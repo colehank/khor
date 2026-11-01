@@ -144,3 +144,2971 @@ A2只读角色模型审查：observe/hash(序列化tuple[version,home DeviceId,a
 A2必要语义已发作者：None中性、不计Idle/不画halo；观察updated_at独立，不伪StateStamp；排序/state分组/stale/quiet/dead/unread/seen、CLI/MCP和peer不能unwrap_or(Idle)。本机持有远机观察metadata不代表content home本机，A1 row.source仅peer报告轴，session_content/page/raw须按binding.home判remote不可用/后续A4，不允许省machine即猜本机同leaf。UI role须先于kind=gui的live分支选ObservedSession；关闭先本地删除observer alias与观察登记，不路由为杀原writer；控制入口按绑定角色拒绝，不把alias翻译native ID用于prompt/cancel/load/attach/takeover/setoption。仅规划独审，未实施/启动native。
 
 G consumer固定660f7e2fa872d8e578ba2c5a3f5d199c323bc7e6最终独审无阻断，5源SHA逐git-show与glass/commit-receipt一致。私有watchBand共用注册体、find first-wins/local无padding、同node cleanup清ref；jump取实际scrollPaddingTop修52px遮挡；flush只held时正文tail0且同组头blur下沿0，普通段落tail不改。11owner/4jump先红后绿/types收据及实际W1200→N390→W1200一owner/pad52→0→52、bodyTop等于barBottom和4静止/小滚态已核；mask:none确为满值，原harness误判失败保留，不改产品追绿。独立真实CommitPage Lab babb78218aad32038526b26515f51e7c1bb8f86b可保留参考；未外推native与余下G消费者完成。
+
+G Machine+frontier当前未提交diff初审无阻断：发现targets仅递归含marker分支、普通兄弟整块、不mask含sticky祖先、不逐cell；nested primary scope留给自有owner。Machine表header/body为真实grid+subgrid盒、rows仍contents；tight body block和首行border选择器已适配、原clip-path保留。12受控函数绿不证明实际列word-x/排序/tight/clip，等待root真实Lab对照；check-face旧cell-sticky/底线假设只应在事实稳定后调整，字重/轨道/clip有效约束保留。
+
+A2另已告root范围检查：只改acp:候选import仍不覆盖普通外部native tui导入；后者原roster Import保原ID且可能在DetailPane mux/attachable分支进可交互终端。若R005所有外部agent导入均只读，需源事实观察alias覆盖native候选，shell导入保其独立语义，不能用imported布尔一刀禁用。此为已计划R005语义核对，不开额外专项。
+
+G Machine/frontier固定7c9af9f06b29c9914189ecc72fc71b1f8456f893最终独审无阻断，四源SHA与glass/machine-receipt逐git-show匹配。实际原port padding16+band52的物理sticky edge为140而非main.bottom124；新阈值取port rect.top+clientTop+computed padding+heading.top，find/RO刷新样式缓存、scroll仍rAF读真实rect，普通main fade边界/原间距不改。13受控红绿/types/Labtypes收据、五项真实DOM结果已核：head140–168满值、body渐隐终点168/flush0、普通兄弟fade，列/row轨道/排序/clip/tight无新增滚动保持，unknown/errors空。原错阈值失败与隐藏窄屏排序harness失败保留，不改布局迎合模型。生产可集成，Lab23a18c90210a24072216f5ed1424c172b5e014a5单独保留；native WK裁剪/实际透明窗仍未验，R013/文档与门尚未闭合G。
+
+A2控制归属专项只读核：on_record/claims仅Meta存在；khor_holds现kind非shell/tui或hostfile可解析包含死marker，不能授权。is_hosted只host.json活PID回答终端宿主存在，不代表agent当前归属；view.json是看外部tmux的lens，不能因lens活跃授agent控制。已建议root/作者从home现live seated/registry同一sweep产出唯一controlled轴：agent要求活Khor host与当前host/child subtree归属（已有hosted_holds/process join可复用）；hook-only/仅lens/旧host死后外部接手false。真实shell/tmux holder资源显式接入保交互，即使表面wears agent也不按kind全禁。GUI isTerminal先该轴，backend每次控制复核当前事实并以既有cookie/protocol握手承接，不拿缓存row bool当授权；无新cache/第二readonly镜像、不扩大S3运行代次协议。当前A2类型check-6绿不冒行为通过，待控制事实和行为测试固定。
+
+A2 check-7冻结时热路径只读核：term_key/Chat Stop经term_of/chat_of纯observe-prefix与既有活handle/队列/socket，无新增全sysinfo扫描；新attach/terminal_address才fresh归属查验。owns_agent_endpoint比较host PID启动时间与host marker mtime，未错误拿合法后spawn child与marker比较；GUI self-host惯例单独处理。发现新绑定guard绕过已发root/作者：core term::attach的Err(_) if is_hosted降级Host可吞attach_tmux新增归属拒绝，而is_hosted弱于can_control，须在当前native终态后修。require_input_owner否定式any对完全无row默允也不能算正向授权，但live seating可能折叠原shell ID，需保明确shell holder/资源事实而非机械全禁，未建议扩大恢复协议或测试中改源。
+
+R013当前三文件初审无阻断：PathField新增menuLayout默认adaptive保窄表单原inline，只ContentPathField显式overlay；ContentToolbar局部relative/z1针对真实candidate被兄弟目录层遮挡事实，不改背景/输入/网页suggestAddresses、不加全局narrow CSS。等待实际十项菜单验收与固定ref。
+
+G收口Face机器表diff初审方向正确：保字重/墨色/内容seam与后续列轨有效矩阵，旧cell-shadow底线断言改真实head+cell无divider；不再滚非滚动clip盒并永远skip，而按实际nav-clear/padding对齐再滚80验held/标题满值/body终点/flush材质/排序并恢复阅读位置。当前仅node --check语法绿，不冒整Face执行/原生验收通过；docs/正式入口待后续收据。
+
+R013固定52415f2e三源SHA逐git-show与glass/path-menu-receipt匹配，独审无阻断。十二项真实DOM报告（八宽窄/主题/外观、点击候选保焦点、Enter进入目录、网页编辑无推荐、unknown/pageerrors空）与field13/types收据已核；局部stack/显式overlay范围不变，可checkpoint集成，未外推native/IME。
+
+A2当前最终未提交稿已见先前弱fallback删除、positive input_owners折叠前保真实shell、unknown拒及本地terminalAddress共用解析；原tui/native显式takeover/resume保持独立动作合理，observe alias仍拒且不自动翻译。后续格式/深模块/别名拒绝/重复owner和实际正文断言不由旧ownership-3九项日志覆盖，待最终定向复验/gen。
+
+A2新增双地址契约风险已告root/作者：input_address的正向归属由host.json的owns_agent_endpoint证明，Seat偏好随后可选任意活view.json；而view按既有定义是foreign tmux lens。旧自有GUI host仍活、同native在外部tmux恢复时，旁边host的授权可能用于写foreign viewer。新增两地址同ownpid夹具仅证明选址，不证明目标归属。需要沿同can_control轴按实际target收紧：agent的foreign mux/view不继承旧GUI host授权，明确shell资源保交互，或agent终端仅接已证明的自有PTY；不要求第二readonly镜像或扩wire。尚不给A2最终无阻断。远端Reach现无channel仍Host优先的既有限制留A4，不冒本slice已解决远程GUI/PTY选址。
+
+A2 final-candidate-3当前实际源码复核已解除上述host借权view阻断：attach_owned对非明确shell资源在读取view分支前收口，Meta TUI只返回自己的已证明PTY Host、Meta GUI Seat/view拒绝；真实shell资源继续原view/tmux。前端isTerminal排GUI并删除mux抢先空分支，自有GUI仍ACP，不用“GUI处于任何mux即foreign”启发式。候选测试改为GUI Host可用/Seat拒、TUI旁有view仍取自己的PTY。Native resume/reopen参数上的新增盲observe/前缀禁用已撤销，正确区分vendor opaque nativeID与Khor SessionId域；明确操作仍校验已记录agent/home/exactID，不做alias翻译，Khor控制门仍拒观察alias。十四项JS/语法是候选收据，最终native/producer尚未执行，不把旧ownership-3九绿外推为新断言通过。已告root/作者源码阻断解除，等既定最终验证和精确ref。
+
+G旧scroll-surfaces门/文档/package当前diff初审无阻断：过时transparent separated契约改为标题满值、无divider/独立tint和正文mask两端，仍保first/range/180阅读位置，脚本显式要求36项数量；root整入口exit0已见。Face精确新段当前opacity0.815295失败不能改绿，180ms transition对2rAF时机疑点待真实0/100/240采样；已要求只有终态精确1后才在测量前有界等待held&&opacity===1，后续精确值/几何/排序断言不放宽、不改生产追绿。语法绿/新段绿不能冒全Face矩阵执行，native材质仍独立未验。
+
+G冻结门/docs/package后续独审无阻断，可固定：face-material-transition真实采样0ms/.815758、100ms/.999314、240ms/精确1，held/几何140–168/scroll435始终不变，证明为180ms过渡而非产品终态未达。Face仅测前新增1s有界wait held&&opacity==='1'，超时记录实际held/opacity，后续exact1/flush/bodyEnd/排序断言保持，生产未改。face-sticky-exact-settled报告精确源SHA8e2fc110755676a56ead4539e01e1b46ef06b854e7430accb77a00e7cc66d71e/pass无失败；范围仅无divider+完整sticky精确段，未跑整Face。旧失败保留，root完整scroll-surfaces日志36绿，旧数量/首行/范围/180位置保障未削弱。等待精确commit指纹，已告root/作者不必重复矩阵。
+
+root新R2-W任务卡只读核总体准确：queued非写权许可，019/020/021/023范围与R022归G、c501最终参考、禁止整支Lab接入、真实Git完整可达分页、E接纳/草稿owner及A2/G/API生成器唯一owner都已覆盖。已建议root补一段正式验收勾选点，避免执行时只读“参考为准”漏掉无重复标题、双玻璃/无分割间隔、独立full-hash提交标签及标题正文/默认展开/标签内状态、SideList槽位/同起点、branch摘要同行/1em头像等间距、下载仅右键。Lab编辑为textarea/内存API，正式CodeEditor位置/编辑自动固定/composition和脏稿接纳须真组件验证，不复用Lab绿冒完整能力。未实施W或扩大调查。
+
+G门/规矩固定8658c56493f517f357e996368b378681946cb9b8最终核无阻断，七路径逐git-show SHA与glass/gates-receipt全匹配，Face精确源为上述8e2fc110…，原red两文件均存在。13owner/4jump/36整入口/精确Face段的范围明确，同源证据可复用，不冒完整Face或native。已告root可按顺序集成。
+
+A2三处最终nullable胶水实码独审无阻断：Mandala waitingOn及MyKhor rows/sessions仅类型放宽，busy/blocked仍严格等值；Workspace said/now Map nullable，busy退出触发必须新word非null且非busy，None不作完成事实，不用Idle吞未知。等待精确ref/新的types收据。
+
+A2编译闭包只读核：graph未索引core结构，回退解析workspace/member Cargo.toml（未跑Cargo）。final-1三lib实际node+commands+gui-core，依赖涵盖core/a2a/sync/net等生产lib，但不涵盖CLI bin及其khor-web lib、Tauri lib/bin，不涵盖独立integration test和依赖cfg(test)。已给root最小队列：CLI `cargo check -p khor-cli --bin khor --locked`同时覆盖web；Tauri lib/bin留V正式App阶段，不立刻全App；已实跑gen_bindings/catalog bin无需重复。明确已改但未编测试target为node tests/live,broadcast,tunnel_wire及gui-core tests/seen_snapshot；sync agents与commands的cfg(test)也不由生产3lib check覆盖，可按包只编测试目标、不跑全矩阵。bridge/face_samples无直接Session字段消费者，V工具构建涵盖即可。此为已授权A2验证边界，不扩专项或占native槽。
+
+A2固定3ff8013c5eb41fd05d4dac613c843f26f0181814最终独审无阻断，可先集成。fixed/source-manifest三十九路径逐git-show全部匹配，final-1前后328源码SHA与ref亦无差异，确认三处nullable胶水未改Rust producer输入。161 bindings的staged和实际published逐SHA全部匹配，catalog为df55c25d…同generated-sha/publish；SessionRow.word确为string|null，producer binarySHA/publish来源收据完整。validation-map对应最新final-1九原生/三lib/真实producer及final-ui-1十五实际函数JS/types/mobile/words绿，旧nullable types红保留，原check-session-content未改。先前weakfallback/unknown默认允/host借权view/native opaque误拒均已收口。CLI/bin与已改integration/cfg(test)额外compile-only缺口仍单列排队，不以checkpoint声称全workspace/Tauri/V/真实agent或A3/A4完成；同源九项不重复跑。
+
+
+A2集成6f103d9b生成来源差异已独立核：作者ref3ff8013c的328源码快照与集成327匹配，唯一web.rs因先集成C1 system_target/open_link函数体、注释、cfg(test)而不同。作者SHA e8bc21de8c116981dc8a077cd412a480e0d2da4de272f279420e4285e75dabfc，集成SHA b73ed5fd61fa65779677265d5591630a059102a294a18af6f718ebb4e867fd7e；root停写与diff记录保留。实际唯一TS类型WebBorrow与gen roots、api注册/签名均无差异；允许以“327同源＋1已审不影响导出结构”显式例外接纳作者真实生成产物，不可声称328全同或手改TS。为该纯函数差异无需单独regen，正式native整合仍归V。
+
+G extras未提交源码及实际收据初审无阻断，已告root/作者待最终types后固定：ContentToolbar page locator确为直接landing子盒，显式data-band-under只取得port owner后写、换target/release清理，默认邻接不变；无DOM landing的native空端不注册/无pullup，不重排或重挂webview。TermPeek仅table挂局部owner，JSON解除，真实table结构保留。extras十二项实际宽窄/切kind/同DOM/范围/空端尺寸/列轨/held/flush终点/排序/JSON清理已核；同区域tbody mask禁用前后截图paint差确有像素改变，不以attrs假证绘制。原R013菜单宽窄hit/click保focus、Enter导航与真正CodeMirror dirty全文/同DOM保留另两流程已核，unknown/errors空，fixture write409记录不冒保存。原漏CSS和synthetic-fill harness失败保留。当前不冒WK原生材质/真实webview验收，等待精确refs与源SHA收据。
+
+
+G extras固定547a94968a481f6ac3a28f39bf74bc42d49e25fb最终七路径逐git-show SHA与glass/extras-receipt全匹配，types/Labtypes/owner14及此前十二+两实际流程范围准确，独审无阻断，可集成生产；Lab5a229057d5133e302e469568d2a78ba289e544be独立。原harness失败与write409保留，不冒native WK/IME/退出。
+
+A3实施前最小契约复审认可：首次无committed内容才pending原子bootstrap base；已有canonical后startup load/显式Replay仅运行时回放，不能append/替换已接纳prompt或按文本hash去重。无需多版本source/UI/每次resume全历史复制，pending最多一份失败保旧；canonical明确覆盖首次base及Khor见到/接纳事件，离线外部变化不能假称自动补齐，记录coverage/gap。已提醒root/作者真实Ready/fence范围：acp opening优先session/resume分支并不等于session/load完整回放，Ready只排序已接收opening队列；必须按实际new/load/resume覆盖记载，完整base要求真实成功可用replay，不能Ready就宣称完整。fence仅把有限队列转发到host receiver，单loop仍须消费完该队列（复用pending_completion.remaining）才发布base；bootstrap期间不接新prompt。accepted prompt先记录后dispatch，写失败不假接纳，不引新临时持久owner。A3未实施/未验。
+
+
+A2补充compile-only收据closure-2已收到：CLI含web、Node三integration targets、gui seen_snapshot、sync/commands cfg(test)四命令全0/源码不变，不冒行为执行，补齐此前明确编译闭包；closure-1缺dist失败保留，web assets准备后才重试，正式Tauri仍归V。
+
+G最后CodeDiff/SessionSide两生产文件未提交小diff初审无阻断：CodeDiff只桌面原标签头挂band，以pb hair保原border占高、narrow无新增头/未改CM；SideBody仅import/ref/data-band，原seat/window-drag逻辑保持。待实际单cm-mergeView scroll口、rest首行/range/scroll/标题满值/宽窄往返cleanup和SideBody内层owner不被抢的收据；集成只取小hunk保A2 word|null，不按旧作者基线整文件覆盖。
+
+
+V/L05单次只读定位交接：真实旧OS harness入口为`/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/P5/fullscreen-query-os-owned-plan03/launcher.py::main`，行232在GUI正常CmdQ exit0后、读取accepted前，`wait_until(lambda: not entry.remaining(table, owners['app']),10,...)`要求所有累计观测App后代终止。具体分类函数是`/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/Q039/local-cold-entry-repair13/source/scripts/run-node-acceptance.py::remaining`行89（同PID+start或已观测owner PGID任意成员）；observe行74累积后代，含setsid持久host，非仅GUI临时owner。真实失败`/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/P5/fullscreen-query-os-owned-run03/runtime/launcher-result.json`仍success:false/normal_app_exit:true；对应`runtime/app-exited.json`、`runtime/accepted.json`和`runtime/business-oracles.json`均独立保留。准确归属证据`/Volumes/disk0/Khor/evidence/runs/khor-code-quality-evidence/P5/fullscreen-query-os-owned-run03-review01/report.json`第95–150行，以私有home session meta/host对应50774 host/50775 child、出生身份与独立PGID；原runtime/processes是累计inventory，不能伪称10s末唯一阻塞PID。产品依据当前`docs/SESSION.md`109持久寿命、node host.rs setsid、Node::open_persistent。最小L05修正契约：按本次私有home+session ID+host marker/PID启动身份+child归属确证持久集合；Quit门只要求GUI/临时集合退出，另验持久者活且能重连；accepted仍独立验。fixture结束显式收本次私有持久资源，再验全部无remaining/footprint；不忽略所有后代、不按宽泛PGID或进程名杀用户agent。未改旧harness/结果、未启动App/kill/新工具。
+
+A3首writer未提交源码初审：独占File lock、current/pending目录发布与64KiB流式序列化合理，16KiB仅manifest预算，不设合法总历史cap。已告作者commit_base的sync_all/rename/父dirsync任一IO失败同append/persist需poison/retire：当前rename成功后dirsync失败会pending=false且仍可accept，不能在调用方错误继续时伪成功。Prompt append到manifest之间crash需reader按缺completion保unknown/gap、不单凭active_turn推完整或自动补发，允许后续读取合同承接而非新增全历史扫描。尚无原生测试，不冒IO断言已过。
+
+
+G最后固定eaaf7c39b640c53aec1bc83a299c56c0eabcad4b两生产源逐git-show SHA与side-diff-receipt全部匹配，独立Labdd9e77512d43118db821e13c5d27490aae2455a8。已核实际6＋inner1脚本/报告的23px高度、range1519、两列轨同位/文档同步、主题保滚180、窄无头清旧owner、回宽单owner，SideBody宽窄首行/scroll及真实SeatBar hit/click、内头独占pad52，errors/api空。hair仅补偿删border的原1px占高，不以新空白改CM；原overflow假设与22px/1518首次几何现场保留。CONSUMERS.md明确活跃关系/排除及不冒native，G实现可封口；原生窗口材质/WK/iPhone组合仍未验。当前integration相对作者SessionSide精确ref仅A2 SideWho.word:string|null一行既有差异，G小hunk在位，确认未旧源覆盖nullable。
+
+
+A3 writer-3首checkpoint精确journal SHA3a0629ae81bea1a5e8a4665fe7a60a22aa82100c768360231e7f48138645f1ad复核无阻断，可固定journal.rs＋mod两路径。commit_base各IO错误统一poison已修，rename后dirsync失败也不允许继续accept；current已发布不被drop误删。真实writer-3/journal.log为六项6/6/0.23s，整批exit0/59.646s/unchanged与result一致，首两syntax101保留。六项仅证base原子可见/待定drop、独占锁、重开gap＋人工半行原bytes、大附件与合法相同chunk保留、实际metadata IO失败后退休、manifest读取16KiB预算；不等于真实硬崩溃注入/host接纳时序/reader malformed呈现/用户路径完成。无总历史cap，后续缺completion保unknown与malformed raw显式引用仍在读取合同。
+
+
+W首未提交模型diff提前只读核：registry device/path→WorkspaceMemory且仅当前Pane实际挂载，typed fields/immutable EditorHistorySlot与独立常驻draft reporter方向符合授权，不需隐藏全部Pane。现effect在每次重挂执行setRev(null)/setFace(default)仍会覆盖搬入memory的保留视图，已告作者需只在真实文件切换触发或明确字段不保留；reading Map尚未消费实际topLine/placeAt，不以模型map测试冒真实位置。最新FileBody onDraft被动更新在同批编辑→切workspace时是否丢末次输入仍须实际接线红绿与必要E窄胶水，未给完整W通过。旧Pane卸载可停止该view的IO/键监听，稳定memory保持草稿退出计数，App不接每键正文。
+
+A3第二片段未编译源码时序初审已见Ready→finite fence→events.len drain→commit，以及已有canonical startup/replay不append、Say/SayWith/Delegation durableaccept先于dispatch。已告作者具体语义收口：合法Ok StopReason如MaxTokens不应直接当执行Failed；journal小写outcome直接投影现ChatFrame::Turn.stop偏离原EndTurn/Cancelled且丢detail，保capture outcome与原protocol stop两种事实。capture/gap目前仅服务投影，旧history-paint忽略该私有note/turn，不能冒UI已表达覆盖。尚无本片段编译/host真实断言，不外推writer六IO绿。
+
+
+W首数据/位置片段固定45f6126149c7ffad73b4fd17279a0c5aaa383e82＋独立Lab60bcea9a65df80662453dcac515d909b7348d168，合计十七源逐git-show SHA与first-slice-receipt全匹配，独审无阻断。最新onText从leaving最新edit保by/was构next，先排本地更新再同步外部owner，通知不在functional updater；被动effect复用同dirty判定，未读不报null。model reporter用自身Symbol初值＋同步订阅发布，detach仅清自身，保无view草稿计数；registry保typed数据/immutable history而非EditorState/DOM。restore私有core保原45/60预算/anchor/cancel，preview ref清rAF/listener；CM公开scrollSnapshot实际是纯ScrollTarget/selectionrange/offset，仅同key同text恢复，freshline优先。FilePage optional成对Dispatch受控face保functional toggle，默认独立仍local，owner只真实file改变reset。已核真实同批17字红绿、model1/quit0→1/1、CM700/预览800宽窄红绿、retention八组和默认/最近三项、model5/core5/E8/9/9与末types；原失败保留。不冒App整壳选择/路由、OS Quit、IME、WK或revision/compare完备；本次可checkpoint集成而非W全项关闭。
+
+A3纵向fixed-vertical未提交16源逐SHA匹配，源码/证据独审无阻断可固定。MaxTokens已归Ended并保原detail投影StopReason；typed ChatFrame::CaptureGap独立于provider扩展，history-paint sys与ObservedSession静态scope文案消费，未将一次probe的gaps数当当前总数。实际三个host夹具核先durableaccept后dispatch/noecho150KB附件/合法重复chunk/原停止原因/twoReplay字节不改canonical/观察alias富diff/raw有效先读后inode换代拒/二次load不重复/真实resume空base与partial来源/abort无ready、pending清理、reap及锁重取。vertical2/3各源码前后不变；当前413输入与vertical3全一致，vertical2仅cfg(test)case独立store及earlyexit诊断差异，逐patch确认生产/Python同源；原abort失败保留。31项为journal8、hostjournal/resume2、abort1、handshake1、page10、core5、fence4，四隔离worker各实际1passed，不冒纯helper外推。161 bindings staged/published逐SHA全匹配，catalog a30639adb2aef712475c86e6e6088f9abf55a5b7d77e7e79b84067c95e0ee45f同publish；gui2 observation16/types只scope/断言变，history20实现/脚本同源沿gui1合理。待精确ref，不冒A4、live恢复、全源搜索/复制、真实App或ACP opening全链字节预算。
+
+
+A3精确固定529d903527532df9d2b069fea00a5c2a909be022（父8a7ae1aa）十六路径逐git-show SHA与fixed-vertical最终manifest全部匹配，最终独审无阻断；上述验证映射/来源例外/未验边界保持，同源矩阵不重复跑。
+
+V-L04两文件未提交最小diff独审无阻断：native_provenance.environment仅补TAURI_CONFIG/REMOVE_UNUSED_COMMANDS两个显式名字，unset同样key(None)、值只hash，未知build-script rerun环境拒绝未动。三新增来源回归通过真实临时目录/既有prepare/verify/generated_output链，覆盖两名unset/set/hash无原值泄露、六组set/change/remove失效、真实已记录unset声明可接纳；setUp clear环境可重复，原未知env/file反例保留。validation/L04/red.log原三tests六FAIL三ERROR、green.log整25tests/0.200s/OK已核，不把Python规则绿冒实际Tauri producer/严格verify已验。待固定ref两SHA。
+
+
+V-L04固定959cf6b837498fac22b673467bd3468963a6a564两路径逐git-show SHA与validation/L04/receipt全匹配，最终独审无阻断，实际native producer仍待验。V-L05新helper两文件未提交源码初审无阻断：仅freshfixture正规home/session元数据、观测及当前PID/start/exe、独立host PGID/childparent证明的原host ancestry可分类；remaining_temporary先调用原strict remaining再只减精确PID/start，未知同PGID、同名临时、复用PID仍阻断，原remaining/stop/run语义不改。caller-predicate-red执行旧真实lambda对受控persistent-only表为False，明确非真实OS/App运行；classifier-red仅新API不存在，未冒原业务red。classifier6＋原cleanup2实际8tests/0.669s/OK已核。后续新launcher需pin正规freshfixture身份（Mac/tmp别名创建时正规化）、Quit验临时退出及持久cookie协议重连/内容，再显式收本fixture并原strict all无remaining，不可忽略所有后代或杀用户agent。当前helper不是已认证重连/GUI/native生命周期证明，旧harness/失败字节不改，待固定ref/实际新caller。
+
+
+V-L05 helper固定e92893ce5cf8439012cb69dc8be68f1de519e9dd最终两SHA与receipt逐git-show匹配；新离线caller位于`/Volumes/disk0/Khor/evidence/round2/validation/L05/launcher.py`，observer同目录，五caller/原副本SHA及四host/Ready协议源SHA全匹配。独审无阻断可交接新验收：正规freshfixture root+inode、private session marker及PID/start归属先pin，原strict仅扣精确proof；preQuit同SID成功open完成→Ready API完成→fixture drop，postQuit持久同birth/host markerhash后v5 cookie Hello/Welcome/Version重连、显式fixture marker证明replay。15s总deadline不随partialread续期、1MiB上限/错协议/EOF拒绝，发送无Input/Ready；Version可能resize/startup相关分支，不冒零副作用。normal清私有persistent再原strict app/helper/observer空，finally仅清已证privatepersist并记录remaining。八fake socket/顺序case仅离线合同，不冒新observer/App/真实socket执行；旧launcher/observer副本SHA分别81eddb6e…与a645375c…、旧失败保持原字节。下一root先冻结整合source/build与新contract，再授真实OS/native验收，不新增离线矩阵。
+
+
+L05离线尾部两加固复核无阻断：launcher校验自身c.launcher_sha256，postQuit只读同一host_bytes完成hash与JSON交probe，消除中间二读。最终launcher SHA271ebe45923c0c592820b9a1be3b760b44b7df582dac17ead1565806cfc1c7d3、receipt五caller SHA全匹配，observer未改。新增三例由AST提取实际新wait_until lambda，受控persist-only通过、未知同组及PIDreuse仍阻断；probe-offline总11/.011s/OK，原八例不削弱。仅离线，新native/App/真实socket仍未执行；前述完成边界保持。
+
+
+V首次native strict早停只读核属实：validation/native-0a885e25/catalog-prepared request为khor-catalog gen_ts bin/testfalse，selected含catalog+core；Cargo.toml中core仅dev-dependency，proof当前metadata closure不区分kind。实际build-catalog.log firstparty只有catalog custom-build/lib/gen_ts，features全[]、build成功但无core row，strict verify集合比较在419行拒绝。result保green:false/provenance_complete:false/source/env稳定/remaining空/未执行App，不归产品失败。root授一次同invocation显式core lib＋catalog bin为最小不改proof/模型适配，额外core仅满足保守coverage、不称gen_ts真实链接依赖；若features仍不符再按精确row定位，不全workspace/allfeatures扩线。旧失败保留，未启动任何构建/工具。
+
+
+A4首本地未提交slice提前独审：graph仍旧build，按实际源码补查。ContentLocator/ReadBinding包含版本/home/namespace/agent/exactNative/view、16KiB实际序列化预算，metadata owner不入read hash、canonical reference可不依alias owner本地解析，方向合理。PreparedRead/TranscriptWindow新增真实proto编码raw256KiB+16KiB预算与serde_bytes，但现parse_prepared Some-window只验内部范围/size、未核FileVersion.changed(cursor)或forward window起点等request/response一致性，可能reset=false拼接旧inode/len响应与新cursor。已在native冻结前告作者/root补最小状态反例和校验，尤其window.observed_len/observation.len并发append/shrink关系需明确；source/view可由后续外envelope做唯一绑定，不要求重复塞身份框架。尚未编译/测试，未给wire状态完整通过，V/native槽未占。
+
+
+A4当前validate_request修正源码已阅：parse_prepared新增显式newer意图，先核source cursor，非reset核file代次、方向、精确前后窗口请求range及snapshot EOF不得大于post-read len且不得早于cursor len，允许并发append下一页继续。上述主要wire状态问题已解决，新增旧inode/错range/方向/截断/append反例尚未执行native。另已提示pending.start<=cursor.position.start应从prepare_read局部检查移至共用check_cursor，使parse_prepared也拒该不合法请求；source/view真实envelope/auth仍留后续，不冒远端完成。
+
+V capabilities精确快照两行＋三测试未提交独审无阻断：仅khor-gui的apps/gui/src-tauri/capabilities目录沿现extra_inputs/tree/covered_inputs/generated_output进入producer key，未改generic admission。真实路径结构正例先复现declared目录未冻结拒绝，再接受该精确目录；同正例换Root未知目录仍拒、保mtime内容修改/增删失效、root/member symlink拒绝均覆盖。整28tests/0.199s/OK已核，原25保障不削弱、initial fixture/missing-extra断言失败保留；仍仅Python来源规则，实际Tauri build/strict恢复未证明，旧GUI来源false不回填。待固定两SHA。
+
+
+A4 candidate4最后共享pending校验实码复核无阻断：check_cursor同时服务prepare/parse，非法pending.start>position.start在公共parse入口先拒，14th反例准确断cursor range。先前主要wire状态阻断解除，计数reference5/page14/window8/obs4=31正确，待真实native终态。六源仅reference相对candidate4存在local1编译后cfg(test)三处&tree.path借用修复，逐全文diff确认无生产变化；local1 exit101仅测试借用错误、未执行，不能冒任何绿。V capabilities固定8bf8c4245bad53e037fd4a8c3ec1a063604aec3d两源SHA27642c68…/41dfd7ff…逐git-show匹配，原独审无阻断，root集成2a5a416b实际28/.237s绿范围仍仅Python来源规则。
+
+
+Root数学小补丁方案独立只读建议：doc入口共享bracketMath且needsOf探测括号合理，但现行级fence＋backtick split会改indented code/逃逸文字/跨行codespan，已真实门暴露，不能仅七公式渲染绿就通过。建议复用既有marked blockTokens定位原raw保护fenced/indented code，再inlineTokens保护同run长度可跨行codespan；只记原source保护范围、不用token.text重拼，raw不能精确对齐时保守保留该区域（含复杂嵌套code容器不猜indexOf）。未保护范围仅匹配未逃逸奇数反斜杠run的成对定界符，2字符原位替为$$，不trim/增删空白换行、不跨code配对；直接blockTokens而非预规范化CRLF，source行/offset保持。needsOf仅粗探测可误加载，不等于转换能力。原七例之外建议两窄反例：跨行codespan、double-backtick含单backtick，非新增parser/framework；只建议未写源码/未执行App。
+
+
+A4首本地精确固定3e9376eebe8cec5bc8b164d19e97f9be3b74eb56六路径逐git-show与fixed-local及local2编译manifest全部匹配，最终独审无阻断，可集成首slice不关闭A4。local1测试借用101保留；local2仅reference5实际绿后内盘floor guard未起page、整批exit90，不称整批成功。恢复资源后local-direct-1以同一二进制path/dev/inode/size/SHA8260f05d4c88348f4287fde31faeb2ab0d998c1288aa28e5c94ab250bd2cbf7b执行page14/window8/obs4全0/1.801s。实际源码快照为414项（新reference后），两批共享414逐SHA一致、各自前后不变；requests草稿不在414或mod，额外单记未编入。故证据为5＋同exe26实际通过，不能冒一次Cargo31全绿；无gen/App/远端合同通过声明。
+
+
+Root R2-029数学三文件最终未提交候选独审无阻断，可固定：doc启用既有转换/needs加载，bracketMath复用marked block/raw和inline code保护，不加依赖/样式/parser；inline raw不完整对齐时整块保护、临时ranges不泄已转换前缀，code/HTML及含code复杂容器保守留原。oddslash定界符成对2字符替换，不变内容空白/换行/offset，未闭合与跨code配对保原。math/final.log实际完整check-md all good已核：九文件例（含indented/escape/multiline/doubletick）及七纯source位置/配对/rawfallback合同、懒加载、原stream redraw150<=174/cut/mend/HTML/anchors/source line/no-pageerrors保障均在。types-candidate3先前exit0，最后fallback局部类型不新增；待root精确ref/SHA与末收据，不外推原生或所有Markdown语法均能转化，保守区域可能留原公式。未重跑浏览器/原生。
+
+
+R2-029数学精确固定ecf36408147bdd6ef193176b707da525a02ef720与Root集成b338ced2三源逐git-show SHA均匹配math/candidate-final：blocks6fe6a9fc…43555、Markdown32bc6d94…93e0d7、check-md eabbfbef…149c84。实际final.log与最终types-final.log SHA亦同receipt/exit0，最终独审无阻断，不重复同源门；原失败保留、native WK/整轮验收未冒完成。
+
+
+Root actualnative-b338ced2构建脚本/contract只读核无放宽：相对native-0a885e25-3仅冻结HEAD/MIRROR、NODE_DISABLE_COMPILE_CACHE=1及contract显式bool，quality identifier为round2b338；script/config SHA同input-contract。原prepare→实际Cargo→verify→require_provenance、catalog compile-only gate、source/env/tool/helper冻结、300s步/1800总/5GiB/owned与TMP归属清理均保留。当前progress至metadata-gui各phase0，catalog/bindings/CLI/core四严格receipt已存在；GUI与整批终态未到，不提前报green。build.py仅构建并拟最终strict通过后复制字节同binary，actual_app_executed固定false，未启动App；后续私有quality devUrl/devtools验收仍待独立授权/来源契约，不冒ship/正式production/native WK/OS通过。只读未占Cargo/App槽。
+
+
+V native-b338终态只读诊断确认：GUI Cargo0但strict generated_output拒绝，整批exit1/240.681s，source/env稳定/provenancefalse/未App/owned空/TMP清理。exact本Root GUI OUT_DIR八文件中七mtime早于prepare、marker新、无matchingGUIprior，其余firstparty有相应合法prior，故不是产品运行失败。root拟唯一槽GUI-only一次可逆重建边界合理：逐regular/inode/SHA及无打开owner核验后，仅整体rename该exact Cargo报告的GUI out至新run retained，旧内容/mtime完整保留；同HEAD/source/env/features下复用四合法receipts/meta，新prepare→实际Cargo重生→原strictverify，不mtime伪造/旧retained充prior/放宽模型或清共享cache。若仍无current/prior继续保真失败并停，不无限重试或重前端全链。待新脚本实码，当前仅方案审查未启动任何工具。
+
+
+V GUI-only第二次实际Cargo0仍strict拒绝后，root已停止native/未App。fresh-output-timestamps现场见本次新OUT_DIR仅capabilities.json/acl-manifests.json保留旧mtime，ctime均>=prepare。对root拟generated-only ctime补丁的独立语义建议：在trusted Cargo、唯一槽、冻结输入工具及本次新OUT_DIR现场下，mtime或ctime current可作为最小新鲜度判据；ctime只能称状态变化，非birth/内容派生证明，chmod也会更新，不能冒攻击安全。须保持marker必须mtime current、每文件hash/regular/路径、已知输入/actualbuild/prior/其他source与compilerartifact规则不变；两时间都旧且无prior、或旧marker即便文件ctime新均拒绝。本次空OUT_DIR/retained旧字节与receipt关联佐证复制反例，不回填旧失败；待两文件精确diff/离线红绿，当前不据建议冒strict已过。
+
+
+W后续UI未提交首diff提前审无明显模型阻断：单typed WorkspaceTabs承接file/diff/fullhash commit及共享preview、active，dirty onDraft同步pin且openTarget读最新memory；commit独立collapsed/scroll state，关闭清理，文件dirty关闭保原shut/flush链。TabFace.onPin/PaneBar.inline/PaneAction.afterClose均可选默认不改既有caller；须真实菜单关后focus及doubleclick验证。当前WorkspaceHistory仍旧fetchGitLog截断more提示，完整分支分页属于后续服务未完，不以UI首片段收全W；真实Lab优先mixed preview互替、typing后固定、双commit状态/关闭、宽窄E草稿undo及collapsed无body的G伪层，当前无DOM/布局最终结论。
+
+Root L04-copytime精确两文件候选独审无阻断可固定：只generated_output files加ctime记录与生成新鲜度max(mtime,ctime)，marker仍mtime current，regular/source/key/prior/compiler artifact路径未改。注释/receipt明确trusted invocation状态变化而非birth/派生内容证明。validation/L04-copytime/red.log实际shutil.copy2保旧mtime为32总唯一ERROR；green32/.213s/OK，新增另三例拒oldmtime+oldctime无prior、旧marker、compiler artifact旧mtime，原28全保。关联旧nativefalse、新OUT/retained复制现场准确，不回填历史。候选source SHA70b6a5cb…8730c、test0f0e17df…82de9待固定ref；无新native/App执行，不需重复离线矩阵。
+
+
+Copytime固定011a8f24→Rootf02b7d693abb33e3300dda5dd00d309eb346ecb8两源逐git-show同L04-copytime/receipt，集成32tests0已收。下一native-f02b7d69准备脚本新增边界独审无阻断：只允许两Python source_delta且ENV等，四合法seed各receipt.source==旧snapshot，实际复用仍由当前per-package key/target/content校验；未把旧整批false或GUI无证明产物当prior。原actual gen/types/assets全链不跳过。GUI仅exact历史Cargo报告OUT_DIR，经正规路径/leafuid/lsof空/devino及逐SHA前后核后整体rename retained，新prepare/Cargo/strictverify，不改旧时间或共享cache。TAURI_CONFIG保round2b338为相同隔离quality变体以维持ENV，HEAD由新contract/源码hashf02证明，identifier不当commit来源声明。当前仅准备未启动native/未App，后续依实际终态收据判定，未追加矩阵或改脚本。
+
+
+V native-f02实际终态false/262.622s只读核：GUI/Node/Web generated_output逐包true，catalog/detect旧marker及两时间旧、无matching实际OUT_DIR prior为拒绝原因；ctime复制反例已过但不等于整条来源通过。source/env稳定/owners与TMP空/未App保持。root拟仅GUI prior_receipts=[]让全部firstparty当前输入实际刷新，四合法receipt只核CLI/core最终字节、不喂GUI prepare，exact GUI out可逆retain→实际生成→原strict，为保守调用适配而非模型改动；variant缓存刷新欠项记下一轮，不继续拓工具。等新script精确核，如仍失败保真诊断并停。
+
+W最新小API增量提前审无阻断：FileVerbs optional toolbar leading/actions复用现menu/IO、默认caller不变；PaneBar pending改layout cleanup，shut读memory最新draftMap覆盖同批末编辑合理。实际宽五报告已核范围，jump仅callback不冒几何；窄源行单击导航即时卸载导致后续dblclick丢失保原失败，沿原即时单击、在真实可达tab上固定补验合理，不新增延迟追count。待窄/菜单几何/最终source收据，当前不封W UI。
+
+
+A4 transport-candidate-1源码提前独审发现资源阻断，已告root/作者：Window/Record在handle早drop普通32 stream seat后，home requests::Request于execute_here返回即Drop；大型Response/Vec随后还可在send.write_all背压await，已无有界owner，重复Begin/快速IO可让未写完大回复队列越过原seat资源上界。需小范围content reply owner/permit贯穿encode/write，真实IO lease仍跨worker终态，取消不与数据回复抢普通lane；若native12批已起先等终态再改，不边编改源。不要求通用调度框架，peer/binding/token/no-Reach权限链初审暂未见绕过；尚不给服务片段最终通过。
+
+Root L04-library精确单行＋两测试候选独审无阻断：actual deps/khor_gui.d同时声明.a/.dylib/.rlib、自身及正确源，原suffix白名单遗漏.a/.dylib导致误找libkhor_gui.a.d；扩suffix只修crate stem选择，后续unique/source-target/primary声明/regular规则未改。34总red仅两个primary suberrors，green34/.220s/OK，原32保留，错depinfo不含primary仍拒。真实row offline artifact_files仅证该配对点，不回填旧GUI整批false；非顶层published alias欠项、新模型或新Cargo。待固定ref/SHA，实际native仍待新冻结调用。
+
+
+A4资源owner最小修方案复审认可：实际服务Node clone共享32-permit content response lane（含QUIC与IPC），验证后try-admit，取得才释普通seat；transport持到encode/write/finish，worker克隆同Arc使await丢弃不提前返，reply先drop后permit。IO64独立管真实worker，Cancel/Begin不取response lane、不重开Node；不是通用调度框架。拟cfg async reply gate仅证响应阶段容量/即刻拒新/Cancel ACK/释放后恢复，不能冒内核实际背压采样；待具体源码与验证，原资源阻断尚未以方案关闭。
+
+V静态库固定d1c443ae→Rootca83fe582b44ac477bd4d7da70b0ac4fe867ad49两源SHA同L04-library/receipt。native-gui-ca83脚本较前次仅HEAD/MIRROR及两Python source_delta白名单/ENV同；GUI仍不喂prior实际刷新，严格通过后CLI/core再走新实际Cargo/currentverify，原support收据不改、不借identifier推来源。增量独审无阻断，实际终态/未App边界保持。
+
+W必要功能保留小增量已核：FileTree右键take沿原非dir/remote/useHereHosts能力分支await原pullFile，拒绝交RowMenu，无hover下载占状态slot；不执行真实下载。CommitPage收起时保空hidden flush包装、内容仅expanded挂载，使G伪层角色不因折叠丢失，无隐藏CM或新增高度；仍待实际收起bottom0/slot对齐验证，源码判断不代替DOM。
+
+
+A4 transport-candidate-2实际十一源SHA全匹配，响应资源阻断在源码层解除。content response32 lane初始化于服务Node Arc字段、所有QUIC/IPC共享；typed/auth后try-admit成功才释普通seat，外层permit声明早于payload/frame并跨encode/write/finish，worker克隆Arc并输出(reply,permit)、parse输出(page,request)，abandoned await下payload先释放再permit，不提前返容量。Cancel/Begin不拿lane，IO64真实worker guard保留。cfg Response门实在编码后写前，双Node断言A IPC/B home实际lane0、额外Window即时拒、Cancel ACK不返槽、显式放门后32恢复，范围是确定响应阶段门，不冒真实内核背压采样。无额外源码阻断，可等唯一槽释放后执行既授check+requests4/wire2/provider6定向12，不扩矩阵；尚未原生测试/固定提交，不冒A4服务完成。
+
+
+L05 focused新launcher函数替换紧急只读核：app-ca83-l05-term相对原L05仅docstring/check_os缩为单真实term_drop、落盘SHA/native_drag/nochatSay/appAlive，保原open→Ready→drop、实际正常Quit、认证replay与私有cleanup链，full_Q043_suite:false明确，可作独立单项而非回填首OS/guard/IME。开前已告root两处函数内必要收口：not successful(chat_put_paths)仅证无成功不等于inactive chat0 call，应禁止任何call；保留旧check的landed路径/SHA返回business-oracles以便事后精确落盘核验，勿只存bool。未运行/无Cargo。首App helper270s硬截止失败及private残留清理另由root保原记录，不冒全套通过。
+
+
+V最终独审通过，可关闭既定L04/L05而非全轮。native-gui-ca83fe58/result实际green/254.051s，GUI/CLI/core三实际Cargo0/currentstrict，源env稳定/provenancecomplete/remaining空/TMP清理，validated copies与focused runtime-contract GUI/core SHA链接一致。app-ca83-l05-term/receipt十三文件＋自身共十四小件，在外盘与`/Users/zgh/Library/Caches/khor-code-quality/recovery/app-ca83-l05-term`逐SHA/receipt字节全同；launcher selfSHA匹配。独立原始native.jsonl核term_open/term_ready/term_drop各一、chat_put_paths/chat_say各零、task_file原生drop一，真实持久session proof seq13→14→15。business-oracles保落盘路径及SHAb32de19c…；app-exited实际0/launcher_sent_app_signal:false后认证v5 replay139B见marker、无Input/Ready，host/child57455/57457同birth归属，explicit fixture清理strict[]、helper0/observer143、launcher success/outer0/source稳/remaining与footprint空。实际Finder用户一次终端拖放/Root CUA正常CmdQ的链条与收据相符。旧app-ca83-os helper270s panic101/wholefalse/outer EPERM不回填，Root私有两pid身份核清理记录保留。此关闭仅构建来源L04与持久宿主退出harness L05，不冒fullQ043、Mac IME、editor Quit guard、GUI restart/fullS、production ship或整轮验收。
+
+
+W UI固定候选0f5a75afcf3e91682b781080fb149d5956d7f57d十五生产源、独立Lab2d85a50d2f0d074bb162877c6cc7bff490ec7a7a五源，逐git-show SHA与workspace/ui-receipt全同，tracked干净。graph实际build在生产ref但当前Lab HEAD不同，定点源码复核，不借9gap计数判缺测。单typed content/全hash commit owner、FileVerbs沿原IO共菜单、PaneBar afterClose pending卸载清理、collapsed保空hidden flush wrapper且无隐藏CM、局部body isolate、RegionLead一次消费及WINDOW_DRAG/WindowControls/stale caption接线无新增源码阻断，可checkpoint而非封W。原wide callback跳转不当几何、窄原行dblclick首click卸载失败保留；最终Provider/正常Back命中/窄三tab当前标题增量待真实验收，旧Face冲突断言和Git完整分页/watch未完成。明确mixed close-others实测仅一个dirty file＋两个readonly commit，拒写409保dirty文本/Keep而readonly可关；多个dirty循环覆盖既有单waiting/closing仍是既有边界，作者确认不称批量队列已完成，记录后续轮次，不新增本片实现。
+
+
+W afterClose平台组合补核：实际Mac此Dropdown仍是DOM Radix而非原生menu桥。ui/dropdown-menu直接import @radix-ui/react-dropdown-menu/Portal并透传props，Vite只有@目录alias无平台替换；showMenu/NativeMenuState无Dropdown调用方，现useFloatedMenu恒false。已读实际锁定依赖：Item同步onSelect后rootContext.onClose，FocusScope卸载延迟派发close-autoFocus，PaneBar先清pending再preventDefault并执行动作；Radix compose因此不再默认抢trigger focus。该合同不会在native分支丢钩子，源码无必要新增接线；本结论是当前共用源码顺序证明，不冒真实Mac新建焦点已验。
+
+
+W UI最后真实增量现已通过并独审：生产0f5a75af十五源与Lab2d85a50d五源commit/当前工作字节再次全SHA同且clean；ui-receipt的final report d008403c…与脚本b1a61265…逐SHA匹配。exec91354真实0报告六组，脚本含正常pointer click、elementFromPoint命中own Back且body isolation、三tab当前标题width>40、collapsed body hidden/flush且pseudo bottom0/CM0、窄jump实际158=band158、宽RegionLead单实例和滚后正常可点；errors/unknown空且finally关闭browser。此前原fullscreen失败保留，先前七staged不回填同源。源码无阻断，可只集成生产0f而不带Lab；本checkpoint不关闭W backend分页/watch及旧Face适配，不冒WK/Mac实际焦点/IME/整App或多dirty批量关闭。收据review/browser_scope残pending旧句已请作者只校正叙述，无需重测。
+
+
+A4 Node服务固定ced98d3b85432b4cb32c0a6ae38d6ecc23aa4435最终独审通过：fixed-transport十一源逐git-show SHA全同；都对应transport4实际417 native输入，source-before==source-after且tracked clean。check真实0/11.501s，requests4/wire2/providers6全部真实0，共90.773s，双Nodewire两项3.85s，响应门/取消/Source/gap/raw/断线等后半断言实际到达。已核candidate2后最小差异：Cursor getter及Record from边界，IPC response许可单次Result初始化仍先于payload/encode/write，未用私有reset删除；wire fixture改typed SessionNotification必需真实sessionId并保exact Value/Gap/prompt断言，冻结A3不变。原transport1/2类型红、3 malformed缺sessionId导致Reference准确失败均保，不能把其先前早停当后半验证。可集成Node服务checkpoint；core/GUI消费胶水与旧core lease删除仍待完成，不冒GUI ready、真正内核背压采样、全source搜索复制或所有外部ACP皆有历史。无新矩阵。
+
+
+L03剩余同步计数Root4cf源码预审：图谱仍3旧文件无覆盖后读实际。SessionContent Record有onDraft/filesMoved/filesGone三类接受，MachineFiles/SideWorkspace Map各onDraft；均layout才report，FileView无上游fallback当前同步publishDraft直接return，仍有同批编辑后Quit读0窗口。旧check-draft-count把layout立即执行，九绿不覆盖此调度。建议限定现hook模块返回同Symbol/alive reporter，三集合窄acceptedRef＋不可变集合React投影update在functional updater外算next→ref→report→setState，Object.is无变跳过；迟到卸载callback不得复活，StrictMode重setup重报，保唯一正文集合不新全局store。FileView无上游同步report dirty，有上游只委托，明确discard同步0而未读不能清草稿；实际onLanded仅排队base/edit，若同任务又输入需用最新已接受disk base与leaving.edit核而非旧闭包，不能首次onText绿冒全转换。Root尚未实施；定向red应暂停projection/layout执行真实owner/onText闭包后立即registry，再同批第二draft/clear、卸载迟到、StrictMode验证；无OS/native矩阵新增。
+
+
+E同步集合计数checkpoint a0c34d13d892989ae54ae2e50f2e3eb5a9553632六源逐git-show SHA=candidate全同，独审无阻断。private registration setup激活重报保count、cleanup先inactive后仅清自身；accepted仅在setter接纳时推进、Object.is无变跳过、pure action在React updater外计算，count同步后React投影。三个真实owner仅替state声明，Session移动/删除也沿同setter，无遗漏第二集合。实际AST抽onDraft延commit回归覆盖同批双文件/幂等/清零/投影追齐、多owner/Strict replay/迟到拒绝；旧prod恰三first-edit-before-commit失败3/6→新6/6，旧计数9与tsc绿。两原fixture错误单存未回填。本片只关闭三集合窗口，FileView独立base/flush、OS Quit/IME仍未覆盖。
+
+
+A4 Core/GUI bridge固定41ed240b45ca9b0de564b673e0761bc5c1185279十一轨迹git-show=固定manifest=已审candidate，包含旧history_request确删除，tracked clean；四个现存core源SHA全匹配bridge1真实417输入before==after。locator id+locator queryKey、binding变化重建reader、begin/cancel Node resident快路无provider重开、ClientRead跨Nodeopen/IO/投影Arc归属无新增源码阻断。Core实际api::answer两例只stub Begin/Cancel admission、page/raw真实IO/投影/提前cancel、cross-view非法在Node开前拒；core check0/预算5/bridge2共83.10s，JS observation18/history20/mobile0。tsc2确旧生成SessionRow.content_locator及available.binding字段未发布，不冒绿；Tauri签名源码未正式App编译。可集成checkpoint，待既定真producer和最终组合，不外推Node/JS例为真实浏览器完整可用。
+
+W Git leaf初审据red/candidate-source.rs耐久九test版（不误读作者临时旧源red树），graph空后定点源码核。head+after全OID固定snapshot、allparents关闭commitgraph、missing/unreachable/shallow明确错误、真实JSON行预算及被预算拒row由last cursor下一页承接无明显正确性阻断，尚待实际red2/green9。明确边界作者已同意记录：20005例是固定cursor深seek无硬总cap，非完整20k跨页或常数成本；每页重walk前缀成本随深度增长，无常驻cache。256KiB仅序列化返回budget，gix已读commit/summary后clip，不称巨单commit内存/IO已界定。既定实现不为此开新缓存/allocator专项。
+
+
+E standalone同步首键checkpoint72591cae17445d75cf5e1895769f67b1dfba7a24五源git-show SHA=standalone-candidate全同，独审无阻断。稳定report inactive拒绝，FileView同步publish对无上游报0/1，有上游只委托不双计，未读/null仍不误清。实际抽count/publish/onText延commit旧7/8恰standalone首键0!=1→8/8；count9/refresh8/merge9/types0。merge夹具仅依赖数组提取＋delegated reporter stub修，原setup失败保留。本checkpoint不关闭新diskbase/onLanded、first-edit flush、真OS/IME边界。
+
+W Git leaf固定c6b0c766188196a4b1875ca9599c6bd6348a6830两源git-show SHA=耐久candidate/receipt，clean，尾核无阻断。旧route实际0pass2fail准确200vs260、firstparent4vsall6，非编译红；新Node九真实绿/测试1.03s（编译总66.737s），各批318输入before==after。Core DTO/mapper仅源码不在Node批编译，留A4共享注册/真producer批；旧path log不改，返回预算/深页重walk与巨commit边界同前，不称W完整UI分页已接。
+
+A4 parent-key窄固定cde0bf011b1ff0ed33f01e898563fabc481194fa双git-show SHA=owner-key-green源，19callback/AST真实0且source不变。两个真实parent JSX key表达式旧metadataowner变化红→row.id稳定，不再无谓重挂；不同id仍分开，内容变化由child id+locator guard及binding reader代次处理。无源码阻断可集成，测试是AST实际表达式求值，非浏览器reconciliation/原生验收，不回填41ed旧证据。
+
+
+E FileView accepted-base/flush下一片预审：Root实际AST三红确对应旧链——clean首键只改edit未改旧autosave故flush0；onLanded排队base后同任务undo按旧file误清draft；随后setEdit仍旧was覆盖新digest。建议限定FileBody单accepted{file,edit,clashes}、React只投影，既有leaving可承担但禁render旧数据回写；publish/save/flush从同快照读。flush动态核file/edit存在、was非空、text!=base、clashes===null（0仍拦）、现roadOf.trouble非clash，failed保持允许重试，不存第二路trouble。onLanded只匹配当前by重钉was/清merge许可，foreign或已撤销线成功只更新disk事实；merge需base/edit/clashes一起接纳，mine freshfile/pin同拍、theirs显式null不可被旧prop draft复活，load retaineddraft保留。建议在同defercommit probe用真实接受回调覆盖原3＋merge0/1阻止、现roadclash/failed、空digest、onChunks0放行及foreignby不越权，不开App/native矩阵。当前是必要设计边界，未实施/未判绿。
+
+
+A4/W共享入口最终269d2a14d995f67f0d498c9b382223ce3b9cd1d5（finder）、e2eeff21bba00a8f17b66016b827bc41f929c026（3catalog）、fa3b57c680c1096bb806b47e33f9a15d96f2e0c9（API/producer4）七SHA逐git-show=shared2真实1526输入before==after。实际api当前单match cmd无raw/blockcomment/字符括号，finder只声明普通quoted/linecomment+自身深度严格literal-or支持，不称通用Rustparser；原差集/数量/ONE_SIDED不改，shared1旧漏七名红保。四生产shared入口同shared1已Core+Tauri libcheck0，重试tables4真绿→bindings真gen→catalog真gen→同binary发布全0/71.292s。163TS+inventory共164文件在staging及发布树逐SHA全同，catalog5485711d…两处同，GUI19/20/mobile/types全0且源码稳定。无阻断可顺序集成，未冒新binding真实浏览器/正式App构建。
+
+W分页UI未固定候选初审无明显源码阻断：8页含page0锚点和visible保护、无无界cursor链，evicted页从已缓存前页逐40重取；one physical request＋attach lease与invalidate等settle防旧票并发，失败保旧显示/scroll，成功refresh才换snapshot、gitAt不自动重置固定head。commit summary由shown.commit补全title/body/coauthors。当前每页一个scrollslot，query变化覆盖同页旧query位置，新key默认回顶，不称每query无界保位；pure九绿仅模型，待真实types/DOM晚回包/返回/refresh验证。
+
+
+Root E固定1f80871c首审：单accepted原子base/edit/clashes和动态road许可主体正确，18callbacks及原定向套件范围清楚，当前暂未放行两处同owner窄缺口。旧投影passive `publishDraft(edit)`仍可在外部CM同步accept/publish新B后执行旧A回调，拿最新base却发布旧edit，重开上游草稿/计数窗口；应effect也读accepted.current.edit，并抽实际effect测oldprojection→acceptB→oldpassive。mine.then当前只epoch门，在layout bufferLive=false而passive epoch清理尚未发生时accept被拒却随后asked write仍执行；需同then加live门或仅成功接纳才write，测试mine→livefalse→resolve不假加epoch。不是新框架或save-road重写，等最小修后独审。
+
+生成复用f89范围独核：shared2 Rust/Cargo876路径逐git-show比集成875相同，仅web.rs e8bc21de…→b73ed5fd…，差异是既有C1 system_target/open_link函数/注释/测试，无derive/schema/generator/注册根变化，可显式来源例外，不称876全同。generated-corrected-f89ea62b清单164文件=真producer manifest，当前gen/bindings逐SHA全同，误gen根新建文件移除清单保留，首次4类型失败不回填。此例外不要求手改TS或新gen，也不是新的实际App来源证明。
+
+
+E 1f80871c＋4aaf1aa0f6c1e305d7270a02b8a1be8f25e766db合片尾核通过，前两阻断解除。五最终git-show SHA=accepted-review候选；passive effect读accepted.current.edit，不见旧投影publication；mine.then同epoch及bufferLive门，真实新反例先18/20红→20/20绿且保旧18原子load/land/merge/overwrite、freshroad、clashes0、foreignby、显式save等断言。types0，未变sync/count/refresh/merge脚本分别沿1f8/9/8/9的精确范围，不重跑同源无关矩阵。accepted只ref→publish→projection，无render旧file/edit回写；不同machine/path有FileBody key、discard无旧draft fallback。可集成两提交，仍是实际函数/延commit夹具，非完整mounted FileView/真Mac IME/OS Quit或Native验证。
+
+
+E显式discard末片7a583b13036512570fe3d01138c7c25d8e0b0605双git-show SHA=accepted-discard候选，尾核无阻断。仅theirs无onDraft同步report0，有上游仍onDraft(null)，不改读中null publication保护；真实hook＋实际theirs闭包同批type count1→discard0，旧8/9红→9/9绿，20acceptance和types0。可叠4a集成，未外推完整挂载/OS；无需重跑全E。
+
+
+R2-028 Mac Shift+Left定点只读：用户原话未定GUI/TUI，当前未发现普通ShiftLeft被Khor错误截获事实，不加防御代码。global shortcuts actOf严格四modifier匹配，无Left chord，成功run才prevent/stop；useKeysTo只字符/229不改Left焦点。GUI真实ChatView textarea1888键回调只IME/补全菜单UpDown EnterTabEsc/发送Enter，ShiftLeft留原生；Textarea透传，Composer为布局。Native菜单无ShiftLeft accelerator，唯一NSEvent monitor仅QuickLook Esc/CmdW。Terminal custom1698未IME时通过，macEditing因shift直接null，find/clear/Option不匹配；非ALL_KEYS kitty arrow keydown交xterm，本地xterm Keyboard113 modifier生成ESC[1;2D（hex1b5b313b3244），ALL_KEYS保modifier且EVENTS可有release。onData2399→串行send→termKey不把此D序列当query reply/多字节不经软CtrlAlt改写；IME active则明确归组合输入，非普通箭头。以上源码路由不是Mac WK实际keyCode/字节证明。最小物理验收：GUI原生textarea abcd末尾ShiftLeft值不变且selection[3,4]；终端私有raw接收夹具零协议同键恰收该hex一次，分别记实际焦点/IME/keydown、xterm onData、term_key/PTy；有kitty协商记录flags对应press/release。字节正确后才核TUI程序自己的选择键约定，不能拿shell无选择功能推Khor错。未启动App/浏览器/Codex/native，不泛审M键行；R2-028仍待真实设备。
+
+
+R2-028只读证据已按Root授权落`/Volumes/disk0/Khor/evidence/round2/input/shift-left-source-review.json`，SHAffaa443b88430691fea9eba8dcb48ed924d2737aebdc4878c96de4c80246fcb1，冻结HEAD5c636c070a06a1d2bc9f98750e3dca4d4c76f80d十七源（受版本控制项working=head）。包含实际local xterm6.0.0 Keyboard.ts和package.json解析绝对路径/SHA，以及GUI package-lock原始SHA和xterm精确version/resolved/integrity；不是只凭库名推行为。排除项和GUI选区→终端字节→实际TUI程序/入口三个物理验收层次已明确，无App/浏览器/Codex/用户session操作。用户未答入口前不猜GUI/TUI/文件，文件CodeMirror路径本次未诊断；不新增源码修正。
+
+
+S首reopen-red-candidate1五SHA=作者当前，connect seam机械提取预审可执行精确filter2。public observer guard保留、其余原body/计数/锁序/auth/cookie无改。两个owned TCP case entered/release确定A慢→Aleave→B先land，B实际peer before/after A marker正向读回而非只assert error，scope join旧connector/局部attachment cleanup有限；gate3/frame2是测试边界，无Node/provider/env/App操作。预期需真实业务0pass2fail，编译或fixture超时不当red；不是用户旧网页L02根因，lease修尚未实施。
+
+
+W分页consumer生产31d1336d8eeeb7a71c18ed131a5b7544ba2f95fd七源、独立Lab740287003abe497f541fffb42588e7ea59813255五源逐git-show SHA=history-ui/receipt，最终独审通过，可只集成生产。模型同先审8页/单物理请求/固定head/lease合同，summary到full详情接线正确；branch/headCommit仅两标题事实保留既有memory，失败仍清空，无sharedscroll/G/timer改动。阶段证据诚实：旧宽8＋窄5共13真实绿原源保留，窄slot真实header24→60导致360→396/rowoffset变；两header事实保留后独立metrics同port/slot/key/top/height/首rowoffset，360→360，剩窄detail和held两组真绿/errors/unknown空。未宣称十三全在新源重跑；finalprod/Lab types0、purehistory9/tabs6/memory5绿。完整E accepted链已用于delegated真实CM/Undo，末standalone discard依赖仅无上游分支不外推W覆盖。23839按PID/birth/cwd核单独停止，旧23837不动。W watch/active header内容变化、旧Face及真实WK/物理IME/OS仍待，不封整W。
+
+
+Root native-editor-0478df63准备准入窄审通过（未运行）：build.py对native-b338实diff仅HEAD/MIRROR、GUI prepare不喂跨variant seeds、已知exact3052 OUT可逆retain；quality名称identifier/devURL23846隔离，仅构建。retain核ca83真实build-script row/path、regular/uid/lsof/devino/SHA，缺失仅记录不清缓存；无helper/strict/source/env/toolchain/owned/floor/cleanup放宽。实际metadata/catalog/bindings/types/Vite/CLI/corefixture --no-run/GUI build保留，当前W/A4 Rust及E前端相较ca83已变，有当前Mac验收来源用途，未新增全测试/原生App操作。300单step/1800总/jobs1/incr0/5GiB，Root唯一槽，成功前无App/L05重做；失败保真记录，不预判产物通过。
+
+
+E watch前置fresh-read胶水aba5ac5393b646fc5f9c49234f69ba26499935f4＋64a7034733adad74f00057125b54edb4cb004836三源git-show SHA=refresh-retry-candidate全同，尾核可集成。仅needbool，不缓存旧text；dirty/composition/checkpoint/lifetime门保留，有效read（含null）才消费，失效/失败留需求，结束composition/clean转移发新stat。bufferLive挡卸载后旧end回调。实际旧8/10红和late13/14红保，最终14真实callback绿，20accepted/sync9/merge9/types0；原双textfallback夹具先只reject一次的12/13失败如实保留后修，未改产品追绿。此为watch前置，不冒producer已实现、物理IME或刚0478旧源码二进制已覆盖本新胶水。
+
+
+R2-028用户后续明确入口是Codex输入区，诉求为缺少组合键配置机制。按Root裁定归既有M/R2-026唯一配置键行owner，保ShiftLeft具体验收，不继续推断物理拦截故障。原shift-left-source-review十七源证据保持原有限只读结论/原SHA，不回填功能已实现；后续验收围绕实际配置发出组合键及Codex输入行为，非本次新增键盘诊断。
+
+
+E单在途c424330505a7c428f1932417759a07daa7d556fb三固定SHA=refresh-single候选，独审可集成。refreshReading在stat前置true到全load finally，followup先过clean/composing/lifetime/needs门；logical requestVersion防早有效答消耗后intent，失败无新request不自旋，有新logical请求合并一轮。底层反向回包改直接真实controller测试、组件以单物理text最大1更强合同覆盖，18/18及20accepted/sync9/merge9/types0准确，不冒watch或0478覆盖。
+
+M/R2-026只读定位：term-keys RowSeat仅name/on、decode拒未知KEY_BY_NAME且去重，localStorage khor.term-key-row＋同/跨窗通知（不是注释旧计划的文件存储）；Mods/锁只CtrlAlt、无任意组合数据。KeyRowList仅开关/排序，pressKey→send→term.input；AppearanceRows编辑入口coarse限定Mac不可见。建议后续同owner纯数据builtin/keychord entry及共用协议aware encoder，增改删组合配置，Mac可配置但不强迫软键行；固定mods与latchedmods合并规则明确，保kitty/legacy对应，不裸UI hardcodeESC、不新全局hotkey映射/兼容框架。后续最小从codec→persist→真实rowinput→raw/Codex行为验，当前未实现不启实例。
+
+
+M只读落盘 `/Volumes/disk0/Khor/evidence/round2/mobile/key-row-source-plan.json`，SHA256 `dc7ed256bafd8f1effb18ae303cdf71208a556e0e61ef32ae430408dad991511`，观察Root `4e63a4b4`六源逐SHA/HEAD一致。保留原组合键与按键序列：versioned stable-id builtin/chord/sequence，sequence仅有序纯chord且严格条数/字节/schema界，异步paste等builtin独立；固定mods与CtrlAlt latch一次采样/union/一次consume建议明确写入，codec复用kitty/legacy并验ShiftLeft，Mac可配置但不强制软键行。只是最小接口/持久化建议，未实现/未跑终端或物理验收。
+
+S green当前未固定源码初审：Registry exact root/id/lease→Arc、Pending30s及全局64opening实际worker槽、旧read/新control和last-holder锁外关闭、前端lateACK once release主链暂未见阻断。独审发现TerminalPane旧string outbox会在A发送await中排队后reopen，下一轮从mutable attachment改送B；作者已改batch.view绑定/旧未发队列丢弃，实际生产sender闭包第9例控制A阻塞→queuedA→B→releaseA证明不入B。已读修后源码，解除该窄阻断；仅源码准入，尚待固定manifest/actual native/gen/两view marker，不算S完成。resize监听当前源码指向mounted current attachment，join当次/读取答复另持joining/reading及generation，未把早前旧捕获疑点当现存缺陷。
+
+
+S green-candidate-1尾核（未编译）：27路径当前逐SHA等 `/Volumes/disk0/Khor/evidence/round2/history/session-recovery/green-candidate-1/source-manifest.json`，manifest SHA `c6ea191fa6c6316e57d66da4fa210b6fdf87fbcaf61188862aa5dc700e9f7eb7`。API/Tauri/native_io/root配置、raw chat_put桥/Web/query/native headers均有id+lease，缺lease拒绝、无id-only兼容回退。两view真实TCP fixture各验证同marker双方可读、first leave旧control拒绝及second peer收到真实SetMode/Input、cursor未drain；旧slowA/leave/B先land marker反例仍保。browser fixture只ACK/scope/onceclaim且明确不模拟resource/queue。修后outbox归属已核，无剩余源码阻断，可进入Root既定52行为+3lib/真实producer批；初types缺产物红/尚无native结果，不冒S或原生L02已完成。
+
+
+S green-candidate-2窄差核准：唯chat_io_tests.rs三个chat_say JSON增加attached.lease（含invalidtoken），原assert与成功/失败条件未变，其余26路径等candidate1；当前27路径均等candidate2，manifest SHA `53ab0a93461a89fe6011bf22c4e8aff2829b518bfee7d0d5a72e354749396280`。是新必填wire下必要fixture纠正，不是产品修正或放宽断言。先前真实3lib0/Registry9、Chat12绿2失败保留，不回填全绿；待Root授剩余批槽，无reviewer native。
+
+
+S green-candidate-3窄差：仅TerminalPane retry及check-attachment-view脚本两路径异于candidate2，其余25源同；当前27SHA=manifest `b4f341ca4581d6e2a8ccbb171fa59c418b2775b3e0de89aba87b1b17c856c4d9`。新B立即独立open，不再await旧A.dispose的Begin ACK；A.dispose先置stopped，迟到ACK仍原facade补一次leave，清理失败摘要保留。第11例抽真实retry块，旧仅retire-A/缺open-B红，新11绿；不冒native。此独立lease收口无新增阻断，不增加架构或native矩阵。
+
+
+S首lease固定 `94131dc8e887580038c8d955ed73b58d63594a2a` 最终独审可集成：27 git-show SHA等green-final；green2 1479输入before==after、固定native源无冲突，green1三lib0/Registry9绿沿用（生产Rust不变），green2实际43=14Chat+9Term+8stage+1put+2current+3upload+2nativeIO+4tables全0/246.613s，合52准确分批。真实生成165（含inventory）stage/published逐SHA同，binary `4062a7b38f69e7737506f97eff09678bbe10e4c0694d544aa7fff1a7704aa5eb`；GUI owner11/history20/obs19/mobile/types0。初green1 Chat2失败与两TMP小夹具1787B残留原日志保留，后owned cleanup独立，不回填原TMP空。未browser/App/原生真agent，不关闭全S/L01/旧网页L02。
+
+
+W Watch首leaf `d979ffaae7fa83c414ea549560af0d741c6d9c93` 三源独审可集成：git-show/current=leaf-receipt三SHA（git d1321372…e4a4cf、watch04e0bbb8…b50896、owned16e4a918…4c2cf）。Git plan4/Owned8/EventKind3逐命令实际Cargo0/源前后同，未reviewer重跑。纯Owned owner/machine隔离、last-ref清理、late initialized不复活/真实init4槽直到回调才释放、queued64/source256/owner128、1024entries+256KiB log及dirs64KiB/reset源事实清楚；Git plan沿gix gitdir/common/index/ref/upstream，不走status扫描。无当前源码阻断。限定private计划/纯账本/既有Access过滤，不冒runtime迁移；expire/Native coverage测试为确定性调用注入，不证明主动idle timer/kernel fence。未挂native.rs不在commit/模块树已核实，后片另审。
+
+
+S browser-only固定 `7246b665a41262da32c62bf6929be1c56aceedc3` 两git-show SHA等candidate2/fixed（poll37c60d29…505747、replay02343481…47f893），独审可集成。browser1实际Chrome5/5、exit0/9.537s，193beforeafter同且94131产品/165gen逐SHA无冲突。新增迟到Begin场景真实B文本渲染、续游标7/精确Blease、A迟到ACK补leave后B仍在、卸载后旧pending stale不出现/不再poll，补齐正向内容证明；既有switch/cancel oldreceipt/webadmission/retrymidreplay全过，未删旧断言。三端口free、私有profile进程[]、TMP0B且removed，首次psdecode失败原样保留不冒产品失败。仍是Chrome实际ChatView+transport替身，无App/native/全S/L01/旧网页L02声明。
+
+
+V fresh-build准入 `/Volumes/disk0/Khor/evidence/round2/validation/native-editor-ce69e0bd`：Root实际clean `ce69e0bdfc41b66c6c7fabfe17b49cc264c89c78`，build SHA `75a555497ae35742b5bf43a915defc7ec6fab322f13d02965944761bddeac459`、AST语法、plan模板SHA核同。对0478成功模板唯HEAD/MIRROR/priorGUI日志三行；quality唯identifier。prior0478 actual build-script-executed唯一行确为3052/out，原regular/uid/lsof/devino/SHA可逆retain及absent分支不变。GUI无priorseed、实际metadata/catalog/bindings/types/Vite/CLI/corefixture/GUI+strict、owned/5GiB双盘/300step1800total/jobs1/incr0/sourceenv/tool/helper冻结均未放宽。TMP/MIRROR未存在，源码准入无阻断，执行由Root唯一槽负责；只build无App，不重复L05，旧0478不覆盖当前S lease/E胶水。
+
+
+V native-editor-ce69实际终态独核：11阶段各exit0、无timeout/forced cleanup，各log SHA核同；2167 source before==after，source/environment/provenance true，254.269681667s，remaining[]、cleanup.errors[]、TMP absent。三verified binary原文件与copy实算SHA均等receipt（GUI `06e3809ca745ecacb8e3e6d947ea70cda83feb30a63d54bd9320ba1f7c79e9d7`），42小件双盘manifest全同。严格来源当前构建通过，actual_app_executed=false；仅可作为随后另审focused E runtime的二进制来源，不冒文件IME/同taskQuit已通过、不复用L05业务oracle/不关闭全轮。
+
+
+E focused App ce69准入初审：private fresh KHOR_HOME/EditorAcceptance、真实CLI登记/实际GUI、只父dir0500触atomicwrite拒、compositionstart/end及精确中文disk、拒写path+nativepreventDefault+取消marker后0700恢复、最终disk exact+q和normal0/owned清理主链合理；helper/binary/observer pins全同，270/300s与5GiB沿既定预算。暂提一条必要oracle收紧：observer固定子集漏新attachment_begin且final只禁chat_open/term_open/chat_say，不能证明plan“无chat/term invoke”。已请Root将所有chat_*/term_*及attachment_begin加入被动记录并最终拒绝出现；不修改实际invoke、不扩业务矩阵，补后尾核。未启动App。
+
+
+E focused App准入尾核解除oracle阻断：Root仅两处改动，observer仍调用原actual()被动观察，新增匹配全部chat_*/term_*和attachment_begin，launcher最终禁止其call。launcher SHA `addd29af4f3d584f3b92441fa6d917f08e160ff5b410b957ab4d26a33cf539f3`，observer `d50ddf13f687c19db784e54cc5bcef8069c192db3b6ed1c37ee670758e4cc178`，contract `6e28b00891ab906dac3c85d2ebbdda89085ef17581a9b6bd18a6a5c7106f78e7` 实算/pins同、AST通过。runtime尚不存在，允许Root先实际同binary/owned30s私有CLI ws preflight，再约真人/启focused流程；不以accepted marker代替真实IME/拒写Quit/恢复Save/normalQuit逐项证据。不执行reviewer App。
+
+
+M pure `9f0349737afc137e4f3691cc47bbfe0348798cec` 七git-show SHA等pure1，原11/既有33×9/types0是pure+xterm/抽callback范围，不是UI/Codex。独审暂提两收口：preencoded已排除isReply但未排除isFocusReport，合法Escape→BracketLeft→ShiftKeyI序列ESC[I在replaying/selectionHold会被丢；应同来源focusReport=!preencoded&&isFocusReport并测真实callback与普通自动focus仍过滤。另Root要求坏配置未reset不覆盖，当前KeyRowList旧toggle/move仍可setKeyRow覆坏raw，pure测试把任意set当explicit save不等同reset，需明确storage/reset保护或UI坏态只允许reset，后片跟踪。custom不继承/不消耗锁、perTerminal WeakMap try/finally、全序列编码后一次input、物理kitty默认Option语义未变均已读，未要求扩改lease/物理键/paste。
+
+
+M pure复审 `fb4db8bc871c6225b656ad7f1f92e9ac6c065f52` 叠9f，两阻断解除可集成：4固定git-show SHA等pure-review-green1 manifest，13 source beforeafter同。focusReport=!preencoded&&isFocusReport复用三处，实际生产callback+实际分类器证明custom ESC[I在replay/selection均发送、普通自动报告仍过滤。storage普通set坏态强制拒写，唯一resetKeyRow显式绕门，list开关/拖拽/handler禁坏态，不靠UI约定。两独立实际业务red保留，新12/old33keys×9states/types全0；无native/browser。schema/一次纯sequence编码与perTerminal finally隔离、custom不继承/不消耗锁均无剩余阻断。UI添加/修改/删除/reset affordance/错误文案、真实跨窗/Codex/触屏仍未完成，不能宣称M完成。
+
+
+E受验源固定validation尾核：`validate/round2-editor-ce69` 实际clean ce69，reviewer只读调用proof.source_frame得到2167整dict精确等刚native ce69 source-after；helper/observer/bin pins同。167当前gen及164可逆retained逐SHA无差。contract对before-fixed-source仅root/entry/module三个绝对路径，SHA `4cb94fbd7f0f4b7a254c8ff719ae9dcae75b2fccf6702ec082e3ce95df7d6270`，launch/launcher业务oracle不变。无新worktree/Cargo/App，runtime尚不存在，可保持冻结避免Root后续M集成污染。
+
+
+W runtime bf11a6ea/dae8b19c Node21准入初审：runner四filter11+3+6+1/300s/双盘5GiB/jobs1/incr0/source冻结/owned严格无豁免/独立TMP范围可接受，Core/CLI38streams留后批。尚有初始化fence阻断已发作者/Root：Owned::replan对running/queued源直接吞intent；Linux目录walk后install期间新目录事件可能被旧plan观察而请求replan，随后被吞，still_current只root/alias/git故可发布Native但漏新增目录后续写入。更完整同竞态：已有pool observer可在新source pending、尚未放入running.plans时drain raw事件，只遍历旧plans，事件完全不给新source。需同一pool/owner最小dirty generation或pending-plan/fresh-after-complete fence，不能仅加已有source replan bool。无新observer/任意全扫描要求；Mac21不冒Linux实际kernel证明。当前未reviewer native，待修fixed候选尾核。
+
+
+## B正式实现前只读交接（限时整理，未实施）
+
+观察Root `644806ffa4f3bf097114809ab3e41bc65357b24c`。先调graph，图仍3f4487e7/3源不匹配，后按现源码定向核。权威BROWSER-EXPERIENCE五项交互已锁；该旧文“proposed/未授权”是收集期历史，实施排期按最新用户开始吧/Root授权，不重开交互讨论。本次不改产品、不启动App/Cargo/网络探测，B任务卡尚不存在，后继owner按正式写权接入。
+
+**一份最小导航身份/状态合同**：以真实tab + 原生view实例代次 + 顶层导航代次识别一次加载；URL只作目标/最终位置，不能拿URL相等当同导航（reload同URL亦是新次）。原生页面生命周期owner发typed导航快照/事件（phase start/redirect/commit/progress/success/failure/cancel，保requested/finalURL、0..1估计、原始错误、实际exit），GUI只reduce当前匹配代次；关闭/替换view后旧事件无权覆新状态。重定向沿其真实导航链单调max估计，不按600ms猜成功；finish成功才100%，失败/取消有独立终态、不冒成功。open/reuse须能拿同owner当前快照（返回或订阅ready推一次择一），使隐藏页/landing重新挂载不重新跑、不丢已完状态；不要再造并行全局loading真假owner。主文档完成不等于未来AJAX/长连接完成。保原有title/scroll/ground等事件职责，是否一并加身份由实际迟到风险决定，不先全事件总线重写。
+
+**B1进度路径**：桌面src-tauri/lib.rs::open_page当前on_page_load只PageWord started/finished，iOS phone_page::load_heard只KVO loading，均无数值/导航身份；API::onPageWord只tab过滤。browse/use-loading.ts的600ms合并和loading-rule的30s仅动画兜底，不是页面成功证据。消费者是BrowseLanding、SessionBar::PillSlot/PillProgress、app.css空share无限动画、native-deck::readDeck读取动画参数和phone_page绘制INFINITY（2166）。应以同导航快照驱动DOM及native deck数值进度，不只改CSS；原生估计progress监听/导航回调必须在现页面owner内并保wry原delegate行为。session网页MobileContentPage目前只有busy boolean与PageReload，亦接同实际页面状态，Web无原生页面则只诚实表示Khor errand，不能编造网站真实进度。
+
+**B2默认背景路径**：桌面外部WebviewBuilder未显式初始底色；repaint_the_ground只main window/main webview；iOS phone_page创建外部WKWebView/scrollView未沿主界面ground同步。创建前、保留页主题变更、空白/加载/失败/重试均消费既有chosen_dark/window_surface/ground同一主题来源；仅默认容器/underpage底色，不注入CSS强改网站明确白底或改变用户全局透明偏好。native页和会话页都验；不要把G主界面材质通过当外部WK已覆盖。
+
+**B3/R016错误路径与未知根因**：page_fail.rs::word现字符串code|domain|description|url，Mac fail回调丢WKNavigation参数、并用page:load finished结束失败；phone_page::failed另将代理-1005变route，page-fail.ts把-1004无法连接与-1005连接丢失同译“连接被拒绝”。BrowseLanding按tab接失败，retry走page_step retry/failed URL，缺迟到导航守护。先保真实NSError domain/code/description/failingURL/有限underlying链与view/nav/所选exit/Khor proxy事实，再分连接/DNS/TLS/取消/路由故障；HTTP响应拒绝须有真实response才称403。最小实际对照仍是同机同完整URL/登录态/exit，fresh与reuse＋失败原目标retry；不加连通性预检/自动改写目标/网络权限或ATS猜修。已有 `/Volumes/disk0/Khor/evidence/round2/browser/access-20261029/head-summary.json` 两HEAD200/TLS0仅当前CLI可达；原WK截图故障无唯一根因，不能销账或归代理/局域网权限。原独审卡120/122段仍有效。
+
+**B4几何路径**：BrowserPane::place当前有native deck时将frame延伸到deck.bottom；native-deck drawing.inset=o.bottom-rowTop，phone_page::inset仅UIScrollView inset，网页layout viewport未扣遮挡。沿现DOM测量→PageBox→move_page/phone_page与native deck共用一次实际可用矩形，覆盖fold/unfold、编辑、键盘、旋转、safe area；先实际验证安全区能力，不可靠就frame真实留出甲板区域，去重复inset避免双扣。保BrowserPane现showing owner/revision/present队列、overlay hide/restore且不重挂webview，不能拿B改动破坏G/R013原生覆盖关系。MobileContentPage的flex网页区+DOM deck是另一条真实路径，要分别验，不针对目标网站加margin。
+
+**B5删除路径**：PagesKind.kind='page'→BrowseLanding菜单close无destructive，SideList::swipeOf仅pin/destructive，bare还自定义只有close；Node tabs.rs::close明确拒pinned，Core tabs::close只委托。应明确同一行的pin/unpin+delete与原错误反馈；page类型可删除置顶的规则须在一次持久更新中实现，别先unpin再close造成失败半状态，也不一并放宽所有其他kind的pinned保护。tabs持久删除成功后沿views/held ledger释放该tab nativepage，borrow仍按设备共享最后持有人释放，不能每个body卸载就drop borrow。删除仅对应tab，不清cookie/历史/site data；release错误不造假成功。
+
+**最小串行/验证**：先native导航身份+state+错误采集→GUI reducer和DOM/native进度（B1/3共owner），再背景与frame同native owner（B2/4），列表kind规则可后一小片（B5），不拆多人同时写PageWord/lib.rs/phone_page/API。共享生产gen走既定唯一writer。纯定向反例可测同URLreload/旧失败晚到/redirect估计回退/成功与cancel区分/初始快照、pinned删除原子性；Chrome只证明reducer/列表和DOM几何。Mac实际WK验证slow/cache/redirect/fail/cancel/retry/reload/切tab、深浅及系统主题和首帧；iPhone同URL同登录态fixed/sticky底栏/100dvh/长页末尾/真实点击/键盘旋转与两网页路径。未覆盖iOS或真实网络失败如实留未验，不拿Chrome替代WK。
+
+
+M UI candidate1七SHA当前等快照初审：KeyRowEntryEditor仅独立new Terminal/encode/dispose，无onData/host/Term props，试按没有session输入能力；typed draft Save/Cancel/Delete、explicit reset/list坏态禁编辑与Mac设置入口方向无新增模型阻断，22catalog keys可准备真实producer。发现/作者同步自查手机生命周期阻断已独立读实：key-panel::onKeyboardChange在keyboardShown时release，KeyPanel !up effect清editing，当前inplace名称Input升软键盘会卸载草稿。Root已授最小入口release旧panel→复用同KeyRowEditor TaskOverlay、删旧inplace/edit/up路径，不改全局key-panel/viewport；待新fixed源码与keyboardChange→同draft/id/Save回归再尾核，Chrome focus不冒iOS软键盘。尚未浏览器/native。
+
+
+M UI candidate2产品/candidate3脚本尾核可进gen：当前7SHA=candidate3，manifest `99fe6dbc0e2ad2b2ee44817d93272f46545f005edf72406f23ea4d396b09781c`，2→3仅脚本。编辑入口keyPanelGone先释放旧panel，再独立同KeyRowEditor TaskOverlay，删inplace/!up清editor，livecaps防抢焦点保留，不动global key-panel/viewport；已解除源码草稿卸载阻断。拟实际测试包含viewport真实owner通知后名称/单editor/Save唯一条目，CtrlB→N整个一次input/kitty协商异值、liveTerm仍挂时试按inputs0，不仅Settings无terminal时空证据；未browser，不冒真iOS。
+
+M ui-catalog-1严格producer准入：run.py SHA `f49816fe7979080be0d27379c2749c56f2f83eceb0157cb8f56a8b52aed7cb0f`/AST核同，HEADfb4+7candidate固定，metadata→prepare无prior→actual catalog bin+gate→verify/require_provenance→实际exe→staging/atomicpublish；source/env/tool/helper/BUNDLE源映射、offline/jobs1/incr0、300step600total、双盘5GiB、owned严格/TMPdevino/lsof/双盘小件保留。仅3phase无bindings/Vite/App，TMP/MIRROR未存在；可Root授唯一槽，未冒types/browser通过。
+
+
+M ui-catalog1实际收据补核：3phase metadata/build-catalog/run-catalog均0，无forcedcleanup，8.422008083s；source前后同/env/provenance/published true、remaining[]/cleanup errors[]/TMPabsent，actual_app_executed=false。staged及published catalog实算同 `4cbc1e9ff6ac35faa2246bc764cb2d49d6949b66e17450f4d5beec6ff14c92a1`，exe SHA `59adb6aa17e005b2c483ae6abd75babb6b95b8bb4c9233e11a8226678c626e24`。浏览器新批尚待终态，未以此生成通过冒UI/iOS/Codex。
+
+
+M UI固定 `2423f2b2f94fea7dcc73c23e122d5775509c6345` 七git-show SHA等ui-fixed，最终独审可集成。strict catalog6产品SHA全同，唯一浏览器script差为catch截图且映射单列；catalog `4cbc1e9ff6ac35faa2246bc764cb2d49d6949b66e17450f4d5beec6ff14c92a1` 实算同。JS12/旧33×9/words/types0。browser1实际Chrome9组、exit0/10.677566333s，2156source+167gen前后同且七固定源对应无差；whole纯sequence一次实际input/kitty不同值、liveTerm仍挂的试按inputs0、锁不消耗/焦点/自定义不repeat及builtin repeat、同源双window、坏态显式reset、320viewport通知后draft仍Save均实际到断言。320截图已review，无横溢。owned[]、port空、fixture[]，旧lab/code.tsx optimize告警原保留不冒全Labs。无真实App/Codex/手机OS软键盘，设备语义与触屏仍单列，不能因本片UI完成宣整M/全轮完成。
+
+
+W fence固定 `e65e8a92c21544af5c5ff932fc2ded1390f99d77` 三源实际diff已审，解除此前两层源码阻断：manual每目录实际注册成功才枚举子项，同pool monotonic revision不随raw drain清除，plan先放原running.plans再核counter，Owned运行中单pending/queued起读清旧intent，完成先让既有queued获得槽再最多1fresh，持续dirty诚实Partial并沿既有deadline3s重试，4+64物理槽/队列公平保留。新nested真实gate确认已有observer已drain新目录事件且新plan仍未入表，随后必须首Native generation≥2/新parent注册/child后续写被收到；Mac强制manual测试不冒Linux kernel实机。尚未native，23+两受控negative runner/源码切换/actualartifact合同待最终发来后审，不能用源码无阻断冒测试通过。
+
+
+W runtime-v2最终native准入：driver实SHA `b1dc62a381b396c5ceb09d9e51bcc3b44f169d00f928478c4d3a909b52d1ec5a`/AST0，11source+2helper当前同合同、clean e65。negative-owned精确仅移去5行pending逻辑，保留分支逐字等bf11，old/new branch SHA `70e46692…1291b`/`9ae269ae…058bb`核同；不是整bf11原字节复现。每variant actual Cargo no-run必须0→既有select_binary核本树libtest+target内→私有同SHAcopy；负2exact均要求101/FAILED0passed1failed+具体assert marker且无timeout/forcedcleanup/interruption，不能把编译/清理红算反例。正源准确恢复/clean后另compile→12+3+7+1共23。每命令11源、variant fullframe beforeafter，unknown result/残组/footprint不授权恢复，当前负SHA准确且组已证消失才恢复。300s/双盘5GiB/jobs1/incr0/独立TMP沿既有guard，无Core/CLI/gen/App。源码/runner无阻断，可Root授唯一native槽，尚未实际结果。
+
+
+W v3窄编译修正 `1dc66584211f1754d676dfeed1493d10ba65aeb9` 两行独审准入：unreached_words可见性pub(crate)（DialFailure原已pubcrate），watch重用现诊断映射，无Debug enum扩展。runtime-v3对v2唯HEAD/两源SHA/旧失败说明，11源当前准确、driver b1dc62a…ec5a与正负owned全文均不变/AST0。v2实际只有compile101 E0277，0负case，不算业务反例；sourceunchanged/strictsafe/positive准确恢复/clean/TMP[]原证据保留。可Root再授同2negative→23既定批，不重审未变fence或扩大矩阵。
+
+
+E ignored-gen pin准入补核：native source_frame2167确无ignored gen，新增既有fixed-source-receipt自SHA+gen全文件集/无symlink/前后SHA，outergreen要求generated_stable，原source/binary/helper/observer/业务oracle不变。当前167整集精确同manifest、无symlink，manifestSHA `841ad7318d4fba4c21948568d1250f745f83da2610f267c37becfcc2a808ec27`；launch `b5385bfb8960fcea62cce116e47f540e5187d0acc10bf17c5debf4ccfc44536b`，launcher `d4edc12a59bb0a98bef5c48c8d45eb8b890efcc79bbb0b7127f43f142479d3f1`，contract `1591744acc20eb32b9f8dc9cc1cf141bc70b379dafaa5ad5d907daa766526173` 实算同/AST2过。无App/runtime不存在，无需重编GUI，不冒行为验证。
+
+S NoLoad capture-node-candidate2五源当前SHA=manifest `24b934c100d58dce131b771aa2a9d8cf2809ef87dda404199957ff09360a6690` 源码无阻断，可固定后申请既定5实际测试；本次未native。Journal私有ReadBoundary不反依赖host/wirebudget，host统一wholeCaptured≤20KiB/token固定16B。EOF只两FD身份/len/mtime六metadata+末1B，不scan、不加fsync；writer append原flush，后续替换交H source/version拒。host单loop bootstrap即时NotReady/replay拒、本who token send_to、无pending/agentload。实际fixture A/B不同token、A后续同token有序barrier查B漏回，同文chunk在A fence两侧走真实A4 ClientRead/content_page按位置各一次，富prompt原值/no load/resume断言保。此为Node只读fence首片，Core exhaustive/lease DTO/GUI hydrate仍后片；成功fixture不覆盖两个host failure分支实际执行，收据不可冒全failure/用户NoLoad恢复已完成。
+
+
+S capture首固定 `ac53589d9466313dc4cb4ba4139588714119fbda` 五git-show/当前SHA等候选2，无源码差。capture-node1 runner实SHA `05ac39bd771b4d6f8407ef152dfdea83e4ef460caec47adaeb4ce8e145e8161d`/AST0，准入无阻断：actual metadata→prepare Node lib/testtrue无prior→实际no-run JSON→verify/require_provenance→同选中exe5exact，各强验1passed0failed0ignored；source/env/tool/helper/BUNDLE26、offline/jobs1/incr0/300step600total/双盘5GiB/owned/TMPdevino/lsof/小件双盘保，无Core/CLI/gen/App，TMP/MIRROR未存在。Root正式授唯一槽才执行，不冒Ready/replay失败分支或GUIhydrate。
+
+W v3原kernel4/7三失败只读核：held-leave1s超时、readonly cursor2→4、atomic首pulse parent缺，wire未跑，旧12+3与negative2按各准确源保。当前两窄修源码合理：apply(empty)每轮deadlines notify会使expiry_loop自唤醒，是实际调度饥饿风险；只新retry wake保begin/leave/localfinish通知不改1s预算。Plan root parent join空path会多尾slash，保asked原拼写+raw原目标assert是实际target修正，不是事件丢弃/放宽kernel。readonly cursor差只证新记录，不足归读反馈或合法init残留；cfgtest有界kind/path/rescan trace先看实际事实、保quiet原断言，不盲吞Metadata/加sleep。未reviewer native，后续fixed candidate/受影响raw3+kernel7+未跑wire1待正式准入。
+
+
+W v4准入核准：`0f911558c5de4bd295cbd08f921e12aac477c544` 唯self-wake/empty-root拼写修正+cfgtest trace，原kernel7/held1s/quiet500ms断言未变。11源/helper当前SHA同/clean；driver实SHA `4a4957889fadf7d8ccfb01cec10d6f99895c876dd71efe1b9bfbeb6bb870edfe`/AST0，relative v3唯positive-only/test trace env且hash记录，actualartifact/strictowned/TMP/5GiB/300s同。真实filter3+7+1，无pure12/负2重跑，readonly待实际trace。contract旧execution/switchrule负2→23文字已请作者离线更正，不影响allowed/filter的执行护栏，不作产品阻断。Root正式授槽才执行，无reviewer native。
+
+S capture首test4失败范围收口建议：原有序A同token barrier已在halfclose前证明B fence不泄A，所有capture/page1/1/2/富prompt断言先到；附加Write-halfclose→mpscEOF4s期待失败应保原失败/未知半关闭生命周期债，不能称产品根因已修。可Root准仅fixture换明确Both清私有A再closeB/reap，保原capture/noLoad断言，续test4+5且先绿3按旧SHA映射；未reviewer改源/加时/执行。不把去掉无关EOF oracle冒原test4已通过或全S生命周期通过。
+
+
+S capture candidate3/续4+5源码准入：当前5SHA等manifest `36aba0059e9a24f93cb2a2d200966cad47e611bfd423d9bb7ed44ed5b82a26e4`，唯一gui_host_cancel_tests cfgtest差为删Write-halfclose→mpscEOF附加loop，改Both+drop ownReceiver；原capture/token有序barrier/wholeframe/pages1,1,2/富prompt/noLoad/CloseB+reap逐字保。capture-node2 runner SHA `dd6cd60cc2bb82d36ff3e714ee06b804a2547d4b51dcc666645903c538e24749`/AST0，对原strict仅out/mirror/candidate、两exact及expected2/green2，metadata/prepare/actualcompile/proof/同exe强验1passed/预算/owned不变，可Root在W终态后授续批。先绿3映射原准确源，原test4红及半关闭EOF未知债不回填，不冒产品生命周期已修。
+
+
+W runtime固定链最终尾核可checkpoint集成Node/Coreleaf：receipt实SHA `0604101a62622a3e8a9d996bc4bafa567d9bb722533857987ee5662406fb65b1`，11 git-show/current/contract同final0f；各evidence SHA核同。v3负variant实际compile0＋两exact marker101/FAILED0passed1failed（只旧replan分支，非整bf11）；v3 positive Owned12沿1dc且owned.rs=final，原kernel4/7三失败、wire未跑保。v4 final `0f911558` actualartifact确watch树khor_node libtest/root，私有copy实SHA `eadd5393d617fbcd60720a4e1e5f1d39331d6a2a1f28821fc71585c25f0d7cf9`；compile0/raw3+kernel7+wire1实际绿、2165fullframe beforeafter同且11fixed源无冲突。额外同exe readonly exact nocapture1/0.55s、原20reads/500ms断言过、无trace行，不反推旧readonly失败原因。三个variant私有copy均实SHA=actualartifact记录，strict组/remaining/footprint/TMP空、源clean。准确分批，不冒final23重跑或旧失败回填；Mac manual策略不冒Linux kernel实机。Coreleaf尚未实际编译，CLI38/远机publicroute/HTTPforce0/Tauri20s/sharedTS/GUIconsumer未完，需共享writer接线后才能宣整项目编译/用户W完成。
+
+
+S Node capture固定 `b14f73a8574ecfed81fbebce0b6d119f2bb1a514` 叠ac535最终尾核无阻断：final5 git-show SHA等manifest；Node2实际2156 source beforeafter同且5fixed无差，strict selected确history本树khor_node/testtrue，当前实际binary实SHA `d8bb677c8fa3a9ed4b172c4d3e970863d7f13261d460dc7b23c868acfb79ee2e` 同记录，22小件双盘SHA同。Node1 EOF2+Journal1各exact1绿，后唯cfgtest清理oracle11行变；Node2 actual strict+NoLoad1/原hostjournal1各1passed0ignored，93.371459084s，NoLoad0.65s到最终noLoad/reap断言。Node1原test4半关闭4s失败/未知债保，不冒一次finalSHA5全跑。Node-only source/fence能力成立，可交后续bridge；按Root裁定不先并Root全项目，不冒Core/GUI恢复可用，NotReady/Replay实际失败分支、startup/L01/L02等仍未验。
+
+W runtime-receipt作者只将review字段改passed，最终SHA `b08d4aedb2e8881ab23698ee483766a3da1fe0f6fdbb561d95ee92405966c3cc`，先前0604101a审核事实/证据未变，无新测试或更广完成声明。
+
+
+W frontend DirectoryWatch首dirty早审（6c20 base，未接正式consumer/gen，未types/Chrome）：class单physicalBegin+串行leave、lateACK精确machine_id/id清理、heldwait不阻leave/owns旧答拒、HTTP≥1s、retry/backoff/隐藏set(null)八纯case主链暂未见阻断。hook有必须收口的身份窗口：新render machine/scopes/active/hidden已变，useEffect前仍直出A旧snapshot/batch/Native coverage/error，可被B/inactive consumer使用甚至停fallback；应当前wantedKey（含hidden/inactive/空scopes→null）render guard旧值只pending/idle、batch/error清空，并layout cleanup在commit退旧owner/timer，延迟passive不可作离页边界。已请作者用实际hook受控render/deferEffects反例验证A→B/hidden，不扩新store/网络框架。当前8纯不是consumer/App/W全可用证据，后续fixed来再审。
+
+
+W frontend hook身份窗窄修已读当前实际源码：wantedKey含inactive/hidden/空scope→null，旧snapshot不符时只pending/idle且batch/error=null；useLayoutEffect set/cleanup在commit退旧lease/timer。新增真实hook受控runner旧A Native→renderB旧batch泄漏真实红，修后B/hidden两case绿，精确stableA/leaseA leave、timer取消；controller8沿绿。解除此前源码阻断，非ReactDOM/WK/正式consumer完成，后续fixed SHA与实际producer/types仍待核。
+
+W shared-candidate-1源码准入无阻断：当前8路径实SHA等manifest `71580cdbaa89b1e00623615d6096232b7cbd3f33dc9ef794621f2487b5a2f719`。graph仍ac535/不符HEAD6c20后按实际diff核：HTTP dirs_wait先保u32/optcursor类型校验再强制effective wait0；Tauri async min20k；Begin解析display machine，后续machine_id/id精确固定，Core五DTO映射/真实producer roots/API三动作/注册齐；mobile WAITS三名无放宽、仅catalog history-updated双语。新bridge2拟测真实api::answer→Corefiles→Node::dirs_wait cookie IPC stub并核Handoff wait0/三动作、malformed列举形状在私有root Nodeopen前拒。它不是kernel/真实远机证明，CLI38是一个case38streams，Core mapper/commandtables/actual strict producer与types仍待真实执行。已告Root/作者可进入既定定向小批准入，不由reviewer启动。
+
+
+W shared-1 runner离线准入：实际SHA `7c610ac83dbeeec90429787855cd7a359cd44e89841224b1ab586229e76283da`/AST0，8源仍7158manifest同；actual metadata→ordinary Core/Tauri lib签名check→strict selected Corelibtest三exact强1→command_tables实际4→bindings/catalog两staging齐后samebin managed发布逐SHA。source/env/tools/BUNDLE/owned/TMP/双盘5GiB/300step600total原严格规则未放宽，GUI只签名非assets/App；CLI38streams单case不在此批。已告Root可正式授槽，reviewer未构建。
+
+W consumer dirty早审（非fixed/未gen/types/DOM）：metadata retained WorkspaceRefresh单physical pair+一freshintent/layoutdetach拒旧答、FileTree每dirreading/Set intent、fallback timer依路径集合/coverage bool而非quietpoll对象，暂未见这些主链阻断。已指出可见重返fallback的具体回归待作者修：FileTree cached listings同时初始化asked，旧fromKept+unavailable首答即时refresh已删；begin失败/Partial无reset时新fallback仅60s interval，重开可长期旧tree。Store旧wasHidden return立即reread亦删，visibilitychange无windowfocus不能依赖focus补救。应仅entry/return且未Native集合即时一次fresh意图，quietpoll不重置timer/不每poll重读，并以actualconsumer受控effect red/green证。当前5callback+metadata5/controller11/hook2仅分层纯证据，不能冒正式W实时/ReactDOM完成。
+
+
+W获授nontext预览窄片dirty早审（仅FileView+check-preview-refresh，不混其他consumer）：私有previewRequests只owner/lifetime/generation与一latest intent，layout leave拒旧答/清队列，渲染key guard隔离machine/path；同图刷新不先清accepted look，失败留原像素+可关闭retry底部提示，nativeOffice只stat，Away去平行stat/未知total null，无自动handoff/协议/text accepted道路改动。当前8私有owner/actualeffect分层纯例主链无源码阻断；已请在现actualeffectcase补同图reject保同accepted对象/error同key，避免仅owner失败与effect成功分开冒完整失败表现。原旧实际effect刷新清look红保，真实gen/types/DOM待后续，不把误启动overwritebrowser计任何E/browser证据；独立2源fixedref/SHA到来再尾核。
+
+
+W nontext固定 `fa62a6ac334945ae320910ae2d58a9487705349e` 两文件尾核可checkpoint：preview-receipt实SHA `1010db6aecb2c20df81bc241143c84366bc2a34a35855296e3a5f33b7fa2d5bc`，FileView `96f6080e…9741a`/script `b3251ab3…61b2d` git-show/current均同，7证据SHA全同且before fixture逐字等父源码。actualeffect同图reject保accepted严格同record/error同key/无hotretry→显式retry成功断言已补并8实际绿；E20/18/sync9/merge9日志范围同。文本accepted/edit/refresh/save函数无改，binary text fallback仅Away去machine冗参、原已知total保留；不可笼统说FileView text区零hunk。可独立并两文件，不含其他consumer；原fulltypes/DOM待验范围维持，误启动overwritebrowser不计E证据。
+
+W shared固定 `57de45439e901ab18e9fe0260ffce7760e3f2bb4`＋`72527c7b05c113ddac2b410dbd8aaf2e7f287fe4` 尾核可集成：8git-show SHA等7158candidate且等actual2174 sourceframe，beforeafter整个dict相等。shared1实际13phase各0/154.478471s/logSHA同，3Coreexact各1passed0ignored＋tables4共7实际到达，actualselected target/test/root正确；source/env稳定、owned[]/TMPabsent。169bindings staging/published全逐SHA，catalog `4b4be541…89241` stage/publish同，两个当前producer binary实SHA亦同记录；generated manifest `155c7b80…7f5544`/validationmap `36a83b0b…9ae321`实核。原oldconsumer9条types红保留不回填；CLI38streams单case/Vite/currentassets/浏览器App仍未完。
+
+W consumer缓存/可见返回早审阻断源码已窄修：FileTree fallback setup对已kept列表立即fresh，Store返回同dir已listed立即reread，依fallbackKey/coverage bool保quietpoll不重置timer；SideWorkspace加其当前文件父scope/readAt与可见返回fresh。作者报告actualconsumer先红后10callback绿、真实shared169生成后fulltypes0；当前仍dirty且无DOM，待独立fixedrefs/源manifest再尾核，不据此冒正式UI或全部filehost实时完成。
+
+
+W consumer固定前最后inactive真实路径发现（931813当前dirty）：SessionContent:222保留ContentPosition show={pickerShow}/inert下ContentPicker；MobileSessionContent:116 workspace div hidden={source!=='workspace'}仍挂SideWorkspace；useHidden只document.hidden，Side→FileTree当前watchActive仅file/commit，故换browser或picker被kept非当前tab仍持watch/fallback请求。已要求作者向Root申必要小props胶水：复用既有pickerShow/当前source active事实→Side父hook/FileTree/listing与fallback guard，无新DOMobserver或状态框架。cached entry/return缺口已修不掩此inactive缺口；最终consumer固定放行需补此源码/受控actualcaller证据，不能以documenthidden tests冒视图退出。
+
+
+W consumer限定终审可checkpoint：作者固定 `931813a438e89fcdd8754996c6907895577e0995` 13源＋Root窄补 `26fdebe70f05710995660396046b0c08c453c615` 4源，git-show逐SHA同各receipt，当前active4同，tree clean。active receipt实SHA `9078582246cf31661f188c9c3dabe779f5c359defbc266a7d28adf49e8253469`；pickerShow→ContentPicker active&&workspace source→Side active→parent hook/FileTree watchActive/visible batch/return/fallback全链实核，未改布局/text E/协议。beforeSide逐字等9318，旧latepulse inactive业务红marker准确，修后13 actualconsumer callback/type0日志SHA同。9318原13源SHA与11controller/2controlledhook/5metadata/10callback及types收据证据全核同；真实shared169bindings完整fileset+每SHA/catalog4b4b实同producer快照，非手写gen。cached entry/visibility return immediatefresh、Side当前fileparent/readAt、Store独立fileparent/fallback源码已收口。当前无新增阻断，可结束本次完整消费者源码审查并顺序集成；不冒ReactDOM/WK/App/nativeIME/CLI38streams或MachineFiles/FilesPane未授路径已完成，物理/组合验收仍后续独立。reviewer未执行native/browser/测试。
+
+
+S后续capture/CoreGUI+PromptOrigin源码前契约初审（824552当前，无新实现结论）：graph旧57de后核现Journal.accept/host派发，现先完整prompt append+active_turn persist才dispatch；新增小origin应同唯一writer成功边界，origin/manifest任一IO失败沿poison不派发，不把token宣已接受，崩溃缺origin只保prompt/未知关联。origin以source+turn+完整record start/end为事实，token仅相关线索非授权/文本去重或重复token幂等，合法同文不同turn不能吞；范围须准确完整prompt record且非空/end<=originrecord.start。Capture EOF应作hydrate before/follow after同分界，不能latest tail再拼旧fence重漏；binding/source/lease/token代次拒旧捕获/raw引用。wake在capture/IO在途保有界fresh-intent版本，旧答不得吃新wake，live只有限非正文控制/optimistic不留双正文。要求后续实际Core NoLoad/双view/大prompt rawRef关联证据，Node5不外推；已报Root/作者，未native/未另造框架。
+
+
+Root cli-current-5ddc-1 runner源码准入无阻断：实SHA `18ee4a492169614b69fe04d8b0511528f227efd05f6113cd6d732d4fccc545fc`/AST0，Root `5ddc574ea182edd59f2fb0dc6a5d1a22ab282f10` clean。types→自有dist可逆retain→Vite currentassets→actual metadata/strictCLI bin及watch_tree testproducer→selectedactualartifact私有同SHA copy→exact1强1。actualscratch调用env!(CARGO_BIN_EXE_khor)，runner test构建后/执行后CLI SHA仍pin，未冒缓存同名为本树binary。实际case38sources/两个私有Node/损伤loopback，heldwait中begin/leave/ordinaryls控制断言源码保，1case非38tests；source/env/tools/BUNDLE/gen169+assets稳定/300step600total/双盘5GiB/strictowned/TMPdevino+lsof原门不放宽。可Root正式授唯一native槽，reviewer未执行；无App/agent请求/ReactDOM/WK/physicalIME声明。
+
+
+Root cli-current-5ddc-1实际终态尾核无阻断：182.224674709s、6phase真实exit0/logSHA全同、无timeout/forcedcleanup；strictselected确Root CLI bin testfalse与本树watch_tree testtrue。当前CLI实SHA `b83f147ea6fe3f2707a88cb1a18df4a7092d100120cd08d226fef42e5e5e8584`、私有test `a38187c11ab46ec3d652a88b230c4db1f89fd55688d671d41e35c24aba200754` 同记录，2182source beforeafter逐dict同；当前277assets/171gen（169bindings＋catalog/inventory）全SHA同快照，29小件双盘逐SHA同。exact1实际1passed0ignored/51.26s，38far sources/control断言到达；本次受控RTT200ms日志新文件276.159959ms、remount0B/286.75µs、30squiet3791B（含pump），只该次环境测量非任意网络SLA。owned[]/TMPabsent/cleanuperrors[]。可收该CLI/publicNode验证项，不冒DOM/WK/App/physicalIME，reviewer未重跑。
+
+
+WDOM-5ddc fixture/runner准入：fixture真实WorkspacePane/SideWorkspace/StorePage+内存DTO transport，baseVite无proxy，/api全拦、未知400/write_text409，无真实写或agent能力。初runner timeout直接raise跳after证据/TMP检查，已要求窄补；现runner实SHA `f6025ffb3e9ae90dce9a933e54f69b44ca8fd218f3012e42c1a6d6c79cc4b7f6`/AST0，try/finally统一owned/source/gen/fixture/port/error/180s结果，TMP uid/devino/lsof/只空非symlinkdirs清理及双盘5GiB预检齐。entry3300883e/cssf38ff785不变，config `90c611af…84a42`/check `bacd3ef9…db026`实核；latecase等待A实际begin、B可见后time，强验A answer>B（非仅sleep碰巧计数）。可Root唯一browser槽跑6组，未reviewer执行，不冒WK/App/physicalIME。
+
+M025 source首审（尚未fixed）：16源实SHA=source-candidate `6286c6d524f1fbe6c8e3300663d3e40a49f7cd83a4d06f0a76863ad9745c6b86`；独立git-show971核engine唯一tempo import差（../../src/lib/tempo→./tempo），thumbFanJoystick factory后缀逐字相同；旧ordinaryscrub门前145行逐字未动。正式DeckBand/DefaultExplore消费position，FanLayer held直接绘、closing按target且loopfalse，不二次绕环；底部含terminal用同FanLayer/top保fallback，箭头物理方向与index方向分开。18engine/旧聚合纯检查合同迁移有原业务红/过时断言与夹具错误记录，当前源码未见阻断；types空log不自行冒终态，待作者fixed16ref/正式收据再核。无native/gen/browser/App/iOS声明；生成类型兼容仅精确46Core/9catalog输入，不声称ce69全native同源。
+
+
+M025固定 `072ba190ffc04c1584d8061086595ff6627e0226` 尾核可source checkpoint：16git-show/current/candidate逐SHA同，receipt实 `f5ab27408a548e673f0d783471b451364c1d60ca91430f7938fa36a25ff0b876`，14证据SHA实同/clean。独立Lab971 engine仅tempoimport差/adapterfactory同、ordinary门前145行同；actual18＋navigation18/31/216/7/10/8/117日志对应，finaltypes56786 actual0按收据终态、空logSHA同。46Core/9catalog兼容输入逐git-show核同，不冒整ce69 native同源；原合同迁移/fixture失败保留，无DOM/iOS/物理触屏声明。
+
+WDOM final5ddc限定尾核：receipt实 `2c7bdc03e49809833949f5fd53c83950463a07a54d38834084c4a98df10a1d0c`；v4 result/outer SHA同，21.3528275s实际先4组通过后Store mefalse无本机dir导致失败；v5 entry仅Store mefalse→true、脚本仅续未跑2组，7.258427s/2actual/exit0。两批2182source/171gen前后及跨批完整dict相等，fixture前后同；v4 dirty断言先treeLS证明pulse已消费且LOCAL_DRAFT保留，再Undo回clean必须读最新disk，符合E pendingfresh合同。v5 lateACK时间先后assert实际到达。94小件外盘/内盘逐SHA全同，两批remaining[]/portfree/TMPabsent/cleanuperrors[]。六组分层4+2，原v1/2 setup/v3错误dirty期待/v4Storefixture失败均保，不冒同finalfixture6全跑/WK/App/physicalIME；后M集成版本不是5ddc同source声明。
+
+S hydration候选2阶段意见：非法PromptOrigin range当前None会静默吞损坏origin记录，已要求其自身record rawRef保可见；NotReady/ReplayInFlight无historyView时wake只增计数，需核Ready后再capture的实际当前路径。曾提出旧SayWith3字段host可能风险，Root明确用户“未上线/纯净开发不需旧兼容”后已撤该准入前提，不要求v2 variant/旧端专项或fallback，继续仅当前协议双方一致/显式失败不重发。此处不因陈旧协议注释另扩兼容矩阵。
+
+
+S Origin rawRef意见更正：已读完整history_page_response generic分支，frame None时bytes取超预算值，确实转自身event.position rawRef，候选2非法Origin未静默吞；reviewer此前仅看match作了误判，已明确撤销该产品阻断/通知Root作者。新增自身准确ref反例仍有价值，不需改生产。accept失败范围作者采用先完整prompt→既有active_turn persist成功→小origin→才returnOk/dispatch；origin只证先前接纳不声称agent执行，origin失败仍poison/未派发且active turn未知保，准备真实manifest rename目标directory故障例。NotReady/Replay transient有限owner重捕获候选待源码，当前不冒新生产/测试绿。
+
+B5当前dirty3源早审（aaf91base，无native/browser）：Node close只kind!='page'仍pinned拒，page同原change原子ledger删除，邻居/末项/异kind保持；原pinned拒测试迁code保byte稳定，并两page测试持久/邻居/空ledger/异kind原样。BrowseLanding仅page标destructive/delete，barepage去单swipe覆盖使SideList自身筛pin/delete；answered错误保row note并rethrow，无unpin再close；nonpagebare保持close。7实际callback脚本提生产menu/swipe/SideList表达式，当前无源码阻断；待类型终态/fixed3SHA/strict Node3runner（未编译不冒测试绿），不扩其他B项/旧兼容。
+
+
+B5固定 `2ba5e9838c1eef25af716efd887c6f0b8b509c43` 源码/Node3准入：3git-show SHA同receipt、clean；receipt实 `6e811716e0534161ad3268e3a449b2a35643ebc9893faf88abae6201768fc52a`/contract `71f1de879ba8be1b250b4e5d8422c743c1b1d764f4a88bf8c547e96abe3b32fb`/driver `48019b4cb4d5d3e0b315786f9013dbf56a9346cbc2703c2545a0ebc67e9cdffe` AST0，15证据/helperSHA全实同；callback7/typecorrectlayout0/rustfmt2024范围保，最初生成路径错误types2不回填。runner单本树Node lib no-run→既有guard.select_binary真实target/test artifact→target内私有同SHA copy→三exact各强1passed0failed，300/双盘5GiB/jobs1/incr0/sourceenv/strictownedguard原规则无放宽，不Core/CLI/gen/App、不切源。可Root唯一native槽，未reviewer执行；此批未调用V prepare/verify，不冒来源strict全链。小建议import前dont_write_bytecode防pycache非产品阻断。
+
+
+S hydration候选3基础源码/runner准入：18实际SHA等manifest `b8b61637e3d54650edde030f9f3e5b3a4598a0e4597f9db98819e4727793f342`；accept现完整prompt→active_turn persist成功→origin→returnOk/dispatch，PromptRecorded只关联正文不settle发送ledger，新增实际manifest目录目标IO失败例断Prompt保/noOrigin/poison；原generic非法origin自身rawRef新增精确反例，无需生产改。NotReady/ReplayInFlight单timer有限backoff/hidden不retryIO/cleanup停、typedUnavailable显式retry、不禁发送，实际private三closures从无reader验证EOF/旧token拒/wake，基础源码无阻断。runner `4a436a999803ed8bf0a47ed51d54c1a65398774ca88ebd3e0cb158ea67e5e973` AST0，strict metadata/Core+GUIcheck/Node-Core-GUI actuallibtest43顶层＋inner1双summary→tables/真实bindings发布，300step600total/5GiB/source-env-tools-BUNDLE/owned/TMP原严格门。可Root在B5释放后授基础批，未reviewer执行/不冒绿；liveuser echo与owncanonicalprompt双用户行语义已报Root待裁，不文本hash/不丢bootstrap无turn用户消息，基础批通过不能冒该项已解决。
+
+B5 actual3固定尾核可集成 `2ba5e983`：receipt实 `f7314ab99835d9779bace54ccd4dbb7f461d8f01eef307bde3e4969a6d90b3c8`；实际artifact确input本树khor_node libtest/testtrue、私有copy实SHA `356e6ca95187d8fb835656c673aa23001bb01a20f8c58e8c81f15734b2ab8a59`同。compile0＋三exact各1passed0failed0ignored/83.581407s；2185source beforeafter逐dict同且fixed3SHA匹配、envstable，16actual证据及15原证据SHA全核。各stage remaining_owners[]/privatefootprint[]/无timeout强清，TMP entries[]后absent，terminalcleanup精确pids ps空/treeclean。driver只offline/dontbytecode许可增量，未改产品；准确guard/Cargo-derived实际artifact，不冒V prepare/verify全链、DOM/WK/OS资源释放。
+
+
+S echo-red2窄准入：manifest实 `4574a03eea42e19e8f3f97b43090a7953f79dff3f42bbeb27adf93860ed3d334`/当前18SHA同，相对candidate3唯journal cfgtest差，#[cfg(test)]前生产prefix逐字同、其余17同。真实Journal bootstrap无localturn用户chunk＋两同文不同turn prompt/echo→actual read_page/parse_record，指定OWNED_ECHO_DUPLICATION旧left5期right3；后两echo raw自身range/原SDKpayload/turn断言保。runner实 `0a5e4d6eea2ea59d88b66ad9fdca6a5e133db05e5f9ce9ae46b63a866649881f` AST0，strictactualNode producer/proof→soleexact，仅实际101/0passed1failed/指定markerleft5right3且无timeout/强清/残留才red_verified，编译/IO/其他panic不得算业务红。可Root唯一槽；未reviewer执行，生产尚未修echo，不重跑中途43。
+
+
+B1–4 private page_navigation首source checkpoint `0b828692`（未mod/未编译/未adapter）早审：view代次/issued字符串nav与revision、同nav进度max且finish才1、失败/取消终态、4KiB每错误字符串/根+3cause UTF8裁界主链清楚。发现接口尚缺同view导航级旧queuedprogress/start归属：progressed仅ViewKey/value，A回调若延后至B started会把A高估计写到B；started(oldA)可重新接管activeB。已告作者/Root在adapter前封最小边界：当前issued nav/request identity在callback同步capture并提交核同，或main回调同步更新Pages生成immutable Changed后仅延后emit，消费者按view/nav/revision拒旧；不能旧value只带ViewKey defer后再写新nav，不用URL去重/无界navset/泛事件框架。现7Rust测试source未执行，仅旧view/旧finish覆盖，不冒该同view边界或platform完成。
+
+
+S echo-red重试red3窄准入：manifest实 `25efdb40c917d7421abf87cc98c1ee5ef7142a8df1482164e7c04bf49ec21dbb`/20当前源同，red2原18SHA全同，新增reference.rs与session_content/wire_tests.rs仅cfgtest accept各补None，原断言/生产不变。新runner实 `8881894185d774e4ab688d37850fb7561eeefe9a48bc66718392f51035badd80` AST0，相对red1仅MIRROR/candidate路径，OUT自然__file__新目录，sole业务101/markerleft5right3/strictclean门不动。可Root唯一重试；前次metadata0/compile101两E0061未执行业务，准确setup失败保原，不算echo红。B privateowner作者已采纳main callback同步Pages mutation→immutableChanged再异步交付的较窄合同，待实际Mac/iOSadapter和消费者revision源码证明，不强制另造Nav事件框架。
+
+
+M025DOM-5c-1 fixture/runner边界准入：实runner `c5192f695f964ac8a76ae2e7aedfafe193205ae244121f382df1579bd9f387d8` AST0，entry1952eda1/check04f3bb78/其余5fixture指纹同；真实正式SessionFanNavigator/DeckBand imports，样例JSON无http/头像本地marble，API本地400，沿已核finally/source-gen171/fixture/owned/port23842/TMPuid-devino-lsof/180s/5GiB闭包，无产品复审/执行。已提醒entry仅fetch拒外网不覆盖img/navigation，Root可goto前加nonlocal page.route或准确限定无外链/fetch拒绝声明，不夸“全外网拒”；5组coarse Chromium pointer/受控clock terminal样例循环，不真实手机时序/TerminalPane输入。
+
+S echo-red2实际原始结果只读核：result red_verified true/84.7707188s，metadata0/actualNodebuild0/soleexact实际101，准确OWNED_ECHO_DUPLICATION left5/right3、0passed1failed0ignored/1.44s；2185source beforeafter整个dict同，envstable/remaining[]/TMPabsent/cleanuperrors[]，无timeout/强清。前red1编译101不混此业务红；投影绿代码尚待下一候选。
+
+
+M025DOM-5c终态尾核：receipt实 `468473b3caeb615ba6fcad0f10754e5e62f8ebe7b331f1a8fe7ba516863931ee`，actual5groups pass/errors[]/network[]、20.071079s/exit0/无timeout；2185source/gen171/fixture前后完整dict同，M16源也逐SHA存在actualsourceframe。check实 `3886e9547841dc169eae0ac84debe3269d8e2db603013ecbdc9d206bf46de39f` 已goto前nonlocal网络route abort，27外/内盘小件逐SHA全同（含root目视right/terminal截图）；owned[]/portfree/TMPabsent/cleanuperrors[]。准确正式手势组件coarse Chromium DOM＋terminal样例受控clock循环，非实际TerminalPane输入/真实手机时序/WK；可收限定DOM项，不重跑/不冒设备验收。
+
+
+S hydration-candidate4-green源码/44runner准入：20当前SHA等manifest `2ffe94eb9ec29833d0bdb1866f8ee0c8544358f5fb698eff81e35ef65140e2dc`，相对actualred3唯一journal.parse_record在SDK验证后8行：可信自身journal外层非空<=256localturn＋user_message_chunk→该event自身Reference，原raw不改，无turn/bootstrap/Native路径不动，无文本hash/无界map/扫源。cfgtest整后缀逐字同actualred3，原5→3及两echo raw自身range/原SDKpayload/turn断言不放宽。UI HistoryRecords现有中性“读取原始记录/尚未展开可按需分段读”，不把普通echo误说超大，不需新raw协议/展示。runner实 `8bd7c392b80026c08210370786632ea22286f557312aec990f1ad0dfc5ff97f3` AST0，相对原已核hydration1仅candidate/MIRROR/Journal11→12及总43→44，strict actualproducer/proof/44顶层＋inner1双summary/预算owned/TMP及真实bindings发布不变。可Root授唯一一次完整绿批，不先单跑绿1再重复；未reviewer执行/未冒产品完成。
+
+
+S hydration-green1生成证明缺口只读定位（94322 terminal1/276.3003s，非产品行为红）：check0/NodeCore strictproducer0/38顶层＋inner1实际绿后GUI libtest Cargo0，verify仅khor-gui generated_output无current/prior；native_io2/tables4/bindings未跑。实际check OUT为khor-gui-5ddefbe669bc4b01/out，libtest为exact `debug/build/khor-gui-a7d478be9174cb97/out`；诊断仅此包，marker当前而279旧成员6,372,577B mtime/ctime均前prepared。prepared已真实触发build.rs/lib.rs原SHA刷新，2priors为Node/Core无GUIgeneration；不是未刷新源，不能重38或放宽证明规则。建议沿已授前例Root唯一槽下exactOUT uid/regular/nosymlink/devino/SHA/lsof可逆retain，再fresh prepare/真实GUIlibtest+strict，仅续2+4/真bindings；旧276s false保留，不写假receipt/伪mtime/扩缓存治理。已告Root/H，reviewer未动缓存/启动进程。
+
+
+S hydration-green2续6＋bindings准入：实runner `8c85f5ee3c8557fc3901007bd79f845054f4046d4d8900a7f69d9296c0e81012` AST0、retentionplan `291d2f657b6104f26e125c4c030882f56b94381379b82e674af8b7429ee9060d`。exacta7d…OUT当前dev16777244/ino36248101/uid501同运行uid；282成员全regular/nlink1、6,450,624B当前SHA同，目录真实dir无symlink。runtime先验证旧2185全source/38+inner1/真实NodeCore receipts，再核exactidentity/完整tree+dirs/SHA/lsof，唯一rename本evidence retained/recreateempty→freshprepare/实际GUIlibtest+原strict；不改helper/收据/mtime/删除缓存。当前仅native_io2＋tables4=6、真实bindings同bin staging/publish，旧38单列reuse，不重跑38。可Root唯一native槽；reviewer未移动缓存/运行。
+
+
+S green3窄续准入：实runner `f9aedc0a14e0c02024624ca1926de411bd5da0a71e801729490440623ef91616` AST0、plan `973caee0cb03ab95621018f9246622a7d2a5214dc7166a55eba9a079362ff873`；sameexactGUIout新ino36272260/282regular+nlink1/6,450,624B当前SHA同。相对green2仅mirror/plan及actualmetadata取catalog/detect真实lib target→no-prior prepare refresh hint；不standalonebuild/不加receipts/不claim其独立provenance，随后原GUI真实NodeCore priors→actualCargo/strict→剩2+4/gen，旧38不重。green2实际31.065sfalse诊断仅catalog-f711…与detect-525c…不同OUT旧marker，GUI自身生成已过；原false/retained保，不改helper/伪mtime/回填。hint保守selectedGraph可能触发多源mtime，具体按保存prepared refreshplan，不称仅两文件或真实链接依赖，source字节仍严格不变。可Root唯一native槽，reviewer未动作。
+
+
+S green3完整来源只读诊断（2026-10-30，未运行/修改helper/Cargo/cache）：历史S已保 `d83d9b73ff78717f54599f6ba73fa5f2566e59bd`，逐git blob独核2185source SHA全等green3 before/after；当前B共享dirty不得混作该历史源变动。green3实际17 first-party artifact rows/5 generated dirs中，所有generated已过，唯一fresh unmatched为khor-acp；证据 `history/session-recovery/hydration-green-3/{gui-tests-prepared.json,build-gui-tests.log,fresh-unit-diagnostic.json}`。两真实Node/Core prior都为ACP `164db2ea3714485c`，actualGUI为`538749b58c7f06c6`，同packagekey b81083cf…/同完整现variant且旧prior文件仍实有效。readonly actual Cargo fingerprint证明tokio/serde/agent_client_protocol依赖metadata hash不同；不外推具体feature归因。prepare仅samekey＋name/kind/test及旧文件有效就跳过该包，verify按actual路径/SHA正确拒绝；此前OUT variant错误复用属同一准备阶段unit不足，不是产品行为失败或verify过严。实际refresh_plan仅Corelib、GUIbuild/lib、webbuild/lib，ACP未refresh。遍历actual已知rows未发现第二个fresh unmatched，未把未知后续Cargo unit冒已证明。
+
+建议一次完整续法而非逐包retry：Root选择固定d83精确源/同env，现有GUI prepare对整个selected first-party graph使用no-prior/apply_refresh=True一次刷新入口，exactGUI OUT继续实时uid/devino/regular+nlink/SHA/lsof可逆retain；不改helper、不手造receipt、不伪mtime、不删除sharedcache。实际GUIlibtest/原strict→只续native_io2；tables4/真实bindings依全部真实Node/Core/newGUI receipts，原strict照常拒任何新未知，旧38＋inner1单列复用不重跑。一次全图入口刷新也使同源其他旧Cargo units的source fingerprint失效，不必猜unit hash；不能保证尚未执行后续必绿，若仍失败停止并保原。前三批false和两个retained目录原字节保留。只读审查已交Root，未作新工具模型治理。
+
+M026真实PTY runtime准入初审：run4267faa8/check7b5bec97/entry60973407当前指纹已读；正式TerminalPane/TermKeys+实际私有CLI PTY/Codex、私有HOME/config/dummy loopbackprovider/透明API allowlist成立，scope仅Playwright标准键盘路径对配置键帽，非人手实体键盘/手机/WK。准入前两fixture问题已报Root：configured全scrollback包含上轮abcdX、cursorX亦可相同，需独特第二轮当前draft状态证明reset和新输入实际落地；relay闭端23846也须preflight无listener。建议cleanup无论original Popen是否仍活都调用一次现有owned-groups helper以清已证detached私有group，随后strict remaining仍保。未启动任何runtime，待精确改动再短核。
+
+
+M026准入末尾窄修已核可执行：admission-source四全SHA实同，runner `5993fcea73ca036e96ea77ac6341d761e92b2b65cdf865dd29d1702ec64eafd6` / check `2c6fcff8c8c4b8b79b70c2bd614b12f8d084a396f3f0c02b8a6cc861f90f543f` / entry60973407不变。第二轮独特pqrst先实际渲染，键帽后必须出现新pqrsY，wire聚合去各自末X/Y比chord，原旧scrollback假阳性已解除；23846也preflight/final free，已观测groups无论originalPopen是否仍活均用原identity helper清一次并strict remaining。私有原生CLI/Codex、dummyloopback拒绝provider、API透明allowlist、无Enter/请求模型/source-gen稳定门不变。可Root唯一有界runtime槽，未reviewer执行；只Playwright标准键盘事件与配置键帽经真实PTY/Codex草稿对照，不冒人手实体键盘/手机/WK/已验成功。
+
+
+M026 attempt2窄准入：run实841ff4e6a6a760b1d76f67d952820967921881a7e55f3be74d241d4104136f6e，相对attempt1仅KHOR显式原私有clone、合法SID严格tui/＋16lowercasehex、执行passflag依实际browser-result三处；check2c6fcff8/entry60973407逐字同。首actual45685/2.363s仅SID夹具拒合法ID，open/close0但browser未启动，原planned actual_terminal_pane=true不算执行证据；原false/strictclean保，attempt2独立目录可Root重启原同scope，未reviewer执行。
+
+
+B native固定09dc4d64d0fe72c5e117e37b486c37977000c0bb源码审查（未编译/未SDK或WK执行）：graph先查覆盖到0b旧基线、head不匹配后读actualfixedblob；page_navigation SHA163d938703d804095c9c068467f8ec2e0b0cc2133e0267dc8520893f1b88835f，page_fail19d9149b7bd3a4362610a5d2a5849e14b3cd2c01b51f443f51db9c3e92f165fc，phone70130f541a51d816891316d339b827736f87ffb96aa04e0726259e831db2e4f3。WK/KVO回调内同步Pages mutation后仅发immutableChanged，main异步不回放raw旧value；初建Mac watch与iOS loadRequest返回nav→expect已拒pending旧start。Mac保留原didCommit/didFinish IMP并先调用，KVO retainedview/exactkey迟到detach不夺新owner；NSError root+3cause/UTF8每string4KiB、private原始完整retrytarget与公开bounded诊断分开，latefailure先currentnav guard再装target。iOS -1005不猜route，原loopback repair完成核view/nav/Failed；frame/inset/deckfollows几何未改，line改真实share不循环；download委托/策略原义保，download不假success。以上未见新unsafe生命周期阻断，不能据源码称平台已验。
+
+当前必要阻断已交H/input：Mac复用live.navigate、desktop reload/back/forward与iOS step未统一同步request→实际selector返回WKNavigation.expect；request仅清nativeNone会拒旧finish/fail，却让旧didStart在Opening(expectedNone)被当新导航。H确认共享只补desktop request/stop，iOS遗漏；需同原native helper收口所有显式动作，stop成功后cancelled，无URL去重/retired集合/新DTO。其余8 shared候选f6c1…HTTP page_state严格tab且null无Node工作、四DTO/字符串ID/Settled与真实gen roots/Facade形状源核无新增阻断；原生动作问题修后固定再核。非WKfallback当前仅builder ViewKey，Finished采用current issued nav，未有每request原生stamp；已要求准确限定Settled通知语义或给实际stamp来源，不扩Win/Linux SDK矩阵、不用URL当身份。当前纯source，不准冒已编译/生成/平台行为完成。
+
+
+M026 attempt3 readiness单delta checke37b9505实核仅context→实际“› Ask Codex to do anything”，原guard不变准入。actual34725/19.856s实际输入raw为ESC[1;2D＋ESC[1;2:3D X，当前Codex显示“› abcdeX”cursor8，无移动/选择；原abcdX期待不能当产品bug。attempt4 check实0e383fccd851b7df4b0e0ed8ac96dc00d431748233849aa593033c6c9b161a1b，将期待精确改成此次已观察append语义，独特第二轮pqrstY，wire仅剔除已观察该条Kittyrelease作press编码对照，raw完整保、noCRLF/隔离/cleanup不变，可Root同有界run。结论仅press编码及该Codex结果等价，原始字节有release差异；不称ShiftLeft选择/移动支持，不改产品/不扩TUI编辑专项。reviewer未运行。
+
+B非WK范围更新：H已回Root明确接受view/logical stream的Settled能力边界：旧A Finished可能使logicalB Settled，SDK无实际nav身份，不冒该导航成功/百分比/OS配对，不URL/FIFO猜身份或无限pending；只列SDK缺口，撤其为当前准入阻断。Mac/iOS有actualWKNavigation仍必须把显式操作返回值严格绑定，input叶delta处理中。
+
+
+B shared候选1其余8源f6c1d27c…18259只读审查：四DTO/decimal身份/Settled、HTTP严格tab后null无Node、roots/facade/mobileinventory/2label、Mac aboutblank→awaitwatch失败close+forget+page_exits清理、close exactkey、retained page主题ground/iOS repaint均无新增阻断。原download不再伪finished；原IMP/script保持。只待同owner WK helper返回nav绑定叶delta及shared准确调用，不因static/rustfmt0冒compiled/gen/types或WK已验；非WK弱Settled范围由Root已正式裁定。
+
+M026 attempt4 actual71277/4.858531s最终限定只读尾核：原browser-failure SHA1d0b635bef23c7d35d0bf15feee319ea82f56d6c8fac9dcc25974c27338b63dd，outer455a8dae05775501b3e74836cb41f3aab9ade146e81a19559ff9d05fc27c2e85；derived-analysis所列7原件逐SHA全同，并独立offline断言两state原始wire仅去末X/Y后精确相同 `ESC[1;2D ESC[1;2:3D`（含keyup，无规范化）；当前draft分别“› abcdeX”/“› pqrstY”，cursorX均8，focusassert已在configured state前过。actualinputs无CRLF，errors/unexpected/network/modelrequests[]；实际私有open/close0、source/gen/fixture稳、strictremaining/privatefootprint[]、23843-46free、TMPabsent。原outer/acceptance_passed仍false：错误仅fixture单侧剔keyup造成不等，原false与前3批setup/oracle失败不回填，不需第5次runtime。足以记正式TerminalPane+TermKeys→实际私有KhorPTY/Codex两路径原始chord字节等价及此次append结果；不记selection/移动支持、完整green suite、未执行success截图/CtrlU-CtrlC键盘清理、实体键盘/手机/WK。reviewer仅离线读取/精确断言，未运行PTY/native/browser。
+
+
+B WK叶4eb36d47a4098de6b8d3aac2e5ebc8c9c90f3657增量源核：Mac/iOS同步prepare_request→实际selector返回WKNavigation→expect(exact request revision)已补显式动作原缺口；None ticket仅当前exactview/requestrev/Opening/nativeNone才恢复旧Page，revision单调递增，不假start/finish/100；Some后旧requestChanged即使后发也由revision消费者拒，stop实际SDK控制后cancelled。局部ticket纯数据同步生命，无第二registry/异步句柄。仍一显见阻断交input/H：新mac::navigate闭包let_=load_on_main吞真实Err且missingkey静默，public仅schedule Ok；需沿watch既有oneshot返回实际Result给async shared调用await，合法history nil no-op保持。此点及shared实际helper调用固定后再尾核；源码未编译/SDK未运行，未新增平台矩阵。
+
+
+B d5b3f5e10c588c198d998340e4eb3e39395da96d＋shared-wk-candidate3尾核：manifest实357fbf1b13d1729872df2f92470921bd22f64935b6e1463a3cc2d0adfed443b4，6currentSHA全等；Mac navigate oneshot真实loadErr/missingownerErr→navigate_page.await→openreuse/retry/pass完整回传，control走actualWKhelper，mobile page_step async已移QUICK，旧load/fail union无消费者后删除。nil ticket exactguards/单调revision/stop事实成立，可解除原09dc导航绑定及后4eb吞Err阻断。iOS page_step仍吞run_on_main_thread调度Err，已给H窄建议一行传播，非要求所有history nil误报错。
+
+front27220c91c0194beb21c3808d368e024eb3764a36已跨source审 typed revision/query事件先订阅再查询、wanted集合/代次迟到拒绝、600ms完成timer清理、failure/cancel/Settled不假1/原NSError按domain投影，未新阻断；37pure不冒ReactDOM，12Rustsource仍未编译。唯一新组合阻断已交Root/input：BrowserPane.hostBox现将iOS WK frame bottom裁到DOM bar.top，readDeck inset0，但phone_page::deck及deck_follows仍以pf.bottom-h放native deck，导致deck上移自身高度盖正文。须同叶owner用真实DOM deck几何独立定位创建/移动两路径，保WK body裁切/无第二contentInset，不按猜gap修、不恢复WK到底部掩B4需求。需最小组合矩形反例而非扩大设备矩阵；待固定窄delta后可编译准备。
+
+
+B final源码尾核：shared候选4实manifestd9556241…493264较3唯一iOS调度Err map_err?，6SHA实同，可独立source checkpoint。df92d4e4e080b9999c518847ef4b6da8ba2fce03修iOS组合坐标，readDeck DOM x/y/w/h、Page viewport_origin沿原frame_of parentorigin，native create/deck_follows共用deck_frame(origin,geometry)，不再pf.bottom-h；open/reuse/place更新origin，WK仍裁至bar.top/inset0。原组合476≠660业务红、新9为真实JS字段与Rust CGRect源表达式受控运算，不冒UIKit/WK。最终source-receipt实e32cd021ba2ccc9462a90146a19f0512fb0a4ca4246eff9865fa80caa3fe8320，22git-show SHA全同，11原证据SHA全同。projection11/hook10/failure10/viewport9=40分层纯检查，Pages12 Rust源码/truegen/fulltypes2 pending准确，B5 actual3独立。原身份/Err/裁后deck坐标阻断已源码关闭，可Root固定cc744组合进入实际producer准备，不冒native/OS/用户016根因已验。
+
+H正常inline search worker首片531a6ee50e57c50a31b4d5e2d913f0d69e42fb0e四git-showSHA实同manifestc2e0763acefffe212d0d877bcd368ac5d3b521a311db08c8c0718f7d1c99621e。graph未覆盖该新模块后读fixedblob；page512KiB/32hit内续接、独立Source/readlease、Worker terminate/dispose/reset拒旧源代码无当前checkpoint阻断，8actual含2实际worker线程仅source-after范围如实，无UI/giant/rawtoolinput完整搜索声明；不在cc744 nativecohort。已给H接UI前两小建议：start在worker先error/reset后拒再启动，逐codepoint lower并非完整Unicode casefold（ΟΣ/ος）；不要求新库/无界映射/新矩阵，已知rawtool输入共享helper作者原已列。未reviewer执行测试/worker/浏览器/native。
+
+
+H tool-input候选1六actualSHA全等e485b0f8e1be03d9de0a4b44c2fa7ada02b5fdfc517a493771fc59e1ef369a7b，只读无新增checkpoint阻断：同acp-view纯helper供render/copy/search，无runtime环；搜索有限64KiB先计actualJSON escapedUTF8/quote/control/lone-surrogate/2spaceindent/逗号closing/number/null，depth128/cycle/plainJSON拒绝后才stringify。renderer默认Infinity保旧正文/command/null条件，不冒巨记录渲染已限。projection按item缓存，32续接不重复pretty/unsearchedInputs；start error/reset gate与sigma等价限定修好，不称完整Unicodecasefold。9actual/3真实worker线程/source-after-only/noUI/无rawgiant，首fixture实际pretty48617不过限误预期保存，修fixturecompact45312/pretty70517；tsc首rendereroptionalchild窄??空串修后仍20诊断仅旧S/Bgen，未冒types0。可固定source小片，不在cc744 nativecohort，不等于H完成；reviewer未执行测试/runtime。
+
+
+N43bf74b38dafff4cb511fddebb95669a259a5100 source/runner准入只读无阻断：3源仅cfgtest gate/module/privatefixture，Context.apply实际root_gate后checkpoint、owned helper实际on_worker→State.receive boundeddevices image。父持未reapedChild，root/PID/PPID＋两次OS birth/exe证实后私有旧CLI sessions一次，release后control一次保10IDs/完整IDs原证据；真实RootPermit.attach/State.open的typedBusy独立辅助，不把stderr字符串重铸typed，不声称原集群因果/产品已修。旧CLI b83f…8584重用213/216全同、2cfgtest剥除同prod＋tabsB5差异明确。runner9fa3c2c…a2bad/contractdf35…1a6c现有guard actualartifact copy，offline/jobs1/incr0/300/双盘5GiB/sourceenv/strictowned/TMP原门，1父＋1helper两summary非2独立业务case，无Core/CLI/gen/App编译或网络/用户home，未V完整来源证明声明。可Root唯一槽先该最小批，reviewer未执行。
+
+Root cc744 S/B native-1准入：run实7501d15468be36cb3a40272fb1bf56c172388a19b54af2f85eaf45a60386012f、plan af69188348621e69447672e09a6e6a0852751675e4035b1a3b813597cce23cd1；固定cohort cc7443070c7cc5a6cc3b76541ffded5763798d8a clean。exacta7 OUT实ino36272745/282regularfiles/6,450,624B identity及每SHA仍同计划，实际执行另重核uid/devino/dirs/lsof→可逆retain，无删除/伪mtime。5target均现有prepare完整selected no-prior刷新→actualCargo→原verify/require，不再逐包hint；Core2＋GUI Pages12＋native_io2＋tables4=20强数，历史S38+inner1仅18/20同/B-onlyapi差异映射，不冒当前fullframe。真实bindings/catalog均stage成功后managed/atomic发布逐SHA比→types，300step600total/jobs1/incr0/offline/双盘5GiB/sourceenv/owned/TMP门保，无App/CLI/重旧38。可N终态清槽后Root唯一批；实际未知产物仍原strict拒绝即停，未承诺未来unit必绿，reviewer未执行cache/Cargo/测试。
+
+
+N actual99879尾核：receipt实abb9b915b661433ea5bd1fdf442e5af9916542f2a2d8bae3c0d95577a53f8284，13actual文件＋3fixedsource SHA逐实同；2186before/after完整dict同。实际Cargo khor_node/lib/testtrue/freshfalse来自本树，privatecopySHA3bb0f6c8386b86326ffea8bb4bfea7f25b23e47941487ba35b98615ee3c2614f，compile0＋父/ownedhelper各1passed0failed0ignored，共1业务case，83.5387204s/无timeout或forcedcleanup。held实际CLI exit1/219ms/空stdout＋原stderr document transfer state busy；release后exit0/195ms/10IDs及baseline/final全保。root/PID/PPID/未reapedChild/twobirth-exe与独立typedRootPermit.attachBusy、State.openBusy均实际到达。两stage remaining/privatefootprint[]/groupabsent，terminal指定PIDs gone、TMPabsent、源env稳定。可收受控devices apply期间constructor跨进程竞争机制证据；不冒原hinton/turing时间或唯一cause/产品修复/V完整prepareverify/全网络sync。reviewer未重跑，Root槽可转已准cc744。
+
+
+cc744 native1实际48487/117.669s Corelibtest原strict通过/Core2实际绿后，GUI prepare缺本树apps/gui/dist而未启GUI Cargo；原False/trace保。native2实runner e1ad05b5fb318362e1c2662ce6fc9e9749f7ac98b3ded8cae5b7462240e10741同admission可准入：两predeclared table/bin request均同Cargo前完整selected no-prior prepare，graph/states相等、同未过滤actualJSON各verify/require；缺真实bin即停，无手造row。复用当前cohort Core2实resultSHA/fullsource/proof，当前tables4＋GUI12＋nativeIO2=18独立；真bindings/catalog→managed/atomic发布→GUI显式types→Vite当前dist→GUIprepare，最终assets/gen/catalog SHA不变。a7只验原retain后空，无新cache搬移/删除；600total300step原strict/owned/TMP/sourceenv规则保，旧S38+inner1映射不重跑，不冒App/CLI。reviewer未执行。
+
+N新生产io a348→150715f2源早审：ordinary local admission与OS fence共享同deadline，只WouldBlock重取同file，不重放Node；control/metadata→root零wait。发现首try若free却已过期仍成功，作者150715f2已补attach入口/每次try前同until，新增freegateexpired反例；None control立即try，睡后回同截止检查。新actual正向fixture按query真实birth/exe＋lsof该gate FD后release，强IDs/controltypedBusy保持；须新实际CLI编译，旧b83仅原诊断，runner待当前assets，未编译/未green。
+
+H projection候选1（8a6235bc…3689abc）必要两闭包反馈：ContentReference::body_projection validJSON且Native parser空Vec时仍complete=true，应保守false（Native replayed_updateNone也不静默宣complete，已知Turn/localEcho明确no-body例外）；historySource project成功新增finally await release后，return的closed/aborted判断却在await前，可能cancelACK held期间dispose后仍返回旧非null；dispose直接cancel而未走job局部release又可在旧ACK完成后重复cancel。要求同owner把最终stale检查置所有release await后，并dispose共用该job release闭包，受控ACK反例即可，不新registry/UI防御或矩阵。其余64K scaffold/512K response/Note-only projection/worker回退源核继续，未因11pure冒Rust已编译或giantUI完成。
+
+
+H projection候选2尾核：manifest实d89f3ebf78597779b7af05c6da45276d2caa209cef5cbe4df8f9d71e402e26a8/14currentSHA全同，较1四源逐snapshot差异准确。Node空parser/Native replayNone→completefalse；Source active Map同job.release贯穿dispose/abort/error/finally，全部cleanup await之后再closed/aborted/throw/return，解除迟到非null及重复cancel；joined record missing_start/end=true仅字节选区不宣JSONL完整边界。旧candidate1保存源码跑新fixture实际AssertionError“retirement during release ACK…” object≠null，非setup/不换生产；新Find11/reader22/mobile0/15源前后同准确，afterpure仅Rust保守flag不冒native验证，独立untrackedlexer不混原语14。三阻断源码解除，可固定source checkpoint；5Rust/真实gen/giantlexer/UI仍pending。reviewer未运行任何worker/native。
+
+
+cc744 native2 actual89630/103.313s原False保持：tables4实际绿/两strict receipts与binding stage过，catalog Cargo0后strict缺devdep khor-core；Root离线diagnostic明确旧shared1正确命令含compile-only --test gate，适配漏参非产品错误。native3窄准入实0abd9d8348926c094a94a8a1d79e0841c1065ea76f8e219153e70483eab07699同admission，catalog仅恢复--bin gen_ts --test gate编译参数、不执行gate/不改helper。原native2 tables4/binding两receipt先resultSHA/fullsource/proof产物核后复用，binding仍实际stage再publish；Core2另复用，当前GUI12＋IO2=14强数（14+4+2非单次20），历史38+inner1不重。真gen→types→当前Vite dist→GUI严格producer/输入稳定门保，a7空不新移动，旧两False不回填。可Root唯一槽，原receipt/artifact变动仍停，reviewer未执行。
+
+
+cc744 native3实际46816/17.070s：catalog旧gate正确strict过、bindings/catalog真实发布且SHA同、tsc0后仅新建apps/gui/tsconfig.tsbuildinfo使source_stable=false，原False不回填。Root按自有uid/ino/nlink/SHA可逆保到native3/retained，source-recovery记录唯一新键及全原source字节同。native4准入实6f0e4e0d5a3baea580c461e3178dd9238cb5888bdaf4f9ec62325567f438b80b同admission，旧before/after唯一cache差＋retainedSHA＋恢复BEFORE全等门齐。当前GUI tsconfig确include src无references，--noEmit --project实际类型检查非空solution且不再buildmode cache；重types→Vite→GUI14，原qualified binding/catalog receipts再require/当前生成整fileset+SHA==实际pub，不重gen/catalog/Core2/table4、不cache再retain、原strict/cleanup不变。可Root唯一槽，前三False与14+4+2分层保持；reviewer未执行。
+
+
+cc744 native4实际79799/120.302s：真实noEmit types/Vite/GUI Cargo0，sourceenv/cleanup稳，原strict所有unit/generated已过但最终selector generic kind lib不匹配Cargo metadata实际唯一staticlib/cdylib/rlib；原False/prepared不改。selector更正离线独核：prepared仅request.kind不同，其他整个dict（source/context/packagekeys/prepared_ns/refreshed等）精确同；kind取原metadata同name/src唯一library，原--lib/name/testtrue实际预声明未换目标，对同未过滤Cargo日志仍用原verify/require通过。native5实afd76d91b3500a42ebaae8ed1f8917ac9bba1cd22d1b924e0737135730097ca6可准入，运行时重核原result/source/命令/metadata/产物，仅GUI12+IO2，gen/types/Vite沿同SHA快照，无新Cargo除metadata、不改helper/input/time/cache；明确caller selector拼写修正后的来源证明，不称原prepared已直接通过。reviewer未运行。
+
+N green150715f2最终runner准入：实driverf3827cab547245fe56539d8d01a7dfb010b79b5f051b034e74f361e7ee79d4b3 / contract314b5cbe8e8a921d6d341e535f204243e1db098cff4a8a2e793d3e4d7b3694fb；当前HEADclean/4源2helper逐SHA，277actualassets15,208,767B及Rootcc744 receipt/copyreceipt全实同。assets仅CLI编译输入，非N UI/API行为相干声明。actual currentRust CLI JSON精确bin/name/src/profile非test→私有SHAcopy；再actualNode artifact5io exact＋1FDfenced query父/1ownedhelper强数，不能旧b83冒新生产绿。总300各command仅min(300,remaining)收紧，原strictowned/floor/sourceenv/assets/TMP门保，无Coretarget测试/gen/App/browser。可Root现GUI14终态清槽后授唯一native，未reviewer执行。
+
+
+cc744 native5 actual31849/3.179s零测试earlyassert“a7需空”属编译前条件误复用，原False保，不是产品测试红。Root停止复用producer大runner，gui-tests-final实eb9464288bf6bd6eaa25e6a1a0799998f42542d4b0e3085cd304e37c16c92b51准入：三pin receipt/prepared/log同已审selector映射，重新原verify＋require，只existing provenGUIbinary12+2，无Cargo/metadata/gen/Vite/cache条件，60total30step原owned/floor/source-gen-assets-env/TMP门保。
+
+actual final15482尾核：result SHA aacb960cff0e264693d35a3a65c15de44103a6b769c3002af17a1d3b18b19884，1.2325237s/14=12+2，日志06ec77bf…f301b与d9127e24…d9aab实核，各exit0/准确passed0failed0ignored，无timeout/forcedcleanup/group剩余/privatefootprint；2193source前后全dict同、gen177/assets277/env稳定、TMPabsent/cleanuperrors[]。可将已审cc744 cohort整合本地integration，main不动；Core2/native1＋tables4/native2＋真pub/native3＋noEmit/Vite/实际GUI编译native4(仅kind selector修正)＋final14分层，原5False全保不冒一次20或S/B整项完成。无App/WK实际声明，不带H新4/14源或N io。reviewer未重跑。
+
+H lexer sourcea5c390b3c4d0e872febe49c4aa12aa94e5c6dd3e两gitshowSHA实fa5ba8d7a8d574da6fa96f88df1c144c4ee50fa3950f99e1b289e346a7373206/bb9f40240d6e6eb58961bb02e61f219b3cad74062661548be6e0478d088faa7d，与manifest同。graph未更新新head后固定源核：JSON状态机/数字literal/尾逗号拒、fatalUTF8跨chunk/surrogateescape精确rawrange、pause消费当前char后pendingText保尾与offset连续、depth128/每chunk64KiB/scaffold64KiB/longrange128/shortprefix内存有界，无新增checkpoint阻断。actualFind14/3worker仅scanner＋第二pass纯验证、source-after-only/22旧gen缺失types2如实，未sourceparser实际normalization/giant整链/GUI/native声明。可作者继续同primitive消费，不扩矩阵；reviewer未执行。
+
+
+H direct-giant候选1早审（10源，未native）：两遍source64KiB块→64KiB/128ranges scaffold→同parser/bodyprojection→paintHistory/historyText模板→原stringrange二次decoded/prettyJSONescaped喂matcher，raw/project经同source lease；每页normal32/bytecap，跨页只一fragment+scalar，source错误清旧hits与unmountheldraw取消方向源核成立。Node BodyProjection内部(index,Value)保原record item索引，不新公共DTO，Rust未验；19actual/6worker为注入project与真worker/纯模型，不冒native规范化或UI。当前必要反馈仅协作预算：recordReader cachehit提前return不计256KiB，复扫同块可只微任务续跑而不给task-level cancel让位，与“all scans包括第二遍”合同不符；要求同owner预算覆盖cached slice及可累计static/escaped消费，不每segment重置/不新IO/cache/framework。作者收口后fixed10再尾核，不将当前candidate1记完整巨记录能力完成。
+
+
+H directgiant候选2尾核：manifest实592574869b69b470d40f8b84f1a58362cdd8d3726df3a7df0defb674519c7c90/10currentSHA全同，较1仅findRecord＋脚本。同recordReader account真实IO、每次返回slice含cachehit、static/escaped输出均计入同256KiB task yield，不每segment重置/无新IO/cache/timer registry。12KiB单源块1次read×64模板反例（短scaffold回填原range大扫描）旧实际task false≠true业务红→新20actual/6worker/source前后同，types22仅旧gen范围如实。两遍range/fragment标量/同sourceowner/原item索引代码未再见当前阻断，可固定source checkpoint；Rust tuple-index/真实sourceparser规范化、Claude/Codex变换工具、GUIsearch-copy/浏览器原生仍未验，不在cc744/N批。reviewer未执行。
+
+
+N metadata第二阶段只读产品链定位（1507，尚未fixture候选/native准入）：graph未覆盖Journal后定点核actual io::Journal.save write＋sync/drop registry.next→rename前State._gate仍held；Node::open_admitted RootPermit.attach后recover_pairing_before_bootstrap→pairing::needs_recovery因io::has_publication(next)直接true→State::open metadata gate Busy。故rootfence free仍可构造期Busy，不是sessions list本体丢行。可用真实Journal.save已flush未rename cfgtest checkpoint，父实证本次有效小next图像、root tryattach成功并drop/State.open typedBusy，再实际当前1507CLI held/released与10IDs对照，隔离此第二机制；不得手造next/仅heldmetadata就宣同阶段，不据此取消保守恢复/猜PairReady或原集群唯一cause。当前sourceclean未有新fixture，已要input固定source/runner后再给唯一native准入；reviewer未运行。
+
+
+cc744 combined离线尾核：combined-receipt实293ad498a4ab54a701b4dfcc58d4c4e24ff1c6eb19107e95d15b59384aa63d3f，内盘mirror `/Users/zgh/Library/Caches/khor-code-quality/recovery/round2/session-browser-cc744-actual` manifest517f9d403472fc2cee83f5d439a96ad166f124031a8da2d17c9fb679e5ba5e42；215件/6,363,307B每SHA同时等原件与镜像。Rootintegration与validator均cc744 clean、2193tracked物理bytes SHA逐文件相同，gen177/assets277全等actualfinal快照；279节点只chmod权限不改内容。Core2/native1＋tables4/native2＋pub/native3＋noEmit/Vite/actualGUIcompile native4(selector-onlykind修)＋final14映射准确，原5False保持/single_twenty=false/App-WK未验范围诚实。恢复bundle实际绝对路径 `/Users/zgh/Library/Caches/khor-code-quality/recovery/round2-cc744-source.bundle`，readonlylist-heads含cc744/df92/shared04c0；mirror manifest仅basename非本目录文件，已提醒Root后续明示路径，无需重镜像/重测。可收本地集成checkpoint，main不动，不含H新/N新或S整项完成；reviewer未重跑native。
+
+
+S-L01/040窄只读预查：原run06 case040实SHA2a0093a1eb5ad2ca71491f51d9999015585c0f040e663256dd0fdde95e01d8c5/result66c55f9e4f1809272562634550825af321927b4ad4c5c5595b7fa983f8d254b7。8.97s准确失败于remote_cancel_tests.rs:1311每run首个OSstart后时间>=due强断言；前序AckPending/原Cancel事件、初四starts已退出、700ms quiet无新增、fresh run在due前服务、旧四Status事件断言已过，原13CLI worker均reaped。旧日志无run/due/start向量，不能判具体run/早多少/唯一原因。currentcc744四文件逐SHA等原run06 source-before：remote_cancel_tests e02e1ed3…ee68f、remote_cancel 443341c9…55b6、mcp_worker2c5906c7…bd73、khor_agent9f5d4ed9…876，当前S lease/Journal片未改本调度路径。
+
+最小后续建议冻结当前Nodeproducer及对应privateCLI/stub，原ignored exact `khor_agent::cancellation_receipt_tests::retry_deadline_bounds_actual_worker_starts_without_starving_a_fresh_run` 单case、原强断言/预算/owned清理；若授权诊断仅断言附已有starts向量/due/各run，保留原4次直接CancelStep返回ReadyAt供核，不新case/加时/猜防御产品修。需核候选为finish_step(scan_complete/not_before)与Scheduler metadataDiscover→enqueue/ReadyAt映射，现有事实不足定根因；未运行、未改源码。N fixture到即优先切回准入。
+
+
+## L01 只读小证据与 L02 主线程查询建议（cc744）
+
+L01 原日志/四源码 SHA 与限定结论已另存 `/Volumes/disk0/Khor/evidence/round2/history/l01-readonly-cc744/findings.md`；未改 H 的 R2-S 卡，未运行 native。原040早于 due 的强断言失败保留，缺 run/start/due 向量，不能归因或冒修复。
+
+L02 当前 Root dirty 的 get_webview→单独捕获 Pages key→查询→末尾复核方案仍有 A view/B key 配对窗口。已建议把 get_webview 与 with_webview 原生同步查询放同一个 run_on_main_thread 任务：pinned tauri-runtime-wry 2.11.4 的 send_user_message 在 main 直接 handle、Message::Task 直接调用，WithWebview 取得当前 runtime view 后立即回调；无额外排队。None 只表示任务内 label 确实不存在；活页查询/调度/channel 错误原样 Err，不用退役后吞错，不持 Pages 锁跨 SDK 或 await。此为源码建议，未把旧 L02 App 失败改绿；等待 Root 新候选后再审。
+
+
+## L02 candidate2 与 N metadata source7482尾核
+
+Root当前cc744上的L02 candidate2仅desktop page_steps：同一个run_on_main_thread内get_webview和with_webview，局部sync_channel(1)承接FnOnce同步回调、try_recv非阻塞；不存在才None，实际查询/调度/oneshot错误为Err，无Pages锁、退役吞错或重试。对pinned runtime-wry2.11.4同步主线程调用契约未见源码阻断，可固定source checkpoint；尚未编译、原两case App验收未做，不能关闭L02。
+
+N固定7482cfd15340dfa8f32f48a4a6c724ea6c31244e两cfgtest源已graph-first（图build1507，标识stale）后读diff：真实Journal.save在sync/drop/check_file后rename前checkpoint；Phase按owned root一次消费；header/body/MAGIC/长度/checksum、父子root物理tryattach、metadata实际持有与next/recovery分支均有具体断言；完整CLI计时从spawn前开始且须小于OPEN_WAIT，release后原IDs正向保留。未见source阻断，待实际runner准入，不算已运行；仅验证受控publication下constructor Busy机制，不能当list正文丢ID、真实PairReady或原集群唯一根因。原1507普通等待与原43bf诊断均独立保留，不重跑或回填。
+
+
+## N metadata 7482 最终 runner 准入
+
+`metadata-source/run.py` f312276755d38bc084c88eb0405bc6b71aea74464c4dbfa9f33441b876ec1a65、contract90372440cd7c5a9aedea071a08de9931314f770acac434ccc01d46f1a8b57677、source-receipt1678471a92835496fe8c88a4106a328e3e937b57a4e66a6260a786df2333fc92实读匹配。4源/2helper、历史1507实际CLI9142722a及其actual artifact/source-frame指针与SHA均实核。一次Node no-run实际artifact选择/私有copy后，仅exact父+owned helper两个1/0总结强验；真实next、root物理free、metadata held、held小于原wait及release后10IDs源断言保持。总300剩余逐阶段收紧，原strict owned/source/env/TMP/双盘5GiB未放宽，未改V helper/未冒V全proof，不重CLI/5IO/Core/gen/App。无准入阻断，已报告Root可授唯一槽；本审查未执行，product_fixed=false保持。
+
+
+## H tool-transform-candidate-1 源码准入
+
+manifest60d65fe6126527000c32794dcef5c35d811d4a58c28a0144d7e1db3a8569a1d6十一当前SHA全实核同；graph陈旧a5c后定向源码兜底。Codex正常replay与scaffold复用原arguments非null优先/input fallback及serde解码helper，仅给选中pointer/parsed事实；cagent同raw join，巨记录把原Unicode trim/16KiB UTF8前缀/cut suffix延后至worker，普通replay规则保持。one-encoded层以原lexer扫描，再交Rust normalizer确认parsed，运输/source错误不作语法fallback；White_Space、尾空白、UTF8首次cut边界、cache/IO/output统一256KiB task account均未见源码阻断。Core新增两typed facts，128/16KiB元数据与128entries/full512KiB限制明确。
+
+Find22/6真实Worker日志已读，实际原c37 findRecord module-in-memory替换两新例业务红保留，不称整旧版本同源。现纯测试的normalizer响应仍stub，新增4Node+3Core实际7例、真实bindings、完整类型/renderer搜索复制与UI未做；types24缺新gen保持失败。可准备既定strict7+actual gen批runner再准入；未给native/浏览器执行授权，本审查未运行。
+
+
+## H strict11 runner 首次准入阻断（35f98a21）
+
+源码60d65f准入不变；runner35f98a211e35c9bd17992f7bfa600f73797e670ef51b607a5dfa0d679ec24afe未获本次执行准入。具体错误：把command_tables配置为khor-gui/khor_gui GUI libtest，再按command_tables过滤，真实4门在khor-gui-core/tests/command_tables.rs integration target；cc744 native2实际命令/bin也已核为--test command_tables / deps/command_tables-*。已报Root/H改用actual metadata该target name/kind=test→原strictprepare/verify→实际4强数，不放宽零匹配门。
+
+既定11为Node4+Core3+tables4，GUI签名check已在前。故GUI libtest及其6.47MB OUT可逆留存对该11没有消费者，建议同修删除无谓缓存操作，不另加producer。当前未移动OUT/运行Cargo；待修正精确runner SHA再尾核。
+
+
+H runner修正版957065d22ee08fbeaae7c45f19b4a9f4a5a5c722036693bdd93b5f186d7d6030逐diff尾核解除上条阻断：actualmetadata testkind映射--test，真实Core integration command_tables binary无filter强4；GUI libtest与整个OUT留存删除，本批零target缓存移动，GUI仍普通lib签名check含L02。十一候选源SHA仍同60d65f。Node4/Core3/tables4、原no-prior全graph严格verify/require、actualbindings空stage+同binmanaged publish、source9/catalog实际输出复用、noEmit、600总300步/5GiB/ownedTMP边界保持，无剩余准入阻断。已告Root可正式授一次唯一槽，本审查未执行；旧35f错误runner作为未启动材料保留。
+
+
+## N nonwaiting 确定性红例 c571 准入
+
+graph first后核c5715e4055eeaacb69f75855792295acbd1e0e42仅io cfgtest36行：实际acquire后非等待OPEN_WAIT+50ms，同OS gate前后try_lock成功并drop，metadata未持有，再attach应成功，以反证旧absoluteUntil把constructor工作当锁等待的前提。生产与原idle-expired unit未改；该旧unit错误合同须红后明确修改，不静默回填。
+
+run4ce16b887f7a9deeabb1a4ffd13488735d86ca14e82b71d8015bd3b215a05cd9/contract4ba8dbee34bb5b9397699468127d3134887908fe8391f8bb28c5ee2a18707a36/source-receiptff5d8ac24465517cac1b6d873221f5c772598dd7960aa8ef590554706175473f实读。expected101仅原guard完成strict cleanup后解析其原RuntimeError dict，必须groupabsent/无timeout、forced、interruption、remaining或privatefootprint，再强0pass1fail、唯一physicalfree/delay/attachedfalse marker、Busy原文及log SHA；compile/未知panic均不算红。300总剩余收紧/双盘5GiB/actualartifact私有copy保持。可Root在H终态后授一次Node编译+sole exact，未执行/不CLI、meta、5IO、Core/gen/App，不是产品修复或原集群归因。
+
+
+## H strict11 实际终态与 fixed d418 尾核
+
+固定d418709b99d0cd272314fe9689fd84452f2b63c1 treeclean；十一git-show=candidate60d65f=actual before/after，fixed-source-map12e45f2c9ec88a221f1e3f132630a0f01cbc26466b97cca06c6d4dfa8dccfbdb实核。resultd241d4f02059e3306690beb4e56d8376f9f2f2596638f8a74cbaec2417a8cdec：actual94683 terminal0/382.771944s、17phase0；Node4/Core3各1/0/0与tables4/0/0原日志强数/逐log SHA已核。四strict producer请求分别实际Node/Core libtest、Core tables integration、bindingsbin，selected row均在对应未过滤CargoJSON，no priors/source对应/fresh=false/nonreuse；不是旧receipt跨variant替代。
+
+bindings177 managed文件（176TS+inventory）actual staging=published逐SHA，内盘bindings-stage完整177字节同；catalog45ac九源实际输出复用不称新producer。full noEmit0，2198source beforeafter/env稳定，owned[]/groupabsent/无forced/timeout/interruption，TMPabsent/cleanup[]。可集成d418，不声称Root/H整frame同源（tabs B5等差异独列）、不冒UI search/jump/copy/App；L02这里只GUI签名编译。
+
+双盘原52小件51条SHA仍同；唯CONTINUE.json结束后更新ref为d418，两盘当前逐字同但原dual-small-manifest仍旧SHA（dc6803→d46dd6）。已告作者保run时原manifest，另补postcommit索引manifest；这是恢复指针变化，不回填原result/log、不影响实际测试结论、不需重跑。
+
+H恢复索引后置差异已另存post-commit-mirror-manifest d7b1b7628d86767d6b0ce730f324f918d7c28576b1c075ea96f46b9878440d53，逐当前小件两盘SHA实核匹配；原run manifest/result/log/receipts未改，唯一旧条目CONTINUE更新与新增元数据明确分列。恢复索引缺口解除。
+
+
+## N nonwaiting 实际红与累计额度965源码审
+
+c571实际nonwaiting-red-source/actual-1结果已读：compile0→sole exact101/0passed1failed，唯一[N-NONWAIT]1053ms/physicalfree/meta false/attachedfalse，validtrue/79.661s/source-env同/strict清理成立；仅证明旧absoluteUntil的owner-interface反例，不当原集群归因。
+
+96510a3d0c7b664bb64ee34c4cc3af195e5e240f单io SHA897e0c7fd40f3e26a7daa03c9cd1e3e2a227b8755a74fc9b92329696f34d3b7e已graph-first（图c571 stale）后逐diff/上下文核。local sync/async授予时冻结剩余Duration，先drop registry mutex再可能drop耗尽permit，避免Drop重锁；attach仅首次真实OS WouldBlock启动一个waiting_until，后续相同截止，构造FS/非锁间隔不耗额度，control None仍单try，metadata反序/zero余额拒。c571原gap断言不动；旧idle-expired明确改zero耗尽前提，同unit20ms OS剩额不得重置。未见源码阻断，尚未编译/运行；Node6IO+历史1507 metadata诊断runner后审，旧CLI不可外推验证965完整constructor正向。
+
+
+N965最终runner051b7596be4ebe02ee7cf5c41af65b4326be82e4af18a236df3376b0f0b64cb9/contracte17be29e86e2e654bdee123729dec3cc10df22bc47500a265aa47afc2209288d/source-receipt93c51c5dda2a1e9abb7e0ea8219ef13aa473f7eb1b83f65be3f484671a124715实读并逐旧metadata runner差异核，无准入阻断：一次实际Node编译/私有SHA copy，6IO exact各1/0、metadata父/helper两1/0，严格guard/300总剩余收紧/双盘5GiB/source-env/owned/TMP保持。历史1507CLI compatibility明确normal_io_exact1507=false，仅under1s真实next/rootfree/metaheld诊断，非965当前CLI正向；原positive FD/exit0/IDs须未来新currentCLI，未被本批关闭。已回Root可授唯一槽，未执行native。
+
+N965首批仅compile101/E0282，6IO/meta未执行，原False保留。29612abd69a94f9bdcedf4d188f8b5cf84d7d4cf唯一加waiting_until: Option<Instant>注解；io8177c9f325cc0774addb13933fc0397819e90bcf3a1146b5bbb754b53bf247cf与其余source/helper实核。v2 driver仍051b7596原字节，contractb55cfbccbdb5b656c26f84269c16126c2a57aaa67f85919b0276d0bb79ce2c79/source-receipt13a3240b8287ec63c318e1244ab956e7664efa2cce3bc19cc242579033dea42b，只来源pin/兼容指针/旧失败记录更新，强断言、预算和guard不变，准入无阻断，已回Root可授同范围一次。未执行。
+
+
+## N296 实际尾核与 Root99 私有build准备审
+
+N actual-receipt54b785895f3ec6f6d682622486c4dda4589031ea95124123589bd64da60c0542/全部证据logSHA/私有actualcopy38b3d77315c239173f72ef0a80f5e15572f1deb9f3ff5701407eaaabc6163373已实核。actual79561 terminal0/80.341s，compile0+6IO各1/0+metadata父/helper两1/0（七独立父非八）。sourcebeforeafter同/strict group/footprint净/TMPabsent。真实399B generation3 next同步未rename/rootfree/metaheld/recoverytrue；历史914CLI224ms Busy低于1000ms，release195ms exit0/10+baseline IDs保。内盘wait-allowance-29612abd-actual1 manifest53321cddd3617bef0d71daa791a0fe7c2f129a39aabedeb63a0fcb78cfaef1dd共35件SHA全同。此机制尾核通过，不冒当前CLIpositive/原集群唯一cause/整体产品修复。
+
+Root99 private native build4488f939准备脚本已逐ce69成功模板diff核。两个实际selected CLI/GUI全no-prior producer足够，无消费者Core test artifact可删除；Root179gen/typecheck复用receipt15d3148d明确H/Root tabs B5基线差异，非整frame同源，私有ID/devUrl23846/900总300步/5GiB/3052 exact可逆留存未见额外阻断。但ignored gen只Vite前核一次、dist只保存snapshot，stable/final只核source_frame遗漏它们；已要求用现179字典与Vite真实assets snapshot在后续阶段/最终再核同字典并纳入green，不改helper/重gen/types。待新精确runner SHA后尾核准入；尚未执行构建/App。
+
+
+Root99 build修正版fcd55a4f793f63a4092580d9cb78e6acef18eaa5f4dca1fd95cdd93372e36fce/admission2ab90e83418207d9c7fd53653ecac3ab7b685e7b49d298808165fae986819f3f逐4488差异实核：每stable/final验证179gen全文件集/SHA，Vite后冻结ASSETS并每后续stable/final验证，green明确必须两项true。解除ignored输入门缺口；两个实际selected CLI/GUI full no-prior strict producer、私有devUrl23846/900总300步/双盘5GiB/owned/TMP与3052精确可逆留存均未变。可授唯一native build，不运行App/不重复gen/types或原行为矩阵，本审查未执行。
+
+N四path joint plan a4f6f5360d73d8b5e7e7cc80f5e2505698316d772fb78b5ab9fc8c62bb895f5c已对照实际metadata机制审：同RootGate保local permit/余额，卸physical root后才等meta，持meta只tryroot，失败drop完整meta（含threadlocal标记）再用同余额等待并对快速miss计费，双锁齐后才load/reconcile/needs重读，未见设计硬阻断。已提醒不能放宽普通attach的METADATA_HELD拒绝门，须仅同owner私有try-physical/同root核验；公共worker metadata→root try0保持。信任devices/anchor须在recover后重新读取，当前作者已说明检查；仍待四源实际diff和新currentCLI正向，计划不是已验证实现。
+
+
+## N联合锁序95acd固定源码与当前CLI正向准入
+
+bcce3da1+95acd42638f0f1f38b4bdabe32ab1b8e250e93fc五源graph-first/逐diff审无源码阻断。RootGate solepermit/余额在same-root+held-file入口校验后卸physical root；gate_with_wait仅bootstrap Some permit可等，原State.open(None)try0不变。metadata FD打开一次保留；持meta仅私有physicaltryfalse，失败完整drop(meta)后才计费pause/rootwait并卸OS再joint，公开attach反序门未放宽。双锁齐后再needs重读/原load/reconcile一次，None与成功路径都保root到原bootstrap结束。原两既有fixture函数未改，新currentCLI positive在有效next/metaheld后pin确切metadata FD+出生、独立rootfree再release、held/control两exit0全IDs，避免把root→next间隙冒经过meta。尚未编译/运行。
+
+runner5a679e039fe198ab3c5a479940dd17be04d12b77d02255919f3bc483e4efa1c0/contract09537d5d525f0221afbd12b069f0723635a802694e5ff43c07ebf09c4a0be1ca/source-receiptd7a20de9b470776cf0238845865381114fdec10d2d147bca6eef0fe3399f3565实读无准入阻断。actual currentCLI唯一Cargo row/src-main/bin/testfalse→私有SHAcopy，再actual Nodecopy；6IO各1/0、原rootpositive与新metapositive各父/helper两1/0，共8独立父+2helper。历史914不使用。总300剩余逐phase收紧、源码/环境/真实cc744资产277逐阶段与final核/双盘5GiB/strictowned清理原样；资产只是CLI编译输入非当前NUI证明，不冒V全proof/Core/gen/App。已告Root在94771终态归槽后可授唯一批，不并行，本审查未执行。
+
+
+## N95acd 最终当前CLI双正向实际尾核
+
+actual-receiptca63545a1003cf2bcd36df580c907d99b813c76bc4d02d5ad82c66ba65a38edd全部证据SHA、95acd42638f0f1f38b4bdabe32ab1b8e250e93fc当前clean源pin、实际CLI fd13b04ebee454fa4157e448fc56383e58cd1eab932687cddc6810505f2cfe6b / Nodecopy0acbe0f790f75c8fa76263d308cc2c807f69974aef8e3eb7faf18a8bf7d3a5e9已实核。actual15681 terminal0/163.767686s，实际两compile0、6IO各1/0、原rootpositive与新metapositive各父/helper两1/0，共8独立父+2helper。
+
+原root FD waiting324ms CLI0/control38ms0；meta有效404B generation3 next同步未rename/rootfree/metaheld/recoverytrue，当前CLI确切metadata FD+出生及独立rootfree再release，held90ms0/control48ms0；两组原10IDs/11baseline-final全部保持。2186source beforeafter与env/assets稳定，所有阶段groupabsent且无timeout/forced/interruption/remaining/footprint，44PID终态ps空、TMPabsent。内盘45件joint-positive-95acd426-actual1 manifestec86b84e2fcefb4579b0431deb7a8250c3729814dfc64b2b9e10a9b49550c674逐SHA全同。
+
+可集成固定N source checkpoint：两个已证constructor竞争路径已由实际currentCLI正向闭合，不能外推原集群唯一cause/全网络同步、V全bundleproof或GUI/App行为。本审查未重跑，Root集成状态另记。
+
+
+## H UI/copy prototype 首窄审（d418后未固定）
+
+graph stale后读ui-copy-source-1指定owner源码，仅recordText/historyFind.inspect/historyFindAction/ChatView reader.at，不审未完成FSA导出或称catalog/types/DOM已绿。recordText把匹配与单part复制共用原normalizer选中的流；64KiB复制超限/coverage不全明确拒绝，context与UTF16位置不以截断冒完整，inspect同worker单在途RPC及source.dispose取消方向未见另一个资源阻断；reader.at显式源fence/不自动追尾语义明确。
+
+已给H/Root两必要owner收口：HistorySearch仅passive effect按binding/open退役，ChatView key仅id:epoch，同id新capture binding时render可短暂保旧A hits/current，旧hit jump可能送新B reader，需binding身份render/key门并layout retirement；实际A held action→B不得交付旧答。另ChatView已有visibility/Resize只pause reader，新增search未消费document.hidden/0height，自动翻旧页/复制在retained hidden可继续，须复用既有visibility owner close/retire search而非新增observer。待这些窄修与固定来源再尾核，不给原型最终通过；25JS/7Worker不冒ReactDOM/WK。
+
+
+## H App export 当前窄审与N整合尾核
+
+H ui-copy-export candidate1后当前source已核：binding key/layout cleanup/sharedstopref和既有visibility同步retire关闭前两owner缺口，无新增observer。Core export初读发现fresh cache父未创建→首用ENOENT，作者已修先create_dir_all(cache父)、再create_dir唯一history-token拒重用，待candidate2精确SHA。其余复用handoff Job/32真实finish占槽、每成功child begin一次cancel、64KiB staging/复制与同Entry commit锁覆盖cancel和最终check+rename（不盖stream），失败仅删自创sibling/owncache，未见新源码阻断。Core2/table4/strictcatalog/types/UI/OS均尚待，本审查未运行。
+
+Root N整合d18161fa73ea2eb96f6bd3fda146a013944747b6 clean，integration-receipt2e9b943af8f3ac745461bde89ed194ddbc34083f5f7a8a6f8b6432625de8f2a9六最终源逐当前文件SHA与git-show95acd作者blob全等。actual收据ca63545a映射范围准确是相同六模块而非Root whole native frame，没有新run/App/main改动，不需重跑同作者矩阵。
+
+
+H ui-copy-export-candidate2 manifestc91b58fb1d5581f6719332c72a91fb4e8a0cf545c3858c53b0238bdc9d339b46二十二当前SHA全实核同。逐candidate1三delta：cache父创建后唯一job create_dir与首用无缓存断言补齐ENOENT；Entry commit锁线性化cancel/最终check+rename不盖64KiB流式IO，原Node INLINE_RECORD_BYTES常量复用；Tauri仅新函数rustfmt，其余十九SHA同。之前UI binding/layout/sharedstop/visibility接线已审，尚未真实DOM/WK关账。
+
+runner49986eb2987bdbbf139ac147ed210c6acd65a4ee13028ed941e5ebc9600288d3源码准入无阻断：普通Core/GUI lib签名check，actualCore2各1/0+实际Core integration tables4强数=6；actualcatalog gen_ts+compile-only gate/fullselected no-prior/原strict verify+require/原子stdout发布/full noEmit。600总300步/双盘5GiB/source-env-tools/BUNDLE/owned/TMP保持，零bindings/CLI/App/GUIlibtest/OUT留存，不重旧11。旧cc744资产仅Rust签名前置非当前HUI。已告Root可正式授唯一槽，本审查未执行；实际OSSave/share、UI取消/切源/hidden后续验收保持待办。
+
+H export attempt1仅compile101/Node.root私有，0tests/无catalog发布，原失败独立保留。candidate3 manifest51f634bead0aaa1df0f9f98a860d8f04dd2c696b84939db751940de0ad30ae9d二十二当前SHA实核同，仅history_export::chunk三行改显式传prepare同root到ClientRead::claim，不开放Node API。runneraa6d884c29f65136c4fcac6d8b2f8f8b52ffb630a9fda06ef74f2f4215d675e1较已审attempt1仅candidate/MIRROR两路径变化，admission6a9ac5426a8477bc95e54d285b586868a1dafc40c1c00d8f933d776ceffafc3e实同。无重试准入阻断，已告Root可授原Core2/tables4/catalog/noEmit同范围，不插raw UI/旧11，本审查未执行。
+
+
+## S startup SDK 前置背压只读核查（d181）
+
+对照history/startup-source-d181/source.json与sdk-ingress-findings.md，实际local registry agent-client-protocol3.5.0五源码SHA全同（不冒pristine upstream相同）；graph无SDK覆盖后读精确源码。ByteStreams.into_lines约7507 BufReader.lines未显式单行界，Lines7347→Channel7573 duplex为固定UnboundedSender/Receiver，transport_actor297..323对Single/Batch/Malformed直接unbounded_send；incoming_actor逐dispatch/notification handler await不反压此前队列。因此仅Khor EventStore8MiB/Note callback背压仍可让前置parsed frames按总历史增长。
+
+现有publicAPI未见capacity/byte-budget/inflight admission配置；Lines自定义stream仅行级入口，Driver::map_future/finish是驱动生命周期非全frame消费确认；genericConnectTo默认额外duplex中继确实存在。只绑Driver元数据或仅Note ACK不能覆盖Batch/unknown response/malformed，也可能泄漏credit/停滞。透明原frame ownership credit随桥移动至最终dispatch/drop释放是合理最小方向，须Root另裁SDK受控patch位置/写权，本审查未改依赖或产品、未native。单原始line/解析中frame仍显式maxSingleFrame项，不得把8MiB窗口表述为整个SDK/RSS绝对8MiB；outgoing/task等其它队列不由本项一并证明有界。已告Root/input，不扩第三方框架。
+
+
+## H export/copy固定两片与实际6尾核
+
+44fa2fefb86b4bcd14bd3a3ae07d38431dede347后端8源→5daaad3d664816d4420613829813af2afb99338f UI/catalog14源，treeclean；22git-show=candidate3=actualbefore/after2203源实核，fixed-map91b2590135a5706571c4c9cd206c6fbecd1c2667266a92f19f922c8946f41ba4相符。result09447d8a0fc6f01160e1a7f29d0c8045bada94ef17ca5d20736f4f9a9a824210：actual92510 terminal0/205.966690s/10phase0；Core2各1/0/0+Core integration tables4/0/0=6实际行为。三strict producer actual selected row在对应未过滤CargoJSON且noprior/source对应；普通Core/GUI签名check0、full noEmit0，actualcatalog stdout=published84476d706bc0e8642f91ad9c69993d7352977e118a630ccc2c18a9cc36433d07，177既有bindings前后未改。
+
+源/env稳，owned[]/groupabsent/无timeoutforced/interruption/footprint，TMP净。原35件run镜像全部逐SHA同；postcommit manifest7c22ea8db8bcc9028b199da7d6288195640cb141a2cc74b637ccb7bc36e6c05c仅新增fixed/validation map，两盘实核，不改原run manifest/log/result/receipts。原attempt1 compile101/0tests/0pub保留。可整合两固定source checkpoint，不冒UI浏览器/WK/OSSave-share/App通过；raw后续两叶不计本批6来源。本审查未重跑。
+
+
+## Root511整合/旧私有副本归档与L01单例准备
+
+Root511adbd991dcf53eaea512f7ff9baee227b715b0整合22源逐当前SHA=5da作者gitshow，integration-receipt0b9822751ce6612aeb2181a09c7c9c0c20a9d45ceda54aa7a2af5e2877121d0e；catalog84476真实输出/当前fullnoEmit0空log与bundle82e60ca3f7f7cfe878ea176af86adbe7716ee54d373a3fe7d0a3c575f6cef3b4实读SHA核过，source整合无阻断，不冒App验收。
+
+旧私有副本归档脚本95ae5c6e9e36a75ac1bb97e699d5e403c197c72a9afc5462905dc6edbf4daf9b逐原archive.py差异仅独立DEST、四精确NAMES（native-editor-0478df63、native-gui-ca83fe58各bin/khor与bin/khor-gui）、purpose三项；原完整流式gzip/解压SHA-size、regular/uid/nlink1/no symlink、lsof/inode/metadata前后、先索引再unlink未改。ce69/current99/sharedtarget与用户路径不在范围，可执行，无实质阻断，本审查未执行。若原SHA归档名重复按原assert停并保未删源，不能绕过。
+
+L01 Root511与N95acd actual Node/CLI：4精确调度源SHA仍等原040与N（remote_cancel_tests e02e1e、remote_cancel443341、mcp_worker2c5906、khor_agent9f5d4e；完整值沿findings.md），根Cargo/lock、node Cargo、acp/lib+lifecycle也同。graph旧cc744未覆盖后对N actual sourceframe与actualCargo firstparty package根全量比较：Node依赖输入差异12——catalog/en.toml、zh.toml；Node adaptor/codex.rs、adaptor/transcript_page.rs、cagent.rs、gui_host.rs、gui_host_cancel_tests.rs、session_content.rs、session_content/journal.rs、session_content/reference.rs、session_content/wire_tests.rs九Rust与fixtures/acp-cancel.py。CLI图另含Core/API/export/web资产等差异。故复用N CLI fd13/Node0acb只能算历史N cohort且4调度源同，不是Root current whole-frame proof。
+
+最少current运行准备：待下一当前App实际matchingCLI producer通过后复用其精确CLI，只额外一次Root cargo test -p khor-node --lib --no-run --locked --offline实际artifact→原sole ignored exact；不重复CLI/Core/GUI/gen或旧cases。追加成本是一份当前Node libtest编译/链接，不声称零构建；native另授。exact使用KHOR_TEST_MCP_EXECUTABLE触cfgtest Worker command()并调用_mcp_worker。没有ACP agent启动：register_agent为cancel-fixture-must-not-run，child是实际Store/Execution，Peer为私有127.0.0.1:0 TCP responder；KHOR_TEST_ACP_STUB对此exact无消费者，不需新stub/provider。
+
+若红应保due、initial/quiet/starts/fresh_seen_at、runs→tasks、original/events、每run实际run_starts及4直接CancelStep ReadyAt replies。现4replies被丢弃、失败断言未打印向量，需另授test-only诊断后才能补，不能凭旧040猜根因/放宽时间。本次只读准备无源码/测试修改，无native。
+
+
+## L01诊断实际diff与L02 focused runtime准备审
+
+Root L01单remote_cancel_tests.rs实际diff无源码阻断：4原worker调用仅把String返回值push direct_replies，due仍在该循环后，原执行顺序/等待预算/强断言不变；统一eprintln置于drain().await与peer.finish之后、所有断言之前，留due/runs/tasks/direct replies/acks/original/initial/quiet/starts/events/fresh_seen_at，不给计时窗口新增打印。可固定test-only checkpoint，无生产改动/未运行。
+
+L02原native-retention.tsx实际SHA6ee28104d6956fec74df4de542963af0bf5bc908e87d0c1800fcfe20139df15b同旧准备。focused check_retention含actual native completed calls、live非空→退役None、重开owner alive、knownfinal0，正常CUA CmdQ exit0/accepted与owned清理门明确，不是只看布尔。准备源码outer尚300（Root已自查拟180，内部150），contract/当前qualifiedGUI尚未填，不可执行。另已报外部fixture不在Root source_frame且role pin缺失，须contract单独fixture path/SHA before/final核；原case/断言/等待不改。outer entry.run抛错会跳尾收据，建议最小finally保source/gen/TMP/owned-result与mirror；原guard仍负责严格owned清理，不扩框架。等待这些小修与最终qualified contract，再作runtime准入，本审查未启动App/native。
+
+
+## L02/L01准备尾核与SDK目录真实来源键缺口
+
+L02 preparation当前四文件SHA实核匹配：launch f67d9144c495169989ab5d15b5a9706fb4663fe5d2db0da13d7afaf0dd7f7eff、launcher d4ebbc118b02d5e3b8107e364aa17844d65edd0d5f2a4a48af7a4f6f34cd8e2e、server ffc7428a13144e9f855cfbb2b0dd9d783904fb83729e6a5a83ced396e0e9e25e、原fixture6ee28104d6956fec74df4de542963af0bf5bc908e87d0c1800fcfe20139df15b。fixture contract角色before/final核、outer180/inner150、entry.run异常outer_error/remaining尾证据与source/gen/fixture/TMP/mirror均已补，不改原两case/等待。准备无剩余源码阻断，仍缺final contract/当前qualifiedGUI来源，不可执行。
+
+L01当前准备runner无新源码阻断：与实际build同TAURI_CONFIG/环境上下文require CLI原receipt、copy等provenexe SHA，再唯一当前Node libtest/fullselected no-prior原proof→原soleignoredexact强1；/usr/bin/env仅给子进程KHOR_TEST_MCP_EXECUTABLE，frozenENV不变（TMPDIR不属proof environment键），60s测试/600总/300编译与gen/assets逐阶段/final pin保持。还没有最终contract/admission/实际CLI，未执行/不授现在运行。
+
+SDK third_party来源键缺口实证：input Cargo.toml明确exclude third_party/agent-client-protocol；native_provenance.packages仅workspace_members，故该依赖不会进入selected package inputs；build_state common.vendored_sources与require同项都仅prefix vendor/。whole source_frame确能识别本次前后文件变动，但跨run unit package_key/prior matching不纳third_party源码，不能据全frame快照替代该键依赖。已建议行为patch/native尚未发生前迁既有vendor/agent-client-protocol、更新patch path/exclude并保pristine来源SHA/声明，沿现vendor共同键覆盖，避免新改工具/另起治理专项；未改目录/helper。Root裁定后再实施。
+
+
+## H raw共享导出七源候选审
+
+raw-export-ui-candidate1 manifest e3694a44f1cf61aee4a2e8b086f4084474977ea6d51c6f14c6387ca0fe51759a七当前SHA全实同。新增completeHistoryRecord以原refs missing flags及左右分页物理事实找完整JSONL边界，不以JSON合法就升级；recordText仅输入双false且lexer完成后保双false，保守引用仍true；源已证明whole的malformed原文不要求JSON parse即可出口。已对照真实Node parse_forward：首forward页可重读basis且newer推进，pending ref可从旧start合并；当前predicate容纳该重叠与首次end不变，但要求has_more/newer进展，left严格end==start连续，reset/unfinished EOF/abort明确拒，不保持无界cursor链。
+
+共享useHistoryExport在ChatView只一owner，Search/Raw同control；A operation.cancel闭包只abort/dispose A且仅current===A才清状态，不取消后来B。id/binding layoutcleanup与原visibility stop当前owner接线，零新增observer/后端/catalog。未见源码阻断，可固定source checkpoint；29pure/7真实Worker/type0不冒真实hook/DOM/WK分享，browser实际准入/验收另片，不要求重Native6。本审查未运行。
+
+
+## Native666必要准入与34项验收表限定审
+
+Native666 runner2f4739b3895109ac4f7460c8a4497cded4a4147896d1810f903c4abf9d3bd599逐已审99驱动diff仅HEAD/mirror/generation receipt+scope文案；实际receipt673c9212a9e068540382e3a6e7baf3d29ed0def08b3621949deb9bcda6cd3b86 head666200f7/type0/179当前gen全文件SHA实同，Rootclean；私有identifier round2history6662仍devUrl23846，900/300/5GiB/fullselected CLI+GUI no-prior严格来源及ignoredgen/assets门未变。首读尚缺admission，已报Root；Root补齐后实际唯一19660启动，由Root持槽。本审查未启动native/App，未预判运行结果。
+
+ROUND-2-ACCEPTANCE.md限定审：34行/34唯一，001–029与L01–05无漏/无新增；源码/pure/DOM、Rust/WK、真人IME与手机层次分开，D/016未知不凭别项绿关闭，索引不是完成声明，未扩需求。已给Root两文案必要修正：R2-028当前‘与物理序列同’应明确Playwright常规keyboard事件路径对照配置键帽、真实PTY/Codex字节相同，并非人手实体键盘；头部当前4f7已旧，宜写编表基线/最新HEAD见STATE。其余无索引阻断，不重搜所有旧证据/新矩阵。
+
+
+## Native666实际来源尾核与L01/L02最终合同
+
+Native666 actual19660 terminal0/226.646s，resulta98257f54cd281fe218971d20245bb3e37801ced9f12d1edce2f5e4dc188176e五phase0；CLI/GUI两selected原CargoJSON/no-prior/nonfresh实核，copies320d5c7b33e1989b2377fc3e586e734b58f03b6838d9147ae007ef773ce88b80 / 878b1bff722c003a625e9c8f9d51b4ad8e9368cb5f85454fcf959a8a0b6a0586实SHA同，sourcebeforeafter、179gen/Vite assets/env稳/owned净/TMPabsent，双盘31小件逐SHA全同。不App完成声明。
+
+L01当前runnerd84739c043afed87fb22659dc15f1e05c061d61a1db56d4e48f289e7ee8586db与原已审134行prepare逐字同，contract39b4ab8e150f01bbbf7b2bb38344f46855f003d22cd00e09b78482a2ded1ce7e指向上述实际同HEAD666匹配CLI proof/verifiedbinaries全pin核过；Rootclean。可按此SHA补admission后授唯一Node producer+原soleignoredexact，600总300编译60test/运行子env不改冻结context，不新CLI/ACP stub/矩阵。本审查未执行。
+
+L02 contract746b26f9abbd1398fe38651b48115ee8e437e6c6c7db381356d2aec2f609a3e0所有角色/sourceafter/179gen/原fixture/实际buildresult实核；launcher64f4f0fbc2aac95448f1877ae8fb2cb2525105c728d748eb8c3c887539ae0d49/outerf67d9144c495169989ab5d15b5a9706fb4663fe5d2db0da13d7afaf0dd7f7eff匹配。新唯一别名delta以同卷os.link将UID501/nlink1 qualified私有GUIcopy接fresh App.bundle，link后devino/SHA核与app-executable-alias记录，不碰sharedtarget/用户/源码，不二次大copy。准备无准入阻断，可Root在L01终态后安排原2case真实App+实际CUA正常CmdQ，150内180外/fixture断言不变；不E真人IME/完整S/L05重复，本审查未启动。
+
+
+## L01当前666实际单例尾核
+
+history/l01-current-666200f7/result.json SHA8744edb810356841d87fd03ce4639b193198e53164aa20856f3f2b154b09f1c6：actual10596 terminal0/110.240521s，metadata/唯一当前Node libtest producer/原soleignoredexact三phase0；原exact实际1/0/0、8.45s，强数与原断言保持。selected Node行在原CargoJSON、no-prior strict receipt/freshfalse对应；matchingCLI320d5c7b33e1989b2377fc3e586e734b58f03b6838d9147ae007ef773ce88b80与actual666 cli receipt a040625a61f1fce7ce6b344e7f0fd46be9b8ad22f933930f54a33a41cac46306匹配。sourcebeforeafter/env/gen/assets稳定，owned[]/无timeoutforced/interruption/footprint/TMPabsent，23件两盘逐SHA全同。
+
+实际向量due1793339710658，旧4run后续start1793339710661/0662即due+3/+4ms，initial=quiet，fresh_seen1793339705796<due，13实际CLI均reaped/ESRCH。生产remote_cancel.rs/mcp_worker.rs/khor_agent.rs再次逐字等main原基线；仅test增加清理后诊断。可登记当前契约回归通过，不能登记已定位并修复原040唯一cause。原040缺due/start/ReadyAt向量，N constructor锁竞争修复虽可能影响整体时序，但无旧事件对齐或单因素材料，不能因新绿给它因果归属；原原因仍unknown，不追加运行/矩阵。本审查只读。
+
+
+## H生产浏览器七组与S压力基线源码准入
+
+H raw-export-browser-1当前script5923fe2932f39c0e9c357a96f6f17ae50c5330f9a6d7558dbd6f75c8ced3e65d、outer7f5108c88f7413859630c1c9869bce6e2b77142a7ce034cec1521354ee9291ff/admission ebfc4d80已实际只读核。图谱仍停5daa，按当前脚本补读；实际Vite config全plugins/独立23841 strictPort、held copy A→B/隐藏late答/源含gen前后指纹/finally自有browser与server清理均具备。可Root授七组Chrome批；Tauri/normalizer与clipboard sink仍fixture，raw export仅完整range到受控job/save调用，不是本批Native/WK系统出口，IME仅isComposing事件。未执行浏览器。
+
+S基线3781b5b4adf7491487fe247e97e12d03bf710bc8十一叶已实际核，frame credit穿整frame/batch/relay/clone到dispatch/drop，v2 init与MCP消费保guard；实际首Note held后DriverClosed/childgone/credit0/noReady/Load1New0均先于唯一window业务断言，最终断言读teardown lifetime peaks。source-only无确定阻断；admit故意不等待capacity，不能作为有界产品完成。AcpAgent→Lines，ByteStreams/partial-line硬限/RSS绝对8MiB均未证明。ed8be96b runner/85d2cc71 contract当前source/helper/Python pins/clean已实核，原Cargoderived-artifact-only方案无调用阻断；Root随后要求补完整V metadata/prepare/verify/require，该未执行旧runner作废，最终执行准入以补强版新PIN为准。
+
+## L02首次实际业务成功与wrapper未知等待分列
+
+app-l02-current原case actual late-close/close-reopen均true、known final handles0，normal App exit0，source/gen/fixture稳；wrapper37693仍false，不能改写整体green。ready文件13:57:52.306，App日志13:59:10 exiting/serve ended，最后processes13:59:20.251已app0，result13:59:21.351，accepted13:59:36.378。remaining按已观测同birth PID及自有PGID成员阻断；最后owners是历史累积，含defunct/(khor-gui)独立组，没有timeout瞬间真实remaining或阶段。不能区分先App-owner10秒还是后accepted10秒；确认晚到不是唯一cause证明。可只补phase/traceback/timeout current remaining及墙钟/单调标记，原case和全部等待不变后一次retry，不改产品/放宽门。原false与实际成功业务子事实分别保留。
+
+
+### S sole-red补强V来源链最终准入
+
+新runner ad9fd0710486cd0c715131496e5db7999ad555a3f7855d6b096c0dd90b17d6db / contract b4c00483179d9d46dd42518234b1e7d75dedf2f4451b788cfcf973e8869e7ab5已只读实核，sources/helpers/cargo-rustc-rustdoc全当前SHA匹配。保原唯一Cargo实际lock转换和完整parsedTOML窄比对，随后真实full locked/offline/filter-platform metadata要求resolve，既有proof.prepare_build exact khor-acp/khor_acp/lib/test、no priors/apply_refresh，原未过滤CargoJSON verify_build+require，selected row与实际唯一row严格相等，private copy前/测试前再次require。proof环境与工具每phase/final冻结，原300总/strictcleanup/唯一指定业务红条件未放宽。无执行准入阻断，可Root授唯一批；旧ed8方案从未运行保留作废，不用expected-red绕来源。未启动metadata/Cargo/test，十一源不重审/不宣称有界产品绿。
+
+
+### H browser2 fixture三点窄修准入
+
+browser1 report实际仅前三组通过，第四组前不存在words.history_latest导致locator九按钮，原false/ownedTMP清理证据留，不作为产品红/旧plain wrapper滚动几何证明。新script2e73afe822922abbbf008a759e778b2386464d0450851d1f8b9234489cb5cc74、runnerb874820b977aa20ba49cf790e03bc548398400894f1c456bb2c909ab352e12ab/admission156d907f实际匹配；outer相对原仅mirror目录。真实data-chat-bottom入口、Probe父flex-column/minHeight0真实高度约束、第一组结果boundingRect须在scroll viewport内正向断言合理，无新源码/旧业务阈值放宽，可Root授同七组。未执行浏览器，不回填首批失败。
+
+
+### L02诊断retry2最终准入
+
+app-l02-current-2 preparation全部SHA与contract3fd46446c5cb10eb188b430324d548a077631c396115153cc5e3ff6c5744cd76所有既有角色/source/gen/binary pins实同。launcher3e6e6745仅新增phase/timeout瞬时remaining与双时钟/traceback，outer1196475仅mirror；原fixture6ee28104、全部10s/65s/150s/180s门逐字不变。attest aaf6899c自SHA pin、ready GUI匹配、实际app PID已无、processes app0、result尚无后才写原accepted，Root须实际CUA退出响应后调用，不代替CUA事实/不提前ack/不允许已知终态回填。可在H浏览器清理归槽后授原两case诊断retry，原false保留，不改产品。本审查未启动App。
+
+
+### S实际no-deps早停与首metadata单点更正
+
+input首批实际metadata0但delta为空，driver按合同早停，无fullmetadata/prepare/compile/test，不算业务红。retry2目录ingress-red-source-2 driver逐字ad9fd071，contract647abeafdc5dba4360001f4ddf57eb9ac1ca3476958c7f91df579231dc608c64唯一执行差异首metadata删除--no-deps，未加其他flags；其余仅expected/execution事实及原false receipt52d4d9ef索引。source/helper全当前SHA实同，完整parsed锁窄比对、随后locked full metadata/no-prior原V链、sole红/strictcleanup不变。可Root授槽执行，不自动重跑/不覆首false，本审查未运行。
+
+
+### L02实际retry2限定尾核通过
+
+receipt4e8631b7f9085226134ab4383936d24d6d773870ba75ec9b8c83596ab31c3341全部列出文件SHA实同；outerf2fcc588557ff12b78532c25e90ed7f801e8ae2162b0b82d40e5f28065e8dab1 green/exit0/no forced/strictremaining-footprint[]/TMPabsent，innerdfffc4813999477e1e5042bf87314303e86a507296ca29330776bf2dbca540c8 phasecomplete/31.857s/App50340正常exit0/observer143。原raw唯一native result两case true/finalhandles0/全actualcompleted/no error；原accepted匹配878bGUI且mtime先于result，Root实际CUA fullpath绑定super+q退出。可关闭当前L02原两case真实回归与正常退出限定，不扩原四case/E真人/S完整。首app-l02-current false保持，原等待唯一cause仍未知；retry成功不反推归因。
+
+### S retry3冻结真实锁来源与准入
+
+retry2实际unfiltered offline metadata101缺Android离线包，无compile/test；其生成锁已独立9c342a9f固定，receipt64e0fed5d97ba66f85203c3eb0297762200f51ef137e7b8bc56edfd48a34f56b与锁8df88cbc923b5ec3dca734ff1efcef6d6a2b1b0ae93b63cdee224c5921aa7e6e匹配。独立parsed TOML比较3781仅SDK3.5 source/checksum删，其余完全同，commit仅Cargo.lock两行删除。retry3 driverc0464f26f9be43081ea6b6ab3d2f580d8b73bcf28d13484f05175b145e796c58/contract25a4c0cfbae524ff94f76a8d44b546ec7a8ee11ae66d2d0ae0270fad39d147e0当前pins/clean已核；新批不改锁，直接标准host-filtered locked/offline resolve metadata核SDK local manifest/sourceNone，再原no-prior V/uniqueactual/sole业务红/300 strict，准入无阻断。前两预备早停不算业务红，不以metadata失败证明producer成功。未运行。
+
+
+### H browser2提示业务红与425d两叶修正/续验准入
+
+browser2前三组含真实viewport通过，随后受控raw job已saved并完整range正确，但旧copy-too-large local notice经notice??exporter.notice遮当前success，原实际业务红保留。425d919f6e5386aed5aeef0b642eb9a361cfeea3两叶gitshow SHA逐manifest实同，hook.clearNotice仅idle可清，Search begin/inspect/copy新intent清旧idle，共享export notice优先；不动active operation/后端/catalog/Native6。源码无阻断。browser3 runneraf0c94685909f9260e488100415f236d25d920951e5fba823bd13ae8d2693fa8仅HEAD/MIRROR差，scriptbb63dcc3c5d69a621250ef8756c0f5401d95e49c7532a6dee0cbeda704d92653第5组补新local intent清idle success正向、原七组不削弱，actual SHA匹配，可Root授同范围续验。未执行。
+
+
+### S0298序列化穷尽与retry4身份pin尾核
+
+0298b20d069fc433da4f10c04b5cf237860808da唯一新增borrowed to_json Admitted→frame.to_json，不move原wire/不提前丢credit；补actual compile E0004，非capacity实现。transportc357c3ed其余源/锁不变，source receipt2ee4aa32实同。retry4 driver逐字c046，contractefa39688c1a2b75c3164ec33b60fdf03c0f5c539ea48c52f507ef903efa14700仅HEAD/该源/receipt与实际Python runtime pin差；runtime canonical regular实SHA0c9a985712bb1235d8fe474a6a99810dc118bcae0dfb429a237aac0c907fa3af，原exactexe/birth断言不放宽。原retry3 fullmetadata0/compile101未pressure、不是业务红，原证据保。原V/hostmetadata/sole红/300 strict不变，准入无阻断，未运行。
+
+
+### S sole真实压力业务红尾核
+
+actual90088 terminal0/11.071351s，receipt e2088a68ba84de452ae517b05217285da7e542af218905b5ece3e55eefd03e94全部列出文件SHA实同；hostmetadata0/actual compile0，no-prior原V receipt8951f1728443cf3743f1491700720372e4512f69fb9b6a350ad23c916332f7db selected row与原CargoJSON/actual artifact严格同，privatecopyb98c0b1495a4acb772a62065dfd9c3079f175bc4efda750a40d66edfb92ad0b9匹配。source beforeafter字节同，strict无timeout/forced/remaining-footprint/TMP。原soleexact实际101/0pass1fail，日志仅指定window断言，panic前已实际DriverClosed/child61073 gone/credits0/noReady/Load1New0；peak25,240,210B/384frames，normal最大65730B/oversize0。可登记0298基线无界业务红，非有界实现绿，不冒ByteStreams/绝对RSS/原前三false回填。input按Root已授SDK capacity/waker最小源继续另候选，原测试源/收据固化；本审查只读不运行。
+
+
+### H Chrome启动唯一未知点与一次重试采集
+
+Browser3 actual launch180s超时、0page/0业务，实际仅55931与55938起；B2/3 environment/tools/helpers三dict完全同，源码均channel Chrome/headless/无customargs。B3 actual argv保原Playwright flags/独立profile/remote-debugging-pipe；B2成功未DEBUG故无完整argv，两批tools均只pin Node，没有历史Chrome SHA，不能声称历史binary相同。当前Chrome launcher SHA cf864393a84aa983ba58feea2c24050748e39738591205ecaa54b2c1199ad28c。两批owned remaining[]/TMPabsent，全部记录PID当前ps无，无已证私有残留/SDK因果。可一次同七组原timeout重试，最小加Chrome SHA/Playwright version前后、DEBUG=pw:browser实际argv/stderr及失败瞬时自有birth/comm，不增timeout/动用户Chrome/换框架；未执行。
+
+### S e326容量/waker源码窄审
+
+e3268412f672799071915bda8d6c5656f73b5fea仅private ingress/KHOR说明，图谱仍0298，按实际diff核。单physical producer先AtomicWaker.register再同Mutex核fit，normal bytes/count双界、giant仅frames0独占实际计费；Pending保持未解析完整line，Receipt最后共享credit减账后解锁wake，Budget closed后解锁wake，成功/closed解锁take清waker，无确定丢唤醒/锁内Waker析构缺口。source无阻断，可准备同V/原exact的1pass绿批，待最终runner准入。不是Khor EventStore/ByteStreams/巨单行上限/绝对RSS完成，未运行。
+
+
+### S绿批准入最终PIN
+
+runner b5e28244d519a235f9e72a8c4fe20e9d73c2fddc0371d961fae0ca1324f3c841/contract2633960cd4a3875a567f710577acf916b539c2076010881ba5db52a47cec423d实际diff已核，source/helper/三工具全SHA匹配、e326clean，原ACP exact fixture逐字等0298 SHA731dea98。执行差异仅删除expected101例外，严格guard要求真实exit0/sole1pass0fail，marker byte/count均≤原window；实际childgone/DriverClosed/credits0/noReady/Load1New0/normalframes保原。hostmetadata/no-prior原V/uniqueartifact/300总界不变，可Root授唯一绿批；未运行。不冒EventStore/ByteStreams/giant branch/绝对RSS完成。
+
+
+### S e326原压力case实际绿尾核
+
+actual79152 terminal0/10.750296s，receipt f7044dd36fdd561415cc4b795c692f5947e582366f0c9fc570514c1783ce9e5c全部文件SHA实同，原V receipt3d822aff3fb68235d656eb865dddda297cce9c00e92762e32338224e96ab28ff selected同原CargoJSON/actualartifact，privatecopy83b28a57f14eb5c97c5b8e745e122b98bc68302c4550dc557838bacd0f6ea636。hostmetadata0/compile0/原exact1pass0fail，fixture731dea98不变，sourcebeforeafter同/环境稳/strict无timeoutforcedremainingfootprint/TMPabsent。实际peak8,347,600B/127≤8MiB/256，另待解析65,730B完整行明确另计，RSS3760→19360KiB仅样本；实际child65884身份→DriverClosed/gone/credit0/noReady/Load1New0全到达。可记录normal-bytepressure/cancel SDK入口红绿闭包，非EventStore/NodeByteStreams/giant/tinycount/全App完成，不重矩阵。input继续Root已授spool另源，e326原收据固化；本审查只读。
+
+
+### SDK82b45整合尾核与H成功请求ledger边界
+
+Root82b45cf369a02b265260ff2f10c37ab45e182f1b七提交整合，receipt76b280bd9281bc407b29408839dedcb2d82aaf3c6c5aa6965012f25f6685765a逐120最终git-show SHA核等author e326与receipt值，handoff e3b5156c4612b064cd8d743d65c337fbaf31109207aeacddcae77ebf5ad8df8e实同。source组件整合无阻断，原红绿正常帧case限定不扩Root当前whole-native。
+
+H Browser4成功page/record没有退役fixture entry是ledger假失败；真实Request.Drop176–185按stop Arc identity移除，成功page/record IO销毁请求，定向删各key合理。Core projection本地claim也drop但未使用home admission须historySource releaseOnSuccess Cancel，因此fixture可留home pending直到取消。另现fixture Cancel直接delete claimed held、hidden放门前要求全表空，弱于实际Registry.cancel只stop且claimed等IO Drop；已要求仅同case收紧为exact held key标cancel、确认零未取消active，释放held后才ledger0/不续读，不能清全表掩在途。等新PIN尾核，不改产品/不扩case。原独立PGID EPERM strictfalse仍保，未放宽guard。
+
+
+### H Browser5 held两阶段fixture准入
+
+script c6f3fffb1fad98c9a65b7872b27bfb3a8ab7114564d40efe9365347015916b37/runnerda0b1b84aba71973f384da4cdd3a37543ec43f9f6022a1bc8fc74e324857bad4/admission0461eba4c29f6026644ee7ec7a96b6a72b010c2b1f2d5706a7ea4abede9cbb85实际SHA匹配、actual script=snapshot，outer对B4仅mirror。used防二次client使用、page/record各key实际完成退役，projection保home pending至Cancel；held Cancel只stop保claimed，组7先exact key onceCancel/无uncancelled，再release→finally退自身→ledger0/无续读/unmount0，确无clear-all。原七组/预算/guard/425产品不变，可Root授同范围，B4 EPERM strictfalse保留不回填。未执行浏览器。
+
+
+### H B6实际几何反例与8f654单叶/B7准入
+
+B6 trace receiver按要求call(observer,entries,observer)窄收，最终scriptdf9db83e已实际使用。原6组过，第7真实7193ms root/parent0，scrollerclient24且padding12+12，现ROcontentRect.height0；resize-after searchCount1/held105 claimed且uncancelled，随后继续newer poll，strict/source/owned/TMP净。这次是hidden-search-closes实际产品红，非旧ledger假失败。8f65423e0f708cc3aa02a0db76fcf3f1f398e613仅installHistory初始client-padding与现RO更新contentHeight，visibility/canFollow共读>0；零新observer/不动scroll-anchor坐标，源码无阻断。B7runner338798e999bc515d46091a8ebe024a349d33130a7e456bb559d2acb95e71228e仅HEAD/MIRROR，script仍df9db83ed205cb93e6f33940e174fe7143e1db4ed446f0d05e46be40f212cb6a/同七组原门，admissiondbf8394e35c6264e3bbe085077242afb53fb065ae5b2da9a11fc978ea6c3eb74实同，可Root授同范围。未运行，不重Native6。
+
+
+### H B7实际七组尾核与固定测试片
+
+resultfe3a6d879a470eb38a7069415440fc9978edf1469d12887b3a8de929a6c656d5/fixed-source-map47651442675b9f58fe85cef890482ddbbbb47b945db72662bc89cd4529fe8b6d实SHA同。actual37853/81919/81936 terminal0，七组全到达，document held101/zeroheight105 exactCancel各1、实际完成后ledger{}且无续读/unmount0；原malformed受控job完整range1281000000..1281070010 saved。ChatView固定8f源e8fcd015与test-only410c1f1b3dd151a0b272fbbce716d08c66bcb88c脚本df9db83e逐git-show=actual outer sourceframe，2205outer/623UI beforeafter字节同。strict无timeout/forced/interruption/remaining-footprint/TMP，25现有双盘小件逐SHA全同，树clean。可Root集成独立测试片，产品8f另整合；仅production组件/worker/reader/hook＋Tauri/normalizer/clipboard fixture，不冒WK/NativeOSSave/设备，B1–6全保不回填。本审查不运行/不重Native6。
+
+
+### H真实Mac平台准备范围审（非运行准入）
+
+mac-platform-preparation当前plan实SHA7c645f322681ed2b896f6e6636920b2a9cb1ee6e1d8d753b35c9aceecd8bed39，异于作者初报f28，已要求最终冻结更新PIN/列delta。source-facts十项当前SHA实同；本地tauri2.11.5 get_app_url/customprotocol Mac分支与GUI默认custom-protocol+devtools实核，khor-ui-assets为revision非origin，旧666 devUrl不能外推productionWK。单synthetic source/实际CLI hook/import/fullApp/真实Copy与OSSave方向合理；实际alias/locator以CLI结果为准、fresh私有save目标、WK origin/secure/ClipboardItem/trusted activation本轮真实记录，不以预期代事实。
+
+剪贴板仍待Root裁定具体guard后另审：全items/types保真或不支持/超限则不点Copy，点击前复核原changeCount，输出后仅仍synthetic bytes与受控changeCount才restore，不覆盖后续用户复制；原内容/哈希不落盘，1MiB事后检查不冒原生materialization硬界。无新增产品Clipboard API/框架/供应商或手机矩阵。本审查只准备意见，不授App/CLI/Cargo/剪贴板执行。
+
+
+### 默认生产协议build与旧99CLI归档准入准备
+
+old-cli-99-archive-1脚本e2f718246728756d968935ea9ccc75beb59a89e353f5859fd83989789b4b552a实际对已审旧归档脚本仅DEST/精确单份native-current-99a154e1/bin/khor/purpose三字面改；uid/nlink1/unopened/inode/流式gzip完整解压SHA后归档规则不变，可Root执行，不触666/ce69/GUI/user/sharedtarget。
+
+native-production-84c81dd0 build.py b2e232a2ecdb1c6e28891985c89a41d31712482c6e9de1a26677540a4dffae81相对actual绿666驱动必要diff已核：Root84clean、generation receipt42191f27093a845d7790a3d924126298a058a2d082010081f7827b13c9c2c3ae head84/type0/179当前gen逐SHA实同。默认custom-protocol/devtools与devUrl null、no-prior原strict/900总300step/5GiB/source-env-gen-assets未弱化；不猜移3052 devUrl OUT、仅学actualdefault CargoJSON且失败停，CLI strict后立即私有copy保真合理，无额外Core测试artifact必要。首读仍缺admission.json，已告Root补固定runner/config/source工具PIN后方可执行；本审查未build/App。
+
+H平台最终plan6b111a7b444673091ae62d43e06f567a50a94a4e5d12ce8a48816309b8c3cf36已实核，Root裁定PhaseA不Copy/不读旧clipboard/无JXAAppKit；PhaseB另fresh availability真人CopyPaste/IME仍OPEN，范围清楚。这只关闭准备方案意见，不授App运行/不把原Chrome或devUrl当production WK。
+
+
+### H平台A可执行准备六源审：一项实际早停阻断
+
+launch3ed67769/launcher021f0aca/attestd3191f3b/template9ba2c8b0/CUA步骤1af2d7cb/synthetic104519b8当前SHA实同。真实CLI candidate/alias与Observation nativeUUID核、私有HOME/store、fresh目标真实OSSave完整bytes/SHA、nohost/view、CUA noCopy、normalquit/10sACK、单complete cache两成员UID/nlink/lsof/devino可逆retain、未知partial仍TMPfalse范围合理；cache_root真实TMP/khor-file-handoff/root-hash/history-token与selector一致。
+
+确定阻断：outer经env-i仅PATH/PYTHONDONTWRITEBYTECODE启动launcher，launcher却直接require_provenance编译GUI/CLI receipt；原helper473–490严格比当前CARGO/RUST/TAURI_CONFIG/KHOR_AGENT_BUNDLE/config/tools与producer context，sanitized runtime必不匹配，会在App前拒。已报Root/H应沿既有L01模式在outer精确producer context下原require验证，再白名单启动runtime，或验证阶段构造并还原原context；不能改helper/伪receipt。其余未见第二硬阻断，仅准备审，template readyfalse/null产物仍不可运行，待修正+真实产物PIN最终审。本审查未CLI/App/native/剪贴板。
+
+
+### H平台A producer环境修正准备尾核
+
+outerf267abd7d4254651b800010363ce5cca61dc7a43b170435a226d5e6c81080977/launcher5ffae61d153ec51d2a9a6122d87530fc5ead1669050e638ce2bc2f04d9c487b1/template6ffaba2c3e2f30dd0e8f56de9b2595b3621e90127e72948c906e7b8d77553d43实际SHA匹配。逐receipt临时完整env键值匹配原hashedmap→原require_provenance/copy-selectedSHA→finally还原，runtime仍env-i白名单，原早停阻断解除；新增scripts_stable正确，零helper/receipt变更。source准备可接受，readyfalse/admission_env null/实际产物pending，最终运行合同另审。
+
+### 215件旧quality缓存exact可逆归档准入
+
+selection d83189302254f307e79a1863acd177cb45cd19dc75edcaaafafe86322d7be270/最终script9b6ea4181ced419ccdcd19fda96f5553e4b7a4838d69a3920693565fbf66837f实核。四rawCargo log SHA同、独立重建全部filenames/executable均在protected集合，215候选零交集/直接basename无逃逸/UID501 regular nlink1/全早于10月29日cutoff/排provenance_dep，合5,144,998,560B；其中三旧Node具体名字在selection，不是当前私有CLI/GUI。mtime仅筛选，不作为来源证明。双盘fsync/dirfsync index先落再unlink、完整gzip解压SHA-size/原属性与lsof前后核、sourcebytes+16MiB预检与每1MiB流式内盘5GiB+16MiB门合理；RESTORE明确同目录临时解压/fullSHA/mode-mtime/fsync/原路径有则拒覆盖并保archive-index。Root确认全程独占native且无cargo/rustc/clang/ld，准入可执行，不扩大清单/动userrelease/整target，原prior中间物归档后不可冒仍能复用，原proof不回填。本审查未归档。
+
+
+### 旧缓存归档实测差额与同源Vite复用/清单清理范围
+
+215归档summary实核complete，215均decompressed_verified/plain_removed，逻辑5,144,998,560B、压缩1,265,301,357B；实际free5,192,814,592→5,764,284,416仅+571,469,824B。不能冒释放5GB，不据此证明APFS clone原因。
+
+native-production-84c81dd0-2 runner73a9125738d847cda8160d3cabb7b0e931d89338ce5b3e4b0b90acef5670fd41/admission74148ab5窄diff无来源阻断：仅复用同HEAD84此前实际成功Vite phase/logSHA/source-after全dict/assets一致，CLI/GUI仍default/no-prior/900总300step/原floor。source准入不等于当前余量可运行，18136整体false保留。
+
+实读PLAN§5/83及现场保留条款，未禁止清理已确认专用quality-target可再生旧缓存；历史‘未动sharedtarget’是过去范围事实，非永久用户禁令。Root可准备旧pre-round2 orphan rcgu.o与已结束旧MachO的冻结exact清单，不需逐byte再备份；须唯一native槽、UID501 regular nlink1/固定basename类型归属、排current近期raw全filenames与stem及当前private/人工备份、lsof/原属性/SHA双核、耐久manifest先记再unlink，不动源码/证据/.d/整库/userrelease。未来旧中间prior失效明确、不回填proof；逻辑量/df分列，到实际余量满足才build。尚待exact名单/脚本尾审，不预授任意.o/MachO删除，未执行。
+
+
+### 283旧quality MachO exact清理最终准入
+
+prune.py6f915e695f671a256c6037cf9dfa63d314a441889220027f049136e3c34c1116/selectionf16878e6221dacd42fb3c6c90e514acb9b660e2fd742b474300c05fdf44c06fe实际SHA匹配。283唯一候选/12,706,273,336逻辑B，逐项核direct basename与真实MachO、UID501 regular nlink1、旧cutoff、mtime新到旧；current protected路径及完整hashstem零交集。每项同basename.d与唯一同hash bin/test fingerprint JSON当前SHA全匹配，实际归属证据仍在。脚本逐项PS无Cargo/rustc/clang/ld、属性与SHA/lsof双核、双盘fsync index先before_unlink后删再deleted，实际externalfree≥10GiB就停，不全库clean；不bytebackup/旧prior不可复用明示。可Root在独占native槽执行这确切小动作，原source/evidence/用户release/currentprivate不动，逻辑量与df实增分列。本审查不执行。
+
+
+### 旧MachO清理实测与11已结束测试缓存归档方向
+
+283旧MachO清理summary实核complete/all deleted，逻辑12,706,273,336B，但free5,763,739,648→6,787,334,144仅+1,023,594,496B；不把逻辑量冒实增/不据此定clone原因/不盲build。Root下一仅拟11已结束profile.test executable（非CLI/GUI/bin-gen/人工备份/rlib）完整可逆归档，无具体PLAN约束阻断；exact raw保护可显式转为字节归档保护，原运行/proof不回填，旧prior原路径不可复用，恢复后重新核来源。仍须exact路径/终态/UID/nlink1/devino/lsof双核、完整解压SHA-size/模式mtime/持久索引、唯一native与内盘逐件流式5GiB门。待清单/脚本尾核，不预授rmeta或rcgu组删除，未执行。
+
+
+### Exact11已结束测试缓存完整归档准入
+
+completed-quality-tests-archive-1脚本0a63d415b20e558e5e9a1a4347996a4fda6118f08cc59abe558802c4d9b52154/selection2a8f70de40a34b9c74b23a7e758186fc45f04ff61922bfd79017e856f084dafb实际SHA同。11件/1,062,039,336B逐当前完整exe字节SHA全核同，UID501 regular nlink1/直接basename/唯一同hash test-* fingerprint JSON当前SHA同，无bin-class CLI/GUIApp/gen/rlib；已结束测试归档而非删原运行记录。对已审9b6算法仅DEST/purpose＋testidentity/exeSHA pin增强，内盘5GiB最坏+流式门、全gzip解压SHA-size、双盘fsync beforeunlink、属性/lsof双核不变。可Root保持独占native后执行此确切归档，字节可恢复、原路径prior失效/原历史proof不回填明确；不预授rmeta/prune。本审查未执行。
+
+
+### 最后一组322旧orphan Rust对象exact准入
+
+scriptb3ee8bf9dae9eb30e83fc8d4693d0f36b8d4413e0edc5f92979ce34f75c34cf8/selectioneb660086f9e6bca0f7bd97ff42467cb603e47aeb02adfaaa8c3d55515239ec81实际SHA匹配。322唯一/1,377,881,928B，逐项实际全MachO MH_OBJECT(type1)、UID501 regular nlink1/>1MiB/precutoff/属性同，限定同stem的两种Rust codegen命名，current raw保护stem零交集，exe/rlib/rmeta/a/dylib伴产物当前全无；.d+同hash Cargo marker JSON SHA全同。对已审6f9算法仅DEST/前后无companion门，逐件idle/lsof/属性SHA/双盘耐久before_unlink与实际10GiB提前停不变，可Root独占native执行，不动metadata/source/evidence/userrelease。逻辑量/df实增分列；约9GB预计启动余量不是提高或放宽原构建5GiB门，10GiB是清理提前停目标，实际构建仍守原门。未执行。
+
+
+### 三份后续实际缓存summary与当前build源码准入记录
+
+old-quality-executables-prune summaryba87a91b25a84b1b91dd27fff33ed9bed5a247f16d7c521d1006db15bd2c298e complete/283全deleted/原路径全无；completed-quality-tests-archive summary996d264ed7104d2881e9a38e7bd4f026c82143ca1efbff478dc8e4cf1c7e1fa1 complete/11全plain_removed/11gzip存在/原路径全无；old-orphan-rust-objects summaryd921a091622379fe0d168bb9d09c2affe1176d95294afb714d9c8af6a3fce148 complete/322全deleted/原路径全无。summary driver/selection pins均对应已审，逻辑量与实测free分列；orphan7,848,951,808→9,226,272,768实增1,377,320,960B，不外推APFS原因。
+
+当前Root84c81dd0仍clean，179gen逐SHA同，native-production-84c81dd0-2 driver73a91257/admission74148ab5082dff3fd3846e5966105b7e8f2d5cfcca4898e9c9eae8ab07be1cfb仍匹配，前source准入记录有效。Root已独占实际42141未终态，不能预判green；本审查只读summary/选定路径，不重复解压/构建/测试，不再扩缓存动作。下一Replay API退役待author当前caller清单后审，原则现Stop/Close/取消/互动/完整性不变量保持，无旧端兼容推导/第二spool。
+
+
+### Production84 actual42141真实构建尾核
+
+result ec0662f783e84f70cf513d30ab908f154d71502fa7073a8d029598be3471ba78实SHA，actual42141/207.560619s四phase0，无timeoutforced/interruption/remaining/TMP；CLI proofa97aa10df8fbc3a8449fa5455eda11aec6b45fb6f9904cacaf8d4d48640f822c/GUI proof4dc040740302593e1fa482294c3620b37215b08ab669bbf07f8b948075770bf8均no-prior/selectedfreshfalse，selected实际row在原CargoJSON且2326 source字典=prepared=receipt=beforeafter。私有CLI5f52ce3c79ad4da9f3e8e488d1710e5a0a3a3f3892003929331af3dca3aade94/355053048B，GUI533dba425b38e2df5ce6a7d21109c304f4aa3ed331ee626c3178977f3d8cf0a4/388737672B完整SHA-size与selectedfiles全匹配。GUI features custom-protocol/default/devtools、devUrl null；179gen/278assets当前逐SHA同，30小件双盘manifest全SHA同。只build通过未App，18136实际同源Vite复用分列不回填其整体false；平台A最终实例/环境/Save/normalQuit合同另审。
+
+### Replay旧链退役只读清单边界与漏列caller
+
+RETIREMENT b70f16c12420d24c3f5e7297a236af4481b93177e74c1f500e85668917bb9d43/sourceinventory19项Root84 gitshow SHA实同，图谱过旧按当前source补读。unused MainUI/用户CLI/MCP action不等于HTTP/Tauri live RPC不可达，旧32MiB collector链真实存在；删旧API而保Facts.replays/初始NewLoadResume/NoLoad canonical H/单writer/互动/StopClose及初始长Load完整性合理，无旧兼容或第二spool。必要漏列迁移表已报H：crates/cli/tests/cagent.rs106,270与codexagent.rs148,363为真实Handle.replay调用（vendor transcript/rollout正规化过去文本/userchunk及Stop后继续/EOF/互动仍应保），crates/cli/tests/agents.rs496真实GuiOp Replay helper（turn/approval/close仍保）。不能仅删调用/整case追绿；仅补3具体path测试语义映射，不扩运行矩阵，Node/ACP仍input单writer。未实施退役或运行。
+
+
+### Replay补表与S EventStore WIP边界只读收口
+
+Replay清单新d92b6479dffc2a167c7b77e237cf1f892c006f7082b595cbb37c21e9c76cb5ea实际已读，补cagent/codex shim初始Load先退旧owner/start_resume、原ID/Stop继续/EOF/互动不丢，agents helper以真实Capture/H保turn/approval/close，三个漏caller迁移表闭合，无清单阻断；不是实施/编译绿，Node/ACP单writer不变。
+
+S当前WIP EventStore早审图谱旧，按生产新budget/disk/store/lib/host读：单IOjob、read_requested bool/单decoded result、8MiB256 encoded含physicalwrite、control16×128KiB credit随问答、scope+acceptedseq有限fence/host remaining_through主体无确定阻断。已与input核Closed事实：正常带logicalseq末Closed等实际driver/provider确认；state.failed产seqNone Closed仅stream abort错误，不是reap，Handle.shutdown/CloseGate与Node confirmed_exit→Gone仍唯一退出证明，input将注释/receipt明确。未见新增按abortClosed伪Ready/Gone分支，不要求新协议或矩阵。仍WIP未编译，不冒真实ByteStreams长base/giant/压力取消绿，待fixedmanifest/合同再审。
+
+### 平台A实际合同与producer环境映射尾核
+
+contract9b921ea2eb6e06c96492471adedd4db590ff713e77093858f3a770c9ce6cdd48/actual-admission-preflight2 SHA0b21f6fc2112807d3944c6755ca32d030f8005db7e0d242e0572a3e4e42329b7实同；全部pinned_files当前SHA同，CLI5f52/GUI533d双production proof/result ec0662对应42141，逐receipt23项环境用原key算法重算完全匹配原hashedmap。producerPATH handoffe9c053a85e0c149069e38a39853e2375520d1e59b1ffafb6044b18699d653f19实pin同，旧PATH失败留，不猜值/不改receipt。原require只读preflight两项过并还原env/179gen/278assets；outerf267/launcher5ffa/attester为已审源码，tmp/runtime均无，未CLI/seed/App。准备无剩余阻断，readyfalse保持，Root单点切readytrue需记最终contractSHA并明确App槽；PhaseA noCopy/原Save/normalquit门不变，准备不冒实际平台完成。
+
+
+### 平台A实际导入早停与sibling2窄修最终准入
+
+原89074在outer加载entry前ModuleNotFoundError native_provenance早停，runtime/tmp/strictadmissions均无，无CLI/seed/App，不算平台业务失败。新mac-platform-a-2 outerf38d9fb86f273a9c3f9dd7b8ee0ed72ab55bc7f3d6e5ccd2a79aa8235e4b2eda/inner1dc674be536868c9e6f119c61007a826a02ceaa3134eb8fe4c6ed3ca85e3ed2a唯一代码delta是proof注册名改native_provenance，原helper/门不改。contract45a28d9594438df05b273a03cc2b5225137cd03fe870da6d01b314a56773f5ef全role pins实同，Root授权readytrue/A-no-copy，fresh runtime/tmp/mirror，attest/synthetic/CUA步骤字节同。import-preflight44f20ceaa588bc0d8a0a88f34fec9e89a02c98109b7858cc7e0f3b8bee07c44b两entry实际导入成功/同精确helper function identity，匹配新script/contract。可Root按已授App槽启动原PhaseA/240外200内/5GiB/真实Save/normalquit/禁止Copy，不重producer或完整preflight；原setupfalse留。本审查不执行。
+
+
+### Store231e固定十源与长ByteStreams夹具审：两项test-only阻断
+
+231e1f69e4fa354283714d12763c7437bd5d8934固定十叶图谱仍旧，当前source补读。原Store owner/单IO/有限scope-seq prefix/预算/poison源审沿早审；新management同Store/interaction credit、错误cancel+shutdown、成功EOF不等consumer drain，conversation仅next receiver形参，Closed文档已明确abort stream≠reap，正常logical末Closed等provider事实，未见另一确定生产阻断。Replay链尚在不冒已退役。
+
+长Load真实ByteStreams拟1025×64KiB/producer三checkpoint/withheldLoad无HostReady→完整canonical有序1025无重/actualCapture→CloseGone-child/spool清理方向合理，但现fixture有两项确定阻断已报input/Root：每行64KiB文本加JSON envelope超过实际INLINE_RECORD_BYTES64KiB，末H页应raw reference，当前硬要page.events Update1024必假红；应同binding/cursor真实content_record有界读最后ref核完整，不减payload/抬阈值。外层worker只status.success未强1passed/0failed/0ignored，须现有模式强summary/透出inner日志防零匹配假绿。这是同case test-only修正，不新矩阵；当前未授native，待新fixedsource/runner合同。
+
+
+### 平台A2失败后只读诊断边界
+
+REPORT e456400e6b7972c248ac4cead16133a8e5db96006e7f0770948dab5c789286a2/facts e1a0ab8123d39c3dadf0c5119b17913273971067086e9329637fe813f5bd4137 source/externalSDK/evidence全SHA实同。原4CLI实际0，App51240仍活时origin-and-history60.7718s超时，无origin attestation/Save/Copy/normalQuit，outerfalse/remaining[]/TMPabsent/sourcegenassets稳；Root后置重开/退出独立不能修原run。useNoWebMenu对input/textarea不preventDefault，原生Inspect Element是已有UI候选；TauriCmdAltI走internal_toggle_devtools且当前cap无grant，但未捕获runtime ACL错误/实见菜单，不定唯一cause。doctor实际adjacentCLI优先，配matchedCLI可还原普通安装，但无argv/合法mcp_worker selfexec，不能将短selfchildren归因缺CLI。报告范围正确，仅只读，无新App准入；next envelope/contract另pin，原时间门不加。
+
+
+### Store27d测试修正与native-source2最终准入
+
+27d6434494db35ad0baf2cf22b717422433a2a6e仅长Load fixture修正；source receipt e9561d35ea0d18aedbdabb994740d18a308a3cc27c2b992dda537a14cfcf212d与全source/helper/tool pins实同/树clean。保原64KiB payload/inline阈值，末完整reference同binding/cursor真实content_record每块≤64KiB/offset连续/精确rawlen/最终1024完整原文；outer强唯一helper1pass0fail0ignored并透stdout。两项夹具阻断闭合，无生产更改/新矩阵。
+
+runner a2fbaf1eca221277ef7f7ffe3abebd5391f0c31b1b05e6c5db29044eccfc4993/contractd62c6d804f8fb9e074fa168fc6b5bd7128b492eda2b97fbf1afb370ee2300b44已实读准入：host full lockedmetadata/no-prior原V分别ACP/Node libtest actualuniqueJSONrow/require/privatecopy，ACP6+6+1/Node3父+2helper强数分列（16父+2辅助而非18独立场景），300总/5GiB/strictsource-env-owned/TMP原门保持，无CLI/Core standalone/gen/App。source准入无剩余阻断，Root按余量/独占槽授运行；privatecopy~150MB预算文案低于既有actualNode363MB+ACP22MB，已提醒不能据此估头寸，原floor不放宽。尚未运行/未证明新ByteStreams绿或Replay已退役。
+
+
+### Exact20旧666非当前依赖缓存差集清理准入
+
+prune e9081109526a869f7443bf16d3c92228ddad31af432981be7b8296f92054798f/selection9142d84165f5d6a8c00b0a10b1f3e2db9cec54c31f1c3862e3feb684864ca588实SHA同，六raw/proof固定SHA全同。独立重建旧666实际filenames含全部20，当前84两raw及两proof递归target路径全不含20且完整在protected集合；20/2,236,342,827B实际firstparty rlib/rmeta、UID501 regular nlink1/直接basename、ar/rust header/.d与同hash lib fingerprint SHA同。仅旧历史中间物，当前/旧666 linked privatecopy及源码/证据/.d/fingerprint不动；未来旧prior不可复用/原receipt不回填明示。脚本仅header与六来源pin增强，原逐件idle/lsof/属性SHA/双盘耐久beforeunlink/实际10GiB提前停不变，可Root独占执行，不扩大清理；未执行。
+
+### Store native-source3硬性unbundled与空间说明尾核
+
+runner2e78be1949158c5a0172bf2d4d1d3e973668a88e17a0402d9091f19b09b793c4/contract12b8df98b692086ff48a3994a30872f0f6dcd7a4578f0a1f16036519baaa7690仅前置assert KHOR_AGENT_BUNDLE unset，不静默改环境；新增build.rs/khor_agent.rs精确源pin与24source/helper均同，Some才embed/notcfg合法focusedPython路径明确。预算修为至少400MB计划非硬max、134MB重叠及编译未知，原27d源/测试/来源/300/5GiB门不变，无准入阻断，Root待清理实测余量与唯一槽授运行；未native。
+
+
+### 旧666库实际清理收尾与Replay共享七叶源码审
+
+obsolete-666-libraries summary actual45563 complete/20全deleted，逻辑2,236,342,827B、physical6,329,876,480→8,566,181,888分列，选定原路径全无；保持旧666收据历史、不冒原中间物仍可复用，当前84产物不变。Root据已审source3授input唯一native27d/2e78/12b8，结果未终态不预判。
+
+共享47fefbcf286647f254c019656b37385a3b2a1017七path/manifestf567d56c6b679ed3fa1f9702fcec792d90a1f6a0ab9fccef57a5ad4a6cb635cc before/fixed逐gitshow全同，HTTP/Tauri/API facade死Replay/Control/frame移除一致。currentGuiNote codec保所有非History断言，FIFO仍3真实control与写完completion，仅Replay换固定tokenCapture，upload仅换死arm并补既有Capture、原断言不弱。canonical JSONL/binding/cursor未改、无手写gen/旧兼容模型，sourcecheckpoint无阻断；Node保留三enum形成明确跨树exhaustive依赖，不可独立集成/不冒编译producer绿，需同步后受影响真实验证。legacybrowser13与typedcapture后片仍pending，author随后脚本dirty不混七源固定证据，input仍Node/ACP单writer。不新增native矩阵。
+
+
+### Store27d实际producer/16父与2辅助/长Load尾核
+
+actual95235 terminal0/118.530588s，receipt97b82bea3d3e3a500798c990c9b20549246860330b91176007a00fef1f016388/result0dc562015ba52afeb7523c1d6af52156de554e5ce3863d8d7ea6c148a1904872全SHA实同；48项evidence及receipt双盘一致，内盘manifest8d8ef24a830363a0afc4bcfdf76a8dadad063568e47b9f9401295a04ed3500f7共51项（49小件+2gzip）全hash同，ACP/Node gzip完整流式解压SHA分别3a2aac9a…62cb38/cafaa586…6277e23同原保留privatecopy与实际Cargo产物。两份no-prior prepared/原unfilteredCargoJSON唯一selectedrow/proof/privatecopy对应，2323 source normalized SHA前后/prepare/proof全同、27d树clean，无重复构建或测试。
+
+实际ACP finite6/bounded6/原SDKpressure1，Node scheduler1/failed-bootstrap父1+helper1/longLoad父1+helper1，全strong summary无ignored：16父+2辅助非18独立场景。Long1025×64KiB=67,174,400payload→67,352,665canonical，原完整有序/无重复、withheld Load禁止Ready、真实Capture/raw尾content_record、Load1New0/CloseGone-childreap/spoolpart清理断言均实际到达；RSS13,136/27,072/27,120/38,000KiB仅四checkpoint，不是内核peak或全进程8MiB硬限。每stage实际0/no timeout/forced/interruption/group absent/remaining与footprint空，TMP entries[]且原批记录absent。可按当前unbundled Store组件绿收口；管理独立行为、giant/整个App、旧Replay退役与全S尚不外推。审查仅只读，未复跑。
+
+
+### Replay恢复夹具ee341后继源码迁移尾核
+
+ee341cbeef05f36031bbe65b59687f4b64dd923a（parent47fe）manifest ec9b851b8a3b4d90b2f571767d37af3845648550cd693862e7f66abece7c5161七逻辑path before/fixed逐git-show SHA全同；13场景映射5de370498cb6154cdf7fc3501b4403a55dd6ac1cf97b3b6e5c3bdda57d8848f9已逐读，History/HistoryEnd/Replay动作按当前Capture/canonical H读取语义迁移，不造旧协议。真实ChatView/source/reader/paint留生产路径，夹具只Transport DTO/attachment wirelease；history_page claimed后直到自身Promise finally才退，Cancel只stopped；取消/迟到A与B独立lease-token/不复活poll/成功空source/错误保正文/终batch后可读等断言保。typedCapture只去已删ReplayInFlight输入，NotReady/隐藏retry/own-token/wake/Unavailable显式retry/退役timer仍保。图谱无当前project，按固定patch/blob补读，sourcecheckpoint无阻断。
+
+本片只有syntax与capture受控closure1实际，browser13尚0运行；真实浏览器准入仍需完整consumer/gen来源帧与原owned wrapper，不能以十个局部fingerprint冒全消费输入。旧smoke/ACP/read/preview及Node/ACP enum退役仍单独pending，未独立集成或宣布S完成。仅只读审查未启动browser/native。
+
+
+### PTY拒GUI2单行测试源码尾核
+
+7d123593b9f06f359eb6820b8b80853f029e20da（parent ee341）manifest687a0037d7e6091cf920012d22a2e02df58e6897717fa2b487d2acea64597063、fixed ac392d0a99316610a9bcf737530c5389b0dbd6706bb383675534e798227b576d与before/fixed git-show及副本全同。唯一负例数组增加khor-gui/2；原空/host4/host6/gui1、零ClientOp/错误msg.peer-non-answer/noattach/fixture.finish不变，Host5/Version5与后续正常单socket例整段未变。sourcecheckpoint无阻断，不冒Cargo或行为绿；GUI2能力断代与rmp variant-name事实区分，Node正例/旧1拒及host负例仍input唯一owner联动。无native/browser运行。
+
+
+### 平台A3最小envelope/根URL/实例绑定尾核
+
+mac-platform-a-3 contract699c8f8d3838aab91ac63023be6360f6705342d19f21edf0550044c9a301e29a当前readyfalse，outerf38d9fb8同A2，inner7ee1a2ae64a67b9a92b182dd8373ebae41a8d630d65fedfa53bf061faa582219/attest316f6687c092aecc13809785e259e75fbea5a6e77c8ff30a3b93071dbadb8aae/steps10abb20144c6e4006eea836b59d380f9781929435a47e8a88ec7e0c7a0183f82/import-sourcepreflight835911a1fcb3bc6b243c13e82e8f8a17b76ea8541ee5d42298092f8633a059f2实同，15role pins全过。唯一代码delta为私有MacOS/khor硬链matching CLI并核同dev/ino/SHA、两处href用urlsplit强tauri/localhost/main空或slash路径；实际origin/secure/clipboard flags仍不改值，正常包络不作为旧selfchild唯一cause。CUA步骤先PID/birth/终态核再绑定实际fullpath，Find input系统Inspector仅候选实际可见才用，禁timeout后bundle lookup自启。原240/200/origin60/Save60/5GiB/真实fullbytes/source/normalQuit/owner/TMP/noCopy门不改。A2 post-Store原require readmission b2236efce5220292501ffe3f0154f406ecab9c8d0e4625cbfc0142205a1286d1仅原CLI/GUI双过，无新producer或场景。无准入阻断，Root可单点readytrue并pin新contract后独占App运行；旧A1/A2 false保，不冒平台完成。仅只读未运行。
+
+
+### Input Replay退役首12叶WIP源码早审
+
+input fix/round2-replay-node@27d首交12叶实际diff SHA 06d0874a7e404aa4df1bed9e016a42f256f301f20cbd6ca73ba9840c35bcb33a（新增agents后续工作未混），图谱未索引按指定source补读。旧32MiB Replay/ReplayDelivery/publish_history_to、replay_wanted/Published/Handle.replay/GuiOpReplay/GuiNoteHistoryEnd/History及ReplayInFlight一致退，正常Turn/Control accepted-prefix fence/Stop/Close/互动/进程shutdown事实保，Capture直接journal边界，无第二spool。GUI_GREETING2按能力集合break，PTY host5/Version5保持，GUI2正例与旧1/host他种拒分清。cagent/codex旧owner退出后handle3初次Load先fence/remaining有限读past+唯一Ready/user_chunk，再新prompt，ID/Stop继续/EOF/child退出原断言保。Elicit迁真实Prompt，stub沿session/new存原context/MCP供该prompt断言，不新增不可能answer的opening互动入口。预算stats仅cfgtest。首12叶未见确定阻断，不等于最终固定/可编译；NodeCancel/Python/agents后续、H共享跨树exhaustive与实际producer仍pending，未运行native。
+
+
+### 平台A4实际partial终态尾核
+
+actual42116 terminal1，contract61eb97e5c4be463696e21a0c741ff742d3077f76848b8b22c8cc6cf0704d22d1/inneraf1d87294fd9da267965664eb8885fa932d6622f8c512b89a359f22b7db9c985/outer42ec6675f45f562d1d245cfdaaf89498e37b8b08b6cbf86409543fa207cfb0d0与当前原件同，postrun partial64853a7f3a924bd253ecb069b5986ee18950a6c47e57b8d985f48e682b6e22f1/terminalmanifest15ddddf1f24de07a58458fdaad95ce662d0897585512120dc35ee27bd95b02e5及29小件双盘全SHA同。四CLI actual0，App94067当origin-and-history61.219s超时仍活，origin.json/UI-observation/verified-save均无，normal_app_exit false；随后outer forcedcleanup原false保。source/gen/assets/env/contract/scripts均稳定，ownersremaining[]/TMPinventory[]且absent，独立ps93831/93987/94067全无。CUA partial仅报告readonly尾1191/1199、系统Inspect Element到Console/prompt；无实际JSON结果及独立SyntaxError，AX拼接文本不足以确定输入故障机制。未Find/Save/Copy/normalQuit、不冒平台绿；未死后重开。误预建最终mirror导致后置assert独立记录，原准备镜像/false不修，不授自动下一App。
+
+
+### 平台A5最后自动Inspector实际partial尾核
+
+actual88908 terminal1，contractbd245a1ab2410fbdd3715e0be548e33f5487efd9239d6b126449df1d2322622b/live origin5ef0661dc57a9eaaac680997c817baaa987d0a359d92774b21ff4da0b4958c76/innerf0463d756adac96484bcb1b98b78aaee85b0514ed3ad5e15cb6add645ceb7da4/outer33c89aa408e3f811f9297c13ce866f5e5ab8e4ddb67ae3f8d26d96464be77d4f实SHA同。postpartial777682022738d618be48d61fbd1fbf4c9d179c5bba6519322c478162eed51ca3/terminalmanifesta3b5470d17ac3346a608247b1b9647b12efe5a1397a6ee81c16b9cb6e047bd37共26selected双盘全同；原正常terminalmirror未碰A4冲突。实际活体attestation记录href/origin tauri://localhost、secure/ClipboardItem/write/writeText存在true/main，userActivation false/hasBeen true，仅API存在性不冒Copy授权/成功。CUA partial报告COPY搜索见完整旧marker中文🙂（未jump），首次typeText字段缺标点未归因产品。随后actual-save60门于inner总119.040s超时，尚未打开export菜单/OSSavePanel，无保存文件/verified-save/UI-observation/normalQuit证明，不能称NativeSave失败cause/PhaseA绿。四CLI0/source-gen-assets/env-contract/scripts稳，remaining[]/TMPinventory[]且absent，1744/1794/1861现ps全无；未死后rebind/重开/无A6。原false保留，后续真OSSave/CopyPaste与IME仍待人另场次。
+
+
+### Replay Node/ACP15源4dd9固定尾审
+
+4dd9db6c4caf6f567c7ab7940e7b483d0957ce88（parent27d）source-receipt cac462edf6f8c13fe0a45e8ae56215bf6b96b4fd3a9ad87f3c32aded398d0598/MIGRATION0754f41c2a56545d63539e140ba7965e2c16bf06716f521af4a31497cd11c664实同，15git-show=当前=完整source快照逐SHA同、树clean。先交12叶早审保留，新增NodeCancel/Python/CLIagents source逐读无确定阻断：journal两Capture含真实reattach同binding/记录bytes不变及原后续reopenLoad保；Control held中ownCapture可读/noReload、invalidElicit与release后4s结果保；many-load16384普通记录初次Load，5s真实marker/12s全Ready+older分页受统一deadline、倒推每页index/无skipduplicate/总量、Load1New0实断言。drip改单30MiB liveNote，raw真实前缀后才attach普通控制view防1MiB读限，64KiB buffer/read/80ms、>5MiB且>2s进度/15s原门保，真实SDKcancel/finalNote先Cancelled/下一EndTurn及3s继续进度/同process不丢；Stop/Close unreadview不重建旧publisher。Root明确授权HistoryEnd/ACK后Stop无SDKcancel/重复Stop2s publisher专属判据退役，不粉饰同覆盖。agents真实helperown-token Capture+canonical读，原流/approval/目标文件/denial/Close断言保，ignored源不运行。
+
+当前只有15syntax/PythonAST/diff0记录，未Rust typecheck/native/gen。可准备与H47fe/ee341/7d同源集中producer及受影响有限运行，尚非整体S完成；27d旧Store16父2helper绿只属旧源，不称本ref已重验。
+
+
+### H剩余fixture9698149七源源码尾审
+
+9698149dc89374c23827a2a0aa2a14fe9ed360d3（parent7d）manifestcbab17e0fff902fa795655d5081c0432405fe38943cfbc9b01c3053abb4ed483/semantic1938c14c6d604fb8ad7c16414be0cb47d084841b335a28aaf64493e26ee86d15/reporta73530abd4e6d9712fd225e0468f3279c908ece3c1a9d96c9bb8c99c77f59f9a实同，七path before/fixed gitshow与双快照SHA全同，treeclean。新增canonical-chat-routes仅knownIDs/固定已投影Frame与HTTPlease DTO，五bodytag为scenario事实分流，原payload/重复chunk不改，productionpaintHistory/reader承担fold/cache；opaqueoffset非生产cursor算法。128entry/512KiB页强界、ownCapturetoken/EOF，claimedCancel只stop直到同fulfill settlement/finally退，不冒Nativeworker/globalcap。原login/mode/optionalmodel/permission/阅读geometry断言保，NoLoad死bracket警告改canonicalbody真实正向/不误警，符合当前canonical唯一正文。
+
+smoke不导helper，真实tab菜单四次reconnect→Capture/已知past1断言保，controlcap恢复Capture与production Find跨DOM证明past1/newest保；initialpast真实setup尚未运行若不成立须走supportedLoad修fixture，不能删强断言或造Replay。当前六JSsyntax/previewTSsyntax/diff0仅sourcecheckpoint，无browser/native/realgen/fullnoEmit或smoke行为绿，不借旧B7/H11/export6替代。
+
+
+### Root2552334源整合指纹与恢复链尾核
+
+Store integration8616296a08a79c6e064ffcd1f95af68083b2c5fb93e373f1b0c3c46680a954ae在729ac2d1十源逐git-show=author27d；Replay integration11d34f3604f82e28e22b60adcb1f35b657bcc63f76c519029fce0fc29aea6250的15Node=4dd9与20存活shared=969，全git-show/current/SHA一致，两个旧Replay脚本确实absent，base729ac→2552334真实37path集与两清单并集完全同，无额外/缺失path。Root2552334ab1d55e227f4dacb90127f2e1b930f60f clean、main仍e7c335c8dd81de091bd12b92cd704a63f25d03f3。内盘Store bundle73ce495efec9d690691483741bf2af1a6825cd64df7b600e412a66f06537f199与manifest同，原verify记录要求84c81dd0依赖且okay，mirrorreceipt同。无整合来源阻断，可准备H真实gen/catalog/noEmit后串行input实际行为；旧27d组件actual与84App只证明各自源，非当前compile/gen/runtime绿。未重跑功能或native。
+
+
+### Root255 Replay定向A/B准入与C资产硬停
+
+replay-retirement-native-2552334a plan383b35d45b7b0e9dbf99891e3439ff8b6f00f5301292f71747ca4128ff9e24e8/driver0de78602412d831aa3298672f1c4ecf7e76a8bf1b8fdcfb6793c7889be887396与全plan pins实同，source-receipt7cbf02c0/2331frame与27源+两helper当前相符，A/B/C全部exact函数存在，原helper未改。A contracte0c205e92ccf86a08a006fa92f925ca9935de24d7c85cb3fa2ac43415b827186：同次actualstub+conversation，3exact强1/0/0；B f71d3ca0533340a89e08bbda125073f539c3f7fc7f6073667311642a3ebdc10f：13父+7辅助，helper stdout独立强1。各hostlockedfullmetadata→每selected独立no-priorprepare→同原CargoJSON verify/require/unique目标manifest/source/kind/test row→SHAcopy与原target持续核，B借A真实stubproof/copy且仅三明确producer env临时恢复/finally还原、GUIintegration禁止implicitCargo。300总/原space5GiB/owned/TMP/源环境门保，未见A/B具体执行阻断，可Root按H先终态、分阶段独占授槽。
+
+C contractd6b2a2bd8e184b232ba83ac1028a7aefa10c0951a4948e2bc0cd025cb79ca458当前assets:null，run_one第一次unchanged即硬停，现不可执行；待H255真实noEmit/Vite并独立repin再审。C planned实际khor+4test产物/两shim+gui_refused3exact，agents仅compile-only与真实第三方runtime缺口明确，不用fakepeer冒等价。未执行metadata/Cargo/native，未重Store旧绿。
+
+
+### A首次工具类型错误与仅续3行为准入
+
+44970真实terminal2/14.876s，原resultd2f1c2df5ff3bb7d2db3f737c9d82ff3db16c964f6cba527f5359b570ca7f357 validfalse只因guard.run收到str触str.parent，首行为未spawn；metadata/compile两stage strict0/sourceenv稳/TMP空。上一版独审漏掉run_one传str点，本次明确纠正，不称业务红。两no-priorprepared/actualCargo唯一row/proof/private+originalSHA acpstub5b0394c3/conversationa1225d6c与原source前后实同。
+
+新acp-behavior-source-2 runa2e95d419e224ab77a39272867527d7326f3a9758ec4f0259167da67cdb62af5/contract7da4df0ed0d02b02349a138b4ec147bc2404fd7f9f48087b5e58c09e3baeea6a/receipt364e9d05ba022b7bb8c109e969b64217b509cd2c72fa8d10aa79d815bcf5f8ee pins全同；只A合同、原producer files/result false+两valid stage严格pin，复核实际proof/唯一row/originalcopy，不再metadata/Cargo；唯一run_one入口Path(binary)，require暂复TMPDIR/evidence两原producer环境再finally还原，3exact强summary/300总/5GiB/原owned清理保。仅续A3可Root授。原B0de合同仍有str及必须原A.valid=true依赖已不能满足，必须新B PIN绑定原producer+续A行为成功并修Path再准入；不可沿旧B直接运行。
+
+
+### A续actual63174与H255六phase最终准入
+
+A续actualreceipt7c825028b0b43b12c6fb589b259e522ad35615fe35c2df91383b4ed9e56cc6e2/result7eb9b9587703dc8555bf78708e0fbffd2fe0d7eeabb4778a459ab1ce52b13478实同，63174 terminal0/2.5998s，原3exact各1pass0fail0ignored，所有strict/sourceenv稳/TMPabsent；原44970false及两producer成功stage不改、不重编。receipt全部file、内盘manifest290ef8168cada2f8e0a7f667a9ce62715adf1e9af4bcebcc93b98faa9bebaa82的44项全SHA同，两gzip流式解压完整5b0394c3/a1225d6c同原artifact/privatecopy。仅当前ACP三行为，不冒Store/App/管理/整体S。
+
+H integration/replay-types-2552334a-1 runner7ccffc3e5967bee20eb8bcb862742849fb32da0595a8a11a957999155860dd37/contract88f22bae91509afc3d833754d3503c1c00e6bb8e47747ac0213176b2cdc73924/admission3227a042ac9bf0eff1400f19c409dafa493572f3785e2e356eadc5ddcffde5eb全pins同；2331sourceframe/179existinggen/两原helper当前全SHA同。catalog9源与原actual stage84476d706bc0e8642f91ad9c69993d7352977e118a630ccc2c18a9cc36433d07、旧result/proof pins全同，明确仅保旧同源输出，不新gen_ts/不冒当前gate。六phase ordinary hostlockedmetadata→原no-prior fullrefresh实际gen_bindings+verify/require→sameexe freshstage/managedpub→完整noEmit --project→actualNodeVite，实际Node buildscript不含embed cfg/env检查、600总300phase/双盘5GiB/原owned/TMP门保；最后仅green才出含真实source/gen/assets/log/proof的frontend-receipt。TMP/mirror/result准入时均未存在，无执行阻断，已回H可依Root条件授权独占启动。此准入不含Core行为/GUIApp/bundled模型。
+
+### B原producer加A续成功依赖窄修准入
+
+node-source-2 driver3d01a0b8987d4106b3136cbbb13ffc3cea396c3c98d866d91ea4fbc242c0f3b5/contract8e3ba459b8b7c4a9347a52c83fc842103c5c29adb23f989718a958ea5f58d996/receiptc9a13482c8ed23e48348a508180588c48f42e83cc11431b7a8b04055450cebe8与所有原producer/Aacceptance依赖files SHA同。原A.validfalse/精确str异常+两validproducer stage与续A.validtrue/3强summary/同whole sourceafter分开绑定，borrowedstub=contract=两result，require只复原producer原TMP/evidence并popSTUB，finally回当前B环境；不以续A目录错冒producerenv。唯一run_one Path修正，三selected独立no-prior/同原CargoJSON/13父7helper/300/5GiB/sourceenv-owned/TMP强门不变，无具体阻断。只可H终态后Root明确独占授B，不自启动；C仍assets:null不可跑，需实际H frontend产物独立repin。
+
+
+### production255准备最小delta只读核
+
+build9005fb645a7128e6096c62375b24bc68c4ace3d5890f2ccf4e455ee5530df82d逐diff旧actual84/73a91257，仅HEAD/mirror/configidentifier与H当前frontendreceipt替旧18136成功Vite复用，scope不加test/gen/App。H约定receipt的head/noEmitExit/ViteExit/source_frame/generated_files/assets与读取逻辑一致，source/gen持续freeze与ASSETS置入后每stable/final核原样，actualCLI成功即copy/defaultcustomprotocol+devtoolsGUI独立actualmetadata/no-priorprepare/verify/require门、300phase900总/双盘5GiB/owned/TMP原门未弱化。没有猜旧OUT/新retain/fallback。当前frontend-pin.json和admission.json均缺，admission前置断言在TMP创建之前，未可执行；只准备无明显错误，待H实际green frontendreceipt与真实log/proof映射及finalpins再作正式准入，不将此准备等同运行批准。未native。
+
+
+### 82947真实gen成功/types两残留红与67772dff准整合
+
+82947 resultdc6eec6d461c7e55ae24cc31f932da3ff14c68810301c183f7228247a2457bc4原greenfalse：metadata/build/stage/pub四phase实际0、原no-prior proofcb2c98a830fa6fe8dbaf57290a7cf733f318077cc65b0df6ac5568e0be19f8e8 selected与actualCargo唯一row同，gen12347f6de8f293eaf60e9525bba7be4d1ed2cc0d2f204250b5846cbd1ca53f4b的177bindings stage=pub=current、179allgen全字节同，sourcebeforeafter同。fullnoEmit2原typeslog6f6eb5ef仅history-paint17/ChatView401 TS2367两死history比较，entry.run抛所以result四phase列表并非types未执行；Vite未跑，原false不改。
+
+67772dff02e131bd041d3f5abbd0a9c489c92793 manifestccefddc380f510493d6bc72bce8c77dd8f1f6116edcf603e70d77988cfc710df与两叶before/fixed/Root255blob实同，仅删两处history kind条件，当前note/title/paint余逻辑逐字不变，无新行为。明确可Root精准cherry，只续新HEAD noEmit→Vite；已实际gen可保字节但须新全sourceframe只列这两TSdelta，Rust/Cargo/tools/generated/catalog全同，旧proof仍255实际producer历史，不改写旧fullframe或冒新Rust生成。新frontendreceipt分旧gen lineage与新HEAD types/Vite实际来源。B新HEAD/source PIN需刷新，ACP三行为/产物关联不强重编。未执行。
+
+
+### 16ee前端仅续两phase准入与B当前stub方案
+
+Root16eec79ead2152b0b1afab08597cd782b5929084 clean，replay-frontend-continuation-1 runbfbca4cf89cddc07b589a0fcb9c3a3e6ea98c483963dbf0e9c33e69223924886/contract08625137f762590ddfa9fc2b63a4f776f04e0de138c1daa4f460f4f61fe6b4fe/admission085ffc83efda06edcf40490fd01417e3a6f2cfff5778e4e732fa46bd37bde418全SHA同，原11pins四phase/proof/gen/tool/helper对应真实82947；当前2331frame实差精确仅两审过TSafter，177stage=managed与179gen保字节，旧proof不改写source、不按当前require冒新producer。仅实际noEmit→Vite，frontendreceipt明确generation_head255/frontend_head16ee/source_delta与实际log/result/旧prooffield分列，600/300/5GiB/owned/TMP原门保，freshTMP/result/mirror均无，无准入阻断，已告H按Root条件授权独占启动。
+
+B因旧255 proof全sourceframe必拒16ee是正确门，最小正确续法为当前actualmetadata→单独actualacp-stub bin no-prior prepare/verify/require/copy取得当前proof→当前Node三selected原V。不重ACP三行为，明确原A3仅ACP/Rust相关源逐SHA不变+全source仅两TSdiff关联历史，不冒16ee重跑A3；不修改helper/旧proof/sourceframe。Root后续production准备也须当前HEAD/frontendreceipt最终pins，原9005未运行保持。
+
+
+### H11451真实前端收尾与B当前stub准入
+
+11451 terminal0/15.224s，result1bc6f1879d9164d68db1d6f5a7ca4e029b9c09051036807f3a2ac99dabb1c8e0/frontend087f4263b5b58a20525a01f500187f06ad2458d35d8e66b51df5352fb9113817/dualmanifest3e33681176bf037d2ea421398e0af7618b292f2ba9128d89adc0e1bacc63ea16实同，26双盘小件及引用result/sourceafter/generationreuse/旧proof/两实际log逐SHA同。actualtypes0/Vite0/无timeoutforced/ownedfootprint/remaining，sourceenvtoolhelper稳、16ee clean、TMPabsent，当前2331source/179gen/278assets字典对应。旧255gen四phase与新16ee两phase+仅两TSdelta分列准确，不回填82947false，无新Cargo/gen。可供C/production最终实际资产pin。
+
+B current16ee node-source-3 runner9469394e6a462fa79affb93320233ec595cee8043bf0f099e519a85616e97d11/contract32faa9209ca6caf5b25d11a879016c16e7f00a86686e7d4c35f066fba5e23813/source8b627efc/admission5449bbd3全pins/2331frame当前同。原A3只精确两TScompat历史事实，不require旧fullframeproof；当前hostmeta→独立normalstub actualno-prior V/unique testfalse/privatecopy→Node三selected原actualV，runtime本批STUB/四current linkedproof与original/copySHA持续核，原Path/13父7helper/300/5GiB强门保。无阻断，Root条件授权后已告input可独占启动并报handle，禁止并行C/production/App。
+
+### production16ee/C与恢复13浏览器最终准备准入
+
+production16ee build ecb2fe05853e941d887202a73412a192327b14c4d6b4180b31d028eacb18d8c9/admission4e469566631e362fe96255e79ffcb96f1e03e4d810d03e50fa1143cd66079a6e/frontendpin e97f3c8003a5573c4a3494b15045648777cf0643481f896c930be7d5e69afab9/config2d8a8760实同，绑定已独审087f实际前端/current2331/179gen/278assets；26bundle源及bundle/reportSHA再核无差。相对9005仅当前HEAD/mirror/namespace/scope字面，原CLI与defaultcustomprotocol+devtoolsGUI两独立actualmetadata/no-prior V/900总300step/5GiB/ownedTMP/CLI成功即copy门保，freshTMP/result/mirror无，无准入阻断但只能B终态后Root另授，未并行启动。
+
+C cli-source-2-16ee driver16f9437c0d5ce59f1d5e6c11de044057edfceb257ebb205d5f79129e19fb58f4/contract7e869a2e56184dae7030f6623d74c9058e7245051e925868bdd24639f1e2671c/sourcee08e01d2/admissione82e05e8与当前全部pins同。H087f/head16ee/noEmit0/Vite0/fullframe/179gen/278assets在每run_one前强核，五selected normal-khor+四tests同次CargoJSON逐no-prior V/unique/currentrequire/copy/originalSHA，原3hermeticexact/agentscompile-only不扩无模型，Path/300总/5GiB/ownedTMP门保。可B终态后Root另授C，未运行。
+
+Recovery13 browser c67fd5bc2ab299f1ac4573250669ae363928309a7dbfd5fed8e03fcdb5a0eebf/contract2aa15bfd3ae0b86bc984c89cbd1fb56efee240989f40ccca0285747b262c12f4/admission5d2190742cfd489722c278fd72b77ed0374fe868adb56b72e3d45e9f44fd0372与已审ee341 scriptdcf546固定、Root16ee/087f/179gen对应，13known/currentproductionChatView-reader-paint但仅transportfixture，原300/Chrome采集/23842strict/sourceenvtool/fixture/TMP清理门保，无具体阻断，告H向Root排独立browser槽，不授当前B并行，不冒WK/Save/App/wholeSmoke。以上均只读未启动。
+
+
+### B60432真实尾核与两叶sourcebundle收口
+
+B60432 actual175.605934s terminal0/result45e9a355d10220ba87f1d0a2b7c0893eed72c15641b3c53e57b7b4183b6c5713 validtrue，metadata/stubcompile/nodecompile加13parent共16stage全实际0，无timeoutforced/remaining/privatefootprint；13父各1pass0fail0ignored，7helper stdout逐SHA/强summary全同。趁后续producer刷新target之前，非作者已实际完整读核四original target/privatecopy/proof/原Cargo唯一row：stub5b0394c3(14,889,944B)、node37ef2ea2(286,696,280B)、greeting524f7644(3,608,352B)、sessiond82f4d4a(134,765,552B)，四no-prior/actualsource2331与prepared/proof全同。sourcebeforeafter同、Root16ee clean/TMPabsent，已即时告Root可归唯一槽运行已准production，不需保旧target不更新。
+
+固定actualreceipt6389689062a4b7e9fc8ebb42c24c892fdd995b29ba965679ea78d4f035274662全部108原files SHA同，内盘manifest65bb535a1aeba389319dca1bfdb04afeade4b98cc40786d3f011687eee4eccbc共113项(原108+receipt+4gzip)全SHA同；4gzip完整流式解压bytes/SHA均等原privatecopy，copy保留，最终镜像闭包无阻断。仅13父7helper，不冒A3新HEAD重跑/Store13/64MiB/Core/App/全S。
+
+replay-note-only-16eec79e integration-receipt138c2b345d072dcf8f8f235c70e3e94edf59b301c8ba2144b7cb8a70eb9caa20/source.bundle3c278b57cd4b6354a599404a6a561449791b6427f60284f28322997ad8dab2c9实同，head16ee/base255/author67772与两已审afterSHA准确；独立只读git bundle verify实际0，依赖255/导出16ee ref，恢复链正确，原82947false/11451两phase来源分列不变。
+
+
+### B四privatecopy可恢复归档尾核
+
+Root显式授权后仅四已结束B私有copy移除，index029c24a51ffd140620e7d8d18e3a06ed3f95f42f04f1010f74dbdce7f3189d05/result66019e66b8719c8905fe1a2593b11a224ecde21d1509ef54154f0e27e2b2c78d/progress双盘逐字同，实际四plain路径absent，恢复原路径/mode/bytes/SHA/UID/ino/nlink1/lsof0记录齐。四gzip SHA仍等原65bb镜像中已由非作者完整流式解码核过的字节，原6389实际receipt/65bb113项manifest未改；旧B通过仍属执行当时，不因后置可恢复归档改判false。依Root要求未重读当前新producer会刷新的target。逻辑sum439,960,128B；原result df实际6,732,111,872→7,172,046,848即+439,934,976B，差25,152B，不冒逻辑量等精确physical，已提醒文案。无归档阻断，不C复用这些copy，不扩大清理。
+
+
+### production61197磁盘门失败与GUI-only来源窄审
+
+61197原resultc6217c384166e217fda393c73f734366c6dd47333deb9df2f0a3b1b636308fd8 false/190.343s：CLIactual0/V通过，GUI被原5GiB sampler中止(exit-15/forcedcleanup)，非timeout或产品编译诊断；source/env/gen/assets稳/remaining[]/TMPabsent，原false不回填。非作者现仍实际读核CLI原target与privatecopy b6360a48d716eea4ac4385dc9610088fe56300e4aea114c93287ac3d0e0713c7/355,300,120B同，原Cargo唯一row=cli proof selected，qualifiedCLI可单列复用。
+
+GUI-only buildc7b41df8cd6621d3ea04bdd574f5005020a78fa250c416eb86cf229af6831056/admission02fce7816c8bf181b497c778b82862a3dee29bc34d396d79da6e55ca1f11867e相对ecb仅reuse成功CLI且metadataGUI+新no-priorGUIproducer，原TMP env暂还原/整env比对/require+originalcopySHA/finally恢复前后两次，defaultconfig/frontendpin同，900/300/5GiB/sourcegenassets/cleanup不改。唯一必要未绑定输入已告Root：reuse_cli的旧result/proof/verified-binaries须三固定SHA在admission及每次入口绑定，防前后接受不同原记录；无需新helper或重build。候选pins为resultc6217c38…08fd8、cli-provenance88882c89f31a2c3f4345cbd0fb0d86014e74674196a41cd9b241b6e6e39416b1、verified-binaries439be80e5ef11ca05cc47ac840212773bd5fb453ae8bc9c086a4ec60e702a8b0。原log由固定result phase.logsha检不加框架。待此pin及足够实际空间/独占槽后准入，browser13优先，不自动运行。
+
+
+### GUI-only三CLI来源pins补齐最终准入
+
+runner4082892e1f69bdb2c732a16c1b96fa21c2391e69a11b8fac159534134ed6af37/admission6f5739f5f7bfd54231af1f94335115c0b37f8180a9865b4efc37a9be9e6e3e1c与before c7/02逐diff，仅加三CLI_PRIOR_PINS literal及reuse_cli入/出断言，值为已核61197result/proof/binaries原SHA，唯一未绑定输入闭合，无其它执行逻辑变化。只复用成功CLIphase/currentrequire与旧TMP暂还原/finally恢复，GUI仍独立actualmetadata/no-priorproducer；原900/300/5GiB/defaultconfig/frontend087f/sourcegenassets/ownedTMP门不变，最终可准入但须实际空间足够/Hbrowser13终态归槽后Root单授，未启动。
+
+原61197 dualmanifestdbd9b779b269a417855072dd3ea7866665fdd96d9addb28f5df4992950f90c2f含31小件双盘全SHA同；metadata/CLI/metadataGUI三成功phase与GUIfloorforcedfalse结果分列、sourceenvgenassets稳/remaining[]/TMPabsent，原false保持。没有重复读取将由下批刷新的target来冒旧B证明。
+
+
+### 两组旧终态私有copy/完整hardlink组归档实际尾核
+
+archive-retired-nlink1-privatecopies indexfa06ffcee304ecd5e7660ee3abfb1441a88dfd45ecbf51502cd704565ba4c819/resultce9dae41082d9e23d4048609e4e148689815af99a9821186c4afdb3087ee153d与progress三小件双盘逐字同，旧666CLI+ce69CLI/GUI三nlink1独立gzip均非作者完整流式解码SHA/bytes等原历史proof记录（proof文件原SHA仍同），原三plain路径均无。logical1,086,306,024B/gzip330,474,867B与df实增731,353,088B分列，不冒同量。
+
+archive-production84-privatecopies index79b81351e4be31a00bdcfce946f4970694ab3770785db9e77360fff7b8a0eff8/result454c480fe5fc0fde01dda1dc1ac2f69320a8fb55a3e7f92562b1fa89665a5a44与progress三小件双盘逐字同；5GUI/4CLI完整alias组各初始同devino且nlink=列明alias数，现9path全absent。两gzip非作者完整流式解码等原533d/5f52字节SHA，恢复必须单decode核SHA后重建列明硬链，不flatten为独立不明副本；唯一logical743,790,720B/gzip229,619,667B/df实增491,524,096B分列。
+
+准确恢复范围为index/result/progress内盘镜像，5gzip字节目前保外盘（未复制到内盘），不称双盘全字节档。原source/proof/result/current16eeCLI/target不动，未重读将由当前producer刷新的target，无扩展缓存动作。旧实际绿保持当时来源，后置可恢复归档不回填原false。
+
+
+### 恢复13真实98901绿与最后③④空间动作闭包
+
+recovery-browser-current-1 actual98901 result23b3e5797db038700a226067f8d4bfbc0785a57353d0ef6eeb2ddc3f8ee9d524/report6aaefd1ec9dafba7bbbdd6370380a30d72205bb58299b636a81ca6c5b529bc64/dualdb9ac1c86f3aaba56d021ef0e2c86f362a47c098a6260d2542b5bc541009aade实同，21双盘小件全SHA同。Chrome13known每项ok、page/console/network错误全空，actualprocess0/no timeoutforced/interruption/groupabsent/remainingfootprint空，source/gen/env/tools/browsertools稳定、fixtureRemoved/TMPabsent/owned空。只生产ChatView/Capture/H reader/cache/paint+受控transport，非App/WK/OSSave/wholeSmoke/H7新运行；已告Root归槽。
+
+③target-test-archive index40916cd76766b0af1795a0c27a010518d219ad5642431c9dc6b89ba1afb5a844/result7c1b8e324873e3891b74096b9e68a48f34c1c00c8110fa7fec9a1962007871a9与progress三小件双盘同；仅三已结束Btest target，原61197两raw匹配保存SHA/实际filenames和绝对路径值不引用三target，未重新读取target文件来证明旧B。三内gzip完整流式decode等此前37ef/524f/d82f原实际bytes，恢复路径/模式/身份记录明确。logical425,070,184B、df实际+425,025,536B分列。
+
+④event-store-native-source-3/privatecopy-archive-95235 indexf8d4181b3863e77ca55f293b73adbd3cc5832fceef8cea6f53600a0a52ff0a4c/result8ae9ae50470ba5421c50a4426cbd7069c51f34fb9adb770319e552a90fb49cc8与progress双盘同，两privateplain现absent、两内gzip再完整decode等3a2a/cafaa原程序，原8d8e镜像/Storeproof-result-source及target保。logical310,601,568B、df实际+310,628,352B分列，不将逻辑量冒physical。仅FS尾核，①②已单独完成，不重盘；Root停止666GUI/其它库盘点边界保持，未新增native/清理动作。
+
+
+### GUI-only48383生成门一次全图离线诊断与消费者组1准入
+
+原result7d16bbfaee8620e1fc4c2d33c61a51e3c474d756d43138ad1b59eeb3e147fca6保false：metadata/build实际0，GUI未qualified。以原gui-prepared.json/package_keys/states及build-gui.log逐包检查（未用当前shell重建context、未运行prepare/Cargo/修改helper）：5个第一方build-script与实际custom-build集合精确相等，无重复，所有marker都在prepared_ns之后。catalog2/detect1/node0/web1生成文件原generated_output逐项通过；唯一失败GUI精确`khor-gui-9093efa5a0c29633/out`，dev16777244/ino36318293/uid501，352 regular文件均nlink1，总8,717,907B。其中349文件8,639,860B的mtime/ctime均早于prepared 1108.725–12497.447秒（347 tauri-codegen-assets、root hash1、app-manifest1）；仅capabilities.json/acl-manifests.json/__global-api-script.js当前。279个实际dep-info引用GUI输出全部属于旧349，另70旧项未被引用，故不能只删孤儿绕门。
+
+实际tauri-codegen2.6.3 embedded_assets.rs355的content-hash cache仅不存在才写，解释实际build marker新而生成成员旧；prepared priors=[]，不是seed/prior缺口。继续按原verify后半段逐项离线核18个第一方actual rows：全fresh:false，唯一配对dep-info/输入SHA覆盖/产物mtime/manifest-target元数据匹配均过；selected精确唯一khor-gui bin/testfalse，build-finished唯一true。未发现额外缺包或下一首错；此检查不伪造通过receipt。
+
+最小后续仅将上述exact GUI OUT经完整tree/身份/SHA/lsof复核后可逆retain，使用原no-prior selected真实GUI producer重新生成并执行原verify/require；其余四OUT、CLI、gen、Vite不用重做，不改mtime/helper、不补伪prior。retain方案尚需Root固定清单/driver再准入，未由reviewer执行。原48383整体false与未qualifiedGUI不回填。
+
+消费者组1 consumer-acp-read-current-1 runnerb5c561b266bbad18f7daaba71f41319adebd1af158914165c409548fa0dfc4fd/contract3154be88f2cbfdc3b06183bd2182b2ac4d327ac32aac11491013a124748bce7e/admission21fcbe9ee84c1dae34b21ff7c0dcf22610e15b0fb486b6aaed01b1f57f97d8f8已核。两个既有脚本SHA等当前16ee、frontend087f实际pin同；原positive marker/ports23843与23844、整组300剩余预算、owned/source/gen/tools/fixture/TMP/lsof门不变，未改脚本或产品。无阻断，已通知H依Root明确条件授权执行并报handle，仅transport组件Chrome，不外推WK/App/系统Save。
+
+
+### ACP/read两脚本LockFacts bootstrap候选窄审
+
+consumer-lock-facts-source-1 manifest785cd9e9a209baf9a79e58e26b471c53d1686266ce5ec57e4e7a6396684cb045逐SHA核：两before等Root16ee、candidate等author当前；每份仅新增4行`lock_state` route，去新增段可逐字恢复原脚本，全部原断言/协议/其它路由不变。六字段符合Core LockFacts；Node TIMEOUTS=[0,1,5,15,60]、PIN_MIN=6真实常量；off/noPIN/timeout0为合法隔离场景，system_door=false表示受控无系统解锁能力，不冒Mac实测值。产品auth/useLock/fetchLock零改，bootstrap先于goto保持生产hook真正读取响应。无源码阻断，已告H按Root授权固定两脚本commit后交Rootcherry；非新runtime准入。原41905 ACP首row超时、Read未跑、严格清理原false保；源码证缺前置可failclosed，但无原network body证据不宣称其唯一实际原因。
+
+
+### fbc组1重试准入与AI4同类fixture最小补齐
+
+consumer-acp-read-current-2 runner0cb956f34a62a477841828b27e987752a4d2bd9b8946d3d6ebf202a134fe142f/contractcc3f62b89b0add24674f2c3ae3b17471cd156d81bbe5b20bb1d8525fc476a454/admissionc10888583ff1319e60c5b34ccfb90a1c944afcc2885ec7bcc0a8c41155299478已核无阻断。非作者实际Rootfbc clean/2331source对frontend087f集合一致且仅两已审fixture SHA差、179gen逐字同；runner差异只有fresh目录/HEAD-pins/明确旧frontend16ee lineage及受限两fixture映射，原两脚本/positive markers/300剩余预算/端口/owned清理门不变。已回H依Root明确条件授权启动并报handle，未由reviewer执行。原41905false保，不回填。
+
+consumer-ai-lock-facts-source-1 manifest0e699b6f35e06a6fdd0b48b848996aedd99c404ba58c0421b83bdda7a73e7c69 before/candidate逐SHA同、before等Root当前；唯一新增同合法LockFacts4行（after1218aeb2700c2eebb12198b484c672b2402f2ff90ca3f9f0329ba2d6a9a9b79d），删除此新增段可逐字还原全部原脚本/四desktop-mobile-light-dark断言，无产品auth变更。可独立commit交Root，不混入组1运行source冻结；preview同类仅待独立候选再审，未预授runtime。
+
+
+### Preview合法LockFacts最小switch补齐
+
+consumer-preview-lock-facts-source-1 manifesta99db6770f0a1639aa4ccba6d9a74ae9d7fdf0f428edb71ff0b370f52f6bca93 before=Rootfbc现源，candidate62d332e5b0932a5316239f2b8ba143c2adf566b3c85bc5fc32fe7701225a0024匹配。diff仅插入合法同六字段lock_state case及comment两行，没有替换/删除任一旧行；原场景/control/显示算法逐字同，无产品auth改。可独立固定交Root，不能混cherry进入当前组1source冻结。TS transpile只称语法，未runtime/语义绿。已向H索独立Read批PIN及ACP旧mode断言到当前SessionPreferences映射，尚不预审未到候选。
+
+
+### 完整Read独立批准入
+
+consumer-read-current-1 runner30010389e9d256f464bc4f04328fde19bb99220b78aa240bbe0a700541510502/contractea5c36cae703f95984abe6b9e7267c69a9992d9f37ef855c1518cecbde1f31eb/admission2bf25be7a9cf529cc66415450e22740bbbb644a7f2c0c993ec3c78d167df5977已核无阻断。较0cb仅移除ACP执行段/端口、组数改1及fresh目录，完整Read脚本b707/原positive marker/原300总剩余预算/5GiB/owned清理门原样；当前Rootfbc clean/2331source对087f仅两approvedfixture差、179gen同、OUT/TMP/mirror fresh。已直接回H按Root明确条件授权执行并报handle，不等ACP权限probe迁移、不混AI4/previewcherry，原41905及48444false保。未由reviewer执行runtime。
+
+
+### Read合法DTO两行与ACP当前controls映射范围
+
+consumer-read-valid-dtos-source-1 manifest13a3dd61ecf612afd422674e1c7f40e5384df06b7e30cec18f3ffeb1622e6e97 before=b707等Rootfbc，candidate e8451c99dd20c996c77715522819ac76609b1bf27127bbb8d2c7bbaa72f7746f匹配；仅tool_call补合法toolCallId/kind/read/status completed与机器row改wide/read-gate+broadcast两行，原title/body/墨色/blockquote/字体/几何/probe/assert均原字节。acp-view131原生产拒缺id；DetailPane570仅broadcast入MachineChat，改fixture不放宽生产。可固定独立commit交Root，原7229false保、未runtime绿。
+
+ACP映射b5c564223dae6b2ab9f73e431a9601663b7b89867c48576d8f5f025b24779e91已核当前SessionPreferences/ChatView/ImportDialog：仅test迁移到真实header内Fact或checked radio/name+ID、model Large/b、fast checked、default/none负例及agent身份/no invented modelusage；保原NoLoad/login/正文/ink/附件send语义。旧nested popup结构不作为新产品要求，不添加product marks/auth/兼容。wizard允许仅补合法LockFacts/hosting DeviceRow与cannot/sessions同synthetic home（ImportDialog markOf实际检查该home），unasked无home、原4state/askcount/ID/selection/geometry不删。映射仅source修改边界，新的testsource及runtime仍待，不作为当前行为绿。
+
+
+### ffa Read完整原脚本重试准入
+
+consumer-read-current-2 runner2f74f8ec1656d60f21fbd2f1536cc85407f1defb49d116160f7fde0be0c3dcae/contract38d5aeb35fc67fcdf6587aaa48afcb7df912d2d0f26f4512a9c34bc9c24801d7/admissiond4c151e91e25469512961ee6a9697e0ab0f13fc4c0a6ef95568e3858cc947344已核；实际Rootffa079c1 clean/2331frame对087f集合精确相同且仅四approvedtestfixtures SHA差、179gen全同、Read e8451c99同，OUT/TMP fresh。相对已审3001仅freshmirror及四fixture lineage/pins，完整Read/positive marker/原300总剩余预算/5GiB/owned清理门全保。已直接回H依Root条件授权执行并报handle，不等ACP迁移，不把原7229false回填。
+
+
+### 当前Core既有3exact+2compile草案边界
+
+replay-core-native-draft contract2cd233e752495bf9d1c0d551fc684fbd3408eaa9fb5499d6a6680f4e2f02e29f仅计划审，无finalHEAD/driver/执行准入。三个真实exact为chat::io_tests::controls_keep_fifo_order_and_complete_only_after_their_frames_are_written、chat::host_frame_tests::host_frames_keep_protocol_content、chat::io_tests::capture_failures_are_typed_and_live_body_updates_are_only_bounded_wake_signals，现源码实际各目标/形状符合。只运行这3libtest，terminal_current/chat_upload_cancel只compile不冒其行为绿。Cargo本机官方test文档338行证integration选择自动build普通bins，当前core三bin桥/face_samples/gen_bindings须计共6selected独立no-prior prepare→同未过滤actualCargoJSON各原verify/require，不执行bin或生成物。仅runtime libtest privatecopy，其他5actualSHA在后续target刷新前核清，不假历史原路径仍存在。FIFO原case实际读完三peer帧后各wait，能证顺序/成功完成，不加称受控写前completion barrier；保原断言不新矩阵。整体范围无阻断，最终consumer freeze后须另pin来源/driver再授运行。
+
+
+### ACP当前controls映射实际testsource窄审
+
+acp-current-controls-source-1 manifest6d3c6aab8a6db422565df848ce3aa7d4a9e2c746559e5d0f6f9bffdafc25740b/candidate4c770714095037dd66276249efc223ee2580e51193d629b63f3fe5a65e5cc48c before/after逐SHA核同。完整diff按原断言审：inspectControls实际打开header→读取root Fact/options→逐values真实choice page checkedradio name/id、summary一致→Back→modeldetail，不从fixture造断言值；mode/default/none/modelLarge-b/fast/identity/no invented modelusage等语义保。Root已明确裁usage由退役hidden used/size改实际Fact严格32%（原SDK320000/1000000字节不变）与无USD；工具probe/色阈值及NoLoad/login/正文/附件send全部保。Wizard只补合法LockFacts/完整synthetic hostingDevice及cannot/sessions匹配home/candidate.command:null，原四state/askcount/registry/import/geometry断言未删。可独立sourcecommit交Root，无产品attrs/auth/兼容改动；仅源码准入，不冒新DOM菜单交互/整脚本实际绿。原48444/7229/96347等失败仍各自保真，后续runtime独立准入。
+
+
+### Read完整ChatMsgRow补齐source审
+
+consumer-read-message-dto-source-1 manifest1d50034449e31b835569f46a01136d9fe454f09753c2f766c7aec8a80651907b/candidate8a623b6fd0cf8e67b32e0f858ca2f8979c31a21d02b68da45605acb37932c2d7逐SHA同。唯一synthetic text消息补step/moved/landed/why/got/of/via/to/note/pushed/command匹配当前ChatMsgRow，删除已退word/delivery，原text/time/from及其它消息内容不改。完整diff中原probe/墨色/blockquote/字体/几何/assert阈值均保；失败时仅打印有界真实DOM body2K/最多16HTTP×URL512/16console×1K到既有日志，无新增服务或owner/判定放宽。可独立固定交Root，只source准入。原96347false缺原现场body/network，静态缺to说明合法fixture缺口，不宣称唯一实际cause或machine已绿。
+
+
+### AI4实际open租约事实补传与exactanswer断言
+
+consumer-ai-open-lease-source-1 manifest4fc22f714607089aa19ac97fbfc9737f761469adaca1ea4d773a604d820c32e1两source before/candidate逐SHA同。canonical helper仅在同一已admit claim行将onOpen(args.id)变为onOpen(args.id,args.lease)，claim顺序/owner/cancel逻辑原样；可选callback多一个JS实参不要求其它callback改变。AI4 Map仅记录真实admitted open事实，answer期待值独立于answer请求；两个A尝试都完整exact{id,leaseA,ask31,option}，B完整exact且leaseB!=leaseA，四组/失败重试/计数/权威回包与原断言均保，无产品协议或registry变化。可独立sourcecommit交Root，不冒实际租约场景已绿。
+
+
+### S真实App同host NoLoad恢复草案范围
+
+full-app-noload-current-preparation contractea3b85f7a9d44f372adbd3fb888896ade642f29e1ffbc08baa2c882dfa452294/preparationbb043336857445618f1bdd1e2d7faa923a8eb024a53d2860111ee927931dab69仅计划审：peer8bfb4828111011548bcedea23b46775de45f86fcbbd071a59bafada65b10fe18相对repo59de逐字只Timer55→270，原journal-no-load New1/无LoadResume能力/fixed重复chunk/endturn逻辑不动。canonical独特prompt文本/turn+真实CUA重开前knownpast+第二UIprompt为互补证据，不能从相同peer chunk推唯一正文。GUI HostFile child_pid=host_pid真实源码符合，不用PTY persistent helper或造marker；独立CLI navigate只写REQUEST结果，不shellopen用户App。
+
+seed先捕获host/peer独立ledger，App1/App2各strict remaining[]且不加持久豁免、最终actualCLIclose/confirmedreap与App2正常Quit/全role清空方向无阻断。最终runner要求case270 clock seed前起、保险退出不冒正常关闭、身份PID/birth/exe/PGID与SID/native/cookie齐，漏初始ancestry即停不补认领。缺finalHEAD/binaries/proofs/driver/operator slot，故非执行准入。hostdeath/offline/newShell/physicalreboot/真实支持resume仍另列未验，不由同host普通重开关账。
+
+
+### Root337三消费者独立合同统一准入
+
+consumer-three-current-337-pins.json列明Read consumer-read-current-3 runner4c8ab9bd05753a3eefc978ec2f64d1ce79497a2731795cab69b70aec7b5166c8/contract1dab94d1cac213deb1a10834b220dc853a1362aabf491530cd8e10082619e6aa/admissionc5e6d04155a00820ae9797329237a4518b1f17ae0f56f71dca29f7532b227bd1；ACP consumer-acp-current-1 runnera7fde8c75e367524dc4868fc981d9618c64ae486380e6aeb124e9d82ad6046d5/contract1ecbb5ea1587c8bc853483df561060066f52b92bce5d0fdbca4d59e9cca44045/admission90477e6d3f59a4e5d63c4c841dfc9b35b82627e9c26d60dc533c4fbf81df9f26；AI consumer-ai-current-1 runnerb45ff9523ae7cf99d3e9d0ad49f8d2121eb1879dd7734db347d3660eb5bf3733/contractfcbf8ac808745e304f59ede782b0bd83229a21aa38981e992cb77ad2efca50f2/admissiond211215da31509232e62390db84ea036deec2634ae349e2af3d7436fe8c62fe6均逐SHA核同。
+
+非作者实际Root337389902092ef2caaed015c61ab389601b85422 clean/2331frame对frontend087f集合一致且精确五已审test/helper差、179gen与278assets当前全字典实同，三个实际script SHA匹配各pin、fresh输出目录。三个runner沿原单脚本owned框架；Read/ACP各完整原脚本+positive marker，AI原4组精确names+errors[]和exit0，原每批300总/5GiB/source-gen-env-tools-browsertools/owned/TMP门保持；AI results子树独立镜像，无产品变更。已直接回H按Root明确条件授权串行Read→ACP→AI4，某业务false严格清净归槽后不阻下一已准脚本、不自动修源，不冒App/WK/OSSave/系统clipboard。未由reviewer运行。
+
+
+### Root337三消费者actual分层尾核
+
+Read-current-3 exec62914 result4ceefb05fb0dd83b0b0a5d00298733d5ea0f8212cb395f0bac3b90c65eeb0f4b/logf0adc343ab211e9c13ffcef63bbbf588d9a7285dfcf8b13fa62725d773eeba18实同，17.612s完整原positive marker+actualexit0/无超时强清，Read整脚本green。ACP-current-1 exec74275 resulta0b1405ea055de5dd532df0ecd0b3524f726133ca0d329c804c0f2461a02e866 actualexit1/118.113s：真实登录、plan/acceptEdits/bypass/unknown/default、settings模型/fast/none/optional、wizard四态/几何/idle/press已到正向；三附件positive image-only/file-only/both各实际0/0错误已明确打印，之后旧data-new-session-add-agent locator30s超时。不能只记录wizard一个失败，后续未达断言不能冒整ACP通过。AI-current-1 exec13652 result8ee047dc07abaae6784e8fb7e2f40be398e23fc8b0b689f045f9b2d9749104f6 actualexit1/5.238s，首context explicit collapse survives chunks actualtrue expectedfalse，未到四contexts完成，不计AI4绿。
+
+三批原guard实际无timedout/forcedcleanup/interruption、group_absent=true/remaining_owners及private_footprint空，source/gen/env/tools/browsertools稳定/fixtures removed，cleanup.errors空、TMP实际absent；source-before/after逐dict同。Read23件dual1f7e59748f5fd8980a5a8743537963383922b7dfacbd4ac7bd18b5c895f900f8、ACP22件duale1a8cdf13e486e74dd2f6ab7f3e3b3b6e352e62f99f356652fea0d43cd6531c2、AI24件dual939492e908e5310acea6d43fe3ca6de3c24207949938563415f77fa4e25cefb0全部外/内原文件逐SHA同。原两个false与既有失败均保，未重跑/未作源码原因归因，transport Chrome范围不外推NativeApp/WK/OSSave。
+
+
+### S3模型源审计非作者尾核
+
+s3-model-audit-33738990 AUDITab0adabcf8410912931bf1430df5fc6229d80a86399c8170aa5110debc403389/source-manifesta8ff9947c0c9db57bc1933c0d07c48079bbf43d4595156923a88882f8f76a1f7/receiptf086ecc39b3acfae7b6290fa85500400f60e5924382bde186e3f8e665a21b3a9逐SHA核同，20当前源/2权威要求pins均同Root337 clean、三小件内盘同。四关键source结论成立：Meta/reseat/report/record_exit无报告run代次参数拒旧契约；App resumeSession仅facade定义无当前caller，CLI显式resume存在；实际precheck→ghost/provider open→live.reopen→Journal.lock，constructorRootGate此前已drop，不是provider前原子执行预留；普通newShell新SID但所查路径无旧run关联/恢复分界。Journal完整identity/单writer/Gap/保旧记录不能证明provider预启动唯一执行，报告明确未执行双writer/旧run覆盖反例，不冒已发生故障。结论在既定S3目标内，不因NoLoad普通重挂或C/Core窄验证关闭整S；无产品/新架构实施授权，本尾核也不要求特定UUID方案，后续只需满足持久执行代次与拒旧发布合同。
+
+
+### canonical chunk分组与共享ACP投影纯red独核
+
+chunk-projection-red-337 probe94a30b01120202b7aad77e7a53b839027495877d1756996383404b391f5cd4ff/resultd105c33cda5e972aa9d85eb66bcb7b372343226620c47e84d788168ad3949edf实同，history-paint515b/acp-viewbd998当前SHA=probe before=after。esbuild实际bundle两生产函数进VM；唯一外部catalog gap标签stub调用即throw，在note-only输入路径未调用。两组合法agent_thought_chunk/agent_message_chunk同channel hel/lo，direct apply输出1项hello，paintHistory每Note前boundary导致2项hel/lo，纯语义分组差异成立。未独立重跑，不宣AI折叠唯一runtimecause/Native或paging行为已验。最小后续设计需按可信来源语义区分canonical增量与native完整记录边界，保stable fold key/older-page anchor/现window bounds及raw出口；不改AI期望或全删boundary来追绿，精确candidate另审，无新增架构/独立scope。
+
+
+### S3有限恢复设计提案审查：两项合同待收紧
+
+s3-recovery-design-33738990 DESIGN9ef8f47ff3a0fa275dbe35a1ceedf016a80f1a257625c91de42e662c8a7fdd43/source-manifestd39614e79305ce9f7f1d83a325d6178ff09540106af604183ae4676a813d076d/receipte0787ed2b7751db75514f32d50e9d493978cddb517deacd78e75c4aeac987034匹配，author分支337 clean/13源pins及三小件内盘同。短row gate、同File JournalReservation在已知native provider前取得、Load完整新display base并保旧binding、Resume保实际早notes、明确home动作/Shell新SID空command方向符合既定S3，不要求新daemon。独立查[ACP v1 session setup](https://agentclientprotocol.com/protocol/v1/session-setup)确认Load先验capability+完整回放与Resume无历史回放之区别；仅锁SDK现有能力，不引v2。
+
+实施前两合同须闭合：当前GuiRun仅current request_token不足说明重复成功token/同token不同args/旧过期token，以及base已pub但runpub失败或response丢失时的durable attempt/result。须绑定home/id/expected_run/operation，同token不再次起provider、旧token不当新动作，采用有限现row/manifest状态而非无界日志，在原case7 duplicate/stale项覆盖。recover_session返回{id,run_id}却说live返回join action，需与H明确typed union或明确refusal后重读join（含legacy live run=null）。本review不替作者选新框架或数据结构。
+
+另case5 X/X/Y明确raw3记录保存；3逻辑显示消息须真实message/turn边界，不能把相邻chunks都当段落，与H当前chunk修正一致。rowgate内部须held-guard helper避免read_pair嵌套重入同OS锁，属实现审点。当前仅设计方向审，无产品/native实施准入，待修订有限合同再判。
+
+
+### chunk有限read分组设计与S3 v2合同收口
+
+chunk-grouping-design-337 DESIGNba5b8e322fa6a76b2495ce6a694971f0b7fb91d345dc23bfbc76b98b964108a3/source-facts2d5d2edc0b509b4b846ad02870bffc711fb1510dc589d70ed95f595f55218ac3已核12现源pins同；精确内盘为recovery/chunk-grouping-design-337（无round2子目录）两件原字节。锁schema1.12.0 v1/client.rs1891..1901确有optional messageId。HistoryEntry单typed starts_message由Native/validatedPrompt/真实SDKupdate producer导出、保Turn/Gap break且不改writer，字段方向与既定范围无阻断；现512贡献map/8page/2MiB、raw/search/copy完整性保守界限明确，不新registry。实现约束已回H：overlap displayKey须1对1唯一；older-prefix anchor须实断同retained贡献文本点/offset几何，不能只整卡bottom稳定冒任意Markdown重排阅读点稳定。H已接受，Node读叶写权仍由Root协调，不由本审代授。
+
+S3 DESIGN-v2 61a08594a9e7324f74e014babd76f31b58ba5c2aeef3fd060a2caefd6bd1f1e2/receipt-v2新增，原v1及原receipt SHA保；v2内盘同。两合同阻断已闭：有限≤16KiB epoch高水+latest attempt/result，home/id/expected_run/op/argsDigest/nonce绑定，preghost durableReserved、旧/冲突token拒，partialpub/失答Pending或Unknown不重spawn，不无界日志；typed Opened/Join(legacy run=null)/Pending/Unknown/Unavailable一致。case5 raw3记录与显示消息分离，heldguard避重入明确。设计可交Root按既定slice/唯一写权实施准备，非native执行准入或扩大文件授权。每次phase/base/run publication须重核attempt epoch，不能只spawn前一次check；Opened onlyactualReady，active旧owner不伪结束，沿原case7/失败边界验不新增矩阵。
+
+
+### H首read来源metadata片8a0fe08e独审及Node叶交还
+
+fixed8a0fe08e445236f5029900127dee82dee86f4184（baseRoot337）9源gitshow逐SHA等manifest528c152f7727284dd9f3e49f54f842494c965643ea70905066dde3cd724e11ab/candidate，patchacb25f614d58cb02c027554166a4d1780e98ca6eaa036dfe01b74df3c6d53712/fixedmap4991adbf6a30d5f3cfb4ce03070ff6b2467ca10f4d0451ced00fcd3898aeefbd同；30小件内盘recovery/chunk-grouping-read-source-1逐SHA同。journal parse_record前全部writer prefix逐字等base、SHA1ac3daad028256850e0c55a27ea5053288b7192a8dd4a3c59e078406fb9e61db。SDK typed通知starts=false、本地Prompt首文本true而附件false、Native完整utterance=true，reference/scaffold和Core普通/giant保同scalar，payload内部starts_message不能盖read metadata。预算encoded-size/cancellation/complete判定不弱化，四授权testadapter仅enum模式改形，原payload/assert/count保；全文静态未见旧ContentEvent::Update(tuple)消费遗留。
+
+具体Clean Code结论：来源事实由现ContentEvent/parser持有，Core仍纯bounded wire映射；没有把事实推断搬UI、加网络/进程副作用或新owner/registry。BodyProjection小内部三元组有就地字段说明与命名destructure，现无需机械拆模块。无源码阻断，可source集成；已通知H交还Node3读取叶，由Root排input后续reservation/Load，H继续Core/TS。仅syntax/静态source checkpoint，未编译/真gen/行为绿，尚不算UI chunk分组修复完成。
+
+
+### Rootae903读取片整合与协调两文档尾核
+
+integration/chunk-origin-ae9030a2 receipt3ee8a94e18fbfbb5984d3962833c1ebeb24e777aaab670a7981c336b9109e73b列9file在Rootae9030a25dcb015d644cb7f57402dfa07af5c059逐gitshow SHA等H8a0fe08e完整原字节，Rootclean；bundlefccf62888cdd1185ab7dc4c4b6713fc42c1f61ec577cee047722393af656c37d/3867B真实verify0且唯一head ae903、prereq337，两件内盘同。只source集成，不冒编译/gen/行为。
+
+计划23da2326仅STATE改写+完整前态archive，archive逐字等parent STATE；原STATEc175fa9f0eaa37d40508e90841782228a8df6ba9efa1b310ead29234b7527275。consumer-lease-337 bundle8a4989f9d7aacbb1bcdb284d7e0e3400adf692f0e3732f1e82b8068bb0fe2741/1191B/prereq6e78真实verify0且内盘同。docs-mirror-current记录224件在内盘recovery/docs/code-quality全SHA符合当时逐件快照，不冒后续dirty卡/文档原子同帧；旧current-code-quality-docs-manifest属早期索引，refs/runtime/RESUME仍按Root排队刷新。
+
+当前STATE/ROUND-2-ACCEPTANCE最小diff未改34个ID/标准列，仅H/S真实状态、执行顺序及NoLoad“只拟验证”表述；实现→gen/consumer→C/Core→final生产→人验准确，不将Read绿/ACP和AI false/旧App partial冒当前整包。一个即时措辞建议已回Root：总账段首“当前Root337”须更新ae903，同时标该consumer证据来源337，以免与STATE矛盾。不新建工具/矩阵/运行。
+
+
+### H纯消息投影90a2与mixed-ID845c两独立片尾核
+
+90a2bfbc470d358b419895677f41e5859d3f0136（base8a0）3源gitshow逐SHA等chunk-projection-source-1 manifestec17703e7c8ff811e4a07d3eccda28f700e10b6d39fff4ccb406cc9f44cea01d/fixedmap796e4310b8d8d1dc95d2c7adf0f612a2661c0459501b5730b53227fa08d8b40d，12源码小件内盘同。red2 result3d79010211da1f3fc284ad1b786aabd6f953e9895f02cea7fd3a17e734ade133/log66438e0d1e873d6d280e660c3c91bbd5f31dbf2bbf63e626824c29b479c3ad79实际23/25，两新断言分组2!=1/不同显式ID误合并均业务红；green1 result497e99f8602ca92eb76a66e537953b11d1baf4e55494ed8022e96ed856a9b1ee/log7323bde67088d7fa4b944e94728da1e29fe0b2b03fcd917542ad43af7343cf26同f56脚本25/25，两prod=90a、source前后同，双盘两结果/日志实同。旧red1路径错仅23旧check通过，不算业务红。
+
+90a严格ID相等仍有Root已定unknown fallback缺口，未作最终分组放行；后继845c77d70c1b45f0a9b563a151104f9e24337598确parent90a，2源gitshow精确等manifest259a44e5d8348c04664fc9a67f6fa26c89e7ac3cba7b19fc47bd6fd03d909616/fixedmapdcca24bd4da828301bd8fcbb503a4c51c5a2cebd1f9dbdaf39170f1d2bf3c9df，7源码小件内盘同。mixed redf4bb57640c7785a9c383e9e2b27c40721ea8475a9427a20f1371ac7649a9f77a/log95c41bf9b17afd40b4fa2d451ebcd97fdaafdb71bdfab749de8f4c68c5d8d0da实际24/25→green1f79a1952fa72cd55611df71d27092bf00e236d814d9b41db51e160e29c76c62/log7323同9573fixture25/25，beforeafter3SHA同、两盘结果/日志同。仅两明确不同ID断开，省略保既有ID/首次明确ID补入，源码修复与Root fallback合同一致。
+
+两提交可顺序source整合，无剩余本片阻断。starts_message/Turn/Gap保边界，首historyKey append稳定/当前window贡献记录保；ToolUpdate仍按原call ID更新。具体Clean Code结论：共享apply持消息合并语义，paint持来源identity/contribution；变更侦测依当前apply对chunk/tool/compaction的replace对象不变量，现源码符合，无新registry/IO/全史map，现有限window无需机械拆模块。原AI4断言未改/未跑，ChatView displayKey/anchor/find/copy下一片、真gen/types/native均待，不由纯25关闭这些目标。
+
+
+### Root0066纯投影两片整合actual尾核
+
+Root顺序90a2→3d45f8ba、845c→0066e68db178070dbcbc10550c9715002d1640ba，最终三源gitshow逐字等author845c，Rootclean。integration/chunk-paint-0066e68d/resultac550fe3c3923113e42e97d14622ce99c9efa3cbbda8e8bc402942023e488478真实exit0/0.213046s，7source前后字典同且当前SHA同；reader.log7323bde67088d7fa4b944e94728da1e29fe0b2b03fcd917542ad43af7343cf26完整25/25，双盘两文件原字节同。原23有效断言未删，新增分组/显式ID与其mixedID子断言保。仅integrated纯reader/projection范围，不冒fullAI/ChatView displayKey/anchor/find/copy/真gen/types/native；本review未重跑。
+
+
+### H bounded display identity首片a5b9独审
+
+a5b9f3a8ec80fa18474653deb7f569a35696bc63（接845）4源gitshow逐SHA等manifest549ab448fb373c72ba95dd0676d1b828ae00257513b62cbcc0ccb2c100779401/fixedmapb84fcff4ce07408a2aea955d59913bb366d4ef6ac2924f2bbb0792b6ec47bdf9，15源码小件内盘原字节同。chunk-identity-pure-1 result76e76c7bb10708a432d097ecfdc671b20e418f0b05cad781afe34263e8bab389/log2552a53e75bccd29d9ccf84aebd8102db801c7a19abb5094ac4d7bf30de70c29实际26/26+fixture syntax0、4source前后同/结果日志内盘同，未实际React/AI4。
+
+retainHistoryIdentity只现window previous贡献建临时map，used一对一且collision回退唯一，无全史表；installHistory实际清past/升epoch，state.reset同清past，不跨binding代次保旧owner。ChatView外wrapper/内AgentContent/user等Reactkey统一displayKey，jump/highlight按historyEntries包含关系找全贡献，不限首key。canonical helper只SDK body Note=false/Turn=true合法read DTO，不自己合并。具体Clean Code：纯身份规则放paint，组件持binding/epoch寿命，未加registry/store或IO owner。源码无阻断可组合整合，实际运行合同另审。
+
+旧top锚点仍未修，不将本片冒olderprefix retained文本点几何保证；find/copy跨贡献完整性及actualdisclosure/AI4/native/gen/types均待。生产TS现已变，后续browser来源不能沿用旧087f“仅fixture差”wholeframe口径。原完整AI脚本/首collapse断言原字节不动，不以pure26关整包。
+
+
+### Root300纯26集成及原AI4 current2运行准入
+
+integration/chunk-identity-300de46f resultfec4d49daca27b243ff41df309d17a97a828f29aa108f17897cec37d5a437260记录actualexit0/0.227634s/26纯check，log2552a53e75bccd29d9ccf84aebd8102db801c7a19abb5094ac4d7bf30de70c29、9source前后同/双盘原字节同；不重跑、不冒DOManchor/fullAI/native。
+
+consumer-ai-current-2 runnerffea150b44a10b00689a61069fa29d23346584373adb9d1214e2e239252eda65/contractc83d30945ceb84cc8c9c754e8c3bd457123c79615b09bb014ac0650622c4c94f/admissionc5f61b18c4f4238d217ab317e0368cb66ca210406ac64dd0df327fbf47c21c3c逐SHA核同。实际Root300de46f5d0164cc53dcac08082aa3e2f5ed44f0 clean/2331frame对087f精确18已审生产/fixture源差，179gen同；278dist独立预检同但此devserver直接消费当前源码，未据旧receipt冒当前Rust/gen/fullnoEmit或wholeframe。runner较旧AI1仅freshmirror和精确sourceDelta/事实文字，原AI完整scriptc240/4names+errors[]/300剩余预算/5GiB/source-env-tools-ownedChrome-TMP采集清理门原样；required starts_message由固定SDK transport DTO false/Turntrue事实供给，不在fixture合并。OUT/TMP/mirror fresh，source无执行阻断，已告Root可授唯一browser实际；reviewer不代启动/不并native，author另树anchor dirty不属于Root本批输入。原AI13652false保持。
+
+
+### AI76618实际false、被动诊断42e源审与单Meta取舍早核
+
+consumer-ai-current-2 result524627e11189ad448f327c33bf0654c44024a7f214a6ede97dd4aada5a347a13真实terminalfalse/36.775s：原manual-collapse及keyboard-open断言已越过，line167等待下一agent正文可见30s超时；actualNodeexit1但wrapper timedout/forced=false，Chrome正常退出。failure只focus reasoning-open/tools等有限状态，不足判reader/follow/transport/render唯一原因。source/gen/env/tools/browsertools稳定、owned/footprint空/TMPabsent，25manifest小件双盘同，原false不回填。
+
+42e460d52431bf55c464c4737abc4e5cc2c66394唯一AI脚本d577d5c5a77de5de07ccccb15ab3e6be8c2f9bb63b124362369d949c8a087c8d等consumer-ai-follow-diagnostic-source-1 manifest462fa1d49c55b718546b83309c09f6e3b24d117155875383404f28582c12721f/fixedmap07aa1cdce5480a4c997ceed77c31103c109155e6cd3980d19106313ce93e8e17/7小件镜像。原60assert/4contexts/队列/等待阈值保；被动末32相关request/16failed+HTTP及failure-only DOM4K、有限reader/scroller/tools，RPC与现selector实符，无新observer/响应parser/owner或未授anchor场景。可source精准cherry，运行合同另审；Root最新因用户磁盘反馈暂停所有新增browser/native/build，此源审不授重跑，暂不制大mirror/gzip。
+
+input dirty首片GUI单Meta state取舍只早审未放行：GUI read_pair不拿rowgate而单读原子Meta内state，生产state.json消费仅legacy分支，避免try0→filter_map缺行；短gate只串RMW/拒旧，legacy文件不搬、不扩全Shell身份。已向作者要求fixed核所有Meta RMW同gate/旧runcheck+embeddedstate写同临界区，尤其set_pid在旧GUI pid死后无RunKey退役的明确takeover caller界限，防迟到旧set_pid旁路；当前未当实际故障或固定源码通过。
+
+plan02a46仅STATE/总账事实更新；Root300 source bundle d956099a7dd2d69d726be5e3e2295476e3f2fc14a75149a17922ba33e84879a9/2423B、receipt2d4ebdd0cfcb0a9e5d37377aaff3ed58ec4f5e0f31ab4985f46bef6397893799/prereq0066真实verify0，两件内盘同。新02a46 docs snapshot224MD逐SHA同、RESUME/runtime明确FREE和76618terminalfalse，无旧live恢复指令；不新盘点/删除或运行矩阵。
+
+
+### S3首RunKey片3efd与Rootc4aa精确整合尾核（源码）
+
+3efd516f7c03648b73ef6a7363bc7c47f96efabd仅live/gui_host/lib三授权叶；receipt6f2d029dd9bd879a8430e5f21d3d786ff8bc10da92f5590705a6a1454a11e2ea/checks2bd46846820455ac6eab829f0794c7084750700ec3c1b082b8a75bb22897a639及fixed三SHA相符。GUI状态唯一owner为Meta.gui_run.state，read_pair单原子Meta快照无rowgate等待/缺行；旧state.json仅legacy分支。所有Meta RMW同短gate，with_run对完整RunKey核验与写入在同临界区，GUI十报告及退出均捕获原key；set_pid对dead GUI仍拒，明确takeover等待旧host退后先reseat TUI再spawnPTY，不给无资格迟到写旁路。完整native identity在Meta/bind前拒碰撞，当前check_gui_source仍非JournalReservation。begin发布与Journal/bootstrap次序仍由后续获授事务片收口，不称S3完成。模块边界为live持Meta/gate/代次，gui_host传捕获key，lib显式takeover，无新cache服务或全Shell重构。5新cfgtest仅源码，rustfmt解析/diff0不是编译或行为绿。
+
+现有设计目录4小件61,717B镜像manifest3912d062b837b78772e79681b82f95cb499b6c53e8aa7f2c6dae375202adf89a原字节核同，未制新binary/gzip/fullmirror。Root当前c4aa4a3f6675b8a201c0479f54359998cd85f535 clean，三叶gitshow逐字等3efd（live e5b49d43/gui_host0f3cd998/lib447461ed）。可source交接下一独立reservation/Load片，无运行准入。
+
+### H原record元数据87d6窄源审
+
+87d6e1ba5c52cccca39c20551fb9d2c9064affa5仅Core chat.rs/history_projection_tests.rs，gitshow逐字等chunk-record-provenance-source-1 manifest6e1a491ed7dd61edcc46c01b367905b55eab82b3a70669c82710b22f8e386de2/fixedmapc88b9739b3ad5e1903338fa856b145ba8d64949cf9cee8fca42383d7a734e7a0。HistoryEntry.record复用Option<HistoryRecordRef>；普通page仅由真实event.position/item/page.cursor_before构造，giant caller scaffold一律None，outer checked selection保独立且不提升物理JSONL边界。完整entry仍计原encoded budget/取消/128和512KiB门。新增exact range/cursor及scaffold None断言未删旧断言。Core mapper持provenance责任，无第二range模型/RPC/owner；Node writer/三读取叶未写。源码无阻断可精确整合，尚无Rust类型/生成/行为验证，anchor dirty不属该片。
+
+### 用户磁盘反馈后的24旧缓存清理边界及结果尾核
+
+maintenance/storage-20261030/obsolete-cache-preflight.json SHA709d940fde8162ef624b3afa9c068bb95ea44564fef18efc311fad05fcfe1174固定24个旧feature debug/iOS或旧experiment target子目录，互不嵌套且不覆盖quality-target/main khor-target/catalog-target保护路径；原lsof完整exit0/stderr空/active[]。117,687,271,424B=109.6048GiB仅du量。cleanup-result.json SHAa9d9a06a32073ac755c40445e79fb519fbc52261fa27f25f9bd5f202fcc9281c complete，引用同manifest，24路径/顺序/字节逐项等清单且现均absent；三保护target实际仍存在且非symlink。结果before/after外盘算式精确，实增112,437,125,120B=104.7152GiB，未混成du量。无具体范围/结果阻断；执行时UID/rename属Root执行记录，本result未逐项单列身份，reviewer不冒亲历全部mutation核验。未再du/lsof/删除/大备份；新增browser/native/build仍暂停。
+
+
+### 内盘历史binary退役、旧mirror引用与新空间门只读尾核
+
+internal-binary-cache-preflight d4e9caf8648eba1c7ac019a528c0330cef5b187f08ae13867075f355f7197dfb/结果f27287da018676d1dbe012ac4ab2c6834c77ac8f0d60ee0dad81e4e41f9c2716，248路径/bytes/allocated/kind逐项同且原inactive、现absent：5binary-only zip/5程序库/238binary gzip，不包含raw Cargo/log gzip。实增4,298,911,744B=4.00367GiB算式同。historical-mirror-dedup-result49e73f9fa31be53ebedae792969096b3aaebcd17c6d4bae12ca30b1d79058d91的3195唯一路径只旧P5/Q039/Q055/Q052/Q037，现全symlink到记录的外盘canonical，原件存在且size同；未重读全部大payload SHA，执行时逐SHA匹配属原结果。实增1,906,225,152B=1.77531GiB。它们是唯一外盘原件加引用，不冒仍双盘完整字节，原旧manifest不回填。
+
+STORAGE24037c9d7d665296c1c2e62a1d89205b38563fadef5a8b04cc5d628301d66e06和PLAN/EXEC顶部同口径；storage-preflight e70d4b2f4d574c518e6a0065b10cd6c6ecb7c45981d8d81d5c8b32e1820384c5源码只读，必填两盘有限非负peak、不同设备检查、ceil((外20/内10GiB)+peak)、两盘都满足才exit0。未降低原5GiB紧急停止线，也不以6/2估算pass充当runtime准入。停制永久binary双份、保当前源码救援实际字节且老日志仅唯一原件，叙述无过界。
+
+### H record消费3cd固定来源已核，copy/raw-gap两源码阻断待收
+
+3cd3c25b65e94b3455377d266b374f3282258e1b接87d6，7gitshow before/after逐SHA等manifestf87a9607a9a8d5965ee93c575ae0070a1f06cfad8d28ec4a23258f31479c1666/fixedmapc13843715afc7c304585b2503f414c4fe45cb4f2b8247a8f236339b5c40b1820，patch fda127448060f836096776008cbdd9954f5388fbcab09b3e812b51f3be68364b。图谱分支匹配但built SHA仍87d6，故用固定diff补源核。只diff0及新增未执行case，不冒新pure/type/browser绿。
+
+目前不放行作为完整copy闭包：historyPartComplete首entry.starts_message直接true跳过尾coverage，但paint只在该entry前断开，后续同channel SDK false仍能并入同item，完整record加未知流尾可误称complete。另raw-gap/unknown覆盖只比start/end，忽略真实ref.item；Core mapper现可把同physical record中超budget的某event变为同start/end、不同item的reference，当前共享range不能被between条件识别。已向H/Root给精确窄边界，建议按真实item顺序或重叠未知保守处理，不要按key猜，也不要求新增cross-page框架。其他变化保持现source IO owner/64KiB cap，无Node/Core新增写入；cross-page logical search/reconstruct、anchor及fullAI仍OPEN。未启动任何运行。
+
+
+### H167b窄修关闭3cd两源码阻断
+
+167b02fabefbde72de13740875ef2ae90cc867c1接3cd，review-fix manifestf474a749c8ef577c6bd58026813369ec31e5bd9ac9f1f763fdd8c98636955be1/fixedmap8d35de3db4d48452bb43ee8558ca262893976532a779764fa3b111e8bf52ab70，5gitshow before/after逐SHA同，patch ed2adfdb2d4237d750b92f2f8d5c30e1d1b44ee961fa4467d54cc78fc5622aed。historyReferenceBetween统一真实range+同range parser item；共享范围中间项能断开、明确更早项不误断，itemNone/重叠不可排序保守处理。不再starts_message无条件complete：起点事实可信，single contribution才有intrinsic end且unknownAfter仍拒，混合完整+SDK组走统一尾coverage。
+
+另发现并修现worker把references丢空后普通paint的实际接线：现batch保原page引用，normalDone仅扣原references的raw待处理计数，既有raw iterator另核真实coverage，未新parser或重复raw消费。partial message计unsearched，不冒其whole-copy支持。原page/result/64KiB copy/IO owner范围未扩大。新mixed/unknown-tail/sharedrange子断言只写未执行，旧断言未删；无browser/pure/Cargo/gen绿。87d6→3cd→167b可顺序source组合，无本片剩余阻断，cross-page query/reconstruct/anchor/fullAI及当前真gen仍OPEN。
+
+Rootd11bd8e0788c3bd1f3778b398a7ff3d7d527608c clean，AI诊断脚本gitshow逐字等42e460d5、SHAd577d5c5a77de5de07ccccb15ab3e6be8c2f9bb63b124362369d949c8a087c8d。后续AI合同需另审compact retention/原guard，本文未授运行。review仅读源码及小索引，未新增大镜像/程序/缓存。
+
+
+### AI3 d11诊断合同与compact retention准入
+
+consumer-ai-current-3 run2d46e28c4a5924c81de82f58dfd7cd45ca8600425af2ea5bf7d411c520452f34/contract357a9bbe82f68e1ae8c8d33f27cc46b7e068ba639964fefa8801b6f01b8de842/admission61370ef680a803d761e0bca1848a2145bf243404a9f6bea0b2c4f2b962a38d34实核相符。Rootd11 clean/2331source keys同087f，精确21已审delta与两合同字典完全同（不沿旧18口径），179gen/278assets实同；devserver读当前JS，不冒Rust/gen/noEmit已过。对旧AI2 runner只freshmirror及finally retention改，原4contexts/断言/队列/300/强正向names/ownedChrome/source-env-tools/TMP/lsof/5GiB紧急门未削弱。
+
+完整外盘canonical逐文件SHA，内盘只当前source-after/结果/合同/工具小索引，ai results/failure各<=128KiB；不copytree日志/截图/module，原失败原始数据仍外盘唯一原件。不改result或cleanup判定，也不声称完整双副本。TMP/mirror fresh。Root需按固定e70只读preflight保存外.25GiB/内1GiB峰值、外20/内10GiB保留量actual pass再单点授唯一批；源审无阻断，reviewer与H不启动，不将旧pause或本审查充作自动运行授权。
+
+
+### S3 known-native reservation primitive481846源审
+
+4818463846776e36284b13e3cb9c77cb3703c22f接854ecead（3efd+H8a），6gitshow逐SHA等receipt361436635cbadc774e9ab324892ba8bb47fc4c5876d3cb7867f55e1152f74c2e；checks b39e2e35fbc07e8e7d9b4b7e13cc3289e367f4e32069682a01e2a9a8e058c3c1/SCOPE826dcad9/candidate3ba943e6均pin同，树clean。图谱built854/head481不一致，固定diff补审。
+
+JournalReservation负责exact identity/current manifest与既有writer File所有权，take不删pending/append/reseat，pre-provider check_binding及live.check_gui_source完整核验，into_journal直接move同File无dup/close-reopen。Known resume在spawn前取得，handshake失败正常路径先request_shutdown/confirmed_exit再drop；成功后来源检查→Journal bind→RunKey出版，未知New只在得到真实native后取锁。模块边界清楚：Journal持物理资源，gui_host持provider时序，acp_process仅真实Session.pid字段（非birth/exit凭证），未新增registry/通用恢复框架。
+
+ACP优先已声明Resume，否则只有load_session=true才发Load；两者均无时Initialize后明确Wont，不替New。现unsupported test增每child私有4method名日志强initialize-only，原facts/refusal断言保；2新Journal case核File FD延续/释放以及preinit drop保原current/pending/binding。全部仅源码/6fmt解析+diff0，未类型/测试/真实provider，不重标旧Store绿。
+
+可source checkpoint整合与继续获授下一独立事务片。明确待封：成功handshake后本地setup Err时局部Journal会先drop，再由外层confirmed_exit；host crash或cleanup unconfirmed也不能以锁free当无provider。须bounded latestAttempt/epoch、OSbirth与Unknown failclosed后才能声称恢复执行唯一性；当前SCOPE已列pending。Load generation/旧binding、Resume早Notes、run/base/Ready事务/public恢复/newShell仍OPEN，无本片运行准入。small镜像manifest162156251955df0b5ecc0708305720ee1b9df5ff4f6101b44403bab202f2839b仅4小件索引，未造binary/cache/大mirror。
+
+
+### AI3 actual73389 false及compact保留/源码因果范围尾核
+
+consumer-ai-current-3 result6ae2d48a8bae3e28ec57aed55e3f5bd95de98ab39029e55d4757cccd6d38b5a2真实terminalfalse/37.574s，Node98495 exit1、非wrapper timeout/forced/interruption，groupabsent且owned/footprint空；source前后完整字典同/gen/env/tools/browsertools全稳定、fixture移除、TMPabsent/lsof空。canonical26文件逐SHA实核全同；dual-small6b60f3fb9ee4c8695658a3f13d84571b4bb4616b9cf9ad525e749347ab55f8a3列14小件及自身manifest共15文件340,164B内盘原字节同，无log/PNG/module复制，failure9374B低于128KiB。实际storage外.25/内1GiB估算下reserve20/10均pass，不改紧急5门。
+
+failure d969df4832a51b3323ad8d3abef0d6b5783a68dfea3c2bcb1e2a6e3adf80b61e确line167等待下一agent正文30s：top0、height=view788、latestButton null、只有两thought、末32request全chat_poll、failed[]；http仍有config/page_icons/face_here/day_strips普通404，不能写全networkerrors空。graph该符号未覆盖后实际读captureDisclosure无条件following=false，ChatView canFollow直接读此ref，historyReader.wake/schedule均受门，足以解释内容未溢出而disclosure关闭后读取停顿的源码路径，与实际吻合。末32是有界尾采样，不足断言整个过程无第三读或唯一runtimecause；没有补跑对照。接Root已授窄修：区分disclosure几何与用户离开latest数据follow意图，真实upscroll/显式历史定位暂停、toBottom恢复、hidden/zeroheight取消及原bounds仍须保。原AI60assert/4contexts不改。
+
+
+### RunKey5exact原生模板27e只读预审（未准入）
+
+run-key-native-1/run.py SHA27e1048a0d28a95dcc76a51f08e3955e8e09181c0463873b380873ac449d7d78，contract-node2939afbc head/sourceReceipt仍null前置硬停。run_one/compile_targets/check_copy三个函数AST精确同旧B946；删A旧compat/stub编译依赖后，stub_build null，实际单Node libtest selected、hostlockedmetadata/每selected no-prior prepare→同次实际CargoJSON verify/require/原path+copySHA→5原RunKey exact各1pass0fail0ignored/0helper。无provider/stub运行或重Store矩阵。强制e70 storage reserve外20/内10+peak6/2，实际300总/5GiB紧急门保持；一份当前私有exe结束核SHA/原件与lsof空后退役，不压缩大镜像。
+
+衍生执行逻辑无新阻断，但最终固定前需清contract中旧B execution/source_rule的16ee/stub3selected/13父7helper以及旧多copies/30MiB/helper时限等语义遗留。它们不改变实际5测试argv，但不能带入新批事实范围。待H窄hook/实际后固定当前head/sourceFrame/sourceReceipt与工具/资源实际pins再最终准入，本模板审查不授运行。
+
+
+### disclosure与数据follow意图850c两产品叶源码尾核
+
+850c840e20a92b606e9a250fe2415ab6caafc0b4接167b，manifest256885741e98e2c3426c7bdca462c2a1c6963117633fad8a2b536216d788fd65/fixedmap5e6ad0dcdb42c95f3f5e16d0a35e21a155e19eacb4b779fb17b1f6177612d42e/patch e6173da62b1fd51de7ac0c22f604c2b322d8223ae59cf90860ecc5d98cc14e91实核，2gitshow前后SHA同。useChatScroll内同owner新增readingLatest，真实readPosition near同步两ref，toBottom恢复两ref；captureDisclosure只把geometry following关掉，不改数据意图。ChatView可追踪的两处显式jump/older均同时关两ref，canFollow保document.hidden/contentHeight原门只改用readingLatest；原hidden/zeroheight cancel/bounds未变。MachineChat既有following消费接口/行为无改，新字段不被其消费。
+
+具体模块结论：用户阅读意图与disclosure几何归同scroll hook，ChatView仅消费数据gate/显式导航，无第二observer、registry或派生store；未混anchor WIP。无本片源码阻断可精确整合，但目前仅diff0与源审，既有AI60assert无改、未pure/DOM/browser/types/gen，不先称73389已修绿。H获授下一既有scroll-compose真实hook/Source/Reader IO fixture另固定审，不由本结论授运行。
+
+
+### Rootc2 hook整合窄尾核
+
+Rootc2dae71845be5897451d64958b8fe3efd678d69c clean，d11→c2只hook/ChatView两path10+/7-，实际增删行逐字等850c原patch。hook全SHA ae1e115e250cd6ab76afc019db5343b7c94a5959b122d674295f27bbdbc584c4同author；Root ChatView3d7cc2fd117a172b32c3c73c3ee5a4d393d43cb49b0b0726283d29d2d044f5ce仅readingLatest已审接线，不冒整文件等author b294（其有87/3cd/167新底）。这三源片仍未入Root，当前gen/types状态与前约束不变。后续current4需独立合同及新storage actual pass，未启动任何运行。
+
+
+### AIcurrent4 c2同原脚本窄准入
+
+consumer-ai-current-4 run2b1275dc253f3c288b05f411e722fd52a933d9417b5225c0bf0f785b16e16214/contract351eb030268610589f706a4eee5c4a81bb5d40235970f6672f62299251b9baa0/admission667d7910da98461f9c69671e5bb1fc0b14db0185d8a859b5bba57ec1e7c97bb6三pin同。runner比current3仅freshmirror；Rootc2 clean、2331source keys同087f且精确22差完全等两合同，179gen/278assets现同。原d577脚本60assert/4contexts/300/5GiB紧急门/owned/source-env-tools/TMP及compact retention全同，不混87/3cd/167/anchor或新scrollfixture。TMP/mirror fresh。源码无执行阻断，需Root保存e70外.25/内1GiB峰值reserve20/10本次actual pass后单点授唯一browser；reviewer/H未启动，不称本次已绿。
+
+
+### RunKeynative5 currentc2最终准入及AIcurrent4 false尾核
+
+run-key-native-1 driver4045ef5c9e585ef92d6c2772f3b841d62dace4b96973a627de50325d0e4152dd/contractd07ecdb1452576c9b848067be7bdfd817844426277a93e0ff76fec781daf635a/sourceReceipt77583bb378a4239fd72d1835f7fc9d6264803823ad6203ce5e86e38de3e525ff实pin同。Rootc2 clean，31source/helpers/tools/python逐SHA当前同，3R1源等3efd，五exact函数各唯一；run_one/compile_targets/check_copy AST仍同已审B模板。旧B文字已清，单Node libtest真实no-prior来源链/5×1pass0fail0ignored/0helper，stub/assets均None，无481/87/3cd/Store运行。e70 reserve20/10+6/2真实前置，原300/5GiB紧急门不降，actual目录fresh；一私有copy验证+lsof空后退役无archive。stdout仅紧凑摘要，完整result照存。无剩余准入阻断，Root待前browserterminal净后可授唯一native；reviewer不启动。
+
+AIcurrent4 actual71253 result7f1920899e862fe98228ab1c71c580afb47a979d683ec99d715f72bbf550c313真实false/38.1047s，source/gen/env/tools/browsertools稳定、cleanup无错/remaining空/TMPabsent；canonical及compact索引全部SHA实同，内盘342,358B无大payload。已越原line167正文，现failure明确等待edit[data-diff-before]可见30s，edit expanded=false，不能据此直接归为新产品缺陷/唯一cause或改assert追绿。H仅获授基线/fixture只读查因，原false保留，不补跑。
+
+
+### RunKey36944实际compile101尾核（0case）
+
+run-key-native-1/actual-node-1 result7bf336a97ffc7e0149797377f8e3be6458bdc46ecf1432ec82b0cb53233a6ce6真实false/36.1654s，host fullmetadata0，compile-node原log d4eb1e58a628fcb5a505484404cdb66c390822d65e0d618bedf729df1966c8a2的唯一compiler error E0382：RunKey在gui_host1024 async move经1116report被捕获移动，1603退出记录再次借用。Cargo101非业务红、非timeout/forced/interruption，groupabsent/remaining/footprint净；因guard失败即抛，compile-node无单独result.json，原error全部保在raw+overallfailure，不推为缺执行业务证据。
+
+artifacts{}、无run-*目录，5cases未执行、无成功V/native producer或私有exe可复用。source前后完整字典同，TMPentries空且absent，private retirement retired/errors皆空；新e70reserve20/10+6/2实际pass。完整result/raw外盘canonical存在，stdout只紧凑摘要，无新binary/gzip/archive；当次尚无独立compact内部索引，不冒已新增双镜像。可审作者单叶RunKey所有权修正后仅同5exact另批；不能混481事务或重旧矩阵，当前未授续跑。
+
+
+### E0382单叶借用修b443源码准入
+
+b443c973cc4d0b1f27987dc889027a77591946de parent481，但commit仅gui_host13+/10-，receipt110ea823a2c5bca47a2f57f0f6923cde335471fbaf3e6622880301b25bba67e6/patch23a3e823033594d9fadaac8390b01d050f0f018d83f38445059a2d5da83937b2实同。loop前run_in_loop=&run，async move只捕获该共享借用；十报告改用同借用，outer final record_exit仍&run，不clone/新key/改变拒旧语义。block_on同步完成future后才final publication，借用无逃逸或新增异步owner。仅该单commit可精确cherry，不取parent481。
+
+reviewer只读git apply --check对Root当前原patch0；另对3efd原gui内存应用同alias+10替换，SHA423e72bb357377fb0db5da4e9a0d50886dbc55b3aab24dda57155f83e7cacdda与derivedreceipt相符。authorfullgui bec9含481，不冒Root整文件相同；Root真正cherry后再现算pin。当前仅rustfmt解析/diff0/源审，未Rust类型或行为，无运行准入；后续只同5必要exact另批，不扩旧矩阵。
+
+
+### 既有scroll fixture5ff源码审：真实IO链合规，缺必需record待补
+
+5ffb9dc2a928102ad7cdbaa187ed6b3ef97f4f69接850c，2gitshow逐SHA等manifest4c20da9a3b4dea452c8847281f891c610a29a48a1c841ea3e425147c185cde7f/fixedmapbc93eb1f0fc81075eae618c74308046aeded010bdf0d53f96c8d4241ce20a689，patch9b7cc5ac7db4443c18ac1cbb68ac566edb942ccb1d1d9f1e96ecc2c1f3e9fc33同。可选disclosure短/长只走原hook/AgentReasoning，实际historySource→historyReader→receiveHistoryPage所接newer marker与transport request独立观察；非ref单量自证/fixture跟随loop，空页只合法cursor进展不冒正文/远程Node。long真实wheel后>一原700ms周期观察请求/已消费marker静止，再toBottom进展；未运行不冒通过。
+
+旧all/parent/transitions非新flag时循环条件与原等价，原assert无删除；hidden/真实App/旧页文本点几何不由该fixture证明。目前一处必修类型缺口：historySource Transport.record为必需，但fixture对象仅begin/cancel/page；TSX语法0不能发现。已告H/Root只加unused record显式throw拒意外读取，不伪数据/新parser/改阈值。待此独立小fix再放source整合；未browser/类型检查/重型运行，原AI4脚本未混入。
+
+
+### RunKeynative2单叶fix续批最终准入
+
+Root4dc3cc7d5f559469540d8146b1859fdc5bf21e16 clean，gui_host423e72bb357377fb0db5da4e9a0d50886dbc55b3aab24dda57155f83e7cacdda等独审derived，live/lib原3efd字节未变，不带481。run-key-native-2 driver4045ef5c与run1逐字同；contracta7a6f5e70e12c6dc9953a3efb64f0d6a76c52ca5c0fca449bef1bc6807102a86/sourceReceipt7acd7429929d69fc4e9392ff09b180d1c8e36ef69f875405f2cc25795126c3fa实核。合同对run1仅head/sourceReceipt位置SHA/status/gui单SHA改，所有source/helper当前匹配；单Node/no-prior真实V/原5exact1/0/0和0helper/e70reserve+6/2/300/5GiB紧急门/一copy结束退役全同。actual目录fresh，原36944false保。无准入阻断，Root可授唯一native，reviewer未启动。
+
+
+### 5ff必需record分支1f29关闭
+
+1f29af6363838cfc1f180bc3534a606395a844c7确parent5ff，唯一lab/scroll-compose.tsx+1 record async显式throw unexpected，gitshow c1fb05ee033a8ed516353e9c4a14a7f08194479e84988b086f955722125d2821等fixedmape942cb0066be870e58770ee91c59754166b1100b6826b0be80af373e28cd8585，patch497a9fd4bb2790c7db5d52f65744e3ab7e3651b11af200fb439c3c0ede2d7c6f同。只补Transport必需成员，拒误用不伪record数据；5ff→1f29可顺序source整合，原真hook/Source/Reader及旧场景不变。当前仅syntax/diff源码检查，未fulltypes/browser，无运行准入。
+
+
+### R1 native2实际57370五例终态及真实产物尾核
+
+run-key-native-2/actual-node-1 result616c96d389a924e78d3c2c513b2f3b569f752d38158c7f363ad50008922c613f真实valid/86.3036s，metadata/compile+5exact七stage全0、每exact唯一1pass0fail0ignored，0helper；各stage无timeout/forced/interruption、groupabsent且remaining/footprint空。7raw日志逐SHA等result，5原函数filter与1passsummary实际匹配，不冒仅零匹配执行。原run1 7bf336a9编译false原字节保。
+
+原target khor_node-6824f1e4f15a339f在后批刷新前实际SHA331e055c9382eba1af4d4fdbcd8f3dfed2b0e54e53a5bdbac43b5ec9e9ec42bc等actual row/artifact/copy/V selected，287,316,056B；storedV.source/context精确prepared、11units/3generated、priors[]、selectedreusefalse/freshfalse，原未过滤CargoJSON唯一currentNode/lib/testtrue row逐字相等。source前后完整dict同/环境同，Root4dc仍冻结时核过；TMPentries空且absent。唯一copy记录finalcheck+无占用后退役，现absent且retirement errors[]，无gzip/大mirror。本尾核未重建/运行/改proof，不把缺省runtime环境强套producer或后续target刷新否定历史来源。只R1同代次拒写/GUI快照5case，不冒S3/Load/fullApp。
+
+### Edit226有界诊断6868单叶源审
+
+6868a8eb3dad470ef22b842e42a50fd2f11ecdaa唯一AI脚本，before d577d5c5/after942e966268607a66c0093827bbfd984ce9438a022d5d3fd007096bb3f006036c与manifest a029ed1fd3bf3261995f10a6bca7d4c9dd06dbf556a9b0a7fea6e2fc19c9e727/patch24497a809d6e554064e630821656ee188d890542a6cc2f3adee5210f9b13b86e实核。只加≤8主frame/document-ready事实、9固定RPC累计、≤16实际admitted callback参数id/lease及总数（非响应返回lease）、Vite console compactJSON≤4KiB和StringDecoder保持UTF8的stdout尾≤4KiB。原60assert/click/defaultopen/queue/timeouts/4contexts未改，没有新owner/parser或先判HMR原因。可source精准cherry；当前syntax与作者42UTF8边界检查记录不冒browser，另实际需current合同/空间预检。
+
+
+### ACP路径附件测试迁移c5719acd源码审
+
+c5719acdb231e063607eeb7b44413f2fcb3a00d2唯一check-acp脚本，before4c770714/after5de3a16fece659882b0c13fdfaf1a2275c51157c799831a2ba454c64196441fc，manifestb369e3acc461d198177d99d7b24cc5fef84cbab78663409493b0a49159c64281/patch70fe1eea55b6cfa58d5192532e2893c8f1dcc865f26ff56928856c52df32e156实核。graph提供usePendingFiles部分调用后实际读生产：takePaste全部file入pending、chatPut用实际lease/rawbody、placed chips显示返回path、withAttachments拼@path；只有facts.images限制小inline PNG，embeds不控制通用路径上传。旧shot/doc隐藏probe不符当前合同已按Root授迁。
+
+5cap组合含unknown均走同真实paste，fixture验证id+admitted callback lease/两个非空bytes上传，两个placed chips与真实返回path匹配；严格一次chat_say文本保两@path，inline按images独立1PNGmime/base64或0。不是stub answer反推lease，也不改生产认证/上传逻辑。NoLoad/login/modes/optional事实区、wizard完整尾块、原PNG和空MIME rs文件paste payload逐字独立核同，无旧m.shots/docs引用残留。可test-source精准整合；无browser/OSclipboard/完整App实际，embedded-newUI为NEXT、registry入口迁移尚未实施，原74275false不回填。
+
+
+### 文本点锚9234 source审：内容来源保守，viewport owner待收
+
+92341b8405f4009bfc790ec89896dc9a95915a8a接c5719acd，两产品叶gitshow before/after逐SHA等manifest0766e85435e169f45ede46d855220d55bb1b41b46e10101e362b88181700c98b/patch806369c94dc7f8f7ef1714bbd44dda38412c2f2bcba0e28a1485b3a7fd492d01。真实caret/Range且root包含检查、48UTF16样本/尾距、当前bounded window贡献suffix校验后恢复同点；失配回旧cardtop而不冒完整文本点保证，无消息文本hash/全史map/新observer。hook接纳几何只记position/remember，不直接改following/readingLatest，此职责方向合理；未types/browser或多RAF实际证明。
+
+目前一具体阻断已告H/Root：loadOlder先捕获A，await期间真实用户wheel到B会由hook readPosition/remember更新意图；新paint时hook先保B，但ChatView layout仍无条件恢复旧A，acceptRestoredPosition随即清readerUntil/旧RAF并采纳A，覆盖较新输入。suffix/sample只核内容对应，不证明viewport恢复仍归此次请求owner，旧top fallback亦需同guard。请用现scroll owner有界input/position revision或capture ticket在后续readPosition/toBottom/显式导航后拒旧restore；不新observer/registry，不为此要求重型新矩阵。source暂未放行，原AI脚本未混anchorcase。
+
+
+### 锚点owner2372关闭9234源阻断
+
+2372b2446de17a72b5dda893c6ac92dc72b5d5e3确parent9234，两叶gitshow before/after逐SHA等manifest5656e311bde07195744db02bbd0a99b5019f42630677ec5c27714c14fe1615d6/patch280599ed79df0ef0296701281d22257de9685648a92b075f789e2890875a3384，hook a4d117bbf1d6a633b6e05b7a124dd121d362f57a70b7680bec5a5b779b5f58ae/ChatView e9644c96cdfb70e28d6cd409b8f9a886cb4354271cd66b84860ca8f627c96da7。现同scroll owner scalar positionRevision在readerInput/readPosition/disclosure/toBottom递增，older捕获票据，acceptRestoredPosition在任何restore/清readerUntil/旧RAF之前比票据，较新B动作下旧A直接false；真实Range和旧top fallback同包callback，无过期DOM移动或清新ownership。显式jump/reset已有anchor=null，数据following/readingLatest不由accept改变。
+
+无本片剩余source阻断，9234→2372可顺序组合检查点；不新observer/registry/全史map，内容suffix/sample规则不变。仍仅syntax/diff及源码审，actual同贡献Range跨多RAF/RO settle/types/gen/browser均OPEN，不以fallback或源码guard代验收。
+
+
+### Load/Resume225072独立组件源审
+
+2250720ea8f429816b59226675b3bb7ab20077ff parentb443，receiptbfb069b71a44de454cb659bb57c3bfaa3735998e9b7caa9f417094ac1f29b5ab的8gitshow SHA/bytes、checks4756edb8/SCOPE84654c93/patch4bda6b93实同，clean；parse_record完整区逐字parent未碰H读取事实。已有design目录4小件manifest3d0f2fa800330c1f372bc46aef2830df56f66cb171366a250f72c9e2dc9f14cc逐SHA同，仅70,343B，无binary镜像。
+
+Load完整pending新随机32hex generation记实际notes不去重，prepare文件/manifest/目录durability后rename再原子active selector；不把整次重放append旧基底。旧current/旧G保；ReadBinding v1 sourceid/current不变，v2 hash含selector，resolve_exact/remoteopen不因新active重定向旧binding。selector合法opaquehex、同home/native/agent校验与16KiB预算，不是新native ID/path。Resume所有同session实际Note含Ready前落原选定generation，finite prefix sync后才beginGuiRun/publish phase并写Ready。RunPublication Opening只持当前word，不报告/退出旧Meta；Live后状态仍唯一Meta。New真实响应native先check再bind。
+
+append令prepare失效；rename后pointer/row失败保completed gen，poison拒Capture/Ready，不假全回滚。Meta.exit只Khor slot结束，非provider退场。无本片source阻断可checkpoint；4新cfgtest及两原host/peer迁移未执行，7fmt+PythonAST+diff不冒types/native。持久旧代保留不是disk硬上限，实际需峰值预算。
+
+Attempt/epoch每phase/base/run gate、OSbirth/Unknown、post-handshake局部Journal先drop、base已pub后begin/syncMeta失败的部分出版仍下一必需片；free lock/slotexit不保证无provider。本片不是安全恢复/全S完成或自动启用闭包，无共享恢复API/UI/newShell，不重旧Store矩阵。
+
+### AIcurrent5窄合同准入
+
+run6709e90169d95ce33ccc6a71b39096a8297b270d5dcdf3cc8a75c68f4ae6b107/contract69412c3065cf4994d3bc857c2a3ef3e4591d8f59b72676a2b1a2ce2f4e599b5d/admissioncfd9b758154867d7dc7f73478f6e336c695af82b404ad951cc0f8221c550a39d实同。对current4仅freshmirror，Root7e2e08b580ebcc85194c93ce8152117ad5ed4c68 clean/2331keys同087f、22delta精确等合同，179gen278assets同，script942e已审诊断。4contexts/60assert/default/click/queue/300/5紧急门/owners/compact不变，不混未入87/3cd/167/anchor/scrollfixture。freshTMP/mirror，Root fresh e70 .25/1GiB reserve20/10 actual pass后可单点授唯一browser；reviewer/H不启动。
+
+### ACP registry controls8d13单script源审
+
+8d13c85e533c38bd3b839101226cb1d0d869f9af唯一check-acp，before5de3/after5f6cb2a1ebe78920b833050f913fcd2ff650b4a12b2f8d37a0df120e3befa0f7、manifest3341c58815dff1f7d4638da23b49e8105a3c287af89458bbe9c0c46cd64f200c/patch055c25782ffb81f4c8acb962f62b93b16902514b14c201209d464ed78149aec0实同。现ChoiceField combobox/listbox/manage action→TaskOverlay attach→catalog实际源/DOM结构匹配；probe只读真实name/detail/action/status，fixtureargv分类只作assert期望，不伪probe startable/argv。exact npx argv或about/byhand无attach、Gemini已接无二次attach控制保强。prewizard附件/NoLoad整段、13四state/geometry/idle5s/press断言块、snapshot日期/claude-acp exactwireID/单ask/resume尾逐字独立核同。可单commit sourcecherry不带中间anchor；无browser，原74275false不回填，不新产品attrs/认证兼容。
+
+
+### Unix生产PID可见性11b4窄源审
+
+11b4f19879241b4bb7ebdda30e60cc9da3d6a748 parent225，仅3源10+/7-，receipt d082d71ef9a38c256c755bae9c1fcb885ff395f26ee14728274c748993101a7d及3gitshow SHA/bytes、checksce1ef4a8/SCOPE7eb11297/patchb1f6d5a9实同，clean；smallmanifest ec071d8a3c49cd1bafafe229cd3f3407dedc08582f28a8ce49cef134dbf152d6仅小元数据。
+
+原481无条件Session.pid调用但既有PID字段/捕获/构造/getter及Unix Process.id受test cfg遮住；该生产形状缺口不能被R1 libtest发现。现仅test,unix→unix和Unix getter去test，Transport Unix Some(actual owned child PID)、非Unix None/Unknown，不造Windows身份适配或假PID。supervisor/kill/wait/reap/profile/协议/依赖不变，源码无阻断可作为481生产编译必要前置整合。仅3fmt解析+diff0，未实际生产类型/运行；PID仍非OSbirth、活执行或确认退出凭据，Attempt/epoch/Unknown与完整恢复仍待，不新平台矩阵。
+
+
+### AI5 active-body只读方向审
+
+consumer-ai-active-body-analysis-7e2e REPORT a1e50b41e4e317efe663ca41e83e8003aa8b9e73886f9fee18ecbbf096a39c67的5source SHA精确Root7e2e。实际源核：absorb只控制/optimistic入live，boundedLive保unresolvedAsk，items=past+live；AgentContent streaming=inTurn&&lastOverallIndex，故canonical最新thought位于保留ask后缀前时false。AgentReasoning仍manualOpen??isStreaming，确可默认关闭该body。main同表达式/组件但其ordinaryNote和Ask按chronological live时序追加，不能只用同字串断言本轮分源无影响。
+
+actual42fe51cb799bc2ec83c9f4f911242250613553c6aac85e0f6b257a1e1dd284cf/45.9429s false，failurefdaa6e49b871f7aef28097d028cd8eb4b6b85a0055fd2a18fd0bc9dcf7f7b576等待流式思考14段可见；15段原payload确double-newline，exact段选择合法，不应换断言追绿。现场底部closed thought+保留review Ask与该机制相符，不证明body bytes从未读取，也不归因旧Edit226。初始goto+明确reload对应两次main导航，未证明HMR/optimizer。
+
+支持Root裁最小有界derived当前canonical尾body、独立live控制后缀的方向；保manual override/displayKey/asks/原15payload/click/default/60assert。资格须同inTurn、非readonly/still、latest window及当前Turn/CaptureGap来源边界；未知保守，不按key/DOM文本猜turn、不新API/全史状态。仅只读方案无产品实施/运行准入，完整runtime因果及actual修绿待后片。
+
+
+### active-body b342源与纯映射红绿尾核
+
+b3423897a13ca4ada22d803e6743a1dd265feb6c三gitshow before/after逐SHA等manifestddbe6ff16ff4d7127dac751e8e600c677613bd6a197114aed080099d865ea209/patche689dd61bc3ff0cb15355da8868c451a60b70ea0d23fbccbc9f310219bc35da8。latestHistoryBody只现有entries末Turn/Gap后有界贡献key集合，反扫past最后非sysbody；caller独立inTurn&&!still&&history.window.latest&&item===candidate，控制/optimistic后缀保留，AgentContent/Reasoning手动状态/displayKey不动，无新生命周期/全史map/API。源码无本片阻断。
+
+red0b0ba3d1dabe05cae0b293c948d75ab00c8fe5b4b1862a50c2356c959486c3e5 actualexit1/0.232s、27/28，stderr a153daaf明确ACTIVE_CANONICAL_BODY false!=true，真实AST抽旧AgentContent JSX streaming表达式；旧helper缺省fallback仅用于到达这条业务断言，不是missing-export/setup红。green1e1ff24491620cc6632a6917c9f6d6f1b2ee618c73753ef9f825882f1c90b114 actualexit0/0.194s、28/28，stdoutc02d7c9d/stderr空，同12914da437575cd5b3feeaf57f741b2c9ba278b232a2df105c80d300c867dd56脚本、4source beforeafter各稳定，原27有效断言保。只纯函数/生产prop映射，不冒React/open状态/原AI4或browser/gen/types/native绿。
+
+Root8f65a9bb481c6a250e9c89c89d19028f5f97952e clean，原patch只读git apply--check0，可单commit精准cherry不带author中间anchor。Root没有9234/2372，不能以author全ChatView f45a冒Root字节同；整合仍须核窄diff。后续真实原AI4另current合同+存储准入，不自动重跑。
+
+
+### Find raw-range夹具c478合法化与sole原case尾核
+
+c478262e10720e768e1c4e9815114d620ec948c3唯一check-history-find，before d1892e03/afterf36da3a33dfd6fd391d0ebf535284dd7e638382a4398da66076a19dd2642e910等manifest0af6b701f1ba315022fabdec5c53042d5f2fc7c066094da3a547ff4fd3ba497f/patch23adec18940859476488c9b61d9451e09bc8c01575733c31cfd6b1dca80d8a86。原bodyrecord null+raw仅cursor没有可比较来源次序，保守多计不完整body并非产品错误；现literal坏JSON行在前/完整Native JSON在后，用两实际UTF8 buffer长度明确range/item/missingflags/sharedcursor，不按key猜bytes，原3assert含expected1逐字不改。可单script源码整合。
+
+redfd224e4180ad7d09b3946000fb3389352e8b1544dcc91100174422ca801a1ad4 actualexit1/0.1166s明确2!=1，green9bb3d0da34fc0c1fd10b033620fdfea15967999f4b25fcc36422ce8e63071ceb actualexit0/0.1105s仅原namedcase1；stdout/stderr SHA与记录全同。两run modeldc939b3a/paint5d42源SHA相同且各beforeafter稳定，仅script变。author model有擦除type WIP、unused新painthelper，非Root wholeframe同源声明；不称新Native规范化实际/完整Find/后续case/worker组已验。generic stdout“actual worker threads”不是该solecase线程覆盖事实，manifest明确未跑worker组；原Root136/fullFind false保，不改生产追绿。
+
+
+### Rootdf0d组合源与actual纯reader/Find尾核
+
+Root顺序87→62c849bb、3cd→bfdf8c02、167→8f65、b342→cc2363e1、c478→df0d3157744f2c6907cd52aa248f3843f9188d50 clean。Core chat/tests逐字87d6，paint含activehelper逐字b342，model/worker167、action3cd、Find脚本c478、readerb342均逐字同独审；hook仍完整850c ae1e115e。RootChatView实际a9001eae保readingLatest门/两导航、rawreferences透传和activebody派生/caller，未textpoint/ticketanchor，不能拿含anchor author全file作字节同声称。未Node481/ACP/scrollfixture。
+
+integration/history-provenance-df0d3157/reader resultd0a2a8a6fff75e8fffad2573162e7e0aa1b40dd690cf3a0b7def07043e65c560 actualexit0/0.211s、28/28，logc02d7c9d匹配；find result0d48dc4ba59eb2bc4146234d32eed5d1d761b7a2b1d4a5bafb18c75c21f933c9 actualexit0/2.946s完整30checks，log7daf73c4062cd0a2c178c51da749a23522f9900a14dd92d14413d7a883171022匹配，含真worker续读/giant/取消/独立contextcopy与source替换组，不是sole1case的通用结语。两批17选定source前后及当前逐SHA同。范围仅集成纯JS/worker，非Core/types/DOM/跨page功能完成；旧8f65 fullFind136 false保，不回填。
+
+### AIcurrent6合同窄准入
+
+run12650072ef41f6cf2e97e4466d742380ef780ba56ca7bbdaf552f4af31318091/contract601d6bba82b7c14ec88981bbe49224f0d33ef7b38e7273897c1dc80dbfb98088/admission4434ca9e8720f26ac84cc401ebca10f116822b4d3770a0522c87b8053301a526实pin同。runner对5仅freshmirror；Rootdf0d clean/2331keys同087f、精确26差等两合同，179gen278assets现同仅旧actual产物pin，非当前Core/types/noEmit。原942e/60assert/4contexts/default/queue/click/300/5G紧急门/owned/compact不改，TMP/mirrorfresh。Root44011已terminal净后再fresh e70外.25/内1GiB reserve20/10actual pass+单点授唯一browser可执行，reviewer/H不启动。
+
+
+### AIcurrent6四场景actual与compact尾核
+
+actual63835 resultf6c28d80b5dc059d0d7773c17fa072f035204cf1a3b29b7b794762925f9edbe0真green/53.7077s，reportc5afceebec9f0f29ee64e8cce5aebb3fbced701dfc67e6cab3ddcad0349a1c75四exactnames desktop-light/dark/mobile-light/dark各errors[]，原942e脚本SHA当前相同、60assert不改。ai进程0且无timeoutforced、groupabsent、remaining/footprint净；source前后完整dict同/gen/env/tools/browsertools稳定、fixturesRemoved/TMPabsent/cleanup无错。canonical37件逐SHA核同；内盘15小件342,706B逐SHA同，仅ai/results、无log/PNG/module复制。范围为当前controlled-transport/coarse Chromium完整原4context，不冒Core/types/native/physicalmobile/OSclipboard或全H/S；原13652/76618/73389/71253/57537false独立保，不回填。已告Root可解除df0d冻结。
+
+### bounded Attempt owner6fbb纯组件源审
+
+6fbb870a86f51f9daee3edee57b0883be2da27a7 parent11b4，2源仅live私有mod及live/recovery_attempt.rs，receipt257678811963cd82306974a00b57a429a4890d54791e719efee156951bdf776c的gitshow SHA/bytes、checks0a0b10ad/SCOPEbff89fdc/patch6b4f0673同且clean；smallmanifest3d976b31b03adc1a97cef7a58a0e66dbf57a8d39b37a77453c3a36b33a744ef9仅4件45,451B逐SHA同，无binary。
+
+唯一&mut RowGate约束同临界区的Held快照；16KiB validated latest/highwater及固定part原子rename+sync，无无界token史。next_epoch只读不建协调文件，u64耗尽拒；nonce/fullargs/home/id/native/operation/expectedrun/digest+reserved runID为完整key，同epoch异参拒、旧epochRetired、新epoch只有next可取。meta/known-native在reserve同gate核；写失败Held毒化不续用旧内存。PublishingBase/Run durable intent先于可信callback，callback失败/响应丢失保持unfinished、原token不得重入；Unknown即Meta.exit或独立free锁仍不Start。RecordedOpened可历史重取而非当前live证明；已有GuiRun缺Attempt明确Unknown。
+
+具体模块结论：private row状态机、校验、有限metadata IO同一owner，唯一短gate，无新增独立锁/服务/后台registry；callback只是既有publication adapter seam，不是第二事务框架。ProcessStamp仅结构model，ProcessExit只是私有可信adapter传参，模型自身没有证明真实OSbirth或sameTransport receipt。1既定R7为注入stamp/ownedFS source测试未跑，无生产caller/Kernel probe/spawn，2fmt+diff不冒类型/native。
+
+可sourcecheckpoint，无本片剩余阻断；下一wiring必须同真实home/id/effectiveargs、实际Meta expectedRun/eligibility、epoch与既有JournalReservation/Ready在相同短gate闭合，并捕获同Transport出生/foreground收据。不能只doc key相等/PID/free锁/历史Opened推live；正常new/legacyJoin分类不得绕owner，unsupported事实Unknown。实际live/hostdeath/reboot/CLI动作仍未完成，不以此关闭S3或授运行。
+
+
+### ordinary跨page query f16首片只读审（待修）
+
+1d1e767b仅三行read_page newer透传，仍原单pending AbortController/worker waiting序号/source.dispose与lease释放闭包，无新owner或取消阻断。f16ab4bfd720fc5a725b7651f6b1d1858827ec9f的manifest6ab63c8e5c0eec7753d1978f14e021ff17980c4470a666bebc54b154478b3feb与三fixed blobs实同。red86c3d8e2实际exit1 CROSS_PAGE_QUERY，green9741778d实际exit0/0.105s；三份run result/stdout/stderr全部SHA同、各selected beforeafter稳定，只oneexact新case，不冒完整Find/workerthread/browser/Native。
+
+已确认阻断：literalMatcher保持原non-overlap，却在seam以left.text.length-matcherContext任意后缀重新创建matcher，丢原左文非重叠相位。静态最小反例query aa、older七个a/newer一个a，左页原0..2/2..4/4..6后应有跨页6..8；当前seam从3开始得3..5/5..7，漏6..8。已交H/Root，未执行反例，不建议作为正确跨页query整合。须有限状态/匹配规则一致修正，不能用后缀长度代非重叠状态。
+
+其余窄边界：sharedpaint唯一判组，starts/Turn/raw/显式不同ID保真实断点，query256B、fold pattern*2 UTF16 context有界；32hits/64KiB、prefix512KiB/512贡献、context8pages/512entries/2MiB、每page128/512KiB与输出64KiB门在。whole-part copy、coverage结算、真正worker/source/binding取消仍明确OPEN，不以continued complete=false或拒copy关闭目标。private helper只抽现有text DTO/来源事实，无第二parser/全史map；该良好模块边界不消除上述业务阻断。
+
+### aa323 reservation/Load组件native8合同准入
+
+Root aa323e26e9c7a8fde2829987507394e639ce540a clean，38sources+2helpers pins逐项同；driver逐字4045ef5c9e585ef92d6c2772f3b841d62dace4b96973a627de50325d0e4152dd，与已过R1 native2同；contract fdc984805dba4bd6535f8966a9435f719cacd3a77896deb6452be7e60d4f67b8、sourceReceipt5dfad5e6a788d521d16b2392b7fe29ab77fbdf026d1eb5177bba3a62baffbc34实核同。8exact各存在，6FS/row组件+2原真实Python host父，各父强1/0/0，两个独立worker.stdout各再强1/0/0，父不透出重复summary。固定Python实际路径/hash、每worker独立scratch/store/loopback，Close/Gone/hostjoin与Worker Drop kill/wait沿原闭包；不是real agent/model/CLI/Core/App。
+
+fullhostlockedmetadata→单lib no-prior prepare/CargoJSON verify/require/原件copy持续SHA、300总、原5GiB紧急门/strictcleanup、最终私有copy核SHA/lsof后退役不archive均不变。storage准备actual accepted外119812919296/内14437924864B，对外26/内12GiB要求通过，runner启动会fresh再强核。无准入阻断，Root可单点授唯一native，reviewer未启动；结果待实际，不称Attempt production已接或完整S。
+
+
+### 跨page phase8a3有限修正尾核
+
+8a3d70523fffd623d79477e4be11586f99acfabd的manifest31a8af2f01dddff35b6f4eac0a1ea15f824a4801f1bb09a17b69a618eb377b13及两个fixed blob/红绿result/stdout/stderr逐SHA同。sole固定4df5258脚本旧4a23b3ef actual1/0.125s→新f8e93875 actual0/0.104s，各source beforeafter稳。collect=false只关hit分配，默认transition/nonoverlap/reset不改；seam先用同matcher扫完整已在内存的left前缀、UTF16切点避low surrogate，再接suffix，原aa7+1反例6..8已闭。
+
+可有限sourcecheckpoint，不等于f16整体正确或最终整合放行。更早未知older前缀引起的全局page-local非重叠相位、完整copy/coverage/workerUI仍OPEN。Root已裁定未知prefix组延后hit，找到真实start后由现page(newer=true)到固定cursor/fence顺序走组，shared增量paint与query/copy共用；不全组map、不新RPC/provider、不重复coverage，不改窗口2MiB/copy64KiB，后继源码再独审。未运行任何新验证。
+
+### 私有OS身份事实70c38源审
+
+70c38d9aea08e0873f974b4c753e548dfc58749e三源receipt87703fcf908163cd0af7e762c50e9dba361bdd0ae1907744ba2b66ecb649e10d和gitshow/patch/SCOPE/checks全部逐SHA同。只current host、实际Session/Transport child、已登记foreground有限对象；PID/PGID2..i32MAX，禁止全系统枚举/name搜索/信号投递/新循环。现Session process_group(0)与child parent/leadergroup约束一致。Mac微秒birth+64B bootUUID、Linux原startticks+boot+PIDnamespace dev/ino，前后context及两次stamp一致；缺数据/权限/不同namespace平台保Unknown。missing/reused leader需确切原PGID Absent且context再核，same-birth仍Present；不同boot仅旧local foreground proof不查新PID重绑。
+
+Apple原libproc wrapper源码(https://github.com/apple-oss-distributions/xnu/blob/main/libsyscall/wrappers/libproc/libproc.c)实核list wrapper把底层失败转0并保errno，故本叶只0+errno0为Absent的限制有依据；不是只见0判空。Linux已Root授kill(-knownPGID,0)只存在/权限检查，ESRCH才Absent；missingpid另用getpgid ESRCH复核。私有不可序列化AbsentForeground只匹配原stamp，不是sameTransport ProcessExit/reap、daemon/remote/nativewriter无主证明。结构清晰：纯decision/有限OS读叶归现live owner，无第二registry/服务。
+
+本片无source阻断可checkpoint；只有解析/diff0，1纯parser/decision cfgtest未跑、无OSprobe/类型/Cargo/生产caller。Mac实际boot sysctl/ABI、namespace与真实进程事实仍需后续定向实际，不能以该叶关闭S3。下一seed/实际home/auth/epoch/foreground receipt接线独立审，不扩大平台矩阵。
+
+### native8 75482编译false与Gap lifetime0b821e修正
+
+load-reservation-native-aa323e26/actual-node-1/result f46ffcb937822d96d4ddf493fe94b52e9148785209b5e70c1bed991b4283a0bc实核false/28.781s。fullmetadata0，compile101 logbc96c014原CargoJSON仅journal291/341各E0109+E0107四error；没有V验证/私有artifact/test/helper。source/env同，compile无timeoutforced/interruption，groupabsent/remaining-footprint[]，TMP entries[]且absent；不冒业务红。
+
+0b821e4237f9b304118751ce3eed48e3cfa13c6e唯一journal两处Record::<()>::Gap→Record::<'_, ()>::Gap；全文严格等225加这两替换，SHA b0019053371ba14863ad64ab16fcc61daf1707b26459534c33f490a0e6fb44f2，receipt8f5312e13e9b180e7f80c14a4a626c6dce77229feae96184bc3d5f3d7c60b0c4同。无语义/70c/seed/Attempt夹带，源码无阻断可精准cherry；原8exact同driver4045待新HEAD/sourceReceipt合同尾核，不加矩阵/不自行启动。原75482 false完整保。
+
+
+### dc469842 native8 source刷新准入
+
+Root dc469842f40d6387ae7a92b2b0e7d00b4eb71083 clean，driver仍逐字4045ef5c，contract9cd3a4c72df420fae780db93e1489c4965aaed12506ad04a97a0af0353a44fe1/receipt1717f1c860c55e97868b25f7cd946746c44c787b381e6a60ad08072c53f6675f逐SHA同。43显式源+2helper无一mismatch，journal=b0019053是两Gap lifetime已审修、proc36cac07e是已审私有事实叶。旧8exact/2helper、selected/compile/fullmetadata/Python/tools/300/strict/retirement/storage门均逐字段同，phase唯一scope追加OS叶只host编译、不实际probe/接线的诚实说明。准备storage6f44fdb4 accepted外119779602432B/内14435426304B，外26/内12GiB要求通过，启动还由原driver fresh强核。无新准入阻断，已告Root可单点授唯一native；reviewer未启动。原75482编译false保，不外推S3/真Kernel/整恢复运行。
+
+
+### native8 22391刷新批仍编译false
+
+load-reservation-native-dc469842/actual-node-1/result40f0ffae190011c7b2f623fced434f1a0d2d5a2f6b1a81cb405124ce0f55944a实际24.424s/false；fullmetadata0、compile101仅journal291/341两E0109(lifetime arguments not allowed on variant Gap)，尚无V/artifact/私有copy/test/helper。compile原logSHA同，source/env稳定，无timeoutforced/interruption、groupabsent/remaining-footprint空，TMP entries[]且absent。0b821显式lifetime路径并未解决类型错误；上一source可整合意见不能作类型通过。Root要求下一精确local typed variable Record<'_,()> = Record::Gap再append，仅两处，无新probe或矩阵；固定ref/合同待尾核。75482/22391各false独立保。
+
+
+### Gap局部类型63ad窄源尾核
+
+63ad031121f07eec38dd7bbd70ae0d77641e301a唯一journal6+/4-，fixed全文04f24e8f24b4c62bd942e283db05800a8e13653caf8fcdde28088b85e658e348及receiptf35c95d0bb44d4aede4c512cdea7fd67bd08b3dcd4d3c8dc548bb27e3266074b实同。两处改为let gap: Record<'_, ()> = Record::Gap，然后next/journal.append(&gap)?；constructor无variant路径泛型。字段值、借用来源、append顺序和?失败传播不变，其余parse_record尾字节同，无seed/OS/Attempt夹带。无该窄source阻断，可精准cherry后只刷新原4045/8exact/2helper合同head/source/receipt；未编译，不以解析通过冒类型绿，75482/22391各false保。
+
+
+### f1bde774原8批最后刷新准入
+
+Root f1bde7741d87be13f5543f808e71e81327a912b2 clean；driver4045逐字同dc，contractf8b673b9be98a7d32e2094d9acdced7451b02c8fb67703e70582bd7bc9513600/receipt18838b6cdb16a3ba7955523c0ca73704ae05adf1b76fafb00a9f1a481a53958f实同。43sources+2helpers现字节无mismatch，相对dc sources仅journal04f24e8f两局部typedGap，完整phases/8exact/2helpers/selected/compile/300/strict/资源与私有binary退役策略逐字段同；seed未入。准备storage01abe5ca实accepted外119783428096/内14437171200B，对26/12GiB要求通过，driver实际入口仍fresh重核。source准入无阻断已回Root可单点授唯一槽；原75482/22391false列表原SHA保，不预判编译/测试/V成功。
+
+
+### f1bde774 native8 actual57551通过尾核
+
+actual-node-1/result6739b540384f28b511dc4beece80093e5a909d97e7900429767f06db9edac0c4实valid/89.490949583s，metadata/compile+8run共10stages全0；8原exact逐名ok且各强1passed/0failed/0ignored，journal和journal-resume两worker.stdout各强1/0/0及原SHA同，非零filter/ignored替代。所有stage logs SHA同、无timeoutforced/interruption，groupsabsent/remaining-footprint[]，source/environment稳，TMP entries[]且absent。
+
+no-prior prepared priors[]，V11units/3generated各reusefalse；prepared与V context/source/request同，2333 proofsource=before=after=当前Root每字节同。唯一实际sameCargoJSON Node libtest row=V.selected.row=artifact且freshfalse。原target当前实际7ffa47831995d045e6d4928f2ef459a83ce23cf91210f0cd8d73885bec29bbd4/288170088B已实读匹配；原件可在后续Cargo刷新前作为实际尾核闭包。单privatecopy完成finalcheck/lsof无错后退役且当前absent，无gzip大payload。
+
+内盘round2/load-reservation-native-f1bde774十紧凑文件837953B及索引逐SHA等canonical，仅sourceAfter/provenance/contract/result等，无log/binary/gzip/PNG。Root可解除freeze、不重跑此批。仅reservation/Load/RunPublication/私有Attempt组件8父+2受控Python helper事实；OS叶只host编译未probe，Attempt无production接线，非完整S/真实恢复App或全平台保证。75482/22391原compilefalse独立保。
+
+
+### 原完整ACP消费者current2窄wrapper准入
+
+consumer-acp-current-2 run0e34e8f855aba6e6d736f889666445ffc578438baa75e76294d5e3a3df0a1025/admissione0af8ecdc35a75a642e8dcf48fb9c6390fde537ad3558544dc9b8ee33d962361/contractac8a1e404e39a3b8e75f408e0ae69ba7e291118887a5680623b2d7d5572a1ab5逐SHA同。Rootf1 clean，原完整check-acp5f6cb2a1字节精确等已审8d13(含c571路径附件)，未新场景/删原断言。实际diff AI6 wrapper仅ACP脚本/23843/原positive marker+exit0替AI4四report、freshmirror，以及两个Node叶精确added-map。
+
+2333source集合=旧087f2331+proc_identity/recovery_attempt两已审叶，完整36delta/added-map与每当前SHA实同，无删除或漏源；179gen全部字节等旧actual087f，只旧产物pin，不冒当前gen/noEmit/Core/WK/agent。原300/5GiB紧急门/strict source-env-tools/owned/TMP与compact保留不变，无log/profile/PNG大镜像。TMP及mirrorfresh。准备storage799ea755 accepted外119735287808B/内14443122688B，对20.5/11GiB reserve+peak通过；Root实际启动前fresh e70外.5内1再核并单点授唯一browser即可，reviewer未启动。原74275等false不回填，完整ACP通过仍待实际。
+
+
+### S出生采样位置设计窄裁决
+
+实读Session::spawn_with_profile/platform Unix：正常WNOWAIT→natural_exit→terminate/wait会先Requests.terminating；但process.exited()非Interrupted Err经result?直接退出并Drop Process，未先写terminating。因此在Requests mutex内observe_owned并不能覆盖全部reap路径，不应用它作为PID不可复用证明。
+
+认可Root窄授权：platform::spawn成功后、任何supervisor thread启动前同步执行有限observer采样，原spawn/profile经默认observer委托，supervisor/kill/wait逐字不改。建议private generic spawn_with_profile_observed<T>(command,Arc<Control>,profile,FnOnce(Option<u32>)->T)->io::Result<(Session,Pipes,T)>；不令Session/Pipes泛型、不存callback/新状态/队列、无需Send/static，不引入live→agent_process逆依赖。UnixSome实际Process.id，unsupported None；上层T可Result<stamp,Unknown>，没有PIDfallback。ACP wrapper只把同Session调用T随Transport返回，同Control用实际传给Session的Arc捕获/传递，不能另建/按PID推断。
+
+observer仅有限只读OS采样，不持RowGate/Requests锁、不spawn/await或重入；采样失败及后续Building失败沿同Session cleanup，缺实际sameTransport receipt保持Unknown。固定实现及真实caller尚待独审，本条仅设计位置/最小签名意见，无新runtime/probe授权。
+
+
+### ACP18947实际false与呈现probe窄裁决
+
+consumer-acp-current-2/resultc8c25d6fbfeadd130d9d736f9299c61b370a804f20662b6d4071c6d103b5b7a1真false/120.147s，log35c4b4803f35cd6e3032b4be541f1543b26898ec006b59ca072679cc1a58f17c同。exit1而非timeout/forced，groupabsent/remaining-footprint[]，source/gen/env/tools/browsertools稳定、fixtures恢复、cleanup空/TMPabsent。mode/optional、5附件cap组合(真实upload/chips/returnedpaths send/inline)、4wizardstate/registry/import/geometry/idle/press日志均实通过；之后四theme×motion旧呈现probe失败，完整suite仍false，原74275不回填。
+
+独立源核分类为obsolete probe适配：Trace当前2f379f43与main e7逐字同，AgentTool/Plan状态呈现块也同；agent diff只有toolInputText抽取。旧data-word-text不存在就读外层Trace通用foreground，误把90.4/15.4当三种line墨；ToolDot虽存在但AgentTool未用，实际running追加LoaderCircle SVG，error由内层TraceLine destructive表达。Plan仅取computed.color漏pending opacity.6及Check/Dot/Circle三种SVG，等色不是同呈现证明。没有本轮新产品状态绘制回归证据。
+
+可作最小test-only语义迁移：TraceLine/Title实际有效墨/error-destructive、running独有可见非零SVG(正常可动画、reduce仍有静态区别)、settled无假activity；Plan真实三shape+合成opacity，不能只metadata/data-status或不同tool-kind图标自证。保四theme×motion、title/output/diff/closeddefault/正负状态区别要求；原all-pairsΔL、state-failed token和旧dot填充实现假设须明确映射到现upstream载体，而非删有效区别断言或改CSS/palette追绿。迁后若真实可见区别仍失败再记NEXT，不先宣产品或新probe绿；未新增runtime。
+
+
+### disclosure current1原short/long两场景准入
+
+run4f7b0d7e7401ca3cba404654716bd396b6b0cf4274aec9af12e9c2ff6f48caee/admission13dcea8385ea4756d5bf0deb7425614feca72a7e7840d2bfc6c58a9b1d79f7f5/contract5cd826a439569249a8c8c41b8e1ac49296a4894adcc284d48e1dacd71a8f63a9同。Rootf1 clean，script逐字5ff b070、fixture逐字1f29 c1fb；disclosure flag确只short/long、chrome唯一engine，跳过原all/parent/transitions。真实Source/Reader IO计数+消费marker在disclosure后进展，long真实wheel后请求/消费静止，再toBottom恢复，原assert未改，不是只读ref自证。
+
+相对ACP current2实际diff仅脚本/env/23844/report exact2及<=128K结果copy/freshmirror；report head/files==final/changed[]/两个精确names各passed/errors[]及进程exit0均强核，旧300/5GiB紧急/strict source-env-tools/owned/TMP/compact门保。完整source36delta+2added与旧179gen087f字节pin同，不冒新gen/types/Core；Vite原配置无proxy，无WebKit安装/下载/真人claim。TMP/mirrorfresh，storagec3ac86准备accepted外119744040960/内14432337920B，对20.5/11GiB通过。Root再fresh e70外.5/内1后单点授唯一browser可执行；reviewer未运行，原产品/source-only范围待actual。
+
+
+### disclosure92761原两场景实际尾核通过
+
+result96909cf6f96b2169c5674a4c7de077d3cc4139ec69d31367df79ccbf545bc668/report1eb7fd3ee61414d20fd1f94b6aac292da7b59aca086c65fb400b027ccf63f9cc实green/10.766707458s。short/long两精确Chrome disclosure-data-intent各passed/errors[]；真实Source/Reader请求/消费1→真点展开2，followingfalse但readingLatesttrue；long真wheel后paused/quiet均requests2/shownfixed-page-2、readingLatestfalse，再toBottom恢复3，非只断言ref。own8files==final/changed[]、report与outer actual_contexts同。
+
+进程0/no timeoutforced/interruption、groupabsent/remaining-footprint[]，source beforeafter完整dict同、env/tools/browsertools/gen稳定、fixture净、TMPabsent/cleanup[]；log5d9e1346814efa5ae1bc42069486581ee47f7253033054c7902775db38595fe5同。canonical822文件逐SHA同；内盘14紧凑文件442741B逐SHA同，无log/profile/png/binary镜像。Rootf1可解除freeze，不重跑。范围仅controlled Chrome真实hook/Reasoning/Source/Reader读取意图，不冒文字Range/WK/IME/真机/完整anchor验收；ACP18947原false另保。
+
+
+### disclosure结束缓存退役附记
+
+cache-retirement4427baca597b101f2eb71b2300101ce7a634dcfa2559c68ea688bf47ec2981c4双盘同，仅本批OUT/disclosure/vite-cache。原canonical7bcdd6c0中798条路径现全部absent、目录已退役，收据记UID/devino/emptylsof、logical56947844B、同盘rename后删除。原result/report/log/source和historical canonical822 index不回填；此前全SHA存在的尾核是退役前事实，当前不再声称822payload全在。无新gzip/cache镜像。
+
+### InitialNew seed a71eac86组件源审
+
+a71eac860edc706b83ab52d5e539108b0ec702a3仅3源，receiptac5d3cfb50eec6226ab058cc776c70037f2210dba7742ab65c5aa8d93be3691a/各fixed/SCOPE/checks/patch/handoff逐SHA同，small43618B/manifest2fd0d595逐SHA同，无payload。H parse_record尾字节原样。
+
+InitialNewAuthority无Serialize/Clone，私有完整AttemptKey+issuingprocess+actualPID、同Reservation移动进Journal的lease Arc标记、Weak Control指针绑定同次实际调用；lease只是对象身份、不新File/锁，原File移动不变。每次base/run在同Held RowGate重核key/epoch/phase/Journalidentity+lease/同Control；普通serialized data key只RecoverNative通道，不能重造initial权限。durablePublishing intent先于可信callback，callback失败/重入不再进入；CleanupUnconfirmed原因撤销内存seed，即便authority仍存在也拒。New只Meta/attempt/publishedbase都无时seed，不能reset既有Unknown/highwater；后续RecoverNative保原next epoch/actualcleanup要求。
+
+Journal New碰已有manifest/generation在pending删除、Gap、bind、Meta变化前拒，Load/Resume及parser不动。缺host/provider真实birth仅Unknown+rawselfPID，不伪Known或从free lock推recovery安全。新增R7 assertions是ownedFiles+synthetic facts source未跑，不是actualNew/Ready/OS结果。源码无本片阻断，可private组件checkpoint；production仍无caller，后接线必须actualNew fullnativeID、实际home/row/effectiveargs、pre-supervisor同Transport/Control事实与真实exit receipt、bulkprepare在gate外、短gate不跨spawn/await。旧native8/R1保持各原源映射，不据此当新源已跑或S3完成。
+
+### 5f9b9da2 pre-supervisor observer源审
+
+5f9b9da2aba4ce9c2bb156672f7eecb1b064945e两源receipt e7ec567567acb3dd504a570607748f9bb8acbadc6d5df3d09846388e6e3109ae及fixed/patch/SCOPE/checks逐SHA同，小镜像6988B/manifestf7546a50逐SHA同。supervisor requests-clone至spawn返回原块实算逐字SHA79f3022c8502d476571ce5941093021ffa26d6f6bfcde2a9f8182cc2f82a4e16，不改exited/kill/wait/循环策略。
+
+Session同步observer确在platform成功后、任何supervisor启动前一次，UnixSome actualProcess.id/unsupportedNone；原spawn/profile unit委托，返回T不存callback/无需Send-static、不令Session/Pipes/Transport泛型化。ACP wrapper把同一Arc Control借给closure并交Session/Transport，无live逆依赖/RowGate/Requests锁/新队列。后续IO/线程失败沿原Building/Process Drop闭包，T可Unknown而不隐式respawn。源码无阻断可独立checkpoint；仅parse/diff无type/Cargo/OSprobe，实际GUI/Attempt durableclaim与Ready/cleanupUnknown仍下一wiring，不能把采样时序组件冒全恢复保证。
+
+
+### S3公开接线短交接核查（Rootfe9）
+
+只读实际入口：Node lib.rs:3090 resume_agent_session(agent,session)->SessionId从本机agent_seen取cwd/title/spec，:4753 reopen_gui_as(cwd,title,cmd,agent,session)是precheck→ghost；不是已有home/epoch恢复API。Core agents.rs:199 resume_session(root,agent,session)->String，经core/api.rs:1237/Tauri lib.rs:3976 off_main/TS api.ts:916；当前App无调用。Node公开offer/action/DTO尚未存在，待input fixed后H统一Core/API/Tauri/TS/gen，不把本机显式resume冒远端row恢复。
+
+home transport可复用link.rs:11689 content_read/:11715的DeviceId本机分支、resident IPC、devices精确hex与ask_on认证连接模式；写动作不可塞只读ContentRead，不建第二home route服务。SessionRow.home(core/lib.rs:1119)是显示名，Node Session.home才DeviceId；observation_owner/content_locator不是执行home替代，需显式权威homehex。
+
+Shell已有core/lib.rs:2885 open_shell→Node link.rs:5551 open_shell_on(machine,ShellStart)→resident OpenShellOn/本机here或Request::OpenShellOnce，目标生成fresh shell SID、自己的default_shell；command空经shell_start::input成空字节，不回放旧argv。ShellStart无previous，现Meta/Session亦无该关系；ended旧row核验、previous→newSID/epoch+全参数绑定仍缺。原once是24h token→SID，不等于S3 authority。offer只读不agent/spawn，action由原home重核expectedRun/token与真实退出/Unknown。已一页交Root及必要事实给input，无产品/测试改动。
+
+### New碰撞cleanupUnknown barrier窄设计意见
+
+只在本次New实际home/agent/fullnative资格与仍持exact reservation及当前binding/Meta对齐时，原16KiB文档加保守barrier；vendor空不能继承旧bound agent，不同/未知短row归属不可冻结旧row。不改旧provider/highwater/result、不自动清、不新registry。若latest改Option，None只highwater0+barrierSome合法，不能把空无barrier文档解释为可Start；barrier挡新Start/initial与known publish，historicalOpened只历史。barrier落盘失败不能以Err放弃lease：由原Transport/Journal owner继续cleanup，只有确认退出或durableUnknown后释放，否则Unknown且不重spawn。仅设计意见、实际fixed待源审，不扩大通用writer协调。
+
+
+### 36a真实New接线固定源审：R5窗口待闭
+
+36a9b3554a63ce90622f54b4bf73be8aced9b459四fixed源与receipt37bfabee6c6146dfb9a4058c0ae1ffc763427fb8371a1cff0858e6a2382ee9aa/SCOPE/checks/patch/NEXT逐SHA同。实际调用已spawn_observed→GuiBirth，同Transport带PID/Control/lifecycle；New fullID只本次vendor/launcher，不继承旧agent。borrowed open_journal在全部fallible setup仍由Reservation持同File，成功最后才take进Journal；外层Journal/reservation不随async future/setup Err提前drop。bulk prepare在gate外，base/bind/Meta/marker各有durableintent/同epoch，heldbegin不重入锁；actualsameTransport settlement与KhorMeta.exit分层。known恢复preghost仍下一片，无实Cargo/provider/OSprobe，不冒旧8绿等新源绿。
+
+独立发现quarantine归属阻断：原bound==native但Meta.gui_native冲突仍可置barrier。d6f9b20038e86732b227b743d9fe1daf7727aa55唯一叶修为至少一个exact正证据，任何存在的bound/Meta.native/非空Meta.id矛盾均拒；receipt864f618e197eac18298c804618fb55afe8722455ca24689a954a6f205c74d71d及fixed7c39739e/patch/checks/SCOPE实同，source新增同R7反例未运行。该首阻断已源码闭合，不能据此批准36a全部。
+
+Root另指出且实源确认两个同R5窗口待fix：parent spawn_ghost_context当前见ready即Ok，发生在callback之后Held.store RunPublished之前，可误Opened；需same spawned ChildPID/home/fullnative/独立agent资格+Meta当前未exit run+doc RunPublished/Opened同run，经同短gate核后才答。仍原parent30s总budget，锁忙在剩预算内等，不删marker后respawn。另Meta已落盘而Ready/最终doc写失败时RunPublication仍Opening、record_exit noop，现settle只provider导致本次Meta exitNone；需同GuiInitial/control/epoch校验下按reservedrun+fullnative+hostPID仅退本次partial Khor slot，不能写旧/新owner，不嵌套拿row锁，base/binding不回滚。缺真实cleanup仍Unknown，Meta.exit不得冒providerreap。
+
+双失败park为Root窄授权：cleanupUnknown且durableUnknown/barrier也写失败时保现ghost+lease，不新listener/服务/重试，不承诺GuiOpClose或跨crash安全；已如实列SCOPE。当前仅固定36a/d6审，作者后续R5 dirty未混入，整体source放行等两个R5 fixed收口，不新matrix/运行。结构归属仍GuiInitial临时authority、Held有界持久状态、Journal唯一File及同Transport cleanup，无新registry/第二GUI状态；最终settlement应沿同held RMW而非继续把责任塞入host loop。
+
+
+### c48 Ready/R5与b1cc持续写失败修正组合尾核
+
+c48ee71b2f1d9531e960c08de85fafc5a51a5ee3三fixed源/receipt7a1b5bdaa9b62eb979320563fc87071d455dcc9ce26829799879c2d2f7d77bb4/patch/SCOPE/checks逐SHA同。parent保actual Child.id、本次独立agent资格，ready只触发sameRowGate try核；确切home/fullnative/id/Meta当前run未exit/该spawn PID与doc RunPublished+RecordedOpened同run后才删marker返ID。原绝对30s含spawn，锁忙只原loop剩预算内等，无每轮1s/no respawn。BirthUnavailable仅InitialNew同调用例外；cleanupUnknown/barrier/Publishing/Exited拒Opened。Known此时无claim会明确failclosed，下一preghost/expectedtoken必须接齐，不称完整resume已可用。
+
+slot结算按同已核GuiInitial/control/epoch在同gate给private retire helper，只匹配fullnative/id/runID/hostPID且未exit的本次Meta，沿原write_state(Some(run))/sync单Meta owner，无嵌套rowlock、不会写旧/新owner，base/binding不回滚，slot结束绝非provider receipt。独立复核又发现其第一份attempt写Err会?短路slotcallback；b1ccf4aa964c77a434c60642947b129ba25268ad已修为两文件结算分别尝试后合并结果，receipt a0c4f57bea406acc93c8b2daf011a14ddd200f96fee0fa52cb6be6c1b4dbe479/单fixed825185f02fa2038c2e145c639b7506119848e1edf15a69244f4ab0ab4bdd75d5/证据逐SHA同。原R7 partial helper新增真实part目录只阻doc写、Meta仍可写场景，要求总体Err且同slot exit1/base原样/新owner不改；全部仍源码未运行。
+
+36a→d6f9→c48→b1cc整体本New组件无剩余source阻断，可独立顺序checkpoint。最终四blob gui01891bb5/live735fa230/attempt825185f0/journal52f92bfe，authorb1cc clean；原36a小镜像51303B实核同。只有parse/diff，无type/Cargo/provider/OSprobe；旧f1 native8结果不挪到此新源。结构结论：Held统一有界document/验证，GuiInitial临时authority，Journal唯一File，sameTransport settlement，parent只消费validatedReady；无新registry/第二状态服务。known恢复、公共offer/action/Shell仍NEXT，不把sourcecheckpoint或park的当前生命周期保证当S3全闭。
+
+
+### Root005b New wiring首次原8批准入
+
+Root005b249da37ef8adcc96f6bec9661280624d410c clean，最终四source01891bb5/735fa230/825185f0/52f92bfe逐字等已审b1cc组合。driver4045原字节；contractba82b3f8d44260a7ff22610d5f55884956bc114572f0d2538e64f3a6db9280d4/receipt26a1fd91c3a8490962330351f0218961487921c63cca0d40da315025b269b48e同，43sources+2helpers实际SHA全部吻合。相对f1实际tests/builds/compile逐字段同，仍8父/2受控Python helper；R7必要seed/lease/partial/partdir故障在原exact内，不新矩阵。
+
+只head/source/scope诚实刷新，原hostlockedmetadata→单Node libtest no-prior V/sameCargoJSON→持续原件copySHA、300total/strict source-env/ownedTMP/单copy退役无archive门不变。准备storage6900e524实accepted外119747694592B/内14426685440B，对外26/内12GiB要求通过，driver实际入口再fresh强核。已报Root可单点授唯一native，reviewer不执行。真实scope是受控Python host New sampler/事务及原Load/Resume组件；没有真实agent/API/CLI parent/Known完整恢复/App，OS采样会执行但允许Unknown，不把控制分支运行冒各Kernel事实Known。来源/强数/清理均待actual，旧f1绿只保原映射不当新批绿。
+
+
+### H deferred query 0a25 固定源与有限 pure 尾核
+
+0a25cb09c328917d6162ea23a7c93e3b70638031 六gitshow source逐SHA等manifest f58c5c85f07b42400c435c8c0bae39d00d4e29dc3642b2264f44120e9c5b136d，patch d30a2fc7bedb8a289e9ac06b683a46aa97cf403c1d9960cc697705fe0be0d2bb吻合；作者后续dirty未读入。原8a UNKNOWN_PREFIX_PHASE实际3!=0红与新0、final-pure三existing finite case各0及六source前后同已核，只现有证据未运行重测。未知older头不预发猜phase hit，确定起点后保存真实before/first→endBefore/last，现singleIO forward到固定贡献key；shared appendHistoryEntry机械抽取保GUI paint，同matcher按组顺序消费，逐贡献retire正文/旧entries，Tool/compaction只保≤512/512KiB必要identity，queryring/locators有界。确认IO不推进正常coverage；raw仍另迭代不因replay重计。Worker32hits/48KiB续接和原controller/source.dispose取消归属保留，无第二provider/parser/RPC/registry，model→stream仅type不构成runtime导入环。
+
+此query组件未发现新增source阻断，可按1d→f16→8a→0a顺序checkpoint；中间旧suffix相位近似被后片替换，不能单独宣传f16完整正确。实际Worker cancel/reset、末尾完整性/coverage与wholecopy64KiB仍OPEN；现copy拒incomplete不构成功能闭合，有限pure不外推fullFind/线程/DOM/types/native。后继完整copy必须保同source/cutoff和raw barrier，不扩大window/预算或全组保存。
+
+### New wiring actual54318 原8首次实际尾核
+
+Root005b249da37ef8adcc96f6bec9661280624d410c clean，result6a9938c7146aeb286a680ed986f6ab185df226379978e56ea0579b27645851fa actual0/92.140733583s。完整hostmetadata0与current no-prior prepared(priors[])→同CargoJSON Node libtest→V11units/3generated/context/request/source同；唯一fresh:false actualrow与selected/artifact一致。原target当次仍在，独立实算9febc77a4be1f6ae314e96fd35bb86240c114e97111d97e0e9fdcb5192490f7b/288572280B；旧f1同路径已被覆盖，仅其当时SHA事实保历史，不挪旧proof。原8父各强1/0/0，两journal worker.stdout各1/0/0及8103f5ac/ded158b6实SHA同。10stage日志指纹、0exit、无timeout/forced/interruption、group_absent、remaining/footprint[]均核。
+
+2333source before=after=prepared/V，environment稳定；TMP entries[]且已删，私有copy最终同SHA/lsof后退役，现absent且无gzip/binary镜像。内盘compact 10canonical小件逐字同（另index），合840820B，无log/binary复制；严格结束可解除Root冻结。不把本批当真实模型/API、CLI parent ghost、Known完整恢复/Core/App通过；OS sampler在controlled New host执行但Unknown fallback允许，不声称所有kernel事实Known。实覆盖受控New seed/同File/发布事务及R7故障组件与既有Load/Resume；旧compile false均原保。本审查未运行任何测试/native/browser。
+
+
+### c0f whole-copy 源审：append 时捕获 fence 未被强制，暂阻整体放行
+
+c0f00e4b5b029c868448d17fcddce120fedf037a 四gitshow等manifest0978a9e0f01b239818da6ef883c91aaa1e9f006965f94d8f40b6317f020fc1d3，patchdb3b59496746ee4bc0b658877cd337d01ac98dfecb9c76558a9b0e7b60d93ea2；七canonical命令日志SHA/源前后同核。旧0a copy incomplete→新hello完整、五finite0（phase含真实Worker32+32+6、暂停间copy后原phase继续；existing context/copy/reset Worker）是原有限证据，不外推浏览器/types/native/新held-abort。
+
+具体阻断在fixed history-find-stream.ts:95–127：whole移除query last切片后只在page.newer===range.fence结束，或遇新body边界即返complete&&reachedLast。真实Node adaptor/transcript_page.rs FileVersion::changed允许同inode append；prepare_read/parse_forward用当前observation len/modified产生新cursor，ReadBinding只固定content identity而非EOF snapshot。因此首次查询后追加同组chunk，re-read页的newer不再与旧opaque fence字节相等，whole会在原fence后继续yield追加正文，随后遇真实新body仍可complete:true，或不断追尾。旧query仍按原last exact contribution截止不受此whole分支问题。需以首次捕获tail真实贡献/record与raw-tail事实界定截止，或无法证明时明确拒；不能解析opaque cursor/增加RPC/以字符串相等冒append snapshot ceiling。已同步Root/H，c0f可保存sourcecheckpoint但暂不整体集成为完整copy修复。
+
+其余新逻辑现未见独立阻断：已知起点+原last必须实际见、raw-tail/Gap/identity scratch不足不交complete，64KiB外部返回前强拒超量；copy沿同shared fold逐贡献retire，无全组map，action与query暂停迭代器串行消费原singleIO和原source取消owner；source reset转既有typed code。后继fence fix另审，原false/pure范围不回填。本审未执行新测试。
+
+
+### 5b8c append ceiling 窄fix尾核：解除c0f该阻断
+
+5b8c9f3203e3099ad0226ccdf12cb6bc424d5a92三gitshow逐SHA等manifest2aa007a9ea548282fc163091b51f4f41de0fb36463f0cefb66bd4bb15940fd9c，patch4839bb32f4003e0a745d0c98462e897e588dcbbf9483ec3fcde8bf0c198ac808吻合。首次真实page记录末entry exactkey/真实record.end/尾后raw unknown事实，whole在dependency preparation前切到captured key或物理越界前；实际见captured tail且原query last已见、无raw未知才可成功，缺失且物理越end保守拒。query仍原last cutoff；不解析key/cursor、不以append后的opaque newer等值成功。允许遇已证在ceiling前的真实分组边界提前结束；原output64KiB/单IO/逐贡献retire/Source owner不改。
+
+新probe实际使用旧c0f完整model+stream+action，追加同组chunk+新body+新cursor后旧返回hello MUST_NOT_COPY complete:true，exact断言红；新exacthello/complete:true绿。六命令日志指纹（red/green+四existing finite）及sourcebeforeafter同已核；finite包含真实Worker32+32+6/pause-copy/resume与existing context-copy-reset有限消费，不是fullFind/browser/native/types绿。known-prefix首page改有真实末contribution，原false completeness和exacthello断言保，准备误停querycutoff的incomplete另保，不回填旧c0f结果。
+
+c0f→5b整体whole-copy组件source无剩余阻断，可交Root顺序checkpoint。新dependency/copy held-abort、文字Range多RAF/RO settle、相关浏览器消费与真实gen/fulltypes/OS剪贴板仍各自OPEN，不据此关H全项。本审仅固定源码与既有证据，未运行测试或产品。
+
+
+### e9f current search fixture DTO 源审：forward held门互斥待一行修
+
+e9f39d60acc16c743aae550f26f703f0fd7ff69d单script afterf86085cac26caf396b96ddb06fe7ebcd7e083a6c2aece9b57f0eafadc8e75ec6/beforedf9db83e等manifest60ad65539f1f9a704dba33512a50f3c33679f255bcb3f5a32f5165c1ffc0aa94；let server/browser/page之后七组与全部assert/cleanup逐字同。Native固定行补starts_message/物理record，scaffold record=null；f:tag:index是场景DTO双向128路由，binding scope拒错，无第二normalizer/reader。
+
+确定fixture阻断：history_page held条件外层仍!args.newer而新copy分支同时要求args.newer，forward Copy held永不可达。已交作者最小修为(holdCopy&&newer)||(holdInitial&&!newer&&cursor===null)，保持原claimed/cancel/finally与七组不变。当前未runtime、不称产品红；e9f暂不放该fixture组合，等待独立一行fixed尾核。
+
+
+### 1bd held方向tinyfix组合尾核
+
+1bd1c1a104cbfdca819628ec06753cc57e9af801相对e9精确仅一行条件替换，(holdCopy&&newer)||(holdInitial&&!newer&&cursor===null)，after584a139581a5dcef223f7447b0a027e90690c76a37220293cddbea50a76ebab2等manifest818c3ba2d7b1811de7955ad81efcf63abfb17131fd6b9c8603e416a2f2af7707。原claimed/cancel/finally不变，let server/browser/page之后原全部七组assert/cleanup仍逐字同。e9→1bd现无source阻断，可交Rootcheckpoint，未混Range/新场景；只有source/既有syntax记录，无browser运行准入或行为绿，e9原准备阻断保留。
+
+
+### Root8d Reader28与04f完整Find32 actual分批尾核
+
+query-8d353cc5/reader result949d123346ad27d2d388b18a2e614d4cff16c2cd2e4e315bcd55beb2bd1c4c44，actual0/0.484845167s，28条PASS与result逐项同，logc02d7c9d及script12914da4等当时HEAD。whole-copy-04f976ab/find result628f644e724ac82ae934861ed94897a9c1361da41a2cdeeb617efe45ff50860a，actual0/3.318438083s，完整default check-history-find无--only/recordoverride，32条PASS与result逐项同，log05ed8d5c/scriptac5f3f85等04fblob，含actual Worker续接/cancel/reset/action有限受控IO。
+
+两批2334source beforeafter逐字同，env stable、freshstorage accepted，actual无timeout/forced/interruption且group_absent/remaining_owners[]/privatefootprint[]。Root04f976ab24f279da047c6f031446da87afc1c5b9 clean；8d→04f精确只model/action/stream/Find四path，Reader/paint/source/window闭包未动。当前stream/model等5b，action等c0f，paint等0a实际gitshow逐字核；因此Reader28保8d原批映射，不伪装04f又跑Reader。可以解除freeze接已审e9+1bd fixture。
+
+范围不含DOM/文字Range/新copy dependency held-abort浏览器/gen/fulltypes/Core/native/App/OS clipboard。54318只005b原native映射，不能将其挪作04f全源native。全部旧失败/有限pure保持原样，本次review只读既有文件/hash/git，无重跑。
+
+
+### cc852 Range有限夹具source准入
+
+cc85258e0da38199904690117a648174e5709d5a单script afterebe87042a048bd20bb2ba821327e991df3f91d5f716fc58fe81947be78761ac8等manifest144c1d3c40f435a27d7aab6b1cc014fe40c87818c68d1ed67b46ff3782bdefd8。原7body仅constant words lookup移至selector前，逐字比较其余全同，原Chrome/server/fixture/source稳定finally保留。selection为default7+Range、range-only三个有限subcase、range-cap-only仅cap，需后续合同准确只报所选范围。
+
+源模型真实ChatView/Markdown/hook/Source/Reader与现RO，没有新observer/renderer/normalizer/属性/registry。真实caret/Text Range选保留贡献内offset/character/sample，后用同贡献文字位置复测≤2px，非card top/bottom。prefix场景确实延展同paragraph；late scene用真实wheelB+无正文older控制页隔离oldA不得挪B。cap四页128..639合512贡献一个body，held0..127后tail512/639退出、entry200保留、前后marker512断言实际淘汰；现RO后六doubleRAF再120ms逐样本看同点，避免仅一瞬态通过。held IO仍claimed、Cancel只stop、finally退自身，结束要求lease0。源审无阻断，可checkpoint；Root另独立固定合同后仅cap actual，未运行/没有实际red或产品cause结论，不冒原7/其他Range/WK/types/native或几何已过。
+
+
+### Range cap baseline wrapper caller窄修准入
+
+Root29887a47e86e0c706b501afbb8587ee1a1928a1b clean，2334来源旧frontend2331精确38delta+3新增逐SHA实核，cc852 script ebe87042，旧179gen lineage诚实不冒当前types；TMP/mirror fresh。初runner9c254把phase/report放entry.run返回后，non0实际helper会先抛RuntimeError造成phases[]；已指出并仅caller修。最终runner8667adabdf185ea7bee69151515c0e79baf0a1a4eda70c835a0654023d265d67/contract80b05a604e7a1c10975f531719dec00d8a9be6e90d3d8edb0805ff73adc9460e/admission pin实同。caller只接helper原Native process failed原字典，ast.literal_eval+exact11字段（与原helper实集合一致）/PIDexit整数/三bool/真实log路径SHA；先存真实phase/report再保非0overall false，CAP marker且无timeout/forced/interruption/remaining/footprint/group_present才标目标业务red，不把红/timeout改green。
+
+其余相对已审disclosure仅选择cc852 --range-cap-only/port23841/对应metadata；原owned/helper/fullsource/env/gen/tools/300/5GiB/TMP/compact留存门不弱化，完整log/profile只外盘。Root运行前另fresh .5GiB外/1GiB内峰值+20/10reserve，再唯一browser可运行一次cap基线；旧7/其他Range不选不冒当前绿。源码准入不预报红，实际终态/marker/几何/strict待证。本审未启动运行。
+
+
+### Range cap actual55767 目标业务红尾核
+
+range-cap-baseline-29887a47 result376b723615a4588ee2c93fe3d7a0efa6d4b7d8794fb3277a355bc7bc9da678c3/实际log5c1127fa019abf742ca529652d0c88fcd07feaeb5c7e7c9d60682f4214193226同，phaseexit1/6.563653s，CAP_EVICTION_TEXT_POINT line413确切目标失败。此前512 marker、older0..127进入、tail512/639淘汰断言均越过；同entry200 offset49/char b/sample/key保留，top0→10240而cardheight40976前后相同，是仅wholeSuffix/card-tail不代表保留文字点的有限反例。非timeout/forced/interruption，groupAbsent/owned-footprint[]，source2334 beforeafter同、env/tools/gen/fixturestable、TMPabsent/cleanup[]。cap-only selection/report errors[]；未选旧7/兄弟Range，不冒其行为。允许按Root既授有界contribution spans窄修，保原≤2px/同字符点/预算/新输入ticket，不重跑基线，不将此说成所有Range失败唯一cause。
+
+### Known2f850029 生产接线组件source尾核
+
+2f850029bddc2ed233b7a2d55dd65284f70b61ad clean五源逐gitshow等receiptf69490bd5e82d57097c07c664c2c94ee008f349f1181691dd4f40d0f958cc0b5及全部evidence pins。5rustfmt parser/diff0、source前后同，仅源码；parse_record tail和原Pythonpeer逐字同。parent fullnative/home/actualknownagent、canonical cwd+effectivecontext frozen digest，临时Journal完整binding预检后同RowGate durableclaim再spawn；child自己持exactFile并核claim/expected Meta run/args、actualhost Starting，observer同SessionControl/PID接Owned，bulk prefix gate外、epoch base/binding/Meta/actualReady短gate内，parent actualghostPID/expectedkey依旧Readyvalidator。不是跨进程FD继承，不在RowGate跨spawn/await。新claim env只本Command，New清继承；spawn失败只能退尚未claimed NotStarted。
+
+ForegroundAbsent独立有限事实仅从当前Owned exactstamp采样，apply回同gate核key/provider/host+actualproof，尚活动ghost必须slot已退或host完整Absent；不合成ProcessExit、不从Meta.exit/freeFD/单PID死猜，也不升级Unknown/cleanupbarrier/legacyGUI无Attempt。早失败/normalfinal同实际Transport结算，partial Meta slot与attempt更新分别尝试，旧result/highwater保，不以旧key写新owner。原privateworker5s包含Readyvalidation、原8行为未被本源码parse冒运行绿。结构归属仍GuiRecovery私有生命周期/Journal唯一File/Held有界文档，gui_environment与retire_failed_opening机械抽重复逻辑，无registry/服务/第二GUI状态。
+
+该Known组件无新增source阻断可checkpoint；当前正常内部opener每次显式fresh token，不可借此代替未实现public stable-token动作。public readonlyoffer/action/home远程/持久capability/Shell仍NEXT；genericclose原函数未改且明确只NEXT，不能把本片当全关闭入口/daemon外部writer或整个S3保证。旧005 native实际只其原源，不挪到2f新源。未运行任何测试/内核probe/产品。
+
+
+### ACP785f 当前visual探针source尾核
+
+785f06659b820a8fdbd2fcd2e9a4801f6890c7df唯一check-acp afterd6e8cee90e1012b8a35d016db6a476504160275481887960fc1603a7276f96d5等manifest3d6500f1a7c0c9eb790e88e00504dea93ce15e5808edd030410aca15c466a3cc；SDKprefix与look/附件/registry/wizard非visual整区逐字同。实际TraceLine/TraceTitle读取有效alpha×ancestoropacity ink，浏览器destructive swatch ΔE≤.5核错误墨；仅loader-circle活动SVG用viewport盒、painted stroke/fill/非零length与动画实态，kind图标不计状态差。settled无activity，reduce有静态activity，pair须真实activity差或composited CIE76 ΔE≥原数值3；Plan3真实几何（check path+circle、不同r双circle、单circle）/pending.6/current与完成1/当前pending ΔL≥3，原顺序状态文字保。四theme×motion、title/output/diff/defaultclosed等有效断言保。
+
+旧Dot/三墨等L与完成pending同weight属于明确授权过时carrier映射退休，不能说全旧visual断言字面未改。没有产品Trace/CSS/palette更改；source无阻断可Root精确checkpoint，只有原syntax记录非browser绿，18947false与已过子范围原保；正确probe若实测新视觉缺口记NEXT，不重画产品追绿。
+
+### Known e313原8 native准入
+
+known-wiring-native-e3132417 contract6ec3cc60674aad0873ab6d3a597d7dc7f4669087c0c829e6a007c23a50e3761d/source327ba5268119293cdb335fb6817e2e67ec0e23316eb96c98cdddc54b06741c4e实核。Roote31324172c2cdc1b9e388dcc85f9a49ba01e362b clean，44显式源（43+现Range script）/helpers/tools逐SHA同，五Known源码同已审2f。driver4045逐字等005旧实际驱动；原builds/compileargs/8filters/两managedhelper逐字段同，fullhostmetadata/no-prior sameCargoJSON V/require/copy连续SHA/300剩余/原5GiB门不变。入口实际强制e70外6/内2峰值+20/10reserve，实际storage文件待执行保存，不伪作预先运行。单私有copy最终SHA/lsof退役无gzip/大mirror。
+
+源码/合同无阻断，Root唯一native可跑，reviewer未执行。此次仅current受控New/Load/Resume+生产prepare/Readyvalidator与model组件，不据此预报CLI parent/publictoken/remote/Core/App/通用close/所有OSKnown证明；actual待尾核。Root先冻结e313到terminal再整合785f，避免无关testscript变化混currentproducer来源。
+
+
+### Known14117 e313原8实际尾核
+
+known-wiring-native-e3132417/actual-node-1 resultebc0052d64963266ee37af3b7f16fc7d88695cb6e4aa2ecbe4eaa96a662e1206，actual0/92.500999s，10stage全0/原8父各强1/0/0，两realworker.stdout各1/0/0及0ba1e87b/ed0b2736实SHA同。每stage原日志SHA、无timeout/forced/interruption、groupAbsent、remaining/footprint[]均核。原未过滤CargoJSON唯一khor_node libtest行=Vselected=artifact fresh:false，按原helper read_messages(dictJSON)及key(json.dumps sort_keys=True)重算messages_sha256同；no-prior[]/V11units3generated/source/context/request与prepared同。当前原target实际重算250ca852161e71c1dc7730367c2cb1b792298e824416f794e7d800f0f13cb4f8/288677480B；后续target刷新不用于伪重证本批。
+
+2334sourcebeforeafter同/env稳，TMP entries[]已删，单copy最终SHA/lsof后退役absent，无gzip/大镜像。内盘index映射10metadata逐SHA等canonical（flat目录，非原runtime嵌套目录），含index840756B，无binary/log。实际只当前受控New/Load/Resume host组件+生产prepare/Ready validator与R7，不冒CLI parent/public stabletoken/remote/Core/App/Shell/genericclose安全/所有OSfactsKnown。Root已仅testscript推进b7，原e313实际source映射保，不把旧proof当前require虚构为已过。本次未重跑。
+
+### ACP b7完整suite wrapper准入
+
+consumer-acp-visual-b7b35ada runner0656d75d818708cb3e6d9031d4c0400e04c28867bd889aedf09da64fce126c0d/contract37305401b775082260a2bc121424c16dde4541ef19475a4d812201d3c8112b67/admission7828ba752e531986beebf9a3480b99114f298046c98fd81b29596f29a4f9c82f实同。Rootb7b35ada89e8b8fc9ed8323cd1af8137bcca9e2b clean，38旧frontend delta+3added逐文件实核，scriptd6e8cee9等785，TMP/mirror fresh。相对原ACP18947 wrapper仅更新pins/path/3added口径与已审caller RuntimeError原11字段捕获+真实logSHA/先落phase；非0仍false。全原script无selection，原positive marker、四theme×motion及非visual保；300剩预算/原5GiB/owned/source-env-gen-tools/TMP强门和compact保。Rootfresh外.5内1峰值+20/10reserve后可唯一browser执行一次，不改变原18947false；source准入不预报视觉绿。本reviewer不执行。
+
+
+### ac953共享pure serde DTO前置尾核
+
+ac953c98cdf8b8d176302e672543b420ae22b6a8仅crates/core/src/lib.rs新增pub module与recovery.rs纯数据derive；两gitshow SHA等manifest21b796e3488ac076bdf445f2b998c5265f7bc5a19b822a4ac203b42242a7e0eb/patch4a376176d10d8da28e6738077ee31a91a414be399f816cf237698eb5e308bc25，未带四Range WIP。RecoveryToken epoch/nonce String、封闭execution/action/support、SessionRecovery可空currentrun/next_epoch/native/previous/reason、kind-tag snake_case结果与Root已定合同同；Opened只Ready、Join可nullrun、Pending/Unknown带id+epoch、ShellOpened强id/previous。SessionId强语义、DeviceId原bytes serde显式保，GUI后片必须映射homehex而非显示名。无IO/路由/校验authority/registry/TS derive/gen/行为helper。源无阻断可独立cherry交input，不带H父链；既有rustfmt0仅syntax/format不冒compile/publicaction完成。
+
+
+### ACP9255 actual false与active调用闭包只读诊断
+
+consumer-acp-visual-b7b35ada result963806b5e50c6c1560e0e9e0edca98d7b1f599aff6bf1f903697c1b061b8753d/log32c28d73b82d3cad1640ed1a1ae43e6322e0e2f2e336491e35afba0e0fd27414精确，actualphaseexit1/121.040387s，非timeout/forced/interruption，strictgroupAbsent/remaining/footprint[]；source2334 beforeafter同/env/gen/tools/browsertools/fixture稳、TMPabsent，13compact逐SHA两盘等canonical。四theme×motion已实际到达，running activity absent/completed-running ΔE0失败；Plan实shape/opacity/pendingΔL及前置nonvisual/附件/registry/wizard/打开diff-output门已越过。原false不改，不先当产品缺口。
+
+补齐上轮漏核active调用闭包：icons.ts只是lucide-react重导出，实际已安装1.61 loader-circle.mjs→Icon→buildLucideIconNode确生成svg.lucide-loader-circle及非空path，选择器/非SVG推断不成立。fixture默认frames只有Note，无turning也无turn；ChatView初始inTurn=false，只有f.kind=turning置true，AgentContent active={inTurn}→AgentTool live=active&&running，故未获当前turn事实时不渲染Loader是现设计，不构成ancestor裁剪证据。建议Root窄授仅这个宣称still-running默认scenario加合法{kind:turning}，不在canonical helper由Note/toolstatus推断turn，不改productactive/原SDK payload或四theme×motion断言。实际新DOM/修正后效果未跑，不承诺唯一runtimecause。若合法fixture后仍真区别缺失按原NEXT，不改palette。已告Root/H，reviewer不新runtime。
+
+
+### e122有界贡献spans Range修 source尾核
+
+e122718879428808cd2ae34a897c06d578d1f52e四fixed source逐SHA等manifest02946d35032592f9bfbb121596ed2dbea62347f9c755763a36375a26221dffcb/patch58c238505b0b97c3110dd07b9ed8162a8da27ff714c881d0e63ee926ee313acb。实际shared append的plain-text delta保≤512 entry/from/to UTF16映射（不是raw byte），超预算null不改正文；Worker retire清spans与正文/旧贡献同寿命，不长史累积。capture用实际可见48UTF16 sample，只有共享projected正文唯一相同sample才得entry+offset；restore先核该贡献仍在且相对sample未变，再mounted Text节点64KiB块流式唯一sample定位真实Range，无全DOM string/新parser/renderer/observer/map。复杂Markdown缺可靠映射只旧严格suffix fallback，透明不冒cap精确覆盖。原acceptRestoredPosition ticket仍在任何DOMmove/ownership更新前校验，新输入不得被oldA挪位；hook/data-follow/CSS不动。
+
+原reader identity case保全部断言并加span/U16/evict/ambiguous/cap必要子断言；sourceprobe0和existing actualWorker32+32+6/pausecopy0日志指纹/四source前后同核，仅有限pure/Worker，不是DOM几何/fulltypes。actual55767 red只引用，不复制/覆盖/重跑。该窄source组件无阻断可Root精确四path整合，独立pureDTO/ACPparent未混；最终原7+Range兄弟+cap≤2px/多RAF/RO需同新head实际，未预宣所有Markdown或Range根治。
+
+
+### e211默认active Turn fixture tinyfix尾核
+
+e211262f5351491af29dbf6824a69bf2eddddb05单script恰三行（两注释+defaultframes合法Turning），去三行逐字等785；after2c67dd266ac3263e5191895049c4ae77813035e98a6c6d226f0d3e44877e97e5等manifesta9a0ab3abf89ec8b4e371a1c950d187cc5a789bd89c7a078a1143ba33b03c0c1。NoLoad/modes/settings/optional/attachments所有非visual look均显式frames override，不被默认Turning污染。原SDK payload/status/四theme×motion/所有断言、canonicalhelper及productactive/CSS逐字保。Header trigger可只读facts，默认visual无可变options不越disabled门。source无阻断可Root精确组合Range；现只有syntax/source，不预报runtime绿，9255真实false及诊断保原，不冒改产品。
+
+
+### Root864 Range closure Reader/Find分批实际尾核与fullH准入
+
+integration/range-864c4500-pure Reader原result15ee848b00ca25b425d0afe17c27fd166cffae72fbcdc588b8f969190d18e729 validfalse/expected29保原。actual75722 subprocess exit0、28条PASS逐项等record、script20c2eaa1正已审e122，logc02d7c9d；e122把span子断言加原identity case内，未加新topcase，因此计数裁决07e68de04f2f1d3c4e4dedefbed6ce398fdc94a5c68f4723ee022895af97d335准确，不改false不重复Reader。准备importfailure c1cc1c4f明确helper导入先失败且无Node启动，仍原保。
+
+随后Find-only55298完整32PASS/exit0/3.278286917s，find-resultfef9c1516c0ec94a777cf3a125ca7ec7a8603397d2806663aae11194bacc68cd/scriptac5f3f85/log05ed8d5c同，无--only/替代case。两次source2335 before/after/find-after逐字同，env/tools稳定，actual无timeout/forced/interruption、groupAbsent/remaining/footprint[]/TMPabsent。只Reader实际28+callerfalse与Find32独立绿，不能包装一次全green，未跑DOM/types/native。
+
+history-full-864c4500 runner3327f7d49d405f47cbadcfbce240a00f4a13d0be68da0325f8fb50915ba54599/contractd1cccecc347a3d8941d448942f4abe2904a51dd259477a70def71a88bf39a54d/admission2c5b58a3f28dce24f3ec4b72f9c8c50e7860d9dd51510c5e2a65ea3fed78a30c实核。Root864c4500f25302deb6d86553cc84ddf69f568f9e clean，旧frontend精确39delta+4added逐文件同/179旧gen实际bytes同，TMP/mirror fresh。相对cap已审wrapper去only，要求默认selection falsefalse+8PASS（原7加prefix/lateinput/cap三个子场景统一Range组），非0保phase并总体false。源/错误/300/5GiB/strictowned/TMP/compact不变，原≤2px/六doubleRAF/RO+120ms门未动。Rootfresh.5/1峰值+20/10reserve后可唯一browser一次全Hactual；不重复基线/不增矩阵，reviewer不执行。179只旧实际gen来源，不冒当前types/Core/native/WK或OSClipboard。
+
+
+### fullH59083早false尾核与holdCopy目标混淆
+
+history-full-864c4500 resultdae945ff8a231b354767b0a8f0e02f7b61c45ef151318cc98586549bf6a47b08/log22acde4cc6c98af80d42058aff30b615467640391dd58da3bc620ea0ec157e8e同；actualexit1/7.848458s，无timeout/forced/interruption、groupAbsent/owners-footprint[]，source-before/after实际2335逐字同（此前口述2334不准确）、env/gen/tools/fixtures/TMP净。只有前4PASS，line244顺序断言失败，未Range/后3组，不据此回填部分剩余。
+
+report有足够独立IO事实：仍claimed uncancelled的lease72对应f:A:1300 newer=true（静态tail空poll），实际copy较后lease73=f:A:20 newer=true已退，clipboard已写Arow50/writes3/activationtrue。any-newer holdCopy被无关tail读取先消费，不能将此误判为产品Promise提交顺序坏。已交Root/H最小按fixture固定A binding+返回页包含被复制的既定contribution key50000000:0隔离（或静态非空forward先排tailpoll），非目标不消耗flag，不用clipboard-write/断言事件来arm。保原顺序/activation/退役A不得交B三要求及claim/cancel/finally；建议仅有界order尾+heldKey/cursor保现场，不加框架/产品改动/自动runtime。原false保存待独立tinyfix。
+
+### ACPturn864 独立完整suite准入
+
+consumer-acp-turn-864c4500 runner05c3f8747160b658183ecfccdacd6a82d703430115d7068f73b81dac60595f3b/contract606f2364cb33733c675c2e136241117d12189ce3f03ebcf0d62c1773fec474f6/admission7b50331b05f780566cc2c21426f05878e3d5edb56ce6e7bd787d735e789b2fd4实核。Root864clean，39delta+4added当前逐SHA同，scripte211的2c67dd26匹配，TMP/mirror fresh。相对已审b7 fullwrapper仅freshmirror与4added口径，原执行完整ACP/positive marker/四theme×motion/nonvisual/300/strict源env-gen-tools/非0phase保存/compact原样。H earlyfalse不取消独立ACP既定验证，Rootfresh.5/1峰值+20/10reserve后可唯一browser实际；reviewer不执行，旧18947/9255false保，未预报新绿。
+
+
+### 3b8共享TS derive元数据tiny尾核
+
+3b8ab1aa42a373aebbd3964b7a3a384dd3fc4a80两Corepath逐SHA等manifest7b26cefb03efd18e47e90ec042207e124c24ec9568ff579888bb55ac69fd36a4。仅8处derive添ts_rs::TS：SessionId1+RecoveryToken/三closedenum/NativeRecovery/两Result7；去元数据后字段/serde/tag文字逐字同。Core现Cargo已有非optional ts-rs10，无依赖/lock改，未加ts(export)/生成test/IO/校验authority。SessionRecovery不derive且不添加DeviceIdTS，GUI后片唯一homehex facade保持。源无阻断可独立pick交input，不混Range dirty；rustfmt/source不是compile或真实TSgen结果。
+
+
+### ACP38247 原完整suite actual绿尾核
+
+consumer-acp-turn-864c4500 result0cf68f0cf2b694b5afa188ba54823da76009d9801966a247001312df540626c8/loga5a924f751557ed739d9c568c2df28a8ce0f41b6386d43a7f90a68a4af387fba实SHA同，actualexit0/120.284257s及原完整positive marker存在。四dark/light×no-preference/reduce均实到activity（motion与static门未删）/errorink/Plan三shape-opacity-pendingΔL，以及title/status/kind/opened diff/output/defaultclosed等门通过；全部mode/settings/optional-model、五附件combo两真实upload/chip/pathsend+inlinegate、wizard四state/geometry/idle/press/registry/exactimport到达，没有faillog。
+
+source2335前后同/env-tools-browsertools/gen/fixturestable，phase无timeout/forced/interruption、groupAbsent/remaining/footprint[]，TMPabsent/cleanup[]。13compact元数据两盘逐SHA等canonical，无binary/logprofile大mirror。这里只受控Chrome原ACP fullsuite，旧179gen仍原来源；不冒WK/OS/Native/currentfulltypes，Root后续326 metadata整合不伪装该新head再跑。18947/9255原false与activefixture诊断原保。本审只读不重跑；后H tinyfixture改不需重复未变Reader/Find产品闭包。
+
+
+### 900b Copy held目标 tinyfix 源尾核
+
+900b2fa3377713542041d9cf1c357e5dd3fb82c3单script aftereaa59d483abc3c1d6a326646f4f60dead7cea73122d41c2fc43800156a2b9247等manifeste64f6643fb665f3f086a57740eb67034815d88b8b233e16c8910cbc3015e7dfd。holdCopy仅固定A binding+forward返回实际entries含被复制source contribution key50000000:0才消耗，tail空poll不能抢走；不写死旧页cursor148，不以clipboard-write或assert事件arm。selectedhit真实enabled前置后记录当前writes/orderStart，目标held要求本gesture恰一新write+activationtrue+writeIndex≥start且<held；原A→B旧copy不得交付、claimed/cancel/finally保。Range整个区逐字同，其余group未改；report只补order尾32/heldkey/cursor小事实，无sleep/observer/API或产品变化。
+
+源无阻断，可Root精确整合后同head原完整H一次实际，不重复未变Reader/Find；现仅syntax/source，不冒runtime绿，59083原false和lease72/73诊断不回填。
+
+
+### fullH e9新head同wrapper准入
+
+history-owned-copy-e9e1a484 runner4763df2354375db2172d0c73b5bd25b2797129f7bbba85ed75dc9a31df8f6a6a/contractcbf9731e0214d6253b50ee9bb810d1d17de4359166b733da3c04c6dad91e64ea/admissionae59249607f873c100b4eeba6e62153d1b1161469ebbfa18dff091c8f21409c7实核；相对刚审full864 wrapper精确仅mirror路径改一处。Roote9e1a484 clean，39delta+4added逐SHA同，900b script eaa59d48，179旧gen当前bytes同，TMP/mirrorfresh。默认selection falsefalse/8groups/原Range≤2px+RO/RAF/sourceerror/300/strictcleanup与compact门不变。Rootfresh.5/1峰值+20/10reserve后唯一browser可实际一次fullH，reviewer不执行。8derive metadata和单fixture之外Reader/Find产品闭包未改，不重复其纯检查；旧55767/59083等false保原，不预报本批绿。
+
+
+### FullH28700 八组 actual 绿与紧凑留存尾核
+
+history-owned-copy-e9e1a484 result925385c43a3324e79d9e36ddc4cb36716b5218182e7d14cc1f210d77a0be86f0/reportd6ac8e8688accde4fd602e80a058324022597629e6ba122b579f10b9dfca7a31/loga4b33f79a305508572e3148509f452bf0b2820fbd97cf09269686bac7122a39c逐SHA同。actual28700 exit0/16.253383s，默认selection falsefalse，原七组及Range第八组全部PASS；Range真实prefix重排、新wheel B胜旧A及cap512尾淘汰后保留字点≤2px，RO/六doubleRAF/120ms门实到。当前gesture恰一新clipboard write、activation true、write早于目标held以及binding退役旧copy不交B原断言均通过；非无关tail poll假held。
+
+2335source beforeafter同，env/gen/tools/browsertools/fixture稳定，无timeout/forced/interruption、groupAbsent/owners与footprint[]、TMPabsent/cleanup[]。13件紧凑元数据逐SHA等外盘canonical，没有大payload双盘镜像。范围仅受控Chrome产品UI/Worker与Tauri API/剪贴板内存sink；不冒WK、OSClipboard/OSSave、当前Rust生成/fulltypes或真实App。55767/59083等原false保原，不重跑未变Reader/Find/ACP。
+
+### 5da capability 与 private stable admission 源尾核
+
+5da45a044cf36c0068254070bd633bb56bae55fd六固定源逐gitshow等receipt a9e6e539a22c8d9b8be3e5551ff5dc0995970e4291d0508bd7e13af15a078c92及证据pins，未把author后继public WIP混入。每次host独立InitializeFacts OnceLock只在typed实际Initialize且v1核过后set一次，旧入口委托同算法；timeout/unsupported后仅实际Some可记录。本次facts在当前key/epoch RowGate下写support，不提前Meta，facts写错不短路provider与slot两结算。New成功真实响应后才把facts带seed；Some不担Ready/cleanup或Start授权。旧缺失/完整native或launch digest不符投影Unknown；同路径并非binary attestation，每次恢复仍实际Initialize核能力。
+
+新的private Live子模块复用现RowGate/16KiB owner，不造registry。稳定admission先exact token与全部args重放、再Journal preflight，current expectedRun/token在IO前后不重算；过期、未决、Unknown结果不转换spawn。旧CLI convenience只生成一次新token，公开调用后片不得借此重造token。pure support消费和private能力无阻断，可作为source checkpoint；只有6parse+diff/source，旧2f八case actual不外推本片。公开Join、current execution与latest action分离、跨home route、offer、Shell和真实public caller仍待固定/编译/运行，不称S3完成。
+
+
+### d549 Core recovery facade 与 producer roots 源尾核
+
+d5497d3a75f5f8b753b56044d30c69704492fed4三gitshow逐SHA等manifeste8bdc0eb4139721f14f827c60588349fe0faa9c87f399c507b2e28d4acb59797。仅GUI SessionRecovery将强DeviceId映射home.hex，其余共享字段/封闭词表原样；SessionRow.execution_home只取v.session.home.hex，不借显示home。三个async叶函数原root/home/id/expectedRun/token透传现约定Node *_on，不造token、不把None补成当前、不local fallback。offer返回核id/home；native result核SID，Shell Opened核fresh不同source及previous精确source，Pending/Unknown核sourceSID。H来信称另核nativeSID映射超出代码，已明确只原样保留，完整native/binding资格由Node权威owner核，不造Core第二套adaptor判断。
+
+producer仅增加四显式roots，依赖用现walk；未手工TS生成或增加数据owner。Node public方法尚依赖input后片，此checkpoint并非独立可编译/已公开调用绿；无API/Tauri/UI接线或运行。source无阻断可精确整合，不据rustfmt冒compile/gen，未带author其他父链。
+
+### ad30 execution / caller action 分离源尾核
+
+ad30da365d5c7c9a425dcc45179e8950bafa1d96两fixed gitshow逐SHA等receipt8ee919fa7e23d60d0d08417edd7b4c1863c2089037d28a137ee63bd6c33acd78，三证据pins同。仍同RowGate/16KiB bounded文档/单highwater；保latest执行key与唯一action/result，不引入第二锁/服务。Join在exact重放后才要求caller实际live验证及同gate Meta/fullnative/run核；action推进不替execution token，原producer记录support/确认退出仍同key可写。重复Join在实际exit后回原已接受结果，旧token退休，不借过期Opened重新spawn；legacy null仅在实际live验证及exactbinding事实下有资格。
+
+Shell接受先durable Pending，精确重复只返回该Pending，新token不能覆盖未决副作用；finish只允许同arguments/token仍Pending转freshSID或有限Refused，不二次完成。实际caller必须将不确定spawn保Unknown，不可据本helper参数构造Refused或重新执行。R7两个私有子断言保原topcase，仅source未跑；endpoint/ended事实、公开稳定路由、claimed opener和真实Shell调用仍后片。该私有owner组件无阻断可source checkpoint，旧2f八case实际绿不挪到本片，无Cargo/native/OSprobe/gen/browser授权。
+
+
+### 74a6 Shell DirectoryRequired pure DTO tiny尾核
+
+74a6bb3780255208cd93fb125926595fc597cde4单core/recovery.rs五新增行，manifest e0e27c98c8eb1ff8135a72cb9eae4e9c0f1af275c9bca0e28a5df9a8a77e0738及fixed before/after954cc9fe12f966598d578eb57f7fb0d3ed25b3653ac002514338f4d42c3003ff逐SHA同；删除该五行后逐字等父。仅ShellRunResult kind=directory_required携强旧SID，Native及已有字段/serde不变，无IO或spawn。source无阻断可独立交input/Root；仅rustfmt/source，无compile/gen。后继已授Corefacade必须把新臂纳入旧SID envelope核、明确cwd Option透传且不采用UI/localcwd；用户改cwd是新offer epoch/nonce意图，同token改变args不允许。已告两作者与Root，未把DTO当目录选择/公开恢复已完成。
+
+
+### public Join WIP 意图接纳窄设计意见（非固定源码/运行准入）
+
+input提出握手失败前token未接纳、同token后来可能转Native的边界，reviewer建议首次同gate判断live Join后先durable JoinPending，发本调用nonClone/nonSerialize ticket，放锁实际GUI2/cookie握手，finish同token/allargs/action与同Meta执行及host端点再Join；legacy null不只比较None。Pending写失败不握手/不Start，重复Pending只Unknown，不重probe/清高水/改Native；迟到finish遇新action或owner拒。Join没有新provider副作用，不能误套Shell未决永久阻止所有后续新意图，仍由原执行与cleanup资格决定新token。
+
+Join固定独立operation digest及精确历史回放可以先于AgentSpec，避免launcher已移除/变更使真实live Join失效，但不能放宽home/fullnative/expectedRun/认证端点。Native历史仍核effective launch；旧已接受Join记录不得静默改digest或绕过allargs。未读整包dirty，意见只约束作者后继固定caller，不称现已实现/编译/运行，不新增API字段/route/registry。已交Root/input，固定后续审。
+
+
+### b8b / 4c604 recovery transport glue 两固定片源尾核
+
+b8b6937fbe48df5a83fed777ee47230ad480bc87及4c604733f2d50ff20b24b578e54a8d0e5c205d96两manifest e1b0f89796d41b9e813b8c42087462e32618589a9f0927a734b40cd207e3549d /459431e78626f74e7500db4043a40290b1fc6e48a6b43b49754178a994e4dad8与所有fixed before/after SHA实同。三JSON分发臂、async Tauri声明/handler注册及TS函数同名，使用现call/IPC/HTTP传输，不新服务；home/id必需string，expectedRun/cwd缺失或null均None，错类型原opt_str拒，token经共享serde而不mint/替换/retry。Tauri取真实Node root，cwd Option原样传Node、不取UI/local cwd；DirectoryRequired新增结果现按旧SID核，Shell fresh/previous及其它envelope保。
+
+mobile WAIT只添这三项，原实际static-only stdout source contracts passed及exit0可核；只source合同非compiler/command_tables/gen/fulltypes/runtime，未重跑检查。TS只import未来真实producer DTO，无手写shim。可独立按d549→b8及74a6→4c依赖精确整合，不带H父链；Node public *_on实现及后续UI/实际生成仍独立待验。reviewer无新增运行/产品改写。
+
+
+### 3da public actions 十源源码审查：typed refusal 尚待闭合
+
+3da8f84f02f958a047be05e3b3f258440eb5b6ff十fixed source与receiptbc359eac8244b61d88dabdeb97b1bf5a2b4e5ddf960bec5d2ecb8aae35a3d640/四证据pin同；只读gitblob，不混后继dirty。精确lowercase DeviceId、resident/peer同home与SID执行端复核、action非reading/非0RTT、发后不重试及远端错误不本地fallback均沿现调用实读。Join固定独立digest在AgentSpec前回放；首次durablePending后放锁真实GUI2/cookie握手，再同gate/token/action/Meta及HostFile PID-child-port-cookie核完成，legacy null仍核实际端点，迟到ticket不越新action。claimed ghost使用原key而非CLI fresh token。
+
+Store read_snapshot复用同read_blocks parser，before/after fingerprint+epoch及pending/broken/vanished门，无Lease/pen/ledger/reseed/持久cache写；mutable提取前pending为空、remember_pending仍按writer最大end，因此该机械提取未见第二语义分叉。Shell旧行gate先持久Pending再调用existingOnce/host，B ancestry/root在host spawn前写，旧A不重放argv；未知spawn或响应保Pending/Unknown，新cwd走新token，DirectoryRequired无spawn。Shell digest包含当前canonical目录/default shell等派生事实，环境变化后同token可args拒绝，不应承诺历史总返回原结果，UI不可自动换nonce补发；该保守有效参数口径已告作者/Root待按现合同表述，不自行扩持久模型。
+
+明确阻断：DESIGNv2要求invalid/stale/allargs mismatch为typed拒绝，但action_token及fresh Held接纳前部分纯拒绝仍走Result String→通用RPC Refused→客户端Err，未形成RecoveryResult/ShellRunResult::Refused。已请input单独极窄fixed，只在可证明未有副作用的纯验证/decision点分类；绝不能整包map_err或按错误字符串把read/store/reservation/handshake/ghost/response不确定伪装Refused。此项闭合前不放完整public源码准入；其它已审private组件不回退，旧2f/Root八case绿不挪。只有parse/source，无Cargo/runtime/Core/API生成/public或Shell实际行为证明，genericclose仍NEXT未改。
+
+
+### 1c11 typed-refusal fix 窄审与剩余同epoch异nonce漏口
+
+1c11f947fab166f427582ee6322463606a4f905b三固定源及receipt3a54706df6c6cb9abdd768045d9442794b04c5298f0dbb04d77bea43f90a76b8/证据pins同。InputDecision在成功加载及ensure之后只包immutable noIO replay分类；Shell barrier仍Err，load/store/claim/OS/handshake/ghost未全包map_err/字符串判类，方向符合原阻断要求。Root已明确保full-effective-args同参数回放边界，不新扩跨配置无条件历史模型。
+
+但尚有确切漏口：doc.high_water=E、action=None、live execution token(E,nonceA)时，用户(E,nonceB)及expectedRun当前，check_join_input→replay_join返回None，is_execution_token=false，begin_join→replay才Err，仍通用RPC而非typed；此在store前为纯冲突。已要求只在immutable replay_join同epoch/actionNone先拒不同token（精确execution token保留None交Native校effective launch），不得捕获整个begin_join以误吞store不确定。固定tiny补前暂未闭完整public源码准入，其余分类无新增明确阻断。无编译/运行。
+
+
+### 91439 typed nonce tinyfix 尾核：3da公共组件原阻断闭合
+
+91439abaf35eb4c27a0cc7a888fa97c5c548f58f单叶fixed e7f41d5bacdc5f93ed5c584e383f25907801028aa9e4bbcec5156419a55ddda4与receiptf584b65760ef1c4db9f0461b83886c1ab823f9c4b9c55e3d7df6ee9abbd9648e/patch/SCOPE pins同。immutable replay_join同epoch/actionNone先拒不同latest.token，check_join_input因此typedRefused；精确execution token仍None留Native校实际完整launch。未包begin_join/store，R7新增一同例断言且后byte不变门保，仅source未跑。3da＋1c11＋914已识别typed-refusal阻断闭合，可source组件checkpoint；Root明确只保完整有效参数不变回放，派生参数变化可typed拒，不自动补nonce/spawn，不扩跨环境历史模型。观察无Meta/同逻辑SID后继仍独立待审，不冒全S3/编译/public runtime。
+
+### 7ed UI caller / 3ad delivery 源审及Terminal home待闭边界
+
+7ed07f94f090a446410b2fafb6fb7488c50b765b七fixed beforeafter逐SHA等manifest73cde16620590b3d95e2f4bfae810d8dd87feb709ab08b7162da36a95a9fe1ee。只读offer与历史挂载分开；IDB compound[home,id]单target未决payload，原生readwrite count+put同事务限32、每件8KiB预parse界，tx complete先于RPC，无WebLocks/全局单槽/内存fallback/自动prune或重试。不同payload不可替换，Pending/Unknown/transport错误保原payload，终态条件delete只清相等payload，晚答不能清新intent。目录先实际DeviceRow.id匹配、action home仍hex，不拿displayname替route。HeaderSeat只export复用，无新增颜色token/图标/布局band；采用现khor-design文档只做源码设计核对。5syntax/有限codec/TOML准备不是真实IDB/React/全types或App。
+
+发现第一阻断并已由3ad4b5776583ecbb768670b8731a6ebb31a7cf16修正：本次恢复自身会让row.word/attachable/ended变化，原act RPC后按该revision误退，先删payload而不onOpened重绑。3ad唯一hook manifest a433a2a952d6c4c0e5d12b28abe61ade5a023a67ace3e2d11d82219f22b62f6e/beforeafter同，现只读offer仍request+revision门，已提交动作与outcome只由target/mount generation控制，Node expectedRun为执行authority；该修源无阻断，无React红绿声明。
+
+第二边界待H固定：kept Terminal只SID存machine，global TabAct也仅SID，新row同SID换home后，新home成功Join可能调旧home Reload。须本DetailPane有明确home-scoped seat，不能仅kind=reload作home证明。H拟只重建该target不调用globalrun，但立即generation remount亦可能取消在传入的资源，必须保原Stop/Save时defer，不绕过不触Stop约束；必要最小本地TerminalPane ready/busy回调应由Root窄授，不加registry/重构全tabs。整体UI源码准入待此源闭口。另已建议两catalog recheck文字明确检查并恢复，因真实recoverSession会Load/Resume而非无副作用probe。无新runtime授权/执行。
+
+
+### observed 同逻辑SID / 三有限alias 后继设计边界（未审dirty）
+
+只给已授后继的窄设计意见：default tui / observeNative / observeAcp候选必须由实际home/namespace/agent/fullnative确定，逐候选核现binding/Meta/Attempt完整identity，布局不完备或冲突保Unknown，不做全扫。唯一物理JournalReservation必须覆盖alias核查到target durableReserved，child仅允许自身exact claim的Reserved，别alias Unknown/Reserved/Starting/barrier不得绕过；不释放lease后再登记。逐个短RowGate，不双持、不持rowgate取Journal/做OS probe/spawn/await；Absent仍原stamp与key回gate复核，不以Meta.exit/freeFile解除未知owner。
+
+实际New返回别alias已有SID且cleanupUnknown时，barrier必须落实际已证明bound的oldalias/oldSID，不能空target造另一份可绕owner，不改旧highwater/result；写失败沿原极端park exactlease边界，不宣跨崩溃持久证明。observe读取优先canonical/控制解锁仅samefullidentity且正式published GUI，不能只看kind或prefix；Core复用Node权威资格，不再推身份映射。genericclose删owner窗口仍原NEXT，不被有限alias设计宣称根治。已交Root/input，未读未固定实现/未授运行。
+
+
+### 3f492 Core observe 控制委托适配源尾核
+
+3f4926c6613abbc54caccdc56ade4e41904db386两fixed Core source beforeafter逐SHA等manifest6493707391f179628dc86e779baee34127655a69f9702c74dbfa640caff53fc4。Chat begin只占现有64/30s Pending槽，不获得控制；Terminal refuse_control仍保。fresh chat_open仍经attach，本地Node.require_interactive_owner/session_dir，远端term::reach_blocking→执行home Reach，再实际GUI2/cookie；共享资源仅现Registry已admitted。Pending/Opening不可read/control，控制须exact root/id/lease、current资源且live，reader须Attached，无新增每poll Node/registry/RPC或client本地published误拒远端判断。
+
+此adapter source无阻断，可依赖checkpoint；必须与input后继samefullidentity且正式Published资格的Node require_input_owner/session_dir/远端Reach组合。旧Node仍粗拒observe，不称此单片已恢复可用或未发布observe已可控。仅parse/diff/source，无Cargo/lease/runtime/生成证明，不放宽原控制authority。
+
+
+### f617 / 3d095 Terminal 本地owner 源审：返回已退休home座位待闭合
+
+f61745eadcff7988cf9d2295ae0660283196f334五fixed beforeafter及manifest96c02e4a120b3122274696cf44046ae165890c4f858a61fdb332741610415eae同，3d09576213eaff6272ddac8736e6422695dc8c67附加两行Terminal最终SHA b279f88f9b1e6b255437172ae8350990fb172ab396ce4f54f81dace287ba0035同。现S3改用本Terminal mounted callback，不调用global SID-only act；samehome既有reopenRef不重挂/不丢staged，idle核dropping真实ref+opening/joining/share/names，drop保持原实际finalizer/cancel ACK结算；home替换hidden/inactive并layout retire新drop和普通onData输入，原目标待idle才换key，方向符合窄授。intent id4096仍总8KiB，catalog检查并恢复语义及等待词修正，不加样式/registry。
+
+确定阻断：忙seat homeA→B时retire永久true并保旧seat；若结算前同SID回homeA，setKept因home相等保旧key、terminalShown重新true，旧retired guard却不清，输入/drop/rejoin永久拒。须单向退休事实让回A也待idle后只重建本seat，不能把旧ref直接unretire或取消transfer。另旧global reopen/hostSilent timer→join(true)仍可在retired时发新连接，及原block rerun直接send(command)绕过onData gate；已要求在相应同owner入口拒新join/user输入，明确协议reply与既有transfer允许结算，不改协议/全tabs。整体UI source准入暂待此固定小delta，无React/native/IDB/types/生成运行结论。
+
+
+### a8ef Terminal owner 窄修续审：pre-join 展示等待尚待退出
+
+a8ef0221936897a38f350a089aa57d1ac1105c74两fixed source beforeafter逐SHA等manifest8ab0826953952b00337e709e7c4c16382693b30e644bfb8f84660db3de67cf3b。kept单向retired让A→B→A不再复用退休key；join统一入口拒retired，send默认user拒retired、OSC52与既有isReply显式protocol保；cap改mount寿命，忙状态变化不cleanup成null，accepted join/sender计数finally通知，方向闭合上条确定源问题。
+
+仍一条必要同owner等待漏口：opening初始true/main effect setOpening(true)，join(false)要等settled+RAF；若在开始join前退休，guard直接return（或隐藏box让settled未达），没有actual join也无人清opening，idle因此永久false而旧seat不能换代。已要求作者最小区分展示等待与真正accepted IO计数，退休后未开始动画不可占IO owner，但正常opening门和已发join/drop结算不能粗删。固定tiny前整体UI源码仍待尾核；无新增React/终端/runtime检查。
+
+
+### 4baf / 1452 tiny尾核：UI组合已识别source阻断闭合
+
+4baf7f1a83c210f25a03fa76e36d4434a97209e9 Terminal唯一idle修正，manifest33a245849f8b986f37d18b6211fb6ae44caa4c7895e0c4bba97b9f1490b0bd40/fixed beforeafter与有限old/new stdout-stderr pins实同。retired只允许越过未开始presentation opening/joining及reopenRef未ready，真实accepted join/sender计数、dropping/share/names仍堵idle，正常活动opening门仍在。探针用TS AST提取真实idle闭包，old RETIRED_UNSTARTED false!=true到new绿，acceptedJoin1及活动opening仍false；只判断predicate，不是React调度/协议或实际IO证明。
+
+1452a1f906f6f782bf3e22b0a2124ed6cef82b5a intent单叶与manifest9cb97962前缀/fixed beforeafter/有限日志pin同，SID4096按UTF8 byte而非仅UTF16长度，原总payload8KiB预parse界不变。实际1400汉字4200B合法JSON旧missing exception红到新codec拒，范围仅该预算codec非IDB事务。
+
+7ed→3ad→f617→3d095→a8ef→1452→4baf UI组合已识别source阻断闭合，可Root精确组件checkpoint；3f Core adapter及d549/b8/74a6/4c transport依赖另已审。仍须input正式Published同identity Node资格，以及当前真实gen/fulltypes、IDB并发/React poll-before-reply、传输中换home/ABA/晚答、local/far实际与App验收，不能由有限predicate/codec红绿替代。无新增运行/生成准入，reviewer未执行产品或测试。
+
+
+### 7313 / 0799 logical-ID 三alias 第一组件源尾核
+
+7313fe131b975254ccb47e890254d1337140d61e＋0799a6031d938e5172248d2d95b2e4962d276487四fixed最终source逐SHA等receipt03035657d460227ddec95fd4ed42d79873acc2ec8926db7f10dc133d9ba7ced8及五证据pins。父prepare物理JournalReservation File在同函数作用域内覆盖finite3 alias fence至target durableReserved，return后才Drop；child重新take实际File后同File期间只容自身exact current unclaimed Reserved，别alias Reserved/Starting/Unknown/barrier挡，decoded credential单独不授spawn。各alias binding/Meta/Attempt完整identity一致才判，确定foreign完整source可排除；旧无owner保Unknown，不凭Meta.exit/freeFile升级。逐个短RowGate，OS读取在锁外，回gate核原key/stamp，未双持或跨spawn/await取gate。
+
+Arguments.id只既定default tui/observeNative/observeAcp，observe还需实际Observation.read完整身份而非tuplehash猜资格。Known child/publish/Meta/Ready沿claim logicalSID，New/default仍旧id_for；0799保本次configured vendor资格，旧source wrapper仅原test caller。不改物理Journal路径或provider Identity。New seed在原File fence后/open_journal前，cleanupUnknown quarantine只实际bound oldalias；选中后的store错误直接回原park/retain政策，不换candidate当释放理由，不改旧高水/result，不声称无lease时durable保证。
+
+该生产primitive无阻断可source checkpoint，但public纯observed无Meta、Ref转发保存、logical target reserve实际调用、registered/selected_content及列表/控制资格消费逐项仍pending，不称observed可用。只有parse/diff/源断言，旧实际八case仍归旧source，不外推新组件；genericclose删owner路径原NEXT不动。reviewer无Cargo/OSprobe/runtime/生成执行或准入。
+
+
+### ed947 published consumers 源审：Observation删除与发布尚需互斥
+
+ed947b39d1104ad318fef0776d15cd7aefbf97f0六fixed source及receipt a08f83a0dec55ce0bb5eaf747f476364b2d85444a250109d711b5c89630434ff/三证据pins同。Observation完整引用+binding+Meta GUI/run/host+Attempt RunPublished/Opened才选canonical，历史Published但Exited/Unknown保Some(false)可读，不授权input；Owned且slot未exit仍须原owns_agent_endpoint/input_owner及GUI2/cookie。Source.registered循环依赖实际没有递归进入自己，未发布observe保旧Native只读；local重复投影抑制和远端替换用同一次cached_report快照，无新增RPC或按client本地Meta误拒远端。Known logicalrow保实际cwd，原callsite签名匹配，未跑类型编译。
+
+具体阻断：take_off_if_imported和ObservationKind.close均先读published_observation(None)，再无owner互斥Observation.remove。它可与child持RowGate的check_observed_target→MetaRun/Ready→Attempt RunPublished交错：删除方在Starting/Publishing时读None后删Ref，child随后完成Published，新canonical/control guard因Ref丢失全拒。只拒已Published不足，需让资格判断+删除与同源publication互斥，并防Reserved/Starting/Publishing/Unknown owner被旧readonly删除门破坏。已请input复用现物理Journal/RowGate有限临界区，两删除入口同判断，不造registry/不修genericclose；无Meta纯observe删除也不应留空alias目录造成后续fence误拒。此窄修前本组件暂不准完整source整合，其它前checkpoint保留，纯noMeta/Ref保存/public logicaltarget实际接入仍后片。无Cargo/OS/runtime执行。
+
+
+### c4cd 删除 fence 窄修：ed947 消费者原阻断闭合
+
+c4cd4b08783ab5801777c7db27b88b437409ceec四fixed source及receipt fef0201cf4b5148e605a5f50a97ff109075384db1a3220d77fdc9d87c66106c3/三证据pins同。take_off_if_imported与ObservationKind.close统一Live.remove_readonly_observation，先实际Ref确定source→exact物理JournalReservation File→仅既有alias目录try RowGate；任何Meta或Attempt均拒删除，坏doc/read错误亦拒，remove表达式结束后才Drop gate/File，故检查/删除与publication互斥。无row不创建空alias目录，不添registry/不改genericclose。remote这里只当前root缓存Ref，不影响执行home独立Ref，不将本机File称远端全局锁。
+
+现有R7内新增真实helper调用/无新alias目录/Reserved无Meta拒删/bytes不变子断言，尚未运行。ed947＋c4组已识别删除TOCTOU源阻断闭合，可Root source组件checkpoint；只有parse/diff/source，noMeta公开来源、Ref转发保存及logical native_at调用仍后片，不称observed恢复已可用或原actual八case覆盖新source。无新增运行/生成准入或执行。
+
+
+### abad / 154333 observed no-Meta caller 组合源审
+
+abad2bc819f3b262a9b0ec4b8dbe80a3a6b98d7f八fixed源及receipt2de2b0aa61511aa68a87353a7e50304b07abb68c21727c4fda295baeca225c07的patch/SCOPE/checks逐SHA与bytes同；15433371a14a56e4a16693c2cdf47ccbce756ecf两fixed源及receipt587aa08d0a23e258dbf59b6f29e37624c1b41c4dbdea4433e00a002331f8302d同。私有IPC/resident/peer只转Ref数据，执行home验证完整hash身份并从真实Native transcript、same-home AgentSeen或exact binding/canonical+Meta重验可读身份/cwd。纯文件、列表、Meta.exit或UnknownBirth不授spawn；finite三alias必须有原Owned的ProviderExited/ForegroundAbsent正证且无Reserved/Unknown/barrier。same physical JournalReservation内重核正证、保存缺失Ref、sourcecheck及alias fence→target Reserved，logicalID沿既有child/publication/Ready；不另造home route/registry。
+
+154在原R7内加实际private offer+受控owned files的完整目录/bytes不变、Unknown只读、模型Exitreceipt后Ended/Native、Ref持同File保存和Msgpack往返断言。其canonical fallback tinyclarify只让身份可信但owner Unknown的历史仍可读，不改变独立positive资格。模型注入退出不是OS实证，全部新增断言未执行。组合无新增source阻断，可按两提交顺序精确整合；不称public/remote/CLI parent/Shell/App已经运行通过，genericclose仍原NEXT。
+
+### recovery cohort 生成 runner 准备窄审
+
+integration/recovery-cohort-20261031-1/run.py bba81149ab4dc66b34b73dae28b1d1c89da501eaef84c4155d3cf2957b0bb0d1与prepared-contract c6d1aab5126fea40f400a9c21eaae8e27a477ed3263212c62b09a9144bcc3ed4一致。八phase为metadata、catalog build/stage、bindings build/stage/publish、完整noEmit、Vite；catalog同次actual gen_ts no-prior V后stdout精确原子发布，bindings同次actual producer no-prior V后stage与managed publication全dict一致。4 recovery DTO/目录结果/SessionRow.execution_home及退役union检查、实际Node no-bundle cfg/env门、source/env/tools/helpers稳定、600总/300阶段/原5GiB紧急门和e70 reserve20/10+peak6/2保持；compact只小合同结果索引，完整日志/provenance外盘canonical，不冒仍双份payload。没有执行逻辑新增阻断。
+
+目前仅prepared-contract且无admission.json，故仍非最终运行准入；待上述源精确整合、Root clean/frozen后补exact head、runner SHA和storage helper SHA admission并fresh storage复核即可沿原队列执行。不得先把准备源当实际gen/noEmit/Vite绿；此reviewer没有运行任何producer/测试/OS probe。
+
+
+### catalog compile-only gate 窄纠正与 Recovery17 测试源尾核
+
+recovery-cohort-20261031-2/run.py 2971fc8a388e8f274cf3036fe2ad739305a00ebf5149a02f7514dfbfc09b16fc相对bba只换独立mirror目录及catalog build追加原`--test gate`。旧ui-copy-export-native-2/run.py:82已有同选项，用于覆盖catalog dev-dep Core的prepared graph，只编不执行gate；不改metadata/provenance或放宽source要求。原45451来源覆盖准备失败保false，不能称业务红。该delta无阻断，最终head/admission及fresh storage仍须实际冻结匹配。
+
+743a0fa47a815a36a6e7647dc52a65d2001ac5db三fixed testpath逐SHA等manifest b42b285a913b4cf0eccba18f334b50fd8d7ebd30b8453da312b65108a8f94d31，十五生产源与4baf逐字同；原十三分支完整断言block逐字SHA73acfa8b21bd32981b9e72aa2c1b544c63e0a41e3596d3987b6366cc4f52f73d同。新增四名明确独立：offer/rebind、真实IDB retries/shared pages、DirectoryRequired Shell、terminal owner transfer。Probe用真实DetailPane/RecoveryActions/hook/IDB；peer同BrowserContext且同origin，无伪IDB或Node去重算法。实际hold action先poll改自身row再reply、旧target晚答不重绑，payload跨Unknown/transport/remount/peer exact重放及不同target并行；目录选择新epoch/nonce/actual device id与freshSID/previous均显式核。
+
+Terminal真实DOM path drop进入现sender+lease，hold期间无Cancel/Leave/reconnect；wait只在实际lease Leave结算，held drop前Leave会拒，不清全表冒退役。samehome保原Xterm并实际Ready重连；A→B→A单向退休待IO再新generation，另kept beta实例不变。关闭后的晚offer不触执行、controlled actions/drop/wait结束和原reader lease空仍核。组合source无已识别阻断，可Root精确整合统一生成；只有syntax/static，未Chrome/React/IDB/协议行为、没有真实Node/public资格证明，须当前actual catalog/bindings后独立运行合同，旧179不能手shim。reviewer未运行生成或浏览器。
+
+
+### Recovery17 wrapper 准备续审：lineage通过，compact报告去重待一处窄修
+
+recovery-public-ui-20261031-1/run.py fd234a3f后续051a0a33bc7b93eb13a44f573272331dc19205d17b5ba8afd21db8b3d50b89d8已加入actual frontend head与当前完整source_frame精确三test路径delta、generated全dict一致及17场景名顺序检查，可在当前生产gen结束后整合743而不误称两head全源同。原owned/Chrome launcher/300/5GiB/TMP/完整非零helper结果保留/e70 reserve20/10+peak2/2没有新增执行范围。尚未admission或运行。
+
+唯一准备阻断：`result['report']=report`把完整report（polls/facts/held调用payload）嵌入将复制内盘的result，而canonical/准备口径称full reports external only。已请Root最小改为report path/SHA加17项紧凑summary，完整report只外盘；原count/finished/sources和scenario强断言不能删。无需重写wrapper/扩大suite，最终actualfrontend终态后再pin准入。
+
+
+31923d3a0234d2ca072e3dae2cf723b547ec6fae5a532627e23e8d75a4972a58 report窄修已核：result只path/SHA/finished及17组engine/scenario/ok/错误计数，完整report留外盘，原完整变量上的17/finished/source/scenario强断言逐字保。上述compact准备阻断闭合，可待actualfrontend终态和精确三testdelta admission后授权，不构成已运行结论。
+
+
+### actual28762 生成成功与 types 红分层尾核
+
+recovery-cohort-20261031-2/result.json SHA5b69534015cc74d0042df7016f66b7889c64e2d52b9ca53e2687ba84e35147ce实际green=false/158.6168s。六成功phase metadata/catalog build-stage/bindings build-stage-publish均exit0且groupAbsent、无timeoutforced/interruption/remaining/footprint，日志SHA全同。两prepared prior_receipts=[]，两proof selected.reuse=false、selected row逐字在本次CargoJSON、现原selected文件SHA同，proof.source均2339 before=after；catalog生成SHA50c065fb为stage/published同字节。generated915af5e4所列186 bindings stage=published逐SHA全同，当前188 allgen dict亦同。
+
+唯一types.log TS2345位于history-find-stream.ts80联合类型AcpCompaction收窄；真实types子进程exit2/无timeoutforced，原helper异常把该phase完整payload保在error/trace，不能因phase列表只有六成功行称fulltypes过。无vite.log/无frontend-receipt，types_passed/vite_passed均false。owners剩余[]、TMPinventory[]/已删、cleanup[]、source/env/tools/helpers稳定，compact小件双盘SHA同，无日志/binary大镜像。可保持186实际生成物，经精确已审三test加单TS差异lineage后只续types/Vite，不重gen或回填整体false；无public/Node/App/WK/模型runtime通过声明。
+
+
+### c0da TS predicate 及 continuation 源审
+
+c0daecb3312c51704e3105e65153cc7388052927唯一history-find-stream.ts plain谓词返回类型改Extract<HistoryItem,{who:'agent'|'user'|'thought'}>，runtime表达式逐字未变。before e8a72e1d/after b562120d fixed blobs与manifest17a00b6f及patch66dd3526全同，排除原不含text的AcpCompaction等联合，使retire的text/contribution截断spread只属正文类型。emit-proof c81eb37a声明transpile前后JS42f25b83相同只是类型擦除证据，非project noEmit。source无阻断可精确整合，不重gen或未变Find32。
+
+continuation准备6b1be23b11d44b693bde8f34a4ae1e6578d7f83438cfcec146d949c90d9bf1c2仅types→Vite；旧28762六成功阶段/strict终态、same工具helper、catalog9/实际stdout、186stage/pub与188gen全dict及完整source union仅精确3test+单TS差异均有门。generation_head/currentfrontend_head分列，不伪当前Rust provenance；600总/300阶段/原5GiB及e70 reserve20/10+peak2/2/compact保持。最终exact4delta和prior_pins admission仍待Root固定，reviewer未运行。
+
+
+### actual48300 frontend continuation 绿尾核
+
+recovery-frontend-continuation-20261031-1/result.json 4e2ea0c661cbce6a03eb37cf112f56dd37eb74658a0185487eacebfbd700f879真实14.3700s/types0+Vite0，均groupAbsent且无timeoutforced/interruption/remaining/footprint，两个log SHA同。frontend-receipt a4314eb0b854049e7ba94bffebc4549ef32b8104eedfae1ad550c1ccb393fb42和所引result/source_after/旧bindings provenance/generation_reuse SHA全同。prior_pins十九件含原false/typeslog、六phase logs、两prepared/proofs及source/gen/tool/env均核同，不覆原28762false。
+
+实际generation_head=cc92d47f、frontend_head=4392a957；完整source差仅已审Recovery17三test与c0da单TS，当前2340 source before=after=receipt；生成188（bindings186+catalog等）全dict保持，当前dist278全SHA同receipt。source/env/tools/helpers稳定，owner剩余[]、TMPinventory[]已删、cleanup[]，compact小件同SHA，无binary/log大镜像。范围是当前完整项目noEmit+实际Vite及精确旧生成复用，不是新Rust producer/Node public/App/WK/模型行为绿；浏览器13057由Root独占运行，reviewer没有poll或开第二实例。
+
+
+### actual13057 Recovery17 当前组件绿尾核
+
+recovery-public-ui-20261031-1/result.json ea117908f1f6808e87864035a8066f5befce8b4fa6582f7232e67a34f6d1a0dd与完整外盘report7084ee576fef2b53ee10c26c8fc57c59296aa9a07b6df4f0e8b8a2dd0629a5ed、log所引SHA实同。exact17按admission顺序全ok/finished，page/console/network errors均空，22脚本追踪source前后同。原13完整分支与新增4独立组实际均运行；当前2340 fullsource before=after、188gen、env/tools/browsertools、fixtures稳定，process0/groupAbsent、无timeoutforced/interruption/remaining/footprint，TMPinventory[]已删、cleanup[]。五compact约19KB逐SHA同，完整report/polls/facts仍仅外盘。
+
+实际IDB transport/Pending/Unknown/remount连续五次payload全同，peer同origin/context按同alpha payload重试、beta新nonce并行；Shell旧cwd null epoch4至chosen epoch5新nonce，再fresh-shell实际Ready与previous；Terminal两held drop真实结算，同home保Xterm本实例重连、ABA退休后仅本target换代，beta原Xterm/open不受影响，原相应断言都到达。晚offer/旧action不能复活当前目标、各read/transfer/wait finalization照原强门。此绿只证明受控Chrome真实DetailPane/hook/IDB/Terminal owner消费，Node执行资格/去重、provider、公有IPC/远端、OS剪贴板/Save、WK/真机/App均未由此证明；不要求重跑未变H17。
+
+
+### actual89125 R7红及 a92 observed完整路径窄修
+
+public-wiring-native-20261031-1/actual-node-1/result09d7704fa4eeda29e0941f973ceffa87e034b04556702644a02fc3469e3836f3实际false/97.8749s。metadata/compile0、no-prior prepared[]/reusefalse、selected实际row在同CargoJSON，原target SHA366e8bda3905c61e543b7f18ff85d19eab1a7813e3f61b247ad1e92c86ce4cf5尾核时仍同；proof2340源码SHA映射与frozen before/after同。run1–4各唯一1/0/0、日志SHA/strict门真过；run5日志4f7ea4bc3bc07087297e82eafd6d328d09e25cc897b5ea49da505cb86da4cb54实际0pass1fail，recovery_attempt.rs2022 live.dir(record.id).unwrap None。后run6–8/2helper未执行；R7内部排在recovery_wire_admission之后的initialNew/partialSettlement/Join/Shell/readonlyOffer子helper亦不能称本批已到。source/env稳、TMPentries[]，单copy最终SHA/lsof后退役无archive，原false保。
+
+独立实源定位LiveKind::dir旧clean_leaf leaf24cap拒绝Observation::id真实完整64lowerhex，是生产映射阻断，不是fixture缺初始化。a92ff5d91c2fda20c9603d5e4b784661f44c2a5b两fixed source及receipt a50c50504b3b80481b1b7245d1c52b284dc1829049bae7e88591a7a779a5d77f/三证据SHA+bytes核同；仅kind OBSERVE接受完整64小写hex并原样observe-{hash}映射，短/大写/非hex拒，其他kind原clean_leaf和kind检查保留，不改Observation/binding/Attempt/input资格。原unwrap/删除/无新dir/bytes断言不删，附fullhashpath/short/uppercase/TUI64拒四断言，无新topcase。source无阻断可精确整合续原8父+2helper，未将parse当绿。
+
+Core-current-4392准备仅计划亦已核：现3exact存在，command_tables四test；lib+三integration四test selected及三个Cargo自动normal bins共7selected，单次显式Core --lib/--test3/no-run命令，无normalbin执行/gen。应复用原导入owned API和逐selected no-prior V，不直接Node --suite；未来新head/source/actualfrontend lineage须刷新，当前无driver/运行准入，无新增suite或框架。
+
+
+### actual14794 run8 能力事实红尾核
+
+public-wiring-native-20261031-2/actual-node-1/result76b47012f8483bf5f45b06123605c1a6314909f3992addbee904d5d3550de078实际false/86.8246s，metadata/compile及no-prior[] V完成、reusefalse。run1–7各唯一1/0/0，journal真实helper1/0/0，各已记录stage log SHA实同，R7完整64hash路径修当前真过。run8日志478ecb9601fa42534d3d74069a443fbd18bed70441793d750fb27c21e916d916显示父/helper在gui_host_cancel_tests994支持能力exactassert失败：实际{load:true,resume:true}，期待{load:false,resume:true}；原后续partial/raw/Close未到，不称原8全绿。无timeoutforced/group剩余，source/env同；privatecopy04d69ec82aeb61987b92defd8ec29981c3609d36cfd9fbd0d3444c8a6df8abe8严格退役，但tmp-status保一个eventstore目录及其一个.part文件，不能说TMP全净或把两entries写成两个part。
+
+独立实源 acp-cancel.py84规定loadSession=mode!='journal-no-load'，journal-resume实际true，85额外resume={}；ACP v1核后RecoveryCapabilities只读caps.load_session/resume.is_some，实际持久事实正确。新增5da期望false把选择了Resume误作不支持Load，支持窄test-only校为true,true并保实际session/resume1、session/load/new0与partial/早Note/raw+projection/Close全部原断言，不改生产getter或fixturecap、不回填14794false。待固定单叶源审，reviewer未运行。
+
+
+e6fd319546214331fe38d16adbd29da9a84ef744能力期望单叶fixed源与receipt bd82e7c8fc7903840532ee3a1a74edede06f5d7c1a3b82efe3fa4d0af5f41131/三证据SHA+bytes全同。差异恰load期望false→true及三行能力/动作分离注释，Resume1/Load0/New0、partial/早Note/raw/projection/Close与peer/getter/生产源全未动。source无阻断，可精确整合续原8+2 current producer，不重UI17/未变types/Vite；原14794false及一dir一part现场保持，未称新运行绿。
+
+
+### actual85431 当前Node原8+2 绿及 Core709c 准入
+
+public-wiring-native-20261031-3/actual-node-1/result7eab991c9f20594a6030f82f46f4ace104f491bf0346569ad407a06f0d4dc8ae实际6aa/88.0680s validtrue。metadata/compile及8运行共10stage全0、各stage log SHA同，8父各精确1/0/0，journal与journal-resume两真实helper各1/0/0且各worker.stdout SHA同。no-prior prepared[]/proof reusefalse、selected row存在同次CargoJSON，当前原target630f5612e9369d3a1025b5a33e9841e842056d324dfed5820c7779907132d297尾核仍同；2340 before=after=proof SHA映射。所有groupAbsent/无timeoutforced/interruption/remaining/footprint，source/env稳、TMPentries[]已删，单copy最终核后退役无gzip。当前R7完整观察path/readonly模型门及Resume后继原断言真到，不能外推真实public peer/CLI parent/App/所有kernel facts Known；原89125/14794false和14794自有part现场保。
+
+Core准备efa877初审发现ignored gen/dist末尾门漏口，709c992d64e27564946dd1d6aadfdd7768d9148476f40379f9788d1353d7e69e只补finally try unchanged()，异常保failure/validfalse且仍出result/退役，并显式final_inputs_stable；阻断闭合。contract d7b9fe8eaeac02b545e7fe25318e2fcdec6b67c2e15db37815e36913221182b9与sourceReceipt6af01baf8054a8fc9fc1c87bbb7bef5a6254f03860ac4a9bbdfab848ae112048精确6aa，owned source字典逐字等85431实际after；a431实际gen188/assets278/source_frame字典原样，差异恰live/recovery_attempt/gui_host_cancel_tests三Node源，不冒4392全frame相同。
+
+Core七selected逐个原no-prior V→同单次Core CargoJSON；lib+tables两实际运行copy，五compileonly原SHA每case及末批核，不复制/执行normal bins或gen。三exact各1和tables全4形成四执行phase，无helpers或新增suite；300总/阶段、owned/source/env/tools/TMP/原5GiB紧急门、e70 reserve20/10+peak8/2/退役不gzip保持。源码与准备合同准入通过，Root可在原授权内仅toggle readytrue并pin实际合同SHA、fresh storage后独占运行；reviewer不启动，当前readyfalse不能直接跑。不重H17/types/Vite，未先称Core行为绿。
+
+
+### actual44421 当前Core focused绿尾核
+
+core-current-native-20261031-1/actual-core-1/result d5aef0a9c406929bfe3329a36e903ca6046c8ee77036f2e9aa4054c0ecc7fbf6真实6aa/117.3418s validtrue。metadata/compile加四执行phase共六stage全0，FIFO/codec/typedCaptureWake各精确1/0/0、command_tables全4/0/0，log SHA全同，groupAbsent且无timeoutforced/interruption/remaining/footprint。七selected各prepared prior_receipts=[]、proof reusefalse、selected row皆同次actual CargoJSON，七proof2340源码SHA映射=before=after，尾核时七原target SHA全同。
+
+terminal_current/chat_upload_cancel/bridge/face_samples/gen_bindings五产物compileonly无privatecopy且末批原SHA仍同，不执行normal bins或生成；Corelib a60804e478d0112bf2713737ebcf2a61a42080c7b6ab98c60a89b9e09e83d9a0与tables22adfb1a939cbb59448cf666f3c5ecd5410ed17a1388652311277d2f4e6b7bec两实际run copy最终SHA/lsof后退役，无gzip/大镜像。final_inputs_stable真，合同/driver SHA和a431实际frontend pin实同，当前188gen/278dist全dict核同；source/env稳、TMPentries[]已删。范围仅既定Core七测试+五compile-only，不称terminal/upload行为、公有Node/真实provider/App/WK已过；可继续既定C hermetic shim/gui_refused与同源生产队列，不复跑无关H/Core。
+
+
+### Current C f308 准备源准入
+
+cli-current-native-20261031-preparation/run.py f308a2575ebdcde587d13b723eabfe57579f8254f0ca4f16329f0415b5cee26f及contract94400a1ceedf852f558a315cf0c65c0e3e9a54f08ce9d4ef13506f5db0244faf已核Core709c必要delta。五request同一CLI Cargo compile，每selected独立原no-prior prepare/verify/require；三integration cagent/codexagent/gui_refused原exact各1/0/0，agents仅compile不跑。三当前源码确实env!(CARGO_BIN_EXE_khor)启动真实khor作fixture依赖，角色runtime-dependency不伪compile-only且不复制无用bin；每case要求原path/SHA/proof、真实owned child row以及无残余path footprint，末批再核。只三actual integration privatecopy，原SHA/lsof退役不gzip。
+
+finally unchanged保ignored gen188/dist278/actualreceipt/source_delta最终门；sourceReceipt同已核current6aa实际Nativeafter，assets.files/generated/source_frame逐dict等actuala431，精确三Node差不同于4392全frame，未冒旧16ee proof复用。原300总/阶段、source/env/tools/owned/TMP、e70 reserve20/10+peak8/2/原5GiB紧急门不变。source准备无阻断，Root可在原授权内仅readytrue/实际合同SHA及freshstorage后独占执行，当前readyfalse不能直接run；不扩suite，不重Core/H，不冒真实provider/完整public/App已过。reviewer未执行。
+
+
+### 8868 CLI agents diagnostic match 窄源审
+
+886809fe4947118848e2ebf31930ae186b7973f7唯一agents.rs +4行，receipt45032c76a8fbe3a02307d035429eaae2b093fc01d1a611847ff768e70b6be944及fixed source/证据SHA+bytes核同。kind_of只显式补Capabilities/Elicit/ElicitAnswered/ControlResult静态诊断名，无wildcard，既有ignored行为/断言/时限/真实API/peer不改。source无阻断，可Root精准pick续原C五selected/三exact；agents仍compile-only不运行。原48124 E0004编译false保，不把parse当compile/V/test绿，不要求重Node/Core/H。
+
+
+### actual22992 C首Claude红与消费同步接缝
+
+cli-current-native-20261031-2/actual-cli-1/result e4a7daf916077eb9b677d94ea34e19291443c313502f33d4cddf1356f6f3eb87真实407/82.4346s false。五prepared prior=[]/proof reusefalse、selected均在本次CargoJSON，proof2340源码SHA映射=before=after，尾核五original SHA真同（khor dc0f1b366fac9b96141940c9add31e4e62f97dd404ebf600ed4cea995c5187bb）。metadata/compile0，Claude首exact实际0pass1fail cagent209 reply断言，日志91177b52f0b57db27b4c91d2c558164469aca7c78aec8ec24faddd0f499dbae3仅已消费config三条和commands，stop为EndTurn；Codex/refusal未跑、agents仅compile。source/env/finalignored输入稳，三copy严格退役；TMP六entries为fixture目录、脚本、cwd、pid/settings/mode文件现场保，非TMPclean。原48124编译false与本false均保，不称此批runtime依赖owned门已通过。
+
+独立源读cagent206 await prompt只返回RPC stop_reason，208立即Mutex快照，而另Tokio pump异步EventStore文件消费更新notes，没有消费完成同步。fake assistant→result、shim drain Note→turn顺序在；vendor incoming_protocol_actor同一wire顺序await Notification handler后route Response，ACP handler await accepted Note。因此afterRPC原fence_events应包括前置已accepted事件，尚需同pump remaining_through==0确认消费。支持test-local单bounded1/oneshot有限prefix ACK后逐字原断言，保Ask并行、原5s消费/10s RPC/Close门；不以sleep/yield/按期待文本轮询、修改生产ACK或删断言追绿。此为真实源码同步接缝，不由当前日志独断所有产品链无错，待fixed两测试叶审与原C实际复验。
+
+production-current-407路径准备已source-only核：当前CLI→normal Core bridge→defaultcustom-protocol+devtools GUI三normal producer各no-priorV，旧Core6aa不硬require当前；a431仅精确已审源delta/gen188/dist278复用。oldGUI OUT352files/8.7MB只是readonly snapshot，非移动/冷构建准入，未来exactvariant/属性SHA/lsof/freshdest独立retain合同后才能同盘可逆rename，不扫别OUT。生产bundle26与actualbinary/report须执行前重核，后继C test同步fix要刷新exactdelta但无必要重gen/types/H，不造新框架。无producer/OS/App执行。
+
+
+### d2a700 两shim prefix消费者窄修源审
+
+d2a700e0007f0cb2e867cecb05ab5ddb7067dec7两fixed源及receipt70c51109e4cdb4d28e62b00e69cbba2caa8d484ad93f87d61597b58704b2ca8e/三证据SHA+bytes全同。独立inverse移除helper/channel/各四consumed_prefix等待并恢复四原recv loop后，两测试整个parent文件逐字完全同，原全部fixture/assert/5s与10s门/ignored real Codex尾部不动，无新case或生产修改。
+
+next_fenced_event仅在上一event经原match实际提交notes/处理Ask后重入，才按同receiver remaining_through(prefix)==Ok(0) ACK。scope/read错误回Err而非默认0；Closed/EOF先关闭请求入口并Err掉pending和queued，pump abort/drop使oneshot失败。单bounded1通道与单pending，每次主task串行wait；5s消费界包含fence写入、排队、消费，prefix后新流量不改变既有through，原Ask并行不串行死锁。main三读与resume一读各取实际Handle.fence_events后等待同pump确认，再执行原逐字业务断言，缺Note仍旧断言失败，不做文本轮询/sleep/yield。
+
+Clean Code：两helper逐字相同，但属于两个独立integration test binary的各自EventReceiver/pump与环境owner，局部自包含适合此窄测试修；不为机械DRY新增共享框架/公共产品API。source无阻断，可Root精准pick续原C五selected/三exact；未runtime，原22992false及六TMP现场保，不外推生产无错或C已绿。
+
+
+### actual59004 当前C三exact绿尾核
+
+cli-current-native-20261031-3/actual-cli-1/result3a72f5fa6a543342ef943ac3505d6a514521ecff600e00ed032c22bea46da66d实际17f6/92.5525s validtrue。metadata/compile+三exact共五stage全0，claude/codex/two-face-refusal各精确1/0/0，全部log SHA同；所有groupAbsent且无timeoutforced/interruption/remaining/footprint。五selected各prepared prior=[]/proof reusefalse、actualrow在同一次CargoJSON，proof2340 SHA映射=before=after，尾核五original SHA皆同。khor原normal路径dc0f1b366fac9b96141940c9add31e4e62f97dd404ebf600ed4cea995c5187bb真实runtime依赖在三case分别观察1/2/1 owned child rows，各剩余footprint[]，不是私有bin未用或compile-only假runtime；agents只compile无copy/执行。
+
+三integration copy4c23d095/4b731790/c463bdb8按最终SHA+lsof严格退役无gzip，TMPentries[]已删，source/env/finalignored输入真稳；a431 receipt SHA、188gen/278dist当前全dict同，旧4392至current17f6恰3Node+agents/cagent/codex六源delta，不冒全frame同。两shim原完整reply/usage/commands/verdict/Stop/EOF/Load/Drop断言实际到达；CLI字节与22992相同而消费者prefix修后通过，支持有限消费同步接缝，但不回填原48124/22992false或清其原TMP现场。范围仅既定fake-peer shim与targeted refusal，非真实模型/完整public恢复/OS/WK/App；可转最后同源三producer和独立exactOUT准备，不重已绿Node/Core/H/types。
+
+
+### production17f6 三producer与独立OUT留存准备准入
+
+production-current-native-20261031-preparation/build.py7e2666ac2caf5902afb1f254ccfa0492a34d3d390157d58d0f6950f13a3f07f6、producer合同fc744c8e2aeea749e4c62434dbbaaf3e5b27c0a3c536cc2b82af432b72be5ea0与独立retention合同1e03e8846d61aad3cf546565dec1bd3651008fab38d15f5c92e69a5e3c3cba06已完整源审。CLI→normal Core bridge→default GUI三个normal selected各原no-prior prepare/verify/require，成功即保唯一canonicalcopy；GUI实际selected features须恰default/custom-protocol/devtools并记录同次buildscript，devUrl/before命令null、独立Labidentifier、bundle.activefalse不等于关闭agent bundle。真实bundle binary/report+26当前源SHA逐核同，非旧Core proof当前硬复用或focused unbundled冒生产。
+
+准备pins/qualityconfig/frontendpin/sourceReceipt哈希实同，SourceReceipt=currentC实际after。实际a431gen188/dist278原样复用，4392至17f6完整source差仅已审3Node+agents/cagent/codex六路径，未重命名为新gen/types/Vite。原900总/300每phase剩余额度、e70 reserve20/10+peak8/2、5GiB紧急门、source/env/tools/helper/bundle/gen/dist及finally stable、owned/TMP闭包和compact白名单保。没有新增生成/测试/App或模型执行，源码无新增阻断。
+
+retention计划只exact旧GUI9093/out目录352relative members/8,717,907B，成员规划UID501/nlink1/dev同、完整tuple/SHA；producer源码无rename/move，且retention/producer两readyfalse与nullresultpins目前拒执行。可Root进入独立实际留存前置：fresh目录inode/成员SHA/type/nlink/UID/无symlink ancestry、exact lsof与无owner/同盘freshdest后仅单目录可逆rename至本evidence retained-gui-out，不删除/预建空替身/改mtime或扫别OUT；实际result/readycontract SHA填进producer、fresh storage和唯一槽授权后方构建。此reviewer未执行留存/内核probe/编译，不把readonly snapshot称已完成，也不新增治理框架。
+
+
+### exact旧GUI OUT 留存实际尾核
+
+production-current-native-20261031-1/retention-result.json ba62cb14abff41000180b2207427c0586d1b1f46e09103741334f1e9f9525bf6、ready retention合同84ae347e45b41660ec615f932882f4b99ba270d546c9f9a055ee299431de855f与admission ee3e29d1c8508b2e4676d3efec576d56ce3b070fabc0f2e749ed48cdcf3a8795链同。相对已审1e03只ready/status/actual sibling destination/授权时间/producer_head变，352members字典完全原样；exact source旧9093/out现在确实absent，retained目录dev16777244/inode36318293/UID501同。独立实读352完整set/8,717,907B，每项dev/inode/UID/nlink1/mtime/ctime/size/SHA全同，无symlink或非regular成员，没有复制/删除/改时间/扫别OUT。
+
+实际lsof stdout/stderr空文件SHA同，结果exit1、native owner active[]证据实同；reviewer未运行lsof/进程扫描。retention-preparation-failure另件记录首次native helper import前遗漏scripts sys.path、source_unmoved/destination_absent，之后全部fresh重核才rename，原失败不回填。此次可逆单目录留存已闭包，可把实际合同/result SHA绑定producer再走最终唯一build准入；producer仍未运行，无需重留存或新缓存专项。
+
+
+### actual9014 同源 bundled CLI/bridge/defaultGUI最终producer绿尾核
+
+production-current-native-20261031-1/result042b6b0c182a652f345472dec1480f3c75910597aecbbddc38838afb74d8aa4c实际17f6/267.8376s green，metadata/buildCLI/buildbridge/metaGUI/buildGUI五phase全0，各log SHA同、groupAbsent且无timeoutforced/interruption/remaining/footprint。三prepared各prior_receipts=[]、proof selected.reusefalse、row在各本次CargoJSON，三proof2340 source=before=after。尾核时三original与各唯一external canonicalcopy SHA皆同：khor a4c46e606f47fe0ba80c64ec7d46d6ff571276b09b546c5b7c220cb7f97a504c/359207432B，bridge74cd6265317e440fcd18d4d649f922a903f3a2e7a4287c20301891cc04c2c44b/343452040B，GUI6d8a883701c051b027e5116edb67b3d32e2a7aa36bdf88e5d0f008ae8ea61d59/392953176B。未gzip或内盘binary复制。
+
+三次实际khor-node buildscript各一行均带khor_embedded_agent cfg与exact pinned bundle env，不把先前focused unbundled producer等同生产。GUI actual features恰custom-protocol/default/devtools，devUrl null/独立Lab标识同config；actual buildscript OUT仍9093/out，但新inode36350968不同于retained旧36318293，原strict V该GUI generated283files现SHA全同、invocation marker新于prepared。旧retained352members仍全SHA同、旧48383false不改，source_absent只属于留存时历史事实，重建后不伪仍absent。
+
+actuala431 receipt/当前gen188/dist278全dict保持，4392→17f6精确六源lineage不冒新gen/types；source/env/generated/assets/finalstable真、owners剩余[]/TMPinventory[]已删/cleanup[]，producercontract/admission/driver绑定同，八compact小件双盘SHA同且无binary。可将这三canonicalcopies用作紧邻runtime合同输入，仍按各自producer有效环境/完整source资格复核，旧Core/C/Node绿保持各自scope而非所有runtime总绿。无App/CLI业务/bridge HTTP/真实provider/OS/WK运行，reviewer仅静态尾核未启动任何产物。
+
+
+### public Load adapter source1→source4 只读尾核（未运行）
+
+最终source4 driver bd1747c7dd24c8bfa06dad40931ff18073c9530613017c6e44b096347c7835c8 / draft009a80b920304cfcbe3ce902f0262a6b7f209eee47c6f3d16c4aefec21767595 / receipt78b655ac784b16579f02e86c18db6b00dfe696faeb8e0a6700a6c5be5e1f7138全SHA与receipt子件同，全部files pins实同。source1 HOME重赋阻断已在source2撤除，真实HOME原值保留，只KHOR_HOME/TMP/task路径私有；producer上下文不写HOME且原env完整hash匹配actual9014。source3收口until谓词后绝对deadline、HTTP按剩余5s界、signal前当前parent==priorparent==actualhost/group身份。source4对source3仅加Load后完整gui_native同一性、父proof.environment/HOME前后恢复小件与green硬门及fresh namespace。源码无新增阻断，可Root固定实际合同另授唯一槽；readyfalse/runtime_authorizationnull，未CLI/bridge/provider/OS信号运行。
+
+范围是借actual9014原canonical CLI/bridge、不复制binary的单customPython peer公开Load场：登记Init与New单列、实际Core HTTP liveJoin/同token回放、一次chat/canonical读取、只已观测登记foreground group TERM并实际reap/AttemptExited，再sameSID新run/Load1 New0与旧binding原样读取。冷readonly offer支持可Unknown，首/新attempt实际Initialize仍load=true/resume=false、Native后offer应load；不warmup/probe。原300总/5s消费与reap/20外10内+peak1/.25/5G紧急门、strictcleanup与source/env保留。无Resume/Shell/两home/offline/App/真实模型全闭声明，旧source1–3未运行原件保。
+
+### Mac当前交互入口准备文档尾核（未seed/未运行）
+
+HANDOFF29eaf9f038adeda2a1a61db7ce79fdc84911695347648be6a6aef926c5f1244b/sourcefacts0ccf6b62118bc57ea86fb04ccd6a37e4266b217b7686ae295e102e42f37d0184实同；13current源pins与18旧复用件全SHA核同。现adaptor::vendor_dir/resolve_vendor_dir在privateKHORroot且无显式KHOR_VENDOR_HOME时使用root/.claude/.codex，原生CLAUDE_CONFIG_DIR/CODEX_HOME仅实际账户home启用；Discovery::for_root默认tmux也仅real vendor_home，显式KHOR_TMUX_SOCKET另入口不能继承。commands::import无论显式id也先import_candidates。故synthetic置RUN/data/.claude而非旧RUN/home有既有源支持，无需新override/API/修改HOME。实际合同仍须排这两个发现override、保真实HOME/home/CODEX_HOME、真实候选alias/device来源，不能把方案当已seed。
+
+当前default6d8a可作真物理入口，旧E Vite被动自动observer不在该GUI内：若保原exact自动oracle才另需独立devURLGUI新V，不是默认产品功能前提。旧A5 false仅origin/availability/旧Find，不外推Copy/OSSave/normalQuit；standalone editor probe不替fullApp验收。此处只源码方案尾核，无App/CLI/seed/人问/clipboard/OSprobe/runtime授权，也未新大mirror或binary副本。
+
+
+### public Load source5 Python双身份资格窄审
+
+source5 driver e74a81c7742f8e50bdfbaf8ea34d3a6b9aa491fae1c483e46850f03a09518c60 / draft6be7acf781ffafb9e5693d296747a29efea35ce1eed4e13e9c385f487c856b91 / receipt281e6c284f4b2de861b81c0ae3e2761728eb95b91850cc4271fc301df10c34bf / qualification patch89505bf402782f6e94e235a90f445f6ce7ec3dd204d8c790d25fdc1dc1d9a099实同。LoadScene完整源码逐字等source4，非仅AST；无HOME/业务时限/owner/producer变化。main保原OSlauncher精确path/SHA0c9a9857，新增sys.orig_argv0与当前PID ps comm恰原launcher；sys.executable另精确opt路径+resolve Framework/bin/python3.14及实际SHA b502cb4c5b46b8d4192ec6bcb600ce8922f1afc396fcf646e8765c6eba74a0bf，pyvenv必须None。reviewer只读核两文件SHA与非samefile事实，没有启动Python资格probe/业务角色；作者已留readonly observed事实。未假samefile/降通配/移除qualification。
+
+原source4 launch-preflight-failure2c73c55e固定入files，Scene/业务roles/输出目录/信号均未开始，属准备失败非Load业务红；source1–4原件不回填。source5所有files与receipt子件全核同，readyfalse/runtime_authorizationnull，无新增阻断，可Root填实际合同另授唯一槽，不是执行或通过证据。
+
+
+### actual89017 首公开Load场false实际范围尾核
+
+source5/actual-load-1 result fc835b00bf9a3d6d595e8e0fe315fd5c8e1026097c87ce410f14ace99c9f3373实际15.367768s greenfalse，error是5s consumer deadline afterHTTP。真实注册Initialize1、seedNew1、公开offer/liveJoin两次samepayload均join、attachment_begin/chat_open true及chat_say一次已到。50HTTP中44poll，首poll实见同token send_committed、三ContentChanged、Turn MaxTokens；没有后继Capture/计划provider终止/Load，不能称Load通过。Core chat.rs726成功send_turn发SendCommitted，1490 PromptRecorded来自history PromptOrigin；adapter把history帧等在live poll属于consumer门错配，不由此推产品丢prompt。
+
+actual canonical原件实有prompt、同token prompt_origin且start0/end135紧接完整prompt，两相同delta/tool/MaxTokens；accepted.jsonl恰一条before_dispatchtrue及原prompt正文。method-counts聚合session/prompt0不能替fixture单独mark(prompt)与rawdurable事实。Python双身份qualification已实际通过，父envbefore/after相同、source_stable真；但failure cleanup报PermissionError1，remaining[]/register0/seed0/bridge-15只证终态，不称strictclean：TMP保一eventstoredir及其一.part文件。原false/现场不回填，不泛化guard修。后继仅公开send_committed消费门＋保accepted/raw门窄修待审，无自主重跑。
+
+
+### public Load source6 liveACK/history来源分离窄修尾核
+
+source6 driver67dea062eeee6e5c3356b65ec76a295fe88802de0e24fc83826f183199472944/draftc665e5e7bc3821ee0426b1cef5c4b3af323773e85d8ca70c88804c4c5a6b076f/receiptf62c93f793d8dde2b3f835827054aaeebf623119ad0e0acb576b803cd10ab9b2/patch65a3e2c9d5f6332d0e529140d932b6e18bd494603b7caa559300a6141f0aebda全SHA同，所有filepins/receipt子件实核。live predicate仅改same-token SendCommitted＋原MaxTokens，仍原5s；durability不是借ACK宣称，而在actualCapture/history后新增soleorigin token/turn==唯一实际prompt、prompttext==原输入、原JSONL真实byte行offset（含newline）==originrange及historyPromptRecorded四字段token/turn/start/end逐等。原accepted.before_dispatch、原prompt/delta次数/tool/全部counts门保，guard/owner/HOME/producer/时限零改。
+
+本修与Core726 liveACK及1490 historyPromptOrigin映射一致，无新增阻断。89017原false/result/http/owners/methodprefix/received/accepted/raw均SHA固定入新contract，不猜EPERMgroup或改guard；旧TMPdir+part保原。仅source-ready结论，readyfalse/slotnull未动，Root可另授同有限Load一次actual，本reviewer无runtime。
+
+
+### actual70988 public Load业务闭包与TMP残留独立尾核（原false保）
+
+source6 admitted0053e7d228515c6bbb09ecf69bba925d61e70a6f1008dfdecc694300ef982e80相对draft仅ready/pending/Root授权，driver67dea与所有filespins实同。actual-load-1/result3d457f8640646cf737bb32c999246a4dd7ccb398aeb2f298f4a37a35bb1c3893实际10.478260s errornull/cleanup_errors[]/remaining[]/forcedfalse，但greenfalse/TMPabsentfalse，原结果不能回填。source-before/after与父envbefore/after全同；双Python资格实过。
+
+28实际HTTP逐核：readonlyoffer live/join，同payload两Join同run且无新增setup；actualchat同tokenSendCommitted/MaxTokens，Capture/history真实prompt+origin，raw1138B SHA4e62b04d…0cd3f，origin0..135为真实完整JSONL行、token/turn与history逐字段同，acceptedbefore_dispatchtrue、唯一prompt与重复delta两条/tool事实到。oldprovider952/host951身份先核再TERM登记providergroup，5s内same-runProviderExited(pid952,codenull)+Meta slot退且原owner无remaining；ended/native公开动作返回sameSID新run，actualinitialize由2到3、Load0到1、New保1/Resume0/prompt保1。新owner1014/host1013不等旧，实际caploadtrue/resumefalse、动作后offer支持load，原payload重放sameOpened/no新setup/同owner。newCapture实际v2generation+loadgap+snapshotbase，旧v1binding第三个historypage与首page完整dict等，原raw现在完整SHA仍同（不只是prefix）；最终provider1014也确证Exited+host1013退/slotexit1。直接register0/seed0/bridge-15，bridge是计划service teardown而非AppnormalQuit。范围仅本custompeer公开Load+Join/回放/canonical读取，不外推Resume/Shell/不同home/offline/App/真实模型/所有OSfacts。
+
+剩余两TMP文件均UID501/regular/nlink1/49B，名prefix946=seedparent与957=bridgeparent，SHA均a63079af78cb0bdcdd4ff0f2c1cf62e79d90c9852efaf3dd19b3ffa8907a00d9，内容Internal error agent closed connection。现源gui_host752成功parent删ready，1765结束时!ready.exists又写refusal_path；可解释本次已发布ghost结束后的自有诊断残留，非provider仍活或恢复错误证据。清理失败准确是TMP门未清，不把cleanup_errors空称全净。
+
+最小建议已报Root：保原false/TMP列表；仅Root授权下对这两exact已知诊断以dev/inode/UID/nlink/size/SHA/无symlink重核后，可逆retain至本actual/diagnostics并另留postrun小receipt，不覆盖原结果。未来driver若需闭包，只对本场same-run实际ProviderExited+hostgone后exactready路径作相同retain，未知TMP仍false；不glob豁免、不改guard/timeout、不以本次尾核自动授重跑或产品修改。本reviewer没有移动、删除、probe或执行runtime。
+
+
+### actual70988事后exact诊断留存与最终CleanCode集成审查交付
+
+postrun-cleanup31a4c0209c963417574cde4d2bd738178ac7ac03d206b5c7e26b5307f3d9a9cd实同，两diagnostics现同dev16777244/旧inode36353592与36353669、UID501/nlink1/49B/SHAa630…a00d9，原source无/TMPabsent；原result3d457…1c3893逐SHA仍false。receipt九originalownerPID均null/lsof1和exact2可逆rename范围清楚，reviewer未新增probe或移动。有限业务完成与事后清理闭合分列，不改原actualterminal或cleanup门结果。
+
+已完成最终非作者currentRoot17f6 CleanCode集成检查，产物 `reviews/R2-CLEAN-CODE-17f6.md`，不是停在计划。复用已闭逐片review，图谱main e7不覆盖current后按固定源检查owner/IO/身份/取消清理/error/重复/comment及34项目域映射，无heavy或新套。未发现新的生产源码准入阻断；实际F1 ready移除后结束写why的生命周期歧义未修、F2通用close原NEXT保留，平台未知和全部34未完不冒通过。大模块行数仅维护成本，不据此发起新服务/registry/通用重构。Root负责中央STATE，reviewer只此报告与任务卡。
+
+
+### Mac现有synthetic最小文件adapter源核
+
+platform/mac-current-acceptance-preparation-1/synthetic.py SHA902280cb313a40d8c20de672d23c93ea1335e5eda5e7db79e928c39dc35d00eb实同；A5原records/UUID/格式逐字保，仅显式prepare(run,work)把实际EditorSession用于cwd/hook，vendor改runtime/data/.claude，main接显式两个路径并exclusive写synthetic.json。无HOME/env修改、CLI/provider/RPC。准确范围为写合成夹具的filesystem adapter，不是无IO pure；原expected-record.write_bytes仍只在Root已授fresh私有runtime适用，vendor exist_okfalse拒重跑，candidate只预期而实际alias取真实返回。源码无新增阻断，reviewer未执行种子。Root后续已自行actualseed并留actualfacts；后继App合同消费这些事实，不按本源核冒actualApp。最终CleanCode报告Root已b5996cce提交并把F1列NEXT e8f782fc，不另扩源审。
+
+
+### Root最小desktop runner 0429c111源码窄准入
+
+platform/mac-current-acceptance-preparation-1/run-desktop.py SHA0429c11184669f56ae1a990e2d3833e853fa70b733c5f21a1ecb8e8588c0249f已全文只读核。actual9014 GUI/CLI各原proof临时producer环境require且original/canonical SHA双核，finally恢复原环境；实际producer22项无HOME，runtime12键HOME实际/私有KHOR_HOME/TMP/KHOR_PATH准确，未继承vendor/tmux/provider门。hardlink GUI及adjacentCLI同盘/同inode/原SHA，Info来自actualconfig；已seed actualalias/cwd事实消费而不伪造。
+
+原entry.run(Path,[],log,EditorSession)的300、privateexe/owner/space/strictcleanup未改，仅observe包装落本parentPID及原owned birth作CUA绑定；source/env和末remaining有门。结果只区分processclosure与原TMP条目、不出整34/UIgreen；process_closed_normally仅原guardexit0无forced/remaining，不单独证明OSCmdQ或具体UI。Root仍以真实fullAppPath/PID/birth绑定与动作记录为准，fresh20/10+声明小峰值后可唯一实际，无新框架要求。reviewer无启动/信号/交互，未新增产品或元数据流程。
+
+
+### Resume＋Unsupported公开场景source1→source2窄准入（未运行）
+
+source2 driver1230baff9f94169540714ce2f545263501c02e8673816b07d3ccf12081ef2bf3/draft8fa6fc107b05e07664e91528a7ce05233458674a4fb59b21658fea9967815c83/receiptb0dc1bf06fb0b918e4e4a2e194e4b8741aad8d51db2d2918c4ff22da17a79d33/patch0541041e783c778d34390b3a1dbf25f6d97c40670ecbe526b0d4d21758274450实同，files及receipt全核同。source1主体已全文diff审：15类helper AST同source6，加module/context为原16口径；retire仅追加immutable同run ended凭据，两个freshKHORstore共享MAIN_STARTED300，finish原严格门仅scope文字不同。实际peerjournal-resume为双cap并在resume答前发早Note；journal-no-load双false且prompt EndTurn。Resume选Resume1/Load0/New不增、pending原prompt/raworigin、早新Note及旧binding/prefix；Unsupported两explicitintent各只Init、samepayload不再Init、无New/Load/Resume且Meta/base/binding旧字节保持，真实ownedhost/providerGone/Refused支持事实门仍在。不是复跑旧Load或新Shell/offline/App/真实模型。
+
+独审要求source2恰两收口已核：新页actualNote content.text早中文精确count1（不只presence），与rawonce各自核；retention before清单filefsync/replace后mkdirdest+fsync(out)先于任何rename，progress/final各fsync(out)，原tmp/dest目录sync保。仅exactparent/ready名、same-run immutableProviderExited+slot退/hostgone、UIDregularnlink1/原49B内容/SHA/lsof空及全部ownerabsence才retain，未知TMP或无凭据仍false；没有guard/信号算法变动。可Root在当前App终态归槽后另授一个串行批，readyfalse/slotnull未动，reviewer无运行/内核probe/产物复制。原source1保未执行，无扩大suite或框架。
+
+
+### actual80153当前Mac桌面与原文OSSave尾核
+
+platform/mac-current-acceptance-data-1/runtime desktop-result55858feefa17f37407fb4ff950c8e0131fe811c621aca7eb77a9e5bb923c178d原件同；PID7238/birth08:52:21/exact privateApp路径与原owned首row一致，nativeexit0/no timeout/forced/interruption，groupabsent/remaining/footprint[]，source2340/envstable，desktoplog ceaeff0b…326a9实同。Root CUA CmdQ动作及71commit分页/pin-preview、39jump保持、四math、CIBOL真实WK/56757拒绝等c988c21cd6d2602455d66c6d881b8c8807cd9cb05bb05466b79cbe8696bdab65记录与PID/原结果互链；reviewer未亲自观察UI，不能称独立重演或新增实际断言。port1仍pending原因未知、5467原占用未接管、dark-only及未验IME/三入口拒写/材质/手机保原未知。
+
+verifiedOSSave b0b4e9a2e86f51027a0a7e5b32569e0aaa67d87b0a8a302770b77377e68e432f与实际history-record.jsonl184613B/SHAa4f78b7b530e5f2798e0a0cf00b9ec5ed1455424664080be4f3c536dd29a4507实同，逐bytes等expected-record及synthetic原source所选真实range，source整SHA未变。证明该完整原文文件出口，非clipboard/IME。retained-handoff fe9c7ccbc4512ed3e6f319074a43f4e7e47ed1abb96061657790bd24ac013aa9实同；当前目录dev/inode36353885、exact两regularUID501/nlink1文件inode36353886/887及size/SHA全同，ready.json为原handoff文件名marker字节，不能误当JSON结构。原目录无、TMP现absent，原desktop-result原TMP列表与SHA未改；lsof空按Root原执行记录，reviewer未内核probe。分列正常进程关闭、Root真实UI观察、OSSave字节核和事后exact完整handoff留存，不冒34全完。
+
+
+### actual57013 Resume首场false精确定位
+
+public-resume-unsupported-source-2/actual-restore-1 aggregate11.256776s仅journal-resume已执行；该场result af47e8b8568b4b84395b09043a8e2c220b12b45ef1ea822521941fa1dc1e8a2f实际11.1801s/AssertionError，source/envstable、remaining[]，但cleanup PermissionError1/forcedtrue且TMP一why+一eventstoredir+其.part原件保，不能全净。24HTTP最后为旧binding history_page/cancel，未写resume-oracles/未计划新provider退出/未retain/未Unsupported。
+
+实际完整到sameSID新runOpened、samepayloadOpened回放、Init3/New1/Load0/Resume1/prompt1，coldoffer Unknown→显式动作后resume；早Note原raw与新页actualNote各1，新raw900B保旧490B逐SHA前缀。失败唯一可达断言为line402全page字典等：旧capture的原opaque490cursor实际原样提交，返回旧3entries完全原key/frame/starts/recordrange/item/missingflags，无reset/增删；递归diff恰3record.cursor及page.newer四opaque字段，仅内部len490→900/modified更新，其余source/file/position同。新页6entries为原3+旧结束Turn+ResumeGap+早Note。
+
+当前transcript_page.rs89 cursor_before克隆page.origin，175新cursor采用当前FileVersion.len/modified，170规则允许append增长不reset。这是新发cursor版本更新而非旧正文/binding丢失证据。已交Root先裁oracle是否保证旧opaque输入可读与完整语义/physicalrange，还是要求新发cursor字串不可变；前者可仅修testadapter保原opaque输入和强语义/raw门、不解析cursor，后者属产品契约不能删assert追绿。reviewer未改断言或生产、无重跑；待Root裁后独立窄修。
+
+
+### Resume source3按Root已裁opaque契约窄尾核
+
+source3 driver5ef87b7ade9358466313e49febd89d024b36756af11a4669201536b7320769e5/draft066f79016394e1109c14f5a76e7437798fd2404738b3e7298c2d5a2f864a6a39/receiptf14df636ab0502a1d4ea387cf6a5bbc13e629e163c862acfe7ee43d8e34548ab与files/receipt全SHA同。仅Resume替换wholepage字典误判为Root明确契约：实际history_page payload旧binding/cursor原字节，页全集字段及older/has_more/references/reset等严格同，3原entries key/frame/order/starts及record所有physical字段同；新发cursor须非空而不比opaque字串/不解析，encoded须正int。不是删除正文/记录/范围强门，也未放宽Unsupported或Load原wholepageexact。原owner/counts/deadline/whyretain门未改，新增failuretraceback+lastHTTP/checks仅观测。57013partial/原false/EPERM/part不回填；source3仅可Root另授完整两场实际，不以旧partial当完成。无新增阻断，reviewer无运行。
+
+
+### workspace-only真人runner最小源准入
+
+run-editor-workspace.py0ac32b41d0833dc8f1a457f449939aa339cb58069758f03cb67847c4b760b228对base0429窄diff核完：只验证已存在App GUI+CLI hardlinkdevino/UID/SHA/exactplist，不创建替身；原9014严格readmit/envfinally恢复/entry300/owner门保。runtime13键除Root授KHOR_WEB_PORT外12值全等原actualenv，null拒，ASCII1024..65535及loopbackbind先验；TMP须原absent后0700新建记devino，退后remaining净/同TMPidentity/无symlink/只有目录/lsof空才删emptydirs，未知file留原且末退出硬计TMPabsent/cleanup。没有具体owner阻断，无新framework/native/observer/provider。仍须Root取得freshavailability/实际port/storage和唯一槽授权，source-only不启动计时/问人，也不把native processclosure冒实际IME/选区/Save或另外两入口。
+
+
+### actual57844有限Resume业务完成、诊断内容门false尾核
+
+source3 aggregate9.650758s仅journal-resume已执行；原resultb62c463d83d6bd5e5c83bddc8e25696b42d116797b75117e82ddd8d30d3cdb8e false，errorAssertionError/cleanup_errors[]/remaining[]/forcedtrue，TMP只两why。failure-contextdb875949…ec0dd明确run446→retain480 exact49B content门，而不是业务/时限；resume-oracles58dc39e53b4d4ca004959c2746d81db3e559be964420c090d339308bec4498d4已保存，25HTTP最后chat_leave。实际Init3/New1/Load0/Resume1/prompt1、sameSID新run/replay不重启、旧opaque输入原字节、旧3recordskey/frame/order/starts/range保留、490B旧prefixSHA、早Note原raw与actual投影各1均已再核；旧18791/18792和新18857/18858两same-run endedproof皆ProviderExited+slotexit1且原owner无remaining，directroles已终态。无Unsupported或聚合两场完成声明。
+
+seedparent18786的why52B bbfc2b003a1b8b066cc01ede61c8b543f165cc9b82566c9fdb80b9838653d854内容ACP cancellation grace expired; retiring the process；bridgeparent18799另一49B SHAa630…a00d9。现gui_host1340的completion !acknowledged产生该有限取消结束原因，经1765原why生命周期写入；fixture旧prompt刻意pending，计划登记provider TERM后该bounded ending与真实reap凭据一致，不是ready失败/Unknownadopt。forced字段因cleanup断言进入finisherror分支，不能回填false，也不等于cleanup_errors有EPERM。可Root保原false对exact2 known诊断在same-runExited/全ownerabsence/attrs/SHA/lsof后独立retain，小receipt闭合。有限Resume业务可单列完成，后继只跑尚未验Unsupported原branch，不为诊断重跑业务；新增52B只可明确源literal＋原proof门，未知TMP仍拒。reviewer无runtime/删除/产品或时限改动。
+
+
+### Unsupported-only source1窄准入（不重Resume）
+
+public-unsupported-source-1 driverd4c87cc882a3b162c1a149c36d5b3b8f8aad23931e72e02d02b5a1d8238dcc9c/draft870283b301f40e031c7145015c38c0937a345b4ec0b186803c831a628f927c3b/receipt553b7c42652375c6542dc427f1365a8482c4dc41d1a1508d683a59ac08316234与files/receipt全SHA同。对已审source3的精确diff仅main literaljournal-no-load、contractcases==单场硬门、aggregate1/namespace/scope及retention source-backed49B/52B exact字节集合。原Unsupported完整分支、所有其余class业务/helper保原，不可选择Resume；old同token不Init、新显式intent仅Init、不New/Load/Resume与Meta/base/oldpageexact门未动。same-runExited/hostgone/全ownerabsence/UIDregularnlink1/SHA/lsof/耐久before/progress/dest同步仍硬门，未知TMP不许，原300/5s/9014V/双Python/资源门保。源码无新阻断，可Root在唯一FREE槽另授尚未跑Unsupported，非本reviewer执行，不重Resume/回填原false。
+
+
+### actual80962 Unsupported首拒绝后OS退出5s失败独立因果核
+
+public-unsupported-source-1 aggregate9.334768s/scene result a584aac386ee023fafa4377745871fe7486488d41d3528b324bb46f768b993bc原false。12HTTP止于firstrecover_session实际typedRefused setup-failed，failure-context6a162a9b…ff527确认confirm_refused460等actualhost/provider消失的5s deadline；已过phaseRefused/resultRefused/supportfalsefalse/providerExited(pid21891,code0)/birthancestry/精确ownedexeassert，host21890的parent为bridge21864。原received.jsonl确第三Initialize，method-counts只action前prefix2，不误判未初始化；无新增New/Load/Resume。same-tokenreplay/新intent复查/最终meta-base-oldpage闭包尚未执行，不能关Unsupported。cleanupEPERM/remaining[]是bridgeexit后的结尾事实，why残留/false保。
+
+当前绝对源码gui_host spawn_prepared取实际child.id后drop(child)，unsupported经retire_failed_opening回收provider/写why后return且不pub新Meta；link::pid_running只对传入具体PIDwaitpid，旧Meta无新refusedhost21890可触发reap，存在实际Child所有权丢失回收缺口。原guardremaining纳身份/组是正确门，不忽略zombie/不延5s。盘failurecontext未保存超时self.rows且owners是历史身份无STAT，因此本次精确Z状态/哪PID驻留尚无独立磁盘证明，已明确交Root，不把强机制推断伪装成现场Z证据。若Root已有当时ps可补exactPID/PPID/STAT/birth；reviewer不新probe或重跑。最小源方向为保本次实际Child并确保真wait/reap，不能waitpid(-1)/adoptPID/先退bridge来粉饰/改guard。待Root与作者固定源计划后窄审，不自动新实现或运行。
+
+
+### W019 ed18413c可逆UI单叶窄审
+
+fixeded18413cb7c962eefd7978f19789e8b4b94ae4e0只WorkspacePane；before77d2f5a3924a0f9ca6b697717b72dc6bb1e0bdc2826f9aaa8a3e8c3535b4a7b7逐bytes等Root17f，afterc0febfc3cd27e8a4a4ee2d0c40f383f5c6eb0cbea0c563f48b29495aab316752实同。cleanfile tabactreload臂改undefined，配套注释不再讲永久重读按钮；dirtysave/confirmedSaved逐字保，workspace菜单1233仍setReadAt/setGitAt/repositoryHistory.invalidate，原watch和其它共享TabStrip/FileView/FilePage零改。源码无阻断，可Root单pick不带H父链；低影响可逆变更不加镜像测试/不重构，既定App后验仍保。reviewer未改Root，当前Root冻结给Unsupported现场证据不受影响。
+
+
+### 64MiB独立native fixture流式生成器源核
+
+platform/mac-long-native-preparation-1/synthetic-long.py0b0d6d9edee24543cad32ca43bedd1b5d5e00df4c8bed1f22234aed81f30e60f已全文核。强pin902280现lineformatter，仅改import模块内NATIVE_ID不改原file，标准新UUIDfirst24与原1201不同；privatepath在platformBASE内绝对/resolve同/UID/无symlink，vendor已有祖先核，project/source/manifest全exclusive。body按真实UTF8补1024字节，单JSONLrow不超8192，一行流写和增量SHA/count直到64–67MiB目标，size终值[target,target+8192)，HEAD/MID/TAIL独立标记，不全读nativefile/攒history。完成sourcefileflush/fsync后才写manifest；异常保partial不cleanup覆盖。无HOME/Node/import/RPC/provider/App。可Root按已授具体私有data_root/cwd与.25GiB预算生成，无新wrapper/test要求；生成只证明夹具数据，不冒GUIperf/actualalias，后续仍真实hook/import。reviewer没有执行生成或大副本。
+
+
+### Unsupported原5s失败最小观测红source准入
+
+public-unsupported-observation-source-1 driver7fbdbeb4184d6b7138463b458247c0f5c9e02d946516e9bd20365cb93dee7d83/draft0b78bbad1f34e212447819f005baa29884614e9a33c52528cf90fbce9b15dd76/receiptbd548fb4384f409e1dc8ebf466c29987d4ba4610ab3a9fd981bba4a66350f3d0与files/receipt全核同。唯一代码diff为confirm_refused原5s until外catch：原失败后/原cleanup前保存monotonic、key/run、registeredhost/ProviderExited/expectedownerbirth/最后guardrows/桥poll，再/bin/ps仅host,provider两个PID+STAT，2s只读上界；probe异常记录后仍bare raise原失败。原predicate/时限/owned表/guard/signal不变、不回收或忽略hostZombie；桥poll只是原directPopen而非host代reap。无新增框架或范围，readysfalse/slotnull；可Root唯一场实际观测红。样本在失败后时间点，未预称Z已证，reviewer不执行probe或runtime。
+
+
+### long-history launcher fe38窄派生准入
+
+run-long-history.py fe38eea8de6b9fbc1de54e395b0017d71601109b20f9afc86d46f0f84efc2091对base0ac32窄diff仅long输出/模块名/envfile/LongHistorycwd/scope及actuallong-fixture-import消费。actualalias==observation.id、cwdLongHistory、完整native_id==fixtureUUID硬核，没用短candidate猜opaquebinding；现facts实际Native/claude/同privatehome、observe197c…3654/67,110,120B/53,262records/SHA771284…d097。原9014两V/hardlinks/devino/SHA/exactplist、300、env原12键+Root授freeport/null模板拒、tmpabsent新建0700/末owner/lsof/仅emptydir清理保。无具体阻断，可Root自己处理原CLI后emptyTMP并freshport/storage和唯一槽后作原longhistoryscene；runtimeexit不等性能/RootCua事实，reviewer不启动或并行UI。
+
+
+### actual96355当前Mac大native场退出与有限观察尾核
+
+long-history-resultc2f9a3398c8740984ae7c08b9749438e9b965af112ec68912eaf200f187ecd40实同，28942/birth09:22:30/exactprivateappowned首row同，nativeexit0/noforced/timeout/interruption，groupabsent/remaining/footprint[]、source2340/envstable、TMP[]absent/cleanup[]；log9149a84aef94e6f5a18ac0b41aab8848e1a35964be11b7d7cce05a897b570cbd实同。实际native67110120B流式SHA771284e2e04b3f848033bf3015998ba7156e7ad61a51c35f8eabb0cc1f32d097仍同，actualalias/完整UUID与importfact一致，GUI6d8a实际admission匹配。
+
+UI记录0a4190cb9993503433bb3afc2b03ed41b097e9c8a89891e5538e66728a665ca0链接PID/原result；所有UI描述归Root实际CUA记录，reviewer未亲眼重演。585ms开、440ms清query、461ms点HEAD为click+AX观测耗时；HEAD一match只在<=90.625s后的观察出现，不冒完成时间；182432KiBparentRSS单点不等WebContent/峰值。回EditorSession再LongHistory未恢复HEAD，后截图黑body但AXtail不变保负向/未定原因，不能称H通过或全Appfreeze。原all_requirements_passedfalse准确；真实正常CmdQ/严格退出独立于此未知。无重跑或源码改动，H仅原scope只读分析。
+
+
+### Refused只读absence资格source2窄准入
+
+public-unsupported-observation-source-2 driver37d8f0041eb407ea066f59f8b237258f07ff0c725da24ae735e92567721eb09a/draftb4c499cec2fbda381f915c71c742d0f6ae6051a0772b02ba3081d0608586b799/receiptacac1883a07855071b030b0519a702d82dc2df55a661511792cbf89f75e9ebec与files/receipt全核同，仅confirm_refused改变。资格前限定2PID的STAT先保存，absence5s在probe前起；exactnonce/token/新attemptRun!=旧slot/home/id/native/expectedRun、实际hoststamp/ownlivebridge核。ProviderExited仅sameTransport PID/code，未采样providerbirth/parent/group明确Unknown，不造owned/signal；已有sample才核原parent/group/exe。readonlyabsence对任何当前PID或PGID匹配保守拒（含reuse/Z），不按旧birth滤掉；不向signal表加入未采样PID。原entry/positive retire_provider信号/其它helper/300/V/资源门保。源码无新增阻断可Root另admit一最短观察，不预称Z已证，reviewer无probe/运行。98492旧no-late-adoption失败保，非放松signalguard。
+
+
+### LongHistory A-B-A源解释与契约范围只读尾核
+
+报告da1ad4dd454b4bffc89854d28ac26c87fba76591b95a737fb45d1133ce9254b9及facts6ecd5f2f13904527b638e1ab40135cb94a42d6aa9631fd222f69ae30e705bdd8全pins同。DetailPane339/638用SID/executionhome/代次key挂ObservedSession，355/709只保Terminal seats；readonlyChatView864清past/anchor/toBottom，924 installHistory(binding)无before，reader18空window/starttail，故A-B-A回tail有直接源因，非sameinstancevisibility pause。readonly真正cleanup925historyCleanup，报告1193引文为非stillattachment分支，已建议作者精确引用但不改机制结论。
+
+CONTINUITY85/86/109约束切换cancel/迟到拒收与读取内anchor，未明确跨mount阅读点恢复承诺；Root轻bookmarkNEXT裁定已明确，报告不把未来owner/cap提案冒当前实现。黑body截图/AXtail差异仍无foreground/layer/rect现场，不归因WK/anchor/全Appfreeze，后续raise/input仅最小观察假设。无产品/新API/持久服务/运行/Inspector/自动retry，本reviewer未交互或重演UI。
+
+
+### actual85368 scopedSTAT将Refusedhost zombie因果闭合
+
+observation-source2 qualification a67138ef5149e9e9bd37137423417488fe708a2b02b234458183a8722c417b94与timeout4b551faacdf0b1055dfaba36485d1be4622f8334bc4ded10acb7790ed5328e20实核限定字段：两ps.stdout均38947/PPID38859/PGID38947/UID501/birth09:32:30/STAT Z <defunct>，provider38948无行且sameAttemptProviderExited0。liveparentbridge38859两时点pollNone、guard/originalbirth09:32:29/exe同；host实际sample/registeredstamp parent/group/birth对齐，token/run同。monotonic493597.5558→493602.5942跨原5s，非单瞬退出窗口。result2d6015cea2e66e8c87a44257430c8b760462791daa9226ddb7f5f1dbaededa0a原false/sourceenvstable，cleanup后remaining[]/EPERM/why不能抹之前已证Z。
+
+至此drop(actualChild)后Refusedhost不pubMeta而无specificwaitpid的源机制与同自有liveparent下未回收host现场闭合；不是provider未退/参数资格问题，不需再跑观察红或忽略Z。待作者已授exactChild/PIDchannel未知语义/原30s预算的固定源小片独审，reviewer未新ps/probe或输出整系统表。
+
+
+### long-return tiny派生日志碰撞阻断与修正准入
+
+原b27039a6源码窄审发现prefix替换漏两处long-history.log：freshassert必撞旧96355log，若绕过会覆盖历史；已回Root而未运行。Root仅两literal改long-return.log，新3af792788a129dfebff168fe7cad584fc0590212d2b10d1be3056fa1bfe90f0a实核精确等fe38原7处prefix/env/scope派生再加这两log替换，旧log0引用/新log2引用，无其它执行delta。原9014/source17f/300/hardlinks/env13/port/owned/TMP门同，无新阻断；Root可freshport/storage/TMP/唯一槽后作原最短raise/input/returnpaint观察，不重Find/不实现bookmark，reviewer不运行。原logs保留不覆。
+
+
+### exactChild waiter产品5a8d源审通过（尚未编译）
+
+5a8d2596a8ae951ba92270e0af95eb686f6006c3仅gui_host.rs/gui_host_cancel_tests.rs两叶136+/8-，父gui逐bytes等Root17f。source-manifestbf300ed01b5b2891f1280940ab1eb4e7d3c9416e95ae2b47425a5ca04c445a41/patch6fecb6bfded9739207354f9f9854c0f0a994b2d83b153c60f3021c393be80015/checks870630001307e7136c064c28915eb51f9d02fb6501759c4750497c8ceac97b20实同。Builder线程在任何Command.spawn之前成功创建，线程独持Command→actualChild→wait，bounded1 PID/ioError通道不传Child；send失败/receiverdrop/caller超时不放弃实际Child。threadalloc/明确CommandErr才原spawnfailed，recvTimeout/disconnect只Unconfirmed，原30s余量继续Ready，不新增失败mark。当前same-token reprepare的ReservationUnfinished映射Pending/Unknown/旧结果而非新Start，不能借缺PID答重复spawn。
+
+成功发布独立host寿命不靠callerthread或会话window，waiter只阻塞自身OS线程；specificpid_running竞争先reap时ECHILD只承认ghost已收，不作providerreceipt。无waitpid(-1)/全局registry/信号/RowGate持跨spawn/SDK/supervisor改动。test仅cfg(test,unix)原leaf增一个focusedexact：正常和receiverdrop两个实际/bin/sh exit7，shared5s，只pid_alive不自己waitpid，另missingexec分类；未动原场时限/断言。源码无阻断，可Root单pick两叶，不带作者链；仅parse/diff0不冒types/Cargo/行为绿，原85368Z红可作基线不重红。reviewer未写Root或执行。
+
+
+### current874c前端续批与production准备骨架源审
+
+Stage1 recovery-frontend-current-874c-prepared-1/run.py edbfa8fb85aa49e1f365c339c3171fe802f0c1c02cf93e536798c0261a261175/admission766b83d6a96880c15242e3d757bc2de699987dc8e1f2d30825d6cc7c10bcc228核同，Root874c7c685e408a0ac4ea0122541375431af3350e实际clean。actual28762 generation到current12delta各before旧dict/aftercurrentSHA全核，19priorpins同，修改为已审测试/私有Node/TS注解/Workspace动作，无DTO/export/cataloggen输入变更。原六actual成功phase/proofs/source/tool/helper/188gen/stagepub dict复用门完整，不硬require旧fullframe作当前Rustproof；原48300runner仅freshmirror/readygate/8+2storage/精确允许集lineage字样变化。两phase仅fullnoEmit→Vite，原guard/source/env/TMP/compact保，无新Cargo/gen。源码无阻断，可Root填review/ready授权实际，reviewer不运行。
+
+Stage2 production-current-874c-prepared-1/build.py5c89d893070ead50e6e5ee830733690549368a0bd2c8207c30604ed927a0fb89/producerdec7aa7b32655c78ad1b99eff332141b0c461f48947bbf36024cf94c20fb5905/独立retention141970f612793939222fd703086fc35ae992043294329cd018e6863359c06420骨架源审无新增逻辑阻断。相对actual9014仅freshmirror/currentlineage说明，CLI→normalbridge→defaultGUI三no-prior/900total300phase/实际bundle26/原helperguard无改。preparedfrontend实际SHA/retention合同结果null且readyfalse，目前不能执行。须Stage1真绿后实际currentfrontendpin、独立fresh exactOUT当前283件成员/attrs/SHA/lsof/目的fresh可逆留存结果，再finalPIN窄核；producer本身无rename/留存执行权限，不把readonlysnapshot冒actual。无App/构建/OUT操作来自reviewer。
+
+
+### current874c focused Child unit准入与actual21839前端绿尾核
+
+ghost-child-native-source1 driverc9500ad8a59a28a27af559c7740017dbed672d9da1cc39d209dc4c24e9f84329/contract219cbec120fea4afad3010071a5106f55d7b8869b77508f85791ec99b41c0463实同，原4045只早ready+authorizationnonnull门，32source/root相对helper/lock/sourceReceipt同。唯一Node libtest原no-priorV+focusedghostwaiter exact1父0helper，无provider/stub/CLI/Core/App/生成，原300/owned/TMP/私有copy末退役/e70reserve20/10+6/2/5门保，可Root另admit。public-unsupported-current准备driver逐bytes37d8，但producer/bins/envNone与readyfalse，目前不可执行，必须真实新normal产物finalpin。
+
+Stage1 actual21839 result54b52d0136672b2ace1bcb0cc5e7692c4cd8c809b58346b66f0e741c6e139d7a/frontend3b6d6598321015d995e819857fdc1aeb20b218f7b55405301028eb7761fade6c实同。types0/Vite0/15.930841s、no forced/groupabsent/owners-footprint[]、sourcebefore=after=receipt2340、env/tool/helperstable，188gen和278新dist当前实际tree逐dict同，四关联文件及两日志SHA同，cleanup[]TMPabsent。generationcc92六旧成功phase+current12delta lineage分列，不冒新Rust/generated/App；可供Stage2真实frontendpin，无重复执行types。
+
+### actual17256返回paint有限尾核
+
+long-return-result7060bd0786201ec50262ac411f48edb6a663279afb91ebe4b8dd7dbb1b200578/UI26b4a132d2e5cfdf4b774c5cf132c74019dd2279c7b3c2b6e3a2ddb5b4533367实同，41399birth09:37:32/原source17f，nativeexit0/noforced/timeout/group/owners/footprint[]、source/envstable/TMPabsent/cleanup[]。Root记录raise后完整两行恢复、真实coordinateA-B-A/wheel可读、HEAD hit下一观察<=36.434s不等完成时长；parent189504KiB仍单点。reviewer仅核记录，不观察UI；本focused raised/input未留可复现foreground读取失败，不倒推旧blankcapture唯一cause或所有WKpaint全绿，crossmountbookmarkNEXT，未投机改paint。
+
+
+### actual15850 current874c focusedChild unit实际尾核
+
+ghost-child-native-source1/actual-node1 resultd11ea87087c4c7ebdaef0ed66d8cd0c90e6c2c3623c1212aeead79593020839c实际874c/93.596432s validtrue，metadata/compile0、唯一a_ghost_waiter_reaps_even_when_the_pid_receiver_leaves原exact1/0/0/0.01s，0helper。prepareprior[]/proofreusefalse；selectedrow=artifactcargo_artifact且在本次CargoJSON恰1行，proof2340源规范化全等before=after，envstable。原target291878248B尾核时实际SHA55d357a452a812a935bf1dc771ed9a315ec47e988f955ed0fac3b92855a47804等source/privatecopy，copy末finalcheck/lsof策略后已退役，retirementerrors[]无gzip/binarymirror。stage全noforced/timeout/interruption、groupabsent/remaining/footprint[]，日志SHA实同、TMPentries[]/tmpabsent。正常PID/receiverdrop/明确missingexec的实际Childwait闭包有focused证据，不外推currentbundled CLI/bridge/公开Unsupported/App全绿；原85368Z/80962/98492失败保。可Root解除此target冻结后走Stage2新producer，reviewer无重跑。
+
+
+### Stage2 current874真实frontend pin与exactOUT留存前置clearance
+
+build5c89原字节；frontend-pin425233bf72c06d6aa5c4c04cadbc7fc6ce91563b427cd4db2f4b1f365882a3b7实际指3b6receipt/54bresult两SHA实同，sourceReceiptframe等actualfrontend2340、188gen/new278dist实际已21839核，currentfrontend_source_delta{}准确。producer950591bd5cf0562c2694e8ae6b3c46828782d7d3985b004b1cbec6a2218fb486/admissiondfd17e57c4049560c3c497393fb4ecadff61d5b790967e525c1592a64ddeec2d仍readyfalse且retentionresultnull，不能执行native。sourceReceipt/quality/frontpin全部directSHA同。
+
+retcontract141970f612793939222fd703086fc35ae992043294329cd018e6863359c06420/READY134f0ac848b973ce4114c1520cda2028b47e8d37a3d3fafb15dba6020b65d595核同。reviewer当前只读全283members/6603040B，source(dev16777244,inode36350968,UID501)与每memberdevino/UID/nlink1/mtime/ctime/size/SHA及exactset均原样、无nestedlink、destabsent。可Root在freshowner/lsof/ancestors/sameFS/小峰值reserve后执行原9014单目录可逆rename；本结论不授producer，须actualresult/posttogglecontractSHA再最终绑定。未移动OUT或新kernelprobe，旧9014canonical保。
+
+
+### current874 exactGUIOUT实际留存＋三producer finalpinclearance
+
+retcontractddd8e25266caf50693086e3ff693c4b2afa94d4b9364d40dfc9ceb0336bbf72b/actualretention-result20b1549eb8ac720386b8dbcbc983e98ba943904a085cc44e48421ab8c2db2344原SHA实同，source/dest/合同互绑且source当前absent。retainedrootdev16777244/inode36350968/UID501同，283件6603040B每memberdevino/UID/nlink1/mtime/ctime/size/SHA和完整set均实核原样，无新目录移动来自reviewer。actualresult关联freshpreflight40d46174、lsof1空/active[]/sameFS事实清楚，reviewer未重新probe。旧1419draft及旧9014canonical保。
+
+最终producer90590ae27d3396aa7ef01432cfe6afbc1228cade18812bc54069a76ff51f8619/admissiond2ef3f72fb3e44ed4919395a5b2ae886b3890709b5be480479fde58c2492a415两retSHA及producerSHA链核同，driver5c89/前端425233→actual3b6&54b/874csource/quality零变，目前readyfalse。无新增源/准入阻断，可Root仅toggle两ready及连带producercontractSHA，fresh8/2+20/10reserve/唯一槽跑原三normalproducer一次。非本reviewer执行、不重复retain/types/gen、当前实际来源须完批后尾核。
+
+
+### actual38590 current874三normalproducer实际来源尾核
+
+production-current-874c-prepared1 resultde6af8996aaa292e8707f084937d2c94770c34f29f79ea37399b862e8db0422a实际874c/333.898955s green，metadata/CLI/bridge/metaGUI/GUI五phase0/noforced/timeout/interruption、groupabsent/remaining/footprint[]；sourcebefore=after2340、env/gen188/assets278stable、cleanup[]TMPabsent。三prepareprior[]/proofreusefalse/规范化source全同/actualselected在各本次CargoJSON唯一行。原target与唯一externalcanonical六文件独立SHA/size均同：CLI7ace6db87f4b6ee2395f110119fc8babc6395095aa1d271be6615687ce5fd610/359304072B，bridge4378e0650cc239042dea2a9600ae5c9ceaedd545160b252087d474021f9a183f/343548664B，GUIcd42b9294277b4e1aa77e913d7baf6b9f73c4c296ed5d6a220adc3de856fa827/393032488B。
+
+三次Nodeactualbuildscript皆khor_embedded_agent+exactQ041pinnedbundleenv；GUIfeatures恰custom-protocol/default/devtools/devUrlnull/874qualityconfig。新GUIOUTinode36356585不同retained旧36350968，283generated现SHA全同proof，invocationmarker新于prepared。actualfrontendreuse3b6/current874/source_delta{}准确，8compact小件双盘SHA同无binarypayload。可供紧邻runtime新合同，不把focusedunbundled/旧9014proof冒current，旧canonical仍保；此批未App/公开恢复执行，不扩34完成claim。
+
+### currentMac准备及实际JSONpins窄核
+
+Macadapter desktopa0609d3e/editor758327ef源审仅新producerdir/newApp/currentoutputs/envfile及动态pins；原300/owner/env/TMP/正面hardlink/plist门保，原nullpins/readyfalse先拒。最终artifactfbda5070d453ac48b8863429b6dc9b9c529ed5e1dc69b80b2dcf5a7789340bf1/producerenv85fe55825d1f0f6d07a770ffe8efdb28d8807bbd03528051e3daf7cde04e1fed/小receiptb6f5ca131a275d5e3f7c33218249253bf0b6ae7f33b49a07127d73672b9c2bdc实际SHA同，de6a/proofGUIfe7b…cfc6a/CLI9542…952d/新GUIcd42与CLI7ace/config一致。22完整env键逐hash同actual，TMPDIR未加入hash/HOME未改；source脚本未动、readyfalse仍待Root实际slot/port/storage/admit，不由reviewer启动。
+
+### currentUnsupported38590重绑定源准入
+
+public-unsupported-current-source1 driver逐bytes37d8f0041eb407ea066f59f8b237258f07ff0c725da24ae735e92567721eb09a/draft7e08fea583f8193159357aa21e48a3680d3cd79a84e4900efdfcf5e32fdd4ecf/receipt579fe52fa0c27500e81970f4e31d52044a978733858c5cf98cad289b5058da73实同，43filespins全核。当前874c/actual38590de6a/currentnormalCLI7ace/bridge4378和V/canonical来源已尾核；producerenv实际22键完整hash恰两actualproof（不按口述23误计），不改parentHOME。业务/5sANYpidgroup含Z/reuse拒/正面signal/guard/retention逐字保，noResumeLoad重跑。无新增阻断，可Root唯一FREE槽fresh资源后另授尚未绿Unsupported，readyfalse/slotnull未改；旧9014和原false保，不以新producer或focusedunit冒本场成功。
+
+
+### current Unsupported source2 窄修与 actual4303 完整分支尾核
+
+source2 driverd6ca1e141df8f4a4ee3c4b0f985703774d2b87ce330b8d94af18d11a64ec1a75/draft3e923c40bec05c99c2ea6e1f8edba680d4d739fa0f97f15c0e0e683a7e4b9f2f仅readonly confirm_refused历史sample无绝对image时记Unknown/signalfalse；绝对image仍核原Python，正面retire/signal资格与5s ANY PID/group含Z/reuse门不动。原33238因历史(Python)显示失败，不证明exec transition；received实际Init4而较早methodcounts3，第二重放与末门当时未到。原false/why保。
+
+actual4303 aggregate2e464e00d861bdf6751a06c094a52c36a464d0516d67898a84ccec431c7a5d43/scene78fd7f4ea17e47dea857c4225326cdd383b2e8c472ca70cbd1111f2b501f8d10真实green/6.260394s；admittedb6a90fe0147f88926c01663bdda934eaf8893bade521080ac769af61e185a96b与driver实等。actualInit4/New1/Load0/Resume0/prompt1，两个epoch2/3意图各Init-only typedRefused，两个同payload重放均不再Init；三次旧opaque binding/cursor提交及整page返回保持，末oracles Meta/base/binding未改。两次Refused host/provider当前scoped ps各exit1空，sameTransport Exited/父bridge存活及原ANY PID/group5s门均到，非忽略Z或收编。完整2340source前后同/父env同，register/seed0、bridge计划TERM；errornull/cleanup[]/forcedfalse/remaining[]/TMPabsent。唯一49B why exactinode36357660/UID501/nlink1/size/SHA实际保留，源absent、lsof1收据；未知TMP不放行。仅current874受控Unsupported完整公开分支，不外推Shell/App/真实vendor或全部S，历史false不可回填。
+
+### public Shell source1 有限场景源准入
+
+driver ee4273a5abf2fbe64981b0be58dd6fa49108fdc5d3e2a26e0179a3bbe3f71230/draft0f386a356f33be7bc72f291ed8dfd77db05fac54190f89ed4fbd280565211044/receipt844d2e135a69c3bf71383aeefdf9f1dce8327e138319b4a5d602218824855cbd及全部filespins实核。继承37d8固定owner的verify/spawn/http/until/finish，current38590两个normal原V与22env恰proof；真实HOME保、env-i SHELL=/bin/sh且无ENV/BASH_ENV/ZDOTDIR/CODEX_HOME。原源码integration::plan对sh None、host cmd不加login、empty input为空，API term_open/attach/ready/stream/key实际JSON路径核对。
+
+场景仅原A启动marker一次/真实Ready前阻、真实PTY owner birth/parent/group/exe资格、public ended/list specific-host reap和5s ANY PID/group；缺cwd DirectoryRequired不spawn/同payload同结果，显式chosen cwd需新epoch/nonce，B新ID+previous/rootA、同payload live/ended只B、A所有语义文件与marker不重放。输出/lease/末proof/source/env/TMP/guard门齐，无concrete源码阻断，可Root另admit唯一slot；此时readyfalse/未运行，不以GUI Child waiter冒PTY保证，不重复Load/Resume，不加matrix。
+
+### L03 Session/Machine namespace-only 派生
+
+sessionb8f0bc1aa86435112f37a55cad4b0aab6430a12276ca7b1a9bbbcd0659bafff9/machineadd71237b99157b8e011429b4064e466c696048f335e2997c4729ad1fdf3bebc/manifest e7fe647105c6b799b2c72db462f0dc579cb919e88ee4f42f13fddcc77829b700实同，仅current874-editor-workspace输出namespace和scope各反向替换即原758327ef。readmit/artifact/hardlinks/env/300/TMP/normalQuit全同。launchcwd仍EditorWorkspace，实际SessionContent或MachineFiles入口必须另由Root真实UI选择并记证，不拿cwd/runtime退出代文件owner或IME验收；无新增source阻断，未执行。
+
+
+### Shell actual12290 首请求红与前审遗漏修正
+
+scene3d432fb3422e62acb038aab3a836fef97dc0beba8c8f3c6738c2ebf83f2e5ffd实际3.389774s/errorHTTP400/calls0，aggregate3.465571s；首open_shell尚未A/PTY任何业务oracle，bridge清理TERM/forced_cleanuptrue，source/env稳、cleanup[]/remaining[]/TMPabsent。前审API字段齐与term后续闭包结论不足，漏了Node机器resolve前置：link.rs::open_shell_on_with5722调用resolve而非resolve_or_here；fixture传machine空串，lib.rs2526真实resolve按channel/device name，不按空串自动本机。已向Root/input明确纠正，当前HTTPError body未保故不把该源链冒唯一实际400cause；最小后继应保实际errorbody、用真实devices本机资格/name再call，不改产品/断言/时限或自动重试。原12290false保持，不称Shell已验。
+
+
+### Shell source2 actual-machine route 窄修准入
+
+driver28e28ce7f136fac7b3007233c55278099bb69da7b9a9583af4cdd74aa0985c9f/draftdba4baa7ba1b87d0dd28a81ff014b1f6e1990fd45105d491892515f930fa1745/receiptd48b5f1a52ae40cec05cb179fb0655a507bb5d2311b61c7e4327667af8f4b5bb/manifest1bf70350746f4b5aab3edbacc40b77796fd6914cb310f527717d95be275b52f9实同，所有filespins同。仅真实devices unique me.name给initial open_shell，Core me严格id==node.device_str，id64及后续SessionRow.execution_home再exact核；无伪设备/本机override。Shell局部HTTPError记录status/request/≤64KiB body加1截断观察后bare raise，原super HTTP预算/owner采样/无重试/所有业务assert/300及5s门不变。原12290response body未知事实诚实保。readyfalse/authorizationnull、只静态审，可Root当前Mac终态后另准入完整原Shell分支；不以源修作实际绿。
+
+
+### current874 Desktop actual91690 有限真App尾核
+
+result915ac449b7c573586bdac3d7fae643a6715b8807d8c758e9b42639d3f805689c/UIa8ee772bc252e1ada6016bb1f507bf139eadccae7a5f33988fc7a1ae8bdbc731实同且互绑874c/91690。App实际khor-gui SHA cd42b9294277b4e1aa77e913d7baf6b9f73c4c296ed5d6a220adc3de856fa827等38590/admission，2340源准入；PID79243birth10:27:09/exactprivateApp。nativeexit0/timeoutfalse/forcedfalse/interruptionnull/groupabsent、remainingowners/footprint[]，source/envstable/TMPabsent/cleanup[]，日志SHA核同，原tmp-lsof1空。Root记录实际CUA CmdQ，不从exit0猜人已操作，不由reviewer重启App。
+
+UI仅核Root证据陈述：W019清洁文件常驻重读消失、Sessions/VSCode/More和More重读仍可用；实际六appearance状态及后续file06/07材料变化和Light→Dark锚点稳定、header/tab可读。初dark wheel file05到首light file06位置差诚实unknown，不据此全pixel保证。dirtysave/C/E/B/IME/mobile未验，不计所有G/H或34项全完；reviewer未亲自观察UI。
+
+
+### public Shell actual9775 完整有限分支尾核
+
+aggregatec68daa86a1e776a5868abd0a866710cdbbf509450c5d1803660852e0fd536c3e/scene2aafdb74c91923b644d4301caf6d175738311941ecc6abbc06f647f924e1b267实际8.756395s green。真实devices Mac-mini/executionhome cbecc851...e755一致，A先真实Ready再marker一次、退出0；DirectoryRequired同payload两次不建B，fresh epoch2/nonce/chosen cwd开唯一B previous/rootA，B live及ended后同payload仍原B。A/B实际/bin/sh与HostFile/祖先group资格和terminalgone到达；B actualoutput含仅新显式command、不含旧marker，chosen cwd原scopedlsof准确。A五semantic文件当前hash逐一同oracles，两个ended含原5s ANY PID/group absence，无Z豁免/testwaitpid。2340source前后同/env同，bridge计划TERM、forcedfalse/cleanup[]/remaining[]/TMPabsent。仅当前本机真实PTY public successor/目录意图/重放，不外推App/远机/Offline或全部S，12290原false保。
+
+### WorkspaceRoot ASCII namespace派生及Offline源审待收口
+
+workspace-root93e71c58d521b5e98772c77827f81bf966acea3380fb70909486f02892ffc8f4/manifest631ea086607fdf526df741d53550f856012e154790d6a961e5bc38321298a880实同。只原758327ef输出workspace→workspace-root及scope文字，反向替换字节还原，原guard/artifact/env/CWD不动；可Root另授真实ASCII场，旧physicalhuman runner保原，不宣IME/selection。
+
+Offline driver429de1bb5738517f6701a7a8518df6310316532d26b0cffe7372937be50b95fc/draftae739dde0063297b176fb224541505958c4d03b8ac6a45f3f1505873413f98ea/receipt93ad4b2a2ec075f212c18bd62ebb9912b903fe7ff972070e1a53abf129105eb7源与pins实核。两privatehome/真实invite pair sync/unique me.id/identitykey保持、固定executionhome无本地fallback、liveJoin及uncertain同payload重放、实际旧provider50s内计划退场/55s保险未改，hostdeath-providalive目标明确未验。唯一待修阻断：finish先remote.pool.shutdown(wait=True)再super原ownedcleanup，异步HTTP异常可先等待31/60s网络再kill/reap。已要求仅将remote池join放ownedcleanup后，roles/files先合并，并末总时限计入；不改guard/time/业务或造新框架，readyfalse未运行，不能当前准入。
+
+
+### Offline source2 cleanup次序窄修闭合
+
+driver40d40a31b9bbeec256ab8ab13d5e6af3fcdba345c0b9d39410196bc02fe9b68f/draft50600873847ad33d50a825bf223a5fffd5c948a910a618b02c56421e3e121a82/receipte0fe0ce113ddaff7317ffc5fd7e91efc86e0e6f3805ff73535a9d57d0ab49639/manifest6b3ff129fb02fddf86bf3f184617a39231b116f7715d01db3b13dd71cfd3a7dd实同。与source1唯finish小delta：roles/files先汇总，super原ownedstop/Childwait先于remote池shutdown；池异常入cleanup_errors/secondhome.pool_error并false，末seconds覆盖池等待且>300不绿。run体/原业务门/文件pins逐字同。唯一顺序阻断已闭，可Root槽FREE后另admit原双真实home分支，readyfalse/authorizationnull保持；尚未实际验证网络耗时/55s窗口或hostdeath-provideralive。
+
+Root另报告Workspace70472原false/unproven：normalexit0/磁盘normalmarker无q但输入未正证，不据此判lastkey产品缺陷；postquit getAX自动启动新90081导致原guard footprint失败，后者已Root exact身份正常CUA Quit。此条仅记录Root报告，待原件尾核；reviewer未CUA/重启。已明确任何dead boundApp的AX/screenshot都可能ensurelaunch，不能只给getApp设门，后继须先PID/birth存活。
+
+
+### Offline actual94947 有限进展与失败精确范围
+
+aggregate9665a796a0cf52ccbe51b55516ea34cf7c4358da9127fec77b5a3d0dd55310d0/scene7d6774da1f93501eeedf553b38701a64b24bbc016ebcb6f8fc17c729da1f8e7b实际39.489635s false，failure4f339a07cf53f0c896441887bd1eaba6a78e0461b38e17fe8b364357505fe63a line163。实际两distinctDeviceId双表互见、真实pair/sync、remote online Join+同payload、executionresident退出后原host/provider live核、reader exacthome Offline/None/noepoch和原token epoch3 Unknown真实到。未存offline-oracles、未到return/replay、Meta/Attempt末hash门和正常providerexit，不闭完整场。
+
+合取失败项已区分：reader当前physicalmeta[]，最后b.live_owner owner快照7到主owner10；新增92124(parent91994/group92124/image'(bridge)'/10:38:23)、92170/92267同readerparent91994/各自group/image<defunct>，故owner集合变化。只证明新增被原guard登记的reader后代，未得完整用途/absoluteimage，不称新provider、也不忽略Z。实际peer received Init2/New1其余0。原source/env stable、cleanupEPERM/forcedtrue、remote eventstore目录+part保，remaining[]不等TMPclean；pool_errornull。原false不回填，input按源调查reader后台进程与有限no-local-execution oracle，reviewer未运行/修改guard。
+
+### WorkspaceRoot2 namespace与Save70472源解释
+
+root2 0772aac0f75345d8bf3cf43e452caf17cbf9ef2df229885a3fbc817c6da51083/manifestb88772940987678f78f97979bb20aeed39a9fd1e266b29c0cbb03ca3552e288d逐SHA同。只root→root-2输出与scope要求先看实际draft/error后Quit，反向替换字节等93e71，原guard/artifact/env/300/TMP不动；可Root另授不改physicalhuman入口。
+
+Save报告5a8122d89d17d57da5aebf45249b3f4daf0c284e14e6d8c028a26b8c151c07ae/facts6274c9a50878939407d34021bd61f79045ae611028bda2753651c6466dce3522实同、12当前源SHA全同。独立核accepted.current同步更新、save-road只now.text==job.text才把lostreply视landed，其余failed/clash保draft；Node.write_whole在目标immediateparent createpart/write/sync/rename，无直接truncate或失败成功fallback。Appquit先draftCount/flush/settle再真实未存Dialog，Cancel不discard。0500只是权限前置、未证实际拒绝，不以70472无q推已接纳输入丢失。Root后继PID/birth外门在任何AX/screenshot前，不由此runner自动保证；未CUA或新runtime。
+
+
+### L03 actual44266 已接纳失败草稿后原生Quit业务红与源因
+
+current874-editor-workspace-root2-file receipt1c3fd3db9e8bdca56ccfceb41f716c2c6939a4c3fdbc5ed85cb32fbfc6a9c5b2记录Root实际CM接纳R2-WORKSPACE-FAILED-DRAFT/Savebutton及CmdS `.khor-save-草稿 保存失败.md.94027-2 Permission denied (os error13)`；CmdQ后94027外部确认消失，无postquitCUA。磁盘仍baseline0e4deb2d6756e883afc776390a19870cefbb32619f58db522e0392717fa45597，parent0755已finally恢复。wrapperresult0130353569dc939af607dbd0fecbbec9c884760d0b36001eccb6a0b1cf34389f仅nativeexit0/noforced/group/owned/TMP净，不作业务绿。不同70472未见q的旧unproven，本场有可见accepteddraft+实际拒绝，业务红成立；不声称草稿不可恢复。
+
+Graph主干e7不覆盖current874，按固定源fallback：menu.rs205 PredefinedMenuItem::quit，当前Cargo锁tauri2.11.5/muda0.19.3的macOS994 Quit为NSApplication terminate:。api.ts1872草稿bridge只听tauri://close-requested，native RunEvent ExitRequested只log/无prevent_exit；actual日志ca133884...de3只有agent runtime closed/exiting，无mainCloseRequested/ExitRequested日志。菜单Quit未经过现draft关闭门的源因/实际一致；不能以pureUIgreen否定实际红。已交H原授权最小nativeQuit→同main关闭/草稿owner叶，不建议假设ExitRequested一定可截该terminate；不扩genericclose、未改源/运行，待fixed审。
+
+Offline94947补充：原合取第一项false使second项短路，先前记ReaderMeta[]是postrun现文件事实，不冒当时已执行second。Input源读既有remote_cancel metadataDiscover每1s可start→mcp_worker selfexe/独立group，故ownedset不可增长比noFallback强，实际三新增PID无argv仍不能指认为worker。已建议Root裁定最小consumer按reader无executionMeta/HostFile/canonical和remote同owner/Meta/Attempt/SDK数核，所有新增仍原owned/strict teardown，不加白名单/忽略Z；未改原断言/执行。
+
+
+### Offline source3 noLOCALAGENT consumer收口准入
+
+driver39facaa12d11546f40598c5b6b3082a8348a08d685722f10f3d0d9c5ac96c98b/draftfa3e452ea77568c80786326cbff1e7cc87d17e23bf2111af7a9db16b5d03e98b/receipt90601b3fd6d29e9bca55eb8831e52ef964bc4f059ce21d3089b4f3bd5daf7c0b/manifest1bb7196649af0572da5e3332fa1fee95ac3a6d068b8eabca59d2121664bc8e73实同/所有filespin同。按Root原noLOCALAGENT裁定仅将全ownedset不得增长改为before/after reader Meta/state/HostFile/view/journal/attempt/ACPcanonical同步空；remote Meta/Attempt哈希/完整owner/SDK数原强门分项保。新增before/after所有owner及delta原记录、仅deltaPID argv/STAT freshps2s；不标签94947未知3PID、不免Z/信号/ALL teardown。原双home/restart同payload/无re-pair、55s<50s计划exit、source2先ownedcleanup后池等待/300/资源逐字同，readyfalse/null。无源码新阻断，可Root唯一槽另admit原分支，94947false/part/EPERM历史保。
+
+
+### Offline actual27250 pair前置早红
+
+source3actual scene fd89810635f5b385bcc1c8fae35c54867463dd9eab613815cdacbdc756642191/12.232830s false；首pair400真实body `"pairing bootstrap is still pending"`（bodyhash0193f9cbb6e5fb5c9076c8e7887cf3be58de67b07527bbbf8841386c9e55bc74、未截断）已保存。仅reader devices及remote invite到，未seed/provider/在线Join/Offline/return；无oracles，不冒94947后半验证。原register0/bridge两-15、remaining[]、两TMPabsent/source-envstable、remote pool_errornull，cleanupEPERM/forcedtrue原false保。已交input仅源读既有pairbootstrap语义，不自动重发mutatingpair/换nonce，reviewer无runtime。
+
+### L03 native Quit fixed05e 两叶源审准入
+
+05e058a035b96b98769bffad26c46fea503fee30（parented184）仅menu.rs/lib.rs，两个before实际逐字Root874。manifest ae4041810423eb66a4a5ffebd97362348e187a060788b4cb905261c045ea2fb1/HANDOFFb965fa27992c92158e0bb1ec7e22a08028aeef6b79415383c4ce013dfaa0c181与fixed menu c080fc8a46f157201758d71fb03fa22ec4fe2d72d4e23bbb309c4ade14ab2602/libc594c1c88ea5e697ecfeaccae23f3aefbe118ad0606c8039d8990fb79bc2b00b核同。PredefinedQuit terminate替显式itemquit/同catalog label标准CmdOrCtrlQ，on_event最前raise/focus main.close经现草稿owner；main缺席仅现webview各close保guard，无app.exit/destroy强退。既有overlay/code:/SETTINGS关闭块只从mainCloseRequested迁mainDestroyed，Cancel不再提前关aux，批准main真正destroy后原关闭集合不变。无新state/RPC/token/通用close事务，原RunEvent/shutdown不动。
+
+源审无阻断可Root只pick该commit；diff/format只静态，未Cargo/GUI，不称44266已修复绿。下一actual必要为同Workspace可见acceptedfailedsave+Settingsopen、CmdQ仍活/Cancel保两窗、恢复权限实际Save/fulltext及最后正常Quit，再既有Session/Machine入口；不扩其他原生Dock/任意多窗聚合保证。原44266业务红和70472unproven分列保。
+
+
+### Quit三producer prepared source窄核（待清旧授权JSON）
+
+production-current-quit-prepared1 driver2ad083dc9c7bb7c0d7252bcf01de9d3091e8742f826209a58dbfa1fa0eb2d268/producer4e0411917f39ab3f7350e0b2635a043447f52ebc89386a05460cb3da3bfb3e7b/admission21f917dab7cfdb787e7d87776345a9191e1de2f07d29387b4f77823fedc48ba7实同，driver相对38590仅freshMIRROR/lineage说明，原三normalCLI→bridge→defaultGUI各no-priorV/900total300step/8+2 reserve20/10/5门/bundle26/finalstable字节保。actual21839frontend3b6/current0f606差恰menu/lib两Rust且与合同delta精确相同，2340sourceReceipt实际全bytes核同；qualityidentifier为productionquit/devUrlnull。OUT原38590inode36356585/UID501/dev16777244、283regular/nlink1/6602979B每memberattrs/SHA/exactset当前全等、destfresh，reviewer不lsof/移动。
+
+唯一准备元数据需清：retention896ba28d96d04ad0c4cf2343c75dd201bf07ca4628ab256371900a0b44e5504f虽readyfalse，runtime_authorization仍旧874c/T02:04:34维护授权，不能充本次。已请H仅置null并刷新retention→producer→admission SHA，之后Rootfreshowner/lsof/sameFS/单rename实际收据再finalpin；当前producer/admissionfalse/retresultnull不准执行，无新gen/types需求。
+
+
+### Quit准备旧授权清空 final sourceclearance
+
+retention8f05d960a4bab81201bb4b329c8e88ab879e82b26e622ca17091ea37dbdaece7仅旧runtime_authorization置null/readyfalse；producer85fbdbdaf3562975fbfd5782f629d5142b3491159c6a3ad08fbd2c1bafc40958及admissionac643460117560151dfbc882f84a9f0ab0fc52f6ddab2300b4eca138a4977729仅连带SHA，逆改各字段精确复原4e041/21f917原SHA。build2ad083dc不动、283members/6602979B/原sourceidentity不动；producer/admissionfalse/retresultnull。误留旧授权已闭，可Rootfresh身份/成员/祖先/owner/lsof/sameFS/目的fresh复核后精确单目录可逆rename，实际result再finalpin；非native准入、reviewer无move/runtime。
+
+
+### Offline source4 exactPending同ticket一次completion准备审
+
+driver7c1c9429edaafeab7825df6ade53990c9ea27fa8ea87e1dca6b1ebe5d340a9bd/draft21ae2d3eaaff9a77ac4483a4b3a56414b4305f50181c9a4bf5941c6df65a9879/receipt9aab5c722005c658195f9e60c35c6f5e912451ea737b7c590a41dd8c91deeb65/manifest4d7875e1dcef9fd3aa5f8a610b1bcf84b3eaeadd0aa59d5b293037585656acb9实同。唯一确切pair400/未截断原Pending字节允许原ticket一次completion，60s绝对deadline从首次pair前开始并覆盖快照/继续/返回；第二Pending或其它错原raise，无循环/新invite/重置claim。独立current link_pairing::pair_over/local_for_ticket核savedlocal按issuer/token_hash返回，后续用saved id/nonce，未伪造公开getter事实。两home registry≤64KiB原件UID/nlink/stableFD/完整SHA/fsync在继续前留存，opaque不作decoded运行断言。
+
+current0f606旧874产物已移出准入，producer/bin/env全null/readyfalse/authorizationnull，仍不可执行，待新实际producer独立pin。其它双home/Offline/同payloadreturn/ALLowner/300/55s门原样。源审无新增阻断，仅建议SCOPE首段旧current874reused句改为历史/当前pending，底部与硬门已诚实；原27250/94947false不回填，无运行。
+
+
+### Quit exactOUT实际留存及当前Mac三adapter准备尾核
+
+actualretention ba288244642fca295dca0f7edd4365fa7b1e71aef8cfb15eecc73e0c397a11b2/readycontractc9fbf40832e16956fb700c3fc938e406841f557e297b0685792f008e404a76e1 current0f606维护授权实互绑；retained同dev16777244/inode36356585/UID501、283regular/nlink1/6602979B所有memberdevino/mtime/ctime/SHA/exactset当前全核同。lsof1空/owner[]取实际收据，source_absent是rename时点不冒producer开后现状；首次stale AppRUNNING precondition原failure明示actionnone/sourcepresent/destabsent/unready，未双move。producer9021bf169301f7ae08f3e16223c8a8613dfc33043fa5a092f7e96e2ebc8145fa/admissionef55d2d6a212e55c5fc9370e5338b45787ce636dde42676f38cc05fb0901a55c实际retSHA绑定正确，37775已Root唯一native在跑，reviewer不poll/run，终态再核产物。
+
+platform/mac-current-quit-prep1 W357e3a944f7f3506bf9bb2da88c17259fb0ab17a5a3a9afe4bda45346f230ba9基a060stage，S a5370d3aed533785a346a36f763d48e5e7b7badc4a4f14f08106f30a6351bb56/M04d095dc4a4b50b59d43f375d239525171cfd881c634ee5413a09633de0f7fa4基b8f0/add7verify，逆diff仅producerdir/newKhorQuitLab/quality/envfile/输出namespace和WSettingsCancel scope，原guard/readmit/HOME/env13/TMP/300/清理字节不变。manifest687fd7a991d88b4257df225c80f6ece7fda68b9d6bc147bad214563ff4b4fda2/artifact38875d076575407e35ad6c753a13534c44290a3f81ee542037a7031cd7047579实同，readyfalse/actualresult/proof/env/config/SHA全null，当前不能stage/launch，待新produceractual绿再JSONfinalpin；真实owner仍RootUI选择，不以CWD证明。
+
+
+### actual37775 currentQuit三normalproducer来源与新App finalJSON尾核
+
+result2ed3567fd1e1686eae86c435589571d8de50f1183758bf9513bb8afa39c00159/current0f606/280.043099s真实green，5metadata/CLI/bridge/metaGUI/GUIphase全0/noforced/timeout/interruption/groupabsent/remainingowners[]；sourcebefore=after2340且三proof normalized source同。各preparedprior[]/selectedreusefalse/normalbin profiletestfalse，本次CargoJSONselected恰1行逐字实同。三Nodeactualbuildscript皆khor_embedded_agent+原Q041bundle。六original/canonical sizeSHA独立核：CLI7ace6db87f4b6ee2395f110119fc8babc6395095aa1d271be6615687ce5fd610/359304072B、bridge4378e0650cc239042dea2a9600ae5c9ceaedd545160b252087d474021f9a183f/343548664B、GUI6017b27a78505bb15d31817e0df1d904f8b8d912d9a92f3bb8bda08d0f7e1d40/393050680B。
+
+当前CLIproof07ea5a3ccb9748bd8cf6d5ef5cd2c918b6530f204516bbaa3435aa74678817a1/bridge4083796500fb1fb138a6448a503733781c673ed6e663459c71a7815ffcd5aa00/GUI929c8bc58f0f4198d3b98a6dda54864e4035c72ae4c9ff2919c8103442855014均本次来源；CLI/bridge字节同旧874但不借旧fullframeproof。GUInewOUTinode36359960不同retained36356585、283generated现SHA全同/marker新于prepared；188gen278dist当前全dict实同，frontend3b6只menu/lib两Rustdelta，GUIdefault/customprotocol/devtools/devUrlnull/qualityQuit实际row核同。logs全SHA同/envstable/cleanup[]TMPabsent，未App，不能称44266实际已修复。
+
+QuitMac artifacta63ff8429cc485abd789c28ec38b78e1efd625e913a1b97d230b755f07cc9528/env06fd4d211526dfbab67ff6a663ee3c3792adf5e3a55fed37f78513227fe4fb7e/pinsreceipt079e88877820e54281e930e831083ca59ecc48429dcbe2531a715fbe502e53e3实同，producerresult/config/两GUI CLIproof/canonicalSHA全互绑。22wholeenvhash精确等两actualproof，较旧env仅TAURI_CONFIG变，HOME不入producerenv；W357e/Sa537/M04d脚本未改、artifactreadyfalse。无pin阻断，可Rootfresh资源单授stageW新KhorQuitLab后实际可见failedDraft+Settings/Cancel/Save/finalQuit，reviewer未readmit执行或CUA。
+
+
+### Offline4 current37775 JSON来源准入尾核
+
+contract.current.draft1bee1eb82ad123259d8a914a4ac7345253110f117eab502825c1e89003163c81/source-receipt-currentb3b6f397fa26ac09c2f8d9f330ae6d485a676c59bdfa6978d3948169297b55ce/manifest-currentb1a03981a9f7f77ae1b02b2d90f5f6d1394d624495a095af739bf5c77b3d083a实同；driver7c1c9429不动，仅producer/bin/env/hash/关联files/pending来源从None填current37775。2340source=37775前后=两proof，result2ed3567f、CLI07ea proof+7ace bytes/bridge4083 proof+4378 bytes original/copy全独立核SHA同；22wholeenvkeys/hash恰两actualcontext。SCOPE-current7e928b02首段874仅历史、末supersedeNone准确。readyfalse/authnull，旧draft/pair27250/94947false保。无新源码阻断，可Root槽FREE/fresh资源单独admit原完整双home，尚无运行绿。
+
+
+### L03 Workspace Quit fix actual88179 有限业务绿尾核
+
+business82527a38deaac4e0ce80fad24a8b2157ef7004718a1a1c5ad4e741c0903bcbf6/native09fb2b2e5b1980afcf32312f339c288a8921eea2be87ee383d18bc595d41c006/file059ac204e18f78d1118fa3758a50843a5e3ba4898e8334d4c0d4150c2bc1f09d实SHA互绑current0f606/actual88179/13835。admission2340source/实际新App6017b27a匹配37775。Root记录实际CM接纳FAILED-DRAFT+Saveos13后从Settings CmdQ originalPID仍活/mainNotSavedDialog、Don'tquit保同完整草稿/error，WindowmenuAppearance+Khor两窗仍在；reviewer只核证据，未亲见UI。
+
+parent原dev16777244/inode36351611/mode0755实际恢复，磁盘最终全文精确含R2-QUIT-FAILED-DRAFTqr、SHA230d68bcb71459fbc0006012bd597367ae61b1a265c6763e3e5dddf3b8dbbaa8同business/file，q先Save/r后立即CmdQ按Root记录成立。nativeexit0/noforced/timeout/interruption/groupabsent/remainingowners/footprint[]，source/envstable/TMPabsent/cleanup[]，lsof原1空/logSHA实同；最终日志mainClosed→ExitRequested→runtimeClosed/Exit，与新Destroyed批准后收aux路径一致。旧44266业务红原件保、不回填；本有限Workspace+Settings修复红绿闭合，不外推Session/Machine/IME/physicalhuman/mobile或任意多窗事务。
+
+
+### L03 SessionContent actual81735 有限业务绿尾核
+
+nativeb238e2289d976106504664ad3de3d1b3fc94817717b3d1732b80d23aba09a091/business0a9f632a5598538a3966d0a7cf4b15a917bb806c86a9ea405587e6bf6b565b2b/file1a0b22cbfb618ff51ee99dcd5f326c3b8a8f1821c56dc2003f1517f4cb7dc8e7实SHA互绑0f606/81735/19653，实际App6017/2340source准入。Root实际UI链readonlyhistory→activefronttoggle→SessionContent EditorSession文件owner、normalSave→可见FAILED-DRAFT/os13→同PID CmdQ阻止/Dialog→Cancel保完整draft；reviewer仅核报告不亲见UI。当前disk全文含R2-SESSION-FAILED-DRAFTqr、SHA d05206896fe85633b7050080fbf9539dad36975a8fa03ed021a05b80ea0c38d2实同receipt/business，原parentdev16777244/inode36351614/0755恢复。nativeexit0/noforced/timeout/interruption/groupabsent/remainingowners/footprint[]，source/env稳、logSHA同、lsof原1空/TMPabsent/cleanup[]。限此Session owner，不外推Machine/IME/physicalhuman/mobile，旧红不回填。
+
+
+### Offline4 actual63373 完整限定业务绿尾核
+
+aggregateb484b4db3be54fe553289cc99e3759bca830d6c02f0ef6e70d6bfec7bcef9d8a/sceneresult2f7f202be8520fb62ebdbb718c61ed6fd7aed7b4c1ee22a24bcce194a19d8115/38.783305s真实green；admittedb299851dc79098dc3c6ebc20879679139e1164250e7e34e63d28fd08af9ea29c/driver7c1/current0f606，原Pending400后只有一次same-ticketcompletion。首failurepayload和completionpayload字节同/ticketSHA同，pending/completed两home registry opaque原件size/SHA逐核；saved id/nonce/token_hash复用为独审pair_over源码事实，不冒公开getter/decoded运行证明。
+
+两真实privateDeviceId互表可见且不同；fixedexecutionhome resident退出后同host29857/provider29858仍live，reader exacthome Offline/None/noepoch/nativeNull，epoch3原payload返回Unknown。before/afterreader执行文件及Meta均空，remote完整owner/Meta/Attempt/SDKcounts不变门实际到；新增9reader子进程仍原owned、unknown用途且无Z/信号/teardown豁免。sameexecutionkey当前SHA等原pairedfacts，重启同DeviceId后原epoch3/nonce/expectedrun请求两次均Join同SID/run5485a28c42972717fae397e889cb8de6/原owner，不新pair/换nonce；actualpeer received只有Init2/New1，Load/Resume/Prompt0。
+
+随后原正面资格计划providerTERM，sameAttemptproviderExited/slotexit实际到，所有directrolesregister/seed0、resident计划-15；ALLremaining[]/forcedfalse/errornull/cleanup[]，source2340前后同/父环境同、两TMP实际absent/secondpoolerrornull。remote exact49B why当前inode36361747/UID501/nlink1/dev/size/SHA同retention7ec08292、源absent/lsof1收据明确，不称F1已修。完整resident-offline/return分支有限绿，可更新原pending cell；旧94947/27250false/part/EPERM保。不外推hostdeath/provideralive takeover、物理两台机器、reboot、真实vendor或所有S。
+
+### W019 startup-selection 源诊断界线
+
+report0e4a5c6a2c2ff31dd029efc5ba7d3736bbd1b1981ee10d02e03441ff45132c25/facts5a8bcbd4c02f18f8caa274713f8c2b36b422ea1f84135ffc568144605416449e/8当前source与specSHA全核同。wide place.ws→openWs非null、WorkspacePane storedTabs恢复file；App695 wsTree初false让4167旧list仍画/Pane385树不画，是恢复选择与左tree不同步，不据AX缺aria-selected推openWs=null（实际data-selected）。用户spec选中tree/Back清选择保memory已有此边界。proposal仅同validated place.ws初值+obsoletecomment，narrow原剥ws仍list，较新persist/model或强制清wide选中窄；无实现/实际StartupDOM证明/新运行，未授新功能。报告696引用实际695小偏移已告作者。
+
+
+### W019 cold init fixedaeee 独立源审
+
+aeee1051c10caf9afe52500f91cee5f84e75bc84仅App.tsx7行（4+/3-），before4e5e逐字Root0f606，afterd71c422792aa6fa332710ba95ba7dc0227d59648b8ee9a3ad2029ccabbee0942/manif34a6cd8fc56b98204d86839a7c792d8061673114b507aeac1fda903869d4035d/HANDOFFe87782d5d02ff8c70211cd325fdfa2b98572a58fea3461bf9f305814827d400f实同。唯一wsTree初false→useState(()=>place.ws!=null)，与openWs同已验证place.ws；narrow原place剥ws仍list，无savedws仍false。只改coldinit/comment，normalopen/back及其余setOpenWs路径不动，不造persist/model/cache或重置tabs/drafts。可Root只pick此ref，source-only syntax不冒fulltypes/实际startup绿；旧81735/33349启动观察与原报告保，后实际验证有限startup/Back，不扩大矩阵或加bool镜像测试。
+
+
+### currentQuit content-root namespace-only 准备
+
+run-content-root7c9cd51468798f89ff736c9dd66c5907970a3ab652b763fb32cda330bd365911/manifest459736c7be8a6ffe752c9615635e180ef3f3fe2955484c1f46968c5c0949c260实SHA同，基a537 Sessionrunner仅输出currentquit-content-root及scope文字，反向替换逐字同。原KhorQuitLab/actual0f606/readmit/artifact/env13/300/TMP/owner/normalQuit不动，可Root另授有限真实内容场；runtimeexit不代Session路径Return/searchoutside/drag/BrowserURL/WK业务，更不宣allintent/softwrap/IME/phone。未stage/运行/界面修改。
+
+
+### host-crash single Mac cfgtest fixed687e 源审（非运行准入）
+
+687e0e07d4cd19b33717d620583cef7dd4baa4db仅proc_identity.rs追加Mac-only ignored exact `live::proc_identity::host_crash_tests::a_crashed_host_cannot_restart_its_exact_live_foreground`；source-receipt5a8924514790e19646d2b095a3ee0788be1778ffb52a56628d2d97fe4a0dff33同。原生产/已有parser tests前缀17550B/SHA828163a7c7ce31d072dc12f712e5192e9b21abc91fc835597afc0d181bd98a3f逐字Root0f606。真实normalCLI+bridge+Python显式输入null/ignored默认不跑，1父0helper，无隐式Cargo/current_exe猜测。
+
+独核实际Attempt/HostFile/native/run与marker资格、knownPID-only sysinfo映像/UID/argv夹在两次nativebirth/context/group采样之间；hostSIGKILL只针对新鲜核验原PID，provider同stamp仍Present并实际Mac reparent1，不扫描认领PID。真实acceptedprompt/Note+Capture/raw/binding先核，crash后realoffer+Present证据在desiredUnknown/None断言前保存，后desiredtypedUnknown/replay/counts/Meta/Attempt/binding/raw/pageexact，不把Meta.exit/独立lock当Exitreceipt。现生产可能Unknown/Native或aliasErr，只有源预期，不冒实际已红或安全已绿。
+
+finally按sameMeta防新owner资格分别attempt原providerPGID TERM、hostPID和directbridgeChildwait，Unknown不signal，provider清理不生成sameTransportExited；Macbirth/映像/原PGID资格不弱化。crash前≤8实际hostprefixeventpart原dev/inode/UID/nlink/bytes/SHA入证，清exactroles后同原件+lsof冷保，未知残留拒，outerALLdescendant无额外grace/whitelist/Z豁免。861行仅一个测试的私有有限Fixture/IO适配，不改product或造复用framework。源审无新增阻断可Root只pick此ref；实际Node producer/runtime普通bin当前兼容pins及资源/guard仍须后续独立准入，不能require历史37775 fullframe作新HEAD。未编译/运行。
+
+
+### 687e cfgtest规模 Clean Code补评
+
+Root要求对861行私有Fixture明确复评，不按行数自动拒绝。实际run约353行、cleanup约106行，串行协议/信号/证据读起来重，是局部维护成本；但仅Mac cfgtest私有模块/一个已授场景，无生产API或多场框架。对照现有gui_host_cancel_tests：launch_host在本进程线程直接gui_host_main；Scratch Drop删除现场、Worker Drop kill/wait，与normalCLI真实host crash后孤儿provider、公共Core及nativebirth和冷part保留义务不同，不能无条件复用。Python37d8跨语言owner也不是可调用的Rusthelper。
+
+本片已复用生产capture/foreground/same_birth/原ACPpeer/实际API；knownPID sample/hash/save/command/api是该场边界适配，信号前freshsample不属无用重复。provider/host/bridge cleanup分离且汇总错误防短路，抽generic killer会抹平authority。未找到必须删除的具体重复阻断；建议本轮保持全部identity/cleanup/assert后做原实际proof，长run分段或移私有testleaf仅可作后续局部维护，不要求新framework/当前repin重构。维持source准入通过，编译/actual另审。
+
+Root另报告content80119原300超时wholefalse保：实际部分path/URL selectedtextdrag、outside结束编辑、目录Return、search/Esc曾观察，WK末项未到；此处仅记录Root报告、不作独立UI通过/全C或B闭合，reviewer未运行。
+
+
+### current43ff frontend两phase续批源准入
+
+runaa41ef65a7d054a19825181ec94c586902c129dea1377b1a24666591dfbf68ce/admission45795c58aab91847305a200d93a38baa4bcb155f47f97e43c5545517e37c540e/source-receiptc4c3dbb9287263978a6593a1c0f51ace352dd279503f4f0c4d2708f3c74fb415/HANDOFF109590985303ac4fe6de0894ede03263dbd28dd7c656b4217ed7f764007d72bb实同。对21839只freshmirror/allowed源集合12→16字面改，执行/guard/600total300step/8+2reserve20/10/5门/compact不变。actual28762六phase/19priorpins全SHA同，generation→43ff exact16与admission字典精确相等；actual21839→43ff恰menu/lib/App/proc_identity4路径，0f→43ff App+testleaf2，current43ff clean2340源bytes全核同。DTO/export/catalog/generator均未改，188gen当前完整dict同actualgeneration，278dist仍旧21839完整dict仅产物pin，不冒新currentassets通过。
+
+无源码新阻断，可Rootfresh槽/资源/ready另授只fullproject noEmit→freshNodeVite；readyfalse/runtime_slotnull保持，不Cargo/gen/Node/Core/CLI/App/行为矩阵，不由reviewer启动。实际绿与新assets由后续终态尾核，687e编译/hostcrash红绿不在本批。
+
+
+### current43ff frontend actual7832尾核与两normal源准入
+
+result e21360e0dcc5bc335d54ab10439da2d07af668e9ecd50b6b5aa1e9aef73044c2/frontend f59ef37f452a9a5bf1b0987c6f2dede38acb1957eb1c144bbe1ff35e57857757 actual7832/15.250014s fulltypes0+freshVite0，noforced/timeout/interruption/groupabsent/owner-footprint[]。before=after=receipt2340且当前每sourceSHA实等，188gen与新278dist当前完整dict同receipt；19priorpins、source/proofbacklinks/logsSHA全同。generationcc92/exact16delta分列，noCargo/gen/behavior/App。env/tool/helperstable/cleanup[]TMPabsent，内盘7小metadata+manifest无payload。可供currentnormal来源，不以新前端证明687e编译/行为。
+
+production-host-crash-programs-prepared1 buildb42f12b3f63f988f118ac630503157dc34df63d8f2a50d512eeda2f502a415c6/producer72fd0e9a01eb6caa264f81f4b425abd8ec7dad6a8a3433008038fd28145b9b05/sourceccd41aca50d740158f1723bf3f0a13cb8a66ec1bd8c0c26b158b46e46126c070/manifesta612480c39d8193626c12ea565b876b458c030cfd3a7b3a550157f18f0bd91da实同。对37775只去GUI metadata/build/copy/OUT留存前置/专属回执、freshcompact namespace及显式ready+authorization；CLI/bridge各normal no-priorV/actualrow/canonicalcopy/finalsource-env-gen-assets/900total300step/8+2reserve20/10/5门原样。f59e/e213实际前端/2340sourceReceipt空delta==current43ff，helpers/tools/realbundle26源SHA实同。source审无阻断，两false/authnull仍不可执行，可Rootfresh唯一native槽单授两normal，不隐含GUI/gen/types或focusedcase。
+
+### focused host-crash Node pending source准备审
+
+run22c4347dbcbab933c1c8e614c867fbe150729d259a8aa08eac58a5273a5abba3/contractd2307d7facfb31f16d2b255b2161562cf3919147f61b1148f17a7b291c06d9dc/sourceb58becec29910a78486b0740129094fab38f9b807898aa0df87fd12c676315c1/manifest400526a645876dc73db611440a703405ed6322b56ea3e1e9cbab9cedc4b6d730实同。对c950新增currentnormalruntimeV/source全frame/original+copySHA验证，producer env有限临时事务finally完整还原/HOME不改；单Node libtest编译明确同embeddedbundle/TAURI_CONFIG。原no-prior/owned300/6+2reserve/copy末退役原样；唯一ignoredexact1父0helper/冷留exactrolesclosed/unknownTMPfalse/不promote/不伪providerExited硬门，原ALL无额外grace或白名单。runtime_programsNone/readyfalse/authnull硬停，当前仅可准备，待两normalactual绿尾核后JSONfinalpin，不能借历史37775 proofrequire新HEAD；source无新阻断，未编译/运行。
+
+
+### current43ff 两normal actual55254 来源尾核
+
+result7e802228bf9da127a447bf8967a3f913cd5caf23ca608a5b1d4c01eecf5695e7/166.719949s实际green，metadata+CLI+bridge3phase0/noforced/timeout/interruption/groupabsent/owner-footprint[]。两preparedprior[]/selectedreusefalse/normalbin profiletestfalse、实际本次CargoJSONselected恰1且逐字同row；两proof normalizedsource=before=after2340=current每sourceSHA实同。CLI efc16d3df6581eb08ab68cf19a453e5da380179168f943bb0b03fc579058df3e/359304072B/proofdf8763e98c3a73a439a32f3c896addbb8d2e3d957164c96e6607559273fc14ce；bridge4378e0650cc239042dea2a9600ae5c9ceaedd545160b252087d474021f9a183f/343548664B/prooffa4d4c8177d1db7ff30f64af8c9e07b16fb3b553ef455e32c94b192b1c3203b2，original/canonical各两文件size/SHA实核同。
+
+两actualNodebuildscript均khor_embedded_agent+原Q041bundle，frontendf59e/current43ff/source_delta{}，188gen/新278dist实际完整dict同保存值；所有phase日志SHA同/source-env-gen-assetsstable/cleanup[]TMPabsent，未GUI/OUT/generation/App，7compact metadata无payload。可供focusedNode currentruntime JSON绑定，不外推687e已编译/实际红绿，不借旧37775wholeframe。已直接通知input尾核完成，finalpins另审。
+
+
+### focused host-crash final current55254 JSON准入
+
+contract1b6b006145719eb9170b22358d4a5e1b33e84f5b99a718d7a9706bd19e1158c9/runtime-inputs-receipt3d6eaf4ae5404aa4455a687d500d9e3e1e3dd4584b36a3a3a0e96b8e7759c96c/manifest44e2a51dcb2a5f8cd80e2da25890a24e2fe901c2bd7bf86135f8783808c30fff实同；driver22c4原字节，pendingd230原件保。contract只status/execution/runtime_programs填，21来源pins实SHA全同、实际55254result7e802/2340sourcebeforeafter/两proofsource精确同current43ff。CLIefc16d3d/df8763e9与bridge4378/fa4d4c81的original/copySHA和selected原path实同；22wholeenvkeys/hash恰producer记录及两actualcontext，sources/helpers当前实等。readyfalse/authnull保，无新源码/来源阻断，可Rootfresh6/2reserve20/10+唯一槽另admit单Node libtest/唯一ignoredexact1父0helper/原300/严格ALL/coldparts门，实际fail不能改绿或扩矩阵；reviewer未运行。
+
+
+### host-crash actual35829 真业务红尾核
+
+resultb739373b7423090e189a70e1f3b5e9de7dd74805e814d6c315d4729f0ac4dbe4/current43ff/102.663515s false；admittedcb916a2a7863d6a3ed3b247fa80c69a1f7d334a2cad639f339172545677a9277/driver22c4实同。fullmetadata0/compileNode0，preparedprior[]/selectedreusefalse/本次实际CargoJSONselected唯一行/V源2340=before=after；原target75204207fe14014bcc1c8f36c9a35a1650e5e20a6c9085555cf695b6b916b007尾核时实SHA等private，末copy严格退役/errors[]。
+
+soleignoredexact真实0pass/1fail/0ignored，runlog25b37a1a9dfbba189974898421e10be89a8c0902612413d2947edcae84f63aa3的1171 actionnative!=none，executionunknown断言此前已过。host64092按原stamp计划SIGKILL/Absent，provider64093仍同原pid/group/boot/start微秒89856、UID501/映像/完整argv，唯一parent64092→1；crash-intent与owned-before精确birth同，host-crash-observed ae56c37bd4848617709c87e80967b2b22fc3259740ef71520df21d11f28b6ec6在desired断言前存。实际SDK Init2/New1/Prompt1/Load0/Resume0。故真实contract业务红成立，不是parser/fixture/编译/清理红；explicitrecover/replay/末历史完整断言未到，不能由此宣已发生重复spawn或恢复成功。
+
+原finallycleanup ea2c4d5ed9e4645f6cb46dfddcd2d975212e247810284eeaec9c78163d9749aa ok/2.706s，原providerPGIDTERM前samebirth/hostAbsent/parent1资格与不伪sameTransportreceipt明确；retained781cba76348af5905316602afc4a24283e38d716047eec6e3516f001415a90cd与crash-before逐项同。原目录inode36363039/part36363040/212B/SHA befaa2d3a40c20d9119e3b44ee9a5490c818b62476bf6275d2a42c77cfe9096e当前同，childTMP刻意cold保/false、outerTMPentries[]；全部原native结果exit101但noforced/timeout/interruption/groupabsent/remainingowners/footprint[]，source/env稳。原overallfalse不可回填；待Root授权既定最小offer/action owner修，不改desiredassert或扩测试矩阵。
+
+
+### hostAbsent/providerPresent offer与explicit门独立源诊断
+
+Graph先取结构但maine7不覆43ff，已读当前固定源。offer红来自recovery_attempt::offer_action_allowed1477只排Unknown/Starting/NotStarted，Owned也true；session_recovery_here305 hostdead时用其给Native。只读offer应正向以durable Exited/ForegroundAbsent（注意reserve原Refused+NotStarted特例）判断freshNative；livehost仍Join，不给offer新增OSprobe/写doc。
+
+显式recover现Held::reserve1129已对未退役Owned回Reservation::UnknownOwner，native_preparation可转typedUnknown；然而prepare_gui_recovery_target132–138在其前先fence_native_aliases。live3452 Probe对providerPresent/Unknown返回StringErr，故已存在的保守reserve结果未到公共层。这是源链预测，35829未执行explicit，不冒实测该路径重复spawn。建议最小私有typed fence unresolvedowner结果由公共recover映射Unknown，真正IO/身份/损坏仍Err，不按字符串宽吞。
+
+不能在早期check_native_input把所有Owned永久拒绝：原fence在provider+host真正Absent时允许sameFile内、锁外OS事实→同stamp/key/RowGate重核写ForegroundAbsent，此合法路须保。历史Join/Opened/token重放和CAS/nonce检查先于freshowner判据；Unknown不动highwater/Meta/base。无新服务/registry/OS探针或genericclose。最小原验证为同host-crash exact完整显式Unknown/replay/history；共享资格若改，在原R7同case核Owned阻/Exited或Absent正例、bytes/replay/stale，可由Root同次libtest编译单选，不重8+2/H/ACP/Store/Core/C。只交Root/author方案，未写产品或运行，待fixed增量独审。
+
+
+### 冻结0f606产物 B-only 运行准入边界意见（待fixeddiff）
+
+Root提原37775已合格GUI6017/adjacentCLI7ace在当前43ff宿主执行原B-only。原则可行，属于immutable冻结产物运行准入，不是重建V；旧sourceproof不能against新frame/newdist require，不能改helper/receipt/monkeypatch。原rawtarget已由55254刷新属正常历史，不要求其保旧hash来否认仍有canonical的冻结产物。
+
+待H最小diff落实：原37775result/两proof/原3b6前端/188gen/旧资产manifestSHA互绑，实际canonical/App硬链devino/SHA/quality/defaultdevUrlnull不走externalnewdist；完整旧frame→43ff只能已审App冷Winit+Nodecfgtest，helpers/所验B叶不变。App.tsx确变，不能泛称所有GUI依赖未变：旧embeddedApp.js也冻结，结果只0f606B不冒43ffWinit/GUI整帧。原env13/真实HOME/privateKHOR/TMP/300/owner/normalQuit/current source-env前后稳保持，deadApp任何CUA前PID/birth门保。若满足无需中间GUIbuild/新框架；只是边界意见，待实际固定合同/代码尾核，尚未准新runtime。
+
+
+### host-crash ownership fix443bb 实际三叶独审
+
+443bb9735aa7d6dd4bfbb4f2ab9e3933833ea30f/receiptfb049ef58f20abefba51a438bfc039aff1d5f3692c3b345e6721c65cbdc0a52b实同；3before逐字Root43ff，afterlive92a2cf711e5a85332dd786142e597d80debf3e52f77080120aa715b3235ac2af/attempt58591854c4f5864044020992344f08e678a354fbdfeacfb35307bc8863158ac3/sessiond4c3dd3a22d28bebd39c2d1eb5e9df9f55b8f6cf7d96d12e0466b79ecde8e390。共享replacement_confirmed只Exited/ForegroundAbsent，Owned仍Probe；alias/reserve原Refused+NotStarted特例保，offer不再凭Owned给Native。私有2态NativeAliasFence只分离3个明确owner阻断；旧wrapper保New/child原Err文本，公共target只typedOwnershipBlocked→Unknown，真实IO/身份/损坏仍?Err，无字符串宽吞。
+
+两处check_native_input/历史Join重放/CAS/nonce均仍fence前；同物理File/3alias/锁外OSprobe后同key/gate写ForegroundAbsent路原样，未早拒Owned封死bothAbsent。CleanCode局部domain enum＋纯predicate复用，无新registry/RPC/schema/IOowner，原Mac回归和peer字节未改；R7只追加Owned否/ExitedAbsent正向存储投影/bytes不写，原nonce/replay断言保。可Root只pick此ref，source-only未Cargo/行为绿，原35829red保；后同Node artifact仅原hostcrash ignoredexact+原R7 exact两父各1/0/0、0helper足此改变，不重8+2或无关H/Core/C。
+
+Root已取消冻结旧0f606 B运行分支，前述边界意见不再是待实施方案。后续B只namespace准备，最终同源3producer＋原V后实际，reviewer不继续审/创建冻结运行工具。
+
+
+### 最终 fb01 三 normal 准备与 Node 两 exact 适配独审
+
+production-current-s-final-prepared-1/build.py807f9ecea851a028a4616882b4e3b304a7c33540937e6f6a2402d25a9dd1c821 较实际37775仅MIRROR及两说明文本；producer7aea8117/admissionbcbfb1c4/source7862a55c实际SHA互绑。Root fb01 clean，2340源码逐SHA实同；actual7832/f59e到当前仅已审443bb三Node Rust叶，188gen/278assets全字典同、26bundle源与真实binary/report/helpers/tools均同。原CLI→normalbridge→defaultGUI/严格no-prior V/900总300步/jobs1/offline/8+2峰/20+10reserve/末输入门不变，无types/Vite/gen/App重跑声明。
+
+retention draft6be24c6d仍readyfalse/authnull，OUT inode36359960、283文件6,602,979B全部devino/UID/nlink/mtime/ctime/SHA实等，目的fresh；Root只读预检f66a6a7d记录lsof1空/ownerfree/mutatedfalse。无源阻断，可由Root独立fresh单目录可逆留存，真实result与合同SHA互绑后才最终ready；reviewer未move/lsof/probe/run，不能将准备通过当producer实际绿。
+
+host-crash-native-source-2/c605475d613c297e0a69f37ac4d2732dfba6b2bd6a8ed706b58967bb45b64be4 较22c4只一行run_one改用case.arguments。首原host ignored exact、次原R7 regular exact，各1/0/0、0helper，同一次Node编译/copy；38source当前fb01全SHA同，原V/300/remaining/ALLguard/coldpart/retire不变。contract36cbea31/source2e01e6b4仍runtime_programs=None/readyfalse/authnull硬停，待新三producer实际绿尾核后仅JSON填CLI/bridge/proofs/env再准入；不作为三producer留存或开跑的额外前置。两项均source-only，未启动角色。
+
+
+### 最终三normal actual20610 尾核＋后继两exact当前来源
+
+actual20610/result13ec7568f50fae5e4e283f1a7569c4c6cf2f005e72c67c07703dc46536fbf5f2，283.709773s，5phase各exit0/noforce/groupAbsent；3normal均prior[]/reusefalse/testfalse，实际唯一Cargo行与proof逐字同、规范messages哈希同，generated当前invocation marker/mtime-ctime原门成立。2340源码前后与当前逐SHA同，3proof22env同、188gen278assets全dict同。GUI default/custom-protocol/devtools/devURLnull，新OUT inode36363702/283文件逐SHA同strict记录，旧留存inode36359960独立不动。remaining[]/cleanup[]/TMPinventory[]已删；内盘9件仅metadata无log/binary。仅证明fb01三normal生产构建，不冒App或hostcrash修后行为绿。
+
+CLI d7ea18c7716751ab8cf981a20ef822b5d2ffdefc859b67eb6d868959deed3172（359305352B）/proof942f17ddabf6bc8cf9ee2b906c11b5e390a577ed12d7609c23157640239ef635；bridge e60c7614aab939409594713694a1c99fea537422e95743737efa5c1b540d6776（343549992B）/prooff480fdb86abb9e0aaaa4d742268f7123965e32a3dce42cd1e60fcada79331c9b；GUI28138ac8da52491bdd85bd9376b4a9e00d89a2279fc3f7512821f10ee3b283ee（393052056B）/proof3902311418d246499f98291ffd8796835cccaed8820b4729c177b43a75cffe96。原件与canonical copy六SHA/尺寸实同。
+
+host-crash-native-source-2后补contract5a955e44b792a7c6276bea8fbb03be2e26c98679799632f1834f667b7510f5e3仅execution说明和runtime_programs变，c605 driver未改。21actual文件pins全同、22rawenv按原proof.key与两actualproof逐项同，38source当前同；原两exact ignored/regular flags精确，源准入无阻断交Root唯一授权，未自行运行。原35829red保持。
+
+
+### iOS compile-only与final B有限入口源码审查
+
+simulator check.py c84bc75adebc6e2c64a446617a69809ed441f99f6e1036018ee66ff9b6ba830b /contract12c1e564/inputs f293b07b：2340source、188gen278assets、58已装target stdlib、SDK/config/tools/helper读取pins相符。仅原entry两phase xcrun SDK resolve→locked/offline/jobs1 cargo check khor-gui --lib aarch64-apple-ios-sim/devtools，部署15，原300共享remaining/6+2峰/20+10reserve/5G/ALLguard/TMP末稳定保。无normal V/copy/App/install/download/物理phone或runtime声明，readyfalse/authnull，源准备无阻断，Root另授。
+
+final B入口756dcc9db9c8c3e95bf8b684d30bdae64a31401713a1059d89d49b9969067943相对357e仅finalproducer/KhorFinalLab/quality/outputenvnamespace/Bscope替换，原readmitV/300/13env/owned/TMP/restore同。artifact e8a54c5e/producerenv e08d602d/actualreceipt cb50b728实同，20610 GUI28138/CLI d7ea与proof/result/quality互绑，22rawenv原key逐项等actualcontext。仍readyfalse，由Root Node终态净后fresh资源/port另授。HANDOFF旧'allSHA null'时态已请H仅文案纠正，不是运行源阻断。B仅有限截图first/loading/errorRetry/自有desktopDelete，不冒连续runtime progress/navID/iOS或全34完成。未运行任何入口或stageApp。
+
+
+### host-crash fix当前双exact actual81606 尾核
+
+source2/actual-node-1/result6dd87b6b7fe0c8ef896549db8351121c433c524755a08de37cd44183f12764e8，112.510677s。metadata/compile/hostignored/R7regular四stage全0，两父各1/0/0、0helper；原no-prior prior[]/reusefalse、唯一actualCargo行/messages规范hash匹配。2340source前后与当前全同；每stage日志SHA、noforce/notimeout/groupAbsent/remaining-footprint[]核同。原件Node b4c45117648903064f6fa28a088ec8bb5dc0299bde1dc7853f4d78f287a29f87同末private退役记录9b2144f2，副本实际absent/errors[]。
+
+host-crash-oracles49c98d749d75bded73d5e304cc550ef91a854a9ac8f17946035c50f52e2d3d8d与实际passed原assert：host85130Absent，provider85131/group/boot/birth同原，parent85130→1、真实foreground仍Present。offer Unknown/None；显式sameepoch actionUnknown及同payload replay不增SDK，Init2/New1/Prompt1/Load0/Resume0。旧Meta/Attempt/binding/raw、旧opaque输入返回history整页精确保持均真到，非35829未达路径预测。provider_exited_receipt_fabricated=false。
+
+cleanup198069b7263f159249c09256433596492b515c0e1f0a41d55d1bf32e623b6f75 ok/4.676s；cold receipt de6f70750bad35f94bcf7483ddaec7ebea7174920c56a277255bcb2d32ac1d99登记原dir/212Bpart现inode与SHA保持，all_exact_roles_closed=true/unknown_tmp_allowed=false/promoted=false/providerExitedReceipt=false。child_tmp_absent=false是明确冷保留，外TMPentries[]且已删，不能写全子TMP无遗留。原35829业务red完整保；此有限当前host-crash保守资格与R7组件实际绿，不冒OS全Known/外部daemon/物理重启/全34完成。
+
+
+### final B actual60137 与后继C008有限入口
+
+currentfinal-browser-root-result dfab93011d71803d67b66a5fd8321e674ecd7cf68aa4770c1c4b40f3546f0bc6：原PID86162 exit0/noforce/notimeout/groupAbsent/remaining-footprint[]，source2340现逐SHA同/envstable、日志aaaa36b2866e254e171edc5c25b9fbd1a22320331d44a6fa8684f4e2f7b47478实同，TMPinventory[]/cleanup[]/TMPabsent/lsof1空。KhorFinalLab GUI28138/adjCLI d7ea仍canonical同inode硬链。UIobs38b67c1a1c800c5fd7990dded5ce891b9f498c3c37e08e7f1c4c13241d955256回链同PID/birth/head/result，观察者RootCUA非reviewer：有限Light partialbar→原CIBOL完整/barabsent、真实closedport Retry、Pin→Delete专用row且原页保。不能推phone/连续navtrace/历史refusal唯一cause/其余C-W全过。
+
+后继run-content-root.py265a35ea1de0c55830242d13b3c9776a96a1f642c39685637e1931f5030bc3d1相对原7c9实际diff仅finalproducer/App/quality/env/outputnamespace和C008四intent scope，AST通过；仍verify-existing不stage，原V/300/13env/owned/TMP同。Root另授短场，末选workspace/次场冷树分列，不以准备源码冒C/W行为已绿。B HANDOFF旧时态H已仅文档纠正385bdae5，runner/JSON不动。
+
+
+simulator prepared-2 setup一行修2f651bbff59fe3e4786d7f029eb5e94cff47c42807f47f81b670775af531ac5d/contract5f4bfcbc：load模块名mobile_check_proof→native_provenance，与entry内部import对齐；inverse精确还原source1，inputs字节同、AST通过。无budget/guard/assert/产品变化，readyfalse/authnull由Root另授原compile-only续批；source1 setup-failure原件保，不把静态解析冒compile绿。reviewer未导入或执行check入口。
+
+
+### iOS actual17655累计owner预算失败与有限适配意见
+
+prepared-2/result68b0ac5aab7a2a2c05e0ba0d9812dc479244bd86dfc5aa0772162b4481f9f0df真实false/54.652s。SDK phase0，cargo-check在原MAX_OBSERVED_PROCESSES512累计登记513时中断并forcedcleanup，不是513并发，不是已完成编译；原日志无error编译诊断行、不可冒cargo成功。observe原owned.setdefault累计后限len，冷aws-lc-sys build-script-main92295直接累计250短子身份；cargo/rustc/clang/<defunct>均保登记。最终remaining0/cleanup[]/TMPabsent/source稳不抵销原false。
+
+只此compile-only独立进程可源准备assert原512后合同显式4096上限，非全局helper改动/Node变化；4096为有限冷C编译planning预算，不是并发数或完成上界。保所有PID/start/group/原ALL含Z/正常reap与剩余零/300/空间/唯一槽，不抛历史身份、不warm批绕限，超4096继续fail不自动升级。需明确guard inventory cap512→4096，不能写所有guards未变；待fixed tiny delta独审，未运行。
+
+
+simulator prepared-3精确delta通过：74d0ff12b623d469efd59c2311339843bd61b8c71261fb4440c8d532a8c8078e/contract5ad39152690365fff98bb71d7394ead1cdea434f3285e513e6713f33b63b0f9e，仅3句assert原512及合同4096后设置此module实例；result另列budget/retained身份总数。inputs字节同、其余source2 driver同、AST通过；无helper/300/storage/phase/ALL-Z/cleanup变化，无身份淘汰/自动扩/重试。readyfalse/authnull交Root在其它App终态净后fresh资源单独授权；原17655 false不可回填，reviewer未运行。
+
+
+### iOS actual89221：compile成功与TMP严格false分列
+
+prepared-3/result663ac2b807a393960fea5e583d5cf7d061b60e3b34b500941a04247bcfa4daf4维持false：SDK0/Cargo-check0，206.571401s，累计1249<4096，noforce/notimeout/groupAbsent/remaining-footprint[]；仅cleanup unknown TMP。facts16c5b1299de15cc36801993dc55f0e2c0d86144dfc64ac740ebdd52ee96e48f5精确匹配唯一actual khor_gui lib compiler row（staticlib/cdylib/rlib、exeNone、default/custom-protocol/devtools）与build-finished success=true。SDK真实xcrun版本入口26.5解析既有canonical；2340source前后/当前全同、188gen278assets全字典同。只compile-check，不normal V/linked/App/physicalphone/runtime。
+
+现TMP81成员与原inventory精确同：32dirs＋49regular files，全部0B/UID501/nlink1、仅.lock/.keep-directory，SHA全e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855。所有已登记1249身份remaining0，但原assert在lsof前失败，不能冒现lsof已证。建议Root独立fresh原ALL身份/组净＋lsof空后完整树attrs/SHA/devino小receipt，原处cold retain无rename/删除、pin原result/log/source/owners；不重已成功Cargo、不改原false，明确TMPabsent=false/strict总体false＋有限compile业务passed分列。SwiftPM路径关联不等于未来自动清理豁免；reviewer未probe/lsof/删改TMP。
+
+
+Root原处冷留存503dbc815ce686ec76ce7c0d62ca0e874de74f964818e5a233817d6f9e7ad54b尾核通过：原false663ac2/facts/log/owners/source各SHA互绑；95dc462231ac6462cb3ebd0c83f46bfb637bca0d4312cbf6ca784ef7936a0ea9 snapshot现82节点含root全attrs/SHA/成员集逐项实同，49个0B文件/32dirs，fresh lsof1空/原1249identity remaining[]。原处retain、不删不rename，TMPabsent=false/wholebatchfalse不变，有限compile passed分列。
+
+后继run-workspace-root.py4b713f980852e691910d086dd18d70859f1e41eaf6fe50273816a0d2b06611ce相对265a精确仅currentfinal-content→workspace namespace及scope，AST通过；原verify-existing/V/300/13env/owner/TMP/normalQuit同。可Root fresh资源/port另授冷tree/Back及plainASCII remarkPaths普通/Cmd两动作；file:// sanitization不据此新增功能，实际范围分别观察，不stage或冒已过。
+
+
+### final C008四GUI intent与W冷恢复 actual11244/14739
+
+currentfinal-content-result372d3c1e10c18749bf6f7140696d341b73029e50e7b5d7ee0fe668580727361a/actual11244 PID97321；workspace-result0c499bf335fc008c3e730699a4c05d362cf7918f526393a22c9679ec6c0261a0/actual14739 PID16900。两原handle exit0/noforce/notimeout/groupAbsent/remaining-footprint[]，source2340前后及当前逐SHA同/envstable，日志SHA实同，TMPentries[]/absent/cleanup[]/lsof1空、GUI28138资格同。
+
+Root CUA观察0d728b542cf4ec6f23e91b1198438bce5ba7d1e622f93ad7078d0888aebff1a5与d0b3cd79e2fe723d836bb5c26861bfe46895a758da0b3ee2d8f3f3d8ef08ca52各精确回链同handle/PID/birth/result。前者native消息URL普通SidePanel实际CIBOL，Cmd新Chrome exactURL tab433992053仅关闭测试tab；后者plainASCII prosepath普通SidePanel marker，第二物理行Cmd actualTextEdit exactdocument URL/marker，现target内容R2_C008_ACTUAL_PATH_TARGET/SHA0ee4a33d79aa69859186ecc3e794a4be96785702babd8286030ac1833a997854核同。共同支持GUI四intent，不扩TUI/phone/G/IME；file://旧fixture仍sanitized未过，无新增协议。
+
+14739另独立初次getApp即Wtree＋右restoredfile，Back后右无旧文件内容，是aeee冷初始化实际范围；观察者Root非reviewer，不从源码bool或AX无selected推实际选择。只此冷宽屏W范围，不冒窄屏/手机全布局。
+
+
+### fb01 剩余34项只读审计（不改中央总账）
+
+已逐读中央Acceptance/STATE末最新覆盖段及ROUND-2、SESSION-CONTINUITY、SESSION-CONTENT、EDITOR-INPUT、BROWSER-EXPERIENCE、WORKSPACE-LAYOUT、STICKY-GLASS、SESSION-FOLLOW、TERM-KEY-ROW原要求，并对照现任务卡和17f/0f非作者报告。Root fb01 clean；图谱仅19旧文件且head不匹配，按固定diff/已审实际fallback，未索引/运行/改产品。STATE中段旧pending、Acceptance开头“没有当前统一App”及B014“真实WK待测”等不得覆盖末新增真实20610/81606/60137/11244/14739事实。以下是范围结论，不是34全部完成。
+
+| ID | 可复用/当前事实 | 最小剩余证据或诚实结案 |
+|---|---|---|
+| 001 | D限定只读调查已交付，原栈/IPC压力时间线缺失 | 无新复现不猜修。交付写“限定调查完成、原卡死未证修复”；只有用户接受unknown/延期才改变未解决状态，不再造watchdog/性能矩阵。 |
+| 002/003/005/007 | 状态分层、readonly能力/观察不接管、A12/Core7/DOM5与40source矩阵、Recovery17、Load/Resume/Unsupported/Shell/Offline、81606真实host死provider活均有分层证据；当前3normal统一来源合格 | 不能再把hostcrash列待测。仅把原S GUI异常退出后持久host重连、无原进程时cold Node/历史恢复及boot-change判断的既有证据索引闭齐；正常Quit可复用L05，缺的只补原有隔离cold-reopen路径。不要求真实厂商40全装、物理双机或重启用户Mac；未实测物理reboot保边界，不以resident重开冒它。 |
+| 004 | 两constructor锁竞争真实current CLI正向、8父2helper与源锁序独审已闭合 | 按不变IO/State路径复用；原集群唯一原因仍unknown不抵销已证机制，不再全群重跑。 |
+| 006 | Node/Core有界读/缓存/worker/Range/跨页copy、Reader28/Find32/H8、67MiB真native与184613B系统Save均已到 | 系统Copy→真实系统粘贴/精确正文仍缺，最小一次专用target即可；不得把激活能力或受控Clipboard API冒它。峰值口径按原登记预算核现索引，parent单点不能称WebContent峰值；不新增性能矩阵或跨mount bookmark要求。 |
+| 008/009 | GUI四intent11244+14739已到；原terminal提取/坐标/硬行边界定向已有 | 仅C009真实TerminalPane/PTY：同一长path+URL宽→窄→再宽，各软行命中完整目标、独立硬两行不拼；普通/Cmd/OSC8各原意图，保TUI鼠标/拖选。H正在原入口准备，不重GUI四intent。 |
+| 010/011/012 | 80119实际Back回cwd、path/URL中段拖到框外松手保选区/编辑、首次外点与Esc清过滤均独立记录；末超时false保 | 相关输入/导航叶未变，可复用已到行为；真人IME相关另归027，不因整场false重跑这些已到动作。 |
+| 013/022/024 | diff91690六外观、生产band/嵌套头/table/side等定向范围已到；CONSUMERS列适用/排除，不能按旧名字扩到终端canvas | 当前真实目录建议菜单Light三材质由Root正在补；Dark尚需相同入口代表，另按共用规则只选未覆盖的session分组/table代表核一次，保阅读位置/单层/标题满值/正文顶消失。不用重六外观×全控件，手机部分随物理场。 |
+| 014/015 | 导航身份/单调/失败取消/迟到规则与原生定向已有；60137真实pending partialbar→success消失、failureRetry浅底；80153深底已有 | 原B014“真实WK待测”需按此限域更新，不要求连续微秒/navID轨迹。若原native定向没有真实Stop取消/切回已载页，可只补该小行为，不能将有限截图写全导航连续trace。 |
+| 016 | 原URL真实WK多次可加载、真实closedport分类/Retry已到 | 当前路径行为通过，原历史refusal唯一cause仍unknown；不要用curl200或新错误归旧因。最终以unknown限制交付/用户处置，不新增网络重构或无限复现循环。 |
+| 017/018 | 当前桌面Pin/Delete专用row且其它页保已到 | 物理手机同URL/登录态：fixed/sticky底栏真实可点、frame不进deck，键盘/旋转代表；左滑Pin/Delete含pinned目标且不抢纵滑/边缘返回。桌面不冒触屏。 |
+| 019 | 80153正式布局/未选空白，91690clean无Reload，14739cold树+rightfile/Back已真到 | 只窄屏返回/多标签可见与不遮挡待手机场；不重冷启动/commit流程。 |
+| 020/021 | 80153真实71commit40+31、预览/固定独立/展开阅读位置、39文件单滚动jump已到 | 相关commit/菜单叶未变，按源映射复用，无新增必测项。 |
+| 023 | Watch内核/IO/共享Core/受控UI/controller与身份拒迟到已到 | 原总账仍需真实App私有文件外写/目录变化/HEAD或branch新变化→自动更新代表，脏草稿不被覆盖；不需要全仓watch性能测试。真实composition干扰与最后落盘由027同行复验。 |
+| 025/026/028 | M025真实生产DOM5＋引擎/geometry，键行CRUD/双窗/xterm/序列归属，真实Codex键帽/键盘完整press+keyup等价已到 | 物理手机三候选入口连续跟手/回中/反拨/循环/松手唯一切换与键行软键盘焦点/编辑保存重开/锁不叠/序列目标待；不重Codex，不要求vendor本身支持选区。 |
+| 027 | composition/accepted draft/迟到保存/原生Quit三owner责任已源码/受控测试收口 | fresh真人可用后系统中文IME实际组词、选词/删字/切换并交错外写/保存/切窗与标签，核正文/光标/撤销/落盘；不可用typeText或合成composition替。既有ASCII三ownerSavefailure/Cancel不重。 |
+| 029 | 定向代码/转义及80153实际四分隔符渲染已有 | 数学链未变，直接复用。 |
+| L01/L02 | 原due/retry exact与真实WK两close case已到 | 相关owner未变可复用，历史唯一race未知不另扩四case/通用Close；新Quit不改WK页回调。 |
+| L03 | 88179 Settings/W、81735 SessionFile、33349 MachineFiles真实os13/Cancel/最后qr即Quit落盘均已到 | ASCII三owner闭合，027真人IME另列不抵销此证据。 |
+| L04/L05 | fb01当前20610三normal原V＋当前B/C/W App来源与正常Quit均严核；L05已有持久host认证重连marker/cleanup真场 | 当前来源/正常退出可复用。iOS89221只compile0＋原false冷留存，不冒App/链接；不重V或L05，异常GUI/cold恢复仅归S缺项。 |
+
+CleanCode增量：0f606→fb01实际5叶（App初始化、3Node规则叶、861行private cfgtest），复用既有逐片审查而非重411文件。App仅消费validated place.ws；Provider replacement_confirmed纯谓词与typed NativeAliasFence把不明owner与真实IO错误分开，历史replay/nonce仍前置、同File/短gate/锁外OS检查未变。81606已真实验证Unknown+原数据保。大privateFixture虽有阅读成本，原helpers不能保实际CLI/HTTP/孤儿birth/coldpart职责，未找到可安全删除的无用重复；不因此新建框架。未发现需额外改产品的新阻断。F1 readywhy生命周期、F2genericClose既定NEXT维持；跨mount bookmark同NEXT不拉回本轮。若后续G/C009/IME实际红才按具体owner最小修，不预先修猜测。
+
+总体结案应分“源码/定向机制合格”“当前平台实际范围”“历史原因unknown/待用户处置”，不能由构建或相邻绿一键标34done。此审计只增本卡，无总账/Root产品改写、无运行/下载/重测。
+
+
+G-Light50409 result96479f8da4501feb08e2904943a81301ecbb274837ccb2a256d1075f9fcd41e2/UIobsd384b5d0728029cac091f1e3ea1ebd7c3bd151b71235179cf09b0b8a4258f6d8已尾核：PID23833正常0/noforce/notimeout/groupAbsent/ALL-footprint[]，2340源当前同/env稳、日志SHA同、TMP[]absent/cleanup[]/lsof1空。观察RootCUA Light wide三材质同实际Editor prefix候选，完整单白底/一层/可读/不透底/无裁剪，点击Return/Esc；只此范围。
+
+Dark派生2c5ced421eb34870aa4f275388831ac7d2deaa829246025d53904b91d0355ddf实际diff仅namespace+scope，AST通过，原V/13env/300/owner/TMP保持。向Root提供最短已有固定区代表：Machines→Mac-mini详情→现CPU进程列表，必要显示全部后滚动；MachineCard data-sticky-group/head/flush body现消费者，核表头满值/正文顶消失/无下线/材质切换保行即可，无新数据矩阵。普通SideList流内分组明确不新增sticky，TermPeek无需为代表再开新入口。未运行。
+
+
+C009源准备runner3681451621ffd0d15b30d4937da42fa8cd95422f9b4b49bc348309e34d585232/fixturebee7639267ec81efb09278d0eb2318bd77a0808e36aa2a7b42a6a060df5132c4/artifact381d1813已实际diff/AST/pins核通过。runner较265a仅namespace/scope，原verify-existing/V/13env/300/owner/TMP同。fixture.prepare仅fresh私有ASCIIseat+file/dir两marker、shlex引用printf/read/exit，控制符转printable；无provider/model/新CLI框架。before实际App注册后取meta.id基线；capture unique新增SID+shell/cwd、真实host.json，App/host/child的start/exe/parent/group必须原running.owners已观察且当前一致，不晚adopt或授signal。ended正常read空行→exit0后ANY原两PID/groups无、旧IDs仍在，不Stop/kill。显式/binsh非login、真实HOME与无ENV/BASH_ENV/ZDOTDIR前提保持；Root另授，实际physicalrow hits/wide-narrow-wide/普通Cmd/OSC8逐项观察，300不延长，未到不冒绿。reviewer未prepare/run。
+
+
+系统Copy source06c1ea4bb16a4102158d00af5410058349b045757381de28400bfdc43d39a405/receipt2572b55c源审通过：原verify-existing wrapper仅namespace/scope差；artifact b1d5bd35仍readyfalse/current20610 GUI/CLI/proof/env/result吻合。原nativeprefix485922B/774e5bb1实同；small H_MAC_ROW_1199=14B/016ac216实核，giantplain184375B/38148890与raw184613B/a4f78b7b分列。真Copy在HistorySearch实际inspect(copy)→ClipboardItem，HistoryRecords仅Read/Export；64KiB cap明确too_large，不能扩大成fullgiantCopy承诺。sentinel真实CmdC→placeholder防noop→giant拒绝后Paste仍sentinel，small成功Paste exact14B，是合理原系统Copy验收，不直接读未知剪贴板、不以Export替。notice/原Clipboard保持仍由实际场判断，未运行。
+
+G Dark3807 result785ae8c61c54067827e8c9d5d918b7166dd2359910cf28991c99968093b7271c/UIobs8b06c27c95703172cf7e545c67109a78d0a85743831f9c3bb403c46358933df9盘尾核：PID31744正常0/noforce/notimeout/groupAbsent/ALL-footprint[]，source2340当前同/env稳、日志SHA同、TMP[]absent/cleanup[]/lsof1空。但904窄下候选AX存屏幕无，1720恢复即菜单重现是真业务红；runtime0不冒G绿。
+
+原共享链ContentToolbar→ContentPathField→PathField desktop below/overlay→OmniMenu/MenuViewport：PathField layout effect仅above panel和dialog测room，desktop非dialog直接return，CSSabsolute topfull/wfull没有viewportclamp或anchor位移观察；OmniMenu无第二anchorowner/MenuViewport只行滚高。此确切缺失边界不单独证明WK唯一cause。H获Root原R013窄fix，要求只seat/viewport/resize cleanup、保above/dialog/adaptive，无新全页observer、材质/zindex硬压/布局重设；待fixed独审，无自主运行或改产品。
+
+
+### G R013 fixed5f4a source独审与C009 import窄fix
+
+5f4a02934eedbecf427bdf024aabb2473ec7e8f2单PathField叶40+/2-独审通过。before1c9ff763135ff3e97d722c626d61229abbd37d34118d3aec183eff79f63d0111逐字Rootfb01，after9ce20c4cca221cd3bb8b260c9e9f704746b0301940e8649fb87082c81babe91d。仅open overlay/below非dialog effect，以真实session-content-pane与visualviewport相交限宽/leftclamp/belowheight，max-content摆脱近零字段宽；min取锚宽，上限不出pane/viewport。RO仅seat/popup/pane，window/document/viewport resize/scroll随open生命周期清理，移除自身inline几何。相同style值/尺寸重算可收敛，无setState循环/新全页observer；above/dialog/adaptive与input/IME/fetch/pick/blur原字节保。原OmniMenu/MenuViewport/材质/zindex/portal不改，未发现具体源码阻断；可Root精准pick后当批fulltypes及真实3807 wide→904/过滤→wide/候选click/blur回归，source-only不冒WK绿，原业务red保。CleanCode只在共享字段内持唯一几何owner，不在ContentPathField再造第二算法。
+
+C009 fixture-import-fixed.py133ce7d8e0b659c654eb3a6103ab9a468ff6dabd38c52de88535bc8722318e1f/receipt22d19ae00ebf004a385f2a2bb54f1bf8f9c067b886b7fd4c19f2b8bbd4f34248实际diff/AST通过：仅原processes加载owner前Root/scripts sys.path一行，供原native_provenance sibling import。原fixturebee7与manifest保字节、不将新filename冒旧清单；prepare/capture/ended/no-late-adopt/owner/时限语义全同。显式新filename+原action交Root，未由reviewerimport/ps/prepare/App。
+
+
+### C009 original actual48478真实超时尾核（不冒交互绿）
+
+runtime/currentfinal-terminal-root-result9e1500c3c2087899830eaba390f6d01308bb4b4410378c14644b0b0950431d35保false。wrapper实际exit1；error中原native dict经literal解析为App43454 exit-15/timed_out=true/forced_cleanup=true/groupAbsent=true，原300秒Timeout，不是正常Quit。79原owned中确含新host48992(parentApp43454/group48992/birth13:24:45/currentAppimage)及child48993(parent48992/group48993/birth同/binsh)，与pty-owner c1630240dbefaa3c8be91f2a064aeef853287b1e174cf7bc36060b8ad560f4a1/真实SID shell/21c8802b6acf81bb资格匹配。原entry remaining_owners[]/privatefootprint[]、wrapperremaining[]，足记录原ALL终态净；reviewer未额外ps/probe。日志ab0865dd0b12f61e0217d68b68fa960a39026f83d61235a95630839db2f99b04实同、2340source当前同/envstable，TMPentries[]/cleanup[]/lsof1空/TMPabsent。
+
+仅新会话/实际PTY归属已采到。ended.json不存在、未见独立业务UI收据；宽窄各physicalrow完整target命中、普通/Cmd、OSC8、硬两行不拼和blankline正常shell退出门不能由此次timeoutcleanup替代，更不能说已通过。未到的保pending，不延300/不删原false/不无证归产品link bug。
+
+剩余最小工作：G5f单叶现仅source通过，当前构建后重3807窄resize/过滤/candidate可见交互；C009只原未到终端行为及正常shell退出，已绿GUI四intent不重；H真实系统Copy按已审sentinel拒大/小正文Paste exact；W023原真实外写file/dir/Git自动更新与脏稿保护；S核异常GUI重连/全cold启动与boot语义证据索引，正常Quit/L05/hostcrash/LoadResume/Shell/Offline均不重。Macfresh真人IME、手机viewport/左滑/W窄屏/跟手/键行仍待。001/016原现场原因unknown按限定调查与当前行为分列、用户处置，不新增watchdog/网络重构。其余已有矩阵/定向/真实平台事实按source映射复用，不扩新矩阵或物理双机/40厂商安装/微秒轨迹门。
+
+
+### R001/R016审计口径勘误（原条目保留、此段覆盖额外审批句）
+
+此前本卡34表与消息写“只有用户接受unknown/延期才可交付”添加了不需要的审批前置，现纠正。按原literal，R001可交付为“现有材料限定调查完成；旧卡死唯一因果unknown/未证修复”；R016可交付为“当前真实WK原URL及错误分类/Retry路径已证；原历史拒绝唯一原因unknown”。不把未知冒修复，不无限追加调查，也无需为这种诚实限域交付新增用户审批。中央总账由Root处理，本卡不改原历史原件。
+
+### S剩余实际最小路线（source-only，非可执行准入）
+
+复用入口：validation/L05/launcher.py与app-ca83-l05-term真实正常Quit/认证重连marker（仅L05，不能向GUI2发PTY5）；history/session-recovery/full-app-noload-current-preparation/{PLAN,REVIEW-BOUNDARIES,contract.draft}是旧337不可执行草案；最新public-load-runtime-source-6、public-resume-unsupported-source-3已有实际seed/正面owned provider settlement/5秒host回收/现proof环境还原。当前G d4b更新后最终normal3与GUI/相邻CLI需新实际V，不能盲require20610against新wholeframe。这里只给路线，不造新driver/服务/observer/重跑纯CLI矩阵。
+
+1. **GUI异常退出→同持久host重挂（NoLoad，单freshhome）**。沿最新已实跑seed方法建立专用NoLoad peer/GUIhost，seed必须在App前且在CLI还活时记录SID/fullnative/home/run/cookie及host/provider实际birth/exe/PGID/祖先；两个App各自独立role ledger，seed另role而非persistent豁免。原draft的HOME=fixture/home已被后续规则否决：真实HOME/home/CODEX_HOME保原，只KHOR_HOME/TMPDIR/任务目录私有，继承原13env/KHOR_PATH，不恢复旧privateHOME模板。Init注册probe若存在与真正New分列，以实况基线counts为准，不盲套旧draft总Init1。
+
+   App A真实选择SID、读取/发FIRST一次，peer receipt＋canonical PromptOrigin/结束turn/实际UI已显示正文；随后Root未来单独授权只对已核App A身份异常结束，不对host/provider发信号，保原异常退出结果，不伪normalQuit0。App A临时owned仍须严格净、seed同PID/birth/run/native/cookie仍活且canonical/methods无新增。App B同实际binary/profile/home选择相同SID，真实已有正文先可见，再SECOND一次验证控制重接；实际Init/New/Load/Resume计数不因重开增加，无第二writer，两个prompt与结束turn唯一有序。无需PTY原始重放探针/伪HostFile childPID。最终seed按已实跑正面身份/provider同Transport结算与host回收方法显式收尾，App B正常CUA Quit，所有role/outer ALL净。异常App阶段保异常与受控预期事实分列，不能用它掩盖forced cleanup或正常Quit缺失。沿旧draft270case保险/原300总界在seed前起算，不给两个App各重置300；不让peer保险退出充当正常结束。
+
+2. **无旧进程→冷App显式恢复（另freshhome，优先现journal-resume以保原canonical前缀）**。用既有受控seed/实际初始化能力与FIRST+canonical正文；正面provider结算＋实际host退出/全部原Node角色正常关，留下原home/key/AgentDoc/fullnative/binding/history，记录无旧进程与实际Exit receipt，不以Meta.exit单独授spawn。冷App以相同home/key启动，先真实只读选同SID见旧正文，选中本身SDK计数不增；通过实际恢复控件一次显式动作，期望sameSID/newrun、Resume1/Load0/New不增、旧canonical prefix/记录key/range保持且实际早Note恰一次，再正常收尾。Load公开路径已证，不为补App再跑完整Load/Resume/Unsupported/Shell/Offline矩阵；GUI同token重投的组件17与真实public replay可按不变源映射复用，不用新shim制造不明网络。
+
+   重要实际判断：session_recovery.rs recovery_launch(readonly)只读observed_user_path；真正冷Node若尚无观察，support/action可能诚实Unknown/None，hook不会fresh发起native action。这在旧cold Core场已列过边界，不能在App场额外agents/probe/直接recover API暖cache后冒“冷UI恢复成功”，也不提前称唯一bug。应先保存真实offer/可见控件；若控件不可执行，原S这条就是实际未闭并交具体owner修，不能悄悄以纯CLI恢复代替。
+
+3. **boot-change纯exact证据状态**。当前已有非ignored完整名live::proc_identity::tests::exact_birth_namespace_and_group_facts_do_not_conflate_pid_reuse_with_an_owner。源码含异boot context不匹配、PID复用/namespace/group否证与明确Absent证明绑定，编译包含它不等执行。只对现S历史合同/actual-node结果有限103件搜索，未找到选中此exact的命令/实际1/0/0收据；81606只选hostcrash+R7，不能外推。若Root无其它已有收据，最小就是现Node libtest原strict producer/copy流程仅选此regular --exact（1/0/0、0helper），不重8＋2/hostcrash，不改断言/造新case。它只证明纯boot/身份判断，不称真实机器物理重启。无需重启用户Mac/下载/模拟整OS或新测试框架。
+
+本路线当前未准备运行合同、未seed/发信号/启App/Cargo，旧draft/runtime原false保持；currentproof/head/operator/role清理由Root后续现机制正式准入。异常GUI与cold恢复是原S范围，不把其余已绿CLI/Core/浏览器证据拉回待测。
+
+
+### d4b frontend/normal3及G stage来源接续独审
+
+frontend47f6209b适配实际diff仅MIRROR与allowlist添PathField/session_recovery，strict18expectedDelta精确仍保，19prior原件SHA同，d4b clean/2340source同。actual85579 result1c596e9ff3ca5c6b2984c7e1a7a57bdc79eed451f9ec6903de7962c1ce1588e3/15.752503s，types/Vite各exit0/noforce/groupAbsent/日志SHA同、remaining[]/cleanup[]/TMPabsent。receiptbedd563f0c2675319cc3d410b2abafde8ee41ae0ee6084dd4d81d99dcd171d91完整current2340/188gen/278newassets字典匹配，不重复Cargo/gen。
+
+G三producer初骨架2468d04b执行仅MIRROR变化，旧scope输出文案已独立88f37b47095df42a9dff4520209c711cd5d291b77149e94fcc22abdb097e43ce修正actual85579 samehead delta{}及20610OUT，只有2字符串，无执行逻辑变化。Root另fresh283/6602973B exactOUT独立留存后实际56763/result554d1a85919485a7c2d900e09f73d1a548bbb6a44eb9827894c06a0a7a043e93绿/285.445311s，五phase全0/noforce/notimeout/groupAbsent/remaining-footprint[]、日志SHA同。3normal prior[]/reusefalse/testfalse、唯一actualCargo行/messages规范hash/全部generated当前marker+mtime-ctime原门通过；2340source前后当前同/22env各proof同/188gen278newassets实同，源front同head无delta。GUI新OUT36393165/283SHA同strict记录，旧36363702原留存互绑不重复move。TMP[]absent/cleanup[]，9compact仅metadata无log/binary。
+
+GUI73da75ebea6cd77bfb5b0f78157b9d282ec0cc9351801a80197f99d42052a6eb/393052056B/proof0c0d4aa10c3e9eb4c0423add9e2fb5fed97215cfa6adeeb698b4a2e04a821da0；CLI9deb5b8122462d5a61779b14534de70ad5352cb792b0d20ac64077f364a417c2/359305352B/proof0770dd1aed51a981e03b7e5787570ddb9ae6acdd52430aa14604027ca673138c；bridgee60c7614aab939409594713694a1c99fea537422e95743737efa5c1b540d6776/343549992B/proof8b60dfdc3813f6ca26ac3397032616a14ec4c32fd1616b7518825c7d3f991584。六original/copy实同。只当前构建，不冒G窄修行为绿。
+
+G runtime dfe47fac04e09640b74c4595775b78c47d2957d2b7f4ed54946273879544dc5e相对265a仅producer/qualityID/namespace/envfile/scope，原verify-existing/V/13env/300/ALL/TMP同。独立stage f08e26546dcfa648a8d37d91c17407819e45d755d0d51f129801d45818db29b8先原V exactenv readmit+finallyrestore、old App精确PS/lsof及3文件regular/no-symlink/devino/UID/nlink/size/SHA/oldcanonical同inode，再sameFS fresh临时硬链replace两目标与匹配plist；不动旧canonical/App目录、不launch或signal。异常写步骤/留temp false不自动rollback，runtime后置双newSHA+plist拒半替换。旧3文件现只读attrs/SHA同plan，readyfalse/newpinsnull时期为source通过，最终Root仅JSON实际绑定再授；未自主stage/运行。
+
+C009v2 runnera30359028b739a6d0992b3da89ee643860e4a0a2c1b0be2c4923fa419663f534仅-root-2 namespace，fixture93b14ab0c1ef7e9629c53de176c5b191d487bd580ea0b7ddf0675d4a3f3d8fa4仅删prepare/改running namespace/dispatch，uniqueSID/owner/ended门原字节同。脚本b593ba0ca997efb806f2e818bfc0adc9ddc2f04f8e948206737c4e97d397e5c1确原command+newline，`. /absolute/script`在同/binsh非新subshell；原48478失败/SID保baseline，需当前新trip repin才能run。仅准备，不延300/不添动作矩阵。
+
+
+W023 source mac-watch-preparation-1/run-watch-root.pyd450d3c33e700e2947830a3aef50a3d66190cc2ee955d2648213a3ed8df37ea5/route07b6479d源核通过，实际diff仅G runtime namespace/scope；原verify-existing/V/13env/realHOME/300/ALL/TMP同，artifact4bd1037b false/pinsnull，当前56763实际来源+stage资格后Root另授。route共享watch→clean FileView接纳/dirty拒覆盖，10s仅原生前台观测预算、不Reload/重开/触focusfallback。untracked目标先仅add该path，commit--only并核changedpaths仅1、其余index/dirtybytes不变；0555父dir阻atomicSave但0644现文件仍可原地外写V3，恢复0755后保原CAS冲突再显式Save mine freshpin，不能把CmdS当强写。只mkdir/rmdir自有空dir、finally还原父权限，未知残留保；无IME/远端/G或当前实际通过声明。未运行/修改fixture/Git。
+
+
+G actual44689/resultb3f69b7884b35fcebe1974755520f9d794f99df764edd6f9c9f17324a62ccf7a独立尾核为Root已知正面身份App67734提前SIGTERM abort：nativeexit-15/notimeout/noforce/groupAbsent/ALL-footprint[]，normalfalse、source/envstable、TMP[]absent/cleanup[]。CUA缓存将原path解析旧CFBundleid/newid invalid而inventory显示实际g，在场Root无法UI控制，不能当产品红或G修复已过。原abort理由保存不回填。
+
+run-g-narrow-2.py e058da7f587f136e6f9000590780e8c8f51a211b100365b5ce09a90bbd27c783实际diff/AST通过，仅12namespace替换＋app路径KhorCurrentGLab，原V/env13/300/ALL/TMP同。Root可fresh无App/ALL/lsof、目的fresh非symlink、旧stage双inode/fullSHA/plist/whole-tree摘要后，单目录sameFS原子rename保devino及相对成员SHA，不复制/改CFBundleid/重build，不保证CUA识别一定恢复。此为fixture workaround计划，不产品修复。Copy/W/C009待admit模板仍oldApp路径，后续需仅同步新path/current事实，不能再stage第二App或启动旧path。reviewer未rename/运行。
+
+
+### G-2 actual68689 red→green与唯一App后继路径
+
+currentg-narrow-2-result7eaecd66b006c76fa4e0767c66927e21c8992f2fbea38c02a6df469e7305eca7/UIobs45c687eab07218604fba834ef137d0c19f3439aa638c8af5003cf0c186ed67d7实核同。PID73757/birth13:49:05正常exit0/noforce/notimeout/groupAbsent/ALL-footprint[]，source2340当前同/envstable、日志SHA同、TMP[]absent/cleanup[]/lsof1空。观察者RootCUA：实际1720→904三候选屏幕可见，EditorS一候选，窄点补全及child候选，回1720重对齐、Return目录、重开外点闭，真实关闭原3807窄红；不冒reviewer目击/全sticky/手机或C009Copy。
+
+Root冷rename实际2dccaea3cc719a99d2ac88d0b3bcae0c007a03515860f1289493d410663c76a2回链原abortb3f…；新KhorCurrentGLab目录inode36364898，3成员fullSHA/属性现同receipt，GUI73da/CLI9deb仍canonical同inode硬链，oldAppabsent，freshlsof1空。无copy/改id/config或重新构建。
+
+W run-watch-current.py117cb16a990ecb574d60a534bd1a8237d81b61f4cad91a9c70ec3bc461279f53实际diff仅原d450模板一行FinalLab→CurrentGLab，AST通过。artifact964c4f9dbab0f84c1924ca6c982604ca2a2743ca4c2d7c04feb8fb0c9acf024c readyfalse/head d4b，actual56763 result/GU73da+proof0c0d/CLI9deb+proof0770与22rawenv原key实同，两App硬链现sameinode/fullSHA。原path-onlyGit/CAS/0555finally/300/ALL/TMP不变，Root可另授不再stage。C009v3待input同App/pins；Copy原模板仅需producer/quality/envfile/app四常量与actualG JSON同步，业务/namespace/oracles不动，不允许第二App或oldfb01proof冒当前。
+
+
+C009 v3 source2463e4d107000ce0def6e3cad7844b83151d9ed7f0d1fb515a0f6d4a499a2551/fixture554062c86d35623526968f9f7960f1b5ab22aa7b34673fd8e58410b8c1319a7e/artifact33be0295ed05726ad0eff8e6d9082680707c9b52aa4ea25979382ba18c6268e6独审通过：runner较G-2仅namespace/scope，仍同KhorCurrentGLab/currentg-env/原V300ALLTMP。fixture仅env/running名＋两条更严actualApp路径断言，原uniqueSID/noLateAdopt/ended门同，短scriptb593字节同。actual56763 currentresult/GUI73da+proof0c0d/CLI9deb+proof0770/22rawenv逐项同，readyfalse，Root另授短场不stage。旧shell/21仅beforebaseline；应在新Appready后before→新GUI短startup→WAIT capture→少数physical命中→blankline exit0+ended→normalQuit；未到不冒全C009/OSC8或矩阵通过，reviewer未执行。
+
+
+### W023 actual5794桌面有限闭环尾核
+
+currentg-watch-root-result37f221508d5084cf1179e280a62d5a45e9bbf0cf011f313b441aaac3b41c75e8/PID77631 start13:53:14正常exit0/noforce/notimeout/groupAbsent/ALL-footprint[]，source2340当前逐SHA同/envstable、日志SHA同、TMP[]absent/cleanup[]/lsof1空。UIobsd18dfe0a614c57d67baba2e618945423056220ffa69f4e461ea84eca6fa8f87f同handle/PID/birth/result，来自RootCUA非reviewer目击：同打开file前台无Reload/refocus自动V2、展开tree空dir出现消失、privatebranch/commit subject自动改；精确草稿接纳后0555原子Save os13保稿、现文件外写V3而编辑稿保、恢复0755后原CAS冲突、显式Save mine成功。
+
+actual-before505385de/actual-gitebdd1366/externalV28a844b34/V330001bc6/after58a706f8分列实际IO与UI观察。现盘target22B/SHAf0db16acbbb668a5c85a1f7edcd9c52f66da390b99a5692201054e0d47f83dea精确，parent0755/emptydirabsent；3其它dirty文件现SHA同before。只读git --no-optional-locks核当前HEAD/branch=actual-git、新commit父=旧head、changedpath恰r2-watch/target.txt1项；39其它index entries以原literal路径（core.quotepath=false）逐项同before。没有Git写入/修改root。
+
+桌面W023这条实际已闭，不继续待测。原typeText初漏underscore cause未分类，Root普通nativePaste建立exactaccepted稿并确认AX后才外写V3，本场证明accepted-draft保护，不冒IME/实体输入可靠性/远端FS或手机。原R027系统IME仍另待。
+
+
+C009 actual49137生命周期尾核：currentg-c009-root-3-result20e5ca5f19ee22b3c88f5fca4e9d0bc5a2a5d983a4325d66cb04085acb1d9fc5/App83182正常exit0/noforce/notimeout/groupAbsent/ALL-footprint[]，source2340当前同/envstable、日志SHA同、TMP[]absent/cleanup[]/lsof1空。pty-owner fd2945d1a60353d97ed11c7007e501f60e085a44867c6de675fc7ee8d4d7a279与原guard App/host84929/child84930的birth/image/parent/group全同；相对before现Meta唯一新增shell/760939224e72f59b、baseline全保，stateexit0/ended1c00a484f921af776ccbf3b85dd71424c70c1d2cfc06e33471765f4db1ef6d43。
+
+UIobsfa4f5cfbab84b65b592ef79d7f546839e433ccc1d9564c9645cf27e925803b46来自RootCUA并精确回链结果/PTY/ended。一次Directory Return触defaultclaude CommandNotFound未执行provider、无额外Meta；后真实/binsh WAIT与原positive capture到。普通wrappedfile与OSC8普通/Cmd未观察openedtarget、businessfalse，未有hover正控，不能称提取产品bug或链接绿。wide-narrow-wide/全physicalrows也未到；正常Shell结束与正常AppQuit不替这些业务。原48478超时false保，不自主重跑。
+
+
+### C009 v4 / 系统Copy当前同App源码续接
+
+C009v4 runner3c33577eaf75cc31e8d9c8b95344b2cd2fd31ea93982cd4bf0aa61878dfc47d3、fixture45dd79e204a7eb5ce7c501c706b911b7f49d24c6611ce4c7a91eba1756f2f8d5较v3只root-3→root-4 namespace，反向全文还原/AST通过；fixture命令仅指向新prepared4脚本，b593 startup原字节。artifact094e2d4f readyfalse/current56763同两roleproof及22env，CurrentG单App不stage。短pointer正控仅3动作，不延300/改原uniqueSID、positiveowner、noLateAdopt、ended/ALL/TMP门；旧49137业务未过保持。可由Root另授，未执行。
+
+Copy prepared2 runner6e4ef6f3fd4f08084fa5a01385dbb18561498bdce61a5fdf8fca0e555f3c7eef仅4常量从finalproducer/qualityfinal/finalenv/FinalLab转actualG/currentg/CurrentGLab，反向其余全文等prepared1/AST通过；原namespace/scope、c8041ad4系统Copy oracle字节不变。artifactd1d008e2117a9054d7428b71598370eaf4ad3ab6c4cecae40c0f5139e2f60e46 readyfalse，actual56763 result/GUI73da+proof0c0d/CLI9deb+proof0770与22rawenv逐hash同，原300/V/ALL/TMP未动，无stage/targets写入/运行。路线是巨正文184375B超64KiB明确拒绝、knownsynthetic sentinel核no partial，再小row14B真实系统Paste exact；不能称巨文本全Copy或用Export替代。源码无阻断，Root另行准入；既有巨Export与有限浏览器Copy不外推系统剪贴板已通过。
+
+
+C009 v4 actual42114有限正向独审：原result3a91e7cf1350f984c9737a4037685827b359142036ef19ecde4d7c965c4c040a/UIobs320d18aec00033c6182d344ccd897ce7c3c04e7b801f7bf03446a64f29848021回链App93359/birth14:11:14，normal0/noforce/notimeout/nointerruption/groupAbsent、ALL-footprint[]/TMP[]absent/cleanup[]、lsof1空；日志8e8905bf同，2340源当前逐SHA同。pty cb3e99cadb8b66c3c7aeb9597408e37c29135648d4606965846b7faaddfa9e48的App/host95105/child95106三身份全部与原guard同，uniqueSIDc8424838303bbcd0，ended9af1aae9c9e56b9e75643eaf891e0f8294263084e89976ed387d13b97ea1d20f exit0/原组无/baseline保。观察者Root CUA：OSC8 label原生短drag＋Raise后ordinaryclick实际ExampleDomain完整URL；ASCII长file第二物理行drag三行下划线、ordinaryclick实际完整path/marker。两正向成立，无产品源变；movement与Raise一起变，不能唯一归因旧no-op。其余Cmd/dir/plainURL/宽窄重折行逐行命中与selection保持未到，不冒全C009。
+
+S source-only作者交付（非本人的独审准入）：full-app-current-source-1/fragments.py273b9588b79244cc0299d01df2bc61d3417ece44f470cd8dd7b3e5fd97305678、contracteb4092ca0b81e4235a510004f5921363efb3f8fc93c697e70d9ff9b7a6232791 readyfalse/authnull、receiptfe593a63b317b44a61c992d5c31fcc01531ee4f48fc35325aa7242e108a689ea。按Root明确授权交实际seed/Appphase/canonical/count/cold-prefix函数＋Root调用顺序，不新增自动main/RPC/GUI代操；原LoadScene/entry.run分角色且共享单case300，新App原ALL仍要空、无persistent豁免。App A计划异常原non0保，B新host先正面结算再正常Quit，cold真实Unknown不API暖。actual56763/App硬链/22env/current2340实pin，270peer当前原件仅Timer55改270。只有AST/JSON/文件hash读取，未导入/执行helper/role/OS探测。此片reviewer为作者，Root需独审及补既有正式envelope/on_tick真实GUI receipts后才可准入；不是当前S实际已过/完整runner已admit。boot旧现名regular exact尚无actual收据仍照原最小一次，不物理重启。
+
+
+Sim cache retirement 源核（未执行）：maintenance/storage-20261031/sim-cache-retirement-1/retire.py7cbba00f62703ca712e7ae0d6c5b38c25a969117e1df4845c698a2d0139255d8/contractbc60994a source-only readyfalse/authnull。仅固定qualitytarget/aarch64-apple-ios-sim根ino35491551→fresh sibling单sameFS rename后fd-safe rmtree，不跟内部symlink。逐成员UID、nlink=树内同inode个数、根dev/inode、内部relative symlink闭包、freshdest、两次metadataSet、Swift8checkout clean/本地commit、fresh no compiler/App owner/lsof与保护currentG三program/proofs/actualOUT/iOS原结果+0BTMP前后门明确，未见越界删除阻断；Root仍须实际fresh准入。inventory是逐成员metadata摘要非所有payload SHA，实际释放按结果不按logical bytes猜。小报告缺口已交H：finally无条件receipts_unchanged=true会在post-check前异常时多报，应默认unknown、仅所有postprotected检查通过后true；成功路径硬断言保。reviewer未遍历cache/跑ps/lsof/gitcheckout/rename/delete。
+
+
+Copy actual38171独审：原resultc74d370ed1c2da2dc381ffbb1d1f15f68d1f4b25875aa51cc3cd8d83d6ad2019/App1171正常0/noforce/notimeout/nointerruption/groupAbsent、ALL-footprint[]/TMP[]absent/cleanup[]/lsof1空，source2340当前逐SHA同/日志59b373fc同。UIobsf41479615797ad9ee157d10b0d098f698e591d9cc5e7459281a7eb271d4fe059来自Root实际CUA+系统CmdC/V及磁盘，非reviewer目击。私有粘贴目标现38B/SHA378d917dcae9567548f06f096d5f1bb806ab0ed15502bb22108ff0d0558cc02b精确sentinel，不是应有14B/016ac216。small Copy业务真失败；giant通用“The text could not be copied”未证明typed too_large，不可把sentinel仍在当预算拒分支已正确。没有直接系统剪贴板读取/Export替代。H已授最小链路诊断修，当前不猜权限/activation/inspect唯一根因、不新增cap或任意浏览器权限；原actual与生命周期绿/业务红分列。
+
+sim retirement tiny851c826e0a6c6ad896567c920441cd568785c3aa7aea3cecffe2b4d7e787ff3c/contract7162c2e41497ad81477517334cbafe52eb1aa99dce013002d40659d291b4d603独审：only report field初值None、成功postprotected核后True，finally删除无条件True；其它delete/库存/guard无变，readyfalse/authnull。小报告阻断已闭，Root仍需自己fresh身份/ALL/lsof/容量与单次维护授权；reviewer未执行。
+
+
+S作者两闭口修订已另存full-app-current-source-2：fragment82f3fa8a0161c23f99b0e69a21d581502db73baaa7e8018747ba041f8c79e25f/contract56614bf1c2f2ca43af3a9a6938f72838540de1cb4e33cbf345411de27dbb5046/receipt36abe865261f87d89efc4adcce49a1691d900b30758afa4f9b7879fea2c01532 readyfalse/authnull。仅app_phase AST改变、其余6顶层函数全AST同：observer只读单Meta原子快照run日志，避免HostFile先写/Meta后publish合法窗口误杀原guard；强Ready/owner/raw/count仍原样。callback/until失败保primary，原pool等guard结束后始终future.result，保存原native timeout/forced/non0/guardError和parseError，之后优先抛callback而不planned白化。source1原件不变，无运行。input非作者复审收据56607aa1…3ebf1通过上述两闭口，Root仍需正式envelope/on_tick实际GUI receipts与运行准入，不称本组件完成实际S验收。
+
+sim readonly副本da6f70b2ddee2af502a16a242fdd22171d448cad3de3ea3436cf53f41b29ccbe/contract199a32060312d672c7013b8bbfe4a170d0897e00c836026717ef2c40bfbd5e77独审通过：851原body只git status --no-optional-locks与2合同filename差，所有保护maps/删除算法/预算同；fd7d2488 receipt记录fresh9be071e4在8次readonlygit前后同、源35491551。12584原失败停在rename前，不回填。Root实际fresh维护仍另授，reviewer无维护运行/缓存遍历。
+
+Copy inspect probe1a84ec80/contract6951354a源意见：只原7Core IO与真实production Source/Worker/controller，freshlocator/binding/hit→inspect，small仅14B/hash/complete，gianttypedcode/size/hash，source dispose与Worker terminate/await在finally。未见路径/typed结果阻断。Node60s须由Root原owned角色等待实际硬限制（probe内部inspect Promise没有独立timer），外300不冒内部60；实际bridge V/readmit/角色关闭由原envelope负责。仅诊断inspect层，不能替WK clipboard实际成功，无Node/esbuild/Worker/HTTP执行。
+
+已结束Shell的补观察按原SESSION-CONTINUITY S3处理：DetailPane655路由EndedPane，Core term.rs698→Node.live.ended2968读ring.bin/commands，EndedScreenView3830 disableStdin:true但xterm仍可有Terminal input辅助textarea，不能由AX该词断可写/空输出。Idle单word也不替row.ended/attachable。已有row preview保留不证明canvas正文可见；最小剩余是同旧SID现term_ended屏幕长度/尺寸及sessions结束/可attach字段，再Root实际screen一次。API有screen而画面无归GUI ended renderer，API无screen但ring有效归Node/Core读取；目前未做此实际区分，不新增专项/恢复旧shell命令，不Stop/delete旧rows。
+
+
+Copy inspect正式两角色source a10b6b500bd10b322d9f5991ebc0b93cd863dc0ff9ce5e14a999cddabeef4ff4/probe2f71e2282768cc3534ec58dbcb124fb5d79366d4b5fdfcd5e33675d2e8ffb605/contract536ba79edd82c22abdad88a337bf3d872297261980805d68855c88d0a5fcabfb独审通过。16files/17currentTS pins实同，22rawenv逐hash=actual56763 bridgeproof；原source6.verify/tick/until/spawn/finish原样复用，private data1仅当前Root读诊断，freshTMP/port，bridgeReady→Node until硬60→2copy结果/cleanup0/Worker0→原正面bridgeTERM/5s all退→verify，外300/ALL/TMP/source-env门保。probe仅exclusive输出路径arg，无provider/App/clipboard/RPC新增。Root另fresh无App及data1其它writer、容量、精确ready/auth后可单槽准入；整体green只diagnostic到达/收尾，不冒systemCopy或实际UI使用相同answer。reviewer未导入/运行Node/esbuild/Worker/HTTP。
+
+
+Copy-inspect actual2621尾核原resultfe7bdd198847cf6bc147f5f39f5db9b2b865dfab5df21655dfed39b22a9b1185：60s原until在谓词前deadline失败，总68.045s/forced_cleanup=true/cleanupEPERM。直接bridge20339/Node20369原正面ledger同，最终两Popen-15、remaining[]/TMP[]absent、2340当前source同/parentenvstable。bridge仅listening57011，Node stdout/stderr0，copy-inspect-result不存在/checks[]，不证inspect已到、没有small/giant结论。wrappercalls0只LoadScene.http未使用，不代表Node自己的fetch0；不可据此定最早stage。
+
+H sibling2诊断源probe65755d8a/contract8be1945a16df975e532772faa34f8b3c076e082c9b8601e085340f1132cba535独审通过：run.py仍a10b6b50全文同，只有bounded32尾events进度及前三boot stdout；固定step/ms/command/status/bytes/worker kind/state计数/typedcode，无正文/key/opaque。原RPC/query/queue/assert/60/300/ALL/TMP未改，目录2新exclusive输出，原2621保。readyfalse/authnull，Root另授实际，不改Nativeclipboard或产品算法。
+
+S Root-ENVELOPE.md 875c3e22bba6b92cacff9e6473686db6bdbcf9c4ababc6667938c48e8edb3355已作source2目录独立交接，不改fixed源码/receipt：明确只缺原main exact资格/两个fresh case各300、同App V/硬链+私有13env、A三有限RootGUI/SDK门、Bcold-read/actualUI恢复门和原finish收尾；不是再增加框架/测试矩阵。尚无S完整App实际，不统计完成。
+
+
+v2 Copy-inspect定位只读复核：progress small在history_page serial2/83726B后真实Worker action_error=incomplete、cleanup0，至少一条generic失败已定位inspect层，不代表系统write已证有错。giant在ms476 result hits0/pageDonefalse，生产controller先publish busyfalse，再内部busytrue自动next且不再次publish；probe持外部旧快照的for/settled/owner.next可形成resolved microtask循环，拒next且饿死Worker事件。最小诊断适配应只等changed直到hits/done/error/reset，不手推空结果；原controller/60/300不改。当前v2 result原false/68.849s/forced+EPERM保，无giantinspect结果。stream111 rawreference先completefalse，再append新group、116带false返回，存在边界污染窗口；未知raw也可能续body，不能一概略raw/撤complete门，H需用实际raw/project边界的窄fix再独审。不加Nativeclipboard/权限兜底。
+
+
+Copy inspect v3源probe3548932d85e8960ddc7f47c691d3ecfa3d00ee616a7f937af4a0799f85e60eaf/contract80e87ecb5a0647e769aff74248f5cbc6918f0758149f922bb55270c8aab009ec独审通过：runner a10b6b50全文同，只有settled等待busy结束且真实hit/done/error/reset，删除空结果手推owner.next，finite32页检查移至wait。生产controller自己的自动next与RPC/queue/断言/32进度尾/60/300/ALL/TMP不变，files pins实同，readyfalse/authnull。此修adapter事件循环饥饿，不放宽产品copy complete门；raw-boundary产品后继待固定单审，非当前系统Copy已绿。目录3新exclusiveOUT/旧2621/v2false保，reviewer无运行。
+
+
+49554 v3 inspect有限actual独审：result032a15f1121f9235e70fba91551774e8fa54305a3c05c3c3c93e87e3c1871f31 /4.887893s true，无forced/cleanup，ALL[]/TMPabsent/source2340前后当前同/parentenv稳；bridge32504计划TERM -15、Node32512exit0。answer3888ad8a31e2d3fbe16ebf4b3abb7f680f65f47911c72c32051b9a394f0f732c真实small301057:0→incomplete，giant301309:0→typedtoo_large，两个source cleanup0/Worker0；Node实际sessions2/content2/begin18/page3/projection4/cancel4/record11。不是systemCopy绿；小14B产品边界仍红，giant预算inspect层已实际证明。
+
+H e42cf89ae04206d549a162a1b8f9b1584a18870c三叶独审通过：record prep机械抽取保原lexer/recordReader/scaffold/Coreprojection/encoded-transform与64KiB门，recordText原消费；whole仅selected/complete/reachedLast、prev/next物理有序不重叠、首raw未越capturedceil且真实Core首selected starts_message+complete才证明选中body结束。unknownSDK/partial/无ceil/越界raw/cancel/reset仍拒；无新RPC/opaque解析/第二normalizer，model对stream仅type避免runtime环。新增1有限正反例/旧32与cap不改。Root此前旧Root cwd实际red incomplete真到，不是假missingexport/types红；后绿/系统Copy还须各自实际，reviewer不运行。
+
+S source3作者已交完整可执行run.py65305b157ce8095b739b234ab046d08e1fcf1fe088c6871271b8a8ae1c56ac47，A2498e63a93a1bc8dd58c0bcbb0d9b4b3dc1746693a0f2557fa6fa2a4862e1f1b /B36e7a8ada928ec2b67a69c0be3e8c0585b846a47d790e803e3603c396255341c drafts，receipt7c0de992710f4f3711fbe45d82fa89cefa61bb64bfe9f5e00ae980a98c79eadd。原main资格/原source2/双entry，A3与B2固定RootCUA ack（8KiBregular/UID/nlink1/exactPID birth home SID），A强FIRST oracle后durableplan只AppPID SIGKILL9，Bcold-read/真实control无HTTPwarm，两个freshcase各原300；失败即时Rootstep仍原guard settle/原native保，finalmethods/ackhash/ALL门保。input非作者input-independent-review-source3.json5c20c234…98154通过19pins/AST与闭包，作者没运行。此时仅56763/d4b baseline，AA产品新frame必须按后续真实frontend/producer/proof/App repin后Root ready/auth；无S actual/GUIack通过声明，原source2未改。
+
+AA fulltypes/Vite源396b87f9/a27fe73a独审通过：diff仅MIRROR与allowlist添Find脚本/record路径，commands同85579、19priorpins实同、20generationdelta after当前实AA、85579→AA准确3H叶。原600/300/188gen复用/ALL/TMP/storage门保，无Cargo/gen。AA normal3骨架f43cf9f5/6db016e2/a6d243e1与ret962da040源通过，仅MIRROR＋2来源strings，quality881b同、执行/V/900-300等原样；frontend-pin path/SHA null与retresultnull、readyfalse/authnull明确。仅已知OUT36393165/283/6603181B原独立sameFSrename计划，待Rootfresh实际/互绑再准入，不由reviewer遍历/维护/运行。
+
+
+### 原34项最终余项审计（2026-10-31，AA source，只读交付）
+
+逐读ROUND-2原29反馈＋5遗留、Acceptance、STATE15:20最新段及原SESSION-CONTINUITY/SESSION-CONTENT/STICKY-GLASS/EDITOR-INPUT。Acceptance表头及若干“仍待”早于最新实际，不以旧句覆盖后文原件；当前RootAA aa346f28 clean，AA frontend26384/Find33实际已有父本记录，normal3尚待本批实际。只更新本卡，不改中央。下列为真正最小余集，不统计百分比、不把34全部done。
+
+| 原项 | 仅剩必要交付 | 直接复用/不再重跑 |
+| --- | --- | --- |
+| R006 H Copy；L04当前来源 | AA实际normal3严格V/前端绑定后，受影响真实inspect证明small14B complete与giant typedtoo_large，再真实系统Copy→私有file Paste small exact14B且giant明确预算拒/不截断。若仍失败只沿已授链修。 | e42旧Root真red＋AA finite/fullFind33/AA types/Vite；Reader28、DOM/Range8组、AI4/ACPfull、原native67MiB长读/184613B Export不再重跑。单parentRSS不冒WebContent峰值；原literal无新增峰值采样/微秒trace硬门。 |
+| R002/003/007 S | source3 A/B新当前proof/App JSON repin后，各一次独立300：App-only异常后原NoLoad host重挂/旧正文→SECOND不增setup；全旧roles退出后cold App旧史先读→真实控件显式恢复。另现名boot/身份regular exact一次（无已有actual收据时），旧两个ended Shell的3次只读摘要＋一次真实冷screen判读。 | 81606 hostAbsent/providerPresent Unknown/None＋同epoch replay、R7；公开Load/Resume/Unsupported/Shell/Offline真实边界；Recovery17实际IDB/React/Terminal owner；L05持久PTY不再重跑，也不拿PTY5替GUI2。无物理Mac reboot/物理双机新要求。 |
+| R008/009 终端余部 | 保42114普通OSC8/第二物理行文件正向，补实际dir/plainURL/Cmd意图；同主例宽→窄→回宽与各物理段命中、硬换行不误拼/拖选不误开按原C009剩余收据完成。只补缺动作，分短场，不复做GUI四intent或用中文替ASCII主例。 | 11244＋14739 GUI路径/URL四intent；42114同源码真实OSC8/长file ordinary。49137旧no-op唯一归因仍unknown（movement+Raise一起变），不凭此新增产品修。现有提取/硬换行/选择保护定向检查可映射复用，不能把未到native矩阵冒绿。 |
+| R024 G未覆盖结构代表 | 只补一个未覆盖真实固定结构代表：现Machines→本机详情的Processes表头滚动/正文fade/readability（或有实际证据的同结构），再以源码映射会话/列表分组共用fade；不新造数据。phone组合另列。 | R013 Light50409/Dark宽3807三材质＋d4b68689真实窄红→绿已闭；R022/024 diff91690六外观与位置限定事实已闭，后AA只3H叶不触G，不要求再全主题×材质×宽度矩阵。 |
+| R027，及原E真实系统交互未验边界 | 用户现明确不方便，Mac真实中文IME/实体组词选词与其保存交接标“未验”，不typeText/合成事件代人验、不反复问或新限时开App。 | RootASCII三fileowner Quit/Savefailure/Cancel/最后qr真过，W023 accepted稿保护真过；不等于IME。R028已澄清为组合配置，不能重加旧物理拦截假说作为它的新门。 |
+| R017/018移动，R019窄，R024移动，R025/026/028 | current iOS/device合格来源与实际可连后，原真机窄viewport/fixed底栏可点、左滑Pin/Delete、W窄布局、三入口跟手/循环、键行编辑保存/焦点/试按及组合/序列。当前人机不可用/设备不可达如实未验，不能以模拟器或桌面Safari代native WK。 | iOS89221现cfg lib check0与原strict false/冷留存分列，不能改整体绿；既有M DOM/共享引擎/真实PTY编码（含Codex Shift+Left press+keyup）可复用，无40厂商全装/任意程序选区保证。 |
+
+其余原项证据复用映射：
+
+| 项 | 已有足够范围的交付与诚实限制 |
+| --- | --- |
+| R001/R016 | R001限定调查交付完成，原卡死现场/唯一因果未知，非已证修复；R016真实当前CIBOL与闭端口WK失败/Retry已到，历史唯一因果未知。按原literal交付，不新增用户接受unknown的审批前置或无限调查。 |
+| R004/005 | 真实并发/8父＋2helper等当前组件与实际来源；capability矩阵、真实受控ACP/原生来源和不支持路径。源码/DTO/同归一化链未变可映射，不声称40个已安装厂商实测或原集群唯一根因已证。 |
+| R010/011/012 | 80119已到Back回会话cwd、Directory/URL原生拖选松手与首次外点/Escape去过滤；末尾超时原false保，个别实际行为单列，输入/导航相关handlers此后未变，不重全E。IME仍R027。 |
+| R013/019/020/021/022/023 | 目录材质与窄修68689、W冷tree/right恢复与Back14739、原branch71当时40+31分页/独立commit标签、39文件单滚条/跳转稳定80153、diff六外观91690、W外写/dir/Git/CAS稿保护5794均已有真App事实。AA3H路径不触上述owner；不以新branch已变重跑旧71count、不把单次Dark→Light未知位移冒精确pixel承诺。 |
+| R014/015/018桌面 | 进度单调/成功失败规则定向证据＋60137真实WK有限pending→CIBOL完成/条消失、真实closedport Retry/非成功、Light和原Dark首次底色、desktop Pin/Delete且另一原页保。此范围可交付，不造连续nav微秒trace门；手机触屏不外推。 |
+| R029 | 同一数学链正反与80153真App四分隔符/代码转义，后H raw-copy/PathField不触Markdown文件预览，不重跑。 |
+| L01/L02/L03/L05 | 原retry-due真实exact、原late-close/close-reopen两WK case、三fileowner真实Savefailure/Cancel/正常Quit、原持久PTY正常Quit认证重连/清理各已有独审。只按原scope复用，历史false保；L03不冒IME，L05不冒S全App。 |
+
+CleanCode最新必要边界：e42共享原record prep，无第二normalizer/完整解码；whole raw边界必须真实Core proof且不越捕获ceil。S新增只是私有有限两case/五Rootack，source2由input非作者审过，source3亦已非作者审过，Root真实ack/最终来源未发生不算actual。已登记F1诊断寿命、genericclose与跨mount bookmark仍NEXT，不因本审计重开。当前没有新的必须改产品阻断，唯一已启动产品红H Copy正由AA当前包验证；如实际发现同链必要修继续，否则独立问题NEXT。
+
+
+### 2026-11-01 最新有限审计更新（覆盖上方AA待测语句，不回填旧false）
+
+复读STATE最新10:00并收到Root当前补充：Root实f23a167b，AA79806已normal3全0并input独审；AA真实systemCopy small14B/Paste与giant sentinel已到。S source3 A42497/B17620真实CUA/SDK/身份/canonical原门已全到并input独审11f1aa14，原整体A1462bfe1/B3e0aafa8仅why留存而false保持；后精确why冷留存7f450784独立收口，不能为了改整体green重跑业务。endedShell87058三readonlyAPI与62253冷App两旧SID真实screen也已分层到/独审：exit0/attachablefalse/can_controlfalse、screen90x41/1100B/knownmarkers，Root实际旧快照可见，不能再列为缺项。原AX Terminal input辅助textarea/Idle疑虑未构成新产品bug。Root按现源码已实际完成AA repin，因此不再造过期AA template，不改原draft/actual。
+
+Root补充f23frontend35387/b027、normal3 actual86710全0并input独审94a6d82a；最新17415 actualApp giantCopy特定too_large提示与38B sentinel真实Paste/Save保持、normalQuit/ALLTMP净（fc9eeef5/ed77b6ed）。此处按Root+非作者收据复用，不冒reviewer亲见UI，不重S/Copy。新的Source错误原因catch仅保原inspect body typed原因，无NativeClipboard/API/权限新能力；与e42共享record原projection/capturedceil闭包相接，未见新增产品重构阻断。
+
+最终最小余集已缩为：
+
+| 原项 | 最小仍缺 | 已有不再要求重跑 |
+| --- | --- | --- |
+| S原boot身份 | Root准备的既有regular exact（bfac已非作者审，实际尚待）；无物理Mac reboot。 | A/B完整App、Load/Resume/Unsupported/Shell/Offline/hostcrash与ended-screen均可按不变S源码复用，原false+单独收口事实保。 |
+| C008/C009终端剩余 | 已有42114普通OSC8与第二physicalfile行正向之外，仅原dir/plainURL/Cmd、width→narrow→width其余行、真实hard-newline区别与selection不误导航有限缺项。 | GUI4intent11244/14739、C009两正向及原提取/坐标/硬换行/selection定向检查；不重所有语言/全端矩阵、不先为旧no-op猜产品修。 |
+| G/R024未覆盖结构 | 一个现成实际table header滚动/fade/readability代表（Machines→本机详情Processes），共用源映射其余分组；手机另待。 | R013深浅三材质wide＋68689窄修、91690 diff六外观、W019/020/021/022/023既有actual均不重全矩阵。 |
+| M/B/W/G physical端 | 当前device库与后续实际App/可连接设备的原viewport/甲板、左滑、W窄、跟手、键行/焦点/试按。人机不可用与设备不可达就标未验。 | sim89221只库check0/整体false+冷留存事实、M引擎/DOM/真实PTY编码含Codex Shift+Left证据复用，不冒phone。 |
+| R027真实IME | 用户当前不方便，保未验，不反复问/开限时真人App、不以typeText/合成composition冒人验。 | 三fileowner ASCII Savefailure/Cancel/Quit与5794 accepted-draft外写/CAS保护复用；R028已澄清为键行配置，不再加旧物理拦截假说门。 |
+
+R001限定调查交付与R016当前WK路径/错误分类可按原literal诚实结案为“调查已交/历史唯一因果未知”，无需额外用户批准，不冒已修、不无限调查。R004/005/010–016桌面/018桌面/019–023桌面/029/L01–L05既有适用范围均依前表source映射复用；当前3H＋2notice叶不触这些owner，R006现Copy+原读/出口证据已到，单RSS不冒峰值、亦不添加原未要求新峰值采样/微秒trace门。原34仍不能全done：physical/IME与上述有限桌面缺口尚存。新独立问题只NEXT，当前没有新增产品必要修复项。main/ship仍未授权，reviewer不改中央STATE/Acceptance。
+
+physical-library-f23 97713c23/1c5ac8d6源审发现一个最小outer ALL缺口已交input：finally只按(pid,start)筛剩余，须保原identity OR registered leader PGID membership，避免失败后漏未知组成员并进入TMP rmdir。每phase原entry.run仍严格，不能拿此改全局helper/重旧sim；device SDK/std/metadata→lib/a证据、不normalV/不copy、共享300与4096累计预算/targetfreshdu+8<=50/末du<=50/外10内2＋20/10方向均正确。此为待精确小fix源码意见，未执行库构建/du/设备探测。
+
+
+TerminalPane本轮已触边界的末CleanCode注释核（只报告，未改Root）：1493仍写plainURL同⌘click/iTerm2手势，已与1504 canActivateTerminalLink→linkIntent的ordinary内部/CmdCtrl系统策略相悖，应在最后source清理更正这两句，保留默认confirm/window.open绕whitelist的必要历史原因。1686图片“⌘click...the gesture links use”类比也过期，图片实际仍Cmd/Ctrl preview，只改注释删旧类比，不改图片行为。限同一已触叶两处，不做全仓注释治理/功能变更、不打断69866或新建行为矩阵；集中最后一次来源构建即可。
+
+
+Copy17415/boot69866实际尾核完成（只读）：compactreceipt /Volumes/disk0/Khor/evidence/round2/review/copy17415-boot69866-readonly-review.json SHA047c35868b794dff7e5065e3ac3e8cdfdc63dbba240cd309c5e77c77203b7ca4，4123B。Copy ed77b6ed/UI fc9eeef5回链61184，normal0/noTimeout/noForce/ALL-footprint[]/TMPabsent/cleanup[]/lsof1空，日志552eabba同、source2340当前同；Root实际特定too_large并实际Paste/Save38B sentinel，现文件SHA378d917d同。AA小14B功能成功按未变success path复用，不重Copy/S/已绿G/W，非reviewer目击。
+
+boot dce41e5f0f8cd966b755d37d5a96f5ea78adc9546682f9f3fbbb29a7e5fc6526 /98.324s valid，metadata/compile/唯一regular exact三stage0/noTimeout/noForce/groupAbsent/remaining-footprint空/日志hash同，actual1/0/0/0helper。real CargoJSON唯一selected freshfalse/testlib、规范messages摘要同，prepared prior[]与context同，proof source规范化=before=after=current2340；原target与私copySHA均b4c45117648903064f6fa28a088ec8bb5dc0299bde1dc7853f4d78f287a29f87，私copy已按原门退役无gzip，TMP[]。这是纯boot/birth/namespace/group身份判断，不是物理Mac reboot/新hostcrash/provider/App。旧JSON文案不盖过实际命令/日志。
+
+因此上方最小余集再删boot：仅C009既有未到动作/G一个表格结构代表/physical库及原真机体验/人不方便的真IME与最终源码整合复用审计。S A+B/endedShell/boot和H Copy均已有原scope事实，不因严格整体false诊断已单独收口而反复跑业务。
+
+
+C00962032/29379有限余项实际独审闭环：compactreceipt /Volumes/disk0/Khor/evidence/round2/review/c009-62032-29379-readonly-review.json SHA2a6150887208ebe86ea656212aacd008b5fe1bf8c745eb9952e5ee7354fa6085，3187B。case5 result794cdabd/UI0e5b0999、case6 result254d72af/UI7247bf6e回链各PID/SID，均normal0/noTimeout/noForce/noInterruption/groupAbsent、ALL-footprint[]/TMPabsent/cleanup[]/lsof1空，2340当前源同/环境稳/日志SHA同。原App-host-child owner逐字段匹配guard，SID3690e9a8880c3e4a/3ab1d6f563174ba3分别不在before5/6旧行，现Meta exact/baseline保；ended两组exit0/原组无。
+
+Root真实CUA观察非reviewer目击：case5 dir ordinary、plainURL ordinary/Cmd、file Cmd、dir Cmd/Finder子文件fullURL/marker、OSC8 Cmd六动作及专用页/doc关闭；case6 1080→904→1544、drag灰选区不打开，904四行末段/1544两行首段均完整file/marker，硬145拆两printf行未误拼，第一硬段hover/click no-open后有效软行正控立即打开。无open负例不称partialpath已提交。结合42114 ordinaryOSC8/file第二行和不变buffer/mouse/selection纯守卫，原C008/C009主例余项可收口，不加每glyph/appmouse/远端/phone新矩阵，不再全列待测。最小桌面余项现在仅G一个未覆盖结构代表（Root推进中），其余physical/真实IME保持原未验。
+
+physical-library-f23 source2 badafacbb280fce7b216a5c638123eb1cd604dfa68b69369e7f811f3604081d8/contract4e8313b6736462550efea2a586d2398911f6cdb8526d2c3ba1925314da42951f/receipt6b30c41748d63ff7a9608faf1ca6d0f275024342ff228fddad54fdaeccc23d6a独审通过：source1唯一脚本delta是outer identity OR registeredleaderPGID全部当前成员，保完整tupleledger/所有Z未知成员；原phase/helper/300/4096/信号/库证据不改。inputs只同字节quality路径换prepared2，合同仅driver/inputSHA，readyfalse/authnull。原安装deviceSDK/std/fullmetadata→lib及actual.a SHA、不normalV/不copy、freshdu+8<=50/末du<=50、外10内2＋20/10门均保，Rootfresh唯一槽另授。原97713/1c5源保，没有库构建/du/设备/App执行，不冒physicalApp/安装/真机通过。
+
+
+### 2026-11-01 — physical16142 原 false、后续 builder 预算准备与 G 窄源审
+
+- 独立只读核 physical16142：SDK/metadata0；Cargo 在剩余294.868s timeout/exit-15/forced，整体303.356s false。编译error0/build-finished0/GUI artifact0，无library-facts；1256身份/组全部gone、source稳、unknown TMP保留。原result bd3d8539 不改。
+- 已按Root明确授权作者准备 `physical-library-g-followup-prepared-3`：仅后续G整合版本离线库producer total/step600，原helper默认/各App与Node交互300不动；同一remaining clamp及最终success<=contract总时限。4096完整身份/ALL、50GiB cap、jobs1/offline/单target、10+2峰值＋20/10reserve/5GiB门不变，无重试。head/frontend/source/gen/assets空、readyfalse/authnull；原f23 partial cache可复用但不冒新fullcold测量。driver97703e45、contract991fe253，作者不能自充独审，已交input/Root。未运行。
+- G b3a2d0ab源审通过：graph19file stale后核现源，held+flush+Processes标签才推进透明区到居中label下沿，原heading底恢复/渐变/owner/cleanup保留；实际paint绿仍待Root。TerminalPane当前2+/6-仅注释清理，无执行变化。
+- 小收据 `evidence/round2/review/physical16142-budget-and-G-source-review.json`；不改中央STATE/Acceptance。
+
+
+### 2026-11-01 — G Processes candidate actual91894 独立尾核
+
+- 已只读核原77782红与91894绿：clip/head/body/scroll几何逐值相同；direct字形 changed3165/max87→0/0，actualblur5249/max41→0/0（actualblur仅诊断，非强求玻璃色零差）；四绿PNG逐字相同。原paint脚本a789ffec/fixture4dd79675在红绿commit间全文同，原默认36组body逐字保。
+- unit15/15、paint两项exit0，2.4407s；无timeout/force/interruption，原group/ALL/footprint全净、TMP absent、source unchanged/environment restored，logSHA实核。Root实际在author GUI source运行，不冒旧Rust后端当前或Mac WK真实验收。
+- 可集成19b066c3＋04d57fca＋b3a2d0ab，无源阻断。sharedowner/RO/cleanup和渐变恢复端不变，G Mac Processes实际回归待新合格产物，原88916红仍保。收据在 `history/sticky-processes-paint-green-1/review.json`。未运行/不改中央总账。
+
+
+### 2026-11-01 — a228 当前前端/normal3 源准备独审
+
+- 前端8de45589/d1e424ff：对35387原入口仅MIRROR＋已审5叶allowed，AST逆向等/commands逐字等；2340源实SHA等、27精确generationdelta和19prior pins核同。源通过，可由Root另授原fulltypes→Vite；600总/300step不变，非actual通过。
+- normal3 57f7745e/cfa034eb：对86710仅3个字符串、逆向全文exact；sourceReceipt233af917与前端同，原V/bundle/quality/ALL/900总300step/8+2与20/10 reserve不变。frontendactualSHA/retresult空、readyfalse，actual后再JSONpin。retention2db0480c仅283/6603311B静态snapshot，fresh身份/lsof/ownerfree及单rename/结果互绑仍Root执行，无自主运行/移动。
+- 小收据 `evidence/round2/review/a228-frontend-normal3-source-review.json`。
+
+
+### 2026-11-01 — a228 frontend4570/留存尾核＋sole App准备
+
+- actual4570 fullnoEmit/Vite两0，17.562s，result646b6a41/receipt6a4200fb；2340源前后与现源SHA同、188gen/278新assets实际全SHA同，logs/receipt/generation links实核，source/env/tools/helpers稳，ALL/TMP净。仅前端，不冒App/native或行为通过。
+- Root单OUT留存809b7044/合同a831e86d，retained283/6603311B全SHA/devino/UID/nlink/size/mtime/ctime实核；savedfreshlsof1空/noowners。source_absent仅当时事实，不在live55538期间重新推断新OUT不存在。normal3当前JSON精确绑前端与留存，尚未尾核，不推live绿。
+- soleApp stage2ec38227原字节/contract48edce0b，old86710 actualcanonical/result及两link+plist现SHA/inode属性同；Processes d37c37c4仅producer/namespace逆向全文同，原300/13env/V/ALL/TMP保，actual新程序仍空/readyfalse，Root后绑定再freshcoldstage。小收据 `review/a228-4570-frontend-retention-App-source-review.json`。
+
+
+## 2026-11-01 发布决定与历史记录边界
+
+用户最新明确授权“先直接commit到main并ship”。本卡以上实施、失败及阶段权限记录原样保留；本次授权及发布状态以[本轮发布记录](../ROUND-2-RELEASE.md)为准。原 Mac 真人中文 IME 与真实 iPhone 操作仍未验，按用户决定移到发布后，不登记为通过；本卡记录提交不代表已合并 main、完成任一 SHIP 目标或已发布。

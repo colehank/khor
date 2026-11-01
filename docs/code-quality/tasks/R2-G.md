@@ -1,6 +1,6 @@
 # G 共用滚动材质
 
-2026-10-29 working，用户“开始吧”授权本轮实施，不main/ship。owner round2_input从C稳定checkpoint轮换，作者树仍/Volumes/disk0/Khor/worktrees/current/khor-round2-content，fix/round2-content，G基线e58f21a1（C生产+隔离Lab已固定，root负责生产集成；Lab不进产品）。中央仅本卡由G作者写，其它总账root负责。
+2026-10-29 实现已封口；等待root最后片段集成与原生最终组合验收。用户“开始吧”授权本轮实施，不main/ship。owner round2_input从C稳定checkpoint轮换，作者树仍/Volumes/disk0/Khor/worktrees/current/khor-round2-content，fix/round2-content，G基线e58f21a1（C生产+隔离Lab已固定，root负责生产集成；Lab不进产品）。中央仅本卡由G作者写，其它总账root负责。
 
 权威范围：ROUND-2-EXECUTION、STICKY-GLASS、SESSION-CONTENT，R2-013菜单材质、R2-022差异sticky标题、R2-024所有滚动固定组块。最终已验参考4d541e5eb83c242304c96a4aeb07682082a59a45，旧浓度方案只历史。不把首片段通过冒整G完成。
 
@@ -78,3 +78,49 @@ root同时已批准按含sticky分支递归的discovery：有markers时深入该
 Root真实宽1200→窄390→宽1200增量jump-verified：wide bodyTop156=barBottom156（旧104），narrow152=152；只一port marker、primary52/local0 padding，flush head::before bottom0，body mask none为已满值、未加空白。首次harness误要求必须有mask，原first-mask-expectation失败保存；没有放宽产品。随后commit-fade-states四项静止/小滚也绿：宽窄静止首diff无提前material、标题mask none/opacity1；jump后多滚12px正文fade endpoint=header.bottom，标题仍满值、伪层bottom0，unknownAPI空。
 
 当前root浏览器批结束，后续继续Machine+frontier regular siblings，不重跑21主band。root已授权check-face机器头旧rule约19007–19327最小适配，先取得真实consumer/原旧预期红证据；保列对齐/清晰度/裁剪/滚动，观察新无边线/材质/fade，不能直接删判据或跑38k全face。
+
+
+## Machine consumer下一检查点（尚未改Machine源）
+
+共用frontier discovery已按root授权实现：包含markers的分支才递归，普通兄弟整块body，显式head/body止步、nested primary scope不抢；无markers仍默认单scroller。regular sibling先红→12全部绿、types/diff绿，保charts/metadata、不mask含sticky祖先、不逐cell。
+
+真实MachineCard Lab /lab/sticky-machine.html已ready，同唯一23835/PID92646，正式MachineCard+外层band，本地about/load120固定process，只有原data-nav-clear页面滚动。actual MachineCard/表头CSS仍旧，root先采列tracks/cell几何/clip/排序与旧下沿rule不符新契约的red；可点data-top-all展开长表。Labtypes绿，source冻结待基线后才做header/body真实grid/subgrid；并非已完成Machine consumer。machine-checkpoint.json记当前3源SHA与状态。
+
+
+## Machine/frontier固定checkpoint
+
+生产`7c9af9f06b29c9914189ecc72fc71b1f8456f893`（4文件），独立Lab`23a18c90210a24072216f5ed1424c172b5e014a5`（5文件），树干净。machine-receipt.json含4源SHA与13 checks/types/Labtypes、原red分开。原列几何/row tracks/clip已过后发现held阈值漏Machine原padding16：port72+68padding真实header140–168，而main.bottom124；原failure/inspect保留。
+
+common owner现按每头物理edge=port.rect.top+clientTop+computed paddingTop+computed heading.top，必要style在find/同RO失效后缓存。main正文边界不动、held正文仍真实group rect/flush0；没有改table top/padding/滚动迎合假设。新增border2/original16/stickytop8受控反例先红→13全绿，原local0/普通band对照保。
+
+root browser/machine-check五结果全绿：wide列/row旧结果保留，真实padded edge140=旧位置、标题满值/body端点168、普通兄弟fade；CPU descending→ascending首PID改变；narrow旧cards tracks/clip、无新scroll/overflow；unknown/pageerrors空。旧hidden mobile sort是harness点隐藏头，失败独存；header由真实box/subgrid承载后去旧shadow和gap填线，body tracks/文字列x保，不把head bbox旧填gap扩宽当列错位。
+
+当前root继续用workspace-return实际入口采R013路径推荐，运行源/配置冻结。仅提交refs未改字节，不HMR；docs/package/旧face断言只读准备，待其批次结束再写。G未done，原生WK/窗口/真人验收仍最终组合负责。
+
+## R013：路径推荐的实际交互阻挡（实施中）
+
+root真实ContentPathField入口发现菜单背景已厚底（light rgb255、文字对比14.92）、完整未裁剪，但frame/两个candidate中心hit-test全部命中后方空目录DIV。path-menu-inspect/check原失败保留；path-menu-layer及minimal-layer单属性诊断中，关闭location glass filter仍失败，仅Toolbar或pill positionrelative+z1即命中。根因不是背景浓度：SessionContentPane的NarrowBox使默认PathField below菜单静态内联，固定工具条的候选未脱离布局且所在层落在body后方。
+
+root授新增精确写权PathField.tsx、ContentPathField.tsx、session-content.css。当前三文件窄修：共享PathField新增menuLayout adaptive(default旧窄表单inline)/overlay，ContentPathField显式overlay、手机仍above；ContentToolbar局部relative/z1。未改输入选择、键盘、路径提交、网页推荐或菜单底。13字段dismiss回归与types绿、diffcheck绿，独审当前源码无阻断；root正在同真实入口原10case续验，运行源/配置再次冻结，未提交不标完成。
+
+收口准备另有已授docs/Face最小窗口：README/30/50改旧band tint+hairline/透明取消overlap的过期说明；Face保字重/墨色/chart-table内容seam/列tracks，把必须shadow改固定头无分割线，原clip盒无内滚恒跳过的分支改真实nav-clear滚动/实际padding阈值、标题满值/held、body endpoint/flush材质及排序。当前Face仅node --check，不称整Face通过。旧headRule精确谓词对root实录shadow none的红证据在face-old-rule-red.json/log。现有scroll-surfaces Lab/runner最小新契约适配与正式13+4 npm入口已获授权，等root实际菜单批结束后才改，避免HMR污染证据。
+
+
+## G 实现收口与下一槽交接
+
+R013生产`52415f2e060d4ece08b735636e06a401681ef176`已固定／独审，root集成f6755103；实际原入口12项绿，path-menu-receipt.json记录3源SHA／field13／types／真实范围。随后Toolbar改共用band后又针对实际宽窄候选点击、焦点、Enter与同一脏CodeMirror DOM回归2项，不把旧12冒新源全矩阵。
+
+门／设计规矩`8658c564`已固定并root集成867c1446：既有scroll-surfaces新正文渐隐契约36整入口绿，正式owner/jump脚本登记。Face只精确no-divider谓词和sticky段实跑；首次2rAF采到.815295为180ms动效中间态，原失败保留。真实0/100/240ms采样.815758/.999314/1、几何与scroll不变后，仅门加有界等held且opacity精确1，保所有后续严格断言；settled段绿，非全Face。gates-receipt.json列范围。
+
+额外真实消费者生产`547a9496`、Lab`5a229057`已固定，独审无阻断：ContentToolbar page显式locator与同owner data-band-under overlap，默认邻接不变，native无DOM landing不加padding／margin；TermPeek保持真实table，只有table挂owner，JSON不挂。受控owner扩到14项先红绿，types／Labtypes绿。extras实际12＋table mask真实paint对照、原会话内容宽窄菜单／dirty DOM2绿，原缺CSS夹具和CM synthetic fill假设失败均保留；extras-receipt.json含源SHA与限制。
+
+最后两消费者生产`eaaf7c39`，独立Lab`dd9e7751`，树tracked干净。SessionSide仅import/ref/data-band纯增量，word那行未改；root必须onto已集成A2 nullable源cherry-pick，不能整文件覆盖。CodeDiff只wide既有标签行接band，narrow无新标题、不改MergeView／EditorState。真实基线是1个.cm-mergeView有效scroll口（内部2个scroller虽computed auto但range0）；初去边线头高23→22／range1519→1518，现用既有hair padding保原23／首行／1519，不画线。side-diff6项＋SideBody包真实内头pane归属1项实际绿；内头独占owner1/pad52，外头不抢。最终types／Labtypes／diff绿，非作者独审无阻断；side-diff-receipt.json记录2源SHA、原失败与范围。
+
+完整消费者适用／排除清单：`/Volumes/disk0/Khor/evidence/round2/glass/CONSUMERS.md`。覆盖现App／Region／PaneBar／Tabs／Workspace搜索主band、Commit二级、Machine表头、ContentToolbar、TermPeek、CodeDiff、SideBody；SeatHead／SideFind在滚动流内明确排除，不加sticky，普通SideList组头／底部任务控制／横轴sticky／终端画布不扩范围；无调用的AddressBar与embedded fallback不按旧名字造新能力。
+
+G实现到此封口。原生窗口三外观／WKWebView paint／物理iPhone触摸留最终组合验收，不用Chrome代替；新独立问题只登记下轮。作者C/G树HEAD dd9e7751，唯一23835/PID92646（exec53679）所有G/C Labs继续冻结供最终验收，不重启用户App、不清用户会话。root准备将W树ff到最终集成HEAD后再正式交接W写权；目前不写W、不启新服务，保留C Lab源与旧E23834恢复点。
+
+
+## 2026-11-01 发布决定与历史记录边界
+
+用户最新明确授权“先直接commit到main并ship”。本卡以上实施、失败及阶段权限记录原样保留；本次授权及发布状态以[本轮发布记录](../ROUND-2-RELEASE.md)为准。原 Mac 真人中文 IME 与真实 iPhone 操作仍未验，按用户决定移到发布后，不登记为通过；本卡记录提交不代表已合并 main、完成任一 SHIP 目标或已发布。

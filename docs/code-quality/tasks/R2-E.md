@@ -133,3 +133,12 @@ W正式browser验已交这两固定依赖，以实际新FileView补CM首键→�
 准备与独审完成后再问用户可用性，不重做L05拖放。不把R2-028强行作为物理Mac ShiftLeft验收：用户已明确其缺终端组合键配置，M负责。E仍需上述真实IME/退出证据；任何脚本或合成事件绿均不替代它。
 
 focused E准入独审通过，唯一oracle缺口已收紧：被动记录全部chat_*/term_*及attachment_begin，final禁止其call，未替换actual invoke。actual私有CLI预检outer12997终态0，ws add/ls实际0、source稳定/无App/无session helper/TMP净。脚本/contract/预检小件镜像在validation-app-ce69-editor-preparation。已问当前3分钟可用性；未收到回答前不启动限时App。
+
+2026-10-30 交W当前可见文件闭包：graph核实readAt已有text安全seam，W父owner推进即可；非text fetchPreview不消费readAt确为W023缺口。Root精确移交input branch仅FileView非text preview/Away元数据私有coalesced请求槽，禁止改text accepted/edit/composition/save/refresh；Root暂停该文件写入避免并行owner。SideWorkspace file-parent lease/readAt由input最小接线；不要用隐藏tree继续持lease代替缺口。此为本轮可见内容自动更新，不扩外部app/QuickLook自动打开。固定E ce69源码/生成输入及pending人验不变，后需受影响组合按实际新源核。
+
+
+## 2026-11-01 发布决定与历史记录边界
+
+用户最新明确授权“先直接commit到main并ship”。本卡以上实施、失败及阶段权限记录原样保留；本次授权及发布状态以[本轮发布记录](../ROUND-2-RELEASE.md)为准。原 Mac 真人中文 IME 与真实 iPhone 操作仍未验，按用户决定移到发布后，不登记为通过；本卡记录提交不代表已合并 main、完成任一 SHIP 目标或已发布。
+
+当前真人入口为 `platform/mac-ime-current-a228-preparation-1`，工作区／会话专用文件两独立原300秒场；当前55538产物pins固定，ready=false，实际env/port与人可用性待fresh绑定。独审 `889b49d2e074ec6acc80f9a047d339b7aec67a676c9c5a878b2d5fe7516b4caf`，源收据 `9a5ace276240729d23cee469527f7a18ff11bae6803429776a501558ba4e6d03`。未创建样例文件、未开 App 或计时窗口；此来源准备不替代真人组词，原 R2-028 Codex键行不重开。
