@@ -86,7 +86,12 @@ export function HistorySearch({ id, binding, open, stop, exporter, onClose, onJu
       else if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(await body);
       else { void body.catch(() => {}); throw new Error('clipboard unavailable'); }
       if (current.current === owner) setNotice(gui.history_copied);
-    } catch (error) { void body.catch(() => {}); if (current.current === owner) failure(error, 'copy'); }
+    } catch (error) {
+      // ClipboardItem may wrap a rejected body in a generic browser error.
+      let cause = error;
+      try { await body; } catch (readError) { cause = readError; }
+      if (current.current === owner) failure(cause, 'copy');
+    }
     finally { if (copying.current === owner) { copying.current = null; setCopyBusy(false); } }
   };
   const exportRecord = (hit: FindHit) => {

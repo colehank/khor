@@ -176,7 +176,7 @@ function transport() {
   window.__TAURI_INTERNALS__ = {metadata: {currentWindow: {label: 'main'}, currentWebview: {label: 'main', windowLabel: 'main'}}, transformCallback: () => 0, unregisterCallback: () => {}, convertFileSrc: path => path, invoke};
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {unregisterListener: () => {}};
   Object.defineProperty(navigator, 'clipboard', {configurable: true, value: {
-    write: async items => {wire.clipboard.writes++;wire.clipboard.activation = navigator.userActivation.isActive;wire.order.push('clipboard-write');try {wire.clipboard.text = await (await items[0].getType('text/plain')).text();}catch(error){wire.clipboard.rejected++;throw error;}},
+    write: async items => {wire.clipboard.writes++;wire.clipboard.activation = navigator.userActivation.isActive;wire.order.push('clipboard-write');try {wire.clipboard.text = await (await items[0].getType('text/plain')).text();}catch(error){wire.clipboard.rejected++;throw new DOMException('Clipboard item data failed', 'NotAllowedError');}},
     writeText: async text => {wire.clipboard.text = text;},
   }});
 }
