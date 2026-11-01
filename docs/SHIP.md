@@ -4,6 +4,25 @@
 
 版本号只在 `Cargo.toml` 一处（`apps/gui/src-tauri/tauri.conf.json` 的 `"version"` 字面量不能删，删了 tauri 写 1.0.0）。装了哪一版现在看不出来——五台都报同一个号；认版本靠二进制里本次新加的字符串（下面每段的「验」）。
 
+## 2026-11-01：第二轮发布实际结果
+
+用户授权直接合main并SHIP；产品a228已合并推送，正式产物构建源 `eca881f2b30c2893b7e73f81ae1e0f5cefbe8c6c`，本节后继提交仅补文档。**Mac与三节点已更新；iOS归档已合格，但TestFlight上传尚未成功。**
+
+完整共同指纹：`khor-ui-assets:/assets/index-B55HQiJV.js`。唯一证据目录 `/Volumes/disk0/Khor/evidence/releases/20261101-round2`，详见[本轮发布记录](code-quality/ROUND-2-RELEASE.md)。
+
+| 目标 | 实际验证 |
+| --- | --- |
+| Mac GUI／CLI | release Cargo0／1394.158s；完整UI及76143842B MacPi、strict签名、源码gen/assets均通过。GUI SHA `7af048369a2fbe2833d870e835550168735b26274e52e4c83665be3cbc3884e6`；CLI `6e162eaae715c9b468a9c2479eac934963998a07aefb3743a7fa1fc181cc29a3`。CLI原子替换，新GUI91072持5467／新UI；原8宿主PID+birth及8会话ID全保。 |
+| 三节点 | hinton Cargo0／2064.288s，LinuxPi完整嵌入，ELF x86_64、GLIBC最高2.30；一次NFS安装后hinton159488／turing989677／lecun860893真实listener exe SHA均为 `9117de4af9fc07b0bff2c660c12fe42c27bc6085da67f9cbee3640cea68a6c7a`，HTTP403与完整UI一致。 |
+| iOS archive | build0／681.998s；arm64 IOS／SDK26.5、deep strict签名、team QR8DMW493W／正式bundle ID、profile及App／.a完整UI均通过。两签名源恢复原bytes，旧60archive／lib在本次ios/previous-60*保留。 |
+| TestFlight | **单次export/upload70／12.359s失败**：`PLA Update available` 与缺少`iOS Distribution`签名。有效本地签名development1／distribution0；没有新上传构建号。现archive/App/lib与上传前全SHA不变。 |
+
+Apple协议须由团队Account Holder登录开发者后台审阅处理；Root未接受条款、修改账号／keychain或自动重传。接续按本次 `ios-upload-handoff.md`，先复查发行签名资格，再沿保留归档执行新的upload-2。只变发布文档的后继main不要求重编产品，但须核非文档源码、gen/dist、archive/App/lib严格等同原输入；成功后才记录Apple实际build。参见[Apple角色要求](https://developer.apple.com/help/account/access/roles)。
+
+保留原失败：Mac／Linux原wrapper多字节mmap成员检查错误，Cargo均0，后以明确find全字节补验合格，不回填原false；原onset1为空日志AND-list末状态，三节点实际采用另证，不重复安装。lecun `sessions --all` 升级前后均busy，未算会话验证通过；hinton/turing各2IDs相同。额外gates索引35脚本及chat-recovery文档登记缺口记[NEXT](code-quality/NEXT-ROUND.md)，不能说所有门绿或这些已由unit覆盖。
+
+真人Mac IME与真实iPhone交互仍为发布后未验，不宣布整轮34项完成。正式SHIP复用原外盘target、jobs1／incr0，未新建Rust缓存；旧镜像仅按逐字节相等与恢复索引收薄0.45017GiB。最终独立审查 `final-release-review.json` SHA `4a4f8a0705f319192e255cbf5dad6be86b06559f7c9413f7f243086f270f7aa5`。
+
 ## 0. 前提
 
 - 在主树 `~/Desktop/working/khor`、分支 `main`、`git status` 干净。worktree 车道都合完再打。
