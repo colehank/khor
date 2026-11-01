@@ -350,13 +350,16 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     let home = root("shield");
     let before = shield_dirs();
     let bin = home.join("khor-copy");
-    fs::copy(env!("CARGO_BIN_EXE_khor"), &bin).unwrap();
+    let original = home.join("generation-1");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &original).unwrap();
+    std::os::unix::fs::symlink(&original, &bin).unwrap();
     let log = home.join("serve.log");
     let mut keeper = Command::new(&bin)
         .arg("serve")
         .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
         .env("KHOR_SHIELD", "1")
+        .env("KHOR_INSTALL_SOURCE", &bin)
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(&log).unwrap())
         .stdout(std::process::Stdio::null())
@@ -391,13 +394,19 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     // watched install path, and the new generation must stand up —
     // proof the keeper kept watching the install path rather than the
     // copy it runs from.
+    let generation = home.join("generation-2");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &generation).unwrap();
     let next = home.join("next");
-    fs::copy(env!("CARGO_BIN_EXE_khor"), &next).unwrap();
+    std::os::unix::fs::symlink(&generation, &next).unwrap();
     fs::rename(&next, &bin).unwrap();
     wait_for("the new generation to stand up", 30, || {
         inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
     });
     let second = inner_pid(&home).unwrap();
+    assert!(
+        original.is_file(),
+        "updating the pointer retains old running images"
+    );
     assert!(
         !alive(first),
         "the old generation must be gone, not doubled"

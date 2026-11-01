@@ -96,6 +96,9 @@ pub fn is_inner() -> bool {
 /// no longer answers once the process runs from a local copy.
 const SHIELD_FROM: &str = "KHOR_SHIELD_FROM";
 
+/// The installer's platform pointer survives immutable version changes.
+const INSTALL_SOURCE: &str = "KHOR_INSTALL_SOURCE";
+
 /// "1" shields on any filesystem (tests), "0" never shields; unset
 /// means "shield exactly when the binary sits on a network mount".
 const SHIELD_ENV: &str = "KHOR_SHIELD";
@@ -260,13 +263,16 @@ fn shield() -> Result<std::path::PathBuf, String> {
         return Ok(std::path::PathBuf::from(orig));
     }
     let exe = crate::self_exe()?;
+    let watched = std::env::var_os(INSTALL_SOURCE)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| exe.clone());
     let wanted = match std::env::var(SHIELD_ENV).ok().as_deref() {
         Some("0") => false,
         Some(_) => true,
         None => on_network_fs(&exe),
     };
     if !wanted {
-        return Ok(exe);
+        return Ok(watched);
     }
     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
     match local_copy(&exe) {
@@ -275,22 +281,23 @@ fn shield() -> Result<std::path::PathBuf, String> {
             use std::os::unix::process::CommandExt;
             let err = std::process::Command::new(&copy)
                 .args(std::env::args_os().skip(1))
-                .env(SHIELD_FROM, &exe)
+                .env(SHIELD_FROM, &watched)
                 .exec();
             // exec returns only on failure.
             eprintln!("{}", msg::serve_shield_failed(&stamp, err));
-            Ok(exe)
+            Ok(watched)
         }
         Err(why) => {
             eprintln!("{}", msg::serve_shield_failed(&stamp, &why));
-            Ok(exe)
+            Ok(watched)
         }
     }
 }
 
 /// What a stable new generation is taken FROM: behind the shield, a
 /// fresh local copy of it (preflighted as the copy, spawned as the
-/// copy); shieldless, the watched path itself.
+/// copy); shieldless, resolve an install pointer once so preflight and
+/// execution use the same immutable generation.
 fn take_generation(
     watched: &std::path::Path,
     shielded: bool,
@@ -298,7 +305,7 @@ fn take_generation(
     let from = if shielded {
         local_copy(watched)?
     } else {
-        watched.to_path_buf()
+        std::fs::canonicalize(watched).map_err(|e| e.to_string())?
     };
     let version = preflight(&from)?;
     Ok((version, from))

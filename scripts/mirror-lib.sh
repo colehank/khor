@@ -12,7 +12,7 @@ khor_validate_mirror_release() (
             }
         done
         _expected=$(khor_published_digest "$_release/$_asset.gz.sha256" "$_asset.gz") || exit 1
-        _actual=$(khor_archive_digest "$_release/$_asset.gz")
+        _actual=$(khor_file_digest "$_release/$_asset.gz")
         [ "$_expected" = "$_actual" ] || { echo "khor-mirror: checksum mismatch ($_asset)" >&2; exit 1; }
         # Validate the whole gzip and program header without executing it.
         _program=$(mktemp "$_release/.verify.XXXXXXXX")

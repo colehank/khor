@@ -108,7 +108,7 @@ fi
 # to test the text without a machine.
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 serve_up_text() {
-    sed -n "/^cat > \"\$UP\" <<'SERVEUP'\$/,/^SERVEUP\$/p" "$REPO/scripts/install.sh" | sed '1d;$d'
+    sed -n "/^khor_publish_file \"\$UP\" 755 <<'SERVEUP'\$/,/^SERVEUP\$/p" "$REPO/scripts/install.sh" | sed '1d;$d'
 }
 if [ "$MODE" = print-serve-up ]; then
     serve_up_text
@@ -156,7 +156,7 @@ say() { printf '%s\n' "$*"; }
 # carries why both questions are dangerous).
 LIB="$REPO/scripts/onset-lib.sh"
 remote() {
-    cat "$LIB" "$1" > "$STAGE/remote.sh" || return 1
+    cat "$LIB" "$REPO/scripts/install-components.sh" "$1" > "$STAGE/remote.sh" || return 1
     ssh_ "sh -s" < "$STAGE/remote.sh"
 }
 
@@ -168,6 +168,10 @@ set -eu
 # Resolve while the installed binary still exists. Reuse this exact store
 # for stopping and purging; another machine may own the shared front store.
 root=$(khor_uninstall_root)
+if [ -d "$HOME/.local/bin/.khor" ]; then
+    echo "onset: this versioned installation may be shared; --uninstall cannot remove it for one host" >&2
+    exit 1
+fi
 khor_stop_serve "$root/.khor/serve.pid"
 rm -f "$HOME/.local/bin/khor"
 # The note that started all this. Deleted rather than updated: nothing
@@ -366,9 +370,16 @@ fi
 rm -f "$src.err"
 echo "onset: khor $ver runs here"
 
-# rename, not copy: upgrading over a *running* khor works because Linux
-# keeps the open inode, and the next start picks up the new file.
-mv -f "$src" "$HOME/.local/bin/khor"
+# Source and release deployments use the installer's immutable activation.
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) asset=khor-linux-x86_64 ;;
+    Linux-aarch64|Linux-arm64) asset=khor-linux-aarch64 ;;
+    Darwin-arm64) asset=khor-macos-arm64 ;;
+    Darwin-x86_64) asset=khor-macos-x86_64 ;;
+    *) echo "onset: unsupported installation platform" >&2; exit 1 ;;
+esac
+khor_activate_release "$src" "$HOME/.local/bin" "$asset" "v$ver"
+rm -f "$src"
 # And the script every login runs to pull the resident up — install.sh's
 # current text, so it asks the binary just installed which store is
 # this machine's instead of working it out the way it did in August.
@@ -463,7 +474,9 @@ done
 said=$(tail -c "+$((was + 1))" "$root/.khor/serve.log" 2>/dev/null || true)
 if [ "$alive" = yes ]; then
     echo "onset: serve is up (pid $(cat "$pidf"), store $root)"
-    [ -n "$said" ] && printf '%s\n' "$said" | sed 's/^/onset:   /'
+    if [ -n "$said" ]; then
+        printf '%s\n' "$said" | sed 's/^/onset:   /'
+    fi
 else
     echo "onset: serve did not stay up on $(hostname). What it wrote this time:" >&2
     if [ -n "$said" ]; then

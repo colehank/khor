@@ -163,10 +163,10 @@ class OnsetBuildTest(unittest.TestCase):
         self.assert_invalid_serve_up_is_rejected('#!/bin/sh\n# no serve-up template\n',False)
 
     def test_malformed_serve_up_fails_dry_run_before_remote_mutation(self):
-        self.assert_invalid_serve_up_is_rejected('cat > "$UP" <<\'SERVEUP\'\nif\nSERVEUP\n',True)
+        self.assert_invalid_serve_up_is_rejected('khor_publish_file "$UP" 755 <<\'SERVEUP\'\nif\nSERVEUP\n',True)
 
     def test_malformed_serve_up_fails_live_before_remote_mutation(self):
-        self.assert_invalid_serve_up_is_rejected('cat > "$UP" <<\'SERVEUP\'\nif\nSERVEUP\n',False)
+        self.assert_invalid_serve_up_is_rejected('khor_publish_file "$UP" 755 <<\'SERVEUP\'\nif\nSERVEUP\n',False)
 
 
 if __name__ == '__main__':

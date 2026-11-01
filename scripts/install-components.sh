@@ -32,7 +32,7 @@ khor_fetch_verify_place() (
             echo "khor: invalid checksum record for $ASSET.gz" >&2; exit 1;
         }
     fi
-    ACTUAL=$(khor_archive_digest "$ARCHIVE")
+    ACTUAL=$(khor_file_digest "$ARCHIVE")
     [ "$ACTUAL" = "$EXPECTED" ] || { echo "khor: archive does not match its selected SHA256" >&2; exit 1; }
     gzip -dc "$ARCHIVE" > "$TMP" || { echo "khor: $URL is not a gzip (wrong tag?)" >&2; exit 1; }
     case "$(head -c 4 "$TMP" | od -An -tx1 | tr -d ' \n')" in
@@ -98,7 +98,7 @@ khor_download() (
     fi
 )
 
-khor_archive_digest() (
+khor_file_digest() (
     set -eu
     if command -v sha256sum >/dev/null 2>&1; then
         _line=$(sha256sum "$1")
@@ -322,5 +322,129 @@ khor_fetch_release() (
         _url="${_selected#*"$_newline"}"
     fi
     khor_fetch_verify_place "$_url" "$_bin" "$_asset" "$_version" "${_mirror:+mirror}"
+)
+
+khor_activate_release() (
+    set -eu
+    _program="$1" _bin="$2" _asset="$3" _version="$4"
+    khor_valid_tag "$_version" || { echo "khor: activation needs an exact release tag" >&2; exit 1; }
+    case "$_asset" in
+        khor-linux-x86_64|khor-linux-aarch64|khor-macos-arm64|khor-macos-x86_64) : ;;
+        *) echo "khor: unsupported installation platform" >&2; exit 1 ;;
+    esac
+    _digest=$(khor_file_digest "$_program")
+    _platform="$_bin/.khor/$_asset"
+    _relative="versions/$_version-$_digest/khor"
+    _destination="$_platform/$_relative"
+    mkdir -p "${_destination%/*}"
+    _stage=$(mktemp -d "$_bin/.khor.activate.XXXXXXXX")
+    trap 'rm -rf "$_stage"' EXIT
+    cp "$_program" "$_stage/program"
+    chmod 555 "$_stage/program"
+    # link is an exclusive publish on NFS too. Concurrent publishers of the
+    # same content reuse it; nobody writes through an existing executable.
+    [ ! -d "$_destination" ] && [ ! -L "$_destination" ] || {
+        echo "khor: immutable installation is not a regular file" >&2; exit 1;
+    }
+    if ! ln "$_stage/program" "$_destination" 2>/dev/null; then
+        [ -f "$_destination" ] && [ "$(khor_file_digest "$_destination")" = "$_digest" ] || {
+            echo "khor: immutable installation differs: $_destination" >&2; exit 1;
+        }
+    fi
+    [ ! -d "$_platform/current" ] && [ ! -d "$_bin/khor" ] || {
+        echo "khor: activation destination is a directory" >&2; exit 1;
+    }
+    khor_launcher > "$_stage/launcher"
+    chmod 755 "$_stage/launcher"
+    ln -s "$_relative" "$_stage/current"
+    mv -f "$_stage/current" "$_platform/current"
+    mv -f "$_stage/launcher" "$_bin/khor"
+)
+
+khor_launcher() (
+    cat <<'KHOR_LAUNCHER'
+#!/bin/sh
+set -eu
+case "$(uname -s)-$(uname -m)" in
+    Linux-x86_64) asset=khor-linux-x86_64 ;;
+    Linux-aarch64|Linux-arm64) asset=khor-linux-aarch64 ;;
+    Darwin-arm64) asset=khor-macos-arm64 ;;
+    Darwin-x86_64) asset=khor-macos-x86_64 ;;
+    *) echo "khor: this platform has no installed build" >&2; exit 1 ;;
+esac
+bin=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+# A keeper can copy this launcher before switching from a direct binary
+# installation. Its original install path still identifies the shared store.
+if [ ! -d "$bin/.khor" ] && [ -n "${KHOR_SHIELD_FROM:-}" ]; then
+    bin=$(CDPATH= cd -- "$(dirname -- "$KHOR_SHIELD_FROM")" && pwd -P)
+fi
+unset KHOR_SHIELD_FROM
+KHOR_INSTALL_SOURCE="$bin/.khor/$asset/current"
+export KHOR_INSTALL_SOURCE
+[ -x "$KHOR_INSTALL_SOURCE" ] || { echo "khor: install $asset on this machine first" >&2; exit 1; }
+exec "$KHOR_INSTALL_SOURCE" "$@"
+KHOR_LAUNCHER
+)
+
+khor_install_release() (
+    set -eu
+    _repo="$1" _version="$2" _mirror="$3" _asset="$4" _bin="$5"
+    _stage=$(mktemp -d "$_bin/.khor.install.XXXXXXXX")
+    trap 'rm -rf "$_stage"' EXIT
+    _preplaced="${KHOR_ASSET_FILE:-}"
+    if [ -n "$_preplaced" ]; then
+        khor_valid_tag "$_version" || { echo "khor: preplaced installation needs its release tag" >&2; exit 1; }
+        cp "$_preplaced" "$_stage/preplaced.gz"
+        KHOR_ASSET_FILE="$_stage/preplaced.gz"
+        export KHOR_ASSET_FILE
+        _url="$KHOR_ASSET_FILE"
+    else
+        _selected=$(khor_select_release "$_repo" "$_version" "$_mirror" "$_asset")
+        _newline='
+'
+        _version="${_selected%%"$_newline"*}"
+        _url="${_selected#*"$_newline"}"
+    fi
+    khor_fetch_verify_place "$_url" "$_stage" "$_asset" "$_version" "${_mirror:+mirror}"
+    _reported=$("$_stage/khor" version) || { echo "khor: downloaded build cannot run on this machine" >&2; exit 1; }
+    [ "$_reported" = "${_version#v}" ] || { echo "khor: downloaded build reports a different version" >&2; exit 1; }
+    khor_activate_release "$_stage/khor" "$_bin" "$_asset" "$_version"
+    if [ -n "$_preplaced" ] && [ ! "$_preplaced" -ef "$_bin/khor" ]; then
+        rm -f "$_preplaced" || echo "khor: installed; could not remove preplaced archive" >&2
+    fi
+)
+
+khor_publish_file() (
+    set -eu
+    _destination="$1" _mode="$2"
+    [ ! -d "$_destination" ] || { echo "khor: publication target is a directory" >&2; exit 1; }
+    _temporary=$(mktemp "${_destination%/*}/.khor-write.XXXXXXXX")
+    trap 'rm -f "$_temporary"' EXIT
+    cat > "$_temporary"
+    chmod "$_mode" "$_temporary"
+    mv -f "$_temporary" "$_destination"
+)
+
+khor_systemd_unit() (
+    set -eu
+    case "$1" in user) _target=default.target ;; system) _target=multi-user.target ;; *) exit 1 ;; esac
+    cat <<'SERVICE'
+[Unit]
+Description=khor resident
+After=network-online.target
+
+[Service]
+Type=exec
+ExecStart="%h/.local/bin/khor" serve
+Restart=on-failure
+RestartSec=5s
+# Session hosts deliberately outlive the resident. The keeper forwards TERM
+# to its own worker; systemd must not sweep independent session hosts.
+KillMode=process
+TimeoutStopSec=30s
+
+[Install]
+SERVICE
+    printf 'WantedBy=%s\n' "$_target"
 )
 

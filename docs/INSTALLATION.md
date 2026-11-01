@@ -1,0 +1,33 @@
+# 产物安装与共享目录
+
+GitHub构建发行产物，Khor安装器负责选择、验证、启用和启动。本机开发无需编译其它机器的版本；SSH配对和手工安装调用同一份 `scripts/install-components.sh`，独立 `install.sh` 由同步脚本嵌入它。
+
+## 文件与所有者
+
+```text
+~/.local/bin/khor                                  平台选择入口
+~/.local/bin/.khor/<asset>/versions/<tag>-<sha>/khor 不可变程序
+~/.local/bin/.khor/<asset>/current                  该平台当前程序的符号链接
+```
+
+`asset`区分Linux/macOS及x86_64/arm64，`sha`是解压后程序的SHA256。下载包另用发行资产的`.gz.sha256`校验；校验和本身不是独立签名。`latest`先解析为确切tag，之后所有请求固定到它。预放置包需要确切tag和压缩字节的SHA256。
+
+包先在目标目录的私有临时目录解压、校验并执行`version`。运行失败或版本不符均不启用，也不消费用户提供的原压缩包。发布用同一文件系统上的排他硬链接，冲突时核对已有字节；指针用原子rename更新。同平台同时安装以最后成功更新指针者为准，不用另一台机器无法验证的PID锁。安装不同平台互不覆盖。临时下载与解压目录在结束时清理。
+
+共享HOME上的**产物和平台选择**可共享，设备身份、会话和运行事实仍属于实际节点。沿用`Node::root_from_env_default`及store owner指纹：不得由安装器改写全局KHOR_HOME，把所有宿主导向同一房间。PID和端口必须在其所属节点解释，不能拿另一台机器的记录在本机kill。
+
+## 常驻进程与会话
+
+入口传递`KHOR_INSTALL_SOURCE`，keeper监视这一稳定指针；运行程序仍来自所选不可变版本。网络文件系统沿用本机shield副本，切换前预检候选。新版本接管常驻服务不删除旧程序、数据或会话宿主，PID身份和会话验证保持原有约束。首次从直接安装的二进制切换时，keeper的临时入口副本可通过原安装路径找到产物目录，并改为监视平台指针。
+
+旧版本不能仅按文件年龄清理：其它节点可能仍在使用它，离线节点也不能被推断为空闲。本轮保留已安装版本，不做跨节点强制回收；空间主要通过临时目录及时清理和不在客户端编译控制。以后回收需基于节点使用事实或用户明确选择。
+
+共享HOME的systemd用户单元不记录安装机器的PID路径。`Type=exec`直接跟踪keeper，`%h`在实际宿主展开；keeper负责停止自己的worker，`KillMode=process`保留独立会话宿主。这是会话持久化对systemd默认整组结束行为的明确例外，参见[服务类型](https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html)与[结束范围](https://www.freedesktop.org/software/systemd/man/latest/systemd.kill.html)。安装器不凭旧PID文件结束进程，已有keeper自行采用新产物。
+
+旧开发脚本`onset --uninstall`无法表达共享安装的所有消费者，因此对新版本目录在停止/删除前报错；它不能被CI或配对回退用作共享产物清理。按节点解除守护和全共享目录卸载需要不同动作，后续单列，不用删除入口代替。
+
+## 验证边界
+
+`scripts/tests/test_install_activation.py`覆盖四个平台共用目录、16并发安装、旧文件保持、损坏/错误版本拒绝、直下与预放置包共用启用路径、旧keeper入口衔接及空日志成功状态。测试使用临时目录和小型可执行文件，不安装到真实HOME。
+
+`crates/cli/tests/serve_keeper.rs`覆盖原生keeper通过稳定链接切换并保留旧程序，需要CI实际运行。普通本地文件系统的并发测试不能冒充真实NFS验证；多节点、网络文件缓存和活跃真实会话迁移另记验收结果。
