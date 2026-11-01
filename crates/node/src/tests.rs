@@ -754,6 +754,7 @@ fn only_dead_seen_and_old_rows_are_stale() {
     let row = |dead: bool, unread: u64, died_at: u64| Session {
         observation: None,
         can_control: false,
+        activity: Vec::new(),
         id: SessionId("shell/x".into()),
         kind: khor_core::Kind(khor_core::kind::SHELL.into()),
         title: "probe".into(),

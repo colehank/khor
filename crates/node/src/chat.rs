@@ -116,6 +116,7 @@ impl ChatKind {
         Session {
             observation: None,
             can_control: false,
+            activity: Vec::new(),
             id: Self::session_id(channel),
             kind: Kind(kind::BROADCAST.to_owned()),
             title: channel.to_owned(),

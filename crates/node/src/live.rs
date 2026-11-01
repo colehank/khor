@@ -28,6 +28,7 @@ use khor_core::{DeviceId, Kind, Millis, Session, SessionId, State, StateStamp};
 
 use crate::adaptor::Discovery;
 
+mod activity;
 mod proc_identity;
 mod recovery_attempt;
 #[path = "session_recovery.rs"]
@@ -98,6 +99,8 @@ pub(crate) fn check_observed_target(
 /// not the agent).
 #[derive(serde::Serialize, serde::Deserialize)]
 pub struct Meta {
+    #[serde(default)]
+    pub(crate) activity: khor_core::activity::ActivityLog,
     pub kind: String,
     pub title: String,
     pub pid: Option<u32>,
@@ -514,6 +517,7 @@ impl LiveKind {
             pid,
             started_ms: now_ms(),
             gui_native: None,
+            activity: Default::default(),
             gui_run: None,
             category: category.map(str::to_owned),
             id: id.0.clone(),
@@ -702,12 +706,15 @@ impl LiveKind {
             vendor_leaf: None,
             place: None,
             gui_native: None,
+            activity: Default::default(),
             gui_run: None,
         });
         meta.kind = khor_core::kind::GUI.into();
         meta.title = title.into();
         meta.pid = Some(pid);
         meta.gui_native = Some(native.clone());
+        meta.activity
+            .report(&run.id, word, None, run.state.at_ms.max(0) as u64);
         meta.gui_run = Some(run.clone());
         if meta.place.is_none() {
             meta.place = place.map(|cwd| cwd.display().to_string());
@@ -838,6 +845,7 @@ impl LiveKind {
             pid: None,
             started_ms: now_ms(),
             gui_native: None,
+            activity: Default::default(),
             gui_run: None,
             category: None,
             id: id.0.clone(),
@@ -2009,6 +2017,7 @@ impl LiveKind {
             out.push(Session {
                 observation: None,
                 can_control: false,
+                activity: Vec::new(),
                 id,
                 kind: Kind(kind.to_owned()),
                 title: sighting.title,
@@ -2216,6 +2225,7 @@ impl LiveKind {
             out.push(Session {
                 observation: None,
                 can_control: false,
+                activity: Vec::new(),
                 id: SessionId(n.id.clone()),
                 kind: Kind(khor_core::kind::TUI.to_owned()),
                 title: n.title.clone(),
@@ -2444,6 +2454,7 @@ impl LiveKind {
                     out.push(Session {
                         observation: None,
                         can_control: false,
+                        activity: Vec::new(),
                         id: host.id.clone(),
                         kind: Kind(found.kind.to_owned()),
                         title: sighting.title.clone(),
@@ -2957,7 +2968,8 @@ impl LiveKind {
                 .filter(|hf| crate::link::pid_running(hf.host_pid));
             let lens = crate::host::read_view_file(&e.path())
                 .is_ok_and(|vf| crate::link::pid_running(vf.host_pid));
-            let mut doing = crate::commands::read_doing(&e.path());
+            let commands = crate::commands::read_saved(&e.path());
+            let mut doing = commands.as_ref().map(|saved| saved.doing.clone());
             // **A hosted shell's row never shows its prompt** (item 26;
             // roadmap 2.1's rule, broken for shells whose host predates
             // the shim and so has no ledger: the owner's row read a
@@ -2999,6 +3011,7 @@ impl LiveKind {
                 row: Session {
                     observation: None,
                     can_control: false,
+                    activity: activity::session_events(&meta, &state, commands),
                     id,
                     kind: Kind(meta.kind.clone()),
                     title: meta.title.clone(),
@@ -4107,6 +4120,7 @@ impl RowGate {
             exit,
             source: Some(source),
         };
+        let at_ms = state.at_ms.max(0) as u64;
         if let Some(run) = run {
             let mut meta = self.read_meta()?;
             let owned = meta
@@ -4115,8 +4129,18 @@ impl RowGate {
                 .filter(|owned| owned.id == run)
                 .ok_or_else(|| "GUI execution has been superseded".to_owned())?;
             owned.state = state;
+            if exit.is_some() || matches!(source, Source::Reported) {
+                meta.activity.report(run, word, exit, at_ms);
+            }
             self.write_meta(&meta)
         } else {
+            if exit.is_some() || matches!(source, Source::Reported) {
+                if let Some(mut meta) = self.read_meta_or_new()? {
+                    let run = format!("{}:{}", meta.started_ms, meta.pid.unwrap_or_default());
+                    meta.activity.report(&run, word, exit, at_ms);
+                    self.write_meta(&meta)?;
+                }
+            }
             write_whole(
                 &self.dir.join("state.json"),
                 &serde_json::to_vec(&state).map_err(|e| e.to_string())?,
@@ -4342,6 +4366,41 @@ mod tests {
     }
 
     #[test]
+    fn activity_records_only_authoritative_reports_and_replays_after_reopen() {
+        use khor_core::activity::ActivityKind;
+        let root = tmp("activity-replay");
+        let live = kind_at(&root);
+        let id = sid("tui/activity");
+        live.register(&id, "tui", "test", Some(std::process::id()), None)
+            .unwrap();
+        live.report(&id, State::Done, Source::Screen).unwrap();
+        assert!(live.registry_rows(&|_| 0)[0].row.activity.is_empty());
+        live.report(&id, State::Blocked, Source::Reported).unwrap();
+        let pending = live.registry_rows(&|_| 0)[0].row.activity[0].clone();
+        live.report(&id, State::Idle, Source::Screen).unwrap();
+        assert!(!live.registry_rows(&|_| 0)[0].row.activity[0].resolved);
+        live.report(&id, State::Done, Source::Reported).unwrap();
+        let restored = kind_at(&root).registry_rows(&|_| i64::MAX)[0]
+            .row
+            .activity
+            .clone();
+        assert_eq!(restored[0].id, pending.id);
+        assert!(restored[0].resolved);
+        assert_eq!(restored[1].kind, ActivityKind::TurnCompleted);
+        live.report(&id, State::Idle, Source::Screen).unwrap();
+        live.record_exit(&id, 9).unwrap();
+        assert_eq!(
+            live.registry_rows(&|_| 0)[0]
+                .row
+                .activity
+                .last()
+                .unwrap()
+                .kind,
+            ActivityKind::Failed
+        );
+    }
+
+    #[test]
     fn gui_run_rejects_old_and_unqualified_reports_without_changing_the_new_pair() {
         let root = tmp("gui-run-stale");
         let live = kind_at(&root);
@@ -4363,6 +4422,7 @@ mod tests {
         );
         live.report_run(&b, State::Blocked, Source::Reported)
             .unwrap();
+        assert_eq!(read_meta(&b.directory).unwrap().activity.events.len(), 1);
         let pair =
             || ["meta.json", "state.json"].map(|name| fs::read(b.directory.join(name)).unwrap());
         let before = pair();
@@ -4380,6 +4440,7 @@ mod tests {
         assert!(live.record_exit(&id, 7).is_err());
         assert_eq!(pair(), before);
         live.record_exit_run(&b, 0).unwrap();
+        assert!(read_meta(&b.directory).unwrap().activity.events[0].resolved);
         live.record_exit_run(&b, 9).unwrap();
         assert_eq!(
             read_pair(&b.directory).unwrap().1.exit,

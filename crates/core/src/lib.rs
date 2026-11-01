@@ -8,6 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod activity;
 pub mod avatar;
 pub mod map;
 pub mod recovery;
@@ -3057,6 +3058,9 @@ pub struct Session {
     /// The home currently owns the agent's input endpoint. Revalidated on control.
     #[serde(default)]
     pub can_control: bool,
+    /// Bounded host events, retained independently of the current displayed word.
+    #[serde(default)]
+    pub activity: Vec<activity::ActivityEvent>,
 }
 
 /// **What a terminal session is doing** (roadmap 1.2 and 2.1): the command
@@ -3275,6 +3279,7 @@ mod tests {
         Session {
             observation: None,
             can_control: false,
+            activity: Vec::new(),
             id: SessionId("dev0/demo/1".to_owned()),
             kind: Kind(kind.to_owned()),
             title: "build khor".to_owned(),

@@ -52,7 +52,8 @@ export type MorePage =
   | "security"
   | "about"
   | "store"
-  | "doctor";
+  | "doctor"
+  | "notifications";
 
 /** Every page, in the order the wide list (and the Mac settings
     window's sidebar) shows them: 我的 khor at the head, like System
@@ -67,6 +68,7 @@ export const morePageOrder: readonly MorePage[] = [
   "security",
   "about",
   "store",
+  "notifications",
   "doctor",
 ];
 
@@ -74,7 +76,7 @@ export const morePageOrder: readonly MorePage[] = [
     than one 更多's menu opens by itself (我的 khor, 存储, 诊断; UX-16). On the
     narrow face the second kind is pushed over the landing it was opened
     from, so its way back is that landing, not 设置's list. */
-export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "store" && page !== "doctor";
+export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "store" && page !== "doctor" && page !== "notifications";
 
 /** The section names, in one place, so the list item and the page head
     cannot come to call the same section two things.
@@ -95,6 +97,7 @@ export const moreName = (page: MorePage): string =>
     about: gui.settings_about,
     store: gui.settings_store,
     doctor: gui.doctor,
+    notifications: gui.notifications,
   })[page];
 
 /** The name the page's head says, for the sections inside it: a group

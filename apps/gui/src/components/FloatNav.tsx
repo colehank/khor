@@ -19,7 +19,7 @@
 import { useRef, type ReactNode } from "react";
 
 import { MachineAvatar } from "@/components/Avatar";
-import { IconGear, IconMore, IconPulse, IconStore } from "@/components/icons";
+import { IconGear, IconRecent, IconMore, IconPulse, IconStore } from "@/components/icons";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { Avatar } from "@/gen/bindings/Avatar";
 import { useTravel } from "@/lib/travel";
@@ -77,6 +77,8 @@ export function FloatNav({
   onSettings,
   onDoctor,
   onStore,
+  onNotifications,
+  unreadNotifications = 0,
   me,
   onMe,
   className,
@@ -93,6 +95,8 @@ export function FloatNav({
   onSettings: () => void;
   onDoctor: () => void;
   onStore: () => void;
+  onNotifications?: () => void;
+  unreadNotifications?: number;
   /** This machine's face, the glyph of 我的 khor at the head of the menu. */
   me: { face: Avatar | null } | null;
   onMe: () => void;
@@ -147,7 +151,7 @@ export function FloatNav({
           onCloseAutoFocus={(e) => e.preventDefault()}
           className="min-w-nav-menu"
         >
-          <MoreMenuItems more={more} onGo={onGo} onSettings={onSettings} onDoctor={onDoctor} onStore={onStore} me={me} onMe={onMe} />
+          <MoreMenuItems more={more} onGo={onGo} onSettings={onSettings} onDoctor={onDoctor} onStore={onStore} onNotifications={onNotifications} unreadNotifications={unreadNotifications} me={me} onMe={onMe} />
         </DropdownMenuContent>
       </DropdownMenu>
     </nav>
@@ -163,6 +167,8 @@ export function MoreMenuItems({
   onSettings,
   onDoctor,
   onStore,
+  onNotifications,
+  unreadNotifications = 0,
   me,
   onMe,
 }: {
@@ -171,6 +177,8 @@ export function MoreMenuItems({
   onSettings: () => void;
   onDoctor: () => void;
   onStore: () => void;
+  onNotifications?: () => void;
+  unreadNotifications?: number;
   me: { face: Avatar | null } | null;
   onMe: () => void;
 }) {
@@ -189,6 +197,11 @@ export function MoreMenuItems({
         </DropdownMenuItem>
       ))}
       {/* 存储 wears its own tray (store-c): the folder is 工作区's. */}
+      {onNotifications && <DropdownMenuItem data-nav-notifications className={MENU_ITEM} onSelect={onNotifications}>
+        <IconRecent />
+        <span className="flex-1">{gui.notifications}</span>
+        {unreadNotifications > 0 && <span className="text-caption tabular-nums text-muted-foreground">{unreadNotifications}</span>}
+      </DropdownMenuItem>}
       <DropdownMenuItem data-nav-store className={MENU_ITEM} onSelect={onStore}>
         <IconStore />
         {gui.settings_store}

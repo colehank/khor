@@ -1,3 +1,7 @@
+import { IconRecent } from "@/components/icons";
+import { NotificationsPage } from "@/views/NotificationsPage";
+import { receiveNotifications, sessionNotificationsEnabled, useNotificationInbox } from "@/lib/notifications";
+import type { InboxItem } from "@/lib/notification-inbox";
 import {SessionHeader} from '@/components/SessionHeader';
 import {retainSessionDrafts} from '@/hooks/use-session-draft';
 import {retainCancelledChatDrafts} from '@/lib/chat-drafts';
@@ -347,6 +351,7 @@ const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) =>
   // 存储 wears its own tray (store-c): received files, not a page.
   store: IconStore,
   doctor: IconPulse,
+  notifications: IconRecent,
 };
 
 /** **A dropping file's name on the pill: no extension, no count** (the
@@ -568,7 +573,10 @@ export default function App() {
   const finished = useRef(new FinishedWatch());
   const onScreen = useRef<(id: string) => boolean>(() => false);
   const announceFinished = useCallback((now: SessionRow[]) => {
-    const done = finished.current.see(now, (id) => onScreen.current(id));
+    const done = finished.current.see(now, (id) => onScreen.current(id)).filter((event) => {
+      const row = now.find((row) => row.id === event.id);
+      return row && sessionNotificationsEnabled(row);
+    });
     // For the gates, as `__xterm` is: what was announced, in order.
     const said = window as unknown as { __finished?: Finished[] };
     if (done.length) said.__finished = [...(said.__finished ?? []), ...done];
@@ -578,24 +586,9 @@ export default function App() {
         f.notice ??
         (f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took));
       notifyFinished(f.title, body).catch(() => {});
-      // The system's notice brings the app forward when it is pressed,
-      // and says nothing more to it; so the window that comes forward
-      // within a minute of a notice posted while it was in the back
-      // opens that session.
-      if (!document.hasFocus()) noticed.current = { id: f.id, at: Date.now() };
     }
   }, []);
-  const noticed = useRef<{ id: string; at: number } | null>(null);
-  const openNoticed = useRef<(id: string) => void>(() => {});
-  useEffect(() => {
-    const back = () => {
-      const n = noticed.current;
-      noticed.current = null;
-      if (n && Date.now() - n.at < 60_000) openNoticed.current(n.id);
-    };
-    window.addEventListener("focus", back);
-    return () => window.removeEventListener("focus", back);
-  }, []);
+  const inbox = useNotificationInbox();
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   /** Whether this machine can host — `false` on a phone, said by its own
       row (`lib/here`, docs/IOS.md 第二步). Handed down as a context; read
@@ -623,7 +616,8 @@ export default function App() {
   const { tabs: openTabs, drop: dropTabs } = sessionTabs;
   const selected = sessionTabs.active;
   onScreen.current = (id) =>
-    document.visibilityState === "visible" && landing === "sessions" && selected === id && (!narrow || screen === "detail");
+    document.visibilityState === "visible" && document.hasFocus() && !lock.locked && morePage === null && !switchingTabs &&
+    landing === "sessions" && selected === id && (!narrow || screen === "detail");
   // Whether the open tabs are up as a list to pick from (`TabSwitcher`)
   // instead of the front tab's content. The narrow face's only way to
   // another tab — a phone has no strip. ⚠️ 墓碑 (UX-45): the wide face's
@@ -1000,11 +994,23 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionTabs.open, readSession]);
 
-  openNoticed.current = (id) => {
-    const row = rows.find((r) => r.id === id);
-    if (!row) return;
+  const openNotification = (item: InboxItem): boolean => {
+    const row = rows.find((r) => r.id === item.session && r.execution_home === item.home);
+    if (!row) return false;
+    setMorePage(null);
+    setSwitchingTabs(false);
     setLanding("sessions");
     onSelect(row);
+    return true;
+  };
+  useEffect(() => {
+    if (!rowsRead || settingsFace || lock.locked) return;
+    receiveNotifications(rawRows, (id) => onScreen.current(id));
+  }, [rawRows, rowsRead, settingsFace, lock.locked, hidden, morePage, switchingTabs]);
+  const openNotifications = () => {
+    setMorePage("notifications");
+    setSwitchingTabs(false);
+    setScreen("detail");
   };
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
@@ -1543,6 +1549,8 @@ export default function App() {
       onSettings={moreSettings}
       onDoctor={moreDoctor}
       onStore={moreStore}
+      onNotifications={openNotifications}
+      unreadNotifications={inbox.items.filter((item) => !item.read).length}
       me={me ? { face: me.face } : null}
       onMe={moreMe}
     />
@@ -1580,6 +1588,8 @@ export default function App() {
   ) : null;
   const nav = (
     <FloatNav
+      onNotifications={openNotifications}
+      unreadNotifications={inbox.items.filter((item) => !item.read).length}
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
       more={navOrder.slice(NAV_SHOWN).map(seatOf)}
       active={morePage === null ? landing : null}
@@ -3394,7 +3404,9 @@ export default function App() {
   }, [narrow, shownKey, screen]);
 
   const morePageEl =
-    morePage === null ? null : morePage === "connection" ? (
+    morePage === null ? null : morePage === "notifications" ? (
+      <NotificationsPage inbox={inbox} sessions={rows} onOpen={openNotification} onClose={leaveMorePage} />
+    ) : morePage === "connection" ? (
       <ConnectionPage
         devices={devices}
         onClose={leaveMorePage}

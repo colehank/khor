@@ -189,6 +189,7 @@ impl Observation {
             doing: None,
             observation: Some(self.reference.clone()),
             can_control: false,
+            activity: Vec::new(),
         }
     }
 }

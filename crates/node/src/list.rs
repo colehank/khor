@@ -223,6 +223,7 @@ mod tests {
             session: Session {
                 observation: None,
                 can_control: false,
+                activity: Vec::new(),
                 id: SessionId(id.to_owned()),
                 kind: Kind("tui".to_owned()),
                 title: id.to_owned(),

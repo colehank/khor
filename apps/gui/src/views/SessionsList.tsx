@@ -1,3 +1,5 @@
+import { useNotificationInbox, setSessionNotifications } from "@/lib/notifications";
+import { notificationsEnabled } from "@/lib/notification-inbox";
 import { sessionCwdOnScreen } from "@/lib/session-cwd";
 import { useMemo, useState } from "react";
 
@@ -98,6 +100,7 @@ export function SessionsList({
       it: unlike a pin, the conversion has no optimistic state to keep
       — the row comes back in its new form on the next poll, or it does
       not come back at all and this sentence says why. */
+  const notificationInbox = useNotificationInbox();
   const [turnRefused, setTurnRefused] = useState<Map<string, string>>(new Map());
   /** The row whose title box the menu's 重命名 opened, if any. */
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -216,6 +219,8 @@ export function SessionsList({
   // finds them on the next — and the one that cannot be taken back is no
   // longer between 置顶 and 复制 ID.
   const actions = (r: SessionRow): RowAction[] => [
+    ...(r.execution_home && (r.can_control || r.activity?.length) ? [{ key: "notifications", label: notificationsEnabled(notificationInbox, r) ? gui.notification_mute : gui.notification_follow,
+      run: () => setSessionNotifications(r, !notificationsEnabled(notificationInbox, r)) }] : []),
     {
       key: "pin",
       // The word is what pressing it *does*, so it is the opposite of

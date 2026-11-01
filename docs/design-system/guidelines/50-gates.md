@@ -840,3 +840,6 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run directory-watch`：`node scripts/check-directory-watch.mjs`。
 - `npm run file-acceptance`：`node scripts/check-file-acceptance.mjs`。
 - `npm run workspace-memory`：`node scripts/check-workspace-memory.mjs`。
+
+- `npm run notification-inbox`：宿主事件的恢复、去重、待处理/已读分离、静音、显式订阅、准确目标与记录上限。
+- `npm run notification-ui`：真实通知组件宽窄布局、处理/已读分离、准确目标、刷新恢复、跨窗口更新；node IO由专用Lab记录替代。

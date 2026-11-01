@@ -13409,6 +13409,7 @@ mod rows_by_change {
         Session {
             observation: None,
             can_control: false,
+            activity: Vec::new(),
             id: SessionId(id.into()),
             kind: khor_core::Kind(khor_core::kind::SHELL.into()),
             title: id.into(),

@@ -50,6 +50,7 @@ use ts_rs::TS;
 /// the display word up in the catalog at the last moment (docs/UX.md 文案).
 #[derive(Debug, Clone, Serialize, TS)]
 pub struct SessionRow {
+    pub activity: Vec<khor_core::activity::ActivityEvent>,
     pub id: String,
     pub kind: String,
     pub title: String,
@@ -1135,6 +1136,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 hosted,
                 via_face: v.session.via.as_ref().and_then(|d| faces.get(d).cloned()),
                 last: v.session.last,
+                activity: v.session.activity,
                 doing: v.session.doing,
                 via: v.session.via,
                 id: v.session.id.0,

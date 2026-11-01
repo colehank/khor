@@ -1820,7 +1820,7 @@ match event {
                             if let Err(error) = result { break Some(error); }
                         }
                         fanout.send(&GuiNote::Answered { ask, option });
-                        if asks.is_empty() {
+                        if asks.is_empty() && elicits.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
                             // turn the ask interrupted is still running.
                             let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
