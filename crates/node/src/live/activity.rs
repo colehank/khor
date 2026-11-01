@@ -18,9 +18,9 @@ pub(super) fn session_events(
     if let Some(saved) = saved {
         events.extend(command_events(saved));
     }
-    // Keep request resolutions when a busy shell's command tail would otherwise evict them.
-    events.sort_by_key(|event| (event.kind == ActivityKind::NeedsInput, event.at_ms));
     if events.len() > RETAINED_EVENTS {
+        // Keep request resolutions when a busy shell's command tail would otherwise evict them.
+        events.sort_by_key(|event| (event.kind == ActivityKind::NeedsInput, event.at_ms));
         events.drain(..events.len() - RETAINED_EVENTS);
     }
     events.sort_by_key(|event| event.at_ms);
