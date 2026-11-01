@@ -1,5 +1,19 @@
 # 行为与门
 
+### 会话关系只由药丸表达（2026-11-01）
+
+正常会话保持普通药丸身份，无独立“会话恢复”文字。进行中沿同一呼吸，展开仅短状态，不提供“立即重试”；失败才显式重试，点击后同一颗药丸收回并承接活动。结束／待确认以稳定轻量样式表达；展开状态、图标、原GlassItem动作同排，不加矩形底块或技术身份说明。选择新目录沿原DirPicker。
+
+自动续接仅针对进入时安全、归属明确且已确认恢复能力的自有对话；查看期间的后续结束不自动重开，普通Shell新开始终是新run。Pending核对原请求、Unknown不另建执行；健康live且无未决请求不持续显示旧失败。Node依据既有运行事实给出资格，不能靠隐藏控件或PID存在代替。
+
+门：`npm run recovery-relationship`与`npm run chat-recovery`；实际Shell状态和输入归属另有khor-node单测。Mac宽窄屏／iPhone、玻璃与字体、重复点击、断连／正常结束／未知、单手触达及减少动态效果列真机验收；隔离组件和固定传输分别记录。
+
+### 终端链接的点击归属（2026-11-01）
+
+有效链接／文件单击在 Khor 当前会话内容中打开，Cmd/Ctrl 单击交给客户端系统默认应用，不以当前程序开启鼠标模式改变目标规则。已识别链接的主按钮点击先由 Khor 保留，不能同时向程序发送同一次按下／抬起；移动超过现有拖动阈值则交还原按下给终端，抬起不再打开链接。普通文字、右键、强制选区保持原终端行为，已有选区不因抬起打开链接。触摸的已完成 tap 同样适用，滚动／长按选区不冒充 tap。
+
+门：`npm run terminal-link-intent`，发布基线在tracked普通点击及touch tap场景先红；实际回调的打开意图与事件归属测试分开记录。`npm run links`继续验证真实xterm缓冲中的软折行路径／URL和OSC8。事件harness不替代Mac真实Codex/TUI与iPhone触摸验收；真实App另核零重复打开、零程序误点击、拖选及右键。
+
 每一行后面都跟着一道能变红的检查。**没有门的那一行不算规则**，只算愿望。
 
 **什么配门（2026-09-25 起）。** 门只给两类东西：机器量得准、人眼看不出的（token 值、对比度、字号档、像素与色值字面量、图标家族、首帧颜色、拖动区域、慢源时限）；以及出过事的。布局摆放——按钮在不在 R0、sheet 离顶多远、某页有没有某一行——不再写成 `check-face` 断言，放进每轮末「真 app 走一遍」的验收清单，由负责人对着看。
@@ -1137,3 +1151,9 @@ Lab 的鼠标／触摸补充检查覆盖深浅主题、320／390 窄屏、两行
 - 自动保存只合并同一编辑线的待写文本；内容摘要重复不代表请求代次回退。丢弃后旧失败请求不能重新安排写入；已提交成功的真实磁盘结果仍须更新缓存。
 
 门：`scroll-lifecycle`、`save-road`。真实 App 另验 iOS 系统键盘、惯性上翻中尺寸变化、窄屏提交菜单及连续跳转；浏览器模拟与系统键盘结果分别记录。
+
+### Preview document titles (round 3)
+
+Standalone workspace temporary file/commit tabs use italic titles, without an extra hollow preview ring; double-click keeps them with normal titles. Session tabs own a browsing process: file/commit/page selections navigate in the current tab with normal titles; only explicit New adds a sibling. A matching target in another tab never steals focus. Desktop, mobile deck and overview follow the same tab identity. This is distinct from the nonclosable pin. The subtitle, dirty and unread marks remain independent. Verified by `WORKSPACE_PREVIEW_REQUIRE=1 WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` (baseline normal title reproduced before the style fix).
+
+Session content toolbar order: source selector (workspace/browser), optional workspace Back, content pill, actions. Browsing pages do not show the workspace Back.

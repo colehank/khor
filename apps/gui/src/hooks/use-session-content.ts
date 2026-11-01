@@ -5,9 +5,14 @@ import { closeTab, fetchTabs, focusTab, goTab, openTab, pinTab, reorderTabs, typ
 
 import {usePageIcons} from '@/hooks/use-page-icons';
 
-export type ContentView = "workspace" | "file" | "page";
+import type { ContentView } from '@/lib/content';
+export type { ContentView } from '@/lib/content';
 export type ContentTab = TabsOpen["tabs"][number] & { view: ContentView | null };
 export const CONTENT_KIND = "content";
+type ContentDestination = {
+  session:string;key?:string|null;device:string;address:string;view:'file'|'page'|'commit';
+  line?:number|null;title?:string;
+};
 const EMPTY: TabsOpen = { tabs: [], active: "" };
 const HANDLE_KEY = "khor.content.handles";
 type State = { open: TabsOpen; opening: ContentTab[]; handles: Record<string, string>; pointing: Record<string, Partial<ContentTab>> };
@@ -99,6 +104,7 @@ export function useSessionContent(watch: boolean) {
       const saved = existing?.id ?? await openTab(CONTENT_KIND, tab.device, tab.url, tab.session, after ? resolve(after) : undefined, tab.view || 'file', id);
       aliases.current.set(id, saved);
       handles.current = { ...handles.current, [saved]: id };
+      if (tab.title && existing?.title !== tab.title) await goTab(CONTENT_KIND, saved, tab.device, tab.url, tab.title, tab.view || 'file');
       const focused = await focusTab(CONTENT_KIND, saved);
       opening.current = opening.current.filter(t => t.id !== id);
       return { result: saved, value: focused };
@@ -111,11 +117,10 @@ export function useSessionContent(watch: boolean) {
     if (opening.current.some(t => t.id === id)) return persist(id).then(() => {});
     return send(async () => ({ result: undefined, value: await focusTab(CONTENT_KIND, resolve(id)) }));
   };
-  const open = (session: string, device: string, path: string, view: ContentView, line?: number | null, after?: string): ContentTab => {
-    // + always creates a distinct starting tab. Address deduplication is
-    // reserved for links opened from outside an existing content tab.
+  const createDocumentTab = (session: string, device: string, path: string, view: ContentView, line?: number | null, after?: string, title = ''): ContentTab => {
+    // Explicit tab creation is separate from navigation in an existing tab.
     const known = view === 'workspace' ? undefined : [...current.current.tabs as ContentTab[], ...opening.current].map(t=>({...t,...pointing.current[handle(t)]})).find(t => same(t, session, device, path, view));
-    const tab = known || { id: `opening:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`}`, session, device, url: path, title: '', view, pinned: false, touched: Date.now() };
+    const tab = known || { id: `opening:${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`}`, session, device, url: path, title, view, pinned: false, touched: Date.now() };
     chosen.current.set(session, handle(tab));
     if (!known) opening.current = [...opening.current, tab];
     publish();
@@ -124,33 +129,35 @@ export function useSessionContent(watch: boolean) {
     if (line != null) setLines(all => ({ ...all, [handle(tab)]: { line, at: Date.now() } }));
     return tab;
   };
-  const add = (session: string, device: string, path: string, view: ContentView = 'file', after?: string, line?: number | null) => {
-    const tab = open(session, device, path, view, line, after); return persist(tab.id, after);
-  };
   const point = (id: string, device: string, path: string, view: ContentView, title = '', line?: number | null) => {
     const tab = opening.current.find(t=>t.id===id) || current.current.tabs.find(t=>t.id===resolve(id));
     if (!tab) return Promise.reject(new Error('Content tab was closed'));
     const key=handle(tab as ContentTab), version=(versions.current.get(key)||0)+1;
     versions.current.set(key,version);
     pointing.current={...pointing.current,[key]:{device,url:path,view,title}};publish();
-    if(line!=null)setLines(all=>({...all,[key]:{line,at:Date.now()}}));
+    setLines(all=>{if(line!=null)return {...all,[key]:{line,at:Date.now()}};if(!(key in all))return all;const next={...all};delete next[key];return next;});
     return persist(id).then(saved=>send(async()=>({result:undefined,value:await goTab(CONTENT_KIND,saved,device,path,title,view)}))).finally(()=>{
       if(versions.current.get(key)===version){const next={...pointing.current};delete next[key];pointing.current=next;if(mounted.current)publish();}
     });
   };
-  /** Choose a document from workspace/history, preserving already opened tabs. */
-  const openFromPicker = (session: string, key: string | null, device: string, path: string, view: 'file'|'page', line?: number|null): ContentTab => {
-    // Read live optimistic targets: two choices may arrive before React renders
-    // or the node acknowledges the first conversion of a blank starting page.
-    const tab = [...current.current.tabs as ContentTab[], ...opening.current]
-      .map(t=>({...t,...pointing.current[handle(t)]}))
-      .find(t=>t.session===session&&(handle(t)===key||t.id===key));
-    if(tab&&(tab.view||'workspace')==='workspace'){
-      const next={...tab,device,url:path,view,title:''};
-      void point(tab.id,device,path,view,'',line).catch(()=>{});
-      return next;
+  /** Every content destination belongs to the tab that initiated navigation. */
+  const navigate = ({session,key=null,device,address,view,line,title=''}:ContentDestination):ContentTab|null => {
+    const tabs=[...current.current.tabs as ContentTab[],...opening.current]
+      .map(tab=>({...tab,...pointing.current[handle(tab)]})).filter(tab=>tab.session===session);
+    const selected=chosen.current.get(session);
+    const tab=key ? tabs.find(tab=>tab.id===key||handle(tab)===key)
+      : tabs.find(tab=>tab.id===selected||handle(tab)===selected)
+        ?? tabs.reduce<ContentTab|undefined>((last,next)=>!last||next.touched>last.touched?next:last,undefined);
+    if(!tab){
+      if(key)return null;
+      // The first content entry needs one tab; subsequent entries never allocate.
+      return createDocumentTab(session,device,address,view,line,undefined,title);
     }
-    return open(session,device,path,view,line,tab?.id);
+    chosen.current.set(session,handle(tab));
+    const next={...tab,device,url:address,view,title};
+    if(selected!==handle(tab))void focus(tab.id).catch(()=>{});
+    void point(tab.id,device,address,view,title,line).catch(()=>{});
+    return next;
   };
   /** Native page observations can arrive after outer Back reset the tab.
    * Check the optimistic target now and its destination version at write
@@ -206,6 +213,6 @@ export function useSessionContent(watch: boolean) {
     return send(async () => ({result:undefined,value:await reorderTabs(CONTENT_KIND,session,saved)}));
   };
   const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
-  return { newTab:(session:string,device='')=>open(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, openFromPicker, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  return { newTab:(session:string,device='')=>createDocumentTab(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, createDocumentTab, lines, ready, error, fail, ensure, reorder, point, navigate, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

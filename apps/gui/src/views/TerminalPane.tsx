@@ -1,4 +1,5 @@
 import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
+import {claimTerminalLinkClicks} from "@/lib/term-link-gesture";
 import {assertPageUrl,openSystemUrl,openSystemPath,openSystemFileUri} from "@/lib/client-opener";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // A live terminal for a session khor hosts (docs/handoff 终端画屏) —
@@ -65,7 +66,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { terminalAttachment, bellHaptic, faceNote, inApp, rejoinNow, said, termDropForget, termEnded, type Miss } from "@/api";
+import { terminalAttachment, bellHaptic, faceNote, inApp, said, termDropForget, termEnded, type Miss } from "@/api";
 import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
@@ -1361,8 +1362,6 @@ export function TerminalPane({
     const off = missed.map((n) => offerNotice(id, n));
     return () => off.forEach((f) => f());
   }, [id, missed]);
-  // **Reconnecting, on the pill** (`rejoinNotice`); 立即重试 dials now,
-  // past the backoff, and the seconds start again.
   useEffect(() => {
     if (!stall || gone || why) return;
     return offerNotice(
@@ -1371,11 +1370,6 @@ export function TerminalPane({
         stall,
         machine: machine ?? null,
         since: stallSince || Date.now(),
-        now: () => {
-          setStallSince(Date.now());
-          const m = stall.machine ?? machine;
-          if (m) void rejoinNow(m).catch(() => {});
-        },
       }),
     );
   }, [id, stall, stallSince, gone, why, machine]);
@@ -1920,9 +1914,10 @@ export function TerminalPane({
       }
     };
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
+    const unclaimLinks = claimTerminalLinkClicks(term, box, (x,y)=>cellAt(term,x,y), TAP_SLOP);
     const tapped = (row: number, col: number) => {
       if (picture(row, col)) return true;
-      if(!canActivateTerminalLink({},term))return false;
+      if(!canActivateTerminalLink({},term,'touch'))return false;
       const url = urlAt(term, row, col);
       if (url) {
         if (/^file:/i.test(url)) fileLink(url);
@@ -1931,7 +1926,7 @@ export function TerminalPane({
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
         const hit = found.find((f) => covers(f, row, col));
-        if (hit&&canActivateTerminalLink({},term)) openPath(hit.target);
+        if (hit&&canActivateTerminalLink({},term,'touch')) openPath(hit.target);
       });
       return false;
     };
@@ -2949,6 +2944,7 @@ export function TerminalPane({
       parked.stop();
       gestures();
       linked.dispose();
+      unclaimLinks();
       box.removeEventListener("mousedown", pictureClick, true);
       predictResized.dispose();
       kitty.dispose();

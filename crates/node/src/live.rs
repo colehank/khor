@@ -4576,6 +4576,63 @@ mod tests {
     }
 
     #[test]
+    fn shell_recovery_execution_follows_the_owned_endpoint() {
+        use crate::adaptor::{Proc, Procs};
+        use khor_core::recovery::RecoveryExecution;
+        let root = tmp("shell-recovery-status");
+        let k = kind_at(&root);
+        let id = sid("shell/recovery-status");
+        let host_pid = std::process::id();
+        let child_pid = host_pid + 1;
+        k.register(&id, "shell", "fixture", Some(host_pid), None)
+            .unwrap();
+        let dir = k.dir_of(&id).unwrap();
+        let process = |parent| Proc {
+            name: "fixture".into(),
+            started_ms: 0,
+            cwd: None,
+            ppid: parent,
+        };
+        let procs = Procs::of([
+            (host_pid, process(None)),
+            (child_pid, process(Some(host_pid))),
+        ]);
+        assert_eq!(
+            k.shell_recovery_execution(&id, &procs),
+            RecoveryExecution::Unknown,
+            "a PID without a host binding is not live proof"
+        );
+        let host = crate::host::HostFile {
+            port: 1234,
+            cookie: "fixture".into(),
+            host_pid,
+            child_pid,
+        };
+        fs::write(
+            crate::host::host_file_path(&dir),
+            serde_json::to_vec(&host).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            k.shell_recovery_execution(&id, &procs),
+            RecoveryExecution::Live,
+            "a healthy owned shell must not be unknown"
+        );
+        let detached = Procs::of([(host_pid, process(None)), (child_pid, process(Some(1)))]);
+        assert_eq!(
+            k.shell_recovery_execution(&id, &detached),
+            RecoveryExecution::Unknown,
+            "another parent cannot prove the endpoint live"
+        );
+        k.record_exit(&id, 0).unwrap();
+        assert_eq!(
+            k.shell_recovery_execution(&id, &procs),
+            RecoveryExecution::Ended,
+            "a recorded exit overrides a still visible PID"
+        );
+    }
+
+    #[test]
     fn input_capability_requires_current_host_and_child_ownership() {
         use crate::adaptor::{Proc, Procs};
         let root = tmp("input-owner");

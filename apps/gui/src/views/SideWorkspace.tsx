@@ -1,37 +1,12 @@
+import { WorkspaceGitNavigation } from '@/components/WorkspaceGitNavigation';
+import { WorkspaceHistory } from '@/views/workspace/WorkspaceHistory';
+import { WorkspaceHistoryMemory } from '@/views/workspace/workspace-history';
+import type { GitCommitSummary } from '@/gen/bindings/GitCommitSummary';
 import { useDirectoryWatch } from "@/hooks/use-directory-watch";
 import { useHidden } from "@/hooks/use-hidden";
 import { directoryScopeIsNative, directoryWatchScopes } from "@/lib/directory-watch";
 import {useDraftState} from '@/hooks/use-draft-count';
-/**
- * **The 附栏's 工作区 seat is the workspace's own tree** (UX-39 §5, the owner
- * 2026-10-06 22:00: 「工作区就不能出工作区外了，顶级不可返回目录就是该
- * 工作区」, and 「是不是有两套绘制目录的方法」— yes, there were: the
- * machine page's listing (`FilesPane`, folder icons, no git, 2026-08-17)
- * and the workspace landing's tree (`FileTree`, twisties, git's letters,
- * 工作区批⑦). The seat drew the first; it is the workspace, so it draws
- * the second). The ceiling is the workspace that holds the session's
- * directory (`holding`), or that directory itself when no workspace
- * does; git's letters come from one status read, folded up the tree the
- * way the landing folds them. A file opens in place as the file page
- * with the main area's deck (`FilePage`, UX-40 §4; it folds as the main
- * area's does, UX-43 §4), and ‹ there is
- * the way back to the tree — or to 最近, for the file a row of 最近 opened.
- * Where it stands — the file open — is said as it moves (`onSpot`) and
- * handed back when the 附栏 opens again (`spot`, UX-47).
- *
- * **Find and make** (UX-40 §1): the find row under the 附栏's head is the
- * landing tree's own box and ＋ — names and lines under the workspace
- * (`Hits`), 新建文件 / 新建目录 into the tree (`FileTree`'s `make`).
- *
- * ⚠️ 墓碑 (item 60 part 5 → STORE-BRIEF phase 1, the owner 2026-10-07:
- * 「工作区不显示"放进来的"」): **「放进来的」**, a row above the tree
- * opening the machine's `~/khor-drop/` as a tree of its own, the one door
- * out of the ceiling. Received files are 更多 → 存储's (`StorePage`).
- *
- * ⚠️ 墓碑 (UX-37 §6 → UX-40 §4): the bare file page, ‹ and the name in a
- * head at its top. ⚠️ 墓碑 (UX-37 §1): `MachineFiles` here, climbing to
- * the root and on to every workspace.
- */
+/** Rooted files open locally or through the session's existing content-tab owner. */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchCheckout, fetchGitLog, fetchGitStatus, searchIn, type Found, type GitLog } from "@/api";
@@ -87,6 +62,9 @@ export function SideWorkspace({
   spot,
   onSpot,
   onOpenContent,
+  onOpenCommit,
+  historyView,
+  onHistoryView,
   onContentMoved,
   onContentGone,
   findLeading,
@@ -100,7 +78,10 @@ export function SideWorkspace({
 }: {
   active?: boolean;
   /** A content-tab host may own file navigation and the search field's scope. */
-  onOpenContent?: (path: string, line: number | null) => void;
+  onOpenContent?: (path: string, line: number | null, keep?:boolean) => void;
+  onOpenCommit?: (commit:GitCommitSummary,keep:boolean)=>void;
+  historyView?:boolean;
+  onHistoryView?:(history:boolean)=>void;
   onContentMoved?: (from:string,to:string)=>void;
   onContentGone?: (path:string)=>void;
   findLeading?: ReactNode;
@@ -202,7 +183,13 @@ export function SideWorkspace({
   }, [machine, root, gitAt]);
   /** The repository's 提交历史 sheet, and the commit a row of it opened —
       a screen in the file's place, ‹ back to the retained history list (`CommitPage`). */
-  const {historyOpen,setHistoryOpen,commit,setCommit,backToHistory} = useRepositoryHistory(machine,root);
+  const route = useRepositoryHistory(machine,root);
+  const {commit,setCommit,backToHistory}=route;
+  const historyOpen=historyView??route.historyOpen;
+  const setHistoryOpen=onHistoryView??route.setHistoryOpen;
+  const [historyMemory]=useState(()=>new WorkspaceHistoryMemory());
+  const hosted=onOpenCommit!==undefined;
+  const repo=checkout?.machine===machine&&checkout.root===root?checkout.repo:git!==null;
 
   // git's letters move with khor's acts anywhere in this checkout — the
   // main area's tree, a save there (UX-43 §1, `lib/tree-changed`).
@@ -227,7 +214,7 @@ export function SideWorkspace({
   const huntAsked = useRef(0);
   useEffect(() => {
     const q = hunt.trim();
-    if (q === "") {
+    if (q === "" || hosted && historyOpen) {
       huntAsked.current += 1;
       setFound(null);
       setHuntError(null);
@@ -248,7 +235,7 @@ export function SideWorkspace({
         });
     }, 300);
     return () => window.clearTimeout(wait);
-  }, [hunt, machine, root]);
+  }, [hunt, machine, root, hosted, historyOpen]);
   /** ＋'s choice, handed to the tree once the menu has given the focus
       back (the name box takes it next), the box cleared so the tree is
       there to take it. */
@@ -305,15 +292,16 @@ export function SideWorkspace({
       <div className={file !== null || commit !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
         {!hideFind && <SideFind onEnter={onSearchEnter} leading={findLeading} label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />}
-        {hunt.trim() !== "" ? (
+        {hosted && <WorkspaceGitNavigation branch={git?.branch??''} repo={repo} history={historyOpen} onHistory={setHistoryOpen} seat="session"/>}
+        {hosted && historyOpen ? <WorkspaceHistory machine={machine} root={root} query={hunt} memory={historyMemory} active={null} onOpen={(commit,keep)=>onOpenCommit?.(commit,keep)}/>:hunt.trim() !== "" ? (
           <Hits
             found={found}
             error={huntError}
             query={hunt.trim()}
             dir={root}
             here={here}
-            onOpen={(path, line) => {
-              if (onOpenContent) return onOpenContent(path, line);
+            onOpen={(path, line, keep) => {
+              if (onOpenContent) return onOpenContent(path, line, keep);
               setFile(path);
               setGoLine(line === null ? null : { path, line, at: Date.now() });
             }}
@@ -327,7 +315,7 @@ export function SideWorkspace({
             here={here}
             marks={folded(root, git)}
             open={file}
-            onOpen={(path) => onOpenContent ? onOpenContent(path, null) : setFile(path)}
+            onOpen={(path,keep) => onOpenContent ? onOpenContent(path, null,keep) : setFile(path)}
             onGone={(path) => {
               if (file && movedFilePath(file,path,path)!==null) setFile(null);
               onContentGone?.(path);
@@ -341,7 +329,7 @@ export function SideWorkspace({
             onMade={() => setGitAt((n) => n + 1)}
             make={make}
             onMakeSeen={() => setMake(null)}
-            headCommit={treeHead ? null : headCommit}
+            headCommit={treeHead || hosted ? null : headCommit}
             onCommitLine={() => setHistoryOpen(true)}
           /></>
         )}
@@ -351,7 +339,7 @@ export function SideWorkspace({
           <CommitPage key={commit.id} machine={machine} root={root} commit={commit} onBack={backToHistory} />
         </div>
       )}
-      <HistorySheet
+      {!hosted && <HistorySheet
         open={historyOpen}
         onOpenChange={setHistoryOpen}
         machine={machine}
@@ -361,7 +349,7 @@ export function SideWorkspace({
           setFile(null);
           setCommit(c);
         }}
-      />
+      />}
       {file !== null && (
         <div data-files-page className="relative flex min-h-0 flex-1 flex-col bg-background">
           <FilePage

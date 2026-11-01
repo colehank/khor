@@ -200,6 +200,7 @@ const ongoing = new Set([
   "files-cancelling", "new-session-seen-asking", "files-reading-folder",
   "files-picking", "reach-busy", "join-dialing", "chat-input", "uploading",
   "web-opening", "web-opening-here", "page-downloading",
+  "recovery-pill-connecting", "recovery-pill-continuing",
 ]);
 const appendedEllipsis = users(/(?:\$\{gui\.[a-z_]+\}|gui\.[a-z_]+\s*\+\s*["'])(?:…|\.\.\.)/);
 if (appendedEllipsis.length) fail(`${appendedEllipsis.join(", ")} append an ellipsis to a catalogue label`);

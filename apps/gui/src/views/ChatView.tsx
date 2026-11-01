@@ -13,7 +13,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalS
 
 import {
   inApp,
-  rejoinNow,
   type ChatFrame,
   type Miss,
 } from "@/api";
@@ -832,11 +831,6 @@ export function ChatView({
         stall,
         machine: machine ?? null,
         since: stallSince || Date.now(),
-        now: () => {
-          setStallSince(Date.now());
-          const m = stall.machine ?? machine;
-          if (m) void rejoinNow(m).catch(() => {});
-        },
       }),
     );
   }, [id, stall, stallSince, gone, machine]);

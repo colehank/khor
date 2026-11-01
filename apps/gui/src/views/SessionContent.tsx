@@ -1,3 +1,7 @@
+import { GlassCircle } from '@/components/Glass';
+import { IconBack } from '@/components/icons';
+import { commitAddress, readCommitAddress } from '@/lib/content-commit';
+import { CommitPage, type CommitPageState } from '@/views/CommitPage';
 import {useDraftState} from '@/hooks/use-draft-count';
 /** Desktop session content. The session's terminal stays in its own pane;
  * these are its files and pages, using the same node tab handles throughout. */
@@ -24,7 +28,7 @@ import "@/styles/session-content.css";
 import { contentView, contentName, contentTabTargets } from '@/lib/content';
 export { contentView, contentName } from '@/lib/content';
 import { contentPickerPosition, type ContentNavigation } from '@/hooks/use-content-navigation';
-import { contentTabFace, ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck } from '@/views/MobileSessionContent';
+import { ContentDocumentBand, MobileContentDeck, contentTabFace, ContentPicker, ContentOverview, ContentSessionOverview, contentFileDeck } from '@/views/MobileSessionContent';
 import {ContentToolbar} from '@/components/ContentToolbar';
 import {ContentPathField} from '@/views/ContentPathField';
 import {TabAvatar} from '@/browse/TabStrip';
@@ -37,8 +41,8 @@ export function ContentTabs({session,open,devices,content,navigation,onAdd,onFoc
   const tabs=content.allTabs.filter(t=>t.session===session),state=navigation.get(session);
   const targets=contentTabTargets(tabs,content.handle);
   const faces=[...targets].map(([key,tab])=>{
-    const picker=contentView(tab)==='workspace';
-    return {...contentTabFace(tab,devices,content.pageIcon),id:key,...(picker?{label:gui.content_new}:{}),pinned:tab.pinned,
+    const face=contentTabFace(tab,devices,content.pageIcon,navigation.forTab(session,key).get(session).scene),picker=face.mark?.key==='new-tab';
+    return {...face,id:key,pinned:tab.pinned,
       attributes:{'data-content-tab':tab.id,'data-content-on':state.key===key,'data-content-browse':picker||undefined,'data-content-icon':!picker},
       menu:[{key:'pin',label:tab.pinned?gui.unpin:gui.pin,run:()=>content.pin(tab.id,!tab.pinned)},{key:'close',label:gui.close_tab,disabled:tab.pinned,run:()=>content.close(tab.id)}]};
   });
@@ -108,11 +112,34 @@ function ContentFileToolbar({tab,device,devices,navigation,onPoint,onClose,child
   const [editing,setEditing]=useState(false);
   const browse=(source:'workspace'|'browser')=>{setEditing(false);navigation.update(tab.session,{source});navigation.browse(tab.session);};
   const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
-  const back=()=>{setEditing(false);navigation.returnToPicker(tab.session);};
+  const back=()=>{setEditing(false);navigation.browse(tab.session);};
   return <ContentToolbar kind="file" source="workspace" onSource={browse} onBack={back} actions={children} pinned={tab.pinned} onClose={close}>
     {editing?<ContentPathField key={device.id+tab.url} device={device} devices={devices} path={tab.url} base={directoryOf(tab.url)} mobile={false} onLeave={()=>setEditing(false)} onDirectory={(d,path)=>{setEditing(false);navigation.browse(tab.session,{device:d.id,root:path});}} onFile={(d,path)=>{setEditing(false);onPoint(d,path);}}/>:<button data-content-location-edit className="content-location-rest" onClick={()=>setEditing(true)}><span className="content-location-face"><TabAvatar f={{id:device.id,label:device.shown,path:tab.url,face:device.face}} bare="size-tab-face" seat="tab"/></span><span>{tab.url}</span></button>}
     {locationAction}
   </ContentToolbar>;
+}
+
+function SessionCommitContent({tab,device,face,content,navigation,onClose,mobile,state}:{
+  tab:ContentTab;device:DeviceRow;face:TabFace|undefined;content:SessionContent;navigation:ContentNavigation;
+  onClose:()=>void;mobile:boolean;state:CommitPageState;
+}) {
+  const revision=readCommitAddress(tab.url);
+  if(!revision)return <div role="alert" className="session-content-error">{gui.no_matches}</div>;
+  const browse=(source:'workspace'|'browser')=>{
+    navigation.browse(tab.session,{device:device.id,root:revision.root});
+    navigation.update(tab.session,{source});
+  };
+  const back=()=>browse('workspace');
+  const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
+  return <>
+    {!mobile&&<ContentToolbar kind="commit" source="workspace" onSource={browse} onBack={back} onClose={close} pinned={tab.pinned}>
+      <button data-content-commit-location className="content-location-rest" title={revision.root} onClick={back}><span className="content-location-face"><TabAvatar f={{id:device.id,label:device.shown,path:revision.root,face:device.face}} bare="size-tab-face" seat="tab"/></span><span>{revision.root||'~/'}</span></button>
+    </ContentToolbar>}
+    <CommitPage machine={device.name} root={revision.root} commit={{id:revision.id}} title={tab.title} state={state} presentation="tab" onBack={back}/>
+    {mobile&&face&&<MobileContentDeck session={tab.session} face={face} content={content} navigation={navigation} onClose={onClose} leading={<GlassCircle aria-label={gui.back} onClick={back}><IconBack/></GlassCircle>}>
+      <ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={contentName(tab)} onTitle={back}/>
+    </MobileContentDeck>}
+  </>;
 }
 
 export function SessionContentPane({ container, content, session, devices, rows, visible, onClose, mobile = false, navigation, sessionFaces, onSelectSession, onCloseSession, onNewSession }: {
@@ -121,6 +148,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
   sessionFaces: TabFace[];onSelectSession:(id:string)=>void;onCloseSession:(id:string)=>void;onNewSession:()=>void;
   navigation: ContentNavigation; onClose: () => void;
 }) {
+  const commitStates=useRef(new Map<string,{handle:string;state:CommitPageState}>());
   const visited = useRef(new Set<string>()), pickers = useRef(new Set<string>());
   // Strip order is navigation, not DOM order. Moving retained editor/page
   // fibers needlessly reconnects effects (including StrictMode replay).
@@ -129,6 +157,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
   viewOrder.current=viewOrder.current.filter(key=>byHandle.has(key));
   for(const key of byHandle.keys())if(!viewOrder.current.includes(key))viewOrder.current.push(key);
   const views=viewOrder.current.map(key=>byHandle.get(key)!);
+  for(const [key,entry] of commitStates.current)if(!byHandle.has(entry.handle))commitStates.current.delete(key);
   const [drafts, setDrafts] = useDraftState<Record<string, Draft | undefined>>({}, drafts=>Object.values(drafts).filter(Boolean).length);
   const [focused, setFocused] = useState(false);
   const state = session ? navigation.get(session) : null;
@@ -168,7 +197,7 @@ export function SessionContentPane({ container, content, session, devices, rows,
   };
   const openDocument = (owner: string, device: DeviceRow, path: string, view: 'file'|'page', line?: number|null) => {
     (document.activeElement as HTMLElement|null)?.blur();
-    navigation.document(content.openFromPicker(owner,navigation.get(owner).key,device.id,path,view,line));
+    navigation.document(content.navigate({session:owner,key:navigation.get(owner).key,device:device.id,address:path,view,line}));
   };
   useTabHost(visible && focused ? {
     count:peers.length,front:!!current||state?.scene==='picker',
@@ -216,13 +245,22 @@ export function SessionContentPane({ container, content, session, devices, rows,
       // A tab keeps its identity while its destination changes. Drafts belong
       // to the destination so leaving one file cannot seed another file.
       const draftKey=JSON.stringify([key,tab.device,tab.url]);
+      const commitState=()=>{
+        let retained=commitStates.current.get(draftKey);
+        if(!retained){retained={handle:key,state:{collapsed:new Set(),scroll:{}}};commitStates.current.set(draftKey,retained);}
+        return retained.state;
+      };
+      const openWorkspaceFile=(device:DeviceRow,path:string,line:number|null)=>{
+        navigation.document(content.navigate({session:tab.session,key,device:device.id,address:path,view:'file',line}));
+      };
+
       const locateFile=()=>{if(!device)return;requestFileLocation(device.name,tab.url);scoped.update(tab.session,{source:'workspace',query:''});scoped.browse(tab.session,{device:device.id,root:directoryOf(tab.url)});};
-      const browser=(onBusy?:(busy:boolean)=>void,suspended=false)=><BrowserPane retentionOwner="content" suspended={suspended} onIcon={content.recordPageIcon} onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.open(tab.session,device!.id,url,'page',undefined,tab.id))}/>;
+      const browser=(onBusy?:(busy:boolean)=>void,suspended=false)=><BrowserPane retentionOwner="content" suspended={suspended} onIcon={content.recordPageIcon} onBusy={onBusy} tab={key} device={device?.id||tab.device} machine={device?.name||''} here={!!device?.me} url={tab.url} onOpened={url=>{void recentVisit('page',device?.name||'',url,tab.session).catch(()=>{});}} onWent={url=>quiet(content.follow(tab.id,url))} onTitle={title=>quiet(content.rename(tab.id,title))} onPopped={url=>navigation.document(content.navigate({session:tab.session,key,device:device!.id,address:url,view:'page'}))}/>;
       return <Fragment key={key}>
-        {row&&face&&pickers.current.has(key)&&<ContentPosition session={tab.session} position={contentPickerPosition(key,p)} show={pickerShow} mobile={mobile} navigation={scoped} data-content-picker={tab.session} data-content-picker-handle={key} className={cn('session-content-view',!pickerShow&&'session-content-retained')} aria-hidden={!pickerShow} inert={!pickerShow}><ContentPicker active={pickerShow} onFilesMoved={filesMoved} onFilesGone={filesGone} desktop={!mobile} face={face} content={content} onClose={onClose} row={row} devices={devices} navigation={scoped} onOpen={(device,path,view,line)=>openDocument(tab.session,device,path,view,line)}/></ContentPosition>}
+        {row&&face&&pickers.current.has(key)&&<ContentPosition session={tab.session} position={contentPickerPosition(key,p)} show={pickerShow} mobile={mobile} navigation={scoped} data-content-picker={tab.session} data-content-picker-handle={key} className={cn('session-content-view',!pickerShow&&'session-content-retained')} aria-hidden={!pickerShow} inert={!pickerShow}><ContentPicker active={pickerShow} onFilesMoved={filesMoved} onFilesGone={filesGone} desktop={!mobile} face={face} content={content} onClose={onClose} row={row} devices={devices} navigation={scoped} onWorkspaceFile={openWorkspaceFile} onOpenCommit={(device,root,commit)=>navigation.document(content.navigate({session:tab.session,key,device:device.id,address:commitAddress({root,id:commit.id}),view:'commit',title:commit.subject}))} onOpen={(device,path,view,line)=>openDocument(tab.session,device,path,view,line)}/></ContentPosition>}
         <ContentPosition session={tab.session} position={JSON.stringify(['document',key,tab.url])} show={show} mobile={mobile} navigation={scoped} data-session-content={tab.id} data-content-handle={key} data-content-visible={show} className={cn('session-content-view',!show&&'session-content-retained')} aria-hidden={!show} inert={!show}>
           {!device ? contentView(tab)!=='workspace'&&<div className="session-content-unknown">{gui.content_machine_gone}</div> : <>
-            {contentView(tab)==='file'?(show||visited.current.has(key))&&<FilePage key={draftKey} embedded={!mobile} embeddedToolbar={!mobile?(actions,locationAction)=><ContentFileToolbar locationAction={locationAction} tab={tab} device={device} devices={devices} navigation={scoped} onPoint={(d,path)=>point(tab,d,path)} onClose={onClose}>{actions}</ContentFileToolbar>:undefined} onLocate={locateFile} machine={device.name} path={tab.url} here={device.me} git draft={drafts[draftKey]} onDraft={draft=>{setDrafts(all=>all[draftKey]===(draft||undefined)?all:{...all,[draftKey]:draft||undefined});}} goLine={content.lines[key]||content.lines[tab.id]} contentDeck={mobile&&face?contentFileDeck({session:tab.session,face,content,navigation:scoped,onClose,title:contentName(tab),devices,tab}):undefined} onBack={()=>scoped.returnToPicker(tab.session)} onGone={()=>quiet(content.close(tab.id))} onMoved={(_from,to)=>point(tab,device,to)}/>:contentView(tab)==='page'?show&&face&&<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={face} content={content} navigation={scoped} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)}>{(onBusy,suspended)=>browser(onBusy,suspended)}</MobileContentPage>:null}
+            {contentView(tab)==='file'?(show||visited.current.has(key))&&<FilePage key={draftKey} embedded={!mobile} embeddedToolbar={!mobile?(actions,locationAction)=><ContentFileToolbar locationAction={locationAction} tab={tab} device={device} devices={devices} navigation={scoped} onPoint={(d,path)=>point(tab,d,path)} onClose={onClose}>{actions}</ContentFileToolbar>:undefined} onLocate={locateFile} machine={device.name} path={tab.url} here={device.me} git draft={drafts[draftKey]} onDraft={draft=>{setDrafts(all=>all[draftKey]===(draft||undefined)?all:{...all,[draftKey]:draft||undefined});}} goLine={content.lines[key]||content.lines[tab.id]} contentDeck={mobile&&face?contentFileDeck({session:tab.session,face,content,navigation:scoped,onClose,title:contentName(tab),devices,tab}):undefined} onBack={()=>scoped.browse(tab.session)} onGone={()=>quiet(content.close(tab.id))} onMoved={(_from,to)=>point(tab,device,to)}/>:contentView(tab)==='commit'?(show||visited.current.has(key))&&<SessionCommitContent key={draftKey} tab={tab} device={device} face={face} content={content} navigation={scoped} onClose={onClose} mobile={mobile} state={commitState()}/>:contentView(tab)==='page'?show&&face&&<MobileContentPage desktop={!mobile} tab={tab} handle={key} device={device} devices={devices} face={face} content={content} navigation={scoped} onClose={onClose} onPoint={(d,url)=>point(tab,d,url)}>{(onBusy,suspended)=>browser(onBusy,suspended)}</MobileContentPage>:null}
           </>}
         </ContentPosition>
       </Fragment>;

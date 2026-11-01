@@ -131,6 +131,7 @@ const LIVE = {
   // canvas, scanned.
   finder: fit(1.17, 1.17, 13.66), // square
   file: fit(1.07, 1.07, 13.87), // square
+  fileTray: fit(0.575, 0.575, 14.85), // square
   link: fit(2.14, 2.14, 11.73), // round
   // The cursor key's (2026-10-03): ink 11 across, centred on the 16
   // canvas; a few strokes reaching out to their ends, so bare.
@@ -325,6 +326,21 @@ export function IconFiles({ className }: IconProps) {
         d="M6.6 10.2h12.8a1.1 1.1 0 0 1 1.1 1.4l-1.6 6.6a1.7 1.7 0 0 1-1.7 1.3H5.2a1.1 1.1 0 0 1-1.1-1.4l1.4-6.6a1.4 1.4 0 0 1 1.1-1.3z"
       />
     </RailGlyph>
+  );
+}
+
+/** File navigation: stacked sheets in a tray, distinct from a workspace folder. */
+export function IconFileTray({ className }: IconProps) {
+  const front = "M2 8.5h3.8a2.2 2.2 0 0 0 4.4 0H14v3.8a1.2 1.2 0 0 1-1.2 1.2H3.2A1.2 1.2 0 0 1 2 12.3Z";
+  return (
+    <Mark className={className} live={LIVE.fileTray} icon="file-tray"
+      cut={<path d={front} fill="black" stroke="black" strokeWidth={cutOf(LIVE.fileTray)}/>}>
+      {cutId => <>
+        <path mask={`url(#${cutId})`} d="M5 2.5h-.7L2 8.5H14l-2.3-6H11"/>
+        <path d="M7.3 2.3h1.4M6.4 4.3h3.2M5.5 6.3h5"/>
+        <path data-body d={front}/>
+      </>}
+    </Mark>
   );
 }
 

@@ -1,3 +1,5 @@
+import { terminalLinkGesture } from './term-link-gesture';
+
 export type LinkIntent = 'internal'|'system';
 export type LinkModifiers = {metaKey?:boolean;ctrlKey?:boolean};
 export const linkIntent = (event:LinkModifiers):LinkIntent => event.metaKey||event.ctrlKey?'system':'internal';
@@ -17,9 +19,10 @@ export function fileUri(path:string):string {
   return uri.href;
 }
 
-/** xterm's linkifier also activates on a mouse-up inside a selection.
- * Keep selection and application mouse input separate from link intent. */
-export function canActivateTerminalLink(event:LinkModifiers&{button?:number},term:{hasSelection:()=>boolean;modes:{mouseTrackingMode:string}}):boolean {
-  if(event.button!==undefined&&event.button!==0||term.hasSelection())return false;
-  return linkIntent(event)==='system'||term.modes.mouseTrackingMode==='none';
+/** A tracked mouse click must first belong to the link rather than the program.
+ * A touch tap has already been distinguished from scrolling and selection. */
+export function canActivateTerminalLink(event:LinkModifiers&{button?:number},term:{hasSelection:()=>boolean;modes:{mouseTrackingMode:string}},source:'mouse'|'touch'='mouse'):boolean {
+  const gesture=terminalLinkGesture(event);
+  if(event.button!==undefined&&event.button!==0||term.hasSelection()||gesture==='cancelled')return false;
+  return source==='touch'||gesture==='claimed'||term.modes.mouseTrackingMode==='none';
 }

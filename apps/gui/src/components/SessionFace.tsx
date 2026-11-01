@@ -5,7 +5,7 @@ import type { SystemKind } from "@/gen/bindings/SystemKind";
 import { machineMark, sessionMark } from "@/components/BrandIcons";
 import { FaceMark, SIZES, type KindMark } from "@/components/FaceMark";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBranch, IconBrowser, IconFiles, IconPlus } from "@/components/icons";
+import { IconHistory, IconBranch, IconBrowser, IconFiles, IconPlus } from "@/components/icons";
 
 /** A glyph component as a `KindMark`'s drawing, at whatever size the
     assembly asks for. */
@@ -43,6 +43,8 @@ export function machineKind(system: SystemKind | null | undefined): KindMark {
 export function workspaceKind(repo: boolean): KindMark {
   return repo ? { key: "branch", glyph: drawn(IconBranch) } : { key: "folder", glyph: drawn(IconFiles) };
 }
+
+export function historyKind(): KindMark { return {key:'history',glyph:drawn(IconHistory)}; }
 
 /** A file's: its kind's glyph, the set the tree draws (`FileKindIcon`,
     VS Code's colours) — a picture of its own, not inked by the face. */

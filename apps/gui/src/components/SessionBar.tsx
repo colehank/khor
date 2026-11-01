@@ -266,7 +266,7 @@ export function SessionScreen({
       under way and a plain pill open the 底栏 as before. */
   const stops = face?.interaction?.notices ?? [];
   const signal = usePillSignal(active, face?.interaction);
-  const grown = useGrownPill(stops.length);
+  const grown = useGrownPill(stops.length, signal === "rejoin");
   /** Grown and something to grow into: the island stands, the pill hides. */
   const island = !contentMode && grown.growth.mounted && stops.length > 0;
   const [deckPill, setDeckPill] = useState<HTMLElement | null>(null);
@@ -695,7 +695,7 @@ export function TabSheetRows({faces,active,onFocus,onClose,onNew,newLabel,canClo
                 <TabAvatar f={f} bare="size-list-face" seat="row" />
                 {/* **One line, the title** (UX-20). ⚠️ 墓碑: the machine or
                     the path under it, cut at the start (`PathCut`). */}
-                <span data-tab-sheet-name className="min-w-0 flex-1 truncate text-body text-foreground">
+                <span data-tab-sheet-name className={cn("min-w-0 flex-1 truncate text-body text-foreground",f.preview&&"italic")}>
                   {f.title ?? f.label}
                 </span>
               </button>

@@ -8,3 +8,7 @@ src/gen/
 src-tauri/gen/*
 !src-tauri/gen/apple/
 core/bindings/
+
+# Private component-test servers; removed when their process exits.
+.workspace-content-check-*/
+.terminal-links-check-*/
