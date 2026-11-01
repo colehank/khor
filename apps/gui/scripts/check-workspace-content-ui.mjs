@@ -11,7 +11,7 @@ const output=process.env.WORKSPACE_CONTENT_DIR;assert(output,'Set WORKSPACE_CONT
 const fixture=mkdtempSync(join(gui,'.workspace-content-check-'));
 writeFileSync(join(fixture,'index.html'),'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),readFileSync(join(gui,'scripts/fixtures/workspace-content-ui.tsx')));
-const files=['src/hooks/use-session-content.ts','src/hooks/use-content-navigation.ts','src/views/SessionContent.tsx','src/views/MobileSessionContent.tsx','src/views/SideWorkspace.tsx','src/views/WorkspacePane.tsx','src/views/CommitPage.tsx','src/components/WorkspaceGitNavigation.tsx','src/browse/TabStrip.tsx','src/components/icons.tsx','src/styles/workspace-navigation.css','src/styles/app.css','src/lib/scroll-edge.ts','src/views/MobileContentPage.tsx'];
+const files=['src/hooks/use-session-content.ts','src/hooks/use-content-navigation.ts','src/views/SessionContent.tsx','src/views/MobileSessionContent.tsx','src/views/SideWorkspace.tsx','src/views/WorkspacePane.tsx','src/views/CommitPage.tsx','src/components/WorkspaceGitNavigation.tsx','src/browse/TabStrip.tsx','src/components/icons.tsx','src/styles/workspace-navigation.css','src/styles/app.css','src/lib/scroll-edge.ts','src/views/MobileContentPage.tsx','src/components/ContentToolbar.tsx'];
 const fingerprint=()=>Object.fromEntries(files.map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
 const before=fingerprint(),calls=[],commits=Array.from({length:82},(_,i)=>({id:(i+1).toString(16).padStart(40,'a'),subject:`Commit ${i+1}`,author:'Fixture author',when_ms:Date.UTC(2026,10,1)-i*3600000,cut:false}));
 let tabs={tabs:[{id:'source',session:'session',device:'fixture',url:'',view:'workspace',pinned:false,title:'',touched:1}],active:'source'},sequence=0,server,browser;
@@ -60,8 +60,10 @@ try{
    const layout=await page.locator('[data-content-visible="true"] [data-file-page]').evaluate(box=>{
      const head=box.querySelector('[data-content-toolbar]'),scroll=box.querySelector('.cm-scroller'),line=box.querySelector('.cm-line'),content=box.querySelector('.cm-content');
      const rect=e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};
-     return {head:rect(head),scroll:rect(scroll),line:rect(line),scrollPadding:getComputedStyle(scroll).paddingTop,contentPadding:getComputedStyle(content).paddingTop,port:scroll.outerHTML.slice(0,450),parent:box.outerHTML.slice(0,250)};
-   });results.push({name:'file first line clears original toolbar',passed:layout.line.top>=layout.head.bottom,layout});
+     const scope=head.querySelector('[data-content-scope]'),back=head.querySelector('[data-content-back]'),location=head.querySelector('[data-content-location-layer]');
+     const order=scope.getBoundingClientRect().right<=back.getBoundingClientRect().left&&back.getBoundingClientRect().right<=location.getBoundingClientRect().left;
+     return {order,head:rect(head),scroll:rect(scroll),line:rect(line),scrollPadding:getComputedStyle(scroll).paddingTop,contentPadding:getComputedStyle(content).paddingTop,port:scroll.outerHTML.slice(0,450),parent:box.outerHTML.slice(0,250)};
+   });results.push({name:'file first line clears original toolbar',passed:layout.line.top>=layout.head.bottom&&layout.order,layout});
    await page.screenshot({path:join(output,'review-file.png')});
    await page.evaluate(()=>window.__workspaceProbe.navigation.browse('session'));
    await picker.getByRole('button',{name:'提交历史',exact:true}).click();await picker.locator('[data-workspace-log-commit]').first().click();
@@ -85,6 +87,7 @@ try{
  assert.equal(box.history,box.close);assert.equal(box.widths[0],box.widths[1]);assert.equal(box.heights[0],box.heights[1]);
  const source=await page.evaluate(()=>window.__workspaceProbe.content.tabs[0].id);
  const browse=()=>page.locator('[data-tab-open="session"]').click();
+ const browseHistory=async()=>{await browse();await picker.getByRole('button',{name:'提交历史',exact:true}).click();};
  await picker.getByRole('button',{name:'提交历史',exact:true}).click();
  await picker.locator('[data-workspace-log-commit]').first().waitFor();
  await picker.locator('[data-workspace-log-older]').click();await picker.locator('[data-workspace-log-commit]').filter({hasText:'Commit 41'}).waitFor();
@@ -92,31 +95,41 @@ try{
  const first=commits[0].id,second=commits[1].id;
  await picker.locator(`[data-workspace-log-commit="${first}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${first}"]`).waitFor();
  if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1'){
-   const previewTitle=page.locator('[data-content-on="true"] [data-tab-name]');
-   assert.equal(await previewTitle.evaluate(el=>getComputedStyle(el).fontStyle),'italic','temporary commit title uses italic');
+   const selectedTitle=page.locator('[data-content-on="true"] [data-tab-name]');
+   assert.equal(await selectedTitle.evaluate(el=>getComputedStyle(el).fontStyle),'normal','single-clicked session commit is kept immediately');
    assert.equal(await page.locator('[data-tab-preview]').count(),0,'temporary title has no hollow ring');
  }
  await until(()=>tabs.tabs.find(t=>t.id===source)?.view==='commit');assert.equal(tabs.tabs.length,1,'first commit replaces the starting tab');
  await page.locator('[data-content-visible="true"] [data-commit-collapse]').click();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'false');
- await browse();await picker.locator(`[data-workspace-log-commit="${second}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${second}"]`).waitFor();assert.equal(tabs.tabs.length,1,'second commit replaces preview');
- const preview=await page.evaluate(()=>window.__workspaceProbe.content.active('session').id);
- await page.locator(`[data-content-tab="${preview}"] [data-tab-open]`).dblclick();
- if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1')assert.equal(await page.locator(`[data-content-tab="${preview}"] [data-tab-name]`).evaluate(el=>getComputedStyle(el).fontStyle),'normal','kept commit title returns to normal');
- await browse();await picker.locator(`[data-workspace-log-commit="${first}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${first}"]`).waitFor();await until(()=>tabs.tabs.length===2);assert.equal(tabs.tabs.length,2,'double-click kept the earlier commit');
- await page.locator(`[data-content-tab="${preview}"] [data-tab-open]`).click();await page.locator('[data-content-visible="true"] [data-commit-collapse]').waitFor();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'true','new commit starts expanded');
+ await browseHistory();await picker.locator(`[data-workspace-log-commit="${second}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${second}"]`).waitFor();await until(()=>tabs.tabs.length===2);assert.equal(tabs.tabs.length,2,'single click keeps both commits');
+ const secondTab=await page.evaluate(()=>{const c=window.__workspaceProbe.content;return c.handle(c.active('session'));});
+ if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1')assert.equal(await page.locator(`[data-tab="${secondTab}"] [data-tab-name]`).evaluate(el=>getComputedStyle(el).fontStyle),'normal','kept commit title returns to normal');
+ await browseHistory();await picker.locator(`[data-workspace-log-commit="${first}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${first}"]`).waitFor();await until(()=>tabs.tabs.length===2);assert.equal(tabs.tabs.length,2,'reopening a kept commit reuses its tab');
+ await page.locator(`[data-tab="${secondTab}"] [data-tab-open]`).click();await page.locator('[data-content-visible="true"] [data-commit-collapse]').waitFor();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'true','new commit starts expanded');
  await browse();await picker.getByRole('button',{name:'文件树',exact:true}).click();await picker.locator('[data-file-tree]').waitFor();
- await page.screenshot({path:join(output,'session-workspace.png')});results.push({name:'original session deck, starting tab conversion, independent commits and preview keep',passed:true,alignment:box});
+ await page.screenshot({path:join(output,'session-workspace.png')});results.push({name:'original session deck, starting tab conversion, single-click commit retention and deduplication',passed:true,alignment:box});
  await picker.locator('[data-file-path="/fixture/a.md"]').click();
- const editor=page.locator('[data-content-visible="true"] .cm-content');await editor.waitFor();await editor.fill('A private unsaved draft');
- await page.waitForFunction(()=>{const c=window.__workspaceProbe.content,t=c.active('session');return t?.view==='file'&&!c.isPreview(t);});
- if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1')assert.equal(await page.locator('[data-content-on="true"] [data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'normal','typing keeps file title in normal style');
- const dirtyId=await page.evaluate(()=>window.__workspaceProbe.content.active('session').id);
+ const editor=page.locator('[data-content-visible="true"] .cm-content');await editor.waitFor();
+ const keptFile=await page.evaluate(()=>{const c=window.__workspaceProbe.content;return c.handle(c.active('session'));});
  await browse();await picker.locator('[data-file-path="/fixture/b.md"]').click();await editor.waitFor();
- assert(tabs.tabs.some(t=>t.id===dirtyId&&t.url==='/fixture/a.md'),'editing preserves a kept file while the next file opens');
- await page.locator(`[data-content-tab="${dirtyId}"] [data-tab-open]`).click();assert.equal(await editor.innerText(),'A private unsaved draft');
- results.push({name:'actual file editing keeps preview and draft across another selection',passed:true});
+ await until(()=>tabs.tabs.some(t=>t.url==='/fixture/b.md'));
+ assert(tabs.tabs.some(t=>t.url==='/fixture/a.md'),'single-clicking another file preserves the first without editing or double-click');
+ const fileCount=tabs.tabs.length;
+ await page.locator(`[data-tab="${keptFile}"] [data-tab-open]`).click();await editor.fill('A private unsaved draft');
+ await browse();await picker.locator('[data-file-path="/fixture/b.md"]').click();await editor.waitFor();assert.equal(tabs.tabs.length,fileCount,'same file reuses its tab');
+ await page.locator(`[data-tab="${keptFile}"] [data-tab-open]`).click();assert.equal(await editor.innerText(),'A private unsaved draft');
+ assert.equal(await page.locator('[data-content-on="true"] [data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'normal');
+ results.push({name:'single-click file retention, deduplication and original draft retention',passed:true});
  await page.goto(url+'?workspace=1&theme=light');await page.locator('[data-workspace-navigation]').waitFor();await page.screenshot({path:join(output,'workspace-light.png')});
- await page.locator('[data-workspace-navigation]').getByRole('button',{name:'提交历史',exact:true}).click();await page.locator('[data-workspace-log-commit]').first().waitFor();await page.locator('[data-workspace-log-commit]').first().click();await page.locator('[data-commit-page]').waitFor();await page.screenshot({path:join(output,'workspace-commit.png')});results.push({name:'actual standalone workspace header and commit tabs',passed:true});
+ await page.locator('[data-workspace-navigation]').getByRole('button',{name:'提交历史',exact:true}).click();await page.locator('[data-workspace-log-commit]').first().waitFor();await page.locator('[data-workspace-log-commit]').first().click();await page.locator('[data-commit-page]').waitFor();await page.screenshot({path:join(output,'workspace-commit.png')});
+ const standalone=page.locator('[data-ws-mid]');
+ assert.equal(await standalone.locator('[data-tab][data-on="true"] [data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'italic','standalone single-click preview remains italic');
+ await page.locator('[data-workspace-log-commit]').nth(1).click();
+ assert.equal(await standalone.locator('[data-tab]').count(),1,'standalone next single click replaces preview');
+ await page.locator('[data-workspace-log-commit]').nth(1).dblclick();
+ assert.equal(await standalone.locator('[data-tab][data-on="true"] [data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'normal','standalone double click keeps preview');
+ await page.locator('[data-workspace-log-commit]').first().click();assert.equal(await standalone.locator('[data-tab]').count(),2);
+ results.push({name:'standalone workspace still previews on single click and keeps on double click',passed:true});
  if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1'){
    await page.goto(url+'?preview-samples=1');const sample=page.locator('[data-tab="preview"]');
    assert.equal(await sample.locator('[data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'italic');

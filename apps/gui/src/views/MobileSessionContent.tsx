@@ -44,16 +44,16 @@ export function contentTabFace(tab:ContentTab,devices:DeviceRow[],iconOf:(url:st
     mark:contentView(tab)==='workspace'?newTabKind():contentView(tab)==='file'?fileKind(tab.url):contentView(tab)==='commit'?historyKind():pageKind(iconOf(tab.url))};
 }
 export type DeckOwner={face:TabFace;content:SessionContent;navigation:ContentNavigation;onClose:()=>void};
-export function ContentOwnerIdentity({face,title,children,editing=false,preview=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean;preview?:boolean}) {
-  return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className={preview?"content-owner-title italic":"content-owner-title"}>{title}</span>}</span>;
+export function ContentOwnerIdentity({face,title,children,editing=false}: {face:TabFace;title?:string;children?:ReactNode;editing?:boolean}) {
+  return <span className="content-owner-identity" data-content-editing={editing||undefined}><span className="content-owner-face">{face.session&&<SessionFace face={face.face} {...face.session} size="tab"/>}</span><span className="content-owner-name">{face.label}</span><span className="content-owner-slash">/</span>{children||<span className="content-owner-title">{title}</span>}</span>;
 }
 /** The nested pill uses the terminal band's exact threshold, flick and cancellation. */
 export function ContentDocumentBand({session,face,content,navigation,title,onTitle}: Omit<DeckOwner,'onClose'> & {session:string;title:string;onTitle:()=>void}) {
   const tabs=content.allTabs.filter(t=>t.session===session);
   const active=navigation.get(session).key;
   const targets=contentTabTargets(tabs,content.handle);
-  const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,preview:content.isPreview(t),mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):contentView(t)==='commit'?historyKind():pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
-  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity preview={item.preview} face={face} title={role==='cur'?title:item.label}/>}/>;
+  const faces=[...targets].map(([key,t])=>({...face,session:undefined,face:contentView(t)==='workspace'?null:face.face,hideFace:false,mark:contentView(t)==='workspace'?newTabKind():contentView(t)==='file'?fileKind(t.url):contentView(t)==='commit'?historyKind():pageKind(content.pageIcon(t.url)),id:key,label:contentView(t)==='workspace'?gui.content_new:contentName(t)}));
+  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'||role==='cur'&&navigation.get(session).scene==='picker'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,navigation,onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
   return <div className="mobile-content-deck" data-content-deck data-content-editing={editing||undefined}>
@@ -68,7 +68,7 @@ function ContentFileIdentity({session,face,content,navigation,title,devices,tab}
 }
 export function contentFileDeck(props: DeckOwner & {session:string;title:string;devices:DeviceRow[];tab:ContentTab}) {
  const {face,title}=props;
- return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity preview={props.content.isPreview(props.tab)} face={face} title={title}/></span>};
+ return {identity:<div className="mobile-file-identity"><ContentFileIdentity {...props}/></div>,folded:<span className="mobile-fold-identity"><ContentOwnerIdentity face={face} title={title}/></span>};
 }
 /** Search has one clear button inside and an independent end-editing control outside. */
 export function ContentSearch({label,value,onChange,onEditing,onEnter,onDismiss}: {label:string;value:string;onChange:(value:string)=>void;onEditing:(editing:boolean)=>void;onEnter?:()=>void;onDismiss?:()=>void}) {
@@ -81,8 +81,8 @@ export function ContentPicker({row,devices,navigation,onOpen,onWorkspaceFile,onO
  active?:boolean;desktop?:boolean;row:SessionRow;devices:DeviceRow[];
  onFilesMoved?:(device:DeviceRow,from:string,to:string)=>void;onFilesGone?:(device:DeviceRow,path:string)=>void;
  onOpen:(device:DeviceRow,path:string,view:'file'|'page',line?:number|null)=>void;
- onWorkspaceFile:(device:DeviceRow,path:string,line:number|null,keep:boolean)=>void;
- onOpenCommit:(device:DeviceRow,root:string,commit:GitCommitSummary,keep:boolean)=>void;
+ onWorkspaceFile:(device:DeviceRow,path:string,line:number|null)=>void;
+ onOpenCommit:(device:DeviceRow,root:string,commit:GitCommitSummary)=>void;
 }) {
  const state=navigation.get(row.id),session=row.id;
  const home=devices.find(d=>d.name===row.home),device=state.scope?devices.find(d=>d.id===state.scope!.device):home;
@@ -119,7 +119,7 @@ export function ContentPicker({row,devices,navigation,onOpen,onWorkspaceFile,onO
    {desktop&&<ContentToolbar kind="picker" onBack={canReturnWorkspace?returnWorkspace:undefined} source={state.source} onSource={source} actions={directoryActions} pinned={content.allTabs.find(t=>content.handle(t)===state.key)?.pinned} onClose={close}>{state.source==='workspace'&&!editing&&!searching?<button data-content-location-edit className="content-location-rest" onClick={()=>edit(true)}><span className="content-location-face">{device&&<TabAvatar f={{id:device.id,label:device.shown,path:root,face:device.face}} bare="size-tab-face" seat="tab"/>}</span><span>{root||'~/'}</span></button>:fieldBody}</ContentToolbar>}
    {!desktop&&canReturnWorkspace&&<div className="flex shrink-0 px-row py-in"><GlassCircle data-content-workspace-return aria-label={gui.back} tip={sessionCwdOnScreen(row)||undefined} onClick={returnWorkspace}><IconBack/></GlassCircle></div>}
    {error&&<p role="alert" className="session-content-error">{error}</p>}
-   <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>{device?<SideWorkspace active={active&&state.source==='workspace'} hideFind key={device.id+' '+root} machine={device.name} here={device.me} root={root||'~'} historyView={history} onHistoryView={setHistory} query={history?historyQuery:state.query} onQuery={setQuery} makeRequest={make} onContentMoved={(from,to)=>onFilesMoved?.(device,from,to)} onContentGone={path=>onFilesGone?.(device,path)} onOpenCommit={(commit,keep)=>onOpenCommit(device,root||'~',commit,keep)} onOpenContent={(path,line,keep)=>onWorkspaceFile(device,path,line,!!keep)}/>:<div className="session-content-unknown">{gui.content_machine_gone}</div>}</div>
+   <div className="mobile-content-workspace" hidden={state.source!=='workspace'}>{device?<SideWorkspace active={active&&state.source==='workspace'} hideFind key={device.id+' '+root} machine={device.name} here={device.me} root={root||'~'} historyView={history} onHistoryView={setHistory} query={history?historyQuery:state.query} onQuery={setQuery} makeRequest={make} onContentMoved={(from,to)=>onFilesMoved?.(device,from,to)} onContentGone={path=>onFilesGone?.(device,path)} onOpenCommit={commit=>onOpenCommit(device,root||'~',commit)} onOpenContent={(path,line)=>onWorkspaceFile(device,path,line)}/>:<div className="session-content-unknown">{gui.content_machine_gone}</div>}</div>
    <div className="mobile-content-browser" hidden={state.source!=='browser'}><div className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div></div>
    {!desktop&&<div ref={setListSeat} className="mobile-content-page-list"/>}
    {!desktop&&<MobileContentDeck session={session} face={face} content={content} navigation={navigation} onClose={onClose} editing={editing} onEditEnd={endEdit} leading={searching?<GlassCircle aria-label={gui.back} onClick={stopSearch}><IconBack/></GlassCircle>:<div className="glass content-source-capsule">{scope}</div>} actions={searching?undefined:directoryActions}>{editing||searching?fieldBody:<div className="mobile-file-identity"><ContentDocumentBand session={session} face={face} content={content} navigation={navigation} title={gui.content_new} onTitle={()=>edit(true)}/></div>}</MobileContentDeck>}
@@ -143,7 +143,7 @@ export function ContentOverview({session,row,devices,content,navigation,onPick,f
   const state=navigation.get(session),q=state.filter.toLocaleLowerCase();
   const [searching,setSearching]=useState(false);
   const tabs=content.allTabs.filter(t=>t.session===session&&(contentName(t)+' '+t.url+' '+contentContext(t,row,devices)).toLocaleLowerCase().includes(q));
-  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),preview:content.isPreview(t),...(contentView(t)==='workspace'?{label:gui.content_new}:{})}));
+  const tabFaces=tabs.map(t=>({...contentTabFace(t,devices,content.pageIcon),...(contentView(t)==='workspace'?{label:gui.content_new}:{})}));
   const current=content.allTabs.find(t=>t.session===session&&content.handle(t)===(state.recent||state.key));
   return <div className="mobile-content-overview">
     <div className="mobile-content-overview-list">

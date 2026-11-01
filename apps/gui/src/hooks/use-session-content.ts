@@ -11,7 +11,7 @@ export type ContentTab = TabsOpen["tabs"][number] & { view: ContentView | null }
 export const CONTENT_KIND = "content";
 type WorkspaceDocumentRequest = {
   session:string;source?:string|null;device:string;address:string;view:'file'|'commit';
-  line?:number|null;keep?:boolean;title?:string;
+  line?:number|null;title?:string;
 };
 const EMPTY: TabsOpen = { tabs: [], active: "" };
 const HANDLE_KEY = "khor.content.handles";
@@ -41,7 +41,6 @@ export function useSessionContent(watch: boolean) {
   const writing = useRef(0), epoch = useRef(0), actionFailed = useRef(false);
   const chosen = useRef(new Map<string, string>()), jobs = useRef(new Map<string, Promise<string>>());
   const aliases = useRef(new Map(Object.entries(state.handles).map(([id, handle]) => [handle, id])));
-  const previews = useRef(new Map<string, string>());
   const pointing = useRef(state.pointing), versions = useRef(new Map<string, number>());
   const publish = () => setState({ open: current.current, opening: opening.current, handles: handles.current, pointing: pointing.current });
   const resolve = (id: string) => aliases.current.get(id) || id;
@@ -138,7 +137,6 @@ export function useSessionContent(watch: boolean) {
     const tab = opening.current.find(t=>t.id===id) || current.current.tabs.find(t=>t.id===resolve(id));
     if (!tab) return Promise.reject(new Error('Content tab was closed'));
     const key=handle(tab as ContentTab), version=(versions.current.get(key)||0)+1;
-    if(view!=='file'&&view!=='commit'&&previews.current.get(tab.session)===key)previews.current.delete(tab.session);
     versions.current.set(key,version);
     pointing.current={...pointing.current,[key]:{device,url:path,view,title}};publish();
     if(line!=null)setLines(all=>({...all,[key]:{line,at:Date.now()}}));
@@ -162,37 +160,15 @@ export function useSessionContent(watch: boolean) {
   };
   const liveTabs = () => [...current.current.tabs as ContentTab[], ...opening.current]
     .map(tab => ({...tab, ...pointing.current[handle(tab)]}));
-  const isPreview = (tab: ContentTab) => previews.current.get(tab.session) === handle(tab);
-  const keepDocument = (id: string) => {
-    const tab = liveTabs().find(tab => tab.id === resolve(id) || handle(tab) === id);
-    if (tab && isPreview(tab)) { previews.current.delete(tab.session); publish(); }
-  };
-  /** A starting tab becomes its first document; later choices share one clean preview.
-   * Preview ownership is local to this viewer; persisted tabs reopen as kept documents. */
-  const openWorkspaceDocument = ({session,source=null,device,address,view,line,keep=false,title=''}:WorkspaceDocumentRequest):ContentTab => {
-    const tabs = liveTabs();
-    const starting = tabs.find(tab => tab.session===session && (tab.id===source || handle(tab)===source) && (tab.view||'workspace')==='workspace');
-    const known = tabs.find(tab => same(tab,session,device,address,view));
-    const preview = tabs.find(tab => tab.session === session && isPreview(tab) && !tab.pinned);
-    let tab: ContentTab;
+  /** Session navigation closes on selection, so each selected document is kept. */
+  const openWorkspaceDocument = ({session,source=null,device,address,view,line,title=''}:WorkspaceDocumentRequest):ContentTab => {
+    const starting = liveTabs().find(tab => tab.session===session && (tab.id===source || handle(tab)===source) && (tab.view||'workspace')==='workspace');
     if (starting) {
-      tab = {...starting,device,url:address,view,title};
-      previews.current.set(session,handle(tab));
+      const tab = {...starting,device,url:address,view,title};
       void point(tab.id,device,address,view,title,line).catch(()=>{});
-    } else if (known) {
-      tab = open(session,device,address,view,line);
-    } else if (preview) {
-      tab = {...preview,device,url:address,view,title};
-      chosen.current.set(session,handle(tab));
-      void point(tab.id,device,address,view,title,line).catch(()=>{});
-      void focus(tab.id).catch(()=>{});
-    } else {
-      tab = open(session,device,address,view,line,source || undefined,title);
-      previews.current.set(session,handle(tab));
+      return tab;
     }
-    if (keep) keepDocument(tab.id);
-    publish();
-    return tab;
+    return open(session,device,address,view,line,source || undefined,title);
   };
   /** Native page observations can arrive after outer Back reset the tab.
    * Check the optimistic target now and its destination version at write
@@ -219,7 +195,7 @@ export function useSessionContent(watch: boolean) {
       return { result: undefined, value: tab?.view==='page'&&currentVersion===observation.version ? await goTab(CONTENT_KIND, saved, tab.device, path, tab.title) : current.current };
     }));
   };
-  const pin = (id: string, on: boolean) => { if(on)keepDocument(id); return persist(id).then(saved => send(async () => ({ result: undefined, value: await pinTab(CONTENT_KIND, saved, on) }))); };
+  const pin = (id: string, on: boolean) => persist(id).then(saved => send(async () => ({ result: undefined, value: await pinTab(CONTENT_KIND, saved, on) })));
   const close = (id: string): Promise<void> => {
     // Closing during the first write closes the assigned node id afterwards.
     return persist(id).then(saved => send(async () => {
@@ -248,6 +224,6 @@ export function useSessionContent(watch: boolean) {
     return send(async () => ({result:undefined,value:await reorderTabs(CONTENT_KIND,session,saved)}));
   };
   const ensure = (session: string, _device: string) => { const tab = active(session); return tab ? focus(tab.id).then(() => resolve(tab.id)) : Promise.resolve(undefined); };
-  return { newTab:(session:string,device='')=>open(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, openFromPicker, openWorkspaceDocument, isPreview, keepDocument, rename, follow, focus, pin, close, active, maximized, setMaximized };
+  return { newTab:(session:string,device='')=>open(session,device,'','workspace'), pageIcon: pageIcons.iconOf, recordPageIcon: pageIcons.record, tabs, allTabs: tabs, handle, open, lines, ready, error, fail, ensure, reorder, add, point, openFromPicker, openWorkspaceDocument, rename, follow, focus, pin, close, active, maximized, setMaximized };
 }
 export type SessionContent = ReturnType<typeof useSessionContent>;

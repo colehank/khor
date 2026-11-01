@@ -1154,4 +1154,6 @@ Lab 的鼠标／触摸补充检查覆盖深浅主题、320／390 窄屏、两行
 
 ### Preview document titles (round 3)
 
-Temporary file/commit tabs use italic titles, without an extra hollow preview ring; kept titles return to normal. The subtitle, dirty and unread marks remain independent. Shared TabStrip one/two-line titles, tab chooser rows and the original mobile document deck follow the same preview owner. Verified by `WORKSPACE_PREVIEW_REQUIRE=1 WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` (baseline normal title reproduced before the style fix).
+Standalone workspace temporary file/commit tabs use italic titles, without an extra hollow preview ring; double-click keeps them with normal titles. Session navigation closes its list on selection, so one click keeps file/commit tabs immediately, with normal titles on desktop, mobile deck and overview. This is distinct from the nonclosable pin. The subtitle, dirty and unread marks remain independent. Verified by `WORKSPACE_PREVIEW_REQUIRE=1 WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` (baseline normal title reproduced before the style fix).
+
+Session content toolbar order: source selector (workspace/browser), optional workspace Back, content pill, actions. Browsing pages do not show the workspace Back.
