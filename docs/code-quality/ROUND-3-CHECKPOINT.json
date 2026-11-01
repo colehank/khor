@@ -1,11 +1,11 @@
 {
-  "updated_at": "2026-11-01T13:41:21.520046+00:00",
-  "status": "in_tab_navigation_complete_awaiting_user_acceptance",
+  "updated_at": "2026-11-01T13:58:57.475967+00:00",
+  "status": "picker_identity_complete_awaiting_user_acceptance",
   "executor": "root_only_serial",
   "main": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
   "implementation_worktree": "/Volumes/disk0/Khor/worktrees/current/khor-round3",
   "implementation_branch": "integrate/round3",
-  "implementation_head": "1450609dc8bc36d5d080e859c92e986227781fcd",
+  "implementation_head": "ae398aa788096c32ce28507562b7e16547995826",
   "completed": {
     "R3-01": "dee0caab",
     "R3-02": "d6114c10",
@@ -15,7 +15,8 @@
     "review_corrections": "4fede1787acd9bcb80a45d299ff95f3571400856",
     "session_single_click": "d7e2445074a5914a25fdcc729e1b815eb0b962e3",
     "session_commit_back": "47407b3bef5958e90c96f8deece9f4e468822630",
-    "in_tab_navigation": "1450609dc8bc36d5d080e859c92e986227781fcd"
+    "in_tab_navigation": "1450609dc8bc36d5d080e859c92e986227781fcd",
+    "picker_identity": "ae398aa788096c32ce28507562b7e16547995826"
   },
   "authorized": {
     "start": true,
@@ -46,19 +47,20 @@
     "single_click_ui": 5,
     "back_alignment_layout": 5,
     "session_commit_back_ui": 5,
-    "in_tab_ui": 6
+    "in_tab_ui": 6,
+    "picker_identity_ui": 6
   },
   "unverified": [
     "Real Mac TUI and system app handoff",
     "Native GUI lifecycle and iPhone gestures/keyboard",
     "WebKit runtime absent"
   ],
-  "next_action": "User reviews current-tab navigation in original Lab; no merge/ship",
+  "next_action": "User reviews scene-aware tab title and mark in original Lab; no merge/ship",
   "sha256": {
-    "ROUND-3-PLAN.md": "6208f9b19fd1638dcd84812efe62f4874108b4541f0e615137dbb3e0347a2cbf",
-    "STATE.md": "d576d324f72a2f635d63fe13fe06b8ac073e58668ea92edac5552ec2aab75d05",
-    "NEXT-ROUND.md": "403a0c2db6831997c74fd5c2530c9ad2f848e789a02a7729d5bc7ec76311ed9d",
-    "round3-implementation.bundle": "42bf04df37440fde0ca7dc3e16d34d04367ef0a79da476e0b5f20bddfab278af"
+    "ROUND-3-PLAN.md": "48af9094639f2314f5c50e72dab1867636ebce85efb6b30bdafad16be42fb923",
+    "STATE.md": "69cce5fa77076880ec9f56897a935e528cc953dd900678193c586104e2087809",
+    "NEXT-ROUND.md": "75cd8db8ae05da795d509736a37c62f36700a05c24ca2161b7af91ef1881e2be",
+    "round3-implementation.bundle": "23b1c970ffc4a7786c9cce13aefc3e19ed380af4666bddf28f9c7bac227c3504"
   },
   "user_review": [
     "session tab owns browsing; all file/commit/page/address/popup destinations point the current tab",
@@ -68,6 +70,7 @@
     "Back only browses without resetting tab",
     "source selector then Back then content pill",
     "browser no workspace Back",
-    "standalone workspace previews unchanged"
+    "standalone workspace previews unchanged",
+    "picker scene displays New tab identity on strip, mobile deck and overview without resetting retained destination"
   ]
 }

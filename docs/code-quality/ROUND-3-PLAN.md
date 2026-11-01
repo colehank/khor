@@ -52,7 +52,7 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 
 ## 当前检查点
 
-- 代码：`integrate/round3@1450609dc8bc36d5d080e859c92e986227781fcd`，工作树干净（私有Lab临时目录忽略）；main27a9ce5c与真实GUI/host未动。四项实现提交dee0caab、d6114c10、722120b2、f57cae56；最后24aae387保存组合事件验证与交接。
+- 代码：`integrate/round3@ae398aa788096c32ce28507562b7e16547995826`，工作树干净（私有Lab临时目录忽略）；main27a9ce5c与真实GUI/host未动。四项实现提交dee0caab、d6114c10、722120b2、f57cae56；最后24aae387保存组合事件验证与交接。
 - 交接：实施树 `docs/code-quality/ROUND-3-REVIEW.md`；各任务卡、设计门和证据引用随代码提交。Root作者自审，未冒称独立智能体审查；目前仅Root运行，旧三个子智能体completed/errored，无子智能体活动。
 - 通过：GUI unit/types实际0；内容模型及bounded history检查0；Rust --lib tabs30/30、Shell qualification/ownership均0；Chrome恢复18/18、工作区/预览/编辑/实际viewport窄屏5/5、真实xterm DOM10/10；相应source hashes前后一致。证据总目录 `/Volumes/disk0/Khor/evidence/round3`。
 - 未验：真实Mac Codex TUI、系统应用最终打开、原生GUI状态与iPhone手势/键盘。WebKit runtime缺失，未下载、未宣称通过。没有发布或原生新构建，不能拿正在运行的旧app验本轮代码。
@@ -69,3 +69,5 @@ NEXT 的日志轮转、非 WK 导航身份、初始 Load 互动、构建缓存�
 - Session提交页返回已提交 47407b3bef5958e90c96f8deece9f4e468822630：桌面复用原导航甲板，选择器→返回→内容药丸；回到该提交的工作区且保留提交实体/阅读与收起状态，手机返回同目标。session-commit-back的red复现无按钮，geometry五组Chrome及types/unit均0。只有原Lab8946/exec88030在运行，刷新原URL，main/ship未授权。
 
 - 最终用户确认已实现并提交 1450609dc8bc36d5d080e859c92e986227781fcd：Session标签承载浏览过程，所有文件/提交/网页/地址栏/popup在原标签跳转；只有显式New增加另一枚标签，首次无标签初始化一枚。统一navigate，废止按目标新增/跨标签去重的旧选择；关闭回调不补新标签，文件行提示/草稿及提交阅读按目的地隔离。session-in-tab/model-final、unit、types-verified0，verified/report.json真实组件六组通过，源hash前后一致。原Lab8946/exec88030不变，刷新原地址；main/运行app未动，无merge/ship授权。此规则覆盖上方历史单击保留实体方案。
+
+- 返回导航的标签身份已提交 ae398aa788096c32ce28507562b7e16547995826：每个标签按自己保存的scene显示名称／图标，picker显示“新会话标签页”，打开内容后显示对应文件／提交／网页身份。顶部条、手机药丸和总览共用身份计算；不重置保留的目的地、不清草稿或阅读状态。picker-identity/pass-3/report.json六组真实Chrome组件通过，types/unit均0；原red与两次测试文案／定位器错误保留。原Lab8946/exec88030不变，main及用户App未动，无merge/ship授权。
