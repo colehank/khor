@@ -4,6 +4,12 @@
 
 版本号只在 `Cargo.toml` 一处（`apps/gui/src-tauri/tauri.conf.json` 的 `"version"` 字面量不能删，删了 tauri 写 1.0.0）。装了哪一版现在看不出来——五台都报同一个号；认版本靠二进制里本次新加的字符串（下面每段的「验」）。
 
+## 2026-11-01：TestFlight接续成功
+
+用户处理Apple协议后，沿同一合格归档上传 **0.1.14（61）**，实际upload-2 Xcode10898／exec31607，exit0／119.853s，Upload succeeded与EXPORT SUCCEEDED俱全；本次ContentDelivery真实数字字段确认61。当前文档HEAD2a与built eca只4docs差，非文档源码／gen／dist、App／.a和导出选项全等且首尾稳定，无重新编译／重装Mac或集群。证据 `evidence/releases/20261101-round2/ios/upload-2/{result,uploaded-version}.json`，result SHA `3083addf77e2a6f26678325dfff6a6a86c76d46e48da6e398e97ae5754e4bf91`。
+
+至此main／Mac／三节点／TestFlight本次SHIP完成。Apple处理可用性未查询，手机未安装，原真人IME／iPhone交互仍未验。以下“未上传／Apple阻挡”保留为upload-1时点历史，不再要求重传或把旧失败改绿。
+
 ## 2026-11-01：第二轮发布实际结果
 
 用户授权直接合main并SHIP；产品a228已合并推送，正式产物构建源 `eca881f2b30c2893b7e73f81ae1e0f5cefbe8c6c`，本节后继提交仅补文档。**Mac与三节点已更新；iOS归档已合格，但TestFlight上传尚未成功。**
