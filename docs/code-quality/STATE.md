@@ -1,4 +1,6 @@
-# 第二轮当前状态
+# 当前状态与历史发布记录
+
+2026-11-01最新：第三轮四项实现及作者自审完成，等待用户体验验收。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `24aae387965e860536858f50c18a985ef51cd29e`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；没有第三轮合并或ship授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
 
 2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 
@@ -43,3 +45,8 @@
 - Mac旧GUI／CLI回退在本次 `rollback-mac`；相同旧installed CLI只保一份canonical＋symlink引用。旧60在 `ios/previous-60.xcarchive` 与 `previous-60-libapp.a`，更早59仍原处。不复制新大payload到内盘，不为归档TMP诊断新开治理。
 - 内盘恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/{STATE.md,RESUME.md,current-runtime.json,current-delivery.json,release-checkpoint.json,latest-source-bundle.json}`。disk0缺失先读RESUME，不建假挂载目录、不按摘要覆盖源。a228小bundle与原链继续保留；本次main/plan最终ref另存小bundle／Git ref收据。
 - 改写前完整STATE保留于本次 `STATE-before-release-closeout.md`（SHA见`state-closeout-lineage.json`），更早详细测试／源／私有Lab位置仍见Git历史及旧checkpoint。本页以当前事实为准，不用历史live状态重新move、stage、kill或发布。
+
+- 2026-11-01 R3-02已提交 d6114c10cd47af5890f437321f8147bf9512ba8d；最终Shell/ownership Rust、相关5组Chrome和types均实际通过。R3-03进入定向结构核查，R3-04未开始；所有本轮编译与测试槽均空闲。WebKit及Mac/iPhone仍未验，main与运行实例不变。下一动作：共享原workspace导航行并接入既有session内容标签。
+
+- 2026-11-01 最新权威检查点：R3-03已提交722120b2（原session甲板共享Git导航、bounded history、真实commit内容标签、单一preview owner及草稿保留）。Rust --lib tabs30/30、types-final、model-final、unit、history、Chrome ui-extended3四组均实际0；source hashes前后不变。原生Mac/iPhone待验，Chrome触摸模拟不等同真机。首轮Rust命令漏--lib导致额外集成测试目标构建，已停止自己的Cargo(exit130)；之后只库内定向，内盘16GiB/外盘91GiB。所有R3-03槽结束。
+- R3-04正在做：最新提交722120b2，当前只有scripts/check-workspace-content-ui.mjs的斜体/无空心圆回归断言未提交；红测exec1107。下一动作核红后修改共用TabStrip/TabSheetRows和移动甲板title样式。无其它实现并行、无agent、main/运行实例不变，无merge/ship授权。
