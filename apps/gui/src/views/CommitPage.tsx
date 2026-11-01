@@ -1,47 +1,28 @@
-// **One commit, as GitHub's commit page says it** (COMMITS-BRIEF,
-// 2026-10-12, the owner: 「提交历史应该如 github，点开后显示这个 commit 的
-// 更改」). Opened from a row of the repository's 提交历史; a page, not a
-// sheet — it scrolls, with a reachable way back. On the wide face it stands where
-// the file does; on the phone it is a screen.
-//
-// Top to bottom: who wrote it and when, the subject, the body; 「已更改 N
-// 个文件」 with the lines added and removed; then each file — a bar with
-// its letter and path, and under it the change with both sides' line
-// numbers.
-//
-// **Each file's change is CodeMirror's unified merge view** (cm-d item 1,
-// `components/CommitDiff`), not `DiffView`: that one is the whole file
-// against the disk, and neither side of a commit is on disk. The node
-// answers both sides' texts (`khor_node::git::CommitFile`) and the page
-// diffs them — syntax ink on both sides, the unchanged stretches folded
-// behind 「展开未更改的 N 行」, the ink the diff tab's: `git-deleted` /
-// `git-added` at 10 % behind the line. Each view is as tall as its lines,
-// so the page is still one scroll on a phone. A side past the node's byte
-// cap (`big`) says so in one line, as a binary does; so does every file
-// after the answer's total of both sides reached 2 MiB (`capped`, cm-f) —
-// its bar still says +a −b.
-//
-// File navigation belongs to the changed-files summary, in the document.
-// On narrow screens the bottom deck holds Back and the commit identity.
-import { useEffect, useMemo, useRef, useState } from "react";
+// A workspace retains each commit's presentation data; standalone pages
+// keep their own navigation. Neither mode retains hidden editor views.
+import { useCallback, useEffect, useMemo, useRef, useState, useReducer } from "react";
 
 import { fetchGitCommit, said } from "@/api";
 import { CommitDiff, preloadCommitDiff } from "@/components/CommitDiff.lazy";
 import { HistoryDeck } from "@/components/HistoryDeck";
 import { useNarrow } from "@/hooks/use-narrow";
 import { GlassCircle } from "@/components/Glass";
-import { IconBack, IconChevronDown } from "@/components/icons";
+import { IconBack, IconChevronDown, IconChevronRight } from "@/components/icons";
 import { Waiting } from "@/components/RegionState";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { MenuViewport } from "@/components/ui/menu-viewport";
 import { gui } from "@/gen/catalog";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
+import type { GitCommitSummary } from "@/gen/bindings/GitCommitSummary";
 import type { GitCommitFile } from "@/gen/bindings/GitCommitFile";
 import type { GitCommitShow } from "@/gen/bindings/GitCommitShow";
 import { cn } from "@/lib/utils";
-import { authorLine, bodyOf, shortId } from "@/views/FileHistory";
+import { authorLine, bodyOf } from "@/views/FileHistory";
 import { markInk } from "@/views/fileRow";
 import { ago, basename } from "@/words";
+import { useKeptScrollRef, type KeptScrollSlot } from "@/hooks/use-kept-scroll";
+import {band,stickyGroups} from "@/lib/scroll-edge";
+
+export type CommitPageState = { collapsed: Set<string>; scroll: KeptScrollSlot };
 
 export function CommitPage({
   machine,
@@ -49,18 +30,31 @@ export function CommitPage({
   commit,
   onBack,
   edgeToEdge = false,
+  presentation = "page",
+  state,
 }: {
   machine: string;
   /** The repository, on that machine. */
   root: string;
   /** The row that was pressed: the head is drawn from it at once, before
       the files arrive. */
-  commit: GitCommit;
+  commit: GitCommit | GitCommitSummary;
   onBack: () => void;
   /** The main workspace owns the full phone viewport; inset sheets do not. */
   edgeToEdge?: boolean;
+  presentation?: "page" | "tab";
+  state?: CommitPageState;
 }) {
   const narrow = useNarrow();
+  const local = useRef<CommitPageState>({ collapsed: new Set(), scroll: {} });
+  const retained = state ?? local.current;
+  const [, redraw] = useReducer((n: number) => n + 1, 0);
+  const setExpanded = (path: string, expanded: boolean) => {
+    if (expanded) retained.collapsed.delete(path);
+    else retained.collapsed.add(path);
+    redraw();
+  };
+  const reading = useKeptScrollRef(JSON.stringify([machine, root, commit.id]), retained.scroll);
   const [shown, setShown] = useState<GitCommitShow | null>(null);
   const [refused, setRefused] = useState<string | null>(null);
   const [since, setSince] = useState(() => Date.now());
@@ -79,15 +73,26 @@ export function CommitPage({
       live = false;
     };
   }, [machine, root, commit.id]);
-  const body = bodyOf(commit);
+  const metadata = shown?.commit.id === commit.id ? shown.commit : "body" in commit ? commit : null;
+  const subject = metadata?.subject ?? commit.subject;
+  const body = metadata === null ? "" : bodyOf(metadata);
   const scroller = useRef<HTMLDivElement>(null);
   const selectedFile = useRef<string | null>(null);
+  // Ref cleanup runs before a width-mode registration takes the same port.
+  const attachScroller = useCallback((node:HTMLDivElement|null) => {
+    scroller.current=node;
+    const release=narrow || presentation === "tab" ? stickyGroups(node) : undefined;
+    const releaseReading = shown !== null ? reading(node) : undefined;
+    return()=>{releaseReading?.();release?.();if(scroller.current===node)scroller.current=null;};
+  },[narrow, presentation, shown, reading]);
   const jump = (path: string) => {
     const box = scroller.current;
     const bar = [...(box?.querySelectorAll<HTMLElement>("[data-commit-file]") ?? [])].find((e) => e.dataset.commitFile === path);
     if (!box || !bar) return;
+    setExpanded(path, true);
     bar.focus({ preventScroll: true });
-    box.scrollTop += bar.getBoundingClientRect().top - box.getBoundingClientRect().top;
+    const inset = parseFloat(getComputedStyle(box).scrollPaddingTop) || 0;
+    box.scrollTop += bar.getBoundingClientRect().top - box.getBoundingClientRect().top - inset;
   };
   const jumps = shown !== null && shown.files.length > 1;
   const sums = useMemo(
@@ -100,30 +105,30 @@ export function CommitPage({
   );
   return (
     <div data-commit-page={commit.id} data-history-edge={narrow && edgeToEdge || undefined} className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-card">
-      {!narrow && <div data-commit-head className="flex flex-none items-center gap-in px-row py-in">
+      {!narrow && presentation === "page" && <div ref={band} data-band data-commit-head className="flex flex-none items-center gap-in px-row py-in">
         <GlassCircle aria-label={gui.back} tip={gui.back} data-commit-back onClick={onBack}>
           <IconBack />
         </GlassCircle>
         <span className="min-w-0 flex-1" />
-        <span className="flex-none font-mono text-callout text-tertiary">{shortId(commit)}</span>
+        <span className="flex-none font-mono text-callout text-tertiary">{commit.id.slice(0, 7)}</span>
       </div>}
       <div
-        ref={scroller}
+        ref={attachScroller}
         data-commit-scroll
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-in"
       >
-        <header data-selectable className="flex flex-col gap-1 px-row py-in">
-          <span data-commit-by className="text-callout text-muted-foreground">
-            {authorLine(commit)} · {ago(commit.when_ms)}
-          </span>
+        <header data-sticky-body data-selectable className="flex flex-col gap-1 px-row py-in">
           <h1 data-commit-title className="text-title-sm text-foreground">
-            {commit.subject}
+            {subject}
           </h1>
           {body !== "" && (
             <p data-commit-message className="whitespace-pre-wrap text-body text-muted-foreground">
               {body}
             </p>
           )}
+          <span data-commit-by className="text-callout text-muted-foreground">
+            {metadata === null ? gui.commit_authored_one(commit.author) : authorLine(metadata)} · {ago(metadata?.when_ms ?? commit.when_ms)} · <span className="font-mono">{commit.id}</span>
+          </span>
         </header>
         {refused !== null ? (
           <div data-commit-refused className="px-row text-callout text-state-failed">
@@ -133,7 +138,7 @@ export function CommitPage({
           <Waiting since={since} />
         ) : (
           <>
-            <div data-commit-stat className="flex flex-wrap items-center justify-between gap-in border-y border-border px-row py-2 text-callout tabular-nums"><span>
+            <div data-sticky-body data-commit-stat className="flex flex-wrap items-center justify-between gap-in border-y border-border px-row py-2 text-callout tabular-nums"><span>
               {gui.commit_changed(shown.total)}
               {" · "}
               <span className="text-git-added">+{sums.added}</span> <span className="text-git-deleted">−{sums.removed}</span></span>
@@ -159,21 +164,21 @@ export function CommitPage({
                               jump(path);
                             }}
                           >
-                            <MenuViewport>{shown.files.map((f) => (
+                            {shown.files.map((f) => (
                               <DropdownMenuItem key={f.path} data-commit-jump-item={f.path} onSelect={() => { selectedFile.current = f.path; }}>
                                 <span className={cn("w-[1ch] flex-none font-mono text-caption", markInk(f.status))}>{f.status}</span>
                                 <span className="min-w-0 truncate" title={f.path}>
                                   {basename(f.path)}
                                 </span>
                               </DropdownMenuItem>
-                            ))}</MenuViewport>
+                            ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
               )}
             </div>
             {shown.files.map((f) => (
-              <FileChange key={f.path} f={f} />
+              <FileChange key={f.path} f={f} full={presentation === "tab"} expanded={!retained.collapsed.has(f.path)} onToggle={() => setExpanded(f.path, retained.collapsed.has(f.path))} />
             ))}
             {shown.more && (
               <div data-commit-more className="px-row py-in text-callout text-muted-foreground">
@@ -183,7 +188,7 @@ export function CommitPage({
           </>
         )}
       </div>
-      {narrow && <HistoryDeck title={shortId(commit)} subtitle={commit.subject} onBack={onBack} commit/>}
+      {narrow && presentation === "page" && <HistoryDeck title={commit.id.slice(0, 7)} subtitle={subject} onBack={onBack} commit/>}
     </div>
   );
 }
@@ -191,13 +196,17 @@ export function CommitPage({
 /** One file's bar and its change. The bar stays at the top while the
     change scrolls under it, as GitHub's does, so a long file still says
     whose lines these are. */
-function FileChange({ f }: { f: GitCommitFile }) {
+function FileChange({ f, expanded, onToggle, full }: { f: GitCommitFile; expanded: boolean; onToggle: () => void; full: boolean }) {
   return (
-    <section data-commit-file={f.path} tabIndex={-1} aria-label={f.path} className="border-b border-border">
+    <section data-sticky-group data-commit-file={f.path} tabIndex={-1} aria-label={f.path} className="border-b border-border">
       <div
         data-commit-file-bar
-        className="sticky top-0 z-10 flex min-w-0 items-center gap-in border-b border-border bg-card px-row py-2"
+        data-sticky-head
+        className="sticky top-0 z-10 flex min-w-0 pointer-coarse:min-h-touch items-center gap-in border-b border-border bg-card px-row py-2"
       >
+        <button type="button" data-commit-collapse data-glass-hit aria-label={f.path} aria-expanded={expanded} onClick={onToggle} className="relative flex size-affordance flex-none items-center justify-center">
+          {expanded ? <IconChevronDown className="size-affordance" /> : <IconChevronRight className="size-affordance" />}
+        </button>
         <span className={cn("w-[1ch] flex-none font-mono text-caption", markInk(f.status))}>{f.status}</span>
         <span data-selectable className="min-w-0 flex-1 truncate font-mono text-callout text-foreground" title={f.path}>
           {f.from !== "" ? `${f.from} → ${f.path}` : f.path}
@@ -208,7 +217,7 @@ function FileChange({ f }: { f: GitCommitFile }) {
           </span>
         )}
       </div>
-      {f.binary ? (
+      <div data-sticky-body="flush" hidden={!expanded}>{expanded && (f.binary ? (
         <div data-commit-binary className="px-row py-2 text-callout text-muted-foreground">
           {gui.file_not_text}
         </div>
@@ -221,8 +230,8 @@ function FileChange({ f }: { f: GitCommitFile }) {
           {gui.commit_file_capped}
         </div>
       ) : (
-        f.before !== f.after && <CommitDiff path={f.path} before={f.before} after={f.after} />
-      )}
+        f.before !== f.after && <CommitDiff path={f.path} before={f.before} after={f.after} full={full} />
+      ))}</div>
     </section>
   );
 }

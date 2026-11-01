@@ -52,7 +52,7 @@ export function DeckExplore({band,faces,state,origin,reach,overview,placement='b
     return()=>{observer.disconnect();window.removeEventListener('resize',update);window.removeEventListener('scroll',update,true);window.visualViewport?.removeEventListener('resize',update);window.visualViewport?.removeEventListener('scroll',update);};
   },[band,placement]);
   const cs=getComputedStyle(band.current!),unit=parseFloat(cs.getPropertyValue('--touch'))||44;
-  const position=useDeckPosition(state.preview,faces.length,state.direction);
+  const position=useDeckPosition(state.preview,faces.length,state.direction,state.position);
   const radius=Math.min(205,frame.width*.46),f=faces[state.preview];
   const titleSegments=useMemo(()=>Array.from(new Intl.Segmenter('zh',{granularity:'word'}).segment(f?.label||''),piece=>piece.segment),[f?.label]);
   const labelWidth=Math.min(2*unit,frame.width*.24);
@@ -84,9 +84,9 @@ export function DeckExplore({band,faces,state,origin,reach,overview,placement='b
     </div>}
     {overview&&<div className="deck-selector-target" data-deck-overview-target data-active={state.overview||undefined} style={{left:originX}}><IconChevronUp centred/><span>{gui.deck_all_tabs}</span></div>}
     {!pulling&&<div className="deck-selector-steering-cues" aria-hidden="true">
-      <DeckRateCue side={-1} state={state} x={Math.max(unit*.6,originX-reach-unit*.45)}/>
+      <DeckRateCue side={-1} state={{...state,direction:-state.direction}} x={Math.max(unit*.6,originX-reach-unit*.45)}/>
       <span className="deck-selector-origin" data-paused={paused||undefined} style={{left:originX}}/>
-      <DeckRateCue side={1} state={state} x={Math.min(frame.width-unit*.6,originX+reach+unit*.45)}/>
+      <DeckRateCue side={1} state={{...state,direction:-state.direction}} x={Math.min(frame.width-unit*.6,originX+reach+unit*.45)}/>
     </div>}
     <div className="sr-only" role="status" aria-live="polite">{state.overview?gui.deck_all_tabs:pulling?(placement==='top'?gui.deck_gesture_down:gui.deck_gesture):gui.deck_preview(f?.label||'')}</div>
   </div>,document.body);

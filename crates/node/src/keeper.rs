@@ -104,7 +104,7 @@ const SHIELD_ENV: &str = "KHOR_SHIELD";
 /// hurt processes already running from it (#76). Unknown reads as
 /// local: the shield is medicine, not a default. The same mounts are the
 /// ones whose changes made by another host no watcher here is told of,
-/// which a directory watch says (`crate::watch::serve`).
+/// which a directory watch says (`crate::watch`).
 #[cfg(target_os = "linux")]
 pub(crate) fn on_network_fs(path: &std::path::Path) -> bool {
     use std::os::unix::ffi::OsStrExt;

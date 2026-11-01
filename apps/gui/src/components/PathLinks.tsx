@@ -1,3 +1,4 @@
+import {openSystemPath} from "@/lib/client-opener";
 // 会话里的路径可点 (工作区第五轮 第 35 条). The remark pass that finds
 // paths in an agent's prose, and the thing it turns them into.
 //
@@ -31,7 +32,8 @@
 // stop copying from the screen. Links are left alone too: `remark-gfm`
 // has already made those, and they belong to the other half of this
 // ruling (`Markdown`'s `Link`).
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { linkIntent, type LinkModifiers } from "@/lib/content-link-intent";
 
 import { pathsIn } from "@/lib/paths";
 import { useLinkHome, underRoot } from "@/views/linkHome";
@@ -106,6 +108,7 @@ export function remarkPaths() {
  * these as the prose it already was. */
 export function PathLink({ written }: { written: string }) {
   const home = useLinkHome();
+  const [refused, setRefused] = useState<{target:string;message:string} | null>(null);
   const inRoot = home === null ? null : underRoot(home.root, written);
   // The conversation's files folder, for a path written whole.
   const more = home?.more && inRoot === null && written.startsWith("/") ? home.more : null;
@@ -119,6 +122,14 @@ export function PathLink({ written }: { written: string }) {
   if (home === null || found === null || known?.(found.abs) !== true) {
     return <>{written}</>;
   }
+  const refusal = refused?.target === found.abs ? refused.message : null;
+  const activate = async (event: LinkModifiers) => {
+    setRefused(null);
+    try {
+      if (linkIntent(event) === "system") await openSystemPath(found.abs);
+      else await home.open(found.abs, found.line);
+    } catch (error) { setRefused({target:found.abs,message:String(error)}); }
+  };
   return (
     // **Inline text, not a `<button>`** (round CHAT, seen on a phone): a
     // button is an atomic box, so a path longer than what was left of the
@@ -130,28 +141,21 @@ export function PathLink({ written }: { written: string }) {
       tabIndex={0}
       data-link={found.abs}
       data-link-line={found.line ?? undefined}
-      title={found.abs}
+      title={refusal ?? found.abs}
       // Underlined like a link and nothing else: it is a link. The
       // dotted variant next door means「this one refused」 (`Link`),
       // and one decoration meaning two things is the ambiguity that
       // rule exists to avoid. **And it wears the pointing hand**, which
       // only a link in prose does (`Markdown`'s `Link` is the other): a
       // control is the arrow (design-system 30-behavior 选字与手).
-      className={cn("cursor-pointer underline underline-offset-2 [overflow-wrap:anywhere]")}
-      // **`⌘`+press always goes to the host's own opener** (ruling 35:
-      // 「`⌘`+点 或 网址→在宿主机器上打开」; 2026-09-18 ruling 54
-      // repeats it in so many words). `ctrlKey` beside it for the same
-      // reason the save shortcut carries both: this face is a browser
-      // on Linux as often as an app on a Mac, and one gesture with two
-      // spellings is one gesture.
-      onClick={(e) =>
-        e.metaKey || e.ctrlKey ? home.launch(found.abs) : home.open(found.abs, found.line)
-      }
+      className={cn("cursor-pointer underline underline-offset-2 [overflow-wrap:anywhere]", refusal !== null && "decoration-dotted")}
+      // Modifiers express the requested destination, independent of the
+      // session machine or whether this client can access the target.
+      onClick={activate}
       onKeyDown={(e) => {
         if (e.key !== "Enter") return;
         e.preventDefault();
-        if (e.metaKey || e.ctrlKey) home.launch(found.abs);
-        else home.open(found.abs, found.line);
+        void activate(e);
       }}
     >
       {written}

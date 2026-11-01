@@ -1,5 +1,7 @@
 import type { historyField } from "@codemirror/commands";
 import type { EditorSelection, StateField } from "@codemirror/state";
+import type { EditorView } from "@codemirror/view";
+import type { KeptScrollSlot } from "@/hooks/use-kept-scroll";
 
 type HistoryValue = typeof historyField extends StateField<infer Value> ? Value : never;
 
@@ -8,5 +10,6 @@ type HistoryValue = typeof historyField extends StateField<infer Value> ? Value 
     and extensions). This is memory only: JSON would discard the inverse
     effects that git/merge edits can carry in their undo entries. */
 export type EditorHistorySlot = {
-  saved?: { key: string; text: string; selection: EditorSelection; history: HistoryValue };
+  preview?: KeptScrollSlot;
+  saved?: { key: string; text: string; selection: EditorSelection; history: HistoryValue; scroll?: ReturnType<EditorView["scrollSnapshot"]> };
 };

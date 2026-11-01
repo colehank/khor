@@ -33,22 +33,13 @@ export type DeckImage = { x: number; y: number; w: number; h: number; png: strin
 export type DeckLabel = { x: number; y: number; w: number; h: number; text: string; size: number; weight: number; color: string; center: boolean };
 /** Where a finger lands, and which DOM control it presses. */
 export type DeckHit = { x: number; y: number; w: number; h: number; seat: number; swipe: boolean };
-/** **The pill's progress line** (UX-35 §2): the slot's run while the tab
-    reloads — its box, the pill's glass it is clipped to (the capsule's
-    corners, `r`), its ink, and the DOM sweep's period and curve, so the
-    native line runs as the DOM one does: from the left, over and over,
-    until a reading comes without it. */
+/** The native deck draws the same actual estimate as the visible DOM line. */
 export type DeckProgress = {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
+  x: number; y: number; w: number; h: number;
   clip: { x: number; y: number; w: number; h: number; r: number };
   color: string;
-  /** One sweep, in ms; 0 under reduced motion, where the line stands. */
-  ms: number;
-  /** The sweep's `cubic-bezier`, linear when the DOM's is not one. */
-  ease: [number, number, number, number];
+  /** Actual issued navigation estimate, including its final successful 1. */
+  share: number;
 };
 
 /** **The glass's rim** (UX-38 §5): `--glass-rim`, a one-pixel ring of a
@@ -59,7 +50,10 @@ export type DeckRim = { angle: number; stops: { color: string; at: number }[] };
 export type DeckShadow = { y: number; blur: number; spread: number; color: string };
 
 export type DeckDrawing = {
-  /** The deck's band, from its top to the screen's foot (safe area in). */
+  /** Actual DOM deck bounds in the same viewport coordinates as PageBox. */
+  x: number;
+  y: number;
+  w: number;
   h: number;
   /** The page's bottom inset: the deck row, or the strip, and the safe area. */
   inset: number;
@@ -477,32 +471,29 @@ export async function readDeck(screen: HTMLElement): Promise<DeckDrawing | null>
   // The pill's progress line, read from the DOM's own (`PillProgress`)
   // while it is there: the DOM pill stays the source of truth.
   let progress: DeckProgress | null = null;
-  const line = bar.querySelector<HTMLElement>("[data-pill-progress]");
+  const line = [...bar.querySelectorAll<HTMLElement>("[data-pill-progress],[data-deck-strip-progress]")].find(line => shown(line) && (line.dataset.pillProgress ?? line.dataset.deckStripProgress ?? "") !== "");
   const run = line?.firstElementChild;
-  const glassOf = line?.closest<HTMLElement>("[data-deck-pill]");
-  if (line && run && glassOf && shown(line)) {
-    const cs = getComputedStyle(run);
-    const g = glassOf.getBoundingClientRect();
-    const curve = /cubic-bezier\(([^)]+)\)/.exec(cs.animationTimingFunction)?.[1].split(",").map(Number);
+  const glassOf = line?.closest<HTMLElement>("[data-deck-pill],[data-deck-strip]");
+  const share = Number(line?.dataset.pillProgress ?? line?.dataset.deckStripProgress);
+  if (line && run && glassOf && Number.isFinite(share) && share >= 0 && share <= 1) {
+    const cs = getComputedStyle(run), g = glassOf.getBoundingClientRect();
     progress = {
       ...rel(line.getBoundingClientRect(), o),
       clip: { ...rel(g, o), r: Math.min(g.width, g.height) / 2 },
-      color: plain(cs.backgroundColor),
-      ms: cs.animationName === "none" ? 0 : (parseFloat(cs.animationDuration) || 0) * (cs.animationDuration.endsWith("ms") ? 1 : 1000),
-      ease: curve?.length === 4 && curve.every(Number.isFinite) ? (curve as DeckProgress["ease"]) : [0, 0, 1, 1],
+      color: plain(cs.backgroundColor), share,
     };
   }
   // The pill swipes sideways between tabs, as the DOM pill does.
   const pill = bar.querySelector<HTMLElement>("[data-deck-pill]");
   if (pill && shown(pill)) hits.push({ ...rel(pill.getBoundingClientRect(), o), seat: -1, swipe: true });
-  const strip = bar.querySelector<HTMLElement>("[data-deck-strip]");
-  const row = strip && shown(strip) ? strip : bar.querySelector<HTMLElement>("[data-session-deck]");
-  // The page's last lines rest above the row — the deck, or the folded
-  // capsule with its gap — and the safe area under it.
-  const rowTop = row?.getBoundingClientRect().top ?? o.bottom;
   return {
+    x: o.left,
+    y: o.top,
+    w: o.width,
     h: o.height,
-    inset: o.bottom - rowTop,
+    // BrowserPane clips the native frame above this deck. A second
+    // contentInset would shorten/pad the document twice.
+    inset: 0,
     dark: document.documentElement.getAttribute("data-theme") === "dark" ||
       (document.documentElement.getAttribute("data-theme") !== "light" && matchMedia("(prefers-color-scheme: dark)").matches),
     tint: plain(root.getPropertyValue("--glass").trim()),

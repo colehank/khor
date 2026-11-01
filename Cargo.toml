@@ -220,6 +220,8 @@ debug = "line-tables-only"
 # iroh 1.2.0 with one upstream bug fixed in place. Why, which change,
 # and when this block and the directory can go: vendor/iroh/KHOR.md.
 [patch.crates-io]
+# SDK 3.5.0 with bounded ingress ownership; vendor/agent-client-protocol/KHOR.md.
+agent-client-protocol = { path = "vendor/agent-client-protocol" }
 # tiny_http 0.12.0 with bounded unread-body cleanup: vendor/tiny_http/KHOR.md.
 tiny_http = { path = "vendor/tiny_http" }
 iroh = { path = "vendor/iroh" }

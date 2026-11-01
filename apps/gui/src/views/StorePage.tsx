@@ -23,19 +23,8 @@
  *   done here or in a tree: closing a conversation's file row no longer
  *   deletes it (the lead, 2026-10-07).
  *
- * **Read again only when it changed** (store-c): no beat while nothing
- * happens. A far machine watches the receive location and answers a long
- * wait (`dirsWait`, the file tree's watch, NET-4); khor's own acts on
- * files — a delete, a rename, a drop landing there — say the level they
- * changed (`lib/tree-changed`). Where the watch cannot hear everything —
- * this machine and any other it cannot watch (`unavailable`), or a
- * location on a network mount another host writes into too
- * (`unreported`: turing and hinton share an NFS home) — the page also
- * reads again when the window comes back to the front and, slowly, while
- * it stays open. A new receive location is a new watch. And under a
- * finger the list pulls to refresh like every other list
- * (`usePullRefresh`): a pull reads the location now, whatever the watch
- * says.
+ * Directory changes use the shared explicit lease. Partial coverage keeps
+ * focus and slow refresh; pulling always asks for the current location.
  *
  * The same page is the 附栏's 更多 → 存储 seat (`bare`): no head of its
  * own there — the 附栏's one head says who and which seat — and where it
@@ -47,7 +36,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { dirsWait, fetchLs, setReceiveDir, type DeviceRow } from "@/api";
+import { fetchLs, setReceiveDir, type DeviceRow } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
 import { GlassCircle } from "@/components/Glass";
 import { IconBack } from "@/components/icons";
@@ -63,6 +52,8 @@ import { PopupButton } from "@/components/ui/popup-button";
 import type { DirRow } from "@/gen/bindings/DirRow";
 import { gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
+import { useDirectoryWatch } from "@/hooks/use-directory-watch";
+import { directoryScopeIsNative, directoryWatchScopes } from "@/lib/directory-watch";
 import { usePullRefresh } from "@/hooks/use-pull-refresh";
 import type { StoreSpot } from "@/hooks/use-session-side";
 import { onTreeChanged, sameMachine } from "@/lib/tree-changed";
@@ -70,9 +61,6 @@ import { FilePage } from "@/views/FilePage";
 import { useRemoveFlow } from "@/views/fileRow";
 import { ago } from "@/words";
 
-/** How long one watch question is held when nothing changes (the
-    file tree's `WATCH_HOLD_MS`). */
-const WATCH_HOLD_MS = 20_000;
 /** Where the watch cannot hear every change: how often the listing is
     asked again while the page stays open. Slow — the window coming back
     to the front asks at once. */
@@ -115,6 +103,7 @@ export function StorePage({
   const [listed, setListed] = useState<{ dir: string; rows: DirRow[] } | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
   const [again, setAgain] = useState(0);
+  const [readAt, setReadAt] = useState(0);
   // One read per ask: the mount, a new machine or location, and every
   // `again` below.
   useEffect(() => {
@@ -133,67 +122,35 @@ export function StorePage({
     };
   }, [name, dir, again]);
 
-  /** The watch hears every change to this location: khor's own acts are
-      left to it then, as a watched tree leaves them (`FileTree`). */
-  const heard = useRef(false);
   const hidden = useHidden();
-  /** Hidden since the last arm: the location may have changed unseen. */
-  const wasHidden = useRef(false);
+  const fileParent = file === null ? null : file.slice(0, file.lastIndexOf("/")) || "/";
+  const watchPlan = directoryWatchScopes(null, [...(fileParent === null ? [] : [fileParent]), ...(dir === null ? [] : [dir])]);
+  const observation = useDirectoryWatch(name, watchPlan.scopes);
+  const heard = useRef(false);
+  const covered = dir !== null && directoryScopeIsNative(observation, { kind: "entries", path: dir });
+  const fileCovered = fileParent === null || directoryScopeIsNative(observation, { kind: "entries", path: fileParent });
+  heard.current = covered;
   useEffect(() => {
-    heard.current = false;
-    if (dir === null) return;
-    if (hidden) {
-      wasHidden.current = true;
-      return;
-    }
-    let stopped = false;
+    const batch = observation.batch;
+    if (observation.status !== "watching" || batch === null) return;
+    if (dir !== null && (batch.reset || batch.dirs.some(path => level(path) === level(dir)))) setAgain(n => n + 1);
+    if (fileParent !== null && (batch.reset || batch.dirs.includes(fileParent))) setReadAt(n => n + 1);
+  }, [dir, observation.batch, observation.status, fileParent]);
+
+  // A partial or interrupted subscription cannot prove a quiet directory.
+  useEffect(() => {
+    const listMissing = dir !== null && !covered;
+    if (hidden || !listMissing && fileCovered) return;
     const reread = () => {
-      if (!stopped && !document.hidden) setAgain((n) => n + 1);
+      if (document.hidden) return;
+      if (dir !== null && !covered) setAgain(n => n + 1);
+      if (!fileCovered) setReadAt(n => n + 1);
     };
-    if (wasHidden.current) {
-      wasHidden.current = false;
-      reread();
-    }
-    // What the watch cannot hear is asked again: on the window's return
-    // and on a slow beat.
-    let slow: number | null = null;
-    const unheard = () => {
-      heard.current = false;
-      if (slow !== null) return;
-      slow = window.setInterval(reread, UNHEARD_MS);
-      window.addEventListener("focus", reread);
-    };
-    const at = level(dir);
-    void (async () => {
-      let seq = 0;
-      let first = true;
-      while (!stopped) {
-        try {
-          const w = await dirsWait(name, [dir], seq, first ? 0 : WATCH_HOLD_MS);
-          if (stopped) return;
-          if (w.unavailable) {
-            unheard();
-            return;
-          }
-          if (w.unreported.some((d) => level(d) === at)) unheard();
-          else if (!first) heard.current = slow === null;
-          // The first answer only arms the watch: the listing was just
-          // read. Every later one that names the location is a change.
-          if (!first && w.dirs.some((d) => level(d) === at)) reread();
-          first = false;
-          seq = w.seq;
-        } catch {
-          // Not reached just now: the next question will say.
-          await new Promise((r) => setTimeout(r, 5_000));
-        }
-      }
-    })();
-    return () => {
-      stopped = true;
-      if (slow !== null) window.clearInterval(slow);
-      window.removeEventListener("focus", reread);
-    };
-  }, [name, dir, hidden]);
+    if (listed?.dir === dir || fileParent !== null) reread();
+    const slow = window.setInterval(reread, UNHEARD_MS);
+    window.addEventListener("focus", reread);
+    return () => { window.clearInterval(slow); window.removeEventListener("focus", reread); };
+  }, [dir, hidden, covered, fileParent, fileCovered]);
 
   /** Pulled down under a finger: read now and hold the spinner until
       the answer is in (`ListPane`'s pull, on this page's own list). */
@@ -248,6 +205,7 @@ export function StorePage({
           key={`${name} ${file}`}
           machine={name}
           path={file}
+          readAt={readAt}
           here={isHere}
           onBack={() => setFile(null)}
           onGone={() => {

@@ -202,7 +202,9 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
             &PredefinedMenuItem::hide_others(app, Some(m::hide_others()))?,
             &PredefinedMenuItem::show_all(app, Some(m::show_all()))?,
             &sep()?,
-            &PredefinedMenuItem::quit(app, Some(m::quit()))?,
+            // AppKit's predefined Quit sends terminate: directly, bypassing
+            // the window's close request and the page's unsaved-file guard.
+            &item("quit", m::quit(), Some("CmdOrCtrl+Q"))?,
         ],
     )?;
 
@@ -543,6 +545,22 @@ pub fn follow_lang(_app: &AppHandle) {}
 /// bar went quiet once 浏览器 had been used. The editor windows hold one
 /// webview each and are still found the old way.
 pub fn on_event(app: &AppHandle, id: &str) {
+    if id == "quit" {
+        // Quit is about the main face even when Settings or an editor is
+        // focused. Its close listener flushes drafts and can keep it open.
+        if let Some(window) = app.get_window("main") {
+            let _ = window.show();
+            let _ = window.set_focus();
+            let _ = window.close();
+        } else {
+            // A remaining auxiliary window still takes its own guarded
+            // close path; no application exit may skip that request.
+            for window in app.webview_windows().values() {
+                let _ = window.close();
+            }
+        }
+        return;
+    }
     #[cfg(target_os = "macos")]
     if crate::quick_look::menu(id) {
         return;

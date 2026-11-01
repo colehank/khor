@@ -5,6 +5,7 @@
 mod menu_overlay;
 mod native_io;
 mod page_history;
+mod page_navigation;
 
 #[cfg(desktop)]
 mod window_surface;
@@ -219,18 +220,34 @@ async fn touched(machine: Option<String>, path: String) -> Result<i64, String> {
     .await
 }
 
-/// Which of a tree's open levels changed on that machine
-/// (`khor_gui_core::files::dirs_wait`): held up to `wait_ms`, so async.
-/// Its arguments are named as the bridge names them (`wait_ms`), one
-/// spelling for both doors.
+#[tauri::command(rename_all = "snake_case")]
+async fn dirs_begin(
+    machine: String,
+    scopes: Vec<khor_gui_core::files::DirWatchScope>,
+) -> Result<khor_gui_core::files::DirWatchOpened, String> {
+    khor_gui_core::files::dirs_begin(&Node::root_from_env(), &machine, scopes).await
+}
+
 #[tauri::command(rename_all = "snake_case")]
 async fn dirs_wait(
-    machine: String,
-    dirs: Vec<String>,
-    since: u64,
-    wait_ms: u64,
-) -> Result<khor_gui_core::files::DirWatch, String> {
-    khor_gui_core::files::dirs_wait(&Node::root_from_env(), &machine, dirs, since, wait_ms).await
+    machine_id: String,
+    id: String,
+    cursor: Option<String>,
+    wait_ms: u32,
+) -> Result<khor_gui_core::files::DirWatchBatch, String> {
+    khor_gui_core::files::dirs_wait(
+        &Node::root_from_env(),
+        &machine_id,
+        &id,
+        cursor.as_deref(),
+        wait_ms.min(20_000),
+    )
+    .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn dirs_leave(machine_id: String, id: String) -> Result<(), String> {
+    khor_gui_core::files::dirs_leave(&Node::root_from_env(), &machine_id, &id).await
 }
 
 /// What an open file is now, without its bytes
@@ -363,6 +380,23 @@ async fn git_diff(machine: String, path: String) -> Result<khor_gui_core::git::G
 #[tauri::command]
 async fn git_log(machine: String, path: String) -> Result<khor_gui_core::git::GitLog, String> {
     khor_gui_core::git::log(&Node::root_from_env(), &machine, &path).await
+}
+
+#[tauri::command]
+async fn git_history(
+    machine: String,
+    dir: String,
+    cursor: Option<String>,
+    limit: u32,
+) -> Result<khor_gui_core::git::GitHistoryPage, String> {
+    khor_gui_core::git::history(
+        &Node::root_from_env(),
+        &machine,
+        &dir,
+        cursor.as_deref(),
+        limit,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -783,13 +817,22 @@ fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
 /// A conversation on another machine is reached over the network
 /// ([`off_main`]).
 #[tauri::command]
-async fn chat_open(id: String) -> Result<bool, String> {
-    off_main(move || khor_gui_core::chat::chat_open(&Node::root_from_env(), &id)).await
+fn attachment_begin(id: String, kind: khor_gui_core::AttachmentKind) -> Result<String, String> {
+    khor_gui_core::attachment_begin(&Node::root_from_env(), &id, kind)
 }
 
 #[tauri::command]
-fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, String> {
-    khor_gui_core::chat::chat_poll(&id, since)
+async fn chat_open(id: String, lease: String) -> Result<bool, String> {
+    off_main(move || khor_gui_core::chat::chat_open(&Node::root_from_env(), &id, &lease)).await
+}
+
+#[tauri::command]
+fn chat_poll(
+    id: String,
+    lease: String,
+    since: u64,
+) -> Result<khor_gui_core::chat::ChatBatch, String> {
+    khor_gui_core::chat::chat_poll(&Node::root_from_env(), &id, &lease, since)
 }
 
 /// The conversation, pushed: held open until a frame lands
@@ -797,10 +840,18 @@ fn chat_poll(id: String, since: u64) -> Result<khor_gui_core::chat::ChatBatch, S
 #[tauri::command]
 async fn chat_wait(
     id: String,
+    lease: String,
     since: u64,
     ms: u64,
 ) -> Result<khor_gui_core::chat::ChatBatch, String> {
-    khor_gui_core::chat::chat_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+    khor_gui_core::chat::chat_wait(
+        &Node::root_from_env(),
+        &id,
+        &lease,
+        since,
+        std::time::Duration::from_millis(ms.min(2000)),
+    )
+    .await
 }
 
 /// A page's site icon, through the page's own exit (docs/SHELL.md 第四轮).
@@ -825,13 +876,13 @@ fn open_link(url: String) -> Result<(), String> {
 /// The phone's half (docs/IOS.md 第二步): **the system opens the page**,
 /// in whatever browser the person uses — an app's sandbox has no program
 /// to hand a URL to, and the desktop road's `xdg-open` came back as a raw
-/// OS error. The same whitelist as the desktop (`web::page_only`), asked
+/// OS error. The same system-target validation as the desktop, asked
 /// before anything leaves; UIKit wants the main thread, so the hand-over
 /// runs there and this answers once it is queued.
 #[cfg(target_os = "ios")]
 #[tauri::command]
 fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    khor_gui_core::web::page_only(&url)?;
+    khor_gui_core::web::system_target(&url)?;
     app.run_on_main_thread(move || {
         use objc2::MainThreadMarker;
         use objc2_foundation::{NSDictionary, NSString, NSURL};
@@ -856,23 +907,83 @@ fn open_link(app: tauri::AppHandle, url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn chat_leave(id: String) -> Result<(), String> {
-    khor_gui_core::chat::chat_leave(&id)
+fn chat_leave(id: String, lease: String) -> Result<(), String> {
+    khor_gui_core::chat::chat_leave(&Node::root_from_env(), &id, &lease)
 }
 
-/// A discovered session's recorded past — the vendor's transcript in
-/// replay-shaped frames (`khor_gui_core::chat::history`).
 #[tauri::command]
-async fn history(id: String) -> Result<Vec<khor_gui_core::chat::ChatFrame>, String> {
-    off_main(move || khor_gui_core::chat::history(&Node::root_from_env(), &id)).await
+async fn session_content(
+    id: String,
+    locator: String,
+) -> Result<khor_gui_core::chat::SessionContent, String> {
+    khor_gui_core::chat::session_content(&Node::root_from_env(), &id, &locator).await
+}
+#[tauri::command]
+async fn history_begin(id: String, binding: String) -> Result<String, String> {
+    khor_gui_core::chat::history_begin(&Node::root_from_env(), &id, &binding).await
+}
+#[tauri::command]
+async fn history_cancel(id: String, binding: String, request_key: String) -> Result<(), String> {
+    khor_gui_core::chat::history_cancel(&Node::root_from_env(), &id, &binding, &request_key).await
+}
+#[tauri::command]
+async fn history_record(
+    id: String,
+    binding: String,
+    cursor: String,
+    from: u64,
+    request_key: String,
+) -> Result<khor_gui_core::chat::HistoryRecordChunk, String> {
+    khor_gui_core::chat::history_record(
+        &Node::root_from_env(),
+        &id,
+        &binding,
+        &cursor,
+        from,
+        &request_key,
+    )
+    .await
+}
+#[tauri::command]
+async fn history_page(
+    id: String,
+    binding: String,
+    cursor: Option<String>,
+    newer: bool,
+    request_key: String,
+) -> Result<khor_gui_core::chat::HistoryPage, String> {
+    khor_gui_core::chat::history_page(
+        &Node::root_from_env(),
+        &id,
+        &binding,
+        cursor.as_deref(),
+        newer,
+        &request_key,
+    )
+    .await
 }
 
-/// A discovered conversation, **followed**: whatever its transcript has
-/// said since `from`, and where to continue. The read-only half of
-/// watching a session that is running in its own terminal.
 #[tauri::command]
-async fn history_follow(id: String, from: u64) -> Result<khor_gui_core::chat::Followed, String> {
-    off_main(move || khor_gui_core::chat::history_follow(&Node::root_from_env(), &id, from)).await
+async fn history_projection(
+    id: String,
+    binding: String,
+    request_key: String,
+    cursor: String,
+    start: u64,
+    end: u64,
+    scaffold: Option<String>,
+) -> Result<khor_gui_core::chat::HistoryProjection, String> {
+    khor_gui_core::chat::history_projection(
+        &Node::root_from_env(),
+        &id,
+        &binding,
+        &request_key,
+        &cursor,
+        start,
+        end,
+        scaffold,
+    )
+    .await
 }
 
 /// One machine's directory, for the files landing. Async because the
@@ -896,6 +1007,59 @@ fn file_handoff_start(
 ) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
     khor_gui_core::file_handoff::start(&Node::root_from_env(), &id, &machine, &path)
 }
+#[tauri::command]
+fn history_export_start(
+    transfer: String,
+    id: String,
+    binding: String,
+    cursor: String,
+    start: u64,
+    end: u64,
+) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
+    khor_gui_core::history_export::start(
+        &Node::root_from_env(),
+        &transfer,
+        &id,
+        &binding,
+        &cursor,
+        start,
+        end,
+    )
+}
+/// A completed app-owned original uses the existing OS file panel/share sheet.
+#[tauri::command]
+async fn file_handoff_save(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    id: String,
+) -> Result<bool, String> {
+    if webview.label() != "main" {
+        return Err("file saving is only available in the app".into());
+    }
+    #[cfg(desktop)]
+    return tauri::async_runtime::spawn_blocking(move || {
+        use tauri_plugin_dialog::DialogExt;
+        // Validate the completed job before presenting an OS panel. The same
+        // owner is rechecked after the panel in case the view was cancelled.
+        khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+        let Some(file) = app
+            .dialog()
+            .file()
+            .set_file_name("history-record.jsonl")
+            .blocking_save_file()
+        else {
+            return Ok(false);
+        };
+        let path = file.into_path().map_err(|error| error.to_string())?;
+        khor_gui_core::history_export::save(&Node::root_from_env(), &id, &path)?;
+        Ok(true)
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    #[cfg(not(desktop))]
+    file_handoff_open(app, webview, id).await
+}
+
 #[tauri::command]
 fn file_handoff_state(id: String) -> Result<khor_gui_core::file_handoff::FileHandoff, String> {
     khor_gui_core::file_handoff::state(&Node::root_from_env(), &id)
@@ -1086,11 +1250,18 @@ fn pdf_here() -> bool {
 /// A terminal on another machine is reached over the network
 /// ([`off_main`]).
 #[tauri::command]
-async fn term_open(id: String, cols: u16, rows: u16, history: Option<u32>) -> Result<(), String> {
+async fn term_open(
+    id: String,
+    lease: String,
+    cols: u16,
+    rows: u16,
+    history: Option<u32>,
+) -> Result<(), String> {
     off_main(move || {
         khor_gui_core::term::term_open(
             &Node::root_from_env(),
             &id,
+            &lease,
             cols,
             rows,
             history.unwrap_or(0),
@@ -1107,13 +1278,17 @@ async fn term_ended(id: String) -> Result<Option<khor_gui_core::term::EndedPage>
 }
 
 #[tauri::command]
-fn term_attach(id: String) -> Result<khor_gui_core::term::TermStart, String> {
-    khor_gui_core::term::term_attach(&id)
+fn term_attach(id: String, lease: String) -> Result<khor_gui_core::term::TermStart, String> {
+    khor_gui_core::term::term_attach(&Node::root_from_env(), &id, &lease)
 }
 
 #[tauri::command]
-fn term_stream(id: String, since: u64) -> Result<khor_gui_core::term::TermChunk, String> {
-    khor_gui_core::term::term_stream(&id, since)
+fn term_stream(
+    id: String,
+    lease: String,
+    since: u64,
+) -> Result<khor_gui_core::term::TermChunk, String> {
+    khor_gui_core::term::term_stream(&Node::root_from_env(), &id, &lease, since)
 }
 
 /// The stream, pushed: held open until the feed grows (`term::term_wait`).
@@ -1138,15 +1313,15 @@ async fn term_history(
 
 /// A tmux row's prompts, moved between by tmux (item 21, `term::prompt`).
 #[tauri::command]
-async fn term_prompt(id: String, up: bool) -> Result<(), String> {
-    khor_gui_core::term::prompt(&Node::root_from_env(), &id, up).await
+async fn term_prompt(id: String, lease: String, up: bool) -> Result<(), String> {
+    khor_gui_core::term::prompt(&Node::root_from_env(), &id, &lease, up).await
 }
 
 /// The wheel over a shell's own tmux client (item 58, `term::scroll`):
 /// true when tmux took it.
 #[tauri::command]
-async fn term_scroll(id: String, rows: i32) -> Result<bool, String> {
-    khor_gui_core::term::scroll(&Node::root_from_env(), &id, rows).await
+async fn term_scroll(id: String, lease: String, rows: i32) -> Result<bool, String> {
+    khor_gui_core::term::scroll(&Node::root_from_env(), &id, &lease, rows).await
 }
 
 /// A tmux row's front pane history from an anchor on (item 31,
@@ -1154,18 +1329,27 @@ async fn term_scroll(id: String, rows: i32) -> Result<bool, String> {
 #[tauri::command]
 async fn term_pane_history(
     id: String,
+    lease: String,
     since: Option<khor_gui_core::term::PaneAnchor>,
 ) -> Result<khor_gui_core::term::PaneHistory, String> {
-    khor_gui_core::term::pane_history(&Node::root_from_env(), &id, since).await
+    khor_gui_core::term::pane_history(&Node::root_from_env(), &id, &lease, since).await
 }
 
 #[tauri::command]
 async fn term_wait(
     id: String,
+    lease: String,
     since: u64,
     ms: u64,
 ) -> Result<khor_gui_core::term::TermChunk, String> {
-    khor_gui_core::term::term_wait(&id, since, std::time::Duration::from_millis(ms.min(2000))).await
+    khor_gui_core::term::term_wait(
+        &Node::root_from_env(),
+        &id,
+        &lease,
+        since,
+        std::time::Duration::from_millis(ms.min(2000)),
+    )
+    .await
 }
 
 /// **A command that finished while nobody was looking, said by the system**
@@ -1374,13 +1558,13 @@ fn joy_haptic(app: tauri::AppHandle, kind: String) {
 /// How far a terminal's drop has got, for its pill's line (item 60):
 /// memory.
 #[tauri::command]
-fn term_drop_progress(id: String) -> Option<f32> {
-    khor_gui_core::term::term_drop_progress(&id)
+fn term_drop_progress(id: String, lease: String) -> Result<Option<f32>, String> {
+    khor_gui_core::term::term_drop_progress(&Node::root_from_env(), &id, &lease)
 }
 
 #[tauri::command]
-fn term_leave(id: String) -> Result<(), String> {
-    khor_gui_core::term::term_leave(&id)
+fn term_leave(id: String, lease: String) -> Result<(), String> {
+    khor_gui_core::term::term_leave(&Node::root_from_env(), &id, &lease)
 }
 
 /// Where this person has been, of one kind, most recent first
@@ -1746,7 +1930,7 @@ async fn open_page(
             let now = wired.as_ref().map(|(_, at)| at.as_str());
             if now != Some(target.as_str()) {
                 page_went(&label, target.as_str());
-                live.navigate(target).map_err(|e| e.to_string())?;
+                navigate_page(&live, &tab, target).await?;
             }
             live.set_position(LogicalPosition::new(at.x, top))
                 .map_err(|e| e.to_string())?;
@@ -1761,6 +1945,14 @@ async fn open_page(
             tell_page_steps(&live, &tab);
             return Ok(borrow);
         }
+        #[cfg(target_os = "macos")]
+        page_fail::forget(&tab);
+        #[cfg(not(target_os = "macos"))]
+        page_navigation::with_pages(|pages| {
+            if let Some(key) = pages.key_for_tab(&tab) {
+                pages.detach(key);
+            }
+        });
         let _ = live.close();
     }
 
@@ -1768,6 +1960,22 @@ async fn open_page(
     // is somebody else's site; broadcasting khor's own events into it
     // would be handing a stranger the app's internal traffic.
     let face = window.label().to_string();
+    #[cfg(not(target_os = "macos"))]
+    let fallback_key = {
+        let (key, opening) = page_navigation::with_pages(|pages| {
+            pages.attach_wry(
+                face.clone(),
+                tab.clone(),
+                going_to.clone(),
+                machine.clone(),
+                !direct,
+            )
+        })
+        .flatten()
+        .ok_or("native page identity exhausted")?;
+        tell_page_navigation(window.app_handle(), Some(opening));
+        key
+    };
     let (t_tab, l_tab) = (tab.clone(), tab.clone());
     let (t_face, l_face) = (face.clone(), face.clone());
     // **The shim rides on the builder, beside the proxy, on purpose.**
@@ -1781,7 +1989,12 @@ async fn open_page(
     // Read `page_shim.js` before touching this. It takes two WebKit APIs
     // away from the page and **cannot take the third**, and the third is
     // still leaking every hostname the page prefetches.
-    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(target));
+    #[cfg(target_os = "macos")]
+    let initial = "about:blank".parse().map_err(|e| format!("{e}"))?;
+    #[cfg(not(target_os = "macos"))]
+    let initial = target;
+    let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(initial))
+        .background_color(ground(chosen_dark(desktop_is_dark)));
     if let Some(proxy) = proxy {
         // The two ride together or not at all — see `direct` above.
         builder = builder
@@ -1800,15 +2013,15 @@ async fn open_page(
             // reach (`khor_node::tunnel::PAGE_FAILED_TITLE`, UX-22): a
             // failed load, not a title.
             if title == khor_node::tunnel::PAGE_FAILED_TITLE {
-                let at = view.url().map(|u| u.to_string()).unwrap_or_default();
-                let _ = view.app_handle().emit_to(
-                    t_face.clone(),
-                    "page:fail",
-                    PageWord {
-                        tab: t_tab.clone(),
-                        text: format!("route|khor||{at}"),
-                    },
-                );
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let failed_url = view.url().map(|url| url.to_string()).unwrap_or_default();
+                    let change = page_navigation::with_pages(|pages| {
+                        pages.wry_failed(fallback_key, page_navigation::route_error(failed_url))
+                    })
+                    .flatten();
+                    tell_page_navigation(view.app_handle(), change);
+                }
                 return;
             }
             let _ = view.app_handle().emit_to(
@@ -1821,19 +2034,23 @@ async fn open_page(
             );
         })
         .on_page_load(move |view, payload| {
-            let word = match payload.event() {
-                tauri::webview::PageLoadEvent::Started => "started",
-                tauri::webview::PageLoadEvent::Finished => "finished",
-            };
+            if payload.url().as_str() == "about:blank" {
+                return;
+            }
             let app = view.app_handle();
-            let _ = app.emit_to(
-                l_face.clone(),
-                "page:load",
-                PageWord {
-                    tab: l_tab.clone(),
-                    text: word.to_owned(),
-                },
-            );
+            #[cfg(not(target_os = "macos"))]
+            {
+                let change = page_navigation::with_pages(|pages| match payload.event() {
+                    tauri::webview::PageLoadEvent::Started => {
+                        pages.wry_started(fallback_key, payload.url().to_string())
+                    }
+                    tauri::webview::PageLoadEvent::Finished => {
+                        pages.wry_finished(fallback_key, payload.url().to_string())
+                    }
+                })
+                .flatten();
+                tell_page_navigation(app, change);
+            }
             // **On arrival, not on departure.** This used to fire for
             // both halves of a load, so every navigation reported the
             // tab's place twice — and the first of the two is a place the
@@ -1940,16 +2157,6 @@ async fn open_page(
                 if let Ok(mut m) = page_downloads().lock() {
                     m.push((url.to_string(), destination.clone()));
                 }
-                // The navigation that became a download ends no load: the
-                // light goes out here.
-                let _ = fetched.emit_to(
-                    d_face.clone(),
-                    "page:load",
-                    PageWord {
-                        tab: d_tab.clone(),
-                        text: "finished".into(),
-                    },
-                );
                 tell(format!("started|{name}"));
             }
             tauri::webview::DownloadEvent::Finished { url, success, .. } => {
@@ -1982,15 +2189,41 @@ async fn open_page(
             LogicalPosition::new(at.x, top),
             LogicalSize::new(at.w, at.h),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|error| {
+            #[cfg(not(target_os = "macos"))]
+            page_navigation::with_pages(|pages| pages.detach(fallback_key));
+            error.to_string()
+        })?;
     if !page_is_wanted(&tab) {
-        made.hide().map_err(|e| e.to_string())?;
+        if let Err(error) = made.hide() {
+            #[cfg(not(target_os = "macos"))]
+            page_navigation::with_pages(|pages| pages.detach(fallback_key));
+            let _ = made.close();
+            return Err(error.to_string());
+        }
+    }
+    // Publish the requested exit before native callbacks can report redirects.
+    if let Ok(mut pages) = page_exits().lock() {
+        pages.insert(label.clone(), (machine.clone(), going_to.clone()));
     }
     // A load that fails says so (UX-22, `page_fail`).
     #[cfg(target_os = "macos")]
-    page_fail::watch(&made, face.clone(), tab.clone());
-    if let Ok(mut m) = page_exits().lock() {
-        m.insert(label, (machine, going_to));
+    if let Err(error) = page_fail::watch(
+        &made,
+        face.clone(),
+        tab.clone(),
+        going_to.clone(),
+        machine.clone(),
+        !direct,
+    )
+    .await
+    {
+        page_fail::forget(&tab);
+        if let Ok(mut pages) = page_exits().lock() {
+            pages.remove(&label);
+        }
+        let _ = made.close();
+        return Err(error);
     }
     Ok(borrow)
 }
@@ -2318,6 +2551,100 @@ fn repaint_the_ground(app: &tauri::AppHandle) {
     if let Some(view) = app.get_webview("main") {
         let _ = view.set_background_color(Some(window_surface::background(dark)));
     }
+    let page_labels = page_exits()
+        .lock()
+        .map(|pages| pages.keys().cloned().collect::<Vec<_>>())
+        .unwrap_or_default();
+    for label in page_labels {
+        if let Some(view) = app.get_webview(&label) {
+            let _ = view.set_background_color(Some(ground(dark)));
+        }
+    }
+}
+
+/// Send immutable lifecycle changes only to the containing Khor face.
+#[cfg(desktop)]
+fn tell_page_navigation(app: &tauri::AppHandle, change: Option<page_navigation::Changed>) {
+    use tauri::Emitter;
+    if let Some(change) = change {
+        let _ = app.emit_to(change.face, "page:navigation", change.state);
+    }
+}
+
+#[cfg(all(desktop, not(target_os = "macos")))]
+fn request_page_navigation(app: &tauri::AppHandle, tab: &str, target: String) {
+    let change = page_navigation::with_pages(|pages| {
+        let key = pages.key_for_tab(tab)?;
+        pages.request(key, target)
+    })
+    .flatten();
+    tell_page_navigation(app, change);
+}
+
+#[cfg(desktop)]
+async fn navigate_page(view: &tauri::Webview, tab: &str, target: tauri::Url) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tab;
+        page_fail::navigate(view, target.to_string()).await
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use tauri::Manager;
+        request_page_navigation(view.app_handle(), tab, target.to_string());
+        view.navigate(target).map_err(|error| error.to_string())
+    }
+}
+
+#[cfg(desktop)]
+fn control_page_navigation(view: &tauri::Webview, tab: &str, way: &str) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = tab;
+        page_fail::step(view, way)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use tauri::Manager;
+        let app = view.app_handle();
+        match way {
+            "back" => view
+                .eval("history.back()")
+                .map_err(|error| error.to_string()),
+            "forward" => view
+                .eval("history.forward()")
+                .map_err(|error| error.to_string()),
+            "reload" => {
+                let target = page_exits().lock().ok().and_then(|pages| {
+                    pages
+                        .get(&page_label(tab))
+                        .map(|(_, target)| target.clone())
+                });
+                if let Some(target) = target {
+                    request_page_navigation(app, tab, target);
+                }
+                view.reload().map_err(|error| error.to_string())
+            }
+            "stop" => {
+                view.eval("window.stop()")
+                    .map_err(|error| error.to_string())?;
+                let change = page_navigation::with_pages(|pages| {
+                    let key = pages.key_for_tab(tab)?;
+                    pages.cancelled(key)
+                })
+                .flatten();
+                tell_page_navigation(app, change);
+                Ok(())
+            }
+            other => Err(format!("no such native navigation control: {other}")),
+        }
+    }
+}
+
+/// The current lifecycle snapshot belongs to the native page owner.
+#[tauri::command]
+fn page_state(tab: String) -> Option<khor_gui_core::web::PageNavigationState> {
+    page_navigation::snapshot(&tab)
 }
 
 /// A snapshot of the actual native session history. Null means that this
@@ -2330,15 +2657,26 @@ async fn page_steps(
     #[cfg(desktop)]
     {
         use tauri::Manager;
-        let Some(view) = app.get_webview(&page_label(&tab)) else {
-            return Ok(None);
-        };
         let (tx, rx) = tokio::sync::oneshot::channel();
-        view.with_webview(move |native| {
-            let _ = tx.send(page_history::desktop(native).map(Some));
+        let query_app = app.clone();
+        app.run_on_main_thread(move || {
+            let query = || {
+                let Some(view) = query_app.get_webview(&page_label(&tab)) else {
+                    return Ok(None);
+                };
+                // Wry runs with_webview inline on its main thread. Keeping the
+                // lookup here prevents close from discarding a queued query.
+                let (reply, result) = std::sync::mpsc::sync_channel(1);
+                view.with_webview(move |native| {
+                    let _ = reply.send(page_history::desktop(native).map(Some));
+                })
+                .map_err(|error| error.to_string())?;
+                result.try_recv().map_err(|error| error.to_string())?
+            };
+            let _ = tx.send(query());
         })
-        .map_err(|e| e.to_string())?;
-        rx.await.map_err(|e| e.to_string())?
+        .map_err(|error| error.to_string())?;
+        rx.await.map_err(|error| error.to_string())?
     }
     #[cfg(target_os = "ios")]
     {
@@ -2383,36 +2721,33 @@ fn tell_page_steps(view: &tauri::Webview, tab: &str) {
 /// queried natively by page_steps; the existing step verbs stay unchanged.
 #[cfg(desktop)]
 #[tauri::command]
-fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
+async fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
     use tauri::Manager;
     let Some(view) = app.get_webview(&page_label(&tab)) else {
         return Ok(());
     };
     match way.as_str() {
-        "back" => view.eval("history.back()").map_err(|e| e.to_string()),
-        "forward" => view.eval("history.forward()").map_err(|e| e.to_string()),
-        "reload" => view.reload().map_err(|e| e.to_string()),
-        // The pill's × while a page loads (UX-33): the page's own stop
-        // (wry has no verb for it; the load ends as a cancelled one).
-        "stop" => view.eval("window.stop()").map_err(|e| e.to_string()),
+        "back" | "forward" | "reload" | "stop" => control_page_navigation(&view, &tab, &way),
         // 重试 (UX-22): where the last load failed to go, again — a
         // reload would load the page still there. A Mac that heard no
         // failure, or a platform that hears none, reloads.
         "retry" => {
             #[cfg(target_os = "macos")]
-            if let Some(url) =
-                page_fail::take_failed(&tab).and_then(|u| u.parse::<tauri::Url>().ok())
-            {
-                return view.navigate(url).map_err(|e| e.to_string());
+            let target = page_fail::take_failed(&tab);
+            #[cfg(not(target_os = "macos"))]
+            let target = page_navigation::retry_target(&tab);
+            if let Some(url) = target.and_then(|url| url.parse::<tauri::Url>().ok()) {
+                navigate_page(&view, &tab, url).await
+            } else {
+                control_page_navigation(&view, &tab, "reload")
             }
-            view.reload().map_err(|e| e.to_string())
         }
         // 「仍然访问」 (UX-42 §14): the certificate the failed load was
         // shown, passed for its host for this run, and the address again.
         "pass" => {
             #[cfg(target_os = "macos")]
             if let Some(url) = page_trust::pass(&tab).and_then(|u| u.parse::<tauri::Url>().ok()) {
-                return view.navigate(url).map_err(|e| e.to_string());
+                return navigate_page(&view, &tab, url).await;
             }
             Ok(())
         }
@@ -2439,6 +2774,12 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
         page_fail::forget(&tab);
         page_trust::forget(&tab);
     }
+    #[cfg(not(target_os = "macos"))]
+    page_navigation::with_pages(|pages| {
+        if let Some(key) = pages.key_for_tab(&tab) {
+            pages.detach(key);
+        }
+    });
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
     }
@@ -3178,9 +3519,10 @@ fn page_ground(tab: String, y: f64) -> Result<(), String> {
 
 #[cfg(not(desktop))]
 #[tauri::command]
-fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
+async fn page_step(app: tauri::AppHandle, tab: String, way: String) -> Result<(), String> {
     #[cfg(target_os = "ios")]
-    let _ = app.run_on_main_thread(move || phone_page::step(&tab, &way));
+    app.run_on_main_thread(move || phone_page::step(&tab, &way))
+        .map_err(|error| error.to_string())?;
     #[cfg(not(target_os = "ios"))]
     let _ = (app, tab, way);
     Ok(())
@@ -3308,8 +3650,12 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
             .and_then(|v| v.to_str().ok())
             .map(|v| khor_gui_core::percent_decoded(v).unwrap_or_else(|| v.to_owned()))
     };
-    let (Some(id), Some(name)) = (header("x-khor-chat"), header("x-khor-name")) else {
-        return Err("chat_put needs the x-khor-chat and x-khor-name headers".to_owned());
+    let (Some(id), Some(lease), Some(name)) = (
+        header("x-khor-chat"),
+        header("x-khor-lease"),
+        header("x-khor-name"),
+    ) else {
+        return Err("chat_put needs x-khor-chat, x-khor-lease and x-khor-name headers".to_owned());
     };
     // The directory on the conversation's machine, when the person chose one.
     let into = header("x-khor-into").unwrap_or_default();
@@ -3318,6 +3664,7 @@ async fn chat_put(request: tauri::ipc::Request<'_>) -> Result<String, String> {
         khor_gui_core::chat::chat_put(
             &Node::root_from_env(),
             &id,
+            &lease,
             &name,
             &into,
             &mut bytes.as_slice(),
@@ -3354,6 +3701,7 @@ async fn term_drop_stage(request: tauri::ipc::Request<'_>) -> Result<String, Str
 #[tauri::command]
 async fn term_drop_items(
     id: String,
+    lease: String,
     items: Vec<khor_gui_core::term::DropItem>,
     into: Option<String>,
 ) -> Result<khor_gui_core::term::DropEnd, String> {
@@ -3361,6 +3709,7 @@ async fn term_drop_items(
         Ok(khor_gui_core::term::term_drop_items(
             &Node::root_from_env(),
             &id,
+            &lease,
             &items,
             into.as_deref(),
         ))
@@ -3450,6 +3799,7 @@ async fn term_pick_folders(
 #[tauri::command]
 async fn chat_put_paths(
     id: String,
+    lease: String,
     paths: Vec<String>,
     into: Option<String>,
 ) -> Result<Vec<String>, String> {
@@ -3457,6 +3807,7 @@ async fn chat_put_paths(
         khor_gui_core::chat::chat_put_paths(
             &Node::root_from_env(),
             &id,
+            &lease,
             &paths,
             into.as_deref().unwrap_or(""),
         )
@@ -3626,6 +3977,50 @@ async fn resume_session(agent: String, session: String) -> Result<String, String
     off_main(move || {
         khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
     })
+    .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn session_recovery(
+    home_id: String,
+    id: String,
+) -> Result<khor_gui_core::agents::SessionRecovery, String> {
+    khor_gui_core::agents::session_recovery(&Node::root_from_env(), &home_id, &id).await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn recover_session(
+    home_id: String,
+    id: String,
+    expected_run: Option<String>,
+    token: khor_gui_core::agents::RecoveryToken,
+) -> Result<khor_gui_core::agents::RecoveryResult, String> {
+    khor_gui_core::agents::recover_session(
+        &Node::root_from_env(),
+        &home_id,
+        &id,
+        expected_run.as_deref(),
+        token,
+    )
+    .await
+}
+
+#[tauri::command(rename_all = "snake_case")]
+async fn new_shell_run(
+    home_id: String,
+    id: String,
+    expected_run: Option<String>,
+    token: khor_gui_core::agents::RecoveryToken,
+    cwd: Option<String>,
+) -> Result<khor_gui_core::agents::ShellRunResult, String> {
+    khor_gui_core::agents::new_shell_run(
+        &Node::root_from_env(),
+        &home_id,
+        &id,
+        expected_run.as_deref(),
+        token,
+        cwd.as_deref(),
+    )
     .await
 }
 
@@ -3878,6 +4273,7 @@ fn wear_on_the_windows(theme: &str) {
             }
         }
     }
+    phone_page::repaint_ground();
 }
 
 /// **The face's own scroll view never bounces** (the owner, 2026-10-05,
@@ -5015,13 +5411,15 @@ pub fn run() {
             if window.label() == "main" {
                 use tauri::Manager;
                 match event {
+                    // Only after the draft owner permits the main window
+                    // to be destroyed: a cancelled close keeps the auxiliaries.
                     // **The overlay window has to be closed by hand.** It
                     // has a level of its own rather than a parent
                     // (`menu_overlay::desktop::hang` says why), and tauri leaves an
                     // app running while any window is open — so without
                     // this, closing khor's window would leave the process
                     // alive with nothing on screen.
-                    tauri::WindowEvent::CloseRequested { .. } => {
+                    tauri::WindowEvent::Destroyed => {
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("[{stamp}] khor app: the main window was closed");
                         menu_overlay::desktop::close(window.app_handle());
@@ -5169,11 +5567,14 @@ pub fn run() {
             pdf_here,
             read_text,
             stat_text,
+            dirs_begin,
             dirs_wait,
+            dirs_leave,
             git_status,
             checkout,
             git_diff,
             git_log,
+            git_history,
             git_blame,
             git_show,
             git_commit,
@@ -5232,6 +5633,7 @@ pub fn run() {
             hooks_state,
             install_hooks,
             uninstall_hooks,
+            attachment_begin,
             chat_open,
             chat_poll,
             chat_wait,
@@ -5239,12 +5641,18 @@ pub fn run() {
             page_icons,
             open_link,
             chat_leave,
-            history,
-            history_follow,
+            session_content,
+            history_begin,
+            history_cancel,
+            history_page,
+            history_record,
+            history_projection,
             ls,
             pull,
             pull_temp,
             file_handoff_start,
+            history_export_start,
+            file_handoff_save,
             file_handoff_state,
             file_handoff_cancel,
             file_handoff_supported,
@@ -5283,6 +5691,7 @@ pub fn run() {
             show_page,
             page_step,
             page_steps,
+            page_state,
             page_deck,
             page_sheet,
             page_ground,
@@ -5316,6 +5725,9 @@ pub fn run() {
             agent_seen,
             agent_ask,
             resume_session,
+            session_recovery,
+            recover_session,
+            new_shell_run,
             find,
             traffic_room,
             window_minimize,

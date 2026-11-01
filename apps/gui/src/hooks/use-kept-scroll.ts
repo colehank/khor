@@ -10,7 +10,7 @@
 // content may still be arriving (a machine's readings, a list's rows),
 // so the putting back is tried over a few frames until each scroller is
 // tall enough to hold its old position.
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react";
 
 import { settleBands } from "@/lib/scroll-edge";
 
@@ -30,7 +30,9 @@ function scrollers(): HTMLElement[] {
     list, scrolled where it was — never a pushed page (`App`'s `place`).
     Only the lists' keys are written down; pushed pages stay in memory. */
 const LISTS = "khor.list-scroll";
-type Kept = { top: number; height: number }[];
+type Position = { top: number; height: number };
+type Kept = Position[];
+export type KeptScrollSlot = { position?: Position & { key: string } };
 
 function storedLists(): Map<string, Kept> {
   try {
@@ -48,6 +50,64 @@ function storeLists(all: Map<string, Kept>) {
   } catch {
     // Without storage a relaunch starts at the top.
   }
+}
+
+function restoreScroll(want: Kept, current: () => HTMLElement[], settled?: () => void): () => void {
+  let frames = 0;
+  let raf = 0;
+  const held = new Set<HTMLElement>();
+  const put = () => {
+    // The band's padding first, in this same frame (`settleBands`):
+    // a position put back before the padding exists is pushed by it.
+    settleBands();
+    const got = current();
+    let done = got.length >= want.length;
+    want.forEach((w, i) => {
+      const s = got[i];
+      if (!s) return;
+      if (!held.has(s)) {
+        held.add(s);
+        s.style.overflowAnchor = "none";
+      }
+      const ready = s.scrollHeight >= w.height - 1 || frames > 45;
+      if (ready && s.scrollHeight - s.clientHeight >= w.top) s.scrollTop = w.top;
+      else done = false;
+    });
+    // …and the band's material from the position just put back, in
+    // the same frame: no scrolled-then-not flash.
+    settleBands();
+    if (!done && ++frames < 60) raf = requestAnimationFrame(put);
+    else {
+      for (const s of held) s.style.overflowAnchor = "";
+      settled?.();
+    }
+  };
+  put();
+  return () => {
+    cancelAnimationFrame(raf);
+    for (const s of held) s.style.overflowAnchor = "";
+  };
+}
+
+export function useKeptScrollRef(key: string, slot: KeptScrollSlot) {
+  return useCallback((node: HTMLElement | null) => {
+    if (!node) return;
+    const wanted = slot.position?.key === key ? slot.position : undefined;
+    if (!wanted) delete slot.position;
+    let restoring = wanted !== undefined && wanted.top > 0;
+    const remember = () => {
+      if (!restoring) slot.position = { key, top: node.scrollTop, height: node.scrollHeight };
+    };
+    node.addEventListener("scroll", remember, { passive: true });
+    const stop = restoring && wanted
+      ? restoreScroll([wanted], () => [node], () => { restoring = false; remember(); })
+      : () => {};
+    return () => {
+      stop();
+      node.removeEventListener("scroll", remember);
+      remember();
+    };
+  }, [key, slot]);
 }
 
 export function useKeptScroll(key: string) {
@@ -78,42 +138,7 @@ export function useKeptScroll(key: string) {
   useLayoutEffect(() => {
     const want = kept.current.get(key);
     if (!want || want.every((w) => w.top === 0)) return;
-    // **Put back once the content is back** (V06): a scroller set while
-    // its page is still arriving is pushed again by the browser's scroll
-    // anchoring as the rest lands above it (450 came back as 599). So
-    // each waits until it is as tall as it was when it was left — or
-    // until the wait runs out — with anchoring off meanwhile.
-    let frames = 0;
-    let raf = 0;
-    const held = new Set<HTMLElement>();
-    const put = () => {
-      // The band's padding first, in this same frame (`settleBands`):
-      // a position put back before the padding exists is pushed by it.
-      settleBands();
-      const got = scrollers();
-      let done = got.length >= want.length;
-      want.forEach((w, i) => {
-        const s = got[i];
-        if (!s) return;
-        if (!held.has(s)) {
-          held.add(s);
-          s.style.overflowAnchor = "none";
-        }
-        const ready = s.scrollHeight >= w.height - 1 || frames > 45;
-        if (ready && s.scrollHeight - s.clientHeight >= w.top) s.scrollTop = w.top;
-        else done = false;
-      });
-      // …and the band's material from the position just put back, in
-      // the same frame: no scrolled-then-not flash.
-      settleBands();
-      if (!done && ++frames < 60) raf = requestAnimationFrame(put);
-      else for (const s of held) s.style.overflowAnchor = "";
-    };
-    put();
-    return () => {
-      cancelAnimationFrame(raf);
-      for (const s of held) s.style.overflowAnchor = "";
-    };
+    return restoreScroll(want, scrollers);
   }, [key]);
 
   /** Forget a place's scroll: its root was asked for again. */

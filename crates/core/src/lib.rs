@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod avatar;
 pub mod map;
+pub mod recovery;
 
 /// A device's identity: its public key (docs/NET.md).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -27,7 +28,7 @@ impl DeviceId {
 
 /// Network-unique, stable across reconnects. Minting is kind-specific;
 /// everything outside the kind treats it as opaque.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, ts_rs::TS)]
 pub struct SessionId(pub String);
 
 /// Kinds are an open set: a client older than the kind must still render
@@ -44,6 +45,8 @@ pub mod kind {
     /// A conversation khor is the protocol client of (ACP): khor paints
     /// the exchange itself, there is no terminal to attach.
     pub const GUI: &str = "gui";
+    /// A saved external identity with no execution ownership.
+    pub const OBSERVE: &str = "observe";
     /// The group conversation of every machine in the khor (STORE-BRIEF
     /// phase 3): a session of the whole khor, not of one machine.
     pub const BROADCAST: &str = "broadcast";
@@ -2904,6 +2907,25 @@ pub struct Event {
     pub payload: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObservationNamespace {
+    Native,
+    Acp,
+}
+
+/// A saved external identity. Metadata ownership is independent of content home.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ObservationRef {
+    pub owner: DeviceId,
+    pub home: DeviceId,
+    pub namespace: ObservationNamespace,
+    pub agent: String,
+    pub native_id: String,
+    pub imported_at: Millis,
+    pub updated_at: Option<Millis>,
+}
+
 /// The five answers the list renders (docs/SESSION.md).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
@@ -2912,7 +2934,7 @@ pub struct Session {
     pub title: String,
     /// The device responsible: execution and answers happen there.
     pub home: DeviceId,
-    pub state: StateStamp,
+    pub state: Option<StateStamp>,
     /// Events not yet seen. Seen state replicates, so clearing it on one
     /// device clears it everywhere.
     pub unread: u64,
@@ -3029,6 +3051,12 @@ pub struct Session {
     /// Wire: appended at the tail with a serde default, like `mux`.
     #[serde(default)]
     pub doing: Option<Doing>,
+    /// Identity and activity of an observation; never an execution state.
+    #[serde(default)]
+    pub observation: Option<ObservationRef>,
+    /// The home currently owns the agent's input endpoint. Revalidated on control.
+    #[serde(default)]
+    pub can_control: bool,
 }
 
 /// **What a terminal session is doing** (roadmap 1.2 and 2.1): the command
@@ -3114,11 +3142,14 @@ impl Session {
         let doing = self.doing.as_mut().unwrap();
         self.kind = Kind(kind::SHELL.to_owned());
         self.category = Some(category::SHELL.to_owned());
-        self.state.state = if doing.running {
-            State::Busy
-        } else {
-            State::Idle
-        };
+        self.state = Some(StateStamp {
+            state: if doing.running {
+                State::Busy
+            } else {
+                State::Idle
+            },
+            at: self.state.map(|stamp| stamp.at).unwrap_or(Millis(0)),
+        });
         doing.thread_unbound = false;
         self.last = None;
         self.unread = 0;
@@ -3136,9 +3167,18 @@ impl Session {
             .or_else(|| self.place.as_deref().filter(|p| !p.trim().is_empty()))
     }
 
+    /// The latest recorded activity; saved identity metadata is not execution evidence.
+    pub fn activity_at(&self) -> Option<Millis> {
+        self.state.map(|stamp| stamp.at).or_else(|| {
+            self.observation
+                .as_ref()
+                .map(|record| record.updated_at.unwrap_or(record.imported_at))
+        })
+    }
+
     /// Whether the stored state has evidence for this terminal’s current thread.
     pub fn state_known(&self) -> bool {
-        !self.doing.as_ref().is_some_and(|d| d.thread_unbound)
+        self.state.is_some() && !self.doing.as_ref().is_some_and(|d| d.thread_unbound)
     }
 }
 
@@ -3233,14 +3273,16 @@ mod tests {
 
     fn a_session(kind: &str) -> Session {
         Session {
+            observation: None,
+            can_control: false,
             id: SessionId("dev0/demo/1".to_owned()),
             kind: Kind(kind.to_owned()),
             title: "build khor".to_owned(),
             home: DeviceId([7; 32]),
-            state: StateStamp {
+            state: Some(StateStamp {
                 state: State::Busy,
                 at: Millis(1),
-            },
+            }),
             unread: 3,
             place: None,
             mux: false,
@@ -3274,7 +3316,7 @@ mod tests {
         assert_eq!(row.kind.0, kind::SHELL);
         assert_eq!(row.category.as_deref(), Some(category::SHELL));
         assert!(row.term && row.state_known());
-        assert_eq!(row.state.state, State::Busy);
+        assert_eq!(row.state.unwrap().state, State::Busy);
         assert_eq!(row.unread, 0);
         assert!(row.last.is_none());
         assert_eq!(row.current_cwd(), Some("/current"));
@@ -3290,7 +3332,7 @@ mod tests {
         let row: Session = rmp_serde::from_slice(&bytes).unwrap();
         assert_eq!(row.kind.0, "holodeck");
         assert_eq!(row.title, "build khor");
-        assert_eq!(row.state.state, State::Busy);
+        assert_eq!(row.state.unwrap().state, State::Busy);
         assert_eq!(row.unread, 3);
     }
 
@@ -3330,14 +3372,14 @@ mod tests {
     }
 
     /// The wire shape of `Session`, spelled out so the test below can
-    /// deserialize into it positionally. A `type` only, to keep
-    /// `clippy::type_complexity` off the `let` — the order is the point.
-    type SessionFrame = (
+    /// deserialize into it positionally, independently of the production struct.
+    #[derive(Deserialize)]
+    struct SessionFrame(
         SessionId,
         Kind,
         String,
         DeviceId,
-        StateStamp,
+        Option<StateStamp>,
         u64,
         Option<String>,
         Option<String>,
@@ -3348,24 +3390,40 @@ mod tests {
         Option<String>,
         bool,
         Option<Doing>,
+        Option<ObservationRef>,
+        bool,
     );
 
     #[test]
-    fn the_session_frame_is_a_fixed_order_array_of_fifteen() {
+    fn observation_has_activity_without_an_execution_state() {
+        let mut row = a_session(kind::OBSERVE);
+        row.state = None;
+        row.term = false;
+        row.observation = Some(ObservationRef {
+            owner: DeviceId([8; 32]),
+            home: row.home,
+            namespace: ObservationNamespace::Acp,
+            agent: "fixture".into(),
+            native_id: "complete-id".into(),
+            imported_at: Millis(40),
+            updated_at: Some(Millis(30)),
+        });
+        let restored: Session = rmp_serde::from_slice(&rmp_serde::to_vec(&row).unwrap()).unwrap();
+        assert_eq!(restored.state, None);
+        assert!(!restored.state_known());
+        assert_eq!(restored.activity_at(), Some(Millis(30)));
+        assert_eq!(restored.observation, row.observation);
+        assert!(!restored.can_control);
+    }
+
+    #[test]
+    fn the_session_frame_preserves_execution_and_observation_axes() {
         let session = a_session("shell");
         let bytes = rmp_serde::to_vec(&session).unwrap();
-        // 0x9f = msgpack fixarray of 15. Adding, removing, or reordering a
-        // field must land here first, consciously. Six → seven appended
-        // `category`; seven → nine appended `last` and `via` together
-        // (会话行改版批); nine → ten appended `term` (会话身份批);
-        // ten → eleven appended `dead` (退场批); eleven → twelve appended
-        // `unbacked` (词的保鲜期批); twelve → thirteen appended `place`
-        // (工作区批); thirteen → fourteen appended `mux` (面跟宿主批);
-        // fourteen → fifteen appended `doing` (roadmap 1.2) —
-        // always at the tail, never in the middle: a mid-frame optional
-        // desyncs the array on every older end.
-        assert_eq!(bytes[0], 0x9f);
-        let (
+        // Execution remains in its original position; observation identity and
+        // input capability are separate tail fields.
+        assert_eq!(&bytes[..3], &[0xdc, 0, 17]);
+        let SessionFrame(
             id,
             kind,
             title,
@@ -3381,9 +3439,10 @@ mod tests {
             place,
             mux,
             _doing,
-        ): SessionFrame = rmp_serde::from_slice(&bytes).unwrap();
-        // Field by field rather than as one tuple comparison: std stops
-        // deriving `PartialEq` at twelve, and this frame is thirteen.
+            observation,
+            can_control,
+        ) = rmp_serde::from_slice(&bytes).unwrap();
+        // Field by field: the tuple deserialization pins field order.
         // Deserializing into the tuple above is what pins the *order* —
         // a reordered field lands as the wrong type and never reaches
         // these lines.
@@ -3401,6 +3460,8 @@ mod tests {
         assert_eq!(unbacked, session.unbacked);
         assert_eq!(place, session.place);
         assert_eq!(mux, session.mux);
+        assert_eq!(observation, session.observation);
+        assert_eq!(can_control, session.can_control);
     }
 
     /// **Over the wire from an older peer**: a machine that predates

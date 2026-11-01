@@ -16,6 +16,12 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
+    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId, observation: Option<khor_core::ObservationRef> },
+    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef> },
+    NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
+
+    /// Bounded independent observation reads; never opens an agent host.
+    ContentRead { action: crate::session_content::remote::Action },
     /// Recoverable authenticated pairing. Every body is a canonical blob chunk.
     Pair { action: PairAction },
     /// The only current document transport. Mutating operations wait for
@@ -504,14 +510,10 @@ pub enum Request {
     /// (round NET-4). Answered as [`Response::Stat`]; a khor that
     /// predates it refuses, and the face reads the file as before.
     Stat { path: String },
-    /// **Watch these directories and say when one changes** (round
-    /// NET-4, `crate::watch`): asked on a stream of its own, which stays
-    /// open — answered first with [`Response::Watching`] and then one
-    /// [`Response::Changed`] per burst of changes, each as a length-
-    /// prefixed frame, until the asker lets the stream go. A khor that
-    /// predates it refuses, and so does one that cannot watch; the
-    /// asker's faces then ask `Ls`, as before.
-    Watch { dirs: Vec<String> },
+    /// A stream-owned observation (`crate::watch`). The admitted peer holds
+    /// a bounded lease until this stream closes; frames carry coverage
+    /// fences and subsequent invalidations, never file contents.
+    Watch { scope: crate::watch::Scope },
     /// The commands run on that machine, searched (roadmap 2.6,
     /// `crate::commands::search_history`). Answered as
     /// [`Response::History`]. **A new variant, the request changing
@@ -959,6 +961,11 @@ pub enum DocumentInventory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
+    SessionRecovery { value: khor_core::recovery::SessionRecovery },
+    RecoverSession { value: khor_core::recovery::RecoveryResult },
+    NewShellRun { value: khor_core::recovery::ShellRunResult },
+
+    ContentRead { reply: crate::session_content::remote::Reply },
     /// One bounded recoverable pairing step. No full document or roster inline.
     Paired {
         reply: PairReply,
@@ -1238,21 +1245,10 @@ pub enum Response {
         at_ms: u64,
         digest: String,
     },
-    /// [`Request::Watch`]'s first frame: the directories it is watching
-    /// (one that is gone, or not a directory, is left out), and which of
-    /// them sit on a network mount (`unreported`, store-c): there a
-    /// change made by another host sharing it is never told to the
-    /// watcher, so a quiet answer about them is not a fact.
-    Watching {
-        dirs: Vec<String>,
-        #[serde(default)]
-        unreported: Vec<String>,
-    },
-    /// One burst of changes on a [`Request::Watch`] stream: the watched
-    /// directories whose listings changed.
-    Changed {
-        dirs: Vec<String>,
-    },
+    /// The stream's initial coverage state.
+    Watching { batch: crate::watch::Batch },
+    /// A coverage fence, invalidation burst, or quiet heartbeat.
+    Changed { batch: crate::watch::Batch },
     /// The answer to [`Request::History`], newest first.
     History {
         hits: Vec<crate::commands::HistoryHit>,
@@ -1408,9 +1404,11 @@ impl Request {
     pub fn is_reading(&self) -> bool {
         matches!(
             self,
-            Request::DocTransfer { .. }
+            Request::ContentRead { action: crate::session_content::remote::Action::Cancel { .. } }
+                | Request::DocTransfer { .. }
                 | Request::Fetch { .. }
                 | Request::Sessions
+                | Request::SessionRecovery { .. }
                 | Request::Usage
                 | Request::Vitals
                 | Request::Ls { .. }
@@ -1564,7 +1562,9 @@ impl Request {
                         ..
                     },
             } => Duration::from_secs(40),
-            Request::Open { .. }
+            Request::RecoverSession { .. }
+            | Request::NewShellRun { .. }
+            | Request::Open { .. }
             | Request::OpenAgent { .. }
             | Request::OpenOnce { .. }
             | Request::OpenAgentOnce { .. }
@@ -1580,12 +1580,18 @@ pub fn encode<T: Serialize>(t: &T) -> Result<Vec<u8>, String> {
 
 pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
     match request {
+        Request::ContentRead { action } => action.validate()?,
         Request::DocTransfer { action } => crate::link::documents::validate_action(action)?,
         Request::Pair { action } => crate::link::pairing::validate_pair_action(action)?,
         Request::Vouch { action } => crate::link::pairing::validate_vouch_action(action)?,
         _ => (),
     }
     let bytes = encode(request)?;
+    if matches!(request, Request::ContentRead { .. })
+        && bytes.len() > crate::session_content::remote::METADATA_WIRE_BYTES
+    {
+        return Err("content request envelope exceeds its wire budget".into());
+    }
     if matches!(
         request,
         Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }
@@ -1597,11 +1603,17 @@ pub fn encode_request(request: &Request) -> Result<Vec<u8>, String> {
 }
 pub fn encode_response(response: &Response) -> Result<Vec<u8>, String> {
     match response {
+        Response::ContentRead { reply } => reply.validate()?,
         Response::DocTransfer { reply } => crate::link::documents::validate_reply(reply)?,
         Response::Paired { reply } => crate::link::pairing::validate_pair_reply(reply)?,
         _ => (),
     }
     let bytes = encode(response)?;
+    if let Response::ContentRead { reply } = response {
+        if bytes.len() > reply.wire_limit() {
+            return Err("content response envelope exceeds its wire budget".into());
+        }
+    }
     if matches!(
         response,
         Response::DocTransfer { .. } | Response::Paired { .. } | Response::Vouched { .. }
@@ -1620,6 +1632,12 @@ pub fn decode<T: for<'a> Deserialize<'a>>(bytes: &[u8]) -> Result<T, String> {
 /// The decoder can leave trailing bytes, so re-encoding cannot enforce this cap.
 pub fn question(bytes: &[u8]) -> Result<Request, String> {
     let request = decode::<Request>(bytes)?;
+    if let Request::ContentRead { action } = &request {
+        if bytes.len() > crate::session_content::remote::METADATA_WIRE_BYTES {
+            return Err("content request envelope exceeds its wire budget".into());
+        }
+        action.validate()?;
+    }
     if matches!(
         &request,
         Request::DocTransfer { .. } | Request::Pair { .. } | Request::Vouch { .. }
@@ -1657,6 +1675,12 @@ fn answer_inner(bytes: &[u8], body_bytes: Option<&mut Option<usize>>) -> Result<
     }
 
     let mut response = decode::<Response>(bytes)?;
+    if let Response::ContentRead { reply } = &response {
+        if bytes.len() > reply.wire_limit() {
+            return Err("content response envelope exceeds its wire budget".into());
+        }
+        reply.validate()?;
+    }
     if let Some(body_bytes) = body_bytes {
         *body_bytes = Some(match &response {
             Response::DocTransfer {
@@ -2184,7 +2208,12 @@ mod tests {
                 },
                 &b"Stat"[..],
             ),
-            (Request::Watch { dirs: Vec::new() }, &b"Watch"[..]),
+            (
+                Request::Watch {
+                    scope: crate::watch::Scope::Entries { path: "/fixture".into() },
+                },
+                &b"Watch"[..],
+            ),
             (
                 Request::DropFile {
                     token: String::new(),
@@ -2270,20 +2299,51 @@ mod tests {
         assert!(matches!(decode::<Request>(&ask), Ok(Request::Watched)));
     }
 
-    /// A watch's first frame says which of the directories it took are on
-    /// a network mount (store-c), and that list crosses intact.
     #[test]
-    fn a_watch_says_which_directories_it_cannot_fully_hear() {
-        let sent = Response::Watching {
-            dirs: vec!["/home/t/khor-drop".into(), "/srv/a".into()],
-            unreported: vec!["/home/t/khor-drop".into()],
-        };
-        match decode::<Response>(&encode(&sent).unwrap()).unwrap() {
-            Response::Watching { dirs, unreported } => {
-                assert_eq!(dirs.len(), 2);
-                assert_eq!(unreported, vec!["/home/t/khor-drop".to_owned()]);
+    fn directory_watch_frames_keep_scope_and_coverage_fences() {
+        for scope in [
+            crate::watch::Scope::Entries {
+                path: "/fixture".into(),
+            },
+            crate::watch::Scope::Workspace {
+                root: "/fixture".into(),
+            },
+        ] {
+            let frame = encode(&Request::Watch {
+                scope: scope.clone(),
+            })
+            .unwrap();
+            match decode::<Request>(&frame).unwrap() {
+                Request::Watch { scope: decoded } => assert_eq!(decoded, scope),
+                other => panic!("decoded wrong: {other:?}"),
             }
-            other => panic!("decoded wrong: {other:?}"),
+        }
+        let batch = crate::watch::Batch {
+            cursor: "epoch:42".into(),
+            reset: true,
+            dirs: vec!["/srv/a".into()],
+            workspace: true,
+            coverage: vec![crate::watch::Coverage {
+                scope: 0,
+                mode: crate::watch::CoverageMode::Partial,
+                reason: Some("Network filesystem".into()),
+            }],
+            retry_ms: 1000,
+        };
+        for sent in [
+            Response::Watching {
+                batch: batch.clone(),
+            },
+            Response::Changed {
+                batch: batch.clone(),
+            },
+        ] {
+            match decode::<Response>(&encode(&sent).unwrap()).unwrap() {
+                Response::Watching { batch: decoded } | Response::Changed { batch: decoded } => {
+                    assert_eq!(decoded, batch)
+                }
+                other => panic!("decoded wrong: {other:?}"),
+            }
         }
     }
 

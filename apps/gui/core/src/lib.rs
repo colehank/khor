@@ -19,10 +19,12 @@ mod connection;
 pub mod console;
 pub mod console_complete;
 pub mod file_handoff;
+pub mod history_export;
 pub mod files;
 pub mod git;
 pub mod import;
-mod landing;
+mod attachments;
+pub use attachments::{AttachmentKind, attachment_begin};
 pub mod launch;
 pub mod miss;
 pub mod qr;
@@ -51,7 +53,12 @@ pub struct SessionRow {
     pub id: String,
     pub kind: String,
     pub title: String,
-    pub word: String,
+    pub word: Option<String>,
+    /// Machine holding the canonical observation record, distinct from content home.
+    pub observation_owner: Option<String>,
+    /// Bounded canonical read selector; independent of metadata ownership.
+    pub content_locator: Option<String>,
+    pub can_control: bool,
     /// ms; `number` on the TS side — serde_json sends a number, and
     /// 2^53 outlives every timestamp and unread count in question.
     #[ts(type = "number")]
@@ -162,6 +169,9 @@ pub struct SessionRow {
     /// machine's rows carry it; a reported row's is `None` and its line
     /// stays as it was.
     pub ended: Option<RowEnding>,
+    /// Stable authoritative execution device hex. Missing authority remains
+    /// read-only; the human-facing home label is never an action route.
+    pub execution_home: Option<String>,
 }
 
 /// [`SessionRow::ended`].
@@ -1076,6 +1086,7 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
         .map(|a| {
             let (v, group) = (a.view, a.group);
             let state_known = v.session.state_known();
+            let at_ms = v.session.activity_at().map_or(0, |at| at.0);
             let hosted = n.is_hosted(&v.session.id);
             // The row itself says whether its home can stand a terminal
             // up (`Session::term` — hosted, a discovered tmux session,
@@ -1096,6 +1107,15 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 .flatten()
                 .map(RowEnding::from);
             SessionRow {
+                execution_home: Some(v.session.home.hex()),
+                content_locator: khor_node::session_content::ContentLocator::of(&v.session)
+                    .and_then(|locator| locator.encode()).ok(),
+                observation_owner: v
+                    .session
+                    .observation
+                    .as_ref()
+                    .map(|record| record.owner.hex()),
+                can_control: v.session.can_control,
                 ended,
                 attachable,
                 home: machines
@@ -1119,12 +1139,12 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
                 id: v.session.id.0,
                 kind: v.session.kind.0,
                 title: v.session.title,
-                word: if state_known {
-                    v.session.state.state.key().to_owned()
-                } else {
-                    String::new()
-                },
-                at_ms: if state_known { v.session.state.at.0 } else { 0 },
+                word: v
+                    .session
+                    .state
+                    .filter(|_| state_known)
+                    .map(|stamp| stamp.state.key().to_owned()),
+                at_ms,
                 unread: v.session.unread,
                 source: v
                     .source
@@ -2670,19 +2690,22 @@ pub fn percent_decoded(v: &str) -> Option<String> {
     percent_decode(v)
 }
 
-pub fn chat_put_args(query: &str) -> Option<(String, String)> {
+pub fn chat_put_args(query: &str) -> Option<(String, String, String)> {
     let mut id = None;
+    let mut lease = None;
     let mut name = None;
     for pair in query.split('&') {
         let (k, v) = pair.split_once('=')?;
         match k {
             "id" => id = Some(percent_decode(v)?),
+            "lease" => lease = Some(percent_decode(v)?),
             "name" => name = Some(percent_decode(v)?),
             _ => {}
         }
     }
-    match (id, name) {
-        (Some(i), Some(n)) if !i.is_empty() && !n.is_empty() => Some((i, n)),
+    match (id, lease, name) {
+        (Some(id), Some(lease), Some(name))
+            if !id.is_empty() && !lease.is_empty() && !name.is_empty() => Some((id, lease, name)),
         _ => None,
     }
 }
@@ -3261,3 +3284,5 @@ pub async fn agent_recognition(
         })
         .collect())
 }
+
+

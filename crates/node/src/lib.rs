@@ -83,6 +83,7 @@ pub(crate) mod roads;
 pub mod satellite;
 pub mod secret;
 pub mod serves;
+pub mod session_content;
 pub mod shell_start;
 mod store_owner;
 pub mod subscriptions;
@@ -263,10 +264,12 @@ pub const STALE_AFTER_MS: u64 = 48 * 60 * 60 * 1000;
 /// A pinned row never folds: pinning is the person saying this one
 /// matters, and a judgment made by hand outranks one made by a clock.
 fn is_stale(session: &Session, pinned: bool, now_ms: u64) -> bool {
-    session.dead
-        && session.unread == 0
-        && !pinned
-        && now_ms.saturating_sub(session.state.at.0) >= STALE_AFTER_MS
+    session.state.is_some_and(|stamp| {
+        session.dead
+            && session.unread == 0
+            && !pinned
+            && now_ms.saturating_sub(stamp.at.0) >= STALE_AFTER_MS
+    })
 }
 
 /// How long an unvouched *live* word stays believable (词的保鲜期批).
@@ -297,11 +300,11 @@ pub const QUIET_AFTER_MS: u64 = 24 * 60 * 60 * 1000;
 /// The word is left exactly as it was: this feeds greying and a "N 天
 /// 没消息" note, never a seventh word (docs/SESSION.md 离线).
 fn is_quiet(session: &Session, now_ms: u64) -> bool {
-    matches!(
-        session.state.state,
-        State::Busy | State::Blocked | State::Errored
-    ) && session.unbacked
-        && now_ms.saturating_sub(session.state.at.0) >= QUIET_AFTER_MS
+    session.state.is_some_and(|stamp| {
+        matches!(stamp.state, State::Busy | State::Blocked | State::Errored)
+            && session.unbacked
+            && now_ms.saturating_sub(stamp.at.0) >= QUIET_AFTER_MS
+    })
 }
 
 /// One place this person has been (`khor_sync::recents`). The machine
@@ -384,6 +387,10 @@ pub enum AvatarChangeOrigin {
     Gui,
 }
 
+// One already-observed launch environment; a readonly offer may inspect it but
+// must not run the login-shell probe to populate it.
+static USER_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
 pub struct Node {
     root: PathBuf,
     /// The identity key; also what the endpoint binds with. One live
@@ -440,8 +447,7 @@ pub struct Node {
     /// id, with its stamp — handed back on the next ask so an unchanged
     /// day does not cross again (round NET-4, `Request::LoadSince`).
     pub(crate) days_held: Arc<Mutex<std::collections::HashMap<String, (u64, khor_core::CpuDay)>>>,
-    /// The directories faces asked to have watched on other machines,
-    /// and what changed in them (round NET-4, `watch::Watches`).
+    /// Resident-owned directory observations and their bounded invalidation logs.
     pub(crate) watches: Arc<watch::Watches>,
     /// **Gone to the background** (`link::suspending`) until `resume`:
     /// no pump, no visits, no rounds — see the serve loop.
@@ -522,6 +528,7 @@ pub struct Node {
     /// lifecycle and why). Shared so a `WireWatch` taken before `serve`
     /// consumes the node still sees what the serve does with them.
     pub(crate) wires: Arc<wires::Wires>,
+    pub(crate) content_responses: Arc<tokio::sync::Semaphore>,
     /// The resident's own handle on itself, set by `serve`: what lets a
     /// task the node spawns (a borrow that re-fetches its wire, a far
     /// stream answered concurrently) outlive the call that started it.
@@ -1127,7 +1134,7 @@ impl Node {
             rounds: Arc::default(),
             readings_held: Arc::default(),
             days_held: Arc::default(),
-            watches: Arc::default(),
+            watches: Arc::new(watch::Watches::new()?),
             resting: Arc::default(),
             face_seen: Arc::default(),
             nudged: Arc::default(),
@@ -1144,6 +1151,7 @@ impl Node {
             reaches: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             codes: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             wires: Arc::default(),
+            content_responses: Arc::new(tokio::sync::Semaphore::new(link::CONTENT_RESPONSES)),
             me: std::sync::OnceLock::new(),
             agent_generation: std::sync::OnceLock::new(),
             ears: Mutex::new(None),
@@ -1154,8 +1162,8 @@ impl Node {
             hosts,
         };
         {
-            let recovered = permit.attach().map_err(String::from)?;
-            node.recover_pairing_before_bootstrap(&recovered)?;
+            let mut recovered = permit.attach().map_err(String::from)?;
+            node.recover_pairing_before_bootstrap(&mut recovered)?;
             node.register_self()?;
             // After the row exists: the first machine's root certifies the
             // machine the table now holds (docs/CONNECT.md 身份).
@@ -2140,8 +2148,11 @@ impl Node {
         // the next person to start the agent again for the same
         // nothing.
         let answer = match self.agent_sessions(name, None)? {
-            khor_acp::Listing::Cannot => AgentAnswer::Cannot,
+            khor_acp::Listing::Cannot => AgentAnswer::Cannot {
+                home: Some(self.device().0),
+            },
             khor_acp::Listing::Sessions(rows) => AgentAnswer::Sessions {
+                home: Some(self.device().0),
                 rows: rows
                     .into_iter()
                     .map(|r| AgentSeen {
@@ -2307,8 +2318,7 @@ impl Node {
         // (the override's name lives at `PATH_ENV`, because the host
         // spawner hands it down to `_host` rather than making that
         // process ask the login shell all over again)
-        static PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-        PATH.get_or_init(|| {
+        USER_PATH.get_or_init(|| {
             let here = std::env::var("PATH").unwrap_or_default();
             if let Ok(told) = std::env::var(PATH_ENV)
                 && !told.trim().is_empty()
@@ -2322,6 +2332,10 @@ impl Node {
             // being avoided is the one this whole function is about.
             merge_paths(&asked_shell().path, &here)
         })
+    }
+
+    pub(crate) fn observed_user_path() -> Option<&'static str> {
+        USER_PATH.get().map(String::as_str)
     }
 
     /// The locale variables to put on a spawned child, **empty when
@@ -2460,7 +2474,10 @@ impl Node {
     /// the agent a different conversation's address.
     pub fn agent_seen_row(&self, name: &str, session: &str) -> Result<Option<AgentSeen>, String> {
         let rows = match self.agent_seen(name)? {
-            Some(AgentAnswer::Sessions { rows }) => rows,
+            Some(AgentAnswer::Sessions {
+                home: Some(home),
+                rows,
+            }) if home == self.device().0 => rows,
             _ => return Ok(None),
         };
         Ok(rows.into_iter().find(|r| r.id == session))
@@ -2627,8 +2644,13 @@ impl Node {
         self.resolve(machine)
     }
 
-    fn kinds(&self) -> [&dyn KindSurface; 3] {
-        [&self.transfer, &self.live, &wide::WideKind]
+    fn kinds(&self) -> [&dyn KindSurface; 4] {
+        [
+            &self.transfer,
+            &self.live,
+            &wide::WideKind,
+            &session_content::ObservationKind,
+        ]
     }
 
     /// The list: one row per session, each answering the five questions.
@@ -2677,19 +2699,35 @@ impl Node {
                 });
             }
         }
-        let mut have: std::collections::BTreeSet<String> =
-            views.iter().map(|v| v.session.id.0.clone()).collect();
         let mut reported = self.cached_peer_rows();
         reported.sort_by_key(|(_, age, _)| *age);
+        // A home report can replace the retained local read-only projection.
+        // Use this same report snapshot for replacement and insertion, never
+        // drop a row based on a second independently read cache. It only picks
+        // a route; attach still authenticates at the actual execution home.
+        views.retain(|view| {
+            let row = &view.session;
+            let Some(reference) = row.observation.as_ref() else { return true; };
+            row.kind.0 != khor_core::kind::OBSERVE || !reported.iter().any(|(_, _, remote)| {
+                remote.id == row.id && remote.home == reference.home
+                    && remote.kind.0 == khor_core::kind::GUI
+                    && remote.category.as_deref() == Some(reference.agent.as_str())
+                    && session_content::Observation::id(reference.home, reference.namespace, &reference.agent, &reference.native_id) == remote.id
+            })
+        });
+        let mut have: std::collections::BTreeSet<String> =
+            views.iter().map(|v| v.session.id.0.clone()).collect();
         for (name, age, mut row) in reported {
             if have.insert(row.id.0.clone()) {
                 // Read decisions are local facts already. A peer's stale report
                 // must not wait for a sync round trip to reflect them here.
-                if row.state.state == State::Done
-                    && seen.doc.watermark(&row.id.0) >= row.state.at.0 as i64
-                {
-                    row.unread = 0;
-                    row.state.state = State::Idle;
+                if let Some(stamp) = row.state.as_mut() {
+                    if stamp.state == State::Done
+                        && seen.doc.watermark(&row.id.0) >= stamp.at.0 as i64
+                    {
+                        row.unread = 0;
+                        stamp.state = State::Idle;
+                    }
                 }
                 views.push(SessionView {
                     pinned: pins.doc.pinned(&row.id.0),
@@ -2774,6 +2812,14 @@ impl Node {
         let loaded = self.roster_loaded()?;
         if loaded.doc.entry(&id.0) != Some(khor_sync::roster::Entry::Import) {
             return Ok(false);
+        }
+        if id.0.starts_with("observe/") {
+            self.live.remove_readonly_observation(id)?;
+            loaded.doc.take_off(&id.0)?;
+            let mut store = loaded.store;
+            store.flush(&loaded.doc)?;
+            self.emit(NodeEvent::Closed(id.clone()));
+            return Ok(true);
         }
         // **接管 makes it khor's** (`takeover`, `takeover_term`): the
         // agent khor imported now runs under a host khor started, or is
@@ -2931,6 +2977,14 @@ impl Node {
                 .is_some_and(|dir| crate::host::read_host_file(&dir).is_ok())
     }
 
+    fn imports_terminal_resource(&self, row: &Session) -> bool {
+        row.id.0.starts_with("shell/")
+            || self
+                .live
+                .on_record(&row.id)
+                .is_some_and(|(kind, _)| kind == khor_core::kind::SHELL)
+    }
+
     /// What could be brought onto the list (docs/SHELL.md 第八轮 导入):
     /// every terminal and agent this machine can see — its own sweep and
     /// what the others reported — that is not on it and has not ended,
@@ -2945,38 +2999,52 @@ impl Node {
             .filter(|v| !listed(&roster.doc, &v.session) && !v.session.dead)
             .map(|v| Candidate {
                 id: v.session.id.0.clone(),
-                form: v.session.kind.0.clone(),
+                form: if self.imports_terminal_resource(&v.session) {
+                    v.session.kind.0.clone()
+                } else {
+                    khor_core::kind::OBSERVE.to_owned()
+                },
                 home: v.session.home.hex(),
                 title: v.session.title.clone(),
                 place: v.session.place.clone(),
-                at_ms: v.session.state.at.0 as i64,
+                at_ms: v
+                    .session
+                    .activity_at()
+                    .map_or(0, |at| at.0.min(i64::MAX as u64) as i64),
                 category: v.session.category.clone(),
                 agent: None,
                 command: v.session.doing.as_ref().and_then(|d| d.command.clone()),
             })
             .collect();
-        let me = self.device_str().to_owned();
-        // **An ACP conversation is reopened on this machine**
-        // (`resume_agent_session`), so a phone offers none (docs/IOS.md):
-        // every one of them would be refused at the press.
-        let agents = if self.hosts {
-            self.agents()?
-        } else {
-            Vec::new()
-        };
+        let agents = self.agents()?;
         for (name, _) in agents {
-            let Some(khor_sync::agents::Answer::Sessions { rows }) = self.agent_seen(&name)? else {
+            let Some(khor_sync::agents::Answer::Sessions {
+                home: Some(home),
+                rows,
+            }) = self.agent_seen(&name)?
+            else {
                 continue;
             };
+            let home = DeviceId(home);
             for r in rows {
-                let as_row = adaptor::id_for(&r.id);
-                if every.iter().any(|v| v.session.id == as_row) {
+                let alias = session_content::Observation::id(
+                    home,
+                    khor_core::ObservationNamespace::Acp,
+                    &name,
+                    &r.id,
+                );
+                if roster.doc.entry(&alias.0).is_some() {
                     continue;
                 }
                 out.push(Candidate {
-                    id: format!("{ACP_CANDIDATE}{name}:{}", r.id),
-                    form: khor_core::kind::GUI.to_owned(),
-                    home: me.clone(),
+                    id: session_content::ListedCandidate {
+                        home,
+                        agent: name.clone(),
+                        native_id: r.id.clone(),
+                    }
+                    .encode(),
+                    form: khor_core::kind::OBSERVE.to_owned(),
+                    home: home.hex(),
                     title: r.title.clone().unwrap_or_default(),
                     place: (!r.cwd.is_empty()).then(|| r.cwd.clone()),
                     at_ms: r
@@ -2995,15 +3063,12 @@ impl Node {
     }
 
     /// Brings one candidate onto the list, by the id
-    /// [`Self::import_candidates`] gave it. A terminal or an agent goes
-    /// on as `import`; an ACP conversation is opened again with
-    /// `session/load` (a conversation khor holds is on the list by
-    /// construction). Answers the row's session id.
+    /// [`Self::import_candidates`] gave it. Agent records become independent
+    /// read-only observations; explicit terminal resources retain their seat.
+    /// Answers the Khor row identity, never the observed agent's control identity.
     pub fn import(&self, id: &str) -> Result<SessionId, String> {
-        if let Some(rest) = id.strip_prefix(ACP_CANDIDATE)
-            && let Some((agent, session)) = rest.split_once(':')
-        {
-            return self.resume_agent_session(agent, session);
+        if id.starts_with(ACP_CANDIDATE) {
+            return self.import_listed_observation(id);
         }
         // Any row this machine can see and the list does not have — an
         // ended one too, when somebody names it: the panel offers only
@@ -3012,9 +3077,20 @@ impl Node {
         let known = self
             .every_session()?
             .into_iter()
-            .any(|v| v.session.id.0 == id && !listed(&loaded.doc, &v.session));
-        if !known {
+            .find(|view| view.session.id.0 == id && !listed(&loaded.doc, &view.session));
+        let Some(known) = known else {
             return Err(msg::not_a_candidate(id));
+        };
+        if known.session.observation.is_some() {
+            return self.import_observed_row(&known.session);
+        }
+        let agent_record = !self.imports_terminal_resource(&known.session)
+            && (matches!(
+                known.session.kind.0.as_str(),
+                khor_core::kind::TUI | khor_core::kind::GUI
+            ) || known.session.id.0.starts_with("tui/"));
+        if agent_record {
+            return self.import_native_observation(&known.session);
         }
         loaded.doc.put(id, khor_sync::roster::Entry::Import)?;
         let mut store = loaded.store;
@@ -3023,8 +3099,9 @@ impl Node {
     }
 
     /// Opens a conversation a registered agent already has, by the id it
-    /// gave (`session/load`) — the import of an ACP candidate, and what
-    /// the new-session wizard's 「已有的对话」 used to do.
+    /// gave (`session/load`). This explicit resume action is independent of
+    /// importing a read-only observation. `session` is the provider's opaque
+    /// native ID qualified by `agent`; it is never resolved as a Khor row ID.
     ///
     /// **The id must be one khor recorded**: an id that was never listed
     /// has no address to open at, so it is refused by name rather than
@@ -3130,13 +3207,19 @@ impl Node {
             views
                 .iter()
                 .filter(|v| v.source.is_none() && v.session.state_known())
-                .map(|v| (v.session.id.0.clone(), v.session.state.state)),
+                .filter_map(|v| {
+                    v.session
+                        .state
+                        .map(|stamp| (v.session.id.0.clone(), stamp.state))
+                }),
         );
         record.unavailable(
             now,
             views
                 .into_iter()
-                .filter(|v| v.source.is_none() && !v.session.state_known())
+                .filter(|v| {
+                    v.source.is_none() && v.session.state.is_some() && !v.session.state_known()
+                })
                 .map(|v| v.session.id.0),
         );
         record.save(&self.root)
@@ -3926,6 +4009,15 @@ impl Node {
     /// caches are skipped — a stale or missing report only means older
     /// information, never an error.
     fn cached_peer_rows(&self) -> Vec<(String, u64, Session)> {
+        let table = self.devices().ok().map(|devices| devices.into_iter().map(|device| device.id).collect());
+        self.cached_peer_rows_with(table)
+    }
+    fn cached_peer_rows_readonly(&self) -> Vec<(String, u64, Session)> {
+        let table = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(&devices_dir(&self.root), self.peer).ok()
+            .map(|doc| doc.all().into_iter().map(|device| device.id).collect());
+        self.cached_peer_rows_with(table)
+    }
+    fn cached_peer_rows_with(&self, table: Option<std::collections::BTreeSet<String>>) -> Vec<(String, u64, Session)> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(self.peers_dir()) else {
             return out;
@@ -3943,10 +4035,6 @@ impl Node {
         // An unreadable table is a blip, not a verdict on every peer:
         // `None` skips the filter and paints what is cached, rather than
         // blanking a list the person was just looking at.
-        let table: Option<std::collections::BTreeSet<String>> = self
-            .devices()
-            .ok()
-            .map(|devs| devs.into_iter().map(|d| d.id).collect());
         for e in rd.flatten() {
             if let Some(table) = &table
                 && !e.file_name().to_str().is_some_and(|id| table.contains(id))
@@ -4375,7 +4463,10 @@ impl Node {
         // A row another device reported: its stamp is the watermark, and
         // the mark replicates — the home's own row clears on next sync.
         if let Some(v) = self.sessions()?.into_iter().find(|v| v.session.id == *id) {
-            return self.mark_seen(id, bounded(v.session.state.at.0 as i64));
+            return match v.session.activity_at() {
+                Some(at) => self.mark_seen(id, bounded(at.0.min(i64::MAX as u64) as i64)),
+                None => Ok(()),
+            };
         }
         Err(msg::no_such_session(&id.0))
     }
@@ -4426,6 +4517,9 @@ impl Node {
         // whichever machine it lives, since the list is one document.
         if self.take_off_if_imported(id)? {
             return Ok(());
+        }
+        if id.0.starts_with("observe/") {
+            return self.close(id);
         }
         if let Some(machine) = self.far_machine(id)? {
             return self.close_on(&machine, id).await;
@@ -4524,6 +4618,7 @@ impl Node {
     /// Runs the command as the session's process, blocking until it
     /// ends. Returns the exit code, which is also the row's ending.
     pub fn run_ephemeral(&self, id: &SessionId, cmd: &[String]) -> Result<i32, String> {
+        session_content::refuse_control(id)?;
         live::run_wrapped(&self.live, id, cmd)
     }
 
@@ -4716,6 +4811,15 @@ impl Node {
         {
             return Err(msg::takeover_writer_busy(session));
         }
+        // clean_leaf is a row spelling, not the provider's full identity. A
+        // conflicting bound conversation must fail before even the ghost is
+        // spawned. The ghost rechecks this at publication; pre-provider
+        // exclusive JournalReservation is the following recovery slice.
+        self.live.check_gui_source(&session_content::journal::Identity {
+            home: self.device(),
+            agent: agent.to_owned(),
+            native_id: session.to_owned(),
+        })?;
         gui_host::spawn_gui_host_reopen(self.root(), Some(cwd), title, cmd, Some(agent), session)
     }
 
@@ -4898,6 +5002,7 @@ impl Node {
     /// A session with no live process is taken over by resurrection
     /// alone — nothing to kill is not an error.
     pub fn takeover(&self, id: &SessionId) -> Result<(), String> {
+        session_content::refuse_control(id)?;
         self.refuse_unless_hosting()?;
         // A terminal wearing an agent's form (docs/SESSION.md 形态随进程变)
         // is taken over as **that agent**: the conversation is the
@@ -5076,6 +5181,7 @@ impl Node {
     /// terminal — the host claims the pid itself on the way up
     /// (`LiveKind::reseat`), so nothing here has to guess it.
     pub fn takeover_term(&self, id: &SessionId) -> Result<(), String> {
+        session_content::refuse_control(id)?;
         self.refuse_unless_hosting()?;
         let Some((kind, title)) = self.live.on_record(id) else {
             return Err(msg::takeover_no_record(&id.0));
@@ -5159,13 +5265,17 @@ impl Node {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
+        // Retire the ended GUI execution explicitly before a PTY host may
+        // publish its PID. set_pid cannot implicitly clear a GUI generation.
+        // A failed spawn remains a dead row, with its old history preserved.
+        self.live.reseat(id, khor_core::kind::TUI, &title, None)?;
         host::spawn_host_at(&cwd, &dir, id, &resume, (80, 24))?;
         // **A form khor holds is on the list, whatever it was before**
         // (docs/SHELL.md 第八轮): a conversation khor opened was never in
         // the roster — it did not need to be — and turning it into a
         // terminal makes it a `tui` row, which does.
         self.roster_new(id)?;
-        self.live.reseat(id, khor_core::kind::TUI, &title, None)
+        Ok(())
     }
 
     /// Stands a host up for a discovered tmux session so a terminal can
@@ -5175,11 +5285,25 @@ impl Node {
     /// it has no tmux to bridge and no host file to find, and a door that
     /// fell through to here for a far row must say so rather than look
     /// for that row's host on this disk.
+    /// External agent records do not inherit a terminal's input capability.
+    pub fn require_interactive_owner(&self, id: &SessionId) -> Result<(), String> {
+        self.live.require_input_owner(id)
+    }
+
     pub fn attach_tmux(&self, id: &SessionId) -> Result<live::Seat, String> {
+        session_content::refuse_control(id)?;
         if !self.hosts {
             return Err(msg::no_terminal_here(&id.0));
         }
         self.live.attach_multiplexed(id)
+    }
+
+    pub fn terminal_address(&self, id: &SessionId) -> Result<host::HostFile, String> {
+        session_content::refuse_control(id)?;
+        if !self.hosts {
+            return Err(msg::no_terminal_here(&id.0));
+        }
+        self.live.terminal_view_address(id)
     }
 
     /// How this machine's dead session ended (`live::Ending`, P5-SHELL
@@ -5199,7 +5323,7 @@ impl Node {
     /// **None on a machine that hosts nothing**: no session's host lives
     /// on it, so nothing there is an address to attach to.
     pub fn session_dir(&self, id: &SessionId) -> Option<PathBuf> {
-        if !self.hosts {
+        if !self.hosts || (id.0.starts_with("observe/") && self.live.published_observation(id).ok().flatten().is_none()) {
             return None;
         }
         self.live.dir_of(id).filter(|d| d.exists())
@@ -5237,6 +5361,7 @@ impl Node {
     /// reader does not come this way, and must not be given a route that
     /// does (`live::Source`).
     pub fn report_state(&self, id: &SessionId, word: khor_core::State) -> Result<(), String> {
+        session_content::refuse_control(id)?;
         self.live.report(id, word, live::Source::Reported)
     }
 
@@ -5437,6 +5562,149 @@ impl Node {
                 }
             }
         }
+    }
+
+    /// A bounded page of the selected read-only source, initially loaded
+    /// from the tail. The cursor is scoped to this session and file identity.
+    pub fn transcript_page(
+        &self,
+        id: &SessionId,
+        cursor: Option<&adaptor::transcript_page::Cursor>,
+        newer: bool,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<adaptor::transcript_page::Page<session_content::ContentEvent>, String> {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("history request cancelled".to_owned());
+        }
+        let (mut file, parse, source) = self.opened_content(id)?;
+        let cancelled = || cancelled.load(std::sync::atomic::Ordering::Acquire);
+        if cursor.is_some_and(|cursor| !cursor.is_for_source(&source)) {
+            let mut page =
+                adaptor::transcript_page::read_page(&mut file, &source, None, parse, &cancelled)?;
+            page.reset = true;
+            return Ok(page);
+        }
+        if newer {
+            let cursor = cursor.ok_or_else(|| "newer history requires a cursor".to_owned())?;
+            adaptor::transcript_page::read_next(&mut file, &source, cursor, parse, &cancelled)
+        } else {
+            adaptor::transcript_page::read_page(&mut file, &source, cursor, parse, &cancelled)
+        }
+    }
+
+    pub fn transcript_record(
+        &self,
+        id: &SessionId,
+        cursor: &adaptor::transcript_page::Cursor,
+        from: u64,
+        cancelled: &std::sync::atomic::AtomicBool,
+    ) -> Result<adaptor::transcript_page::RecordChunk, String> {
+        if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("history request cancelled".to_owned());
+        }
+        let (mut file, _, source) = self.opened_content(id)?;
+        adaptor::transcript_page::read_record_chunk(&mut file, &source, cursor, from, &|| {
+            cancelled.load(std::sync::atomic::Ordering::Acquire)
+        })
+    }
+
+    /// Opening observation may register its source in Khor metadata; it never starts an agent.
+    pub fn session_content(
+        &self,
+        id: &SessionId,
+        machine: Option<&str>,
+    ) -> Result<session_content::Availability, String> {
+        use session_content::{Availability, ObservationBinding, Unavailable};
+        if let Some(machine) = machine {
+            let (_, home) = self.resolve_machine(machine)?;
+            if home.hex() != self.device_str() {
+                return Ok(Availability::Unavailable(Unavailable::RemoteNotConnected));
+            }
+        }
+        let source = match self.selected_content(id, true) {
+            Ok(Some(source)) => source,
+            Ok(None) => return Ok(Availability::Unavailable(Unavailable::NoSource)),
+            Err(reason) => return Ok(Availability::Unavailable(reason)),
+        };
+        let availability = source.availability();
+        if !id.0.starts_with("observe/") && matches!(availability, Availability::Available { .. }) {
+            if let session_content::ContentSource::Native(source)=&source {
+                ObservationBinding::save(&self.root, self.device_str(), id, source)?;
+            }
+        }
+        Ok(availability)
+    }
+
+    fn selected_content(
+        &self,
+        id: &SessionId,
+        register: bool,
+    ) -> Result<Option<session_content::ContentSource>, session_content::Unavailable> {
+        use session_content::{ContentSource, NativeTranscript, ObservationBinding, Provider, Unavailable};
+        let directory=self.live.dir_of(id);
+        if let Some(journal)=session_content::journal::Source::registered(&self.root,self.device(),id,directory.as_deref())
+            .map_err(|_|Unavailable::Unreadable)? {
+            return Ok(Some(ContentSource::Journal(journal)));
+        }
+        if id.0.starts_with("observe/") {
+            let record = session_content::Observation::read(&self.root, id)
+                .map_err(|_| Unavailable::Unreadable)?
+                .ok_or(Unavailable::NoSource)?;
+            return session_content::ContentReference::observed(&record.reference)
+                .resolve(&self.root,self.device());
+        }
+        let Some(leaf) = id.0.strip_prefix("tui/") else {
+            return Ok(None);
+        };
+        let registered = session_content::registered(id, directory.as_deref())
+            .map_err(|_| Unavailable::Unreadable)?;
+        let binding = ObservationBinding::read(&self.root, self.device_str(), id)
+            .map_err(|_| Unavailable::Unreadable)?;
+        if let Some((provider, leaf)) = registered {
+            let Some(provider) = provider else {
+                return Ok(None);
+            };
+            return match binding.filter(|binding| binding.matches(provider, &leaf)) {
+                Some(binding) => binding.resolve(&self.root),
+                None => NativeTranscript::resolve(&self.root, provider, &leaf, None),
+            }.map(|source|source.map(ContentSource::Native));
+        }
+        if let Some(binding) = binding {
+            return binding.resolve(&self.root).map(|source|source.map(ContentSource::Native));
+        }
+        if !register {
+            return Ok(None);
+        }
+        let mut provider = None;
+        for row in self.every_session().map_err(|_| Unavailable::Unreadable)? {
+            if row.source.is_some() || row.session.id != *id {
+                continue;
+            }
+            let Some(found) = Provider::of(row.session.category.as_deref()) else {
+                return Ok(None);
+            };
+            if provider.is_some_and(|previous| previous != found) {
+                return Err(Unavailable::AmbiguousSource);
+            }
+            provider = Some(found);
+        }
+        match provider {
+            Some(provider) => NativeTranscript::resolve(&self.root, provider, leaf, None).map(|source|source.map(ContentSource::Native)),
+            None => Ok(None),
+        }
+    }
+
+    fn opened_content(
+        &self,
+        id: &SessionId,
+    ) -> Result<(std::fs::File, fn(&str)->Vec<session_content::ContentEvent>, String), String> {
+        let source = self
+            .selected_content(id, false)
+            .map_err(|reason| format!("content source unavailable: {reason:?}"))?
+            .ok_or_else(|| "no registered transcript source".to_owned())?;
+        let identity = source.source_id(self.device_str(), id);
+        let (file, parser) = source.open().map_err(|error| error.to_string())?;
+        Ok((file, parser, identity))
     }
 
     /// A discovered conversation, followed: what its transcript has said
@@ -5652,7 +5920,7 @@ impl KindSurface for LiveKind {
 }
 
 /// How an ACP conversation is spelled among the candidates: it is not a
-/// session yet, so it has no session id — `acp:<agent>:<its own id>`.
+/// session yet. Its opaque payload pins the answer's home, agent and exact ID.
 pub const ACP_CANDIDATE: &str = "acp:";
 
 /// One thing [`Node::find`] found: what it is, how a face jumps to it,
@@ -5703,7 +5971,9 @@ pub struct Candidate {
 /// list when khor started it or somebody imported it (`khor_sync::roster`).
 fn listed(roster: &RosterDoc, row: &Session) -> bool {
     let kind = row.kind.0.as_str();
-    !(kind == khor_core::kind::SHELL || kind == khor_core::kind::TUI)
+    !(kind == khor_core::kind::SHELL
+        || kind == khor_core::kind::TUI
+        || kind == khor_core::kind::OBSERVE)
         || roster.entry(&row.id.0).is_some()
 }
 

@@ -23,18 +23,20 @@
 // Which branches are open is remembered per workspace in this face's own
 // storage, so reopening a project finds it where it was left — the same
 // class of memory as a column width, not a decision about the mesh.
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { EmptyState, RegionState, Waiting } from "@/components/RegionState";
-import { dirsWait, fetchLs, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { fetchLs, pullFile, makeDir, makeFile, renamePath, type DirListing } from "@/api";
+import { useHereHosts } from "@/lib/here";
 import { useHidden } from "@/hooks/use-hidden";
+import { useDirectoryWatch } from "@/hooks/use-directory-watch";
+import { directoryAliases, directoryScopeIsNative, directoryWatchScopes, type DirectoryWatchState } from "@/lib/directory-watch";
 import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { useFileObjectActions } from "@/lib/file-actions";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
-import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag } from "@/lib/path-drag";
@@ -42,7 +44,7 @@ import { consumeFileLocation, fileLocationAncestors, onFileLocation, pendingFile
 import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { useSetting } from "@/settings";
-import { Mark, markInk, useRemoveFlow, useTake } from "@/views/fileRow";
+import { Mark, markInk, useRemoveFlow } from "@/views/fileRow";
 import { ago } from "@/words";
 import type { GitCommit } from "@/gen/bindings/GitCommit";
 
@@ -103,20 +105,10 @@ function remembered(machine: string, root: string): Set<string> {
   }
 }
 
-/**
- * **What each tree last held, and where its watch had got to** (round
- * NET-4): a tree coming back on screen — the narrow face walking back
- * from a file, a workspace reopened — starts from this, and asks its
- * machine's watch what changed since (`dirsWait`, answered by the
- * resident without crossing the road) instead of listing every open
- * level again. Only while that machine is watched: where it cannot be,
- * the tree asks as it always did.
- */
-const trees = new Map<string, { listings: Map<string, DirListing>; seq: number }>();
+/** Cached listings are display data, never proof that a departed lease is current. */
+const trees = new Map<string, { listings: Map<string, DirListing> }>();
 const treeKey = (machine: string, root: string) => `${machine}\u0000${root}`;
 
-/** How long one watch question is held when nothing changes. */
-const WATCH_HOLD_MS = 20_000;
 /** How often a level the watch cannot fully hear (`unreported`) is
     asked again while the tree is on screen — 存储's beat (`StorePage`).
     The window coming back to the front asks at once. */
@@ -135,8 +127,12 @@ export function FileTree({
   onMade,
   make,
   onMakeSeen,
+  previewOnClick = false,
   headCommit,
   onCommitLine,
+  observation,
+  onWatchEntries,
+  watchActive = true,
 }: {
   /** The machine's name — what the node resolves. */
   machine: string;
@@ -182,6 +178,7 @@ export function FileTree({
       tree — would open a name box nobody asked for. */
   make?: { kind: "file" | "dir"; at: number } | null;
   onMakeSeen?: () => void;
+  previewOnClick?: boolean;
   /** HEAD's first commit, for the commit line above the tree (WS-LAB
       item 1). `null` when the root is not a repository or the log has
       not arrived yet. `undefined` when the caller does not provide it
@@ -190,29 +187,21 @@ export function FileTree({
   /** The commit line or the branch chip was pressed — open the
       repository's history sheet (WS-LAB item 1). */
   onCommitLine?: () => void;
+  observation?: DirectoryWatchState;
+  onWatchEntries?: (paths: string[]) => void;
+  watchActive?: boolean;
 }) {
   /** Every directory this tree has an answer for. The root is asked at
       once; the rest are asked when they are opened. */
   const [listings, setListings] = useState<Map<string, DirListing>>(
     () => new Map(trees.get(treeKey(machine, root))?.listings ?? []),
   );
-  /** Whether this machine's levels are watched (`dirsWait`): `null`
-      until the first answer, then a fact. Read by the asks after khor's
-      own changes — a watched tree is told, not re-asked. */
-  const watching = useRef<boolean | null>(null);
-  /** The levels the watch cannot hear (all levels if unavailable;
-      otherwise `unreported`, a
-      network mount another host writes into too — turing and hinton
-      share an NFS home): asked again on the window's return and on a
-      slow beat, since a quiet answer about them is not a fact. */
-  const unheard = useRef<Set<string>>(new Set());
-  /** The watch's counter this tree has caught up to. */
-  const seq = useRef(trees.get(treeKey(machine, root))?.seq ?? 0);
-  /** The listings came from `trees`, from an earlier mount: what was
-      there may have changed since, watched or not. */
-  const fromKept = useRef(trees.has(treeKey(machine, root)));
   const hidden = useHidden();
   const treeElement = useRef<HTMLElement>(null);
+  const mounted = useRef(true);
+  useLayoutEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const reading = useRef(new Set<string>());
+  const rereadNeeded = useRef(new Set<string>());
   /** …and the ones that refused, in the node's own sentence. Kept apart
       from the listings for `WorkspacePane`'s reason: 「could not read」
       and 「empty」 are different facts and only one of them is a fact
@@ -242,7 +231,8 @@ export function FileTree({
   /** Asks for `path` again from the start: the refusal or the wait
       forgotten, the dial made anew. */
   const again = (path: string) => {
-    asked.current.delete(path);
+    if (reading.current.has(path)) rereadNeeded.current.add(path);
+    else asked.current.delete(path);
     setFailed((was) => {
       const next = new Map(was);
       next.delete(path);
@@ -250,11 +240,11 @@ export function FileTree({
     });
     setTries((n) => n + 1);
   };
-  const { took, take, takes } = useTake(machine);
   /** 单击文件: whether one click keeps the tab, or takes the preview
       seat the next click replaces (`khor config`). Double click pins
       either way, so 「预览」 is not a road with no exit. */
-  const clickPins = useSetting("files-click") === "pin";
+  const configuredClickPins = useSetting("files-click") === "pin";
+  const clickPins = !previewOnClick && configuredClickPins;
   // **The open file is not marked on the narrow face** (2026-10-02, the
   // lists' rule, `SideList`): there the tree and the file it opened are
   // two screens, never side by side, so coming back to the tree there is
@@ -280,9 +270,16 @@ export function FileTree({
   // it), so `machine` and `root` cannot change under an answer in
   // flight — every answer that arrives is about this tree.
   useEffect(() => {
+    if (hidden || !watchActive) return;
     for (const path of want) {
+      if (rereadNeeded.current.has(path) && !reading.current.has(path)) {
+        rereadNeeded.current.delete(path);
+        asked.current.delete(path);
+      }
       if (asked.current.has(path)) continue;
+      if (reading.current.has(path)) { rereadNeeded.current.add(path); continue; }
       asked.current.add(path);
+      reading.current.add(path);
       const request = (requests.current.get(path) ?? 0) + 1;
       requests.current.set(path, request);
       const latest = () => requests.current.get(path) === request;
@@ -303,13 +300,18 @@ export function FileTree({
           if (latest()) setFailed((was) => new Map(was).set(path, String(e instanceof Error ? e.message : e)));
         })
         .finally(() => {
+          reading.current.delete(path);
           if (latest() && path === root) setRootAskedAt(null);
+          if (mounted.current && !document.hidden && rereadNeeded.current.delete(path)) {
+            asked.current.delete(path);
+            setWant(was => new Set(was));
+          }
         });
     }
     // `root` is a constant here (the tree is remounted per workspace);
     // `tries` is 重试 asking for a path taken off `asked`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine, want, tries]);
+  }, [machine, want, tries, hidden, watchActive]);
 
   /**
    * **A directory remembered open and deleted since leaves quietly**
@@ -363,127 +365,73 @@ export function FileTree({
     });
   }, [failed, listings, expanded, want, machine, root]);
 
-  /** The level a watch said changed, asked again — that level alone,
-      its listing on screen until the new one lands. */
+  const visibleDirs = useMemo(() => [...want].filter(path => {
+    if (path === root) return true;
+    for (let parent = path; parent !== root; parent = parent.slice(0, parent.lastIndexOf("/")) || "/") {
+      if (!expanded.has(parent) || parent === "/") return false;
+    }
+    return true;
+  }).sort(), [want, expanded, root]);
+  const aliases = directoryAliases(root, listings, visibleDirs);
+  const aliasKey = JSON.stringify(aliases);
+  useEffect(() => {
+    onWatchEntries?.(aliases);
+    return () => onWatchEntries?.([]);
+    // A stable path list, not listing payload changes, alters the scope set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onWatchEntries, aliasKey]);
+  const plan = directoryWatchScopes(null, visibleDirs);
+  const ownObservation = useDirectoryWatch(machine, plan.scopes, observation === undefined && watchActive);
+  const observed = observation ?? ownObservation;
+  const covers = (path: string) => directoryScopeIsNative(observed, { kind: "entries", path }) ||
+    observation !== undefined && !aliases.includes(path) && directoryScopeIsNative(observed, { kind: "workspace", root });
+  const coverage = useRef(covers);
+  coverage.current = covers;
+  const fallback = visibleDirs.filter(path => !covers(path));
+  const fallbackKey = JSON.stringify(fallback);
+
   const refresh = (dirs: string[]) => {
-    for (const d of dirs) asked.current.delete(d);
-    setWant((was) => new Set(was));
+    for (const dir of dirs) {
+      if (reading.current.has(dir)) rereadNeeded.current.add(dir);
+      else asked.current.delete(dir);
+    }
+    setWant(was => new Set(was));
   };
-
-  // **khor's own acts, wherever they were made** (UX-43 §1,
-  // `lib/tree-changed`): a level said to have changed is read again where
-  // this tree holds it, its listing on screen until the new one lands. A
-  // watched tree is told by the watch instead; a level this tree never
-  // asked about is not its business. The tree's own acts say it too, after
-  // their `reread` has already taken the level off `asked`, so nothing is
-  // asked twice.
-  useEffect(
-    () =>
-      onTreeChanged((c) => {
-        if (!sameMachine(c, { machine, here }) || watching.current === true || !asked.current.has(c.dir)) return;
-        refresh([c.dir]);
-      }),
-    // `refresh` only touches refs and a setter.
+  useEffect(() => onTreeChanged(change => {
+    if (!sameMachine(change, { machine, here }) || coverage.current(change.dir) || !asked.current.has(change.dir)) return;
+    refresh([change.dir]);
+    // The listener reads current coverage, not a previous response closure.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [machine, here],
-  );
-
-  // **Kept for the next mount** (`trees`): what this tree holds, and
-  // how far its watch had got.
+  }), [machine, here]);
+  useEffect(() => { trees.set(treeKey(machine, root), { listings }); }, [listings, machine, root]);
   useEffect(() => {
-    trees.set(treeKey(machine, root), { listings, seq: seq.current });
-  }, [listings, machine, root]);
-
-  /**
-   * **The watch** (round NET-4): while the tree is on screen, one
-   * question at a time to this machine's watch — which of the levels
-   * held changed since the counter this tree has — and the ones named
-   * are asked again. The first question does not wait, so a tree that
-   * came back from `trees` learns at once which levels went stale while
-   * it was away. Where the machine cannot be watched (this machine, a
-   * satellite, the web face, an older khor) the answer says so, and the
-   * tree asks every level it held, as it always did.
-   */
-  useEffect(() => {
-    if (hidden) return;
-    let stopped = false;
-    let first = true;
-    const loop = async () => {
-      while (!stopped) {
-        const dirs = [...want].filter((d) => listings.has(d) || asked.current.has(d));
-        if (dirs.length === 0) {
-          await new Promise((r) => setTimeout(r, 500));
-          continue;
-        }
-        try {
-          const w = await dirsWait(machine, dirs, seq.current, first ? 0 : WATCH_HOLD_MS);
-          if (stopped) return;
-          if (w.unavailable) {
-            // Cannot be watched: refresh kept answers once, then keep
-            // these levels in the focus/slow fallback as well.
-            // **Whatever its counter** (ux-43 finding 3): an unwatched
-            // machine never gets one past 0, and its kept tree was shown
-            // as it was at the last mount, a change outside khor never
-            // seen on the next open.
-            if (watching.current === null && fromKept.current) refresh(dirs);
-            watching.current = false;
-            unheard.current = new Set(dirs);
-            return;
-          }
-          watching.current = true;
-          unheard.current = new Set(w.unreported);
-          first = false;
-          seq.current = w.seq;
-          if (w.dirs.length > 0) refresh(w.dirs.filter((d) => listings.has(d)));
-        } catch {
-          // Not reached just now: the next question will say.
-          await new Promise((r) => setTimeout(r, 5_000));
-        }
-      }
-    };
-    void loop();
-    return () => {
-      stopped = true;
-    };
-    // The loop reads the latest `want` and `listings` on each turn
-    // through this effect re-running when they change.
+    const batch = observed.batch;
+    if (hidden || !watchActive || observed.status !== "watching" || batch === null) return;
+    const changed = batch.reset ? visibleDirs : visibleDirs.filter(path =>
+      batch.dirs.includes(path) || batch.dirs.includes(listings.get(path)?.path ?? path));
+    if (changed.length > 0) refresh(changed);
+    // One accepted batch invalidates current listing keys; listing replies
+    // themselves must not repeatedly consume the same reset fence.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine, hidden, want, listings.size]);
-
-  // **What the watch cannot hear** (store-c): while the tree is on
-  // screen, its unavailable / `unreported` levels are asked again when the window
-  // comes back to the front and on a slow beat — only those, and only
-  // ones this tree has asked about.
+  }, [observed.batch, observed.status, hidden, watchActive]);
   useEffect(() => {
-    if (hidden) return;
-    const again = () => {
-      if (document.hidden) return;
-      const visible = (path: string) => {
-        if (path === root) return true;
-        for (let p = path; p !== root; p = p.slice(0, p.lastIndexOf("/")) || "/") {
-          if (!expanded.has(p) || p === "/") return false;
-        }
-        return true;
-      };
-      const dirs = [...unheard.current].filter((d) => asked.current.has(d) && visible(d));
-      if (dirs.length > 0) refresh(dirs);
-    };
+    if (hidden || !watchActive || fallback.length === 0) return;
+    const again = () => { if (!document.hidden) refresh(fallback); };
+    const kept = fallback.filter(path => listings.has(path));
+    if (kept.length > 0) refresh(kept);
     const slow = window.setInterval(again, UNHEARD_MS);
     window.addEventListener("focus", again);
-    return () => {
-      window.clearInterval(slow);
-      window.removeEventListener("focus", again);
-    };
-    // `refresh` only touches refs and a setter.
+    return () => { window.clearInterval(slow); window.removeEventListener("focus", again); };
+    // Equal fallback path sets keep the same timer across quiet poll replies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hidden, expanded, root]);
+  }, [hidden, watchActive, fallbackKey]);
 
   /** Ask that directory again. Everything below it goes too: a listing
       for a path under one that just changed is an answer about a tree
       that may no longer be there. **Not on a watched tree**, after khor's
       own change: the watch says which level moved, a moment later. */
   const reread = (dir: string) => {
-    if (watching.current === true) return;
+    if (coverage.current(dir)) return;
     const under = (p: string) => p === dir || p.startsWith(`${dir}/`);
     for (const p of [...asked.current]) if (under(p)) asked.current.delete(p);
     const drop = <T,>(m: Map<string, T>) =>
@@ -507,7 +455,7 @@ export function FileTree({
   const toggle = (full: string) => {
     // A cached answer is current only where the watch can hear changes.
     // Keep it on screen while reopening reads the level again.
-    if (!expanded.has(full) && (watching.current !== true || unheard.current.has(full))) {
+    if (!expanded.has(full) && !coverage.current(full)) {
       refresh([full]);
     }
     setExpanded((was) => {
@@ -583,6 +531,7 @@ export function FileTree({
    * is the success face — it has no line to say 已复制 on — and a refusal
    * rejects, so the menu stays open with the item saying so (`RowMenu`). */
   const objectActions = useFileObjectActions(here, root);
+  const takes = useHereHosts();
   const menu = (full: string, isDir: boolean): RowAction[] => [
     ...(isDir
       ? [
@@ -599,6 +548,7 @@ export function FileTree({
         ]
       : []),
     ...objectActions(full),
+    ...(!isDir && !here && takes ? [{ key: "take", label: gui.take_file, run: async () => { await pullFile(machine, full); } }] : []),
     {
       key: "rename",
       label: gui.rename,
@@ -987,50 +937,11 @@ export function FileTree({
                       )}
                     </button>
                   </RowMenu>
-                  <Mark
-                    mark={mark}
-                    onPress={onDiff === undefined ? undefined : () => onDiff(r.full)}
-                  />
-                  {took?.path === r.full ? (
-                    <span
-                      data-took={took.state}
-                      className={cn(
-                        "max-w-[50%] truncate text-caption",
-                        took.state === "failed" ? "text-state-failed" : "text-muted-foreground",
-                      )}
-                    >
-                      {took.word}
-                    </span>
-                  ) : (
-                    !here && takes && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        data-take={r.name}
-                        // **Drawn where somebody is, VS Code's row-action
-                        // rule** (2026-09-28 audit 第 15 条): the row under
-                        // the pointer, the row the keyboard is in, the open
-                        // row — and every row under a finger, which has no
-                        // hover to summon it with. On every row at once it
-                        // was the loudest word in the tree, repeated down
-                        // a column that is about names.
-                        //
-                        // **Hidden by opacity, never removed**: it stays in
-                        // the tab order, and the focus that lands on it is
-                        // what draws it (`group-focus-within`). Its place is
-                        // kept too, so a row does not change shape when the
-                        // pointer arrives.
-                        className={cn(
-                          "min-h-[var(--tree-row)] min-w-touch flex-none transition-opacity",
-                          open !== r.full &&
-                            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:opacity-100",
-                        )}
-                        onClick={() => take(r.full)}
-                      >
-                        {gui.take_file}
-                      </Button>
-                    )
-                  )}
+                  <span data-tree-mark-slot className="flex size-[var(--tree-slot)] flex-none items-center justify-center">
+                    <Mark mark={mark} onPress={onDiff === undefined ? undefined : () => onDiff(r.full)} />
+                  </span>
+
+
                 </div>
               );
               // One row, or a row and the box being typed under it.

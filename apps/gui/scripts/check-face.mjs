@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The type gate, rendered half: what the letterforms actually weigh on
 // the glass. The static half (`check-type.mjs`) proves nobody wrote a
 // stray literal; this half proves the tokens land — a stylesheet layer,
@@ -294,6 +295,7 @@ try {
     ...row(n, word),
     id: `${kind}/ws-${n}`,
     kind,
+    can_control: kind === "gui",
     title: `ws-session-${n}`,
     place,
     last,
@@ -1876,41 +1878,12 @@ try {
     // conversation and not this ruling's business, but a fixture that
     // did it would put a percent-encoded 另外 in this gate's own log.
     "看 src/one.rs:3 那一段,还有 https://example.test/x 。另外 src/ghost.rs 不在树里";
-  await page.route("**/chat_open", (r) =>
-    r.fulfill({ contentType: "application/json", body: "true" }),
-  );
-  await page.route("**/chat_leave", (r) =>
-    r.fulfill({ contentType: "application/json", body: "null" }),
-  );
-  await page.route("**/chat_replay", (r) =>
-    r.fulfill({ contentType: "application/json", body: "null" }),
-  );
-  await page.route("**/chat_poll", (r) => {
-    const since = (r.request().postDataJSON() ?? {}).since ?? 0;
-    return r.fulfill({
-      contentType: "application/json",
-      body: JSON.stringify({
-        frames:
-          since > 0
-            ? []
-            : [
-                {
-                  kind: "history",
-                  update: {
-                    update: {
-                      sessionUpdate: "agent_message_chunk",
-                      content: { type: "text", text: CHAT_SAID },
-                    },
-                  },
-                },
-                { kind: "history_end" },
-              ],
-        next: 1,
-        gone: false,
-        lost: false,
-      }),
-    });
-  });
+  const agentFixtureIds = ['gui/ws-2', 'gui/ws-4'];
+  const servedAgentBodies = new Set();
+  await routeCanonicalChat(page, {ids: agentFixtureIds, takeFrames: id => {
+    if (servedAgentBodies.has(id)) return [];servedAgentBodies.add(id);
+    return [{kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text: CHAT_SAID}}}}];
+  }});
   // The settings dialog's body. **Without this the settings stop judged
   // one control — the dialog's own close button — while its name said
   // 「settings」**: `FaceSettings` paints nothing at all until
@@ -18969,7 +18942,8 @@ try {
     await page.setViewportSize({ width: 1120, height: 1000 });
     await wait(300);
     const look = await page.evaluate(() => {
-      const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
+      const heading = document.querySelector("[data-machine-card] [data-top-heads]");
+      const head = heading?.firstElementChild;
       //   ⚠️ **Every cell of a row, not its first.** The first child is
       //   the pid, and the pid is the one cell drawn in the muted ink —
       //   so comparing the head with it reported 「0.62 → 0.94」 and
@@ -19004,8 +18978,11 @@ try {
         cellWeights: [...new Set(cells.map((c) => +cs(c).fontWeight))],
         cellInks: [...new Set(cells.map((c) => lum(cs(c).color)))],
         headInk: lum(cs(head).color),
-        //   The rule under the heads, and the one above the table.
+        // Fixed headings use material; the figure/table content seam remains.
         headRule: cs(head).boxShadow,
+        headingRule: cs(heading).boxShadow,
+        headBorder: parseFloat(cs(head).borderBottomWidth) || 0,
+        headingBorder: parseFloat(cs(heading).borderBottomWidth) || 0,
         seamRule: seam ? +parseFloat(cs(seam).borderTopWidth || "0") : null,
         //   How far the table's head sits from the figure's foot,
         //   against how far two rows sit from each other. A break has
@@ -19099,9 +19076,7 @@ try {
       //   (measured, every cell but the pid: alpha .94), so a head
       //   cannot be darker than its body without dimming the data,
       //   which is the wrong thing to trade. Weight is the channel
-      //   that is left, and the rule under the heads is the other
-      //   half — see the stylesheet, where it is also made to run
-      //   unbroken across the gaps.
+      //   that is left; the separate figure/table seam stays in the flow.
       if (!look.cellWeights.length) {
         fail("probe dead: the row has no cells, so 「the head is set apart」 measured nothing");
       } else {
@@ -19120,8 +19095,8 @@ try {
           );
         }
       }
-      if (!look.headRule || look.headRule === "none") {
-        fail("the column heads carry no rule under them — the line that says 「rows start here」 is missing");
+      if (look.headRule !== "none" || look.headingRule !== "none" || look.headBorder > 0 || look.headingBorder > 0) {
+        fail(`fixed column heads carry a divider: cell ${look.headRule}/${look.headBorder}px, heading ${look.headingRule}/${look.headingBorder}px`);
       }
       if (!(look.seamRule > 0)) {
         fail(
@@ -19164,7 +19139,7 @@ try {
       }
       console.log(
         `heads: weight ${look.cellWeights.join("/")}→${look.headWeight}, ink ${look.cellInks.join("/")}→${look.headInk}, ` +
-          `rule under them ${look.headRule !== "none"}, seam ${look.seamRule}px, ` +
+          `fixed heading divider absent, content seam ${look.seamRule}px, ` +
           `figure ends ${look.plotToTable}px before the table, drawing to head ${look.figureToHead}px, ` +
           `labels inside ${look.labels.map((l) => `${l.which}:${l.inside}`).join(" ")}, ` +
           `head ${look.pickToHead}px below the axis words against a ${look.rowPitch}px row`,
@@ -19173,74 +19148,89 @@ try {
   }
 
   //     ── the column heads do not go with the rows ─────────────────
-  //
-  //     2026-09-04:「拖动进程列表的时候,表头要悬浮,不要被拖走,这种基础
-  //     的都搞错」. The process window is a fixed box that scrolls, and
-  //     a head that leaves with the rows takes with it the only thing
-  //     saying which column a number is in — **and the control that
-  //     re-orders them**.
-  //
-  //     ⚠️ **Measured on the head's own box, and the reason is the bug
-  //     it replaced.** `[data-top-heads]` wore `sticky top-0 bg-card`
-  //     for as long as this table has existed and it was inert:
-  //     `display: contents` gives that element **no box at all**, so it
-  //     cannot be positioned and cannot paint a ground. Reading the
-  //     class off the markup would have said 「sticky」; the head went
-  //     from 737 to −2675.
-  //
-  //     Three things after the scroll, because the shallow version of
-  //     this passes on a head that is pinned and useless: it is still
-  //     **where it was**, it still **covers** the rows going under it
-  //     (a transparent head is a head with rows written through it),
-  //     and it still **sorts**.
+  // The table flows in the page. Probe that actual port, including its
+  // existing padding, rather than the non-scrolling clipping box.
   {
     await page.setViewportSize({ width: 1120, height: 1000 });
     await wait(300);
-    // Every row (F4.3's 显示全部), or the window has nothing to scroll.
     if (await page.locator("[data-machine-card] [data-top-all]").count()) await press("[data-machine-card] [data-top-all]");
-    const before = await page.evaluate(() => {
-      const box = document.querySelector("[data-machine-card] [data-load-top-box]");
-      const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
-      if (!box || !head) return null;
+    const before = await page.evaluate(async () => {
+      const head = document.querySelector("[data-machine-card] [data-top-heads]");
+      const port = head?.closest("[data-nav-clear]");
+      const first = document.querySelector("[data-machine-card] [data-top-row] > *");
+      if (!port || !head || !first) return null;
+      const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const previous = port.scrollTop;
+      port.scrollTop = 0;
+      await frame();
+      const css = getComputedStyle(port);
+      const boundary = port.getBoundingClientRect().top + port.clientTop + (parseFloat(css.paddingTop) || 0) + (parseFloat(getComputedStyle(head).top) || 0);
+      port.scrollTop = Math.max(0, head.getBoundingClientRect().top - boundary);
+      await frame();
       return {
-        scrollable: box.scrollHeight - box.clientHeight,
-        top: +head.getBoundingClientRect().top.toFixed(1),
-        firstRow: +document.querySelector("[data-machine-card] [data-top-row] > *").getBoundingClientRect().top.toFixed(1),
-        opaque: getComputedStyle(head).backgroundColor,
+        previous,
+        scrollable: port.scrollHeight - port.clientHeight,
+        top: head.getBoundingClientRect().top,
+        firstRow: first.getBoundingClientRect().top,
+        scrollTop: port.scrollTop,
       };
     });
     if (!before) {
-      fail("probe dead: no process window or no column heads, so 「the heads stay」 measured nothing");
-    } else if (before.scrollable < 40) {
-      // ⚠️ 墓碑 (the audit fix plan F4.3): the table was a fixed-height
-      // window scrolling under sticky heads; it shows twenty rows and
-      // 显示全部 now, and the page scrolls. Nothing scrolls in the box.
-      console.log(`process window: the table is not a scrolling window since F4.3 (${before.scrollable}px)`);
+      fail("probe dead: no page scroll port, process heading or row");
     } else {
-      const after = await page.evaluate(async () => {
-        const box = document.querySelector("[data-machine-card] [data-load-top-box]");
-        box.scrollTop = box.scrollHeight;
-        await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
-        const head = document.querySelector("[data-machine-card] [data-top-heads] > *");
+      await page.evaluate(() => {
+        const head = document.querySelector("[data-machine-card] [data-top-heads]");
+        head.closest("[data-nav-clear]").scrollTop += 80;
+      });
+      try {
+        await page.waitForFunction(() => {
+          const head = document.querySelector("[data-machine-card] [data-top-heads]");
+          return head?.hasAttribute("data-sticky-held") && getComputedStyle(head, "::before").opacity === "1";
+        }, null, { timeout: 1000 });
+      } catch {
+        const state = await page.evaluate(() => {
+          const head = document.querySelector("[data-machine-card] [data-top-heads]");
+          return { held: head?.hasAttribute("data-sticky-held"), opacity: head ? getComputedStyle(head, "::before").opacity : null };
+        });
+        fail(`held material did not settle: ${JSON.stringify(state)}`);
+      }
+      const after = await page.evaluate(() => {
+        const head = document.querySelector("[data-machine-card] [data-top-heads]");
+        const port = head.closest("[data-nav-clear]");
+        const body = head.parentElement.querySelector('[data-sticky-body="flush"]');
+        const css = getComputedStyle(head), material = getComputedStyle(head, "::before");
+        const end = body ? (parseFloat(body.style.getPropertyValue("--sticky-fade-start")) || 0) + (parseFloat(body.style.getPropertyValue("--sticky-fade-length")) || 0) : NaN;
         return {
-          top: +head.getBoundingClientRect().top.toFixed(1),
-          firstRow: +document.querySelector("[data-machine-card] [data-top-row] > *").getBoundingClientRect().top.toFixed(1),
-          moved: box.scrollTop,
+          top: head.getBoundingClientRect().top,
+          bottom: head.getBoundingClientRect().bottom,
+          firstRow: document.querySelector("[data-machine-card] [data-top-row] > *").getBoundingClientRect().top,
+          moved: port.scrollTop,
+          held: head.hasAttribute("data-sticky-held"),
+          titleMask: css.maskImage,
+          titleOpacity: css.opacity,
+          bodyFading: body?.hasAttribute("data-sticky-fading") ?? false,
+          bodyEnd: body ? body.getBoundingClientRect().top + end : null,
+          materialOpacity: material.opacity,
+          materialBottom: material.bottom,
+          blur: material.backdropFilter,
+          blurExpected: CSS.supports("backdrop-filter", "blur(1px)") && !matchMedia("(prefers-reduced-transparency: reduce)").matches,
         };
       });
-      if (Math.abs(after.top - before.top) > 1) {
-        fail(`the column heads went from ${before.top} to ${after.top} while the rows were scrolled — they were dragged away with them`);
+      if (Math.abs(after.top - before.top) > 1 || !after.held) {
+        fail(`the column heading left its sticky boundary: ${before.top}→${after.top}, held=${after.held}`);
       }
-      //   Probe alive: the rows really did move.
-      if (Math.abs(after.firstRow - before.firstRow) < 40) {
-        fail(`probe dead: the first row moved ${(after.firstRow - before.firstRow).toFixed(1)}px, so 「the heads stayed」 was true of a table nothing scrolled`);
+      if (after.moved - before.scrollTop < 40 || Math.abs(after.firstRow - before.firstRow) < 40) {
+        fail(`probe dead: page moved ${after.moved - before.scrollTop}px and first row moved ${after.firstRow - before.firstRow}px`);
       }
-      const bg = before.opaque;
-      if (!bg || bg === "rgba(0, 0, 0, 0)" || bg === "transparent") {
-        fail(`the column heads have no ground of their own (${bg}) — the rows sliding under them are written through the words`);
+      if (after.titleMask !== "none" || after.titleOpacity !== "1") {
+        fail(`the held heading fades with its rows: mask=${after.titleMask}, opacity=${after.titleOpacity}`);
       }
-      //   And it still sorts, which is the half a pinned-but-dead head
-      //   would pass without.
+      if (!after.bodyFading || after.bodyEnd === null || Math.abs(after.bodyEnd - after.bottom) > 1) {
+        fail(`rows do not become clear at the heading bottom: fading=${after.bodyFading}, endpoint=${after.bodyEnd}, heading=${after.bottom}`);
+      }
+      if (after.materialOpacity !== "1" || after.materialBottom !== "0px" || (after.blurExpected && after.blur === "none")) {
+        fail(`held material does not end with the flush heading: opacity=${after.materialOpacity}, bottom=${after.materialBottom}, blur=${after.blur}`);
+      }
       const col = await page.evaluate(() => document.querySelector("[data-machine-card] [data-top-heads] > [data-top-head]")?.dataset.topHead);
       const rowsBefore = await page.evaluate(() =>
         [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
@@ -19250,25 +19240,12 @@ try {
       const rowsAfter = await page.evaluate(() =>
         [...document.querySelectorAll("[data-machine-card] [data-top-row]")].map((r) => r.dataset.topRow).join(","),
       );
-      if (rowsAfter === rowsBefore) {
-        fail(`pressing 「${col}」 after scrolling changed nothing — the head is pinned and no longer a control`);
-      }
-      //   ⚠️ **Tombstone: an assertion that the heads' ground reached
-      //   12px upward, 2026-09-11 — written and withdrawn the same
-      //   night.** It guarded a fix that turned out to paint nothing:
-      //   the head sits at 0 from the scroll port's top, so a shadow
-      //   above it is outside the clip. Painted red and photographed:
-      //   no red anywhere.
-      //
-      //   **A gate over a fix that does not work is worse than no gate**
-      //   — it is the sentence 「something is holding this」 with nothing
-      //   behind it, and the next person reads it as coverage. The band
-      //   on the user's screen is unexplained and is an account in
-      //   docs/handoff, not an assertion here.
-      console.log(
-        `sticky heads: window scrolls ${before.scrollable}, heads ${before.top}→${after.top}, ` +
-          `first row ${before.firstRow}→${after.firstRow}, ground ${bg}, still sorts`,
-      );
+      if (rowsAfter === rowsBefore) fail(`pressing 「${col}」 after scrolling changed nothing`);
+      await page.evaluate((top) => {
+        document.querySelector("[data-machine-card] [data-top-heads]").closest("[data-nav-clear]").scrollTop = top;
+      }, before.previous);
+      await wait(100);
+      console.log(`sticky heading: page ${before.scrollTop}→${after.moved}, heading ${before.top}→${after.top}, body endpoint ${after.bodyEnd}, still sorts`);
     }
   }
 
@@ -19322,12 +19299,8 @@ try {
       //   as reading a floor off the element it is meant to constrain.
       const holder = t.parentElement;
       const box = holder.getBoundingClientRect();
-      //   ⚠️ **Track geometry off the row cells, not the heads.** Each
-      //   head but the last is widened by one gap and padded back by it
-      //   so the rule under them runs unbroken; measured on the heads,
-      //   every track then reads a gap wider than it is and every gap
-      //   reads zero. The row cells are the tracks without that
-      //   compensation.
+      // Measure the data tracks directly; heading material must not
+      // change the column geometry the numbers are read against.
       const firstRow = document.querySelector("[data-machine-card] [data-top-row]");
       const trackEls = firstRow ? [...firstRow.children] : heads;
       const rects = trackEls.map((h) => h.getBoundingClientRect());
@@ -33839,16 +33812,16 @@ try {
         const { gui } = await import("/src/gen/catalog.ts");
         const at = "https://nowhere.example/";
         return {
-          host: pageFail(`-1003|NSURLErrorDomain|A server with the specified hostname could not be found.|${at}`),
-          refused: pageFail(`-1004|NSURLErrorDomain|Could not connect to the server.|${at}`),
-          timeout: pageFail(`-1001|NSURLErrorDomain|The request timed out.|${at}`),
-          tls: pageFail(`-1200|NSURLErrorDomain|An SSL error has occurred and a secure connection to the server cannot be made.|${at}`),
-          cert: pageFail(`-1202|NSURLErrorDomain|The certificate for this server is invalid.|${at}`),
-          expired: pageFail(`-1201|NSURLErrorDomain|The certificate for this server has expired.|${at}`),
-          route: pageFail(`route|khor||${at}`),
-          proxy: pageFail(`310|kCFErrorDomainCFNetwork|There was a problem communicating with the secure web proxy server (HTTPS).|${at}`),
-          other: pageFail(`-1100|NSURLErrorDomain|The requested URL was not found on this server.|${at}`),
-          want: { host: gui.page_fail_host, refused: gui.page_fail_refused, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route, cert: gui.page_fail_cert, expired: gui.page_fail_cert },
+          host: pageFail({ code: "-1003", domain: "NSURLErrorDomain", description: "A server with the specified hostname could not be found.", url: at, underlying: [], truncated: false }),
+          refused: pageFail({ code: "-1004", domain: "NSURLErrorDomain", description: "Could not connect to the server.", url: at, underlying: [], truncated: false }),
+          timeout: pageFail({ code: "-1001", domain: "NSURLErrorDomain", description: "The request timed out.", url: at, underlying: [], truncated: false }),
+          tls: pageFail({ code: "-1200", domain: "NSURLErrorDomain", description: "An SSL error has occurred and a secure connection to the server cannot be made.", url: at, underlying: [], truncated: false }),
+          cert: pageFail({ code: "-1202", domain: "NSURLErrorDomain", description: "The certificate for this server is invalid.", url: at, underlying: [], truncated: false }),
+          expired: pageFail({ code: "-1201", domain: "NSURLErrorDomain", description: "The certificate for this server has expired.", url: at, underlying: [], truncated: false }),
+          route: pageFail({ code: "route", domain: "khor", description: "", url: at, underlying: [], truncated: false }),
+          proxy: pageFail({ code: "310", domain: "kCFErrorDomainCFNetwork", description: "There was a problem communicating with the secure web proxy server (HTTPS).", url: at, underlying: [], truncated: false }),
+          other: pageFail({ code: "-1100", domain: "NSURLErrorDomain", description: "The requested URL was not found on this server.", url: at, underlying: [], truncated: false }),
+          want: { host: gui.page_fail_host, refused: gui.page_fail_connect, timeout: gui.page_fail_timeout, tls: gui.page_fail_tls, route: gui.page_fail_route, proxy: gui.page_fail_route, cert: gui.page_fail_cert, expired: gui.page_fail_cert },
         };
       });
       console.log(`bar t · failure words ${shown(words)}`);
@@ -38995,7 +38968,7 @@ try {
       };
       const chatRow = { ...base, id: "wide/all", kind: "broadcast", title: "广播", category: "khor", hosted: false, attachable: false, place: null };
       const agentRow = {
-        ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false,
+        ...base, id: "gui/afix-agent", kind: "gui", title: "afix-agent", category: "claude", attachable: false, can_control: true,
         source: { device: "f".repeat(64), age_ms: 0 },
       };
       const line = (id, from_me, text) => ({
@@ -39003,27 +38976,17 @@ try {
         retracted: false, edited: false, word: null, step: null, moved: 0, landed: [], why: null, into: null,
         to: [], note: null, pushed: false,
       });
-      const frame = (update) => ({ kind: "history", update: { update } });
+      let agentBodyServed = false;
+      await routeCanonicalChat(page, {ids: ['gui/afix-agent'], takeFrames: () => {
+        if (agentBodyServed) return [];agentBodyServed = true;
+        return [
+          {kind: 'note', update: {update: {sessionUpdate: "agent_message_chunk", content: {type: "text", text: `链接在这里 ${LONG} 。`}}}},
+          {kind: 'note', update: {update: {sessionUpdate: "tool_call", toolCallId: "t-long", title: `Fetch ${LONG}`, kind: "fetch", status: "completed"}}},
+        ];
+      }});
       const routesA = [
         ["**/sessions", json([chatRow, agentRow])],
-        ["**/machine_log", json({ messages: [line("m-in", false, `看这个 ${LONG}`), line("m-out", true, LONG)], broken: 0 })],
-        [
-          "**/chat_poll",
-          (r) =>
-            json({
-              frames:
-                ((r.request().postDataJSON() ?? {}).since ?? 0) > 0
-                  ? []
-                  : [
-                      frame({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: `链接在这里 ${LONG} 。` } }),
-                      frame({ sessionUpdate: "tool_call", toolCallId: "t-long", title: `Fetch ${LONG}`, kind: "fetch", status: "completed" }),
-                      { kind: "history_end" },
-                    ],
-              next: 1,
-              gone: false,
-              lost: false,
-            })(r),
-        ],
+        ["**/machine_log", json({messages: [line("m-in", false, `看这个 ${LONG}`), line("m-out", true, LONG)], broken: 0})],
       ];
       for (const [glob, run] of routesA) await page.route(glob, run);
       await page.evaluate(() => window.localStorage.clear());

@@ -26,6 +26,12 @@ export function installChatCancelWire({scenario, http = false}) {
   URL.createObjectURL = file => { const url = create(file); wire.created.push(url); return url; };
   const invoke = async (cmd, args = {}, options = {}) => {
     wire.calls.push({cmd, args: cmd === 'chat_put' ? {name: options.headers?.['x-khor-name']} : args});
+    const scope = cmd === 'chat_put' ? {
+      id: decodeURIComponent(options.headers?.['x-khor-chat'] ?? ''),
+      lease: decodeURIComponent(options.headers?.['x-khor-lease'] ?? ''),
+    } : args;
+    const admission = window.__attachmentLeases(cmd,scope);
+    if (admission.handled) return admission.value;
     if (cmd === 'chat_open') {
       const previous = wire.history.get(args.id);
       if (previous?.gone || previous?.frames.some(frame => frame.kind === 'send_cancelled' && frame.reconnect)) wire.history.delete(args.id);
@@ -57,9 +63,9 @@ export function installChatCancelWire({scenario, http = false}) {
     window.fetch = async (input, init = {}) => {
       const url = new URL(typeof input === 'string' ? input : input.url, location.href);
       const cmd = url.pathname.split('/').pop();
-      if (!cmd.startsWith('chat_')) return original(input, init);
+      if (cmd !== 'attachment_begin' && !cmd.startsWith('chat_')) return original(input, init);
       let value;
-      if (cmd === 'chat_put') value = await invoke(cmd, {}, {headers: {'x-khor-name': url.searchParams.get('name')}});
+      if (cmd === 'chat_put') value = await invoke(cmd, {}, {headers: {'x-khor-name': url.searchParams.get('name'),'x-khor-chat': encodeURIComponent(url.searchParams.get('id') ?? ''),'x-khor-lease': encodeURIComponent(url.searchParams.get('lease') ?? '')}});
       else value = await invoke(cmd, JSON.parse(init.body || '{}'));
       return new Response(JSON.stringify(value), {status: 200, headers: {'content-type': 'application/json'}});
     };

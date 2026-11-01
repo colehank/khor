@@ -127,8 +127,12 @@ pub fn arrange(
         })
         .collect();
     out.sort_by(|(a, pa), (b, pb)| {
-        pa.cmp(pb)
-            .then_with(|| b.view.session.state.at.0.cmp(&a.view.session.state.at.0))
+        pa.cmp(pb).then_with(|| {
+            b.view
+                .session
+                .activity_at()
+                .cmp(&a.view.session.activity_at())
+        })
     });
     out.into_iter().map(|(row, _)| row).collect()
 }
@@ -183,7 +187,10 @@ fn place_of(
             (GROUP_STATE.to_owned(), (8, String::new()))
         }
         Arrange::State => {
-            let word = view.session.state.state;
+            let Some(stamp) = view.session.state else {
+                return (GROUP_STATE.to_owned(), (8, String::new()));
+            };
+            let word = stamp.state;
             (
                 format!("{GROUP_STATE}{}", word.key()),
                 (1 + word.rank(), String::new()),
@@ -214,14 +221,16 @@ mod tests {
         SessionView {
             imported: false,
             session: Session {
+                observation: None,
+                can_control: false,
                 id: SessionId(id.to_owned()),
                 kind: Kind("tui".to_owned()),
                 title: id.to_owned(),
                 home: DeviceId([home; 32]),
-                state: StateStamp {
+                state: Some(StateStamp {
                     state: word,
                     at: Millis(at),
-                },
+                }),
                 unread: 0,
                 place: None,
                 mux: false,

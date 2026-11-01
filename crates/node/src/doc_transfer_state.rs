@@ -194,6 +194,8 @@ impl Context {
             if pairing::needs_recovery(&self.root, self.local)? {
                 return Err(Error::busy());
             }
+            #[cfg(all(test, unix))]
+            crate::link::documents::query_concurrency_tests::root_acquired(self);
             Some(guard)
         } else {
             None
@@ -291,6 +293,22 @@ impl State {
     pub(crate) fn open(context: &Context) -> Result<Self, Error> {
         let root = context.root.join(".khor/doc-transfer-state");
         let gate = io::gate(&root)?;
+        Self::open_with_gate(context, gate)
+    }
+    pub(crate) fn open_for_bootstrap(
+        context: &Context,
+        root_guard: &mut RootMutationGuard,
+    ) -> Result<Option<Self>, Error> {
+        let gate = root_guard.bootstrap_metadata(&context.root)?;
+        // The physical root fence was handed off. Decide against the latest
+        // publication only after both corresponding leases are held again.
+        if !pairing::needs_recovery(&context.root, context.local)? {
+            return Ok(None);
+        }
+        Self::open_with_gate(context, gate).map(Some)
+    }
+    fn open_with_gate(context: &Context, gate: io::Gate) -> Result<Self, Error> {
+        let root = context.root.join(".khor/doc-transfer-state");
         let (journal, body) = io::Journal::load(&root, |bytes| {
             validate_records(bytes, context.local).map_err(String::from)
         })?;

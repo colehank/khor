@@ -41,8 +41,17 @@
 // every key with Ctrl or Alt that way; level 1 only those that have no
 // control character of their own; both send Enter, Tab and Backspace with
 // any modifier. The kitty flags, when a program set any, come first.
-import { ctrlOf } from "@/lib/term-keys";
 import type { Terminal } from "@xterm/xterm";
+
+export function ctrlOf(ch: string): string | null {
+  if (ch.length !== 1) return null;
+  if (ch === "?") return "\x7f";
+  if (ch === " ") return "\x00";
+  if (ch === "/") return "\x1f";
+  const up = ch.toUpperCase().charCodeAt(0);
+  if (up >= 0x40 && up <= 0x5f) return String.fromCharCode(up & 0x1f);
+  return null;
+}
 
 const DISAMBIGUATE = 1;
 const EVENTS = 2;
@@ -220,13 +229,22 @@ function csi(keys: string, mods: number, event: number, text: string, final: str
  * spells unambiguously). `release` is a keyup.
  */
 export function kittyKey(term: Terminal, ev: KeyboardEvent, release: boolean): string | null {
+  return encodeKey(term, ev, release, false);
+}
+
+/** Explicit Alt from the key row is a modifier, independent of physical Option typing. */
+export function kittyRowKey(term: Terminal, ev: KeyboardEvent, release: boolean): string | null {
+  return encodeKey(term, ev, release, true);
+}
+
+function encodeKey(term: Terminal, ev: KeyboardEvent, release: boolean, explicitAlt: boolean): string | null {
   const flags = kittyFlags(term);
-  if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return otherKey(term, ev, release) ?? plainShiftEnter(ev, release);
+  if (!(flags & (DISAMBIGUATE | ALL_KEYS))) return otherKey(term, ev, release, explicitAlt) ?? plainShiftEnter(ev, release);
   // An IME's keys are the composition's, and what it commits is text.
   if (ev.isComposing || ev.keyCode === 229) return null;
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   // ⌥ on a Mac types a character unless the pane makes it Meta.
-  const altIsMod = !mac || !!term.options.macOptionIsMeta;
+  const altIsMod = explicitAlt || !mac || !!term.options.macOptionIsMeta;
   const mods = modsOf(ev, altIsMod);
   const all = (flags & ALL_KEYS) !== 0;
   const event = flags & EVENTS ? (release ? 3 : ev.repeat ? 2 : 1) : 1;
@@ -276,11 +294,11 @@ export function otherKeysLevel(term: Terminal): number {
 
 /** A key under xterm's modifyOtherKeys: `CSI 27 ; mods ; code ~`, or
     `null` for xterm's own spelling. */
-function otherKey(term: Terminal, ev: KeyboardEvent, release: boolean): string | null {
+function otherKey(term: Terminal, ev: KeyboardEvent, release: boolean, explicitAlt = false): string | null {
   const level = otherKeysLevel(term);
   if (!level || release || ev.isComposing || ev.keyCode === 229 || ev.metaKey) return null;
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
-  const altIsMod = !mac || !!term.options.macOptionIsMeta;
+  const altIsMod = explicitAlt || !mac || !!term.options.macOptionIsMeta;
   const mods = modsOf(ev, altIsMod);
   if (mods === 1) return null;
   const triple: Record<string, number> = { Enter: 13, Tab: 9, Backspace: 127 };

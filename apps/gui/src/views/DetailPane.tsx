@@ -1,9 +1,10 @@
 import type { SessionReading } from "@/hooks/use-session-attention";
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useLayoutEffect, useState, type ReactNode } from "react";
 
 import { programOf, shortDir } from "@/components/DoingLine";
 import type { Doing } from "@/gen/bindings/Doing";
-import { type SessionRow } from "@/api";
+import { fetchSessionContent, type SessionRow } from "@/api";
+import type { SessionContent } from "@/gen/bindings/SessionContent";
 import { StatusWord } from "@/components/StatusWord";
 import { SessionFace } from "@/components/SessionFace";
 import { EditableName, useSinglePress } from "@/components/EditableName";
@@ -20,6 +21,54 @@ import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
+import { RecoveryActions } from "@/views/RecoveryActions";
+import type { TerminalRecoveryOwner } from "@/views/TerminalPane";
+
+function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: SessionReading }) {
+  const [answer, setAnswer] = useState<{key: string; content: SessionContent} | null>(null);
+  const [fault, setFault] = useState<{key: string; message: string} | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const locator = row.content_locator;
+  const queryKey = JSON.stringify([row.id, locator]);
+  const content = answer?.key === queryKey ? answer.content : null;
+  const failure = fault?.key === queryKey ? fault.message : null;
+  useEffect(() => {
+    let stopped = false;
+    setAnswer(null); setFault(null);
+    if (!locator) {
+      setAnswer({ key: queryKey, content: { kind: 'unavailable', reason: 'no_source' } });
+      return;
+    }
+    fetchSessionContent(row.id, locator).then(answer => {
+      if (!stopped) setAnswer({key: queryKey, content: answer});
+    }, error => { if (!stopped) setFault({key: queryKey, message: String(error)}); });
+    return () => { stopped = true; };
+  }, [row.id, locator, queryKey, attempt]);
+  if (content?.kind === 'available') {
+    const history=<ChatView id={row.id} still binding={content.binding} watch={content.following} category={row.category}
+      home={row.home} machine={row.home} ended={row.word === 'failed'} onReading={onReading} />;
+    if (!content.capture) return history;
+    return <>
+      <div data-history-capture className="px-row py-in text-caption text-muted-foreground" role="status">
+        <p>{gui.history_capture_scope}</p>
+      </div>
+      {history}
+    </>;
+  }
+  const reason = content?.kind === 'unavailable' ? {
+    no_source: gui.content_no_source,
+    unreadable: gui.content_unreadable,
+    remote_not_connected: gui.content_remote_not_connected,
+    ambiguous_source: gui.content_ambiguous_source,
+  }[content.reason] : failure ?? gui.content_loading;
+  return <div className="grid min-h-0 flex-1 place-items-center p-row text-center text-callout text-muted-foreground" data-session-content={content?.kind ?? (failure ? 'failed' : 'loading')}>
+    <div className="space-y-in">
+      <StatusWord word={row.word} absent={row.kind === "observe" ? gui.session_observation : undefined} />
+      <p>{reason}</p>
+      {(content || failure) && <Button size="sm" onClick={() => setAttempt(value => value + 1)}>{gui.region_retry}</Button>}
+    </div>
+  </div>;
+}
 
 /** **The terminal arrives when a terminal does** (UX-6, the phone's first
     frame): xterm, its renderer and addons were a quarter of the bundle the
@@ -219,7 +268,17 @@ export function closeWarning(
 // address and the kind is the behaviour.
 /** Whether a row is shown as a terminal here — and so whether the deck's
     pill opens its directory (UX-17, `SessionPlaceSheet`). */
-export const isTerminal = (r: SessionRow) => r.kind !== "broadcast" && (r.mux || (r.kind !== "gui" && r.attachable));
+export const isTerminal = (r: SessionRow) => r.can_control && r.kind !== "observe" && r.kind !== "broadcast" && r.kind !== "gui" && (r.mux || r.attachable);
+export const isObserved = (r: SessionRow) => r.kind === "observe" || (!r.can_control && (r.kind === "tui" || r.kind === "gui" || (r.kind === "shell" && !r.ended)));
+
+type KeptTerminal = {
+  id: string; machine: string | null; mux: boolean;
+  home: string | null; generation: number; retired: boolean; recovery: TerminalRecoveryOwner | null;
+};
+const terminalSeat = (row: SessionRow, generation = 0): KeptTerminal => ({
+  id: row.id, machine: row.source ? row.home : null, mux: row.mux,
+  home: row.execution_home, generation, retired: false, recovery: null,
+});
 
 export function DetailPane({
   row,
@@ -272,6 +331,12 @@ export function DetailPane({
   onReading?: SessionReading;
 }) {
   const shown = useDayShown();
+  // A view generation is not a replacement session ID. Explicit same-SID
+  // recovery must reopen the outer content lookup as well as the control pipe.
+  const [rejoined, setRejoined] = useState({ id: "", generation: 0 });
+  const [terminalRejoin, setTerminalRejoin] = useState<{ id: string; home: string | null } | null>(null);
+  const [created, setCreated] = useState<{ id: string; home: string | null; previous: string } | null>(null);
+  const viewKey = row ? JSON.stringify([row.id, row.execution_home, rejoined.id === row.id ? rejoined.generation : 0]) : "";
   // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
   useEffect(() => {
     const t = window.setTimeout(() => void loadTerminal(), 1500);
@@ -287,18 +352,46 @@ export function DetailPane({
   // screen when its host ends** (T-15): the row turning into 失败 no
   // longer swaps the pane for the row's facts — the terminal stays, with
   // its own 这个终端结束了.
-  const [kept, setKept] = useState<{ id: string; machine: string | null; mux: boolean }[]>([]);
+  const [kept, setKept] = useState<KeptTerminal[]>([]);
   useEffect(() => {
-    if (!row || !isTerminal(row)) return;
-    const machine = row.source ? row.home : null;
-    setKept((k) => (k.some((t) => t.id === row.id) ? k : [...k, { id: row.id, machine, mux: row.mux }]));
-  }, [row]);
+    if (!row) return;
+    setKept(old => {
+      const seat = old.find(value => value.id === row.id);
+      if (!isTerminal(row)) {
+        return seat && (seat.retired || seat.home !== row.execution_home) && (!seat.recovery || seat.recovery.idle())
+          ? old.filter(value => value !== seat) : old;
+      }
+      if (!seat) return [...old, terminalSeat(row)];
+      if ((!seat.retired && seat.home === row.execution_home) || (seat.recovery && !seat.recovery.idle())) return old;
+      return old.map(value => value === seat ? terminalSeat(row, seat.generation + 1) : value);
+    });
+  }, [row, kept]);
+  // Home replacement first removes interactivity and prevents new drops. The
+  // old seat stays mounted until its own existing transfer/join has settled.
+  useLayoutEffect(() => {
+    if (!row) return;
+    const seat = kept.find(value => value.id === row.id && (value.retired || value.home !== row.execution_home));
+    seat?.recovery?.retire();
+    if (seat && !seat.retired) setKept(old => old.map(value => value === seat ? { ...value, retired: true } : value));
+  }, [row?.id, row?.execution_home, kept]);
   useEffect(() => {
     if (!openIds) return;
     setKept((k) => (k.every((t) => openIds.includes(t.id)) ? k : k.filter((t) => openIds.includes(t.id))));
   }, [openIds]);
-  const keptHere = openIds ? kept : kept.filter((t) => t.id === row?.id);
-  const terminalShown = row !== null && (isTerminal(row) || keptHere.some((t) => t.id === row.id));
+  const keptHere = (openIds ? kept : kept.filter((t) => t.id === row?.id)).filter(tab => {
+    const current = row?.id === tab.id ? row : sessions?.find(item => item.id === tab.id);
+    return !current || isTerminal(current) || !!current.ended || (tab.recovery !== null && !tab.recovery.idle());
+  });
+  const waitingForSeat = row !== null && isTerminal(row) && keptHere.some(t => t.id === row.id && (t.retired || t.home !== row.execution_home));
+  const terminalShown = row !== null && !waitingForSeat && (isTerminal(row) || (!!row.ended && keptHere.some((t) => t.id === row.id && !t.retired && t.home === row.execution_home)));
+  useEffect(() => {
+    if (!terminalRejoin) return;
+    if (!active || row?.id !== terminalRejoin.id || row.execution_home !== terminalRejoin.home || !terminalShown) { setTerminalRejoin(null); return; }
+    const seat = keptHere.find(value => value.id === terminalRejoin.id && !value.retired && value.home === terminalRejoin.home);
+    // This exact mounted seat rechecks its live drop/opening/joining state.
+    // No global id-only act, automatic Stop or same-home unmount is involved.
+    if (seat?.recovery?.rejoin()) setTerminalRejoin(null);
+  }, [terminalRejoin, row?.id, row?.execution_home, active, terminalShown, kept]);
   /** Whether this pane is the narrow session page's content, with its
       tabs in the bar under it (`components/SessionBar`, 2026-10-02): no
       head then — the bar's tab is this session's face, name and switch,
@@ -514,31 +607,42 @@ export function DetailPane({
           the phone's sheet becomes the same column. */}
       {/* The session and, beside it, its 附栏 (UX-30): a row, the session
           taking what the column leaves. */}
+      {active && row && ["gui", "tui", "observe", "shell"].includes(row.kind) && <RecoveryActions
+        key={JSON.stringify([row.id, row.execution_home])}
+        row={row}
+        previous={created?.id === row.id && created.home === row.execution_home ? created.previous : null}
+        onSession={onSession}
+        onOpened={opened => {
+          if (opened.id === row.id) {
+            if (terminalShown) setTerminalRejoin({ id: row.id, home: row.execution_home });
+            else setRejoined(old => ({ id: row.id, generation: old.id === row.id ? old.generation + 1 : 1 }));
+          } else if (opened.previous === row.id) {
+            setCreated({ id: opened.id, home: row.execution_home, previous: opened.previous });
+            onSession?.(opened.id);
+          }
+        }}
+      />}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {terminalShown ? null : row && row.kind === "broadcast" ? (
+      {waitingForSeat && row ? (
+        row.kind === "gui" || row.kind === "tui" ? <ObservedSession key={viewKey} row={row} onReading={onReading} />
+          : <div role="status" className="grid min-h-0 flex-1 place-items-center p-row text-callout text-muted-foreground">{gui.recovery_waiting_owner}</div>
+      ) : terminalShown ? null : row && row.kind === "broadcast" ? (
         // A machine's conversation — the stream `khor log` prints,
         // with the composer `tell` fills — or the broadcast, the khor's
         // own (STORE-BRIEF phase 3). Keyed so switching machines drops
         // the draft and the scroll with the conversation they belonged
         // to.
         <MachineChat key={row.id} id={row.id} active={active} onSession={onSession} sessions={sessions} />
-      ) : row && row.mux ? (
-        // **The face follows the host** (2026-09-01: 「什么宿主跑的就用
-        // 什么显示」). The process sits in the person's own tmux, so
-        // the terminal is where they are — even for a `gui` row, which
-        // is what a conversation khor started becomes once the person
-        // resumes it in a terminal (`claude -r`): one session, two
-        // hosts, and the one they are typing into wins. The row menu's
-        // 转为 GUI 显示 is the other way round, on purpose.
-        null
-      ) : row && row.kind === "gui" ? (
+      ) : row && isObserved(row) ? (
+        <ObservedSession key={viewKey} row={row} onReading={onReading} />
+      ) : row && row.kind === "gui" && row.word !== "failed" ? (
         // A conversation khor holds, and the only thing it has: there
         // is no terminal under it to show. Keyed so switching sessions
         // remounts the chat — its cursor, frames and attachment all
         // belong to one conversation.
         <ChatView
-          key={row.id}
+          key={viewKey}
           id={row.id}
           onReading={onReading}
           category={row.category}
@@ -563,12 +667,8 @@ export function DetailPane({
         // and no bridge. Remote hosted sessions are on the ledger (their
         // host is elsewhere), and fall through to the facts below.
         null
-      ) : row && row.category === "claude" ? (
-        // A discovered claude session: its recorded past, read from
-        // the vendor's own transcript. Claude only, this batch — the
-        // other vendors' records are on the ledger, and their rows
-        // keep the facts pane below rather than an empty chat.
-        <ChatView key={row.id} id={row.id} still onReading={onReading} />
+      ) : row && (row.kind === "tui" || row.kind === "gui") ? (
+        <ObservedSession key={viewKey} row={row} onReading={onReading} />
       ) : !row && empty ? (
         // The network's now: the biggest canvas in the app stops
         // reading "pick something" and starts showing what there is
@@ -583,7 +683,7 @@ export function DetailPane({
             // read as two lines of equal news about a session nobody can
             // see.
             <div>
-              <StatusWord word={row.word} />
+              <StatusWord word={row.word} absent={row.kind === "observe" ? gui.session_observation : undefined} />
               <div className="text-callout">{row.kind}</div>
             </div>
           ) : (
@@ -611,23 +711,30 @@ export function DetailPane({
       {/* The shown one first in the document, so whatever finds "the
           terminal" by `[data-terminal]` finds the one on screen. */}
       {(row && isTerminal(row) && !keptHere.some((t) => t.id === row.id)
-        ? [...keptHere, { id: row.id, machine: row.source ? row.home : null, mux: row.mux }]
+        ? [...keptHere, terminalSeat(row)]
         : keptHere
       )
         .slice()
         .sort((a, b) => Number(b.id === row?.id) - Number(a.id === row?.id))
         .map((t) => {
-        const on = terminalShown && t.id === row?.id;
+        const on = terminalShown && !t.retired && t.id === row?.id && t.home === row.execution_home;
         return (
           <div
-            key={t.id}
+            key={JSON.stringify([t.id, t.home, t.generation])}
             data-kept-terminal={t.id}
             data-active={on || undefined}
             className={on ? "contents" : "pointer-events-none invisible absolute inset-0 flex flex-col"}
             aria-hidden={on ? undefined : true}
           >
             <Suspense fallback={null}>
-              <TerminalPane onReading={onReading} id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined} />
+              <TerminalPane onReading={onReading} id={t.id} machine={t.machine} mux={t.mux} active={on} doing={on ? row?.doing : undefined}
+                onRecoveryRejoin={recovery => setKept(old => {
+                  const seat = old.find(value => value.id === t.id);
+                  if (!seat) return recovery ? [...old, { ...t, recovery }] : old;
+                  if (seat.home !== t.home || seat.generation !== t.generation) return old;
+                  if (seat.recovery === recovery && !seat.retired && !terminalRejoin) return old;
+                  return old.map(value => value === seat ? { ...seat, recovery } : value);
+                })} />
             </Suspense>
           </div>
         );

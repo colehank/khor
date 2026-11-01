@@ -4116,7 +4116,9 @@ fn sessions(rest: &[String]) -> Result<(), String> {
                 .unwrap_or(0);
             format!(
                 "\t{}",
-                cli::quiet_for(human_age(now.saturating_sub(s.state.at.0)))
+                cli::quiet_for(human_age(
+                    now.saturating_sub(s.activity_at().map_or(now, |at| at.0))
+                ))
             )
         } else {
             String::new()
@@ -4124,10 +4126,12 @@ fn sessions(rest: &[String]) -> Result<(), String> {
         println!(
             "{}\t{}\t{}\t{}{pin}{quiet}{}",
             s.id.0,
-            if s.state_known() {
-                state::word(s.state.state.key())
+            if s.kind.0 == khor_node::kind::OBSERVE {
+                khor_catalog::gui::chat_readonly()
+            } else if let Some(stamp) = s.state.filter(|_| s.state_known()) {
+                state::word(stamp.state.key())
             } else {
-                khor_catalog::gui::thread_unbound()
+                khor_catalog::gui::session_state_unknown()
             },
             cli::unread(s.unread),
             s.title,
@@ -5504,11 +5508,11 @@ fn agents(rest: &[String]) -> Result<(), String> {
                     println!("{}", cli::agents_sessions_unasked(name));
                     return Ok(());
                 }
-                Some(khor_node::AgentAnswer::Cannot) => {
+                Some(khor_node::AgentAnswer::Cannot { .. }) => {
                     println!("{}", cli::agents_sessions_cannot(name));
                     return Ok(());
                 }
-                Some(khor_node::AgentAnswer::Sessions { rows }) => rows,
+                Some(khor_node::AgentAnswer::Sessions { rows, .. }) => rows,
             };
             if rows.is_empty() {
                 println!("{}", cli::agents_sessions_none(name));
@@ -5570,7 +5574,8 @@ fn agents(rest: &[String]) -> Result<(), String> {
             // is already waiting on this agent.** A failure to answer
             // is not a failure to register: the registration stands,
             // and the question can be put again later.
-            if let Ok(khor_node::AgentAnswer::Sessions { rows }) = n.refresh_agent_sessions(name)
+            if let Ok(khor_node::AgentAnswer::Sessions { rows, .. }) =
+                n.refresh_agent_sessions(name)
                 && !rows.is_empty()
             {
                 println!("{}", cli::agents_sessions_asked(name, rows.len()));
@@ -6106,10 +6111,11 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
             .ok()
             .and_then(|v| v.into_iter().find(|v| v.session.id == *id))
         {
-            Some(v) => match v.session.state.state.key() {
+            Some(v) => match v.session.state.map(|stamp| stamp.state.key()).unwrap_or("") {
                 key @ ("done" | "failed" | "idle") => {
                     eprintln!("{}", cli::session_settled(state::word(key)))
                 }
+                "" => eprintln!("{}", khor_catalog::gui::session_state_unknown()),
                 key => eprintln!("{}", cli::link_dropped(state::word(key), &id.0)),
             },
             None => eprintln!("{}", cli::session_closed()),
@@ -6225,7 +6231,7 @@ fn group_word(group: &str) -> String {
     }
     if let Some(key) = group.strip_prefix(list::GROUP_STATE) {
         return if key.is_empty() {
-            khor_catalog::gui::thread_unbound().to_owned()
+            khor_catalog::gui::session_state_unknown().to_owned()
         } else {
             state::word(key).to_owned()
         };

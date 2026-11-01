@@ -50,10 +50,13 @@ import type { Terminal } from "@xterm/xterm";
 import { IconAttach, IconChevronDown, IconChevronRight, IconChevronUp, IconGrip, IconKeyboard, IconKeyRow, IconMore } from "@/components/icons";
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
-import { Dialog, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
-import { afterKey, GROUPS, KEYS, KEY_BY_NAME, pressLatch, setKeyRow, useKeyRow, type KeyDef, type Mods, type RowSeat } from "@/lib/term-keys";
+import { afterKey, GROUPS, KEYS, keyDefinition, pressLatch, resetKeyRow, setKeyRow, useKeyRow, useKeyRowState, type KeyDef, type Mods } from "@/lib/term-keys";
+import { pressKeyAction } from "@/lib/term-key-codec";
+import { KEY_ROW_LIMITS, type CustomKeyEntry, type KeyRowEntry } from "@/lib/term-key-model";
 import { keyPanelGone, toggleKeyPanel, useKeyPanel, useKeyPanelKind, type PanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
@@ -63,6 +66,7 @@ import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
 import { TermFiles, type FilesRoad } from "@/views/TermFiles";
+import { KeyRowEntryEditor } from "@/views/KeyRowEntryEditor";
 
 /** A cap's two looks: its box is the finger's floor, the cap drawn inside
     it (`p-xxs` round a `radius-xs` cap, the key cap's corner); held, it
@@ -83,6 +87,10 @@ const lockedOf = (k: KeyDef, mods: Mods) => (k.name === "ctrl" || k.name === "al
     `TerminalPane` reads them for whatever xterm hands out, and these
     bytes are already in their modified form. */
 function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void, images: (files: File[]) => void) {
+  if (k.action) {
+    pressKeyAction(t, k.action);
+    return;
+  }
   if (k.name === "ctrl" || k.name === "alt") {
     onMods(pressLatch(mods, k.name, performance.now()));
     return;
@@ -143,13 +151,18 @@ export function TermKeys({
   onMods: (m: Mods) => void;
 }) {
   const row = useKeyRow();
-  const shown = row.filter((s) => s.on).flatMap((s) => KEY_BY_NAME.get(s.name) ?? []);
+  const [keyError, setKeyError] = useState(false);
+  const shown = row.filter((s) => s.on).flatMap((s) => keyDefinition(s) ?? []);
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     // A repeat after the first key: the latches have let go already.
-    if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
+    if (t) {
+      try { pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles); }
+      catch { setKeyError(true); }
+    }
   };
   return (
+    <>
     <div
       data-term-keys
       role="toolbar"
@@ -171,6 +184,8 @@ export function TermKeys({
       </div>
       <CursorKey term={term} mods={mods} onMods={onMods} />
     </div>
+    <KeyActionFailure open={keyError} onOpenChange={setKeyError} />
+    </>
   );
 }
 
@@ -219,9 +234,9 @@ function AttachKey({ term }: { term: RefObject<Terminal | null> }) {
  * there sends the key the way the row does and leaves the panel up, so
  * several go in a row. Under the keys, the keyboard's own matters and
  * nothing else: 键盘唤醒, Option as Meta, and 编辑这一行, which turns the
- * panel into the row's editor in place (`KeyRowList`). 「…」 pressed
+ * opens the shared row editor (`KeyRowEditor`). 「…」 pressed
  * again puts it away: back to the keyboard it replaced, else down.
- * Nothing here takes the focus: the terminal keeps it throughout.
+ * Live caps preserve terminal focus; the row editor owns its fields.
  * ⚠️ 墓碑 (the owner 2026-10-07 12:30: 「不要在最下面搞个键盘，用户点不
  * 到」): a 「键盘」 key at the panel's foot, by the home indicator.
  * ⚠️ 墓碑 (2026-10-03): a bottom sheet (`KeySheet`), which took the focus
@@ -243,15 +258,16 @@ function KeyPanel({
   /** 「…」 is on only while the keys are the panel up (📎 has the files). */
   const up = raised && kind === "keys";
   const [editing, setEditing] = useState(false);
+  const [keyError, setKeyError] = useState(false);
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
-    if (t) pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles);
+    if (t) {
+      try { pressKey(k, t, under, under === mods ? onMods : () => {}, files.dropFiles); }
+      catch { setKeyError(true); }
+    }
   };
   // The row gone (collapsed, the page left) takes the panel with it.
   useEffect(() => () => keyPanelGone(), []);
-  useEffect(() => {
-    if (!up) setEditing(false);
-  }, [up]);
   return (
     <>
       <button
@@ -274,8 +290,6 @@ function KeyPanel({
             data-key-panel
             role="group"
             aria-label={gui.key_more}
-            // Nothing on the panel takes the focus from the terminal (the
-            // caps' own rule, for the switches and the editor too).
             onMouseDown={(e) => e.preventDefault()}
             // **In the keyboard's band**: fixed to the layout viewport's
             // foot, as tall as the foot the panel holds (`--kb`,
@@ -285,23 +299,6 @@ function KeyPanel({
           >
             {kind === "files" ? (
               <TermFiles road={files} />
-            ) : editing ? (
-              <>
-                <div className="flex flex-none items-center gap-row px-row">
-                  <span className="min-w-0 flex-1 text-body font-label">{gui.term_key_row}</span>
-                  <button
-                    type="button"
-                    data-key-row-done
-                    onClick={() => setEditing(false)}
-                    className="flex min-h-touch flex-none items-center text-body font-label"
-                  >
-                    {gui.edit_done}
-                  </button>
-                </div>
-                <div data-key-panel-scroll className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-row">
-                  <KeyRowList />
-                </div>
-              </>
             ) : (
               <div data-key-panel-scroll className="flex min-h-0 flex-1 touch-pan-y flex-col gap-base overflow-y-auto overscroll-contain px-row pt-in">
                 {GROUPS.map(({ group, label }) => (
@@ -356,12 +353,14 @@ function KeyPanel({
                     </button>
                   </div>
                 </section>
-                <KeyboardMatters onEdit={() => setEditing(true)} />
+                <KeyboardMatters onEdit={() => { keyPanelGone(); setEditing(true); }} />
               </div>
             )}
           </div>,
           document.body,
         )}
+      <KeyRowEditor open={editing} onOpenChange={setEditing} />
+      <KeyActionFailure open={keyError} onOpenChange={setKeyError} />
     </>
   );
 }
@@ -407,14 +406,19 @@ function KeyboardMatters({ onEdit }: { onEdit: () => void }) {
 /** A key's spoken name in the editor: its own where it has one. */
 const nameOf = (k: KeyDef) => k.label ?? k.cap;
 
-/**
- * **The row's editor** (2026-10-03): every key the panel offers, and 粘贴,
- * each with a switch (in the row or not) and a grip to move it — iOS's
- * own list for this, the one 外观's navigation order already is. Kept at
- * once (`lib/term-keys`); the row follows. 📎, the cursor pad and 「…」
- * are the row's own and not listed. A sheet from 外观 → 终端; in place inside
- * the key panel (`KeyRowList`, UX-31).
- */
+function KeyActionFailure({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent purpose="confirmation">
+        <DialogTitle>{gui.term_key_row}</DialogTitle>
+        <p role="alert" className="text-body">{gui.key_row_unsupported}</p>
+        <Button className="min-h-touch self-end" onClick={() => onOpenChange(false)}>{gui.edit_done}</Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Settings and the keyboard panel share one device-local row editor. */
 export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -441,18 +445,36 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
 
 /** The editor's list: the seats, their switches and grips. */
 function KeyRowList() {
-  const row = useKeyRow();
+  const { entries: row, problem, temporary } = useKeyRowState();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [editing, setEditing] = useState<CustomKeyEntry | null>();
+  const [error, setError] = useState(false);
+  useEffect(() => { if (problem !== null) setEditing(undefined); }, [problem]);
+  const save = (entry: CustomKeyEntry) => {
+    if (editing && !row.some(value => value.id === entry.id)) throw new Error("key entry no longer exists");
+    setKeyRow(editing ? row.map(value => value.id === entry.id ? entry : value) : [...row, entry]);
+    setEditing(undefined);
+  };
+  const remove = () => {
+    if (!editing) return;
+    try { setKeyRow(row.filter(value => value.id !== editing.id)); setEditing(undefined); }
+    catch { setError(true); }
+  };
   const move = (name: string, to: number) => {
-    const from = row.findIndex((s) => s.name === name);
+    if (problem !== null) return;
+    const from = row.findIndex((s) => s.id === name);
     const at = Math.max(0, Math.min(row.length - 1, to));
     if (from < 0 || from === at) return;
-    const next = row.filter((s) => s.name !== name);
+    const next = row.filter((s) => s.id !== name);
     next.splice(at, 0, row[from]);
-    setKeyRow(next);
+    try { setKeyRow(next); } catch { setError(true); }
   };
-  const toggle = (name: string) => setKeyRow(row.map((s): RowSeat => (s.name === name ? { ...s, on: !s.on } : s)));
+  const toggle = (name: string) => {
+    if (problem !== null) return;
+    try { setKeyRow(row.map((s): KeyRowEntry => (s.id === name ? { ...s, on: !s.on } : s))); }
+    catch { setError(true); }
+  };
   /** Where a row dragged to `y` lands: after every other row whose middle
       is above the pointer. */
   const slotAt = (name: string, y: number): number => {
@@ -466,38 +488,53 @@ function KeyRowList() {
   };
   return (
     <div ref={box} data-key-row-list className="flex flex-col">
-      {row.map((s) => {
-        const k = KEY_BY_NAME.get(s.name);
+      {problem !== null ? (
+        <div data-key-row-damaged className="flex flex-col gap-in py-in">
+          <p role="alert" className="text-body">{gui.key_row_damaged}</p>
+          <Button className="min-h-touch self-start" data-key-row-reset onClick={() => { resetKeyRow(); setError(false); }}>{gui.key_row_reset}</Button>
+        </div>
+      ) : temporary && <p data-key-row-temporary className="py-in text-callout text-muted-foreground">{gui.key_row_temporary}</p>}
+      {error && <p role="alert" className="text-callout text-destructive">{gui.key_row_invalid}</p>}
+      {editing === undefined && problem === null && row.length < KEY_ROW_LIMITS.entries && <Button data-key-row-add className="min-h-touch my-in self-start" onClick={() => { setError(false); setEditing(null); }}>{gui.key_row_add}</Button>}
+      {editing !== undefined && problem === null ? (
+        <KeyRowEntryEditor key={editing?.id ?? "new"} entry={editing} onSave={save} onCancel={() => setEditing(undefined)} onDelete={editing ? remove : undefined} />
+      ) : row.map((s) => {
+        const k = keyDefinition(s);
         if (!k) return null;
         return (
           <div
-            key={s.name}
-            data-key-row-seat={s.name}
-            data-dragging={dragging === s.name || undefined}
-            className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.name && "bg-fill")}
+            key={s.id}
+            data-key-row-seat={s.id}
+            data-dragging={dragging === s.id || undefined}
+            className={cn("flex min-h-touch items-center gap-row border-b", dragging === s.id && "bg-fill")}
           >
-            <span className="min-w-0 flex-1 truncate text-body">{k.cap}</span>
-            <Switch on={s.on} label={nameOf(k)} onToggle={() => toggle(s.name)} />
+            {s.kind === "builtin" ? <span className="min-w-0 flex-1 truncate text-body">{k.cap}</span> : (
+              <button type="button" data-key-row-edit={s.id} disabled={problem !== null} onClick={() => { setError(false); setEditing(s); }} className="flex min-h-touch min-w-0 flex-1 items-center gap-in text-left text-body">
+                <span className="min-w-0 flex-1 truncate">{k.cap}</span><IconChevronRight className="size-affordance flex-none text-tertiary" />
+              </button>
+            )}
+            <Switch on={s.on} label={nameOf(k)} disabled={problem !== null} onToggle={() => toggle(s.id)} />
             <button
               type="button"
               data-key-row-grip
+              disabled={problem !== null}
               data-sheet-hold
               aria-label={nameOf(k)}
               aria-keyshortcuts="ArrowUp ArrowDown"
               className="grid min-h-touch min-w-touch flex-none cursor-grab touch-none place-items-center rounded-full text-tertiary [&_svg]:size-4"
               onPointerDown={(e) => {
                 e.currentTarget.setPointerCapture(e.pointerId);
-                setDragging(s.name);
+                setDragging(s.id);
               }}
               onPointerMove={(e) => {
-                if (dragging === s.name) move(s.name, slotAt(s.name, e.clientY));
+                if (dragging === s.id) move(s.id, slotAt(s.id, e.clientY));
               }}
               onPointerUp={() => setDragging(null)}
               onPointerCancel={() => setDragging(null)}
               onKeyDown={(e: KeyboardEvent<HTMLButtonElement>) => {
                 if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
                 e.preventDefault();
-                move(s.name, row.findIndex((r) => r.name === s.name) + (e.key === "ArrowUp" ? -1 : 1));
+                move(s.id, row.findIndex((r) => r.id === s.id) + (e.key === "ArrowUp" ? -1 : 1));
               }}
             >
               <IconGrip />

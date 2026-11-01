@@ -21,7 +21,7 @@ const shortModel=(model:string|null)=>{
   if(!model)return '模型设置';
   return model.replace(/^claude-sonnet-(\d+)-(\d+).*$/,'Sonnet $1.$2').replace(/^claude-opus-(\d+)-(\d+).*$/,'Opus $1.$2').replace(/^grok-(\d+)\.(\d+)$/,'Grok $1.$2').replace(/^gpt-/,'GPT-');
 };
-function HeaderSeat({children}:{children:ReactNode}){
+export function HeaderSeat({children}:{children:ReactNode}){
   const inBar=useInBar(),[wide,setWide]=useState<Element|null>(null);
   useLayoutEffect(()=>{
     if(inBar)return;

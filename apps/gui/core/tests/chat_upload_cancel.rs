@@ -183,6 +183,7 @@ impl Drop for UploadRelay {
 struct Fixture {
     root: PathBuf,
     id: String,
+    lease: String,
     addr: String,
     cookie: String,
     host: Option<std::thread::JoinHandle<Result<(), String>>>,
@@ -246,7 +247,11 @@ impl Fixture {
             serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         json["port"] = serde_json::json!(port);
         std::fs::write(path, serde_json::to_vec(&json).unwrap()).unwrap();
+        let lease =
+            khor_gui_core::attachment_begin(&root, &id, khor_gui_core::AttachmentKind::Chat)
+                .unwrap();
         let fixture = Self {
+            lease,
             root,
             id,
             addr,
@@ -257,14 +262,14 @@ impl Fixture {
             finished: false,
         };
         if fixture.control.is_none() {
-            assert!(chat::chat_open(&fixture.root, &fixture.id).unwrap());
+            assert!(chat::chat_open(&fixture.root, &fixture.id, &fixture.lease).unwrap());
         }
         fixture
     }
     fn until(&self, mut predicate: impl FnMut(&ChatFrame) -> bool) -> ChatFrame {
         let deadline = Instant::now() + Duration::from_secs(5);
         loop {
-            let batch = chat::chat_poll(&self.id, 0).unwrap();
+            let batch = chat::chat_poll(&self.root, &self.id, &self.lease, 0).unwrap();
             if let Some(frame) = batch.frames.iter().find(|frame| predicate(frame)) {
                 return frame.clone();
             }
@@ -286,8 +291,15 @@ impl Fixture {
     }
     fn settings(&self) {
         self.until(|frame| matches!(frame, ChatFrame::Settings { .. }));
-        chat::chat_set_mode(&self.id, "bold").unwrap();
-        chat::chat_set_option(&self.id, "model", &serde_json::json!("two")).unwrap();
+        chat::chat_set_mode(&self.root, &self.id, &self.lease, "bold").unwrap();
+        chat::chat_set_option(
+            &self.root,
+            &self.id,
+            &self.lease,
+            "model",
+            &serde_json::json!("two"),
+        )
+        .unwrap();
         self.until(|frame|matches!(frame,ChatFrame::Settings{settings} if settings["modes"]["currentModeId"]=="bold" && settings["options"][0]["currentValue"]=="two"));
     }
     fn finish_prompt(&self) {
@@ -296,7 +308,14 @@ impl Fixture {
         else {
             unreachable!()
         };
-        chat::chat_answer(&self.id, ask, Some(options[0].0.clone())).unwrap();
+        chat::chat_answer(
+            &self.root,
+            &self.id,
+            &self.lease,
+            ask,
+            Some(options[0].0.clone()),
+        )
+        .unwrap();
         self.until(|frame| matches!(frame,ChatFrame::Turn{stop} if stop=="EndTurn"));
     }
 }
@@ -308,7 +327,7 @@ impl Fixture {
         self.finished = true;
         self.relay.stop();
         if self.control.is_none() {
-            let _ = chat::chat_leave(&self.id);
+            let _ = chat::chat_leave(&self.root, &self.id, &self.lease);
         }
         self.relay.disconnect_clients();
         let close = match khor_node::gui_host::connect_at(&self.addr, &self.cookie) {
@@ -415,11 +434,13 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
         GuiOp::Part(bytes) => ("Part", bytes.len()),
         GuiOp::Parts => ("Parts", 0),
         GuiOp::Stop => ("Stop", 0),
+        GuiOp::Capture { .. } => ("Capture", 0),
         GuiOp::Say(text) => ("Say", text.len()),
         GuiOp::SayWith {
             text,
             images,
             files,
+            ..
         } => (
             "SayWith",
             text.len()
@@ -428,7 +449,6 @@ fn op_event(connection: usize, op: &GuiOp) -> serde_json::Value {
         ),
         GuiOp::Answer { .. } => ("Answer", 0),
         GuiOp::Close => ("Close", 0),
-        GuiOp::Replay => ("Replay", 0),
         GuiOp::SetMode(_) => ("SetMode", 0),
         GuiOp::SetOption { .. } => ("SetOption", 0),
         GuiOp::Delegate { .. } => ("Delegate", 0),
@@ -512,7 +532,9 @@ fn cancel_upload() {
     let fixture = Fixture::new();
     fixture.settings();
     let turn = chat::submit_say_with_token(
+        &fixture.root,
         &fixture.id,
+        &fixture.lease,
         "cancelled upload".into(),
         vec![("image/png".into(), "x".repeat(16 * 1024 * 1024))],
         vec![],
@@ -524,12 +546,13 @@ fn cancel_upload() {
         .first_part
         .recv_timeout(Duration::from_secs(5))
         .unwrap();
-    let stop = chat::submit_control(&fixture.id, Control::Stop).unwrap();
+    let stop =
+        chat::submit_control(&fixture.root, &fixture.id, &fixture.lease, Control::Stop).unwrap();
     fixture.relay.release.send(()).unwrap();
     stop.wait().unwrap();
     assert!(turn.wait().is_err());
     fixture.until(|frame|matches!(frame,ChatFrame::SendCancelled{token:Some(token),reconnect} if token=="draft-1" && !*reconnect));
-    let batch = chat::chat_poll(&fixture.id, 0).unwrap();
+    let batch = chat::chat_poll(&fixture.root, &fixture.id, &fixture.lease, 0).unwrap();
     assert!(!batch.gone);
     assert!(
         !batch
@@ -546,7 +569,9 @@ fn cancel_upload() {
     );
     assert_eq!(fixture.prompt_count(), 0);
     let next = chat::submit_say_with_token(
+        &fixture.root,
         &fixture.id,
+        &fixture.lease,
         "fresh turn".into(),
         vec![],
         vec![],
@@ -626,7 +651,9 @@ fn residual_upload_parts_cannot_revive_a_stopped_turn_on_the_same_socket() {
 fn a_committed_small_turn_uses_agent_stop_and_keeps_the_attachment() {
     let fixture = Fixture::new();
     chat::submit_say_with_token(
+        &fixture.root,
         &fixture.id,
+        &fixture.lease,
         "already committed".into(),
         vec![],
         vec![],
@@ -636,9 +663,9 @@ fn a_committed_small_turn_uses_agent_stop_and_keeps_the_attachment() {
     .wait()
     .unwrap();
     fixture.until(|frame| matches!(frame, ChatFrame::Ask { .. }));
-    chat::chat_stop(&fixture.id).unwrap();
+    chat::chat_stop(&fixture.root, &fixture.id, &fixture.lease).unwrap();
     fixture.until(|frame| matches!(frame, ChatFrame::Turn { stop } if stop == "Cancelled"));
-    let batch = chat::chat_poll(&fixture.id, 0).unwrap();
+    let batch = chat::chat_poll(&fixture.root, &fixture.id, &fixture.lease, 0).unwrap();
     assert!(!batch.gone);
     assert!(
         !batch

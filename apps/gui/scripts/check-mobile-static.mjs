@@ -120,16 +120,16 @@ export function checkMobileSources(gui) {
     "set_lock_timeout", "unlock", "doctor_fix",
     // Attachment reads and leave only touch memory or interrupt a socket;
     // ordered writes are admitted by native_io and complete asynchronously.
-    "chat_poll", "chat_leave", "term_attach", "term_stream", "term_leave", "term_drop_progress",
+    "attachment_begin", "chat_poll", "chat_leave", "term_attach", "term_stream", "term_leave", "term_drop_progress",
     // Answers the build knows, or plain memory.
     "console_catalog", // static command descriptors; no node/network work
     "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
     "reveal_here", "file_handoff_supported", "file_preview_supported",
     // The system's: windows, menus, the theme, a link handed to the OS.
     "set_window_theme", "set_window_appearance", "window_appearance_support", "menu_state", "open_link", "size_menu", "menu_pick",
-    "hide_menu", "widen", "unwiden", "move_page", "hide_page", "show_page", "close_page", "page_step",
+    "hide_menu", "widen", "unwiden", "move_page", "hide_page", "show_page", "close_page",
     // The phone's native deck over its page, and the ground under its folded capsule (UIKit, queued).
-    "page_deck", "page_sheet", "page_ground",
+    "page_deck", "page_sheet", "page_ground", "page_state",
     "window_minimize", "window_maximize_toggle", "window_close", "name_settings",
     // A line to the app's log; a notification handed to the OS; a haptic
     // handed to UIKit's thread (`bell_haptic` queues it and returns).
@@ -143,13 +143,14 @@ export function checkMobileSources(gui) {
     // that memory. The ssh config's Host names: one local file, read only.
     "add_start", "promote_start", "add_read", "ssh_config_hosts",
     // Handoff workers own the filesystem and network work; these only register/read/cancel jobs.
-    "file_handoff_start", "file_handoff_state", "file_handoff_cancel",
+    "file_handoff_start", "file_handoff_state", "file_handoff_cancel", "history_export_start",
   ]);
   // The ones that waited on the main thread on 2026-10-02, named so the
   // red says which: each must be `async`.
   const WAITS = [
     "term_open", "chat_open", "term_drop", "close_session", "usage", "agent_ask",
     "takeover", "takeover_term", "resume_session",
+    "session_recovery", "recover_session", "new_shell_run",
     // 2026-10-04: a turn carrying photos to a far machine held the main
     // thread for minutes — a write to its socket is quick only while the
     // road keeps up.
@@ -163,7 +164,9 @@ export function checkMobileSources(gui) {
     // its own snapshot by design (`khor_node::Node::day_strips`). Measured
     // at 31 ms held on a scratch app, with key→echo max 35 ms in the same
     // window against a p95 of 12 ms.
-    "day_strips", "history", "history_follow",
+    "day_strips", "session_content", "history_begin", "history_cancel", "history_page", "history_record", "history_projection",
+    "dirs_begin", "dirs_wait", "dirs_leave",
+    "file_handoff_save", // native Save/activity panel and disk copy are asynchronous
   ];
   {
     const decl = /#\[tauri::command(\([^)]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?(async\s+)?fn\s+([a-z_0-9]+)/g;

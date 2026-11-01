@@ -1,3 +1,4 @@
+await import('./check-session-follow.mjs');
 await import('./session-navigation/fan-state.mjs');
 await import('./session-navigation/fan-many.mjs');
 await import('./session-navigation/fan-motion.mjs');

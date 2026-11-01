@@ -21,6 +21,7 @@ use std::{
 struct Fixture {
     root: PathBuf,
     id: SessionId,
+    lease: String,
     peer: Option<thread::JoinHandle<()>>,
 }
 impl Fixture {
@@ -83,20 +84,24 @@ impl Fixture {
             .unwrap();
             exchange(&mut stream);
         });
+        let lease =
+            khor_gui_core::attachment_begin(&root, &id.0, khor_gui_core::AttachmentKind::Terminal)
+                .unwrap();
         Self {
+            lease,
             root,
             id,
             peer: Some(peer),
         }
     }
     fn finish(&mut self) {
-        let _ = term::term_leave(&self.id.0);
+        let _ = term::term_leave(&self.root, &self.id.0, &self.lease);
         self.peer.take().unwrap().join().unwrap();
     }
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
-        let _ = term::term_leave(&self.id.0);
+        let _ = term::term_leave(&self.root, &self.id.0, &self.lease);
         if let Some(peer) = self.peer.take() {
             let result = peer.join();
             if !thread::panicking() {
@@ -106,10 +111,10 @@ impl Drop for Fixture {
         let _ = std::fs::remove_dir_all(&self.root);
     }
 }
-fn until(id: &str, needle: &str) -> Vec<u8> {
+fn until(fixture: &Fixture, needle: &str) -> Vec<u8> {
     let deadline = Instant::now() + Duration::from_secs(3);
     loop {
-        let chunk = term::term_stream(id, 0).unwrap();
+        let chunk = term::term_stream(&fixture.root, &fixture.id.0, &fixture.lease, 0).unwrap();
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(chunk.bytes)
             .unwrap();
@@ -127,7 +132,7 @@ fn until(id: &str, needle: &str) -> Vec<u8> {
 
 #[test]
 fn core_rejects_noncurrent_welcomes_without_registering_an_attachment() {
-    for greeting in ["", "khor-host/4", "khor-host/6", "khor-gui/1"] {
+    for greeting in ["", "khor-host/4", "khor-host/6", "khor-gui/1", "khor-gui/2"] {
         let mut fixture = Fixture::new(greeting, |stream| {
             assert_eq!(
                 stream.read(&mut [0u8; 1]).unwrap(),
@@ -135,12 +140,13 @@ fn core_rejects_noncurrent_welcomes_without_registering_an_attachment() {
                 "the rejected peer received a client op"
             );
         });
-        let error = term::term_open(&fixture.root, &fixture.id.0, 80, 24, 5000).unwrap_err();
+        let error = term::term_open(&fixture.root, &fixture.id.0, &fixture.lease, 80, 24, 5000)
+            .unwrap_err();
         assert_eq!(
             khor_catalog::read(&error).map(|(key, _)| key),
             Some("msg.peer-non-answer")
         );
-        assert!(term::term_attach(&fixture.id.0).is_err());
+        assert!(term::term_attach(&fixture.root, &fixture.id.0, &fixture.lease).is_err());
         fixture.finish();
     }
 }
@@ -190,16 +196,22 @@ fn core_sends_history_and_only_renderer_ready_then_forgets_and_continues_on_one_
         );
         stream.write_all(b"same-socket\r\n").unwrap();
     });
-    term::term_open(&fixture.root, &fixture.id.0, 80, 24, 5000).unwrap();
+    term::term_open(&fixture.root, &fixture.id.0, &fixture.lease, 80, 24, 5000).unwrap();
     waiting.recv_timeout(Duration::from_secs(3)).unwrap();
-    until(&fixture.id.0, "before-clear");
-    term::term_attach(&fixture.id.0).unwrap();
-    term::term_ready(&fixture.id.0).unwrap();
-    assert!(term::term_forget(&fixture.id.0, true).unwrap());
-    term::term_resize(&fixture.id.0, 90, 28).unwrap();
-    let after = until(&fixture.id.0, "after-clear");
+    until(&fixture, "before-clear");
+    term::term_attach(&fixture.root, &fixture.id.0, &fixture.lease).unwrap();
+    term::term_ready(&fixture.root, &fixture.id.0, &fixture.lease).unwrap();
+    assert!(term::term_forget(&fixture.root, &fixture.id.0, &fixture.lease, true).unwrap());
+    term::term_resize(&fixture.root, &fixture.id.0, &fixture.lease, 90, 28).unwrap();
+    let after = until(&fixture, "after-clear");
     assert!(!String::from_utf8_lossy(&after).contains("before-clear"));
-    term::term_key(&fixture.id.0, b"same-socket\r".to_vec()).unwrap();
-    until(&fixture.id.0, "same-socket");
+    term::term_key(
+        &fixture.root,
+        &fixture.id.0,
+        &fixture.lease,
+        b"same-socket\r".to_vec(),
+    )
+    .unwrap();
+    until(&fixture, "same-socket");
     fixture.finish();
 }

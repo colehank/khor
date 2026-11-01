@@ -138,7 +138,7 @@ export const ALL_AXES = AXES;
  * (`SessionRow::home` says the rest).
  */
 const pick: Record<Axis, (r: SessionRow) => string> = {
-  "state:": (r) => r.word,
+  "state:": (r) => r.word ?? "",
   "dev:": (r) => r.home,
   "cat:": (r) => r.category ?? "",
   "at:": (r) => sessionCwd(r) ?? "",

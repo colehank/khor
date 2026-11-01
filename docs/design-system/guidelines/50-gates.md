@@ -576,12 +576,15 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 2026-10-18 独立内容标签：`content-model` 的新能力检查先红（缺少独立 newTab），随后覆盖连续 ＋ 的持久独立身份、原位 point、丢失 open 回执与 focus 失败的重试、独立 picker/query/address、非当前编辑器迟到更新、Back/reload 和旧导航迁移。`session-content` 适配真实持久空标签和共享 TabStrip，检查原 ID、查询隔离、原位网页、鼠标排序、关闭格中心、置顶、宽窄总览、新建与关闭最后一枚。头像环的折叠裁切探针改读实际 SVG 几何与描边。
 
-### 透明列表与触屏间歇滚动（2026-10-19）
+### 固定标题材质与触屏间歇滚动（2026-10-19，2026-10-29 更新）
 
-- `npm run scroll-surfaces`：共享 band／正式 PaneBar 的滚动材质、首行避让、范围与阅读位置；隔离页为 `lab/scroll-surfaces.html`。本轮通过 CUA 点击同一验收按钮，36 项由透明模式先红到全绿；自动浏览器脚本仅检查语法。Chrome 的图案背景只能验证 CSS 合成，不代替原生透明／毛玻璃。原生 Mac、Windows、Linux 多列表滚动另验。
+- `npm run scroll-surfaces`：启动隔离 Vite／Chromium，点击同一 `lab/scroll-surfaces.html` 检查按钮，验证共享 band／正式 PaneBar 的三类标题 × 明暗 × 实色／透明 × 0／45／100 共 36 项。标题无分割线／独立调色底且文字满值，正文渐隐起点对齐标题顶端、终点覆盖标题下沿；首行、范围与 180 的阅读位置跨材质保持。Chrome 图案背景只能验证 CSS 合成，不代替原生透明／毛玻璃。原生 Mac、Windows、Linux 多列表滚动另验。
+- `npm run sticky-fade`：不启动浏览器，执行正式 scroll-edge owner 的 14 项受控几何／observer 检查，包含局部口不改布局、显式 DOM 正文／原生空端及 overlap 清理、先注册 owner 保持、静止／held、flush 收口、普通兄弟正文、边框／既有内边距／sticky top 及卸载清理。并非真实 CSS／原生叠层验收。
+- `npm run commit-sticky-jump`：不启动浏览器，执行正式 CommitPage 跳文件回调的 4 项检查，覆盖实际 scroll-padding、局部口零偏移、重复跳转和缺失目标。宽窄回切、首行不遮挡及阅读布局由正式 CommitPage Lab 实测。
+- 固定标题正式组件隔离页：`lab/sticky-fade.html` 明暗 × 三外观 × 宽窄、动态标题、二级 sticky 和减少透明；`lab/sticky-consumers.html` 宽窄回切／跳文件／静止与小幅滚动；`lab/sticky-machine.html` 既有列轨、页面滚动、排序、窄屏卡片／裁剪。2026-10-29 实测收据在第二轮 G 任务卡；原先 2026-10-19 的 36 项是旧布局历史，不替代新契约验收。
 - `npm run scroll-health`：不启动浏览器的生产计时模型与被动事件监听生命周期测试，纳入默认前端检查。增加的是下一次卡顿的限频诊断，不是已确认修复；iPhone 上须复现后读取该设备的诊断记录，不能用 Mac 的 face-notes 代替。
 
-本轮验证：默认入口中的静态／模型检查、TypeScript、生产构建与门索引通过；`select`、`scroll-target` 的自动浏览器流程未执行。CUA 在 Chrome 操作共享标题夹具得到 36/36，三列的滚动范围和 180 的阅读位置跨材质相同。慢滚动测试还覆盖未返回发送、后台取消及卸载清理。原生透明合成与 iPhone 卡顿尚未实机验证；未安装、合并或发布。
+2026-10-19 历史验证：默认入口中的静态／模型检查、TypeScript、生产构建与门索引通过；`select`、`scroll-target` 的自动浏览器流程未执行。CUA 在 Chrome 操作共享标题夹具得到 36/36，三列的滚动范围和 180 的阅读位置跨材质相同。慢滚动测试还覆盖未返回发送、后台取消及卸载清理。原生透明合成与 iPhone 卡顿尚未实机验证；未安装、合并或发布。
 
 ### 药丸连续预选（2026-10-19）
 

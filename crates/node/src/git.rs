@@ -162,6 +162,65 @@ pub fn is_checkout(root: &Path) -> bool {
     root.join(".git").exists()
 }
 
+/// The control directories and reference identity a workspace observer must
+/// cover. Missing ref directories are kept: the watcher starts at their
+/// nearest existing ancestor and replans after creation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GitWatchPlan {
+    pub directories: Vec<PathBuf>,
+    pub reference: Option<BString>,
+    pub upstream: Option<BString>,
+}
+
+pub(crate) fn watch_plan(path: &Path) -> Result<Option<GitWatchPlan>, String> {
+    let Some(root) = repo_root(path) else {
+        return Ok(None);
+    };
+    let repo = gix::open(root).map_err(|e| e.to_string())?;
+    let absolute = |path: &Path| {
+        if path.is_absolute() {
+            path.to_owned()
+        } else {
+            repo.current_dir().join(path)
+        }
+    };
+    let git_dir = absolute(repo.git_dir());
+    let common_dir = absolute(repo.common_dir());
+    let mut directories = std::collections::BTreeSet::from([git_dir.clone(), common_dir.clone()]);
+    if let Some(parent) = repo.index_path().parent() {
+        directories.insert(absolute(parent));
+    }
+    if let Some(worktree) = repo.workdir() {
+        directories.insert(absolute(worktree));
+    }
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let reference = head.referent_name().map(|name| name.as_bstr().to_owned());
+    let upstream = head
+        .referent_name()
+        .and_then(|name| repo.branch_remote_tracking_ref_name(name, gix::remote::Direction::Fetch))
+        .transpose()
+        .map_err(|e| e.to_string())?
+        .map(|name| name.as_bstr().to_owned());
+    for name in reference.iter().chain(upstream.iter()) {
+        let relative = gix::path::from_bstr(name.as_bstr());
+        if relative.components().count() > 64 {
+            return Err("Git reference exceeds watch path depth budget".to_owned());
+        }
+        if let Some(parent) = relative.parent() {
+            directories.insert(git_dir.join(parent));
+            directories.insert(common_dir.join(parent));
+        }
+    }
+    if directories.len() > 16 {
+        return Err("Git control directories exceed watch budget".to_owned());
+    }
+    Ok(Some(GitWatchPlan {
+        directories: directories.into_iter().collect(),
+        reference,
+        upstream,
+    }))
+}
+
 /// What differs from HEAD across one workspace.
 ///
 /// `root` must be the checkout itself — the workspace list only ever
@@ -667,14 +726,18 @@ pub(crate) const WALK: usize = 20_000;
 /// the current file would.
 pub(crate) const SHOWN: usize = 256 * 1024;
 
-/// A question about one file's history. **One wire word for the four**
-/// (`proto::Request::Git`), each its own variant here, so a later
-/// question rides the same word and an older khor refuses the word once.
+/// A repository or file-history question carried by `proto::Request::Git`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GitAsk {
     /// The commits that changed `path`, newest first, following the first
     /// parent (what `git log --first-parent -- path` lists).
     Log { path: String, limit: u32 },
+    /// All commits reachable from a fixed HEAD, with an opaque continuation.
+    RepositoryLog {
+        dir: String,
+        cursor: Option<String>,
+        limit: u32,
+    },
     /// Who last changed each line of `path` as HEAD has it.
     Blame { path: String },
     /// `path` as revision `rev` had it, and where the file as it is now
@@ -737,6 +800,23 @@ pub struct Commit {
     pub body: String,
 }
 
+/// Bounded metadata for a repository-history row; full messages belong to detail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommitSummary {
+    pub id: String,
+    pub author: String,
+    pub when_ms: i64,
+    pub subject: String,
+    /// Author or subject exceeded its UTF-8 byte budget.
+    pub cut: bool,
+}
+
+const HISTORY_DEFAULT: u32 = 40;
+const HISTORY_LIMIT: u32 = 100;
+const HISTORY_SUBJECT_BYTES: usize = 1024;
+const HISTORY_AUTHOR_BYTES: usize = 256;
+const HISTORY_PAGE_BYTES: usize = 256 * 1024;
+
 /// A run of lines one commit wrote, in HEAD's lines: `start` 0-based,
 /// `len` lines, `commit` an index into the answer's commits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -749,6 +829,11 @@ pub struct BlameRun {
 /// The answer to a [`GitAsk`], variant for variant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GitAnswer {
+    RepositoryLog {
+        head: Option<String>,
+        commits: Vec<CommitSummary>,
+        next: Option<String>,
+    },
     Log {
         commits: Vec<Commit>,
         more: bool,
@@ -783,6 +868,9 @@ pub enum GitAnswer {
 pub fn answer(ask: &GitAsk) -> Result<GitAnswer, String> {
     match ask {
         GitAsk::Log { path, limit } => log(Path::new(path), (*limit).clamp(1, LOG)),
+        GitAsk::RepositoryLog { dir, cursor, limit } => {
+            repository_log(Path::new(dir), cursor.as_deref(), *limit)
+        }
         GitAsk::Blame { path } => blame(Path::new(path)),
         GitAsk::Show { path, rev } => show(Path::new(path), rev),
         GitAsk::Commit { root, rev } => commit_show(Path::new(root), rev),
@@ -872,6 +960,161 @@ fn log(path: &Path, limit: u32) -> Result<GitAnswer, String> {
         }
     }
     Ok(GitAnswer::Log { commits, more })
+}
+
+fn clip_history_field(mut value: String, limit: usize) -> (String, bool) {
+    if value.len() <= limit {
+        return (value, false);
+    }
+    let mut end = limit;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value.truncate(end);
+    (value, true)
+}
+
+fn summary_of(commit: &gix::Commit<'_>) -> Result<CommitSummary, String> {
+    let author = commit.author().map_err(|e| e.to_string())?;
+    let (author, author_cut) = clip_history_field(
+        author.name.to_str_lossy().into_owned(),
+        HISTORY_AUTHOR_BYTES,
+    );
+    let message = commit.message().map_err(|e| e.to_string())?;
+    let (subject, subject_cut) = clip_history_field(
+        message.summary().to_str_lossy().into_owned(),
+        HISTORY_SUBJECT_BYTES,
+    );
+    Ok(CommitSummary {
+        id: commit.id.to_string(),
+        author,
+        when_ms: commit
+            .time()
+            .map_err(|e| e.to_string())?
+            .seconds
+            .saturating_mul(1000),
+        subject,
+        cut: author_cut || subject_cut,
+    })
+}
+
+struct HistoryCursor {
+    head: gix::ObjectId,
+    after: gix::ObjectId,
+}
+
+impl HistoryCursor {
+    fn parse(value: &str, hash: gix::hash::Kind) -> Result<Self, String> {
+        let invalid = || "Invalid repository history cursor".to_owned();
+        let (head, after) = value.split_once(':').ok_or_else(invalid)?;
+        let parse = |text: &str| {
+            let id = gix::ObjectId::from_hex(text.as_bytes()).map_err(|_| invalid())?;
+            if id.kind() != hash {
+                return Err(invalid());
+            }
+            Ok(id)
+        };
+        Ok(Self {
+            head: parse(head)?,
+            after: parse(after)?,
+        })
+    }
+
+    fn encode(head: gix::ObjectId, after: gix::ObjectId) -> String {
+        format!("{head}:{after}")
+    }
+}
+
+fn repository_log(path: &Path, cursor: Option<&str>, limit: u32) -> Result<GitAnswer, String> {
+    let (repo, _) = open_rel(path)?;
+    if repo.shallow_commits().map_err(|e| e.to_string())?.is_some() {
+        return Err("Repository history is incomplete in a shallow checkout".to_owned());
+    }
+    let cursor = cursor
+        .map(|c| HistoryCursor::parse(c, repo.object_hash()))
+        .transpose()?;
+    let head = match &cursor {
+        Some(cursor) => cursor.head,
+        None => {
+            let head = repo.head().map_err(|e| e.to_string())?;
+            let Some(id) = head.id() else {
+                return Ok(GitAnswer::RepositoryLog {
+                    head: None,
+                    commits: Vec::new(),
+                    next: None,
+                });
+            };
+            id.detach()
+        }
+    };
+    // Read objects even when a commit-graph exists: missing objects must fail,
+    // and a graph written between requests must not change continuation order.
+    repo.find_commit(head).map_err(|e| e.to_string())?;
+    if let Some(cursor) = &cursor {
+        repo.find_commit(cursor.after).map_err(|e| e.to_string())?;
+    }
+    let walk = repo
+        .rev_walk([head])
+        .sorting(gix::revision::walk::Sorting::ByCommitTime(
+            gix::traverse::commit::simple::CommitTimeOrder::NewestFirst,
+        ))
+        .use_commit_graph(false)
+        .all()
+        .map_err(|e| e.to_string())?;
+    let limit = if limit == 0 {
+        HISTORY_DEFAULT
+    } else {
+        limit.min(HISTORY_LIMIT)
+    } as usize;
+    let envelope = GitAnswer::RepositoryLog {
+        head: Some(head.to_string()),
+        commits: Vec::new(),
+        next: Some(HistoryCursor::encode(head, head)),
+    };
+    let mut bytes = serde_json::to_vec(&envelope)
+        .map_err(|e| e.to_string())?
+        .len();
+    let mut commits = Vec::new();
+    let mut found_after = cursor.is_none();
+    let mut more = false;
+    for info in walk {
+        let info = info.map_err(|e| e.to_string())?;
+        if !found_after {
+            found_after = cursor.as_ref().is_some_and(|c| c.after == info.id);
+            continue;
+        }
+        if commits.len() == limit {
+            more = true;
+            break;
+        }
+        let summary = summary_of(&repo.find_commit(info.id).map_err(|e| e.to_string())?)?;
+        let row_bytes = serde_json::to_vec(&summary)
+            .map_err(|e| e.to_string())?
+            .len()
+            + usize::from(!commits.is_empty());
+        if bytes + row_bytes > HISTORY_PAGE_BYTES {
+            more = true;
+            break;
+        }
+        bytes += row_bytes;
+        commits.push(summary);
+    }
+    if !found_after {
+        return Err("Repository history cursor is not reachable from its snapshot HEAD".to_owned());
+    }
+    let next = if more {
+        let last = commits
+            .last()
+            .ok_or_else(|| "Repository history row exceeds page budget".to_owned())?;
+        Some(format!("{head}:{}", last.id))
+    } else {
+        None
+    };
+    Ok(GitAnswer::RepositoryLog {
+        head: Some(head.to_string()),
+        commits,
+        next,
+    })
 }
 
 fn blame(path: &Path) -> Result<GitAnswer, String> {
@@ -1629,5 +1872,518 @@ mod status_tests {
     fn a_file_outside_any_checkout_says_so_rather_than_failing_to_open() {
         let err = diff(Path::new("/etc/hosts")).expect_err("no checkout above /etc");
         assert_eq!(err, khor_catalog::msg::no_checkout());
+    }
+}
+
+#[cfg(test)]
+pub(crate) mod repository_history_tests {
+    use super::*;
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    pub(crate) struct Checkout(pub(crate) PathBuf);
+
+    impl Checkout {
+        pub(crate) fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path = std::env::temp_dir().join(format!(
+                "khor-repository-history-{}-{stamp}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            std::fs::create_dir(&path).unwrap();
+            let checkout = Self(std::fs::canonicalize(path).unwrap());
+            checkout.git(&["init", "--quiet", "--initial-branch=main"]);
+            checkout
+        }
+
+        fn command(&self) -> Command {
+            let mut cmd = Command::new("git");
+            cmd.env_clear()
+                .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+                .env("HOME", &self.0)
+                .env("GIT_CONFIG_GLOBAL", "/dev/null")
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_TERMINAL_PROMPT", "0")
+                .env("LC_ALL", "C")
+                .current_dir(&self.0)
+                .args(["-c", "core.fsync=none"]);
+            cmd
+        }
+
+        pub(crate) fn git(&self, args: &[&str]) -> Vec<u8> {
+            let output = self.command().args(args).output().unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        }
+
+        fn input(&self, args: &[&str], data: &[u8]) -> Vec<u8> {
+            let mut child = self
+                .command()
+                .args(args)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            let written = child.stdin.take().unwrap().write_all(data);
+            if let Err(error) = written {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("fixture stdin: {error}");
+            }
+            let output = child.wait_with_output().unwrap();
+            assert!(
+                output.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            output.stdout
+        }
+
+        fn import(&self, stream: &str) -> BTreeMap<usize, String> {
+            let marks = self.0.join("marks");
+            self.input(
+                &[
+                    "fast-import",
+                    "--quiet",
+                    &format!("--export-marks={}", marks.display()),
+                ],
+                stream.as_bytes(),
+            );
+            std::fs::read_to_string(marks)
+                .unwrap()
+                .lines()
+                .map(|line| {
+                    let (mark, oid) = line.split_once(' ').unwrap();
+                    (
+                        mark.trim_start_matches(':').parse().unwrap(),
+                        oid.to_owned(),
+                    )
+                })
+                .collect()
+        }
+    }
+
+    impl Drop for Checkout {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn record(
+        stream: &mut String,
+        mark: usize,
+        branch: &str,
+        parents: &[usize],
+        time: usize,
+        author: &str,
+        message: &str,
+    ) {
+        use std::fmt::Write;
+        writeln!(stream, "commit refs/heads/{branch}\nmark :{mark}\nauthor {author} <a@example.test> {time} +0000\ncommitter A <a@example.test> {time} +0000\ndata {}\n{message}", message.len()).unwrap();
+        if let Some((first, rest)) = parents.split_first() {
+            writeln!(stream, "from :{first}").unwrap();
+            for parent in rest {
+                writeln!(stream, "merge :{parent}").unwrap();
+            }
+        }
+        stream.push_str("deleteall\n\n");
+    }
+
+    pub(crate) fn linear(count: usize) -> (Checkout, BTreeMap<usize, String>) {
+        let checkout = Checkout::new();
+        let mut stream = String::new();
+        for i in 1..=count {
+            let parents = if i == 1 { vec![] } else { vec![i - 1] };
+            record(
+                &mut stream,
+                i,
+                "main",
+                &parents,
+                1_700_000_000 + i,
+                "A",
+                &format!("commit {i}"),
+            );
+        }
+        let marks = checkout.import(&stream);
+        (checkout, marks)
+    }
+
+    fn page(
+        checkout: &Checkout,
+        cursor: Option<&str>,
+        limit: u32,
+    ) -> (Option<String>, Vec<CommitSummary>, Option<String>) {
+        let answer = answer(&GitAsk::RepositoryLog {
+            dir: checkout.0.display().to_string(),
+            cursor: cursor.map(str::to_owned),
+            limit,
+        })
+        .unwrap();
+        assert!(serde_json::to_vec(&answer).unwrap().len() <= HISTORY_PAGE_BYTES);
+        let GitAnswer::RepositoryLog {
+            head,
+            commits,
+            next,
+        } = answer
+        else {
+            panic!("repository log");
+        };
+        (head, commits, next)
+    }
+
+    fn collect(checkout: &Checkout, limit: u32) -> Vec<CommitSummary> {
+        let mut cursor = None;
+        let mut rows = Vec::new();
+        loop {
+            let (_, commits, next) = page(checkout, cursor.as_deref(), limit);
+            assert!(!commits.is_empty() || next.is_none());
+            rows.extend(commits);
+            let Some(next) = next else {
+                return rows;
+            };
+            assert_ne!(cursor.as_ref(), Some(&next));
+            cursor = Some(next);
+        }
+    }
+
+    #[test]
+    fn repository_history_reaches_merge_parents() {
+        let checkout = Checkout::new();
+        let mut stream = String::new();
+        for (mark, branch, parents) in [
+            (1, "main", vec![]),
+            (2, "main", vec![1]),
+            (3, "topic", vec![1]),
+            (4, "topic", vec![3]),
+            (5, "main", vec![2]),
+            (6, "main", vec![5, 4]),
+        ] {
+            record(
+                &mut stream,
+                mark,
+                branch,
+                &parents,
+                1_700_000_000,
+                "A",
+                &format!("commit {mark}"),
+            );
+        }
+        let marks = checkout.import(&stream);
+        let GitAnswer::Log {
+            commits: path_log,
+            more,
+        } = log(&checkout.0, LOG).unwrap()
+        else {
+            panic!("path log");
+        };
+        assert_eq!(path_log.len(), 4);
+        assert!(!more);
+
+        let all = collect(&checkout, 2);
+        let actual: std::collections::BTreeSet<_> = all.iter().map(|c| c.id.clone()).collect();
+        assert_eq!(actual.len(), all.len());
+        assert_eq!(actual, marks.into_values().collect());
+        let first = page(&checkout, None, 2);
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(page(&checkout, None, 2)).unwrap()
+        );
+        let next = first.2.unwrap();
+        assert_eq!(
+            page(&checkout, Some(&next), 2),
+            page(&checkout, Some(&next), 2)
+        );
+    }
+
+    #[test]
+    fn repository_history_continues_after_two_hundred() {
+        let (checkout, _) = linear(260);
+        let all = collect(&checkout, 40);
+        assert_eq!(all.len(), 260);
+        let expected: Vec<_> = (1..=260).rev().map(|i| format!("commit {i}")).collect();
+        assert_eq!(
+            all.into_iter().map(|c| c.subject).collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(page(&checkout, None, 0).1.len(), 40);
+        assert_eq!(page(&checkout, None, u32::MAX).1.len(), 100);
+    }
+
+    #[test]
+    fn repository_history_continues_beyond_twenty_thousand() {
+        let (checkout, marks) = linear(20_005);
+        let first = page(&checkout, None, 100);
+        assert_eq!(first.1.len(), 100);
+        assert_eq!(first.1[0].id, marks[&20_005]);
+        let cursor = HistoryCursor::encode(
+            gix::ObjectId::from_hex(marks[&20_005].as_bytes()).unwrap(),
+            gix::ObjectId::from_hex(marks[&5].as_bytes()).unwrap(),
+        );
+        let (_, rows, next) = page(&checkout, Some(&cursor), 40);
+        assert_eq!(
+            rows.into_iter().map(|c| c.id).collect::<Vec<_>>(),
+            (1..=4).rev().map(|i| marks[&i].clone()).collect::<Vec<_>>()
+        );
+        assert_eq!(next, None);
+    }
+
+    #[test]
+    fn repository_history_keeps_snapshot_when_head_moves() {
+        let (checkout, marks) = linear(6);
+        let (head, first, next) = page(&checkout, None, 2);
+        checkout.git(&["update-ref", "refs/heads/main", &marks[&3]]);
+        let (same_head, second, _) = page(&checkout, next.as_deref(), 2);
+        assert_eq!(head, same_head);
+        assert_eq!(
+            first.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            vec![&marks[&6], &marks[&5]]
+        );
+        assert_eq!(
+            second.iter().map(|c| &c.id).collect::<Vec<_>>(),
+            vec![&marks[&4], &marks[&3]]
+        );
+        assert_eq!(page(&checkout, None, 2).0, Some(marks[&3].clone()));
+        checkout.git(&["repack", "-ad"]);
+        checkout.git(&["commit-graph", "write", "--reachable"]);
+        assert_eq!(page(&checkout, next.as_deref(), 2).1, second);
+    }
+
+    #[test]
+    fn repository_history_empty_is_distinct_from_missing_or_invalid_objects() {
+        let checkout = Checkout::new();
+        assert_eq!(page(&checkout, None, 40), (None, vec![], None));
+        for cursor in [
+            "",
+            "HEAD:HEAD",
+            "a:b",
+            &format!("{}:{}", "f".repeat(40), "e".repeat(40)),
+        ] {
+            assert!(
+                repository_log(&checkout.0, Some(cursor), 40).is_err(),
+                "{cursor}"
+            );
+        }
+        std::fs::write(
+            checkout.0.join(".git/refs/heads/main"),
+            format!("{}\n", "f".repeat(40)),
+        )
+        .unwrap();
+        assert!(repository_log(&checkout.0, None, 40).is_err());
+    }
+
+    #[test]
+    fn repository_history_reports_a_missing_ancestor_instead_of_completion() {
+        let (checkout, _) = linear(1);
+        let tree = String::from_utf8(checkout.git(&["rev-parse", "HEAD^{tree}"])).unwrap();
+        let raw = format!(
+            "tree {}\nparent {}\nauthor A <a@example.test> 1700000001 +0000\ncommitter A <a@example.test> 1700000001 +0000\n\nmissing parent\n",
+            tree.trim(),
+            "f".repeat(40)
+        );
+        let oid = String::from_utf8(checkout.input(
+            &["hash-object", "-t", "commit", "-w", "--stdin"],
+            raw.as_bytes(),
+        ))
+        .unwrap();
+        checkout.git(&["update-ref", "refs/heads/main", oid.trim()]);
+        assert!(repository_log(&checkout.0, None, 40).is_err());
+    }
+
+    #[test]
+    fn repository_history_rejects_unreachable_cursors_and_shallow_completion() {
+        let checkout = Checkout::new();
+        let mut stream = String::new();
+        record(&mut stream, 1, "main", &[], 1_700_000_000, "A", "main");
+        record(&mut stream, 2, "other", &[], 1_700_000_000, "A", "other");
+        let marks = checkout.import(&stream);
+        let cursor = format!("{}:{}", marks[&1], marks[&2]);
+        assert!(
+            repository_log(&checkout.0, Some(&cursor), 40)
+                .unwrap_err()
+                .contains("not reachable")
+        );
+        std::fs::write(checkout.0.join(".git/shallow"), format!("{}\n", marks[&1])).unwrap();
+        assert!(
+            repository_log(&checkout.0, None, 40)
+                .unwrap_err()
+                .contains("incomplete")
+        );
+    }
+
+    #[test]
+    fn repository_history_clips_utf8_metadata_without_sending_body() {
+        let checkout = Checkout::new();
+        let mut stream = String::new();
+        record(
+            &mut stream,
+            1,
+            "main",
+            &[],
+            1_700_000_000,
+            &"é".repeat(160),
+            &format!("{}\n\nPRIVATE BODY", "🦀".repeat(300)),
+        );
+        checkout.import(&stream);
+        let (_, rows, _) = page(&checkout, None, 40);
+        let row = &rows[0];
+        assert_eq!(row.author, "é".repeat(128));
+        assert_eq!(row.subject, "🦀".repeat(256));
+        assert!(row.cut);
+        assert!(!serde_json::to_string(row).unwrap().contains("PRIVATE BODY"));
+        assert_eq!(
+            clip_history_field("é".repeat(3), 5),
+            ("éé".to_owned(), true)
+        );
+        assert_eq!(
+            clip_history_field("plain".to_owned(), 5),
+            ("plain".to_owned(), false)
+        );
+    }
+
+    #[test]
+    fn repository_history_counts_json_escaping_and_preserves_rejected_next_row() {
+        let checkout = Checkout::new();
+        let mut stream = String::new();
+        for i in 1..=100 {
+            let parents = if i == 1 { vec![] } else { vec![i - 1] };
+            record(
+                &mut stream,
+                i,
+                "main",
+                &parents,
+                1_700_000_000 + i,
+                "A",
+                &"\u{1}".repeat(1200),
+            );
+        }
+        let marks = checkout.import(&stream);
+        let first = page(&checkout, None, 100);
+        assert!(first.1.len() < 100);
+        assert!(first.2.is_some());
+        let all = collect(&checkout, 100);
+        assert!(all.iter().all(|row| row.cut && row.subject.len() == 1024));
+        assert_eq!(
+            all.into_iter().map(|c| c.id).collect::<Vec<_>>(),
+            (1..=100)
+                .rev()
+                .map(|i| marks[&i].clone())
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn git_watch_plan_keeps_unborn_nested_refs_and_tracks_identity_changes() {
+        let checkout = Checkout::new();
+        checkout.git(&["symbolic-ref", "HEAD", "refs/heads/topic/deep/main"]);
+        let unborn = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_eq!(
+            unborn.reference.as_ref().unwrap().as_bstr(),
+            b"refs/heads/topic/deep/main".as_bstr()
+        );
+        assert!(
+            unborn
+                .directories
+                .contains(&checkout.0.join(".git/refs/heads/topic/deep"))
+        );
+        assert!(!checkout.0.join(".git/refs/heads/topic/deep").exists());
+        checkout.git(&["symbolic-ref", "HEAD", "refs/heads/other/deep/main"]);
+        let switched = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_ne!(unborn, switched);
+        assert!(switched.directories.contains(&checkout.0.join(".git")));
+    }
+
+    #[test]
+    fn git_watch_plan_uses_real_linked_worktree_gitdir_and_common_refs() {
+        let (checkout, marks) = linear(1);
+        let linked = checkout.0.join("linked");
+        checkout.git(&[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "topic/deep",
+            linked.to_str().unwrap(),
+            &marks[&1],
+        ]);
+        let repo = gix::open(&linked).unwrap();
+        assert!(linked.join(".git").is_file());
+        assert_ne!(repo.git_dir(), repo.common_dir());
+        let plan = watch_plan(&linked).unwrap().unwrap();
+        assert!(plan.directories.contains(&repo.git_dir().to_path_buf()));
+        assert!(plan.directories.contains(&repo.common_dir().to_path_buf()));
+        assert!(
+            plan.directories
+                .contains(&repo.common_dir().join("refs/heads/topic"))
+        );
+        assert!(
+            !plan.directories.contains(&linked.join(".git")),
+            "a linked marker file is not a watch directory"
+        );
+        assert_eq!(
+            plan.reference.as_ref().unwrap().as_bstr(),
+            b"refs/heads/topic/deep".as_bstr()
+        );
+    }
+
+    #[test]
+    fn git_watch_plan_covers_upstream_and_external_index_without_a_status_walk() {
+        let (checkout, _) = linear(1);
+        checkout.git(&[
+            "config",
+            "remote.origin.url",
+            "https://fixture.invalid/repo",
+        ]);
+        checkout.git(&[
+            "config",
+            "remote.origin.fetch",
+            "+refs/heads/*:refs/remotes/origin/*",
+        ]);
+        checkout.git(&["config", "branch.main.remote", "origin"]);
+        checkout.git(&["config", "branch.main.merge", "refs/heads/topic/deep"]);
+        let external = checkout.0.join("external-index/state/index");
+        checkout.git(&[
+            "config",
+            "gitoxide.core.indexFile",
+            external.to_str().unwrap(),
+        ]);
+        let plan = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_eq!(
+            plan.upstream.as_ref().unwrap().as_bstr(),
+            b"refs/remotes/origin/topic/deep".as_bstr()
+        );
+        assert!(
+            plan.directories
+                .contains(&checkout.0.join(".git/refs/remotes/origin/topic"))
+        );
+        assert!(
+            plan.directories
+                .contains(&external.parent().unwrap().to_path_buf())
+        );
+    }
+
+    #[test]
+    fn git_watch_plan_handles_plain_folders_and_detached_head() {
+        let checkout = Checkout::new();
+        let plain = checkout.0.join("plain");
+        std::fs::create_dir(&plain).unwrap();
+        std::fs::rename(checkout.0.join(".git"), checkout.0.join("git-not-a-marker")).unwrap();
+        assert_eq!(watch_plan(&plain).unwrap(), None);
+        let (checkout, marks) = linear(1);
+        checkout.git(&["update-ref", "--no-deref", "HEAD", &marks[&1]]);
+        let detached = watch_plan(&checkout.0).unwrap().unwrap();
+        assert_eq!(detached.reference, None);
+        assert_eq!(detached.upstream, None);
+        assert!(detached.directories.contains(&checkout.0.join(".git")));
     }
 }

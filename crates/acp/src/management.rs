@@ -1,7 +1,7 @@
 //! A login connection has no session: authentication must work before session/new.
 use super::*;
 pub struct Management {
-    pub events: mpsc::UnboundedReceiver<Event>,
+    pub events: EventReceiver,
     pub result: tokio::task::JoinHandle<Result<serde_json::Value, String>>,
 }
 impl Drop for Management {
@@ -20,17 +20,20 @@ pub fn manage_on(
     agent: impl agent_client_protocol::ConnectTo<Client>,
     method: Option<String>,
 ) -> Management {
-    let (tx, events) = mpsc::unbounded_channel();
+    let (tx, events, _) = event_store::channel();
     let result = tokio::spawn(async move {
         let elicits = tx.clone();
         let completed = tx.clone();
         let (result_tx, result_rx) = oneshot::channel();
-        Client.builder().on_receive_request(
+        let driver = Client.builder().on_receive_request(
             async move|request:CreateElicitationRequest,responder,connection|{
-                let(answer,rx)=oneshot::channel();let _=elicits.send(Event::Elicit(Elicitation{request,answer}));
+                let credit=elicits.interaction_credit(&request).map_err(agent_client_protocol::util::internal_error)?;
+                let(answer,rx)=oneshot::channel();
+                elicits.interaction(Event::Elicit(Elicitation{request,answer,_store_credit:credit}))
+                    .map_err(agent_client_protocol::util::internal_error)?;
                 connection.spawn(async move{responder.respond(rx.await.unwrap_or_else(|_|CreateElicitationResponse::new(ElicitationAction::Cancel)))})
             },agent_client_protocol::on_receive_request!(),
-        ).on_receive_notification(async move|n:agent_client_protocol::schema::v1::CompleteElicitationNotification,_cx|{let _=completed.send(Event::ElicitDone(n.elicitation_id.to_string()));Ok(())},agent_client_protocol::on_receive_notification!()).connect_with(agent,move|connection:ConnectionTo<Agent>|async move{
+        ).on_receive_notification(async move|n:agent_client_protocol::schema::v1::CompleteElicitationNotification,_cx|{completed.elicitation_done(&n.elicitation_id.to_string()).await.map_err(agent_client_protocol::util::internal_error)},agent_client_protocol::on_receive_notification!()).connect_with(agent,move|connection:ConnectionTo<Agent>|async move{
             let out=async{
                 let mut init=InitializeRequest::new(ProtocolVersion::V1);init.client_capabilities=client_capabilities();
                 let hello=connection.send_request(init).block_task().await.map_err(|e|e.to_string())?;
@@ -43,10 +46,21 @@ pub fn manage_on(
                 Ok(facts)
             }.await;
             let _=result_tx.send(out);Ok(())
-        }).await.map_err(|e|e.to_string())?;
-        result_rx
-            .await
-            .map_err(|_| "The agent ended before answering".to_owned())?
+        });
+        let answer = tokio::select! {
+            result=driver => match result {
+                Ok(())=>result_rx.await.unwrap_or_else(|_|Err("The agent ended before answering".to_owned())),
+                Err(error)=>Err(error.to_string()),
+            },
+            error=tx.failed()=>Err(error),
+        };
+        if let Err(error) = &answer {
+            tx.cancel(error.clone());
+            tx.shutdown().await?;
+        }
+        // On success the final producer drop confirms EOF. Do not wait for
+        // receiver drain here: its owner can choose to consume or drop it.
+        answer
     });
     Management { events, result }
 }

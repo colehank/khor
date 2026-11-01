@@ -8,6 +8,7 @@ use std::{
 
 struct Attached {
     id: String,
+    lease: String,
     term: Arc<Term>,
     peer: TcpStream,
 }
@@ -19,6 +20,7 @@ impl Attached {
         let (peer, _) = listener.accept().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
         let term = Arc::new(Term {
+            far: None,
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(24, 80, 0)),
@@ -26,15 +28,22 @@ impl Attached {
             gone: AtomicBool::new(false),
             stall: Mutex::new(None),
             arrived: tokio::sync::Notify::new(),
-            holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
             feed: Mutex::new(Feed::default()),
             fed: AtomicU64::new(0),
             history: AtomicU32::new(0),
         });
         let id = id.unwrap_or_else(|| format!("term-io-{}", khor_node::link::fresh_hex().unwrap()));
-        assert!(plock(terms()).insert(id.clone(), term.clone()).is_none());
-        Self { id, term, peer }
+        let lease = terms().begin(Path::new("."), &id).unwrap();
+        let opening = terms().claim(Path::new("."), &id, &lease).unwrap();
+        let (term, _) = opening.publish(term).unwrap();
+        drop(opening);
+        Self {
+            id,
+            lease,
+            term,
+            peer,
+        }
     }
 
     fn read(&mut self) -> ClientOp {
@@ -73,23 +82,22 @@ impl Attached {
 
 impl Drop for Attached {
     fn drop(&mut self) {
-        let ours = plock(terms())
-            .get(&self.id)
-            .is_some_and(|t| Arc::ptr_eq(t, &self.term));
-        if ours {
-            let _ = term_leave(&self.id);
-        }
-        self.term.commands.close();
-        self.term.conn.close();
+        let _ = term_leave(Path::new("."), &self.id, &self.lease);
     }
 }
 
 #[test]
 fn input_resize_and_clear_preserve_the_actual_host_protocol_order() {
     let mut attached = Attached::new(None);
-    let key = submit_key(&attached.id, b"typed".to_vec()).unwrap();
-    let size = submit_resize(&attached.id, 100, 30).unwrap();
-    let clear = submit_forget(&attached.id, true).unwrap();
+    let key = submit_key(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        b"typed".to_vec(),
+    )
+    .unwrap();
+    let size = submit_resize(Path::new("."), &attached.id, &attached.lease, 100, 30).unwrap();
+    let clear = submit_forget(Path::new("."), &attached.id, &attached.lease, true).unwrap();
     assert!(matches!(attached.read(), ClientOp::Input(bytes) if bytes == b"typed"));
     assert!(matches!(
         attached.read(),
@@ -113,7 +121,7 @@ fn a_clear_preserves_the_prompt_modes_and_caught_up_cursor() {
         b"\x1b[?2004h\x1b[?1h\x1b=\x1b[?25lsecret one\r\nsecret two\r\n\x1b[33m$ \x1b[0mtyped",
     );
     let end = attached.term.fed.load(Ordering::Relaxed);
-    let clear = submit_forget(&attached.id, false).unwrap();
+    let clear = submit_forget(Path::new("."), &attached.id, &attached.lease, false).unwrap();
     assert!(matches!(attached.read(), ClientOp::Forget));
     assert!(clear.wait().unwrap());
     assert_eq!(attached.term.fed.load(Ordering::Relaxed), end);
@@ -157,7 +165,7 @@ fn a_clear_preserves_the_prompt_modes_and_caught_up_cursor() {
 
     attached.paint(b"\r\nsecond secret\r\n\x1b[32m$ two\x1b[0m");
     let end = attached.term.fed.load(Ordering::Relaxed);
-    let clear = submit_forget(&attached.id, false).unwrap();
+    let clear = submit_forget(Path::new("."), &attached.id, &attached.lease, false).unwrap();
     assert!(matches!(attached.read(), ClientOp::Forget));
     assert!(clear.wait().unwrap());
     let (bytes, seq, reset) = take_since(
@@ -184,7 +192,7 @@ fn a_clear_preserves_the_prompt_modes_and_caught_up_cursor() {
 fn a_later_feed_trim_cannot_revive_the_screen_a_clear_forgot() {
     let mut attached = Attached::new(None);
     attached.paint(b"secret before clear\r\n\x1b[?2004h\x1b[33m$ \x1b[0mtyped");
-    let clear = submit_forget(&attached.id, false).unwrap();
+    let clear = submit_forget(Path::new("."), &attached.id, &attached.lease, false).unwrap();
     assert!(matches!(attached.read(), ClientOp::Forget));
     assert!(clear.wait().unwrap());
     let since = attached.term.fed.load(Ordering::Relaxed);
@@ -230,7 +238,7 @@ fn a_redraw_is_requested_only_after_the_local_screen_and_feed_clear() {
     attached.paint(b"secret before clear\r\n$ typed");
     let term = attached.term.clone();
     let parser = plock(&term.parser);
-    let clear = submit_forget(&attached.id, true).unwrap();
+    let clear = submit_forget(Path::new("."), &attached.id, &attached.lease, true).unwrap();
     assert!(matches!(attached.read(), ClientOp::Forget));
     attached
         .peer
@@ -268,7 +276,7 @@ fn an_alternate_screen_is_kept_and_a_failed_forget_does_not_clear() {
     let mut attached = Attached::new(None);
     attached.paint(b"normal\r\n\x1b[?1049hprogram\r\nactive");
     let before = take_all(&attached.term.feed, &attached.term.fed);
-    let clear = submit_forget(&attached.id, false).unwrap();
+    let clear = submit_forget(Path::new("."), &attached.id, &attached.lease, false).unwrap();
     assert!(matches!(attached.read(), ClientOp::Forget));
     assert!(clear.wait().unwrap());
     assert_eq!(take_all(&attached.term.feed, &attached.term.fed), before);
@@ -284,7 +292,12 @@ fn an_alternate_screen_is_kept_and_a_failed_forget_does_not_clear() {
     let before = take_all(&attached.term.feed, &attached.term.fed);
     let screen = plock(&attached.term.parser).screen().contents();
     attached.term.conn.close();
-    assert!(submit_forget(&attached.id, true).unwrap().wait().is_err());
+    assert!(
+        submit_forget(Path::new("."), &attached.id, &attached.lease, true)
+            .unwrap()
+            .wait()
+            .is_err()
+    );
     assert_eq!(take_all(&attached.term.feed, &attached.term.fed), before);
     assert_eq!(plock(&attached.term.parser).screen().contents(), screen);
 }
@@ -311,10 +324,16 @@ fn a_cancelled_queued_paste_writes_no_terminal_input() {
 fn queued_input_cannot_cross_a_closed_and_reopened_terminal_id() {
     let old = Attached::new(None);
     let (release, first) = old.block();
-    let stale = submit_key(&old.id, b"stale".to_vec()).unwrap();
-    term_leave(&old.id).unwrap();
+    let stale = submit_key(Path::new("."), &old.id, &old.lease, b"stale".to_vec()).unwrap();
+    term_leave(Path::new("."), &old.id, &old.lease).unwrap();
     let mut reopened = Attached::new(Some(old.id.clone()));
-    let fresh = submit_key(&reopened.id, b"fresh".to_vec()).unwrap();
+    let fresh = submit_key(
+        Path::new("."),
+        &reopened.id,
+        &reopened.lease,
+        b"fresh".to_vec(),
+    )
+    .unwrap();
     assert!(stale.wait().is_err());
     release.send(()).unwrap();
     first.wait().unwrap();
@@ -326,4 +345,144 @@ fn queued_input_cannot_cross_a_closed_and_reopened_terminal_id() {
         reopened.peer.read(&mut byte).unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
     );
+}
+
+#[test]
+fn active_reopen_retains_its_own_connection_when_an_old_open_lands_last() {
+    use std::io::Write as _;
+    fn pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (peer, _) = listener.accept().unwrap();
+        (client, peer)
+    }
+    fn wait_for_marker(id: &str, lease: &str, marker: &str) -> Result<(), String> {
+        let until = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            let batch = term_stream(Path::new("."), id, lease, 0)?;
+            let bytes = B64.decode(batch.bytes).map_err(|e| e.to_string())?;
+            if bytes
+                .windows(marker.len())
+                .any(|bytes| bytes == marker.as_bytes())
+            {
+                return Ok(());
+            }
+            if std::time::Instant::now() >= until {
+                return Err("active terminal connection did not receive its own marker".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    struct Cleanup(String, String);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = term_leave(Path::new("."), &self.0, &self.1);
+        }
+    }
+    let id = format!("term-reopen-{}", khor_node::link::fresh_hex().unwrap());
+    let old_lease = begin_view(Path::new("."), &id).unwrap();
+    let new_lease = begin_view(Path::new("."), &id).unwrap();
+    let _cleanup = Cleanup(id.clone(), new_lease.clone());
+    let (old_stream, _old_peer) = pair();
+    let (new_stream, mut new_peer) = pair();
+    let (entered, at_connector) = mpsc::channel();
+    let (release, held) = mpsc::channel();
+    let (before_old_landed, after_old_landed) = std::thread::scope(|scope| {
+        let old_id = id.clone();
+        let old_view = old_lease.clone();
+        let old = scope.spawn(move || {
+            open_terminal_with(Path::new("."), &old_id, &old_view, 80, 24, 0, || {
+                entered.send(()).map_err(|e| e.to_string())?;
+                held.recv_timeout(Duration::from_secs(3))
+                    .map_err(|e| e.to_string())?;
+                Ok((old_stream, None))
+            })
+        });
+        at_connector.recv_timeout(Duration::from_secs(2)).unwrap();
+        term_leave(Path::new("."), &id, &old_lease).unwrap();
+        let new_open = open_terminal_with(Path::new("."), &id, &new_lease, 80, 24, 0, || {
+            Ok((new_stream, None))
+        });
+        let before = new_open.and_then(|_| {
+            new_peer
+                .write_all(b"active-B-before-A\r\n")
+                .map_err(|e| e.to_string())?;
+            wait_for_marker(&id, &new_lease, "active-B-before-A")
+        });
+        release.send(()).unwrap();
+        let old_result = old.join().unwrap();
+        assert!(
+            old_result.is_err(),
+            "retired A must not acquire a live view"
+        );
+        let after = (|| {
+            new_peer
+                .write_all(b"active-B-after-A\r\n")
+                .map_err(|e| e.to_string())?;
+            wait_for_marker(&id, &new_lease, "active-B-after-A")
+        })();
+        (before, after)
+    });
+    assert!(
+        before_old_landed.is_ok(),
+        "active B was discarded by A's early leave: {before_old_landed:?}"
+    );
+    assert!(
+        after_old_landed.is_ok(),
+        "late A replaced or closed active B: {after_old_landed:?}"
+    );
+}
+
+#[test]
+fn two_views_read_the_same_bytes_and_one_leave_preserves_the_other() {
+    use std::io::Write as _;
+    let root = Path::new(".");
+    let id = format!("term-two-views-{}", khor_node::link::fresh_hex().unwrap());
+    let first = begin_view(root, &id).unwrap();
+    let second = begin_view(root, &id).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    open_terminal_with(root, &id, &first, 80, 24, 0, || Ok((client, None))).unwrap();
+    open_terminal_with(root, &id, &second, 80, 24, 0, || {
+        panic!("a second live view must share the connection")
+    })
+    .unwrap();
+    assert!(matches!(
+        khor_node::host::read_frame::<ClientOp>(&mut peer).unwrap(),
+        ClientOp::Resize { cols: 80, rows: 24 }
+    ));
+    peer.write_all(b"both-views\r\n").unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    let (a, b) = loop {
+        let a = term_stream(root, &id, &first, 0).unwrap();
+        let b = term_stream(root, &id, &second, 0).unwrap();
+        if a.seq > 0 && b.seq > 0 {
+            break (a, b);
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the shared reader did not deliver its marker"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    assert_eq!(B64.decode(&a.bytes).unwrap(), b"both-views\r\n");
+    assert_eq!(a.bytes, b.bytes);
+    assert_eq!(a.seq, b.seq);
+    term_leave(root, &id, &first).unwrap();
+    assert!(
+        term_key(root, &id, &first, b"stale".to_vec()).is_err(),
+        "released view has no input authority"
+    );
+    term_key(root, &id, &second, b"still-here".to_vec()).unwrap();
+    assert!(
+        matches!(khor_node::host::read_frame::<ClientOp>(&mut peer).unwrap(), ClientOp::Input(bytes) if bytes == b"still-here")
+    );
+    assert_eq!(
+        term_stream(root, &id, &second, 0).unwrap().seq,
+        b.seq,
+        "one view does not drain the other cursor"
+    );
+    term_leave(root, &id, &second).unwrap();
 }

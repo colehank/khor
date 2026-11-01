@@ -255,11 +255,11 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
             // A file for an agent conversation (round CHAT): the same
             // raw body, put on the machine the conversation runs on.
             if cmd == "chat_put" {
-                let Some((id, name)) = khor_gui_core::chat_put_args(query) else {
+                let Some((id, lease, name)) = khor_gui_core::chat_put_args(query) else {
                     return Reply::refused(400, msg::upload_needs_machine_and_name().to_owned());
                 };
                 let into = khor_gui_core::into_arg(query);
-                return match khor_gui_core::chat::chat_put(root, &id, &name, &into, req.as_reader())
+                return match khor_gui_core::chat::chat_put(root, &id, &lease, &name, &into, req.as_reader())
                 {
                     Ok(path) => Reply {
                         code: 200,

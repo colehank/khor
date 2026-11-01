@@ -1,7 +1,10 @@
 /** A session's webpage keeps the browser's address, exit choice and
  * native history. Its one deck carries the owning session identity. */
 import {useState,type ReactNode} from 'react';
-import {forgetRecentByDevice,said,type DeviceRow} from '@/api';
+import {forgetRecentByDevice,pageStep,said,type DeviceRow} from '@/api';
+import {useLoading} from '@/browse/use-loading';
+import {pageFail} from '@/browse/page-fail';
+import {PillProgress} from '@/components/SessionBar';
 import {ContentToolbar} from '@/components/ContentToolbar';
 import {NewTabPage} from '@/browse/NewTabPage';
 import {usePlaces} from '@/browse/use-places';
@@ -25,7 +28,9 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
   const setEditing=(editing:boolean)=>navigation.edit(handle,{editing,...(editing?{address:field.address??tab.url}:{})});
   const go=(device:DeviceRow,url:string)=>{navigation.edit(handle,{editing:false,address:url});onPoint(device,url);};
   const setDraft=(address:string)=>navigation.edit(handle,{editing:true,address});
-  const [busy,setBusy]=useState(false),steps=usePageSteps(handle);
+  const load=useLoading([handle],handle),busy=load.busy(handle),share=load.share(handle),steps=usePageSteps(handle);
+  const observed=load.state(handle),failed=observed?.phase==='failed'?pageFail(observed.error):null;
+  const onBusy=(busy:boolean)=>load.errand(handle,busy);
   const [listSeat,setListSeat]=useState<HTMLDivElement|null>(null);
   const browse=(source:'workspace'|'browser')=>{navigation.update(tab.session,{source});navigation.browse(tab.session);};
   const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
@@ -33,9 +38,9 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
   const revisit=(id:string,url:string)=>{const d=devices.find(d=>d.id===id);if(d)go(d,url);else navigation.edit(handle,{editing:true,address:url,exitPrompt:(field.exitPrompt??0)+1});};
   const forget=async(id:string,path:string)=>{try{await forgetRecentByDevice('page',id,path);places.reload();}catch(e){setError(said(e));}};
   return <div className="mobile-content-page">
-    <div className="session-content-web" hidden={editing}>{children(setBusy,editing)}</div>
+    <div className="session-content-web" hidden={editing}>{children(onBusy,editing)}</div>
     {editing&&<div data-content-page-landing className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow={!desktop} onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div>}
-    {error&&<p role="alert" className="session-content-error">{error}</p>}
+    {(error||failed)&&<p role="alert" className="session-content-error" title={failed?.detail}>{error||failed?.reason}{failed&&<button type="button" className="text-brand-strong" onClick={()=>void pageStep(handle,failed.pass?'pass':'retry').catch(()=>{})}>{failed.pass?gui.page_pass:gui.region_retry}</button>}</p>}
     <div ref={setListSeat} className="mobile-content-page-list"/>
     {desktop?<ContentToolbar kind="page" source="browser" onSource={browse} onBack={back} onClose={close} pinned={tab.pinned}>
       <PageHistory tab={handle} steps={steps}/>
@@ -43,12 +48,13 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
       <PageReload tab={handle} busy={busy}/>
     </ContentToolbar>:<div data-content-deck className="mobile-content-deck">
       {!editing&&<GlassCircle data-content-back aria-label={gui.back} onClick={back}><IconBack/></GlassCircle>}
-      <div className="glass mobile-content-pill">
+      <div className="glass mobile-content-pill relative">
         {!editing&&<PageHistory tab={handle} steps={steps}/>}
         {editing?<div className="mobile-content-page-editor"><PageField suggestAddresses={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} steps={false} autoFocus inPill listSeat={listSeat} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/></div>:<>
           <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.title||tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>setEditing(true)}/></div>
         </>}
         {!editing&&<PageReload tab={handle} busy={busy}/>}
+        {(busy||share!==undefined)&&<PillProgress share={share??null}/>}
       </div>
       {editing&&<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={()=>{(document.activeElement as HTMLElement|null)?.blur();setEditing(false);}}><IconClose/></GlassCircle>}
     </div>}

@@ -94,6 +94,9 @@ A program asks its terminal things in its output (DA1/DA2, DSR, OSC 10/11/12/4 c
 - **The deck API**, for the session screen's other controls: `terminalKeyboard.raise() / lower() / up() / mode()` (`lib/soft-keyboard.ts`). The ux lane's deck uses it: its downward drag calls `lower()`, and its switch is drawn only when `mode()` is 点击按钮.
 - **Key row** (`views/TermKeys.tsx`, `lib/term-keys.ts`):
   - a person-chosen row of caps;
+  - Settings → Terminal → Terminal key row edits the same device-local row on Mac and phone. Custom keys contain Ctrl/Alt/Shift with a semantic base key, or up to 16 ordered keys; blank names use the combination. Save publishes a draft; Cancel discards it. Entries can be reordered, hidden, edited or deleted.
+  - Custom keys execute once, ignore existing modifier locks, and encode the entire sequence for the active terminal protocol before one input operation. The isolated trial only displays standard encoding; it has no session input capability. Physical keys and repeating builtins keep their existing behavior.
+  - Versioned configuration is limited to 128 entries/64 KiB, with names up to 32 Unicode characters/128 UTF-8 bytes. A damaged saved value remains untouched until explicit Reset; unavailable storage keeps edits in the current window only.
   - the cursor joystick, second from the right (`views/CursorPad.tsx`);
   - … last: a sheet with every key, the prompt jumps and 历史命令, plus the row editor.
   - A key a hardware keyboard repeats (⌫, Del, the moves, Tab and ⇧Tab, the characters) repeats while held, on the cursor stick's numbers (`lib/key-repeat`): 400 ms, then 6 a second, 12 after a second, a haptic tick each time under 「摇杆震动」. A tap still sends at the click, so a finger scrolling the row sends nothing. Esc, the latches, paste and the function keys never repeat; latches hold for the whole repeat, as the stick's do.
@@ -125,7 +128,7 @@ All per device, in the face's `localStorage`. The real store after the redesign'
 | Bell | 响铃 | `khor.term-bell` | on |
 | Predict typing | 慢网预测回显 | `khor.term-predict` | on |
 | Keyboard on tap (phone only) | 键盘唤醒 | `khor.term-wake` | 自动 |
-| Key row (phone only) | 终端键行… | `khor.term-key-row` | Esc, Ctrl, Tab, ⇧Tab, 粘贴, / - \| : |
+| Key row (shown under touch; editor on every device) | 终端键行… | `khor.term-key-row` | Esc, Ctrl, Tab, ⇧Tab, 粘贴, / - \| : |
 | New shell size | — (remembered) | `khor.term-size-hint` | the last fitted size, else estimated |
 
 The node's own setting is `khor config set session-form chat|term`, which picks the form a new agent session opens in.

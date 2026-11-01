@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The reading gate: a conversation is the one surface in this app that
 // is *read* rather than scanned, and until 2026-08-30 nothing measured
 // it. It borrowed the dashboard's aux size (12.5), ran to whatever width
@@ -225,7 +226,7 @@ fn still_arriving() {`;
 
 const frames = [
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: {
         sessionUpdate: "user_message_chunk",
@@ -234,16 +235,15 @@ const frames = [
     },
   },
   {
-    kind: "history",
-    update: { update: { sessionUpdate: "tool_call", title: "Read src/views/ChatView.tsx" } },
+    kind: "note",
+    update: { update: { sessionUpdate: "tool_call", toolCallId: "read-layout-tool", kind: "read", status: "completed", title: "Read src/views/ChatView.tsx" } },
   },
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: AGENT_TEXT } },
     },
   },
-  { kind: "history_end" },
 ];
 
 const row = (id, kind, title) => ({
@@ -260,13 +260,14 @@ const row = (id, kind, title) => ({
   group: "",
   face: null,
   hosted: true,
+  can_control: kind === "gui",
   attachable: false,
   last: null,
   via: null,
   via_face: null,
   home: "gate",
 });
-const ROWS = [row("gui/read-gate", "gui", "read-gate-agent"), row("chat/read-gate", "chat", "read-gate-machine")];
+const ROWS = [row("gui/read-gate", "gui", "read-gate-agent"), row("wide/read-gate", "broadcast", "read-gate-machine")];
 
 /**
  * Everything measured off one painted conversation, in the page.
@@ -635,10 +636,16 @@ try {
       deviceScaleFactor: 1,
     });
     const page = await ctx.newPage();
-    const errs = [];
+    const errs = [], responses = [], consoleErrors = [];
     page.on("pageerror", (e) => errs.push(String(e)));
+    page.on("response", response => {if (response.status() >= 400 && responses.length < 16) responses.push({url: response.url().slice(0, 512), status: response.status()});});
+    page.on("console", message => {if (message.type() === "error" && consoleErrors.length < 16) consoleErrors.push(message.text().slice(0, 1000));});
     const json = (b) => (r) =>
       r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
+    // The current lock reader fails closed: this isolated scenario explicitly
+    // says its private fixture has no PIN/lock, rather than relying on a failed read.
+    await page.route("**/lock_state", json({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", json(ROWS));
     await page.route(
       "**/devices",
@@ -664,7 +671,6 @@ try {
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));
     await page.route("**/recents", json([]));
-    await page.route("**/chat_open", json(true));
     // The machine conversation's whole readout. Its body is the same
     // sample, so both faces are measured on one text and a difference
     // in the numbers is a difference in the faces.
@@ -683,26 +689,32 @@ try {
             unknown: null,
             retracted: false,
             edited: false,
-            word: null,
-            delivery: null,
+            step: null, moved: 0, landed: [], why: null,
+            got: null, of: null, via: null, to: [], note: null,
+            pushed: false, command: null,
           },
         ],
       }),
     );
     let served = false;
-    await page.route("**/chat_poll", (r) => {
-      const body = served
-        ? { frames: [], next: 4, gone: false, lost: false }
-        : { frames, next: 4, gone: false, lost: false };
-      served = true;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
-    });
+    await routeCanonicalChat(page, {ids: ['gui/read-gate'], takeFrames: () => {
+      if (served) return [];served = true;return frames;
+    }});
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(900);
     const nth = which === "machine" ? 1 : 0;
     await page.locator("[data-list] [data-row-open]").nth(nth).click();
     await wait(1200);
     const out = await page.evaluate(probe);
+    if (!out.drew || errs.length) {
+      const dom = await page.evaluate(() => ({
+        machine: !!document.querySelector('[data-machine-chat]'),
+        column: !!document.querySelector('[data-chat-column]'),
+        message: !!document.querySelector('[data-msg-text]'),
+        body: document.body.innerText.slice(0, 2000),
+      }));
+      console.error('READ_FIXTURE_DIAGNOSTIC', JSON.stringify({which, scheme, width, dom, responses, consoleErrors, errors: errs}));
+    }
     await ctx.close();
     return { ...out, errs, scheme, width, which };
   };

@@ -21,8 +21,32 @@ pub struct Handoff {
     pub op: Op,
 }
 
+pub(crate) fn validate_handoff(handoff: &Handoff, bytes: usize) -> Result<(), String> {
+    if let Op::ContentRead { action } = &handoff.op {
+        action.validate()?;
+        if bytes > crate::session_content::remote::METADATA_WIRE_BYTES {
+            return Err("content handoff exceeds its serialized wire budget".into());
+        }
+    }
+    Ok(())
+}
+pub(crate) fn validate_reply(reply: &Reply, bytes: usize) -> Result<(), String> {
+    if let Reply::ContentRead { reply } = reply {
+        reply.validate()?;
+        if bytes > reply.wire_limit() {
+            return Err("content handoff reply exceeds its serialized wire budget".into());
+        }
+    }
+    Ok(())
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Op {
+    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId, observation: Option<khor_core::ObservationRef> },
+    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef> },
+    NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
+
+    ContentRead { action: crate::session_content::remote::Action },
     Pair {
         ticket: String,
     },
@@ -298,15 +322,19 @@ pub enum Op {
         machine: String,
         path: String,
     },
-    /// Which of these directories on that machine changed since `since`
-    /// (`crate::watch::Watches`), held up to `wait_ms` (at most
-    /// [`WATCH_WAIT`]) for one to — 0 asks without waiting, which is what
-    /// a tree coming back on screen does. Tail-appended.
-    WatchOn {
+    WatchBegin {
         machine: String,
-        dirs: Vec<String>,
-        since: u64,
-        wait_ms: u64,
+        scopes: Vec<crate::watch::Scope>,
+    },
+    WatchWait {
+        machine_id: String,
+        id: String,
+        cursor: Option<String>,
+        wait_ms: u32,
+    },
+    WatchLeave {
+        machine_id: String,
+        id: String,
     },
     /// A machine's commands, searched (roadmap 2.6); answered with
     /// [`Reply::History`]. Tail-appended.
@@ -473,7 +501,7 @@ pub enum Op {
 /// from for three of these is taken to be gone.
 pub const FACE_BEAT: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// How long a [`Op::WatchOn`] is held when nothing changes: under
+/// How long a [`Op::WatchWait`] is held when nothing changes: under
 /// [`DEADLINE_FAR`], which bounds it.
 pub const WATCH_WAIT: std::time::Duration = std::time::Duration::from_secs(20);
 
@@ -528,6 +556,11 @@ impl Op {
     /// the bug this table exists to end.
     fn table(&self) -> (&'static str, std::time::Duration) {
         match self {
+            Op::ContentRead { .. } => ("ContentRead", DEADLINE_FAR),
+            Op::SessionRecovery { .. } => ("SessionRecovery", DEADLINE_FAR),
+            Op::RecoverSession { .. } => ("RecoverSession", DEADLINE_FAR),
+            Op::NewShellRun { .. } => ("NewShellRun", DEADLINE_FAR),
+
             Op::RecognitionOn { .. } => ("RecognitionOn", DEADLINE_FAR),
             Op::SubscriptionsOn { .. } => ("SubscriptionsOn", DEADLINE_FAR),
             Op::Hops => ("Hops", DEADLINE_LOCAL),
@@ -536,7 +569,9 @@ impl Op {
             Op::Connections => ("Connections", DEADLINE_LOCAL),
             Op::LetGo { .. } => ("LetGo", DEADLINE_LOCAL),
             Op::StatOn { .. } => ("StatOn", DEADLINE_FAR),
-            Op::WatchOn { .. } => ("WatchOn", DEADLINE_FAR),
+            Op::WatchBegin { .. } => ("WatchBegin", DEADLINE_LOCAL),
+            Op::WatchWait { .. } => ("WatchWait", DEADLINE_FAR),
+            Op::WatchLeave { .. } => ("WatchLeave", DEADLINE_LOCAL),
             Op::DropBorrow { .. } => ("DropBorrow", DEADLINE_LOCAL),
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
@@ -595,6 +630,11 @@ impl Op {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Reply {
+    SessionRecovery { value: khor_core::recovery::SessionRecovery },
+    RecoverSession { value: khor_core::recovery::RecoveryResult },
+    NewShellRun { value: khor_core::recovery::ShellRunResult },
+
+    ContentRead { reply: crate::session_content::remote::Reply },
     Paired {
         name: String,
     },
@@ -682,10 +722,9 @@ pub enum Reply {
         at_ms: u64,
         digest: String,
     },
-    /// Tail-appended with [`Op::WatchOn`].
-    DirsChanged {
-        changes: crate::watch::DirChanges,
-    },
+    WatchOpened { opened: crate::watch::Opened },
+    WatchChanged { batch: crate::watch::Batch },
+    WatchLeft,
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.
     GitStatus {
@@ -897,10 +936,9 @@ async fn exchange(
     cookie: &str,
     op: Op,
 ) -> Result<Reply, String> {
-    let frame = proto::encode(&Handoff {
-        cookie: cookie.to_owned(),
-        op,
-    })?;
+    let handoff = Handoff { cookie: cookie.to_owned(), op };
+    let frame = proto::encode(&handoff)?;
+    validate_handoff(&handoff, frame.len())?;
     stream
         .write_all(&frame)
         .await
@@ -912,7 +950,9 @@ async fn exchange(
         .read_to_end(&mut bytes)
         .await
         .map_err(msg::no_reply_from_serve)?;
-    proto::decode(&bytes).map(heard)
+    let reply = proto::decode(&bytes)?;
+    validate_reply(&reply, bytes.len())?;
+    Ok(heard(reply))
 }
 
 /// **The resident's words, in this process's language** (round NET-9):

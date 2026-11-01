@@ -136,11 +136,12 @@ fn main() {
                     })
             } else if cmd == "chat_put" {
                 khor_gui_core::chat_put_args(&query)
-                    .ok_or_else(|| "chat_put needs id and name query args".to_owned())
-                    .and_then(|(id, name)| {
+                    .ok_or_else(|| "chat_put needs id, lease and name query args".to_owned())
+                    .and_then(|(id, lease, name)| {
                         khor_gui_core::chat::chat_put(
                             &root,
                             &id,
+                            &lease,
                             &name,
                             &khor_gui_core::into_arg(&query),
                             req.as_reader(),

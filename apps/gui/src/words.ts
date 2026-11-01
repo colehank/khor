@@ -21,8 +21,8 @@ export const count = {
   lockIdleAfter: (n: number) => (n === 1 ? one.lock_idle_after(n) : cli.lock_idle_after(n)),
 };
 
-export function word(key: string): string {
-  if (!key) return gui.thread_unbound;
+export function word(key: string | null): string {
+  if (!key) return gui.session_state_unknown;
   return (state as Record<string, string>)[key] ?? key;
 }
 

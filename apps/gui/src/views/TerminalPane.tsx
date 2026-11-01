@@ -1,3 +1,5 @@
+import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
+import {assertPageUrl,openSystemUrl,openSystemPath,openSystemFileUri} from "@/lib/client-opener";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // A live terminal for a session khor hosts (docs/handoff 终端画屏) —
 // drawn by xterm.js, fed bytes.
@@ -41,9 +43,8 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 // And the four things a terminal *emulator* leaves to the window
 // around it, each set to what iTerm2 does out of the box (the app's
 // rule: defaults over settings, aligned to iTerm):
-//   - **links** open on ⌘-click (`WebLinksAddon`), through the same
-//     `open_link` the conversation pane uses — the whitelist of schemes
-//     is khor's, not the addon's;
+//   - **links** open internally on click, or in the client system with
+//     a modifier; xterm owns selection and application mouse protocols;
 //   - **a selection is a copy** (`onSelectionChange` → clipboard), so
 //     there is no ⌘C to remember and nothing to lose by clicking away;
 //     where the program has the mouse (a tmux khor attached), the
@@ -64,7 +65,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { bellHaptic, faceNote, inApp, rejoinNow, said, termAttach, termReady, termDrop, termDropCancel, termDropProgress, termDropItems, termDropForget, termEnded, termKey, termLeave, termForget, termOpen, termPaneHistory, termPrompt, termResize, termScroll, termStream, termWait, type Miss } from "@/api";
+import { terminalAttachment, bellHaptic, faceNote, inApp, rejoinNow, said, termDropForget, termEnded, type Miss } from "@/api";
 import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
@@ -118,6 +119,7 @@ import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
 import { promptMarks } from "@/lib/term-prompt-sp";
 import { kittyFlags, kittyKey, kittyNamed, kittyProtocol, kittyTyped } from "@/lib/term-kitty";
+import { isEncodedKeyInput } from "@/lib/term-key-codec";
 import { afterKey, typed, type Mods } from "@/lib/term-keys";
 import { isFocusReport, isReply } from "@/lib/term-replies";
 import { programScrolls, scrollsNatively } from "@/lib/term-scroller";
@@ -306,17 +308,11 @@ function asksToFind(ev: KeyboardEvent): boolean {
   return IS_MAC ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && ev.shiftKey;
 }
 
-/** Where a link goes. In the app, through khor (`open_link`: the
-    scheme whitelist is the same one the conversation pane's links go
-    through). In a browser, the browser's own new tab — `open` on the
-    serving machine would open it on the wrong screen when the face is
-    being read from a phone. */
-function follow(uri: string, machine: string | null | undefined) {
-  // **In the app, a browsing tab through the terminal's own machine**
-  // (roadmap 3.2): a dev server's `localhost:3000` printed on a far
-  // machine is that machine's. A browser face keeps its own tab.
-  if (inApp) askOpenUrl(machine ?? "", uri);
-  else window.open(uri, "_blank", "noopener");
+/** Internal URLs use the same session content route on app and web. */
+async function follow(uri: string, machine: string | null | undefined, intent:LinkIntent='internal') {
+  assertPageUrl(uri);
+  if(intent==='system')await openSystemUrl(uri);
+  else askOpenUrl(machine??'',uri);
 }
 
 /** Base64 → bytes, the shape `term.write` takes. The api boundary is
@@ -1226,6 +1222,13 @@ export async function reopenTerminal(id: string): Promise<boolean> {
   return true;
 }
 
+/** This mounted seat's capability; no global tab ID can prove its home. */
+export type TerminalRecoveryOwner = {
+  idle: () => boolean;
+  rejoin: () => boolean;
+  retire: () => void;
+};
+
 export function TerminalPane({
   id,
   machine,
@@ -1233,8 +1236,10 @@ export function TerminalPane({
   doing,
   mux = false,
   onReading,
+  onRecoveryRejoin,
 }: {
   id: string;
+  onRecoveryRejoin?: (owner: TerminalRecoveryOwner | null) => void;
   onReading?: SessionReading;
   /** The row's process sits in a tmux pane (`SessionRow.mux`): Claude
       Code in the person's own tmux, reached through khor's grouped
@@ -1252,6 +1257,7 @@ export function TerminalPane({
       `null` for one hosted here. What a wait and a reconnect name. */
   machine?: string | null;
 }) {
+  const attachmentRef = useRef<ReturnType<typeof terminalAttachment> | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const mountRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -1275,6 +1281,13 @@ export function TerminalPane({
   // The reload circle's join in flight (`reopen`): its glyph turns.
   const [joining, setJoining] = useState(false);
   const reopenRef = useRef<(() => Promise<void>) | null>(null);
+  const recoveryRetired = useRef(false);
+  const recoveryJoining = useRef(0);
+  const recoverySending = useRef(0);
+  const recoveryOwner = useRef<TerminalRecoveryOwner | null>(null);
+  const recoverySink = useRef(onRecoveryRejoin);
+  recoverySink.current = onRecoveryRejoin;
+  const notifyRecovery = () => recoverySink.current?.(recoveryOwner.current);
   // **The tab pill's third seat is this terminal's re-attach** (UX-33):
   // offered by id while the pane is mounted, with whether it is joining
   // (the pill's line runs then).
@@ -1306,6 +1319,19 @@ export function TerminalPane({
   // for a person, and throwing it away is what once flattened all of
   // them into one wrong word.
   const [why, setWhy] = useState<string | null>(null);
+  const [linkFailure,setLinkFailure]=useState<string|null>(null);
+  const linkAction=useRef(0);
+  useLayoutEffect(()=>{
+    linkAction.current++;setLinkFailure(null);
+    return()=>{linkAction.current++;};
+  },[id,machine]);
+  const activateLink=async(open:()=>void|Promise<void>)=>{
+    const action=++linkAction.current;
+    setLinkFailure(null);
+    try{await open();}
+    catch(error){if(action===linkAction.current)setLinkFailure(said(error));}
+  };
+
   // **Until the attachment is made, the pane says it is coming**
   // (2026-10-02, the phone: a far machine that had dropped off left the
   // board blank for the reach's whole wait). A never-seen region shows
@@ -1450,19 +1476,19 @@ export function TerminalPane({
     const box = boxRef.current;
     const mount = mountRef.current;
     if (!box || !mount) return;
+    let attachment = terminalAttachment(id);
+    attachmentRef.current = attachment;
     const font = fontOf(box);
     /** Opens an OSC 8 `file://` link; set once the session's machine
         and the path opener are known (below). */
-    let fileLink = (_uri: string) => {};
+    let fileLink = (_uri: string, _intent:LinkIntent='internal') => {};
+    const openUrl=(uri:string,intent:LinkIntent='internal')=>{void activateLink(()=>follow(uri,machine,intent));};
     const term = new Terminal({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
       allowTransparency: windowOpacity() < 1,
-      // **OSC 8 links go where every other link goes** (T-24, the
-      // terminal audit: they went to xterm's default `confirm()` and
-      // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
-      // 114). The same gesture as a plain URL (⌘-click, iTerm2's), and
-      // the same road (`follow`).
+      // xterm's default OSC8 handler uses confirm/window.open and bypasses
+      // Khor's content-opening rules.
       //
       // A `file://` link (`ls --hyperlink`, ripgrep's and gcc's
       // hyperlinks, delta) is a path on the session's machine: it opens
@@ -1472,9 +1498,10 @@ export function TerminalPane({
       linkHandler: {
         allowNonHttpProtocols: true,
         activate: (ev, uri) => {
-          if (!(ev.metaKey || ev.ctrlKey)) return;
-          if (/^https?:/i.test(uri)) follow(uri, machine);
-          else if (/^file:/i.test(uri)) fileLink(uri);
+          if(!canActivateTerminalLink(ev,term))return;
+          const intent=linkIntent(ev);
+          if (/^https?:/i.test(uri)) openUrl(uri,intent);
+          else if (/^file:/i.test(uri)) fileLink(uri,intent);
         },
       },
       // **A secondary click does not select** (the terminal audit, item
@@ -1555,7 +1582,7 @@ export function TerminalPane({
         ?.readText()
         .then((text) => {
           const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(text)));
-          send(`\x1b]52;${target};${b64}\x07`);
+          send(`\x1b]52;${target};${b64}\x07`, true);
         })
         .catch(() => {});
     };
@@ -1626,12 +1653,11 @@ export function TerminalPane({
     term.loadAddon(search);
     searchRef.current = search;
     const found = search.onDidChangeResults((r) => setHits({ at: r.resultIndex, of: r.resultCount }));
-    // Links underline on hover and open on ⌘-click, iTerm2's gesture.
-    // A plain click on a URL in a terminal is more often the start of a
-    // selection than a wish to leave, so the modifier is the intent.
+    // Activation uses the same intent for detected URLs, paths and OSC8.
+    // xterm keeps ownership of selection drags and application mouse input.
     term.loadAddon(
       new WebLinksAddon((ev, uri) => {
-        if (ev.metaKey || ev.ctrlKey) follow(uri, machine);
+        if(canActivateTerminalLink(ev,term))openUrl(uri,linkIntent(ev));
       }),
     );
     // **Pictures in place** (roadmap 3.3): sixel and iTerm2's inline
@@ -1654,7 +1680,6 @@ export function TerminalPane({
       setPeek(canvas.toDataURL());
       return true;
     };
-    // Under a mouse a ⌘-click opens one, the gesture links use.
     const pictureClick = (ev: MouseEvent) => {
       if (!(ev.metaKey || ev.ctrlKey) || ev.button !== 0) return;
       const at = cellAt(term, ev.clientX, ev.clientY);
@@ -1866,7 +1891,7 @@ export function TerminalPane({
       const atPrompt = normal && !marks.running() && !!at?.input && !at.output;
       term.clear();
       if (!normal) return;
-      void termForget(id, atPrompt).catch(() => {
+      void attachment.forget(atPrompt).catch(() => {
         if (atPrompt) term.input("\x0c", true);
       });
     };
@@ -1875,20 +1900,21 @@ export function TerminalPane({
     hooks.__find = () => setFinding(true);
     // For the gates, as `__xterm` is.
     (box as HTMLDivElement & { __marks?: Marks }).__marks = marks;
-    // **Paths and URLs open khor's own views** (roadmap 3.1, 3.2): under
-    // a mouse a ⌘-click on an underlined path; under a finger a tap.
+    // Plain links stay in session content; modifiers ask the client system.
     const here = machine ?? "";
     // After an attach the face has no marks and no OSC 7 of its own until
     // the next prompt (the host's snapshot carries neither, item 46), and
     // a relative path printed before it was no link (the terminal audit,
     // item 53); the host's ledger still knows where the shell stands.
     const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd() ?? doingRef.current?.cwd ?? undefined;
-    const openPath = (t: { path: string; dir: boolean; line: number | null }) =>
-      askOpenPath(here, t.path, t.dir, t.line);
-    fileLink = (uri) => {
+    const openPath = (t: { path: string; dir: boolean; line: number | null },intent:LinkIntent='internal') => {
+      void activateLink(()=>intent==='system'?openSystemPath(t.path):askOpenPath(here,t.path,t.dir,t.line));
+    };
+    fileLink = (uri,intent='internal') => {
+      if(intent==='system'){void activateLink(()=>openSystemFileUri(uri));return;}
       try {
         const path = decodeURIComponent(new URL(uri).pathname);
-        if (path) openPath({ path, dir: path.endsWith("/"), line: null });
+        if (path) openPath({ path, dir: path.endsWith("/"), line: null },intent);
       } catch {
         /* not a URL: nothing to open */
       }
@@ -1896,15 +1922,16 @@ export function TerminalPane({
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
     const tapped = (row: number, col: number) => {
       if (picture(row, col)) return true;
+      if(!canActivateTerminalLink({},term))return false;
       const url = urlAt(term, row, col);
       if (url) {
         if (/^file:/i.test(url)) fileLink(url);
-        else follow(url, machine);
+        else openUrl(url);
         return true;
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
         const hit = found.find((f) => covers(f, row, col));
-        if (hit) openPath(hit.target);
+        if (hit&&canActivateTerminalLink({},term)) openPath(hit.target);
       });
       return false;
     };
@@ -2038,6 +2065,7 @@ export function TerminalPane({
         attachment ended, or no answer at all. */
     const tick = async (): Promise<"live" | "ended" | "failed"> => {
       const mine = generation;
+      const reading = attachment;
       // **The place this ask was made from.** An ask that left before the
       // join set `seq` (a poll the page's own focus effect started while
       // the open was still reaching) comes back with everything since 0 —
@@ -2050,7 +2078,7 @@ export function TerminalPane({
         // NET-2): the node answers the moment bytes arrive, so an echo
         // no longer waits for the next beat. Elsewhere, the beat.
         const pushed = inApp && pace.current === LIVE_MS;
-        const b = await (pushed ? termWait(id, seq, WAIT_MS) : termStream(id, seq));
+        const b = await (pushed ? reading.wait(seq, WAIT_MS) : reading.stream(seq));
         if (stopped || mine !== generation || from !== seq) return "live";
         const gap = performance.now() - lastBeat;
         lastBeat = performance.now();
@@ -2079,7 +2107,8 @@ export function TerminalPane({
         if (stopped || mine !== generation) return "live";
         // A remote pipe may have rejoined before its first Ready reached
         // the host. A fresh feed needs the renderer's acknowledgement too.
-        if (b.reset && !b.gone && !b.stall) await termReady(id);
+        if (b.reset && !b.gone && !b.stall) await reading.ready();
+        if (stopped || mine !== generation) return "live";
         seq = b.seq;
         if (b.gone) setGone(true);
         const held = b.gone ? null : (b.stall ?? null);
@@ -2136,6 +2165,8 @@ export function TerminalPane({
         come back as any new attacher gets them. A join that fails says
         why in the pane, as a first join does, and can be pressed again. */
     const join = (again: boolean): Promise<void> => {
+      if (recoveryRetired.current) return Promise.resolve();
+      recoveryJoining.current++;
       const mine = ++generation;
       window.clearTimeout(timer);
       if (again) setJoining(true);
@@ -2145,13 +2176,18 @@ export function TerminalPane({
         setWhy(null);
         setOpenedAt(Date.now());
       }
-      const opened = again
-        ? termLeave(id)
-            .catch(() => {})
-            .then(() => termOpen(id, term.cols, term.rows, termHistory()))
-        : termOpen(id, term.cols, term.rows, termHistory());
+      const previous = attachment;
+      if (again) {
+        attachment = terminalAttachment(id);
+        attachmentRef.current = attachment;
+        void previous.dispose().then(result => {
+          if (result.failures) console.warn("Terminal attachment cleanup failed", result);
+        });
+      }
+      const joining = attachment;
+      const opened = joining.open(term.cols, term.rows, termHistory());
       return opened
-        .then(() => termAttach(id))
+        .then(() => joining.attach())
         .then(async (a) => {
           if (stopped || mine !== generation) return;
           setJoining(false);
@@ -2216,11 +2252,11 @@ export function TerminalPane({
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
           resizing ??= term.onResize(({ cols, rows }) => {
-            termResize(id, cols, rows).catch(() => {});
+            attachment.resize(cols, rows).catch(() => {});
           });
           if (again) {
             fit.fit();
-            termResize(id, term.cols, term.rows).catch(() => {});
+            joining.resize(term.cols, term.rows).catch(() => {});
             term.scrollToBottom();
             // A reload keeps the terminal the focus, and the keyboard as
             // it was.
@@ -2228,7 +2264,7 @@ export function TerminalPane({
           }
           // Socket attachment precedes rendering. Release automatic shell
           // input only after replay no longer suppresses live query replies.
-          await termReady(id);
+          await joining.ready();
           if (stopped || mine !== generation) return;
           void loop();
         })
@@ -2249,6 +2285,9 @@ export function TerminalPane({
             silentRetry = window.setTimeout(() => void join(true), silentWait);
             silentWait = Math.min(SILENT_RETRY_MOST, silentWait * 2);
           }
+        }).finally(() => {
+          recoveryJoining.current--;
+          notifyRecovery();
         });
     };
     let silentRetry = 0;
@@ -2306,27 +2345,39 @@ export function TerminalPane({
     // frame, and a paste bigger than that used to go as one. A chunk is
     // 16 Ki characters — 64 KiB at most once UTF-8 encoded — and the
     // chunks keep their order like everything else here.
-    let outbox = "";
+    let outbox: { view: ReturnType<typeof terminalAttachment>; bytes: string } | null = null;
     let sending = false;
     let scrollHealthNotes: ReturnType<typeof notesScrollHealth> | null = null;
-    const send = (bytes: string) => {
-      outbox += bytes;
+    const send = (bytes: string, protocol = false) => {
+      if (recoveryRetired.current && !protocol) return;
+      const view = attachment;
+      if (outbox?.view === view) outbox.bytes += bytes;
+      else outbox = { view, bytes };
       if (sending) return;
       sending = true;
+      recoverySending.current++;
       void (async () => {
-        while (outbox && !stopped) {
-          // Never split a surrogate pair across two frames.
-          let cut = Math.min(outbox.length, CHUNK_CHARS);
-          if (cut < outbox.length && /[\ud800-\udbff]/.test(outbox[cut - 1])) cut -= 1;
-          const next = outbox.slice(0, cut);
-          outbox = outbox.slice(cut);
-          const started = performance.now(), queued = next.length + outbox.length;
-          scrollHealthNotes?.sending(started, queued);
-          await termKey(id, next).catch(() => {});
-          scrollHealthNotes?.sent(started, performance.now(), queued);
+        try {
+          while (outbox && !stopped) {
+            const batch = outbox;
+            if (batch.view !== attachment) { outbox = null; continue; }
+            // Never split a surrogate pair across two frames.
+            let cut = Math.min(batch.bytes.length, CHUNK_CHARS);
+            if (cut < batch.bytes.length && /[\ud800-\udbff]/.test(batch.bytes[cut - 1])) cut -= 1;
+            const next = batch.bytes.slice(0, cut);
+            batch.bytes = batch.bytes.slice(cut);
+            if (!batch.bytes) outbox = null;
+            const started = performance.now(), queued = next.length + batch.bytes.length;
+            scrollHealthNotes?.sending(started, queued);
+            await batch.view.key(next).catch(() => {});
+            scrollHealthNotes?.sent(started, performance.now(), queued);
+          }
+        } finally {
+          sending = false;
+          recoverySending.current--;
+          notifyRecovery();
+          pollNow.current();
         }
-        sending = false;
-        pollNow.current();
       })();
     };
     // **A paste of more than one line asks first** (roadmap 4.3): how many
@@ -2383,25 +2434,29 @@ export function TerminalPane({
         return;
       }
       sizedAt = performance.now();
-      termResize(id, term.cols, term.rows).catch(() => {});
+      attachment.resize(term.cols, term.rows).catch(() => {});
     };
     const data = term.onData((d) => {
-      const reply = isReply(d);
-      if (replaying > 0 && (reply || isFocusReport(d))) return;
+      const preencoded = isEncodedKeyInput(term);
+      const reply = !preencoded && isReply(d);
+      const focusReport = !preencoded && isFocusReport(d);
+      if (replaying > 0 && (reply || focusReport)) return;
+      // A retired execution-home seat may finish protocol IO, not new input.
+      if (recoveryRetired.current && !reply) return;
       // The field let go for a touch or a selection (item 54) is not the
       // person leaving the terminal: the program is not told.
-      if (isFocusReport(d) && selectionHolds()) return;
-      if (!reply && !isFocusReport(d)) ownSize();
+      if (focusReport && selectionHolds()) return;
+      if (!reply && !focusReport) ownSize();
       let out = d;
       const m = modsRef.current;
       // An answer to a live question is not a key: it neither takes a
       // latch nor waits for one.
       if (!reply && !MOUSE_REPORT.test(d)) blink.typed();
-      if ((m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
+      if (!preencoded && (m.ctrl || m.alt) && !reply && !MOUSE_REPORT.test(d)) {
         out = d.length === 1 ? (kittyTyped(term, d, m.ctrl, m.alt) ?? typed(d, m)) : d;
         latch(afterKey(m));
       }
-      send(out);
+      send(out, reply);
       // An answer is not typing; a key is, and a history replay's keys
       // are not anybody's (`lib/term-predict`).
       if (!reply && replaying === 0) predict.typed(out);
@@ -2508,12 +2563,12 @@ export function TerminalPane({
       history?.approached();
       return history?.pane() ?? null;
     });
-    const shellTmux = SHELL_ROW(id) ? followsShellTmux(term, (rows) => termScroll(id, rows)) : null;
+    const shellTmux = SHELL_ROW(id) ? followsShellTmux(term, (rows) => attachment.scroll(rows)) : null;
     const unwheel =
-      shellTmux && !window.matchMedia("(pointer: coarse)").matches ? wheelsToShellTmux(box, term, shellTmux, (rows) => termScroll(id, rows)) : () => {};
+      shellTmux && !window.matchMedia("(pointer: coarse)").matches ? wheelsToShellTmux(box, term, shellTmux, (rows) => attachment.scroll(rows)) : () => {};
     const viaTmux = () => (TMUX_ROW.test(id) || !!shellTmux?.front()) && term.buffer.active.type === "alternate";
     (box as HTMLDivElement & { __jump?: (dir: -1 | 1) => void }).__jump = (dir) => {
-      if (viaTmux()) void termPrompt(id, dir < 0).catch(() => {});
+      if (viaTmux()) void attachment.prompt(dir < 0).catch(() => {});
       else jumpToPrompt(term, marks, dir);
     };
     // The menu's ⌘⇧; and the key sheet's 历史命令 (roadmap 2.6).
@@ -2565,7 +2620,7 @@ export function TerminalPane({
         });
       const offer = () => (at ? showEditMenuAt(at, items.slice(), p.text) : offerEditMenu(items.slice()));
       const url = /^[a-z][a-z0-9+.-]*:\/\/\S+$/i.test(p.text) ? p.text : urlAt(term, p.from.row, p.from.col);
-      if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : follow(url, machine)));
+      if (url) open(() => (/^file:/i.test(url) ? fileLink(url) : openUrl(url)));
       items.push({
         id: "paste",
         title: menu.paste,
@@ -2698,7 +2753,7 @@ export function TerminalPane({
         seat: historyRef.current!,
         scroller: scrollerRef.current!,
         room: roomRef.current!,
-        read: (since) => termPaneHistory(id, since),
+        read: (since) => attachment.paneHistory(since),
         changed: () => native.sync(),
         moved: (to) => {
           historyUp = to;
@@ -2919,7 +2974,10 @@ export function TerminalPane({
       termRef.current = null;
       searchRef.current = null;
       keysRef.current = null;
-      termLeave(id).catch(() => {});
+      if (attachmentRef.current === attachment) attachmentRef.current = null;
+      void attachment.dispose().then(result => {
+        if (result.failures) console.warn("Terminal attachment cleanup failed", result);
+      });
     };
   }, [id, attempt]);
 
@@ -2980,6 +3038,28 @@ export function TerminalPane({
   const activeRef = useRef(active);
   activeRef.current = active;
   const dropping = useRef(false);
+  const recoveryState = useRef({ joining, opening, dropShare, dropNames });
+  recoveryState.current = { joining, opening, dropShare, dropNames };
+  useEffect(() => {
+    let alive = true;
+    const idle = () => {
+      const state = recoveryState.current;
+      // A retired, not-yet-started animation/open wait owns no IO. Actual
+      // accepted joins, sends and transfers still block disposal until settled.
+      const presented = recoveryRetired.current || (!state.joining && !state.opening && reopenRef.current !== null);
+      return alive && !dropping.current && !recoveryJoining.current && !recoverySending.current &&
+        state.dropShare === null && state.dropNames === null && presented;
+    };
+    const owner: TerminalRecoveryOwner = { idle, retire: () => { recoveryRetired.current = true; }, rejoin: () => {
+      if (recoveryRetired.current || !idle()) return false;
+      void reopenRef.current?.();
+      return true;
+    } };
+    recoveryOwner.current = owner;
+    notifyRecovery();
+    return () => { alive = false; recoveryOwner.current = null; notifyRecovery(); };
+  }, []);
+  useEffect(() => { notifyRecovery(); }, [joining, opening, dropShare, dropNames]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
@@ -3038,7 +3118,9 @@ export function TerminalPane({
       into: string | null = null,
       onLanded?: () => void,
     ): Promise<boolean> => {
-      if ((Array.isArray(paths) && paths.length === 0) || dropping.current) return false;
+      if (recoveryRetired.current || (Array.isArray(paths) && paths.length === 0) || dropping.current) return false;
+      const attachment = attachmentRef.current;
+      if (!attachment || attachment.id !== id) return false;
       // A fresh send supersedes the previous failed attempt. Its
       // staged bytes and retry affordance must not linger after a
       // successful retry from the selection panel.
@@ -3052,7 +3134,7 @@ export function TerminalPane({
       let cancelled = false;
       let made: PreparedDrop | null = null;
       const watch = window.setInterval(() => {
-        termDropProgress(id).then((p) => p !== null && !cancelled && setDropShare(p), () => {});
+        attachment.dropProgress().then((p) => p !== null && !cancelled && setDropShare(p), () => {});
       }, DROP_LOOK_MS);
       const settle = () => {
         window.clearInterval(watch);
@@ -3066,7 +3148,7 @@ export function TerminalPane({
         cancelled = true;
         window.clearInterval(watch);
         setDropStopping(true);
-        cancellation = termDropCancel(id).catch(() => {});
+        cancellation = attachment.dropCancel().catch(() => {});
       };
       try {
         made = typeof paths === "function" ? await paths(() => cancelled) : Array.isArray(paths)
@@ -3079,7 +3161,7 @@ export function TerminalPane({
         // no existing wire frame changes for single-file transfers.
         const first = made.items[0]?.from ?? null;
         const simple = made.items.every((x) => x.from === first && !x.keep);
-        const end = await (simple ? termDrop(id, made.items.map((x) => x.path), first, into) : termDropItems(id, made.items, into));
+        const end = await (simple ? attachment.drop(made.items.map((x) => x.path), first, into) : attachment.dropItems(made.items, into));
         if (end?.miss) {
           const retry = made;
           if (!cancelled) fail(end.miss, names,
@@ -3538,6 +3620,10 @@ export function TerminalPane({
       {/* ⚠️ 墓碑 (NOTICE-BRIEF, IMG_5412): reconnecting was a bubble
           floating at the top of the screen it held (`RejoinPill`), over
           the program's text. It is the session pill's now. */}
+      {linkFailure&&<div data-term-link-error role="alert" className="absolute inset-x-row bottom-row z-20 flex items-center gap-in rounded-lg bg-popover px-row py-in text-callout shadow-(--shadow-float)">
+        <span className="min-w-0 flex-1 break-words">{linkFailure}</span>
+        <button type="button" aria-label={gui.close} className="grid min-h-touch min-w-touch place-items-center" onMouseDown={e=>e.preventDefault()} onClick={()=>{linkAction.current++;setLinkFailure(null);}}><IconClose className="size-affordance"/></button>
+      </div>}
       {opening && !why && openedAt !== null && (
         <div data-term-opening className="absolute inset-0 z-10 bg-card font-sans">
           <Waiting

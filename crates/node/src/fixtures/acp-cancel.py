@@ -30,9 +30,9 @@ def send(value):
         print(json.dumps(value, separators=(',', ':')), flush=True)
 
 
-def note(text):
+def note(text, session='synthetic-q037-session'):
     send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {
-        'sessionId': 'synthetic-q037-session',
+        'sessionId': session,
         'update': {'sessionUpdate': 'agent_message_chunk',
                    'content': {'type': 'text', 'text': text}},
     }})
@@ -44,7 +44,11 @@ def answer(request_id, result):
 
 def flood():
     n = 0
-    large = mode == 'large-flood'
+    if mode == 'drip-live':
+        note('drip-large:' + 'd' * (30 * 1024 * 1024))
+        mark('flood-progress', {'frames': 1})
+        return
+    large = mode in ('large-flood', 'capture-flood', 'capture-close')
     while not stop.wait(.04 if large else .0005):
         try:
             note('synthetic-noise-' + str(n) + 'x' * (256 * 1024 if large else 128))
@@ -77,23 +81,32 @@ try:
                 continue
             answer(request_id, {
                 'protocolVersion': 2 if mode == 'handshake-refuse' else 1,
-                'agentCapabilities': {'loadSession': True},
+                'agentCapabilities': {'loadSession': mode != 'journal-no-load',
+                                      **({'sessionCapabilities': {'resume': {}}} if mode == 'journal-resume' else {}),
+                                      **({'promptCapabilities': {'image': True, 'embeddedContext': True}} if mode in ('journal-load', 'journal-no-load') else {})},
                 'authMethods': [{'id': 'synthetic', 'name': 'Synthetic', 'type': 'agent'}],
                 'agentInfo': {'name': 'synthetic-q037', 'version': '1'},
             })
         elif method == 'session/new':
+            if mode == 'journal-invalid':
+                note('invalid source', 'another-session')
+            if mode == 'journal-opening':
+                for n in range(20000):
+                    note('opening-' + str(n))
             answer(request_id, {'sessionId': 'synthetic-q037-session'})
+        elif method == 'session/resume':
+            if mode == 'journal-resume':
+                note('新运行早期')
+            answer(request_id, {})
         elif method == 'session/load':
             mark('load', {'id': request_id})
-            if mode == 'drip-replay':
-                note('drip-large:' + 'd' * (30 * 1024 * 1024))
-                for n in range(4096):
-                    note('drip-tail-' + str(n) + ':' + 't' * 64)
-            elif mode in ('many-small-replay', 'cancel-replay'):
+            if mode == 'many-small-load':
                 for n in range(16384):
-                    note('replay-item-' + str(n) + ':' + 'r' * (1024 if mode == 'cancel-replay' else 64))
+                    note('load-item-' + str(n) + ':' + 'r' * 64)
+            elif mode == 'journal-load':
+                note('journal snapshot base')
             else:
-                note('synthetic replay final note')
+                note('synthetic restored final note')
             answer(request_id, {})
         elif method == 'authenticate':
             mark('control', {'id': request_id})
@@ -103,10 +116,31 @@ try:
             turns += 1
             pending = request_id
             mark('prompt', {'id': request_id, 'turn': turns})
+            if mode == 'journal-no-load':
+                note('capture identical chunk')
+                answer(request_id, {'stopReason': 'end_turn'})
+                pending = None
+                continue
+            if mode == 'journal-load':
+                captures = list((root.parent / 'store/.khor/acp-journal').glob('*/current/records.jsonl'))
+                prompts = [json.loads(record) for path in captures for record in path.read_text().splitlines() if json.loads(record).get('kind') == 'prompt']
+                mark('accepted', {'before_dispatch': bool(prompts), 'content': message['params']['prompt']})
+                note('journal repeated delta')
+                note('journal repeated delta')
+                send({'jsonrpc': '2.0', 'method': 'session/update', 'params': {
+                    'sessionId': 'synthetic-q037-session', 'update': {
+                        'sessionUpdate': 'tool_call', 'toolCallId': 'journal-tool',
+                        'title': 'Edit', 'kind': 'edit', 'status': 'completed',
+                        'content': [{'type': 'diff', 'path': 'a.txt', 'oldText': 'old', 'newText': 'new'}],
+                        'rawInput': {'path': 'a.txt'},
+                    }}})
+                answer(request_id, {'stopReason': 'max_tokens'})
+                pending = None
+                continue
             note('synthetic prompt admitted')
-            if mode in ('notes-flood', 'cooperative-flood', 'large-flood') and turns == 1:
+            if mode in ('notes-flood', 'cooperative-flood', 'large-flood', 'capture-flood', 'capture-close', 'drip-live') and turns == 1:
                 threading.Thread(target=flood, daemon=True).start()
-            if turns > 1 or mode in ('normal', 'cancel-replay', 'drip-replay'):
+            if turns > 1 or mode == 'normal':
                 note('synthetic final note before normal completion')
                 answer(request_id, {'stopReason': 'end_turn'})
                 pending = None
@@ -115,7 +149,8 @@ try:
                     time.sleep(.1)
         elif method == 'session/cancel':
             mark('cancel', {'prompt': pending, 'at': time.monotonic()})
-            if mode in ('cooperative', 'cooperative-flood') and pending is not None:
+            if mode in ('cooperative', 'cooperative-flood', 'capture-flood', 'capture-close', 'drip-live') and pending is not None:
+                if mode in ('capture-flood', 'capture-close', 'drip-live'): stop.set()
                 note('synthetic final note after cancel')
                 answer(pending, {'stopReason': 'cancelled'})
                 pending = None

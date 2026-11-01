@@ -1222,8 +1222,9 @@ async fn retry_deadline_bounds_actual_worker_starts_without_starving_a_fresh_run
     }
     let mut peer = Peer::new(&node, Mode::Reply);
     let mut acknowledgements = Vec::new();
+    let mut direct_replies = Vec::new();
     for run in &runs {
-        worker(&node, Operation::CancelStep { run: run.clone() }).unwrap();
+        direct_replies.push(worker(&node, Operation::CancelStep { run: run.clone() }).unwrap());
         acknowledgements.push(status(&node, run));
     }
     let original_events = peer.events.lock().unwrap().clone();
@@ -1279,6 +1280,12 @@ async fn retry_deadline_bounds_actual_worker_starts_without_starving_a_fresh_run
     let events = peer.events.lock().unwrap().clone();
     let retired = drain(&node).await;
     let cleanup = peer.finish();
+    eprintln!(
+        "retry-deadline-observation due={due:?} runs={runs:?} tasks={tasks:?} \
+         direct_replies={direct_replies:?} acknowledgements={acknowledgements:?} \
+         original_events={original_events:?} initial={initial:?} quiet={quiet:?} \
+         starts={starts:?} events={events:?} fresh_seen_at={fresh_seen_at:?}"
+    );
     assert!(
         retired.is_ok() && cleanup.is_ok(),
         "workers={retired:?} peer={cleanup:?}"

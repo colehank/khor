@@ -2664,13 +2664,14 @@ function Top({
         ref={grid}
         role="table"
         data-load-top
+        data-sticky-group
         data-panel
         data-top-cols={shown.join(" ")}
         data-top-frs={shown.map((k) => `${k}:${COLS[k].fr}`).join(" ")}
         style={{ gridTemplateColumns: tracks }}
         className="text-callout tabular-nums"
       >
-        <div data-top-heads role="row" className="bg-card text-callout text-muted-foreground">
+        <div data-top-heads data-sticky-head role="row" className="bg-card text-callout text-muted-foreground">
           {/* **The order the user named** (2026-09-05:「PID · 状态 ·
               USER · 时长 · CPU时间 · CPU · GPU · 内存 · 显存 · 读写 ·
               命令」): the pid you type next, then what the process *is*,
@@ -2708,7 +2709,7 @@ function Top({
             </Column>
           ))}
         </div>
-        {why ? (
+        <div data-top-body data-sticky-body="flush" role="rowgroup">{why ? (
           <div
             data-load-why
             title={whyDetail && whyDetail !== why ? whyDetail : undefined}
@@ -2768,7 +2769,7 @@ function Top({
               )}
             </div>
           ))
-        )}
+        )}</div>
       </div>
       {!why && !all && ordered.length > TOP_SHOWN && (
         <button

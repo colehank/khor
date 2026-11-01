@@ -1,3 +1,4 @@
+import {installAttachmentLeases} from "./fixtures/attachment-leases.mjs";
 // Actual ChatView/React and production api.ts; only Tauri invoke is a fixture.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -9,7 +10,7 @@ import {createServer} from 'vite';
 import {chromium, webkit} from 'playwright-core';
 
 import {chatPollCases, exerciseChatPoll} from './fixtures/chat-poll-cases.mjs';
-const known = ['immediate-failure', 'gone-empty', ...chatPollCases];
+const known = ['immediate-failure', 'gone-empty', 'late-begin-retry', ...chatPollCases];
 const scenarios = process.env.CHAT_POLL_SCENARIOS?.split(',').filter(Boolean) ?? known;
 assert(scenarios.length > 0, 'Select at least one chat poll scenario');
 assert.equal(new Set(scenarios).size, scenarios.length, 'Chat poll scenarios must not repeat');
@@ -19,7 +20,7 @@ assert(existsSync(join(gui, 'src/gen/catalog.ts')), 'Generate the catalog/bindin
 const fixture = mkdtempSync(join(gui, '.chat-poll-check-'));
 const evidence = process.env.CHAT_POLL_CHECK_DIR || mkdtempSync(join(tmpdir(), 'khor-chat-poll-'));
 mkdirSync(evidence, {recursive: true});
-const sourceFiles = ['src/views/ChatView.tsx', 'scripts/check-chat-poll.mjs', 'scripts/fixtures/chat-poll-cases.mjs'];
+const sourceFiles = ['src/api.ts', 'src/lib/attachment-view.ts', 'src/gen/bindings/AttachmentKind.ts', 'scripts/fixtures/attachment-leases.mjs', 'src/views/ChatView.tsx', 'scripts/check-chat-poll.mjs', 'scripts/fixtures/chat-poll-cases.mjs'];
 const fingerprint = () => Object.fromEntries(sourceFiles.map(file => [file, createHash('sha256').update(readFileSync(join(gui, file))).digest('hex')]));
 const sources = fingerprint(), results = [];
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -52,6 +53,7 @@ async function run(engine, name) {
     const errors = [], consoleErrors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+    await page.addInitScript(installAttachmentLeases);
     await page.addInitScript(({scenario}) => {
       const empty = {frames: [], next: 0, gone: false, lost: false, sending: 0, sending_of: 0, stall: null};
       const wire = window.__chatWire = {mode: ['immediate-failure', 'success-resets', 'backoff-cap', 'retry-attempt', 'http-failure'].includes(scenario) ? 'fail' : ['gone-empty', 'gone-reload'].includes(scenario) ? 'gone' : 'hold', calls: [], pending: [],
@@ -64,6 +66,12 @@ async function run(engine, name) {
         transformCallback: () => 0, unregisterCallback: () => {}, convertFileSrc: path => path,
         invoke: async (cmd, args = {}) => {
           const call = {cmd, args, at: Date.now()}; wire.calls.push(call);
+          const admission = window.__attachmentLeases(cmd,args);
+          if (scenario === 'late-begin-retry' && cmd === 'attachment_begin' && !wire.ackBegin) {
+            wire.heldLease = admission.value;
+            return new Promise(resolve => { wire.ackBegin = () => resolve(admission.value); });
+          }
+          if (admission.handled) return admission.value;
           if (cmd === 'chat_wait' || cmd === 'chat_poll') {
             if (wire.mode === 'fail') throw new Error('fixture unavailable');
             if (wire.mode === 'gone') return {...empty, gone: true};
@@ -98,6 +106,33 @@ async function run(engine, name) {
       await page.clock.install({time: new Date('2026-10-25T00:00:00Z')});
       await page.clock.pauseAt(new Date('2026-10-25T00:00:00Z'));
       await page.goto(`http://127.0.0.1:${server.config.server.port}/${fixture.split('/').pop()}/index.html`);
+      if (scenario === 'late-begin-retry') {
+        await until(() => page.evaluate(() => typeof window.__chatWire.ackBegin === 'function'), 'first Begin reached the controlled ACK barrier');
+        await page.evaluate(() => window.__chatReact.reload());
+        await until(async () => (await polls()).length === 1, 'new attempt opens and polls without waiting for the old ACK');
+        const opened = await page.evaluate(() => window.__chatWire.calls.filter(call => call.cmd === 'chat_open'));
+        assert.equal(opened.length, 1);
+        const oldKey = await page.evaluate(() => window.__chatWire.heldLease);
+        assert.notEqual(opened[0].args.lease, oldKey, 'retry has its own Begin ACK');
+        assert.equal((await polls())[0].args.lease, opened[0].args.lease, 'the first read belongs to B');
+        const message = text => ({kind:'note',update:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text}}}});
+        await page.evaluate(frame => window.__chatWire.reply(0, {next:7,frames:[frame]}), message('active B after a delayed Begin'));
+        await page.clock.runFor(0);
+        await until(async () => (await polls()).length === 2, 'B continues from its completed read');
+        assert.equal((await polls())[1].args.since, 7);
+        assert.equal((await polls())[1].args.lease, opened[0].args.lease);
+        await until(async () => (await page.locator('body').innerText()).includes('active B after a delayed Begin'), 'the real renderer paints B data');
+        await page.evaluate(() => window.__chatWire.ackBegin());
+        await until(() => page.evaluate(key => window.__chatWire.calls.some(call => call.cmd === 'chat_leave' && call.args.lease === key), oldKey), 'late ACK is released by its original view');
+        assert.equal(await page.evaluate(() => window.__chatWire.calls.filter(call => call.cmd === 'chat_open').length), 1, 'late A never opens a socket');
+        assert((await page.locator('body').innerText()).includes('active B after a delayed Begin'), 'late A cleanup preserves B content');
+        await page.evaluate(() => window.__chatReact.close());
+        await until(() => page.evaluate(key => window.__chatWire.calls.some(call => call.cmd === 'chat_leave' && call.args.lease === key), opened[0].args.lease), 'unmount releases only the active view key');
+        await page.evaluate(frame => window.__chatWire.reply(1, {next:99,frames:[frame]}), message('stale data after unmount'));
+        await page.clock.runFor(60_000);
+        assert.equal((await polls()).length, 2, 'late poll completion cannot revive an unmounted view');
+        assert(!(await page.locator('body').innerText()).includes('stale data after unmount'));
+      } else {
       await until(async () => (await polls()).length > 0, 'actual ChatView started a poll');
       if (scenario === 'immediate-failure' || scenario === 'gone-empty') {
       await page.clock.runFor(90);
@@ -115,6 +150,7 @@ async function run(engine, name) {
         assert.equal((await polls()).length, 1, 'gone also rejects pace/visibility kicks');
       }
       } else { await exerciseChatPoll(scenario, page, polls); }
+      }
       assert.deepEqual(errors, []);
       results.push({engine: name, scenario, ok: true, polls: await polls()}); console.log('PASS', name, scenario);
     } catch (error) {

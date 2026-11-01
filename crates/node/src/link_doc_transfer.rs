@@ -1276,3 +1276,7 @@ mod budget_tests {
 #[cfg(test)]
 #[path = "doc_transfer_flow_tests.rs"]
 pub(crate) mod flow_tests;
+
+#[cfg(all(test, unix))]
+#[path = "doc_transfer_state/query_concurrency_tests.rs"]
+pub(crate) mod query_concurrency_tests;

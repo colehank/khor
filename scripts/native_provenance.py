@@ -67,7 +67,7 @@ def environment():
     # Hash values so credentials accidentally carried in CARGO_* are not printed.
     names = {"PATH", "CC", "CXX", "AR", "CFLAGS", "CPPFLAGS", "CXXFLAGS", "LDFLAGS",
              "SDKROOT", "MACOSX_DEPLOYMENT_TARGET", "IPHONEOS_DEPLOYMENT_TARGET",
-             "KHOR_AGENT_BUNDLE"}
+             "KHOR_AGENT_BUNDLE", "TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS"}
     names.update(n for n in os.environ if n.startswith(("CARGO", "RUST", "KHOR_", "CC_", "CXX_", "AR_", "PKG_CONFIG")))
     return {n: key(os.environ.get(n)) for n in sorted(names)}
 
@@ -136,6 +136,8 @@ def build_state(root, metadata, tools, request):
         extras = {}
         if package["name"] == "khor-web":
             extras["apps/gui/dist"] = tree(root / "apps/gui/dist")
+        if package["name"] == "khor-gui":
+            extras["apps/gui/src-tauri/capabilities"] = tree(root / "apps/gui/src-tauri/capabilities")
         if package["name"] == "khor-node":
             for name in ("apps/agent/providers.json", "scripts/install.sh"):
                 extras[name] = tree(root / name)
@@ -316,7 +318,7 @@ def artifact_files(row, root, target_dir):
             raise ValueError("Expected one content-paired normal executable")
         paired = candidates[0]
         files[str(paired)] = regular(paired)
-    stem = paired.stem.removeprefix("lib") if paired.suffix in (".rlib", ".rmeta") else paired.name
+    stem = paired.stem.removeprefix("lib") if paired.suffix in (".rlib", ".rmeta", ".a", ".dylib") else paired.name
     candidates = [paired.parent / (stem + ".d")]
     if row["target"]["kind"] == ["custom-build"]:
         candidates = list(paired.parent.glob("*.d"))
@@ -370,7 +372,7 @@ def generated_output(row, prepared, package, priors):
     out.relative_to(Path(prepared["target_dir"]))
     if not out.is_dir() or out.resolve() != out.absolute():
         raise ValueError("Generated output directory is absent or has symlink ancestors")
-    files = {str(p): regular(p) for p in sorted(out.rglob("*"))
+    files = {str(p): {**regular(p), "ctime_ns": p.lstat().st_ctime_ns} for p in sorted(out.rglob("*"))
              if not p.is_dir() or p.is_symlink()}
     marker = regular(out.parent / "output")
     package_root = Path(next(p["manifest_path"] for p in prepared["metadata"]["packages"]
@@ -396,8 +398,10 @@ def generated_output(row, prepared, package, priors):
                 and {p: content(s) for p, s in g["files"].items()}
                 == {p: content(s) for p, s in files.items()}]
     if not previous:
+        # Darwin copies can retain mtime (and birth time). ctime records
+        # current filesystem state changes, within this trusted Cargo invocation.
         if marker["mtime_ns"] < prepared["prepared_ns"] or any(
-                s["mtime_ns"] < prepared["prepared_ns"] for s in files.values()):
+                max(s["mtime_ns"], s["ctime_ns"]) < prepared["prepared_ns"] for s in files.values()):
             raise ValueError("Generated output has no current invocation or matching prior receipt")
     return {"package_key": prepared["package_keys"][package], "out_dir": str(out),
             "files": files, "invocation_marker": marker}

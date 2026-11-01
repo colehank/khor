@@ -20,6 +20,7 @@
 //! | variable | the stub then |
 //! |---|---|
 //! | `KHOR_STUB_REPLAYS=0` | advertises no `load_session`, and refuses `session/load` |
+//! | `KHOR_STUB_SETUP_LOG=<path>` | private fixture log of setup method names only |
 //! | `KHOR_STUB_VERSION=<n>` | answers `initialize` with version `n`, whatever was asked |
 //! | `KHOR_STUB_LOGIN=1` | answers `session/new` with `auth_required` (-32000) |
 //! | `KHOR_STUB_LISTS=1` | advertises `sessionCapabilities.list`, and answers `session/list` |
@@ -67,6 +68,19 @@ use agent_client_protocol::schema::v1::{
 };
 fn extended() -> bool {
     std::env::var("KHOR_STUB_EXTENDED").is_ok() || std::env::args().any(|v| v == "--extended")
+}
+
+fn setup_log(method: &str) {
+    use std::io::Write;
+    if let Some(path) = std::env::var_os("KHOR_STUB_SETUP_LOG") {
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .expect("open private setup-method log");
+        writeln!(file, "{method}").expect("write private setup-method log");
+        file.sync_all().expect("sync private setup-method log");
+    }
 }
 fn question(session: Option<&str>) -> CreateElicitationRequest {
     let mut v = serde_json::json!({"mode":"form","message":"Choose a count","requestedSchema":{"type":"object","properties":{"count":{"type":"integer","minimum":1,"maximum":3}},"required":["count"]}});
@@ -166,6 +180,9 @@ async fn main() -> agent_client_protocol::Result<()> {
     // What the settable stub currently has set: (model, fast).
     let set = Arc::new(Mutex::new(("small".to_owned(), false)));
     let set_option = set.clone();
+    // The scripted agent retains the actual context accepted by session/new.
+    let new_context = Arc::new(Mutex::new(String::new()));
+    let prompt_context = new_context.clone();
     let canceled = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let prompt_canceled = canceled.clone();
     Agent
@@ -180,6 +197,7 @@ async fn main() -> agent_client_protocol::Result<()> {
         .name("acp-stub")
         .on_receive_request(
             async move |request: InitializeRequest, responder, connection| {
+                setup_log("initialize");
                 if let Ok(marker)=std::env::var("KHOR_STUB_WAIT_INIT"){
                     std::fs::write(marker,std::process::id().to_string()).unwrap();
                     return connection.spawn(async move{tokio::time::sleep(std::time::Duration::from_secs(600)).await;responder.respond(InitializeResponse::new(request.protocol_version))});
@@ -260,6 +278,7 @@ async fn main() -> agent_client_protocol::Result<()> {
         )
         .on_receive_request(
             async move |request: NewSessionRequest, responder, _connection| {
+                setup_log("session/new");
                 if std::env::var("KHOR_STUB_LOGIN").is_ok() {
                     // The real spelling: `auth_required` is a code, not
                     // a phrase, and a client that matched on words
@@ -271,7 +290,7 @@ async fn main() -> agent_client_protocol::Result<()> {
                     format!("stub-session-{}", std::process::id())
                 } else { "stub-session-1".to_owned() };
                 let mut opened = NewSessionResponse::new(session);
-                if extended(){let mut meta=serde_json::Map::new();meta.insert("modelId".into(),serde_json::to_string(&request).unwrap().into());opened.meta=Some(meta);}
+                if extended(){let context=serde_json::to_string(&request).unwrap();*new_context.lock().unwrap()=context.clone();let mut meta=serde_json::Map::new();meta.insert("modelId".into(),context.into());opened.meta=Some(meta);}
                 if settable() {
                     let (model, fast) = set.lock().unwrap().clone();
                     opened.modes = Some(modes_of("careful"));
@@ -325,16 +344,15 @@ async fn main() -> agent_client_protocol::Result<()> {
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            // The replay contract, scripted: every replayed update goes
-            // out **before** the response — which is the ordering the
-            // real adapter honours and khor_acp::Handle::replay leans on.
+            // Supported initial Load emits the recorded past before its response.
             async move |request: LoadSessionRequest, responder, connection| {
+                setup_log("session/load");
                 if !replays() {
                     return responder
                         .respond_with_error(agent_client_protocol::Error::method_not_found());
                 }
                 let session = request.session_id.clone();
-                if extended(){let inner=connection.clone();return connection.spawn(async move{let response=inner.send_request(question(Some(session.0.as_ref()))).block_task().await?;inner.send_notification(SessionNotification::new(session.clone(),chunk(&format!("load-answer:{} context:{}",serde_json::to_string(&response).unwrap(),serde_json::to_string(&request).unwrap()))))?;responder.respond(LoadSessionResponse::new())});}
+                if extended(){connection.send_notification(SessionNotification::new(session.clone(),chunk(&format!("load-context:{}",serde_json::to_string(&request).unwrap()))))?;return responder.respond(LoadSessionResponse::new());}
                 for text in ["played back: one", "played back: two"] {
                     connection.send_notification(SessionNotification::new(
                         session.clone(),
@@ -350,11 +368,21 @@ async fn main() -> agent_client_protocol::Result<()> {
             let inner=connection.clone();connection.spawn(async move{let response=inner.send_request(question(None)).block_task().await?;if serde_json::to_value(response).unwrap()["action"]!="accept"{return responder.respond_with_error(agent_client_protocol::Error::auth_required());}responder.respond(AuthenticateResponse::new())})
         },agent_client_protocol::on_receive_request!())
         .on_receive_request(async move|request:ResumeSessionRequest,responder,connection|{
+            setup_log("session/resume");
             connection.send_notification(SessionNotification::new(request.session_id,chunk("no-replay resume")))?;responder.respond(ResumeSessionResponse::new())
         },agent_client_protocol::on_receive_request!())
         .on_receive_request(async move|_request:CloseSessionRequest,responder,_connection|responder.respond(CloseSessionResponse::new()),agent_client_protocol::on_receive_request!())
         .on_receive_request(
             async move |request: PromptRequest, responder, connection| {
+                if extended() {
+                    let context=prompt_context.lock().unwrap().clone();
+                    let inner=connection.clone();
+                    return connection.spawn(async move {
+                        let answer=inner.send_request(question(Some(request.session_id.0.as_ref()))).block_task().await?;
+                        inner.send_notification(SessionNotification::new(request.session_id.clone(),chunk(&format!("prompt-answer:{} context:{}",serde_json::to_string(&answer).unwrap(),context))))?;
+                        responder.respond(PromptResponse::new(StopReason::EndTurn))
+                    });
+                }
                 prompt_canceled.store(false, std::sync::atomic::Ordering::SeqCst);
                 let canceled = prompt_canceled.clone();
                 let session = request.session_id.clone();

@@ -8,8 +8,77 @@ export type AcpTool = {
 };
 export type AcpCompaction = {who:"compaction";id:string;status:string;summary:string;error:string|null};
 export type AcpResource = {who:"resource";kind:string;name:string;uri?:string;data?:string;mime?:string};
-export type AcpItem = AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string } | (AcpTool & { who: "tool" });
+export type AcpItem = AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string; messageId?: string } | (AcpTool & { who: "tool" });
+
+// Count the JSON data's actual two-space display before materializing it.
+// Transport values are plain JSON; non-JSON/cyclic input cannot claim a
+// complete bounded projection. The normal renderer retains JSON.stringify.
+function prettyInputFits(value: unknown, limit: number): boolean {
+  let bytes = 0;
+  const add = (size: number) => (bytes += size) <= limit;
+  const string = (text: string) => {
+    if (!add(2)) return false;
+    for (const char of text) {
+      const point = char.codePointAt(0)!;
+      const escaped = char === '"' || char === '\\' || '\b\t\n\f\r'.includes(char);
+      const size = escaped ? 2 : point < 32 || (point >= 0xd800 && point <= 0xdfff) ? 6
+        : point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+      if (!add(size)) return false;
+    }
+    return true;
+  };
+  const ancestors = new Set<object>();
+  const walk = (entry: unknown, depth: number): boolean => {
+    if (typeof entry === 'string') return string(entry);
+    if (entry === null || entry === undefined) return add(4);
+    if (typeof entry === 'boolean') return add(entry ? 4 : 5);
+    if (typeof entry === 'number') return add(Number.isFinite(entry) ? String(entry).length : 4);
+    if (typeof entry !== 'object' || depth >= 128 || ancestors.has(entry)) return false;
+    const array = Array.isArray(entry);
+    if (!array && Object.getPrototypeOf(entry) !== Object.prototype && Object.getPrototypeOf(entry) !== null) return false;
+    ancestors.add(entry);
+    if (!add(1)) return false;
+    const keys = array ? null : Object.keys(entry).filter(key => {
+      const type = typeof (entry as Record<string, unknown>)[key];
+      return type !== 'undefined' && type !== 'function' && type !== 'symbol';
+    });
+    const count = array ? entry.length : keys!.length;
+    for (let index = 0; index < count; index++) {
+      if ((index && !add(1)) || !add(1 + (depth + 1) * 2)) return false;
+      if (keys && (!string(keys[index]) || !add(2))) return false;
+      const child = array ? entry[index] : (entry as Record<string, unknown>)[keys![index]];
+      if (!walk(child, depth + 1)) return false;
+    }
+    ancestors.delete(entry);
+    return (!count || add(1 + depth * 2)) && add(1);
+  };
+  return walk(value, 0);
+}
+
+/** One definition of the input text used by tool rendering, copying and
+ * source search. A finite budget rejects before constructing pretty JSON. */
+export function toolInputText(raw: unknown, maxBytes = Infinity): {
+  text: string | undefined; command: boolean; complete: boolean;
+} {
+  const command = raw && typeof raw === 'object' && typeof (raw as Record<string, unknown>).command === 'string'
+    ? (raw as { command: string }).command : null;
+  if (command !== null) {
+    if (Number.isFinite(maxBytes)) {
+      let bytes = 0;
+      for (const char of command) {
+        const point = char.codePointAt(0)!;
+        bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+        if (bytes > maxBytes) return { text: undefined, command: Boolean(command), complete: false };
+      }
+    }
+    return { text: command, command: Boolean(command), complete: true };
+  }
+  if (raw !== undefined && Number.isFinite(maxBytes) && !prettyInputFits(raw, maxBytes))
+    return { text: undefined, command: false, complete: false };
+  return { text: JSON.stringify(raw, null, 2), command: false, complete: true };
+}
 export type AcpUpdate = {
+  messageId?: string;
   compactionId?:string;summary?:{type?:string;text?:string}[]|null;error?:string|null;
   sessionUpdate?: string; toolCallId?: string; title?: string | null; kind?: string; status?: string;
   rawInput?: unknown; rawOutput?: unknown; locations?: { path?: string; line?: number }[];
@@ -55,8 +124,14 @@ export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], 
       return true;
     }
     const last = out[out.length - 1];
-    if (last?.who === who && "text" in last && typeof last.text === "string") out[out.length - 1] = { ...last, text: last.text + text };
-    else out.push({ who, text });
+    const messageId = typeof u.messageId === "string" ? u.messageId : undefined;
+    const priorId = last && "messageId" in last ? last.messageId : undefined;
+    // Omission reports no new identity; only two different explicit IDs
+    // establish a message boundary. Remember a newly reported ID thereafter.
+    if (last?.who === who && "text" in last && typeof last.text === "string"
+      && (priorId === undefined || messageId === undefined || priorId === messageId))
+      out[out.length - 1] = { ...last, text: last.text + text, ...(messageId === undefined ? {} : { messageId }) };
+    else out.push({ who, text, ...(messageId === undefined ? {} : { messageId }) });
     return true;
   }
   if (u.sessionUpdate !== "tool_call" && u.sessionUpdate !== "tool_call_update") return false;

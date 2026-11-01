@@ -7,12 +7,16 @@ use std::{
 
 struct Attached {
     id: String,
+    lease: String,
     chat: Arc<Chat>,
     peer: TcpStream,
 }
 
 impl Attached {
     fn new() -> Self {
+        Self::with_id(None)
+    }
+    fn with_id(id: Option<String>) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         conn.set_write_timeout(Some(Duration::from_secs(3)))
@@ -30,34 +34,25 @@ impl Attached {
             far: None,
             arrived: tokio::sync::Notify::new(),
             sending: (AtomicU64::new(0), AtomicU64::new(0)),
-            holds: AtomicUsize::new(1),
             left: AtomicBool::new(false),
         });
-        let id = format!("chat-io-{}", khor_node::link::fresh_hex().unwrap());
-        assert!(
-            chats()
-                .lock()
-                .unwrap()
-                .insert(id.clone(), chat.clone())
-                .is_none()
-        );
-        Self { id, chat, peer }
+        let id = id.unwrap_or_else(|| format!("chat-io-{}", khor_node::link::fresh_hex().unwrap()));
+        let lease = chats().begin(Path::new("."), &id).unwrap();
+        let opening = chats().claim(Path::new("."), &id, &lease).unwrap();
+        let (chat, _) = opening.publish(chat).unwrap();
+        drop(opening);
+        Self {
+            id,
+            lease,
+            chat,
+            peer,
+        }
     }
 }
 
 impl Drop for Attached {
     fn drop(&mut self) {
-        let current = chats()
-            .lock()
-            .unwrap()
-            .get(&self.id)
-            .is_some_and(|chat| Arc::ptr_eq(chat, &self.chat));
-        if current {
-            let _ = chat_leave(&self.id);
-        }
-        self.chat.commands.close();
-        self.chat.turns.close();
-        self.chat.conn.close();
+        let _ = chat_leave(Path::new("."), &self.id, &self.lease);
     }
 }
 
@@ -65,7 +60,9 @@ impl Drop for Attached {
 fn closing_a_queued_stop_unblocks_the_upload_and_cannot_stop_a_reopened_attachment() {
     let attached = Attached::new();
     let turn = submit_say_with_token(
+        Path::new("."),
         &attached.id,
+        &attached.lease,
         "x".repeat(16 * 1024 * 1024),
         vec![],
         vec![],
@@ -88,8 +85,9 @@ fn closing_a_queued_stop_unblocks_the_upload_and_cannot_stop_a_reopened_attachme
         })
         .unwrap();
     at_blocker.recv_timeout(Duration::from_secs(2)).unwrap();
-    let stop = submit_control(&attached.id, Control::Stop).unwrap();
-    chat_leave(&attached.id).unwrap();
+    let stop =
+        submit_control(Path::new("."), &attached.id, &attached.lease, Control::Stop).unwrap();
+    chat_leave(Path::new("."), &attached.id, &attached.lease).unwrap();
     assert!(stop.wait().is_err());
     let (finished, result) = mpsc::channel();
     std::thread::spawn(move || finished.send(turn.wait()).unwrap());
@@ -100,16 +98,18 @@ fn closing_a_queued_stop_unblocks_the_upload_and_cannot_stop_a_reopened_attachme
             .is_err()
     );
     assert!(attached.chat.frames.lock().unwrap().held.iter().any(|frame| matches!(frame, ChatFrame::SendCancelled { token: Some(token), .. } if token == "retired-upload")));
-    let mut fresh = Attached::new();
-    {
-        let mut registry = chats().lock().unwrap();
-        registry.remove(&fresh.id);
-        fresh.id = attached.id.clone();
-        registry.insert(fresh.id.clone(), fresh.chat.clone());
-    }
+    let mut fresh = Attached::with_id(Some(attached.id.clone()));
     release.send(()).unwrap();
     blocker.wait().unwrap();
-    let say = submit_say(&fresh.id, "fresh attachment".into(), vec![], vec![]).unwrap();
+    let say = submit_say(
+        Path::new("."),
+        &fresh.id,
+        &fresh.lease,
+        "fresh attachment".into(),
+        vec![],
+        vec![],
+    )
+    .unwrap();
     assert!(
         matches!(read_frame::<GuiOp>(&mut fresh.peer).unwrap(), GuiOp::SayWith { text, .. } if text == "fresh attachment")
     );
@@ -122,7 +122,9 @@ fn a_write_error_is_correlated_before_the_first_poll() {
     attached.chat.conn.close();
     assert!(
         submit_say_with_token(
+            Path::new("."),
             &attached.id,
+            &attached.lease,
             "same words".into(),
             vec![],
             vec![],
@@ -132,7 +134,7 @@ fn a_write_error_is_correlated_before_the_first_poll() {
         .wait()
         .is_err()
     );
-    let batch = chat_poll(&attached.id, 0).unwrap();
+    let batch = chat_poll(Path::new("."), &attached.id, &attached.lease, 0).unwrap();
     assert!(
         matches!(batch.frames.as_slice(), [ChatFrame::Unsent { token: Some(token), .. }] if token == "failed-draft")
     );
@@ -153,24 +155,22 @@ fn queued_close_failure_keeps_its_original_token_across_same_text_resubmission()
         .unwrap();
     at_blocker.recv_timeout(Duration::from_secs(2)).unwrap();
     let old = submit_say_with_token(
+        Path::new("."),
         &attached.id,
+        &attached.lease,
         "same words".into(),
         vec![],
         vec![],
         Some("old-draft".into()),
     )
     .unwrap();
-    chat_leave(&attached.id).unwrap();
+    chat_leave(Path::new("."), &attached.id, &attached.lease).unwrap();
     assert!(old.wait().is_err());
-    let mut fresh = Attached::new();
-    {
-        let mut registry = chats().lock().unwrap();
-        registry.remove(&fresh.id);
-        fresh.id = attached.id.clone();
-        registry.insert(fresh.id.clone(), fresh.chat.clone());
-    }
+    let mut fresh = Attached::with_id(Some(attached.id.clone()));
     let new = submit_say_with_token(
+        Path::new("."),
         &fresh.id,
+        &fresh.lease,
         "same words".into(),
         vec![],
         vec![],
@@ -201,14 +201,16 @@ fn a_stop_admitted_before_the_first_frame_cancels_the_already_admitted_turn() {
         .submit(move || blocked.recv().map_err(|e| e.to_string()))
         .unwrap();
     let turn = submit_say_with_token(
+        Path::new("."),
         &attached.id,
+        &attached.lease,
         "must-not-send".into(),
         vec![],
         vec![],
         Some("draft-1".into()),
     )
     .unwrap();
-    submit_control(&attached.id, Control::Stop)
+    submit_control(Path::new("."), &attached.id, &attached.lease, Control::Stop)
         .unwrap()
         .wait()
         .unwrap();
@@ -231,7 +233,9 @@ fn send_tokens_are_optional_bounded_and_never_encoded_on_the_host_wire() {
     for token in ["", "x y", "秘密", &"x".repeat(129)] {
         assert!(
             submit_say_with_token(
+                Path::new("."),
                 &attached.id,
+                &attached.lease,
                 "hi".into(),
                 vec![],
                 vec![],
@@ -242,10 +246,18 @@ fn send_tokens_are_optional_bounded_and_never_encoded_on_the_host_wire() {
     }
     for token in [None, Some("draft-2_A.b:c".into()), Some("x".repeat(128))] {
         let expected = token.clone();
-        let pending =
-            submit_say_with_token(&attached.id, "hi".into(), vec![], vec![], token).unwrap();
+        let pending = submit_say_with_token(
+            Path::new("."),
+            &attached.id,
+            &attached.lease,
+            "hi".into(),
+            vec![],
+            vec![],
+            token,
+        )
+        .unwrap();
         assert!(
-            matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SayWith { text, images, files } if text == "hi" && images.is_empty() && files.is_empty())
+            matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SayWith { text, images, files, token } if text == "hi" && images.is_empty() && files.is_empty() && token == expected)
         );
         pending.wait().unwrap();
         let frames = &attached.chat.frames.lock().unwrap().held;
@@ -260,6 +272,43 @@ fn send_tokens_are_optional_bounded_and_never_encoded_on_the_host_wire() {
             );
         }
     }
+}
+
+#[test]
+fn capture_tokens_are_view_specific_and_an_old_lease_cannot_capture_the_replacement() {
+    let mut attached = Attached::new();
+    let b = begin_view(Path::new("."), &attached.id).unwrap();
+    open_chat_with(Path::new("."), &attached.id, &b, || panic!("second view must share the current socket")).unwrap();
+    let a_token = "00112233445566778899aabbccddeeff";
+    let b_token = "ffeeddccbbaa99887766554433221100";
+    for (lease, token) in [(&attached.lease,a_token),(&b,b_token)] {
+        chat_capture(Path::new("."),&attached.id,lease,token).unwrap();
+        assert!(matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(),GuiOp::Capture { token:actual } if actual==capture_token(token).unwrap()));
+    }
+    chat_leave(Path::new("."),&attached.id,&attached.lease).unwrap();
+    assert!(chat_capture(Path::new("."),&attached.id,&attached.lease,a_token).is_err());
+    chat_capture(Path::new("."),&attached.id,&b,b_token).unwrap();
+    assert!(matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(),GuiOp::Capture { token } if token==capture_token(b_token).unwrap()));
+    chat_leave(Path::new("."),&attached.id,&b).unwrap();
+}
+
+#[test]
+fn capture_failures_are_typed_and_live_body_updates_are_only_bounded_wake_signals() {
+    for bad in ["", "short", "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "秘密秘密秘密秘密秘密"] {
+        assert!(capture_token(bad).is_err());
+    }
+    for (failure,expected) in [
+        (khor_node::gui_host::CaptureFailure::NotReady,"not_ready"),
+        (khor_node::gui_host::CaptureFailure::Unavailable,"unavailable"),
+    ] {
+        let frame=frame_of(GuiNote::Captured {token:[3;16],result:Err(failure)});
+        let value=serde_json::to_value(frame).unwrap();
+        assert_eq!(value["token"],"03".repeat(16));assert_eq!(value["result"]["reason"],expected);
+    }
+    let frame=frame_of(GuiNote::Note(serde_json::json!({"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"x".repeat(1024*1024)}}}).to_string()));
+    assert!(matches!(frame,ChatFrame::ContentChanged));
+    assert!(serde_json::to_vec(&frame).unwrap().len()<64);
+    assert!(matches!(frame_of(GuiNote::Note(serde_json::json!({"update":{"sessionUpdate":"current_mode_update","currentModeId":"plan"}}).to_string())),ChatFrame::Note {update} if update["update"]["currentModeId"]=="plan"));
 }
 
 #[test]
@@ -280,7 +329,7 @@ fn http_admits_the_token_before_returning_and_rejects_invalid_tokens() {
                 &runtime,
                 root,
                 "chat_say",
-                &serde_json::json!({"id": attached.id, "text": "hi", "token": token})
+                &serde_json::json!({"id": attached.id, "lease": attached.lease, "text": "hi", "token": token})
             )
             .is_err()
         );
@@ -296,12 +345,12 @@ fn http_admits_the_token_before_returning_and_rejects_invalid_tokens() {
             &runtime,
             root,
             "chat_say",
-            &serde_json::json!({"id":attached.id,"text":"hi","token":"http-draft"})
+            &serde_json::json!({"id":attached.id,"lease":attached.lease,"text":"hi","token":"http-draft"})
         )
         .unwrap(),
         "null"
     );
-    submit_control(&attached.id, Control::Stop)
+    submit_control(Path::new("."), &attached.id, &attached.lease, Control::Stop)
         .unwrap()
         .wait()
         .unwrap();
@@ -330,13 +379,16 @@ fn http_returns_at_admission_and_commits_only_after_the_complete_input_is_writte
             &runtime,
             std::path::Path::new("."),
             "chat_say",
-            &serde_json::json!({"id":attached.id,"text":"commit me","token":"http-commit"})
+            &serde_json::json!({"id":attached.id,"lease":attached.lease,"text":"commit me","token":"http-commit"})
         )
         .unwrap(),
         "null"
     );
     assert!(
-        chat_poll(&attached.id, 0).unwrap().frames.is_empty(),
+        chat_poll(Path::new("."), &attached.id, &attached.lease, 0)
+            .unwrap()
+            .frames
+            .is_empty(),
         "HTTP admission cannot report a write commit"
     );
     release.send(()).unwrap();
@@ -346,7 +398,7 @@ fn http_returns_at_admission_and_commits_only_after_the_complete_input_is_writte
     );
     let until = Instant::now() + Duration::from_secs(2);
     loop {
-        let batch = chat_poll(&attached.id, 0).unwrap();
+        let batch = chat_poll(Path::new("."), &attached.id, &attached.lease, 0).unwrap();
         if !batch.frames.is_empty() {
             assert!(
                 matches!(batch.frames.as_slice(), [ChatFrame::SendCommitted { token }] if token == "http-commit")
@@ -368,9 +420,22 @@ fn http_returns_at_admission_and_commits_only_after_the_complete_input_is_writte
 #[test]
 fn controls_keep_fifo_order_and_complete_only_after_their_frames_are_written() {
     let mut attached = Attached::new();
-    let mode = submit_control(&attached.id, Control::SetMode("plan".into())).unwrap();
-    let stop = submit_control(&attached.id, Control::Stop).unwrap();
-    let replay = submit_control(&attached.id, Control::Replay).unwrap();
+    let mode = submit_control(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        Control::SetMode("plan".into()),
+    )
+    .unwrap();
+    let stop =
+        submit_control(Path::new("."), &attached.id, &attached.lease, Control::Stop).unwrap();
+    let capture = submit_control(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        Control::Capture([7; 16]),
+    )
+    .unwrap();
     assert!(
         matches!(read_frame::<GuiOp>(&mut attached.peer).unwrap(), GuiOp::SetMode(mode) if mode == "plan")
     );
@@ -380,11 +445,11 @@ fn controls_keep_fifo_order_and_complete_only_after_their_frames_are_written() {
     ));
     assert!(matches!(
         read_frame::<GuiOp>(&mut attached.peer).unwrap(),
-        GuiOp::Replay
+        GuiOp::Capture { token } if token == [7; 16]
     ));
     mode.wait().unwrap();
     stop.wait().unwrap();
-    replay.wait().unwrap();
+    capture.wait().unwrap();
 }
 
 #[test]
@@ -407,16 +472,32 @@ fn a_turn_waits_for_previously_admitted_mode_and_option() {
         })
         .unwrap();
     started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-    let mode = submit_control(&attached.id, Control::SetMode("plan".into())).unwrap();
-    let option = submit_control(
+    let mode = submit_control(
+        Path::new("."),
         &attached.id,
+        &attached.lease,
+        Control::SetMode("plan".into()),
+    )
+    .unwrap();
+    let option = submit_control(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
         Control::SetOption {
             option: "model".into(),
             value: serde_json::json!("reasoner"),
         },
     )
     .unwrap();
-    let turn = submit_say(&attached.id, "use those settings".into(), vec![], vec![]).unwrap();
+    let turn = submit_say(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        "use those settings".into(),
+        vec![],
+        vec![],
+    )
+    .unwrap();
     let premature = read_frame::<GuiOp>(&mut attached.peer);
     release.send(()).unwrap();
     assert!(
@@ -445,7 +526,15 @@ fn a_turn_waits_for_previously_admitted_mode_and_option() {
 #[test]
 fn stop_can_pass_a_large_turn_before_its_final_parts_frame() {
     let mut attached = Attached::new();
-    let turn = submit_say(&attached.id, "x".repeat(16 * 1024 * 1024), vec![], vec![]).unwrap();
+    let turn = submit_say(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        "x".repeat(16 * 1024 * 1024),
+        vec![],
+        vec![],
+    )
+    .unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     while attached.chat.sending.0.load(Ordering::Relaxed) == 0 {
         assert!(Instant::now() < deadline, "turn never started writing");
@@ -453,7 +542,8 @@ fn stop_can_pass_a_large_turn_before_its_final_parts_frame() {
     }
     // The unread multi-megabyte turn fills the socket before Stop arrives.
     std::thread::sleep(Duration::from_millis(100));
-    let stop = submit_control(&attached.id, Control::Stop).unwrap();
+    let stop =
+        submit_control(Path::new("."), &attached.id, &attached.lease, Control::Stop).unwrap();
     let mut stopped = false;
     let mut slices = 0;
     loop {
@@ -490,9 +580,23 @@ fn leaving_rejects_a_turn_waiting_for_preceding_controls() {
         })
         .unwrap();
     started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-    let mode = submit_control(&attached.id, Control::SetMode("plan".into())).unwrap();
-    let turn = submit_say(&attached.id, "must not send".into(), vec![], vec![]).unwrap();
-    chat_leave(&attached.id).unwrap();
+    let mode = submit_control(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        Control::SetMode("plan".into()),
+    )
+    .unwrap();
+    let turn = submit_say(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        "must not send".into(),
+        vec![],
+        vec![],
+    )
+    .unwrap();
+    chat_leave(Path::new("."), &attached.id, &attached.lease).unwrap();
     let (finished, result) = mpsc::channel();
     std::thread::spawn(move || {
         let _ = finished.send(turn.wait());
@@ -511,7 +615,15 @@ fn leaving_rejects_a_turn_waiting_for_preceding_controls() {
 #[test]
 fn leaving_the_last_holder_interrupts_a_turn_blocked_on_the_real_socket() {
     let attached = Attached::new();
-    let turn = submit_say(&attached.id, "x".repeat(16 * 1024 * 1024), vec![], vec![]).unwrap();
+    let turn = submit_say(
+        Path::new("."),
+        &attached.id,
+        &attached.lease,
+        "x".repeat(16 * 1024 * 1024),
+        vec![],
+        vec![],
+    )
+    .unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
     while attached.chat.sending.0.load(Ordering::Relaxed) == 0 {
         assert!(Instant::now() < deadline, "turn never started writing");
@@ -525,12 +637,155 @@ fn leaving_the_last_holder_interrupts_a_turn_blocked_on_the_real_socket() {
         result.recv_timeout(Duration::from_millis(100)).is_err(),
         "fixture peer does not consume the large turn"
     );
-    chat_leave(&attached.id).unwrap();
+    chat_leave(Path::new("."), &attached.id, &attached.lease).unwrap();
     assert!(
         result
             .recv_timeout(Duration::from_secs(2))
             .unwrap()
             .is_err()
     );
-    assert!(!chats().lock().unwrap().contains_key(&attached.id));
+    assert!(
+        chats()
+            .read(Path::new("."), &attached.id, &attached.lease)
+            .is_err()
+    );
+}
+
+#[test]
+fn active_reopen_retains_its_own_connection_when_an_old_open_lands_last() {
+    fn pair() -> (TcpStream, TcpStream) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (peer, _) = listener.accept().unwrap();
+        (client, peer)
+    }
+    fn wait_for_marker(id: &str, lease: &str, marker: &str) -> Result<(), String> {
+        let until = Instant::now() + Duration::from_secs(2);
+        loop {
+            let batch = chat_poll(Path::new("."), id, lease, 0)?;
+            if batch
+                .frames
+                .iter()
+                .any(|frame| matches!(frame, ChatFrame::Turn {stop} if stop==marker))
+            {
+                return Ok(());
+            }
+            if Instant::now() >= until {
+                return Err("active GUI connection did not receive its own marker".into());
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+    struct Cleanup(String, String);
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            let _ = chat_leave(Path::new("."), &self.0, &self.1);
+        }
+    }
+    let id = format!("chat-reopen-{}", khor_node::link::fresh_hex().unwrap());
+    let old_lease = begin_view(Path::new("."), &id).unwrap();
+    let new_lease = begin_view(Path::new("."), &id).unwrap();
+    let _cleanup = Cleanup(id.clone(), new_lease.clone());
+    let (old_stream, _old_peer) = pair();
+    let (new_stream, mut new_peer) = pair();
+    let (entered, at_connector) = mpsc::channel();
+    let (release, held) = mpsc::channel();
+    let (before_old_landed, after_old_landed) = std::thread::scope(|scope| {
+        let old_id = id.clone();
+        let old_view = old_lease.clone();
+        let old = scope.spawn(move || {
+            open_chat_with(Path::new("."), &old_id, &old_view, || {
+                entered.send(()).map_err(|e| e.to_string())?;
+                held.recv_timeout(Duration::from_secs(3))
+                    .map_err(|e| e.to_string())?;
+                Ok((khor_node::gui_host::Attached { stream: old_stream }, None))
+            })
+        });
+        at_connector.recv_timeout(Duration::from_secs(2)).unwrap();
+        chat_leave(Path::new("."), &id, &old_lease).unwrap();
+        let new_open = open_chat_with(Path::new("."), &id, &new_lease, || {
+            Ok((khor_node::gui_host::Attached { stream: new_stream }, None))
+        });
+        let before = new_open.and_then(|_| {
+            write_frame(&mut new_peer, &GuiNote::Turn("active-B-before-A".into()))?;
+            wait_for_marker(&id, &new_lease, "active-B-before-A")
+        });
+        release.send(()).unwrap();
+        let old_result = old.join().unwrap();
+        assert!(
+            old_result.is_err(),
+            "retired A must not acquire a live view"
+        );
+        let after = (|| {
+            write_frame(&mut new_peer, &GuiNote::Turn("active-B-after-A".into()))?;
+            wait_for_marker(&id, &new_lease, "active-B-after-A")
+        })();
+        (before, after)
+    });
+    assert!(
+        before_old_landed.is_ok(),
+        "active B was discarded by A's early leave: {before_old_landed:?}"
+    );
+    assert!(
+        after_old_landed.is_ok(),
+        "late A replaced or closed active B: {after_old_landed:?}"
+    );
+}
+
+#[test]
+fn two_views_read_the_same_frames_and_one_leave_preserves_the_other() {
+    let root = Path::new(".");
+    let id = format!("chat-two-views-{}", khor_node::link::fresh_hex().unwrap());
+    let first = begin_view(root, &id).unwrap();
+    let second = begin_view(root, &id).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut peer, _) = listener.accept().unwrap();
+    peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    assert!(
+        open_chat_with(root, &id, &first, || Ok((
+            khor_node::gui_host::Attached { stream: client },
+            None
+        )))
+        .unwrap()
+    );
+    assert!(
+        !open_chat_with(root, &id, &second, || panic!(
+            "a second live view must share the connection"
+        ))
+        .unwrap()
+    );
+    write_frame(&mut peer, &GuiNote::Turn("both-views".into())).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    let (a, b) = loop {
+        let a = chat_poll(root, &id, &first, 0).unwrap();
+        let b = chat_poll(root, &id, &second, 0).unwrap();
+        if a.next > 0 && b.next > 0 {
+            break (a, b);
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the shared reader did not deliver its marker"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    };
+    assert_eq!(a.next, b.next);
+    for batch in [&a, &b] {
+        assert!(matches!(&batch.frames[0], ChatFrame::Turn { stop } if stop == "both-views"));
+    }
+    chat_leave(root, &id, &first).unwrap();
+    assert!(
+        chat_stop(root, &id, &first).is_err(),
+        "released view has no input authority"
+    );
+    chat_set_mode(root, &id, &second, "still-here").unwrap();
+    assert!(
+        matches!(read_frame::<GuiOp>(&mut peer).unwrap(), GuiOp::SetMode(mode) if mode == "still-here")
+    );
+    assert_eq!(
+        chat_poll(root, &id, &second, 0).unwrap().next,
+        b.next,
+        "one view does not drain the other cursor"
+    );
+    chat_leave(root, &id, &second).unwrap();
 }

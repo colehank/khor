@@ -113,7 +113,6 @@ pub(super) fn spawn_with_profile(
     spawn(command)
 }
 impl Process {
-    #[cfg(test)]
     pub(super) fn id(&self) -> u32 {
         self.child.id()
     }

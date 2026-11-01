@@ -230,6 +230,73 @@ try {
     if (!dollars && !struck && doubled === 3 && file === 2) ok("math: conversation needs $$ or \\( \\); file reads $ — 0 / 3 / 2");
   }
 
+  // R2-029: file-only bracket formulas must load the math chunk too.
+  {
+    const demand = await page.evaluate(async () => {
+      const { needsOf } = await import("/src/lib/md/blocks.ts");
+      return [needsOf(String.raw`\(x\)`, true).math, needsOf(String.raw`\[x\]`, true).math, needsOf("正文", true).math];
+    });
+    if (JSON.stringify(demand) !== "[true,true,false]") fail(`file bracket math lazy demand: ${JSON.stringify(demand)}`);
+    else ok("file bracket math: bracket-only files request math; plain files do not");
+    const positions = await page.evaluate(async () => {
+      const { bracketMath } = await import("/src/lib/md/blocks.ts");
+      const cases = [
+        [String.raw`\(x\)`, "$$x$$"],
+        [String.raw`\\(literal\\)`, String.raw`\\(literal\\)`],
+        [String.raw`\\\(x\)`, String.raw`\\$$x$$`],
+        ["\\[\na\n\nb\n\\]", "$$\na\n\nb\n$$"],
+        [String.raw`\(unclosed`, String.raw`\(unclosed`],
+        ["\\(before `code` after\\)", "\\(before `code` after\\)"],
+        ["```tex\n\\(x\\)\n```\n\n\\(y\\)\n\n- ", "```tex\n\\(x\\)\n```\n\n$$y$$\n\n- "],
+      ];
+      return cases.map(([source, expected]) => {
+        const result = bracketMath(source);
+        const breaks = (text) => [...text.matchAll(/\n/g)].map((match) => match.index);
+        return { source, expected, result, samePositions: source.length === result.length && JSON.stringify(breaks(source)) === JSON.stringify(breaks(result)) };
+      });
+    });
+    for (const row of positions) {
+      if (row.result !== row.expected || !row.samePositions) fail(`bracket math source contract: ${JSON.stringify(row)}`);
+    }
+    if (positions.every((row) => row.result === row.expected && row.samePositions)) ok("bracket math: escapes, pairing, raw fallback and source positions");
+    const cases = [
+      ["inline brackets", String.raw`行内 \(x^2 + y^2\)。`, ["x^2 + y^2"], 0],
+      ["display brackets", "\\[\na^2 + b^2 = c^2\n\\]", ["a^2 + b^2 = c^2"], 1],
+      ["mixed delimiters", "\\(x\\) 和 $y$\n\n\\[\nz\n\\]\n\n$$\nw\n$$", ["x", "y", "z", "w"], 2],
+      ["inline code", "代码 `\\(x\\)`，\\(y\\)。", ["y"], 0],
+      ["fenced code", "```tex\n\\(x\\)\n\\[\ny\n\\]\n```\n\n\\(z\\)", ["z"], 0],
+      ["indented code", "    \\(literal\\)\n\n\\(x\\)", ["x"], 0],
+      ["escaped delimiters", String.raw`\\(literal\\) 和 \(x\)`, ["x"], 0],
+      ["multiline code span", "代码 `\\(literal\\)\n\\[literal\\]`，\\(x\\)。", ["x"], 0],
+      ["double backtick code span", "代码 `` ` \\(literal\\) ``，\\(x\\)。", ["x"], 0],
+    ];
+    for (const [name, text, want, display] of cases) {
+      await show(text, FILE);
+      const got = await page.evaluate(() => ({
+        formulas: [...document.querySelectorAll("[data-md] .katex-mathml annotation")].map((a) => a.textContent),
+        display: document.querySelectorAll("[data-md] .katex-display").length,
+        errors: document.querySelectorAll("[data-md] .katex-error").length,
+        code: [...document.querySelectorAll("[data-md] pre code, [data-md] p > code")].map((a) => a.textContent),
+        plain: (() => {
+          const root = document.querySelector("[data-md]").cloneNode(true);
+          root.querySelectorAll(".katex").forEach((a) => a.remove());
+          return root.textContent;
+        })(),
+      }));
+      if (JSON.stringify(got.formulas) !== JSON.stringify(want) || got.display !== display || got.errors)
+        fail(`file bracket math ${name}: ${JSON.stringify(got)}, wanted ${JSON.stringify(want)}, display ${display}`);
+      else ok(`file bracket math ${name}`);
+      if (got.code.some((code) => code.includes("$$")))
+        fail(`file bracket math: code delimiters changed: ${JSON.stringify(got.code)}`);
+      if (name === "indented code" && got.code[0] !== String.raw`\(literal\)` + "\n")
+        fail(`file bracket math: indented code changed: ${JSON.stringify(got.code)}`);
+      if (name === "escaped delimiters" && got.plain !== String.raw`\(literal\) 和 `)
+        fail(`file bracket math: escaped text changed: ${JSON.stringify(got.plain)}`);
+      if (name === "inline code" && got.code[0] !== String.raw`\(x\)`)
+        fail(`file bracket math: inline code changed: ${JSON.stringify(got.code)}`);
+    }
+  }
+
   // 3b. a conversation's single `$` follows pandoc (tex_math_dollars):
   // an opening `$` has a non-space on its right, a closing one a
   // non-space on its left and no digit after it; `\$` is a dollar; code

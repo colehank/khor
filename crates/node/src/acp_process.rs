@@ -15,6 +15,11 @@ mod io;
 
 pub(crate) struct Transport {
     pub streams: ByteStreams<io::Writer, io::Reader>,
+    /// Actual child returned by the owned Session, not an inferred descendant.
+    /// Persistent recovery must also verify OS birth before treating this PID
+    /// as a later owner; a PID by itself is not an exit or liveness receipt.
+    /// None means this platform has not carried that fact out of its adapter.
+    pub provider_pid: Option<u32>,
     pub lifecycle: khor_acp::TransportLifecycle,
     pub control: Arc<Control>,
     pub stderr: Arc<Mutex<VecDeque<u8>>>,
@@ -85,6 +90,17 @@ fn command_of(command: &str) -> Result<Command, String> {
 }
 
 pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
+    spawn_observed(command, |_, _| ()).map(|(transport, ())| transport)
+}
+
+/// Capture finite facts before the Session's supervisor starts. The same Control
+/// is borrowed here and then moved into Transport; the observation is not a
+/// second lifecycle owner or an exit receipt. Unknown facts remain the caller's
+/// value and never cause an implicit respawn.
+pub(crate) fn spawn_observed<T>(
+    command: &str,
+    observe: impl FnOnce(Option<u32>, &Arc<Control>) -> T,
+) -> Result<(Transport, T), String> {
     let command = command_of(command)?;
     let control = Arc::new(Control::default());
     let (
@@ -94,7 +110,18 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
             stdout,
             mut stderr,
         },
-    ) = Session::spawn(command, control.clone()).map_err(|error| error.to_string())?;
+        observed,
+    ) = Session::spawn_with_profile_observed(
+        command,
+        control.clone(),
+        crate::agent_process::SpawnProfile::Contained,
+        |pid| observe(pid, &control),
+    )
+    .map_err(|error| error.to_string())?;
+    #[cfg(unix)]
+    let provider_pid = Some(session.pid());
+    #[cfg(not(unix))]
+    let provider_pid = None;
     let mut building = Building {
         session: Some(session),
         control: control.clone(),
@@ -148,12 +175,16 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
         },
         completion,
     );
-    Ok(Transport {
-        streams: ByteStreams::new(writer, reader),
-        lifecycle,
-        control,
-        stderr: tail,
-    })
+    Ok((
+        Transport {
+            streams: ByteStreams::new(writer, reader),
+            provider_pid,
+            lifecycle,
+            control,
+            stderr: tail,
+        },
+        observed,
+    ))
 }
 
 #[cfg(test)]

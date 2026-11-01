@@ -1,6 +1,8 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // Production App / ChatView, with only the bridge replaced. No test UI.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
+import { StringDecoder } from "node:string_decoder";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
@@ -57,7 +59,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const note = (sessionUpdate, rest) => ({ kind: "note", update: { update: { sessionUpdate, ...rest } } });
 const thought = (text) => note("agent_thought_chunk", { content: { type: "text", text } });
 const longPath = `/work/${"nested-project/".repeat(12)}src/session.ts`;
-const history = (sessionUpdate, rest) => ({ ...note(sessionUpdate, rest), kind: "history" });
+const history = (sessionUpdate, rest) => ({ ...note(sessionUpdate, rest), kind: "note" });
 const reviewFrames = () => [
   history("user_message_chunk", { content: { type: "text", text: "修一下工作区里的撤销快捷键，切换文件后也要保留编辑状态。" } }),
   history("agent_message_chunk", { content: { type: "text", text: "我先检查编辑器的快捷键绑定和文件切换时的状态保存。" } }),
@@ -67,7 +69,6 @@ const reviewFrames = () => [
   history("tool_call", { toolCallId: "review-edit", title: "Edit /work/khor/apps/gui/src/components/CodeEditor.tsx", kind: "edit", status: "completed", rawInput: { file_path: "/work/khor/apps/gui/src/components/CodeEditor.tsx" }, content: [{ type: "diff", path: "/work/khor/apps/gui/src/components/CodeEditor.tsx", oldText: "const extensions = [\n  defaultKeymap,\n  languageSupport,\n];", newText: "const extensions = [\n  history(),\n  keymap.of([...historyKeymap, ...defaultKeymap]),\n  languageSupport,\n];" }] }),
   history("tool_call", { toolCallId: "review-test", title: "编辑历史回归通过", kind: "execute", status: "completed", rawInput: { command: "npm run editor-history" }, content: [{ type: "content", content: { type: "text", text: "Undo / redo passed\nHistory retained across file switches\nNo cross-file history changes" } }] }),
   history("agent_message_chunk", { content: { type: "text", text: "快捷键和编辑历史已经接好。\n\n- **⌘Z / ⇧⌘Z** 交给当前编辑器处理\n- 切换文件后，撤销和重做历史各自保留\n- 预览与源码切换不会重置历史\n\n浏览器回归已通过，接下来检查 Mac 原生窗口中的系统菜单。" } }),
-  { kind: "history_end" },
   { kind: "ask", ask: 99, title: "打开独立的 Mac 测试窗口，验证系统菜单的撤销与重做？", options: [["allow-once", "本次允许"], ["deny", "暂不运行"]] },
 ];
 const results = [];
@@ -100,43 +101,111 @@ async function checkDisclosureMotion(page, trigger) {
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.equal(await content.evaluate((el) => getComputedStyle(el).animationName), "none", "reduced motion disables the height animation");
 }
-let browser, vite, currentPage;
+// Diagnostic text stays bounded independently of the original assertions.
+const utf8Prefix = (text, limit) => {
+  let result = "", bytes = 0;
+  for (const character of text) {
+    bytes += Buffer.byteLength(character);
+    if (bytes > limit) break;
+    result += character;
+  }
+  return result;
+};
+const utf8Tail = (text, limit) => {
+  const bytes = Buffer.from(text);
+  let start = Math.max(0, bytes.length - limit);
+  while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++;
+  return bytes.subarray(start).toString("utf8");
+};
+let browser, vite, currentPage, currentTrace, viteStdoutTail = "";
 try {
   vite = spawn("node_modules/.bin/vite", ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: gui, env: { ...process.env, KHOR_FACE_GATE: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   let ready = false, log = "";
-  vite.stdout.on("data", (b) => { ready ||= String(b).includes(`:${port}`); });
+  const stdoutDecoder = new StringDecoder("utf8");
+  vite.stdout.on("data", (b) => {
+    ready ||= String(b).includes(`:${port}`);
+    viteStdoutTail = utf8Tail(viteStdoutTail + stdoutDecoder.write(b), 4096);
+  });
   vite.stderr.on("data", (b) => { log += b; });
   for (let i = 0; i < 150 && !ready && vite.exitCode === null; i++) await sleep(100);
   assert(ready, log || "Vite did not start");
   browser = await chromium.launch({ channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? "chrome") || undefined, headless: process.env.AI_ELEMENTS_HEADED !== "1" });
   for (const [name, width, scheme] of [["desktop-light", 1280, "light"], ["desktop-dark", 1280, "dark"], ["mobile-light", 390, "light"], ["mobile-dark", 390, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
-    const page = await context.newPage(), errors = [], requests = [];
+    const page = await context.newPage(), errors = [], requests = [], openedLeases = new Map();
     currentPage = page;
+    currentTrace = {requests: [], failed: [], http: [], count: 0, commandCounts: {}, opened: [], openCount: 0, navigation: [], viteConsole: []};
+    const trace = currentTrace;
+    const relevant = new Set(['attachment_begin','chat_open','chat_capture','chat_poll','chat_wait','chat_leave','history_begin','history_page','history_cancel']);
+    // These fixed commands have cumulative counts even after the request tail rolls over.
+    trace.commandCounts = Object.fromEntries([...relevant].map(command => [command, 0]));
+    const navigation = kind => {
+      trace.navigation.push({kind, at: Date.now(), requestSeq: trace.count, url: utf8Prefix(page.url(), 512)});
+      if (trace.navigation.length > 8) trace.navigation.shift();
+    };
+    page.on('framenavigated', frame => {if (frame === page.mainFrame()) navigation('main-frame');});
+    page.on('domcontentloaded', () => navigation('document-ready'));
+    page.on('console', message => {
+      const text = message.text();
+      if (!/\[vite\]|optimized dependencies|dependencies.*(?:optimized|reloading)|vite.*(?:reload|connect|error)/i.test(text)) return;
+      trace.viteConsole.push({at: Date.now(), type: message.type(), text: utf8Prefix(text, 256)});
+      // Console JSON <=4KiB plus the separate stdout tail <=4KiB in failure.json.
+      while (trace.viteConsole.length > 16 || Buffer.byteLength(JSON.stringify(trace.viteConsole)) > 4096) trace.viteConsole.shift();
+    });
+    page.on('request', request => {
+      const command = new URL(request.url()).pathname.split('/').at(-1);
+      if (!relevant.has(command)) return;
+      trace.commandCounts[command]++;
+      let args;
+      try { args = request.postDataJSON() ?? {}; } catch { args = {}; }
+      const summary = {seq: ++trace.count, command, at: Date.now()};
+      for (const key of ['id','lease','token','requestKey','cursor','newer']) {
+        const value = args[key];
+        if (value === null || typeof value === 'boolean') summary[key] = value;
+        else if (typeof value === 'string') summary[key] = value.slice(0,256);
+      }
+      trace.requests.push(summary);
+      if (trace.requests.length > 32) trace.requests.shift();
+    });
+    page.on('requestfailed', request => {
+      trace.failed.push({url: request.url().slice(0,512), error: request.failure()?.errorText?.slice(0,256)});
+      if (trace.failed.length > 16) trace.failed.shift();
+    });
+    page.on('response', response => {
+      if (response.status() < 400) return;
+      trace.http.push({url: response.url().slice(0,512), status: response.status()});
+      if (trace.http.length > 16) trace.http.shift();
+    });
     page.on("pageerror", (error) => { errors.push(error.message); console.error(error.message); });
     const reply = (value) => (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify(value) });
-    const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
+    const row = (id, title) => ({ id, kind: "gui", title, word: "idle", at_ms: Date.now(), unread: 0, source: null, pinned: false, stale: false, category: "claude", group: "", face: null, hosted: true, can_control: true, attachable: false, last: null, via: null, via_face: null, home: "gate" });
+    // This private rendering fixture has no app PIN; failed lock reads must
+    // never be used to make the production shell open.
+    await page.route("**/lock_state", reply({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", reply([row("gui/elements-a", "Elements A"), row("gui/elements-b", "Elements B")]));
     await page.route("**/devices", reply([{ id: "e".repeat(64), name: "gate", me: true, face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true }]));
     for (const path of ["dir_pins", "web_pins", "recents"]) await page.route(`**/${path}`, reply([]));
-    for (const path of ["chat_replay", "chat_leave", "chat_say", "chat_stop"]) await page.route(`**/${path}`, reply(null));
+    for (const path of ["chat_say", "chat_stop"]) await page.route(`**/${path}`, reply(null));
     await page.route("**/hooks_state", reply({ installed: false }));
     await page.route("**/quota", reply({ quota: null, trouble: null }));
     let reviewPending = false;
-    await page.route("**/chat_open", (route) => {
-      if (reviewPending) { queue = reviewFrames(); reviewPending = false; }
-      return reply(true)(route);
-    });
     await page.route("**/tabs_list", reply({ tabs: [], active: "" }));
-    let queue = [{ kind: "history_end" }, { kind: "turning" }, thought("先检查工作区。")], otherQueue = [], cursor = 0;
-    await page.route("**/chat_poll", (route) => {
-      const id = JSON.parse(route.request().postData()).id;
-      const frames = id === "gui/elements-a" ? queue : otherQueue;
-      if (id === "gui/elements-a") queue = []; else otherQueue = [];
-      cursor += frames.length;
-      return reply({ frames, next: cursor, gone: false, lost: false, stall: null })(route);
+    let queue = [{kind: "turning"}, thought("先检查工作区。")], otherQueue = [];
+    await routeCanonicalChat(page, {ids: ['gui/elements-a', 'gui/elements-b'],
+      onOpen: (id, lease) => {
+        // Admission callback facts, independent of later answer requests (not response fields).
+        trace.opened.push({seq: ++trace.openCount, at: Date.now(), requestSeq: trace.count, id: utf8Prefix(id, 256), lease: utf8Prefix(lease, 256)});
+        if (trace.opened.length > 16) trace.opened.shift();
+        openedLeases.set(id, lease);if (reviewPending) {queue = reviewFrames();reviewPending = false;}
+      },
+      takeFrames: id => {
+        const frames = id === 'gui/elements-a' ? queue : otherQueue;
+        if (id === 'gui/elements-a') queue = [];else otherQueue = [];
+        return frames;
+      },
     });
     let reject = true, holdAnswer = true, releaseAnswer;
     await page.route("**/chat_answer", async (route) => {
@@ -225,7 +294,9 @@ try {
     await page.locator('[data-ask-pending][data-ask-phase="waiting"]').waitFor();
     await sleep(350);
     assert.equal(requests.length, 2, "one retry, no double submit");
-    assert.deepEqual(requests[1], { id: "gui/elements-a", ask: 31, option: "allow-once" });
+    const leaseA = openedLeases.get("gui/elements-a");
+    assert.match(leaseA, /^[a-f0-9]{32}$/, "the actual chat_open admitted A's lease before its answers");
+    for (const request of requests) assert.deepEqual(request, { id: "gui/elements-a", lease: leaseA, ask: 31, option: "allow-once" });
     queue.push({ kind: "answered", ask: 31, option: "deny" });
     await page.waitForFunction(() => document.querySelector("[data-ask-answer]")?.textContent === "拒绝读取，保留当前工作区不变");
     assert.equal(await page.locator("[data-ask-option]").count(), 0, "authoritative reply settles confirmation");
@@ -310,7 +381,7 @@ try {
     assert(Math.abs((await reading.boundingBox()).y - readingTop) <= 2, "reading history keeps its paragraph in place when the plan above changes height");
     // Different sessions may use the same numeric ask ID. The local
     // optimistic answer must not make the next session unanswerable.
-    otherQueue = [{ kind: "history_end" }, { kind: "ask", ask: 31, title: "Another session", options: [["different", "另一会话的选项"]] }];
+    otherQueue = [ { kind: "ask", ask: 31, title: "Another session", options: [["different", "另一会话的选项"]] }];
     if (width < 600) {
       await page.locator("[data-session-bar]").getByRole("button", { name: /^(返回|Back)$/ }).click();
     }
@@ -318,7 +389,10 @@ try {
     await page.locator('[data-ask-option="different"]').click();
     otherQueue.push({ kind: "answered", ask: 31, option: "different" });
     await page.waitForFunction(() => document.querySelector("[data-ask-answer]")?.textContent === "另一会话的选项");
-    assert.deepEqual(requests.at(-1), { id: "gui/elements-b", ask: 31, option: "different" }, "answer state belongs to its session");
+    const leaseB = openedLeases.get("gui/elements-b");
+    assert.match(leaseB, /^[a-f0-9]{32}$/, "the actual chat_open admitted B's lease before its answer");
+    assert.notEqual(leaseB, leaseA, "the two actual open claims have distinct leases");
+    assert.deepEqual(requests.at(-1), { id: "gui/elements-b", lease: leaseB, ask: 31, option: "different" }, "answer state belongs to its session and admitted view");
     assert.deepEqual(errors, []);
     results.push({ name, reasoning: "stream / manual override / keyboard", tool: "update / expand / output bound / no empty disclosure", diff: "real changes / independent line numbers / context model", scroll: "manual disclosure anchor / history anchor / animated tail following", plan: "live update preserves choice", permission: "submitting / waiting / retry / exact IDs / no duplicate / authoritative reply", overflow, errors });
     await context.close();
@@ -330,10 +404,17 @@ try {
   if (currentPage && !currentPage.isClosed()) {
     await currentPage.screenshot({ path: join(out, "failure.png") }).catch(() => {});
     const state = await currentPage.evaluate(() => ({
-      focus: document.activeElement?.outerHTML,
-      tools: [...document.querySelectorAll("[data-chat-tool]")].map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent })),
+      focus: document.activeElement?.outerHTML?.slice(0,1024),
+      body: document.body.innerText.slice(0,4096),
+      scroll: (() => {const el=document.querySelector('[data-chat-scroll]');return el?{top:el.scrollTop,height:el.scrollHeight,view:el.clientHeight,rect:el.getBoundingClientRect().toJSON()}:null;})(),
+      reader: {latestButton: document.querySelector('[data-chat-bottom]')?.textContent?.slice(0,256) ?? null,
+        captureError: document.querySelector('[data-chat-capture-error]')?.textContent?.slice(0,512) ?? null,
+        rows: [...document.querySelectorAll('[data-history-key]')].slice(0,16).map(el=>({key:el.getAttribute('data-history-key'),text:el.textContent?.slice(0,128)})),
+        buttons: [...document.querySelectorAll('[data-chat-column] button')].slice(0,32).map(el=>({text:el.textContent?.slice(0,128),disabled:el.disabled})),
+      },
+      tools: [...document.querySelectorAll("[data-chat-tool]")].slice(0,16).map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent?.slice(0,512) })),
     })).catch(() => null);
-    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state }, null, 2));
+    writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state, trace: currentTrace, viteStdoutTail }, null, 2));
   }
   throw error;
 } finally {

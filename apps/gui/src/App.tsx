@@ -11,7 +11,7 @@ import { tabAct, useTabActs } from "@/lib/tab-acts";
 import { noticesOf, useNotices } from "@/lib/pill-notices";
 import { rungOffScreen } from "@/lib/bell-marks";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
 import {
   faceHere,
   fetchDevices,
@@ -26,7 +26,6 @@ import {
   widenWindow,
   giveBackWindow,
   inApp,
-  launchOn,
   closeSession,
   forgetDevice,
   nameSettings,
@@ -147,7 +146,8 @@ import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
 import { SideWorkspace } from "@/views/SideWorkspace";
 import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
-import { WorkspacesNow } from "@/views/WorkspacesNow";
+import { WorkspaceMemories, workspaceIdentity } from "@/views/workspace/workspace-memory";
+import { WorkspaceDraftOwner } from "@/views/workspace/use-workspace-memory";
 import { LockScreen } from "@/views/LockScreen";
 import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
 import { StorePage, StoreScreen } from "@/views/StorePage";
@@ -680,6 +680,7 @@ export default function App() {
   // It lives here rather than in the landing so that arriving from
   // somewhere else is a state already set, not a landing being told to
   // remember something after it mounts.
+  const [workspaceMemories] = useState(() => new WorkspaceMemories());
   const [openWs, setOpenWs] = useState<{
     device: string;
     machine: string;
@@ -689,9 +690,10 @@ export default function App() {
       Files and Notes' folders): opening a workspace turns the list column
       into its file tree, under a head 「‹ 工作区名」 that returns to the
       list; the content holds only the file. Kept per seat — another
-      landing and back finds the tree — and not across a cold start, which
-      lands on the list (UX-14 §7). */
-  const [wsTree, setWsTree] = useState(false);
+      landing and back finds the tree. A wide cold start restores the
+      chosen workspace and its tree together; the narrow face restores
+      no workspace, so it stays on the list (UX-14 §7). */
+  const [wsTree, setWsTree] = useState(() => place.ws != null);
   // …and the browser landing's own tabs. **A second strip, not a
   // second mechanism** (浏览器接壳批): both browsing landings are the
   // same shell with a different kind, and the two stores are kept apart
@@ -1263,10 +1265,6 @@ export default function App() {
   // an answer from the disk the conversation is happening on.
   const sessionMachine = selectedRow?.home ?? "";
   const sessionRoot = sessionCwdOnScreen(selectedRow) ?? "";
-  /** That machine's id. **The id and not the name**, because what it
-      is compared against is a workspace row's `device` — and a name is
-      a thing the user retypes (2026-09-17 改名也进命令行). */
-  const sessionDevice = devices.find((d) => d.name === sessionMachine)?.id ?? "";
   const { known: sessionKnown, see: seeInSession } = useKnownFiles(sessionMachine, sessionRoot);
   /** A file a press in a conversation asked this shell to show, handed
       to whichever workspace pane opens next (`WorkspacePane`'s
@@ -1277,58 +1275,16 @@ export default function App() {
     at: number;
   } | null>(null);
   const sessionHome = useMemo<LinkHome | null>(() => {
-    // **No directory, no links** — a conversation nobody recorded a
-    // directory for has no root, and a relative path in it is relative
-    // to nothing. The context is null and the prose stays prose, which
-    // is `linkHome`'s own default outside a workspace.
-    if (sessionMachine === "" || sessionRoot === "") return null;
-    /** That path on the machine the session runs on — the address's
-        road, and what `⌘`+press and a workspace-less path both take. */
-    const toHost = (abs: string) => {
-      void launchOn(sessionMachine, abs).catch(() => {
-        // The machine's own refusal (no opener, no screen) — it is
-        // said where it is asked for, and a sentence about khor in the
-        // middle of a sentence about code is not an improvement.
-      });
-    };
+    if (!selectedRow) return null;
     return {
       machine: sessionMachine,
       root: sessionRoot,
       known: sessionKnown,
       see: seeInSession,
-      launch: toHost,
-      open: (abs, line) => {
-        // **Asked at the press, from the local table** (ruling 54:
-        // 「问本地那张工作区表(`ws ls`), 不走网」). One read of a
-        // replicated document costs nothing and is never stale, which
-        // is worth more here than a poll would be: the answer decides
-        // where somebody lands.
-        void fetchWorkspaces().then(
-          (list) => {
-            const ws = holding(list, sessionDevice, abs);
-            // Nothing on this machine declares a project around it, so
-            // there is no tree to open it in and no root to show it
-            // under — the host's own opener is the honest answer, and
-            // it is the same one an address in the same sentence gets.
-            if (ws === null) {
-              toHost(abs);
-              return;
-            }
-            setMorePage(null);
-            setLanding("workspaces");
-            // The id stands in where the device table has no name for
-            // it — `WorkspacesList`'s own line, for the same reason.
-            setOpenWs({ device: ws.device, machine: ws.machine || ws.device, path: ws.path });
-            setReveal({ path: abs, line, at: Date.now() });
-            setScreen("detail");
-          },
-          // A table this face could not read is a face that knows of no
-          // workspace, which is the branch above.
-          () => toHost(abs),
-        );
-      },
+      open: (path, line) => askOpenPath(sessionMachine, path, false, line),
+      openPage: (url) => askOpenUrl(sessionMachine, url),
     };
-  }, [sessionMachine, sessionRoot, sessionDevice, sessionKnown, seeInSession]);
+  }, [selectedRow?.id, sessionMachine, sessionRoot, sessionKnown, seeInSession]);
   // ⚠️ **The open row's workspace word left with the detail header**
   // (第十四轮 第 1 条): 「工作区 · 类型」 was the tab's own content said
   // a second time one row lower, and the user struck the whole row out.
@@ -1492,7 +1448,7 @@ export default function App() {
   // …keyed by the row that is open too (V06): two machines' pages are
   // two places, and one's scroll is not the other's.
   const openRow =
-    landing === "devices" ? (selectedDevice ?? "") : landing === "sessions" ? (selected ?? "") : landing === "workspaces" ? (openWs?.path ?? "") : "";
+    landing === "devices" ? (selectedDevice ?? "") : landing === "sessions" ? (selected ?? "") : landing === "workspaces" ? (openWs ? workspaceIdentity(openWs) : "") : "";
   const placeKey = narrow
     ? `${morePage ? `more:${morePage}` : landing}:${switchingTabs ? "tabs" : screen}:${screen === "detail" ? openRow : ""}`
     : `${morePage ?? landing}:${openRow}`;
@@ -2345,9 +2301,7 @@ export default function App() {
   const pageTitle =
     landing === "devices" && openDevice
       ? openDevice.shown
-      : landing === "workspaces" && openWs
-        ? openWs.path.split("/").filter(Boolean).pop() || openWs.machine
-        : // Nothing picked: the head is empty (the redesign). The
+      : // Nothing picked: the head is empty (the redesign). The
           // landing's name and count are the left block's head now, and
           // saying them again over the content is the name said twice.
           "";
@@ -3063,11 +3017,11 @@ export default function App() {
     // detail and on the narrow one is the list alone.
     openWs ? (
       <WorkspacePane
-        // Remounted per workspace: the tree's position, the open file
-        // and both switches are this workspace's, and carrying them
-        // into the next one would show somebody a path that is not
-        // under the project they just opened.
-        key={`${openWs.device} ${openWs.path}`}
+        status={stale ? gui.backend_unreachable : undefined}
+        memory={workspaceMemories.retain(openWs)}
+        // Views detach on navigation; the identity's model retains its
+        // tabs, drafts and reading state without background view work.
+        key={workspaceIdentity(openWs)}
         // The tree in the list column (wide), while the list is drilled
         // into this workspace (`wsTree`); the narrow face's tree is a
         // screen of the pane's own.
@@ -3137,15 +3091,9 @@ export default function App() {
         onRevealSeen={() => setReveal(null)}
         narrow={narrow}
         listOpen={!narrow && !listPane.collapsed}
-        onBack={() => setScreen("list")}
+        onBack={() => { setOpenWs(null); setWsTree(false); setScreen("list"); }}
       />
-    ) : narrow ? null : (
-      // **The landing's overview** (10-layout 「每个落地页有一个总览」,
-      // 2026-09-28): the workspaces this face opened last, each with its
-      // machine, path, branch and last change — the board was a blank
-      // slab here. Wide only: on the narrow face the list is the screen.
-      <WorkspacesNow devices={devices} onOpen={openWorkspace} />
-    )
+    ) : null
   ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
     // A machine asked for (⌘K) before the device table has answered
     // once: its card has never been read, so the board shows the
@@ -3958,6 +3906,7 @@ export default function App() {
     <HereHostsProvider value={hosts}>
     <FullScreenProvider value={claimFull}>
     <TooltipProvider>
+      {workspaceMemories.entries().map(([key, memory]) => <WorkspaceDraftOwner key={key} memory={memory} />)}
       {narrow ? (
         // **As tall as `#root`, not the screen** (2026-10-02): `#root`
         // follows what the soft keyboard leaves (`lib/viewport`), and a
@@ -4272,7 +4221,7 @@ export default function App() {
                 </Tabs>
               ) : (
                 <div ref={sideMain} className="flex min-h-0 min-w-0 flex-1 flex-col">
-                  <Region
+                  {landing === "workspaces" && openWs !== null ? <div data-ws-region data-region data-region-kind="tabs" className="flex min-h-0 flex-1 flex-col"><Fault name="detail" reset={seamAt}>{detail}</Fault></div> : <Region
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
                     // The open machine's verbs, and nothing else: with
@@ -4282,7 +4231,6 @@ export default function App() {
                     // offers; an act that makes something lives on ＋
                     // alone (10-layout 「一个动作只有一个家」).
                     actions={machineVerbs}
-                    flush={landing === "workspaces" && openWs !== null}
                     capped={landing === "devices" && selectedDevice !== null && machineBody === "dashboard"}
                     // 过期 / 离线 (第十七轮 §6): what is on the board is the
                     // last answer, and R0 says so — never a banner inside.
@@ -4295,7 +4243,7 @@ export default function App() {
                     <Fault name="detail" reset={seamAt}>
                       {detail}
                     </Fault>
-                  </Region>
+                  </Region>}
                 </div>
               )}
             </>

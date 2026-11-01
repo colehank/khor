@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { build } from "esbuild";
+const before=process.argv.find(argument=>argument.startsWith("--before="))?.slice("--before=".length);
+const result=await build({entryPoints:["src/hooks/use-directory-watch.ts"],bundle:true,write:false,format:"esm",plugins:[{name:"hook-fixture",setup(b){
+ if(before)b.onLoad({filter:/use-directory-watch\.ts$/},()=>({contents:readFileSync(before,"utf8"),loader:"ts"}));
+ b.onResolve({filter:/^(react|@\/api|@\/hooks\/use-hidden)$/},args=>({path:args.path,namespace:"fixture"}));
+ b.onLoad({filter:/.*/,namespace:"fixture"},args=>({contents:args.path==="react"?'export const useState=fn=>globalThis.fixture.state(fn);export const useEffect=(fn,deps)=>globalThis.fixture.effect(fn,deps,"passive");export const useLayoutEffect=(fn,deps)=>globalThis.fixture.effect(fn,deps,"layout");export const useSyncExternalStore=(subscribe,snapshot)=>snapshot();':args.path==="@/api"?'export const inApp=true;export const dirsBegin=(...args)=>globalThis.fixture.begin(...args);export const dirsWait=(...args)=>globalThis.fixture.wait(...args);export const dirsLeave=(...args)=>globalThis.fixture.leave(...args);':'export const useHidden=()=>globalThis.fixture.hidden;'}));
+}}]});
+const {useDirectoryWatch}=await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString("base64")}`);
+const deferred=()=>{let resolve;const promise=new Promise(yes=>{resolve=yes;});return{promise,resolve};};
+const settle=async()=>{for(let i=0;i<10;i++)await Promise.resolve();};
+let owner,cleanup,deps,pending;const calls=[],timers=[];
+globalThis.window={setTimeout:(run,delay)=>{const t={run,delay};timers.push(t);return t;},clearTimeout:t=>{t.canceled=true;}};
+globalThis.fixture={hidden:false,state:fn=>[owner??=fn()],effect:(fn,next,kind)=>{if(!deps||deps.some((v,i)=>v!==next[i]))pending={fn,next,kind};},begin:(machine,scopes)=>{const wait=deferred();calls.push({kind:"begin",machine,scopes,wait});return wait.promise;},wait:()=>new Promise(()=>{}),leave:(machine,id)=>{calls.push({kind:"leave",machine,id});return Promise.resolve();}};
+const commit=()=>{if(!pending)return;cleanup?.();const current=pending;pending=null;deps=current.next;cleanup=current.fn();return current.kind;};
+const scopes=[{kind:"entries",path:"/directory"}];
+useDirectoryWatch("A",scopes);commit();calls[0].wait.resolve({machine_id:"stableA",id:"leaseA",batch:{cursor:"A:1",retry_ms:0,reset:true,dirs:["/directory"],workspace:false,coverage:[{scope:0,mode:"native",reason:null}]}});await settle();
+assert.equal(useDirectoryWatch("A",scopes).batch.cursor,"A:1");
+const changed=useDirectoryWatch("B",scopes);
+assert.equal(changed.batch,null,"the render for B cannot expose A's batch before effects");assert.equal(changed.status,"pending");assert.equal(commit(),"layout","departure cancels the old owner at commit, not a later passive phase");
+assert.deepEqual(calls.find(c=>c.kind==="leave"),{kind:"leave",machine:"stableA",id:"leaseA"});await settle();
+const last=calls.findLast(c=>c.kind==="begin");last.wait.resolve({machine_id:"stableB",id:"leaseB",batch:{cursor:"B:1",retry_ms:0,reset:false,dirs:[],workspace:false,coverage:[{scope:0,mode:"native",reason:null}]}});await settle();
+globalThis.fixture.hidden=true;const hidden=useDirectoryWatch("B",scopes);assert.equal(hidden.batch,null);assert.equal(hidden.status,"idle");assert.equal(commit(),"layout");assert.equal(timers.filter(t=>!t.canceled).length,0);await settle();
+assert.equal(calls.filter(c=>c.kind==="leave").length,2);console.log("2 actual hook render/commit identity checks passed (controlled hook runner; no DOM)");

@@ -1,3 +1,7 @@
+import { useDirectoryWatch } from "@/hooks/use-directory-watch";
+import { useHidden } from "@/hooks/use-hidden";
+import { directoryScopeIsNative, directoryWatchScopes } from "@/lib/directory-watch";
+import {useDraftState} from '@/hooks/use-draft-count';
 /**
  * **The 附栏's 工作区 seat is the workspace's own tree** (UX-39 §5, the owner
  * 2026-10-06 22:00: 「工作区就不能出工作区外了，顶级不可返回目录就是该
@@ -92,7 +96,9 @@ export function SideWorkspace({
   makeRequest,
   treeHead,
   hideFind = false,
+  active = true,
 }: {
+  active?: boolean;
   /** A content-tab host may own file navigation and the search field's scope. */
   onOpenContent?: (path: string, line: number | null) => void;
   onContentMoved?: (from:string,to:string)=>void;
@@ -127,6 +133,31 @@ export function SideWorkspace({
   onRead?: (path: string) => void;
 }) {
   const [file, setFile] = useState<string | null>(spot ? spot.file : (start?.path ?? null));
+  const [readAt, setReadAt] = useState(0);
+  const hidden = useHidden();
+  const visible = active && !hidden;
+  const fileParent = file === null ? null : file.slice(0, file.lastIndexOf("/")) || "/";
+  const observation = useDirectoryWatch(machine, directoryWatchScopes(null, fileParent === null ? [] : [fileParent]).scopes, active);
+  const wasVisible = useRef(visible);
+  useEffect(() => {
+    const returned = !wasVisible.current && visible;
+    wasVisible.current = visible;
+    if (returned && fileParent !== null) setReadAt(n => n + 1);
+  }, [visible, fileParent]);
+  const fileCovered = fileParent !== null && directoryScopeIsNative(observation, { kind: "entries", path: fileParent });
+  useEffect(() => {
+    if (!visible) return;
+    const batch = observation.batch;
+    if (fileParent !== null && observation.status === "watching" && batch !== null &&
+        (batch.reset || batch.dirs.includes(fileParent))) setReadAt(n => n + 1);
+  }, [observation.batch, observation.status, fileParent, visible]);
+  useEffect(() => {
+    if (fileParent === null || !visible || fileCovered) return;
+    const refresh = () => { if (!document.hidden) setReadAt(n => n + 1); };
+    const slow = window.setInterval(refresh, 60_000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(slow); window.removeEventListener("focus", refresh); };
+  }, [fileParent, visible, fileCovered]);
   /** A line hit's line, for the file it opened (`FilePage`'s `goLine`). */
   const [goLine, setGoLine] = useState<{ path: string; line: number; at: number } | null>(null);
   // A seat come back to (`spot`) has already answered the `start` it
@@ -182,7 +213,7 @@ export function SideWorkspace({
       }),
     [machine, here, root],
   );
-  const [drafts, setDrafts] = useState<Map<string, Draft>>(() => new Map());
+  const [drafts, setDrafts] = useDraftState<Map<string, Draft>>(() => new Map(), drafts=>drafts.size);
   // The hunt: asked 300 ms after the typing stops, a late answer to an
   // old question thrown away (`WorkspacePane`'s, the same rule).
   const [localHunt, setLocalHunt] = useState("");
@@ -289,6 +320,7 @@ export function SideWorkspace({
           />
         ) : (
           <>{treeHead?.(() => setHistoryOpen(true), checkout?.machine===machine&&checkout.root===root?checkout.repo:git!==null)}<FileTree
+            watchActive={active && file === null && commit === null}
             key={`${machine} ${root}`}
             machine={machine}
             root={root}
@@ -336,6 +368,7 @@ export function SideWorkspace({
             key={file}
             machine={machine}
             path={file}
+            readAt={readAt}
             here={here}
             git
             goLine={goLine?.path === file ? goLine : null}

@@ -135,7 +135,7 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     // Every machine is the same person's: a line typed on beta was seen
     // by its writer, and the seen mark travels (`Node::tell`'s rule).
     assert_eq!(
-        (rc_row.unread, rc_row.state.state),
+        (rc_row.unread, rc_row.state.unwrap().state),
         (0, State::Idle),
         "own words are unread nowhere"
     );
@@ -160,13 +160,13 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     sync(&c).await;
     for n in [&b, &c] {
         assert_eq!(
-            row(n).unwrap().state.state,
+            row(n).unwrap().state.unwrap().state,
             State::Done,
             "an unanswered offer is 未看, never 待批"
         );
     }
     assert_ne!(
-        row(&a).unwrap().state.state,
+        row(&a).unwrap().state.unwrap().state,
         State::Blocked,
         "the sender waits on nobody"
     );
@@ -200,12 +200,12 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     );
     assert_eq!(face(&b).here.unwrap().step, Step::Landed);
     assert_ne!(
-        row(&b).unwrap().state.state,
+        row(&b).unwrap().state.unwrap().state,
         State::Blocked,
         "answered, beta's row lets go"
     );
     assert_eq!(
-        row(&c).unwrap().state.state,
+        row(&c).unwrap().state.unwrap().state,
         State::Done,
         "gamma's own is still unread, not waiting"
     );
@@ -221,7 +221,7 @@ async fn the_broadcast_reaches_every_machine_and_each_answers_its_offer() {
     assert_eq!(failed.step, Step::Failed);
     assert!(!failed.why.is_empty(), "with its sentence");
     assert_eq!(
-        row(&c).unwrap().state.state,
+        row(&c).unwrap().state.unwrap().state,
         State::Errored,
         "a broken pull is 中断"
     );

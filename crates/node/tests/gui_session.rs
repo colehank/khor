@@ -21,6 +21,21 @@ use khor_node::live::{LiveKind, Source};
 /// that is running the tests, and found beside this test's own binary.
 /// The build is a no-op when `cargo test --workspace` already made it.
 fn stub_path() -> PathBuf {
+    if let Some(path)=std::env::var_os("KHOR_ACP_STUB") {
+        let path=PathBuf::from(path);
+        let metadata=std::fs::symlink_metadata(&path).expect("the pinned stub must exist");
+        assert!(path.is_absolute() && metadata.is_file() && !metadata.file_type().is_symlink()
+            && path.canonicalize().unwrap()==path,
+            "the supplied same-source stub must be an absolute regular file without symlink components");
+        #[cfg(unix)] {
+            use std::os::unix::fs::PermissionsExt;
+            assert_ne!(metadata.permissions().mode() & 0o111,0,"the pinned stub must be executable");
+        }
+        return path;
+    }
+    assert!(std::env::var_os("KHOR_ACP_TEST_EVIDENCE").is_none(),
+        "controlled acceptance requires an explicitly verified KHOR_ACP_STUB; implicit Cargo is forbidden");
+    // Local convenience only; this branch is not an acceptance provenance proof.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let status = std::process::Command::new(cargo)
         .args(["build", "-q", "-p", "khor-acp", "--bin", "acp-stub"])
@@ -147,7 +162,7 @@ fn a_complete_empty_option_list_removes_the_previous_controls() {
 }
 
 #[test]
-fn replay_keeps_answering_interactions_across_two_faces() {
+fn a_prompt_keeps_answering_interactions_across_two_faces() {
     let root = std::env::temp_dir().join(format!(
         "khor-gui-elicit-{}",
         khor_node::link::fresh_hex().unwrap()
@@ -180,7 +195,7 @@ fn replay_keeps_answering_interactions_across_two_faces() {
     };
     let mut a = connect();
     let _ = next_note(&mut a);
-    write_frame(&mut a, &GuiOp::Replay).unwrap();
+    write_frame(&mut a, &GuiOp::Say("interactive prompt".into())).unwrap();
     let ask = loop {
         if let GuiNote::Elicit { ask, .. } = next_note(&mut a) {
             break ask;
@@ -212,16 +227,27 @@ fn replay_keeps_answering_interactions_across_two_faces() {
     )
     .unwrap();
     assert!(matches!(next_note(&mut b),GuiNote::ElicitAnswered{ask:answered,..}if answered==ask));
-    let mut history = String::new();
+    let mut answer=String::new();
     loop {
         match next_note(&mut a) {
-            GuiNote::History(s) => history.push_str(&s),
-            GuiNote::HistoryEnd => break,
-            _ => {}
+            GuiNote::Note(note)=>answer.push_str(&note),
+            GuiNote::Turn(stop)=> { assert_eq!(stop,"EndTurn");break; },
+            _=>{},
         }
     }
-    assert!(history.contains("load-answer"));
-    assert!(history.contains("accept"));
+    assert!(answer.contains("prompt-answer"));
+    assert!(answer.contains("accept"));
+    // Current prompt output is live on both views, unlike the retired private
+    // history bracket. Drain and verify it before probing a stale answer.
+    let mut mirrored=String::new();
+    loop {
+        match next_note(&mut b) {
+            GuiNote::Note(note)=>mirrored.push_str(&note),
+            GuiNote::Turn(stop)=> { assert_eq!(stop,"EndTurn");break; },
+            _=>{},
+        }
+    }
+    assert!(mirrored.contains("prompt-answer") && mirrored.contains("accept"));
     write_frame(
         &mut b,
         &GuiOp::ElicitAnswer {
@@ -404,15 +430,11 @@ fn a_gui_session_is_one_row_wearing_the_protocols_words() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
-/// Replay in one test, three claims: asked mid-turn it waits for the
-/// turn (the `Turn` frame arrives before any `History`), the replayed
-/// updates and the end marker reach the asker, and **none of it reaches
-/// anyone else** — with the negative half proved live first: the other
-/// connection read the whole turn's broadcast through the very frames
-/// it is then expected not to get (the grep-scope lesson: an empty read
-/// only means something after the same read has found something).
+/// Each view receives the live turn but only its own Capture response. The
+/// captured canonical cursor includes the completed turn and is readable without
+/// asking the agent to load again. The negative view first proves its live path.
 #[test]
-fn history_answers_the_asker_alone_and_after_the_turn() {
+fn capture_answers_its_own_view_and_contains_the_completed_turn() {
     let root = std::env::temp_dir().join(format!("khor-guireplay-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
@@ -471,16 +493,8 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
     let mut asker = attach();
     let mut bystander = attach();
 
-    // Say, then ask for history in the same breath: the ops arrive in
-    // order on one stream, so the host sees the turn start first and
-    // must hold the replay.
     write_frame(&mut asker, &GuiOp::Say("hello".into())).unwrap();
-    write_frame(&mut asker, &GuiOp::Replay).unwrap();
-
-    // The whole turn plays out first, on both connections — anything
-    // History-shaped before the turn's end would be the mid-turn
-    // interleaving the host exists to prevent. The asker answers the
-    // stub's permission ask; the bystander only listens.
+    // Both views see the same genuine turn and permission/answer broadcasts.
     loop {
         match next_note(&mut asker) {
             GuiNote::Ask { ask, options, .. } => {
@@ -499,34 +513,26 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
             }
             // `Answered` rides the same broadcast as the ask itself —
             // both faces see it, which is the point of it existing.
-            GuiNote::Note(_) | GuiNote::Answered { .. } => {}
-            other => panic!("history before the turn ended: {}", kind_of(&other)),
+            GuiNote::Note(_) | GuiNote::Answered { .. } | GuiNote::Capabilities(_) | GuiNote::Settings(_) | GuiNote::Turning => {}
+            other => panic!("unexpected turn frame: {}", kind_of(&other)),
         }
     }
     loop {
         match next_note(&mut bystander) {
             GuiNote::Turn(_) => break,
-            GuiNote::Note(_) | GuiNote::Ask { .. } | GuiNote::Answered { .. } => {}
-            other => panic!("history before the turn ended: {}", kind_of(&other)),
+            GuiNote::Note(_) | GuiNote::Ask { .. } | GuiNote::Answered { .. } | GuiNote::Capabilities(_) | GuiNote::Settings(_) | GuiNote::Turning => {}
+            other => panic!("unexpected turn frame: {}", kind_of(&other)),
         }
     }
 
-    // Now the held replay: the asker gets the stub's canned playback
-    // and the end marker, in order.
-    let mut played = Vec::new();
-    loop {
-        match next_note(&mut asker) {
-            GuiNote::History(json) => played.push(json),
-            GuiNote::HistoryEnd => break,
-            other => panic!("expected history frames, got {}", kind_of(&other)),
-        }
-    }
-    assert!(
-        played.iter().any(|j| j.contains("played back: one"))
-            && played.iter().any(|j| j.contains("played back: two")),
-        "the replayed conversation reached the asker: {played:?}"
-    );
-
+    let token=[43;16];
+    write_frame(&mut asker,&GuiOp::Capture{token}).unwrap();
+    let fence=receive_capture(&mut asker,token);
+    let page=canonical_page(&root,&fence);
+    assert!(page.events.iter().any(|event|matches!(&event.payload,
+        khor_node::session_content::ContentEvent::Update { update: note, .. }
+            if note.to_string().contains("picked:go"))),
+        "canonical history must contain the answered, completed turn");
     // The bystander proved its read path on the turn above; the same
     // read now finds silence where broadcast history would be.
     bystander
@@ -534,12 +540,43 @@ fn history_answers_the_asker_alone_and_after_the_turn() {
         .unwrap();
     assert!(
         read_frame::<GuiNote>(&mut bystander).is_err(),
-        "history frames must never be broadcast"
+        "a capture response must never be broadcast"
     );
 
     write_frame(&mut asker, &GuiOp::Close).unwrap();
     host.join().expect("the host thread ends").expect("cleanly");
     let _ = std::fs::remove_dir_all(&root);
+}
+
+fn receive_capture(conn: &mut TcpStream, expected: [u8; 16]) -> khor_node::gui_host::CaptureFence {
+    loop {
+        if let GuiNote::Captured { token, result } = next_note(conn) {
+            assert_eq!(token, expected, "a view received another capture token");
+            return result.expect("the current canonical capture is available");
+        }
+    }
+}
+fn canonical_page(
+    root: &Path,
+    fence: &khor_node::gui_host::CaptureFence,
+) -> khor_node::adaptor::transcript_page::Page<khor_node::session_content::ContentEvent> {
+    let node = khor_node::Node::open(root.to_owned()).unwrap();
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let key = node.content_begin(&fence.binding).await.unwrap();
+            let request = khor_node::session_content::remote::ClientRead::claim(
+                root,
+                fence.binding.clone(),
+                &key,
+            )
+            .unwrap();
+            node.content_page(&request, Some(fence.cursor.clone()), false)
+                .await
+                .unwrap()
+        })
 }
 
 fn kind_of(n: &GuiNote) -> &'static str {
@@ -548,8 +585,6 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::Ask { .. } => "Ask",
         GuiNote::Turn(_) => "Turn",
         GuiNote::Gone => "Gone",
-        GuiNote::History(_) => "History",
-        GuiNote::HistoryEnd => "HistoryEnd",
         GuiNote::Turning => "Turning",
         GuiNote::Answered { .. } => "Answered",
         GuiNote::Agent { .. } => "Agent",
@@ -560,6 +595,7 @@ fn kind_of(n: &GuiNote) -> &'static str {
         GuiNote::ElicitAnswered { .. } => "ElicitAnswered",
         GuiNote::ControlResult { .. } => "ControlResult",
         GuiNote::Delegated { .. } => "Delegated",
+        GuiNote::Captured { .. } => "Captured",
     }
 }
 
@@ -577,14 +613,8 @@ fn stub_with(key: &str, value: &str) -> Vec<String> {
     ]
 }
 
-/// **An agent that cannot replay says so, and its empty history stays
-/// distinguishable from an empty conversation.**
-///
-/// The two are byte-identical on the wire — an empty `HistoryEnd`
-/// bracket either way — so the only thing that can tell them apart is
-/// the fact announced up front. Without it a face paints "nothing was
-/// said here" over a past that merely cannot be fetched, which is the
-/// neighbouring answer rather than the missing one.
+/// NoLoad is an explicit restore capability fact. A new local canonical
+/// capture remains available and must retain its honest new/empty origin.
 #[test]
 fn an_agent_that_cannot_replay_is_not_a_conversation_with_nothing_in_it() {
     let root = std::env::temp_dir().join(format!("khor-guihost-noreplay-{}", std::process::id()));
@@ -620,21 +650,16 @@ fn an_agent_that_cannot_replay_is_not_a_conversation_with_nothing_in_it() {
         "this stub advertises no load_session, and the face must be told"
     );
 
-    // Asking anyway closes the bracket rather than hanging — a face
-    // that asks before reading the fact must not be left waiting.
-    write_frame(&mut conn, &GuiOp::Replay).unwrap();
-    let GuiNote::ControlResult {
-        operation, error, ..
-    } = next_note(&mut conn)
-    else {
-        panic!("a failed replay says why")
-    };
-    assert_eq!(operation, "replay");
-    assert!(error.is_some());
-    assert!(
-        matches!(next_note(&mut conn), GuiNote::HistoryEnd),
-        "a failed replay still closes its bracket"
-    );
+    let token=[44;16];
+    write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
+    let fence=receive_capture(&mut conn,token);
+    let page=canonical_page(&root,&fence);
+    assert!(page.events.is_empty() && page.references.is_empty());
+    let node=khor_node::Node::open(root.clone()).unwrap();
+    assert!(matches!(node.session_content(&id,None).unwrap(),
+        khor_node::session_content::Availability::Available{capture:Some(capture),..}
+            if capture.opening=="new" && capture.gaps==0),
+        "fresh captured content must not masquerade as an unsupported restored past");
 
     write_frame(&mut conn, &GuiOp::Close).unwrap();
     host.join().expect("the host thread ends").expect("cleanly");

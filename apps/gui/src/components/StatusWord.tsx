@@ -11,17 +11,20 @@ import type { CSSProperties } from "react";
 export function StatusWord({
   word: w,
   dot = true,
+  absent,
   className,
   ...marks
 }: {
-  word: string;
+  word: string | null;
+  /** A record's role when it has no execution state. */
+  absent?: string;
   /** The dot is left off where the word stands in a line of its own kind. */
   dot?: boolean;
   className?: string;
   /** The caller's own anchors (`data-*`). */
   [mark: `data-${string}`]: unknown;
 }) {
-  if (!w) return <span {...(marks as Record<string, unknown>)} data-status-unavailable className={cn("text-caption text-secondary-foreground", className)}>{word(w)}</span>;
+  if (!w) return <span {...(marks as Record<string, unknown>)} data-status-unavailable className={cn("text-caption text-secondary-foreground", className)}>{absent ?? word(w)}</span>;
   return (
     <span
       {...(marks as Record<string, unknown>)}

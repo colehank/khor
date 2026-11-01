@@ -81,6 +81,7 @@ impl RootAdmission {
         Ok(RootPermit {
             id,
             root: root.into(),
+            wait_remaining: None,
             _thread: PhantomData,
         })
     }
@@ -154,6 +155,10 @@ impl Drop for RootWaiter {
 pub(crate) struct RootPermit {
     id: u64,
     root: PathBuf,
+    // Only ordinary construction can wait for the OS trust fence. Freeze the
+    // allowance left after local admission: constructor CPU/filesystem work
+    // between admission and attach is not lock contention.
+    wait_remaining: Option<Duration>,
     _thread: PhantomData<Rc<()>>,
 }
 impl RootPermit {
@@ -173,7 +178,12 @@ impl RootPermit {
             if Instant::now() >= until {
                 return Err(Error::busy());
             }
-            if let Some(permit) = admission.ordinary(root, &mut waiter)? {
+            if let Some(mut permit) = admission.ordinary(root, &mut waiter)? {
+                permit.wait_remaining = Some(until.saturating_duration_since(Instant::now()));
+                drop(admission);
+                if permit.wait_remaining.is_some_and(|left| left.is_zero()) {
+                    return Err(Error::busy());
+                }
                 return Ok(permit);
             }
             let remaining = until.saturating_duration_since(Instant::now());
@@ -203,7 +213,13 @@ impl RootPermit {
                     return Err(Error::busy());
                 }
                 let ready = admission.ordinary(root, &mut waiter)?;
-                if let Some(permit) = ready {
+                if let Some(mut permit) = ready {
+                    permit.wait_remaining =
+                        Some(until.saturating_duration_since(tokio::time::Instant::now()));
+                    drop(admission);
+                    if permit.wait_remaining.is_some_and(|left| left.is_zero()) {
+                        return Err(Error::busy());
+                    }
                     return Ok(permit);
                 }
             }
@@ -212,12 +228,56 @@ impl RootPermit {
             }
         }
     }
+    fn wait_for_lock(&mut self) -> Result<(), Error> {
+        // Waiting while holding metadata would reverse the worker's order.
+        // None belongs to control/transfer: it always remains a single try.
+        if METADATA_HELD.get() {
+            return Err(Error::busy());
+        }
+        let left = self
+            .wait_remaining
+            .filter(|left| !left.is_zero())
+            .ok_or_else(Error::busy)?;
+        let started = Instant::now();
+        std::thread::sleep(left.min(Duration::from_millis(5)));
+        let left = left.saturating_sub(started.elapsed());
+        self.wait_remaining = Some(left);
+        if left.is_zero() {
+            return Err(Error::busy());
+        }
+        Ok(())
+    }
     pub(crate) fn attach(self) -> Result<RootGate, Error> {
         let mut owned = RootGate {
             permit: self,
             file: None,
         };
-        let directory = owned.permit.root.join(".khor/trust-mutation");
+        owned.acquire_file(true)?;
+        Ok(owned)
+    }
+}
+impl Drop for RootPermit {
+    fn drop(&mut self) {
+        roots().owners.retain(|owner| owner.id != self.id);
+        root_changed();
+    }
+}
+/// One local reservation owns bootstrap, including its metadata-lock handoff.
+pub(crate) struct RootGate {
+    permit: RootPermit,
+    file: Option<File>,
+}
+impl RootGate {
+    fn acquire_file(&mut self, wait: bool) -> Result<(), Error> {
+        debug_assert!(self.file.is_none());
+        if self
+            .permit
+            .wait_remaining
+            .is_some_and(|left| left.is_zero() || (wait && METADATA_HELD.get()))
+        {
+            return Err(Error::busy());
+        }
+        let directory = self.permit.root.join(".khor/trust-mutation");
         private_dir(&directory)?;
         for (count, entry) in fs::read_dir(&directory).map_err(error)?.enumerate() {
             let entry = entry.map_err(error)?;
@@ -230,25 +290,47 @@ impl RootPermit {
         if file.metadata().map_err(error)?.len() != 0 {
             return Err("unexpected trust mutation gate bytes".into());
         }
-        match file.try_lock() {
-            Ok(()) => (),
-            Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
-            Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+        loop {
+            match file.try_lock() {
+                Ok(()) => {
+                    self.file = Some(file);
+                    return Ok(());
+                }
+                Err(fs::TryLockError::WouldBlock) if wait => self.permit.wait_for_lock()?,
+                Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
+                Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+            }
         }
-        owned.file = Some(file);
-        Ok(owned)
     }
-}
-impl Drop for RootPermit {
-    fn drop(&mut self) {
-        roots().owners.retain(|owner| owner.id != self.id);
-        root_changed();
+    pub(super) fn bootstrap_metadata(&mut self, root: &Path) -> Result<Gate, Error> {
+        if self.permit.root != root || self.file.is_none() {
+            return Err("bootstrap metadata needs its held root fence".into());
+        }
+        if METADATA_HELD.get() {
+            return Err(Error::busy());
+        }
+        // The same owner keeps local admission and the cumulative allowance.
+        // Never sleep for metadata while holding the physical root fence.
+        self.file.take();
+        let directory = root.join(".khor/doc-transfer-state");
+        loop {
+            let metadata = gate_with_wait(&directory, Some(&mut self.permit))?;
+            // Workers use metadata -> root try0 too. Only the two leases
+            // together admit journal loading or any recovery side effects.
+            match self.acquire_file(false) {
+                Ok(()) => return Ok(metadata),
+                Err(why) if why.kind == crate::proto::DocTransferFailure::Busy => {
+                    drop(metadata);
+                    // Charge this contention even if the next root try finds
+                    // it free, so alternating owners cannot spin for free.
+                    self.permit.wait_for_lock()?;
+                    self.acquire_file(true)?;
+                    self.file.take();
+                }
+                Err(why) => return Err(why),
+            }
+        }
     }
-}
-/// The OS lease attaches once to the same local reservation used by bootstrap.
-pub(crate) struct RootGate {
-    permit: RootPermit,
-    file: Option<File>,
 }
 impl Drop for RootGate {
     fn drop(&mut self) {
@@ -339,20 +421,33 @@ pub(super) fn peek(root: &Path) -> Result<Option<Vec<u8>>, String> {
 }
 
 pub(super) fn gate(root: &Path) -> Result<Gate, Error> {
-    let local = match LOCAL.try_lock() {
-        Ok(guard) => guard,
-        Err(TryLockError::Poisoned(error)) => error.into_inner(),
-        Err(TryLockError::WouldBlock) => return Err(Error::busy()),
+    gate_with_wait(root, None)
+}
+fn gate_with_wait(root: &Path, mut permit: Option<&mut RootPermit>) -> Result<Gate, Error> {
+    let local = loop {
+        match LOCAL.try_lock() {
+            Ok(guard) => break guard,
+            Err(TryLockError::Poisoned(error)) => break error.into_inner(),
+            Err(TryLockError::WouldBlock) => permit
+                .as_deref_mut()
+                .ok_or_else(Error::busy)?
+                .wait_for_lock()?,
+        }
     };
     private_dir(root)?;
     let file = open(root.join("gate").as_path(), true)?;
     if file.metadata().map_err(error)?.len() != 0 {
         return Err("unexpected transfer metadata gate bytes".to_owned().into());
     }
-    match file.try_lock() {
-        Ok(()) => {}
-        Err(fs::TryLockError::WouldBlock) => return Err(Error::busy()),
-        Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+    loop {
+        match file.try_lock() {
+            Ok(()) => break,
+            Err(fs::TryLockError::WouldBlock) => permit
+                .as_deref_mut()
+                .ok_or_else(Error::busy)?
+                .wait_for_lock()?,
+            Err(fs::TryLockError::Error(why)) => return Err(error(why).into()),
+        }
     }
     METADATA_HELD.set(true);
     Ok(Gate {
@@ -474,6 +569,13 @@ impl Journal {
         file.sync_all().map_err(error)?;
         drop(file);
         check_file(&next)?;
+        #[cfg(all(test, unix))]
+        crate::link::documents::query_concurrency_tests::publication_ready(
+            &self.root,
+            METADATA_HELD.get(),
+            OPEN_WAIT,
+            (&header, body),
+        );
         fs::rename(&next, self.root.join("registry")).map_err(error)?;
         self.generation = generation;
         Ok(())
@@ -907,6 +1009,150 @@ mod tests {
             "a late free root extended the admission deadline"
         );
         assert!(!expired.0.join(".khor/identity.key").exists());
+    }
+
+    #[test]
+    fn ordinary_admission_does_not_charge_nonwaiting_constructor_work() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        private_trust_root(&fixture.0);
+        let directory = fixture.0.join(".khor/trust-mutation");
+        private_dir(&directory).unwrap();
+        let path = directory.join("gate");
+        // Physical lock proof, not a warmed constructor or a Node retry.
+        let free = open(&path, true).unwrap();
+        free.try_lock().expect("new private OS gate is unowned");
+        drop(free);
+        let admitted = RootPermit::acquire(&fixture.0).unwrap();
+        let started = Instant::now();
+        // Deliberately model slow CPU/filesystem initialization between the
+        // actual admission and attach. Nobody contends or waits for any lock.
+        std::thread::sleep(OPEN_WAIT + Duration::from_millis(50));
+        assert!(started.elapsed() >= OPEN_WAIT);
+        assert!(!METADATA_HELD.get());
+        let free = open(&path, false).unwrap();
+        free.try_lock()
+            .expect("the same physical gate remains unowned");
+        drop(free);
+        let attached = admitted.attach();
+        eprintln!(
+            "[N-NONWAIT] physical_gate_free=true metadata_held=false delay_ms={} attached={}",
+            started.elapsed().as_millis(),
+            attached.is_ok()
+        );
+        assert!(
+            attached.is_ok(),
+            "nonwaiting constructor work consumed the lock waiting allowance: {:?}",
+            attached.err()
+        );
+    }
+
+    #[test]
+    fn ordinary_attach_spends_only_remaining_wait_and_control_never_waits() {
+        let _serial = TEST_SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let fixture = Fixture::new();
+        private_trust_root(&fixture.0);
+        drop(root_gate(&fixture.0).unwrap());
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(fixture.0.join(".khor/trust-mutation/gate"))
+            .unwrap();
+        file.try_lock().unwrap();
+
+        let mut expired = RootPermit::acquire(&fixture.0).unwrap();
+        assert!(
+            expired.wait_remaining.is_some(),
+            "ordinary admission must retain its remaining allowance"
+        );
+        // An actually exhausted local-admission allowance may not be restarted
+        // by attach. Constructor elapsed time alone does not exhaust it.
+        expired.wait_remaining = Some(Duration::ZERO);
+        let started = Instant::now();
+        let error = expired
+            .attach()
+            .err()
+            .expect("held OS fence with exhausted budget");
+        assert_eq!(error.kind, crate::proto::DocTransferFailure::Busy);
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "attach reset the admission budget"
+        );
+
+        // OS contention receives only what local admission left, not a fresh
+        // OPEN_WAIT. A held physical file makes the timeout decision exact.
+        let mut partly_spent = RootPermit::acquire(&fixture.0).unwrap();
+        let remaining = Duration::from_millis(20);
+        partly_spent.wait_remaining = Some(remaining);
+        let started = Instant::now();
+        assert_eq!(
+            partly_spent.attach().err().unwrap().kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        assert!(started.elapsed() >= remaining);
+        assert!(started.elapsed() < OPEN_WAIT, "OS wait reset the allowance");
+
+        let control = RootPermit::try_acquire(&fixture.0).unwrap();
+        assert!(control.wait_remaining.is_none());
+        let started = Instant::now();
+        assert_eq!(
+            control.attach().err().unwrap().kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "control waited for the OS gate"
+        );
+
+        let ordinary = RootPermit::acquire(&fixture.0).unwrap();
+        let metadata = gate(&fixture.0.join("metadata")).unwrap();
+        let started = Instant::now();
+        assert_eq!(
+            ordinary.attach().err().unwrap().kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        assert!(
+            started.elapsed() < OPEN_WAIT,
+            "metadata -> root waited after admission"
+        );
+        drop(metadata);
+        drop(file);
+
+        // Exhaustion is checked even for a free gate. This is spent lock wait,
+        // not the old absolute idle-deadline premise corrected by the gap test.
+        let mut expired_free = RootPermit::acquire(&fixture.0).unwrap();
+        expired_free.wait_remaining = Some(Duration::ZERO);
+        assert_eq!(
+            expired_free
+                .attach()
+                .err()
+                .expect("expired even when free")
+                .kind,
+            crate::proto::DocTransferFailure::Busy
+        );
+        drop(root_gate(&fixture.0).unwrap());
+
+        let mut joint = root_gate(&fixture.0).unwrap();
+        let other = fixture.0.join("different-root");
+        assert!(joint.bootstrap_metadata(&other).is_err());
+        assert!(!other.exists(), "mismatched root created metadata");
+        let metadata = joint.bootstrap_metadata(&fixture.0).unwrap();
+        assert!(METADATA_HELD.get());
+        let same_file = open(&fixture.0.join(".khor/trust-mutation/gate"), false).unwrap();
+        assert!(matches!(
+            same_file.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
+        drop(metadata);
+        assert!(!METADATA_HELD.get());
+        assert!(matches!(
+            same_file.try_lock(),
+            Err(fs::TryLockError::WouldBlock)
+        ));
+        drop(joint);
+        same_file
+            .try_lock()
+            .expect("joint owner released the OS fence");
     }
 
     #[test]

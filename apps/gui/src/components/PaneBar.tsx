@@ -12,7 +12,7 @@
 //
 // Every control carries a name from the catalog. A control the eye reads
 // by its shape still has to say what it is out loud.
-import { Fragment, useState, type CSSProperties } from "react";
+import { Fragment, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { IconClose, IconFilter, IconPlus, IconSearch } from "@/components/icons";
@@ -48,7 +48,7 @@ import { cn } from "@/lib/utils";
     a heading over nothing. */
 export type FilterOption = { key: string; label: string; axis?: string };
 
-export type PaneAction = { key: string; label: string; onSelect: () => void };
+export type PaneAction = { key: string; label: string; onSelect: () => void; afterClose?: boolean };
 
 // ⚠️ 墓碑 (2026-09-30): `PageActions` stood here — a landing's own acts
 // drawn a second time as push buttons at R0's right end (新会话… 导入… on
@@ -79,11 +79,14 @@ export function PaneBar({
   seat,
   band: bandProp,
   title,
+  inline = false,
 }: {
   /** The landing's name, said as the list page's title where the bar
       is seated (the redesign; it used to ride only the pane's
       aria-label). */
   title?: string;
+  /** Keep the side toolbar in a compound heading already seated by its owner. */
+  inline?: boolean;
   /** Names the search box and stands in as its placeholder. */
   searchLabel: string;
   /**
@@ -179,6 +182,8 @@ export function PaneBar({
   // gives the row to the window's corner and the buttons, and the name a
   // row of its own under it (below). The search circle opens the box in
   // the row's place; a query left in it keeps it open.
+  const pending = useRef<PaneAction | null>(null);
+  useLayoutEffect(() => () => { pending.current = null; }, []);
   const glass = seat === "side";
   const banded = !!bandProp && seat === undefined;
   const [searching, setSearching] = useState(query !== "");
@@ -340,15 +345,21 @@ export function PaneBar({
           the narrow face, which has no R0. That put every act twice on
           the wide face; the owner took R0's copy away. */}
       {actions && actions.length > 1 ? (
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={(open) => { if (open) pending.current = null; }}>
           <DropdownMenuTrigger asChild>
             <Plus aria-label={gui.new_item} data-pane-new>
               <IconPlus />
             </Plus>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent align="end" onCloseAutoFocus={(event) => {
+            const action = pending.current;
+            pending.current = null;
+            if (!action) return;
+            event.preventDefault();
+            action.onSelect();
+          }}>
             {actions.map((a, i) => (
-              <DropdownMenuItem key={a.key} data-new-item={a.key} onSelect={a.onSelect}>
+              <DropdownMenuItem key={a.key} data-new-item={a.key} onSelect={() => { if (a.afterClose) pending.current = a; else a.onSelect(); }}>
                 {a.label}
                 {/* The first act is the one ⌘N runs (`useNewAct` above),
                     and only from the seated bar. */}
@@ -448,7 +459,7 @@ export function PaneBar({
       {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
     </div>
   );
-  if (!glass) return bar;
+  if (!glass || inline) return bar;
   return (
     <>
       <SideSeat>{bar}</SideSeat>

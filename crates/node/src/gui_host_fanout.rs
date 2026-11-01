@@ -12,9 +12,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 // This is the host's per-connection backlog budget, not a wire-format cap:
-// host::write_frame has no outgoing size limit. The host caps replay at 32 MiB;
-// allow one such encoded frame plus subsequent live notes. The frame currently
-// being written still counts against both budgets.
+// host::write_frame has no outgoing size limit. A slow connection can retain
+// only this bounded set of already encoded frames. The frame currently being
+// written still counts against both budgets.
 const MAX_FRAMES: usize = 128;
 const MAX_BYTES: usize = 64 * 1024 * 1024;
 const WRITE_TIMEOUT: Duration = Duration::from_millis(100);

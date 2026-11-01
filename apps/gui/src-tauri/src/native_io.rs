@@ -25,7 +25,7 @@ pub(crate) const COMMANDS: &[&str] = &[
     "chat_set_mode",
     "chat_set_option",
     "chat_stop",
-    "chat_replay",
+    "chat_capture",
     "chat_say",
     "term_key",
     "term_resize",
@@ -38,10 +38,12 @@ pub(crate) const COMMANDS: &[&str] = &[
 enum Request {
     Chat {
         id: String,
+        lease: String,
         command: Control,
     },
     Say {
         id: String,
+        lease: String,
         text: String,
         images: Vec<(String, String)>,
         files: Vec<(String, String)>,
@@ -49,28 +51,34 @@ enum Request {
     },
     Key {
         id: String,
+        lease: String,
         keys: String,
     },
     Resize {
         id: String,
+        lease: String,
         cols: u16,
         rows: u16,
     },
     Ready {
         id: String,
+        lease: String,
     },
     Forget {
         id: String,
+        lease: String,
         redraw: bool,
     },
     Drop {
         id: String,
+        lease: String,
         paths: Vec<String>,
         from: Option<String>,
         into: Option<String>,
     },
     CancelDrop {
         id: String,
+        lease: String,
         staged: Vec<String>,
     },
 }
@@ -91,6 +99,7 @@ fn argument<R: Runtime, T: DeserializeOwned>(
 
 fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, InvokeError> {
     let id = argument(invoke, name, "id")?;
+    let lease = argument(invoke, name, "lease")?;
     macro_rules! arg {
         ($key:literal) => {
             argument(invoke, name, $key)?
@@ -116,7 +125,10 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
             value: arg!("value"),
         },
         "chat_stop" => Control::Stop,
-        "chat_replay" => Control::Replay,
+        "chat_capture" => {
+            let token: String = arg!("token");
+            Control::Capture(chat::capture_token(&token).map_err(InvokeError::from)?)
+        },
         "chat_say" => {
             let text = arg!("text");
             let images = argument::<R, Option<Vec<(String, String)>>>(invoke, name, "images")?
@@ -127,6 +139,7 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
             chat::validate_send_token(token.as_deref()).map_err(InvokeError::from)?;
             return Ok(Request::Say {
                 id,
+                lease,
                 text,
                 images,
                 files,
@@ -136,26 +149,30 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
         "term_key" => {
             return Ok(Request::Key {
                 id,
+                lease,
                 keys: arg!("keys"),
             });
         }
         "term_resize" => {
             return Ok(Request::Resize {
                 id,
+                lease,
                 cols: arg!("cols"),
                 rows: arg!("rows"),
             });
         }
-        "term_ready" => return Ok(Request::Ready { id }),
+        "term_ready" => return Ok(Request::Ready { id, lease }),
         "term_forget" => {
             return Ok(Request::Forget {
                 id,
+                lease,
                 redraw: arg!("redraw"),
             });
         }
         "term_drop" => {
             return Ok(Request::Drop {
                 id,
+                lease,
                 paths: arg!("paths"),
                 from: arg!("from"),
                 into: arg!("into"),
@@ -164,13 +181,14 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
         "term_drop_cancel" => {
             return Ok(Request::CancelDrop {
                 id,
+                lease,
                 staged: argument::<R, Option<Vec<String>>>(invoke, name, "staged")?
                     .unwrap_or_default(),
             });
         }
         _ => unreachable!("dispatch checked the command name"),
     };
-    Ok(Request::Chat { id, command })
+    Ok(Request::Chat { id, lease, command })
 }
 
 /// A handled invoke is consumed; unknown commands retain their resolver and
@@ -202,29 +220,50 @@ fn dispatch_into<R: Runtime>(
 }
 
 fn submit<R: Runtime>(invoke: Invoke<R>, request: Request) {
+    let root = khor_node::Node::root_from_env();
     match request {
-        Request::Chat { id, command } => reply(invoke, chat::submit_control(&id, command)),
+        Request::Chat { id, lease, command } => {
+            reply(invoke, chat::submit_control(&root, &id, &lease, command))
+        }
         Request::Say {
             id,
+            lease,
             text,
             images,
             files,
             token,
         } => reply(
             invoke,
-            chat::submit_say_with_token(&id, text, images, files, token),
+            chat::submit_say_with_token(&root, &id, &lease, text, images, files, token),
         ),
-        Request::Key { id, keys } => reply(invoke, term::submit_key(&id, keys.into_bytes())),
-        Request::Resize { id, cols, rows } => reply(invoke, term::submit_resize(&id, cols, rows)),
-        Request::Ready { id } => reply(invoke, term::submit_ready(&id)),
-        Request::Forget { id, redraw } => reply(invoke, term::submit_forget(&id, redraw)),
+        Request::Key { id, lease, keys } => reply(
+            invoke,
+            term::submit_key(&root, &id, &lease, keys.into_bytes()),
+        ),
+        Request::Resize {
+            id,
+            lease,
+            cols,
+            rows,
+        } => reply(invoke, term::submit_resize(&root, &id, &lease, cols, rows)),
+        Request::Ready { id, lease } => reply(invoke, term::submit_ready(&root, &id, &lease)),
+        Request::Forget { id, lease, redraw } => {
+            reply(invoke, term::submit_forget(&root, &id, &lease, redraw))
+        }
         Request::Drop {
             id,
+            lease,
             paths,
             from,
             into,
         } => {
-            let job = term::begin_drop(&id);
+            let job = match term::begin_drop(&root, &id, &lease) {
+                Ok(job) => job,
+                Err(why) => {
+                    invoke.resolver.reject(why);
+                    return;
+                }
+            };
             invoke.resolver.respond_async(async move {
                 crate::off_main(move || {
                     Ok(job.run_paths(
@@ -238,10 +277,13 @@ fn submit<R: Runtime>(invoke: Invoke<R>, request: Request) {
                 .map_err(InvokeError::from)
             });
         }
-        Request::CancelDrop { id, staged } => {
+        Request::CancelDrop { id, lease, staged } => {
             // Cancellation is immediate; filesystem cleanup must not make
             // the UI wait, nor cancel a later drop after scheduling a task.
-            term::cancel_drop(&id);
+            if let Err(why) = term::cancel_drop(&root, &id, &lease) {
+                invoke.resolver.reject(why);
+                return;
+            }
             invoke.resolver.respond_async(async move {
                 crate::off_main(move || {
                     term::term_drop_forget(&khor_node::Node::root_from_env(), &staged);
@@ -281,16 +323,22 @@ mod tests {
     #[allow(unused_variables)]
     mod original {
         #[tauri::command]
-        pub fn chat_answer(id: String, ask: u64, option: Option<String>) -> bool {
+        pub fn chat_answer(id: String, lease: String, ask: u64, option: Option<String>) -> bool {
             true
         }
         #[tauri::command]
-        pub fn chat_respond(id: String, ask: u64, response: serde_json::Value) -> bool {
+        pub fn chat_respond(
+            id: String,
+            lease: String,
+            ask: u64,
+            response: serde_json::Value,
+        ) -> bool {
             true
         }
         #[tauri::command]
         pub fn chat_control(
             id: String,
+            lease: String,
             token: String,
             operation: String,
             payload: serde_json::Value,
@@ -298,24 +346,28 @@ mod tests {
             true
         }
         #[tauri::command]
-        pub fn chat_set_mode(id: String, mode: String) -> bool {
+        pub fn chat_set_mode(id: String, lease: String, mode: String) -> bool {
             true
         }
         #[tauri::command]
-        pub fn chat_set_option(id: String, option: String, value: serde_json::Value) -> bool {
+        pub fn chat_set_option(
+            id: String,
+            lease: String,
+            option: String,
+            value: serde_json::Value,
+        ) -> bool {
             true
         }
         #[tauri::command]
-        pub fn chat_stop(id: String) -> bool {
+        pub fn chat_stop(id: String, lease: String) -> bool {
             true
         }
         #[tauri::command]
-        pub fn chat_replay(id: String) -> bool {
-            true
-        }
+        pub fn chat_capture(id: String, lease: String, token: String) -> bool { true }
         #[tauri::command]
         pub fn chat_say(
             id: String,
+            lease: String,
             text: String,
             images: Option<Vec<(String, String)>>,
             files: Option<Vec<(String, String)>>,
@@ -325,24 +377,25 @@ mod tests {
             Ok(true)
         }
         #[tauri::command]
-        pub fn term_key(id: String, keys: String) -> bool {
+        pub fn term_key(id: String, lease: String, keys: String) -> bool {
             true
         }
         #[tauri::command]
-        pub fn term_resize(id: String, cols: u16, rows: u16) -> bool {
+        pub fn term_resize(id: String, lease: String, cols: u16, rows: u16) -> bool {
             true
         }
         #[tauri::command]
-        pub fn term_ready(id: String) -> bool {
+        pub fn term_ready(id: String, lease: String) -> bool {
             true
         }
         #[tauri::command]
-        pub fn term_forget(id: String, redraw: bool) -> bool {
+        pub fn term_forget(id: String, lease: String, redraw: bool) -> bool {
             true
         }
         #[tauri::command]
         pub fn term_drop(
             id: String,
+            lease: String,
             paths: Vec<String>,
             from: Option<String>,
             into: Option<String>,
@@ -350,7 +403,7 @@ mod tests {
             true
         }
         #[tauri::command]
-        pub fn term_drop_cancel(id: String, staged: Option<Vec<String>>) -> bool {
+        pub fn term_drop_cancel(id: String, lease: String, staged: Option<Vec<String>>) -> bool {
             true
         }
     }
@@ -377,7 +430,7 @@ mod tests {
                 original::chat_set_mode,
                 original::chat_set_option,
                 original::chat_stop,
-                original::chat_replay,
+                original::chat_capture,
                 original::chat_say,
                 original::term_key,
                 original::term_resize,
@@ -401,33 +454,63 @@ mod tests {
             .build()
             .unwrap();
         let cases = [
-            ("chat_answer", json!({"id":"fixture","ask":1})),
+            (
+                "chat_answer",
+                json!({"id":"fixture","lease":"fixture-lease","ask":1}),
+            ),
             (
                 "chat_respond",
-                json!({"id":"fixture","ask":1,"response":{"yes":true}}),
+                json!({"id":"fixture","lease":"fixture-lease","ask":1,"response":{"yes":true}}),
             ),
             (
                 "chat_control",
-                json!({"id":"fixture","token":"t","operation":"close","payload":{}}),
+                json!({"id":"fixture","lease":"fixture-lease","token":"t","operation":"close","payload":{}}),
             ),
-            ("chat_set_mode", json!({"id":"fixture","mode":"plan"})),
+            (
+                "chat_set_mode",
+                json!({"id":"fixture","lease":"fixture-lease","mode":"plan"}),
+            ),
             (
                 "chat_set_option",
-                json!({"id":"fixture","option":"plan","value":true}),
+                json!({"id":"fixture","lease":"fixture-lease","option":"plan","value":true}),
             ),
-            ("chat_stop", json!({"id":"fixture"})),
-            ("chat_replay", json!({"id":"fixture"})),
-            ("chat_say", json!({"id":"fixture","text":"hi"})),
+            ("chat_stop", json!({"id":"fixture","lease":"fixture-lease"})),
+            (
+                "chat_capture",
+                json!({"id":"fixture","lease":"fixture-lease","token":"00112233445566778899aabbccddeeff"}),
+            ),
             (
                 "chat_say",
-                json!({"id":"fixture","text":"hi","token":"draft-1"}),
+                json!({"id":"fixture","lease":"fixture-lease","text":"hi"}),
             ),
-            ("term_key", json!({"id":"fixture","keys":"hi"})),
-            ("term_resize", json!({"id":"fixture","cols":80,"rows":24})),
-            ("term_ready", json!({"id":"fixture"})),
-            ("term_forget", json!({"id":"fixture","redraw":true})),
-            ("term_drop", json!({"id":"fixture","paths":[]})),
-            ("term_drop_cancel", json!({"id":"fixture"})),
+            (
+                "chat_say",
+                json!({"id":"fixture","lease":"fixture-lease","text":"hi","token":"draft-1"}),
+            ),
+            (
+                "term_key",
+                json!({"id":"fixture","lease":"fixture-lease","keys":"hi"}),
+            ),
+            (
+                "term_resize",
+                json!({"id":"fixture","lease":"fixture-lease","cols":80,"rows":24}),
+            ),
+            (
+                "term_ready",
+                json!({"id":"fixture","lease":"fixture-lease"}),
+            ),
+            (
+                "term_forget",
+                json!({"id":"fixture","lease":"fixture-lease","redraw":true}),
+            ),
+            (
+                "term_drop",
+                json!({"id":"fixture","lease":"fixture-lease","paths":[]}),
+            ),
+            (
+                "term_drop_cancel",
+                json!({"id":"fixture","lease":"fixture-lease"}),
+            ),
         ];
         let response = |view: &tauri::WebviewWindow<tauri::test::MockRuntime>, name, body| {
             tauri::test::get_ipc_response(view, request(name, body))
@@ -470,7 +553,7 @@ mod tests {
             json!("bad token"),
             json!("秘密"),
         ] {
-            let body = json!({"id":"fixture","text":"hi","token":token});
+            let body = json!({"id":"fixture","lease":"fixture-lease","text":"hi","token":token});
             assert_eq!(
                 response(&after, "chat_say", body.clone().into()),
                 response(&before, "chat_say", body.into())
@@ -479,19 +562,19 @@ mod tests {
         for (name, body) in [
             (
                 "term_resize",
-                json!({"id":"fixture","cols":65536,"rows":24}),
+                json!({"id":"fixture","lease":"fixture-lease","cols":65536,"rows":24}),
             ),
             (
                 "chat_answer",
-                json!({"id":"fixture","ask":-1,"option":null}),
+                json!({"id":"fixture","lease":"fixture-lease","ask":-1,"option":null}),
             ),
             (
                 "chat_say",
-                json!({"id":"fixture","text":"hi","images":[["png"]]}),
+                json!({"id":"fixture","lease":"fixture-lease","text":"hi","images":[["png"]]}),
             ),
             (
                 "term_drop",
-                json!({"id":"fixture","paths":[],"from":null,"into":null}),
+                json!({"id":"fixture","lease":"fixture-lease","paths":[],"from":null,"into":null}),
             ),
         ] {
             assert_eq!(
@@ -538,7 +621,10 @@ mod tests {
         for key in ["a", "b", "c"] {
             tauri::test::get_ipc_response(
                 &view,
-                request("term_key", json!({"id":"fixture","keys":key}).into()),
+                request(
+                    "term_key",
+                    json!({"id":"fixture","lease":"fixture-lease","keys":key}).into(),
+                ),
             )
             .unwrap();
         }
@@ -551,7 +637,7 @@ mod tests {
         // Remote origins still go through Tauri's ACL before our handler.
         let mut remote = request(
             "term_key",
-            json!({"id":"fixture","keys":"forbidden"}).into(),
+            json!({"id":"fixture","lease":"fixture-lease","keys":"forbidden"}).into(),
         );
         remote.url = "https://untrusted.invalid".parse().unwrap();
         assert!(tauri::test::get_ipc_response(&view, remote).is_err());

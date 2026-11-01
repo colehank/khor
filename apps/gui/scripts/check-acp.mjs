@@ -1,3 +1,4 @@
+import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The ACP-surface gate: what the conversation face draws from the
 // *protocol's* frames, as opposed to from its own text.
 //
@@ -43,24 +44,19 @@
 //      to its transcript and nothing to the stream), so this claim is
 //      about registry agents — and an ability nothing exercises is one
 //      nobody finds out is broken.
-//   8. the handshake's facts reach the face, and only while there is
-//      something for them to explain. `ChatFrame::Agent` had carried
-//      `replays` since the day it was added, with `gui_host`'s own note
-//      saying a face must act on it — **and no face read the frame at
-//      all**. Both agents khor wrote replay, so nothing ever showed.
+//   8. handshake facts reach the face: login explains an empty composer,
+//      while NoLoad does not deny independently captured canonical content.
 //   9. a `plan` reaches the screen in order, and a finished step reads
 //      differently from the one being worked. **claude sends no plan
 //      either** — measured 2026-08-30, its tool list on this machine
 //      has 128 entries and nothing todo-shaped; an earlier note in this
 //      repo said the plan would come from a `TodoWrite` tool, and there
 //      is no such tool.
-//  10. an image and a file paste into the composer **only when the
-//      agent said it takes each kind** — asserted against each other in
-//      one paste, because separate runs let each capability answer for
-//      the other. Both directions, because "no attach affordance"
-//      is a claim a page that never rendered satisfies for free — so
-//      the positive row has to find the very thing the negative row
-//      must not.
+//  10. one paste uploads both files to their session machine and sends
+//      both returned paths. The independent images capability gates only
+//      the small inline picture; embeds does not gate path attachments.
+//      Creating new embedded-text documents has no current UI entry and
+//      remains a baseline NEXT-ROUND gap, not coverage supplied by this gate.
 //  10b. a tool line says which call it was, and three different calls
 //      paint three different lines. The second half is the complaint —
 //      「大量 bash,不可展开也没有标题」— and a per-line check alone is
@@ -73,6 +69,7 @@
 //      nothing behind it grows no control at all. Then it is actually
 //      opened and the diff and the output are read back — a title that
 //      claims to open is not the same as one that does.
+import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -118,8 +115,11 @@ const DELTA_L = 3;
  * updates to calls by id, and an id that is unique per call is the only
  * reason two calls to the same tool do not fold into one line. */
 const frames = [
+  // This default visual scenario is an active turn; Note bodies alone do
+  // not assert the live Turning control fact used by the actual component.
+  { kind: "turning" },
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: {
         sessionUpdate: "user_message_chunk",
@@ -129,40 +129,40 @@ const frames = [
   },
   // An edit, which carries its own diff — the payload shape khor's
   // 垫片 builds out of claude's `old_string`/`new_string`.
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_ok", title: "Edit src/lib.rs", kind: "edit", status: "in_progress",
+  { kind: "note", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_ok", title: "Edit src/lib.rs", kind: "edit", status: "in_progress",
     rawInput: { file_path: "/w/khor/src/lib.rs", old_string: "let x = 1;", new_string: "let x = 2;" },
     locations: [{ path: "/w/khor/src/lib.rs" }],
     content: [{ type: "diff", path: "/w/khor/src/lib.rs", oldText: "let x = 1;", newText: "let x = 2;" }] } } },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_ok", status: "completed" } } },
+  { kind: "note", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_ok", status: "completed" } } },
   // A failed shell command that said why.
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "跑一遍测试", kind: "execute", status: "in_progress",
+  { kind: "note", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_bad", title: "跑一遍测试", kind: "execute", status: "in_progress",
     rawInput: { command: "cargo test -p khor-node", description: "跑一遍测试" } } } },
-  { kind: "history", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed",
+  { kind: "note", update: { update: { sessionUpdate: "tool_call_update", toolCallId: "toolu_bad", status: "failed",
     content: [{ type: "content", content: { type: "text", text: "error[E0425]: cannot find value `x`" } }] } } },
   // A call still running, with nothing behind it — the one line that
   // must **not** grow a control, because a control onto nothing is
   // worse than no control.
-  { kind: "history", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_run", title: "Grep kind_of", kind: "search", status: "in_progress" } } },
+  { kind: "note", update: { update: { sessionUpdate: "tool_call", toolCallId: "toolu_run", title: "Grep kind_of", kind: "search", status: "in_progress" } } },
   // Batch 2. `used`/`size` are the shape claude actually puts on the
   // wire (captured 2026-08-30: 32126 tokens against a 1 000 000 window),
   // so the share the face prints is a real one and not a round number
   // chosen to make the arithmetic obvious.
-  { kind: "history", update: { update: { sessionUpdate: "usage_update", used: 320000, size: 1000000, cost: { amount: 0.38777300000000003, currency: "USD" } } } },
+  { kind: "note", update: { update: { sessionUpdate: "usage_update", used: 320000, size: 1000000, cost: { amount: 0.38777300000000003, currency: "USD" } } } },
   // A title, which claude never sends — see `ChatView`'s note. In the
   // fixture because the *face's* ability to read it is what the next
   // batch depends on, and an ability nothing exercises is one nobody
   // finds out is broken.
-  { kind: "history", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
+  { kind: "note", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
   // A plan, which claude also never sends — its 128-tool list here has
   // nothing todo-shaped. Three entries so all three statuses are
   // present at once, which is what claim 9 measures them against.
-  { kind: "history", update: { update: { sessionUpdate: "plan", entries: [
+  { kind: "note", update: { update: { sessionUpdate: "plan", entries: [
     { content: "读那个文件", status: "completed", priority: "medium" },
     { content: "改那个文件", status: "in_progress", priority: "high" },
     { content: "跑测试", status: "pending", priority: "low" },
   ] } } },
   {
-    kind: "history",
+    kind: "note",
     update: {
       update: {
         sessionUpdate: "agent_message_chunk",
@@ -170,13 +170,12 @@ const frames = [
       },
     },
   },
-  { kind: "history_end" },
 ];
 
 const row = (id, kind, title) => ({
   id, kind, title, word: "idle", at_ms: Date.now(), unread: 0, source: null,
   pinned: false, stale: false, category: "claude", group: "", face: null,
-  hosted: true, attachable: false, last: null, via: null, via_face: null, home: "gate",
+  hosted: true, can_control: kind === "gui", attachable: false, last: null, via: null, via_face: null, home: "gate",
 });
 const ROWS = [row("gui/acp-gate", "gui", "acp-gate-agent")];
 
@@ -214,53 +213,43 @@ const probe = () => {
       fg.g * a + bg.g * (1 - a),
     )}, ${Math.round(fg.b * a + bg.b * (1 - a))})`;
   };
-  /** What a control says it is set to: a popup button's drawn value
-      (its `<select>` carries the anchor, and the select's own text is
-      every option's), anything else its own words. */
-  const faceOf = (el) => {
-    const drawn = el.tagName === "SELECT" ? el.closest("[data-popup-button]")?.querySelector("[data-popup-value]") : null;
-    return ((drawn ?? el).textContent ?? "").trim();
+  const opacityOf = el => {
+    let opacity=1;
+    for(let node=el;node;node=node.parentElement)opacity*=Number(getComputedStyle(node).opacity);
+    return opacity;
+  };
+  const inkOf = el => {
+    if(!el)return null;
+    const color=rgba(getComputedStyle(el).color);
+    return color?flatten({...color,a:color.a*opacityOf(el)},groundOf(el)):null;
+  };
+  const svgMark = svg => {
+    if(!svg)return null;
+    const style=getComputedStyle(svg),box=svg.getBoundingClientRect(),opacity=opacityOf(svg);
+    const parts=[...svg.querySelectorAll('path,circle,polyline,line,rect,ellipse')].map(shape=>{
+      const css=getComputedStyle(shape);let length=0;
+      try{length=shape.getTotalLength();}catch{}
+      const stroke=rgba(css.stroke),fill=rgba(css.fill);
+      return {tag:shape.tagName.toLowerCase(),d:shape.getAttribute('d'),points:shape.getAttribute('points'),
+        radius:shape.getAttribute('r'),length,
+        painted:length>0 && opacityOf(shape)>0.05 && ((stroke?.a>0.05 && parseFloat(css.strokeWidth)>0) || fill?.a>0.05)};
+    });
+    return {visible:box.width>0 && box.height>0 && box.bottom>0 && box.top<innerHeight && box.right>0 && box.left<innerWidth
+        && style.display!=='none' && style.visibility!=='hidden' && opacity>0.05 && parts.some(part=>part.painted),
+      width:box.width,height:box.height,ink:inkOf(svg),parts,
+      shape:JSON.stringify(parts.map(({tag,d,points,radius})=>({tag,d,points,radius}))),
+      animated:svg.getAnimations().some(animation=>animation.playState==='running' && Number(animation.effect?.getTiming().duration)>0)};
   };
   const lines = [...document.querySelectorAll("[data-chat-tool]")].map((el) => {
-    const text = el.querySelector("[data-word-text]") ?? el;
-    const fg = rgba(getComputedStyle(text).color);
+    const line=el.querySelector('[data-slot="trace-line"]'), title=line?.querySelector('[data-slot="trace-title"]');
     return {
-      status: el.getAttribute("data-tool-status"),
-      kind: el.getAttribute("data-tool-kind"),
-      word: el.getAttribute("data-word"),
-      openable: el.getAttribute("data-tool-open"),
-      title: (el.querySelector("[data-word-text]")?.textContent ?? "").trim(),
+      status: el.getAttribute("data-tool-status"), kind: el.getAttribute("data-tool-kind"),
+      openable: el.getAttribute("data-tool-open"), title: (title?.textContent ?? "").trim(),
       body: !!el.querySelector("[data-tool-body]"),
-      // The mark, as a **still image**: what a reader sees with the
-      // breath switched off — its composited colour, and whether it is
-      // filled at all. Both, because a mark can be told from another by
-      // being a different weight of grey *or* by being a ring instead
-      // of a disc, and the design uses each of them somewhere.
-      dot: (() => {
-        const d = el.querySelector("[data-tool-dot]");
-        if (!d) return null;
-        const cs = getComputedStyle(d);
-        const fill = rgba(cs.backgroundColor);
-        const filled = !!fill && fill.a > 0.05;
-        // The ring is a `box-shadow`; its colour is the first `rgb(...)`
-        // in the resolved value.
-        const ringHit = /rgba?\([^)]*\)/.exec(cs.boxShadow || "");
-        const ring = ringHit ? rgba(ringHit[0]) : null;
-        const ground = groundOf(el);
-        const showing = filled ? fill : ring;
-        return {
-          state: d.getAttribute("data-dot-state"),
-          filled,
-          ink: showing ? flatten(showing, ground) : null,
-          size: `${cs.width}x${cs.height}`,
-          animated: cs.animationName !== "none" && cs.animationName !== "",
-        };
-      })(),
-      diff: !!el.querySelector("[data-tool-diff]"),
-      out: (el.querySelector("[data-tool-out]")?.textContent ?? "").trim(),
-      raw: getComputedStyle(text).color,
-      ink: fg ? flatten(fg, groundOf(el)) : null,
-      title: (el.textContent ?? "").trim(),
+      // Only the activity carrier, never the edit/search/execute kind icon.
+      activity:svgMark(line?.querySelector('[data-slot="trace-icon"] svg.lucide-loader-circle')),
+      diff: !!el.querySelector("[data-tool-diff]"), out: (el.querySelector("[data-tool-out]")?.textContent ?? "").trim(),
+      raw: title?getComputedStyle(title).color:null, ink:inkOf(title),
     };
   });
   // **Resolved by the engine, not parsed here.** Reading the custom
@@ -273,7 +262,7 @@ const probe = () => {
   // `rgb(...)` the line under test comes back as.
   const anchor = document.querySelector("[data-chat-tool]") ?? document.body;
   const swatch = document.createElement("span");
-  swatch.style.cssText = "position:absolute;left:-9999px;color:var(--state-failed)";
+  swatch.style.cssText = "position:absolute;left:-9999px;color:var(--destructive)";
   anchor.appendChild(swatch);
   const fgT = rgba(getComputedStyle(swatch).color);
   const failedToken = fgT ? flatten(fgT, groundOf(anchor)) : null;
@@ -281,64 +270,31 @@ const probe = () => {
   // The positive control for claim 0: something this fixture certainly
   // paints, found by a different selector than the one under test.
   const paragraphs = document.querySelectorAll("[data-chat-column] p").length;
-  const u = document.querySelector("[data-chat-usage]");
-  const usage = u && {
-    used: Number(u.getAttribute("data-usage-used")),
-    size: Number(u.getAttribute("data-usage-size")),
-    // The share is the dial's: its number and the seat's name for a
-    // screen reader (the composer capsule, 2026-10-02).
-    share: `${(u.textContent ?? "").trim()} ${u.getAttribute("aria-label") ?? ""}`,
-    // **No cost anywhere in the composer** (the owner, 2026-10-02:
-    // 「右边不写美元」): whatever of the cost the page prints.
-    cost: /\$|USD|0\.39/.test(document.body.innerText) ? document.body.innerText.match(/.{0,12}(\$|USD|0\.39).{0,12}/)?.[0] ?? "?" : "",
-  };
   const factsLine = document.querySelector("[data-chat-facts]");
   const planEls = [...document.querySelectorAll("[data-plan-entry]")];
   const planRows = planEls.map((el) => {
-    const fg = rgba(getComputedStyle(el).color);
+    const title=el.querySelector('[data-slot="trace-title"]');
     return {
-      status: el.getAttribute("data-plan-status"),
-      text: (el.textContent ?? "").trim(),
-      ink: fg ? flatten(fg, groundOf(el)) : null,
+      status: el.getAttribute("data-plan-status"), text: (title?.textContent ?? "").trim(),
+      ink:inkOf(title), opacity:opacityOf(el),
+      mark:svgMark(el.querySelector('[data-slot="trace-icon"] svg')),
     };
   });
   const title = document.querySelector("[data-chat-title]");
-  const modeEl = document.querySelector("[data-chat-mode]");
-  const shots = document.querySelectorAll("[data-chat-shot]").length;
-  const docs = document.querySelectorAll("[data-chat-doc]").length;
+  const modeEl = document.querySelector("[data-lab-execution-badge]");
+  const pendingFiles = [...document.querySelectorAll("[data-chat-pending-file]")].map(el => ({
+    name: el.getAttribute("data-chat-pending-file"), placed: el.getAttribute("data-placed") === "true", path: el.getAttribute("title"),
+  }));
   const hasInput = !!document.querySelector("[data-chat-input]");
   return {
-    lines, failedToken, paragraphs, usage,
+    lines, failedToken, paragraphs,
     facts: factsLine ? (factsLine.textContent ?? "").trim() : null,
-    plan: planRows, shots, docs, hasInput,
+    plan: planRows, pendingFiles, hasInput,
     mode: modeEl ? (modeEl.textContent ?? "").trim() : null,
     title: title ? (title.textContent ?? "").trim() : null,
     column: !!document.querySelector("[data-chat-column]"),
     input: !!document.querySelector("[data-chat-input]"),
-    who: !!document.querySelector("[data-chat-who]"),
     text: document.body.innerText,
-    // The settings row: the mode menu's face and every option control,
-    // each with what it says it is set to.
-    //
-    // **A choice is a popup button since 2026-09-28** (components/
-    // PopupButton): the anchor sits on its native `<select>`, whose own
-    // text is *every* option's — so what the control says it is set to
-    // is read off the drawn face (`data-popup-value`), which a select
-    // holding the right value and drawing the wrong word would fail.
-    modeMenu: (() => {
-      const el = document.querySelector("[data-chat-mode-menu]");
-      return el
-        ? { text: faceOf(el), id: el.getAttribute("data-mode-id"), tag: el.tagName.toLowerCase(), popup: el.getAttribute("aria-haspopup") }
-        : null;
-    })(),
-    options: [...document.querySelectorAll("[data-chat-option]")].map((el) => ({
-      id: el.getAttribute("data-chat-option"),
-      text: faceOf(el),
-      on: el.getAttribute("aria-checked"),
-      value: el.getAttribute("data-value"),
-      tag: el.tagName.toLowerCase(),
-      popup: el.getAttribute("aria-haspopup"),
-    })),
   };
 };
 
@@ -350,6 +306,20 @@ const lstar = (rgb) => {
   const lin = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
   const Y = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
   return Y > 216 / 24389 ? 116 * Math.cbrt(Y) - 16 : Y * 24389 / 27;
+};
+
+/** CIE76 on browser-composited RGB: hue as well as weight can carry error. */
+const inkDistance=(a,b)=>{
+  const lab=rgb=>{
+    const match=String(rgb).match(/rgba?\(([^)]+)\)/);if(!match)return null;
+    const values=match[1].split(',').slice(0,3).map(value=>Number(value.trim())/255);
+    const [r,g,b]=values.map(value=>value<=0.04045?value/12.92:((value+0.055)/1.055)**2.4);
+    const f=value=>value>216/24389?Math.cbrt(value):(24389/27*value+16)/116;
+    const x=f((0.4124564*r+0.3575761*g+0.1804375*b)/0.95047);
+    const y=f(0.2126729*r+0.7151522*g+0.0721750*b),z=f((0.0193339*r+0.1191920*g+0.9503041*b)/1.08883);
+    return [116*y-16,500*(x-y),200*(y-z)];
+  };
+  const left=lab(a),right=lab(b);return left&&right?Math.hypot(...left.map((value,index)=>value-right[index])):null;
 };
 
 let vite = null;
@@ -370,7 +340,58 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
 
-  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false, openAdd = false }) => {
+  // Read current production controls through the same actions a person takes.
+  // This replaces retired composer metadata; no values come from the fixture feed.
+  const inspectControls = async (page) => {
+    await page.locator('[data-lab-session-settings]').click();
+    const menu = page.locator('[data-lab-preferences]');
+    await menu.waitFor();
+    const root = await menu.evaluate((element) => {
+      const facts = Object.fromEntries([...element.querySelectorAll('.composer-lab-fact')].map(row =>
+        [...row.children].map(child => (child.textContent ?? '').trim())));
+      const agent = [...element.querySelectorAll('[data-slot="dropdown-menu-label"]')]
+        .map(row => (row.textContent ?? '').trim()).find(text => text.endsWith('· 会话设置'));
+      return {facts, agentIdentity: agent?.replace(/\s*· 会话设置$/, '') ?? null,
+        controls: [...element.querySelectorAll('[data-lab-option]')].map(row => ({
+          id: row.getAttribute('data-lab-option'), role: row.getAttribute('role'),
+          on: row.getAttribute('aria-checked'), tag: row.tagName.toLowerCase(),
+          summary: (row.querySelector('.composer-lab-menu-value')?.textContent ?? '').trim(),
+          text: (row.textContent ?? '').trim(),
+        })),
+      };
+    });
+    const cost = await page.evaluate(() => document.body.innerText.match(/.{0,12}(\$|USD|0\.39).{0,12}/)?.[0] ?? '');
+    const options = [];
+    let modeMenu = null;
+    for (const control of root.controls) {
+      if (control.role === 'menuitemcheckbox') {
+        options.push(control);
+        continue;
+      }
+      await menu.locator(`[data-lab-option="${control.id}"]`).click();
+      const selected = menu.locator('[role="menuitemradio"][data-state="checked"]');
+      await selected.waitFor();
+      const value = await selected.evaluate(row => ({
+        id: row.getAttribute('data-option-value'),
+        name: [...row.querySelectorAll(':scope > span')].map(child => (child.textContent ?? '').trim()).find(Boolean) ?? '',
+      }));
+      assert.equal(control.summary, value.name, `${control.id}: drawn summary matches the selected choice`);
+      const choice = {...control, text: value.name, value: value.id, menuRole: await menu.getAttribute('role')};
+      if (control.id === 'execution-permission') modeMenu = {...choice, id: value.id};
+      else options.push(choice);
+      await menu.locator('[data-session-menu-back]').click();
+    }
+    await menu.getByRole('menuitem', {name: '模型详情', exact: true}).click();
+    const modelReported = await menu.locator('[data-lab-model-id]').textContent();
+    await page.keyboard.press('Escape');
+    await menu.waitFor({state: 'hidden'});
+    return {modeMenu, options, permission: modeMenu?.text ?? root.facts['执行权限'] ?? null,
+      agentIdentity: root.agentIdentity, modelReported,
+      usage: root.facts['上下文'] === undefined ? null : {share: root.facts['上下文'], cost},
+    };
+  };
+
+  const look = async ({ scheme, motion, frames: override, paste = false, openTools = false, send = false }) => {
     const feed = override ?? frames;
     const ctx = await browser.newContext({
       viewport: { width: WIDE, height: 900 },
@@ -382,6 +403,10 @@ try {
     const errs = [];
     page.on("pageerror", (e) => errs.push(String(e)));
     const json = (b) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
+    // The current lock reader fails closed: this isolated scenario explicitly
+    // says its private fixture has no PIN/lock, rather than relying on a failed read.
+    await page.route("**/lock_state", json({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", json(ROWS));
     // The row's own machine. `home: "gate"` on the row points here, and
     // without it the list paints nothing — which arrives as a click
@@ -396,7 +421,6 @@ try {
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));
     await page.route("**/recents", json([]));
-    await page.route("**/chat_open", json(true));
     // What the face actually put on the wire when 发送 was pressed.
     // **Attaching and sending are two claims**: a chip on screen and a
     // frame carrying the file are different facts, and the first is
@@ -410,13 +434,23 @@ try {
       }
       r.fulfill({ contentType: "application/json", body: "null" });
     });
-    let served = false;
-    await page.route("**/chat_poll", (r) => {
-      const body = served ? { frames: [], next: 4, gone: false, lost: false }
-                          : { frames: feed, next: 4, gone: false, lost: false };
-      served = true;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    let served = false, admittedLease;
+    const uploads = [];
+    await page.route(/\/chat_put\?/, async route => {
+      const query = new URL(route.request().url()).searchParams;
+      const name = query.get('name');
+      const bytes = route.request().postDataBuffer();
+      if (query.get('id') !== 'gui/acp-gate' || query.get('lease') !== admittedLease || !['shot.png','main.rs'].includes(name) || !bytes?.length) {
+        errs.push('invalid attachment fixture upload');
+        return route.fulfill({status: 400, body: 'invalid attachment fixture upload'});
+      }
+      const path = `/synthetic/khor-drop/${name}`;
+      await route.fulfill({contentType: 'application/json', body: JSON.stringify(path)});
+      uploads.push({name, path, bytes: bytes.length});
     });
+    await routeCanonicalChat(page, {ids: ['gui/acp-gate'], onOpen: (_id, lease) => {admittedLease = lease;}, takeFrames: () => {
+      if (served) return [];served = true;return feed;
+    }});
     await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
     await wait(900);
     await page.locator("[data-list] [data-row-open]").nth(0).click();
@@ -451,22 +485,17 @@ try {
         box?.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true }));
       });
       await wait(600);
+      for (const name of ['shot.png','main.rs']) await page.locator(`[data-chat-pending-file="${name}"][data-placed="true"]`).waitFor();
     }
-    if (openAdd) {
-      // The agent's own settings live in the ＋ menu since the redesign
-      // (the composer capsule, 2026-10-02): opened for real, so what is
-      // read is what a person sees there.
-      await page.locator("[data-chat-add]").click();
-      await wait(400);
-    }
-    const out = await page.evaluate(probe);
+    const controls = await inspectControls(page);
+    const out = {...await page.evaluate(probe), ...controls};
     if (send) {
       await page.locator("[data-chat-input]").fill("看看这个");
       await page.locator("[data-chat-send]").click();
       await wait(500);
     }
     await ctx.close();
-    return { ...out, errs, scheme, motion, sent };
+    return { ...out, errs, scheme, motion, sent, uploads };
   };
 
   const WANT = ["completed", "failed", "in_progress"];
@@ -478,16 +507,15 @@ try {
   // exists while there is nothing to explain it away, and adding it to
   // a painted conversation would assert the opposite of the rule.
   for (const [label, agentFrame, want] of [
-    ["cannot replay", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, words.chat_no_replay],
+    ["NoLoad canonical source", { kind: "agent", name: "reg", replays: false, images: false, embeds: false, lists: false, needs_login: false }, null],
     ["needs a login", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: true }, words.chat_needs_login],
     ["ordinary agent", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, null],
   ]) {
-    const m = await look({ scheme: "dark", motion: "no-preference", frames: [agentFrame, { kind: "history_end" }] });
+    const m = await look({ scheme: "dark", motion: "no-preference", frames: [agentFrame, ...(agentFrame.replays ? [] : [{kind: "note", update: {update: {sessionUpdate: "agent_message_chunk", content: {type: "text", text: "Captured NoLoad history"}}}}])] });
     if (m.errs.length) fail(`facts/${label}: the page threw — ${m.errs[0]}`);
-    // The positive control: this fixture paints no conversation, so the
-    // *column* is what proves the face got that far. Without it a
-    // never-rendered chat would satisfy the "ordinary agent" row by
-    // being absent, which is the negative-assertion trap.
+    if (!agentFrame.replays && !m.text.includes("Captured NoLoad history")) fail("NoLoad: the canonical body is missing");
+    // Empty ordinary/login fixtures still require the real column. The
+    // NoLoad fixture additionally requires its positive canonical body.
     if (!m.column) {
       fail(`facts/${label}: probe dead — the conversation face never painted`);
       continue;
@@ -505,10 +533,9 @@ try {
 
   // ── the mode marker ──────────────────────────────────────────────
   //
-  // **The load-bearing row is `default → nothing`.** A marker that is
-  // always there is not a marker, and a negative claim like that is
-  // satisfied for free by a page that never painted — so the rows
-  // around it have to find the very element it must not.
+  // Default reports no nondefault permission. The current header exposes
+  // the other words as actual configuration facts (or selected choices);
+  // positive neighboring rows keep the default negative from passing for free.
   for (const [id, want] of [
     ["plan", words.chat_mode_plan],
     ["acceptEdits", words.chat_mode_accept_edits],
@@ -521,8 +548,7 @@ try {
       scheme: "dark",
       motion: "no-preference",
       frames: [
-        { kind: "history", update: { update: { sessionUpdate: "current_mode_update", currentModeId: id } } },
-        { kind: "history_end" },
+        { kind: "note", update: { update: { sessionUpdate: "current_mode_update", currentModeId: id } } },
       ],
     });
     if (m.errs.length) fail(`mode/${id}: the page threw — ${m.errs[0]}`);
@@ -531,15 +557,15 @@ try {
       continue;
     }
     if (want === null) {
-      if (m.mode !== null) {
-        fail(`mode/${id}: the ordinary mode drew ${JSON.stringify(m.mode)} — a marker that is always there is not one`);
+      if (m.permission !== null || m.mode !== null) {
+        fail(`mode/${id}: the ordinary mode drew ${JSON.stringify(m.permission ?? m.mode)} — a marker that is always there is not one`);
       } else {
         console.log(`mode · ${id}: silent, as it must be`);
       }
-    } else if (m.mode !== want) {
-      fail(`mode/${id}: drew ${JSON.stringify(m.mode)}, wanted ${JSON.stringify(want)}`);
+    } else if (m.permission !== want) {
+      fail(`mode/${id}: drew ${JSON.stringify(m.permission)}, wanted ${JSON.stringify(want)}`);
     } else {
-      console.log(`mode · ${id}: ${m.mode}`);
+      console.log(`mode · ${id}: ${m.permission}`);
     }
   }
 
@@ -580,9 +606,7 @@ try {
             ],
           },
         },
-        { kind: "history_end" },
       ],
-      openAdd: true,
     });
     if (m.errs.length) fail(`settings: the page threw — ${m.errs[0]}`);
     if (!m.column) {
@@ -595,14 +619,11 @@ try {
       } else {
         console.log(`settings · mode menu: ${m.modeMenu.text}`);
       }
-      // **A choice among values opens a menu** — the composer's own glass
-      // menu since the redesign (2026-10-02: the mode is a seat in the
-      // capsule, a listed select is a submenu of ＋), where it was a
-      // native `<select>` (components/PopupButton, 2026-09-28). What is
-      // held is that each is a control announcing the menu it opens.
+      // Each values control must actually open its choice page in the
+      // current single configuration menu, not only print a setting name.
       for (const [what, got] of [["the mode menu", m.modeMenu], ["the model select", m.options.find((o) => o.id === "model")]]) {
-        if (got && got.popup !== "menu") {
-          fail(`settings: ${what} is a <${got.tag}> announcing ${JSON.stringify(got.popup)} — a choice among values opens a menu`);
+        if (got && got.menuRole !== "menu") {
+          fail(`settings: ${what} did not open its current choice page in a menu (${JSON.stringify(got.menuRole)})`);
         }
       }
       if (m.mode !== null) {
@@ -625,7 +646,7 @@ try {
     const none = await look({
       scheme: "dark",
       motion: "no-preference",
-      frames: [{ kind: "settings", settings: { modes: null, options: [] } }, { kind: "history_end" }],
+      frames: [{ kind: "settings", settings: { modes: null, options: [] } },],
     });
     if (none.modeMenu || none.options.length) {
       fail("settings: an agent with nothing to set must draw no controls");
@@ -634,17 +655,8 @@ try {
     }
   }
 
-  // ── batch 3c: an old host's frames ───────────────────────────────
-  //
-  // The owner's running conversations are hosted by the binary before the
-  // redesign (`khor-gui _host`), and the new face attaches to them. That
-  // host names no model in its settings (`khor_acp::Settings.model` came
-  // with the redesign), keeps no usage to hand a face on attach, and its
-  // settings frame is `{ modes, options }` alone. The wire half is
-  // `khor-gui-core`'s `old_host_tests` (the old note, encoded, read by the
-  // new reader); this is the drawing half: those frames, as gui-core hands
-  // them on, must draw a whole conversation with nothing invented — no
-  // dial without a reading, no model, the mode seat on the old mode.
+  // Current settings may omit a selected model. Preserve body/mode/composer
+  // and absence-of-invented-model/usage assertions without an old host codec.
   {
     const m = await look({
       scheme: "dark",
@@ -665,96 +677,62 @@ try {
             options: [],
           },
         },
-        { kind: "history", update: { sessionId: "s", update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "旧宿主上的一句话" } } } },
-        { kind: "history", update: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "旧宿主的回答" } } } },
-        { kind: "history_end" },
+        { kind: "note", update: { sessionId: "s", update: { sessionUpdate: "user_message_chunk", content: { type: "text", text: "旧宿主上的一句话" } } } },
+        { kind: "note", update: { sessionId: "s", update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "旧宿主的回答" } } } },
       ],
     });
-    if (m.errs.length) fail(`old host: the page threw — ${m.errs[0]}`);
+    if (m.errs.length) fail(`optional model: the page threw — ${m.errs[0]}`);
     if (!m.column || !m.input) {
-      fail(`old host: the conversation did not draw (column ${m.column}, input ${m.input})`);
+      fail(`optional model: the conversation did not draw (column ${m.column}, input ${m.input})`);
     } else {
       for (const said of ["旧宿主上的一句话", "旧宿主的回答"]) {
-        if (!m.text.includes(said)) fail(`old host: ${JSON.stringify(said)} is not on the page`);
+        if (!m.text.includes(said)) fail(`optional model: ${JSON.stringify(said)} is not on the page`);
       }
       if (!m.modeMenu || m.modeMenu.id !== "default") {
-        fail(`old host: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the old host's current mode (default)`);
+        fail(`optional model: the mode seat wears ${JSON.stringify(m.modeMenu)}, wanted the selected execution permission (default)`);
       }
-      if (m.usage) fail(`old host: a context dial was drawn with no reading from the host (${JSON.stringify(m.usage)})`);
-      if (!m.who) fail("old host: the composer's who seat is missing — with no reading it is the agent's mark");
-      if (!m.errs.length) console.log("old host · a conversation from an old host draws: words, mode seat on default, no dial, no model");
+      if (m.usage) fail(`optional model: a context dial was drawn with no reading from the host (${JSON.stringify(m.usage)})`);
+      if (!/claude/i.test(m.agentIdentity ?? "")) fail(`optional model: reported agent identity is missing (${JSON.stringify(m.agentIdentity)})`);
+      if (m.modelReported !== "宿主未报告模型") fail(`optional model: an unreported model was invented (${JSON.stringify(m.modelReported)})`);
+      if (!m.errs.length) console.log("optional model · current payload draws: words, selected default, reported identity, no usage/model");
     }
   }
 
-  // ── batch 3b: the image gate ─────────────────────────────────────
-  //
-  // **A negative claim, so it needs a positive control first.** "no
-  // attach affordance" is satisfied by a page that never rendered, by a
-  // renamed selector, and by a typo — so the same probe is run against
-  // an agent that *does* take images, and that row has to find the
-  // thing the other row must not.
-  //
-  // The third row is the one the first two cannot reach: **before any
-  // handshake has landed**, the capability is unknown, and the code
-  // says an unknown capability is not a yes. Written after a red-proof
-  // run showed the difference between `!facts?.images` and
-  // `facts && !facts.images` changing nothing — because every fixture
-  // handed the face an agent frame first, so "unknown" never happened.
-  //
-  // **The two capabilities are asserted against each other**, not each
-  // on its own: a single paste carries one image and one file, and an
-  // agent that takes only pictures has to take the picture *and* leave
-  // the file. One combined gate would let each capability answer for
-  // the other, and the run would look identical.
-  for (const [label, agentFrame, wantPaste, wantDoc] of [
-    ["images only", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true, false],
-    ["files only", { kind: "agent", name: "reg", replays: true, images: false, embeds: true, lists: false, needs_login: false }, false, true],
-    ["both", { kind: "agent", name: "reg", replays: true, images: true, embeds: true, lists: false, needs_login: false }, true, true],
-    ["neither", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false, false],
-    ["not said yet", null, false, false],
+  // ── batch 3b: paths plus independent inline image gate ───────────
+  // The existing path-upload contract is independent of both capability
+  // bits. Five combinations still exercise actual paste/upload/chip/send;
+  // only images controls the additional inline image payload.
+  for (const [label, agentFrame, wantInline] of [
+    ["images only", { kind: "agent", name: "reg", replays: true, images: true, embeds: false, lists: false, needs_login: false }, true],
+    ["files only", { kind: "agent", name: "reg", replays: true, images: false, embeds: true, lists: false, needs_login: false }, false],
+    ["both", { kind: "agent", name: "reg", replays: true, images: true, embeds: true, lists: false, needs_login: false }, true],
+    ["neither", { kind: "agent", name: "reg", replays: true, images: false, embeds: false, lists: false, needs_login: false }, false],
+    ["not said yet", null, false],
   ]) {
     const m = await look({
-      scheme: "dark",
-      motion: "no-preference",
-      frames: agentFrame ? [agentFrame, { kind: "history_end" }] : [{ kind: "history_end" }],
-      paste: true,
-      send: true,
+      scheme: "dark", motion: "no-preference", frames: agentFrame ? [agentFrame] : [], paste: true, send: true,
     });
     if (m.errs.length) fail(`images/${label}: the page threw — ${m.errs[0]}`);
     if (!m.hasInput) {
       fail(`images/${label}: probe dead — the composer never drew, so nothing below means anything`);
       continue;
     }
-    const okPic = m.shots > 0 === wantPaste;
-    const okDoc = m.docs > 0 === wantDoc;
-    if (!okPic || !okDoc) {
-      fail(
-        `attach/${label}: one paste of an image and a file attached ` +
-          `${m.shots} image(s) and ${m.docs} file(s); wanted ` +
-          `${wantPaste ? 1 : 0} and ${wantDoc ? 1 : 0}`,
-      );
-    } else {
-      // …and what was on screen is what went. A chip that never
-      // reaches the frame is the same bug as one that never drew,
-      // arriving later and harder to see.
-      const body = m.sent[0];
-      if (!body) {
-        fail(`attach/${label}: 发送 was pressed and no chat_say went out`);
-      } else {
-        const gotPic = (body.images ?? []).length;
-        const gotDoc = (body.files ?? []).length;
-        if (gotPic !== (wantPaste ? 1 : 0) || gotDoc !== (wantDoc ? 1 : 0)) {
-          fail(
-            `attach/${label}: the frame carried ${gotPic} image(s) and ${gotDoc} file(s), ` +
-              `while the screen showed ${m.shots} and ${m.docs}`,
-          );
-        } else {
-          console.log(
-            `attach · ${label}: ${m.shots} image(s), ${m.docs} file(s) — and the frame carried the same`,
-          );
-        }
-      }
+    const names = ['main.rs', 'shot.png'];
+    if (m.uploads.length !== 2 || JSON.stringify(m.uploads.map(file => file.name).sort()) !== JSON.stringify(names) || m.uploads.some(file => file.bytes <= 0))
+      fail(`attach/${label}: expected two completed nonempty uploads, got ${JSON.stringify(m.uploads)}`);
+    if (m.pendingFiles.length !== 2 || JSON.stringify(m.pendingFiles.map(file => file.name).sort()) !== JSON.stringify(names) || m.pendingFiles.some(file => !file.placed || !m.uploads.some(upload => upload.name === file.name && upload.path === file.path)))
+      fail(`attach/${label}: expected two placed chips naming actual returned paths, got ${JSON.stringify(m.pendingFiles)}`);
+    const body = m.sent[0];
+    if (m.sent.length !== 1 || !body) {
+      fail(`attach/${label}: one Send must produce exactly one chat_say, got ${m.sent.length}`);
+      continue;
     }
+    if (!body.text?.startsWith('看看这个') || m.uploads.some(file => !body.text.split('\n').includes(`@${file.path}`)))
+      fail(`attach/${label}: sent text did not retain both actual upload paths: ${JSON.stringify(body.text)}`);
+    const inline = body.images ?? [];
+    if (inline.length !== (wantInline ? 1 : 0) || (wantInline && (inline[0]?.[0] !== 'image/png' || !inline[0]?.[1])))
+      fail(`attach/${label}: inline image must independently follow images=${wantInline}: ${JSON.stringify(inline)}`);
+    else console.log(`attach · ${label}: two completed uploads / two placed chips / both returned paths sent / inline=${inline.length}`);
   }
 
   // ── batch 4: the wizard reaches what only the CLI could ──────────
@@ -848,8 +826,14 @@ try {
     const errs = [];
     page.on("pageerror", (e) => errs.push(String(e)));
     const json = (b) => (r) => r.fulfill({ contentType: "application/json", body: JSON.stringify(b) });
+    await page.route("**/lock_state", json({on: false, has_pin: false, timeout_min: 0,
+      timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}));
     await page.route("**/sessions", json([]));
-    await page.route("**/devices", json([]));
+    const fixtureHome = "a".repeat(64);
+    await page.route("**/devices", json([{id: fixtureHome, name: "alpha", me: true,
+      face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null,
+      seat: {left: 50, top: 50}, hosts: true}]));
+    const savedAnswer = seen.said === "unasked" ? seen : {...seen, home: fixtureHome};
     await page.route("**/hooks_state", json({ installed: false }));
     await page.route("**/quota", json({ quota: null, trouble: null }));
     await page.route("**/dir_pins", json([]));
@@ -862,11 +846,11 @@ try {
     const sent = { register: [], resume: [] };
     await page.route("**/agent_seen", (r) => {
       calls.seen += 1;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(seen) });
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(savedAnswer) });
     });
     await page.route("**/agent_ask", (r) => {
       calls.ask += 1;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(seen) });
+      r.fulfill({ contentType: "application/json", body: JSON.stringify(savedAnswer) });
     });
     await page.route("**/register_known_agent", (r) => {
       try {
@@ -889,6 +873,7 @@ try {
           at_ms: r.updated_at ? Date.parse(r.updated_at) : 0,
           category: null,
           agent: registered[0].name,
+          command: null,
         }))
       : [];
     await page.route("**/import_candidates", json(offered));
@@ -910,32 +895,44 @@ try {
     await wait(300);
     await page.locator(`[role="menu"] [data-new-item="${door}"]`).click();
     await wait(400);
-    if (attachId !== null) {
-      await page.locator("[data-new-session-add-agent]").click();
-      await wait(400);
+    let newAgentChoices = 0;
+    if (door === "new") {
+      await page.locator('[data-new-session-launch]').getByRole('combobox').click();
+      const choices = page.getByRole('listbox');
+      await choices.waitFor();
+      newAgentChoices = await choices.locator('[data-choice-option^="agent:"]').count();
+      if (attachId !== null) {
+        await choices.locator('[data-choice-option="manage"]').click();
+        await page.locator('[data-launch-manage]').getByRole('button', {name: words.launch_attach_agent, exact: true}).click();
+        await page.locator('[data-launch-catalog-rows] > div').first().waitFor();
+        await wait(400);
+      } else if (pick) {
+        await choices.locator(`[data-choice-option="agent:${pick}"]`).click();
+        await wait(400);
+      } else await page.keyboard.press('Escape');
     }
     const panel = attachId !== null
-      ? await page.evaluate(() => {
-          const rows = [...document.querySelectorAll("[data-registry-row]")].map((el) => ({
-            id: el.getAttribute("data-registry-row"),
-            startable: el.getAttribute("data-registry-startable") === "true",
-            attach: !!el.querySelector("[data-registry-attach]"),
-            byhand: !!el.querySelector("[data-registry-byhand]"),
-            attached: !!el.querySelector("[data-registry-attached]"),
-            argv: (el.querySelector("[data-registry-argv]")?.textContent ?? "").trim(),
-          }));
-          const t = document.querySelector("[data-registry-taken]");
-          return { rows, taken: (t?.textContent ?? "").trim() };
-        })
+      ? await page.evaluate(labels => {
+          const rows = [...document.querySelectorAll('[data-launch-catalog-rows] > div')].map(el => {
+            const lines = el.querySelector(':scope > div');
+            return {
+              name: (lines?.children[0]?.textContent ?? '').trim(),
+              detail: (lines?.children[1]?.textContent ?? '').trim(),
+              attach: [...el.querySelectorAll('button')].some(button => button.textContent?.trim() === labels.attach),
+              byhand: [...el.querySelectorAll(':scope > span')].some(span => span.textContent?.trim() === labels.byhand),
+              attached: [...el.querySelectorAll(':scope > span')].some(span => span.textContent?.trim() === labels.attached),
+            };
+          });
+          const t = document.querySelector('[data-launch-catalog] > span');
+          return { rows, taken: (t?.textContent ?? '').trim() };
+        }, {attach: words.new_session_attach, byhand: words.new_session_byhand, attached: words.new_session_attached})
       : null;
     if (attachId !== null && attachId !== "") {
-      await page.locator(`[data-registry-attach="${attachId}"]`).click();
+      const target = known.find(entry => entry.id === attachId);
+      assert(target, 'the intended registry ID has a distinct visible fixture name');
+      await page.locator('[data-launch-catalog-rows] > div').filter({has: page.getByText(target.name, {exact: true})})
+        .getByRole('button', {name: words.new_session_attach, exact: true}).click();
       await wait(600);
-    }
-    if (pick && door === "new") {
-      // An agent is a tile among the kinds on the new tab's page (UX-45).
-      await page.locator(`[data-new-session-tile="agent:${pick}"]`).click();
-      await wait(400);
     }
     // **Two poll ticks (POLL_MS is 2000).** The claim is that nothing
     // on a timer asks, and a window shorter than the timer measures
@@ -951,7 +948,7 @@ try {
       await page.locator(`[data-import-row="acp:${registered[0].name}:${resumeId}"]`).click();
       await wait(900);
     }
-    const out = await page.evaluate((door) => {
+    const out = await page.evaluate(({door, newAgentChoices}) => {
       const box = document.querySelector("[data-agent-seen]");
       return {
         // Null and "" are different: no section at all versus a section
@@ -970,7 +967,7 @@ try {
         // The positive control for every negative claim below: the
         // dialog is open and painting agents at all.
         buttons: door === "new"
-          ? document.querySelectorAll('[data-new-session-tile^="agent:"]').length
+          ? newAgentChoices
           : document.querySelectorAll("[data-agent-seen]").length,
         askButton: !!document.querySelector("[data-agent-ask]"),
         // **Where things actually landed**, asked of the engine. `box`
@@ -999,7 +996,7 @@ try {
           return { width: Math.round(r.width), over: Math.round(worst), who };
         })(),
       };
-    }, door);
+    }, {door, newAgentChoices});
     await ctx.close();
     return { ...out, errs, calls, before, sent, panel };
   };
@@ -1147,39 +1144,37 @@ try {
     if (rows.length !== KNOWN_FIXTURE.length) {
       fail(`${say}: probe dead — the snapshot has ${KNOWN_FIXTURE.length} entries and ${rows.length} drew`);
     } else {
-      // The positive half first: without it, "no button on the binary
-      // ones" is a claim a blank panel satisfies.
-      const startable = rows.filter((r) => r.startable);
-      const byhand = rows.filter((r) => !r.startable);
-      if (startable.filter((r) => r.attach || r.attached).length !== startable.length) {
-        fail(`${say}: a startable entry grew neither 接进来 nor 已接入 — ${JSON.stringify(startable)}`);
+      // Expected classification is solely the fixture's public registry
+      // contract. Probe values remain actual rendered name/detail/actions;
+      // no retired data attribute or fixture-derived "argv" enters the probe.
+      const startable = KNOWN_FIXTURE.filter(entry => entry.argv !== null);
+      const byhand = KNOWN_FIXTURE.filter(entry => entry.argv === null);
+      for (const expected of KNOWN_FIXTURE) {
+        const drawn = rows.filter(row => row.name === expected.name);
+        if (drawn.length !== 1) {
+          fail(`${say}: ${expected.id} must draw its own distinct name exactly once: ${JSON.stringify(drawn)}`);
+          continue;
+        }
+        const row = drawn[0];
+        if (expected.argv !== null) {
+          if (!row.attach && !row.attached)
+            fail(`${say}: ${expected.id} grew neither 接进来 nor 已接入 — ${JSON.stringify(row)}`);
+          if (!row.detail.startsWith('npx ') || row.detail !== expected.argv)
+            fail(`${say}: ${expected.id} does not paint its exact start command: ${JSON.stringify(row.detail)}`);
+          if (row.byhand) fail(`${say}: ${expected.id} has a start command but claims 自己装`);
+        } else {
+          if (row.detail !== expected.about)
+            fail(`${say}: ${expected.id} has no command: wanted its description, got ${JSON.stringify(row.detail)}`);
+          if (row.attach || row.attached)
+            fail(`${say}: ${expected.id} ships a binary without a start command yet offers attachment — ${JSON.stringify(row)}`);
+          if (!row.byhand) fail(`${say}: ${expected.id} has no command and does not say 自己装`);
+        }
       }
-      // gemini is already registered in the fixture, so it must read
-      // as attached rather than offering to attach twice.
-      const gem = rows.find((r) => r.id === "gemini");
-      if (!gem?.attached || gem?.attach) {
+      // Already registered must not offer another attach, independently of
+      // the startable/by-hand count and command checks above.
+      const gem = rows.find(row => row.name === 'Gemini CLI');
+      if (!gem?.attached || gem?.attach)
         fail(`${say}: an already-registered entry must read 已接入 and offer no second attach — ${JSON.stringify(gem)}`);
-      }
-      // **「khor 起得来」without the command is a claim taken on
-      // trust.** Asserted as the painted argv, and as its absence on
-      // the ones khor has no command for — where printing one would
-      // be khor inventing it.
-      for (const r of startable) {
-        if (!r.argv.startsWith("npx ")) {
-          fail(`${say}: ${r.id} claims khor can start it and shows ${JSON.stringify(r.argv)} as the command`);
-        }
-      }
-      for (const r of byhand) {
-        if (r.argv) {
-          fail(`${say}: ${r.id} ships a binary and khor printed a command for it: ${JSON.stringify(r.argv)}`);
-        }
-        if (r.attach) {
-          fail(`${say}: ${r.id} ships a binary and khor has no command for it, yet it grew 接进来`);
-        }
-        if (!r.byhand) {
-          fail(`${say}: ${r.id} has no command and said nothing — 「自己装」 and 「接不了」 are different sentences`);
-        }
-      }
       console.log(`${say}: ${startable.length} startable, ${byhand.length} by hand — ${w.panel.taken}`);
     }
     // A table that ages says when it is from.
@@ -1318,103 +1313,42 @@ try {
         console.log(`${say}: opened — diff ${oEdit.diff}, output ${oShell.out.length} chars`);
       }
 
-      // 2) three inks a person can tell apart.
-      const L = m.lines.map((l) => ({ status: l.status, ink: l.ink, l: lstar(l.ink) }));
-      if (L.some((x) => x.l === null)) {
-        fail(`${say}: probe dead — an ink did not parse as rgb: ${L.map((x) => x.ink).join(" / ")}`);
+      // 2) Actual state carriers: error ink, and the unique running
+      // activity shape. Kind icons do not earn a status distinction.
+      const L=m.lines.map(line=>({status:line.status,ink:line.ink,l:lstar(line.ink)}));
+      if(L.some(line=>line.l===null)){
+        fail(`${say}: probe dead — a TraceTitle ink did not resolve: ${L.map(line=>line.ink).join(' / ')}`);
         continue;
       }
-      console.log(
-        `${say}: ` + L.map((x) => `${x.status} L*${x.l.toFixed(1)}`).join("  ") +
-          (motion === "reduce" ? "" : `  (busy wears data-word=${m.lines[2].word})`),
-      );
-      for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) {
-        const d = Math.abs(L[a].l - L[b].l);
-        if (d < DELTA_L) {
-          fail(
-            `${say}: ${L[a].status} and ${L[b].status} are ΔL* ${d.toFixed(2)} apart, under ${DELTA_L} — ` +
-              `two states drawn the same way is the state not being drawn`,
-          );
+      for(const line of m.lines){
+        const busy=line.status==='in_progress',activity=line.activity;
+        if(busy){
+          if(!activity?.visible || !activity.parts.some(part=>part.painted && part.length>0))
+            fail(`${say}: running has no visible nonzero activity SVG`);
+          if(activity && activity.animated!==(motion!=='reduce'))
+            fail(`${say}: running activity motion=${activity.animated} under ${motion}`);
+        }else if(activity){
+          fail(`${say}: settled ${line.status} still carries a running activity shape`);
         }
       }
-
-      // 2b) the running mark is legible **as a still image**.
-      //
-      // The obvious design is one filled dot in three hues, and it has
-      // a hole this repo has already paid for: 忙碌's indigo sits at
-      // grey's exact loudness on purpose (ΔL* 1.03), so with the breath
-      // off, running and completed would be the same dot. And the
-      // breath is off for anyone who asked for less motion — the reader
-      // least able to spare a distinction.
-      //
-      // **So this claim is made with motion out of the picture, in both
-      // passes.** A gate that only checked the animated pass would be
-      // testing the half that is not at risk.
-      const dots = m.lines.map((l) => l.dot);
-      if (dots.some((d) => d === null)) {
-        fail(`${say}: a tool line has no status mark — ${dots.filter((d) => !d).length} of ${dots.length}`);
-      } else {
-        // The live probe that earns the comparison below: the marks are
-        // really on screen and really have a box, so "they differ" is
-        // about two drawn things rather than two absences.
-        for (const d of dots) {
-          if (d.size === "0px x 0px" || d.size === "auto x auto") {
-            fail(`${say}: a status mark measured ${d.size} — nothing is being drawn`);
-          }
-        }
-        // **Two marks are told apart by weight or by shape**, and the
-        // check must say which — a plain "these two strings differ"
-        // passes for three hues at one lightness, which is precisely
-        // the design this shape exists to avoid. Measured: with a
-        // filled dot in 忙碌's indigo against a filled dot in grey, the
-        // string check was green and the two dots were ΔL* 1.0 apart.
-        const dl = dots.map((d) => lstar(d.ink));
-        if (dl.some((x) => x === null)) {
-          fail(`${say}: probe dead — a mark's colour did not parse: ${dots.map((d) => d.ink).join(" / ")}`);
-        } else {
-          for (const [a, b] of [[0, 1], [0, 2], [1, 2]]) {
-            const shape = dots[a].filled !== dots[b].filled;
-            const weight = Math.abs(dl[a] - dl[b]);
-            if (!shape && weight < DELTA_L) {
-              fail(
-                `${say}: ${dots[a].state} and ${dots[b].state} are both ` +
-                  `${dots[a].filled ? "filled" : "hollow"} and ΔL* ${weight.toFixed(2)} apart ` +
-                  `(under ${DELTA_L}) — with the breath off they are one state`,
-              );
-            }
-          }
-          console.log(
-            `${say}: marks ` +
-              dots
-                .map((d, i) => `${d.state}${d.filled ? "●" : "○"}L*${dl[i].toFixed(0)}${d.animated ? "~" : ""}`)
-                .join(" "),
-          );
-        }
-        // And the motion, where it is allowed: the running mark is the
-        // one that moves, and it is the *only* one — a settled mark
-        // that breathed would say a finished call is still going.
-        for (const d of dots) {
-          const shouldMove = motion !== "reduce" && d.state === "running";
-          if (d.animated !== shouldMove) {
-            fail(
-              `${say}: the ${d.state} mark ${d.animated ? "breathes" : "is still"} under motion:${motion}`,
-            );
-          }
-        }
+      for(const [a,b] of [[0,1],[0,2],[1,2]]){
+        const shape=!!m.lines[a].activity?.visible!==!!m.lines[b].activity?.visible;
+        const distance=inkDistance(m.lines[a].ink,m.lines[b].ink);
+        if(!shape && (distance===null || distance<DELTA_L))
+          fail(`${say}: ${L[a].status}/${L[b].status} have neither a visible activity-shape difference nor ΔE>=${DELTA_L} (got ${distance})`);
       }
+      console.log(`${say}: `+L.map((line,index)=>`${line.status} L*${line.l.toFixed(1)}${m.lines[index].activity?.visible?' activity':''}`).join('  '));
 
       // 3) failure wears the word's own ink.
       const failedLine = m.lines.find((l) => l.status === "failed");
       if (failedLine) {
         const want = lstar(m.failedToken);
-        const gotL = lstar(failedLine.ink);
-        if (want === null) {
-          fail(`${say}: probe dead — --state-failed did not resolve to rgb (${m.failedToken})`);
-        } else if (Math.abs(want - gotL) > 0.5) {
-          fail(
-            `${say}: the failed tool is drawn L*${gotL.toFixed(1)} but 失败 is L*${want.toFixed(1)} — ` +
-              `a seventh colour was invented for a word that already exists`,
-          );
+        const gotL = lstar(failedLine.ink), distance=inkDistance(failedLine.ink,m.failedToken);
+        if (want === null || distance===null) {
+          fail(`${say}: probe dead — --destructive did not resolve to rgb (${m.failedToken})`);
+        } else if (distance > 0.5) {
+          fail(`${say}: failed TraceTitle differs from the painted destructive ink by ΔE${distance.toFixed(2)} ` +
+            `(L*${gotL.toFixed(1)} versus ${want.toFixed(1)})`);
         }
       }
 
@@ -1422,15 +1356,11 @@ try {
       if (!m.usage) {
         fail(`${say}: usage_update carried a reading and nothing drew it`);
       } else {
-        if (m.usage.used !== 320_000 || m.usage.size !== 1_000_000) {
-          fail(`${say}: the reading arrived as ${m.usage.used}/${m.usage.size}, not 320000/1000000`);
-        }
-        // 32% — asserted as the *printed* string, because the bug this
-        // is about is arithmetic reaching a person, not a number
-        // reaching a variable. A face that divided the wrong way would
-        // hold the right two numbers in the DOM and print 313%.
-        if (!m.usage.share.includes("32")) {
-          fail(`${say}: 320000 of 1000000 printed as "${m.usage.share}" — 32 is nowhere in it`);
+        // The current header exposes the actual visible percentage, not the
+        // retired composer's hidden raw-count attributes. Keep the original
+        // 320000/1000000 SDK input and independently require its visible 32%.
+        if (m.usage.share !== "32%") {
+          fail(`${say}: 320000 of 1000000 printed as "${m.usage.share}", wanted exactly 32%`);
         }
         // ⚠️ This asserted the cost was printed (0.39) until the redesign;
         // the owner decided the composer writes no dollars (2026-10-02),
@@ -1461,39 +1391,27 @@ try {
             );
           }
         }
-        const pl = m.plan.map((r) => lstar(r.ink));
-        if (pl.some((x) => x === null)) {
-          fail(`${say}: probe dead — a plan ink did not parse as rgb`);
-        } else {
-          console.log(
-            `${say}: plan ` + m.plan.map((r, i) => `${r.status} L*${pl[i].toFixed(1)}`).join("  "),
-          );
-          // **Both pairs against the present, not just one.** The
-          // first version of this asserted only done-vs-doing, and the
-          // run printed `in_progress L*90.8  pending L*90.8` — a plan
-          // whose not-yet-started steps were drawn exactly like the one
-          // being worked, which is the single thing a plan is read for.
-          // The assertion was true and too narrow to see it.
-          for (const i of [0, 2]) {
-            const d = Math.abs(pl[i] - pl[1]);
-            if (d < DELTA_L) {
-              fail(
-                `${say}: the step being worked and a ${m.plan[i].status} one are ` +
-                  `ΔL* ${d.toFixed(2)} apart, under ${DELTA_L} — a plan that does not ` +
-                  `say which line is now is not a plan`,
-              );
-            }
-          }
-          // And the two that are *not* the present stay together: three
-          // weights for three statuses would spend contrast on a
-          // distinction the order already carries.
-          if (Math.abs(pl[0] - pl[2]) > 0.5) {
-            fail(
-              `${say}: done and not-yet are ΔL* ${Math.abs(pl[0] - pl[2]).toFixed(2)} apart; ` +
-                `neither is the present and they should share a weight`,
-            );
-          }
+        const pl=m.plan.map(row=>lstar(row.ink));
+        if(pl.some(value=>value===null))fail(`${say}: probe dead — effective Plan ink did not parse`);
+        const marks=m.plan.map(row=>row.mark);
+        if(marks.some(mark=>!mark?.visible))fail(`${say}: a Plan status has no visible nonzero SVG`);
+        else{
+          const [done,doing,pending]=marks;
+          const circles=mark=>mark.parts.filter(part=>part.tag==='circle' && part.painted);
+          if(!done.parts.some(part=>part.tag==='path' && part.painted) || circles(done).length!==1)
+            fail(`${say}: completed Plan must draw its circle and check stroke`);
+          if(circles(doing).length!==2 || new Set(circles(doing).map(part=>part.radius)).size!==2)
+            fail(`${say}: in-progress Plan must draw the distinct inner-dot and outer-circle geometry`);
+          if(circles(pending).length!==1 || pending.parts.some(part=>part.tag==='path' && part.painted))
+            fail(`${say}: pending Plan must draw the single empty circle`);
+          if(new Set(marks.map(mark=>mark.shape)).size!==3)
+            fail(`${say}: the three Plan statuses have collapsed to the same drawn shape`);
         }
+        if(Math.abs(m.plan[2].opacity-0.6)>0.01 || Math.abs(m.plan[0].opacity-1)>0.01 || Math.abs(m.plan[1].opacity-1)>0.01)
+          fail(`${say}: Plan pending opacity must compose at .6, with completed/current at1: ${m.plan.map(row=>row.opacity)}`);
+        if(pl.every(value=>value!==null) && Math.abs(pl[2]-pl[1])<DELTA_L)
+          fail(`${say}: pending/current Plan effective inks are ΔL*${Math.abs(pl[2]-pl[1]).toFixed(2)} apart`);
+        console.log(`${say}: plan `+m.plan.map((row,index)=>`${row.status} L*${pl[index]?.toFixed(1)} opacity${row.opacity}`).join('  '));
       }
 
       // 7) the agent's own title, which claude never sends and other
@@ -1502,16 +1420,11 @@ try {
         fail(`${say}: session_info_update carried a title and the face drew ${JSON.stringify(m.title)}`);
       }
 
-      // 4) with motion off, the running line is still marked as running.
-      if (motion === "reduce") {
-        const run = L.find((x) => x.status === "in_progress");
-        const done = L.find((x) => x.status === "completed");
-        if (run && done && Math.abs(run.l - done.l) < DELTA_L) {
-          fail(
-            `${say}: with motion off, running and settled are ΔL* ${Math.abs(run.l - done.l).toFixed(2)} apart — ` +
-              `the breath was carrying the fact, which app.css says it never may`,
-          );
-        }
+      // 4) Reduced motion removes movement, never the running fact.
+      if(motion==='reduce'){
+        const running=m.lines.find(line=>line.status==='in_progress');
+        if(!running?.activity?.visible || running.activity.animated)
+          fail(`${say}: reduced-motion running must retain a visible static activity shape`);
       }
     }
   }

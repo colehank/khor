@@ -1,3 +1,7 @@
+import type { AttachmentKind } from "./gen/bindings/AttachmentKind";
+import { attachmentView } from "./lib/attachment-view";
+import type { SessionContent } from "./gen/bindings/SessionContent";
+import type { HistoryRecordChunk } from "./gen/bindings/HistoryRecordChunk";
 // The one transport seam. Three ways in, one set of commands
 // (`khor_gui_core::api`): the app talks tauri IPC, browser verification
 // talks to the dev bridge, and a phone talks to the web face this page
@@ -28,13 +32,19 @@ import type { TabsOpen } from "./gen/bindings/TabsOpen";
 import type { WorkspaceRow } from "./gen/bindings/WorkspaceRow";
 import type { FileText } from "./gen/bindings/FileText";
 import type { FileStat } from "./gen/bindings/FileStat";
-import type { DirWatch } from "./gen/bindings/DirWatch";
+import type { DirWatchScope } from "./gen/bindings/DirWatchScope";
+import type { DirWatchCoverageMode } from "./gen/bindings/DirWatchCoverageMode";
+import type { DirWatchCoverage } from "./gen/bindings/DirWatchCoverage";
+import type { DirWatchBatch } from "./gen/bindings/DirWatchBatch";
+import type { DirWatchOpened } from "./gen/bindings/DirWatchOpened";
 import type { GitStatus } from "./gen/bindings/GitStatus";
 import type { Editor } from "./gen/bindings/Editor";
 import type { GitRow } from "./gen/bindings/GitRow";
 import type { GitDiff } from "./gen/bindings/GitDiff";
 import type { GitBlame } from "./gen/bindings/GitBlame";
 import type { GitLog } from "./gen/bindings/GitLog";
+import type { GitHistoryPage } from "./gen/bindings/GitHistoryPage";
+import type { GitCommitSummary } from "./gen/bindings/GitCommitSummary";
 import type { GitShow } from "./gen/bindings/GitShow";
 import type { GitHunk } from "./gen/bindings/GitHunk";
 import type { GitCommitShow } from "./gen/bindings/GitCommitShow";
@@ -43,6 +53,10 @@ import type { Merged } from "./gen/bindings/Merged";
 import type { CodeAt } from "./gen/bindings/CodeAt";
 import type { Preview } from "./gen/bindings/Preview";
 import type { SessionRow } from "./gen/bindings/SessionRow";
+import type { RecoveryToken } from "./gen/bindings/RecoveryToken";
+import type { SessionRecovery } from "./gen/bindings/SessionRecovery";
+import type { RecoveryResult } from "./gen/bindings/RecoveryResult";
+import type { ShellRunResult } from "./gen/bindings/ShellRunResult";
 import type { DeviceRow } from "./gen/bindings/DeviceRow";
 import type { DayRun } from "./gen/bindings/DayRun";
 import type { DayMark } from "./gen/bindings/DayMark";
@@ -64,6 +78,8 @@ import type { ConfigChoice } from "./gen/bindings/ConfigChoice";
 import type { Usage } from "./gen/bindings/Usage";
 import type { Strain } from "./gen/bindings/Strain";
 import type { ChatBatch } from "./gen/bindings/ChatBatch";
+import type { HistoryPage } from "./gen/bindings/HistoryPage";
+import type { HistoryProjection } from "./gen/bindings/HistoryProjection";
 import type { ChatFrame } from "./gen/bindings/ChatFrame";
 import type { DirListing } from "./gen/bindings/DirListing";
 import type { Found } from "./gen/bindings/Found";
@@ -72,6 +88,10 @@ import { CONFIG_TOLD, LOCK_TOLD, tellOthers } from "./lib/other-windows";
 import type { HistoryRow } from "./gen/bindings/HistoryRow";
 import type { SearchHit } from "./gen/bindings/SearchHit";
 import type { RecentRow } from "./gen/bindings/RecentRow";
+import type { PageNavigationState } from "./gen/bindings/PageNavigationState";
+import type { PageNavigationPhase } from "./gen/bindings/PageNavigationPhase";
+import type { PageNavigationError } from "./gen/bindings/PageNavigationError";
+import type { PageNavigationCause } from "./gen/bindings/PageNavigationCause";
 import type { WebBorrow } from "./gen/bindings/WebBorrow";
 import type { TermStart } from "./gen/bindings/TermStart";
 import type { EndedPage } from "./gen/bindings/EndedPage";
@@ -111,12 +131,18 @@ export type {
   WorkspaceRow,
   FileText,
   FileStat,
-  DirWatch,
+  DirWatchScope,
+  DirWatchCoverageMode,
+  DirWatchCoverage,
+  DirWatchBatch,
+  DirWatchOpened,
   GitStatus,
   GitRow,
   GitDiff,
   GitBlame,
   GitLog,
+  GitHistoryPage,
+  GitCommitSummary,
   GitShow,
   GitHunk,
   GitCommitShow,
@@ -125,6 +151,10 @@ export type {
   CodeAt,
   Preview,
   SessionRow,
+  RecoveryToken,
+  SessionRecovery,
+  RecoveryResult,
+  ShellRunResult,
   DeviceRow,
   DayRun,
   DayMark,
@@ -156,6 +186,10 @@ export type {
   SearchHit,
   RecentRow,
   WebBorrow,
+  PageNavigationState,
+  PageNavigationPhase,
+  PageNavigationError,
+  PageNavigationCause,
   AgentRow,
   KnownAgent,
   AgentSaid,
@@ -474,6 +508,8 @@ export const fetchGitDiff = (machine: string, path: string) =>
     that changed it, newest first; who wrote each of HEAD's lines; and the
     file as one revision had it, with where the current file differs. */
 export const fetchGitLog = (machine: string, path: string) => call<GitLog>("git_log", { machine, path });
+export const fetchGitHistory = (machine: string, dir: string, cursor?: string | null, limit = 0) =>
+  call<GitHistoryPage>("git_history", { machine, dir, cursor, limit });
 export const fetchGitBlame = (machine: string, path: string) => call<GitBlame>("git_blame", { machine, path });
 export const fetchGitShow = (machine: string, path: string, rev: string) =>
   call<GitShow>("git_show", { machine, path, rev });
@@ -887,6 +923,16 @@ export const agentAsk = (name: string) => call<AgentSaid>("agent_ask", { name })
     which is why neither is passed. Answers the new row's id. */
 export const resumeSession = (agent: string, session: string) =>
   call<string>("resume_session", { agent, session });
+
+/** Read an offer on the exact execution device; this does not start a provider. */
+export const sessionRecovery = (home_id: string, id: string) =>
+  call<SessionRecovery>("session_recovery", { home_id, id });
+/** The action owner supplies one stable token; transport never mints a retry identity. */
+export const recoverSession = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken) =>
+  call<RecoveryResult>("recover_session", { home_id, id, expected_run, token });
+/** expected_run is the old Shell SID, not a default filled by this facade. */
+export const newShellRun = (home_id: string, id: string, expected_run: string | null, token: RecoveryToken, cwd: string | null = null) =>
+  call<ShellRunResult>("new_shell_run", { home_id, id, expected_run, token, cwd });
 
 /** 导入 (docs/SHELL.md 第八轮): what could be brought onto the session
     list — agents started elsewhere, tmux sessions, and the ACP
@@ -1311,7 +1357,8 @@ export const systemUnlock: ((reason?: string) => Promise<boolean>) | null = inAp
 /** Answers whether this call attached anew — replay history only then:
     a second open of a living chat (dev double-mount) must not ask the
     host to replay again. */
-export const chatOpen = (id: string) => call<boolean>("chat_open", { id });
+export const attachmentBegin = (id: string, kind: AttachmentKind) => call<string>("attachment_begin", { id, kind });
+export const chatOpen = (id: string, lease: string) => call<boolean>("chat_open", { id, lease });
 /** Hands a page to whatever this machine opens pages with. Refuses
     anything that is not http/https — the address came out of an agent's
     own words (`khor_gui_core::web::open_link`). */
@@ -1329,24 +1376,24 @@ export const fetchPageIcons = () => call<Record<string, string>>("page_icons");
     (`Node::takeover_term`). Same row, same conversation. */
 export const takeoverTerm = (id: string) => call<null>("takeover_term", { id });
 /** Ends the running turn — not the session (`GuiOp::Stop`). */
-export const chatStop = (id: string) => call<null>("chat_stop", { id });
+export const chatStop = (id: string, lease: string) => call<null>("chat_stop", { id, lease });
 /** Puts the session in one of the modes its agent listed
     (`ChatFrame::Settings`'s `modes.availableModes`), by the agent's own
     id. The answer comes back on the poll — a fresh `settings` frame when
     it took, a `refused` one when the agent said no — never here. */
-export const chatSetMode = (id: string, mode: string) => call<null>("chat_set_mode", { id, mode });
+export const chatSetMode = (id: string, lease: string, mode: string) => call<null>("chat_set_mode", { id, lease, mode });
 /** Sets one of the agent's options: a string is a listed value's id, a
     boolean is a switch. Same answer channel as {@link chatSetMode}. */
-export const chatSetOption = (id: string, option: string, value: string | boolean) =>
-  call<null>("chat_set_option", { id, option, value });
-export const chatRespond=(id:string,ask:number,response:unknown)=>call<null>('chat_respond',{id,ask,response});
-export const chatControl=(id:string,token:string,operation:string,payload:Record<string,unknown>={})=>call<null>('chat_control',{id,token,operation,payload});
-export const chatPoll = (id: string, since: number) =>
-  call<ChatBatch>("chat_poll", { id, since });
+export const chatSetOption = (id: string, lease: string, option: string, value: string | boolean) =>
+  call<null>("chat_set_option", { id, lease, option, value });
+export const chatRespond=(id:string, lease: string,ask:number,response:unknown)=>call<null>('chat_respond',{id, lease,ask,response});
+export const chatControl=(id:string, lease: string,token:string,operation:string,payload:Record<string,unknown>={})=>call<null>('chat_control',{id, lease,token,operation,payload});
+export const chatPoll = (id: string, lease: string, since: number) =>
+  call<ChatBatch>("chat_poll", { id, lease, since });
 /** `chatPoll`, held open until a frame lands past `since` (or `ms`
     passes) — `termWait`'s twin, and the app's only for its reason. */
-export const chatWait = (id: string, since: number, ms: number) =>
-  call<ChatBatch>("chat_wait", { id, since, ms });
+export const chatWait = (id: string, lease: string, since: number, ms: number) =>
+  call<ChatBatch>("chat_wait", { id, lease, since, ms });
 /** One user turn. `images` are `[mime, base64]` pairs and are only ever
     non-empty when the agent said it takes them (`ChatFrame::Agent`'s
     `images`) — the host puts them on a different op (`GuiOp::SayWith`),
@@ -1355,14 +1402,14 @@ export const chatWait = (id: string, since: number, ms: number) =>
     send_cancelled receipts. HTTP may resolve this request at admission;
     resolving the promise alone must not release the retained draft. */
 export const chatSay = (
-  id: string,
+  id: string, lease: string,
   text: string,
   images: [string, string][] = [],
   files: [string, string][] = [],
   token?: string,
 ) =>
   call<null>("chat_say", {
-    id,
+    id, lease,
     text,
     ...(images.length ? { images } : {}),
     ...(files.length ? { files } : {}),
@@ -1374,18 +1421,19 @@ export const chatSay = (
     the agent is told. The bytes ride raw: the bridge's and the web
     face's body route, the app's raw invoke body. `into`: a directory
     on that machine the person chose; `null` is its receive location. */
-export const chatPut = async (id: string, file: File, into: string | null = null): Promise<string> => {
+export const chatPut = async (id: string, lease: string, file: File, into: string | null = null): Promise<string> => {
   if (inApp && !bridge) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<string>("chat_put", new Uint8Array(await file.arrayBuffer()), {
       headers: {
         "x-khor-chat": encodeURIComponent(id),
+        "x-khor-lease": encodeURIComponent(lease),
         "x-khor-name": encodeURIComponent(file.name),
         ...(into ? { "x-khor-into": encodeURIComponent(into) } : {}),
       },
     });
   }
-  const q = `id=${encodeURIComponent(id)}&name=${encodeURIComponent(file.name)}${into ? `&into=${encodeURIComponent(into)}` : ""}`;
+  const q = `id=${encodeURIComponent(id)}&lease=${encodeURIComponent(lease)}&name=${encodeURIComponent(file.name)}${into ? `&into=${encodeURIComponent(into)}` : ""}`;
   const url = bridge ? `http://127.0.0.1:${bridge}/chat_put?${q}` : `/api/chat_put?${q}`;
   const r = await reach(url, {
     method: "POST",
@@ -1398,36 +1446,38 @@ export const chatPut = async (id: string, file: File, into: string | null = null
 /** Files this machine already has (a drop's paths, the app only), put
     where the conversation's machine keeps them (or in `into` there).
     Answers their paths there, in order. */
-export const chatPutPaths = (id: string, paths: string[], into: string | null = null) =>
-  call<string[]>("chat_put_paths", { id, paths, into });
-export const chatAnswer = (id: string, ask: number, option: string | null) =>
-  call<null>("chat_answer", { id, ask, option });
-export const chatReplay = (id: string) => call<null>("chat_replay", { id });
-export const chatLeave = (id: string) => call<null>("chat_leave", { id });
-/** A discovered session's recorded past: the vendor's transcript in
-    replay-shaped frames, whole, ending in history_end — so the same
-    fold paints it and a live replay alike. */
-export const fetchHistory = (id: string) => call<ChatFrame[]>("history", { id });
+export const chatPutPaths = (id: string, lease: string, paths: string[], into: string | null = null) =>
+  call<string[]>("chat_put_paths", { id, lease, paths, into });
+export const chatAnswer = (id: string, lease: string, ask: number, option: string | null) =>
+  call<null>("chat_answer", { id, lease, ask, option });
+export const chatCapture = (id: string, lease: string, token: string) => call<null>("chat_capture", { id, lease, token });
+export const chatLeave = (id: string, lease: string) => call<null>("chat_leave", { id, lease });
+export const fetchSessionContent = (id: string, locator: string) =>
+  call<SessionContent>("session_content", { id, locator });
+export const beginHistoryRequest = (id: string, binding: string) => call<string>("history_begin", { id, binding });
+export const cancelHistoryRequest = (id: string, binding: string, requestKey: string) =>
+  call<null>("history_cancel", { id, binding, requestKey });
+export const fetchHistoryRecord = (id: string, binding: string, requestKey: string, cursor: string, from: number) =>
+  call<HistoryRecordChunk>("history_record", { id, binding, requestKey, cursor, from });
+export const fetchHistoryPage = (id: string, binding: string, requestKey: string, cursor: string | null = null, newer = false) =>
+  call<HistoryPage>("history_page", { id, binding, cursor, newer, requestKey });
+export const fetchHistoryProjection = (id: string, binding: string, requestKey: string, cursor: string,
+  start: number, end: number, scaffold: string | null = null) =>
+  call<HistoryProjection>("history_projection", { id, binding, requestKey, cursor, start, end, scaffold });
+export const startHistoryExport = (transfer: string, id: string, binding: string, cursor: string, start: number, end: number) =>
+  call<FileHandoff>("history_export_start", { transfer, id, binding, cursor, start, end });
 
-/** A discovered session's transcript, **followed**: whatever it has said
-    since `from`, and where to continue.
-
-    Appended lines come back as `note` frames and append; a rewound file
-    (a compaction) comes back whole as `history` + `history_end` and
-    repaints. Both shapes are ones the fold already knows — see
-    `chat::history_follow` for why that split is the design and not a
-    convenience. */
-export const followHistory = (id: string, from: number) =>
-  call<{ frames: ChatFrame[]; at: number; following: boolean }>("history_follow", { id, from });
 /** One machine's directory — order, cap and the answered-about path
     all come from the node; `""` asks for that machine's home. */
 export const fetchLs = (machine: string, path: string) =>
   call<DirListing>("ls", { machine, path });
-/** Which of these open levels changed on that machine since `since`,
-    held up to `waitMs` for one to (`khor_gui_core::files::dirs_wait`):
-    the far machine watches them. `unavailable` says ask instead. */
-export const dirsWait = (machine: string, dirs: string[], since: number, waitMs: number) =>
-  call<DirWatch>("dirs_wait", { machine, dirs, since, wait_ms: waitMs });
+/** Begin resolves the machine once; subsequent calls use its pinned DeviceId. */
+export const dirsBegin = (machine: string, scopes: DirWatchScope[]) =>
+  call<DirWatchOpened>("dirs_begin", { machine, scopes });
+export const dirsWait = (machine_id: string, id: string, cursor: string | null, waitMs: number) =>
+  call<DirWatchBatch>("dirs_wait", { machine_id, id, cursor, wait_ms: waitMs });
+export const dirsLeave = (machine_id: string, id: string) =>
+  call<null>("dirs_leave", { machine_id, id });
 /** Takes a file into this machine's downloads; answers where it
     landed — the place was chosen silently, so it must be said. */
 export const pullFile = (machine: string, path: string) =>
@@ -1443,6 +1493,7 @@ export const fileHandoffStart = (id:string,machine:string,path:string) => call<F
 export const fileHandoffState = (id:string) => call<FileHandoff>("file_handoff_state",{id});
 export const fileHandoffCancel = (id:string) => call<null>("file_handoff_cancel",{id});
 export const fileHandoffOpen = (id:string) => call<boolean>("file_handoff_open",{id});
+export const fileHandoffSave = (id: string) => call<boolean>("file_handoff_save", { id });
 export const filePreviewSupported = () => inApp ? call<boolean>("file_preview_supported") : Promise.resolve(false);
 export const filePreviewOpen = (id:string) => call<boolean>("file_preview_open",{id});
 
@@ -1508,18 +1559,18 @@ export const fetchCommandHistory = (machine: string, text: string, dir: string, 
   call<HistoryRow[]>("term_history", { machine, text, dir, failed });
 /** The prompt before (`up`) or after the one in view in a tmux row's
     front pane (item 21): tmux holds that screen, so tmux moves. */
-export const termPrompt = (id: string, up: boolean) => call<null>("term_prompt", { id, up });
+export const termPrompt = (id: string, lease: string, up: boolean) => call<null>("term_prompt", { id, lease, up });
 /** The wheel over a shell's own tmux client (item 58): `rows` up when
     positive; false when no tmux client is in front (0 rows only asks). */
-export const termScroll = (id: string, rows: number) => call<boolean>("term_scroll", { id, rows });
+export const termScroll = (id: string, lease: string, rows: number) => call<boolean>("term_scroll", { id, lease, rows });
 /** ⌘K kept by this attachment's feed and, on a host that speaks version
     2, by its ring; `redraw` sends the shell its ⌃L after. True when the
     host kept it (audit/term-attach.md). */
-export const termForget = (id: string, redraw: boolean) => call<boolean>("term_forget", { id, redraw });
+export const termForget = (id: string, lease: string, redraw: boolean) => call<boolean>("term_forget", { id, lease, redraw });
 /** A tmux row's front pane history from `since` on, or all of it
     (item 31): what the phone scrolls instead of tmux's copy mode. */
-export const termPaneHistory = (id: string, since: PaneAnchor | null) =>
-  call<PaneHistory>("term_pane_history", { id, since });
+export const termPaneHistory = (id: string, lease: string, since: PaneAnchor | null) =>
+  call<PaneHistory>("term_pane_history", { id, lease, since });
 /** Whether the machine khor's backend runs on has a recycle bin. Asked
     rather than read off the browser: the same page is served to a phone
     looking at a desktop's face (`khor_gui_core::files::trash_here`). */
@@ -1626,6 +1677,10 @@ export const showPage = (tab: string) =>
 export const pageSteps = (tab: string) =>
   onWebFace ? Promise.resolve(null) : call<{back:boolean;forward:boolean}|null>("page_steps", { tab });
 
+/** Current native navigation, including a retained view's latest snapshot. */
+export const pageState = (tab: string) =>
+  onWebFace ? Promise.resolve(null) : call<PageNavigationState | null>("page_state", { tab });
+
 /** Back, forward, reload, retry, stop and certificate continuation. */
 export const pageStep = (tab: string, way: "back" | "forward" | "reload" | "retry" | "stop" | "pass") =>
   onWebFace ? Promise.resolve(null) : call<null>("page_step", { tab, way });
@@ -1652,7 +1707,7 @@ export const pageDeck = (tab: string, drawing: import("@/lib/native-deck").DeckD
  * back a cleanup that undoes nothing rather than pretending to listen.
  */
 export function onPageWord(
-  event: "page:sheet" | "page:went" | "page:title" | "page:load" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:fail" | "page:ground" | "page:download",
+  event: "page:sheet" | "page:went" | "page:title" | "page:popup" | "page:steps" | "page:scroll" | "page:deck" | "page:ground" | "page:download",
   tab: string,
   said: (text: string) => void,
   onReady?: () => void,
@@ -1918,8 +1973,8 @@ export function onFullscreen(tell: (full: boolean) => void): () => void {
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match, and keeps `history` rows of it (the face's
     历史行数, item 56; capped by the host). */
-export const termOpen = (id: string, cols: number, rows: number, history: number) =>
-  call<null>("term_open", { id, cols, rows, history });
+export const termOpen = (id: string, lease: string, cols: number, rows: number, history: number) =>
+  call<null>("term_open", { id, lease, cols, rows, history });
 /** Everything the feed holds so far (it began with the host's ring, so
     history rides along) and the cursor to stream from. The pane writes
     it into xterm and then follows with `termStream`.
@@ -1929,24 +1984,24 @@ export const termOpen = (id: string, cols: number, rows: number, history: number
     left with the 2026-09-03 pivot: xterm.js consumes bytes and speaks
     its own mouse and paste. 「不必考虑旧版兼容」 is why there is no
     bridge.) */
-export const termAttach = (id: string) => call<TermStart>("term_attach", { id });
+export const termAttach = (id: string, lease: string) => call<TermStart>("term_attach", { id, lease });
 /** The initial replay is parsed; live terminal queries can now be answered. */
-export const termReady = (id: string) => call<null>("term_ready", { id });
+export const termReady = (id: string, lease: string) => call<null>("term_ready", { id, lease });
 /** **A dead terminal row's page** (P5-SHELL): how it ended, its last
     screen when its host left one (`ring.bin`), else the commands it ran,
     newest first. `null` while the session is not dead on this machine. */
 export const termEnded = (id: string) => call<EndedPage | null>("term_ended", { id });
-export const termStream = (id: string, since: number) =>
-  call<TermChunk>("term_stream", { id, since });
+export const termStream = (id: string, lease: string, since: number) =>
+  call<TermChunk>("term_stream", { id, lease, since });
 /** `termStream`, held open until the feed grows past `since` (or `ms`
     passes): output arrives the moment it is there instead of on the next
     beat. The app's only — the bridge and the web face answer one request
     at a time, so there it is the stream's answer as it stands. */
-export const termWait = (id: string, since: number, ms: number) =>
-  call<TermChunk>("term_wait", { id, since, ms });
+export const termWait = (id: string, lease: string, since: number, ms: number) =>
+  call<TermChunk>("term_wait", { id, lease, since, ms });
 /** Keystrokes as the bytes a terminal sends — xterm encodes every key,
     modifier, mouse report and paste; the backend stays a pipe. */
-export const termKey = (id: string, keys: string) => call<null>("term_key", { id, keys });
+export const termKey = (id: string, lease: string, keys: string) => call<null>("term_key", { id, lease, keys });
 /** A line from the face into the app's own log (its stderr, which the
     device's console keeps): what a page saw that only a device shows. */
 export const faceNote = (line: string) => call<null>("face_note", { line });
@@ -1993,14 +2048,14 @@ export const notifyFinished = (title: string, body: string) => call<null>("notif
     face should be assembling, and one wrong escape turns a filename
     into a command (`khor_gui_core::term::term_drop`). `into`: the
     shell's current directory, where 「放到当前目录」 lands them. */
-export const termDrop = (id: string, paths: string[], from?: string | null, into?: string | null) =>
-  call<DropEnd>("term_drop", { id, paths, from: from ?? null, into: into ?? null });
+export const termDrop = (id: string, lease: string, paths: string[], from?: string | null, into?: string | null) =>
+  call<DropEnd>("term_drop", { id, lease, paths, from: from ?? null, into: into ?? null });
 /** **The drop under way on session `id`, cancelled** (the owner
     2026-10-07 12:50, item 71): the pull stops, its part file goes,
     nothing is pasted; with no drop under way, nothing happens.
     `staged`: files `termDropStage` put up for a drop that will now
     never be asked for, which go at once. */
-export const termDropCancel = (id: string, staged: string[] = []) => call<null>("term_drop_cancel", { id, staged });
+export const termDropCancel = (id: string, lease: string, staged: string[] = []) => call<null>("term_drop_cancel", { id, lease, staged });
 /** A file picked in a face (the phone's photos and files, item 60 part
     3), put where this machine's node serves it by path, for `termDrop`
     with `from` null. Answers its path here. The bytes ride raw, as
@@ -2024,7 +2079,7 @@ async function stageBytes(command: string, fields: Record<string, string>, file:
   if (!r.ok) throw new Error(unwrap(await r.text()));
   return answer<string>(r);
 }
-export const termDropItems = (id: string, items: DropItem[], into: string | null) => call<DropEnd>("term_drop_items", { id, items, into });
+export const termDropItems = (id: string, lease: string, items: DropItem[], into: string | null) => call<DropEnd>("term_drop_items", { id, lease, items, into });
 export const termDropFolder = (name: string, dirs: string[]) => call<string>("term_drop_folder", { name, dirs });
 /** Releases only app-owned selection tokens, without cancelling a different transfer. */
 export const termDropForget = (paths: string[]) => call<null>("term_drop_forget", { paths });
@@ -2032,10 +2087,10 @@ export const nativeFolders = () => inApp && !bridge && !/Android/i.test(navigato
 export const termPickFolders = () => call<string[]>("term_pick_folders");
 /** How far this terminal's drop has got, 0 to 1, or `null` when none is
     under way (item 60): what its pill's line draws. */
-export const termDropProgress = (id: string) => call<number | null>("term_drop_progress", { id });
-export const termResize = (id: string, cols: number, rows: number) =>
-  call<null>("term_resize", { id, cols, rows });
-export const termLeave = (id: string) => call<null>("term_leave", { id });
+export const termDropProgress = (id: string, lease: string) => call<number | null>("term_drop_progress", { id, lease });
+export const termResize = (id: string, lease: string, cols: number, rows: number) =>
+  call<null>("term_resize", { id, lease, cols, rows });
+export const termLeave = (id: string, lease: string) => call<null>("term_leave", { id, lease });
 
 /** What the Mac app's menu bar should say applies right now
     (`src/lib/shortcuts.ts` → `src-tauri/src/menu.rs`): whether ⌘W has
@@ -2058,3 +2113,57 @@ export const menuState = (state: MenuState) =>
 
 export const agentRecognition = (machine: string, action: "read" | "enable" | "disable" = "read", agent?: string) =>
   call<RecognitionEntry[]>("agent_recognition", { machine, action, agent });
+
+
+const attachmentTransport = {
+  begin: attachmentBegin,
+  leave: async (id: string, kind: AttachmentKind, lease: string): Promise<void> => {
+    await (kind === "chat" ? chatLeave(id, lease) : termLeave(id, lease));
+  },
+};
+
+export function chatAttachment(id: string) {
+  const owner = attachmentView<boolean>(id, "chat", attachmentTransport);
+  return {
+    id,
+    open: () => owner.open(lease => chatOpen(id, lease)),
+    poll: (since: number) => owner.run(lease => chatPoll(id, lease, since)),
+    wait: (since: number, ms: number) => owner.run(lease => chatWait(id, lease, since, ms)),
+    say: (text: string, images: [string, string][], files: [string, string][], token?: string) =>
+      owner.run(lease => chatSay(id, lease, text, images, files, token)),
+    answer: (ask: number, option: string | null) => owner.run(lease => chatAnswer(id, lease, ask, option)),
+    respond: (ask: number, response: unknown) => owner.run(lease => chatRespond(id, lease, ask, response)),
+    control: (token: string, operation: string, payload: Record<string, unknown>) =>
+      owner.run(lease => chatControl(id, lease, token, operation, payload)),
+    setMode: (mode: string) => owner.run(lease => chatSetMode(id, lease, mode)),
+    setOption: (option: string, value: string | boolean) => owner.run(lease => chatSetOption(id, lease, option, value)),
+    capture: (token: string) => owner.run(lease => chatCapture(id, lease, token)),
+    stop: () => owner.run(lease => chatStop(id, lease)),
+    put: (file: File, into: string | null) => owner.run(lease => chatPut(id, lease, file, into)),
+    putPaths: (paths: string[], into: string | null) => owner.run(lease => chatPutPaths(id, lease, paths, into)),
+    dispose: owner.dispose,
+  };
+}
+
+export function terminalAttachment(id: string) {
+  const owner = attachmentView<null>(id, "terminal", attachmentTransport);
+  return {
+    id,
+    open: (cols: number, rows: number, history: number) => owner.open(lease => termOpen(id, lease, cols, rows, history)),
+    attach: () => owner.run(lease => termAttach(id, lease)),
+    ready: () => owner.run(lease => termReady(id, lease)),
+    stream: (since: number) => owner.run(lease => termStream(id, lease, since)),
+    wait: (since: number, ms: number) => owner.run(lease => termWait(id, lease, since, ms)),
+    key: (keys: string) => owner.run(lease => termKey(id, lease, keys)),
+    resize: (cols: number, rows: number) => owner.run(lease => termResize(id, lease, cols, rows)),
+    forget: (redraw: boolean) => owner.run(lease => termForget(id, lease, redraw)),
+    prompt: (up: boolean) => owner.run(lease => termPrompt(id, lease, up)),
+    scroll: (rows: number) => owner.run(lease => termScroll(id, lease, rows)),
+    paneHistory: (since: PaneAnchor | null) => owner.run(lease => termPaneHistory(id, lease, since)),
+    drop: (paths: string[], from?: string | null, into?: string | null) => owner.run(lease => termDrop(id, lease, paths, from, into)),
+    dropItems: (items: DropItem[], into: string | null) => owner.run(lease => termDropItems(id, lease, items, into)),
+    dropCancel: (staged: string[] = []) => owner.run(lease => termDropCancel(id, lease, staged)),
+    dropProgress: () => owner.run(lease => termDropProgress(id, lease)),
+    dispose: owner.dispose,
+  };
+}

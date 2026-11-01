@@ -147,6 +147,24 @@ pub struct GitLog {
     pub more: bool,
 }
 
+/// Bounded repository-history metadata. Full messages are fetched by `git_commit`.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitCommitSummary {
+    pub id: String,
+    pub author: String,
+    #[ts(type = "number")]
+    pub when_ms: i64,
+    pub subject: String,
+    pub cut: bool,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct GitHistoryPage {
+    pub head: Option<String>,
+    pub commits: Vec<GitCommitSummary>,
+    pub next: Option<String>,
+}
+
 /// One run of HEAD's lines a commit wrote: `start` 0-based, `len` lines,
 /// `commit` an index into [`GitBlame::commits`].
 #[derive(Debug, Clone, Serialize, TS)]
@@ -247,6 +265,48 @@ pub async fn log(root: &Path, machine: &str, path: &str) -> Result<GitLog, Strin
         GitAnswer::Log { commits, more } => Ok(GitLog {
             commits: commits.into_iter().map(commit).collect(),
             more,
+        }),
+        other => Err(format!("{other:?}")),
+    }
+}
+
+/// All parents reachable from one snapshot HEAD; `cursor` is opaque to callers.
+pub async fn history(
+    root: &Path,
+    machine: &str,
+    dir: &str,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<GitHistoryPage, String> {
+    use khor_node::git::{GitAnswer, GitAsk};
+    match ask(
+        root,
+        machine,
+        GitAsk::RepositoryLog {
+            dir: dir.to_owned(),
+            cursor: cursor.map(str::to_owned),
+            limit,
+        },
+    )
+    .await?
+    {
+        GitAnswer::RepositoryLog {
+            head,
+            commits,
+            next,
+        } => Ok(GitHistoryPage {
+            head,
+            commits: commits
+                .into_iter()
+                .map(|c| GitCommitSummary {
+                    id: c.id,
+                    author: c.author,
+                    when_ms: c.when_ms,
+                    subject: c.subject,
+                    cut: c.cut,
+                })
+                .collect(),
+            next,
         }),
         other => Err(format!("{other:?}")),
     }

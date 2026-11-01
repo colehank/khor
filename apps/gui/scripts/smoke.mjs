@@ -6500,65 +6500,26 @@ for line in sys.stdin:
     }
   }
 
-  //      …and a replay replaces the past rather than stacking onto it.
-  //      Asked for twice through the real op, because that is what a
-  //      reconnect does. The first one must visibly paint something —
-  //      otherwise the second's "nothing changed" is the answer a dead
-  //      probe gives.
-  const replayRow = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
-  if (!replayRow) throw new Error("probe dead: the wizard's row has no id to replay");
-  const replay = () =>
-    page.evaluate(
-      async ([port, id]) => {
-        const r = await fetch(`http://127.0.0.1:${port}/chat_replay`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id }),
-        });
-        if (!r.ok) throw new Error(await r.text());
-      },
-      [BRIDGE_PORT, replayRow],
-    );
-  // The needle is the one line the fake writes into claude's own
-  // transcript on its way up, and `session/load` is where the host gets
-  // a past from (`gui_host` `replay_to`) — so counting it counts copies
-  // of the replayed past and nothing else.
+  // Fresh view boundaries reread canonical content instead of asking the
+  // agent to load again. Use the actual tab reconnect UI and real backend.
+  const recoveryRow = await page.locator('[data-title="wizard-one"]').getAttribute("data-row");
+  if (!recoveryRow) throw new Error("probe dead: the wizard's row has no id to reconnect");
   const RECORDED = "the fake's own past";
   const copiesOfThePast = async () => (await chatText()).split(RECORDED).length - 1;
-  // The past is already on screen: this pane asked for a replay when it
-  // attached, and that is the first copy. Asserted rather than assumed,
-  // because everything below is about that number not moving, and a
-  // number that started at zero would never move either.
-  const copies = await copiesOfThePast();
-  if (copies !== 1) {
-    throw new Error(`probe dead: the recorded past should be painted once, it is ${copies}`);
-  }
-  // Now ask again, the way a reconnect does. Several times, and the
-  // count is checked after each: a replay can legitimately arrive with
-  // no history at all (`replay_to` drains the agent's load with
-  // `try_recv`, so one answered a moment later sends only `HistoryEnd`)
-  // and that empties the past — the old fold did the same, its "last
-  // complete replay" being an empty one. An empty arrival says nothing
-  // about stacking, so what is required is that at least one of these
-  // landed, and that none of them ever made a second copy.
-  let landedAgain = false;
-  let most = copies;
-  for (let i = 0; i < 4; i += 1) {
-    await replay();
-    await new Promise((r) => setTimeout(r, 1_500));
-    const now = await copiesOfThePast();
-    most = Math.max(most, now);
-    if (now >= 1) landedAgain = true;
-    if (now > 1) break;
-  }
-  if (!landedAgain) {
-    throw new Error("probe dead: every replay arrived empty, so stacking was never tested");
-  }
-  if (most > 1) {
-    throw new Error(
-      `history is a state, not a stream: replaying again left ${most} copies of the past`,
-    );
-  }
+  if (await copiesOfThePast() !== 1) throw new Error("probe dead: the recorded past must first be painted once");
+  const captures = [];
+  const countCapture = request => {if (request.url().endsWith('/chat_capture')) captures.push(request.postDataJSON());};
+  page.on('request', countCapture);
+  try {
+    for (let i = 0; i < 4; i += 1) {
+      const before = captures.length;
+      await page.locator(`[data-session-tabs] [data-tab="${recoveryRow}"]`).click({button: 'right'});
+      await page.getByRole('menuitem', {name: catalogWords.term_reload, exact: true}).click();
+      await until('the reconnected view captures its own canonical boundary', 20_000, async () => captures.length > before);
+      await until('canonical content restored exactly once', 20_000, async () => await copiesOfThePast() === 1);
+      if (await copiesOfThePast() !== 1) throw new Error('reconnecting stacked or lost the recorded past');
+    }
+  } finally {page.off('request', countCapture);}
 
   // The permission round-trip, on the screen's own buttons, in khor's
   // catalog words.
@@ -6616,45 +6577,32 @@ for line in sys.stdin:
   //      down at startup is what makes it reachable; the burst below is
   //      what crosses it.
   //
-  //      The evidence is a **request the face would not otherwise
-  //      make**: a replay is asked for on attach and never again by
-  //      itself, so one arriving now can only be the recovery deciding
-  //      its own picture is no longer backed by anything.
-  const replaysAsked = [];
-  const countReplays = (r) => {
-    if (r.url().endsWith("/chat_replay")) replaysAsked.push(Date.now());
+  // A lost control cursor must request Capture, while body comes from
+  // the same bounded H source. The actual bridge/host remains unstubbed.
+  const recoveryCaptures = [];
+  const countRecoveryCapture = request => {
+    if (request.url().endsWith('/chat_capture')) recoveryCaptures.push(request.postDataJSON());
   };
-  page.on("request", countReplays);
-  await say(page, "flood-600");
-  await until("the far end of the burst on screen", 40_000, async () =>
-    (await chatText()).includes("flood 599"),
-  );
-  if (replaysAsked.length === 0) {
-    throw new Error("the cap was crossed and nothing asked for the past back — the recovery never ran");
-  }
-  //      …and what it recovered is a conversation, not an empty pane.
-  //
-  //      **This second half does not test the clear, and saying so is
-  //      the point.** The obvious break — recover but skip
-  //      `setPaint(BLANK)` — was run, and this stayed green. Two
-  //      reasons, both measured: `absorb` *replaces* the past when a
-  //      `history_end` lands rather than appending, so a second replay
-  //      can never stack; and this stand-in does not replay its own
-  //      turns (`session/load` returns only the line it wrote on its
-  //      way up), so the clear has nothing visible to take away. The
-  //      clear's real work is on the live half, and with an agent that
-  //      replays for real it would be the difference between a middle
-  //      restored and a middle missing. What is gated here is that the
-  //      recovery *runs* and leaves a conversation behind; the content
-  //      half waits for a stand-in that answers a load.
-  await until("the recorded past back on screen, once", 30_000, async () => {
-    const t = await chatText();
-    return t.split(RECORDED).length - 1 === 1;
-  });
-  if (!(await chatText()).includes("flood 599")) {
-    throw new Error("the recovery took the newest frames with it — those were never lost");
-  }
-  page.off("request", countReplays);
+  page.on('request', countRecoveryCapture);
+  try {
+    await say(page, "flood-600");
+    await until("the far end of the burst on screen", 40_000, async () => (await chatText()).includes("flood 599"));
+    if (recoveryCaptures.length === 0) throw new Error('the control cap was crossed but no fresh boundary was captured');
+    if (recoveryCaptures.some(request => request.id !== recoveryRow || typeof request.lease !== 'string' || !/^[0-9a-f]{32}$/i.test(request.token))) {
+      throw new Error('recovery capture is not scoped to the current view/token');
+    }
+    // Six hundred records can evict early pages from the bounded DOM/cache.
+    // Prove that original content remains in the real source via real Find,
+    // rather than requiring the whole history to stay rendered forever.
+    await page.locator('[data-history-find-open]').first().click();
+    const search = page.locator('[data-history-search]');
+    await search.getByRole('searchbox').fill(RECORDED);
+    await search.getByRole('searchbox').press('Enter');
+    await until('recorded canonical past is still present exactly once beyond the DOM window', 30_000, async () =>
+      await search.locator('[data-history-find-hit]').filter({hasText: RECORDED}).count() === 1);
+    await search.getByRole('button', {name: catalogWords.close, exact: true}).click();
+    if (!(await chatText()).includes('flood 599')) throw new Error('recovery discarded the newest committed content');
+  } finally {page.off('request', countRecoveryCapture);}
 
   // 25d) 转成终端 (接管, 唯一本体 read backwards), from the row's menu
   //      like its opposite in 24k. The row keeps its id and its past;

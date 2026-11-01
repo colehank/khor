@@ -10,8 +10,8 @@ import {chromium,webkit} from 'playwright-core';
 
 const gui=fileURLToPath(new URL('..',import.meta.url));
 const scenarios=process.env.COMPOSE_SCENARIOS??'all';
-assert(['all','parent','transitions'].includes(scenarios),'Unknown COMPOSE_SCENARIOS');
-const transitionsOnly=scenarios==='transitions';
+assert(['all','parent','transitions','disclosure'].includes(scenarios),'Unknown COMPOSE_SCENARIOS');
+const transitionsOnly=scenarios==='transitions',disclosureOnly=scenarios==='disclosure';
 const port=Number(process.env.COMPOSE_PORT??23844),base=`http://127.0.0.1:${port}`;
 const engines=(process.env.COMPOSE_ENGINES??'chrome,webkit').split(',');
 for(const engine of engines)assert(['chrome','webkit'].includes(engine),`Unknown engine ${engine}`);
@@ -31,7 +31,38 @@ try{
   const deadline=Date.now()+30000;while(!log.includes('COMPOSE_READY')){assert(server.exitCode===null&&Date.now()<deadline,log);await new Promise(resolve=>setTimeout(resolve,100));}
   for(const engine of engines){
     browser=await(engine==='chrome'?chromium:webkit).launch({headless:true,...(engine==='chrome'?{channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined}:{})});
-    for(const probe of (transitionsOnly?[]:[false,true]))for(const long of [false,true])for(const reader of [false,true])for(const changeRevision of [false,true]){
+    for(const size of (disclosureOnly?['short','long']:[])){
+      free();const context=await browser.newContext({viewport:{width:402,height:714}}),page=await context.newPage();
+      const result={engine,scenario:'disclosure-data-intent',size,errors:[]};report.results.push(result);page.on('pageerror',error=>result.errors.push(error.message));
+      try{
+        await page.goto(`${base}/lab/scroll-compose.html?disclosure=${size}`);
+        await page.locator('[data-reasoning-toggle]').waitFor();
+        await page.waitForFunction(()=>window.__composeFixture.intent().requests>0&&window.__composeFixture.intent().shown!==null);
+        await page.evaluate(()=>window.__composeFixture.toBottom());await page.waitForTimeout(250);
+        result.before=await page.evaluate(()=>window.__composeFixture.intent());
+        assert.equal(result.before.readingLatest,true);assert.equal(result.before.following,true);
+        await page.locator('[data-reasoning-toggle]').click();
+        assert.equal(await page.locator('[data-reasoning-toggle]').getAttribute('aria-expanded'),'true');
+        await page.waitForFunction(before=>{const now=window.__composeFixture.intent();return now.requests>before.requests&&now.shown!==before.shown;},result.before);
+        result.after=await page.evaluate(()=>window.__composeFixture.intent());
+        assert.equal(result.after.following,false,'the actual disclosure keeps its geometry owner');
+        assert.equal(result.after.readingLatest,true,'disclosure alone does not express leaving latest');
+        if(size==='long'){
+          const bounds=await page.locator('[data-compose-scroll]').boundingBox();await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.mouse.wheel(0,-500);
+          await page.waitForFunction(()=>!window.__composeFixture.intent().readingLatest);await page.waitForTimeout(600);
+          result.paused=await page.evaluate(()=>window.__composeFixture.intent());await page.waitForTimeout(650);
+          result.quiet=await page.evaluate(()=>window.__composeFixture.intent());
+          assert.equal(result.quiet.requests,result.paused.requests,'real user upscroll pauses actual Source/Reader IO');
+          assert.equal(result.quiet.shown,result.paused.shown,'paused reader did not consume a new source page');
+        }
+        const prior=await page.evaluate(()=>window.__composeFixture.intent());await page.evaluate(()=>window.__composeFixture.toBottom());
+        await page.waitForFunction(before=>{const now=window.__composeFixture.intent();return now.requests>before.requests&&now.shown!==before.shown;},prior);
+        result.resumed=await page.evaluate(()=>window.__composeFixture.intent());
+        assert.equal(result.resumed.following,true);assert.equal(result.resumed.readingLatest,true);assert.deepEqual(result.errors,[]);result.status='passed';
+      }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
+      finally{console.log(`${result.status} ${engine} disclosure=${size}`);save();await context.close();}
+    }
+    for(const probe of (transitionsOnly||disclosureOnly?[]:[false,true]))for(const long of [false,true])for(const reader of [false,true])for(const changeRevision of [false,true]){
       free();const context=await browser.newContext({viewport:{width:402,height:714},hasTouch:true,isMobile:false});const page=await context.newPage();
       const result={engine,version:browser.version(),probe,long,reader,changeRevision,errors:[]};report.results.push(result);page.on('pageerror',error=>result.errors.push(error.message));
       try{
@@ -51,7 +82,7 @@ try{
       }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} probe=${probe} long=${long} reader=${reader} freshRevision=${changeRevision}`);save();await context.close();}
     }
-    for(const reader of (scenarios!=='parent'?[false,true]:[])){
+    for(const reader of (scenarios!=='parent'&&!disclosureOnly?[false,true]:[])){
       const context=await browser.newContext({viewport:{width:402,height:714},hasTouch:true});
       const page=await context.newPage();
       const result={engine,scenario:'draft-and-width-transitions',reader,errors:[],steps:[]};report.results.push(result);

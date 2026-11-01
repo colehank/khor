@@ -246,6 +246,21 @@ impl Claude {
         Ok(utterances_of(&text))
     }
 
+    /// A bounded raw window for paginated history. Fragments and oversized
+    /// records remain explicit; this does not change the legacy follow cursor.
+    pub fn transcript_window(
+        &self,
+        leaf: &str,
+        before: Option<u64>,
+    ) -> Result<super::transcript_window::TranscriptWindow, String> {
+        let path = self
+            .transcript_path(leaf)
+            .map(|(path, _)| path)
+            .ok_or_else(|| msg::no_such_session(leaf))?;
+        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        super::transcript_window::read_window(&mut file, before).map_err(|e| e.to_string())
+    }
+
     /// What was appended to a transcript since byte `from`.
     ///
     /// **Only the new bytes are read.** A watched conversation's file
@@ -471,7 +486,7 @@ impl Claude {
         found
     }
 
-    fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
+    pub(crate) fn transcript_path(&self, leaf: &str) -> Option<(PathBuf, std::time::SystemTime)> {
         let mut hit: Option<(std::time::SystemTime, PathBuf)> = None;
         let projects = std::fs::read_dir(self.projects_dir()).ok()?;
         for proj in projects.flatten() {
@@ -501,6 +516,50 @@ impl Claude {
         hit.map(|(t, p)| (p, t))
     }
 
+    /// A source binding must never choose between distinct native IDs sharing a leaf.
+    pub(crate) fn unique_transcript_path(
+        &self,
+        leaf: &str,
+        exact: Option<&str>,
+    ) -> Result<Option<(PathBuf, String)>, ()> {
+        let Ok(projects) = std::fs::read_dir(self.projects_dir()) else {
+            return Ok(None);
+        };
+        let mut chosen: Option<(PathBuf, String, std::time::SystemTime)> = None;
+        for project in projects.flatten() {
+            let Ok(entries) = std::fs::read_dir(project.path()) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|part| part.to_str()) != Some("jsonl") {
+                    continue;
+                }
+                let Some(native) = path.file_stem().and_then(|part| part.to_str()) else {
+                    continue;
+                };
+                if crate::live::clean_leaf(native) != leaf || exact.is_some_and(|id| id != native) {
+                    continue;
+                }
+                let at = entry
+                    .metadata()
+                    .and_then(|meta| meta.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH);
+                if let Some((_, prior, _)) = &chosen {
+                    if prior != native {
+                        return Err(());
+                    }
+                }
+                if chosen
+                    .as_ref()
+                    .is_none_or(|(_, _, previous)| at > *previous)
+                {
+                    chosen = Some((path.clone(), native.to_owned(), at));
+                }
+            }
+        }
+        Ok(chosen.map(|(path, native, _)| (path, native)))
+    }
     /// The newest utterance in a leaf's transcript, as one preview line —
     /// what the row's 最近一条消息 shows for a claude-backed session.
     ///
@@ -736,7 +795,7 @@ pub enum Utterance {
 /// So the judgment has to be made **here, where the evidence is** —
 /// reading the vendor's own file, which is the only place the envelope
 /// is visible at all.
-fn utterances_of(text: &str) -> Vec<Utterance> {
+pub(crate) fn utterances_of(text: &str) -> Vec<Utterance> {
     const PLUMBING: [&str; 4] = [
         "<command-name>",
         "<local-command-stdout>",
@@ -2133,13 +2192,13 @@ mod tests {
         assert_eq!(row.id.0, "tui/55e-fakeuuid");
         assert_eq!(row.title, "proj");
         assert_eq!(
-            row.state.state,
+            row.state.unwrap().state,
             State::Idle,
             "started, waiting for the first prompt"
         );
 
         hook(&k, &payload("UserPromptSubmit", "")).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Busy);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Busy);
 
         let idle_note = payload(
             "Notification",
@@ -2147,7 +2206,7 @@ mod tests {
         );
         assert!(matches!(hook(&k, &idle_note).unwrap(), Hooked::Ignored));
         assert_eq!(
-            k.rows(|_| 0)[0].state.state,
+            k.rows(|_| 0)[0].state.unwrap().state,
             State::Busy,
             "long-idle must not become 待批"
         );
@@ -2157,15 +2216,15 @@ mod tests {
             r#","message":"Claude needs your permission to use Bash""#,
         );
         hook(&k, &ask).unwrap();
-        assert_eq!(k.rows(|_| 0)[0].state.state, State::Blocked);
+        assert_eq!(k.rows(|_| 0)[0].state.unwrap().state, State::Blocked);
 
         hook(&k, &payload("Stop", "")).unwrap();
         let row = &k.rows(|_| 0)[0];
-        assert_eq!((row.state.state, row.unread), (State::Done, 1));
+        assert_eq!((row.state.unwrap().state, row.unread), (State::Done, 1));
 
         hook(&k, &payload("SessionEnd", "")).unwrap();
         assert_eq!(
-            k.rows(|_| 0)[0].state.state,
+            k.rows(|_| 0)[0].state.unwrap().state,
             State::Idle,
             "a clean end is idle"
         );

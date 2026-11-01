@@ -94,41 +94,113 @@ fn tauri_commands() -> BTreeSet<String> {
 }
 
 /// What every HTTP skin answers: the string arms of the shared
-/// dispatch. Anchored at line start so a `"word"` inside a comment or a
-/// nested expression cannot pass for an arm.
+/// dispatch. Only literal patterns at the dispatch match's own depth count;
+/// formatting may split an or-pattern over several lines.
 fn served_commands() -> BTreeSet<String> {
-    let src = repo_file("src/api.rs");
-    src.lines()
-        .flat_map(|line| {
-            let t = line.trim_start();
-            if !t.starts_with('"') || !t.contains("=>") {
-                return Vec::new();
+    command_patterns(&repo_file("src/api.rs"))
+}
+
+fn quoted_end(bytes: &[u8], start: usize) -> usize {
+    let mut end = start + 1;
+    while end < bytes.len() {
+        match bytes[end] {
+            b'\\' => end += 2,
+            b'"' => return end + 1,
+            _ => end += 1,
+        }
+    }
+    bytes.len()
+}
+
+fn command_head(bytes: &[u8], mut at: usize) -> Option<(Vec<String>, usize)> {
+    let mut names = Vec::new();
+    loop {
+        if bytes.get(at) != Some(&b'"') {
+            return None;
+        }
+        let end = quoted_end(bytes, at);
+        let name = bytes.get(at + 1..end.checked_sub(1)?)?;
+        if name.is_empty() || !name.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_') {
+            return None;
+        }
+        names.push(std::str::from_utf8(name).ok()?.to_owned());
+        at = end;
+        while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+            at += 1;
+        }
+        match bytes.get(at) {
+            Some(b'|') => {
+                at += 1;
+                while bytes.get(at).is_some_and(u8::is_ascii_whitespace) {
+                    at += 1;
+                }
             }
-            // ⚠️ **An arm may name several commands**, and until
-            // 2026-09-12 this finder could not see one that did. It read
-            // `"word"` then required `=>` immediately after, so
-            // `"move_page" | "hide_page" | … =>` matched nothing at all
-            // — and five commands that have had a shared arm for months
-            // were reported as missing from this side. The gate had been
-            // red about them the whole time, which is the good half of
-            // how it was found; the bad half is that the sentence it was
-            // red with said the wrong thing about the code.
-            //
-            // Everything before the `=>`, split on `|`, each piece a
-            // quoted word. A guard clause (`if x =>`) has no quotes and
-            // drops out.
-            let head = t.split("=>").next().unwrap_or("");
-            head.split('|')
-                .filter_map(|piece| {
-                    let p = piece.trim();
-                    p.strip_prefix('"')?
-                        .split_once('"')
-                        .map(|(w, _)| w.to_owned())
-                })
-                .filter(|w| !w.is_empty())
-                .collect()
-        })
-        .collect()
+            Some(b'=') if bytes.get(at + 1) == Some(&b'>') => return Some((names, at + 2)),
+            _ => return None,
+        }
+    }
+}
+
+fn command_patterns(src: &str) -> BTreeSet<String> {
+    let marker = "match cmd {";
+    let start = src.find(marker).expect("shared command dispatch must match cmd");
+    let bytes = src.as_bytes();
+    let mut at = start + marker.len();
+    let mut depth = 1;
+    let mut names = BTreeSet::new();
+    while at < bytes.len() && depth > 0 {
+        match bytes[at] {
+            b'/' if bytes.get(at + 1) == Some(&b'/') => {
+                at += 2;
+                while at < bytes.len() && bytes[at] != b'\n' { at += 1; }
+            }
+            b'"' => {
+                if depth == 1 {
+                    if let Some((head, end)) = command_head(bytes, at) {
+                        names.extend(head);
+                        at = end;
+                        continue;
+                    }
+                }
+                at = quoted_end(bytes, at);
+            }
+            b'{' | b'(' | b'[' => { depth += 1; at += 1; }
+            b'}' | b')' | b']' => { depth -= 1; at += 1; }
+            _ => at += 1,
+        }
+    }
+    names
+}
+
+#[test]
+fn command_finder_keeps_all_names_in_multiline_patterns() {
+    let src = r#"fn answer(cmd: &str) {
+        match cmd {
+            "move_page" | "hide_page" | "close_page" | "show_page" | "page_step" | "page_deck"
+            | "page_ground" => Ok("null"),
+        }
+    }"#;
+    assert_eq!(command_patterns(src), BTreeSet::from([
+        "move_page", "hide_page", "close_page", "show_page", "page_step", "page_deck", "page_ground",
+    ].map(str::to_owned)));
+}
+
+#[test]
+fn command_finder_ignores_strings_and_patterns_outside_dispatch_arms() {
+    let src = r#"const NOTE: &str = "not_a_command =>";
+    fn answer(cmd: &str) {
+        match cmd {
+            // "comment" =>
+            "real" => {
+                let text = "body =>";
+                match text { "nested" => (), _ => () }
+            }
+            "second" => "plain_body",
+            _ => "fallback",
+        }
+    }
+    fn other() { match "outside" { "unrelated" => () } }"#;
+    assert_eq!(command_patterns(src), BTreeSet::from(["real".to_owned(), "second".to_owned()]));
 }
 
 /// A command that lives on one side on purpose, with the reason.
@@ -153,6 +225,10 @@ const ONE_SIDED: &[(&str, &str)] = &[
     (
         "file_handoff_open",
         "presents the native original-file activity sheet; HTTP faces have no app-owned native presenter",
+    ),
+    (
+        "file_handoff_save",
+        "presents the native Save panel or original-file activity sheet for a completed app-owned handoff; HTTP faces use their browser file picker",
     ),
     (
         "page_steps",

@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 from pathlib import Path
 import tempfile
 import unittest
@@ -227,6 +228,40 @@ class ProvenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "inputs changed"):
                 p.verify_build(prepared, rows)
 
+    def test_tauri_environment_records_unset_and_hashes_values(self):
+        names = ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS")
+        absent = p.environment()
+        for name in names:
+            with self.subTest(name=name):
+                self.assertEqual(absent[name], p.key(None))
+                os.environ[name] = "private config value"
+                present = p.environment()
+                self.assertEqual(present[name], p.key("private config value"))
+                self.assertNotIn("private config value", json.dumps(present))
+                os.environ.pop(name)
+                self.assertEqual(p.environment(), absent)
+
+    def test_tauri_environment_set_change_and_remove_invalidate_producer_keys(self):
+        for name in ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS"):
+            for previous, current in ((None, "A"), ("A", "B"), ("A", None)):
+                with self.subTest(name=name, previous=previous, current=current):
+                    if previous is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = previous
+                    prepared = self.prepare()
+                    rows = self.rows()
+                    if current is None:
+                        os.environ.pop(name, None)
+                    else:
+                        os.environ[name] = current
+                    changed = self.prepare()
+                    self.assertNotEqual(prepared["package_keys"], changed["package_keys"])
+                    with self.assertRaisesRegex(ValueError, "inputs changed"):
+                        p.verify_build(prepared, rows)
+                    self.assertEqual(changed["package_keys"], self.prepare()["package_keys"])
+            os.environ.pop(name, None)
+
     def test_wrong_artifact_or_unknown_depfile_source_cannot_reach_native_runner(self):
         receipt, rows = self.initial()
         Path(rows[1]["executable"]).write_bytes(b"other tree binary")
@@ -360,6 +395,82 @@ class ProvenanceTests(unittest.TestCase):
             row["fresh"] = True
         self.assertEqual(len(p.verify_build(reused, [generated, *rows])["generated"]), 1)
 
+    def library_row(self):
+        directory = self.target / "debug/deps"
+        directory.mkdir(parents=True)
+        files = [directory / ("libapp" + suffix) for suffix in (".a", ".dylib", ".rlib")]
+        for path in files:
+            path.write_text("synthetic library: " + path.suffix)
+        dep = directory / "app.d"
+        dep.write_text("".join(f"{path}: {self.root / 'app/src/lib.rs'}\n" for path in [dep, *files]))
+        return {"filenames": [str(path) for path in files], "executable": None,
+                "target": {"name": "app", "kind": ["staticlib", "cdylib", "rlib"],
+                           "src_path": str(self.root / "app/src/lib.rs")}}, dep
+
+    def test_static_and_dynamic_library_row_uses_the_rustc_crate_depinfo(self):
+        row, dep = self.library_row()
+        for primary in row["filenames"][:2]:
+            with self.subTest(primary=primary):
+                current = {**row, "filenames": [primary, *(name for name in row["filenames"] if name != primary)]}
+                files, paired = p.artifact_files(current, self.root, self.target)
+                self.assertEqual(paired["path"], str(dep))
+                self.assertEqual(set(files), {*row["filenames"], str(dep)})
+                self.assertTrue(set(row["filenames"]).issubset(paired["targets"]))
+
+    def test_library_depinfo_must_name_the_reported_primary_artifact(self):
+        row, dep = self.library_row()
+        dep.write_text(f"{dep}: {self.root / 'app/src/lib.rs'}\n")
+        with self.assertRaisesRegex(ValueError, "Missing unique paired"):
+            p.artifact_files(row, self.root, self.target)
+
+    def test_current_generation_copy_preserves_old_mtime(self):
+        self.add_generator()
+        source = self.base / "template.rs"
+        source.write_text('const KEY: &str = "copied";\n')
+        os.utime(source, ns=(1, 1))
+        prepared = self.prepare()
+        generated = self.generated_row(prepared, current=True)
+        copied = Path(generated["out_dir"]) / "generated.rs"
+        shutil.copy2(source, copied)
+        self.assertEqual(copied.stat().st_mtime_ns, 1)
+        self.assertGreaterEqual(copied.stat().st_ctime_ns, prepared["prepared_ns"])
+        receipt = p.verify_build(prepared, [generated, *self.rows()])
+        stamp = receipt["generated"][0]["files"][str(copied)]
+        self.assertEqual(stamp["sha256"], p.digest(source))
+        self.assertEqual(stamp["mtime_ns"], 1)
+        self.assertEqual(stamp["ctime_ns"], copied.stat().st_ctime_ns)
+
+    def test_current_marker_does_not_admit_unchanged_old_generated_file(self):
+        self.add_generator()
+        generated = self.generated_row(self.prepare(), current=True)
+        file = Path(generated["out_dir"]) / "generated.rs"
+        before = file.stat()
+        prepared = self.prepare()
+        marker = file.parent.parent / "output"
+        marker.write_text("cargo::rerun-if-changed=input.toml\n")
+        self.assertLess(before.st_mtime_ns, prepared["prepared_ns"])
+        self.assertLess(before.st_ctime_ns, prepared["prepared_ns"])
+        with self.assertRaisesRegex(ValueError, "no current invocation"):
+            p.verify_build(prepared, [generated, *self.rows()])
+
+    def test_current_generated_file_does_not_admit_an_old_marker(self):
+        self.add_generator()
+        prepared = self.prepare()
+        generated = self.generated_row(prepared, current=True)
+        marker = Path(generated["out_dir"]).parent / "output"
+        os.utime(marker, ns=(1, 1))
+        with self.assertRaisesRegex(ValueError, "no current invocation"):
+            p.verify_build(prepared, [generated, *self.rows()])
+
+    def test_compiler_artifact_still_requires_current_mtime(self):
+        prepared = self.prepare()
+        rows = self.rows()
+        artifact = Path(rows[0]["filenames"][0])
+        os.utime(artifact, ns=(1, 1))
+        self.assertGreaterEqual(artifact.stat().st_ctime_ns, prepared["prepared_ns"])
+        with self.assertRaisesRegex(ValueError, "artifact predates"):
+            p.verify_build(prepared, rows)
+
     def test_returning_to_A_checks_each_target_and_generated_output(self):
         source = self.add_generator()
         original, stamp = source.read_bytes(), source.stat()
@@ -416,6 +527,87 @@ class ProvenanceTests(unittest.TestCase):
             row["fresh"] = True
         with self.assertRaisesRegex(ValueError, "no current invocation"):
             p.verify_build(prepared, [generated, *rows])
+
+    def test_tauri_build_script_environment_is_known_even_when_unset(self):
+        self.add_generator()
+        prepared = self.prepare()
+        rows = self.rows()
+        generated = self.generated_row(prepared, current=True)
+        marker = Path(generated["out_dir"]).parent / "output"
+        marker.write_text("cargo::rerun-if-env-changed=TAURI_CONFIG\n"
+                          "cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS\n")
+        receipt = p.verify_build(prepared, [generated, *rows])
+        self.assertEqual(len(receipt["generated"]), 1)
+
+    def gui_capabilities(self):
+        package = self.metadata["packages"][1]
+        previous = self.root / "app"
+        directory = self.root / "apps/gui/src-tauri"
+        directory.parent.mkdir(parents=True)
+        previous.rename(directory)
+        package.update(name="khor-gui", manifest_path=str(directory / "Cargo.toml"))
+        package["targets"][0]["src_path"] = str(directory / "src/lib.rs")
+        (directory / "Cargo.toml").write_text("[package]\nname='khor-gui'\nversion='0.1.0'\n[lib]\nname='app'\n")
+        self.request["package"] = "khor-gui"
+        return self.put("apps/gui/src-tauri/capabilities/default.json", '{"permissions":["A"]}\n').parent
+
+    def test_gui_capabilities_directory_is_frozen_and_admitted_as_declared(self):
+        directory = self.gui_capabilities()
+        script = self.put("apps/gui/src-tauri/build.rs", "fn main() {}\n")
+        self.metadata["packages"][1]["targets"].append(
+            {"name": "build-script-build", "kind": ["custom-build"],
+             "edition": "2024", "src_path": str(script)})
+        prepared = self.prepare()
+        out = self.target / "debug/build/app-output/out"
+        out.mkdir(parents=True)
+        (out / "permissions.rs").write_text("const PERMISSIONS: &[&str] = &[];\n")
+        marker = out.parent / "output"
+        marker.write_text(f"cargo::rerun-if-changed={directory}\n")
+        generated = {"reason": "build-script-executed", "package_id": "app", "out_dir": str(out)}
+        receipt = p.verify_build(prepared, [generated, *self.rows()])
+        self.assertEqual(len(receipt["generated"]), 1)
+        self.assertEqual(prepared["states"]["app"]["extra_inputs"]["apps/gui/src-tauri/capabilities"],
+                         {"default.json": p.digest(directory / "default.json")})
+        marker.write_text(f"cargo::rerun-if-changed={self.root}\n")
+        with self.assertRaisesRegex(ValueError, "outside its producer key"):
+            p.verify_build(prepared, [generated, *self.rows()])
+
+    def test_gui_capabilities_set_change_and_remove_invalidate_the_producer_key(self):
+        directory = self.gui_capabilities()
+        source = directory / "default.json"
+        original = source.read_bytes()
+        before = self.prepare()
+        stamp = source.stat()
+        source.write_bytes(original + b" ")
+        os.utime(source, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+        changed = self.prepare()
+        self.assertNotEqual(before["package_keys"], changed["package_keys"])
+        source.write_bytes(original)
+        self.assertEqual(before["package_keys"], self.prepare()["package_keys"])
+        extra = directory / "new.json"
+        extra.write_text("{}\n")
+        added = self.prepare()
+        self.assertNotEqual(before["package_keys"], added["package_keys"])
+        extra.unlink()
+        self.assertEqual(before["package_keys"], self.prepare()["package_keys"])
+        source.unlink()
+        self.assertNotEqual(before["package_keys"], self.prepare()["package_keys"])
+
+    def test_gui_capabilities_symlink_root_and_member_are_rejected(self):
+        directory = self.gui_capabilities()
+        source = directory / "default.json"
+        real = source.with_name("real.json")
+        source.rename(real)
+        source.symlink_to(real.name)
+        with self.assertRaisesRegex(ValueError, "nonregular|regular.*symlink"):
+            self.prepare()
+        source.unlink()
+        real.rename(source)
+        moved = directory.with_name("real-capabilities")
+        directory.rename(moved)
+        directory.symlink_to(moved.name, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "nonregular|regular.*symlink"):
+            self.prepare()
 
     def test_build_script_unrecorded_input_is_rejected(self):
         self.add_generator()

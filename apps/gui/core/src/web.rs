@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use khor_node::Node;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 /// The script every borrowed page runs before its own scripts do.
@@ -40,6 +40,57 @@ pub struct WebBorrow {
     pub session: String,
     /// `127.0.0.1:<port>`, the proxy a webview sets as its `proxy_url`.
     pub addr: String,
+}
+
+/// The lifecycle reported by the platform's current page navigation.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum PageNavigationPhase {
+    Opening,
+    Started,
+    Committed,
+    Finished,
+    /// The platform reported an end without confirming success.
+    Settled,
+    Failed,
+    Cancelled,
+}
+
+/// An original platform error cause. Native integer codes remain strings.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PageNavigationCause {
+    pub domain: String,
+    pub code: String,
+    pub description: String,
+    pub url: String,
+}
+
+/// A bounded original error chain, including at most four total causes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PageNavigationError {
+    pub domain: String,
+    pub code: String,
+    pub description: String,
+    pub url: String,
+    pub underlying: Vec<PageNavigationCause>,
+    pub truncated: bool,
+}
+
+/// A snapshot of one view's current navigation. Decimal identities preserve
+/// native counter precision; an absent estimate means no platform estimate.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
+pub struct PageNavigationState {
+    pub tab: String,
+    pub view: String,
+    pub navigation: String,
+    pub revision: String,
+    pub phase: PageNavigationPhase,
+    pub estimate: Option<f64>,
+    pub requested_url: String,
+    pub url: String,
+    pub exit: String,
+    pub proxied: bool,
+    pub error: Option<PageNavigationError>,
 }
 
 /// Opens a borrow of `machine`'s network and answers where its proxy
@@ -92,10 +143,8 @@ pub fn page_icons(root: &Path) -> std::collections::BTreeMap<String, String> {
     khor_node::favicon::kept(root)
 }
 
-/// [`open_link`]'s whitelist on its own: `http` and `https`, refused in
-/// words otherwise. Public for the phone's opener (`khor_gui`'s iOS
-/// `open_link`, which hands the page to the system rather than to a
-/// program), so both roads refuse the same addresses.
+/// Only browser pages may enter a page view. System handoffs use
+/// [`system_target`] so a file URI never becomes a browser page.
 pub fn page_only(url: &str) -> Result<(), String> {
     let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase());
     if matches!(scheme.as_deref(), Some("http") | Some("https")) {
@@ -105,22 +154,52 @@ pub fn page_only(url: &str) -> Result<(), String> {
     }
 }
 
-/// Hands a page to whatever this machine opens pages with.
-///
-/// **The address comes out of an agent's own words** — a conversation
-/// pane paints a link because a model wrote one — so the scheme is a
-/// whitelist, not a check for the obviously bad. `http` and `https` are
-/// pages; `file:` reads this machine's disk, and a scheme this machine
-/// happens to have registered can be an action rather than a page (a
-/// mail client sending, an app that takes a command). Anything else is
-/// refused with its own text, and the face falls back to showing the
-/// address so a person can decide for themselves.
-///
-/// The opener is the platform's, not a tool the user had to install
-/// (docs/STACK.md 零依赖 is about **the user's tools**): `open` and
-/// `xdg-open` ship with the desktop that would be showing this window.
+/// The system can open pages and absolute file URIs. Keep this separate
+/// from page navigation, and pass accepted targets to the opener unchanged.
+pub fn system_target(url: &str) -> Result<(), String> {
+    if page_only(url).is_ok() {
+        return Ok(());
+    }
+    let file = url
+        .split_once("://")
+        .filter(|(scheme, _)| scheme.eq_ignore_ascii_case("file"));
+    let valid = file.is_some_and(|(_, rest)| {
+        let Some((host, _path)) = rest.split_once('/') else {
+            return false;
+        };
+        // A file authority is a host, never credentials or a port. Brackets
+        // retain an IPv6 authority; the OS decides whether it is reachable.
+        let host_ok = !host.contains('@')
+            && (!host.contains(':') || (host.starts_with('[') && host.ends_with(']')));
+        let bytes = url.as_bytes();
+        let mut at = 0;
+        while at < bytes.len() {
+            if bytes[at].is_ascii_whitespace() || bytes[at].is_ascii_control() {
+                return false;
+            }
+            if bytes[at] == b'%' {
+                if at + 2 >= bytes.len()
+                    || !bytes[at + 1].is_ascii_hexdigit()
+                    || !bytes[at + 2].is_ascii_hexdigit()
+                {
+                    return false;
+                }
+                at += 2;
+            }
+            at += 1;
+        }
+        host_ok
+    });
+    if valid {
+        Ok(())
+    } else {
+        Err(khor_catalog::msg::not_openable(url))
+    }
+}
+
+/// Hands an explicit system target to the client's platform opener.
 pub fn open_link(url: &str) -> Result<(), String> {
-    page_only(url)?;
+    system_target(url)?;
     // A URL is a URL, never a shell word: the opener is executed
     // directly with one argument, so nothing in the address can become
     // a second command.
@@ -143,24 +222,44 @@ pub fn open_link(url: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod open_link_tests {
-    use super::open_link;
+    use super::{page_only, system_target};
 
-    /// The whitelist is the point: what an agent writes is text, and a
-    /// scheme this machine has registered can be an action rather than
-    /// a page. Only the refusals are asserted here — the allowed side
-    /// would open a browser on whoever ran the tests.
     #[test]
-    fn only_a_page_is_a_page() {
+    fn system_targets_keep_file_uris_out_of_page_views() {
         for url in [
-            "file:///etc/passwd",
+            "file:///etc/a%20b.txt",
             "FILE:///etc/passwd",
+            "file://server/share/a.txt",
+            "file:///C:/Work/a.txt",
+            "file://[::1]/share/a.txt",
+        ] {
+            assert!(system_target(url).is_ok(), "system must accept: {url}");
+            assert!(page_only(url).is_err(), "page must refuse: {url}");
+        }
+        for url in ["http://localhost:4321/a", "https://example.com/a"] {
+            assert!(system_target(url).is_ok());
+            assert!(page_only(url).is_ok());
+        }
+    }
+
+    #[test]
+    fn system_target_validation_never_opens_or_guesses_another_scheme() {
+        for url in [
             "mailto:someone@example.com",
             "javascript:alert(1)",
             "vscode://file/etc/passwd",
             "/etc/passwd",
             "",
+            "file:relative",
+            "file://server",
+            "file://user@server/share/a",
+            "file://server:80/share/a",
+            "file:///a%",
+            "file:///a%ZZ",
+            "file:///a b",
+            "file:///a\n",
         ] {
-            assert!(open_link(url).is_err(), "must refuse: {url}");
+            assert!(system_target(url).is_err(), "must refuse: {url}");
         }
     }
 }
@@ -410,5 +509,48 @@ mod loopback_tests {
             .await
             .unwrap_err();
         assert!(said.contains(&port.to_string()), "{said}");
+    }
+}
+
+#[cfg(test)]
+mod navigation_contract_tests {
+    use super::{PageNavigationPhase, PageNavigationState};
+
+    #[test]
+    fn native_identity_and_error_codes_survive_the_json_boundary() {
+        let value = serde_json::json!({
+            "tab":"tab", "view":"18446744073709551615", "navigation":"9007199254740993",
+            "revision":"9007199254740994", "phase":"failed", "estimate":null,
+            "requested_url":"https://requested.example", "url":"https://actual.example",
+            "exit":"home", "proxied":true,
+            "error":{"domain":"NSURLErrorDomain","code":"-9223372036854775808",
+                "description":"连接中断", "url":"https://failed.example",
+                "underlying":[], "truncated":false}
+        });
+        let state: PageNavigationState = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(state.phase, PageNavigationPhase::Failed);
+        assert_eq!(serde_json::to_value(state).unwrap(), value);
+        assert_eq!(
+            serde_json::to_value(PageNavigationPhase::Settled).unwrap(),
+            "settled"
+        );
+    }
+
+    #[test]
+    fn the_http_skin_has_no_native_page_snapshot_or_node_work() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        // This path must not be opened or created just to report native absence.
+        let root = std::path::Path::new("/does-not-exist/khor-native-page-state");
+        assert_eq!(
+            crate::api::answer(&rt, root, "page_state", &serde_json::json!({"tab":"tab"})).unwrap(),
+            "null"
+        );
+        for invalid in [
+            serde_json::json!({}),
+            serde_json::json!({"tab":42}),
+            serde_json::json!({"tab":null}),
+        ] {
+            assert!(crate::api::answer(&rt, root, "page_state", &invalid).is_err());
+        }
     }
 }

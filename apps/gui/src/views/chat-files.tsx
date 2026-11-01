@@ -34,7 +34,7 @@ import { fileManagerLabel } from "@/lib/file-actions";
 // on (Finder on the Mac, the system's share sheet on a phone).
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { chatPut, chatPutPaths, fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
+import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { PathCut } from "@/components/PathCut";
@@ -89,7 +89,10 @@ async function base64Of(f: File): Promise<string> {
 
 /** `into`: the directory on the conversation's machine the files go
     to, as chosen when each is added; `null` is its receive location. */
-export function usePendingFiles(id: string, into: string | null = null) {
+export function usePendingFiles(upload: {
+  put: (file: File, into: string | null) => Promise<string>;
+  putPaths: (paths: string[], into: string | null) => Promise<string[]>;
+}, into: string | null = null) {
   const [items, setItems] = useState<Pending[]>([]);
   const seq = useRef(0);
   const mounted = useRef(true);
@@ -126,7 +129,7 @@ export function usePendingFiles(id: string, into: string | null = null) {
       if (picture && f.size <= INLINE_MAX) {
         void base64Of(f).then((b) => patch(key, { inline: [f.type, b] }));
       }
-      chatPut(id, f, into).then(
+      upload.put(f, into).then(
         (path) => patch(key, { path }),
         (e) => patch(key, { error: why(e) }),
       );
@@ -140,7 +143,7 @@ export function usePendingFiles(id: string, into: string | null = null) {
       ...now,
       ...paths.map((p, i) => ({ key: keys[i], name: baseName(p), size: null, thumb: null, inline: null, path: null, error: null })),
     ]);
-    chatPutPaths(id, paths, into).then(
+    upload.putPaths(paths, into).then(
       (landed) => landed.forEach((path, i) => patch(keys[i], { path })),
       (e) => keys.forEach((k) => patch(k, { error: why(e) })),
     );

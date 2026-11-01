@@ -1024,6 +1024,7 @@ const RELAY_HEAD_START: Duration = Duration::from_millis(1500);
 /// pause cannot take every thread this one has. QUIC's own stream limit
 /// (100 open bidirectional streams) is what holds the asker beyond it.
 const STREAMS_AT_ONCE: usize = 32;
+pub(crate) const CONTENT_RESPONSES: usize = 32;
 
 /// How long a pairing ticket can be used after it is minted.
 ///
@@ -2224,6 +2225,7 @@ impl Node {
         // share it, including a GUI request falling back to this process.
         crate::khor_agent::runtime::seal(node.root(), false)?;
         drop(handoffs);
+        node.watches.shutdown().await;
         ep.close().await;
         services.abort_all();
         // Aborted handlers release their API admissions. Their separately
@@ -2254,7 +2256,7 @@ impl Node {
     }
 
     async fn handle_handoff(
-        &self,
+        self: &std::sync::Arc<Self>,
         mut stream: tokio::net::TcpStream,
         ep: &iroh::Endpoint,
         cookie: &str,
@@ -2266,15 +2268,34 @@ impl Node {
             .read_to_end(&mut bytes)
             .await
             .map_err(msg::handoff_unreadable)?;
-        let reply = match proto::decode::<ipc::Handoff>(&bytes) {
-            Ok(h) if h.cookie == cookie => self.run_handoff_within(ep, h.op).await,
-            Ok(_) => ipc::Reply::Refused {
-                why: msg::handoff_wrong_cookie().into(),
-            },
-            Err(e) => ipc::Reply::Refused { why: e },
+        let handoff = proto::decode::<ipc::Handoff>(&bytes).and_then(|handoff| {
+            if handoff.cookie != cookie {
+                return Err(msg::handoff_wrong_cookie().into());
+            }
+            ipc::validate_handoff(&handoff, bytes.len())?;
+            Ok(handoff)
+        });
+        // Declared before payloads so the owner outlives their buffers on drop.
+        let content_response = match &handoff {
+            Ok(handoff) if matches!(&handoff.op, ipc::Op::ContentRead {
+                action: crate::session_content::remote::Action::Window { .. }
+                    | crate::session_content::remote::Action::Record { .. }
+            }) => self.content_response_permit().map(Some),
+            _ => Ok(None),
         };
+        let reply = match (handoff, &content_response) {
+            (Ok(handoff), Ok(permit)) => self.run_handoff_within(ep, handoff.op, permit.clone()).await,
+            (Err(why), _) => ipc::Reply::Refused { why },
+            (_, Err(why)) => ipc::Reply::Refused { why: why.clone() },
+        };
+        let frame = proto::encode(&reply)?;
+        ipc::validate_reply(&reply, frame.len())?;
+        #[cfg(test)]
+        if matches!(&content_response, Ok(Some(_))) {
+            crate::session_content::wire_tests::pause_response(self.root()).await;
+        }
         stream
-            .write_all(&proto::encode(&reply)?)
+            .write_all(&frame)
             .await
             .map_err(msg::cant_reply)?;
         stream.shutdown().await.map_err(msg::cant_close_stream)?;
@@ -2286,10 +2307,11 @@ impl Node {
     /// reaches a caller that is about to stop waiting, and **named in the
     /// log** — a stuck op is a fault in something this serve talks to,
     /// and the log is where somebody goes looking for which.
-    async fn run_handoff_within(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+    async fn run_handoff_within(self: &std::sync::Arc<Self>, ep: &iroh::Endpoint, op: ipc::Op,
+        response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
         let (name, deadline) = (op.name(), op.deadline());
         let mine = deadline.saturating_sub(Duration::from_millis(500));
-        match tokio::time::timeout(mine, self.run_handoff(ep, op)).await {
+        match tokio::time::timeout(mine, self.run_handoff(ep, op, response)).await {
             Ok(reply) => reply,
             Err(_) => {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
@@ -2305,8 +2327,15 @@ impl Node {
         }
     }
 
-    async fn run_handoff(&self, ep: &iroh::Endpoint, op: ipc::Op) -> ipc::Reply {
+    async fn run_handoff(self: &std::sync::Arc<Self>, ep: &iroh::Endpoint, op: ipc::Op,
+        response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
         match op {
+            ipc::Op::ContentRead { action } => {
+                match self.content_read_with(ep, action, response).await {
+                    Ok(reply) => ipc::Reply::ContentRead { reply },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::Pair { ticket } => {
                 // Routed pairing reports the serve's own addresses: they
                 // outlive this exchange, unlike a one-shot endpoint's.
@@ -2458,6 +2487,18 @@ impl Node {
                     landed: Vec::new(),
                 }
             }
+            ipc::Op::SessionRecovery { home, id, observation } => match self.session_recovery_with(ep, home, &id, observation).await {
+                Ok(value) => ipc::Reply::SessionRecovery { value },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::RecoverSession { home, id, expected_run, token, observation } => match self.recover_session_with(ep, home, &id, expected_run.as_deref(), token, observation).await {
+                Ok(value) => ipc::Reply::RecoverSession { value },
+                Err(why) => ipc::Reply::Refused { why },
+            },
+            ipc::Op::NewShellRun { home, id, expected_run, token, cwd } => match self.new_shell_run_with(ep, home, &id, expected_run.as_deref(), token, cwd.as_deref()).await {
+                Ok(value) => ipc::Reply::NewShellRun { value },
+                Err(why) => ipc::Reply::Refused { why },
+            },
             ipc::Op::OpenShellOn { machine, start } => {
                 match self.open_shell_on_with(ep, &machine, start).await {
                     Ok(id) => ipc::Reply::OpenedOn { session: id.0 },
@@ -2577,24 +2618,43 @@ impl Node {
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
-            ipc::Op::WatchOn {
-                machine,
-                dirs,
-                since,
+            ipc::Op::WatchBegin { machine, scopes } => {
+                match self.watch_begin_with(ep, &machine, scopes) {
+                    Ok(opened) => ipc::Reply::WatchOpened { opened },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::WatchWait {
+                machine_id,
+                id,
+                cursor,
                 wait_ms,
-            } => match self
-                .watch_with(
-                    ep,
-                    &machine,
-                    &dirs,
-                    since,
-                    Duration::from_millis(wait_ms).min(ipc::WATCH_WAIT),
-                )
-                .await
-            {
-                Ok(changes) => ipc::Reply::DirsChanged { changes },
-                Err(why) => ipc::Reply::Refused { why },
-            },
+            } => {
+                let result = async {
+                    let machine_id = crate::device_id_from_hex(&machine_id)?.hex();
+                    self.watches
+                        .wait(
+                            &machine_id,
+                            &id,
+                            cursor.as_deref(),
+                            Duration::from_millis(u64::from(wait_ms)).min(ipc::WATCH_WAIT),
+                        )
+                        .await
+                }
+                .await;
+                match result {
+                    Ok(batch) => ipc::Reply::WatchChanged { batch },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::WatchLeave { machine_id, id } => {
+                let result = crate::device_id_from_hex(&machine_id)
+                    .and_then(|machine| self.watches.leave(&machine.hex(), &id));
+                match result {
+                    Ok(()) => ipc::Reply::WatchLeft,
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
             ipc::Op::CarryIn { carrier } => match self.carry_hosted(&carrier).await {
                 Ok((addr, cookie)) => ipc::Reply::Piping { addr, cookie },
                 Err(why) => ipc::Reply::Refused { why },
@@ -3826,7 +3886,8 @@ impl Node {
             let (node, ep, remote, mut done) =
                 (self.clone(), ep.clone(), remote.clone(), done.clone());
             tokio::spawn(async move {
-                let _seat = seat;
+                let mut seat = Some(seat);
+                let mut content_response = None;
                 let early = recv.is_0rtt();
                 let Ok(bytes) = recv.read_to_end(MAX_FRAME).await else {
                     return;
@@ -3834,7 +3895,7 @@ impl Node {
                 // **A watch keeps its stream** (`crate::watch`): answered
                 // as it goes, not once — through the same gate as every
                 // other request.
-                if let Ok(Request::Watch { dirs }) = proto::question(&bytes) {
+                if let Ok(Request::Watch { scope }) = proto::question(&bytes) {
                     if early && *done.borrow() != Some(true) {
                         while done.borrow().is_none() {
                             if done.changed().await.is_err() {
@@ -3845,8 +3906,14 @@ impl Node {
                             return;
                         }
                     }
-                    match node.admit(&remote) {
-                        Ok(()) => crate::watch::serve(dirs, send).await,
+                    let admitted = node.admit(&remote).and_then(|()| {
+                        crate::watch::Subscription::local(&node, remote.clone(), scope)
+                    });
+                    match admitted {
+                        Ok(subscription) => {
+                            drop(seat.take());
+                            subscription.serve(send).await;
+                        }
                         Err(why) => {
                             if let Ok(frame) = proto::encode(&Response::Refused { why }) {
                                 let mut out = (frame.len() as u32).to_be_bytes().to_vec();
@@ -3872,17 +3939,35 @@ impl Node {
                                 return;
                             }
                         }
-                        #[cfg(test)]
-                        let response = node.dispatch_wire(&remote, req, &ep, &wire_tag).await;
-                        #[cfg(not(test))]
-                        let response = node.dispatch(&remote, req, &ep).await;
-                        response
+                        let admission = if matches!(&req, Request::ContentRead {
+                            action: crate::session_content::remote::Action::Window { .. }
+                                | crate::session_content::remote::Action::Record { .. }
+                        }) && node.admit(&remote).is_ok() {
+                            node.content_response_permit().map(|permit| {
+                                content_response = Some(permit);
+                                drop(seat.take());
+                            })
+                        } else { Ok(()) };
+                        match admission {
+                            Err(why) => Response::Refused { why },
+                            Ok(()) => {
+                                #[cfg(test)]
+                                let response = node.dispatch_wire(&remote, req, &ep, &wire_tag, content_response.clone()).await;
+                                #[cfg(not(test))]
+                                let response = node.dispatch(&remote, req, &ep, content_response.clone()).await;
+                                response
+                            }
+                        }
                     }
                     Err(e) => Response::Refused { why: e },
                 };
                 let Ok(frame) = proto::encode_response(&resp) else {
                     return;
                 };
+                #[cfg(test)]
+                if content_response.is_some() {
+                    crate::session_content::wire_tests::pause_response(node.root()).await;
+                }
                 if send.write_all(&frame).await.is_ok() {
                     #[cfg(test)]
                     documents::flow_tests::reply_written(&wire_tag, &resp);
@@ -3893,11 +3978,12 @@ impl Node {
         Ok(())
     }
 
-    async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint) -> Response {
+    async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint,
+        response: Option<crate::session_content::remote::ResponsePermit>) -> Response {
         #[cfg(test)]
-        let result = self.dispatch_inner(remote, req, ep, None).await;
+        let result = self.dispatch_inner(remote, req, ep, None, response).await;
         #[cfg(not(test))]
-        let result = self.dispatch_inner(remote, req, ep).await;
+        let result = self.dispatch_inner(remote, req, ep, response).await;
         match result {
             Ok(resp) => resp,
             Err(why) => Response::Refused { why },
@@ -3911,8 +3997,9 @@ impl Node {
         req: Request,
         ep: &iroh::Endpoint,
         tag: &documents::flow_tests::FrameTag,
+        response: Option<crate::session_content::remote::ResponsePermit>,
     ) -> Response {
-        match self.dispatch_inner(remote, req, ep, Some(tag)).await {
+        match self.dispatch_inner(remote, req, ep, Some(tag), response).await {
             Ok(response) => response,
             Err(why) => Response::Refused { why },
         }
@@ -3924,6 +4011,7 @@ impl Node {
         req: Request,
         ep: &iroh::Endpoint,
         #[cfg(test)] wire_tag: Option<&documents::flow_tests::FrameTag>,
+        response: Option<crate::session_content::remote::ResponsePermit>,
     ) -> Result<Response, String> {
         // **One gate, before any arm** (docs/CONNECT.md 名单是信任的唯一
         // 出处): in the table, and on the roster. `Pair` is the one
@@ -3951,6 +4039,12 @@ impl Node {
             }
         }
         match req {
+            Request::ContentRead { action } => {
+                let reader = crate::session_content::requests::Reader::Peer(
+                    crate::device_id_from_hex(remote)?
+                );
+                Ok(Response::ContentRead { reply: self.content_read_here(reader, action, response).await? })
+            }
             Request::Pair { action } => {
                 let response = self.answer_pair(remote, action).await?;
                 self.nudge(ep, false);
@@ -4423,6 +4517,9 @@ impl Node {
                     truncated,
                 })
             }
+            Request::SessionRecovery { home, id, observation } => Ok(Response::SessionRecovery { value: self.session_recovery_here(home, &id, observation.as_ref())? }),
+            Request::RecoverSession { home, id, expected_run, token, observation } => Ok(Response::RecoverSession { value: self.recover_session_here(home, &id, expected_run.as_deref(), token, observation.as_ref()).await? }),
+            Request::NewShellRun { home, id, expected_run, token, cwd } => Ok(Response::NewShellRun { value: self.new_shell_run_here(home, &id, expected_run.as_deref(), token, cwd.as_deref()).await? }),
             Request::OpenShellOnce { start } => {
                 let id = self.open_shell_here(start).await?;
                 Ok(Response::Opened { session: id.0 })
@@ -5465,6 +5562,125 @@ impl Node {
         outcome
     }
 
+    pub(crate) fn recovery_home(home_hex: &str) -> Result<khor_core::DeviceId, String> {
+        let home = crate::device_id_from_hex(home_hex)?;
+        if home.hex() != home_hex { return Err("execution home must be its exact lowercase device ID".into()); }
+        Ok(home)
+    }
+    fn recovery_offer_reply(home: khor_core::DeviceId, id: &crate::SessionId, value: khor_core::recovery::SessionRecovery) -> Result<khor_core::recovery::SessionRecovery, String> {
+        if value.home != home || &value.id != id { return Err("recovery offer answered for another execution home or SID".into()); }
+        Ok(value)
+    }
+    fn recovered_reply(id: &crate::SessionId, value: khor_core::recovery::RecoveryResult) -> Result<khor_core::recovery::RecoveryResult, String> {
+        use khor_core::recovery::RecoveryResult;
+        match &value {
+            RecoveryResult::Opened { id: actual, .. } | RecoveryResult::Join { id: actual, .. }
+                | RecoveryResult::Pending { id: actual, .. } | RecoveryResult::Unknown { id: actual, .. } if actual != id => return Err("recovery result answered for another SID".into()),
+            _ => {}
+        }
+        Ok(value)
+    }
+    fn shell_run_reply(id: &crate::SessionId, value: khor_core::recovery::ShellRunResult) -> Result<khor_core::recovery::ShellRunResult, String> {
+        use khor_core::recovery::ShellRunResult;
+        match &value {
+            ShellRunResult::Opened { id: next, previous } if previous != id || next == id => return Err("new Shell result has another previous SID".into()),
+            ShellRunResult::DirectoryRequired { id: actual } | ShellRunResult::Pending { id: actual, .. } | ShellRunResult::Unknown { id: actual, .. } if actual != id => return Err("new Shell result answered for another SID".into()),
+            _ => {}
+        }
+        Ok(value)
+    }
+    fn recovery_peer(&self, home: khor_core::DeviceId) -> Result<DeviceInfo, String> {
+        let devices = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(&khor_sync::devices::devices_dir(self.root()), self.peer)?;
+        devices.all().into_iter().find(|device| device.id == home.hex()).ok_or("execution home is not in this device table".into())
+    }
+
+    /// Imported observation metadata may live only on this reader. Forward its
+    /// original reference as data; the execution home re-qualifies the source.
+    fn recovery_reference(&self, home: khor_core::DeviceId, id: &crate::SessionId) -> Result<Option<khor_core::ObservationRef>, String> {
+        if !id.0.starts_with("observe/") { return Ok(None); }
+        let record = crate::session_content::Observation::read(self.root(), id)?;
+        let reference = record.map(|record| record.reference).or_else(|| self.cached_peer_rows_readonly().into_iter()
+            .find_map(|(_, _, row)| (row.id == *id && row.home == home).then_some(row.observation).flatten()));
+        if let Some(reference) = reference.as_ref() { crate::session_content::Observation::validate_reference(id, home, reference)?; }
+        Ok(reference)
+    }
+
+    pub async fn session_recovery_on(&self, home_hex: &str, id: &crate::SessionId) -> Result<khor_core::recovery::SessionRecovery, String> {
+        let home = Self::recovery_home(home_hex)?;
+        let observation = self.recovery_reference(home, id)?;
+        if let Some(reply) = self.via_serve(ipc::Op::SessionRecovery { home, id: id.clone(), observation: observation.clone() }).await {
+            return match reply? { ipc::Reply::SessionRecovery { value } => Self::recovery_offer_reply(home, id, value), ipc::Reply::Refused { why } => Err(why), other => Err(msg::serve_non_answer(format_args!("{other:?}"))) };
+        }
+        if home == self.device() { return self.session_recovery_here(home, id, observation.as_ref()); }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|error| error.to_string())?;
+        let result = self.session_recovery_with(&ep, home, id, observation).await;
+        ep.close().await;
+        result
+    }
+    async fn session_recovery_with(&self, ep: &iroh::Endpoint, home: khor_core::DeviceId, id: &crate::SessionId, observation: Option<khor_core::ObservationRef>) -> Result<khor_core::recovery::SessionRecovery, String> {
+        if home == self.device() { return self.session_recovery_here(home, id, observation.as_ref()); }
+        let device = self.recovery_peer(home)?;
+        match self.ask_on(ep, &device, &Request::SessionRecovery { home, id: id.clone(), observation }).await {
+            Ok(Response::SessionRecovery { value }) => Self::recovery_offer_reply(home, id, value),
+            Ok(Response::Refused { why }) => Err(why),
+            Ok(other) => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            Err(error) => Ok(khor_core::recovery::SessionRecovery {
+                    id: id.clone(), home, current_run: None, next_attempt_epoch: None,
+                    execution: khor_core::recovery::RecoveryExecution::Offline,
+                    action: khor_core::recovery::RecoveryAction::None, native: None, previous: None, reason: Some(error),
+                }),
+        }
+    }
+
+    pub async fn recover_session_on(&self, home_hex: &str, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken) -> Result<khor_core::recovery::RecoveryResult, String> {
+        let home = match Self::recovery_home(home_hex) { Ok(home) => home, Err(reason) => return Ok(khor_core::recovery::RecoveryResult::Refused { reason }) };
+        if let Err(reason) = Self::check_recovery_token(&token) { return Ok(khor_core::recovery::RecoveryResult::Refused { reason }); }
+        let observation = self.recovery_reference(home, id)?;
+        if let Some(reply) = self.via_serve(ipc::Op::RecoverSession { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token: token.clone(), observation: observation.clone() }).await {
+            return match reply { Ok(ipc::Reply::RecoverSession { value }) => Self::recovered_reply(id, value), Ok(ipc::Reply::Refused { why }) => Err(why), Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))), Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown { id: id.clone(), attempt_epoch: token.epoch.clone(), reason: format!("resident-outcome-unknown: {error}") }) };
+        }
+        if home == self.device() { return self.recover_session_here(home, id, expected_run, token, observation.as_ref()).await; }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|error| error.to_string())?;
+        let result = self.recover_session_with(&ep, home, id, expected_run, token, observation).await;
+        ep.close().await;
+        result
+    }
+    async fn recover_session_with(&self, ep: &iroh::Endpoint, home: khor_core::DeviceId, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef>) -> Result<khor_core::recovery::RecoveryResult, String> {
+        if home == self.device() { return self.recover_session_here(home, id, expected_run, token, observation.as_ref()).await; }
+        let device = self.recovery_peer(home)?;
+        let epoch = token.epoch.clone();
+        match self.ask_on(ep, &device, &Request::RecoverSession { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token, observation }).await {
+            Ok(Response::RecoverSession { value }) => Self::recovered_reply(id, value),
+            Ok(Response::Refused { why }) => Err(why),
+            Ok(other) => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown { id: id.clone(), attempt_epoch: epoch, reason: format!("transport-outcome-unknown: {error}") }),
+        }
+    }
+
+    pub async fn new_shell_run_on(&self, home_hex: &str, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, cwd: Option<&str>) -> Result<khor_core::recovery::ShellRunResult, String> {
+        let home = match Self::recovery_home(home_hex) { Ok(home) => home, Err(reason) => return Ok(khor_core::recovery::ShellRunResult::Refused { reason }) };
+        if let Err(reason) = Self::check_recovery_token(&token) { return Ok(khor_core::recovery::ShellRunResult::Refused { reason }); }
+        if let Some(reply) = self.via_serve(ipc::Op::NewShellRun { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token: token.clone(), cwd: cwd.map(str::to_owned) }).await {
+            return match reply { Ok(ipc::Reply::NewShellRun { value }) => Self::shell_run_reply(id, value), Ok(ipc::Reply::Refused { why }) => Err(why), Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))), Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown { id: id.clone(), attempt_epoch: token.epoch.clone(), reason: format!("resident-outcome-unknown: {error}") }) };
+        }
+        if home == self.device() { return self.new_shell_run_here(home, id, expected_run, token, cwd).await; }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|error| error.to_string())?;
+        let result = self.new_shell_run_with(&ep, home, id, expected_run, token, cwd).await;
+        ep.close().await;
+        result
+    }
+    async fn new_shell_run_with(&self, ep: &iroh::Endpoint, home: khor_core::DeviceId, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, cwd: Option<&str>) -> Result<khor_core::recovery::ShellRunResult, String> {
+        if home == self.device() { return self.new_shell_run_here(home, id, expected_run, token, cwd).await; }
+        let device = self.recovery_peer(home)?;
+        let epoch = token.epoch.clone();
+        match self.ask_on(ep, &device, &Request::NewShellRun { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token, cwd: cwd.map(str::to_owned) }).await {
+            Ok(Response::NewShellRun { value }) => Self::shell_run_reply(id, value),
+            Ok(Response::Refused { why }) => Err(why),
+            Ok(other) => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+            Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown { id: id.clone(), attempt_epoch: epoch, reason: format!("transport-outcome-unknown: {error}") }),
+        }
+    }
+
     /// Runs the startup exactly once on the target's own shell and home.
     pub async fn open_shell_on(
         &self,
@@ -5514,6 +5730,14 @@ impl Node {
         &self,
         start: crate::shell_start::ShellStart,
     ) -> Result<crate::SessionId, String> {
+        self.open_shell_here_from(start, None, None).await
+    }
+    pub(crate) async fn open_shell_here_from(
+        &self,
+        start: crate::shell_start::ShellStart,
+        ancestry: Option<crate::live::ShellRun>,
+        selected_shell: Option<String>,
+    ) -> Result<crate::SessionId, String> {
         self.refuse_unless_hosting()?;
         start.validate()?;
         let _held = crate::once::lock(&start.token).await;
@@ -5535,7 +5759,7 @@ impl Node {
         }
         let live = self.live.clone();
         let id = tokio::task::spawn_blocking(move || {
-            let shell = crate::shell_start::default_shell();
+            let shell = selected_shell.unwrap_or_else(crate::shell_start::default_shell);
             let title = if start.title.trim().is_empty() {
                 std::path::Path::new(&shell)
                     .file_name()
@@ -5553,6 +5777,7 @@ impl Node {
                 Self::category_of_started(crate::kind::SHELL),
             )?;
             live.learn_place(&id, &cwd)?;
+            if let Some(ancestry) = ancestry { live.record_shell_ancestry(&id, ancestry)?; }
             let dir = live
                 .dir_of(&id)
                 .ok_or_else(|| msg::not_a_session_id(&id.0))?;
@@ -7113,98 +7338,95 @@ impl Node {
         }
     }
 
-    /// The **first slice** of a file on any machine, for looking at it
-    /// rather than taking it: `(total, at_ms, bytes)`.
-    ///
-    /// **One slice, never a loop.** `pull_path` loops because it is
-    /// spending this machine's disk on a whole file; this is spending a
-    /// screen on as much as fits, and one [`proto::SLICE`] is 256 KB.
-    /// Measured on this repo's neighbours (1525 tracked files): 98% are
-    /// under that, and of the 31 that are not, 27 are png/pdf/icns/mp4
-    /// — files no code view was ever going to paint. Four text files in
-    /// 1525 are cut, and `total` is what says so.
-    ///
-    /// So the caller never has to guess: `bytes.len() < total` means
-    /// there is more, and what it does about that is a question about a
-    /// screen, which is why the limit is not decided here.
-    ///
-    /// A satellite's file does not come through this road — the sponsor
-    /// serves those off a staging copy with `SatFetchPath`, which is
-    /// the account already in docs/handoff/001.md.
-    /// **Which of these directories on `machine` changed since `since`**
-    /// (round NET-4, `crate::watch`), held up to `wait` (at most
-    /// `ipc::WATCH_WAIT`) for one to. Only a resident watches: with none, and for this machine
-    /// itself or a satellite (a tree here is asked off this disk; a
-    /// satellite has no watcher of khor's), the answer is `unavailable`,
-    /// and the face asks the tree as before.
-    pub async fn dirs_changed(
+    /// Open a resident-owned observation. Only this step resolves a display
+    /// name; subsequent operations use the stable machine id in its answer.
+    pub async fn dirs_begin(
         &self,
         machine: &str,
-        dirs: &[String],
-        since: u64,
-        wait: Duration,
-    ) -> Result<crate::watch::DirChanges, String> {
-        let unavailable = || crate::watch::DirChanges {
-            seq: since,
-            dirs: dirs.to_vec(),
-            unavailable: true,
-            unreported: Vec::new(),
-        };
-        if machine.is_empty() || machine == self.name() {
-            return Ok(unavailable());
-        }
-        match self
-            .via_serve(ipc::Op::WatchOn {
-                machine: machine.to_owned(),
-                dirs: dirs.to_vec(),
-                since,
-                wait_ms: wait.as_millis() as u64,
+        scopes: Vec<crate::watch::Scope>,
+    ) -> Result<crate::watch::Opened, String> {
+        let reply = self
+            .via_serve(ipc::Op::WatchBegin {
+                machine: machine.into(),
+                scopes,
             })
             .await
-        {
-            Some(reply) => match reply? {
-                ipc::Reply::DirsChanged { changes } => Ok(changes),
-                ipc::Reply::Refused { why } => Err(why),
-                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
-            },
-            None => Ok(unavailable()),
+            .ok_or("Directory watching requires a live resident")??;
+        match reply {
+            ipc::Reply::WatchOpened { opened } => Ok(opened),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
         }
     }
 
-    async fn watch_with(
+    pub async fn dirs_wait(
         &self,
+        machine_id: &str,
+        id: &str,
+        cursor: Option<&str>,
+        wait_ms: u32,
+    ) -> Result<crate::watch::Batch, String> {
+        let machine_id = crate::device_id_from_hex(machine_id)?.hex();
+        let reply = self
+            .via_serve(ipc::Op::WatchWait {
+                machine_id,
+                id: id.into(),
+                cursor: cursor.map(str::to_owned),
+                wait_ms,
+            })
+            .await
+            .ok_or("Directory watching requires a live resident")??;
+        match reply {
+            ipc::Reply::WatchChanged { batch } => Ok(batch),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    pub async fn dirs_leave(&self, machine_id: &str, id: &str) -> Result<(), String> {
+        let machine_id = crate::device_id_from_hex(machine_id)?.hex();
+        let reply = self
+            .via_serve(ipc::Op::WatchLeave {
+                machine_id,
+                id: id.into(),
+            })
+            .await
+            .ok_or("Directory watching requires a live resident")??;
+        match reply {
+            ipc::Reply::WatchLeft => Ok(()),
+            ipc::Reply::Refused { why } => Err(why),
+            other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    fn watch_begin_with(
+        self: &std::sync::Arc<Self>,
         ep: &iroh::Endpoint,
         machine: &str,
-        dirs: &[String],
-        since: u64,
-        wait: Duration,
-    ) -> Result<crate::watch::DirChanges, String> {
-        let (channel, home) = self.resolve(machine)?;
-        let target = self
-            .devices_loaded()?
-            .doc
-            .by_name(&channel)
-            .ok_or_else(|| msg::machine_left_table(&channel))?;
-        if home == self.device() || target.sponsor.is_some() {
-            return Ok(crate::watch::DirChanges {
-                seq: since,
-                dirs: dirs.to_vec(),
-                unavailable: true,
-                unreported: Vec::new(),
-            });
-        }
-        let line = self
-            .line_to(ep, &target, wires::Proto::Main)
-            .await
-            .map_err(|e| unreached_words(&target.name, e))?;
-        let watches = self.watches.clone();
-        let id = target.id.clone();
-        Ok(self
-            .watches
-            .wait(&target.id, dirs, since, wait, |n, fresh| {
-                tokio::spawn(crate::watch::run(watches, id, n, line.conn.clone(), fresh))
-            })
-            .await)
+        scopes: Vec<crate::watch::Scope>,
+    ) -> Result<crate::watch::Opened, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        let route = if home == self.device() {
+            crate::watch::Route::Here
+        } else {
+            let target = self
+                .devices_loaded()?
+                .doc
+                .by_name(&channel)
+                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            if target.sponsor.is_some() {
+                crate::watch::Route::Unavailable(
+                    "This machine cannot observe its hosted filesystem".into(),
+                )
+            } else {
+                crate::watch::Route::Peer {
+                    node: std::sync::Arc::downgrade(self),
+                    endpoint: ep.clone(),
+                    target,
+                }
+            }
+        };
+        self.watches.begin(home.hex(), scopes, route)
     }
 
     /// What a file on any machine is now, without its bytes
@@ -11435,7 +11657,7 @@ impl Node {
                 .filter_map(|(kind, held)| Some((reading_request(&kind)?, kind, held)))
                 .map(|(req, kind, held)| async move {
                     let answer =
-                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep)))
+                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep, None)))
                             .await;
                     (kind, held, answer)
                 })
@@ -11601,17 +11823,121 @@ impl Node {
         self.endpoint_file().ok().flatten().map(|f| f.pid)
     }
 
-    fn endpoint_file(&self) -> Result<Option<EndpointFile>, String> {
-        let path = self.root().join(".khor").join("endpoint.json");
-        let Ok(text) = fs::read_to_string(&path) else {
-            return Ok(None);
-        };
-        let file: EndpointFile = serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
-        if pid_alive(file.pid) {
-            Ok(Some(file))
-        } else {
-            Ok(None)
+    fn content_response_permit(&self) -> Result<crate::session_content::remote::ResponsePermit, String> {
+        self.content_responses.clone().try_acquire_owned().map(std::sync::Arc::new)
+            .map_err(|_| "too many buffered content responses".into())
+    }
+
+    /// Independent content reads never pass through session reach/attach.
+    pub async fn content_read(
+        &self,
+        action: crate::session_content::remote::Action,
+    ) -> Result<crate::session_content::remote::Reply, String> {
+        use crate::session_content::requests;
+        action.validate()?;
+        if action.home() == self.device() {
+            return self.content_read_here(requests::Reader::local(self.root()), action, None).await;
         }
+        if let Some(reply) = self.via_serve(ipc::Op::ContentRead { action: action.clone() }).await {
+            return match reply? {
+                ipc::Reply::ContentRead { reply } => {
+                    reply.validate_for(&action)?;
+                    Ok(reply)
+                }
+                ipc::Reply::Refused { why } => Err(why),
+                _ => Err("resident returned another content reply".into()),
+            };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
+            .await.map_err(|error| error.to_string())?;
+        let answer = self.content_read_with(&ep, action, None).await;
+        ep.close().await;
+        answer
+    }
+
+    async fn content_read_with(
+        &self,
+        ep: &iroh::Endpoint,
+        action: crate::session_content::remote::Action,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> Result<crate::session_content::remote::Reply, String> {
+        use crate::session_content::requests;
+        action.validate()?;
+        let home = action.home();
+        if home == self.device() {
+            return self.content_read_here(requests::Reader::local(self.root()), action, response).await;
+        }
+        let device = self.devices()?.into_iter().find(|device| device.id == home.hex())
+            .ok_or("content home is no longer paired")?;
+        let request = Request::ContentRead { action: action.clone() };
+        match self.ask_on(ep, &device, &request).await? {
+            Response::ContentRead { reply } => {
+                reply.validate_for(&action)?;
+                Ok(reply)
+            }
+            Response::Refused { why } => Err(why),
+            _ => Err("peer returned another content reply".into()),
+        }
+    }
+
+    async fn content_read_here(
+        &self,
+        reader: crate::session_content::requests::Reader,
+        action: crate::session_content::remote::Action,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> Result<crate::session_content::remote::Reply, String> {
+        use crate::session_content::remote::{self, Action};
+        action.validate()?;
+        let (root, home) = (self.root().to_path_buf(), self.device());
+        let active = remote::admit_here(home, &reader, &action)?;
+        if matches!(action, Action::Begin { .. } | Action::Cancel { .. }) {
+            return remote::execute_here(&root, home, reader, action, active);
+        }
+        // Claim and move into the worker before yielding: cancellation of this await
+        // cannot release capacity while its blocking worker is still running.
+        let (reply, _response) = tokio::task::spawn_blocking(move || {
+            let reply = remote::execute_here(&root, home, reader, action, active)?;
+            // Payload precedes owner in the output, including an abandoned await.
+            Ok::<_, String>((reply, response))
+        }).await.map_err(|error| format!("content read worker failed: {error}"))??;
+        Ok(reply)
+    }
+
+    fn endpoint_file(&self) -> Result<Option<EndpointFile>, String> {
+        endpoint_file_at(self.root())
+    }
+}
+
+fn endpoint_file_at(root: &std::path::Path) -> Result<Option<EndpointFile>, String> {
+    let path = root.join(".khor").join("endpoint.json");
+    let Ok(text) = fs::read_to_string(&path) else {
+        return Ok(None);
+    };
+    let file: EndpointFile = serde_json::from_str(&text).map_err(msg::endpoint_file_garbled)?;
+    Ok(pid_alive(file.pid).then_some(file))
+}
+
+pub(crate) async fn content_on_resident(
+    root: &std::path::Path,
+    action: crate::session_content::remote::Action,
+) -> Result<crate::session_content::remote::Reply, String> {
+    action.validate()?;
+    let file = endpoint_file_at(root)?.ok_or("content resident is not available")?;
+    if file.ipc_port == 0 {
+        return Err("content resident has no handoff port".into());
+    }
+    let reply = ipc::call_refreshing(file.ipc_port, &file.ipc_cookie,
+        ipc::Op::ContentRead { action: action.clone() }, || {
+            let latest = endpoint_file_at(root).ok().flatten()?;
+            Some((latest.ipc_port, latest.ipc_cookie))
+        }).await?;
+    match reply {
+        ipc::Reply::ContentRead { reply } => {
+            reply.validate_for(&action)?;
+            Ok(reply)
+        }
+        ipc::Reply::Refused { why } => Err(why),
+        _ => Err("resident returned another content reply".into()),
     }
 }
 
@@ -12054,7 +12380,7 @@ async fn wait_for(job: &crate::road::Job) -> Result<(u64, Vec<String>), String> 
 }
 
 /// A dial's failure as the sentence a person reads.
-fn unreached_words(name: &str, e: DialFailure) -> String {
+pub(crate) fn unreached_words(name: &str, e: DialFailure) -> String {
     match e {
         DialFailure::TimedOut => msg::machine_unreachable_timeout(name),
         DialFailure::Refused(why) | DialFailure::Asleep(why) => msg::cant_reach_named(name, why),
@@ -12701,14 +13027,16 @@ mod rows_by_change {
 
     fn row(id: &str, command: &str) -> Session {
         Session {
+            observation: None,
+            can_control: false,
             id: SessionId(id.into()),
             kind: khor_core::Kind(khor_core::kind::SHELL.into()),
             title: id.into(),
             home: DeviceId([1; 32]),
-            state: khor_core::StateStamp {
+            state: Some(khor_core::StateStamp {
                 state: State::Busy,
                 at: khor_core::Millis(1),
-            },
+            }),
             unread: 0,
             place: None,
             mux: false,

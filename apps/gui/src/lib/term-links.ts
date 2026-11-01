@@ -14,6 +14,7 @@
 import type { IBufferLine, ILink, ILinkProvider, Terminal } from "@xterm/xterm";
 
 import { fetchLs } from "@/api";
+import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
 
 /** What a path link opens. */
 export type PathTarget = { path: string; dir: boolean; line: number | null; col: number | null };
@@ -114,6 +115,10 @@ function logical(term: Terminal, y: number): { text: string; at: Cell[]; first: 
       const c = line.getCell(x);
       if (!c) break;
       if (c.getWidth() === 0) continue;
+      // xterm moves a wide character to the next soft-wrapped row and
+      // clears the unused last cell to code 0. A typed space is code 32.
+      const next = x === term.cols - 1 ? b.getLine(row + 1) : undefined;
+      if (c.getCode() === 0 && next?.isWrapped && next.getCell(0)?.getWidth() === 2) continue;
       at[text.length] = { x, y: row };
       text += c.getChars() || " ";
     }
@@ -200,15 +205,15 @@ export async function pathsOn(
 
 /**
  * The provider, for a mouse: xterm asks for a line's links as the pointer
- * crosses it, underlines them, and a ⌘-click opens one (iTerm2's gesture,
- * as for URLs here). A finger has no hover to ask before a tap; the pane
+ * crosses it and underlines them. Activation carries the requested
+ * internal or client-system destination, as for URLs. A finger has no hover to ask before a tap; the pane
  * asks `pathsOn` at the tap itself.
  */
 export function pathLinks(
   term: Terminal,
   machine: string,
   cwdAt: (line: number) => string | undefined,
-  open: (target: PathTarget) => void,
+  open: (target: PathTarget, intent: LinkIntent) => void,
 ): ILinkProvider {
   return {
     provideLinks(y, done) {
@@ -218,7 +223,7 @@ export function pathLinks(
           text: f.text,
           decorations: { underline: true, pointerCursor: true },
           activate: (ev: MouseEvent) => {
-            if (ev.metaKey || ev.ctrlKey) open(f.target);
+            if(canActivateTerminalLink(ev,term))open(f.target,linkIntent(ev));
           },
         }));
         done(links.length ? links : undefined);

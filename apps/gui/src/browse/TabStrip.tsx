@@ -104,7 +104,7 @@ export type TabFace = {
       the corner is the kind; 2026-09-02:「标签页的标签头像应该和
       session列表一致」). A browsing tab has none and keeps the bare
       machine face. */
-  session?: { word: string; kind: string; category: string | null };
+  session?: { word: string | null; kind: string; category: string | null };
   /** A browsing page's kind mark on its machine's face (the redesign):
       the face says which machine, the mark that it is a page. */
   mark?: KindMark;
@@ -149,6 +149,7 @@ export type TabFace = {
       place this app uses the slope, because what it marks is exactly
       「this is not settled」. */
   preview?: boolean;
+  onPin?: () => void;
   /* ⚠️ 墓碑 (UX-34, 2026-10-06): `glyph` — what a file tab wore instead
      of a face — went with UX-32's WorkspacePane: a file tab's seat is the
      assembly (the machine's face, the file's kind as the mark) like every
@@ -893,6 +894,7 @@ export function TabStrip({
               <button
                 type="button"
                 data-tab-open={f.id}
+                onDoubleClick={f.onPin}
                 role={nested ? "tab" : undefined}
                 aria-selected={nested ? on : undefined}
                 tabIndex={nested ? (on ? 0 : -1) : undefined}
@@ -1351,7 +1353,7 @@ export function TabSwitcher({
               pinned: false,
               face: { machine: f.face },
               mark: f.session ? sessionKind(f.session.kind, f.session.category) : f.mark,
-              halo: f.session?.word,
+              halo: f.session?.word ?? undefined,
               title: (
                 <span data-tab-label data-tab-name className="block truncate">
                   {f.title ?? f.label}

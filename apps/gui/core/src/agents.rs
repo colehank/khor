@@ -1,6 +1,6 @@
-//! The two things about an ACP agent that only the command line could
-//! reach: **the shipped registry snapshot**, and **what one agent said
-//! it already has**.
+//! Registry facts, recorded ACP conversations, and explicit session recovery.
+//! Recovery reads and actions keep their stable execution home; a display
+//! label is never a route and reading an offer never starts a provider.
 //!
 //! # The three answers, and why they are an enum on the wire
 //!
@@ -37,7 +37,117 @@
 use serde::Serialize;
 use ts_rs::TS;
 
+use khor_core::SessionId;
+pub use khor_core::recovery::{
+    NativeRecovery, RecoveryAction, RecoveryExecution, RecoveryResult, RecoverySupport,
+    RecoveryToken, ShellRunResult,
+};
 use khor_node::Node;
+
+/// The App offer maps only the authoritative device identity to table hex.
+/// Other facts and results retain the one Node/Core shared serde contract.
+#[derive(Debug, Clone, Serialize, TS)]
+pub struct SessionRecovery {
+    pub id: SessionId,
+    pub home: String,
+    pub current_run: Option<String>,
+    pub next_attempt_epoch: Option<String>,
+    pub execution: RecoveryExecution,
+    pub action: RecoveryAction,
+    pub native: Option<NativeRecovery>,
+    pub previous: Option<SessionId>,
+    pub reason: Option<String>,
+}
+
+impl From<khor_core::recovery::SessionRecovery> for SessionRecovery {
+    fn from(offer: khor_core::recovery::SessionRecovery) -> Self {
+        Self {
+            id: offer.id,
+            home: offer.home.hex(),
+            current_run: offer.current_run,
+            next_attempt_epoch: offer.next_attempt_epoch,
+            execution: offer.execution,
+            action: offer.action,
+            native: offer.native,
+            previous: offer.previous,
+            reason: offer.reason,
+        }
+    }
+}
+
+/// Read-only: the existing Node route authenticates this exact execution home.
+pub async fn session_recovery(
+    root: &std::path::Path,
+    home_id: &str,
+    id: &str,
+) -> Result<SessionRecovery, String> {
+    let node = Node::open(root.to_path_buf())?;
+    let id = SessionId(id.to_owned());
+    let offer = node.session_recovery_on(home_id, &id).await?;
+    if offer.id != id || offer.home.hex() != home_id {
+        return Err("recovery offer changed its session or execution home".to_owned());
+    }
+    Ok(offer.into())
+}
+
+/// The caller's token is forwarded intact; only the execution owner admits it.
+pub async fn recover_session(
+    root: &std::path::Path,
+    home_id: &str,
+    id: &str,
+    expected_run: Option<&str>,
+    token: RecoveryToken,
+) -> Result<RecoveryResult, String> {
+    let node = Node::open(root.to_path_buf())?;
+    let id = SessionId(id.to_owned());
+    let result = node
+        .recover_session_on(home_id, &id, expected_run, token)
+        .await?;
+    let result_id = match &result {
+        RecoveryResult::Opened { id, .. }
+        | RecoveryResult::Join { id, .. }
+        | RecoveryResult::Pending { id, .. }
+        | RecoveryResult::Unknown { id, .. } => Some(id),
+        RecoveryResult::Unavailable { .. } | RecoveryResult::Refused { .. } => None,
+    };
+    if result_id.is_some_and(|actual| actual != &id) {
+        return Err("recovery reply changed its session identity".to_owned());
+    }
+    Ok(result)
+}
+
+/// A new shell retains the old SID only as previous; no command is replayed.
+pub async fn new_shell_run(
+    root: &std::path::Path,
+    home_id: &str,
+    id: &str,
+    expected_run: Option<&str>,
+    token: RecoveryToken,
+    cwd: Option<&str>,
+) -> Result<ShellRunResult, String> {
+    let node = Node::open(root.to_path_buf())?;
+    let id = SessionId(id.to_owned());
+    let result = node
+        .new_shell_run_on(home_id, &id, expected_run, token, cwd)
+        .await?;
+    match &result {
+        ShellRunResult::Opened {
+            id: fresh,
+            previous,
+        } if fresh == &id || previous != &id => {
+            return Err("new shell reply lost its previous session identity".to_owned());
+        }
+        ShellRunResult::DirectoryRequired { id: actual }
+        | ShellRunResult::Pending { id: actual, .. }
+        | ShellRunResult::Unknown { id: actual, .. }
+            if actual != &id =>
+        {
+            return Err("new shell reply changed its source session identity".to_owned());
+        }
+        _ => {}
+    }
+    Ok(result)
+}
 
 /// One entry of the shipped ACP registry snapshot
 /// (`khor_sync::agents::registry`).
@@ -95,18 +205,24 @@ pub enum AgentSaid {
     /// implemented it on 2026-08-30). **A recorded refusal, not a
     /// missing answer**: it is why the next person is not sent to
     /// start the same process for the same nothing.
-    Cannot,
+    Cannot { home: Option<String> },
     /// It answered. Possibly with nothing, and here that really is
     /// nothing.
-    Sessions { rows: Vec<SeenSession> },
+    Sessions {
+        home: Option<String>,
+        rows: Vec<SeenSession>,
+    },
 }
 
 impl From<Option<khor_node::AgentAnswer>> for AgentSaid {
     fn from(a: Option<khor_node::AgentAnswer>) -> Self {
         match a {
             None => AgentSaid::Unasked,
-            Some(khor_node::AgentAnswer::Cannot) => AgentSaid::Cannot,
-            Some(khor_node::AgentAnswer::Sessions { rows }) => AgentSaid::Sessions {
+            Some(khor_node::AgentAnswer::Cannot { home }) => AgentSaid::Cannot {
+                home: home.map(|home| khor_core::DeviceId(home).hex()),
+            },
+            Some(khor_node::AgentAnswer::Sessions { home, rows }) => AgentSaid::Sessions {
+                home: home.map(|home| khor_core::DeviceId(home).hex()),
                 rows: rows
                     .into_iter()
                     .map(|r| SeenSession {
@@ -248,14 +364,19 @@ mod tests {
     fn an_empty_listing_and_a_question_never_asked_do_not_serialise_alike() {
         let unasked = serde_json::to_string(&AgentSaid::from(None)).unwrap();
         let cannot =
-            serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Cannot))).unwrap();
+            serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Cannot {
+                home: None,
+            })))
+            .unwrap();
         let none =
             serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+                home: None,
                 rows: vec![],
             })))
             .unwrap();
         let some =
             serde_json::to_string(&AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+                home: None,
                 rows: vec![khor_node::AgentSeen {
                     id: "sess-1".into(),
                     cwd: "/w/khor".into(),
@@ -300,6 +421,7 @@ mod tests {
     #[test]
     fn a_recorded_conversation_carries_where_it_lives() {
         let said = AgentSaid::from(Some(khor_node::AgentAnswer::Sessions {
+            home: Some([7; 32]),
             rows: vec![khor_node::AgentSeen {
                 id: "s".into(),
                 cwd: "/w/khor".into(),
@@ -307,9 +429,10 @@ mod tests {
                 updated_at: None,
             }],
         }));
-        let AgentSaid::Sessions { rows } = said else {
+        let AgentSaid::Sessions { home, rows } = said else {
             panic!("a listing")
         };
+        assert_eq!(home, Some(khor_core::DeviceId([7; 32]).hex()));
         assert_eq!(rows[0].cwd, "/w/khor");
         // A conversation nobody named stays unnamed rather than
         // becoming an empty string on screen.

@@ -200,6 +200,31 @@ impl Codex {
         uuid_in_name(path.file_name()?.to_str()?).map(str::to_owned)
     }
 
+    pub(crate) fn unique_session_id(
+        &self,
+        leaf: &str,
+        exact: Option<&str>,
+    ) -> Result<Option<String>, ()> {
+        let mut chosen = None;
+        for rollout in self.rollouts() {
+            let Some(native) = rollout
+                .path
+                .file_name()
+                .and_then(|part| part.to_str())
+                .and_then(uuid_in_name)
+            else {
+                continue;
+            };
+            if crate::live::clean_leaf(native) != leaf || exact.is_some_and(|id| id != native) {
+                continue;
+            }
+            if chosen.as_ref().is_some_and(|previous| previous != native) {
+                return Err(());
+            }
+            chosen = Some(native.to_owned());
+        }
+        Ok(chosen)
+    }
     /// A writer belongs to a thread, possibly inside a shared daemon. It is
     /// never permission to terminate that daemon or guess a terminal PID.
     pub(crate) fn has_writer(&self, uuid: &str) -> Result<bool, String> {
@@ -281,6 +306,20 @@ impl Codex {
             .ok_or_else(|| khor_catalog::msg::takeover_no_record(uuid))?;
         let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
         Ok(utterances_of(&text))
+    }
+
+    /// A bounded raw window for paginated history. Fragments and oversized
+    /// records remain explicit; this does not change the legacy follow cursor.
+    pub fn transcript_window(
+        &self,
+        uuid: &str,
+        before: Option<u64>,
+    ) -> Result<super::transcript_window::TranscriptWindow, String> {
+        let path = self
+            .rollout_path(uuid)
+            .ok_or_else(|| khor_catalog::msg::takeover_no_record(uuid))?;
+        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+        super::transcript_window::read_window(&mut file, before).map_err(|e| e.to_string())
     }
 
     /// The same conversation, **followed**: what the rollout has said
@@ -403,20 +442,8 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                 }
                 Some("response_item") => {
                     let p = &v["payload"];
-                    if matches!(
-                        p["type"].as_str(),
-                        Some("custom_tool_call") | Some("function_call") | Some("local_shell_call")
-                    ) && let Some(name) = p["name"].as_str()
-                    {
-                        let input = p
-                            .get("arguments")
-                            .filter(|a| !a.is_null())
-                            .or_else(|| p.get("input"));
-                        let input = input
-                            .and_then(|a| a.as_str())
-                            .and_then(|a| serde_json::from_str::<serde_json::Value>(a).ok())
-                            .or_else(|| input.cloned())
-                            .unwrap_or(serde_json::Value::Null);
+                    if let Some(name) = tool_call_name(p) {
+                        let input = decoded_tool_input(p);
                         // Shaped as claude's `tool_use` block so
                         // that both vendors' pasts go through the
                         // one translation (`cagent::said`). codex
@@ -437,6 +464,36 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
         }
     }
     out
+}
+
+/// Both normal replay and bounded scaffold preparation select the same
+/// recorded input. A null arguments field deliberately falls back to input.
+fn tool_call_name(payload: &serde_json::Value) -> Option<&str> {
+    matches!(payload["type"].as_str(), Some("custom_tool_call" | "function_call" | "local_shell_call"))
+        .then(|| payload["name"].as_str()).flatten()
+}
+fn tool_input_field(payload: &serde_json::Value) -> Option<(&'static str, &serde_json::Value)> {
+    payload.get("arguments").filter(|value| !value.is_null()).map(|value| ("arguments", value))
+        .or_else(|| payload.get("input").map(|value| ("input", value)))
+}
+fn decoded_tool_input(payload: &serde_json::Value) -> serde_json::Value {
+    decoded_tool_input_state(payload).0
+}
+fn decoded_tool_input_state(payload: &serde_json::Value) -> (serde_json::Value, bool) {
+    let input = tool_input_field(payload).map(|(_, value)| value);
+    if let Some(decoded) = input.and_then(|value| value.as_str())
+        .and_then(|text| serde_json::from_str(text).ok()) { return (decoded, true); }
+    (input.cloned().unwrap_or(serde_json::Value::Null), false)
+}
+/// A long encoded input must first prepare its inner JSON with the same
+/// bounded lexer. This is a field-selection fact, not a second vendor parser.
+pub(crate) fn scaffold_json_input(value: &serde_json::Value) -> Option<(String, bool)> {
+    let payload = &value["payload"];
+    if value["type"].as_str() != Some("response_item") { return None; }
+    tool_call_name(payload)?;
+    let (field, input) = tool_input_field(payload)?;
+    input.as_str()?;
+    Some((format!("/payload/{field}"), decoded_tool_input_state(payload).1))
 }
 
 /// This vendor's name, which is also the category its rows carry — and,
@@ -1404,7 +1461,7 @@ mod current {
             .discovering(Arc::new(Discovery::at(base).with_procs(Procs::default())));
         let first = kind.rows(|_| 0);
         assert_eq!(first.len(), 1);
-        assert_eq!(first[0].state.state, State::Busy);
+        assert_eq!(first[0].state.unwrap().state, State::Busy);
 
         let mut f = OpenOptions::new().append(true).open(path).unwrap();
         writeln!(f, "{}", item("AgentMessage", "latest answer")).unwrap();
@@ -1419,13 +1476,19 @@ mod current {
         let next = kind.rows(|_| 0);
         assert_eq!(next.len(), 1);
         assert_eq!(next[0].last.as_deref(), Some("latest answer"));
-        assert_eq!((next[0].state.state, next[0].unread), (State::Done, 1));
+        assert_eq!(
+            (next[0].state.unwrap().state, next[0].unread),
+            (State::Done, 1)
+        );
         let seen_at = "2026-08-06T13:49:20Z"
             .parse::<jiff::Timestamp>()
             .unwrap()
             .as_millisecond();
         let seen = kind.rows(|_| seen_at);
-        assert_eq!((seen[0].state.state, seen[0].unread), (State::Idle, 0));
+        assert_eq!(
+            (seen[0].state.unwrap().state, seen[0].unread),
+            (State::Idle, 0)
+        );
         drop(writer);
         assert!(kind.rows(|_| 0).is_empty());
     }

@@ -218,8 +218,8 @@ export function BrowseLanding({
       the next screen (the shell's list ⇄ detail pair). */
   const opened = () => onOpen?.();
   // ⌘W, ⌃⇥ / ⌃⇧⇥ on this landing's tabs (`lib/shortcuts`, 2026-09-28): the
-  // tab in front closes — a pinned one is refused by the node, as its
-  // row menu's 删除 is — and the steps walk the column's order.
+  // tab in front closes through the same node action as its row menu;
+  // the steps walk the column's order.
   useTabHost(
     tabs.ready
       ? {
@@ -254,7 +254,7 @@ export function BrowseLanding({
       第十二轮). Kept by the landing rather than by the body, because the
       body is only ever mounted for the tab in front and a tab loading
       behind one has to breathe too. */
-  const load = useLoading();
+  const load = useLoading(tabs.tabs.map(tab => tab.id), tabs.current.id);
   const pageIcons = usePageIcons();
   const iconOf = (t: {path: string}) => pageIcons.iconOf(t.path);
   // An element, never a call — see `BrowseKind.Body`.
@@ -275,23 +275,8 @@ export function BrowseLanding({
   const deviceOf = (id: string | null) => (id ? (devices.find((d) => d.id === id) ?? null) : null);
   const machine = deviceOf(tabs.current.device);
 
-  /**
-   * A tab's own menu: **置顶, what this column has of its own, then 删除
-   * last behind a line** (2026-09-28 audit 第 16 条, Apple HIG; until then
-   * docs/SHELL.md 第二轮's 「头两项永远是置顶、删除」).
-   *
-   * ⚠️ 墓碑 (2026-10-02): the last item was 删除, asked first since 第四轮
-   * (`tab_remove_confirm`), beside a × that never asked. The × went to
-   * this menu (one act, one home) and the owner named the act 关闭 — a
-   * page is closed, nothing is deleted — so it asks nothing, like
-   * Chrome's. A pinned tab is refused by the node; that sentence is the
-   * note.
-   *
-   * No 「在系统浏览器中打开」: the ruling asked for it where a road
-   * already exists, and none does — a page here leaves through the
-   * machine the tab names, and the system browser would take it out
-   * through this one.
-   */
+  // Page rows share the other lists' pin and delete actions. Deleting a
+  // pinned page is one close request; the node updates the ledger atomically.
   const menuOf = (t: BrowseTab): RowAction[] => {
     const k = (action: string) => `${t.id}:${action}`;
     const answered = (action: string) => (p: Promise<void>) =>
@@ -331,11 +316,9 @@ export function BrowseLanding({
         : []),
       // 删除 last, behind a line (2026-09-28 audit 第 16 条, Apple HIG).
       {
-        // **关闭, not 删除** (the owner, 2026-10-02): a page is closed, like
-        // a tab in the session switcher — nothing is deleted, so nothing
-        // is asked first and the item is not drawn as destructive.
         key: "close",
-        label: gui.close,
+        label: kind.kind === "page" ? gui.delete : gui.close,
+        destructive: kind.kind === "page",
         note: refused.get(k("close")),
         run: () => answered("close")(tabs.close(t.id)),
       },
@@ -393,12 +376,8 @@ export function BrowseLanding({
       find: `${label} ${t.title} ${t.path}`,
       selected: on,
       menu: menuOf(t),
-      // **Slid left, 关闭 closes the page** (UX-44 §3), in the 附栏's
-      // list, in red at the row's end; a full swipe closes it at once. The
-      // menu's own word (the lead, 2026-10-07: a page is closed, not
-      // deleted — the owner's 2026-10-02 ruling), so finger and mouse say
-      // one act one way. ⚠️ 墓碑: 「删除」 on this swipe, the first cut.
-      swipe: bare ? { key: "close", label: gui.close, run: () => tabs.close(t.id) } : undefined,
+      // Page swipes use the menu's pin/delete pair in both list hosts.
+      swipe: bare && kind.kind !== "page" ? { key: "close", label: gui.close, run: () => tabs.close(t.id) } : undefined,
       onOpen: () => {
         tabs.focus(t.id);
         opened();
@@ -437,14 +416,12 @@ export function BrowseLanding({
   const [folded, setFolded] = useState(false);
   /** The strip pressed holds the deck through the flick (`UnfoldHold`). */
   const hold = useRef(new UnfoldHold());
-  /** **The deck's light is the row's** (UX-22): one rule, held across a
-      load's hops and bounded by the ceiling (`use-loading`). ⚠️ 墓碑: its
-      own state, set on every `page:load` and with no ceiling — a load
-      that started and never finished pulsed forever. */
   const pageLoading = load.busy(tabs.current.id);
+  const pageShare = load.share(tabs.current.id);
+  const pageState = load.state(tabs.current.id);
   /** **Why the page could not be opened** (UX-22), until the next load
       starts: said in the pill (narrow) or the caption (wide), with 重试. */
-  const [failed, setFailed] = useState<PageFail | null>(null);
+  const failed: PageFail | null = pageState?.phase === "failed" ? pageFail(pageState.error) : null;
   /** **What the page's download did** (UX-42 §16): never silent — said
       where the caption stands until the next load or the next word. */
   const [said, setSaid] = useState<PageSaid | null>(null);
@@ -466,7 +443,6 @@ export function BrowseLanding({
   };
   useEffect(() => {
     setFolded(false);
-    setFailed(null);
     setSaid(null);
     setInk("dark");
     const id = tabs.current.id;
@@ -488,31 +464,21 @@ export function BrowseLanding({
       }
     });
     const offGround = onPageWord("page:ground", id, (t) => setInk(inkOver(t)));
-    const offLoad = onPageWord("page:load", id, (t) => {
-      // A page starting to load is a page at its top: the deck unfolds
-      // (measured on the simulator: a new address typed into a folded
-      // tab arrived folded, its first scroll word lost to the editing).
-      if (t === "started") {
-        setFailed(null);
-        setSaid(null);
-        setFolded(false);
-      }
-    });
-    const offFail = onPageWord("page:fail", id, (t) => setFailed(pageFail(t)));
     const offDown = onPageWord("page:download", id, (t) => setSaid(pageDownload(t)));
-    // Arrived somewhere: whatever failed before is over (UX-38 §1; a load
-    // quicker than the phone's poll used to leave the word standing).
-    const offWent = onPageWord("page:went", id, () => setFailed(null));
     return () => {
       offScroll();
       offGround();
-      offLoad();
-      offFail();
       offDown();
-      offWent();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabs.current.id]);
+  useEffect(() => {
+    if (!pageState) return;
+    if (pageState.phase === "opening" || pageState.phase === "started") {
+      setSaid(null); setFolded(false);
+    }
+  }, [pageState?.view, pageState?.navigation, pageState?.phase, pageState?.error]);
+
   /** Whether this tab has somewhere to be: its ← → and reload are drawn
       then, and the editor is not needed to start. */
   const somewhere = !!(machine && tabs.current.device && tabs.current.path);
@@ -521,7 +487,7 @@ export function BrowseLanding({
       failed to go. */
   const failedWord = failed && (
     <span data-page-failed className="flex min-w-0 items-center gap-in">
-      <span data-page-failed-word title={failed.url || undefined} className="min-w-0 truncate text-caption text-muted-foreground">
+      <span data-page-failed-word title={failed.detail || failed.url || undefined} className="min-w-0 truncate text-caption text-muted-foreground">
         {/* The phone's pill has room for the reason and 重试, not the
             whole sentence (measured: 「打不开：连接被拒绝」 is cut to
             「打不开：…」 there). */}
@@ -535,7 +501,6 @@ export function BrowseLanding({
         data-page-retry
         data-page-pass={failed.pass ? "" : undefined}
         onClick={() => {
-          setFailed(null);
           void pageStep(tabs.current.id, failed.pass ? "pass" : "retry").catch(() => {});
         }}
         className="grid min-h-touch flex-none place-items-center px-in text-caption font-label text-brand-strong"
@@ -608,7 +573,7 @@ export function BrowseLanding({
     if (deck) ro.observe(deck);
     return () => ro.disconnect();
   }, [native, nativeTab]);
-  const nativeKey = `${folded}|${ink}|${pageLoading}|${failed?.reason ?? ""}|${said?.text ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
+  const nativeKey = `${folded}|${ink}|${pageLoading}|${pageShare ?? ""}|${failed?.reason ?? ""}|${said?.text ?? ""}|${JSON.stringify(steps)}|${tabs.current.title}|${tabs.current.path}|${tabs.tabs.length}|${laid}`;
   useEffect(() => {
     if (!nativeDeckHere || !narrow) return;
     if (!native) {
@@ -803,7 +768,10 @@ export function BrowseLanding({
       act: load.busy(t.id)
         ? { kind: "stop" as const, label: gui.page_stop, onPress: () => void pageStep(t.id, "stop").catch(() => {}) }
         : { kind: "reload" as const, label: gui.page_reload, onPress: () => void pageStep(t.id, "reload").catch(() => {}) },
-      loading: load.busy(t.id),
+      // Native pages supply an actual share; Khor errands keep the row
+      // busy without manufacturing a looping page-progress line.
+      loading: false,
+      share: load.share(t.id),
     };
   });
 
@@ -909,7 +877,8 @@ export function BrowseLanding({
           hold.current.asked();
           setFolded(false);
         }}
-        loading={pageLoading}
+        loading={pageLoading || pageShare !== undefined}
+        loadingShare={pageShare ?? null}
       >
         <section data-browse-landing={kind.kind} data-browse-bare={bare ? "page" : undefined} className="flex h-full min-h-0 flex-col">
           <div data-nav-clear={bare ? true : undefined} className="min-h-0 flex-1 overflow-hidden">

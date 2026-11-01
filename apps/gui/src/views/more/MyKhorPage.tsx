@@ -164,7 +164,7 @@ export function MyKhorPage({
       readers of one answer is how two surfaces disagree). */
   devices: DeviceRow[];
   /** The session rows, for the card's 会话 / 忙碌 / 待批 counts. */
-  rows: { home: string; word: string }[];
+  rows: { home: string; word: string | null }[];
   onClose: () => void;
   /** The card's 会话 ›: that machine's page, on its sessions. */
   onOpenMachine: (row: DeviceRow, body: "dashboard" | "sessions") => void;
@@ -1118,7 +1118,7 @@ function MachineCard({
 }: {
   row: DeviceRow;
   rows: DeviceRow[];
-  sessions: { home: string; word: string }[];
+  sessions: { home: string; word: string | null }[];
   workspaces: number;
   coarse: boolean;
   onNewSession: () => void;

@@ -43,20 +43,12 @@
 //! The host file and cookie handshake are `host.rs`'s, reused verbatim.
 //! After the welcome the stream carries [`GuiNote`] frames out and
 //! [`GuiOp`] frames in — length-prefixed msgpack like everything else
-//! on this socket, positional arrays, so the wire discipline holds:
-//! new fields go at the tail with defaults, none in the middle.
-//! **Live frames are broadcast; history is asked for.** An attacher
-//! sees the conversation from now on, and one that wants the past sends
-//! [`GuiOp::Replay`]: the host asks the agent itself (`session/load`
-//! replays the whole conversation before it answers — probed on the
-//! real adapter, and re-loading a live session works) and relays the
-//! replayed updates as [`GuiNote::History`] frames **to that connection
-//! only** — broadcast history would repaint every other face's past.
-//! The host still buffers nothing: a second copy here would be a
-//! transcript nobody owns. A replay asked for mid-turn waits for the
-//! turn to end — the live updates already on screen are the same
-//! content, and a load answered during a turn would interleave the two
-//! indistinguishably (the protocol does not tag replayed updates).
+//! on this socket. Enum variants use names; their payload/struct fields are
+//! positional. The GUI greeting gates incompatible capabilities/frame sets.
+//! Live updates are broadcast. Each view asks for a token-bound canonical
+//! Capture and reads its own bounded page/raw cursor; it never reloads the
+//! running agent. The first supported Load/Resume commits its finite opening
+//! batch atomically before the host publishes readiness.
 
 use std::net::{TcpListener, TcpStream};
 use std::path::PathBuf;
@@ -71,6 +63,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::host::{Hello, HostFile, Welcome, host_file_path, read_frame, write_frame};
 use crate::live::{LiveKind, Source};
+use crate::session_content::journal::{Identity as JournalIdentity, Journal, JournalReservation, Opening as JournalOpening, Outcome as JournalOutcome};
 
 /// What a connected face may do to the conversation.
 #[derive(Serialize, Deserialize)]
@@ -83,16 +76,8 @@ pub enum GuiOp {
         ask: u64,
         option: Option<String>,
     },
-    /// End the conversation: the agent dies with the connection. Held
-    /// at its position — frames are positional msgpack, and an old host
-    /// reading a new client must fail on the frame, never misread an
-    /// earlier variant.
+    /// End the conversation: the agent dies with the connection.
     Close,
-    /// Ask for the conversation so far, replayed by the agent itself
-    /// and answered as [`GuiNote::History`] frames **to this connection
-    /// only**, closed by [`GuiNote::HistoryEnd`]. Sent mid-turn it
-    /// waits for the turn to end (module head). Tail-appended.
-    Replay,
     /// End the turn that is running — not the session. The agent stays,
     /// its conversation stays, and the ending is `Cancelled`, which is
     /// 空闲: stopping it was the user's own act, so nothing is broken.
@@ -100,12 +85,7 @@ pub enum GuiOp {
     Stop,
     /// One user turn with images attached.
     ///
-    /// **Tail-appended, and a separate variant rather than a field on
-    /// [`GuiOp::Say`]** — these frames are positional msgpack, so a
-    /// field added inside `Say` would be read by an old host as a
-    /// different `Say`, silently. A variant at the end fails to decode
-    /// instead, which is the whole rule this enum's `Close` comment
-    /// already states.
+    /// A separate payload keeps [`GuiOp::Say`]'s ordinary text shape explicit.
     ///
     /// `(mime, base64)` pairs. The data is carried rather than a path
     /// because the face that has the image may be on another machine
@@ -114,15 +94,13 @@ pub enum GuiOp {
     /// `images` are `(mime, base64)`; `files` are `(name, text)` and
     /// ride as the protocol's embedded resources.
     ///
-    /// **Both lists on the one variant, and it never grows a third**:
-    /// this frame is positional msgpack, so the shape it ships with is
-    /// the shape it keeps. Anything else attachable later gets its own
-    /// variant at the tail, which fails loudly on an old host instead
-    /// of being misread as this one.
+    /// The client token correlates its optimistic draft with the canonical
+    /// accepted prompt. It does not identify or deduplicate an agent turn.
     SayWith {
         text: String,
         images: Vec<(String, String)>,
         files: Vec<(String, String)>,
+        token: Option<String>,
     },
     /// Put the session in one of the modes the agent listed
     /// ([`GuiNote::Settings`]), by the agent's own id. Tail-appended.
@@ -163,6 +141,32 @@ pub enum GuiOp {
         operation: String,
         payload: String,
     },
+    /// A per-view read boundary; it never asks the agent to replay.
+    Capture { token: [u8; 16] },
+}
+
+pub const CAPTURE_WIRE_BYTES: usize = 20 * 1024;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CaptureFence {
+    pub binding: crate::session_content::ReadBinding,
+    pub cursor: crate::adaptor::transcript_page::Cursor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CaptureFailure {
+    NotReady,
+    Unavailable,
+}
+
+fn captured_note(token: [u8; 16], result: Result<CaptureFence, CaptureFailure>) -> GuiNote {
+    let note = GuiNote::Captured { token, result };
+    if crate::proto::encode(&note).is_ok_and(|bytes| bytes.len() <= CAPTURE_WIRE_BYTES) {
+        note
+    } else {
+        GuiNote::Captured { token, result: Err(CaptureFailure::Unavailable) }
+    }
 }
 
 /// How big one [`GuiOp::Part`] is: well under the host's frame cap, and
@@ -175,7 +179,7 @@ pub const PART: usize = 256 * 1024;
 /// so before sending, and the host drops what it was sent.
 pub const MAX_PARTS: usize = 64 * 1024 * 1024;
 
-const GUI_GREETING: &str = "khor-gui/1";
+const GUI_GREETING: &str = "khor-gui/2";
 
 pub struct Attached {
     pub stream: TcpStream,
@@ -331,15 +335,6 @@ pub enum GuiNote {
     Turn(String),
     /// The conversation is over; no more frames follow.
     Gone,
-    /// One replayed update (`session/update` JSON, [`GuiNote::Note`]'s
-    /// shape), answering this connection's [`GuiOp::Replay`] — never
-    /// broadcast. Tail-appended.
-    History(String),
-    /// The replay is complete. Arrives with no [`GuiNote::History`]
-    /// before it when there is nothing to replay **or the load failed**
-    /// — to a face the two are one fact: no past to paint, the live
-    /// stream unaffected. Tail-appended.
-    HistoryEnd,
     /// A turn is already running — told to a face the moment it
     /// attaches, and to nobody else. Without it, a second face opens
     /// on a conversation mid-turn with an inviting empty input, and
@@ -440,6 +435,10 @@ pub enum GuiNote {
         operation: String,
         data: Option<String>,
         error: Option<String>,
+    },
+    Captured {
+        token: [u8; 16],
+        result: Result<CaptureFence, CaptureFailure>,
     },
 }
 
@@ -551,6 +550,7 @@ pub fn spawn_gui_host_reopen(
 /// How `_ghost` learns it resumes: env, not argv — the argv convention
 /// stays what every existing binary parses (`VIEWER_ENV`'s precedent).
 const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
+const RECOVERY_ENV: &str = "KHOR_GHOST_RECOVERY";
 
 /// Whose session this is, when the **opener** knows — the wizard's own
 /// 智能体 field, which is the user saying it, not khor guessing from an
@@ -571,6 +571,59 @@ fn ghost_command(
     // independent roots without changing the parent process environment.
     command.env("KHOR_HOME", root);
     Ok(command)
+}
+
+enum GhostSpawnError {
+    BeforeSpawn(std::io::Error),
+    Unconfirmed(String),
+}
+
+/// The thread exists before any OS child. It owns Command -> Child -> wait;
+/// only the one spawn result crosses back, never the Child's ownership.
+fn ghost_child_lifetime(
+    mut command: std::process::Command,
+    spawned: std::sync::mpsc::SyncSender<std::io::Result<u32>>,
+) {
+    match command.spawn() {
+        Ok(mut child) => {
+            let _ = spawned.send(Ok(child.id()));
+            // A caller timeout/drop does not abandon this actual child.
+            if let Err(why) = child.wait() {
+                // Existing pid_running may have reaped a published host first.
+                // This is ghost cleanup, never a provider exit receipt.
+                #[cfg(unix)]
+                if why.raw_os_error() == Some(libc::ECHILD) {
+                    return;
+                }
+                eprintln!("GUI ghost wait failed: {why}");
+            }
+        }
+        Err(why) => {
+            let _ = spawned.send(Err(why));
+        }
+    }
+}
+
+fn spawn_ghost_with_waiter(
+    command: std::process::Command,
+    deadline: std::time::Instant,
+) -> Result<u32, GhostSpawnError> {
+    let (spawned, received) = std::sync::mpsc::sync_channel(1);
+    let waiter = std::thread::Builder::new()
+        .name("khor-gui-child".into())
+        .spawn(move || ghost_child_lifetime(command, spawned))
+        .map_err(GhostSpawnError::BeforeSpawn)?;
+    // Detach only the thread handle. The thread retains its Child until wait.
+    drop(waiter);
+    match received.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now())) {
+        Ok(Ok(pid)) => Ok(pid),
+        Ok(Err(why)) => Err(GhostSpawnError::BeforeSpawn(why)),
+        // The thread may have spawned, or still be spawning. Do not publish a
+        // definite failure or allow a duplicate from a missing PID response.
+        Err(why) => Err(GhostSpawnError::Unconfirmed(format!(
+            "GUI ghost spawn outcome is unconfirmed: {why}"
+        ))),
+    }
 }
 
 fn spawn_ghost(
@@ -594,6 +647,30 @@ fn spawn_ghost_context(
     agent: bool,
     environment: Option<&khor_acp::Environment>,
 ) -> Result<SessionId, String> {
+    spawn_ghost_prepared(root, cwd, title, cmd, resume, vendor, agent, environment, None)
+}
+
+/// Explicit stable recovery already owns this exact durable token. Do not pass
+/// through the CLI convenience path which chooses a fresh token for a new ask.
+pub(crate) fn spawn_gui_host_claimed(
+    root: &std::path::Path, cwd: &std::path::Path, title: &str, cmd: &[String],
+    native: &JournalIdentity, context: &khor_acp::Environment, claim: &str,
+) -> Result<SessionId, String> {
+    spawn_ghost_prepared(root, Some(cwd), title, cmd, Some(&native.native_id), Some(&native.agent), false, Some(context), Some(claim))
+}
+
+fn spawn_ghost_prepared(
+    root: &std::path::Path,
+    cwd: Option<&std::path::Path>,
+    title: &str,
+    cmd: &[String],
+    resume: Option<&str>,
+    vendor: Option<&str>,
+    agent: bool,
+    environment: Option<&khor_acp::Environment>,
+    prepared_claim: Option<&str>,
+) -> Result<SessionId, String> {
+    if prepared_claim.is_some() && resume.is_none() { return Err("a recovery claim cannot start a New session".into()); }
     let exe = crate::self_exe()?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
@@ -601,6 +678,8 @@ fn spawn_ghost_context(
         crate::link::fresh_hex()?
     ));
     let mut c = ghost_command(root, &exe)?;
+    // A fresh New must never inherit another invocation's claim.
+    c.env_remove(RECOVERY_ENV);
     match environment {
         Some(context) => {
             c.env(
@@ -670,13 +749,75 @@ fn spawn_ghost_context(
             Ok(())
         });
     }
-    c.spawn().map_err(msg::host_wont_start)?;
+    let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key"))
+        .map_err(|error| error.to_string())?;
+    let live = LiveKind::new(root.to_path_buf(), khor_core::DeviceId(*key.public().as_bytes()));
+    let mut expected_agent = Some(gui_new_agent(cmd, vendor));
+    let claim = if let Some(native_id) = resume {
+        if agent { return Err("known-native recovery cannot inject a new scheduler context".into()); }
+        let native = match prepared_claim {
+            Some(claim) => {
+                let (_, native) = live.decode_gui_target(claim, native_id)?;
+                if vendor.is_some_and(|vendor| vendor != native.agent) { return Err("prepared claim names another configured agent".into()); }
+                native
+            }
+            None => gui_source_identity_as(&live, khor_core::DeviceId(*key.public().as_bytes()), cmd, native_id, vendor)?,
+        };
+        expected_agent = Some(native.agent.clone());
+        let context = match environment {
+            Some(context) => context.clone(),
+            None => saved_environment(root, native_id)?,
+        };
+        let standing = cwd.map(std::path::Path::to_path_buf).or_else(crate::cwd::standing)
+            .ok_or("known session directory is unavailable")?;
+        let standing = std::fs::canonicalize(standing).map_err(|error| error.to_string())?;
+        let launch = serde_json::to_vec(&(&standing, title, cmd, &context)).map_err(|error| error.to_string())?;
+        // Freeze exactly the context/cwd hashed into this claim. The child must
+        // not reread a newer saved context and silently change the operation.
+        c.current_dir(&standing);
+        c.env("KHOR_GHOST_CONTEXT", serde_json::to_string(&context).map_err(|error| error.to_string())?);
+        let claim = match prepared_claim {
+            Some(claim) => claim.to_owned(),
+            None => live.prepare_gui_recovery(native, &launch)?,
+        };
+        c.env(RECOVERY_ENV, &claim);
+        Some(claim)
+    } else { None };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let ghost_pid = match spawn_ghost_with_waiter(c, deadline) {
+        Ok(pid) => pid,
+        Err(GhostSpawnError::BeforeSpawn(error)) => {
+            let why = msg::host_wont_start(error);
+            return Err(
+                match claim
+                    .as_deref()
+                    .map(|claim| live.gui_ghost_spawn_failed(claim))
+                    .transpose()
+                {
+                    Ok(_) => why,
+                    Err(failed) => format!("{why}; recovery reservation is uncertain: {failed}"),
+                },
+            );
+        }
+        Err(GhostSpawnError::Unconfirmed(why)) => return Err(why),
+    };
+    let mut ready_issue = None;
     // Longer than host.rs's wait on purpose: before the marker can
     // exist an agent process has to boot and answer two requests.
-    for _ in 0..600 {
+    while std::time::Instant::now() < deadline {
         if let Ok(id) = std::fs::read_to_string(&ready) {
-            let _ = std::fs::remove_file(&ready);
-            return Ok(SessionId(id.trim().to_owned()));
+            let id = SessionId(id.trim().to_owned());
+            if !id.0.is_empty() {
+                match live.confirm_gui_ready(&id, ghost_pid, resume, expected_agent.as_deref(), claim.as_deref()) {
+                    Ok(()) => {
+                        let _ = std::fs::remove_file(&ready);
+                        return Ok(id);
+                    }
+                    // Publishing/busy/error is never permission to return
+                    // Opened. Keep the marker and only the original deadline.
+                    Err(why) => ready_issue = Some(why),
+                }
+            }
         }
         // The ghost's own account of why there is no session. Without
         // it the only thing this loop can say is that thirty seconds
@@ -689,9 +830,10 @@ fn spawn_ghost_context(
             let _ = std::fs::remove_file(refusal_path(&ready));
             return Err(why);
         }
-        std::thread::sleep(std::time::Duration::from_millis(50));
+        std::thread::sleep(deadline.saturating_duration_since(std::time::Instant::now())
+            .min(std::time::Duration::from_millis(50)));
     }
-    Err(msg::ghost_never_ready().into())
+    Err(ready_issue.unwrap_or_else(|| msg::ghost_never_ready().into()))
 }
 
 /// Where the ghost writes why it will never be ready. Beside the marker
@@ -771,6 +913,27 @@ impl Default for HostTimeouts {
     }
 }
 
+fn gui_environment(root: &std::path::Path, resume: Option<&str>) -> Result<khor_acp::Environment, String> {
+    let saved_context = resume
+        .and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
+    let mut environment: khor_acp::Environment = std::env::var("KHOR_GHOST_CONTEXT")
+        .ok()
+        .or(saved_context)
+        .map(|s| serde_json::from_str(&s))
+        .transpose()
+        .map_err(|e| format!("Invalid session context: {e}"))?
+        .unwrap_or_default();
+    if std::env::var(crate::cagent::AGENT_ENV).is_ok() {
+        environment.mcp_servers.retain(|s| {
+            serde_json::to_value(s)
+                .ok()
+                .is_none_or(|v| v["name"] != "khor")
+        });
+        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
+    }
+    Ok(environment)
+}
+
 /// The detached process `_ghost` runs. Blocks until the conversation is
 /// over, then reports the ending like any host: a recorded exit, even
 /// if nobody is watching.
@@ -805,42 +968,78 @@ fn gui_host_main_with_timeouts(
     // has pinned the process elsewhere (第十四轮 第 4 条).
     let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
     let resume = std::env::var(RESUME_ENV).ok();
-    let saved_context = resume
-        .as_ref()
-        .and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
-    let mut environment: khor_acp::Environment = std::env::var("KHOR_GHOST_CONTEXT")
-        .ok()
-        .or(saved_context)
-        .map(|s| serde_json::from_str(&s))
-        .transpose()
-        .map_err(|e| format!("Invalid session context: {e}"))?
-        .unwrap_or_default();
-    if std::env::var(crate::cagent::AGENT_ENV).is_ok() {
-        environment.mcp_servers.retain(|s| {
-            serde_json::to_value(s)
-                .ok()
-                .is_none_or(|v| v["name"] != "khor")
-        });
-        environment.mcp_servers.push(serde_json::from_value(serde_json::json!({"name":"khor","command":crate::self_exe()?.display().to_string(),"args":["mcp"],"env":[{"name":"KHOR_HOME","value":root.display().to_string()}]})).map_err(|e|e.to_string())?);
-    }
+    let environment = gui_environment(&root, resume.as_deref())?;
     let retained_environment = environment.clone();
-    let transport = crate::acp_process::spawn(&command).map_err(|why| {
-        let why = refusal_words(&khor_acp::Refusal::Wont(why));
+    let launch = serde_json::to_vec(&(&cwd, &title, &cmd, &retained_environment))
+        .map_err(|error| error.to_string())?;
+    // A known native conversation owns the journal's physical writer lock
+    // before any upstream process exists. This is not an inherited-FD handoff:
+    // the ghost acquires it and later moves that same File into its Journal.
+    let mut reservation = resume.as_ref().map(|native_id| {
+        let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
+        let (id, identity) = live.decode_gui_target(&claim, native_id)?;
+        if std::env::var(VENDOR_ENV).ok().as_deref().is_some_and(|vendor| vendor != identity.agent) {
+            return Err("known opening claim names another configured agent".into());
+        }
+        let reservation = JournalReservation::take(&root, identity)?;
+        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        reservation.check_binding(&dir)?;
+        Ok::<_, String>(reservation)
+    }).transpose().map_err(|why| {
         let _ = std::fs::write(refusal_path(&ready), &why);
         why
     })?;
+    let mut recovery = if resume.is_some() {
+        let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
+        Some(live.claim_gui_recovery(
+            reservation.as_ref().ok_or("known-native opening has no Journal reservation")?,
+            &launch, &claim,
+        ).map_err(|why| {
+            let failure = live.gui_ghost_spawn_failed(&claim);
+            let why = match failure { Ok(()) => why, Err(error) => format!("{why}; claim remains fenced: {error}") };
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            why
+        })?)
+    } else { None };
+    let (transport, birth) = match crate::acp_process::spawn_observed(&command, |pid, _control| {
+        crate::live::observe_gui_birth(pid)
+    }) {
+        Ok(spawned) => spawned,
+        Err(error) => {
+            let why = refusal_words(&khor_acp::Refusal::Wont(error));
+            let settled = recovery.as_ref().map(|owner| live.settle_gui_recovery(owner, Err(()), 1)).transpose();
+            let why = match &settled { Ok(_) => why, Err(failed) => format!("{why}; cleanup publication is uncertain: {failed}") };
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            if settled.is_err() && reservation.as_ref().is_some_and(|value| value.holds_file()) {
+                hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take());
+            }
+            return Err(why);
+        }
+    };
+    let provider_pid = transport.provider_pid;
     let process_lifecycle = transport.lifecycle.clone();
     let process_control = transport.control.clone();
     let stderr = transport.stderr.clone();
+    let mut birth = Some(birth);
+    if let Some(owner) = recovery.as_mut() {
+        if let Err(why) = live.attach_gui_recovery(owner, &process_control, provider_pid, birth.take().expect("one observation")) {
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), None, why);
+            let _ = std::fs::write(refusal_path(&ready), &why);
+            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            return Err(why);
+        }
+    }
+    let initialization = khor_acp::InitializeFacts::default();
     let opened = rt.block_on(async {
         tokio::time::timeout(
             timeouts.handshake,
-            khor_acp::start_configured_on(
+            khor_acp::start_configured_on_with_facts(
                 transport.streams,
                 transport.lifecycle,
-                cwd,
+                cwd.clone(),
                 resume.clone(),
                 environment,
+                initialization.clone(),
             ),
         )
         .await
@@ -850,26 +1049,74 @@ fn gui_host_main_with_timeouts(
             ))
         })
     });
-    if opened.is_err() {
-        process_lifecycle.request_shutdown();
-        if let Err(why) = rt.block_on(process_lifecycle.confirmed_exit()) {
-            let why = format!("ACP initialization failed; process cleanup is unconfirmed: {why}");
+    if let (Some(owner), Some(support)) = (recovery.as_ref(), initialization.recovery()) {
+        if let Err(why) = live.record_gui_recovery_support(owner, support) {
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), Some(&initialization), why);
             let _ = std::fs::write(refusal_path(&ready), &why);
+            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
             return Err(why);
         }
     }
-    let (handle, mut events) = opened
-        // The opener is waiting on a file, and this is the only moment
-        // that knows why there will never be one. Written before
-        // returning, so the wait ends at the refusal rather than at its
-        // own timeout thirty seconds later.
-        .map_err(|r| {
-            let why = refusal_words(&r);
+    let (handle, mut events) = match opened {
+        Ok(opened) => opened,
+        Err(refusal) => {
+            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), Some(&initialization), refusal_words(&refusal));
             let _ = std::fs::write(refusal_path(&ready), &why);
-            why
-        })?;
+            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            return Err(why);
+        }
+    };
 
+    // These owners outlive every local setup error and the async loop. In
+    // particular, a successful handshake never drops its Journal before the
+    // outer same-Transport cleanup has been confirmed or marked Unknown.
+    let mut retained_journal: Option<Journal> = None;
+    let mut initial: Option<crate::live::GuiInitial> = None;
+    let mut new_collision = false;
     let result = (|| -> Result<(), String> {
+        // Keep the full provider identity; the row's clean_leaf is only a
+        // retained spelling, never authority to replace another conversation.
+        let is_new = handle.opened_by() == khor_acp::OpenedBy::New;
+        let id = recovery.as_ref().map(|owner| owner.logical_id().clone()).unwrap_or_else(|| crate::adaptor::id_for(&handle.session().0));
+        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let identity = if is_new {
+            // A New response cannot inherit an unrelated old row's agent.
+            gui_new_source_identity(khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)
+        } else {
+            let identity = reservation.as_ref().ok_or("known opening lost its physical Journal")?.identity().clone();
+            if identity.native_id != handle.session().0.as_ref() { return Err("known opening returned another native session".into()); }
+            identity
+        };
+        if is_new {
+            reservation = Some(JournalReservation::take(&root, identity.clone())?);
+            new_collision = true;
+        }
+        // Check the complete source before binding or appending anything.
+        if is_new { live.check_gui_source(&identity)?; }
+        let opening=match handle.opened_by() {
+            khor_acp::OpenedBy::New=>JournalOpening::New,
+            khor_acp::OpenedBy::Load=>JournalOpening::Load,
+            khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
+        };
+        if is_new {
+            initial = Some(live.seed_gui_new(
+                reservation.as_ref().ok_or("New has no exact journal reservation")?,
+                &launch, &process_control, provider_pid,
+                birth.take().ok_or("initial process observation was already consumed")?,
+                initialization.recovery(),
+            )?);
+        }
+        let admission = reservation.as_mut().ok_or("ACP opening has no physical journal reservation")?;
+        if admission.identity() != &identity {
+            return Err("ACP opened another identity than its reservation".into());
+        }
+        retained_journal = Some(admission.open_journal(opening)?);
+        new_collision = false;
+        let journal = retained_journal.as_mut().expect("journal retained until process cleanup");
+        let vendor = std::env::var(VENDOR_ENV).ok();
+        // Keep the previous published row during the finite opening prefix.
+        // A new execution becomes visible only after its display base commits.
+        let mut run = RunPublication::Opening(State::Idle);
         let context = context_path(&root, handle.session().0.as_ref());
         if !retained_environment.mcp_servers.is_empty()
             || !retained_environment.additional_directories.is_empty()
@@ -887,40 +1134,7 @@ fn gui_host_main_with_timeouts(
                 &serde_json::to_vec(&retained_environment).map_err(|e| e.to_string())?,
             )?;
         }
-        // The vendor's uuid is the id — the whole merge story hangs on this
-        // line (module head).
-        let id = crate::adaptor::id_for(&handle.session().0);
-        if resume.is_some() {
-            // The takeover re-seats a row that already exists (and clears
-            // the ending the takeover itself just caused).
-            live.reopen(&id, khor_core::kind::GUI, &title, std::process::id())?;
-        } else {
-            // The vendor the opener declared, if it did: the wizard's own
-            // 智能体 field is the user saying whose session this is, which
-            // is not the guess the argv ruling forbids.
-            let vendor = std::env::var(VENDOR_ENV).ok();
-            live.register(
-                &id,
-                khor_core::kind::GUI,
-                &title,
-                Some(std::process::id()),
-                vendor.as_deref(),
-            )?;
-            // **This process was started standing in it** — the opener
-            // spawned the ghost with `current_dir`, so the answer is right
-            // here and needs no argument passed down
-            // (`khor_core::Session::place`).
-            if let Some(cwd) = crate::cwd::standing() {
-                live.learn_place(&id, &cwd)?;
-            }
-            // Register wrote the spawn's 忙碌; a fresh GUI session is a
-            // prompt nobody has typed into yet.
-            live.report(&id, State::Idle, Source::Reported)?;
-        }
-        let dir = live
-            .dir_of(&id)
-            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
-
+        let initial_place = Some(cwd.clone());
         let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(msg::cant_listen_loopback)?;
         let port = listener.local_addr().map_err(|e| e.to_string())?.port();
         let cookie = crate::link::fresh_hex()?;
@@ -940,7 +1154,6 @@ fn gui_host_main_with_timeouts(
             })
             .map_err(|e| e.to_string())?,
         )?;
-        std::fs::write(&ready, &id.0).map_err(|e| e.to_string())?;
 
         let fanout = Arc::new(Fanout::new());
         let (ops_tx, mut ops_rx) = tokio::sync::mpsc::unbounded_channel::<(u64, GuiOp, bool)>();
@@ -951,7 +1164,7 @@ fn gui_host_main_with_timeouts(
         let (joined_tx, mut joined_rx) = tokio::sync::mpsc::unbounded_channel::<u64>();
 
         // Attachers: cookie in, frames both ways after the welcome. Each
-        // gets a number so a replay can be answered to its asker alone;
+        // gets a number so a capture can be answered to its asker alone;
         // every other op is the same from anyone.
         {
             let fanout = fanout.clone();
@@ -1019,6 +1232,12 @@ fn gui_host_main_with_timeouts(
         let loop_live = live.clone();
         let loop_id = id.clone();
         let loop_fanout = fanout.clone();
+        let loop_ready = ready.clone();
+        // block_on drops this future before final exit publication. The outer
+        // owner retains the exact key, if the opening actually publishes one.
+        let run_in_loop = &mut run;
+        let initial_in_loop = initial.as_ref();
+        let recovery_in_loop = recovery.as_ref();
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1027,17 +1246,14 @@ fn gui_host_main_with_timeouts(
         let mut asks: Vec<(u64, khor_acp::Ask, GuiNote)> = Vec::new();
         let mut elicits:Vec<(u64,khor_acp::Elicitation,GuiNote)>=Vec::new();
         let mut next_ask: u64 = 0;
-        // Who asked for history while a turn was running: answered when
-        // the turn ends (module head — a mid-turn load would interleave
-        // replayed and live updates indistinguishably).
-        let mut replay_wanted: Vec<u64> = Vec::new();
-        let mut replay: Option<Replay> = None;
         let (completion_tx, mut completion_rx) = tokio::sync::mpsc::unbounded_channel::<HostProgress>();
         let mut pending_completion: Option<PendingCompletion> = None;
         let mut deferred_ending: Option<Option<String>> = None;
         let mut in_turn: Option<tokio::task::AbortHandle> = None;
         let mut tasks = tokio::task::JoinSet::new();
         let mut active_operation = None;
+        let mut bootstrap=Bootstrap::AwaitReady;
+        let mut journal_turn:Option<String>=None;
         // Read once here rather than off the handle at each use: this
         // is what the handshake said, and it cannot change while the
         // connection lives.
@@ -1079,15 +1295,42 @@ fn gui_host_main_with_timeouts(
         delegation_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut event_burst = 0usize;
         let ending = 'conversation: loop {
-            if pending_completion.is_none() && in_turn.is_none() && replay.is_none() && !controlling && !replay_wanted.is_empty() {
-                active_operation = process_control.begin_operation();
-                let Some(operation) = active_operation.clone() else { break Some("ACP process is retiring".into()); };
-                replay = Some(Replay::start(std::mem::take(&mut replay_wanted), handle.clone(), operation, process_control.clone(), completion_tx.clone(), &mut tasks));
+            if bootstrap.is_drained() {
+                let key = if let Some(initial) = initial_in_loop {
+                    let word = match &*run_in_loop {
+                        RunPublication::Opening(word) => *word,
+                        RunPublication::Live(_) => break Some("GUI opening published twice".into()),
+                    };
+                    match live.publish_gui_new(
+                        initial, journal, &title, vendor.as_deref(), word,
+                        initial_place.as_deref(), &loop_ready,
+                    ) { Ok(key) => key, Err(why) => break Some(why) }
+                } else if let Some(recovery) = recovery_in_loop {
+                    let word = match &*run_in_loop {
+                        RunPublication::Opening(word) => *word,
+                        RunPublication::Live(_) => break Some("GUI recovery published twice".into()),
+                    };
+                    match live.publish_gui_recovery(recovery, journal, &title, vendor.as_deref(), word, initial_place.as_deref(), &loop_ready) {
+                        Ok(key) => key, Err(why) => break Some(why),
+                    }
+                } else {
+                    break Some("GUI opening has no current publication authority".into());
+                };
+                if let Err(why) = run_in_loop.publish(&live, key) { break Some(why); }
+                bootstrap=Bootstrap::Live;
             }
             if pending_completion.as_ref().is_some_and(|pending| pending.remaining == Some(0)) {
                 let pending = pending_completion.take().unwrap();
                 match pending.completion {
 HostCompletion::Turn { result, .. } => {
+                    if let Some(turn)=journal_turn.take() {
+                        let (outcome,detail)=match &result {
+                            Ok(stop) if stop=="Cancelled"=>(JournalOutcome::Cancelled,Some(stop.as_str())),
+                            Ok(stop)=>(JournalOutcome::Ended,Some(stop.as_str())),
+                            Err(why)=>(JournalOutcome::Unknown,Some(why.as_str())),
+                        };
+                        if let Err(why)=journal.finish(&turn,outcome,detail) { break Some(why); }
+                    }
 let turn = Some(result);
                     in_turn = None;
                     cancellation_sent = None;
@@ -1104,27 +1347,14 @@ let turn = Some(result);
                                 "Cancelled" => State::Idle,
                                 _ => State::Errored,
                             };
-                            let _ = live.report(&id, word, Source::Reported);
+                            let _ = run_in_loop.report(&live, word, Source::Reported);
                             fanout.send(&GuiNote::Turn(stop));
                         }
                         Some(Err(e)) => {
-                            let _ = live.report(&id, State::Errored, Source::Reported);
+                            let _ = run_in_loop.report(&live, State::Errored, Source::Reported);
                             fanout.send(&GuiNote::Turn(e));
                         }
                         None => {}
-                    }
-                    // The turn is over: the replays that waited on it,
-                    // in the order they were asked for.
-                }
-HostCompletion::Replay { generation, result } => {
-                    cancel_elicits(&mut elicits, &fanout);
-                    if result.is_ok() && replay.as_ref().is_some_and(|active| !active.overflow) {
-                        if let Err(why) = replay.as_mut().unwrap().publish(generation, fanout.clone(), completion_tx.clone(), &mut tasks) { break Some(why); }
-                    } else if let Some(active) = replay.take() {
-                        for who in active.who {
-                            fanout.send_to(who, &GuiNote::ControlResult { token: "replay".into(), operation: "replay".into(), data: None, error: Some(result.as_ref().err().cloned().unwrap_or_else(|| "Session history exceeds the replay limit".into())) });
-                            fanout.send_to(who, &GuiNote::HistoryEnd);
-                        }
                     }
                 }
 HostCompletion::Control { who, token, operation, result, .. } => {
@@ -1137,9 +1367,7 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                     }
 
                 }
-                if replay.as_ref().is_none_or(|active| active.delivery.is_none()) {
-                    if let Some(ending) = deferred_ending.take() { break ending; }
-                }
+                if let Some(ending) = deferred_ending.take() { break ending; }
                 continue;
             }
             while let Some(joined) = tasks.try_join_next() {
@@ -1155,6 +1383,13 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                 biased;
                 progress = completion_rx.recv() => {
                     match progress {
+                        Some(HostProgress::BootstrapFenced { result })=> {
+                            let remaining=match result.and_then(|prefix| events.remaining_through(&prefix)) {
+                                Ok(remaining)=>remaining,
+                                Err(why)=>break Some(format!("ACP bootstrap event fence failed: {why}")),
+                            };
+                            if let Err(why)=bootstrap.fenced(remaining) { break Some(why); }
+                        },
                         Some(HostProgress::Resolved { completion, acknowledged }) => {
                             if active_operation.as_ref() != Some(completion.operation()) || pending_completion.is_some() {
                                 break Some("ACP completion belongs to an inactive operation".into());
@@ -1172,15 +1407,10 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                             let Some(pending) = pending_completion.as_mut().filter(|pending| pending.completion.operation() == &operation) else {
                                 break Some("ACP event fence belongs to an inactive operation".into());
                             };
-                            if let Err(why) = result { break Some(format!("ACP response was received but its event fence failed: {why}")); }
-                            pending.remaining = Some(events.len());
-                        }
-                        Some(HostProgress::Published { operation }) => {
-                            if replay.as_ref().and_then(|active| active.delivery.as_ref()).is_none_or(|delivery| delivery.operation != operation) {
-                                break Some("ACP history delivery belongs to an inactive replay".into());
-                            }
-                            replay = None;
-                            if let Some(ending) = deferred_ending.take() { break ending; }
+                            pending.remaining = Some(match result.and_then(|prefix| events.remaining_through(&prefix)) {
+                                Ok(remaining)=>remaining,
+                                Err(why)=>break Some(format!("ACP response was received but its event fence failed: {why}")),
+                            });
                         }
                         None => break Some("ACP completion channel closed".into()),
                     }
@@ -1199,10 +1429,14 @@ HostCompletion::Control { who, token, operation, result, .. } => {
                 incoming = next_host_input(&mut events, &mut ops_rx, event_burst >= 32, pause_closed_events(deferred_ending.is_some(), pending_completion.as_ref().and_then(|pending| pending.remaining))) => match incoming {
                     HostInput::Event(event) => { event_burst = event_burst.saturating_add(1);
                         if let Some(remaining) = pending_completion.as_mut().and_then(|pending| pending.remaining.as_mut()) { *remaining = remaining.saturating_sub(1); }
+                        bootstrap.consume_event();
 match event {
                     Some(khor_acp::Event::Note(n)) => {
+                        if n.session_id!=*handle.session() { break Some("ACP update belongs to another session".into()); }
+                        // Load is a full new base; Resume is not a replay.
+                        // Both still own every notification actually received.
+                        if let Err(why)=journal.note(&n) { break Some(why); }
                         let json = serde_json::to_string(&n).unwrap_or_default();
-                        if let Some(replay)=replay.as_mut().filter(|active| active.delivery.is_none()){replay.push(json);continue;}
                         if matches!(n.update, SessionUpdate::AvailableCommandsUpdate(_)) {
                             commands = Some(json.clone());
                         }
@@ -1260,7 +1494,7 @@ match event {
                         let note = GuiNote::Ask { ask: n, title, options };
                         fanout.send(&note);
                         asks.push((n, ask, note));
-                        let _ = live.report(&id, State::Blocked, Source::Reported);
+                        let _ = run_in_loop.report(&live, State::Blocked, Source::Reported);
                     }
                     Some(khor_acp::Event::Elicit(request))=>{
                         let encoded=serde_json::to_value(&request.request).unwrap_or_default();
@@ -1268,24 +1502,29 @@ match event {
                         let ask=next_ask;next_ask+=1;
                         let note=GuiNote::Elicit{ask,request:encoded.to_string()};
                         fanout.send(&note);elicits.push((ask,request,note));
-                        let _=live.report(&id,State::Blocked,Source::Reported);
+                        let _=run_in_loop.report(&live,State::Blocked,Source::Reported);
                     }
                     Some(khor_acp::Event::ElicitDone(elicitation_id))=>{
                         if let Some(at)=elicits.iter().position(|(_,q,_)|serde_json::to_value(&q.request).is_ok_and(|v|v["mode"]=="url"&&v["elicitationId"]==elicitation_id)){
                             let(ask,q,_)=elicits.remove(at);let value=serde_json::json!({"action":"accept"});if let Ok(response)=q.validate(&value){let _=q.answer(response);}
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:value.to_string()});
-                            let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=run_in_loop.report(&live,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }
                     }
-                    Some(khor_acp::Event::Ready { .. }) => {}
+                    Some(khor_acp::Event::Ready { session }) => {
+                        if session!=*handle.session() { break Some("ACP opening belongs to another session".into()); }
+                        if let Err(why)=bootstrap.begin_fence() { break Some(why); }
+                        let handle=handle.clone(); let tx=completion_tx.clone();
+                        tasks.spawn(async move { let _=tx.send(HostProgress::BootstrapFenced { result:handle.fence_events().await }); });
+                    }
                     // A channel that just stops is an ending too, and
                     // painting it any other way would need a word khor
                     // does not have.
                     Some(khor_acp::Event::Closed(err)) => {
-                        if pending_completion.is_some() || replay.as_ref().is_some_and(|active| active.delivery.is_some()) { deferred_ending = Some(err); } else { break err; }
+                        if pending_completion.is_some() { deferred_ending = Some(err); } else { break err; }
                     }
                     None => {
-                        if pending_completion.is_some() || replay.as_ref().is_some_and(|active| active.delivery.is_some()) { deferred_ending = Some(None); } else { break None; }
+                        if pending_completion.is_some() { deferred_ending = Some(None); } else { break None; }
                     }
                 }
                     },
@@ -1295,7 +1534,20 @@ match event {
                         Some((who, op, stopped)) => (Some((who, op)), stopped),
                         None => (None, false),
                     };
+                    if bootstrap.is_running() {
+                        match &op {
+                            Some((who,GuiOp::Capture{token}))=> { fanout.send_to(*who, &captured_note(*token, Err(CaptureFailure::NotReady))); continue; },
+                            Some((_,GuiOp::Close|GuiOp::Stop))|None=>{},
+                            Some((who,_))=> { fanout.send_to(*who,&GuiNote::Refused { why:refused::TURN_IN_FLIGHT.to_owned() }); continue; },
+                        }
+                    }
                     match op {
+                    Some((who, GuiOp::Capture { token })) => {
+                        let result = journal.capture(id.clone())
+                            .map(|boundary| CaptureFence { binding: boundary.binding, cursor: boundary.cursor })
+                            .map_err(|_| CaptureFailure::Unavailable);
+                        fanout.send_to(who, &captured_note(token, result));
+                    }
                     Some((who,GuiOp::ElicitAnswer{ask,response}))=>{
                         let accepted=elicits.iter().position(|(id,_,_)|*id==ask).and_then(|at|{
                             let value:serde_json::Value=serde_json::from_str(&response).ok()?;
@@ -1306,11 +1558,11 @@ match event {
                             let action=serde_json::to_value(&answer).unwrap_or_default()["action"].clone();
                             let accepted=request.answer(answer).is_ok();
                             fanout.send(&GuiNote::ElicitAnswered{ask,response:serde_json::json!({"action":if accepted{action}else{serde_json::json!("cancel")}}).to_string()});
-                            let _=live.report(&id,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
+                            let _=run_in_loop.report(&live,if asks.is_empty()&&elicits.is_empty(){if in_turn.is_some(){State::Busy}else{State::Idle}}else{State::Blocked},Source::Reported);
                         }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
                     }
                     Some((who,GuiOp::Control{token,operation,payload}))=>{
-                        if in_turn.is_some()||replay.is_some()||controlling{fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;}
+                        if in_turn.is_some()||controlling{fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;}
                         let parsed=serde_json::from_str(&payload);
                         if token.is_empty()||token.len()>128||payload.len()>16*1024||operation.len()>64||parsed.is_err(){fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some("Invalid session operation".into())});continue;}
                         active_operation = process_control.begin_operation();
@@ -1327,17 +1579,20 @@ match event {
                         });
                     }
                     Some((who, GuiOp::Delegate { task, message })) => {
-                        if in_turn.is_some() || replay.is_some() || controlling {
+                        if in_turn.is_some() || controlling {
                             fanout.send_to(who, &GuiNote::Delegated { task, why: Some("ACP session already has a running turn".into()) });
                             continue;
                         }
                         match crate::delegation::HostedTask::claim(&root, &id, &task, &message) {
-                            Ok((execution, text)) => {
+                            Ok((mut execution, text)) => {
                                 active_operation = process_control.begin_operation();
                                 if active_operation.is_none() { break Some("ACP process is retiring".into()); }
+                                let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
+                                if let Err(why)=journal.accept(&turn,&text,&[],&[],None) { let _=execution.finish(&why); break Some(why); }
+                                journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;
-                                let _ = live.report(&id, State::Busy, Source::Reported);
+                                let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
                                 let handle = handle.clone();
                                 let tx = completion_tx.clone();
                                 let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1358,12 +1613,12 @@ match event {
                     // things that have each been got wrong once already
                     // and must not exist twice.
                     Some((who, op @ (GuiOp::Say(_) | GuiOp::SayWith { .. }))) => {
-                        let (text, images, files) = match op {
-                            GuiOp::Say(t) => (t, Vec::new(), Vec::new()),
-                            GuiOp::SayWith { text, images, files } => (text, images, files),
+                        let (text, images, files, token) = match op {
+                            GuiOp::Say(t) => (t, Vec::new(), Vec::new(), None),
+                            GuiOp::SayWith { text, images, files, token } => (text, images, files, token),
                             _ => unreachable!("the pattern above admits nothing else"),
                         };
-                        if in_turn.is_some() || replay.is_some() || controlling {
+                        if in_turn.is_some() || controlling {
                             // One turn at a time; a queue would answer
                             // "who said what when" wrongly on every face.
                             // **Said back, though.** Dropping it in
@@ -1378,7 +1633,10 @@ match event {
                         }
                         active_operation = process_control.begin_operation();
                         if active_operation.is_none() { break Some("ACP process is retiring".into()); }
-                        let _ = live.report(&id, State::Busy, Source::Reported);
+                        let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
+                        if let Err(why)=journal.accept(&turn,&text,&images,&files,token.as_deref()) { break Some(why); }
+                        journal_turn=Some(turn);
+                        let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
                         let handle = handle.clone();
                         let tx = completion_tx.clone();
                         let generation = active_operation.clone().unwrap(); let control = process_control.clone();
@@ -1413,7 +1671,7 @@ match event {
                         if asks.is_empty() {
                             // 待批答才清 — and it clears to 忙碌: the
                             // turn the ask interrupted is still running.
-                            let _ = live.report(&id, State::Busy, Source::Reported);
+                            let _ = run_in_loop.report(&live, State::Busy, Source::Reported);
                         }
                     }
                     Some((who, GuiOp::Stop)) => {
@@ -1423,15 +1681,14 @@ match event {
                         // agent still working with nobody reading it.
                         // The turn ends the way every turn ends, through
                         // its own `Turn` note.
-                        if in_turn.is_some() || replay.is_some() || controlling {
+                        if in_turn.is_some() || controlling {
                             if let Some(operation) = &active_operation {
                                 process_control.cancel_operation(operation, timeouts.cancel);
                                 let _ = handle.cancel();
                             }
-                            if let Some(delivery) = replay.as_ref().and_then(|active| active.delivery.as_ref()) { delivery.cancel(); }
                             for(ask,_,_)in asks.drain(..){fanout.send(&GuiNote::Answered{ask,option:None});}
                         } else if stopped_upload {
-                            let _ = live.report(&id, State::Idle, Source::Reported);
+                            let _ = run_in_loop.report(&live, State::Idle, Source::Reported);
                             fanout.send_to(who, &GuiNote::Turn("Cancelled".into()));
                         } else {
                             // Nothing to stop. A face that got here is
@@ -1476,37 +1733,14 @@ match event {
                     Some((_, GuiOp::Close)) => {asks.clear();elicits.clear();let _=handle.cancel();let _=tokio::time::timeout(std::time::Duration::from_secs(2),handle.control("close",&serde_json::json!({}))).await;break None;},
                     // Put back together by the reader (`Reassembly`).
                     Some((_, GuiOp::Part(_) | GuiOp::Parts)) => {}
-                    Some((who, GuiOp::Replay)) => {
-                        // **The capability decides what a face is
-                        // told, never whether the agent is asked.** An
-                        // agent that under-advertises is a real animal
-                        // — this repo's own stub was one for months,
-                        // implementing `session/load` while claiming
-                        // nothing — and skipping the request on its say
-                        // so would withhold a past it actually has. So
-                        // the load always goes out; `GuiNote::Agent` is
-                        // what keeps an empty answer from reading as an
-                        // empty conversation.
-                        if in_turn.is_some() || controlling {
-                            if !replay_wanted.contains(&who) { replay_wanted.push(who); }
-                        } else if let Some(active)=replay.as_mut(){
-                            if active.delivery.is_some() {
-                                if !replay_wanted.contains(&who) { replay_wanted.push(who); }
-                            } else if !active.who.contains(&who){active.who.push(who);}
-                        } else {
-                            active_operation = process_control.begin_operation();
-                            if active_operation.is_none() { break Some("ACP process is retiring".into()); }
-                            replay=Some(Replay::start(vec![who], handle.clone(), active_operation.clone().unwrap(), process_control.clone(), completion_tx.clone(), &mut tasks));
-                        }
-                    }
                     None => break None,
                     }
                 }
                     },
                 },
                 // A face that arrived mid-ask gets the ask. Nothing
-                // else is re-sent: the conversation's past is what
-                // `Replay` is for, and the row already carries the word.
+                // else is re-sent: the canonical past belongs to each view
+                // through its own Capture, and the row already carries the word.
                 who = joined_rx.recv() => {
                     if let Some(who) = who {
                         // First, because everything else a face does
@@ -1564,12 +1798,20 @@ match event {
         };
 
         asks.clear(); elicits.clear();
+        let mut ending=if let Some(turn)=journal_turn.take() {
+            match journal.finish(&turn,JournalOutcome::Unknown,ending.as_deref()) {
+                Ok(())=>ending,
+                Err(why)=>Some(match ending { Some(previous)=>format!("{previous}; {why}"),None=>why }),
+            }
+        } else { ending };
+        if let Err(why)=journal.abort_base() {
+            ending=Some(match ending { Some(previous)=>format!("{previous}; {why}"),None=>why });
+        }
         handle.request_shutdown();
 
         tasks.abort_all();
         while tasks.join_next().await.is_some() {}
 
-        replay.take();
         match handle.shutdown().await {
             Ok(khor_acp::ShutdownOutcome::ProcessReaped(_)) => ending,
             Ok(khor_acp::ShutdownOutcome::DriverClosed) => Some("ACP driver closed without a process receipt".into()),
@@ -1581,17 +1823,56 @@ match event {
         rt.block_on(process_lifecycle.confirmed_exit())
             .map_err(|why| format!("ACP process cleanup is unconfirmed: {why}"))?;
 
+        if !ready.exists() {
+            std::fs::write(refusal_path(&ready),ending.as_deref().unwrap_or("ACP closed before the initial capture committed"))
+                .map_err(|why|why.to_string())?;
+        }
+
         fanout.send(&GuiNote::Gone);
 
         fanout.packets.close();
 
         // 0 for an ending nobody minded, 1 for a torn connection: the exit
         // code is how `record_exit` tells 完成-shaped endings from 失败.
-        let _ = live.record_exit(&id, if ending.is_none() { 0 } else { 1 });
+        let _ = run.record_exit(&live, if ending.is_none() { 0 } else { 1 });
         Ok(())
     })();
     process_lifecycle.request_shutdown();
     let retired = rt.block_on(process_lifecycle.confirmed_exit());
+    let settled = if let Some(initial) = &initial {
+        live.settle_gui_new(initial, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
+    } else if let Some(recovery) = &recovery {
+        live.settle_gui_recovery(recovery, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
+    } else if retired.is_err() && new_collision {
+        // Only the exact actual-New agent/native reservation can quarantine
+        // its old bound row. A same short SID or missing reservation is never
+        // authority to freeze someone else's source.
+        match &reservation {
+            Some(reservation) => live.quarantine_gui_new(reservation),
+            None => Err("unconfirmed New has no exact reservation".into()),
+        }
+    } else {
+        Ok(())
+    };
+    if retired.is_err() && settled.is_err()
+        && (retained_journal.is_some() || reservation.as_ref().is_some_and(|value| value.holds_file()))
+    {
+        let why = format!("ACP cleanup and its durable Unknown record are unconfirmed: {}; {}",
+            retired.as_ref().err().expect("cleanup error"),
+            settled.as_ref().err().expect("publication error"));
+        // Refuse the opener within its existing budget; the ghost itself keeps
+        // its exact resource rather than returning and silently unlocking it.
+        let _ = std::fs::write(refusal_path(&ready), &why);
+        eprintln!("{why}");
+        hold_uncertain_gui_owner(reservation.take(), retained_journal.take(), initial.take(), recovery.take());
+    }
+    // Release only after actual cleanup or a durable Unknown. A failed write
+    // plus unconfirmed cleanup parks the existing ghost above, without retry.
+    let result = match (result, settled) {
+        (outcome, Ok(())) => outcome,
+        (outcome, Err(why)) => Err(format!("{}GUI cleanup publication is uncertain: {why}",
+            outcome.err().map(|why| format!("{why}; ")).unwrap_or_default())),
+    };
     match (result, retired) {
         (Ok(()), Ok(_)) => Ok(()),
         (Err(why), Ok(_)) => Err(why),
@@ -1606,14 +1887,101 @@ match event {
     }
 }
 
+fn retire_failed_opening(
+    rt: &tokio::runtime::Runtime,
+    live: &LiveKind,
+    process: &khor_acp::TransportLifecycle,
+    recovery: Option<&crate::live::GuiRecovery>,
+    initialization: Option<&khor_acp::InitializeFacts>,
+    mut why: String,
+) -> (String, bool) {
+    process.request_shutdown();
+    let retired = rt.block_on(process.confirmed_exit());
+    let facts = match (recovery, initialization.and_then(khor_acp::InitializeFacts::recovery)) {
+        (Some(owner), Some(support)) => live.record_gui_recovery_support(owner, support),
+        _ => Ok(()),
+    };
+    let settled = recovery.map(|owner| live.settle_gui_recovery(owner, retired.as_ref().map_err(|_| ()), 1)).transpose();
+    if let Err(error) = &retired { why = format!("{why}; ACP cleanup is unconfirmed: {error}"); }
+    if let Err(error) = &settled { why = format!("{why}; durable cleanup is unconfirmed: {error}"); }
+    if let Err(error) = &facts { why = format!("{why}; Initialize fact publication is unconfirmed: {error}"); }
+    (why, retired.is_err() && (settled.is_err() || facts.is_err()))
+}
+
+/// No listener or GuiOp::Close is promised on this pre-publication failure.
+/// Retaining this existing ghost is fail-closed only for its current lifetime:
+/// explicit OS termination/crash releases the File, and a failed durable write
+/// cannot provide cross-crash safety. No retry, timer, new control plane or
+/// second resource registry is created here.
+fn hold_uncertain_gui_owner(
+    _reservation: Option<JournalReservation>,
+    _journal: Option<Journal>,
+    _initial: Option<crate::live::GuiInitial>,
+    _recovery: Option<crate::live::GuiRecovery>,
+) -> ! {
+    loop {
+        std::thread::park();
+    }
+}
+
+/// Before publication this owns only the latest opening word. Afterwards the
+/// GUI row's atomic Meta is the sole state owner; no second live snapshot is kept.
+enum RunPublication {
+    Opening(State),
+    Live(crate::live::RunKey),
+}
+impl RunPublication {
+    fn report(&mut self, live: &LiveKind, word: State, source: Source) -> Result<(), String> {
+        match self {
+            Self::Opening(current) => {
+                *current = word;
+                Ok(())
+            }
+            Self::Live(key) => live.report_run(key, word, source),
+        }
+    }
+    fn publish(&mut self, live: &LiveKind, key: crate::live::RunKey) -> Result<(), String> {
+        let Self::Opening(word) = self else {
+            return Err("GUI execution has already published".into());
+        };
+        let word = *word;
+        *self = Self::Live(key);
+        self.report(live, word, Source::Reported)
+    }
+    fn record_exit(&self, live: &LiveKind, code: i32) -> Result<(), String> {
+        match self {
+            Self::Opening(_) => Ok(()),
+            Self::Live(key) => live.record_exit_run(key, code),
+        }
+    }
+}
+
+enum Bootstrap {
+    AwaitReady,
+    Fencing,
+    Draining(u64),
+    Live,
+}
+impl Bootstrap {
+    fn is_running(&self) -> bool { !matches!(self,Self::Live) }
+    fn is_drained(&self) -> bool { matches!(self,Self::Draining(0)) }
+    fn begin_fence(&mut self) -> Result<(),String> {
+        if !matches!(self,Self::AwaitReady) { return Err("ACP Ready belongs to an inactive opening".into()); }
+        *self=Self::Fencing; Ok(())
+    }
+    fn fenced(&mut self, remaining:u64) -> Result<(),String> {
+        if !matches!(self,Self::Fencing) { return Err("ACP event fence belongs to an inactive opening".into()); }
+        *self=Self::Draining(remaining); Ok(())
+    }
+    fn consume_event(&mut self) {
+        if let Self::Draining(remaining)=self { *remaining=remaining.saturating_sub(1); }
+    }
+}
+
 enum HostCompletion {
     Turn {
         generation: crate::agent_process::Operation,
         result: Result<String, String>,
-    },
-    Replay {
-        generation: crate::agent_process::Operation,
-        result: Result<(), String>,
     },
     Control {
         generation: crate::agent_process::Operation,
@@ -1628,27 +1996,24 @@ impl HostCompletion {
     fn operation(&self) -> &crate::agent_process::Operation {
         match self {
             Self::Turn { generation, .. }
-            | Self::Replay { generation, .. }
             | Self::Control { generation, .. } => generation,
         }
     }
 }
 enum HostProgress {
+    BootstrapFenced { result:Result<khor_acp::EventPrefix,String> },
     Resolved {
         completion: HostCompletion,
         acknowledged: bool,
     },
     Fenced {
         operation: crate::agent_process::Operation,
-        result: Result<(), String>,
-    },
-    Published {
-        operation: crate::agent_process::Operation,
+        result: Result<khor_acp::EventPrefix, String>,
     },
 }
 struct PendingCompletion {
     completion: HostCompletion,
-    remaining: Option<usize>,
+    remaining: Option<u64>,
 }
 async fn finish_host_operation(
     handle: &khor_acp::Handle,
@@ -1687,220 +2052,123 @@ enum HostInput {
     Op(Option<(u64, GuiOp, bool)>),
 }
 
-fn pause_closed_events(closed: bool, remaining: Option<usize>) -> bool {
+fn pause_closed_events(closed: bool, remaining: Option<u64>) -> bool {
     // Closed can itself lie inside an already-captured finite batch. Drain
     // that accepted tail before pausing the receiver and publishing its end.
     closed && !remaining.is_some_and(|remaining| remaining > 0)
 }
 
+fn poll_host_input(
+    cx: &mut std::task::Context<'_>,
+    mut poll_events: impl FnMut(&mut std::task::Context<'_>) -> std::task::Poll<Option<khor_acp::Event>>,
+    ops: &mut tokio::sync::mpsc::UnboundedReceiver<(u64, GuiOp, bool)>,
+    prefer_ops: bool,
+    events_closed: bool,
+) -> std::task::Poll<HostInput> {
+    if prefer_ops {
+        if let std::task::Poll::Ready(op) = ops.poll_recv(cx) {
+            return std::task::Poll::Ready(HostInput::Op(op));
+        }
+    }
+    if !events_closed {
+        if let std::task::Poll::Ready(event) = poll_events(cx) {
+            return std::task::Poll::Ready(HostInput::Event(event));
+        }
+    }
+    ops.poll_recv(cx).map(HostInput::Op)
+}
 async fn next_host_input(
-    events: &mut tokio::sync::mpsc::UnboundedReceiver<khor_acp::Event>,
+    events: &mut khor_acp::EventReceiver,
     ops: &mut tokio::sync::mpsc::UnboundedReceiver<(u64, GuiOp, bool)>,
     prefer_ops: bool,
     events_closed: bool,
 ) -> HostInput {
     std::future::poll_fn(|cx| {
-        if prefer_ops {
-            if let std::task::Poll::Ready(op) = ops.poll_recv(cx) {
-                return std::task::Poll::Ready(HostInput::Op(op));
-            }
-        }
-        if !events_closed {
-            if let std::task::Poll::Ready(event) = events.poll_recv(cx) {
-                return std::task::Poll::Ready(HostInput::Event(event));
-            }
-        }
-        ops.poll_recv(cx).map(HostInput::Op)
-    })
-    .await
+        poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
+    }).await
 }
 
+fn gui_new_source_identity(
+    home: khor_core::DeviceId,
+    cmd: &[String],
+    native_id: &str,
+) -> JournalIdentity {
+    let vendor = std::env::var(VENDOR_ENV).ok();
+    JournalIdentity { home, agent: gui_new_agent(cmd, vendor.as_deref()), native_id: native_id.to_owned() }
+}
+
+fn gui_new_agent(cmd: &[String], vendor: Option<&str>) -> String {
+    vendor.map(str::to_owned).unwrap_or_else(|| {
+        let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");
+        format!("launcher:{}", blake3::hash(&launch).to_hex())
+    })
+}
+
+#[cfg(test)]
+fn gui_source_identity(
+    live: &LiveKind,
+    home: khor_core::DeviceId,
+    cmd: &[String],
+    native_id: &str,
+) -> Result<JournalIdentity, String> {
+    let vendor = std::env::var(VENDOR_ENV).ok();
+    gui_source_identity_as(live, home, cmd, native_id, vendor.as_deref())
+}
+
+fn gui_source_identity_as(
+    live: &LiveKind,
+    home: khor_core::DeviceId,
+    cmd: &[String],
+    native_id: &str,
+    vendor: Option<&str>,
+) -> Result<JournalIdentity, String> {
+    let id = crate::adaptor::id_for(native_id);
+    let dir = live
+        .dir_of(&id)
+        .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+    let bound = crate::session_content::journal::bound_identity(&dir)?;
+    let meta = match std::fs::read(dir.join("meta.json")) {
+        Ok(bytes) => {
+            Some(serde_json::from_slice::<crate::live::Meta>(&bytes).map_err(|e| e.to_string())?)
+        }
+        Err(why) if why.kind() == std::io::ErrorKind::NotFound => None,
+        Err(why) => return Err(why.to_string()),
+    };
+    let recorded = bound.or_else(|| meta.as_ref().and_then(|meta| meta.gui_native.clone()));
+    if let Some(recorded) = recorded {
+        if recorded.home != home
+            || recorded.native_id != native_id
+            || vendor.is_some_and(|agent| agent != recorded.agent)
+        {
+            return Err("GUI row already names another full native identity".into());
+        }
+        return Ok(recorded);
+    }
+    let agent = vendor.map(str::to_owned)
+        .or_else(|| meta.and_then(|meta| meta.category))
+        .unwrap_or_else(|| {
+            let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");
+            format!("launcher:{}", blake3::hash(&launch).to_hex())
+        });
+    Ok(JournalIdentity {
+        home,
+        agent,
+        native_id: native_id.into(),
+    })
+}
+
+pub(crate) fn saved_environment(root: &std::path::Path, native_id: &str) -> Result<khor_acp::Environment, String> {
+    match std::fs::read_to_string(context_path(root, native_id)) {
+        Ok(context) => serde_json::from_str(&context).map_err(|error| format!("Invalid session context: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(khor_acp::Environment::default()),
+        Err(error) => Err(error.to_string()),
+    }
+}
 fn context_path(root: &std::path::Path, session: &str) -> PathBuf {
     root.join(".khor/acp-context").join(format!(
         "{}.json",
         blake3::hash(session.as_bytes()).to_hex()
     ))
-}
-
-/// History is buffered while the main loop continues answering interactions.
-/// A failed/oversized load never paints an apparently complete partial past.
-struct ReplayDelivery {
-    operation: crate::agent_process::Operation,
-    cancel: tokio::sync::watch::Sender<Option<tokio::time::Instant>>,
-}
-impl ReplayDelivery {
-    fn cancel(&self) {
-        // The first UI Stop fixes one deadline for every recipient and both
-        // terminal frames. Repeated Stop must not keep a drip reader alive.
-        self.cancel.send_if_modified(|deadline| {
-            if deadline.is_some() {
-                return false;
-            }
-            *deadline = Some(tokio::time::Instant::now() + std::time::Duration::from_secs(2));
-            true
-        });
-    }
-}
-struct Replay {
-    delivery: Option<ReplayDelivery>,
-    who: Vec<u64>,
-    notes: Vec<String>,
-    bytes: usize,
-    overflow: bool,
-}
-impl Replay {
-    fn start(
-        who: Vec<u64>,
-        handle: Arc<khor_acp::Handle>,
-        generation: crate::agent_process::Operation,
-        control: Arc<crate::agent_process::Control>,
-        tx: tokio::sync::mpsc::UnboundedSender<HostProgress>,
-        tasks: &mut tokio::task::JoinSet<()>,
-    ) -> Self {
-        tasks.spawn(async move {
-            let result = handle.replay().await;
-            finish_host_operation(
-                &handle,
-                &control,
-                &tx,
-                HostCompletion::Replay { generation, result },
-            )
-            .await;
-        });
-        Self {
-            delivery: None,
-            who,
-            notes: Vec::new(),
-            bytes: 0,
-            overflow: false,
-        }
-    }
-    fn publish(
-        &mut self,
-        operation: crate::agent_process::Operation,
-        fanout: Arc<Fanout>,
-        tx: tokio::sync::mpsc::UnboundedSender<HostProgress>,
-        tasks: &mut tokio::task::JoinSet<()>,
-    ) -> Result<(), String> {
-        // One bounded replay blob is encoded once and shared by every reader.
-        // Each independent producer keeps a cursor and awaits actual capacity;
-        // a burst of legal small history frames is not evidence of a slow GUI.
-        let frames: Arc<[Arc<[u8]>]> = std::mem::take(&mut self.notes)
-            .into_iter()
-            .map(|note| Fanout::encode(&GuiNote::History(note)))
-            .collect::<Result<Vec<_>, _>>()?
-            .into();
-        let end = Fanout::encode(&GuiNote::HistoryEnd)?;
-        let cancelled_note = Fanout::encode(&GuiNote::ControlResult {
-            token: "replay".into(),
-            operation: "replay".into(),
-            data: None,
-            error: Some("Session history delivery was cancelled".into()),
-        })?;
-        let (cancel, _) = tokio::sync::watch::channel(None::<tokio::time::Instant>);
-        let recipients = self.who.clone();
-        self.delivery = Some(ReplayDelivery {
-            operation: operation.clone(),
-            cancel: cancel.clone(),
-        });
-        tasks.spawn(async move {
-            futures::future::join_all(recipients.into_iter().map(|who| {
-                publish_history_to(
-                    who,
-                    fanout.clone(),
-                    frames.clone(),
-                    end.clone(),
-                    cancelled_note.clone(),
-                    cancel.subscribe(),
-                )
-            }))
-            .await;
-            let _ = tx.send(HostProgress::Published { operation });
-        });
-        Ok(())
-    }
-    fn push(&mut self, json: String) {
-        // Transient notices must never become history, even from a broken adapter.
-        if serde_json::from_str::<serde_json::Value>(&json)
-            .ok()
-            .is_some_and(|v| v["update"]["sessionUpdate"] == "notice")
-        {
-            return;
-        }
-        self.bytes = self.bytes.saturating_add(json.len());
-        if self.bytes > 32 * 1024 * 1024 {
-            self.overflow = true;
-            self.notes.clear();
-        }
-        if !self.overflow {
-            self.notes.push(json);
-        }
-    }
-}
-async fn publish_history_to(
-    who: u64,
-    fanout: Arc<Fanout>,
-    frames: Arc<[Arc<[u8]>]>,
-    end: Arc<[u8]>,
-    cancelled_note: Arc<[u8]>,
-    mut cancelled: tokio::sync::watch::Receiver<Option<tokio::time::Instant>>,
-) {
-    let mut cancel_deadline = None;
-    for frame in frames.iter() {
-        if let Some(deadline) = *cancelled.borrow() {
-            cancel_deadline = Some(deadline);
-            break;
-        }
-        tokio::select! {
-            biased;
-            request = cancelled.wait_for(|deadline| deadline.is_some()) => {
-                let Ok(request) = request else { fanout.packets.remove(who); return; };
-                cancel_deadline = *request;
-                break;
-            }
-            result = std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, frame, cx)) => {
-                if let Err(error) = result {
-                    if error != packet_fanout::SendError::Closed { fanout.packets.remove(who); }
-                    return;
-                }
-            }
-        }
-    }
-    if cancel_deadline.is_none() {
-        // Cancellation also interrupts a normal HistoryEnd waiting for space,
-        // after every history frame has already been admitted.
-        tokio::select! {
-            biased;
-            request = cancelled.wait_for(|deadline| deadline.is_some()) => {
-                let Ok(request) = request else { fanout.packets.remove(who); return; };
-                cancel_deadline = *request;
-            }
-            result = std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, &end, cx)) => {
-                if result.is_err() { fanout.packets.remove(who); }
-                return;
-            }
-        }
-    }
-    let deadline = cancel_deadline.expect("a cancellation request carries its deadline");
-    if tokio::time::Instant::now() >= deadline {
-        fanout.packets.remove(who);
-        return;
-    }
-    let terminal = async {
-        std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, &cancelled_note, cx)).await?;
-        if tokio::time::Instant::now() >= deadline {
-            return Err(packet_fanout::SendError::Closed);
-        }
-        std::future::poll_fn(|cx| fanout.packets.poll_send_to(who, &end, cx)).await
-    };
-    // This limit belongs only to already-cancelled UI delivery. Ordinary
-    // complete replay frames keep their progress-based socket stall policy.
-    if !matches!(
-        tokio::time::timeout_at(deadline, terminal).await,
-        Ok(Ok(()))
-    ) {
-        fanout.packets.remove(who);
-    }
 }
 
 fn cancel_elicits(elicits: &mut Vec<(u64, khor_acp::Elicitation, GuiNote)>, fanout: &Fanout) {
@@ -1923,6 +2191,7 @@ mod parts_tests {
             text: "keep this".into(),
             images: vec![("image/png".into(), picture.clone())],
             files: vec![],
+            token: None,
         };
         let bytes = crate::proto::encode(&op).unwrap();
         let mut parts = Reassembly::default();
@@ -1947,6 +2216,7 @@ mod parts_tests {
             text: "look".into(),
             images: vec![("image/png".into(), picture.clone())],
             files: vec![],
+            token: None,
         };
         let reader = std::thread::spawn(move || {
             let mut parts = Reassembly::default();
@@ -1977,6 +2247,7 @@ mod parts_tests {
                 text: "next".into(),
                 images: vec![],
                 files: vec![],
+                token: None,
             },
         )
         .unwrap();

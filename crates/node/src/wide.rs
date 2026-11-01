@@ -268,10 +268,10 @@ impl KindSurface for WideKind {
         // the ruling reads (忙碌, 中断, then 未看, then 空闲), and the
         // row goes 忙碌 → 未看 as it lands.
         if let Some((word, at)) = pressed {
-            row.state = StateStamp {
+            row.state = Some(StateStamp {
                 state: word,
                 at: Millis(at.max(0) as u64),
-            };
+            });
         }
         // Put away like a machine's window (`ChatKind`'s rows) — but a
         // newest file still moving or broken here keeps it out.
@@ -459,6 +459,7 @@ mod tests {
             .first()
             .expect("the broadcast row stands")
             .state
+            .unwrap()
             .state
     }
 

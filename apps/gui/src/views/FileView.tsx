@@ -1,3 +1,4 @@
+import {useDraftCount} from "@/hooks/use-draft-count";
 // One file, read (工作区批2). What the middle column of a workspace
 // shows when a file is picked out of the tree.
 //
@@ -30,7 +31,8 @@
 // broken, which is the failure `check-acp` 第二批 names.
 import { useFileHandoff, type FileHandoffControl } from "@/hooks/use-file-handoff";
 import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { fileRefresh } from "@/lib/file-refresh";
 
 import {
   fetchPreview,
@@ -50,10 +52,12 @@ import {
 import { CodeEditor, preloadEditor } from "@/components/CodeEditor.lazy";
 import { editorIn, focusAtTop } from "@/lib/code/place";
 import type { EditorHistorySlot } from "@/lib/code/history";
+import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
 import { Button } from "@/components/ui/button";
+import { IconClose } from "@/components/icons";
 import { cli, gui } from "@/gen/catalog";
 import { parseDelimited } from "@/lib/csv";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
@@ -70,6 +74,7 @@ import {
   PAUSE_MS,
   readForOverwrite,
   reopened,
+  roadOf,
   useRoad,
   write,
 } from "@/lib/save-road";
@@ -178,6 +183,41 @@ export function rendererOf(path: string): "md" | "table" | "html" | "ipynb" | nu
   return null;
 }
 
+/** Payload stays in React; the request slot retains only ownership and one latest intent. */
+function previewRequests<T>() {
+  let active = false;
+  let lifetime = 0;
+  let generation = 0;
+  let reading = false;
+  let next: { generation: number; read: () => Promise<T>; land: (value: T) => void; fail: (error: unknown) => void } | null = null;
+  const run = () => {
+    if (!active || reading || next === null) return;
+    const request = next;
+    next = null;
+    const identity = lifetime;
+    const owns = () => active && identity === lifetime && request.generation === generation;
+    reading = true;
+    void Promise.resolve().then(async () => {
+      if (!owns()) return;
+      try {
+        const value = await request.read();
+        if (owns()) request.land(value);
+      } catch (error) {
+        if (owns()) request.fail(error);
+      }
+    }).finally(() => { reading = false; run(); });
+  };
+  return {
+    activate() { active = true; lifetime += 1; },
+    leave() { active = false; lifetime += 1; generation += 1; next = null; },
+    ask(read: () => Promise<T>, land: (value: T) => void, fail: (error: unknown) => void) {
+      if (!active) return;
+      next = { generation: ++generation, read, land, fail };
+      run();
+    },
+  };
+}
+
 /** A file khor will not paint, and the one thing it can still do about
     it. **One component for the three refusals** (too big, not text,
     nothing khor knows) because they differ only in the sentence — and
@@ -187,15 +227,13 @@ function Away({
   onTake,
   took,
   path,
-  machine,
   total,
   handoff,
   preview = false,
 }: {
   preview?:boolean;
   path:string;
-  machine:string;
-  total?:number;
+  total?:number | null;
   handoff:FileHandoffControl;
   word: string;
   onTake: () => void;
@@ -203,18 +241,12 @@ function Away({
 }) {
   // Not on a phone (docs/IOS.md 第二步): it takes no files (`useTake`).
   const takes = useHereHosts();
-  const [size,setSize]=useState(total);
-  useEffect(()=>{
-    setSize(total);if(total!==undefined)return;
-    let alive=true;void fetchFileStat(machine,path).then(s=>{if(alive)setSize(s.total);}).catch(()=>{});
-    return()=>{alive=false;};
-  },[machine,path,total]);
   const name=path.split("/").pop()??path;
   const type=name.includes(".")?name.slice(name.lastIndexOf(".")+1).toUpperCase():null;
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
       <span data-file-fallback-name className="max-w-full break-words text-body text-foreground">{name}</span>
-      <span className="text-callout text-muted-foreground">{[type,size===undefined?null:sizeWord(size)].filter(Boolean).join(" · ")}</span>
+      <span className="text-callout text-muted-foreground">{[type,total==null?null:sizeWord(total)].filter(Boolean).join(" · ")}</span>
       {word && <span className="text-callout text-muted-foreground">{word}</span>}
       <FileHandoffAction handoff={handoff} preview={preview}/>
       {takes && !handoff.supported && (
@@ -249,7 +281,7 @@ export function FileView(props: Omit<Parameters<typeof FileBody>[0],"handoff"> &
   const own=useFileHandoff(props.machine,props.path,!props.handoff);
   const handoff=props.handoff??own;
   return <div ref={own.owner} data-file-body className="relative flex min-h-0 flex-1 flex-col">
-    <FileBody {...props} handoff={handoff}/>
+    <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
     {!props.handoff&&<FileHandoffStatus handoff={handoff}/>}
   </div>;
 }
@@ -365,19 +397,41 @@ function FileBody({
   goLine?: { line: number; at: number } | null;
 }) {
   const localHistory = useRef<EditorHistorySlot>({});
+  const history = editorHistory ?? localHistory.current;
+  const previewScroll = useKeptScrollRef(JSON.stringify([machine, path]), history.preview ??= {});
   const nativeOffice = kindOf(path) === "doc" && handoff.previewSupported;
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
-  const [look, setLook] = useState<Preview | null>(null);
-  const [lookError, setLookError] = useState<string | null>(null);
-  const [file, setFile] = useState<FileText | null>(null);
-  /** The working copy, and the digest it is pinned to. **One piece of
-      state, not two**: a save replaces both at once (the text it wrote
-      and the digest the far machine answered), and holding them apart
-      is how a second save gets pinned to a digest that belongs to
-      different bytes. `null` until the file arrives. */
-  const [own, setOwn] = useState<Draft | null>(null);
+  const previewKey = JSON.stringify([machine, path]);
+  const [lookValue, setLookValue] = useState<{ key: string; preview: Preview | null; total: number | null } | null>(null);
+  const [lookFailure, setLookFailure] = useState<{ key: string; error: string } | null>(null);
+  const look = lookValue?.key === previewKey ? lookValue.preview : null;
+  const lookTotal = lookValue?.key === previewKey ? lookValue.total : null;
+  const lookError = lookFailure?.key === previewKey ? lookFailure.error : null;
+  const previewReader = useRef(previewRequests<{ preview: Preview | null; total: number }>());
+  const [buffer, projectBuffer] = useState(() => ({
+    file: null as FileText | null,
+    edit: (draft ?? null) as Draft | null,
+    // Zero still requires review; null means no unresolved merge.
+    clashes: null as number | null,
+  }));
+  const {file, edit, clashes} = buffer;
+  const accepted = useRef(buffer);
+  const bufferLive = useRef(true);
+  const publishAccepted = useRef<() => void>(() => {});
+  // React is a projection: save callbacks and editor transactions can share a task.
+  const acceptBuffer = useCallback((change: (was: typeof buffer) => typeof buffer) => {
+    if (!bufferLive.current) return;
+    const next = change(accepted.current);
+    if (next === accepted.current) return;
+    accepted.current = next;
+    publishAccepted.current();
+    projectBuffer(next);
+  }, []);
+  const setClashes = useCallback((next: number | null) => {
+    acceptBuffer(was => ({...was, clashes: next}));
+  }, [acceptBuffer]);
   // **The editor's chunk, fetched while the file is read** (CM-BRIEF §2):
   // the strip's 「编辑」 focuses the editor inside its own press
   // (`beginEditing`), so the module has to be resident before the press
@@ -385,27 +439,18 @@ function FileBody({
   useEffect(() => {
     preloadEditor();
   }, []);
-  /** The buffer: this mount's own once it has one, and the pane's draft
-      until then.
-      **That order, and it is the second spelling of it** (工作区批⑧).
-      It read `draft ?? own` while every `setEdit` also handed the new
-      value straight up to the pane in the same tick — so the two could
-      not disagree. Reporting the draft from an effect made them able
-      to: the pane's copy is now one render behind, and a buffer read
-      from behind is a buffer that never moves. A merge landed in `own`
-      and the screen went on showing the text from before it, for as
-      long as the file stayed open (`check-face` 4b-bis).
-
-      `own` is never staler than `draft` — `draft` is derived from it —
-      so preferring it is not a race won by luck. What the fallback is
-      still for is the beat after a remount, when this mount has read
-      nothing yet and the pane is holding what somebody typed. */
-  const edit = own ?? draft ?? null;
+  const refresh = useRef(fileRefresh());
+  const refreshReading = useRef(false);
+  useLayoutEffect(() => {
+    bufferLive.current = true;
+    return () => { bufferLive.current = false; refresh.current.invalidate(); };
+  }, [machine, path]);
   const setEdit = useCallback(
     (next: Draft | null | ((was: Draft | null) => Draft | null)) => {
-      setOwn((was) => (typeof next === "function" ? next(was ?? draft ?? null) : next));
+      refresh.current.invalidate();
+      acceptBuffer(was => ({...was, edit: typeof next === "function" ? next(was.edit) : next}));
     },
-    [draft],
+    [acceptBuffer],
   );
   /** A way out of a clash is under way (a read, a merge, an overwrite). */
   const [working, setWorking] = useState(false);
@@ -427,12 +472,6 @@ function FileBody({
   const trouble = road.trouble;
   /** A way out that could not even ask the machine (its read failed). */
   const [oops, setOops] = useState<string | null>(null);
-  /** How many clashes the last merge left, or `null` when the box holds
-      nothing merged. **Its own state rather than a word inside
-      `saved`**: `saved` is what the *file* did and a merge does nothing
-      to the file — reusing it would paint 「refused」 red over a box
-      that is merely waiting to be saved. */
-  const [clashes, setClashes] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [took, setTook] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitDiff | null>(null);
@@ -484,44 +523,45 @@ function FileBody({
     return () => URL.revokeObjectURL(pdfAt);
   }, [pdfAt]);
 
-  // **Asked first and alone: what is this.** The node answers with the
-  // content, so a file that turns out to be a picture never has its
-  // bytes decoded as text on the way (`khor_gui_core::files::preview`).
+  const previewMode = kindOf(path) === "text" || kindOf(path) === "doc" && handoff.previewSupported === null
+    ? null : nativeOffice ? "stat" : "preview";
+  useLayoutEffect(() => {
+    if (previewMode === null) return;
+    previewReader.current.activate();
+    return () => previewReader.current.leave();
+  }, [machine, path, previewMode]);
   useEffect(() => {
-    let live = true;
-    setLook(null);
-    setLookError(null);
-    if (kindOf(path) === "text" || (kindOf(path) === "doc" && handoff.previewSupported !== false)) return;
-    fetchPreview(machine, path)
-      .then((p) => live && setLook(p))
-      .catch((e: unknown) => live && setLookError(String(e instanceof Error ? e.message : e)));
-    return () => {
-      live = false;
-    };
-  }, [machine, path, reread, nativeOffice, handoff.previewSupported]);
+    if (previewMode === null) return;
+    setLookFailure(null);
+    previewReader.current.ask(async () => {
+      if (previewMode === "stat") {
+        const stat = await fetchFileStat(machine, path);
+        return { preview: null, total: stat.total };
+      }
+      const preview = await fetchPreview(machine, path);
+      return { preview, total: preview.total };
+    }, value => setLookValue({ key: previewKey, ...value }),
+    error => setLookFailure({ key: previewKey, error: said(error) }));
+  }, [machine, path, previewMode, previewKey, reread, readAt]);
 
   useEffect(() => {
     let live = true;
     if (kindOf(path) !== "text") {
       // Nothing to decode as text, and asking would spend a slice on a
       // file this view is not going to paint as code.
-      setFile(null);
-      setEdit(null);
+      acceptBuffer(was => ({...was, file: null, edit: null, clashes: null}));
       return;
     }
-    setFile(null);
-    if (draft === undefined) setEdit(null);
+    acceptBuffer(was => ({...was, file: null, edit: draft ?? null, clashes: null}));
     setOops(null);
     setError(null);
     setTook(null);
     const take = (f: FileText) => {
       if (!live) return;
       remember(machine, path, f);
-      setFile(f);
-      // **Only when nobody is holding one.** A draft means somebody
-      // typed here and walked away; overwriting it with what is on
-      // disk is the loss this whole arrangement exists to stop.
-      if (draft === undefined) setEdit({ text: f.text, was: f.digest, by: newLine() });
+      acceptBuffer(was => ({...was, file: f,
+        edit: draft === undefined ? {text: f.text, was: f.digest, by: newLine()} : was.edit,
+      }));
     };
     const read = () =>
       fetchFileText(machine, path)
@@ -620,30 +660,19 @@ function FileBody({
       One fact, one place. */
   const canEdit = (edit?.was ?? "") !== "";
   const dirty = file !== null && edit !== null && edit.text !== file.text;
+  const reportDraftCount = useDraftCount(onDraft === undefined && dirty ? 1 : 0);
   useEffect(() => onCanEdit?.(canEdit), [canEdit, onCanEdit]);
 
-  // **「a draft」means「the buffer differs from the disk」, and it is
-  // reported from one place** (工作区批⑧). Until this batch every
-  // `setEdit` handed the buffer up, including the one that *loads* the
-  // file and the one that re-pins it after a save — so the pane counted
-  // a freshly opened file as unsaved, and a save could never take the
-  // count back down. Nobody noticed while the only reader was a line in
-  // a head saying 「N 个文件未存」; the tab's dot is a mark per file,
-  // and a dot that never goes out is the kind of wrong somebody stares
-  // at (「保存成功了,圆点消失」).
-  //
-  // Derived here rather than spelled at each writer because the two
-  // halves move on different beats: a keystroke replaces the buffer, a
-  // save replaces khor's reading of the file, and a rule written at
-  // five call sites is a rule that will disagree with itself.
-  //
-  // **Silent until the file has arrived.** On a remount the pane is
-  // already holding the draft and `file` is null for a beat; reporting
-  // then would throw away what somebody typed before the read lands.
-  useEffect(() => {
-    if (onDraft === undefined || file === null || edit === null) return;
-    onDraft(edit.text === file.text ? null : edit);
-  }, [edit, file, onDraft]);
+  const publishDraft = useCallback((next: Draft | null) => {
+    // A read in flight cannot clear the retained owner's existing draft.
+    const base = accepted.current.file;
+    if (base === null || next === null) return;
+    const pending = next.text === base.text ? null : next;
+    if (onDraft === undefined) reportDraftCount(pending === null ? 0 : 1);
+    else onDraft(pending);
+  }, [onDraft, reportDraftCount]);
+  publishAccepted.current = () => publishDraft(accepted.current.edit);
+  useEffect(() => publishDraft(accepted.current.edit), [edit, file, publishDraft]);
 
   /** How many lines the text has, counted the way `\n` does — the spine
       blame is laid along. */
@@ -674,43 +703,37 @@ function FileBody({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readAt]);
 
-  /** Ask the far machine what this file says now, and take the answer
-      only where taking it costs nobody anything (工作区批⑩).
-   *
-   * **A draft stops it dead, before the round trip is even read.**
-   * 「有草稿维持『存的时候报冲突』」— the buffer is somebody's work and
-   * the disk is somebody else's; khor does not pick between them, and
-   * the place that already asks is the save, which has three ways out
-   * (`theirs` / `merge` / `mine`). Touching `file` here would be worse
-   * than useless: `file.text` is the **base** the merge is computed
-   * against, so moving it under a draft would make that merge
-   * three-way against a base nobody ever had.
-   *
-   * **The same digest means nothing happened**, and saying so would be
-   * a repaint of an unchanged file plus a fresh diff request.
-   *
-   * A failure is silent: a machine that could not be reached on the way
-   * back into the window is not news about this file, and the next save
-   * says its own piece in its own words. */
-  const again = () => {
-    if (kindOf(path) !== "text" || file === null || dirty) return;
-    // **Asked what it is, not for what it says** (round NET-4): one
-    // small answer, and the file only when that answer moved. A failure
-    // to ask reads it as before.
-    fetchFileStat(machine, path)
-      .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
-      .catch(() => fetchFileText(machine, path))
-      .then((f) => {
-        if (f === null || f.digest === file.digest) return;
+  /** Refresh a clean file without replacing intervening edits or marked text.
+      The original disk version must also remain the draft's merge base. */
+  const readNeeded = useCallback(function checkRead(): void {
+    if (!bufferLive.current || refreshReading.current || !refresh.current.needsRead()) return;
+    const {file,edit} = accepted.current;
+    if (kindOf(path) !== "text" || file === null || (edit !== null && edit.text !== file.text)) return;
+    if (refresh.current.checkpoint() === null) return;
+    const requestedAt = refresh.current.requestVersion();
+    refreshReading.current = true;
+    let failed = false;
+    void refresh.current.read(
+      () => fetchFileStat(machine, path)
+        .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
+        .catch(() => fetchFileText(machine, path)),
+      (f) => {
+        if (f.digest === file.digest) return;
         remember(machine, path, f);
-        setFile(f);
-        setEdit({ text: f.text, was: f.digest, by: newLine() });
-        // The gutter is about HEAD and the file just moved underneath
-        // it, so it is wrong until it is asked again.
+        refresh.current.invalidate();
+        acceptBuffer(was => ({...was, file: f, edit: {text: f.text, was: f.digest, by: newLine()}}));
         setDiffAt((n) => n + 1);
-      })
-      .catch(() => {});
-  };
+      },
+    ).catch(() => { failed = true; }).finally(() => {
+      refreshReading.current = false;
+      if (!failed || refresh.current.requestVersion() !== requestedAt) checkRead();
+    });
+  }, [machine, path, acceptBuffer]);
+  const again = useCallback(() => {
+    refresh.current.requestRead();
+    readNeeded();
+  }, [readNeeded]);
+  useEffect(() => { readNeeded(); }, [file, edit, readNeeded]);
 
   /** **A write landed**, from this mount or from one that left the file
       a moment ago (`lib/save-road`). The disk is the text written, so
@@ -724,13 +747,17 @@ function FileBody({
   useEffect(
     () =>
       onLanded(machine, path, (l) => {
-        setFile((f) =>
-          f === null ? f : { ...f, text: l.text, digest: l.digest, at_ms: l.at_ms, total: bytesOf(l.text) },
-        );
-        setEdit((e) => (e === null || e.by !== l.by ? e : { ...e, was: l.digest }));
+        refresh.current.invalidate();
+        acceptBuffer(was => {
+          const edit = was.edit;
+          const sameLine = edit !== null && edit.by === l.by;
+          return {
+            file: was.file === null ? null : {...was.file, text: l.text, digest: l.digest, at_ms: l.at_ms, total: bytesOf(l.text)},
+            edit: sameLine ? {...edit, was: l.digest} : edit,
+            clashes: sameLine ? null : was.clashes,
+          };
+        });
         setOops(null);
-        // A merge saved is a merge answered (✓ over undecided places).
-        setClashes(null);
         // The gutter is about HEAD and the file just moved, so it is
         // wrong until it is asked again. Same for the tree's marks,
         // which this view does not hold (`onSaved`, and `treeChanged`
@@ -746,16 +773,14 @@ function FileBody({
       clash — the other side may have gone back — and the button says
       已保存 when it lands, or at once when there is nothing to write. */
   const save = (asked = false) => {
-    if (edit === null || !canEdit) return;
-    // Before the read lands the buffer can only be the pane's draft —
-    // something typed and not written — so it is written as it stands.
-    if (file !== null && !dirty) {
-      if (asked && !road.busy) confirmSaved(machine, path);
+    const current = accepted.current;
+    if (current.edit === null || current.edit.was === "") return;
+    if (current.file !== null && current.edit.text === current.file.text) {
+      if (asked && !roadOf(machine, path).busy) confirmSaved(machine, path);
       return;
     }
-    // The answer is heard by `onLanded` above and the trouble by
-    // `useRoad`; the promise has nothing left to say.
-    write(machine, path, edit, { asked }).catch(() => {});
+    if (!asked && (current.clashes !== null || roadOf(machine, path).trouble?.kind === "clash")) return;
+    write(machine, path, current.edit, { asked }).catch(() => {});
   };
   const saveRef = useRef(save);
   saveRef.current = save;
@@ -777,20 +802,22 @@ function FileBody({
 
   /** **Leaving the file writes it** — another tab, the tab closed, the
       page left — and so does the app being hidden or quit (`holdFlush`,
-      which `lib/save-road` calls). Read through a ref: the unmount sees
-      the last render, not the first. The pane hears the landing through
+      which `lib/save-road` calls). Read the accepted transaction even
+      before React commits it. The pane hears the landing through
       `orphan` when no view of this file is mounted by then. */
-  const leaving = useRef({ edit, autosave, onDraft, onSaved });
-  leaving.current = { edit, autosave, onDraft, onSaved };
+  const leavingCallbacks = useRef({onDraft, onSaved});
+  leavingCallbacks.current = {onDraft, onSaved};
   useEffect(() => {
     reopened(machine, path);
     const flush = () => {
-      const s = leaving.current;
-      if (!s.autosave || s.edit === null) return null;
-      return write(machine, path, s.edit, {
+      const current = accepted.current;
+      if (current.file === null || current.edit === null || current.edit.was === "" ||
+          current.edit.text === current.file.text || current.clashes !== null ||
+          roadOf(machine, path).trouble?.kind === "clash") return null;
+      return write(machine, path, current.edit, {
         orphan: () => {
-          s.onDraft?.(null);
-          s.onSaved?.();
+          leavingCallbacks.current.onDraft?.(null);
+          leavingCallbacks.current.onSaved?.();
         },
       }).catch(() => {});
     };
@@ -807,9 +834,10 @@ function FileBody({
     setWorking(false);
     forget(machine, path);
     setOops(null);
-    setClashes(null);
-    setEdit(null);
-    onDraft?.(null);
+    refresh.current.invalidate();
+    acceptBuffer(was => ({...was, edit: null, clashes: null}));
+    if (onDraft === undefined) reportDraftCount(0);
+    else onDraft(null);
     setReread((n) => n + 1);
   };
 
@@ -828,26 +856,34 @@ function FileBody({
    * count says how many times it did not.
    */
   const merge = () => {
+    const {file,edit} = accepted.current;
     if (edit === null || file === null || working) return;
+    const current = refresh.current.checkpoint();
+    if (current === null) return;
+    const action = ++overwriteEpoch.current;
+    const accepts = () => action === overwriteEpoch.current && current();
     setWorking(true);
     setOops(null);
     const base = file.text;
     const mine_ = edit.text;
     fetchFileText(machine, path)
-      .then((now) =>
-        mergeFileText(base, mine_, now.text).then((m) => {
-          // The base moves with the merge: a second refusal has to be
-          // measured against what this merge started from, not against
-          // the text the view first opened.
-          setFile((f) => (f === null ? f : { ...f, text: now.text, digest: now.digest, at_ms: now.at_ms }));
-          setEdit((e) => (e === null ? e : { ...e, text: m.text, was: now.digest }));
-          setClashes(m.clashes);
-          // The clash is answered: the box is pinned to what is there.
+      .then((now) => {
+        if (!accepts()) return;
+        return mergeFileText(base, mine_, now.text).then((m) => {
+          if (!accepts()) return;
+          // The buffer and its merge base move together, only while this
+          // action still owns the unchanged line of editing.
+          refresh.current.invalidate();
+          acceptBuffer(was => ({
+            file: was.file === null ? null : {...was.file, text: now.text, digest: now.digest, at_ms: now.at_ms},
+            edit: was.edit === null ? null : {...was.edit, text: m.text, was: now.digest},
+            clashes: m.clashes,
+          }));
           forget(machine, path);
-        }),
-      )
-      .catch((e: unknown) => setOops(said(e)))
-      .finally(() => setWorking(false));
+        });
+      })
+      .catch((e: unknown) => { if (accepts()) setOops(said(e)); })
+      .finally(() => { if (action === overwriteEpoch.current) setWorking(false); });
   };
 
   /** Save what is in the box over whatever is there now.
@@ -859,6 +895,7 @@ function FileBody({
    * it is the gap the person just chose to accept — the button says so.
    */
   const mine = () => {
+    const {edit} = accepted.current;
     if (edit === null || working) return;
     const action = ++overwriteEpoch.current;
     const by = edit.by;
@@ -866,17 +903,16 @@ function FileBody({
     setOops(null);
     readForOverwrite(machine, path)
       .then((read) => {
-        if (action !== overwriteEpoch.current) return;
-        const latest = leaving.current.edit;
+        if (action !== overwriteEpoch.current || !bufferLive.current) return;
+        const latest = accepted.current.edit;
         if (latest === null || latest.by !== by) return;
         const pin = read.pin(latest.text);
         if (pin === null) return;
         // New typing belongs to the fresh base too. The write and the next
         // keystroke must share this new line, rather than the old line's head.
         remember(machine, path, read.file);
-        setFile(read.file);
-        setEdit(pin);
-        leaving.current = { ...leaving.current, edit: pin };
+        refresh.current.invalidate();
+        acceptBuffer(was => ({...was, file: read.file, edit: pin}));
         return write(machine, path, pin, { asked: true });
       })
       .catch((e: unknown) => {
@@ -896,16 +932,23 @@ function FileBody({
       .catch((e: unknown) => setTook(said(e)));
   };
 
-  // ── the three screens that are not a code view ──────────────────
-  if (nativeOffice) return <Away machine={machine} path={path} handoff={handoff} preview word="" onTake={take} took={took}/>;
+  const previewSurface = (children: ReactNode) => <div data-file-preview className="relative flex min-h-0 flex-1 flex-col">
+    {children}
+    {lookError !== null && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center p-2">
+      <div role="alert" data-file-preview-error className="pointer-events-auto flex max-w-full items-center gap-3 rounded-lg border bg-popover px-3 py-1.5 text-callout text-muted-foreground shadow-(--shadow-float)">
+        <span className="min-w-0 break-words">{lookError}</span>
+        <Button size="sm" onClick={() => setReread(n => n + 1)} className="min-h-touch">{gui.region_retry}</Button>
+        <button type="button" aria-label={gui.close} onClick={() => setLookFailure(null)} className="grid min-h-touch min-w-touch place-items-center"><IconClose className="size-affordance" /></button>
+      </div>
+    </div>}
+  </div>;
+  if (nativeOffice) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
   if (kindOf(path) !== "text") {
-    if (lookError !== null) {
-      return <Away machine={machine} path={path} handoff={handoff} word={lookError} onTake={take} took={took}/>;
-    }
-    if (look === null) return <div className="flex-1" />;
+    if (look === null) return previewSurface(lookError === null ? <div className="flex-1" /> :
+      <Away path={path} handoff={handoff} total={lookTotal} word="" onTake={take} took={took} />);
     if (look.cut) {
-      return (
-        <Away machine={machine} path={path} handoff={handoff} total={look.total} word={gui.file_preview_too_big} onTake={take} took={took} />
+      return previewSurface(
+        <Away path={path} handoff={handoff} total={look.total} word={gui.file_preview_too_big} onTake={take} took={took} />
       );
     }
     if (look.kind === "image" || look.kind === "svg") {
@@ -914,7 +957,7 @@ function FileBody({
       // document it would run them, and khor would owe itself a
       // sanitiser. An image element renders the same drawing and runs
       // nothing — the browser's own rule, not khor's.
-      return (
+      return previewSurface(
         <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden p-4">
           <img
             ref={pinch}
@@ -932,7 +975,7 @@ function FileBody({
       // than `<object>`: both reach the same viewer, and a frame is the
       // one of the two whose failure mode is a blank rectangle rather
       // than a silent fallback to nothing.
-      return (
+      return previewSurface(
         <div className="flex min-h-0 flex-1 flex-col">
           <iframe
             data-pdf-frame
@@ -944,7 +987,7 @@ function FileBody({
       );
     }
     if (look.kind === "doc" || look.kind === "pdf") {
-      return (
+      return previewSurface(
         <div className="flex min-h-0 flex-1 flex-col">
           {look.empty ? (
             <div className="flex flex-1 items-center justify-center p-6 text-body text-foreground">
@@ -981,7 +1024,7 @@ function FileBody({
         </div>
       );
     }
-    return <Away machine={machine} path={path} handoff={handoff} word={gui.file_not_text} onTake={take} took={took} />;
+    return previewSurface(<Away path={path} handoff={handoff} total={look.total} word={gui.file_not_text} onTake={take} took={took} />);
   }
 
   if (error !== null) {
@@ -990,7 +1033,7 @@ function FileBody({
   if (file === null) return <div className="flex-1" />;
 
   if (file.binary) {
-    return <Away machine={machine} path={path} handoff={handoff} total={file.total} word={gui.file_not_text} onTake={take} took={took}/>;
+    return <Away path={path} handoff={handoff} total={file.total} word={gui.file_not_text} onTake={take} took={took}/>;
   }
 
   // **Nothing is drawn about HEAD while the buffer differs from disk.**
@@ -1096,6 +1139,7 @@ function FileBody({
           because there is nothing there to focus. */}
       {(face ?? defaultFaceOf(path)) === "preview" && renders !== null ? (
         <div
+          ref={previewScroll}
           data-file-preview={renders}
           {...groundAttr(ground.ground)}
           className={cn("min-h-0 flex-1 overflow-auto", renders === "html" && "flex flex-col")}
@@ -1119,7 +1163,7 @@ function FileBody({
         // editor's own extensions (`lib/code`). Writable exactly when the
         // whole file is here and nobody is reading it first.
         <CodeEditor
-          editorHistory={editorHistory ?? localHistory.current}
+          editorHistory={history}
           historyKey={JSON.stringify([machine, path])}
           path={path}
           text={body}
@@ -1127,14 +1171,12 @@ function FileBody({
           hunks={hunks}
           blamed={blamed}
           goLine={goLine}
+          onComposition={(active) => {
+            refresh.current.setComposing(active);
+            if (!active) readNeeded();
+          }}
           onText={(t) => {
-            // **The leaving write sees the key at once.** CodeMirror's
-            // input is not a React event, so the render that refreshes
-            // `leaving` comes a task later; a tab closed in that gap
-            // wrote the text without its last key (face save i, cm-b).
-            const s = leaving.current;
-            if (s.edit !== null) leaving.current = { ...s, edit: { ...s.edit, text: t } };
-            setEdit((e) => (e === null ? e : { ...e, text: t }));
+            setEdit(e => e === null ? null : {...e, text: t});
           }}
           onSave={() => save(true)}
           // A merge waiting on the person: the disk's text (the merge set

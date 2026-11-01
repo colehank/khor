@@ -1,48 +1,12 @@
-// 会话里的路径与网址可点 (工作区第五轮 第 35 条). 「都在宿主机器上打开」
-// — the user, 2026-09-17.
-//
-// # What this is for
-//
-// An agent writes `src/main.rs:12` and khor paints it as text. The file
-// is one press away in the tree beside the conversation, and a person
-// reading the sentence has to go and find it by hand — which is the
-// whole of the complaint.
-//
-// # Why a context and not props
-//
-// The words are painted by `Markdown`, which is four components below
-// the pane that knows which machine and which project this conversation
-// belongs to (`ChatView` takes a session id and nothing else). Threading
-// a machine and a root through every one of them would put a workspace
-// on every piece of prose in this app — the agent's plan, a tool's
-// output, the machine conversation — for the sake of one of them.
-//
-// **Absent is the honest default.** Outside a workspace there is no
-// project for a relative path to be relative to, and no middle column to
-// open one in; the context is then null and a path stays text. A link
-// that pointed at nothing would be worse than no link at all, which is
-// the same rule as「a file the tree does not have is not painted as a
-// link」below.
-//
-// # The existence check is one `ls` per directory
-//
-// 「在树里真有这个文件」 is the rule, and it cannot be answered from
-// what the tree happens to have listed: a project's tree is two or three
-// open branches (`FileTree`), and a sentence about a file in a closed
-// one would silently stop being a link. So the directory a candidate
-// sits in is listed once and remembered, and every name in it is
-// answered from that. A conversation mentions a handful of directories;
-// this is a handful of `ls` calls for the life of the pane.
-//
-// **A directory is not a file.** Only files become links, because what
-// pressing one does is open a tab, and a directory has nothing to open.
+// A rendering context resolves source-machine paths and opens content in
+// the containing pane. Activation chooses internal or client-system intent.
+// Existence queries remain cached per source directory and machine.
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
 import { fetchLs, type WorkspaceRow } from "@/api";
 
 export type LinkHome = {
-  /** The machine this conversation is running on — the one that opens
-      things, which is the whole point (`khor_node::Link::launch`). */
+  /** The source machine used to resolve the conversation's paths. */
   machine: string;
   /** The project's own directory, absolute. The ceiling: a path outside
       it is not painted, the same ruling the tree keeps. */
@@ -56,12 +20,8 @@ export type LinkHome = {
   see: (abs: string) => void;
   /** Open it in the middle column, at that line where one was named. */
   open: (abs: string, line: number | null) => void;
-  /** Hand it to that machine's own opener instead — what `⌘`+press
-      always does (ruling 35:「`⌘`+点 或 网址→在宿主机器上打开」, and
-      2026-09-18 ruling 54 repeats it for the session landing).
-      **The same road an address takes** (`Markdown`'s `Link`), which is
-      why it is one word here rather than two behaviours. */
-  launch: (abs: string) => void;
+  /** A session URL opens in its own content side panel. */
+  openPage?: (url: string) => void;
   /** **The file opens beside the prose**, in the middle column of the
       pane that holds both (`WorkspacePane`). A conversation elsewhere
       shows a pressed file in its own preview first (round CHAT,
