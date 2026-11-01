@@ -1,4 +1,6 @@
-# 第二轮当前状态
+# 当前状态与历史发布记录
+
+2026-11-01最新：第三轮四项实现及作者自审完成，用户已确认当前Lab无问题；用户现已明确授权合并main并ship，正在发布，真机交互未验。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `ae398aa788096c32ce28507562b7e16547995826`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；第三轮合并与ship已获本次新授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
 
 2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 
@@ -43,3 +45,18 @@
 - Mac旧GUI／CLI回退在本次 `rollback-mac`；相同旧installed CLI只保一份canonical＋symlink引用。旧60在 `ios/previous-60.xcarchive` 与 `previous-60-libapp.a`，更早59仍原处。不复制新大payload到内盘，不为归档TMP诊断新开治理。
 - 内盘恢复入口 `/Users/zgh/Library/Caches/khor-code-quality/recovery/{STATE.md,RESUME.md,current-runtime.json,current-delivery.json,release-checkpoint.json,latest-source-bundle.json}`。disk0缺失先读RESUME，不建假挂载目录、不按摘要覆盖源。a228小bundle与原链继续保留；本次main/plan最终ref另存小bundle／Git ref收据。
 - 改写前完整STATE保留于本次 `STATE-before-release-closeout.md`（SHA见`state-closeout-lineage.json`），更早详细测试／源／私有Lab位置仍见Git历史及旧checkpoint。本页以当前事实为准，不用历史live状态重新move、stage、kill或发布。
+
+- 2026-11-01 R3-02已提交 d6114c10cd47af5890f437321f8147bf9512ba8d；最终Shell/ownership Rust、相关5组Chrome和types均实际通过。R3-03进入定向结构核查，R3-04未开始；所有本轮编译与测试槽均空闲。WebKit及Mac/iPhone仍未验，main与运行实例不变。下一动作：共享原workspace导航行并接入既有session内容标签。
+
+- 2026-11-01 最新权威检查点：R3-03已提交722120b2（原session甲板共享Git导航、bounded history、真实commit内容标签、单一preview owner及草稿保留）。Rust --lib tabs30/30、types-final、model-final、unit、history、Chrome ui-extended3四组均实际0；source hashes前后不变。原生Mac/iPhone待验，Chrome触摸模拟不等同真机。首轮Rust命令漏--lib导致额外集成测试目标构建，已停止自己的Cargo(exit130)；之后只库内定向，内盘16GiB/外盘91GiB。所有R3-03槽结束。
+- R3-04正在做：最新提交722120b2，当前只有scripts/check-workspace-content-ui.mjs的斜体/无空心圆回归断言未提交；红测exec1107。下一动作核红后修改共用TabStrip/TabSheetRows和移动甲板title样式。无其它实现并行、无agent、main/运行实例不变，无merge/ship授权。
+
+- 用户首轮验收修正已完成并提交4fede178：首次打开内容原位转换、编辑器首行避开甲板、浏览器移除工作区返回、Lab补齐正式app滚动监听。review-fixes布局5项与完整交互5组均通过，model/types/unit实际0。原95583 Lab已按PID/出生/cwd核实后关闭，新的唯一Lab为PID8946（Sun Nov  1 21:02:48 2026），exec88030，http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html。main/用户GUI未动，无原生构建；最新资源内盘13GiB/外盘91GiB。原Lab链接和上方旧PID仅是旧时点，以JSON为准。
+
+- 用户已允许并完成单击保留与返回位置修正，代码HEAD d7e2445074a5914a25fdcc729e1b815eb0b962e3。Session预览Map及替换分支已移除，文件/提交单击保留、同目标去重，独立工作区单击预览/双击保留不变；返回位于选择器之后、内容药丸之前。session-single-click:model先红后绿，types/unit0，UI5/5、layout5/5，源hash不变。原Lab PID8946/exec88030/port23836仍在，刷新原URL即可。main未动，无merge/ship授权，无新增构建。
+
+- Session提交页返回已提交 47407b3bef5958e90c96f8deece9f4e468822630：桌面复用原导航甲板，选择器→返回→内容药丸；回到该提交的工作区且保留提交实体/阅读与收起状态，手机返回同目标。session-commit-back的red复现无按钮，geometry五组Chrome及types/unit均0。只有原Lab8946/exec88030在运行，刷新原URL，main/ship未授权。
+
+- 最终用户确认已实现并提交 1450609dc8bc36d5d080e859c92e986227781fcd：Session标签承载浏览过程，所有文件/提交/网页/地址栏/popup在原标签跳转；只有显式New增加另一枚标签，首次无标签初始化一枚。统一navigate，废止按目标新增/跨标签去重的旧选择；关闭回调不补新标签，文件行提示/草稿及提交阅读按目的地隔离。session-in-tab/model-final、unit、types-verified0，verified/report.json真实组件六组通过，源hash前后一致。原Lab8946/exec88030不变，刷新原地址；main/运行app未动，无merge/ship授权。此规则覆盖上方历史单击保留实体方案。
+
+- 返回导航的标签身份已提交 ae398aa788096c32ce28507562b7e16547995826：每个标签按自己保存的scene显示名称／图标，picker显示“新会话标签页”，打开内容后显示对应文件／提交／网页身份。顶部条、手机药丸和总览共用身份计算；不重置保留的目的地、不清草稿或阅读状态。picker-identity/pass-3/report.json六组真实Chrome组件通过，types/unit均0；原red与两次测试文案／定位器错误保留。原Lab8946/exec88030不变，main及用户App未动，无merge/ship授权。

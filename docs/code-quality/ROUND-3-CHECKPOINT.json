@@ -1,0 +1,89 @@
+{
+  "updated_at": "2026-11-01T14:02:49.600041+00:00",
+  "status": "release_authorized_preparing",
+  "executor": "root_only_serial",
+  "main": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
+  "implementation_worktree": "/Volumes/disk0/Khor/worktrees/current/khor-round3",
+  "implementation_branch": "integrate/round3",
+  "implementation_head": "ae398aa788096c32ce28507562b7e16547995826",
+  "completed": {
+    "R3-01": "dee0caab",
+    "R3-02": "d6114c10",
+    "R3-03": "722120b2",
+    "R3-04": "f57cae56",
+    "verification": "24aae387",
+    "review_corrections": "4fede1787acd9bcb80a45d299ff95f3571400856",
+    "session_single_click": "d7e2445074a5914a25fdcc729e1b815eb0b962e3",
+    "session_commit_back": "47407b3bef5958e90c96f8deece9f4e468822630",
+    "in_tab_navigation": "1450609dc8bc36d5d080e859c92e986227781fcd",
+    "picker_identity": "ae398aa788096c32ce28507562b7e16547995826"
+  },
+  "authorized": {
+    "start": true,
+    "merge_main": true,
+    "ship": true
+  },
+  "active_slots": {
+    "lab": {
+      "exec": 88030,
+      "pid": 8946,
+      "birth": "Sun Nov  1 21:02:48 2026",
+      "url": "http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html",
+      "cwd": "/Volumes/disk0/Khor/worktrees/current/khor-round3/apps/gui"
+    },
+    "tests": null,
+    "rust": null,
+    "native": null
+  },
+  "verified": {
+    "unit": "exit0",
+    "types": "exit0",
+    "node_tabs": 30,
+    "chrome_recovery": 18,
+    "chrome_workspace": 5,
+    "chrome_xterm_dom": 10,
+    "review_layout": 5,
+    "review_workspace": 5,
+    "single_click_ui": 5,
+    "back_alignment_layout": 5,
+    "session_commit_back_ui": 5,
+    "in_tab_ui": 6,
+    "picker_identity_ui": 6
+  },
+  "unverified": [
+    "Real Mac TUI and system app handoff",
+    "Native GUI lifecycle and iPhone gestures/keyboard",
+    "WebKit runtime absent"
+  ],
+  "next_action": "Merge accepted implementation and plan to main; freeze source and build Mac, iOS and Linux; preserve hosts and disk reserve",
+  "sha256": {
+    "ROUND-3-PLAN.md": "e83ceea8479b9badabfd187394527d659a5f0b6e29cee5049af2ab4d19626ed0",
+    "STATE.md": "054adba0cdab1925d95e6afaf9aa0bc008bad5cdc76fca213cfcd2f6092d8913",
+    "NEXT-ROUND.md": "75cd8db8ae05da795d509736a37c62f36700a05c24ca2161b7af91ef1881e2be",
+    "round3-implementation.bundle": "23b1c970ffc4a7786c9cce13aefc3e19ed380af4666bddf28f9c7bac227c3504"
+  },
+  "user_review": [
+    "session tab owns browsing; all file/commit/page/address/popup destinations point the current tab",
+    "only explicit New adds sibling; first entry initializes one",
+    "no automatic cross-tab address dedup/focus",
+    "destination-owned drafts and commit reading/collapse retained",
+    "Back only browses without resetting tab",
+    "source selector then Back then content pill",
+    "browser no workspace Back",
+    "standalone workspace previews unchanged",
+    "picker scene displays New tab identity on strip, mobile deck and overview without resetting retained destination"
+  ],
+  "acceptance": {
+    "user_message": "ok 没问题了, 这一轮都做完了吗",
+    "scope": "current Lab and corrections accepted; does not claim native device verification",
+    "at": "2026-11-01T14:00:32.029511+00:00"
+  },
+  "release": {
+    "user_authorization": "可以合并main并ship了",
+    "evidence": "/Volumes/disk0/Khor/evidence/releases/20261101-round3",
+    "phase": "preparing",
+    "main_before": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
+    "native_slot": null,
+    "remote_slot": null
+  }
+}
