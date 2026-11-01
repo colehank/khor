@@ -81,9 +81,11 @@ async function frames(page, count = 3) {
 // period. Nothing here focuses, clicks, scrolls, or calls production methods.
 async function samples(page, kind, target = null, duration = 700) {
   return page.evaluate(async ({ kind, target, duration }) => {
-    const result = [], from = performance.now();
+    const result = [];
+    let from;
     do {
       await new Promise(requestAnimationFrame);
+      from ??= performance.now();
       const box = document.querySelector(kind === 'commit' ? '[data-commit-scroll]' : kind);
       if (!box) throw new Error(`Missing scroll surface: ${kind}`);
       const bounds = box.getBoundingClientRect();
@@ -100,7 +102,7 @@ async function samples(page, kind, target = null, duration = 700) {
         focus: active?.hasAttribute('data-commit-jump') ? 'trigger' : active?.getAttribute('data-commit-file') ?? active?.tagName,
         focusInTarget: !!element && (active === element || element.contains(active)),
       });
-    } while (performance.now() - from < duration);
+    } while (performance.now() - from < duration || result.length < 4);
     return result;
   }, { kind, target, duration });
 }
@@ -122,8 +124,16 @@ async function commitCase(page, mode, evidence) {
   await page.evaluate(() => {
     window.__qualityTrace = [];
     const box = document.querySelector('[data-commit-scroll]');
-    const record = event => window.__qualityTrace.push({ at: performance.now(), event: event.type, top: box.scrollTop, focus: document.activeElement?.hasAttribute('data-commit-jump') ? 'trigger' : document.activeElement?.tagName });
-    box.addEventListener('scroll', record); document.addEventListener('focusin', record);
+    const record = event => {
+      if (window.__qualityTrace.length >= 128) return;
+      const target = event.target instanceof Element ? event.target.closest('[data-commit-jump-item], [data-commit-jump]') : null;
+      window.__qualityTrace.push({ at: performance.now(), event: event.type, top: box.scrollTop,
+        target: target?.getAttribute('data-commit-jump-item') ?? (target ? 'trigger' : null),
+        menuTop: document.querySelector('[data-menu-viewport]')?.scrollTop,
+        focus: document.activeElement?.hasAttribute('data-commit-jump') ? 'trigger' : document.activeElement?.tagName });
+    };
+    box.addEventListener('scroll', record);
+    for (const event of ['focusin', 'pointerdown', 'pointerup', 'pointercancel', 'touchend', 'click']) document.addEventListener(event, record, true);
   });
   if (mode === 'touch') await trigger.tap();
   else if (mode === 'keyboard' || mode === 'escape') {
@@ -492,6 +502,7 @@ try {
         result.status = 'passed';
       } catch (error) {
         result.status = 'failed'; result.error = error.stack ?? String(error);
+        result.evidence.trace = await page.evaluate(() => window.__qualityTrace).catch(() => null);
         process.exitCode = 1;
       } finally {
         await page.screenshot({ path: join(out, `${engine}-${name}.png`) }).catch(error => { result.screenshotError = String(error); });

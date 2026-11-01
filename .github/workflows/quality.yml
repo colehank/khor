@@ -142,7 +142,13 @@ jobs:
       - run: npm run test:unit && npm run test:types
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
-      - run: npm run test:interaction && npm run workspace-content-ui && npm run terminal-links-ui && npm run notification-ui
+      - name: Run every interaction group and retain all failures
+        run: |
+          failed=0
+          for gate in lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui native-events native-helpers chat-recovery workspace-content-ui terminal-links-ui notification-ui; do
+            if ! npm run "$gate"; then failed=1; fi
+          done
+          exit "$failed"
         env:
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
           KHOR_TEST_FRONTEND: dist
@@ -151,8 +157,8 @@ jobs:
           EDITOR_OVERWRITE_WEBKIT: '1'
           CHAT_POLL_WEBKIT: '1'
           CHAT_CANCEL_WEBKIT: '1'
-          CHAT_REPLAY_WEBKIT: '1'
-          CHAT_REPLAY_CHECK_DIR: ${{ runner.temp }}/quality-chat-replay
+          CHAT_RECOVERY_WEBKIT: '1'
+          CHAT_RECOVERY_CHECK_DIR: ${{ runner.temp }}/quality-chat-recovery
           COMPOSE_OUT: ${{ runner.temp }}/quality-compose
           NATIVE_HELPERS_CHECK_DIR: ${{ runner.temp }}/quality-native-helpers
           NATIVE_EVENTS_CHECK_DIR: ${{ runner.temp }}/quality-native-events
@@ -175,7 +181,7 @@ jobs:
             ${{ runner.temp }}/quality-overwrite
             ${{ runner.temp }}/quality-chat-poll
             ${{ runner.temp }}/quality-chat-cancel
-            ${{ runner.temp }}/quality-chat-replay
+            ${{ runner.temp }}/quality-chat-recovery
             ${{ runner.temp }}/quality-pages
             ${{ runner.temp }}/quality-native-events
             ${{ runner.temp }}/quality-native-helpers
