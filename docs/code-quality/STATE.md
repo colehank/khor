@@ -1,13 +1,13 @@
 # 第二轮当前状态
 
-2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；iOS归档通过，但TestFlight上传被Apple账号条件拦住。** 不宣布完整SHIP或34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
+2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 
 ## 立即恢复
 
 - 产品源 `integrate/round2@a228baef4540ac4fe03c40879d4cb50f89da69c4`，正式构建源 `main@eca881f2b30c2893b7e73f81ae1e0f5cefbe8c6c`。本次尾部仅补发布文档，不改产品。主树 `/Users/zgh/Desktop/working/khor`；协调树 `/Volumes/disk0/Khor/worktrees/current/khor-code-quality-plan`。
 - 入口证据 `/Volumes/disk0/Khor/evidence/releases/20261101-round2`，最终非作者审查 `final-release-review.json` SHA `4a4f8a0705f319192e255cbf5dad6be86b06559f7c9413f7f243086f270f7aa5`。详细交付见[ROUND-2-RELEASE](ROUND-2-RELEASE.md)、[SHIP](../SHIP.md)。
 - **所有编译、上传和远端安装执行槽均FREE。** 正式Mac GUI PID91072／出生2026-11-01 15:19:04仍是用户程序；不当作临时Lab清理。Root唯一实际集成发布者，input/reviewer已完成只读交接，无待集成产品提交。
-- Mac实际72765已结束：Cargo0，原验证脚本成员搜索错误导致wrapper1，原false保留。22765补验0；78140切换0。iOS67257归档0，54810上传wrapper2／xcodebuild70。Linux driver126041／cargo126055已结束：Cargo0，原wrapper记录Assertion false；89593补验与stage0。70279安装driver0／原onset1，49028三节点采用探测0。**不要重启这些旧handle或重复安装。**
+- Mac实际72765已结束：Cargo0，原验证脚本成员搜索错误导致wrapper1，原false保留。22765补验0；78140切换0。iOS67257归档0；54810原upload-1 wrapper2／xcodebuild70保；31607新upload-2 wrapper0／xcodebuild0、真实build61。Linux driver126041／cargo126055已结束：Cargo0，原wrapper记录Assertion false；89593补验与stage0。70279安装driver0／原onset1，49028三节点采用探测0。**不要重启这些旧handle或重复安装。**
 - 所有旧CUA/Lab绑定不可观察以免拉起App；本次正式bare executable不在CUA应用目录中，精确路径getApp返回Invalid app。正式切换沿SHIP只向fresh PID/birth/exe/5467复核的旧main79598发送SIGTERM，未向host/provider发信号。
 - 当前真实状态与后续接续以内盘 `current-runtime.json`、`current-delivery.json`、`release-checkpoint.json` 和本目录结果文件为准。旧“未授权main／先真人／正在编译／等待可用性”均是历史时点。
 
@@ -19,10 +19,14 @@
 - **三节点**：hinton单jobs1／nice19／offline复用原target，Cargo0／2064.288s。Linux CLI SHA `9117de4af9fc07b0bff2c660c12fe42c27bc6085da67f9cbee3640cea68a6c7a`，完整LinuxPi SHA `89b53264b099746af37cd05feb31fcec0de36ce13034888d998904a6b74eeac4`、ELF x86_64／GLIBC最高2.30、全source/gen/dist manifest通过。一次共享NFS安装后，hinton159488、turing989677、lecun860893实际5467 listener的exe SHA均同，HTTP403＋完整UI一致。hinton/turing各2会话ID不变；lecun前后均`document transfer state busy`，保留未知会话读结果，不冒通过。见 `cluster/adoption-summary.json`、`session-comparison.json`。
 - 原Mac/Linux多字节mmap成员检查false均保留，补验改用明确 `.find(bytes,0)>=0`，没有重编或回填旧false。原onset1保留：serve已up，但serve.sh末尾空日志AND-list返回1；实际三节点采用由独立探测证明，不重启掩盖退出码。新独立缺口记[NEXT](NEXT-ROUND.md)。
 
-## 唯一发布外部阻挡：Apple账号
+## TestFlight接续已完成：0.1.14（61）
+
+- 用户回复“通过了”后，按Apple协议已处理继续；同归档新upload-2实际exec31607／Xcode10898，exit0／119.853s，Upload succeeded＋EXPORT SUCCEEDED均存在；本次原位ContentDelivery提取真实build **61**。result SHA `3083addf77e2a6f26678325dfff6a6a86c76d46e48da6e398e97ae5754e4bf91`；version收据SHA `92bf22f9aa1612385cccdb42d0600d4cfd5b14d78ba2481fb3f25b1b44c648e8`。server已接受，不推断TestFlight处理完成或安装通过。
+- upload-2当前文档HEAD2a041ddd与built eca仅精确4份发布文档不同，其它实际源码全等；App完整树／.a／gen／dist／导出选项首尾不变、原进程组空、无force。复用原归档，**没有重新编译、重装Mac／集群或手工修改账号／私钥**。所有执行槽再次FREE。
+- 下列upload-1的70／协议／签名缺失是已解除的原失败，仍原样保留；旧“唯一外部阻挡／等待处理／执行upload-2”是接续前历史，不再触发重传。现无需任何发布重试。
 
 - iOS正式归档build0／681.998s，后续架构、deep strict签名、team／正式ID和profile各phase0，真实arm64 **IOS**／SDK26.5／min15.0；App与`.a`均含完整新UI。source两签名叶恢复原bytes，gen/assets不变；旧60archive/lib同FS可逆保留。见 `ios/result.json`、`product-verification.json`、`platform-verification.json`。原工具TMP非空诊断保留，不称TMP absent。
-- 正式export/upload仅尝试一次，xcodebuild70／12.359s：`PLA Update available` 与 `No signing certificate "iOS Distribution" found`。本地只读有效签名身份development1／distribution0。没有Upload succeeded／EXPORT SUCCEEDED，**未交付TestFlight、没有新上传构建号**。现archive/App/lib与上传前逐SHA不变。
+- 正式export/upload仅尝试一次，xcodebuild70／12.359s：`PLA Update available` 与 `No signing certificate "iOS Distribution" found`。本地只读有效签名身份development1／distribution0。没有Upload succeeded／EXPORT SUCCEEDED，**该次未交付TestFlight、当时无新上传构建号**。现archive/App/lib与上传前逐SHA不变。
 - 由Apple团队Account Holder登录开发者后台，审阅并处理更新协议。Root未接受法律协议、改账号／keychain／私钥或自动重传。Apple角色要求见 https://developer.apple.com/help/account/access/roles 。协议处理后再复查自动发行签名条件，不预判缺证书一定只是协议的副作用。
 - 接续时沿现归档单次上传，另建`upload-2`结果；保留原70和原upload-1，不重建Rust来追绿。先读 `ios-upload-handoff.md`：若main只是本次发布文档后继，核Git差异仅`docs/SHIP.md`／`docs/code-quality/**`且其它源码、gen、dist、archive/App/lib完整等原输入；不要机械要求新HEAD==eca，也不能随意放宽产品源码。实际上传成功后才记录Apple分配的新build。
 
