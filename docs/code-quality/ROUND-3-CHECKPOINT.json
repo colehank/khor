@@ -1,11 +1,11 @@
 {
-  "updated_at": "2026-11-01T13:13:03.447255+00:00",
-  "status": "session_single_click_and_back_alignment_complete_awaiting_acceptance",
+  "updated_at": "2026-11-01T13:20:54.377610+00:00",
+  "status": "session_commit_back_complete_awaiting_acceptance",
   "executor": "root_only_serial",
   "main": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
   "implementation_worktree": "/Volumes/disk0/Khor/worktrees/current/khor-round3",
   "implementation_branch": "integrate/round3",
-  "implementation_head": "d7e2445074a5914a25fdcc729e1b815eb0b962e3",
+  "implementation_head": "47407b3bef5958e90c96f8deece9f4e468822630",
   "completed": {
     "R3-01": "dee0caab",
     "R3-02": "d6114c10",
@@ -13,7 +13,8 @@
     "R3-04": "f57cae56",
     "verification": "24aae387",
     "review_corrections": "4fede1787acd9bcb80a45d299ff95f3571400856",
-    "session_single_click": "d7e2445074a5914a25fdcc729e1b815eb0b962e3"
+    "session_single_click": "d7e2445074a5914a25fdcc729e1b815eb0b962e3",
+    "session_commit_back": "47407b3bef5958e90c96f8deece9f4e468822630"
   },
   "authorized": {
     "start": true,
@@ -42,19 +43,20 @@
     "review_layout": 5,
     "review_workspace": 5,
     "single_click_ui": 5,
-    "back_alignment_layout": 5
+    "back_alignment_layout": 5,
+    "session_commit_back_ui": 5
   },
   "unverified": [
     "Real Mac TUI and system app handoff",
     "Native GUI lifecycle and iPhone gestures/keyboard",
     "WebKit runtime absent"
   ],
-  "next_action": "User acceptance; reuse Lab PID8946 port23836, no merge/ship",
+  "next_action": "User acceptance of refreshed original Lab; no merge/ship",
   "sha256": {
-    "ROUND-3-PLAN.md": "0321cba7774bb77db0395c6a7adf22f02daedd54fb52789e1eff4bb8425e15fe",
-    "STATE.md": "b83de5ff7031551283256348c526062fd671977b5625637de1cb6cd6f4e07e81",
+    "ROUND-3-PLAN.md": "c4037c7124201ddbaa1a6241230f47155e080b8a6f44951f6b29e7c2e6cb09d3",
+    "STATE.md": "11d2d06d1346d525f242aa536b4b0cfc798e98f471c1a1e20d7974b31f7a9232",
     "NEXT-ROUND.md": "403a0c2db6831997c74fd5c2530c9ad2f848e789a02a7729d5bc7ec76311ed9d",
-    "round3-implementation.bundle": "ac906f896a140b7d37c1599c1ea57723d346816790cc4a219bf21a66a35b845d"
+    "round3-implementation.bundle": "3b10f5687615f0897daee544d1a432525d3c56de1235a1ce14e21cfd39ac1f59"
   },
   "user_review": [
     "first document consumes new tab",
