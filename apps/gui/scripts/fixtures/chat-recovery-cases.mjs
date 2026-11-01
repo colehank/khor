@@ -20,7 +20,7 @@ export function installRecoveryTransport() {
   let binding = 'canonical-1', serial = 0;
   const cursor = (source, offset) => JSON.stringify([source, offset]);
   const wire = window.__chatWire = {
-    calls: [], pending: [], held: [], unknown: [], cancellations: [], failNext: null, holdNext: false,
+    calls: [], pending: [], held: [], unknown: [], cancellations: [], failedReads: [], readFailure: null, holdNext: false,
     reply(index, change = {}) {
       const poll = wire.pending[index];
       if (!poll || poll.completed) throw new Error('missing or completed fixture poll');
@@ -72,8 +72,10 @@ export function installRecoveryTransport() {
         const answer = {entries: texts.map((text, index) => entry(args.binding, start + index, text)), references: [], older: null,
           newer: cursor(args.binding, args.newer ? selected.length : offset), has_more: false, reset: false, encoded_bytes: 0};
         answer.encoded_bytes = new TextEncoder().encode(JSON.stringify(answer)).length + 20;
-        const failure = wire.failNext; wire.failNext = null;
-        if (failure !== null) throw new Error(failure);
+        if (wire.readFailure !== null) {
+          wire.failedReads.push({key: args.requestKey, binding: args.binding, error: wire.readFailure});
+          throw new Error(wire.readFailure);
+        }
         if (wire.holdNext) {
           wire.holdNext = false;
           return await new Promise(resolve => wire.held.push({key: args.requestKey, answer, resolve, released: false}));
@@ -123,8 +125,15 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
     await deliver([frame, ...extra], {gone: extra.some(frame => frame.kind === 'gone')});
   };
   const wake = () => deliver([{kind: 'content_changed'}]);
+  const failReads = message => page.evaluate(message => {
+    window.__chatWire.readFailure = message;
+    return window.__chatWire.failedReads.length;
+  }, message);
+  const readFailedAfter = count => page.evaluate(count => window.__chatWire.failedReads.length > count, count);
+  const allowReads = () => page.evaluate(() => { window.__chatWire.readFailure = null; });
   const mutate = texts => page.evaluate(texts => window.__chatWire.source(texts), texts);
   const recapture = async (texts, extra = []) => {
+    await allowReads();
     await mutate(texts);
     const before = (await calls('chat_capture')).length;
     await deliver([], {lost: true});
@@ -144,9 +153,8 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
     await exerciseRecoveryActions(scenario,page,{calls,capture,check,preparePeer});
   } else if (scenario === 'failed-empty' || scenario === 'failed-partial' || scenario === 'empty-error') {
     if (scenario !== 'failed-empty') await page.evaluate(() => window.__chatWire.append('Uncommitted fragment.'));
-    const before = (await calls('history_page')).length;
-    await page.evaluate(scenario => {window.__chatWire.failNext = scenario === 'empty-error' ? '' : 'fixture read failure';}, scenario);
-    await wake();await until(async () => (await calls('history_page')).length === before + 1, 'canonical read failure reached actual reader');
+    const before = await failReads(scenario === 'empty-error' ? '' : 'fixture read failure');
+    await wake();await until(() => readFailedAfter(before), 'canonical read failure reached actual reader');
     await check(['Complete known history.'], ['Uncommitted fragment.']);
   } else if (scenario === 'cancelled-delivery') {
     await page.evaluate(() => {window.__chatWire.append('Uncommitted fragment.');window.__chatWire.holdNext = true;});
@@ -161,17 +169,18 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
   } else if (scenario === 'successful-empty') {
     await recapture([]);await check([], ['Complete known history.']);
   } else if (scenario === 'failure-then-success') {
-    await page.evaluate(() => {window.__chatWire.append('Failed fragment.');window.__chatWire.failNext = 'fixture read failure';});
-    const before = (await calls('history_page')).length;await wake();
-    await until(async () => (await calls('history_page')).length === before + 1, 'first read actually failed');
+    await page.evaluate(() => window.__chatWire.append('Failed fragment.'));
+    const before = await failReads('fixture read failure');await wake();
+    await until(() => readFailedAfter(before), 'first read actually failed');
     await check(['Complete known history.'], ['Failed fragment.']);
     await recapture(['Successful replacement.']);await check(['Successful replacement.'], ['Complete known history.', 'Failed fragment.']);
     await recapture([]);await check([], ['Successful replacement.']);
   } else if (scenario === 'live-interleaved') {
-    await page.evaluate(() => {window.__chatWire.append('Live before failure.');window.__chatWire.failNext = 'fixture read failure';});
-    const before = (await calls('history_page')).length;
+    await page.evaluate(() => window.__chatWire.append('Live before failure.'));
+    const before = await failReads('fixture read failure');
     await deliver([{kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text: 'Failed fragment.'}}}}, {kind: 'content_changed'}]);
-    await until(async () => (await calls('history_page')).length === before + 1, 'failed canonical read reached reader');
+    await until(() => readFailedAfter(before), 'failed canonical read reached reader');
+    await allowReads();
     await page.evaluate(() => window.__chatWire.append('Live after failure.'));await wake();
     await check(['Complete known history.', 'Live before failure.', 'Live after failure.'], ['Failed fragment.']);
   } else if (scenario === 'ordinary-control-error' || scenario === 'successful-result') {

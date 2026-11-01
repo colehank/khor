@@ -49,7 +49,7 @@ async function run(engine, name) {
     await page.addInitScript(installRecoveryTransport);
     await page.addInitScript(installRecoveryActionsTransport);
     const polls = () => page.evaluate(() => window.__chatWire.calls.filter(call => call.cmd === 'chat_wait' || call.cmd === 'chat_poll'));
-    const facts=()=>page.evaluate(()=>({origin:location.origin,calls:window.__recoveryWire?.calls.slice(-64),peers:window.__recoveryWire?.peers,terminals:window.__recoveryWire?.terminals,heldOffers:window.__recoveryWire?.offers.map(x=>({id:x.args.id,done:x.done})),heldActions:window.__recoveryWire?.actions.map(x=>({cmd:x.cmd,args:x.args,done:x.done})),heldDrops:window.__recoveryWire?.drops.map(x=>({lease:x.lease,done:x.done}))})).catch(()=>null);
+    const facts=()=>page.evaluate(()=>({origin:location.origin,calls:window.__recoveryWire?.calls.slice(-64),failedReads:window.__chatWire?.failedReads,peers:window.__recoveryWire?.peers,terminals:window.__recoveryWire?.terminals,heldOffers:window.__recoveryWire?.offers.map(x=>({id:x.args.id,done:x.done})),heldActions:window.__recoveryWire?.actions.map(x=>({cmd:x.cmd,args:x.args,done:x.done})),heldDrops:window.__recoveryWire?.drops.map(x=>({lease:x.lease,done:x.done}))})).catch(()=>null);
     try {
       await page.clock.install({time: new Date('2026-10-25T00:00:00Z')});
       await page.clock.pauseAt(new Date('2026-10-25T00:00:00Z'));
