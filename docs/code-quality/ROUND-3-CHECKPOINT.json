@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-11-01T14:00:32.029511+00:00",
-  "status": "implementation_complete_lab_accepted_pending_delivery",
+  "updated_at": "2026-11-01T14:02:49.600041+00:00",
+  "status": "release_authorized_preparing",
   "executor": "root_only_serial",
   "main": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
   "implementation_worktree": "/Volumes/disk0/Khor/worktrees/current/khor-round3",
@@ -20,8 +20,8 @@
   },
   "authorized": {
     "start": true,
-    "merge_main": false,
-    "ship": false
+    "merge_main": true,
+    "ship": true
   },
   "active_slots": {
     "lab": {
@@ -55,10 +55,10 @@
     "Native GUI lifecycle and iPhone gestures/keyboard",
     "WebKit runtime absent"
   ],
-  "next_action": "Implementation and Lab feedback complete; await explicit main merge/ship instruction, retain native/Mac/iPhone verification gaps",
+  "next_action": "Merge accepted implementation and plan to main; freeze source and build Mac, iOS and Linux; preserve hosts and disk reserve",
   "sha256": {
-    "ROUND-3-PLAN.md": "b49a3ffc3e68eee5709598febc8df8931de8f9f970df247180051d4eee03317d",
-    "STATE.md": "2291f1d74f0373d65ad7db2e02f089e7a06c20b291c4bba624b11ceaa6de3f54",
+    "ROUND-3-PLAN.md": "e83ceea8479b9badabfd187394527d659a5f0b6e29cee5049af2ab4d19626ed0",
+    "STATE.md": "054adba0cdab1925d95e6afaf9aa0bc008bad5cdc76fca213cfcd2f6092d8913",
     "NEXT-ROUND.md": "75cd8db8ae05da795d509736a37c62f36700a05c24ca2161b7af91ef1881e2be",
     "round3-implementation.bundle": "23b1c970ffc4a7786c9cce13aefc3e19ed380af4666bddf28f9c7bac227c3504"
   },
@@ -77,5 +77,13 @@
     "user_message": "ok 没问题了, 这一轮都做完了吗",
     "scope": "current Lab and corrections accepted; does not claim native device verification",
     "at": "2026-11-01T14:00:32.029511+00:00"
+  },
+  "release": {
+    "user_authorization": "可以合并main并ship了",
+    "evidence": "/Volumes/disk0/Khor/evidence/releases/20261101-round3",
+    "phase": "preparing",
+    "main_before": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
+    "native_slot": null,
+    "remote_slot": null
   }
 }
