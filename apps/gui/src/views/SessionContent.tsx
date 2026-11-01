@@ -41,8 +41,8 @@ export function ContentTabs({session,open,devices,content,navigation,onAdd,onFoc
   const tabs=content.allTabs.filter(t=>t.session===session),state=navigation.get(session);
   const targets=contentTabTargets(tabs,content.handle);
   const faces=[...targets].map(([key,tab])=>{
-    const picker=contentView(tab)==='workspace';
-    return {...contentTabFace(tab,devices,content.pageIcon),id:key,...(picker?{label:gui.content_new}:{}),pinned:tab.pinned,
+    const face=contentTabFace(tab,devices,content.pageIcon,navigation.forTab(session,key).get(session).scene),picker=face.mark?.key==='new-tab';
+    return {...face,id:key,pinned:tab.pinned,
       attributes:{'data-content-tab':tab.id,'data-content-on':state.key===key,'data-content-browse':picker||undefined,'data-content-icon':!picker},
       menu:[{key:'pin',label:tab.pinned?gui.unpin:gui.pin,run:()=>content.pin(tab.id,!tab.pinned)},{key:'close',label:gui.close_tab,disabled:tab.pinned,run:()=>content.close(tab.id)}]};
   });

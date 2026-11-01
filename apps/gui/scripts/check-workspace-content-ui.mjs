@@ -113,6 +113,10 @@ try{
  await page.locator('[data-content-visible="true"] [data-commit-collapse]').click();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'false');
  await commitToolbar.locator('[data-content-back]').click();await picker.locator('[data-workspace-navigation]').waitFor();
  assert.equal(tabs.tabs.find(t=>t.id===source).view,'commit','Back keeps the commit tab identity');
+ const sourceTab=page.locator(`[data-tab="${source}"]`);
+ assert.equal(await sourceTab.locator('[data-tab-name]').innerText(),'新会话标签页','Back displays the source scene rather than the retained commit title');
+ assert.equal(await sourceTab.locator('[data-side-mark="new-tab"]').count(),1,'Back also updates the tab mark');
+ await page.screenshot({path:join(output,'picker-tab-title.png')});
  await page.locator(`[data-tab-open="${source}"]`).click();await page.locator('[data-content-visible="true"] [data-commit-collapse]').waitFor();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'false','Back and reopen preserves collapse state');
 
  await browseHistory();await picker.locator(`[data-workspace-log-commit="${second}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${second}"]`).waitFor();await until(()=>tabs.tabs[0]?.url.includes(second));
@@ -132,10 +136,14 @@ try{
  await page.locator('[data-content-visible="true"] [data-content-source="workspace"]').click();await picker.locator('[data-file-path="/fixture/a.md"]').click();await editor.waitFor();
  assert.equal(await editor.innerText(),'A private unsaved draft','returning to the file restores its own draft');assert.equal(tabs.tabs.length,1);
  await page.screenshot({path:join(output,'in-tab-file.png')});results.push({name:'file/browser/file in-tab navigation retains destination-owned draft',passed:true});
+ await page.locator('[data-content-visible="true"] [data-content-toolbar="file"] [data-content-back]').click();
  await page.locator('[data-content-tabs] [data-tab-new]').click();await picker.locator('[data-file-path="/fixture/a.md"]').click();await editor.waitFor();await until(()=>tabs.tabs.length===2);
  assert.equal(tabs.tabs.filter(t=>t.url==='/fixture/a.md').length,2,'same address stays in its explicit new tab instead of switching to another');
  assert(!(await editor.innerText()).includes('private unsaved'),'another explicit tab does not inherit this tab draft');
+ assert.equal(await sourceTab.locator('[data-tab-name]').innerText(),'新会话标签页','inactive picker tab keeps its own title while another tab shows a file');
+ assert.equal(await page.locator('[data-content-on="true"] [data-tab-name]').innerText(),'a.md','active file label does not inherit another tab picker scene');
  await page.locator(`[data-tab-open="${source}"]`).click();assert.equal(await editor.innerText(),'A private unsaved draft');
+ assert.equal(await sourceTab.locator('[data-tab-name]').innerText(),'a.md','reopening content restores its current document title');
  results.push({name:'only explicit New creates a sibling, with independent draft and identity',passed:true});
  await page.goto(url+'?workspace=1&theme=light');await page.locator('[data-workspace-navigation]').waitFor();await page.screenshot({path:join(output,'workspace-light.png')});
  await page.locator('[data-workspace-navigation]').getByRole('button',{name:'提交历史',exact:true}).click();await page.locator('[data-workspace-log-commit]').first().waitFor();await page.locator('[data-workspace-log-commit]').first().click();await page.locator('[data-commit-page]').waitFor();await page.screenshot({path:join(output,'workspace-commit.png')});
@@ -165,7 +173,13 @@ try{
  await mobilePicker.locator('[data-workspace-log-commit]').first().click();await phone.locator('[data-content-visible="true"] [data-commit-page]').waitFor();
  await phone.locator('[data-content-visible="true"] [data-content-deck]').waitFor();await phone.screenshot({path:join(output,'mobile-commit.png')});
  await phone.locator('[data-content-visible="true"] [data-content-deck]').getByRole('button',{name:'返回',exact:true}).click();await mobilePicker.locator('[data-workspace-navigation]').waitFor();
- results.push({name:'mobile commit retains original content deck and can return to workspace',passed:true});await phone.close();
+ assert.equal(await mobilePicker.locator('.content-new-title').innerText(),'新会话标签页','mobile picker identity follows the scene');
+ await phone.evaluate(()=>window.__workspaceProbe.navigation.overview('session'));
+ const overview=phone.locator('.mobile-content-overview');await overview.waitFor();
+ assert.equal(await overview.locator('[data-content-overview-tab][data-on="true"] [data-tab-sheet-name]').innerText(),'新会话标签页','overview retains per-tab picker presentation');
+ assert.equal(await overview.locator('[data-content-overview-tab][data-on="true"] [data-side-mark="new-tab"]').count(),1,'overview picker uses the New tab mark');
+ await phone.screenshot({path:join(output,'mobile-picker-overview.png')});
+ results.push({name:'mobile commit Back, deck and overview use the current scene identity',passed:true});await phone.close();
  }
  assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),before,'test evidence must match unchanged source');
  }
