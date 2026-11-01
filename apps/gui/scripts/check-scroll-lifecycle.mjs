@@ -162,11 +162,28 @@ async function commitCase(page, mode, evidence) {
     await page.keyboard.press('Enter');
   } else {
     const item = page.locator('[data-commit-jump-item]').nth(5);
-    if (mode === 'touch') await item.tap(); else await item.click();
+    if (mode === 'touch') {
+      await menu.evaluate(async menu => {
+        await Promise.all(menu.getAnimations({subtree: true}).map(animation => animation.finished));
+      });
+      await item.evaluate(item => {
+        const viewport = item.closest('[data-menu-viewport]');
+        viewport.scrollTop += item.getBoundingClientRect().bottom - viewport.getBoundingClientRect().bottom + 4;
+      });
+      const bounds = await item.boundingBox();
+      assert(bounds, 'scrolled menu item has a touch target');
+      await page.touchscreen.tap(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    } else await item.click();
   }
   await menu.waitFor({ state: 'detached' });
   evidence.samples = await samples(page, 'commit', target);
   evidence.trace = await page.evaluate(() => window.__qualityTrace);
+  if (mode === 'touch') {
+    const press = evidence.trace.find(event => event.event === 'pointerdown' && event.target === target);
+    const click = evidence.trace.find(event => event.event === 'click' && event.target === target);
+    assert(press && click, 'touch selects the pressed menu item');
+    assert.equal(click.menuTop, press.menuTop, 'touch focus must not move the menu row before its click');
+  }
   if (mode === 'escape') {
     assert(evidence.samples.every(s => s.focus === 'trigger'), 'Escape restores and retains trigger focus');
     assert(evidence.samples.every(s => Math.abs(s.top - evidence.before.top) <= 2), 'Escape does not navigate or scroll');

@@ -51,5 +51,8 @@ export function MenuViewport({
   }, [active]);
   return <div ref={viewport} data-menu-viewport data-sheet-hold className={cn('min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain', className)} style={{
     maxHeight: room === undefined ? MENU_TALLEST : `min(${MENU_TALLEST}px, ${typeof room === 'number' ? room + 'px' : room})`
-  }} onFocusCapture={e => reveal(e.target as HTMLElement)} onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}><div ref={items} data-menu-items className="min-w-0 p-menu-inset">{children}</div></div>;
+  }} onFocusCapture={e => {
+    // Pointer focus must not move the pressed row between touchend and click.
+    if (e.target.matches(':focus-visible')) reveal(e.target as HTMLElement);
+  }} onWheel={e => e.stopPropagation()} onTouchMove={e => e.stopPropagation()}><div ref={items} data-menu-items className="min-w-0 p-menu-inset">{children}</div></div>;
 }
