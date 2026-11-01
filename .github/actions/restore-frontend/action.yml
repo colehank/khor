@@ -1,0 +1,15 @@
+name: Restore the verified frontend
+description: Reuse this run's frontend without regenerating or rebuilding it
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: frontend
+        path: frontend
+    - shell: bash
+      run: |
+        python3 scripts/release_manifest.py verify --root frontend
+        mkdir -p apps/gui/src
+        cp -R frontend/dist apps/gui/dist
+        cp -R frontend/gen apps/gui/src/gen

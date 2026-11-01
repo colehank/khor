@@ -1,0 +1,41 @@
+name: Frontend artifact
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: frontend-registry
+          cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - run: python3 scripts/release_manifest.py version
+      - run: npm ci --prefix apps/gui
+      - run: npm run build --prefix apps/gui
+      - name: Record the frontend consumed by every native platform
+        run: |
+          mkdir -p frontend
+          cp -R apps/gui/dist frontend/dist
+          cp -R apps/gui/src/gen frontend/gen
+          python3 scripts/release_manifest.py create --root frontend --kind frontend
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend
+          path: frontend/
+          if-no-files-found: error
+          retention-days: 7

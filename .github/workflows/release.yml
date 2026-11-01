@@ -1,200 +1,183 @@
-# One tag, every platform, one place to download from.
-#
-# **Why zigbuild and not the plain runner toolchain.** A binary built on
-# ubuntu-latest carries that image's glibc floor (2.35+), and the
-# machines this ships to are Ubuntu 20.04 (glibc 2.31) — it would
-# install fine and fail at exec. `cargo-zigbuild` names the floor
-# instead of inheriting it, so one artifact runs on 20.04 and on
-# everything newer.
-#
-# **Why not musl, which would have no floor at all.** A fully static
-# binary has no dynamic loader, so it can never `dlopen` a driver
-# library: measured side by side on one machine, the glibc build read
-# `GPU 0% / 2 卡 显存 43.0G/48.0G` and the musl build reported no GPU at
-# all (`crates/node/src/vitals/gpu/nvidia.rs`). "Cannot ask" and "there
-# is none" are the same empty field, so the floor is the cheaper price.
-name: release
-
+name: Release candidates
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['docs/**', '*.md']
   workflow_dispatch:
-
+    inputs:
+      signed:
+        description: Build Apple distribution artifacts (apple-signing environment required)
+        type: boolean
+        default: false
 permissions:
-  contents: write
-
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_BUILD_JOBS: '2'
+  CARGO_PROFILE_DEV_DEBUG: '0'
 jobs:
   quality:
     uses: ./.github/workflows/quality.yml
-    permissions:
-      contents: read
-
-  # **The face is built once, not four times.**
-  #
-  # `khor web` serves the desktop GUI's own bundle, and that bundle is
-  # compiled into the binary (`crates/web/build.rs`) — so every release
-  # build needs `apps/gui/dist` on disk before cargo runs, and without
-  # it the build stops with a message rather than shipping a khor whose
-  # web face is blank.
-  #
-  # Building it in each matrix leg would be four node installs producing
-  # four artifacts that must be identical and have no mechanism making
-  # them so. One job, one artifact, downloaded by all four: whatever
-  # ships, every platform ships the same one.
-  #
-  # It needs the rust toolchain as well as node — `npm run build` runs
-  # `npm run gen` first, and the wording and the TS types are generated
-  # by cargo from `crates/catalog/zh.toml` and the Rust structs, which
-  # is what keeps the frontend from holding its own copy of either.
-  frontend:
+  native:
     needs: quality
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: frontend-gen
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: apps/gui/package-lock.json
-      - run: npm ci
-        working-directory: apps/gui
-      - run: npm run build
-        working-directory: apps/gui
-      - uses: actions/upload-artifact@v4
-        with:
-          name: gui-dist
-          path: apps/gui/dist
-          # A face nobody can see is the failure this whole arrangement
-          # exists to prevent, so an empty upload must stop the release
-          # rather than travel quietly to four builds.
-          if-no-files-found: error
-
-  build:
-    needs: frontend
+    timeout-minutes: 60
+    environment: ${{ inputs.signed && 'apple-signing' || 'candidate' }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             zig: x86_64-unknown-linux-gnu.2.31
             asset: khor-linux-x86_64
-          - runner: ubuntu-latest
+          - runner: ubuntu-24.04
             target: aarch64-unknown-linux-gnu
             zig: aarch64-unknown-linux-gnu.2.31
             asset: khor-linux-aarch64
-          - runner: macos-latest
+          - runner: macos-26
             target: aarch64-apple-darwin
-            zig: ""
+            zig: ''
             asset: khor-macos-arm64
-          - runner: macos-latest
+          - runner: macos-26
             target: x86_64-apple-darwin
-            zig: ""
+            zig: ''
             asset: khor-macos-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
-      # Before the toolchain, because `crates/web/build.rs` reads this
-      # directory and a missing one is a build error, not a warning.
-      - uses: actions/download-artifact@v4
+      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/native-tools
         with:
-          name: gui-dist
-          path: apps/gui/dist
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: ${{ matrix.target }}
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.3.14
-      # Only the cross builds need zig; a mac runner builds its own
-      # architectures natively.
-      #
-      # **zig comes from pip, not from a third-party action.** The
-      # toolchain publishes itself as a wheel, and cargo-zigbuild looks
-      # for `python -m ziglang` — so this is one fewer action to trust
-      # and one fewer thing to break when it is renamed (the first cut
-      # of this file died on exactly that).
+          target: ${{ matrix.target }}
+      - if: runner.os == 'macOS'
+        run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - if: matrix.zig != ''
         run: |
-          pip3 install ziglang
-          cargo install cargo-zigbuild --locked
-      - name: build
+          python3 -m venv "$RUNNER_TEMP/zig"
+          "$RUNNER_TEMP/zig/bin/pip" install ziglang==0.13.0
+          echo "$RUNNER_TEMP/zig/bin" >> "$GITHUB_PATH"
+          cargo install cargo-zigbuild --version 0.20.1 --locked
+      - name: Build target Pi and CLI
         env:
           KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+          TARGET: ${{ matrix.target }}
+          ZIG_TARGET: ${{ matrix.zig }}
         run: |
           npm ci --prefix apps/agent
-          node apps/agent/build.mjs "${{ matrix.target }}"
-          if [ -n "${{ matrix.zig }}" ]; then
-            cargo zigbuild -p khor-cli --bin khor --target "${{ matrix.zig }}" --release
+          node apps/agent/build.mjs "$TARGET"
+          if [ -n "$ZIG_TARGET" ]; then
+            cargo zigbuild --locked -p khor-cli --bin khor --target "$ZIG_TARGET" --release
           else
-            cargo build -p khor-cli --bin khor --target "${{ matrix.target }}" --release
+            cargo build --locked -p khor-cli --bin khor --target "$TARGET" --release
           fi
-      # **Shipped compressed, because the link is the slow part.**
-      # Measured from the machines this installs onto: ~95 KB/s, which
-      # makes a 29.7 MB binary five minutes of watching a progress bar
-      # — and watching it is the first thing a new machine does. The
-      # release profile's `strip` takes it to 20.2 MB and gzip to 8.9,
-      # so the same install is ninety seconds. `gzip` is on every box
-      # that has a shell, so this costs the installer one pipe.
-      - name: name it after the platform
+      - name: Package CLI
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET: ${{ matrix.asset }}
         run: |
-          cp "target/${{ matrix.target }}/release/khor" "${{ matrix.asset }}"
-          gzip -9 "${{ matrix.asset }}"
-          shasum -a 256 "${{ matrix.asset }}.gz" > "${{ matrix.asset }}.gz.sha256"
+          mkdir -p product
+          gzip -n -9 -c "target/$TARGET/release/khor" > "product/$ASSET.gz"
+          (cd product && shasum -a 256 "$ASSET.gz" > "$ASSET.gz.sha256")
+          python3 scripts/release_manifest.py create --root product --kind "$ASSET" --frontend frontend --executable "target/$TARGET/release/khor" --agent apps/agent/dist/khor-agent
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset }}
-          path: |
-            ${{ matrix.asset }}.gz
-            ${{ matrix.asset }}.gz.sha256
-
-  publish:
-    needs: build
-    runs-on: ubuntu-latest
-    # A dispatch run builds and stops: cutting a release is what a tag
-    # means, and a button that quietly publishes is a button somebody
-    # presses to "just check the build".
-    if: startsWith(github.ref, 'refs/tags/')
+          path: product/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Build Mac App from the same frontend and runtime
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+          SIGNED: ${{ inputs.signed || false }}
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+          APPLE_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          npm ci --prefix apps/gui
+          python3 scripts/apple_release.py mac-build --target "$TARGET" --signed "$SIGNED"
+      - name: Package Mac App
+        if: runner.os == 'macOS'
+        env:
+          TARGET: ${{ matrix.target }}
+          ASSET: ${{ matrix.asset }}
+          SIGNED: ${{ inputs.signed || false }}
+        run: |
+          mkdir -p desktop
+          tar -czf "desktop/$ASSET.app.tar.gz" -C "target/$TARGET/release/bundle/macos" Khor.app
+          printf '%s\n' "$SIGNED" > desktop/signed.txt
+          python3 scripts/release_manifest.py create --root desktop --kind "$ASSET-app" --frontend frontend --executable "target/$TARGET/release/bundle/macos/Khor.app/Contents/MacOS/khor-gui"
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'macOS'
+        with:
+          name: ${{ matrix.asset }}-app
+          path: desktop/
+          if-no-files-found: error
+          retention-days: 14
+  ios:
+    needs: quality
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: ${{ inputs.signed && 'apple-signing' || 'candidate' }}
     steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/native-tools
+        with:
+          target: aarch64-apple-ios
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - run: npm ci --prefix apps/gui
+      - name: Archive iOS without uploading
+        env:
+          SIGNED: ${{ inputs.signed || false }}
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+          IOS_CERTIFICATE_P12: ${{ secrets.IOS_CERTIFICATE_P12 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE: ${{ secrets.IOS_PROFILE }}
+        run: python3 scripts/apple_release.py ios-build --signed "$SIGNED"
+      - name: Package iOS archive
+        run: |
+          python3 scripts/apple_release.py package-ios
+          python3 scripts/release_manifest.py create --root ios --kind ios-archive --frontend frontend --executable apps/gui/src-tauri/gen/apple/build/khor-gui_iOS.xcarchive/Products/Applications/Khor.app/Khor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-archive
+          path: ios/
+          if-no-files-found: error
+          retention-days: 14
+  candidate:
+    needs: [native, ios]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: dist
-          merge-multiple: true
-      # The installer ships **as a release asset**, not just as a file in
-      # the tree. The documented one-liner used to fetch it from
-      # `raw.githubusercontent.com`, and that host is unreachable from
-      # the machines this is for — measured from turing: raw timed out
-      # after 20s with 0 bytes, while `api.github.com` answered in 0.59s
-      # and a release download in 1.82s. A distribution route may not
-      # depend on a host its own machines cannot reach.
-      - uses: actions/checkout@v4
+          pattern: khor-*
+          path: candidate
+      - uses: actions/download-artifact@v4
         with:
-          path: src
-      - run: cp src/scripts/install.sh dist/install.sh
-      # **The tag and the crate version have to agree**, because the
-      # binary reports the crate version and a fleet is asked "who is
-      # behind" through that number. They sat apart for five releases
-      # (0.1.0 in the tree, v0.1.5 on the tag), which is exactly as
-      # useful as no version at all.
-      - name: tag matches the crate version
+          name: ios-archive
+          path: candidate/ios-archive
+      - name: Verify and summarize (does not publish)
         run: |
-          tag="${GITHUB_REF_NAME#v}"
-          want=$(grep -m1 '^version = ' src/Cargo.toml | cut -d'"' -f2)
-          if [ "$tag" != "$want" ]; then
-            echo "tag $GITHUB_REF_NAME says $tag, Cargo.toml says $want" >&2
-            exit 1
-          fi
-      - uses: softprops/action-gh-release@v2
+          for artifact in candidate/*; do
+            python3 scripts/release_manifest.py verify --root "$artifact"
+          done
+          cp scripts/install.sh candidate/install.sh
+          python3 scripts/release_candidate.py candidate
+      - uses: actions/upload-artifact@v4
         with:
-          files: dist/*
-          generate_release_notes: true
+          name: candidate-manifest
+          path: |
+            candidate/manifest.json
+            candidate/install.sh
+          retention-days: 14
+          if-no-files-found: error

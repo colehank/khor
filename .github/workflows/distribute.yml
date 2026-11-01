@@ -1,0 +1,78 @@
+name: Distribute an existing candidate
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful Release candidates run ID on main or a release tag
+        type: string
+        required: true
+      channel:
+        type: choice
+        description: Review uses the already uploaded build; never recompiles
+        options: [github-draft, testflight, appstore-review]
+        default: github-draft
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: distribute-${{ inputs.channel }}
+  cancel-in-progress: false
+jobs:
+  distribute:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: ${{ inputs.channel == 'github-draft' && 'github-release' || inputs.channel == 'testflight' && 'apple-testflight' || 'apple-store' }}
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - name: Fetch and verify the selected successful candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.run_id }}
+        run: python3 scripts/distribute_candidate.py fetch
+      - name: Create a GitHub release draft
+        if: inputs.channel == 'github-draft'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/distribute_candidate.py github-draft
+      - name: Upload the existing iOS archive to TestFlight
+        if: inputs.channel == 'testflight'
+        env:
+          APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
+          IOS_CERTIFICATE_P12: ${{ secrets.IOS_CERTIFICATE_P12 }}
+          IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          IOS_PROFILE: ${{ secrets.IOS_PROFILE }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: python3 scripts/apple_release.py upload-ios --root candidate/ios-archive
+      - name: Submit this tested build for App Store review (manual release)
+        if: inputs.channel == 'appstore-review'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          gem install fastlane --version 2.238.0 --no-document --user-install
+          export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+          python3 scripts/distribute_candidate.py appstore-review
+      - name: Record the completed stage
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          CANDIDATE_RUN_ID: ${{ inputs.run_id }}
+        run: python3 scripts/distribute_candidate.py receipt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: distribution-receipt
+          path: distribution.json
+          if-no-files-found: error
+          retention-days: 90

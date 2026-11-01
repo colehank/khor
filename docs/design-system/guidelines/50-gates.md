@@ -801,3 +801,42 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 `npm run content-model` verifies first-tab initialization, rapid in-tab cross-type navigation, explicit New only, target/tab isolation and commit address/reload behavior. `WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` uses the actual WorkspacePane, original session TabStrip/ContentPicker and CommitPage with private in-memory node IO; checks history pagination, session commit/file/browser in-tab navigation, independent drafts after New, standalone preview/double-click keep, collapse and desktop alignment. It does not run a user session or prove native/phone behavior. Add `WORKSPACE_CONTENT_LAB=1` to keep that isolated fixture available locally. `cargo test --lib -p khor-node tabs::tests` covers durable renderer/address storage and existing tab mutation rules.
 
 `TERMINAL_LINK_UI_DIR=<evidence> npm run terminal-links-ui` mounts the real xterm6 renderer with production path/link-intent/gesture providers and browser input. It observes opening intents and actual mouse-report bytes without launching a PTY or an external app. Checks URL/path/OSC8 plain and platform modifier clicks, no dual TUI mouse report, ordinary program input, drag, secondary click and platform forced selection. Native Mac uses Cmd and Option-drag; Ctrl-primary policy on other platforms remains covered by the event harness unless run there. This does not substitute for a real Codex TUI/iPhone acceptance.
+
+## 第四轮补齐的检查入口
+
+以下原有检查现在可通过 npm 名称调用；登记入口不代表已执行或通过。浏览器/原生依赖仍以各检查脚本为准。
+
+- `npm run page-navigation`：`node scripts/check-page-navigation.mjs`。
+- `npm run content-link-intent`：`node scripts/check-content-link-intent.mjs`。
+- `npm run workspace-tabs`：`node scripts/check-workspace-tabs.mjs`。
+- `npm run page-failure`：`node scripts/check-page-failure.mjs`。
+- `npm run preview-refresh`：`node scripts/check-preview-refresh.mjs`。
+- `npm run directory-watch-consumers`：`node scripts/check-directory-watch-consumers.mjs`。
+- `npm run history-search-ui`：`node scripts/check-history-search-ui.mjs`。
+- `npm run history-reader`：`node scripts/check-history-reader.mjs`。
+- `npm run page-loading-hook`：`node scripts/check-page-loading-hook.mjs`。
+- `npm run attachment-view`：`node scripts/check-attachment-view.mjs`。
+- `npm run kept-scroll`：`node scripts/check-kept-scroll.mjs`。
+- `npm run file-refresh`：`node scripts/check-file-refresh.mjs`。
+- `npm run draft-count`：`node scripts/check-draft-count.mjs`。
+- `npm run key-row`：`node scripts/check-key-row.mjs`。
+- `npm run journal-capture`：`node scripts/check-journal-capture.mjs`。
+- `npm run history-find`：`node scripts/check-history-find.mjs`。
+- `npm run file-merge`：`node scripts/check-file-merge.mjs`。
+- `npm run page-viewport`：`node scripts/check-page-viewport.mjs`。
+- `npm run draft-sync`：`node scripts/check-draft-sync.mjs`。
+- `npm run browser-row-actions`：`node scripts/check-browser-row-actions.mjs`。
+- `npm run workspace-refresh`：`node scripts/check-workspace-refresh.mjs`。
+- `npm run session-link-routing`：`node scripts/check-session-link-routing.mjs`。
+- `npm run directory-watch-hook`：`node scripts/check-directory-watch-hook.mjs`。
+- `npm run content-workspace-return`：`node scripts/check-content-workspace-return.mjs`。
+- `npm run journal-body`：`node scripts/check-journal-body.mjs`。
+- `npm run session-follow`：`node scripts/check-session-follow.mjs`。
+- `npm run wide-wrap-links`：`node scripts/check-wide-wrap-links.mjs`。
+- `npm run workspace-history`：`node scripts/check-workspace-history.mjs`。
+- `npm run field-dismiss`：`node scripts/check-field-dismiss.mjs`。
+- `npm run key-row-ui`：`node scripts/check-key-row-ui.mjs`。
+- `npm run session-observation`：`node scripts/check-session-observation.mjs`。
+- `npm run directory-watch`：`node scripts/check-directory-watch.mjs`。
+- `npm run file-acceptance`：`node scripts/check-file-acceptance.mjs`。
+- `npm run workspace-memory`：`node scripts/check-workspace-memory.mjs`。

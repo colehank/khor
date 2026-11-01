@@ -2,17 +2,23 @@ name: Quality
 
 on:
   pull_request:
-  push:
-    branches: [main]
   workflow_dispatch:
   workflow_call:
 
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+
 jobs:
+  frontend:
+    uses: ./.github/workflows/frontend.yml
   scripts:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +32,7 @@ jobs:
       - run: node scripts/check-native-io.mjs
 
   agent:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,19 +46,24 @@ jobs:
         working-directory: apps/agent
 
   node-native:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    needs: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     env:
-      CARGO_TARGET_DIR: ${{ runner.temp }}/khor-quality-target
       CARGO_BUILD_JOBS: '1'
       CARGO_INCREMENTAL: '0'
-      KHOR_TEST_MCP_EXECUTABLE: ${{ runner.temp }}/khor-quality-target/debug/khor
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set the private native build directory
+        run: |
+          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/khor-quality-target" >> "$GITHUB_ENV"
+          echo "KHOR_TEST_MCP_EXECUTABLE=$RUNNER_TEMP/khor-quality-target/debug/khor" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: quality-node-native
+          cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
@@ -60,8 +71,9 @@ jobs:
           cache-dependency-path: apps/gui/package-lock.json
       - run: npm ci
         working-directory: apps/gui
-      - run: npm run build
-        working-directory: apps/gui
+      - uses: ./.github/actions/restore-frontend
+      - run: sudo apt-get update && sudo apt-get install -y tmux openssh-server
+      - run: sudo mkdir -p /run/sshd
       - run: npm ci
         working-directory: apps/agent
       - name: Snapshot the actual Cargo graph and prepare the normal worker
@@ -79,6 +91,10 @@ jobs:
       - run: python3 scripts/native_provenance.py verify --prepared "${{ runner.temp }}/node-prepared.json" --artifacts "${{ runner.temp }}/node-artifacts.json" --output "${{ runner.temp }}/node-provenance.json"
       - name: Run each agent close acceptance test in its own process
         run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --provenance "${{ runner.temp }}/node-provenance.json" --worker-provenance "${{ runner.temp }}/cli-provenance.json" --output "${{ runner.temp }}/node-native-close"
+      - name: Verify keeper adoption and SSH installation in scratch homes
+        run: |
+          cargo test --locked -p khor-node --lib join:: -- --test-threads=1
+          cargo test --locked -p khor-cli --test serve_keeper --test add_ssh -- --test-threads=1
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -93,29 +109,31 @@ jobs:
           if-no-files-found: warn
 
   gui:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    needs: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
     defaults:
       run:
         working-directory: apps/gui
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
           key: quality-gen
+          cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
           cache: npm
           cache-dependency-path: apps/gui/package-lock.json
       - run: npm ci
-      - run: cargo check --locked -j 2 -p khor-node --lib
-        working-directory: .
-      - run: npm test
+      - uses: ./.github/actions/restore-frontend
+      - run: npm run test:unit && npm run test:types
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
-      - run: npm run test:interaction
+      - run: npm run test:interaction && npm run workspace-content-ui && npm run terminal-links-ui
         env:
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
           QUALITY_ENGINES: chrome,webkit
@@ -152,11 +170,11 @@ jobs:
           if-no-files-found: warn
 
   windows-agent-process:
-    runs-on: windows-latest
+    runs-on: windows-2025
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.95.0
       - name: Verify owned processes and cancellable pipes on Windows
         shell: pwsh
         run: |
