@@ -25,9 +25,9 @@ khor_fetch_verify_place() (
             if [ "${5:-}" = mirror ]; then
                 echo "khor: mirror needs a complete releases/$VERSION directory; legacy flat mirrors must migrate" >&2
             fi
-            exit 1
+            exit 75
         }
-        khor_download "$URL.sha256" "$STAGE/checksum" 512
+        khor_download "$URL.sha256" "$STAGE/checksum" 512 || exit 75
         EXPECTED=$(khor_published_digest "$STAGE/checksum" "$ASSET.gz") || {
             echo "khor: invalid checksum record for $ASSET.gz" >&2; exit 1;
         }
@@ -85,13 +85,13 @@ khor_download() (
         if [ -n "$_limit" ]; then
             khor_capture "$_destination" "$_limit" out curl --disable -fsSL --connect-timeout 15 --max-time 30 "$_url"
         else
-            curl --disable -fsSL --connect-timeout 15 "$_url" -o "$_destination"
+            curl --disable -fsSL --connect-timeout 15 --max-time 300 "$_url" -o "$_destination"
         fi
     elif command -v wget >/dev/null 2>&1; then
         if [ -n "$_limit" ]; then
             khor_capture "$_destination" "$_limit" out wget -qT 15 -O - "$_url"
         else
-            wget -qT 15 -O "$_destination" "$_url"
+            wget -qT 15 --tries=2 -O "$_destination" "$_url"
         fi
     else
         echo "khor: needs curl or wget to fetch a release" >&2; exit 1

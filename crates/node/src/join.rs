@@ -6,9 +6,10 @@
 //! road, the satellite module's rules (BatchMode, nothing stored, the
 //! jump as `ProxyCommand`). When it cannot stay a member — its bin
 //! directory is read-only, its resident does not outlive the session,
-//! or it cannot call back over iroh in [`PAIR_WAIT`] — everything the
-//! attempt put there is taken off again (「卫星身上不留东西」) and it is
-//! adopted as a **satellite** instead. A flag skips straight to that.
+//! or it cannot call back over iroh in [`PAIR_WAIT`] — it can be adopted
+//! as a **satellite** instead. Verified installation and node identity remain
+//! available for retry; a failed pairing never deletes shared install files.
+//! A flag skips installation and adds the SSH host directly.
 //!
 //! # What runs over there is `install.sh`, the one every install runs
 //!
@@ -18,8 +19,8 @@
 //! (`KHOR_SKIP_FETCH`). The version is this machine's own
 //! ([`crate::VERSION`]), so a network never grows a second khor by
 //! being added to; `KHOR_MIRROR` set here is passed along. When the far
-//! machine cannot fetch, this one fetches (or, on the same platform,
-//! sends its own program) and pushes the asset down the ssh channel.
+//! machine cannot fetch, this one fetches the target platform's same published
+//! archive, verifies it, and pushes the exact bytes down the SSH channel.
 //!
 //! # What is never done
 //!
@@ -92,6 +93,8 @@ pub const PAIR_WAIT: Duration = Duration::from_secs(60);
 /// (round ROAD-4): ssh's login, then one GET to each relay at once,
 /// each inside `doctor`'s three seconds.
 pub const RELAY_ASK: Duration = Duration::from_secs(10);
+const DOWNLOAD_UNAVAILABLE: i32 = 75;
+const MAX_ARCHIVE_BYTES: usize = 512 * 1024 * 1024;
 
 /// **`khor _relay-check`, the far side of [`Node::far_reaches_a_relay`]**:
 /// whether this machine reaches any of `urls`, by the same GET and the
@@ -109,7 +112,7 @@ pub enum Step {
     Place,
     Start,
     Pair,
-    /// Taking off what the attempt put there, on the way to a satellite.
+    /// Reserved wire value from the former destructive rollback path.
     Undo,
     Satellite,
 }
@@ -211,13 +214,11 @@ fn refused_or_failed(refused: Option<satellite::Refusal>, why: &str) -> Mark {
     }
 }
 
-/// What one look at the machine found, over one connection — the
-/// before-picture the undo is measured against.
+/// Platform and installation capabilities observed over one connection.
 #[derive(Debug, Default)]
 struct Look {
     asset: Option<&'static str>,
     tmux: bool,
-    had: std::collections::HashSet<String>,
     bin_ok: bool,
 }
 
@@ -225,61 +226,8 @@ const LOOK_SH: &str = r#"
 B="$HOME/.local/bin"
 uname -s; uname -m
 command -v tmux >/dev/null 2>&1 && echo tmux
-[ -e "$B/khor" ] && echo had-bin
-[ -e "$B/khor-serve-up" ] && echo had-up
-R=""; [ -x "$B/khor" ] && R=$(env -u KHOR_HOME "$B/khor" root 2>/dev/null)
-[ -n "$R" ] || R="$HOME"
-[ -e "$R/.khor" ] && echo had-store
-[ -e "$HOME/.khor-hosts" ] && echo had-hosts
-[ -e "$HOME/.profile" ] && echo had-profile
-for d in Library Library/LaunchAgents .config .config/systemd .config/systemd/user; do
-  [ -d "$HOME/$d" ] && echo "had-d:$d"
-done
-grep -qs 'HOME/.local/bin' "$HOME/.profile" && echo had-path
-grep -qs khor-serve-up "$HOME/.profile" && echo had-up-profile
-grep -qs khor-serve-up "$HOME/.bash_profile" && echo had-up-bash
-[ -e "$HOME/Library/LaunchAgents/io.github.colehank.khor.plist" ] && echo had-agent
-[ -e "$HOME/.config/systemd/user/khor-serve.service" ] && echo had-unit
-if [ -d "$B" ]; then echo had-dir; [ -w "$B" ] && echo bin-ok
+if [ -d "$B" ]; then [ -w "$B" ] && echo bin-ok
 else P="$HOME/.local"; [ -d "$P" ] || P="$HOME"; [ -w "$P" ] && echo bin-ok; fi
-exit 0
-"#;
-
-/// Takes off what an attempt put there, and only that: every `had-*`
-/// the look saw is passed in as a variable and left alone.
-const UNDO_SH: &str = r#"
-B="$HOME/.local/bin"
-R=""; [ -x "$B/khor" ] && R=$(env -u KHOR_HOME "$B/khor" root 2>/dev/null)
-[ -n "$R" ] || R="$HOME"
-if [ -z "$HAD_STORE" ]; then
-  P=$(cat "$R/.khor/serve.pid" 2>/dev/null)
-  [ -n "$P" ] && kill "$P" 2>/dev/null
-  sleep 1
-  [ -n "$P" ] && kill -9 "$P" 2>/dev/null
-fi
-if [ -z "$HAD_AGENT" ] && [ -e "$HOME/Library/LaunchAgents/io.github.colehank.khor.plist" ]; then
-  launchctl bootout "gui/$(id -u)/io.github.colehank.khor" 2>/dev/null
-  rm -f "$HOME/Library/LaunchAgents/io.github.colehank.khor.plist"
-fi
-if [ -z "$HAD_UNIT" ] && [ -e "$HOME/.config/systemd/user/khor-serve.service" ]; then
-  systemctl --user disable khor-serve.service >/dev/null 2>&1
-  rm -f "$HOME/.config/systemd/user/khor-serve.service"
-fi
-drop() { [ -f "$1" ] || return 0; grep -v "$2" "$1" > "$1.khor-undo" ; mv -f "$1.khor-undo" "$1"; }
-[ -n "$HAD_PATH" ] || drop "$HOME/.profile" 'HOME/.local/bin:\$PATH'
-[ -n "$HAD_UP_PROFILE" ] || drop "$HOME/.profile" 'khor-serve-up'
-[ -n "$HAD_UP_BASH" ] || drop "$HOME/.bash_profile" 'khor-serve-up'
-[ -n "$HAD_PROFILE" ] || [ -s "$HOME/.profile" ] || rm -f "$HOME/.profile"
-[ -n "$HAD_BIN" ] || rm -f "$B/khor"
-[ -n "$HAD_UP" ] || rm -f "$B/khor-serve-up"
-[ -n "$HAD_DIR" ] || rmdir "$B" "$HOME/.local" 2>/dev/null
-# The directories the keeper's file went into, deepest first; `rmdir`
-# leaves any that hold something else.
-for d in $NEW_DIRS; do rmdir "$HOME/$d" 2>/dev/null; done
-if [ -z "$HAD_STORE" ]; then
-  case "$R" in "$HOME"|"$HOME"/*) rm -rf "$R/.khor" ;; esac
-  [ -n "$HAD_HOSTS" ] || rm -rf "$HOME/.khor-hosts"
-fi
 exit 0
 "#;
 
@@ -308,22 +256,6 @@ fn asset_for(system: &str, machine: &str) -> Option<&'static str> {
     })
 }
 
-/// This machine's own asset, so a far machine of the same kind can be
-/// sent the program that is running here.
-fn own_asset() -> Option<&'static str> {
-    let system = match std::env::consts::OS {
-        "linux" => "Linux",
-        "macos" => "Darwin",
-        _ => return None,
-    };
-    // Rust calls Apple silicon `aarch64`; `uname -m` there says `arm64`.
-    let machine = match (system, std::env::consts::ARCH) {
-        ("Darwin", "aarch64") => "arm64",
-        (_, arch) => arch,
-    };
-    asset_for(system, machine)
-}
-
 #[path = "join_process.rs"]
 mod process;
 
@@ -335,6 +267,16 @@ fn run(
     stdin: &[u8],
     wait: Duration,
 ) -> Result<(bool, String, String), String> {
+    let (code, stdout, stderr) = run_exit(to, command, stdin, wait)?;
+    Ok((code == Some(0), stdout, stderr))
+}
+
+fn run_exit(
+    to: &Dest,
+    command: &str,
+    stdin: &[u8],
+    wait: Duration,
+) -> Result<(Option<i32>, String, String), String> {
     let mut command_line = to.finite_ssh_command();
     command_line
         .args(["-o", "ConnectTimeout=8"])
@@ -350,10 +292,10 @@ fn run(
             stderr.push('\n');
         }
         stderr.push_str(&msg::add_timed_out(wait.as_secs()));
-        return Ok((false, String::new(), stderr));
+        return Ok((None, String::new(), stderr));
     }
     Ok((
-        out.status.success(),
+        out.status.code(),
         String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr,
     ))
@@ -445,10 +387,8 @@ fn release_asset_url(
 fn fetch_archive_bytes(url: &str, limit: Option<usize>) -> Result<Vec<u8>, String> {
     let mut command = Command::new("curl");
     command.args(["--disable", "-fsSL", "--connect-timeout", "15", url]);
-    if limit.is_some() {
-        command.args(["--max-time", "30"]);
-    }
-    read_archive_output(command, limit)
+    command.args(["--max-time", if limit.is_some() { "30" } else { "300" }]);
+    read_archive_output(command, Some(limit.unwrap_or(MAX_ARCHIVE_BYTES)))
 }
 
 fn read_archive_output(mut command: Command, limit: Option<usize>) -> Result<Vec<u8>, String> {
@@ -467,7 +407,7 @@ fn read_archive_output(mut command: Command, limit: Option<usize>) -> Result<Vec
     if read.is_err() || limit.is_some_and(|limit| bytes.len() > limit) {
         let _ = child.kill();
         let _ = child.wait();
-        return Err("release metadata exceeds its limit or could not be read".into());
+        return Err("release download exceeds its byte limit or could not be read".into());
     }
     if !child.wait().map_err(|error| error.to_string())?.success() {
         return Err("could not fetch the selected release archive or checksum".into());
@@ -579,19 +519,14 @@ impl Node {
         match self.become_member(to, &name, &look, on) {
             Ok(added) => Ok(added),
             Err(Stop::Fatal(e)) => Err(e),
-            Err(Stop::Fallback(why)) => {
-                on(Step::Undo, Mark::Live);
-                self.undo(to, &look)?;
-                on(Step::Undo, Mark::Done(String::new()));
-                self.add_satellite(to, &name, Some(why), on)
-            }
+            Err(Stop::Fallback(why)) => self.add_satellite(to, &name, Some(why), on),
         }
     }
 
     /// 转正: a satellite this machine sponsors becomes a full member
     /// through the same install; its satellite row goes and its name
     /// carries over to the new machine. When it cannot stay a member it
-    /// stays the satellite it was, with nothing left behind.
+    /// stays the satellite it was; verified installation files remain reusable.
     pub fn promote(&self, machine: &str, on: &mut dyn FnMut(Step, Mark)) -> Result<Added, String> {
         let (channel, _) = self.resolve(machine)?;
         let row = self
@@ -616,12 +551,7 @@ impl Node {
                 Ok(added)
             }
             Err(Stop::Fatal(e)) => Err(e),
-            Err(Stop::Fallback(why)) => {
-                on(Step::Undo, Mark::Live);
-                self.undo(&to, &look)?;
-                on(Step::Undo, Mark::Done(String::new()));
-                Err(msg::promote_stayed_satellite(why))
-            }
+            Err(Stop::Fallback(why)) => Err(msg::promote_stayed_satellite(why)),
         }
     }
 
@@ -644,10 +574,6 @@ impl Node {
             asset: asset_for(&system, &machine),
             tmux: words.iter().any(|w| w == "tmux"),
             bin_ok: words.iter().any(|w| w == "bin-ok"),
-            had: words
-                .into_iter()
-                .filter(|w| w.starts_with("had-"))
-                .collect(),
         })
     }
 
@@ -672,16 +598,16 @@ impl Node {
             return Err(Stop::Fallback(why));
         };
         let wait = Duration::from_secs(300);
-        let (ok, _, err) = run(
+        let (code, _, err) = run_exit(
             to,
             &install_env("KHOR_NO_SERVE=1"),
             INSTALL_SH.as_bytes(),
             wait,
         )
         .map_err(Stop::Fatal)?;
-        let placed = if ok {
+        let placed = if code == Some(0) {
             cli::add_placed_fetched(crate::VERSION)
-        } else {
+        } else if code == Some(DOWNLOAD_UNAVAILABLE) {
             // It could not fetch for itself: this machine brings it.
             let pushed = self.push_asset(to, asset).and_then(|archive| {
                 let env = install_env(&format!(
@@ -717,6 +643,14 @@ impl Node {
                 return Err(Stop::Fallback(why));
             }
             cli::add_placed_pushed(crate::VERSION)
+        } else {
+            let why = msg::add_why_cant_place(host, last_line(&err));
+            on(Step::Place, Mark::Failed(why.clone()));
+            return Err(if code.is_none() || code == Some(255) {
+                Stop::Fatal(why)
+            } else {
+                Stop::Fallback(why)
+            });
         };
         on(Step::Place, Mark::Done(placed));
 
@@ -841,34 +775,17 @@ impl Node {
         }
     }
 
-    /// Fetches (or, on the same platform, takes this machine's own) the
-    /// asset and pushes it next to the far bin directory.
+    /// Fetch the target's published archive and send those exact verified bytes.
     fn push_asset(&self, to: &Dest, asset: &str) -> Result<PushedArchive, String> {
-        let bytes = if own_asset() == Some(asset) {
-            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-            let output = Command::new("gzip")
-                .arg("-c")
-                .arg(&exe)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                return Err(msg::add_no_asset_here(asset));
-            }
-            output.stdout
-        } else {
-            let mirror = std::env::var("KHOR_MIRROR").ok();
-            let repo = std::env::var("KHOR_REPO").ok();
-            let url = release_asset_url(mirror.as_deref(), repo.as_deref(), crate::VERSION, asset)?;
-            let bytes = fetch_archive_bytes(&url, None)?;
-            let record = fetch_archive_bytes(&format!("{url}.sha256"), Some(512))?;
-            let expected = published_archive_digest(&record, asset)?;
-            if archive_digest(&bytes) != expected {
-                return Err("release archive does not match its selected SHA256".into());
-            }
-            bytes
-        };
-        // This is the digest of this exact transport buffer. A locally gzipped
-        // current_exe is a local source, not an independently signed release.
+        let mirror = std::env::var("KHOR_MIRROR").ok();
+        let repo = std::env::var("KHOR_REPO").ok();
+        let url = release_asset_url(mirror.as_deref(), repo.as_deref(), crate::VERSION, asset)?;
+        let bytes = fetch_archive_bytes(&url, None)?;
+        let record = fetch_archive_bytes(&format!("{url}.sha256"), Some(512))?;
+        let expected = published_archive_digest(&record, asset)?;
+        if archive_digest(&bytes) != expected {
+            return Err("release archive does not match its selected SHA256".into());
+        }
         let digest = archive_digest(&bytes);
         let command = format!(
             "sh -c {} sh \"$HOME/.local/bin\"",
@@ -888,42 +805,6 @@ impl Node {
             path: pushed_archive_path(&receipt).map_err(uncertain)?,
             digest,
         })
-    }
-
-    fn undo(&self, to: &Dest, look: &Look) -> Result<(), String> {
-        let flag = |w: &str| if look.had.contains(w) { "1" } else { "" };
-        let vars = format!(
-            "HAD_BIN='{}' HAD_UP='{}' HAD_STORE='{}' HAD_HOSTS='{}' HAD_PATH='{}' HAD_UP_PROFILE='{}' HAD_UP_BASH='{}' HAD_AGENT='{}' HAD_UNIT='{}' HAD_DIR='{}' HAD_PROFILE='{}' NEW_DIRS='{}' sh -s",
-            flag("had-bin"),
-            flag("had-up"),
-            flag("had-store"),
-            flag("had-hosts"),
-            flag("had-path"),
-            flag("had-up-profile"),
-            flag("had-up-bash"),
-            flag("had-agent"),
-            flag("had-unit"),
-            flag("had-dir"),
-            flag("had-profile"),
-            // Created by the attempt, deepest first.
-            [
-                "Library/LaunchAgents",
-                "Library",
-                ".config/systemd/user",
-                ".config/systemd",
-                ".config"
-            ]
-            .into_iter()
-            .filter(|d| !look.had.contains(&format!("had-d:{d}")))
-            .collect::<Vec<_>>()
-            .join(" "),
-        );
-        let (ok, _, err) = run(to, &vars, UNDO_SH.as_bytes(), Duration::from_secs(60))?;
-        if ok {
-            Ok(())
-        } else {
-            Err(satellite::cant_reach(to, &err))
-        }
     }
 
     /// **Pairs `id` over khor inside ssh** (round ROAD-3): this machine's

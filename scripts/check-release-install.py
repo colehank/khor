@@ -252,14 +252,14 @@ class InstallComponentsTest(unittest.TestCase):
     def test_missing_checksum_preserves_old_binary(self):
         with loopback({"/fixture.gz": self.archive}) as base:
             result = self.run_component(base + "/fixture.gz")
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 75, "download failure permits client transfer")
         self.assertEqual(self.binary.read_bytes(), b"original binary")
         self.assert_no_stage()
 
     def test_wrong_checksum_preserves_old_binary(self):
         with loopback(self.with_digest(self.archive, "0" * 64 + "  fixture.gz\n")) as base:
             result = self.run_component(base + "/fixture.gz")
-        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.returncode, 1, "integrity failure must not trigger another source")
         self.assertEqual(self.binary.read_bytes(), b"original binary")
         self.assert_no_stage()
 

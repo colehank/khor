@@ -71,10 +71,10 @@ impl Drop for World {
     }
 }
 
-/// (alias, takes our key, fake `kill -0`): `target` is an ordinary host,
+/// (alias, takes our key, fails detached launch): `target` is an ordinary host,
 /// `jump` a jump, `pw` takes only a password, `fragile` cannot keep a
-/// resident (its `kill -0` always says no, so install.sh reports the
-/// serve dead and the add falls back), `lock` takes only the
+/// resident (its `setsid` fails, so install.sh reports the serve dead
+/// and the add falls back), `lock` takes only the
 /// passphrase-protected key (the module head), `keyed` only `other` and
 /// the `lock` key, neither of them in the scratch config.
 const HOSTS: &[(&str, bool, bool)] = &[
@@ -126,10 +126,22 @@ fn sh(cmd: &mut Command) {
     assert!(st.success(), "{cmd:?}");
 }
 
-/// A static mirror on loopback: answers `/<asset>.gz` with `file`.
+/// The same versioned archive and exact checksum used by both download paths.
 fn mirror(file: PathBuf) -> u16 {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = l.local_addr().unwrap().port();
+    let checksum = if cfg!(target_os = "macos") {
+        Command::new("shasum")
+            .args(["-a", "256"])
+            .arg(&file)
+            .output()
+    } else {
+        Command::new("sha256sum").arg(&file).output()
+    }
+    .unwrap();
+    assert!(checksum.status.success());
+    let digest = String::from_utf8(checksum.stdout).unwrap();
+    let digest = digest.split_whitespace().next().unwrap().to_owned();
     std::thread::spawn(move || {
         for s in l.incoming() {
             let Ok(mut s) = s else { continue };
@@ -137,8 +149,15 @@ fn mirror(file: PathBuf) -> u16 {
             let n = s.read(&mut buf).unwrap_or(0);
             let req = String::from_utf8_lossy(&buf[..n]);
             let want = file.file_name().unwrap().to_string_lossy().into_owned();
-            if req.starts_with(&format!("GET /{want} ")) {
-                let body = fs::read(&file).unwrap();
+            let path = format!("/releases/v{}/{want}", khor_node::VERSION);
+            let body = if req.starts_with(&format!("GET {path} ")) {
+                Some(fs::read(&file).unwrap())
+            } else if req.starts_with(&format!("GET {path}.sha256 ")) {
+                Some(format!("{digest}  {want}\n").into_bytes())
+            } else {
+                None
+            };
+            if let Some(body) = body {
                 let _ = write!(
                     s,
                     "HTTP/1.0 200 OK\r\nContent-Length: {}\r\n\r\n",
@@ -213,12 +232,13 @@ fn build() -> Option<World> {
             ("launchctl", "exit 1".to_owned()),
             ("systemctl", "exit 1".into()),
             ("loginctl", "exit 1".into()),
+            (
+                "curl",
+                "[ ! -f \"$HOME/no-download\" ] || exit 7\nexec /usr/bin/curl \"$@\"".into(),
+            ),
         ];
         if fragile {
-            fakes.push((
-                "kill",
-                "[ \"$1\" = -0 ] && exit 1\nexec /bin/kill \"$@\"".into(),
-            ));
+            fakes.push(("setsid", "exit 71".into()));
         }
         for (name, body) in fakes {
             let p = fake.join(name);
@@ -422,7 +442,6 @@ fn add_over_ssh_in_a_scratch_world() {
         gz.display()
     )));
     let m = format!("http://127.0.0.1:{}", mirror(gz));
-    let dead_mirror = format!("http://127.0.0.1:{}", free_port());
 
     // **The far HOME is scratch, through the jump too, or nothing runs.**
     for (via, host) in [
@@ -526,10 +545,11 @@ fn add_over_ssh_in_a_scratch_world() {
         "box2 speaks for itself now: {named:?}"
     );
 
-    // 3. It cannot fetch: this machine sends its own program.
+    // 3. Only the remote download fails; the client fetches the same release.
     let _ = khor(&w, &m, &["forget", "box2"]);
     reset_far(&dir, "target");
-    let out = khor(&w, &dead_mirror, &["add", "target", "box3"]);
+    fs::write(far_home(&dir, "target").join("no-download"), "").unwrap();
+    let out = khor(&w, &m, &["add", "target", "box3"]);
     let said = text(&out);
     assert!(
         out.status.success()
@@ -538,14 +558,16 @@ fn add_over_ssh_in_a_scratch_world() {
         "{said}"
     );
 
-    // 4. It cannot keep a resident: everything put there is taken back,
-    //    and it is a satellite.
-    let before = tree(&far_home(&dir, "fragile"));
+    // 4. A failed start can use SSH without deleting a potentially shared
+    //    installation or destroying the remote node's persistent identity.
+    let archive = far_home(&dir, "fragile").join("keep-me");
+    fs::write(&archive, "user content").unwrap();
     let out = khor(&w, &m, &["add", "fragile", "box4"]);
     let said = text(&out);
     assert!(out.status.success(), "{said}");
     assert!(said.contains("connected over SSH instead"), "{said}");
-    assert_eq!(tree(&far_home(&dir, "fragile")), before, "卫星身上不留东西");
+    assert_eq!(fs::read_to_string(archive).unwrap(), "user content");
+    assert!(far_home(&dir, "fragile").join(".local/bin/.khor").is_dir());
     assert!(
         rows(&w, &m)
             .iter()
