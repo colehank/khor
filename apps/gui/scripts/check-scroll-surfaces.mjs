@@ -76,7 +76,10 @@ try{
  browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1200,height:800}});
  const url=new URL(existing??`http://localhost:${port}/lab/scroll-surfaces.html`);if(processes)url.searchParams.set('surface','processes');
  await page.goto(url.href);
- if(processes){await processHeadingPaint(page);}else{
+ if(processes){
+   await page.locator('[data-scroll-proof="processes"] [data-top-heads]').waitFor({state:'visible'});
+   await processHeadingPaint(page);
+ }else{
  await page.getByRole('button',{name:'检查列表',exact:true}).click();
  await page.waitForFunction(()=>document.querySelector('[data-scroll-proof-report]')?.textContent.includes('"results"'));
  const report=JSON.parse(await page.locator('[data-scroll-proof-report]').textContent());assert(report.pass,JSON.stringify(report));
