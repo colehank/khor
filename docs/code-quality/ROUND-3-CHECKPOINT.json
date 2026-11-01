@@ -1,8 +1,8 @@
 {
-  "updated_at": "2026-11-01T14:02:49.600041+00:00",
-  "status": "release_authorized_preparing",
+  "updated_at": "2026-11-01T15:46:00.105084+00:00",
+  "status": "shipped_testflight_uploaded",
   "executor": "root_only_serial",
-  "main": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
+  "main": "ee7151381412e523c0018db791b1a400afee14aa",
   "implementation_worktree": "/Volumes/disk0/Khor/worktrees/current/khor-round3",
   "implementation_branch": "integrate/round3",
   "implementation_head": "ae398aa788096c32ce28507562b7e16547995826",
@@ -24,13 +24,7 @@
     "ship": true
   },
   "active_slots": {
-    "lab": {
-      "exec": 88030,
-      "pid": 8946,
-      "birth": "Sun Nov  1 21:02:48 2026",
-      "url": "http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html",
-      "cwd": "/Volumes/disk0/Khor/worktrees/current/khor-round3/apps/gui"
-    },
+    "lab": null,
     "tests": null,
     "rust": null,
     "native": null
@@ -48,19 +42,28 @@
     "back_alignment_layout": 5,
     "session_commit_back_ui": 5,
     "in_tab_ui": 6,
-    "picker_identity_ui": 6
+    "picker_identity_ui": 6,
+    "main_types": "exit0",
+    "main_unit": "exit0",
+    "main_vite": "exit0",
+    "mac_restart": "same8rowIDs/allhosts/no-new-failed",
+    "linux_adoption": "all3 exeSHA/UI agree",
+    "ios_archive": "exit0/IOS-arm64/signature/source-restored",
+    "testflight": "0.1.14(62)/single-upload-exit0"
   },
   "unverified": [
-    "Real Mac TUI and system app handoff",
-    "Native GUI lifecycle and iPhone gestures/keyboard",
-    "WebKit runtime absent"
+    "Real Mac Codex TUI clicks and system app handoff",
+    "iPhone native gestures/keyboard/text selection",
+    "Playwright WebKit interaction runtime absent",
+    "Apple processing availability and phone installation not queried"
   ],
-  "next_action": "Merge accepted implementation and plan to main; freeze source and build Mac, iOS and Linux; preserve hosts and disk reserve",
+  "next_action": "User tests shipped Mac/TestFlight62; collect next-round feedback, no new implementation authorized",
   "sha256": {
-    "ROUND-3-PLAN.md": "e83ceea8479b9badabfd187394527d659a5f0b6e29cee5049af2ab4d19626ed0",
-    "STATE.md": "054adba0cdab1925d95e6afaf9aa0bc008bad5cdc76fca213cfcd2f6092d8913",
-    "NEXT-ROUND.md": "75cd8db8ae05da795d509736a37c62f36700a05c24ca2161b7af91ef1881e2be",
-    "round3-implementation.bundle": "23b1c970ffc4a7786c9cce13aefc3e19ed380af4666bddf28f9c7bac227c3504"
+    "ROUND-3-PLAN.md": "5ace982d62fb6ad618e4895f254f841772d35ccade46bfd3b780c53d6ae2ddc6",
+    "STATE.md": "06b3af0c9a26f1fdd0ecbe3a0f4e3d45bd8daefe2689147134ff590dcdf5f5ad",
+    "NEXT-ROUND.md": "9642c0ae2f7dcf6b3580c6e896d58f2a6b04f4dbb6ea0bf317951903ecf8b697",
+    "round3-implementation.bundle": "23b1c970ffc4a7786c9cce13aefc3e19ed380af4666bddf28f9c7bac227c3504",
+    "ROUND-3-RELEASE.md": "3f809b97fd0645230183c92419f7c261deb2f43e8abb0bf6f8831e61a24a7740"
   },
   "user_review": [
     "session tab owns browsing; all file/commit/page/address/popup destinations point the current tab",
@@ -81,9 +84,52 @@
   "release": {
     "user_authorization": "可以合并main并ship了",
     "evidence": "/Volumes/disk0/Khor/evidence/releases/20261101-round3",
-    "phase": "preparing",
+    "phase": "complete",
     "main_before": "27a9ce5c1e006548f045d7159fdbab68884b13d4",
     "native_slot": null,
-    "remote_slot": null
-  }
+    "remote_slot": null,
+    "main": "ee7151381412e523c0018db791b1a400afee14aa",
+    "pushed": true,
+    "ui_receipt": "khor-ui-assets:/assets/index-C9KeWEdI.js",
+    "resume": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/RELEASE-RESUME.md",
+    "attempt_1": "mac-build-result.json; cargo -15 at 8GiB disk reserve; no product installed",
+    "cache_offload": "cache-offload.json; Cargo registry and retired recovery node_modules now external with same-path symlinks; 2GiB freed",
+    "xcode_scratch_cleanup": "completed-xcode-scratch-cleanup.json; 2 completed Khor export scratch directories removed",
+    "mac2_settings": "release codegen-units16, jobs1, ThinLTO, no source change",
+    "linux": {
+      "phase": "installed_qualified_all3",
+      "validation": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/cluster/stage-validation.json",
+      "sha256": "f74f2b6f0ac94f46123a943a55fa89ed08aa2707b45498412bb64fec00f33dfc",
+      "stage": "/nfs/t1/userhome/zzl-zgh/.local/bin/.khor.round3-ee715138",
+      "glibc_max": "2.30",
+      "adoption": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/cluster/adoption-summary.json",
+      "installer_exit": 1,
+      "installer_explanation": "old known serve startup empty-log timeout; actual all3 process hashes and HTTP verified; no reinstall"
+    },
+    "npm_cache_offload": "cache-offload-npm.json; complete manifest verification, original ~/.npm/_cacache symlink preserved",
+    "mac2_phase": "GUI binary generated; CLI linking, cargo64383 still active",
+    "mac": {
+      "phase": "installed_qualified",
+      "runtime_pid": 95781,
+      "runtime_birth": "Sun Nov 1 23:07:37 2026",
+      "build_result": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/mac-2/mac-build-result.json",
+      "cutover_result": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/mac-cutover-result.json",
+      "sessions": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/mac-session-comparison.json"
+    },
+    "ios": {
+      "archive": "exit0",
+      "archive_seconds": 1454.7146999170072,
+      "platform": "arm64 IOS SDK26.5 min15",
+      "upload_exit": 0,
+      "upload_seconds": 137.70944812498055,
+      "version": "0.1.14",
+      "uploaded_build": "62",
+      "server_upload_succeeded": true,
+      "installed_on_phone": false,
+      "result": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/ios/upload-1/result.json"
+    },
+    "final_main_receipt": "/Volumes/disk0/Khor/evidence/releases/20261101-round3/release-final.json",
+    "lab_closed": true
+  },
+  "main_note": "Product build commit; later docs-only final main HEAD is in release-final.json"
 }
