@@ -132,3 +132,58 @@ C009 actual49137 PID83182/start13:58:03已终态0，Runtime成功/链接业务�
 手机：H已源准备mobile/physical-current-d4b-preparation-1，已安装device Ruststd/SDK26.5但无当前physical合格App；原旧sim/observer不能替代。唯一qualitytarget约42.37GiB＋device保守8GiB>50GiB，上限阻coldbuild；H只读评估已完成ios-sim约6.98GiB可重建cache退役方案，**未clean/未构建/未安装或改tunnel**。外盘约105/内13GiB仍按保留+峰值。物理iPhone仍unavailable；不能用Safari部分验收代native WK/键行。
 
 当前source bundle path-suggestions-d4b835ba.bundle相对fb01，外内双份1521B/SHA23584e6a0520e1b66a13bbce54765ddc7f566c6c935e49bb8b8d4b357a613ac9；现恢复集仅源码/小metadata，不复制大程序。中央Acceptance已补G/W/currentV有限闭环，其余任务卡dirty归作者，不全局stage/stash/reset。
+
+
+## 2026-10-31 15:20 当前恢复入口（优先于以上旧live/目标状态）
+
+目标第二轮34项仍active/未完成；本轮main/ship未授权。用户现在明确人工验收不方便，已解释Mac真实IME/Shift选择与iPhone真机体验先标未验；不再开限时人验实例、不反复问可用性。自动实施/验证继续，不能以未验冒全目标完成。
+
+Root当前`integrate/round2@aa346f284730d87f2226419a279b3cea0067dd55` clean：独审H e42精准pick，仅record/stream边界＋1回归3叶75+/10-；普通完整14B Native之后的raw记录必须经完整物理ref/有序/捕获ceiling内真实Core starts_message证明下一消息，才结束旧body，不取消未知SDK/partial/cancel/sourcechange/64KiB完整保护，无新RPC/nativeclipboard。Root实际旧d4b新case红（history-copy-raw-boundary-red-1，Node1/InComplete），AA focused＋完整Find33 actual38443均0/3.602924s/source/ALL/TMP净。只Node机制，不冒实际系统Copy已修。
+
+AA frontend actual26384已终态0，15.413407916s/fulltypes＋Vite0；resultbca04cc3…35939/receipt770779dffc0352fa9d1a11e645248548d5020e86572267faf67dec4b06531a3e；input独立尾核2340源/188gen/新278assets/env-tools-helpers/原19pins/20delta/ALL-TMP净。native当前可运行程序仍旧d4b actual56763（GUI73da/CLI9deb/bridgee60c），**不能对AA盲require旧wholeV/不以旧包称已验证修复**。下一唯一重批：production-current-aa-prepared-1/build.py f43cf9f5，原normal3/V/900total300step/8+2峰/20+10保留；quality round2productiong/881b字节固定不再换id；frontend真实pin待Root绑、OUT36393165/283/6603181B只读retention962da040 readyfalse（未move），需fresh单目录身份/成员/lsof/owner检查与单次可逆留存，不重复旧move。
+
+Copy38171原true生命周期/业务false已保：小14B和giant真实按钮/context Copy generic fail，系统Paste仍旧38Bsentinel378d917d；原c74d370e/UIobsf4147961。Copyinspect2621/v2 49772均原false/60s/forced+EPERM保，不冒业务成功；v2有small worker Incomplete证据，giant适配器旧快照手推next导致microtask饥饿，未修产品controller。v3取消adapter手推并等真实changed，actual49554实际0/4.887893s/noforce/ALL-TMP净且独审：small301057:0/part0/from0to14→Incomplete，giant301309:0→typedTooLarge，两source cleanup0/Worker0；result032a15f1…71f31/answer3888ad8a…f732c。这是当前修复的真Core/生产Worker红，非Clipboard绿。AA native/stage后只补受影响inspect+系统Copy，已绿G/W不重整矩阵。
+
+C0094 actual42114已独审有限正向：Root native小drag+AXWindow Raise后普通OSC8 opens实际SidePanel exactURL；file第二物理行drag后3行统一underline，普通click→exactfullpath/R2_C009_ASCII_FILE_TARGET。newSIDc842.../host95105/child95106/blankline sh0/ended强门/App正常Quit/源env/ALL-TMP净；result3a91e7cf…c040a/UIobs320d18ae…48021。前次no-op不能唯一归因drag或Raise（一起改变），无需猜产品修。仍缺dir/plainURL/Cmd/宽窄逐行与selection/hardnewline范围，不冒全C009绿。所有旧CUA对象已dead，访问前查真正PID/出生时间，不能getApp自动重启。
+
+S source3完整可执行外壳已非作者input审过（source2两adapter窄修保），run65305b15/A2498e63a/B36e7a8ad readyfalse；固定A3/B2 Root真实CUA ack，各独立300，A只精确App PIDKILL9并原非0保存；B旧roles全退后无API暖，真实history/控件Unknown诚实记录，provider正面退再正常Quit/ALL。待AA新当前producer/frontend/proof/App最终repin才可实际。RootAck必须亲自看实际body后写，不能API代GUI或自动造ack。input另只源准备旧两个正常ended shell SID的sessions flags＋term_ended概要/屏幕长度hash/marker，然后Root真实cold画面一次，因EndedPane禁输入仍有辅助Terminal input，AX词和Idle标签不能先判丢输出。boot pure现名exact仍待一次，不重启用户Mac。
+
+存储：原sim维护12584在Git status后第二库存断言失败，未rename/delete/source同inode/quarantine无，failure原件保。独审readonly副本仅status加--no-optional-locks，actual45169终态0，精确已完成ios-sim缓存退役成功，result69a613c607510cb3cd14cedce6df7d504662409d8cb4b80b0c7b0cc69cbb6c86；现source/quarantine均无，当前normal程序/OUT/所有iOS原收据＋82节点0B冷留存完整不改。实际外盘free＋7233753088B（约6.74GiB），du unique target36868436KiB（35.16GiB），外盘约111GiB/内盘13GiB，phone冷build＋8GiB现可在50GiB内但尚未准入/未构建/未安装，等当前修复包以免做旧包。禁止执行无-p cargo clean（会整target），无挪藏容量/全量镜像。人机不可用与设备unavailable真实边界保。
+
+所有运行槽当前FREE（以实际handle/内盘current-runtime优先）。H仅源AA native准备，input前端尾核完/旧shell只读诊断准备，reviewer源审/父本S3已交非作者。源码bundle history-copy-aa346f28.bundle相对d4b，外内各2994B/SHA219ee167f64dc4373953716806d3d5938a8c2a7229a014f5f9839b02367331c3；无大程序内盘镜像。细原件位于Khor/evidence、cache退休maintenance；本页只恢复状态。
+
+
+### 2026-10-31 15:32 AA native实际启动
+
+Root已fresh核OUT36393165全部283件/devino/UID/nlink/SHA/times、owner无/lsof1空、前端receipt770779与source2340完全等、8/2峰值+20/10保留通过后单次可逆留存（retention contract41860470/result见production-current-aa-prepared-1）。原import缺sys.path在任何mutation前失败，修正后实际成功，不重留存。当前唯一live为native exec79806，原build f43cf9f5/production-contract2da94bc0/admissionb80e5e8a，必须poll原handle，不因无输出重启。旧d4b App仍冷，未stage/未验证Copy。
+
+
+## 2026-11-01 09:53 当前恢复入口（优先于此前live）
+
+Root仍integrate/round2@aa346f28 clean，未main/ship。AA native79806实际terminal0/284.8786s/resultd69aa9ed、5phase0/normal3原V/source2340-env22-gen188-assets278/ALLTMP净；input独审09830afc及综合cc07c622已闭。AA前端26384/receipt770779原证不变。现canonicalGUI95abebdb、CLIfed25859、bridgee60c7614，所有真实proof位于production-current-aa-prepared-1。OUT36393165单次留存actual结果（41860470合同）已完成，新OUT另有真实生成；不得重复move。唯一CurrentG App原路径/inode36364898，只两hardlink刷新stage334723a1，plist不变，input独审闭，不再stage第二App。
+
+Copyinspect4 actual36537正常0/3.94695s/result78569854，small14B完整016ac216、giant typedTooLarge/workers0/cleanup0/ALLTMP净，独审闭。实际系统Copy69036在过夜用户中断中原300timeout/forced/exit1，但ALLTMP净，原false保；不是产品崩溃/业务pass。新namespace actual28765 App85836正常CmdQ0/noforce/ALLTMP净：small真实native菜单Copy→系统CmdV/CmdS文件14B exact016ac216；giant按钮拒绝且实际Paste仍38Bsentinel378d917d。UI仍generic提示，未称typed提示绿。Root两个nativePaste报冲突后都实际AX检查到了专用sentinel，再CmdA/C建立已知clipboard，未读用户clipboard。两系统复制结果与UI收据在mac-copy-preparation-4。
+
+S source3原driver65305未改，Root按AA实际proof/22env/同App只JSON重新pin。A actual42497 83.6316s业务oracle全到：真实FIRST/response→durable计划仅AppA90205 SIGKILL9原非0→AppB91587先读FIRST再SECOND/response，sameSID/run/host/provider及无Init/New/Load/Resume增原assert全到。B actual17620 69.5808s：旧角色全gone后coldApp93799先读S_COLD_FIRST，真实SessionRecovery菜单Check and recover一次，Running后Idle/input、oldbody+earlyResumeNote；原SDK Init3/New1/Resume1/Load0/Prompt1/newrun/prefix断言全到。两场normal最终CmdQ/ALL空/source-env稳/forcedfalse；**原整体均exit2/greenfalse仅ready诊断why残留**，A1/B2，不能回填原false。input正独审及已知why精确保留方案，不重业务矩阵。原三个sAppA/sAppB/sCold CUA绑定已dead，不可访问导致重启。
+
+Copy提示最小修源准备在khor-round2-history（原e42 branch）尚未改Root：HistorySearch catch等待原body以保实际too_large/incomplete，避免ClipboardItem用DOM错误替换原因；原check-history-search-ui仅把clipboard拒绝包为DOMException模拟真实WK。测试先59580实际red1：原两source search/copy通过后等specifictooLarge超15s，无force/ALL空/TMP空。当前唯一live为Root browser29753，全既有DOM suite green验证中，必须poll原handle；没新Cargo/App。待通过后交input非作者review，再整合并集中一次最后前端/native构建；无需在测试期间改Root影响原qualifiedS。
+
+仍余：上述why冷保留与source-copy提示收口、旧endedShell只读API+冷画面、原boot pure exact、C009 dir/plainURL/Cmd/wide-narrow/hardnewline/selection有限项、G未覆盖table代表、手机当前devicebuild及真实布局/触屏/键行、Mac真IME（用户当前不方便，未验）、最终34项/CleanCode审计。已绿G/W/B/公式等按源未变复用。系统13GiB/外盘110GiB，禁止重复全量镜像/新target。
+
+
+### 2026-11-01 09:58 最新终态与下一步
+
+当前所有实际槽FREE，无活App/Cargo/Node/Chrome；不要再访问dead endedApp/aaCopy2/sAppA/sAppB/sCold CUA对象。Root仍AAclean，H authorworktree2叶未提交UI错误原因修复（Root作者，input独审中）。29753完整原8组HistorySearch DOM已实际0，reportf419257c、native97672/noTimeout/noforce/ALL空/fixture删除/source稳/TMP空；原59580 red原1仍保。source.patch9d7a96b2外盘与内盘copy-notice-pending.patch同；未以DOM冒实际WK提示复验。下一步收到非作者review后只commit这2叶并pickRoot，最后集中前端/native构建，勿重复既有无关验证。
+
+S A+B真实业务已input独审11f1aa14（同原SDK/身份/canonical/真实CUA ack/全部进程退出），原A1462bfe1/B3e0aafa8 overallfalse照存。Root已fresh全attrs/fullSHA/known3files/creatorPID无/lsof1空，分别将仅含诊断why的scene/tmp单次sameFSrename至各out/diagnostics，receipt7f4507840966f75a92d4ba4bfa8737c0454123367754b9a5217b29b63178fc89，原results逐字未改；原TMPfalse是当时事实，当前TMPabsent单独收据，不再重业务测试。
+
+ended-shell-current-source-1原准备遗漏继承real_home/peer_sha256，两setup失败均在roles启动前，原输出精确冷留存于setup-failure-missing-real-home及setup-failure-missing-peer-pin，前者只有storagepreflight、后者原false/roles空/calls0；不称产品红。Root仅contract.current3加原realHOME/fixtureSHA，不改driver320f4d69。actual87058正常0/2.777s，3只读RPC、source-env/ALLTMP净：两旧SID ended.exit0/attachablefalse/can_controlfalse，screen90x41/1100B/SHA46bb4252，含OUTPUT_BEGIN/OSC8/WAIT。actual62253独立冷App99618正常CmdQ0/source-env/ALLTMP净，Root真实点两rows都显示旧终端快照/longpaths/plainURL/markers。result1782b120/UI8e0a231c在mac-ended-screen-preparation-1；不从辅助Terminal input AX猜可交互，不把row Idle当任务仍活。该Shell持久screen缺口现已有分层API+真实画面证据。
+
+剩余仍是原boot pure exact、C009余有限真实intent/物理行与selection、G表格代表、手机当前devicebuild/真机UI与真实MacIME、最终34核账/CleanCode、以及新Copy提示小fix最终集成/native复验。main/ship未授权，用户当前人验不可用，不能算完成。
+
+
+### 2026-11-01 10:00 当前源码已集成
+
+Copy提示两叶已input独审4d6192f7b34ea03e1c3d183503253fbe94ccf3ed5638dbf7212d722909944e10，作者commit39a19011，Root精准pick **f23a167be48bb47d752f3f3a89ffa4efbef03a9f clean**；H authorworktree也clean。Root当前fulltypes/Vite/native尚未针对f23重建，不能用AAwholeV冒新包。input只源准备f23 frontend及normal3最小namespace，同原qualityID、188gen/guard/20+10保留+峰值；readyfalse实际pinsnull、OUT只读snapshot，不自主运行/移动。所有实际运行槽FREE。
+
+最新源码bundle history-copy-notice-f23a167b.bundle相对AA，1189B、外内双份verify0/SHA cb5304ffdc5ca543e78ad2fab51d189b47be05d87ba2792d2a0a8c7754cb23b3，旧chain保。pending.patch已被真实commit替代（原内盘小patch仍作历史，不再当未提交状态）。下一步Root读input准备、单次实际frontend/native并刷新同App，再闭Copy提示native及剩余C009/G既定范围，不重S/G已绿矩阵。

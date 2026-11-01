@@ -1,6 +1,6 @@
 # 第二轮验收总账
 
-本页是34项的验收索引，不是完成声明。最新源码/所有权/运行槽见[STATE](STATE.md)，用户决定见[原反馈](ROUND-2.md)及专项文档。编表基线为4f7e732e，当前Root d4b835ba与normal三产物actual56763来源合格；实际行为按各行限定范围及STATE最新段，不能由构建推导全项通过。源码实现、pure/DOM、Rust定向测试、真实WK、真人IME与手机触屏各自证明自己的范围。
+本页是34项的验收索引，不是完成声明。最新源码/所有权/运行槽见[STATE](STATE.md)，用户决定见[原反馈](ROUND-2.md)及专项文档。编表基线为4f7e732e，当前Root aa346f28，前端actual26384已通过；AA normal三产物actual79806正在构建，旧d4b835ba/actual56763只证明当时版本；实际行为按各行限定范围及STATE最新段，不能由构建推导全项通过。源码实现、pure/DOM、Rust定向测试、真实WK、真人IME与手机触屏各自证明自己的范围。
 
 ## 逐项最小完成证据
 
@@ -14,12 +14,12 @@
 | R2-006 | H | 长历史 | 有界分页/渲染/缓存/传输；可取消并保持阅读锚点；搜索、复制或原文出口不把截断冒成完整。 | 基础读取/出口与既有browser已通过；真实chunk分组、读取意图及最新思考定位已修；当前28项reader、完整32项Find worker在864实际通过，Reader真实28过但caller误计29的原false保留；跨页query/wholeplain-copy已实现，完整DOM消费者actual28700原7＋全部Range真过；实际17f默认App80153原生1201记录及184,613B巨条完整Export→系统Save逐字相同；96355与17256实际67,110,120B/53,262条原生历史分页、未加载HEAD全文搜索并定位、取消、WindowRaise/指针返回与滚轮可读。原paint不足现象因果未知；跨mount阅读bookmark不属本轮，仅NEXT。尚无系统Copy与真实WebContent峰值证明，不把parent单点RSS冒峰值。 |
 | R2-007 | S | 统一持久化恢复 | 同一会话身份恢复canonical正文；存活重挂、已退任务和离线明确；不重复load/writer；长合法base无丢失且启动内存受控。 | Store真实67,174,400B payload及有界启动已通过；运行代次拒写5exact已实际通过；前置reservation、Load新display base与Resume实际Note的8项组件验证已通过；真实New/Attempt及known-native生产组件原8父＋2helper已54318/14117通过；公开显式恢复/新Shell源码与当前Recovery17组件已接并通过受控UI验证；真实Node当前85431原8父＋2helper完整通过并独审，真实CLI/Core公开Load70988业务断言全到且双审：Join与重放无重复writer、退出后同SID新run、Load1/New不增、旧binding仍读；整场false仅两个自有诊断，另据31a4c020收口，不回填。真实Resume57844业务全到（同native新run/Resume1/Load0/New不增/原opaque输入与旧record/raw保）；其已知诊断另收口原false保。当前874c完整Unsupported4303实际0/6.260s，原5s两次host/provider全部退出、replay无额外启动、fresh recheck Init-only Refused、最终Init4/New1/Load0/Resume0/Prompt1、无forced/TMP净；独立尾核已通过。Shell9775真实0/8.756s＋独审，原A仅Ready后执行一次、DirectoryRequired无spawn、用户新cwd建立唯一默认Shell B、同payload live/ended均同B、旧A保持及两PTY实际回收。两同机真实privatehome Offline4 actual63373完整离线无本机执行/Unknown、samekey重开后原payload Join原SID/run/host/provider已通过并独审；不外推物理双机。Host死亡但provider仍活已在43ff实际35829复现业务红：hostAbsent/provider精确Present，Unknown成立但actionNative不满足None；后续显式恢复/replay断言未到。原false与冷现场保；最小修复fb01已实际81606通过：Unknown/None＋显式sameepoch Unknown/replay无增，原Meta/Attempt/binding/raw/history保持；同artifact原R7正反例通过，各1/0/0，独审及strict清理通过。完整App剩余组合按来源另列。 |
 | R2-008 | C | 打开意图 | 同一路径/URL普通点击内部，Cmd点击系统；不作可达性预检或额外改写。 | 当前fb01实际11244＋14739：native消息URL普通SidePanel实际CIBOL、Cmd新Chrome exactURL；plainASCII path普通SidePanel exactmarker、第二物理行Cmd actualTextEdit exactdoc URL/marker。外部专用tab/doc已关，两场normalQuit/ALL-TMP净独审。GUI四intent已到，终端path/URL/OSC8仍待。 |
-| R2-009 | C | 软折行路径 | 同一生产终端入口长路径在宽/窄屏均可识别并命中，网址对照；不误把硬换行拼为同一路径。 | 实现/定向检查已有；当前App窄屏待测。 |
+| R2-009 | C | 软折行路径 | 同一生产终端入口长路径在宽/窄屏均可识别并命中，网址对照；不误把硬换行拼为同一路径。 | actual42114真实非login终端第二物理行文件普通点击→完整目标/marker，OSC8普通点击→exact URL，App正常Quit/独审；操作含真实小drag＋Raise，尚缺directory/plainURL/Cmd与宽窄逐行、硬换行、选区/应用鼠标范围，不能称全项通过。 |
 | R2-010 | C | 回当前工作区 | 离开session cwd后左上动作回当前工作区，不在推荐列表追加同类项。 | 0f606实际80119已从EditorSession进入EditorMachine，再用Back回EditorSession；源相关组件未变。该批末300超时原false保，不冒整场通过。 |
 | R2-011 | E | 路径/URL拖选 | 从中间拖至末尾松手保持选区和编辑态；真正外点正常退出。 | 0f606实际80119：长Directory path与长URL都从中段拖至真实末尾/框外松手，实际Selected尾段保留且仍编辑；真正外点才结束。该批末300超时原false保，Root原生事件不冒真人IME。 |
 | R2-012 | E | 退出搜索 | 首次外点或Escape退出药丸搜索，过滤不残留；输入/候选内部操作保留。 | 0f606实际80119：不存在查询→Nothing here，首次blank click或Escape均关闭目录搜索并恢复原files；该批末300超时原false保，个别已到行为单列。 |
-| R2-013 | G | 推荐菜单材质 | 工作区建议可读、有足够底色和单一叠层；浏览网页仍不显示推荐框。 | 当前App深浅/三材质待测。 |
-| R2-014 | B | 真实加载进度 | 同导航进度单调，真正成功后结束；失败/取消不伪100；非WK能力不伪造比例。 | 规则/原生定向证据已有；真实WK事件待测。 |
+| R2-013 | G | 推荐菜单材质 | 工作区建议可读、有足够底色和单一叠层；浏览网页仍不显示推荐框。 | Light50409与Dark3807宽窗三材质已实际观察；Dark904窄窗原红经d4b835ba修复后actual68689已正常Quit/独审闭环。G其余固定区域另列R2-024。 |
+| R2-014 | B | 真实加载进度 | 同导航进度单调，真正成功后结束；失败/取消不伪100；非WK能力不伪造比例。 | 规则/原生定向证据已有；真实B60137同一导航pending可见、实际完整CIBOL后进度消失，closedport失败与Retry不伪成功；不外推任意网站或手机。 |
 | R2-015 | B | 网页初始背景 | 首帧、加载、失败/重试随主题底色，网站自有背景仍保留。 | 深色80153既有实际；当前fb01 B60137实际Light/Translucent90 pending首帧offwhite/完整页自有浅底，真实closedport失败＋Retry浅底，无成功bar。Root CUA与严格退出尾核分列，手机另待。 |
 | R2-016 | B | 连接拒绝 | 采真实WK错误/导航身份/访问运行路径；区分失败，不能用独立HTTP200宣称修复。 | 当前App80153真实WK已加载原lan.cibol.khor.cloud/guest访客页面；闭端口56757显示连接失败+Retry。证明当前路径行为，原历史拒绝唯一原因仍未知。 |
 | R2-017 | B | 手机网页视口 | 同一网站/登录状态对照，fixed/sticky底栏可见可点，网页frame不进入Khor甲板操作区。 | 真实手机同页几何/点击待测。 |
@@ -50,7 +50,7 @@
 3. 私有工作区/测试文件完成桌面W/C/G/Q/B组合：导航、实时更新、路径拖选、长diff/菜单、公式和真实WK。每个结果标明实际入口/主题/材质/宽度，未测的组合保留待测。
 4. 完整S验证存活重挂、host退出/重启、远端断线、能力驱动显式恢复、旧代次拒写与新Shell不重放旧命令；NoLoad正常Quit重开草案尚未执行，不能替代全S。仅私有fixture，不操作真实用户会话或调用真实agent/API。
 5. 新鲜真人可用性后才开限时Mac IME/路径选区/各入口草稿/保存失败取消及最后一键→正常Quit。手机另验同页viewport、连续候选与组合键行；模拟不能替代真实触屏。准备匹配当前observer devUrl GUI及physical私有Lab后才约人。
-6. 逐项精确证据与最终完成审计。R2-001/016若仍无原现场/当前复现则保未证修复，只有用户明确接受延期才调整范围。新独立问题仅NEXT-ROUND。
+6. 逐项精确证据与最终完成审计。R2-001/016若仍无原现场/当前复现则按限定调查如实交付因果未知/未证修复，不新增用户接受unknown的审批门，也不以此无限扩展调查。新独立问题仅NEXT-ROUND。
 
 每包仍须有非作者Clean Code审查：领域名称、唯一状态owner、IO与纯规则边界、取消/失败清理、迟到结果身份、删除被替代分支，以及只解释必要原因的注释。不得以零注释、格式化数量或新增测试数量当完成目标。
 
@@ -61,3 +61,17 @@
 - W023上述actual5794 result37f22150…c75e8/UIobsd18dfe0a…8f87f已独审真实尾核。Root最初typeText漏下划线原因未分类，之后正常native Paste建立exactaccepted draft才测外写保护；不以该场证明中文/按键输入可靠。
 - C009 actual49137：已创建真实非login sh/uniqueSID760939224e72f59b，原guard正向观察host84929/child84930；blankline正常exit0/原两PID组无/旧rows保，App正常CmdQ0/ALL-TMP净。但wrappedfile row普通点击和OSC8普通/Cmd未见打开目标，未建立正向hover控制，故链接业务未闭合，需区分CUA坐标事件与产品处理，不先猜唯一因果。result20e5ca5f…d9fc5/UIobsfa4f5cfb…03b46。
 - R001按原限定调查要求可交付“调查完成、原卡死唯一因果未知/未证修复”；R016当前真实WK路径/失败分类已有证据，历史唯一因果仍未知。不得新增必须用户接受unknown的审批前置，亦不得冒已修或无限扩调查。
+
+
+## 2026-10-31 15:36 当前复制与平台边界
+
+- 系统Copy actual38171生命周期正常而业务红：小14B与giant按钮均generic fail，实际粘贴为已知38B sentinel，不算成功；生产Core/Worker inspect v3 actual49554正常结束后分层确认为small Incomplete、giant typedTooLarge。AA修复先旧源回归红，再focused＋完整Find33 actual38443真绿；当前真实复制复验尚待新包，不以Node/构建冒系统Copy。原2621/49772诊断false与清理事实均保留。
+- 用户已明确当前不方便，Mac真实系统IME/Shift选择和physical iPhone交互保持未验；不以早期方便答复开限时人验。自动实施/验证继续，完整34项目标不缩小。当前iPhone连接仍不可用，已完成sim cfg编译仅compile-only，不代真机。
+- 已完成ios-sim可重建缓存精确退役actual45169/receipt69a613c6，实际外盘释放约6.74GiB，唯一quality target约35.16GiB；现AA native在唯一target串行，jobs1/incr0/offline，系统13GiB/外盘约110GiB，仍逐重批检查峰值和20/10保留。所有原iOS证据与冷0B现场保，不扫用户文件。
+
+
+## 2026-11-01 实际恢复与复制新增证据
+
+- R2-006：actual28765真实系统菜单Copy→CmdV/CmdS，小消息14B exact016ac216；giant复制明确失败、38B原sentinel真实粘贴保持378d917d，正常Quit/ALLTMP净。大小原因在WK UI被泛化，最小修已原DOM回归先红59580再整套8组29753绿，尚未最终集成/native提示复验。
+- R2-002/007：S A actual42497（83.63s）真实FIRST→精确App-only计划SIGKILL→新App先读FIRST再SECOND，sameSID/run/host/provider/无重复setup断言全到；S B actual17620（69.58s）原roles全退后先真读磁盘history再真实菜单recover一次，sameSID/fullnative/newrun/Resume1/Load0/New不增与earlyNote及prefix全到。input独审11f1aa14。两原整体false仅3已知why，真实业务/正常最终退出/ALL/source均闭；精确冷留存7f450784另证TMP现无，原false不回填。
+- R2-003/007 Shell分层：actual87058只读两旧SID的ended状态/1100B screen；actual62253真实冷App两已结束会话旧快照可见，正常Quit/ALLTMP净，无attach或输入。AX辅助Terminal input不是可交互证据，row Idle不是后台仍运行证据。
