@@ -4,6 +4,16 @@
 
 版本号只在 `Cargo.toml` 一处（`apps/gui/src-tauri/tauri.conf.json` 的 `"version"` 字面量不能删，删了 tauri 写 1.0.0）。装了哪一版现在看不出来——五台都报同一个号；认版本靠二进制里本次新加的字符串（下面每段的「验」）。
 
+## 2026-11-01：第三轮发布完成
+
+本轮用户验收Lab后授权合main并ship。正式构建源 `ee7151381412e523c0018db791b1a400afee14aa`，后继只更新发布文档；共同UI收据 **`khor-ui-assets:/assets/index-C9KeWEdI.js`**。完整结果见[第三轮发布](code-quality/ROUND-3-RELEASE.md)，原始证据集中在 `/Volumes/disk0/Khor/evidence/releases/20261101-round3`。
+
+- Mac GUI／CLI已更新：新GUI95781实际监听5467并返回新收据；原8个列表ID及全部宿主保留，无新增失败。CLI SHA `78f753adcff6a2bccc72e5466dbaaa52ef17b7df896f893565fcf1e263ce5342`；GUI `afa8c59b961bd82c4acc05be3f07a8d29aab7d10bb021cae6969172f382aca32`。
+- 三节点实际运行exe均为 `f74f2b6f0ac94f46123a943a55fa89ed08aa2707b45498412bb64fec00f33dfc`，完整UI／LinuxPi／ELF／GLIBC2.30及HTTP收据通过。单次安装器1保留，独立实际采用核验通过，未重复安装。
+- iOS archive-only0，arm64 **IOS**／SDK26.5／min15.0与签名、完整新UI均通过，两签名源恢复。单次正式上传Xcode12082实际0／137.709s，Upload succeeded／EXPORT SUCCEEDED齐全，ContentDelivery确认 **0.1.14（62）**；源、App／静态库和导出选项前后稳定。Apple处理与手机安装／真机交互未验。
+
+首次Mac因系统盘8GiB保护停止，原Cargo-15保留；后以release、jobs1、incremental0、`CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16`、ThinLTO完成Mac及iOS。此参数应随同机缓存继续使用，避免反复切换而重建依赖。Cargo registry、旧恢复node_modules及npm下载缓存已逐文件校验外置、保留原链接，node_modules物理层级和实际导入均通过；未删除系统swap或用户数据。正式归档、当前lib、旧61回退和发布收据保留，临时Lab已关闭。
+
 ## 2026-11-01：TestFlight接续成功
 
 用户处理Apple协议后，沿同一合格归档上传 **0.1.14（61）**，实际upload-2 Xcode10898／exec31607，exit0／119.853s，Upload succeeded与EXPORT SUCCEEDED俱全；本次ContentDelivery真实数字字段确认61。当前文档HEAD2a与built eca只4docs差，非文档源码／gen／dist、App／.a和导出选项全等且首尾稳定，无重新编译／重装Mac或集群。证据 `evidence/releases/20261101-round2/ios/upload-2/{result,uploaded-version}.json`，result SHA `3083addf77e2a6f26678325dfff6a6a86c76d46e48da6e398e97ae5754e4bf91`。

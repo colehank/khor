@@ -1,6 +1,6 @@
 # 当前状态与历史发布记录
 
-2026-11-01最新：第三轮四项实现及作者自审完成，用户已确认当前Lab无问题；用户现已明确授权合并main并ship，正在发布，真机交互未验。Root单独执行；唯一实施树 `/Volumes/disk0/Khor/worktrees/current/khor-round3`，分支 `integrate/round3`，HEAD `ae398aa788096c32ce28507562b7e16547995826`。main仍为27a9ce5c，当前GUI PID91072/出生15:19:04未动；第三轮合并与ship已获本次新授权。入口 [ROUND-3-PLAN.md](ROUND-3-PLAN.md)，机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。
+2026-11-01最新：**第三轮已合并main并完成ship**。产品构建源 `ee7151381412e523c0018db791b1a400afee14aa`；Mac GUI95781／CLI与hinton、turing、lecun均实际更新，TestFlight **0.1.14（62）**单次上传成功。发布文档随后合入main；实际最终HEAD读发布目录release-final.json。Mac原8个列表ID及全部宿主保留，无新增失败；原生TUI点击／iPhone手势键盘与安装体验仍待真人验收。详见 [ROUND-3-RELEASE.md](ROUND-3-RELEASE.md)；机器检查点 [ROUND-3-CHECKPOINT.json](ROUND-3-CHECKPOINT.json)。临时Lab和全部本轮构建／上传槽已结束，不把正式GUI95781当临时进程清理。
 
 2026-11-01。用户已明确授权“先直接commit到main并ship”。**main已合并推送，Mac与三节点已更新；TestFlight 0.1.14（61）已实际上传成功，本次SHIP完成。** Apple处理可用性、手机安装与真人交互尚未查询／验收，不宣布34项整轮完成。原真人Mac IME、iPhone交互均转为发布后未验。
 
