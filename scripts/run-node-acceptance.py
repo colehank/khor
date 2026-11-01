@@ -41,6 +41,16 @@ def isolated_tests(tests, ignored, helpers=()):
     return selected
 
 
+def require_test_success(raw, selected, helpers):
+    executed = re.findall(r"^test (\S+) \.\.\. ", raw, re.M)
+    summaries = re.findall(r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;", raw)
+    if (executed.count(selected) != 1 or len(executed) != len(set(executed))
+            or set(executed) - {selected} - set(helpers)
+            or summaries != [("1", "0", "0")] * len(executed)
+            or "skipped" in raw.lower()):
+        raise ValueError(f"{selected}: expected its passing result and only declared fixture helpers")
+
+
 def digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
@@ -319,10 +329,7 @@ def main():
         for index, test in enumerate(tests, 1):
             result, raw = run(binary, ["--ignored", "--exact", test, "--nocapture"],
                               output / f"case-{index:02}.log", root)
-            summaries = re.findall(
-                r"test result: ok\. (\d+) passed; (\d+) failed; (\d+) ignored;", raw)
-            if summaries != [("1", "0", "0")] or "skipped" in raw.lower():
-                raise RuntimeError(f"{test}: expected one executed passing test")
+            require_test_success(raw, test, helpers)
             if digest(binary) != binary_sha or source_frame(root) != before:
                 raise RuntimeError("Source or actual binary changed during acceptance")
             receipt["passes"].append({"test": test, **result})

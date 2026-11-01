@@ -20,6 +20,17 @@ spec.loader.exec_module(entry)
 
 
 class PersistentOwnershipTests(unittest.TestCase):
+    def test_nested_fixture_summary_does_not_hide_the_selected_test_result(self):
+        summary = 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 99 filtered out;\n'
+        helper = 'test worker ... owner exited\nok\n' + summary
+        outer = 'test selected ... ok\n' + summary
+        entry.require_test_success(outer, 'selected', {'worker'})
+        entry.require_test_success(helper + outer, 'selected', {'worker'})
+        for text in [helper, helper + outer + outer, helper + outer.replace('1 passed', '0 passed'),
+                     helper.replace('worker', 'unrelated') + outer, outer + 'skipped']:
+            with self.subTest(text=text), self.assertRaises(ValueError):
+                entry.require_test_success(text, 'selected', {'worker'})
+
     def test_suite_growth_runs_every_isolated_case_without_a_stale_count(self):
         cases = [f"test-{index:02}" for index in range(13)]
         self.assertEqual(entry.isolated_tests(cases, cases), cases)

@@ -21,7 +21,7 @@ const files=['src/hooks/use-compose-layout.ts','src/hooks/use-chat-scroll.ts','s
 const hashes=()=>Object.fromEntries(files.map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
 const report={head:execFileSync('git',['rev-parse','HEAD'],{cwd:gui,encoding:'utf8'}).trim(),files:hashes(),boundary:'Real production components/CSS; fixed parent epoch, stable/fresh log reference; browser component diagnosis only. No synthetic keyboard or native Safari claim.',results:[]};
 const save=()=>writeFileSync(join(out,'results.json'),JSON.stringify(report,null,2));
-const free=()=>{for(const path of ['/Volumes/disk0','/Users/zgh']){const s=statfsSync(path);assert(s.bavail*s.bsize>=5*1024**3,`${path} below5GiB`);}};
+const free=()=>{for(const path of [gui,out,tmpdir()]){const s=statfsSync(path);assert(s.bavail*s.bsize>=5*1024**3,`${path} below5GiB`);}};
 let server,browser,log='';
 try{
   free();

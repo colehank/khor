@@ -12,7 +12,8 @@ export async function exerciseChatPoll(scenario, page, polls) {
   const reply = (index, change = {}) => page.evaluate(({index, change}) => window.__chatWire.reply(index, change), {index, change});
   const reject = index => page.evaluate(index => window.__chatWire.reject(index), index);
   const commandCount = cmd => page.evaluate(cmd => window.__chatWire.calls.filter(call => call.cmd === cmd).length, cmd);
-  const message = text => ({kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text}}}});
+  // Poll owns live controls; conversation bodies arrive through history pages.
+  const message = text => ({kind: 'ask', ask: 1, title: text, options: [['ack', 'Acknowledge']]});
   const nextPoll = async before => { await advance(0); await until(async () => await count() === before + 1, 'completion starts the next held wait'); };
   if (scenario === 'http-failure') {
     for (const delay of [500, 500, 500, 800]) {

@@ -87,6 +87,8 @@ async function samples(page, kind, target = null, duration = 700) {
       const box = document.querySelector(kind === 'commit' ? '[data-commit-scroll]' : kind);
       if (!box) throw new Error(`Missing scroll surface: ${kind}`);
       const bounds = box.getBoundingClientRect();
+      const header = kind === 'commit' ? document.querySelector('[data-commit-head]') : null;
+      const covered = header ? Math.max(0, header.getBoundingClientRect().bottom - bounds.top) : 0;
       const element = target ? [...box.querySelectorAll('[data-commit-file]')].find(e => e.dataset.commitFile === target) : null;
       const active = document.activeElement;
       result.push({
@@ -94,6 +96,7 @@ async function samples(page, kind, target = null, duration = 700) {
         height: box.scrollHeight, view: box.clientHeight,
         gap: box.scrollHeight - box.clientHeight - box.scrollTop,
         offset: element ? element.getBoundingClientRect().top - bounds.top : null,
+        covered,
         focus: active?.hasAttribute('data-commit-jump') ? 'trigger' : active?.getAttribute('data-commit-file') ?? active?.tagName,
         focusInTarget: !!element && (active === element || element.contains(active)),
       });
@@ -159,7 +162,7 @@ async function commitCase(page, mode, evidence) {
     assert(evidence.samples.every(s => Math.abs(s.top - evidence.before.top) <= 2), 'Escape does not navigate or scroll');
     return;
   }
-  assert(evidence.samples.every(s => s.top > 100 && s.offset >= -2 && s.offset < s.view && (Math.abs(s.offset) <= 2 || Math.abs(s.gap) <= 2)), `Selected file must remain visible after menu exit: ${JSON.stringify(evidence.samples.slice(-3))}`);
+  assert(evidence.samples.every(s => s.top > 100 && s.offset >= s.covered - 2 && s.offset < s.view && (Math.abs(s.offset - s.covered) <= 2 || Math.abs(s.gap) <= 2)), `Selected file must remain visible below the header after menu exit: ${JSON.stringify(evidence.samples.slice(-3))}`);
   assert(evidence.samples.every(s => s.focusInTarget), 'Selection transfers and retains focus in the selected file');
   assert.equal(new Set(evidence.samples.map(s => s.focus)).size, 1, 'Focus remains stable after menu exit');
 }
@@ -270,19 +273,25 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   const bottom = kind === 'acp' ? '[data-chat-bottom]' : '[data-machine-chat-bottom]';
   const rows = [];
   let next = 0;
-  const add = async count => {
+  const add = async (count, waitForBody = true) => {
     let last;
     if (kind === 'acp') {
       const text = Array.from({ length: count }, () => (last = paragraph(kind, ++next))).join('\n\n');
+      const delivered = page.waitForResponse(async response => {
+        if (!/\/(chat_poll|chat_wait)$/.test(new URL(response.url()).pathname)) return false;
+        const value = await response.json();
+        return value.frames?.some(frame => frame.kind === 'content_changed');
+      });
       const response = await page.request.post(`${base}/__ai_preview/acp`, { data: { id: session, frames: [note(`\n\n${text}`)] } });
       assert(response.ok(), 'ACP fixture accepts new frames');
+      await delivered;
     } else {
       for (let i = 0; i < count; i++) {
         last = paragraph(kind, ++next);
         rows.push({ id: `quality-${next}`, at_ms: 1792900800000 + next * 1000, from: '验收消息', from_me: false, to: [], text: last, files: null, note: null, unknown: null, retracted: false, command: null });
       }
     }
-    await page.getByText(last, { exact: true }).waitFor({ state: 'attached' });
+    if (waitForBody || kind !== 'acp') await page.getByText(last, { exact: true }).waitFor({ state: 'attached' });
     return last;
   };
   const reset = await page.request.post(`${base}/__ai_preview/reset`);
@@ -391,7 +400,9 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   await keyboard(page, 300, evidence, 'historyOpenFrames');
   evidence.historyOpen = await anchorOffset();
   assert(Math.abs(evidence.historyOpen - anchor.offset) <= 2, 'Keyboard opening keeps the historical paragraph anchored');
-  await add(3);
+  // Reading history pauses body loading; the live content-change signal must
+  // arrive without moving the anchor. The body is required on explicit return.
+  const newest = await add(3, false);
   await frames(page, 5);
   evidence.historyMessage = await anchorOffset();
   assert(Math.abs(evidence.historyMessage - anchor.offset) <= 2, 'New messages do not take the reader away from history');
@@ -400,6 +411,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   assert(Math.abs(evidence.historyClose - anchor.offset) <= 2, 'Keyboard closing keeps the historical paragraph anchored');
   assert(await toBottom.isVisible(), 'History mode remains an explicit choice');
   await toBottom.click();
+  await page.getByText(newest, { exact: true }).waitFor({ state: 'attached' });
   await frames(page);
   evidence.returnToTail = await samples(page, selector);
   assertTail(evidence.returnToTail, 'Explicit return to the latest message');

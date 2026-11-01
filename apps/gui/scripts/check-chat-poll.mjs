@@ -115,7 +115,7 @@ async function run(engine, name) {
         const oldKey = await page.evaluate(() => window.__chatWire.heldLease);
         assert.notEqual(opened[0].args.lease, oldKey, 'retry has its own Begin ACK');
         assert.equal((await polls())[0].args.lease, opened[0].args.lease, 'the first read belongs to B');
-        const message = text => ({kind:'note',update:{update:{sessionUpdate:'agent_message_chunk',content:{type:'text',text}}}});
+        const message = text => ({kind:'ask',ask:1,title:text,options:[['ack','Acknowledge']]});
         await page.evaluate(frame => window.__chatWire.reply(0, {next:7,frames:[frame]}), message('active B after a delayed Begin'));
         await page.clock.runFor(0);
         await until(async () => (await polls()).length === 2, 'B continues from its completed read');
