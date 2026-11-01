@@ -259,8 +259,14 @@ fn answer(rt: &tokio::runtime::Runtime, root: &Path, req: &mut tiny_http::Reques
                     return Reply::refused(400, msg::upload_needs_machine_and_name().to_owned());
                 };
                 let into = khor_gui_core::into_arg(query);
-                return match khor_gui_core::chat::chat_put(root, &id, &lease, &name, &into, req.as_reader())
-                {
+                return match khor_gui_core::chat::chat_put(
+                    root,
+                    &id,
+                    &lease,
+                    &name,
+                    &into,
+                    req.as_reader(),
+                ) {
                     Ok(path) => Reply {
                         code: 200,
                         kind: "application/json",

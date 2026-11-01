@@ -36,11 +36,24 @@ use ts_rs::TS;
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ChatFrame {
-    PromptRecorded { turn: String, token: String, #[ts(type = "number")] start: u64, #[ts(type = "number")] end: u64 },
-    Captured { token: String, result: CapturedContent },
+    PromptRecorded {
+        turn: String,
+        token: String,
+        #[ts(type = "number")]
+        start: u64,
+        #[ts(type = "number")]
+        end: u64,
+    },
+    Captured {
+        token: String,
+        result: CapturedContent,
+    },
     /// Canonical content advanced. The bounded history reader owns its body.
     ContentChanged,
-    CaptureGap { opening: String, interrupted: bool },
+    CaptureGap {
+        opening: String,
+        interrupted: bool,
+    },
     /// One live update.
     Note {
         #[ts(type = "unknown")]
@@ -64,7 +77,9 @@ pub enum ChatFrame {
         option: Option<String>,
     },
     /// The turn ended, with the protocol's stop reason.
-    Turn { stop: String },
+    Turn {
+        stop: String,
+    },
     /// The conversation is over; no more frames follow.
     Gone,
     /// What the agent on the other end can do — told once, when this
@@ -84,7 +99,9 @@ pub enum ChatFrame {
     /// (`khor_node::gui_host::GuiNote::Refused`), and why — as a
     /// **key**, looked up at the last moment like every other word.
     /// Sent to the face that sent the op and to nobody else.
-    Refused { why: String },
+    Refused {
+        why: String,
+    },
     /// **A turn that did not go** (NOTICE-BRIEF): its bytes could not be
     /// written to the host — the road to that machine broke under it —
     /// and why, in parts. The face takes the line back off its
@@ -103,7 +120,9 @@ pub enum ChatFrame {
     },
     /// The complete input was written, including its final commit frame.
     /// This is not an acknowledgement of remote execution or agent completion.
-    SendCommitted { token: String },
+    SendCommitted {
+        token: String,
+    },
     /// What this session can be set to and what it is set to
     /// (`khor_node::gui_host::GuiNote::Settings`): `{ modes, options }`
     /// in the protocol's own JSON, `unknown` here for the reason
@@ -147,7 +166,10 @@ pub enum CapturedContent {
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "snake_case")]
-pub enum CaptureUnavailable { NotReady, Unavailable }
+pub enum CaptureUnavailable {
+    NotReady,
+    Unavailable,
+}
 
 /// What a poll answers: the frames since the cursor, the next cursor,
 /// and whether the conversation has ended — `gone` covers both the
@@ -333,24 +355,45 @@ fn frame_of(note: GuiNote) -> ChatFrame {
     match note {
         GuiNote::Note(s) => {
             let update = parse(s);
-            match update.get("update").and_then(|u|u.get("sessionUpdate")).and_then(|v|v.as_str()) {
-                Some("agent_message_chunk" | "agent_thought_chunk" | "user_message_chunk" | "tool_call" | "tool_call_update") => ChatFrame::ContentChanged,
+            match update
+                .get("update")
+                .and_then(|u| u.get("sessionUpdate"))
+                .and_then(|v| v.as_str())
+            {
+                Some(
+                    "agent_message_chunk"
+                    | "agent_thought_chunk"
+                    | "user_message_chunk"
+                    | "tool_call"
+                    | "tool_call_update",
+                ) => ChatFrame::ContentChanged,
                 _ => ChatFrame::Note { update },
             }
-        },
+        }
         GuiNote::Captured { token, result } => {
             let result = match result {
                 Ok(fence) => match (fence.binding.encode(), serde_json::to_string(&fence.cursor)) {
                     (Ok(binding), Ok(cursor)) => CapturedContent::Available { binding, cursor },
-                    _ => CapturedContent::Unavailable { reason: CaptureUnavailable::Unavailable },
+                    _ => CapturedContent::Unavailable {
+                        reason: CaptureUnavailable::Unavailable,
+                    },
                 },
-                Err(reason) => CapturedContent::Unavailable { reason: match reason {
-                    khor_node::gui_host::CaptureFailure::NotReady => CaptureUnavailable::NotReady,
-                    khor_node::gui_host::CaptureFailure::Unavailable => CaptureUnavailable::Unavailable,
-                } },
+                Err(reason) => CapturedContent::Unavailable {
+                    reason: match reason {
+                        khor_node::gui_host::CaptureFailure::NotReady => {
+                            CaptureUnavailable::NotReady
+                        }
+                        khor_node::gui_host::CaptureFailure::Unavailable => {
+                            CaptureUnavailable::Unavailable
+                        }
+                    },
+                },
             };
-            ChatFrame::Captured { token: token.iter().map(|byte|format!("{byte:02x}")).collect(), result }
-        },
+            ChatFrame::Captured {
+                token: token.iter().map(|byte| format!("{byte:02x}")).collect(),
+                result,
+            }
+        }
         GuiNote::Ask {
             ask,
             title,
@@ -1063,9 +1106,10 @@ pub fn capture_token(token: &str) -> Result<[u8; 16], String> {
     if token.len() != 32 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err("Invalid capture token".into());
     }
-    let mut bytes = [0;16];
+    let mut bytes = [0; 16];
     for (at, byte) in bytes.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&token[at*2..at*2+2],16).map_err(|_|"Invalid capture token")?;
+        *byte = u8::from_str_radix(&token[at * 2..at * 2 + 2], 16)
+            .map_err(|_| "Invalid capture token")?;
     }
     Ok(bytes)
 }
@@ -1078,15 +1122,21 @@ pub fn chat_capture(root: &Path, id: &str, lease: &str, token: &str) -> Result<(
 #[ts(export)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SessionContent {
-    Available { binding: String, following: bool, capture: Option<ContentCapture> },
-    Unavailable { reason: ContentUnavailable },
+    Available {
+        binding: String,
+        following: bool,
+        capture: Option<ContentCapture>,
+    },
+    Unavailable {
+        reason: ContentUnavailable,
+    },
 }
 
 #[derive(Serialize, TS)]
 #[ts(export)]
 pub struct ContentCapture {
     pub opening: String,
-    #[ts(type="number")]
+    #[ts(type = "number")]
     pub gaps: u64,
 }
 
@@ -1232,8 +1282,15 @@ pub struct HistoryProjection {
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[ts(export)]
 pub enum HistoryTextTransform {
-    JsonString { pointer: String, parsed: bool },
-    ToolOutput { item: usize, max_bytes: usize, suffix: String },
+    JsonString {
+        pointer: String,
+        parsed: bool,
+    },
+    ToolOutput {
+        item: usize,
+        max_bytes: usize,
+        suffix: String,
+    },
 }
 
 pub async fn history_projection(
@@ -1305,10 +1362,24 @@ fn body_projection_response(
     let mut response = HistoryProjection {
         record,
         entries: Vec::new(),
-        transforms: projection.transforms.into_iter().map(|transform| match transform {
-            khor_node::session_content::BodyTransform::JsonString { pointer, parsed } => HistoryTextTransform::JsonString { pointer, parsed },
-            khor_node::session_content::BodyTransform::ToolOutput { item, max_bytes, suffix } => HistoryTextTransform::ToolOutput { item, max_bytes, suffix },
-        }).collect(),
+        transforms: projection
+            .transforms
+            .into_iter()
+            .map(|transform| match transform {
+                khor_node::session_content::BodyTransform::JsonString { pointer, parsed } => {
+                    HistoryTextTransform::JsonString { pointer, parsed }
+                }
+                khor_node::session_content::BodyTransform::ToolOutput {
+                    item,
+                    max_bytes,
+                    suffix,
+                } => HistoryTextTransform::ToolOutput {
+                    item,
+                    max_bytes,
+                    suffix,
+                },
+            })
+            .collect(),
         complete: projection.complete,
     };
     if response.transforms.len() > 128 || encoded_size(&response.transforms)? > 16 * 1024 {
@@ -1465,32 +1536,67 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
         }
         use khor_node::session_content::ContentEvent;
         let payload = event.payload.into();
-        let starts_message = !matches!(&payload, ContentEvent::Update { starts_message: false, .. });
+        let starts_message = !matches!(
+            &payload,
+            ContentEvent::Update {
+                starts_message: false,
+                ..
+            }
+        );
         let frame = match payload {
             ContentEvent::Native(utterance) => {
-                let Some(update)=khor_node::replayed_update(utterance) else { continue; };
-                Some(ChatFrame::Note { update:serde_json::json!({"sessionId":id,"update":update}) })
-            },
-            ContentEvent::Update { update, .. }=>Some(ChatFrame::Note { update }),
-            ContentEvent::Turn { stop }=>Some(ChatFrame::Turn { stop }),
-            ContentEvent::CaptureGap { opening, interrupted }=>Some(ChatFrame::CaptureGap { opening, interrupted }),
-            ContentEvent::PromptOrigin { turn, token, start, end } => {
+                let Some(update) = khor_node::replayed_update(utterance) else {
+                    continue;
+                };
+                Some(ChatFrame::Note {
+                    update: serde_json::json!({"sessionId":id,"update":update}),
+                })
+            }
+            ContentEvent::Update { update, .. } => Some(ChatFrame::Note { update }),
+            ContentEvent::Turn { stop } => Some(ChatFrame::Turn { stop }),
+            ContentEvent::CaptureGap {
+                opening,
+                interrupted,
+            } => Some(ChatFrame::CaptureGap {
+                opening,
+                interrupted,
+            }),
+            ContentEvent::PromptOrigin {
+                turn,
+                token,
+                start,
+                end,
+            } => {
                 // The sole journal writer puts this small origin immediately
                 // after its complete prompt. Never trust an arbitrary old range.
                 if start >= end || end != event.position.start {
                     None
                 } else {
-                    if end-start > 64*1024 {
-                        let position = khor_node::adaptor::transcript_page::Position { start, end, item:0 };
+                    if end - start > 64 * 1024 {
+                        let position = khor_node::adaptor::transcript_page::Position {
+                            start,
+                            end,
+                            item: 0,
+                        };
                         expanded_references.push(HistoryRecordRef {
-                            start, end, missing_start:false, missing_end:false, item:None,
-                            cursor:serde_json::to_string(&page.cursor_before(position)).map_err(|e|e.to_string())?,
+                            start,
+                            end,
+                            missing_start: false,
+                            missing_end: false,
+                            item: None,
+                            cursor: serde_json::to_string(&page.cursor_before(position))
+                                .map_err(|e| e.to_string())?,
                         });
                     }
-                    Some(ChatFrame::PromptRecorded { turn, token, start, end })
+                    Some(ChatFrame::PromptRecorded {
+                        turn,
+                        token,
+                        start,
+                        end,
+                    })
                 }
-            },
-            ContentEvent::Reference | ContentEvent::LocalUserEcho=>None,
+            }
+            ContentEvent::Reference | ContentEvent::LocalUserEcho => None,
         };
         let entry = if let Some(frame) = frame {
             Some(HistoryEntry {
@@ -1507,8 +1613,13 @@ fn history_page_response<T: Into<khor_node::session_content::ContentEvent>>(
                 }),
                 frame,
             })
-        } else { None };
-        let bytes = entry.as_ref().and_then(|entry|encoded_size(entry).ok()).unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
+        } else {
+            None
+        };
+        let bytes = entry
+            .as_ref()
+            .and_then(|entry| encoded_size(entry).ok())
+            .unwrap_or(HISTORY_PAYLOAD_BYTES + 1);
         if bytes > HISTORY_FRAME_BYTES {
             expanded_references.push(HistoryRecordRef {
                 start: event.position.start,
@@ -2043,7 +2154,10 @@ mod put_tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let (_peer, _) = listener.accept().unwrap();
-        open_chat_with(&root, id, &lease, || Ok((khor_node::gui_host::Attached { stream }, None))).unwrap();
+        open_chat_with(&root, id, &lease, || {
+            Ok((khor_node::gui_host::Attached { stream }, None))
+        })
+        .unwrap();
         let first = chat_put_paths(&root, id, &lease, &given, "").expect("placed");
         let again = chat_put_paths(&root, id, &lease, &given, "").expect("placed again");
 
@@ -2161,13 +2275,33 @@ mod bounded_history_response_tests {
         assert_eq!(second.entries[0].key, "4:0");
         assert_eq!(second.entries.len(), 1);
         assert!(!second.has_more);
-        assert!(first.entries.iter().chain(&second.entries).all(|entry|entry.starts_message), "native utterances retain complete-message boundaries");
-        for (entry, (start, end)) in first.entries.iter().chain(&second.entries).zip([(0,2),(2,4),(4,6)]) {
-            let record=entry.record.as_ref().expect("real parser output retains its record");
-            assert_eq!((record.start,record.end,record.item),(start,end,Some(0)));
+        assert!(
+            first
+                .entries
+                .iter()
+                .chain(&second.entries)
+                .all(|entry| entry.starts_message),
+            "native utterances retain complete-message boundaries"
+        );
+        for (entry, (start, end)) in
+            first
+                .entries
+                .iter()
+                .chain(&second.entries)
+                .zip([(0, 2), (2, 4), (4, 6)])
+        {
+            let record = entry
+                .record
+                .as_ref()
+                .expect("real parser output retains its record");
+            assert_eq!(
+                (record.start, record.end, record.item),
+                (start, end, Some(0))
+            );
             assert!(!record.missing_start && !record.missing_end);
-            let cursor:khor_node::adaptor::transcript_page::Cursor=serde_json::from_str(&record.cursor).unwrap();
-            assert!(cursor.at_record_range("session",start,end).is_ok());
+            let cursor: khor_node::adaptor::transcript_page::Cursor =
+                serde_json::from_str(&record.cursor).unwrap();
+            assert!(cursor.at_record_range("session", start, end).is_ok());
         }
     }
 
@@ -2205,45 +2339,86 @@ mod bounded_history_response_tests {
     #[test]
     fn journal_payloads_keep_rich_updates_private_gaps_and_raw_references() {
         use khor_node::session_content::ContentEvent;
-        fn parse(line:&str)->Vec<ContentEvent> {
+        fn parse(line: &str) -> Vec<ContentEvent> {
             vec![match line.trim() {
-                "rich"=>ContentEvent::Update { update:serde_json::json!({"sessionId":"opaque-native","update":{"sessionUpdate":"tool_call","toolCallId":"tool","content":[{"type":"diff","path":"a.txt","oldText":"old","newText":"new"}]}}), starts_message:false },
-                "stop"=>ContentEvent::Turn {stop:"MaxTokens".into()},
-                "gap"=>ContentEvent::CaptureGap {opening:"resume".into(),interrupted:true},
-                _=>ContentEvent::Reference,
+                "rich" => ContentEvent::Update {
+                    update: serde_json::json!({"sessionId":"opaque-native","update":{"sessionUpdate":"tool_call","toolCallId":"tool","content":[{"type":"diff","path":"a.txt","oldText":"old","newText":"new"}]}}),
+                    starts_message: false,
+                },
+                "stop" => ContentEvent::Turn {
+                    stop: "MaxTokens".into(),
+                },
+                "gap" => ContentEvent::CaptureGap {
+                    opening: "resume".into(),
+                    interrupted: true,
+                },
+                _ => ContentEvent::Reference,
             }]
         }
-        let fixture=RecordFixture::new("journal-projection",b"rich\nstop\ngap\nraw\n");
-        let mut file=std::fs::File::open(&fixture.0).unwrap();
-        let page=khor_node::adaptor::transcript_page::read_page(&mut file,"journal",None,parse,&||false).unwrap();
-        let response=history_page_response("alias",page,false,&||false).unwrap();
-        assert_eq!(response.entries.len(),3);
-        assert!(matches!(&response.entries[0].frame,ChatFrame::Note {update} if update["update"]["content"][0]["newText"]=="new"));
+        let fixture = RecordFixture::new("journal-projection", b"rich\nstop\ngap\nraw\n");
+        let mut file = std::fs::File::open(&fixture.0).unwrap();
+        let page = khor_node::adaptor::transcript_page::read_page(
+            &mut file,
+            "journal",
+            None,
+            parse,
+            &|| false,
+        )
+        .unwrap();
+        let response = history_page_response("alias", page, false, &|| false).unwrap();
+        assert_eq!(response.entries.len(), 3);
+        assert!(
+            matches!(&response.entries[0].frame,ChatFrame::Note {update} if update["update"]["content"][0]["newText"]=="new")
+        );
         assert!(!response.entries[0].starts_message);
-        for (entry, (start,end)) in response.entries.iter().zip([(0,5),(5,10),(10,14)]) {
-            let record=entry.record.as_ref().expect("journal events keep their actual own range");
-            assert_eq!((record.start,record.end,record.item),(start,end,Some(0)));
+        for (entry, (start, end)) in response.entries.iter().zip([(0, 5), (5, 10), (10, 14)]) {
+            let record = entry
+                .record
+                .as_ref()
+                .expect("journal events keep their actual own range");
+            assert_eq!(
+                (record.start, record.end, record.item),
+                (start, end, Some(0))
+            );
             assert!(!record.missing_start && !record.missing_end);
         }
         assert!(matches!(&response.entries[1].frame,ChatFrame::Turn {stop} if stop=="MaxTokens"));
-        assert!(matches!(&response.entries[2].frame,ChatFrame::CaptureGap {opening,interrupted:true} if opening=="resume"));
-        assert_eq!(response.references.len(),1);
+        assert!(
+            matches!(&response.entries[2].frame,ChatFrame::CaptureGap {opening,interrupted:true} if opening=="resume")
+        );
+        assert_eq!(response.references.len(), 1);
         assert!(!response.references[0].cursor.is_empty());
-        assert!(response.encoded_bytes<=HISTORY_PAYLOAD_BYTES);
+        assert!(response.encoded_bytes <= HISTORY_PAYLOAD_BYTES);
     }
 
     #[test]
     fn malformed_origin_exposes_its_own_record_without_trusting_a_foreign_range() {
-        fn parse(_: &str)->Vec<khor_node::session_content::ContentEvent> {
-            vec![khor_node::session_content::ContentEvent::PromptOrigin {turn:"bad".into(),token:"client".into(),start:500,end:900}]
+        fn parse(_: &str) -> Vec<khor_node::session_content::ContentEvent> {
+            vec![khor_node::session_content::ContentEvent::PromptOrigin {
+                turn: "bad".into(),
+                token: "client".into(),
+                start: 500,
+                end: 900,
+            }]
         }
-        let fixture=RecordFixture::new("bad-origin",b"bad-origin\n");
-        let mut file=std::fs::File::open(&fixture.0).unwrap();
-        let page=khor_node::adaptor::transcript_page::read_page(&mut file,"journal",None,parse,&||false).unwrap();
-        let response=history_page_response("view",page,false,&||false).unwrap();
-        assert!(response.entries.is_empty());assert_eq!(response.references.len(),1);
-        assert_eq!((response.references[0].start,response.references[0].end),(0,11));
-        assert!(response.encoded_bytes<=HISTORY_PAYLOAD_BYTES);
+        let fixture = RecordFixture::new("bad-origin", b"bad-origin\n");
+        let mut file = std::fs::File::open(&fixture.0).unwrap();
+        let page = khor_node::adaptor::transcript_page::read_page(
+            &mut file,
+            "journal",
+            None,
+            parse,
+            &|| false,
+        )
+        .unwrap();
+        let response = history_page_response("view", page, false, &|| false).unwrap();
+        assert!(response.entries.is_empty());
+        assert_eq!(response.references.len(), 1);
+        assert_eq!(
+            (response.references[0].start, response.references[0].end),
+            (0, 11)
+        );
+        assert!(response.encoded_bytes <= HISTORY_PAYLOAD_BYTES);
     }
 }
 

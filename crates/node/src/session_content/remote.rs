@@ -402,7 +402,8 @@ fn resolve_here(node: &crate::Node, locator: &ContentLocator) -> Result<Resoluti
                     agent: agent.into(),
                     native_id: native_id.into(),
                 },
-            )?.with_journal_generation(source.journal_generation())?;
+            )?
+            .with_journal_generation(source.journal_generation())?;
             Ok(Resolution::Available {
                 binding,
                 following,

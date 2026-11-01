@@ -42,11 +42,29 @@ pub(crate) fn validate_reply(reply: &Reply, bytes: usize) -> Result<(), String> 
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Op {
-    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId, observation: Option<khor_core::ObservationRef> },
-    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef> },
-    NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
+    SessionRecovery {
+        home: khor_core::DeviceId,
+        id: crate::SessionId,
+        observation: Option<khor_core::ObservationRef>,
+    },
+    RecoverSession {
+        home: khor_core::DeviceId,
+        id: crate::SessionId,
+        expected_run: Option<String>,
+        token: khor_core::recovery::RecoveryToken,
+        observation: Option<khor_core::ObservationRef>,
+    },
+    NewShellRun {
+        home: khor_core::DeviceId,
+        id: crate::SessionId,
+        expected_run: Option<String>,
+        token: khor_core::recovery::RecoveryToken,
+        cwd: Option<String>,
+    },
 
-    ContentRead { action: crate::session_content::remote::Action },
+    ContentRead {
+        action: crate::session_content::remote::Action,
+    },
     Pair {
         ticket: String,
     },
@@ -630,11 +648,19 @@ impl Op {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Reply {
-    SessionRecovery { value: khor_core::recovery::SessionRecovery },
-    RecoverSession { value: khor_core::recovery::RecoveryResult },
-    NewShellRun { value: khor_core::recovery::ShellRunResult },
+    SessionRecovery {
+        value: khor_core::recovery::SessionRecovery,
+    },
+    RecoverSession {
+        value: khor_core::recovery::RecoveryResult,
+    },
+    NewShellRun {
+        value: khor_core::recovery::ShellRunResult,
+    },
 
-    ContentRead { reply: crate::session_content::remote::Reply },
+    ContentRead {
+        reply: crate::session_content::remote::Reply,
+    },
     Paired {
         name: String,
     },
@@ -722,8 +748,12 @@ pub enum Reply {
         at_ms: u64,
         digest: String,
     },
-    WatchOpened { opened: crate::watch::Opened },
-    WatchChanged { batch: crate::watch::Batch },
+    WatchOpened {
+        opened: crate::watch::Opened,
+    },
+    WatchChanged {
+        batch: crate::watch::Batch,
+    },
     WatchLeft,
     /// Tail-appended with [`Op::GitStatusOn`]: the branch, the marked
     /// paths, and whether the list was cut.
@@ -936,7 +966,10 @@ async fn exchange(
     cookie: &str,
     op: Op,
 ) -> Result<Reply, String> {
-    let handoff = Handoff { cookie: cookie.to_owned(), op };
+    let handoff = Handoff {
+        cookie: cookie.to_owned(),
+        op,
+    };
     let frame = proto::encode(&handoff)?;
     validate_handoff(&handoff, frame.len())?;
     stream

@@ -120,8 +120,14 @@ pub(crate) fn capture_eof(
     if source.is_empty() || source.len() > 256 {
         return Err("invalid capture source identity".into());
     }
-    if !writer.metadata().map_err(|error| error.to_string())?.is_file()
-        || !published.metadata().map_err(|error| error.to_string())?.is_file()
+    if !writer
+        .metadata()
+        .map_err(|error| error.to_string())?
+        .is_file()
+        || !published
+            .metadata()
+            .map_err(|error| error.to_string())?
+            .is_file()
     {
         return Err("capture source is not a regular file".into());
     }
@@ -130,9 +136,13 @@ pub(crate) fn capture_eof(
         return Err("published capture file identity changed".into());
     }
     if before.len > 0 {
-        published.seek(SeekFrom::End(-1)).map_err(|error| error.to_string())?;
+        published
+            .seek(SeekFrom::End(-1))
+            .map_err(|error| error.to_string())?;
         let mut last = [0];
-        published.read_exact(&mut last).map_err(|error| error.to_string())?;
+        published
+            .read_exact(&mut last)
+            .map_err(|error| error.to_string())?;
         if last != [b'\n'] {
             return Err("capture ends inside an incomplete record".into());
         }
@@ -142,7 +152,14 @@ pub(crate) fn capture_eof(
     {
         return Err("capture changed while observing its EOF".into());
     }
-    Ok(before.cursor(source, Position { start: before.len, end: before.len, item: 0 }))
+    Ok(before.cursor(
+        source,
+        Position {
+            start: before.len,
+            end: before.len,
+            item: 0,
+        },
+    ))
 }
 
 impl FileVersion {
@@ -856,13 +873,24 @@ mod tests {
     fn joined_record_range_keeps_source_snapshot_and_actual_read_validation() {
         let fixture = Fixture::new("joined-record", b"0123456789\n");
         let page = fixture.page(None);
-        let fragment = page.cursor_before(Position { start: 3, end: 5, item: 0 });
+        let fragment = page.cursor_before(Position {
+            start: 3,
+            end: 5,
+            item: 0,
+        });
         assert!(fragment.at_record_range("other-source", 0, 10).is_err());
         assert!(fragment.at_record_range("source", 4, 10).is_err());
         assert!(fragment.at_record_range("source", 0, 12).is_err());
         let joined = fragment.at_record_range("source", 0, 10).unwrap();
-        let read = |cursor: &Cursor| read_record_chunk(&mut File::open(&fixture.path).unwrap(),
-            "source", cursor, 0, &|| false);
+        let read = |cursor: &Cursor| {
+            read_record_chunk(
+                &mut File::open(&fixture.path).unwrap(),
+                "source",
+                cursor,
+                0,
+                &|| false,
+            )
+        };
         assert_eq!(read(&joined).unwrap().bytes, b"0123456789");
         append(&fixture, b"appended\n");
         assert_eq!(read(&joined).unwrap().bytes, b"0123456789");
@@ -899,13 +927,21 @@ mod tests {
         let partial = Fixture::new("capture-partial", b"partial");
         let writer = File::open(&partial.path).unwrap();
         let mut published = File::open(&partial.path).unwrap();
-        assert!(capture_eof(&writer, &mut published, "source").unwrap_err().contains("incomplete"));
+        assert!(
+            capture_eof(&writer, &mut published, "source")
+                .unwrap_err()
+                .contains("incomplete")
+        );
         let fixture = Fixture::new("capture-replaced", b"same\n");
         let writer = File::open(&fixture.path).unwrap();
         std::fs::rename(&fixture.path, fixture.path.with_extension("retired")).unwrap();
         std::fs::write(&fixture.path, b"same\n").unwrap();
         let mut published = File::open(&fixture.path).unwrap();
-        assert!(capture_eof(&writer, &mut published, "source").unwrap_err().contains("identity changed"));
+        assert!(
+            capture_eof(&writer, &mut published, "source")
+                .unwrap_err()
+                .contains("identity changed")
+        );
     }
 
     #[test]

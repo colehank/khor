@@ -918,14 +918,24 @@ pub(crate) struct ToolTextPolicy {
     pub suffix: String,
 }
 const TOOL_TEXT_BYTES: usize = 16 * 1024;
-fn tool_text_suffix() -> String { format!("\n… {}", msg::tool_output_cut()) }
-pub(crate) fn replayed_scaffold(u: crate::adaptor::claude::Utterance)
-    -> (Option<SessionUpdate>, Option<ToolTextPolicy>)
-{
+fn tool_text_suffix() -> String {
+    format!("\n… {}", msg::tool_output_cut())
+}
+pub(crate) fn replayed_scaffold(
+    u: crate::adaptor::claude::Utterance,
+) -> (Option<SessionUpdate>, Option<ToolTextPolicy>) {
     if let crate::adaptor::claude::Utterance::ToolDone(block) = u {
         let update = settled_with_text(&block, raw_result_text(&block));
-        (update, Some(ToolTextPolicy { max_bytes: TOOL_TEXT_BYTES, suffix: tool_text_suffix() }))
-    } else { (replayed(u), None) }
+        (
+            update,
+            Some(ToolTextPolicy {
+                max_bytes: TOOL_TEXT_BYTES,
+                suffix: tool_text_suffix(),
+            }),
+        )
+    } else {
+        (replayed(u), None)
+    }
 }
 
 /// The flags that turn this session into **the network's scheduler**

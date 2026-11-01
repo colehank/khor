@@ -471,7 +471,9 @@ pub fn go(
 
 fn checked_view(kind: &str, view: Option<&str>) -> Result<Option<String>, String> {
     match view {
-        Some("workspace" | "file" | "page" | "commit") if kind == "content" => Ok(view.map(str::to_owned)),
+        Some("workspace" | "file" | "page" | "commit") if kind == "content" => {
+            Ok(view.map(str::to_owned))
+        }
         None => Ok(None),
         _ => Err("invalid content view".to_string()),
     }

@@ -72,17 +72,40 @@ impl Observation {
     }
     /// The hint carries data, never permission to run its source. The execution
     /// home must independently qualify it before persisting under the Journal.
-    pub(crate) fn validate_reference(id: &SessionId, home: DeviceId, reference: &ObservationRef) -> Result<(), String> {
-        if reference.home != home || reference.agent.is_empty() || reference.native_id.is_empty()
-            || serde_json::to_vec(reference).map_err(|error| error.to_string())?.len() > 4096
-            || Self::id(home, reference.namespace, &reference.agent, &reference.native_id) != *id
-        { return Err("observation reference belongs to another home or full source".into()); }
+    pub(crate) fn validate_reference(
+        id: &SessionId,
+        home: DeviceId,
+        reference: &ObservationRef,
+    ) -> Result<(), String> {
+        if reference.home != home
+            || reference.agent.is_empty()
+            || reference.native_id.is_empty()
+            || serde_json::to_vec(reference)
+                .map_err(|error| error.to_string())?
+                .len()
+                > 4096
+            || Self::id(
+                home,
+                reference.namespace,
+                &reference.agent,
+                &reference.native_id,
+            ) != *id
+        {
+            return Err("observation reference belongs to another home or full source".into());
+        }
         Ok(())
     }
-    pub(crate) fn persist_recovery(&self, root: &Path, reservation: &super::journal::JournalReservation) -> Result<(), String> {
+    pub(crate) fn persist_recovery(
+        &self,
+        root: &Path,
+        reservation: &super::journal::JournalReservation,
+    ) -> Result<(), String> {
         let identity = reservation.identity();
         Self::validate_reference(&self.id, identity.home, &self.reference)?;
-        if !reservation.holds_file() || self.reference.agent != identity.agent || self.reference.native_id != identity.native_id {
+        if !reservation.holds_file()
+            || self.reference.agent != identity.agent
+            || self.reference.native_id != identity.native_id
+        {
             return Err("observation recovery does not hold its exact Journal reservation".into());
         }
         if let Some(existing) = Self::read(root, &self.id)? {
@@ -182,7 +205,12 @@ impl KindSurface for ObservationKind {
                 // A local published GUI projection owns the same logical row;
                 // the retained observation metadata itself is never deleted.
                 if record.reference.home == node.device() {
-                    return node.live.published_observation(&record.id).ok().flatten().is_none();
+                    return node
+                        .live
+                        .published_observation(&record.id)
+                        .ok()
+                        .flatten()
+                        .is_none();
                 }
                 true
             })

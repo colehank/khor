@@ -26,11 +26,16 @@ impl ContentReference {
         let mut transforms = Vec::new();
         let compact = {
             let Ok(value) = serde_json::from_str::<serde_json::Value>(scaffold) else {
-                return Ok(super::BodyProjection { updates: Vec::new(), transforms: Vec::new(), complete: false });
+                return Ok(super::BodyProjection {
+                    updates: Vec::new(),
+                    transforms: Vec::new(),
+                    complete: false,
+                });
             };
             if self.namespace == ObservationNamespace::Native
                 && super::Provider::of(Some(&self.agent)) == Some(super::Provider::Codex)
-                && let Some((pointer, parsed)) = crate::adaptor::codex::scaffold_json_input(&value) {
+                && let Some((pointer, parsed)) = crate::adaptor::codex::scaffold_json_input(&value)
+            {
                 transforms.push(super::BodyTransform::JsonString { pointer, parsed });
             }
             serde_json::to_string(&value).map_err(|error| error.to_string())?
@@ -45,14 +50,21 @@ impl ContentReference {
                     let (update, policy) = crate::cagent::replayed_scaffold(utterance);
                     if let Some(policy) = policy {
                         transforms.push(super::BodyTransform::ToolOutput {
-                            item: index, max_bytes: policy.max_bytes, suffix: policy.suffix,
+                            item: index,
+                            max_bytes: policy.max_bytes,
+                            suffix: policy.suffix,
                         });
                     }
                     if let Some(update) = update {
                         updates.push((index, serde_json::json!({ "update": update }), true));
-                    } else { complete = false; }
+                    } else {
+                        complete = false;
+                    }
                 }
-                ContentEvent::Update { update, starts_message } => updates.push((index, update, starts_message)),
+                ContentEvent::Update {
+                    update,
+                    starts_message,
+                } => updates.push((index, update, starts_message)),
                 ContentEvent::LocalUserEcho | ContentEvent::Turn { .. } => {}
                 // A scaffold cannot elevate an origin, gap or arbitrary raw
                 // record into a trusted system fact on the viewing client.
@@ -61,7 +73,11 @@ impl ContentReference {
                 | ContentEvent::CaptureGap { .. } => complete = false,
             }
         }
-        Ok(super::BodyProjection { updates, transforms, complete })
+        Ok(super::BodyProjection {
+            updates,
+            transforms,
+            complete,
+        })
     }
     pub fn observed(reference: &ObservationRef) -> Self {
         Self {
@@ -351,12 +367,21 @@ mod tests {
         let projected = reference.body_projection(prompt).unwrap();
         assert!(projected.complete);
         assert_eq!(projected.updates.len(), 1);
-        assert_eq!(projected.updates[0].1["update"]["content"]["text"], "marker");
-        assert!(projected.updates[0].2, "the validated prompt starts a complete message");
+        assert_eq!(
+            projected.updates[0].1["update"]["content"]["text"],
+            "marker"
+        );
+        assert!(
+            projected.updates[0].2,
+            "the validated prompt starts a complete message"
+        );
         let chunk = r#"{"kind":"update","notification":{"sessionId":"native","update":{"sessionUpdate":"agent_message_chunk","messageId":"same-message","content":{"type":"text","text":"marker"}}}}"#;
         let streamed = reference.body_projection(chunk).unwrap();
         assert!(streamed.complete);
-        assert!(!streamed.updates[0].2, "an SDK chunk does not invent a complete message boundary");
+        assert!(
+            !streamed.updates[0].2,
+            "an SDK chunk does not invent a complete message boundary"
+        );
         assert_eq!(streamed.updates[0].1["update"]["messageId"], "same-message");
         let echo = r#"{"kind":"update","turn":"local","notification":{"sessionId":"native","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"marker"}}}}"#;
         let projected = reference.body_projection(echo).unwrap();
@@ -371,49 +396,91 @@ mod tests {
             assert!(!projected.complete);
             assert!(projected.updates.is_empty());
         }
-        assert!(reference.body_projection(&"x".repeat(64 * 1024 + 1)).is_err());
-        let native = ContentReference { namespace: ObservationNamespace::Native,
-            agent: "claude".into(), ..reference };
-        let scaffold = serde_json::to_string_pretty(&serde_json::json!({"type":"user","message":{"role":"user","content":"native marker"}})).unwrap();
+        assert!(
+            reference
+                .body_projection(&"x".repeat(64 * 1024 + 1))
+                .is_err()
+        );
+        let native = ContentReference {
+            namespace: ObservationNamespace::Native,
+            agent: "claude".into(),
+            ..reference
+        };
+        let scaffold = serde_json::to_string_pretty(
+            &serde_json::json!({"type":"user","message":{"role":"user","content":"native marker"}}),
+        )
+        .unwrap();
         let projected = native.body_projection(&scaffold).unwrap();
         assert!(projected.complete);
-        assert_eq!(projected.updates[0].1["update"]["content"]["text"], "native marker");
-        assert!(projected.updates[0].2, "a native utterance remains a complete message");
+        assert_eq!(
+            projected.updates[0].1["update"]["content"]["text"],
+            "native marker"
+        );
+        assert!(
+            projected.updates[0].2,
+            "a native utterance remains a complete message"
+        );
         assert!(!native.body_projection("{").unwrap().complete);
         assert!(!native.body_projection("{}").unwrap().complete);
-        assert!(!native.body_projection(r#"{"type":"unknown"}"#).unwrap().complete);
+        assert!(
+            !native
+                .body_projection(r#"{"type":"unknown"}"#)
+                .unwrap()
+                .complete
+        );
     }
     #[test]
     fn native_scaffold_facts_share_encoded_input_and_visible_tool_output_rules() {
         let mut reference = ContentReference::observed(&observed(9));
         reference.namespace = ObservationNamespace::Native;
         reference.agent = "codex".into();
-        let arguments = serde_json::json!({"command":"echo visible","hidden":"not command text"}).to_string();
+        let arguments =
+            serde_json::json!({"command":"echo visible","hidden":"not command text"}).to_string();
         let call = serde_json::json!({"type":"response_item","payload":{"type":"function_call","name":"Bash",
             "call_id":"exact","arguments":arguments,"input":{"command":"wrong fallback"}}});
         let projected = reference.body_projection(&call.to_string()).unwrap();
-        assert!(matches!(&projected.transforms[..], [super::super::BodyTransform::JsonString { pointer, parsed: true }] if pointer == "/payload/arguments"));
-        assert_eq!(projected.updates[0].1["update"]["rawInput"]["command"], "echo visible");
+        assert!(
+            matches!(&projected.transforms[..], [super::super::BodyTransform::JsonString { pointer, parsed: true }] if pointer == "/payload/arguments")
+        );
+        assert_eq!(
+            projected.updates[0].1["update"]["rawInput"]["command"],
+            "echo visible"
+        );
         let fallback = serde_json::json!({"type":"response_item","payload":{"type":"function_call","name":"Bash",
             "arguments":null,"input":"{\"command\":\"fallback\"}"}});
-        assert!(matches!(&reference.body_projection(&fallback.to_string()).unwrap().transforms[..],
-            [super::super::BodyTransform::JsonString { pointer, parsed: true }] if pointer == "/payload/input"));
+        assert!(
+            matches!(&reference.body_projection(&fallback.to_string()).unwrap().transforms[..],
+            [super::super::BodyTransform::JsonString { pointer, parsed: true }] if pointer == "/payload/input")
+        );
         reference.agent = "claude".into();
         let output = format!(" \u{85}{} tail ", "中😀".repeat(4000));
-        let block = serde_json::json!({"type":"tool_result","tool_use_id":"exact","content":output});
-        let original = crate::replayed_update(crate::adaptor::claude::Utterance::ToolDone(block.clone())).unwrap();
+        let block =
+            serde_json::json!({"type":"tool_result","tool_use_id":"exact","content":output});
+        let original =
+            crate::replayed_update(crate::adaptor::claude::Utterance::ToolDone(block.clone()))
+                .unwrap();
         let original = serde_json::to_value(original).unwrap();
         let shown = original["content"][0]["content"]["text"].as_str().unwrap();
         let record = serde_json::json!({"type":"user","message":{"content":[block]}});
         let projected = reference.body_projection(&record.to_string()).unwrap();
-        let super::super::BodyTransform::ToolOutput { item, max_bytes, suffix } = &projected.transforms[0] else { panic!("output policy missing") };
+        let super::super::BodyTransform::ToolOutput {
+            item,
+            max_bytes,
+            suffix,
+        } = &projected.transforms[0]
+        else {
+            panic!("output policy missing")
+        };
         assert_eq!(*item, 0);
         assert_eq!(*max_bytes, 16 * 1024);
         assert!(shown.ends_with(suffix));
         let head = shown.strip_suffix(suffix).unwrap();
         assert!(head.len() <= *max_bytes && head.len() + 7 > *max_bytes);
         assert!(head.starts_with("中😀"));
-        assert_eq!(projected.updates[0].1["update"]["content"][0]["content"]["text"], output);
+        assert_eq!(
+            projected.updates[0].1["update"]["content"][0]["content"]["text"],
+            output
+        );
     }
 
     fn observed(owner: u8) -> ObservationRef {

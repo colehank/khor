@@ -16,12 +16,30 @@ pub const SLICE: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    SessionRecovery { home: khor_core::DeviceId, id: crate::SessionId, observation: Option<khor_core::ObservationRef> },
-    RecoverSession { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef> },
-    NewShellRun { home: khor_core::DeviceId, id: crate::SessionId, expected_run: Option<String>, token: khor_core::recovery::RecoveryToken, cwd: Option<String> },
+    SessionRecovery {
+        home: khor_core::DeviceId,
+        id: crate::SessionId,
+        observation: Option<khor_core::ObservationRef>,
+    },
+    RecoverSession {
+        home: khor_core::DeviceId,
+        id: crate::SessionId,
+        expected_run: Option<String>,
+        token: khor_core::recovery::RecoveryToken,
+        observation: Option<khor_core::ObservationRef>,
+    },
+    NewShellRun {
+        home: khor_core::DeviceId,
+        id: crate::SessionId,
+        expected_run: Option<String>,
+        token: khor_core::recovery::RecoveryToken,
+        cwd: Option<String>,
+    },
 
     /// Bounded independent observation reads; never opens an agent host.
-    ContentRead { action: crate::session_content::remote::Action },
+    ContentRead {
+        action: crate::session_content::remote::Action,
+    },
     /// Recoverable authenticated pairing. Every body is a canonical blob chunk.
     Pair { action: PairAction },
     /// The only current document transport. Mutating operations wait for
@@ -961,11 +979,19 @@ pub enum DocumentInventory {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Response {
-    SessionRecovery { value: khor_core::recovery::SessionRecovery },
-    RecoverSession { value: khor_core::recovery::RecoveryResult },
-    NewShellRun { value: khor_core::recovery::ShellRunResult },
+    SessionRecovery {
+        value: khor_core::recovery::SessionRecovery,
+    },
+    RecoverSession {
+        value: khor_core::recovery::RecoveryResult,
+    },
+    NewShellRun {
+        value: khor_core::recovery::ShellRunResult,
+    },
 
-    ContentRead { reply: crate::session_content::remote::Reply },
+    ContentRead {
+        reply: crate::session_content::remote::Reply,
+    },
     /// One bounded recoverable pairing step. No full document or roster inline.
     Paired {
         reply: PairReply,
@@ -1246,9 +1272,13 @@ pub enum Response {
         digest: String,
     },
     /// The stream's initial coverage state.
-    Watching { batch: crate::watch::Batch },
+    Watching {
+        batch: crate::watch::Batch,
+    },
     /// A coverage fence, invalidation burst, or quiet heartbeat.
-    Changed { batch: crate::watch::Batch },
+    Changed {
+        batch: crate::watch::Batch,
+    },
     /// The answer to [`Request::History`], newest first.
     History {
         hits: Vec<crate::commands::HistoryHit>,
@@ -2210,7 +2240,9 @@ mod tests {
             ),
             (
                 Request::Watch {
-                    scope: crate::watch::Scope::Entries { path: "/fixture".into() },
+                    scope: crate::watch::Scope::Entries {
+                        path: "/fixture".into(),
+                    },
                 },
                 &b"Watch"[..],
             ),

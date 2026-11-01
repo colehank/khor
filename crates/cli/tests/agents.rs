@@ -494,24 +494,51 @@ fn a_real_third_party_agent_goes_through_the_whole_gate() {
 
     // The completed turn is read from its real canonical Capture, without
     // another agent load or a second in-memory history collector.
-    let token=[62;16];
-    write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
-    let capture=loop {
-        if let GuiNote::Captured{token:received,result}=read_frame::<GuiNote>(&mut conn).expect("a capture frame") {
-            assert_eq!(received,token,"the view received another capture owner");
+    let token = [62; 16];
+    write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
+    let capture = loop {
+        if let GuiNote::Captured {
+            token: received,
+            result,
+        } = read_frame::<GuiNote>(&mut conn).expect("a capture frame")
+        {
+            assert_eq!(received, token, "the view received another capture owner");
             break result.expect("the completed canonical turn is captured");
         }
     };
-    let node=khor_node::Node::open(home.to_path_buf()).unwrap();
-    let page=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-        let key=node.content_begin(&capture.binding).await.unwrap();
-        let request=khor_node::session_content::remote::ClientRead::claim(&home,capture.binding.clone(),&key).unwrap();
-        node.content_page(&request,Some(capture.cursor.clone()),false).await.unwrap()
-    });
-    let captured=page.events.iter().filter(|event|matches!(&event.payload,
-        khor_node::session_content::ContentEvent::Update { .. })).count()+page.references.len();
+    let node = khor_node::Node::open(home.to_path_buf()).unwrap();
+    let page = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let key = node.content_begin(&capture.binding).await.unwrap();
+            let request = khor_node::session_content::remote::ClientRead::claim(
+                &home,
+                capture.binding.clone(),
+                &key,
+            )
+            .unwrap();
+            node.content_page(&request, Some(capture.cursor.clone()), false)
+                .await
+                .unwrap()
+        });
+    let captured = page
+        .events
+        .iter()
+        .filter(|event| {
+            matches!(
+                &event.payload,
+                khor_node::session_content::ContentEvent::Update { .. }
+            )
+        })
+        .count()
+        + page.references.len();
     println!("captured={captured} (supports_initial_load={replays})");
-    assert!(captured>0,"the real completed turn must remain in canonical history even without agent Load support");
+    assert!(
+        captured > 0,
+        "the real completed turn must remain in canonical history even without agent Load support"
+    );
 
     // The approval was answered, so the act it gated must have
     // happened — otherwise "answering an ask" is this side's own

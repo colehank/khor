@@ -1178,15 +1178,22 @@ impl DropJob {
     }
 
     pub fn run(self, root: &Path, items: &[DropItem], into: Option<&str>) -> DropEnd {
-        if root != self.root { return drop_refused("drop belongs to another root".into()); }
-        let ended =
-            drop_items_text(root, self.attachment.far.as_deref(), items, into, &self.held).and_then(|(landed, text)| {
-                if !text.is_empty() {
-                    term_paste(self.attachment.clone(), text, self.held.stopped.clone())?
-                        .wait()?;
-                }
-                Ok(landed)
-            });
+        if root != self.root {
+            return drop_refused("drop belongs to another root".into());
+        }
+        let ended = drop_items_text(
+            root,
+            self.attachment.far.as_deref(),
+            items,
+            into,
+            &self.held,
+        )
+        .and_then(|(landed, text)| {
+            if !text.is_empty() {
+                term_paste(self.attachment.clone(), text, self.held.stopped.clone())?.wait()?;
+            }
+            Ok(landed)
+        });
         match ended {
             Ok(landed) => DropEnd { landed, miss: None },
             Err(why) => {
@@ -2163,9 +2170,15 @@ mod tests {
         // Nothing new: it waits, then answers with nothing.
         let since = term.fed.load(Ordering::Relaxed);
         let began = std::time::Instant::now();
-        let chunk = term_wait(root, &id, &lease, since, std::time::Duration::from_millis(200))
-            .await
-            .unwrap();
+        let chunk = term_wait(
+            root,
+            &id,
+            &lease,
+            since,
+            std::time::Duration::from_millis(200),
+        )
+        .await
+        .unwrap();
         assert!(began.elapsed() >= std::time::Duration::from_millis(190));
         assert!(chunk.bytes.is_empty());
 
@@ -2462,14 +2475,7 @@ mod stage_tests {
             "held from the start"
         );
         term_drop_cancel(&root, "stage-test/cancel", "stage-test/cancel-view", &[]).unwrap();
-        let out = drop_text(
-            &root,
-            None,
-            &[a.clone(), b.clone()],
-            None,
-            None,
-            &held,
-        );
+        let out = drop_text(&root, None, &[a.clone(), b.clone()], None, None, &held);
         assert_eq!(
             out,
             Err(khor_node::drops::cancelled()),
@@ -2527,9 +2533,12 @@ mod stage_tests {
         assert!(drop_items_text(&root, None, &items, None, &held).is_err());
         assert!(Path::new(&folder).join("nested/a.txt").is_file());
         drop(held);
-        let held = Held::begin(&root, "stage-test/native-retry", "stage-test/native-retry-view");
-        let (landed, text) =
-            drop_items_text(&root, None, &items, None, &held).unwrap();
+        let held = Held::begin(
+            &root,
+            "stage-test/native-retry",
+            "stage-test/native-retry-view",
+        );
+        let (landed, text) = drop_items_text(&root, None, &items, None, &held).unwrap();
         assert_eq!(text, shell_quote(&landed[0]));
         assert!(Path::new(&landed[0]).join("nested/empty").is_dir());
         assert_eq!(
@@ -2554,18 +2563,12 @@ mod stage_tests {
         let a = term_drop_stage(&root, "a.txt", &mut &b"abc"[..]).unwrap();
         let b = term_drop_stage(&root, "missing.txt", &mut &b"def"[..]).unwrap();
         std::fs::remove_file(&b).unwrap();
-        let held = Held::begin(&root, "stage-test/batch-retry", "stage-test/batch-retry-view");
-        assert!(
-            drop_text(
-                &root,
-                None,
-                &[a.clone(), b],
-                None,
-                None,
-                &held
-            )
-            .is_err()
+        let held = Held::begin(
+            &root,
+            "stage-test/batch-retry",
+            "stage-test/batch-retry-view",
         );
+        assert!(drop_text(&root, None, &[a.clone(), b], None, None, &held).is_err());
         assert_eq!(
             std::fs::read(a).unwrap(),
             b"abc",

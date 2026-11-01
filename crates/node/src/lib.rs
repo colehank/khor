@@ -2707,13 +2707,22 @@ impl Node {
         // a route; attach still authenticates at the actual execution home.
         views.retain(|view| {
             let row = &view.session;
-            let Some(reference) = row.observation.as_ref() else { return true; };
-            row.kind.0 != khor_core::kind::OBSERVE || !reported.iter().any(|(_, _, remote)| {
-                remote.id == row.id && remote.home == reference.home
-                    && remote.kind.0 == khor_core::kind::GUI
-                    && remote.category.as_deref() == Some(reference.agent.as_str())
-                    && session_content::Observation::id(reference.home, reference.namespace, &reference.agent, &reference.native_id) == remote.id
-            })
+            let Some(reference) = row.observation.as_ref() else {
+                return true;
+            };
+            row.kind.0 != khor_core::kind::OBSERVE
+                || !reported.iter().any(|(_, _, remote)| {
+                    remote.id == row.id
+                        && remote.home == reference.home
+                        && remote.kind.0 == khor_core::kind::GUI
+                        && remote.category.as_deref() == Some(reference.agent.as_str())
+                        && session_content::Observation::id(
+                            reference.home,
+                            reference.namespace,
+                            &reference.agent,
+                            &reference.native_id,
+                        ) == remote.id
+                })
         });
         let mut have: std::collections::BTreeSet<String> =
             views.iter().map(|v| v.session.id.0.clone()).collect();
@@ -4009,15 +4018,25 @@ impl Node {
     /// caches are skipped — a stale or missing report only means older
     /// information, never an error.
     fn cached_peer_rows(&self) -> Vec<(String, u64, Session)> {
-        let table = self.devices().ok().map(|devices| devices.into_iter().map(|device| device.id).collect());
+        let table = self
+            .devices()
+            .ok()
+            .map(|devices| devices.into_iter().map(|device| device.id).collect());
         self.cached_peer_rows_with(table)
     }
     fn cached_peer_rows_readonly(&self) -> Vec<(String, u64, Session)> {
-        let table = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(&devices_dir(&self.root), self.peer).ok()
-            .map(|doc| doc.all().into_iter().map(|device| device.id).collect());
+        let table = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(
+            &devices_dir(&self.root),
+            self.peer,
+        )
+        .ok()
+        .map(|doc| doc.all().into_iter().map(|device| device.id).collect());
         self.cached_peer_rows_with(table)
     }
-    fn cached_peer_rows_with(&self, table: Option<std::collections::BTreeSet<String>>) -> Vec<(String, u64, Session)> {
+    fn cached_peer_rows_with(
+        &self,
+        table: Option<std::collections::BTreeSet<String>>,
+    ) -> Vec<(String, u64, Session)> {
         let mut out = Vec::new();
         let Ok(rd) = fs::read_dir(self.peers_dir()) else {
             return out;
@@ -4815,11 +4834,12 @@ impl Node {
         // conflicting bound conversation must fail before even the ghost is
         // spawned. The ghost rechecks this at publication; pre-provider
         // exclusive JournalReservation is the following recovery slice.
-        self.live.check_gui_source(&session_content::journal::Identity {
-            home: self.device(),
-            agent: agent.to_owned(),
-            native_id: session.to_owned(),
-        })?;
+        self.live
+            .check_gui_source(&session_content::journal::Identity {
+                home: self.device(),
+                agent: agent.to_owned(),
+                native_id: session.to_owned(),
+            })?;
         gui_host::spawn_gui_host_reopen(self.root(), Some(cwd), title, cmd, Some(agent), session)
     }
 
@@ -5323,7 +5343,10 @@ impl Node {
     /// **None on a machine that hosts nothing**: no session's host lives
     /// on it, so nothing there is an address to attach to.
     pub fn session_dir(&self, id: &SessionId) -> Option<PathBuf> {
-        if !self.hosts || (id.0.starts_with("observe/") && self.live.published_observation(id).ok().flatten().is_none()) {
+        if !self.hosts
+            || (id.0.starts_with("observe/")
+                && self.live.published_observation(id).ok().flatten().is_none())
+        {
             return None;
         }
         self.live.dir_of(id).filter(|d| d.exists())
@@ -5628,7 +5651,7 @@ impl Node {
         };
         let availability = source.availability();
         if !id.0.starts_with("observe/") && matches!(availability, Availability::Available { .. }) {
-            if let session_content::ContentSource::Native(source)=&source {
+            if let session_content::ContentSource::Native(source) = &source {
                 ObservationBinding::save(&self.root, self.device_str(), id, source)?;
             }
         }
@@ -5640,10 +5663,18 @@ impl Node {
         id: &SessionId,
         register: bool,
     ) -> Result<Option<session_content::ContentSource>, session_content::Unavailable> {
-        use session_content::{ContentSource, NativeTranscript, ObservationBinding, Provider, Unavailable};
-        let directory=self.live.dir_of(id);
-        if let Some(journal)=session_content::journal::Source::registered(&self.root,self.device(),id,directory.as_deref())
-            .map_err(|_|Unavailable::Unreadable)? {
+        use session_content::{
+            ContentSource, NativeTranscript, ObservationBinding, Provider, Unavailable,
+        };
+        let directory = self.live.dir_of(id);
+        if let Some(journal) = session_content::journal::Source::registered(
+            &self.root,
+            self.device(),
+            id,
+            directory.as_deref(),
+        )
+        .map_err(|_| Unavailable::Unreadable)?
+        {
             return Ok(Some(ContentSource::Journal(journal)));
         }
         if id.0.starts_with("observe/") {
@@ -5651,7 +5682,7 @@ impl Node {
                 .map_err(|_| Unavailable::Unreadable)?
                 .ok_or(Unavailable::NoSource)?;
             return session_content::ContentReference::observed(&record.reference)
-                .resolve(&self.root,self.device());
+                .resolve(&self.root, self.device());
         }
         let Some(leaf) = id.0.strip_prefix("tui/") else {
             return Ok(None);
@@ -5667,10 +5698,13 @@ impl Node {
             return match binding.filter(|binding| binding.matches(provider, &leaf)) {
                 Some(binding) => binding.resolve(&self.root),
                 None => NativeTranscript::resolve(&self.root, provider, &leaf, None),
-            }.map(|source|source.map(ContentSource::Native));
+            }
+            .map(|source| source.map(ContentSource::Native));
         }
         if let Some(binding) = binding {
-            return binding.resolve(&self.root).map(|source|source.map(ContentSource::Native));
+            return binding
+                .resolve(&self.root)
+                .map(|source| source.map(ContentSource::Native));
         }
         if !register {
             return Ok(None);
@@ -5689,7 +5723,8 @@ impl Node {
             provider = Some(found);
         }
         match provider {
-            Some(provider) => NativeTranscript::resolve(&self.root, provider, leaf, None).map(|source|source.map(ContentSource::Native)),
+            Some(provider) => NativeTranscript::resolve(&self.root, provider, leaf, None)
+                .map(|source| source.map(ContentSource::Native)),
             None => Ok(None),
         }
     }
@@ -5697,7 +5732,14 @@ impl Node {
     fn opened_content(
         &self,
         id: &SessionId,
-    ) -> Result<(std::fs::File, fn(&str)->Vec<session_content::ContentEvent>, String), String> {
+    ) -> Result<
+        (
+            std::fs::File,
+            fn(&str) -> Vec<session_content::ContentEvent>,
+            String,
+        ),
+        String,
+    > {
         let source = self
             .selected_content(id, false)
             .map_err(|reason| format!("content source unavailable: {reason:?}"))?

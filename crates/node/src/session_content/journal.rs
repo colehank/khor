@@ -139,7 +139,12 @@ enum Record<'a, T: Serialize> {
         images: &'a [(String, String)],
         files: &'a [(String, String)],
     },
-    PromptOrigin { turn: &'a str, token: &'a str, start: u64, end: u64 },
+    PromptOrigin {
+        turn: &'a str,
+        token: &'a str,
+        start: u64,
+        end: u64,
+    },
     Turn {
         turn: &'a str,
         outcome: Outcome,
@@ -291,7 +296,10 @@ impl Journal {
     pub fn open(root: &Path, identity: Identity, opening: Opening) -> Result<Self, String> {
         JournalReservation::take(root, identity)?.into_journal(opening)
     }
-    fn from_reservation(reservation: &mut JournalReservation, opening: Opening) -> Result<Self, String> {
+    fn from_reservation(
+        reservation: &mut JournalReservation,
+        opening: Opening,
+    ) -> Result<Self, String> {
         if reservation.lock.is_none() {
             return Err("journal reservation has already handed off its File".into());
         }
@@ -399,7 +407,12 @@ impl Journal {
             journal.manifest.gaps = journal.manifest.gaps.saturating_add(1);
             journal.persist()?;
         }
-        journal._lock = Some(reservation.lock.take().expect("reservation still owns its File"));
+        journal._lock = Some(
+            reservation
+                .lock
+                .take()
+                .expect("reservation still owns its File"),
+        );
         Ok(journal)
     }
 
@@ -561,7 +574,13 @@ impl Journal {
         if turn.is_empty() || turn.len() > 256 {
             return Err("invalid journal turn identity".into());
         }
-        if token.is_some_and(|token|token.is_empty() || token.len()>128 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b"._:-".contains(&b))) {
+        if token.is_some_and(|token| {
+            token.is_empty()
+                || token.len() > 128
+                || !token
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._:-".contains(&b))
+        }) {
             return Err("invalid journal client token".into());
         }
         let prompt: Record<'_, ()> = Record::Prompt {
@@ -574,7 +593,12 @@ impl Journal {
         self.manifest.active_turn = Some(turn.to_owned());
         self.persist()?;
         if let Some(token) = token {
-            let origin: Record<'_, ()> = Record::PromptOrigin { turn, token, start:range.start, end:range.end };
+            let origin: Record<'_, ()> = Record::PromptOrigin {
+                turn,
+                token,
+                start: range.start,
+                end: range.end,
+            };
             self.append(&origin)?;
         }
         Ok(())
@@ -613,13 +637,15 @@ impl Journal {
             writer.write_all(b"\n")?;
             writer.flush()?;
             drop(writer);
-            Ok::<_,io::Error>(start..self.file.seek(SeekFrom::End(0))?)
+            Ok::<_, io::Error>(start..self.file.seek(SeekFrom::End(0))?)
         })();
         match result {
             Ok(range) => Ok(range),
             Err(error) => {
                 self.poisoned = true;
-                Err(format!("journal append failed; capture must retire: {error}"))
+                Err(format!(
+                    "journal append failed; capture must retire: {error}"
+                ))
             }
         }
     }
@@ -735,7 +761,11 @@ impl Source {
             return Err("journal registration belongs to another session or home".into());
         }
         crate::live::check_observed_target(root, id, &identity)?;
-        if id.0.starts_with("observe/") && crate::live::LiveKind::new(root.to_path_buf(), home).published_observation(id)?.is_none() {
+        if id.0.starts_with("observe/")
+            && crate::live::LiveKind::new(root.to_path_buf(), home)
+                .published_observation(id)?
+                .is_none()
+        {
             return Ok(None);
         }
         Self::find(root, identity)
@@ -779,14 +809,28 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
     };
     match object.get("kind").and_then(|v| v.as_str()) {
         Some("prompt_origin") => {
-            let (Some(turn),Some(token),Some(start),Some(end)) = (
-                object.get("turn").and_then(|v|v.as_str()), object.get("token").and_then(|v|v.as_str()),
-                object.get("start").and_then(|v|v.as_u64()), object.get("end").and_then(|v|v.as_u64()),
-            ) else { return vec![ContentEvent::Reference]; };
-            if turn.is_empty() || turn.len()>256 || token.is_empty() || token.len()>128 || start>=end {
+            let (Some(turn), Some(token), Some(start), Some(end)) = (
+                object.get("turn").and_then(|v| v.as_str()),
+                object.get("token").and_then(|v| v.as_str()),
+                object.get("start").and_then(|v| v.as_u64()),
+                object.get("end").and_then(|v| v.as_u64()),
+            ) else {
+                return vec![ContentEvent::Reference];
+            };
+            if turn.is_empty()
+                || turn.len() > 256
+                || token.is_empty()
+                || token.len() > 128
+                || start >= end
+            {
                 return vec![ContentEvent::Reference];
             }
-            vec![ContentEvent::PromptOrigin { turn:turn.into(), token:token.into(), start, end }]
+            vec![ContentEvent::PromptOrigin {
+                turn: turn.into(),
+                token: token.into(),
+                start,
+                end,
+            }]
         }
         Some("update") => {
             let Some(notification) = object.remove("notification") else {
@@ -802,12 +846,18 @@ pub(crate) fn parse_record(text: &str) -> Vec<super::ContentEvent> {
             // This outer turn is written by the journal only after a local
             // prompt is persisted. An optional agent echo is source detail,
             // rather than a second user input; keep its exact raw record.
-            if object.get("turn").and_then(|v|v.as_str()).is_some_and(|turn|!turn.is_empty() && turn.len()<=256)
+            if object
+                .get("turn")
+                .and_then(|v| v.as_str())
+                .is_some_and(|turn| !turn.is_empty() && turn.len() <= 256)
                 && notification["update"]["sessionUpdate"] == "user_message_chunk"
             {
                 return vec![ContentEvent::LocalUserEcho];
             }
-            vec![ContentEvent::Update { update: notification, starts_message: false }]
+            vec![ContentEvent::Update {
+                update: notification,
+                starts_message: false,
+            }]
         }
         Some("prompt") => {
             let Some(text) = object.get("text").and_then(|v| v.as_str()) else {
@@ -1049,21 +1099,34 @@ mod tests {
         let f = Fixture::new();
         let mut journal = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
         let view = crate::SessionId("view".into());
-        assert!(journal.capture(view.clone()).unwrap_err().contains("committed"));
+        assert!(
+            journal
+                .capture(view.clone())
+                .unwrap_err()
+                .contains("committed")
+        );
         journal.note(&serde_json::json!({"text":"same"})).unwrap();
         journal.commit_base().unwrap();
         let fence = journal.capture(view.clone()).unwrap();
         assert_eq!(fence.binding.view(), &view);
         assert_eq!(fence.binding.reference().home, f.identity().home);
         assert_eq!(fence.binding.reference().native_id, f.identity().native_id);
-        assert_eq!(fence.binding.reference().namespace, khor_core::ObservationNamespace::Acp);
+        assert_eq!(
+            fence.binding.reference().namespace,
+            khor_core::ObservationNamespace::Acp
+        );
         assert!(fence.cursor.is_for_source(&fence.binding.source_id()));
         assert!(fence.binding.encode().unwrap().len() <= super::super::reference::METADATA_BYTES);
         let path = f.current().join("records.jsonl");
         let content = fs::read(&path).unwrap();
         fs::rename(&path, path.with_extension("retired")).unwrap();
         fs::write(&path, content).unwrap();
-        assert!(journal.capture(view.clone()).unwrap_err().contains("identity changed"));
+        assert!(
+            journal
+                .capture(view.clone())
+                .unwrap_err()
+                .contains("identity changed")
+        );
         journal.poisoned = true;
         assert!(journal.capture(view).unwrap_err().contains("failed"));
     }
@@ -1289,76 +1352,145 @@ mod tests {
 
     #[test]
     fn origin_records_preserve_large_prompt_ranges_without_deduplicating_reused_tokens() {
-        let f=Fixture::new();
-        let mut journal=Journal::open(&f.0,f.identity(),Opening::New).unwrap();
+        let f = Fixture::new();
+        let mut journal = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
         journal.commit_base().unwrap();
-        let image="图".repeat(70_000);
-        for turn in ["first-turn","second-turn"] {
-            journal.accept(turn,"same words",&[("image/png".into(),image.clone())],&[],Some("same-client-token")).unwrap();
-            journal.finish(turn,Outcome::Ended,Some("EndTurn")).unwrap();
+        let image = "图".repeat(70_000);
+        for turn in ["first-turn", "second-turn"] {
+            journal
+                .accept(
+                    turn,
+                    "same words",
+                    &[("image/png".into(), image.clone())],
+                    &[],
+                    Some("same-client-token"),
+                )
+                .unwrap();
+            journal
+                .finish(turn, Outcome::Ended, Some("EndTurn"))
+                .unwrap();
         }
-        let bytes=std::fs::read(f.current().join("records.jsonl")).unwrap();
-        let mut offset=0;let mut count=0;
-        for line in bytes.split_inclusive(|b|*b==b'\n') {
-            let record:serde_json::Value=serde_json::from_slice(line).unwrap();
-            if record["kind"]=="prompt_origin" {
-                count+=1;assert!(line.len()<512);
-                let start=record["start"].as_u64().unwrap() as usize;
-                let end=record["end"].as_u64().unwrap() as usize;
-                assert_eq!(end,offset);assert!(end-start>64*1024);
-                let prompt:serde_json::Value=serde_json::from_slice(&bytes[start..end]).unwrap();
-                assert_eq!(prompt["kind"],"prompt");assert_eq!(prompt["turn"],record["turn"]);
-                assert_eq!(prompt["images"][0][1],image);
-                assert!(matches!(&parse_record(std::str::from_utf8(line).unwrap())[0],super::super::ContentEvent::PromptOrigin {token,..} if token=="same-client-token"));
+        let bytes = std::fs::read(f.current().join("records.jsonl")).unwrap();
+        let mut offset = 0;
+        let mut count = 0;
+        for line in bytes.split_inclusive(|b| *b == b'\n') {
+            let record: serde_json::Value = serde_json::from_slice(line).unwrap();
+            if record["kind"] == "prompt_origin" {
+                count += 1;
+                assert!(line.len() < 512);
+                let start = record["start"].as_u64().unwrap() as usize;
+                let end = record["end"].as_u64().unwrap() as usize;
+                assert_eq!(end, offset);
+                assert!(end - start > 64 * 1024);
+                let prompt: serde_json::Value = serde_json::from_slice(&bytes[start..end]).unwrap();
+                assert_eq!(prompt["kind"], "prompt");
+                assert_eq!(prompt["turn"], record["turn"]);
+                assert_eq!(prompt["images"][0][1], image);
+                assert!(
+                    matches!(&parse_record(std::str::from_utf8(line).unwrap())[0],super::super::ContentEvent::PromptOrigin {token,..} if token=="same-client-token")
+                );
             }
-            offset+=line.len();
+            offset += line.len();
         }
-        assert_eq!(count,2,"client token is correlation, never a deduplication identity");
+        assert_eq!(
+            count, 2,
+            "client token is correlation, never a deduplication identity"
+        );
     }
 
     #[test]
     fn failed_acceptance_manifest_does_not_publish_a_prompt_origin() {
-        let f=Fixture::new();
-        let mut journal=Journal::open(&f.0,f.identity(),Opening::New).unwrap();
+        let f = Fixture::new();
+        let mut journal = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
         journal.commit_base().unwrap();
-        let manifest=f.current().join("manifest.json");
+        let manifest = f.current().join("manifest.json");
         std::fs::remove_file(&manifest).unwrap();
         std::fs::create_dir(&manifest).unwrap();
-        assert!(journal.accept("not-dispatched","original unsent input",&[],&[],Some("client-token")).is_err());
-        let records=f.records();
-        let rows:Vec<serde_json::Value>=records.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
-        assert_eq!(rows.len(),1);assert_eq!(rows[0]["kind"],"prompt");
-        assert_eq!(rows[0]["text"],"original unsent input");
+        assert!(
+            journal
+                .accept(
+                    "not-dispatched",
+                    "original unsent input",
+                    &[],
+                    &[],
+                    Some("client-token")
+                )
+                .is_err()
+        );
+        let records = f.records();
+        let rows: Vec<serde_json::Value> = records
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0]["kind"], "prompt");
+        assert_eq!(rows[0]["text"], "original unsent input");
         assert!(!records.contains("prompt_origin"));
-        assert!(journal.capture(crate::SessionId("failed-view".into())).unwrap_err().contains("failed"));
-        assert!(journal.note(&serde_json::json!({"not":"dispatched"})).unwrap_err().contains("failed"));
+        assert!(
+            journal
+                .capture(crate::SessionId("failed-view".into()))
+                .unwrap_err()
+                .contains("failed")
+        );
+        assert!(
+            journal
+                .note(&serde_json::json!({"not":"dispatched"}))
+                .unwrap_err()
+                .contains("failed")
+        );
     }
 
     #[test]
     fn local_turn_echoes_keep_raw_records_without_duplicating_canonical_prompts() {
-        let f=Fixture::new();
-        let mut journal=Journal::open(&f.0,f.identity(),Opening::New).unwrap();
-        let user=serde_json::json!({"sessionId":f.identity().native_id,"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"same text"}}});
+        let f = Fixture::new();
+        let mut journal = Journal::open(&f.0, f.identity(), Opening::New).unwrap();
+        let user = serde_json::json!({"sessionId":f.identity().native_id,"update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"same text"}}});
         // A replay/bootstrap user chunk has no local prompt provenance.
-        journal.note(&user).unwrap();journal.commit_base().unwrap();
-        for turn in ["local-one","local-two"] {
-            journal.accept(turn,"same text",&[],&[],None).unwrap();
-            journal.note(&user).unwrap();journal.finish(turn,Outcome::Ended,Some("EndTurn")).unwrap();
+        journal.note(&user).unwrap();
+        journal.commit_base().unwrap();
+        for turn in ["local-one", "local-two"] {
+            journal.accept(turn, "same text", &[], &[], None).unwrap();
+            journal.note(&user).unwrap();
+            journal
+                .finish(turn, Outcome::Ended, Some("EndTurn"))
+                .unwrap();
         }
-        let bytes=std::fs::read(f.current().join("records.jsonl")).unwrap();
-        let mut file=std::fs::File::open(f.current().join("records.jsonl")).unwrap();
-        let page=crate::adaptor::transcript_page::read_page(&mut file,"owned-journal",None,parse_record,&||false).unwrap();
+        let bytes = std::fs::read(f.current().join("records.jsonl")).unwrap();
+        let mut file = std::fs::File::open(f.current().join("records.jsonl")).unwrap();
+        let page = crate::adaptor::transcript_page::read_page(
+            &mut file,
+            "owned-journal",
+            None,
+            parse_record,
+            &|| false,
+        )
+        .unwrap();
         let users=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::Update { update, .. } if update["update"]["sessionUpdate"]=="user_message_chunk")).count();
-        assert_eq!(users,3,"OWNED_ECHO_DUPLICATION: bootstrap plus two different recorded turns must remain three user messages");
-        let echoes:Vec<_>=page.events.iter().filter(|event|matches!(&event.payload,super::super::ContentEvent::LocalUserEcho)).collect();
-        assert_eq!(echoes.len(),2,"every associated echo remains an inspectable raw record");
-        let mut turns=Vec::new();
+        assert_eq!(
+            users, 3,
+            "OWNED_ECHO_DUPLICATION: bootstrap plus two different recorded turns must remain three user messages"
+        );
+        let echoes: Vec<_> = page
+            .events
+            .iter()
+            .filter(|event| matches!(&event.payload, super::super::ContentEvent::LocalUserEcho))
+            .collect();
+        assert_eq!(
+            echoes.len(),
+            2,
+            "every associated echo remains an inspectable raw record"
+        );
+        let mut turns = Vec::new();
         for echo in echoes {
-            let raw:serde_json::Value=serde_json::from_slice(&bytes[echo.position.start as usize..echo.position.end as usize]).unwrap();
-            assert_eq!(raw["kind"],"update");assert_eq!(raw["notification"],user);
+            let raw: serde_json::Value = serde_json::from_slice(
+                &bytes[echo.position.start as usize..echo.position.end as usize],
+            )
+            .unwrap();
+            assert_eq!(raw["kind"], "update");
+            assert_eq!(raw["notification"], user);
             turns.push(raw["turn"].as_str().unwrap().to_owned());
         }
-        assert_eq!(turns,["local-one","local-two"]);
+        assert_eq!(turns, ["local-one", "local-two"]);
     }
 
     #[test]
@@ -1460,14 +1592,31 @@ mod tests {
         assert!(
             matches!(&events[2],ContentEvent::Update { update, .. } if update["update"]["content"]["resource"]["text"]=="body")
         );
-        assert!(matches!(&events[0],ContentEvent::Update { starts_message:true, .. }));
-        assert!(events[1..].iter().all(|event|matches!(event,ContentEvent::Update { starts_message:false, .. })),
-            "attachments belong to the same recorded prompt");
+        assert!(matches!(
+            &events[0],
+            ContentEvent::Update {
+                starts_message: true,
+                ..
+            }
+        ));
+        assert!(
+            events[1..].iter().all(|event| matches!(
+                event,
+                ContentEvent::Update {
+                    starts_message: false,
+                    ..
+                }
+            )),
+            "attachments belong to the same recorded prompt"
+        );
         let chunk = serde_json::json!({"kind":"update","notification":{"sessionId":"s","update":{
             "sessionUpdate":"agent_message_chunk","messageId":"provider-message",
             "content":{"type":"text","text":"same text"}}}});
-        assert!(matches!(&parse_record(&chunk.to_string())[0],ContentEvent::Update { update, starts_message:false }
-            if update==&chunk["notification"]),"SDK messageId and original payload stay intact");
+        assert!(
+            matches!(&parse_record(&chunk.to_string())[0],ContentEvent::Update { update, starts_message:false }
+            if update==&chunk["notification"]),
+            "SDK messageId and original payload stay intact"
+        );
         let turn = r#"{"kind":"turn","turn":"turn","outcome":"ended","detail":"MaxTokens"}"#;
         assert!(matches!(&parse_record(turn)[0],ContentEvent::Turn {stop} if stop=="MaxTokens"));
         for damaged in [

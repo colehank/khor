@@ -21,20 +21,31 @@ use khor_node::live::{LiveKind, Source};
 /// that is running the tests, and found beside this test's own binary.
 /// The build is a no-op when `cargo test --workspace` already made it.
 fn stub_path() -> PathBuf {
-    if let Some(path)=std::env::var_os("KHOR_ACP_STUB") {
-        let path=PathBuf::from(path);
-        let metadata=std::fs::symlink_metadata(&path).expect("the pinned stub must exist");
-        assert!(path.is_absolute() && metadata.is_file() && !metadata.file_type().is_symlink()
-            && path.canonicalize().unwrap()==path,
-            "the supplied same-source stub must be an absolute regular file without symlink components");
-        #[cfg(unix)] {
+    if let Some(path) = std::env::var_os("KHOR_ACP_STUB") {
+        let path = PathBuf::from(path);
+        let metadata = std::fs::symlink_metadata(&path).expect("the pinned stub must exist");
+        assert!(
+            path.is_absolute()
+                && metadata.is_file()
+                && !metadata.file_type().is_symlink()
+                && path.canonicalize().unwrap() == path,
+            "the supplied same-source stub must be an absolute regular file without symlink components"
+        );
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::PermissionsExt;
-            assert_ne!(metadata.permissions().mode() & 0o111,0,"the pinned stub must be executable");
+            assert_ne!(
+                metadata.permissions().mode() & 0o111,
+                0,
+                "the pinned stub must be executable"
+            );
         }
         return path;
     }
-    assert!(std::env::var_os("KHOR_ACP_TEST_EVIDENCE").is_none(),
-        "controlled acceptance requires an explicitly verified KHOR_ACP_STUB; implicit Cargo is forbidden");
+    assert!(
+        std::env::var_os("KHOR_ACP_TEST_EVIDENCE").is_none(),
+        "controlled acceptance requires an explicitly verified KHOR_ACP_STUB; implicit Cargo is forbidden"
+    );
     // Local convenience only; this branch is not an acceptance provenance proof.
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let status = std::process::Command::new(cargo)
@@ -227,24 +238,30 @@ fn a_prompt_keeps_answering_interactions_across_two_faces() {
     )
     .unwrap();
     assert!(matches!(next_note(&mut b),GuiNote::ElicitAnswered{ask:answered,..}if answered==ask));
-    let mut answer=String::new();
+    let mut answer = String::new();
     loop {
         match next_note(&mut a) {
-            GuiNote::Note(note)=>answer.push_str(&note),
-            GuiNote::Turn(stop)=> { assert_eq!(stop,"EndTurn");break; },
-            _=>{},
+            GuiNote::Note(note) => answer.push_str(&note),
+            GuiNote::Turn(stop) => {
+                assert_eq!(stop, "EndTurn");
+                break;
+            }
+            _ => {}
         }
     }
     assert!(answer.contains("prompt-answer"));
     assert!(answer.contains("accept"));
     // Current prompt output is live on both views, unlike the retired private
     // history bracket. Drain and verify it before probing a stale answer.
-    let mut mirrored=String::new();
+    let mut mirrored = String::new();
     loop {
         match next_note(&mut b) {
-            GuiNote::Note(note)=>mirrored.push_str(&note),
-            GuiNote::Turn(stop)=> { assert_eq!(stop,"EndTurn");break; },
-            _=>{},
+            GuiNote::Note(note) => mirrored.push_str(&note),
+            GuiNote::Turn(stop) => {
+                assert_eq!(stop, "EndTurn");
+                break;
+            }
+            _ => {}
         }
     }
     assert!(mirrored.contains("prompt-answer") && mirrored.contains("accept"));
@@ -513,26 +530,37 @@ fn capture_answers_its_own_view_and_contains_the_completed_turn() {
             }
             // `Answered` rides the same broadcast as the ask itself —
             // both faces see it, which is the point of it existing.
-            GuiNote::Note(_) | GuiNote::Answered { .. } | GuiNote::Capabilities(_) | GuiNote::Settings(_) | GuiNote::Turning => {}
+            GuiNote::Note(_)
+            | GuiNote::Answered { .. }
+            | GuiNote::Capabilities(_)
+            | GuiNote::Settings(_)
+            | GuiNote::Turning => {}
             other => panic!("unexpected turn frame: {}", kind_of(&other)),
         }
     }
     loop {
         match next_note(&mut bystander) {
             GuiNote::Turn(_) => break,
-            GuiNote::Note(_) | GuiNote::Ask { .. } | GuiNote::Answered { .. } | GuiNote::Capabilities(_) | GuiNote::Settings(_) | GuiNote::Turning => {}
+            GuiNote::Note(_)
+            | GuiNote::Ask { .. }
+            | GuiNote::Answered { .. }
+            | GuiNote::Capabilities(_)
+            | GuiNote::Settings(_)
+            | GuiNote::Turning => {}
             other => panic!("unexpected turn frame: {}", kind_of(&other)),
         }
     }
 
-    let token=[43;16];
-    write_frame(&mut asker,&GuiOp::Capture{token}).unwrap();
-    let fence=receive_capture(&mut asker,token);
-    let page=canonical_page(&root,&fence);
-    assert!(page.events.iter().any(|event|matches!(&event.payload,
+    let token = [43; 16];
+    write_frame(&mut asker, &GuiOp::Capture { token }).unwrap();
+    let fence = receive_capture(&mut asker, token);
+    let page = canonical_page(&root, &fence);
+    assert!(
+        page.events.iter().any(|event| matches!(&event.payload,
         khor_node::session_content::ContentEvent::Update { update: note, .. }
             if note.to_string().contains("picked:go"))),
-        "canonical history must contain the answered, completed turn");
+        "canonical history must contain the answered, completed turn"
+    );
     // The bystander proved its read path on the turn above; the same
     // read now finds silence where broadcast history would be.
     bystander
@@ -650,16 +678,18 @@ fn an_agent_that_cannot_replay_is_not_a_conversation_with_nothing_in_it() {
         "this stub advertises no load_session, and the face must be told"
     );
 
-    let token=[44;16];
-    write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
-    let fence=receive_capture(&mut conn,token);
-    let page=canonical_page(&root,&fence);
+    let token = [44; 16];
+    write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
+    let fence = receive_capture(&mut conn, token);
+    let page = canonical_page(&root, &fence);
     assert!(page.events.is_empty() && page.references.is_empty());
-    let node=khor_node::Node::open(root.clone()).unwrap();
-    assert!(matches!(node.session_content(&id,None).unwrap(),
+    let node = khor_node::Node::open(root.clone()).unwrap();
+    assert!(
+        matches!(node.session_content(&id,None).unwrap(),
         khor_node::session_content::Availability::Available{capture:Some(capture),..}
             if capture.opening=="new" && capture.gaps==0),
-        "fresh captured content must not masquerade as an unsupported restored past");
+        "fresh captured content must not masquerade as an unsupported restored past"
+    );
 
     write_frame(&mut conn, &GuiOp::Close).unwrap();
     host.join().expect("the host thread ends").expect("cleanly");

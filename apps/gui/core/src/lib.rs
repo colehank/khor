@@ -12,6 +12,7 @@ pub mod acs;
 pub mod add;
 pub mod agents;
 pub mod api;
+mod attachments;
 pub mod chat;
 pub mod code;
 pub mod command_queue;
@@ -19,11 +20,10 @@ mod connection;
 pub mod console;
 pub mod console_complete;
 pub mod file_handoff;
-pub mod history_export;
 pub mod files;
 pub mod git;
+pub mod history_export;
 pub mod import;
-mod attachments;
 pub use attachments::{AttachmentKind, attachment_begin};
 pub mod launch;
 pub mod miss;
@@ -1109,7 +1109,8 @@ pub fn list_sessions(root: &Path, by: &str) -> Result<Vec<SessionRow>, String> {
             SessionRow {
                 execution_home: Some(v.session.home.hex()),
                 content_locator: khor_node::session_content::ContentLocator::of(&v.session)
-                    .and_then(|locator| locator.encode()).ok(),
+                    .and_then(|locator| locator.encode())
+                    .ok(),
                 observation_owner: v
                     .session
                     .observation
@@ -2705,7 +2706,10 @@ pub fn chat_put_args(query: &str) -> Option<(String, String, String)> {
     }
     match (id, lease, name) {
         (Some(id), Some(lease), Some(name))
-            if !id.is_empty() && !lease.is_empty() && !name.is_empty() => Some((id, lease, name)),
+            if !id.is_empty() && !lease.is_empty() && !name.is_empty() =>
+        {
+            Some((id, lease, name))
+        }
         _ => None,
     }
 }
@@ -3284,5 +3288,3 @@ pub async fn agent_recognition(
         })
         .collect())
 }
-
-

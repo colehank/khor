@@ -120,7 +120,11 @@ fn command_head(bytes: &[u8], mut at: usize) -> Option<(Vec<String>, usize)> {
         }
         let end = quoted_end(bytes, at);
         let name = bytes.get(at + 1..end.checked_sub(1)?)?;
-        if name.is_empty() || !name.iter().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_') {
+        if name.is_empty()
+            || !name
+                .iter()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || *b == b'_')
+        {
             return None;
         }
         names.push(std::str::from_utf8(name).ok()?.to_owned());
@@ -143,7 +147,9 @@ fn command_head(bytes: &[u8], mut at: usize) -> Option<(Vec<String>, usize)> {
 
 fn command_patterns(src: &str) -> BTreeSet<String> {
     let marker = "match cmd {";
-    let start = src.find(marker).expect("shared command dispatch must match cmd");
+    let start = src
+        .find(marker)
+        .expect("shared command dispatch must match cmd");
     let bytes = src.as_bytes();
     let mut at = start + marker.len();
     let mut depth = 1;
@@ -152,7 +158,9 @@ fn command_patterns(src: &str) -> BTreeSet<String> {
         match bytes[at] {
             b'/' if bytes.get(at + 1) == Some(&b'/') => {
                 at += 2;
-                while at < bytes.len() && bytes[at] != b'\n' { at += 1; }
+                while at < bytes.len() && bytes[at] != b'\n' {
+                    at += 1;
+                }
             }
             b'"' => {
                 if depth == 1 {
@@ -164,8 +172,14 @@ fn command_patterns(src: &str) -> BTreeSet<String> {
                 }
                 at = quoted_end(bytes, at);
             }
-            b'{' | b'(' | b'[' => { depth += 1; at += 1; }
-            b'}' | b')' | b']' => { depth -= 1; at += 1; }
+            b'{' | b'(' | b'[' => {
+                depth += 1;
+                at += 1;
+            }
+            b'}' | b')' | b']' => {
+                depth -= 1;
+                at += 1;
+            }
             _ => at += 1,
         }
     }
@@ -180,9 +194,21 @@ fn command_finder_keeps_all_names_in_multiline_patterns() {
             | "page_ground" => Ok("null"),
         }
     }"#;
-    assert_eq!(command_patterns(src), BTreeSet::from([
-        "move_page", "hide_page", "close_page", "show_page", "page_step", "page_deck", "page_ground",
-    ].map(str::to_owned)));
+    assert_eq!(
+        command_patterns(src),
+        BTreeSet::from(
+            [
+                "move_page",
+                "hide_page",
+                "close_page",
+                "show_page",
+                "page_step",
+                "page_deck",
+                "page_ground",
+            ]
+            .map(str::to_owned)
+        )
+    );
 }
 
 #[test]
@@ -200,7 +226,10 @@ fn command_finder_ignores_strings_and_patterns_outside_dispatch_arms() {
         }
     }
     fn other() { match "outside" { "unrelated" => () } }"#;
-    assert_eq!(command_patterns(src), BTreeSet::from(["real".to_owned(), "second".to_owned()]));
+    assert_eq!(
+        command_patterns(src),
+        BTreeSet::from(["real".to_owned(), "second".to_owned()])
+    );
 }
 
 /// A command that lives on one side on purpose, with the reason.

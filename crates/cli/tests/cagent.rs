@@ -13,7 +13,10 @@ use std::io::Write as _;
 // RPC completion and the asynchronous event consumer are separate owners.
 // One test-local request confirms only its already-accepted finite prefix;
 // later traffic does not delay it and a closed/wrong receiver cannot ACK it.
-type PrefixRequest = (khor_acp::EventPrefix, tokio::sync::oneshot::Sender<Result<(), String>>);
+type PrefixRequest = (
+    khor_acp::EventPrefix,
+    tokio::sync::oneshot::Sender<Result<(), String>>,
+);
 async fn next_fenced_event(
     events: &mut khor_acp::EventReceiver,
     requests: &mut tokio::sync::mpsc::Receiver<PrefixRequest>,
@@ -22,7 +25,9 @@ async fn next_fenced_event(
     loop {
         if let Some((prefix, _)) = pending.as_ref() {
             let completed = match events.remaining_through(prefix) {
-                Ok(0) => Some(Ok(())), Err(why) => Some(Err(why)), Ok(_) => None,
+                Ok(0) => Some(Ok(())),
+                Err(why) => Some(Err(why)),
+                Ok(_) => None,
             };
             if let Some(result) = completed {
                 let (_, reply) = pending.take().unwrap();
@@ -44,14 +49,27 @@ async fn next_fenced_event(
         }
     }
 }
-async fn consumed_prefix(handle: &khor_acp::Handle, requests: &tokio::sync::mpsc::Sender<PrefixRequest>) {
+async fn consumed_prefix(
+    handle: &khor_acp::Handle,
+    requests: &tokio::sync::mpsc::Sender<PrefixRequest>,
+) {
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        let prefix = handle.fence_events().await.expect("accepted turn prefix must be written");
+        let prefix = handle
+            .fence_events()
+            .await
+            .expect("accepted turn prefix must be written");
         let (reply, completed) = tokio::sync::oneshot::channel();
-        requests.send((prefix, reply)).await.expect("the original event pump must own this prefix");
-        completed.await.expect("the pump must answer its prefix request")
+        requests
+            .send((prefix, reply))
+            .await
+            .expect("the original event pump must own this prefix");
+        completed
+            .await
+            .expect("the pump must answer its prefix request")
             .expect("the pump must process the complete accepted prefix");
-    }).await.expect("the event consumer must process its finite prefix within five seconds");
+    })
+    .await
+    .expect("the event consumer must process its finite prefix within five seconds");
 }
 
 #[tokio::test]
@@ -146,23 +164,30 @@ for line in sys.stdin:
         .await
         .unwrap();
 
-    let opening=handle.fence_events().await.unwrap();
-    let mut initial_notes=Vec::new();
-    let mut ready=false;
-    while events.remaining_through(&opening).unwrap()>0 {
+    let opening = handle.fence_events().await.unwrap();
+    let mut initial_notes = Vec::new();
+    let mut ready = false;
+    while events.remaining_through(&opening).unwrap() > 0 {
         match events.recv().await.expect("fresh opening remains readable") {
-            khor_acp::Event::Note(note)=> {
-                let value=serde_json::to_value(&note).unwrap();
-                assert!(!matches!(value["update"]["sessionUpdate"].as_str(),
-                    Some("user_message_chunk"|"agent_message_chunk")),
-                    "an unprompted new session must not invent past messages: {value}");
+            khor_acp::Event::Note(note) => {
+                let value = serde_json::to_value(&note).unwrap();
+                assert!(
+                    !matches!(
+                        value["update"]["sessionUpdate"].as_str(),
+                        Some("user_message_chunk" | "agent_message_chunk")
+                    ),
+                    "an unprompted new session must not invent past messages: {value}"
+                );
                 initial_notes.push(serde_json::to_string(&note).unwrap());
             }
-            khor_acp::Event::Ready{..}=> { assert!(!ready); ready=true; },
-            _=>panic!("a fresh empty opening unexpectedly asked or closed"),
+            khor_acp::Event::Ready { .. } => {
+                assert!(!ready);
+                ready = true;
+            }
+            _ => panic!("a fresh empty opening unexpectedly asked or closed"),
         }
     }
-    assert!(ready,"fresh opening must acknowledge its actual session");
+    assert!(ready, "fresh opening must acknowledge its actual session");
     let sid = handle.session().0.to_string();
     assert_eq!(sid.len(), 36, "a minted v4 uuid, dashes and all: {sid}");
     assert_eq!(
@@ -180,7 +205,8 @@ for line in sys.stdin:
     let (drain, mut drain_requests) = tokio::sync::mpsc::channel::<PrefixRequest>(1);
     let pump = tokio::spawn(async move {
         let mut pending = None;
-        while let Some(e) = next_fenced_event(&mut events, &mut drain_requests, &mut pending).await {
+        while let Some(e) = next_fenced_event(&mut events, &mut drain_requests, &mut pending).await
+        {
             match e {
                 khor_acp::Event::Note(n) => {
                     n2.lock().unwrap().push(serde_json::to_string(&n).unwrap());
@@ -398,26 +424,41 @@ for line in sys.stdin:
         sid,
         "the resumed session keeps its id"
     );
-    let opening=handle3.fence_events().await.unwrap();
-    let mut past=Vec::new();
-    let mut ready=false;
-    while events3.remaining_through(&opening).unwrap()>0 {
-        match events3.recv().await.expect("restored opening remains readable") {
-            khor_acp::Event::Note(note)=>past.push(serde_json::to_string(&note).unwrap()),
-            khor_acp::Event::Ready{..}=> { assert!(!ready); ready=true; },
-            _=>panic!("the supported initial Load unexpectedly asked or closed"),
+    let opening = handle3.fence_events().await.unwrap();
+    let mut past = Vec::new();
+    let mut ready = false;
+    while events3.remaining_through(&opening).unwrap() > 0 {
+        match events3
+            .recv()
+            .await
+            .expect("restored opening remains readable")
+        {
+            khor_acp::Event::Note(note) => past.push(serde_json::to_string(&note).unwrap()),
+            khor_acp::Event::Ready { .. } => {
+                assert!(!ready);
+                ready = true;
+            }
+            _ => panic!("the supported initial Load unexpectedly asked or closed"),
         }
     }
     assert!(ready);
-    let said=past.join("\n");
-    assert!(said.contains("words from the past"),"initial Load must surface the recorded transcript before a new prompt: {said}");
-    assert!(said.contains("user_message_chunk"),"the restored past must retain its normalized user-message shape");
+    let said = past.join("\n");
+    assert!(
+        said.contains("words from the past"),
+        "initial Load must surface the recorded transcript before a new prompt: {said}"
+    );
+    assert!(
+        said.contains("user_message_chunk"),
+        "the restored past must retain its normalized user-message shape"
+    );
     let notes3 = std::sync::Arc::new(std::sync::Mutex::new(past));
     let n3 = notes3.clone();
     let (drain3, mut drain_requests3) = tokio::sync::mpsc::channel::<PrefixRequest>(1);
     let pump3 = tokio::spawn(async move {
         let mut pending = None;
-        while let Some(e) = next_fenced_event(&mut events3, &mut drain_requests3, &mut pending).await {
+        while let Some(e) =
+            next_fenced_event(&mut events3, &mut drain_requests3, &mut pending).await
+        {
             match e {
                 khor_acp::Event::Note(n) => {
                     n3.lock().unwrap().push(serde_json::to_string(&n).unwrap());

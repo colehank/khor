@@ -201,9 +201,9 @@ pub fn answer(
             &arg("path")?,
         ))?),
         "dirs_begin" => {
-            let scopes: Vec<crate::files::DirWatchScope> = serde_json::from_value(
-                args.get("scopes").cloned().ok_or("missing arg: scopes")?,
-            ).map_err(|error| error.to_string())?;
+            let scopes: Vec<crate::files::DirWatchScope> =
+                serde_json::from_value(args.get("scopes").cloned().ok_or("missing arg: scopes")?)
+                    .map_err(|error| error.to_string())?;
             to_json(&rt.block_on(crate::files::dirs_begin(root, &arg("machine")?, scopes))?)
         }
         "dirs_wait" => {
@@ -211,11 +211,19 @@ pub fn answer(
             // serial HTTP bridge while waiting for a filesystem event.
             u32::try_from(num("wait_ms")?).map_err(|_| "wait_ms exceeds u32".to_owned())?;
             to_json(&rt.block_on(crate::files::dirs_wait(
-                root, &arg("machine_id")?, &arg("id")?, opt_str("cursor")?.as_deref(), 0,
+                root,
+                &arg("machine_id")?,
+                &arg("id")?,
+                opt_str("cursor")?.as_deref(),
+                0,
             ))?)
         }
         "dirs_leave" => {
-            rt.block_on(crate::files::dirs_leave(root, &arg("machine_id")?, &arg("id")?))?;
+            rt.block_on(crate::files::dirs_leave(
+                root,
+                &arg("machine_id")?,
+                &arg("id")?,
+            ))?;
             Ok("null".into())
         }
         "stat_text" => to_json(&rt.block_on(crate::files::stat_text(
@@ -599,17 +607,41 @@ pub fn answer(
             to_json(&crate::attachment_begin(root, &arg("id")?, kind)?)
         }
         "chat_open" => to_json(&crate::chat::chat_open(root, &arg("id")?, &arg("lease")?)?),
-        "session_content" => to_json(&rt.block_on(crate::chat::session_content(root,&arg("id")?,&arg("locator")?))?),
-        "history_begin" => to_json(&rt.block_on(crate::chat::history_begin(root,&arg("id")?,&arg("binding")?))?),
+        "session_content" => to_json(&rt.block_on(crate::chat::session_content(
+            root,
+            &arg("id")?,
+            &arg("locator")?,
+        ))?),
+        "history_begin" => to_json(&rt.block_on(crate::chat::history_begin(
+            root,
+            &arg("id")?,
+            &arg("binding")?,
+        ))?),
         "history_cancel" => {
-            rt.block_on(crate::chat::history_cancel(root,&arg("id")?,&arg("binding")?,&arg("requestKey")?))?;
+            rt.block_on(crate::chat::history_cancel(
+                root,
+                &arg("id")?,
+                &arg("binding")?,
+                &arg("requestKey")?,
+            ))?;
             Ok("null".to_owned())
         }
         "history_record" => to_json(&rt.block_on(crate::chat::history_record(
-            root,&arg("id")?,&arg("binding")?,&arg("cursor")?,num("from")?,&arg("requestKey")?,
+            root,
+            &arg("id")?,
+            &arg("binding")?,
+            &arg("cursor")?,
+            num("from")?,
+            &arg("requestKey")?,
         ))?),
         "history_export_start" => to_json(&crate::history_export::start(
-            root, &arg("transfer")?, &arg("id")?, &arg("binding")?, &arg("cursor")?, num("start")?, num("end")?,
+            root,
+            &arg("transfer")?,
+            &arg("id")?,
+            &arg("binding")?,
+            &arg("cursor")?,
+            num("start")?,
+            num("end")?,
         )?),
         "history_projection" => to_json(&rt.block_on(crate::chat::history_projection(
             root,
@@ -621,11 +653,24 @@ pub fn answer(
             num("end")?,
             opt_str("scaffold")?,
         ))?),
-        "history_page" => to_json(&rt.block_on(crate::chat::history_page(
-            root,&arg("id")?,&arg("binding")?,opt_str("cursor")?.as_deref(),
-            args.get("newer").and_then(serde_json::Value::as_bool).unwrap_or(false),&arg("requestKey")?,
-        ))?),
-        "chat_poll" => to_json(&crate::chat::chat_poll(root, &arg("id")?, &arg("lease")?, num("since")?)?),
+        "history_page" => to_json(
+            &rt.block_on(crate::chat::history_page(
+                root,
+                &arg("id")?,
+                &arg("binding")?,
+                opt_str("cursor")?.as_deref(),
+                args.get("newer")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                &arg("requestKey")?,
+            ))?,
+        ),
+        "chat_poll" => to_json(&crate::chat::chat_poll(
+            root,
+            &arg("id")?,
+            &arg("lease")?,
+            num("since")?,
+        )?),
         // The bridge answers one request at a time: a held wait would
         // hold every other call behind it, so it is the poll here.
         "chat_wait" => to_json(&crate::chat::chat_poll(

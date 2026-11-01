@@ -941,7 +941,10 @@ fn read_once<D: Doc>(
     let imported = read_blocks(dir, &doc, &kept)?;
     vanished |= imported.vanished;
     broken.extend(imported.broken);
-    for name in imported.names { grew |= ledger.insert(&name); held.insert(name); }
+    for name in imported.names {
+        grew |= ledger.insert(&name);
+        held.insert(name);
+    }
     pending.extend(imported.pending);
     let on_disk = doc.version();
     let mut store = BlockStore {
@@ -994,18 +997,31 @@ struct ImportedBlocks {
     pending: BTreeMap<u64, i32>,
     vanished: bool,
 }
-fn read_blocks<D: Doc>(dir: &Path, doc: &D, kept: &std::collections::BTreeSet<String>) -> Result<ImportedBlocks, String> {
-    let mut result = ImportedBlocks { names: Default::default(), broken: Vec::new(), pending: BTreeMap::new(), vanished: false };
+fn read_blocks<D: Doc>(
+    dir: &Path,
+    doc: &D,
+    kept: &std::collections::BTreeSet<String>,
+) -> Result<ImportedBlocks, String> {
+    let mut result = ImportedBlocks {
+        names: Default::default(),
+        broken: Vec::new(),
+        pending: BTreeMap::new(),
+        vanished: false,
+    };
     let mut imported = 0;
     for path in blocks(dir)? {
-        if file_name(&path).is_some_and(|name| kept.contains(&name)) { continue; }
+        if file_name(&path).is_some_and(|name| kept.contains(&name)) {
+            continue;
+        }
         imported += 1;
         match fs::read(&path) {
             Ok(bytes) => match doc.merge_report(&bytes) {
                 Err(_) => result.broken.push(path),
                 Ok(report) => {
                     remember_pending(&mut result.pending, &report);
-                    if let Some(name) = file_name(&path) { result.names.insert(name); }
+                    if let Some(name) = file_name(&path) {
+                        result.names.insert(name);
+                    }
                 }
             },
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => result.vanished = true,
@@ -1013,7 +1029,9 @@ fn read_blocks<D: Doc>(dir: &Path, doc: &D, kept: &std::collections::BTreeSet<St
         }
     }
     let mut reads = READS.lock().unwrap_or_else(|p| p.into_inner());
-    let count = reads.entry(dir.to_path_buf()).or_default(); count.0 += 1; count.1 += imported;
+    let count = reads.entry(dir.to_path_buf()).or_default();
+    count.0 += 1;
+    count.1 += imported;
     Ok(result)
 }
 
@@ -1026,10 +1044,17 @@ pub fn read_snapshot<D: Doc>(dir: &Path, peer: u64) -> Result<D, String> {
     let doc = D::open(peer)?;
     let imported = read_blocks(dir, &doc, &Default::default())?;
     let version = doc.version();
-    if imported.vanished || !imported.broken.is_empty()
-        || imported.pending.iter().any(|(writer, end)| version.get(writer).copied().unwrap_or(0) < *end)
-        || fingerprint(dir)? != before || read_epoch(dir) != epoch
-    { return Err("configuration changed or is incomplete during read-only snapshot".into()); }
+    if imported.vanished
+        || !imported.broken.is_empty()
+        || imported
+            .pending
+            .iter()
+            .any(|(writer, end)| version.get(writer).copied().unwrap_or(0) < *end)
+        || fingerprint(dir)? != before
+        || read_epoch(dir) != epoch
+    {
+        return Err("configuration changed or is incomplete during read-only snapshot".into());
+    }
     Ok(doc)
 }
 

@@ -10,10 +10,10 @@ use std::{
 #[path = "session_content/reference.rs"]
 mod reference;
 pub use reference::{ContentLocator, ContentReference, ReadBinding};
-#[path = "session_content/requests.rs"]
-pub(crate) mod requests;
 #[path = "session_content/remote.rs"]
 pub mod remote;
+#[path = "session_content/requests.rs"]
+pub(crate) mod requests;
 
 #[path = "session_content/journal.rs"]
 pub(crate) mod journal;
@@ -46,10 +46,23 @@ pub struct Capture {
 pub enum ContentEvent {
     Native(Utterance),
     /// Display provenance from the validated record kind, never an SDK claim.
-    Update { update: serde_json::Value, starts_message: bool },
-    Turn { stop: String },
-    CaptureGap { opening: String, interrupted: bool },
-    PromptOrigin { turn: String, token: String, start: u64, end: u64 },
+    Update {
+        update: serde_json::Value,
+        starts_message: bool,
+    },
+    Turn {
+        stop: String,
+    },
+    CaptureGap {
+        opening: String,
+        interrupted: bool,
+    },
+    PromptOrigin {
+        turn: String,
+        token: String,
+        start: u64,
+        end: u64,
+    },
     LocalUserEcho,
     Reference,
 }
@@ -63,8 +76,15 @@ pub struct BodyProjection {
 }
 /// Only the two existing replay transformations. No caller-defined rules.
 pub enum BodyTransform {
-    JsonString { pointer: String, parsed: bool },
-    ToolOutput { item: usize, max_bytes: usize, suffix: String },
+    JsonString {
+        pointer: String,
+        parsed: bool,
+    },
+    ToolOutput {
+        item: usize,
+        max_bytes: usize,
+        suffix: String,
+    },
 }
 impl From<Utterance> for ContentEvent {
     fn from(value: Utterance) -> Self {
@@ -285,8 +305,11 @@ impl NativeTranscript {
     }
     pub(crate) fn recorded_cwd(&self, root: &Path) -> Option<PathBuf> {
         match self.provider {
-            Provider::Claude => adaptor::claude::Claude::at(adaptor::claude_home(root)).recorded_cwd(&self.native_id),
-            Provider::Codex => adaptor::codex::Codex::at(adaptor::codex_home(root)).recorded_cwd(&self.native_id),
+            Provider::Claude => adaptor::claude::Claude::at(adaptor::claude_home(root))
+                .recorded_cwd(&self.native_id),
+            Provider::Codex => {
+                adaptor::codex::Codex::at(adaptor::codex_home(root)).recorded_cwd(&self.native_id)
+            }
         }
     }
     pub(crate) fn native_reference(&self) -> (Provider, &str) {

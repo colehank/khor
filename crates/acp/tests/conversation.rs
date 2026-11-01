@@ -267,21 +267,24 @@ async fn dropping_an_ask_unanswered_still_ends_the_turn() {
 #[tokio::test]
 async fn initial_load_is_complete_through_its_accepted_prefix() {
     let (handle, mut rx) = khor_acp::start_resume(STUB, std::env::temp_dir(), "recorded-stub")
-        .await.expect("the initial Load succeeds");
-    let prefix=handle.fence_events().await.unwrap();
-    let mut played=Vec::new();
-    let mut ready=0;
-    while rx.remaining_through(&prefix).unwrap()>0 {
+        .await
+        .expect("the initial Load succeeds");
+    let prefix = handle.fence_events().await.unwrap();
+    let mut played = Vec::new();
+    let mut ready = 0;
+    while rx.remaining_through(&prefix).unwrap() > 0 {
         match next(&mut rx).await {
-            Event::Note(note)=>played.push(format!("{:?}",note.update)),
-            Event::Ready{..}=>ready+=1,
-            other=>panic!("unexpected opening event: {other:?}"),
+            Event::Note(note) => played.push(format!("{:?}", note.update)),
+            Event::Ready { .. } => ready += 1,
+            other => panic!("unexpected opening event: {other:?}"),
         }
     }
-    assert_eq!(ready,1);
-    assert!(played.iter().any(|text|text.contains("played back: one"))
-        && played.iter().any(|text|text.contains("played back: two")),
-        "the supported initial Load must preserve both recorded chunks: {played:?}");
+    assert_eq!(ready, 1);
+    assert!(
+        played.iter().any(|text| text.contains("played back: one"))
+            && played.iter().any(|text| text.contains("played back: two")),
+        "the supported initial Load must preserve both recorded chunks: {played:?}"
+    );
 }
 
 /// Dropping the handle ends everything: the connection task returns,

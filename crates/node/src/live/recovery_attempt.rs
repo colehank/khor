@@ -48,9 +48,19 @@ impl Arguments {
         expected_run: Option<String>,
         launch: &[u8],
     ) -> Result<Self, String> {
-        Self::native_at(crate::adaptor::id_for(&native.native_id), native, expected_run, launch)
+        Self::native_at(
+            crate::adaptor::id_for(&native.native_id),
+            native,
+            expected_run,
+            launch,
+        )
     }
-    pub(super) fn native_at(id: SessionId, native: Identity, expected_run: Option<String>, launch: &[u8]) -> Result<Self, String> {
+    pub(super) fn native_at(
+        id: SessionId,
+        native: Identity,
+        expected_run: Option<String>,
+        launch: &[u8],
+    ) -> Result<Self, String> {
         let value = Self {
             home: native.home,
             id,
@@ -65,7 +75,8 @@ impl Arguments {
     fn validate(&self) -> Result<(), String> {
         if self.home != self.native.home
             || !super::matches_logical_source(&self.id, &self.native)
-            || (self.operation == Operation::InitialNew && self.id != crate::adaptor::id_for(&self.native.native_id))
+            || (self.operation == Operation::InitialNew
+                && self.id != crate::adaptor::id_for(&self.native.native_id))
             || self.native.agent.is_empty()
             || self.native.native_id.is_empty()
             || serde_json::to_vec(&self.native)
@@ -188,7 +199,10 @@ impl Provider {
         matches!(self, Self::Exited { .. } | Self::ForegroundAbsent { .. })
     }
     fn no_foreground_owner(&self) -> bool {
-        matches!(self, Self::NotStarted | Self::Exited { .. } | Self::ForegroundAbsent { .. })
+        matches!(
+            self,
+            Self::NotStarted | Self::Exited { .. } | Self::ForegroundAbsent { .. }
+        )
     }
     fn validate(&self) -> Result<(), String> {
         match self {
@@ -242,13 +256,22 @@ pub(super) struct InitializedSupport {
 }
 impl From<khor_acp::RecoveryCapabilities> for InitializedSupport {
     fn from(value: khor_acp::RecoveryCapabilities) -> Self {
-        Self { load: value.load, resume: value.resume }
+        Self {
+            load: value.load,
+            resume: value.resume,
+        }
     }
 }
 impl InitializedSupport {
     fn projection(self) -> khor_core::recovery::RecoverySupport {
         use khor_core::recovery::RecoverySupport;
-        if self.resume { RecoverySupport::Resume } else if self.load { RecoverySupport::Load } else { RecoverySupport::Unsupported }
+        if self.resume {
+            RecoverySupport::Resume
+        } else if self.load {
+            RecoverySupport::Load
+        } else {
+            RecoverySupport::Unsupported
+        }
     }
 }
 
@@ -273,25 +296,52 @@ struct Latest {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum ActionArguments {
-    Native { arguments: Arguments },
-    Shell { home: DeviceId, id: SessionId, expected_run: String, launch_digest: String },
+    Native {
+        arguments: Arguments,
+    },
+    Shell {
+        home: DeviceId,
+        id: SessionId,
+        expected_run: String,
+        launch_digest: String,
+    },
 }
 impl ActionArguments {
-    pub(super) fn shell(home: DeviceId, id: SessionId, expected_run: String, launch: &[u8]) -> Result<Self, String> {
-        let value = Self::Shell { home, id, expected_run, launch_digest: blake3::hash(launch).to_hex().to_string() };
+    pub(super) fn shell(
+        home: DeviceId,
+        id: SessionId,
+        expected_run: String,
+        launch: &[u8],
+    ) -> Result<Self, String> {
+        let value = Self::Shell {
+            home,
+            id,
+            expected_run,
+            launch_digest: blake3::hash(launch).to_hex().to_string(),
+        };
         value.validate()?;
         Ok(value)
     }
     fn scope(&self) -> (DeviceId, &SessionId) {
-        match self { Self::Native { arguments } => (arguments.home, &arguments.id), Self::Shell { home, id, .. } => (*home, id) }
+        match self {
+            Self::Native { arguments } => (arguments.home, &arguments.id),
+            Self::Shell { home, id, .. } => (*home, id),
+        }
     }
     fn validate(&self) -> Result<(), String> {
         match self {
             Self::Native { arguments } => {
                 arguments.validate()?;
-                if arguments.operation != Operation::RecoverNative { return Err("New cannot be an explicit recovery action".into()); }
+                if arguments.operation != Operation::RecoverNative {
+                    return Err("New cannot be an explicit recovery action".into());
+                }
             }
-            Self::Shell { id, expected_run, launch_digest, .. } => {
+            Self::Shell {
+                id,
+                expected_run,
+                launch_digest,
+                ..
+            } => {
                 if id.0.is_empty() || id.0.len() > 4096 || expected_run != &id.0 {
                     return Err("a new Shell action must name its exact previous SID".into());
                 }
@@ -313,18 +363,30 @@ pub(super) enum ActionResult {
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct LatestAction { token: Token, arguments: ActionArguments, result: ActionResult }
+struct LatestAction {
+    token: Token,
+    arguments: ActionArguments,
+    result: ActionResult,
+}
 impl LatestAction {
     fn validate(&self) -> Result<(), String> {
         self.token.validate()?;
         self.arguments.validate()?;
         match (&self.arguments, &self.result) {
-            (ActionArguments::Native { .. }, ActionResult::JoinPending) => {},
-            (ActionArguments::Native { arguments }, ActionResult::Join { current_run }) if &arguments.expected_run == current_run => {
-                if let Some(run) = current_run { hex(run, 32)?; }
+            (ActionArguments::Native { .. }, ActionResult::JoinPending) => {}
+            (ActionArguments::Native { arguments }, ActionResult::Join { current_run })
+                if &arguments.expected_run == current_run =>
+            {
+                if let Some(run) = current_run {
+                    hex(run, 32)?;
+                }
             }
-            (ActionArguments::Shell { id: previous, .. }, ActionResult::ShellOpened { id }) if id != previous && !id.0.is_empty() && id.0.len() <= 4096 => {}
-            (ActionArguments::Shell { .. }, ActionResult::ShellPending | ActionResult::DirectoryRequired) => {}
+            (ActionArguments::Shell { id: previous, .. }, ActionResult::ShellOpened { id })
+                if id != previous && !id.0.is_empty() && id.0.len() <= 4096 => {}
+            (
+                ActionArguments::Shell { .. },
+                ActionResult::ShellPending | ActionResult::DirectoryRequired,
+            ) => {}
             (_, ActionResult::Refused { reason }) if !reason.is_empty() && reason.len() <= 256 => {}
             _ => return Err("recovery action and result disagree".into()),
         }
@@ -332,22 +394,40 @@ impl LatestAction {
     }
 }
 /// None means a never-accepted next token; a retired token cannot become work.
-pub(super) enum ActionReplay { Recorded(ActionResult), Retired }
+pub(super) enum ActionReplay {
+    Recorded(ActionResult),
+    Retired,
+}
 /// Only pure admission validation after a successful document load. Disk,
 /// provider and publication failures remain the outer Err, never this refusal.
-pub(super) enum InputDecision<T> { Continue(T), Refused(String) }
+pub(super) enum InputDecision<T> {
+    Continue(T),
+    Refused(String),
+}
 
 /// Permission only for the invocation which durably chose Join. It cannot be
 /// serialized/cloned or reconstructed by a duplicate/reconnected request.
-pub(super) struct JoinCheck { token: Token, arguments: Arguments }
-pub(super) enum JoinAdmission { Previous(Reservation), Check(JoinCheck) }
-pub(super) fn join_arguments(native: Identity, expected: Option<String>) -> Result<Arguments, String> {
+pub(super) struct JoinCheck {
+    token: Token,
+    arguments: Arguments,
+}
+pub(super) enum JoinAdmission {
+    Previous(Reservation),
+    Check(JoinCheck),
+}
+pub(super) fn join_arguments(
+    native: Identity,
+    expected: Option<String>,
+) -> Result<Arguments, String> {
     join_arguments_at(crate::adaptor::id_for(&native.native_id), native, expected)
 }
-pub(super) fn join_arguments_at(id: SessionId, native: Identity, expected: Option<String>) -> Result<Arguments, String> {
+pub(super) fn join_arguments_at(
+    id: SessionId,
+    native: Identity,
+    expected: Option<String>,
+) -> Result<Arguments, String> {
     Arguments::native_at(id, native, expected, b"khor/current-execution-join/v1")
 }
-
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -366,26 +446,46 @@ impl Document {
         if let Some(barrier) = &self.cleanup_barrier {
             Arguments::initial_new(barrier.clone(), b"cleanup-barrier")?;
         }
-        if self.version != VERSION { return Err("invalid recovery document version".into()); }
+        if self.version != VERSION {
+            return Err("invalid recovery document version".into());
+        }
         if let Some(action) = &self.action {
             action.validate()?;
-            if self.high_water != action.token.epoch || self.latest.as_ref().is_some_and(|execution| {
-                let (home, id) = action.arguments.scope();
-                execution.token.epoch >= action.token.epoch || execution.arguments.home != home || &execution.arguments.id != id
-            }) { return Err("action high-water belongs to another execution row".into()); }
-            if self.cleanup_barrier.as_ref().is_some_and(|barrier| match &action.arguments {
-                ActionArguments::Native { arguments } => barrier != &arguments.native,
-                ActionArguments::Shell { .. } => true,
-            }) { return Err("cleanup barrier belongs to another action source".into()); }
+            if self.high_water != action.token.epoch
+                || self.latest.as_ref().is_some_and(|execution| {
+                    let (home, id) = action.arguments.scope();
+                    execution.token.epoch >= action.token.epoch
+                        || execution.arguments.home != home
+                        || &execution.arguments.id != id
+                })
+            {
+                return Err("action high-water belongs to another execution row".into());
+            }
+            if self
+                .cleanup_barrier
+                .as_ref()
+                .is_some_and(|barrier| match &action.arguments {
+                    ActionArguments::Native { arguments } => barrier != &arguments.native,
+                    ActionArguments::Shell { .. } => true,
+                })
+            {
+                return Err("cleanup barrier belongs to another action source".into());
+            }
         }
         let Some(v) = &self.latest else {
-            return if self.action.is_some() || (self.high_water == 0 && self.cleanup_barrier.is_some()) {
+            return if self.action.is_some()
+                || (self.high_water == 0 && self.cleanup_barrier.is_some())
+            {
                 Ok(())
             } else {
                 Err("empty recovery document is not an admissible row".into())
             };
         };
-        if self.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != &v.arguments.native) {
+        if self
+            .cleanup_barrier
+            .as_ref()
+            .is_some_and(|barrier| barrier != &v.arguments.native)
+        {
             return Err("cleanup barrier belongs to another exact native source".into());
         }
         if self.action.is_none() && self.high_water != v.token.epoch {
@@ -404,7 +504,9 @@ impl Document {
             }
         }
         let host_recorded = v.host.is_some() || v.unverified_host_pid.is_some();
-        if v.support.is_some() && (!host_recorded || matches!(v.provider, Provider::NotStarted | Provider::Starting)) {
+        if v.support.is_some()
+            && (!host_recorded || matches!(v.provider, Provider::NotStarted | Provider::Starting))
+        {
             return Err("Initialize facts have no started execution owner".into());
         }
         v.provider.validate()?;
@@ -472,7 +574,9 @@ impl AttemptKey {
         (self.arguments.home, &self.arguments.id)
     }
     pub(super) fn target(&self) -> Result<(&SessionId, &Identity), String> {
-        self.arguments.validate()?; self.token.validate()?; hex(&self.run_id, 32)?;
+        self.arguments.validate()?;
+        self.token.validate()?;
+        hex(&self.run_id, 32)?;
         Ok((&self.arguments.id, &self.arguments.native))
     }
 }
@@ -498,7 +602,9 @@ pub(super) struct InitialNewAuthority {
     issuing_pid: u32,
 }
 pub(super) enum Reservation {
-    Joined { current_run: Option<String> },
+    Joined {
+        current_run: Option<String>,
+    },
     Start(AttemptKey),
     Recorded(Recorded),
     /// Never label this Pending without independently proving the exact owner.
@@ -699,69 +805,133 @@ impl<'a> Held<'a> {
         }
         Ok(())
     }
-    pub(super) fn alias_admission(&self, id: &SessionId, native: &Identity, own: Option<&AttemptKey>) -> Result<AliasAdmission, String> {
+    pub(super) fn alias_admission(
+        &self,
+        id: &SessionId,
+        native: &Identity,
+        own: Option<&AttemptKey>,
+    ) -> Result<AliasAdmission, String> {
         self.ensure()?;
         let binding = self.gate.native_binding()?;
         let meta = self.gate.read_meta_or_new()?;
         let execution = self.document.as_ref().and_then(|doc| doc.latest.as_ref());
-        if meta.as_ref().is_some_and(|meta| !meta.id.is_empty() && meta.id != id.0)
+        if meta
+            .as_ref()
+            .is_some_and(|meta| !meta.id.is_empty() && meta.id != id.0)
             || execution.is_some_and(|execution| &execution.arguments.id != id)
-        { return Err("native alias metadata has another logical identity".into()); }
-        let mut identities = binding.iter().chain(meta.as_ref().and_then(|meta| meta.gui_native.as_ref()))
+        {
+            return Err("native alias metadata has another logical identity".into());
+        }
+        let mut identities = binding
+            .iter()
+            .chain(meta.as_ref().and_then(|meta| meta.gui_native.as_ref()))
             .chain(execution.map(|execution| &execution.arguments.native))
-            .chain(self.document.as_ref().and_then(|doc| doc.cleanup_barrier.as_ref()));
+            .chain(
+                self.document
+                    .as_ref()
+                    .and_then(|doc| doc.cleanup_barrier.as_ref()),
+            );
         let first = identities.next();
-        if identities.any(|other| Some(other) != first) { return Err("native alias binding, Meta and execution disagree".into()); }
+        if identities.any(|other| Some(other) != first) {
+            return Err("native alias binding, Meta and execution disagree".into());
+        }
         match first {
             Some(other) if other != native => return Ok(AliasAdmission::DifferentSource),
-            None => return Ok(if meta.is_none() && self.document.is_none() { AliasAdmission::Clear } else { AliasAdmission::Unknown }),
+            None => {
+                return Ok(if meta.is_none() && self.document.is_none() {
+                    AliasAdmission::Clear
+                } else {
+                    AliasAdmission::Unknown
+                });
+            }
             _ => {}
         }
-        if self.has_cleanup_barrier() { return Ok(AliasAdmission::Unknown); }
-        let Some(execution) = execution else { return Ok(AliasAdmission::Unknown); };
+        if self.has_cleanup_barrier() {
+            return Ok(AliasAdmission::Unknown);
+        }
+        let Some(execution) = execution else {
+            return Ok(AliasAdmission::Unknown);
+        };
         if let Some(own) = own {
-            if self.current(own).is_ok() && execution.phase == Phase::Reserved && execution.host.is_none() && matches!(execution.provider, Provider::NotStarted) {
+            if self.current(own).is_ok()
+                && execution.phase == Phase::Reserved
+                && execution.host.is_none()
+                && matches!(execution.provider, Provider::NotStarted)
+            {
                 return Ok(AliasAdmission::OwnUnclaimed);
             }
         }
-        let current_run = meta.as_ref().and_then(|meta| meta.gui_run.as_ref()).map(|run| run.id.as_str());
-        if current_run.is_some_and(|run| run != execution.run_id && Some(run) != execution.arguments.expected_run.as_deref()) {
+        let current_run = meta
+            .as_ref()
+            .and_then(|meta| meta.gui_run.as_ref())
+            .map(|run| run.id.as_str());
+        if current_run.is_some_and(|run| {
+            run != execution.run_id && Some(run) != execution.arguments.expected_run.as_deref()
+        }) {
             return Ok(AliasAdmission::Unknown);
         }
         Ok(match execution.provider {
             ref provider if provider.replacement_confirmed() => AliasAdmission::Clear,
             Provider::NotStarted if execution.phase == Phase::Refused => AliasAdmission::Clear,
-            Provider::Owned { .. } => AliasAdmission::Probe(self.registered_foreground(native)?.ok_or("registered alias lost its exact foreground")?),
+            Provider::Owned { .. } => AliasAdmission::Probe(
+                self.registered_foreground(native)?
+                    .ok_or("registered alias lost its exact foreground")?,
+            ),
             _ => AliasAdmission::Unknown,
         })
     }
 
-    pub(super) fn registered_foreground(&self, native: &Identity) -> Result<Option<RegisteredForeground>, String> {
+    pub(super) fn registered_foreground(
+        &self,
+        native: &Identity,
+    ) -> Result<Option<RegisteredForeground>, String> {
         self.ensure()?;
-        if self.has_cleanup_barrier() { return Ok(None); }
+        if self.has_cleanup_barrier() {
+            return Ok(None);
+        }
         let Some(latest) = self.document.as_ref().and_then(|doc| doc.latest.as_ref()) else {
             return Ok(None);
         };
         if &latest.arguments.native != native {
             return Err("registered execution belongs to another full native source".into());
         }
-        let Provider::Owned { process } = &latest.provider else { return Ok(None); };
+        let Provider::Owned { process } = &latest.provider else {
+            return Ok(None);
+        };
         Ok(Some(RegisteredForeground {
-            key: AttemptKey { token: latest.token.clone(), arguments: latest.arguments.clone(), run_id: latest.run_id.clone() },
+            key: AttemptKey {
+                token: latest.token.clone(),
+                arguments: latest.arguments.clone(),
+                run_id: latest.run_id.clone(),
+            },
             process: process.clone(),
-            host: latest.host.clone().ok_or("registered foreground has no actual host")?,
+            host: latest
+                .host
+                .clone()
+                .ok_or("registered foreground has no actual host")?,
             slot_ended: self.slot_ended(latest)?,
         }))
     }
 
     fn slot_ended(&self, latest: &Latest) -> Result<bool, String> {
-        let Some(meta) = self.gate.read_meta_or_new()? else { return Ok(false); };
-        Ok(latest.phase == Phase::RunPublished && meta.kind == khor_core::kind::GUI
+        let Some(meta) = self.gate.read_meta_or_new()? else {
+            return Ok(false);
+        };
+        Ok(latest.phase == Phase::RunPublished
+            && meta.kind == khor_core::kind::GUI
             && meta.id == latest.arguments.id.0
             && meta.gui_native.as_ref() == Some(&latest.arguments.native)
-            && meta.pid == latest.host.as_ref().map(|host| host.pid).or(latest.unverified_host_pid)
-            && meta.gui_run.as_ref().is_some_and(|run| run.id == latest.run_id
-                && run.state.gui_run.as_ref() == Some(&run.id) && run.state.exit.is_some()))
+            && meta.pid
+                == latest
+                    .host
+                    .as_ref()
+                    .map(|host| host.pid)
+                    .or(latest.unverified_host_pid)
+            && meta.gui_run.as_ref().is_some_and(|run| {
+                run.id == latest.run_id
+                    && run.state.gui_run.as_ref() == Some(&run.id)
+                    && run.state.exit.is_some()
+            }))
     }
 
     pub(super) fn foreground_absent(
@@ -772,7 +942,8 @@ impl<'a> Held<'a> {
     ) -> Result<(), String> {
         let current = self.current(&registered.key)?;
         if current.host.as_ref() != Some(&registered.host)
-            || (!self.slot_ended(current)? && !host_absent.is_some_and(|proof| proof.is_for(&registered.host)))
+            || (!self.slot_ended(current)?
+                && !host_absent.is_some_and(|proof| proof.is_for(&registered.host)))
         {
             return Err("the previous Khor execution is still active or unknown".into());
         }
@@ -814,8 +985,10 @@ impl<'a> Held<'a> {
         arguments: &Arguments,
     ) -> Result<(), String> {
         let latest = self.current(key)?;
-        if self.has_cleanup_barrier() || &latest.arguments != arguments
-            || latest.phase != Phase::Reserved || !matches!(latest.provider, Provider::NotStarted)
+        if self.has_cleanup_barrier()
+            || &latest.arguments != arguments
+            || latest.phase != Phase::Reserved
+            || !matches!(latest.provider, Provider::NotStarted)
         {
             return Err("recovery ghost does not own these exact reserved arguments".into());
         }
@@ -823,7 +996,9 @@ impl<'a> Held<'a> {
     }
 
     fn has_cleanup_barrier(&self) -> bool {
-        self.document.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some())
+        self.document
+            .as_ref()
+            .is_some_and(|doc| doc.cleanup_barrier.is_some())
     }
 
     /// A colliding real New was refused and its actual cleanup is unconfirmed.
@@ -831,31 +1006,75 @@ impl<'a> Held<'a> {
     /// only quarantine an exactly bound source while its File is still held.
     #[cfg(test)]
     fn quarantine_new(&mut self, reservation: &JournalReservation) -> Result<(), String> {
-        self.quarantine_new_at(&crate::adaptor::id_for(&reservation.identity().native_id), reservation)
+        self.quarantine_new_at(
+            &crate::adaptor::id_for(&reservation.identity().native_id),
+            reservation,
+        )
     }
-    pub(super) fn quarantine_matches(&self, id: &SessionId, native: &Identity) -> Result<bool, String> {
+    pub(super) fn quarantine_matches(
+        &self,
+        id: &SessionId,
+        native: &Identity,
+    ) -> Result<bool, String> {
         self.ensure()?;
         let meta = self.gate.read_meta_or_new()?;
         let bound = crate::session_content::journal::bound_identity(&self.gate.dir)?;
         let recorded = meta.as_ref().and_then(|meta| meta.gui_native.as_ref());
-        if bound.as_ref().zip(recorded).is_some_and(|(bound, recorded)| bound != recorded) {
+        if bound
+            .as_ref()
+            .zip(recorded)
+            .is_some_and(|(bound, recorded)| bound != recorded)
+        {
             return Err("New quarantine alias binding and Meta disagree".into());
         }
-        if bound.as_ref().is_some_and(|bound| bound != native) || recorded.is_some_and(|recorded| recorded != native) { return Ok(false); }
-        if meta.as_ref().is_some_and(|meta| !meta.id.is_empty() && meta.id != id.0) { return Err("New quarantine alias has another logical identity".into()); }
-        if bound.as_ref() != Some(native) && recorded != Some(native) { return Ok(false); }
-        if self.document.as_ref().is_some_and(|doc| doc.latest.as_ref().is_some_and(|latest| &latest.arguments.native != native) || doc.cleanup_barrier.as_ref().is_some_and(|barrier| barrier != native)) {
+        if bound.as_ref().is_some_and(|bound| bound != native)
+            || recorded.is_some_and(|recorded| recorded != native)
+        {
+            return Ok(false);
+        }
+        if meta
+            .as_ref()
+            .is_some_and(|meta| !meta.id.is_empty() && meta.id != id.0)
+        {
+            return Err("New quarantine alias has another logical identity".into());
+        }
+        if bound.as_ref() != Some(native) && recorded != Some(native) {
+            return Ok(false);
+        }
+        if self.document.as_ref().is_some_and(|doc| {
+            doc.latest
+                .as_ref()
+                .is_some_and(|latest| &latest.arguments.native != native)
+                || doc
+                    .cleanup_barrier
+                    .as_ref()
+                    .is_some_and(|barrier| barrier != native)
+        }) {
             return Err("New quarantine alias attempt names another source".into());
         }
         Ok(true)
     }
-    pub(super) fn quarantine_new_at(&mut self, id: &SessionId, reservation: &JournalReservation) -> Result<(), String> {
+    pub(super) fn quarantine_new_at(
+        &mut self,
+        id: &SessionId,
+        reservation: &JournalReservation,
+    ) -> Result<(), String> {
         self.ensure()?;
-        if !reservation.holds_file() { return Err("New quarantine no longer holds its exact journal File".into()); }
+        if !reservation.holds_file() {
+            return Err("New quarantine no longer holds its exact journal File".into());
+        }
         let native = reservation.identity();
-        if !self.quarantine_matches(id, native)? { return Err("unconfirmed New is not proven to be this row's exact source".into()); }
+        if !self.quarantine_matches(id, native)? {
+            return Err("unconfirmed New is not proven to be this row's exact source".into());
+        }
         reservation.check_binding(&self.gate.dir)?;
-        let mut next = self.document.clone().unwrap_or(Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None });
+        let mut next = self.document.clone().unwrap_or(Document {
+            version: VERSION,
+            high_water: 0,
+            latest: None,
+            action: None,
+            cleanup_barrier: None,
+        });
         next.cleanup_barrier = Some(native.clone());
         self.store(next)
     }
@@ -872,21 +1091,34 @@ impl<'a> Held<'a> {
         if self.has_cleanup_barrier() {
             return Err("GUI Ready has an unconfirmed cleanup barrier".into());
         }
-        let latest = self.document.as_ref().and_then(|doc| doc.latest.as_ref())
+        let latest = self
+            .document
+            .as_ref()
+            .and_then(|doc| doc.latest.as_ref())
             .ok_or("GUI Ready has no durable execution result")?;
         if let Some(key) = expected {
             self.current(key)?;
         } else if latest.arguments.operation != Operation::InitialNew {
             return Err("known-native Ready requires its exact recovery token".into());
         }
-        let same_host = latest.host.as_ref().map(|host| host.pid)
-            .or(latest.unverified_host_pid) == Some(ghost_pid);
+        let same_host = latest
+            .host
+            .as_ref()
+            .map(|host| host.pid)
+            .or(latest.unverified_host_pid)
+            == Some(ghost_pid);
         let actual_owner = matches!(latest.provider, Provider::Owned { .. })
             || (latest.arguments.operation == Operation::InitialNew
-                && matches!(latest.provider, Provider::Unknown {
-                    reason: UnknownReason::BirthUnavailable, ..
-                }));
-        if &latest.arguments.native != native || !same_host || !actual_owner
+                && matches!(
+                    latest.provider,
+                    Provider::Unknown {
+                        reason: UnknownReason::BirthUnavailable,
+                        ..
+                    }
+                ));
+        if &latest.arguments.native != native
+            || !same_host
+            || !actual_owner
             || latest.phase != Phase::RunPublished
             || !matches!(&latest.result, Some(Recorded::Opened { id, run_id })
                 if id == &latest.arguments.id && run_id == &latest.run_id)
@@ -905,7 +1137,10 @@ impl<'a> Held<'a> {
     ) -> Result<(), String> {
         self.current(&authority.key)?;
         if authority.issuing_pid != std::process::id()
-            || !authority.control.upgrade().is_some_and(|owner| Arc::ptr_eq(&owner, control))
+            || !authority
+                .control
+                .upgrade()
+                .is_some_and(|owner| Arc::ptr_eq(&owner, control))
         {
             return Err("initial cleanup belongs to another transport owner".into());
         }
@@ -917,13 +1152,20 @@ impl<'a> Held<'a> {
             let latest = self.current(&authority.key)?;
             if latest.result.is_none() && latest.provider.no_foreground_owner() {
                 self.refuse(&authority.key, Reason::SetupFailed)
-            } else { Ok(()) }
+            } else {
+                Ok(())
+            }
         });
         // The key/Control/epoch were validated under this still-held gate.
         // Even if the attempt file is unwritable, exact same-run Meta cleanup
         // is independently safe and must not be skipped by that first error.
-        let slot = retire_slot(self.gate, &authority.key.arguments.id, &authority.key.arguments.native,
-            &authority.key.run_id, authority.issuing_pid);
+        let slot = retire_slot(
+            self.gate,
+            &authority.key.arguments.id,
+            &authority.key.arguments.native,
+            &authority.key.run_id,
+            authority.issuing_pid,
+        );
         match (provider, slot) {
             (Ok(()), Ok(())) => Ok(()),
             (Err(why), Ok(())) | (Ok(()), Err(why)) => Err(why),
@@ -947,7 +1189,9 @@ impl<'a> Held<'a> {
         }
         if self.document.as_ref().is_some_and(|doc| {
             let Some(latest) = &doc.latest else {
-                return doc.action.as_ref().is_none_or(|action| action.arguments.scope() != (arguments.home, &arguments.id));
+                return doc.action.as_ref().is_none_or(|action| {
+                    action.arguments.scope() != (arguments.home, &arguments.id)
+                });
             };
             let origin = &latest.arguments;
             origin.home != arguments.home
@@ -962,12 +1206,21 @@ impl<'a> Held<'a> {
         }
         if token.epoch == high_water {
             if let Some(action) = self.document.as_ref().and_then(|doc| doc.action.as_ref()) {
-                if &action.token != token || action.arguments != (ActionArguments::Native { arguments: arguments.clone() }) {
+                if &action.token != token
+                    || action.arguments
+                        != (ActionArguments::Native {
+                            arguments: arguments.clone(),
+                        })
+                {
                     return Err("recovery token was reused with different arguments".into());
                 }
                 return Ok(Some(match &action.result {
-                    ActionResult::Join { current_run } => Reservation::Joined { current_run: current_run.clone() },
-                    ActionResult::JoinPending | ActionResult::Refused { .. } => Reservation::UnknownOwner,
+                    ActionResult::Join { current_run } => Reservation::Joined {
+                        current_run: current_run.clone(),
+                    },
+                    ActionResult::JoinPending | ActionResult::Refused { .. } => {
+                        Reservation::UnknownOwner
+                    }
                     _ => return Err("native token belongs to a Shell action".into()),
                 }));
             }
@@ -975,7 +1228,9 @@ impl<'a> Held<'a> {
                 .document
                 .as_ref()
                 .ok_or("missing latest recovery attempt")?
-                .latest.as_ref().ok_or("recovery row is quarantined without an attempt")?;
+                .latest
+                .as_ref()
+                .ok_or("recovery row is quarantined without an attempt")?;
             if token != &latest.token || arguments != &latest.arguments {
                 return Err("recovery token was reused with different arguments".into());
             }
@@ -996,128 +1251,287 @@ impl<'a> Held<'a> {
         Ok(None)
     }
 
-    pub(super) fn check_native_input(&self, arguments: &Arguments, token: &Token) -> Result<InputDecision<Option<Reservation>>, String> {
+    pub(super) fn check_native_input(
+        &self,
+        arguments: &Arguments,
+        token: &Token,
+    ) -> Result<InputDecision<Option<Reservation>>, String> {
         self.ensure()?;
         // replay is immutable and performs no IO: after ensure, every Err in
         // this call is a pure argument/origin/epoch/nonce mismatch.
-        Ok(match self.replay(arguments, token) { Ok(value) => InputDecision::Continue(value), Err(reason) => InputDecision::Refused(reason) })
+        Ok(match self.replay(arguments, token) {
+            Ok(value) => InputDecision::Continue(value),
+            Err(reason) => InputDecision::Refused(reason),
+        })
     }
-    pub(super) fn check_join_input(&self, arguments: &Arguments, token: &Token) -> Result<InputDecision<Option<Reservation>>, String> {
+    pub(super) fn check_join_input(
+        &self,
+        arguments: &Arguments,
+        token: &Token,
+    ) -> Result<InputDecision<Option<Reservation>>, String> {
         self.ensure()?;
-        Ok(match self.replay_join(arguments, token) { Ok(value) => InputDecision::Continue(value), Err(reason) => InputDecision::Refused(reason) })
+        Ok(match self.replay_join(arguments, token) {
+            Ok(value) => InputDecision::Continue(value),
+            Err(reason) => InputDecision::Refused(reason),
+        })
     }
-    pub(super) fn check_shell_input(&self, arguments: &ActionArguments, token: &Token) -> Result<InputDecision<Option<ActionReplay>>, String> {
+    pub(super) fn check_shell_input(
+        &self,
+        arguments: &ActionArguments,
+        token: &Token,
+    ) -> Result<InputDecision<Option<ActionReplay>>, String> {
         self.ensure()?;
         // A cleanup barrier is an unknown owner, not invalid caller input.
-        if self.has_cleanup_barrier() { return Err("source cleanup is unconfirmed".into()); }
-        Ok(match self.action_replay(arguments, token) { Ok(value) => InputDecision::Continue(value), Err(reason) => InputDecision::Refused(reason) })
+        if self.has_cleanup_barrier() {
+            return Err("source cleanup is unconfirmed".into());
+        }
+        Ok(match self.action_replay(arguments, token) {
+            Ok(value) => InputDecision::Continue(value),
+            Err(reason) => InputDecision::Refused(reason),
+        })
     }
 
     /// Replays only an explicitly accepted Join before any launcher lookup.
     /// Native execution tokens still go through their actual effective args.
-    pub(super) fn replay_join(&self, arguments: &Arguments, token: &Token) -> Result<Option<Reservation>, String> {
-        self.ensure()?; arguments.validate()?; token.validate()?;
+    pub(super) fn replay_join(
+        &self,
+        arguments: &Arguments,
+        token: &Token,
+    ) -> Result<Option<Reservation>, String> {
+        self.ensure()?;
+        arguments.validate()?;
+        token.validate()?;
         let high = self.document.as_ref().map_or(0, |doc| doc.high_water);
-        if token.epoch < high { return Ok(Some(Reservation::Retired)); }
-        if token.epoch > high && Some(token.epoch) != high.checked_add(1) { return Err("recovery epoch is not the next offer".into()); }
+        if token.epoch < high {
+            return Ok(Some(Reservation::Retired));
+        }
+        if token.epoch > high && Some(token.epoch) != high.checked_add(1) {
+            return Err("recovery epoch is not the next offer".into());
+        }
         if token.epoch == high {
-            if self.document.as_ref().is_some_and(|doc| doc.action.is_some()) { return self.replay(arguments, token); }
-            if self.document.as_ref().and_then(|doc| doc.latest.as_ref()).is_some_and(|execution| execution.token != *token) {
+            if self
+                .document
+                .as_ref()
+                .is_some_and(|doc| doc.action.is_some())
+            {
+                return self.replay(arguments, token);
+            }
+            if self
+                .document
+                .as_ref()
+                .and_then(|doc| doc.latest.as_ref())
+                .is_some_and(|execution| execution.token != *token)
+            {
                 return Err("recovery token was reused with another nonce".into());
             }
         }
         Ok(None)
     }
     pub(super) fn is_execution_token(&self, token: &Token) -> bool {
-        self.document.as_ref().is_some_and(|doc| doc.high_water == token.epoch && doc.action.is_none() && doc.latest.as_ref().is_some_and(|execution| execution.token == *token))
+        self.document.as_ref().is_some_and(|doc| {
+            doc.high_water == token.epoch
+                && doc.action.is_none()
+                && doc
+                    .latest
+                    .as_ref()
+                    .is_some_and(|execution| execution.token == *token)
+        })
     }
-    fn join_meta(&self, arguments: &Arguments, legacy: Option<&(Option<String>, Identity)>) -> Result<(), String> {
-        let meta = self.gate.read_meta_or_new()?.ok_or("the joined GUI row disappeared")?;
-        self.gate.check_native(&arguments.id, Some(&meta), &arguments.native, legacy)?;
-        if meta.kind != khor_core::kind::GUI || meta.gui_run.as_ref().map(|run| &run.id) != arguments.expected_run.as_ref() || super::gui_slot_ended(&meta) {
+    fn join_meta(
+        &self,
+        arguments: &Arguments,
+        legacy: Option<&(Option<String>, Identity)>,
+    ) -> Result<(), String> {
+        let meta = self
+            .gate
+            .read_meta_or_new()?
+            .ok_or("the joined GUI row disappeared")?;
+        self.gate
+            .check_native(&arguments.id, Some(&meta), &arguments.native, legacy)?;
+        if meta.kind != khor_core::kind::GUI
+            || meta.gui_run.as_ref().map(|run| &run.id) != arguments.expected_run.as_ref()
+            || super::gui_slot_ended(&meta)
+        {
             return Err("the joined GUI execution changed".into());
         }
         Ok(())
     }
     /// Freeze Join intent before its real endpoint handshake. Even a failed
     /// handshake cannot later turn this accepted token into provider startup.
-    pub(super) fn begin_join(&mut self, arguments: Arguments, token: Token,
+    pub(super) fn begin_join(
+        &mut self,
+        arguments: Arguments,
+        token: Token,
         legacy: Option<&(Option<String>, Identity)>,
     ) -> Result<JoinAdmission, String> {
-        if let Some(previous) = self.replay(&arguments, &token)? { return Ok(JoinAdmission::Previous(previous)); }
+        if let Some(previous) = self.replay(&arguments, &token)? {
+            return Ok(JoinAdmission::Previous(previous));
+        }
         self.join_meta(&arguments, legacy)?;
-        let mut next = self.document.clone().unwrap_or(Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None });
+        let mut next = self.document.clone().unwrap_or(Document {
+            version: VERSION,
+            high_water: 0,
+            latest: None,
+            action: None,
+            cleanup_barrier: None,
+        });
         next.high_water = token.epoch;
-        next.action = Some(LatestAction { token: token.clone(), arguments: ActionArguments::Native { arguments: arguments.clone() }, result: ActionResult::JoinPending });
+        next.action = Some(LatestAction {
+            token: token.clone(),
+            arguments: ActionArguments::Native {
+                arguments: arguments.clone(),
+            },
+            result: ActionResult::JoinPending,
+        });
         self.store(next)?;
         Ok(JoinAdmission::Check(JoinCheck { token, arguments }))
     }
-    pub(super) fn finish_join(&mut self, ticket: JoinCheck,
+    pub(super) fn finish_join(
+        &mut self,
+        ticket: JoinCheck,
         legacy: Option<&(Option<String>, Identity)>,
         validate_live: impl FnOnce(&mut RowGate) -> Result<(), String>,
     ) -> Result<Reservation, String> {
-        let args = ActionArguments::Native { arguments: ticket.arguments.clone() };
-        if !matches!(self.action_replay(&args, &ticket.token)?, Some(ActionReplay::Recorded(ActionResult::JoinPending))) {
+        let args = ActionArguments::Native {
+            arguments: ticket.arguments.clone(),
+        };
+        if !matches!(
+            self.action_replay(&args, &ticket.token)?,
+            Some(ActionReplay::Recorded(ActionResult::JoinPending))
+        ) {
             return Err("Join checking authority has been retired".into());
         }
         validate_live(self.gate)?;
         self.join_meta(&ticket.arguments, legacy)?;
         let current_run = ticket.arguments.expected_run;
         let mut next = self.document.clone().ok_or("Join intent is missing")?;
-        next.action.as_mut().ok_or("Join intent is missing")?.result = ActionResult::Join { current_run: current_run.clone() };
+        next.action.as_mut().ok_or("Join intent is missing")?.result = ActionResult::Join {
+            current_run: current_run.clone(),
+        };
         self.store(next)?;
         Ok(Reservation::Joined { current_run })
     }
     #[cfg(test)]
-    fn join(&mut self, arguments: Arguments, token: Token, legacy: Option<&(Option<String>, Identity)>, validate_live: impl FnOnce(&mut RowGate) -> Result<(), String>) -> Result<Reservation, String> {
+    fn join(
+        &mut self,
+        arguments: Arguments,
+        token: Token,
+        legacy: Option<&(Option<String>, Identity)>,
+        validate_live: impl FnOnce(&mut RowGate) -> Result<(), String>,
+    ) -> Result<Reservation, String> {
         match self.begin_join(arguments, token, legacy)? {
             JoinAdmission::Previous(previous) => Ok(previous),
             JoinAdmission::Check(ticket) => self.finish_join(ticket, legacy, validate_live),
         }
     }
 
-    pub(super) fn action_replay(&self, arguments: &ActionArguments, token: &Token) -> Result<Option<ActionReplay>, String> {
-        self.ensure()?; arguments.validate()?; token.validate()?;
-        if self.has_cleanup_barrier() { return Err("source cleanup is unconfirmed".into()); }
+    pub(super) fn action_replay(
+        &self,
+        arguments: &ActionArguments,
+        token: &Token,
+    ) -> Result<Option<ActionReplay>, String> {
+        self.ensure()?;
+        arguments.validate()?;
+        token.validate()?;
+        if self.has_cleanup_barrier() {
+            return Err("source cleanup is unconfirmed".into());
+        }
         let high = self.document.as_ref().map_or(0, |doc| doc.high_water);
-        if token.epoch < high { return Ok(Some(ActionReplay::Retired)); }
+        if token.epoch < high {
+            return Ok(Some(ActionReplay::Retired));
+        }
         if token.epoch == high {
-            let action = self.document.as_ref().and_then(|doc| doc.action.as_ref()).ok_or("token belongs to another execution action")?;
-            if &action.token != token || &action.arguments != arguments { return Err("recovery token was reused with different arguments".into()); }
+            let action = self
+                .document
+                .as_ref()
+                .and_then(|doc| doc.action.as_ref())
+                .ok_or("token belongs to another execution action")?;
+            if &action.token != token || &action.arguments != arguments {
+                return Err("recovery token was reused with different arguments".into());
+            }
             return Ok(Some(ActionReplay::Recorded(action.result.clone())));
         }
-        if Some(token.epoch) != high.checked_add(1) { return Err("recovery epoch is not the next offer".into()); }
+        if Some(token.epoch) != high.checked_add(1) {
+            return Err("recovery epoch is not the next offer".into());
+        }
         if self.document.as_ref().is_some_and(|doc| {
-            doc.latest.as_ref().is_some_and(|execution| (execution.arguments.home, &execution.arguments.id) != arguments.scope())
-                || doc.action.as_ref().is_some_and(|previous| previous.arguments.scope() != arguments.scope())
-        }) { return Err("action belongs to another execution row".into()); }
+            doc.latest.as_ref().is_some_and(|execution| {
+                (execution.arguments.home, &execution.arguments.id) != arguments.scope()
+            }) || doc
+                .action
+                .as_ref()
+                .is_some_and(|previous| previous.arguments.scope() != arguments.scope())
+        }) {
+            return Err("action belongs to another execution row".into());
+        }
         Ok(None)
     }
     /// This durable pending acceptance precedes existingOnce/shell spawn. An
     /// interrupted response may replay Pending/Unknown, never create another B.
     pub(super) fn reserve_shell(
-        &mut self, arguments: ActionArguments, token: Token,
+        &mut self,
+        arguments: ActionArguments,
+        token: Token,
         validate_ended: impl FnOnce(&mut RowGate) -> Result<(), String>,
     ) -> Result<Option<ActionReplay>, String> {
-        if !matches!(&arguments, ActionArguments::Shell { .. }) { return Err("not a Shell action".into()); }
-        if let Some(previous) = self.action_replay(&arguments, &token)? { return Ok(Some(previous)); }
-        if self.document.as_ref().and_then(|doc| doc.action.as_ref()).is_some_and(|previous| matches!(previous.result, ActionResult::ShellPending)) {
-            return Err("previous Shell action is unresolved; a new token cannot replay its effects".into());
+        if !matches!(&arguments, ActionArguments::Shell { .. }) {
+            return Err("not a Shell action".into());
+        }
+        if let Some(previous) = self.action_replay(&arguments, &token)? {
+            return Ok(Some(previous));
+        }
+        if self
+            .document
+            .as_ref()
+            .and_then(|doc| doc.action.as_ref())
+            .is_some_and(|previous| matches!(previous.result, ActionResult::ShellPending))
+        {
+            return Err(
+                "previous Shell action is unresolved; a new token cannot replay its effects".into(),
+            );
         }
         validate_ended(self.gate)?;
-        let mut next = self.document.clone().unwrap_or(Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None });
+        let mut next = self.document.clone().unwrap_or(Document {
+            version: VERSION,
+            high_water: 0,
+            latest: None,
+            action: None,
+            cleanup_barrier: None,
+        });
         next.high_water = token.epoch;
-        next.action = Some(LatestAction { token, arguments, result: ActionResult::ShellPending });
+        next.action = Some(LatestAction {
+            token,
+            arguments,
+            result: ActionResult::ShellPending,
+        });
         self.store(next)?;
         Ok(None)
     }
-    pub(super) fn finish_shell(&mut self, arguments: &ActionArguments, token: &Token, result: ActionResult) -> Result<(), String> {
-        if !matches!(self.action_replay(arguments, token)?, Some(ActionReplay::Recorded(ActionResult::ShellPending))) {
+    pub(super) fn finish_shell(
+        &mut self,
+        arguments: &ActionArguments,
+        token: &Token,
+        result: ActionResult,
+    ) -> Result<(), String> {
+        if !matches!(
+            self.action_replay(arguments, token)?,
+            Some(ActionReplay::Recorded(ActionResult::ShellPending))
+        ) {
             return Err("Shell action is no longer its accepted pending token".into());
         }
-        if !matches!(result, ActionResult::ShellOpened { .. } | ActionResult::DirectoryRequired | ActionResult::Refused { .. }) { return Err("invalid completed Shell result".into()); }
+        if !matches!(
+            result,
+            ActionResult::ShellOpened { .. }
+                | ActionResult::DirectoryRequired
+                | ActionResult::Refused { .. }
+        ) {
+            return Err("invalid completed Shell result".into());
+        }
         let mut next = self.document.clone().ok_or("Shell action is missing")?;
-        next.action.as_mut().ok_or("Shell action is missing")?.result = result;
+        next.action
+            .as_mut()
+            .ok_or("Shell action is missing")?
+            .result = result;
         self.store(next)
     }
 
@@ -1134,7 +1548,9 @@ impl<'a> Held<'a> {
         // substitute for its actual owned-foreground receipt or complete,
         // same-context registered foreground absence proof.
         if self.document.as_ref().is_some_and(|doc| {
-            let Some(latest) = &doc.latest else { return true; };
+            let Some(latest) = &doc.latest else {
+                return true;
+            };
             !latest.provider.replacement_confirmed()
                 && !(latest.phase == Phase::Refused
                     && matches!(latest.provider, Provider::NotStarted))
@@ -1151,14 +1567,25 @@ impl<'a> Held<'a> {
         if current != arguments.expected_run.as_deref() {
             return Err("recovery offer names another GUI execution".into());
         }
-        if self.document.as_ref().and_then(|doc| doc.latest.as_ref()).is_some_and(|latest| {
-            current.is_some_and(|current| current != latest.run_id
-                && Some(current) != latest.arguments.expected_run.as_deref())
-        }) {
+        if self
+            .document
+            .as_ref()
+            .and_then(|doc| doc.latest.as_ref())
+            .is_some_and(|latest| {
+                current.is_some_and(|current| {
+                    current != latest.run_id
+                        && Some(current) != latest.arguments.expected_run.as_deref()
+                })
+            })
+        {
             return Ok(Reservation::UnknownOwner);
         }
-        if self.document.is_none() && (current.is_some()
-            || meta.as_ref().is_some_and(|meta| meta.kind == khor_core::kind::GUI)) {
+        if self.document.is_none()
+            && (current.is_some()
+                || meta
+                    .as_ref()
+                    .is_some_and(|meta| meta.kind == khor_core::kind::GUI))
+        {
             return Ok(Reservation::UnknownOwner);
         }
         let run_id = crate::link::fresh_hex()?;
@@ -1189,7 +1616,10 @@ impl<'a> Held<'a> {
     }
     pub(super) fn spawn_failed(&mut self, key: &AttemptKey) -> Result<(), String> {
         let latest = self.current(key)?;
-        if latest.phase != Phase::Reserved || latest.host.is_some() || !matches!(latest.provider, Provider::NotStarted) {
+        if latest.phase != Phase::Reserved
+            || latest.host.is_some()
+            || !matches!(latest.provider, Provider::NotStarted)
+        {
             return Err("failed spawn cannot retire an already claimed ghost".into());
         }
         self.refuse(key, Reason::SetupFailed)
@@ -1249,7 +1679,8 @@ impl<'a> Held<'a> {
         retire_slot: impl FnOnce(&RowGate, &SessionId, &Identity, &str, u32) -> Result<(), String>,
     ) -> Result<(), String> {
         let latest = self.current(key)?;
-        if latest.arguments.operation != Operation::RecoverNative || latest.host.as_ref() != Some(host)
+        if latest.arguments.operation != Operation::RecoverNative
+            || latest.host.as_ref() != Some(host)
             || host.pid != std::process::id()
         {
             return Err("recovery cleanup belongs to another actual host".into());
@@ -1262,9 +1693,17 @@ impl<'a> Held<'a> {
             let latest = self.current(key)?;
             if latest.result.is_none() && latest.provider.no_foreground_owner() {
                 self.refuse(key, Reason::SetupFailed)
-            } else { Ok(()) }
+            } else {
+                Ok(())
+            }
         });
-        let slot = retire_slot(self.gate, &key.arguments.id, &key.arguments.native, &key.run_id, host.pid);
+        let slot = retire_slot(
+            self.gate,
+            &key.arguments.id,
+            &key.arguments.native,
+            &key.run_id,
+            host.pid,
+        );
         match (provider, slot) {
             (Ok(()), Ok(())) => Ok(()),
             (Err(why), Ok(())) | (Ok(()), Err(why)) => Err(why),
@@ -1345,7 +1784,8 @@ impl<'a> Held<'a> {
         }
         self.change(key, |v| {
             match &v.provider {
-                Provider::Owned { process } | Provider::ForegroundAbsent { process } if process.pid == pid => {}
+                Provider::Owned { process } | Provider::ForegroundAbsent { process }
+                    if process.pid == pid => {}
                 // Birth capture can fail after a real spawn. The same actual
                 // transport can still publish its own confirmed reap receipt.
                 Provider::Starting => {}
@@ -1417,7 +1857,9 @@ impl<'a> Held<'a> {
             .document
             .as_ref()
             .ok_or("recovery attempt is missing")?
-            .latest.as_ref().ok_or("recovery row has no publishing attempt")?;
+            .latest
+            .as_ref()
+            .ok_or("recovery row has no publishing attempt")?;
         if key.token != latest.token
             || key.arguments != latest.arguments
             || key.run_id != latest.run_id
@@ -1433,7 +1875,11 @@ impl<'a> Held<'a> {
     ) -> Result<(), String> {
         self.current(key)?;
         let mut next = self.document.clone().ok_or("recovery attempt is missing")?;
-        update(next.latest.as_mut().ok_or("recovery row has no mutable attempt")?)?;
+        update(
+            next.latest
+                .as_mut()
+                .ok_or("recovery row has no mutable attempt")?,
+        )?;
         self.store(next)
     }
     fn store(&mut self, value: Document) -> Result<(), String> {
@@ -1460,19 +1906,42 @@ impl<'a> Held<'a> {
     }
 }
 
-pub(super) fn has_document(directory: &Path) -> Result<bool, String> { read(directory).map(|document| document.is_some()) }
+pub(super) fn has_document(directory: &Path) -> Result<bool, String> {
+    read(directory).map(|document| document.is_some())
+}
 
 /// A read-only publication projection, not provider ownership or an endpoint
 /// authorization. The actual attach still authenticates GUI2 and its lease.
-pub(super) fn published_run(directory: &Path, id: &SessionId, native: &Identity, run: &str, host_pid: Option<u32>) -> Result<Option<bool>, String> {
-    let Some(document) = read(directory)? else { return Ok(None); };
-    let Some(execution) = &document.latest else { return Ok(None); };
-    if &execution.arguments.id != id || &execution.arguments.native != native || execution.run_id != run
+pub(super) fn published_run(
+    directory: &Path,
+    id: &SessionId,
+    native: &Identity,
+    run: &str,
+    host_pid: Option<u32>,
+) -> Result<Option<bool>, String> {
+    let Some(document) = read(directory)? else {
+        return Ok(None);
+    };
+    let Some(execution) = &document.latest else {
+        return Ok(None);
+    };
+    if &execution.arguments.id != id
+        || &execution.arguments.native != native
+        || execution.run_id != run
         || execution.phase != Phase::RunPublished
         || !matches!(&execution.result, Some(Recorded::Opened { id: result_id, run_id }) if result_id == id && run_id == run)
-        || execution.host.as_ref().map(|host| host.pid).or(execution.unverified_host_pid) != host_pid
-    { return Ok(None); }
-    Ok(Some(document.cleanup_barrier.is_none() && matches!(execution.provider, Provider::Owned { .. })))
+        || execution
+            .host
+            .as_ref()
+            .map(|host| host.pid)
+            .or(execution.unverified_host_pid)
+            != host_pid
+    {
+        return Ok(None);
+    }
+    Ok(Some(
+        document.cleanup_barrier.is_none() && matches!(execution.provider, Provider::Owned { .. }),
+    ))
 }
 
 /// Read-only projection of a previous observation; no row lock/file creation,
@@ -1480,16 +1949,27 @@ pub(super) fn published_run(directory: &Path, id: &SessionId, native: &Identity,
 /// Offer only classifies durable facts; it does not probe processes, acquire
 /// coordination files or turn legacy/missing ownership into permission.
 pub(super) fn offer_action_allowed(directory: &Path) -> Result<bool, String> {
-    let Some(document) = read(directory)? else { return Ok(false); };
-    if document.cleanup_barrier.is_some() { return Ok(false); }
-    Ok(document.latest.as_ref().is_some_and(|execution| execution.provider.replacement_confirmed()))
+    let Some(document) = read(directory)? else {
+        return Ok(false);
+    };
+    if document.cleanup_barrier.is_some() {
+        return Ok(false);
+    }
+    Ok(document
+        .latest
+        .as_ref()
+        .is_some_and(|execution| execution.provider.replacement_confirmed()))
 }
 
 /// Read-only finite-alias fact, never a lease or external-writer probe.
 /// None means empty/different full source; false means unresolved ownership.
 /// Only a matching actual owner receipt or complete foreground-absence fact
 /// can positively qualify a no-Meta observation for explicit recovery.
-pub(super) fn observed_alias_ended(directory: &Path, id: &SessionId, native: &Identity) -> Result<Option<bool>, String> {
+pub(super) fn observed_alias_ended(
+    directory: &Path,
+    id: &SessionId,
+    native: &Identity,
+) -> Result<Option<bool>, String> {
     let document = read(directory)?;
     let binding = crate::session_content::journal::bound_identity(directory)?;
     let meta: Option<crate::live::Meta> = match fs::read(directory.join("meta.json")) {
@@ -1497,17 +1977,42 @@ pub(super) fn observed_alias_ended(directory: &Path, id: &SessionId, native: &Id
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
         Err(error) => return Err(error.to_string()),
     };
-    let execution = document.as_ref().and_then(|document| document.latest.as_ref());
-    let mut identities = binding.iter().chain(meta.as_ref().and_then(|meta| meta.gui_native.as_ref()))
+    let execution = document
+        .as_ref()
+        .and_then(|document| document.latest.as_ref());
+    let mut identities = binding
+        .iter()
+        .chain(meta.as_ref().and_then(|meta| meta.gui_native.as_ref()))
         .chain(execution.map(|execution| &execution.arguments.native))
-        .chain(document.as_ref().and_then(|document| document.cleanup_barrier.as_ref()));
+        .chain(
+            document
+                .as_ref()
+                .and_then(|document| document.cleanup_barrier.as_ref()),
+        );
     let first = identities.next();
-    if identities.any(|other| Some(other) != first) { return Err("observed alias identities disagree".into()); }
-    if first.is_some_and(|identity| identity != native) { return Ok(None); }
-    if first.is_none() { return Ok(if meta.is_none() && document.is_none() { None } else { Some(false) }); }
-    if document.as_ref().is_some_and(|document| document.cleanup_barrier.is_some()) { return Ok(Some(false)); }
+    if identities.any(|other| Some(other) != first) {
+        return Err("observed alias identities disagree".into());
+    }
+    if first.is_some_and(|identity| identity != native) {
+        return Ok(None);
+    }
+    if first.is_none() {
+        return Ok(if meta.is_none() && document.is_none() {
+            None
+        } else {
+            Some(false)
+        });
+    }
+    if document
+        .as_ref()
+        .is_some_and(|document| document.cleanup_barrier.is_some())
+    {
+        return Ok(Some(false));
+    }
     if let Some(execution) = execution {
-        if &execution.arguments.id != id { return Err("observed alias has another logical owner".into()); }
+        if &execution.arguments.id != id {
+            return Err("observed alias has another logical owner".into());
+        }
         if meta.is_none() && execution.phase == Phase::Refused {
             return Ok(match execution.provider {
                 Provider::NotStarted => None,
@@ -1516,14 +2021,31 @@ pub(super) fn observed_alias_ended(directory: &Path, id: &SessionId, native: &Id
             });
         }
     }
-    let ended = document.as_ref().is_some_and(|document| document.cleanup_barrier.is_none())
+    let ended = document
+        .as_ref()
+        .is_some_and(|document| document.cleanup_barrier.is_none())
         && execution.is_some_and(|execution| {
-            execution.arguments.id == *id && execution.phase == Phase::RunPublished
-                && matches!(execution.provider, Provider::Exited { .. } | Provider::ForegroundAbsent { .. })
-                && meta.as_ref().is_some_and(|meta| meta.id == id.0 && meta.kind == khor_core::kind::GUI
-                    && meta.gui_native.as_ref() == Some(native)
-                    && meta.gui_run.as_ref().is_some_and(|run| run.id == execution.run_id && run.state.gui_run.as_ref() == Some(&run.id))
-                    && meta.pid == execution.host.as_ref().map(|host| host.pid).or(execution.unverified_host_pid))
+            execution.arguments.id == *id
+                && execution.phase == Phase::RunPublished
+                && matches!(
+                    execution.provider,
+                    Provider::Exited { .. } | Provider::ForegroundAbsent { .. }
+                )
+                && meta.as_ref().is_some_and(|meta| {
+                    meta.id == id.0
+                        && meta.kind == khor_core::kind::GUI
+                        && meta.gui_native.as_ref() == Some(native)
+                        && meta.gui_run.as_ref().is_some_and(|run| {
+                            run.id == execution.run_id
+                                && run.state.gui_run.as_ref() == Some(&run.id)
+                        })
+                        && meta.pid
+                            == execution
+                                .host
+                                .as_ref()
+                                .map(|host| host.pid)
+                                .or(execution.unverified_host_pid)
+                })
         });
     Ok(Some(ended))
 }
@@ -1535,17 +2057,24 @@ pub(super) fn matching_support(
 ) -> Result<khor_core::recovery::RecoverySupport, String> {
     use khor_core::recovery::RecoverySupport;
     let document = read(directory)?;
-    let Some(latest) = document.as_ref().and_then(|doc| doc.latest.as_ref()) else { return Ok(RecoverySupport::Unknown); };
+    let Some(latest) = document.as_ref().and_then(|doc| doc.latest.as_ref()) else {
+        return Ok(RecoverySupport::Unknown);
+    };
     if &latest.arguments.native != native
         || latest.arguments.launch_digest != blake3::hash(launch).to_hex().to_string()
     {
         return Ok(RecoverySupport::Unknown);
     }
-    Ok(latest.support.map_or(RecoverySupport::Unknown, InitializedSupport::projection))
+    Ok(latest
+        .support
+        .map_or(RecoverySupport::Unknown, InitializedSupport::projection))
 }
 
 pub(super) fn check_unquarantined(directory: &Path) -> Result<(), String> {
-    if read(directory)?.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some()) {
+    if read(directory)?
+        .as_ref()
+        .is_some_and(|doc| doc.cleanup_barrier.is_some())
+    {
         Err("native source has an unconfirmed New cleanup".into())
     } else {
         Ok(())
@@ -1555,7 +2084,10 @@ pub(super) fn check_unquarantined(directory: &Path) -> Result<(), String> {
 /// Read-only offer helper: no row lock acquisition, file creation or PID probe.
 pub(super) fn next_epoch(directory: &Path) -> Result<u64, String> {
     let value = read(directory)?;
-    if value.as_ref().is_some_and(|doc| doc.cleanup_barrier.is_some()) {
+    if value
+        .as_ref()
+        .is_some_and(|doc| doc.cleanup_barrier.is_some())
+    {
         return Err("native source has an unconfirmed New cleanup".into());
     }
     let high = value.map_or(0, |value| value.high_water);
@@ -1685,16 +2217,32 @@ mod tests {
     }
     #[test]
     fn bounded_attempt_tokens_keep_arguments_results_and_unknown_owners_fenced() {
-        let supplied = khor_core::recovery::RecoveryToken { epoch: "1".into(), nonce: "a".repeat(32) };
-        assert_eq!(super::super::session_recovery::action_token(&supplied).unwrap().epoch, 1);
+        let supplied = khor_core::recovery::RecoveryToken {
+            epoch: "1".into(),
+            nonce: "a".repeat(32),
+        };
+        assert_eq!(
+            super::super::session_recovery::action_token(&supplied)
+                .unwrap()
+                .epoch,
+            1
+        );
         for epoch in ["", "0", "01", "+1", "-1", "1.0", "18446744073709551616"] {
-            assert!(super::super::session_recovery::action_token(&khor_core::recovery::RecoveryToken {
-                epoch: epoch.into(), nonce: "a".repeat(32),
-            }).is_err());
+            assert!(
+                super::super::session_recovery::action_token(&khor_core::recovery::RecoveryToken {
+                    epoch: epoch.into(),
+                    nonce: "a".repeat(32),
+                })
+                .is_err()
+            );
         }
-        assert!(super::super::session_recovery::action_token(&khor_core::recovery::RecoveryToken {
-            epoch: "1".into(), nonce: "A".repeat(32),
-        }).is_err());
+        assert!(
+            super::super::session_recovery::action_token(&khor_core::recovery::RecoveryToken {
+                epoch: "1".into(),
+                nonce: "A".repeat(32),
+            })
+            .is_err()
+        );
         let scratch = Scratch::new();
         assert_eq!(next_epoch(&scratch.0).unwrap(), 1);
         assert_eq!(
@@ -1714,13 +2262,30 @@ mod tests {
         let mut held = Held::load(&mut gate).unwrap();
         let first = start(held.reserve(args.clone(), one.clone(), None).unwrap());
         held.check_claim(&first, &args).unwrap();
-        assert!(held.check_claim(&first, &Arguments::native(native.clone(), None, b"wrong context").unwrap()).is_err());
+        assert!(
+            held.check_claim(
+                &first,
+                &Arguments::native(native.clone(), None, b"wrong context").unwrap()
+            )
+            .is_err()
+        );
         let before = fs::read(held.gate.dir.join(NAME)).unwrap();
         assert!(before.len() <= BYTES);
-        assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Unknown));
-        assert!(matches!(held.alias_admission(&args.id, &native, Some(&first)).unwrap(), AliasAdmission::OwnUnclaimed));
-        let mut foreign = native.clone(); foreign.agent = "other-agent".into();
-        assert!(matches!(held.alias_admission(&args.id, &foreign, None).unwrap(), AliasAdmission::DifferentSource));
+        assert!(matches!(
+            held.alias_admission(&args.id, &native, None).unwrap(),
+            AliasAdmission::Unknown
+        ));
+        assert!(matches!(
+            held.alias_admission(&args.id, &native, Some(&first))
+                .unwrap(),
+            AliasAdmission::OwnUnclaimed
+        ));
+        let mut foreign = native.clone();
+        foreign.agent = "other-agent".into();
+        assert!(matches!(
+            held.alias_admission(&args.id, &foreign, None).unwrap(),
+            AliasAdmission::DifferentSource
+        ));
         assert!(matches!(
             held.reserve(args.clone(), one.clone(), None).unwrap(),
             Reservation::Unfinished {
@@ -1747,13 +2312,32 @@ mod tests {
         assert!(held.reserve(elsewhere, token(2, 'b'), None).is_err());
         assert!(held.reserve(args.clone(), token(1, 'b'), None).is_err());
         assert!(held.reserve(args.clone(), token(3, 'b'), None).is_err());
-        assert!(matches!(held.check_native_input(&args, &token(1, 'b')).unwrap(), InputDecision::Refused(_)));
-        assert!(matches!(held.check_native_input(&args, &token(3, 'b')).unwrap(), InputDecision::Refused(_)));
-        assert!(matches!(held.check_join_input(&join_arguments(native.clone(), None).unwrap(), &token(1, 'b')).unwrap(), InputDecision::Refused(_)), "execution epoch with another nonce is typed before begin_join");
+        assert!(matches!(
+            held.check_native_input(&args, &token(1, 'b')).unwrap(),
+            InputDecision::Refused(_)
+        ));
+        assert!(matches!(
+            held.check_native_input(&args, &token(3, 'b')).unwrap(),
+            InputDecision::Refused(_)
+        ));
+        assert!(
+            matches!(
+                held.check_join_input(
+                    &join_arguments(native.clone(), None).unwrap(),
+                    &token(1, 'b')
+                )
+                .unwrap(),
+                InputDecision::Refused(_)
+            ),
+            "execution epoch with another nonce is typed before begin_join"
+        );
         assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), before);
 
         held.claim_host(&first, stamp(10, 1)).unwrap();
-        assert!(held.check_claim(&first, &args).is_err(), "a second ghost cannot reuse a claimed token");
+        assert!(
+            held.check_claim(&first, &args).is_err(),
+            "a second ghost cannot reuse a claimed token"
+        );
         assert!(held.claim_host(&first, stamp(11, 1)).is_err());
         held.starting_provider(&first).unwrap();
         assert!(
@@ -1761,22 +2345,58 @@ mod tests {
             "a replayed claim cannot issue another spawn"
         );
         assert!(held.owned_provider(&first, stamp(20, 99)).is_err());
-        let advertised = khor_acp::RecoveryCapabilities { load: true, resume: false };
+        let advertised = khor_acp::RecoveryCapabilities {
+            load: true,
+            resume: false,
+        };
         assert!(held.record_support(&first, advertised).is_err());
         held.owned_provider(&first, stamp(20, 10)).unwrap();
-        assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Probe(_)), "injected stamp only asks the production adapter for proof; it does not clear ownership");
+        assert!(
+            matches!(
+                held.alias_admission(&args.id, &native, None).unwrap(),
+                AliasAdmission::Probe(_)
+            ),
+            "injected stamp only asks the production adapter for proof; it does not clear ownership"
+        );
         let owned_bytes = fs::read(held.gate.dir.join(NAME)).unwrap();
-        assert!(!offer_action_allowed(&held.gate.dir).unwrap(), "Owned is not a read-only replacement fact");
+        assert!(
+            !offer_action_allowed(&held.gate.dir).unwrap(),
+            "Owned is not a read-only replacement fact"
+        );
         assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), owned_bytes);
         held.record_support(&first, advertised).unwrap();
         held.record_support(&first, advertised).unwrap();
         let supported = fs::read(held.gate.dir.join(NAME)).unwrap();
-        assert!(held.record_support(&first, khor_acp::RecoveryCapabilities { load: false, resume: true }).is_err());
+        assert!(
+            held.record_support(
+                &first,
+                khor_acp::RecoveryCapabilities {
+                    load: false,
+                    resume: true
+                }
+            )
+            .is_err()
+        );
         assert_eq!(supported, fs::read(held.gate.dir.join(NAME)).unwrap());
-        assert_eq!(matching_support(&held.gate.dir, &native, b"effective-launch-and-context").unwrap(), khor_core::recovery::RecoverySupport::Load);
-        assert_eq!(matching_support(&held.gate.dir, &native, b"changed AgentSpec launch").unwrap(), khor_core::recovery::RecoverySupport::Unknown);
-        let mut another_agent = native.clone(); another_agent.agent = "another-agent".into();
-        assert_eq!(matching_support(&held.gate.dir, &another_agent, b"effective-launch-and-context").unwrap(), khor_core::recovery::RecoverySupport::Unknown);
+        assert_eq!(
+            matching_support(&held.gate.dir, &native, b"effective-launch-and-context").unwrap(),
+            khor_core::recovery::RecoverySupport::Load
+        );
+        assert_eq!(
+            matching_support(&held.gate.dir, &native, b"changed AgentSpec launch").unwrap(),
+            khor_core::recovery::RecoverySupport::Unknown
+        );
+        let mut another_agent = native.clone();
+        another_agent.agent = "another-agent".into();
+        assert_eq!(
+            matching_support(
+                &held.gate.dir,
+                &another_agent,
+                b"effective-launch-and-context"
+            )
+            .unwrap(),
+            khor_core::recovery::RecoverySupport::Unknown
+        );
         held.publish_base(&first, Some(&"c".repeat(32)), |_| Ok(()))
             .unwrap();
         held.publish_run(&first, |gate, run_id| {
@@ -1806,8 +2426,14 @@ mod tests {
             })
         })
         .unwrap();
-        assert_eq!(published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(10)).unwrap(), Some(true));
-        assert_eq!(published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(11)).unwrap(), None);
+        assert_eq!(
+            published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(10)).unwrap(),
+            Some(true)
+        );
+        assert_eq!(
+            published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(11)).unwrap(),
+            None
+        );
         let result = Recorded::Opened {
             id: args.id.clone(),
             run_id: first.run_id.clone(),
@@ -1817,7 +2443,10 @@ mod tests {
         );
 
         held.cleanup_unknown(&first).unwrap();
-        assert_eq!(published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(10)).unwrap(), Some(false));
+        assert_eq!(
+            published_run(&held.gate.dir, &args.id, &native, &first.run_id, Some(10)).unwrap(),
+            Some(false)
+        );
         let mut meta = held.gate.read_meta().unwrap();
         meta.gui_run.as_mut().unwrap().state.exit = Some(1);
         held.gate.write_meta(&meta).unwrap();
@@ -1861,11 +2490,16 @@ mod tests {
         // Stored-fact projection only: this injected model does not claim an
         // actual OS absence proof or replace the production stamp/key checks.
         let mut absent = exited.clone();
-        absent.latest.as_mut().unwrap().provider = Provider::ForegroundAbsent { process: stamp(20, 10) };
+        absent.latest.as_mut().unwrap().provider = Provider::ForegroundAbsent {
+            process: stamp(20, 10),
+        };
         held.store(absent).unwrap();
         let absent_bytes = fs::read(held.gate.dir.join(NAME)).unwrap();
         assert!(offer_action_allowed(&held.gate.dir).unwrap());
-        assert!(matches!(held.alias_admission(&args.id, &native, None).unwrap(), AliasAdmission::Clear));
+        assert!(matches!(
+            held.alias_admission(&args.id, &native, None).unwrap(),
+            AliasAdmission::Clear
+        ));
         assert_eq!(fs::read(held.gate.dir.join(NAME)).unwrap(), absent_bytes);
         held.store(exited).unwrap();
         let second = start(held.reserve(args_two.clone(), token(2, 'b'), None).unwrap());
@@ -1961,7 +2595,16 @@ mod tests {
         held.confirmed_exit(&key, 20, &receipt).unwrap();
         let next = start(held.reserve(args.clone(), token(2, 'b'), None).unwrap());
         let fresh = fs::read(held.gate.dir.join(NAME)).unwrap();
-        assert!(held.record_support(&key, khor_acp::RecoveryCapabilities { load: true, resume: true }).is_err());
+        assert!(
+            held.record_support(
+                &key,
+                khor_acp::RecoveryCapabilities {
+                    load: true,
+                    resume: true
+                }
+            )
+            .is_err()
+        );
         assert_eq!(fresh, fs::read(held.gate.dir.join(NAME)).unwrap());
         held.claim_host(&next, stamp(30, 1)).unwrap();
         held.starting_provider(&next).unwrap();
@@ -2003,66 +2646,190 @@ mod tests {
 
     fn recovery_wire_admission() {
         use crate::proto::Request;
-        let home = DeviceId([0xab; 32]); let id = SessionId("tui/native".into());
+        let home = DeviceId([0xab; 32]);
+        let id = SessionId("tui/native".into());
         assert_eq!(crate::Node::recovery_home(&home.hex()).unwrap(), home);
         assert!(crate::Node::recovery_home(&home.hex().to_uppercase()).is_err());
-        let token = khor_core::recovery::RecoveryToken { epoch: "1".into(), nonce: "a".repeat(32) };
+        let token = khor_core::recovery::RecoveryToken {
+            epoch: "1".into(),
+            nonce: "a".repeat(32),
+        };
         for request in [
-            Request::RecoverSession { home, id: id.clone(), expected_run: Some("c".repeat(32)), token: token.clone(), observation: None },
-            Request::NewShellRun { home, id: SessionId("shell/old".into()), expected_run: Some("shell/old".into()), token, cwd: Some("/explicit/new-directory".into()) },
+            Request::RecoverSession {
+                home,
+                id: id.clone(),
+                expected_run: Some("c".repeat(32)),
+                token: token.clone(),
+                observation: None,
+            },
+            Request::NewShellRun {
+                home,
+                id: SessionId("shell/old".into()),
+                expected_run: Some("shell/old".into()),
+                token,
+                cwd: Some("/explicit/new-directory".into()),
+            },
         ] {
-            assert!(!request.is_reading() && !request.rides_early(), "explicit actions are not read retries or 0RTT");
+            assert!(
+                !request.is_reading() && !request.rides_early(),
+                "explicit actions are not read retries or 0RTT"
+            );
             let encoded = crate::proto::encode_request(&request).unwrap();
             let decoded = crate::proto::question(&encoded).unwrap();
-            assert_eq!(serde_json::to_value(request).unwrap(), serde_json::to_value(decoded).unwrap());
+            assert_eq!(
+                serde_json::to_value(request).unwrap(),
+                serde_json::to_value(decoded).unwrap()
+            );
         }
-        assert!(Request::SessionRecovery { home, id, observation: None }.is_reading());
-        let reference = khor_core::ObservationRef { owner: DeviceId([3; 32]), home, namespace: khor_core::ObservationNamespace::Acp,
-            agent: "fixture".into(), native_id: "wire-full-native".into(), imported_at: khor_core::Millis(1), updated_at: None };
-        let observed_id = crate::session_content::Observation::id(home, reference.namespace, &reference.agent, &reference.native_id);
-        let request = Request::RecoverSession { home, id: observed_id, expected_run: None,
-            token: khor_core::recovery::RecoveryToken { epoch: "1".into(), nonce: "b".repeat(32) }, observation: Some(reference) };
+        assert!(
+            Request::SessionRecovery {
+                home,
+                id,
+                observation: None
+            }
+            .is_reading()
+        );
+        let reference = khor_core::ObservationRef {
+            owner: DeviceId([3; 32]),
+            home,
+            namespace: khor_core::ObservationNamespace::Acp,
+            agent: "fixture".into(),
+            native_id: "wire-full-native".into(),
+            imported_at: khor_core::Millis(1),
+            updated_at: None,
+        };
+        let observed_id = crate::session_content::Observation::id(
+            home,
+            reference.namespace,
+            &reference.agent,
+            &reference.native_id,
+        );
+        let request = Request::RecoverSession {
+            home,
+            id: observed_id,
+            expected_run: None,
+            token: khor_core::recovery::RecoveryToken {
+                epoch: "1".into(),
+                nonce: "b".repeat(32),
+            },
+            observation: Some(reference),
+        };
         let encoded = crate::proto::encode_request(&request).unwrap();
-        assert_eq!(serde_json::to_value(&request).unwrap(), serde_json::to_value(crate::proto::question(&encoded).unwrap()).unwrap());
-        let native = Identity { home, agent: "fixture".into(), native_id: "full-qualified-native".into() };
+        assert_eq!(
+            serde_json::to_value(&request).unwrap(),
+            serde_json::to_value(crate::proto::question(&encoded).unwrap()).unwrap()
+        );
+        let native = Identity {
+            home,
+            agent: "fixture".into(),
+            native_id: "full-qualified-native".into(),
+        };
         let ids = super::super::native_aliases(&native);
         assert_eq!(ids[0], crate::adaptor::id_for(&native.native_id));
         for target in &ids {
-            assert_eq!(Arguments::native_at(target.clone(), native.clone(), None, b"same frozen launch").unwrap().id, *target);
+            assert_eq!(
+                Arguments::native_at(target.clone(), native.clone(), None, b"same frozen launch")
+                    .unwrap()
+                    .id,
+                *target
+            );
         }
-        assert!(Arguments::native_at(SessionId("observe/not-the-source-hash".into()), native.clone(), None, b"same frozen launch").is_err());
+        assert!(
+            Arguments::native_at(
+                SessionId("observe/not-the-source-hash".into()),
+                native.clone(),
+                None,
+                b"same frozen launch"
+            )
+            .is_err()
+        );
         let mut new = Arguments::initial_new(native, b"same frozen launch").unwrap();
         new.id = ids[1].clone();
-        assert!(new.validate().is_err(), "InitialNew keeps its original id_for layout");
+        assert!(
+            new.validate().is_err(),
+            "InitialNew keeps its original id_for layout"
+        );
         // The real deletion door shares the physical lease and keeps accepted
         // attempts, even before any GUI Meta/RunPublished exists.
         let root = Scratch::new();
-        let record = crate::session_content::Observation::new(home, home, khor_core::ObservationNamespace::Acp,
-            "fixture".into(), "deletion-source".into(), "retained reference".into(), None, None);
+        let record = crate::session_content::Observation::new(
+            home,
+            home,
+            khor_core::ObservationNamespace::Acp,
+            "fixture".into(),
+            "deletion-source".into(),
+            "retained reference".into(),
+            None,
+            None,
+        );
         record.save(&root.0).unwrap();
         let live = crate::live::LiveKind::new(root.0.clone(), home);
         let row = live.dir(&record.id).unwrap();
-        assert_eq!(row, crate::live::sessions_dir(&root.0).join(format!("observe-{}", record.id.0.strip_prefix("observe/").unwrap())), "retain the complete 64-hex logical identity without clean_leaf truncation");
-        assert!(live.dir(&SessionId(format!("observe/{}", "a".repeat(24)))).is_none());
-        assert!(live.dir(&SessionId(format!("observe/{}", "A".repeat(64)))).is_none());
-        assert!(live.dir(&SessionId(format!("tui/{}", "a".repeat(64)))).is_none(), "other registry kinds keep their existing short-leaf boundary");
+        assert_eq!(
+            row,
+            crate::live::sessions_dir(&root.0).join(format!(
+                "observe-{}",
+                record.id.0.strip_prefix("observe/").unwrap()
+            )),
+            "retain the complete 64-hex logical identity without clean_leaf truncation"
+        );
+        assert!(
+            live.dir(&SessionId(format!("observe/{}", "a".repeat(24))))
+                .is_none()
+        );
+        assert!(
+            live.dir(&SessionId(format!("observe/{}", "A".repeat(64))))
+                .is_none()
+        );
+        assert!(
+            live.dir(&SessionId(format!("tui/{}", "a".repeat(64))))
+                .is_none(),
+            "other registry kinds keep their existing short-leaf boundary"
+        );
         live.remove_readonly_observation(&record.id).unwrap();
-        assert!(!row.exists(), "readonly removal must not create an empty alias row");
+        assert!(
+            !row.exists(),
+            "readonly removal must not create an empty alias row"
+        );
         record.save(&root.0).unwrap();
-        let before = serde_json::to_vec(&crate::session_content::Observation::read(&root.0, &record.id).unwrap()).unwrap();
+        let before = serde_json::to_vec(
+            &crate::session_content::Observation::read(&root.0, &record.id).unwrap(),
+        )
+        .unwrap();
         fs::create_dir_all(&row).unwrap();
         let mut gate = RowGate::acquire(&row).unwrap();
-        let identity = Identity { home, agent: record.reference.agent.clone(), native_id: record.reference.native_id.clone() };
-        let args = Arguments::native_at(record.id.clone(), identity, None, b"frozen source").unwrap();
-        assert!(matches!(Held::load(&mut gate).unwrap().reserve(args, Token::new(1, "a".repeat(32)).unwrap(), None).unwrap(), Reservation::Start(_)));
+        let identity = Identity {
+            home,
+            agent: record.reference.agent.clone(),
+            native_id: record.reference.native_id.clone(),
+        };
+        let args =
+            Arguments::native_at(record.id.clone(), identity, None, b"frozen source").unwrap();
+        assert!(matches!(
+            Held::load(&mut gate)
+                .unwrap()
+                .reserve(args, Token::new(1, "a".repeat(32)).unwrap(), None)
+                .unwrap(),
+            Reservation::Start(_)
+        ));
         drop(gate);
         assert!(live.remove_readonly_observation(&record.id).is_err());
-        assert_eq!(before, serde_json::to_vec(&crate::session_content::Observation::read(&root.0, &record.id).unwrap()).unwrap());
+        assert_eq!(
+            before,
+            serde_json::to_vec(
+                &crate::session_content::Observation::read(&root.0, &record.id).unwrap()
+            )
+            .unwrap()
+        );
     }
 
     fn joins_do_not_retire_execution() {
         let scratch = Scratch::new();
-        let native = Identity { home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "join-writer".into() };
+        let native = Identity {
+            home: DeviceId([7; 32]),
+            agent: "fixture".into(),
+            native_id: "join-writer".into(),
+        };
         let original = Arguments::native(native.clone(), None, b"same-config").unwrap();
         let mut gate = RowGate::acquire(&scratch.0).unwrap();
         let mut held = Held::load(&mut gate).unwrap();
@@ -2071,36 +2838,117 @@ mod tests {
         held.starting_provider(&writer).unwrap();
         held.owned_provider(&writer, stamp(20, 10)).unwrap();
         held.publish_base(&writer, None, |_| Ok(())).unwrap();
-        held.publish_run(&writer, |gate, run_id| gate.write_meta(&crate::live::Meta {
-            shell_run: None,
-            kind: khor_core::kind::GUI.into(), title: "same producer".into(), pid: Some(10), started_ms: 1,
-            gui_native: Some(native.clone()), category: None, id: original.id.0.clone(), vendor_leaf: None, place: None,
-            gui_run: Some(GuiRun { id: run_id.into(), started_ms: 1, state: LiveState {
-                gui_run: Some(run_id.into()), word: State::Idle, at_ms: 1, exit: None, source: Some(Source::Reported),
-            }}),
-        })).unwrap();
+        held.publish_run(&writer, |gate, run_id| {
+            gate.write_meta(&crate::live::Meta {
+                shell_run: None,
+                kind: khor_core::kind::GUI.into(),
+                title: "same producer".into(),
+                pid: Some(10),
+                started_ms: 1,
+                gui_native: Some(native.clone()),
+                category: None,
+                id: original.id.0.clone(),
+                vendor_leaf: None,
+                place: None,
+                gui_run: Some(GuiRun {
+                    id: run_id.into(),
+                    started_ms: 1,
+                    state: LiveState {
+                        gui_run: Some(run_id.into()),
+                        word: State::Idle,
+                        at_ms: 1,
+                        exit: None,
+                        source: Some(Source::Reported),
+                    },
+                }),
+            })
+        })
+        .unwrap();
         let join = join_arguments(native, Some(writer.run_id.clone())).unwrap();
-        let ticket = match held.begin_join(join.clone(), token(2, 'b'), None).unwrap() { JoinAdmission::Check(ticket) => ticket, _ => panic!("expected one checking ticket") };
-        assert!(matches!(held.begin_join(join.clone(), token(2, 'b'), None).unwrap(), JoinAdmission::Previous(Reservation::UnknownOwner)), "pending duplicate cannot handshake or recover");
-        let fresh_ticket = match held.begin_join(join.clone(), token(3, 'c'), None).unwrap() { JoinAdmission::Check(ticket) => ticket, _ => panic!("expected explicit new Join intent") };
+        let ticket = match held.begin_join(join.clone(), token(2, 'b'), None).unwrap() {
+            JoinAdmission::Check(ticket) => ticket,
+            _ => panic!("expected one checking ticket"),
+        };
+        assert!(
+            matches!(
+                held.begin_join(join.clone(), token(2, 'b'), None).unwrap(),
+                JoinAdmission::Previous(Reservation::UnknownOwner)
+            ),
+            "pending duplicate cannot handshake or recover"
+        );
+        let fresh_ticket = match held.begin_join(join.clone(), token(3, 'c'), None).unwrap() {
+            JoinAdmission::Check(ticket) => ticket,
+            _ => panic!("expected explicit new Join intent"),
+        };
         let mut checks = 0;
-        assert!(held.finish_join(ticket, None, |_| { checks += 1; Ok(()) }).is_err());
-        assert_eq!(checks, 0, "a late checking ticket cannot cross a newer action highwater");
-        assert!(matches!(held.finish_join(fresh_ticket, None, |_| { checks += 1; Ok(()) }).unwrap(), Reservation::Joined { .. }));
+        assert!(
+            held.finish_join(ticket, None, |_| {
+                checks += 1;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert_eq!(
+            checks, 0,
+            "a late checking ticket cannot cross a newer action highwater"
+        );
+        assert!(matches!(
+            held.finish_join(fresh_ticket, None, |_| {
+                checks += 1;
+                Ok(())
+            })
+            .unwrap(),
+            Reservation::Joined { .. }
+        ));
         let after_join = fs::read(held.gate.dir.join(NAME)).unwrap();
-        assert!(held.current(&writer).is_ok(), "a Join does not replace producer authority");
-        held.record_support(&writer, khor_acp::RecoveryCapabilities { load: true, resume: false }).unwrap();
-        held.confirmed_exit(&writer, 20, &khor_acp::ProcessExit { code: Some(0) }).unwrap();
+        assert!(
+            held.current(&writer).is_ok(),
+            "a Join does not replace producer authority"
+        );
+        held.record_support(
+            &writer,
+            khor_acp::RecoveryCapabilities {
+                load: true,
+                resume: false,
+            },
+        )
+        .unwrap();
+        held.confirmed_exit(&writer, 20, &khor_acp::ProcessExit { code: Some(0) })
+            .unwrap();
         let mut ended = held.gate.read_meta_or_new().unwrap().unwrap();
         ended.gui_run.as_mut().unwrap().state.exit = Some(0);
         held.gate.write_meta(&ended).unwrap();
-        assert!(matches!(held.join(join.clone(), token(3, 'c'), None, |_| { checks += 1; Err("already ended".into()) }).unwrap(), Reservation::Joined { .. }));
-        assert_eq!(checks, 1, "duplicate success returns its accepted Join without another live/spawn decision");
-        let mut conflicting = join.clone(); conflicting.launch_digest = "f".repeat(64);
-        assert!(held.join(conflicting, token(3, 'c'), None, |_| Ok(())).is_err());
-        assert_ne!(fs::read(held.gate.dir.join(NAME)).unwrap(), after_join, "the same producer still records actual exit after Join");
-        assert!(matches!(held.reserve(join, token(3, 'c'), None).unwrap(), Reservation::Joined { .. }));
-        assert!(matches!(held.reserve(original, token(1, 'a'), None).unwrap(), Reservation::Retired));
+        assert!(matches!(
+            held.join(join.clone(), token(3, 'c'), None, |_| {
+                checks += 1;
+                Err("already ended".into())
+            })
+            .unwrap(),
+            Reservation::Joined { .. }
+        ));
+        assert_eq!(
+            checks, 1,
+            "duplicate success returns its accepted Join without another live/spawn decision"
+        );
+        let mut conflicting = join.clone();
+        conflicting.launch_digest = "f".repeat(64);
+        assert!(
+            held.join(conflicting, token(3, 'c'), None, |_| Ok(()))
+                .is_err()
+        );
+        assert_ne!(
+            fs::read(held.gate.dir.join(NAME)).unwrap(),
+            after_join,
+            "the same producer still records actual exit after Join"
+        );
+        assert!(matches!(
+            held.reserve(join, token(3, 'c'), None).unwrap(),
+            Reservation::Joined { .. }
+        ));
+        assert!(matches!(
+            held.reserve(original, token(1, 'a'), None).unwrap(),
+            Reservation::Retired
+        ));
         assert_eq!(next_epoch(&scratch.0).unwrap(), 4);
         assert!(fs::metadata(held.gate.dir.join(NAME)).unwrap().len() <= BYTES as u64);
     }
@@ -2109,96 +2957,294 @@ mod tests {
         let mut gate = RowGate::acquire(&scratch.0).unwrap();
         let mut held = Held::load(&mut gate).unwrap();
         let previous = SessionId("shell/previous".into());
-        let args = ActionArguments::shell(DeviceId([7; 32]), previous.clone(), previous.0.clone(), b"cwd/defaultshell/emptycommand").unwrap();
-        let one = token(1, 'a'); let mut admissions = 0;
-        assert!(held.reserve_shell(args.clone(), one.clone(), |_| { admissions += 1; Ok(()) }).unwrap().is_none());
-        assert!(matches!(held.reserve_shell(args.clone(), one.clone(), |_| { admissions += 1; Ok(()) }).unwrap(), Some(ActionReplay::Recorded(ActionResult::ShellPending))));
-        assert_eq!(admissions, 1, "response loss cannot invoke existingOnce with a second successor");
-        assert!(held.reserve_shell(args.clone(), token(2, 'b'), |_| { admissions += 1; Ok(()) }).is_err());
-        assert_eq!(admissions, 1, "a fresh token cannot supersede uncertain Shell effects");
+        let args = ActionArguments::shell(
+            DeviceId([7; 32]),
+            previous.clone(),
+            previous.0.clone(),
+            b"cwd/defaultshell/emptycommand",
+        )
+        .unwrap();
+        let one = token(1, 'a');
+        let mut admissions = 0;
+        assert!(
+            held.reserve_shell(args.clone(), one.clone(), |_| {
+                admissions += 1;
+                Ok(())
+            })
+            .unwrap()
+            .is_none()
+        );
+        assert!(matches!(
+            held.reserve_shell(args.clone(), one.clone(), |_| {
+                admissions += 1;
+                Ok(())
+            })
+            .unwrap(),
+            Some(ActionReplay::Recorded(ActionResult::ShellPending))
+        ));
+        assert_eq!(
+            admissions, 1,
+            "response loss cannot invoke existingOnce with a second successor"
+        );
+        assert!(
+            held.reserve_shell(args.clone(), token(2, 'b'), |_| {
+                admissions += 1;
+                Ok(())
+            })
+            .is_err()
+        );
+        assert_eq!(
+            admissions, 1,
+            "a fresh token cannot supersede uncertain Shell effects"
+        );
         let second = SessionId("shell/fresh-B".into());
-        held.finish_shell(&args, &one, ActionResult::ShellOpened { id: second.clone() }).unwrap();
-        assert!(matches!(held.action_replay(&args, &one).unwrap(), Some(ActionReplay::Recorded(ActionResult::ShellOpened { id })) if id == second));
-        let changed = ActionArguments::shell(DeviceId([7; 32]), previous.clone(), previous.0, b"different-cwd").unwrap();
+        held.finish_shell(
+            &args,
+            &one,
+            ActionResult::ShellOpened { id: second.clone() },
+        )
+        .unwrap();
+        assert!(
+            matches!(held.action_replay(&args, &one).unwrap(), Some(ActionReplay::Recorded(ActionResult::ShellOpened { id })) if id == second)
+        );
+        let changed = ActionArguments::shell(
+            DeviceId([7; 32]),
+            previous.clone(),
+            previous.0,
+            b"different-cwd",
+        )
+        .unwrap();
         assert!(held.action_replay(&changed, &one).is_err());
         let before_refusal = fs::read(held.gate.dir.join(NAME)).unwrap();
-        assert!(matches!(held.check_shell_input(&changed, &one).unwrap(), InputDecision::Refused(_)));
-        assert_eq!(before_refusal, fs::read(held.gate.dir.join(NAME)).unwrap(), "typed input refusal made no durable transition");
-        assert!(held.finish_shell(&args, &one, ActionResult::ShellOpened { id: SessionId("shell/fresh-C".into()) }).is_err());
+        assert!(matches!(
+            held.check_shell_input(&changed, &one).unwrap(),
+            InputDecision::Refused(_)
+        ));
+        assert_eq!(
+            before_refusal,
+            fs::read(held.gate.dir.join(NAME)).unwrap(),
+            "typed input refusal made no durable transition"
+        );
+        assert!(
+            held.finish_shell(
+                &args,
+                &one,
+                ActionResult::ShellOpened {
+                    id: SessionId("shell/fresh-C".into())
+                }
+            )
+            .is_err()
+        );
         assert!(fs::metadata(held.gate.dir.join(NAME)).unwrap().len() <= BYTES as u64);
-        let chosen = ActionArguments::shell(DeviceId([7; 32]), SessionId("shell/previous".into()), "shell/previous".into(), b"explicit-new-directory").unwrap();
+        let chosen = ActionArguments::shell(
+            DeviceId([7; 32]),
+            SessionId("shell/previous".into()),
+            "shell/previous".into(),
+            b"explicit-new-directory",
+        )
+        .unwrap();
         let next = token(2, 'b');
-        assert!(held.reserve_shell(chosen.clone(), next.clone(), |_| Ok(())).unwrap().is_none());
-        held.finish_shell(&chosen, &next, ActionResult::DirectoryRequired).unwrap();
-        assert!(matches!(held.action_replay(&chosen, &next).unwrap(), Some(ActionReplay::Recorded(ActionResult::DirectoryRequired))));
-        assert!(matches!(held.action_replay(&args, &one).unwrap(), Some(ActionReplay::Retired)));
+        assert!(
+            held.reserve_shell(chosen.clone(), next.clone(), |_| Ok(()))
+                .unwrap()
+                .is_none()
+        );
+        held.finish_shell(&chosen, &next, ActionResult::DirectoryRequired)
+            .unwrap();
+        assert!(matches!(
+            held.action_replay(&chosen, &next).unwrap(),
+            Some(ActionReplay::Recorded(ActionResult::DirectoryRequired))
+        ));
+        assert!(matches!(
+            held.action_replay(&args, &one).unwrap(),
+            Some(ActionReplay::Retired)
+        ));
     }
 
     fn readonly_observed_offer() {
         use crate::session_content::{Observation, journal::Opening};
-        use khor_core::{ObservationNamespace, recovery::{RecoveryAction, RecoveryExecution}};
+        use khor_core::{
+            ObservationNamespace,
+            recovery::{RecoveryAction, RecoveryExecution},
+        };
         fn tree(path: &Path) -> Vec<(std::path::PathBuf, Option<Vec<u8>>)> {
-            fn visit(root: &Path, path: &Path, out: &mut Vec<(std::path::PathBuf, Option<Vec<u8>>)>) {
+            fn visit(
+                root: &Path,
+                path: &Path,
+                out: &mut Vec<(std::path::PathBuf, Option<Vec<u8>>)>,
+            ) {
                 for entry in fs::read_dir(path).unwrap() {
                     let path = entry.unwrap().path();
                     let relative = path.strip_prefix(root).unwrap().to_path_buf();
-                    if path.is_dir() { out.push((relative, None)); visit(root, &path, out); }
-                    else { out.push((relative, Some(fs::read(path).unwrap()))); }
+                    if path.is_dir() {
+                        out.push((relative, None));
+                        visit(root, &path, out);
+                    } else {
+                        out.push((relative, Some(fs::read(path).unwrap())));
+                    }
                 }
             }
-            let mut out = Vec::new(); visit(path, path, &mut out); out.sort_by(|a, b| a.0.cmp(&b.0)); out
+            let mut out = Vec::new();
+            visit(path, path, &mut out);
+            out.sort_by(|a, b| a.0.cmp(&b.0));
+            out
         }
         // An actual Node read path over model-owned files. No provider, OS
         // absence probe, endpoint, capability Initialize or ghost is started.
         let root = Scratch::new();
-        let node = crate::Node::open_hosting(root.0.clone(), "private-recovery-read-fixture", true).unwrap();
+        let node = crate::Node::open_hosting(root.0.clone(), "private-recovery-read-fixture", true)
+            .unwrap();
         let home = node.device();
-        let native = Identity { home, agent: "fixture".into(), native_id: "observed-full-native".into() };
-        let record = Observation::new(home, home, ObservationNamespace::Acp, native.agent.clone(), native.native_id.clone(), "actual canonical title".into(), Some(root.0.to_string_lossy().into_owned()), None);
-        assert_eq!(Observation::validate_reference(&record.id, home, &record.reference), Ok(()));
-        assert!(Observation::validate_reference(&record.id, DeviceId([0; 32]), &record.reference).is_err());
-        assert!(Observation::validate_reference(&SessionId("observe/not-the-source".into()), home, &record.reference).is_err());
+        let native = Identity {
+            home,
+            agent: "fixture".into(),
+            native_id: "observed-full-native".into(),
+        };
+        let record = Observation::new(
+            home,
+            home,
+            ObservationNamespace::Acp,
+            native.agent.clone(),
+            native.native_id.clone(),
+            "actual canonical title".into(),
+            Some(root.0.to_string_lossy().into_owned()),
+            None,
+        );
+        assert_eq!(
+            Observation::validate_reference(&record.id, home, &record.reference),
+            Ok(())
+        );
+        assert!(
+            Observation::validate_reference(&record.id, DeviceId([0; 32]), &record.reference)
+                .is_err()
+        );
+        assert!(
+            Observation::validate_reference(
+                &SessionId("observe/not-the-source".into()),
+                home,
+                &record.reference
+            )
+            .is_err()
+        );
         let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
         let control = Arc::new(Control::default());
         let old_id = crate::adaptor::id_for(&native.native_id);
-        let old_row = node.live.dir_of(&old_id).unwrap(); fs::create_dir_all(&old_row).unwrap();
+        let old_row = node.live.dir_of(&old_id).unwrap();
+        fs::create_dir_all(&old_row).unwrap();
         let authority = {
             let mut gate = RowGate::acquire(&old_row).unwrap();
-            Held::load(&mut gate).unwrap().seed_initial_new(Arguments::initial_new(native.clone(), b"old launch").unwrap(),
-                NewInvocation { reservation: &reservation, control: &control, actual_pid: Some(20), host: None, provider: None, support: None }).unwrap()
+            Held::load(&mut gate)
+                .unwrap()
+                .seed_initial_new(
+                    Arguments::initial_new(native.clone(), b"old launch").unwrap(),
+                    NewInvocation {
+                        reservation: &reservation,
+                        control: &control,
+                        actual_pid: Some(20),
+                        host: None,
+                        provider: None,
+                        support: None,
+                    },
+                )
+                .unwrap()
         };
         let mut journal = reservation.into_journal(Opening::New).unwrap();
-        journal.note(&serde_json::json!({"text":"unchanged canonical history"})).unwrap(); journal.prepare_base().unwrap();
+        journal
+            .note(&serde_json::json!({"text":"unchanged canonical history"}))
+            .unwrap();
+        journal.prepare_base().unwrap();
         {
-            let mut gate = RowGate::acquire(&old_row).unwrap(); let mut held = Held::load(&mut gate).unwrap();
-            held.publish_initial_base(&authority, &mut journal, &control, |_, journal| journal.publish_base()).unwrap();
-            held.publish_initial_run(&authority, &mut journal, &control, |gate, journal, run_id| {
-                journal.bind(&gate.dir)?;
-                gate.write_meta(&crate::live::Meta { shell_run: None, kind: khor_core::kind::GUI.into(), title: record.title.clone(), pid: Some(std::process::id()), started_ms: 1,
-                    gui_native: Some(native.clone()), category: Some(native.agent.clone()), id: old_id.0.clone(), vendor_leaf: None, place: record.cwd.clone(),
-                    gui_run: Some(GuiRun { id: run_id.into(), started_ms: 1, state: LiveState { gui_run: Some(run_id.into()), word: State::Idle, at_ms: 1, exit: Some(0), source: Some(Source::Reported) } }) })
-            }).unwrap();
-            assert_eq!(observed_alias_ended(&old_row, &old_id, &native).unwrap(), Some(false), "free files/slot exit cannot upgrade unknown provider birth");
+            let mut gate = RowGate::acquire(&old_row).unwrap();
+            let mut held = Held::load(&mut gate).unwrap();
+            held.publish_initial_base(&authority, &mut journal, &control, |_, journal| {
+                journal.publish_base()
+            })
+            .unwrap();
+            held.publish_initial_run(
+                &authority,
+                &mut journal,
+                &control,
+                |gate, journal, run_id| {
+                    journal.bind(&gate.dir)?;
+                    gate.write_meta(&crate::live::Meta {
+                        shell_run: None,
+                        kind: khor_core::kind::GUI.into(),
+                        title: record.title.clone(),
+                        pid: Some(std::process::id()),
+                        started_ms: 1,
+                        gui_native: Some(native.clone()),
+                        category: Some(native.agent.clone()),
+                        id: old_id.0.clone(),
+                        vendor_leaf: None,
+                        place: record.cwd.clone(),
+                        gui_run: Some(GuiRun {
+                            id: run_id.into(),
+                            started_ms: 1,
+                            state: LiveState {
+                                gui_run: Some(run_id.into()),
+                                word: State::Idle,
+                                at_ms: 1,
+                                exit: Some(0),
+                                source: Some(Source::Reported),
+                            },
+                        }),
+                    })
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                observed_alias_ended(&old_row, &old_id, &native).unwrap(),
+                Some(false),
+                "free files/slot exit cannot upgrade unknown provider birth"
+            );
             let before = tree(&root.0);
-            let unknown = node.session_recovery_here(home, &record.id, Some(&record.reference)).unwrap();
-            assert_eq!(unknown.execution, RecoveryExecution::Unknown); assert_eq!(unknown.action, RecoveryAction::None);
-            assert_eq!(before, tree(&root.0), "known readable history does not manufacture execution authority or write on offer");
-            held.settle_initial(&authority, &control, Ok(&khor_acp::ProcessExit { code: Some(0) }), |_, _, _, _, _| Ok(())).unwrap();
+            let unknown = node
+                .session_recovery_here(home, &record.id, Some(&record.reference))
+                .unwrap();
+            assert_eq!(unknown.execution, RecoveryExecution::Unknown);
+            assert_eq!(unknown.action, RecoveryAction::None);
+            assert_eq!(
+                before,
+                tree(&root.0),
+                "known readable history does not manufacture execution authority or write on offer"
+            );
+            held.settle_initial(
+                &authority,
+                &control,
+                Ok(&khor_acp::ProcessExit { code: Some(0) }),
+                |_, _, _, _, _| Ok(()),
+            )
+            .unwrap();
         }
         drop(journal);
         let before = tree(&root.0);
-        let offer = node.session_recovery_here(home, &record.id, Some(&record.reference)).unwrap();
-        assert_eq!(offer.id, record.id); assert!(offer.current_run.is_none());
-        assert_eq!(offer.execution, RecoveryExecution::Ended); assert_eq!(offer.action, RecoveryAction::Native);
-        assert_eq!(before, tree(&root.0), "real offer does not create an observation, alias row, attempt or store lease");
+        let offer = node
+            .session_recovery_here(home, &record.id, Some(&record.reference))
+            .unwrap();
+        assert_eq!(offer.id, record.id);
+        assert!(offer.current_run.is_none());
+        assert_eq!(offer.execution, RecoveryExecution::Ended);
+        assert_eq!(offer.action, RecoveryAction::Native);
+        assert_eq!(
+            before,
+            tree(&root.0),
+            "real offer does not create an observation, alias row, attempt or store lease"
+        );
         assert!(Observation::read(&root.0, &record.id).unwrap().is_none());
         assert!(!node.live.dir_of(&record.id).unwrap().exists());
         assert!(node.require_interactive_owner(&record.id).is_err());
         let admission = JournalReservation::take(&root.0, native.clone()).unwrap();
         record.persist_recovery(&root.0, &admission).unwrap();
-        assert_eq!(Observation::read(&root.0, &record.id).unwrap().unwrap().id, record.id);
-        let arguments = Arguments::native_at(record.id.clone(), native, None, b"actual frozen launch").unwrap();
-        assert_eq!(arguments.id, record.id, "logical SID does not become provider id_for at action admission");
+        assert_eq!(
+            Observation::read(&root.0, &record.id).unwrap().unwrap().id,
+            record.id
+        );
+        let arguments =
+            Arguments::native_at(record.id.clone(), native, None, b"actual frozen launch").unwrap();
+        assert_eq!(
+            arguments.id, record.id,
+            "logical SID does not become provider id_for at action admission"
+        );
     }
 
     fn partial_new_settlement() {
@@ -2212,51 +3258,82 @@ mod tests {
         let row = root.0.join("row");
         fs::create_dir(&row).unwrap();
         let native = Identity {
-            home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "partial-new".into(),
+            home: DeviceId([7; 32]),
+            agent: "fixture".into(),
+            native_id: "partial-new".into(),
         };
         let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
         let control = Arc::new(Control::default());
         let authority = {
             let mut gate = RowGate::acquire(&row).unwrap();
-            Held::load(&mut gate).unwrap().seed_initial_new(
-                Arguments::initial_new(native.clone(), b"actual-args-model").unwrap(),
-                NewInvocation { reservation: &reservation, control: &control,
-                    actual_pid: Some(20), host: None, provider: None, support: None },
-            ).unwrap()
+            Held::load(&mut gate)
+                .unwrap()
+                .seed_initial_new(
+                    Arguments::initial_new(native.clone(), b"actual-args-model").unwrap(),
+                    NewInvocation {
+                        reservation: &reservation,
+                        control: &control,
+                        actual_pid: Some(20),
+                        host: None,
+                        provider: None,
+                        support: None,
+                    },
+                )
+                .unwrap()
         };
         let mut journal = reservation.into_journal(Opening::New).unwrap();
-        journal.note(&serde_json::json!({"text":"complete retained base"})).unwrap();
+        journal
+            .note(&serde_json::json!({"text":"complete retained base"}))
+            .unwrap();
         journal.prepare_base().unwrap();
         let mut gate = RowGate::acquire(&row).unwrap();
         let mut held = Held::load(&mut gate).unwrap();
         held.publish_initial_base(&authority, &mut journal, &control, |gate, journal| {
             journal.publish_base()?;
             journal.bind(&gate.dir)
-        }).unwrap();
+        })
+        .unwrap();
         let original = fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap();
-        let failed: Result<(), String> = held.publish_initial_run(
-            &authority, &mut journal, &control, |gate, _, run_id| {
+        let failed: Result<(), String> =
+            held.publish_initial_run(&authority, &mut journal, &control, |gate, _, run_id| {
                 gate.write_meta(&crate::live::Meta {
                     shell_run: None,
-                    kind: khor_core::kind::GUI.into(), title: "partial publication".into(),
-                    pid: Some(std::process::id()), started_ms: 1, gui_native: Some(native.clone()),
-                    gui_run: Some(GuiRun { id: run_id.into(), started_ms: 1, state: LiveState {
-                        gui_run: Some(run_id.into()), word: State::Idle, at_ms: 1,
-                        exit: None, source: Some(Source::Reported),
-                    }}), category: None, id: crate::adaptor::id_for(&native.native_id).0,
-                    vendor_leaf: None, place: None,
+                    kind: khor_core::kind::GUI.into(),
+                    title: "partial publication".into(),
+                    pid: Some(std::process::id()),
+                    started_ms: 1,
+                    gui_native: Some(native.clone()),
+                    gui_run: Some(GuiRun {
+                        id: run_id.into(),
+                        started_ms: 1,
+                        state: LiveState {
+                            gui_run: Some(run_id.into()),
+                            word: State::Idle,
+                            at_ms: 1,
+                            exit: None,
+                            source: Some(Source::Reported),
+                        },
+                    }),
+                    category: None,
+                    id: crate::adaptor::id_for(&native.native_id).0,
+                    vendor_leaf: None,
+                    place: None,
                 })?;
                 Err("failure after Meta before Ready/result publication".into())
-            },
-        );
+            });
         assert!(failed.is_err());
         assert!(held.ready_run(&native, std::process::id(), None).is_err());
         if blocked {
             fs::create_dir(row.join("recovery-attempt.part")).unwrap();
         }
-        let settled = held.settle_initial(&authority, &control, Err(()), |gate, id, native, run, pid| {
-            crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
-        });
+        let settled = held.settle_initial(
+            &authority,
+            &control,
+            Err(()),
+            |gate, id, native, run, pid| {
+                crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
+            },
+        );
         assert_eq!(settled.is_err(), blocked);
         let meta = held.gate.read_meta().unwrap();
         assert_eq!(meta.gui_run.as_ref().unwrap().state.exit, Some(1));
@@ -2266,7 +3343,10 @@ mod tests {
         assert!(latest.result.is_none());
         assert!(matches!(latest.provider, Provider::Unknown { reason, .. }
             if reason == if blocked { UnknownReason::BirthUnavailable } else { UnknownReason::CleanupUnconfirmed }));
-        assert_eq!(original, fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap());
+        assert_eq!(
+            original,
+            fs::read(native.directory(&root.0).join("current/records.jsonl")).unwrap()
+        );
         assert!(held.ready_run(&native, std::process::id(), None).is_err());
         drop(held);
         drop(gate);
@@ -2282,20 +3362,41 @@ mod tests {
         run.state.exit = None;
         held.gate.write_meta(&newer).unwrap();
         let before = fs::read(row.join("meta.json")).unwrap();
-        held.settle_initial(&authority, &control, Err(()), |gate, id, native, run, pid| {
-            crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
-        }).unwrap();
-        assert_eq!(before, fs::read(row.join("meta.json")).unwrap(), "old attempt cannot retire a newer Khor slot");
+        held.settle_initial(
+            &authority,
+            &control,
+            Err(()),
+            |gate, id, native, run, pid| {
+                crate::live::retire_gui_slot_held(gate, id, native, run, pid, 1)
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            before,
+            fs::read(row.join("meta.json")).unwrap(),
+            "old attempt cannot retire a newer Khor slot"
+        );
     }
 
     fn initial_new_cases() {
         use crate::session_content::journal::Opening;
         let native = Identity {
-            home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "barrier-only".into(),
+            home: DeviceId([7; 32]),
+            agent: "fixture".into(),
+            native_id: "barrier-only".into(),
         };
-        let empty = Document { version: VERSION, high_water: 0, latest: None, action: None, cleanup_barrier: None };
+        let empty = Document {
+            version: VERSION,
+            high_water: 0,
+            latest: None,
+            action: None,
+            cleanup_barrier: None,
+        };
         assert!(empty.validate().is_err());
-        let mut barrier_only = Document { cleanup_barrier: Some(native), ..empty };
+        let mut barrier_only = Document {
+            cleanup_barrier: Some(native),
+            ..empty
+        };
         barrier_only.validate().unwrap();
         barrier_only.high_water = 1;
         assert!(barrier_only.validate().is_err());
@@ -2304,9 +3405,15 @@ mod tests {
             let row = root.0.join("row");
             fs::create_dir(&row).unwrap();
             let native = Identity {
-                home: DeviceId([7; 32]), agent: "fixture".into(), native_id: "bound-before-meta".into(),
+                home: DeviceId([7; 32]),
+                agent: "fixture".into(),
+                native_id: "bound-before-meta".into(),
             };
-            fs::write(row.join("journal.json"), serde_json::to_vec(&native).unwrap()).unwrap();
+            fs::write(
+                row.join("journal.json"),
+                serde_json::to_vec(&native).unwrap(),
+            )
+            .unwrap();
             let reservation = JournalReservation::take(&root.0, native.clone()).unwrap();
             let mut gate = RowGate::acquire(&row).unwrap();
             let mut held = Held::load(&mut gate).unwrap();
@@ -2314,28 +3421,46 @@ mod tests {
             conflict.agent = "another-agent".into();
             let mut meta = crate::live::Meta {
                 shell_run: None,
-                kind: khor_core::kind::GUI.into(), title: "collision fixture".into(),
-                pid: None, started_ms: 1, gui_native: Some(conflict), gui_run: None,
-                category: None, id: crate::adaptor::id_for(&native.native_id).0,
-                vendor_leaf: None, place: None,
+                kind: khor_core::kind::GUI.into(),
+                title: "collision fixture".into(),
+                pid: None,
+                started_ms: 1,
+                gui_native: Some(conflict),
+                gui_run: None,
+                category: None,
+                id: crate::adaptor::id_for(&native.native_id).0,
+                vendor_leaf: None,
+                place: None,
             };
             held.gate.write_meta(&meta).unwrap();
             assert!(held.quarantine_new(&reservation).is_err());
-            assert!(!row.join(NAME).exists(), "matching binding cannot override conflicting Meta source");
+            assert!(
+                !row.join(NAME).exists(),
+                "matching binding cannot override conflicting Meta source"
+            );
             meta.gui_native = Some(native.clone());
             meta.id = "tui/another-row".into();
             held.gate.write_meta(&meta).unwrap();
             assert!(held.quarantine_new(&reservation).is_err());
-            assert!(!row.join(NAME).exists(), "matching native cannot override conflicting logical row");
+            assert!(
+                !row.join(NAME).exists(),
+                "matching native cannot override conflicting logical row"
+            );
             fs::remove_file(row.join("meta.json")).unwrap();
             held.quarantine_new(&reservation).unwrap();
             let document = read(&row).unwrap().unwrap();
             assert_eq!(document.high_water, 0);
             assert!(document.latest.is_none());
             assert_eq!(document.cleanup_barrier, Some(native.clone()));
-            assert!(matches!(held.reserve(
-                Arguments::native(native, None, b"explicit retry").unwrap(), token(1, 'a'), None,
-            ).unwrap(), Reservation::UnknownOwner));
+            assert!(matches!(
+                held.reserve(
+                    Arguments::native(native, None, b"explicit retry").unwrap(),
+                    token(1, 'a'),
+                    None,
+                )
+                .unwrap(),
+                Reservation::UnknownOwner
+            ));
         }
         for revoke in [false, true] {
             let root = Scratch::new();
@@ -2415,8 +3540,17 @@ mod tests {
                 .unwrap();
                 assert!(held.ready_run(&native, std::process::id(), None).is_err());
                 if revoke {
-                    assert!(held.settle_initial(&authority, &wrong_control, Err(()), |_, _, _, _, _| Ok(())).is_err());
-                    held.settle_initial(&authority, &control, Err(()), |_, _, _, _, _| Ok(())).unwrap();
+                    assert!(
+                        held.settle_initial(
+                            &authority,
+                            &wrong_control,
+                            Err(()),
+                            |_, _, _, _, _| Ok(())
+                        )
+                        .is_err()
+                    );
+                    held.settle_initial(&authority, &control, Err(()), |_, _, _, _, _| Ok(()))
+                        .unwrap();
                     assert!(
                         held.publish_initial_run(&authority, &mut journal, &control, |_, _, _| {
                             writes += 1;
@@ -2460,11 +3594,48 @@ mod tests {
                         },
                     )
                     .unwrap();
-                    assert_eq!(published_run(&row, &args.id, &native, &authority.key.run_id, Some(std::process::id())).unwrap(), Some(false), "published history with unknown birth is not current input authority");
-                    assert_eq!(published_run(&row, &args.id, &native, &"f".repeat(32), Some(std::process::id())).unwrap(), None);
-                    assert_eq!(published_run(&row, &args.id, &native, &authority.key.run_id, Some(std::process::id() + 1)).unwrap(), None);
-                    assert_eq!(held.ready_run(&native, std::process::id(), None).unwrap(), authority.key.run_id);
-                    assert!(held.ready_run(&native, std::process::id() + 1, None).is_err());
+                    assert_eq!(
+                        published_run(
+                            &row,
+                            &args.id,
+                            &native,
+                            &authority.key.run_id,
+                            Some(std::process::id())
+                        )
+                        .unwrap(),
+                        Some(false),
+                        "published history with unknown birth is not current input authority"
+                    );
+                    assert_eq!(
+                        published_run(
+                            &row,
+                            &args.id,
+                            &native,
+                            &"f".repeat(32),
+                            Some(std::process::id())
+                        )
+                        .unwrap(),
+                        None
+                    );
+                    assert_eq!(
+                        published_run(
+                            &row,
+                            &args.id,
+                            &native,
+                            &authority.key.run_id,
+                            Some(std::process::id() + 1)
+                        )
+                        .unwrap(),
+                        None
+                    );
+                    assert_eq!(
+                        held.ready_run(&native, std::process::id(), None).unwrap(),
+                        authority.key.run_id
+                    );
+                    assert!(
+                        held.ready_run(&native, std::process::id() + 1, None)
+                            .is_err()
+                    );
                     let recovery = Arguments::native(
                         native.clone(),
                         Some(authority.key.run_id.clone()),
@@ -2543,10 +3714,15 @@ mod tests {
                 assert_eq!(before.high_water, after.high_water);
                 assert_eq!(old_latest, serde_json::to_vec(&after.latest).unwrap());
                 assert_eq!(after.cleanup_barrier, Some(native.clone()));
-                assert!(matches!(held.reserve(
-                    Arguments::native(native.clone(), None, b"barrier retry").unwrap(),
-                    token(after.high_water + 1, 'e'), None,
-                ).unwrap(), Reservation::UnknownOwner));
+                assert!(matches!(
+                    held.reserve(
+                        Arguments::native(native.clone(), None, b"barrier retry").unwrap(),
+                        token(after.high_water + 1, 'e'),
+                        None,
+                    )
+                    .unwrap(),
+                    Reservation::UnknownOwner
+                ));
                 assert!(next_epoch(&row).is_err());
             }
             drop(existing);

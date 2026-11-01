@@ -2277,14 +2277,24 @@ impl Node {
         });
         // Declared before payloads so the owner outlives their buffers on drop.
         let content_response = match &handoff {
-            Ok(handoff) if matches!(&handoff.op, ipc::Op::ContentRead {
-                action: crate::session_content::remote::Action::Window { .. }
-                    | crate::session_content::remote::Action::Record { .. }
-            }) => self.content_response_permit().map(Some),
+            Ok(handoff)
+                if matches!(
+                    &handoff.op,
+                    ipc::Op::ContentRead {
+                        action: crate::session_content::remote::Action::Window { .. }
+                            | crate::session_content::remote::Action::Record { .. }
+                    }
+                ) =>
+            {
+                self.content_response_permit().map(Some)
+            }
             _ => Ok(None),
         };
         let reply = match (handoff, &content_response) {
-            (Ok(handoff), Ok(permit)) => self.run_handoff_within(ep, handoff.op, permit.clone()).await,
+            (Ok(handoff), Ok(permit)) => {
+                self.run_handoff_within(ep, handoff.op, permit.clone())
+                    .await
+            }
             (Err(why), _) => ipc::Reply::Refused { why },
             (_, Err(why)) => ipc::Reply::Refused { why: why.clone() },
         };
@@ -2294,10 +2304,7 @@ impl Node {
         if matches!(&content_response, Ok(Some(_))) {
             crate::session_content::wire_tests::pause_response(self.root()).await;
         }
-        stream
-            .write_all(&frame)
-            .await
-            .map_err(msg::cant_reply)?;
+        stream.write_all(&frame).await.map_err(msg::cant_reply)?;
         stream.shutdown().await.map_err(msg::cant_close_stream)?;
         Ok(())
     }
@@ -2307,8 +2314,12 @@ impl Node {
     /// reaches a caller that is about to stop waiting, and **named in the
     /// log** — a stuck op is a fault in something this serve talks to,
     /// and the log is where somebody goes looking for which.
-    async fn run_handoff_within(self: &std::sync::Arc<Self>, ep: &iroh::Endpoint, op: ipc::Op,
-        response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
+    async fn run_handoff_within(
+        self: &std::sync::Arc<Self>,
+        ep: &iroh::Endpoint,
+        op: ipc::Op,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> ipc::Reply {
         let (name, deadline) = (op.name(), op.deadline());
         let mine = deadline.saturating_sub(Duration::from_millis(500));
         match tokio::time::timeout(mine, self.run_handoff(ep, op, response)).await {
@@ -2327,8 +2338,12 @@ impl Node {
         }
     }
 
-    async fn run_handoff(self: &std::sync::Arc<Self>, ep: &iroh::Endpoint, op: ipc::Op,
-        response: Option<crate::session_content::remote::ResponsePermit>) -> ipc::Reply {
+    async fn run_handoff(
+        self: &std::sync::Arc<Self>,
+        ep: &iroh::Endpoint,
+        op: ipc::Op,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> ipc::Reply {
         match op {
             ipc::Op::ContentRead { action } => {
                 match self.content_read_with(ep, action, response).await {
@@ -2487,15 +2502,44 @@ impl Node {
                     landed: Vec::new(),
                 }
             }
-            ipc::Op::SessionRecovery { home, id, observation } => match self.session_recovery_with(ep, home, &id, observation).await {
+            ipc::Op::SessionRecovery {
+                home,
+                id,
+                observation,
+            } => match self.session_recovery_with(ep, home, &id, observation).await {
                 Ok(value) => ipc::Reply::SessionRecovery { value },
                 Err(why) => ipc::Reply::Refused { why },
             },
-            ipc::Op::RecoverSession { home, id, expected_run, token, observation } => match self.recover_session_with(ep, home, &id, expected_run.as_deref(), token, observation).await {
+            ipc::Op::RecoverSession {
+                home,
+                id,
+                expected_run,
+                token,
+                observation,
+            } => match self
+                .recover_session_with(ep, home, &id, expected_run.as_deref(), token, observation)
+                .await
+            {
                 Ok(value) => ipc::Reply::RecoverSession { value },
                 Err(why) => ipc::Reply::Refused { why },
             },
-            ipc::Op::NewShellRun { home, id, expected_run, token, cwd } => match self.new_shell_run_with(ep, home, &id, expected_run.as_deref(), token, cwd.as_deref()).await {
+            ipc::Op::NewShellRun {
+                home,
+                id,
+                expected_run,
+                token,
+                cwd,
+            } => match self
+                .new_shell_run_with(
+                    ep,
+                    home,
+                    &id,
+                    expected_run.as_deref(),
+                    token,
+                    cwd.as_deref(),
+                )
+                .await
+            {
                 Ok(value) => ipc::Reply::NewShellRun { value },
                 Err(why) => ipc::Reply::Refused { why },
             },
@@ -3939,22 +3983,38 @@ impl Node {
                                 return;
                             }
                         }
-                        let admission = if matches!(&req, Request::ContentRead {
-                            action: crate::session_content::remote::Action::Window { .. }
-                                | crate::session_content::remote::Action::Record { .. }
-                        }) && node.admit(&remote).is_ok() {
+                        let admission = if matches!(
+                            &req,
+                            Request::ContentRead {
+                                action: crate::session_content::remote::Action::Window { .. }
+                                    | crate::session_content::remote::Action::Record { .. }
+                            }
+                        ) && node.admit(&remote).is_ok()
+                        {
                             node.content_response_permit().map(|permit| {
                                 content_response = Some(permit);
                                 drop(seat.take());
                             })
-                        } else { Ok(()) };
+                        } else {
+                            Ok(())
+                        };
                         match admission {
                             Err(why) => Response::Refused { why },
                             Ok(()) => {
                                 #[cfg(test)]
-                                let response = node.dispatch_wire(&remote, req, &ep, &wire_tag, content_response.clone()).await;
+                                let response = node
+                                    .dispatch_wire(
+                                        &remote,
+                                        req,
+                                        &ep,
+                                        &wire_tag,
+                                        content_response.clone(),
+                                    )
+                                    .await;
                                 #[cfg(not(test))]
-                                let response = node.dispatch(&remote, req, &ep, content_response.clone()).await;
+                                let response = node
+                                    .dispatch(&remote, req, &ep, content_response.clone())
+                                    .await;
                                 response
                             }
                         }
@@ -3978,8 +4038,13 @@ impl Node {
         Ok(())
     }
 
-    async fn dispatch(&self, remote: &str, req: Request, ep: &iroh::Endpoint,
-        response: Option<crate::session_content::remote::ResponsePermit>) -> Response {
+    async fn dispatch(
+        &self,
+        remote: &str,
+        req: Request,
+        ep: &iroh::Endpoint,
+        response: Option<crate::session_content::remote::ResponsePermit>,
+    ) -> Response {
         #[cfg(test)]
         let result = self.dispatch_inner(remote, req, ep, None, response).await;
         #[cfg(not(test))]
@@ -3999,7 +4064,10 @@ impl Node {
         tag: &documents::flow_tests::FrameTag,
         response: Option<crate::session_content::remote::ResponsePermit>,
     ) -> Response {
-        match self.dispatch_inner(remote, req, ep, Some(tag), response).await {
+        match self
+            .dispatch_inner(remote, req, ep, Some(tag), response)
+            .await
+        {
             Ok(response) => response,
             Err(why) => Response::Refused { why },
         }
@@ -4041,9 +4109,11 @@ impl Node {
         match req {
             Request::ContentRead { action } => {
                 let reader = crate::session_content::requests::Reader::Peer(
-                    crate::device_id_from_hex(remote)?
+                    crate::device_id_from_hex(remote)?,
                 );
-                Ok(Response::ContentRead { reply: self.content_read_here(reader, action, response).await? })
+                Ok(Response::ContentRead {
+                    reply: self.content_read_here(reader, action, response).await?,
+                })
             }
             Request::Pair { action } => {
                 let response = self.answer_pair(remote, action).await?;
@@ -4517,9 +4587,41 @@ impl Node {
                     truncated,
                 })
             }
-            Request::SessionRecovery { home, id, observation } => Ok(Response::SessionRecovery { value: self.session_recovery_here(home, &id, observation.as_ref())? }),
-            Request::RecoverSession { home, id, expected_run, token, observation } => Ok(Response::RecoverSession { value: self.recover_session_here(home, &id, expected_run.as_deref(), token, observation.as_ref()).await? }),
-            Request::NewShellRun { home, id, expected_run, token, cwd } => Ok(Response::NewShellRun { value: self.new_shell_run_here(home, &id, expected_run.as_deref(), token, cwd.as_deref()).await? }),
+            Request::SessionRecovery {
+                home,
+                id,
+                observation,
+            } => Ok(Response::SessionRecovery {
+                value: self.session_recovery_here(home, &id, observation.as_ref())?,
+            }),
+            Request::RecoverSession {
+                home,
+                id,
+                expected_run,
+                token,
+                observation,
+            } => Ok(Response::RecoverSession {
+                value: self
+                    .recover_session_here(
+                        home,
+                        &id,
+                        expected_run.as_deref(),
+                        token,
+                        observation.as_ref(),
+                    )
+                    .await?,
+            }),
+            Request::NewShellRun {
+                home,
+                id,
+                expected_run,
+                token,
+                cwd,
+            } => Ok(Response::NewShellRun {
+                value: self
+                    .new_shell_run_here(home, &id, expected_run.as_deref(), token, cwd.as_deref())
+                    .await?,
+            }),
             Request::OpenShellOnce { start } => {
                 let id = self.open_shell_here(start).await?;
                 Ok(Response::Opened { session: id.0 })
@@ -5564,120 +5666,361 @@ impl Node {
 
     pub(crate) fn recovery_home(home_hex: &str) -> Result<khor_core::DeviceId, String> {
         let home = crate::device_id_from_hex(home_hex)?;
-        if home.hex() != home_hex { return Err("execution home must be its exact lowercase device ID".into()); }
+        if home.hex() != home_hex {
+            return Err("execution home must be its exact lowercase device ID".into());
+        }
         Ok(home)
     }
-    fn recovery_offer_reply(home: khor_core::DeviceId, id: &crate::SessionId, value: khor_core::recovery::SessionRecovery) -> Result<khor_core::recovery::SessionRecovery, String> {
-        if value.home != home || &value.id != id { return Err("recovery offer answered for another execution home or SID".into()); }
+    fn recovery_offer_reply(
+        home: khor_core::DeviceId,
+        id: &crate::SessionId,
+        value: khor_core::recovery::SessionRecovery,
+    ) -> Result<khor_core::recovery::SessionRecovery, String> {
+        if value.home != home || &value.id != id {
+            return Err("recovery offer answered for another execution home or SID".into());
+        }
         Ok(value)
     }
-    fn recovered_reply(id: &crate::SessionId, value: khor_core::recovery::RecoveryResult) -> Result<khor_core::recovery::RecoveryResult, String> {
+    fn recovered_reply(
+        id: &crate::SessionId,
+        value: khor_core::recovery::RecoveryResult,
+    ) -> Result<khor_core::recovery::RecoveryResult, String> {
         use khor_core::recovery::RecoveryResult;
         match &value {
-            RecoveryResult::Opened { id: actual, .. } | RecoveryResult::Join { id: actual, .. }
-                | RecoveryResult::Pending { id: actual, .. } | RecoveryResult::Unknown { id: actual, .. } if actual != id => return Err("recovery result answered for another SID".into()),
+            RecoveryResult::Opened { id: actual, .. }
+            | RecoveryResult::Join { id: actual, .. }
+            | RecoveryResult::Pending { id: actual, .. }
+            | RecoveryResult::Unknown { id: actual, .. }
+                if actual != id =>
+            {
+                return Err("recovery result answered for another SID".into());
+            }
             _ => {}
         }
         Ok(value)
     }
-    fn shell_run_reply(id: &crate::SessionId, value: khor_core::recovery::ShellRunResult) -> Result<khor_core::recovery::ShellRunResult, String> {
+    fn shell_run_reply(
+        id: &crate::SessionId,
+        value: khor_core::recovery::ShellRunResult,
+    ) -> Result<khor_core::recovery::ShellRunResult, String> {
         use khor_core::recovery::ShellRunResult;
         match &value {
-            ShellRunResult::Opened { id: next, previous } if previous != id || next == id => return Err("new Shell result has another previous SID".into()),
-            ShellRunResult::DirectoryRequired { id: actual } | ShellRunResult::Pending { id: actual, .. } | ShellRunResult::Unknown { id: actual, .. } if actual != id => return Err("new Shell result answered for another SID".into()),
+            ShellRunResult::Opened { id: next, previous } if previous != id || next == id => {
+                return Err("new Shell result has another previous SID".into());
+            }
+            ShellRunResult::DirectoryRequired { id: actual }
+            | ShellRunResult::Pending { id: actual, .. }
+            | ShellRunResult::Unknown { id: actual, .. }
+                if actual != id =>
+            {
+                return Err("new Shell result answered for another SID".into());
+            }
             _ => {}
         }
         Ok(value)
     }
     fn recovery_peer(&self, home: khor_core::DeviceId) -> Result<DeviceInfo, String> {
-        let devices = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(&khor_sync::devices::devices_dir(self.root()), self.peer)?;
-        devices.all().into_iter().find(|device| device.id == home.hex()).ok_or("execution home is not in this device table".into())
+        let devices = khor_sync::store::read_snapshot::<khor_sync::devices::DeviceDoc>(
+            &khor_sync::devices::devices_dir(self.root()),
+            self.peer,
+        )?;
+        devices
+            .all()
+            .into_iter()
+            .find(|device| device.id == home.hex())
+            .ok_or("execution home is not in this device table".into())
     }
 
     /// Imported observation metadata may live only on this reader. Forward its
     /// original reference as data; the execution home re-qualifies the source.
-    fn recovery_reference(&self, home: khor_core::DeviceId, id: &crate::SessionId) -> Result<Option<khor_core::ObservationRef>, String> {
-        if !id.0.starts_with("observe/") { return Ok(None); }
+    fn recovery_reference(
+        &self,
+        home: khor_core::DeviceId,
+        id: &crate::SessionId,
+    ) -> Result<Option<khor_core::ObservationRef>, String> {
+        if !id.0.starts_with("observe/") {
+            return Ok(None);
+        }
         let record = crate::session_content::Observation::read(self.root(), id)?;
-        let reference = record.map(|record| record.reference).or_else(|| self.cached_peer_rows_readonly().into_iter()
-            .find_map(|(_, _, row)| (row.id == *id && row.home == home).then_some(row.observation).flatten()));
-        if let Some(reference) = reference.as_ref() { crate::session_content::Observation::validate_reference(id, home, reference)?; }
+        let reference = record.map(|record| record.reference).or_else(|| {
+            self.cached_peer_rows_readonly()
+                .into_iter()
+                .find_map(|(_, _, row)| {
+                    (row.id == *id && row.home == home)
+                        .then_some(row.observation)
+                        .flatten()
+                })
+        });
+        if let Some(reference) = reference.as_ref() {
+            crate::session_content::Observation::validate_reference(id, home, reference)?;
+        }
         Ok(reference)
     }
 
-    pub async fn session_recovery_on(&self, home_hex: &str, id: &crate::SessionId) -> Result<khor_core::recovery::SessionRecovery, String> {
+    pub async fn session_recovery_on(
+        &self,
+        home_hex: &str,
+        id: &crate::SessionId,
+    ) -> Result<khor_core::recovery::SessionRecovery, String> {
         let home = Self::recovery_home(home_hex)?;
         let observation = self.recovery_reference(home, id)?;
-        if let Some(reply) = self.via_serve(ipc::Op::SessionRecovery { home, id: id.clone(), observation: observation.clone() }).await {
-            return match reply? { ipc::Reply::SessionRecovery { value } => Self::recovery_offer_reply(home, id, value), ipc::Reply::Refused { why } => Err(why), other => Err(msg::serve_non_answer(format_args!("{other:?}"))) };
+        if let Some(reply) = self
+            .via_serve(ipc::Op::SessionRecovery {
+                home,
+                id: id.clone(),
+                observation: observation.clone(),
+            })
+            .await
+        {
+            return match reply? {
+                ipc::Reply::SessionRecovery { value } => {
+                    Self::recovery_offer_reply(home, id, value)
+                }
+                ipc::Reply::Refused { why } => Err(why),
+                other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+            };
         }
-        if home == self.device() { return self.session_recovery_here(home, id, observation.as_ref()); }
-        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|error| error.to_string())?;
+        if home == self.device() {
+            return self.session_recovery_here(home, id, observation.as_ref());
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
         let result = self.session_recovery_with(&ep, home, id, observation).await;
         ep.close().await;
         result
     }
-    async fn session_recovery_with(&self, ep: &iroh::Endpoint, home: khor_core::DeviceId, id: &crate::SessionId, observation: Option<khor_core::ObservationRef>) -> Result<khor_core::recovery::SessionRecovery, String> {
-        if home == self.device() { return self.session_recovery_here(home, id, observation.as_ref()); }
+    async fn session_recovery_with(
+        &self,
+        ep: &iroh::Endpoint,
+        home: khor_core::DeviceId,
+        id: &crate::SessionId,
+        observation: Option<khor_core::ObservationRef>,
+    ) -> Result<khor_core::recovery::SessionRecovery, String> {
+        if home == self.device() {
+            return self.session_recovery_here(home, id, observation.as_ref());
+        }
         let device = self.recovery_peer(home)?;
-        match self.ask_on(ep, &device, &Request::SessionRecovery { home, id: id.clone(), observation }).await {
+        match self
+            .ask_on(
+                ep,
+                &device,
+                &Request::SessionRecovery {
+                    home,
+                    id: id.clone(),
+                    observation,
+                },
+            )
+            .await
+        {
             Ok(Response::SessionRecovery { value }) => Self::recovery_offer_reply(home, id, value),
             Ok(Response::Refused { why }) => Err(why),
             Ok(other) => Err(msg::peer_non_answer(format_args!("{other:?}"))),
             Err(error) => Ok(khor_core::recovery::SessionRecovery {
-                    id: id.clone(), home, current_run: None, next_attempt_epoch: None,
-                    execution: khor_core::recovery::RecoveryExecution::Offline,
-                    action: khor_core::recovery::RecoveryAction::None, native: None, previous: None, reason: Some(error),
-                }),
+                id: id.clone(),
+                home,
+                current_run: None,
+                next_attempt_epoch: None,
+                execution: khor_core::recovery::RecoveryExecution::Offline,
+                action: khor_core::recovery::RecoveryAction::None,
+                native: None,
+                previous: None,
+                reason: Some(error),
+            }),
         }
     }
 
-    pub async fn recover_session_on(&self, home_hex: &str, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken) -> Result<khor_core::recovery::RecoveryResult, String> {
-        let home = match Self::recovery_home(home_hex) { Ok(home) => home, Err(reason) => return Ok(khor_core::recovery::RecoveryResult::Refused { reason }) };
-        if let Err(reason) = Self::check_recovery_token(&token) { return Ok(khor_core::recovery::RecoveryResult::Refused { reason }); }
-        let observation = self.recovery_reference(home, id)?;
-        if let Some(reply) = self.via_serve(ipc::Op::RecoverSession { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token: token.clone(), observation: observation.clone() }).await {
-            return match reply { Ok(ipc::Reply::RecoverSession { value }) => Self::recovered_reply(id, value), Ok(ipc::Reply::Refused { why }) => Err(why), Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))), Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown { id: id.clone(), attempt_epoch: token.epoch.clone(), reason: format!("resident-outcome-unknown: {error}") }) };
+    pub async fn recover_session_on(
+        &self,
+        home_hex: &str,
+        id: &crate::SessionId,
+        expected_run: Option<&str>,
+        token: khor_core::recovery::RecoveryToken,
+    ) -> Result<khor_core::recovery::RecoveryResult, String> {
+        let home = match Self::recovery_home(home_hex) {
+            Ok(home) => home,
+            Err(reason) => return Ok(khor_core::recovery::RecoveryResult::Refused { reason }),
+        };
+        if let Err(reason) = Self::check_recovery_token(&token) {
+            return Ok(khor_core::recovery::RecoveryResult::Refused { reason });
         }
-        if home == self.device() { return self.recover_session_here(home, id, expected_run, token, observation.as_ref()).await; }
-        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|error| error.to_string())?;
-        let result = self.recover_session_with(&ep, home, id, expected_run, token, observation).await;
+        let observation = self.recovery_reference(home, id)?;
+        if let Some(reply) = self
+            .via_serve(ipc::Op::RecoverSession {
+                home,
+                id: id.clone(),
+                expected_run: expected_run.map(str::to_owned),
+                token: token.clone(),
+                observation: observation.clone(),
+            })
+            .await
+        {
+            return match reply {
+                Ok(ipc::Reply::RecoverSession { value }) => Self::recovered_reply(id, value),
+                Ok(ipc::Reply::Refused { why }) => Err(why),
+                Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown {
+                    id: id.clone(),
+                    attempt_epoch: token.epoch.clone(),
+                    reason: format!("resident-outcome-unknown: {error}"),
+                }),
+            };
+        }
+        if home == self.device() {
+            return self
+                .recover_session_here(home, id, expected_run, token, observation.as_ref())
+                .await;
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        let result = self
+            .recover_session_with(&ep, home, id, expected_run, token, observation)
+            .await;
         ep.close().await;
         result
     }
-    async fn recover_session_with(&self, ep: &iroh::Endpoint, home: khor_core::DeviceId, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, observation: Option<khor_core::ObservationRef>) -> Result<khor_core::recovery::RecoveryResult, String> {
-        if home == self.device() { return self.recover_session_here(home, id, expected_run, token, observation.as_ref()).await; }
+    async fn recover_session_with(
+        &self,
+        ep: &iroh::Endpoint,
+        home: khor_core::DeviceId,
+        id: &crate::SessionId,
+        expected_run: Option<&str>,
+        token: khor_core::recovery::RecoveryToken,
+        observation: Option<khor_core::ObservationRef>,
+    ) -> Result<khor_core::recovery::RecoveryResult, String> {
+        if home == self.device() {
+            return self
+                .recover_session_here(home, id, expected_run, token, observation.as_ref())
+                .await;
+        }
         let device = self.recovery_peer(home)?;
         let epoch = token.epoch.clone();
-        match self.ask_on(ep, &device, &Request::RecoverSession { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token, observation }).await {
+        match self
+            .ask_on(
+                ep,
+                &device,
+                &Request::RecoverSession {
+                    home,
+                    id: id.clone(),
+                    expected_run: expected_run.map(str::to_owned),
+                    token,
+                    observation,
+                },
+            )
+            .await
+        {
             Ok(Response::RecoverSession { value }) => Self::recovered_reply(id, value),
             Ok(Response::Refused { why }) => Err(why),
             Ok(other) => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-            Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown { id: id.clone(), attempt_epoch: epoch, reason: format!("transport-outcome-unknown: {error}") }),
+            Err(error) => Ok(khor_core::recovery::RecoveryResult::Unknown {
+                id: id.clone(),
+                attempt_epoch: epoch,
+                reason: format!("transport-outcome-unknown: {error}"),
+            }),
         }
     }
 
-    pub async fn new_shell_run_on(&self, home_hex: &str, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, cwd: Option<&str>) -> Result<khor_core::recovery::ShellRunResult, String> {
-        let home = match Self::recovery_home(home_hex) { Ok(home) => home, Err(reason) => return Ok(khor_core::recovery::ShellRunResult::Refused { reason }) };
-        if let Err(reason) = Self::check_recovery_token(&token) { return Ok(khor_core::recovery::ShellRunResult::Refused { reason }); }
-        if let Some(reply) = self.via_serve(ipc::Op::NewShellRun { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token: token.clone(), cwd: cwd.map(str::to_owned) }).await {
-            return match reply { Ok(ipc::Reply::NewShellRun { value }) => Self::shell_run_reply(id, value), Ok(ipc::Reply::Refused { why }) => Err(why), Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))), Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown { id: id.clone(), attempt_epoch: token.epoch.clone(), reason: format!("resident-outcome-unknown: {error}") }) };
+    pub async fn new_shell_run_on(
+        &self,
+        home_hex: &str,
+        id: &crate::SessionId,
+        expected_run: Option<&str>,
+        token: khor_core::recovery::RecoveryToken,
+        cwd: Option<&str>,
+    ) -> Result<khor_core::recovery::ShellRunResult, String> {
+        let home = match Self::recovery_home(home_hex) {
+            Ok(home) => home,
+            Err(reason) => return Ok(khor_core::recovery::ShellRunResult::Refused { reason }),
+        };
+        if let Err(reason) = Self::check_recovery_token(&token) {
+            return Ok(khor_core::recovery::ShellRunResult::Refused { reason });
         }
-        if home == self.device() { return self.new_shell_run_here(home, id, expected_run, token, cwd).await; }
-        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|error| error.to_string())?;
-        let result = self.new_shell_run_with(&ep, home, id, expected_run, token, cwd).await;
+        if let Some(reply) = self
+            .via_serve(ipc::Op::NewShellRun {
+                home,
+                id: id.clone(),
+                expected_run: expected_run.map(str::to_owned),
+                token: token.clone(),
+                cwd: cwd.map(str::to_owned),
+            })
+            .await
+        {
+            return match reply {
+                Ok(ipc::Reply::NewShellRun { value }) => Self::shell_run_reply(id, value),
+                Ok(ipc::Reply::Refused { why }) => Err(why),
+                Ok(other) => Err(msg::serve_non_answer(format_args!("{other:?}"))),
+                Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown {
+                    id: id.clone(),
+                    attempt_epoch: token.epoch.clone(),
+                    reason: format!("resident-outcome-unknown: {error}"),
+                }),
+            };
+        }
+        if home == self.device() {
+            return self
+                .new_shell_run_here(home, id, expected_run, token, cwd)
+                .await;
+        }
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
+        let result = self
+            .new_shell_run_with(&ep, home, id, expected_run, token, cwd)
+            .await;
         ep.close().await;
         result
     }
-    async fn new_shell_run_with(&self, ep: &iroh::Endpoint, home: khor_core::DeviceId, id: &crate::SessionId, expected_run: Option<&str>, token: khor_core::recovery::RecoveryToken, cwd: Option<&str>) -> Result<khor_core::recovery::ShellRunResult, String> {
-        if home == self.device() { return self.new_shell_run_here(home, id, expected_run, token, cwd).await; }
+    async fn new_shell_run_with(
+        &self,
+        ep: &iroh::Endpoint,
+        home: khor_core::DeviceId,
+        id: &crate::SessionId,
+        expected_run: Option<&str>,
+        token: khor_core::recovery::RecoveryToken,
+        cwd: Option<&str>,
+    ) -> Result<khor_core::recovery::ShellRunResult, String> {
+        if home == self.device() {
+            return self
+                .new_shell_run_here(home, id, expected_run, token, cwd)
+                .await;
+        }
         let device = self.recovery_peer(home)?;
         let epoch = token.epoch.clone();
-        match self.ask_on(ep, &device, &Request::NewShellRun { home, id: id.clone(), expected_run: expected_run.map(str::to_owned), token, cwd: cwd.map(str::to_owned) }).await {
+        match self
+            .ask_on(
+                ep,
+                &device,
+                &Request::NewShellRun {
+                    home,
+                    id: id.clone(),
+                    expected_run: expected_run.map(str::to_owned),
+                    token,
+                    cwd: cwd.map(str::to_owned),
+                },
+            )
+            .await
+        {
             Ok(Response::NewShellRun { value }) => Self::shell_run_reply(id, value),
             Ok(Response::Refused { why }) => Err(why),
             Ok(other) => Err(msg::peer_non_answer(format_args!("{other:?}"))),
-            Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown { id: id.clone(), attempt_epoch: epoch, reason: format!("transport-outcome-unknown: {error}") }),
+            Err(error) => Ok(khor_core::recovery::ShellRunResult::Unknown {
+                id: id.clone(),
+                attempt_epoch: epoch,
+                reason: format!("transport-outcome-unknown: {error}"),
+            }),
         }
     }
 
@@ -5777,7 +6120,9 @@ impl Node {
                 Self::category_of_started(crate::kind::SHELL),
             )?;
             live.learn_place(&id, &cwd)?;
-            if let Some(ancestry) = ancestry { live.record_shell_ancestry(&id, ancestry)?; }
+            if let Some(ancestry) = ancestry {
+                live.record_shell_ancestry(&id, ancestry)?;
+            }
             let dir = live
                 .dir_of(&id)
                 .ok_or_else(|| msg::not_a_session_id(&id.0))?;
@@ -11656,9 +12001,11 @@ impl Node {
                 .into_iter()
                 .filter_map(|(kind, held)| Some((reading_request(&kind)?, kind, held)))
                 .map(|(req, kind, held)| async move {
-                    let answer =
-                        tokio::time::timeout(READING_BY, Box::pin(self.dispatch(remote, req, ep, None)))
-                            .await;
+                    let answer = tokio::time::timeout(
+                        READING_BY,
+                        Box::pin(self.dispatch(remote, req, ep, None)),
+                    )
+                    .await;
                     (kind, held, answer)
                 })
                 .collect(),
@@ -11823,8 +12170,13 @@ impl Node {
         self.endpoint_file().ok().flatten().map(|f| f.pid)
     }
 
-    fn content_response_permit(&self) -> Result<crate::session_content::remote::ResponsePermit, String> {
-        self.content_responses.clone().try_acquire_owned().map(std::sync::Arc::new)
+    fn content_response_permit(
+        &self,
+    ) -> Result<crate::session_content::remote::ResponsePermit, String> {
+        self.content_responses
+            .clone()
+            .try_acquire_owned()
+            .map(std::sync::Arc::new)
             .map_err(|_| "too many buffered content responses".into())
     }
 
@@ -11836,9 +12188,16 @@ impl Node {
         use crate::session_content::requests;
         action.validate()?;
         if action.home() == self.device() {
-            return self.content_read_here(requests::Reader::local(self.root()), action, None).await;
+            return self
+                .content_read_here(requests::Reader::local(self.root()), action, None)
+                .await;
         }
-        if let Some(reply) = self.via_serve(ipc::Op::ContentRead { action: action.clone() }).await {
+        if let Some(reply) = self
+            .via_serve(ipc::Op::ContentRead {
+                action: action.clone(),
+            })
+            .await
+        {
             return match reply? {
                 ipc::Reply::ContentRead { reply } => {
                     reply.validate_for(&action)?;
@@ -11848,8 +12207,13 @@ impl Node {
                 _ => Err("resident returned another content reply".into()),
             };
         }
-        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0())
-            .await.map_err(|error| error.to_string())?;
+        let ep = endpoint::bind_with(
+            self.secret_key().clone(),
+            self.relay_map(),
+            self.relays_n0(),
+        )
+        .await
+        .map_err(|error| error.to_string())?;
         let answer = self.content_read_with(&ep, action, None).await;
         ep.close().await;
         answer
@@ -11865,11 +12229,18 @@ impl Node {
         action.validate()?;
         let home = action.home();
         if home == self.device() {
-            return self.content_read_here(requests::Reader::local(self.root()), action, response).await;
+            return self
+                .content_read_here(requests::Reader::local(self.root()), action, response)
+                .await;
         }
-        let device = self.devices()?.into_iter().find(|device| device.id == home.hex())
+        let device = self
+            .devices()?
+            .into_iter()
+            .find(|device| device.id == home.hex())
             .ok_or("content home is no longer paired")?;
-        let request = Request::ContentRead { action: action.clone() };
+        let request = Request::ContentRead {
+            action: action.clone(),
+        };
         match self.ask_on(ep, &device, &request).await? {
             Response::ContentRead { reply } => {
                 reply.validate_for(&action)?;
@@ -11899,7 +12270,9 @@ impl Node {
             let reply = remote::execute_here(&root, home, reader, action, active)?;
             // Payload precedes owner in the output, including an abandoned await.
             Ok::<_, String>((reply, response))
-        }).await.map_err(|error| format!("content read worker failed: {error}"))??;
+        })
+        .await
+        .map_err(|error| format!("content read worker failed: {error}"))??;
         Ok(reply)
     }
 
@@ -11926,11 +12299,18 @@ pub(crate) async fn content_on_resident(
     if file.ipc_port == 0 {
         return Err("content resident has no handoff port".into());
     }
-    let reply = ipc::call_refreshing(file.ipc_port, &file.ipc_cookie,
-        ipc::Op::ContentRead { action: action.clone() }, || {
+    let reply = ipc::call_refreshing(
+        file.ipc_port,
+        &file.ipc_cookie,
+        ipc::Op::ContentRead {
+            action: action.clone(),
+        },
+        || {
             let latest = endpoint_file_at(root).ok().flatten()?;
             Some((latest.ipc_port, latest.ipc_cookie))
-        }).await?;
+        },
+    )
+    .await?;
     match reply {
         ipc::Reply::ContentRead { reply } => {
             reply.validate_for(&action)?;

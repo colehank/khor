@@ -128,7 +128,7 @@ fn parse<R: Runtime>(invoke: &Invoke<R>, name: &'static str) -> Result<Request, 
         "chat_capture" => {
             let token: String = arg!("token");
             Control::Capture(chat::capture_token(&token).map_err(InvokeError::from)?)
-        },
+        }
         "chat_say" => {
             let text = arg!("text");
             let images = argument::<R, Option<Vec<(String, String)>>>(invoke, name, "images")?
@@ -363,7 +363,9 @@ mod tests {
             true
         }
         #[tauri::command]
-        pub fn chat_capture(id: String, lease: String, token: String) -> bool { true }
+        pub fn chat_capture(id: String, lease: String, token: String) -> bool {
+            true
+        }
         #[tauri::command]
         pub fn chat_say(
             id: String,

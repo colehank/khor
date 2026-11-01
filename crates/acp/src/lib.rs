@@ -161,9 +161,9 @@ impl InitializeFacts {
         self.0.get().copied()
     }
     fn initialized(&self, value: RecoveryCapabilities) -> Result<(), Refusal> {
-        self.0.set(value).map_err(|_| Refusal::Wont(
-            "Initialization facts cannot be reused for another startup".into(),
-        ))
+        self.0.set(value).map_err(|_| {
+            Refusal::Wont("Initialization facts cannot be reused for another startup".into())
+        })
     }
 }
 
@@ -365,7 +365,9 @@ impl Drop for Handle {
 }
 
 impl Handle {
-    pub fn opened_by(&self) -> OpenedBy { self.opened_by }
+    pub fn opened_by(&self) -> OpenedBy {
+        self.opened_by
+    }
     /// Forward the finite batch of events already accepted before this call.
     /// Call after an RPC response before publishing its UI completion. This is
     /// independent of live close admission: a delivered response remains delivered.
@@ -595,10 +597,7 @@ impl Handle {
 /// Resolves once the session exists; conversation and permission
 /// traffic then arrives on the returned receiver until [`Event::Closed`].
 /// Dropping the [`Handle`] closes everything, agent process included.
-pub async fn start(
-    command: &str,
-    cwd: PathBuf,
-) -> Result<(Handle, EventReceiver), Refusal> {
+pub async fn start(command: &str, cwd: PathBuf) -> Result<(Handle, EventReceiver), Refusal> {
     start_with(command, cwd, None).await
 }
 
@@ -794,7 +793,15 @@ pub async fn start_configured_on(
     resume: Option<String>,
     environment: Environment,
 ) -> Result<(Handle, EventReceiver), Refusal> {
-    start_configured_on_with_facts(transport, lifecycle, cwd, resume, environment, InitializeFacts::default()).await
+    start_configured_on_with_facts(
+        transport,
+        lifecycle,
+        cwd,
+        resume,
+        environment,
+        InitializeFacts::default(),
+    )
+    .await
 }
 
 /// Caller-owned facts are filled only by this startup's real Initialize v1
@@ -808,7 +815,16 @@ pub async fn start_configured_on_with_facts(
     initialization: InitializeFacts,
 ) -> Result<(Handle, EventReceiver), Refusal> {
     let cleanup = lifecycle.clone();
-    match start_transport_with_facts(transport, Some(lifecycle), cwd, resume, environment, initialization).await {
+    match start_transport_with_facts(
+        transport,
+        Some(lifecycle),
+        cwd,
+        resume,
+        environment,
+        initialization,
+    )
+    .await
+    {
         Ok(opened) => Ok(opened),
         Err(refusal) => {
             cleanup.request_shutdown();
@@ -842,7 +858,15 @@ async fn start_transport(
     resume: Option<String>,
     environment: Environment,
 ) -> Result<(Handle, EventReceiver), Refusal> {
-    start_transport_with_facts(agent, lifecycle, cwd, resume, environment, InitializeFacts::default()).await
+    start_transport_with_facts(
+        agent,
+        lifecycle,
+        cwd,
+        resume,
+        environment,
+        InitializeFacts::default(),
+    )
+    .await
 }
 
 async fn start_transport_with_facts(
@@ -1069,7 +1093,6 @@ fn append_refusal(refusal: Refusal, context: String) -> Refusal {
         Refusal::Wont(said) => Refusal::Wont(append(said)),
     }
 }
-
 
 fn client_capabilities() -> ClientCapabilities {
     serde_json::from_value(serde_json::json!({"session":{"configOptions":{"boolean":{}},"compaction":{},"notices":{}},"elicitation":{"form":{},"url":{}}})).expect("client capabilities")

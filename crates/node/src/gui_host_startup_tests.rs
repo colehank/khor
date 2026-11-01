@@ -301,13 +301,15 @@ for line in sys.stdin:
             .count(),
         0
     );
-    assert!(!std::fs::read_dir(std::env::temp_dir())
-        .unwrap()
-        .flatten()
-        .any(|entry| entry
-            .file_name()
-            .to_string_lossy()
-            .starts_with(&format!("khor-acp-events-{}-", std::process::id()))));
+    assert!(
+        !std::fs::read_dir(std::env::temp_dir())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(&format!("khor-acp-events-{}-", std::process::id())))
+    );
     std::fs::write(marker.join("observations.json"), serde_json::to_vec_pretty(&serde_json::json!({
         "rows":count,"payload_bytes":ROWS*PAYLOAD,"canonical_bytes":bytes,"samples":samples,
         "rss_scope":"process samples at producer checkpoints, not kernel peak or an 8MiB hard RSS claim",

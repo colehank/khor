@@ -63,7 +63,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::host::{Hello, HostFile, Welcome, host_file_path, read_frame, write_frame};
 use crate::live::{LiveKind, Source};
-use crate::session_content::journal::{Identity as JournalIdentity, Journal, JournalReservation, Opening as JournalOpening, Outcome as JournalOutcome};
+use crate::session_content::journal::{
+    Identity as JournalIdentity, Journal, JournalReservation, Opening as JournalOpening,
+    Outcome as JournalOutcome,
+};
 
 /// What a connected face may do to the conversation.
 #[derive(Serialize, Deserialize)]
@@ -142,7 +145,9 @@ pub enum GuiOp {
         payload: String,
     },
     /// A per-view read boundary; it never asks the agent to replay.
-    Capture { token: [u8; 16] },
+    Capture {
+        token: [u8; 16],
+    },
 }
 
 pub const CAPTURE_WIRE_BYTES: usize = 20 * 1024;
@@ -165,7 +170,10 @@ fn captured_note(token: [u8; 16], result: Result<CaptureFence, CaptureFailure>) 
     if crate::proto::encode(&note).is_ok_and(|bytes| bytes.len() <= CAPTURE_WIRE_BYTES) {
         note
     } else {
-        GuiNote::Captured { token, result: Err(CaptureFailure::Unavailable) }
+        GuiNote::Captured {
+            token,
+            result: Err(CaptureFailure::Unavailable),
+        }
     }
 }
 
@@ -647,16 +655,41 @@ fn spawn_ghost_context(
     agent: bool,
     environment: Option<&khor_acp::Environment>,
 ) -> Result<SessionId, String> {
-    spawn_ghost_prepared(root, cwd, title, cmd, resume, vendor, agent, environment, None)
+    spawn_ghost_prepared(
+        root,
+        cwd,
+        title,
+        cmd,
+        resume,
+        vendor,
+        agent,
+        environment,
+        None,
+    )
 }
 
 /// Explicit stable recovery already owns this exact durable token. Do not pass
 /// through the CLI convenience path which chooses a fresh token for a new ask.
 pub(crate) fn spawn_gui_host_claimed(
-    root: &std::path::Path, cwd: &std::path::Path, title: &str, cmd: &[String],
-    native: &JournalIdentity, context: &khor_acp::Environment, claim: &str,
+    root: &std::path::Path,
+    cwd: &std::path::Path,
+    title: &str,
+    cmd: &[String],
+    native: &JournalIdentity,
+    context: &khor_acp::Environment,
+    claim: &str,
 ) -> Result<SessionId, String> {
-    spawn_ghost_prepared(root, Some(cwd), title, cmd, Some(&native.native_id), Some(&native.agent), false, Some(context), Some(claim))
+    spawn_ghost_prepared(
+        root,
+        Some(cwd),
+        title,
+        cmd,
+        Some(&native.native_id),
+        Some(&native.agent),
+        false,
+        Some(context),
+        Some(claim),
+    )
 }
 
 fn spawn_ghost_prepared(
@@ -670,7 +703,9 @@ fn spawn_ghost_prepared(
     environment: Option<&khor_acp::Environment>,
     prepared_claim: Option<&str>,
 ) -> Result<SessionId, String> {
-    if prepared_claim.is_some() && resume.is_none() { return Err("a recovery claim cannot start a New session".into()); }
+    if prepared_claim.is_some() && resume.is_none() {
+        return Err("a recovery claim cannot start a New session".into());
+    }
     let exe = crate::self_exe()?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
@@ -751,38 +786,59 @@ fn spawn_ghost_prepared(
     }
     let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key"))
         .map_err(|error| error.to_string())?;
-    let live = LiveKind::new(root.to_path_buf(), khor_core::DeviceId(*key.public().as_bytes()));
+    let live = LiveKind::new(
+        root.to_path_buf(),
+        khor_core::DeviceId(*key.public().as_bytes()),
+    );
     let mut expected_agent = Some(gui_new_agent(cmd, vendor));
     let claim = if let Some(native_id) = resume {
-        if agent { return Err("known-native recovery cannot inject a new scheduler context".into()); }
+        if agent {
+            return Err("known-native recovery cannot inject a new scheduler context".into());
+        }
         let native = match prepared_claim {
             Some(claim) => {
                 let (_, native) = live.decode_gui_target(claim, native_id)?;
-                if vendor.is_some_and(|vendor| vendor != native.agent) { return Err("prepared claim names another configured agent".into()); }
+                if vendor.is_some_and(|vendor| vendor != native.agent) {
+                    return Err("prepared claim names another configured agent".into());
+                }
                 native
             }
-            None => gui_source_identity_as(&live, khor_core::DeviceId(*key.public().as_bytes()), cmd, native_id, vendor)?,
+            None => gui_source_identity_as(
+                &live,
+                khor_core::DeviceId(*key.public().as_bytes()),
+                cmd,
+                native_id,
+                vendor,
+            )?,
         };
         expected_agent = Some(native.agent.clone());
         let context = match environment {
             Some(context) => context.clone(),
             None => saved_environment(root, native_id)?,
         };
-        let standing = cwd.map(std::path::Path::to_path_buf).or_else(crate::cwd::standing)
+        let standing = cwd
+            .map(std::path::Path::to_path_buf)
+            .or_else(crate::cwd::standing)
             .ok_or("known session directory is unavailable")?;
         let standing = std::fs::canonicalize(standing).map_err(|error| error.to_string())?;
-        let launch = serde_json::to_vec(&(&standing, title, cmd, &context)).map_err(|error| error.to_string())?;
+        let launch = serde_json::to_vec(&(&standing, title, cmd, &context))
+            .map_err(|error| error.to_string())?;
         // Freeze exactly the context/cwd hashed into this claim. The child must
         // not reread a newer saved context and silently change the operation.
         c.current_dir(&standing);
-        c.env("KHOR_GHOST_CONTEXT", serde_json::to_string(&context).map_err(|error| error.to_string())?);
+        c.env(
+            "KHOR_GHOST_CONTEXT",
+            serde_json::to_string(&context).map_err(|error| error.to_string())?,
+        );
         let claim = match prepared_claim {
             Some(claim) => claim.to_owned(),
             None => live.prepare_gui_recovery(native, &launch)?,
         };
         c.env(RECOVERY_ENV, &claim);
         Some(claim)
-    } else { None };
+    } else {
+        None
+    };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let ghost_pid = match spawn_ghost_with_waiter(c, deadline) {
         Ok(pid) => pid,
@@ -808,7 +864,13 @@ fn spawn_ghost_prepared(
         if let Ok(id) = std::fs::read_to_string(&ready) {
             let id = SessionId(id.trim().to_owned());
             if !id.0.is_empty() {
-                match live.confirm_gui_ready(&id, ghost_pid, resume, expected_agent.as_deref(), claim.as_deref()) {
+                match live.confirm_gui_ready(
+                    &id,
+                    ghost_pid,
+                    resume,
+                    expected_agent.as_deref(),
+                    claim.as_deref(),
+                ) {
                     Ok(()) => {
                         let _ = std::fs::remove_file(&ready);
                         return Ok(id);
@@ -830,8 +892,11 @@ fn spawn_ghost_prepared(
             let _ = std::fs::remove_file(refusal_path(&ready));
             return Err(why);
         }
-        std::thread::sleep(deadline.saturating_duration_since(std::time::Instant::now())
-            .min(std::time::Duration::from_millis(50)));
+        std::thread::sleep(
+            deadline
+                .saturating_duration_since(std::time::Instant::now())
+                .min(std::time::Duration::from_millis(50)),
+        );
     }
     Err(ready_issue.unwrap_or_else(|| msg::ghost_never_ready().into()))
 }
@@ -913,9 +978,12 @@ impl Default for HostTimeouts {
     }
 }
 
-fn gui_environment(root: &std::path::Path, resume: Option<&str>) -> Result<khor_acp::Environment, String> {
-    let saved_context = resume
-        .and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
+fn gui_environment(
+    root: &std::path::Path,
+    resume: Option<&str>,
+) -> Result<khor_acp::Environment, String> {
+    let saved_context =
+        resume.and_then(|sid| std::fs::read_to_string(context_path(&root, sid)).ok());
     let mut environment: khor_acp::Environment = std::env::var("KHOR_GHOST_CONTEXT")
         .ok()
         .or(saved_context)
@@ -975,40 +1043,69 @@ fn gui_host_main_with_timeouts(
     // A known native conversation owns the journal's physical writer lock
     // before any upstream process exists. This is not an inherited-FD handoff:
     // the ghost acquires it and later moves that same File into its Journal.
-    let mut reservation = resume.as_ref().map(|native_id| {
-        let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
-        let (id, identity) = live.decode_gui_target(&claim, native_id)?;
-        if std::env::var(VENDOR_ENV).ok().as_deref().is_some_and(|vendor| vendor != identity.agent) {
-            return Err("known opening claim names another configured agent".into());
-        }
-        let reservation = JournalReservation::take(&root, identity)?;
-        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
-        reservation.check_binding(&dir)?;
-        Ok::<_, String>(reservation)
-    }).transpose().map_err(|why| {
-        let _ = std::fs::write(refusal_path(&ready), &why);
-        why
-    })?;
-    let mut recovery = if resume.is_some() {
-        let claim = std::env::var(RECOVERY_ENV).map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
-        Some(live.claim_gui_recovery(
-            reservation.as_ref().ok_or("known-native opening has no Journal reservation")?,
-            &launch, &claim,
-        ).map_err(|why| {
-            let failure = live.gui_ghost_spawn_failed(&claim);
-            let why = match failure { Ok(()) => why, Err(error) => format!("{why}; claim remains fenced: {error}") };
+    let mut reservation = resume
+        .as_ref()
+        .map(|native_id| {
+            let claim = std::env::var(RECOVERY_ENV)
+                .map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
+            let (id, identity) = live.decode_gui_target(&claim, native_id)?;
+            if std::env::var(VENDOR_ENV)
+                .ok()
+                .as_deref()
+                .is_some_and(|vendor| vendor != identity.agent)
+            {
+                return Err("known opening claim names another configured agent".into());
+            }
+            let reservation = JournalReservation::take(&root, identity)?;
+            let dir = live
+                .dir_of(&id)
+                .ok_or_else(|| msg::not_a_session_id(&id.0))?;
+            reservation.check_binding(&dir)?;
+            Ok::<_, String>(reservation)
+        })
+        .transpose()
+        .map_err(|why| {
             let _ = std::fs::write(refusal_path(&ready), &why);
             why
-        })?)
-    } else { None };
+        })?;
+    let mut recovery = if resume.is_some() {
+        let claim = std::env::var(RECOVERY_ENV)
+            .map_err(|_| "known-native opening has no preghost recovery claim".to_owned())?;
+        Some(
+            live.claim_gui_recovery(
+                reservation
+                    .as_ref()
+                    .ok_or("known-native opening has no Journal reservation")?,
+                &launch,
+                &claim,
+            )
+            .map_err(|why| {
+                let failure = live.gui_ghost_spawn_failed(&claim);
+                let why = match failure {
+                    Ok(()) => why,
+                    Err(error) => format!("{why}; claim remains fenced: {error}"),
+                };
+                let _ = std::fs::write(refusal_path(&ready), &why);
+                why
+            })?,
+        )
+    } else {
+        None
+    };
     let (transport, birth) = match crate::acp_process::spawn_observed(&command, |pid, _control| {
         crate::live::observe_gui_birth(pid)
     }) {
         Ok(spawned) => spawned,
         Err(error) => {
             let why = refusal_words(&khor_acp::Refusal::Wont(error));
-            let settled = recovery.as_ref().map(|owner| live.settle_gui_recovery(owner, Err(()), 1)).transpose();
-            let why = match &settled { Ok(_) => why, Err(failed) => format!("{why}; cleanup publication is uncertain: {failed}") };
+            let settled = recovery
+                .as_ref()
+                .map(|owner| live.settle_gui_recovery(owner, Err(()), 1))
+                .transpose();
+            let why = match &settled {
+                Ok(_) => why,
+                Err(failed) => format!("{why}; cleanup publication is uncertain: {failed}"),
+            };
             let _ = std::fs::write(refusal_path(&ready), &why);
             if settled.is_err() && reservation.as_ref().is_some_and(|value| value.holds_file()) {
                 hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take());
@@ -1022,10 +1119,18 @@ fn gui_host_main_with_timeouts(
     let stderr = transport.stderr.clone();
     let mut birth = Some(birth);
     if let Some(owner) = recovery.as_mut() {
-        if let Err(why) = live.attach_gui_recovery(owner, &process_control, provider_pid, birth.take().expect("one observation")) {
-            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), None, why);
+        if let Err(why) = live.attach_gui_recovery(
+            owner,
+            &process_control,
+            provider_pid,
+            birth.take().expect("one observation"),
+        ) {
+            let (why, retain) =
+                retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), None, why);
             let _ = std::fs::write(refusal_path(&ready), &why);
-            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            if retain {
+                hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take());
+            }
             return Err(why);
         }
     }
@@ -1051,18 +1156,36 @@ fn gui_host_main_with_timeouts(
     });
     if let (Some(owner), Some(support)) = (recovery.as_ref(), initialization.recovery()) {
         if let Err(why) = live.record_gui_recovery_support(owner, support) {
-            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), Some(&initialization), why);
+            let (why, retain) = retire_failed_opening(
+                &rt,
+                &live,
+                &process_lifecycle,
+                recovery.as_ref(),
+                Some(&initialization),
+                why,
+            );
             let _ = std::fs::write(refusal_path(&ready), &why);
-            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            if retain {
+                hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take());
+            }
             return Err(why);
         }
     }
     let (handle, mut events) = match opened {
         Ok(opened) => opened,
         Err(refusal) => {
-            let (why, retain) = retire_failed_opening(&rt, &live, &process_lifecycle, recovery.as_ref(), Some(&initialization), refusal_words(&refusal));
+            let (why, retain) = retire_failed_opening(
+                &rt,
+                &live,
+                &process_lifecycle,
+                recovery.as_ref(),
+                Some(&initialization),
+                refusal_words(&refusal),
+            );
             let _ = std::fs::write(refusal_path(&ready), &why);
-            if retain { hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take()); }
+            if retain {
+                hold_uncertain_gui_owner(reservation.take(), None, None, recovery.take());
+            }
             return Err(why);
         }
     };
@@ -1077,14 +1200,29 @@ fn gui_host_main_with_timeouts(
         // Keep the full provider identity; the row's clean_leaf is only a
         // retained spelling, never authority to replace another conversation.
         let is_new = handle.opened_by() == khor_acp::OpenedBy::New;
-        let id = recovery.as_ref().map(|owner| owner.logical_id().clone()).unwrap_or_else(|| crate::adaptor::id_for(&handle.session().0));
-        let dir = live.dir_of(&id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
+        let id = recovery
+            .as_ref()
+            .map(|owner| owner.logical_id().clone())
+            .unwrap_or_else(|| crate::adaptor::id_for(&handle.session().0));
+        let dir = live
+            .dir_of(&id)
+            .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         let identity = if is_new {
             // A New response cannot inherit an unrelated old row's agent.
-            gui_new_source_identity(khor_core::DeviceId(*key.public().as_bytes()), &cmd, &handle.session().0)
+            gui_new_source_identity(
+                khor_core::DeviceId(*key.public().as_bytes()),
+                &cmd,
+                &handle.session().0,
+            )
         } else {
-            let identity = reservation.as_ref().ok_or("known opening lost its physical Journal")?.identity().clone();
-            if identity.native_id != handle.session().0.as_ref() { return Err("known opening returned another native session".into()); }
+            let identity = reservation
+                .as_ref()
+                .ok_or("known opening lost its physical Journal")?
+                .identity()
+                .clone();
+            if identity.native_id != handle.session().0.as_ref() {
+                return Err("known opening returned another native session".into());
+            }
             identity
         };
         if is_new {
@@ -1092,27 +1230,41 @@ fn gui_host_main_with_timeouts(
             new_collision = true;
         }
         // Check the complete source before binding or appending anything.
-        if is_new { live.check_gui_source(&identity)?; }
-        let opening=match handle.opened_by() {
-            khor_acp::OpenedBy::New=>JournalOpening::New,
-            khor_acp::OpenedBy::Load=>JournalOpening::Load,
-            khor_acp::OpenedBy::Resume=>JournalOpening::Resume,
+        if is_new {
+            live.check_gui_source(&identity)?;
+        }
+        let opening = match handle.opened_by() {
+            khor_acp::OpenedBy::New => JournalOpening::New,
+            khor_acp::OpenedBy::Load => JournalOpening::Load,
+            khor_acp::OpenedBy::Resume => JournalOpening::Resume,
         };
         if is_new {
-            initial = Some(live.seed_gui_new(
-                reservation.as_ref().ok_or("New has no exact journal reservation")?,
-                &launch, &process_control, provider_pid,
-                birth.take().ok_or("initial process observation was already consumed")?,
-                initialization.recovery(),
-            )?);
+            initial = Some(
+                live.seed_gui_new(
+                    reservation
+                        .as_ref()
+                        .ok_or("New has no exact journal reservation")?,
+                    &launch,
+                    &process_control,
+                    provider_pid,
+                    birth
+                        .take()
+                        .ok_or("initial process observation was already consumed")?,
+                    initialization.recovery(),
+                )?,
+            );
         }
-        let admission = reservation.as_mut().ok_or("ACP opening has no physical journal reservation")?;
+        let admission = reservation
+            .as_mut()
+            .ok_or("ACP opening has no physical journal reservation")?;
         if admission.identity() != &identity {
             return Err("ACP opened another identity than its reservation".into());
         }
         retained_journal = Some(admission.open_journal(opening)?);
         new_collision = false;
-        let journal = retained_journal.as_mut().expect("journal retained until process cleanup");
+        let journal = retained_journal
+            .as_mut()
+            .expect("journal retained until process cleanup");
         let vendor = std::env::var(VENDOR_ENV).ok();
         // Keep the previous published row during the finite opening prefix.
         // A new execution becomes visible only after its display base commits.
@@ -1824,8 +1976,13 @@ match event {
             .map_err(|why| format!("ACP process cleanup is unconfirmed: {why}"))?;
 
         if !ready.exists() {
-            std::fs::write(refusal_path(&ready),ending.as_deref().unwrap_or("ACP closed before the initial capture committed"))
-                .map_err(|why|why.to_string())?;
+            std::fs::write(
+                refusal_path(&ready),
+                ending
+                    .as_deref()
+                    .unwrap_or("ACP closed before the initial capture committed"),
+            )
+            .map_err(|why| why.to_string())?;
         }
 
         fanout.send(&GuiNote::Gone);
@@ -1840,9 +1997,17 @@ match event {
     process_lifecycle.request_shutdown();
     let retired = rt.block_on(process_lifecycle.confirmed_exit());
     let settled = if let Some(initial) = &initial {
-        live.settle_gui_new(initial, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
+        live.settle_gui_new(
+            initial,
+            retired.as_ref().map_err(|_| ()),
+            if result.is_ok() { 0 } else { 1 },
+        )
     } else if let Some(recovery) = &recovery {
-        live.settle_gui_recovery(recovery, retired.as_ref().map_err(|_| ()), if result.is_ok() { 0 } else { 1 })
+        live.settle_gui_recovery(
+            recovery,
+            retired.as_ref().map_err(|_| ()),
+            if result.is_ok() { 0 } else { 1 },
+        )
     } else if retired.is_err() && new_collision {
         // Only the exact actual-New agent/native reservation can quarantine
         // its old bound row. A same short SID or missing reservation is never
@@ -1854,24 +2019,38 @@ match event {
     } else {
         Ok(())
     };
-    if retired.is_err() && settled.is_err()
-        && (retained_journal.is_some() || reservation.as_ref().is_some_and(|value| value.holds_file()))
+    if retired.is_err()
+        && settled.is_err()
+        && (retained_journal.is_some()
+            || reservation.as_ref().is_some_and(|value| value.holds_file()))
     {
-        let why = format!("ACP cleanup and its durable Unknown record are unconfirmed: {}; {}",
+        let why = format!(
+            "ACP cleanup and its durable Unknown record are unconfirmed: {}; {}",
             retired.as_ref().err().expect("cleanup error"),
-            settled.as_ref().err().expect("publication error"));
+            settled.as_ref().err().expect("publication error")
+        );
         // Refuse the opener within its existing budget; the ghost itself keeps
         // its exact resource rather than returning and silently unlocking it.
         let _ = std::fs::write(refusal_path(&ready), &why);
         eprintln!("{why}");
-        hold_uncertain_gui_owner(reservation.take(), retained_journal.take(), initial.take(), recovery.take());
+        hold_uncertain_gui_owner(
+            reservation.take(),
+            retained_journal.take(),
+            initial.take(),
+            recovery.take(),
+        );
     }
     // Release only after actual cleanup or a durable Unknown. A failed write
     // plus unconfirmed cleanup parks the existing ghost above, without retry.
     let result = match (result, settled) {
         (outcome, Ok(())) => outcome,
-        (outcome, Err(why)) => Err(format!("{}GUI cleanup publication is uncertain: {why}",
-            outcome.err().map(|why| format!("{why}; ")).unwrap_or_default())),
+        (outcome, Err(why)) => Err(format!(
+            "{}GUI cleanup publication is uncertain: {why}",
+            outcome
+                .err()
+                .map(|why| format!("{why}; "))
+                .unwrap_or_default()
+        )),
     };
     match (result, retired) {
         (Ok(()), Ok(_)) => Ok(()),
@@ -1897,15 +2076,29 @@ fn retire_failed_opening(
 ) -> (String, bool) {
     process.request_shutdown();
     let retired = rt.block_on(process.confirmed_exit());
-    let facts = match (recovery, initialization.and_then(khor_acp::InitializeFacts::recovery)) {
+    let facts = match (
+        recovery,
+        initialization.and_then(khor_acp::InitializeFacts::recovery),
+    ) {
         (Some(owner), Some(support)) => live.record_gui_recovery_support(owner, support),
         _ => Ok(()),
     };
-    let settled = recovery.map(|owner| live.settle_gui_recovery(owner, retired.as_ref().map_err(|_| ()), 1)).transpose();
-    if let Err(error) = &retired { why = format!("{why}; ACP cleanup is unconfirmed: {error}"); }
-    if let Err(error) = &settled { why = format!("{why}; durable cleanup is unconfirmed: {error}"); }
-    if let Err(error) = &facts { why = format!("{why}; Initialize fact publication is unconfirmed: {error}"); }
-    (why, retired.is_err() && (settled.is_err() || facts.is_err()))
+    let settled = recovery
+        .map(|owner| live.settle_gui_recovery(owner, retired.as_ref().map_err(|_| ()), 1))
+        .transpose();
+    if let Err(error) = &retired {
+        why = format!("{why}; ACP cleanup is unconfirmed: {error}");
+    }
+    if let Err(error) = &settled {
+        why = format!("{why}; durable cleanup is unconfirmed: {error}");
+    }
+    if let Err(error) = &facts {
+        why = format!("{why}; Initialize fact publication is unconfirmed: {error}");
+    }
+    (
+        why,
+        retired.is_err() && (settled.is_err() || facts.is_err()),
+    )
 }
 
 /// No listener or GuiOp::Close is promised on this pre-publication failure.
@@ -1963,18 +2156,30 @@ enum Bootstrap {
     Live,
 }
 impl Bootstrap {
-    fn is_running(&self) -> bool { !matches!(self,Self::Live) }
-    fn is_drained(&self) -> bool { matches!(self,Self::Draining(0)) }
-    fn begin_fence(&mut self) -> Result<(),String> {
-        if !matches!(self,Self::AwaitReady) { return Err("ACP Ready belongs to an inactive opening".into()); }
-        *self=Self::Fencing; Ok(())
+    fn is_running(&self) -> bool {
+        !matches!(self, Self::Live)
     }
-    fn fenced(&mut self, remaining:u64) -> Result<(),String> {
-        if !matches!(self,Self::Fencing) { return Err("ACP event fence belongs to an inactive opening".into()); }
-        *self=Self::Draining(remaining); Ok(())
+    fn is_drained(&self) -> bool {
+        matches!(self, Self::Draining(0))
+    }
+    fn begin_fence(&mut self) -> Result<(), String> {
+        if !matches!(self, Self::AwaitReady) {
+            return Err("ACP Ready belongs to an inactive opening".into());
+        }
+        *self = Self::Fencing;
+        Ok(())
+    }
+    fn fenced(&mut self, remaining: u64) -> Result<(), String> {
+        if !matches!(self, Self::Fencing) {
+            return Err("ACP event fence belongs to an inactive opening".into());
+        }
+        *self = Self::Draining(remaining);
+        Ok(())
     }
     fn consume_event(&mut self) {
-        if let Self::Draining(remaining)=self { *remaining=remaining.saturating_sub(1); }
+        if let Self::Draining(remaining) = self {
+            *remaining = remaining.saturating_sub(1);
+        }
     }
 }
 
@@ -1995,13 +2200,14 @@ enum HostCompletion {
 impl HostCompletion {
     fn operation(&self) -> &crate::agent_process::Operation {
         match self {
-            Self::Turn { generation, .. }
-            | Self::Control { generation, .. } => generation,
+            Self::Turn { generation, .. } | Self::Control { generation, .. } => generation,
         }
     }
 }
 enum HostProgress {
-    BootstrapFenced { result:Result<khor_acp::EventPrefix,String> },
+    BootstrapFenced {
+        result: Result<khor_acp::EventPrefix, String>,
+    },
     Resolved {
         completion: HostCompletion,
         acknowledged: bool,
@@ -2084,8 +2290,15 @@ async fn next_host_input(
     events_closed: bool,
 ) -> HostInput {
     std::future::poll_fn(|cx| {
-        poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
-    }).await
+        poll_host_input(
+            cx,
+            |cx| events.poll_recv(cx),
+            ops,
+            prefer_ops,
+            events_closed,
+        )
+    })
+    .await
 }
 
 fn gui_new_source_identity(
@@ -2094,7 +2307,11 @@ fn gui_new_source_identity(
     native_id: &str,
 ) -> JournalIdentity {
     let vendor = std::env::var(VENDOR_ENV).ok();
-    JournalIdentity { home, agent: gui_new_agent(cmd, vendor.as_deref()), native_id: native_id.to_owned() }
+    JournalIdentity {
+        home,
+        agent: gui_new_agent(cmd, vendor.as_deref()),
+        native_id: native_id.to_owned(),
+    }
 }
 
 fn gui_new_agent(cmd: &[String], vendor: Option<&str>) -> String {
@@ -2144,7 +2361,8 @@ fn gui_source_identity_as(
         }
         return Ok(recorded);
     }
-    let agent = vendor.map(str::to_owned)
+    let agent = vendor
+        .map(str::to_owned)
         .or_else(|| meta.and_then(|meta| meta.category))
         .unwrap_or_else(|| {
             let launch = serde_json::to_vec(cmd).expect("launcher identity serializes");
@@ -2157,10 +2375,16 @@ fn gui_source_identity_as(
     })
 }
 
-pub(crate) fn saved_environment(root: &std::path::Path, native_id: &str) -> Result<khor_acp::Environment, String> {
+pub(crate) fn saved_environment(
+    root: &std::path::Path,
+    native_id: &str,
+) -> Result<khor_acp::Environment, String> {
     match std::fs::read_to_string(context_path(root, native_id)) {
-        Ok(context) => serde_json::from_str(&context).map_err(|error| format!("Invalid session context: {error}")),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(khor_acp::Environment::default()),
+        Ok(context) => serde_json::from_str(&context)
+            .map_err(|error| format!("Invalid session context: {error}")),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            Ok(khor_acp::Environment::default())
+        }
         Err(error) => Err(error.to_string()),
     }
 }

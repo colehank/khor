@@ -199,7 +199,8 @@ fn open_host_with_timeouts(
 }
 fn fixture_command(scratch: &std::path::Path, mode: &str) -> String {
     let python = std::env::var("KHOR_ACP_TEST_PYTHON").unwrap_or_else(|_| "python3".into());
-    serde_json::json!({"command":python,"args":[scratch.join("agent.py"),mode,scratch.join(mode)]}).to_string()
+    serde_json::json!({"command":python,"args":[scratch.join("agent.py"),mode,scratch.join(mode)]})
+        .to_string()
 }
 
 fn launch_host(
@@ -215,16 +216,30 @@ fn launch_host(
         // actual context/cwd and claim validation as the normal opener. No
         // synthetic token, fake provider receipt or admission bypass.
         let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key")).unwrap();
-        let live = LiveKind::new(root.to_owned(), khor_core::DeviceId(*key.public().as_bytes()));
+        let live = LiveKind::new(
+            root.to_owned(),
+            khor_core::DeviceId(*key.public().as_bytes()),
+        );
         let cmd = vec![command.clone()];
-        let native = gui_source_identity(&live, khor_core::DeviceId(*key.public().as_bytes()), &cmd, &native_id).unwrap();
+        let native = gui_source_identity(
+            &live,
+            khor_core::DeviceId(*key.public().as_bytes()),
+            &cmd,
+            &native_id,
+        )
+        .unwrap();
         let context = gui_environment(root, Some(&native_id)).unwrap();
         let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
-        let launch = serde_json::to_vec(&(&cwd, "ACP cancellation fixture", &cmd, &context)).unwrap();
+        let launch =
+            serde_json::to_vec(&(&cwd, "ACP cancellation fixture", &cmd, &context)).unwrap();
         let claim = live.prepare_gui_recovery(native, &launch).unwrap();
-        unsafe { std::env::set_var(RECOVERY_ENV, claim); }
+        unsafe {
+            std::env::set_var(RECOVERY_ENV, claim);
+        }
     } else {
-        unsafe { std::env::remove_var(RECOVERY_ENV); }
+        unsafe {
+            std::env::remove_var(RECOVERY_ENV);
+        }
     }
     let host = {
         let root = root.to_owned();
@@ -249,21 +264,44 @@ fn attach_host(
     let ready = scratch.join(format!("{mode}.ready"));
     let until = Instant::now() + Duration::from_secs(5);
     let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key")).unwrap();
-    let live = LiveKind::new(root.to_owned(), khor_core::DeviceId(*key.public().as_bytes()));
+    let live = LiveKind::new(
+        root.to_owned(),
+        khor_core::DeviceId(*key.public().as_bytes()),
+    );
     let native = std::env::var(RESUME_ENV).ok();
     let vendor = std::env::var(VENDOR_ENV).ok();
     let agent = if native.is_none() {
-        Some(gui_new_agent(&[fixture_command(scratch, mode)], vendor.as_deref()))
-    } else { vendor };
-    let claim = native.as_ref().and_then(|_| std::env::var(RECOVERY_ENV).ok());
+        Some(gui_new_agent(
+            &[fixture_command(scratch, mode)],
+            vendor.as_deref(),
+        ))
+    } else {
+        vendor
+    };
+    let claim = native
+        .as_ref()
+        .and_then(|_| std::env::var(RECOVERY_ENV).ok());
     let id = loop {
         if let Ok(id) = std::fs::read_to_string(&ready) {
             let id = SessionId(id.trim().to_owned());
-            if !id.0.is_empty() && live.confirm_gui_ready(&id, std::process::id(), native.as_deref(), agent.as_deref(), claim.as_deref()).is_ok() {
+            if !id.0.is_empty()
+                && live
+                    .confirm_gui_ready(
+                        &id,
+                        std::process::id(),
+                        native.as_deref(),
+                        agent.as_deref(),
+                        claim.as_deref(),
+                    )
+                    .is_ok()
+            {
                 break id;
             }
         }
-        assert!(Instant::now() < until, "fixture did not durably publish Ready within the original5s bound");
+        assert!(
+            Instant::now() < until,
+            "fixture did not durably publish Ready within the original5s bound"
+        );
         std::thread::sleep(Duration::from_millis(5));
     };
     let file = crate::host::read_host_file(&live.dir_of(&id).unwrap()).unwrap();
@@ -431,10 +469,18 @@ fn run_host_case(case: &str) {
         std::fs::write(evidence.join("worker.stderr"), &stderr).unwrap();
     }
     assert!(status.success(), "{case}: {stdout}\n{stderr}");
-    assert_eq!(stdout.lines().filter(|line|line.starts_with("test result:")).count(),1,
-        "{case}: owned helper must produce exactly one real test summary: {stdout}");
-    assert!(stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
-        "{case}: owned helper did not actually run its case: {stdout}");
+    assert_eq!(
+        stdout
+            .lines()
+            .filter(|line| line.starts_with("test result:"))
+            .count(),
+        1,
+        "{case}: owned helper must produce exactly one real test summary: {stdout}"
+    );
+    assert!(
+        stdout.contains("test result: ok. 1 passed; 0 failed; 0 ignored;"),
+        "{case}: owned helper did not actually run its case: {stdout}"
+    );
 }
 
 #[test]
@@ -579,8 +625,15 @@ async fn raw_host_input(
     events_closed: bool,
 ) -> HostInput {
     std::future::poll_fn(|cx| {
-        poll_host_input(cx, |cx| events.poll_recv(cx), ops, prefer_ops, events_closed)
-    }).await
+        poll_host_input(
+            cx,
+            |cx| events.poll_recv(cx),
+            ops,
+            prefer_ops,
+            events_closed,
+        )
+    })
+    .await
 }
 
 #[test]
@@ -685,18 +738,36 @@ fn capture_page(
     fence: &CaptureFence,
     newer: bool,
 ) -> crate::adaptor::transcript_page::Page<crate::session_content::ContentEvent> {
-    tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap().block_on(async {
-        let key = node.content_begin(&fence.binding).await.unwrap();
-        let request = crate::session_content::remote::ClientRead::claim(node.root(), fence.binding.clone(), &key).unwrap();
-        node.content_page(&request, Some(fence.cursor.clone()), newer).await.unwrap()
-    })
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            let key = node.content_begin(&fence.binding).await.unwrap();
+            let request = crate::session_content::remote::ClientRead::claim(
+                node.root(),
+                fence.binding.clone(),
+                &key,
+            )
+            .unwrap();
+            node.content_page(&request, Some(fence.cursor.clone()), newer)
+                .await
+                .unwrap()
+        })
 }
 
-fn capture_chunks(page: &crate::adaptor::transcript_page::Page<crate::session_content::ContentEvent>) -> usize {
-    page.events.iter().filter(|event| matches!(&event.payload,
-        crate::session_content::ContentEvent::Update { update: note, .. }
-            if note["update"]["content"]["text"] == "capture identical chunk"
-    )).count()
+fn capture_chunks(
+    page: &crate::adaptor::transcript_page::Page<crate::session_content::ContentEvent>,
+) -> usize {
+    page.events
+        .iter()
+        .filter(|event| {
+            matches!(&event.payload,
+                crate::session_content::ContentEvent::Update { update: note, .. }
+                    if note["update"]["content"]["text"] == "capture identical chunk"
+            )
+        })
+        .count()
 }
 fn await_turn(notes: &mpsc::Receiver<GuiNote>, expected: &str, final_text: &str) {
     let deadline = Instant::now() + Duration::from_secs(4);
@@ -799,12 +870,16 @@ fn managed_host_case_worker() {
                     break;
                 }
             }
-            write_frame(&mut a, &GuiOp::SayWith {
-                text: "first accepted prompt".into(),
-                images: vec![("image/png".into(), "aW1hZ2U=".into())],
-                files: vec![("original.txt".into(), "原文".into())],
-                token: None,
-            }).unwrap();
+            write_frame(
+                &mut a,
+                &GuiOp::SayWith {
+                    text: "first accepted prompt".into(),
+                    images: vec![("image/png".into(), "aW1hZ2U=".into())],
+                    files: vec![("original.txt".into(), "原文".into())],
+                    token: None,
+                },
+            )
+            .unwrap();
             await_turn(&notes_a, "EndTurn", "capture identical chunk");
             let token_a = [1; 16];
             write_frame(&mut a, &GuiOp::Capture { token: token_a }).unwrap();
@@ -816,7 +891,9 @@ fn managed_host_case_worker() {
             std::thread::spawn(move || {
                 while let Ok(note) = read_frame::<GuiNote>(&mut reader) {
                     let end = matches!(note, GuiNote::Gone);
-                    if tx.send(note).is_err() || end { break; }
+                    if tx.send(note).is_err() || end {
+                        break;
+                    }
                 }
             });
             write_frame(&mut b, &GuiOp::Say("second accepted prompt".into())).unwrap();
@@ -832,7 +909,12 @@ fn managed_host_case_worker() {
             let latest_a = await_capture(&notes_a, token_a);
             assert_eq!(latest_a.cursor, second.cursor);
             for (token, fence) in [(token_a, &first), (token_b, &second)] {
-                assert!(crate::proto::encode(&captured_note(token, Ok(fence.clone()))).unwrap().len() <= CAPTURE_WIRE_BYTES);
+                assert!(
+                    crate::proto::encode(&captured_note(token, Ok(fence.clone())))
+                        .unwrap()
+                        .len()
+                        <= CAPTURE_WIRE_BYTES
+                );
             }
             let node = crate::Node::open(root.clone()).unwrap();
             let before = capture_page(&node, &first, false);
@@ -844,27 +926,70 @@ fn managed_host_case_worker() {
             assert_eq!(capture_chunks(&all), 2);
             assert!(before.events.len() <= crate::adaptor::transcript_page::EVENT_LIMIT);
             assert!(after.events.len() <= crate::adaptor::transcript_page::EVENT_LIMIT);
-            let records = first.binding.resolve_exact(&root, node.device()).unwrap().unwrap();
+            let records = first
+                .binding
+                .resolve_exact(&root, node.device())
+                .unwrap()
+                .unwrap();
             let (mut file, _) = records.open().unwrap();
             let mut text = String::new();
             file.read_to_string(&mut text).unwrap();
-            let rows: Vec<serde_json::Value> = text.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
+            let rows: Vec<serde_json::Value> = text
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
             assert_eq!(rows.iter().filter(|row| row["kind"] == "prompt").count(), 2);
-            let prompt = rows.iter().find(|row| row["text"] == "first accepted prompt").unwrap();
+            let prompt = rows
+                .iter()
+                .find(|row| row["text"] == "first accepted prompt")
+                .unwrap();
             assert_eq!(prompt["images"][0][1], "aW1hZ2U=");
             assert_eq!(prompt["files"][0][1], "原文");
-            assert_eq!(rows.iter().filter(|row| row["notification"]["update"]["content"]["text"] == "capture identical chunk").count(), 2);
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row["notification"]["update"]["content"]["text"]
+                        == "capture identical chunk")
+                    .count(),
+                2
+            );
             a.shutdown(std::net::Shutdown::Both).unwrap();
             drop(notes_a);
             assert_alive(process_pid(&scratch, "journal-no-load"));
-            close_host(host, &mut b, &notes_b, process_pid(&scratch, "journal-no-load"));
-            let received = std::fs::read_to_string(scratch.join("journal-no-load/received.jsonl")).unwrap();
-            let calls: Vec<serde_json::Value> = received.lines().map(|line| serde_json::from_str(line).unwrap()).collect();
-            let row = LiveKind::new(root.clone(), node.device()).dir_of(first.binding.view()).unwrap();
-            let attempt: serde_json::Value = serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap()).unwrap();
-            assert_eq!(attempt["latest"]["support"], serde_json::json!({"load":false,"resume":false}));
-            assert_eq!(calls.iter().filter(|call| call["method"] == "session/new").count(), 1);
-            assert!(!calls.iter().any(|call| call["method"] == "session/load" || call["method"] == "session/resume"));
+            close_host(
+                host,
+                &mut b,
+                &notes_b,
+                process_pid(&scratch, "journal-no-load"),
+            );
+            let received =
+                std::fs::read_to_string(scratch.join("journal-no-load/received.jsonl")).unwrap();
+            let calls: Vec<serde_json::Value> = received
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            let row = LiveKind::new(root.clone(), node.device())
+                .dir_of(first.binding.view())
+                .unwrap();
+            let attempt: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                attempt["latest"]["support"],
+                serde_json::json!({"load":false,"resume":false})
+            );
+            assert_eq!(
+                calls
+                    .iter()
+                    .filter(|call| call["method"] == "session/new")
+                    .count(),
+                1
+            );
+            assert!(
+                !calls
+                    .iter()
+                    .any(|call| call["method"] == "session/load"
+                        || call["method"] == "session/resume")
+            );
         }
         "journal" => {
             unsafe {
@@ -944,8 +1069,10 @@ fn managed_host_case_worker() {
                 .unwrap();
             assert!(
                 observed.events.iter().any(|event| match &event.payload {
-                    crate::session_content::ContentEvent::Update { update: notification, .. } =>
-                        notification["update"]["content"][0]["newText"] == "new",
+                    crate::session_content::ContentEvent::Update {
+                        update: notification,
+                        ..
+                    } => notification["update"]["content"][0]["newText"] == "new",
                     _ => false,
                 }),
                 "rich ACP diff survives the common read-only source pipeline"
@@ -970,18 +1097,22 @@ fn managed_host_case_worker() {
             assert!(chunk.bytes.len() <= 64 * 1024);
             assert!(chunk.next.is_some());
             assert!(String::from_utf8_lossy(&chunk.bytes).contains("original user words"));
-            let token=[71;16];
-            write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
-            let first=await_capture(&notes,token);
-            let _=capture_page(&node,&first,false);
-            let (mut reattached,reattached_notes)=attach_host(&root,&scratch,"journal-load");
-            let token=[72;16];
-            write_frame(&mut reattached,&GuiOp::Capture{token}).unwrap();
-            let second=await_capture(&reattached_notes,token);
-            assert_eq!(first.binding,second.binding,"reattach must preserve canonical source identity");
-            let _=capture_page(&node,&second,false);
+            let token = [71; 16];
+            write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
+            let first = await_capture(&notes, token);
+            let _ = capture_page(&node, &first, false);
+            let (mut reattached, reattached_notes) = attach_host(&root, &scratch, "journal-load");
+            let token = [72; 16];
+            write_frame(&mut reattached, &GuiOp::Capture { token }).unwrap();
+            let second = await_capture(&reattached_notes, token);
+            assert_eq!(
+                first.binding, second.binding,
+                "reattach must preserve canonical source identity"
+            );
+            let _ = capture_page(&node, &second, false);
             reattached.shutdown(std::net::Shutdown::Both).unwrap();
-            drop(reattached);drop(reattached_notes);
+            drop(reattached);
+            drop(reattached_notes);
             assert_eq!(
                 std::fs::read(&records).unwrap(),
                 text.as_bytes(),
@@ -1003,15 +1134,28 @@ fn managed_host_case_worker() {
             );
             std::fs::remove_file(scratch.join("journal-load.ready")).unwrap();
             let (host, mut conn, notes) = open_host(&root, &scratch, "journal-load");
-            assert_eq!(std::fs::read(&records).unwrap(), text.as_bytes(), "Load preserves the old published base byte for byte");
-            let token=[73;16];
-            write_frame(&mut conn,&GuiOp::Capture{token}).unwrap();
-            let loaded=await_capture(&notes,token);
-            assert_ne!(loaded.binding, first.binding, "a complete Load publishes a separate display generation");
-            let loaded_source=loaded.binding.resolve_exact(&root,node.device()).unwrap().unwrap();
-            let read_loaded=|| {
-                let(mut file,_)=loaded_source.open().unwrap();
-                let mut raw=String::new();file.read_to_string(&mut raw).unwrap();raw
+            assert_eq!(
+                std::fs::read(&records).unwrap(),
+                text.as_bytes(),
+                "Load preserves the old published base byte for byte"
+            );
+            let token = [73; 16];
+            write_frame(&mut conn, &GuiOp::Capture { token }).unwrap();
+            let loaded = await_capture(&notes, token);
+            assert_ne!(
+                loaded.binding, first.binding,
+                "a complete Load publishes a separate display generation"
+            );
+            let loaded_source = loaded
+                .binding
+                .resolve_exact(&root, node.device())
+                .unwrap()
+                .unwrap();
+            let read_loaded = || {
+                let (mut file, _) = loaded_source.open().unwrap();
+                let mut raw = String::new();
+                file.read_to_string(&mut raw).unwrap();
+                raw
             };
             let after = read_loaded();
             assert_eq!(
@@ -1032,11 +1176,11 @@ fn managed_host_case_worker() {
                 process_pid(&scratch, "journal-load"),
             );
             let (host, mut conn, notes) = open_host(&root, &scratch, "journal-resume");
-            let resumed=read_loaded();
+            let resumed = read_loaded();
             assert!(resumed.starts_with(&after));
             assert!(resumed.contains("\"opening\":\"resume\""));
-            assert_eq!(resumed.matches("新运行早期").count(),1);
-            assert_eq!(std::fs::read(&records).unwrap(),text.as_bytes());
+            assert_eq!(resumed.matches("新运行早期").count(), 1);
+            assert_eq!(std::fs::read(&records).unwrap(), text.as_bytes());
             close_host(
                 host,
                 &mut conn,
@@ -1056,12 +1200,19 @@ fn managed_host_case_worker() {
                     .to_owned(),
             );
             let node = crate::Node::open(root.clone()).unwrap();
-            let row = LiveKind::new(root.clone(), node.device()).dir_of(&id).unwrap();
-            let attempt: serde_json::Value = serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap()).unwrap();
+            let row = LiveKind::new(root.clone(), node.device())
+                .dir_of(&id)
+                .unwrap();
+            let attempt: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(row.join("recovery-attempt.json")).unwrap())
+                    .unwrap();
             // This fixture advertises both capabilities. Persist the actual
             // Initialize facts; the resume1/load0/new0 checks below independently
             // prove which opening was selected, even when Load is available.
-            assert_eq!(attempt["latest"]["support"], serde_json::json!({"load":true,"resume":true}));
+            assert_eq!(
+                attempt["latest"]["support"],
+                serde_json::json!({"load":true,"resume":true})
+            );
             assert_eq!(
                 node.session_content(&id, None).unwrap(),
                 crate::session_content::Availability::Available {
@@ -1074,21 +1225,52 @@ fn managed_host_case_worker() {
             );
             let received =
                 std::fs::read_to_string(scratch.join("journal-resume/received.jsonl")).unwrap();
-            let calls:Vec<serde_json::Value>=received.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
-            assert_eq!(calls.iter().filter(|call|call["method"]=="session/resume").count(),1);
+            let calls: Vec<serde_json::Value> = received
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert_eq!(
+                calls
+                    .iter()
+                    .filter(|call| call["method"] == "session/resume")
+                    .count(),
+                1
+            );
             assert!(!calls.iter().any(|call|call["method"]=="session/load"||call["method"]=="session/new"));
             let page = node
                 .transcript_page(&id, None, false, &std::sync::atomic::AtomicBool::new(false))
                 .unwrap();
-            assert_eq!(page.events.iter().filter(|event| matches!(&event.payload,
+            assert_eq!(
+                page.events
+                    .iter()
+                    .filter(|event| matches!(&event.payload,
                 crate::session_content::ContentEvent::Update{update:note,..}
-                if note["update"]["content"]["text"]=="新运行早期")).count(),1);
-            let source=crate::session_content::journal::Source::registered(
-                &root,node.device(),&id,LiveKind::new(root.clone(),node.device()).dir_of(&id).as_deref()
-            ).unwrap().unwrap();
-            let mut raw=String::new();source.open().unwrap().read_to_string(&mut raw).unwrap();
-            let rows:Vec<serde_json::Value>=raw.lines().map(|line|serde_json::from_str(line).unwrap()).collect();
-            assert_eq!(rows.iter().filter(|row|row["notification"]["update"]["content"]["text"]=="新运行早期").count(),1);
+                if note["update"]["content"]["text"]=="新运行早期"))
+                    .count(),
+                1
+            );
+            let source = crate::session_content::journal::Source::registered(
+                &root,
+                node.device(),
+                &id,
+                LiveKind::new(root.clone(), node.device())
+                    .dir_of(&id)
+                    .as_deref(),
+            )
+            .unwrap()
+            .unwrap();
+            let mut raw = String::new();
+            source.open().unwrap().read_to_string(&mut raw).unwrap();
+            let rows: Vec<serde_json::Value> = raw
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+            assert_eq!(
+                rows.iter()
+                    .filter(|row| row["notification"]["update"]["content"]["text"] == "新运行早期")
+                    .count(),
+                1
+            );
             close_host(
                 host,
                 &mut conn,
@@ -1110,7 +1292,11 @@ fn managed_host_case_worker() {
                 let id = crate::adaptor::id_for("synthetic-q037-session");
                 let node = crate::Node::open(root.clone()).unwrap();
                 let live = LiveKind::new(root.clone(), node.device());
-                let expected_identity = gui_new_source_identity(node.device(), std::slice::from_ref(&command), "synthetic-q037-session");
+                let expected_identity = gui_new_source_identity(
+                    node.device(),
+                    std::slice::from_ref(&command),
+                    "synthetic-q037-session",
+                );
                 let handle = {
                     let root = root.clone();
                     let ready = ready.clone();
@@ -1510,8 +1696,10 @@ fn managed_host_case_worker() {
                                 .checked_sub(page.events.len())
                                 .expect("history duplicated rows");
                             for (index, event) in page.events.iter().enumerate() {
-                                let crate::session_content::ContentEvent::Update { update: note, .. } =
-                                    &event.payload
+                                let crate::session_content::ContentEvent::Update {
+                                    update: note,
+                                    ..
+                                } = &event.payload
                                 else {
                                     panic!("unexpected non-history record")
                                 };
