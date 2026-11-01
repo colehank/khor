@@ -119,7 +119,8 @@
     "chat-drafts": "node scripts/check-chat-drafts.mjs",
     "chat-cancel": "node scripts/check-chat-cancel.mjs",
     "chat-recovery": "node scripts/check-chat-recovery.mjs",
-    "workspace-content-ui": "node scripts/check-workspace-content-ui.mjs"
+    "workspace-content-ui": "node scripts/check-workspace-content-ui.mjs",
+    "terminal-links-ui": "node scripts/check-terminal-links-ui.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",

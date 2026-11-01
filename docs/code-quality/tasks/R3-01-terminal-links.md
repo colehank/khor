@@ -27,3 +27,5 @@ URL、OSC8和已验证路径继续使用已有provider／opener，不新增网�
 ## Clean Code自审
 
 打开目的地仍由linkIntent决定；是否可激活与手势归属独立，不把程序模式当用户意图。手势的link/program/cancelled状态集中在一个资源owner，私有SDK访问只出现一处，TerminalPane只挂接／释放。注释只保留SDK与事件时序原因；不顺带整理巨大TerminalPane或引入通用手势框架。
+
+Final combination adds actual Chrome/xterm DOM evidence: `/Volumes/disk0/Khor/evidence/round3/terminal-dom-verified`10/10 (URL/path/OSC8 plain+Cmd, actual program mouse report observation, drag handoff, secondary click and Option forced selection). No production change needed. This uses production providers/claim adapter with no PTY or external app execution. Initial fixture failures (escaped payload, testing Mac Ctrl as a primary click, using Shift without the production Mac Option setting) were corrected and retained; none are counted as product regressions. Exact source hashes are recorded in the final rerun below. Real native TUI/iPhone remains to accept.
