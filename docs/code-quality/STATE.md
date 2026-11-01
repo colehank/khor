@@ -52,3 +52,5 @@
 - R3-04正在做：最新提交722120b2，当前只有scripts/check-workspace-content-ui.mjs的斜体/无空心圆回归断言未提交；红测exec1107。下一动作核红后修改共用TabStrip/TabSheetRows和移动甲板title样式。无其它实现并行、无agent、main/运行实例不变，无merge/ship授权。
 
 - 用户首轮验收修正已完成并提交4fede178：首次打开内容原位转换、编辑器首行避开甲板、浏览器移除工作区返回、Lab补齐正式app滚动监听。review-fixes布局5项与完整交互5组均通过，model/types/unit实际0。原95583 Lab已按PID/出生/cwd核实后关闭，新的唯一Lab为PID8946（Sun Nov  1 21:02:48 2026），exec88030，http://127.0.0.1:23836/.workspace-content-check-zlzg3G/index.html。main/用户GUI未动，无原生构建；最新资源内盘13GiB/外盘91GiB。原Lab链接和上方旧PID仅是旧时点，以JSON为准。
+
+- 用户已允许并完成单击保留与返回位置修正，代码HEAD d7e2445074a5914a25fdcc729e1b815eb0b962e3。Session预览Map及替换分支已移除，文件/提交单击保留、同目标去重，独立工作区单击预览/双击保留不变；返回位于选择器之后、内容药丸之前。session-single-click:model先红后绿，types/unit0，UI5/5、layout5/5，源hash不变。原Lab PID8946/exec88030/port23836仍在，刷新原URL即可。main未动，无merge/ship授权，无新增构建。
