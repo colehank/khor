@@ -149,8 +149,13 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
       const group = !heading && groupHead?.getBoundingClientRect();
       const boundary = groupHead ? stickyEdge(groupHead) : main.bottom;
       const held = group && group.top <= boundary + 1 && group.bottom > boundary;
-      const start = (held ? group.top : main.top) - top;
       const flush = held && body.dataset.stickyBody === 'flush';
+      // Process-column controls centre one line inside the touch target.
+      // Keep direct row glyphs out of that line; the lower inset still fades
+      // naturally to full body opacity at the same heading bottom.
+      const line = flush && groupHead?.hasAttribute('data-top-heads') ? parseFloat(getComputedStyle(groupHead).lineHeight) : 0;
+      const labelClear = line > 0 && group ? Math.min(group.height, (group.height + line) / 2) : 0;
+      const start = (held ? group.top + labelClear : main.top) - top;
       const end = (held ? group.bottom : main.bottom) + (heading || flush ? 0 : tail) - top;
       return {body,start,length:end-start,active:on && end>0,material:heading && on && rect.top<=stickyEdge(body)+1 && rect.bottom>stickyEdge(body)};
     });
