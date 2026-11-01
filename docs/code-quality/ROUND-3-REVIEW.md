@@ -1,6 +1,6 @@
 # 第三轮实现与验收交接
 
-本轮四项代码已经完成，Root 单独执行并自审；当前等待用户体验验收。没有合并 main、ship、重启旧 GUI 或接管用户会话。代码基线为 main27a9ce5c；本轮分支为 `integrate/round3`。
+本轮四项代码及用户首轮验收修正已完成，Root单独执行并自审；当前等待再次体验验收。没有合并 main、ship、重启旧 GUI 或接管用户会话。代码基线为 main27a9ce5c；本轮分支为 `integrate/round3`。
 
 ## 交付
 
@@ -44,3 +44,7 @@ WebKit运行时缺失，未下载，未宣称通过。本轮没有原生发布�
 两个命令选择失误已处理并保留日志：第一次Rust定向命令漏`--lib`，额外构建集成目标后停止自己的Cargo；组合`npm test`的pretest隐式触发绑定编译后停止，改显式unit/types，删除本次误建的2.7GiB工作树target。共享Rust缓存保留，不清未知产物。最后内盘约16GiB、外盘91GiB；不以这个快照替代以后大构建前检查。
 
 中央权威入口为规划树 `docs/code-quality/ROUND-3-CHECKPOINT.json`、`STATE.md` 和 `ROUND-3-PLAN.md`；镜像及仅本轮提交bundle位于内盘recovery目录。恢复先核实际分支/diff/进程；不重做已提交四项，不唤醒子智能体，不从旧inflight压缩包覆盖代码。Lab进程/URL在检查点登记，合并和ship等待用户另行授权。
+
+## 2026-11-01 首轮验收修正
+
+见 [修正记录](tasks/R3-review-corrections.md)。新建页首次内容原位转换；文件端口不再被浮动页padding覆盖；浏览器移除工作区返回；Lab补齐正式app全局滚动监听。最新review-fixes/model、types-final、unit均0，regression-final2五组通过，light-final专门验证首行/新建页/浏览器返回与连续滚动材质。没有Rust或原生构建，main与用户app不动。

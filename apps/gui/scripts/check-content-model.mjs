@@ -274,7 +274,7 @@ historyRoute.value.setHistoryOpen(true);await tick();historyMachine='three';hist
 historyRoute.close();otherHistoryRoute.close();
 console.log('repository history: detail-to-list Back, separate seats, root and machine changes passed');
 
-// Workspace selections share one preview slot without consuming their starting tab.
+// A starting tab converts once; later selections share its clean preview slot.
 node={tabs:[],active:''};
 const workspace=mount(()=>useSessionContent(false));await until(()=>workspace.value.ready);
 const source=workspace.value.newTab('Workspace','machine');await until(()=>workspace.value.tabs.length>0&&!workspace.value.tabs[0].id.startsWith('opening:'));
@@ -283,7 +283,8 @@ const first=workspace.value.openWorkspaceDocument({session:'Workspace',source:so
 const second=workspace.value.openWorkspaceDocument({session:'Workspace',source:source.id,device:'machine',address:'/repo/b.md',view:'file'});
 assert.equal(workspace.value.handle(first),workspace.value.handle(second),'rapid single clicks reuse the same preview before acknowledgements');
 await until(()=>node.tabs.some(t=>t.url==='/repo/b.md'));
-assert.equal(workspace.value.tabs.filter(t=>t.view==='workspace').length,1,'the source deck remains an actual tab');
+assert.equal(workspace.value.handle(first),workspace.value.handle(source),'the first document occupies the starting tab itself');
+assert.equal(workspace.value.tabs.filter(t=>t.view==='workspace').length,0,'opening content does not leave an unused new tab');
 assert.equal(workspace.value.isPreview(second),true);
 workspace.value.keepDocument(second.id);await tick();
 const third=workspace.value.openWorkspaceDocument({session:'Workspace',source:source.id,device:'machine',address:JSON.stringify(['/repo','a'.repeat(40)]),view:'commit',title:'Commit subject'});
@@ -309,7 +310,7 @@ const reloadedWorkspace=mount(()=>useSessionContent(false));await until(()=>relo
 assert(reloadedWorkspace.value.tabs.some(t=>t.view==='commit'&&t.title==='Lost acknowledgement'),'commit identity survives a reload');
 assert(reloadedWorkspace.value.tabs.every(t=>!reloadedWorkspace.value.isPreview(t)),'transient preview slots reopen as kept documents');
 reloadedWorkspace.close();
-console.log('workspace document previews: source retention, rapid replacement, keep, separate sessions and commit reload passed');
+console.log('workspace document previews: starting tab conversion, rapid replacement, keep, separate sessions and commit reload passed');
 
 const revision={root:'/repo/中文 [draft] \"notes\"',id:'a'.repeat(40)};
 assert.deepEqual(readCommitAddress(commitAddress(revision)),revision);

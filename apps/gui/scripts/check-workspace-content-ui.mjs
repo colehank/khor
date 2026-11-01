@@ -11,7 +11,7 @@ const output=process.env.WORKSPACE_CONTENT_DIR;assert(output,'Set WORKSPACE_CONT
 const fixture=mkdtempSync(join(gui,'.workspace-content-check-'));
 writeFileSync(join(fixture,'index.html'),'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),readFileSync(join(gui,'scripts/fixtures/workspace-content-ui.tsx')));
-const files=['src/hooks/use-session-content.ts','src/hooks/use-content-navigation.ts','src/views/SessionContent.tsx','src/views/MobileSessionContent.tsx','src/views/SideWorkspace.tsx','src/views/WorkspacePane.tsx','src/views/CommitPage.tsx','src/components/WorkspaceGitNavigation.tsx','src/browse/TabStrip.tsx','src/components/icons.tsx','src/styles/workspace-navigation.css'];
+const files=['src/hooks/use-session-content.ts','src/hooks/use-content-navigation.ts','src/views/SessionContent.tsx','src/views/MobileSessionContent.tsx','src/views/SideWorkspace.tsx','src/views/WorkspacePane.tsx','src/views/CommitPage.tsx','src/components/WorkspaceGitNavigation.tsx','src/browse/TabStrip.tsx','src/components/icons.tsx','src/styles/workspace-navigation.css','src/styles/app.css','src/lib/scroll-edge.ts','src/views/MobileContentPage.tsx'];
 const fingerprint=()=>Object.fromEntries(files.map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
 const before=fingerprint(),calls=[],commits=Array.from({length:82},(_,i)=>({id:(i+1).toString(16).padStart(40,'a'),subject:`Commit ${i+1}`,author:'Fixture author',when_ms:Date.UTC(2026,10,1)-i*3600000,cut:false}));
 let tabs={tabs:[{id:'source',session:'session',device:'fixture',url:'',view:'workspace',pinned:false,title:'',touched:1}],active:'source'},sequence=0,server,browser;
@@ -49,10 +49,42 @@ try{
  else{
  browser=await chromium.launch({channel:'chrome',headless:true});
  const page=await browser.newPage({viewport:{width:1400,height:900},reducedMotion:'reduce'});page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Fixture page error:',e.message);});
- await page.goto(url);const picker=page.locator('[data-content-picker]:visible');await picker.locator('[data-workspace-navigation]').waitFor();
+ await page.goto(url+(process.env.WORKSPACE_REVIEW_THEME==='light'?'?theme=light':''));const picker=page.locator('[data-content-picker]:visible');await picker.locator('[data-workspace-navigation]').waitFor();
+ if(process.env.WORKSPACE_REVIEW_REQUIRE==='1'){
+   await picker.locator('[data-content-source="browser"]').click();
+   const back=await picker.locator('[data-content-back]').count();
+   results.push({name:'browser picker has no workspace return',passed:back===0,back});
+   await picker.locator('[data-content-source="workspace"]').click();
+   await picker.locator('[data-file-path="/fixture/a.md"]').click();await page.locator('[data-content-visible="true"] .cm-content').waitFor();
+   results.push({name:'new starting tab converts into first document',passed:tabs.tabs.length===1,tabs:structuredClone(tabs)});
+   const layout=await page.locator('[data-content-visible="true"] [data-file-page]').evaluate(box=>{
+     const head=box.querySelector('[data-content-toolbar]'),scroll=box.querySelector('.cm-scroller'),line=box.querySelector('.cm-line'),content=box.querySelector('.cm-content');
+     const rect=e=>{const r=e.getBoundingClientRect();return {top:r.top,bottom:r.bottom,height:r.height};};
+     return {head:rect(head),scroll:rect(scroll),line:rect(line),scrollPadding:getComputedStyle(scroll).paddingTop,contentPadding:getComputedStyle(content).paddingTop,port:scroll.outerHTML.slice(0,450),parent:box.outerHTML.slice(0,250)};
+   });results.push({name:'file first line clears original toolbar',passed:layout.line.top>=layout.head.bottom,layout});
+   await page.screenshot({path:join(output,'review-file.png')});
+   await page.evaluate(()=>window.__workspaceProbe.navigation.browse('session'));
+   await picker.getByRole('button',{name:'提交历史',exact:true}).click();await picker.locator('[data-workspace-log-commit]').first().click();
+   const scroller=page.locator('[data-content-visible="true"] [data-commit-scroll]');await scroller.locator('.cm-editor').waitFor();
+   await scroller.evaluate(el=>{el.scrollTop=el.querySelector('[data-commit-file]').offsetTop+150;});
+   await page.waitForTimeout(150);
+   const sticky=await scroller.locator('[data-commit-file]').first().evaluate(group=>{
+     const head=group.querySelector('[data-sticky-head]'),body=group.querySelector('[data-sticky-body]');const h=head.getBoundingClientRect(),b=body.getBoundingClientRect();
+     return {head:{top:h.top,bottom:h.bottom},body:{top:b.top,bottom:b.bottom},held:head.hasAttribute('data-sticky-held'),fading:body.hasAttribute('data-sticky-fading'),mask:getComputedStyle(body).maskImage,start:body.style.getPropertyValue('--sticky-fade-start'),length:body.style.getPropertyValue('--sticky-fade-length'),scroller:group.parentElement.outerHTML.slice(0,200)};
+   });results.push({name:'commit body fades beneath held title',passed:sticky.held&&sticky.fading,sticky});
+   await page.waitForTimeout(500);
+   await scroller.evaluate(el=>{el.scrollTop=Math.max(0,el.scrollHeight-el.clientHeight-12);});await page.waitForTimeout(60);
+   const beforeScroll=await scroller.locator('[data-sticky-body="flush"]').first().evaluate(el=>parseFloat(el.style.getPropertyValue('--sticky-fade-start')));
+   await scroller.evaluate(el=>{el.scrollTop+=8;});await page.waitForTimeout(60);
+   const afterScroll=await scroller.locator('[data-sticky-body="flush"]').first().evaluate(el=>parseFloat(el.style.getPropertyValue('--sticky-fade-start')));
+   results.push({name:'settled commit scroll updates shared material',passed:afterScroll-beforeScroll>6,beforeScroll,afterScroll});
+   await page.screenshot({path:join(output,'review-commit.png')});
+   console.log(JSON.stringify(results));assert(results.every(r=>r.passed),'review regressions reproduced');
+ } else {
  const box=await picker.locator('[data-workspace-navigation]').evaluate(nav=>{const b=nav.querySelector('button:last-child').getBoundingClientRect(),close=nav.closest('[data-content-picker]').querySelector('[data-content-close]')?.getBoundingClientRect();const first=nav.querySelector('button').getBoundingClientRect();return {history:b.x+b.width/2,close:close?close.x+close.width/2:null,widths:[first.width,b.width],heights:[first.height,b.height]};});
  assert.equal(box.history,box.close);assert.equal(box.widths[0],box.widths[1]);assert.equal(box.heights[0],box.heights[1]);
  const source=await page.evaluate(()=>window.__workspaceProbe.content.tabs[0].id);
+ const browse=()=>page.locator('[data-tab-open="session"]').click();
  await picker.getByRole('button',{name:'提交历史',exact:true}).click();
  await picker.locator('[data-workspace-log-commit]').first().waitFor();
  await picker.locator('[data-workspace-log-older]').click();await picker.locator('[data-workspace-log-commit]').filter({hasText:'Commit 41'}).waitFor();
@@ -64,22 +96,22 @@ try{
    assert.equal(await previewTitle.evaluate(el=>getComputedStyle(el).fontStyle),'italic','temporary commit title uses italic');
    assert.equal(await page.locator('[data-tab-preview]').count(),0,'temporary title has no hollow ring');
  }
- assert.equal(tabs.tabs.length,2,'commit does not replace source picker');assert.equal(tabs.tabs.find(t=>t.id===source).view,'workspace');
+ await until(()=>tabs.tabs.find(t=>t.id===source)?.view==='commit');assert.equal(tabs.tabs.length,1,'first commit replaces the starting tab');
  await page.locator('[data-content-visible="true"] [data-commit-collapse]').click();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'false');
- await page.locator(`[data-content-tab="${source}"]`).click();await picker.locator(`[data-workspace-log-commit="${second}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${second}"]`).waitFor();assert.equal(tabs.tabs.length,2,'second commit replaces preview');
+ await browse();await picker.locator(`[data-workspace-log-commit="${second}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${second}"]`).waitFor();assert.equal(tabs.tabs.length,1,'second commit replaces preview');
  const preview=await page.evaluate(()=>window.__workspaceProbe.content.active('session').id);
  await page.locator(`[data-content-tab="${preview}"] [data-tab-open]`).dblclick();
  if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1')assert.equal(await page.locator(`[data-content-tab="${preview}"] [data-tab-name]`).evaluate(el=>getComputedStyle(el).fontStyle),'normal','kept commit title returns to normal');
- await page.locator(`[data-content-tab="${source}"]`).click();await picker.locator(`[data-workspace-log-commit="${first}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${first}"]`).waitFor();await until(()=>tabs.tabs.length===3);assert.equal(tabs.tabs.length,3,'double-click kept the earlier commit');
+ await browse();await picker.locator(`[data-workspace-log-commit="${first}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${first}"]`).waitFor();await until(()=>tabs.tabs.length===2);assert.equal(tabs.tabs.length,2,'double-click kept the earlier commit');
  await page.locator(`[data-content-tab="${preview}"] [data-tab-open]`).click();await page.locator('[data-content-visible="true"] [data-commit-collapse]').waitFor();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'true','new commit starts expanded');
- await page.locator(`[data-content-tab="${source}"]`).click();await picker.getByRole('button',{name:'文件树',exact:true}).click();await picker.locator('[data-file-tree]').waitFor();
- await page.screenshot({path:join(output,'session-workspace.png')});results.push({name:'original session deck, independent commit tabs, preview keep, pagination and collapse',passed:true,alignment:box});
+ await browse();await picker.getByRole('button',{name:'文件树',exact:true}).click();await picker.locator('[data-file-tree]').waitFor();
+ await page.screenshot({path:join(output,'session-workspace.png')});results.push({name:'original session deck, starting tab conversion, independent commits and preview keep',passed:true,alignment:box});
  await picker.locator('[data-file-path="/fixture/a.md"]').click();
  const editor=page.locator('[data-content-visible="true"] .cm-content');await editor.waitFor();await editor.fill('A private unsaved draft');
  await page.waitForFunction(()=>{const c=window.__workspaceProbe.content,t=c.active('session');return t?.view==='file'&&!c.isPreview(t);});
  if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1')assert.equal(await page.locator('[data-content-on="true"] [data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'normal','typing keeps file title in normal style');
  const dirtyId=await page.evaluate(()=>window.__workspaceProbe.content.active('session').id);
- await page.locator(`[data-content-tab="${source}"] [data-tab-open]`).click();await picker.locator('[data-file-path="/fixture/b.md"]').click();await editor.waitFor();
+ await browse();await picker.locator('[data-file-path="/fixture/b.md"]').click();await editor.waitFor();
  assert(tabs.tabs.some(t=>t.id===dirtyId&&t.url==='/fixture/a.md'),'editing preserves a kept file while the next file opens');
  await page.locator(`[data-content-tab="${dirtyId}"] [data-tab-open]`).click();assert.equal(await editor.innerText(),'A private unsaved draft');
  results.push({name:'actual file editing keeps preview and draft across another selection',passed:true});
@@ -98,12 +130,13 @@ try{
    results.push({name:'two-line/narrow title typography preserves subtitle, unread and unsaved marks',passed:true});
  }
  const phone=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'});
- phone.on('pageerror',e=>errors.push(e.message));await phone.goto(url+'?mobile=1');await phone.waitForFunction(()=>window.__workspaceProbe?.content.ready);await phone.evaluate(()=>{const {content,navigation}=window.__workspaceProbe,source=content.tabs.find(t=>t.id==='source');navigation.select(source);void content.focus(source.id);});const mobilePicker=phone.locator('[data-content-picker]:visible');
+ phone.on('pageerror',e=>errors.push(e.message));await phone.goto(url+'?mobile=1');await phone.waitForFunction(()=>window.__workspaceProbe?.content.ready);await phone.locator('[data-content-visible="true"]').waitFor();await phone.evaluate(()=>window.__workspaceProbe.navigation.browse('session'));const mobilePicker=phone.locator('[data-content-picker]:visible');
  await mobilePicker.locator('[data-workspace-navigation]').waitFor();await mobilePicker.getByRole('button',{name:'提交历史',exact:true}).click();
  await mobilePicker.locator('[data-workspace-log-commit]').first().click();await phone.locator('[data-content-visible="true"] [data-commit-page]').waitFor();
  await phone.locator('[data-content-visible="true"] [data-content-deck]').waitFor();await phone.screenshot({path:join(output,'mobile-commit.png')});
  await phone.locator('[data-content-visible="true"] [data-content-deck]').getByRole('button',{name:'返回',exact:true}).click();await mobilePicker.locator('[data-workspace-navigation]').waitFor();
  results.push({name:'mobile commit retains original content deck and can return to workspace',passed:true});await phone.close();
+ }
  assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),before,'test evidence must match unchanged source');
  }
 }catch(e){if(browser){for(const context of browser.contexts())for(const page of context.pages())await page.screenshot({path:join(output,'failure.png')}).catch(()=>{});}results.push({passed:false,error:String(e)});throw e;}

@@ -2491,8 +2491,11 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
    bottom. Padding on the scroller itself, so the text still passes under
    the deck while it moves and the last line can rest clear of it. */
 [data-file-page] :is([data-file-scroll], [data-file-preview]) {
-  padding-top: calc(var(--safe-top) + var(--gap-in));
   padding-bottom: calc(var(--dock-safe-bottom) + var(--glass-btn) + 2 * var(--gap-in));
+}
+/* A top toolbar owns its port's clearance; floating decks only reserve the safe area. */
+[data-file-page] :is([data-file-scroll], [data-file-preview]):not([data-band-scroll]) {
+  padding-top: calc(var(--safe-top) + var(--gap-in));
   scroll-padding-top: calc(var(--safe-top) + var(--gap-in));
 }
 /* The file's one floating notice (a refused save, a merge, the gutter

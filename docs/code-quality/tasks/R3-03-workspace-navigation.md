@@ -1,3 +1,5 @@
+> 用户验收修正：新建标签首次打开内容原位转换，不保留额外新建页；以 [R3-review-corrections.md](R3-review-corrections.md) 和最新回归为准。
+
 # R3-03 Shared workspace navigation
 
 State: implementation and author self-review complete; committed with this task card. Root only; no main merge/ship.

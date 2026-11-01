@@ -88,7 +88,7 @@ export function ContentPicker({row,devices,navigation,onOpen,onWorkspaceFile,onO
  const home=devices.find(d=>d.name===row.home),device=state.scope?devices.find(d=>d.id===state.scope!.device):home;
  const editDevice=device||home||devices.find(d=>d.me)||devices[0];
  const root=state.scope?.root||sessionCwdOnScreen(row)||'';
- const canReturnWorkspace=!!home&&(state.source==='browser'||!!state.scope&&(state.scope.device!==home.id||state.scope.root!==sessionCwdOnScreen(row)));
+ const canReturnWorkspace=state.source==='workspace'&&!!home&&!!state.scope&&(state.scope.device!==home.id||state.scope.root!==sessionCwdOnScreen(row));
  const exit=devices.find(d=>d.id===state.exit)||device;
  const fieldKey='picker:'+session+':'+(state.key||'legacy'),field=navigation.editor(fieldKey),editing=!!field.editing||field.exitPrompt!==undefined;
  const [history,setHistory]=useState(false),[historyQuery,setHistoryQuery]=useState('');

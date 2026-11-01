@@ -167,14 +167,19 @@ export function useSessionContent(watch: boolean) {
     const tab = liveTabs().find(tab => tab.id === resolve(id) || handle(tab) === id);
     if (tab && isPreview(tab)) { previews.current.delete(tab.session); publish(); }
   };
-  /** A workspace keeps its source tab and one replaceable, clean document per session.
+  /** A starting tab becomes its first document; later choices share one clean preview.
    * Preview ownership is local to this viewer; persisted tabs reopen as kept documents. */
   const openWorkspaceDocument = ({session,source=null,device,address,view,line,keep=false,title=''}:WorkspaceDocumentRequest):ContentTab => {
     const tabs = liveTabs();
+    const starting = tabs.find(tab => tab.session===session && (tab.id===source || handle(tab)===source) && (tab.view||'workspace')==='workspace');
     const known = tabs.find(tab => same(tab,session,device,address,view));
     const preview = tabs.find(tab => tab.session === session && isPreview(tab) && !tab.pinned);
     let tab: ContentTab;
-    if (known) {
+    if (starting) {
+      tab = {...starting,device,url:address,view,title};
+      previews.current.set(session,handle(tab));
+      void point(tab.id,device,address,view,title,line).catch(()=>{});
+    } else if (known) {
       tab = open(session,device,address,view,line);
     } else if (preview) {
       tab = {...preview,device,url:address,view,title};
