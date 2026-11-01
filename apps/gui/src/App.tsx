@@ -2034,7 +2034,7 @@ export default function App() {
     if (!device) return content.fail(gui.content_machine_gone);
     (document.activeElement as HTMLElement|null)?.blur();
     if(view==='workspace')contentNavigation.browse(session,path?{device:device.id,root:path}:undefined);
-    else contentNavigation.document(content.open(session,device.id,path,view,line));
+    else contentNavigation.document(content.navigate({session,key:contentNavigation.get(session).key,device:device.id,address:path,view,line}));
     setSessionSide(session,{open:true,seat:'workspace'});
   };
   const sideShow = (machine: string, dir: string | null, start: { path: string; at: number } | null) =>

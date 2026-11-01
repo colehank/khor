@@ -11,7 +11,7 @@
 | R3-03 工作区导航 | 722120b2 | 两入口共用导航行，保留原session标签栏与甲板；bounded history、每次提交实体标签、预览/保留与真实编辑器草稿 |
 | R3-04 预览标题 | f57cae56 | 临时文件/提交标题斜体，无空心圆；双击/编辑保留后正体，副标题/未读/未保存标记独立 |
 
-详细实现与边界在各 [任务卡](tasks/R3-03-workspace-navigation.md)。Session内容单击即保留，首次占用新建标签，后续复用相同目标或新建对应标签。独立工作区保持单击预览、双击保留。保留不等于不可关闭的置顶。提交页从节点获取真实作者/正文，未伪造持久化摘要。
+详细实现与边界在各 [任务卡](tasks/R3-03-workspace-navigation.md)。Session标签承载自己的浏览过程：提交/文件/网页在当前标签原位切换，只有显式新建增加另一枚标签；不按同地址自动切换其他标签。首次进入初始化一枚。独立工作区保持单击预览、双击保留。提交页从节点获取真实作者/正文，未伪造持久化摘要。
 
 ## 已完成验证
 
@@ -50,3 +50,5 @@ WebKit运行时缺失，未下载，未宣称通过。本轮没有原生发布�
 见 [修正记录](tasks/R3-review-corrections.md)。新建页首次内容原位转换；文件端口不再被浮动页padding覆盖；浏览器移除工作区返回；Lab补齐正式app全局滚动监听。最新review-fixes/model、types-final、unit均0，regression-final2五组通过，light-final专门验证首行/新建页/浏览器返回与连续滚动材质。没有Rust或原生构建，main与用户app不动。
 
 - Session提交页返回补齐：参见 [R3-session-commit-back](tasks/R3-session-commit-back.md)。与文件页相同列位的原导航甲板；返回保留提交实体与收起状态，不变回新建页。相关Chrome五组/types/unit均通过。
+
+- 最终标签内导航契约：[R3-in-tab-navigation](tasks/R3-in-tab-navigation.md) 覆盖此前按内容新增/去重的选择。标签与目的地分离；所有内容入口统一navigate，New单独创建，返回保留原标签，草稿/阅读状态按目的地保留。

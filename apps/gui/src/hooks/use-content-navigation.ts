@@ -73,7 +73,7 @@ export type ContentEditor = {address?:string;editing?:boolean;exitPrompt?:number
 export type ContentNavigation = {
  editor:(key:string)=>ContentEditor;edit:(key:string,patch:ContentEditor)=>void;
  get:(session:string)=>ContentNavigationState;has:(session:string)=>boolean;
- update:(session:string,patch:Partial<ContentPlace>)=>void;document:(tab:ContentTab)=>void;select:(tab:ContentTab)=>void;
+ update:(session:string,patch:Partial<ContentPlace>)=>void;document:(tab:ContentTab|null)=>void;select:(tab:ContentTab)=>void;
  resume:(session:string)=>void;browse:(session:string,scope?:{device:string;root:string})=>void;
  add:(session:string,scope?:{device:string;root:string})=>ContentTab;
  returnToPicker:(session:string)=>void;
@@ -121,7 +121,8 @@ export function useContentNavigation(content: SessionContent): ContentNavigation
       target=enterContent(target,{scene:'document',source:tab.view==='page'?'browser':target.source});
     write(tab.session,s=>({...s,...place(target),trail:target.trail,from:target.from,recent:key,documentTrail:target.documentTrail}));
   };
-  const document=(tab:ContentTab)=>{
+  const document=(tab:ContentTab|null)=>{
+    if(!tab)return;
     if((tab.view||'workspace')==='workspace'){select(tab);return;}
     pendingResume.current.delete(tab.session);
     const key=content.handle(tab),target=tabState(tab.session,key),before=get(tab.session);
@@ -155,13 +156,12 @@ export function useContentNavigation(content: SessionContent): ContentNavigation
       if(tab&&content.active(session)?.id!==tab.id)void content.focus(tab.id).catch(()=>{});
       return;
     }
-    // Migrate the old singleton browsing location into one real starting
-    // tab, retaining its directory, query and address instead of losing it.
+    const tab=content.active(session);if(tab){select(tab);return;}
+    // With no tab yet, restore the initial browsing location.
     if(remembered&&(isContent(remembered)?remembered.scene==='picker':kept?.place.scene==='picker')){
       const old=isContent(remembered)?place(remembered):kept!.place;
       add(session);update(session,{...old,key:get(session).key,scene:'picker'});return;
     }
-    const tab=content.active(session);if(tab){select(tab);return;}
     add(session);
   };
   useEffect(()=>{if(content.ready)for(const session of [...pendingResume.current])resume(session);},[content.ready]);
