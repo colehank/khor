@@ -54,6 +54,7 @@ impl std::ops::Deref for Scratch {
 }
 
 fn root(tag: &str) -> Scratch {
+    khor_catalog::lang::set(khor_catalog::lang::from_env());
     let p = std::env::temp_dir().join(format!("khor-keeper-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
@@ -138,6 +139,7 @@ fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
         .arg("serve")
         .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
+        .env("KHOR_WEB_PORT", "0")
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(&log).unwrap())
         .stdout(std::process::Stdio::null())
@@ -221,6 +223,7 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         .arg("serve")
         .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
+        .env("KHOR_WEB_PORT", "0")
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(&log).unwrap())
         .stdout(std::process::Stdio::null())
@@ -358,6 +361,7 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
         .arg("serve")
         .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
+        .env("KHOR_WEB_PORT", "0")
         .env("KHOR_SHIELD", "1")
         .env("KHOR_INSTALL_SOURCE", &bin)
         .env_remove("KHOR_SESSION")
@@ -459,6 +463,7 @@ fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
         .arg("serve")
         .env("KHOR_HOME", &*home)
         .env("KHOR_NAME", "box")
+        .env("KHOR_WEB_PORT", "0")
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(home.join("serve.log")).unwrap())
         .stdout(std::process::Stdio::null())
