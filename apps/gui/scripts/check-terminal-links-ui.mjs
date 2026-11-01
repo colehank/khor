@@ -41,7 +41,7 @@ try{
  const url=`http://127.0.0.1:${server.config.server.port}/${basename(fixture)}/index.html`;
  if(process.env.TERMINAL_LINK_LAB==='1'){console.log('Private terminal Lab '+url);await new Promise(r=>{process.once('SIGINT',r);process.once('SIGTERM',r);});}
  else{
- browser=await chromium.launch({channel:'chrome',headless:true});const page=await browser.newPage({viewport:{width:1100,height:600}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>window.__terminalLinkWire?.ready);
+ browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:600}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>window.__terminalLinkWire?.ready);
  const point=(col,row)=>page.evaluate(([c,r])=>window.__terminalLinkPoint(c,r),[col,row]);
  const state=()=>page.evaluate(()=>window.__terminalLinkWire);
  const hover=async(col,row)=>{const p=await point(col,row);await page.mouse.move(p.x,p.y);await page.waitForFunction(()=>!!window.__terminalLinkCurrent());return p;};

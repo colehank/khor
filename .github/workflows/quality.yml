@@ -4,6 +4,10 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      reuse_frontend:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +20,7 @@ env:
 
 jobs:
   frontend:
+    if: ${{ !inputs.reuse_frontend }}
     uses: ./.github/workflows/frontend.yml
   scripts:
     runs-on: ubuntu-24.04
@@ -47,6 +52,7 @@ jobs:
 
   node-native:
     needs: frontend
+    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -94,6 +100,8 @@ jobs:
       - name: Verify keeper adoption and SSH installation in scratch homes
         run: |
           cargo test --locked -p khor-node --lib join:: -- --test-threads=1
+          cargo test --locked -p khor-core -p khor-node --lib activity -- --test-threads=1
+          cargo test --locked -p khor-node --lib gui_run_rejects_old_and_unqualified_reports -- --test-threads=1
           cargo test --locked -p khor-cli --test serve_keeper --test add_ssh -- --test-threads=1
       - uses: actions/upload-artifact@v4
         if: always()
@@ -110,6 +118,7 @@ jobs:
 
   gui:
     needs: frontend
+    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
@@ -133,9 +142,10 @@ jobs:
       - run: npm run test:unit && npm run test:types
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
-      - run: npm run test:interaction && npm run workspace-content-ui && npm run terminal-links-ui
+      - run: npm run test:interaction && npm run workspace-content-ui && npm run terminal-links-ui && npm run notification-ui
         env:
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          KHOR_TEST_FRONTEND: dist
           QUALITY_ENGINES: chrome,webkit
           QUALITY_HEADLESS: '1'
           EDITOR_OVERWRITE_WEBKIT: '1'
@@ -152,6 +162,9 @@ jobs:
           EDITOR_OVERWRITE_CHECK_DIR: ${{ runner.temp }}/quality-overwrite
           QUALITY_OUT: ${{ runner.temp }}/quality-scroll
           AI_ELEMENTS_OUT: ${{ runner.temp }}/quality-elements
+          WORKSPACE_CONTENT_DIR: ${{ runner.temp }}/quality-workspace
+          TERMINAL_LINK_UI_DIR: ${{ runner.temp }}/quality-terminal-links
+          NOTIFICATION_UI_DIR: ${{ runner.temp }}/quality-notifications
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -167,6 +180,9 @@ jobs:
             ${{ runner.temp }}/quality-native-events
             ${{ runner.temp }}/quality-native-helpers
             ${{ runner.temp }}/quality-compose
+            ${{ runner.temp }}/quality-workspace
+            ${{ runner.temp }}/quality-terminal-links
+            ${{ runner.temp }}/quality-notifications
           if-no-files-found: warn
 
   windows-agent-process:

@@ -20,6 +20,16 @@ spec.loader.exec_module(entry)
 
 
 class PersistentOwnershipTests(unittest.TestCase):
+    def test_suite_growth_runs_every_isolated_case_without_a_stale_count(self):
+        cases = [f"test-{index:02}" for index in range(13)]
+        self.assertEqual(entry.isolated_tests(cases, cases), cases)
+        self.assertEqual(entry.isolated_tests(cases, cases, {cases[-1]}), cases[:-1])
+        with self.assertRaises(ValueError):
+            entry.isolated_tests(["worker"], ["worker"], {"worker"})
+        for all_tests, ignored in [([], []), (cases, cases[:-1]), (["a", "a"], ["a", "a"])]:
+            with self.assertRaises(ValueError):
+                entry.isolated_tests(all_tests, ignored)
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="khor-persistent-proof-")
         self.addCleanup(self.temp.cleanup)

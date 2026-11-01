@@ -20,10 +20,15 @@ env:
   CARGO_BUILD_JOBS: '2'
   CARGO_PROFILE_DEV_DEBUG: '0'
 jobs:
+  frontend:
+    uses: ./.github/workflows/frontend.yml
   quality:
+    needs: frontend
     uses: ./.github/workflows/quality.yml
+    with:
+      reuse_frontend: true
   native:
-    needs: quality
+    needs: frontend
     timeout-minutes: 60
     environment: ${{ inputs.signed && 'apple-signing' || 'candidate' }}
     strategy:
@@ -123,7 +128,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   ios:
-    needs: quality
+    needs: frontend
     runs-on: macos-26
     timeout-minutes: 60
     environment: ${{ inputs.signed && 'apple-signing' || 'candidate' }}
@@ -154,7 +159,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   candidate:
-    needs: [native, ios]
+    needs: [quality, native, ios]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

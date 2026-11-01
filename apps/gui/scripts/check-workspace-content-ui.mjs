@@ -47,7 +47,7 @@ try{
  await server.listen();const url=`http://127.0.0.1:${server.config.server.port}/${basename(fixture)}/index.html`;
  if(process.env.WORKSPACE_CONTENT_LAB==='1'){console.log('Private fixture Lab '+url);await new Promise(resolve=>{process.once('SIGINT',resolve);process.once('SIGTERM',resolve);});}
  else{
- browser=await chromium.launch({channel:'chrome',headless:true});
+ browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});
  const page=await browser.newPage({viewport:{width:1400,height:900},reducedMotion:'reduce'});page.setDefaultTimeout(20000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('Fixture page error:',e.message);});
  await page.goto(url+(process.env.WORKSPACE_REVIEW_THEME==='light'?'?theme=light':''));const picker=page.locator('[data-content-picker]:visible');await picker.locator('[data-workspace-navigation]').waitFor();
  for(const width of [900,1400]){

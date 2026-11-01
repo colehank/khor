@@ -119,7 +119,8 @@ const utf8Tail = (text, limit) => {
 };
 let browser, vite, currentPage, currentTrace, viteStdoutTail = "";
 try {
-  vite = spawn("node_modules/.bin/vite", ["--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+  const mode = process.env.KHOR_TEST_FRONTEND === "dist" ? ["preview"] : [];
+  vite = spawn("node_modules/.bin/vite", [...mode, "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
     cwd: gui, env: { ...process.env, KHOR_FACE_GATE: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   let ready = false, log = "";
@@ -129,8 +130,11 @@ try {
     viteStdoutTail = utf8Tail(viteStdoutTail + stdoutDecoder.write(b), 4096);
   });
   vite.stderr.on("data", (b) => { log += b; });
-  for (let i = 0; i < 150 && !ready && vite.exitCode === null; i++) await sleep(100);
-  assert(ready, log || "Vite did not start");
+  for (let i = 0; i < 150 && !ready && vite.exitCode === null; i++) {
+    ready = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(500) }).then(r => r.ok, () => false);
+    if (!ready) await sleep(100);
+  }
+  assert(ready, `Vite did not start (exit ${vite.exitCode}): ${log}\n${viteStdoutTail}`);
   browser = await chromium.launch({ channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? "chrome") || undefined, headless: process.env.AI_ELEMENTS_HEADED !== "1" });
   for (const [name, width, scheme] of [["desktop-light", 1280, "light"], ["desktop-dark", 1280, "dark"], ["mobile-light", 390, "light"], ["mobile-dark", 390, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });

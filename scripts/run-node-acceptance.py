@@ -21,12 +21,24 @@ from native_provenance import key, read_messages, regular, require_provenance
 
 
 SUITES = {
-    "runtime-close": ("khor_agent::runtime_close_tests::", 6),
-    "doc-transfer": ("link::documents::flow_tests::", 5),
+    "runtime-close": "khor_agent::runtime_close_tests::",
+    "doc-transfer": "link::documents::flow_tests::",
+}
+SUITE_HELPERS = {
+    "runtime-close": {"khor_agent::runtime_close_tests::shutdown_worker"},
 }
 TIMEOUT_SECONDS = 300
 MIN_FREE_BYTES = 5 * 1024 * 1024 * 1024
 MAX_OBSERVED_PROCESSES = 512
+
+
+def isolated_tests(tests, ignored, helpers=()):
+    if not tests or len(tests) != len(set(tests)) or tests != ignored:
+        raise ValueError(f"Every selected test must be isolated and ignored; all={tests}, ignored={ignored}")
+    selected = [test for test in tests if test not in helpers]
+    if not selected or not set(helpers).issubset(tests):
+        raise ValueError("Suite must contain acceptance tests and its declared fixture helpers")
+    return selected
 
 
 def digest(path):
@@ -293,16 +305,16 @@ def main():
                        artifacts_sha256=digest(args.artifacts),
                        provenance_sha256=digest(args.provenance),
                        worker_provenance_sha256=digest(args.worker_provenance) if worker_provenance else None)
-        prefix, count = SUITES[args.suite]
+        prefix = SUITES[args.suite]
         inventories = []
         for name, flags in (("all", []), ("ignored", ["--ignored"])):
             _, raw = run(binary, ["--list", "--format", "terse", *flags],
                          output / f"list-{name}.log", root)
             inventories.append(sorted(test for test in re.findall(r"^(.+): test$", raw, re.M)
                                       if test.startswith(prefix)))
-        tests, ignored = inventories
-        if len(tests) != count or tests != ignored:
-            raise ValueError(f"Expected {count} isolated ignored tests; all={tests}, ignored={ignored}")
+        helpers = SUITE_HELPERS.get(args.suite, set())
+        tests = isolated_tests(*inventories, helpers)
+        receipt["fixture_helpers"] = sorted(helpers)
         receipt["selected_tests"] = tests
         for index, test in enumerate(tests, 1):
             result, raw = run(binary, ["--ignored", "--exact", test, "--nocapture"],
