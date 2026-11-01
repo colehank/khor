@@ -8,6 +8,7 @@ import os
 import shutil
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -80,7 +81,8 @@ class ProvenanceTests(unittest.TestCase):
                     paired = directory / "build_script_build-1111111111111111"
                     paired.write_bytes(b"synthetic build script")
                     executable.write_bytes(paired.read_bytes())
-                    stamp = paired.stat().st_mtime_ns
+                    stamp = time.time_ns()
+                    os.utime(paired, ns=(stamp, stamp))
                     os.utime(executable, ns=(stamp, stamp))
                     file = paired
                     published = executable
@@ -88,6 +90,8 @@ class ProvenanceTests(unittest.TestCase):
                     file = directory / (name + "-1111111111111111" if test or target["kind"] == ["bin"]
                                         else "lib" + name + "-1111111111111111.rlib")
                     file.write_bytes(b"synthetic artifact " + name.encode())
+                    stamp = time.time_ns()
+                    os.utime(file, ns=(stamp, stamp))
                     published = file
                 dep = file.with_suffix(".d")
                 if not test and target["kind"] not in (["custom-build"], ["bin"]):
