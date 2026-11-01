@@ -266,7 +266,7 @@ export function SessionScreen({
       under way and a plain pill open the 底栏 as before. */
   const stops = face?.interaction?.notices ?? [];
   const signal = usePillSignal(active, face?.interaction);
-  const grown = useGrownPill(stops.length);
+  const grown = useGrownPill(stops.length, signal === "rejoin");
   /** Grown and something to grow into: the island stands, the pill hides. */
   const island = !contentMode && grown.growth.mounted && stops.length > 0;
   const [deckPill, setDeckPill] = useState<HTMLElement | null>(null);

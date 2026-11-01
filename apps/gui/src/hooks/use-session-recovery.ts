@@ -56,9 +56,12 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
       return null;
     }
   };
-  // A lifecycle change invalidates an older offer. This is the read-only offer,
-  // never Initialize, Load, Resume or an automatic retry of a caller intent.
-  useEffect(() => { void refresh(); }, [id, home, revision]);
+  // A later lifecycle must not be hidden by an earlier successful result.
+  // Unresolved caller intents remain owned until their typed final reply.
+  useEffect(() => {
+    setOutcome(previous => previous?.kind === 'opened' || previous?.kind === 'join' ? null : previous);
+    void refresh();
+  }, [id, home, revision]);
   useEffect(() => {
     void loadIntent();
     return hearRecoveryIntent(() => { void loadIntent(); });
@@ -114,5 +117,5 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
       if (generation === live.generation) { live.busy = false; if (live.alive) setBusy(false); }
     }
   };
-  return { offer: offer?.revision === revision ? offer.value : null, intent, intentReady, outcome, fault, problem, busy, refresh: async () => { await Promise.all([refresh(), loadIntent()]); }, act };
+  return { offer: offer?.revision === revision ? offer.value : null, intent, intentReady, outcome, fault, problem, busy, refresh: async () => { setProblem(null); await Promise.all([refresh(), loadIntent()]); }, act };
 }

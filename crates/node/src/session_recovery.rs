@@ -59,6 +59,21 @@ fn native_preparation(
 }
 
 impl LiveKind {
+    pub(super) fn shell_recovery_execution(
+        &self,
+        id: &SessionId,
+        procs: &crate::adaptor::Procs,
+    ) -> khor_core::recovery::RecoveryExecution {
+        use khor_core::recovery::RecoveryExecution;
+        if self.owns_agent_endpoint(id, procs) {
+            RecoveryExecution::Live
+        } else if self.ending(id).is_some() {
+            RecoveryExecution::Ended
+        } else {
+            RecoveryExecution::Unknown
+        }
+    }
+
     fn observed_execution_ended(&self, native: &Identity) -> Result<bool, String> {
         let mut positive = false;
         for id in super::native_aliases(native) {
@@ -297,7 +312,9 @@ impl crate::Node {
         if meta.kind == khor_core::kind::SHELL {
             offer.current_run = Some(id.0.clone());
             offer.previous = meta.shell_run.as_ref().map(|run| run.previous.clone());
-            offer.execution = if self.live.ending(id).is_some() { Execution::Ended } else { Execution::Unknown };
+            offer.execution = self
+                .live
+                .shell_recovery_execution(id, &crate::adaptor::Procs::snapshot());
             if offer.execution == Execution::Ended { offer.action = Action::NewShell; }
             return Ok(offer);
         }

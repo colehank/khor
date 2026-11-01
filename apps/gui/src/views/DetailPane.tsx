@@ -335,7 +335,6 @@ export function DetailPane({
   // recovery must reopen the outer content lookup as well as the control pipe.
   const [rejoined, setRejoined] = useState({ id: "", generation: 0 });
   const [terminalRejoin, setTerminalRejoin] = useState<{ id: string; home: string | null } | null>(null);
-  const [created, setCreated] = useState<{ id: string; home: string | null; previous: string } | null>(null);
   const viewKey = row ? JSON.stringify([row.id, row.execution_home, rejoined.id === row.id ? rejoined.generation : 0]) : "";
   // Warm the terminal's chunk once the pane has drawn (`loadTerminal`).
   useEffect(() => {
@@ -610,14 +609,11 @@ export function DetailPane({
       {active && row && ["gui", "tui", "observe", "shell"].includes(row.kind) && <RecoveryActions
         key={JSON.stringify([row.id, row.execution_home])}
         row={row}
-        previous={created?.id === row.id && created.home === row.execution_home ? created.previous : null}
-        onSession={onSession}
         onOpened={opened => {
           if (opened.id === row.id) {
             if (terminalShown) setTerminalRejoin({ id: row.id, home: row.execution_home });
             else setRejoined(old => ({ id: row.id, generation: old.id === row.id ? old.generation + 1 : 1 }));
           } else if (opened.previous === row.id) {
-            setCreated({ id: opened.id, home: row.execution_home, previous: opened.previous });
             onSession?.(opened.id);
           }
         }}

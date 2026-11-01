@@ -138,7 +138,8 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
   };
   const control = error => ({kind: 'control_result', token: 'fixture-control', operation: 'set_mode', data: null, error});
 
-  await capture();await check(['Complete known history.']);
+  // The entry case begins with an ended owner; Capture is possible only after Ready.
+  if(scenario!=='automatic-entry-and-later-exit'){await capture();await check(['Complete known history.']);}
   if (recoveryActionCases.includes(scenario)) {
     await exerciseRecoveryActions(scenario,page,{calls,capture,check,preparePeer});
   } else if (scenario === 'failed-empty' || scenario === 'failed-partial' || scenario === 'empty-error') {
@@ -205,10 +206,10 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
 
   assert.equal((await calls('chat_replay')).length, 0, 'no retired Replay API is invoked');
   assert.deepEqual(await page.evaluate(() => window.__chatWire.unknown), []);
-  const leaveBefore=await page.evaluate(()=>({chat:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length,terminal:window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length,hasTerminal:!!document.querySelector('[data-kept-terminal][data-active] [data-terminal]')}));
+  const leaveBefore=await page.evaluate(()=>({chat:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length,terminal:window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length,hasTerminal:!!document.querySelector('[data-kept-terminal][data-active] [data-terminal]'),hasChat:window.__chatWire.calls.some(open=>open.cmd==='chat_open'&&!window.__chatWire.calls.some(leave=>leave.cmd==='chat_leave'&&leave.args.lease===open.args.lease))}));
   await page.evaluate(() => window.__chatReact.close());
   await until(async () => (await calls('chat_leave')).length >= 1, 'actual component leaves its view');
-  await until(()=>page.evaluate(before=>before.hasTerminal?window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length>before.terminal:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length>before.chat,leaveBefore),'current production view leaves its own admitted resource');
+  await until(()=>page.evaluate(before=>before.hasTerminal?window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length>before.terminal:!before.hasChat||window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length>before.chat,leaveBefore),'current production view leaves its own admitted resource');
   await page.evaluate(()=>{const wire=window.__recoveryWire;for(let i=0;i<wire.offers.length;i++)if(!wire.offers[i].done)wire.releaseOffer(i,wire.offers[i].answer);});
   const actionsBefore=await page.evaluate(()=>window.__recoveryWire.calls.filter(c=>c.cmd==='recover_session'||c.cmd==='new_shell_run').length);
   const before = (await polls()).length;

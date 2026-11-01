@@ -793,3 +793,5 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 `npm run chat-replay`：真实ChatView与api.ts的成功/失败/取消回放提交边界，跨poll错误与结束、断连/重连/owner退役、成功空回放与live/普通control独立。加入test:interaction；`CHAT_REPLAY_WEBKIT=1`覆盖WebKit，`CHAT_REPLAY_CHECK_DIR`保存源指纹与报告（默认OS临时目录），`CHAT_REPLAY_SCENARIOS`严格选择。失败回放保留已知完整past，未完成片段不作历史；页面/console错误均失败。可控Tauri poll fixture不替代真实host/native链验收。
 `npm run terminal-link-intent`：运行生产URL／OSC8／路径／触摸回调的意图与失败归属检查，以及tracked鼠标事件harness的点击独占、修饰键分流、拖动交还、取消和释放。已纳入test:unit；`check-terminal-link-gesture.mjs --baseline`使用发布基线规则及尚未接入的手势适配作先红对照。DOM传播／原生鼠标报告仍需真实App验收，不把Node EventTarget harness称为浏览器或PTY证据。
+
+`npm run recovery-relationship`：生产药丸关系投影的健康／工作／结束／未知、持久intent、能力与进入时自动续接边界；已纳入test:unit。`npm run chat-recovery`同时使用真实TabStrip/PillNotice/DetailPane/RecoveryActions/IDB检查当前18组历史与恢复行为：进入即续接、后续退出不自动重开、紧凑行无重复动作、同请求核对、跨页面、目录选择与传输中rebind；固定传输不替代Node执行资格或Mac/iPhone真机。

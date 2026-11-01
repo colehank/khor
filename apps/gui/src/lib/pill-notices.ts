@@ -33,7 +33,8 @@ export type PillNotice = {
   /** Unique within its tab; a notice offered again under the same id
       replaces the one there (a second failure of the same drop). */
   id: string;
-  kind: "failed" | "rejoin";
+  kind: "failed" | "rejoin" | "ended" | "unconfirmed";
+  layout?: "compact";
   /** On the pill. */
   short: Say;
   /** Grown: the whole sentence. */
@@ -80,7 +81,7 @@ export function withdrawNotice(tab: string, id: string, which?: PillNotice) {
 
 /** Reconnecting before a failure — nothing else works until the session
     is back — and the newest first within each. */
-const RANK = { rejoin: 0, failed: 1 } as const;
+const RANK = { ended: -1, rejoin: 0, failed: 1, unconfirmed: 2 } as const;
 
 /** What stops tab `tab`, the most urgent first. */
 export function noticesOf(tab: string): PillNotice[] {
@@ -179,23 +180,12 @@ export function failedNotice({
   };
 }
 
-/**
- * **The session reconnecting** (NOTICE-BRIEF): 「重新连接 Mac-mini」 and
- * its seconds on the pill — the pill's ~120 for words holds that whole;
- * grown, 「正在重新连接 Mac-mini」 and what it waits for, the machine or
- * its host for this session, and 立即重试.
- */
-export function rejoinNotice({ stall, machine, since, now }: { stall: Miss; machine: string | null; since: number; now: () => void }): PillNotice {
+/** A reconnect already in progress has no second retry action. */
+export function rejoinNotice({ stall, machine, since }: { stall: Miss; machine: string | null; since: number }): PillNotice {
   const m = stall.machine ?? machine;
   return {
-    id: "rejoin",
-    kind: "rejoin",
+    id: "rejoin", kind: "rejoin", layout: "compact",
     short: m ? sayWith(gui.notice_rejoin_short, m) : [gui.term_rejoining_here],
-    whole: m ? gui.term_rejoining(m) : gui.term_rejoining_here,
-    how: m ? (stall.kind === "host-lost" ? gui.notice_host_lost_how(m) : gui.term_rejoining_how(m)) : gui.term_rejoining_how_here,
-    raw: stall.raw || undefined,
-    since,
-    at: since,
-    acts: m ? [{ key: "now", word: gui.notice_retry_now, run: now }] : [],
+    whole: gui.recovery_pill_connecting, at: since, acts: [],
   };
 }

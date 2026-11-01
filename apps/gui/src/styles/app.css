@@ -2791,6 +2791,10 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 [data-pill-signal="rejoin"], [data-pill-signal="upload"] {
   animation: pill-signal-breathe var(--pill-breathe) ease-in-out infinite;
 }
+[data-pill-signal="ended"], [data-pill-signal="unconfirmed"] {
+  box-shadow: inset 0 0 0 var(--hair) var(--foreground);
+  animation: none;
+}
 [data-pill-signal="failed"] {
   --pill-signal-ink: var(--state-failed);
   animation: pill-signal-arrive var(--dur-420) var(--ease-out) both;

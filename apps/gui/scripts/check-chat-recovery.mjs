@@ -1,6 +1,6 @@
 import {installAttachmentLeases} from "./fixtures/attachment-leases.mjs";
 // Actual DetailPane/RecoveryActions/IDB plus original ChatView/Reader; only
-// external Tauri IO is controlled. The new4 S3 groups are separate from old13.
+// external Tauri IO is controlled. Relationship/action cases remain separate from history cases.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, existsSync} from 'node:fs';
@@ -21,7 +21,7 @@ const gui = fileURLToPath(new URL('..', import.meta.url));
 assert(existsSync(join(gui, 'src/gen/catalog.ts')), 'Generate the catalog/bindings before running the component fixture');
 const evidence = process.env.CHAT_RECOVERY_CHECK_DIR || mkdtempSync(join(tmpdir(), 'khor-chat-recovery-'));
 mkdirSync(evidence, {recursive: true});
-const sourceFiles = ['src/lib/attachment-view.ts', 'src/gen/bindings/AttachmentKind.ts', 'scripts/fixtures/attachment-leases.mjs', 'src/views/ChatView.tsx', 'src/views/DetailPane.tsx', 'src/views/RecoveryActions.tsx', 'src/views/TerminalPane.tsx', 'src/views/SessionPreferences.tsx', 'src/hooks/use-session-recovery.ts', 'src/lib/session-recovery-intent.ts', 'scripts/fixtures/recovery-actions-ui.mjs', 'scripts/check-chat-recovery.mjs', 'scripts/fixtures/chat-recovery-cases.mjs', 'src/api.ts', 'src/lib/acp-view.ts', 'src/gen/bindings/ChatFrame.ts', 'src/gen/bindings/SessionRow.ts', 'src/gen/bindings/SessionRecovery.ts', 'src/gen/bindings/RecoveryResult.ts', 'src/gen/bindings/ShellRunResult.ts', 'src/gen/bindings/RecoveryToken.ts', 'src/gen/catalog.ts'];
+const sourceFiles = ['src/browse/TabStrip.tsx', 'src/components/PillNotice.tsx', 'src/lib/pill-notices.ts', 'src/lib/recovery-relationship.ts', 'src/styles/app.css', 'src/lib/attachment-view.ts', 'src/gen/bindings/AttachmentKind.ts', 'scripts/fixtures/attachment-leases.mjs', 'src/views/ChatView.tsx', 'src/views/DetailPane.tsx', 'src/views/RecoveryActions.tsx', 'src/views/TerminalPane.tsx', 'src/views/SessionPreferences.tsx', 'src/hooks/use-session-recovery.ts', 'src/lib/session-recovery-intent.ts', 'scripts/fixtures/recovery-actions-ui.mjs', 'scripts/check-chat-recovery.mjs', 'scripts/fixtures/chat-recovery-cases.mjs', 'src/api.ts', 'src/lib/acp-view.ts', 'src/gen/bindings/ChatFrame.ts', 'src/gen/bindings/SessionRow.ts', 'src/gen/bindings/SessionRecovery.ts', 'src/gen/bindings/RecoveryResult.ts', 'src/gen/bindings/ShellRunResult.ts', 'src/gen/bindings/RecoveryToken.ts', 'src/gen/catalog.ts'];
 const fingerprint = () => Object.fromEntries(sourceFiles.map(file => [file, createHash('sha256').update(readFileSync(join(gui, file))).digest('hex')]));
 const catalog=readFileSync(join(gui,'src/gen/catalog.ts'),'utf8');for(const word of ['recovery_title','recovery_join','recovery_choose_directory','recovery_waiting_owner'])assert(catalog.includes(word),'Run the actual current catalog producer before this fixture: '+word);
 const sources = fingerprint(), results = [];
@@ -54,7 +54,8 @@ async function run(engine, name) {
       await page.clock.install({time: new Date('2026-10-25T00:00:00Z')});
       await page.clock.pauseAt(new Date('2026-10-25T00:00:00Z'));
       await page.goto(`http://127.0.0.1:${server.config.server.port}/${basename(fixture)}/index.html?recovery_case=${encodeURIComponent(scenario)}`);
-      await until(async () => (await polls()).length > 0, 'actual ChatView started a poll');
+      if(scenario==='automatic-entry-and-later-exit') await until(()=>page.evaluate(()=>window.__recoveryWire.actions.length===1),'entry continuation reached controlled IO');
+      else await until(async () => (await polls()).length > 0, 'actual ChatView started a poll');
       await exerciseChatRecovery(scenario, page, polls, async peer=>{
         peer.setDefaultTimeout(12000);peer.setDefaultNavigationTimeout(60000);
         peer.on('pageerror',error=>errors.push('peer: '+error.message));

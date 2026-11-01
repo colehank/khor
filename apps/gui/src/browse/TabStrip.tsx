@@ -667,7 +667,7 @@ export function TabStrip({
       the panel says the notice. */
   const stops = faces.find((f) => f.id === active)?.interaction?.notices ?? [];
   const signal = usePillSignal(active, faces.find((f) => f.id === active)?.interaction);
-  const grown = useGrownPill(stops.length);
+  const grown = useGrownPill(stops.length, signal === "rejoin");
   const capsule = useRef<HTMLDivElement>(null);
   const [front, setFront] = useState<HTMLElement | null>(null);
   useLayoutEffect(() => {

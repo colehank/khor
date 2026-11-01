@@ -24,7 +24,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProp
 import { createPortal } from "react-dom";
 
 import { MidName } from "@/browse/TabStrip";
-import { IconAlert, IconChevronDown, IconChevronRight, IconReload } from "@/components/icons";
+import { GlassItem } from "@/components/Glass";
+import { IconAlert, IconChevronDown, IconChevronRight, IconReload, IconTerminal, IconLink } from "@/components/icons";
 import { gui } from "@/gen/catalog";
 import { plainOf, type NoticeAct, type PillNotice, type Say } from "@/lib/pill-notices";
 import { stillMotion } from "@/lib/travel";
@@ -56,6 +57,10 @@ function useTick(on: boolean) {
 /** The kind's mark, in the face's seat: the reload ring turning while it
     reconnects, the failure's 「!」 in `state-failed`. */
 export function NoticeGlyph({ n }: { n: PillNotice }) {
+  if (n.kind === "ended" || n.kind === "unconfirmed") {
+    const Mark = n.kind === "ended" ? IconTerminal : IconLink;
+    return <span data-notice-glyph={n.kind} className="grid size-tab-face flex-none place-items-center text-muted-foreground"><Mark className="size-affordance" /></span>;
+  }
   return n.kind === "rejoin" ? (
     <span data-notice-glyph="rejoin" className="grid size-tab-face flex-none place-items-center text-muted-foreground">
       <IconReload className="size-affordance animate-spin motion-reduce:animate-none" />
@@ -132,6 +137,7 @@ export function NoticeLook({ list, seat, hideMark = false }: { list: PillNotice[
 function Row({ n, seat, words }: { n: PillNotice; seat: string; words?: CSSProperties }) {
   const [open, setOpen] = useState(false);
   const age = secondsOf(n) ?? ago(n.at);
+  if (n.layout === "compact") return <CompactRow n={n} seat={seat} words={words} />;
   return (
     <div data-notice-row={n.kind} data-notice-id={n.id} className="flex flex-col">
       <div className="flex items-start gap-in pe-row">
@@ -194,6 +200,20 @@ function Row({ n, seat, words }: { n: PillNotice; seat: string; words?: CSSPrope
         </p>
       )}
       <div className="h-1" />
+    </div>
+  );
+}
+
+function CompactRow({ n, seat, words }: { n: PillNotice; seat: string; words?: CSSProperties }) {
+  return (
+    <div data-notice-row={n.kind} data-notice-id={n.id} data-notice-compact className="flex min-h-glass-btn items-center gap-in py-1 pe-1">
+      <span className={cn("grid flex-none place-items-center", seat)}><NoticeGlyph n={n} /></span>
+      <span data-notice-words className="min-w-0 flex-1 text-body text-foreground" style={words}>
+        <span data-notice-whole>{n.whole}</span>
+      </span>
+      {n.acts.length > 0 && <span className="flex flex-none items-center gap-xxs" style={words}>
+        {n.acts.map((a) => <GlassItem key={a.key} data-notice-act={a.key} onClick={a.run} tip={false} style={{width:"auto",height:"var(--glass-btn)"}} className="min-w-glass-btn flex-none whitespace-nowrap px-row text-body font-label">{a.word}</GlassItem>)}
+      </span>}
     </div>
   );
 }
@@ -403,6 +423,7 @@ export function NoticeIsland({
     <div
       ref={island}
       data-notice-island={growth.big ? "open" : "folded"}
+      data-pill-signal={top.kind === "rejoin" ? "rejoin" : undefined}
       role="dialog"
       aria-label={plainOf(top.short)}
       // The pill's look as it stands on the deck: its tint over the
@@ -493,6 +514,7 @@ export function NoticePanel({ list, tab, board, growth }: { list: PillNotice[]; 
   return createPortal(
     <div
       data-notice-panel={growth.big ? "open" : "folded"}
+      data-pill-signal={list[0]?.kind === "rejoin" ? "rejoin" : undefined}
       role="dialog"
       aria-label={list[0].whole}
       className="glass-sel fixed z-50 overflow-hidden"
@@ -523,13 +545,13 @@ export function NoticePanel({ list, tab, board, growth }: { list: PillNotice[]; 
  * opened (the ghost click), the growth, and Escape. Folds by itself once
  * nothing stops the session.
  */
-export function useGrownPill(count: number) {
+export function useGrownPill(count: number, working = false) {
   const [open, setOpen] = useState(false);
   const openedAt = useRef(0);
   const growth = useGrowth(open && count > 0);
   useEffect(() => {
-    if (count === 0) setOpen(false);
-  }, [count]);
+    if (count === 0 || working) setOpen(false);
+  }, [count, working]);
   // Stable, so an owner can fold on its own changes (another tab in
   // front) without folding on every render.
   const fold = useCallback(() => setOpen(false), []);
