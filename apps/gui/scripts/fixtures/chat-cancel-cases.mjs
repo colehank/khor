@@ -134,7 +134,9 @@ export async function exerciseCancellation(scenario, f) {
     await page.locator('[data-chat-draft-add]').click(); assert.equal(await input.inputValue(), `${fresh}\n\n${draft}`);
     assert.equal(await page.locator('[data-chat-pending-file]').count(), 2);
   } else if (scenario === 'narrow' || scenario === 'app-narrow') {
-    await emit([{kind: 'note', update: {update: {sessionUpdate: 'agent_message_chunk', content: {type: 'text', text: 'Latest visible message stays above the composer.'}}}}]);
+    // This transport fixture owns live controls, not the separately paged body.
+    const prompt = 'Pending confirmation stays above the composer.';
+    await emit([{kind: 'ask', ask: 91, title: prompt, options: [['allow', 'Continue']]}]);
     await page.setViewportSize({width: 390, height: 844});
     // Actual App replaces its wide shell with its narrow shell. Wait for the
     // keyed view to remount and replay the transport's retained cursor data.
@@ -143,7 +145,7 @@ export async function exerciseCancellation(scenario, f) {
       try { await page.locator('[data-chat-draft-add]').scrollIntoViewIfNeeded({timeout: 1000}); return true; }
       catch { return false; }
     }, 'the narrow shell settled on its recovery entry');
-    await until(async () => (await page.locator('body').innerText()).includes('Latest visible message stays above the composer.'), 'the remounted renderer replayed its latest message');
+    await until(async () => (await page.locator('body').innerText()).includes(prompt), 'the remounted renderer restored its pending confirmation');
     await page.screenshot({path: `${evidence}/${engine}-${scenario}-cancelled-draft.png`});
     assert(await input.isVisible());
     assert.equal(await input.inputValue(), fresh);
