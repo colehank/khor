@@ -100,7 +100,21 @@ try{
    assert.equal(await page.locator('[data-tab-preview]').count(),0,'temporary title has no hollow ring');
  }
  await until(()=>tabs.tabs.find(t=>t.id===source)?.view==='commit');assert.equal(tabs.tabs.length,1,'first commit replaces the starting tab');
+ const commitToolbar=page.locator('[data-content-visible="true"] [data-content-toolbar="commit"]');
+ assert.equal(await commitToolbar.locator('[data-content-back]').count(),1,'session commit needs the workspace Back');
+ const commitOrder=await commitToolbar.evaluate(head=>{const a=head.querySelector('[data-content-scope]').getBoundingClientRect(),b=head.querySelector('[data-content-back]').getBoundingClientRect(),c=head.querySelector('[data-content-location-layer]').getBoundingClientRect();return a.right<=b.left&&b.right<=c.left;});assert(commitOrder,'commit Back belongs between source and content pill');
+ const commitPort=page.locator('[data-content-visible="true"] [data-commit-scroll]');await commitPort.locator('.cm-editor').waitFor();
+ await commitPort.evaluate(el=>{el.scrollTop=el.scrollHeight;});await page.waitForTimeout(60);
+ const heldTop=await commitPort.locator('[data-commit-file-bar]').first().evaluate(el=>el.getBoundingClientRect().top),toolbarBottom=await commitToolbar.evaluate(el=>el.getBoundingClientRect().bottom);
+ assert(heldTop>=toolbarBottom-1,`held commit file title ${heldTop} must clear toolbar ${toolbarBottom}`);
+ await commitPort.evaluate(el=>{el.scrollTop=0;});await page.screenshot({path:join(output,'session-commit-back.png')});
+
+
  await page.locator('[data-content-visible="true"] [data-commit-collapse]').click();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'false');
+ await commitToolbar.locator('[data-content-back]').click();await picker.locator('[data-workspace-navigation]').waitFor();
+ assert.equal(tabs.tabs.find(t=>t.id===source).view,'commit','Back keeps the commit tab identity');
+ await page.locator(`[data-tab-open="${source}"]`).click();await page.locator('[data-content-visible="true"] [data-commit-collapse]').waitFor();assert.equal(await page.locator('[data-content-visible="true"] [data-commit-collapse]').getAttribute('aria-expanded'),'false','Back and reopen preserves collapse state');
+
  await browseHistory();await picker.locator(`[data-workspace-log-commit="${second}"]`).click();await page.locator(`[data-content-visible="true"] [data-commit-page="${second}"]`).waitFor();await until(()=>tabs.tabs.length===2);assert.equal(tabs.tabs.length,2,'single click keeps both commits');
  const secondTab=await page.evaluate(()=>{const c=window.__workspaceProbe.content;return c.handle(c.active('session'));});
  if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1')assert.equal(await page.locator(`[data-tab="${secondTab}"] [data-tab-name]`).evaluate(el=>getComputedStyle(el).fontStyle),'normal','kept commit title returns to normal');

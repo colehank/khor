@@ -48,3 +48,5 @@ WebKit运行时缺失，未下载，未宣称通过。本轮没有原生发布�
 ## 2026-11-01 首轮验收修正
 
 见 [修正记录](tasks/R3-review-corrections.md)。新建页首次内容原位转换；文件端口不再被浮动页padding覆盖；浏览器移除工作区返回；Lab补齐正式app全局滚动监听。最新review-fixes/model、types-final、unit均0，regression-final2五组通过，light-final专门验证首行/新建页/浏览器返回与连续滚动材质。没有Rust或原生构建，main与用户app不动。
+
+- Session提交页返回补齐：参见 [R3-session-commit-back](tasks/R3-session-commit-back.md)。与文件页相同列位的原导航甲板；返回保留提交实体与收起状态，不变回新建页。相关Chrome五组/types/unit均通过。

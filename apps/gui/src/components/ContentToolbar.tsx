@@ -8,7 +8,7 @@ import type {ContentSource} from '@/hooks/use-content-navigation';
 import {band} from '@/lib/scroll-edge';
 
 export function ContentToolbar({kind,source,onSource,children,actions,onClose,onBack,pinned=false}:{
-  kind:'picker'|'file'|'page';source:ContentSource;onSource:(source:ContentSource)=>void;
+  kind:'picker'|'file'|'page'|'commit';source:ContentSource;onSource:(source:ContentSource)=>void;
   children:ReactNode;actions?:ReactNode;onClose:()=>void;onBack?:()=>void;pinned?:boolean;
 }) {
   const bind=useCallback((head:HTMLDivElement|null)=>{

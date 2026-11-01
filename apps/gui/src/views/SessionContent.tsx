@@ -125,11 +125,19 @@ function SessionCommitContent({tab,device,face,content,navigation,onClose,mobile
 }) {
   const revision=readCommitAddress(tab.url);
   if(!revision)return <div role="alert" className="session-content-error">{gui.no_matches}</div>;
-  const browse=()=>navigation.browse(tab.session);
+  const browse=(source:'workspace'|'browser')=>{
+    navigation.browse(tab.session,{device:device.id,root:revision.root});
+    navigation.update(tab.session,{source});
+  };
+  const back=()=>browse('workspace');
+  const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
   return <>
-    <CommitPage machine={device.name} root={revision.root} commit={{id:revision.id}} title={tab.title} state={state} presentation="tab" onBack={()=>navigation.returnToPicker(tab.session)}/>
-    {mobile&&face&&<MobileContentDeck session={tab.session} face={face} content={content} navigation={navigation} onClose={onClose} leading={<GlassCircle aria-label={gui.back} onClick={browse}><IconBack/></GlassCircle>}>
-      <ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={contentName(tab)} onTitle={browse}/>
+    {!mobile&&<ContentToolbar kind="commit" source="workspace" onSource={browse} onBack={back} onClose={close} pinned={tab.pinned}>
+      <button data-content-commit-location className="content-location-rest" title={revision.root} onClick={back}><span className="content-location-face"><TabAvatar f={{id:device.id,label:device.shown,path:revision.root,face:device.face}} bare="size-tab-face" seat="tab"/></span><span>{revision.root||'~/'}</span></button>
+    </ContentToolbar>}
+    <CommitPage machine={device.name} root={revision.root} commit={{id:revision.id}} title={tab.title} state={state} presentation="tab" onBack={back}/>
+    {mobile&&face&&<MobileContentDeck session={tab.session} face={face} content={content} navigation={navigation} onClose={onClose} leading={<GlassCircle aria-label={gui.back} onClick={back}><IconBack/></GlassCircle>}>
+      <ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={contentName(tab)} onTitle={back}/>
     </MobileContentDeck>}
   </>;
 }
