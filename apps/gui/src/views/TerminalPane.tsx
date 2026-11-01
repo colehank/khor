@@ -1,4 +1,5 @@
 import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
+import {claimTerminalLinkClicks} from "@/lib/term-link-gesture";
 import {assertPageUrl,openSystemUrl,openSystemPath,openSystemFileUri} from "@/lib/client-opener";
 import { useReadingSession, type SessionReading } from "@/hooks/use-session-attention";
 // A live terminal for a session khor hosts (docs/handoff 终端画屏) —
@@ -1920,9 +1921,10 @@ export function TerminalPane({
       }
     };
     const linked = term.registerLinkProvider(pathLinks(term, here, cwdAt, openPath));
+    const unclaimLinks = claimTerminalLinkClicks(term, box, (x,y)=>cellAt(term,x,y), TAP_SLOP);
     const tapped = (row: number, col: number) => {
       if (picture(row, col)) return true;
-      if(!canActivateTerminalLink({},term))return false;
+      if(!canActivateTerminalLink({},term,'touch'))return false;
       const url = urlAt(term, row, col);
       if (url) {
         if (/^file:/i.test(url)) fileLink(url);
@@ -1931,7 +1933,7 @@ export function TerminalPane({
       }
       void pathsOn(term, here, cwdAt, row).then((found) => {
         const hit = found.find((f) => covers(f, row, col));
-        if (hit&&canActivateTerminalLink({},term)) openPath(hit.target);
+        if (hit&&canActivateTerminalLink({},term,'touch')) openPath(hit.target);
       });
       return false;
     };
@@ -2949,6 +2951,7 @@ export function TerminalPane({
       parked.stop();
       gestures();
       linked.dispose();
+      unclaimLinks();
       box.removeEventListener("mousedown", pictureClick, true);
       predictResized.dispose();
       kitty.dispose();
