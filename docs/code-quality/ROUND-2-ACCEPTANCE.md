@@ -1,6 +1,6 @@
 # 第二轮验收总账
 
-本页是34项的验收索引，不是完成声明。最新源码/所有权/运行槽见[STATE](STATE.md)，用户决定见[原反馈](ROUND-2.md)及专项文档。编表基线为4f7e732e，当前Root a228baef。f23前端actual35387和normal三产物actual86710已通过；最后G最小修与过期注释已整合，当前最终产物尚待构建。G定向绘制91894已绿，不冒Mac/WK复验通过。实际行为按各行限定范围及STATE，不能由构建推导全项通过。源码实现、pure/DOM、Rust定向测试、真实WK、真人IME与手机触屏各自证明自己的范围。
+本页是34项的验收索引，不是完成声明。最新源码/所有权/运行槽见[STATE](STATE.md)，用户决定见[原反馈](ROUND-2.md)及专项文档。编表基线为4f7e732e，当前Root a228baef。f23前端actual35387和normal三产物actual86710已通过；最后G最小修与过期注释已整合，当前最终normal3 55538已实际通过；G Mac/WK Processes93241实际复验及独审通过，原红保留。实际行为按各行限定范围及STATE，不能由构建推导全项通过。源码实现、pure/DOM、Rust定向测试、真实WK、真人IME与手机触屏各自证明自己的范围。
 
 ## 逐项最小完成证据
 
@@ -29,7 +29,7 @@
 | R2-021 | W | 菜单单滚动 | 长变更列表只一根滚动条，跳转保持焦点和阅读位置。 | 17f实际80153：39变更文件的真实jump菜单仅一根内部滚动条；跳至35后后续AX与截图保持下方阅读位置。组件后续源码未变，复用此实际证据。 |
 | R2-022 | G/W | diff固定标题 | 标题与标签栏一体，无细分割线；滚动时正文自然隐去，标题不被穿透。 | 874实际91690：39文件diff下深浅及三材质代表组合可读，标签与固定标题无分割线；后续材质变化保持file06/07。首次dark→light位置file05→06原因未知，不冒精确像素稳定；目录建议材质/其他sticky入口另待。 |
 | R2-023 | W/E | 实时更新与草稿 | 树、当前文件和Git外部变化及时更新；组词/脏草稿不被覆盖，迟到结果按身份拒收。 | 当前d4b actual5794真实同打开文件V2自动刷新、expanded tree空目录建删、private branch+path-only commit自动刷新；0555真实os13保exactdraft，外写V3保稿，0755后原CAS冲突→显式Save mine→22B原文落盘。normalQuit/source-env/ALL-TMP净且独审，其他dirty/index保；不冒IME/远端FS。 |
-| R2-024 | G | 共用固定区域材质 | 统一连续渐隐；最上正文完全隐藏，窗口底按不透明/半透明/毛玻璃独立变化，阅读位置稳定。 | 874实际91690已验39文件diff共用固定标题及六外观组合。新真实Processes88916发现labelghost；最小修a228的同几何绘制77782红→91894绿（direct3165→0，unit15/15），原脚本/fixture未改且独审c83f7d1f；最终当前native表格复验与手机仍待。 |
+| R2-024 | G | 共用固定区域材质 | 统一连续渐隐；最上正文完全隐藏，窗口底按不透明/半透明/毛玻璃独立变化，阅读位置稳定。 | 874实际91690已验39文件diff共用固定标题及六外观组合。新真实Processes88916发现labelghost；最小修a228的同几何绘制77782红→91894绿（direct3165→0，unit15/15），原脚本/fixture未改且独审c83f7d1f；最终当前native表格93241原Showall200/scroll1+.35两settled帧无重影，normalQuit/ALLTMP净且独审b2024571；手机仍待。 |
 | R2-025 | M | 候选连续跟手 | 三入口方向一致，连续拖动/循环/回中暂停/松手吸附符合参考Lab，触屏不提前直跳。 | 生产DOM/共用引擎已过；真手机手感待测。 |
 | R2-026 | M | 自定义键行 | 编辑、保存/重开组合键及序列；焦点/修饰键/隔离试按正确，使用既有键行外观。 | pure/UI/真实PTY已有证据；手机软键盘待测。 |
 | R2-027 | E | Mac中文组词 | 真实系统IME组词不丢拼写；外部/迟到更新不覆盖composition与草稿，最后输入可保存。 | 定向逻辑/专用程序已准备；真实IME仍待。 |
@@ -38,7 +38,7 @@
 | R2-L01 | S | 取消retry deadline | 原ignored exact不改时限/断言；真实匹配CLI worker启动不早于due，fresh run不饿死，进程均reap。 | 当前666 Node actual producer＋原exact实际1/0、fresh不饿死/旧retry不早于due；原040唯一原因未知。 |
 | R2-L02 | S/B | 原生关闭交接 | 原late-close与close-reopen两失败case实际WK通过；旧owner退出、新owner保活、最终handle全空。 | 666真实GUI原两case及正常CUA退出/全清理已通过并独审；首收尾超时仍未知，不扩原四case。 |
 | R2-L03 | E | 所有入口草稿退出 | workspace、session内文件与机器文件同一保护规则；保存失败可取消退出，最后一键保存后正常OS Quit。 | 共用owner已有定向证据；当前0f606真实Workspace88179（含SettingsCancel）、Session81735、Machine33349各自Savefailure/Cancel/恢复权限/最后字符立即Quit已通过并独审，正常退出及TMP净；仅Root ASCII，真实系统IME/真人交互另列R2-027。 |
-| R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | f23当前normal3 actual86710五phase0/339.578s、前端35387 fulltypes/Vite/188gen278assets已真实通过且独审；最终a228 G/comment后正准备一次当前构建。iOS16142原300冷库未完成，无compilererror，原false/未知TMP保；后续builder源3独审共享600仅库且readyfalse，仍不冒physical App或设备通过。 |
+| R2-L04 | V | 原生构建来源 | 实际当前GUI/CLI来源完整、环境/ACL目录/生成文件规则守住反例；旧失败不回填。 | f23当前normal3 actual86710五phase0/339.578s、前端35387 fulltypes/Vite/188gen278assets已真实通过且独审；最终a228 G/comment后normal3 55538五phase0/274.749s，原V/ALL/source-env-assets均净，独审06fb51de；原stage59892换唯一App两link后93241实际表格复验通过。iOS16142原300冷库未完成，无compilererror，原false/未知TMP保；后续builder源3独审共享600仅库且readyfalse，仍不冒physical App或设备通过。 |
 | R2-L05 | V | 正常退出与持久宿主 | 实际正常OS Quit后同私有host认证重连并读旧marker，随后显式清理自有fixture，无信号冒正常退出。 | focused真实App/重连/清理已通过并独审；不冒完整S恢复或E输入。 |
 
 ## 实际执行顺序
@@ -81,3 +81,13 @@
 - f23实际Copy17415/boot69866及终端62032/29379均已非作者尾核，准确边界现已更新上表。旧失败事实保留，不通过后写一段自动覆盖前文。
 - Processes88916真实表头重影已用相同fixture绘制77782复现；原脚本/fixture保持，91894候选绿并独审。最小修和两处过期注释已分四小提交整合至a228baef，待最终当前构建和真实Mac表格复验。
 - Mac真人IME与physical手机交互仍未验；用户暂不方便，不反复询问或复用旧方便回复开实例。手机当前库原冷编16142超时未完成，不称App/sign/install成功。
+
+## 2026-11-01 当前最终桌面验收
+
+- a228 frontend4570 fulltypes/Vite、normal3 55538原5phase/current V/no-prior全绿，源码与188gen/278assets同源。
+- 唯一App经原stage59892刷新，93241实际Processes两settled帧无旧rowglyph、正文自然渐隐且无divider，正常Quit/ALLTMP/source-env净；独审b2024571。G原88916/77782红保留。
+- 当前exec3007只离线device库构建，不冒手机App/link/sign/install。真IME/手机原范围继续未验；[末审索引](ROUND-2-CLOSEOUT-REVIEW.md)提供34项与每包CleanCode证据边界。
+
+## 2026-11-01 当前iOS库来源与诊断分列
+
+actual3007的SDK/metadata/Cargo build三phase全0，124.732s，source/env/SDK/gen/assets稳，actual aarch64-apple-ios staticlib1083289296B/SHA b926ba26已生成且非作者尾核f5754aee通过。原overall97965e98仍false，仅严格TMP含SwiftPM 0B locks/keepfiles；随后独审＋fresh62成员/194ALL/lsof的单次可逆cold留存ad8a9e3e另证tmp现无，原false不回填、不重compile。当前target约41.843GiB<50。后续App链接/本地签名与真实手机仍待，不能以库通过销账。
