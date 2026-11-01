@@ -255,3 +255,7 @@
 - Escape、失焦、切后台、多指、尺寸／视口变化、当前项或 ID 列表变化及卸载撤销未确认选择。指针与原生触摸结束只消费一次；点击在 click 阶段打开，避免 touchend 后的兼容 click 击中新弹层的遮罩。
 
 验证沿用 `npm run deck-scrub`、`npm run content-toolbar`、`npm run browser-yield` 与默认前端检查。`lab/deck-joystick.html` 只注入参数和示例数据，直接使用生产组件；正式 App 不读取 Lab 保存值。iPhone 原生触控、触感、系统键盘与网页叠层仍须真机验收。
+
+### 会话标签栏右边界（2026-11-02）
+
+会话顶部标签栏与下方内容关闭按钮共用 `gap-row` 右边距。空的模型设置 portal 槽保持挂载，但不预留宽度或间隔；有设置按钮时正常显示。宽窄桌面和内容新增／切换沿用 `workspace-content-ui` 的真实组件验收。

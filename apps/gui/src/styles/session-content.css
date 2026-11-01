@@ -158,6 +158,7 @@
 /* Session content's location and directory verbs: one shared toolbar, at
    the top on desktop and in the content deck on touch screens. */
 .session-content-location-bar{display:flex;align-items:center;gap:var(--gap-in);flex:none;min-height:var(--pane-head);padding:var(--gap-in) var(--gap-row)}
+[data-session-tabs] > [data-tab-bar]{padding-inline-end:var(--gap-row)}
 .session-content-location-bar,.session-content-page-bar{--ctl-glyph:var(--nav-glyph)}
 .content-location-pill{display:flex;align-items:center;min-width:0;flex:1;height:var(--glass-btn);border-radius:var(--radius-full);padding-inline:calc(var(--gap-in) / 2)}
 .content-location-rest{display:flex;align-items:center;gap:var(--gap-in);height:100%;flex:1;min-width:0;text-align:left;font-size:var(--text-body)}

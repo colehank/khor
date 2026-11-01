@@ -306,6 +306,11 @@ input[type="search"]::-webkit-search-decoration {
   display: none;
 }
 
+/* Portal seats stay mounted, but an empty seat must not reserve a gap. */
+[data-tab-extras]:has(> :only-child:empty) {
+  display: none;
+}
+
 /* The keys a soft keyboard lacks (`views/TermKeys`, 2026-10-02) scroll
    sideways the same way and for the same reason: a thumb swipes them,
    and a bar under a row of keys is one more thing between the keys and

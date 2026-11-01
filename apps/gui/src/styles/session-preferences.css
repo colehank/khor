@@ -3,7 +3,7 @@
 .composer-lab-trigger-words{display:flex;flex-direction:column;align-items:flex-start;min-width:0;line-height:var(--text-callout--line-height)}
 .composer-lab-trigger-words>span{overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .composer-lab-trigger-words>small{max-width:100%;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-caption);line-height:var(--text-caption--line-height);color:var(--muted-foreground)}
-[data-lab-session-settings-slot]{display:flex;align-items:center;flex:none;align-self:center;padding-inline:var(--gap-in)}
+[data-lab-session-settings-slot]{display:flex;align-items:center;flex:none;align-self:center}
 .composer-lab-menu{max-width:calc(100vw - 2 * var(--gap-row))}
 .composer-lab-menu-value{min-width:0;max-width:calc(3 * var(--touch));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted-foreground)}
 .composer-lab-menu-note{max-width:calc(6 * var(--touch));white-space:normal;line-height:var(--text-caption--line-height)}
