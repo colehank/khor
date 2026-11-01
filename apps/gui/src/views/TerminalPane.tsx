@@ -1487,11 +1487,8 @@ export function TerminalPane({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
       allowTransparency: windowOpacity() < 1,
-      // **OSC 8 links go where every other link goes** (T-24, the
-      // terminal audit: they went to xterm's default `confirm()` and
-      // `window.open`, around `open_link`'s whitelist; OscLinkProvider.ts
-      // 114). The same gesture as a plain URL (⌘-click, iTerm2's), and
-      // the same road (`follow`).
+      // xterm's default OSC8 handler uses confirm/window.open and bypasses
+      // Khor's content-opening rules.
       //
       // A `file://` link (`ls --hyperlink`, ripgrep's and gcc's
       // hyperlinks, delta) is a path on the session's machine: it opens
@@ -1683,7 +1680,6 @@ export function TerminalPane({
       setPeek(canvas.toDataURL());
       return true;
     };
-    // Under a mouse a ⌘-click opens one, the gesture links use.
     const pictureClick = (ev: MouseEvent) => {
       if (!(ev.metaKey || ev.ctrlKey) || ev.button !== 0) return;
       const at = cellAt(term, ev.clientX, ev.clientY);
