@@ -44,3 +44,9 @@ Rust 采用官方 rustfmt 默认风格并尊重各 manifest edition；ACP 是202
 ## 原则来源
 
 本约定是《Clean Code》原则在Khor中的应用：[必要注释](https://blog.cleancoder.com/uncle-bob/2017/02/23/NecessaryComments.html)、[第二版原则节选](https://www.informit.com/articles/article.aspx?p=3222335)、[出版社目录](https://www.pearson.com/en-us/subject-catalog/p/clean-code-a-handbook-of-agile-software-craftsmanship-2nd-edition/P200000013239/9780135398548)。命名、职责、错误和状态归属用于帮助读者理解与修改代码，具体约束由当前功能契约决定。
+
+## 下一轮逐包审查（2026-10-29）
+
+[ROUND-2-EXECUTION](ROUND-2-EXECUTION.md)第4节将本约定用于每个工作包，不能延期到最后统一整理。每包review记录实际模块/函数的命名与职责、状态和资源owner、迟到结果处理、纯规则/副作用边界、重复规则、错误语义、注释与行为测试，并说明调整或保留的原因。机械格式单独提交；不以零注释、函数/文件数量或代码减少量代替质量。结构整理限于该包的行为边界，不重新扩大为全仓专项。
+
+2026-10-29已重新阅读上列作者与出版社来源：可读命名和组织服务于读者理解；必要注释用于代码难以充分表达的平台/协议/并发意图。Khor的composition/草稿/外部版本和会话归属规则是对这些原则的具体应用，不冒书中逐字规则。
