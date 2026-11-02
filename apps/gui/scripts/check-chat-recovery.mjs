@@ -43,6 +43,7 @@ async function run(engine, name) {
     page.setDefaultTimeout(12000); page.setDefaultNavigationTimeout(60000);
     const errors = [], consoleErrors = [], networkErrors = [];
     page.on('pageerror', error => errors.push(error.message));
+    page.on('crash', () => errors.push('Browser page crashed'));
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('response', response => { if (response.status() >= 400) networkErrors.push({url: response.url(), status: response.status()}); });
     await page.addInitScript(installAttachmentLeases);
