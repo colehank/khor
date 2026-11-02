@@ -99,7 +99,8 @@ export function useChatScroll(revision: unknown) {
     focusChanged();
     document.addEventListener("focusin", focusChanged);
     const inputs = ["wheel", "touchmove", "pointerdown", "pointermove", "keydown"] as const;
-    for (const input of inputs) el.addEventListener(input, readerInput, { passive: true });
+    // A passive WebKit wheel may scroll before delivering its input intent.
+    for (const input of inputs) el.addEventListener(input, readerInput, { passive: input !== "wheel" });
     sync();
     return () => {
       observer.disconnect();

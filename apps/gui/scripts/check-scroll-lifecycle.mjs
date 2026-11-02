@@ -21,6 +21,7 @@ const engines = (process.env.QUALITY_ENGINES ?? 'chrome').split(',');
 const only = (process.env.QUALITY_ONLY ?? '').split(',').filter(Boolean);
 const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-acp-blur-restore', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history', 'chat-khor-blur-restore'];
 names.push('chat-acp-blur-restore-busy', 'chat-khor-blur-restore-busy');
+names.push('chat-acp-blur-restore-compositor', 'chat-khor-blur-restore-compositor');
 for (const name of engines) assert(['chrome', 'webkit'].includes(name), `Unknown engine: ${name}`);
 for (const name of only) assert(names.some(candidate => candidate === name || candidate.startsWith(`${name}-`)), `Unknown scenario: ${name}`);
 mkdirSync(out, { recursive: true });
@@ -340,7 +341,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   const input = page.locator('[data-composer-text]');
   await input.click();
   if (phase === 'input-tail') return inputDuringResize(page, selector, evidence);
-  if (phase === 'blur-restore' || phase === 'blur-restore-busy') {
+  if (phase.startsWith('blur-restore')) {
     const oldTop = evidence.before.at(-1).top;
     await keyboard(page, 300, evidence, 'blurKeyboardOpen');
     await input.fill('draft words '.repeat(24));
@@ -390,6 +391,11 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
         const end = performance.now() + 350;
         while (performance.now() < end) {}
       }, { once: true, passive: true });
+    });
+    if (phase === 'blur-restore-compositor') await page.locator(selector).evaluate(box => {
+      // Deliver the compositor's scroll before the passive wheel callback.
+      // The wheel itself and the resulting movement still come from the browser.
+      box.addEventListener('wheel', () => box.dispatchEvent(new Event('scroll')), {once: true, capture: true, passive: true});
     });
     await page.mouse.wheel(0, -400);
     evidence.blurReader = await samples(page, selector, null, 800);

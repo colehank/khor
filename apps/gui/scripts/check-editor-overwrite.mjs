@@ -46,7 +46,7 @@ import '/src/styles/tokens.css'; import '/src/styles/app.css';
 document.documentElement.dataset.theme='light';
 function Editor({name,path='/fixture/note.txt'}) {
  const [drafts,setDrafts]=useState({}); const history=useRef({});
- return <section data-editor={name} style={{position:'relative',height:'100vh',flex:1,minWidth:0}}><FilePage
+ return <section data-editor={name} style={{position:'relative',display:'flex',height:'100vh',flex:1,minWidth:0,minHeight:0}}><FilePage
   machine="overwrite-fixture" path={path} here={false} editorHistory={history.current}
   draft={drafts[path]} onDraft={d=>setDrafts(was=>was[path]===(d||undefined)?was:{...was,[path]:d||undefined})}
   onBack={()=>{}} onGone={()=>{}} onMoved={()=>{}} /></section>;
@@ -150,6 +150,11 @@ async function run(engine, name) {
         await step('mount second editor', () => page.evaluate(() => window.__overwrite.second()));
         await step('wait for second editor', () => editor('two').waitFor());
       }
+      const viewports = await step('check editor viewport bounds', () => page.locator('[data-editor]').evaluateAll(panes => panes.map(pane => ({
+        name: pane.dataset.editor, available: pane.clientHeight, viewport: pane.querySelector('.cm-scroller')?.clientHeight,
+      }))));
+      for (const viewport of viewports) assert(viewport.viewport > 0 && Math.abs(viewport.available - viewport.viewport) <= 2,
+        `The editor must use its owner's bounded viewport: ${JSON.stringify(viewport)}`);
       await type('B'); await until(() => disk === 'B', 'first edit saves B');
       // This line has A -> B. Another writer restores A; a fresh read of A
       // must not be forwarded through the old line to B.
@@ -242,7 +247,7 @@ try {
   process.env.KHOR_FACE_GATE = '1';
   // Cache belongs to this temporary fixture even when node_modules is a
   // read-only link to another worktree's dependencies.
-  server = await createServer({root: gui, cacheDir: join(fixture, '.vite'), optimizeDeps: {entries: [join(fixture, 'index.html')]}, server: {hmr: process.env.EDITOR_OVERWRITE_HMR !== '0', host: "127.0.0.1", port: Number(process.env.EDITOR_OVERWRITE_PORT || 23827), strictPort: true}, clearScreen: false});
+  server = await createServer({root: gui, cacheDir: join(fixture, '.vite'), optimizeDeps: {entries: [join(fixture, 'index.html')]}, server: {hmr: false, host: "127.0.0.1", port: Number(process.env.EDITOR_OVERWRITE_PORT || 23827), strictPort: true}, clearScreen: false});
   await server.listen();
   await run(chromium, 'chrome');
   if (process.env.EDITOR_OVERWRITE_WEBKIT === '1') await run(webkit, 'webkit');
