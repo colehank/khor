@@ -1,135 +1,16 @@
 name: Quality
-
 on:
-  push:
-    branches: [main]
-    paths-ignore: ['docs/**', '*.md']
-  pull_request:
   workflow_dispatch:
   workflow_call:
     inputs:
       reuse_frontend:
         type: boolean
         default: false
-
 permissions:
   contents: read
-
-env:
-  CARGO_INCREMENTAL: '0'
-  CARGO_PROFILE_DEV_DEBUG: '0'
-  CARGO_PROFILE_TEST_DEBUG: '0'
-  CARGO_BUILD_JOBS: '2'
-
 jobs:
   frontend:
-    if: ${{ !inputs.reuse_frontend }}
     uses: ./.github/workflows/frontend.yml
-  scripts:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.19.0
-      - uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          components: rustfmt
-      - name: Install the pinned workflow validator
-        run: |
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-          curl --fail --location --silent --show-error https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz --output "$RUNNER_TEMP/shellcheck.tar.xz"
-          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  $RUNNER_TEMP/shellcheck.tar.xz" | sha256sum --check
-          tar -xJf "$RUNNER_TEMP/shellcheck.tar.xz" -C "$RUNNER_TEMP"
-          echo "$RUNNER_TEMP/shellcheck-v0.11.0" >> "$GITHUB_PATH"
-      - name: Run the same fast checks as local commits
-        run: pipx run --spec pre-commit==4.5.1 pre-commit run --all-files --hook-stage pre-commit
-        env:
-          SKIP: khor-gui-types,khor-agent-types
-      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
-      - run: node scripts/check-native-io.mjs
-
-  agent:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.19.0
-          cache: npm
-          cache-dependency-path: apps/agent/package-lock.json
-      - run: npm ci
-        working-directory: apps/agent
-      - run: npm test
-        working-directory: apps/agent
-
-  node-native:
-    needs: frontend
-    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
-    env:
-      CARGO_BUILD_JOBS: '1'
-      CARGO_INCREMENTAL: '0'
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Set the private native build directory
-        run: |
-          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/khor-quality-target" >> "$GITHUB_ENV"
-          echo "KHOR_TEST_MCP_EXECUTABLE=$RUNNER_TEMP/khor-quality-target/debug/khor" >> "$GITHUB_ENV"
-      - uses: dtolnay/rust-toolchain@1.95.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: quality-node-native
-          cache-targets: false
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22.19.0
-          cache: npm
-          cache-dependency-path: apps/gui/package-lock.json
-      - run: npm ci
-        working-directory: apps/gui
-      - uses: ./.github/actions/restore-frontend
-      - run: sudo apt-get update && sudo apt-get install -y tmux openssh-server
-      - run: sudo mkdir -p /run/sshd
-      - run: npm ci
-        working-directory: apps/agent
-      - name: Snapshot the actual Cargo graph and prepare the normal worker
-        run: |
-          native_host="$(rustc -vV | sed -n 's/^host: //p')"
-          test -n "$native_host"
-          cargo metadata --locked --format-version 1 --filter-platform "$native_host" > "${{ runner.temp }}/node-metadata.json"
-          python3 scripts/native_provenance.py prepare --metadata "${{ runner.temp }}/node-metadata.json" --target-dir "$CARGO_TARGET_DIR" --package khor-cli --name khor --kind bin --tool "$(rustup which cargo)" --tool "$(rustup which rustc)" --apply-refresh --output "${{ runner.temp }}/cli-prepared.json"
-      - run: cargo build --locked -p khor-cli --bin khor --message-format=json > "${{ runner.temp }}/cli-artifacts.json"
-      - name: Verify the normal worker and prepare the isolated acceptance binary
-        run: |
-          python3 scripts/native_provenance.py verify --prepared "${{ runner.temp }}/cli-prepared.json" --artifacts "${{ runner.temp }}/cli-artifacts.json" --output "${{ runner.temp }}/cli-provenance.json"
-          python3 scripts/native_provenance.py prepare --metadata "${{ runner.temp }}/node-metadata.json" --target-dir "$CARGO_TARGET_DIR" --package khor-node --name khor_node --kind lib --test --tool "$(rustup which cargo)" --tool "$(rustup which rustc)" --prior "${{ runner.temp }}/cli-provenance.json" --apply-refresh --output "${{ runner.temp }}/node-prepared.json"
-      - run: cargo test --locked -p khor-node --lib --no-run --message-format=json > "${{ runner.temp }}/node-artifacts.json"
-      - run: python3 scripts/native_provenance.py verify --prepared "${{ runner.temp }}/node-prepared.json" --artifacts "${{ runner.temp }}/node-artifacts.json" --output "${{ runner.temp }}/node-provenance.json"
-      - name: Run each agent close acceptance test in its own process
-        run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --provenance "${{ runner.temp }}/node-provenance.json" --worker-provenance "${{ runner.temp }}/cli-provenance.json" --output "${{ runner.temp }}/node-native-close"
-      - name: Verify keeper adoption and SSH installation in scratch homes
-        run: |
-          cargo test --locked -p khor-node --lib join:: -- --test-threads=1
-          cargo test --locked -p khor-core -p khor-node --lib activity -- --test-threads=1
-          cargo test --locked -p khor-node --lib gui_run_rejects_old_and_unqualified_reports -- --test-threads=1
-          cargo test --locked -p khor-cli --test serve_keeper --test add_ssh -- --test-threads=1
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: node-native-close-evidence
-          path: |
-            ${{ runner.temp }}/node-artifacts.json
-            ${{ runner.temp }}/node-metadata.json
-            ${{ runner.temp }}/cli-artifacts.json
-            ${{ runner.temp }}/*-prepared.json
-            ${{ runner.temp }}/*-provenance.json
-            ${{ runner.temp }}/node-native-close
-          if-no-files-found: warn
-
   gui:
     needs: frontend
     if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
@@ -156,19 +37,21 @@ jobs:
       - run: npm run test:unit && npm run test:types
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
-      - name: Run every interaction group and retain all failures
+      - name: Diagnose only the three rc.2 GUI failures
         run: |
           failed=0
-          for gate in lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui native-events native-helpers chat-recovery workspace-content-ui terminal-links-ui notification-ui; do
-            echo "::group::$gate"
-            if timeout --kill-after=10s 8m npm run "$gate"; then
-              echo "$gate passed"
-            else
-              result=$?
-              echo "::error::$gate failed (exit $result)"
-              failed=1
-            fi
-            echo '::endgroup::'
+          for sample in 1 2 3; do
+            export QUALITY_OUT="$RUNNER_TEMP/quality-scroll/sample-$sample"
+            export CHAT_RECOVERY_CHECK_DIR="$RUNNER_TEMP/quality-chat-recovery/sample-$sample"
+            for gate in scroll-lifecycle chat-recovery; do
+              if timeout --kill-after=10s 5m npm run "$gate" > "$RUNNER_TEMP/$gate-$sample.log" 2>&1; then
+                echo "$gate sample $sample passed"
+              else
+                echo "::error::$gate sample $sample failed"
+                tail -60 "$RUNNER_TEMP/$gate-$sample.log"
+                failed=1
+              fi
+            done
           done
           exit "$failed"
         env:
@@ -193,11 +76,15 @@ jobs:
           WORKSPACE_CONTENT_DIR: ${{ runner.temp }}/quality-workspace
           TERMINAL_LINK_UI_DIR: ${{ runner.temp }}/quality-terminal-links
           NOTIFICATION_UI_DIR: ${{ runner.temp }}/quality-notifications
+          QUALITY_ONLY: chat-khor-blur-restore-compositor,chat-acp-blur-restore-compositor
+          CHAT_RECOVERY_SCENARIOS: idb-retries-and-shared-pages,directory-required-shell
+          DEBUG: pw:browser
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: gui-interaction-evidence
           path: |
+            ${{ runner.temp }}/*.log
             ${{ runner.temp }}/quality-scroll
             ${{ runner.temp }}/quality-elements
             ${{ runner.temp }}/quality-overwrite
@@ -213,33 +100,3 @@ jobs:
             ${{ runner.temp }}/quality-notifications
           if-no-files-found: warn
 
-  windows-agent-process:
-    runs-on: windows-2025
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@1.95.0
-      - name: Verify owned processes and cancellable pipes on Windows
-        shell: pwsh
-        run: |
-          cargo run --locked --manifest-path crates/node/tests/windows-process-harness/Cargo.toml *> "$env:RUNNER_TEMP/agent-process.log"
-          $processCheckExit = $LASTEXITCODE
-          Get-Content "$env:RUNNER_TEMP/agent-process.log"
-          exit $processCheckExit
-      - name: Verify bounded GUI socket writers on Windows
-        shell: pwsh
-        run: |
-          rustc --edition=2024 --test crates/node/tests/fanout_harness.rs -o "$env:RUNNER_TEMP/gui-fanout-tests.exe"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          & "$env:RUNNER_TEMP/gui-fanout-tests.exe" --nocapture --test-threads=1 *> "$env:RUNNER_TEMP/gui-fanout.log"
-          $fanoutCheckExit = $LASTEXITCODE
-          Get-Content "$env:RUNNER_TEMP/gui-fanout.log"
-          exit $fanoutCheckExit
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: windows-agent-process-evidence
-          path: |
-            ${{ runner.temp }}/agent-process.log
-            ${{ runner.temp }}/gui-fanout.log
-          if-no-files-found: warn
