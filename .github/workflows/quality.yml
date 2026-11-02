@@ -82,7 +82,7 @@ jobs:
           WORKSPACE_CONTENT_DIR: ${{ runner.temp }}/quality-workspace
           TERMINAL_LINK_UI_DIR: ${{ runner.temp }}/quality-terminal-links
           NOTIFICATION_UI_DIR: ${{ runner.temp }}/quality-notifications
-          QUALITY_ONLY: chat-khor-blur-restore-compositor,chat-acp-blur-restore-compositor
+          QUALITY_ONLY: chat-khor-blur-restore-small-step,chat-acp-blur-restore-small-step
           CHAT_RECOVERY_SCENARIOS: idb-retries-and-shared-pages,directory-required-shell
           DEBUG: pw:browser
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
