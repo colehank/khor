@@ -240,6 +240,9 @@ export async function exerciseRecoveryActions(scenario,page,helpers) {
     await until(async()=>(await publicCalls('new_shell_run')).length===1,'old cwd request completed');const first=(await publicCalls('new_shell_run'))[0].args;
     await page.evaluate(({A})=>{window.__recoveryWire.holdOfferTargets.push(JSON.stringify([A,'fresh-shell']));window.__recoveryWire.offer(A,'alpha',{action:'new_shell',execution:'ended',current_run:'alpha',next_attempt_epoch:'5',native:null});window.__recoveryWire.replies.push({kind:'opened',id:'fresh-shell',previous:'alpha'});},{A});
     const w=await words(page);await menu(page);await page.getByRole('button',{name:w.choose,exact:true}).click();const field=page.locator('[data-dir-picker-path] input, input[data-dir-picker-path]');await field.fill('/fixture/chosen');
+    await advanceUntil(page,()=>page.locator('[data-dir-picker]').evaluate(node=>
+      node.getAnimations({subtree:true}).every(animation=>animation.playState!=='running')),
+    'directory chooser finishes opening while the polling clock is paused');
     const take=await page.evaluate(()=>window.__recoveryWords.dir_picker_take);await page.getByRole('button',{name:take,exact:true}).click();
     await until(async()=>(await publicCalls('new_shell_run')).length===2,'confirmed new cwd sends a new intent');const second=(await publicCalls('new_shell_run'))[1].args;
     assert.equal(first.cwd,null);assert.equal(second.cwd,'/fixture/chosen');assert.equal(second.expected_run,'alpha');assert.equal(second.home_id,A);assert.equal(second.token.epoch,'5');assert.notEqual(second.token.nonce,first.token.nonce);
