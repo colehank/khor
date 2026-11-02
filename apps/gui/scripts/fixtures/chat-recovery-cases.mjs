@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {recoveryActionCases, exerciseRecoveryActions} from './recovery-actions-ui.mjs';
+import {recoveryActionCases, exerciseRecoveryActions, advanceRecoveryClock} from './recovery-actions-ui.mjs';
 
 // User-visible capabilities retained from the retired History/HistoryEnd suite.
 export const chatRecoveryCases = [
@@ -116,7 +116,7 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
     await until(async () => (index ?? await nextPoll()) >= 0, 'actual held poll ready');
     const selected = index ?? await nextPoll();
     await page.evaluate(({selected, frames, change}) => window.__chatWire.reply(selected, {frames, next: selected + 1, ...change}), {selected, frames, change});
-    await wait(10);await page.clock.runFor(0);await wait(10);
+    await wait(10);await advanceRecoveryClock(page,0);await wait(10);
   };
   const capture = async (extra = []) => {
     await until(async () => (await calls('chat_capture')).length > 0, 'actual view asks for Capture');

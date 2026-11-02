@@ -10,7 +10,7 @@ import {fileURLToPath} from 'node:url';
 import {createServer} from 'vite';
 import {chromium, webkit} from 'playwright-core';
 
-import {recoveryActionCases, recoveryProbe, installRecoveryActionsTransport} from './fixtures/recovery-actions-ui.mjs';
+import {recoveryActionCases, recoveryProbe, installRecoveryActionsTransport, usesRecoveryClock} from './fixtures/recovery-actions-ui.mjs';
 import {chatRecoveryCases, exerciseChatRecovery, installRecoveryTransport} from './fixtures/chat-recovery-cases.mjs';
 const known = [...chatRecoveryCases,...recoveryActionCases];
 const scenarios = process.env.CHAT_RECOVERY_SCENARIOS?.split(',').filter(Boolean) ?? known;
@@ -52,8 +52,11 @@ async function run(engine, name) {
     const polls = () => page.evaluate(() => window.__chatWire.calls.filter(call => call.cmd === 'chat_wait' || call.cmd === 'chat_poll'));
     const facts=()=>page.evaluate(()=>({origin:location.origin,calls:window.__recoveryWire?.calls.slice(-64),failedReads:window.__chatWire?.failedReads,peers:window.__recoveryWire?.peers,terminals:window.__recoveryWire?.terminals,heldOffers:window.__recoveryWire?.offers.map(x=>({id:x.args.id,done:x.done})),heldActions:window.__recoveryWire?.actions.map(x=>({cmd:x.cmd,args:x.args,done:x.done})),heldDrops:window.__recoveryWire?.drops.map(x=>({lease:x.lease,done:x.done}))})).catch(()=>null);
     try {
-      await page.clock.install({time: new Date('2026-10-25T00:00:00Z')});
-      await page.clock.pauseAt(new Date('2026-10-25T00:00:00Z'));
+      // Directory selection needs native animation/rAF; only timing cases install a clock.
+      if (usesRecoveryClock(scenario)) {
+        await page.clock.install({time: new Date('2026-10-25T00:00:00Z')});
+        await page.clock.pauseAt(new Date('2026-10-25T00:00:00Z'));
+      }
       await page.goto(`http://127.0.0.1:${server.config.server.port}/${basename(fixture)}/index.html?recovery_case=${encodeURIComponent(scenario)}`);
       if(scenario==='automatic-entry-and-later-exit') await until(()=>page.evaluate(()=>window.__recoveryWire.actions.length===1),'entry continuation reached controlled IO');
       else await until(async () => (await polls()).length > 0, 'actual ChatView started a poll');

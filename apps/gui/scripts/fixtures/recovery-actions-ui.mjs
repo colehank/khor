@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 // Fixed UI facts and controlled external IO. No Node execution qualification,
 // idempotency/reservation algorithm, canonical parser or replacement IDB owner.
 export const recoveryActionCases = ['offer-and-same-sid-rebind', 'idb-retries-and-shared-pages', 'directory-required-shell', 'terminal-owner-transfer', 'automatic-entry-and-later-exit'];
+export const usesRecoveryClock = scenario => scenario !== 'directory-required-shell';
+
+export async function advanceRecoveryClock(page, milliseconds) {
+  const scenario = new URL(page.url()).searchParams.get('recovery_case');
+  if (usesRecoveryClock(scenario)) await page.clock.runFor(milliseconds);
+}
 
 export const recoveryProbe = `
 import React,{useState} from 'react';
@@ -121,7 +127,7 @@ async function menu(page){
   if(await page.locator('[data-notice-panel=open]').count())return;
   const id=await page.evaluate(()=>window.__recoveryProbe.current());
   await until(()=>page.locator('[data-tab="'+id+'"][data-pill-signal]').count().then(n=>n>0),'relationship is visible on its original tab');
-  await page.locator('[data-tab="'+id+'"]').click();await page.clock.runFor(500);
+  await page.locator('[data-tab="'+id+'"]').click();await advanceRecoveryClock(page,500);
   await page.locator('[data-notice-panel=open]').waitFor();
 }
 async function action(page,label){
@@ -238,13 +244,10 @@ export async function exerciseRecoveryActions(scenario,page,helpers) {
   } else if(scenario==='directory-required-shell') {
     // Independent new Shell UI coverage; original13 do not claim this behavior.
     await page.evaluate(({A})=>{window.__recoveryWire.offer(A,'alpha',{action:'new_shell',execution:'ended',current_run:'alpha',next_attempt_epoch:'4',native:null});window.__recoveryWire.replies.push({kind:'directory_required',id:'alpha'});window.__recoveryProbe.patch({kind:'shell',category:'shell',word:'failed',can_control:false,attachable:false,ended:{exit:0}});},{A});
-    await page.clock.runFor(200);const newLabel=await page.evaluate(()=>window.__recoveryWords.recovery_new_shell);await action(page,newLabel);
+    const newLabel=await page.evaluate(()=>window.__recoveryWords.recovery_new_shell);await action(page,newLabel);
     await until(async()=>(await publicCalls('new_shell_run')).length===1,'old cwd request completed');const first=(await publicCalls('new_shell_run'))[0].args;
     await page.evaluate(({A})=>{window.__recoveryWire.holdOfferTargets.push(JSON.stringify([A,'fresh-shell']));window.__recoveryWire.offer(A,'alpha',{action:'new_shell',execution:'ended',current_run:'alpha',next_attempt_epoch:'5',native:null});window.__recoveryWire.replies.push({kind:'opened',id:'fresh-shell',previous:'alpha'});},{A});
     const w=await words(page);await menu(page);
-    // This flow tests choosing a directory, not polling cadence. Let native
-    // animation and rAF share a running clock; click waits for a stable hit target.
-    await page.clock.resume();
     await page.getByRole('button',{name:w.choose,exact:true}).click();const field=page.locator('[data-dir-picker-path] input, input[data-dir-picker-path]');await field.fill('/fixture/chosen');
     const take=await page.evaluate(()=>window.__recoveryWords.dir_picker_take);await page.getByRole('button',{name:take,exact:true}).click();
     await until(async()=>(await publicCalls('new_shell_run')).length===2,'confirmed new cwd sends a new intent');const second=(await publicCalls('new_shell_run'))[1].args;
