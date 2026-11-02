@@ -24,7 +24,7 @@ jobs:
     outputs:
       rc: ${{ steps.intent.outputs.rc }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: intent
@@ -56,9 +56,9 @@ jobs:
             target: x86_64-apple-darwin
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/restore-frontend
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22.19.0
           cache: npm
@@ -73,7 +73,7 @@ jobs:
           npm ci --prefix apps/agent
           node apps/agent/build.mjs "$TARGET" agent-runtime/khor-agent
           python3 scripts/release_manifest.py create --root agent-runtime --kind "agent-runtime-$TARGET" --frontend frontend --agent agent-runtime/khor-agent
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: agent-runtime-${{ matrix.target }}
           path: agent-runtime/
@@ -104,7 +104,7 @@ jobs:
             asset: khor-macos-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/restore-frontend
       - uses: ./.github/actions/restore-agent
         with:
@@ -140,7 +140,7 @@ jobs:
           gzip -n -9 -c "target/$TARGET/release/khor" > "product/$ASSET.gz"
           (cd product && shasum -a 256 "$ASSET.gz" > "$ASSET.gz.sha256")
           python3 scripts/release_manifest.py create --root product --kind "$ASSET" --frontend frontend --executable "target/$TARGET/release/khor" --agent apps/agent/dist/khor-agent
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ${{ matrix.asset }}
           path: product/
@@ -162,7 +162,7 @@ jobs:
             asset: khor-macos-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/restore-frontend
       - uses: ./.github/actions/restore-agent
         with:
@@ -187,7 +187,7 @@ jobs:
           TARGET: ${{ matrix.target }}
           SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
         run: python3 scripts/mac_notarization.py package-build --target "$TARGET" --signed "$SIGNED"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-build-${{ matrix.asset }}
           path: mac-build/
@@ -206,9 +206,9 @@ jobs:
       ASSET: ${{ matrix.asset }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mac-build-${{ matrix.asset }}
           path: mac-build
@@ -219,7 +219,7 @@ jobs:
         name: Restore any saved Apple request
         run: python3 scripts/mac_notarization.py restore --name "notary-request-$ASSET" --output notary
       - run: python3 scripts/mac_notarization.py prepare --asset "$ASSET"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.intent.outputs.found != 'true'
         with:
           name: notary-intent-${{ matrix.asset }}
@@ -233,7 +233,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
         run: python3 scripts/mac_notarization.py submit --asset "$ASSET" --allow-submit "$ALLOW_SUBMIT"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && steps.request.outputs.found != 'true' && hashFiles('notary/request.json') != ''
         with:
           name: notary-request-${{ matrix.asset }}
@@ -253,13 +253,13 @@ jobs:
       ASSET: ${{ matrix.asset }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mac-build-${{ matrix.asset }}
           path: mac-build
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: notary-request-${{ matrix.asset }}
           path: notary
@@ -272,7 +272,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
         run: python3 scripts/mac_notarization.py finish --asset "$ASSET" --timeout 1800
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: steps.final.outputs.found != 'true'
         with:
           name: ${{ matrix.asset }}-app
@@ -280,7 +280,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Keep notarization status and rejection details
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: notary-status-${{ matrix.asset }}-${{ github.run_attempt }}
@@ -294,7 +294,7 @@ jobs:
     timeout-minutes: 90
     environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/restore-frontend
       - uses: ./.github/actions/native-tools
         with:
@@ -313,7 +313,7 @@ jobs:
         run: |
           python3 scripts/apple_release.py package-ios
           python3 scripts/release_manifest.py create --root ios --kind ios-archive --frontend frontend --executable apps/gui/src-tauri/gen/apple/build/khor-gui_iOS.xcarchive/Products/Applications/Khor.app/Khor
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-archive
           path: ios/
@@ -333,12 +333,12 @@ jobs:
     needs: [quality, native, ios, mac-notarize]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: khor-*
           path: candidate
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ios-archive
           path: candidate/ios-archive
@@ -349,7 +349,7 @@ jobs:
           done
           cp scripts/install.sh candidate/install.sh
           python3 scripts/release_candidate.py candidate
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: candidate-manifest
           path: |
