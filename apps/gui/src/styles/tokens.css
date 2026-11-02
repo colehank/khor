@@ -2898,7 +2898,7 @@
   /* Only floating controls can enter the generous iOS home-indicator
      band. Content, sheets and system navigation retain --safe-bottom. */
   --dock-safe-bottom: var(--safe-bottom);
-  --dock-home-overlap: 20px;
+  --dock-home-overlap: 8px;
   /* 更多's menu, as wide as the canvas draws it. */
   --nav-menu: 236px;
   --list-row: 56px;
@@ -3091,11 +3091,9 @@
   }
 }
 
-/* iPhone / iPad floating controls share a lower native-style baseline.
-   viewport.ts stamps this once before the first frame. With a 34-point
-   band, the control bottom is 34 - 20 + 8 = 22; no band (or a keyboard)
-   retains only the normal inner 8-point breath. A shorter landscape
-   indicator band still keeps up to 8 points below that breath. */
+/* iOS decks clear the home gesture area: with a 34-point safe area,
+   controls end at 34 - 8 + 8 = 34. Without a safe area, including above
+   the keyboard, only the normal 8-point inner gap remains. */
 :root[data-ios] {
   --dock-safe-bottom: max(0px, min(var(--safe-bottom), var(--gap-in)), calc(var(--safe-bottom) - var(--dock-home-overlap)));
 }

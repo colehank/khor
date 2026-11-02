@@ -297,6 +297,10 @@ try {
 
   browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+  await page.route("**/lock_state", (route) => route.fulfill({
+    contentType: "application/json",
+    body: JSON.stringify({ on: false, has_pin: false, timeout_min: 0, timeouts: [0], pin_min: 6, system_door: false }),
+  }));
   const thrown = [];
   page.on("pageerror", (e) => thrown.push(String(e)));
   await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
@@ -310,6 +314,7 @@ try {
   // is typed, and **a disabled button cannot be focused**, so a keyboard
   // probe against the empty dialog silently measures nothing. The value
   // is never submitted — nothing here presses it.
+  if (process.env.PALETTE_ONLY !== "rows") {
   const join = page.locator("[data-add-go]");
   const openJoin = async () => {
     // Reach devices as a *switch*, never a re-click: pressing the open
@@ -754,6 +759,8 @@ try {
   }
 
 
+  } // primary action and base palette
+
   // ── the selected row (docs/SHELL.md 第十五轮 第 2 条, D6) ──────────
   //
   // 「选中的列表行是实心品牌深绿、白字；窗口不在前台时变灰」. Every piece
@@ -887,52 +894,50 @@ try {
       if (!strongOf[scheme]) fail(`${scheme}: --brand-strong does not resolve — the selected row has no solid to be (src/styles/tokens.css)`);
     }
     for (const scheme of ["light", "dark"]) {
+      await page.reload({ waitUntil: "load" });
       await flipTheme(page, scheme);
       await wait(400);
       const base = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--background").trim());
       const fallback = page.locator('[data-side-row="tui/palette-gate-6"]');
       if (await fallback.locator('[data-status-unavailable], [data-unread]').count()) fail(`${scheme}: shell fallback still paints restricted agent state or unread`);
       if (!(await fallback.locator('[data-status-word="busy"]').count())) fail(`${scheme}: shell fallback lost its own command activity`);
+      if (process.env.PALETTE_SHOTS) {
+        const { mkdirSync } = await import('node:fs');
+        mkdirSync(process.env.PALETTE_SHOTS, { recursive: true });
+        await page.locator('[data-list]').screenshot({ path: `${process.env.PALETTE_SHOTS}/session-indicators-${scheme}.png` });
+      }
       let dotSize;
       for (let n = 0; n < WORDS.length; n++) {
         const row = page.locator(`[data-side-row="tui/palette-gate-${n}"]`);
-        await row.locator('[data-row-open]').click();
-        await wait(100);
-        judgeRow(scheme, WORDS[n], "each state", await read(), base);
         const badge = row.locator('[data-unread]');
         if (n === 0) {
           if (await badge.count()) fail(`${scheme}: read session still has an unread mark`);
         } else {
-          const text = (await badge.textContent())?.trim();
-          if (text !== (n === 2 ? "3" : "")) fail(`${scheme}: unread ${n === 2 ? 3 : 1} rendered ${JSON.stringify(text)}`);
           if (!(await badge.getAttribute('aria-label'))) fail(`${scheme}: unread mark lost its accessible count`);
-          if (!(await row.locator('[data-side-title] [data-unread]').count())) fail(`${scheme}: unread mark is not beside the title`);
-          const mark = await badge.boundingBox();
-          const title = await row.locator('[data-side-title]').boundingBox();
-          if (!mark || !title || mark.x < title.x || mark.x + mark.width > title.x + title.width + 1)
-            fail(`${scheme}: unread mark clipped by its title (${JSON.stringify({ mark, title })})`);
-          const dot = badge.locator('[data-unread-dot]');
-          if (!(await dot.count())) fail(`${scheme}: unread mark has no separate dot`);
-          else {
-            const box = await dot.boundingBox();
-            if (!box || (dotSize && (box.width !== dotSize.width || box.height !== dotSize.height)))
-              fail(`${scheme}: unread dot changes size with the count`);
-            dotSize ??= box;
-          }
-          const number = badge.locator('[data-unread-count]');
+          const dot = row.locator('[data-unread-dot]');
+          const face = await row.locator('[data-side-face]').boundingBox();
+          const box = await dot.boundingBox();
+          if (!box || !face || Math.abs(box.x + box.width / 2 - face.x - face.width) > 3 || Math.abs(box.y + box.height / 2 - face.y) > 3)
+            fail(`${scheme}: unread dot is not at the avatar upper-right (${JSON.stringify({ box, face })})`);
+          if (!box || (dotSize && (box.width !== dotSize.width || box.height !== dotSize.height)))
+            fail(`${scheme}: unread dot changes size with the count`);
+          dotSize ??= box;
+          const number = row.locator('[data-unread-count]');
+          if ((await number.count() ? (await number.textContent())?.trim() : undefined) !== (n === 2 ? "3" : undefined))
+            fail(`${scheme}: unread numeric label does not match its count`);
+          if (n === 2 && !(await row.locator('[data-side-title] [data-unread-count]').count()))
+            fail(`${scheme}: unread numeric label is not beside the title`);
           if (n === 2 && await number.count()) {
             const paint = await number.evaluate((el) => ({ color: getComputedStyle(el).color, bg: getComputedStyle(el).backgroundColor }));
             if (oklch(rgb(paint.color)).c > 0.02 || parse(paint.bg)[3] !== 0)
               fail(`${scheme}: unread count needs neutral text with no background`);
           } else if (n === 2 || await number.count()) fail(`${scheme}: unread numeric label does not match its count`);
         }
+        await row.locator('[data-row-open]').click();
+        await wait(100);
+        judgeRow(scheme, WORDS[n], "each state", await read(), base);
       }
       await opener.click();
-      if (process.env.PALETTE_SHOTS) {
-        const { mkdirSync } = await import('node:fs');
-        mkdirSync(process.env.PALETTE_SHOTS, { recursive: true });
-        await page.locator('[data-list]').screenshot({ path: `${process.env.PALETTE_SHOTS}/session-indicators-${scheme}.png` });
-      }
       for (const state of ["front", "behind"]) {
         // **Behind, by the road the app itself takes**: the page loses
         // focus to another tab of the same browser, and `lib/window-key.ts`
@@ -940,8 +945,10 @@ try {
         // is set by hand and the line says so.
         let how = "blur";
         if (state === "behind") {
-          const other = await browser.newPage();
-          await other.bringToFront();
+          // Focused row checks measure inactive paint without hiding the page
+          // and suspending its session poll. The full sweep still exercises blur.
+          const other = process.env.PALETTE_ONLY === "rows" ? null : await browser.newPage();
+          await other?.bringToFront();
           await wait(300);
           const key = await page.evaluate(() => document.documentElement.getAttribute("data-window-key"));
           if (key !== "false") {
@@ -950,7 +957,7 @@ try {
           }
           await wait(300);
           const got = await read();
-          await other.close();
+          await other?.close();
           await page.bringToFront();
           await page.evaluate(() => document.documentElement.setAttribute("data-window-key", "true"));
           await wait(300);

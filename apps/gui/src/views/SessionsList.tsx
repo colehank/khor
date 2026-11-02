@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 
 import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
-import { SessionUnread } from "@/components/SessionUnread";
+import { SessionUnread, SessionUnreadCount } from "@/components/SessionUnread";
 import { takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
@@ -300,6 +300,7 @@ export function SessionsList({
     face: { machine: r.face },
     halo: r.word ?? undefined,
     mark: sessionKind(r.kind, r.category),
+    indicator: r.unread > 0 ? <SessionUnread count={r.unread} /> : rung?.has(r.id) ? <BellMark /> : undefined,
     // Double-click the title to rename it in place — the component the
     // detail header wears, so the two cannot drift. `nested`: it sits
     // inside the button that opens the row.
@@ -315,7 +316,7 @@ export function SessionsList({
           open={renaming === r.id ? true : undefined}
           onClose={() => setRenaming(null)}
         />
-        <SessionUnread count={r.unread} />
+        <SessionUnreadCount count={r.unread} />
       </span>
     ),
     name: r.title,
@@ -354,7 +355,7 @@ export function SessionsList({
     // used to come after it, and a row that carried
     // one had its word 22px left of the rows that did not — a column of
     // words that did not line up. Whatever else rides this line stands
-    // to the word's left. Unread belongs beside the title (2026-10-13).
+    // to the word's left.
     trailing: (
       <span className="flex flex-none flex-col items-end gap-xxs text-caption tabular-nums text-muted-foreground">
         <span className="flex items-center gap-xxs">
@@ -377,7 +378,6 @@ export function SessionsList({
               )}
             </span>
           )}
-          {r.unread === 0 && rung?.has(r.id) && <BellMark />}
           <StatusWord word={r.word} absent={r.kind === "observe" ? gui.session_observation : undefined} />
         </span>
         {r.at_ms > 0 &&

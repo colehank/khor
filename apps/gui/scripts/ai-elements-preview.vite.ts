@@ -248,4 +248,4 @@ function previewBridge(terminal = false): Plugin {
 }
 
 export function aiElementsPreview(terminal=false){return mergeConfig(base,defineConfig({plugins:[previewBridge(terminal)],server:{host:"127.0.0.1",port:23776,strictPort:true}}));}
-export default aiElementsPreview();
+export default aiElementsPreview(process.env.KHOR_PREVIEW_TERMINAL === "1");

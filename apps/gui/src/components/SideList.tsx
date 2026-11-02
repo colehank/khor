@@ -59,6 +59,7 @@ export type SideRow = {
   mark?: KindMark;
   /** A session's state ring. */
   halo?: string;
+  indicator?: ReactNode;
   title: ReactNode;
   /** **The title line's aside** (UX-15, the owner 2026-10-05): small
       muted words after the name — today a machine's latency (UX-50); once
@@ -413,9 +414,9 @@ export function SideList({
             face is — a session's, a machine's, the 额度 dial. */}
         <span data-side-face-slot className={cn("flex w-list-face flex-none items-center justify-center", dim && "opacity-55")}>
           {"machine" in r.face ? (
-            <FaceMark face={r.face} halo={r.halo} mark={r.mark} />
+            <FaceMark face={r.face} halo={r.halo} mark={r.mark} indicator={r.indicator} />
           ) : (
-            <FaceMark face={r.face} halo={r.halo} />
+            <FaceMark face={r.face} halo={r.halo} indicator={r.indicator} />
           )}
         </span>
         <span

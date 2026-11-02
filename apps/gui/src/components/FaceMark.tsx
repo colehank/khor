@@ -156,6 +156,7 @@ export function FaceMark({
   face,
   mark,
   halo,
+  indicator,
   size = "row",
   className,
 }: (
@@ -168,6 +169,8 @@ export function FaceMark({
 ) & {
   /** A session's state key (`busy`…), for the ring outside the face. */
   halo?: string;
+  /** Unread activity, separate from the state ring and lower kind badge. */
+  indicator?: ReactNode;
   /** A list row's (the switcher's rows too) or a tab's — see `SIZES`. */
   size?: keyof typeof SIZES;
   /* ⚠️ 墓碑 (2026-09-28 → 09-30): `beside` stood the corner next to the
@@ -285,6 +288,11 @@ export function FaceMark({
             {mark.glyph(s.glyph)}
           </span>
         ))}
+      {indicator && (
+        <span data-face-indicator className="pointer-events-none absolute -right-0.5 -top-0.5 flex">
+          {indicator}
+        </span>
+      )}
     </span>
   );
 }
