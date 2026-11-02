@@ -20,10 +20,11 @@ export function installRecoveryTransport() {
   let binding = 'canonical-1', serial = 0;
   const cursor = (source, offset) => JSON.stringify([source, offset]);
   const wire = window.__chatWire = {
-    calls: [], pending: [], held: [], unknown: [], cancellations: [], failedReads: [], readFailure: null, holdNext: false,
+    calls: [], pending: [], delivered: [], held: [], unknown: [], cancellations: [], failedReads: [], readFailure: null, holdNext: false,
     reply(index, change = {}) {
       const poll = wire.pending[index];
       if (!poll || poll.completed) throw new Error('missing or completed fixture poll');
+      wire.delivered.push({lease: poll.call.args.lease, frames: change.frames ?? []});
       poll.completed = true; poll.resolve({...empty, ...change});
     },
     source(texts) {binding = `canonical-${sources.size + 1}`;sources.set(binding, [...texts]);},
@@ -119,10 +120,17 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
     await wait(10);await advanceRecoveryClock(page,0);await wait(10);
   };
   const capture = async (extra = []) => {
-    await until(async () => (await calls('chat_capture')).length > 0, 'actual view asks for Capture');
-    const token = (await calls('chat_capture')).at(-1).args.token;
-    const frame = await page.evaluate(token => window.__chatWire.captured(token), token);
-    await deliver([frame, ...extra], {gone: extra.some(frame => frame.kind === 'gone')});
+    await until(() => page.evaluate(extra => {
+      const wire = window.__chatWire;
+      const lease = wire.calls.findLast(call => call.cmd === 'chat_open')?.args.lease;
+      const request = wire.calls.findLast(call => call.cmd === 'chat_capture' && call.args.lease === lease);
+      const selected = wire.pending.findIndex(poll => !poll.completed && poll.call.args.lease === lease);
+      if (!request || selected < 0) return false;
+      wire.reply(selected, {frames: [wire.captured(request.args.token), ...extra], next: selected + 1,
+        gone: extra.some(frame => frame.kind === 'gone')});
+      return true;
+    }, extra), 'current attachment has its own Capture and held poll');
+    await wait(10);await advanceRecoveryClock(page,0);await wait(10);
   };
   const wake = () => deliver([{kind: 'content_changed'}]);
   const failReads = (message, texts = []) => page.evaluate(({message, texts}) => {
