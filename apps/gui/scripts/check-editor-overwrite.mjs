@@ -71,6 +71,10 @@ async function run(engine, name) {
     page.setDefaultNavigationTimeout(60000);
     let disk = 'A', other = 'Other file', heldRead = null, holdNextRead = false, mutateAtWrite = null, readKind = 'complete';
     const writes = [], errors = [], consoleErrors = [];
+    const step = async (label, action) => {
+      recordStage(`${name} ${scenario} ${label}`);
+      return action();
+    };
     page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
     page.on('pageerror', error => errors.push(error.message));
     const snapshot = path => {
@@ -106,15 +110,20 @@ async function run(engine, name) {
     const editor = who => pane(who).locator('.cm-content[contenteditable=true]');
     const type = async (text, who = 'one', save = true) => {
       const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
-      await editor(who).click(); await page.keyboard.press(`${modifier}+a`); await page.keyboard.insertText(text);
-      if (save) await page.keyboard.press(`${modifier}+s`);
+      await step(`focus ${who}`, () => editor(who).click());
+      await step(`select ${who}`, () => page.keyboard.press(`${modifier}+a`));
+      await step(`type ${who}: ${text}`, () => page.keyboard.insertText(text));
+      if (save) await step(`save ${who}`, () => page.keyboard.press(`${modifier}+s`));
     };
     const readText = who => pane(who).locator('[data-code-view]').evaluate(node => node.__view.state.doc.toString());
     try {
       recordStage(`${name} ${scenario} navigating`);
       await page.goto(`http://127.0.0.1:${server.config.server.port}/${fixture.split('/').pop()}/index.html`);
-      await editor('one').waitFor({timeout: 45000});
-      if (scenario === 'two-editors') { await page.evaluate(() => window.__overwrite.second()); await editor('two').waitFor(); }
+      await step('wait for first editor', () => editor('one').waitFor({timeout: 45000}));
+      if (scenario === 'two-editors') {
+        await step('mount second editor', () => page.evaluate(() => window.__overwrite.second()));
+        await step('wait for second editor', () => editor('two').waitFor());
+      }
       await type('B'); await until(() => disk === 'B', 'first edit saves B');
       // This line has A -> B. Another writer restores A; a fresh read of A
       // must not be forwarded through the old line to B.
@@ -139,7 +148,7 @@ async function run(engine, name) {
       if (scenario === 'external-aba') mutateAtWrite = () => { disk = 'external-intermediate'; disk = 'A'; };
       if (scenario === 'incomplete-read') readKind = 'incomplete';
       if (scenario === 'binary-read') readKind = 'binary';
-      await pane('one').locator('[data-keep-mine]').click();
+      await step('overwrite first editor', () => pane('one').locator('[data-keep-mine]').click());
       if (holdNextRead || heldRead) {
         await until(() => heldRead !== null, 'overwrite fresh read is in flight');
         if (scenario === 'typing-during-read') await type('C plus typing', 'one', false);
@@ -175,7 +184,7 @@ async function run(engine, name) {
           if (scenario === 'two-editors') {
             await type('other editor', 'two'); await pane('two').locator('[data-save-state=refused]').waitFor();
             assert.equal(disk, 'C', 'independent old buffer still conflicts');
-            await pane('two').locator('[data-keep-mine]').click(); await until(() => disk === 'other editor', 'second editor can explicitly overwrite');
+            await step('overwrite second editor', () => pane('two').locator('[data-keep-mine]').click()); await until(() => disk === 'other editor', 'second editor can explicitly overwrite');
             await type('second continues', 'two'); await until(() => disk === 'second continues', 'second editing line continues');
           } else {
             await type('D'); await until(() => disk === 'D', 'fresh line continues with ordinary save');
