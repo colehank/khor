@@ -64,7 +64,7 @@ def push_tree():
 def script_tests():
     if sys.platform == "win32":
         print("Windows: run portable release/API tests; POSIX shell/process fixtures run on macOS/Linux and CI")
-        run([sys.executable, "-m", "unittest", "scripts.tests.test_apple_api", "scripts.tests.test_tag_release", "scripts.tests.test_local_checks"])
+        run([sys.executable, "-m", "unittest", "scripts.tests.test_apple_api", "scripts.tests.test_tag_release", "scripts.tests.test_mac_notarization", "scripts.tests.test_local_checks"])
     else:
         run([sys.executable, "scripts/sync-install-components.py"])
         run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_*.py"])

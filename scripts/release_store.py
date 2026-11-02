@@ -68,6 +68,13 @@ def signed_build(root, record):
     for name in ["khor-macos-arm64-app", "khor-macos-x86_64-app"]:
         if (root / name / "signed.txt").read_text().strip() != "true":
             raise ValueError("Mac candidates must be signed and notarized")
+        proof = json.loads((root / name / "notarization.json").read_text())
+        if (proof.get("status") != "Accepted" or proof.get("signed") is not True
+                or proof.get("source_sha") != record["source_sha"] or proof.get("run_id") != record["run_id"]
+                or proof.get("asset") != name.removesuffix("-app")
+                or not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", proof.get("request_id", ""))
+                or not re.fullmatch(r"[0-9a-f]{64}", proof.get("archive_sha256", ""))):
+            raise ValueError("Mac candidate has no accepted notarization for this exact build")
     build = json.loads((root / "ios-archive/build.json").read_text())
     if build["signed"] is not True or build["version"] != record["version"]:
         raise ValueError("iOS candidate must be signed at the same version")
@@ -80,7 +87,7 @@ def asset_map(record):
         for filename, info in receipt["files"].items():
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", filename):
                 raise ValueError("Release assets must have flat safe filenames")
-            name = f"{platform}-{filename}" if filename in {"signed.txt", "build.json"} else filename
+            name = f"{platform}-{filename}" if filename in {"signed.txt", "build.json", "notarization.json"} else filename
             if name in assets or name in {"manifest.json", "install.sh", "release.json"}:
                 raise ValueError("Release asset name collision")
             assets[name] = {"path": f"{platform}/{filename}", **info}
@@ -141,7 +148,7 @@ def fetch_release(tag, root, *, full=True):
         assets[name] = {"sha256": digest(path), "bytes": path.stat().st_size}
     verify_remote_assets(release, assets)
     for name, info in asset_map(record).items():
-        if full or info["path"].endswith(("/signed.txt", "/build.json")):
+        if full or info["path"].endswith(("/signed.txt", "/build.json", "/notarization.json")):
             target = root / info["path"]
             download_asset(tag, name, target)
             if digest(target) != info["sha256"] or target.stat().st_size != info["bytes"]:

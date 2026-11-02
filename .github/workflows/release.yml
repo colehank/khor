@@ -115,29 +115,116 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.MAC_SIGNING_IDENTITY }}
-          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
-          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           npm ci --prefix apps/gui
           python3 scripts/apple_release.py mac-build --target "$TARGET" --signed "$SIGNED"
-      - name: Package Mac App
+      - name: Preserve the signed build before contacting Apple
         if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
-          ASSET: ${{ matrix.asset }}
           SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
-        run: |
-          mkdir -p desktop
-          tar -czf "desktop/$ASSET.app.tar.gz" -C "target/$TARGET/release/bundle/macos" Khor.app
-          printf '%s\n' "$SIGNED" > desktop/signed.txt
-          python3 scripts/release_manifest.py create --root desktop --kind "$ASSET-app" --frontend frontend --executable "target/$TARGET/release/bundle/macos/Khor.app/Contents/MacOS/khor-gui" --agent apps/agent/dist/khor-agent
+        run: python3 scripts/mac_notarization.py package-build --target "$TARGET" --signed "$SIGNED"
       - uses: actions/upload-artifact@v4
         if: runner.os == 'macOS'
+        with:
+          name: mac-build-${{ matrix.asset }}
+          path: mac-build/
+          if-no-files-found: error
+          retention-days: 14
+  mac-submit:
+    needs: [prepare, native]
+    runs-on: macos-26
+    timeout-minutes: 15
+    environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        asset: [khor-macos-arm64, khor-macos-x86_64]
+    env:
+      ASSET: ${{ matrix.asset }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-build-${{ matrix.asset }}
+          path: mac-build
+      - id: intent
+        name: Restore any previous submission intent
+        run: python3 scripts/mac_notarization.py restore --name "notary-intent-$ASSET" --output notary
+      - id: request
+        name: Restore any saved Apple request
+        run: python3 scripts/mac_notarization.py restore --name "notary-request-$ASSET" --output notary
+      - run: python3 scripts/mac_notarization.py prepare --asset "$ASSET"
+      - uses: actions/upload-artifact@v4
+        if: steps.intent.outputs.found != 'true'
+        with:
+          name: notary-intent-${{ matrix.asset }}
+          path: notary/intent.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Submit once or recover the original request
+        env:
+          ALLOW_SUBMIT: ${{ steps.intent.outputs.found != 'true' }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: python3 scripts/mac_notarization.py submit --asset "$ASSET" --allow-submit "$ALLOW_SUBMIT"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.request.outputs.found != 'true' && hashFiles('notary/request.json') != ''
+        with:
+          name: notary-request-${{ matrix.asset }}
+          path: notary/request.json
+          if-no-files-found: error
+          retention-days: 14
+  mac-notarize:
+    needs: [prepare, mac-submit]
+    runs-on: macos-26
+    timeout-minutes: 40
+    environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        asset: [khor-macos-arm64, khor-macos-x86_64]
+    env:
+      ASSET: ${{ matrix.asset }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - uses: actions/download-artifact@v4
+        with:
+          name: mac-build-${{ matrix.asset }}
+          path: mac-build
+      - uses: actions/download-artifact@v4
+        with:
+          name: notary-request-${{ matrix.asset }}
+          path: notary
+      - id: final
+        name: Restore an already completed Mac App
+        run: python3 scripts/mac_notarization.py restore --name "$ASSET-app" --output desktop
+      - name: Wait for the saved request, staple and verify
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: python3 scripts/mac_notarization.py finish --asset "$ASSET" --timeout 1800
+      - uses: actions/upload-artifact@v4
+        if: steps.final.outputs.found != 'true'
         with:
           name: ${{ matrix.asset }}-app
           path: desktop/
           if-no-files-found: error
+          retention-days: 14
+      - name: Keep notarization status and rejection details
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: notary-status-${{ matrix.asset }}-${{ github.run_attempt }}
+          path: notary/
+          overwrite: true
+          if-no-files-found: ignore
           retention-days: 14
   ios:
     needs: [prepare, frontend]
@@ -181,7 +268,7 @@ jobs:
       tag: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}
   candidate:
-    needs: [quality, native, ios]
+    needs: [quality, native, ios, mac-notarize]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

@@ -41,6 +41,12 @@ GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才�
 
 ## Apple阶段与失败重试
 
+Mac 构建与公证分为三个独立任务。`native` 只编译、签名，将原始 zip 和源码、前端、Pi、文件摘要收据保存为 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后附加公证票据，执行 `codesign` 与 `stapler validate`，最后生成 App 包和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录；仅签名不能分发。
+
+公证查询每次最多等待30分钟，任务上限40分钟，为下载、打包和状态保存留出时间；编译仍有独立的90分钟预算。等待超时不取消 Apple 上的处理。在原 Actions run 选择 **Re-run failed jobs**，继续查询同一请求，复用原始签名包，不重新编译、签名或提交。已有最终包也会校验后复用。不要使用 Re-run all jobs 恢复公证。
+
+`notary-status-<平台>-<attempt>` 保存最后状态，Apple 拒绝时同时保存诊断日志。`In Progress` 可稍后重试；查询暂时不可用会在等待时限内重试；`Invalid`/`Rejected` 需要修复后创建新候选。提交回执丢失时，按包含平台、run 与完整归档摘要的唯一名称从 Apple history 恢复 ID；历史记录有歧义或暂时查不到时明确停止，绝不盲目重复提交。原始包、提交意图和请求记录保留14天，过期后创建新候选，不混用其它 run 的产物。
+
 TestFlight使用App Store Connect发行导出，不能使用Internal Only。上传前查询同一应用、营销版本和build number：已存在就检查处理状态，避免重复上传。Apple处理超过等待上限时明确失败；重试仍使用原build。处理成功不等同外部测试审核通过或用户已安装；测试组的自动分发设置及外部Beta审核由App Store Connect管理。
 
 iOS build number为`1000+release workflow run_number.run_attempt`，高于历史62；超过Apple组件边界会拒绝。App Store提审核对已测试Apple build ID，Fastlane跳过二进制、截图和元数据上传，`automatic_release=false`。同一build已经在审核或待发布则不重复提交；发现另一个build正在审核则拒绝替换。协议、截图、隐私、加密申报等必要资料未齐时，错误如实保留。
@@ -70,8 +76,10 @@ Mac继续走Developer ID签名、公证和商店外分发。当前`macos-private
 
 ## 验证
 
-Python测试覆盖tag分类、错源/错run拒绝、失败Quality阻断、过期产物恢复、部分上传续传、同名冲突、重复Apple上传、错误build提审和正式晋升字节一致。安装器用真实临时文件/进程验证rc、版本错配和原子激活；actionlint检查工作流。
+Python测试覆盖tag分类、错源/错run拒绝、失败Quality阻断、公证超时/回执丢失恢复、拒绝结果、未公证包阻断、过期产物恢复、部分上传续传、同名冲突、重复Apple上传、错误build提审和正式晋升字节一致。公证状态测试使用隔离环境和虚拟凭据，不调用 Apple 服务。安装器用真实临时文件/进程验证rc、版本错配和原子激活；actionlint与ShellCheck检查工作流。
 
 这些检查不代替实际GitHub签名、Apple上传/审核和真机验收。实现或配置发布流程时不创建试验发布tag，不用真实上传验证单元测试。
 
 官方参考：[Tauri GitHub流水线](https://v2.tauri.app/distribute/pipelines/github/)、[Apple测试与正式分发](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases/)、[GitHub不可变Release](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)。
+
+公证参考：[Apple自定义公证工作流](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)、[Tauri macOS签名](https://v2.tauri.app/distribute/sign/macos/)。

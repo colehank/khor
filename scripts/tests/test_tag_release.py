@@ -31,6 +31,11 @@ def candidate_at(root):
         elif platform.endswith("-app"):
             (folder / (platform.removesuffix("-app") + ".app.tar.gz")).write_bytes(platform.encode())
             (folder / "signed.txt").write_text("true\n")
+            (folder / "notarization.json").write_text(json.dumps({
+                "status": "Accepted", "signed": True, "source_sha": SHA, "run_id": "42",
+                "asset": platform.removesuffix("-app"), "request_id": "11111111-2222-4333-8444-555555555555",
+                "archive_sha256": "e" * 64,
+            }))
         else:
             (folder / (platform + ".gz")).write_bytes(platform.encode())
         receipt = {"schema": 1, "kind": platform, "version": "1.2.3", "source_sha": SHA,
@@ -166,9 +171,28 @@ class ReleaseStorageTest(unittest.TestCase):
         target = self.base / "metadata"
         store.fetch_release(RC, target, full=False)
         self.assertFalse(list(target.rglob("*.gz")))
+        self.assertEqual(len(list(target.rglob("notarization.json"))), 2)
         self.remote.releases[RC]["immutable"] = False
         with self.assertRaisesRegex(ValueError, "immutable"):
             store.fetch_release(RC, self.base / "bad", full=False)
+
+    def test_signed_but_unnotarized_or_mismatched_mac_cannot_distribute(self):
+        path = self.root / "khor-macos-arm64-app/notarization.json"
+        original = json.loads(path.read_text())
+        for field, value in [("status", "In Progress"), ("status", "Invalid"), ("signed", False),
+                             ("run_id", "43"), ("source_sha", "b" * 40), ("asset", "khor-macos-x86_64"),
+                             ("request_id", "-" * 36), ("request_id", ""), ("archive_sha256", "")]:
+            with self.subTest(field=field, value=value):
+                path.write_text(json.dumps({**original, field: value}))
+                with self.assertRaisesRegex(ValueError, "accepted notarization"):
+                    store.signed_build(self.root, self.record)
+
+    def test_metadata_fetch_rejects_changed_notarization_proof(self):
+        store.publish(RC, self.root, self.uploaded)
+        name = "khor-macos-arm64-app-notarization.json"
+        self.remote.contents[RC, name] = b'{"status":"In Progress"}'
+        with self.assertRaisesRegex(ValueError, "Downloaded release asset changed"):
+            store.fetch_release(RC, self.base / "metadata", full=False)
 
     def test_tampering_unsigned_and_mixed_provenance_fail_closed(self):
         for field, value in [("source_sha", "b" * 40), ("run_id", "43"), ("version", "1.2.4")]:
