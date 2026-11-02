@@ -326,6 +326,7 @@ jobs:
       contents: write
       actions: read
     uses: ./.github/workflows/distribute.yml
+    secrets: inherit
     with:
       tag: ${{ github.ref_name }}
       run_id: ${{ github.run_id }}

@@ -37,6 +37,10 @@ def raw_signature(der):
 
 class AppleClient:
     def __enter__(self):
+        missing = [name for name in ("APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_CONTENT")
+                   if not os.environ.get(name, "").strip()]
+        if missing:
+            raise ValueError("Missing App Store Connect credentials: " + ", ".join(missing))
         self.temporary = tempfile.TemporaryDirectory()
         self.key = Path(self.temporary.name) / "AuthKey.p8"
         self.key.write_text(os.environ["APPLE_API_KEY_CONTENT"])

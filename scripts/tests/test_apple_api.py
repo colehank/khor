@@ -1,6 +1,8 @@
 import json
+import os
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -12,6 +14,20 @@ class AppleBuildTest(unittest.TestCase):
     def setUp(self):
         self.client = AppleClient()
         self.client.app = "app"
+
+    def test_missing_credentials_fail_before_creating_a_key_file(self):
+        credentials = {"APPLE_API_KEY": "test-key-id", "APPLE_API_ISSUER": "test-issuer",
+                       "APPLE_API_KEY_CONTENT": "synthetic-private-key"}
+        for name in credentials:
+            for value in [None, "", " \n"]:
+                values = {**credentials, name: value} if value is not None else {
+                    key: item for key, item in credentials.items() if key != name}
+                with self.subTest(name=name, value=value), patch.dict(os.environ, values, clear=True), \
+                        patch("apple_api.tempfile.TemporaryDirectory", wraps=tempfile.TemporaryDirectory) as temporary:
+                    with self.assertRaisesRegex(ValueError, name):
+                        with AppleClient():
+                            pass
+                    temporary.assert_not_called()
 
     def test_filter_matches_build_and_marketing_version(self):
         response = {"data": [
