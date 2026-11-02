@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -216,6 +217,28 @@ class ReleaseStorageTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 store.publish(RC, self.root, wrong)
         self.assertEqual(self.remote.releases, {})
+
+
+class ReleaseLookupTest(unittest.TestCase):
+    def test_unpublished_draft_is_found_on_a_later_release_page(self):
+        draft = {"id": 42, "tag_name": RC, "draft": True, "assets": []}
+        missing = subprocess.CompletedProcess([], 1, stdout="", stderr="HTTP 404: Not Found")
+        pages = [[{"id": 41, "tag_name": "v1.2.2"}], [draft]]
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}), \
+                patch.object(store.subprocess, "run", return_value=missing), \
+                patch.object(store, "gh", return_value=json.dumps(pages)) as gh, \
+                patch.object(store, "api", return_value=draft) as api:
+            self.assertEqual(store.release_info(RC), draft)
+            gh.assert_called_once_with("api", "repos/owner/repo/releases?per_page=100", "--paginate", "--slurp")
+            api.assert_called_once_with("repos/owner/repo/releases/42")
+
+    def test_lookup_errors_are_not_treated_as_missing_releases(self):
+        denied = subprocess.CompletedProcess([], 1, stdout="", stderr="HTTP 403: Forbidden")
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "owner/repo"}), \
+                patch.object(store.subprocess, "run", return_value=denied), patch.object(store, "gh") as gh:
+            with self.assertRaisesRegex(RuntimeError, "403"):
+                store.release_info(RC)
+            gh.assert_not_called()
 
 
 class DistributionGateTest(unittest.TestCase):

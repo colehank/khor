@@ -109,7 +109,11 @@ def release_info(tag):
     if result.returncode == 0:
         return json.loads(result.stdout)
     if "HTTP 404" in result.stderr:
-        return None
+        pages = json.loads(gh("api", f"repos/{repository()}/releases?per_page=100", "--paginate", "--slurp"))
+        matches = [release for page in pages for release in page if release["tag_name"] == tag]
+        if len(matches) > 1:
+            raise ValueError("Multiple release drafts use this tag; refusing to choose one")
+        return api(f"repos/{repository()}/releases/{matches[0]['id']}") if matches else None
     raise RuntimeError(result.stderr.strip())
 
 
