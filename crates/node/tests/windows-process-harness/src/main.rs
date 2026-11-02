@@ -253,10 +253,7 @@ mod checks {
             }
             let durable = Durable(unsafe { OwnedHandle::from_raw_handle(handle) });
             session.finish(true).unwrap();
-            assert_eq!(
-                unsafe { WaitForSingleObject(temporary.as_raw_handle(), 0) },
-                WAIT_OBJECT_0
-            );
+            assert_dead(&temporary);
             assert_eq!(
                 unsafe { WaitForSingleObject(durable.0.as_raw_handle(), 0) },
                 WAIT_TIMEOUT

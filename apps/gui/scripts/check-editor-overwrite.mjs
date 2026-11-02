@@ -62,9 +62,9 @@ createRoot(document.getElementById('root')).render(<Probe/>);
 `);
 
 async function run(engine, name) {
-  recordStage(`${name} launching browser`);
-  browser = await engine.launch(name === 'chrome' ? {channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined, headless: true} : {headless: true});
   for (const scenario of scenarios) {
+    recordStage(`${name} ${scenario} launching browser`);
+    browser = await engine.launch(name === 'chrome' ? {channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined, headless: true} : {headless: true});
     recordStage(`${name} ${scenario} opening page`);
     const page = await browser.newPage({viewport: {width: 1300, height: 760}});
     page.setDefaultTimeout(12000);
@@ -185,20 +185,22 @@ async function run(engine, name) {
       assert.deepEqual(errors, []);
       results.push({engine: name, scenario, ok: true, disk, writes}); console.log('PASS', name, scenario);
     } catch (error) {
-      const editorState = await page.evaluate(() => {
+      const failure = {engine: name, scenario, ok: false, error: error.message, disk, writes, errors, consoleErrors};
+      results.push(failure);console.error('FAIL', name, scenario, error.message);
+      recordStage(`${name} ${scenario} collecting failure evidence`);
+      failure.editorState = await Promise.race([page.evaluate(() => {
         const node = document.querySelector('[data-editor=one] [data-code-view]');
         return node ? {text: node.__view?.state.doc.toString(), editable: node.querySelector('.cm-content')?.isContentEditable} : null;
-      }).catch(() => null);
-      results.push({engine: name, scenario, ok: false, error: error.message, disk, writes, errors, consoleErrors, editorState}); console.error('FAIL', name, scenario, error.message);
-      await page.screenshot({path: join(evidence, `${name}-${scenario}.png`)}).catch(() => {});
+      }).catch(() => null), wait(1500).then(() => null)]);
+      await page.screenshot({path: join(evidence, `${name}-${scenario}.png`), timeout: 2000}).catch(() => {});
     } finally {
       recordStage(`${name} ${scenario} closing page`);
       if (heldRead) await heldRead().catch(() => {});
       await page.close();
+      recordStage(`${name} ${scenario} closing browser`);
+      await browser.close(); browser = null;
     }
   }
-  recordStage(`${name} closing browser`);
-  await browser.close(); browser = null;
   recordStage(`${name} browser closed`);
 }
 try {
