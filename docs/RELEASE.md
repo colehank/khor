@@ -1,45 +1,77 @@
 # GitHub 构建与分发
 
-本地只开发、Lab和定向验证；正式构建在 GitHub 托管 runner 上进行，不需要用户集群接入 runner。集群安装、NFS共享目录与进程采用由 Khor 处理，见 [INSTALLATION](INSTALLATION.md)。
+正式构建由 GitHub 托管 runner 完成。本地只开发、Lab和定向验证；集群下载、SSH代下载上传、NFS目录与进程采用由 Khor 处理，见 [INSTALLATION](INSTALLATION.md)。发布不会自动替换用户机器上的程序。
 
-## 日常入口
+## 版本与触发规则
 
-1. PR运行 Quality；main产品修改运行 Release candidates（其中复用Quality）。手工可选择分支运行候选构建。默认不签名、不上传Apple、不更新用户机器。
-2. 流水线先生成一次frontend，生成的类型和dist一起上传；Quality与各原生平台并行消费同一份，最终候选等待全部检查成功，不在每个平台重新生成前端。Rust 1.95.0、Node 22.19.0、Bun 1.3.14和Xcode26.5固定，依赖使用锁文件。
-3. CLI保留Linux x86_64/arm64与Mac Intel/Apple Silicon；Linux用glibc2.31构建，并检查CLI和Pi的实际ABI。Mac同时产生App归档，iOS产生xcarchive。Android/Windows安装包未纳入本轮。
-4. 每个产物带源SHA、前端收据、大小/SHA256、run/attempt。原生程序检查实际嵌入的前端，CLI与Mac App再检查目标Pi完整字节。聚合manifest只有所有平台成功、身份相同才生成。
-5. 需要分发Apple版本时手工运行候选并选signed，配置完环境才能成功；缺凭据直接失败，不产出“已签名”假成功。使用同一候选的Distribute an existing candidate，无本机编译或集群部署步骤。
-
-GitHub runner镜像仍会更新；收据记录实际镜像版本。Rust目标目录不跨运行缓存，避免几十GB原生产物累计和旧源错配；Rust包缓存仅main保存，npm与Bun使用各自的下载缓存。前端保留7天，候选14天，分发收据90天；需长期分发的包发布到Release。过期候选要重新构建，不能拼接其它run的部分文件。已有上游成功job由Actions“Re-run failed jobs”保留；上传失败不需要重编Rust。
-
-## 分发与权限
-
-`distribute.yml`只能从main手工运行，输入成功候选run ID。验证该run确为release.yml、源提交已进入main、全部产物及安装器摘要匹配，然后执行所选阶段：
-
-| 阶段 | 行为 |
+| 操作 | 自动结果 |
 | --- | --- |
-| github-draft | tag必须已存在且精确指向候选源SHA；创建带CLI、Mac App、安装器与manifest的草稿。用户审阅后发布。重复tag不会覆盖旧资产 |
-| testflight | 仅签名归档可上传。复用原归档与build number；成功只表示上传成功，Apple处理、可安装和真人测试分开记录 |
-| appstore-review | 通过Fastlane选择相同version/build，跳过二进制上传及元数据覆盖，提交审核；automatic_release=false，审核通过后仍由用户上线 |
+| PR、普通main提交 | Quality检查与测试，不构建分发包、不上传Apple |
+| 推送`vX.Y.Z-rc.N` | 全部Quality门和七平台产物通过后，上传TestFlight并确认Apple处理成功，再发布GitHub预发布资产 |
+| 在通过的候选提交上推送`vX.Y.Z` | 读取已经发布的候选，复用同一批字节发布GitHub正式版本，并将同一Apple build提交App Store审核 |
+| Apple审核通过 | 保留手动上线；自动流程不替用户上线 |
 
-TestFlight使用app-store-connect导出且不是Internal Only，之后可选择相同build正式提审。iOS build number为`1000+release workflow run_number.run_attempt`，高于现有62；超过Apple组件边界会拒绝。失败上传后再次运行分发仍用原build，不改号码、不重建。Apple协议、审核资料、加密申报等需要在App Store Connect维护；工具失败不代表它们已处理。
+`rc.N`从1开始。Tag发布后不能移动或删除；修复用下一个rc。Git tag带候选后缀，Cargo、Tauri和iOS应用版本都保持数字`X.Y.Z`。不同候选由tag、源码SHA、Actions run及iOS build number区分。正式发布不改包内版本、不改build number、不重新编译。
 
-Mac当前启用了macos-private-api，按项目既有配置走商店外Developer ID签名与公证，不将这条流水线误称Mac App Store兼容。需要Mac App Store时应单独评估能力与沙盒。Tauri提供打包和签名，Apple渠道仍需独立流程，参考[Tauri分发](https://v2.tauri.app/distribute/)、[iOS签名](https://v2.tauri.app/distribute/sign/ios/)、[App Store](https://v2.tauri.app/distribute/app-store/)。
+候选tag的提交必须已经进入main，且Cargo/Tauri版本与tag的数字部分一致。先将版本变更合入main，再打候选tag。例如：
 
-## 一次性配置
+```sh
+git tag -a v0.1.15-rc.1 <main提交SHA> -m 'Khor 0.1.15 release candidate 1'
+git push origin v0.1.15-rc.1
+```
 
-仓库创建以下GitHub environments，并为分发环境配置所需reviewer、仅main可部署：`apple-signing`、`apple-testflight`、`apple-store`、`github-release`。`candidate`不需要凭据。环境门的实际reviewer设置不是YAML能代替的，本轮没有修改账户或环境权限。
+验收后，正式tag必须指向这个候选的同一提交，不能直接指向已经继续开发的main：
 
-在GitHub的Secrets界面配置，不把内容贴进聊天、日志或源码：
+```sh
+git tag -a v0.1.15 'v0.1.15-rc.1^{commit}' -m 'Release tested Khor 0.1.15'
+git push origin v0.1.15
+```
 
-| 环境 | Secret |
-| --- | --- |
-| apple-signing（Mac） | MAC_CERTIFICATE_P12（Developer ID Application证书+私钥，base64）、MAC_CERTIFICATE_PASSWORD、MAC_SIGNING_IDENTITY |
-| apple-signing、apple-testflight（iOS） | APPLE_DEVELOPMENT_TEAM、IOS_CERTIFICATE_P12（Apple Distribution证书+私钥，base64）、IOS_CERTIFICATE_PASSWORD、IOS_PROFILE（此bundle的App Store provisioning profile，base64） |
-| apple-signing（公证）、apple-testflight、apple-store | APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8（App Store Connect API key文本） |
+正式流程只接受同版本、同源码、已发布且不可变的候选。若同一提交有多个候选，不猜测latest；使用`Distribute tagged release`手工重试并填写`candidate_tag`明确选择。没有候选就失败，不回退成重新编译。
 
-这些与APNs无关。App内通知不需要任何上述Apple发布密钥。临时keychain、profile和API文件仅在runner使用，任务退出后清理；iOS构建只临时改签名设置，结束恢复项目文件。已有私钥不会自动从用户Mac导出或上传。
+## 构建与永久产物
 
-## 验证范围
+`release.yml`只自动响应rc tag；手工`Release candidates`仍可在main进行签名或未签名诊断构建，main手工构建不会自动分发。
 
-本地`actionlint`检查workflow与表达式，`scripts/tests/test_release_manifest.py`验证篡改、错源、缺平台、前端/Pi嵌入及未签名拒传。实际GitHub构建结果另记，不用静态检查代替原生编译；实际签名、公证、Apple处理及NFS多客户端验收也独立记录。发布回滚优先选择已验证旧版本；不删除仍可能被节点或会话使用的产物。
+前端只生成一次，Quality与原生平台消费相同dist与生成类型。四个CLI（Linux x86_64/arm64、Mac Intel/Apple Silicon）、两个Mac App和一个iOS archive分别产出收据，再聚合manifest。收据包含源SHA、前端标识、run/attempt、大小与SHA256；实际原生程序检查嵌入前端，CLI/Mac App还检查嵌入Pi及Linux glibc 2.31下限。
+
+工具链使用Rust1.95、Node22.19、Bun1.3.14、Xcode26.5及锁文件。Rust目标目录不跨运行缓存。Actions前端保留7天，候选14天；成功rc会将七平台产物、iOS归档/构建号、manifest、原始安装器及TestFlight记录保存在GitHub不可变预发布资产。正式晋升从该预发布读取，Actions文件过期不会导致重编。
+
+GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才发布。重试仅补齐缺失的相同文件；发现同名不同内容立即拒绝，绝不覆盖。发布后的资产由GitHub immutable releases保护；正式Release中的程序字节与候选一致。默认latest只指向正式版本。
+
+## Apple阶段与失败重试
+
+TestFlight使用App Store Connect发行导出，不能使用Internal Only。上传前查询同一应用、营销版本和build number：已存在就检查处理状态，避免重复上传。Apple处理超过等待上限时明确失败；重试仍使用原build。处理成功不等同外部测试审核通过或用户已安装；测试组的自动分发设置及外部Beta审核由App Store Connect管理。
+
+iOS build number为`1000+release workflow run_number.run_attempt`，高于历史62；超过Apple组件边界会拒绝。App Store提审核对已测试Apple build ID，Fastlane跳过二进制、截图和元数据上传，`automatic_release=false`。同一build已经在审核或待发布则不重复提交；发现另一个build正在审核则拒绝替换。协议、截图、隐私、加密申报等必要资料未齐时，错误如实保留。
+
+重试入口是`Distribute tagged release`，在main手工运行：
+
+- rc分发失败：填写原`tag`与`run_id`；复用已经通过全部检查的候选。若Actions产物已过期且rc尚未成功永久发布，需要创建新rc，不能拼接其它run。
+- 正式分发或提审失败：填写原正式`tag`；多个同源候选时再填写`candidate_tag`。已发布的相同GitHub资产会验证后跳过，Apple提审继续使用原build。
+- 构建/Quality失败：查看失败job，修复源码后发新rc；基础设施临时故障可使用Actions的Re-run failed jobs，不通过删除检查追绿。
+
+GitHub正式发布与Apple审核是独立阶段：GitHub可能已经发布，而Apple因资料缺失仍未提交。此时补齐资料并重试分发，不能把GitHub成功当作App Store上线。
+
+Mac继续走Developer ID签名、公证和商店外分发。当前`macos-private-api`配置不等同Mac App Store兼容。Android/Windows安装包未纳入本轮。
+
+## GitHub一次性配置
+
+发布环境保留main用于明确的诊断或重试，并允许相应tag类型：
+
+| 环境 | 允许的tag | Secrets |
+| --- | --- | --- |
+| apple-signing | `v*-rc.*` | MAC_CERTIFICATE_P12、MAC_CERTIFICATE_PASSWORD、MAC_SIGNING_IDENTITY、APPLE_DEVELOPMENT_TEAM、IOS_CERTIFICATE_P12、IOS_CERTIFICATE_PASSWORD、IOS_PROFILE、APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8 |
+| apple-testflight | `v*-rc.*` | 上表除MAC三项外的7项 |
+| apple-store | `v*`，脚本再严格要求正式版本 | APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8 |
+| github-release | `v*` | 使用工作流GITHUB_TOKEN，不存个人token |
+
+另外启用仓库immutable releases，以及禁止更新/删除`refs/tags/v*`的规则。Tag创建仍由有推送权限的人执行，创建正式tag即确认发布和提审意图；不额外加一轮重复人工审批。签名私钥只通过Environment Secrets提供，临时keychain/profile/API文件在runner退出时清理。
+
+## 验证
+
+Python测试覆盖tag分类、错源/错run拒绝、失败Quality阻断、过期产物恢复、部分上传续传、同名冲突、重复Apple上传、错误build提审和正式晋升字节一致。安装器用真实临时文件/进程验证rc、版本错配和原子激活；actionlint检查工作流。
+
+这些检查不代替实际GitHub签名、Apple上传/审核和真机验收。实现或配置发布流程时不创建试验发布tag，不用真实上传验证单元测试。
+
+官方参考：[Tauri GitHub流水线](https://v2.tauri.app/distribute/pipelines/github/)、[Apple测试与正式分发](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases/)、[GitHub不可变Release](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)。

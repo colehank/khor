@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import tomllib
+from release_policy import parse_tag
 
 
 def digest(path):
@@ -36,7 +37,7 @@ def version():
     if value != json.loads(Path("apps/gui/src-tauri/tauri.conf.json").read_text())["version"]:
         raise ValueError("Cargo and App versions differ")
     ref = os.environ.get("GITHUB_REF", "")
-    if ref.startswith("refs/tags/") and ref != f"refs/tags/v{value}":
+    if ref.startswith("refs/tags/") and parse_tag(ref.removeprefix("refs/tags/")).version != value:
         raise ValueError("Release tag and source version differ")
     return value
 

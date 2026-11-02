@@ -407,7 +407,12 @@ khor_install_release() (
     fi
     khor_fetch_verify_place "$_url" "$_stage" "$_asset" "$_version" "${_mirror:+mirror}"
     _reported=$("$_stage/khor" version) || { echo "khor: downloaded build cannot run on this machine" >&2; exit 1; }
-    [ "$_reported" = "${_version#v}" ] || { echo "khor: downloaded build reports a different version" >&2; exit 1; }
+    _expected="${_version#v}"
+    case "$_expected" in
+        *-rc.*) _candidate="${_expected##*-rc.}"
+            case "$_candidate" in ''|*[!0-9]*) ;; *) _expected="${_expected%-rc.*}" ;; esac ;;
+    esac
+    [ "$_reported" = "$_expected" ] || { echo "khor: downloaded build reports a different version" >&2; exit 1; }
     khor_activate_release "$_stage/khor" "$_bin" "$_asset" "$_version"
     if [ -n "$_preplaced" ] && [ ! "$_preplaced" -ef "$_bin/khor" ]; then
         rm -f "$_preplaced" || echo "khor: installed; could not remove preplaced archive" >&2

@@ -1,9 +1,7 @@
 name: Release candidates
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-    paths-ignore: ['docs/**', '*.md']
+    tags: ['v*-rc.*']
   workflow_dispatch:
     inputs:
       signed:
@@ -12,6 +10,7 @@ on:
         default: false
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -20,7 +19,20 @@ env:
   CARGO_BUILD_JOBS: '2'
   CARGO_PROFILE_DEV_DEBUG: '0'
 jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    outputs:
+      rc: ${{ steps.intent.outputs.rc }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: intent
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/distribute_candidate.py check-build
   frontend:
+    needs: prepare
     uses: ./.github/workflows/frontend.yml
   quality:
     needs: frontend
@@ -28,9 +40,9 @@ jobs:
     with:
       reuse_frontend: true
   native:
-    needs: frontend
+    needs: [prepare, frontend]
     timeout-minutes: 90
-    environment: ${{ inputs.signed && 'apple-signing' || 'candidate' }}
+    environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
     strategy:
       fail-fast: false
       matrix:
@@ -98,7 +110,7 @@ jobs:
         if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
-          SIGNED: ${{ inputs.signed || false }}
+          SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
           KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
           APPLE_CERTIFICATE: ${{ secrets.MAC_CERTIFICATE_P12 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
@@ -114,7 +126,7 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           ASSET: ${{ matrix.asset }}
-          SIGNED: ${{ inputs.signed || false }}
+          SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
         run: |
           mkdir -p desktop
           tar -czf "desktop/$ASSET.app.tar.gz" -C "target/$TARGET/release/bundle/macos" Khor.app
@@ -128,10 +140,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
   ios:
-    needs: frontend
+    needs: [prepare, frontend]
     runs-on: macos-26
     timeout-minutes: 90
-    environment: ${{ inputs.signed && 'apple-signing' || 'candidate' }}
+    environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/restore-frontend
@@ -142,7 +154,7 @@ jobs:
       - run: npm ci --prefix apps/gui
       - name: Archive iOS without uploading
         env:
-          SIGNED: ${{ inputs.signed || false }}
+          SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
           IOS_CERTIFICATE_P12: ${{ secrets.IOS_CERTIFICATE_P12 }}
           IOS_CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
@@ -158,6 +170,16 @@ jobs:
           path: ios/
           if-no-files-found: error
           retention-days: 14
+  distribute:
+    needs: [prepare, candidate]
+    if: needs.prepare.outputs.rc == 'true'
+    permissions:
+      contents: write
+      actions: read
+    uses: ./.github/workflows/distribute.yml
+    with:
+      tag: ${{ github.ref_name }}
+      run_id: ${{ github.run_id }}
   candidate:
     needs: [quality, native, ios]
     runs-on: ubuntu-24.04

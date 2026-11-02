@@ -12,6 +12,7 @@ import subprocess
 import tarfile
 import tempfile
 from release_manifest import version
+from apple_api import AppleClient
 
 GUI = Path("apps/gui")
 APPLE = GUI / "src-tauri/gen/apple"
@@ -153,6 +154,16 @@ def upload_ios(root):
     build = json.loads((root / "build.json").read_text())
     if not build["signed"]:
         raise ValueError("This candidate is unsigned. Run a signed candidate first.")
+    with AppleClient() as client:
+        if client.find_build(build["version"], build["build"]) is None:
+            export_ios(root)
+        processed = client.processed_build(build["version"], build["build"])
+    print(f"Apple processed {build['version']} ({build['build']}); tester groups and review remain separate.")
+    return {"version": build["version"], "build": build["build"], "apple_build_id": processed["id"],
+            "processing_state": processed["attributes"]["processingState"]}
+
+
+def export_ios(root):
     with tempfile.TemporaryDirectory() as temporary, ios_signing() as profile, api_key() as key:
         with tarfile.open(root / "Khor.xcarchive.tar.gz") as archive:
             archive.extractall(temporary, filter="data")
@@ -166,7 +177,6 @@ def upload_ios(root):
              "-exportOptionsPlist", str(options), "-exportPath", str(Path(temporary) / "export"),
              "-authenticationKeyPath", str(key), "-authenticationKeyID", required("APPLE_API_KEY"),
              "-authenticationKeyIssuerID", required("APPLE_API_ISSUER")])
-    print(f"Uploaded {build['version']} ({build['build']}); Apple processing and testing are separate.")
 
 
 def main():

@@ -176,6 +176,19 @@ class InstallReleaseTest(unittest.TestCase):
         self.assertTrue(self.previous.read_bytes().startswith(b"#!/bin/sh"))
         self.assertEqual(list(self.bin.glob(".khor.*.*")), [])
 
+    def test_rc_tag_installs_the_numeric_build_that_can_be_promoted(self):
+        result = self.install(version="v1.2.3-rc.2")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        current = self.bin / ".khor/khor-linux-x86_64/current"
+        self.assertEqual(current.read_bytes(), self.program.read_bytes())
+        self.assertIn("v1.2.3-rc.2-", str(current.readlink()))
+
+    def test_rc_tag_still_rejects_a_different_application_version(self):
+        result = self.install(version="v1.2.4-rc.2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("different version", result.stderr)
+        self.assertEqual(self.previous.read_bytes(), b"previous installation")
+
     def test_version_mismatch_retains_old_install_and_preplaced_archive(self):
         result = self.install(version="v1.2.4")
         self.assertNotEqual(result.returncode, 0)

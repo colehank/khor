@@ -1,31 +1,59 @@
-name: Distribute an existing candidate
+name: Distribute tagged release
 on:
-  workflow_dispatch:
+  push:
+    tags: ['v*', '!v*-*']
+  workflow_call:
     inputs:
-      run_id:
-        description: Successful Release candidates run ID on main or a release tag
+      tag:
         type: string
         required: true
-      channel:
-        type: choice
-        description: Review uses the already uploaded build; never recompiles
-        options: [github-draft, testflight, appstore-review]
-        default: github-draft
+      run_id:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing rc tag to retry distribution, or stable tag to promote
+        type: string
+        required: true
+      run_id:
+        description: RC build run ID (only required for an rc distribution retry)
+        type: string
+      candidate_tag:
+        description: Exact published rc tag when multiple candidates share the stable source
+        type: string
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: distribute-${{ inputs.channel }}
+  group: distribute-${{ inputs.tag || github.ref_name }}
   cancel-in-progress: false
+env:
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 jobs:
-  distribute:
-    if: github.ref == 'refs/heads/main'
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      rc: ${{ steps.plan.outputs.rc }}
+      tag: ${{ steps.plan.outputs.tag }}
+      candidate_tag: ${{ steps.plan.outputs.candidate_tag }}
+      run_id: ${{ steps.plan.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RUN_ID: ${{ inputs.run_id }}
+          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+        run: python3 scripts/distribute_candidate.py plan
+  testflight:
+    needs: plan
+    if: needs.plan.outputs.rc == 'true'
     runs-on: macos-26
-    timeout-minutes: 30
-    environment: ${{ inputs.channel == 'github-draft' && 'github-release' || inputs.channel == 'testflight' && 'apple-testflight' || 'apple-store' }}
-    permissions:
-      contents: write
-      actions: read
+    timeout-minutes: 35
+    environment: apple-testflight
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,18 +62,12 @@ jobs:
         with:
           python-version: '3.12'
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
-      - name: Fetch and verify the selected successful candidate
+      - name: Fetch the candidate that passed every required check
         env:
           GH_TOKEN: ${{ github.token }}
-          CANDIDATE_RUN_ID: ${{ inputs.run_id }}
+          CANDIDATE_RUN_ID: ${{ needs.plan.outputs.run_id }}
         run: python3 scripts/distribute_candidate.py fetch
-      - name: Create a GitHub release draft
-        if: inputs.channel == 'github-draft'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/distribute_candidate.py github-draft
-      - name: Upload the existing iOS archive to TestFlight
-        if: inputs.channel == 'testflight'
+      - name: Upload once and confirm the exact Apple build
         env:
           APPLE_DEVELOPMENT_TEAM: ${{ secrets.APPLE_DEVELOPMENT_TEAM }}
           IOS_CERTIFICATE_P12: ${{ secrets.IOS_CERTIFICATE_P12 }}
@@ -54,9 +76,57 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
-        run: python3 scripts/apple_release.py upload-ios --root candidate/ios-archive
-      - name: Submit this tested build for App Store review (manual release)
-        if: inputs.channel == 'appstore-review'
+        run: python3 scripts/distribute_candidate.py testflight
+      - uses: actions/upload-artifact@v4
+        with:
+          name: testflight-receipt
+          path: testflight.json
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 90
+  github:
+    needs: [plan, testflight]
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.testflight.result == 'success' || needs.plan.outputs.rc == 'false') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: github-release
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CANDIDATE_RUN_ID: ${{ needs.plan.outputs.run_id }}
+      CANDIDATE_TAG: ${{ needs.plan.outputs.candidate_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the original rc artifacts
+        if: needs.plan.outputs.rc == 'true'
+        run: python3 scripts/distribute_candidate.py fetch
+      - uses: actions/download-artifact@v4
+        if: needs.plan.outputs.rc == 'true'
+        with:
+          name: testflight-receipt
+      - name: Publish the verified assets without rebuilding or overwriting
+        run: python3 scripts/distribute_candidate.py publish
+  appstore:
+    needs: [plan, github]
+    if: ${{ !cancelled() && needs.github.result == 'success' && needs.plan.outputs.rc == 'false' }}
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: apple-store
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CANDIDATE_TAG: ${{ needs.plan.outputs.candidate_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Submit the tested Apple build; keep public release manual
         env:
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
@@ -65,14 +135,3 @@ jobs:
           gem install fastlane --version 2.238.0 --no-document --user-install
           export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
           python3 scripts/distribute_candidate.py appstore-review
-      - name: Record the completed stage
-        env:
-          CHANNEL: ${{ inputs.channel }}
-          CANDIDATE_RUN_ID: ${{ inputs.run_id }}
-        run: python3 scripts/distribute_candidate.py receipt
-      - uses: actions/upload-artifact@v4
-        with:
-          name: distribution-receipt
-          path: distribution.json
-          if-no-files-found: error
-          retention-days: 90
