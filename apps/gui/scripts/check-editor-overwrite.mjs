@@ -70,13 +70,37 @@ async function run(engine, name) {
     page.setDefaultTimeout(12000);
     page.setDefaultNavigationTimeout(60000);
     let disk = 'A', other = 'Other file', heldRead = null, holdNextRead = false, mutateAtWrite = null, readKind = 'complete';
-    const writes = [], errors = [], consoleErrors = [];
+    const writes = [], errors = [], consoleErrors = [], events = [];
+    const diagnostic = () => ({stage, disk, writes, errors, consoleErrors, events});
+    const event = (kind, detail) => {
+      if (events.length >= 100) return;
+      events.push({kind, detail});
+      writeFileSync(join(evidence, `${name}-${scenario}-events.json`), JSON.stringify(diagnostic(), null, 2));
+    };
     const step = async (label, action) => {
       recordStage(`${name} ${scenario} ${label}`);
-      return action();
+      let timer;
+      try {
+        return await Promise.race([action(), new Promise((_, reject) => {
+          timer = setTimeout(() => {
+            event('timeout', label);
+            reject(new Error(`Editor action did not finish: ${label}`));
+          }, 50000);
+        })]);
+      } finally { clearTimeout(timer); }
     };
-    page.on('console', message => { if (message.type() === 'error') consoleErrors.push(message.text()); });
-    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => {
+      if (message.type() === 'error' && consoleErrors.length < 20) { consoleErrors.push(message.text()); event('console-error', message.text()); }
+      if (message.text().startsWith('OVERWRITE_KEY ')) event('key', message.text().slice(14));
+    });
+    page.on('pageerror', error => { if (errors.length < 20) { errors.push(error.message); event('page-error', error.message); } });
+    page.on('crash', () => event('crash'));
+    page.on('dialog', dialog => { event('dialog', dialog.message()); void dialog.dismiss(); });
+    await page.addInitScript(() => {
+      for (const type of ['keydown', 'keyup']) document.addEventListener(type, event => {
+        if (event.key.toLowerCase() === 's') console.log('OVERWRITE_KEY', JSON.stringify({type, prevented: event.defaultPrevented, editor: event.target.closest('[data-editor]')?.dataset.editor}));
+      });
+    });
     const snapshot = path => {
       const text = path === '/fixture/other.txt' ? other : disk;
       return {text: readKind === 'binary' ? '' : text, digest: readKind === 'complete' ? hash(text) : '',
@@ -87,6 +111,7 @@ async function run(engine, name) {
       const args = route.request().postDataJSON() || {};
       if (cmd === 'read_text') {
         const read = snapshot(args.path);
+        event('read', read.text);
         if (holdNextRead) {
           holdNextRead = false;
           await new Promise(resolve => { heldRead = async () => { await route.fulfill({json: read}); resolve(); }; });
@@ -99,6 +124,7 @@ async function run(engine, name) {
         const current = args.path === '/fixture/other.txt' ? other : disk;
         const accepted = args.was === hash(current);
         writes.push({...args, before: current, accepted});
+        event('write', {text: args.text, accepted});
         if (!accepted) { await route.fulfill({status: 409, json: {error: 'fixture compare-and-write conflict'}}); return; }
         if (args.path === '/fixture/other.txt') other = args.text; else disk = args.text;
         await route.fulfill({json: {digest: hash(args.text), at_ms: 2}}); return;
@@ -128,7 +154,7 @@ async function run(engine, name) {
       // This line has A -> B. Another writer restores A; a fresh read of A
       // must not be forwarded through the old line to B.
       disk = 'A'; await type('C');
-      await pane('one').locator('[data-save-state=refused]').waitFor();
+      await step('wait for first conflict', () => pane('one').locator('[data-save-state=refused]').waitFor());
       const before = writes.length;
       if (scenario === 'take-theirs') {
         await pane('one').locator('[data-take-theirs]').click();
