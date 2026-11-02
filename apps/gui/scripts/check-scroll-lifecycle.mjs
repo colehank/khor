@@ -393,14 +393,31 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
       }, { once: true, passive: true });
     });
     if (phase === 'blur-restore-compositor') await page.locator(selector).evaluate(box => {
-      // Deliver the compositor's scroll before the passive wheel callback.
-      // The wheel itself and the resulting movement still come from the browser.
-      box.addEventListener('wheel', () => box.dispatchEvent(new Event('scroll')), {once: true, capture: true, passive: true});
+      // Observe redundant writes while a compositor event precedes wheel delivery.
+      // The native accessor still applies every write; the browser owns movement.
+      const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+      window.__qualityCompositorWrites = [];
+      box.addEventListener('wheel', () => {
+        Object.defineProperty(box, 'scrollTop', {
+          configurable: true,
+          get() { return scrollTop.get.call(this); },
+          set(value) {
+            window.__qualityCompositorWrites.push({before: scrollTop.get.call(this), requested: value});
+            scrollTop.set.call(this, value);
+          },
+        });
+        try { box.dispatchEvent(new Event('scroll')); }
+        finally { delete box.scrollTop; }
+      }, {once: true, capture: true, passive: true});
     });
     await page.mouse.wheel(0, -400);
     evidence.blurReader = await samples(page, selector, null, 800);
     evidence.blurWheel = await page.evaluate(() => window.__qualityBlurWheel);
     evidence.blurScrollEvents = await page.evaluate(() => window.__qualityBlurScroll);
+    if (phase === 'blur-restore-compositor') {
+      evidence.compositorWrites = await page.evaluate(() => window.__qualityCompositorWrites);
+      assert.deepEqual(evidence.compositorWrites, [], 'An unchanged scroll position must not interrupt the pending native wheel');
+    }
     assert(evidence.blurWheel?.trusted, 'A real wheel takes reading ownership after composer blur');
     assert(evidence.blurReader.at(-1).top < beforeReader.top - 200, 'Composer ownership cannot undo a reader moving to history');
 
