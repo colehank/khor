@@ -22,6 +22,7 @@ const only = (process.env.QUALITY_ONLY ?? '').split(',').filter(Boolean);
 const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-acp-blur-restore', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history', 'chat-khor-blur-restore'];
 names.push('chat-acp-blur-restore-busy', 'chat-khor-blur-restore-busy');
 names.push('chat-acp-blur-restore-compositor', 'chat-khor-blur-restore-compositor');
+names.push('chat-acp-blur-restore-small-step', 'chat-khor-blur-restore-small-step');
 for (const name of engines) assert(['chrome', 'webkit'].includes(name), `Unknown engine: ${name}`);
 for (const name of only) assert(names.some(candidate => candidate === name || candidate.startsWith(`${name}-`)), `Unknown scenario: ${name}`);
 mkdirSync(out, { recursive: true });
@@ -366,6 +367,18 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
     const beforeReader = evidence.blurRestored.at(-1);
     const bounds = await page.locator(selector).boundingBox();
     await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    if (phase === 'blur-restore-small-step') {
+      await page.mouse.wheel(0, -24);
+      evidence.smallStep = await samples(page, selector, null, 350);
+      const chosen = evidence.smallStep.at(-1);
+      assert(chosen.top < beforeReader.top - 2 && chosen.gap < 40, 'A small upward gesture must leave the tail without being pulled back');
+      await add(1, false);
+      evidence.smallStepUpdate = await samples(page, selector, null, 650);
+      assert(evidence.smallStepUpdate.every(sample => Math.abs(sample.top - chosen.top) <= 2), 'A new revision must preserve even a small upward reading gesture');
+      await toBottom.click();
+      assertTail(await samples(page, selector), 'Explicit return resumes following after a small upward gesture');
+      return;
+    }
     if (phase === 'blur-restore-busy') {
       await page.mouse.wheel(0, 400);
       evidence.idleInput = await samples(page, selector, null, 400);
@@ -393,14 +406,31 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
       }, { once: true, passive: true });
     });
     if (phase === 'blur-restore-compositor') await page.locator(selector).evaluate(box => {
-      // Deliver the compositor's scroll before the passive wheel callback.
-      // The wheel itself and the resulting movement still come from the browser.
-      box.addEventListener('wheel', () => box.dispatchEvent(new Event('scroll')), {once: true, capture: true, passive: true});
+      // Observe redundant writes while a compositor event precedes wheel delivery.
+      // The native accessor still applies every write; the browser owns movement.
+      const scrollTop = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollTop');
+      window.__qualityCompositorWrites = [];
+      box.addEventListener('wheel', () => {
+        Object.defineProperty(box, 'scrollTop', {
+          configurable: true,
+          get() { return scrollTop.get.call(this); },
+          set(value) {
+            window.__qualityCompositorWrites.push({before: scrollTop.get.call(this), requested: value});
+            scrollTop.set.call(this, value);
+          },
+        });
+        try { box.dispatchEvent(new Event('scroll')); }
+        finally { delete box.scrollTop; }
+      }, {once: true, capture: true, passive: true});
     });
     await page.mouse.wheel(0, -400);
     evidence.blurReader = await samples(page, selector, null, 800);
     evidence.blurWheel = await page.evaluate(() => window.__qualityBlurWheel);
     evidence.blurScrollEvents = await page.evaluate(() => window.__qualityBlurScroll);
+    if (phase === 'blur-restore-compositor') {
+      evidence.compositorWrites = await page.evaluate(() => window.__qualityCompositorWrites);
+      assert.deepEqual(evidence.compositorWrites, [], 'An unchanged scroll position must not interrupt the pending native wheel');
+    }
     assert(evidence.blurWheel?.trusted, 'A real wheel takes reading ownership after composer blur');
     assert(evidence.blurReader.at(-1).top < beforeReader.top - 200, 'Composer ownership cannot undo a reader moving to history');
 
@@ -555,7 +585,8 @@ try {
         await page.screenshot({ path: join(out, `${engine}-${name}.png`) }).catch(error => { result.screenshotError = String(error); });
         save();
         console.log(`${result.status.toUpperCase()} ${engine} ${name}${result.error ? `: ${result.error.split('\n')[0]}` : ''}`);
-        await context.close();
+        try { await page.unrouteAll({ behavior: 'wait' }); }
+        finally { await context.close(); }
       }
     }
     await browser.close(); browser = null;

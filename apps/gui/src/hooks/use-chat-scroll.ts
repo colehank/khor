@@ -34,7 +34,8 @@ export function useChatScroll(revision: unknown) {
     const el = scroller.current;
     if (!el) return;
     positionRevision.current++;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    const movingAway = el.scrollTop < position.current.top;
+    const near = !movingAway && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     following.current = near;
     readingLatest.current = near;
     setAway(!near);
@@ -65,7 +66,10 @@ export function useChatScroll(revision: unknown) {
         sync();
       });
     }
-    if (following.current) el.scrollTop = el.scrollHeight;
+    if (following.current) {
+      const bottom = Math.max(0, el.scrollHeight - el.clientHeight);
+      if (Math.abs(el.scrollTop - bottom) > 0.5) el.scrollTop = bottom;
+    }
     else if (anchor.current?.node.isConnected) {
       const { node, top } = anchor.current;
       const delta = node.getBoundingClientRect().top - el.getBoundingClientRect().top - top;

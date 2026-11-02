@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {recoveryActionCases, exerciseRecoveryActions} from './recovery-actions-ui.mjs';
+import {recoveryActionCases, exerciseRecoveryActions, advanceRecoveryClock, usesRecoveryClock} from './recovery-actions-ui.mjs';
 
 // User-visible capabilities retained from the retired History/HistoryEnd suite.
 export const chatRecoveryCases = [
@@ -116,7 +116,7 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
     await until(async () => (index ?? await nextPoll()) >= 0, 'actual held poll ready');
     const selected = index ?? await nextPoll();
     await page.evaluate(({selected, frames, change}) => window.__chatWire.reply(selected, {frames, next: selected + 1, ...change}), {selected, frames, change});
-    await wait(10);await page.clock.runFor(0);await wait(10);
+    await wait(10);await advanceRecoveryClock(page,0);await wait(10);
   };
   const capture = async (extra = []) => {
     await until(async () => (await calls('chat_capture')).length > 0, 'actual view asks for Capture');
@@ -221,7 +221,9 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
   await page.evaluate(()=>{const wire=window.__recoveryWire;for(let i=0;i<wire.offers.length;i++)if(!wire.offers[i].done)wire.releaseOffer(i,wire.offers[i].answer);});
   const actionsBefore=await page.evaluate(()=>window.__recoveryWire.calls.filter(c=>c.cmd==='recover_session'||c.cmd==='new_shell_run').length);
   const before = (await polls()).length;
-  await page.clock.runFor(60000);await wait(20);
+  if (usesRecoveryClock(scenario)) await page.clock.runFor(60000);
+  else await wait(2100); // Observe a full polling interval without replacing native timers.
+  await wait(20);
   assert.equal(await page.evaluate(()=>window.__recoveryWire.calls.filter(c=>c.cmd==='recover_session'||c.cmd==='new_shell_run').length),actionsBefore,'late read-only offers cannot revive execution after unmount');
   assert(await page.evaluate(()=>window.__recoveryWire.actions.every(io=>io.done)&&window.__recoveryWire.drops.every(io=>io.done)&&window.__recoveryWire.waits.every(io=>io.done)),'all controlled action/transfer/wait IO ended in its actual reply or leave');
   assert.equal((await polls()).length, before, 'retired component does not resume polling');
