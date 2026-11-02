@@ -375,7 +375,15 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
     }
     await page.locator(selector).evaluate(box => {
       window.__qualityBlurWheel = null;
-      box.addEventListener('wheel', event => { window.__qualityBlurWheel = { trusted: event.isTrusted, delta: event.deltaY }; }, { once: true, passive: true });
+      window.__qualityBlurScroll = [];
+      box.addEventListener('scroll', () => {
+        if (window.__qualityBlurScroll.length < 40) window.__qualityBlurScroll.push({at: performance.now(), top: box.scrollTop});
+      }, {capture: true, passive: true});
+      box.addEventListener('wheel', event => {
+        window.__qualityBlurWheel = { trusted: event.isTrusted, delta: event.deltaY, at: performance.now(), top: box.scrollTop,
+          path: event.composedPath().filter(node => node instanceof Element).map(node => ({tag: node.tagName, overflow: getComputedStyle(node).overflowY, top: node.scrollTop, height: node.scrollHeight, view: node.clientHeight})) };
+        queueMicrotask(() => { window.__qualityBlurWheel.prevented = event.defaultPrevented; });
+      }, { once: true, passive: true });
     });
     if (phase === 'blur-restore-busy') await page.locator(selector).evaluate(box => {
       box.addEventListener('wheel', () => {
@@ -386,6 +394,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
     await page.mouse.wheel(0, -400);
     evidence.blurReader = await samples(page, selector, null, 800);
     evidence.blurWheel = await page.evaluate(() => window.__qualityBlurWheel);
+    evidence.blurScrollEvents = await page.evaluate(() => window.__qualityBlurScroll);
     assert(evidence.blurWheel?.trusted, 'A real wheel takes reading ownership after composer blur');
     assert(evidence.blurReader.at(-1).top < beforeReader.top - 200, 'Composer ownership cannot undo a reader moving to history');
 

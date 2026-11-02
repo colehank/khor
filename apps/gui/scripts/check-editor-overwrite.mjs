@@ -242,7 +242,7 @@ try {
   process.env.KHOR_FACE_GATE = '1';
   // Cache belongs to this temporary fixture even when node_modules is a
   // read-only link to another worktree's dependencies.
-  server = await createServer({root: gui, cacheDir: join(fixture, '.vite'), optimizeDeps: {entries: [join(fixture, 'index.html')]}, server: {host: "127.0.0.1", port: Number(process.env.EDITOR_OVERWRITE_PORT || 23827), strictPort: true}, clearScreen: false});
+  server = await createServer({root: gui, cacheDir: join(fixture, '.vite'), optimizeDeps: {entries: [join(fixture, 'index.html')]}, server: {hmr: process.env.EDITOR_OVERWRITE_HMR !== '0', host: "127.0.0.1", port: Number(process.env.EDITOR_OVERWRITE_PORT || 23827), strictPort: true}, clearScreen: false});
   await server.listen();
   await run(chromium, 'chrome');
   if (process.env.EDITOR_OVERWRITE_WEBKIT === '1') await run(webkit, 'webkit');
