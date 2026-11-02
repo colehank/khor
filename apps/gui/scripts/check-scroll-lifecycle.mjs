@@ -22,6 +22,7 @@ const only = (process.env.QUALITY_ONLY ?? '').split(',').filter(Boolean);
 const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-acp-blur-restore', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history', 'chat-khor-blur-restore'];
 names.push('chat-acp-blur-restore-busy', 'chat-khor-blur-restore-busy');
 names.push('chat-acp-blur-restore-compositor', 'chat-khor-blur-restore-compositor');
+names.push('chat-acp-blur-restore-small-step', 'chat-khor-blur-restore-small-step');
 for (const name of engines) assert(['chrome', 'webkit'].includes(name), `Unknown engine: ${name}`);
 for (const name of only) assert(names.some(candidate => candidate === name || candidate.startsWith(`${name}-`)), `Unknown scenario: ${name}`);
 mkdirSync(out, { recursive: true });
@@ -366,6 +367,18 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
     const beforeReader = evidence.blurRestored.at(-1);
     const bounds = await page.locator(selector).boundingBox();
     await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    if (phase === 'blur-restore-small-step') {
+      await page.mouse.wheel(0, -24);
+      evidence.smallStep = await samples(page, selector, null, 350);
+      const chosen = evidence.smallStep.at(-1);
+      assert(chosen.top < beforeReader.top - 2 && chosen.gap < 40, 'A small upward gesture must leave the tail without being pulled back');
+      await add(1, false);
+      evidence.smallStepUpdate = await samples(page, selector, null, 650);
+      assert(evidence.smallStepUpdate.every(sample => Math.abs(sample.top - chosen.top) <= 2), 'A new revision must preserve even a small upward reading gesture');
+      await toBottom.click();
+      assertTail(await samples(page, selector), 'Explicit return resumes following after a small upward gesture');
+      return;
+    }
     if (phase === 'blur-restore-busy') {
       await page.mouse.wheel(0, 400);
       evidence.idleInput = await samples(page, selector, null, 400);
