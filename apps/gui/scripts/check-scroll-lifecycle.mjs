@@ -20,6 +20,7 @@ const headless = process.env.QUALITY_HEADLESS === '1';
 const engines = (process.env.QUALITY_ENGINES ?? 'chrome').split(',');
 const only = (process.env.QUALITY_ONLY ?? '').split(',').filter(Boolean);
 const names = ['lock-unavailable', 'lock-pin-failure', 'commit-mouse', 'commit-touch', 'commit-keyboard', 'commit-escape', 'lab-acp-blur', 'chat-acp-tail', 'chat-acp-history', 'chat-acp-input-tail', 'chat-acp-input-history', 'chat-acp-blur-restore', 'chat-khor-tail', 'chat-khor-history', 'chat-khor-input-tail', 'chat-khor-input-history', 'chat-khor-blur-restore'];
+names.push('chat-acp-blur-restore-busy', 'chat-khor-blur-restore-busy');
 for (const name of engines) assert(['chrome', 'webkit'].includes(name), `Unknown engine: ${name}`);
 for (const name of only) assert(names.some(candidate => candidate === name || candidate.startsWith(`${name}-`)), `Unknown scenario: ${name}`);
 mkdirSync(out, { recursive: true });
@@ -339,7 +340,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
   const input = page.locator('[data-composer-text]');
   await input.click();
   if (phase === 'input-tail') return inputDuringResize(page, selector, evidence);
-  if (phase === 'blur-restore') {
+  if (phase === 'blur-restore' || phase === 'blur-restore-busy') {
     const oldTop = evidence.before.at(-1).top;
     await keyboard(page, 300, evidence, 'blurKeyboardOpen');
     await input.fill('draft words '.repeat(24));
@@ -363,11 +364,25 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
 
     const beforeReader = evidence.blurRestored.at(-1);
     const bounds = await page.locator(selector).boundingBox();
+    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    if (phase === 'blur-restore-busy') {
+      await page.mouse.wheel(0, 400);
+      evidence.idleInput = await samples(page, selector, null, 400);
+      assertTail(evidence.idleInput, 'A wheel beyond the end keeps the latest-message intent');
+      await page.locator(selector).evaluate(box => { box.scrollTop -= 80; });
+      evidence.afterIdleInput = await samples(page, selector, null, 650);
+      assertTail(evidence.afterIdleInput, 'An input without movement cannot keep reader ownership forever');
+    }
     await page.locator(selector).evaluate(box => {
       window.__qualityBlurWheel = null;
       box.addEventListener('wheel', event => { window.__qualityBlurWheel = { trusted: event.isTrusted, delta: event.deltaY }; }, { once: true, passive: true });
     });
-    await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+    if (phase === 'blur-restore-busy') await page.locator(selector).evaluate(box => {
+      box.addEventListener('wheel', () => {
+        const end = performance.now() + 350;
+        while (performance.now() < end) {}
+      }, { once: true, passive: true });
+    });
     await page.mouse.wheel(0, -400);
     evidence.blurReader = await samples(page, selector, null, 800);
     evidence.blurWheel = await page.evaluate(() => window.__qualityBlurWheel);
@@ -503,7 +518,7 @@ try {
       const mobile = name.startsWith('lock-') || name === 'commit-touch' || name.startsWith('chat-');
       // Playwright cannot send a wheel in mobile WebKit. History keeps the
       // phone viewport/coarse pointer, with desktop WebKit wheel capability.
-      const mobileEmulation = mobile && !(engine === 'webkit' && (name.endsWith('-history') || name.includes('-input-') || name.endsWith('-blur-restore')));
+      const mobileEmulation = mobile && !(engine === 'webkit' && (name.endsWith('-history') || name.includes('-input-') || name.includes('-blur-restore')));
       const context = await browser.newContext({ viewport: mobile || name.startsWith('lab-') ? { width: 390, height: 844 } : { width: 1280, height: 900 }, hasTouch: mobile, isMobile: mobileEmulation, reducedMotion: 'no-preference' });
       const page = await context.newPage();
       page.setDefaultTimeout(12_000);
