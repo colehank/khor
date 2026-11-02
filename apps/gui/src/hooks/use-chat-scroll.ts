@@ -34,7 +34,8 @@ export function useChatScroll(revision: unknown) {
     const el = scroller.current;
     if (!el) return;
     positionRevision.current++;
-    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    const movingAway = el.scrollTop < position.current.top;
+    const near = !movingAway && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     following.current = near;
     readingLatest.current = near;
     setAway(!near);
