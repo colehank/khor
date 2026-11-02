@@ -8,12 +8,9 @@ on:
         default: false
 permissions:
   contents: read
+  actions: read
 jobs:
-  frontend:
-    uses: ./.github/workflows/frontend.yml
   gui:
-    needs: frontend
-    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
@@ -33,7 +30,17 @@ jobs:
           cache: npm
           cache-dependency-path: apps/gui/package-lock.json
       - run: npm ci
-      - uses: ./.github/actions/restore-frontend
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frontend
+          path: frontend
+          run-id: 41446458619
+          github-token: ${{ github.token }}
+      - name: Reuse unchanged generated bindings for source-based browser diagnostics
+        working-directory: .
+        run: |
+          python3 scripts/release_manifest.py verify --root frontend --sha 5747944cc5543e45ee8f9f0a63657a3792fd415e --kind frontend --run-id 41446458619
+          cp -R frontend/gen apps/gui/src/gen
       - run: npm run test:unit && npm run test:types
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
@@ -56,7 +63,6 @@ jobs:
           exit "$failed"
         env:
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
-          KHOR_TEST_FRONTEND: dist
           QUALITY_ENGINES: chrome,webkit
           QUALITY_HEADLESS: '1'
           EDITOR_OVERWRITE_WEBKIT: '1'
