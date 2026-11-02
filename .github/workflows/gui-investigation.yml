@@ -14,6 +14,8 @@ jobs:
         working-directory: apps/gui
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 4
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
@@ -28,7 +30,8 @@ jobs:
           path: frontend
       - name: Reuse unchanged generated interfaces from the diagnostic build
         run: |
-          python3 ../../scripts/release_manifest.py verify --root ../../frontend
+          git -C ../.. diff --exit-code b8522151e1daedbe3aaf79eebd9524de183d88b3 HEAD -- crates Cargo.toml Cargo.lock
+          python3 ../../scripts/release_manifest.py verify --root ../../frontend --sha b8522151e1daedbe3aaf79eebd9524de183d88b3
           cp -R ../../frontend/gen src/gen
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
       - name: Capture native crashes and wheel event order without rebuilding the app
