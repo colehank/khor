@@ -39,7 +39,7 @@ jobs:
       candidate_tag: ${{ steps.plan.outputs.candidate_tag }}
       run_id: ${{ steps.plan.outputs.run_id }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - id: plan
@@ -55,10 +55,10 @@ jobs:
     timeout-minutes: 35
     environment: apple-testflight
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
@@ -77,7 +77,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
         run: python3 scripts/distribute_candidate.py testflight
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: testflight-receipt
           path: testflight.json
@@ -98,13 +98,13 @@ jobs:
       CANDIDATE_RUN_ID: ${{ needs.plan.outputs.run_id }}
       CANDIDATE_TAG: ${{ needs.plan.outputs.candidate_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Fetch the original rc artifacts
         if: needs.plan.outputs.rc == 'true'
         run: python3 scripts/distribute_candidate.py fetch
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         if: needs.plan.outputs.rc == 'true'
         with:
           name: testflight-receipt
@@ -120,10 +120,10 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       CANDIDATE_TAG: ${{ needs.plan.outputs.candidate_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.12'
       - name: Submit the tested Apple build; keep public release manual
