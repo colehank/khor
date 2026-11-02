@@ -585,7 +585,8 @@ try {
         await page.screenshot({ path: join(out, `${engine}-${name}.png`) }).catch(error => { result.screenshotError = String(error); });
         save();
         console.log(`${result.status.toUpperCase()} ${engine} ${name}${result.error ? `: ${result.error.split('\n')[0]}` : ''}`);
-        await context.close();
+        try { await page.unrouteAll({ behavior: 'wait' }); }
+        finally { await context.close(); }
       }
     }
     await browser.close(); browser = null;
