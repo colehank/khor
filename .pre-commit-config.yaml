@@ -1,0 +1,69 @@
+minimum_pre_commit_version: '4.4.0'
+default_install_hook_types: [pre-commit, pre-push]
+exclude: '(^vendor/|(^|/)(node_modules|dist|gen|fixtures)/|^apps/gui/lab/)'
+repos:
+  - repo: local
+    hooks:
+      - id: khor-syntax
+        name: Source syntax (read only)
+        language: unsupported
+        entry: python3 scripts/local_checks.py syntax
+        files: '\.(py|json|toml|m?js|cjs|sh)$'
+        require_serial: true
+        stages: [pre-commit]
+      - id: khor-rust-format
+        name: First-party Rust format
+        language: unsupported
+        entry: python3 scripts/check-rust-format.py --check
+        files: '(\.rs$|(^|/)Cargo\.toml$|^rustfmt\.toml$)'
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: khor-workflows
+        name: GitHub workflow validation
+        language: unsupported
+        entry: python3 scripts/local_checks.py workflows
+        files: '^(\.github/|\.pre-commit-config\.yaml$|scripts/local_checks\.py$)'
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: khor-gui-types
+        name: GUI TypeScript
+        language: unsupported
+        entry: python3 scripts/local_checks.py gui-types
+        files: '^apps/gui/(src/.*\.tsx?$|.*\.json$)'
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: khor-agent-types
+        name: Agent TypeScript
+        language: unsupported
+        entry: python3 scripts/local_checks.py agent-types
+        files: '^apps/agent/.*\.(ts|json)$'
+        pass_filenames: false
+        stages: [pre-commit]
+      - id: khor-push-tree
+        name: Push the checked working tree
+        language: unsupported
+        entry: python3 scripts/local_checks.py push-tree
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]
+      - id: khor-script-tests
+        name: Script and release tests
+        language: unsupported
+        entry: python3 scripts/local_checks.py scripts
+        files: '^(scripts/|\.github/|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-push]
+      - id: khor-gui-tests
+        name: GUI unit, types, design and mobile checks
+        language: unsupported
+        entry: python3 scripts/local_checks.py gui
+        files: '^(apps/gui/|crates/(catalog|gui-core)/|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-push]
+      - id: khor-agent-tests
+        name: Agent tests
+        language: unsupported
+        entry: python3 scripts/local_checks.py agent
+        files: '^(apps/agent/|\.pre-commit-config\.yaml$)'
+        pass_filenames: false
+        stages: [pre-push]
