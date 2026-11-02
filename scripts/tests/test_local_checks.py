@@ -34,6 +34,12 @@ class LocalChecksTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "worktree"):
                 local_checks.push_tree()
 
+    def test_workflow_checks_require_the_same_shellcheck_version(self):
+        with patch.object(local_checks, "executable", return_value="shellcheck"), patch.object(subprocess, "check_output", return_value="version: 0.10.0\n"), patch.object(local_checks, "run") as run:
+            with self.assertRaisesRegex(RuntimeError, "0.11.0"):
+                local_checks.workflows()
+            run.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

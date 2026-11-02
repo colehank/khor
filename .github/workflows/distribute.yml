@@ -133,5 +133,6 @@ jobs:
           APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
         run: |
           gem install fastlane --version 2.238.0 --no-document --user-install
-          export PATH="$(ruby -e 'print Gem.user_dir')/bin:$PATH"
+          khor_gem_bin="$(ruby -e 'print Gem.user_dir')/bin"
+          export PATH="$khor_gem_bin:$PATH"
           python3 scripts/distribute_candidate.py appstore-review

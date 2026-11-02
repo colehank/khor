@@ -14,8 +14,8 @@ def executable(name):
     path = shutil.which(name)
     if path:
         return path
-    if name == "actionlint":
-        setting = subprocess.run(["git", "config", "--get", "khor.actionlint"], capture_output=True, text=True)
+    if name in {"actionlint", "shellcheck"}:
+        setting = subprocess.run(["git", "config", "--get", f"khor.{name}"], capture_output=True, text=True)
         if setting.returncode == 0 and Path(setting.stdout.strip()).is_file():
             return setting.stdout.strip()
     raise RuntimeError(f"Missing {name}; install the documented tool before retrying (docs/LOCAL-CHECKS.md)")
@@ -38,7 +38,7 @@ def syntax(paths):
         elif path.suffix in {".js", ".mjs", ".cjs"}:
             run([executable("node"), "--check", filename])
         elif path.suffix == ".sh":
-            shell = "bash" if "bash" in path.read_text(encoding="utf-8").splitlines()[0] else "sh"
+            shell = "bash" if "bash" in path.read_text(encoding="utf-8").split("\n", 1)[0] else "sh"
             run([executable(shell), "-n", filename])
 
 
@@ -70,8 +70,16 @@ def script_tests():
         run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_*.py"])
 
 
+def workflows():
+    shellcheck = executable("shellcheck")
+    version = subprocess.check_output([shellcheck, "--version"], text=True)
+    if "version: 0.11.0" not in version.splitlines():
+        raise RuntimeError("Use ShellCheck 0.11.0, matching the CI workflow validator")
+    run([executable("actionlint"), "-shellcheck", shellcheck])
+
+
 def main():
-    actions = {"workflows": lambda: run([executable("actionlint")]),
+    actions = {"workflows": workflows,
                "gui-types": lambda: npm("gui", ["test:types"]),
                "agent-types": lambda: npm("agent", ["check"]),
                "gui": lambda: npm("gui", ["test:unit", "test:types", "gates", "mobile:static"]),
