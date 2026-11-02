@@ -39,10 +39,49 @@ jobs:
     uses: ./.github/workflows/quality.yml
     with:
       reuse_frontend: true
+  agent-runtime:
+    needs: frontend
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-26
+            target: aarch64-apple-darwin
+          - runner: macos-26
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/agent/package-lock.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Build and record the target Pi runtime once
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          npm ci --prefix apps/agent
+          node apps/agent/build.mjs "$TARGET" agent-runtime/khor-agent
+          python3 scripts/release_manifest.py create --root agent-runtime --kind "agent-runtime-$TARGET" --frontend frontend --agent agent-runtime/khor-agent
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-runtime-${{ matrix.target }}
+          path: agent-runtime/
+          if-no-files-found: error
+          retention-days: 14
   native:
-    needs: [prepare, frontend]
+    needs: [frontend, agent-runtime]
     timeout-minutes: 90
-    environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
     strategy:
       fail-fast: false
       matrix:
@@ -67,6 +106,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/restore-agent
+        with:
+          target: ${{ matrix.target }}
       - uses: ./.github/actions/native-tools
         with:
           target: ${{ matrix.target }}
@@ -78,14 +120,12 @@ jobs:
           "$RUNNER_TEMP/zig/bin/pip" install ziglang==0.13.0
           echo "$RUNNER_TEMP/zig/bin" >> "$GITHUB_PATH"
           cargo install cargo-zigbuild --version 0.20.1 --locked
-      - name: Build target Pi and CLI
+      - name: Build CLI from the shared frontend and runtime
         env:
           KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
           TARGET: ${{ matrix.target }}
           ZIG_TARGET: ${{ matrix.zig }}
         run: |
-          npm ci --prefix apps/agent
-          node apps/agent/build.mjs "$TARGET"
           if [ -n "$ZIG_TARGET" ]; then
             cargo zigbuild --locked -p khor-cli --bin khor --target "$ZIG_TARGET" --release
           else
@@ -106,8 +146,32 @@ jobs:
           path: product/
           if-no-files-found: error
           retention-days: 14
+  mac-app:
+    needs: [prepare, frontend, agent-runtime]
+    timeout-minutes: 90
+    environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-26
+            target: aarch64-apple-darwin
+            asset: khor-macos-arm64
+          - runner: macos-26
+            target: x86_64-apple-darwin
+            asset: khor-macos-x86_64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/restore-agent
+        with:
+          target: ${{ matrix.target }}
+      - uses: ./.github/actions/native-tools
+        with:
+          target: ${{ matrix.target }}
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - name: Build Mac App from the same frontend and runtime
-        if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
           SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
@@ -119,20 +183,18 @@ jobs:
           npm ci --prefix apps/gui
           python3 scripts/apple_release.py mac-build --target "$TARGET" --signed "$SIGNED"
       - name: Preserve the signed build before contacting Apple
-        if: runner.os == 'macOS'
         env:
           TARGET: ${{ matrix.target }}
           SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
         run: python3 scripts/mac_notarization.py package-build --target "$TARGET" --signed "$SIGNED"
       - uses: actions/upload-artifact@v4
-        if: runner.os == 'macOS'
         with:
           name: mac-build-${{ matrix.asset }}
           path: mac-build/
           if-no-files-found: error
           retention-days: 14
   mac-submit:
-    needs: [prepare, native]
+    needs: [prepare, mac-app]
     runs-on: macos-26
     timeout-minutes: 15
     environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}

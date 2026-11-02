@@ -42,12 +42,16 @@ def version():
     return value
 
 
-def verify(root, sha=None):
+def verify(root, sha=None, *, kind=None, run_id=None):
     receipt = json.loads((root / "receipt.json").read_text())
     if receipt["schema"] != 1 or receipt["files"] != files(root):
         raise ValueError(f"Artifact bytes changed: {root}")
     if sha and receipt["source_sha"] != sha:
         raise ValueError(f"Artifact belongs to a different source commit: {root}")
+    if kind and receipt["kind"] != kind:
+        raise ValueError(f"Artifact has a different kind: {root}")
+    if run_id and receipt["run_id"] != run_id:
+        raise ValueError(f"Artifact belongs to a different workflow run: {root}")
     return receipt
 
 
@@ -104,6 +108,7 @@ def main():
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--agent", type=Path)
     parser.add_argument("--sha")
+    parser.add_argument("--run-id")
     args = parser.parse_args()
     if args.action == "version":
         print(version())
@@ -115,7 +120,7 @@ def main():
             parser.error("--kind is required")
         result = create(args.root, args.kind, args.frontend, args.executable, args.agent)
     else:
-        result = verify(args.root, args.sha or source_sha())
+        result = verify(args.root, args.sha or source_sha(), kind=args.kind, run_id=args.run_id)
     print(json.dumps({key: result[key] for key in ["kind", "version", "source_sha", "ui_revision"]}))
 
 

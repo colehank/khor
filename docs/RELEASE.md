@@ -39,13 +39,15 @@ git push origin v0.1.15
 
 前端只生成一次，Quality与原生平台消费相同dist与生成类型。四个CLI（Linux x86_64/arm64、Mac Intel/Apple Silicon）、两个Mac App和一个iOS archive分别产出收据，再聚合manifest。收据包含源SHA、前端标识、run/attempt、大小与SHA256；实际原生程序检查嵌入前端，CLI/Mac App还检查嵌入Pi及Linux glibc 2.31下限。
 
+`agent-runtime` 为每个目标平台制作一次 Pi，CLI 的 `native` 与 `mac-app` 校验源码、目标平台、run 和文件摘要后复用相同字节。两类原生构建独立调度，各有90分钟预算；Mac App不再接在CLI编译之后共用一个任务时限。中间的 `agent-runtime-*` 工件不进入最终七平台发布集合。
+
 工具链使用Rust1.95、Node22.19、Bun1.3.14、Xcode26.5及锁文件。Rust目标目录不跨运行缓存。Actions前端保留7天，候选14天；成功rc会将七平台产物、iOS归档/构建号、manifest、原始安装器及TestFlight记录保存在GitHub不可变预发布资产。正式晋升从该预发布读取，Actions文件过期不会导致重编。
 
 GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才发布。重试仅补齐缺失的相同文件；发现同名不同内容立即拒绝，绝不覆盖。发布后的资产由GitHub immutable releases保护；正式Release中的程序字节与候选一致。默认latest只指向正式版本。
 
 ## Apple阶段与失败重试
 
-Mac 构建与公证分为三个独立任务。`native` 只编译、签名，将原始 zip 和源码、前端、Pi、文件摘要收据保存为 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后附加公证票据，执行 `codesign` 与 `stapler validate`，最后生成 App 包和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录；仅签名不能分发。
+Mac 构建与公证分为三个独立任务。`mac-app` 只编译、签名，将原始 zip 和源码、前端、Pi、文件摘要收据保存为 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后附加公证票据，执行 `codesign` 与 `stapler validate`，最后生成 App 包和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录；仅签名不能分发。
 
 公证查询每次最多等待30分钟，任务上限40分钟，为下载、打包和状态保存留出时间；编译仍有独立的90分钟预算。等待超时不取消 Apple 上的处理。在原 Actions run 选择 **Re-run failed jobs**，继续查询同一请求，复用原始签名包，不重新编译、签名或提交。已有最终包也会校验后复用。不要使用 Re-run all jobs 恢复公证。
 

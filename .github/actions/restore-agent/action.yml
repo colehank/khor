@@ -1,0 +1,19 @@
+name: Restore the verified Pi runtime
+description: Share one target runtime between CLI and Mac App builds in this run
+inputs:
+  target:
+    description: Target triple of the compiled runtime
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: agent-runtime-${{ inputs.target }}
+        path: apps/agent/dist
+    - shell: bash
+      env:
+        TARGET: ${{ inputs.target }}
+      run: |
+        python3 scripts/release_manifest.py verify --root apps/agent/dist --kind "agent-runtime-$TARGET" --run-id "$GITHUB_RUN_ID"
+        chmod +x apps/agent/dist/khor-agent

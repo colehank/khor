@@ -56,6 +56,28 @@ class ArtifactReceiptTest(unittest.TestCase):
         manifest.create(product, "linux", self.frontend, binary, agent)
         manifest.verify(product, "a" * 40)
 
+    def test_shared_runtime_rejects_another_target_run_or_changed_bytes(self):
+        runtime = self.root / "runtime"
+        runtime.mkdir()
+        agent = runtime / "khor-agent"
+        agent.write_bytes(b"shared target runtime")
+        kind = "agent-runtime-aarch64-apple-darwin"
+        with patch.dict(manifest.os.environ, {"GITHUB_RUN_ID": "123", "GITHUB_RUN_ATTEMPT": "1"}):
+            receipt = manifest.create(runtime, kind, self.frontend, agent=agent)
+        self.assertEqual(receipt["agent_sha256"], manifest.digest(agent))
+        # Failed downstream jobs may reuse this artifact on a later attempt of the same run.
+        with patch.dict(manifest.os.environ, {"GITHUB_RUN_ATTEMPT": "2"}):
+            self.assertEqual(manifest.verify(runtime, "a" * 40, kind=kind, run_id="123"), receipt)
+        with self.assertRaisesRegex(ValueError, "different source"):
+            manifest.verify(runtime, "b" * 40, kind=kind, run_id="123")
+        with self.assertRaisesRegex(ValueError, "different kind"):
+            manifest.verify(runtime, "a" * 40, kind="agent-runtime-x86_64-apple-darwin", run_id="123")
+        with self.assertRaisesRegex(ValueError, "different workflow run"):
+            manifest.verify(runtime, "a" * 40, kind=kind, run_id="456")
+        agent.write_bytes(b"another runtime")
+        with self.assertRaisesRegex(ValueError, "bytes changed"):
+            manifest.verify(runtime, "a" * 40, kind=kind, run_id="123")
+
     def test_refuses_symlinks_and_missing_frontend_entry(self):
         (self.frontend / "link").symlink_to(self.root / "private-key")
         with self.assertRaisesRegex(ValueError, "regular files"):
