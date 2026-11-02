@@ -36,8 +36,8 @@ writeFileSync(join(fixture, 'index.html'), '<link rel="icon" href="data:,"><div 
 writeFileSync(join(fixture, 'probe.tsx'), recoveryProbe);
 let server, browser;
 async function run(engine, name) {
-  browser = await engine.launch(name === 'chrome' ? {channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined, headless: true} : {headless: true});
   for (const scenario of scenarios) {
+    browser = await engine.launch(name === 'chrome' ? {channel: (process.env.PLAYWRIGHT_CHROMIUM_CHANNEL ?? 'chrome') || undefined, headless: true} : {headless: true});
     const context = await browser.newContext({viewport:{width:1100,height:760}});
     const page = await context.newPage();
     page.setDefaultTimeout(12000); page.setDefaultNavigationTimeout(60000);
@@ -50,7 +50,7 @@ async function run(engine, name) {
     await page.addInitScript(installRecoveryTransport);
     await page.addInitScript(installRecoveryActionsTransport);
     const polls = () => page.evaluate(() => window.__chatWire.calls.filter(call => call.cmd === 'chat_wait' || call.cmd === 'chat_poll'));
-    const facts=()=>page.evaluate(()=>({origin:location.origin,calls:window.__recoveryWire?.calls.slice(-64),failedReads:window.__chatWire?.failedReads,peers:window.__recoveryWire?.peers,terminals:window.__recoveryWire?.terminals,heldOffers:window.__recoveryWire?.offers.map(x=>({id:x.args.id,done:x.done})),heldActions:window.__recoveryWire?.actions.map(x=>({cmd:x.cmd,args:x.args,done:x.done})),heldDrops:window.__recoveryWire?.drops.map(x=>({lease:x.lease,done:x.done}))})).catch(()=>null);
+    const facts=()=>page.evaluate(()=>({origin:location.origin,visibility:document.visibilityState,focused:document.hasFocus(),calls:window.__recoveryWire?.calls.slice(-64),failedReads:window.__chatWire?.failedReads,peers:window.__recoveryWire?.peers,terminals:window.__recoveryWire?.terminals,heldOffers:window.__recoveryWire?.offers.map(x=>({id:x.args.id,done:x.done})),heldActions:window.__recoveryWire?.actions.map(x=>({cmd:x.cmd,args:x.args,done:x.done})),heldDrops:window.__recoveryWire?.drops.map(x=>({lease:x.lease,done:x.done}))})).catch(()=>null);
     try {
       // Directory selection needs native animation/rAF; only timing cases install a clock.
       if (usesRecoveryClock(scenario)) {
@@ -58,6 +58,7 @@ async function run(engine, name) {
         await page.clock.pauseAt(new Date('2026-10-25T00:00:00Z'));
       }
       await page.goto(`http://127.0.0.1:${server.config.server.port}/${basename(fixture)}/index.html?recovery_case=${encodeURIComponent(scenario)}`);
+      await page.bringToFront();
       if(scenario==='automatic-entry-and-later-exit') await until(()=>page.evaluate(()=>window.__recoveryWire.actions.length===1),'entry continuation reached controlled IO');
       else await until(async () => (await polls()).length > 0, 'actual ChatView started a poll');
       await exerciseChatRecovery(scenario, page, polls, async peer=>{
@@ -74,9 +75,8 @@ async function run(engine, name) {
       results.push({engine: name, scenario, ok: false, error: error.message, facts:await facts(), polls: await polls().catch(() => []), errors, consoleErrors, networkErrors});
       console.error('FAIL', name, scenario, error.message);
       await page.screenshot({path: join(evidence, `${name}-${scenario}.png`)}).catch(() => {});
-    } finally { await context.close(); }
+    } finally { await context.close(); await browser.close(); browser = null; }
   }
-  await browser.close(); browser = null;
 }
 try {
   process.env.KHOR_FACE_GATE = '1';
