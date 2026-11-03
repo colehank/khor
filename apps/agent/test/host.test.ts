@@ -87,5 +87,6 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     const again=await turn('Continue B',join(stateDir,'second-conversation'),true);
     assert.equal(requests.length,before+1,'Pi restores its saved name without another naming request');
     assert.equal(again.find(e=>e.type==='title')?.title,'Isolated B');
+    assert(authenticated,'all conversation and title requests use the selected account');
   } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); await rm(stateDir, { recursive: true, force: true }); }
 });
