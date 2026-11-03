@@ -74,9 +74,10 @@ test("standalone OAuth loads outside the repository and cancels without a token 
   } finally { child.kill(); lines.close(); await rm(root, { recursive: true, force: true }); }
 });
 
-test("the packaged usage bridge starts outside the repository without external Pi extension files", { timeout: 12000, skip: !process.env.KHOR_TEST_AGENT_BIN }, async () => {
+test("the usage management host starts outside the repository without external Pi extension files", { timeout: 12000 }, async () => {
   const root = await mkdtemp(join(tmpdir(), "khor-usage-packaged-"));
-  const child = spawn(resolve(process.env.KHOR_TEST_AGENT_BIN!), [], { cwd: root, env: { PATH: process.env.PATH, PI_CODING_AGENT_DIR: root }, stdio: ["pipe", "pipe", "pipe"] });
+  const binary = process.env.KHOR_TEST_AGENT_BIN;
+  const child = spawn(binary ? resolve(binary) : process.execPath, binary ? [] : [fileURLToPath(new URL("../src/host.ts", import.meta.url))], { cwd: root, env: { PATH: process.env.PATH, PI_CODING_AGENT_DIR: root }, stdio: ["pipe", "pipe", "pipe"] });
   let stderr = ""; child.stderr.on("data", data => { stderr += String(data); });
   const exit = new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
   const lines = createInterface({ input: child.stdout });
@@ -90,7 +91,7 @@ test("the packaged usage bridge starts outside the repository without external P
         const frame = JSON.parse(line);
         if (frame.type === "failed") reject(new Error(frame.error));
         if (frame.type === "auth_prompt") reject(new Error("Read-only usage requested login"));
-        if (frame.type === "managed") resolve(frame.value);
+        if (frame.type === "result") resolve(frame.value);
       } catch (error) { reject(error); }
     });
   });
