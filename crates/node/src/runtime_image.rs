@@ -49,6 +49,7 @@ fn current() -> Result<Info, String> {
             .to_hex()
             .to_string(),
     );
+    let wire = include_str!("proto.rs").replace("\r\n", "\n");
     Ok(Info {
         release: Release {
             schema: 1,
@@ -60,7 +61,7 @@ fn current() -> Result<Info, String> {
                 node: format!(
                     "{}:sha256:{:x}",
                     String::from_utf8_lossy(khor_net::endpoint::ALPN),
-                    Sha256::digest(include_bytes!("proto.rs"))
+                    Sha256::digest(wire.as_bytes())
                 ),
                 store: 1,
                 journal: crate::session_content::journal::VERSION,
