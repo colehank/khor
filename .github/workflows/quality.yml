@@ -6,6 +6,12 @@ on:
     paths-ignore: ['docs/**', '*.md']
   pull_request:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Validation scope; releases always run the complete quality gate
+        type: choice
+        options: [all, agent]
+        default: all
   workflow_call:
     inputs:
       reuse_frontend:
@@ -23,9 +29,10 @@ env:
 
 jobs:
   frontend:
-    if: ${{ !inputs.reuse_frontend }}
+    if: ${{ inputs.suite != 'agent' && !inputs.reuse_frontend }}
     uses: ./.github/workflows/frontend.yml
   scripts:
+    if: ${{ inputs.suite != 'agent' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -51,6 +58,7 @@ jobs:
       - run: node scripts/check-native-io.mjs
 
   mac-icon:
+    if: ${{ inputs.suite != 'agent' }}
     runs-on: macos-26
     timeout-minutes: 10
     steps:
@@ -89,7 +97,7 @@ jobs:
 
   node-native:
     needs: frontend
-    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
+    if: ${{ inputs.suite != 'agent' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -163,7 +171,7 @@ jobs:
 
   gui:
     needs: frontend
-    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
+    if: ${{ inputs.suite != 'agent' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     defaults:
