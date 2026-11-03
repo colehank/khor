@@ -152,6 +152,7 @@ jobs:
           cargo test --locked -p khor-gui-core --lib first_rejoin_is_safe_inside_a_runtime_worker -- --test-threads=1
           cargo test --locked -p khor-gui-core --lib term_io_tests -- --test-threads=1
           cargo test --locked -p khor-gui-core --test terminal_current -- --test-threads=1
+          cargo test --locked -p khor-gui-core --test account_registration -- --test-threads=1
       - name: Verify keeper adoption and SSH installation in scratch homes
         run: |
           cargo test --locked -p khor-node --lib join:: -- --test-threads=1
