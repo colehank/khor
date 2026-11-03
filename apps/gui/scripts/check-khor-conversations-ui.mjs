@@ -24,13 +24,13 @@ window.showNew();`);
 let server,browser;
 const results=[];
 try {
- server=await createServer({root:gui,server:{host:'127.0.0.1',port:0}});await server.listen();
+ server=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:join(fixture,'.vite'),optimizeDeps:{entries:[join(fixture,'index.html')]},server:{host:'127.0.0.1',port:23837,strictPort:true,hmr:false},logLevel:'error'});await server.listen();
  const port=server.httpServer.address().port;
  for(const [name,engine] of [['chromium',chromium],...(process.env.QUALITY_ENGINES?.includes('webkit')?[['webkit',webkit]]:[])]) {
   browser=await engine.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1000,height:760}});page.setDefaultTimeout(12000);
   const errors=[],calls=[],histories=new Map([[A,[]],[B,[]]]),creates=new Map();let failedCreate=false;
-  page.on('pageerror',error=>errors.push(error.message));
+  page.on('pageerror',error=>{errors.push(error.message);console.error(error.message);});
   const config={home,account:'fixture-account',model:'fixture-model',options:{}};
   const account={id:config.account,name:'Fixture account',home,home_name:'fixture',provider:'anthropic',default_model:config.model,configured:true,base_url:null,auth_type:'api_key'};
   const record=(id,line,agent=false)=>({id,at_ms:Date.now(),text:null,from:'fixture',from_me:true,to:[],files:null,note:null,unknown:null,retracted:false,
