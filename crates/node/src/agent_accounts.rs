@@ -908,7 +908,7 @@ mod tests {
             "cancellation must win before the registration commit"
         );
         drop(node);
-        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[tokio::test]
