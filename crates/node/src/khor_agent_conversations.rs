@@ -21,6 +21,7 @@ pub(super) fn executor_path(root: &Path, board: &str) -> PathBuf {
 }
 
 pub(super) fn claim_in(root: &Path, board: &str) -> Result<File, String> {
+    fs::create_dir_all(directory(root).join("runs")).map_err(|e| e.to_string())?;
     let path = executor_path(root, board);
     fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
     let file = OpenOptions::new()
@@ -241,6 +242,7 @@ mod tests {
         node.chat.set_agent_config_in(&a, &config).unwrap();
         assert_eq!(node.khor_agent_config_in(&a).unwrap(), Some(config));
         assert_eq!(node.khor_agent_config_in(&b).unwrap(), None);
+        let _claim = claim_in(node.root(), &a).unwrap();
         let record = CommandRecord {
             id: "fixture-receipt".into(),
             line: "Only A".into(),
@@ -250,7 +252,15 @@ mod tests {
             ended_at_ms: Some(2),
             ..Default::default()
         };
-        node.record_command_in(&a, &record).unwrap();
+        save(
+            node.root(),
+            &Saved {
+                board: a.clone(),
+                fingerprint: "receipt-fixture".into(),
+                record: record.clone(),
+            },
+        )
+        .unwrap();
         assert_eq!(node.chat.log(&a).unwrap().messages.len(), 1);
         assert!(node.chat.log(&b).unwrap().messages.is_empty());
         assert!(
