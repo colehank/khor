@@ -329,7 +329,7 @@ impl Node {
         }
         if !matches!(
             operation,
-            "models" | "login" | "session_settings" | "session_set_option"
+            "usage" | "models" | "login" | "session_settings" | "session_set_option"
         ) {
             return Err(msg::agent_arguments().into());
         }
@@ -338,6 +338,9 @@ impl Node {
             .filter(|id| !id.is_empty())
             .map(|id| own(self, id))
             .transpose()?;
+        if operation == "usage" && existing.is_none() {
+            return Err(msg::agent_arguments().into());
+        }
         let session_config = if matches!(operation, "session_settings" | "session_set_option") {
             let config = self
                 .khor_agent_config()?
@@ -472,6 +475,7 @@ impl Node {
                 command.env(name, value);
             }
         }
+        command.env("PI_CODING_AGENT_DIR", path.parent().unwrap());
         command.env("PATH", Node::user_path());
         let control = Arc::new(Control::default());
         let job_id = crate::link::fresh_hex()?;

@@ -1,11 +1,13 @@
 /** Provider-owned setup; credential files are account-scoped on the execution home. */
+import { dirname } from "node:path";
+import { readPiUsage } from "./usage-query.ts";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import type { AuthPrompt, AuthEvent } from "@earendil-works/pi-ai";
 import { openModels, seatCredentials, type AccountSeat } from "./models.ts";
 import {configOptions,type SessionOptions} from './session-state.ts';
 import {pickModel} from './models.ts';
 export interface Management {
-  type: "manage"; operation: "models" | "login" | "session_settings" | "session_set_option";
+  type: "manage"; operation: "usage" | "models" | "login" | "session_settings" | "session_set_option";
   account: AccountSeat; credentialPath: string; authType?: "api_key" | "oauth";
   deviceId: string;
   model?:string;options?:SessionOptions;
@@ -20,6 +22,10 @@ export async function manage(command: Management, prompt: (p: AuthPrompt) => Pro
     const credential = await runtime.login(seated.providerId, command.authType, { prompt, notify, signal }, { agentName: "khor", getDeviceId: () => command.deviceId });
     if (!(await runtime.listCredentials()).some((c) => c.providerId === seated.providerId)) throw new Error("Credential was not saved");
     return { credentialType: credential.type };
+  }
+  if (command.operation === "usage") {
+    const selected = pickModel(seated, command.model || seated.models.getModels(seated.providerId)[0]?.id || "usage");
+    return { usage: await readPiUsage(runtime, selected.model, dirname(command.credentialPath), command.credentialPath, signal) };
   }
   const refreshed = await runtime.refresh({ providers: [seated.providerId], force: true, signal: signal?AbortSignal.any([signal,AbortSignal.timeout(12000)]):AbortSignal.timeout(12000) });
   const models = runtime.getModels(seated.providerId), trouble = refreshed.errors.get(seated.providerId);

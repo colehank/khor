@@ -73,3 +73,37 @@ test("standalone OAuth loads outside the repository and cancels without a token 
     assert(!JSON.stringify(events).includes("Cannot find module"));
   } finally { child.kill(); lines.close(); await rm(root, { recursive: true, force: true }); }
 });
+
+test("the packaged usage bridge starts outside the repository without external Pi extension files", { timeout: 12000, skip: !process.env.KHOR_TEST_AGENT_BIN }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "khor-usage-packaged-"));
+  const child = spawn(resolve(process.env.KHOR_TEST_AGENT_BIN!), [], { cwd: root, env: { PATH: process.env.PATH, PI_CODING_AGENT_DIR: root }, stdio: ["pipe", "pipe", "pipe"] });
+  let stderr = ""; child.stderr.on("data", data => { stderr += String(data); });
+  const exit = new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
+  const lines = createInterface({ input: child.stdout });
+  let rejectResult!: (error: Error) => void;
+  const result = new Promise<any>((resolve, reject) => {
+    rejectResult = reject;
+    child.once("error", reject);
+    child.once("exit", () => reject(new Error(`Usage bridge exited before its result: ${stderr}`)));
+    lines.on("line", line => {
+      try {
+        const frame = JSON.parse(line);
+        if (frame.type === "failed") reject(new Error(frame.error));
+        if (frame.type === "auth_prompt") reject(new Error("Read-only usage requested login"));
+        if (frame.type === "managed") resolve(frame.value);
+      } catch (error) { reject(error); }
+    });
+  });
+  const timer = setTimeout(() => { rejectResult(new Error("Packaged usage exceeded its deadline")); child.kill("SIGKILL"); }, 10000);
+  try {
+    child.stdin.write(JSON.stringify({ type: "manage", operation: "usage", account: { provider: "newapi", baseUrl: "http://127.0.0.1:1", key: "fixture-only" }, credentialPath: join(root, "auth.json"), deviceId: "fixture" }) + "\n");
+    const value = await result;
+    assert.equal(value.usage?.status, "unavailable");
+    assert.equal(value.usage?.reason, "unsupported");
+    assert(!JSON.stringify(value).includes("fixture-only"));
+    child.stdin.end(); assert.equal(await exit, 0, stderr);
+  } finally {
+    clearTimeout(timer); child.kill("SIGKILL"); await exit.catch(() => {}); lines.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
