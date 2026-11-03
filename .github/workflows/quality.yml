@@ -28,6 +28,9 @@ env:
   CARGO_BUILD_JOBS: '2'
 
 jobs:
+  runtime-store:
+    if: ${{ inputs.suite != 'agent' }}
+    uses: ./.github/workflows/runtime-store.yml
   frontend:
     if: ${{ inputs.suite != 'agent' && !inputs.reuse_frontend }}
     uses: ./.github/workflows/frontend.yml
