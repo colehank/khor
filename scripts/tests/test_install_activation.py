@@ -34,11 +34,11 @@ class InstallActivationTest(unittest.TestCase):
         program.chmod(0o755)
         return program
 
-    def activate(self, program, asset="khor-linux-x86_64", version="v1.2.3"):
+    def activate(self, program, asset="khor-linux-x86_64", version="v1.2.3", environment=None):
         return subprocess.run(
             ["sh", "-s", "--", str(program), str(self.bin), asset, version],
             input=COMPONENTS + '\nkhor_activate_release "$1" "$2" "$3" "$4"\n',
-            text=True, capture_output=True, timeout=10,
+            text=True, capture_output=True, timeout=15, env=environment,
         )
 
     def run_installed(self, system, arch, *args):
@@ -130,6 +130,23 @@ class InstallActivationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("compatibility could not be established", result.stderr)
         self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), old.read_bytes())
+
+    def test_contender_retries_after_the_previous_owner_releases_its_lock(self):
+        tools = self.root / "tools"
+        tools.mkdir()
+        marker = self.root / "released"
+        lock = self.bin / ".khor/khor-linux-x86_64/activation.lock"
+        wrapper = tools / "mkdir"
+        wrapper.write_text('#!/bin/sh\nif [ "$#" = 1 ] && [ "$1" = ' + shlex.quote(str(lock)) +
+                           ' ] && [ ! -f ' + shlex.quote(str(marker)) + ' ]; then\n'
+                           'touch ' + shlex.quote(str(marker)) + '\n'
+                           '/bin/mkdir "$1" && /bin/rmdir "$1"\nexit 1\nfi\nexec /bin/mkdir "$@"\n')
+        wrapper.chmod(0o755)
+        environment = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'])
+        result = self.activate(self.program("new"), environment=environment)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(marker.exists(), "a real failed mkdir observed the previous owner")
+        self.assertFalse(lock.exists())
 
     def test_keeper_copy_can_transition_from_the_direct_binary_install(self):
         asset = {("Darwin", "arm64"): "khor-macos-arm64", ("Darwin", "x86_64"): "khor-macos-x86_64",

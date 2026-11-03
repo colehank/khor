@@ -421,7 +421,7 @@ khor_activate_release() (
     _attempt=0
     until mkdir "$_lock" 2>/dev/null; do
         _attempt=$((_attempt + 1))
-        [ "$_attempt" -lt 100 ] && [ -d "$_lock" ] || {
+        [ "$_attempt" -lt 100 ] || {
             echo "khor: activation is locked; current version retained ($_lock)" >&2; exit 1;
         }
         sleep 0.1
