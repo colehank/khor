@@ -79,7 +79,7 @@ import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { Why, useWhy } from "@/components/Why";
-import { gui } from "@/gen/catalog";
+import { gui, state } from "@/gen/catalog";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import type { PaneWidth } from "@/hooks/use-list-width";
 import { cn } from "@/lib/utils";
@@ -153,6 +153,8 @@ function providerWord(p: string): string {
     a reason, and hiding it would paint 问不出来 with no why. */
 function troubleWord(key: string, provider: string): string {
   switch (key) {
+    case "query-failed":
+      return state.failed;
     case "key-refused":
       return gui.accounts_trouble_key_refused;
     case "unreachable":

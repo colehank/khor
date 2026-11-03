@@ -57,7 +57,8 @@ impl Node {
                     Some("auth-unavailable") => trouble::NO_KEY,
                     Some("unsupported") => trouble::UNKNOWN_PROVIDER,
                     Some("protocol-error") => trouble::UNREADABLE,
-                    _ => trouble::UNREACHABLE,
+                    Some("timeout") => trouble::UNREACHABLE,
+                    _ => trouble::QUERY_FAILED,
                 });
             }
             let expires_at_ms = value["expiresAt"].as_i64().ok_or(trouble::UNREADABLE)?;

@@ -107,6 +107,8 @@ const LOG_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The keys [`AccountReading::trouble`] travels under.
 pub mod trouble {
+    /// Upstream reported a failed query without a machine-readable cause.
+    pub const QUERY_FAILED: &str = "query-failed";
     /// The provider refused the key (401/403).
     pub const KEY_REFUSED: &str = "key-refused";
     /// No answer from the address.
