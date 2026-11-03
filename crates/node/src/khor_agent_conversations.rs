@@ -369,8 +369,8 @@ mod tests {
         let b = create(&node, "conversation-token-b", "");
         let first = Arc::new(Running::new("run-a".into()));
         let second = Arc::new(Running::new("run-b".into()));
-        *first.approval.lock().unwrap() = Some((7, None));
-        *second.approval.lock().unwrap() = Some((7, None));
+        *first.approval.lock().unwrap() = Some(("ask-7".into(), None));
+        *second.approval.lock().unwrap() = Some(("ask-7".into(), None));
         let first_key = execution_key(node.root(), &a);
         let second_key = execution_key(node.root(), &b);
         {
@@ -382,7 +382,7 @@ mod tests {
             session,
             action: Box::new(Action::Answer {
                 run: run.into(),
-                ask: 7,
+                ask: "ask-7".into(),
                 allow,
             }),
         };
@@ -397,8 +397,14 @@ mod tests {
         );
         right.unwrap();
         other.unwrap();
-        assert_eq!(*first.approval.lock().unwrap(), Some((7, Some(true))));
-        assert_eq!(*second.approval.lock().unwrap(), Some((7, Some(false))));
+        assert_eq!(
+            *first.approval.lock().unwrap(),
+            Some(("ask-7".into(), Some(true)))
+        );
+        assert_eq!(
+            *second.approval.lock().unwrap(),
+            Some(("ask-7".into(), Some(false)))
+        );
     }
 
     #[test]
