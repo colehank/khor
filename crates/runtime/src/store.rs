@@ -155,7 +155,20 @@ impl Store {
         embedded: BTreeMap<String, String>,
         source: Source<'_>,
     ) -> io::Result<Image> {
-        let _catalog = self.catalog()?;
+        self.publish_checked(role, version, contract, embedded, source, |_| Ok(()))
+    }
+
+    /// Verification may run the selected program; occupancy protects it while catalog is released.
+    pub fn publish_checked(
+        &self,
+        role: Role,
+        version: &str,
+        contract: Contract,
+        embedded: BTreeMap<String, String>,
+        source: Source<'_>,
+        check: impl FnOnce(&Image) -> io::Result<()>,
+    ) -> io::Result<Image> {
+        let catalog = self.catalog()?;
         let (digest, bytes) = match source {
             Source::File(path) => hash_file(path)?,
             Source::Bytes(bytes) => (blake3::hash(bytes).to_hex().to_string(), bytes.len() as u64),
@@ -176,7 +189,7 @@ impl Store {
         }
         let id = identity.id()?;
         let destination = self.root.join(&id);
-        let mut index = self.index()?;
+        let index = self.index()?;
         if !destination.exists() {
             // An unsuccessful publication must leave both current and rollback intact.
             self.collect_locked(&index)?;
@@ -189,7 +202,8 @@ impl Store {
                         .saturating_add(bytes)
                         .saturating_add(MANIFEST_LIMIT)
             {
-                return Err(io::Error::other(
+                return Err(io::Error::new(
+                    io::ErrorKind::StorageFull,
                     "runtime cache is full; occupied or unknown versions were retained",
                 ));
             }
@@ -236,6 +250,10 @@ impl Store {
             staged?;
         }
         let image = self.hold_locked(&id)?;
+        drop(catalog);
+        check(&image)?;
+        let _catalog = self.catalog()?;
+        let mut index = self.index()?;
         index.retain(role, &id);
         self.write_index(&index)?;
         self.collect_locked(&index)?;
@@ -362,8 +380,8 @@ impl Store {
             if protected.contains(name.as_str()) {
                 continue;
             }
-            if hash_file(&directory.join(identity.role.executable()))?
-                != (identity.digest, identity.bytes)
+            if !hash_file(&directory.join(identity.role.executable()))
+                .is_ok_and(|observed| observed == (identity.digest, identity.bytes))
             {
                 result.unknown.push(name);
                 continue;
@@ -371,10 +389,16 @@ impl Store {
             match Lease::vacant(&directory.join("lease")) {
                 Ok(true) => {
                     let tombstone = self.root.join(format!(".gc-{name}"));
-                    fs::rename(&directory, &tombstone)?;
-                    sync_dir(&self.root)?;
-                    finish_collection(&tombstone, &name)?;
-                    result.removed.push(name);
+                    let removed = (|| {
+                        fs::rename(&directory, &tombstone)?;
+                        sync_dir(&self.root)?;
+                        finish_collection(&tombstone, &name)
+                    })();
+                    if removed.is_ok() {
+                        result.removed.push(name);
+                    } else {
+                        result.unknown.push(name);
+                    }
                 }
                 Ok(false) => result.occupied.push(name),
                 Err(_) => result.unknown.push(name),

@@ -190,6 +190,57 @@ fn unreadable_manifest_and_extra_resources_are_preserved() {
 }
 
 #[test]
+fn failed_compatibility_check_keeps_both_previously_selected_versions() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let first = image(&store, "one", b"first");
+    let a = id(&first);
+    drop(first);
+    let second = image(&store, "two", b"second");
+    let b = id(&second);
+    drop(second);
+    let failed = store.publish_checked(
+        Role::Cli,
+        "three",
+        contract(),
+        BTreeMap::new(),
+        Source::Bytes(b"incompatible"),
+        |candidate| {
+            // Verification is allowed to consult the same store without a reentrant catalog lock.
+            let held = store.hold(&id(candidate))?;
+            assert_eq!(held.path(), candidate.path());
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "incompatible storage",
+            ))
+        },
+    );
+    assert!(failed.is_err());
+    store.collect().unwrap();
+    assert!(store.hold(&a).is_ok());
+    assert!(store.hold(&b).is_ok());
+}
+
+#[test]
+fn a_corrupted_inactive_program_is_retained_without_blocking_a_valid_selection() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let first = image(&store, "one", b"first");
+    let old = id(&first);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(first.path(), fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    fs::write(first.path(), b"corrupt").unwrap();
+    drop(first);
+    drop(image(&store, "two", b"second"));
+    drop(image(&store, "three", b"third"));
+    assert!(store.collect().unwrap().unknown.contains(&old));
+    assert!(fixture.0.join(old).is_dir());
+}
+
+#[test]
 fn interrupted_collection_and_publication_are_finished_without_trusting_pids() {
     let fixture = Fixture::new();
     let store = fixture.store();
