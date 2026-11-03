@@ -139,6 +139,14 @@ jobs:
       - run: sudo mkdir -p /run/sshd
       - run: npm ci
         working-directory: apps/agent
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.3.14
+      - name: Embed the real agent in the native worker and host fixtures
+        run: |
+          node build.mjs x86_64-unknown-linux-gnu "$RUNNER_TEMP/khor-agent"
+          echo "KHOR_AGENT_BUNDLE=$RUNNER_TEMP/khor-agent" >> "$GITHUB_ENV"
+        working-directory: apps/agent
       - name: Snapshot the actual Cargo graph and prepare the normal worker
         run: |
           native_host="$(rustc -vV | sed -n 's/^host: //p')"
@@ -160,6 +168,7 @@ jobs:
           cargo test --locked -p khor-node --lib accounts::pi_usage -- --test-threads=1
           cargo test --locked -p khor-node --lib observer_tests -- --test-threads=1
           cargo test --locked -p khor-node --lib doc_transfer_state::io::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib foreground_satellite_registration_waits -- --test-threads=1
           cargo test --locked -p khor-node --lib cancelling_account_registration_while_root_is_busy -- --test-threads=1
           cargo test --locked -p khor-node --lib connection_failure_does_not_claim_the_host_ended -- --test-threads=1
           cargo test --locked -p khor-node --lib interrupted_and_invalid_handshakes_have_different_recovery -- --test-threads=1
