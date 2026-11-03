@@ -7,11 +7,27 @@ const INCOMPATIBLE: &str =
 
 // Published v0.1.15-rc.3, source 3dbaa9cc53eabd13a2767aa3ee5841df414ab6f5.
 // Only these verified executable bytes qualify for the pre-manifest contract.
-const LEGACY_PROGRAMS: [&str; 4] = [
-    "499dec3513b3af917be3dc866950081a09224880591f1e6950a0524ef8a8a709",
-    "827973daf71025dc001a8f20b12831a7e779919d3a3569ac7d144e7f59a7fe94",
-    "8dfe7b859801ff3c62f20197e8318bf3b409b718bc7dde29b3683ccb04425428",
-    "a4dafc2c94715817f560a22aaae1180ba060d54f7788dd35f4a712ed7dbab8ac",
+const LEGACY_PROGRAMS: [(&str, &str, &str); 4] = [
+    (
+        "499dec3513b3af917be3dc866950081a09224880591f1e6950a0524ef8a8a709",
+        "linux",
+        "x86_64",
+    ),
+    (
+        "827973daf71025dc001a8f20b12831a7e779919d3a3569ac7d144e7f59a7fe94",
+        "linux",
+        "aarch64",
+    ),
+    (
+        "8dfe7b859801ff3c62f20197e8318bf3b409b718bc7dde29b3683ccb04425428",
+        "macos",
+        "aarch64",
+    ),
+    (
+        "a4dafc2c94715817f560a22aaae1180ba060d54f7788dd35f4a712ed7dbab8ac",
+        "macos",
+        "x86_64",
+    ),
 ];
 
 pub(super) fn legacy_info(program: &Path) -> Result<Option<Info>, String> {
@@ -40,8 +56,14 @@ pub(super) fn legacy_info(program: &Path) -> Result<Option<Info>, String> {
         return Err("activation source changed while being verified".into());
     }
     let digest = format!("{:x}", digest.finalize());
-    if !LEGACY_PROGRAMS.contains(&digest.as_str()) {
+    let Some((_, os, architecture)) = LEGACY_PROGRAMS.iter().find(|(hash, _, _)| *hash == digest)
+    else {
         return Ok(None);
+    };
+    if (*os, *architecture) != (std::env::consts::OS, std::env::consts::ARCH) {
+        return Err(
+            "legacy runtime belongs to another operating system or CPU architecture".into(),
+        );
     }
     Ok(Some(Info {
         executable: std::fs::canonicalize(program).map_err(|error| error.to_string())?,
