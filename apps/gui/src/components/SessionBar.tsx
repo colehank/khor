@@ -618,13 +618,16 @@ export function PillSlot({ loading = false, share, seat }: { loading?: boolean; 
     `share` (item 60, a drop landing) it stands filled that far, 0 to 1,
     instead of running. */
 export function PillProgress({ share }: { share?: number | null } = {}) {
-  if (share === null) return <span data-pill-pending aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h bg-fill-strong" />;
   return (
-    <span data-pill-progress={share ?? ""} aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 h-progress-h overflow-hidden">
-      <span
-        className="block h-full w-full origin-left bg-brand-strong"
-        style={share === undefined ? undefined : { transform: `scaleX(${share})` }}
-      />
+    <span aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden" style={{ borderRadius: "inherit" }}>
+      {share === null ? (
+        <span data-pill-pending className="absolute inset-x-0 bottom-0 h-progress-h bg-fill-strong" />
+      ) : (
+        <span data-pill-progress={share ?? ""} className="absolute inset-x-0 bottom-0 h-progress-h overflow-hidden">
+          <span className="block h-full w-full origin-left bg-brand-strong"
+            style={share === undefined ? undefined : { transform: `scaleX(${share})` }} />
+        </span>
+      )}
     </span>
   );
 }

@@ -11,7 +11,7 @@ const output=process.env.WORKSPACE_CONTENT_DIR;assert(output,'Set WORKSPACE_CONT
 const fixture=mkdtempSync(join(gui,'.workspace-content-check-'));
 writeFileSync(join(fixture,'index.html'),'<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),readFileSync(join(gui,'scripts/fixtures/workspace-content-ui.tsx')));
-const files=['src/hooks/use-session-content.ts','src/hooks/use-content-navigation.ts','src/views/SessionContent.tsx','src/views/MobileSessionContent.tsx','src/views/SideWorkspace.tsx','src/views/WorkspacePane.tsx','src/views/CommitPage.tsx','src/components/WorkspaceGitNavigation.tsx','src/browse/TabStrip.tsx','src/components/icons.tsx','src/styles/workspace-navigation.css','src/styles/app.css','src/lib/scroll-edge.ts','src/views/MobileContentPage.tsx','src/components/ContentToolbar.tsx','src/styles/session-content.css','src/styles/session-preferences.css','scripts/fixtures/workspace-content-ui.tsx'];
+const files=['scripts/check-workspace-content-ui.mjs','src/components/SessionBar.tsx','src/components/SessionExplore.tsx','src/components/session-nav/fan.tsx','src/views/BrowserPane.tsx','src/hooks/use-session-content.ts','src/hooks/use-content-navigation.ts','src/views/SessionContent.tsx','src/views/MobileSessionContent.tsx','src/views/SideWorkspace.tsx','src/views/WorkspacePane.tsx','src/views/CommitPage.tsx','src/components/WorkspaceGitNavigation.tsx','src/browse/TabStrip.tsx','src/components/icons.tsx','src/styles/workspace-navigation.css','src/styles/app.css','src/lib/scroll-edge.ts','src/views/MobileContentPage.tsx','src/components/ContentToolbar.tsx','src/styles/session-content.css','src/styles/session-preferences.css','scripts/fixtures/workspace-content-ui.tsx'];
 const fingerprint=()=>Object.fromEntries(files.map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
 const before=fingerprint(),calls=[],commits=Array.from({length:82},(_,i)=>({id:(i+1).toString(16).padStart(40,'a'),subject:`Commit ${i+1}`,author:'Fixture author',when_ms:Date.UTC(2026,10,1)-i*3600000,cut:false}));
 let tabs={tabs:[{id:'source',session:'session',device:'fixture',url:'',view:'workspace',pinned:false,title:'',touched:1}],active:'source'},sequence=0,server,browser;
@@ -35,6 +35,8 @@ const answer=(cmd,a)=>{
  if(cmd==='code_here')return {version:'',name:'',command:''};
  if(cmd==='trash_here')return false;
  if(cmd==='page_icons')return {};
+ if(cmd==='open_page')return {addr:'',session:'fixture-browser'};
+ if(cmd==='page_steps')return {back:false,forward:false};
  if(cmd==='git_diff')return {hunks:[]};
  if(cmd==='git_blame')return {lines:[],commits:{},more:false};
  if(cmd==='git_windows'||cmd==='recents'||cmd==='devices'||cmd==='workspaces'||cmd==='code_windows')return [];
@@ -194,6 +196,44 @@ try{
  assert.equal(await overview.locator('[data-content-overview-tab][data-on="true"] [data-side-mark="new-tab"]').count(),1,'overview picker uses the New tab mark');
  await phone.screenshot({path:join(output,'mobile-picker-overview.png')});
  results.push({name:'mobile commit Back, deck and overview use the current scene identity',passed:true});await phone.close();
+ {
+ const nativePhone=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+ nativePhone.on('pageerror',e=>errors.push(e.message));
+ await nativePhone.addInitScript(()=>{
+   const callbacks=new Map(),listeners=new Map();let serial=0;
+   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main',windowLabel:'main'}},
+     transformCallback:callback=>{const id=++serial;callbacks.set(id,callback);return id;},unregisterCallback:id=>callbacks.delete(id),convertFileSrc:path=>path,
+     invoke:async(cmd,args={})=>{
+       if(cmd==='plugin:event|listen'){const id=++serial;listeners.set(id,args);return id;}
+       if(cmd==='plugin:event|unlisten'){listeners.delete(args.eventId);return null;}
+       const response=await fetch('/api/'+cmd,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(args)});
+       const value=await response.json();if(!response.ok)throw new Error(value);return value;
+     }};
+   window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
+   window.__fixtureNavigation=payload=>{for(const [id,listener]of listeners)if(listener.event==='page:navigation')callbacks.get(listener.handler)?.({id,event:listener.event,payload});};
+ });
+ await nativePhone.goto(url+'?mobile=1');await nativePhone.waitForFunction(()=>window.__workspaceProbe?.content.ready);
+ await nativePhone.evaluate(async()=>{const {content,navigation}=window.__workspaceProbe;await content.point('source','fixture','https://fixture.invalid/page','page');navigation.select(content.allTabs.find(t=>t.id==='source'));});
+ const webpage=nativePhone.locator('[data-content-visible="true"] .mobile-content-page'),host=webpage.locator('[data-page-host]');
+ await host.waitFor();await nativePhone.waitForFunction(()=>document.querySelector('[data-content-visible="true"] [data-page-host]')?.dataset.nativePageVisible==='true');
+ const handle=await host.getAttribute('data-native-page-tab'),tabCount=await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length);
+ const band=webpage.locator('[data-deck-band]'),box=await band.boundingBox();assert(box&&box.width>0);
+ const touch=await nativePhone.context().newCDPSession(nativePhone),point={x:box.x+box.width/2,y:box.y+box.height/2,id:1};
+ await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});
+ await nativePhone.locator('[data-lab-left-fan]').waitFor();
+ await nativePhone.waitForFunction(()=>document.querySelector('[data-content-visible="true"] [data-page-host]')?.dataset.nativePageVisible==='false');
+ await until(()=>calls.some(c=>c.cmd==='hide_page'&&c.args.tab===handle));
+ await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y-90}]});
+ await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ const browserOverview=nativePhone.locator('[data-content-overview]:not([inert])');await browserOverview.waitFor();
+ await browserOverview.locator('[data-content-overview-tab][data-on="true"]').click();await webpage.waitFor();
+ assert.equal(await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length),tabCount,'overview gestures preserve the current tab');
+ await nativePhone.evaluate(tab=>window.__fixtureNavigation({tab,view:'1',navigation:'1',revision:'1',phase:'started',estimate:.6,requested_url:'https://fixture.invalid/page',url:'https://fixture.invalid/page',exit:'',proxied:false,error:null}),handle);
+ const progress=webpage.locator('[data-pill-progress]');await progress.waitFor();
+ assert(await progress.evaluate(line=>{const pill=line.closest('.mobile-content-pill'),shape=pill.getBoundingClientRect();for(let p=line;p&&p!==pill.parentElement;p=p.parentElement){const s=getComputedStyle(p),r=p.getBoundingClientRect();if(s.overflowX==='hidden'&&parseFloat(s.borderBottomLeftRadius)>0&&Math.abs(r.left-shape.left)<1&&Math.abs(r.width-shape.width)<1)return true;}return false;}),'loading progress is clipped to the complete pill shape');
+ results.push({name:'native session browser keeps its gesture selector above the page and clips pill progress',passed:true});await nativePhone.close();
+ }
+
  }
  assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),before,'test evidence must match unchanged source');
  }
