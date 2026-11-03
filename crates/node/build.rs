@@ -9,6 +9,11 @@ fn main() {
         let path = std::fs::canonicalize(path)
             .expect("KHOR_AGENT_BUNDLE must name the compiled Pi sidecar");
         println!("cargo::rerun-if-changed={}", path.display());
+        let bytes = std::fs::read(&path).expect("read the compiled Pi sidecar");
+        println!(
+            "cargo::rustc-env=KHOR_AGENT_BUNDLE_BLAKE3={}",
+            blake3::hash(&bytes).to_hex()
+        );
         println!("cargo::rustc-env=KHOR_AGENT_BUNDLE={}", path.display());
         println!("cargo::rustc-cfg=khor_embedded_agent");
     }

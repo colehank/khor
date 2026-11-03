@@ -46,12 +46,7 @@ fn current() -> Result<Info, String> {
     #[allow(unused_mut)]
     let mut embedded = BTreeMap::new();
     #[cfg(khor_embedded_agent)]
-    embedded.insert(
-        "pi".into(),
-        blake3::hash(include_bytes!(env!("KHOR_AGENT_BUNDLE")))
-            .to_hex()
-            .to_string(),
-    );
+    embedded.insert("pi".into(), env!("KHOR_AGENT_BUNDLE_BLAKE3").to_owned());
     let wire = include_str!("proto.rs").replace("\r\n", "\n");
     Ok(Info {
         release: Release {

@@ -3,6 +3,9 @@ name = "khor-node"
 version.workspace = true
 edition.workspace = true
 
+[build-dependencies]
+blake3.workspace = true
+
 [dependencies]
 khor-a2a.workspace = true
 # Official A2A v1 HTTP client (Apache-2.0), sharing the pinned core types.
