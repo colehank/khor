@@ -424,7 +424,7 @@ mod tests {
     #[tokio::test]
     async fn slash_receipts_stay_in_the_conversation_that_submitted_them() {
         let root = scratch("conversation");
-        let node = Node::open_hosting(root.0.clone(), "conversation", false).unwrap();
+        let node = Node::open_hosting(root.0.clone(), "conversation", true).unwrap();
         let report = node
             .khor_agent_on(
                 node.device_str(),
