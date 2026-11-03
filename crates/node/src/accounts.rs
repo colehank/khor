@@ -179,7 +179,7 @@ struct Cached {
 
 #[derive(Serialize, Deserialize)]
 struct PiObservation {
-    credential_fingerprint: String,
+    identity_fingerprint: String,
     expires_at_ms: i64,
     report: serde_json::Value,
 }
@@ -711,7 +711,7 @@ impl Node {
             } else {
                 #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 if pi_usage::supports(&account) {
-                    if self.usage_credential_fingerprint(&account).is_none() {
+                    if self.usage_identity_fingerprint(&account).is_none() {
                         out.push(bare(&account, Some(trouble::NO_KEY), now));
                         continue;
                     }
@@ -719,8 +719,8 @@ impl Node {
                         self.cached_reading(&account.id)
                             .filter(|cached| {
                                 cached.pi.as_ref().is_some_and(|pi| {
-                                    self.usage_credential_fingerprint(&account).as_deref()
-                                        == Some(pi.credential_fingerprint.as_str())
+                                    self.usage_identity_fingerprint(&account).as_deref()
+                                        == Some(pi.identity_fingerprint.as_str())
                                 })
                             })
                             .map(|cached| cached.reading),

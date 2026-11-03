@@ -444,7 +444,7 @@ async fn import_subscription(machine: String, provider: String) -> Result<String
 /// (`snake_case`): tauri reads a command's arguments as camelCase unless
 /// told otherwise, and this one's multi-word argument then never arrived.
 #[tauri::command(rename_all = "snake_case")]
-fn register_account(
+async fn register_account(
     name: String,
     provider: String,
     kind: String,
@@ -461,6 +461,7 @@ fn register_account(
         &key,
         budget,
     )
+    .await
 }
 
 #[tauri::command]

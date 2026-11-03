@@ -551,6 +551,15 @@ impl Node {
                 .map_err(|e| e.to_string())?,
         );
         let mut start = json!({"type":"manage","operation":operation,"account":seat,"credentialPath":path,"authType":auth_type,"deviceId":self.device_str()});
+        if operation == "usage"
+            && let Some(model) = account
+                .inference
+                .as_ref()
+                .map(|inference| &inference.default_model)
+                .filter(|model| !model.is_empty())
+        {
+            start["model"] = json!(model);
+        }
         if let Some(config) = &session_config {
             start["model"] = json!(config.model);
             start["options"] = json!(config.options);
@@ -597,7 +606,7 @@ impl Node {
                             Some("result") => {
                                 if operation == "session_set_option" {
                                     let _configuration = super::configuration_lock(&root)?;
-                                    let node = Node::open(root.clone())?;
+                                    let node = Node::open_foreground(root.clone())?;
                                     if node.khor_agent_config()? != session_config {
                                         return Err(msg::agent_arguments().into());
                                     }
@@ -627,7 +636,7 @@ impl Node {
                                     ));
                                 }
                                 if operation == "login" {
-                                    let node = Node::open(root.clone())?;
+                                    let node = Node::open_foreground(root.clone())?;
                                     let mut account = node
                                         .accounts()?
                                         .into_iter()
@@ -698,10 +707,10 @@ impl Node {
                 #[cfg(all(test, unix))]
                 super::runtime_close_tests::producer_point(&root, "setup-cleanup");
                 if is_new && work.state.lock().unwrap()["status"] != "done" {
-                    let registered = Node::open(root.clone())
+                    let unregistered = Node::open_foreground(root.clone())
                         .and_then(|node| node.accounts())
-                        .is_ok_and(|accounts| accounts.iter().any(|a| a.id == account.id));
-                    if !registered {
+                        .is_ok_and(|accounts| accounts.iter().all(|a| a.id != account.id));
+                    if unregistered {
                         let _ = fs::remove_dir_all(
                             credential_path(&root, &account.id).parent().unwrap(),
                         );
@@ -715,7 +724,7 @@ impl Node {
         Ok(json!({"job":job_id,"status":"running"}))
     }
 
-    pub(crate) fn usage_credential_fingerprint(&self, account: &Account) -> Option<String> {
+    pub(crate) fn usage_identity_fingerprint(&self, account: &Account) -> Option<String> {
         if !account_id(&account.id) || account.home != self.device_str() {
             return None;
         }
@@ -725,7 +734,26 @@ impl Node {
             self.root().join(".khor/keys").join(&account.id)
         };
         let bytes = fs::read(path).ok()?;
-        (!bytes.is_empty()).then(|| blake3::hash(&bytes).to_hex().to_string())
+        if bytes.is_empty() {
+            return None;
+        }
+        let inference = account.inference.as_ref();
+        let binding = serde_json::to_vec(&(
+            &account.id,
+            &account.home,
+            provider_id(account),
+            inference
+                .and_then(|value| value.base_url.as_ref())
+                .or(account.base_url.as_ref()),
+            inference.map(|value| &value.default_model),
+        ))
+        .ok()?;
+        let mut digest = blake3::Hasher::new();
+        digest.update(b"pi-usage:v1\0");
+        digest.update(&(binding.len() as u64).to_le_bytes());
+        digest.update(&binding);
+        digest.update(&bytes);
+        Some(digest.finalize().to_hex().to_string())
     }
 
     /// Wait for the existing process owner to reap before publishing a reading.

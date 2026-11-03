@@ -1293,7 +1293,7 @@ pub async fn quota_board(root: &Path) -> Result<Vec<AccountRing>, String> {
 /// value before it holds none, and a `bool` named `sub` would have to
 /// be replaced rather than extended — while spelling it out costs one
 /// `parse` that already refuses by name.
-pub fn register_account(
+pub async fn register_account(
     root: &Path,
     name: &str,
     provider: &str,
@@ -1306,7 +1306,8 @@ pub fn register_account(
         .ok_or_else(|| khor_catalog::msg::no_such_provider(provider))?;
     let kind =
         khor_node::AccountKind::parse(kind).ok_or_else(|| khor_catalog::msg::no_such_kind(kind))?;
-    Ok(open(root)?
+    Ok(Node::open_foreground_async(root.to_path_buf())
+        .await?
         .register_account(name, provider, kind, base_url, key, budget)?
         .id)
 }
@@ -2385,6 +2386,10 @@ pub async fn khor_agent(
 ) -> Result<KhorAgentView, String> {
     let n = if matches!(action, "stop" | "answer" | "cancel_status" | "cancel_retry") {
         try_open(root)?
+    } else if action == "configure"
+        || (action == "manage" && payload["operation"].as_str() != Some("cancel"))
+    {
+        Node::open_foreground_async(root.to_path_buf()).await?
     } else {
         open_async(root).await?
     };

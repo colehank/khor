@@ -12,8 +12,8 @@ impl Drop for Fixture {
     }
 }
 
-#[test]
-fn one_account_save_waits_for_short_root_contention_and_registers_once() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn one_account_save_waits_for_short_root_contention_and_registers_once() {
     let fixture = Fixture(std::env::temp_dir().join(format!(
         "khor-account-save-{}-{}",
         std::process::id(),
@@ -38,7 +38,8 @@ fn one_account_save_waits_for_short_root_contention_and_registers_once() {
         None,
         "fixture-only-key",
         None,
-    );
+    )
+    .await;
     owner.join().unwrap();
     let id = saved.expect("one foreground save should outwait short background contention");
     let node = Node::open(fixture.0.clone()).unwrap();

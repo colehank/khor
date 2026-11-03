@@ -389,7 +389,7 @@ pub fn answer(
             // who picked 订阅, and the refusal they would then read is
             // 「密钥是空的」 — a sentence about a box the form never
             // showed them.
-            to_json(&crate::register_account(
+            to_json(&rt.block_on(crate::register_account(
                 root,
                 &arg("name")?,
                 &arg("provider")?,
@@ -397,7 +397,7 @@ pub fn answer(
                 opt_str("base_url")?.as_deref(),
                 &arg("key")?,
                 budget,
-            )?)
+            ))?)
         }
         "remove_account" => {
             crate::remove_account(root, &arg("id")?)?;

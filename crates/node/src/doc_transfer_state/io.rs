@@ -170,7 +170,10 @@ impl RootPermit {
         admission.reserve(root, None)
     }
     pub(crate) fn acquire(root: &Path) -> Result<Self, Error> {
-        let until = Instant::now() + OPEN_WAIT;
+        Self::acquire_with_wait(root, OPEN_WAIT)
+    }
+    pub(crate) fn acquire_with_wait(root: &Path, wait: Duration) -> Result<Self, Error> {
+        let until = Instant::now() + wait;
         // The mutex guard drops before a registered waiter's cleanup can lock it.
         let mut waiter = None;
         let mut admission = roots();
@@ -197,7 +200,13 @@ impl RootPermit {
         }
     }
     pub(crate) async fn acquire_async(root: &Path) -> Result<Self, Error> {
-        let until = tokio::time::Instant::now() + OPEN_WAIT;
+        Self::acquire_async_with_wait(root, OPEN_WAIT).await
+    }
+    pub(crate) async fn acquire_async_with_wait(
+        root: &Path,
+        wait: Duration,
+    ) -> Result<Self, Error> {
+        let until = tokio::time::Instant::now() + wait;
         let mut waiter = None;
         loop {
             if tokio::time::Instant::now() >= until {

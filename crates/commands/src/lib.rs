@@ -149,6 +149,11 @@ pub fn run_cli(start_web: fn(&std::path::Path), write: fn(bool, &str)) -> i32 {
 
 fn node() -> Result<Node, String> {
     let n = Node::open(command_root())?;
+    announce_root_birth(&n);
+    Ok(n)
+}
+
+fn announce_root_birth(n: &Node) {
     // The one moment a person must be told (docs/CONNECT.md 身份): this
     // open made the network's root. On stderr, so a verb whose stdout is
     // piped still says it — and the words themselves are never printed
@@ -156,7 +161,6 @@ fn node() -> Result<Node, String> {
     if n.root_born() {
         eprintln!("{}", cli::root_born_hint(n.shown_name()));
     }
-    Ok(n)
 }
 
 fn rt() -> Result<tokio::runtime::Runtime, String> {
@@ -1020,7 +1024,8 @@ fn revoke(rest: &[String]) -> Result<(), String> {
 fn id(rest: &[String]) -> Result<(), String> {
     match rest {
         [] => {
-            let n = node()?;
+            let n = Node::open_foreground(command_root())?;
+            announce_root_birth(&n);
             record_data(serde_json::json!({"id": n.device_str(), "name": n.name()}));
             println!("{}  {}", n.device_str(), n.name());
             Ok(())

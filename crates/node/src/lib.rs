@@ -985,11 +985,37 @@ fn relays_under(root: &std::path::Path) -> (Vec<khor_net::endpoint::Relay>, bool
 }
 
 impl Node {
+    const FOREGROUND_OPEN_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
     /// Opens the node rooted at `root`, named after the hostname (or
     /// `KHOR_NAME` when set — tests and same-machine dual instances).
     /// Admission and filesystem work block this calling thread.
     pub fn open(root: PathBuf) -> Result<Node, String> {
         Self::open_as(root, &Self::opening_name())
+    }
+
+    /// User-initiated writes wait through short background contention. The
+    /// ordinary/control constructors keep their shorter admission contracts.
+    pub fn open_foreground(root: PathBuf) -> Result<Node, String> {
+        let permit =
+            doc_transfer_state::RootPermit::acquire_with_wait(&root, Self::FOREGROUND_OPEN_WAIT)
+                .map_err(String::from)?;
+        Self::open_admitted(root, &Self::opening_name(), khor_core::hosts_here(), permit)
+    }
+
+    /// Admission can be cancelled before construction; the filesystem phase
+    /// remains synchronous on this executor, as with `open_async`.
+    pub async fn open_foreground_async(root: PathBuf) -> Result<Node, String> {
+        tokio::runtime::Handle::try_current().map_err(|_| {
+            "async Node opening requires a Tokio runtime; use Node::open_foreground".to_owned()
+        })?;
+        let permit = doc_transfer_state::RootPermit::acquire_async_with_wait(
+            &root,
+            Self::FOREGROUND_OPEN_WAIT,
+        )
+        .await
+        .map_err(String::from)?;
+        Self::open_admitted(root, &Self::opening_name(), khor_core::hosts_here(), permit)
     }
 
     fn opening_name() -> String {

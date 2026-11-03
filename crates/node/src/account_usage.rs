@@ -29,14 +29,14 @@ impl Node {
             .acquire()
             .await
             .expect("private usage slots stay open");
-        let Some(fingerprint) = self.usage_credential_fingerprint(account) else {
+        let Some(fingerprint) = self.usage_identity_fingerprint(account) else {
             return bare(account, Some(trouble::NO_KEY), now);
         };
         let cached = self.cached_reading(&account.id).filter(|cached| {
             cached
                 .pi
                 .as_ref()
-                .is_some_and(|pi| pi.credential_fingerprint == fingerprint)
+                .is_some_and(|pi| pi.identity_fingerprint == fingerprint)
         });
         if let Some(cached) = &cached
             && cached.reading.trouble.is_none()
@@ -48,7 +48,7 @@ impl Node {
             return cached.reading.clone();
         }
         let result = self.read_pi_usage(account).await;
-        if self.usage_credential_fingerprint(account).as_deref() != Some(fingerprint.as_str()) {
+        if self.usage_identity_fingerprint(account).as_deref() != Some(fingerprint.as_str()) {
             return bare(account, Some(trouble::NO_READING), now);
         }
         let result = result.map_err(|_| trouble::UNREACHABLE).and_then(|value| {
@@ -67,7 +67,7 @@ impl Node {
             Ok((
                 reading,
                 PiObservation {
-                    credential_fingerprint: fingerprint,
+                    identity_fingerprint: fingerprint,
                     expires_at_ms,
                     report,
                 },
@@ -211,7 +211,7 @@ mod tests {
                 reading: reading.clone(),
                 failed_at_ms: None,
                 pi: Some(PiObservation {
-                    credential_fingerprint: node.usage_credential_fingerprint(&account).unwrap(),
+                    identity_fingerprint: node.usage_identity_fingerprint(&account).unwrap(),
                     expires_at_ms: now + 60_000,
                     report: normalized,
                 }),
@@ -220,6 +220,14 @@ mod tests {
         assert!(!root.join(".khor/keys").join(&account.id).exists());
         assert_eq!(node.quota_readings().await.unwrap(), vec![reading.clone()]);
         assert_eq!(node.quota_readings_held().await.unwrap(), vec![reading]);
+        let identity = node.usage_identity_fingerprint(&account);
+        let mut changed_endpoint = account.clone();
+        changed_endpoint.inference.as_mut().unwrap().base_url =
+            Some("https://fixture.invalid/v1".into());
+        assert_ne!(node.usage_identity_fingerprint(&changed_endpoint), identity);
+        let mut changed_label = account.clone();
+        changed_label.name = "renamed".into();
+        assert_eq!(node.usage_identity_fingerprint(&changed_label), identity);
         std::fs::write(&auth, br#"{"deepseek":{"type":"api_key","key":"rotated"}}"#).unwrap();
         assert!(
             node.quota_readings_held().await.unwrap().is_empty(),
