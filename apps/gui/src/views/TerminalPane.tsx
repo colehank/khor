@@ -66,7 +66,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
-import { terminalAttachment, bellHaptic, faceNote, inApp, said, termDropForget, termEnded, type Miss } from "@/api";
+import { TerminalUnavailable, terminalAttachment, bellHaptic, faceNote, inApp, said, termDropForget, termEnded, type Miss } from "@/api";
 import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
@@ -176,12 +176,6 @@ const SILENT_RETRY_FIRST = 2000;
 /** …up to this. */
 const SILENT_RETRY_MOST = 30_000;
 
-/** Whether an open's error is the node's 「the host did not answer」
-    (`host-silent`, any number of seconds), not a refusal. */
-function hostSilent(why: string): boolean {
-  const [head, tail] = msg.host_silent("\u0000").split("\u0000");
-  return why.startsWith(head) && why.endsWith(tail);
-}
 /** A beat this long after the last one is a catch-up: what it carries
     was asked while nobody was looking, and is replayed (`replay`). */
 const CATCH_UP_MS = 2_000;
@@ -2189,6 +2183,8 @@ export function TerminalPane({
           // An open that lands after 停止等待 is still an open: the
           // terminal is there, so the pane shows it.
           setWhy(null);
+          setStall(null);
+          setStallSince(0);
           silentWait = SILENT_RETRY_FIRST;
           failures = 0;
           setGone(false);
@@ -2268,17 +2264,18 @@ export function TerminalPane({
           setOpening(false);
           setOpenedAt(null);
           setJoining(false);
-          const why = String((e as { message?: string })?.message ?? e);
-          setWhy(why);
-          // No attachment behind this pane now: its beats stop asking.
           joined = false;
-          // **A host that did not answer is asked again** (item 36), on
-          // a wait that doubles, while the pane says why; one that
-          // answered with a refusal is not.
-          if (hostSilent(why)) {
+          if (e instanceof TerminalUnavailable) {
+            setWhy(null);
+            setStall(e.miss);
+            setStallSince(was => was || Date.now());
             window.clearTimeout(silentRetry);
             silentRetry = window.setTimeout(() => void join(true), silentWait);
             silentWait = Math.min(SILENT_RETRY_MOST, silentWait * 2);
+          } else {
+            setStall(null);
+            setStallSince(0);
+            setWhy(String((e as { message?: string })?.message ?? e));
           }
         }).finally(() => {
           recoveryJoining.current--;

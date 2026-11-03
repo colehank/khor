@@ -280,6 +280,46 @@ pub fn term_open(
     rows: u16,
     history: u32,
 ) -> Result<(), String> {
+    open_terminal(root, id, lease, cols, rows, history).map_err(|error| match error {
+        OpenError::Unavailable(miss) => miss.raw,
+        OpenError::Refused(why) => why,
+    })
+}
+
+pub fn term_open_status(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    cols: u16,
+    rows: u16,
+    history: u32,
+) -> Result<Option<Miss>, String> {
+    match open_terminal(root, id, lease, cols, rows, history) {
+        Ok(()) => Ok(None),
+        Err(OpenError::Unavailable(miss)) => Ok(Some(miss)),
+        Err(OpenError::Refused(why)) => Err(why),
+    }
+}
+
+enum OpenError {
+    Unavailable(Miss),
+    Refused(String),
+}
+
+impl From<String> for OpenError {
+    fn from(why: String) -> Self {
+        Self::Refused(why)
+    }
+}
+
+fn open_terminal(
+    root: &Path,
+    id: &str,
+    lease: &str,
+    cols: u16,
+    rows: u16,
+    history: u32,
+) -> Result<(), OpenError> {
     khor_node::session_content::refuse_control(&SessionId(id.to_owned()))?;
     open_terminal_with(root, id, lease, cols, rows, history, || {
         attach(root, id, cols, rows)
@@ -292,8 +332,8 @@ fn open_terminal_with(
     cols: u16,
     rows: u16,
     history: u32,
-    connect: impl FnOnce() -> Result<(std::net::TcpStream, Option<String>), String>,
-) -> Result<(), String> {
+    connect: impl FnOnce() -> Result<(std::net::TcpStream, Option<String>), OpenError>,
+) -> Result<(), OpenError> {
     let opening = terms().claim(root, id, lease)?;
     if let Some(term) = opening.share()? {
         configure_join(term, cols, rows, history)?;
@@ -415,7 +455,7 @@ fn attach(
     id: &str,
     cols: u16,
     rows: u16,
-) -> Result<(std::net::TcpStream, Option<String>), String> {
+) -> Result<(std::net::TcpStream, Option<String>), OpenError> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
     // **The fork is on the row, not on a flag** (`Node::far_machine`):
@@ -430,20 +470,37 @@ fn attach(
         // line is unchanged, and the terminal never learns there is a
         // network under it (`host::connect_at`).
         Some(machine) => {
-            let (addr, cookie) = reach_blocking(root, machine, &sid)?;
-            khor_node::host::connect_at(&addr, &cookie, cols, rows)?
+            let (addr, cookie) =
+                crate::rejoin::rejoin_once(root, machine, &sid).map_err(|error| match error {
+                    khor_node::link::Rejoin::Unreached(why) => {
+                        OpenError::Unavailable(Miss::new(MissKind::Unreached, Some(machine), why))
+                    }
+                    khor_node::link::Rejoin::Gone(why) => OpenError::Refused(why),
+                })?;
+            khor_node::host::connect_terminal(&addr, &cookie, cols, rows)
+                .map_err(|error| host_open_error(error, far.as_deref()))?
         }
         None => {
             let host = n.terminal_address(&sid)?;
-            khor_node::host::connect_at(
+            khor_node::host::connect_terminal(
                 &format!("127.0.0.1:{}", host.port),
                 &host.cookie,
                 cols,
                 rows,
-            )?
+            )
+            .map_err(|error| host_open_error(error, None))?
         }
     };
     Ok((conn, far))
+}
+
+fn host_open_error(error: khor_node::host::ConnectError, machine: Option<&str>) -> OpenError {
+    match error {
+        khor_node::host::ConnectError::Unavailable(why) => {
+            OpenError::Unavailable(Miss::new(MissKind::HostLost, machine, why))
+        }
+        khor_node::host::ConnectError::Refused(why) => OpenError::Refused(why),
+    }
 }
 
 /// An attachment made again (`crate::rejoin`) starts a new life: the

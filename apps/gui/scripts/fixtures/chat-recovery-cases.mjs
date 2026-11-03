@@ -222,7 +222,7 @@ export async function exerciseChatRecovery(scenario, page, polls, preparePeer) {
 
   assert.equal((await calls('chat_replay')).length, 0, 'no retired Replay API is invoked');
   assert.deepEqual(await page.evaluate(() => window.__chatWire.unknown), []);
-  const leaveBefore=await page.evaluate(()=>({chat:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length,terminal:window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length,hasTerminal:!!document.querySelector('[data-kept-terminal][data-active] [data-terminal]'),hasChat:window.__chatWire.calls.some(open=>open.cmd==='chat_open'&&!window.__chatWire.calls.some(leave=>leave.cmd==='chat_leave'&&leave.args.lease===open.args.lease))}));
+  const leaveBefore=await page.evaluate(()=>({chat:window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length,terminal:window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length,hasTerminal:window.__recoveryWire.calls.some(open=>open.cmd==='term_open'&&!window.__recoveryWire.calls.some(leave=>leave.cmd==='term_leave'&&leave.args.lease===open.args.lease)),hasChat:window.__chatWire.calls.some(open=>open.cmd==='chat_open'&&!window.__chatWire.calls.some(leave=>leave.cmd==='chat_leave'&&leave.args.lease===open.args.lease))}));
   await page.evaluate(() => window.__chatReact.close());
   await until(async () => (await calls('chat_leave')).length >= 1, 'actual component leaves its view');
   await until(()=>page.evaluate(before=>before.hasTerminal?window.__recoveryWire.calls.filter(c=>c.cmd==='term_leave').length>before.terminal:!before.hasChat||window.__chatWire.calls.filter(c=>c.cmd==='chat_leave').length>before.chat,leaveBefore),'current production view leaves its own admitted resource');

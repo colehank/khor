@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // Fixed UI facts and controlled external IO. No Node execution qualification,
 // idempotency/reservation algorithm, canonical parser or replacement IDB owner.
-export const recoveryActionCases = ['offer-and-same-sid-rebind', 'idb-retries-and-shared-pages', 'directory-required-shell', 'terminal-owner-transfer', 'automatic-entry-and-later-exit'];
+export const recoveryActionCases = ['offer-and-same-sid-rebind', 'idb-retries-and-shared-pages', 'directory-required-shell', 'terminal-owner-transfer', 'automatic-entry-and-later-exit', 'initial-terminal-connect-recovers', 'initial-terminal-connect-cancelled', 'initial-terminal-refused'];
 export const usesRecoveryClock = scenario => scenario !== 'directory-required-shell';
 
 export async function advanceRecoveryClock(page, milliseconds) {
@@ -37,6 +37,7 @@ createRoot(document.getElementById('root')).render(<Probe/>);
 `;
 
 export function installRecoveryActionsTransport() {
+  const scenario = new URL(location.href).searchParams.get("recovery_case");
   const base = window.__TAURI_INTERNALS__.invoke, chat = window.__chatWire;
   const A = 'a'.repeat(64), B = 'b'.repeat(64);
   const row = (id, patch = {}) => ({id, kind:'gui', title:`Recovery ${id}`, word:'idle',
@@ -89,7 +90,7 @@ export function installRecoveryActionsTransport() {
     if(cmd==='term_drop_forget')return null;
     if(cmd.startsWith('term_')) {
       const admission=window.__attachmentLeases(cmd,args);if(admission.handled)return admission.value;
-      if(cmd==='term_open'){wire.terminals.push({id:args.id,lease:args.lease,home:wire.termHome,number:wire.terminals.length+1});return null;}
+      if(cmd==='term_open'){if(scenario==='initial-terminal-refused')throw new Error('Authentication refused fixture');if(scenario?.startsWith('initial-terminal-connect-') && wire.calls.filter(call=>call.cmd==='term_open').length===1)return {kind:'host-lost',machine:'Fixture A',raw:'Connection refused fixture'};wire.terminals.push({id:args.id,lease:args.lease,home:wire.termHome,number:wire.terminals.length+1});return null;}
       const current=wire.terminals.find(value=>value.lease===args.lease);
       if(cmd==='term_attach')return {bytes:btoa(`TERMINAL ${current.home} ${args.id} OPEN ${current.number}\r\n`),seq:current.number};
       if(cmd==='term_wait'||cmd==='term_stream')return new Promise(resolve=>wire.waits.push({lease:args.lease,seq:current.number,resolve,done:false}));
@@ -167,6 +168,37 @@ export async function exerciseRecoveryActions(scenario,page,helpers) {
   const A='a'.repeat(64),B='b'.repeat(64);
   const publicCalls=cmd=>calls(page,cmd);
   const heldAction=async(label)=>{const index=await page.evaluate(()=>window.__recoveryWire.actions.length);await page.evaluate(()=>{window.__recoveryWire.holdAction=true;});const w=await words(page);await action(page,label??w.join);await until(()=>page.evaluate(index=>window.__recoveryWire.actions.length===index+1,index),'explicit action reached controlled IO');return index;};
+  if(scenario.startsWith('initial-terminal-')) {
+    await page.evaluate(()=>window.__recoveryProbe.patch({kind:'shell',category:'shell',can_control:true,attachable:true,word:'idle',ended:null}));
+    await page.clock.runFor(500);
+    await advanceUntil(page,async()=>(await publicCalls('term_open')).length===1,'first terminal connection attempted');
+    if(scenario==='initial-terminal-refused') {
+      await page.getByText('Authentication refused fixture',{exact:true}).waitFor();
+      await page.clock.runFor(10000);
+      assert.equal((await publicCalls('term_open')).length,1,'a definitive refusal is not retried');
+      assert.equal((await publicCalls('term_attach')).length,0);
+      return;
+    }
+    await until(()=>page.locator('[data-tab=alpha][data-pill-signal=rejoin]').count().then(n=>n===1),'temporary connection failure uses the existing reconnect pill');
+    if(scenario==='initial-terminal-connect-cancelled') {
+      await page.evaluate(()=>window.__chatReact.close());
+      await page.clock.runFor(10000);
+      assert.equal((await publicCalls('term_open')).length,1,'closing the view cancels its pending retry');
+      assert.equal((await publicCalls('term_attach')).length,0);
+      return;
+    }
+    assert.equal((await publicCalls('term_attach')).length,0,'failed open does not publish an attachment');
+    await menu(page);
+    assert.equal(await page.locator('[data-notice-act]').count(),0,'automatic reconnect has no duplicate action');
+    await closeMenu(page);
+    await advanceUntil(page,async()=>(await publicCalls('term_ready')).length===1,'initial connection automatically recovers');
+    assert.equal((await publicCalls('term_open')).length,2,'only one retry is needed');
+    assert.equal((await publicCalls('term_attach')).length,1);
+    assert.equal((await publicCalls('recover_session')).length,0,'attachment does not restart execution');
+    assert.equal((await publicCalls('new_shell_run')).length,0,'attachment never creates a replacement shell');
+    await until(()=>page.locator('[data-tab=alpha][data-pill-signal=rejoin]').count().then(n=>n===0),'successful initial attachment clears reconnect activity');
+    return;
+  }
   if(scenario==='automatic-entry-and-later-exit') {
     await until(()=>page.evaluate(()=>window.__recoveryWire.actions.length===1),'owned supported dialogue automatically continues on entry');
     assert.equal((await publicCalls('recover_session')).length,1);

@@ -1256,9 +1256,9 @@ async fn term_open(
     cols: u16,
     rows: u16,
     history: Option<u32>,
-) -> Result<(), String> {
+) -> Result<Option<khor_gui_core::miss::Miss>, String> {
     off_main(move || {
-        khor_gui_core::term::term_open(
+        khor_gui_core::term::term_open_status(
             &Node::root_from_env(),
             &id,
             &lease,

@@ -924,15 +924,14 @@ pub fn answer(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(0)
                 .min(u32::MAX as u64) as u32;
-            crate::term::term_open(
+            to_json(&crate::term::term_open_status(
                 root,
                 &arg("id")?,
                 &arg("lease")?,
                 num("cols")? as u16,
                 num("rows")? as u16,
                 history,
-            )?;
-            Ok("null".to_owned())
+            )?)
         }
         "term_attach" => to_json(&crate::term::term_attach(
             root,

@@ -102,16 +102,24 @@ fn wait_since(seen: u64, beat: Duration) {
     let _ = woke.wait_timeout_while(guard, beat, |now| *now == seen);
 }
 
-/// [`Node::rejoin`] from a reader's own thread — a plain thread, so a
-/// runtime of its own is safe to build here (the reason `reach_blocking`
-/// spawns one is that its caller may be async; this one never is).
-fn rejoin_once(root: &Path, machine: &str, id: &SessionId) -> Result<(String, String), Rejoin> {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| Rejoin::Unreached(khor_catalog::msg::runtime_wont_start(e)))?;
-    let n = Node::open(root.to_path_buf()).map_err(Rejoin::Unreached)?;
-    rt.block_on(n.rejoin(machine, id))
+/// Also called from a Tauri blocking worker, which can still have a Tokio
+/// context. A separate thread owns this short-lived synchronous runtime.
+pub(crate) fn rejoin_once(
+    root: &Path,
+    machine: &str,
+    id: &SessionId,
+) -> Result<(String, String), Rejoin> {
+    let (root, machine, id) = (root.to_path_buf(), machine.to_owned(), id.clone());
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| Rejoin::Unreached(khor_catalog::msg::runtime_wont_start(e)))?;
+        let n = Node::open(root).map_err(Rejoin::Unreached)?;
+        rt.block_on(n.rejoin(&machine, &id))
+    })
+    .join()
+    .map_err(|_| Rejoin::Unreached(khor_catalog::msg::reach_thread_died().to_string()))?
 }
 
 /// Asks for the session again until it is reached, it is gone, or
@@ -217,6 +225,28 @@ mod tests {
     use super::*;
     use std::sync::Arc;
     use std::time::Instant;
+
+    #[test]
+    fn first_rejoin_is_safe_inside_a_runtime_worker() {
+        let root = std::env::temp_dir().join(format!("khor-first-rejoin-{}", std::process::id()));
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let owned = root.clone();
+        let result = runtime.block_on(async move {
+            tokio::task::spawn_blocking(move || {
+                rejoin_once(
+                    &owned,
+                    "fixture-unreachable",
+                    &SessionId("shell/fixture".into()),
+                )
+            })
+            .await
+        });
+        assert!(matches!(result, Ok(Err(Rejoin::Unreached(_)))));
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     /// A kick ends a wait at once; without one the wait is the beat.
     #[test]

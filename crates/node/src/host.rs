@@ -370,13 +370,17 @@ pub fn read_host_file(dir: &Path) -> Result<HostFile, String> {
 }
 
 pub fn write_frame<T: Serialize>(s: &mut (impl Write + ?Sized), t: &T) -> Result<(), String> {
+    s.write_all(&encode_frame(t)?).map_err(msg::handoff_failed)
+}
+
+fn encode_frame(t: &impl Serialize) -> Result<Vec<u8>, String> {
     let bytes = proto::encode(t)?;
     // One write, length and body together: two small writes are the
     // pattern Nagle's algorithm holds the second of for an ack.
     let mut frame = Vec::with_capacity(4 + bytes.len());
     frame.extend_from_slice(&(bytes.len() as u32).to_be_bytes());
     frame.extend_from_slice(&bytes);
-    s.write_all(&frame).map_err(msg::handoff_failed)
+    Ok(frame)
 }
 
 /// A client's frame, or `None` for one over `MAX_OP` that was read past
@@ -694,6 +698,22 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
     connect_at(&format!("127.0.0.1:{}", hf.port), &hf.cookie, cols, rows)
 }
 
+#[derive(Debug)]
+pub enum ConnectError {
+    Unavailable(String),
+    Refused(String),
+}
+
+impl std::fmt::Display for ConnectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unavailable(why) | Self::Refused(why) => f.write_str(why),
+        }
+    }
+}
+
+impl std::error::Error for ConnectError {}
+
 /// The same handshake against an address the caller already has.
 ///
 /// **This is the whole of what remote attach adds to this file.** A
@@ -711,15 +731,28 @@ pub fn connect(dir: &Path, cols: u16, rows: u16) -> Result<TcpStream, String> {
 /// stream goes back to blocking without a timeout once welcomed: from
 /// then on a quiet terminal is a terminal nobody is typing in.
 pub fn connect_at(addr: &str, cookie: &str, cols: u16, rows: u16) -> Result<TcpStream, String> {
-    let (mut stream, welcome) = connect_welcomed(addr, cookie, cols, rows)?;
+    connect_terminal(addr, cookie, cols, rows).map_err(|error| error.to_string())
+}
+
+pub fn connect_terminal(
+    addr: &str,
+    cookie: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<TcpStream, ConnectError> {
+    let (mut stream, welcome) = connect_welcomed_typed(addr, cookie, cols, rows)?;
     if welcome.why != format!("{GREETING}{HOST_VERSION}") {
-        return Err(msg::peer_non_answer("terminal protocol mismatch"));
+        return Err(ConnectError::Refused(msg::peer_non_answer(
+            "terminal protocol mismatch",
+        )));
     }
-    write_frame(&mut stream, &ClientOp::Version(HOST_VERSION))?;
-    stream.set_read_timeout(None).map_err(msg::no_frame)?;
+    write_handshake(&mut stream, &ClientOp::Version(HOST_VERSION))?;
+    stream
+        .set_read_timeout(None)
+        .map_err(|error| ConnectError::Unavailable(msg::no_frame(error)))?;
     stream
         .set_write_timeout(None)
-        .map_err(msg::handoff_failed)?;
+        .map_err(|error| ConnectError::Unavailable(msg::handoff_failed(error)))?;
     Ok(stream)
 }
 
@@ -731,12 +764,21 @@ pub fn connect_welcomed(
     cols: u16,
     rows: u16,
 ) -> Result<(TcpStream, Welcome), String> {
-    let mut s = TcpStream::connect(addr).map_err(|_| msg::host_gone().to_string())?;
-    // A keystroke is one small frame: never held back for an ack.
+    connect_welcomed_typed(addr, cookie, cols, rows).map_err(|error| error.to_string())
+}
+
+fn connect_welcomed_typed(
+    addr: &str,
+    cookie: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(TcpStream, Welcome), ConnectError> {
+    let mut s = TcpStream::connect(addr)
+        .map_err(|error| ConnectError::Unavailable(msg::cant_reach_plain(error)))?;
     let _ = s.set_nodelay(true);
     let _ = s.set_read_timeout(Some(HANDSHAKE));
     let _ = s.set_write_timeout(Some(HANDSHAKE));
-    write_frame(
+    write_handshake(
         &mut s,
         &Hello {
             cookie: cookie.to_owned(),
@@ -744,25 +786,32 @@ pub fn connect_welcomed(
             rows,
         },
     )?;
-    let w: Welcome = read_welcome(&mut s)?;
-    if !w.ok {
-        return Err(w.why);
+    let welcome: Welcome = read_handshake_typed(&mut s, HANDSHAKE)?;
+    if !welcome.ok {
+        return Err(ConnectError::Refused(welcome.why));
     }
-    Ok((s, w))
+    Ok((s, welcome))
 }
 
-/// A complete Welcome must arrive before the shared handshake deadline;
-/// a partial reply cannot extend the wait for a far host.
-fn read_welcome(stream: &mut TcpStream) -> Result<Welcome, String> {
-    read_handshake_frame(stream, HANDSHAKE)
+fn write_handshake(stream: &mut TcpStream, frame: &impl Serialize) -> Result<(), ConnectError> {
+    let bytes = encode_frame(frame).map_err(ConnectError::Refused)?;
+    stream
+        .write_all(&bytes)
+        .map_err(|error| ConnectError::Unavailable(msg::handoff_failed(error)))
 }
 
 /// One deadline covers the prefix and body, including a peer trickling bytes.
-/// A per-read timeout alone would let each new byte renew the whole budget.
 fn read_handshake_frame<T: for<'a> Deserialize<'a>>(
     stream: &mut TcpStream,
     budget: Duration,
 ) -> Result<T, String> {
+    read_handshake_typed(stream, budget).map_err(|error| error.to_string())
+}
+
+fn read_handshake_typed<T: for<'a> Deserialize<'a>>(
+    stream: &mut TcpStream,
+    budget: Duration,
+) -> Result<T, ConnectError> {
     fn exact(
         stream: &mut TcpStream,
         mut into: &mut [u8],
@@ -792,28 +841,30 @@ fn read_handshake_frame<T: for<'a> Deserialize<'a>>(
     };
     let mut prefix = [0u8; 4];
     exact(stream, &mut prefix, deadline).map_err(|error| {
-        if timeout(&error) {
+        ConnectError::Unavailable(if timeout(&error) {
             msg::host_silent(budget.as_secs())
         } else {
             msg::no_frame(error)
-        }
+        })
     })?;
     let length = u32::from_be_bytes(prefix) as usize;
     if length > MAX_OP {
-        return Err(msg::frame_too_big(length));
+        return Err(ConnectError::Refused(msg::frame_too_big(length)));
     }
     let mut bytes = vec![0; length];
     exact(stream, &mut bytes, deadline).map_err(|error| {
-        if timeout(&error) {
+        ConnectError::Unavailable(if timeout(&error) {
             msg::host_silent(budget.as_secs())
         } else {
             msg::half_a_frame(error)
-        }
+        })
     })?;
     if std::time::Instant::now() >= deadline {
-        return Err(msg::host_silent(budget.as_secs()));
+        return Err(ConnectError::Unavailable(msg::host_silent(
+            budget.as_secs(),
+        )));
     }
-    proto::decode(&bytes)
+    proto::decode(&bytes).map_err(ConnectError::Refused)
 }
 
 /// How long [`connect_at`] waits for a host to welcome it: a far pipe's
@@ -3486,6 +3537,35 @@ mod handshake_tests {
     }
 
     #[test]
+    fn connection_failure_does_not_claim_the_host_ended() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap().to_string();
+        drop(listener);
+        let error = connect_terminal(&addr, "owned-cookie", 80, 24).unwrap_err();
+        assert!(matches!(error, ConnectError::Unavailable(_)));
+        assert_ne!(error.to_string(), msg::host_gone());
+    }
+
+    #[test]
+    fn interrupted_and_invalid_handshakes_have_different_recovery() {
+        for oversized in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let mut writer = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+            let (mut reader, _) = listener.accept().unwrap();
+            if oversized {
+                writer
+                    .write_all(&((MAX_OP + 1) as u32).to_be_bytes())
+                    .unwrap();
+            }
+            drop(writer);
+            let error = read_handshake_typed::<Welcome>(&mut reader, Duration::from_millis(100))
+                .err()
+                .expect("invalid handshake connected");
+            assert_eq!(matches!(error, ConnectError::Refused(_)), oversized);
+        }
+    }
+
+    #[test]
     fn a_cookie_refusal_keeps_the_hosts_reason() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
@@ -3504,9 +3584,10 @@ mod handshake_tests {
             )
             .unwrap();
         });
-        let why = connect_at(&addr, "owned-cookie", 80, 24).err();
+        let error = connect_terminal(&addr, "owned-cookie", 80, 24).unwrap_err();
         host.join().unwrap();
-        assert_eq!(why, Some(msg::wrong_cookie().to_string()));
+        assert!(matches!(error, ConnectError::Refused(_)));
+        assert_eq!(error.to_string(), msg::wrong_cookie());
     }
 
     #[test]

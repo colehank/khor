@@ -131,6 +131,39 @@ fn until(fixture: &Fixture, needle: &str) -> Vec<u8> {
 }
 
 #[test]
+fn an_unavailable_connection_keeps_the_view_lease_for_a_later_attach() {
+    let mut fixture = Fixture::new("khor-host/5", |stream| {
+        assert!(matches!(
+            host::read_frame::<ClientOp>(stream).unwrap(),
+            ClientOp::Version(5)
+        ));
+        stream.write_all(b"Recovered terminal\r\n").unwrap();
+    });
+    let node = Node::open(fixture.root.clone()).unwrap();
+    let live = khor_node::live::LiveKind::new(fixture.root.clone(), node.device());
+    let marker = host::host_file_path(&live.dir_of(&fixture.id).unwrap());
+    let original = std::fs::read(&marker).unwrap();
+    let mut record: HostFile = serde_json::from_slice(&original).unwrap();
+    let unused = TcpListener::bind("127.0.0.1:0").unwrap();
+    record.port = unused.local_addr().unwrap().port();
+    drop(unused);
+    std::fs::write(&marker, serde_json::to_vec(&record).unwrap()).unwrap();
+    let miss = term::term_open_status(&fixture.root, &fixture.id.0, &fixture.lease, 80, 24, 5000)
+        .unwrap()
+        .expect("unavailable connection was reported as attached");
+    assert_eq!(miss.kind, khor_gui_core::miss::MissKind::HostLost);
+    assert!(term::term_attach(&fixture.root, &fixture.id.0, &fixture.lease).is_err());
+    std::fs::write(&marker, original).unwrap();
+    assert!(
+        term::term_open_status(&fixture.root, &fixture.id.0, &fixture.lease, 80, 24, 5000)
+            .unwrap()
+            .is_none()
+    );
+    assert!(term::term_attach(&fixture.root, &fixture.id.0, &fixture.lease).is_ok());
+    fixture.finish();
+}
+
+#[test]
 fn core_rejects_noncurrent_welcomes_without_registering_an_attachment() {
     for greeting in ["", "khor-host/4", "khor-host/6", "khor-gui/1", "khor-gui/2"] {
         let mut fixture = Fixture::new(greeting, |stream| {
