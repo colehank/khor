@@ -71,6 +71,7 @@ pub(super) fn legacy_info(program: &Path) -> Result<Option<Info>, String> {
             schema: 1,
             version: "0.1.15".into(),
             role: Role::Cli,
+            platform: khor_runtime::platform(),
             portable: true,
             embedded: [("legacy-complete-release".into(), digest)].into(),
             contract: Contract {
@@ -88,9 +89,9 @@ pub(super) fn legacy_info(program: &Path) -> Result<Option<Info>, String> {
 }
 
 pub(super) fn check(other: &Path) -> Result<(), String> {
-    let expected = current()?.release.contract;
-    let actual = inspect_supported(other)?.release.contract;
-    if !expected.accepts(&actual) {
+    let expected = current()?.release;
+    let actual = inspect_supported(other)?.release;
+    if expected.platform != actual.platform || !expected.contract.accepts(&actual.contract) {
         return Err(INCOMPATIBLE.into());
     }
     #[cfg(not(any(target_os = "ios", target_os = "android")))]

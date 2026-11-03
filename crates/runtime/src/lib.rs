@@ -9,6 +9,10 @@ pub use lease::Lease;
 pub use local::local_directory;
 pub use store::{Collection, Image, Limits, Source, Store};
 
+pub fn platform() -> String {
+    format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
 use serde::{Deserialize, Serialize};
 
 /// Enter before opening user stores. Unmanaged executables keep their ordinary installation path.

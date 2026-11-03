@@ -24,6 +24,7 @@ fn managed_host_selection_reads_the_probe_reply_before_joining_its_pipe_owner() 
     assert!(output.status.success(), "{output:?}");
     let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(info["release"]["schema"], 1);
+    assert_eq!(info["release"]["platform"], khor_runtime::platform());
     assert_eq!(
         PathBuf::from(info["executable"].as_str().unwrap()),
         image.path()

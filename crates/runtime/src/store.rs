@@ -217,7 +217,7 @@ impl Store {
             schema: 1,
             role,
             version: version.into(),
-            platform: format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH),
+            platform: crate::platform(),
             contract,
             digest,
             bytes,
@@ -459,7 +459,7 @@ fn identity_at(directory: &Path) -> io::Result<Identity> {
         MANIFEST_LIMIT,
     )?)?;
     if identity.schema != 1
-        || identity.platform != format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)
+        || identity.platform != crate::platform()
         || directory.file_name().and_then(|name| name.to_str()) != Some(identity.id()?.as_str())
     {
         return Err(io::Error::other("runtime manifest identity mismatch"));

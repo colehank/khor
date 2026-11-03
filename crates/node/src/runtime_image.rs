@@ -24,6 +24,7 @@ struct Release {
     schema: u8,
     version: String,
     role: Role,
+    platform: String,
     contract: Contract,
     embedded: BTreeMap<String, String>,
     portable: bool,
@@ -57,6 +58,7 @@ fn current() -> Result<Info, String> {
             schema: 1,
             version: crate::VERSION.into(),
             role,
+            platform: khor_runtime::platform(),
             contract: Contract {
                 terminal: crate::host::HOST_VERSION,
                 gui: crate::gui_host::GUI_GREETING.into(),
@@ -237,7 +239,9 @@ pub(crate) fn agent(bundle: &[u8]) -> Result<Image, String> {
 pub fn host_at(source: &Path) -> Result<HostImage, String> {
     let expected = current()?.release;
     let info = inspect_supported(source)?;
-    if !expected.contract.accepts(&info.release.contract) {
+    if expected.platform != info.release.platform
+        || !expected.contract.accepts(&info.release.contract)
+    {
         return Err(
             "runtime protocols or storage format are incompatible; existing sessions were retained"
                 .into(),
