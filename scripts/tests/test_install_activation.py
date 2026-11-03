@@ -5,6 +5,7 @@ import hashlib
 import importlib.util
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -22,9 +23,14 @@ class InstallActivationTest(unittest.TestCase):
         self.bin = self.root / "shared home" / "bin"
         self.bin.mkdir(parents=True)
 
-    def program(self, name):
+    def program(self, name, contract="same", checker=True):
         program = self.root / name
-        program.write_text('#!/bin/sh\nprintf "%s\\n" ' + name + ' "$KHOR_INSTALL_SOURCE" "$@"\n')
+        check = ('[ "$("$2" _fixture_contract)" = ' + shlex.quote(contract) +
+                 ' ] || exit 78; echo compatible; exit 0') if checker else 'exit 64'
+        program.write_text('#!/bin/sh\ncase "$1" in\n'
+                           '_runtime_check) ' + check + ' ;;\n'
+                           '_fixture_contract) echo ' + shlex.quote(contract) + '; exit 0 ;;\n'
+                           'esac\nprintf "%s\\n" ' + shlex.quote(name) + ' "$KHOR_INSTALL_SOURCE" "$@"\n')
         program.chmod(0o755)
         return program
 
@@ -97,6 +103,34 @@ class InstallActivationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("install khor-linux-aarch64", result.stderr)
 
+    def test_incompatible_activation_preserves_current_and_releases_its_lock(self):
+        old, incompatible = self.program("old"), self.program("incompatible", contract="changed")
+        self.assertEqual(self.activate(old).returncode, 0)
+        pointer = self.bin / ".khor/khor-linux-x86_64/current"
+        previous = pointer.readlink()
+        result = self.activate(incompatible, version="v2.0.0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("incompatible activation", result.stderr)
+        self.assertEqual(pointer.readlink(), previous)
+        self.assertFalse((pointer.parent / "activation.lock").exists())
+        self.assertEqual(self.activate(self.program("compatible"), version="v1.2.4").returncode, 0)
+
+    def test_rollback_to_a_legacy_program_requires_the_current_checker(self):
+        old, new = self.program("legacy", checker=False), self.program("new")
+        self.assertEqual(self.activate(old).returncode, 0)
+        self.assertEqual(self.activate(new, version="v1.2.4").returncode, 0)
+        result = self.activate(old)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), old.read_bytes())
+
+    def test_two_programs_without_a_checker_cannot_establish_compatibility(self):
+        old, unknown = self.program("old", checker=False), self.program("unknown", checker=False)
+        self.assertEqual(self.activate(old).returncode, 0)
+        result = self.activate(unknown, version="v1.2.4")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("compatibility could not be established", result.stderr)
+        self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), old.read_bytes())
+
     def test_keeper_copy_can_transition_from_the_direct_binary_install(self):
         asset = {("Darwin", "arm64"): "khor-macos-arm64", ("Darwin", "x86_64"): "khor-macos-x86_64",
                  ("Linux", "x86_64"): "khor-linux-x86_64", ("Linux", "aarch64"): "khor-linux-aarch64"}[(os.uname().sysname, os.uname().machine)]
@@ -154,7 +188,7 @@ class InstallReleaseTest(unittest.TestCase):
         self.previous.write_bytes(b"previous installation")
         self.program = self.root / "program"
         subprocess.run([compiler, "-x", "c", "-", "-o", str(self.program)],
-                       input='#include <stdio.h>\nint main(void) { puts("1.2.3"); return 0; }\n',
+                       input='#include <stdio.h>\n#include <string.h>\nint main(int n, char **v) { puts(n > 1 && strcmp(v[1], "_runtime_check") == 0 ? "compatible" : "1.2.3"); return 0; }\n',
                        text=True, check=True, capture_output=True, timeout=30)
         self.archive = self.root / "archive.gz"
         self.archive.write_bytes(gzip.compress(self.program.read_bytes(), mtime=0))

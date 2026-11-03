@@ -324,6 +324,24 @@ khor_fetch_release() (
     khor_fetch_verify_place "$_url" "$_bin" "$_asset" "$_version" "${_mirror:+mirror}"
 )
 
+khor_check_activation() (
+    set -eu
+    _candidate="$1" _current="$2" _scratch="$3"
+    _status=0
+    khor_capture "$_scratch/activation-check" 128 out "$_candidate" _runtime_check "$_current" || _status=$?
+    if [ "$_status" = 0 ] && [ "$(cat "$_scratch/activation-check")" = compatible ]; then
+        exit 0
+    fi
+    # New checkers use 78 for an explicit refusal. An older candidate can
+    # only be rolled back by a current checker that recognizes its bytes.
+    [ "$_status" != 78 ] || { echo "khor: incompatible activation; current version retained" >&2; exit 1; }
+    _status=0
+    khor_capture "$_scratch/rollback-check" 128 out "$_current" _runtime_check "$_candidate" || _status=$?
+    [ "$_status" = 0 ] && [ "$(cat "$_scratch/rollback-check")" = compatible ] || {
+        echo "khor: activation compatibility could not be established; current version retained" >&2; exit 1;
+    }
+)
+
 khor_activate_release() (
     set -eu
     _program="$1" _bin="$2" _asset="$3" _version="$4"
@@ -338,7 +356,9 @@ khor_activate_release() (
     _destination="$_platform/$_relative"
     mkdir -p "${_destination%/*}"
     _stage=$(mktemp -d "$_bin/.khor.activate.XXXXXXXX")
-    trap 'rm -rf "$_stage"' EXIT
+    _lock="$_platform/activation.lock"
+    _locked=""
+    trap 'if [ -n "$_locked" ]; then rmdir "$_lock"; fi; rm -rf "$_stage"' EXIT
     cp "$_program" "$_stage/program"
     chmod 555 "$_stage/program"
     # link is an exclusive publish on NFS too. Concurrent publishers of the
@@ -356,6 +376,20 @@ khor_activate_release() (
     }
     khor_launcher > "$_stage/launcher"
     chmod 755 "$_stage/launcher"
+    _attempt=0
+    until mkdir "$_lock" 2>/dev/null; do
+        _attempt=$((_attempt + 1))
+        [ "$_attempt" -lt 100 ] && [ -d "$_lock" ] || {
+            echo "khor: activation is locked; current version retained ($_lock)" >&2; exit 1;
+        }
+        sleep 0.1
+    done
+    _locked=1
+    if [ -e "$_platform/current" ] || [ -L "$_platform/current" ]; then
+        khor_check_activation "$_destination" "$_platform/current" "$_stage"
+    elif [ -e "$_bin/khor" ] && ! cmp -s "$_bin/khor" "$_stage/launcher"; then
+        khor_check_activation "$_destination" "$_bin/khor" "$_stage"
+    fi
     ln -s "$_relative" "$_stage/current"
     mv -f "$_stage/current" "$_platform/current"
     mv -f "$_stage/launcher" "$_bin/khor"

@@ -1,4 +1,6 @@
 //! Select an executable and its compatibility contract before opening user data or detaching a host.
+mod activation;
+
 use crate::agent_process::{Control, Session};
 use khor_runtime::{Contract, Image, Role, Source, Store};
 use serde::{Deserialize, Serialize};
@@ -90,9 +92,30 @@ pub fn process_entry() {
             }
         }
     }
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_runtime_check")) {
+        let result = match std::env::args_os().skip(2).collect::<Vec<_>>().as_slice() {
+            [other] => activation::check(Path::new(other)),
+            _ => Err("runtime activation check requires one existing program".into()),
+        };
+        match result {
+            Ok(()) => {
+                println!("compatible");
+                std::process::exit(0);
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(78);
+            }
+        }
+    }
     if let Err(error) = khor_runtime::enter_current() {
         eprintln!("cannot enter runtime: {error}");
         std::process::exit(1);
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Err(error) = activation::check_local_contracts() {
+        eprintln!("{error}");
+        std::process::exit(78);
     }
 }
 
