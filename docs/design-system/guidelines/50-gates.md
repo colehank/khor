@@ -843,3 +843,5 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 - `npm run notification-inbox`：宿主事件的恢复、去重、待处理/已读分离、静音、显式订阅、准确目标与记录上限。
 - `npm run notification-ui`：真实通知组件宽窄布局、处理/已读分离、准确目标、刷新恢复、跨窗口更新；node IO由专用Lab记录替代。
+
+- `npm run khor-conversations-ui`：真实新建页与MachineChat，覆盖空/手工标题、创建丢响应原token重试、多会话历史及Stop归属、Khor斜杠补全/执行不透传Pi，Chromium与WebKit在CI运行。

@@ -177,8 +177,9 @@ export function NewSessionPage({
   }, [target?.hosts]);
   const selected = launch.kind === 'agent' ? choices.find(c => c.id === 'agent:' + launch.agent) : launch.kind === 'tell' || launch.kind === 'khor' ? choices.find(c => c.id === launch.kind) : choices.find(c => c.id === 'custom:' + launch.preset && c.launch.kind === 'shell' && c.launch.command === launch.command) ?? choices.find(c => c.launch.kind === 'shell' && c.launch.command === launch.command);
   const command = launch.kind === 'shell' ? launch.command : '';
+  const contextReady = launch.kind !== 'agent' || contextValid;
   const create = () => {
-    if (opening || pending || !target || !contextValid) return;
+    if (opening || pending || !target || !contextReady) return;
     if (target.hosts === false && launch.kind !== 'tell') return;
     if (launch.kind === 'tell') {
       if (!target.me) draftFor(tellDraft(target.name));
@@ -290,7 +291,7 @@ export function NewSessionPage({
    </FormGrid>
    {launch.kind==='agent'&&!['claude','codex'].includes(launch.agent)&&<AcpAgentSetup key={`${channel}:${launch.agent}`} agent={launch.agent} machine={channel} environment={environment} onEnvironment={setEnvironment} onValid={setContextValid}/>}
    {error && <p data-new-session-error role="alert" className="text-callout text-destructive">{error}</p>}
-   <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || !contextValid || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
+   <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || !contextReady || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
   </div></div>
   <Dialog open={!!edit} onOpenChange={on => {
       if (!on && !saving) setEdit(null);
