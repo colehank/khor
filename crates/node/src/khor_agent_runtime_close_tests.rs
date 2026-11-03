@@ -158,7 +158,43 @@ async fn close_after_progress(node: &Node) -> RuntimeClose {
         match Node::close_agent_runtime(node.root()).await.unwrap() {
             RuntimeClose::Closed => return RuntimeClose::Closed,
             RuntimeClose::Busy => {
-                assert!(Instant::now() < deadline, "runtime never quiesced");
+                if Instant::now() >= deadline {
+                    let active: Vec<_> = running()
+                        .lock()
+                        .unwrap()
+                        .iter()
+                        .filter(|(key, _)| {
+                            key.as_path() == node.root()
+                                || key.starts_with(directory(node.root()).join("conversations"))
+                        })
+                        .map(|(key, run)| {
+                            (
+                                key.clone(),
+                                run.id.clone(),
+                                run.stopped.load(Ordering::SeqCst),
+                            )
+                        })
+                        .collect();
+                    let records: Vec<_> = fs::read_dir(directory(node.root()).join("runs"))
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Result::ok)
+                        .filter_map(|entry| fs::read(entry.path()).ok())
+                        .filter_map(|bytes| serde_json::from_slice::<Saved>(&bytes).ok())
+                        .map(|saved| {
+                            (
+                                saved.record.id,
+                                saved.record.status,
+                                saved.record.ended_at_ms,
+                                saved.record.error,
+                            )
+                        })
+                        .collect();
+                    panic!(
+                        "runtime never quiesced: local_idle={} active={active:?} records={records:?}",
+                        runtime::idle(node.root())
+                    );
+                }
                 node.reconcile_agent().unwrap();
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }

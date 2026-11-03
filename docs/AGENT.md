@@ -2,21 +2,21 @@
 
 khor 使用用户登记的 API 账户，通过 Pi 处理设备网络里的任务。当前运行组件固定为 Pi 1.4.0；实现位于 `apps/agent` 和 `crates/node/src/khor_agent.rs`。
 
-Khor session 定位为用户与 Khor agent 的常驻主对话，普通文字直接交给 agent；后续 `@` 用来引用机器、agent 或工作 session。智能体间委派采用 A2A，任务与 session 的边界、已实现的原生 A2A HTTP 和本机／跨设备 ACP 执行及协议边界见 [A2A.md](A2A.md)。
+Khor session 是普通会话，可在新建会话中选择 khor，创建多个独立对话。每个对话分别保存模型配置、Pi 上下文、任务与权限确认；普通文字直接交给 agent。标题可不填，首次对话由模型生成并保存，手工标题优先；命名失败不影响回复。后续 `@` 用来引用机器、agent 或工作 session。智能体间委派采用 A2A，任务与 session 的边界、已实现的原生 A2A HTTP 和本机／跨设备 ACP 执行及协议边界见 [A2A.md](A2A.md)。
 
 ## 使用
 
 1. 从额度页 ＋ 选择「模型账户」，搜索 Pi 提供商、选择保存凭据的设备，按提供商提示配置 API Key、OAuth 或云服务身份，再选择默认模型。原有额度查询与订阅导入入口保留。
 2. 打开 khor 会话，从会话的模型菜单选择账户及当前模型。可以搜索模型目录，也可直接输入模型 ID。已有额度账户从行菜单「模型调用」补充推理配置。
-3. 普通文字提交给 khor agent；`/` 命令继续直接执行。文件邀约使用现有文件通道。
+3. 普通文字提交给 khor agent；输入 `/` 选择 Khor 命令推荐，由现有命令目录执行，结果保存在当前会话，不转发为 Pi 或 ACP 原生命令。普通 Khor 对话的附件作为明确的设备与路径交给 agent；网络广播中的文件邀约继续使用文件通道。
 
-执行节点是所选账户的 home。手机和浏览器通过认证后的 khor 网络向该节点发任务、批准或停止操作。节点不通时明确拒绝，不悄悄换设备或改用另一份凭据。当前一台执行节点同时处理一个 khor 任务；忙碌期间拒绝新的任务，但允许选择下一轮使用的账户和模型。当前请求及其审批仍绑定开始时的配置。
+普通 Khor 对话绑定创建时选择的执行设备，使用该设备上的模型账户；网络广播保留按账户 home 执行的入口。手机和浏览器通过认证后的 khor 网络向该节点发任务、批准或停止操作。节点不通时明确拒绝，不悄悄换设备或改用另一份凭据。同一会话同时处理一个 khor 任务；不同会话可以独立执行、停止与确认权限。忙碌期间拒绝同一会话的新任务，但允许选择下一轮使用的账户和模型。当前请求及其审批仍绑定开始时的配置。
 
 ## 模型账户与额度查询
 
 提供商和认证方式从固定的 Pi 1.4.0 公共 API 生成 `apps/agent/providers.json`；只向用户提供支持聊天且有配置流程的提供商，另有 OpenAI 兼容服务入口。模型目录由对应提供商读取，读取失败时保留已缓存的选项，并允许手输 ID；列出模型不表示已经验证付费推理权限。
 
-账户的默认模型存于同步账户元数据 `inference.default_model`；会话当前选择继续使用 `AgentConfig`，修改其中一项不会改写另一项。已经开始的回复保持其模型与审批，后续请求捕获新的配置。khor 的广播主对话在同一执行设备上延续上下文；Claude/Codex 托管 GUI 会话继续使用各自 ACP 宿主及其模型选择。
+账户的默认模型存于同步账户元数据 `inference.default_model`；会话当前选择继续使用 `AgentConfig`，修改其中一项不会改写另一项。已经开始的回复保持其模型与审批，后续请求捕获新的配置。普通 Khor 对话各自延续上下文，原有网络广播历史独立保留；Claude/Codex 托管 GUI 会话继续使用各自 ACP 宿主及其模型选择。
 
 账户名称、归属设备、提供商、服务地址和默认模型在设备网内同步；私密凭据留在归属设备。手机或其它设备可通过已有认证路由发起登录与配置，凭据输入只传给选定设备。登录支持提供商的分步输入、授权链接、设备码和手工回填；关闭会取消后台操作，闲置操作会过期回收。Pi 的 Bun OAuth 注册入口显式嵌入所有登录实现，独立发布包不依赖用户安装 Node 或 node_modules。
 
@@ -35,7 +35,7 @@ Pi 官方 MCP client 通过私有 JSONL 管道与 Rust MCP 分发器通信。当
 - 每次提交有稳定 token；同一 token、同一请求返回原记录，改变输入则拒绝。
 - 执行前认领并落盘。接收同步记录不会开始模型请求或执行工具。
 - 回答、待批和最终状态更新同一条会话记录；进度版本拥有独立的已读快照。
-- Pi 的完整模型上下文保存在执行节点 `.khor/agent/sessions/`，包含工具调用及结果。进程重启后继续读取该上下文，不靠显示文字重建。
+- 普通 Khor 对话的 Pi 完整模型上下文保存在执行节点 `.khor/agent/conversations/<会话哈希>/history/`；原网络广播保留 `.khor/agent/sessions/`。上下文包含工具调用及结果。进程重启后继续读取该上下文，不靠显示文字重建。
 - 任务记录保存在 `.khor/agent/runs/`。重启发现执行锁已释放而记录仍在运行时，标记中断；不会自动重放网络写操作。
 - 停止中止 Pi 请求和等待中的审批，并按持久子任务关联请求停止委派。已经提交给远端的操作可能已经生效，停止不表示回滚。
 - 推理凭据由 Pi ModelRuntime 保存在执行设备的 `.khor/agent/credentials/<account-id>/auth.json`，同提供商的多个账户彼此独立；刷新令牌使用 SDK 的跨进程存储锁。旧版可推理 API Key 仍经私有 stdin 交给 Pi，设置账户默认模型时迁入独立存储；凭据不写入同步记录或模型提示。子进程环境不继承模型提供商的 API Key。
@@ -65,6 +65,8 @@ Pi 官方 [SDK 文档](https://github.com/earendil-works/pi/blob/main/packages/c
 
 ## 构建与发布
 
+0.2.0 增加普通多 Khor 会话与配对进度协议。升级时同步更新 App 和参与配对的节点；旧运行中的终端宿主保留自身运行镜像，不通过终止它们完成升级。正式产物由可信 GitHub runner 从源构建；租赁开发机的测试二进制和缓存不用于签名发布。候选 tag 只分发 TestFlight，正式 App Store 提审另走稳定 tag，见 [RELEASE.md](RELEASE.md)。
+
 `npm ci --prefix apps/agent` 安装固定依赖；Bun 1.3.14 执行 `node apps/agent/build.mjs [Rust target]`，生成不依赖用户 Node 安装的 `apps/agent/dist/khor-agent`。
 
 编译原生宿主时设置 `KHOR_AGENT_BUNDLE` 为上述产物的绝对路径。node crate 会将运行组件嵌入 khor 可执行文件；首次运行按内容哈希提取到私有目录，校验内容后启动。编译组件时关闭 Bun 的项目配置与 dotenv 自动加载。手机构建不嵌入运行组件。发布 workflow 已包含交叉构建和嵌入步骤，安装器仍可分发单个 khor 文件。
@@ -77,7 +79,8 @@ Pi 官方 [SDK 文档](https://github.com/earendil-works/pi/blob/main/packages/c
 - `KHOR_TEST_AGENT_BIN=./dist/khor-agent node --test test/host.test.ts`（在 apps/agent）：同一测试验证独立运行组件。另运行 `test/management.test.ts` 检查包外 OAuth 唤起／取消及账户隔离。
 - `cargo test -p khor-gui-core --test khor_agent --test seen_snapshot --test console_receipts --test command_tables`：Rust→Pi→MCP、审批、停止、幂等、上下文与已读边界。
 - `cargo test -p khor-node --test khor_agent_wire`：真实 IPC/设备网络、账户归属、密钥留在 home、未配对设备拒绝。
-- `npm run console`（在 apps/gui）：真实输入框、配置、流式 Markdown、批准/拒绝、命令回归。
+- `npm run khor-conversations-ui`（在 apps/gui）：真实新建页及会话组件验证创建重试、独立历史、停止与 Khor 斜杠命令路由。
+- `cargo test -p khor-node --lib khor_agent::conversations::tests`：创建幂等、配置及收据隔离、迟到回复、执行槽、命名与权限确认边界。
 
 测试模型只监听本机回环，使用临时账户与目录，不调用用户的付费模型。
 

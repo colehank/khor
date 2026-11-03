@@ -62,9 +62,6 @@ pub const BROADCAST: &str = "wide/all";
 /// The prefix every khor-wide board and session id carries.
 pub use khor_sync::chat::WIDE;
 
-/// The board a caller named — refused unless this build keeps one by
-/// that name (only the broadcast, so far). A typo must not open a new
-/// khor-wide conversation that every machine then syncs.
 pub(crate) fn board(name: &str) -> Result<&str, String> {
     if name == BROADCAST || agent_board(name) {
         Ok(name)
