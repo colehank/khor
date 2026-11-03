@@ -336,11 +336,11 @@ impl crate::Node {
         };
         let spec = match native.agent.as_str() {
             crate::adaptor::claude::VENDOR => crate::AgentSpec {
-                command: crate::self_exe()?.display().to_string(),
+                command: crate::installed_exe()?.display().to_string(),
                 args: vec!["_cagent".into()],
             },
             crate::adaptor::codex::VENDOR => crate::AgentSpec {
-                command: crate::self_exe()?.display().to_string(),
+                command: crate::installed_exe()?.display().to_string(),
                 args: vec!["_codexagent".into()],
             },
             name if readonly => khor_sync::store::read_snapshot::<khor_sync::agents::AgentDoc>(

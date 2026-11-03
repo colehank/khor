@@ -25,6 +25,7 @@ const NAME: &str = "a_shell_opened_from_a_phone_is_on_the_phones_list_when_the_o
 const ROOT_ENV: &str = "KHOR_TEST_OPEN_FROM_PHONE_ROOT";
 
 fn main() {
+    khor_node::runtime_image::process_entry();
     if let Ok(root) = std::env::var(ROOT_ENV) {
         khor_node::host::main_if_host(PathBuf::from(root));
     }

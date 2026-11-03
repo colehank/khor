@@ -432,6 +432,7 @@ pub fn read_frame<T: for<'a> Deserialize<'a>>(s: &mut (impl Read + ?Sized)) -> R
 /// found live: a host spawned from it was another bridge, and the
 /// terminal waited on a host.json nobody would ever write.
 pub fn main_if_host(root: std::path::PathBuf) {
+    crate::runtime_image::process_entry();
     crate::legacy_codex::main_if_shim();
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
@@ -587,8 +588,8 @@ fn spawn_host_with(
     cwd: Option<&Path>,
     startup: Option<&str>,
 ) -> Result<(), String> {
-    let exe = crate::self_exe()?;
-    let mut c = std::process::Command::new(exe);
+    let image = crate::runtime_image::host()?;
+    let mut c = std::process::Command::new(image.path());
     // A host belongs to the store containing this session. A GUI request may
     // name a different root from its process environment; only the child gets
     // that root, before it changes directory to the session's working path.
@@ -663,7 +664,7 @@ fn spawn_host_with(
     // A leftover from a previous failed spawn must never answer for
     // this one; nothing else writes this file.
     let _ = std::fs::remove_file(&complaint);
-    let mut child = c.spawn().map_err(msg::host_wont_start)?;
+    let mut child = image.spawn(&mut c).map_err(msg::host_wont_start)?;
     for _ in 0..100 {
         if marker.exists() {
             return Ok(());

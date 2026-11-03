@@ -17,6 +17,7 @@ use std::{
 };
 
 fn main() {
+    khor_node::runtime_image::process_entry();
     if let Some(code) = khor_node::mcp_worker::main_if_requested() {
         std::process::exit(code);
     }

@@ -187,7 +187,7 @@ pub const PART: usize = 256 * 1024;
 /// so before sending, and the host drops what it was sent.
 pub const MAX_PARTS: usize = 64 * 1024 * 1024;
 
-const GUI_GREETING: &str = "khor-gui/2";
+pub(crate) const GUI_GREETING: &str = "khor-gui/2";
 
 pub struct Attached {
     pub stream: TcpStream,
@@ -706,13 +706,13 @@ fn spawn_ghost_prepared(
     if prepared_claim.is_some() && resume.is_none() {
         return Err("a recovery claim cannot start a New session".into());
     }
-    let exe = crate::self_exe()?;
+    let image = crate::runtime_image::host()?;
     let ready = std::env::temp_dir().join(format!(
         "khor-gui-ready-{}-{}",
         std::process::id(),
         crate::link::fresh_hex()?
     ));
-    let mut c = ghost_command(root, &exe)?;
+    let mut c = ghost_command(root, image.path())?;
     // A fresh New must never inherit another invocation's claim.
     c.env_remove(RECOVERY_ENV);
     match environment {
@@ -840,6 +840,9 @@ fn spawn_ghost_prepared(
         None
     };
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    image
+        .prepare_command(&mut c)
+        .map_err(msg::host_wont_start)?;
     let ghost_pid = match spawn_ghost_with_waiter(c, deadline) {
         Ok(pid) => pid,
         Err(GhostSpawnError::BeforeSpawn(error)) => {

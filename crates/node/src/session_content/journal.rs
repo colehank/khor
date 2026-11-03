@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-const VERSION: u8 = 1;
+pub(crate) const VERSION: u8 = 1;
 const MANIFEST_BYTES: u64 = 16 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

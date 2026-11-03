@@ -5105,6 +5105,7 @@ dependencies = [
  "khor-core",
  "khor-detect",
  "khor-net",
+ "khor-runtime",
  "khor-sync",
  "libc",
  "n0-future",

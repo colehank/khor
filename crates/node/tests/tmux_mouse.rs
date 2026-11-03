@@ -36,6 +36,7 @@ const NAME: &str = "attaching_a_tmux_session_turns_the_mouse_on_for_khor_s_clien
 const ROOT_ENV: &str = "KHOR_TEST_TMUX_MOUSE_ROOT";
 
 fn main() {
+    khor_node::runtime_image::process_entry();
     if let Ok(root) = std::env::var(ROOT_ENV) {
         khor_node::host::main_if_host(PathBuf::from(root));
     }

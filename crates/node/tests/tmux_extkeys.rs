@@ -36,6 +36,7 @@ const NAME: &str = "shift_enter_reaches_a_pane_program_that_asked_for_extended_k
 const ROOT_ENV: &str = "KHOR_TEST_TMUX_EXTKEYS_ROOT";
 
 fn main() {
+    khor_node::runtime_image::process_entry();
     if let Ok(root) = std::env::var(ROOT_ENV) {
         khor_node::host::main_if_host(PathBuf::from(root));
     }

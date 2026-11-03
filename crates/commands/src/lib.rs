@@ -72,6 +72,7 @@ mod relay;
 /// Process entry hook for terminal sessions created by the slash interface.
 /// Each native binary supports its own commands; no companion CLI is required.
 pub fn console_main_if_requested(start_web: fn(&std::path::Path)) -> Option<i32> {
+    khor_node::runtime_image::process_entry();
     if let Some(code) = khor_node::mcp_worker::main_if_requested() {
         return Some(code);
     }
@@ -123,6 +124,7 @@ fn console_args(args: &[String], start_web: fn(&std::path::Path)) -> Result<i32,
 }
 
 pub fn run_cli(start_web: fn(&std::path::Path), write: fn(bool, &str)) -> i32 {
+    khor_node::runtime_image::process_entry();
     khor_node::legacy_codex::main_if_shim();
     START_WEB.with(|slot| slot.set(Some(start_web)));
     execution::NATIVE_OUTPUT.with(|slot| slot.set(Some(write)));
@@ -4946,7 +4948,7 @@ fn gui(rest: &[String]) -> Result<(), String> {
     if !rest.is_empty() {
         return Err(usage_text().into());
     }
-    let me = khor_node::self_exe()?;
+    let me = khor_node::installed_exe()?;
     let dir = me
         .parent()
         .ok_or_else(|| msg::gui_not_installed(me.display()))?;

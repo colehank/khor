@@ -842,7 +842,7 @@ fn scheduler_into(params: &mut serde_json::Value) -> Result<(), String> {
     if std::env::var(crate::cagent::AGENT_ENV).is_err() {
         return Ok(());
     }
-    let exe = crate::self_exe()?;
+    let exe = crate::installed_exe()?;
     let root = crate::Node::root_from_env();
     if !params["config"].is_object() {
         params["config"] = serde_json::json!({});

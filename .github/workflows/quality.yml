@@ -111,8 +111,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set the private native build directory
         run: |
-          echo "CARGO_TARGET_DIR=$RUNNER_TEMP/khor-quality-target" >> "$GITHUB_ENV"
-          echo "KHOR_TEST_MCP_EXECUTABLE=$RUNNER_TEMP/khor-quality-target/debug/khor" >> "$GITHUB_ENV"
+          {
+            echo "CARGO_TARGET_DIR=$RUNNER_TEMP/khor-quality-target"
+            echo "KHOR_TEST_MCP_EXECUTABLE=$RUNNER_TEMP/khor-quality-target/debug/khor"
+            echo "KHOR_RUNTIME_DIR=$RUNNER_TEMP/runtime-images"
+          } >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
@@ -148,6 +151,7 @@ jobs:
         run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --provenance "${{ runner.temp }}/node-provenance.json" --worker-provenance "${{ runner.temp }}/cli-provenance.json" --output "${{ runner.temp }}/node-native-close"
       - name: Verify terminal connection failure and recovery boundaries
         run: |
+          cargo test --locked -p khor-cli --test runtime_image -- --test-threads=1
           cargo test --locked -p khor-node --lib accounts::pi_usage -- --test-threads=1
           cargo test --locked -p khor-node --lib observer_tests -- --test-threads=1
           cargo test --locked -p khor-node --lib doc_transfer_state::io::tests -- --test-threads=1

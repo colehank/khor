@@ -1198,7 +1198,7 @@ pub struct HookInstall {
 /// Single quotes because the path is going into a shell command line and
 /// may hold spaces; `'` inside it is escaped the only way POSIX allows.
 pub fn hook_command() -> Result<String, String> {
-    let exe = crate::self_exe()?;
+    let exe = crate::installed_exe()?;
     Ok(format!(
         "{}{HOOK_VERB}",
         shell_quoted(&exe.to_string_lossy())

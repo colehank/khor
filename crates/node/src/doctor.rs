@@ -1061,7 +1061,7 @@ pub fn identity_path(root: &Path) -> PathBuf {
 /// CLI is its neighbour, and that pair is what an installer lays down.
 /// PATH after, for a machine where they are not neighbours.
 pub(crate) fn khor_cli_binary() -> Option<PathBuf> {
-    if let Ok(me) = crate::self_exe()
+    if let Ok(me) = crate::installed_exe()
         && let Some(dir) = me.parent()
     {
         let beside = dir.join("khor");

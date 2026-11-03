@@ -80,6 +80,7 @@ pub(crate) mod remote_cancel;
 pub mod road;
 pub mod roadbook;
 pub(crate) mod roads;
+pub mod runtime_image;
 pub mod satellite;
 pub mod secret;
 pub mod serves;
@@ -650,6 +651,24 @@ impl WireWatch {
 /// would then print a different number than the other two, and nothing
 /// would say which was the one a person installed.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Durable configuration follows the installer; executing hosts use self_exe for introspection.
+pub fn installed_exe() -> Result<PathBuf, String> {
+    for key in [
+        runtime_image::INSTALL_SOURCE,
+        "KHOR_INSTALL_SOURCE",
+        "KHOR_SHIELD_FROM",
+    ] {
+        if let Some(path) = std::env::var_os(key) {
+            let path = PathBuf::from(path);
+            if !path.is_absolute() {
+                return Err("installation source must be absolute".into());
+            }
+            return Ok(path);
+        }
+    }
+    self_exe()
+}
 
 pub fn self_exe() -> Result<PathBuf, String> {
     let raw = std::env::current_exe().map_err(msg::cant_find_self)?;
@@ -5195,7 +5214,7 @@ impl Node {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
         }
-        let exe = crate::self_exe()?;
+        let exe = crate::installed_exe()?;
         gui_host::spawn_gui_host_resume(
             self.root(),
             Some(&cwd),
@@ -6377,7 +6396,7 @@ impl Picked {
     /// the PATH the process has.
     fn launch(&self) -> Result<(Vec<String>, String), String> {
         let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
-            let exe = self_exe()?;
+            let exe = installed_exe()?;
             let spec = AgentSpec {
                 command: exe.display().to_string(),
                 args: vec![shim.to_owned()],

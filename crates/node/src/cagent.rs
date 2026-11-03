@@ -1258,7 +1258,7 @@ fn mcp_tools(
     }
     let mut configured = crate::acp_mcp::servers(servers, false)?;
     if scheduler {
-        let exe = crate::self_exe()?;
+        let exe = crate::installed_exe()?;
         let root = crate::Node::root_from_env();
         configured["khor"] = serde_json::json!({"command":exe.display().to_string(),"args":["mcp"],"env":{"KHOR_HOME":root.display().to_string()}});
     }

@@ -4,6 +4,9 @@ use std::{
 };
 
 pub fn local_directory() -> io::Result<PathBuf> {
+    if let Some(root) = std::env::var_os("KHOR_RUNTIME_DIR") {
+        return Ok(root.into());
+    }
     #[cfg(target_os = "linux")]
     let root = PathBuf::from(format!("/var/tmp/khor-runtime-{}", unsafe {
         libc::getuid()
