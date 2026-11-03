@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createEventBus, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -125,6 +125,49 @@ test("cancelling a real Pi usage management request releases its upstream fetche
     await entered; controller.abort(); const result = (await pending).usage;
     assert(result); assert.equal(result.status === "unavailable" && result.reason, "cancelled");
     assert(signals.length > 0 && signals.every(signal => signal.aborted), "no fetch remains owned after management finishes");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("legacy usage keys and both Moonshot regions use upstream balances without creating credentials", { timeout: 20000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), "khor-pi-regional-usage-")), originalFetch = globalThis.fetch;
+  const previousDir = process.env.PI_CODING_AGENT_DIR; process.env.PI_CODING_AGENT_DIR = root;
+  const cases = [
+    { provider: "deepseek", key: "legacy-deepseek", url: "https://api.deepseek.com/user/balance", currency: "USD", value: 0 },
+    { provider: "moonshotai", key: "legacy-moonshot", url: "https://api.moonshot.ai/v1/users/me/balance", currency: "USD", value: 0 },
+    { provider: "moonshotai-cn", key: "legacy-moonshot-cn", url: "https://api.moonshot.cn/v1/users/me/balance", currency: "CNY", value: 17 },
+  ];
+  let active = cases[0], requests = 0;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    requests++;
+    assert.equal(input instanceof Request ? input.url : String(input), active.url);
+    assert.equal(new Headers(init?.headers).get("authorization"), `Bearer ${active.key}`);
+    const payload = active.provider === "deepseek"
+      ? { is_available: true, balance_infos: [{ currency: "USD", total_balance: "0", granted_balance: "0", topped_up_balance: "0" }] }
+      : { code: 0, status: true, data: { available_balance: active.value, voucher_balance: 0, cash_balance: active.value } };
+    return new Response(JSON.stringify(payload), { headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  const noLogin = async () => { throw new Error("Usage must not prompt for authentication"); };
+  try {
+    for (const entry of cases) {
+      active = entry;
+      const dir = join(root, entry.provider); await mkdir(dir);
+      const credentialPath = join(dir, "auth.json"), before = requests;
+      const result = (await manage({ type: "manage", operation: "usage", account: { provider: entry.provider, key: entry.key }, credentialPath, deviceId: "fixture" }, noLogin, () => {})).usage;
+      assert(result); assert.equal(result.status, "ready", JSON.stringify(result));
+      if (result.status !== "ready") throw new Error("Expected an upstream balance");
+      assert(requests > before, "the actual upstream provider performed the query");
+      assert(result.report.metrics.some(metric => metric.currency === entry.currency && Number(metric.value) === entry.value));
+      assert(!JSON.stringify(result).includes(entry.key));
+      await assert.rejects(stat(credentialPath), { code: "ENOENT" });
+    }
+    const before = requests;
+    const result = (await manage({ type: "manage", operation: "usage", account: { provider: "deepseek", key: "custom-gateway-secret", baseUrl: "https://gateway.invalid/v1" }, credentialPath: join(root, "gateway-auth.json"), deviceId: "fixture" }, noLogin, () => {})).usage;
+    assert.equal(result?.status, "unavailable");
+    assert.equal(requests, before, "a custom gateway credential must not reach the official usage endpoint");
   } finally {
     globalThis.fetch = originalFetch;
     if (previousDir === undefined) delete process.env.PI_CODING_AGENT_DIR; else process.env.PI_CODING_AGENT_DIR = previousDir;
