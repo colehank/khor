@@ -177,6 +177,7 @@ jobs:
           cargo test --locked -p khor-node --lib connection_failure_does_not_claim_the_host_ended -- --test-threads=1
           cargo test --locked -p khor-node --lib interrupted_and_invalid_handshakes_have_different_recovery -- --test-threads=1
           cargo test --locked -p khor-node --lib a_cookie_refusal_keeps_the_hosts_reason -- --test-threads=1
+          cargo test --locked -p khor-node --lib unfinished_bootstrap_is_progress -- --test-threads=1
           cargo test --locked -p khor-gui-core --lib first_rejoin_is_safe_inside_a_runtime_worker -- --test-threads=1
           cargo test --locked -p khor-gui-core --lib term::io_tests:: -- --test-threads=1 | tee "$RUNNER_TEMP/terminal-io.log"
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/terminal-io.log"

@@ -954,3 +954,86 @@ async fn receiving_pair_claim_rejects_changed_owner_and_releases_invalid_roster_
         "[Q039-PAIR-CLAIM] immutable_header=true wrong_owner_rejected=true hash_not_credential=true bad_signature_before_burn=true valid_ticket_reusable=true"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn unfinished_bootstrap_is_progress_and_never_a_false_completion() {
+    let case = Case::new("finish-progress");
+    let issuer = case.node("issuer");
+    let caller = case.node("caller");
+    let ticket = khor_net::endpoint::Ticket::decode(&issuer.invite().unwrap()).unwrap();
+    let remote = id(caller.device_str()).unwrap();
+    let local = id(issuer.device_str()).unwrap();
+    let nonce = [27; 32];
+    let operation = state::claim_id(
+        local,
+        remote,
+        state::token_hash(&ticket.token).unwrap(),
+        nonce,
+    );
+    let have = canonical_version(&caller.doc_context().unwrap()).unwrap();
+    issuer
+        .answer_pair(
+            caller.device_str(),
+            PairAction::Start {
+                token: ticket.token,
+                nonce,
+                header: PairHeader {
+                    name: "caller".into(),
+                    addrs: vec![],
+                    devices_have: have.clone(),
+                    roster: None,
+                },
+                roster: None,
+            },
+        )
+        .await
+        .unwrap();
+    issuer
+        .answer_pair(
+            caller.device_str(),
+            PairAction::Commit {
+                claim: operation,
+                nonce,
+            },
+        )
+        .await
+        .unwrap();
+    let reply = issuer
+        .answer_pair(
+            caller.device_str(),
+            PairAction::Finish {
+                claim: operation,
+                nonce,
+                have: have.clone(),
+                target: have.clone(),
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        matches!(reply,Response::Paired {reply:PairReply::BootstrapPending {claim}} if claim==operation)
+    );
+    let context = issuer.doc_context().unwrap();
+    assert_eq!(
+        State::open(&context)
+            .unwrap()
+            .pair_claim(operation)
+            .unwrap()
+            .phase,
+        PairPhase::AdmissionFlushed
+    );
+    assert!(
+        issuer
+            .answer_pair(
+                caller.device_str(),
+                PairAction::Finish {
+                    claim: operation,
+                    nonce: [28; 32],
+                    have: have.clone(),
+                    target: have
+                }
+            )
+            .await
+            .is_err()
+    );
+}

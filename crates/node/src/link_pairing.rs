@@ -217,7 +217,7 @@ pub(crate) fn validate_pair_reply(reply: &PairReply) -> Result<(), Error> {
         }
         PairReply::Roster { chunk, .. } => state::validate_chunk(chunk)?,
         PairReply::Devices { reply, .. } => documents::validate_reply(reply)?,
-        PairReply::Aborted { .. } => (),
+        PairReply::Aborted { .. } | PairReply::BootstrapPending { .. } => (),
         PairReply::Uncommitted { why, .. } if why.len() <= 4096 => (),
         PairReply::Uncommitted { .. } => return Err("unbounded pairing diagnostic".into()),
     }
@@ -476,7 +476,7 @@ impl Node {
                                 .ok_or("missing settlement target")?,
                         )?
                     {
-                        return Err("pairing bootstrap is still pending".into());
+                        return Ok(PairReply::BootstrapPending { claim: operation });
                     }
                     row.phase = PairPhase::BootstrapComplete;
                     row.completed_ms.get_or_insert(crate::now_ms());
@@ -529,7 +529,8 @@ impl Node {
             | PairReply::Roster { claim, .. }
             | PairReply::Devices { claim, .. }
             | PairReply::Aborted { claim }
-            | PairReply::Uncommitted { claim, .. } => *claim,
+            | PairReply::Uncommitted { claim, .. }
+            | PairReply::BootstrapPending { claim } => *claim,
         };
         if received != expected {
             return Err("pairing response claim mismatch".into());
@@ -843,6 +844,9 @@ impl Node {
             })
             .await?;
             loop {
+                if began.elapsed() > Duration::from_secs(240) {
+                    return Err("pairing bootstrap remains pending; retry this ticket".into());
+                }
                 let moved = self
                     .transfer_pair_documents(&line, devices_have.clone(), operation, nonce)
                     .await;
@@ -852,45 +856,48 @@ impl Node {
                 if !moved.apart.is_empty() {
                     return Err("pairing document epochs are apart".into());
                 }
-                if moved.pending.is_empty() {
-                    break;
+                if !moved.pending.is_empty() {
+                    tokio::task::yield_now().await;
+                    continue;
                 }
-                if began.elapsed() > Duration::from_secs(240) {
-                    return Err("pairing bootstrap remains pending; retry this ticket".into());
-                }
-            }
-            let (have, target) = self
-                .pair_step(move |_, context, state| {
-                    if state.pair_documents_pending(remote, operation)? {
-                        return Err("pairing receipts remain pending".into());
+                let snapshot = self
+                    .pair_step(move |_, context, state| {
+                        if state.pair_documents_pending(remote, operation)? {
+                            return Ok(None);
+                        }
+                        let target = state
+                            .pair_settlement(operation)
+                            .and_then(|s| s.target)
+                            .ok_or("missing local target")?;
+                        Ok(Some((canonical_version(context)?, target)))
+                    })
+                    .await?;
+                let Some((have, target)) = snapshot else {
+                    tokio::task::yield_now().await;
+                    continue;
+                };
+                let completed = self
+                    .pair_request(
+                        &line,
+                        PairAction::Finish {
+                            claim: operation,
+                            nonce,
+                            have,
+                            target,
+                        },
+                        operation,
+                    )
+                    .await?;
+                match completed {
+                    PairReply::Progress {
+                        phase: PairPhase::BootstrapComplete,
+                        ..
+                    } => break,
+                    PairReply::BootstrapPending { .. } => {
+                        tokio::task::yield_now().await;
                     }
-                    let target = state
-                        .pair_settlement(operation)
-                        .and_then(|s| s.target)
-                        .ok_or("missing local target")?;
-                    Ok((canonical_version(context)?, target))
-                })
-                .await?;
-            let completed = self
-                .pair_request(
-                    &line,
-                    PairAction::Finish {
-                        claim: operation,
-                        nonce,
-                        have,
-                        target,
-                    },
-                    operation,
-                )
-                .await?;
-            if !matches!(
-                completed,
-                PairReply::Progress {
-                    phase: PairPhase::BootstrapComplete,
-                    ..
+                    _ => return Err("pairing completion did not confirm its bootstrap".into()),
                 }
-            ) {
-                return Err("pairing completion remains pending".into());
             }
             self.pair_step(move |trust, _, state| {
                 let mut row = state.pair_local(operation).ok_or("missing local pair")?;

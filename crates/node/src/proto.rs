@@ -811,6 +811,9 @@ pub enum PairReply {
         claim: [u8; 32],
         why: String,
     },
+    BootstrapPending {
+        claim: [u8; 32],
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
