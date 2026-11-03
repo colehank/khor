@@ -651,9 +651,10 @@ async fn running_token_retry_is_idempotent_and_its_record_writer_blocks_close() 
     let running_claim_busy = matches!(close_claim(node.root(), false).unwrap(), CloseClaim::Busy);
     observed.hook.gate.release();
     let second = retry.join().unwrap();
+    // Quiescing does not cancel an active prompt. Use shutdown's real stop
+    // phase rather than requiring a cold model/MCP startup to fail within 8s.
+    stop_local_producers(node.root());
     executor_gate.release();
-    // The actual executor now performs its ordinary request to the unreachable
-    // fixture endpoint and retires normally. Its result is never synthesized.
     let closed = close_after_progress(&node).await;
     let actual_terminal: Saved = serde_json::from_slice(
         &fs::read(file(node.root(), first.run.as_deref().unwrap())).unwrap(),
