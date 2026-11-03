@@ -88,7 +88,7 @@ use serde::{Deserialize, Serialize};
 use crate::Node;
 use crate::link;
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[path = "account_usage.rs"]
 mod pi_usage;
 
@@ -709,7 +709,7 @@ impl Node {
                     None => Some(bare(&account, Some(trouble::UNKNOWN_PROVIDER), now)),
                 }
             } else {
-                #[cfg(not(target_os = "ios"))]
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 if pi_usage::supports(&account) {
                     if self.usage_credential_fingerprint(&account).is_none() {
                         out.push(bare(&account, Some(trouble::NO_KEY), now));
@@ -741,7 +741,7 @@ impl Node {
     }
 
     async fn read_one(&self, account: &Account, now: i64) -> AccountReading {
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         if pi_usage::supports(account) {
             return self.read_pi_balance(account, now).await;
         }
@@ -1079,7 +1079,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
         Provider::Newapi => fetch_newapi(account, key, now).await,
         Provider::Claude => fetch_claude(account, key, now).await,
         Provider::Openai => fetch_openai(account, key, now).await,
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         Provider::Deepseek => {
             let j = get_json(
                 client()
@@ -1090,7 +1090,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
             .map_err(|_| trouble::UNREACHABLE)?;
             read_deepseek(account, &j, now)
         }
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         Provider::Moonshot => {
             let j = get_json(
                 client()
@@ -1101,7 +1101,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
             .map_err(|_| trouble::UNREACHABLE)?;
             read_moonshot(account, &j, now, "USD")
         }
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "android"))]
         Provider::MoonshotCn => {
             let j = get_json(
                 client()
@@ -1125,7 +1125,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
         // A subscription only: registration refuses a billed one, so
         // this is a doc written by hand or by a newer khor.
         Provider::Codex | Provider::Other(_) => Err(trouble::UNKNOWN_PROVIDER),
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         Provider::Deepseek | Provider::Moonshot | Provider::MoonshotCn => {
             Err(trouble::UNKNOWN_PROVIDER)
         }
@@ -1149,7 +1149,7 @@ fn decimal(v: Option<&serde_json::Value>) -> Option<f64> {
 /// empty account shows USD at zero. No spend, so no fraction and no
 /// budget — there is nothing for a budget to be a fraction of.
 /// Endpoint and shape as `pi-usage` and `pi-deepseek-usage` read them.
-#[cfg(any(test, target_os = "ios"))]
+#[cfg(any(test, target_os = "ios", target_os = "android"))]
 fn read_deepseek(
     account: &Account,
     j: &serde_json::Value,
@@ -1184,7 +1184,7 @@ fn read_deepseek(
 /// the figure that gates requests (`cash_balance` alone can be
 /// negative on credit). The site decides the currency (.ai in USD, .cn
 /// in CNY), which is why the caller names it and not the answer.
-#[cfg(any(test, target_os = "ios"))]
+#[cfg(any(test, target_os = "ios", target_os = "android"))]
 fn read_moonshot(
     account: &Account,
     j: &serde_json::Value,

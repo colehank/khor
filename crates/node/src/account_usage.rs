@@ -1,5 +1,5 @@
 //! Project Pi's normalized balance reports; credentials and vendor HTTP stay
-//! with the management process. iOS keeps its native readers without a sidecar.
+//! with the management process. Mobile keeps its native readers without a sidecar.
 use super::{Account, AccountReading, Cached, Node, PiObservation, bare, decimal, trouble};
 use crate::khor_agent::{account_provider_id, runtime};
 use serde_json::Value;
