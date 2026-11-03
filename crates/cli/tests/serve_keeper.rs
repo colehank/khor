@@ -104,12 +104,24 @@ fn inode(path: &Path) -> u64 {
 }
 
 /// An assertion that panics must not leak a serve tree.
-struct Reaper(u32);
+struct Reaper(std::process::Child);
+impl std::ops::Deref for Reaper {
+    type Target = std::process::Child;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl std::ops::DerefMut for Reaper {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
 impl Drop for Reaper {
     fn drop(&mut self) {
-        let _ = Command::new("kill")
-            .args(["-9", &self.0.to_string()])
-            .status();
+        if matches!(self.0.try_wait(), Ok(None)) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
     }
 }
 
@@ -117,18 +129,19 @@ impl Drop for Reaper {
 fn a_killed_serve_comes_back_named_and_a_stopped_one_stays_stopped() {
     let home = root("main");
     let log = home.join("serve.log");
-    let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
-        .arg("serve")
-        .env("KHOR_HOME", &*home)
-        .env("KHOR_NAME", "box")
-        .env("KHOR_WEB_PORT", "0")
-        .env_remove("KHOR_SESSION")
-        .stderr(fs::File::create(&log).unwrap())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
+    let mut keeper = Reaper(
+        Command::new(env!("CARGO_BIN_EXE_khor"))
+            .arg("serve")
+            .env("KHOR_HOME", &*home)
+            .env("KHOR_NAME", "box")
+            .env("KHOR_WEB_PORT", "0")
+            .env_remove("KHOR_SESSION")
+            .stderr(fs::File::create(&log).unwrap())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     let keeper_pid = keeper.id();
-    let _reap = Reaper(keeper_pid);
 
     wait_for("the first serve to stand up", 20, || {
         inner_pid(&home).is_some()
@@ -201,21 +214,24 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     let bin = home.join("khor-copy");
     fs::copy(env!("CARGO_BIN_EXE_khor"), &bin).unwrap();
     let log = home.join("serve.log");
-    let mut keeper = Command::new(&bin)
-        .arg("serve")
-        .env("KHOR_HOME", &*home)
-        .env("KHOR_NAME", "box")
-        .env("KHOR_WEB_PORT", "0")
-        .env_remove("KHOR_SESSION")
-        .stderr(fs::File::create(&log).unwrap())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let _reap = Reaper(keeper.id());
+    let mut keeper = Reaper(
+        Command::new(&bin)
+            .arg("serve")
+            .env("KHOR_HOME", &*home)
+            .env("KHOR_NAME", "box")
+            .env("KHOR_WEB_PORT", "0")
+            .env_remove("KHOR_SESSION")
+            .stderr(fs::File::create(&log).unwrap())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     wait_for("the first serve to stand up", 20, || {
         inner_pid(&home).is_some()
     });
     let first = inner_pid(&home).unwrap();
+    let runtime_inode = running_inode(keeper.id()).unwrap();
+    assert_ne!(runtime_inode, inode(&bin), "execute an owned local image");
 
     let read_log = || {
         let mut said = String::new();
@@ -268,14 +284,13 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     // code it was started with until its own next start — and a keeper
     // that is never restarted never gets there. A handover that leaves
     // the parent on the old image is half an upgrade.
-    let new_image = inode(&bin);
     wait_for("the keeper to be on the new image", 10, || {
-        running_inode(keeper.id()) == Some(new_image)
+        running_inode(keeper.id()) == Some(runtime_inode)
     });
     assert_eq!(
         running_inode(second),
-        Some(new_image),
-        "and so must the serve it spawned"
+        Some(runtime_inode),
+        "identical program bytes reuse their immutable runtime image"
     );
     let v = env!("CARGO_PKG_VERSION");
     let swap_line = after_stamp(&khor_catalog::msg::serve_swapping("\u{1}", v, v), '\u{1}');
@@ -303,15 +318,14 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
         inner_pid(&home).is_some_and(|pid| pid != second && alive(pid))
     });
     let third = inner_pid(&home).unwrap();
-    let newest = inode(&bin);
     wait_for("the keeper to be on the newest image", 10, || {
-        running_inode(keeper.id()) == Some(newest)
+        running_inode(keeper.id()) == Some(runtime_inode)
     });
     assert!(
         !alive(first) && !alive(second),
         "after two upgrades exactly one serve is left: the first two lives are gone"
     );
-    assert_eq!(running_inode(third), Some(newest));
+    assert_eq!(running_inode(third), Some(runtime_inode));
 
     Command::new("kill")
         .args(["-TERM", &keeper.id().to_string()])
@@ -339,20 +353,21 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     fs::copy(env!("CARGO_BIN_EXE_khor"), &original).unwrap();
     std::os::unix::fs::symlink(&original, &bin).unwrap();
     let log = home.join("serve.log");
-    let mut keeper = Command::new(&bin)
-        .arg("serve")
-        .env("KHOR_HOME", &*home)
-        .env("KHOR_NAME", "box")
-        .env("KHOR_WEB_PORT", "0")
-        .env("KHOR_SHIELD", "1")
-        .env("KHOR_RUNTIME_DIR", &runtime)
-        .env("KHOR_INSTALL_SOURCE", &bin)
-        .env_remove("KHOR_SESSION")
-        .stderr(fs::File::create(&log).unwrap())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let _reap = Reaper(keeper.id());
+    let mut keeper = Reaper(
+        Command::new(&bin)
+            .arg("serve")
+            .env("KHOR_HOME", &*home)
+            .env("KHOR_NAME", "box")
+            .env("KHOR_WEB_PORT", "0")
+            .env("KHOR_SHIELD", "1")
+            .env("KHOR_RUNTIME_DIR", &runtime)
+            .env("KHOR_INSTALL_SOURCE", &bin)
+            .env_remove("KHOR_SESSION")
+            .stderr(fs::File::create(&log).unwrap())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     wait_for("the serve to stand up", 20, || inner_pid(&home).is_some());
     let first = inner_pid(&home).unwrap();
 
@@ -431,17 +446,18 @@ fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
     // the endpoint key, in the way of every next serve. The inner must
     // notice it was orphaned (ppid becomes 1) and leave on its own.
     let home = root("orphan");
-    let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
-        .arg("serve")
-        .env("KHOR_HOME", &*home)
-        .env("KHOR_NAME", "box")
-        .env("KHOR_WEB_PORT", "0")
-        .env_remove("KHOR_SESSION")
-        .stderr(fs::File::create(home.join("serve.log")).unwrap())
-        .stdout(std::process::Stdio::null())
-        .spawn()
-        .unwrap();
-    let _reap = Reaper(keeper.id());
+    let mut keeper = Reaper(
+        Command::new(env!("CARGO_BIN_EXE_khor"))
+            .arg("serve")
+            .env("KHOR_HOME", &*home)
+            .env("KHOR_NAME", "box")
+            .env("KHOR_WEB_PORT", "0")
+            .env_remove("KHOR_SESSION")
+            .stderr(fs::File::create(home.join("serve.log")).unwrap())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
     wait_for("the serve to stand up", 20, || inner_pid(&home).is_some());
     let inner = inner_pid(&home).unwrap();
 
@@ -475,4 +491,294 @@ fn an_inner_whose_keeper_died_leaves_instead_of_squatting() {
         said.contains(&expected),
         "the departure must be named: {said}"
     );
+}
+
+#[cfg(target_os = "linux")]
+mod published_upgrade {
+    use super::*;
+    use khor_node::host::{ClientOp, HostFile, write_frame};
+    use std::io::Write;
+    use std::net::TcpStream;
+    use std::process::Stdio;
+
+    struct Installation {
+        home: Scratch,
+        bin: PathBuf,
+        runtime: PathBuf,
+    }
+
+    impl Installation {
+        fn command(&self, program: &Path) -> Command {
+            let mut command = Command::new(program);
+            command
+                .current_dir(&*self.home)
+                .env("HOME", &*self.home)
+                .env("KHOR_HOME", &*self.home)
+                .env("KHOR_RUNTIME_DIR", &self.runtime)
+                .env("KHOR_NAME", "upgrade-fixture")
+                .env("KHOR_WEB_PORT", "0")
+                .env("SHELL", "/bin/sh")
+                .env_remove("KHOR_SESSION")
+                .env_remove("KHOR_SHIELD")
+                .env_remove("KHOR_SHIELD_FROM")
+                .env_remove("KHOR_RUNTIME_INSTALL_SOURCE")
+                .env_remove("KHOR_INSTALL_SOURCE");
+            command
+        }
+
+        fn activate(&self, program: &Path, tag: &str) {
+            let mut command = self.command(Path::new("/bin/sh"));
+            command
+                .args(["-s", "--"])
+                .arg(program)
+                .arg(&self.bin)
+                .args(["khor-linux-x86_64", tag])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            let mut child = command.spawn().unwrap();
+            let mut input = child.stdin.take().unwrap();
+            input
+                .write_all(include_bytes!("../../../scripts/install-components.sh"))
+                .unwrap();
+            input
+                .write_all(b"\nkhor_activate_release \"$1\" \"$2\" \"$3\" \"$4\"\n")
+                .unwrap();
+            drop(input);
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success(), "activation: {output:?}");
+        }
+
+        fn pointer(&self) -> PathBuf {
+            self.bin.join(".khor/khor-linux-x86_64/current")
+        }
+
+        fn shell(&self) -> Terminal {
+            let output = self
+                .command(&self.bin.join("khor"))
+                .args(["open", "-d", "--", "/bin/sh"])
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "open shell: {output:?}");
+            let id = khor_core::SessionId(String::from_utf8(output.stdout).unwrap().trim().into());
+            let dir =
+                khor_node::live::LiveKind::new(self.home.0.clone(), khor_core::DeviceId([1; 32]))
+                    .dir_of(&id)
+                    .expect("the actual CLI created a terminal row");
+            let host = khor_node::host::read_host_file(&dir).unwrap();
+            let mut terminal = Terminal {
+                home: self.home.0.clone(),
+                id,
+                stream: khor_node::host::connect(&dir, 80, 24).unwrap(),
+                host,
+            };
+            terminal
+                .stream
+                .set_read_timeout(Some(Duration::from_millis(200)))
+                .unwrap();
+            write_frame(&mut terminal.stream, &ClientOp::Ready).unwrap();
+            terminal
+        }
+    }
+
+    struct Terminal {
+        home: PathBuf,
+        id: khor_core::SessionId,
+        stream: TcpStream,
+        host: HostFile,
+    }
+
+    impl Terminal {
+        fn round_trip(&mut self, value: &str) {
+            let command = format!("printf '__R5_%s__\\n' {value}\r");
+            write_frame(&mut self.stream, &ClientOp::Input(command.into_bytes())).unwrap();
+            let wanted = format!("__R5_{value}__");
+            let mut received = Vec::new();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while Instant::now() < deadline && received.len() < 64 * 1024 {
+                let mut bytes = [0; 4096];
+                match self.stream.read(&mut bytes) {
+                    Ok(0) => panic!("terminal disconnected"),
+                    Ok(count) => received.extend_from_slice(&bytes[..count]),
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                        ) => {}
+                    Err(error) => panic!("terminal read: {error}"),
+                }
+                if received
+                    .windows(wanted.len())
+                    .any(|window| window == wanted.as_bytes())
+                {
+                    return;
+                }
+            }
+            panic!("shell did not execute {value}");
+        }
+    }
+
+    impl Drop for Terminal {
+        fn drop(&mut self) {
+            if let Ok(node) = khor_node::Node::open(self.home.clone()) {
+                let _ = node.close(&self.id);
+            }
+        }
+    }
+
+    fn birth(pid: u32) -> String {
+        fs::read_to_string(format!("/proc/{pid}/stat"))
+            .unwrap()
+            .rsplit_once(')')
+            .unwrap()
+            .1
+            .split_whitespace()
+            .nth(19)
+            .unwrap()
+            .into()
+    }
+
+    fn digest(program: &Path) -> String {
+        let output = Command::new("sha256sum").arg(program).output().unwrap();
+        assert!(output.status.success());
+        String::from_utf8(output.stdout)
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .into()
+    }
+
+    #[test]
+    #[ignore = "requires the exact published v0.1.15-rc.3 CLI supplied by native CI"]
+    fn an_actual_published_release_upgrades_and_rolls_back_without_replacing_shells() {
+        let old = PathBuf::from(
+            std::env::var_os("KHOR_TEST_PREVIOUS_BIN").expect("verified old release"),
+        );
+        assert_eq!(
+            digest(&old),
+            "499dec3513b3af917be3dc866950081a09224880591f1e6950a0524ef8a8a709"
+        );
+        let new = Path::new(env!("CARGO_BIN_EXE_khor"));
+        assert_ne!(
+            digest(new),
+            digest(&old),
+            "two actual different Khor builds"
+        );
+        let home = root("published-upgrade");
+        let bin = home.join("shared-installation");
+        let runtime = home.join("node-local-runtime");
+        fs::create_dir(&bin).unwrap();
+        let installation = Installation { home, bin, runtime };
+        installation.activate(&old, "v0.1.15-rc.3");
+        let previous_package = fs::canonicalize(installation.pointer()).unwrap();
+        let mut keeper = Reaper(
+            installation
+                .command(&installation.bin.join("khor"))
+                .arg("serve")
+                .stdout(Stdio::null())
+                .stderr(fs::File::create(installation.home.join("serve.log")).unwrap())
+                .spawn()
+                .unwrap(),
+        );
+        wait_for("published resident", 30, || {
+            inner_pid(&installation.home).is_some()
+        });
+        let first = inner_pid(&installation.home).unwrap();
+        let mut existing = installation.shell();
+        let host_birth = birth(existing.host.host_pid);
+        let shell_birth = birth(existing.host.child_pid);
+        existing.round_trip("BEFORE");
+
+        installation.activate(new, "v0.1.15-round5");
+        wait_for("new resident", 30, || {
+            inner_pid(&installation.home).is_some_and(|pid| pid != first && alive(pid))
+        });
+        let new_program = fs::read_link(format!("/proc/{}/exe", keeper.id())).unwrap();
+        assert!(
+            new_program.starts_with(&installation.runtime),
+            "keeper executes its local immutable image"
+        );
+        assert_eq!(digest(&new_program), digest(new));
+        existing.round_trip("AFTER");
+        assert_eq!(birth(existing.host.host_pid), host_birth);
+        assert_eq!(birth(existing.host.child_pid), shell_birth);
+        let mut created = installation.shell();
+        let created_program =
+            fs::read_link(format!("/proc/{}/exe", created.host.host_pid)).unwrap();
+        assert_eq!(
+            created_program, new_program,
+            "new terminals use the new runtime"
+        );
+        created.round_trip("NEW");
+
+        let second = inner_pid(&installation.home).unwrap();
+        installation.activate(&old, "v0.1.15-rc.3");
+        wait_for("compatible rollback", 30, || {
+            inner_pid(&installation.home).is_some_and(|pid| pid != second && alive(pid))
+        });
+        assert_eq!(
+            digest(&fs::read_link(format!("/proc/{}/exe", keeper.id())).unwrap()),
+            digest(&old)
+        );
+        existing.round_trip("ROLLBACK");
+        created.round_trip("RETAINED");
+
+        Command::new("kill")
+            .args(["-TERM", &keeper.id().to_string()])
+            .status()
+            .unwrap();
+        wait_for("own keeper to stop", 15, || {
+            keeper.try_wait().unwrap().is_some()
+        });
+        existing.round_trip("AFTER_STOP");
+        created.round_trip("AFTER_STOP");
+        let probe = installation
+            .command(new)
+            .arg("_runtime_info")
+            .output()
+            .unwrap();
+        assert!(probe.status.success());
+        let info: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
+        let contract: khor_runtime::Contract =
+            serde_json::from_value(info["release"]["contract"].clone()).unwrap();
+        let store =
+            khor_runtime::Store::open(installation.runtime.clone(), Default::default()).unwrap();
+        for value in [b"gc-sentinel-1", b"gc-sentinel-2"] {
+            drop(
+                store
+                    .publish(
+                        khor_runtime::Role::Cli,
+                        "gc-test-only",
+                        contract.clone(),
+                        Default::default(),
+                        khor_runtime::Source::Bytes(value),
+                    )
+                    .unwrap(),
+            );
+        }
+        let id = new_program
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        assert!(
+            store.collect().unwrap().occupied.contains(&id),
+            "a live terminal retains the new generation after serve stops"
+        );
+        drop(created);
+        wait_for("unoccupied new generation to be collected", 15, || {
+            store.collect().unwrap().removed.contains(&id)
+        });
+        assert!(
+            previous_package.is_file(),
+            "local GC never deletes shared release packages"
+        );
+        existing.round_trip("SHARED_RETAINED");
+        assert_eq!(birth(existing.host.host_pid), host_birth);
+        assert_eq!(birth(existing.host.child_pid), shell_birth);
+    }
 }

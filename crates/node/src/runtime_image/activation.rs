@@ -1,4 +1,4 @@
-use super::{Contract, current, inspect};
+use super::{Contract, Info, Release, Role, current, inspect_supported};
 use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, path::Path};
 
@@ -14,7 +14,7 @@ const LEGACY_PROGRAMS: [&str; 4] = [
     "a4dafc2c94715817f560a22aaae1180ba060d54f7788dd35f4a712ed7dbab8ac",
 ];
 
-fn legacy_contract(program: &Path) -> Result<Option<Contract>, String> {
+pub(super) fn legacy_info(program: &Path) -> Result<Option<Info>, String> {
     let metadata = std::fs::metadata(program).map_err(|error| error.to_string())?;
     if !metadata.is_file() {
         return Err("activation source is not a regular program".into());
@@ -39,26 +39,35 @@ fn legacy_contract(program: &Path) -> Result<Option<Contract>, String> {
     if length != metadata.len() {
         return Err("activation source changed while being verified".into());
     }
-    if !LEGACY_PROGRAMS.contains(&format!("{:x}", digest.finalize()).as_str()) {
+    let digest = format!("{:x}", digest.finalize());
+    if !LEGACY_PROGRAMS.contains(&digest.as_str()) {
         return Ok(None);
     }
-    Ok(Some(Contract {
-        terminal: 5,
-        gui: "khor-gui/2".into(),
-        node: "khor/0:sha256:7bdf9a8cedcc26b783f3a6714899df875cbcb429e2f1ee64aa5a7d065e75fcda"
-            .into(),
-        store: 1,
-        journal: 1,
-        agent: 1,
+    Ok(Some(Info {
+        executable: std::fs::canonicalize(program).map_err(|error| error.to_string())?,
+        release: Release {
+            schema: 1,
+            version: "0.1.15".into(),
+            role: Role::Cli,
+            portable: true,
+            embedded: [("legacy-complete-release".into(), digest)].into(),
+            contract: Contract {
+                terminal: 5,
+                gui: "khor-gui/2".into(),
+                node:
+                    "khor/0:sha256:7bdf9a8cedcc26b783f3a6714899df875cbcb429e2f1ee64aa5a7d065e75fcda"
+                        .into(),
+                store: 1,
+                journal: 1,
+                agent: 1,
+            },
+        },
     }))
 }
 
 pub(super) fn check(other: &Path) -> Result<(), String> {
     let expected = current()?.release.contract;
-    let actual = match legacy_contract(other)? {
-        Some(contract) => contract,
-        None => inspect(other)?.release.contract,
-    };
+    let actual = inspect_supported(other)?.release.contract;
     if !expected.accepts(&actual) {
         return Err(INCOMPATIBLE.into());
     }

@@ -183,6 +183,15 @@ jobs:
           cargo test --locked -p khor-core -p khor-node --lib activity -- --test-threads=1
           cargo test --locked -p khor-node --lib gui_run_rejects_old_and_unqualified_reports -- --test-threads=1
           cargo test --locked -p khor-cli --test serve_keeper --test add_ssh -- --test-threads=1
+      - name: Verify an actual published build upgrades and rolls back while both shells stay live
+        run: |
+          previous="$RUNNER_TEMP/khor-0.1.15-rc.3"
+          curl --fail --location --silent --show-error --connect-timeout 15 --max-time 120 https://github.com/colehank/khor/releases/download/v0.1.15-rc.3/khor-linux-x86_64.gz --output "$previous.gz"
+          echo "92bf83cca3773456f9da55630d4d7819dc52ade3079720b79379121aacf58208  $previous.gz" | sha256sum --check
+          gzip --decompress --stdout "$previous.gz" > "$previous"
+          echo "499dec3513b3af917be3dc866950081a09224880591f1e6950a0524ef8a8a709  $previous" | sha256sum --check
+          chmod 555 "$previous"
+          KHOR_TEST_PREVIOUS_BIN="$previous" cargo test --locked -p khor-cli --test serve_keeper an_actual_published_release -- --ignored --nocapture --test-threads=1
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

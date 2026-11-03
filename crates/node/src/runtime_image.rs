@@ -168,6 +168,13 @@ fn inspect(program: &Path) -> Result<Info, String> {
     Ok(info)
 }
 
+fn inspect_supported(program: &Path) -> Result<Info, String> {
+    match activation::legacy_info(program)? {
+        Some(info) => Ok(info),
+        None => inspect(program),
+    }
+}
+
 pub struct HostImage {
     image: Image,
     source: PathBuf,
@@ -228,7 +235,7 @@ pub(crate) fn agent(bundle: &[u8]) -> Result<Image, String> {
 
 pub fn host_at(source: &Path) -> Result<HostImage, String> {
     let expected = current()?.release;
-    let info = inspect(source)?;
+    let info = inspect_supported(source)?;
     if !expected.contract.accepts(&info.release.contract) {
         return Err(
             "runtime protocols or storage format are incompatible; existing sessions were retained"
@@ -249,7 +256,7 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
             selected.embedded.clone(),
             Source::File(&executable),
             |image| {
-                let observed = inspect(image.path()).map_err(io::Error::other)?;
+                let observed = inspect_supported(image.path()).map_err(io::Error::other)?;
                 if observed.release != selected {
                     return Err(io::Error::other(
                         "runtime changed between inspection and publication",
