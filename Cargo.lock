@@ -4953,6 +4953,7 @@ dependencies = [
  "khor-core",
  "khor-net",
  "khor-node",
+ "khor-runtime",
  "khor-sync",
  "khor-web",
  "libc",

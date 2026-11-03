@@ -17,6 +17,7 @@ khor-web = { path = "../web" }
 libc.workspace = true
 
 [dev-dependencies]
+khor-runtime.workspace = true
 khor-node.workspace = true
 khor-core.workspace = true
 khor-acp = { path = "../acp" }

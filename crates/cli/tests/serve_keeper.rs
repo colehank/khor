@@ -13,24 +13,6 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
-/// Every shield directory in the machine's temp dir right now. The
-/// shield's copies land in one of these, and this test is the only
-/// thing that makes one nobody will ever revisit.
-fn shield_dirs() -> std::collections::HashSet<PathBuf> {
-    let Ok(entries) = fs::read_dir(std::env::temp_dir()) else {
-        return Default::default();
-    };
-    entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("khor-shield-"))
-        })
-        .collect()
-}
-
 /// A scratch tree that **takes itself away however the test leaves**
 /// (`crates/node/src/tests.rs::Scratch` has the whole reasoning: a
 /// cleanup written at the end of a test is skipped by the assertion
@@ -351,7 +333,7 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     // pid (TERM below lands on the pre-exec id, which is what serve.pid
     // holds), the disk watch, and the handover.
     let home = root("shield");
-    let before = shield_dirs();
+    let runtime = home.join("runtime-images");
     let bin = home.join("khor-copy");
     let original = home.join("generation-1");
     fs::copy(env!("CARGO_BIN_EXE_khor"), &original).unwrap();
@@ -363,6 +345,7 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
         .env("KHOR_NAME", "box")
         .env("KHOR_WEB_PORT", "0")
         .env("KHOR_SHIELD", "1")
+        .env("KHOR_RUNTIME_DIR", &runtime)
         .env("KHOR_INSTALL_SOURCE", &bin)
         .env_remove("KHOR_SESSION")
         .stderr(fs::File::create(&log).unwrap())
@@ -431,25 +414,14 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     wait_for("the keeper and its serve to leave", 10, || {
         keeper.try_wait().map(|s| s.is_some()).unwrap_or(false) && !alive(second)
     });
-    // **The copy the shield made, too** (2026-09-14). It does not live
-    // under `home`: it is in the machine's temp dir, named after a hash
-    // of this install path — and this install path carries a pid, so no
-    // later khor ever opens that directory again and its own age sweep
-    // never reaches it. Measured before this line existed: 8.6 GB in
-    // ~150 MB pairs, one pair per run of this test, on a disk with 3 GB
-    // free.
-    //
-    // **By difference rather than by name.** Rebuilding the name means
-    // hashing the same spelling of the path the keeper hashed, and the
-    // first try at that deleted nothing: `temp_dir()` answers `/var/…`
-    // while the keeper resolves its own exe to `/private/var/…`, and
-    // the two hash apart. What came and went is a fact this test can
-    // read instead of derive.
-    // ⚠️ **Not the scratch home's** — these are the keeper's shield
-    // directories, made outside it, so no `Scratch` takes them away.
-    for d in shield_dirs().difference(&before) {
-        let _ = fs::remove_dir_all(d);
-    }
+    let store = khor_runtime::Store::open(runtime, Default::default())
+        .unwrap()
+        .contracts()
+        .unwrap();
+    assert!(
+        !store.is_empty(),
+        "the keeper and serve used recognized immutable runtime images"
+    );
 }
 
 #[test]

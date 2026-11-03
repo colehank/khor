@@ -117,30 +117,35 @@ pub(super) fn spawn_with_profile(
 ) -> io::Result<(Process, Pipes)> {
     spawn(command)
 }
+pub(super) fn child_exited(child: &Child) -> io::Result<bool> {
+    // Keep the unreaped Child as the PID ownership anchor until signalling is disabled.
+    let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    let status = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            child.id(),
+            &mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        )
+    };
+    if status < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(info.si_signo == libc::SIGCHLD)
+}
 impl Process {
     pub(super) fn id(&self) -> u32 {
         self.child.id()
     }
     pub(super) fn exited(&mut self) -> io::Result<bool> {
-        // WNOWAIT preserves the leader's PID as the process-group ownership
-        // anchor. Reaping before killpg could target a reused process group.
-        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
-        let status = unsafe {
-            libc::waitid(
-                libc::P_PID,
-                self.child.id(),
-                &mut info,
-                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
-            )
-        };
-        if status < 0 {
-            let error = io::Error::last_os_error();
-            if error.raw_os_error() == Some(libc::ECHILD) {
-                self.owns_group = false;
-            }
-            return Err(error);
+        let result = child_exited(&self.child);
+        if result
+            .as_ref()
+            .is_err_and(|error| error.raw_os_error() == Some(libc::ECHILD))
+        {
+            self.owns_group = false;
         }
-        Ok(info.si_signo == libc::SIGCHLD)
+        result
     }
     pub(super) fn terminate(&mut self) -> io::Result<()> {
         if !self.owns_group {

@@ -13,6 +13,11 @@ mod platform;
 mod platform;
 
 const EXIT_GRACE: Duration = Duration::from_secs(10);
+
+#[cfg(unix)]
+pub(crate) fn child_exited(child: &std::process::Child) -> io::Result<bool> {
+    platform::child_exited(child)
+}
 pub(super) struct Pipes {
     pub stdin: Box<dyn Write + Send>,
     pub stdout: Box<dyn Read + Send>,

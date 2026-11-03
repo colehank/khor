@@ -182,6 +182,12 @@ pub fn host() -> Result<HostImage, String> {
     host_at(&crate::installed_exe()?)
 }
 
+pub(crate) fn running_host() -> Result<HostImage, String> {
+    let mut image = host_at(&crate::self_exe()?)?;
+    image.source = crate::installed_exe()?;
+    Ok(image)
+}
+
 #[cfg(khor_embedded_agent)]
 pub(crate) fn agent(bundle: &[u8]) -> Result<Image, String> {
     let release = current()?.release;
