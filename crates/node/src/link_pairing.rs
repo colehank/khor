@@ -217,7 +217,7 @@ pub(crate) fn validate_pair_reply(reply: &PairReply) -> Result<(), Error> {
         }
         PairReply::Roster { chunk, .. } => state::validate_chunk(chunk)?,
         PairReply::Devices { reply, .. } => documents::validate_reply(reply)?,
-        PairReply::Aborted { .. } | PairReply::BootstrapPending { .. } => (),
+        PairReply::Aborted { .. } => (),
         PairReply::Uncommitted { why, .. } if why.len() <= 4096 => (),
         PairReply::Uncommitted { .. } => return Err("unbounded pairing diagnostic".into()),
     }
@@ -476,7 +476,7 @@ impl Node {
                                 .ok_or("missing settlement target")?,
                         )?
                     {
-                        return Ok(PairReply::BootstrapPending { claim: operation });
+                        return progress(state, &row);
                     }
                     row.phase = PairPhase::BootstrapComplete;
                     row.completed_ms.get_or_insert(crate::now_ms());
@@ -529,8 +529,7 @@ impl Node {
             | PairReply::Roster { claim, .. }
             | PairReply::Devices { claim, .. }
             | PairReply::Aborted { claim }
-            | PairReply::Uncommitted { claim, .. }
-            | PairReply::BootstrapPending { claim } => *claim,
+            | PairReply::Uncommitted { claim, .. } => *claim,
         };
         if received != expected {
             return Err("pairing response claim mismatch".into());
@@ -893,7 +892,10 @@ impl Node {
                         phase: PairPhase::BootstrapComplete,
                         ..
                     } => break,
-                    PairReply::BootstrapPending { .. } => {
+                    PairReply::Progress {
+                        phase: PairPhase::AdmissionFlushed,
+                        ..
+                    } => {
                         tokio::task::yield_now().await;
                     }
                     _ => return Err("pairing completion did not confirm its bootstrap".into()),

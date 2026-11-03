@@ -690,7 +690,7 @@ mod published_upgrade {
         let shell_birth = birth(existing.host.child_pid);
         existing.round_trip("BEFORE");
 
-        installation.activate(new, "v0.1.15-round5");
+        installation.activate(new, &format!("v{}-rc.1", khor_node::VERSION));
         wait_for("new resident", 30, || {
             inner_pid(&installation.home).is_some_and(|pid| pid != first && alive(pid))
         });

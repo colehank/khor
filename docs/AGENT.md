@@ -65,7 +65,7 @@ Pi 官方 [SDK 文档](https://github.com/earendil-works/pi/blob/main/packages/c
 
 ## 构建与发布
 
-0.2.0 增加普通多 Khor 会话与配对进度协议。升级时同步更新 App 和参与配对的节点；旧运行中的终端宿主保留自身运行镜像，不通过终止它们完成升级。正式产物由可信 GitHub runner 从源构建；租赁开发机的测试二进制和缓存不用于签名发布。候选 tag 只分发 TestFlight，正式 App Store 提审另走稳定 tag，见 [RELEASE.md](RELEASE.md)。
+0.2.0 增加普通多 Khor 会话并完善配对进度处理。升级时同步更新 App 和参与配对的节点；旧运行中的终端宿主保留自身运行镜像，不通过终止它们完成升级。正式产物由可信 GitHub runner 从源构建；租赁开发机的测试二进制和缓存不用于签名发布。候选 tag 只分发 TestFlight，正式 App Store 提审另走稳定 tag，见 [RELEASE.md](RELEASE.md)。
 
 `npm ci --prefix apps/agent` 安装固定依赖；Bun 1.3.14 执行 `node apps/agent/build.mjs [Rust target]`，生成不依赖用户 Node 安装的 `apps/agent/dist/khor-agent`。
 

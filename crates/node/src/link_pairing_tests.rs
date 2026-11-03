@@ -1011,7 +1011,7 @@ async fn unfinished_bootstrap_is_progress_and_never_a_false_completion() {
         .await
         .unwrap();
     assert!(
-        matches!(reply,Response::Paired {reply:PairReply::BootstrapPending {claim}} if claim==operation)
+        matches!(reply, Response::Paired { reply: PairReply::Progress { claim, phase: PairPhase::AdmissionFlushed, .. } } if claim == operation)
     );
     let context = issuer.doc_context().unwrap();
     assert_eq!(
