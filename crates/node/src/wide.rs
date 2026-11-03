@@ -286,7 +286,7 @@ fn conversation_row(node: &Node, board: &str) -> Result<Option<Session>, String>
         } else {
             conversation.title
         };
-        row.cwd = (!conversation.cwd.is_empty()).then_some(conversation.cwd);
+        row.place = (!conversation.cwd.is_empty()).then_some(conversation.cwd);
         row.home = khor_core::DeviceId(home);
     }
     // The latest message still standing speaks, from this machine's
