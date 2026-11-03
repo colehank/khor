@@ -1,0 +1,307 @@
+//! Each ordinary Khor conversation owns its config, Pi history and executor slot.
+use super::*;
+use khor_sync::chat::AgentConversation;
+
+pub(super) fn execution_key(root: &Path, board: &str) -> PathBuf {
+    if board == crate::wide::BROADCAST {
+        root.to_owned()
+    } else {
+        directory(root)
+            .join("conversations")
+            .join(blake3::hash(board.as_bytes()).to_hex().as_str())
+    }
+}
+
+pub(super) fn executor_path(root: &Path, board: &str) -> PathBuf {
+    if board == crate::wide::BROADCAST {
+        directory(root).join("executor.lock")
+    } else {
+        execution_key(root, board).join("executor.lock")
+    }
+}
+
+pub(super) fn claim_in(root: &Path, board: &str) -> Result<File, String> {
+    let path = executor_path(root, board);
+    fs::create_dir_all(path.parent().unwrap()).map_err(|e| e.to_string())?;
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    file.try_lock().map_err(|_| msg::agent_busy().to_owned())?;
+    Ok(file)
+}
+
+impl Node {
+    pub fn khor_conversation(&self, board: &str) -> Result<AgentConversation, String> {
+        if !crate::wide::agent_board(board) {
+            return Err(msg::agent_arguments().into());
+        }
+        self.chat
+            .agent_conversation(board)?
+            .ok_or_else(|| msg::agent_arguments().into())
+    }
+
+    pub fn khor_agent_config_in(&self, board: &str) -> Result<Option<AgentConfig>, String> {
+        crate::wide::board(board)?;
+        if board != crate::wide::BROADCAST {
+            self.khor_conversation(board)?;
+        }
+        self.chat.agent_config_in(board)
+    }
+
+    pub(super) fn create_khor_conversation(
+        &self,
+        token: &str,
+        title: &str,
+        cwd: &str,
+    ) -> Result<Report, String> {
+        self.refuse_unless_hosting()?;
+        if !safe_token(token)
+            || title.chars().count() > 256
+            || title.chars().any(char::is_control)
+            || cwd.len() > 4096
+            || cwd.contains('\0')
+        {
+            return Err(msg::agent_arguments().into());
+        }
+        let _admission = prompt_admission(self.root())?;
+        let identity =
+            serde_json::to_vec(&(self.device_str(), token)).map_err(|e| e.to_string())?;
+        let board = format!("wide/agent-{}", blake3::hash(&identity).to_hex());
+        let creation = serde_json::to_vec(&(title.trim(), cwd)).map_err(|e| e.to_string())?;
+        let requested = AgentConversation {
+            creation: blake3::hash(&creation).to_hex().to_string(),
+            home: self.device_str().into(),
+            title: title.trim().into(),
+            cwd: cwd.into(),
+            auto_title: title.trim().is_empty(),
+        };
+        let config = if let Some(existing) = self.chat.agent_conversation(&board)? {
+            if existing.home != requested.home || existing.creation != requested.creation {
+                return Err(msg::console_token_conflict().into());
+            }
+            self.chat.agent_config_in(&board)?
+        } else {
+            let config = self
+                .khor_agent_config()?
+                .filter(|c| c.home == self.device_str());
+            self.chat
+                .set_agent_conversation(&board, &requested, config.as_ref())?;
+            config
+        };
+        let conversation = self.khor_conversation(&board)?;
+        let _ = self.emit_row_of(&crate::SessionId(board.clone()));
+        Ok(Report {
+            config,
+            run: None,
+            data: Some(json!({"session":board,"conversation":conversation})),
+        })
+    }
+
+    pub(crate) fn accept_agent_report(
+        &self,
+        action: &Action,
+        report: &Report,
+    ) -> Result<(), String> {
+        if matches!(action, Action::CreateConversation { .. }) {
+            let data = report
+                .data
+                .as_ref()
+                .ok_or_else(|| msg::agent_arguments().to_owned())?;
+            let board = data["session"]
+                .as_str()
+                .filter(|s| crate::wide::agent_board(s))
+                .ok_or_else(|| msg::agent_arguments().to_owned())?;
+            let conversation: AgentConversation =
+                serde_json::from_value(data["conversation"].clone()).map_err(|e| e.to_string())?;
+            self.chat
+                .set_agent_conversation(board, &conversation, report.config.as_ref())?;
+        } else if configuration_reply(action, report) {
+            if let Some(config) = &report.config {
+                self.chat.set_agent_config_in(action.board(), config)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+// The root admission lock is held while taking these existing execution locks.
+pub(super) fn close_claims(root: &Path) -> Result<Option<Vec<File>>, String> {
+    let path = directory(root).join("conversations");
+    let entries = match fs::read_dir(path) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Some(Vec::new())),
+        Err(error) => return Err(error.to_string()),
+    };
+    let mut held = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|e| e.to_string())?
+            .path()
+            .join("executor.lock");
+        let file = match OpenOptions::new().read(true).write(true).open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error.to_string()),
+        };
+        match file.try_lock() {
+            Ok(()) => held.push(file),
+            Err(std::fs::TryLockError::WouldBlock) => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+    Ok(Some(held))
+}
+
+pub(super) fn name_conversation(
+    root: &Path,
+    board: &str,
+    title: &str,
+    key: &str,
+) -> Result<(), String> {
+    if board == crate::wide::BROADCAST
+        || title.trim().is_empty()
+        || title.chars().count() > 80
+        || title.chars().any(char::is_control)
+    {
+        return Ok(());
+    }
+    let _configuration = configuration_lock(root)?;
+    let node = Node::open(root.to_owned())?;
+    let mut conversation = node.khor_conversation(board)?;
+    if !conversation.auto_title {
+        return Ok(());
+    }
+    conversation.title = if key.is_empty() {
+        title.trim().into()
+    } else {
+        title.trim().replace(key, "[redacted]")
+    };
+    conversation.auto_title = false;
+    node.chat
+        .set_agent_conversation(board, &conversation, None)?;
+    let _ = node.emit_row_of(&crate::SessionId(board.into()));
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::KindSurface;
+
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn node() -> (Scratch, Node) {
+        let root = std::env::temp_dir().join(format!(
+            "khor-conversations-{}",
+            crate::link::fresh_hex().unwrap()
+        ));
+        fs::create_dir_all(root.join(".khor")).unwrap();
+        fs::write(
+            root.join(".khor/relays.json"),
+            r#"{"relays":[{"url":"http://127.0.0.1:9"}],"only_mine":true}"#,
+        )
+        .unwrap();
+        let node = Node::open_hosting(root.clone(), "conversations", false).unwrap();
+        (Scratch(root), node)
+    }
+    fn create(node: &Node, token: &str, title: &str) -> String {
+        node.create_khor_conversation(token, title, "/fixture")
+            .unwrap()
+            .data
+            .unwrap()["session"]
+            .as_str()
+            .unwrap()
+            .into()
+    }
+    #[test]
+    fn creation_retries_reuse_one_conversation_and_configs_and_receipts_remain_separate() {
+        let (_scratch, node) = node();
+        let a = create(&node, "conversation-token-a", "");
+        let b = create(&node, "conversation-token-b", "My conversation");
+        assert_ne!(a, b);
+        assert_eq!(create(&node, "conversation-token-a", ""), a);
+        assert!(
+            node.create_khor_conversation("conversation-token-a", "different", "/fixture")
+                .is_err()
+        );
+        let config = AgentConfig {
+            home: node.device_str().into(),
+            account: "fixture-account".into(),
+            model: "fixture-model".into(),
+            options: Default::default(),
+        };
+        node.chat.set_agent_config_in(&a, &config).unwrap();
+        assert_eq!(node.khor_agent_config_in(&a).unwrap(), Some(config));
+        assert_eq!(node.khor_agent_config_in(&b).unwrap(), None);
+        let record = CommandRecord {
+            id: "fixture-receipt".into(),
+            line: "Only A".into(),
+            owner: node.device_str().into(),
+            status: "done".into(),
+            started_at_ms: 1,
+            ended_at_ms: Some(2),
+            ..Default::default()
+        };
+        node.record_command_in(&a, &record).unwrap();
+        assert_eq!(node.chat.log(&a).unwrap().messages.len(), 1);
+        assert!(node.chat.log(&b).unwrap().messages.is_empty());
+        assert!(
+            node.chat
+                .log(crate::wide::BROADCAST)
+                .unwrap()
+                .messages
+                .is_empty()
+        );
+        let rows = crate::wide::WideKind.rows(&node).unwrap();
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.id.0 == a || row.id.0 == b)
+                .count(),
+            2
+        );
+        let reopened = Node::open(node.root().to_owned()).unwrap();
+        assert_eq!(reopened.chat.log(&a).unwrap().messages.len(), 1);
+        assert_eq!(
+            reopened.khor_conversation(&b).unwrap().title,
+            "My conversation"
+        );
+    }
+    #[test]
+    fn executor_slots_are_independent_and_root_close_waits_for_every_slot() {
+        let (_scratch, node) = node();
+        let a = create(&node, "conversation-token-a", "");
+        let b = create(&node, "conversation-token-b", "");
+        let first = claim_in(node.root(), &a).unwrap();
+        assert!(claim_in(node.root(), &a).is_err());
+        let second = claim_in(node.root(), &b).unwrap();
+        assert!(close_claims(node.root()).unwrap().is_none());
+        drop(first);
+        assert!(close_claims(node.root()).unwrap().is_none());
+        drop(second);
+        assert_eq!(close_claims(node.root()).unwrap().unwrap().len(), 2);
+        assert_ne!(
+            execution_key(node.root(), &a),
+            execution_key(node.root(), &b)
+        );
+    }
+    #[test]
+    fn model_names_are_persisted_once_and_never_replace_explicit_titles() {
+        let (_scratch, node) = node();
+        let a = create(&node, "conversation-token-a", "");
+        let b = create(&node, "conversation-token-b", "Manual title");
+        name_conversation(node.root(), &a, "Model title", "").unwrap();
+        name_conversation(node.root(), &a, "Later title", "").unwrap();
+        name_conversation(node.root(), &b, "Wrong replacement", "").unwrap();
+        assert_eq!(node.khor_conversation(&a).unwrap().title, "Model title");
+        assert_eq!(node.khor_conversation(&b).unwrap().title, "Manual title");
+        assert_eq!(create(&node, "conversation-token-a", ""), a);
+    }
+}

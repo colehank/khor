@@ -250,12 +250,52 @@ impl ChatKind {
     }
 
     pub fn agent_config(&self) -> Result<Option<khor_sync::chat::AgentConfig>, String> {
-        Ok(self.load(crate::wide::BROADCAST)?.doc.agent_config())
+        self.agent_config_in(crate::wide::BROADCAST)
     }
 
     pub fn set_agent_config(&self, config: &khor_sync::chat::AgentConfig) -> Result<(), String> {
-        let loaded = self.load(crate::wide::BROADCAST)?;
+        self.set_agent_config_in(crate::wide::BROADCAST, config)
+    }
+
+    pub(crate) fn agent_config_in(
+        &self,
+        board: &str,
+    ) -> Result<Option<khor_sync::chat::AgentConfig>, String> {
+        Ok(self.load(board)?.doc.agent_config())
+    }
+
+    pub(crate) fn set_agent_config_in(
+        &self,
+        board: &str,
+        config: &khor_sync::chat::AgentConfig,
+    ) -> Result<(), String> {
+        let loaded = self.load(board)?;
         loaded.doc.set_agent_config(config)?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).map(|_| ())
+    }
+
+    pub(crate) fn agent_conversation(
+        &self,
+        board: &str,
+    ) -> Result<Option<khor_sync::chat::AgentConversation>, String> {
+        if !self.dir(board)?.is_dir() {
+            return Ok(None);
+        }
+        Ok(self.load(board)?.doc.agent_conversation())
+    }
+
+    pub(crate) fn set_agent_conversation(
+        &self,
+        board: &str,
+        conversation: &khor_sync::chat::AgentConversation,
+        config: Option<&khor_sync::chat::AgentConfig>,
+    ) -> Result<(), String> {
+        let loaded = self.load(board)?;
+        loaded.doc.set_agent_conversation(conversation)?;
+        if let Some(config) = config {
+            loaded.doc.set_agent_config(config)?;
+        }
         let mut store = loaded.store;
         store.flush(&loaded.doc).map(|_| ())
     }

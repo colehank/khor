@@ -82,7 +82,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   useGrowingText(box, draft);
 
   const refresh = useCallback(() => {
-    void khorAgent("read").then((value) => { if (currentId.current === id) setAgent(value); }, () => {});
+    void khorAgent("read", "", {session:id}).then((value) => { if (currentId.current === id) setAgent(value); }, () => {});
     machineLog(id).then(
       (l) => { if (currentId.current === id) setReadout({ id, log: l }); },
       // A poll that threw on a blip must not take the screen down;
@@ -213,13 +213,15 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     if (text.startsWith("/") && (runToken.current?.line !== text || runToken.current?.input !== input)) {
       runToken.current = { line: text, input, token: crypto.randomUUID() };
     }
-    const agentPrompt = !text.startsWith("/") && text.length > 0 && files.length === 0;
+    const agentInput = id === 'wide/all' || files.length === 0 ? text
+      : [text, `Attached files on ${JSON.stringify(landsOn)}:`, ...files.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
+    const agentPrompt = !text.startsWith("/") && (id === 'wide/all' ? text.length > 0 && files.length === 0 : agentInput.length > 0);
     if (agentPrompt && !agent?.config) { setSending(false); setRefused(gui.agent_choose_first); return; }
-    if (agentPrompt && (runToken.current?.line !== text || runToken.current?.input !== undefined)) {
-      runToken.current = { line: text, input: undefined, token: crypto.randomUUID() };
+    if (agentPrompt && (runToken.current?.line !== agentInput || runToken.current?.input !== undefined)) {
+      runToken.current = { line: agentInput, input: undefined, token: crypto.randomUUID() };
     }
-    const posted = text.startsWith("/") ? consoleRun(text, runToken.current!.token, input) : agentPrompt
-      ? khorAgent("prompt", agent!.config!.home, { text, token: runToken.current!.token }) : compose(text, files);
+    const posted = text.startsWith("/") ? consoleRun(text, runToken.current!.token, input, id) : agentPrompt
+      ? khorAgent("prompt", agent!.config!.home, { text:agentInput, token: runToken.current!.token, session:id }) : compose(text, files);
     posted.then(
       () => {
         setDraft((now) => (now.trim() === text ? "" : now));
@@ -280,6 +282,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
         {shownMsgs.map((m, i) => (
           <MsgLine
             key={m.id}
+            session={id}
             m={m}
             stamp={stampFor(m, i === 0 ? null : shownMsgs[i - 1])}
             machine={landsOn}
@@ -308,7 +311,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           same reason: the line divides two regions, the column is where
           the writing is. On the narrow face it sits above the deck
           (`components/SessionBar`, 2026-10-13), like the agent composer. */}
-      <BarSeat at="above"><KhorHeader view={agent} onChanged={setAgent} disabled={!!(runningAgent)} updates={agentUpdates} />
+      <BarSeat at="above"><KhorHeader session={id} view={agent} onChanged={setAgent} disabled={!!(runningAgent)} updates={agentUpdates} />
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
         {pickerOpen && <ConsoleMenu choices={choices} pick={pick} onPick={choose} />}
@@ -338,7 +341,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
             // **The keyboard stays up after a note** (P7, 2026-10-03, the
             // owner's ruling): the press does not take the focus from the
             // text, so the next line is typed at once, as in Messages.
-            <KhorSend record={runningAgent} onStopped={refresh} ready={ready} sending={sending} onSend={send} />
+            <KhorSend session={id} record={runningAgent} onStopped={refresh} ready={ready} sending={sending} onSend={send} />
           }
         >
         {/* The browser forms' picker: a real <input type=file>, hidden —
@@ -461,6 +464,7 @@ function stampFor(m: ChatMsgRow, prev: ChatMsgRow | null): string | null {
 }
 
 function MsgLine({
+  session,
   m,
   stamp,
   machine,
@@ -470,6 +474,7 @@ function MsgLine({
   onSession,
   linked,
 }: {
+  session: string;
   m: ChatMsgRow;
   stamp: string | null;
   machine: string;
@@ -502,7 +507,7 @@ function MsgLine({
         {m.retracted ? (
           <div className="text-caption text-muted-foreground">{cli.retracted}</div>
         ) : m.command ? (
-          <ConsoleResult command={m.command} onSession={onSession} linked={linked} />
+          <ConsoleResult session={session} command={m.command} onSession={onSession} linked={linked} />
         ) : m.text !== null ? (
           // **A word longer than the bubble breaks inside the bubble**
           // (afix-a; the audit's S2: a long URL ran past the bubble and

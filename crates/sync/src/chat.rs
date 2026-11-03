@@ -7,8 +7,8 @@ pub mod doc;
 use std::path::{Path, PathBuf};
 
 pub use doc::{
-    AgentApproval, AgentConfig, AgentTurn, ChatDoc, CommandRecord, Fate, FileRef, Message, MsgBody,
-    Sender, Step, Target,
+    AgentApproval, AgentConfig, AgentConversation, AgentTurn, ChatDoc, CommandRecord, Fate,
+    FileRef, Message, MsgBody, Sender, Step, Target,
 };
 
 use crate::store::{Loaded, load};

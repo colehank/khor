@@ -10,14 +10,14 @@ export const managePi = async (machine: string, payload: Record<string, unknown>
 export async function piJob(machine: string, request: Record<string, unknown>, signal: AbortSignal, progress?: (job: PiJob, id: string) => void) {
   const started = await managePi(machine, request), id = started.job;
   if (!id) throw new Error(started.error ?? "Missing setup operation");
-  const cancel = () => { void managePi(machine, { operation: "cancel", job: id }).catch(() => {}); };
+  const cancel = () => { void managePi(machine, { operation: "cancel", job: id, session:request.session }).catch(() => {}); };
   signal.addEventListener("abort", cancel, { once: true });
   let finished = false;
   try {
     if (signal.aborted) { cancel(); signal.throwIfAborted(); }
     for (;;) {
       signal.throwIfAborted();
-      const state = await managePi(machine, { operation: "poll", job: id });
+      const state = await managePi(machine, { operation: "poll", job: id, session:request.session });
       if (state.status === "done") { finished = true; return state; }
       if (state.status === "failed" || state.status === "cancelled") { finished = true; throw new Error(state.error ?? state.status); }
       progress?.(state, id);

@@ -14,10 +14,13 @@ mod io;
 #[path = "khor_agent_output.rs"]
 mod output;
 use crate::agent_process as process;
+#[path = "khor_agent_conversations.rs"]
+mod conversations;
 #[path = "khor_agent_runtime.rs"]
 pub(crate) mod runtime;
 #[path = "khor_agent_updates.rs"]
 mod updates;
+use conversations::{claim_in, execution_key};
 use output::TextStream;
 use std::{
     collections::HashMap,
@@ -62,6 +65,24 @@ pub enum Action {
     RetryCancellation {
         run: String,
     },
+    CreateConversation {
+        token: String,
+        title: String,
+        cwd: String,
+    },
+    Conversation {
+        session: String,
+        action: Box<Action>,
+    },
+}
+
+impl Action {
+    pub(crate) fn board(&self) -> &str {
+        match self {
+            Self::Conversation { session, .. } => session,
+            _ => crate::wide::BROADCAST,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -82,6 +103,8 @@ pub enum RuntimeClose {
 
 #[derive(Serialize, Deserialize)]
 struct Saved {
+    #[serde(default = "default_board")]
+    board: String,
     fingerprint: String,
     record: CommandRecord,
 }
@@ -172,6 +195,10 @@ impl Drop for Execution {
         }
     }
 }
+fn default_board() -> String {
+    crate::wide::BROADCAST.into()
+}
+
 fn running() -> &'static Mutex<HashMap<PathBuf, Arc<Running>>> {
     static RUNS: OnceLock<Mutex<HashMap<PathBuf, Arc<Running>>>> = OnceLock::new();
     RUNS.get_or_init(Default::default)
@@ -179,12 +206,16 @@ fn running() -> &'static Mutex<HashMap<PathBuf, Arc<Running>>> {
 fn stop_local_producers(root: &Path) {
     accounts::stop_jobs(root);
     crate::acp_management::stop_jobs(root);
-    let active = running()
+    let active: Vec<_> = running()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
-        .get(root)
-        .cloned();
-    if let Some(active) = active {
+        .iter()
+        .filter(|(key, _)| {
+            key.as_path() == root || key.starts_with(directory(root).join("conversations"))
+        })
+        .map(|(_, run)| run.clone())
+        .collect();
+    for active in active {
         active.request_stop();
     }
 }
@@ -368,14 +399,18 @@ impl Node {
                 CloseClaim::Missing => (true, None),
                 CloseClaim::Busy => return Ok(RuntimeClose::Busy),
             };
+            let Some(_conversations) = conversations::close_claims(&root)? else {
+                return Ok(RuntimeClose::Busy);
+            };
             if running()
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .contains_key(&root)
+                .keys()
+                .any(|key| key == &root || key.starts_with(directory(&root).join("conversations")))
             {
                 return Ok(RuntimeClose::Busy);
             }
-            closing.finish(missing_claim)
+            closing.finish(missing_claim && _conversations.is_empty())
         })
         .await
         .map_err(|_| "Agent runtime close owner failed".to_owned())?
@@ -384,6 +419,7 @@ impl Node {
 
 fn save(root: &Path, saved: &Saved) -> Result<(), String> {
     let mut saved = Saved {
+        board: saved.board.clone(),
         fingerprint: saved.fingerprint.clone(),
         record: saved.record.clone(),
     };
@@ -409,7 +445,7 @@ fn save(root: &Path, saved: &Saved) -> Result<(), String> {
     File::open(target.parent().expect("agent receipt directory"))
         .and_then(|f| f.sync_all())
         .map_err(|e| e.to_string())?;
-    Node::open(root.to_path_buf())?.record_command(&saved.record)?;
+    Node::open(root.to_path_buf())?.record_command_in(&saved.board, &saved.record)?;
     Ok(())
 }
 fn send(active: &Running, value: &Value) -> Result<(), String> {
@@ -425,6 +461,9 @@ fn send(active: &Running, value: &Value) -> Result<(), String> {
 }
 
 pub(crate) fn configuration_reply(action: &Action, report: &Report) -> bool {
+    if let Action::Conversation { action, .. } = action {
+        return configuration_reply(action, report);
+    }
     matches!(action, Action::Configure { .. })
         || matches!(action,Action::Manage{request}if request["operation"]=="poll"&&report.data.as_ref().is_some_and(|data|data["status"]=="done"&&data["result"]["options"].is_object()&&data["result"]["configOptions"].is_array()))
 }
@@ -437,11 +476,30 @@ impl Node {
     /// Only called on the selected home, through the authenticated node route.
     pub(crate) async fn khor_agent_here(&self, action: Action) -> Result<Report, String> {
         let _call = runtime::enter(self.root(), &self.agent_generation)?;
+        if let Action::CreateConversation { token, title, cwd } = &action {
+            return self.create_khor_conversation(token, title, cwd);
+        }
+        let (board, action) = match action {
+            Action::Conversation { session, action } => {
+                let conversation = self.khor_conversation(&session)?;
+                if conversation.home != self.device_str()
+                    || matches!(
+                        *action,
+                        Action::Conversation { .. } | Action::CreateConversation { .. }
+                    )
+                {
+                    return Err(msg::agent_arguments().into());
+                }
+                (session, *action)
+            }
+            action => (default_board(), action),
+        };
+        let execution_key = execution_key(self.root(), &board);
         if let Action::Stop { run } = &action {
             let active = running()
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .get(self.root())
+                .get(&execution_key)
                 .filter(|r| &r.id == run)
                 .cloned()
                 .ok_or_else(|| msg::agent_not_running().to_owned())?;
@@ -455,7 +513,7 @@ impl Node {
             )
             .await;
             return Ok(Report {
-                config: self.khor_agent_config().ok().flatten(),
+                config: self.khor_agent_config_in(&board).ok().flatten(),
                 run: Some(run.clone()),
                 data: Some(data),
             });
@@ -470,7 +528,7 @@ impl Node {
             )
             .await;
             return Ok(Report {
-                config: self.khor_agent_config().ok().flatten(),
+                config: self.khor_agent_config_in(&board).ok().flatten(),
                 run: Some(run.clone()),
                 data: Some(data),
             });
@@ -478,14 +536,17 @@ impl Node {
         self.reconcile_agent()?;
         let root = self.root().to_path_buf();
         let mut report = Report {
-            config: self.khor_agent_config()?,
+            config: self.khor_agent_config_in(&board)?,
             run: None,
             data: None,
         };
         match action {
+            Action::Conversation { .. } | Action::CreateConversation { .. } => {
+                return Err(msg::agent_arguments().into());
+            }
             Action::Manage { request } => {
                 report.data = Some(self.manage_agent(request)?);
-                report.config = self.khor_agent_config()?;
+                report.config = self.khor_agent_config_in(&board)?;
             }
             Action::Read => {
                 self.reconcile_agent()?;
@@ -500,7 +561,7 @@ impl Node {
                     return Err(msg::agent_model_required().to_owned());
                 }
                 let _configuration = configuration_lock(&root)?;
-                let current = self.khor_agent_config()?;
+                let current = self.khor_agent_config_in(&board)?;
                 let config = AgentConfig {
                     home: self.device_str().into(),
                     account: account.id.clone(),
@@ -511,8 +572,8 @@ impl Node {
                         .map(|c| c.options.clone())
                         .unwrap_or_default(),
                 };
-                self.chat.set_agent_config(&config)?;
-                let _ = self.emit_row_of(&crate::SessionId(crate::wide::BROADCAST.into()));
+                self.chat.set_agent_config_in(&board, &config)?;
+                let _ = self.emit_row_of(&crate::SessionId(board.clone()));
                 report.config = Some(config);
             }
             Action::Prompt { token, text } => {
@@ -537,7 +598,14 @@ impl Node {
                     fs::read_to_string(self.root().join(".khor/keys").join(&account.id))
                         .map_err(|_| msg::agent_key_missing().to_owned())?
                 };
-                let id = format!("agent-{}-{token}", &self.device_str()[..16]);
+                let id = if board == crate::wide::BROADCAST {
+                    format!("agent-{}-{token}", &self.device_str()[..16])
+                } else {
+                    format!(
+                        "agent-{}-{token}",
+                        &blake3::hash(board.as_bytes()).to_hex()[..16]
+                    )
+                };
                 let fingerprint = blake3::hash(
                     &serde_json::to_vec(&(&text, &config)).map_err(|e| e.to_string())?,
                 )
@@ -555,16 +623,17 @@ impl Node {
                     }
                     #[cfg(all(test, unix))]
                     runtime_close_tests::producer_point(&root, "retry-record");
-                    self.record_command(&prior.record)?;
+                    self.record_command_in(&board, &prior.record)?;
                     report.run = Some(id);
                     return Ok(report);
                 }
-                let claim = Arc::new(claim(&root)?);
+                let claim = Arc::new(claim_in(&root, &board)?);
                 // Re-check under the cross-process executor claim.
                 if file(&root, &id).exists() {
                     return Err(msg::agent_busy().to_owned());
                 }
                 let saved = Saved {
+                    board: board.clone(),
                     fingerprint,
                     record: CommandRecord {
                         id: id.clone(),
@@ -588,14 +657,18 @@ impl Node {
                 running()
                     .lock()
                     .map_err(|e| e.to_string())?
-                    .insert(root.clone(), active.clone());
-                let mut start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":directory(&root).join("sessions"),"model":config.model,"options":config.options,
+                    .insert(execution_key.clone(), active.clone());
+                let mut start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":if board == crate::wide::BROADCAST { directory(&root).join("sessions") } else { execution_key.join("history") },"model":config.model,"options":config.options,
                     "account":{"provider":account.provider.word(),"baseUrl":account.base_url,"key":key.trim()}});
                 if let Some(inference) = &account.inference {
                     start["account"] =
                         json!({"provider":inference.provider,"baseUrl":inference.base_url});
                     start["credentialPath"] = json!(accounts::credential_path(&root, &account.id));
                 }
+                if let Ok(conversation) = self.khor_conversation(&board) {
+                    start["autoTitle"] = json!(conversation.auto_title);
+                }
+                let recovery_key = execution_key.clone();
                 let recovery_root = root.clone();
                 let recovery_id = id.clone();
                 let executor_claim = claim.clone();
@@ -625,7 +698,7 @@ impl Node {
                     running()
                         .lock()
                         .unwrap_or_else(|p| p.into_inner())
-                        .remove(&root);
+                        .remove(&execution_key);
                 });
                 match spawned {
                     Ok(executor) => runtime::register_producer(&recovery_root, executor),
@@ -633,7 +706,7 @@ impl Node {
                         running()
                             .lock()
                             .unwrap_or_else(|p| p.into_inner())
-                            .remove(&recovery_root);
+                            .remove(&recovery_key);
                         let mut saved: Saved = serde_json::from_slice(
                             &fs::read(file(&recovery_root, &recovery_id))
                                 .map_err(|e| e.to_string())?,
@@ -710,21 +783,13 @@ impl Node {
         if !directory(self.root()).join("runs").is_dir() {
             return Ok(());
         }
-        let Ok(_claim) = claim(self.root()) else {
-            return Ok(());
-        };
+
         // A passive read may have crossed the close before obtaining the
         // claim. Recheck while holding it before touching any display receipt.
         if crate::remote_cancel::is_closed(self.root()) {
             return Ok(());
         }
-        let recorded: HashMap<_, _> = self
-            .chat
-            .log(crate::wide::BROADCAST)?
-            .messages
-            .into_iter()
-            .filter_map(|m| m.command.map(|c| (c.id.clone(), c)))
-            .collect();
+        let mut recorded = HashMap::<String, HashMap<String, CommandRecord>>::new();
         for entry in fs::read_dir(directory(self.root()).join("runs"))
             .map_err(|e| e.to_string())?
             .flatten()
@@ -738,6 +803,12 @@ impl Node {
             let Ok(mut saved) = serde_json::from_slice::<Saved>(&bytes) else {
                 continue;
             };
+            let Ok(_claim) = claim_in(self.root(), &saved.board) else {
+                continue;
+            };
+            if crate::remote_cancel::is_closed(self.root()) {
+                return Ok(());
+            }
             if saved.record.ended_at_ms.is_none() {
                 saved.record.status = "interrupted".into();
                 saved.record.error = Some(msg::console_interrupted().into());
@@ -746,8 +817,20 @@ impl Node {
                     agent.approval = None;
                 }
                 save(self.root(), &saved)?;
-            } else if recorded.get(&saved.record.id) != Some(&saved.record) {
-                self.record_command(&saved.record)?;
+            } else {
+                if !recorded.contains_key(&saved.board) {
+                    let records = self
+                        .chat
+                        .log(&saved.board)?
+                        .messages
+                        .into_iter()
+                        .filter_map(|m| m.command.map(|c| (c.id.clone(), c)))
+                        .collect();
+                    recorded.insert(saved.board.clone(), records);
+                }
+                if recorded[&saved.board].get(&saved.record.id) != Some(&saved.record) {
+                    self.record_command_in(&saved.board, &saved.record)?;
+                }
             }
         }
         Ok(())
@@ -936,6 +1019,16 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
                         if last_flush.elapsed() >= std::time::Duration::from_millis(200) {
                             save(&root, &saved)?;
                             last_flush = std::time::Instant::now();
+                        }
+                    }
+                    Some("title") => {
+                        if !active.stopped.load(Ordering::SeqCst) {
+                            conversations::name_conversation(
+                                &root,
+                                &saved.board,
+                                event["title"].as_str().unwrap_or(""),
+                                key,
+                            )?;
                         }
                     }
                     Some("tool") => {}
@@ -1296,6 +1389,7 @@ mod tests {
         }
         let _registered = RegisteredRun(node.root().into());
         let mut saved = Saved {
+            board: default_board(),
             fingerprint: "fixture".into(),
             record: CommandRecord {
                 id: active.id.clone(),
@@ -1364,6 +1458,7 @@ mod tests {
         let node = Node::open_as(scratch.join("store"), "notification-fixture").unwrap();
         let active = Running::new("notification-fixture-run".into());
         let mut saved = Saved {
+            board: default_board(),
             fingerprint: "fixture".into(),
             record: CommandRecord {
                 id: active.id.clone(),
@@ -1452,6 +1547,7 @@ mod tests {
         .unwrap();
         let active = Running::new("worker-generation-fixture".into());
         let mut saved = Saved {
+            board: default_board(),
             fingerprint: "fixture".into(),
             record: CommandRecord {
                 id: active.id.clone(),
@@ -1531,6 +1627,7 @@ mod tests {
             approval: Mutex::new(None),
         };
         let mut saved = Saved {
+            board: default_board(),
             fingerprint: "fixture".into(),
             record: CommandRecord {
                 id: active.id.clone(),

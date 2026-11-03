@@ -128,6 +128,7 @@ fn failed_sidecar_child() {
         approval: Mutex::new(None),
     });
     let saved = Saved {
+        board: default_board(),
         fingerprint: "fixture".into(),
         record: CommandRecord {
             id: active.id.clone(),
@@ -466,6 +467,7 @@ fn streamed_sidecar_child() {
         approval: Mutex::new(None),
     });
     let saved = Saved {
+        board: default_board(),
         fingerprint: "stream-fixture".into(),
         record: CommandRecord {
             id: active.id.clone(),

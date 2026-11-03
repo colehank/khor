@@ -86,11 +86,14 @@ pub fn answer(
             &arg("line")?,
             num("caret")? as usize,
         ))?),
-        "console_run" => to_json(&crate::console::run(
+        "console_run" => to_json(&crate::console::run_in(
             root,
             &arg("line")?,
             &arg("token")?,
             opt_str("input")?.as_deref(),
+            opt_str("session")?
+                .as_deref()
+                .unwrap_or(khor_node::wide::BROADCAST),
         )?),
         "sessions" => to_json(&crate::list_sessions(root, &arg("by")?)?),
         // `cells` is required rather than defaulted: it is a measured

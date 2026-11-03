@@ -7037,11 +7037,7 @@ impl Node {
         {
             return match reply? {
                 ipc::Reply::KhorAgent { report } => {
-                    if crate::khor_agent::configuration_reply(&action, &report) {
-                        if let Some(config) = &report.config {
-                            self.chat.set_agent_config(config)?;
-                        }
-                    }
+                    self.accept_agent_report(&action, &report)?;
                     Ok(report)
                 }
                 ipc::Reply::Refused { why } => Err(why),
@@ -7084,11 +7080,7 @@ impl Node {
             .await?
         {
             Response::KhorAgent { report } => {
-                if crate::khor_agent::configuration_reply(&configure_action, &report) {
-                    if let Some(config) = &report.config {
-                        self.chat.set_agent_config(config)?;
-                    }
-                }
+                self.accept_agent_report(&configure_action, &report)?;
                 Ok(report)
             }
             Response::Refused { why } => Err(why),

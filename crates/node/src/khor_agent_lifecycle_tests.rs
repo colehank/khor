@@ -215,6 +215,7 @@ fn stop_before_input(root: PathBuf) {
     )));
     active.request_stop();
     let saved = Saved {
+        board: default_board(),
         fingerprint: "fixture".into(),
         record: CommandRecord {
             id: active.id.clone(),

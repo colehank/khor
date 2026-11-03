@@ -2386,7 +2386,7 @@ pub async fn khor_agent(
 ) -> Result<KhorAgentView, String> {
     let n = if matches!(action, "stop" | "answer" | "cancel_status" | "cancel_retry") {
         try_open(root)?
-    } else if action == "configure"
+    } else if matches!(action, "configure" | "create")
         || (action == "manage" && payload["operation"].as_str() != Some("cancel"))
     {
         Node::open_foreground_async(root.to_path_buf()).await?
@@ -2399,17 +2399,41 @@ pub async fn khor_agent(
             .map(str::to_owned)
             .ok_or_else(|| khor_catalog::msg::agent_arguments().to_owned())
     };
-    let mut config = n.khor_agent_config()?;
+    let board = payload["session"]
+        .as_str()
+        .unwrap_or(khor_node::wide::BROADCAST);
+    let mut config = n.khor_agent_config_in(board)?;
     let mut run = None;
     let mut data = None;
     if action == "catalog" {
         data = Some(khor_node::khor_agent::providers());
     } else if action == "read" {
-        if n.hosts() {
-            n.reconcile_agent()?;
+        if board == khor_node::wide::BROADCAST {
+            if n.hosts() {
+                n.reconcile_agent()?;
+            }
+        } else {
+            let conversation = n.khor_conversation(board)?;
+            let home = conversation.home.clone();
+            data = Some(serde_json::json!({"conversation":conversation}));
+            config = n
+                .khor_agent_on(
+                    &home,
+                    khor_node::khor_agent::Action::Conversation {
+                        session: board.into(),
+                        action: Box::new(khor_node::khor_agent::Action::Read),
+                    },
+                )
+                .await?
+                .config;
         }
     } else {
         let action = match action {
+            "create" => khor_node::khor_agent::Action::CreateConversation {
+                token: string("token")?,
+                title: string("title")?,
+                cwd: string("cwd")?,
+            },
             "manage" => khor_node::khor_agent::Action::Manage {
                 request: payload.clone(),
             },
@@ -2443,6 +2467,19 @@ pub async fn khor_agent(
         if machine.is_empty() {
             return Err(khor_catalog::msg::agent_not_configured().into());
         }
+        let action = if board == khor_node::wide::BROADCAST
+            || matches!(
+                action,
+                khor_node::khor_agent::Action::CreateConversation { .. }
+                    | khor_node::khor_agent::Action::Manage { .. }
+            ) {
+            action
+        } else {
+            khor_node::khor_agent::Action::Conversation {
+                session: board.into(),
+                action: Box::new(action),
+            }
+        };
         let report = n.khor_agent_on(machine, action).await?;
         config = report.config;
         run = report.run;

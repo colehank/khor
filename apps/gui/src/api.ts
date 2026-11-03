@@ -850,8 +850,8 @@ export type { KhorAgentView } from "./gen/bindings/KhorAgentView";
 export const khorAgent = (action: string, machine = "", payload: Record<string, unknown> = {}) =>
   call<import("./gen/bindings/KhorAgentView").KhorAgentView>("khor_agent", { action, machine, payload });
 export const consoleComplete = (line: string, caret: number) => call<ConsoleCompletion>("console_complete", { line, caret });
-export const consoleRun = (line: string, token: string, input?: string) =>
-  call<string>("console_run", { line, token, ...(input === undefined ? {} : { input }) });
+export const consoleRun = (line: string, token: string, input?: string, session?:string) =>
+  call<string>("console_run", { line, token, session, ...(input === undefined ? {} : { input }) });
 /** A broadcast file taken, or taken again after it failed or was
     cancelled — `khor retry`, same node call (docs/KHOR.md equivalence).
     Answers where the files landed. */

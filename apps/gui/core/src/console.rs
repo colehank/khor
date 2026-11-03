@@ -42,11 +42,17 @@ pub fn catalog() -> Vec<ConsoleCommand> {
 
 #[derive(Clone, Serialize, Deserialize)]
 struct Stored {
+    #[serde(default = "default_board")]
+    board: String,
     fingerprint: String,
     pid: u32,
     process_started: i64,
     private: bool,
     record: CommandRecord,
+}
+
+fn default_board() -> String {
+    khor_node::wide::BROADCAST.into()
 }
 
 fn now() -> i64 {
@@ -133,13 +139,23 @@ fn public_record(stored: &Stored) -> CommandRecord {
 }
 
 fn publish(root: &Path, stored: &Stored) -> Result<(), String> {
-    Node::open(root.to_path_buf())?.record_command(&public_record(stored))?;
+    Node::open(root.to_path_buf())?.record_command_in(&stored.board, &public_record(stored))?;
     Ok(())
 }
 
 /// The request token belongs to exactly this invocation. It is not an
 /// execution queue: an interrupted operation requires a new submission.
 pub fn run(root: &Path, line: &str, token: &str, input: Option<&str>) -> Result<String, String> {
+    run_in(root, line, token, input, khor_node::wide::BROADCAST)
+}
+
+pub fn run_in(
+    root: &Path,
+    line: &str,
+    token: &str,
+    input: Option<&str>,
+    board: &str,
+) -> Result<String, String> {
     if !(16..=64).contains(&token.len()) || !safe_id(token) {
         return Err(msg::console_token_invalid().to_owned());
     }
@@ -152,7 +168,15 @@ pub fn run(root: &Path, line: &str, token: &str, input: Option<&str>) -> Result<
         return Err(msg::console_unknown(word));
     }
     let node = Node::open(root.to_path_buf())?;
-    let id = format!("cmd-{}-{token}", &node.device_str()[..16]);
+    if board != khor_node::wide::BROADCAST {
+        node.khor_conversation(board)?;
+    }
+    let prefix = if board == khor_node::wide::BROADCAST {
+        node.device_str()[..16].to_owned()
+    } else {
+        blake3::hash(board.as_bytes()).to_hex()[..16].to_owned()
+    };
+    let id = format!("cmd-{prefix}-{token}");
     let fingerprint = blake3::hash(&serde_json::to_vec(&(line, input)).map_err(|e| e.to_string())?)
         .to_hex()
         .to_string();
@@ -188,6 +212,7 @@ pub fn run(root: &Path, line: &str, token: &str, input: Option<&str>) -> Result<
         agent: None,
     };
     let mut stored = Stored {
+        board: board.into(),
         fingerprint,
         pid: std::process::id(),
         process_started: process_started(),
@@ -327,7 +352,7 @@ pub fn reconcile(root: &Path, node: &Node, messages: &mut [khor_node::Message]) 
         }
         let public = public_record(&stored);
         if public != *record {
-            let _ = node.record_command(&public);
+            let _ = node.record_command_in(&stored.board, &public);
         }
         m.at = stored
             .record
@@ -396,6 +421,54 @@ mod tests {
         let log = node.log(khor_node::wide::BROADCAST).unwrap();
         assert_eq!(log.messages.iter().filter(|m| m.id == id).count(), 1);
     }
+    #[tokio::test]
+    async fn slash_receipts_stay_in_the_conversation_that_submitted_them() {
+        let root = scratch("conversation");
+        let node = Node::open_hosting(root.0.clone(), "conversation", false).unwrap();
+        let report = node
+            .khor_agent_on(
+                node.device_str(),
+                khor_node::khor_agent::Action::CreateConversation {
+                    token: "create-conversation-1234".into(),
+                    title: "Commands".into(),
+                    cwd: "/fixture".into(),
+                },
+            )
+            .await
+            .unwrap();
+        let board = report.data.unwrap()["session"].as_str().unwrap().to_owned();
+        let id = run_in(
+            &root.0,
+            "/version",
+            "conversation-command-1234",
+            None,
+            &board,
+        )
+        .unwrap();
+        assert_eq!(finished(&root.0, &id).record.status, "done");
+        assert_eq!(
+            run_in(
+                &root.0,
+                "/version",
+                "conversation-command-1234",
+                None,
+                &board
+            )
+            .unwrap(),
+            id
+        );
+        let log = node.log(&board).unwrap();
+        assert_eq!(log.messages.iter().filter(|m| m.id == id).count(), 1);
+        assert!(
+            !node
+                .log(khor_node::wide::BROADCAST)
+                .unwrap()
+                .messages
+                .iter()
+                .any(|m| m.id == id)
+        );
+    }
+
     #[test]
     fn a_dead_executor_is_reported_without_replaying_its_command() {
         let root = scratch("restart");

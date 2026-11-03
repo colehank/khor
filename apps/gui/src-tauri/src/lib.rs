@@ -566,9 +566,20 @@ async fn console_complete(
 }
 
 #[tauri::command]
-async fn console_run(line: String, token: String, input: Option<String>) -> Result<String, String> {
+async fn console_run(
+    line: String,
+    token: String,
+    input: Option<String>,
+    session: Option<String>,
+) -> Result<String, String> {
     off_main(move || {
-        khor_gui_core::console::run(&Node::root_from_env(), &line, &token, input.as_deref())
+        khor_gui_core::console::run_in(
+            &Node::root_from_env(),
+            &line,
+            &token,
+            input.as_deref(),
+            session.as_deref().unwrap_or(khor_node::wide::BROADCAST),
+        )
     })
     .await
 }

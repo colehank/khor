@@ -97,20 +97,20 @@ export function AcpHeader({who,mode,options,protocol,onControl,disabled=false}:{
     {!options.length&&!m&&<DropdownMenuLabel className="composer-lab-menu-note">此会话由宿主管理模型与执行权限</DropdownMenuLabel>}
   </Preferences><Dialog open={deleting} onOpenChange={setDeleting}><DialogContent purpose="confirmation"><DialogTitle>删除会话记录？</DialogTitle><DialogBody>由智能体删除这段会话的记录。删除后无法从这里恢复。</DialogBody><DialogFooter><Button onClick={()=>setDeleting(false)}>取消</Button><Button variant="destructive" onClick={()=>{setDeleting(false);onControl?.('delete');}}>删除记录</Button></DialogFooter></DialogContent></Dialog></>;
 }
-export function KhorHeader({view,onChanged,disabled,updates=[]}:{view:KhorAgentView|null;onChanged:(view:KhorAgentView)=>void;disabled:boolean;updates?:readonly string[]}){
+export function KhorHeader({view,onChanged,disabled,updates=[],session="wide/all"}:{session?:string;view:KhorAgentView|null;onChanged:(view:KhorAgentView)=>void;disabled:boolean;updates?:readonly string[]}){
   const [configure,setConfigure]=useState(0);
   const [open,setOpen]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[options,setOptions]=useState<SessionConfigOption[]>([]);
   const request=useRef<AbortController|null>(null);
   const account=view?.accounts.find(a=>a.id===view.config?.account),model=view?.config?.model??'';
   useEffect(()=>{if(!account||saving)return;const abort=new AbortController();setError('');
-    void piJob(account.home,{operation:'session_settings',account:account.id},abort.signal).then(result=>{if(!abort.signal.aborted)setOptions(result.result?.configOptions??[]);},e=>{if(!abort.signal.aborted)setError(String(e));});
+    void piJob(account.home,{operation:'session_settings',account:account.id,session},abort.signal).then(result=>{if(!abort.signal.aborted)setOptions(result.result?.configOptions??[]);},e=>{if(!abort.signal.aborted)setError(String(e));});
     return()=>abort.abort();
   },[open,account?.id,account?.home,model,saving]);
   useEffect(()=>()=>request.current?.abort(),[]);
   const pick=async(configId:string,value:string|boolean)=>{
     if(!account||saving)return;request.current?.abort();const abort=new AbortController();request.current=abort;setSaving(true);setError('');
-    try{const result=await piJob(account.home,{operation:'session_set_option',account:account.id,configId,value},abort.signal);
-      if(!abort.signal.aborted){setOptions(result.result?.configOptions??[]);onChanged(await khorAgent('read',account.home));}
+    try{const result=await piJob(account.home,{operation:'session_set_option',account:account.id,configId,value,session},abort.signal);
+      if(!abort.signal.aborted){setOptions(result.result?.configOptions??[]);onChanged(await khorAgent('read',account.home,{session}));}
     }catch(e){if(!abort.signal.aborted)setError(String(e));}finally{if(!abort.signal.aborted)setSaving(false);}
   };
   const ui=options.flatMap((o):AddOption[]=>o.type==='boolean'?[{kind:'switch',id:o.id,name:o.name,note:o.description??null,on:o.currentValue===true,onToggle:()=>void pick(o.id,o.currentValue!==true)}]:o.type==='select'?[{kind:'values',id:o.id,name:o.name,note:o.description??null,current:String(o.currentValue??''),values:(o.options??[]).flatMap(v=>'group' in v?v.options.map(x=>({...x,heading:v.name,note:x.description??null})):[{...v,heading:"",note:v.description??null}]),onPick:v=>void pick(o.id,v)}]:[]).map(o=>({...o,category:options.find(source=>source.id===o.id)?.category}));
@@ -126,7 +126,7 @@ export function KhorHeader({view,onChanged,disabled,updates=[]}:{view:KhorAgentV
     <Fact name="运行于">{account?.home_name??'—'}</Fact>
     {disabled&&<DropdownMenuLabel className="composer-lab-menu-note">设置从下一轮生效</DropdownMenuLabel>}
     {error&&<DropdownMenuLabel role="alert" className="composer-lab-menu-note text-state-failed">{error}</DropdownMenuLabel>}
-  </Preferences><KhorAgentSettings view={view} onChanged={onChanged} disabled={disabled} openRequest={configure} hideTrigger/></>;
+  </Preferences><KhorAgentSettings session={session} view={view} onChanged={onChanged} disabled={disabled} openRequest={configure} hideTrigger/></>;
 }
 export function SessionAdd({destination,...props}:ComponentProps<typeof AddSeat>&{destination?:ReactElement<ComponentProps<typeof SendInto>>|null}){
 
@@ -144,7 +144,7 @@ export function SessionAdd({destination,...props}:ComponentProps<typeof AddSeat>
   // DirPicker must survive closing the menu that opened it.
   return destination?cloneElement(destination,{render:menu}):menu();
 }
-export function KhorSend({record,onStopped,ready,sending,onSend}:{record:CommandRecord|null;onStopped:()=>void;ready:boolean;sending:boolean;onSend:()=>void}){
-  if(record)return <StopSeat tip={false} onStop={()=>{void khorAgent('stop',record.owner,{run:record.id}).then(onStopped);}}/>;
+export function KhorSend({record,onStopped,ready,sending,onSend,session="wide/all"}:{session?:string;record:CommandRecord|null;onStopped:()=>void;ready:boolean;sending:boolean;onSend:()=>void}){
+  if(record)return <StopSeat tip={false} onStop={()=>{void khorAgent('stop',record.owner,{run:record.id,session}).then(onStopped);}}/>;
   return ready?<SendSeat onSend={onSend} disabled={sending} keepFocus/>:null;
 }

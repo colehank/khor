@@ -86,8 +86,8 @@ function StructuredData({ raw }: { raw: string }) {
   return <pre data-console-json className="overflow-x-auto whitespace-pre-wrap break-all font-mono text-callout">{JSON.stringify(value, null, 2)}</pre>;
 }
 
-export function ConsoleResult({ command: c, onSession, linked }: { command: CommandRecord; onSession?: (id: string) => void; linked?: SessionRow }) {
-  if (c.agent) return <KhorAgentResult record={c} />;
+export function ConsoleResult({ command: c, onSession, linked, session="wide/all" }: { session?:string;command: CommandRecord; onSession?: (id: string) => void; linked?: SessionRow }) {
+  if (c.agent) return <KhorAgentResult session={session} record={c} />;
   const status = ({ running: gui.console_running, done: gui.console_done, failed: gui.console_failed, interrupted: gui.console_interrupted, cancelled: gui.console_cancelled } as Record<string, string>)[c.status] ?? c.status;
   return (
     <section data-console-result={c.id} data-console-status={c.status} aria-busy={c.status === "running"} className="min-w-0 space-y-in rounded-lg border px-row py-in text-body">

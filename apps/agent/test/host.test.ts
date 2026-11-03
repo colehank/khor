@@ -27,12 +27,14 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     let body = ""; for await (const chunk of request) body += chunk;
     authenticated &&= request.headers.authorization === "Bearer fixture-selected-key";
     const value = JSON.parse(body); requests.push(value);
-    if (requests.length === 1) stream(response, { role: "assistant", tool_calls: [{ index: 0, id: "fixture-call", type: "function", function: { name: "mcp__khor__devices", arguments: "{}" } }] }, "tool_calls");
+    const naming = value.messages.some((message:any) => message.role === 'system' && typeof message.content === 'string' && message.content.includes('Give this conversation a short descriptive title'));
+    if (naming) stream(response,{role:'assistant',content:'Isolated B'},'stop');
+    else if (requests.length === 1) stream(response, { role: "assistant", tool_calls: [{ index: 0, id: "fixture-call", type: "function", function: { name: "mcp__khor__devices", arguments: "{}" } }] }, "tool_calls");
     else stream(response, { role: "assistant", content: requests.length === 2 ? "network found" : "context restored" }, "stop");
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address(); assert.ok(address && typeof address === "object");
-  const turn = (text: string): Promise<Record<string, any>[]> => new Promise((resolve, reject) => {
+  const turn = (text: string, historyDir=stateDir, autoTitle=false): Promise<Record<string, any>[]> => new Promise((resolve, reject) => {
     const compiled = process.env.KHOR_TEST_AGENT_BIN;
     const child = spawn(compiled ? absolute(compiled) : process.execPath, compiled ? [] : [fileURLToPath(new URL("../src/host.ts", import.meta.url))], { cwd: stateDir, env: { PATH: process.env.PATH }, stdio: ["pipe", "pipe", "pipe"] });
     const events: Record<string, any>[] = []; let diagnostics = "";
@@ -53,7 +55,7 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     });
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve(events) : reject(new Error(`Host exited ${code}: ${diagnostics}; ${JSON.stringify(events.filter((e) => e.type !== "mcp"))}`)));
-    child.stdin.write(`${JSON.stringify({ type: "start", protocol: 1, run: "fixture-run", text, stateDir, model: "fixture", account: { provider: "newapi", baseUrl: `http://127.0.0.1:${address.port}`, key: "fixture-selected-key" } })}\n`);
+    child.stdin.write(`${JSON.stringify({ type: "start", protocol: 1, run: "fixture-run", text, stateDir:historyDir, autoTitle, model: "fixture", account: { provider: "newapi", baseUrl: `http://127.0.0.1:${address.port}`, key: "fixture-selected-key" } })}\n`);
   });
   try {
     const first = await turn("Remember fixture-task, then list my devices");
@@ -74,5 +76,16 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     await turn("What did I ask before?");
     assert.ok(requests[2]!.messages.some((m: any) => m.role === "user" && JSON.stringify(m.content).includes("fixture-task")));
     assert.ok(requests[2]!.messages.some((m: any) => m.role === "tool"));
+    const isolated = await turn('Independent B conversation',join(stateDir,'second-conversation'),true);
+    assert.equal(isolated.find(e=>e.type==='title')?.title,'Isolated B');
+    assert(!JSON.stringify(requests[3]!.messages).includes('fixture-task'),'another Pi directory never inherits A history');
+    assert.equal(requests[4]!.tools?.length??0,0,'automatic naming has no network tools');
+    await turn('Continue A');
+    assert(JSON.stringify(requests[5]!.messages).includes('fixture-task'));
+    assert(!JSON.stringify(requests[5]!.messages).includes('Independent B conversation'));
+    const before=requests.length;
+    const again=await turn('Continue B',join(stateDir,'second-conversation'),true);
+    assert.equal(requests.length,before+1,'Pi restores its saved name without another naming request');
+    assert.equal(again.find(e=>e.type==='title')?.title,'Isolated B');
   } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); await rm(stateDir, { recursive: true, force: true }); }
 });

@@ -65,12 +65,21 @@ pub use khor_sync::chat::WIDE;
 /// The board a caller named — refused unless this build keeps one by
 /// that name (only the broadcast, so far). A typo must not open a new
 /// khor-wide conversation that every machine then syncs.
-pub(crate) fn board(name: &str) -> Result<&'static str, String> {
-    if name == BROADCAST {
-        Ok(BROADCAST)
+pub(crate) fn board(name: &str) -> Result<&str, String> {
+    if name == BROADCAST || agent_board(name) {
+        Ok(name)
     } else {
         Err(msg::bad_channel_name(format_args!("{name:?}")))
     }
+}
+
+pub(crate) fn agent_board(name: &str) -> bool {
+    name.strip_prefix("wide/agent-").is_some_and(|id| {
+        id.len() == 64
+            && id
+                .bytes()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+    })
 }
 
 /// One broadcast file, as this machine reads it.
@@ -168,8 +177,20 @@ impl Node {
         &self,
         record: &khor_sync::chat::CommandRecord,
     ) -> Result<String, String> {
-        let id = self.chat.command(BROADCAST, record)?;
-        let _ = self.emit_row_of(&khor_core::SessionId(BROADCAST.to_owned()));
+        self.record_command_in(BROADCAST, record)
+    }
+
+    pub fn record_command_in(
+        &self,
+        channel: &str,
+        record: &khor_sync::chat::CommandRecord,
+    ) -> Result<String, String> {
+        let channel = board(channel)?;
+        if channel != BROADCAST && self.chat.agent_conversation(channel)?.is_none() {
+            return Err(msg::agent_arguments().into());
+        }
+        let id = self.chat.command(channel, record)?;
+        let _ = self.emit_row_of(&khor_core::SessionId(channel.to_owned()));
         Ok(id)
     }
 
@@ -205,83 +226,15 @@ pub(crate) struct WideKind;
 
 impl KindSurface for WideKind {
     fn claims(&self, _node: &Node, id: &SessionId) -> bool {
-        id.0 == BROADCAST
+        id.0 == BROADCAST || agent_board(&id.0)
     }
 
     fn rows(&self, node: &Node) -> Result<Vec<Session>, String> {
-        let seen = node.seen_loaded()?;
-        let watermark = seen.doc.watermark(BROADCAST);
-        let msgs = node.chat.log(BROADCAST)?.messages;
-        let mut row: Session =
-            node.chat
-                .row_from(BROADCAST, node.device(), &msgs, watermark, Some(&seen.doc));
-        row.title = msg::broadcast_title().to_owned();
-        // The latest message still standing speaks, from this machine's
-        // seat (the module head): a file to this machine still moving or
-        // broken presses its word; anything else leaves the row its own
-        // 未看/空闲. Still standing, as the row's preview reads it
-        // (`ChatKind::row_from`'s `last`): a retracted slot has no word.
-        let me = node.device_str();
-        let kept = Kept::read(&msgs);
-        let active_agent = msgs.iter().rev().find(|m| {
-            !m.retracted
-                && m.command.as_ref().is_some_and(|c| {
-                    c.agent.is_some()
-                        && c.ended_at_ms.is_none()
-                        && matches!(c.status.as_str(), "running" | "blocked")
-                })
-        });
-        if let Some(c) = active_agent.and_then(|m| m.command.as_ref()) {
-            row.last = Some(khor_core::preview(if c.stdout.is_empty() {
-                &c.line
-            } else {
-                &c.stdout
-            }));
-        }
-        let pressed = active_agent
-            .or_else(|| msgs.iter().rev().find(|m| !m.retracted))
-            .and_then(|m| {
-                if let Some(c) = &m.command {
-                    let word = match c.status.as_str() {
-                        "running" => State::Busy,
-                        "blocked" if c.agent.is_some() => State::Blocked,
-                        "failed" => State::Failed,
-                        "interrupted" => State::Errored,
-                        _ => return None,
-                    };
-                    return Some((word, m.at));
-                }
-                if m.from.id == me || bytes(m).is_none() {
-                    return None;
-                }
-                let word = match kept.fate(m, me)?.step {
-                    Step::Moving => State::Busy,
-                    Step::Failed => State::Errored,
-                    // Not answered: an offer one may take, not a
-                    // question that blocks the row (rule 3).
-                    Step::Landed | Step::Stopped => return None,
-                };
-                Some((word, m.at))
-            });
-        // The message's own word, not the more pressing of two: a file
-        // still moving here is 忙碌 even while it is unseen — the order
-        // the ruling reads (忙碌, 中断, then 未看, then 空闲), and the
-        // row goes 忙碌 → 未看 as it lands.
-        if let Some((word, at)) = pressed {
-            row.state = Some(StateStamp {
-                state: word,
-                at: Millis(at.max(0) as u64),
-            });
-        }
-        // Put away like a machine's window (`ChatKind`'s rows) — but a
-        // newest file still moving or broken here keeps it out.
-        if pressed.is_none()
-            && let Some(closed) = seen.doc.closed_watermark(BROADCAST)
-            && msgs.iter().map(|m| m.at).max().unwrap_or(0) <= closed
-        {
-            return Ok(Vec::new());
-        }
-        Ok(vec![row])
+        node.known_wide()
+            .into_iter()
+            .filter(|name| name == BROADCAST || agent_board(name))
+            .filter_map(|name| conversation_row(node, &name).transpose())
+            .collect()
     }
 
     /// Every machine derives its own, from its own copy.
@@ -289,10 +242,10 @@ impl KindSurface for WideKind {
         false
     }
 
-    fn seen_at(&self, node: &Node, _id: &SessionId) -> Result<i64, String> {
+    fn seen_at(&self, node: &Node, id: &SessionId) -> Result<i64, String> {
         Ok(node
             .chat
-            .log(BROADCAST)?
+            .log(board(&id.0)?)?
             .messages
             .iter()
             .map(|m| m.at)
@@ -311,6 +264,97 @@ impl KindSurface for WideKind {
         store.flush(&loaded.doc)?;
         Ok(())
     }
+}
+
+fn conversation_row(node: &Node, board: &str) -> Result<Option<Session>, String> {
+    let seen = node.seen_loaded()?;
+    let watermark = seen.doc.watermark(board);
+    let msgs = node.chat.log(board)?.messages;
+    let mut row: Session =
+        node.chat
+            .row_from(board, node.device(), &msgs, watermark, Some(&seen.doc));
+    row.title = msg::broadcast_title().to_owned();
+    if board != BROADCAST {
+        let Some(conversation) = node.chat.agent_conversation(board)? else {
+            return Ok(None);
+        };
+        let Some(home) = khor_net::trust::id_from_hex(&conversation.home) else {
+            return Ok(None);
+        };
+        row.title = if conversation.title.is_empty() {
+            "khor".into()
+        } else {
+            conversation.title
+        };
+        row.cwd = (!conversation.cwd.is_empty()).then_some(conversation.cwd);
+        row.home = khor_core::DeviceId(home);
+    }
+    // The latest message still standing speaks, from this machine's
+    // seat (the module head): a file to this machine still moving or
+    // broken presses its word; anything else leaves the row its own
+    // 未看/空闲. Still standing, as the row's preview reads it
+    // (`ChatKind::row_from`'s `last`): a retracted slot has no word.
+    let me = node.device_str();
+    let kept = Kept::read(&msgs);
+    let active_agent = msgs.iter().rev().find(|m| {
+        !m.retracted
+            && m.command.as_ref().is_some_and(|c| {
+                c.agent.is_some()
+                    && c.ended_at_ms.is_none()
+                    && matches!(c.status.as_str(), "running" | "blocked")
+            })
+    });
+    if let Some(c) = active_agent.and_then(|m| m.command.as_ref()) {
+        row.last = Some(khor_core::preview(if c.stdout.is_empty() {
+            &c.line
+        } else {
+            &c.stdout
+        }));
+    }
+    let pressed = active_agent
+        .or_else(|| msgs.iter().rev().find(|m| !m.retracted))
+        .and_then(|m| {
+            if let Some(c) = &m.command {
+                let word = match c.status.as_str() {
+                    "running" => State::Busy,
+                    "blocked" if c.agent.is_some() => State::Blocked,
+                    "failed" => State::Failed,
+                    "interrupted" => State::Errored,
+                    _ => return None,
+                };
+                return Some((word, m.at));
+            }
+            if m.from.id == me || bytes(m).is_none() {
+                return None;
+            }
+            let word = match kept.fate(m, me)?.step {
+                Step::Moving => State::Busy,
+                Step::Failed => State::Errored,
+                // Not answered: an offer one may take, not a
+                // question that blocks the row (rule 3).
+                Step::Landed | Step::Stopped => return None,
+            };
+            Some((word, m.at))
+        });
+    // The message's own word, not the more pressing of two: a file
+    // still moving here is 忙碌 even while it is unseen — the order
+    // the ruling reads (忙碌, 中断, then 未看, then 空闲), and the
+    // row goes 忙碌 → 未看 as it lands.
+    if let Some((word, at)) = pressed {
+        row.state = Some(StateStamp {
+            state: word,
+            at: Millis(at.max(0) as u64),
+        });
+    }
+    // Put away like a machine's window (`ChatKind`'s rows) — but a
+    // newest file still moving or broken here keeps it out.
+    if pressed.is_none()
+        && let Some(closed) = seen.doc.closed_watermark(board)
+        && msgs.iter().map(|m| m.at).max().unwrap_or(0) <= closed
+    {
+        return Ok(None);
+    }
+    Ok(Some(row))
 }
 
 #[cfg(test)]

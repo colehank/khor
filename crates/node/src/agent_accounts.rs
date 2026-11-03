@@ -354,9 +354,13 @@ impl Node {
         if operation == "usage" && existing.is_none() {
             return Err(msg::agent_arguments().into());
         }
+        let session_board = request["session"]
+            .as_str()
+            .unwrap_or(crate::wide::BROADCAST)
+            .to_owned();
         let session_config = if matches!(operation, "session_settings" | "session_set_option") {
             let config = self
-                .khor_agent_config()?
+                .khor_agent_config_in(&session_board)?
                 .filter(|c| {
                     c.home == self.device_str()
                         && existing.as_ref().is_some_and(|a| a.id == c.account)
@@ -624,7 +628,8 @@ impl Node {
                                 }
                                 if operation == "session_set_option" {
                                     let node = node.as_ref().expect("prepared settings commit");
-                                    if node.khor_agent_config()? != session_config {
+                                    if node.khor_agent_config_in(&session_board)? != session_config
+                                    {
                                         return Err(msg::agent_arguments().into());
                                     }
                                     let mut config = session_config
@@ -647,10 +652,9 @@ impl Node {
                                     {
                                         return Err(msg::agent_arguments().into());
                                     }
-                                    node.chat.set_agent_config(&config)?;
-                                    let _ = node.emit_row_of(&crate::SessionId(
-                                        crate::wide::BROADCAST.into(),
-                                    ));
+                                    node.chat.set_agent_config_in(&session_board, &config)?;
+                                    let _ =
+                                        node.emit_row_of(&crate::SessionId(session_board.clone()));
                                 }
                                 if operation == "login" {
                                     let node = node.as_ref().expect("prepared account commit");

@@ -185,6 +185,15 @@ pub struct AgentConfig {
     pub options: BTreeMap<String, serde_json::Value>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct AgentConversation {
+    pub creation: String,
+    pub home: String,
+    pub title: String,
+    pub cwd: String,
+    pub auto_title: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
 pub struct AgentTurn {
     pub model: String,
@@ -461,6 +470,23 @@ impl ChatDoc {
     pub fn agent_config(&self) -> Option<AgentConfig> {
         str_of(&self.inner.get_map(HEAD), "agent_config")
             .and_then(|s| serde_json::from_str(&s).ok())
+    }
+
+    pub fn agent_conversation(&self) -> Option<AgentConversation> {
+        str_of(&self.inner.get_map(HEAD), "agent_conversation")
+            .and_then(|value| serde_json::from_str(&value).ok())
+    }
+
+    pub fn set_agent_conversation(&self, conversation: &AgentConversation) -> Result<(), String> {
+        self.inner
+            .get_map(HEAD)
+            .insert(
+                "agent_conversation",
+                serde_json::to_string(conversation).map_err(|e| e.to_string())?,
+            )
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
     }
 
     pub fn set_agent_config(&self, config: &AgentConfig) -> Result<(), String> {

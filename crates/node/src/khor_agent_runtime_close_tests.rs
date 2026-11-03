@@ -119,6 +119,7 @@ async fn until(mut condition: impl FnMut() -> bool) -> bool {
 fn historical(node: &Node) -> String {
     let run = format!("agent-close-{}", crate::link::fresh_hex().unwrap());
     let saved = Saved {
+        board: default_board(),
         fingerprint: "close-native-fixture".into(),
         record: CommandRecord {
             id: run.clone(),

@@ -3,7 +3,7 @@ import {managePi} from "@/lib/pi-accounts";
 // New session: the target, its current directory, and what to run. The same
 // page sits behind the desktop strip and the narrow screen's bottom deck.
 import { useEffect, useRef, useState } from 'react';
-import { agentAsk, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, registerKnownAgent, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
+import { agentAsk, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, khorAgent, registerKnownAgent, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
 import { MachineField } from '@/components/MachineField';
 import { PathField, settledPath } from '@/components/PathField';
 import { sessionKind } from '@/components/SessionFace';
@@ -27,6 +27,8 @@ type Launch = {
   agent: string;
 } | {
   kind: 'tell';
+} | {
+  kind: 'khor';
 };
 type LaunchOption = ChoiceOption & {
   launch: Launch;
@@ -121,7 +123,7 @@ export function NewSessionPage({
   if (contextMachine.current === null && target) contextMachine.current = channel;
   const dir = paths[channel] ?? (channel === contextMachine.current ? at : '');
   const agents = [...new Set(['claude', 'codex', ...known.map(a => a.name)])];
-  const allChoices: LaunchOption[] = [{
+  const allChoices: LaunchOption[] = [{id:'khor',label:'khor',icon:kindIcon('broadcast','khor'),launch:{kind:'khor'}}, {
     id: 'shell',
     label: 'Shell',
     icon: kindIcon('shell', null),
@@ -173,7 +175,7 @@ export function NewSessionPage({
       kind: 'tell'
     });
   }, [target?.hosts]);
-  const selected = launch.kind === 'agent' ? choices.find(c => c.id === 'agent:' + launch.agent) : launch.kind === 'tell' ? choices.find(c => c.id === 'tell') : choices.find(c => c.id === 'custom:' + launch.preset && c.launch.kind === 'shell' && c.launch.command === launch.command) ?? choices.find(c => c.launch.kind === 'shell' && c.launch.command === launch.command);
+  const selected = launch.kind === 'agent' ? choices.find(c => c.id === 'agent:' + launch.agent) : launch.kind === 'tell' || launch.kind === 'khor' ? choices.find(c => c.id === launch.kind) : choices.find(c => c.id === 'custom:' + launch.preset && c.launch.kind === 'shell' && c.launch.command === launch.command) ?? choices.find(c => c.launch.kind === 'shell' && c.launch.command === launch.command);
   const command = launch.kind === 'shell' ? launch.command : '';
   const create = () => {
     if (opening || pending || !target || !contextValid) return;
@@ -193,7 +195,7 @@ export function NewSessionPage({
     const token = tokenFor(key);
     setOpening(true);
     setError(null);
-    (launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
+    (launch.kind === 'khor' ? khorAgent('create',target.id,{token,title,cwd}).then(view=>{const id=(view.data as {session?:string})?.session;if(!id)throw new Error('未能创建会话');return id;}) : launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
       creates.delete(key);
       startedAgent.current = launch.kind === 'agent';
       onOpened(id);
