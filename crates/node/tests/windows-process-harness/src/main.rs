@@ -41,6 +41,10 @@ fn main() {
 fn fixture() {
     use std::io::{Read, Write};
     match std::env::var("KHOR_PROCESS_MODE").unwrap().as_str() {
+        "runtime-hold" => {
+            let mut input = Vec::new();
+            std::io::stdin().read_to_end(&mut input).unwrap();
+        }
         "echo" => {
             let mut input = String::new();
             std::io::stdin().read_to_string(&mut input).unwrap();
@@ -209,7 +213,86 @@ mod checks {
         println!(
             "PASS only the MCP worker profile permits explicit durable breakaway; temporary child is terminated"
         );
-        println!("PASS 9 Windows runtime groups");
+        inherited_runtime_image(&scratch);
+        println!("PASS runtime lease is in HANDLE_LIST and survives parent-side lease drop");
+        println!("PASS 10 Windows runtime groups");
+    }
+
+    fn inherited_runtime_image(scratch: &Scratch) {
+        use khor_runtime::{Contract, Limits, Role, Source, Store};
+        let store = Store::open(
+            scratch.0.join("runtime-images"),
+            Limits {
+                cache_bytes: 512 * 1024 * 1024,
+                free_bytes: 0,
+            },
+        )
+        .unwrap();
+        let contract = Contract {
+            terminal: 5,
+            gui: "khor-gui/2".into(),
+            node: "opaque-process-fixture".into(),
+            store: 1,
+            journal: 1,
+            agent: 1,
+        };
+        let program = std::env::current_exe().unwrap();
+        let image = store
+            .publish(
+                Role::Agent,
+                "one",
+                contract.clone(),
+                Default::default(),
+                Source::File(&program),
+            )
+            .unwrap();
+        let old = image
+            .path()
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_owned();
+        let mut command = Command::new(image.path());
+        command
+            .arg("--fixture")
+            .env_clear()
+            .env("KHOR_PROCESS_MODE", "runtime-hold");
+        let (mut child, pipes) = process::spawn(command).unwrap();
+        drop(image);
+        drop(
+            store
+                .publish(
+                    Role::Agent,
+                    "two",
+                    contract.clone(),
+                    Default::default(),
+                    Source::Bytes(b"second"),
+                )
+                .unwrap(),
+        );
+        drop(
+            store
+                .publish(
+                    Role::Agent,
+                    "three",
+                    contract,
+                    Default::default(),
+                    Source::Bytes(b"third"),
+                )
+                .unwrap(),
+        );
+        assert!(
+            store.collect().unwrap().occupied.contains(&old),
+            "only the actual child now owns the image lease"
+        );
+        drop(pipes.stdin);
+        await_leader(&mut child);
+        assert!(child.wait().unwrap().success());
+        drop(child);
+        assert!(store.collect().unwrap().removed.contains(&old));
     }
 
     fn durable_worker_profile() {

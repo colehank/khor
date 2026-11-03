@@ -466,7 +466,7 @@ impl Node {
                 seat["key"] = json!(key.trim());
             }
         }
-        let mut command = sidecar(&root)?;
+        let (mut command, _runtime_image) = sidecar(&root)?;
         command.env_clear();
         for name in [
             "HOME",

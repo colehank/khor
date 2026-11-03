@@ -181,6 +181,21 @@ pub fn host() -> Result<HostImage, String> {
     host_at(&crate::installed_exe()?)
 }
 
+#[cfg(khor_embedded_agent)]
+pub(crate) fn agent(bundle: &[u8]) -> Result<Image, String> {
+    let release = current()?.release;
+    Store::local()
+        .map_err(|error| error.to_string())?
+        .publish(
+            Role::Agent,
+            &release.version,
+            release.contract,
+            release.embedded,
+            Source::Bytes(bundle),
+        )
+        .map_err(|error| error.to_string())
+}
+
 pub fn host_at(source: &Path) -> Result<HostImage, String> {
     let expected = current()?.release;
     let info = inspect(source)?;

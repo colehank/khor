@@ -754,38 +754,21 @@ impl Node {
     }
 }
 
-fn sidecar(root: &Path) -> Result<Command, String> {
+fn sidecar(root: &Path) -> Result<(Command, Option<khor_runtime::Image>), String> {
     if let Some(path) = std::env::var_os("KHOR_AGENT_SIDECAR") {
-        return Ok(Command::new(path));
+        return Ok((Command::new(path), None));
     }
     #[cfg(khor_embedded_agent)]
     {
         const BUNDLE: &[u8] = include_bytes!(env!("KHOR_AGENT_BUNDLE"));
-        let digest = blake3::hash(BUNDLE).to_hex().to_string();
-        let dir = directory(root).join("runtime").join(&digest);
-        let path = dir.join(if cfg!(windows) {
-            "khor-agent.exe"
-        } else {
-            "khor-agent"
-        });
-        if !fs::read(&path).is_ok_and(|bytes| blake3::hash(&bytes).to_hex().as_str() == digest) {
-            fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-            let temp = path.with_extension("tmp");
-            crate::link::write_private(&temp, BUNDLE)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&temp, fs::Permissions::from_mode(0o700))
-                    .map_err(|e| e.to_string())?;
-            }
-            fs::rename(temp, &path).map_err(|e| e.to_string())?;
-        }
-        Ok(Command::new(path))
+        let _ = root;
+        let image = super::runtime_image::agent(BUNDLE)?;
+        Ok((Command::new(image.path()), Some(image)))
     }
     #[cfg(not(khor_embedded_agent))]
     {
         let _ = root;
-        let exe = crate::self_exe()?;
+        let exe = crate::installed_exe()?;
         let bin = exe
             .parent()
             .unwrap_or(Path::new("."))
@@ -795,14 +778,14 @@ fn sidecar(root: &Path) -> Result<Command, String> {
                 "khor-agent"
             });
         if bin.is_file() {
-            return Ok(Command::new(bin));
+            return Ok((Command::new(bin), None));
         }
         if cfg!(debug_assertions) {
             let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/agent/src/host.ts");
             if script.is_file() {
                 let mut c = Command::new("node");
                 c.arg(script);
-                return Ok(c);
+                return Ok((c, None));
             }
         }
         Err(msg::agent_runtime_missing().into())
@@ -818,7 +801,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
             return Ok(());
         }
         // Extraction and hashing of the bundled runtime stay off the reactor.
-        let mut command = sidecar(&root)?;
+        let (mut command, _runtime_image) = sidecar(&root)?;
         // Pass only operating-system settings. Provider keys, tokens, Pi config
         // and MCP credentials from the parent environment cannot select auth.
         command.env_clear();

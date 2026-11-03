@@ -366,3 +366,126 @@ fn lease_child_process() {
     fs::write(root.join("child.ready"), b"ready").unwrap();
     wait_for(|| root.join("child.release").exists());
 }
+
+#[cfg(unix)]
+#[test]
+#[ignore = "requires the real standalone Bun agent via KHOR_TEST_AGENT_BIN"]
+fn actual_standalone_agent_keeps_its_image_lease_after_initialization() {
+    use std::{
+        io::{BufRead, BufReader, Write},
+        os::unix::process::CommandExt,
+        process::{Child, Stdio},
+        sync::mpsc,
+        thread::JoinHandle,
+    };
+    struct OwnedAgent {
+        child: Child,
+        reader: Option<JoinHandle<()>>,
+    }
+    impl Drop for OwnedAgent {
+        fn drop(&mut self) {
+            // This unreaped leader owns its explicitly created process group.
+            unsafe {
+                libc::kill(-(self.child.id() as libc::pid_t), libc::SIGKILL);
+            }
+            let _ = self.child.wait();
+            if let Some(reader) = self.reader.take() {
+                reader.join().unwrap();
+            }
+        }
+    }
+    let program = PathBuf::from(
+        std::env::var_os("KHOR_TEST_AGENT_BIN").expect("real compiled agent required"),
+    );
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let credentials = Fixture::new();
+    fs::create_dir(&credentials.0).unwrap();
+    let image = store
+        .publish(
+            Role::Agent,
+            "standalone-agent",
+            contract(),
+            BTreeMap::new(),
+            Source::File(&program),
+        )
+        .unwrap();
+    let old = id(&image);
+    let mut command = Command::new(image.path());
+    command
+        .process_group(0)
+        .env_clear()
+        .env("HOME", &credentials.0)
+        .env("USERPROFILE", &credentials.0)
+        .current_dir(&credentials.0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    image.lease().attach_unix(&mut command).unwrap();
+    let mut agent = OwnedAgent {
+        child: command.spawn().unwrap(),
+        reader: None,
+    };
+    drop(command); // Only the initialized child may retain the command's inherited descriptor.
+    let stdout = agent.child.stdout.take().unwrap();
+    let (sent, received) = mpsc::sync_channel(1);
+    agent.reader = Some(std::thread::spawn(move || {
+        let mut offered = false;
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else {
+                break;
+            };
+            if line.len() > 16 * 1024 {
+                break;
+            }
+            if !offered
+                && serde_json::from_str::<serde_json::Value>(&line)
+                    .is_ok_and(|frame| frame["type"] == "auth_prompt")
+            {
+                let _ = sent.send(());
+                offered = true;
+            }
+        }
+    }));
+    let mut frame = serde_json::to_vec(&serde_json::json!({"type":"manage","operation":"login","account":{"id":"lease-fixture","provider":"anthropic","baseUrl":null},"credentialPath":credentials.0.join("auth.json"),"authType":"api_key","deviceId":"0".repeat(64)})).unwrap();
+    frame.push(b'\n');
+    agent
+        .child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(&frame)
+        .unwrap();
+    received
+        .recv_timeout(Duration::from_secs(15))
+        .expect("compiled agent must finish initialization and wait for an API key");
+    drop(image);
+    drop(
+        store
+            .publish(
+                Role::Agent,
+                "two",
+                contract(),
+                BTreeMap::new(),
+                Source::Bytes(b"second"),
+            )
+            .unwrap(),
+    );
+    drop(
+        store
+            .publish(
+                Role::Agent,
+                "three",
+                contract(),
+                BTreeMap::new(),
+                Source::Bytes(b"third"),
+            )
+            .unwrap(),
+    );
+    assert!(
+        store.collect().unwrap().occupied.contains(&old),
+        "initialized Bun must retain its own runtime image"
+    );
+    drop(agent);
+    assert!(store.collect().unwrap().removed.contains(&old));
+}

@@ -77,6 +77,11 @@ impl<T: Write + AsRawFd> Write for Pipe<T> {
 }
 
 pub(super) fn spawn(mut command: Command) -> io::Result<(Process, Pipes)> {
+    if let Some(lease) =
+        khor_runtime::Store::lease_for_program(std::path::Path::new(command.get_program()))?
+    {
+        lease.attach_unix(&mut command)?;
+    }
     command
         .process_group(0)
         .stdin(Stdio::piped())

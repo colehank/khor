@@ -80,8 +80,22 @@ impl Lease {
         Ok(Self(file))
     }
 
-    pub fn file(&self) -> &File {
-        &self.0
+    #[cfg(windows)]
+    pub fn inheritable_file(&self) -> io::Result<File> {
+        use std::os::windows::io::AsRawHandle;
+        use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+        let file = self.0.try_clone()?;
+        if unsafe {
+            SetHandleInformation(
+                file.as_raw_handle(),
+                HANDLE_FLAG_INHERIT,
+                HANDLE_FLAG_INHERIT,
+            )
+        } == 0
+        {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(file)
     }
 
     pub fn try_clone(&self) -> io::Result<Self> {

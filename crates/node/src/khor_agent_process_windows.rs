@@ -165,14 +165,20 @@ pub(super) fn spawn_with_profile(
     let (parent_stdin, child_stdin) = pipe(false, cancel.clone())?;
     let (parent_stdout, child_stdout) = pipe(true, cancel.clone())?;
     let (parent_stderr, child_stderr) = pipe(true, cancel.clone())?;
-    let child_handles = [
+    let lease = khor_runtime::Store::lease_for_program(&executable)?
+        .map(|lease| lease.inheritable_file())
+        .transpose()?;
+    let mut child_handles = vec![
         child_stdin.as_raw_handle(),
         child_stdout.as_raw_handle(),
         child_stderr.as_raw_handle(),
     ];
+    if let Some(lease) = &lease {
+        child_handles.push(lease.as_raw_handle());
+    }
     let job_handles = [job.as_raw_handle()];
     let mut attributes = AttributeList::new()?;
-    attributes.set(PROC_THREAD_ATTRIBUTE_HANDLE_LIST, &child_handles)?;
+    attributes.set(PROC_THREAD_ATTRIBUTE_HANDLE_LIST, child_handles.as_slice())?;
     attributes.set(PROC_THREAD_ATTRIBUTE_JOB_LIST, &job_handles)?;
 
     let mut startup = STARTUPINFOEXW::default();
