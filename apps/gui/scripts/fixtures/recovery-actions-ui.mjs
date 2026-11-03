@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 // Fixed UI facts and controlled external IO. No Node execution qualification,
 // idempotency/reservation algorithm, canonical parser or replacement IDB owner.
-export const recoveryActionCases = ['offer-and-same-sid-rebind', 'idb-retries-and-shared-pages', 'directory-required-shell', 'terminal-owner-transfer', 'automatic-entry-and-later-exit', 'initial-terminal-connect-recovers', 'initial-terminal-connect-cancelled', 'initial-terminal-refused'];
+export const recoveryActionCases = ['offer-and-same-sid-rebind', 'idb-retries-and-shared-pages', 'directory-required-shell', 'terminal-owner-transfer', 'automatic-entry-and-later-exit', 'initial-terminal-connect-recovers', 'initial-terminal-connect-cancelled', 'initial-terminal-refused', 'foreground-metadata-failure'];
 export const usesRecoveryClock = scenario => scenario !== 'directory-required-shell';
 
 export async function advanceRecoveryClock(page, milliseconds) {
@@ -68,6 +68,7 @@ export function installRecoveryActionsTransport() {
   window.__TAURI_INTERNALS__.invoke = async (cmd,args={}) => {
     wire.calls.push({cmd,args:structuredClone(args)});
     if(cmd==='session_recovery') {
+      if(scenario==='foreground-metadata-failure' && wire.failOffer)throw new Error('Diagnostic query unavailable fixture');
       const answer=offers.get(JSON.stringify([args.home_id,args.id]));if(!answer)throw new Error('unknown fixed offer target');
       if(wire.holdOffer||wire.holdOfferTargets.includes(JSON.stringify([args.home_id,args.id])))return new Promise(resolve=>wire.offers.push({args,answer,resolve,done:false}));
       return structuredClone(answer);
@@ -168,6 +169,27 @@ export async function exerciseRecoveryActions(scenario,page,helpers) {
   const A='a'.repeat(64),B='b'.repeat(64);
   const publicCalls=cmd=>calls(page,cmd);
   const heldAction=async(label)=>{const index=await page.evaluate(()=>window.__recoveryWire.actions.length);await page.evaluate(()=>{window.__recoveryWire.holdAction=true;});const w=await words(page);await action(page,label??w.join);await until(()=>page.evaluate(index=>window.__recoveryWire.actions.length===index+1,index),'explicit action reached controlled IO');return index;};
+  if(scenario==='foreground-metadata-failure') {
+    await newTerminal(page);
+    const before=(await publicCalls('session_recovery')).length;
+    await page.evaluate(()=>{
+      window.__recoveryWire.failOffer=true;
+      Object.defineProperty(document,'hidden',{configurable:true,value:true});
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.clock.runFor(100);
+    await page.evaluate(()=>{
+      Object.defineProperty(document,'hidden',{configurable:true,value:false});
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await advanceUntil(page,async()=>(await publicCalls('session_recovery')).length>before,'foreground refreshes the metadata');
+    await page.clock.runFor(500);
+    assert.equal(await page.locator('[data-tab=alpha][data-pill-signal]').count(),0,'a passive query failure does not override the connected terminal');
+    assert.equal((await publicCalls('term_open')).length,1,'foreground does not replace a working attachment');
+    assert.equal((await publicCalls('recover_session')).length,0);
+    assert.equal((await publicCalls('new_shell_run')).length,0);
+    return;
+  }
   if(scenario.startsWith('initial-terminal-')) {
     await page.evaluate(()=>window.__recoveryProbe.patch({kind:'shell',category:'shell',can_control:true,attachable:true,word:'idle',ended:null}));
     await page.clock.runFor(500);

@@ -30,9 +30,9 @@ function RecoverySurface({ row, home, onOpened }: { row: SessionRow; home: strin
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
   const sameIntent = recovery.intent?.home === home && recovery.intent.id === row.id;
-  const facts = { kind:row.kind, offer:recovery.offer, intentOperation:sameIntent ? recovery.intent!.operation : null,
+  const facts = { kind:row.kind, ended:!!row.ended, offer:recovery.offer, intentOperation:sameIntent ? recovery.intent!.operation : null,
     outcome:recovery.outcome?.kind ?? null, ready:recovery.intentReady, busy:recovery.busy || picking,
-    fault:!!(recovery.fault || recovery.problem || pickerError) };
+    metadataFault:!!recovery.metadataFault, fault:!!(recovery.fault || recovery.problem || pickerError) };
   const presentation = recoveryRelationship(facts);
   const current = useRef({ recovery, presentation });
   current.current = { recovery, presentation };

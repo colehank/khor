@@ -29,4 +29,8 @@ test('an unknown outcome with the original intent does not offer a new shell',()
 test('a missing working directory is selected as a new explicit intent',()=>assert.deepEqual(project(facts({kind:'shell',outcome:'directory_required'})),{state:'directory',action:'directory'}));
 test('a completed rejoin does not leave a continue confirmation',()=>assert.deepEqual(project(facts({outcome:'join'})),{state:'quiet',action:null}));
 test('a final refused attempt does not mark a confirmed live owner broken',()=>assert.deepEqual(project(facts({outcome:'refused'})),{state:'quiet',action:null}));
+test('a passive offer failure cannot claim an active shell is disconnected',()=>assert.deepEqual(project(facts({kind:'shell',offer:null,metadataFault:true,ended:false})),{state:'quiet',action:null}));
+test('confirmed live execution survives a failed diagnostic refresh',()=>assert.deepEqual(project(facts({metadataFault:true})),{state:'quiet',action:null}));
+test('an ended row with unavailable recovery metadata still permits a safe refresh',()=>assert.deepEqual(project(facts({kind:'shell',offer:null,metadataFault:true,ended:true})),{state:'failed',action:'refresh'}));
+test('a failed user operation stays actionable on a live offer',()=>assert.deepEqual(project(facts({fault:true})),{state:'failed',action:'retry'}));
 console.log(`recovery relationship: ${passed} checks passed`);

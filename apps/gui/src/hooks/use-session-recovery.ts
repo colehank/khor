@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { newShellRun, recoverSession, sessionRecovery, type RecoveryResult, type SessionRecovery, type ShellRunResult } from "@/api";
 import { hearRecoveryIntent, readRecoveryIntent, RecoveryIntentError, rememberRecoveryIntent, settleRecoveryIntent, type RecoveryIntent } from "@/lib/session-recovery-intent";
+import { useHidden } from "@/hooks/use-hidden";
 
 type Outcome = RecoveryResult | ShellRunResult;
 export type RecoveryOpened = { id: string; previous: string | null };
@@ -20,6 +21,7 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
   const [intent, setIntent] = useState<RecoveryIntent | null>(null);
   const [intentReady, setIntentReady] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [metadataFault, setMetadataFault] = useState<string | null>(null);
   const [fault, setFault] = useState<string | null>(null);
   const [problem, setProblem] = useState<RecoveryProblem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,10 +51,10 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
       if (!live.alive || reading !== live.reading || requested !== live.revision) return null;
       if (answer.id !== id || answer.home !== home) throw new Error("recovery offer changed its execution identity");
       setOffer({ revision: requested, value: answer });
-      setFault(null);
+      setMetadataFault(null);
       return answer;
     } catch (error) {
-      if (live.alive && reading === live.reading && requested === live.revision) { setOffer(null); setFault(String(error)); }
+      if (live.alive && reading === live.reading && requested === live.revision) { setOffer(null); setMetadataFault(String(error)); }
       return null;
     }
   };
@@ -66,6 +68,13 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
     void loadIntent();
     return hearRecoveryIntent(() => { void loadIntent(); });
   }, []);
+  const hidden = useHidden();
+  const wasHidden = useRef(hidden);
+  useEffect(() => {
+    const returning = wasHidden.current && !hidden;
+    wasHidden.current = hidden;
+    if (returning && !owner.current.busy) { void refresh(); void loadIntent(); }
+  }, [hidden]);
 
   const act = async (cwd: string | null = null) => {
     const live = owner.current, generation = live.generation;
@@ -117,5 +126,5 @@ export function useSessionRecovery({ id, home, revision, onOpened }: {
       if (generation === live.generation) { live.busy = false; if (live.alive) setBusy(false); }
     }
   };
-  return { offer: offer?.revision === revision ? offer.value : null, intent, intentReady, outcome, fault, problem, busy, refresh: async () => { setProblem(null); await Promise.all([refresh(), loadIntent()]); }, act };
+  return { offer: offer?.revision === revision ? offer.value : null, intent, intentReady, outcome, fault, metadataFault, problem, busy, refresh: async () => { setProblem(null); setFault(null); await Promise.all([refresh(), loadIntent()]); }, act };
 }

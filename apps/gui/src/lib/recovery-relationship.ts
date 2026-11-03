@@ -12,6 +12,8 @@ type Facts = {
   ready: boolean;
   busy: boolean;
   fault: boolean;
+  metadataFault?: boolean;
+  ended?: boolean;
 };
 
 const owned = (kind: string) => kind === 'gui' || kind === 'shell';
@@ -30,7 +32,8 @@ export function recoveryRelationship(facts: Facts): RecoveryRelationship {
   if (!owned(kind)) return { state: 'quiet', action: null };
   if (offer?.execution === 'live') return { state: 'quiet', action: null };
   if (outcome === 'refused' || outcome === 'unavailable' || outcome === 'unknown') return { state: 'failed', action: retry };
-  if (!offer) return { state: 'quiet', action: null };
+  if (!offer) return facts.metadataFault && facts.ended
+    ? { state: 'failed', action: 'refresh' } : { state: 'quiet', action: null };
   if (offer.execution !== 'ended') return { state: 'unconfirmed', action: 'refresh' };
   if (offer.action === 'new_shell') return { state: 'ended', action: available && ready ? 'new_shell' : null };
   return { state: 'unsupported', action: retry };
