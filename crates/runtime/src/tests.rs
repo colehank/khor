@@ -358,10 +358,12 @@ fn lease_child_process() {
             .unwrap()
             .parse()
             .unwrap();
-        assert_ne!(
-            unsafe { libc::fcntl(raw, libc::F_GETFD) } & libc::FD_CLOEXEC,
-            0
+        let flags = unsafe { libc::fcntl(raw, libc::F_GETFD) };
+        assert!(
+            flags >= 0,
+            "the inherited descriptor must remain open in this process"
         );
+        assert_ne!(flags & libc::FD_CLOEXEC, 0);
     }
     fs::write(root.join("child.ready"), b"ready").unwrap();
     wait_for(|| root.join("child.release").exists());
