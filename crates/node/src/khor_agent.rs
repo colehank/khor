@@ -734,7 +734,7 @@ impl Node {
                 let active = running()
                     .lock()
                     .map_err(|e| e.to_string())?
-                    .get(&execution_key)
+                    .get(&root)
                     .filter(|r| r.id == run)
                     .cloned()
                     .ok_or_else(|| msg::agent_not_running().to_owned())?;

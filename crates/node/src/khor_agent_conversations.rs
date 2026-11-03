@@ -217,7 +217,7 @@ mod tests {
             r#"{"relays":[{"url":"http://127.0.0.1:9"}],"only_mine":true}"#,
         )
         .unwrap();
-        let node = Node::open_hosting(root.clone(), "conversations", false).unwrap();
+        let node = Node::open_hosting(root.clone(), "conversations", true).unwrap();
         (Scratch(root), node)
     }
     fn create(node: &Node, token: &str, title: &str) -> String {
