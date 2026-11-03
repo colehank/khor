@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import shutil
 import subprocess
 import time
 
@@ -407,6 +408,26 @@ def generated_output(row, prepared, package, priors):
             "files": files, "invocation_marker": marker}
 
 
+def retained_metadata(path, files, prepared_ns):
+    path = Path(path)
+    archive = path.with_suffix(".rlib")
+    library = files.get(str(archive))
+    archiver = shutil.which("ar")
+    if path.suffix != ".rmeta" or not library or library["mtime_ns"] < prepared_ns or not archiver:
+        return None
+    try:
+        result = subprocess.run([archiver, "p", str(archive), "lib.rmeta"],
+                                capture_output=True, timeout=10, check=False)
+        metadata = path.read_bytes()
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode or not metadata or result.stdout.count(metadata) != 1:
+        return None
+    return {"path": str(path), "sha256": files[str(path)]["sha256"],
+            "archive": str(archive), "archive_sha256": library["sha256"],
+            "member": "lib.rmeta", "offset": result.stdout.index(metadata), "size": len(metadata)}
+
+
 def verify_build(prepared, messages):
     """Verify a successful guarded Cargo build. Does not launch Cargo or tests."""
     root = Path(prepared["root"])
@@ -452,12 +473,18 @@ def verify_build(prepared, messages):
                     == {p: s["sha256"] for p, s in files.items()}]
         if row["fresh"] is not False and not (row["fresh"] is True and previous):
             raise ValueError(f"Fresh first-party artifact lacks a matching producer: {v['name']}")
-        if row["fresh"] is False and any(s["mtime_ns"] < prepared["prepared_ns"]
-                                         for path, s in files.items() if not path.endswith(".d")):
-            raise ValueError("New first-party artifact predates the prepared build window")
+        retained = []
+        if row["fresh"] is False:
+            for path, details in files.items():
+                if path.endswith(".d") or details["mtime_ns"] >= prepared["prepared_ns"]:
+                    continue
+                proof = retained_metadata(path, files, prepared["prepared_ns"])
+                if proof is None:
+                    raise ValueError(f"New first-party artifact predates the prepared build window: {path}")
+                retained.append(proof)
         units.append({"package_key": keys[row["package_id"]], "variant": v,
                       "files": files, "depinfo": dep, "row": row,
-                      "reuse": bool(row["fresh"])})
+                      "reuse": bool(row["fresh"]), "retained_metadata": retained})
     request = prepared["request"]
     selected = [u for u in units if pkgs[u["row"]["package_id"]]["name"] == request["package"]
                 and all(u["variant"][k] == request[k] for k in ("name", "kind", "test"))]

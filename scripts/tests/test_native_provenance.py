@@ -46,8 +46,8 @@ class ProvenanceTests(unittest.TestCase):
         for tool in self.tools:
             tool.write_text("synthetic tool identity: " + tool.name)
         self.request = {"package": "app", "name": "app", "kind": ["lib"], "test": True}
-        # Only the git inventory transport is mocked. All source/artifact/dep-info,
-        # additions, timestamps and refresh effects below are real temp files.
+        # Source, artifacts, dep-info and timestamps are real temp files.
+        # Inventory is controlled; the retained-metadata case also controls archive IO.
         def inventory(*args, **kwargs):
             return "\0".join(str(f.relative_to(self.root)) for f in self.root.rglob("*")
                               if f.is_file() or f.is_symlink()).encode() + b"\0"
@@ -474,6 +474,37 @@ class ProvenanceTests(unittest.TestCase):
         self.assertGreaterEqual(artifact.stat().st_ctime_ns, prepared["prepared_ns"])
         with self.assertRaisesRegex(ValueError, "artifact predates"):
             p.verify_build(prepared, rows)
+
+    def test_retained_metadata_must_be_embedded_in_a_newly_built_library(self):
+        archiver = self.base / "ar"
+        archiver.write_text("controlled archive transport")
+        archiver.chmod(0o700)
+        content = b"rust metadata fixture: the full sidecar bytes"
+        body = b"object wrapper prefix" + content + b"object wrapper suffix"
+        transport = p.subprocess.CompletedProcess([], 0, stdout=body, stderr=b"")
+        with patch.dict(os.environ, {"PATH": str(self.base)}), patch.object(p.subprocess, "run", return_value=transport):
+            prepared = self.prepare()
+            rows = self.rows()
+            row = rows[0]
+            archive = Path(row["filenames"][0])
+            metadata = archive.with_suffix(".rmeta")
+            metadata.write_bytes(content)
+            row["filenames"].append(str(metadata))
+            os.utime(metadata, ns=(1, 1))
+            before = metadata.stat().st_mtime_ns
+            receipt = p.verify_build(prepared, rows)
+            unit = next(u for u in receipt["units"] if u["row"]["package_id"] == "dep")
+            self.assertEqual(unit["retained_metadata"][0]["path"], str(metadata))
+            self.assertEqual(metadata.stat().st_mtime_ns, before)
+            metadata.write_bytes(b"different metadata")
+            os.utime(metadata, ns=(1, 1))
+            with self.assertRaisesRegex(ValueError, "artifact predates"):
+                p.verify_build(prepared, rows)
+            metadata.write_bytes(content)
+            os.utime(metadata, ns=(1, 1))
+            os.utime(archive, ns=(1, 1))
+            with self.assertRaisesRegex(ValueError, "artifact predates"):
+                p.verify_build(prepared, rows)
 
     def test_returning_to_A_checks_each_target_and_generated_output(self):
         source = self.add_generator()
