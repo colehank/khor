@@ -18,13 +18,41 @@ ASSET = "khor-macos-arm64"
 
 
 class SigningBoundaryTest(unittest.TestCase):
+    def test_unsigned_build_bundles_a_live_precompiled_catalog_and_keeps_fallbacks(self):
+        catalogs = []
+        def compile_icon(output):
+            catalogs.append(output / "Assets.car")
+            catalogs[-1].touch()
+        def build(command, **_):
+            self.assertEqual(len(catalogs), 1, "compile the catalog before starting Tauri")
+            config = json.loads(command[command.index("--config") + 1])
+            icons = config["bundle"]["icon"]
+            self.assertEqual(Path(icons[0]), catalogs[0])
+            self.assertTrue(catalogs[0].is_file())
+            self.assertEqual(icons[1:], ["icons/icon.icns", "icons/icon.png"])
+            self.assertIn("--no-sign", command)
+        with patch.object(apple, "compile_icon", side_effect=compile_icon) as compiler, \
+                patch.object(apple, "run", side_effect=build) as run, patch.object(apple, "verify_app"):
+            apple.mac_build("aarch64-apple-darwin", False)
+        compiler.assert_called_once()
+        run.assert_called_once()
+        self.assertFalse(catalogs[0].exists())
+
+    def test_icon_failure_stops_before_expensive_build_or_signing(self):
+        with patch.object(apple, "compile_icon", side_effect=RuntimeError("invalid icon")), \
+                patch.object(apple, "run") as run, patch.object(apple, "verify_app"):
+            with self.assertRaisesRegex(RuntimeError, "invalid icon"):
+                apple.mac_build("aarch64-apple-darwin", False)
+        run.assert_not_called()
+
     def test_mac_build_signs_without_submitting_or_waiting_for_notarization(self):
         credentials = {name: "test" for name in [
             "APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_SIGNING_IDENTITY",
             "APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_CONTENT", "APPLE_API_KEY_PATH",
             "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
         ]}
-        with patch.dict(os.environ, credentials, clear=True), patch.object(apple, "run") as run, \
+        with patch.dict(os.environ, credentials, clear=True), patch.object(apple, "compile_icon"), \
+                patch.object(apple, "run") as run, \
                 patch.object(apple, "verify_app") as verify:
             apple.mac_build("aarch64-apple-darwin", True)
         verify.assert_called_once_with(Path("target/aarch64-apple-darwin/release/bundle/macos/Khor.app"))

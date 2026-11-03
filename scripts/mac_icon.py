@@ -25,7 +25,8 @@ def compile_icon(output):
     subprocess.run(["xcrun", "actool", str(SOURCE), "--compile", str(output),
                     "--platform", "macosx", "--minimum-deployment-target", "26.0",
                     "--target-device", "mac", "--app-icon", SOURCE.stem,
-                    "--include-all-app-icons", "--output-partial-info-plist", str(output / "Info.plist")], check=True)
+                    "--include-all-app-icons", "--output-partial-info-plist", str(output / "Info.plist")],
+                   stdin=subprocess.DEVNULL, check=True)
     catalog_name(output / "Assets.car")
 
 
