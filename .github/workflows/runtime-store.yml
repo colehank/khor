@@ -25,3 +25,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.95.0
       - name: Verify immutable publication, collection and inherited occupancy
         run: cargo test --locked -p khor-runtime -- --nocapture --test-threads=1
+      - name: Check that the shared runtime library also compiles for the iOS client
+        if: matrix.os == 'macos-26'
+        run: |
+          rustup target add aarch64-apple-ios
+          cargo check --locked -p khor-runtime --target aarch64-apple-ios
