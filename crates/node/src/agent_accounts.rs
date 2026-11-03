@@ -604,9 +604,26 @@ impl Node {
                                 state["events"] = events.into();
                             }
                             Some("result") => {
+                                drop(state);
+                                let _configuration = if operation == "session_set_option" {
+                                    Some(super::configuration_lock(&root)?)
+                                } else {
+                                    None
+                                };
+                                let node =
+                                    if matches!(operation.as_str(), "login" | "session_set_option")
+                                    {
+                                        Some(Node::open_foreground(root.clone())?)
+                                    } else {
+                                        None
+                                    };
+                                let mut state = work.state.lock().map_err(|e| e.to_string())?;
+                                if state["status"] == "cancelled" || work.control.is_cancelled() {
+                                    state["status"] = json!("cancelled");
+                                    return Ok(());
+                                }
                                 if operation == "session_set_option" {
-                                    let _configuration = super::configuration_lock(&root)?;
-                                    let node = Node::open_foreground(root.clone())?;
+                                    let node = node.as_ref().expect("prepared settings commit");
                                     if node.khor_agent_config()? != session_config {
                                         return Err(msg::agent_arguments().into());
                                     }
@@ -636,7 +653,7 @@ impl Node {
                                     ));
                                 }
                                 if operation == "login" {
-                                    let node = Node::open_foreground(root.clone())?;
+                                    let node = node.as_ref().expect("prepared account commit");
                                     let mut account = node
                                         .accounts()?
                                         .into_iter()
@@ -666,7 +683,7 @@ impl Node {
                                     account.inference = Some(inference);
                                     node.commit_account(account.clone())?;
                                     state["account"] = json!(account.id);
-                                    state["accountInfo"] = account_info(&node, &account);
+                                    state["accountInfo"] = account_info(node, &account);
                                 }
                                 state["status"] = json!("done");
                                 state["result"] = event["value"].clone();
@@ -826,6 +843,74 @@ mod tests {
             std::thread::sleep(Duration::from_millis(25));
         }
     }
+
+    #[tokio::test]
+    async fn cancelling_account_registration_while_root_is_busy_does_not_publish_account() {
+        let root = std::env::temp_dir().join(format!(
+            "khor-setup-admission-{}",
+            crate::link::fresh_hex().unwrap()
+        ));
+        let node = Node::open_as(root.clone(), "setup-admission").unwrap();
+        let started = node.manage_agent(json!({"operation":"login","provider":"anthropic","authType":"api_key","name":"cancelled setup"})).unwrap();
+        let id = started["job"].as_str().unwrap();
+        let waiting = poll(&node, id, "waiting");
+        let gate = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.join(".khor/trust-mutation/gate"))
+            .unwrap();
+        gate.lock().unwrap();
+        node.manage_agent(
+            json!({"operation":"reply","job":id,"ask":waiting["ask"],"value":"fixture-cancel-key"}),
+        )
+        .unwrap();
+        let credentials = directory(&root).join("credentials");
+        let until = tokio::time::Instant::now() + Duration::from_secs(3);
+        loop {
+            let persisted = fs::read_dir(&credentials)
+                .unwrap()
+                .flatten()
+                .any(|entry| entry.path().join("auth.json").is_file());
+            if persisted {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < until,
+                "setup did not reach credential persistence"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        let pending = jobs()
+            .lock()
+            .unwrap()
+            .get(&(root.clone(), id.to_owned()))
+            .cloned()
+            .unwrap();
+        let closing = Node::shutdown_agent_runtime(&root);
+        tokio::pin!(closing);
+        let cancelled = tokio::select! {
+            result = &mut closing => panic!("runtime closed while setup still held the root gate: {result:?}"),
+            result = tokio::time::timeout(Duration::from_secs(2), async {
+                while !pending.control.is_cancelled() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            }) => result.is_ok(),
+        };
+        drop(gate);
+        let closed = closing.await;
+        assert!(
+            cancelled,
+            "shutdown must cancel setup before the root gate is released"
+        );
+        assert_eq!(closed.unwrap(), super::super::RuntimeClose::Closed);
+        assert!(
+            node.accounts().unwrap().is_empty(),
+            "cancellation must win before the registration commit"
+        );
+        drop(node);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     #[tokio::test]
     async fn pi_login_keeps_credentials_local_reuses_accounts_and_switches_only_future_turns() {
         let root = std::env::temp_dir().join(format!(

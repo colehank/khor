@@ -147,6 +147,7 @@ jobs:
           cargo test --locked -p khor-node --lib accounts::pi_usage -- --test-threads=1
           cargo test --locked -p khor-node --lib observer_tests -- --test-threads=1
           cargo test --locked -p khor-node --lib doc_transfer_state::io::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib cancelling_account_registration_while_root_is_busy -- --test-threads=1
           cargo test --locked -p khor-node --lib connection_failure_does_not_claim_the_host_ended -- --test-threads=1
           cargo test --locked -p khor-node --lib interrupted_and_invalid_handshakes_have_different_recovery -- --test-threads=1
           cargo test --locked -p khor-node --lib a_cookie_refusal_keeps_the_hosts_reason -- --test-threads=1
