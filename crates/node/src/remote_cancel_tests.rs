@@ -30,6 +30,7 @@ fn historical_run(node: &Node) -> String {
     save(
         node.root(),
         &Saved {
+            board: crate::wide::BROADCAST.into(),
             fingerprint: "receipt-only-fixture".into(),
             record: CommandRecord {
                 id: run.clone(),

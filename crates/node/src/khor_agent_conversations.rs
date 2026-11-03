@@ -320,6 +320,31 @@ mod tests {
     }
 
     #[test]
+    fn management_replies_update_their_own_conversation_only() {
+        let (_scratch, node) = node();
+        let a = create(&node, "conversation-token-a", "");
+        let b = create(&node, "conversation-token-b", "");
+        let config = AgentConfig {
+            home: node.device_str().into(),
+            account: "selected-account".into(),
+            model: "selected-model".into(),
+            options: Default::default(),
+        };
+        let action = Action::Manage {
+            request: json!({"operation":"poll","session":a}),
+        };
+        let report = Report {
+            config: Some(config.clone()),
+            run: None,
+            data: Some(json!({"status":"done","result":{"options":{},"configOptions":[]}})),
+        };
+        node.accept_agent_report(&action, &report).unwrap();
+        assert_eq!(node.khor_agent_config_in(&a).unwrap(), Some(config));
+        assert!(node.khor_agent_config_in(&b).unwrap().is_none());
+        assert!(node.khor_agent_config().unwrap().is_none());
+    }
+
+    #[test]
     fn executor_slots_are_independent_and_root_close_waits_for_every_slot() {
         let (_scratch, node) = node();
         let a = create(&node, "conversation-token-a", "");

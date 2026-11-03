@@ -80,6 +80,9 @@ impl Action {
     pub(crate) fn board(&self) -> &str {
         match self {
             Self::Conversation { session, .. } => session,
+            Self::Manage { request } => request["session"]
+                .as_str()
+                .unwrap_or(crate::wide::BROADCAST),
             _ => crate::wide::BROADCAST,
         }
     }
@@ -479,21 +482,26 @@ impl Node {
         if let Action::CreateConversation { token, title, cwd } = &action {
             return self.create_khor_conversation(token, title, cwd);
         }
-        let (board, action) = match action {
-            Action::Conversation { session, action } => {
-                let conversation = self.khor_conversation(&session)?;
-                if conversation.home != self.device_str()
-                    || matches!(
-                        *action,
-                        Action::Conversation { .. } | Action::CreateConversation { .. }
-                    )
-                {
+        let board = action.board().to_owned();
+        let action = match action {
+            Action::Conversation { action, .. } => {
+                if matches!(
+                    *action,
+                    Action::Conversation { .. }
+                        | Action::CreateConversation { .. }
+                        | Action::Manage { .. }
+                ) {
                     return Err(msg::agent_arguments().into());
                 }
-                (session, *action)
+                *action
             }
-            action => (default_board(), action),
+            action => action,
         };
+        if board != crate::wide::BROADCAST
+            && self.khor_conversation(&board)?.home != self.device_str()
+        {
+            return Err(msg::agent_arguments().into());
+        }
         let execution_key = execution_key(self.root(), &board);
         if let Action::Stop { run } = &action {
             let active = running()
