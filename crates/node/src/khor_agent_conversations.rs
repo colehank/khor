@@ -118,8 +118,15 @@ impl Node {
                 .ok_or_else(|| msg::agent_arguments().to_owned())?;
             let conversation: AgentConversation =
                 serde_json::from_value(data["conversation"].clone()).map_err(|e| e.to_string())?;
-            self.chat
-                .set_agent_conversation(board, &conversation, report.config.as_ref())?;
+            if let Some(existing) = self.chat.agent_conversation(board)? {
+                if existing.home != conversation.home || existing.creation != conversation.creation
+                {
+                    return Err(msg::console_token_conflict().into());
+                }
+            } else {
+                self.chat
+                    .set_agent_conversation(board, &conversation, report.config.as_ref())?;
+            }
         } else if configuration_reply(action, report) {
             if let Some(config) = &report.config {
                 self.chat.set_agent_config_in(action.board(), config)?;
@@ -284,6 +291,34 @@ mod tests {
             "My conversation"
         );
     }
+    #[test]
+    fn a_late_create_reply_cannot_replace_a_newer_title_or_config() {
+        let (_scratch, node) = node();
+        let action = Action::CreateConversation {
+            token: "conversation-token-a".into(),
+            title: "".into(),
+            cwd: "/fixture".into(),
+        };
+        let report = node
+            .create_khor_conversation("conversation-token-a", "", "/fixture")
+            .unwrap();
+        let board = report.data.as_ref().unwrap()["session"].as_str().unwrap();
+        name_conversation(node.root(), board, "Current title", "").unwrap();
+        let config = AgentConfig {
+            home: node.device_str().into(),
+            account: "chosen-account".into(),
+            model: "chosen-model".into(),
+            options: Default::default(),
+        };
+        node.chat.set_agent_config_in(board, &config).unwrap();
+        node.accept_agent_report(&action, &report).unwrap();
+        assert_eq!(
+            node.khor_conversation(board).unwrap().title,
+            "Current title"
+        );
+        assert_eq!(node.khor_agent_config_in(board).unwrap(), Some(config));
+    }
+
     #[test]
     fn executor_slots_are_independent_and_root_close_waits_for_every_slot() {
         let (_scratch, node) = node();

@@ -45,7 +45,7 @@ try {
    else if(cmd==='ls')result={path:'/fixture',entries:[],truncated:false};
    else if(cmd==='machine_log')result={messages:histories.get(args.id)??[],broken:0};
    else if(cmd==='console_catalog')result=[{word:'status',aliases:[],usage:'status',reach:'local',mode:'read',parameters:[]}];
-   else if(cmd==='console_complete')result={start:0,end:args.caret,choices:args.line.startsWith('/sta')?[{value:'/status',label:'/status',detail:'status',kind:'command'}]:[]};
+   else if(cmd==='console_complete')result={start:0,end:args.caret,choices:args.line==='/sta'?[{value:'/status',label:'/status',detail:'status',kind:'command'}]:[]};
    else if(cmd==='console_run'){histories.get(args.session).push(record('command-a',args.line));result='command-a';}
    else if(cmd==='khor_agent') {
     const {action,payload}=args;result={config,accounts:[account],run:null,data:{conversation:{home}}};
@@ -55,7 +55,7 @@ try {
      result.data={session:creates.get(payload.token)};
     } else if(action==='prompt'){const id=payload.session===A?'task-a':'task-b';histories.get(payload.session).push(record(id,payload.text,true));result.run=id;}
     else if(action==='stop'){const item=histories.get(payload.session).find(m=>m.id===payload.run);item.command.status='done';item.command.ended_at_ms=Date.now();}
-    else if(action==='manage')result.data={status:'done',result:{configOptions:[]}};
+    else if(action==='manage')result.data=payload.operation==='poll'?{status:'done',result:{configOptions:[]}}:{job:'fixture-settings',status:'running'};
    }
    await route.fulfill({contentType:'application/json',body:JSON.stringify(result)});
   });
@@ -80,7 +80,7 @@ try {
   await page.evaluate(A=>window.showChat(A),A);await page.locator('[data-khor-agent-turn=task-a]').waitFor();
   assert.equal(await page.locator('[data-khor-agent-turn=task-b]').count(),0);
   await page.locator('[data-chat-composer]').fill('/sta');await page.locator('[data-console-choice=command]').waitFor();
-  await page.locator('[data-chat-composer]').press('Tab');await page.locator('[data-chat-composer]').press('Enter');await page.locator('[data-console-result]').waitFor();
+  await page.locator('[data-chat-composer]').press('Tab');await page.locator('[data-console-choice=command]').waitFor({state:'detached'});await page.locator('[data-chat-composer]').press('Enter');await page.locator('[data-console-result]').waitFor();
   assert.equal(calls.find(c=>c.cmd==='console_run').args.session,A);
   assert(!calls.some(c=>c.cmd==='khor_agent'&&c.args.action==='prompt'&&c.args.payload.text.startsWith('/')));
   assert(!calls.some(c=>c.cmd==='post'));
