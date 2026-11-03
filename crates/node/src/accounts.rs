@@ -4,8 +4,8 @@
 //!
 //! **A key lives on one machine.** The registration (name, provider,
 //! address, budget, and *which machine*) replicates like every other
-//! table (`khor_sync::accounts`); the key is written once, under
-//! `.khor/keys/`, on the machine that registered it, and never leaves.
+//! table (`khor_sync::accounts`); credentials stay in `.khor/keys/` or
+//! Pi's account-scoped credential store on their home machine.
 //! That machine reads the provider and answers [`Request::Quotas`]; the
 //! others cache its answer with an age, the way vitals cross. So a
 //! ring on any screen is "what the home machine last read", and a
@@ -20,10 +20,10 @@
 //! what "full" means.
 //!
 //! **Read on a leash.** Every provider rate-limits its usage endpoints;
-//! a reading is cached for [`CACHE_TTL_MS`] and a failure cools the
-//! account for [`FAIL_COOLDOWN_MS`] before it is asked again (`quota.rs`'s
-//! discipline, lifted). A screen polling every ten seconds costs the
-//! provider one call per five minutes.
+//! native readers cache for [`CACHE_TTL_MS`] and cool failures for
+//! [`FAIL_COOLDOWN_MS`]. Desktop/server Pi balance readers instead keep
+//! the upstream report until its own expiry, bound concurrent SDK
+//! processes, and retain the last observation when refresh fails.
 //!
 //! # Which way this can be wrong
 //!
@@ -87,6 +87,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::Node;
 use crate::link;
+
+#[cfg(not(target_os = "ios"))]
+#[path = "account_usage.rs"]
+mod pi_usage;
 
 /// How long a reading stands before the provider is asked again.
 pub const CACHE_TTL_MS: i64 = 5 * 60 * 1000;
@@ -167,6 +171,15 @@ struct Cached {
     reading: AccountReading,
     #[serde(default)]
     failed_at_ms: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pi: Option<PiObservation>,
+}
+
+#[derive(Serialize, Deserialize)]
+struct PiObservation {
+    credential_fingerprint: String,
+    expires_at_ms: i64,
+    report: serde_json::Value,
 }
 
 /// A peer's whole answer, stamped with when it arrived.
@@ -694,6 +707,24 @@ impl Node {
                     None => Some(bare(&account, Some(trouble::UNKNOWN_PROVIDER), now)),
                 }
             } else {
+                #[cfg(not(target_os = "ios"))]
+                if pi_usage::supports(&account) {
+                    if self.usage_credential_fingerprint(&account).is_none() {
+                        out.push(bare(&account, Some(trouble::NO_KEY), now));
+                        continue;
+                    }
+                    out.extend(
+                        self.cached_reading(&account.id)
+                            .filter(|cached| {
+                                cached.pi.as_ref().is_some_and(|pi| {
+                                    self.usage_credential_fingerprint(&account).as_deref()
+                                        == Some(pi.credential_fingerprint.as_str())
+                                })
+                            })
+                            .map(|cached| cached.reading),
+                    );
+                    continue;
+                }
                 match self.cached_reading(&account.id) {
                     Some(c) => Some(c.reading),
                     None if self.key_of(&account.id).is_none() => {
@@ -708,6 +739,10 @@ impl Node {
     }
 
     async fn read_one(&self, account: &Account, now: i64) -> AccountReading {
+        #[cfg(not(target_os = "ios"))]
+        if pi_usage::supports(account) {
+            return self.read_pi_balance(account, now).await;
+        }
         // **A subscription keeps no reading of its own on this disk.**
         // `quota::read` already holds three layers for exactly this
         // purpose — five minutes in memory, a disk cache every process
@@ -753,6 +788,7 @@ impl Node {
                     &Cached {
                         reading: reading.clone(),
                         failed_at_ms: None,
+                        pi: None,
                     },
                 );
                 reading
@@ -770,6 +806,7 @@ impl Node {
                     &Cached {
                         reading: reading.clone(),
                         failed_at_ms: Some(now),
+                        pi: None,
                     },
                 );
                 reading
@@ -1040,6 +1077,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
         Provider::Newapi => fetch_newapi(account, key, now).await,
         Provider::Claude => fetch_claude(account, key, now).await,
         Provider::Openai => fetch_openai(account, key, now).await,
+        #[cfg(target_os = "ios")]
         Provider::Deepseek => {
             let j = get_json(
                 client()
@@ -1050,6 +1088,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
             .map_err(|_| trouble::UNREACHABLE)?;
             read_deepseek(account, &j, now)
         }
+        #[cfg(target_os = "ios")]
         Provider::Moonshot => {
             let j = get_json(
                 client()
@@ -1060,6 +1099,7 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
             .map_err(|_| trouble::UNREACHABLE)?;
             read_moonshot(account, &j, now, "USD")
         }
+        #[cfg(target_os = "ios")]
         Provider::MoonshotCn => {
             let j = get_json(
                 client()
@@ -1083,6 +1123,10 @@ async fn fetch(account: &Account, key: &str, now: i64) -> Result<AccountReading,
         // A subscription only: registration refuses a billed one, so
         // this is a doc written by hand or by a newer khor.
         Provider::Codex | Provider::Other(_) => Err(trouble::UNKNOWN_PROVIDER),
+        #[cfg(not(target_os = "ios"))]
+        Provider::Deepseek | Provider::Moonshot | Provider::MoonshotCn => {
+            Err(trouble::UNKNOWN_PROVIDER)
+        }
     }
 }
 
@@ -1103,6 +1147,7 @@ fn decimal(v: Option<&serde_json::Value>) -> Option<f64> {
 /// empty account shows USD at zero. No spend, so no fraction and no
 /// budget — there is nothing for a budget to be a fraction of.
 /// Endpoint and shape as `pi-usage` and `pi-deepseek-usage` read them.
+#[cfg(any(test, target_os = "ios"))]
 fn read_deepseek(
     account: &Account,
     j: &serde_json::Value,
@@ -1137,6 +1182,7 @@ fn read_deepseek(
 /// the figure that gates requests (`cash_balance` alone can be
 /// negative on credit). The site decides the currency (.ai in USD, .cn
 /// in CNY), which is why the caller names it and not the answer.
+#[cfg(any(test, target_os = "ios"))]
 fn read_moonshot(
     account: &Account,
     j: &serde_json::Value,
@@ -2576,6 +2622,7 @@ mod tests {
             &Cached {
                 reading: refused,
                 failed_at_ms: Some(now - 1_000),
+                pi: None,
             },
         );
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -2597,6 +2644,7 @@ mod tests {
             &Cached {
                 reading: fine,
                 failed_at_ms: Some(now - 1_000),
+                pi: None,
             },
         );
         let got = rt.block_on(n.quota_readings()).unwrap();
@@ -2648,6 +2696,7 @@ mod tests {
             &Cached {
                 reading: aged,
                 failed_at_ms: None,
+                pi: None,
             },
         );
         let got = rt.block_on(n.quota_readings_held()).unwrap();
@@ -2707,6 +2756,7 @@ mod tests {
             &Cached {
                 reading: read,
                 failed_at_ms: None,
+                pi: None,
             },
         );
         let rt = tokio::runtime::Builder::new_current_thread()
@@ -2805,6 +2855,7 @@ mod tests {
                 &Cached {
                     reading: read,
                     failed_at_ms: None,
+                    pi: None,
                 },
             );
         };

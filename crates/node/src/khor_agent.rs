@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 #[path = "agent_accounts.rs"]
 mod accounts;
+pub(crate) use accounts::provider_id as account_provider_id;
 #[path = "khor_agent_input.rs"]
 mod input;
 #[path = "khor_agent_io.rs"]

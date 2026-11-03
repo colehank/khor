@@ -1,4 +1,4 @@
-//! Process-local admission for a resident's final agent shutdown.
+//! Process-local admission for resident agents and account observations.
 //! Only an explicit new resident can advance a retired generation. Final
 //! process exit additionally seals the Root against any new generation.
 use std::{
@@ -40,6 +40,21 @@ pub(crate) fn enter(root: &Path, generation: &OnceLock<u64>) -> Result<Call, Str
     let mut roots = roots().lock().unwrap_or_else(|p| p.into_inner());
     let state = reserve(&mut roots, root)?;
     if state.sealed || *generation.get_or_init(|| state.generation) != state.generation {
+        return Err("RuntimeShutDown".into());
+    }
+    if state.calls + state.producers.len() >= CALL_LIMIT {
+        return Err("ResourceLimit".into());
+    }
+    state.calls += 1;
+    Ok(Call(root.into()))
+}
+/// Account observations remain available when agent hosting is paused. They
+/// still join the same shutdown barrier and cannot enter a draining/closed Root.
+pub(crate) fn enter_observer(root: &Path) -> Result<Call, String> {
+    reap_finished(root);
+    let mut roots = roots().lock().unwrap_or_else(|p| p.into_inner());
+    let state = reserve(&mut roots, root)?;
+    if state.terminal || state.draining || state.unconfirmed || (state.sealed && !state.retired) {
         return Err("RuntimeShutDown".into());
     }
     if state.calls + state.producers.len() >= CALL_LIMIT {
@@ -231,5 +246,42 @@ impl Drop for Serve {
         if state.generation == self.generation {
             state.serving = false;
         }
+    }
+}
+
+#[cfg(test)]
+mod observer_tests {
+    use super::*;
+
+    #[test]
+    fn observations_survive_a_completed_pause_but_not_drain_or_final_close() {
+        let root = std::env::temp_dir().join(format!(
+            "khor-observer-{}",
+            crate::link::fresh_hex().unwrap()
+        ));
+        let generation = OnceLock::new();
+        drop(enter(&root, &generation).unwrap());
+        seal(&root, false).unwrap();
+        assert!(
+            enter_observer(&root).is_err(),
+            "an incomplete close is not a pause"
+        );
+        retired(&root);
+        let observation = enter_observer(&root).unwrap();
+        assert!(!idle(&root));
+        assert!(
+            enter(&root, &generation).is_err(),
+            "observation admission does not reopen agent execution"
+        );
+        drop(observation);
+        assert!(idle(&root));
+        let drain = drain(&root, false).unwrap().unwrap();
+        assert!(enter_observer(&root).is_err());
+        retired(&root);
+        drop(drain);
+        drop(enter_observer(&root).unwrap());
+        seal(&root, true).unwrap();
+        retired(&root);
+        assert!(enter_observer(&root).is_err());
     }
 }

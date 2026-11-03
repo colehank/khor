@@ -53,7 +53,7 @@ pub(super) fn inference_ready(node: &Node, account: &Account) -> bool {
             || fs::read_to_string(node.root().join(".khor/keys").join(&account.id))
                 .is_ok_and(|key| !key.trim().is_empty()))
 }
-pub(super) fn provider_id(account: &Account) -> String {
+pub(crate) fn provider_id(account: &Account) -> String {
     if let Some(i) = &account.inference {
         return i.provider.clone();
     }
@@ -78,6 +78,7 @@ struct Job {
     finished: AtomicBool,
     state: Mutex<Value>,
     since: Instant,
+    read_only: bool,
 }
 impl Job {
     fn stop(&self) {
@@ -227,9 +228,21 @@ fn address(value: &str) -> bool {
 }
 impl Node {
     pub(super) fn manage_agent(&self, request: Value) -> Result<Value, String> {
-        let _call = runtime::enter(self.root(), &self.agent_generation)?;
-        self.refuse_unless_hosting()?;
         let operation = text(&request, "operation")?;
+        let read_only = operation == "usage"
+            || (matches!(operation, "poll" | "cancel")
+                && jobs()
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .get(&(self.root().to_path_buf(), text(&request, "job")?.into()))
+                    .is_some_and(|job| job.read_only));
+        let _call = if read_only {
+            runtime::enter_observer(self.root())?
+        } else {
+            let call = runtime::enter(self.root(), &self.agent_generation)?;
+            self.refuse_unless_hosting()?;
+            call
+        };
         if operation.starts_with("acp_") {
             return crate::acp_management::manage(self, &request);
         }
@@ -485,6 +498,7 @@ impl Node {
             input: Mutex::new(None),
             state: Mutex::new(json!({"status":"running"})),
             since: Instant::now(),
+            read_only,
         });
         {
             let mut jobs = jobs().lock().map_err(|e| e.to_string())?;
@@ -699,6 +713,68 @@ impl Node {
         runtime::register_producer(&owner_root, owner);
         registration.committed = true;
         Ok(json!({"job":job_id,"status":"running"}))
+    }
+
+    pub(crate) fn usage_credential_fingerprint(&self, account: &Account) -> Option<String> {
+        if !account_id(&account.id) || account.home != self.device_str() {
+            return None;
+        }
+        let path = if account.inference.is_some() {
+            credential_path(self.root(), &account.id)
+        } else {
+            self.root().join(".khor/keys").join(&account.id)
+        };
+        let bytes = fs::read(path).ok()?;
+        (!bytes.is_empty()).then(|| blake3::hash(&bytes).to_hex().to_string())
+    }
+
+    /// Wait for the existing process owner to reap before publishing a reading.
+    /// Dropping this future cancels its job; shutdown retains the producer join.
+    pub(crate) async fn read_pi_usage(&self, account: &Account) -> Result<Value, String> {
+        let started = self.manage_agent(json!({"operation":"usage","account":account.id}))?;
+        let id = text(&started, "job")?.to_owned();
+        let job = jobs()
+            .lock()
+            .map_err(|e| e.to_string())?
+            .get(&(self.root().to_path_buf(), id.clone()))
+            .cloned()
+            .ok_or_else(|| msg::agent_not_running().to_owned())?;
+        let _owner = UsageOwner {
+            root: self.root().to_path_buf(),
+            id,
+            job: job.clone(),
+        };
+        let by = tokio::time::Instant::now() + Duration::from_secs(25);
+        while !job.finished.load(Ordering::SeqCst) {
+            if tokio::time::Instant::now() >= by {
+                return Err("UsageTimeout".into());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let state = job.state.lock().map_err(|e| e.to_string())?;
+        if state["status"] != "done" {
+            return Err("UsageUnavailable".into());
+        }
+        Ok(state["result"]["usage"].clone())
+    }
+}
+
+struct UsageOwner {
+    root: PathBuf,
+    id: String,
+    job: Arc<Job>,
+}
+impl Drop for UsageOwner {
+    fn drop(&mut self) {
+        self.job.stop();
+        let mut jobs = jobs().lock().unwrap_or_else(|p| p.into_inner());
+        let key = (self.root.clone(), self.id.clone());
+        if jobs
+            .get(&key)
+            .is_some_and(|job| Arc::ptr_eq(job, &self.job))
+        {
+            jobs.remove(&key);
+        }
     }
 }
 
