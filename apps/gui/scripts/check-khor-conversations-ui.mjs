@@ -62,7 +62,7 @@ try {
   });
   // The page and API share one server; bridge POSTs are intercepted above.
   await page.goto(`http://localhost:${port}/${basename(fixture)}/index.html?bridge=${port}`);
-  const choose=async id=>{await page.locator('[data-new-session-launch] input').click();await page.locator(`[data-choice-option="${id}"]`).click();};
+  const choose=async id=>{await page.locator('[data-new-session-launch] textarea').click();await page.locator(`[data-choice-option="${id}"]`).click();};
   await choose('agent:fixture-acp');await page.locator('[data-acp-setup] > summary').click();await page.getByLabel('MCP servers',{exact:true}).fill('{');
   assert(await page.locator('[data-new-session-create]').isDisabled());
   await choose('khor');await page.locator('[data-new-session-create]').click();
