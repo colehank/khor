@@ -131,7 +131,7 @@ fn until(fixture: &Fixture, needle: &str) -> Vec<u8> {
 }
 
 #[test]
-fn an_unavailable_connection_keeps_the_view_lease_for_a_later_attach() {
+fn an_unavailable_connection_retires_its_lease_before_a_new_view_attaches() {
     let mut fixture = Fixture::new("khor-host/5", |stream| {
         assert!(matches!(
             host::read_frame::<ClientOp>(stream).unwrap(),
@@ -154,6 +154,16 @@ fn an_unavailable_connection_keeps_the_view_lease_for_a_later_attach() {
     assert_eq!(miss.kind, khor_gui_core::miss::MissKind::HostLost);
     assert!(term::term_attach(&fixture.root, &fixture.id.0, &fixture.lease).is_err());
     std::fs::write(&marker, original).unwrap();
+    assert!(
+        term::term_open_status(&fixture.root, &fixture.id.0, &fixture.lease, 80, 24, 5000).is_err(),
+        "a failed open retires its exact lease"
+    );
+    fixture.lease = khor_gui_core::attachment_begin(
+        &fixture.root,
+        &fixture.id.0,
+        khor_gui_core::AttachmentKind::Terminal,
+    )
+    .unwrap();
     assert!(
         term::term_open_status(&fixture.root, &fixture.id.0, &fixture.lease, 80, 24, 5000)
             .unwrap()
