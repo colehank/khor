@@ -108,7 +108,7 @@ export function checkMobileSources(gui) {
     // Lists and documents on this machine's own disk.
     "workspaces", "tabs_list", "tabs_open", "tabs_go", "tabs_focus",
     "tabs_close", "tabs_pin", "tabs_save", "tabs_reorder", "ws_rm", "ws_pin", "pin_account", "rename_account", "seen_snapshot",
-    "update_account", "register_account", "remove_account", "seen", "rename_session",
+    "update_account", "remove_account", "seen", "rename_session",
     "rename_machine", "relays", "set_relays", "pin_session", "pin_device", "forget_device",
     "set_watch", "set_receive_dir", "face_choices", "restyle", "recents", "recent_visit", "forget_recent", "find",
     "machine_log", "import_candidates", "import_sessions", "agents",
