@@ -8,6 +8,29 @@ impl Drop for Fixture {
 }
 
 #[test]
+fn managed_host_selection_reads_the_probe_reply_before_joining_its_pipe_owner() {
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_khor"));
+    let image = khor_node::runtime_image::host_at(&binary).unwrap();
+    assert_ne!(image.path(), binary);
+    let mut command = Command::new(image.path());
+    command
+        .arg("_runtime_info")
+        .stdout(std::process::Stdio::piped());
+    let output = image
+        .spawn(&mut command)
+        .unwrap()
+        .wait_with_output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(info["release"]["schema"], 1);
+    assert_eq!(
+        PathBuf::from(info["executable"].as_str().unwrap()),
+        image.path()
+    );
+}
+
+#[test]
 fn runtime_inspection_is_bounded_json_without_opening_a_user_store() {
     let fixture = Fixture(std::env::temp_dir().join(format!(
         "khor-runtime-info-{}",

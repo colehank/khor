@@ -141,17 +141,18 @@ fn inspect(program: &Path) -> Result<Info, String> {
         }
         std::thread::sleep(Duration::from_millis(5));
     };
-    child.finish(false).map_err(|error| error.to_string())?;
     if !status.success() {
+        child.finish(false).map_err(|error| error.to_string())?;
         return Err("program did not provide a runtime contract".into());
     }
     let mut bytes = Vec::new();
-    pipes
+    let read = pipes
         .stdout
         .by_ref()
         .take(INFO_LIMIT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| error.to_string())?;
+        .read_to_end(&mut bytes);
+    child.finish(false).map_err(|error| error.to_string())?;
+    read.map_err(|error| error.to_string())?;
     if bytes.len() as u64 > INFO_LIMIT {
         return Err("runtime contract exceeds its byte limit".into());
     }
