@@ -13,6 +13,7 @@ import tarfile
 import tempfile
 from release_manifest import version
 from apple_api import AppleClient
+from mac_icon import verify_app
 
 GUI = Path("apps/gui")
 APPLE = GUI / "src-tauri/gen/apple"
@@ -124,14 +125,16 @@ def mac_build(target, signed):
     if not signed:
         command.insert(command.index("--bundles"), "--no-sign")
         run(command, cwd=GUI)
-        return
-    for name in ["APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_SIGNING_IDENTITY"]:
-        required(name)
-    notarization_keys = {"APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID", "APPLE_API_KEY",
-                         "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_CONTENT"}
-    run(command, cwd=GUI, env={key: value for key, value in os.environ.items() if key not in notarization_keys})
+    else:
+        for name in ["APPLE_CERTIFICATE", "APPLE_CERTIFICATE_PASSWORD", "APPLE_SIGNING_IDENTITY"]:
+            required(name)
+        notarization_keys = {"APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID", "APPLE_API_KEY",
+                             "APPLE_API_ISSUER", "APPLE_API_KEY_PATH", "APPLE_API_KEY_CONTENT"}
+        run(command, cwd=GUI, env={key: value for key, value in os.environ.items() if key not in notarization_keys})
     app = Path("target") / target / "release/bundle/macos/Khor.app"
-    run(["codesign", "--verify", "--deep", "--strict", str(app)])
+    verify_app(app)
+    if signed:
+        run(["codesign", "--verify", "--deep", "--strict", str(app)])
 
 
 def package_ios():

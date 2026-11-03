@@ -22,14 +22,14 @@
 外形按 Apple 官方 Liquid Glass 规范:**全出血 1024 方形画布**,
 角半径 229(22.4%)、曲率连续,直边笔直。
 
-配色沿用 `apps/desktop/src/styles.css` 的 `--liquid` 与暗底,未引入新色。
+配色沿用 `apps/gui/src/styles.css` 的 `--liquid` 与暗底,未引入新色。
 
 ## 文件
 
 | 文件 | 用途 |
 | --- | --- |
 | `mandala-glass.svg` | **主稿(带掩模)**。传统 tauri / icns / ico 流程用这份 |
-| `mandala-glass-bleed.svg` | 全出血无掩模版。Xcode 26 / Icon Composer 用这份,圆角与折射交给系统;文件头注释里有四层拆分建议 |
+| `../Icon.icon/Assets/mandala-glass-bleed.svg` | 全出血无掩模版。Xcode 26 / Icon Composer 用这份,圆角与折射交给系统;文件头注释里有四层拆分建议 |
 | `mandala-16.svg` | 16px 专稿。只留环与心,用于替换生成结果里的最小尺寸 |
 | `tray.svg` | 托盘模板版。纯黑 + alpha,系统自动着色 |
 | `mandala-glyph.svg` | 抽象符号版。只留骨干(环 / 方 / 四门珠 / 心珠),`currentColor` 纯线条,app 内当通用符号用,不是应用图标 |
@@ -40,13 +40,13 @@
 简易转换器会丢滤镜。
 
 ```sh
-cd apps/desktop/src-tauri/icons
+cd apps/gui/src-tauri/icons
 
 # 1. 主稿导出 1024 PNG
 resvg --width 1024 --height 1024 src/mandala-glass.svg icon.png
 
 # 2. 生成全平台图标(覆盖 icons/ 下的 PNG / icns / ico / android / ios)
-cd ../..                 # 到 apps/desktop
+cd ../..                 # 到 apps/gui
 pnpm tauri icon src-tauri/icons/icon.png
 
 # 3. 最小尺寸换成专稿(Windows ico 内的 16px 同理,需要时用 icotool 重打包)
@@ -70,3 +70,11 @@ resvg --width 88 --height 88 src/tray.svg tray@2x.png
 - Dock / 启动台:32 / 64 / 128 / 256 各看一眼,玻璃细节在 64px 以下应自然融化成辉光,剪影不变
 - 菜单栏托盘:亮色与暗色壁纸各切一次,模板图标应自动反色
 - 若走 Icon Composer:确认系统折射生效后,`mandala-glass.svg` 里手绘的拾光边可以撤掉,避免与系统效果叠加
+
+## macOS 26 图标交付
+
+`../Icon.icon` 是 macOS 原生图标文档；唯一全出血稿在其 `Assets/` 内，直接供 Icon Composer 和 `actool` 使用。原图保持既有配色与玻璃细节，图层不再套玻璃材质、不缩小、不预裁圆角，由系统绘制外形。`tauri.ci.json` 同时列出原生文档、既有 ICNS 和 PNG；Tauri 2.12.1 在 macOS 打包时调用 Xcode 26 的 `actool` 生成 `Assets.car`，旧系统继续读取 ICNS。iOS 的现有 asset catalog 与 Windows/Linux 资源不随此次修改再生成。
+
+仅修改 ICNS 无法验证新版系统的最终图标。Quality 的 `mac-icon` job 编译真实 catalog 并检查包含图标栈；Mac App 打包结束还须核验 catalog、Info.plist 名称和 ICNS fallback。Dock 的视觉验收需使用新候选包，不修改正式 App、不清除用户系统图标缓存来冒充修复。
+
+参考：[Apple App icons](https://developer.apple.com/design/human-interface-guidelines/app-icons/)、[Tauri 2.12.1 bundler](https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.12.1/crates/tauri-bundler/src/bundle/macos/icon.rs)。

@@ -24,8 +24,10 @@ class SigningBoundaryTest(unittest.TestCase):
             "APPLE_API_KEY", "APPLE_API_ISSUER", "APPLE_API_KEY_CONTENT", "APPLE_API_KEY_PATH",
             "APPLE_ID", "APPLE_PASSWORD", "APPLE_TEAM_ID",
         ]}
-        with patch.dict(os.environ, credentials, clear=True), patch.object(apple, "run") as run:
+        with patch.dict(os.environ, credentials, clear=True), patch.object(apple, "run") as run, \
+                patch.object(apple, "verify_app") as verify:
             apple.mac_build("aarch64-apple-darwin", True)
+        verify.assert_called_once_with(Path("target/aarch64-apple-darwin/release/bundle/macos/Khor.app"))
         environment = run.call_args_list[0].kwargs["env"]
         self.assertEqual(environment["APPLE_SIGNING_IDENTITY"], "test")
         self.assertFalse("APPLE_API_KEY" in environment)
