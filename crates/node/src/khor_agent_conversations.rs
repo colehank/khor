@@ -362,6 +362,45 @@ mod tests {
             execution_key(node.root(), &b)
         );
     }
+    #[tokio::test]
+    async fn approval_answers_reach_only_the_conversation_that_owns_the_run() {
+        let (_scratch, node) = node();
+        let a = create(&node, "conversation-token-a", "");
+        let b = create(&node, "conversation-token-b", "");
+        let first = Arc::new(Running::new("run-a".into()));
+        let second = Arc::new(Running::new("run-b".into()));
+        *first.approval.lock().unwrap() = Some((7, None));
+        *second.approval.lock().unwrap() = Some((7, None));
+        let first_key = execution_key(node.root(), &a);
+        let second_key = execution_key(node.root(), &b);
+        {
+            let mut active = running().lock().unwrap();
+            active.insert(first_key.clone(), first.clone());
+            active.insert(second_key.clone(), second.clone());
+        }
+        let answer = |session: String, run: &str, allow| Action::Conversation {
+            session,
+            action: Box::new(Action::Answer {
+                run: run.into(),
+                ask: 7,
+                allow,
+            }),
+        };
+        let wrong = node.khor_agent_here(answer(b.clone(), "run-a", true)).await;
+        let right = node.khor_agent_here(answer(a, "run-a", true)).await;
+        let other = node.khor_agent_here(answer(b, "run-b", false)).await;
+        running().lock().unwrap().remove(&first_key);
+        running().lock().unwrap().remove(&second_key);
+        assert!(
+            wrong.is_err(),
+            "a different conversation cannot answer this run"
+        );
+        right.unwrap();
+        other.unwrap();
+        assert_eq!(*first.approval.lock().unwrap(), Some((7, Some(true))));
+        assert_eq!(*second.approval.lock().unwrap(), Some((7, Some(false))));
+    }
+
     #[test]
     fn model_names_are_persisted_once_and_never_replace_explicit_titles() {
         let (_scratch, node) = node();
