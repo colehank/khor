@@ -301,6 +301,7 @@ pub fn term_open_status(
     }
 }
 
+#[derive(Debug)]
 enum OpenError {
     Unavailable(Miss),
     Refused(String),
@@ -2764,9 +2765,7 @@ mod input_ownership_tests {
             "the old Err(_) if is_hosted branch would swallow this ownership refusal"
         );
         assert!(
-            attach(&root.0, &id.0, 80, 24)
-                .unwrap_err()
-                .contains("outside Khor")
+            matches!(attach(&root.0, &id.0, 80, 24), Err(OpenError::Refused(why)) if why.contains("outside Khor"))
         );
         assert_eq!(
             listener.accept().unwrap_err().kind(),

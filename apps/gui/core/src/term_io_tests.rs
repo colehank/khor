@@ -407,7 +407,7 @@ fn active_reopen_retains_its_own_connection_when_an_old_open_lands_last() {
             new_peer
                 .write_all(b"active-B-before-A\r\n")
                 .map_err(|e| e.to_string())?;
-            wait_for_marker(&id, &new_lease, "active-B-before-A")
+            wait_for_marker(&id, &new_lease, "active-B-before-A").map_err(OpenError::from)
         });
         release.send(()).unwrap();
         let old_result = old.join().unwrap();

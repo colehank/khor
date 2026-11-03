@@ -116,8 +116,9 @@ jobs:
           cargo test --locked -p khor-node --lib connection_failure_does_not_claim_the_host_ended -- --test-threads=1
           cargo test --locked -p khor-node --lib interrupted_and_invalid_handshakes_have_different_recovery -- --test-threads=1
           cargo test --locked -p khor-node --lib a_cookie_refusal_keeps_the_hosts_reason -- --test-threads=1
-          cargo test --locked -p khor-gui-core --test terminal_current -- --test-threads=1
           cargo test --locked -p khor-gui-core --lib first_rejoin_is_safe_inside_a_runtime_worker -- --test-threads=1
+          cargo test --locked -p khor-gui-core --lib term_io_tests -- --test-threads=1
+          cargo test --locked -p khor-gui-core --test terminal_current -- --test-threads=1
       - name: Verify keeper adoption and SSH installation in scratch homes
         run: |
           cargo test --locked -p khor-node --lib join:: -- --test-threads=1
