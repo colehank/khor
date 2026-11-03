@@ -11,6 +11,24 @@ pub use store::{Collection, Image, Limits, Source, Store};
 
 use serde::{Deserialize, Serialize};
 
+/// Enter before opening user stores. Unmanaged executables keep their ordinary installation path.
+pub fn enter_current() -> std::io::Result<()> {
+    static CURRENT: std::sync::OnceLock<Result<Option<Lease>, String>> = std::sync::OnceLock::new();
+    match CURRENT.get_or_init(|| {
+        (|| {
+            let lease = Store::lease_for_program(&std::env::current_exe()?)?;
+            if let Some(lease) = &lease {
+                lease.make_inherited_private()?;
+            }
+            Ok(lease)
+        })()
+        .map_err(|error: std::io::Error| error.to_string())
+    }) {
+        Ok(_) => Ok(()),
+        Err(error) => Err(std::io::Error::other(error.clone())),
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Role {

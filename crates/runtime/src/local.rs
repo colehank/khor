@@ -77,8 +77,9 @@ pub(crate) fn validate(path: &Path) -> io::Result<()> {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Storage::FileSystem::{
-            DRIVE_FIXED, DRIVE_RAMDISK, GetDriveTypeW, GetVolumePathNameW,
+        use windows_sys::Win32::{
+            Storage::FileSystem::{GetDriveTypeW, GetVolumePathNameW},
+            System::WindowsProgramming::{DRIVE_FIXED, DRIVE_RAMDISK},
         };
         let wide: Vec<_> = path.as_os_str().encode_wide().chain(Some(0)).collect();
         let mut volume = vec![0; 32768];

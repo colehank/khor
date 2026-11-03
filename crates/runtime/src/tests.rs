@@ -351,6 +351,18 @@ fn lease_child_process() {
         return;
     };
     let root = PathBuf::from(root);
+    enter_current().unwrap();
+    #[cfg(unix)]
+    {
+        let raw: i32 = std::env::var("KHOR_RUNTIME_LEASE_FD")
+            .unwrap()
+            .parse()
+            .unwrap();
+        assert_ne!(
+            unsafe { libc::fcntl(raw, libc::F_GETFD) } & libc::FD_CLOEXEC,
+            0
+        );
+    }
     fs::write(root.join("child.ready"), b"ready").unwrap();
     wait_for(|| root.join("child.release").exists());
 }

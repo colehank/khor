@@ -105,6 +105,12 @@ impl Store {
     }
 
     pub fn open(root: PathBuf, limits: Limits) -> io::Result<Self> {
+        if !root.is_absolute() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "runtime directory must be absolute",
+            ));
+        }
         if !root.exists() {
             #[cfg(unix)]
             {
@@ -119,7 +125,10 @@ impl Store {
             fs::create_dir_all(&root)?;
         }
         local::validate(&root)?;
-        let store = Self { root, limits };
+        let store = Self {
+            root: fs::canonicalize(root)?,
+            limits,
+        };
         let _catalog = store.catalog()?;
         let owner = store.root.join("owner");
         if !owner.exists() {
@@ -145,6 +154,37 @@ impl Store {
             ));
         }
         Ok(store)
+    }
+
+    pub fn lease_for_program(program: &Path) -> io::Result<Option<Lease>> {
+        if !program.is_absolute() {
+            return Ok(None);
+        }
+        let Some(directory) = program.parent() else {
+            return Ok(None);
+        };
+        let Some(id) = directory
+            .file_name()
+            .and_then(|name| name.to_str())
+            .filter(|id| valid_id(id))
+        else {
+            return Ok(None);
+        };
+        let Some(root) = directory.parent() else {
+            return Ok(None);
+        };
+        match read_bounded(&root.join("owner"), OWNER.len() as u64) {
+            Ok(bytes) if bytes == OWNER => {}
+            Ok(_) => return Err(io::Error::other("unsupported runtime owner")),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        }
+        let store = Self::open(root.into(), Limits::default())?;
+        let selected = store.hold(id)?;
+        if selected.path != fs::canonicalize(program)? {
+            return Err(io::Error::other("runtime executable differs from manifest"));
+        }
+        Ok(Some(selected.lease))
     }
 
     pub fn publish(
