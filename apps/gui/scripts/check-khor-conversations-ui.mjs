@@ -37,6 +37,7 @@ try {
    command:{id,line,owner:home,owner_name:'fixture',status:agent?'running':'done',started_at_ms:Date.now(),ended_at_ms:agent?null:Date.now(),stdout:agent?'':line+' result',stderr:'',data_json:null,session:null,error:null,
     agent:agent?{model:config.model,approval:null,updates:[],updates_truncated:false,updated_at_ms:Date.now()}:null}});
   await page.route(`http://127.0.0.1:${port}/**`,async route=>{
+   if(route.request().method()==='OPTIONS'){await route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-methods':'POST, OPTIONS','access-control-allow-headers':'content-type'}});return;}
    if(route.request().method()!=='POST'){await route.continue();return;}
    const cmd=new URL(route.request().url()).pathname.slice(1),args=route.request().postDataJSON()??{};calls.push({cmd,args});let result=null;
    if(cmd==='devices')result=[{id:home,name:'fixture',shown:'Fixture',me:true,sponsor:null,hosts:true,pinned:false,paused:false,vitals:null,seat:{left:0,top:0},roads:[]}];
@@ -51,13 +52,13 @@ try {
     const {action,payload}=args;result={config,accounts:[account],run:null,data:{conversation:{home}}};
     if(action==='create') {
      if(!creates.has(payload.token))creates.set(payload.token,creates.size===0?A:B);
-     if(!failedCreate){failedCreate=true;await route.fulfill({status:503,body:'Lost create response fixture'});return;}
+     if(!failedCreate){failedCreate=true;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'Lost create response fixture'});return;}
      result.data={session:creates.get(payload.token)};
     } else if(action==='prompt'){const id=payload.session===A?'task-a':'task-b';histories.get(payload.session).push(record(id,payload.text,true));result.run=id;}
     else if(action==='stop'){const item=histories.get(payload.session).find(m=>m.id===payload.run);item.command.status='done';item.command.ended_at_ms=Date.now();}
     else if(action==='manage')result.data=payload.operation==='poll'?{status:'done',result:{configOptions:[]}}:{job:'fixture-settings',status:'running'};
    }
-   await route.fulfill({contentType:'application/json',body:JSON.stringify(result)});
+   await route.fulfill({contentType:'application/json',headers:{'access-control-allow-origin':'*'},body:JSON.stringify(result)});
   });
   // The page and API share one server; bridge POSTs are intercepted above.
   await page.goto(`http://localhost:${port}/${basename(fixture)}/index.html?bridge=${port}`);

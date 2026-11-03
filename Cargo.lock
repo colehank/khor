@@ -4911,7 +4911,7 @@ dependencies = [
 
 [[package]]
 name = "khor-a2a"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "a2a-lf",
  "blake3",
@@ -4934,7 +4934,7 @@ dependencies = [
 
 [[package]]
 name = "khor-catalog"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "khor-core",
  "toml 0.8.23",
@@ -4942,7 +4942,7 @@ dependencies = [
 
 [[package]]
 name = "khor-cli"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "ctor 1.0.13",
  "iroh",
@@ -4966,7 +4966,7 @@ dependencies = [
 
 [[package]]
 name = "khor-commands"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "iroh",
  "iroh-relay",
@@ -4986,7 +4986,7 @@ dependencies = [
 
 [[package]]
 name = "khor-core"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "rmp-serde",
  "serde",
@@ -4997,7 +4997,7 @@ dependencies = [
 
 [[package]]
 name = "khor-detect"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "regex",
  "toml 0.8.23",
@@ -5006,7 +5006,7 @@ dependencies = [
 
 [[package]]
 name = "khor-gui"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "block2",
  "embed_plist",
@@ -5034,7 +5034,7 @@ dependencies = [
 
 [[package]]
 name = "khor-gui-core"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5053,7 +5053,7 @@ dependencies = [
 
 [[package]]
 name = "khor-net"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5080,7 +5080,7 @@ dependencies = [
 
 [[package]]
 name = "khor-node"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "a2a-client-lf",
  "a2a-server-lf",
@@ -5138,7 +5138,7 @@ dependencies = [
 
 [[package]]
 name = "khor-runtime"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "blake3",
  "getrandom 0.3.4",
@@ -5150,7 +5150,7 @@ dependencies = [
 
 [[package]]
 name = "khor-sync"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5163,7 +5163,7 @@ dependencies = [
 
 [[package]]
 name = "khor-web"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "khor-catalog",
  "khor-gui-core",
@@ -9245,7 +9245,7 @@ dependencies = [
 
 [[package]]
 name = "tauri-plugin-khor-files"
-version = "0.1.15"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "tauri",
