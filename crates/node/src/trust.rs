@@ -1159,6 +1159,18 @@ impl Node {
         root_mutation_at(self.root(), self.my_id())
     }
 
+    pub(crate) fn foreground_root_mutation_guard(
+        &self,
+    ) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
+        let guard = crate::doc_transfer_state::RootPermit::acquire_with_wait(
+            self.root(),
+            Self::FOREGROUND_OPEN_WAIT,
+        )
+        .and_then(|permit| permit.attach())
+        .map_err(String::from)?;
+        settled_root_mutation(self.root(), self.my_id(), guard)
+    }
+
     // Metadata admission may hand off the physical root fence before recovery.
     // Once both locks are held, keep root through self-registration/bootstrap:
     // a later Doc publication must not trigger a second recovery decision.
@@ -1916,6 +1928,14 @@ fn root_mutation_at(
     local: Id,
 ) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
     let guard = crate::doc_transfer_state::pairing::root_fence(root).map_err(String::from)?;
+    settled_root_mutation(root, local, guard)
+}
+
+fn settled_root_mutation(
+    root: &std::path::Path,
+    local: Id,
+    guard: crate::doc_transfer_state::RootMutationGuard,
+) -> Result<crate::doc_transfer_state::RootMutationGuard, String> {
     if crate::doc_transfer_state::pairing::needs_recovery(root, local).map_err(String::from)? {
         return Err("trust settlement recovery is pending".into());
     }
@@ -1935,6 +1955,52 @@ mod tests {
     use super::*;
 
     const NOW: u64 = 1_790_000_000_000;
+
+    #[test]
+    fn foreground_satellite_registration_waits_for_a_short_root_lease() {
+        struct OwnedRoot(std::path::PathBuf);
+        impl Drop for OwnedRoot {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let root = OwnedRoot(std::env::temp_dir().join(format!(
+            "khor-satellite-admission-{}",
+            crate::link::fresh_hex().unwrap()
+        )));
+        let node = Node::open_as(root.0.clone(), "satellite-admission").unwrap();
+        let gate = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(root.0.join(".khor/trust-mutation/gate"))
+            .unwrap();
+        gate.lock().unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+            drop(gate);
+        });
+        let subject = "ab".repeat(32);
+        let result = node.enter_satellite(
+            &subject,
+            "satellite",
+            &crate::satellite::Dest::new("fixture", None),
+            false,
+        );
+        release.join().unwrap();
+        result.expect("one foreground registration must wait through a short root lease");
+        let loaded = node.devices_loaded().unwrap();
+        let row = loaded.doc.get(&subject).unwrap();
+        assert_eq!(row.sponsor.as_deref(), Some(node.device_str()));
+        assert_eq!(
+            loaded
+                .doc
+                .all()
+                .iter()
+                .filter(|row| row.id == subject)
+                .count(),
+            1
+        );
+    }
 
     fn id(n: u8) -> Id {
         [n; 32]

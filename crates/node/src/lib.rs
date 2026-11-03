@@ -2261,7 +2261,7 @@ impl Node {
         host: &satellite::Dest,
         tmux: bool,
     ) -> Result<(), String> {
-        let _trust = self.root_mutation_guard()?;
+        let _trust = self.foreground_root_mutation_guard()?;
         let loaded = self.devices_loaded()?;
         loaded.doc.upsert(id, name, &[])?;
         loaded
