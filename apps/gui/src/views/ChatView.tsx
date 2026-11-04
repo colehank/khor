@@ -35,7 +35,6 @@ import { FileCard, MachineFilePick, PendingChips, SendInto, usePendingFiles } fr
 import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
 import { Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
-import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
 import { applyAcpUpdate } from "@/lib/acp-view";
