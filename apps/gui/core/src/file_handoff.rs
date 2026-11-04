@@ -56,9 +56,11 @@ fn cache_lock(cache: &Path) -> Result<File, String> {
 
 pub fn acquire_ready(root: &Path, id: &str) -> Result<ReadyFile, String> {
     let owner = entry(root, id)?;
-    let lease = cache_lock(&cache_root(root))?;
-    lease.lock_shared().map_err(|error| error.to_string())?;
+    let admission = cache_lock(&cache_root(root))?;
+    admission.lock_shared().map_err(|error| error.to_string())?;
     let path = ready_path(root, id)?;
+    let lease = cache_lock(path.parent().ok_or("missing original-file directory")?)?;
+    lease.lock_shared().map_err(|error| error.to_string())?;
     Ok(ReadyFile {path, owner, _lease: Arc::new(lease)})
 }
 #[derive(PartialEq, Eq)]
@@ -317,11 +319,11 @@ async fn prepare(
 }
 
 /// Cache is disposable, never a receive folder. Age and size are soft
-/// bounds: native readers hold a shared cache lease; other completed
+/// bounds: native readers hold a shared version lease; other completed
 /// originals retain an hour of grace even when they exceed the budget.
 pub(crate) fn prune_cache(root: &Path, current: &Path) {
-    let Ok(lease) = cache_lock(root) else { return; };
-    if lease.try_lock().is_err() {
+    let Ok(admission) = cache_lock(root) else { return; };
+    if admission.try_lock().is_err() {
         return;
     }
     fn size(path: &Path) -> u64 {
@@ -359,11 +361,12 @@ pub(crate) fn prune_cache(root: &Path, current: &Path) {
     let mut total: u64 = dirs.iter().map(|(_, _, bytes)| *bytes).sum();
     for (path, age, bytes) in dirs {
         let completed = path.join("ready.json").is_file();
-        if path != current
-            && age > Duration::from_secs(3600)
-            && (age > Duration::from_secs(7 * 86400) || (completed && total > 512 * 1024 * 1024))
-            && std::fs::remove_dir_all(path).is_ok()
-        {
+        if path == current || age <= Duration::from_secs(3600)
+            || !(age > Duration::from_secs(7 * 86400) || (completed && total > 512 * 1024 * 1024)) {
+            continue;
+        }
+        let Ok(lease) = cache_lock(&path) else { continue; };
+        if lease.try_lock().is_ok() && std::fs::remove_dir_all(path).is_ok() {
             total = total.saturating_sub(bytes);
         }
     }
@@ -387,6 +390,13 @@ mod tests {
         File::open(&manifest).unwrap().set_times(
             std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400))
         ).unwrap();
+        let unowned=cache.join("unowned");
+        std::fs::create_dir_all(&unowned).unwrap();
+        let old=unowned.join("ready.json");
+        std::fs::write(&old,b"another original").unwrap();
+        File::open(old).unwrap().set_times(
+            std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400))
+        ).unwrap();
         let owner = Arc::new(Entry {
             source: Source::File {machine: String::new(), path: "original.pdf".into()},
             job: Arc::new(Job::default()), stopped: tokio::sync::Notify::new(),
@@ -401,6 +411,7 @@ mod tests {
         assert!(first.is_cancelled());
         prune_cache(&cache, &cache.join("another-version"));
         assert!(first.path().is_file(), "cancelling its page must not erase the OS reader's file");
+        assert!(!unowned.exists(), "an open reader must not pin unrelated old downloads");
         drop(first); drop(retained);
         prune_cache(&cache, &cache.join("another-version"));
         assert!(path.is_file(), "a second native owner still retains the original");
