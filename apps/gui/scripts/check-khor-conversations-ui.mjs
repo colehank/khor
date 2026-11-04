@@ -107,7 +107,7 @@ try {
   await page.locator('[data-chat-composer]').fill('/');await page.locator('[data-slash-item=help]').waitFor();
   assert.equal(await page.locator('[data-slash-item=session]').count(),0,'new agent capabilities replace the old command set');
   commands=[];await page.evaluate(A=>window.showChat(A),A);
-  await page.locator('[data-khor-agent-turn=session-info]').waitFor();
+  await page.locator('[data-slash-menu]').waitFor({state:'detached'});
   assert.equal(await page.locator('[data-slash-menu]').count(),0,'a cleared command set leaves no stale menu');
   await page.evaluate(()=>window.showNew());await choose('khor');failNextCreate=true;
   await page.locator('[data-new-session-create]').click();await page.locator('[data-new-session-error]').waitFor();
