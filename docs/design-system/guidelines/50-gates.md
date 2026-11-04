@@ -847,3 +847,5 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run khor-conversations-ui`：真实新建页与MachineChat，覆盖空/手工标题、创建丢响应原token重试、多会话历史及Stop归属、Khor斜杠补全/执行不透传Pi，Chromium与WebKit在CI运行。
 
 - `npm run list-scroll-ui`：正式 ListPane、SideList、scroll-edge 与下拉刷新。合成触摸验证原生纵向滚动开始后不夺回、反向时滚动层及几何稳定、系统取消不刷新，真实横向置顶/删除入口与下拉释放保留。Chromium/WebKit 边界证据不冒充 iPhone 连续拖动与滚动条实机验收。远端开发设 `KHOR_TEST_CHROME=1` 复用已有 Chrome；标准 CI 仍用锁定 Chromium。
+
+- `npm run new-session-choices`：新建偏好的每机器目录与启动方式、重开恢复、GUI/TUI与预设稳定ID、MRU顺序、编辑时不重排、存储失败与坏数据。已纳入 `test:unit`；页面机器切换和显式工作区参数另由真实组件回归覆盖。

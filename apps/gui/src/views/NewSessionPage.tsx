@@ -15,26 +15,32 @@ import { FormGrid, FormLabel } from '@/components/ui/form-grid';
 import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { IconClose, IconGear, IconPencil, IconPlus } from '@/components/icons';
 import { gui } from '@/gen/catalog';
-import { draftFor, dropHandOff, peekHandOff, tellDraft } from '@/lib/composer-handoff';
+import { dropHandOff, peekHandOff } from '@/lib/composer-handoff';
+import {launchId, readNewSessionChoices, recentLaunchChoices, rememberNewSessionChoice, type SessionLaunch as Launch} from '@/lib/new-session-choices';
 import { useHereHosts } from '@/lib/here';
 import { useSetting } from '@/settings';
 import { imeKey } from '@/lib/ime';
-type Launch = {
-  kind: 'shell';
-  command: string;
-  preset?: string;
-} | {
-  kind: 'agent';
-  agent: string;
-} | {
-  kind: 'tell';
-} | {
-  kind: 'khor';
-};
 type LaunchOption = ChoiceOption & {
   launch: Launch;
 };
+const defaultLaunch = (terminal: boolean): Launch => terminal ? {kind: 'shell', command: 'claude'} : {kind: 'agent', agent: 'claude'};
+const creationTarget = (devices: DeviceRow[], machine: string) => devices.find(d => d.name === machine || d.id === machine) ?? (machine === '' ? devices.find(d => d.me && d.hosts) ?? devices.find(d => d.hosts && d.sponsor === null) ?? devices.find(d => d.me) : undefined);
 const kindIcon = (kind: string, agent: string | null) => sessionKind(kind, agent).glyph('size-kind-mark');
+function returnedSession(value: unknown): string {
+  const session = (value as {session?: unknown} | null)?.session;
+  if (typeof session !== 'string' || !session) throw new Error(gui.new_session_create_missing);
+  return session;
+}
+async function createSession({launch, target, cwd, title, token, environment, selection}: {
+  launch: Launch; target: DeviceRow; cwd: string; title: string; token: string;
+  environment: SessionEnvironment; selection: Pick<KhorModelSelection, 'account' | 'model'> | null;
+}): Promise<string> {
+  if (launch.kind === 'khor') return returnedSession((await khorAgent('create', target.id, {token, title, cwd, selection})).data);
+  if (launch.kind === 'shell') return openShell(target.name, cwd, launch.command, title, token);
+  if (environment.mcpServers.length || environment.additionalDirectories.length)
+    return returnedSession(await managePi(target.name, {operation: 'acp_open', agent: launch.agent, cwd, title, environment, token}));
+  return openSession(cwd, title, 'chat', launch.agent, target.name, token);
+}
 export function NewSessionPage({
   onCancel,
   onOpened,
@@ -48,18 +54,14 @@ export function NewSessionPage({
 }) {
   const here = useHereHosts(),
     wantsTerm = useSetting('session-form') === 'term';
+  const [preferences, setPreferences] = useState(readNewSessionChoices);
   const [devices, setDevices] = useState<DeviceRow[]>([]),
-    [machine, setMachine] = useState(picked),
+    [machine, setMachine] = useState(picked || preferences.machine),
     [paths, setPaths] = useState<Record<string, string>>({});
   const [known, setKnown] = useState<AgentRow[]>([]),
     [presets, setPresets] = useState<LaunchPreset[]>([]);
-  const [launch, setLaunch] = useState<Launch>(() => wantsTerm ? {
-    kind: 'shell',
-    command: 'claude'
-  } : {
-    kind: 'agent',
-    agent: 'claude'
-  });
+  const [launchesLoaded, setLaunchesLoaded] = useState(false);
+  const [launch, setLaunch] = useState<Launch>(() => defaultLaunch(wantsTerm));
   const [name, setName] = useState('');
   const [contextValid,setContextValid]=useState(true);
   const [environment,setEnvironment]=useState<SessionEnvironment>(EMPTY_ENVIRONMENT);
@@ -87,28 +89,34 @@ export function NewSessionPage({
     let live = true;
     generation.current++;
     creation.current = null;
+    const restored = readNewSessionChoices();
+    setPreferences(restored);
     setDevices([]);
-    setMachine(picked);
+    setLaunchesLoaded(false);
+    setMachine(picked || restored.machine);
     setPaths({});
+    setName('');
+    setEnvironment(EMPTY_ENVIRONMENT);
+    setContextValid(true);
     contextMachine.current = null;
     setOpening(false);
     setError(null);
     setHanded(peekHandOff());
     startedAgent.current = false;
     fetchDevices().then(rows => {
-      if (live) setDevices(rows);
+      if (!live) return;
+      const target = creationTarget(rows, picked || restored.machine);
+      contextMachine.current = target?.id ?? null;
+      setDevices(rows);
+      setLaunch(target && restored.machines[target.id]?.launch || defaultLaunch(wantsTerm));
     }, e => {
       if (live) why(e);
     });
-    fetchAgents().then(rows => {
-      if (live) setKnown(rows);
-    }, e => {
-      if (live) why(e);
-    });
-    launchPresets().then(rows => {
-      if (live) setPresets(rows);
-    }, e => {
-      if (live) why(e);
+    void Promise.allSettled([fetchAgents(), launchPresets()]).then(([agents, presets]) => {
+      if (!live) return;
+      if (agents.status === 'fulfilled') setKnown(agents.value); else why(agents.reason);
+      if (presets.status === 'fulfilled') setPresets(presets.value); else why(presets.reason);
+      setLaunchesLoaded(true);
     });
     return () => {
       live = false;
@@ -116,10 +124,10 @@ export function NewSessionPage({
       creation.current = null;
     };
   }, [picked, at]);
-  const target = devices.find(d => d.name === machine || d.id === machine) ?? (machine === '' ? devices.find(d => d.me && d.hosts) ?? devices.find(d => d.hosts && d.sponsor === null) ?? devices.find(d => d.me) : undefined);
+  const target = creationTarget(devices, machine);
   const channel = target?.name || '';
-  if (contextMachine.current === null && target) contextMachine.current = channel;
-  const dir = paths[channel] ?? (channel === contextMachine.current ? at : '');
+  const machineId = target?.id ?? '';
+  const dir = paths[machineId] ?? (machineId === contextMachine.current && at ? at : preferences.machines[machineId]?.dir ?? '');
   const agents = [...new Set(['claude', 'codex', ...known.map(a => a.name)])];
   const allChoices: LaunchOption[] = [{id:'khor',label:'khor',icon:kindIcon('broadcast','khor'),launch:{kind:'khor'}}, {
     id: 'shell',
@@ -148,14 +156,7 @@ export function NewSessionPage({
       kind: 'agent' as const,
       agent: name
     }
-  })), {
-    id: 'tell',
-    label: gui.message_text,
-    icon: kindIcon('broadcast', null),
-    launch: {
-      kind: 'tell'
-    }
-  }, ...presets.map(p => ({
+  })), ...presets.map(p => ({
     id: 'custom:' + p.id,
     label: p.name,
     terms: p.command,
@@ -167,23 +168,31 @@ export function NewSessionPage({
       preset: p.id
     }
   }))];
-  const choices = target?.hosts === false ? allChoices.filter(c => c.launch.kind === 'tell') : allChoices;
-  useEffect(() => {
-    if (target?.hosts === false) setLaunch({
-      kind: 'tell'
-    });
-  }, [target?.hosts]);
-  const selected = launch.kind === 'agent' ? choices.find(c => c.id === 'agent:' + launch.agent) : launch.kind === 'tell' || launch.kind === 'khor' ? choices.find(c => c.id === launch.kind) : choices.find(c => c.id === 'custom:' + launch.preset && c.launch.kind === 'shell' && c.launch.command === launch.command) ?? choices.find(c => c.launch.kind === 'shell' && c.launch.command === launch.command);
+  const choices = recentLaunchChoices(allChoices, preferences.machines[machineId]?.recent ?? []);
+  const selected = choices.find(c => c.id === launchId(launch));
+  const launchReady = !!selected && !(launch.kind === 'shell' && launch.preset && (selected.launch.kind !== 'shell' || selected.launch.command !== launch.command));
   const command = launch.kind === 'shell' ? launch.command : '';
   const contextReady = launch.kind === 'khor' ? khorSelection?.home === target?.id && !!khorSelection : launch.kind !== 'agent' || contextValid;
+  const remember = (id: string, change: Parameters<typeof rememberNewSessionChoice>[2] = {}) => {
+    const next = rememberNewSessionChoice(preferences, id, change);
+    setPreferences(next);
+    return next;
+  };
+  const pickMachine = (name: string) => {
+    const target = creationTarget(devices, name);
+    if (!target) return;
+    const next = remember(target.id);
+    setMachine(target.id);
+    setLaunch(next.machines[target.id]?.launch ?? defaultLaunch(wantsTerm));
+    setEnvironment(EMPTY_ENVIRONMENT); setContextValid(true);
+  };
+  const pickLaunch = (launch: Launch, used = true) => {
+    setLaunch(launch);
+    if (machineId) remember(machineId, {launch, used});
+    setEnvironment(EMPTY_ENVIRONMENT); setContextValid(true);
+  };
   const create = () => {
-    if (opening || pending || !target || !contextReady) return;
-    if (target.hosts === false && launch.kind !== 'tell') return;
-    if (launch.kind === 'tell') {
-      if (!target.me) draftFor(tellDraft(target.name));
-      onOpened('wide/all');
-      return;
-    }
+    if (opening || pending || !target?.hosts || !launchReady || !contextReady) return;
     const cwd = settledPath(dir);
     if (!cwd) {
       setError(gui.need_path);
@@ -198,9 +207,10 @@ export function NewSessionPage({
     const ownsRequest = () => generation.current === version && creation.current?.token === token;
     setOpening(true);
     setError(null);
-    (launch.kind === 'khor' ? khorAgent('create',target.id,{token,title,cwd,selection}).then(view=>{const id=(view.data as {session?:string})?.session;if(!id)throw new Error('未能创建会话');return id;}) : launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
+    createSession({launch, target, cwd, title, token, environment, selection}).then(id => {
       if (!ownsRequest()) return;
       creation.current = null;
+      remember(target.id, {dir: cwd, launch});
       startedAgent.current = launch.kind === 'agent';
       onOpened(id);
     }).catch(error => {
@@ -229,7 +239,7 @@ export function NewSessionPage({
     setEditError(null);
     saveLaunchPreset(edit).then(rows => {
       setPresets(rows);
-      setLaunch({
+      pickLaunch({
         kind: 'shell',
         command: edit.command,
         preset: edit.id
@@ -260,7 +270,7 @@ export function NewSessionPage({
     setError(null);
     registerKnownAgent(id).then(fetchAgents).then(rows => {
       setKnown(rows);
-      setLaunch({
+      pickLaunch({
         kind: 'agent',
         agent: id
       });
@@ -272,17 +282,17 @@ export function NewSessionPage({
   return <>
   <div data-new-session-page className="h-full min-h-0 overflow-y-auto"><div className="mx-auto flex w-full max-w-measure flex-col gap-group px-page pt-pane pb-nav-room">
    <FormGrid data-new-session-form>
-    <FormLabel>{gui.new_session_machine}</FormLabel><div data-new-session-machines data-machine={channel}><MachineField devices={devices.filter(d=>d.sponsor===null)} value={channel || machine} disabled={opening} onPick={setMachine} onPendingChange={setPending} /></div>
-    <FormLabel>{gui.new_session_dir}</FormLabel><PathField key={channel} data-new-session-dir aria-label={gui.new_session_dir} machine={channel} value={dir} disabled={opening || !target} onValueChange={value => setPaths(was => ({
+    <FormLabel>{gui.new_session_machine}</FormLabel><div data-new-session-machines data-machine={channel}><MachineField devices={devices.filter(d=>d.sponsor===null)} value={channel || machine} disabled={opening} onPick={pickMachine} onPendingChange={setPending} /></div>
+    <FormLabel>{gui.new_session_dir}</FormLabel><PathField key={channel} data-new-session-dir aria-label={gui.new_session_dir} machine={channel} value={dir} disabled={opening || !target} onValueChange={value => {setPaths(was => ({
             ...was,
-            [channel]: value
-          }))} onSubmit={create} />
-    <FormLabel>{gui.launch_method}</FormLabel><div data-new-session-launch data-kind={launch.kind} data-selected={selected?.id} className="flex min-w-0 flex-col gap-in"><ChoiceField label={gui.launch_method} value={launch.kind === 'shell' ? launch.command : selected?.label || ''} selected={selected?.id} options={choices} disabled={opening} multiline placeholder={gui.launch_shell_hint} onInput={target?.hosts === false ? undefined : text => setLaunch({
+            [machineId]: value
+          })); remember(machineId, {dir: value});}} onSubmit={create} />
+    <FormLabel>{gui.launch_method}</FormLabel><div data-new-session-launch data-kind={launch.kind} data-selected={selected?.id} className="flex min-w-0 flex-col gap-in"><ChoiceField label={gui.launch_method} value={launch.kind === 'shell' ? launch.command : selected?.label || (launch.kind === 'agent' ? launch.agent : 'khor')} selected={selected?.id} options={choices} disabled={opening || !target} multiline placeholder={gui.launch_shell_hint} onInput={text => pickLaunch({
               kind: 'shell',
               command: text
-            })} onPick={id => {
+            }, false)} onPick={id => {
               const choice = choices.find(c => c.id === id);
-              if (choice) {setLaunch(choice.launch);setEnvironment(EMPTY_ENVIRONMENT);setContextValid(true);}
+              if (choice) pickLaunch(choice.launch);
             }} onSubmit={create} actions={[...(launch.kind === 'shell' && command.trim() ? [{
               id: 'save-command',
               label: gui.launch_add,
@@ -297,11 +307,12 @@ export function NewSessionPage({
     {launch.kind === 'shell' && <span data-new-session-launch-note className="col-start-2 text-caption text-tertiary">{gui.launch_command_note}</span>}
     {launch.kind === 'khor' && target?.hosts && <KhorSessionSetup key={target.id} machine={target.id} disabled={opening} onChange={setKhorSelection} />}
     {handed && launch.kind === 'agent' && <><FormLabel>{gui.new_session_handed}</FormLabel><span data-new-session-handed className="min-w-0 truncate font-mono text-body">{handed}</span></>}
-    {launch.kind !== 'tell' && <><FormLabel htmlFor="new-session-name">{gui.new_session_name}</FormLabel><Input id="new-session-name" data-new-session-name value={name} disabled={opening} placeholder={gui.new_session_name_hint} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !imeKey(e)) { e.preventDefault(); create(); } }} /></>}
+    <FormLabel htmlFor="new-session-name">{gui.new_session_name}</FormLabel><Input id="new-session-name" data-new-session-name value={name} disabled={opening} placeholder={gui.new_session_name_hint} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !imeKey(e)) { e.preventDefault(); create(); } }} />
    </FormGrid>
    {launch.kind==='agent'&&<AcpAgentSetup key={`${channel}:${launch.agent}`} agent={launch.agent} machine={channel} environment={environment} onEnvironment={setEnvironment} onValid={setContextValid}/>}
+   {devices.length > 0 && (!target || !target.hosts || launchesLoaded && !launchReady) && <p data-new-session-unavailable role="status" className="text-callout text-secondary-foreground">{!target ? gui.new_session_machine_missing : !target.hosts ? gui.new_session_host_required : gui.new_session_launch_missing}</p>}
    {error && <p data-new-session-error role="alert" className="text-callout text-destructive">{error}</p>}
-   <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || !contextReady || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
+   <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target?.hosts || !launchReady || !contextReady || !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
   </div></div>
   <Dialog open={!!edit} onOpenChange={on => {
       if (!on && !saving) setEdit(null);
