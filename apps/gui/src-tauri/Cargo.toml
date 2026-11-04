@@ -60,6 +60,9 @@ tauri-plugin-dialog = "2"
 # item.
 tauri-plugin-notification = "2"
 
+[target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
+tauri-plugin-updater = "~2.12.0"
+
 # macos-proxy is Apple-only (it compiles for macOS 14+ alone), so the
 # feature is enabled only there — enabling it everywhere would break the
 # Linux and Windows builds of this same app. A borrow opens a browsing

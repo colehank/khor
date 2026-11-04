@@ -199,6 +199,11 @@ kind = "类型"
 machine = "机器"
 
 [cli]
+upgrade-usage = "khor upgrade [--check] [--channel stable|beta] [--version <tag>] [--json]"
+upgrade-download = "正在下载更新：{0}%"
+upgrade-installed = "命令行已更新至 {0}。现有会话继续运行。"
+upgrade-available = "可更新至 {0}"
+upgrade-current = "已是最新版本：{0}"
 usage = """
 用法：khor <动词>
   id [--reset 机器名]    本机身份；--reset 删除身份密钥并重新生成——
@@ -349,9 +354,9 @@ usage = """
                         known 看随包带的 ACP 注册表快照；@<id> 直接用快照里那条命令。
                         sessions 看它有哪些对话（读记下来的；--ask 才真去问，那会起一个进程）；
                         问过的答案全网同步，别的机器不用再起一遍
-  agents connect <名字> <地址> [--token-stdin]
+         connect <名字> <地址> [--token-stdin]
                         在本机连接 A2A 智能体，对方服务无需安装 khor
-  agents disconnect a2a:<名字>
+         disconnect a2a:<名字>
                         断开本机登记，保留任务回执
   state <词>            汇报当前 session 的状态（可用 --session 指定）
   seen <session>        标已读
@@ -455,6 +460,7 @@ usage = """
                         脚本用）
   sync                  立即和全网各同步一趟
   mcp                   把 khor 的动词当工具讲出去（智能体用，不是人敲的）
+  upgrade [--check]     更新本机由 Khor 管理的命令行；--check 仅检查
   version               本机装的是哪一版（网里各机器的版本看 devices）
   forget <机器>          把一台机器移出网络：全网都不再认它，它也不再看得见网。
                         要回来得重新配对（在还认它的那台上出票）

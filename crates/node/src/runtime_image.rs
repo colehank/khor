@@ -78,6 +78,20 @@ fn current() -> Result<Info, String> {
 
 /// Every native face and the re-executing integration harness enter here before Node::open.
 pub fn process_entry() {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_release_info")) {
+        match crate::updates::program_info()
+            .and_then(|info| serde_json::to_string(&info).map_err(|error| error.to_string()))
+        {
+            Ok(info) => {
+                println!("{info}");
+                std::process::exit(0);
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
+    }
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new(INFO)) {
         match current()
             .and_then(|info| serde_json::to_string(&info).map_err(|error| error.to_string()))
@@ -108,6 +122,11 @@ pub fn process_entry() {
             }
         }
     }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Err(error) = crate::updates::recover_current_installation() {
+        eprintln!("{error}");
+        std::process::exit(78);
+    }
     if let Err(error) = khor_runtime::enter_current() {
         eprintln!("cannot enter runtime: {error}");
         std::process::exit(1);
@@ -120,9 +139,24 @@ pub fn process_entry() {
 }
 
 fn inspect(program: &Path) -> Result<Info, String> {
+    let bytes = probe(program, &[std::ffi::OsStr::new(INFO)])?;
+    let info: Info =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid runtime contract".to_owned())?;
+    if info.release.schema != 1
+        || info.release.version.is_empty()
+        || info.release.version.len() > 64
+        || !info.executable.is_absolute()
+        || info.release.role == Role::Agent
+    {
+        return Err("unsupported runtime contract".into());
+    }
+    Ok(info)
+}
+
+pub(crate) fn probe(program: &Path, args: &[&std::ffi::OsStr]) -> Result<Vec<u8>, String> {
     let mut command = Command::new(program);
-    command.arg(INFO).env_clear();
-    for name in ["SYSTEMROOT", "WINDIR"] {
+    command.args(args).env_clear();
+    for name in ["SYSTEMROOT", "WINDIR", "KHOR_RUNTIME_DIR"] {
         if let Some(value) = std::env::var_os(name) {
             command.env(name, value);
         }
@@ -156,17 +190,11 @@ fn inspect(program: &Path) -> Result<Info, String> {
     if bytes.len() as u64 > INFO_LIMIT {
         return Err("runtime contract exceeds its byte limit".into());
     }
-    let info: Info =
-        serde_json::from_slice(&bytes).map_err(|_| "invalid runtime contract".to_owned())?;
-    if info.release.schema != 1
-        || info.release.version.is_empty()
-        || info.release.version.len() > 64
-        || !info.executable.is_absolute()
-        || info.release.role == Role::Agent
-    {
-        return Err("unsupported runtime contract".into());
-    }
-    Ok(info)
+    Ok(bytes)
+}
+
+pub(crate) fn release_contract() -> Result<Contract, String> {
+    Ok(current()?.release.contract)
 }
 
 fn inspect_supported(program: &Path) -> Result<Info, String> {

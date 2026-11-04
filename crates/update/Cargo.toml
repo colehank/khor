@@ -1,0 +1,17 @@
+[package]
+name = "khor-update"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+khor-runtime.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+semver.workspace = true
+reqwest = { workspace = true, features = ["stream"] }
+sha2.workspace = true
+base64.workspace = true
+minisign-verify = "0.3"
+tokio = { workspace = true, features = ["fs", "io-util"] }
+flate2 = "1"
+tempfile = "3"

@@ -1,0 +1,2 @@
+Khor updater signing root check
+This is not a release manifest or executable.

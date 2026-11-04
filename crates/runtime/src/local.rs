@@ -103,7 +103,7 @@ pub(crate) fn validate(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-pub(crate) fn available(path: &Path) -> io::Result<u64> {
+pub fn available(path: &Path) -> io::Result<u64> {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;

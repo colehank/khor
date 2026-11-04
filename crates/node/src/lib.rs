@@ -96,6 +96,7 @@ pub mod transfer;
 pub mod tree;
 pub mod trust;
 pub mod tunnel;
+pub mod updates;
 pub mod usage;
 pub mod vitals;
 pub mod watch;

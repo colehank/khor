@@ -68,6 +68,7 @@ pub use execution::{
 /// `khor relay` — its own file because it is its own program: a server
 /// with its own access control and meter (`relay.rs` head).
 mod relay;
+mod upgrade;
 
 /// Process entry hook for terminal sessions created by the slash interface.
 /// Each native binary supports its own commands; no companion CLI is required.
@@ -680,6 +681,11 @@ const VERBS: &[Verb] = &[
         word: "version",
         run: version,
         reach: Reach::Read,
+    },
+    Verb {
+        word: "upgrade",
+        run: upgrade::run,
+        reach: Reach::Act,
     },
     // Bare, it prints which store is khor's (for `scripts/install.sh`);
     // with a subword it is the user's root key — and `words` prints the

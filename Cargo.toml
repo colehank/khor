@@ -10,6 +10,7 @@ members = [
     "crates/sync",
     "crates/node",
     "crates/runtime",
+    "crates/update",
     "crates/web",
     "crates/cli",
     "crates/commands",
@@ -39,6 +40,8 @@ khor-net = { path = "crates/net" }
 khor-sync = { path = "crates/sync" }
 khor-node = { path = "crates/node" }
 khor-runtime = { path = "crates/runtime" }
+khor-update = { path = "crates/update" }
+semver = { version = "1", features = ["serde"] }
 gethostname = "1"
 getrandom = "0.3"
 # How wide a string is **on a screen**, which is not how long it is.
