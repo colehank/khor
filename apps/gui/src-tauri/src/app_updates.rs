@@ -100,10 +100,15 @@ impl AppUpdates {
     }
 
     pub(crate) fn status(&self) -> Result<AppUpdateStatus, String> {
-        self.data
+        let mut status = self
+            .data
             .lock()
             .map(|data| data.status.clone())
-            .map_err(|_| "update state is unavailable".into())
+            .map_err(|_| "update state is unavailable".to_owned())?;
+        if let Ok(current) = self.current() {
+            status.current = current.tag.as_str().to_owned();
+        }
+        Ok(status)
     }
 
     fn change(

@@ -4109,8 +4109,23 @@ fn doctor_fix(key: String) -> Result<String, String> {
 /// Which khor this is, and which store it is talking to
 /// (`khor_gui_core::about`) — the identity card's foot.
 #[tauri::command]
-fn about() -> khor_gui_core::About {
-    khor_gui_core::about(&Node::root_from_env())
+fn about(app: tauri::AppHandle) -> khor_gui_core::About {
+    let about = khor_gui_core::about(&Node::root_from_env());
+    #[cfg(desktop)]
+    {
+        use tauri::Manager;
+        if let Some(updates) = app.try_state::<app_updates::AppUpdates>()
+            && let Ok(status) = updates.status()
+        {
+            return khor_gui_core::About {
+                version: status.current,
+                ..about
+            };
+        }
+    }
+    #[cfg(mobile)]
+    let _ = app;
+    about
 }
 
 // ── 设置 (docs/MORE.md) ─────────────────────────────────────────────

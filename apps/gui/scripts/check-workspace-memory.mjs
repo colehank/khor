@@ -3,9 +3,38 @@ import {build} from 'esbuild';
 import {readFileSync} from 'node:fs';
 const output=(await build({entryPoints:['src/views/workspace/workspace-memory.ts'],bundle:true,write:false,format:'esm'})).outputFiles[0].text;
 const {WorkspaceMemories,workspaceIdentity}=await import('data:text/javascript;base64,'+Buffer.from(output).toString('base64'));
+const stored=(await build({entryPoints:['src/views/workspace/workspace-navigation-storage.ts'],bundle:true,write:false,format:'esm'})).outputFiles[0].text;
+const {WorkspaceNavigationStore}=await import('data:text/javascript;base64,'+Buffer.from(stored).toString('base64'));
 const results=[];
 function test(name,run){try{run();results.push({name,pass:true});console.log('PASS',name);}catch(error){results.push({name,pass:false,error:error.message});console.error('FAIL',name,error.message);}}
 const identity=(device,path)=>({device,path});
+test('a cold workspace restores commit/file identities, active preview and directory independently per machine',()=>{
+ const values=new Map(),storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+ const make=machine=>new WorkspaceNavigationStore(()=>storage,machine,'/project',path=>({kind:'file',path}));
+ const file={kind:'file',path:'/project/a.md'},commit={kind:'commit',commit:{id:'a'.repeat(40),author:'Author',subject:'Commit title',when_ms:1,cut:false}};
+ const navigation={at:'/project/src',historyOpen:true,content:{items:[file,commit],active:JSON.stringify(['commit',commit.commit.id]),preview:JSON.stringify(['file',file.path])}};
+ assert(make('one').save(navigation));assert.deepEqual(make('one').restore(),navigation);
+ assert.equal(make('two').restore().content.items.length,0);
+ values.set('khor.ws-tabs.one:/project',JSON.stringify(['/project/a.md','/outside/b.md']));
+ assert.deepEqual(make('one').restore().content.items,[file],'existing path-only storage remains owned by the same workspace');
+});
+test('a detached workspace retries its latest navigation checkpoint without erasing another workspace on quota failure',()=>{
+ const values=new Map();let full=false;
+ const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>{if(full)throw Error('quota');values.set(key,value);}};
+ const store=new WorkspaceNavigationStore(()=>storage,'one','/project',path=>({kind:'file',path}));
+ const memory=new WorkspaceMemories().retain(identity('one','/project'));
+ const first={at:'/project',historyOpen:false,content:{items:[],active:null,preview:null}};
+ memory.ensure('at',()=>first.at);memory.ensure('historyOpen',()=>first.historyOpen);memory.ensure('content',()=>first.content);
+ memory.bindNavigationCheckpoint(()=>store.save({at:memory.read('at'),historyOpen:memory.read('historyOpen'),content:memory.read('content')}));
+ assert(memory.checkpointNavigation());const before=values.get('khor.ws-tabs.one:/project');
+ memory.update('at','/project/new');full=true;assert.equal(memory.checkpointNavigation(),false);assert.equal(values.get('khor.ws-tabs.one:/project'),before);
+ full=false;assert(memory.checkpointNavigation());assert.equal(new WorkspaceNavigationStore(()=>storage,'one','/project',path=>({kind:'file',path})).restore().at,'/project/new');
+});
+test('an unreadable navigation record is preserved and cannot be silently replaced during update admission',()=>{
+ const values=new Map([['khor.ws-tabs.one:/project','{"schema":99}']]);const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)};
+ const store=new WorkspaceNavigationStore(()=>storage,'one','/project',path=>({kind:'file',path}));const state=store.restore();
+ assert.equal(store.save(state),false);assert.equal(values.get('khor.ws-tabs.one:/project'),'{"schema":99}');
+});
 test('the same path on two devices has separate drafts and selected tabs',()=>{
  const owners=new WorkspaceMemories(),a=owners.retain(identity('machine-a','/project')),b=owners.retain(identity('machine-b','/project'));
  a.ensure('drafts',()=>new Map());b.ensure('drafts',()=>new Map());a.ensure('content',()=>({items:[],active:null,preview:null}));b.ensure('content',()=>({items:[],active:null,preview:null}));

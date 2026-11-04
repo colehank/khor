@@ -171,6 +171,15 @@ try{
  assert.equal(await standalone.locator('[data-tab][data-on="true"] [data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'normal','standalone double click keeps preview');
  await page.locator('[data-workspace-log-commit]').first().click();assert.equal(await standalone.locator('[data-tab]').count(),2);
  results.push({name:'standalone workspace still previews on single click and keeps on double click',passed:true});
+ if(process.env.WORKSPACE_RESTART_REQUIRE==='1'){
+   const state=await standalone.locator('[data-tab]').evaluateAll(tabs=>tabs.map(tab=>({id:tab.getAttribute('data-tab'),active:tab.getAttribute('data-on')==='true',preview:getComputedStyle(tab.querySelector('[data-tab-name]')).fontStyle==='italic'})));
+   assert.equal(state.length,2,'the reload fixture must own a kept commit and an active preview');
+   await page.reload();await page.locator('[data-workspace-navigation]').waitFor();
+   const restored=await page.locator('[data-ws-mid] [data-tab]').evaluateAll(tabs=>tabs.map(tab=>({id:tab.getAttribute('data-tab'),active:tab.getAttribute('data-on')==='true',preview:getComputedStyle(tab.querySelector('[data-tab-name]')).fontStyle==='italic'})));
+   assert.deepEqual(restored,state,'an app restart must restore commit tabs, the active tab and its preview ownership');
+   await page.locator('[data-commit-page]').waitFor();
+   results.push({name:'workspace commit tabs and active preview survive an actual page reload',passed:true,state:restored});
+ }
  if(process.env.WORKSPACE_PREVIEW_REQUIRE==='1'){
    await page.goto(url+'?preview-samples=1');const sample=page.locator('[data-tab="preview"]');
    assert.equal(await sample.locator('[data-tab-name]').evaluate(el=>getComputedStyle(el).fontStyle),'italic');

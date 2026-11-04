@@ -44,6 +44,10 @@ export class WorkspaceMemory {
   readonly histories = new Map<string, EditorHistorySlot>();
   private values = new Map<keyof WorkspaceFields, unknown>();
   private listeners = new Set<() => void>();
+  private saveNavigation = () => true;
+
+  bindNavigationCheckpoint(save: () => boolean): void { this.saveNavigation = save; }
+  checkpointNavigation = (): boolean => this.saveNavigation();
 
   readonly subscribe = (listener: () => void) => {
     this.listeners.add(listener);

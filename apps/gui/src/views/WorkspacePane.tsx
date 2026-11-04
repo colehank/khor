@@ -73,7 +73,8 @@ import { heavier, IGNORED } from "@/views/fileRow";
 import { beginEditing, defaultFaceOf, FileView, rendererOf, type Draft } from "@/views/FileView";
 import { DiffView, diffLabel } from "@/views/DiffView";
 import { RevisionView, revisionRenders, shortId } from "@/views/FileHistory";
-import { closeWorkspaceTab, emptyWorkspaceTabs, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFiles, selectWorkspaceTab, selectedWorkspaceTarget, workspaceTabId, type WorkspaceTarget } from "@/views/workspace/workspace-tabs";
+import { closeWorkspaceTab, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFiles, selectWorkspaceTab, selectedWorkspaceTarget, workspaceTabId, type WorkspaceTarget } from "@/views/workspace/workspace-tabs";
+import { WorkspaceNavigationStore } from "@/views/workspace/workspace-navigation-storage";
 import { CommitPage } from "@/views/CommitPage";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
 import { FileVerbs, placeAt, topLine } from "@/views/FilePage";
@@ -222,11 +223,10 @@ export function WorkspacePane({
   // Where the tree is standing. Starts at the workspace and walks down;
   // `root` changing is a different workspace, not a step.
   const regionLead = useContext(RegionLead);
-  const [at, setAt] = useWorkspaceField(memory, "at", () => root);
-  const [content, setContent] = useWorkspaceField(memory, "content", () => {
-    const items = storedTabs(machine, root).map(targetOf);
-    return { ...emptyWorkspaceTabs(), items, active: items[0] ? workspaceTabId(items[0]) : null };
-  });
+  const navigationStore = useMemo(() => new WorkspaceNavigationStore(workspaceStorage, machine, root, targetOf), [machine, root]);
+  const restoredNavigation = useMemo(() => navigationStore.restore(), [navigationStore]);
+  const [at, setAt] = useWorkspaceField(memory, "at", () => restoredNavigation.at);
+  const [content, setContent] = useWorkspaceField(memory, "content", () => restoredNavigation.content);
   const tabs = content.items.filter((target) => target.kind !== "commit").map(keyOf);
   const selected = selectedWorkspaceTarget(content);
   const file = selected === null || selected.kind === "commit" ? null : keyOf(selected);
@@ -273,7 +273,7 @@ export function WorkspacePane({
     null,
   );
   /** Narrow shows one column at a time; wide ignores this retained choice. */
-  const [screen, setScreen] = useWorkspaceField(memory, "screen", () => "tree");
+  const [screen, setScreen] = useWorkspaceField(memory, "screen", () => restoredNavigation.content.active ? "file" : "tree");
   const preview = content.preview;
   /** When each tab was last in front, for 标签页上限 (`browse/tab-limit`).
       A ref: it is read when a tab is opened, and a change to it is not
@@ -522,7 +522,7 @@ export function WorkspacePane({
   // grow an initially empty header after its reading position was restored.
   const [branch, setBranch] = useWorkspaceField(memory, "branch", () => "");
   const [headCommit, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
-  const [historyOpen, setHistoryOpen] = useWorkspaceField(memory, "historyOpen", () => false);
+  const [historyOpen, setHistoryOpen] = useWorkspaceField(memory, "historyOpen", () => restoredNavigation.historyOpen);
   const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
@@ -828,19 +828,10 @@ export function WorkspacePane({
   const wordOptions = useMemo(() => sessionOptions(mine, words, ["state:"]), [mine, words]);
   const axes = useMemo(() => sessionAxes(wordOptions), [wordOptions]);
 
-  /** Remember which tabs are open, for this workspace. Storage refusing
-      costs the memory and nothing else — the tabs are on screen either
-      way (`use-list-width`'s bargain). */
-  const remember = useCallback(
-    (open: string[]) => {
-      try {
-        window.localStorage.setItem(tabsKey(machine, root), JSON.stringify(open));
-      } catch {
-        /* the tabs are still open; only finding them again tomorrow is lost */
-      }
-    },
-    [machine, root],
-  );
+  useLayoutEffect(() => {
+    memory.bindNavigationCheckpoint(() => navigationStore.save({ at: memory.read("at"), content: memory.read("content"), historyOpen: memory.read("historyOpen") }));
+  }, [memory, navigationStore]);
+  useEffect(() => { memory.checkpointNavigation(); }, [memory, at, content, historyOpen]);
 
   const openTarget = useCallback((target: WorkspaceTarget, pinned: boolean) => {
     let next = openWorkspaceTab(memory.read("content"), target, pinned);
@@ -851,9 +842,8 @@ export function WorkspacePane({
     });
     if (gone !== null) next = closeWorkspaceTab(next, gone);
     setContent(next);
-    remember(next.items.filter((item) => item.kind !== "commit").map(keyOf));
     setScreen("file");
-  }, [memory, setContent, limit, remember, setScreen]);
+  }, [memory, setContent, limit, setScreen]);
   const open = useCallback((path: string, pinned: boolean) => {
     if (diffOf(path) === null) setRecent(rememberOpened(machine, root, path));
     openTarget(targetOf(path), pinned);
@@ -904,7 +894,6 @@ export function WorkspacePane({
         p === from ? to : p.startsWith(`${from}/`) ? `${to}${p.slice(from.length)}` : p;
       const next = renameWorkspaceFiles(memory.read("content"), after);
       setContent(next);
-      remember(next.items.filter((item) => item.kind !== "commit").map(keyOf));
       setDrafts((was) => {
         const now = new Map<string, Draft>();
         for (const [p, d] of was) now.set(after(p), d);
@@ -914,7 +903,7 @@ export function WorkspacePane({
       setRecent((was) => was.map(after));
       setGitAt((n) => n + 1);
     },
-    [memory, setContent, remember],
+    [memory, setContent],
   );
 
   /** Take a tab off the strip. **Never asks here** — whether there is
@@ -924,7 +913,6 @@ export function WorkspacePane({
     (path: string) => {
       const next = closeWorkspaceTab(memory.read("content"), workspaceTabId(targetOf(path)));
       setContent(next);
-      remember(next.items.filter((item) => item.kind !== "commit").map(keyOf));
       setDrafts((was) => {
         if (!was.has(path)) return was;
         // **Thrown away on purpose** (不保存): the write the file's view
@@ -936,7 +924,7 @@ export function WorkspacePane({
       });
       setClosing((was) => (was === path ? null : was));
     },
-    [remember, machine, memory, setContent],
+    [machine, memory, setContent],
   );
 
   /** Close a tab. **Something typed in it is saved on the way out**
@@ -1971,7 +1959,9 @@ export const fileOf = (key: string) => diffOf(key) ?? key;
     (docs/WORKSPACE.md 身份与名字), the same key shape the tree's open
     branches use: the same checkout on two machines is two projects, and
     one's tabs under the other's name would point at another disk. */
-const tabsKey = (machine: string, root: string) => `khor.ws-tabs.${machine}:${root}`;
+function workspaceStorage(): Pick<Storage, "getItem" | "setItem"> | null {
+  try { return window.localStorage; } catch { return null; }
+}
 
 /** The tabs this workspace was last left with. Paths outside the root
     are dropped whatever storage holds — the ceiling is the whole ruling
@@ -1979,20 +1969,7 @@ const tabsKey = (machine: string, root: string) => `khor.ws-tabs.${machine}:${ro
     explain. Storage refusing reads as「nothing was open」, which is the
     shape a workspace opens in anyway. */
 export function storedTabs(machine: string, root: string): string[] {
-  try {
-    const raw = window.localStorage.getItem(tabsKey(machine, root));
-    const list: unknown = raw === null ? [] : JSON.parse(raw);
-    if (!Array.isArray(list)) return [];
-    // Judged on the **file** a tab is about, so a diff tab survives a
-    // reload the way the file's own tab does (`fileOf`).
-    return list.filter((p): p is string => {
-      if (typeof p !== "string") return false;
-      const f = fileOf(p);
-      return root === "" ? f.startsWith("/") : f.startsWith(`${root}/`);
-    });
-  } catch {
-    return [];
-  }
+  return new WorkspaceNavigationStore(workspaceStorage, machine, root, targetOf).restore().content.items.filter((item) => item.kind !== "commit").map(keyOf);
 }
 
 /** Where a file sits relative to the workspace root — the tab's second

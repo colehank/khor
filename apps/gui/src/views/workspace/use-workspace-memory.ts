@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useSyncExternalStore, type Dispatch, type SetStateAction } from "react";
 
 import { reportDrafts } from "@/lib/drafts";
+import { useUpdateCheckpoint } from "@/lib/update-readiness";
 import { WorkspaceMemory, type WorkspaceFields } from "./workspace-memory";
 
 export function useWorkspaceField<K extends keyof WorkspaceFields>(
@@ -17,6 +18,7 @@ export function useWorkspaceField<K extends keyof WorkspaceFields>(
 
 /** Draft reporting follows the model, including when its view is detached. */
 export function WorkspaceDraftOwner({ memory }: { memory: WorkspaceMemory }) {
+  useUpdateCheckpoint(() => memory.checkpointNavigation() ? null : "navigation-storage");
   const owner = useRef(Symbol("workspace-drafts"));
   useLayoutEffect(() => {
     const report = () => reportDrafts(owner.current, memory.draftCount());

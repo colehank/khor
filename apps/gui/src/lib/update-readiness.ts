@@ -15,3 +15,9 @@ export function useUpdateBlocker(reason: UpdateBlocker, blocked: boolean): void 
   current.current = blocked;
   useLayoutEffect(() => updateReadiness.register(() => current.current ? reason : null), [reason]);
 }
+
+export function useUpdateCheckpoint(check: () => UpdateBlocker | null): void {
+  const current = useRef(check);
+  current.current = check;
+  useLayoutEffect(() => updateReadiness.register(() => current.current()), []);
+}
