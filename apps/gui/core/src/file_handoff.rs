@@ -392,11 +392,12 @@ mod tests {
         let root = Scratch::new();
         let cache = cache_root(&root.0);
         let version = cache.join("native-reader");
-        std::fs::create_dir_all(&version).unwrap();
-        let path = version.join("original.pdf");
+        let transfer=version.join("transfer");
+        std::fs::create_dir_all(&transfer).unwrap();
+        let path = transfer.join("original.pdf");
         std::fs::write(&path, b"synthetic original file").unwrap();
         let manifest = version.join("ready.json");
-        std::fs::write(&manifest, b"original.pdf").unwrap();
+        std::fs::write(&manifest, b"transfer/original.pdf").unwrap();
         File::open(&manifest)
             .unwrap()
             .set_times(
