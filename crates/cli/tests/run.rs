@@ -24,6 +24,36 @@ fn listed(home: &std::path::Path) -> String {
 }
 
 #[test]
+fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
+    let home = std::env::temp_dir().join(format!("khor-retired-hook-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&home);
+    std::fs::create_dir_all(&home).unwrap();
+    let mut child = khor(&home)
+        .args(["state", "--hook"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    };
+    let opened_node = home.join(".khor").exists();
+    std::fs::remove_dir_all(&home).unwrap();
+    assert!(status.is_some_and(|s| s.success()), "retired hook waited for stdin");
+    assert!(!opened_node, "retired hook opened the production state path");
+}
+
+#[test]
 fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
     let home = std::env::temp_dir().join(format!("khor-cli-run-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
