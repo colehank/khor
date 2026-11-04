@@ -42,9 +42,6 @@ pub unsafe fn present_after(
     completion: Option<&block2::Block<dyn Fn()>>,
 ) -> bool {
     unsafe {
-        let completion = completion.map_or(std::ptr::null::<AnyObject>(), |block| {
-            block as *const _ as *const AnyObject
-        });
         let _: () = msg_send![presenter, presentViewController: controller, animated: true, completion: completion];
         let presented: *mut AnyObject = msg_send![presenter, presentedViewController];
         std::ptr::eq(presented, controller)

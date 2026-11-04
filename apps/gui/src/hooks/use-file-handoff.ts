@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
   fileHandoffSupported,
   fileHandoffStart,
@@ -8,6 +8,7 @@ import {
   filePreviewSupported,
   filePreviewOpen,
   said,
+  type FilePreviewKind,
 } from "@/api";
 import { FILE_HANDOFF_POLL_MS } from "@/lib/tempo";
 import { visiblePageOwner } from "@/lib/native-page-yield";
@@ -26,16 +27,20 @@ type Pending = {
 };
 const idle: Progress = { phase: "idle", moved: 0, total: 0, error: null, intent: "open" };
 let capability: Promise<boolean> | undefined;
-let previewCapability: Promise<boolean> | undefined;
+const previewCapabilities: Partial<Record<FilePreviewKind, Promise<boolean>>> = {};
 
 /** One original-file transfer belongs to one visible file page. A late
  * native response cannot open a file after its page has been left. */
 export function useFileHandoff(machine: string, path: string, enabled = true, pageOwner?: RefObject<HTMLDivElement | null>) {
   const localOwner = useRef<HTMLDivElement>(null);
   const owner = pageOwner ?? localOwner;
+  const page = useMemo(() => ({machine,path,enabled}), [machine,path,enabled]);
+  const attached = useRef<typeof page | null>(null);
+  const previewKind: FilePreviewKind = /\.pdf$/i.test(path) ? "pdf" : "document";
   const pending = useRef<Pending | null>(null);
   const [supported, setSupported] = useState(false);
-  const [previewSupported, setPreviewSupported] = useState<boolean | null>(null);
+  const [previewSupport, setPreviewSupport] = useState<{kind: FilePreviewKind; value: boolean} | null>(null);
+  const previewSupported = previewSupport?.kind === previewKind ? previewSupport.value : null;
   const lastIntent = useRef<"open" | "preview">("open");
   const [progress, setProgress] = useState<Progress>(idle);
 
@@ -58,14 +63,15 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
       (capability ??= fileHandoffSupported().catch(() => { capability = undefined; return false; })).then(value => {
         if (alive) setSupported(value);
       });
-      (previewCapability ??= filePreviewSupported().catch(() => { previewCapability = undefined; return false; })).then(value => {
-        if (alive) setPreviewSupported(value);
+      (previewCapabilities[previewKind] ??= filePreviewSupported(previewKind).catch(() => { delete previewCapabilities[previewKind]; return false; })).then(value => {
+        if (alive) setPreviewSupport({kind:previewKind,value});
       });
     }
     return () => { alive = false; };
-  }, [enabled]);
+  }, [enabled,previewKind]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    attached.current=page;
     setProgress(idle);
     const backgrounded = () => {
       // The OS sheet may itself make the WebView inactive. Its file
@@ -74,18 +80,20 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
     };
     document.addEventListener("visibilitychange", backgrounded);
     return () => {
+      attached.current=null;
       document.removeEventListener("visibilitychange", backgrounded);
       stop();
     };
-  }, [machine, path]);
+  }, [page]);
 
   const start = (intent: "open" | "preview") => {
+    if (!enabled || attached.current!==page) return;
     if (!(intent === "preview" ? previewSupported : supported) || pending.current) return;
     lastIntent.current = intent;
     const job: Pending = { id: crypto.randomUUID(), opening: false };
     pending.current = job;
     setProgress({ ...idle, phase: "downloading", intent });
-    const active = () => pending.current === job && !!owner.current && visiblePageOwner(owner.current);
+    const active = () => attached.current===page && pending.current === job && !!owner.current && visiblePageOwner(owner.current);
     const fail = (error: unknown) => {
       if (pending.current !== job) return;
       pending.current = null;

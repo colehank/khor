@@ -181,6 +181,7 @@ define_class!(
     impl ReaderDelegate {
         #[unsafe(method(close:))]
         fn close(&self,_sender:*mut AnyObject) {
+            let _keep=unsafe{Retained::retain(self as *const Self as *mut Self)};
             let navigation=READER.with(|reader|reader.borrow().as_ref().filter(|reader|std::ptr::eq(&*reader.delegate,self)).map(|reader|reader.navigation.clone()));
             let Some(navigation)=navigation else{return;};
             let identity=&*navigation as *const AnyObject;
@@ -190,6 +191,7 @@ define_class!(
         }
         #[unsafe(method(presentationControllerDidDismiss:))]
         fn dismissed(&self,controller:*mut AnyObject) {
+            let _keep=unsafe{Retained::retain(self as *const Self as *mut Self)};
             // SAFETY: UIKit supplies the presentation controller on its main thread.
             let navigation:*mut AnyObject=unsafe{msg_send![controller,presentedViewController]};
             finish(navigation,Ok(true));

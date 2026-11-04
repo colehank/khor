@@ -127,7 +127,7 @@ const HOLD_MS = 900;
 /** 分享 and 「…」: what one file offers besides reading it. Drawn as two
     glass circles by the page, and at the right end of the workspace's
     tab strip on a Mac (`FileVerbs`). */
-type FileMenuAction = { key: string; label: string; run: () => void };
+type FileMenuAction = { key: string; label: string; run: () => void; afterClose?: boolean };
 
 function useFileVerbs({
   machine,
@@ -190,12 +190,12 @@ function useFileVerbs({
   const previewKind = rendererOf(path) !== null || kind === "image" || kind === "svg" || kind === "pdf";
   const textKind = kind === "text";
   const menu: FileMenuAction[] = [
-    ...(kind === "doc" && handoff?.previewSupported ? [{key:"native-preview",label:gui.file_face_preview,run:handoff.preview}] : []),
-    ...(onLocate ? [{key:"locate",label:gui.file_locate,run:onLocate}] : []),
+    ...((kind === "doc" || kind === "pdf") && handoff?.previewSupported ? [{key:"native-preview",label:gui.file_face_preview,run:handoff.preview,afterClose:true}] : []),
+    ...(onLocate ? [{key:"locate",label:gui.file_locate,run:onLocate,afterClose:true}] : []),
     ...(native ? [
       {key:here?"open-default":"open-copy",label:here?gui.file_open_default:gui.file_open_copy,run:()=>void local().then(p=>launchOn("",p)).catch(fail)},
       ...(here?[{key:"reveal",label:fileManagerLabel(),run:()=>void reveal(path).catch(fail)}]:[]),
-    ] : handoff?.supported ? [{key:"open-other",label:gui.file_open_other,run:handoff.open}] : sharing ? [{key:"share",label:gui.chat_file_share,run:share}] : []),
+    ] : handoff?.supported ? [{key:"open-other",label:gui.file_open_other,run:handoff.open,afterClose:true}] : sharing ? [{key:"share",label:gui.chat_file_share,run:share}] : []),
     {
       key: "copy-path",
       label: gui.tab_copy_path,
@@ -211,9 +211,8 @@ function useFileVerbs({
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
     ...additionalActions,
   ];
-  // The menu can still receive pointer-leave while its exit animation runs.
-  // Let its focus scope leave before a navigation action focuses the tree.
-  const locating=useRef<(() => void) | null>(null);
+  const afterClose=useRef<FileMenuAction | null>(null);
+  useLayoutEffect(() => () => { afterClose.current=null; }, [machine,path]);
   const MoreButton = faceToggle ? GlassItem : GlassCircle;
   const moreMenu: ReactNode = (
     <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
@@ -222,11 +221,11 @@ function useFileVerbs({
           <IconMore />
         </MoreButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent onCloseAutoFocus={e=>{const locate=locating.current;if(locate){e.preventDefault();locating.current=null;locate();}}} align="end" side="top" sideOffset={8} data-file-more-menu className="min-w-nav-menu">
+      <DropdownMenuContent onCloseAutoFocus={e=>{const action=afterClose.current;afterClose.current=null;if(action){if(action.key==='locate')e.preventDefault();action.run();}}} align="end" side="top" sideOffset={8} data-file-more-menu className="min-w-nav-menu">
         {menu.map((m, i) => (
           <Fragment key={m.key}>
             {i > 0 && ["symbols", "history", "blame", "code"].includes(m.key) && !["symbols", "history", "blame", "code"].includes(menu[i-1].key) && <DropdownMenuSeparator />}
-            <DropdownMenuItem data-file-more-item={m.key} onSelect={()=>{if(m.key==='locate')locating.current=m.run;else m.run();}}>{m.label}</DropdownMenuItem>
+            <DropdownMenuItem data-file-more-item={m.key} onSelect={()=>{if(m.afterClose)afterClose.current=m;else m.run();}}>{m.label}</DropdownMenuItem>
           </Fragment>
         ))}
         {/* 字号, for what reads (text, rendered or not); a picture or a

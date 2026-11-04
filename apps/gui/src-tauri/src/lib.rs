@@ -1110,8 +1110,12 @@ async fn file_handoff_open(
 }
 
 #[tauri::command]
-fn file_preview_supported() -> bool {
-    cfg!(any(target_os = "ios", target_os = "macos"))
+fn file_preview_supported(kind: String) -> bool {
+    match kind.as_str() {
+        "document" => cfg!(any(target_os = "ios", target_os = "macos")),
+        "pdf" => cfg!(target_os = "ios"),
+        _ => false,
+    }
 }
 #[tauri::command]
 async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, String> {

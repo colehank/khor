@@ -40,7 +40,7 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
    if(cmd==='file_handoff_open'){await wait(50);return false;}
    if(cmd==='preview')return args.path?.endsWith('.png')?{kind:'image',media:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXv8AAAAASUVORK5CYII=',html:'',total:68,cut:false,empty:false}:{kind:'doc',media:'',data:'',html:'',total,cut:true,empty:false};
    if(cmd==='read_text')return {text:'# Hello\n',total:8,at_ms:0,cut:false,binary:false,digest:'0'.repeat(64)};
-   if(cmd==='file_stat')return {total,at_ms:0,digest:''};
+   if(cmd==='stat_text')return {total,at_ms:0,digest:''};
    if(cmd==='about')return {hosts:false,faces:[]};
    if(cmd==='reveal_here'||cmd==='trash_here')return false;
    if(cmd==='git_diff')return {hunks:[],binary:false};
@@ -55,7 +55,7 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
   await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
   assert.equal(await page.locator('[data-pdf-frame]').count(),0,'a native PDF reader must not use the embedded browser PDF frame');
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),0,'a native PDF reader must not load a second original through JS base64');
-  assert(await page.evaluate(()=>window.calls.some(c=>c.cmd==='file_stat'&&c.args.path==='/project/three-pages.pdf')));
+  assert(await page.evaluate(()=>window.calls.some(c=>c.cmd==='stat_text'&&c.args.path==='/project/three-pages.pdf')));
   await page.locator('[data-file-native-preview]').click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length),2,'a dismissed PDF reader must be available again');
   await page.evaluate(()=>window.showAttachment('/project/attachment.pdf'));

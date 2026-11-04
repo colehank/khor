@@ -1492,7 +1492,8 @@ export const fileHandoffState = (id:string) => call<FileHandoff>("file_handoff_s
 export const fileHandoffCancel = (id:string) => call<null>("file_handoff_cancel",{id});
 export const fileHandoffOpen = (id:string) => call<boolean>("file_handoff_open",{id});
 export const fileHandoffSave = (id: string) => call<boolean>("file_handoff_save", { id });
-export const filePreviewSupported = () => inApp ? call<boolean>("file_preview_supported") : Promise.resolve(false);
+export type FilePreviewKind = "document" | "pdf";
+export const filePreviewSupported = (kind: FilePreviewKind) => inApp ? call<boolean>("file_preview_supported", {kind}) : Promise.resolve(false);
 export const filePreviewOpen = (id:string) => call<boolean>("file_preview_open",{id});
 
 

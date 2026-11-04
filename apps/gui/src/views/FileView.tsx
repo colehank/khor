@@ -63,6 +63,7 @@ import { parseDelimited } from "@/lib/csv";
 import { blameOfLines, useBlameShown } from "@/lib/blame";
 import { groundAttr, usePreviewGround } from "@/lib/preview-ground";
 import { useHereHosts } from "@/lib/here";
+import { visiblePageOwner } from "@/lib/native-page-yield";
 import { levelOf, treeChanged } from "@/lib/tree-changed";
 import {
   confirmSaved,
@@ -399,7 +400,16 @@ function FileBody({
   const localHistory = useRef<EditorHistorySlot>({});
   const history = editorHistory ?? localHistory.current;
   const previewScroll = useKeptScrollRef(JSON.stringify([machine, path]), history.preview ??= {});
-  const nativeOffice = kindOf(path) === "doc" && handoff.previewSupported;
+  const kind=kindOf(path);
+  const nativePreview = (kind === "doc" || kind === "pdf") && handoff.previewSupported;
+  const openedNativePdf=useRef(false);
+  useEffect(() => {
+    if (kind!=="pdf" || !nativePreview || openedNativePdf.current || document.hidden) return;
+    const owner=handoff.owner.current;
+    if (!owner || !visiblePageOwner(owner)) return;
+    openedNativePdf.current=true;
+    handoff.preview();
+  }, [kind,nativePreview,handoff]);
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
@@ -512,19 +522,19 @@ function FileBody({
       document to query, so the picture is the only witness). Chrome's
       side is `check-face` 4j. */
   const pdfAt = useMemo(() => {
-    if (look === null || look.kind !== "pdf" || look.data === "") return null;
+    if (nativePreview || look === null || look.kind !== "pdf" || look.data === "") return null;
     const raw = atob(look.data);
     const bytes = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i += 1) bytes[i] = raw.charCodeAt(i);
     return URL.createObjectURL(new Blob([bytes], { type: look.media }));
-  }, [look]);
+  }, [look,nativePreview]);
   useEffect(() => {
     if (pdfAt === null) return;
     return () => URL.revokeObjectURL(pdfAt);
   }, [pdfAt]);
 
-  const previewMode = kindOf(path) === "text" || kindOf(path) === "doc" && handoff.previewSupported === null
-    ? null : nativeOffice ? "stat" : "preview";
+  const previewMode = kind === "text" || (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
+    ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
     previewReader.current.activate();
@@ -942,7 +952,7 @@ function FileBody({
       </div>
     </div>}
   </div>;
-  if (nativeOffice) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
+  if (nativePreview) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
   if (kindOf(path) !== "text") {
     if (look === null) return previewSurface(lookError === null ? <div className="flex-1" /> :
       <Away path={path} handoff={handoff} total={lookTotal} word="" onTake={take} took={took} />);
