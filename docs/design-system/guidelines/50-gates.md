@@ -684,6 +684,8 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 - `npm run quicklook`：生产文件页与附件的原文件预览入口、失败重试意图、关闭后重开、迟到取消与外部打开回退；系统 Quick Look 另做原生验收。
 
+- `npm run file-pdf-ui`：生产文件页与附件的原生 PDF 传输、自动打开、关闭重开及外部打开回退；禁止手机原生 PDF 回到 iframe 或 JS base64 预览副本。系统 PDFKit 的多页、缩放、旋转及页内位置另做 iPhone 验收。
+
 
 ### GUI 会话 AI Elements（2026-10-23）
 
