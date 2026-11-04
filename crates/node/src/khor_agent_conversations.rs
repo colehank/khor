@@ -342,7 +342,10 @@ mod tests {
         }
         let active_a = Arc::new(Running::new("running-conversation-receipt".into()));
         let active_b = Arc::new(Running::new("other-conversation-receipt".into()));
-        let keys = vec![execution_key(node.root(), &a), execution_key(node.root(), &b)];
+        let keys = vec![
+            execution_key(node.root(), &a),
+            execution_key(node.root(), &b),
+        ];
         {
             let mut runs = running().lock().unwrap_or_else(|p| p.into_inner());
             runs.insert(keys[0].clone(), active_a.clone());
