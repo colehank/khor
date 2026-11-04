@@ -131,6 +131,7 @@ import {
   storedWords,
 } from "@/lib/session-filter";
 import { draftCount, watchDrafts } from "@/lib/drafts";
+import { confirmUpdateUiReady } from "@/lib/update-lifecycle";
 import { discardAll, flushAll } from "@/lib/save-road";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
@@ -597,6 +598,7 @@ export default function App() {
   // until then an empty array is 「not read yet」, drawn as a skeleton,
   // and never as 「there are none」.
   const [rowsRead, setRowsRead] = useState(false);
+  useEffect(() => { if (rowsRead) void confirmUpdateUiReady().catch(error => console.error("khor: update UI confirmation failed",error)); },[rowsRead]);
   const [devicesRead, setDevicesRead] = useState(false);
   // The sessions a person has open, as tabs, and which is in front:
   // `selected` is the front tab (`useSessionTabs` — iTerm's arrangement,

@@ -1,6 +1,7 @@
 import { listenNativeDragDrop } from "@/lib/native-events";
 import { awaitChatDraftReceipt, chatDraftOwner, completeChatDraft, discardChatDraft, rememberChatDraft, recoverableChatDrafts, settleChatDraft, subscribeChatDrafts, unconfirmedChatDrafts, type ChatDraft } from '@/lib/chat-drafts';
 import {useSessionDraft} from '@/hooks/use-session-draft';
+import {useUpdateBlocker} from '@/lib/update-readiness';
 import {unifiedSession,AcpHeader,SessionAdd} from "@/views/SessionPreferences";
 import {AgentInteraction,type InteractionRequest} from "@/components/AgentInteraction";
 import {chatAttachment} from "@/api";
@@ -757,6 +758,7 @@ export function ChatView({
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const composer = useRef({session: id, text, documents: docs, attachments: files.items});
   composer.current = {session: id, text, documents: docs, attachments: files.items};
+  useUpdateBlocker("attachments", docs.length > 0 || files.items.length > 0);
   const savedDrafts = useSyncExternalStore(subscribeChatDrafts, () => recoverableChatDrafts(id));
   const composerEmpty = () => {
     const now = composer.current;

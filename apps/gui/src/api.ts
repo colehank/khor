@@ -1250,6 +1250,18 @@ export const setMachinePaused = (machine: string, on: boolean) =>
     what another machine is running is `khor doctor`'s question, asked
     over the wire, never a field on the device table. */
 export const fetchAbout = () => call<About>("about");
+export type { AppUpdateStatus } from "./gen/bindings/AppUpdateStatus";
+export type { UpdatePreferences } from "./gen/bindings/UpdatePreferences";
+export const fetchAppUpdateStatus = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_status");
+export const checkAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_check");
+export const downloadAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_download");
+export const installAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_install");
+export const setAppUpdatePreferences = (preferences: import("./gen/bindings/UpdatePreferences").UpdatePreferences) =>
+  call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_preferences", { preferences });
+export function onAppUpdate(receive: (status: import("./gen/bindings/AppUpdateStatus").AppUpdateStatus) => void): () => void {
+  if (!inApp) return () => {};
+  return listenNativeEvent<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app-update:changed", receive);
+}
 /**
  * 外观 (批 D2): hands the app's **window** the theme the face resolved.
  *

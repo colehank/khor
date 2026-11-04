@@ -853,3 +853,7 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run new-session-choices`：新建偏好的每机器目录与启动方式、重开恢复、GUI/TUI与预设稳定ID、MRU顺序、编辑时不重排、存储失败与坏数据。已纳入 `test:unit`；页面机器切换和显式工作区参数另由真实组件回归覆盖。
 
 - `npm run agent-commands`：ACP命令公告与普通文本隔离、命令全量替换/清空、输入提示保留、前缀匹配和非法数据；ChatView与Khor共用解析和菜单，执行各自prompt。已纳入 `test:unit`。
+
+### Desktop update settings (R6)
+
+`npm run updates-ui` renders the actual UpdateSettings component with the native transport boundary. It checks check/download/restart routing, blocked drafts, channel preference preservation, background progress and store/external/development ownership. It does not prove SDK installation or native health rollback. `chat-drafts` additionally checks live restart blockers, checkpoint refusal and unconfirmed sends.

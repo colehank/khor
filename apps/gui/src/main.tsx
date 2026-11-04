@@ -17,6 +17,7 @@ import { followScrollEdge } from "./lib/scroll-edge";
 import { followFieldSwipe } from "./lib/field-swipe";
 import { wearTermPalette } from "./lib/term-theme";
 import { followWindowSurface } from "./lib/window-surface";
+import { followUpdatePreparation } from "./lib/update-lifecycle";
 
 // **The theme is stamped before React is asked for a frame** (批 D2).
 //
@@ -92,3 +93,4 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <Fault name="app" className="h-dvh">{isMenuFace ? <MenuFace /> : <App />}</Fault>
   </React.StrictMode>,
 );
+if (!isMenuFace) followUpdatePreparation();

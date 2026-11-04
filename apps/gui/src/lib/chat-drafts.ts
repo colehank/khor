@@ -28,6 +28,10 @@ let allowed: ReadonlySet<string> | null = null;
 const accepts = (session: string) => allowed === null || allowed.has(session);
 const changed = () => { for (const listener of listeners) listener(); };
 
+export function chatDraftsAtRisk(): boolean {
+  return pending.size > 0 || saved.size > 0;
+}
+
 /** Open tabs own recovery data. Remember the boundary too: a late receipt
  * after close must not recreate an entry that this pass just released. */
 export function retainCancelledChatDrafts(sessions: readonly string[]): void {

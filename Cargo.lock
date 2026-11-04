@@ -5014,6 +5014,8 @@ dependencies = [
  "khor-catalog",
  "khor-gui-core",
  "khor-node",
+ "khor-runtime",
+ "khor-update",
  "khor-web",
  "libc",
  "objc2",
@@ -5029,6 +5031,7 @@ dependencies = [
  "tauri-plugin-khor-files",
  "tauri-plugin-notification",
  "tauri-plugin-updater",
+ "tempfile",
  "tokio",
  "webkit2gtk",
 ]
@@ -5176,6 +5179,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "tar",
  "tempfile",
  "tokio",
 ]

@@ -1,6 +1,8 @@
 use crate::{Artifact, Channel, Component, Platform, ReleaseIdentity, ReleaseManifest, ReleaseTag};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use minisign_verify::{PublicKey, Signature};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{fs::File, io::Read, path::Path};
 
 const MANIFEST_LIMIT: usize = 256 * 1024;
@@ -43,7 +45,19 @@ impl TrustRoot {
             .map_err(|e| e.to_string())?;
         let manifest: ReleaseManifest = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
         manifest.validate()?;
-        Ok(VerifiedRelease { manifest })
+        Ok(VerifiedRelease {
+            manifest,
+            signed: SignedRelease {
+                document: std::str::from_utf8(bytes)
+                    .map_err(|e| e.to_string())?
+                    .to_owned(),
+                signature: signature.trim().to_owned(),
+            },
+        })
+    }
+
+    pub fn restore(&self, signed: &SignedRelease) -> Result<VerifiedRelease, String> {
+        self.authenticate(signed.document.as_bytes(), &signed.signature)
     }
 
     pub fn verify_file(&self, path: &Path, signature: &str) -> Result<(), String> {
@@ -63,6 +77,47 @@ impl TrustRoot {
         }
         verifier.finalize().map_err(|e| e.to_string())
     }
+
+    pub fn verify_asset(&self, path: &Path, asset: &Artifact) -> Result<(), String> {
+        let signature = signature_from_base64(&asset.signature)?;
+        let mut verifier = self
+            .key
+            .verify_stream(&signature)
+            .map_err(|e| e.to_string())?;
+        let mut file = File::open(path).map_err(|e| e.to_string())?;
+        let mut digest = Sha256::new();
+        let mut count = 0u64;
+        let mut bytes = [0; 64 * 1024];
+        loop {
+            let size = file.read(&mut bytes).map_err(|e| e.to_string())?;
+            if size == 0 {
+                break;
+            }
+            count = count
+                .checked_add(size as u64)
+                .ok_or("release size overflow")?;
+            if count > asset.bytes {
+                return Err("release asset exceeds its signed size".into());
+            }
+            verifier.update(&bytes[..size]);
+            digest.update(&bytes[..size]);
+        }
+        if count != asset.bytes || format!("{:x}", digest.finalize()) != asset.sha256.as_str() {
+            return Err("release asset disagrees with its signed size or digest".into());
+        }
+        verifier.finalize().map_err(|e| e.to_string())
+    }
+
+    pub fn verify_asset_bytes(&self, bytes: &[u8], asset: &Artifact) -> Result<(), String> {
+        if bytes.len() as u64 != asset.bytes
+            || format!("{:x}", Sha256::digest(bytes)) != asset.sha256.as_str()
+        {
+            return Err("release asset disagrees with its signed size or digest".into());
+        }
+        self.key
+            .verify(bytes, &signature_from_base64(&asset.signature)?, false)
+            .map_err(|e| e.to_string())
+    }
 }
 
 fn signature_from_base64(encoded: &str) -> Result<Signature, String> {
@@ -74,11 +129,23 @@ fn signature_from_base64(encoded: &str) -> Result<Signature, String> {
     Signature::decode(text).map_err(|e| e.to_string())
 }
 
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SignedRelease {
+    document: String,
+    signature: String,
+}
+
+#[derive(Clone)]
 pub struct VerifiedRelease {
     manifest: ReleaseManifest,
+    signed: SignedRelease,
 }
 
 impl VerifiedRelease {
+    pub fn signed(&self) -> &SignedRelease {
+        &self.signed
+    }
     pub fn manifest(&self) -> &ReleaseManifest {
         &self.manifest
     }
@@ -127,6 +194,15 @@ impl Offer {
     pub fn artifact(&self) -> &Artifact {
         &self.artifact
     }
+}
+
+#[cfg(test)]
+pub(crate) fn fixture_app_offer() -> Offer {
+    let (_, mut offer) = fixture_offer("http://127.0.0.1/app.tar.gz".into());
+    offer.artifact.component = Component::DesktopApp;
+    offer.artifact.platform.os = crate::OperatingSystem::Macos;
+    offer.artifact.unpacked_bytes = 4096;
+    offer
 }
 
 #[cfg(test)]
@@ -179,6 +255,34 @@ mod tests {
         assert_ne!(trust.tauri_key(), KEY.trim());
     }
     #[test]
+    fn persisted_assets_require_the_signed_size_digest_and_signature_together() {
+        let trust = TrustRoot::from_tauri_base64(KEY).unwrap();
+        let release = trust.authenticate(RELEASE, SIGNATURE).unwrap();
+        let asset = &release.manifest().artifacts[0];
+        let bytes = include_bytes!("../tests/fixtures/asset.gz");
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("cached-package");
+        std::fs::write(&path, bytes).unwrap();
+        trust.verify_asset(&path, asset).unwrap();
+        trust.verify_asset_bytes(bytes, asset).unwrap();
+        let mut corrupted = bytes.to_vec();
+        corrupted[10] ^= 1;
+        std::fs::write(&path, &corrupted).unwrap();
+        assert!(trust.verify_asset(&path, asset).is_err());
+        assert!(trust.verify_asset_bytes(&corrupted, asset).is_err());
+        assert!(
+            trust
+                .verify_asset_bytes(&bytes[..bytes.len() - 1], asset)
+                .is_err()
+        );
+        let mut changed = asset.clone();
+        changed.signature = SIGNATURE.into();
+        assert!(trust.verify_asset_bytes(bytes, &changed).is_err());
+        changed = asset.clone();
+        changed.bytes -= 1;
+        assert!(trust.verify_asset(&path, &changed).is_err());
+    }
+    #[test]
     fn only_authenticated_bytes_can_become_an_update_offer() {
         let trust = TrustRoot::from_tauri_base64(KEY).unwrap();
         let release = trust.authenticate(RELEASE, SIGNATURE).unwrap();
@@ -212,6 +316,20 @@ mod tests {
                 )
                 .is_err()
         );
+    }
+    #[test]
+    fn restored_staging_reauthenticates_original_signed_bytes_before_reusing_an_offer() {
+        let trust = TrustRoot::from_tauri_base64(KEY).unwrap();
+        let release = trust.authenticate(RELEASE, SIGNATURE).unwrap();
+        let raw = serde_json::to_vec(release.signed()).unwrap();
+        let saved: SignedRelease = serde_json::from_slice(&raw).unwrap();
+        assert_eq!(
+            trust.restore(&saved).unwrap().manifest(),
+            release.manifest()
+        );
+        let mut changed = saved;
+        changed.document = changed.document.replace("v0.2.0", "v9.9.9");
+        assert!(trust.restore(&changed).is_err());
     }
 
     #[test]

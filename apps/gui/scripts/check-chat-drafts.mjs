@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {fileURLToPath} from 'node:url';
 import {SessionDraftStore} from '../src/lib/session-drafts.ts';
+import {RestartChecklist} from '../src/lib/restart-checklist.ts';
 const source = fileURLToPath(new URL('../src/lib/chat-drafts.ts', import.meta.url));
 const compiled = await build({entryPoints: [source], bundle: true, write: false, platform: 'node', format: 'esm'});
 const store = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
@@ -12,6 +13,39 @@ const completeCurrent = (session, token) => complete(session, token, owner(sessi
 const discardCurrent = (session, token) => discard(session, token, owner(session));
 let passed = 0;
 async function test(name, run) { retain([]); await run(); passed++; console.log('PASS', name); }
+await test('update preparation reads live state, never saves a file, and releases closed owners', () => {
+  const checklist = new RestartChecklist();
+  let unsaved = true;
+  const leave = checklist.register(() => unsaved ? 'unsaved-files' : null);
+  assert.deepEqual(checklist.prepare(), ['unsaved-files']);
+  unsaved = false;
+  assert.deepEqual(checklist.prepare(), []);
+  unsaved = true;
+  leave();
+  assert.deepEqual(checklist.prepare(), []);
+});
+await test('update preparation fails closed on checkpoint failure and retries current state', () => {
+  const checklist = new RestartChecklist();
+  let writable = false;
+  checklist.register(() => { if (!writable) throw new Error('storage unavailable'); return null; });
+  checklist.register(() => writable ? null : 'draft-storage');
+  assert.deepEqual(checklist.prepare(), ['draft-storage']);
+  writable = true;
+  assert.deepEqual(checklist.prepare(), []);
+});
+await test('an unconfirmed or recoverable send blocks restart until its actual receipt or discard', () => {
+  retain(['alpha']);
+  assert.equal(store.chatDraftsAtRisk(), false);
+  remember(draft('alpha', 'pending'));
+  assert.equal(store.chatDraftsAtRisk(), true);
+  completeCurrent('alpha', 'pending');
+  assert.equal(store.chatDraftsAtRisk(), false);
+  remember(draft('alpha', 'failed'));
+  settleCurrent('alpha', 'failed', 'failed');
+  assert.equal(store.chatDraftsAtRisk(), true);
+  discardCurrent('alpha', 'failed');
+  assert.equal(store.chatDraftsAtRisk(), false);
+});
 await test('snapshot shares large strings and drops revoked URL ownership', () => {
   retain(['alpha']); const input = draft('alpha', 'first'); const kept = remember(input);
   assert(kept); assert.notEqual(kept.attachments, input.attachments); assert.equal(kept.attachments[0].thumb, null);

@@ -1,6 +1,7 @@
 import type {CommandRecord} from '@/gen/bindings/CommandRecord';
 import {KhorHeader,SessionAdd,KhorSend} from '@/views/SessionPreferences';
 import {useSessionDraft} from '@/hooks/use-session-draft';
+import {useUpdateBlocker} from '@/lib/update-readiness';
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
@@ -61,6 +62,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   currentId.current = id;
   const [draft, setDraft] = useSessionDraft("khor:"+id);
   const [sending, setSending] = useState(false);
+  useUpdateBlocker("unconfirmed-sends", sending);
   const [refused, setRefused] = useState<string | null>(null);
   const [agent, setAgent] = useState<KhorAgentView | null>(null);
   const agentHome = useRef('');
@@ -149,6 +151,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
 
   // ── the files going along with the line ──
   const [pending, setPending] = useState<Pending[]>([]);
+  useUpdateBlocker("attachments", pending.length > 0);
   const seq = useRef(0);
   const placing = pending.some((p) => p.path === null && p.error === null);
   const fileInput = useRef<HTMLInputElement | null>(null);

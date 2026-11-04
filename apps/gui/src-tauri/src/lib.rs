@@ -6,6 +6,17 @@ mod menu_overlay;
 mod native_io;
 mod page_history;
 mod page_navigation;
+mod updater_commands;
+
+#[cfg(all(desktop, target_os = "macos"))]
+mod app_update_install;
+#[cfg(desktop)]
+mod app_updates;
+#[cfg(desktop)]
+mod update_admission;
+
+#[cfg(desktop)]
+mod updater_package;
 
 #[cfg(desktop)]
 mod window_surface;
@@ -2382,6 +2393,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     {
         win = win
+            .initialization_script(app_update_install::boot_script())
             .title_bar_style(tauri::utils::TitleBarStyle::Overlay)
             .hidden_title(true);
         // ⚠️ Tombstone (the redesign, 2026-10-02): the window was built
@@ -5210,6 +5222,10 @@ fn system_language_into_env() {
 /// ever runs it.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(all(desktop, target_os = "macos"))]
+    if let Some(code) = app_update_install::main_if_requested() {
+        std::process::exit(code);
+    }
     if let Some(code) = khor_gui_core::console::main_if_requested(|root| {
         match khor_web::listen(root.to_path_buf(), khor_web::port()) {
             Ok(face) => eprintln!("{}", khor_catalog::cli::web_banner(face.addr)),
@@ -5334,6 +5350,8 @@ pub fn run() {
     khor_node::vitals::local::start(&Node::root_from_env());
 
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_khor_files::init());
     // 加入网络's 扫码 (docs/IOS.md 第三步): the camera reads a pairing
@@ -5357,6 +5375,12 @@ pub fn run() {
             // name (`build_the_window` says why it is not in the config).
             #[cfg(desktop)]
             build_the_window(app.handle())?;
+            #[cfg(desktop)]
+            {
+                use tauri::Manager;
+                app.manage(app_updates::AppUpdates::new().map_err(std::io::Error::other)?);
+                app.manage(std::sync::Arc::new(update_admission::UpdateAdmission::default()));
+            }
             // The menu bar (macOS; a no-op elsewhere). Its items and the
             // page's last word on them live in `menu::Held`.
             #[cfg(desktop)]
@@ -5758,6 +5782,13 @@ pub fn run() {
             doctor,
             doctor_fix,
             about,
+            updater_commands::app_update_status,
+            updater_commands::app_update_check,
+            updater_commands::app_update_download,
+            updater_commands::app_update_preferences,
+            updater_commands::app_update_prepared,
+            updater_commands::app_update_install,
+            updater_commands::app_update_ui_ready,
             set_window_theme,
             window_appearance_support,
             save_terminal_palette,

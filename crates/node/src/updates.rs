@@ -54,6 +54,14 @@ pub fn verify_program(program: &Path, offer: &Offer) -> Result<(), String> {
     }
     Ok(())
 }
+
+pub fn verify_activation(program: &Path, current: &Path) -> Result<(), String> {
+    runtime_image::probe(
+        program,
+        &[OsStr::new("_runtime_check"), current.as_os_str()],
+    )?;
+    Ok(())
+}
 pub fn update_trust() -> Result<khor_update::TrustRoot, String> {
     TrustRoot::bundled()
 }

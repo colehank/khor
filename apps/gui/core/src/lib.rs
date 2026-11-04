@@ -33,6 +33,7 @@ pub mod rejoin;
 pub mod subscriptions;
 pub mod tabs;
 pub mod term;
+pub mod updates;
 pub mod web;
 pub mod workspaces;
 

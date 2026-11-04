@@ -14,6 +14,7 @@ import { ActionRow } from "@/components/settings/ActionRow";
 import { gui } from "@/gen/catalog";
 import { useHereHosts } from "@/lib/here";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
+import { UpdateSettings } from "./UpdateSettings";
 
 /** Bytes as a person reads them. **Binary steps and one decimal**, the
     same shape the machine card's disk readings take — a store is
@@ -121,6 +122,7 @@ export function AboutPage({ onClose }: { onClose: () => void }) {
           </MoreSection>
         </>
       )}
+      <UpdateSettings />
     </MoreFrame>
   );
 }
