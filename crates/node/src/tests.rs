@@ -304,8 +304,6 @@ fn a_registration_needs_both_a_name_and_a_command() {
     assert!(n.agents().unwrap().is_empty(), "neither wrote anything");
 }
 
-/// The gap above closes the moment the vendor speaks for itself: a
-/// claude hook naming a session is claude saying "this one is mine".
 #[test]
 fn a_native_status_file_identifies_the_vendor() {
     let r = root("category-hook");
@@ -317,11 +315,11 @@ fn a_native_status_file_identifies_the_vendor() {
         .unwrap()
         .into_iter()
         .find(|v| v.session.id.0.starts_with("tui/"))
-        .expect("the hook should have registered a row");
+        .expect("the native status file should identify a row");
     assert_eq!(
         row.session.category.as_deref(),
         Some(crate::adaptor::claude::VENDOR),
-        "a claude hook is claude naming its own session"
+        "the native status file identifies Claude"
     );
 }
 

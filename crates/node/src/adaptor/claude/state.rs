@@ -72,8 +72,10 @@ impl Endings {
 
 fn ending(bytes: &[u8]) -> Option<(State, i64)> {
     let end = bytes.iter().rposition(|&b| b == b'\n')?;
+    if bytes[end + 1..].iter().any(|b| !b.is_ascii_whitespace()) { return None; }
     for line in bytes[..end].split(|&b| b == b'\n').rev() {
-        let Ok(value) = serde_json::from_slice::<serde_json::Value>(line) else { continue };
+        if line.iter().all(|b| b.is_ascii_whitespace()) { continue; }
+        let value = serde_json::from_slice::<serde_json::Value>(line).ok()?;
         if value["isSidechain"].as_bool() == Some(true) { continue; }
         match value["type"].as_str() {
             Some("user") => return None,
@@ -130,6 +132,8 @@ mod tests {
         }
         assert_eq!(ending(bookkeeping.as_bytes()), None);
         assert_eq!(ending(complete.trim_end().as_bytes()), None, "an incomplete line is revisited");
+        assert_eq!(ending(format!("{complete}{{\"type\":").as_bytes()), None);
+        assert_eq!(ending(format!("{complete}not-json\n").as_bytes()), None);
     }
     #[test]
     fn api_errors_are_not_completions_and_sidechains_do_not_own_the_parent() {
