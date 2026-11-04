@@ -183,6 +183,9 @@ impl Node {
         record: &khor_sync::chat::CommandRecord,
     ) -> Result<String, String> {
         let channel = board(channel)?;
+        if agent_board(channel) && self.seen_loaded()?.doc.closed_watermark(channel).is_some() {
+            return Err(msg::no_such_session(channel));
+        }
         if channel != BROADCAST && self.chat.agent_conversation(channel)?.is_none() {
             return Err(msg::agent_arguments().into());
         }
@@ -253,6 +256,9 @@ impl KindSurface for WideKind {
     /// Put away, never deleted — a machine's window's close
     /// (docs/SESSION.md 动作): the next message brings it back.
     fn close(&self, node: &Node, id: &SessionId) -> Result<(), String> {
+        if agent_board(&id.0) {
+            return node.delete_khor_conversation(&id.0);
+        }
         let newest = self.seen_at(node, id)?;
         let loaded = node.seen_loaded()?;
         loaded.doc.mark(&id.0, newest)?;
@@ -265,6 +271,9 @@ impl KindSurface for WideKind {
 
 fn conversation_row(node: &Node, board: &str) -> Result<Option<Session>, String> {
     let seen = node.seen_loaded()?;
+    if agent_board(board) && seen.doc.closed_watermark(board).is_some() {
+        return Ok(None);
+    }
     let watermark = seen.doc.watermark(board);
     let msgs = node.chat.log(board)?.messages;
     let mut row: Session =

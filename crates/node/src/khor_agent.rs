@@ -587,6 +587,9 @@ impl Node {
             Action::Prompt { token, text } => {
                 self.refuse_unless_hosting()?;
                 let _admission = prompt_admission(&root)?;
+                if conversations::deleted(&root, &board)? {
+                    return Err(msg::no_such_session(&board));
+                }
                 crate::remote_cancel::pump(
                     &root,
                     !self.paused() && !self.resting.load(Ordering::Relaxed),
@@ -811,6 +814,10 @@ impl Node {
             let Ok(mut saved) = serde_json::from_slice::<Saved>(&bytes) else {
                 continue;
             };
+            if conversations::deleted(self.root(), &saved.board)? {
+                conversations::stop_producer(self.root(), &saved.board);
+                continue;
+            }
             let Ok(_claim) = claim_in(self.root(), &saved.board) else {
                 continue;
             };
@@ -888,6 +895,9 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
     let mut snapshots = updates::Recorder::new(key);
     let mut process_stopped = true;
     let outcome = (|| -> Result<(), String> {
+        if conversations::deleted(&root, &saved.board)? {
+            active.request_stop();
+        }
         if active.stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -963,9 +973,17 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         let mut completed = false;
         let mut pending = McpSession::default();
         let mut last_flush = std::time::Instant::now();
+        let mut last_lifecycle_check = std::time::Instant::now();
         let read_result = (|| -> Result<(), String> {
             send(&active, &start)?;
             loop {
+                if last_lifecycle_check.elapsed() >= std::time::Duration::from_secs(1) {
+                    if let Ok(true) = conversations::deleted(&root, &saved.board) {
+                        active.request_stop();
+                        break;
+                    }
+                    last_lifecycle_check = std::time::Instant::now();
+                }
                 let line = match events.recv_timeout(std::time::Duration::from_millis(100)) {
                     Ok(line) => line?,
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,

@@ -2,6 +2,32 @@
 use super::*;
 use khor_sync::chat::AgentConversation;
 
+pub(super) fn deleted(root: &Path, board: &str) -> Result<bool, String> {
+    if !crate::wide::agent_board(board) {
+        return Ok(false);
+    }
+    let dir = khor_sync::seen::seen_dir(root);
+    if !dir.is_dir() {
+        return Ok(false);
+    }
+    let loaded = khor_sync::store::load_pile::<khor_sync::seen::SeenDoc>(
+        &dir,
+        khor_sync::chat::ChatDoc::fresh_peer(),
+    )?;
+    Ok(loaded.doc.closed_watermark(board).is_some())
+}
+
+pub(super) fn stop_producer(root: &Path, board: &str) {
+    let active = running()
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .get(&execution_key(root, board))
+        .cloned();
+    if let Some(active) = active {
+        active.request_stop();
+    }
+}
+
 pub(super) fn execution_key(root: &Path, board: &str) -> PathBuf {
     if board == crate::wide::BROADCAST {
         root.to_owned()
@@ -36,9 +62,29 @@ pub(super) fn claim_in(root: &Path, board: &str) -> Result<File, String> {
 }
 
 impl Node {
+    pub(crate) fn delete_khor_conversation(&self, board: &str) -> Result<(), String> {
+        if !crate::wide::agent_board(board) || self.chat.agent_conversation(board)?.is_none() {
+            return Err(msg::no_such_session(board));
+        }
+        let _admission = match close_claim(self.root(), true)? {
+            CloseClaim::Held(file) => Some(file),
+            CloseClaim::Missing => None,
+            CloseClaim::Busy => return Err(msg::agent_busy().into()),
+        };
+        let loaded = self.seen_loaded()?;
+        loaded.doc.put_away(board, now())?;
+        let mut store = loaded.store;
+        store.flush(&loaded.doc)?;
+        stop_producer(self.root(), board);
+        Ok(())
+    }
+
     pub fn khor_conversation(&self, board: &str) -> Result<AgentConversation, String> {
         if !crate::wide::agent_board(board) {
             return Err(msg::agent_arguments().into());
+        }
+        if deleted(self.root(), board)? {
+            return Err(msg::no_such_session(board));
         }
         self.chat
             .agent_conversation(board)?
@@ -116,6 +162,9 @@ impl Node {
                 .as_str()
                 .filter(|s| crate::wide::agent_board(s))
                 .ok_or_else(|| msg::agent_arguments().to_owned())?;
+            if deleted(self.root(), board)? {
+                return Ok(());
+            }
             let conversation: AgentConversation =
                 serde_json::from_value(data["conversation"].clone()).map_err(|e| e.to_string())?;
             if let Some(existing) = self.chat.agent_conversation(board)? {
@@ -128,6 +177,9 @@ impl Node {
                     .set_agent_conversation(board, &conversation, report.config.as_ref())?;
             }
         } else if configuration_reply(action, report) {
+            if deleted(self.root(), action.board())? {
+                return Ok(());
+            }
             if let Some(config) = &report.config {
                 self.chat.set_agent_config_in(action.board(), config)?;
             }
@@ -279,6 +331,24 @@ mod tests {
         let (_scratch, node) = node();
         let a = create(&node, "running-conversation-token-a", "");
         let b = create(&node, "running-conversation-token-b", "");
+        struct Producers(Vec<PathBuf>);
+        impl Drop for Producers {
+            fn drop(&mut self) {
+                let mut runs = running().lock().unwrap_or_else(|p| p.into_inner());
+                for key in &self.0 {
+                    runs.remove(key);
+                }
+            }
+        }
+        let active_a = Arc::new(Running::new("running-conversation-receipt".into()));
+        let active_b = Arc::new(Running::new("other-conversation-receipt".into()));
+        let keys = vec![execution_key(node.root(), &a), execution_key(node.root(), &b)];
+        {
+            let mut runs = running().lock().unwrap_or_else(|p| p.into_inner());
+            runs.insert(keys[0].clone(), active_a.clone());
+            runs.insert(keys[1].clone(), active_b.clone());
+        }
+        let _producers = Producers(keys);
         let saved = Saved {
             board: a.clone(),
             fingerprint: "running-conversation-fixture".into(),
@@ -300,6 +370,8 @@ mod tests {
         fs::create_dir_all(directory(node.root()).join("runs")).unwrap();
         save(node.root(), &saved).unwrap();
         node.close(&crate::SessionId(a.clone())).unwrap();
+        assert!(active_a.stopped.load(Ordering::SeqCst));
+        assert!(!active_b.stopped.load(Ordering::SeqCst));
         let rows = crate::wide::WideKind.rows(&node).unwrap();
         assert!(!rows.iter().any(|row| row.id.0 == a));
         assert!(rows.iter().any(|row| row.id.0 == b));
