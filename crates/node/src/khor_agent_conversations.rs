@@ -229,6 +229,74 @@ mod tests {
             .unwrap()
             .into()
     }
+
+    #[test]
+    fn deleting_a_conversation_does_not_hide_its_empty_replacement_or_revive_from_late_output() {
+        let (_scratch, node) = node();
+        let a = create(&node, "deleted-conversation-token-a", "");
+        let mut saved = Saved {
+            board: a.clone(),
+            fingerprint: "deleted-conversation-fixture".into(),
+            record: CommandRecord {
+                id: "deleted-conversation-receipt".into(),
+                owner: node.device_str().into(),
+                status: "done".into(),
+                started_at_ms: 1,
+                ended_at_ms: Some(2),
+                ..Default::default()
+            },
+        };
+        fs::create_dir_all(directory(node.root()).join("runs")).unwrap();
+        save(node.root(), &saved).unwrap();
+        node.close(&crate::SessionId(a.clone())).unwrap();
+        let b = create(&node, "replacement-conversation-token-b", "");
+        assert_ne!(a, b);
+        assert_eq!(create(&node, "replacement-conversation-token-b", ""), b);
+        let rows = crate::wide::WideKind.rows(&node).unwrap();
+        assert!(rows.iter().any(|row| row.id.0 == b));
+        assert!(!rows.iter().any(|row| row.id.0 == a));
+        assert!(node.chat.log(&b).unwrap().messages.is_empty());
+
+        saved.record.stdout = "late output after deletion".into();
+        let _ = save(node.root(), &saved);
+        let reopened = Node::open(node.root().to_owned()).unwrap();
+        let rows = crate::wide::WideKind.rows(&reopened).unwrap();
+        assert!(!rows.iter().any(|row| row.id.0 == a));
+        assert!(rows.iter().any(|row| row.id.0 == b));
+        assert!(reopened.chat.log(&b).unwrap().messages.is_empty());
+    }
+
+    #[test]
+    fn deleting_a_conversation_with_an_active_receipt_leaves_other_conversations_visible() {
+        let (_scratch, node) = node();
+        let a = create(&node, "running-conversation-token-a", "");
+        let b = create(&node, "running-conversation-token-b", "");
+        let saved = Saved {
+            board: a.clone(),
+            fingerprint: "running-conversation-fixture".into(),
+            record: CommandRecord {
+                id: "running-conversation-receipt".into(),
+                owner: node.device_str().into(),
+                status: "running".into(),
+                started_at_ms: 1,
+                agent: Some(AgentTurn {
+                    model: "fixture".into(),
+                    approval: None,
+                    updated_at_ms: 0,
+                    updates: Vec::new(),
+                    updates_truncated: false,
+                }),
+                ..Default::default()
+            },
+        };
+        fs::create_dir_all(directory(node.root()).join("runs")).unwrap();
+        save(node.root(), &saved).unwrap();
+        node.close(&crate::SessionId(a.clone())).unwrap();
+        let rows = crate::wide::WideKind.rows(&node).unwrap();
+        assert!(!rows.iter().any(|row| row.id.0 == a));
+        assert!(rows.iter().any(|row| row.id.0 == b));
+    }
+
     #[test]
     fn creation_retries_reuse_one_conversation_and_configs_and_receipts_remain_separate() {
         let (_scratch, node) = node();
