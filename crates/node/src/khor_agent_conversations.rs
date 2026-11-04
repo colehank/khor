@@ -243,6 +243,13 @@ mod tests {
                 status: "done".into(),
                 started_at_ms: 1,
                 ended_at_ms: Some(2),
+                agent: Some(AgentTurn {
+                    model: "fixture".into(),
+                    approval: None,
+                    updated_at_ms: 0,
+                    updates: Vec::new(),
+                    updates_truncated: false,
+                }),
                 ..Default::default()
             },
         };
@@ -258,6 +265,7 @@ mod tests {
         assert!(node.chat.log(&b).unwrap().messages.is_empty());
 
         saved.record.stdout = "late output after deletion".into();
+        saved.record.ended_at_ms = Some(3);
         let _ = save(node.root(), &saved);
         let reopened = Node::open(node.root().to_owned()).unwrap();
         let rows = crate::wide::WideKind.rows(&reopened).unwrap();
