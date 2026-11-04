@@ -1120,8 +1120,13 @@ async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, 
     }
     let file = khor_gui_core::file_handoff::acquire_ready(&Node::root_from_env(), &id)?;
     #[cfg(target_os = "ios")]
-    if file.path().extension().and_then(|ext|ext.to_str()).is_some_and(|ext|ext.eq_ignore_ascii_case("pdf")) {
-        return phone_pdf::open(webview,file).await;
+    if file
+        .path()
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("pdf"))
+    {
+        return phone_pdf::open(webview, file).await;
     }
     #[cfg(any(target_os = "ios", target_os = "macos"))]
     {

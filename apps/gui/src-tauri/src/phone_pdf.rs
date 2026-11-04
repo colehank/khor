@@ -1,107 +1,176 @@
 use khor_gui_core::file_handoff::ReadyFile;
-use objc2::{ClassType, class, define_class, msg_send, sel, rc::{Allocated, Retained}, runtime::{AnyClass, AnyObject, NSObject}};
+use objc2::{
+    ClassType, class, define_class, msg_send,
+    rc::{Allocated, Retained},
+    runtime::{AnyClass, AnyObject, NSObject},
+    sel,
+};
 use objc2_foundation::{NSPoint, NSRect, NSString};
 use std::{cell::RefCell, collections::VecDeque, path::PathBuf};
 
-#[link(name="PDFKit",kind="framework")]
+#[link(name = "PDFKit", kind = "framework")]
 unsafe extern "C" {
-    #[link_name="OBJC_CLASS_$_PDFDocument"] static DOCUMENT:AnyClass;
-    #[link_name="OBJC_CLASS_$_PDFView"] static VIEW:AnyClass;
-    #[link_name="OBJC_CLASS_$_PDFDestination"] static DESTINATION:AnyClass;
-    static PDFViewPageChangedNotification:*const AnyObject;
+    #[link_name = "OBJC_CLASS_$_PDFDocument"]
+    static DOCUMENT: AnyClass;
+    #[link_name = "OBJC_CLASS_$_PDFView"]
+    static VIEW: AnyClass;
+    #[link_name = "OBJC_CLASS_$_PDFDestination"]
+    static DESTINATION: AnyClass;
+    static PDFViewPageChangedNotification: *const AnyObject;
 }
 
-#[derive(Clone,Copy)]
-struct Position {page:usize,point:NSPoint,zoom:f64}
+#[derive(Clone, Copy)]
+struct Position {
+    page: usize,
+    point: NSPoint,
+    zoom: f64,
+}
 struct Reader {
-    file:ReadyFile,
-    navigation:Retained<AnyObject>,
-    content:Retained<AnyObject>,
-    pdf:Retained<AnyObject>,
-    document:Retained<AnyObject>,
-    delegate:Retained<ReaderDelegate>,
-    reply:tokio::sync::oneshot::Sender<Result<bool,String>>,
+    file: ReadyFile,
+    navigation: Retained<AnyObject>,
+    content: Retained<AnyObject>,
+    pdf: Retained<AnyObject>,
+    document: Retained<AnyObject>,
+    delegate: Retained<ReaderDelegate>,
+    reply: tokio::sync::oneshot::Sender<Result<bool, String>>,
 }
 thread_local! {
     static READER:RefCell<Option<Reader>>=const{RefCell::new(None)};
     static POSITIONS:RefCell<VecDeque<(PathBuf,Position)>>=const{RefCell::new(VecDeque::new())};
 }
 
-fn owns(reader:&Reader,identity:*const AnyObject)->bool {std::ptr::eq(&*reader.navigation,identity)}
+fn owns(reader: &Reader, identity: *const AnyObject) -> bool {
+    std::ptr::eq(&*reader.navigation, identity)
+}
 
-unsafe fn remember(reader:&Reader) {
+unsafe fn remember(reader: &Reader) {
     unsafe {
-        let destination:*mut AnyObject=msg_send![&*reader.pdf,currentDestination];
-        if destination.is_null(){return;}
-        let page:*mut AnyObject=msg_send![destination,page];
-        if page.is_null(){return;}
-        let index:usize=msg_send![&*reader.document,indexForPage:page];
-        let count:usize=msg_send![&*reader.document,pageCount];
-        let point:NSPoint=msg_send![destination,point];
-        let scale:f64=msg_send![&*reader.pdf,scaleFactor];
-        let fit:f64=msg_send![&*reader.pdf,scaleFactorForSizeToFit];
-        let zoom=scale/fit;
-        if index>=count || !point.x.is_finite() || !point.y.is_finite() || !zoom.is_finite() || zoom<=0.0 {return;}
+        let destination: *mut AnyObject = msg_send![&*reader.pdf, currentDestination];
+        if destination.is_null() {
+            return;
+        }
+        let page: *mut AnyObject = msg_send![destination, page];
+        if page.is_null() {
+            return;
+        }
+        let index: usize = msg_send![&*reader.document,indexForPage:page];
+        let count: usize = msg_send![&*reader.document, pageCount];
+        let point: NSPoint = msg_send![destination, point];
+        let scale: f64 = msg_send![&*reader.pdf, scaleFactor];
+        let fit: f64 = msg_send![&*reader.pdf, scaleFactorForSizeToFit];
+        let zoom = scale / fit;
+        if index >= count
+            || !point.x.is_finite()
+            || !point.y.is_finite()
+            || !zoom.is_finite()
+            || zoom <= 0.0
+        {
+            return;
+        }
         POSITIONS.with(|positions| {
-            let mut positions=positions.borrow_mut();
-            positions.retain(|(path,_)|path!=reader.file.path());
-            positions.push_back((reader.file.path().to_owned(),Position{page:index,point,zoom}));
-            while positions.len()>64 {positions.pop_front();}
+            let mut positions = positions.borrow_mut();
+            positions.retain(|(path, _)| path != reader.file.path());
+            positions.push_back((
+                reader.file.path().to_owned(),
+                Position {
+                    page: index,
+                    point,
+                    zoom,
+                },
+            ));
+            while positions.len() > 64 {
+                positions.pop_front();
+            }
         });
     }
 }
 
-fn finish(identity:*const AnyObject,result:Result<bool,String>) {
-    let reader=READER.with(|reader| {
-        let mut reader=reader.borrow_mut();
-        if reader.as_ref().is_some_and(|reader|owns(reader,identity)){reader.take()}else{None}
+fn finish(identity: *const AnyObject, result: Result<bool, String>) {
+    let reader = READER.with(|reader| {
+        let mut reader = reader.borrow_mut();
+        if reader.as_ref().is_some_and(|reader| owns(reader, identity)) {
+            reader.take()
+        } else {
+            None
+        }
     });
-    let Some(reader)=reader else{return;};
+    let Some(reader) = reader else {
+        return;
+    };
     // SAFETY: UIKit callbacks and with_webview run on the main thread;
     // the owned native objects and original stay alive through this cleanup.
     unsafe {
-        let center:*mut AnyObject=msg_send![class!(NSNotificationCenter),defaultCenter];
-        let _:()=msg_send![center,removeObserver:&*reader.delegate];
-        if result.is_ok(){remember(&reader);}
+        let center: *mut AnyObject = msg_send![class!(NSNotificationCenter), defaultCenter];
+        let _: () = msg_send![center,removeObserver:&*reader.delegate];
+        if result.is_ok() {
+            remember(&reader);
+        }
     }
-    let _=reader.reply.send(result);
+    let _ = reader.reply.send(result);
 }
 
-unsafe fn page_label(pdf:&AnyObject,document:&AnyObject,content:&AnyObject) {
+unsafe fn page_label(pdf: &AnyObject, document: &AnyObject, content: &AnyObject) {
     unsafe {
-        let page:*mut AnyObject=msg_send![pdf,currentPage];
-        if page.is_null(){return;}
-        let index:usize=msg_send![document,indexForPage:page];
-        let count:usize=msg_send![document,pageCount];
-        if index>=count {return;}
-        let text=NSString::from_str(&format!("{} / {}",index+1,count));
-        let item:*mut AnyObject=msg_send![content,navigationItem];
-        let _:()=msg_send![item,setPrompt:&*text];
+        let page: *mut AnyObject = msg_send![pdf, currentPage];
+        if page.is_null() {
+            return;
+        }
+        let index: usize = msg_send![document,indexForPage:page];
+        let count: usize = msg_send![document, pageCount];
+        if index >= count {
+            return;
+        }
+        let text = NSString::from_str(&format!("{} / {}", index + 1, count));
+        let item: *mut AnyObject = msg_send![content, navigationItem];
+        let _: () = msg_send![item,setPrompt:&*text];
     }
 }
 
-fn appeared(identity:*const AnyObject) {
-    let current=READER.with(|reader|reader.borrow().as_ref().filter(|reader|owns(reader,identity))
-        .map(|reader|(reader.pdf.clone(),reader.document.clone(),reader.content.clone(),reader.file.path().to_owned())));
-    let Some((pdf,document,content,path))=current else{return;};
-    let position=POSITIONS.with(|positions|positions.borrow().iter().find(|(key,_)|key==&path).map(|(_,position)|*position));
+fn appeared(identity: *const AnyObject) {
+    let current = READER.with(|reader| {
+        reader
+            .borrow()
+            .as_ref()
+            .filter(|reader| owns(reader, identity))
+            .map(|reader| {
+                (
+                    reader.pdf.clone(),
+                    reader.document.clone(),
+                    reader.content.clone(),
+                    reader.file.path().to_owned(),
+                )
+            })
+    });
+    let Some((pdf, document, content, path)) = current else {
+        return;
+    };
+    let position = POSITIONS.with(|positions| {
+        positions
+            .borrow()
+            .iter()
+            .find(|(key, _)| key == &path)
+            .map(|(_, position)| *position)
+    });
     // SAFETY: the presentation completed on UIKit's main thread. The
     // destination is restored after layout, in PDF page coordinates.
     unsafe {
-        let _:()=msg_send![&*pdf,layoutIfNeeded];
-        if let Some(position)=position {
-            let page:*mut AnyObject=msg_send![&*document,pageAtIndex:position.page];
+        let _: () = msg_send![&*pdf, layoutIfNeeded];
+        if let Some(position) = position {
+            let page: *mut AnyObject = msg_send![&*document,pageAtIndex:position.page];
             if !page.is_null() {
-                let fit:f64=msg_send![&*pdf,scaleFactorForSizeToFit];
-                if fit.is_finite() && fit>0.0 {
-                    let _:()=msg_send![&*pdf,setScaleFactor:fit*position.zoom];
+                let fit: f64 = msg_send![&*pdf, scaleFactorForSizeToFit];
+                if fit.is_finite() && fit > 0.0 {
+                    let _: () = msg_send![&*pdf,setScaleFactor:fit*position.zoom];
                 }
-                let destination:Allocated<AnyObject>=msg_send![&DESTINATION,alloc];
-                let destination:Option<Retained<AnyObject>>=msg_send![destination,initWithPage:page,atPoint:position.point];
-                if let Some(destination)=destination {let _:()=msg_send![&*pdf,goToDestination:&*destination];}
+                let destination: Allocated<AnyObject> = msg_send![&DESTINATION, alloc];
+                let destination: Option<Retained<AnyObject>> =
+                    msg_send![destination,initWithPage:page,atPoint:position.point];
+                if let Some(destination) = destination {
+                    let _: () = msg_send![&*pdf,goToDestination:&*destination];
+                }
             }
         }
-        page_label(&pdf,&document,&content);
+        page_label(&pdf, &document, &content);
     }
 }
 
@@ -139,8 +208,8 @@ define_class!(
     }
 );
 
-pub async fn open(view:tauri::Webview,file:ReadyFile)->Result<bool,String> {
-    let (tx,rx)=tokio::sync::oneshot::channel();
+pub async fn open(view: tauri::Webview, file: ReadyFile) -> Result<bool, String> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
     view.with_webview(move |webview| {
         let fail=||khor_catalog::msg::file_preview_unavailable().to_owned();
         if file.is_cancelled(){let _=tx.send(Err(khor_node::drops::cancelled()));return;}
@@ -190,5 +259,5 @@ pub async fn open(view:tauri::Webview,file:ReadyFile)->Result<bool,String> {
             }
         }
     }).map_err(|error|error.to_string())?;
-    rx.await.map_err(|error|error.to_string())?
+    rx.await.map_err(|error| error.to_string())?
 }

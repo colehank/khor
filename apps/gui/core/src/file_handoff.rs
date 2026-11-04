@@ -392,7 +392,7 @@ mod tests {
         let root = Scratch::new();
         let cache = cache_root(&root.0);
         let version = cache.join("native-reader");
-        let transfer=version.join("transfer");
+        let transfer = version.join("transfer");
         std::fs::create_dir_all(&transfer).unwrap();
         let path = transfer.join("original.pdf");
         std::fs::write(&path, b"synthetic original file").unwrap();
