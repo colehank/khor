@@ -1314,7 +1314,7 @@ mod tests {
     }
 
     #[test]
-    fn completion_comes_from_the_native_turn_and_survives_a_reader_restart() {
+    fn native_completion_is_available_on_first_read_and_busy_takes_precedence() {
         let root = Scratch(std::env::temp_dir().join(format!("khor-native-state-{}", std::process::id())));
         std::fs::create_dir_all(root.join("sessions")).unwrap();
         let project = root.join("projects/fixture");
