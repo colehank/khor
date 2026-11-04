@@ -59,9 +59,16 @@ pub fn acquire_ready(root: &Path, id: &str) -> Result<ReadyFile, String> {
     let admission = cache_lock(&cache_root(root))?;
     admission.lock_shared().map_err(|error| error.to_string())?;
     let path = ready_path(root, id)?;
-    let cache = cache_root(root).canonicalize().map_err(|error| error.to_string())?;
-    let relative = path.strip_prefix(&cache).map_err(|error| error.to_string())?;
-    let version = relative.components().next().ok_or("missing original-file version")?;
+    let cache = cache_root(root)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let relative = path
+        .strip_prefix(&cache)
+        .map_err(|error| error.to_string())?;
+    let version = relative
+        .components()
+        .next()
+        .ok_or("missing original-file version")?;
     let lease = cache_lock(&cache.join(version.as_os_str()))?;
     lease.lock_shared().map_err(|error| error.to_string())?;
     Ok(ReadyFile {
