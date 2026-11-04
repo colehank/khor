@@ -504,6 +504,7 @@ mod published_upgrade {
     use khor_node::host::{ClientOp, HostFile, write_frame};
     use std::io::Write;
     use std::net::TcpStream;
+    use std::path::PathBuf;
     use std::process::Stdio;
 
     struct Installation {
