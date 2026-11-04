@@ -1,6 +1,3 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { consoleCatalog, consoleComplete, type ConsoleChoice, type ConsoleCommand, type ConsoleCompletion } from "@/api";
-import {MenuViewport} from "@/components/ui/menu-viewport";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -8,72 +5,6 @@ import type { CommandRecord } from "@/gen/bindings/CommandRecord";
 import type { SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
 import { KhorAgentResult } from "@/views/KhorAgent";
-
-/** Completion is owned by the public command parser, including its
- * replacement range. The capsule remains the only keyboard input. */
-export function useConsoleCompletion(line: string, caret: number) {
-  const [catalog, setCatalog] = useState<ConsoleCommand[]>([]);
-  const [answer, setAnswer] = useState<{ line: string; caret: number; offer: ConsoleCompletion } | null>(null);
-  const [pick, setPick] = useState(0);
-  const [shut, setShut] = useState(false);
-  const snapshot = useRef({ line, caret });
-  snapshot.current = { line, caret };
-  useEffect(() => { void consoleCatalog().then(setCatalog, () => {}); }, []);
-  useEffect(() => {
-    setPick(0);
-    setShut(false);
-    setAnswer(null);
-    if (!line.startsWith("/")) return;
-    let live = true;
-    // The catalog can answer the first word immediately while argument
-    // completions ask the node for its machines, sessions and disk.
-    const prefix = line.slice(0, caret);
-    if (/^\/[^\s]*$/.test(prefix)) {
-      const word = prefix.slice(1).toLowerCase();
-      const tail = /^\S*/.exec(line.slice(caret))?.[0] ?? "";
-      setAnswer({ line, caret, offer: { start: 0, end: caret + tail.length, choices: catalog.filter((c) => c.word.startsWith(word) || c.aliases.some((a) => a.startsWith(word))).map((c) => ({ value: `/${c.word}`, label: `/${c.word}`, detail: c.usage, kind: "command" })) } });
-    }
-    const timer = setTimeout(() => {
-      void consoleComplete(line, caret).then((next) => {
-        if (live) setAnswer({ line, caret, offer: next });
-      }, () => {});
-    }, 150);
-    return () => { live = false; clearTimeout(timer); };
-  }, [line, caret, catalog]);
-  const offer = answer?.line === line && answer.caret === caret ? answer.offer : null;
-  const choices = offer?.choices ?? [];
-  return {
-    choices, pick, setPick,
-    open: line.startsWith("/") && !shut && choices.length > 0,
-    close: () => setShut(true),
-    take: (choice: ConsoleChoice) => {
-      if (!offer || snapshot.current.line !== line || snapshot.current.caret !== caret) return null;
-      const suffix = line.slice(offer.end);
-      const finished = ["command", "machine", "session", "argument", "file"].includes(choice.kind);
-      const value = choice.value + (finished && !/\s$/.test(choice.value) && !/^\s/.test(suffix) ? " " : "");
-      const next = `${line.slice(0, offer.start)}${value}${suffix}`;
-      setShut(true);
-      return { line: next, caret: offer.start + value.length };
-    },
-  };
-}
-
-export function ConsoleMenu({ choices, pick, onPick }: { choices: ConsoleChoice[]; pick: number; onPick: (choice: ConsoleChoice) => void }) {
-  const id = useId();
-  return (
-    <div data-console-menu data-menu-frame role="listbox" aria-label={gui.console_title} className="absolute bottom-full left-0 z-20 mb-1 w-full overflow-hidden rounded-lg border bg-popover shadow-(--shadow-float)">
-      <MenuViewport active={pick}>
-      {choices.map((choice, n) => (
-        <button key={`${choice.value}-${n}`} id={`${id}-${n}`} type="button" role="option" aria-selected={n === pick} data-console-choice={choice.kind} data-on={n === pick} className={cn("flex min-h-touch w-full flex-col items-start justify-center rounded-sm px-2 py-1 text-left text-callout pointer-fine:min-h-ctl-md", n === pick && "bg-fill-strong text-foreground")} onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()} onClick={() => onPick(choice)}>
-          <span className="w-full truncate font-mono">{choice.label}</span>
-          {choice.detail && <span className={cn("w-full truncate text-caption", n !== pick && "text-secondary-foreground")}>{choice.detail}</span>}
-        </button>
-      ))}
-      <div className="px-2 py-1 text-caption text-muted-foreground">{gui.console_hint}</div>
-      </MenuViewport>
-    </div>
-  );
-}
 
 function StructuredData({ raw }: { raw: string }) {
   let value: unknown;

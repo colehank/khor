@@ -50,9 +50,6 @@ try {
    else if(cmd==='launch_presets')result=[];
    else if(cmd==='ls')result={path:'/fixture',entries:[],truncated:false};
    else if(cmd==='machine_log')result={messages:histories.get(args.id)??[],broken:0};
-   else if(cmd==='console_catalog')result=[{word:'status',aliases:[],usage:'status',reach:'local',mode:'read',parameters:[]}];
-   else if(cmd==='console_complete')result={start:0,end:args.caret,choices:args.line==='/sta'?[{value:'/status',label:'/status',detail:'status',kind:'command'}]:[]};
-   else if(cmd==='console_run'){histories.get(args.session).push(record('command-a',args.line));result='command-a';}
    else if(cmd==='khor_agent') {
     const {action,payload}=args;result={config,accounts,run:null,data:{conversation:{home},commands}};
     if(action==='create') {
