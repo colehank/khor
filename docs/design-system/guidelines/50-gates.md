@@ -846,7 +846,7 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run notification-inbox`：宿主事件的恢复、去重、待处理/已读分离、静音、显式订阅、准确目标与记录上限。
 - `npm run notification-ui`：真实通知组件宽窄布局、处理/已读分离、准确目标、刷新恢复、跨窗口更新；node IO由专用Lab记录替代。
 
-- `npm run khor-conversations-ui`：真实新建页与MachineChat，覆盖空/手工标题、创建丢响应原token重试、多会话历史及Stop归属、智能体自有命令补全/执行经对应Pi，不调用Khor CLI，命令全量替换/清空与输入提示，Chromium与WebKit在CI运行。
+- `npm run khor-conversations-ui`：真实新建页与MachineChat，覆盖空/手工标题、创建丢响应原token重试、多会话历史及Stop归属、智能体自有命令补全/执行经对应Pi，不调用Khor CLI，命令全量替换/清空与输入提示，Chromium与WebKit在CI运行。 第六轮另验两会话分别输入未发送文本，真实 page.reload 后逐一恢复；内存Map旧实现已有效重现为空。
 
 - `npm run list-scroll-ui`：正式 ListPane、SideList、scroll-edge 与下拉刷新。合成触摸验证原生纵向滚动开始后不夺回、反向时滚动层及几何稳定、系统取消不刷新，真实横向置顶/删除入口与下拉释放保留。Chromium/WebKit 边界证据不冒充 iPhone 连续拖动与滚动条实机验收。远端开发设 `KHOR_TEST_CHROME=1` 复用已有 Chrome；标准 CI 仍用锁定 Chromium。
 

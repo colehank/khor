@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {fileURLToPath} from 'node:url';
+import {SessionDraftStore} from '../src/lib/session-drafts.ts';
 const source = fileURLToPath(new URL('../src/lib/chat-drafts.ts', import.meta.url));
 const compiled = await build({entryPoints: [source], bundle: true, write: false, platform: 'node', format: 'esm'});
 const store = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
@@ -98,6 +99,22 @@ await test('a fresh attachment marks only older readers uncertain', () => {
   retain(['alpha']); const previous = remember(draft('alpha', 'previous')), current = remember(draft('alpha', 'current'));
   unknownAll('alpha', current.owner, {reader: current.reader, except: true});
   assert.deepEqual(saved('alpha').map(entry => entry.draft.token), [previous.token]);
+});
+await test('unsent draft checkpoint refuses quota loss without evicting another session', () => {
+  const values=new Map();let full=false;
+  const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>{if(full)throw new Error('quota');values.set(key,value);}};
+  const drafts=new SessionDraftStore(storage);
+  drafts.set('khor:alpha','中文 draft A');full=true;drafts.set('gui:beta','draft B');
+  assert.equal(drafts.checkpoint(),false,'an updater must not restart over an uncommitted draft');
+  assert.equal(drafts.get('gui:beta'),'draft B','typing remains available after storage failure');
+  full=false;assert.equal(drafts.checkpoint(),true);
+  const reopened=new SessionDraftStore(storage);assert.equal(reopened.get('khor:alpha'),'中文 draft A');assert.equal(reopened.get('gui:beta'),'draft B');
+  drafts.set('khor:alpha','large'.repeat(150000));assert.equal(drafts.checkpoint(),false);
+  assert.equal(drafts.get('gui:beta'),'draft B','capacity limits never evict an unrelated live draft');
+  reopened.retain(['beta']);assert.equal(new SessionDraftStore(storage).get('khor:alpha'),'','closed tabs do not resurrect drafts');
+  const damaged=new Map([['khor.session-drafts.v1','{broken']]);
+  const corrupt=new SessionDraftStore({getItem:key=>damaged.get(key)??null,setItem:(key,value)=>damaged.set(key,value)});
+  corrupt.set('gui:new','new input');assert.equal(corrupt.checkpoint(),false);assert.equal(damaged.get('khor.session-drafts.v1'),'{broken');
 });
 retain([]);
 console.log(`chat drafts: ${passed}/${passed} passed`);

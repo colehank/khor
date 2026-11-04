@@ -146,6 +146,15 @@ try {
   await page.evaluate(()=>window.showNewWith('other-fixture','/explicit-workspace'));
   await page.locator('[data-new-session-launch][data-selected="term:codex"]').waitFor();
   assert.equal(await page.locator('[data-new-session-dir]').inputValue(),'/explicit-workspace');
+  await page.evaluate(id=>window.showChat(id),A);await page.locator('[data-chat-composer]').waitFor();
+  await page.locator('[data-chat-composer]').fill('会话 A 的未发送草稿 / draft A');
+  await page.evaluate(id=>window.showChat(id),B);await page.locator('[data-chat-composer]').waitFor();
+  await page.locator('[data-chat-composer]').fill('会话 B 的未发送草稿 / draft B');
+  await page.reload();await page.waitForFunction(()=>typeof window.showChat==='function');
+  await page.evaluate(id=>window.showChat(id),A);await page.locator('[data-chat-composer]').waitFor();
+  assert.equal(await page.locator('[data-chat-composer]').inputValue(),'会话 A 的未发送草稿 / draft A','an app restart must restore its independent unsent session draft');
+  await page.evaluate(id=>window.showChat(id),B);await page.locator('[data-chat-composer]').waitFor();
+  assert.equal(await page.locator('[data-chat-composer]').inputValue(),'会话 B 的未发送草稿 / draft B');
   assert.deepEqual(errors,[]);results.push({engine:name,passed:true});await browser.close();browser=null;
  }
  console.log('Khor conversations UI: creation lifecycle, independent tasks, account/model ownership, machine preferences and agent-owned command routing passed');

@@ -1159,3 +1159,10 @@ Lab 的鼠标／触摸补充检查覆盖深浅主题、320／390 窄屏、两行
 Standalone workspace temporary file/commit tabs use italic titles, without an extra hollow preview ring; double-click keeps them with normal titles. Session tabs own a browsing process: file/commit/page selections navigate in the current tab with normal titles; only explicit New adds a sibling. A matching target in another tab never steals focus. Desktop, mobile deck and overview follow the same tab identity. This is distinct from the nonclosable pin. The subtitle, dirty and unread marks remain independent. Verified by `WORKSPACE_PREVIEW_REQUIRE=1 WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` (baseline normal title reproduced before the style fix).
 
 Session content toolbar order: source selector (workspace/browser), optional workspace Back, content pill, actions. Browsing pages do not show the workspace Back.
+
+
+### Session drafts across restart (round 6)
+
+GUI conversation drafts belong to their session. Reloading the app restores each open session’s unsent text independently; explicitly closing its tab releases that draft. A failed or oversized local write keeps the text in memory and reports an unsuccessful checkpoint, without evicting another session’s text. Corrupt saved data is not overwritten by an empty restore.
+
+The real `khor-conversations-ui` reload regression failed with an empty composer before the persistence change. `chat-drafts` covers quota failure/retry, capacity and closed-tab ownership. Restart admission must consume the checkpoint result; attachment and unconfirmed-send ownership remain separate from composer text.
