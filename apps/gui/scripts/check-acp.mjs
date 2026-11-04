@@ -416,7 +416,6 @@ try {
       id: "e".repeat(64), name: "gate", me: true, face: null, pinned: false,
       vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true,
     }]));
-    await page.route("**/hooks_state", json({ installed: false }));
     await page.route("**/quota", json({ quota: null, trouble: null }));
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));
@@ -834,7 +833,6 @@ try {
       face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null,
       seat: {left: 50, top: 50}, hosts: true}]));
     const savedAnswer = seen.said === "unasked" ? seen : {...seen, home: fixtureHome};
-    await page.route("**/hooks_state", json({ installed: false }));
     await page.route("**/quota", json({ quota: null, trouble: null }));
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));

@@ -50,7 +50,9 @@ fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
     let mut stderr = String::new();
     std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut stderr).unwrap();
     std::fs::remove_dir_all(&home).unwrap();
-    let status = status.unwrap_or_else(|| panic!("retired hook did not exit; opened_node={opened_node}; {stderr}"));
+    let status = status.unwrap_or_else(|| {
+        panic!("retired hook did not exit; opened_node={opened_node}; {stderr}")
+    });
     assert!(status.success(), "retired hook exited with {status}: {stderr}");
     assert!(
         !opened_node,

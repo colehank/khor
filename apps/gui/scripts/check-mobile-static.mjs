@@ -116,7 +116,7 @@ export function checkMobileSources(gui) {
     "pending_list", "root_words", "set_paused", "set_machine_paused", "config", "set_config",
     "about", "web_key", "rotate_web_key", "reset_identity", "page_icons",
     // This machine's own settings files.
-    "hooks_state", "install_hooks", "uninstall_hooks", "lock_state", "set_lock", "set_lock_pin",
+    "lock_state", "set_lock", "set_lock_pin",
     "set_lock_timeout", "unlock", "doctor_fix",
     // Attachment reads and leave only touch memory or interrupt a socket;
     // ordered writes are admitted by native_io and complete asynchronously.

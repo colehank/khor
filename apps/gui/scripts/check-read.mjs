@@ -666,7 +666,6 @@ try {
         },
       ]),
     );
-    await page.route("**/hooks_state", json({ installed: false }));
     await page.route("**/quota", json({ quota: null, trouble: null }));
     await page.route("**/dir_pins", json([]));
     await page.route("**/web_pins", json([]));

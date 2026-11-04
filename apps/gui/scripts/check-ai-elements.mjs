@@ -193,7 +193,6 @@ try {
     await page.route("**/devices", reply([{ id: "e".repeat(64), name: "gate", me: true, face: null, pinned: false, vitals: null, hop: null, sponsor: null, watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true }]));
     for (const path of ["dir_pins", "web_pins", "recents"]) await page.route(`**/${path}`, reply([]));
     for (const path of ["chat_say", "chat_stop"]) await page.route(`**/${path}`, reply(null));
-    await page.route("**/hooks_state", reply({ installed: false }));
     await page.route("**/quota", reply({ quota: null, trouble: null }));
     let reviewPending = false;
     await page.route("**/tabs_list", reply({ tabs: [], active: "" }));
