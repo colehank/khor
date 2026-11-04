@@ -240,7 +240,7 @@ jobs:
       - name: Run every interaction group and retain all failures
         run: |
           failed=0
-          for gate in lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui native-events native-helpers chat-recovery khor-conversations-ui workspace-content-ui terminal-links-ui notification-ui; do
+          for gate in lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui workspace-content-ui terminal-links-ui notification-ui; do
             echo "::group::$gate"
             if timeout --kill-after=10s 8m npm run "$gate"; then
               echo "$gate passed"
@@ -281,6 +281,7 @@ jobs:
           name: gui-interaction-evidence
           path: |
             ${{ runner.temp }}/khor-conversations-ui-evidence
+            ${{ runner.temp }}/khor-list-scroll-evidence
             ${{ runner.temp }}/quality-scroll
             ${{ runner.temp }}/quality-elements
             ${{ runner.temp }}/quality-overwrite

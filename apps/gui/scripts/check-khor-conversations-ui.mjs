@@ -27,7 +27,7 @@ try {
  server=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:join(fixture,'.vite'),optimizeDeps:{entries:[join(fixture,'index.html')]},server:{host:'127.0.0.1',port:23837,strictPort:true,hmr:false},logLevel:'error'});await server.listen();
  const port=server.httpServer.address().port;
  for(const [name,engine] of [['chromium',chromium],...(process.env.QUALITY_ENGINES?.includes('webkit')?[['webkit',webkit]]:[])]) {
-  browser=await engine.launch({headless:true});
+  browser=await engine.launch({headless:true,...(name==='chromium'&&process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{})});
   const page=await browser.newPage({viewport:{width:1000,height:760}});page.setDefaultTimeout(12000);
   const errors=[],calls=[],histories=new Map([[A,[]],[B,[]]]),creates=new Map();let failedCreate=false,failNextCreate=false,holdNextCreate=false,releaseCreate;
   page.on('pageerror',error=>{errors.push(error.message);console.error(error.message);});

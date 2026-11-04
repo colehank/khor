@@ -486,7 +486,13 @@ impl Node {
     /// Only called on the selected home, through the authenticated node route.
     pub(crate) async fn khor_agent_here(&self, action: Action) -> Result<Report, String> {
         let _call = runtime::enter(self.root(), &self.agent_generation)?;
-        if let Action::CreateConversation { token, title, cwd, selection } = &action {
+        if let Action::CreateConversation {
+            token,
+            title,
+            cwd,
+            selection,
+        } = &action
+        {
             return self.create_khor_conversation(token, title, cwd, selection.as_ref());
         }
         let board = action.board().to_owned();
@@ -750,7 +756,12 @@ impl Node {
         Ok(report)
     }
 
-    fn agent_model_config(&self, account: &str, model: &str, current: Option<&AgentConfig>) -> Result<AgentConfig, String> {
+    fn agent_model_config(
+        &self,
+        account: &str,
+        model: &str,
+        current: Option<&AgentConfig>,
+    ) -> Result<AgentConfig, String> {
         let account = self.agent_account(account)?;
         if model.trim().is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
             return Err(msg::agent_model_required().to_owned());
