@@ -3220,7 +3220,9 @@ fn what_is_on_the_list_is_the_users_choice() {
     );
     let candidates = n.import_candidates().unwrap();
     assert!(
-        candidates.iter().any(|c| c.id == found && c.form == "observe"),
+        candidates
+            .iter()
+            .any(|c| c.id == found && c.form == khor_core::kind::OBSERVE),
         "{candidates:?}"
     );
     // An agent's row names the agent, not a command (IMPORT-BRIEF): the
@@ -3240,10 +3242,20 @@ fn what_is_on_the_list_is_the_users_choice() {
     let imported = n.import(&found).unwrap();
     assert_ne!(imported.0, found);
     assert!(ids(&n).contains(&imported.0));
-    let observation = n.sessions().unwrap().into_iter().find(|v| v.session.id == imported).unwrap().session;
+    let observation = n
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|v| v.session.id == imported)
+        .unwrap()
+        .session;
     assert!(!observation.can_control && !observation.term);
     assert_eq!(observation.kind.0, khor_core::kind::OBSERVE);
-    assert_eq!(n.import(&found).unwrap(), imported, "importing again reuses the read-only row");
+    assert_eq!(
+        n.import(&found).unwrap(),
+        imported,
+        "importing again reuses the read-only row"
+    );
 
     n.close(&imported).unwrap();
     assert!(!ids(&n).contains(&imported.0));

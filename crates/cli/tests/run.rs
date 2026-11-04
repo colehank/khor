@@ -53,7 +53,10 @@ fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
     let status = status.unwrap_or_else(|| {
         panic!("retired hook did not exit; opened_node={opened_node}; {stderr}")
     });
-    assert!(status.success(), "retired hook exited with {status}: {stderr}");
+    assert!(
+        status.success(),
+        "retired hook exited with {status}: {stderr}"
+    );
     assert!(
         !opened_node,
         "retired hook opened the production state path"
