@@ -808,20 +808,8 @@ async fn agent_recognition(
 /// settings file they read and write is rooted at this node's vendor
 /// home, so there is no argument naming a machine and no way to point
 /// one of these at somebody else's.
-#[tauri::command]
-fn hooks_state() -> Result<khor_gui_core::HooksState, String> {
-    khor_gui_core::hooks_state(&Node::root_from_env())
-}
 
-#[tauri::command]
-fn install_hooks() -> Result<khor_gui_core::HooksState, String> {
-    khor_gui_core::install_hooks(&Node::root_from_env())
-}
 
-#[tauri::command]
-fn uninstall_hooks() -> Result<khor_gui_core::HooksState, String> {
-    khor_gui_core::uninstall_hooks(&Node::root_from_env())
-}
 
 /// The six chat commands are one attachment registry in gui-core: the
 /// window polls for frames because that is the shape both skins can
@@ -5642,9 +5630,6 @@ pub fn run() {
             face_choices,
             restyle,
             agent_recognition,
-            hooks_state,
-            install_hooks,
-            uninstall_hooks,
             attachment_begin,
             chat_open,
             chat_poll,

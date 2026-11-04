@@ -4,8 +4,7 @@
 //! # Three rules this module is built out of
 //!
 //! **Nothing here is a second probe.** Every row asks the question some
-//! existing code already asks — `hops()` for the roads, `hooks_report()`
-//! for the hooks, `code::probe()` for the editor, `files::launcher()`
+//! existing code already asks — `hops()` for the roads, `code::probe()` for the editor, `files::launcher()`
 //! for the opener, `vitals::sample()` for the disk, `find_program()` for
 //! an agent's command. A doctor that re-derived any of those would be a
 //! second opinion about the machine, and the day the two disagree the
@@ -113,7 +112,7 @@ pub struct Check {
 /// It exists at all so a face and the fix door cannot disagree about
 /// what the keys are.
 pub const KEYS: &[&str] = &[
-    "version", "identity", "store", "serve", "web", "relays", "peers", "roster", "roads", "hooks",
+    "version", "identity", "store", "serve", "web", "relays", "peers", "roster", "roads",
     "agents", "vscode", "disk", "launcher", "terminal",
 ];
 
@@ -156,7 +155,7 @@ pub fn group(key: &str) -> &'static str {
         "serve" | "web" | "relays" | "peers" | "roster" | "roads" => "network",
         // 工具: the things khor installs *beside* itself — none of them
         // is khor failing, and all of them are khor's to mend.
-        "hooks" | "agents" | "vscode" | "launcher" => "tools",
+        "agents" | "vscode" | "launcher" => "tools",
         _ => "",
     }
 }
@@ -193,7 +192,6 @@ pub fn name(key: &str) -> &str {
         "peers" => cli::doctor_name_peers(),
         "roster" => cli::doctor_name_roster(),
         "roads" => cli::doctor_name_roads(),
-        "hooks" => cli::doctor_name_hooks(),
         "agents" => cli::doctor_name_agents(),
         "vscode" => cli::doctor_name_vscode(),
         "disk" => cli::doctor_name_disk(),
@@ -219,7 +217,7 @@ pub fn applies(key: &str, hosts: bool) -> bool {
     hosts
         || !matches!(
             key,
-            "version" | "web" | "hooks" | "agents" | "vscode" | "launcher"
+            "version" | "web" | "agents" | "vscode" | "launcher"
         )
 }
 
@@ -251,7 +249,6 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         peers,
         roster,
         roads,
-        hooks,
         agents,
         vscode,
         disk,
@@ -271,7 +268,6 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed_if(run("peers"), "peers", check_peers(node)),
         timed_if(run("roster"), "roster", check_roster(node)),
         timed_if(run("roads"), "roads", check_roads(node)),
-        timed_if(run("hooks"), "hooks", check_hooks(node)),
         timed_if(run("agents"), "agents", check_agents(node)),
         timed_if(run("vscode"), "vscode", check_vscode()),
         timed_if(run("disk"), "disk", check_disk(root.clone())),
@@ -279,7 +275,7 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed_if(run("terminal"), "terminal", check_terminal(root.clone())),
     );
     [
-        version, identity, store, serve, web, relays, peers, roster, roads, hooks, agents, vscode,
+        version, identity, store, serve, web, relays, peers, roster, roads, agents, vscode,
         disk, launcher, terminal,
     ]
     .into_iter()
@@ -859,32 +855,6 @@ pub(crate) async fn check_roster(node: &Node) -> (Health, String, Option<String>
     }
 }
 
-/// Whether claude on this machine tells khor what it is doing.
-async fn check_hooks(node: &Node) -> (Health, String, Option<String>) {
-    use crate::adaptor::claude::Installed;
-    let Ok(report) = node.hooks_report() else {
-        return (
-            Health::Unmeasured,
-            cli::doctor_hooks_unread().to_owned(),
-            None,
-        );
-    };
-    let missing = report
-        .events
-        .iter()
-        .filter(|(_, s)| *s != Installed::Here)
-        .count();
-    if missing == 0 {
-        (Health::Ok, cli::doctor_hooks_ok().to_owned(), None)
-    } else {
-        (
-            Health::Warn,
-            cli::doctor_hooks_part(missing),
-            Some("hooks".to_owned()),
-        )
-    }
-}
-
 /// Every registered agent's command, against the PATH khor would start
 /// it with.
 async fn check_agents(node: &Node) -> (Health, String, Option<String>) {
@@ -1006,7 +976,7 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
     // On a phone the two remedies that start something — a `khor serve`,
     // claude's hooks — have nothing to start (docs/IOS.md); the page
     // offers neither there, and asking anyway is refused by name.
-    if !node.hosts() && matches!(key, "serve" | "hooks") {
+    if !node.hosts() && matches!(key, "serve") {
         return Err(cli::doctor_no_fix(key));
     }
     match key {
@@ -1024,10 +994,6 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
                 let _ = p;
                 Err(cli::doctor_no_fix(key))
             }
-        }
-        "hooks" => {
-            node.install_hooks()?;
-            Ok(cli::doctor_fixed_hooks().to_owned())
         }
         "serve" => {
             let exe = khor_cli_binary().ok_or_else(|| cli::doctor_version_no_cli().to_owned())?;

@@ -307,11 +307,10 @@ fn a_registration_needs_both_a_name_and_a_command() {
 /// The gap above closes the moment the vendor speaks for itself: a
 /// claude hook naming a session is claude saying "this one is mine".
 #[test]
-fn a_vendors_hook_places_the_row_that_khor_could_not() {
+fn a_native_status_file_identifies_the_vendor() {
     let r = root("category-hook");
     let n = Node::open(r.to_path_buf()).unwrap();
-    let payload = r#"{"session_id":"feed01","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#;
-    n.claude_hook(payload).unwrap();
+    plant_live_claude(&r, "feed01", "idle", std::process::id());
 
     let row = n
         .every_session()
@@ -3157,8 +3156,10 @@ fn what_is_on_the_list_is_the_users_choice() {
     };
     // An agent somebody started in their own terminal, reported by its
     // hook: found, and **not** on the list.
-    n.claude_hook(r#"{"session_id":"feed02","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#)
-        .unwrap();
+    plant_live_claude(&r, "feed02", "idle", std::process::id());
+    let project = crate::adaptor::vendor_home(&r).join(".claude/projects/fixture");
+    fs::create_dir_all(&project).unwrap();
+    fs::write(project.join("feed02.jsonl"), "{\"type\":\"user\",\"sessionId\":\"feed02\",\"cwd\":\"/tmp/proj\",\"message\":{\"role\":\"user\",\"content\":\"hello\"}}\n").unwrap();
     let found = crate::adaptor::id_for("feed02").0;
     assert!(
         !ids(&n).contains(&found),
@@ -3227,10 +3228,7 @@ fn an_upgraded_store_keeps_what_khor_started_and_drops_what_it_found() {
             .unwrap(),
         )
         .unwrap();
-        n.claude_hook(
-            r#"{"session_id":"f0und","cwd":"/tmp/proj","hook_event_name":"SessionStart"}"#,
-        )
-        .unwrap();
+        plant_live_claude(&r, "f0und", "idle", std::process::id());
     }
     let n = Node::open(r.to_path_buf()).unwrap();
     let ids: Vec<String> = n
@@ -3317,11 +3315,6 @@ fn a_machine_that_cannot_host_says_so_and_refuses_before_any_row_exists() {
         n.sessions().unwrap().len(),
         before,
         "nothing was registered on the way to a refusal"
-    );
-    assert_eq!(
-        n.install_hooks().map(|_| ()),
-        Err(msg::hooks_need_a_computer().to_owned()),
-        "no hooks are 「installed」 where there is no claude"
     );
     assert_eq!(
         n.refresh_agent_sessions("anything").map(|_| ()),

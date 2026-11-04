@@ -432,7 +432,7 @@ fn grammar(word: &str) -> &'static str {
             "accounts [ls|add <name> --provider <provider> [--kind sub|bill] [--base-url <url>] [--budget <number>] [--key <key>|--key-stdin]|rm <account>]"
         }
         "quota" => "quota [--why]",
-        "state" => "state <state> [--session <session>] | state --hook",
+        "state" => "state <state> [--session <session>]",
         "seen" => "seen <session>",
         "rename" => "rename [-m] <session|machine> [<name>...]",
         "pin" => "pin [-m] <session|machine>",
@@ -446,7 +446,6 @@ fn grammar(word: &str) -> &'static str {
         "gui" => "gui",
         "faces" => "faces",
         "quit" => "quit",
-        "hooks" => "hooks [install|uninstall]",
         "doctor" => "doctor [--json] [--fix <check>]",
         "journal" => {
             "journal [<machine>] [--minutes <number>] [--report] [--json] [--on <machine>]"

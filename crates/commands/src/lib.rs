@@ -72,6 +72,10 @@ mod relay;
 /// Process entry hook for terminal sessions created by the slash interface.
 /// Each native binary supports its own commands; no companion CLI is required.
 pub fn console_main_if_requested(start_web: fn(&std::path::Path)) -> Option<i32> {
+    // Retired hooks may remain loaded in an already running agent.
+    if std::env::args().skip(1).eq(["state", "--hook"]) {
+        return Some(0);
+    }
     khor_node::runtime_image::process_entry();
     if let Some(code) = khor_node::mcp_worker::main_if_requested() {
         return Some(code);
@@ -592,12 +596,6 @@ const VERBS: &[Verb] = &[
     Verb {
         word: "quit",
         run: quit,
-        reach: Reach::Act,
-    },
-    // Status observes; `install`/`uninstall` write the rc files.
-    Verb {
-        word: "hooks",
-        run: hooks,
         reach: Reach::Act,
     },
     // Reads twelve things and writes nothing — **until `--fix`**, which
@@ -4739,12 +4737,6 @@ fn codexagent(_rest: &[String]) -> Result<(), String> {
 fn state(rest: &[String]) -> Result<(), String> {
     let n = node()?;
     match rest {
-        [flag] if flag == "--hook" => {
-            let mut payload = String::new();
-            input_all(&mut payload).map_err(msg::hook_payload_unreadable)?;
-            n.claude_hook(&payload)?;
-            Ok(())
-        }
         [word] => {
             let sid =
                 std::env::var("KHOR_SESSION").map_err(|_| msg::which_session().to_string())?;
@@ -5721,72 +5713,6 @@ fn journal(rest: &[String]) -> Result<(), String> {
         println!("{} {mark} {}\t{}", l.when, l.machine, l.text);
     }
     Ok(())
-}
-
-fn hooks(rest: &[String]) -> Result<(), String> {
-    let n = node()?;
-    match rest {
-        [] => {
-            let report = n.hooks_report()?;
-            println!("{}", cli::hooks_file(report.path.display()));
-            let mut incomplete = false;
-            for (event, state) in &report.events {
-                let said = match state {
-                    khor_node::adaptor::claude::Installed::Here => cli::hook_here().to_owned(),
-                    khor_node::adaptor::claude::Installed::Missing => {
-                        incomplete = true;
-                        cli::hook_missing().to_owned()
-                    }
-                    khor_node::adaptor::claude::Installed::Elsewhere(cmd) => {
-                        incomplete = true;
-                        cli::hook_elsewhere(cmd)
-                    }
-                };
-                println!("{event}\t{said}");
-            }
-            if incomplete {
-                println!("{}", cli::hooks_worth_installing());
-            }
-            Ok(())
-        }
-        [word] if word == "install" => {
-            let done = n.install_hooks()?;
-            println!("{}", cli::hooks_file(done.path.display()));
-            let list = |v: &[&str]| v.join(cli::name_separator());
-            if !done.added.is_empty() {
-                println!("{}", cli::hooks_added(list(&done.added)));
-            }
-            if !done.repointed.is_empty() {
-                println!("{}", cli::hooks_repointed(list(&done.repointed)));
-            }
-            if !done.unchanged.is_empty() {
-                println!("{}", cli::hooks_already(list(&done.unchanged)));
-            }
-            if !done.added.is_empty() || !done.repointed.is_empty() {
-                println!("{}", cli::hooks_restart_claude());
-            }
-            Ok(())
-        }
-        [word] if word == "uninstall" => {
-            let done = n.uninstall_hooks()?;
-            println!("{}", cli::hooks_file(done.path.display()));
-            // Both outcomes are said out loud. "Removed nothing" is not
-            // silence: nobody can check somebody else's settings file by
-            // hand, and a second run that printed the same thing as the
-            // first would be the only way to see that twice equals once.
-            if done.removed.is_empty() {
-                println!("{}", cli::hooks_none_to_remove());
-            } else {
-                println!(
-                    "{}",
-                    cli::hooks_removed(done.removed.join(cli::name_separator()))
-                );
-                println!("{}", cli::hooks_restart_claude());
-            }
-            Ok(())
-        }
-        _ => Err(usage_text().into()),
-    }
 }
 
 fn invite(_rest: &[String]) -> Result<(), String> {

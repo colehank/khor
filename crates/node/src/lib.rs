@@ -1131,6 +1131,9 @@ impl Node {
         // skipped, so every reader of `live` keeps working and simply
         // finds nothing here.
         let discovery = if hosts {
+            if let Err(error) = recognition::retire_status_hooks(&root, &adaptor::vendor_home(&root)) {
+                eprintln!("retiring legacy Khor status hooks: {error}");
+            }
             adaptor::Discovery::for_root(&root)
         } else {
             adaptor::Discovery::empty().with_procs(adaptor::Procs::default())
@@ -5433,11 +5436,6 @@ impl Node {
         self.live.report(id, word, live::Source::Reported)
     }
 
-    /// One Claude Code hook payload in, the mapped session move out.
-    pub fn claude_hook(&self, payload: &str) -> Result<adaptor::claude::Hooked, String> {
-        adaptor::claude::hook(&self.live, payload)
-    }
-
     /// What the agents on this machine have spent, by day and by vendor.
     ///
     /// **Blocking, and it can take seconds on the first ask** — one pass
@@ -5589,16 +5587,6 @@ impl Node {
     /// but this number tells those apart.
     pub fn unreadable_sessions(&self) -> usize {
         self.live.unreadable_sessions()
-    }
-
-    /// What claude's settings say about khor's hooks. Reads only.
-    ///
-    /// Rooted the same way discovery is (`adaptor::vendor_home`), which
-    /// is what makes this safe to run: a node opened on a temp home
-    /// looks at that home's `.claude`, never the user's. The whole
-    /// verification for this feature is made of that.
-    pub fn hooks_report(&self) -> Result<adaptor::claude::HookReport, String> {
-        adaptor::claude::hooks_report(&adaptor::vendor_home(&self.root))
     }
 
     /// The recorded conversation behind a discovered claude session —
@@ -5857,28 +5845,6 @@ impl Node {
             rewound: true,
             following: false,
         })
-    }
-
-    /// Adds khor's hooks to claude's settings, leaving the rest of that
-    /// file alone. See `adaptor::claude::install_hooks`.
-    pub fn install_hooks(&self) -> Result<adaptor::claude::HookInstall, String> {
-        // A phone has no claude to tell khor anything (docs/IOS.md): the
-        // card does not offer this there, and answering 「装好了」 for a
-        // settings file in a sandbox nobody reads was the lie.
-        if !self.hosts {
-            return Err(msg::hooks_need_a_computer().to_owned());
-        }
-        adaptor::claude::install_hooks(&adaptor::vendor_home(&self.root))
-    }
-
-    /// Takes them back out again, leaving the rest of that file alone.
-    /// See `adaptor::claude::uninstall_hooks`.
-    ///
-    /// Rooted through the same `vendor_home` as the other two, which is
-    /// what keeps this verifiable: a node opened on a temp home can only
-    /// ever edit that home's `.claude`.
-    pub fn uninstall_hooks(&self) -> Result<adaptor::claude::HookUninstall, String> {
-        adaptor::claude::uninstall_hooks(&adaptor::vendor_home(&self.root))
     }
 
     /// Re-derives one session's row and pushes it to watchers. The

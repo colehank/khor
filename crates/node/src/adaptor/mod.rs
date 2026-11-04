@@ -1,31 +1,8 @@
 //! Vendor adaptors: turning an agent's own files into khor sessions.
 //!
-//! # Why the seam is cut here, and why it looks like this
-//!
-//! The ledger's trigger was "cut it when the second vendor arrives, from
-//! two real implementations" (the [`crate::KindSurface`] precedent: that
-//! trait was cut at the third kind, not guessed at the first). Codex is
-//! the second vendor, so the cut is due. What the three real
-//! implementations — claude-on-disk, codex-on-disk, and the claude hook
-//! that predates both — actually share is narrower than it first looks:
-//!
-//! 1. They turn **vendor-specific evidence into a khor session id and one
-//!    of the six words**, and they must agree on the id or the same
-//!    session shows up twice ([`id_for`] is that agreement, and it is why
-//!    the hook moved into [`claude`] instead of staying in `live.rs`).
-//! 2. They must **refuse to guess**. That is why a mapping returns
-//!    `Option<State>` and an unmapped sighting becomes no row at all
-//!    plus a count ([`Sweep::unmapped`]) — a word we cannot derive must
-//!    not land on its neighbour (docs/SESSION.md; a "waiting" claude
-//!    painted 空闲 says "nothing is happening" while it sits on a prompt).
-//!
-//! What they do **not** share, and what the trait therefore refuses to
-//! model: how they are triggered (the hook is pushed, disk is pulled),
-//! whether a pid is knowable, and which words are reachable at all.
-//! Claude's status file cannot say 完成 and codex's rollout cannot say
-//! 待批; a trait with a method per word would have frozen both gaps into
-//! ceremony. So [`Adaptor`] carries exactly one method, the pull, and the
-//! push side stays a plain function in the vendor's own module.
+//! Each adaptor maps native evidence to a stable session identity and a state.
+//! Unknown vendor states remain unmapped; protocol events and process liveness
+//! are handled by their owners rather than guessed from terminal output.
 //!
 //! # The list is not a graveyard
 //!
@@ -863,11 +840,7 @@ impl Discovery {
 /// Where this node's vendors live: khor's own root, unless
 /// `KHOR_VENDOR_HOME` says otherwise.
 ///
-/// One function because reading and **writing** must agree. Discovery
-/// reads `<here>/.claude/sessions`; `claude::install_hooks` writes
-/// `<here>/.claude/settings.json`. If those two ever answered
-/// differently, `khor hooks install` would configure one claude while
-/// the list watched another — and both would look fine.
+/// Shared by discovery, quota readers and legacy integration cleanup.
 pub fn vendor_home(root: &Path) -> PathBuf {
     std::env::var_os("KHOR_VENDOR_HOME")
         .filter(|p| !p.is_empty())

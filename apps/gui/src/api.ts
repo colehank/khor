@@ -66,7 +66,6 @@ import type { RelayChoices } from "./gen/bindings/RelayChoices";
 import type { RelayWant } from "./gen/bindings/RelayWant";
 import type { RoadShare } from "./gen/bindings/RoadShare";
 import type { RecognitionEntry } from "./gen/bindings/RecognitionEntry";
-import type { HooksState } from "./gen/bindings/HooksState";
 import type { Ticket } from "./gen/bindings/Ticket";
 import type { LeaveOutcome } from "./gen/bindings/LeaveOutcome";
 import type { Waiting } from "./gen/bindings/Waiting";
@@ -164,7 +163,6 @@ export type {
   RelayWant,
   RoadShare,
   Connections,
-  HooksState,
   RecognitionEntry,
   Ticket,
   LeaveOutcome,
@@ -1128,9 +1126,6 @@ export const setPreferredRelay = (url: string | null) => call<null>("set_preferr
     is rooted at this node's own vendor home, so there is nothing to
     point at somebody else. Each write answers with the state after it,
     so a button never has to guess what it just did. */
-export const fetchHooks = () => call<HooksState>("hooks_state");
-export const installHooks = () => call<HooksState>("install_hooks");
-export const uninstallHooks = () => call<HooksState>("uninstall_hooks");
 /** The ticket and how long it lasts. The window comes from the library
     that enforces it — a `15` written into the dialog would be a second
     copy of a number only `link::INVITE_WINDOW_MS` decides. */

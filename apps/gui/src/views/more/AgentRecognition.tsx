@@ -55,7 +55,7 @@ function RecognitionRows({ machine }: { machine: string }) {
   if (!entries) return <RegionState state="loading-never" />;
   return <>{entries.map((entry) => {
     const label = entry.agent === "claude" ? "Claude Code" : "Codex";
-    const canChange = entry.state !== "absent" && entry.state !== "error" && (entry.state !== "configured" || entry.managed);
+    const canChange = entry.agent === "codex" && entry.state !== "absent" && entry.state !== "error" && (entry.state !== "configured" || entry.managed);
     const note = entry.error ?? (entry.state === "configured" && !entry.managed ? gui.recognition_user_config : entry.agent === "claude" ? gui.recognition_claude_note : gui.recognition_codex_note);
     return canChange ? <ActionRow key={entry.agent} name={`recognition-${entry.agent}`}
       label={<span className="flex flex-wrap items-baseline gap-x-in"><span>{label}</span><span className="text-callout text-secondary-foreground">{word(entry)}</span></span>}

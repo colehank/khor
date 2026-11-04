@@ -2,7 +2,6 @@
 //! network: the registry must work cold. The child's ending decides the
 //! word; Claude payloads drive an observed session over stdin.
 
-use std::io::Write;
 use std::process::{Command, Stdio};
 
 fn khor(home: &std::path::Path) -> Command {
@@ -54,7 +53,7 @@ fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
 }
 
 #[test]
-fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
+fn wrapped_commands_report_exit_and_read_state_without_hooks() {
     let home = std::env::temp_dir().join(format!("khor-cli-run-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&home);
     std::fs::create_dir_all(&home).unwrap();
@@ -107,69 +106,6 @@ fn a_wrapped_command_and_a_hooked_agent_both_land_in_the_list() {
         text.lines()
             .any(|l| l.contains("quick") && l.contains(khor_catalog::state::word("idle"))),
         "looked at = 空闲:\n{text}"
-    );
-
-    // Claude hook payloads over stdin, the observed path: no wrapper,
-    // no pid, the words still move.
-    let feed = |event: &str| {
-        let mut c = khor(&home)
-            .args(["state", "--hook"])
-            .stdin(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap();
-        let payload =
-            format!(r#"{{"session_id":"cafe1234","cwd":"/tmp/proj","hook_event_name":"{event}"}}"#);
-        c.stdin
-            .take()
-            .unwrap()
-            .write_all(payload.as_bytes())
-            .unwrap();
-        let out = c.wait_with_output().unwrap();
-        assert!(
-            out.status.success(),
-            "{event}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-    };
-    feed("SessionStart");
-    feed("UserPromptSubmit");
-    // **Found is not listed** (docs/SHELL.md 第八轮): an agent somebody
-    // started in their own terminal is an import candidate until they
-    // bring it in — `khor import` lists it, `khor import <id>` does it.
-    let text = listed(&home);
-    assert!(
-        !text.contains("tui/cafe1234"),
-        "a hooked agent nobody imported is on the list:\n{text}"
-    );
-    let out = khor(&home).arg("import").output().unwrap();
-    let offered = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(
-        offered.lines().any(|l| l.ends_with("tui/cafe1234")),
-        "the hooked agent is not offered for import:\n{offered}"
-    );
-    let out = khor(&home)
-        .args(["import", "tui/cafe1234"])
-        .output()
-        .unwrap();
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    let text = listed(&home);
-    assert!(
-        text.lines().any(|l| l.contains("tui/cafe1234")
-            && l.contains(khor_catalog::state::word("busy"))
-            && l.contains("proj")),
-        "the observed agent should list busy:\n{text}"
-    );
-    feed("Stop");
-    let text = listed(&home);
-    assert!(
-        text.lines()
-            .any(|l| l.contains("tui/cafe1234") && l.contains(khor_catalog::state::word("done"))),
-        "the turn's end should list done:\n{text}"
     );
 
     // Control: a word outside the six is refused by name, and a report

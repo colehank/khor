@@ -600,9 +600,6 @@ pub fn answer(
             &arg("action")?,
             opt_str("agent")?.as_deref(),
         ))?),
-        "hooks_state" => to_json(&crate::hooks_state(root)?),
-        "install_hooks" => to_json(&crate::install_hooks(root)?),
-        "uninstall_hooks" => to_json(&crate::uninstall_hooks(root)?),
         "attachment_begin" => {
             let kind =
                 serde_json::from_value(args.get("kind").cloned().ok_or("missing arg: kind")?)

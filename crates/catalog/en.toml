@@ -362,8 +362,7 @@ usage: khor <verb>
                         the agent service needs no khor
   agents disconnect a2a:<name>
                         removes the local connection, keeps task receipts
-  state <word|--hook>   (for process hooks) reports status; --hook
-                        reads Claude events from stdin
+  state <word>          reports the current session status; --session selects one
   seen <session>        marks it read
   rename [-m] <session|machine> [name...]
                         gives it a name (shared across the whole
@@ -429,11 +428,6 @@ usage: khor <verb>
   quit                  shuts down: stops this machine's serve and
                         every session host (files all stay — serve
                         again and everything comes back)
-  hooks [install|uninstall]
-                        shows whether the hooks are installed; install
-                        adds them, uninstall removes them (both only
-                        touch khor's own entries; doing it twice is
-                        the same as doing it once)
   lock [status|on|off|pin|timeout minutes]
                         the password on the screens (the app window and
                         web access). It does NOT lock this terminal —
@@ -1951,8 +1945,8 @@ recognition-configured = "Configured"
 recognition-changed = "Configuration changed"
 recognition-absent = "Configuration not found"
 recognition-error = "Needs attention"
-recognition-claude-auto = "Automatic · basic status"
-recognition-claude-note = "Install hooks for completion and approval status"
+recognition-claude-auto = "Automatic"
+recognition-claude-note = "Reads native status and conversation records without hooks"
 recognition-codex-note = "Use the conversation ID as the Codex terminal title; applies on next launch, removable to restore the previous setting"
 recognition-user-config = "Configured outside khor"
 recognition-removed-note = "Restore only khor changes, keeping later manual edits"

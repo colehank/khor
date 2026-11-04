@@ -353,7 +353,7 @@ usage = """
                         在本机连接 A2A 智能体，对方服务无需安装 khor
   agents disconnect a2a:<名字>
                         断开本机登记，保留任务回执
-  state <词|--hook>     （给进程钩子用）汇报状态；--hook 从标准输入读 Claude 事件
+  state <词>            汇报当前 session 的状态（可用 --session 指定）
   seen <session>        标已读
   rename [-m] <session|机器> [名字...]
                         给它起个名（全网同一份，盖在它自己的名上）；
@@ -394,9 +394,6 @@ usage = """
                         界面，不是头像**——头像那一个是 avatar
   quit                  收摊：停掉本机的 serve 和所有 session 宿主
                         （文件都留着，再 serve 就都回来）
-  hooks [install|uninstall]
-                        看钩子装没装；install 装上、uninstall 卸掉（都只碰
-                        khor 自己那几条，做两遍=做一遍）
   lock [status|on|off|pin|timeout 分钟]
                         屏幕上那几个界面的打开密码（app 窗口和网页版）。
                         **不锁命令行**——`khor` 后面站着的人已经登进这台
@@ -2911,8 +2908,8 @@ recognition-configured = "已配置"
 recognition-changed = "配置已更改"
 recognition-absent = "未找到配置"
 recognition-error = "需处理"
-recognition-claude-auto = "自动识别 · 状态未增强"
-recognition-claude-note = "安装状态钩子，补全完成和待批状态"
+recognition-claude-auto = "自动识别"
+recognition-claude-note = "读取智能体自身的状态与会话记录，无需安装钩子"
 recognition-codex-note = "将 Codex 终端标题设为对话 ID；下次启动生效，撤销可恢复原设置"
 recognition-user-config = "已由其他方式配置"
 recognition-removed-note = "撤销只恢复 khor 修改的配置，保留后来的手动修改"

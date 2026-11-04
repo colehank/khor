@@ -29,7 +29,6 @@ import { baseName } from "@/lib/paths";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
@@ -67,7 +66,6 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   const [inputOpen, setInputOpen] = useState(false);
   const [commandInput, setCommandInput] = useState("");
   const isCommand = draft.trimStart().startsWith("/");
-  const jsonInput = /^\/state\b/.test(draft.trimStart()) && /(?:^|\s)--hook(?:\s|$)/.test(draft);
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [agent, setAgent] = useState<KhorAgentView | null>(null);
@@ -317,11 +315,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
         {pickerOpen && <ConsoleMenu choices={choices} pick={pick} onPick={choose} />}
         {isCommand && inputOpen && (
           <div data-console-input-panel className="mb-in flex flex-col gap-in text-callout">
-            {jsonInput ? (
-              <Textarea data-console-input aria-label={gui.console_input} placeholder={gui.console_input} value={commandInput} onChange={(e) => setCommandInput(e.target.value)} rows={3} spellCheck={false} />
-            ) : (
-              <Input data-console-input type="password" aria-label={gui.console_input} placeholder={gui.console_input} autoComplete="off" value={commandInput} onChange={(e) => setCommandInput(e.target.value)} />
-            )}
+            <Input data-console-input type="password" aria-label={gui.console_input} placeholder={gui.console_input} autoComplete="off" value={commandInput} onChange={(e) => setCommandInput(e.target.value)} />
             <span className="text-secondary-foreground">{gui.console_input_hint}</span>
           </div>
         )}

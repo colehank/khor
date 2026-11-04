@@ -1986,7 +1986,9 @@ impl LiveKind {
                 // the hook is the fresher of the two by design.
                 let other_reporter =
                     !pids.is_empty() && registered[seat].pid.is_some_and(|p| !pids.contains(&p));
-                if guessed.contains(&&id) || other_reporter {
+                let native_claude = found.category == crate::adaptor::claude::VENDOR
+                    && out[seat].kind.0 == khor_core::kind::TUI && !out[seat].dead;
+                if guessed.contains(&&id) || other_reporter || native_claude {
                     // **The registry does not always win — the stronger
                     // source does.** This row's word was read off the
                     // screen (or reported by a process that is not the
@@ -7729,12 +7731,6 @@ mod tests {
         let claude = proc_under(4001, "claude", 5001);
         let term = sid("shell/a1b2c3d4e5f6");
         let agent = sid(AGENT);
-        let payload = |event: &str| {
-            format!(
-                r#"{{"session_id":"11111111-1111-4111-8111-111111111111","cwd":"/w/one","hook_event_name":"{event}"}}"#
-            )
-        };
-
         let k = at(Procs::of([shell.clone()]));
         k.register(
             &term,
@@ -7747,13 +7743,9 @@ mod tests {
         host.serve(&k.dir_of(&term).unwrap(), 5001);
         assert_eq!(k.rows(|_| 0)[0].kind.0, khor_core::kind::SHELL);
 
-        // claude starts in it. Its hooks carry the terminal's
-        // KHOR_SESSION, and must write claude's own row.
         let k = at(Procs::of([shell.clone(), claude.clone()]));
-        crate::adaptor::claude::hook_under(&k, &payload("SessionStart"), Some(term.0.clone()))
-            .unwrap();
-        crate::adaptor::claude::hook_under(&k, &payload("Stop"), Some(term.0.clone())).unwrap();
-        assert!(k.claims(&agent), "the hook wrote claude's own row");
+        k.ensure(&agent, khor_core::kind::TUI, "claude", None, Some("claude")).unwrap();
+        k.report(&agent, State::Busy, Source::Reported).unwrap();
         assert_eq!(
             k.on_record(&term).map(|(kind, _)| kind).as_deref(),
             Some(khor_core::kind::SHELL),
@@ -7771,24 +7763,11 @@ mod tests {
         assert_eq!(row.category.as_deref(), Some("claude"));
         assert_eq!(
             (row.state.unwrap().state, row.unread),
-            (State::Done, 1),
-            "claude's 完成, unread against the terminal's own watermark"
+            (State::Blocked, 0),
+            "the native permission prompt overrides a stale legacy report"
         );
         assert!(!row.mux, "khor's own terminal, not a tmux seat");
-        let seen = |s: &str| if s == term.0 { i64::MAX } else { 0 };
-        assert_eq!(
-            k.rows(seen)[0].unread,
-            0,
-            "looking at the terminal clears the badge it shows"
-        );
-        assert!(
-            k.shown_stamp(&term, |_| false).unwrap() >= k.stamp(&agent).unwrap(),
-            "and 「seen」 on it covers claude's 完成"
-        );
-
-        // claude exits: SessionEnd is claude's ending, not the shell's.
-        crate::adaptor::claude::hook_under(&k, &payload("SessionEnd"), Some(term.0.clone()))
-            .unwrap();
+        k.record_exit(&agent, 0).unwrap();
         let k = at(Procs::of([shell.clone()]));
         let rows = k.rows(|_| 0);
         assert_eq!(

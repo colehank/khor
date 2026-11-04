@@ -285,8 +285,7 @@ fn theme_settings() -> Option<PathBuf> {
 /// cost of being loud about it would be a refusal in front of an editor
 /// somebody asked for.
 ///
-/// It is the same reach `khor hooks` takes into claude's settings
-/// (`crate::adaptor::claude::install_hooks`): parse, touch one key,
+/// Parse the configuration and touch only the owned key,
 /// write the rest back as it was. `serde_json`'s `preserve_order` is
 /// why the rest really is as it was — without it a round trip would
 /// re-alphabetise somebody's configuration and call the diff khor's.

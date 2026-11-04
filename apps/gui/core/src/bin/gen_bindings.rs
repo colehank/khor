@@ -39,7 +39,6 @@ macro_rules! roots {
         $visit!(khor_gui_core::add::AddRun);
         $visit!(khor_gui_core::add::LoginAsk);
         $visit!(khor_gui_core::RecognitionEntry);
-        $visit!(khor_gui_core::HooksState);
         $visit!(khor_gui_core::Ticket);
         $visit!(khor_gui_core::About);
         $visit!(khor_gui_core::LeaveOutcome);
