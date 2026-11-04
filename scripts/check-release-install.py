@@ -145,6 +145,34 @@ class InstallComponentsTest(unittest.TestCase):
         self.assertEqual(list(self.destination.glob(".khor.download.*")), [])
         self.assertEqual(list(self.directory.glob("khor-release.*")), [])
 
+    @unittest.skipUnless(os.name == "posix", "the CLI launcher is Unix-only")
+    def test_launcher_uses_its_installation_instead_of_the_parent_sessions_source(self):
+        asset = {
+            ("Darwin", "arm64"): "khor-macos-arm64",
+            ("Darwin", "x86_64"): "khor-macos-x86_64",
+            ("Linux", "x86_64"): "khor-linux-x86_64",
+            ("Linux", "aarch64"): "khor-linux-aarch64",
+        }.get((os.uname().sysname, os.uname().machine))
+        if asset is None:
+            self.skipTest("no published CLI for this platform")
+        store = self.destination / ".khor" / asset
+        program = store / "versions/fixture/khor"
+        program.parent.mkdir(parents=True)
+        program.write_text('#!/bin/sh\nprintf "%s\\n" "$KHOR_INSTALL_SOURCE" "$KHOR_RUNTIME_INSTALL_SOURCE"\n')
+        program.chmod(0o755)
+        current = store / "current"
+        current.symlink_to("versions/fixture/khor")
+        launcher = subprocess.run(["/bin/sh"], input=self.helpers + "\nkhor_launcher\n",
+                                  text=True, capture_output=True, check=True)
+        self.binary.write_text(launcher.stdout)
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("KHOR_")}
+        environment["KHOR_RUNTIME_INSTALL_SOURCE"] = str(self.directory / "retired-session-host")
+        environment["KHOR_INSTALL_SOURCE"] = str(self.directory / "other-installation")
+        result = subprocess.run([str(self.binary)], env=environment, text=True, capture_output=True, check=True)
+        selected = str(store.resolve() / "current")
+        self.assertEqual(result.stdout.splitlines(), [selected, selected],
+                         "a CLI invocation must replace inherited session-source hints")
+
     def with_digest(self, payload, line=None):
         digest = hashlib.sha256(payload).hexdigest()
         return {"/fixture.gz": payload, "/fixture.gz.sha256": (line if line is not None else digest + "  fixture.gz\n").encode()}

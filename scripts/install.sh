@@ -456,7 +456,8 @@ if [ ! -d "$bin/.khor" ] && [ -n "${KHOR_SHIELD_FROM:-}" ]; then
 fi
 unset KHOR_SHIELD_FROM
 KHOR_INSTALL_SOURCE="$bin/.khor/$asset/current"
-export KHOR_INSTALL_SOURCE
+KHOR_RUNTIME_INSTALL_SOURCE="$KHOR_INSTALL_SOURCE"
+export KHOR_INSTALL_SOURCE KHOR_RUNTIME_INSTALL_SOURCE
 [ -x "$KHOR_INSTALL_SOURCE" ] || { echo "khor: install $asset on this machine first" >&2; exit 1; }
 exec "$KHOR_INSTALL_SOURCE" "$@"
 KHOR_LAUNCHER
