@@ -43,11 +43,12 @@ export function KhorSessionSetup({machine, disabled, onChange}: {
   return <>
     <FormLabel>{gui.agent_account}</FormLabel>
     <div data-new-khor-account className="min-w-0 space-y-in">
-      <ChoiceField label={gui.agent_account} value={picked?.name ?? ''} selected={account} disabled={disabled || loading}
+      <ChoiceField label={gui.agent_account} value={picked ? `${picked.provider} · ${picked.name}` : ''} selected={account} disabled={disabled || loading}
         options={accounts.map(a => ({id: a.id, label: a.name, aside: a.provider}))}
         onPick={id => select(id, accounts.find(a => a.id === id)?.default_model ?? '')}
         actions={[{id: 'add', label: gui.agent_account_add, run: () => setSetup(true)}]} />
-      {!loading && !accounts.length && !error && <p className="text-caption text-secondary-foreground">{gui.agent_provider_missing}</p>}
+      {loading && <p className="text-caption text-secondary-foreground">{gui.new_session_accounts_loading}</p>}
+      {!loading && !accounts.length && !error && <p className="text-caption text-secondary-foreground">{gui.new_session_accounts_missing}</p>}
       {error && <div className="flex items-baseline gap-in"><p role="alert" className="min-w-0 flex-1 text-caption text-destructive">{error}</p><Button variant="ghost" size="sm" onClick={() => setRevision(n => n + 1)}>{gui.region_retry}</Button></div>}
     </div>
     <FormLabel>{gui.agent_model_session}</FormLabel>
