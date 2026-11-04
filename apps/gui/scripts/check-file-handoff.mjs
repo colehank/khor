@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
 const quicklook=process.argv.includes('--quicklook');
+const pdf=process.argv.includes('--pdf');
 const gui=fileURLToPath(new URL('..',import.meta.url)),port=23879;
 const entry=join(gui,`scripts/.file-handoff-${process.pid}.tsx`);
 const out=process.env.FILE_HANDOFF_OUT||mkdtempSync(join(tmpdir(),'khor-file-handoff-'));mkdirSync(out,{recursive:true});
@@ -18,19 +19,19 @@ import {FilePage} from '../src/views/FilePage.tsx';import {FilePreview} from '..
 speakLang('zh');document.documentElement.toggleAttribute('data-narrow',matchMedia(NARROW_QUERY).matches);
 const root=createRoot(document.getElementById('root'));const no=()=>{};
 window.showFile=(path='/project/large.pptx',hidden=false)=>flushSync(()=>root.render(<TooltipProvider><section className='relative flex min-h-0 flex-1 flex-col' aria-hidden={hidden||undefined} inert={hidden||undefined}><FilePage machine='remote' path={path} here={false} onBack={no} onGone={no} onMoved={no}/></section></TooltipProvider>));
-window.showAttachment=()=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='remote' path='/project/large.pptx' here={false} onClose={no}/></TooltipProvider>));window.showFile();`);
+window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='remote' path={path} here={false} onClose={no}/></TooltipProvider>));window.showFile(${pdf?"'/project/three-pages.pdf'":""});`);
  vite=spawn(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
  let ready=false;vite.stdout.on('data',d=>ready||=String(d).includes(`:${port}`));vite.stderr.on('data',d=>process.stderr.write(d));for(let i=0;i<100&&!ready;i++){assert(vite.exitCode===null);await pause(100);}assert(ready);
  browser=await chromium.launch({...(process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{}),headless:true,args:['--no-proxy-server']});
  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
- await context.addInitScript((previewEnabled)=>{
+ await context.addInitScript(({officePreview,pdfPreview})=>{
   Object.defineProperty(navigator,'platform',{get:()=> 'iPhone'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5});
-  window.calls=[];window.complete=false;window.refuse=false;window.startDelay=0;window.instant=false;
+  window.calls=[];window.complete=false;window.refuse=false;window.startDelay=0;window.instant=pdfPreview;
   const wait=ms=>new Promise(r=>setTimeout(r,ms));
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>0,unregisterCallback:()=>{},invoke:async(cmd,args={})=>{
    window.calls.push({cmd,args});const total=130*1024*1024;
    if(cmd==='file_handoff_supported')return true;
-   if(cmd==='file_preview_supported')return previewEnabled;
+   if(cmd==='file_preview_supported')return args.kind==='pdf'?pdfPreview:officePreview;
    if(cmd==='file_preview_open'){await wait(50);if(window.refusePreview)throw Error('Cannot preview this file');return true;}
    if(cmd==='file_handoff_start'){await wait(window.startDelay);return {moved:window.instant?total:0,total,ready:window.instant,cancelled:false,error:null};}
    if(cmd==='file_handoff_state')return {moved:window.complete?total:1048576,total,ready:window.complete,cancelled:false,error:window.refuse?'Download failed':null};
@@ -43,11 +44,28 @@ window.showAttachment=()=>flushSync(()=>root.render(<TooltipProvider><FilePrevie
    if(cmd==='git_diff')return {hunks:[],binary:false};
    return null;
   }};
- },quicklook);
+ },{officePreview:quicklook||pdf,pdfPreview:pdf});
  page=await context.newPage();page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/__file_handoff',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme='dark'><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body><div id='root' class='relative flex h-screen flex-col'></div><script type='module'>import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type='module' src='/scripts/.file-handoff-${process.pid}.tsx'></script></body></html>`}));
  await page.goto(`http://localhost:${port}/__file_handoff`);
- if(quicklook) {
+ if(pdf) {
+  await page.waitForFunction(()=>window.calls.some(c=>c.cmd==='file_preview_open'));
+  await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
+  assert.equal(await page.locator('[data-pdf-frame]').count(),0,'a native PDF reader must not use the embedded browser PDF frame');
+  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),0,'a native PDF reader must not load a second original through JS base64');
+  assert(await page.evaluate(()=>window.calls.some(c=>c.cmd==='file_stat'&&c.args.path==='/project/three-pages.pdf')));
+  await page.locator('[data-file-native-preview]').click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length),2,'a dismissed PDF reader must be available again');
+  await page.evaluate(()=>window.showAttachment('/project/attachment.pdf'));
+  await page.waitForFunction(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length===3);
+  await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
+  await page.locator('[data-file-open-other]').click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
+  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_handoff_open').length),1,'native PDF preview must retain original-file handoff');
+  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),0,'attachment PDFs must also avoid JS preview copies');
+  assert.deepEqual(errors,[]);
+  writeFileSync(join(out,'pdf-results.json'),JSON.stringify({checks:['native PDF original transport','no iframe or JS preview copies','dismiss and reopen','attachment PDF uses same reader','original handoff retained'],errors},null,2));
+  console.log('native PDF transport UI: clean',out);
+ } else if(quicklook) {
   await page.locator('[data-file-native-preview]').waitFor();
   const before=await page.locator('[data-file-deck]').evaluate(e=>e.getBoundingClientRect().height);
   await page.evaluate(()=>{window.complete=true;window.refusePreview=true});

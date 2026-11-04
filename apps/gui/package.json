@@ -98,6 +98,7 @@
     "menu-material": "node scripts/check-menu-material.mjs",
     "file-handoff": "node scripts/check-file-handoff.mjs",
     "quicklook": "node scripts/check-file-handoff.mjs --quicklook",
+    "file-pdf-ui": "node scripts/check-file-handoff.mjs --pdf",
     "ai-elements": "node scripts/check-ai-elements.mjs",
     "ai-elements:preview": "vite --config scripts/ai-elements-preview.vite.ts --host 127.0.0.1 --port 23776 --strictPort",
     "pi-accounts": "node scripts/check-pi-accounts.mjs",
