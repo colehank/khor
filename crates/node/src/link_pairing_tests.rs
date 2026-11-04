@@ -962,6 +962,7 @@ async fn unfinished_bootstrap_is_progress_and_never_a_false_completion() {
     let caller = case.node("caller");
     let server = Server::start(issuer.root(), "issuer").await;
     let ticket = khor_net::endpoint::Ticket::decode(&issuer.invite().unwrap()).unwrap();
+    server.stop().await;
     let remote = id(caller.device_str()).unwrap();
     let local = id(issuer.device_str()).unwrap();
     let nonce = [27; 32];
@@ -1037,5 +1038,4 @@ async fn unfinished_bootstrap_is_progress_and_never_a_false_completion() {
             .await
             .is_err()
     );
-    server.stop().await;
 }

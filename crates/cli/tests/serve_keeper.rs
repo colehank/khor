@@ -9,7 +9,7 @@
 
 use std::fs;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 use std::time::{Duration, Instant};
 
@@ -23,6 +23,11 @@ struct Scratch(std::path::PathBuf);
 
 impl Drop for Scratch {
     fn drop(&mut self) {
+        if std::thread::panicking() {
+            if let Ok(log) = fs::read_to_string(self.0.join("serve.log")) {
+                eprintln!("keeper stderr before fixture cleanup:\n{log}");
+            }
+        }
         let _ = std::fs::remove_dir_all(&self.0);
     }
 }
