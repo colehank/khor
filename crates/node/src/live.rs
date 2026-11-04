@@ -1970,33 +1970,14 @@ impl LiveKind {
                 if out[seat].place.is_none() {
                     out[seat].place = place_of(sighting.cwd.as_deref());
                 }
-                // **A report from a process that is not the one the
-                // vendor's file describes does not outrank that file.**
-                // `Reported` means "first-hand", and it is — for the
-                // process that wrote it. When the registry's pid is a
-                // different process from every live one the sighting
-                // accounts for, the report is about somebody else: a
-                // ghost that *resumed* this session while the person's
-                // own claude kept running (found live, 2026-09-01: the
-                // reopen wrote 空闲 for a session that was busy in its
-                // terminal the whole time, and 空闲 stood for as long as
-                // the ghost lived — a reporter that has since died is
-                // the same case). A pid-less report (a hook's) keeps
-                // its rank: the hook and the file are one process, and
-                // the hook is the fresher of the two by design.
+                // GUI protocol reports keep their owner. Native Claude terminal
+                // evidence supersedes persisted reports from retired status hooks.
                 let other_reporter =
                     !pids.is_empty() && registered[seat].pid.is_some_and(|p| !pids.contains(&p));
                 let native_claude = found.category == crate::adaptor::claude::VENDOR
                     && out[seat].kind.0 == khor_core::kind::TUI
                     && !out[seat].dead;
                 if guessed.contains(&&id) || other_reporter || native_claude {
-                    // **The registry does not always win — the stronger
-                    // source does.** This row's word was read off the
-                    // screen (or reported by a process that is not the
-                    // one running it), and the vendor just told us in
-                    // its own files. Letting the guess stand here would
-                    // put the bottom of the four-family order on top of
-                    // the family it is a fallback *for*.
                     let (state, unread) =
                         settle_done(sighting.word, sighting.at_ms, watermark(&id.0));
                     out[seat].state = Some(StateStamp {

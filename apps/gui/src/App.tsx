@@ -236,7 +236,6 @@ const POLL_MS = 2000;
  * ```
  * sessions      175–250 ms
  * devices       103–115 ms
- * hooks_state    19–24  ms
  * ```
  *
  * — about 330 ms of work every 2 s, and `top` agreed: **khor-gui 12–15 %

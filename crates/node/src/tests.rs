@@ -380,24 +380,51 @@ fn native_claude_state_supersedes_retired_hook_reports_and_read_completion_stays
     let session = "aaaaaaa2-0000-4000-8000-00000000000c";
     plant_live_claude(&r, session, "idle", std::process::id());
     let id = crate::adaptor::id_for(session);
-    node.live.ensure(&id, khor_core::kind::TUI, "claude", None, Some("claude")).unwrap();
-    node.live.report(&id, State::Busy, crate::live::Source::Reported).unwrap();
+    node.live
+        .ensure(&id, khor_core::kind::TUI, "claude", None, Some("claude"))
+        .unwrap();
+    node.live
+        .report(&id, State::Busy, crate::live::Source::Reported)
+        .unwrap();
     let state = |node: &Node| {
-        let row = node.every_session().unwrap().into_iter().find(|v| v.session.id == id).unwrap().session;
+        let row = node
+            .every_session()
+            .unwrap()
+            .into_iter()
+            .find(|v| v.session.id == id)
+            .unwrap()
+            .session;
         (row.state.unwrap().state, row.unread)
     };
-    assert_eq!(state(&node), (State::Idle, 0), "a retired callback cannot keep the terminal busy");
+    assert_eq!(
+        state(&node),
+        (State::Idle, 0),
+        "a retired callback cannot keep the terminal busy"
+    );
     let project = crate::adaptor::vendor_home(&r).join(".claude/projects/fixture");
     fs::create_dir_all(&project).unwrap();
     let transcript = project.join(format!("{session}.jsonl"));
-    let at = jiff::Timestamp::from_millisecond(crate::live::now_ms()).unwrap().to_string();
+    let at = jiff::Timestamp::from_millisecond(crate::live::now_ms())
+        .unwrap()
+        .to_string();
     fs::write(&transcript, format!("{}\n", serde_json::json!({"type":"assistant","timestamp":at,"message":{"stop_reason":"end_turn"}}))).unwrap();
     assert_eq!(state(&node), (State::Done, 1));
     node.seen(&id).unwrap();
     assert_eq!(state(&node), (State::Idle, 0));
-    writeln!(fs::OpenOptions::new().append(true).open(transcript).unwrap(), "{{\"type\":\"system\",\"subtype\":\"turn_duration\"}}").unwrap();
+    writeln!(
+        fs::OpenOptions::new()
+            .append(true)
+            .open(transcript)
+            .unwrap(),
+        "{{\"type\":\"system\",\"subtype\":\"turn_duration\"}}"
+    )
+    .unwrap();
     let reopened = Node::open(r.to_path_buf()).unwrap();
-    assert_eq!(state(&reopened), (State::Idle, 0), "bookkeeping and reopening do not revive an unread result");
+    assert_eq!(
+        state(&reopened),
+        (State::Idle, 0),
+        "bookkeeping and reopening do not revive an unread result"
+    );
 }
 
 /// **A word reported by a process that is not the one running the

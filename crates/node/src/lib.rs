@@ -5426,13 +5426,7 @@ impl Node {
             })
     }
 
-    /// A process reporting its own word — the hook door. 失败 is refused
-    /// by the kind: it derives from the exit code, never from a claim.
-    ///
-    /// Being the hook door is what fixes the provenance here: everything
-    /// arriving through it is a vendor speaking for itself. The screen
-    /// reader does not come this way, and must not be given a route that
-    /// does (`live::Source`).
+    /// Explicit process status reports; failure is derived from process exit.
     pub fn report_state(&self, id: &SessionId, word: khor_core::State) -> Result<(), String> {
         session_content::refuse_control(id)?;
         self.live.report(id, word, live::Source::Reported)

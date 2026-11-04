@@ -969,10 +969,7 @@ async fn check_launcher() -> (Health, String, Option<String>) {
 /// nothing quietly is the shape where somebody believes a thing was
 /// mended.
 pub fn fix(node: &Node, key: &str) -> Result<String, String> {
-    // On a phone the two remedies that start something — a `khor serve`,
-    // claude's hooks — have nothing to start (docs/IOS.md); the page
-    // offers neither there, and asking anyway is refused by name.
-    if !node.hosts() && matches!(key, "serve") {
+    if !node.hosts() && key == "serve" {
         return Err(cli::doctor_no_fix(key));
     }
     match key {

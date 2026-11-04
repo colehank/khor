@@ -234,7 +234,6 @@ function previewBridge(terminal = false): Plugin {
           case "ls": answer={path:String(body.path||'/preview'),entries:['files','project','documents'].map(name=>({name,dir:true,size:0,at_ms:previewAt,from:null,received_ms:null})),truncated:false};break;
           // Explicit no-PIN fixture facts; a failed read never unlocks production.
           case "lock_state": answer = {on: false, has_pin: false, timeout_min: 0, timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}; break;
-          case "hooks_state": answer = { installed: false }; break;
           case "quota": answer = { quota: null, trouble: null }; break;
           case "config": case "dir_pins": case "web_pins": case "recents": case "workspaces": case "agents": case "quota_board": answer = []; break;
           case "seen_snapshot": case "seen": case "session_seen": break;

@@ -93,7 +93,9 @@ impl Endings {
 
 fn ending(bytes: &[u8]) -> Option<(State, i64)> {
     let end = bytes.iter().rposition(|&b| b == b'\n')?;
-    if bytes[end + 1..].iter().any(|b| !b.is_ascii_whitespace()) { return None; }
+    if bytes[end + 1..].iter().any(|b| !b.is_ascii_whitespace()) {
+        return None;
+    }
     for line in bytes[..end].split(|&b| b == b'\n').rev() {
         if line.iter().all(|b| b.is_ascii_whitespace()) {
             continue;
