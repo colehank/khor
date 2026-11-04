@@ -17,6 +17,9 @@ use std::{
 pub const INSTALL_SOURCE: &str = "KHOR_RUNTIME_INSTALL_SOURCE";
 const INFO: &str = "_runtime_info";
 const INFO_LIMIT: u64 = 16 * 1024;
+// Fresh macOS images spend about two seconds in dyld before reaching our code.
+// Keep probes bounded while allowing that cold-load cost beside an active serve.
+const INFO_TIMEOUT: Duration = Duration::from_secs(if cfg!(target_os = "macos") { 5 } else { 3 });
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -127,7 +130,7 @@ fn inspect(program: &Path) -> Result<Info, String> {
     let (mut child, mut pipes) =
         Session::spawn(command, Arc::new(Control::default())).map_err(|error| error.to_string())?;
     drop(pipes.stdin);
-    let by = Instant::now() + Duration::from_secs(3);
+    let by = Instant::now() + INFO_TIMEOUT;
     let status = loop {
         if let Some(status) = child.poll_exit() {
             break status.map_err(|error| error.to_string())?;
