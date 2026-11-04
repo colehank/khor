@@ -61,6 +61,7 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
   await page.evaluate(()=>window.showAttachment('/project/attachment.pdf'));
   await page.waitForFunction(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length===3);
   await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
+  assert.equal(await page.locator('[data-file-open-other]').count(),1,'an attachment has one original-file handoff action');
   await page.locator('[data-file-open-other]').click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_handoff_open').length),1,'native PDF preview must retain original-file handoff');
   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),0,'attachment PDFs must also avoid JS preview copies');

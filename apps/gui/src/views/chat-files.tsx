@@ -413,6 +413,7 @@ export function FilePreview({
   }, []);
   useEffect(() => setSaid(null), [path]);
   const kind = path === null ? "text" : kindOf(path);
+  const nativePreview = (kind === "doc" || kind === "pdf") && handoff.previewSupported;
   const sharing = path !== null && kind !== "doc" && shares();
   const copy = () => {
     if (path === null) return;
@@ -496,7 +497,7 @@ export function FilePreview({
                     {fileManagerLabel()}
                   </Button>
                 )}
-                {!finder && handoff.supported && <FileHandoffAction handoff={handoff}/>}
+                {!finder && handoff.supported && !nativePreview && <FileHandoffAction handoff={handoff}/>}
                 {!finder && !handoff.supported && sharing && (
                   <Button size="sm" data-file-preview-share onClick={share}>
                     {gui.chat_file_share}
