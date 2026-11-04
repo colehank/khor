@@ -21,21 +21,21 @@ window.showFile=(path='/project/large.pptx',hidden=false)=>flushSync(()=>root.re
 window.showAttachment=()=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='remote' path='/project/large.pptx' here={false} onClose={no}/></TooltipProvider>));window.showFile();`);
  vite=spawn(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
  let ready=false;vite.stdout.on('data',d=>ready||=String(d).includes(`:${port}`));vite.stderr.on('data',d=>process.stderr.write(d));for(let i=0;i<100&&!ready;i++){assert(vite.exitCode===null);await pause(100);}assert(ready);
- browser=await chromium.launch({channel:'chrome',headless:true,args:['--no-proxy-server']});
+ browser=await chromium.launch({...(process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{}),headless:true,args:['--no-proxy-server']});
  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await context.addInitScript((previewEnabled)=>{
   Object.defineProperty(navigator,'platform',{get:()=> 'iPhone'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5});
-  window.calls=[];window.complete=false;window.refuse=false;window.startDelay=0;
+  window.calls=[];window.complete=false;window.refuse=false;window.startDelay=0;window.instant=false;
   const wait=ms=>new Promise(r=>setTimeout(r,ms));
   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>0,unregisterCallback:()=>{},invoke:async(cmd,args={})=>{
    window.calls.push({cmd,args});const total=130*1024*1024;
    if(cmd==='file_handoff_supported')return true;
    if(cmd==='file_preview_supported')return previewEnabled;
    if(cmd==='file_preview_open'){await wait(50);if(window.refusePreview)throw Error('Cannot preview this file');return true;}
-   if(cmd==='file_handoff_start'){await wait(window.startDelay);return {moved:0,total,ready:false,cancelled:false,error:null};}
+   if(cmd==='file_handoff_start'){await wait(window.startDelay);return {moved:window.instant?total:0,total,ready:window.instant,cancelled:false,error:null};}
    if(cmd==='file_handoff_state')return {moved:window.complete?total:1048576,total,ready:window.complete,cancelled:false,error:window.refuse?'Download failed':null};
    if(cmd==='file_handoff_open'){await wait(50);return false;}
-   if(cmd==='preview')return {kind:'doc',media:'',data:'',html:'',total,cut:true,empty:false};
+   if(cmd==='preview')return args.path?.endsWith('.png')?{kind:'image',media:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXv8AAAAASUVORK5CYII=',html:'',total:68,cut:false,empty:false}:{kind:'doc',media:'',data:'',html:'',total,cut:true,empty:false};
    if(cmd==='read_text')return {text:'# Hello\n',total:8,at_ms:0,cut:false,binary:false,digest:'0'.repeat(64)};
    if(cmd==='file_stat')return {total,at_ms:0,digest:''};
    if(cmd==='about')return {hosts:false,faces:[]};
@@ -102,6 +102,15 @@ window.showAttachment=()=>flushSync(()=>root.render(<TooltipProvider><FilePrevie
  await page.setViewportSize({width:390,height:844});
  await page.evaluate(()=>window.showAttachment());await page.locator('[data-file-preview-body] [data-file-open-other]').waitFor();
  assert.equal(await page.locator('[data-file-preview-share]').count(),0,'attachment still shares limited preview bytes');
+ const opensBefore=await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_handoff_open').length);
+ await page.evaluate(()=>{window.instant=true;window.showFile('/project/cached.png');});
+ await page.locator('[data-file-more]').click();await page.locator('[data-file-more-item="open-other"]').click();
+ await page.waitForFunction(()=>{
+  const job=window.calls.filter(c=>c.cmd==='file_handoff_start'&&c.args.path==='/project/cached.png').at(-1)?.args.id;
+  return job&&window.calls.some(c=>['file_handoff_open','file_handoff_cancel'].includes(c.cmd)&&c.args.id===job);
+ });
+ assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_handoff_open').length),opensBefore+1,'an immediately ready image selected in More must reach the native presenter instead of being cancelled by menu modality');
+ await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
  assert.deepEqual(errors,[]);writeFileSync(join(out,'results.json'),JSON.stringify({checks:['original fallback metadata','late start cancellation','retry','OS sheet dismissal preserves deck','path change cancellation','hidden retained tab','background cancellation','narrow long filename','normal file More','attachment original bytes'],errors},null,2));console.log('file handoff: clean',out);
  }
 } catch(error){await page?.screenshot({path:join(out,'failed.png')}).catch(()=>{});throw error;}
