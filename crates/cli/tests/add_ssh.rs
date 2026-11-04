@@ -31,7 +31,7 @@ use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const SSHD: &str = "/usr/sbin/sshd";
 
@@ -41,6 +41,51 @@ impl Drop for Kept {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+    }
+}
+
+fn wait_for_serve(dir: &Path, name: &str, keeper: &mut Kept) {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let started = Instant::now();
+    let endpoint = dir.join(name).join(".khor/endpoint.json");
+    loop {
+        let exited = keeper.0.try_wait().unwrap();
+        let file = fs::read(&endpoint)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
+        if exited.is_none()
+            && let Some(file) = file
+            && file["addrs"]
+                .as_array()
+                .is_some_and(|addrs| !addrs.is_empty())
+            && let Some(port) = file["ipc_port"]
+                .as_u64()
+                .and_then(|port| u16::try_from(port).ok())
+                .filter(|port| *port != 0)
+            && let Some(cookie) = file["ipc_cookie"].as_str()
+        {
+            let reply = runtime.block_on(async {
+                tokio::time::timeout(
+                    Duration::from_millis(300),
+                    khor_node::ipc::call(port, cookie, khor_node::ipc::Op::Hops),
+                )
+                .await
+            });
+            if matches!(reply, Ok(Ok(khor_node::ipc::Reply::Hops { .. }))) {
+                eprintln!("[SSH-READY] {name}: {}ms", started.elapsed().as_millis());
+                return;
+            }
+        }
+        if exited.is_some() || started.elapsed() >= Duration::from_secs(20) {
+            panic!(
+                "{name} did not become ready ({exited:?}): {}",
+                fs::read_to_string(dir.join(format!("{name}.log"))).unwrap_or_default()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(50));
     }
 }
 
@@ -494,8 +539,8 @@ fn add_over_ssh_in_a_scratch_world() {
         .env_remove("KHOR_SESSION")
         .stdout(Stdio::null())
         .stderr(fs::File::create(dir.join("sponsor.log")).unwrap());
-    let _sponsor = Kept(serve.spawn().unwrap());
-    std::thread::sleep(Duration::from_secs(3));
+    let mut sponsor = Kept(serve.spawn().unwrap());
+    wait_for_serve(&dir, "sponsor", &mut sponsor);
 
     // 1. A member, through a jump: fetched from the mirror over there.
     let out = khor(&w, &m, &["add", "target", "box1", "--via", "jump"]);
@@ -801,8 +846,8 @@ fn add_over_ssh_in_a_scratch_world() {
         .env_remove("KHOR_SESSION")
         .stdout(Stdio::null())
         .stderr(fs::File::create(dir.join("origin.log")).unwrap());
-    let _origin = Kept(serve.spawn().unwrap());
-    std::thread::sleep(Duration::from_secs(3));
+    let mut origin = Kept(serve.spawn().unwrap());
+    wait_for_serve(&dir, "origin", &mut origin);
     let ticket = khor(&w, &m, &["invite"]);
     assert!(
         ticket.status.success(),
