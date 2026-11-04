@@ -2369,7 +2369,9 @@ pub async fn khor_agent(
                 n.reconcile_agent()?;
             }
             if !machine.is_empty() {
-                let report = n.khor_agent_on(machine, khor_node::khor_agent::Action::Read).await?;
+                let report = n
+                    .khor_agent_on(machine, khor_node::khor_agent::Action::Read)
+                    .await?;
                 config = report.config;
                 data = report.data;
             }
@@ -2386,7 +2388,10 @@ pub async fn khor_agent(
                 )
                 .await?;
             config = report.config;
-            let commands = report.data.map(|data| data["commands"].clone()).unwrap_or_default();
+            let commands = report
+                .data
+                .map(|data| data["commands"].clone())
+                .unwrap_or_default();
             data = Some(serde_json::json!({"conversation":conversation,"commands":commands}));
         }
     } else {
