@@ -30,7 +30,7 @@ python3 scripts/dev.py result RUN_ID --output /path/to/evidence
 
 快照包含已跟踪文件的当前修改，含已暂存新增文件；**不自动上传未跟踪或忽略文件**。新源码先`git add path`再提交检查。快照不改当前分支、暂存区或stash列表，不要求先做一个WIP提交。它是无父提交的独立源码树，避免每次传输全部历史；基线commit、tree、dirty和snapshot commit写入回执。
 
-提交后立即返回Actions链接和run ID，记录保存在Git公共目录`khor-development/runs`。SSH/iroh短时断线不会打断GH runner；无需让本地终端一直等待。源码准备和便携格式检查在GH托管Linux上执行；Mac重型任务使用同一个槽串行，增量缓存保留。GitHub concurrency只保留一个pending任务；被后续请求替换的pending显示cancelled，不能当成已检查。用run ID核对结果，不盲目重发。
+提交后立即返回Actions链接和run ID，记录保存在Git公共目录`khor-development/runs`。SSH/iroh短时断线不会打断GH runner；无需让本地终端一直等待。源码准备、便携格式与脚本回归在现有CI使用的GH托管Linux上执行；Mac生成绑定并检查GUI/Agent，重型任务使用同一个槽串行，增量缓存保留。GitHub concurrency只保留一个pending任务；被后续请求替换的pending显示cancelled，不能当成已检查。用run ID核对结果，不盲目重发。
 
 私库工作流使用控制仓库中的可信driver，不执行源码快照内的workflow。源码任务当然会执行开发代码，因此这台租机仍然不能承载敏感凭据。任务结束后退休该请求的临时源码分支；准备失败也会清理，未成功dispatch的请求可根据本机回执，在确认没有active任务后删除对应`dev-snapshots/<request_id>`。源码artifact保留3天，证据7天。
 

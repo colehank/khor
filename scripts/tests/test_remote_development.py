@@ -142,9 +142,11 @@ class RemoteDevelopmentTest(unittest.TestCase):
         (output / "source.json").write_text("{}")
         args = SimpleNamespace(run_id="123", builder_repo="private/build", output=str(output), lab=False)
         run = {"status": "completed", "conclusion": "failure", "url": "https://example.invalid/run"}
-        with patch.object(dev, "command", return_value=json.dumps(run)), patch.object(dev, "submitted_source", return_value=None), contextlib.redirect_stdout(io.StringIO()):
+        unavailable = subprocess.CalledProcessError(1, ["gh", "run", "download"])
+        with patch.object(dev, "command", side_effect=[json.dumps(run), unavailable, ""]) as fetch, patch.object(dev, "submitted_source", return_value=None), contextlib.redirect_stdout(io.StringIO()):
             with self.assertRaisesRegex(ValueError, "did not pass"):
                 dev.result(args)
+        self.assertIn("dev-portable-evidence", fetch.call_args.args)
 
 
 if __name__ == "__main__":

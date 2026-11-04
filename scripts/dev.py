@@ -157,7 +157,11 @@ def result(args):
         raise ValueError("Run is still active; inspect status before downloading its results")
     output = Path(args.output).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    command("gh", "run", "download", args.run_id, "--repo", args.builder_repo, "--name", "dev-evidence", "--dir", str(output))
+    try:
+        command("gh", "run", "download", args.run_id, "--repo", args.builder_repo, "--name", "dev-evidence", "--dir", str(output))
+    except subprocess.CalledProcessError:
+        # Portable preparation can fail before a Mac job is allowed to start.
+        command("gh", "run", "download", args.run_id, "--repo", args.builder_repo, "--name", "dev-portable-evidence", "--dir", str(output))
     expected = submitted_source(args.run_id, args.builder_repo)
     actual = json.loads((output / "source.json").read_text())
     if expected and any(actual.get(key) != expected[key] for key in ["snapshot_commit", "base_commit", "tree"]):
