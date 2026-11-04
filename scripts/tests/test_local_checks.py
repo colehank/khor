@@ -40,6 +40,15 @@ class LocalChecksTest(unittest.TestCase):
                 local_checks.workflows()
             run.assert_not_called()
 
+    def test_script_fixtures_do_not_inherit_the_hooks_git_repository(self):
+        with patch.dict(os.environ, {"GIT_DIR": "/developer/.git", "GIT_INDEX_FILE": "/developer/index",
+                                    "GIT_CONFIG_GLOBAL": "/dev/null"}), patch.object(local_checks, "run") as run:
+            local_checks.script_tests()
+        for call in run.call_args_list:
+            self.assertNotIn("GIT_DIR", call.kwargs["env"])
+            self.assertNotIn("GIT_INDEX_FILE", call.kwargs["env"])
+            self.assertEqual(call.kwargs["env"]["GIT_CONFIG_GLOBAL"], "/dev/null")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,7 @@
 # 本地提交与推送检查
 
+本机仅保存源码时，使用[远端开发](REMOTE-DEVELOPMENT.md)中的`python3 scripts/dev.py configure-local`，无需安装下面的构建依赖。原有完整配置继续用于CI和具备完整工具链的开发机。
+
 每个克隆执行一次：
 
 ```sh

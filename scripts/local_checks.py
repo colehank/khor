@@ -62,12 +62,17 @@ def push_tree():
 
 
 def script_tests():
+    # pre-push in a linked worktree exports an absolute GIT_DIR. Test repositories
+    # must select their own .git rather than reinitialize the developer's repository.
+    selectors = {"GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+                 "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_PREFIX"}
+    environment = {key: value for key, value in os.environ.items() if key not in selectors}
     if sys.platform == "win32":
         print("Windows: run portable release/API tests; POSIX shell/process fixtures run on macOS/Linux and CI")
-        run([sys.executable, "-m", "unittest", "scripts.tests.test_apple_api", "scripts.tests.test_tag_release", "scripts.tests.test_mac_notarization", "scripts.tests.test_local_checks"])
+        run([sys.executable, "-m", "unittest", "scripts.tests.test_apple_api", "scripts.tests.test_tag_release", "scripts.tests.test_mac_notarization", "scripts.tests.test_local_checks"], env=environment)
     else:
-        run([sys.executable, "scripts/sync-install-components.py"])
-        run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_*.py"])
+        run([sys.executable, "scripts/sync-install-components.py"], env=environment)
+        run([sys.executable, "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_*.py"], env=environment)
 
 
 def workflows():
