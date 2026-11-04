@@ -324,6 +324,62 @@ mod tests {
         assert!(!rows.iter().any(|row| row.id.0 == a));
         assert!(rows.iter().any(|row| row.id.0 == b));
         assert!(reopened.chat.log(&b).unwrap().messages.is_empty());
+        assert!(
+            reopened.chat.log(&a).unwrap().messages.iter().all(|message| {
+                message.command.as_ref().is_none_or(|record| record.stdout.is_empty())
+            })
+        );
+    }
+
+    #[test]
+    fn an_empty_deleted_conversation_cannot_be_recreated_by_a_retry_or_late_reply() {
+        let (_scratch, node) = node();
+        let action = Action::CreateConversation {
+            token: "empty-deleted-conversation-token".into(),
+            title: "".into(),
+            cwd: "/fixture".into(),
+        };
+        let report = node
+            .create_khor_conversation("empty-deleted-conversation-token", "", "/fixture")
+            .unwrap();
+        let a = report.data.as_ref().unwrap()["session"].as_str().unwrap().to_owned();
+        node.close(&crate::SessionId(a.clone())).unwrap();
+        node.close(&crate::SessionId(a.clone())).unwrap();
+        assert!(
+            node.create_khor_conversation("empty-deleted-conversation-token", "", "/fixture")
+                .is_err()
+        );
+        node.accept_agent_report(&action, &report).unwrap();
+        let b = create(&node, "empty-replacement-conversation-token", "");
+        let reopened = Node::open(node.root().to_owned()).unwrap();
+        assert!(reopened.khor_conversation(&a).is_err());
+        let rows = crate::wide::WideKind.rows(&reopened).unwrap();
+        assert!(!rows.iter().any(|row| row.id.0 == a));
+        assert!(rows.iter().any(|row| row.id.0 == b));
+    }
+
+    #[test]
+    fn a_replicated_close_survives_an_old_snapshot_and_only_closes_its_own_conversation() {
+        use khor_sync::store::Doc;
+        let (_scratch, node) = node();
+        let a = create(&node, "replicated-conversation-token-a", "");
+        let b = create(&node, "replicated-conversation-token-b", "");
+        let before = node.seen_loaded().unwrap().doc.snapshot().unwrap();
+        let remote = khor_sync::seen::SeenDoc::new(0x1324).unwrap();
+        remote.merge(&before).unwrap();
+        remote.put_away(&a, 0).unwrap();
+        {
+            let loaded = node.seen_loaded().unwrap();
+            loaded.doc.merge(&remote.snapshot().unwrap()).unwrap();
+            loaded.doc.merge(&before).unwrap();
+            let mut store = loaded.store;
+            store.flush(&loaded.doc).unwrap();
+        }
+        assert!(deleted(node.root(), &a).unwrap());
+        assert!(!deleted(node.root(), &b).unwrap());
+        let rows = crate::wide::WideKind.rows(&node).unwrap();
+        assert!(!rows.iter().any(|row| row.id.0 == a));
+        assert!(rows.iter().any(|row| row.id.0 == b));
     }
 
     #[test]
