@@ -35,6 +35,7 @@ try {
   const config={home,account:'fixture-account',model:'fixture-model',options:{}};
   const account={id:config.account,name:'Fixture account',home,home_name:'fixture',provider:'anthropic',default_model:config.model,configured:true,base_url:null,auth_type:'api_key'};
   const accounts=[account,{...account,id:'billing-only',name:'Organization billing',configured:false},{...account,id:'other-home',name:'Other machine account',home:'d'.repeat(64)}];
+  let commands=[{name:'session',description:'Conversation statistics'},{name:'compact',description:'Compact context',input:{hint:'optional instructions'}}];
   const devices=[{id:home,name:'fixture',shown:'Fixture',me:true,sponsor:null,hosts:true,pinned:false,paused:false,vitals:null,seat:{left:0,top:0},roads:[]}];
   devices.push({...devices[0],id:'d'.repeat(64),name:'other-fixture',shown:'Other machine',me:false},{...devices[0],id:'e'.repeat(64),name:'phone',shown:'Phone',me:false,hosts:false});
   const record=(id,line,agent=false)=>({id,at_ms:Date.now(),text:null,from:'fixture',from_me:true,to:[],files:null,note:null,unknown:null,retracted:false,
@@ -53,13 +54,18 @@ try {
    else if(cmd==='console_complete')result={start:0,end:args.caret,choices:args.line==='/sta'?[{value:'/status',label:'/status',detail:'status',kind:'command'}]:[]};
    else if(cmd==='console_run'){histories.get(args.session).push(record('command-a',args.line));result='command-a';}
    else if(cmd==='khor_agent') {
-    const {action,payload}=args;result={config,accounts,run:null,data:{conversation:{home}}};
+    const {action,payload}=args;result={config,accounts,run:null,data:{conversation:{home},commands}};
     if(action==='create') {
      if(!creates.has(payload.token))creates.set(payload.token,creates.size===0?A:B);
      if(!failedCreate||failNextCreate){failedCreate=true;failNextCreate=false;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'Lost create response fixture'});return;}
      if(holdNextCreate){holdNextCreate=false;await new Promise(resolve=>{releaseCreate=resolve;});}
      result.data={session:creates.get(payload.token)};
-    } else if(action==='prompt'){const id=payload.session===A?'task-a':'task-b';histories.get(payload.session).push(record(id,payload.text,true));result.run=id;}
+    } else if(action==='prompt'){
+     const info=payload.text==='/session',id=info?'session-info':payload.session===A?'task-a':'task-b';
+     const message=record(id,payload.text,true);
+     if(info){message.command.status='done';message.command.ended_at_ms=Date.now();message.command.stdout='Messages: 1';}
+     histories.get(payload.session).push(message);result.run=id;
+    }
     else if(action==='stop'){const item=histories.get(payload.session).find(m=>m.id===payload.run);item.command.status='done';item.command.ended_at_ms=Date.now();}
     else if(action==='manage')result.data=payload.operation==='poll'?{status:'done',result:{configOptions:[]}}:{job:'fixture-settings',status:'running'};
    }
@@ -93,13 +99,19 @@ try {
   await page.locator('[data-chat-composer]').fill('Task B');await page.locator('[data-chat-composer]').press('Enter');await page.locator('[data-khor-agent-turn=task-b]').waitFor();
   await page.evaluate(A=>window.showChat(A),A);await page.locator('[data-khor-agent-turn=task-a]').waitFor();
   assert.equal(await page.locator('[data-khor-agent-turn=task-b]').count(),0);
-  await page.locator('[data-chat-composer]').fill('/sta');await page.locator('[data-console-choice=command]').waitFor();
-  await page.locator('[data-chat-composer]').press('Tab');await page.locator('[data-console-choice=command]').waitFor({state:'detached'});await page.locator('[data-chat-composer]').press('Enter');await page.locator('[data-console-result]').waitFor();
-  assert.equal(calls.find(c=>c.cmd==='console_run').args.session,A);
-  assert(!calls.some(c=>c.cmd==='khor_agent'&&c.args.action==='prompt'&&c.args.payload.text.startsWith('/')));
+  await page.locator('[data-chat-composer]').fill('/se');await page.locator('[data-slash-item=session]').waitFor();
+  await page.locator('[data-chat-composer]').press('Tab');await page.locator('[data-slash-menu]').waitFor({state:'detached'});await page.locator('[data-chat-composer]').press('Enter');await page.locator('[data-khor-agent-turn=session-info]').waitFor();
+  assert.equal(calls.find(c=>c.cmd==='khor_agent'&&c.args.action==='prompt'&&c.args.payload.text==='/session').args.payload.session,A);
+  assert(!calls.some(c=>c.cmd.startsWith('console_')),'GUI commands never enter Khor CLI completion or execution');
   assert(!calls.some(c=>c.cmd==='post'));
   await page.evaluate(B=>window.showChat(B),B);await page.locator('[data-khor-agent-turn=task-b]').waitFor();
   assert.equal(await page.locator('[data-console-result]').count(),0);
+  commands=[{name:'help',description:'Supported commands'}];await page.evaluate(A=>window.showChat(A),A);
+  await page.locator('[data-chat-composer]').fill('/');await page.locator('[data-slash-item=help]').waitFor();
+  assert.equal(await page.locator('[data-slash-item=session]').count(),0,'new agent capabilities replace the old command set');
+  commands=[];await page.evaluate(A=>window.showChat(A),A);
+  await page.locator('[data-khor-agent-turn=session-info]').waitFor();
+  assert.equal(await page.locator('[data-slash-menu]').count(),0,'a cleared command set leaves no stale menu');
   await page.evaluate(()=>window.showNew());await choose('khor');failNextCreate=true;
   await page.locator('[data-new-session-create]').click();await page.locator('[data-new-session-error]').waitFor();
   const abandoned=calls.filter(c=>c.cmd==='khor_agent'&&c.args.action==='create').at(-1).args.payload.token;
@@ -139,6 +151,6 @@ try {
   assert.equal(await page.locator('[data-new-session-dir]').inputValue(),'/explicit-workspace');
   assert.deepEqual(errors,[]);results.push({engine:name,passed:true});await browser.close();browser=null;
  }
- console.log('Khor conversations UI: create retry/abandonment, independent tabs, model task/stop and Khor slash routing passed');
+ console.log('Khor conversations UI: creation lifecycle, independent tasks, account/model ownership, machine preferences and agent-owned command routing passed');
 } catch(error){if(browser){try{await browser.contexts()[0]?.pages()[0]?.screenshot({path:join(out,'failure.png')});}catch{}}throw error;}
 finally{writeFileSync(join(out,'report.json'),JSON.stringify(results,null,2));await browser?.close();await server?.close();rmSync(fixture,{recursive:true,force:true});}

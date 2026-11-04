@@ -2825,6 +2825,7 @@ new-session-machine-missing = "上次使用的机器不在当前网络，重新�
 new-session-host-required = "这台设备不能运行会话，选择一台电脑"
 new-session-launch-missing = "这个启动方式已不可用，重新选择启动方式"
 new-session-create-missing = "智能体未返回新会话"
+agent-commands = "智能体命令"
 agent-auth-wait = "按提供商提示完成登录"
 agent-usage-not-configured = "未配置额度查询"
 agent-account-ready = "凭据已保存"

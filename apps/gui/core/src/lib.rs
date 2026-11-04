@@ -2368,11 +2368,15 @@ pub async fn khor_agent(
             if n.hosts() {
                 n.reconcile_agent()?;
             }
+            if !machine.is_empty() {
+                let report = n.khor_agent_on(machine, khor_node::khor_agent::Action::Read).await?;
+                config = report.config;
+                data = report.data;
+            }
         } else {
             let conversation = n.khor_conversation(board)?;
             let home = conversation.home.clone();
-            data = Some(serde_json::json!({"conversation":conversation}));
-            config = n
+            let report = n
                 .khor_agent_on(
                     &home,
                     khor_node::khor_agent::Action::Conversation {
@@ -2380,8 +2384,10 @@ pub async fn khor_agent(
                         action: Box::new(khor_node::khor_agent::Action::Read),
                     },
                 )
-                .await?
-                .config;
+                .await?;
+            config = report.config;
+            let commands = report.data.map(|data| data["commands"].clone()).unwrap_or_default();
+            data = Some(serde_json::json!({"conversation":conversation,"commands":commands}));
         }
     } else {
         let action = match action {

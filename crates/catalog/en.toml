@@ -1861,6 +1861,7 @@ new-session-machine-missing = "The previous computer is no longer in this networ
 new-session-host-required = "This device cannot run a session; choose a computer"
 new-session-launch-missing = "This launch method is no longer available; choose another method"
 new-session-create-missing = "The agent did not return a new session"
+agent-commands = "Agent commands"
 agent-auth-wait = "Complete the provider sign-in steps"
 agent-usage-not-configured = "Usage lookup is not configured"
 agent-account-ready = "Credentials saved"

@@ -39,6 +39,8 @@ import { cn } from "@/lib/utils";
 import { lasting, word } from "@/words";
 import { imeKey } from "@/lib/ime";
 import { applyAcpUpdate } from "@/lib/acp-view";
+import {AgentCommandMenu} from '@/components/AgentCommandMenu';
+import {agentCommandUpdate, matchingAgentCommands, type AgentCommand} from '@/lib/agent-commands';
 
 import { historyApi } from '@/lib/history-api';
 import { HistorySearch } from '@/components/history/HistorySearch';
@@ -237,29 +239,7 @@ type Update = import("@/lib/acp-view").AcpUpdate & {
   used?: number;
   size?: number;
   cost?: { amount?: number; currency?: string } | null;
-  /** `available_commands_update`'s payload. The spelling is pinned by a
-      test on the Rust side (`cagent`'s `wire_tests`) — this face reads
-      the protocol's JSON by hand, so a rename there would leave the "/"
-      menu quietly empty rather than break anything. */
-  availableCommands?: { name?: string; description?: string }[];
 };
-
-/** The agent's own command list, if this frame carries one.
-    A list, not a merge: the agent republishes the whole set (claude's
-    垫片 turns each init frame's `slash_commands` into one of these), so
-    the last frame to carry one is the truth and this simply replaces.
-
-    Read per frame rather than by scanning the conversation: the scan
-    was a second full pass over every frame ever received, run on every
-    render — it cost as much as the fold and answered a question only
-    one frame in a thousand changes. */
-function commandsIn(frame: ChatFrame): { name: string; description: string }[] | null {
-  const u = updateOf(frame);
-  if (u?.sessionUpdate !== "available_commands_update") return null;
-  return (u.availableCommands ?? [])
-    .map((c) => ({ name: c.name ?? "", description: c.description ?? "" }))
-    .filter((c) => c.name);
-}
 
 /** This conversation's context reading, if this frame carries one.
     Replaces rather than accumulates: `used` is the whole window's
@@ -653,7 +633,7 @@ export function ChatView({
   const historyAnchor = useRef<{ key: string; top: number; ticket: number; point: HistoryTextPoint | null } | null>(null);
   const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
-  const [commands, setCommands] = useState<{ name: string; description: string }[]>([]);
+  const [commands, setCommands] = useState<AgentCommand[]>([]);
   const [gone, setGone] = useState(false);
   // **Why it never opened, in the node's own words, and a way to try
   // again** (round NET-FIX, audit/net.md F9): a machine that cannot be
@@ -1111,7 +1091,7 @@ export function ChatView({
                 const u=(f.update as {update?:{sessionUpdate?:string;title?:string;description?:string;severity?:string}})?.update;
                 if(u?.sessionUpdate==='notice')setNotice({title:u.title??'',message:u.description,severity:u.severity});
               }
-              const list = commandsIn(f);
+              const list = agentCommandUpdate(updateOf(f));
               if (list) setCommands(list);
               const u = usageIn(f);
               if (u) setUsage(u);
@@ -1477,9 +1457,7 @@ export function ChatView({
   // typed so far. Open only while the box holds a single slash-word —
   // a space means the command is chosen and what follows is its
   // argument, which is the agent's business and not this menu's.
-  const slash = /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : null;
-  const menu =
-    slash === null ? [] : commands.filter((c) => c.name.toLowerCase().startsWith(slash));
+  const menu = matchingAgentCommands(commands, text);
   const complete = (name: string) => {
     // A trailing space: it closes the menu and leaves room for an
     // argument, and `say` trims it back off for a command that takes
@@ -1911,42 +1889,7 @@ export function ChatView({
                 them. Absolute so opening it does not push the
                 conversation up — a list that moves the text you are
                 reading is worse than no list. */}
-            {menu.length > 0 && (
-              <div
-                data-slash-menu
-                // One floating language (components/Menu, 2026-09-28):
-                // `popover`, `float`, `radius-lg` — it wore `shadow-md`
-                // and `rounded-md`, a menu of its own drawing.
-                className="absolute bottom-full left-0 mb-1 max-h-40 w-full overflow-y-auto rounded-lg border bg-popover p-1 shadow-(--shadow-float)"
-              >
-                {menu.map((c, n) => (
-                  <button
-                    key={c.name}
-                    type="button"
-                    data-slash-item={c.name}
-                    data-on={n === pick}
-                    className={cn(
-                      "flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-callout",
-                      // The picked command is a chosen row — `fill-strong`,
-                      // like a selected list row; the brand wash is for
-                      // the row being located to (README 颜色, 4K).
-                      n === pick && "bg-fill-strong",
-                    )}
-                    // The box must not lose focus to the press, or the
-                    // completion would land in a box nobody is typing in.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => complete(c.name)}
-                  >
-                    <span>/{c.name}</span>
-                    {c.description && (
-                      <span className="truncate text-caption text-muted-foreground">
-                        {c.description}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
+            <AgentCommandMenu commands={menu} pick={pick} onPick={complete} />
             {/* ＋'s picker: any file, into the same path a paste takes. */}
             {canAttach && (
               <input

@@ -151,7 +151,7 @@ impl Node {
         Ok(Report {
             config,
             run: None,
-            data: Some(json!({"session":board,"conversation":conversation})),
+            data: Some(json!({"session":board,"conversation":conversation,"commands":available_commands()})),
         })
     }
 
@@ -287,6 +287,22 @@ mod tests {
             .as_str()
             .unwrap()
             .into()
+    }
+
+    #[tokio::test]
+    async fn reading_a_conversation_announces_its_agent_commands_without_starting_a_turn() {
+        let (_scratch, node) = node();
+        let board = create(&node, "read-agent-commands-token", "");
+        let report = node.khor_agent_here(Action::Conversation {
+            session: board.clone(), action: Box::new(Action::Read),
+        }).await.unwrap();
+        let data = report.data.unwrap();
+        let commands = data["commands"].as_array().unwrap();
+        assert!(commands.iter().any(|command| command["name"] == "compact" && command["input"]["hint"].is_string()));
+        assert!(commands.iter().any(|command| command["name"] == "session"));
+        assert!(!commands.iter().any(|command| command["name"] == "tell" || command["name"] == "status"));
+        assert!(report.config.is_none());
+        assert!(node.chat.log(&board).unwrap().messages.is_empty());
     }
 
     #[test]

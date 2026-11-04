@@ -1,0 +1,5 @@
+[
+  {"name": "compact", "description": "Compact the conversation context", "input": {"hint": "optional instructions"}},
+  {"name": "session", "description": "Show conversation statistics"},
+  {"name": "help", "description": "List supported agent commands"}
+]

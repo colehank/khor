@@ -5,7 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   compose,
-  consoleRun,
   khorAgent,
   type KhorAgentView,
   fetchDevices,
@@ -28,14 +27,15 @@ import { takeDraft } from "@/lib/composer-handoff";
 import { baseName } from "@/lib/paths";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { YIELD_MS } from "@/lib/tempo";
 import { BarSeat } from "@/components/SessionBar";
-import { Composer, COMPOSER_TEXT, PlusSeat, Tip, useGrowingText } from "@/views/Composer";
+import { Composer, COMPOSER_TEXT, useGrowingText } from "@/views/Composer";
 import { imeKey } from "@/lib/ime";
-import { ConsoleMenu, ConsoleResult, useConsoleCompletion } from "@/views/Console";
+import { ConsoleResult } from "@/views/Console";
+import {AgentCommandMenu} from '@/components/AgentCommandMenu';
+import {agentCommands, matchingAgentCommands} from '@/lib/agent-commands';
 import { useHidden } from "@/hooks/use-hidden";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
 
@@ -52,10 +52,7 @@ function fmtSize(n: number): string {
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)}GB`;
 }
 
-/** The network's khor conversation: agent turns and files share the
- * stream with durable command receipts. Slash commands use the CLI
- * engine; natural-language tasks go to the configured agent home.
- * The shared Composer and BarSeat keep the deck and keyboard geometry. */
+/** Each Khor conversation sends prompts and commands to its own agent home. */
 export function MachineChat({ id, active = true, onSession, sessions = [] }: { id: string; active?: boolean; onSession?: (id: string) => void; sessions?: SessionRow[] }) {
   const hidden = useHidden();
   const [readout, setReadout] = useState<{ id: string; log: MachineLog } | null>(null);
@@ -63,12 +60,10 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   const currentId = useRef(id);
   currentId.current = id;
   const [draft, setDraft] = useSessionDraft("khor:"+id);
-  const [inputOpen, setInputOpen] = useState(false);
-  const [commandInput, setCommandInput] = useState("");
-  const isCommand = draft.trimStart().startsWith("/");
   const [sending, setSending] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
   const [agent, setAgent] = useState<KhorAgentView | null>(null);
+  const agentHome = useRef('');
   const runningAgent=log?.messages.reduce<CommandRecord|null>((last,m)=>m.command?.agent&&(m.command.status==='running'||m.command.status==='blocked')?m.command:last,null)??null;
   const agentUpdates=log?.messages.flatMap(m=>{const a=m.command?.agent;return a&&a.model===agent?.config?.model?a.updates:[];})??[];
   const { scroller, column, following: stickToEnd, away, onScroll, captureDisclosure, toBottom } = useChatScroll(log);
@@ -80,7 +75,11 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   useGrowingText(box, draft);
 
   const refresh = useCallback(() => {
-    void khorAgent("read", "", {session:id}).then((value) => { if (currentId.current === id) setAgent(value); }, () => {});
+    void khorAgent("read", id === 'wide/all' ? agentHome.current : '', {session:id}).then((value) => {
+      if (currentId.current !== id) return;
+      agentHome.current = value.config?.home ?? '';
+      setAgent(value);
+    }, () => {});
     machineLog(id).then(
       (l) => { if (currentId.current === id) setReadout({ id, log: l }); },
       // A poll that threw on a blip must not take the screen down;
@@ -91,6 +90,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
 
   useEffect(() => {
     setReadout(null);
+    setAgent(null); agentHome.current = '';
     seenMessages.current = new Set();
     refresh();
     const t = setInterval(refresh, POLL_MS);
@@ -178,20 +178,19 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     }
   };
 
-  const [caret, setCaret] = useState(0);
-  const completion = useConsoleCompletion(draft, caret);
-  const { choices, pick, setPick, open: pickerOpen, close: closePicker } = completion;
-  const choose = (choice: (typeof choices)[number]) => {
-    const taken = completion.take(choice);
-    if (!taken) return;
-    setDraft(taken.line);
-    setCaret(taken.caret);
+  const [pick, setPick] = useState(0), [dismissed, setDismissed] = useState<string | null>(null);
+  const commands = agentCommands((agent?.data as {commands?: unknown} | null)?.commands);
+  const choices = dismissed === draft ? [] : matchingAgentCommands(commands, draft);
+  const pickerOpen = choices.length > 0;
+  const choose = (name: string) => {
+    const line = `/${name} `;
+    setDraft(line); setPick(0);
     requestAnimationFrame(() => {
       box.current?.focus();
-      box.current?.setSelectionRange(taken.caret, taken.caret);
+      box.current?.setSelectionRange(line.length, line.length);
     });
   };
-  const runToken = useRef<{ line: string; input: string | undefined; token: string } | null>(null);
+  const runToken = useRef<{ line: string; token: string } | null>(null);
 
   const send = () => {
     const text = draft.trim();
@@ -202,23 +201,14 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     const went = new Set(pending.map((p) => p.key));
     setSending(true);
     setRefused(null);
-    if (text.startsWith("/") && files.length > 0) {
-      setSending(false);
-      setRefused(gui.console_attached);
-      return;
-    }
-    const input = inputOpen ? commandInput : undefined;
-    if (text.startsWith("/") && (runToken.current?.line !== text || runToken.current?.input !== input)) {
-      runToken.current = { line: text, input, token: crypto.randomUUID() };
-    }
-    const agentInput = id === 'wide/all' || files.length === 0 ? text
+    const agentInput = files.length === 0 ? text
       : [text, `Attached files on ${JSON.stringify(landsOn)}:`, ...files.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
-    const agentPrompt = !text.startsWith("/") && (id === 'wide/all' ? text.length > 0 && files.length === 0 : agentInput.length > 0);
+    const agentPrompt = text.startsWith('/') || (id === 'wide/all' ? text.length > 0 && files.length === 0 : agentInput.length > 0);
     if (agentPrompt && !agent?.config) { setSending(false); setRefused(gui.agent_choose_first); return; }
-    if (agentPrompt && (runToken.current?.line !== agentInput || runToken.current?.input !== undefined)) {
-      runToken.current = { line: agentInput, input: undefined, token: crypto.randomUUID() };
+    if (agentPrompt && runToken.current?.line !== agentInput) {
+      runToken.current = { line: agentInput, token: crypto.randomUUID() };
     }
-    const posted = text.startsWith("/") ? consoleRun(text, runToken.current!.token, input, id) : agentPrompt
+    const posted = agentPrompt
       ? khorAgent("prompt", agent!.config!.home, { text:agentInput, token: runToken.current!.token, session:id }) : compose(text, files);
     posted.then(
       () => {
@@ -226,9 +216,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
         setPending((now) => now.filter((p) => !went.has(p.key)));
         setSending(false);
         runToken.current = null;
-        setCommandInput("");
-        setInputOpen(false);
-        closePicker();
+        setDismissed(null);
         toBottom();
         refresh();
       },
@@ -312,22 +300,11 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       <BarSeat at="above"><KhorHeader session={id} view={agent} onChanged={setAgent} disabled={!!(runningAgent)} updates={agentUpdates} />
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
-        {pickerOpen && <ConsoleMenu choices={choices} pick={pick} onPick={choose} />}
-        {isCommand && inputOpen && (
-          <div data-console-input-panel className="mb-in flex flex-col gap-in text-callout">
-            <Input data-console-input type="password" aria-label={gui.console_input} placeholder={gui.console_input} autoComplete="off" value={commandInput} onChange={(e) => setCommandInput(e.target.value)} />
-            <span className="text-secondary-foreground">{gui.console_input_hint}</span>
-          </div>
-        )}
+        <AgentCommandMenu commands={choices} pick={pick} onPick={choose} />
         <PendingChips items={pending} onRemove={(key) => setPending((now) => now.filter((p) => p.key !== key))} />
-        {/* The shared capsule keeps files and explicit slash input in
-            their existing slots; agent approvals and stop belong to
-            the turn whose executor owns them. */}
         <Composer
           lead={
-            <Tip label={isCommand ? gui.console_input : gui.send_file}>
-              {isCommand ? <PlusSeat data-console-input-toggle aria-label={gui.console_input} aria-expanded={inputOpen} onClick={() => setInputOpen((value) => !value)} /> : <SessionAdd onAttach={attach} options={[]} />}
-            </Tip>
+            <SessionAdd onAttach={attach} options={[]} />
           }
           trail={
             // Drawn only once there is something to send (progressive
@@ -373,9 +350,8 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           rows={1}
           onChange={(e) => {
             setDraft(e.target.value);
-            setCaret(e.target.selectionStart ?? e.target.value.length);
+            setPick(0); setDismissed(null);
           }}
-          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={(e) => {
             if (imeKey(e)) return;
             if (pickerOpen && choices.length > 0) {
@@ -389,13 +365,13 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
               }
               if (e.key === "Enter" || e.key === "Tab") {
                 e.preventDefault();
-                choose(choices[Math.min(pick, choices.length - 1)]);
+                choose(choices[Math.min(pick, choices.length - 1)].name);
                 return;
               }
             }
             if (pickerOpen && e.key === "Escape") {
               e.preventDefault();
-              closePicker();
+              setDismissed(draft);
               return;
             }
             if (e.key === "Enter" && !e.shiftKey) {

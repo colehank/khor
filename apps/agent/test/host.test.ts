@@ -88,5 +88,11 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     assert.equal(requests.length,before+1,'Pi restores its saved name without another naming request');
     assert.equal(again.find(e=>e.type==='title')?.title,'Isolated B');
     assert(authenticated,'all conversation and title requests use the selected account');
+    const modelCalls = requests.length;
+    const info = await turn('/session', stateDir, true);
+    assert.equal(requests.length, modelCalls, 'session information does not prompt or auto-name with a model');
+    assert(info.some(e=>e.type==='update'&&e.update.sessionUpdate==='available_commands_update'&&e.update.availableCommands.some((c:any)=>c.name==='compact')));
+    assert(info.some(e=>e.type==='update'&&e.update.sessionUpdate==='agent_message_chunk'&&e.update.content.text.includes('Messages:')));
+    await turn('/help');assert.equal(requests.length, modelCalls);
   } finally { server.closeAllConnections(); await new Promise<void>((resolve) => server.close(() => resolve())); await rm(stateDir, { recursive: true, force: true }); }
 });

@@ -37,6 +37,11 @@ use std::{
 #[cfg(all(test, unix))]
 use std::process::Child;
 
+fn available_commands() -> Value {
+    serde_json::from_str(include_str!("../../../apps/agent/session-commands.json"))
+        .expect("embedded agent command catalog")
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ModelSelection {
     pub account: String,
@@ -571,6 +576,7 @@ impl Node {
             }
             Action::Read => {
                 self.reconcile_agent()?;
+                report.data = Some(json!({"commands": available_commands()}));
             }
             Action::Configure { account, model } => {
                 self.refuse_unless_hosting()?;
