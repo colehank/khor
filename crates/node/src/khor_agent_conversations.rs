@@ -325,9 +325,18 @@ mod tests {
         assert!(rows.iter().any(|row| row.id.0 == b));
         assert!(reopened.chat.log(&b).unwrap().messages.is_empty());
         assert!(
-            reopened.chat.log(&a).unwrap().messages.iter().all(|message| {
-                message.command.as_ref().is_none_or(|record| record.stdout.is_empty())
-            })
+            reopened
+                .chat
+                .log(&a)
+                .unwrap()
+                .messages
+                .iter()
+                .all(|message| {
+                    message
+                        .command
+                        .as_ref()
+                        .is_none_or(|record| record.stdout.is_empty())
+                })
         );
     }
 
@@ -342,7 +351,10 @@ mod tests {
         let report = node
             .create_khor_conversation("empty-deleted-conversation-token", "", "/fixture")
             .unwrap();
-        let a = report.data.as_ref().unwrap()["session"].as_str().unwrap().to_owned();
+        let a = report.data.as_ref().unwrap()["session"]
+            .as_str()
+            .unwrap()
+            .to_owned();
         node.close(&crate::SessionId(a.clone())).unwrap();
         node.close(&crate::SessionId(a.clone())).unwrap();
         assert!(
