@@ -1,3 +1,4 @@
+use khor_gui_core::file_handoff::ReadyFile;
 use objc2::{
     ClassType, class, define_class, msg_send,
     rc::{Allocated, Retained},
@@ -5,7 +6,6 @@ use objc2::{
 };
 use objc2_foundation::{NSRect, NSString};
 use std::cell::RefCell;
-use khor_gui_core::file_handoff::ReadyFile;
 #[link(name = "QuickLookUI", kind = "framework")]
 unsafe extern "C" {
     #[link_name = "OBJC_CLASS_$_QLPreviewView"]

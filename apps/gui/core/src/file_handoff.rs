@@ -61,7 +61,11 @@ pub fn acquire_ready(root: &Path, id: &str) -> Result<ReadyFile, String> {
     let path = ready_path(root, id)?;
     let lease = cache_lock(path.parent().ok_or("missing original-file directory")?)?;
     lease.lock_shared().map_err(|error| error.to_string())?;
-    Ok(ReadyFile {path, owner, _lease: Arc::new(lease)})
+    Ok(ReadyFile {
+        path,
+        owner,
+        _lease: Arc::new(lease),
+    })
 }
 #[derive(PartialEq, Eq)]
 enum Source {
@@ -322,7 +326,9 @@ async fn prepare(
 /// bounds: native readers hold a shared version lease; other completed
 /// originals retain an hour of grace even when they exceed the budget.
 pub(crate) fn prune_cache(root: &Path, current: &Path) {
-    let Ok(admission) = cache_lock(root) else { return; };
+    let Ok(admission) = cache_lock(root) else {
+        return;
+    };
     if admission.try_lock().is_err() {
         return;
     }
@@ -361,11 +367,15 @@ pub(crate) fn prune_cache(root: &Path, current: &Path) {
     let mut total: u64 = dirs.iter().map(|(_, _, bytes)| *bytes).sum();
     for (path, age, bytes) in dirs {
         let completed = path.join("ready.json").is_file();
-        if path == current || age <= Duration::from_secs(3600)
-            || !(age > Duration::from_secs(7 * 86400) || (completed && total > 512 * 1024 * 1024)) {
+        if path == current
+            || age <= Duration::from_secs(3600)
+            || !(age > Duration::from_secs(7 * 86400) || (completed && total > 512 * 1024 * 1024))
+        {
             continue;
         }
-        let Ok(lease) = cache_lock(&path) else { continue; };
+        let Ok(lease) = cache_lock(&path) else {
+            continue;
+        };
         if lease.try_lock().is_ok() && std::fs::remove_dir_all(path).is_ok() {
             total = total.saturating_sub(bytes);
         }
@@ -387,37 +397,66 @@ mod tests {
         std::fs::write(&path, b"synthetic original file").unwrap();
         let manifest = version.join("ready.json");
         std::fs::write(&manifest, b"original.pdf").unwrap();
-        File::open(&manifest).unwrap().set_times(
-            std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400))
-        ).unwrap();
-        let unowned=cache.join("unowned");
+        File::open(&manifest)
+            .unwrap()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400)),
+            )
+            .unwrap();
+        let unowned = cache.join("unowned");
         std::fs::create_dir_all(&unowned).unwrap();
-        let old=unowned.join("ready.json");
-        std::fs::write(&old,b"another original").unwrap();
-        File::open(old).unwrap().set_times(
-            std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400))
-        ).unwrap();
+        let old = unowned.join("ready.json");
+        std::fs::write(&old, b"another original").unwrap();
+        File::open(old)
+            .unwrap()
+            .set_times(
+                std::fs::FileTimes::new()
+                    .set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400)),
+            )
+            .unwrap();
         let owner = Arc::new(Entry {
-            source: Source::File {machine: String::new(), path: "original.pdf".into()},
-            job: Arc::new(Job::default()), stopped: tokio::sync::Notify::new(),
-            commit: Mutex::new(()), started: Instant::now(),
+            source: Source::File {
+                machine: String::new(),
+                path: "original.pdf".into(),
+            },
+            job: Arc::new(Job::default()),
+            stopped: tokio::sync::Notify::new(),
+            commit: Mutex::new(()),
+            started: Instant::now(),
         });
         owner.job.finish(Ok(path.to_string_lossy().into_owned()));
-        entries().lock().unwrap().insert((root.0.clone(), "native-reader".into()), owner);
+        entries()
+            .lock()
+            .unwrap()
+            .insert((root.0.clone(), "native-reader".into()), owner);
         let first = acquire_ready(&root.0, "native-reader").unwrap();
         let retained = first.clone();
         let second = acquire_ready(&root.0, "native-reader").unwrap();
         cancel(&root.0, "native-reader").unwrap();
         assert!(first.is_cancelled());
         prune_cache(&cache, &cache.join("another-version"));
-        assert!(first.path().is_file(), "cancelling its page must not erase the OS reader's file");
-        assert!(!unowned.exists(), "an open reader must not pin unrelated old downloads");
-        drop(first); drop(retained);
+        assert!(
+            first.path().is_file(),
+            "cancelling its page must not erase the OS reader's file"
+        );
+        assert!(
+            !unowned.exists(),
+            "an open reader must not pin unrelated old downloads"
+        );
+        drop(first);
+        drop(retained);
         prune_cache(&cache, &cache.join("another-version"));
-        assert!(path.is_file(), "a second native owner still retains the original");
+        assert!(
+            path.is_file(),
+            "a second native owner still retains the original"
+        );
         drop(second);
         prune_cache(&cache, &cache.join("another-version"));
-        assert!(!path.exists(), "an unowned old original becomes eligible for normal eviction");
+        assert!(
+            !path.exists(),
+            "an unowned old original becomes eligible for normal eviction"
+        );
     }
     struct Scratch(PathBuf);
     impl Scratch {

@@ -21,7 +21,9 @@ pub unsafe fn show(
     }
     unsafe {
         let at = view as *const AnyObject as *mut AnyObject;
-        let Some(top) = crate::phone_presentation::presenter(view) else { return false; };
+        let Some(top) = crate::phone_presentation::presenter(view) else {
+            return false;
+        };
         let text = NSString::from_str(&path.to_string_lossy());
         let url: Retained<AnyObject> =
             msg_send![class!(NSURL), fileURLWithPath: &*text, isDirectory: false];
@@ -34,13 +36,15 @@ pub unsafe fn show(
             let _: () = msg_send![pop, setSourceView: at];
             let _: () = msg_send![pop, setSourceRect: bounds];
         }
-        let identity=&*sheet as *const AnyObject;
+        let identity = &*sheet as *const AnyObject;
         let gone = block2::RcBlock::new(
             move |_kind: *mut AnyObject,
                   completed: objc2::runtime::Bool,
                   _items: *mut AnyObject,
                   error: *mut AnyObject| {
-                if CURRENT.with(|current| current.get()!=identity) { return; }
+                if CURRENT.with(|current| current.get() != identity) {
+                    return;
+                }
                 CURRENT.with(|current| current.set(std::ptr::null()));
                 if error.is_null() {
                     done(Ok(completed.as_bool()));
@@ -52,26 +56,34 @@ pub unsafe fn show(
         );
         let _: () = msg_send![&*sheet, setCompletionWithItemsHandler: &*gone];
         CURRENT.with(|current| current.set(identity));
-        if crate::phone_presentation::present(&top,&sheet) { return true; }
+        if crate::phone_presentation::present(&top, &sheet) {
+            return true;
+        }
         CURRENT.with(|current| current.set(std::ptr::null()));
-        let _:()=msg_send![&*sheet,setCompletionWithItemsHandler:std::ptr::null::<AnyObject>()];
+        let _: () = msg_send![&*sheet,setCompletionWithItemsHandler:std::ptr::null::<AnyObject>()];
         false
     }
 }
 
-pub async fn open(view: tauri::Webview, file: khor_gui_core::file_handoff::ReadyFile) -> Result<bool, String> {
+pub async fn open(
+    view: tauri::Webview,
+    file: khor_gui_core::file_handoff::ReadyFile,
+) -> Result<bool, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     view.with_webview(move |webview| {
-        if file.is_cancelled(){let _=tx.send(Err(khor_node::drops::cancelled()));return;}
+        if file.is_cancelled() {
+            let _ = tx.send(Err(khor_node::drops::cancelled()));
+            return;
+        }
         let tx = std::rc::Rc::new(std::cell::RefCell::new(Some(tx)));
         let reply = tx.clone();
         // SAFETY: with_webview executes on the main thread and provides
         // this live app WKWebView. Only a completed app-owned path enters.
-        let path=file.path().to_path_buf();
+        let path = file.path().to_path_buf();
         let shown = unsafe {
             let view = &*(webview.inner() as *mut AnyObject);
             show(view, &path, move |result| {
-                let _keep_alive=&file;
+                let _keep_alive = &file;
                 if let Some(tx) = reply.borrow_mut().take() {
                     let _ = tx.send(result);
                 }

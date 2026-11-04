@@ -1092,7 +1092,8 @@ async fn file_handoff_open(
     }
     #[cfg(target_os = "macos")]
     {
-        khor_gui_core::files::launch(&Node::root_from_env(), "", &file.path().to_string_lossy()).await?;
+        khor_gui_core::files::launch(&Node::root_from_env(), "", &file.path().to_string_lossy())
+            .await?;
         Ok(true)
     }
     #[cfg(target_os = "android")]

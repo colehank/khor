@@ -5,7 +5,10 @@ mod ios;
 #[cfg(target_os = "macos")]
 mod macos;
 
-pub async fn open(view: tauri::Webview, file: khor_gui_core::file_handoff::ReadyFile) -> Result<bool, String> {
+pub async fn open(
+    view: tauri::Webview,
+    file: khor_gui_core::file_handoff::ReadyFile,
+) -> Result<bool, String> {
     #[cfg(target_os = "ios")]
     {
         ios::open(view, file).await
