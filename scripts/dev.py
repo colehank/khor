@@ -54,7 +54,11 @@ def configure(restore=False, install_command=False):
             shutil.copyfile(source, destination / name)
     for stage in ["pre-commit", "pre-push"]:
         hook = destination / stage
-        hook.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(destination / "source_hook.py"), stage]) + ' "$@"\n')
+        graph = destination.parent.parent / "hooks/pre-commit.legacy"
+        legacy = ""
+        if stage == "pre-commit" and graph.is_file() and "Installed by code-review-graph" in graph.read_text():
+            legacy = shlex.quote(str(graph)) + ' "$@"\n'
+        hook.write_text("#!/bin/sh\n" + legacy + "exec " + shlex.join([sys.executable, str(destination / "source_hook.py"), stage]) + ' "$@"\n')
         hook.chmod(0o755)
     # Existing pre-commit and graph hooks remain on disk and are restored with --restore.
     git("config", "--local", "core.hooksPath", str(destination))

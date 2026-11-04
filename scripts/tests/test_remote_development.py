@@ -107,6 +107,9 @@ class RemoteDevelopmentTest(unittest.TestCase):
         self.assertEqual(self.git("config", "--get", "core.hooksPath"), "old-hooks")
 
     def test_installed_hooks_allow_a_real_commit_without_node_or_cargo(self):
+        graph = Path(".git/hooks/pre-commit.legacy")
+        graph.write_text('#!/bin/sh\n# Installed by code-review-graph\nprintf graph > graph-hook-ran\n')
+        graph.chmod(0o755)
         with contextlib.redirect_stdout(io.StringIO()):
             dev.configure()
         Path("source.json").write_text('{"state": "changed"}\n')
@@ -120,6 +123,7 @@ class RemoteDevelopmentTest(unittest.TestCase):
         result = subprocess.run(["git", "commit", "-qm", "offline"], env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("NOT validated locally", result.stdout + result.stderr)
+        self.assertEqual(Path("graph-hook-ran").read_text(), "graph")
 
     def test_result_rejects_an_artifact_for_other_source(self):
         output = Path("download")

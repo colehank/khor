@@ -10,7 +10,7 @@ python3 scripts/dev.py configure-local --install-command
 python3 scripts/dev.py configure-local --restore
 ```
 
-这会为当前克隆的所有worktree安装轻量hook，原有pre-commit和图谱hook文件保留，恢复命令还原原来的core.hooksPath。轻量hook只检查**暂存内容**的空白错误、Python/JSON/TOML/Shell结构，不联网、不安装依赖、不编译。JS/TS、Rust格式、工作流和测试没有在本地通过；hook会明确提示这一点。不要把轻量hook的成功当作完整检查成功。
+这会为当前克隆的所有worktree安装轻量hook，原有hook文件保留；现有code-review-graph索引hook继续调用，恢复命令还原原来的core.hooksPath。轻量hook只检查**暂存内容**的空白错误、Python/JSON/TOML/Shell结构，不联网、不安装依赖、不编译。JS/TS、Rust格式、工作流和测试没有在本地通过；hook会明确提示这一点。不要把轻量hook的成功当作完整检查成功。
 
 `--install-command`还会把这两个小型源码脚本保存在Git公共目录，提供`~/.local/bin/khor-dev`命令。它不依赖当前分支是否包含脚本；以后可直接在任意Khor工作树运行`khor-dev check`。重新安装即可更新脚本；恢复hook不会删除这一工具。
 
