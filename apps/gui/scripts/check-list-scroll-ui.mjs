@@ -44,14 +44,14 @@ try {
     const before = await geometry();
     assert(before.content > before.height * 2, 'the fixture must have a scrollable list');
     assert(before.owner, 'the fixed heading must own the list scroll port');
-    const touch = (type, x, y, cancelable = true, target = '[data-pane-body]') => page.evaluate(({type, x, y, cancelable, target}) => {
+    const touch = (type, x, y, cancelable = true, target = '[data-pane-body]', count = 1) => page.evaluate(({type, x, y, cancelable, target, count}) => {
       const el = document.querySelector(target);
       const point = new Touch({identifier: 1, target: el, clientX: x, clientY: y});
-      const points = type === 'touchend' || type === 'touchcancel' ? [] : [point];
+      const points = type === 'touchend' || type === 'touchcancel' ? [] : Array.from({length: count}, (_, i) => i === 0 ? point : new Touch({identifier: i + 1, target: el, clientX: x + 20, clientY: y}));
       const event = new TouchEvent(type, {bubbles: true, cancelable, touches: points, targetTouches: points, changedTouches: [point]});
       el.dispatchEvent(event);
       return event.defaultPrevented;
-    }, {type, x, y, cancelable, target});
+    }, {type, x, y, cancelable, target, count});
     const frame = () => page.evaluate(() => new Promise(requestAnimationFrame));
 
     await touch('touchstart', 200, 400);
@@ -69,6 +69,10 @@ try {
     await touch('touchcancel', 200, 360); await frame();
     assert.equal(await page.evaluate(() => window.refreshes), 0, 'OS gesture cancellation must not start a refresh');
     await page.waitForFunction(() => !document.querySelector('[data-pull-host]'));
+    await touch('touchstart', 200, 200); await touch('touchmove', 200, 360);
+    await touch('touchstart', 200, 360, true, '[data-pane-body]', 2); await frame();
+    assert.equal(await page.locator('[data-pull-host]').count(), 0, 'a second finger must release the pull transform');
+    await touch('touchcancel', 200, 360);
 
     const row = '[data-side-row="session-1"] [data-side-open]';
     await touch('touchstart', 300, 230, true, row);

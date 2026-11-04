@@ -22,6 +22,7 @@ export type PullState = "idle" | "pulling" | "armed" | "syncing" | "done";
 
 /** How far a finger has to pull, in CSS pixels of strip, to arm it. */
 const ARM = 64;
+const SLOP = 8;
 /** The room the pane holds open above itself while it works: the
     spinner's, and no more. */
 export const PULL_HOLD = 36;
@@ -42,28 +43,40 @@ export function usePullRefresh(
 
   useEffect(() => {
     if (!scroller || !coarse || !run.current) return;
-    let from: number | null = null;
+    let live = true, completion = 0;
+    let from: {x: number; y: number} | null = null;
+    let claimed = false;
     let now = 0;
+    busy.current = false;
+    setPull(0); setState("idle");
+    const cancel = () => {
+      if (!from) return;
+      from = null; claimed = false; now = 0;
+      setPull(0); setState("idle");
+    };
     const start = (e: TouchEvent) => {
+      cancel();
+      from = null; claimed = false; now = 0;
       if (busy.current || scroller.scrollTop > 0 || e.touches.length !== 1) return;
-      from = e.touches[0].clientY;
-      now = 0;
+      from = {x: e.touches[0].clientX, y: e.touches[0].clientY};
     };
     const move = (e: TouchEvent) => {
       if (from === null) return;
-      const dy = e.touches[0].clientY - from;
-      if (dy <= 0) {
-        if (now > 0) {
-          now = 0;
-          setPull(0);
-          setState("idle");
+      if (e.touches.length !== 1 || !e.cancelable) {cancel(); return;}
+      const dx = e.touches[0].clientX - from.x;
+      const dy = e.touches[0].clientY - from.y;
+      if (!claimed) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < SLOP) return;
+        if (scroller.scrollTop > 0 || dy <= 0 || Math.abs(dx) >= dy) {
+          cancel();
+          return;
         }
-        return;
+        claimed = true;
       }
       // The list follows the finger at half its speed: the rubber band
       // that says this is a pull, not a scroll.
       e.preventDefault();
-      now = dy / 2;
+      now = Math.max(0, dy / 2);
       setPull(now);
       setState(now >= ARM ? "armed" : "pulling");
     };
@@ -80,12 +93,13 @@ export function usePullRefresh(
       busy.current = true;
       setPull(PULL_HOLD);
       setState("syncing");
-      void go()
+      void Promise.resolve().then(go)
         .catch(() => {})
         .finally(() => {
+          if (!live) return;
           setState("done");
           setPull(0);
-          window.setTimeout(() => {
+          completion = window.setTimeout(() => {
             busy.current = false;
             setState("idle");
           }, DONE_MS);
@@ -95,12 +109,15 @@ export function usePullRefresh(
     // Not passive: a pull holds the page still instead of scrolling it.
     scroller.addEventListener("touchmove", move, { passive: false });
     scroller.addEventListener("touchend", end);
-    scroller.addEventListener("touchcancel", end);
+    scroller.addEventListener("touchcancel", cancel);
     return () => {
+      live = false;
+      busy.current = false;
+      window.clearTimeout(completion);
       scroller.removeEventListener("touchstart", start);
       scroller.removeEventListener("touchmove", move);
       scroller.removeEventListener("touchend", end);
-      scroller.removeEventListener("touchcancel", end);
+      scroller.removeEventListener("touchcancel", cancel);
     };
   }, [scroller, coarse]);
 
