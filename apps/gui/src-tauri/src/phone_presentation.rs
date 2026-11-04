@@ -31,8 +31,19 @@ pub unsafe fn presenter(view: &AnyObject) -> Option<Retained<AnyObject>> {
 /// # Safety
 /// Main thread, with a retained presenter and controller.
 pub unsafe fn present(presenter: &AnyObject, controller: &AnyObject) -> bool {
+    unsafe { present_after(presenter, controller, None) }
+}
+
+/// # Safety
+/// Main thread. UIKit copies the completion block before this call returns.
+pub unsafe fn present_after(
+    presenter: &AnyObject,
+    controller: &AnyObject,
+    completion: Option<&block2::Block<dyn Fn()>>,
+) -> bool {
     unsafe {
-        let _: () = msg_send![presenter, presentViewController: controller, animated: true, completion: std::ptr::null::<AnyObject>()];
+        let completion=completion.map_or(std::ptr::null::<AnyObject>(),|block|block as *const _ as *const AnyObject);
+        let _: () = msg_send![presenter, presentViewController: controller, animated: true, completion: completion];
         let presented: *mut AnyObject = msg_send![presenter, presentedViewController];
         std::ptr::eq(presented, controller)
     }
