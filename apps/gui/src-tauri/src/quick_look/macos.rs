@@ -4,13 +4,15 @@ use objc2::{
     runtime::{AnyClass, AnyObject, NSObject},
 };
 use objc2_foundation::{NSRect, NSString};
-use std::{cell::RefCell, path::PathBuf};
+use std::cell::RefCell;
+use khor_gui_core::file_handoff::ReadyFile;
 #[link(name = "QuickLookUI", kind = "framework")]
 unsafe extern "C" {
     #[link_name = "OBJC_CLASS_$_QLPreviewView"]
     static PREVIEW: AnyClass;
 }
 struct Held {
+    _file: ReadyFile,
     window: Retained<AnyObject>,
     preview: Retained<AnyObject>,
     _delegate: Retained<PreviewDelegate>,
@@ -58,13 +60,15 @@ define_class!(
         }
     }
 );
-pub async fn open(view: tauri::Webview, path: PathBuf) -> Result<bool, String> {
+pub async fn open(view: tauri::Webview, file: ReadyFile) -> Result<bool, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     view.with_webview(move |webview| {
+        if file.is_cancelled(){let _=tx.send(Err(khor_node::drops::cancelled()));return;}
         if HELD.with(|held|held.borrow().is_some()){let _=tx.send(Err(khor_catalog::msg::file_preview_unavailable().into()));return;}
         // SAFETY: this closure and every AppKit callback run on the main
         // thread. The preview owns its objects until windowWillClose.
         unsafe {
+            let path=file.path();
             let wk=webview.inner()as *mut AnyObject;
             let frame:NSRect=msg_send![wk,bounds];
             let window:Allocated<AnyObject>=msg_send![class!(NSWindow),alloc];
@@ -96,7 +100,7 @@ pub async fn open(view: tauri::Webview, path: PathBuf) -> Result<bool, String> {
             });
             let monitor:Retained<AnyObject>=msg_send![class!(NSEvent),addLocalMonitorForEventsMatchingMask:1usize<<10,handler:&*keys];
             let window_ptr=&*window as *const AnyObject;
-            HELD.with(|held|*held.borrow_mut()=Some(Held{window,preview,_delegate:delegate,monitor,reply:tx}));
+            HELD.with(|held|*held.borrow_mut()=Some(Held{_file:file,window,preview,_delegate:delegate,monitor,reply:tx}));
             let _:()=msg_send![window_ptr,center];
             let _:()=msg_send![window_ptr,makeKeyAndOrderFront:std::ptr::null::<AnyObject>()];
         }

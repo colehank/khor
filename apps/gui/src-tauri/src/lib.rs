@@ -1085,25 +1085,25 @@ async fn file_handoff_open(
     }
     #[cfg(not(target_os = "android"))]
     let _ = &app;
-    let path = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+    let file = khor_gui_core::file_handoff::acquire_ready(&Node::root_from_env(), &id)?;
     #[cfg(target_os = "ios")]
     {
-        phone_share::open(webview, path).await
+        phone_share::open(webview, file).await
     }
     #[cfg(target_os = "macos")]
     {
-        khor_gui_core::files::launch(&Node::root_from_env(), "", &path.to_string_lossy()).await?;
+        khor_gui_core::files::launch(&Node::root_from_env(), "", &file.path().to_string_lossy()).await?;
         Ok(true)
     }
     #[cfg(target_os = "android")]
     {
-        tauri_plugin_khor_files::open(&app, &path)
+        tauri_plugin_khor_files::open(&app, file.path())
             .map_err(|_| khor_catalog::msg::file_open_unavailable().to_owned())?;
         Ok(true)
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
     {
-        let _ = (app, path);
+        let _ = (app, file);
         Err(khor_catalog::msg::file_open_unavailable().into())
     }
 }
@@ -1117,14 +1117,14 @@ async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, 
     if webview.label() != "main" {
         return Err("file preview is only available in the app".into());
     }
-    let path = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+    let file = khor_gui_core::file_handoff::acquire_ready(&Node::root_from_env(), &id)?;
     #[cfg(any(target_os = "ios", target_os = "macos"))]
     {
-        quick_look::open(webview, path).await
+        quick_look::open(webview, file).await
     }
     #[cfg(not(any(target_os = "ios", target_os = "macos")))]
     {
-        let _ = (webview, path);
+        let _ = (webview, file);
         Err(khor_catalog::msg::file_preview_unavailable().into())
     }
 }
@@ -5913,6 +5913,8 @@ mod page_trust;
 mod phone_files;
 #[cfg(target_os = "ios")]
 mod phone_page;
+#[cfg(target_os = "ios")]
+mod phone_presentation;
 #[cfg(target_os = "ios")]
 mod phone_share;
 #[cfg(desktop)]

@@ -4,6 +4,7 @@ use khor_node::{Node, road::Job};
 use serde::Serialize;
 use std::{
     collections::HashMap,
+    fs::{File, OpenOptions},
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
     time::{Duration, Instant},
@@ -26,6 +27,39 @@ struct Entry {
     stopped: tokio::sync::Notify,
     commit: Mutex<()>,
     started: Instant,
+}
+
+#[derive(Clone)]
+pub struct ReadyFile {
+    path: PathBuf,
+    owner: Arc<Entry>,
+    _lease: Arc<File>,
+}
+impl ReadyFile {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+    pub fn is_cancelled(&self) -> bool {
+        self.owner.job.is_stopped()
+    }
+}
+
+fn cache_lock(cache: &Path) -> Result<File, String> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(cache.join(".readers.lock"))
+        .map_err(|error| error.to_string())
+}
+
+pub fn acquire_ready(root: &Path, id: &str) -> Result<ReadyFile, String> {
+    let owner = entry(root, id)?;
+    let lease = cache_lock(&cache_root(root))?;
+    lease.lock_shared().map_err(|error| error.to_string())?;
+    let path = ready_path(root, id)?;
+    Ok(ReadyFile {path, owner, _lease: Arc::new(lease)})
 }
 #[derive(PartialEq, Eq)]
 enum Source {
@@ -283,9 +317,13 @@ async fn prepare(
 }
 
 /// Cache is disposable, never a receive folder. Age and size are soft
-/// bounds: a file just handed to another app stays alive for an hour,
-/// even if that single original exceeds the budget.
+/// bounds: native readers hold a shared cache lease; other completed
+/// originals retain an hour of grace even when they exceed the budget.
 pub(crate) fn prune_cache(root: &Path, current: &Path) {
+    let Ok(lease) = cache_lock(root) else { return; };
+    if lease.try_lock().is_err() {
+        return;
+    }
     fn size(path: &Path) -> u64 {
         let Ok(entries) = std::fs::read_dir(path) else {
             return 0;
@@ -335,6 +373,41 @@ pub(crate) fn prune_cache(root: &Path, current: &Path) {
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn native_readers_keep_original_files_until_the_last_owner_releases_them() {
+        let root = Scratch::new();
+        let cache = cache_root(&root.0);
+        let version = cache.join("native-reader");
+        std::fs::create_dir_all(&version).unwrap();
+        let path = version.join("original.pdf");
+        std::fs::write(&path, b"synthetic original file").unwrap();
+        let manifest = version.join("ready.json");
+        std::fs::write(&manifest, b"original.pdf").unwrap();
+        File::open(&manifest).unwrap().set_times(
+            std::fs::FileTimes::new().set_modified(std::time::SystemTime::now() - Duration::from_secs(8 * 86400))
+        ).unwrap();
+        let owner = Arc::new(Entry {
+            source: Source::File {machine: String::new(), path: "original.pdf".into()},
+            job: Arc::new(Job::default()), stopped: tokio::sync::Notify::new(),
+            commit: Mutex::new(()), started: Instant::now(),
+        });
+        owner.job.finish(Ok(path.to_string_lossy().into_owned()));
+        entries().lock().unwrap().insert((root.0.clone(), "native-reader".into()), owner);
+        let first = acquire_ready(&root.0, "native-reader").unwrap();
+        let retained = first.clone();
+        let second = acquire_ready(&root.0, "native-reader").unwrap();
+        cancel(&root.0, "native-reader").unwrap();
+        assert!(first.is_cancelled());
+        prune_cache(&cache, &cache.join("another-version"));
+        assert!(first.path().is_file(), "cancelling its page must not erase the OS reader's file");
+        drop(first); drop(retained);
+        prune_cache(&cache, &cache.join("another-version"));
+        assert!(path.is_file(), "a second native owner still retains the original");
+        drop(second);
+        prune_cache(&cache, &cache.join("another-version"));
+        assert!(!path.exists(), "an unowned old original becomes eligible for normal eviction");
+    }
     struct Scratch(PathBuf);
     impl Scratch {
         fn new() -> Self {

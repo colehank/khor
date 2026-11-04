@@ -7,7 +7,7 @@ use objc2::{
 };
 use objc2_foundation::NSString;
 
-thread_local! { static BUSY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+thread_local! { static CURRENT: std::cell::Cell<*const AnyObject> = const { std::cell::Cell::new(std::ptr::null()) }; }
 
 /// # Safety
 /// Main thread; `view` must be an attached, live WKWebView.
@@ -16,26 +16,12 @@ pub unsafe fn show(
     path: &std::path::Path,
     done: impl Fn(Result<bool, String>) + 'static,
 ) -> bool {
-    if BUSY.with(|busy| busy.get()) {
+    if CURRENT.with(|current| !current.get().is_null()) {
         return false;
     }
     unsafe {
         let at = view as *const AnyObject as *mut AnyObject;
-        let window: *mut AnyObject = msg_send![at, window];
-        if window.is_null() {
-            return false;
-        }
-        let mut top: *mut AnyObject = msg_send![window, rootViewController];
-        if top.is_null() {
-            return false;
-        }
-        loop {
-            let next: *mut AnyObject = msg_send![top, presentedViewController];
-            if next.is_null() {
-                break;
-            }
-            top = next;
-        }
+        let Some(top) = crate::phone_presentation::presenter(view) else { return false; };
         let text = NSString::from_str(&path.to_string_lossy());
         let url: Retained<AnyObject> =
             msg_send![class!(NSURL), fileURLWithPath: &*text, isDirectory: false];
@@ -48,12 +34,14 @@ pub unsafe fn show(
             let _: () = msg_send![pop, setSourceView: at];
             let _: () = msg_send![pop, setSourceRect: bounds];
         }
+        let identity=&*sheet as *const AnyObject;
         let gone = block2::RcBlock::new(
             move |_kind: *mut AnyObject,
                   completed: objc2::runtime::Bool,
                   _items: *mut AnyObject,
                   error: *mut AnyObject| {
-                BUSY.with(|busy| busy.set(false));
+                if CURRENT.with(|current| current.get()!=identity) { return; }
+                CURRENT.with(|current| current.set(std::ptr::null()));
                 if error.is_null() {
                     done(Ok(completed.as_bool()));
                 } else {
@@ -63,22 +51,27 @@ pub unsafe fn show(
             },
         );
         let _: () = msg_send![&*sheet, setCompletionWithItemsHandler: &*gone];
-        BUSY.with(|busy| busy.set(true));
-        let _: () = msg_send![top, presentViewController: &*sheet, animated: true, completion: std::ptr::null::<AnyObject>()];
-        true
+        CURRENT.with(|current| current.set(identity));
+        if crate::phone_presentation::present(&top,&sheet) { return true; }
+        CURRENT.with(|current| current.set(std::ptr::null()));
+        let _:()=msg_send![&*sheet,setCompletionWithItemsHandler:std::ptr::null::<AnyObject>()];
+        false
     }
 }
 
-pub async fn open(view: tauri::Webview, path: std::path::PathBuf) -> Result<bool, String> {
+pub async fn open(view: tauri::Webview, file: khor_gui_core::file_handoff::ReadyFile) -> Result<bool, String> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     view.with_webview(move |webview| {
+        if file.is_cancelled(){let _=tx.send(Err(khor_node::drops::cancelled()));return;}
         let tx = std::rc::Rc::new(std::cell::RefCell::new(Some(tx)));
         let reply = tx.clone();
         // SAFETY: with_webview executes on the main thread and provides
         // this live app WKWebView. Only a completed app-owned path enters.
+        let path=file.path().to_path_buf();
         let shown = unsafe {
             let view = &*(webview.inner() as *mut AnyObject);
             show(view, &path, move |result| {
+                let _keep_alive=&file;
                 if let Some(tx) = reply.borrow_mut().take() {
                     let _ = tx.send(result);
                 }
