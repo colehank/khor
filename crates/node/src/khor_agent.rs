@@ -674,6 +674,7 @@ impl Node {
                     .insert(execution_key.clone(), active.clone());
                 let mut start = json!({"type":"start","protocol":1,"run":id,"text":text,"stateDir":if board == crate::wide::BROADCAST { directory(&root).join("sessions") } else { execution_key.join("history") },"model":config.model,"options":config.options,
                     "account":{"provider":account.provider.word(),"baseUrl":account.base_url,"key":key.trim()}});
+                start["cwd"] = json!(root.to_string_lossy());
                 if let Some(inference) = &account.inference {
                     start["account"] =
                         json!({"provider":inference.provider,"baseUrl":inference.base_url});
@@ -681,6 +682,9 @@ impl Node {
                 }
                 if let Ok(conversation) = self.khor_conversation(&board) {
                     start["autoTitle"] = json!(conversation.auto_title);
+                    if !conversation.cwd.is_empty() {
+                        start["cwd"] = json!(conversation.cwd);
+                    }
                 }
                 let recovery_key = execution_key.clone();
                 let recovery_root = root.clone();

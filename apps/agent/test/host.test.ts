@@ -55,7 +55,7 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     });
     child.on("error", reject);
     child.on("exit", (code) => code === 0 ? resolve(events) : reject(new Error(`Host exited ${code}: ${diagnostics}; ${JSON.stringify(events.filter((e) => e.type !== "mcp"))}`)));
-    child.stdin.write(`${JSON.stringify({ type: "start", protocol: 1, run: "fixture-run", text, stateDir:historyDir, autoTitle, model: "fixture", account: { provider: "newapi", baseUrl: `http://127.0.0.1:${address.port}`, key: "fixture-selected-key" } })}\n`);
+    child.stdin.write(`${JSON.stringify({ type: "start", protocol: 1, run: "fixture-run", text, cwd:'/selected-workspace', stateDir:historyDir, autoTitle, model: "fixture", account: { provider: "newapi", baseUrl: `http://127.0.0.1:${address.port}`, key: "fixture-selected-key" } })}\n`);
   });
   try {
     const first = await turn("Remember fixture-task, then list my devices");
@@ -72,6 +72,7 @@ test("the real Pi host uses MCP only, supplies the selected key, and restores mo
     assert.equal(toolsCalled, 1);
     assert.ok(authenticated, "the model received credentials other than the selected account");
     assert.deepEqual(requests[0]!.tools.map((t: any) => t.function.name), ["mcp__khor__devices"]);
+    assert(requests[0]!.messages.some((message: any)=>message.role==='system'&&message.content.includes('/selected-workspace')), 'the selected working directory reaches the actual model context');
     assert.ok(requests[1]!.messages.some((m: any) => m.role === "tool" && m.content.includes("fixture-device")));
     await turn("What did I ask before?");
     assert.ok(requests[2]!.messages.some((m: any) => m.role === "user" && JSON.stringify(m.content).includes("fixture-task")));

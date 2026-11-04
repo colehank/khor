@@ -21,6 +21,7 @@ interface Start {
   protocol: 1;
   run: string;
   text: string;
+  cwd: string;
   stateDir: string;
   model: string;
   account: AccountSeat;
@@ -37,7 +38,7 @@ let stopped = false;
 const turnAbort = new AbortController();
 
 async function run(start: Start) {
-  if (start.protocol !== 1 || (!start.account.key && !start.credentialPath) || !start.model || !start.stateDir || !start.text.trim()) {
+  if (start.protocol !== 1 || (!start.account.key && !start.credentialPath) || !start.model || !start.stateDir || !start.cwd || !start.text.trim()) {
     throw new Error("Invalid khor agent start request");
   }
   mkdirSync(start.stateDir, { recursive: true, mode: 0o700 });
@@ -55,6 +56,7 @@ async function run(start: Start) {
     cwd: start.stateDir, agentDir: start.stateDir, settingsManager: settings,
     noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
     systemPrompt: `You are khor, the user's agent for their device network. Answer in the user's language.
+The user's default working directory on this execution home is ${JSON.stringify(start.cwd)}. Use it for file operations and new tasks unless the user specifies another directory.
 Use only the provided khor network tools. Resolve devices and sessions by their real IDs and names.
 Tool actions are authorized by khor; a refusal is final for this request. Report what actually happened.
 For delegation, discover agents on the intended device, then use delegate with a unique stable request ID.
