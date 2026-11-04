@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{File, OpenOptions},
     io::{Read, Write},
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::OnceLock,
@@ -10,6 +11,22 @@ use std::{
 };
 
 static EXIT_LEASE: OnceLock<File> = OnceLock::new();
+
+fn spawn_monitor(program: &Path, directory: &Path, output: File) -> Result<Child, String> {
+    Command::new(program)
+        .arg("_app_update_watch")
+        .arg(directory)
+        .current_dir("/")
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(output.try_clone().map_err(|e| e.to_string())?))
+        .stderr(Stdio::from(output))
+        .env_remove("KHOR_RUNTIME_LEASE_FD")
+        .env_remove("KHOR_APP_UPDATE_RECORD")
+        .env_remove("KHOR_APP_UPDATE_TOKEN")
+        .spawn()
+        .map_err(|e| e.to_string())
+}
 
 pub(crate) fn boot_script() -> &'static str {
     if std::env::var_os("KHOR_APP_UPDATE_RECORD").is_some() {
@@ -107,18 +124,7 @@ impl Installation {
             .write(true)
             .open(path.join("worker.log"))
             .map_err(|e| e.to_string())?;
-        let worker = Command::new(&previous)
-            .arg("_app_update_watch")
-            .arg(path)
-            .current_dir("/")
-            .stdin(Stdio::null())
-            .stdout(Stdio::from(output.try_clone().map_err(|e| e.to_string())?))
-            .stderr(Stdio::from(output))
-            .env_remove("KHOR_RUNTIME_LEASE_FD")
-            .env_remove("KHOR_APP_UPDATE_RECORD")
-            .env_remove("KHOR_APP_UPDATE_TOKEN")
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        let worker = spawn_monitor(&previous, path, output)?;
         let directory = directory.keep();
         let mut installation = Self {
             directory,
@@ -322,6 +328,7 @@ fn launch(program: &Path, health: Option<(&Path, &str)>) -> Result<Child, String
     let mut command = Command::new(program);
     command
         .current_dir("/")
+        .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -554,6 +561,52 @@ fn write_json(root: &Path, name: &str, value: &impl Serialize) -> Result<(), Str
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;
+    #[test]
+    fn update_monitor_has_an_independent_lifetime_group() {
+        let root = tempfile::tempdir().unwrap();
+        let program = root.path().join("monitor");
+        let log = root.path().join("output");
+        std::fs::write(&program, b"#!/bin/sh\n/bin/ps -o pgid= -p \"$$\"\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = File::create(&log).unwrap();
+        let mut worker = spawn_monitor(&program, root.path(), output).unwrap();
+        let pid = worker.id();
+        assert!(worker.wait().unwrap().success());
+        let group: u32 = std::fs::read_to_string(log)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            group, pid,
+            "the updater must outlive cleanup of the old App's process group"
+        );
+    }
+
+    #[test]
+    fn relaunched_application_has_an_independent_lifetime_group() {
+        let root = tempfile::tempdir().unwrap();
+        let program = root.path().join("application");
+        std::fs::write(
+            &program,
+            b"#!/bin/sh\n/bin/ps -o pgid= -p \"$$\" > \"${0%/*}/group\"\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut application = launch(&program, None).unwrap();
+        let pid = application.id();
+        assert!(application.wait().unwrap().success());
+        let group: u32 = std::fs::read_to_string(root.path().join("group"))
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert_eq!(
+            group, pid,
+            "the restored App must outlive its completed update monitor"
+        );
+    }
+
     fn old_bundle(root: &Path) -> BuildIdentity {
         let mut info = khor_node::updates::program_info().unwrap();
         info.component = khor_update::Component::DesktopApp;
