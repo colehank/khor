@@ -3207,8 +3207,7 @@ fn what_is_on_the_list_is_the_users_choice() {
             .map(|v| v.session.id.0)
             .collect::<Vec<_>>()
     };
-    // An agent somebody started in their own terminal, reported by its
-    // hook: found, and **not** on the list.
+    // Native discovery alone does not put an external agent on the list.
     plant_live_claude(&r, "feed02", "idle", std::process::id());
     let project = crate::adaptor::vendor_home(&r).join(".claude/projects/fixture");
     fs::create_dir_all(&project).unwrap();
@@ -3221,7 +3220,7 @@ fn what_is_on_the_list_is_the_users_choice() {
     );
     let candidates = n.import_candidates().unwrap();
     assert!(
-        candidates.iter().any(|c| c.id == found && c.form == "tui"),
+        candidates.iter().any(|c| c.id == found && c.form == "observe"),
         "{candidates:?}"
     );
     // An agent's row names the agent, not a command (IMPORT-BRIEF): the
@@ -3238,15 +3237,16 @@ fn what_is_on_the_list_is_the_users_choice() {
         "on the list already: nothing to import"
     );
 
-    // Imported: on the list, and no longer a candidate.
-    n.import(&found).unwrap();
-    assert!(ids(&n).contains(&found));
-    assert!(!n.import_candidates().unwrap().iter().any(|c| c.id == found));
+    let imported = n.import(&found).unwrap();
+    assert_ne!(imported.0, found);
+    assert!(ids(&n).contains(&imported.0));
+    let observation = n.sessions().unwrap().into_iter().find(|v| v.session.id == imported).unwrap().session;
+    assert!(!observation.can_control && !observation.term);
+    assert_eq!(observation.kind.0, khor_core::kind::OBSERVE);
+    assert_eq!(n.import(&found).unwrap(), imported, "importing again reuses the read-only row");
 
-    // 删除 takes it off the list and nothing else: a candidate again,
-    // and its registry entry (the hook's) untouched.
-    n.close(&SessionId(found.clone())).unwrap();
-    assert!(!ids(&n).contains(&found));
+    n.close(&imported).unwrap();
+    assert!(!ids(&n).contains(&imported.0));
     assert!(n.import_candidates().unwrap().iter().any(|c| c.id == found));
     assert!(
         n.every_session()
