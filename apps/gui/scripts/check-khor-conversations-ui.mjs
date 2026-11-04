@@ -29,7 +29,7 @@ try {
  for(const [name,engine] of [['chromium',chromium],...(process.env.QUALITY_ENGINES?.includes('webkit')?[['webkit',webkit]]:[])]) {
   browser=await engine.launch({headless:true});
   const page=await browser.newPage({viewport:{width:1000,height:760}});page.setDefaultTimeout(12000);
-  const errors=[],calls=[],histories=new Map([[A,[]],[B,[]]]),creates=new Map();let failedCreate=false,failNextCreate=false;
+  const errors=[],calls=[],histories=new Map([[A,[]],[B,[]]]),creates=new Map();let failedCreate=false,failNextCreate=false,holdNextCreate=false,releaseCreate;
   page.on('pageerror',error=>{errors.push(error.message);console.error(error.message);});
   const config={home,account:'fixture-account',model:'fixture-model',options:{}};
   const account={id:config.account,name:'Fixture account',home,home_name:'fixture',provider:'anthropic',default_model:config.model,configured:true,base_url:null,auth_type:'api_key'};
@@ -53,6 +53,7 @@ try {
     if(action==='create') {
      if(!creates.has(payload.token))creates.set(payload.token,creates.size===0?A:B);
      if(!failedCreate||failNextCreate){failedCreate=true;failNextCreate=false;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'Lost create response fixture'});return;}
+     if(holdNextCreate){holdNextCreate=false;await new Promise(resolve=>{releaseCreate=resolve;});}
      result.data={session:creates.get(payload.token)};
     } else if(action==='prompt'){const id=payload.session===A?'task-a':'task-b';histories.get(payload.session).push(record(id,payload.text,true));result.run=id;}
     else if(action==='stop'){const item=histories.get(payload.session).find(m=>m.id===payload.run);item.command.status='done';item.command.ended_at_ms=Date.now();}
@@ -94,8 +95,17 @@ try {
   await page.locator('[data-new-session-create]').click();await page.locator('[data-chat-composer]').waitFor();
   const replacement=calls.filter(c=>c.cmd==='khor_agent'&&c.args.action==='create').at(-1).args.payload.token;
   assert.notEqual(replacement,abandoned,'a fresh creation form must not reuse an abandoned request token');
+  await page.evaluate(()=>window.showNew());await choose('khor');holdNextCreate=true;
+  const requested=page.waitForRequest(request=>request.method()==='POST'&&new URL(request.url()).pathname==='/khor_agent'&&request.postDataJSON().action==='create');
+  await page.locator('[data-new-session-create]').click();const oldRequest=await requested;
+  await page.evaluate(()=>window.showNew());await choose('khor');
+  assert.equal(typeof releaseCreate,'function');
+  const answered=page.waitForResponse(response=>response.request()===oldRequest);
+  releaseCreate();await answered;await page.evaluate(()=>new Promise(requestAnimationFrame));
+  assert.equal(await page.locator('[data-new-session-page]').count(),1,'a response from an abandoned form must not navigate away from the new form');
+  assert.equal(await page.locator('[data-chat-composer]').count(),0);
   assert.deepEqual(errors,[]);results.push({engine:name,passed:true});await browser.close();browser=null;
  }
- console.log('Khor conversations UI: create retry, independent tabs, model task/stop and Khor slash routing passed');
+ console.log('Khor conversations UI: create retry/abandonment, independent tabs, model task/stop and Khor slash routing passed');
 } catch(error){if(browser){try{await browser.contexts()[0]?.pages()[0]?.screenshot({path:join(out,'failure.png')});}catch{}}throw error;}
 finally{writeFileSync(join(out,'report.json'),JSON.stringify(results,null,2));await browser?.close();await server?.close();rmSync(fixture,{recursive:true,force:true});}

@@ -33,16 +33,6 @@ type Launch = {
 type LaunchOption = ChoiceOption & {
   launch: Launch;
 };
-// A response lost in transit does not turn a retry into a second session.
-const creates = new Map<string, string>();
-const tokenFor = (key: string) => {
-  let token = creates.get(key);
-  if (!token) {
-    token = crypto.randomUUID();
-    creates.set(key, token);
-  }
-  return token;
-};
 const kindIcon = (kind: string, agent: string | null) => sessionKind(kind, agent).glyph('size-kind-mark');
 export function NewSessionPage({
   onCancel,
@@ -87,10 +77,14 @@ export function NewSessionPage({
     [attaching, setAttaching] = useState<string | null>(null);
   const [handed, setHanded] = useState<string | null>(peekHandOff);
   const contextMachine = useRef<string | null>(null),
-    startedAgent = useRef(false);
+    startedAgent = useRef(false),
+    generation = useRef(0),
+    creation = useRef<{key: string; token: string} | null>(null);
   const why = (e: unknown) => setError(String(e instanceof Error ? e.message : e));
   useEffect(() => {
     let live = true;
+    generation.current++;
+    creation.current = null;
     setDevices([]);
     setMachine(picked);
     setPaths({});
@@ -116,6 +110,8 @@ export function NewSessionPage({
     });
     return () => {
       live = false;
+      generation.current++;
+      creation.current = null;
     };
   }, [picked, at]);
   const target = devices.find(d => d.name === machine || d.id === machine) ?? (machine === '' ? devices.find(d => d.me && d.hosts) ?? devices.find(d => d.hosts && d.sponsor === null) ?? devices.find(d => d.me) : undefined);
@@ -193,16 +189,26 @@ export function NewSessionPage({
     }
     const title = name.trim() || (launch.kind === 'shell' && launch.preset ? presets.find(p => p.id === launch.preset)?.name || '' : '');
     const key = JSON.stringify([channel, cwd, launch, title,environment]);
-    const token = tokenFor(key);
+    if (creation.current?.key !== key) creation.current = {key, token: crypto.randomUUID()};
+    const {token} = creation.current;
+    const version = generation.current;
+    const ownsRequest = () => generation.current === version && creation.current?.token === token;
     setOpening(true);
     setError(null);
     (launch.kind === 'khor' ? khorAgent('create',target.id,{token,title,cwd}).then(view=>{const id=(view.data as {session?:string})?.session;if(!id)throw new Error('未能创建会话');return id;}) : launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
-      creates.delete(key);
+      if (!ownsRequest()) return;
+      creation.current = null;
       startedAgent.current = launch.kind === 'agent';
       onOpened(id);
-    }).catch(why).finally(() => setOpening(false));
+    }).catch(error => {
+      if (ownsRequest()) why(error);
+    }).finally(() => {
+      if (generation.current === version && (!creation.current || creation.current.token === token)) setOpening(false);
+    });
   };
   const cancel = () => {
+    generation.current++;
+    creation.current = null;
     if (!startedAgent.current) dropHandOff();
     onCancel();
   };
