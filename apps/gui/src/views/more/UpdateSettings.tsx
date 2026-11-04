@@ -50,7 +50,7 @@ export function UpdateSettings() {
   const working = busy || ["checking", "downloading", "verifying", "installing", "awaiting-health"].includes(status.phase);
   const download = status.phase === "available" || (status.phase === "failed" && status.available !== null);
   const ready = status.phase === "ready";
-  const blocked = status.blocked.map(reason => ({"unsaved-files":gui.update_save_files,"attachments":gui.update_finish_attachments,"unconfirmed-sends":gui.update_finish_sends,"draft-storage":gui.update_draft_storage,"navigation-storage":gui.update_draft_storage,"window-not-ready":gui.update_window_not_ready})[reason]).join(" · ");
+  const blocked = status.blocked.map(reason => ({"unsaved-files":gui.update_save_files,"attachments":gui.update_finish_attachments,"unconfirmed-sends":gui.update_finish_sends,"draft-storage":gui.update_draft_storage,"navigation-storage":gui.update_draft_storage,"window-not-ready":gui.update_window_not_ready,"input-in-progress":gui.update_finish_input,"user-active":gui.update_later})[reason]).join(" · ");
   const preferences = (next: Partial<UpdatePreferences>) => run(() => setAppUpdatePreferences({ ...status.preferences, ...next }));
   return (
     <MoreSection name="app-update">
@@ -63,6 +63,8 @@ export function UpdateSettings() {
         onToggle={() => { if (!working) preferences({ automatic_check: !status.preferences.automatic_check }); }} />
       <SwitchRow name="update-automatic-download" label={gui.update_automatic_download} on={status.preferences.automatic_download}
         onToggle={() => { if (!working) preferences({ automatic_download: !status.preferences.automatic_download }); }} />
+      <SwitchRow name="update-install-on-start" label={gui.update_install_on_start} hint={gui.update_install_on_start_hint} on={status.preferences.install_on_start}
+        onToggle={() => { if (!working) preferences({ install_on_start: !status.preferences.install_on_start }); }} />
     </MoreSection>
   );
 }

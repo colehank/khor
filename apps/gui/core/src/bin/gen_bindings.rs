@@ -43,6 +43,7 @@ macro_rules! roots {
         $visit!(khor_gui_core::About);
         $visit!(khor_gui_core::updates::AppUpdateStatus);
         $visit!(khor_gui_core::updates::UpdateBlocker);
+        $visit!(khor_gui_core::updates::UpdatePreparation);
         $visit!(khor_gui_core::LeaveOutcome);
         $visit!(khor_gui_core::Waiting);
         $visit!(khor_gui_core::SyncOutcome);

@@ -36,6 +36,7 @@ impl UpdateAdmission {
     pub(crate) async fn prepare(
         self: &Arc<Self>,
         app: &AppHandle,
+        automatic: bool,
     ) -> Result<RestartPermit, Vec<UpdateBlocker>> {
         static SEQUENCE: AtomicU64 = AtomicU64::new(1);
         let nonce = format!(
@@ -66,7 +67,14 @@ impl UpdateAdmission {
             nonce: nonce.clone(),
         };
         for label in &labels {
-            let _ = app.emit_to(label, "app-update:prepare", &nonce);
+            let _ = app.emit_to(
+                label,
+                "app-update:prepare",
+                &khor_gui_core::updates::UpdatePreparation {
+                    nonce: nonce.clone(),
+                    automatic,
+                },
+            );
         }
         let result = tokio::time::timeout(Duration::from_secs(5), async {
             loop {

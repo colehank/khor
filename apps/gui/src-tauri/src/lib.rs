@@ -5364,6 +5364,9 @@ pub fn run() {
     // sampler's last round and never waits for a disk.
     khor_node::vitals::local::start(&Node::root_from_env());
 
+    let context = tauri::generate_context!();
+    #[cfg(desktop)]
+    let context = updater_package::configure(context).expect("bundled updater configuration");
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
@@ -5826,7 +5829,7 @@ pub fn run() {
             ];
             fallback(invoke)
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("tauri build")
         // **Every way out is said in the log** (round NET-FIX): a window
         // closed or ⌘Q is the person's, and the line names it so a

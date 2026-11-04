@@ -41,6 +41,14 @@ pub enum UpdateBlocker {
     DraftStorage,
     NavigationStorage,
     WindowNotReady,
+    InputInProgress,
+    UserActive,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+pub struct UpdatePreparation {
+    pub nonce: String,
+    pub automatic: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
@@ -49,7 +57,8 @@ pub struct UpdatePreferences {
     pub channel: UpdateChannel,
     pub automatic_check: bool,
     pub automatic_download: bool,
-    pub install_on_exit: bool,
+    #[serde(default, alias = "install_on_exit")]
+    pub install_on_start: bool,
 }
 
 impl UpdatePreferences {
@@ -58,7 +67,7 @@ impl UpdatePreferences {
             channel,
             automatic_check: true,
             automatic_download: true,
-            install_on_exit: false,
+            install_on_start: false,
         }
     }
 }

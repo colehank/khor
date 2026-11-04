@@ -174,6 +174,13 @@ impl Installation {
 
     pub(crate) fn restore_after_failure(&mut self) -> Result<(), String> {
         restore_previous(&self.directory, &self.receipt)?;
+        write_json(
+            self.directory
+                .parent()
+                .ok_or("installation has no staging directory")?,
+            "deferred.json",
+            &self.receipt.release,
+        )?;
         self.cancel();
         Ok(())
     }
@@ -261,6 +268,13 @@ fn watch(directory: &Path) -> Result<(), String> {
     }
     eprintln!("update was not healthy: {}", result.unwrap_err());
     restore_previous(directory, &receipt)?;
+    write_json(
+        directory
+            .parent()
+            .ok_or("installation has no staging directory")?,
+        "deferred.json",
+        &receipt.release,
+    )?;
     receipt.phase = Phase::RolledBack;
     write_json(directory, "receipt.json", &receipt)?;
     launch(&program, None)?;
@@ -392,6 +406,20 @@ pub(crate) fn adopted(root: &Path, build: &BuildIdentity) -> Option<khor_update:
         .then(|| release.manifest().identity.clone())
 }
 
+pub(crate) fn automatic_allowed(root: &Path, identity: &khor_update::ReleaseIdentity) -> bool {
+    let path = root.join("deferred.json");
+    if !path.exists() {
+        return true;
+    }
+    let Some(release) = read_json::<SignedRelease>(&path)
+        .ok()
+        .and_then(|signed| TrustRoot::bundled().ok()?.restore(&signed).ok())
+    else {
+        return false;
+    };
+    release.manifest().identity != *identity
+}
+
 fn restore_previous(directory: &Path, receipt: &Receipt) -> Result<(), String> {
     let previous = directory.join("previous.app");
     if khor_node::updates::inspect(&previous.join("Contents/MacOS/khor-gui"))?.build != receipt.old
@@ -402,6 +430,12 @@ fn restore_previous(directory: &Path, receipt: &Receipt) -> Result<(), String> {
         .target
         .parent()
         .ok_or("application has no installation directory")?;
+    if receipt.target.exists()
+        && khor_node::updates::inspect(&receipt.target.join("Contents/MacOS/khor-gui"))
+            .is_ok_and(|info| info.build == receipt.old)
+    {
+        return Ok(());
+    }
     let staging = tempfile::Builder::new()
         .prefix(".khor-restore-")
         .tempdir_in(parent)
@@ -581,6 +615,15 @@ mod tests {
             std::fs::read(root.path().join("neighbour")).unwrap(),
             b"unrelated user data"
         );
+        restore_previous(
+            &directory,
+            &receipt(target.clone(), khor_update::build_identity().unwrap()),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read(target.join("Contents/Resources/ui.bin")).unwrap(),
+            b"previous interface"
+        );
     }
     #[test]
     fn a_mismatched_previous_program_cannot_overwrite_the_current_application() {
@@ -597,5 +640,22 @@ mod tests {
             std::fs::read(target.join("keep")).unwrap(),
             b"current application"
         );
+    }
+
+    #[test]
+    fn unknown_failed_update_metadata_cannot_enable_an_automatic_retry_loop() {
+        let root = tempfile::tempdir().unwrap();
+        let identity = khor_update::ReleaseIdentity {
+            tag: "v0.2.0".to_owned().try_into().unwrap(),
+            source: "a".repeat(40).try_into().unwrap(),
+            build: 1,
+        };
+        assert!(automatic_allowed(root.path(), &identity));
+        std::fs::write(
+            root.path().join("deferred.json"),
+            b"unverified or interrupted failure record",
+        )
+        .unwrap();
+        assert!(!automatic_allowed(root.path(), &identity));
     }
 }

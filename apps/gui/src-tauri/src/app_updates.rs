@@ -209,8 +209,8 @@ impl AppUpdates {
         let platform = Platform::current()?;
         let staging = self.store()?;
         // A cached signed selection is useful after a restart even when discovery is temporarily offline.
-        if let Some((release, offer)) =
-            staging.restore(&trust, &current, Component::DesktopApp, platform, channel)?
+        if let Ok(Some((release, offer))) =
+            staging.restore(&trust, &current, Component::DesktopApp, platform, channel)
         {
             let ready = staging.is_ready(&trust, &offer).unwrap_or(false);
             self.change(app, |data| {
@@ -344,12 +344,16 @@ impl AppUpdates {
     }
 
     #[cfg(target_os = "macos")]
-    pub(crate) async fn install(&self, app: &AppHandle) -> Result<AppUpdateStatus, String> {
+    pub(crate) async fn install(
+        &self,
+        app: &AppHandle,
+        automatic: bool,
+    ) -> Result<AppUpdateStatus, String> {
         let _operation = self
             .operation
             .try_lock()
             .map_err(|_| "an update operation is already running")?;
-        let result = self.install_inner(app).await;
+        let result = self.install_inner(app, automatic).await;
         match result {
             Ok(status) => Ok(status),
             Err(error) => self.failed(app, error),
@@ -357,7 +361,11 @@ impl AppUpdates {
     }
 
     #[cfg(target_os = "macos")]
-    async fn install_inner(&self, app: &AppHandle) -> Result<AppUpdateStatus, String> {
+    async fn install_inner(
+        &self,
+        app: &AppHandle,
+        automatic: bool,
+    ) -> Result<AppUpdateStatus, String> {
         let current = self.current()?;
         let trust = TrustRoot::bundled()?;
         let release = self
@@ -415,7 +423,7 @@ impl AppUpdates {
             .state::<std::sync::Arc<crate::update_admission::UpdateAdmission>>()
             .inner()
             .clone();
-        let _permit = match admission.prepare(app).await {
+        let _permit = match admission.prepare(app, automatic).await {
             Ok(permit) => permit,
             Err(blocked) => {
                 return self.change(app, |data| {
@@ -445,6 +453,43 @@ impl AppUpdates {
         app.exit(0);
         Ok(status)
     }
+    fn restore_cached(&self, app: &AppHandle) -> Result<AppUpdateStatus, String> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .map_err(|_| "an update operation is already running")?;
+        if self.status()?.source != UpdateSource::Direct {
+            return self.status();
+        }
+        let trust = TrustRoot::bundled()?;
+        let current = self.current()?;
+        let staging = self.store()?;
+        if let Ok(Some((release, offer))) = staging.restore(
+            &trust,
+            &current,
+            Component::DesktopApp,
+            Platform::current()?,
+            self.channel()?,
+        ) {
+            let ready = staging.is_ready(&trust, &offer).unwrap_or(false);
+            return self.change(app, |data| {
+                data.status.available = Some(offer.identity().tag.as_str().into());
+                data.status.notes = release.manifest().notes.clone();
+                data.status.phase = if ready {
+                    UpdatePhase::Ready
+                } else {
+                    UpdatePhase::Available
+                };
+                data.status.total = Some(offer.artifact().bytes);
+                data.status.received = if ready { offer.artifact().bytes } else { 0 };
+                data.selected = Some(Selection {
+                    release,
+                    package: None,
+                });
+            });
+        }
+        self.status()
+    }
 }
 
 pub(crate) fn start(app: &AppHandle) {
@@ -458,10 +503,29 @@ pub(crate) fn start(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let updates = app.state::<AppUpdates>();
-        if !updates
-            .status()
-            .is_ok_and(|state| state.preferences.automatic_check)
-        {
+        let Ok(restored) = updates.restore_cached(&app) else {
+            return;
+        };
+        #[cfg(target_os = "macos")]
+        if restored.phase == UpdatePhase::Ready && restored.preferences.install_on_start {
+            let allowed = updates
+                .data
+                .lock()
+                .ok()
+                .and_then(|data| {
+                    data.selected
+                        .as_ref()
+                        .map(|selected| selected.release.manifest().identity.clone())
+                })
+                .is_some_and(|identity| {
+                    crate::app_update_install::automatic_allowed(&updates.root, &identity)
+                });
+            if allowed {
+                let _ = updates.install(&app, true).await;
+                return;
+            }
+        }
+        if !restored.preferences.automatic_check {
             return;
         }
         match updates.check(&app).await {

@@ -118,7 +118,7 @@ pub(crate) async fn app_update_install(
     #[cfg(all(desktop, target_os = "macos"))]
     return app
         .state::<crate::app_updates::AppUpdates>()
-        .install(&app)
+        .install(&app, false)
         .await;
     #[cfg(not(all(desktop, target_os = "macos")))]
     {

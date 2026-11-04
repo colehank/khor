@@ -7,6 +7,30 @@ use std::{
 use tauri::Runtime;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
+pub(crate) fn configure<R: Runtime>(
+    mut context: tauri::Context<R>,
+) -> Result<tauri::Context<R>, String> {
+    let value = context
+        .config_mut()
+        .plugins
+        .0
+        .entry("updater".into())
+        .or_insert_with(|| serde_json::json!({}));
+    if value.is_null() {
+        *value = serde_json::json!({});
+    }
+    let settings = value
+        .as_object_mut()
+        .ok_or("updater configuration must be an object")?;
+    settings.insert(
+        "pubkey".into(),
+        serde_json::Value::String(TrustRoot::bundled()?.tauri_key().to_owned()),
+    );
+    let _: tauri_plugin_updater::Config =
+        serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    Ok(context)
+}
+
 pub(crate) struct DesktopPackage {
     update: Update,
     offer: Offer,
@@ -126,4 +150,28 @@ fn sync_directory(path: &Path) -> Result<(), String> {
         .and_then(|file| file.sync_all())
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn updater_plugin_can_initialize_without_a_duplicated_configured_public_key() {
+        let context = tauri::test::mock_context(tauri::test::noop_assets());
+        assert!(
+            serde_json::from_value::<tauri_plugin_updater::Config>(serde_json::Value::Null)
+                .is_err()
+        );
+        let context = configure(context).unwrap();
+        assert_eq!(
+            context.config().plugins.0["updater"]["pubkey"],
+            TrustRoot::bundled().unwrap().tauri_key()
+        );
+        assert!(
+            tauri::test::mock_builder()
+                .plugin(tauri_plugin_updater::Builder::new().build())
+                .build(context)
+                .is_ok()
+        );
+    }
 }
