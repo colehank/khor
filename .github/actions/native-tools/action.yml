@@ -7,6 +7,9 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Bind native binaries to their checked-out build identity
+      shell: bash
+      run: python3 scripts/release_manifest.py build-env
     - uses: dtolnay/rust-toolchain@1.95.0
       with:
         targets: ${{ inputs.target }}

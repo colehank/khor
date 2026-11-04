@@ -8,7 +8,7 @@ from pathlib import Path
 import re
 import subprocess
 import tomllib
-from release_policy import parse_tag
+from release_policy import compiler_identity, parse_tag
 
 
 def digest(path):
@@ -101,7 +101,7 @@ def create(root, kind, frontend=None, executable=None, agent=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["create", "verify", "version"])
+    parser.add_argument("action", choices=["create", "verify", "version", "build-env"])
     parser.add_argument("--root", type=Path)
     parser.add_argument("--kind")
     parser.add_argument("--frontend", type=Path)
@@ -110,6 +110,15 @@ def main():
     parser.add_argument("--sha")
     parser.add_argument("--run-id")
     args = parser.parse_args()
+    if args.action == "build-env":
+        values = compiler_identity(source_sha(), version(), os.environ)
+        destination = os.environ.get("GITHUB_ENV")
+        if not destination:
+            parser.error("build-env requires GitHub's step environment file")
+        with Path(destination).open("a") as stream:
+            for key, value in values.items():
+                stream.write(f"{key}={value}\n")
+        return
     if args.action == "version":
         print(version())
         return

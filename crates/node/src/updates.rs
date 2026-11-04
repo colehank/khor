@@ -45,7 +45,7 @@ pub fn inspect(program: &Path) -> Result<ProgramInfo, String> {
 
 pub fn verify_program(program: &Path, offer: &Offer) -> Result<(), String> {
     let info = inspect(program)?;
-    if info.build.release.as_ref() != Some(offer.identity())
+    if info.build.release.as_ref() != Some(offer.build_identity())
         || info.platform != offer.artifact().platform
         || info.component != offer.artifact().component
         || info.contract != offer.artifact().contract
@@ -74,7 +74,7 @@ pub(crate) fn recover_current_installation() -> Result<(), String> {
                     let info = inspect(program)?;
                     if info.component != Component::Cli
                         || info.platform != receipt.platform
-                        || info.build.release.as_ref() != Some(&receipt.identity)
+                        || info.build.release.as_ref() != Some(&receipt.build)
                     {
                         return Err(
                             "activated program disagrees with its installation record".into()
@@ -124,6 +124,7 @@ pub async fn upgrade_local(
         .build
         .release
         .ok_or("install a signed release with full version identity before using upgrade")?;
+    let current = installation.adopted_identity(&current)?;
     let channel = request
         .channel
         .or(installation.receipt()?.map(|receipt| receipt.channel))

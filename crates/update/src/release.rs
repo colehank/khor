@@ -50,6 +50,7 @@ impl TryFrom<String> for ReleaseTag {
                 .strip_prefix("rc.")
                 .ok_or("unsupported release channel")?;
             if candidate.parse::<u64>().is_err()
+                || candidate == "0"
                 || candidate.is_empty()
                 || !candidate.bytes().all(|c| c.is_ascii_digit())
             {
@@ -217,13 +218,31 @@ impl Artifact {
 pub struct ReleaseManifest {
     pub schema: u8,
     pub identity: ReleaseIdentity,
+    pub built_from: ReleaseTag,
     pub notes: String,
     pub artifacts: Vec<Artifact>,
 }
 impl ReleaseManifest {
+    pub fn build_identity(&self) -> ReleaseIdentity {
+        ReleaseIdentity {
+            tag: self.built_from.clone(),
+            ..self.identity.clone()
+        }
+    }
     pub fn validate(&self) -> Result<(), String> {
         if self.schema != 1 || self.identity.build == 0 {
             return Err("unsupported release identity".into());
+        }
+        if self.built_from != self.identity.tag {
+            let built = self.built_from.version();
+            let published = self.identity.tag.version();
+            if self.identity.tag.channel() != Channel::Stable
+                || self.built_from.channel() != Channel::Beta
+                || (built.major, built.minor, built.patch)
+                    != (published.major, published.minor, published.patch)
+            {
+                return Err("release is not a promotion of this candidate build".into());
+            }
         }
         if self.notes.len() > 64 * 1024 || self.artifacts.is_empty() || self.artifacts.len() > 32 {
             return Err("invalid release manifest size".into());
@@ -294,6 +313,7 @@ mod tests {
         ReleaseManifest {
             schema: 1,
             identity: identity(value),
+            built_from: tag(value),
             notes: "Release notes".into(),
             artifacts: vec![Artifact {
                 component: Component::Cli,
@@ -346,6 +366,7 @@ mod tests {
             "v0.2.0-beta.1",
             "v0.2.0-rc.foo",
             "v0.2.0-rc.01",
+            "v0.2.0-rc.0",
             "v0.2.0+build.1",
             "../v0.2.0",
         ] {
@@ -367,6 +388,27 @@ mod tests {
             serde_json::from_str::<ReleaseIdentity>(&serde_json::to_string(&a).unwrap()).unwrap(),
             a
         );
+    }
+    #[test]
+    fn promoting_the_same_candidate_separates_publication_and_immutable_binary_identity() {
+        let mut release = manifest("v0.2.0");
+        release.built_from = tag("v0.2.0-rc.4");
+        release.validate().unwrap();
+        assert_eq!(release.build_identity().tag.as_str(), "v0.2.0-rc.4");
+        assert!(
+            release
+                .newer_than(&identity("v0.2.0-rc.4"), Channel::Stable)
+                .unwrap()
+        );
+        for (published, built) in [
+            ("v0.2.0-rc.5", "v0.2.0-rc.4"),
+            ("v0.2.0", "v0.1.0-rc.4"),
+            ("v0.2.0", "v0.3.0"),
+        ] {
+            let mut invalid = manifest(published);
+            invalid.built_from = tag(built);
+            assert!(invalid.validate().is_err());
+        }
     }
     #[test]
     fn a_manifest_has_one_selection_per_component_and_platform() {

@@ -32,15 +32,29 @@ fn managed_host_selection_reads_the_probe_reply_before_joining_its_pipe_owner() 
 }
 
 #[test]
-fn release_inspection_uses_the_compiled_identity_without_opening_user_or_runtime_stores() {
-    let fixture=Fixture(std::env::temp_dir().join(format!("khor-release-info-{}",khor_node::link::fresh_hex().unwrap())));
-    fs::create_dir(&fixture.0).unwrap();let home=fixture.0.join("unopened-home");let runtime=fixture.0.join("unopened-runtime");
-    let output=Command::new(env!("CARGO_BIN_EXE_khor")).arg("_release_info").env("KHOR_HOME",&home).env("KHOR_RUNTIME_DIR",&runtime)
-        .env_remove("KHOR_RUNTIME_INSTALL_SOURCE").env_remove("KHOR_INSTALL_SOURCE").output().unwrap();
-    assert!(output.status.success(),"{output:?}");
-    let info:khor_node::updates::ProgramInfo=serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(info.schema,1);assert_eq!(info.build.version,khor_node::VERSION);
-    assert!(output.stdout.len()<=16*1024);assert!(!home.exists());assert!(!runtime.exists());
+fn release_probe_does_not_open_user_or_runtime_stores() {
+    let fixture = Fixture(std::env::temp_dir().join(format!(
+        "khor-release-info-{}",
+        khor_node::link::fresh_hex().unwrap()
+    )));
+    fs::create_dir(&fixture.0).unwrap();
+    let home = fixture.0.join("unopened-home");
+    let runtime = fixture.0.join("unopened-runtime");
+    let output = Command::new(env!("CARGO_BIN_EXE_khor"))
+        .arg("_release_info")
+        .env("KHOR_HOME", &home)
+        .env("KHOR_RUNTIME_DIR", &runtime)
+        .env_remove("KHOR_RUNTIME_INSTALL_SOURCE")
+        .env_remove("KHOR_INSTALL_SOURCE")
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let info: khor_node::updates::ProgramInfo = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(info.schema, 1);
+    assert_eq!(info.build.version, khor_node::VERSION);
+    assert!(output.stdout.len() <= 16 * 1024);
+    assert!(!home.exists());
+    assert!(!runtime.exists());
 }
 
 #[test]

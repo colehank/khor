@@ -105,6 +105,7 @@ impl VerifiedRelease {
             .ok_or("release has no asset for this component and platform")?;
         Ok(Some(Offer {
             identity: self.manifest.identity.clone(),
+            build: self.manifest.build_identity(),
             artifact: artifact.clone(),
         }))
     }
@@ -113,9 +114,13 @@ impl VerifiedRelease {
 #[derive(Clone)]
 pub struct Offer {
     identity: ReleaseIdentity,
+    build: ReleaseIdentity,
     artifact: Artifact,
 }
 impl Offer {
+    pub fn build_identity(&self) -> &ReleaseIdentity {
+        &self.build
+    }
     pub fn identity(&self) -> &ReleaseIdentity {
         &self.identity
     }

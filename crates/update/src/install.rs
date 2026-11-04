@@ -28,6 +28,7 @@ pub enum InstallState {
 pub struct InstallReceipt {
     pub schema: u8,
     pub identity: ReleaseIdentity,
+    pub build: ReleaseIdentity,
     pub channel: Channel,
     pub platform: Platform,
     pub program_digest: String,
@@ -68,6 +69,20 @@ impl CliInstallation {
         self.root.join("staging")
     }
 
+    pub fn adopted_identity(&self, compiled: &ReleaseIdentity) -> Result<ReleaseIdentity, String> {
+        if let Some(receipt) = self.receipt()? {
+            if receipt.state == InstallState::Complete
+                && &receipt.build == compiled
+                && self.current()?.as_ref().is_some_and(|path| {
+                    hash(path).is_ok_and(|digest| digest == receipt.program_digest)
+                })
+            {
+                return Ok(receipt.identity);
+            }
+        }
+        Ok(compiled.clone())
+    }
+
     pub fn current(&self) -> Result<Option<PathBuf>, String> {
         let current = self.root.join("current");
         let relative = match fs::read_link(&current) {
@@ -98,6 +113,8 @@ impl CliInstallation {
                     serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
                 if receipt.schema != 1
                     || receipt.platform != self.platform
+                    || receipt.identity.source != receipt.build.source
+                    || receipt.identity.build != receipt.build.build
                     || crate::Digest::try_from(receipt.program_digest.clone()).is_err()
                 {
                     return Err("installation record belongs to another platform or program".into());
@@ -182,6 +199,7 @@ impl CliInstallation {
         let mut receipt = InstallReceipt {
             schema: 1,
             identity: offer.identity().clone(),
+            build: offer.build_identity().clone(),
             channel,
             platform: self.platform,
             program_digest: digest,
@@ -508,6 +526,39 @@ mod tests {
             .unwrap();
         assert_eq!(observed.state, InstallState::Activating);
         assert_eq!(observed.channel, Channel::Beta);
+    }
+    #[test]
+    fn a_promoted_installation_remembers_the_publication_without_inventing_a_different_build() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        let mut receipt = install
+            .install(
+                &Download::fixture(),
+                Channel::Beta,
+                |_, _, _| Ok(()),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        receipt.build.tag = "v0.2.0-rc.4".to_owned().try_into().unwrap();
+        install.record(&receipt).unwrap();
+        assert_eq!(
+            install
+                .adopted_identity(&receipt.build)
+                .unwrap()
+                .tag
+                .as_str(),
+            "v0.2.0"
+        );
+        let mut unrelated = receipt.build.clone();
+        unrelated.source = "b".repeat(40).try_into().unwrap();
+        assert_eq!(install.adopted_identity(&unrelated).unwrap(), unrelated);
+        let program = install.current().unwrap().unwrap();
+        fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(program, b"altered installation").unwrap();
+        assert_eq!(
+            install.adopted_identity(&receipt.build).unwrap(),
+            receipt.build
+        );
     }
     #[test]
     fn external_installations_and_escaping_pointers_are_never_adopted() {

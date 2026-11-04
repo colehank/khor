@@ -15,10 +15,31 @@ import distribute_candidate as distribute
 import release_candidate
 import release_manifest
 import release_store as store
-from release_policy import matching_candidate, parse_tag
+from release_policy import compiler_identity, matching_candidate, parse_tag
 
 SHA = "a" * 40
 RC = "v1.2.3-rc.1"
+
+
+class CompilerIdentityTests(unittest.TestCase):
+    def test_tagged_build_records_complete_identity_and_retry_keeps_its_build_id(self):
+        env = {"GITHUB_REF": "refs/tags/" + RC, "GITHUB_SHA": SHA, "GITHUB_RUN_ID": "42", "GITHUB_RUN_ATTEMPT": "1"}
+        first = compiler_identity(SHA, "1.2.3", env)
+        self.assertEqual(first, {"KHOR_BUILD_SOURCE": SHA, "KHOR_RELEASE_TAG": RC, "KHOR_RELEASE_BUILD": "42"})
+        env["GITHUB_RUN_ATTEMPT"] = "2"
+        self.assertEqual(compiler_identity(SHA, "1.2.3", env), first)
+
+    def test_development_checkout_never_borrows_the_private_control_repository_identity(self):
+        self.assertEqual(compiler_identity(SHA, "1.2.3", {"GITHUB_REF": "refs/heads/main", "GITHUB_SHA": "b" * 40, "GITHUB_RUN_ID": "42"}),
+                         {"KHOR_BUILD_SOURCE": SHA, "KHOR_RELEASE_TAG": "", "KHOR_RELEASE_BUILD": ""})
+
+    def test_source_tag_and_build_disagreement_fail_before_native_compilation(self):
+        valid = {"GITHUB_REF": "refs/tags/" + RC, "GITHUB_SHA": SHA, "GITHUB_RUN_ID": "42"}
+        for field, value in [("GITHUB_SHA", "b" * 40), ("GITHUB_REF", "refs/tags/v1.2.4-rc.1"), ("GITHUB_RUN_ID", ""), ("GITHUB_RUN_ID", "42\ninjected=1")]:
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                compiler_identity(SHA, "1.2.3", {**valid, field: value})
+        with self.assertRaises(ValueError):
+            compiler_identity("short", "1.2.3", valid)
 
 
 def candidate_at(root):
