@@ -1987,7 +1987,8 @@ impl LiveKind {
                 let other_reporter =
                     !pids.is_empty() && registered[seat].pid.is_some_and(|p| !pids.contains(&p));
                 let native_claude = found.category == crate::adaptor::claude::VENDOR
-                    && out[seat].kind.0 == khor_core::kind::TUI && !out[seat].dead;
+                    && out[seat].kind.0 == khor_core::kind::TUI
+                    && !out[seat].dead;
                 if guessed.contains(&&id) || other_reporter || native_claude {
                     // **The registry does not always win — the stronger
                     // source does.** This row's word was read off the
@@ -7744,7 +7745,8 @@ mod tests {
         assert_eq!(k.rows(|_| 0)[0].kind.0, khor_core::kind::SHELL);
 
         let k = at(Procs::of([shell.clone(), claude.clone()]));
-        k.ensure(&agent, khor_core::kind::TUI, "claude", None, Some("claude")).unwrap();
+        k.ensure(&agent, khor_core::kind::TUI, "claude", None, Some("claude"))
+            .unwrap();
         k.report(&agent, State::Busy, Source::Reported).unwrap();
         assert_eq!(
             k.on_record(&term).map(|(kind, _)| kind).as_deref(),

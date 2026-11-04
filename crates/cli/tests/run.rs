@@ -48,8 +48,14 @@ fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
     };
     let opened_node = home.join(".khor").exists();
     std::fs::remove_dir_all(&home).unwrap();
-    assert!(status.is_some_and(|s| s.success()), "retired hook waited for stdin");
-    assert!(!opened_node, "retired hook opened the production state path");
+    assert!(
+        status.is_some_and(|s| s.success()),
+        "retired hook waited for stdin"
+    );
+    assert!(
+        !opened_node,
+        "retired hook opened the production state path"
+    );
 }
 
 #[test]

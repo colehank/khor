@@ -1,9 +1,6 @@
 //! Per-machine agent integration. The report is read from vendor configuration,
 //! never a saved UI boolean. Codex uses native title settings, not a launcher.
-use crate::{
-    Node,
-    adaptor,
-};
+use crate::{Node, adaptor};
 use khor_catalog::msg;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -357,33 +354,58 @@ fn codex_change(root: &Path, home: &Path, enable: bool) -> Result<(), String> {
     Ok(())
 }
 fn owned_status_hook(command: &str) -> bool {
-    let Some(exe) = command.trim().strip_suffix(" state --hook") else { return false };
-    let executable = if let Some(quoted) = exe.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')) {
+    let Some(exe) = command.trim().strip_suffix(" state --hook") else {
+        return false;
+    };
+    let executable = if let Some(quoted) = exe.strip_prefix('\'').and_then(|s| s.strip_suffix('\''))
+    {
         let value = quoted.replace("'\\''", "'");
-        if format!("'{}'", value.replace('\'', "'\\''")) != exe { return false; }
+        if format!("'{}'", value.replace('\'', "'\\''")) != exe {
+            return false;
+        }
         value
     } else {
-        if exe.bytes().any(|b| b.is_ascii_whitespace() || b";$`|&<>\\\"'".contains(&b)) { return false; }
+        if exe
+            .bytes()
+            .any(|b| b.is_ascii_whitespace() || b";$`|&<>\\\"'".contains(&b))
+        {
+            return false;
+        }
         exe.to_owned()
     };
-    matches!(Path::new(&executable).file_name().and_then(|s| s.to_str()), Some("khor" | "khor-gui" | "khor.exe" | "khor-gui.exe"))
+    matches!(
+        Path::new(&executable).file_name().and_then(|s| s.to_str()),
+        Some("khor" | "khor-gui" | "khor.exe" | "khor-gui.exe")
+    )
 }
 
 pub(crate) fn retire_status_hooks(root: &Path, home: &Path) -> Result<bool, String> {
     let source = adaptor::claude_home(home).join("settings.json");
-    let Some(original) = read(&source)? else { return Ok(false) };
-    let mut settings: serde_json::Value = serde_json::from_str(&original).map_err(|e| e.to_string())?;
-    let Some(events) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else { return Ok(false) };
+    let Some(original) = read(&source)? else {
+        return Ok(false);
+    };
+    let mut settings: serde_json::Value =
+        serde_json::from_str(&original).map_err(|e| e.to_string())?;
+    let Some(events) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) else {
+        return Ok(false);
+    };
     let mut removed = Vec::new();
     events.retain(|event, groups| {
-        let Some(groups) = groups.as_array_mut() else { return true };
+        let Some(groups) = groups.as_array_mut() else {
+            return true;
+        };
         let mut touched = false;
         groups.retain_mut(|group| {
-            let Some(entries) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) else { return true };
+            let Some(entries) = group.get_mut("hooks").and_then(|h| h.as_array_mut()) else {
+                return true;
+            };
             let mut changed = false;
             entries.retain(|entry| {
-                let ours = entry["type"] == "command" && entry["command"].as_str().is_some_and(owned_status_hook);
-                if ours { removed.push(serde_json::json!({"event":event,"hook":entry})); }
+                let ours = entry["type"] == "command"
+                    && entry["command"].as_str().is_some_and(owned_status_hook);
+                if ours {
+                    removed.push(serde_json::json!({"event":event,"hook":entry}));
+                }
                 changed |= ours;
                 !ours
             });
@@ -392,18 +414,40 @@ pub(crate) fn retire_status_hooks(root: &Path, home: &Path) -> Result<bool, Stri
         });
         !touched || !groups.is_empty()
     });
-    if removed.is_empty() { return Ok(false); }
-    if events.is_empty() { settings.as_object_mut().unwrap().remove("hooks"); }
-    fs::create_dir_all(root.join(".khor")).map_err(|e| e.to_string())?;
-    let lock = fs::OpenOptions::new().create(true).truncate(false).read(true).write(true)
-        .open(root.join(".khor/recognition.lock")).map_err(|e| e.to_string())?;
-    lock.try_lock().map_err(|_| msg::recognition_busy().to_owned())?;
-    let path = write_target(&source)?;
-    let backup = root.join(".khor/migrations").join(format!("status-hooks-{}.json", blake3::hash(original.as_bytes()).to_hex()));
-    if !backup.exists() {
-        replace(&backup, None, &serde_json::to_string(&serde_json::json!({"source":source,"removed":removed})).map_err(|e| e.to_string())?)?;
+    if removed.is_empty() {
+        return Ok(false);
     }
-    replace(&path, Some(&original), &(serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())? + "\n"))?;
+    if events.is_empty() {
+        settings.as_object_mut().unwrap().remove("hooks");
+    }
+    fs::create_dir_all(root.join(".khor")).map_err(|e| e.to_string())?;
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(root.join(".khor/recognition.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.try_lock()
+        .map_err(|_| msg::recognition_busy().to_owned())?;
+    let path = write_target(&source)?;
+    let backup = root.join(".khor/migrations").join(format!(
+        "status-hooks-{}.json",
+        blake3::hash(original.as_bytes()).to_hex()
+    ));
+    if !backup.exists() {
+        replace(
+            &backup,
+            None,
+            &serde_json::to_string(&serde_json::json!({"source":source,"removed":removed}))
+                .map_err(|e| e.to_string())?,
+        )?;
+    }
+    replace(
+        &path,
+        Some(&original),
+        &(serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())? + "\n"),
+    )?;
     Ok(true)
 }
 
@@ -424,7 +468,9 @@ fn entry(root: &Path, home: &Path, agent: Agent) -> Entry {
     }
     let result = (|| -> Result<(), String> {
         match agent {
-            Agent::Claude => { e.state = "automatic".into(); }
+            Agent::Claude => {
+                e.state = "automatic".into();
+            }
             Agent::Codex => {
                 let doc = parse(read(&path)?.as_deref().unwrap_or(""))?;
                 e.managed = read(&backup_path(root))?.is_some();
@@ -517,21 +563,36 @@ mod tests {
             "hooks":{"Stop":[{"matcher":"*","hooks":[other]},{"hooks":[]}],"Other":[{"hooks":[]}]}
         });
         let after = fs::read_to_string(&path).unwrap();
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&after).unwrap(), expected);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&after).unwrap(),
+            expected
+        );
         assert!(!retire_status_hooks(&s.0, &s.0).unwrap());
         assert_eq!(fs::read_to_string(&path).unwrap(), after);
-        let receipts: Vec<_> = fs::read_dir(s.0.join(".khor/migrations")).unwrap().flatten().collect();
+        let receipts: Vec<_> = fs::read_dir(s.0.join(".khor/migrations"))
+            .unwrap()
+            .flatten()
+            .collect();
         assert_eq!(receipts.len(), 1);
         let receipt = fs::read_to_string(receipts[0].path()).unwrap();
         assert!(!receipt.contains("keep-this-out-of-the-migration-receipt"));
-        #[cfg(unix)] {
+        #[cfg(unix)]
+        {
             use std::os::unix::fs::PermissionsExt;
-            assert_eq!(receipts[0].metadata().unwrap().permissions().mode() & 0o777, 0o600);
+            assert_eq!(
+                receipts[0].metadata().unwrap().permissions().mode() & 0o777,
+                0o600
+            );
         }
     }
     #[test]
     fn retirement_does_not_guess_ownership_or_rewrite_unreadable_settings() {
-        for command in ["other state --hook", "khor state --hook && other", "echo khor state --hook", "'some tool' state --hook"] {
+        for command in [
+            "other state --hook",
+            "khor state --hook && other",
+            "echo khor state --hook",
+            "'some tool' state --hook",
+        ] {
             assert!(!owned_status_hook(command), "{command}");
         }
         assert!(owned_status_hook("khor state --hook"));
@@ -552,14 +613,24 @@ mod tests {
         let s = scratch("retire-symlink");
         fs::create_dir_all(s.0.join(".claude")).unwrap();
         let target = s.0.join("claude-settings.json");
-        fs::write(&target, r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"khor state --hook"}]}]}}"#).unwrap();
+        fs::write(
+            &target,
+            r#"{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"khor state --hook"}]}]}}"#,
+        )
+        .unwrap();
         fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).unwrap();
         let link = s.0.join(".claude/settings.json");
         symlink(&target, &link).unwrap();
         assert!(retire_status_hooks(&s.0, &s.0).unwrap());
         assert!(link.is_symlink());
-        assert_eq!(fs::metadata(&target).unwrap().permissions().mode() & 0o777, 0o640);
-        assert_eq!(serde_json::from_str::<serde_json::Value>(&fs::read_to_string(link).unwrap()).unwrap(), serde_json::json!({}));
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o640
+        );
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&fs::read_to_string(link).unwrap()).unwrap(),
+            serde_json::json!({})
+        );
     }
     #[test]
     fn title_roundtrip_preserves_other_edits_and_original_preference() {

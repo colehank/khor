@@ -809,8 +809,6 @@ async fn agent_recognition(
 /// home, so there is no argument naming a machine and no way to point
 /// one of these at somebody else's.
 
-
-
 /// The six chat commands are one attachment registry in gui-core: the
 /// window polls for frames because that is the shape both skins can
 /// serve (`khor_gui_core::chat` module head).

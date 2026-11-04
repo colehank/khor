@@ -915,12 +915,18 @@ impl Adaptor for Claude {
                 }
             };
             let (word, at_ms) = if word == State::Idle && file.status.as_deref() == Some("idle") {
-                self.unique_transcript_path(&crate::live::clean_leaf(&file.session_id), Some(&file.session_id))
-                    .ok().flatten()
-                    .and_then(|(path, _)| state::last_ending(&path))
-                    .filter(|(_, at)| *at >= file.started_at)
-                    .unwrap_or((word, at_ms))
-            } else { (word, at_ms) };
+                self.unique_transcript_path(
+                    &crate::live::clean_leaf(&file.session_id),
+                    Some(&file.session_id),
+                )
+                .ok()
+                .flatten()
+                .and_then(|(path, _)| state::last_ending(&path))
+                .filter(|(_, at)| *at >= file.started_at)
+                .unwrap_or((word, at_ms))
+            } else {
+                (word, at_ms)
+            };
             let title = file.title();
             let pid = file.pid;
             seen.push((
@@ -1315,27 +1321,43 @@ mod tests {
 
     #[test]
     fn native_completion_is_available_on_first_read_and_busy_takes_precedence() {
-        let root = Scratch(std::env::temp_dir().join(format!("khor-native-state-{}", std::process::id())));
+        let root =
+            Scratch(std::env::temp_dir().join(format!("khor-native-state-{}", std::process::id())));
         std::fs::create_dir_all(root.join("sessions")).unwrap();
         let project = root.join("projects/fixture");
         std::fs::create_dir_all(&project).unwrap();
-        let at = "2026-11-04T12:00:00Z".parse::<jiff::Timestamp>().unwrap().as_millisecond();
+        let at = "2026-11-04T12:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond();
         let id = "11111111-1111-4111-8111-111111111111";
         let status = root.join("sessions/4001.json");
-        let write_status = |word: &str| std::fs::write(&status, format!(r#"{{"pid":4001,"sessionId":"{id}","status":"{word}","startedAt":{},"statusUpdatedAt":{at}}}"#, at-1000)).unwrap();
-        let procs = Procs::of([(4001, proc_of(at-1000))]);
+        let write_status = |word: &str| {
+            std::fs::write(&status, format!(r#"{{"pid":4001,"sessionId":"{id}","status":"{word}","startedAt":{},"statusUpdatedAt":{at}}}"#, at-1000)).unwrap()
+        };
+        let procs = Procs::of([(4001, proc_of(at - 1000))]);
         write_status("idle");
         let transcript = project.join(format!("{id}.jsonl"));
         std::fs::write(&transcript, "{\"type\":\"assistant\",\"timestamp\":\"2026-11-04T12:00:00Z\",\"message\":{\"stop_reason\":\"end_turn\"}}\n").unwrap();
         for _ in 0..2 {
             let row = Claude::at(root.to_path_buf()).sweep(&procs).rows.remove(0);
-            assert_eq!((row.word,row.at_ms), (State::Done,at));
+            assert_eq!((row.word, row.at_ms), (State::Done, at));
         }
         write_status("busy");
-        assert_eq!(Claude::at(root.to_path_buf()).sweep(&procs).rows[0].word, State::Busy);
+        assert_eq!(
+            Claude::at(root.to_path_buf()).sweep(&procs).rows[0].word,
+            State::Busy
+        );
         write_status("idle");
-        std::fs::write(&transcript, "{\"type\":\"user\",\"message\":{\"content\":\"next\"}}\n").unwrap();
-        assert_eq!(Claude::at(root.to_path_buf()).sweep(&procs).rows[0].word, State::Idle);
+        std::fs::write(
+            &transcript,
+            "{\"type\":\"user\",\"message\":{\"content\":\"next\"}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            Claude::at(root.to_path_buf()).sweep(&procs).rows[0].word,
+            State::Idle
+        );
     }
 
     /// The graveyard control group, claude side: the same tree that just

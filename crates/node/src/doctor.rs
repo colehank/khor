@@ -112,8 +112,8 @@ pub struct Check {
 /// It exists at all so a face and the fix door cannot disagree about
 /// what the keys are.
 pub const KEYS: &[&str] = &[
-    "version", "identity", "store", "serve", "web", "relays", "peers", "roster", "roads",
-    "agents", "vscode", "disk", "launcher", "terminal",
+    "version", "identity", "store", "serve", "web", "relays", "peers", "roster", "roads", "agents",
+    "vscode", "disk", "launcher", "terminal",
 ];
 
 /// The three groups the healthy checks are folded under (docs/MORE.md
@@ -214,11 +214,7 @@ pub fn name(key: &str) -> &str {
 /// (`check_vscode`'s reason). Dropped rows, not green ones: a row that
 /// said 「正常」 about a CLI that does not exist would be a lie.
 pub fn applies(key: &str, hosts: bool) -> bool {
-    hosts
-        || !matches!(
-            key,
-            "version" | "web" | "agents" | "vscode" | "launcher"
-        )
+    hosts || !matches!(key, "version" | "web" | "agents" | "vscode" | "launcher")
 }
 
 /// The whole checklist.
@@ -275,8 +271,8 @@ pub async fn doctor(node: &Node) -> Vec<Check> {
         timed_if(run("terminal"), "terminal", check_terminal(root.clone())),
     );
     [
-        version, identity, store, serve, web, relays, peers, roster, roads, agents, vscode,
-        disk, launcher, terminal,
+        version, identity, store, serve, web, relays, peers, roster, roads, agents, vscode, disk,
+        launcher, terminal,
     ]
     .into_iter()
     .flatten()

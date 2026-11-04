@@ -1131,7 +1131,9 @@ impl Node {
         // skipped, so every reader of `live` keeps working and simply
         // finds nothing here.
         let discovery = if hosts {
-            if let Err(error) = recognition::retire_status_hooks(&root, &adaptor::vendor_home(&root)) {
+            if let Err(error) =
+                recognition::retire_status_hooks(&root, &adaptor::vendor_home(&root))
+            {
                 eprintln!("retiring legacy Khor status hooks: {error}");
             }
             adaptor::Discovery::for_root(&root)
