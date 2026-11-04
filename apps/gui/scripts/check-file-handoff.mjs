@@ -1,15 +1,16 @@
 // Real FilePage/FileView; only native transport and the OS activity sheet are replaced.
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
 import {mkdirSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
+import {createServer} from 'vite';
 const quicklook=process.argv.includes('--quicklook');
 const pdf=process.argv.includes('--pdf');
 const gui=fileURLToPath(new URL('..',import.meta.url)),port=23879;
 const entry=join(gui,`scripts/.file-handoff-${process.pid}.tsx`);
+const cache=mkdtempSync(join(tmpdir(),'khor-file-handoff-vite-'));
 const out=process.env.FILE_HANDOFF_OUT||mkdtempSync(join(tmpdir(),'khor-file-handoff-'));mkdirSync(out,{recursive:true});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 let vite,browser,page;const errors=[];
@@ -20,8 +21,9 @@ speakLang('zh');document.documentElement.toggleAttribute('data-narrow',matchMedi
 const root=createRoot(document.getElementById('root'));const no=()=>{};
 window.showFile=(path='/project/large.pptx',hidden=false)=>flushSync(()=>root.render(<TooltipProvider><section className='relative flex min-h-0 flex-1 flex-col' aria-hidden={hidden||undefined} inert={hidden||undefined}><FilePage machine='remote' path={path} here={false} onBack={no} onGone={no} onMoved={no}/></section></TooltipProvider>));
 window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='remote' path={path} here={false} onClose={no}/></TooltipProvider>));window.showFile(${pdf?"'/project/three-pages.pdf'":""});`);
- vite=spawn(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
- let ready=false;vite.stdout.on('data',d=>ready||=String(d).includes(`:${port}`));vite.stderr.on('data',d=>process.stderr.write(d));for(let i=0;i<100&&!ready;i++){assert(vite.exitCode===null);await pause(100);}assert(ready);
+ process.env.KHOR_FACE_GATE='1';
+ vite=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:cache,optimizeDeps:{entries:[entry]},server:{host:'127.0.0.1',port,strictPort:true,hmr:false},logLevel:'error'});
+ await vite.listen();
  browser=await chromium.launch({...(process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{}),headless:true,args:['--no-proxy-server']});
  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await context.addInitScript(({officePreview,pdfPreview})=>{
@@ -47,7 +49,7 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
  },{officePreview:quicklook||pdf,pdfPreview:pdf});
  page=await context.newPage();page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
  await page.route('**/__file_handoff',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme='dark'><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body><div id='root' class='relative flex h-screen flex-col'></div><script type='module'>import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type='module' src='/scripts/.file-handoff-${process.pid}.tsx'></script></body></html>`}));
- await page.goto(`http://localhost:${port}/__file_handoff`);
+ await page.goto(`http://127.0.0.1:${port}/__file_handoff`);
  if(pdf) {
   await page.waitForFunction(()=>window.calls.some(c=>c.cmd==='file_preview_open'));
   await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
@@ -132,4 +134,4 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
  assert.deepEqual(errors,[]);writeFileSync(join(out,'results.json'),JSON.stringify({checks:['original fallback metadata','late start cancellation','retry','OS sheet dismissal preserves deck','path change cancellation','hidden retained tab','background cancellation','narrow long filename','normal file More','attachment original bytes'],errors},null,2));console.log('file handoff: clean',out);
  }
 } catch(error){await page?.screenshot({path:join(out,'failed.png')}).catch(()=>{});throw error;}
-finally{await browser?.close().catch(()=>{});if(vite?.exitCode===null){vite.kill('SIGTERM');await Promise.race([new Promise(r=>vite.once('exit',r)),pause(2000)]);if(vite.exitCode===null)vite.kill('SIGKILL');}rmSync(entry,{force:true});}
+finally{await browser?.close().catch(()=>{});await vite?.close().catch(()=>{});rmSync(entry,{force:true});rmSync(cache,{recursive:true,force:true});}
