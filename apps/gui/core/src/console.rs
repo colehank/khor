@@ -432,6 +432,7 @@ mod tests {
                     token: "create-conversation-1234".into(),
                     title: "Commands".into(),
                     cwd: "/fixture".into(),
+                    selection: None,
                 },
             )
             .await

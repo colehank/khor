@@ -33,6 +33,7 @@ try {
   page.on('pageerror',error=>{errors.push(error.message);console.error(error.message);});
   const config={home,account:'fixture-account',model:'fixture-model',options:{}};
   const account={id:config.account,name:'Fixture account',home,home_name:'fixture',provider:'anthropic',default_model:config.model,configured:true,base_url:null,auth_type:'api_key'};
+  const accounts=[account,{...account,id:'billing-only',name:'Organization billing',configured:false},{...account,id:'other-home',name:'Other machine account',home:'d'.repeat(64)}];
   const record=(id,line,agent=false)=>({id,at_ms:Date.now(),text:null,from:'fixture',from_me:true,to:[],files:null,note:null,unknown:null,retracted:false,
    command:{id,line,owner:home,owner_name:'fixture',status:agent?'running':'done',started_at_ms:Date.now(),ended_at_ms:agent?null:Date.now(),stdout:agent?'':line+' result',stderr:'',data_json:null,session:null,error:null,
     agent:agent?{model:config.model,approval:null,updates:[],updates_truncated:false,updated_at_ms:Date.now()}:null}});
@@ -49,7 +50,7 @@ try {
    else if(cmd==='console_complete')result={start:0,end:args.caret,choices:args.line==='/sta'?[{value:'/status',label:'/status',detail:'status',kind:'command'}]:[]};
    else if(cmd==='console_run'){histories.get(args.session).push(record('command-a',args.line));result='command-a';}
    else if(cmd==='khor_agent') {
-    const {action,payload}=args;result={config,accounts:[account],run:null,data:{conversation:{home}}};
+    const {action,payload}=args;result={config,accounts,run:null,data:{conversation:{home}}};
     if(action==='create') {
      if(!creates.has(payload.token))creates.set(payload.token,creates.size===0?A:B);
      if(!failedCreate||failNextCreate){failedCreate=true;failNextCreate=false;await route.fulfill({status:503,headers:{'access-control-allow-origin':'*'},body:'Lost create response fixture'});return;}
@@ -66,11 +67,19 @@ try {
   const choose=async id=>{await page.locator('[data-new-session-launch] textarea').click();await page.locator(`[data-choice-option="${id}"]`).click();};
   await choose('agent:fixture-acp');await page.locator('[data-acp-setup] > summary').click();await page.getByLabel('MCP servers',{exact:true}).fill('{');
   assert(await page.locator('[data-new-session-create]').isDisabled());
-  await choose('khor');await page.locator('[data-new-session-create]').click();
+  await choose('khor');await page.locator('[data-new-khor-model] input').waitFor();
+  await page.locator('[data-new-khor-account] input').click();
+  assert.equal(await page.locator('[data-choice-option="billing-only"]').count(),0);
+  assert.equal(await page.locator('[data-choice-option="other-home"]').count(),0);
+  await page.keyboard.press('Escape');
+  await page.locator('[data-new-khor-model] input').fill('explicit-model');await page.keyboard.press('Escape');
+  await page.locator('[data-new-session-create]').click();
   await page.locator('[data-new-session-error]').waitFor();
   await page.locator('[data-new-session-create]').click();await page.locator('[data-chat-composer]').waitFor();
   const first=calls.filter(c=>c.cmd==='khor_agent'&&c.args.action==='create');
   assert.equal(first.length,2);assert.equal(first[0].args.payload.token,first[1].args.payload.token);assert.equal(first[0].args.payload.title,'');
+  assert.deepEqual(first[0].args.payload.selection,{account:account.id,model:'explicit-model'});
+  assert.equal(first[0].args.machine,home);assert.equal(account.default_model,'fixture-model');
   await page.locator('[data-chat-composer]').fill('Task A');await page.locator('[data-chat-composer]').press('Enter');
   await page.locator('[data-khor-agent-turn=task-a]').waitFor();await page.locator('[data-chat-stop]').click();
   assert.equal(calls.find(c=>c.cmd==='khor_agent'&&c.args.action==='stop').args.payload.session,A);

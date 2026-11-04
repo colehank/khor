@@ -104,6 +104,7 @@ impl Node {
         token: &str,
         title: &str,
         cwd: &str,
+        selection: Option<&ModelSelection>,
     ) -> Result<Report, String> {
         self.refuse_unless_hosting()?;
         if !safe_token(token)
@@ -118,7 +119,7 @@ impl Node {
         let identity =
             serde_json::to_vec(&(self.device_str(), token)).map_err(|e| e.to_string())?;
         let board = format!("wide/agent-{}", blake3::hash(&identity).to_hex());
-        let creation = serde_json::to_vec(&(title.trim(), cwd)).map_err(|e| e.to_string())?;
+        let creation = serde_json::to_vec(&(title.trim(), cwd, selection)).map_err(|e| e.to_string())?;
         let requested = AgentConversation {
             creation: blake3::hash(&creation).to_hex().to_string(),
             home: self.device_str().into(),
@@ -132,9 +133,10 @@ impl Node {
             }
             self.chat.agent_config_in(&board)?
         } else {
-            let config = self
-                .khor_agent_config()?
-                .filter(|c| c.home == self.device_str());
+            let config = match selection {
+                Some(choice) => Some(self.agent_model_config(&choice.account, &choice.model, None)?),
+                None => self.khor_agent_config()?.filter(|c| c.home == self.device_str()),
+            };
             self.chat
                 .set_agent_conversation(&board, &requested, config.as_ref())?;
             config
@@ -273,13 +275,56 @@ mod tests {
         (Scratch(root), node)
     }
     fn create(node: &Node, token: &str, title: &str) -> String {
-        node.create_khor_conversation(token, title, "/fixture")
+        node.create_khor_conversation(token, title, "/fixture", None)
             .unwrap()
             .data
             .unwrap()["session"]
             .as_str()
             .unwrap()
             .into()
+    }
+
+    #[test]
+    fn creation_saves_the_selected_home_account_and_model_without_changing_defaults() {
+        let (_scratch, node) = node();
+        let account = node.register_account(
+            "Model account", crate::Provider::Newapi, crate::AccountKind::Bill,
+            Some("http://127.0.0.1:1"), "synthetic-fixture-key", None,
+        ).unwrap();
+        let default = AgentConfig {
+            home: node.device_str().into(), account: account.id.clone(),
+            model: "default-model".into(), options: Default::default(),
+        };
+        node.chat.set_agent_config_in(crate::wide::BROADCAST, &default).unwrap();
+        let choice = ModelSelection {account: account.id.clone(), model: "selected-model".into()};
+        let report = node.create_khor_conversation("selected-model-token-a", "", "/fixture", Some(&choice)).unwrap();
+        let a = report.data.as_ref().unwrap()["session"].as_str().unwrap();
+        assert_eq!(report.config.as_ref().unwrap().model, "selected-model");
+        assert_eq!(report.config.as_ref().unwrap().home, node.device_str());
+        assert_eq!(node.khor_agent_config().unwrap(), Some(default));
+        let b = create(&node, "selected-model-token-b", "");
+        assert_eq!(node.khor_agent_config_in(&b).unwrap().unwrap().model, "default-model");
+        let retry = node.create_khor_conversation("selected-model-token-a", "", "/fixture", Some(&choice)).unwrap();
+        assert_eq!(retry.data.unwrap()["session"], a);
+        let different = ModelSelection {model: "other-model".into(), ..choice};
+        assert!(node.create_khor_conversation("selected-model-token-a", "", "/fixture", Some(&different)).is_err());
+        assert_eq!(node.khor_agent_config_in(a).unwrap().unwrap().model, "selected-model");
+        let reopened = Node::open(node.root().to_owned()).unwrap();
+        assert_eq!(reopened.khor_agent_config_in(a).unwrap().unwrap().model, "selected-model");
+    }
+
+    #[test]
+    fn creation_rejects_billing_only_or_missing_credentials_before_registering_a_conversation() {
+        let (_scratch, node) = node();
+        let billing = node.register_account(
+            "Organization billing", crate::Provider::Claude, crate::AccountKind::Bill,
+            None, "synthetic-billing-key", None,
+        ).unwrap();
+        for account in [billing.id, "account-on-another-home".into()] {
+            let choice = ModelSelection {account, model: "fixture-model".into()};
+            assert!(node.create_khor_conversation("unavailable-model-token", "", "/fixture", Some(&choice)).is_err());
+        }
+        assert!(!crate::wide::WideKind.rows(&node).unwrap().iter().any(|row| crate::wide::agent_board(&row.id.0)));
     }
 
     #[test]
@@ -347,9 +392,10 @@ mod tests {
             token: "empty-deleted-conversation-token".into(),
             title: "".into(),
             cwd: "/fixture".into(),
+            selection: None,
         };
         let report = node
-            .create_khor_conversation("empty-deleted-conversation-token", "", "/fixture")
+            .create_khor_conversation("empty-deleted-conversation-token", "", "/fixture", None)
             .unwrap();
         let a = report.data.as_ref().unwrap()["session"]
             .as_str()
@@ -358,7 +404,7 @@ mod tests {
         node.close(&crate::SessionId(a.clone())).unwrap();
         node.close(&crate::SessionId(a.clone())).unwrap();
         assert!(
-            node.create_khor_conversation("empty-deleted-conversation-token", "", "/fixture")
+            node.create_khor_conversation("empty-deleted-conversation-token", "", "/fixture", None)
                 .is_err()
         );
         node.accept_agent_report(&action, &report).unwrap();
@@ -456,7 +502,7 @@ mod tests {
         assert_ne!(a, b);
         assert_eq!(create(&node, "conversation-token-a", ""), a);
         assert!(
-            node.create_khor_conversation("conversation-token-a", "different", "/fixture")
+            node.create_khor_conversation("conversation-token-a", "different", "/fixture", None)
                 .is_err()
         );
         let config = AgentConfig {
@@ -517,9 +563,10 @@ mod tests {
             token: "conversation-token-a".into(),
             title: "".into(),
             cwd: "/fixture".into(),
+            selection: None,
         };
         let report = node
-            .create_khor_conversation("conversation-token-a", "", "/fixture")
+            .create_khor_conversation("conversation-token-a", "", "/fixture", None)
             .unwrap();
         let board = report.data.as_ref().unwrap()["session"].as_str().unwrap();
         name_conversation(node.root(), board, "Current title", "").unwrap();

@@ -2389,6 +2389,8 @@ pub async fn khor_agent(
                 token: string("token")?,
                 title: string("title")?,
                 cwd: string("cwd")?,
+                selection: serde_json::from_value(payload["selection"].clone())
+                    .map_err(|_| khor_catalog::msg::agent_arguments().to_owned())?,
             },
             "manage" => khor_node::khor_agent::Action::Manage {
                 request: payload.clone(),

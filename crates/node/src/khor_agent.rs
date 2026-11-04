@@ -38,6 +38,12 @@ use std::{
 use std::process::Child;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ModelSelection {
+    pub account: String,
+    pub model: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Action {
     Read,
     Manage {
@@ -69,6 +75,7 @@ pub enum Action {
         token: String,
         title: String,
         cwd: String,
+        selection: Option<ModelSelection>,
     },
     Conversation {
         session: String,
@@ -479,8 +486,8 @@ impl Node {
     /// Only called on the selected home, through the authenticated node route.
     pub(crate) async fn khor_agent_here(&self, action: Action) -> Result<Report, String> {
         let _call = runtime::enter(self.root(), &self.agent_generation)?;
-        if let Action::CreateConversation { token, title, cwd } = &action {
-            return self.create_khor_conversation(token, title, cwd);
+        if let Action::CreateConversation { token, title, cwd, selection } = &action {
+            return self.create_khor_conversation(token, title, cwd, selection.as_ref());
         }
         let board = action.board().to_owned();
         let action = match action {
@@ -561,25 +568,9 @@ impl Node {
             }
             Action::Configure { account, model } => {
                 self.refuse_unless_hosting()?;
-                let account = self.agent_account(&account)?;
-                if model.trim().is_empty()
-                    || model.len() > 256
-                    || model.chars().any(char::is_control)
-                {
-                    return Err(msg::agent_model_required().to_owned());
-                }
                 let _configuration = configuration_lock(&root)?;
                 let current = self.khor_agent_config_in(&board)?;
-                let config = AgentConfig {
-                    home: self.device_str().into(),
-                    account: account.id.clone(),
-                    model: model.trim().into(),
-                    options: current
-                        .as_ref()
-                        .filter(|c| c.account == account.id && c.model == model.trim())
-                        .map(|c| c.options.clone())
-                        .unwrap_or_default(),
-                };
+                let config = self.agent_model_config(&account, &model, current.as_ref())?;
                 self.chat.set_agent_config_in(&board, &config)?;
                 let _ = self.emit_row_of(&crate::SessionId(board.clone()));
                 report.config = Some(config);
@@ -757,6 +748,22 @@ impl Node {
             | Action::RetryCancellation { .. } => unreachable!("handled before reconciliation"),
         }
         Ok(report)
+    }
+
+    fn agent_model_config(&self, account: &str, model: &str, current: Option<&AgentConfig>) -> Result<AgentConfig, String> {
+        let account = self.agent_account(account)?;
+        if model.trim().is_empty() || model.len() > 256 || model.chars().any(char::is_control) {
+            return Err(msg::agent_model_required().to_owned());
+        }
+        Ok(AgentConfig {
+            home: self.device_str().into(),
+            account: account.id.clone(),
+            model: model.trim().into(),
+            options: current
+                .filter(|c| c.account == account.id && c.model == model.trim())
+                .map(|c| c.options.clone())
+                .unwrap_or_default(),
+        })
     }
 
     fn agent_account(&self, id: &str) -> Result<crate::Account, String> {

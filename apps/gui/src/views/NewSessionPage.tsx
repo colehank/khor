@@ -1,5 +1,6 @@
 import {AcpAgentSetup,EMPTY_ENVIRONMENT,type SessionEnvironment} from "@/views/AcpAgentSetup";
 import {managePi} from "@/lib/pi-accounts";
+import {KhorSessionSetup, type KhorModelSelection} from '@/views/KhorSessionSetup';
 // New session: the target, its current directory, and what to run. The same
 // page sits behind the desktop strip and the narrow screen's bottom deck.
 import { useEffect, useRef, useState } from 'react';
@@ -62,6 +63,7 @@ export function NewSessionPage({
   const [name, setName] = useState('');
   const [contextValid,setContextValid]=useState(true);
   const [environment,setEnvironment]=useState<SessionEnvironment>(EMPTY_ENVIRONMENT);
+  const [khorSelection, setKhorSelection] = useState<KhorModelSelection | null>(null);
   const [pending, setPending] = useState(false),
     [opening, setOpening] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -173,7 +175,7 @@ export function NewSessionPage({
   }, [target?.hosts]);
   const selected = launch.kind === 'agent' ? choices.find(c => c.id === 'agent:' + launch.agent) : launch.kind === 'tell' || launch.kind === 'khor' ? choices.find(c => c.id === launch.kind) : choices.find(c => c.id === 'custom:' + launch.preset && c.launch.kind === 'shell' && c.launch.command === launch.command) ?? choices.find(c => c.launch.kind === 'shell' && c.launch.command === launch.command);
   const command = launch.kind === 'shell' ? launch.command : '';
-  const contextReady = launch.kind !== 'agent' || contextValid;
+  const contextReady = launch.kind === 'khor' ? khorSelection?.home === target?.id && !!khorSelection : launch.kind !== 'agent' || contextValid;
   const create = () => {
     if (opening || pending || !target || !contextReady) return;
     if (target.hosts === false && launch.kind !== 'tell') return;
@@ -188,14 +190,15 @@ export function NewSessionPage({
       return;
     }
     const title = name.trim() || (launch.kind === 'shell' && launch.preset ? presets.find(p => p.id === launch.preset)?.name || '' : '');
-    const key = JSON.stringify([channel, cwd, launch, title,environment]);
+    const selection = launch.kind === 'khor' && khorSelection ? {account: khorSelection.account, model: khorSelection.model} : null;
+    const key = JSON.stringify([channel, cwd, launch, title,environment,selection]);
     if (creation.current?.key !== key) creation.current = {key, token: crypto.randomUUID()};
     const {token} = creation.current;
     const version = generation.current;
     const ownsRequest = () => generation.current === version && creation.current?.token === token;
     setOpening(true);
     setError(null);
-    (launch.kind === 'khor' ? khorAgent('create',target.id,{token,title,cwd}).then(view=>{const id=(view.data as {session?:string})?.session;if(!id)throw new Error('未能创建会话');return id;}) : launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
+    (launch.kind === 'khor' ? khorAgent('create',target.id,{token,title,cwd,selection}).then(view=>{const id=(view.data as {session?:string})?.session;if(!id)throw new Error('未能创建会话');return id;}) : launch.kind === 'shell' ? openShell(channel, cwd, launch.command, title, token) : environment.mcpServers.length||environment.additionalDirectories.length ? managePi(channel,{operation:'acp_open',agent:launch.agent,cwd,title,environment,token}).then(value=>{const session=(value as unknown as {session?:string}).session;if(!session)throw new Error('智能体未返回会话');return session;}) : openSession(cwd, title, 'chat', launch.agent, channel, token)).then(id => {
       if (!ownsRequest()) return;
       creation.current = null;
       startedAgent.current = launch.kind === 'agent';
@@ -292,10 +295,11 @@ export function NewSessionPage({
               run: () => setManage(true)
             }]} /></div>
     {launch.kind === 'shell' && <span data-new-session-launch-note className="col-start-2 text-caption text-tertiary">{gui.launch_command_note}</span>}
+    {launch.kind === 'khor' && target?.hosts && <KhorSessionSetup key={target.id} machine={target.id} disabled={opening} onChange={setKhorSelection} />}
     {handed && launch.kind === 'agent' && <><FormLabel>{gui.new_session_handed}</FormLabel><span data-new-session-handed className="min-w-0 truncate font-mono text-body">{handed}</span></>}
     {launch.kind !== 'tell' && <><FormLabel htmlFor="new-session-name">{gui.new_session_name}</FormLabel><Input id="new-session-name" data-new-session-name value={name} disabled={opening} placeholder={gui.new_session_name_hint} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !imeKey(e)) { e.preventDefault(); create(); } }} /></>}
    </FormGrid>
-   {launch.kind==='agent'&&!['claude','codex'].includes(launch.agent)&&<AcpAgentSetup key={`${channel}:${launch.agent}`} agent={launch.agent} machine={channel} environment={environment} onEnvironment={setEnvironment} onValid={setContextValid}/>}
+   {launch.kind==='agent'&&<AcpAgentSetup key={`${channel}:${launch.agent}`} agent={launch.agent} machine={channel} environment={environment} onEnvironment={setEnvironment} onValid={setContextValid}/>}
    {error && <p data-new-session-error role="alert" className="text-callout text-destructive">{error}</p>}
    <div className="flex justify-end gap-in"><Button data-new-tab-cancel onMouseDown={e => e.preventDefault()} onClick={cancel}>{gui.delete_keep}</Button><Button variant="primary" data-new-session-create disabled={opening || pending || !target || !contextReady || launch.kind !== 'tell' && !dir.trim()} aria-busy={opening || undefined} onMouseDown={e => e.preventDefault()} onClick={create}>{gui.create}</Button></div>
   </div></div>

@@ -12,7 +12,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { managePi, piJob, type PiJob, type PiModel, type PiProvider } from "@/lib/pi-accounts";
 
 const modelCache = new Map<string, PiModel[]>();
-export function PiModelField({ account, value, onChange, enabled = true, label = gui.agent_model_session }: { account: KhorAgentAccount | undefined; value: string; onChange: (value: string) => void; enabled?: boolean; label?: string }) {
+export function PiModelField({ account, value, onChange, enabled = true, disabled = false, label = gui.agent_model_session }: { account: KhorAgentAccount | undefined; value: string; onChange: (value: string) => void; enabled?: boolean; disabled?: boolean; label?: string }) {
   const [models, setModels] = useState<PiModel[]>([]), [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), [revision, setRevision] = useState(0);
   useEffect(() => {
     if (!enabled || !account) return;
@@ -25,15 +25,15 @@ export function PiModelField({ account, value, onChange, enabled = true, label =
     return () => controller.abort();
   }, [account?.id, account?.home, enabled, revision]);
   return <div className="space-y-in" data-pi-model-field>
-    <div data-khor-agent-model><ChoiceField label={label} value={value} selected={value} onInput={onChange} onPick={onChange} placeholder={gui.agent_model_search} disabled={!account}
-      options={models.map((m) => ({ id: m.id, label: m.name, terms: m.id, aside: [m.reasoning ? gui.agent_reasoning_capability : "", m.image ? gui.agent_image_capability : ""].filter(Boolean).join(" · ") }))} /></div>
-    <div className="flex items-baseline gap-in text-caption text-secondary-foreground"><span className="min-w-0 flex-1">{busy ? gui.agent_model_loading : error ?? gui.agent_model_manual}</span><Button size="sm" variant="ghost" onClick={() => setRevision((n) => n + 1)} disabled={busy || !account}>{gui.agent_model_refresh}</Button></div>
+    <div data-khor-agent-model><ChoiceField label={label} value={value} selected={value} onInput={onChange} onPick={onChange} placeholder={gui.agent_model_search}
+      options={models.map((m) => ({ id: m.id, label: m.name, terms: m.id, aside: [m.reasoning ? gui.agent_reasoning_capability : "", m.image ? gui.agent_image_capability : ""].filter(Boolean).join(" · ") }))} disabled={disabled || !account} /></div>
+    <div className="flex items-baseline gap-in text-caption text-secondary-foreground"><span className="min-w-0 flex-1">{busy ? gui.agent_model_loading : error ?? gui.agent_model_manual}</span><Button size="sm" variant="ghost" onClick={() => setRevision((n) => n + 1)} disabled={disabled || busy || !account}>{gui.agent_model_refresh}</Button></div>
   </div>;
 }
 
-export function PiAccountForm({ account, onDone, onCancel }: { account?: KhorAgentAccount; onDone: (view: KhorAgentView, id: string) => void; onCancel: () => void }) {
+export function PiAccountForm({ account, home: initialHome = "", onDone, onCancel }: { account?: KhorAgentAccount; home?: string; onDone: (view: KhorAgentView, id: string) => void; onCancel: () => void }) {
   const [providers, setProviders] = useState<PiProvider[]>([]), [machines, setMachines] = useState<DeviceRow[]>([]);
-  const [home, setHome] = useState(account?.home ?? ""), [providerId, setProviderId] = useState(account?.provider ?? ""), [name, setName] = useState(account?.name ?? "");
+  const [home, setHome] = useState(account?.home ?? initialHome), [providerId, setProviderId] = useState(account?.provider ?? ""), [name, setName] = useState(account?.name ?? "");
   const [base, setBase] = useState(account?.base_url ?? ""), [custom, setCustom] = useState(!!account?.base_url), [method, setMethod] = useState(account?.auth_type ?? "api_key");
   const [state, setState] = useState<PiJob | null>(null), [job, setJob] = useState(""), [answer, setAnswer] = useState("");
   const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(false), [responding, setResponding] = useState(false);
@@ -81,7 +81,7 @@ export function PiAccountForm({ account, onDone, onCancel }: { account?: KhorAge
   };
   return <div className="space-y-group" data-pi-account-form>
     {!ready && !busy && <div className="space-y-row">
-      <div className="space-y-in"><label className="text-callout">{gui.agent_credential_home}</label><ChoiceField label={gui.agent_credential_home} value={machine?.name ?? ""} selected={home} disabled={!!target.current} options={machines.map((m) => ({ id: m.id, label: m.name, icon: <MachineAvatar face={m.face} className="h-ctl-sm w-ctl-sm shrink-0" /> }))} onPick={setHome} /></div>
+      <div className="space-y-in"><label className="text-callout">{gui.agent_credential_home}</label><ChoiceField label={gui.agent_credential_home} value={machine?.name ?? ""} selected={home} disabled={!!target.current || !!initialHome} options={machines.map((m) => ({ id: m.id, label: m.name, icon: <MachineAvatar face={m.face} className="h-ctl-sm w-ctl-sm shrink-0" /> }))} onPick={setHome} /></div>
       <div className="space-y-in"><label className="text-callout">{gui.agent_provider}</label><ChoiceField label={gui.agent_provider} value={provider?.name ?? ""} selected={providerId} disabled={!!target.current} options={providers.map((p) => ({ id: p.id, label: p.id === "newapi" ? gui.agent_compatible_provider : p.name, terms: p.id }))} onPick={selectProvider} /></div>
       <label className="flex flex-col gap-in text-callout">{gui.agent_account_name}<Input value={name} onChange={(e) => setName(e.target.value)} placeholder={provider?.name} /></label>
       {provider && <div className="space-y-in"><span className="text-callout">{gui.add_auth}</span><PopupButton look="field" label={gui.add_auth} value={method} onPick={setMethod} choices={provider.methods.map((m) => ({ value: m.id, label: m.label }))} /></div>}
@@ -109,7 +109,7 @@ export function PiAccountForm({ account, onDone, onCancel }: { account?: KhorAge
     </DialogFooter>
   </div>;
 }
-export function PiAccountDialog({ open, onOpenChange, account, onDone, restoreFocus = true }: { open: boolean; onOpenChange: (open: boolean) => void; account?: KhorAgentAccount; onDone: (view: KhorAgentView, id: string) => void; restoreFocus?: boolean }) {
+export function PiAccountDialog({ open, onOpenChange, account, home, onDone, restoreFocus = true }: { open: boolean; onOpenChange: (open: boolean) => void; account?: KhorAgentAccount; home?: string; onDone: (view: KhorAgentView, id: string) => void; restoreFocus?: boolean }) {
   const title = useRef<HTMLHeadingElement>(null);
-  return <Dialog open={open} onOpenChange={onOpenChange}><TaskOverlay purpose="edit" scrollable data-pi-account-dialog onOpenAutoFocus={(e) => { e.preventDefault(); title.current?.focus(); }} onCloseAutoFocus={(e) => { if (!restoreFocus) e.preventDefault(); }}><DialogHeader><DialogTitle ref={title} tabIndex={-1}>{account ? gui.agent_model_account : gui.agent_account_add}</DialogTitle></DialogHeader>{open && <PiAccountForm key={account?.id ?? "new"} account={account} onCancel={() => onOpenChange(false)} onDone={(view, id) => { onDone(view, id); onOpenChange(false); }} />}</TaskOverlay></Dialog>;
+  return <Dialog open={open} onOpenChange={onOpenChange}><TaskOverlay purpose="edit" scrollable data-pi-account-dialog onOpenAutoFocus={(e) => { e.preventDefault(); title.current?.focus(); }} onCloseAutoFocus={(e) => { if (!restoreFocus) e.preventDefault(); }}><DialogHeader><DialogTitle ref={title} tabIndex={-1}>{account ? gui.agent_model_account : gui.agent_account_add}</DialogTitle></DialogHeader>{open && <PiAccountForm key={account?.id ?? home ?? "new"} account={account} home={home} onCancel={() => onOpenChange(false)} onDone={(view, id) => { onDone(view, id); onOpenChange(false); }} />}</TaskOverlay></Dialog>;
 }
