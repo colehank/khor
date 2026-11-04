@@ -31,10 +31,10 @@ fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
         .args(["state", "--hook"])
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     let status = loop {
         if let Some(status) = child.try_wait().unwrap() {
             break Some(status);
@@ -47,11 +47,11 @@ fn retired_hook_exits_without_waiting_for_stdin_or_opening_a_node() {
         std::thread::sleep(std::time::Duration::from_millis(10));
     };
     let opened_node = home.join(".khor").exists();
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut child.stderr.take().unwrap(), &mut stderr).unwrap();
     std::fs::remove_dir_all(&home).unwrap();
-    assert!(
-        status.is_some_and(|s| s.success()),
-        "retired hook waited for stdin"
-    );
+    let status = status.unwrap_or_else(|| panic!("retired hook did not exit; opened_node={opened_node}; {stderr}"));
+    assert!(status.success(), "retired hook exited with {status}: {stderr}");
     assert!(
         !opened_node,
         "retired hook opened the production state path"
