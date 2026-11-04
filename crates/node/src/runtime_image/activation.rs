@@ -101,22 +101,20 @@ pub(super) fn check(other: &Path) -> Result<(), String> {
 
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub(super) fn check_local_contracts() -> Result<(), String> {
-    static CHECKED: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
-    CHECKED
-        .get_or_init(|| {
-            let root = khor_runtime::local_directory().map_err(|error| error.to_string())?;
-            if !root.try_exists().map_err(|error| error.to_string())? {
-                return Ok(());
-            }
-            let expected = current()?.release.contract;
-            let store = khor_runtime::Store::open(root, khor_runtime::Limits::default())
-                .map_err(|error| error.to_string())?;
-            for actual in store.contracts().map_err(|error| error.to_string())? {
-                if !expected.accepts(&actual) {
-                    return Err(INCOMPATIBLE.into());
-                }
-            }
-            Ok(())
-        })
-        .clone()
+    let root = khor_runtime::local_directory().map_err(|error| error.to_string())?;
+    if !root.try_exists().map_err(|error| error.to_string())? {
+        return Ok(());
+    }
+    let expected = current()?.release.contract;
+    let store = khor_runtime::Store::open(root, khor_runtime::Limits::default())
+        .map_err(|error| error.to_string())?;
+    for actual in store
+        .occupied_contracts()
+        .map_err(|error| error.to_string())?
+    {
+        if !expected.accepts(&actual) {
+            return Err(INCOMPATIBLE.into());
+        }
+    }
+    Ok(())
 }

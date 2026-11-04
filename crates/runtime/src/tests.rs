@@ -93,6 +93,24 @@ fn same_content_reuses_one_immutable_generation_and_changed_contract_does_not() 
 }
 
 #[test]
+fn live_contracts_follow_kernel_occupancy_while_idle_rollback_remains_available() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let first = image(&store, "one", b"first");
+    let old = id(&first);
+    let lease = first.lease().try_clone().unwrap();
+    drop(first);
+    assert_eq!(store.occupied_contracts().unwrap(), vec![contract()]);
+    drop(lease);
+    assert!(store.occupied_contracts().unwrap().is_empty());
+    assert_eq!(store.contracts().unwrap(), vec![contract()]);
+    let selected = store.hold(&old).unwrap();
+    assert_eq!(store.occupied_contracts().unwrap(), vec![contract()]);
+    drop(selected);
+    assert!(store.occupied_contracts().unwrap().is_empty());
+}
+
+#[test]
 fn old_occupied_generation_survives_until_last_cloned_lease_closes() {
     let fixture = Fixture::new();
     let store = fixture.store();

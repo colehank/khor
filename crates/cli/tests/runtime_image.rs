@@ -143,4 +143,20 @@ fn activation_check_and_incompatible_local_runtime_never_open_user_data() {
     assert_eq!(blocked.status.code(), Some(78), "{blocked:?}");
     assert!(String::from_utf8_lossy(&blocked.stderr).contains("incompatible"));
     assert!(!home.exists(), "refusal must precede Node::open");
+
+    drop(_image);
+    let released = Command::new(&binary)
+        .args([std::ffi::OsStr::new("_runtime_check"), binary.as_os_str()])
+        .env("KHOR_HOME", &home)
+        .env("KHOR_RUNTIME_DIR", &runtime)
+        .output()
+        .unwrap();
+    assert!(
+        released.status.success(),
+        "an idle rollback image must not block activation: {released:?}"
+    );
+    assert!(
+        !home.exists(),
+        "checking idle images must not open user data"
+    );
 }

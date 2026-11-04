@@ -311,6 +311,17 @@ impl Store {
     }
 
     pub fn contracts(&self) -> io::Result<Vec<Contract>> {
+        self.contracts_matching(|_| Ok(true))
+    }
+
+    pub fn occupied_contracts(&self) -> io::Result<Vec<Contract>> {
+        self.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))
+    }
+
+    fn contracts_matching(
+        &self,
+        include: impl Fn(&Path) -> io::Result<bool>,
+    ) -> io::Result<Vec<Contract>> {
         let _catalog = self.catalog()?;
         let mut result = Vec::new();
         for entry in fs::read_dir(&self.root)? {
@@ -319,6 +330,7 @@ impl Store {
                 .file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(valid_id)
+                && include(&path)?
             {
                 result.push(identity_at(&path)?.contract);
             }
