@@ -232,8 +232,9 @@ class ProvenanceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "inputs changed"):
                 p.verify_build(prepared, rows)
 
-    def test_tauri_environment_records_unset_and_hashes_values(self):
-        names = ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS")
+    def test_declared_build_environment_records_unset_and_hashes_values(self):
+        names = ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS", "KHOR_BUILD_SOURCE",
+                 "KHOR_RELEASE_TAG", "KHOR_RELEASE_BUILD")
         absent = p.environment()
         for name in names:
             with self.subTest(name=name):
@@ -245,8 +246,9 @@ class ProvenanceTests(unittest.TestCase):
                 os.environ.pop(name)
                 self.assertEqual(p.environment(), absent)
 
-    def test_tauri_environment_set_change_and_remove_invalidate_producer_keys(self):
-        for name in ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS"):
+    def test_declared_build_environment_set_change_and_remove_invalidate_producer_keys(self):
+        for name in ("TAURI_CONFIG", "REMOVE_UNUSED_COMMANDS", "KHOR_BUILD_SOURCE",
+                     "KHOR_RELEASE_TAG", "KHOR_RELEASE_BUILD"):
             for previous, current in ((None, "A"), ("A", "B"), ("A", None)):
                 with self.subTest(name=name, previous=previous, current=current):
                     if previous is None:
@@ -572,6 +574,17 @@ class ProvenanceTests(unittest.TestCase):
         marker.write_text("cargo::rerun-if-env-changed=TAURI_CONFIG\n"
                           "cargo:rerun-if-env-changed=REMOVE_UNUSED_COMMANDS\n")
         receipt = p.verify_build(prepared, [generated, *rows])
+        self.assertEqual(len(receipt["generated"]), 1)
+
+    def test_release_build_script_identity_inputs_are_known_even_when_unset(self):
+        self.add_generator()
+        prepared = self.prepare()
+        generated = self.generated_row(prepared, current=True)
+        marker = Path(generated["out_dir"]).parent / "output"
+        marker.write_text("cargo::rerun-if-env-changed=KHOR_BUILD_SOURCE\n"
+                          "cargo::rerun-if-env-changed=KHOR_RELEASE_TAG\n"
+                          "cargo::rerun-if-env-changed=KHOR_RELEASE_BUILD\n")
+        receipt = p.verify_build(prepared, [generated, *self.rows()])
         self.assertEqual(len(receipt["generated"]), 1)
 
     def gui_capabilities(self):
