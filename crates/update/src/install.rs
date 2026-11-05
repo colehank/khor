@@ -1,4 +1,5 @@
 use crate::{Channel, Component, Download, Offer, Platform, ReleaseIdentity};
+use khor_runtime::{Image, Limits, Role, Source, Store};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
@@ -12,6 +13,8 @@ use std::{
 pub struct CliInstallation {
     root: PathBuf,
     platform: Platform,
+    origin: PathBuf,
+    local: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -47,26 +50,194 @@ impl CliInstallation {
         if root.file_name().and_then(|s| s.to_str()) != Some(asset_name(platform)?) {
             return Ok(None);
         }
-        let Some(hidden) = root
+        let (bin, local) = if let Some(hidden) = root
             .parent()
-            .filter(|p| p.file_name().is_some_and(|name| name == ".khor"))
-        else {
-            return Ok(None);
+            .filter(|p| p.file_name().is_some_and(|n| n == ".khor"))
+        {
+            let Some(bin) = hidden.parent() else {
+                return Ok(None);
+            };
+            (bin.to_path_buf(), false)
+        } else {
+            let Some(origin) = read_origin(root)? else {
+                return Ok(None);
+            };
+            let expected = node_root(
+                &origin,
+                platform,
+                &khor_runtime::local_directory().map_err(|e| e.to_string())?,
+            )?;
+            if fs::canonicalize(root).map_err(|e| e.to_string())?
+                != fs::canonicalize(expected).map_err(|e| e.to_string())?
+            {
+                return Err("CLI selection belongs to another node or installation".into());
+            }
+            (origin, true)
         };
-        let Some(bin) = hidden.parent() else {
-            return Ok(None);
-        };
-        if fs::read(bin.join("khor")).ok().as_deref() != Some(launcher()?.as_bytes()) {
+        if !is_launcher(&bin.join("khor"))? {
             return Ok(None);
         }
         let root = fs::canonicalize(root).map_err(|e| e.to_string())?;
-        let install = Self { root, platform };
+        let install = Self {
+            root,
+            platform,
+            origin: bin,
+            local,
+        };
         install.current()?;
         Ok(Some(install))
     }
 
+    pub fn source(&self) -> PathBuf {
+        self.root.join("current")
+    }
+
+    pub fn is_node_local(&self) -> bool {
+        self.local
+    }
+
+    pub fn prepare(bin: &Path, platform: Platform, runtime: &Path) -> Result<Self, String> {
+        let bin = fs::canonicalize(bin).map_err(|e| e.to_string())?;
+        Store::open(runtime.to_path_buf(), Limits::default()).map_err(|e| e.to_string())?;
+        let runtime = fs::canonicalize(runtime).map_err(|e| e.to_string())?;
+        let root = node_root(&bin, platform, &runtime)?;
+        let cli = runtime.join("cli");
+        private_directory(&cli)?;
+        private_directory(root.parent().ok_or("invalid node installation")?)?;
+        private_directory(&root)?;
+        let origin = root.join("origin.json");
+        match OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&origin)
+        {
+            Ok(mut file) => {
+                file.write_all(&serde_json::to_vec(&bin).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
+                file.sync_all().map_err(|e| e.to_string())?;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e.to_string()),
+        }
+        if read_origin(&root)?.as_ref() != Some(&bin) {
+            return Err("node installation has a different owner".into());
+        }
+        let install = Self {
+            root,
+            platform,
+            origin: bin,
+            local: true,
+        };
+        install.images()?;
+        Ok(install)
+    }
+
+    pub fn on_node(
+        &self,
+        runtime: &Path,
+        bootstrap: impl FnOnce() -> Result<Image, String>,
+    ) -> Result<Self, String> {
+        let local = Self::prepare(&self.origin, self.platform, runtime)?;
+        if local.current()?.is_some() {
+            return Ok(local);
+        }
+        let _lock = local.lock()?;
+        if local.current()?.is_none() {
+            let previous = bootstrap()?;
+            if previous.role() != Role::Cli {
+                return Err("this installation is not the CLI".into());
+            }
+            let store = local.images()?;
+            let image = store
+                .publish(
+                    Role::Cli,
+                    previous.version(),
+                    previous.contract().clone(),
+                    previous.embedded().clone(),
+                    Source::File(previous.path()),
+                )
+                .map_err(|e| e.to_string())?;
+            local.point(
+                image
+                    .path()
+                    .strip_prefix(&local.root)
+                    .map_err(|e| e.to_string())?,
+            )?;
+        }
+        drop(_lock);
+        Ok(local)
+    }
+
+    pub fn selected_on_node(&self, runtime: &Path) -> Result<PathBuf, String> {
+        if self.local {
+            return Ok(self.source());
+        }
+        let root = node_root(&self.origin, self.platform, runtime)?;
+        let local = Self {
+            root,
+            platform: self.platform,
+            origin: self.origin.clone(),
+            local: true,
+        };
+        if local.root.try_exists().map_err(|e| e.to_string())? {
+            khor_runtime::validate_local_directory(&local.root).map_err(|e| e.to_string())?;
+            if read_origin(&local.root)?.as_ref() != Some(&local.origin) {
+                return Err("node selection belongs to another installation".into());
+            }
+            if local.current()?.is_some() {
+                return Ok(local.source());
+            }
+        }
+        Ok(self.source())
+    }
+
+    pub fn bootstrap_source(&self) -> Result<Option<PathBuf>, String> {
+        let shared = self
+            .origin
+            .join(".khor")
+            .join(asset_name(self.platform)?)
+            .join("current");
+        if shared.try_exists().map_err(|e| e.to_string())? {
+            return Ok(Some(shared));
+        }
+        let entry = self.origin.join("khor");
+        if !entry.try_exists().map_err(|e| e.to_string())? || is_launcher(&entry)? {
+            return Ok(None);
+        }
+        Ok(Some(entry))
+    }
+
+    pub fn publish_launcher(&self) -> Result<(), String> {
+        let mut stage = tempfile::NamedTempFile::new_in(&self.origin).map_err(|e| e.to_string())?;
+        stage
+            .write_all(launcher()?.as_bytes())
+            .map_err(|e| e.to_string())?;
+        stage
+            .as_file()
+            .set_permissions(fs::Permissions::from_mode(0o755))
+            .map_err(|e| e.to_string())?;
+        stage.as_file().sync_all().map_err(|e| e.to_string())?;
+        stage
+            .persist(self.origin.join("khor"))
+            .map_err(|e| e.to_string())?;
+        sync(&self.origin)
+    }
+
+    fn images(&self) -> Result<Store, String> {
+        if !self.local {
+            return Err("adopt this CLI on the current node before updating it".into());
+        }
+        Store::open(self.root.join("versions"), Limits::default()).map_err(|e| e.to_string())
+    }
+
     pub fn staging(&self) -> PathBuf {
         self.root.join("staging")
+    }
+
+    pub fn activation_ready(&self) -> Result<bool, String> {
+        Ok(!self
+            .receipt()?
+            .is_some_and(|r| matches!(r.state, InstallState::Prepared | InstallState::Activating)))
     }
 
     pub fn adopted_identity(&self, compiled: &ReleaseIdentity) -> Result<ReleaseIdentity, String> {
@@ -155,39 +326,38 @@ impl CliInstallation {
         let _lock = self.lock()?;
         let previous = self.current()?;
         check(&program, previous.as_deref(), offer)?;
-        let version = format!("{}-{}", offer.identity().tag.as_str(), digest);
-        let relative = Path::new("versions").join(version).join("khor");
-        let destination = self.root.join(&relative);
-        let parent = destination.parent().ok_or("invalid CLI destination")?;
-        directory(&self.root.join("versions"))?;
-        directory(parent)?;
-        match fs::symlink_metadata(&destination) {
-            Ok(meta) => {
-                if !meta.is_file() || hash(&destination)? != digest {
-                    return Err("immutable CLI installation differs from its release".into());
-                }
+        if let Some(mut receipt) = self.receipt()? {
+            if receipt.state == InstallState::Complete
+                && &receipt.identity == offer.identity()
+                && &receipt.build == offer.build_identity()
+                && receipt.program_digest == digest
+                && previous
+                    .as_ref()
+                    .is_some_and(|path| hash(path).is_ok_and(|value| value == digest))
+            {
+                health(&self.source(), offer)?;
+                receipt.channel = channel;
+                self.record(&receipt)?;
+                self.retain_selected()?;
+                return Ok(receipt);
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                let mut temporary =
-                    tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
-                std::io::copy(
-                    &mut File::open(&program).map_err(|e| e.to_string())?,
-                    &mut temporary,
-                )
-                .map_err(|e| e.to_string())?;
-                temporary
-                    .as_file()
-                    .set_permissions(fs::Permissions::from_mode(0o555))
-                    .map_err(|e| e.to_string())?;
-                temporary.as_file().sync_all().map_err(|e| e.to_string())?;
-                if hash(temporary.path())? != digest {
-                    return Err("CLI changed during publication".into());
-                }
-                fs::hard_link(temporary.path(), &destination).map_err(|e| e.to_string())?;
-                sync(parent)?;
-            }
-            Err(e) => return Err(e.to_string()),
         }
+        let store = self.images()?;
+        let image = store
+            .stage_checked(
+                Role::Cli,
+                offer.identity().tag.as_str(),
+                offer.artifact().contract.clone(),
+                Default::default(),
+                Source::File(&program),
+                |_| Ok(()),
+            )
+            .map_err(|e| e.to_string())?;
+        let relative = image
+            .path()
+            .strip_prefix(&self.root)
+            .map_err(|e| e.to_string())?
+            .to_path_buf();
         let previous_relative = previous
             .as_ref()
             .map(|path| {
@@ -220,6 +390,7 @@ impl CliInstallation {
         }
         receipt.state = InstallState::Complete;
         self.record(&receipt)?;
+        store.select(&image).map_err(|e| e.to_string())?;
         Ok(receipt)
     }
 
@@ -231,7 +402,7 @@ impl CliInstallation {
         if !observed.as_ref().is_some_and(|receipt| {
             matches!(
                 receipt.state,
-                InstallState::Prepared | InstallState::Activating
+                InstallState::Prepared | InstallState::Activating | InstallState::Complete
             )
         }) {
             return Ok(observed);
@@ -245,6 +416,10 @@ impl CliInstallation {
         let Some(mut receipt) = self.receipt()? else {
             return Ok(None);
         };
+        if receipt.state == InstallState::Complete && self.local {
+            self.retain_selected()?;
+            return Ok(Some(receipt));
+        }
         if !matches!(
             receipt.state,
             InstallState::Prepared | InstallState::Activating
@@ -266,8 +441,19 @@ impl CliInstallation {
             }
             receipt.state = InstallState::Complete;
             self.record(&receipt)?;
+            self.retain_selected()?;
         }
         Ok(Some(receipt))
+    }
+
+    fn retain_selected(&self) -> Result<(), String> {
+        if let Some(program) = self.current()? {
+            let image = Store::image_for_program(&program)
+                .map_err(|e| e.to_string())?
+                .ok_or("selected CLI has no owned runtime image")?;
+            self.images()?.select(&image).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     fn lock(&self) -> Result<File, String> {
@@ -328,18 +514,39 @@ impl CliInstallation {
     }
 }
 
-fn directory(path: &Path) -> Result<(), String> {
-    match fs::create_dir(path) {
-        Ok(()) => Ok(()),
-        Err(e)
-            if e.kind() == std::io::ErrorKind::AlreadyExists
-                && fs::symlink_metadata(path).is_ok_and(|m| m.is_dir() && !m.is_symlink()) =>
-        {
-            Ok(())
+fn node_root(bin: &Path, platform: Platform, runtime: &Path) -> Result<PathBuf, String> {
+    use std::os::unix::ffi::OsStrExt;
+    let id = format!("{:x}", Sha256::digest(bin.as_os_str().as_bytes()));
+    Ok(runtime.join("cli").join(id).join(asset_name(platform)?))
+}
+fn read_origin(root: &Path) -> Result<Option<PathBuf>, String> {
+    match File::open(root.join("origin.json")) {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            file.take(16 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|e| e.to_string())?;
+            if bytes.len() > 16 * 1024 {
+                return Err("CLI origin record is too large".into());
+            }
+            serde_json::from_slice(&bytes)
+                .map(Some)
+                .map_err(|e| e.to_string())
         }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e.to_string()),
     }
 }
+fn private_directory(path: &Path) -> Result<(), String> {
+    use std::os::unix::fs::DirBuilderExt;
+    match fs::DirBuilder::new().mode(0o700).create(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    khor_runtime::validate_local_directory(path).map_err(|e| e.to_string())
+}
+
 fn sync(path: &Path) -> Result<(), String> {
     File::open(path)
         .and_then(|file| file.sync_all())
@@ -368,6 +575,20 @@ fn asset_name(platform: Platform) -> Result<&'static str, String> {
         _ => Err("this CLI installation uses an external package manager".into()),
     }
 }
+fn is_launcher(path: &Path) -> Result<bool, String> {
+    let mut bytes = Vec::new();
+    match File::open(path) {
+        Ok(file) => {
+            file.take(256 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|e| e.to_string())?;
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e.to_string()),
+    }
+    Ok(bytes.len() <= 256 * 1024 && bytes.starts_with(b"#!/bin/sh\n# KHOR_CLI_LAUNCHER_V1\n"))
+}
+
 fn launcher() -> Result<&'static str, String> {
     include_str!("../../../scripts/install-components.sh")
         .split_once("<<'KHOR_LAUNCHER'\n")
@@ -412,7 +633,20 @@ mod tests {
             fs::write(bin.join("khor"), launcher().unwrap()).unwrap();
             let source = root.join("current");
             symlink("versions/old/khor", &source).unwrap();
-            let install = CliInstallation::detect(&source, platform).unwrap().unwrap();
+            let shared = CliInstallation::detect(&source, platform).unwrap().unwrap();
+            let runtime = directory.path().join("runtime");
+            let bootstrap = Store::open(runtime.clone(), Limits::default())
+                .unwrap()
+                .publish(
+                    Role::Cli,
+                    "previous",
+                    Download::fixture().offer().artifact().contract.clone(),
+                    Default::default(),
+                    Source::File(&old),
+                )
+                .unwrap();
+            let install = shared.on_node(&runtime, || Ok(bootstrap)).unwrap();
+            let old = install.current().unwrap().unwrap();
             Self {
                 _directory: directory,
                 install,
@@ -490,6 +724,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(fs::metadata(&program).unwrap().ino(), inode);
+        assert_eq!(
+            install.receipt().unwrap().unwrap().previous,
+            first.previous,
+            "reinstalling the same release must preserve the previous rollback selection"
+        );
         let mut interrupted = first.clone();
         interrupted.state = InstallState::Activating;
         install.record(&interrupted).unwrap();
@@ -519,6 +758,7 @@ mod tests {
             .unwrap();
         receipt.state = InstallState::Activating;
         install.record(&receipt).unwrap();
+        assert!(!install.activation_ready().unwrap());
         let _active = install.lock().unwrap();
         let observed = install
             .recover(|_, _| panic!("live updater owns the health check"))
@@ -563,7 +803,7 @@ mod tests {
     #[test]
     fn external_installations_and_escaping_pointers_are_never_adopted() {
         let fixture = Fixture::new();
-        let bin = fixture.install.root.parent().unwrap().parent().unwrap();
+        let bin = &fixture.install.origin;
         fs::write(
             bin.join("khor"),
             b"#!/bin/sh\nexec external-package-khor \"$@\"\n",
@@ -579,5 +819,49 @@ mod tests {
         symlink("../../../outside", &fixture.source).unwrap();
         assert!(CliInstallation::detect(&fixture.source, fixture.install.platform).is_err());
         assert!(fixture.old.is_file());
+    }
+    #[test]
+    fn shared_installations_select_independent_local_versions_even_when_the_shared_home_goes_offline()
+     {
+        let fixture = Fixture::new();
+        let shared = CliInstallation::detect(&fixture.source, fixture.install.platform)
+            .unwrap()
+            .unwrap();
+        let other_runtime = fixture._directory.path().join("other-runtime");
+        let image = Store::image_for_program(&fixture.old).unwrap().unwrap();
+        let other = shared.on_node(&other_runtime, || Ok(image)).unwrap();
+        let other_old = other.current().unwrap().unwrap();
+        fixture
+            .install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, _, _| Ok(()),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(other.current().unwrap().unwrap(), other_old);
+        assert_eq!(fs::read(&fixture.source).unwrap(), b"previous program");
+        let _updating = other.lock().unwrap();
+        let before = Instant::now();
+        other
+            .on_node(&other_runtime, || {
+                panic!("selected nodes must not re-adopt shared state")
+            })
+            .unwrap();
+        assert!(before.elapsed() < Duration::from_secs(1));
+        fs::rename(
+            fixture.install.origin.join(".khor"),
+            fixture.install.origin.join("offline-home"),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read(other.current().unwrap().unwrap()).unwrap(),
+            b"previous program"
+        );
+        assert_eq!(
+            fs::read(fixture.install.current().unwrap().unwrap()).unwrap(),
+            b"Khor update fixture program\n"
+        );
     }
 }

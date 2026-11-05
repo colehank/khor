@@ -56,14 +56,36 @@ pub fn verify_program(program: &Path, offer: &Offer) -> Result<(), String> {
 }
 
 pub fn verify_activation(program: &Path, current: &Path) -> Result<(), String> {
-    runtime_image::probe(
+    let reply = runtime_image::probe(
         program,
         &[OsStr::new("_runtime_check"), current.as_os_str()],
     )?;
+    if reply != b"compatible\n" {
+        return Err("activation compatibility was not confirmed".into());
+    }
     Ok(())
 }
 pub fn update_trust() -> Result<khor_update::TrustRoot, String> {
     TrustRoot::bundled()
+}
+
+pub(crate) fn selected_cli_source(source: &Path) -> Result<std::path::PathBuf, String> {
+    #[cfg(unix)]
+    if let Some(installation) = khor_update::CliInstallation::detect(source, Platform::current()?)?
+    {
+        return installation
+            .selected_on_node(&khor_runtime::local_directory().map_err(|e| e.to_string())?);
+    }
+    Ok(source.into())
+}
+
+pub(crate) fn cli_activation_ready(source: &Path) -> Result<bool, String> {
+    #[cfg(unix)]
+    if let Some(installation) = khor_update::CliInstallation::detect(source, Platform::current()?)?
+    {
+        return installation.activation_ready();
+    }
+    Ok(true)
 }
 
 pub(crate) fn recover_current_installation() -> Result<(), String> {
@@ -114,16 +136,30 @@ pub struct UpgradeOutcome {
 }
 
 #[cfg(unix)]
-pub async fn upgrade_local(
-    request: UpgradeRequest,
-    trust: TrustRoot,
-    progress: impl FnMut(DownloadProgress),
-) -> Result<UpgradeOutcome, String> {
+pub(crate) fn cli_installation() -> Result<
+    (
+        khor_update::CliInstallation,
+        ProgramInfo,
+        ReleaseIdentity,
+        Channel,
+    ),
+    String,
+> {
     let source = crate::installed_exe()?;
     let platform = Platform::current()?;
     let installation = khor_update::CliInstallation::detect(&source, platform)?.ok_or(
         "this CLI is managed outside Khor; update it with its package manager or installer",
     )?;
+    let installation = installation.on_node(
+        &khor_runtime::local_directory().map_err(|e| e.to_string())?,
+        || {
+            let source = runtime_image::host_at(&source)?;
+            khor_runtime::Store::image_for_program(source.path())
+                .map_err(|e| e.to_string())?
+                .ok_or_else(|| "CLI bootstrap did not produce an owned runtime".into())
+        },
+    )?;
+    let source = installation.source();
     let info = inspect(&source)?;
     if info.component != Component::Cli {
         return Err("this installation is not the CLI".into());
@@ -131,12 +167,56 @@ pub async fn upgrade_local(
     let current = info
         .build
         .release
+        .clone()
         .ok_or("install a signed release with full version identity before using upgrade")?;
     let current = installation.adopted_identity(&current)?;
-    let channel = request
-        .channel
-        .or(installation.receipt()?.map(|receipt| receipt.channel))
+    let channel = installation
+        .receipt()?
+        .map(|receipt| receipt.channel)
         .unwrap_or_else(|| current.tag.channel());
+    Ok((installation, info, current, channel))
+}
+
+#[cfg(unix)]
+pub(crate) fn install_cli(
+    installation: &khor_update::CliInstallation,
+    download: &Download,
+    channel: Channel,
+    expected: Option<&ReleaseIdentity>,
+) -> Result<khor_update::InstallReceipt, String> {
+    installation.install(
+        download,
+        channel,
+        |program, previous, offer| {
+            verify_program(program, offer)?;
+            if let Some(expected) = expected {
+                let previous = previous.ok_or("CLI installation changed while downloading")?;
+                let actual = inspect(previous)?
+                    .build
+                    .release
+                    .ok_or("existing CLI has no release identity")?;
+                if &installation.adopted_identity(&actual)? != expected {
+                    return Err("CLI version changed while downloading; check again".into());
+                }
+            }
+            if let Some(previous) = previous {
+                verify_activation(program, previous)?;
+            }
+            Ok(())
+        },
+        verify_program,
+    )
+}
+
+#[cfg(unix)]
+pub async fn upgrade_local(
+    request: UpgradeRequest,
+    trust: TrustRoot,
+    progress: impl FnMut(DownloadProgress),
+) -> Result<UpgradeOutcome, String> {
+    let (installation, info, current, default_channel) = cli_installation()?;
+    let platform = info.platform;
+    let channel = request.channel.unwrap_or(default_channel);
     let feed = Feed::github(trust.clone())?;
     let Some(release) = feed
         .check(&current, channel, request.version.as_ref())
@@ -171,24 +251,7 @@ pub async fn upgrade_local(
         });
     }
     let download = Download::fetch(offer, &trust, &installation.staging(), progress).await?;
-    installation.install(
-        &download,
-        channel,
-        |program, previous, offer| {
-            verify_program(program, offer)?;
-            if let Some(previous) = previous {
-                let output = runtime_image::probe(
-                    program,
-                    &[OsStr::new("_runtime_check"), previous.as_os_str()],
-                )?;
-                if output != b"compatible\n" {
-                    return Err("activation compatibility was not confirmed".into());
-                }
-            }
-            Ok(())
-        },
-        verify_program,
-    )?;
+    install_cli(&installation, &download, channel, Some(&current))?;
     Ok(UpgradeOutcome {
         current,
         target,

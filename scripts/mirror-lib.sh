@@ -25,6 +25,11 @@ khor_validate_mirror_release() (
         rm -f "$_program"
         trap - EXIT
     done
+    for _metadata in khor-release.json khor-release.json.sig; do
+        [ -f "$_release/$_metadata" ] && [ ! -L "$_release/$_metadata" ] || {
+            echo "khor-mirror: missing signed release metadata ($_metadata)" >&2; exit 1;
+        }
+    done
     [ -f "$_release/install.sh" ] && [ ! -L "$_release/install.sh" ] || exit 1
     /bin/sh -n "$_release/install.sh"
 )
@@ -45,7 +50,7 @@ khor_commit_mirror_release() (
     _generation="$_root/releases/$_tag"
     if [ -e "$_generation" ] || [ -L "$_generation" ]; then
         [ -d "$_generation" ] && [ ! -L "$_generation" ] || exit 1
-        for _file in install.sh khor-linux-x86_64.gz khor-linux-x86_64.gz.sha256 khor-linux-aarch64.gz khor-linux-aarch64.gz.sha256 khor-macos-arm64.gz khor-macos-arm64.gz.sha256 khor-macos-x86_64.gz khor-macos-x86_64.gz.sha256; do
+        for _file in install.sh khor-release.json khor-release.json.sig khor-linux-x86_64.gz khor-linux-x86_64.gz.sha256 khor-linux-aarch64.gz khor-linux-aarch64.gz.sha256 khor-macos-arm64.gz khor-macos-arm64.gz.sha256 khor-macos-x86_64.gz khor-macos-x86_64.gz.sha256; do
             [ -f "$_generation/$_file" ] && [ ! -L "$_generation/$_file" ] && cmp -s "$_stage/$_file" "$_generation/$_file" || {
                 echo "khor-mirror: refusing to replace immutable $_tag ($_file)" >&2; exit 1;
             }
@@ -55,7 +60,7 @@ khor_commit_mirror_release() (
     fi
     # Staging is private. Published static assets must also be readable by the
     # web server when it runs under a different account from the deploy user.
-    for _file in install.sh khor-linux-x86_64.gz khor-linux-x86_64.gz.sha256 khor-linux-aarch64.gz khor-linux-aarch64.gz.sha256 khor-macos-arm64.gz khor-macos-arm64.gz.sha256 khor-macos-x86_64.gz khor-macos-x86_64.gz.sha256; do
+    for _file in install.sh khor-release.json khor-release.json.sig khor-linux-x86_64.gz khor-linux-x86_64.gz.sha256 khor-linux-aarch64.gz khor-linux-aarch64.gz.sha256 khor-macos-arm64.gz khor-macos-arm64.gz.sha256 khor-macos-x86_64.gz khor-macos-x86_64.gz.sha256; do
         chmod 644 "$_generation/$_file"
     done
     chmod 755 "$_root" "$_root/releases" "$_generation"

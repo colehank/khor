@@ -82,6 +82,12 @@ impl Image {
     pub fn version(&self) -> &str {
         &self.identity.version
     }
+    pub fn role(&self) -> Role {
+        self.identity.role
+    }
+    pub fn embedded(&self) -> &BTreeMap<String, String> {
+        &self.identity.embedded
+    }
     pub fn lease(&self) -> &Lease {
         &self.lease
     }
@@ -157,6 +163,10 @@ impl Store {
     }
 
     pub fn lease_for_program(program: &Path) -> io::Result<Option<Lease>> {
+        Ok(Self::image_for_program(program)?.map(|image| image.lease))
+    }
+
+    pub fn image_for_program(program: &Path) -> io::Result<Option<Image>> {
         if !program.is_absolute() {
             return Ok(None);
         }
@@ -184,7 +194,7 @@ impl Store {
         if selected.path != fs::canonicalize(program)? {
             return Err(io::Error::other("runtime executable differs from manifest"));
         }
-        Ok(Some(selected.lease))
+        Ok(Some(selected))
     }
 
     pub fn publish(
@@ -200,6 +210,21 @@ impl Store {
 
     /// Verification may run the selected program; occupancy protects it while catalog is released.
     pub fn publish_checked(
+        &self,
+        role: Role,
+        version: &str,
+        contract: Contract,
+        embedded: BTreeMap<String, String>,
+        source: Source<'_>,
+        check: impl FnOnce(&Image) -> io::Result<()>,
+    ) -> io::Result<Image> {
+        let image = self.stage_checked(role, version, contract, embedded, source, check)?;
+        self.select(&image)?;
+        Ok(image)
+    }
+
+    /// Keep a verified candidate occupied without changing the selected rollback pair.
+    pub fn stage_checked(
         &self,
         role: Role,
         version: &str,
@@ -292,12 +317,22 @@ impl Store {
         let image = self.hold_locked(&id)?;
         drop(catalog);
         check(&image)?;
+        Ok(image)
+    }
+
+    pub fn select(&self, image: &Image) -> io::Result<()> {
         let _catalog = self.catalog()?;
+        let id = image.identity.id()?;
+        if image.path != self.root.join(&id).join(image.identity.role.executable()) {
+            return Err(io::Error::other(
+                "runtime selection belongs to another store",
+            ));
+        }
         let mut index = self.index()?;
-        index.retain(role, &id);
+        index.retain(image.role(), &id);
         self.write_index(&index)?;
         self.collect_locked(&index)?;
-        Ok(image)
+        Ok(())
     }
 
     pub fn hold(&self, id: &str) -> io::Result<Image> {
@@ -315,7 +350,36 @@ impl Store {
     }
 
     pub fn occupied_contracts(&self) -> io::Result<Vec<Contract>> {
-        self.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))
+        let mut result =
+            self.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?;
+        let cli = self.root.join("cli");
+        if !cli.try_exists()? {
+            return Ok(result);
+        }
+        local::validate(&cli)?;
+        for entry in fs::read_dir(cli)? {
+            let entry = entry?;
+            if !entry.file_name().to_str().is_some_and(valid_id) {
+                continue;
+            }
+            local::validate(&entry.path())?;
+            for platform in [
+                "khor-linux-x86_64",
+                "khor-linux-aarch64",
+                "khor-macos-arm64",
+                "khor-macos-x86_64",
+            ] {
+                let root = entry.path().join(platform).join("versions");
+                if !root.join("owner").try_exists()? {
+                    continue;
+                }
+                let child = Self::open(root, self.limits)?;
+                result.extend(
+                    child.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?,
+                );
+            }
+        }
+        Ok(result)
     }
 
     fn contracts_matching(

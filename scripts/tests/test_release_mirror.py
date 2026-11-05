@@ -66,6 +66,8 @@ class ReleaseMirrorTest(unittest.TestCase):
         self.release = "https://github.com/colehank/khor/releases/download/v1.2.3/"
         self.installer = (ROOT / "scripts/install.sh").read_bytes()
         self.route(self.release + "install.sh", self.installer)
+        self.route(self.release + "khor-release.json", b"signed manifest fixture")
+        self.route(self.release + "khor-release.json.sig", b"signature fixture")
         # The old writer requests the API twice. Both calls are deterministic;
         # missing assets and bad digests below are actual publication failures.
         api = {"tag_name": "v1.2.3", "assets": [
@@ -140,7 +142,7 @@ class ReleaseMirrorTest(unittest.TestCase):
                 (old/'reader-open').write_bytes(b'old reader remains')
                 generation = self.mirror/'releases/v1.2.3'
                 generation.mkdir()
-                for name in ['install.sh'] + [asset + suffix for asset in ASSETS for suffix in ['.gz', '.gz.sha256']]:
+                for name in ['install.sh', 'khor-release.json', 'khor-release.json.sig'] + [asset + suffix for asset in ASSETS for suffix in ['.gz', '.gz.sha256']]:
                     (generation/name).write_bytes(base64.b64decode(self.routes[self.release + name]))
                 (generation/entry).unlink()
                 os.mkfifo(generation/entry)

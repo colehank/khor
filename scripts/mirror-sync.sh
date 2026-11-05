@@ -22,6 +22,8 @@ for ASSET in khor-linux-x86_64 khor-linux-aarch64 khor-macos-arm64 khor-macos-x8
     khor_download "$BASE/$ASSET.gz" "$STAGE/$ASSET.gz"
     khor_download "$BASE/$ASSET.gz.sha256" "$STAGE/$ASSET.gz.sha256" 512
 done
+khor_download "$BASE/khor-release.json" "$STAGE/khor-release.json" 262144
+khor_download "$BASE/khor-release.json.sig" "$STAGE/khor-release.json.sig" 4096
 khor_download "$BASE/install.sh" "$STAGE/install.sh" 262144
 # Only publish installers that implement the matching immutable layout. This
 # checks declarations; it never executes the downloaded installer or helpers.

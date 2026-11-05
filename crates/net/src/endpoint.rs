@@ -13,6 +13,9 @@ pub const ALPN: &[u8] = b"khor/0";
 /// routes by which one a connection speaks.
 pub const TUNNEL_ALPN: &[u8] = b"khor-tunnel/0";
 
+/// Signed administration stays independent of the session request wire.
+pub const UPDATE_ALPN: &[u8] = b"khor-update/1";
+
 /// The Khor relay tier (docs/NET.md 中继): the relays every khor binds
 /// with unless this machine was told to use only its own — each with
 /// the shared key its relay asks for.
@@ -682,7 +685,11 @@ fn builder(
     )
     .proxy_from_env()
     .transport_config(transport())
-    .alpns(vec![ALPN.to_vec(), TUNNEL_ALPN.to_vec()])
+    .alpns(vec![
+        ALPN.to_vec(),
+        TUNNEL_ALPN.to_vec(),
+        UPDATE_ALPN.to_vec(),
+    ])
     // The filter that keeps this machine from publishing an address
     // nobody can route to belongs where the services are assembled
     // (the reason is the mDNS service's, below). It also decides what

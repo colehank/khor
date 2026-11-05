@@ -464,7 +464,9 @@ fn grammar(word: &str) -> &'static str {
         "sync" => "sync",
         "mcp" => "mcp",
         "version" => "version",
-        "upgrade" => "upgrade [--check] [--channel stable|beta] [--version <tag>] [--json]",
+        "upgrade" => {
+            "upgrade [--machine <name>] [--check] [--channel stable|beta] [--version <tag>] [--json]"
+        }
         "root" => "root [--verify-owner|show [--json]|words <machine>|recover <words>...|init]",
         "forget" => "forget <machine>",
         "leave" => "leave <machine>",

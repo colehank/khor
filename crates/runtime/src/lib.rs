@@ -6,7 +6,9 @@ mod store;
 mod tests;
 
 pub use lease::Lease;
-pub use local::{available as available_space, local_directory};
+pub use local::{
+    available as available_space, local_directory, validate as validate_local_directory,
+};
 pub use store::{Collection, Image, Limits, Source, Store};
 
 pub fn platform() -> String {

@@ -55,6 +55,12 @@ impl Feed {
                 tag
             }
         };
+        let release = self.release(&tag).await?;
+        release.manifest().newer_than(current, channel)?;
+        Ok(Some(release))
+    }
+
+    pub async fn release(&self, tag: &ReleaseTag) -> Result<VerifiedRelease, String> {
         let prefix = format!(
             "https://github.com/colehank/khor/releases/download/{}/khor-release.json",
             tag.as_str()
@@ -81,11 +87,10 @@ impl Feed {
             &bytes,
             std::str::from_utf8(&signature).map_err(|e| e.to_string())?,
         )?;
-        if release.manifest().identity.tag != tag {
+        if &release.manifest().identity.tag != tag {
             return Err("signed release does not match the selected tag".into());
         }
-        release.manifest().newer_than(current, channel)?;
-        Ok(Some(release))
+        Ok(release)
     }
 }
 

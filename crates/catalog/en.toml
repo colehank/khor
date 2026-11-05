@@ -115,7 +115,7 @@ kind = "The kind"
 machine = "The machine"
 
 [cli]
-upgrade-usage = "khor upgrade [--check] [--channel stable|beta] [--version <tag>] [--json]"
+upgrade-usage = "khor upgrade [--machine <name>] [--check] [--channel stable|beta] [--version <tag>] [--json]"
 upgrade-download = "Downloading update: {0}%"
 upgrade-installed = "Updated CLI to {0}. Existing sessions keep running."
 upgrade-available = "Update available: {0}"
@@ -525,7 +525,7 @@ usage: khor <verb>
   sync                  syncs with the whole network right now
   mcp                   exposes khor's commands as tools (for
                         agents, not for typing by hand)
-  upgrade [--check]     updates this machine’s managed CLI; --check only checks
+  upgrade [--check]     updates a managed CLI; --machine <name> selects a paired machine
   version               which version is installed on this machine
                         (see devices for versions across the network)
   forget <machine>      removes a machine from the network: nobody

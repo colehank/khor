@@ -45,6 +45,49 @@ mod tests {
         (url, worker)
     }
 
+    #[test]
+    fn importing_a_transferred_release_reverifies_bytes_and_leaves_no_unclaimed_stage_on_failure() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("uploaded.gz");
+        let staging = temp.path().join("staging");
+        let (trust, offer) = crate::trust::fixture_offer("http://127.0.0.1/not-used".into());
+        std::fs::write(&source, include_bytes!("../tests/fixtures/asset.gz")).unwrap();
+        let ready = Download::import(offer.clone(), &trust, &source, &staging).unwrap();
+        assert_eq!(
+            std::fs::read(ready.unpack_cli().unwrap()).unwrap(),
+            b"Khor update fixture program\n"
+        );
+        drop(ready);
+        let mut bad = std::fs::read(&source).unwrap();
+        bad[0] ^= 1;
+        std::fs::write(&source, bad).unwrap();
+        assert!(Download::import(offer, &trust, &source, &staging).is_err());
+        assert_eq!(std::fs::read_dir(staging).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn receiving_from_a_paired_machine_bounds_and_authenticates_the_original_archive() {
+        let staging = tempfile::tempdir().unwrap();
+        let bytes = include_bytes!("../tests/fixtures/asset.gz");
+        let (trust, offer) = crate::trust::fixture_offer("http://127.0.0.1/not-used".into());
+        let ready = Download::receive(offer.clone(), &trust, &mut bytes.as_slice(), staging.path())
+            .await
+            .unwrap();
+        assert_eq!(
+            std::fs::read(ready.unpack_cli().unwrap()).unwrap(),
+            b"Khor update fixture program\n"
+        );
+        drop(ready);
+        for bad in [&bytes[..bytes.len() - 1], b"bad".as_slice()] {
+            assert!(
+                Download::receive(offer.clone(), &trust, &mut &bad[..], staging.path())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(std::fs::read_dir(staging.path()).unwrap().count(), 0);
+        }
+    }
+
     #[tokio::test]
     async fn download_verifies_signed_original_and_cleans_cancelled_or_invalid_staging() {
         let temp = tempfile::tempdir().unwrap();
@@ -94,12 +137,59 @@ impl Download {
         }
     }
 
-    pub async fn fetch(
+    pub fn import(
         offer: Offer,
         trust: &TrustRoot,
+        archive: &Path,
         staging: &Path,
-        mut progress: impl FnMut(DownloadProgress),
     ) -> Result<Self, String> {
+        let ready = Self::prepare(offer, staging)?;
+        let mut input = std::fs::File::open(archive)
+            .map_err(|e| e.to_string())?
+            .take(ready.offer.artifact().bytes + 1);
+        let mut output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&ready.archive)
+            .map_err(|e| e.to_string())?;
+        let count = std::io::copy(&mut input, &mut output).map_err(|e| e.to_string())?;
+        output.sync_all().map_err(|e| e.to_string())?;
+        if count != ready.offer.artifact().bytes {
+            return Err("transferred release size differs from its manifest".into());
+        }
+        drop(output);
+        trust.verify_asset(&ready.archive, ready.offer.artifact())?;
+        Ok(ready)
+    }
+
+    pub async fn receive(
+        offer: Offer,
+        trust: &TrustRoot,
+        reader: &mut (impl tokio::io::AsyncRead + Unpin),
+        staging: &Path,
+    ) -> Result<Self, String> {
+        use tokio::io::AsyncReadExt;
+        let ready = Self::prepare(offer, staging)?;
+        let mut file = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&ready.archive)
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut input = reader.take(ready.offer.artifact().bytes + 1);
+        let bytes = tokio::io::copy(&mut input, &mut file)
+            .await
+            .map_err(|e| e.to_string())?;
+        file.sync_all().await.map_err(|e| e.to_string())?;
+        drop(file);
+        if bytes != ready.offer.artifact().bytes {
+            return Err("transferred release size differs from its manifest".into());
+        }
+        trust.verify_asset(&ready.archive, ready.offer.artifact())?;
+        Ok(ready)
+    }
+
+    fn prepare(offer: Offer, staging: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(staging).map_err(|e| e.to_string())?;
         if khor_runtime::available_space(staging).map_err(|e| e.to_string())?
             < offer.artifact().required_space()?
@@ -111,7 +201,22 @@ impl Download {
             .tempdir_in(staging)
             .map_err(|e| e.to_string())?;
         let archive = directory.path().join("asset");
-        let asset = offer.artifact();
+        Ok(Self {
+            directory,
+            archive,
+            offer,
+        })
+    }
+
+    pub async fn fetch(
+        offer: Offer,
+        trust: &TrustRoot,
+        staging: &Path,
+        mut progress: impl FnMut(DownloadProgress),
+    ) -> Result<Self, String> {
+        let ready = Self::prepare(offer, staging)?;
+        let archive = &ready.archive;
+        let asset = ready.offer.artifact();
         let client = reqwest::Client::builder()
             .connect_timeout(Duration::from_secs(15))
             .timeout(Duration::from_secs(300))
@@ -159,11 +264,7 @@ impl Download {
             return Err("release download failed its size or checksum verification".into());
         }
         trust.verify_file(&archive, &asset.signature)?;
-        Ok(Self {
-            directory,
-            archive,
-            offer,
-        })
+        Ok(ready)
     }
 
     pub fn archive(&self) -> &Path {

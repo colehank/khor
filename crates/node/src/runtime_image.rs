@@ -122,14 +122,24 @@ pub fn process_entry() {
             }
         }
     }
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
-    if let Err(error) = crate::updates::recover_current_installation() {
-        eprintln!("{error}");
-        std::process::exit(78);
+    #[cfg(unix)]
+    if let Some(result) = crate::cli_bootstrap::if_requested() {
+        match result {
+            Ok(()) => std::process::exit(0),
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
     }
     if let Err(error) = khor_runtime::enter_current() {
         eprintln!("cannot enter runtime: {error}");
         std::process::exit(1);
+    }
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    if let Err(error) = crate::updates::recover_current_installation() {
+        eprintln!("{error}");
+        std::process::exit(78);
     }
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if let Err(error) = activation::check_local_contracts() {
@@ -212,6 +222,13 @@ impl HostImage {
     pub fn path(&self) -> &Path {
         self.image.path()
     }
+    pub(crate) fn generation(&self) -> &std::ffi::OsStr {
+        self.image
+            .path()
+            .parent()
+            .and_then(Path::file_name)
+            .expect("owned runtime generation")
+    }
     pub fn version(&self) -> &str {
         self.image.version()
     }
@@ -278,6 +295,15 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
     }
     let selected = info.release;
     let executable = std::fs::canonicalize(&info.executable).map_err(|error| error.to_string())?;
+    if let Some(image) = Store::image_for_program(&executable).map_err(|error| error.to_string())? {
+        if image.role() != selected.role || image.contract() != &selected.contract {
+            return Err("managed runtime contract differs from its executable".into());
+        }
+        return Ok(HostImage {
+            image,
+            source: source.into(),
+        });
+    }
     let image = Store::local()
         .map_err(|error| error.to_string())?
         .publish_checked(

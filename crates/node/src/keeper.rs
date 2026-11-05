@@ -85,7 +85,8 @@ fn shield() -> Result<std::path::PathBuf, String> {
     {
         return Ok(watched);
     }
-    let image = crate::runtime_image::host_at(&watched)?;
+    let selected = crate::updates::selected_cli_source(&watched)?;
+    let image = crate::runtime_image::host_at(&selected)?;
     if on_network_fs(&exe) || std::env::var(SHIELD_ENV).ok().as_deref() == Some("1") {
         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
         eprintln!("{}", msg::serve_shielding(&stamp, exe.display()));
@@ -100,7 +101,8 @@ fn shield() -> Result<std::path::PathBuf, String> {
 fn take_generation(
     watched: &std::path::Path,
 ) -> Result<(String, crate::runtime_image::HostImage), String> {
-    let image = crate::runtime_image::host_at(watched)?;
+    let selected = crate::updates::selected_cli_source(watched)?;
+    let image = crate::runtime_image::host_at(&selected)?;
     Ok((image.version().into(), image))
 }
 
@@ -131,7 +133,11 @@ const SWAP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 /// a generation.
 fn fingerprint(exe: &std::path::Path) -> Option<(u64, i64, u64)> {
     use std::os::unix::fs::MetadataExt;
-    let m = std::fs::metadata(exe).ok()?;
+    let selected = crate::updates::selected_cli_source(exe).ok()?;
+    if !crate::updates::cli_activation_ready(&selected).ok()? {
+        return None;
+    }
+    let m = std::fs::metadata(selected).ok()?;
     Some((m.ino(), m.mtime(), m.len()))
 }
 
@@ -174,7 +180,7 @@ pub fn keep() -> Result<(), String> {
         let mut child = source.spawn(&mut command).map_err(msg::host_wont_start)?;
         CHILD.store(child.id() as i32, Ordering::SeqCst);
         let born = std::time::Instant::now();
-        let on_disk = fingerprint(&watched);
+        let mut on_disk = fingerprint(&watched);
         // A change must hold still for two looks before it counts: a
         // download writing the file in place is many changes in a row,
         // and none of them is a generation yet.
@@ -241,6 +247,11 @@ pub fn keep() -> Result<(), String> {
             let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
             match take_generation(&watched) {
                 Ok((next, from)) => {
+                    if from.generation() == source.generation() {
+                        on_disk = Some(now);
+                        seen = None;
+                        continue;
+                    }
                     eprintln!("{}", msg::serve_swapping(&stamp, &running, &next));
                     swap = Some((next, from));
                     term_at = Some(std::time::Instant::now());

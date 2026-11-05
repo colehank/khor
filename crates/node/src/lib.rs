@@ -27,6 +27,8 @@ pub(crate) mod beside;
 pub mod cagent;
 pub mod carry;
 pub mod chat;
+#[cfg(unix)]
+mod cli_bootstrap;
 pub mod code;
 mod codex_process;
 pub mod codex_terminal;
@@ -96,6 +98,7 @@ pub mod transfer;
 pub mod tree;
 pub mod trust;
 pub mod tunnel;
+mod update_wire;
 pub mod updates;
 pub mod usage;
 pub mod vitals;
@@ -665,7 +668,7 @@ pub fn installed_exe() -> Result<PathBuf, String> {
             if !path.is_absolute() {
                 return Err("installation source must be absolute".into());
             }
-            return Ok(path);
+            return updates::selected_cli_source(&path);
         }
     }
     self_exe()

@@ -83,6 +83,7 @@ khor_fetch_verify_place() (
     esac
     [ ! -d "$BIN_DIR/khor" ] || { echo "khor: destination is a directory" >&2; exit 1; }
     chmod +x "$TMP"
+    if [ -n "${6:-}" ]; then cp "$ARCHIVE" "$6"; fi
     mv -f "$TMP" "$BIN_DIR/khor"
     if [ -n "${KHOR_ASSET_FILE:-}" ]; then
         if [ "$KHOR_ASSET_FILE" -ef "$BIN_DIR/khor" ]; then
@@ -440,6 +441,7 @@ khor_activate_release() (
 khor_launcher() (
     cat <<'KHOR_LAUNCHER'
 #!/bin/sh
+# KHOR_CLI_LAUNCHER_V1
 set -eu
 case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) asset=khor-linux-x86_64 ;;
@@ -451,11 +453,31 @@ esac
 bin=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
 # A keeper can copy this launcher before switching from a direct binary
 # installation. Its original install path still identifies the shared store.
-if [ ! -d "$bin/.khor" ] && [ -n "${KHOR_SHIELD_FROM:-}" ]; then
+if [ ! "$bin/khor" -ef "$0" ] && [ ! -d "$bin/.khor" ] && [ -n "${KHOR_SHIELD_FROM:-}" ]; then
     bin=$(CDPATH= cd -- "$(dirname -- "$KHOR_SHIELD_FROM")" && pwd -P)
 fi
 unset KHOR_SHIELD_FROM
 KHOR_INSTALL_SOURCE="$bin/.khor/$asset/current"
+if [ -n "${KHOR_RUNTIME_DIR:-}" ]; then
+    runtime=$KHOR_RUNTIME_DIR
+elif [ "$(uname -s)" = Darwin ]; then
+    runtime="$(getconf DARWIN_USER_DIR)khor-runtime"
+else
+    runtime="/var/tmp/khor-runtime-$(id -u)"
+fi
+if [ -d "$runtime" ]; then
+    runtime=$(CDPATH= cd -- "$runtime" && pwd -P)
+    if command -v sha256sum >/dev/null 2>&1; then
+        installation=$(printf '%s' "$bin" | sha256sum)
+    else
+        installation=$(printf '%s' "$bin" | shasum -a 256)
+    fi
+    installation=${installation%% *}
+    selected="$runtime/cli/$installation/$asset/current"
+    if [ -e "$selected" ] || [ -L "$selected" ]; then
+        KHOR_INSTALL_SOURCE=$selected
+    fi
+fi
 KHOR_RUNTIME_INSTALL_SOURCE="$KHOR_INSTALL_SOURCE"
 export KHOR_INSTALL_SOURCE KHOR_RUNTIME_INSTALL_SOURCE
 [ -x "$KHOR_INSTALL_SOURCE" ] || { echo "khor: install $asset on this machine first" >&2; exit 1; }
@@ -482,7 +504,22 @@ khor_install_release() (
         _version="${_selected%%"$_newline"*}"
         _url="${_selected#*"$_newline"}"
     fi
-    khor_fetch_verify_place "$_url" "$_stage" "$_asset" "$_version" "${_mirror:+mirror}"
+    khor_fetch_verify_place "$_url" "$_stage" "$_asset" "$_version" "${_mirror:+mirror}" "$_stage/archive.gz"
+    if [ -n "${KHOR_RELEASE_FILE:-}" ] || [ -n "${KHOR_RELEASE_SIGNATURE_FILE:-}" ]; then
+        [ -n "${KHOR_RELEASE_FILE:-}" ] && [ -n "${KHOR_RELEASE_SIGNATURE_FILE:-}" ] || {
+            echo "khor: transferred releases need both manifest and signature" >&2; exit 1;
+        }
+        cp "$KHOR_RELEASE_FILE" "$_stage/khor-release.json"
+        cp "$KHOR_RELEASE_SIGNATURE_FILE" "$_stage/khor-release.json.sig"
+    else
+        if [ -n "$_mirror" ]; then
+            _metadata="${_mirror%/}/releases/$_version"
+        else
+            _metadata="https://github.com/$_repo/releases/download/$_version"
+        fi
+        khor_download "$_metadata/khor-release.json" "$_stage/khor-release.json" 262144 || exit 75
+        khor_download "$_metadata/khor-release.json.sig" "$_stage/khor-release.json.sig" 4096 || exit 75
+    fi
     _reported=$("$_stage/khor" version) || { echo "khor: downloaded build cannot run on this machine" >&2; exit 1; }
     _expected="${_version#v}"
     case "$_expected" in
@@ -490,7 +527,7 @@ khor_install_release() (
             case "$_candidate" in ''|*[!0-9]*) ;; *) _expected="${_expected%-rc.*}" ;; esac ;;
     esac
     [ "$_reported" = "$_expected" ] || { echo "khor: downloaded build reports a different version" >&2; exit 1; }
-    khor_activate_release "$_stage/khor" "$_bin" "$_asset" "$_version"
+    "$_stage/khor" _install_cli "$_bin" "$_version" "$_stage/khor-release.json" "$_stage/khor-release.json.sig" "$_stage/archive.gz"
     if [ -n "$_preplaced" ] && [ ! "$_preplaced" -ef "$_bin/khor" ]; then
         rm -f "$_preplaced" || echo "khor: installed; could not remove preplaced archive" >&2
     fi

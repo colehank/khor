@@ -513,6 +513,10 @@ pub enum Op {
         #[serde(with = "crate::delegation::wire_json")]
         action: crate::delegation::Action,
     },
+    UpgradeMachine {
+        machine: String,
+        request: crate::updates::UpgradeRequest,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -642,6 +646,7 @@ impl Op {
             Op::CodeOpenOn { .. } => ("CodeOpenOn", DEADLINE_SLOW),
             Op::Pull { .. } => ("Pull", DEADLINE_TRANSFER),
             Op::Take { .. } => ("Take", DEADLINE_TRANSFER),
+            Op::UpgradeMachine { .. } => ("UpgradeMachine", DEADLINE_TRANSFER),
         }
     }
 }
@@ -898,6 +903,9 @@ pub enum Reply {
     Delegation {
         #[serde(with = "crate::delegation::wire_json")]
         answer: crate::delegation::Answer,
+    },
+    MachineUpgraded {
+        outcome: crate::updates::UpgradeOutcome,
     },
 }
 

@@ -41,7 +41,7 @@ pub fn local_directory() -> io::Result<PathBuf> {
     Ok(root)
 }
 
-pub(crate) fn validate(path: &Path) -> io::Result<()> {
+pub fn validate(path: &Path) -> io::Result<()> {
     let metadata = std::fs::symlink_metadata(path)?;
     if !metadata.is_dir() || metadata.is_symlink() {
         return Err(io::Error::other(

@@ -1756,7 +1756,9 @@ impl Node {
                             once_done(n.clone(), e.clone(), &conn);
                             let remote = conn.remote_id().to_string();
                             let _ = done_tx.send(Some(true));
-                            if conn.alpn() == endpoint::TUNNEL_ALPN {
+                            if conn.alpn() == endpoint::UPDATE_ALPN {
+                                let _ = n.serve_updates(conn).await;
+                            } else if conn.alpn() == endpoint::TUNNEL_ALPN {
                                 let _ = n.serve_tunnel(conn, e).await;
                             } else {
                                 let _ = n.handle(conn, remote, e, done).await;
@@ -2474,6 +2476,12 @@ impl Node {
                         moved,
                         dest: dest.display().to_string(),
                     },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::UpgradeMachine { machine, request } => {
+                match self.upgrade_with(ep, &machine, request).await {
+                    Ok(outcome) => ipc::Reply::MachineUpgraded { outcome },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -13666,5 +13674,97 @@ mod current_inventory {
         progress.moved += 12;
         progress.fail("titles failed".into());
         assert_eq!(progress.finish().err().as_deref(), Some("devices failed"));
+    }
+}
+
+impl Node {
+    pub async fn upgrade_on(
+        &self,
+        machine: &str,
+        request: crate::updates::UpgradeRequest,
+    ) -> Result<crate::updates::UpgradeOutcome, String> {
+        let (_, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            return crate::updates::upgrade_local(request, crate::updates::update_trust()?, |_| {})
+                .await;
+        }
+        if let Some(ep) = self.current_ears() {
+            return self.upgrade_with(&ep, machine, request).await;
+        }
+        match self
+            .via_serve(ipc::Op::UpgradeMachine {
+                machine: machine.into(),
+                request,
+            })
+            .await
+        {
+            Some(Ok(ipc::Reply::MachineUpgraded { outcome })) => Ok(outcome),
+            Some(Ok(ipc::Reply::Refused { why })) | Some(Err(why)) => Err(why),
+            Some(Ok(_)) => Err("resident returned an unexpected update reply".into()),
+            None => Err("start Khor on this machine before updating another machine".into()),
+        }
+    }
+
+    async fn upgrade_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+        request: crate::updates::UpgradeRequest,
+    ) -> Result<crate::updates::UpgradeOutcome, String> {
+        let (channel, home) = self.resolve_or_here(machine)?;
+        if home == self.device() {
+            return crate::updates::upgrade_local(request, crate::updates::update_trust()?, |_| {})
+                .await;
+        }
+        let target = self
+            .devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .ok_or("machine left the paired device table")?;
+        let connection = self
+            .dial(
+                ep,
+                &target.id,
+                &target.addrs,
+                endpoint::UPDATE_ALPN,
+                Some(std::time::Instant::now() + DIAL_TIMEOUT),
+            )
+            .await
+            .map_err(|e| unreached_words(&channel, e))?;
+        tokio::time::timeout(
+            ipc::DEADLINE_TRANSFER,
+            crate::update_wire::upgrade(&connection, request),
+        )
+        .await
+        .map_err(|_| {
+            "machine update timed out; check its installed version before retrying".to_owned()
+        })?
+    }
+
+    async fn serve_updates(
+        self: std::sync::Arc<Self>,
+        connection: iroh::endpoint::Connection,
+    ) -> Result<(), String> {
+        let remote = connection.remote_id().to_string();
+        let permits = std::sync::Arc::new(tokio::sync::Semaphore::new(4));
+        while let Ok((send, recv)) = connection.accept_bi().await {
+            let paired = !self.paused()
+                && !crate::pause::peer_on(self.root(), &remote)
+                && self.admit(&remote).is_ok();
+            let permit = permits
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|e| e.to_string())?;
+            tokio::spawn(async move {
+                let _permit = permit;
+                let _ = tokio::time::timeout(
+                    ipc::DEADLINE_TRANSFER,
+                    crate::update_wire::serve(send, recv, paired),
+                )
+                .await;
+            });
+        }
+        Ok(())
     }
 }

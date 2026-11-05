@@ -509,3 +509,83 @@ fn actual_standalone_agent_keeps_its_image_lease_after_initialization() {
     drop(agent);
     assert!(store.collect().unwrap().removed.contains(&old));
 }
+
+#[test]
+fn unselected_candidates_cannot_evict_current_or_rollback_and_other_stores_cannot_select_them() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let previous = image(&store, "previous", b"previous");
+    let previous_path = previous.path().to_path_buf();
+    drop(previous);
+    let current = image(&store, "current", b"current");
+    let current_path = current.path().to_path_buf();
+    drop(current);
+    for attempt in 0..4 {
+        let candidate = store
+            .stage_checked(
+                Role::Cli,
+                &format!("attempt-{attempt}"),
+                contract(),
+                BTreeMap::new(),
+                Source::Bytes(b"candidate"),
+                |_| Ok(()),
+            )
+            .unwrap();
+        assert!(previous_path.exists());
+        assert!(current_path.exists());
+        let other = Fixture::new();
+        assert!(other.store().select(&candidate).is_err());
+        drop(candidate);
+        store.collect().unwrap();
+    }
+    let ready = store
+        .stage_checked(
+            Role::Cli,
+            "ready",
+            contract(),
+            BTreeMap::new(),
+            Source::Bytes(b"ready"),
+            |_| Ok(()),
+        )
+        .unwrap();
+    store.select(&ready).unwrap();
+    assert!(current_path.exists());
+    assert!(!previous_path.exists());
+    let held = Store::image_for_program(ready.path()).unwrap().unwrap();
+    assert_eq!(held.path(), ready.path());
+}
+
+#[test]
+fn compatibility_accounts_for_occupied_node_installations_without_treating_idle_copies_as_live() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let installation = fixture
+        .0
+        .join("cli")
+        .join("a".repeat(64))
+        .join("khor-macos-arm64");
+    fs::create_dir_all(&installation).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        for path in [
+            fixture.0.join("cli"),
+            installation.parent().unwrap().to_path_buf(),
+            installation.clone(),
+        ] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
+        }
+    }
+    let child = Store::open(
+        installation.join("versions"),
+        Limits {
+            cache_bytes: 1024 * 1024,
+            free_bytes: 0,
+        },
+    )
+    .unwrap();
+    let live = image(&child, "node-local", b"local CLI");
+    assert_eq!(store.occupied_contracts().unwrap(), vec![contract()]);
+    drop(live);
+    assert!(store.occupied_contracts().unwrap().is_empty());
+}

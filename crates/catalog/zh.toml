@@ -199,7 +199,7 @@ kind = "类型"
 machine = "机器"
 
 [cli]
-upgrade-usage = "khor upgrade [--check] [--channel stable|beta] [--version <tag>] [--json]"
+upgrade-usage = "khor upgrade [--machine <name>] [--check] [--channel stable|beta] [--version <tag>] [--json]"
 upgrade-download = "正在下载更新：{0}%"
 upgrade-installed = "命令行已更新至 {0}。现有会话继续运行。"
 upgrade-available = "可更新至 {0}"
@@ -460,7 +460,7 @@ usage = """
                         脚本用）
   sync                  立即和全网各同步一趟
   mcp                   把 khor 的动词当工具讲出去（智能体用，不是人敲的）
-  upgrade [--check]     更新本机由 Khor 管理的命令行；--check 仅检查
+  upgrade [--check]     更新由 Khor 管理的命令行；--machine <name> 选择配对机器
   version               本机装的是哪一版（网里各机器的版本看 devices）
   forget <机器>          把一台机器移出网络：全网都不再认它，它也不再看得见网。
                         要回来得重新配对（在还认它的那台上出票）

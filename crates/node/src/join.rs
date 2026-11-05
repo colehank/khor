@@ -61,6 +61,37 @@ trap - EXIT
 struct PushedArchive {
     path: String,
     digest: String,
+    manifest: String,
+    signature: String,
+}
+
+impl PushedArchive {
+    fn cleanup_command(&self) -> String {
+        format!(
+            "rm -f -- {} {} {}",
+            install_quoted_value(&self.path),
+            install_quoted_value(&self.manifest),
+            install_quoted_value(&self.signature)
+        )
+    }
+}
+
+fn push_verified_bytes(to: &Dest, bytes: &[u8]) -> Result<String, String> {
+    let command = format!(
+        "sh -c {} sh \"$HOME/.local/bin\"",
+        install_quoted_value(PUSH_ARCHIVE_SH)
+    );
+    let uncertain = |why: String| {
+        format!(
+            "{why}; remote transfer was not confirmed and an unclaimed temporary archive may remain"
+        )
+    };
+    let (ok, receipt, err) =
+        run(to, &command, bytes, Duration::from_secs(600)).map_err(uncertain)?;
+    if !ok {
+        return Err(uncertain(last_line(&err)));
+    }
+    pushed_archive_path(&receipt).map_err(uncertain)
 }
 
 fn pushed_archive_path(receipt: &str) -> Result<String, String> {
@@ -419,7 +450,7 @@ fn read_archive_output(mut command: Command, limit: Option<usize>) -> Result<Vec
 /// this machine's version, and its mirror when it has one. Values are
 /// single-quoted; the names are ours.
 fn install_env(extra: &str) -> String {
-    let mut e = format!("KHOR_VERSION='v{}'", crate::VERSION);
+    let mut e = format!("KHOR_VERSION={}", install_quoted_value(&installation_tag()));
     for name in ["KHOR_MIRROR", "KHOR_REPO"] {
         if let Ok(value) = std::env::var(name)
             && !value.is_empty()
@@ -428,6 +459,14 @@ fn install_env(extra: &str) -> String {
         }
     }
     format!("{e} {extra} sh -s")
+}
+
+fn installation_tag() -> String {
+    khor_update::build_identity()
+        .ok()
+        .and_then(|build| build.release)
+        .map(|release| release.tag.as_str().to_owned())
+        .unwrap_or_else(|| format!("v{}", crate::VERSION))
 }
 
 fn install_quoted_value(value: &str) -> String {
@@ -611,15 +650,17 @@ impl Node {
             // It could not fetch for itself: this machine brings it.
             let pushed = self.push_asset(to, asset).and_then(|archive| {
                 let env = install_env(&format!(
-                    "KHOR_NO_SERVE=1 KHOR_ASSET_FILE={} KHOR_ASSET_SHA256={}",
+                    "KHOR_NO_SERVE=1 KHOR_ASSET_FILE={} KHOR_ASSET_SHA256={} KHOR_RELEASE_FILE={} KHOR_RELEASE_SIGNATURE_FILE={}",
                     install_quoted_value(&archive.path),
                     install_quoted_value(&archive.digest),
+                    install_quoted_value(&archive.manifest),
+                    install_quoted_value(&archive.signature),
                 ));
                 let result = run(to, &env, INSTALL_SH.as_bytes(), wait);
-                if !matches!(&result, Ok((true, _, _))) {
+                {
                     let cleanup = run(
                         to,
-                        &format!("rm -f -- {}", install_quoted_value(&archive.path)),
+                        &archive.cleanup_command(),
                         &[],
                         Duration::from_secs(30),
                     );
@@ -779,32 +820,56 @@ impl Node {
     fn push_asset(&self, to: &Dest, asset: &str) -> Result<PushedArchive, String> {
         let mirror = std::env::var("KHOR_MIRROR").ok();
         let repo = std::env::var("KHOR_REPO").ok();
-        let url = release_asset_url(mirror.as_deref(), repo.as_deref(), crate::VERSION, asset)?;
+        let tag = installation_tag();
+        let url = release_asset_url(
+            mirror.as_deref(),
+            repo.as_deref(),
+            tag.trim_start_matches('v'),
+            asset,
+        )?;
         let bytes = fetch_archive_bytes(&url, None)?;
-        let record = fetch_archive_bytes(&format!("{url}.sha256"), Some(512))?;
-        let expected = published_archive_digest(&record, asset)?;
-        if archive_digest(&bytes) != expected {
-            return Err("release archive does not match its selected SHA256".into());
+        let base = url.rsplit_once('/').ok_or("invalid release asset URL")?.0;
+        let manifest = fetch_archive_bytes(&format!("{base}/khor-release.json"), Some(256 * 1024))?;
+        let signature = fetch_archive_bytes(&format!("{base}/khor-release.json.sig"), Some(4096))?;
+        let trust = crate::updates::update_trust()?;
+        let release = trust.authenticate(
+            &manifest,
+            std::str::from_utf8(&signature).map_err(|e| e.to_string())?,
+        )?;
+        if release.manifest().identity.tag.as_str() != tag {
+            return Err("release differs from the requested installation".into());
         }
-        let digest = archive_digest(&bytes);
-        let command = format!(
-            "sh -c {} sh \"$HOME/.local/bin\"",
-            install_quoted_value(PUSH_ARCHIVE_SH)
-        );
-        let uncertain = |why: String| {
-            format!(
-                "{why}; remote transfer was not confirmed and an unclaimed temporary archive may remain"
-            )
-        };
-        let (ok, receipt, err) =
-            run(to, &command, &bytes, Duration::from_secs(600)).map_err(uncertain)?;
-        if !ok {
-            return Err(uncertain(last_line(&err)));
+        let artifact = release
+            .manifest()
+            .artifacts
+            .iter()
+            .find(|a| a.component == khor_update::Component::Cli && a.file == format!("{asset}.gz"))
+            .ok_or("signed release has no asset for the target machine")?;
+        trust.verify_asset_bytes(&bytes, artifact)?;
+        let mut transferred = Vec::new();
+        let result = (|| {
+            for payload in [&bytes, &manifest, &signature] {
+                transferred.push(push_verified_bytes(to, payload)?);
+            }
+            Ok(PushedArchive {
+                path: transferred[0].clone(),
+                digest: archive_digest(&bytes),
+                manifest: transferred[1].clone(),
+                signature: transferred[2].clone(),
+            })
+        })();
+        if result.is_err() && !transferred.is_empty() {
+            let command = format!(
+                "rm -f -- {}",
+                transferred
+                    .iter()
+                    .map(|p| install_quoted_value(p))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            let _ = run(to, &command, &[], Duration::from_secs(30));
         }
-        Ok(PushedArchive {
-            path: pushed_archive_path(&receipt).map_err(uncertain)?,
-            digest,
-        })
+        result
     }
 
     /// **Pairs `id` over khor inside ssh** (round ROAD-3): this machine's

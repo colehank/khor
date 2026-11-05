@@ -205,34 +205,57 @@ class InstallReleaseTest(unittest.TestCase):
         self.previous.write_bytes(b"previous installation")
         self.program = self.root / "program"
         subprocess.run([compiler, "-x", "c", "-", "-o", str(self.program)],
-                       input='#include <stdio.h>\n#include <string.h>\nint main(int n, char **v) { puts(n > 1 && strcmp(v[1], "_runtime_check") == 0 ? "compatible" : "1.2.3"); return 0; }\n',
+                       input="""#include <stdio.h>
+#include <string.h>
+int main(int n, char **v) {
+  if (n > 1 && strcmp(v[1], "_install_cli") == 0) {
+    if (n != 7) return 2;
+    char path[8192]; snprintf(path, sizeof(path), "%s/native-install.txt", v[2]);
+    FILE *out = fopen(path, "w"); if (!out) return 3;
+    fprintf(out, "%s\\n", v[3]);
+    for (int i = 4; i < 7; i++) {
+      FILE *in = fopen(v[i], "rb"); if (!in) return 4;
+      int count = 0; while (fgetc(in) != EOF) count++;
+      fclose(in); fprintf(out, "%d\\n", count);
+    }
+    fclose(out); return 0;
+  }
+  puts("1.2.3"); return 0;
+}
+""",
                        text=True, check=True, capture_output=True, timeout=30)
         self.archive = self.root / "archive.gz"
         self.archive.write_bytes(gzip.compress(self.program.read_bytes(), mtime=0))
         self.digest = hashlib.sha256(self.archive.read_bytes()).hexdigest()
+        self.manifest = self.root / "manifest.json"
+        self.manifest.write_bytes(b"signed release fixture")
+        self.signature = self.root / "manifest.sig"
+        self.signature.write_bytes(b"signature fixture")
 
     def install(self, version="v1.2.3", mirror="", preplaced=True):
         environment = {key: value for key, value in os.environ.items() if not key.startswith("KHOR_")}
         if preplaced:
-            environment.update(KHOR_ASSET_FILE=str(self.archive), KHOR_ASSET_SHA256=self.digest)
+            environment.update(KHOR_ASSET_FILE=str(self.archive), KHOR_ASSET_SHA256=self.digest,
+                               KHOR_RELEASE_FILE=str(self.manifest), KHOR_RELEASE_SIGNATURE_FILE=str(self.signature))
         return subprocess.run(["sh", "-s", "--", version, mirror, str(self.bin)],
                               input=COMPONENTS + '\nkhor_install_release owner/repo "$1" "$2" khor-linux-x86_64 "$3"\n',
                               text=True, capture_output=True, env=environment, timeout=30)
 
-    def test_preplaced_install_activates_only_after_preflight(self):
+    def test_preplaced_install_passes_original_archive_and_signed_metadata_to_native_verification(self):
+        archive_bytes = self.archive.stat().st_size
         result = self.install()
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse(self.archive.exists())
-        self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), self.program.read_bytes())
-        self.assertTrue(self.previous.read_bytes().startswith(b"#!/bin/sh"))
+        self.assertEqual((self.bin / "native-install.txt").read_text().splitlines(),
+                         ["v1.2.3", str(self.manifest.stat().st_size), str(self.signature.stat().st_size), str(archive_bytes)])
+        self.assertEqual(self.previous.read_bytes(), b"previous installation",
+                         "the Shell dispatcher delegates publication entirely to the native verifier")
         self.assertEqual(list(self.bin.glob(".khor.*.*")), [])
 
-    def test_rc_tag_installs_the_numeric_build_that_can_be_promoted(self):
+    def test_rc_install_preserves_the_exact_publication_tag_for_native_verification(self):
         result = self.install(version="v1.2.3-rc.2")
         self.assertEqual(result.returncode, 0, result.stderr)
-        current = self.bin / ".khor/khor-linux-x86_64/current"
-        self.assertEqual(current.read_bytes(), self.program.read_bytes())
-        self.assertIn("v1.2.3-rc.2-", str(current.readlink()))
+        self.assertEqual((self.bin / "native-install.txt").read_text().splitlines()[0], "v1.2.3-rc.2")
 
     def test_rc_tag_still_rejects_a_different_application_version(self):
         result = self.install(version="v1.2.4-rc.2")
@@ -254,11 +277,13 @@ class InstallReleaseTest(unittest.TestCase):
         spec.loader.exec_module(fixture)
         name = "/releases/v1.2.3/khor-linux-x86_64.gz"
         contents = {name: self.archive.read_bytes(),
-                    name + ".sha256": (self.digest + "  khor-linux-x86_64.gz\n").encode()}
+                    name + ".sha256": (self.digest + "  khor-linux-x86_64.gz\n").encode(),
+                    "/releases/v1.2.3/khor-release.json": self.manifest.read_bytes(),
+                    "/releases/v1.2.3/khor-release.json.sig": self.signature.read_bytes()}
         with fixture.loopback(contents) as mirror:
             result = self.install(mirror=mirror, preplaced=False)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), self.program.read_bytes())
+        self.assertEqual((self.bin / "native-install.txt").read_text().splitlines()[0], "v1.2.3")
 
 
 if __name__ == "__main__":
