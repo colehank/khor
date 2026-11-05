@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { checkAppUpdate, downloadAppUpdate, fetchAppUpdateStatus, inApp, installAppUpdate, onAppUpdate, setAppUpdatePreferences, type AppUpdateStatus, type UpdatePreferences } from "@/api";
+import { checkAppUpdate, downloadAppUpdate, fetchAppUpdateStatus, inApp, installAppUpdate, onAppUpdate, selectUpdateCompanions, setAppUpdatePreferences, type AppUpdateStatus, type UpdatePreferences } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
@@ -16,7 +16,7 @@ function stateLabel(status: AppUpdateStatus): string {
     case "installing": case "awaiting-health": return gui.update_installing;
     case "complete": return gui.update_complete;
     case "failed": return gui.update_failed;
-    case "idle": return status.checked_at ? gui.update_current : gui.update_label;
+    case "idle": return status.checked_at ? gui.update_app_current : gui.update_label;
   }
 }
 
@@ -53,9 +53,10 @@ export function UpdateSettings() {
   const blocked = status.blocked.map(reason => ({"unsaved-files":gui.update_save_files,"attachments":gui.update_finish_attachments,"unconfirmed-sends":gui.update_finish_sends,"draft-storage":gui.update_draft_storage,"navigation-storage":gui.update_draft_storage,"window-not-ready":gui.update_window_not_ready,"input-in-progress":gui.update_finish_input,"user-active":gui.update_later})[reason]).join(" · ");
   const preferences = (next: Partial<UpdatePreferences>) => run(() => setAppUpdatePreferences({ ...status.preferences, ...next }));
   return (
+    <>
     <MoreSection name="app-update">
       <ActionRow name="update-check" label={failed ? gui.update_failed : stateLabel(status)} value={status.available ?? undefined}
-        hint={blocked || undefined} actionLabel={ready ? gui.update_restart : download ? gui.update_download : gui.update_check} busy={working} onPress={() => run(ready ? installAppUpdate : download ? downloadAppUpdate : checkAppUpdate)} />
+        hint={blocked || undefined} actionLabel={ready ? (status.restart_required ? gui.update_restart : gui.update_apply_selected) : download ? gui.update_download : gui.update_check} busy={working} onPress={() => run(ready ? installAppUpdate : download ? downloadAppUpdate : checkAppUpdate)} />
       <PopupRow name="update-channel" label={gui.update_channel} value={status.preferences.channel}
         choices={[{ value: "stable", label: gui.update_stable }, { value: "beta", label: gui.update_beta }]}
         onPick={value => { if (!working && (value === "stable" || value === "beta")) preferences({ channel: value }); }} />
@@ -66,5 +67,21 @@ export function UpdateSettings() {
       <SwitchRow name="update-install-on-start" label={gui.update_install_on_start} hint={gui.update_install_on_start_hint} on={status.preferences.install_on_start}
         onToggle={() => { if (!working) preferences({ install_on_start: !status.preferences.install_on_start }); }} />
     </MoreSection>
+    {status.companions.map((companion, index) => (
+      <MoreSection key={companion.id} name={`update-companion-${index}`} label={gui.update_companion}>
+        <MoreFact name={`update-cli-version-${index}`} label={gui.identity_version} note={companion.path}>{companion.current}</MoreFact>
+        <SwitchRow name={`update-cli-selected-${index}`} label={gui.update_include_cli}
+          hint={companion.available ?? undefined} on={companion.selected} onToggle={() => {
+            if (working) return;
+            const selected = status.companions.filter(item => item.selected && item.id !== companion.id).map(item => item.id);
+            if (!companion.selected) selected.push(companion.id);
+            run(() => selectUpdateCompanions(selected));
+          }} />
+        <MoreFact name={`update-cli-result-${index}`} label={gui.axis_state}>
+          {companion.phase === "complete" ? gui.update_cli_complete : companion.phase === "failed" ? gui.update_failed : companion.phase === "installing" ? gui.update_installing : companion.available ? gui.update_available : gui.update_component_current}
+        </MoreFact>
+      </MoreSection>
+    ))}
+    </>
   );
 }

@@ -260,6 +260,10 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "signed installation management is admitted only from bundled native application windows",
     ),
     (
+        "app_update_companions",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
         "app_update_prepared",
         "signed installation management is admitted only from bundled native application windows",
     ),

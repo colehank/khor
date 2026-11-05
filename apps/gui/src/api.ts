@@ -1260,6 +1260,8 @@ export const downloadAppUpdate = () => call<import("./gen/bindings/AppUpdateStat
 export const installAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_install");
 export const setAppUpdatePreferences = (preferences: import("./gen/bindings/UpdatePreferences").UpdatePreferences) =>
   call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_preferences", { preferences });
+export const selectUpdateCompanions = (ids: string[]) =>
+  call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_companions", { ids });
 export type { MachineInstallation } from "./gen/bindings/MachineInstallation";
 export type { MachineUpdateResult } from "./gen/bindings/MachineUpdateResult";
 export const fetchMachineInstallation = (machine: string) =>

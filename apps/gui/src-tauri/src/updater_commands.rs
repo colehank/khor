@@ -106,6 +106,25 @@ pub(crate) async fn app_update_download(
 }
 
 #[tauri::command]
+pub(crate) async fn app_update_companions(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    ids: Vec<String>,
+) -> Result<AppUpdateStatus, String> {
+    authorize(&webview)?;
+    #[cfg(all(desktop, unix))]
+    return app
+        .state::<crate::app_updates::AppUpdates>()
+        .select_companions(&app, ids)
+        .await;
+    #[cfg(not(all(desktop, unix)))]
+    {
+        let _ = (app, ids);
+        Err("CLI installations are updated on their host machine".into())
+    }
+}
+
+#[tauri::command]
 pub(crate) async fn app_update_preferences(
     app: tauri::AppHandle,
     webview: tauri::Webview,
@@ -177,6 +196,8 @@ fn store_status() -> AppUpdateStatus {
         failure: None,
         blocked: Vec::new(),
         preferences: UpdatePreferences::new(UpdateChannel::Stable),
+        companions: Vec::new(),
+        restart_required: false,
     }
 }
 

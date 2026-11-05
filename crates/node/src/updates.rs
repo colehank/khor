@@ -5,6 +5,11 @@ use khor_update::{Component, Download, Feed, Offer, Platform, TrustRoot};
 use serde::{Deserialize, Serialize};
 use std::{ffi::OsStr, path::Path};
 
+#[cfg(unix)]
+mod companions;
+#[cfg(unix)]
+pub use companions::{ManagedCli, managed_clis, upgrade_managed_cli};
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProgramInfo {
@@ -129,23 +134,27 @@ pub(crate) fn recover_current_installation() -> Result<(), String> {
                 else {
                     return Ok(());
                 };
-                installation.recover(|program, receipt| {
-                    let info = inspect(program)?;
-                    if info.component != Component::Cli
-                        || info.platform != receipt.platform
-                        || info.build.release.as_ref() != Some(&receipt.build)
-                    {
-                        return Err(
-                            "activated program disagrees with its installation record".into()
-                        );
-                    }
-                    Ok(())
-                })?;
+                recover_cli(&installation)?;
                 Ok(())
             })
             .clone();
     }
     #[cfg(not(unix))]
+    Ok(())
+}
+
+#[cfg(unix)]
+fn recover_cli(installation: &khor_update::CliInstallation) -> Result<(), String> {
+    installation.recover(|program, receipt| {
+        let info = inspect(program)?;
+        if info.component != Component::Cli
+            || info.platform != receipt.platform
+            || info.build.release.as_ref() != Some(&receipt.build)
+        {
+            return Err("activated program disagrees with its installation record".into());
+        }
+        Ok(())
+    })?;
     Ok(())
 }
 

@@ -28,7 +28,7 @@ try {
     window.machineRows=['Alpha','Beta','App node'].map((shown,i)=>({id:String.fromCharCode(97+i).repeat(64),name:'host-'+i,shown,hosts:true,me:false,sponsor:null,face:null,vitals:null}));
     window.machineQueue={revision:0,jobs:[]};
     window.machineInfos=Object.fromEntries(window.machineRows.map((row,i)=>[row.id,{source:i===2?'app':'cli',running:'v0.2.0-rc.1',selected:'v0.2.0-rc.1',channel:'beta',service_ready:true,failed:null}]));
-    window.updateState={source:'direct',phase:'idle',current:'v0.2.0-rc.1',built_from:'v0.2.0-rc.1',source_commit:'a'.repeat(40),available:null,notes:'',received:0,total:null,checked_at:null,failure:null,blocked:[],preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
+    window.updateState={source:'direct',phase:'idle',current:'v0.2.0-rc.1',built_from:'v0.2.0-rc.1',source_commit:'a'.repeat(40),available:null,notes:'',received:0,total:null,checked_at:null,failure:null,blocked:[],companions:[],restart_required:false,preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
     let events=[];
     window.emitUpdate=patch=>{Object.assign(window.updateState,patch);for(const event of events)if(event.event==='app-update:changed')callbacks.get(event.handler)?.({event:'app-update:changed',id:event.id,payload:structuredClone(window.updateState)});};
     window.emitMachineQueue=patch=>{window.machineQueue=structuredClone(patch);for(const event of events)if(event.event==='machine-updates:changed')callbacks.get(event.handler)?.({event:'machine-updates:changed',id:event.id,payload:structuredClone(patch)});};
@@ -49,12 +49,17 @@ try {
         window.emitMachineQueue({revision:window.machineQueue.revision+1,jobs:window.machineQueue.jobs.filter(job=>job.machine!==args.machine||job.request!==args.request)});return structuredClone(window.machineQueue);
       }
       if(cmd==='app_update_status')return structuredClone(window.updateState);
+      if(cmd==='app_update_companions'){
+        if(window.companionFailOnce){window.companionFailOnce=false;throw new Error('fixture choice persistence failure');}
+        window.emitUpdate({companions:window.updateState.companions.map(item=>({...item,selected:args.ids.includes(item.id)}))});
+        return structuredClone(window.updateState);
+      }
       if(cmd==='app_update_runtime_cache'){
         if(args.clean){if(window.cacheFailOnce){window.cacheFailOnce=false;throw new Error('fixture cache cleanup unavailable');}window.cacheUsage.idle_bytes=0;}
         return structuredClone(window.cacheUsage);
       }
       if(cmd==='app_update_prepared')return null;
-      if(cmd==='app_update_check')window.emitUpdate({phase:'available',available:'v0.2.0-rc.2',total:100,checked_at:'2026-11-05T00:00:00Z'});
+      if(cmd==='app_update_check')window.emitUpdate({phase:'available',restart_required:true,available:'v0.2.0-rc.2',total:100,checked_at:'2026-11-05T00:00:00Z'});
       else if(cmd==='app_update_preferences')window.emitUpdate({preferences:args.preferences,phase:'idle',available:null});
       else if(cmd==='app_update_download')window.emitUpdate({phase:'ready',received:100,total:100});
       else if(cmd==='app_update_install')window.emitUpdate({phase:'ready',blocked:['unsaved-files','attachments']});
@@ -96,6 +101,26 @@ try {
   await page.evaluate(()=>window.emitUpdate({phase:'downloading',received:42,total:100}));
   await page.waitForFunction(()=>document.querySelector('[data-setting-row-name="update-check"]').textContent.includes('42%'));
   assert.equal(await action.isDisabled(),true,'a native background operation owns its action');
+  await page.evaluate(()=>window.emitUpdate({phase:'idle',blocked:[],restart_required:false,companions:[
+    {id:'registered-one',path:'/owned/one/bin/khor',current:'v0.2.0-rc.1',available:'v0.2.0-rc.2',selected:false,phase:'available',failure:null},
+    {id:'registered-two',path:'/owned/two/bin/khor',current:'v0.2.0-rc.1',available:'v0.2.0-rc.2',selected:false,phase:'available',failure:null}
+  ]}));
+  const companion=page.locator('[data-setting-row-name="update-cli-selected-0"] button');
+  await page.evaluate(()=>{window.companionFailOnce=true;});
+  await companion.click();
+  await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='app_update_companions'));
+  assert.equal(await companion.getAttribute('aria-checked'),'false','failed persistence must not pretend the CLI was selected');
+  await page.waitForFunction(()=>!document.querySelector('[data-setting-row-name="update-check"] button').disabled);
+  await companion.click();
+  await page.waitForFunction(()=>window.updateState.companions[0].selected===true);
+  assert.deepEqual(await page.evaluate(()=>window.updateCalls.filter(call=>call.cmd==='app_update_companions').at(-1).args.ids),['registered-one']);
+  assert.equal(await page.locator('[data-setting-row-name="update-cli-selected-1"] button').getAttribute('aria-checked'),'false');
+  await page.evaluate(()=>window.emitUpdate({phase:'ready'}));
+  assert.match(await action.innerText(),/更新所选|Update selection/,'a CLI-only update never asks to restart the App');
+  await page.evaluate(()=>window.emitUpdate({phase:'failed',companions:window.updateState.companions.map((entry,i)=>({...entry,phase:i?'failed':'complete'}))}));
+  assert.match(await page.locator('[data-more-fact="update-cli-result-0"]').innerText(),/命令行已更新|CLI updated/);
+  assert.match(await page.locator('[data-more-fact="update-cli-result-1"]').innerText(),/未完成|failed/);
+  assert.match(await page.locator('[data-setting-row-name="update-check"]').innerText(),/未完成|failed/,'partial component success is never reported as overall completion');
   for(const source of ['store','external','development']) {
     await page.evaluate(source=>window.emitUpdate({source,phase:'idle',blocked:[]}),source);
     await page.locator('[data-more-fact="update-source"]').waitFor();

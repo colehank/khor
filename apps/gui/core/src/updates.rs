@@ -87,6 +87,19 @@ pub struct AppUpdateStatus {
     pub failure: Option<String>,
     pub blocked: Vec<UpdateBlocker>,
     pub preferences: UpdatePreferences,
+    pub companions: Vec<CompanionUpdate>,
+    pub restart_required: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+pub struct CompanionUpdate {
+    pub id: String,
+    pub path: String,
+    pub current: String,
+    pub available: Option<String>,
+    pub selected: bool,
+    pub phase: UpdatePhase,
+    pub failure: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

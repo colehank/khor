@@ -21,6 +21,8 @@ struct Selection {
 struct Data {
     status: AppUpdateStatus,
     selected: Option<Selection>,
+    #[cfg(unix)]
+    companions: Option<crate::app_companions::Plan>,
 }
 
 pub(crate) struct AppUpdates {
@@ -85,6 +87,8 @@ impl AppUpdates {
             failure: preference_failure,
             blocked: Vec::new(),
             preferences,
+            companions: Vec::new(),
+            restart_required: false,
         };
         Ok(Self {
             started: std::sync::atomic::AtomicBool::new(false),
@@ -93,6 +97,8 @@ impl AppUpdates {
             data: Mutex::new(Data {
                 status,
                 selected: None,
+                #[cfg(unix)]
+                companions: None,
             }),
             operation: tokio::sync::Mutex::new(()),
             staging: Mutex::new(None),
@@ -188,6 +194,12 @@ impl AppUpdates {
         self.change(app, |data| {
             if data.status.preferences.channel != preferences.channel {
                 data.selected = None;
+                #[cfg(unix)]
+                {
+                    data.companions = None;
+                }
+                data.status.companions.clear();
+                data.status.restart_required = false;
                 data.status.available = None;
                 data.status.notes.clear();
                 data.status.phase = UpdatePhase::Idle;
@@ -215,31 +227,31 @@ impl AppUpdates {
         }
     }
 
+    fn app_offer(&self, release: &VerifiedRelease) -> Result<Option<khor_update::Offer>, String> {
+        release.select(
+            Component::DesktopApp,
+            Platform::current()?,
+            &self.current()?,
+            self.channel()?,
+            None,
+        )
+    }
+
     async fn check_inner(&self, app: &AppHandle) -> Result<AppUpdateStatus, String> {
         let current = self.current()?;
         let trust = TrustRoot::bundled()?;
         let channel = self.channel()?;
-        let platform = Platform::current()?;
         let staging = self.store()?;
-        // A cached signed selection is useful after a restart even when discovery is temporarily offline.
-        if let Ok(Some((release, offer))) =
-            staging.restore(&trust, &current, Component::DesktopApp, platform, channel)
-        {
-            let ready = staging.is_ready(&trust, &offer).unwrap_or(false);
-            self.change(app, |data| {
-                data.status.available = Some(offer.identity().tag.as_str().into());
-                data.status.notes = release.manifest().notes.clone();
-                data.status.phase = if ready {
-                    UpdatePhase::Ready
-                } else {
-                    UpdatePhase::Available
-                };
-                data.selected = Some(Selection {
-                    release,
-                    package: None,
-                });
-            })?;
+        if let Ok(Some(release)) = staging.selected_release(&trust) {
+            self.adopt_release(app, release, false).await?;
         }
+        #[cfg(unix)]
+        let plan = {
+            let root = self.root.clone();
+            crate::off_main(move || crate::app_companions::Plan::discover(&root)).await?
+        };
+        #[cfg(unix)]
+        let current = plan.oldest(&current);
         let release = Feed::github(trust.clone())?
             .check(&current, channel, None)
             .await?;
@@ -250,34 +262,129 @@ impl AppUpdates {
                 data.status.notes.clear();
                 data.status.phase = UpdatePhase::Idle;
                 data.status.checked_at = Some(jiff::Timestamp::now().to_string());
+                #[cfg(unix)]
+                {
+                    data.status.companions = plan.statuses();
+                    data.companions = Some(plan);
+                }
             });
         };
-        let offer = release
-            .select(Component::DesktopApp, platform, &current, channel, None)?
-            .ok_or("selected release has no application update")?;
         staging.remember(&release)?;
-        collect_cache(staging.clone()).await;
-        let ready = staging.is_ready(&trust, &offer).unwrap_or(false);
-        let package = DesktopPackage::check(app, offer, trust).await?;
+        collect_cache(staging).await;
+        self.adopt_release(app, release, true).await
+    }
+
+    async fn adopt_release(
+        &self,
+        app: &AppHandle,
+        release: VerifiedRelease,
+        checked: bool,
+    ) -> Result<AppUpdateStatus, String> {
+        let trust = TrustRoot::bundled()?;
+        let staging = self.store()?;
+        let offer = self.app_offer(&release)?;
+        let restart_required = offer.is_some();
+        let mut ready = offer
+            .as_ref()
+            .map(|offer| staging.is_ready(&trust, offer))
+            .transpose()?
+            .unwrap_or(true);
+        let mut total = offer.as_ref().map_or(0, |offer| offer.artifact().bytes);
+        let mut changed = offer.is_some();
+        #[cfg(unix)]
+        let plan = {
+            let root = self.root.clone();
+            let selected = release.clone();
+            let channel = self.channel()?;
+            let plan = crate::off_main(move || {
+                let mut plan = crate::app_companions::Plan::discover(&root)?;
+                plan.select_release(&selected, channel)?;
+                Ok(plan)
+            })
+            .await?;
+            if let Some(cli) = plan.offer(&release, channel)? {
+                changed = true;
+                ready &= staging.is_ready(&trust, &cli)?;
+                total = total
+                    .checked_add(cli.artifact().bytes)
+                    .ok_or("component download size overflow")?;
+            }
+            plan
+        };
+        let package = match offer {
+            Some(offer) if checked => Some(DesktopPackage::check(app, offer, trust).await?),
+            _ => self
+                .data
+                .lock()
+                .map_err(|_| "update state is unavailable")?
+                .selected
+                .as_mut()
+                .filter(|selection| {
+                    selection.release.manifest().identity == release.manifest().identity
+                })
+                .and_then(|selection| selection.package.take()),
+        };
         self.change(app, |data| {
-            data.status.available = Some(package.offer().identity().tag.as_str().into());
+            data.status.available =
+                changed.then(|| release.manifest().identity.tag.as_str().to_owned());
+            data.status.restart_required = restart_required;
             data.status.notes = release.manifest().notes.clone();
-            data.status.total = Some(package.offer().artifact().bytes);
-            data.status.received = if ready {
-                package.offer().artifact().bytes
-            } else {
-                0
-            };
-            data.status.checked_at = Some(jiff::Timestamp::now().to_string());
-            data.status.phase = if ready {
+            data.status.total = changed.then_some(total);
+            data.status.received = if ready && changed { total } else { 0 };
+            if checked {
+                data.status.checked_at = Some(jiff::Timestamp::now().to_string());
+            }
+            data.status.phase = if !changed {
+                UpdatePhase::Idle
+            } else if ready {
                 UpdatePhase::Ready
             } else {
                 UpdatePhase::Available
             };
-            data.selected = Some(Selection {
-                release,
-                package: Some(package),
-            });
+            #[cfg(unix)]
+            {
+                data.status.companions = plan.statuses();
+                data.companions = Some(plan);
+            }
+            data.selected = Some(Selection { release, package });
+        })
+    }
+
+    #[cfg(unix)]
+    pub(crate) async fn select_companions(
+        &self,
+        app: &AppHandle,
+        ids: Vec<String>,
+    ) -> Result<AppUpdateStatus, String> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .map_err(|_| "an update operation is already running")?;
+        let mut plan = self
+            .data
+            .lock()
+            .map_err(|_| "update state is unavailable")?
+            .companions
+            .clone()
+            .ok_or("check updates before choosing CLI installations")?;
+        let plan = crate::off_main(move || {
+            plan.select(&ids)?;
+            Ok(plan)
+        })
+        .await?;
+        let release = self
+            .data
+            .lock()
+            .map_err(|_| "update state is unavailable")?
+            .selected
+            .as_ref()
+            .map(|selection| selection.release.clone());
+        if let Some(release) = release {
+            return self.adopt_release(app, release, false).await;
+        }
+        self.change(app, |data| {
+            data.status.companions = plan.statuses();
+            data.companions = Some(plan);
         })
     }
 
@@ -302,52 +409,72 @@ impl AppUpdates {
             .as_ref()
             .map(|selected| selected.release.clone())
             .ok_or("check for updates first")?;
-        let current = self.current()?;
         let trust = TrustRoot::bundled()?;
-        let channel = self.channel()?;
-        let offer = release
-            .select(
-                Component::DesktopApp,
-                Platform::current()?,
-                &current,
-                channel,
-                None,
-            )?
-            .ok_or("no newer application update")?;
         let staging = self.store()?;
-        let path = staging.archive(&offer);
-        let package = DesktopPackage::check(app, offer, trust.clone()).await?;
-        if !staging.is_ready(&trust, package.offer()).unwrap_or(false) {
-            self.change(app, |data| {
-                data.status.phase = UpdatePhase::Downloading;
-                data.status.failure = None;
-                data.status.received = 0;
-                data.status.total = Some(package.offer().artifact().bytes);
-            })?;
-            let mut last = Instant::now() - Duration::from_secs(1);
-            package
-                .download(&path, |progress| {
-                    if last.elapsed() < Duration::from_millis(100)
-                        && progress.received != progress.total
-                    {
-                        return;
-                    }
-                    last = Instant::now();
-                    let _ = self.change(app, |data| {
-                        data.status.received = progress.received;
-                    });
-                })
-                .await?;
+        let mut received = 0;
+        if let Some(offer) = self.app_offer(&release)? {
+            let path = staging.archive(&offer);
+            if !staging.is_ready(&trust, &offer)? {
+                let package = DesktopPackage::check(app, offer.clone(), trust.clone()).await?;
+                self.change(app, |data| {
+                    data.status.phase = UpdatePhase::Downloading;
+                    data.status.failure = None;
+                    data.status.received = 0;
+                })?;
+                let mut last = Instant::now() - Duration::from_secs(1);
+                package
+                    .download(&path, |progress| {
+                        if last.elapsed() >= Duration::from_millis(100)
+                            || progress.received == progress.total
+                        {
+                            last = Instant::now();
+                            let _ =
+                                self.change(app, |data| data.status.received = progress.received);
+                        }
+                    })
+                    .await?;
+            }
+            received = offer.artifact().bytes;
         }
-        self.change(app, |data| {
-            data.status.phase = UpdatePhase::Ready;
-            data.status.failure = None;
-            data.status.received = package.offer().artifact().bytes;
-            data.selected = Some(Selection {
-                release,
-                package: Some(package),
-            });
-        })
+        #[cfg(unix)]
+        {
+            let channel = self.channel()?;
+            let cli = self
+                .data
+                .lock()
+                .map_err(|_| "update state is unavailable")?
+                .companions
+                .as_ref()
+                .map(|plan| plan.offer(&release, channel))
+                .transpose()?
+                .flatten();
+            if let Some(offer) = cli {
+                if !staging.is_ready(&trust, &offer)? {
+                    self.change(app, |data| {
+                        data.status.phase = UpdatePhase::Downloading;
+                        data.status.failure = None;
+                        data.status.received = received;
+                    })?;
+                    let mut last = Instant::now() - Duration::from_secs(1);
+                    let download =
+                        khor_update::Download::fetch(offer, &trust, staging.root(), |progress| {
+                            if last.elapsed() >= Duration::from_millis(100)
+                                || progress.received == progress.total
+                            {
+                                last = Instant::now();
+                                let _ = self.change(app, |data| {
+                                    data.status.received = received + progress.received
+                                });
+                            }
+                        })
+                        .await?;
+                    let staging = staging.clone();
+                    let trust = trust.clone();
+                    crate::off_main(move || staging.cache(&download, &trust)).await?;
+                }
+            }
+        }
+        self.adopt_release(app, release, false).await
     }
 
     fn failed(&self, app: &AppHandle, error: String) -> Result<AppUpdateStatus, String> {
@@ -380,7 +507,6 @@ impl AppUpdates {
         app: &AppHandle,
         automatic: bool,
     ) -> Result<AppUpdateStatus, String> {
-        let current = self.current()?;
         let trust = TrustRoot::bundled()?;
         let release = self
             .data
@@ -390,65 +516,70 @@ impl AppUpdates {
             .as_ref()
             .map(|selection| selection.release.clone())
             .ok_or("download an update first")?;
-        let offer = release
-            .select(
-                Component::DesktopApp,
-                Platform::current()?,
-                &current,
-                self.channel()?,
-                None,
-            )?
-            .ok_or("no newer application update")?;
         let staging = self.store()?;
-        let path = staging.archive(&offer);
-        if !staging.is_ready(&trust, &offer)? {
-            return Err("download the complete application update first".into());
-        }
-        let package = self
-            .data
-            .lock()
-            .map_err(|_| "update state is unavailable")?
-            .selected
-            .as_mut()
-            .and_then(|selection| selection.package.take());
-        let package = match package {
-            Some(package) => package,
-            None => DesktopPackage::check(app, offer.clone(), trust.clone()).await?,
-        };
         self.change(app, |data| {
             data.status.phase = UpdatePhase::Verifying;
             data.status.failure = None;
             data.status.blocked.clear();
         })?;
-        let candidate_path = path.clone();
-        let candidate_parent = staging.root().to_path_buf();
-        crate::off_main(move || {
-            let candidate =
-                khor_update::AppCandidate::extract(&candidate_path, &offer, &candidate_parent)?;
-            khor_node::updates::verify_program(candidate.program(), &offer)?;
-            khor_node::updates::verify_activation(
-                candidate.program(),
-                &std::env::current_exe().map_err(|e| e.to_string())?,
-            )?;
-            Ok(())
-        })
-        .await?;
-        let admission = app
-            .state::<std::sync::Arc<crate::update_admission::UpdateAdmission>>()
-            .inner()
-            .clone();
-        let _permit = match admission.prepare(app, automatic).await {
-            Ok(permit) => permit,
-            Err(blocked) => {
-                return self.change(app, |data| {
-                    data.status.phase = UpdatePhase::Ready;
-                    data.status.blocked = blocked;
-                });
+        let application = if let Some(offer) = self.app_offer(&release)? {
+            let path = staging.archive(&offer);
+            if !staging.is_ready(&trust, &offer)? {
+                return Err("download the complete application update first".into());
             }
+            let held = self
+                .data
+                .lock()
+                .map_err(|_| "update state is unavailable")?
+                .selected
+                .as_mut()
+                .and_then(|selection| selection.package.take());
+            let package = match held {
+                Some(package) => package,
+                None => DesktopPackage::check(app, offer.clone(), trust.clone()).await?,
+            };
+            let candidate_path = path.clone();
+            let candidate_parent = staging.root().to_path_buf();
+            crate::off_main(move || {
+                let candidate =
+                    khor_update::AppCandidate::extract(&candidate_path, &offer, &candidate_parent)?;
+                khor_node::updates::verify_program(candidate.program(), &offer)?;
+                khor_node::updates::verify_activation(
+                    candidate.program(),
+                    &std::env::current_exe().map_err(|e| e.to_string())?,
+                )?;
+                Ok(())
+            })
+            .await?;
+            Some((package, path))
+        } else {
+            None
         };
-        self.change(app, |data| {
-            data.status.phase = UpdatePhase::Installing;
-        })?;
+        let _permit = if application.is_some() {
+            let admission = app
+                .state::<std::sync::Arc<crate::update_admission::UpdateAdmission>>()
+                .inner()
+                .clone();
+            match admission.prepare(app, automatic).await {
+                Ok(permit) => Some(permit),
+                Err(blocked) => {
+                    return self.change(app, |data| {
+                        data.status.phase = UpdatePhase::Ready;
+                        data.status.blocked = blocked;
+                    });
+                }
+            }
+        } else {
+            None
+        };
+        self.apply_companions(app, &release, automatic).await?;
+        let Some((package, path)) = application else {
+            return self.change(app, |data| {
+                data.status.phase = UpdatePhase::Complete;
+                data.status.available = None;
+            });
+        };
+        self.change(app, |data| data.status.phase = UpdatePhase::Installing)?;
         let install_root = staging.root().to_path_buf();
         crate::off_main(move || {
             let mut installation =
@@ -461,13 +592,106 @@ impl AppUpdates {
             installation.handoff()
         })
         .await?;
-        let status = self.change(app, |data| {
-            data.status.phase = UpdatePhase::AwaitingHealth;
-        })?;
+        let status = self.change(app, |data| data.status.phase = UpdatePhase::AwaitingHealth)?;
         app.exit(0);
         Ok(status)
     }
-    fn restore_cached(&self, app: &AppHandle) -> Result<AppUpdateStatus, String> {
+
+    #[cfg(target_os = "macos")]
+    async fn apply_companions(
+        &self,
+        app: &AppHandle,
+        release: &VerifiedRelease,
+        automatic: bool,
+    ) -> Result<(), String> {
+        let plan = self
+            .data
+            .lock()
+            .map_err(|_| "update state is unavailable")?
+            .companions
+            .clone()
+            .ok_or("check the component update plan first")?;
+        if automatic && plan.automatic_blocked() {
+            return Err("retry the failed CLI update manually".into());
+        }
+        let channel = self.channel()?;
+        let trust = TrustRoot::bundled()?;
+        let staging = self.store()?;
+        for entry in plan.pending() {
+            let offer = release
+                .select(
+                    Component::Cli,
+                    Platform::current()?,
+                    &entry.cli.current,
+                    channel,
+                    None,
+                )?
+                .ok_or("CLI no longer has the planned update")?;
+            if !staging.is_ready(&trust, &offer)? {
+                return Err("download the complete CLI update first".into());
+            }
+            self.companion_progress(app, &entry.status.id, UpdatePhase::Installing, None)
+                .await?;
+            let result = khor_node::updates::upgrade_managed_cli(
+                &entry.cli.source,
+                &entry.cli.current,
+                release,
+                channel,
+                &trust,
+                &staging.archive(&offer),
+            )
+            .await
+            .and_then(|current| {
+                if current.current == release.manifest().identity {
+                    Ok(current)
+                } else {
+                    Err("CLI did not retain the selected update".into())
+                }
+            });
+            let phase = if result.is_ok() {
+                UpdatePhase::Complete
+            } else {
+                UpdatePhase::Failed
+            };
+            self.companion_progress(app, &entry.status.id, phase, Some(result.clone()))
+                .await?;
+            result?;
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    async fn companion_progress(
+        &self,
+        app: &AppHandle,
+        id: &str,
+        phase: UpdatePhase,
+        result: Option<Result<khor_node::updates::ManagedCli, String>>,
+    ) -> Result<(), String> {
+        let mut plan = self
+            .data
+            .lock()
+            .map_err(|_| "update state is unavailable")?
+            .companions
+            .clone()
+            .ok_or("component update plan is unavailable")?;
+        let id = id.to_owned();
+        let plan = crate::off_main(move || {
+            plan.progress(&id, phase, result.as_ref())?;
+            Ok(plan)
+        })
+        .await?;
+        self.change(app, |data| {
+            data.status.companions = plan.statuses();
+            data.companions = Some(plan);
+            if phase == UpdatePhase::Installing {
+                data.status.phase = UpdatePhase::Installing;
+            }
+        })?;
+        Ok(())
+    }
+
+    async fn restore_cached(&self, app: &AppHandle) -> Result<AppUpdateStatus, String> {
         let _operation = self
             .operation
             .try_lock()
@@ -475,32 +699,10 @@ impl AppUpdates {
         if self.status()?.source != UpdateSource::Direct {
             return self.status();
         }
-        let trust = TrustRoot::bundled()?;
-        let current = self.current()?;
         let staging = self.store()?;
-        if let Ok(Some((release, offer))) = staging.restore(
-            &trust,
-            &current,
-            Component::DesktopApp,
-            Platform::current()?,
-            self.channel()?,
-        ) {
-            let ready = staging.is_ready(&trust, &offer).unwrap_or(false);
-            return self.change(app, |data| {
-                data.status.available = Some(offer.identity().tag.as_str().into());
-                data.status.notes = release.manifest().notes.clone();
-                data.status.phase = if ready {
-                    UpdatePhase::Ready
-                } else {
-                    UpdatePhase::Available
-                };
-                data.status.total = Some(offer.artifact().bytes);
-                data.status.received = if ready { offer.artifact().bytes } else { 0 };
-                data.selected = Some(Selection {
-                    release,
-                    package: None,
-                });
-            });
+        let trust = TrustRoot::bundled()?;
+        if let Some(release) = staging.selected_release(&trust)? {
+            return self.adopt_release(app, release, false).await;
         }
         self.status()
     }
@@ -537,7 +739,7 @@ pub(crate) fn start(app: &AppHandle) {
 async fn startup(app: &AppHandle) {
     let updates = app.state::<AppUpdates>();
     updates.maintain().await;
-    let Ok(restored) = updates.restore_cached(app) else {
+    let Ok(restored) = updates.restore_cached(app).await else {
         return;
     };
     #[cfg(target_os = "macos")]

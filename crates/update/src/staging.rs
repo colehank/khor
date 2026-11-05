@@ -66,6 +66,21 @@ impl Staging {
             .join(format!("{}.package", offer.artifact().sha256.as_str()))
     }
 
+    pub fn cache(&self, download: &crate::Download, trust: &TrustRoot) -> Result<(), String> {
+        let mut temporary =
+            tempfile::NamedTempFile::new_in(&self.root).map_err(|e| e.to_string())?;
+        let mut source = File::open(download.archive())
+            .map_err(|e| e.to_string())?
+            .take(download.offer().artifact().bytes + 1);
+        std::io::copy(&mut source, temporary.as_file_mut()).map_err(|e| e.to_string())?;
+        temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+        trust.verify_asset(temporary.path(), download.offer().artifact())?;
+        temporary
+            .persist(self.archive(download.offer()))
+            .map_err(|e| e.to_string())?;
+        sync_directory(&self.root)
+    }
+
     pub fn remember(&self, release: &VerifiedRelease) -> Result<(), String> {
         let record = Record {
             schema: 1,
@@ -188,6 +203,18 @@ impl Staging {
     pub fn root(&self) -> &Path {
         &self.root
     }
+
+    pub fn selected_release(&self, trust: &TrustRoot) -> Result<Option<VerifiedRelease>, String> {
+        if !self
+            .root
+            .join("selected.json")
+            .try_exists()
+            .map_err(|e| e.to_string())?
+        {
+            return Ok(None);
+        }
+        read_release(&self.root.join("selected.json"), trust).map(Some)
+    }
 }
 
 fn read_release(path: &Path, trust: &TrustRoot) -> Result<VerifiedRelease, String> {
@@ -244,6 +271,39 @@ mod tests {
         let platform = release.manifest().artifacts[0].platform;
         (trust, release, current, platform)
     }
+    #[test]
+    fn a_component_download_survives_restart_and_changed_bytes_cannot_replace_its_cache() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("staging");
+        let (trust, release, current, platform) = fixture();
+        let staging = Staging::open(root.clone()).unwrap();
+        staging.remember(&release).unwrap();
+        let offer = release
+            .select(Component::Cli, platform, &current, Channel::Stable, None)
+            .unwrap()
+            .unwrap();
+        let input = directory.path().join("asset.gz");
+        fs::write(&input, include_bytes!("../tests/fixtures/asset.gz")).unwrap();
+        let download =
+            crate::Download::import(offer.clone(), &trust, &input, staging.root()).unwrap();
+        staging.cache(&download, &trust).unwrap();
+        fs::write(download.archive(), b"changed after download").unwrap();
+        assert!(staging.cache(&download, &trust).is_err());
+        drop(download);
+        drop(staging);
+        let staging = Staging::open(root).unwrap();
+        assert_eq!(
+            staging
+                .selected_release(&trust)
+                .unwrap()
+                .unwrap()
+                .manifest()
+                .identity,
+            release.manifest().identity
+        );
+        assert!(staging.is_ready(&trust, &offer).unwrap());
+    }
+
     #[test]
     fn a_new_process_restores_only_authenticated_metadata_and_reverifies_the_archive() {
         let directory = tempfile::tempdir().unwrap();

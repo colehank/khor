@@ -9,6 +9,8 @@ mod page_history;
 mod page_navigation;
 mod updater_commands;
 
+#[cfg(all(desktop, unix))]
+mod app_companions;
 #[cfg(all(desktop, target_os = "macos"))]
 mod app_update_install;
 #[cfg(desktop)]
@@ -5812,6 +5814,7 @@ pub fn run() {
             updater_commands::app_update_check,
             updater_commands::app_update_download,
             updater_commands::app_update_preferences,
+            updater_commands::app_update_companions,
             updater_commands::app_update_prepared,
             updater_commands::app_update_install,
             updater_commands::app_update_ui_ready,

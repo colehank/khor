@@ -94,6 +94,10 @@ impl CliInstallation {
         self.root.join("current")
     }
 
+    pub fn launcher(&self) -> PathBuf {
+        self.origin.join("khor")
+    }
+
     pub fn is_node_local(&self) -> bool {
         self.local
     }
