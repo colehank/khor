@@ -8,6 +8,7 @@ blake3.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 getrandom.workspace = true
+tempfile = "3"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

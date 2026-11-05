@@ -28,6 +28,12 @@ pub fn managed_clis() -> Result<Vec<ManagedCli>, String> {
         let Some(installation) = CliInstallation::detect(&source, Platform::current()?)? else {
             continue;
         };
+        recover_cli(&installation)?;
+        if !installation.activation_ready()? {
+            return Err(
+                "a registered CLI update is still active; check again after it finishes".into(),
+            );
+        }
         found.push(describe(&installation)?);
         if found.len() > 64 {
             return Err("too many local CLI installations to review together".into());

@@ -35,6 +35,7 @@ pub struct InstallReceipt {
     pub channel: Channel,
     pub platform: Platform,
     pub program_digest: String,
+    pub runtime_image: String,
     pub previous: Option<PathBuf>,
     pub state: InstallState,
     #[serde(default)]
@@ -293,6 +294,7 @@ impl CliInstallation {
                     || receipt.identity.source != receipt.build.source
                     || receipt.identity.build != receipt.build.build
                     || crate::Digest::try_from(receipt.program_digest.clone()).is_err()
+                    || crate::Digest::try_from(receipt.runtime_image.clone()).is_err()
                 {
                     return Err("installation record belongs to another platform or program".into());
                 }
@@ -330,6 +332,7 @@ impl CliInstallation {
         let program = download.unpack_cli()?;
         let digest = hash(&program)?;
         let _lock = self.lock()?;
+        self.settle_previous_installation()?;
         let previous = self.current()?;
         check(&program, previous.as_deref(), offer)?;
         if let Some(mut receipt) = self.receipt()? {
@@ -344,7 +347,7 @@ impl CliInstallation {
                 health(&self.source(), offer)?;
                 receipt.channel = channel;
                 self.record(&receipt)?;
-                self.retain_selected()?;
+                self.finish_reservation(&receipt)?;
                 return Ok(receipt);
             }
         }
@@ -379,11 +382,13 @@ impl CliInstallation {
             channel,
             platform: self.platform,
             program_digest: digest,
+            runtime_image: image.id().map_err(|e| e.to_string())?,
             previous: previous_relative,
             state: InstallState::Prepared,
             service_ready: false,
         };
         self.record(&receipt)?;
+        store.reserve(&image).map_err(|e| e.to_string())?;
         receipt.state = InstallState::Activating;
         self.record(&receipt)?;
         self.point(&relative)?;
@@ -391,6 +396,7 @@ impl CliInstallation {
             self.rollback(&receipt)?;
             receipt.state = InstallState::RolledBack;
             self.record(&receipt)?;
+            self.finish_reservation(&receipt)?;
             return Err(format!(
                 "update health check failed; previous CLI retained: {error}"
             ));
@@ -398,6 +404,9 @@ impl CliInstallation {
         receipt.state = InstallState::Complete;
         self.record(&receipt)?;
         store.select(&image).map_err(|e| e.to_string())?;
+        store
+            .release_reservation(&receipt.runtime_image)
+            .map_err(|e| e.to_string())?;
         Ok(receipt)
     }
 
@@ -406,12 +415,7 @@ impl CliInstallation {
         health: impl Fn(&Path, &InstallReceipt) -> Result<(), String>,
     ) -> Result<Option<InstallReceipt>, String> {
         let observed = self.receipt()?;
-        if !observed.as_ref().is_some_and(|receipt| {
-            matches!(
-                receipt.state,
-                InstallState::Prepared | InstallState::Activating | InstallState::Complete
-            )
-        }) {
+        if observed.is_none() {
             return Ok(observed);
         }
         let lock = self.open_lock()?;
@@ -423,8 +427,12 @@ impl CliInstallation {
         let Some(mut receipt) = self.receipt()? else {
             return Ok(None);
         };
-        if receipt.state == InstallState::Complete && self.local {
-            self.retain_selected()?;
+        if matches!(
+            receipt.state,
+            InstallState::Complete | InstallState::RolledBack
+        ) && self.local
+        {
+            self.finish_reservation(&receipt)?;
             return Ok(Some(receipt));
         }
         if !matches!(
@@ -433,8 +441,8 @@ impl CliInstallation {
         ) {
             return Ok(Some(receipt));
         }
-        if self
-            .current()?
+        let current = self.current()?;
+        if current
             .as_ref()
             .is_some_and(|path| hash(path).is_ok_and(|digest| digest == receipt.program_digest))
         {
@@ -442,13 +450,22 @@ impl CliInstallation {
                 self.rollback(&receipt)?;
                 receipt.state = InstallState::RolledBack;
                 self.record(&receipt)?;
+                self.finish_reservation(&receipt)?;
                 return Err(format!(
                     "interrupted update failed its health check; previous CLI retained: {error}"
                 ));
             }
             receipt.state = InstallState::Complete;
             self.record(&receipt)?;
-            self.retain_selected()?;
+            self.finish_reservation(&receipt)?;
+        } else {
+            let previous = receipt.previous.as_ref().map(|path| self.root.join(path));
+            if current != previous {
+                return Err("CLI selection changed while installation was interrupted; reservation retained".into());
+            }
+            receipt.state = InstallState::RolledBack;
+            self.record(&receipt)?;
+            self.finish_reservation(&receipt)?;
         }
         Ok(Some(receipt))
     }
@@ -494,6 +511,39 @@ impl CliInstallation {
             self.images()?.select(&image).map_err(|e| e.to_string())?;
         }
         Ok(())
+    }
+
+    fn finish_reservation(&self, receipt: &InstallReceipt) -> Result<(), String> {
+        self.retain_selected()?;
+        self.images()?
+            .release_reservation(&receipt.runtime_image)
+            .map_err(|e| e.to_string())
+    }
+
+    fn settle_previous_installation(&self) -> Result<(), String> {
+        let Some(mut receipt) = self.receipt()? else {
+            return self.retain_selected();
+        };
+        if !matches!(
+            receipt.state,
+            InstallState::Prepared | InstallState::Activating
+        ) {
+            return self.finish_reservation(&receipt);
+        }
+        let current = self.current()?;
+        let previous = receipt.previous.as_ref().map(|path| self.root.join(path));
+        if current != previous {
+            if !current
+                .as_ref()
+                .is_some_and(|path| hash(path).is_ok_and(|digest| digest == receipt.program_digest))
+            {
+                return Err("CLI selection changed while installation was interrupted; reservation retained".into());
+            }
+            self.rollback(&receipt)?;
+        }
+        receipt.state = InstallState::RolledBack;
+        self.record(&receipt)?;
+        self.finish_reservation(&receipt)
     }
 
     fn lock(&self) -> Result<File, String> {
@@ -784,6 +834,165 @@ mod tests {
         assert_ne!(install.current().unwrap().unwrap(), fixture.old);
         assert_eq!(fs::read(&fixture.old).unwrap(), b"previous program");
     }
+    #[test]
+    fn interrupted_activation_keeps_the_pointed_program_until_recovery_runs() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        let interrupted = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            install
+                .install(
+                    &Download::fixture(),
+                    Channel::Stable,
+                    |_, _, _| Ok(()),
+                    |_, _| {
+                        panic!("fixture interruption after the pointer changed, before completion")
+                    },
+                )
+                .unwrap();
+        }));
+        assert!(interrupted.is_err());
+        let selected = install.current().unwrap().unwrap();
+        assert_ne!(selected, fixture.old);
+        assert_eq!(
+            install.receipt().unwrap().unwrap().state,
+            InstallState::Activating
+        );
+        install.images().unwrap().collect().unwrap();
+        assert!(
+            selected.is_file(),
+            "collection removed the pointed program before activation recovery"
+        );
+        assert!(
+            fixture.old.is_file(),
+            "collection removed the retained previous version"
+        );
+        install.recover(|_, _| Ok(())).unwrap();
+        assert_eq!(install.current().unwrap().unwrap(), selected);
+        assert!(
+            !install
+                .images()
+                .unwrap()
+                .directory()
+                .join(format!(
+                    ".reservation-{}",
+                    install.receipt().unwrap().unwrap().runtime_image
+                ))
+                .exists()
+        );
+    }
+
+    #[test]
+    fn a_new_install_settles_the_previous_completed_reservation_before_validation() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        let receipt = install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, _, _| Ok(()),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let selected = Store::image_for_program(&install.current().unwrap().unwrap())
+            .unwrap()
+            .unwrap();
+        install.images().unwrap().reserve(&selected).unwrap();
+        let marker = install
+            .images()
+            .unwrap()
+            .directory()
+            .join(format!(".reservation-{}", receipt.runtime_image));
+        drop(selected);
+        install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, _, _| {
+                    assert!(
+                        !marker.exists(),
+                        "a completed transaction must be settled before replacing its receipt"
+                    );
+                    Ok(())
+                },
+                |_, _| Ok(()),
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn retrying_an_interrupted_install_keeps_the_last_confirmed_rollback() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            install
+                .install(
+                    &Download::fixture(),
+                    Channel::Stable,
+                    |_, _, _| Ok(()),
+                    |_, _| panic!("fixture interrupted activation"),
+                )
+                .unwrap();
+        }));
+        install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, previous, _| {
+                    assert_eq!(previous, Some(fixture.old.as_path()));
+                    Ok(())
+                },
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        assert_eq!(
+            install
+                .receipt()
+                .unwrap()
+                .unwrap()
+                .previous
+                .as_ref()
+                .unwrap(),
+            fixture.old.strip_prefix(&install.root).unwrap()
+        );
+    }
+
+    #[test]
+    fn recovery_releases_a_prepared_reservation_that_never_changed_the_pointer() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        let mut receipt = install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, _, _| Ok(()),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let image = Store::image_for_program(&install.current().unwrap().unwrap())
+            .unwrap()
+            .unwrap();
+        install.images().unwrap().reserve(&image).unwrap();
+        install.point(receipt.previous.as_ref().unwrap()).unwrap();
+        install.retain_selected().unwrap();
+        receipt.state = InstallState::Prepared;
+        install.record(&receipt).unwrap();
+        drop(image);
+        let recovered = install
+            .recover(|_, _| panic!("a never-published target must not be started"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(recovered.state, InstallState::RolledBack);
+        assert_eq!(install.current().unwrap().unwrap(), fixture.old);
+        assert!(
+            !install
+                .images()
+                .unwrap()
+                .directory()
+                .join(format!(".reservation-{}", receipt.runtime_image))
+                .exists()
+        );
+    }
+
     #[test]
     fn repeated_install_reuses_immutable_program_and_interrupted_activation_can_be_confirmed_or_rolled_back()
      {

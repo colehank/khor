@@ -580,6 +580,46 @@ fn actual_standalone_agent_keeps_its_image_lease_after_initialization() {
 }
 
 #[test]
+fn durable_reservation_preserves_the_pending_image_and_both_existing_selections() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let previous = image(&store, "previous", b"previous");
+    let previous_path = previous.path().to_path_buf();
+    drop(previous);
+    let current = image(&store, "current", b"current");
+    let current_path = current.path().to_path_buf();
+    drop(current);
+    let pending = store
+        .stage_checked(
+            Role::Cli,
+            "pending",
+            contract(),
+            BTreeMap::new(),
+            Source::Bytes(b"pending"),
+            |_| Ok(()),
+        )
+        .unwrap();
+    let candidate = pending.path().to_path_buf();
+    let key = pending.id().unwrap();
+    store.reserve(&pending).unwrap();
+    store.reserve(&pending).unwrap();
+    let other = Fixture::new();
+    assert!(other.store().reserve(&pending).is_err());
+    drop(pending);
+    drop(store);
+    let store = fixture.store();
+    store.collect().unwrap();
+    assert!(candidate.exists());
+    assert!(current_path.exists());
+    assert!(previous_path.exists());
+    assert_eq!(store.usage_all().unwrap().idle_bytes, 0);
+    store.release_reservation(&key).unwrap();
+    store.collect().unwrap();
+    assert!(!candidate.exists());
+    assert!(current_path.exists() && previous_path.exists());
+}
+
+#[test]
 fn unselected_candidates_cannot_evict_current_or_rollback_and_other_stores_cannot_select_them() {
     let fixture = Fixture::new();
     let store = fixture.store();

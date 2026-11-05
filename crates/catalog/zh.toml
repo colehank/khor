@@ -2713,8 +2713,8 @@ journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
 update-runtime-cache = "运行程序缓存"
-update-runtime-retained = "当前与回退版本"
-update-runtime-retained-hint = "保留当前版本和上一版，以便回退"
+update-runtime-retained = "更新保留"
+update-runtime-retained-hint = "保留当前、回退和等待确认的更新，完成后自动整理"
 update-runtime-active-old = "会话额外保留"
 update-runtime-active-hint = "会话使用期间保留，结束后自动清理"
 update-runtime-unknown = "其他保留项"

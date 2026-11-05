@@ -9,6 +9,7 @@ use std::{
 
 const OWNER: &[u8] = b"khor-runtime-v1\n";
 const MANIFEST_LIMIT: u64 = 16 * 1024;
+const RESERVATION: &[u8] = b"khor-runtime-reservation-v1\n";
 
 #[derive(Clone, Copy)]
 pub struct Limits {
@@ -73,6 +74,9 @@ pub struct Image {
     lease: Lease,
 }
 impl Image {
+    pub fn id(&self) -> io::Result<String> {
+        self.identity.id()
+    }
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -343,6 +347,75 @@ impl Store {
         Ok(())
     }
 
+    /// An installation reservation survives process death until transaction recovery releases it.
+    pub fn reserve(&self, image: &Image) -> io::Result<()> {
+        let _catalog = self.catalog()?;
+        let id = image.id()?;
+        if image.path != self.root.join(&id).join(image.role().executable()) {
+            return Err(io::Error::other(
+                "runtime reservation belongs to another store",
+            ));
+        }
+        let path = self.reservation_path(&id)?;
+        let mut temporary = tempfile::NamedTempFile::new_in(&self.root)?;
+        temporary.write_all(RESERVATION)?;
+        temporary.as_file().sync_all()?;
+        match temporary.persist_noclobber(&path) {
+            Ok(_) => {}
+            Err(error) if error.error.kind() == io::ErrorKind::AlreadyExists => {
+                if read_bounded(&path, 64)? != RESERVATION {
+                    return Err(io::Error::other("unknown runtime reservation was retained"));
+                }
+            }
+            Err(error) => return Err(error.error),
+        }
+        sync_dir(&self.root)
+    }
+
+    pub fn release_reservation(&self, id: &str) -> io::Result<()> {
+        let _catalog = self.catalog()?;
+        let path = self.reservation_path(id)?;
+        match read_bounded(&path, 64) {
+            Ok(bytes) if bytes == RESERVATION => fs::remove_file(&path)?,
+            Ok(_) => return Err(io::Error::other("unknown runtime reservation was retained")),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        }
+        sync_dir(&self.root)
+    }
+
+    fn reservation_path(&self, id: &str) -> io::Result<PathBuf> {
+        if !valid_id(id) {
+            return Err(io::Error::other("invalid runtime reservation identity"));
+        }
+        Ok(self.root.join(format!(".reservation-{id}")))
+    }
+
+    fn protected(&self, index: &Index) -> io::Result<BTreeSet<String>> {
+        let mut protected = index
+            .protected()
+            .into_iter()
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        let mut count = 0;
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            let Some(id) = name
+                .to_str()
+                .and_then(|name| name.strip_prefix(".reservation-"))
+            else {
+                continue;
+            };
+            count += 1;
+            if count > 256 || !valid_id(id) || read_bounded(&entry.path(), 64)? != RESERVATION {
+                return Err(io::Error::other("unknown runtime reservation was retained"));
+            }
+            protected.insert(id.to_owned());
+        }
+        Ok(protected)
+    }
+
     pub fn hold(&self, id: &str) -> io::Result<Image> {
         let _catalog = self.catalog()?;
         self.hold_locked(id)
@@ -385,7 +458,7 @@ impl Store {
     fn usage(&self) -> io::Result<Usage> {
         let _catalog = self.catalog()?;
         let index = self.index()?;
-        let protected = index.protected();
+        let protected = self.protected(&index)?;
         let mut result = Usage::default();
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
@@ -544,7 +617,7 @@ impl Store {
     }
 
     fn collect_locked(&self, index: &Index) -> io::Result<Collection> {
-        let protected = index.protected();
+        let protected = self.protected(index)?;
         let mut result = Collection::default();
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
