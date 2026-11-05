@@ -1,0 +1,2 @@
+# Signatures authenticate exact bytes; checkout must not convert line endings.
+crates/update/tests/fixtures/** -text
