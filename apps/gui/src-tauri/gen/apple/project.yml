@@ -80,6 +80,7 @@ targets:
       - sdk: CoreGraphics.framework
       - sdk: Metal.framework
       - sdk: MetalKit.framework
+      - sdk: PDFKit.framework
       - sdk: QuickLook.framework
       - sdk: QuartzCore.framework
       - sdk: Security.framework
