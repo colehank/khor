@@ -1,8 +1,20 @@
 use super::*;
 
+const RECORD_FILES: &[&str] = &[
+    "receipt.json",
+    "parent.lock",
+    "worker.lock",
+    "worker.ready",
+    "worker.log",
+    "healthy.json",
+    "live.lock",
+    "failed.json",
+];
+
 struct Backup {
     directory: PathBuf,
-    phase: Phase,
+    receipt: Receipt,
+    has_previous: bool,
     modified: std::time::SystemTime,
     _leases: Vec<File>,
 }
@@ -29,19 +41,34 @@ fn collect_for(root: &Path, target: &Path, trust: &TrustRoot) -> Result<u64, Str
     }
     backups.sort_by_key(|backup| std::cmp::Reverse(backup.modified));
     let mut retained = false;
+    let mut history = 0;
     let mut bytes = 0u64;
     for backup in backups {
-        if backup.phase == Phase::Complete && !retained {
+        if backup.receipt.phase == Phase::Complete && backup.has_previous && !retained {
             retained = true;
             continue;
         }
-        let path = backup.directory.join("previous.app");
-        let size = bundle_bytes(&path)?;
-        std::fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+        if backup.has_previous {
+            let path = backup.directory.join("previous.app");
+            let size = bundle_bytes(&path)?;
+            std::fs::remove_dir_all(path).map_err(|e| e.to_string())?;
+            bytes = bytes.saturating_add(size);
+        }
+        if matches!(backup.receipt.phase, Phase::Cancelled | Phase::RolledBack) {
+            if let Ok(reclaimed) = failed::collect(&backup.directory, &backup.receipt) {
+                bytes = bytes.saturating_add(reclaimed);
+            }
+        }
         File::open(&backup.directory)
             .and_then(|f| f.sync_all())
             .map_err(|e| e.to_string())?;
-        bytes = bytes.saturating_add(size);
+        if !failed::pending(&backup.directory, &backup.receipt) {
+            if history < 16 {
+                history += 1;
+            } else {
+                retire(&backup.directory)?;
+            }
+        }
     }
     Ok(bytes)
 }
@@ -58,17 +85,7 @@ fn admit(directory: &Path, target: &Path, trust: &TrustRoot) -> Result<Backup, S
             if !entry.file_type().map_err(|e| e.to_string())?.is_dir() {
                 return Err("application backup is not a directory".into());
             }
-        } else if ![
-            "receipt.json",
-            "parent.lock",
-            "worker.lock",
-            "worker.ready",
-            "worker.log",
-            "healthy.json",
-        ]
-        .iter()
-        .any(|name| entry.file_name() == *name)
-        {
+        } else if !RECORD_FILES.iter().any(|name| entry.file_name() == *name) {
             return Err("application update contains unknown files".into());
         } else {
             regular_file(&entry.path())?;
@@ -94,19 +111,42 @@ fn admit(directory: &Path, target: &Path, trust: &TrustRoot) -> Result<Backup, S
         }
         Err(e) => return Err(e.to_string()),
     }
-    let backup =
-        std::fs::symlink_metadata(directory.join("previous.app")).map_err(|e| e.to_string())?;
-    if !backup.is_dir() || backup.is_symlink() {
-        return Err("application backup is not an owned directory".into());
+    match std::fs::symlink_metadata(directory.join("live.lock")) {
+        Ok(_) => leases.push(vacant(&directory.join("live.lock"))?),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
     }
+    let has_previous = match std::fs::symlink_metadata(directory.join("previous.app")) {
+        Ok(metadata) if metadata.is_dir() && !metadata.is_symlink() => true,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+        _ => return Err("application backup is not an owned directory".into()),
+    };
     Ok(Backup {
         directory: directory.to_path_buf(),
-        phase: receipt.phase,
+        receipt,
+        has_previous,
         modified: std::fs::metadata(directory.join("receipt.json"))
             .and_then(|m| m.modified())
             .map_err(|e| e.to_string())?,
         _leases: leases,
     })
+}
+
+fn retire(directory: &Path) -> Result<(), String> {
+    let mut files = Vec::new();
+    for entry in std::fs::read_dir(directory).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        if !RECORD_FILES.iter().any(|name| entry.file_name() == *name) {
+            return Err("application update contains unknown files".into());
+        }
+        regular_file(&entry.path())?;
+        files.push(entry.path());
+    }
+    for path in files {
+        std::fs::remove_file(path).map_err(|e| e.to_string())?;
+    }
+    std::fs::remove_dir(directory).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 fn regular_file(path: &Path) -> Result<(), String> {
@@ -127,6 +167,25 @@ fn vacant(path: &Path) -> Result<File, String> {
         .map_err(|e| e.to_string())?;
     file.try_lock()
         .map_err(|_| "application update is still occupied")?;
+    Ok(file)
+}
+
+pub(super) fn live(directory: &Path) -> Result<File, String> {
+    let path = directory.join("live.lock");
+    match std::fs::symlink_metadata(&path) {
+        Ok(_) => regular_file(&path)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.to_string()),
+    }
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    file.try_lock_shared()
+        .map_err(|_| "application update metadata is being collected")?;
     Ok(file)
 }
 
@@ -235,5 +294,60 @@ mod tests {
         for path in [&unknown, &foreign, &linked, &invalid] {
             assert!(path.join("previous.app/payload").exists());
         }
+    }
+
+    #[test]
+    fn a_running_updated_app_keeps_its_backup_and_terminal_receipts_have_a_bounded_history() {
+        let root = tempfile::tempdir().unwrap();
+        let running = backup(root.path(), "install-running", Phase::Complete, 1);
+        let lease = live(&running).unwrap();
+        for n in 2..24 {
+            backup(
+                root.path(),
+                &format!("install-old-{n}"),
+                Phase::Cancelled,
+                n,
+            );
+        }
+        collect_for(root.path(), &root.path().join("Khor.app"), &trust()).unwrap();
+        assert!(running.join("previous.app/payload").exists());
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 17);
+        drop(lease);
+    }
+
+    #[test]
+    fn quarantined_app_collection_checks_provenance_and_actual_open_files() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = backup(root.path(), "install-failed", Phase::RolledBack, 1);
+        let receipt = read_receipt(&directory).unwrap();
+        let failed_path = root.path().join(".khor-failed-install-failed");
+        let program = failed_path.join("Contents/MacOS/khor-gui");
+        std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+        std::fs::write(&program, b"failed").unwrap();
+        failed::remember(&directory, &receipt).unwrap();
+        let open = File::open(&program).unwrap();
+        assert_eq!(
+            collect_for(root.path(), &receipt.target, &trust()).unwrap(),
+            6
+        );
+        assert!(program.exists());
+        drop(open);
+        assert_eq!(
+            collect_for(root.path(), &receipt.target, &trust()).unwrap(),
+            6
+        );
+        assert!(!failed_path.exists());
+
+        std::fs::create_dir_all(program.parent().unwrap()).unwrap();
+        std::fs::write(&program, b"old failed").unwrap();
+        failed::remember(&directory, &receipt).unwrap();
+        let replacement = root.path().join("new-file");
+        std::fs::write(&replacement, b"unrelated replacement").unwrap();
+        std::fs::rename(replacement, &program).unwrap();
+        assert_eq!(
+            collect_for(root.path(), &receipt.target, &trust()).unwrap(),
+            0
+        );
+        assert_eq!(std::fs::read(program).unwrap(), b"unrelated replacement");
     }
 }

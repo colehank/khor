@@ -44,6 +44,19 @@ def component_declarations(source):
     return helpers
 
 
+FETCH_FIXTURE = r'''
+khor_fetch_fixture() (
+    set -eu
+    _selected=$(khor_select_release "$1" "$2" "$3" "$4")
+    _newline='
+'
+    _version="${_selected%%"$_newline"*}"
+    _url="${_selected#*"$_newline"}"
+    khor_fetch_verify_place "$_url" "$5" "$4" "$_version" "${3:+mirror}"
+)
+'''
+
+
 @contextlib.contextmanager
 def loopback(contents, requests=None):
     class Handler(http.server.BaseHTTPRequestHandler):
@@ -130,9 +143,9 @@ class InstallComponentsTest(unittest.TestCase):
             environment["KHOR_ASSET_FILE"] = str(preplaced)
         if digest is not None:
             environment["KHOR_ASSET_SHA256"] = digest
-        script = self.helpers
-        if mirror is not None:
-            script += '\nkhor_fetch_release "$5" "$4" "$6" "$3" "$2"\n'
+        script = self.helpers + FETCH_FIXTURE
+        if mirror is not None and not preplaced:
+            script += '\nkhor_fetch_fixture "$5" "$4" "$6" "$3" "$2"\n'
 
         else:
             script += '\nkhor_fetch_verify_place "$1" "$2" "$3" "$4"\n'
@@ -478,7 +491,7 @@ class InstallComponentsTest(unittest.TestCase):
             environment["PATH"] = str(tools)
             environment["TMPDIR"] = str(self.directory)
             result = subprocess.run(["/bin/sh", "-s", "--", version, str(self.destination)],
-                input=self.helpers + '\nkhor_fetch_release owner/repo "$1" "" fixture "$2"\n',
+                input=self.helpers + FETCH_FIXTURE + '\nkhor_fetch_fixture owner/repo "$1" "" fixture "$2"\n',
                 text=True, capture_output=True, env=environment, timeout=30)
         return result, requests, [__import__("json").loads(line) for line in log.read_text().splitlines()]
 

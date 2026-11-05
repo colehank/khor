@@ -11,8 +11,10 @@ use std::{
 };
 
 static EXIT_LEASE: OnceLock<File> = OnceLock::new();
+static LIVE_LEASE: OnceLock<File> = OnceLock::new();
 
 mod collection;
+mod failed;
 pub(crate) use collection::collect;
 
 fn spawn_monitor(program: &Path, directory: &Path, output: File) -> Result<Child, String> {
@@ -396,6 +398,10 @@ pub(crate) fn ui_ready() -> Result<(), String> {
         "adopted.json",
         &receipt.release,
     )?;
+    if LIVE_LEASE.get().is_none() {
+        let lease = collection::live(directory)?;
+        let _ = LIVE_LEASE.set(lease);
+    }
     write_json(
         directory,
         "healthy.json",
@@ -466,6 +472,9 @@ fn restore_previous(directory: &Path, receipt: &Receipt) -> Result<(), String> {
     let failed = parent.join(format!(".khor-failed-{}", receipt.nonce));
     if receipt.target.exists() {
         std::fs::rename(&receipt.target, &failed).map_err(|e| e.to_string())?;
+        if let Err(error) = self::failed::remember(directory, receipt) {
+            eprintln!("failed application retained without a collection claim: {error}");
+        }
     }
     if let Err(error) = std::fs::rename(&restored, &receipt.target) {
         if failed.exists() {

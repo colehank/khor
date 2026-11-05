@@ -1,5 +1,4 @@
 """Exercise shared-directory installation with actual shell/filesystem operations."""
-from concurrent.futures import ThreadPoolExecutor
 import gzip
 import hashlib
 import importlib.util
@@ -15,31 +14,32 @@ ROOT = Path(__file__).resolve().parents[2]
 COMPONENTS = (ROOT / "scripts/install-components.sh").read_text()
 
 
-class InstallActivationTest(unittest.TestCase):
+class LauncherTest(unittest.TestCase):
     def setUp(self):
-        scratch = tempfile.TemporaryDirectory(prefix="khor-activation-")
+        scratch = tempfile.TemporaryDirectory(prefix="khor-launcher-")
         self.addCleanup(scratch.cleanup)
-        self.root = Path(scratch.name)
-        self.bin = self.root / "shared home" / "bin"
+        self.root = Path(scratch.name).resolve()
+        self.bin = self.root / "shared-home/bin"
         self.bin.mkdir(parents=True)
+        self.environment = {k: v for k, v in os.environ.items() if not k.startswith("KHOR_")}
+        self.environment["KHOR_RUNTIME_DIR"] = str(self.root / "runtime")
+        self.installation = hashlib.sha256(os.fsencode(self.bin.resolve())).hexdigest()
+        result = subprocess.run(["sh"], input=COMPONENTS + "\nkhor_launcher\n",
+                                text=True, capture_output=True, check=True, timeout=5)
+        (self.bin / "khor").write_text(result.stdout)
+        (self.bin / "khor").chmod(0o755)
 
-    def program(self, name, contract="same", checker=True):
-        program = self.root / name
-        check = ('[ "$("$2" _fixture_contract)" = ' + shlex.quote(contract) +
-                 ' ] || exit 78; echo compatible; exit 0') if checker else 'exit 64'
-        program.write_text('#!/bin/sh\ncase "$1" in\n'
-                           '_runtime_check) ' + check + ' ;;\n'
-                           '_fixture_contract) echo ' + shlex.quote(contract) + '; exit 0 ;;\n'
-                           'esac\nprintf "%s\\n" ' + shlex.quote(name) + ' "$KHOR_INSTALL_SOURCE" "$@"\n')
+    def selection(self, asset):
+        return self.root / "runtime/cli" / self.installation / asset / "current"
+
+    def place(self, asset):
+        current = self.selection(asset)
+        program = current.parent / "versions/fixture/khor"
+        program.parent.mkdir(parents=True)
+        program.write_text('#!/bin/sh\nprintf "%s\\n" ' + shlex.quote(asset) +
+                           ' "$KHOR_INSTALL_SOURCE" "$@"\n')
         program.chmod(0o755)
-        return program
-
-    def activate(self, program, asset="khor-linux-x86_64", version="v1.2.3", environment=None):
-        return subprocess.run(
-            ["sh", "-s", "--", str(program), str(self.bin), asset, version],
-            input=COMPONENTS + '\nkhor_activate_release "$1" "$2" "$3" "$4"\n',
-            text=True, capture_output=True, timeout=15, env=environment,
-        )
+        current.symlink_to("versions/fixture/khor")
 
     def run_installed(self, system, arch, *args):
         tools = self.root / "tools"
@@ -48,117 +48,38 @@ class InstallActivationTest(unittest.TestCase):
         uname.write_text(f'#!/bin/sh\ncase "$1" in -s) echo {system} ;; -m) echo {arch} ;; esac\n')
         uname.chmod(0o755)
         return subprocess.run([str(self.bin / "khor"), *args], text=True, capture_output=True,
-                              env=dict(os.environ, PATH=str(tools) + os.pathsep + os.environ["PATH"]), timeout=5)
+                              env=dict(self.environment, PATH=str(tools) + os.pathsep + os.environ["PATH"]), timeout=5)
 
-    def test_shared_home_dispatches_each_platform_and_preserves_arguments(self):
+    def test_shared_launcher_selects_each_node_local_platform_and_preserves_arguments(self):
         platforms = [("Linux", "x86_64", "khor-linux-x86_64"),
                      ("Linux", "aarch64", "khor-linux-aarch64"),
                      ("Darwin", "arm64", "khor-macos-arm64"),
                      ("Darwin", "x86_64", "khor-macos-x86_64")]
-        for system, arch, asset in platforms:
-            result = self.activate(self.program(asset), asset)
-            self.assertEqual(result.returncode, 0, result.stderr)
+        for _, _, asset in platforms:
+            self.place(asset)
         for system, arch, asset in platforms:
             result = self.run_installed(system, arch, "two words", "--version")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.splitlines(),
-                             [asset, str(self.bin.resolve() / ".khor" / asset / "current"), "two words", "--version"])
+                             [asset, str(self.selection(asset)), "two words", "--version"])
+        self.assertFalse((self.bin / ".khor").exists())
 
-    def test_concurrent_installs_never_rewrite_a_published_executable(self):
-        old, new = self.program("old"), self.program("new")
-        self.assertEqual(self.activate(old).returncode, 0)
-        pointer = self.bin / ".khor/khor-linux-x86_64/current"
-        previous = pointer.resolve()
-        inode = previous.stat().st_ino
-        with ThreadPoolExecutor(max_workers=8) as pool:
-            results = list(pool.map(lambda _: self.activate(new, version="v1.2.4"), range(16)))
-        for result in results:
-            self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertNotEqual(previous, pointer.resolve())
-        self.assertEqual(previous.stat().st_ino, inode)
-        self.assertEqual(previous.read_bytes(), old.read_bytes())
-        self.assertEqual(pointer.read_bytes(), new.read_bytes())
-        self.assertEqual(len(list(pointer.parent.glob("versions/*/khor"))), 2)
-        self.assertEqual(list(self.bin.glob(".khor.activate.*")), [])
-
-    def test_collision_or_invalid_identity_preserves_active_version(self):
-        old, new = self.program("old"), self.program("new")
-        self.assertEqual(self.activate(old).returncode, 0)
-        pointer = self.bin / ".khor/khor-linux-x86_64/current"
-        previous = pointer.resolve()
-        digest = hashlib.sha256(new.read_bytes()).hexdigest()
-        collision = pointer.parent / "versions" / f"v1.2.4-{digest}" / "khor"
-        collision.parent.mkdir(parents=True)
-        collision.write_text("interrupted or altered artifact")
-        for asset, version in [("khor-linux-x86_64", "v1.2.4"), ("../../escape", "v1.2.4"),
-                               ("khor-linux-x86_64", "latest")]:
-            result = self.activate(new, asset, version)
-            self.assertNotEqual(result.returncode, 0)
-            self.assertEqual(pointer.resolve(), previous)
-            self.assertEqual(pointer.read_bytes(), old.read_bytes())
-
-    def test_missing_platform_reports_installation_without_using_another_architecture(self):
-        self.assertEqual(self.activate(self.program("x86")).returncode, 0)
+    def test_missing_platform_does_not_execute_another_architecture(self):
+        self.place("khor-linux-x86_64")
         result = self.run_installed("Linux", "aarch64")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("install khor-linux-aarch64", result.stderr)
 
-    def test_incompatible_activation_preserves_current_and_releases_its_lock(self):
-        old, incompatible = self.program("old"), self.program("incompatible", contract="changed")
-        self.assertEqual(self.activate(old).returncode, 0)
-        pointer = self.bin / ".khor/khor-linux-x86_64/current"
-        previous = pointer.readlink()
-        result = self.activate(incompatible, version="v2.0.0")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("incompatible activation", result.stderr)
-        self.assertEqual(pointer.readlink(), previous)
-        self.assertFalse((pointer.parent / "activation.lock").exists())
-        self.assertEqual(self.activate(self.program("compatible"), version="v1.2.4").returncode, 0)
-
-    def test_rollback_to_a_legacy_program_requires_the_current_checker(self):
-        old, new = self.program("legacy", checker=False), self.program("new")
-        self.assertEqual(self.activate(old).returncode, 0)
-        self.assertEqual(self.activate(new, version="v1.2.4").returncode, 0)
-        result = self.activate(old)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), old.read_bytes())
-
-    def test_two_programs_without_a_checker_cannot_establish_compatibility(self):
-        old, unknown = self.program("old", checker=False), self.program("unknown", checker=False)
-        self.assertEqual(self.activate(old).returncode, 0)
-        result = self.activate(unknown, version="v1.2.4")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("compatibility could not be established", result.stderr)
-        self.assertEqual((self.bin / ".khor/khor-linux-x86_64/current").read_bytes(), old.read_bytes())
-
-    def test_contender_retries_after_the_previous_owner_releases_its_lock(self):
-        tools = self.root / "tools"
-        tools.mkdir()
-        marker = self.root / "released"
-        lock = self.bin / ".khor/khor-linux-x86_64/activation.lock"
-        wrapper = tools / "mkdir"
-        wrapper.write_text('#!/bin/sh\nif [ "$#" = 1 ] && [ "$1" = ' + shlex.quote(str(lock)) +
-                           ' ] && [ ! -f ' + shlex.quote(str(marker)) + ' ]; then\n'
-                           'touch ' + shlex.quote(str(marker)) + '\n'
-                           '/bin/mkdir "$1" && /bin/rmdir "$1"\nexit 1\nfi\nexec /bin/mkdir "$@"\n')
-        wrapper.chmod(0o755)
-        environment = dict(os.environ, PATH=str(tools) + os.pathsep + os.environ['PATH'])
-        result = self.activate(self.program("new"), environment=environment)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(marker.exists(), "a real failed mkdir observed the previous owner")
-        self.assertFalse(lock.exists())
-
-    def test_keeper_copy_can_transition_from_the_direct_binary_install(self):
+    def test_keeper_copy_uses_the_original_installation_and_node_selection(self):
         asset = {("Darwin", "arm64"): "khor-macos-arm64", ("Darwin", "x86_64"): "khor-macos-x86_64",
                  ("Linux", "x86_64"): "khor-linux-x86_64", ("Linux", "aarch64"): "khor-linux-aarch64"}[(os.uname().sysname, os.uname().machine)]
-        self.assertEqual(self.activate(self.program("installed"), asset).returncode, 0)
+        self.place(asset)
         copy = self.root / "keeper-copy"
         shutil.copy2(self.bin / "khor", copy)
         result = subprocess.run([str(copy), "version"], text=True, capture_output=True, timeout=5,
-                                env=dict(os.environ, KHOR_SHIELD_FROM=str(self.bin / "khor")))
+                                env=dict(self.environment, KHOR_SHIELD_FROM=str(self.bin / "khor")))
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.splitlines()[0], "installed")
-        self.assertEqual(result.stdout.splitlines()[1], str(self.bin.resolve() / ".khor" / asset / "current"))
+        self.assertEqual(result.stdout.splitlines(), [asset, str(self.selection(asset)), "version"])
 
 
 class ServeReportTest(unittest.TestCase):

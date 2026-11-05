@@ -1481,6 +1481,8 @@ impl Node {
         crate::vitals::local::start(self.root());
 
         let mut services = tokio::task::JoinSet::new();
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        services.spawn(crate::updates::maintain());
 
         // One task per connection: a client that vanishes without
         // closing must not block the accept loop until QUIC times out.

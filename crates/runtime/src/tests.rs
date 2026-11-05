@@ -128,6 +128,52 @@ fn old_occupied_generation_survives_until_last_cloned_lease_closes() {
 }
 
 #[test]
+fn node_collection_reaches_registered_cli_stores_and_preserves_live_and_rollback_images() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let parent = fixture
+        .0
+        .join("cli")
+        .join("a".repeat(64))
+        .join("khor-macos-arm64");
+    let mut directories = fs::DirBuilder::new();
+    directories.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        directories.mode(0o700);
+    }
+    directories.create(&parent).unwrap();
+    let child = Store::open(
+        parent.join("versions"),
+        Limits {
+            free_bytes: 0,
+            ..Limits::default()
+        },
+    )
+    .unwrap();
+    let first = image(&child, "one", b"first");
+    let old = id(&first);
+    let lease = first.lease().try_clone().unwrap();
+    drop(first);
+    let second = image(&child, "two", b"second");
+    let rollback = second.path().to_path_buf();
+    drop(second);
+    let third = image(&child, "three", b"third");
+    let current = third.path().to_path_buf();
+    drop(third);
+    assert!(store.collect_all().unwrap().occupied.contains(&old));
+    assert!(rollback.exists() && current.exists());
+    drop(lease);
+    assert!(store.collect_all().unwrap().removed.contains(&old));
+    assert!(rollback.exists() && current.exists());
+    let unowned = parent.join("unclaimed");
+    fs::write(&unowned, b"personal data").unwrap();
+    store.collect_all().unwrap();
+    assert_eq!(fs::read(unowned).unwrap(), b"personal data");
+}
+
+#[test]
 fn current_and_one_rollback_are_retained_and_a_failed_publication_does_not_evict_either() {
     let fixture = Fixture::new();
     let store = fixture.store();

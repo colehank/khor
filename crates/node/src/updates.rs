@@ -69,6 +69,35 @@ pub fn update_trust() -> Result<khor_update::TrustRoot, String> {
     TrustRoot::bundled()
 }
 
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub(crate) async fn maintain() {
+    let mut beat = tokio::time::interval(std::time::Duration::from_secs(30));
+    beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        beat.tick().await;
+        let result = tokio::task::spawn_blocking(|| -> Result<(), String> {
+            let store = khor_runtime::Store::local().map_err(|e| e.to_string())?;
+            store.collect_all().map_err(|e| e.to_string())?;
+            let trust = TrustRoot::bundled()?;
+            for child in store.cli_stores().map_err(|e| e.to_string())? {
+                let staging = child
+                    .directory()
+                    .parent()
+                    .ok_or("CLI store has no installation")?
+                    .join("staging");
+                khor_update::collect_downloads(&staging, &trust)?;
+            }
+            Ok(())
+        })
+        .await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => eprintln!("runtime maintenance deferred: {error}"),
+            Err(error) => eprintln!("runtime maintenance stopped: {error}"),
+        }
+    }
+}
+
 pub(crate) fn selected_cli_source(source: &Path) -> Result<std::path::PathBuf, String> {
     #[cfg(unix)]
     if let Some(installation) = khor_update::CliInstallation::detect(source, Platform::current()?)?

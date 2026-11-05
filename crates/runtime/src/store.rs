@@ -345,6 +345,21 @@ impl Store {
         self.collect_locked(&self.index()?)
     }
 
+    pub fn directory(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn collect_all(&self) -> io::Result<Collection> {
+        let mut result = self.collect()?;
+        for child in self.cli_stores()? {
+            let next = child.collect()?;
+            result.removed.extend(next.removed);
+            result.occupied.extend(next.occupied);
+            result.unknown.extend(next.unknown);
+        }
+        Ok(result)
+    }
+
     pub fn contracts(&self) -> io::Result<Vec<Contract>> {
         self.contracts_matching(|_| Ok(true))
     }
@@ -352,6 +367,15 @@ impl Store {
     pub fn occupied_contracts(&self) -> io::Result<Vec<Contract>> {
         let mut result =
             self.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?;
+        for child in self.cli_stores()? {
+            result
+                .extend(child.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?);
+        }
+        Ok(result)
+    }
+
+    pub fn cli_stores(&self) -> io::Result<Vec<Self>> {
+        let mut result = Vec::new();
         let cli = self.root.join("cli");
         if !cli.try_exists()? {
             return Ok(result);
@@ -373,10 +397,7 @@ impl Store {
                 if !root.join("owner").try_exists()? {
                     continue;
                 }
-                let child = Self::open(root, self.limits)?;
-                result.extend(
-                    child.contracts_matching(|path| Ok(!Lease::vacant(&path.join("lease"))?))?,
-                );
+                result.push(Self::open(root, self.limits)?);
             }
         }
         Ok(result)
@@ -496,14 +517,14 @@ impl Store {
             if protected.contains(name.as_str()) {
                 continue;
             }
-            if !hash_file(&directory.join(identity.role.executable()))
-                .is_ok_and(|observed| observed == (identity.digest, identity.bytes))
-            {
-                result.unknown.push(name);
-                continue;
-            }
             match Lease::vacant(&directory.join("lease")) {
                 Ok(true) => {
+                    if !hash_file(&directory.join(identity.role.executable()))
+                        .is_ok_and(|observed| observed == (identity.digest, identity.bytes))
+                    {
+                        result.unknown.push(name);
+                        continue;
+                    }
                     let tombstone = self.root.join(format!(".gc-{name}"));
                     let removed = (|| {
                         fs::rename(&directory, &tombstone)?;
