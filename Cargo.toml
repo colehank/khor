@@ -222,9 +222,12 @@ strip = false
 [profile.dev]
 debug = "line-tables-only"
 
-# Runtime image validation hashes full executables during startup. Unoptimized
-# ARM64 NEON hashing can exhaust the same bounded startup checks used in release.
+# Runtime and update verification hash complete executables. Keep development
+# hashing optimized so debug binaries fit the same bounded probes as releases.
 [profile.dev.package.blake3]
+opt-level = 3
+
+[profile.dev.package.sha2]
 opt-level = 3
 
 # iroh 1.2.0 with one upstream bug fixed in place. Why, which change,
