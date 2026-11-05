@@ -44,8 +44,10 @@ test("a non-zero exit fails the load and carries stderr", async () => {
 // change as verbs are added, so assert shape and known words, not
 // totals.
 test("the real binary's table loads and classifies known words", async (t) => {
-  const bin = fileURLToPath(new URL("../../../target/release/khor", import.meta.url));
+  const configured = process.env.KHOR_TEST_CLI_BIN;
+  const bin = configured ?? fileURLToPath(new URL("../../../target/release/khor", import.meta.url));
   if (!existsSync(bin)) {
+    assert.ok(!configured, `configured Khor binary is missing: ${bin}`);
     t.skip(`no built binary at ${bin}`);
     return;
   }
