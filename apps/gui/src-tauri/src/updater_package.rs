@@ -1,4 +1,4 @@
-use khor_update::{Component, DownloadProgress, Offer, Platform, TrustRoot};
+use khor_update::{Component, DownloadProgress, Offer, PackageStage, Platform, TrustRoot};
 use std::{
     io::{Read, Write},
     path::Path,
@@ -115,17 +115,17 @@ impl DesktopPackage {
             .map_err(|error| error.to_string())?;
         self.trust
             .verify_asset_bytes(&bytes, self.offer.artifact())?;
-        let mut temporary =
-            tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
-        temporary
-            .write_all(&bytes)
+        let temporary = PackageStage::new(&self.offer, parent)?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(temporary.archive())
             .map_err(|error| error.to_string())?;
-        temporary
-            .as_file()
-            .sync_all()
-            .map_err(|error| error.to_string())?;
+        file.write_all(&bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
         drop(bytes);
-        temporary.persist(path).map_err(|error| error.to_string())?;
+        drop(file);
+        std::fs::rename(temporary.archive(), path).map_err(|error| error.to_string())?;
         sync_directory(parent)
     }
 

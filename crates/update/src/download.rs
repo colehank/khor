@@ -1,4 +1,4 @@
-use crate::{Offer, TrustRoot};
+use crate::{Offer, PackageStage, TrustRoot};
 use sha2::{Digest, Sha256};
 use std::{
     io::{self, Read},
@@ -14,7 +14,7 @@ pub struct DownloadProgress {
 }
 
 pub struct Download {
-    directory: tempfile::TempDir,
+    directory: PackageStage,
     archive: PathBuf,
     offer: Offer,
 }
@@ -124,7 +124,7 @@ impl Download {
     #[cfg(test)]
     pub(crate) fn fixture() -> Self {
         let (trust, offer) = crate::trust::fixture_offer("http://127.0.0.1/asset.gz".into());
-        let directory = tempfile::tempdir().unwrap();
+        let directory = PackageStage::new(&offer, &std::env::temp_dir()).unwrap();
         let archive = directory.path().join("asset");
         std::fs::write(&archive, include_bytes!("../tests/fixtures/asset.gz")).unwrap();
         trust
@@ -143,7 +143,7 @@ impl Download {
         archive: &Path,
         staging: &Path,
     ) -> Result<Self, String> {
-        let ready = Self::prepare(offer, staging)?;
+        let ready = Self::prepare(offer, trust, staging)?;
         let mut input = std::fs::File::open(archive)
             .map_err(|e| e.to_string())?
             .take(ready.offer.artifact().bytes + 1);
@@ -169,7 +169,7 @@ impl Download {
         staging: &Path,
     ) -> Result<Self, String> {
         use tokio::io::AsyncReadExt;
-        let ready = Self::prepare(offer, staging)?;
+        let ready = Self::prepare(offer, trust, staging)?;
         let mut file = tokio::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -189,17 +189,17 @@ impl Download {
         Ok(ready)
     }
 
-    fn prepare(offer: Offer, staging: &Path) -> Result<Self, String> {
+    fn prepare(offer: Offer, trust: &TrustRoot, staging: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(staging).map_err(|e| e.to_string())?;
+        if let Err(error) = crate::collect_downloads(staging, trust) {
+            eprintln!("update cache maintenance deferred: {error}");
+        }
         if khor_runtime::available_space(staging).map_err(|e| e.to_string())?
             < offer.artifact().required_space()?
         {
             return Err("not enough free space to download and install this release".into());
         }
-        let directory = tempfile::Builder::new()
-            .prefix("download-")
-            .tempdir_in(staging)
-            .map_err(|e| e.to_string())?;
+        let directory = PackageStage::new(&offer, staging)?;
         let archive = directory.path().join("asset");
         Ok(Self {
             directory,
@@ -214,7 +214,7 @@ impl Download {
         staging: &Path,
         mut progress: impl FnMut(DownloadProgress),
     ) -> Result<Self, String> {
-        let ready = Self::prepare(offer, staging)?;
+        let ready = Self::prepare(offer, trust, staging)?;
         let archive = &ready.archive;
         let asset = ready.offer.artifact();
         let client = reqwest::Client::builder()

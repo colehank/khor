@@ -12,6 +12,9 @@ use std::{
 
 static EXIT_LEASE: OnceLock<File> = OnceLock::new();
 
+mod collection;
+pub(crate) use collection::collect;
+
 fn spawn_monitor(program: &Path, directory: &Path, output: File) -> Result<Child, String> {
     Command::new(program)
         .arg("_app_update_watch")
@@ -38,6 +41,7 @@ pub(crate) fn boot_script() -> &'static str {
 
 #[derive(Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 enum Phase {
+    Preparing,
     Prepared,
     Installing,
     Installed,
@@ -92,24 +96,23 @@ impl Installation {
             .tempdir_in(root)
             .map_err(|e| e.to_string())?;
         let path = directory.path();
-        let backup = path.join("previous.app");
-        copy_bundle(&target, &backup)?;
-        let previous = backup.join("Contents/MacOS/khor-gui");
-        if khor_node::updates::inspect(&previous)?.build != old {
-            return Err("the previous application changed during its backup".into());
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+                .map_err(|e| e.to_string())?;
         }
         let nonce = path
             .file_name()
             .ok_or("installation has no identity")?
             .to_string_lossy()
             .into_owned();
-        let receipt = Receipt {
+        let mut receipt = Receipt {
             schema: 1,
             nonce,
             target,
             old,
             release: release.signed().clone(),
-            phase: Phase::Prepared,
+            phase: Phase::Preparing,
         };
         let lease = OpenOptions::new()
             .read(true)
@@ -118,6 +121,14 @@ impl Installation {
             .open(path.join("parent.lock"))
             .map_err(|e| e.to_string())?;
         lease.lock().map_err(|e| e.to_string())?;
+        write_json(path, "receipt.json", &receipt)?;
+        let backup = path.join("previous.app");
+        copy_bundle(&receipt.target, &backup)?;
+        let previous = backup.join("Contents/MacOS/khor-gui");
+        if khor_node::updates::inspect(&previous)?.build != receipt.old {
+            return Err("the previous application changed during its backup".into());
+        }
+        receipt.phase = Phase::Prepared;
         write_json(path, "receipt.json", &receipt)?;
         let output = OpenOptions::new()
             .create_new(true)
@@ -234,6 +245,9 @@ fn watch(directory: &Path) -> Result<(), String> {
     worker
         .try_lock()
         .map_err(|_| "another monitor owns this application update")?;
+    EXIT_LEASE
+        .set(worker)
+        .map_err(|_| "this monitor already holds a process lease")?;
     let parent = OpenOptions::new()
         .read(true)
         .write(true)

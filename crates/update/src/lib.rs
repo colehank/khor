@@ -6,6 +6,7 @@ mod download;
 mod feed;
 #[cfg(unix)]
 mod install;
+mod package_stage;
 mod release;
 mod staging;
 mod trust;
@@ -16,6 +17,7 @@ pub use download::{Download, DownloadProgress};
 pub use feed::Feed;
 #[cfg(unix)]
 pub use install::{CliInstallation, InstallReceipt, InstallState};
+pub use package_stage::{PackageStage, collect_downloads};
 pub use release::{
     Architecture, Artifact, Channel, Component, Digest, OperatingSystem, Platform, ReleaseIdentity,
     ReleaseManifest, ReleaseTag, SourceCommit,

@@ -143,6 +143,19 @@ impl AppUpdates {
         Ok(staging)
     }
 
+    async fn maintain(&self) {
+        if self
+            .status()
+            .is_ok_and(|status| status.source == UpdateSource::Direct)
+        {
+            if let Ok(_operation) = self.operation.try_lock() {
+                if let Ok(staging) = self.store() {
+                    collect_cache(staging).await;
+                }
+            }
+        }
+    }
+
     fn channel(&self) -> Result<Channel, String> {
         Ok(match self.status()?.preferences.channel {
             UpdateChannel::Stable => Channel::Stable,
@@ -243,6 +256,7 @@ impl AppUpdates {
             .select(Component::DesktopApp, platform, &current, channel, None)?
             .ok_or("selected release has no application update")?;
         staging.remember(&release)?;
+        collect_cache(staging.clone()).await;
         let ready = staging.is_ready(&trust, &offer).unwrap_or(false);
         let package = DesktopPackage::check(app, offer, trust).await?;
         self.change(app, |data| {
@@ -503,6 +517,7 @@ pub(crate) fn start(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let updates = app.state::<AppUpdates>();
+        updates.maintain().await;
         let Ok(restored) = updates.restore_cached(&app) else {
             return;
         };
@@ -538,6 +553,22 @@ pub(crate) fn start(app: &AppHandle) {
             _ => {}
         }
     });
+}
+
+async fn collect_cache(staging: Arc<Staging>) {
+    let result = tokio::task::spawn_blocking(move || -> Result<(), String> {
+        let trust = TrustRoot::bundled()?;
+        staging.collect(&trust)?;
+        #[cfg(target_os = "macos")]
+        crate::app_update_install::collect(staging.root(), &trust)?;
+        Ok(())
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => eprintln!("update cache maintenance deferred: {error}"),
+        Err(error) => eprintln!("update cache maintenance stopped: {error}"),
+    }
 }
 
 fn installation_source(build: &BuildIdentity) -> Result<UpdateSource, String> {

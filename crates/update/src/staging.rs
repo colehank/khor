@@ -62,11 +62,8 @@ impl Staging {
     }
 
     pub fn archive(&self, offer: &Offer) -> PathBuf {
-        self.root.join(format!(
-            "{}-{}.package",
-            offer.identity().tag.as_str(),
-            offer.artifact().sha256.as_str()
-        ))
+        self.root
+            .join(format!("{}.package", offer.artifact().sha256.as_str()))
     }
 
     pub fn remember(&self, release: &VerifiedRelease) -> Result<(), String> {
@@ -78,12 +75,83 @@ impl Staging {
         if bytes.len() as u64 > RECORD_LIMIT {
             return Err("update record exceeds its limit".into());
         }
-        let mut file = tempfile::NamedTempFile::new_in(&self.root).map_err(|e| e.to_string())?;
-        file.write_all(&bytes).map_err(|e| e.to_string())?;
-        file.as_file().sync_all().map_err(|e| e.to_string())?;
-        file.persist(self.root.join("selected.json"))
-            .map_err(|e| e.to_string())?;
+        for artifact in &release.manifest().artifacts {
+            self.write_record(
+                &format!("{}.package.json", artifact.sha256.as_str()),
+                &bytes,
+            )?;
+        }
+        self.write_record("selected.json", &bytes)?;
         sync_directory(&self.root)
+    }
+
+    fn write_record(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        let mut file = tempfile::NamedTempFile::new_in(&self.root).map_err(|e| e.to_string())?;
+        file.write_all(bytes).map_err(|e| e.to_string())?;
+        file.as_file().sync_all().map_err(|e| e.to_string())?;
+        file.persist(self.root.join(name))
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    pub fn collect(&self, trust: &TrustRoot) -> Result<u64, String> {
+        let selected = match fs::symlink_metadata(self.root.join("selected.json")) {
+            Ok(_) => Some(read_release(&self.root.join("selected.json"), trust)?),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e.to_string()),
+        };
+        let mut bytes = crate::collect_downloads(&self.root, trust)?;
+        for entry in fs::read_dir(&self.root)
+            .map_err(|e| e.to_string())?
+            .take(256)
+        {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let name = entry.file_name();
+            let Some(digest) = name
+                .to_str()
+                .and_then(|name| name.strip_suffix(".package.json"))
+            else {
+                continue;
+            };
+            if digest.len() != 64 || !digest.bytes().all(|b| b.is_ascii_hexdigit()) {
+                continue;
+            }
+            if selected.as_ref().is_some_and(|release| {
+                release
+                    .manifest()
+                    .artifacts
+                    .iter()
+                    .any(|asset| asset.sha256.as_str() == digest)
+            }) {
+                continue;
+            }
+            let Ok(release) = read_release(&entry.path(), trust) else {
+                continue;
+            };
+            if !release
+                .manifest()
+                .artifacts
+                .iter()
+                .any(|asset| asset.sha256.as_str() == digest)
+            {
+                continue;
+            }
+            let archive = self.root.join(format!("{digest}.package"));
+            match fs::symlink_metadata(&archive) {
+                Ok(_) => {
+                    let Ok(metadata) = crate::package_stage::regular_file(&archive) else {
+                        continue;
+                    };
+                    fs::remove_file(&archive).map_err(|e| e.to_string())?;
+                    bytes = bytes.saturating_add(metadata.len());
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => continue,
+            }
+            fs::remove_file(entry.path()).map_err(|e| e.to_string())?;
+        }
+        sync_directory(&self.root)?;
+        Ok(bytes)
     }
 
     pub fn restore(
@@ -95,24 +163,12 @@ impl Staging {
         channel: Channel,
     ) -> Result<Option<(VerifiedRelease, Offer)>, String> {
         let path = self.root.join("selected.json");
-        reject_symlink(&path)?;
-        let file = match File::open(path) {
-            Ok(file) => file,
+        match fs::symlink_metadata(&path) {
+            Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
             Err(e) => return Err(e.to_string()),
-        };
-        let mut bytes = Vec::new();
-        file.take(RECORD_LIMIT + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|e| e.to_string())?;
-        if bytes.len() as u64 > RECORD_LIMIT {
-            return Err("update record exceeds its limit".into());
         }
-        let record: Record = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-        if record.schema != 1 {
-            return Err("unsupported update record".into());
-        }
-        let release = trust.restore(&record.release)?;
+        let release = read_release(&path, trust)?;
         let Some(offer) = release.select(component, platform, current, channel, None)? else {
             return Ok(None);
         };
@@ -132,6 +188,24 @@ impl Staging {
     pub fn root(&self) -> &Path {
         &self.root
     }
+}
+
+fn read_release(path: &Path, trust: &TrustRoot) -> Result<VerifiedRelease, String> {
+    crate::package_stage::regular_file(path)?;
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(|e| e.to_string())?
+        .take(RECORD_LIMIT + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > RECORD_LIMIT {
+        return Err("update record exceeds its limit".into());
+    }
+    let record: Record = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+    if record.schema != 1 {
+        return Err("unsupported update record".into());
+    }
+    trust.restore(&record.release)
 }
 
 fn reject_symlink(path: &Path) -> Result<(), String> {
@@ -223,5 +297,61 @@ mod tests {
         let root = directory.path().join("staging");
         symlink(directory.path(), &root).unwrap();
         assert!(Staging::open(root).is_err());
+    }
+
+    #[test]
+    fn collection_retains_selected_bytes_and_reclaims_only_authenticated_old_archives() {
+        let directory = tempfile::tempdir().unwrap();
+        let (trust, release, current, platform) = fixture();
+        let staging = Staging::open(directory.path().join("staging")).unwrap();
+        staging.remember(&release).unwrap();
+        let offer = release
+            .select(Component::Cli, platform, &current, Channel::Stable, None)
+            .unwrap()
+            .unwrap();
+        let archive = staging.archive(&offer);
+        fs::write(&archive, b"cached payload").unwrap();
+        let unknown = staging.root.join(format!("{}.package", "b".repeat(64)));
+        fs::write(&unknown, b"unclaimed data").unwrap();
+        fs::write(
+            staging
+                .root
+                .join(format!("{}.package.json", "b".repeat(64))),
+            b"untrusted",
+        )
+        .unwrap();
+        assert_eq!(staging.collect(&trust).unwrap(), 0);
+        assert!(archive.exists());
+        fs::write(staging.root.join("selected.json"), b"interrupted selection").unwrap();
+        assert!(staging.collect(&trust).is_err());
+        assert!(archive.exists());
+        fs::remove_file(staging.root.join("selected.json")).unwrap();
+        assert_eq!(staging.collect(&trust).unwrap(), 14);
+        assert!(!archive.exists());
+        assert_eq!(fs::read(unknown).unwrap(), b"unclaimed data");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn collection_never_follows_an_archive_link_into_user_data() {
+        let directory = tempfile::tempdir().unwrap();
+        let (trust, release, current, platform) = fixture();
+        let staging = Staging::open(directory.path().join("staging")).unwrap();
+        staging.remember(&release).unwrap();
+        fs::remove_file(staging.root.join("selected.json")).unwrap();
+        let offer = release
+            .select(Component::Cli, platform, &current, Channel::Stable, None)
+            .unwrap()
+            .unwrap();
+        let neighbour = directory.path().join("neighbour");
+        fs::write(&neighbour, b"user data").unwrap();
+        std::os::unix::fs::symlink(&neighbour, staging.archive(&offer)).unwrap();
+        assert_eq!(staging.collect(&trust).unwrap(), 0);
+        assert_eq!(fs::read(neighbour).unwrap(), b"user data");
+        assert!(
+            fs::symlink_metadata(staging.archive(&offer))
+                .unwrap()
+                .is_symlink()
+        );
     }
 }

@@ -174,6 +174,7 @@ impl VerifiedRelease {
             identity: self.manifest.identity.clone(),
             build: self.manifest.build_identity(),
             artifact: artifact.clone(),
+            signed: self.signed.clone(),
         }))
     }
 }
@@ -183,8 +184,12 @@ pub struct Offer {
     identity: ReleaseIdentity,
     build: ReleaseIdentity,
     artifact: Artifact,
+    signed: SignedRelease,
 }
 impl Offer {
+    pub(crate) fn signed(&self) -> &SignedRelease {
+        &self.signed
+    }
     pub fn build_identity(&self) -> &ReleaseIdentity {
         &self.build
     }
