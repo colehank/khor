@@ -2,14 +2,16 @@
 // Checks paint updates preserve the attachment, buffer and scroll position;
 // native desktop material itself is checked separately in the real app.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { createServer } from "vite";
 import { chromium } from "playwright-core";
+import { installAttachmentLeases } from "./fixtures/attachment-leases.mjs";
 const gui = fileURLToPath(new URL("..", import.meta.url));
-const port = Number(process.env.APPEARANCE_PORT ?? 1493);
+let port = Number(process.env.APPEARANCE_PORT ?? 0);
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const entry = `${gui}/scripts/.appearance-gate-${process.pid}.tsx`;
+const cache = mkdtempSync(`${gui}/.appearance-cache-`);
 let bootStyle = readFileSync(`${gui}/index.html`, "utf8").match(/<style>([\s\S]*?)<\/style>/)?.[1];
 assert(bootStyle, "first-frame styles missing");
 const calls = [], errors = [];
@@ -38,12 +40,15 @@ function Lab(){const [kept,setKept]=useState(false),[front,setFront]=useState(fa
 return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}><div data-retained-front className={front||concealed?'pointer-events-none invisible absolute inset-0 flex flex-col':'contents'}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active={!front} />}</div>{kept&&<div data-retained-back className={front&&!concealed?'contents':'pointer-events-none invisible absolute inset-0 flex flex-col'} aria-hidden={!front||undefined}><TerminalPane id='shell/appearance-kept' active={front}/></div>}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
 createRoot(document.getElementById('root')).render(<Lab/>);
 `);
-  vite = spawn("node_modules/.bin/vite", ["--port", String(port), "--strictPort"], { cwd: gui, stdio: ["ignore", "pipe", "pipe"] });
-  let ready = false, viteLog = ""; vite.stdout.on("data", b => { ready ||= String(b).includes(`:${port}`); }); vite.stderr.on("data", b => { viteLog += String(b); });
-  for (let n = 0; n < 100 && !ready; n++) await pause(100);
-  assert(ready, "vite did not start");
+  vite = await createServer({configFile: `${gui}/vite.config.ts`, root: gui, cacheDir: cache,
+    optimizeDeps: {entries: [entry]}, server: {host: '127.0.0.1', port, strictPort: true, hmr: false}});
+  await vite.listen();
+  const address = vite.httpServer.address();
+  assert(address && typeof address === 'object', 'appearance server has no listening address');
+  port = address.port;
   browser = await chromium.launch({ channel: "chrome", headless: process.env.APPEARANCE_HEADLESS === "1", args: ["--no-proxy-server", "--disable-features=LocalNetworkAccessChecks"] });
   const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
+  await context.addInitScript(installAttachmentLeases);
   await context.addInitScript(() => {
     window.__TAURI_INTERNALS__ = { invoke: async () => 0, transformCallback: () => 0, unregisterCallback: () => {} };
     window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
@@ -52,6 +57,8 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await context.route(`http://127.0.0.1:${port}/**`, async route => {
     const cmd = new URL(route.request().url()).pathname.slice(1), args = route.request().postDataJSON() ?? {};
     calls.push({ cmd, args });
+    const admission = await route.request().frame().evaluate(({cmd,args}) => window.__attachmentLeases(cmd,args), {cmd,args});
+    if (admission.handled) return route.fulfill({contentType: 'application/json', body: JSON.stringify(admission.value)});
     let result = null;
     if (cmd === "window_appearance_support") result = { supported: true, blur };
     if (cmd === "config") result = rows;
@@ -66,11 +73,13 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   const page = await context.newPage(); page.on("pageerror", e => errors.push(e.message));
   const startupErrors = []; page.on("requestfailed", r => startupErrors.push(`${r.url()}: ${r.failure()?.errorText}`)); page.on("response", r => { if (r.status() >= 400) startupErrors.push(`${r.status()} ${r.url()}`); });
   await page.goto(`http://localhost:${port}/__appearance_gate?bridge=${port}`);
-  await page.locator("[data-terminal]").waitFor({ timeout: 30000 }).catch(async e => { throw new Error(`${e.message}\n${errors.join("\n")}\n${startupErrors.join("\n")}\n${viteLog}\n${(await page.locator("body").innerHTML()).slice(0,1200)}`); });
+  await page.locator("[data-terminal]").waitFor({ timeout: 30000 }).catch(async e => { throw new Error(`${e.message}\n${errors.join("\n")}\n${startupErrors.join("\n")}\n${(await page.locator("body").innerHTML()).slice(0,1200)}`); });
   // Teeth: recreate the old extra body background after stylesheet load.
   // This must fail the screenshot assertion rather than silently pass.
   if (process.env.APPEARANCE_BOOT_DOUBLE === "1") await page.addStyleTag({ content: ":root[data-window-transparent] body { background: color-mix(in srgb, var(--boot-ground) var(--window-opacity), transparent) !important; }" });
-  await page.waitForFunction(() => document.querySelector("[data-terminal]")?.__xterm?.buffer.active.length > 100);
+  await page.waitForFunction(() => document.querySelector("[data-terminal]")?.__xterm?.buffer.active.length > 100).catch(async error => {
+    throw new Error(`${error.message}\nTransport calls: ${calls.map(call => call.cmd).join(', ')}\n${errors.join('\n')}\n${await page.locator('[data-term-why], [data-term-opening]').allTextContents()}`);
+  });
   const outline=()=>page.getByRole('switch',{name:'窗口轮廓',exact:true});
   assert.equal(await outline().count(),0,'solid material must not disclose the outline setting');
   const baseline = await page.evaluate(() => {
@@ -115,6 +124,56 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.evaluate(()=>document.documentElement.dataset.theme='dark');
 
   await page.waitForFunction(() => document.getElementById("root").style.getPropertyValue("--window-ground-clip").includes("M"));
+  // ResizeObserver runs before paint: the shared tint must already reach the
+  // sidebar's new edge, rather than leaving the previous terminal hole there.
+  await page.evaluate(() => {
+    const root = document.getElementById('root');
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    window.surfaceResizeChecks = [];
+    const sample = () => {
+      const bounds = root.getBoundingClientRect();
+      const term = document.querySelector('[data-retained-front] [data-terminal]').getBoundingClientRect();
+      canvas.width = Math.ceil(bounds.width); canvas.height = Math.ceil(bounds.height);
+      const clip = getComputedStyle(root, '::before').clipPath;
+      const outline = /^path\((?:evenodd,\s*)?["'](.+)["']\)$/.exec(clip);
+      const x = term.right + Math.min(2, (bounds.right - term.right) / 2);
+      const y = term.top + term.height / 2;
+      return {
+        material: window.surfaceResizeMaterial, width: bounds.width, edge: term.right,
+        sidebarPainted: !!outline && context.isPointInPath(new Path2D(outline[1]), x - bounds.left, y - bounds.top, 'evenodd'),
+        terminalClear: !!outline && !context.isPointInPath(new Path2D(outline[1]), term.right - 2 - bounds.left, y - bounds.top, 'evenodd'),
+      };
+    };
+    const initial = sample();
+    if (!initial.sidebarPainted || !initial.terminalClear) throw new Error('invalid initial surface geometry: ' + JSON.stringify(initial));
+    window.surfaceResizeWatch = new ResizeObserver(() => window.surfaceResizeChecks.push(sample()));
+    window.surfaceResizeWatch.observe(root);
+  });
+  try {
+    for (const material of ['clear', 'frost']) {
+      await page.evaluate(material => {
+        window.surfaceResizeMaterial = material;
+        window.wearWindowChoice({material, opacity: 85, outline: true}, false);
+      }, material);
+      for (const width of [1320, 1160, 1530, 1270, 1400]) {
+        await page.setViewportSize({width, height: 900});
+        await page.waitForTimeout(80);
+      }
+    }
+    const frames = await page.evaluate(() => window.surfaceResizeChecks);
+    for (const material of ['clear', 'frost']) assert(frames.filter(frame => frame.material === material).length >= 5, 'resize regression missed material ' + material);
+    assert.deepEqual(frames.filter(frame => !frame.sidebarPainted), [], 'window resize exposed an untinted gap beside the terminal before paint');
+    assert.deepEqual(frames.filter(frame => !frame.terminalClear), [], 'window resize put a second background behind the terminal before paint');
+  } finally {
+    await page.evaluate(() => {
+      window.surfaceResizeWatch.disconnect();
+      window.wearWindowChoice({material: 'clear', opacity: 85, outline: true}, false);
+    });
+    await page.setViewportSize({width: 1400, height: 900});
+    await page.waitForFunction(cols => document.querySelector('[data-terminal]').__xterm.cols === cols, baseline.cols);
+    await page.evaluate(y => document.querySelector('[data-terminal]').__xterm.scrollToLine(y), baseline.y);
+  }
   assert(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm === window.originalTerm));
   assert.equal(calls.filter(c => c.cmd === "term_open").length, opens);
   const halos = await page.evaluate(() => [...document.querySelectorAll('[data-halo-lab] [data-halo]')].map(el => {const r=el.getBoundingClientRect();const s=getComputedStyle(el);return {right:r.right,y:r.top+r.height/2,gap:parseFloat(s.getPropertyValue('--halo-gap')),width:parseFloat(s.getPropertyValue('--halo-w')),ink:s.getPropertyValue('--halo-color').trim()};}));
@@ -319,4 +378,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   if(process.env.APPEARANCE_SHOT) await page.screenshot({path:process.env.APPEARANCE_SHOT.replace(/\.png$/, '-ansi.png')});
   assert.deepEqual(errors, []);
   console.log("appearance: presets/DIY/JSON, cross-window sync, same PTY/buffer/scroll, retained/hidden tab backgrounds, background-only single-layer alpha in WebGL/DOM/recovery at 1x/2x, unsupported blur, parser bounds and narrow editor passed");
-} finally { if (browser) await browser.close(); if (vite) vite.kill(); rmSync(entry, { force: true }); }
+} finally {
+  try { if (browser) await browser.close(); }
+  finally { if (vite) await vite.close(); rmSync(entry, {force: true}); rmSync(cache, {recursive: true, force: true}); }
+}

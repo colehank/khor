@@ -89,7 +89,9 @@ export function followWindowSurface(): void {
     const v = window.__KHOR_WINDOW_PREF__ ?? JSON.parse(window.localStorage.getItem(WINDOW_MIRROR) ?? "null") as WindowChoice | null;
     if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: normalizeWindowOpacity(v.opacity), outline: v.outline !== false }, false);
   } catch { /* A missing mirror remains solid. */ }
-  resize = new ResizeObserver(queueGround);
+  // Terminal padding resizes before paint; its cutout must follow in that
+  // same phase, or shrinking exposes the previous frame's hole in the list.
+  resize = new ResizeObserver(measureGround);
   const root = document.getElementById("root");
   if (!root) return;
   resize.observe(root);
