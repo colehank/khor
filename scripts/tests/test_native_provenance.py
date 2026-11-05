@@ -137,7 +137,6 @@ class ProvenanceTests(unittest.TestCase):
         self.put("dep/Cargo.toml", "[package]\nname='khor-node'\nversion='0.1.0'\n[lib]\nname='dep'\n")
         self.put("apps/agent/providers.json", '{"provider":"fixture"}\n')
         self.put("scripts/install.sh", "#!/bin/sh\n")
-        self.put("scripts/install-components.sh", "#!/bin/sh\n")
         self.put("apps/agent/session-commands.json", "[]\n")
         self.assertFalse((self.root / "apps/gui/dist").exists())
         for request in (self.request.copy(),
@@ -718,26 +717,31 @@ class ProvenanceTests(unittest.TestCase):
             p.verify_build(changed, rows)
 
     def test_node_known_root_includes_are_keyed_and_each_invalidates_with_old_mtime(self):
-        self.metadata["packages"][0]["name"] = "khor-node"
-        self.put("dep/Cargo.toml", "[package]\nname='khor-node'\nversion='0.1.0'\n[lib]\nname='dep'\n")
-        providers = self.put("apps/agent/providers.json", '{"provider":"A"}\n')
-        install = self.put("scripts/install.sh", "#!/bin/sh\nprintf A\n")
-        components = self.put("scripts/install-components.sh", "#!/bin/sh\nprintf A\n")
-        commands = self.put("apps/agent/session-commands.json", '["session"]\n')
-        inputs = (providers, install, components, commands)
-        self.put("dep/src/lib.rs", 'pub const PROVIDERS: &str = include_str!("../../apps/agent/providers.json");\n'
-                 'pub const INSTALL: &str = include_str!("../../scripts/install.sh");\n'
-                 'pub const COMPONENTS: &str = include_str!("../../scripts/install-components.sh");\n'
-                 'pub const COMMANDS: &str = include_str!("../../apps/agent/session-commands.json");\n')
+        self.assert_root_inputs_are_keyed("khor-node", {
+            "apps/agent/providers.json": '{"provider":"A"}\n',
+            "apps/agent/session-commands.json": '["session"]\n',
+            "scripts/install.sh": "#!/bin/sh\nprintf A\n",
+        })
+
+    def test_update_launcher_input_is_keyed_and_invalidates_with_old_mtime(self):
+        self.assert_root_inputs_are_keyed("khor-update", {
+            "scripts/install-components.sh": "#!/bin/sh\nprintf A\n",
+        })
+
+    def assert_root_inputs_are_keyed(self, package, files):
+        self.metadata["packages"][0]["name"] = package
+        self.put("dep/Cargo.toml", f"[package]\nname='{package}'\nversion='0.1.0'\n[lib]\nname='dep'\n")
+        inputs = [self.put(name, data) for name, data in files.items()]
+        self.put("dep/src/lib.rs", "".join(
+            f'pub const INPUT_{index}: &str = include_str!("../../{name}");\n'
+            for index, name in enumerate(files)))
         prepared = self.prepare()
         rows = self.rows()
         library = Path(rows[0]["filenames"][0])
         dep = library.with_name(library.stem.removeprefix("lib") + ".d")
-        dep.write_text(f"{library}: {rows[0]['target']['src_path']} {providers} {install} {components} {commands}\n{dep}:\n")
+        dep.write_text(f"{library}: {rows[0]['target']['src_path']} {' '.join(map(str, inputs))}\n{dep}:\n")
         receipt = p.verify_build(prepared, rows)
-        self.assertEqual(set(receipt["extra_inputs"]),
-                         {"apps/agent/providers.json", "scripts/install.sh",
-                          "scripts/install-components.sh", "apps/agent/session-commands.json"})
+        self.assertEqual(set(receipt["extra_inputs"]), set(files))
         p.require_provenance(receipt, self.root, rows[1])
         originals = {path: (path.read_bytes(), path.stat()) for path in inputs}
         for path in inputs:
