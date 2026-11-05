@@ -151,6 +151,7 @@ async fn answer(_: &mut SendStream, _: &mut RecvStream) -> Result<(), String> {
 pub(crate) async fn upgrade(
     connection: &Connection,
     request: UpgradeRequest,
+    staging: &std::path::Path,
 ) -> Result<UpgradeOutcome, String> {
     let (mut send, mut recv) = connection.open_bi().await.map_err(|e| e.to_string())?;
     write(&mut send, &Request::Describe).await?;
@@ -209,10 +210,7 @@ pub(crate) async fn upgrade(
     .await?;
     let response = match read::<Response>(&mut recv).await? {
         Response::Upload => {
-            khor_runtime::Store::local().map_err(|e| e.to_string())?;
-            let root = khor_runtime::local_directory().map_err(|e| e.to_string())?;
-            let staging = root.join("update-transfers");
-            let download = Download::fetch(offer.clone(), &trust, &staging, |_| {}).await?;
+            let download = Download::fetch(offer.clone(), &trust, staging, |_| {}).await?;
             let mut file = tokio::fs::File::open(download.archive())
                 .await
                 .map_err(|e| e.to_string())?;

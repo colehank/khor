@@ -13683,8 +13683,7 @@ impl Node {
         machine: &str,
         request: crate::updates::UpgradeRequest,
     ) -> Result<crate::updates::UpgradeOutcome, String> {
-        let (_, home) = self.resolve_or_here(machine)?;
-        if home == self.device() {
+        if self.update_target(machine)?.is_none() {
             return crate::updates::upgrade_local(request, crate::updates::update_trust()?, |_| {})
                 .await;
         }
@@ -13711,16 +13710,11 @@ impl Node {
         machine: &str,
         request: crate::updates::UpgradeRequest,
     ) -> Result<crate::updates::UpgradeOutcome, String> {
-        let (channel, home) = self.resolve_or_here(machine)?;
-        if home == self.device() {
+        let Some(target) = self.update_target(machine)? else {
             return crate::updates::upgrade_local(request, crate::updates::update_trust()?, |_| {})
                 .await;
-        }
-        let target = self
-            .devices_loaded()?
-            .doc
-            .by_name(&channel)
-            .ok_or("machine left the paired device table")?;
+        };
+        let channel = target.shown();
         let connection = self
             .dial(
                 ep,
@@ -13733,12 +13727,34 @@ impl Node {
             .map_err(|e| unreached_words(&channel, e))?;
         tokio::time::timeout(
             ipc::DEADLINE_TRANSFER,
-            crate::update_wire::upgrade(&connection, request),
+            crate::update_wire::upgrade(
+                &connection,
+                request,
+                &self.root().join(".khor/update-transfers"),
+            ),
         )
         .await
         .map_err(|_| {
             "machine update timed out; check its installed version before retrying".to_owned()
         })?
+    }
+
+    fn update_target(&self, machine: &str) -> Result<Option<DeviceInfo>, String> {
+        if machine.is_empty() || machine == self.device_str() {
+            return Ok(None);
+        }
+        if let Some(target) = self.devices()?.into_iter().find(|row| row.id == machine) {
+            return Ok(Some(target));
+        }
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            return Ok(None);
+        }
+        self.devices_loaded()?
+            .doc
+            .by_name(&channel)
+            .map(Some)
+            .ok_or_else(|| "machine left the paired device table".into())
     }
 
     async fn serve_updates(
