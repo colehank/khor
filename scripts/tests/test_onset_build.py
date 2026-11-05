@@ -1,173 +1,171 @@
-"""Exercise onset build ordering without compiling or contacting a machine."""
+"""Exercise signed SSH deployment with isolated homes and a local release mirror."""
+import gzip
+import hashlib
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+import threading
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 TOOL = r'''#!/usr/bin/env python3
-import json, os, sys
+import json, os, shlex, shutil, subprocess, sys
 from pathlib import Path
-name = Path(sys.argv[0]).name
 args = sys.argv[1:]
 root = Path(os.environ['ONSET_FIXTURE_ROOT'])
-bundle = os.environ.get('KHOR_AGENT_BUNDLE')
-record = {'tool':name, 'args':args}
-if name == 'cargo':
-    record['bundle'] = bundle
-    record['bundle_exists'] = bool(bundle and Path(bundle).is_file() and Path(bundle).stat().st_size)
-with open(os.environ['ONSET_FIXTURE_LOG'],'a') as log: log.write(json.dumps(record)+'\n')
-if name == 'ssh':
-    if '-O' in args: sys.exit(0)
-    command = args[-1]
-    if command == 'uname -m': print(os.environ.get('ONSET_FIXTURE_ARCH','x86_64')); sys.exit(0)
-    if command == 'printf %s "$HOME"': print(root/'remote-home'); sys.exit(0)
-    if command == 'command -v nvidia-smi >/dev/null 2>&1': sys.exit(1)
-    if command.startswith('mkdir '): sys.exit(0)
-    # No remote script is ever executed; unexpected installation stops here.
-    sys.exit(79)
-if name == 'scp': sys.exit(0)
-if name == 'node':
-    if os.environ.get('ONSET_BUNDLE_FAILURE'): sys.exit(34)
-    if os.environ.get('ONSET_BUNDLE_EMPTY'): sys.exit(0)
-    output = Path(args[2]) if len(args)>2 else root/'apps/agent/dist/khor-agent'
-    output.parent.mkdir(parents=True,exist_ok=True)
-    output.write_bytes(b'fixture standalone agent')
+with (root/'commands.jsonl').open('a') as log:
+    log.write(json.dumps(dict(tool=Path(sys.argv[0]).name,args=args))+'\n')
+if Path(sys.argv[0]).name == 'scp':
+    target = shlex.split(args[-1].split(':',1)[1])[0]
+    assert Path(target).is_relative_to(root/'remote')
+    shutil.copyfile(args[-2],target)
     sys.exit(0)
-if name == 'npm': sys.exit(0)
-if name == 'cargo':
-    if os.environ.get('ONSET_CARGO_FAILURE'): sys.exit(17)
-    target = args[args.index('--target')+1].split('.')[0]
-    directory = Path(os.environ.get('CARGO_TARGET_DIR', str(root/'target')))
-    binary = directory/target/'release/khor'
-    binary.parent.mkdir(parents=True,exist_ok=True)
-    binary.write_bytes(b'\x7fELFfixture executable bytes, never run')
-    sys.exit(0)
-if name == 'file': print(args[-1]+': ELF 64-bit dynamically linked'); sys.exit(0)
-raise SystemExit('unexpected fixture tool')
+if '-O' in args: sys.exit(0)
+command = args[-1]
+if command == 'sh -s':
+    script = sys.stdin.read()
+    transfer = "export KHOR_ASSET_FILE=" in script
+    (root/('transfer.sh' if transfer else 'direct.sh')).write_text(script)
+    if not transfer and os.environ.get('ONSET_DIRECT_STATUS'):
+        sys.exit(int(os.environ['ONSET_DIRECT_STATUS']))
+    environment = dict(os.environ,HOME=str(root/'remote'))
+    sys.exit(subprocess.run(['/bin/sh','-s'],input=script,text=True,env=environment).returncode)
+if command.startswith('printf "%s-%s"'): print('Linux-x86_64'); sys.exit(0)
+if command.startswith('mktemp -d '):
+    landing=root/'remote'/"khor-onset.A1b2C3d4"
+    landing.mkdir();print(landing);sys.exit(0)
+if command.startswith('rm -rf -- '):
+    path=Path(shlex.split(command)[-1]);assert path.is_relative_to(root/'remote')
+    shutil.rmtree(path);sys.exit(0)
+raise SystemExit('unexpected remote command: '+command)
+'''
+MAIN = r'''khor_install_main() {
+    [ -z "${KHOR_RUNTIME_INSTALL_SOURCE:-}" ] || exit 89
+    [ -z "${KHOR_INSTALL_SOURCE:-}" ] || exit 89
+    printf '%s\n%s\n%s\n' "$KHOR_VERSION" "${KHOR_NO_SERVE:-}" "${KHOR_ASSET_SHA256:-}" > "$HOME/result"
+    if [ -n "${KHOR_ASSET_FILE:-}" ]; then
+        [ -f "$KHOR_ASSET_FILE" ] && [ -f "$KHOR_RELEASE_FILE" ] && [ -f "$KHOR_RELEASE_SIGNATURE_FILE" ] || exit 91
+        [ "$(khor_file_digest "$KHOR_ASSET_FILE")" = "$KHOR_ASSET_SHA256" ] || exit 92
+        cp "$KHOR_RELEASE_FILE" "$HOME/manifest"
+        cp "$KHOR_RELEASE_SIGNATURE_FILE" "$HOME/signature"
+    fi
+}
 '''
 
 
 class OnsetBuildTest(unittest.TestCase):
     def setUp(self):
-        self.scratch = tempfile.TemporaryDirectory(prefix='khor-onset-build-')
-        self.addCleanup(self.scratch.cleanup)
-        self.base = Path(self.scratch.name)
-        self.repo = self.base/'repo'
-        scripts = self.repo/'scripts'
-        scripts.mkdir(parents=True)
-        for name in ['onset.sh','onset-lib.sh','install.sh','install-components.sh']:
-            shutil.copy2(ROOT/'scripts'/name,scripts/name)
-        (self.repo/'apps/agent').mkdir(parents=True)
-        shutil.copy2(ROOT/'apps/agent/build.mjs',self.repo/'apps/agent/build.mjs')
-        self.tools = self.base/'tools'
-        self.tools.mkdir()
-        for name in ['ssh','scp','cargo','node','npm','file']:
-            file = self.tools/name
-            file.write_text(TOOL)
-            file.chmod(0o755)
-        self.log = self.base/'commands.jsonl'
-        self.env = dict(os.environ,PATH=f"{self.tools}:{os.environ['PATH']}",
-                        TMPDIR=str(self.base),ONSET_FIXTURE_ROOT=str(self.repo),ONSET_FIXTURE_LOG=str(self.log))
-        for name in ['KHOR_AGENT_BUNDLE','KHOR_SSH_OPTS','CARGO_TARGET_DIR']:
+        self.temp = tempfile.TemporaryDirectory(prefix="khor onset 'signed-")
+        self.addCleanup(self.temp.cleanup)
+        self.root=Path(self.temp.name)
+        scripts=self.root/'repo/scripts';scripts.mkdir(parents=True)
+        for name in ['onset.sh','onset-lib.sh','install-components.sh']:
+            shutil.copyfile(ROOT/'scripts'/name,scripts/name)
+        components=(scripts/'install-components.sh').read_text()
+        (scripts/'install.sh').write_text('#!/bin/sh\n# KHOR_INSTALL_DECLARATIONS_BEGIN\n'+components+MAIN+'# KHOR_INSTALL_DECLARATIONS_END\nkhor_install_main "$@"\n')
+        self.script=scripts/'onset.sh'
+        tools=self.root/'tools';tools.mkdir()
+        (self.root/'remote').mkdir()
+        for name in ['ssh','scp']:
+            (tools/name).write_text(TOOL);(tools/name).chmod(0o755)
+        self.env=dict(os.environ,PATH=str(tools)+':'+os.environ['PATH'],ONSET_FIXTURE_ROOT=str(self.root),TMPDIR=str(self.root))
+        for name in ['KHOR_SSH_OPTS','KHOR_MIRROR','KHOR_ASSET_FILE','KHOR_ASSET_SHA256','KHOR_REPO']:
+            self.env.pop(name,None)
+        for name in ['HTTP_PROXY','http_proxy','HTTPS_PROXY','https_proxy','ALL_PROXY','all_proxy']:
             self.env.pop(name,None)
 
     def run_onset(self,*options):
-        return subprocess.run(['/bin/sh',str(self.repo/'scripts/onset.sh'),'fixture-host',*options],
-                              env=self.env,text=True,capture_output=True,timeout=10)
+        return subprocess.run(['/bin/sh',str(self.script),'fixture-host',*options],env=self.env,text=True,capture_output=True,timeout=20)
 
-    def calls(self,tool=None):
-        calls = [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
-        return [call for call in calls if not tool or call['tool']==tool]
+    def calls(self):
+        path=self.root/'commands.jsonl'
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
-    def assert_no_remote_mutation(self):
-        self.assertEqual(self.calls('scp'),[])
-        for call in self.calls('ssh'):
-            if '-O' in call['args']:
-                continue
-            self.assertIn(call['args'][-1],['uname -m','printf %s "$HOME"',
-                          'command -v nvidia-smi >/dev/null 2>&1'],call)
+    def mirror(self):
+        assets=self.root/'mirror/releases/v1.2.3';assets.mkdir(parents=True)
+        archive=gzip.compress(b'\x7fELFtransport fixture, never executed')
+        (assets/'khor-linux-x86_64.gz').write_bytes(archive)
+        self.digest=hashlib.sha256(archive).hexdigest()
+        (assets/'khor-linux-x86_64.gz.sha256').write_text(self.digest+'  khor-linux-x86_64.gz\n')
+        (assets/'khor-release.json').write_text('{"fixture":"signed metadata transported verbatim"}')
+        (assets/'khor-release.json.sig').write_text('fixture-signature')
+        directory=str(self.root/'mirror')
+        class Handler(SimpleHTTPRequestHandler):
+            def __init__(self,*args,**kwargs):super().__init__(*args,directory=directory,**kwargs)
+            def log_message(self,*args):pass
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        self.addCleanup(server.server_close);self.addCleanup(server.shutdown)
+        self.env['KHOR_MIRROR']=f'http://127.0.0.1:{server.server_port}'
+        return assets
 
-    def test_source_build_embeds_the_prepared_target_agent(self):
-        result = self.run_onset('--dry-run')
+    def test_default_uses_target_installer_without_upload_or_local_build(self):
+        result=self.run_onset()
         self.assertEqual(result.returncode,0,result.stderr)
-        cargo = self.calls('cargo')
-        self.assertEqual(len(cargo),1)
-        self.assertTrue(cargo[0]['bundle_exists'],'compiler received no standalone Pi component')
-        self.assertIn('--locked',cargo[0]['args'])
-        node = self.calls('node')
-        self.assertEqual(len(node),1)
-        self.assertEqual(node[0]['args'][1],'x86_64-unknown-linux-gnu')
-        self.assert_no_remote_mutation()
+        self.assertEqual((self.root/'remote/result').read_text().splitlines()[0],'latest')
+        self.assertFalse(any(call['tool']=='scp' for call in self.calls()))
 
-    def test_failed_agent_preparation_never_builds_or_modifies_remote_files(self):
-        self.env['ONSET_BUNDLE_FAILURE']='1'
-        result = self.run_onset('--dry-run')
+    def test_fetch_failure_transfers_exact_archive_and_metadata_then_cleans_owned_landing(self):
+        self.mirror();self.env['ONSET_DIRECT_STATUS']='75'
+        result=self.run_onset('--release=v1.2.3','--no-serve')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual((self.root/'remote/result').read_text().splitlines(),['v1.2.3','1',self.digest])
+        self.assertEqual((self.root/'remote/signature').read_text(),'fixture-signature')
+        self.assertEqual(len([call for call in self.calls() if call['tool']=='scp']),3)
+        self.assertFalse((self.root/'remote/khor-onset.A1b2C3d4').exists())
+
+    def test_non_download_failure_never_retries_or_uploads(self):
+        for code in [1,78,255]:
+            with self.subTest(code=code):
+                self.env['ONSET_DIRECT_STATUS']=str(code)
+                result=self.run_onset('--release=v1.2.3')
+                self.assertEqual(result.returncode,code,result.stderr)
+                self.assertFalse(any(call['tool']=='scp' for call in self.calls()))
+
+    def test_bad_archive_stops_before_upload_or_any_replacement(self):
+        assets=self.mirror();self.env['ONSET_DIRECT_STATUS']='75'
+        (assets/'khor-linux-x86_64.gz').write_bytes(b'wrong archive')
+        result=self.run_onset('--release=v1.2.3')
         self.assertNotEqual(result.returncode,0)
-        self.assertEqual(self.calls('cargo'),[])
-        self.assert_no_remote_mutation()
+        self.assertFalse(any(call['tool']=='scp' for call in self.calls()))
+        self.assertFalse((self.root/'remote/result').exists())
 
-    def test_failed_rust_build_never_modifies_remote_files(self):
-        self.env['ONSET_CARGO_FAILURE']='1'
-        result = self.run_onset('--dry-run')
+    def test_session_runtime_hints_cannot_select_an_old_installer(self):
+        self.env.update(KHOR_RUNTIME_INSTALL_SOURCE='/retired/khor',KHOR_INSTALL_SOURCE='/retired/khor')
+        result=self.run_onset()
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_failed_metadata_transfer_cleans_only_its_owned_directory(self):
+        self.mirror();self.env['ONSET_DIRECT_STATUS']='75'
+        tool=self.root/'tools/scp'
+        source=tool.read_text().replace("shutil.copyfile(args[-2],target)","\n    if target.endswith('.sig'): sys.exit(17)\n    shutil.copyfile(args[-2],target)")
+        tool.write_text(source)
+        result=self.run_onset('--release=v1.2.3')
         self.assertEqual(result.returncode,17,result.stderr)
-        self.assert_no_remote_mutation()
+        self.assertFalse((self.root/'remote/khor-onset.A1b2C3d4').exists())
+        self.assertFalse((self.root/'transfer.sh').exists())
 
-    def test_existing_target_binary_dry_run_only_reads_target_information(self):
-        result = self.run_onset('--bin-on-target=$HOME/.local/bin/ready-khor','--dry-run')
-        self.assertEqual(result.returncode,0,result.stderr)
-        self.assertEqual(self.calls('cargo'),[])
-        self.assert_no_remote_mutation()
+    def test_raw_binary_install_modes_fail_before_contacting_target(self):
+        for option in ['--musl','--bin-on-target=$HOME/.local/bin/raw']:
+            with self.subTest(option=option):
+                result=self.run_onset(option)
+                self.assertEqual(result.returncode,2)
+                self.assertEqual(self.calls(),[])
 
-    def test_build_uses_the_configured_cargo_target_directory(self):
-        self.env['CARGO_TARGET_DIR']=str(self.base/'configured-target')
-        result = self.run_onset('--dry-run')
-        self.assertEqual(result.returncode,0,result.stderr)
-        self.assert_no_remote_mutation()
-
-    def test_empty_agent_output_cannot_reuse_a_previous_bundle(self):
-        self.env['ONSET_BUNDLE_EMPTY']='1'
+    def test_dry_run_does_not_contact_target_or_compile(self):
         result=self.run_onset('--dry-run')
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(self.calls(),[])
+
+    def test_out_of_sync_installer_is_rejected_before_remote_contact(self):
+        (self.script.parent/'install.sh').write_text('# invalid generated installer\n')
+        result=self.run_onset()
         self.assertNotEqual(result.returncode,0)
-        self.assertEqual(self.calls('cargo'),[])
-        self.assert_no_remote_mutation()
-
-    def test_arm64_build_uses_the_same_architecture_for_agent_and_host(self):
-        self.env['ONSET_FIXTURE_ARCH']='aarch64'
-        result=self.run_onset('--dry-run')
-        self.assertEqual(result.returncode,0,result.stderr)
-        self.assertEqual(self.calls('node')[0]['args'][1],'aarch64-unknown-linux-gnu')
-        cargo=self.calls('cargo')[0]['args']
-        self.assertEqual(cargo[cargo.index('--target')+1],'aarch64-unknown-linux-gnu.2.31')
-        self.assert_no_remote_mutation()
-
-    def test_relative_target_directory_is_relative_to_the_workspace(self):
-        self.env['CARGO_TARGET_DIR']='owned-target'
-        result=self.run_onset('--dry-run')
-        self.assertEqual(result.returncode,0,result.stderr)
-        self.assert_no_remote_mutation()
-
-    def assert_invalid_serve_up_is_rejected(self,template,dry):
-        (self.repo/'scripts/install.sh').write_text(template)
-        result=self.run_onset(*(['--dry-run'] if dry else []))
-        self.assertNotEqual(result.returncode,0,'invalid serve-up must fail local preflight')
-        self.assert_no_remote_mutation()
-
-    def test_missing_serve_up_fails_dry_run_before_remote_mutation(self):
-        self.assert_invalid_serve_up_is_rejected('#!/bin/sh\n# no serve-up template\n',True)
-
-    def test_missing_serve_up_fails_live_before_remote_mutation(self):
-        self.assert_invalid_serve_up_is_rejected('#!/bin/sh\n# no serve-up template\n',False)
-
-    def test_malformed_serve_up_fails_dry_run_before_remote_mutation(self):
-        self.assert_invalid_serve_up_is_rejected('khor_publish_file "$UP" 755 <<\'SERVEUP\'\nif\nSERVEUP\n',True)
-
-    def test_malformed_serve_up_fails_live_before_remote_mutation(self):
-        self.assert_invalid_serve_up_is_rejected('khor_publish_file "$UP" 755 <<\'SERVEUP\'\nif\nSERVEUP\n',False)
+        self.assertFalse((self.root/'direct.sh').exists())
 
 
-if __name__ == '__main__':
-    unittest.main()
+if __name__=='__main__':unittest.main()

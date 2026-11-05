@@ -1,166 +1,59 @@
 #!/bin/sh
-# Put khor on a machine, from a machine that already has it.
-#
-# The one hard rule this encodes: **the target needs nothing.** No Rust,
-# no package manager, no root, no network of its own. A machine that can
-# be reached over ssh can join the mesh — the binary is built here,
-# against a named glibc floor (2.31 = Ubuntu 20.04), so nothing has to
-# be installed over there to run it.
-#
-#   scripts/onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve]
-#                    [--release[=vX.Y.Z]] [--bin-on-target=PATH] [--dry-run]
-#
-# **Three places the binary can come from, one install after all three.**
-#
-# - Built here with zigbuild (the default, below).
-# - `--release[=tag]`: fetched from the GitHub release (latest, or the
-#   tag named) — the asset the `release` workflow built, checked against
-#   the `.sha256` it published. This machine compiles nothing for Linux
-#   then; cutting a release is what puts a build on the fleet, and the
-#   Mac's disk stops paying for a target dir it does not run. `KHOR_MIRROR`
-#   is honoured the way install.sh honours it. No `--musl` this way: the
-#   release matrix has no static leg.
-# - `--bin-on-target=PATH`: the binary already sits on the target, under
-#   its `~/.local/bin` — put there by `scripts/build-on.sh`, which builds
-#   natively on a Linux box whose glibc *is* the floor. Nothing is sent;
-#   the file is renamed into the staged name and walks the same gate.
-#
-# For installation, `--dry-run` stops once the binary is ready.
-# For uninstallation, it prints the plan without contacting the target.
-#
-# **glibc by default, static only when asked.** A statically linked
-# binary is the tidier idea — it runs on any kernel, no version floor —
-# but it has no dynamic loader, so it can never `dlopen` a driver
-# library. Measured on one machine at one moment: the glibc build read
-# `GPU 0% / 2 卡 显存 43.0G / 48.0G`, the musl build reported no GPU at
-# all (`vitals/gpu/nvidia.rs`). "Cannot ask" and "there is none" are the
-# same empty field, so the choice is made here, where the target's
-# hardware is still visible. `--musl` exists for boxes older than glibc
-# 2.31, and refuses to go to a machine with an NVIDIA driver.
-#
-# `KHOR_SSH_OPTS` is passed to ssh and scp verbatim — some networks need
-# a ProxyCommand to reach the box at all, and that belongs to the person
-# running this, not to khor:
-#
-#   KHOR_SSH_OPTS="-o ProxyCommand='nc -X 5 -x 127.0.0.1:7897 %h %p'" \
-#     scripts/onset.sh turing
-#
-# Idempotent: running it twice is running it once.
-#
-# **The remote half is a file, not a quoted string.** It grew one nested
-# level too many the first time (a here-string inside ssh inside eval),
-# and quoting bugs in an installer are the kind that half-install.
+# Install a signed release over SSH. The target downloads first; on a fetch
+# failure, the controller transfers the original archive and signed metadata.
 set -eu
-
 HOST=""
 MODE=install
 PURGE=no
 SERVE=yes
-LIBC=gnu
-SOURCE=build
 RELEASE=latest
-ONTARGET=""
 DRY=no
-UNINSTALL=no
-PRINT_UP=no
 INSTALL_OPTIONS=no
+PRINT_UP=no
 for arg in "$@"; do
     case "$arg" in
-        --uninstall) MODE=uninstall; UNINSTALL=yes ;;
+        --uninstall) MODE=uninstall ;;
         --purge) PURGE=yes ;;
         --no-serve) SERVE=no; INSTALL_OPTIONS=yes ;;
-        --musl) LIBC=musl; INSTALL_OPTIONS=yes ;;
-        --release) SOURCE=release; INSTALL_OPTIONS=yes ;;
-        --release=*) SOURCE=release; RELEASE="${arg#--release=}"; INSTALL_OPTIONS=yes ;;
-        --bin-on-target=*) SOURCE=ontarget; ONTARGET="${arg#--bin-on-target=}"; INSTALL_OPTIONS=yes ;;
+        --release) INSTALL_OPTIONS=yes ;;
+        --release=*) RELEASE="${arg#--release=}"; INSTALL_OPTIONS=yes ;;
         --dry-run) DRY=yes ;;
-        --print-serve-up) MODE=print-serve-up; PRINT_UP=yes ;;
-        -*) echo "unknown option: $arg" >&2; exit 2 ;;
+        --print-serve-up) PRINT_UP=yes ;;
+        --musl|--bin-on-target=*) echo "onset: installation requires a signed release; build development binaries separately" >&2; exit 2 ;;
+        -*) echo "onset: unknown option: $arg" >&2; exit 2 ;;
         *)
             [ -z "$HOST" ] && [ -n "$arg" ] || { echo "onset: expected one ssh host" >&2; exit 2; }
-            case "$arg" in *[!a-zA-Z0-9_.@:%+\[\]-]*) echo "onset: invalid ssh host: $arg" >&2; exit 2 ;; esac
-            HOST="$arg"
-            ;;
+            case "$arg" in *[!a-zA-Z0-9_.@:%+\[\]-]*) echo "onset: invalid ssh host" >&2; exit 2 ;; esac
+            HOST="$arg" ;;
     esac
 done
-if [ "$UNINSTALL" = yes ] && { [ "$PRINT_UP" = yes ] || [ "$INSTALL_OPTIONS" = yes ]; }; then
-    echo "onset: --uninstall cannot be combined with installation or print options" >&2
-    exit 2
+if [ "$MODE" = uninstall ] && { [ "$PRINT_UP" = yes ] || [ "$INSTALL_OPTIONS" = yes ]; }; then
+    echo "onset: --uninstall cannot be combined with installation or print options" >&2; exit 2
 fi
-if [ "$PURGE" = yes ] && [ "$UNINSTALL" != yes ]; then
-    echo "onset: --purge requires --uninstall" >&2
-    exit 2
+if [ "$PURGE" = yes ] && [ "$MODE" != uninstall ]; then
+    echo "onset: --purge requires --uninstall" >&2; exit 2
 fi
-# **`khor-serve-up`, the login pull-up, is shipped too — and it is
-# install.sh's own text, cut out of install.sh**, not a copy of it.
-#
-# onset never used to touch it, and on a shared home it is one file for
-# every machine. turing's was install.sh's from 2026-08-21: it compared
-# the whole `~/.khor/owner` to the hostname, the owner file grew a
-# second line on 9-11, and from then on every login on turing — the
-# machine that *owns* `$HOME` — started a resident for
-# `.khor-hosts/turing`, a second identity for itself. Measured
-# 2026-09-22: that resident had been up since 9-17 beside the real one,
-# holding its web port. Every onset run since had upgraded the binary
-# and left the script that starts it five weeks behind.
-#
-# `--print-serve-up` prints what would be sent and stops: the one way
-# to test the text without a machine.
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-serve_up_text() {
+if [ "$PRINT_UP" = yes ]; then
     sed -n "/^khor_publish_file \"\$UP\" 755 <<'SERVEUP'\$/,/^SERVEUP\$/p" "$REPO/scripts/install.sh" | sed '1d;$d'
-}
-if [ "$MODE" = print-serve-up ]; then
-    serve_up_text
     exit 0
 fi
-[ -n "$HOST" ] || { echo "usage: onset.sh <ssh-host> [--musl] [--uninstall] [--purge] [--no-serve] [--release[=tag]] [--bin-on-target=PATH] [--dry-run]" >&2; exit 2; }
-if [ "$MODE" = uninstall ] && [ "$DRY" = yes ]; then
-    printf 'onset: dry run — would stop the resident and remove the binary on %s; no connection made\n' "$HOST"
+[ -n "$HOST" ] || { echo "usage: onset.sh <ssh-host> [--release[=tag]] [--no-serve] [--dry-run] [--uninstall [--purge]]" >&2; exit 2; }
+if [ "$DRY" = yes ]; then
+    printf 'onset: dry run — %s on %s (release %s); no connection made\n' "$MODE" "$HOST" "$RELEASE"
     [ "$PURGE" != yes ] || printf 'onset: would purge only the verified machine store; its path will be resolved on the target\n'
     exit 0
 fi
-if [ "$SOURCE" = release ] && [ "$LIBC" = musl ]; then
-    echo "onset: the release has no static build (release.yml says why); build --musl here instead" >&2
-    exit 2
-fi
-
 STAGE=$(mktemp -d "${TMPDIR:-/tmp}/khor-onset.XXXXXXXX")
 trap 'ssh -O exit -o ControlPath="$STAGE/mux" "$HOST" 2>/dev/null || :; rm -rf "$STAGE"' EXIT
-
-# **One TCP connection for the whole run.** A run asks the target half a
-# dozen things (what it is, where its home is, install, start), and
-# opening a session for each is how a shared box's sshd starts refusing:
-# measured on a machine with 41 logged-in users, where the fourth run in
-# a row came back `Connection closed by UNKNOWN port 65535` while a
-# quieter neighbour answered fine. Multiplexing makes the count one, and
-# the master retires on its own a minute later.
-MUX="-o ControlMaster=auto -o ControlPath=$STAGE/mux -o ControlPersist=60"
-# One quoting rule for both tools. `eval` because a ProxyCommand carries
-# its own quotes.
-ssh_() { eval "ssh $MUX ${KHOR_SSH_OPTS:-} -o BatchMode=yes '$HOST' \"\$@\""; }
-scp_() { eval "scp $MUX ${KHOR_SSH_OPTS:-} -o BatchMode=yes -q \"\$1\" '$HOST':\"\$2\""; }
+ssh_() { eval "ssh ${KHOR_SSH_OPTS:-} -o ControlMaster=auto -o \"ControlPath=\$STAGE/mux\" -o ControlPersist=60 -o BatchMode=yes '$HOST' \"\$@\""; }
+scp_() { eval "scp ${KHOR_SSH_OPTS:-} -o ControlMaster=auto -o \"ControlPath=\$STAGE/mux\" -o ControlPersist=60 -o BatchMode=yes -q \"\$1\" '$HOST':\"\$2\""; }
 say() { printf '%s\n' "$*"; }
-
-# **Never a login shell.** A login shell sources the target's
-# `~/.profile`, and `.` is a POSIX *special builtin*: when it fails, a
-# non-interactive shell exits on the spot. One box of this fleet carries
-# a stale `. "/tmp/.../bin/env"` there — measured, and it killed an
-# install right after the file copy, leaving a binary in /tmp and
-# nothing else. Everything below uses absolute paths, so no PATH is
-# needed to install; the PATH line written into `.profile` is for the
-# *person* who logs in later.
-# **Every remote script gets the shared half in front of it**, so
-# "which store is mine" and "is this pid really khor" are answered the
-# same way whether we are installing, starting or removing (onset-lib.sh
-# carries why both questions are dangerous).
 LIB="$REPO/scripts/onset-lib.sh"
 remote() {
     cat "$LIB" "$REPO/scripts/install-components.sh" "$1" > "$STAGE/remote.sh" || return 1
     ssh_ "sh -s" < "$STAGE/remote.sh"
 }
-
-# ── uninstall ────────────────────────────────────────────
 if [ "$MODE" = uninstall ]; then
     printf 'purge=%s\n' "$PURGE" > "$STAGE/off.sh"
     cat >> "$STAGE/off.sh" <<'REMOTE'
@@ -168,7 +61,7 @@ set -eu
 # Resolve while the installed binary still exists. Reuse this exact store
 # for stopping and purging; another machine may own the shared front store.
 root=$(khor_uninstall_root)
-if [ -d "$HOME/.local/bin/.khor" ]; then
+if [ -d "$HOME/.local/bin/.khor" ] || grep -qF "# KHOR_CLI_LAUNCHER_V1" "$HOME/.local/bin/khor" 2>/dev/null; then
     echo "onset: this versioned installation may be shared; --uninstall cannot remove it for one host" >&2
     exit 1
 fi
@@ -189,308 +82,68 @@ REMOTE
     exit 0
 fi
 
-# Pin and validate the companion script before discovery, build or any remote
-# file changes. The exact validated copy is the one sent with the executable.
-serve_up_text > "$STAGE/khor-serve-up"
-[ -s "$STAGE/khor-serve-up" ] || { echo "onset: could not cut khor-serve-up out of scripts/install.sh" >&2; exit 1; }
-sh -n "$STAGE/khor-serve-up" || { echo "onset: khor-serve-up is not valid shell" >&2; exit 1; }
 
-# ── what the target is ───────────────────────────────────
-ARCH=$(ssh_ 'uname -m' | tr -d '\r')
-# An empty answer is a connection that dropped, not a CPU nobody
-# supports — and "no build for  yet" reads exactly like the latter.
-[ -n "$ARCH" ] || { echo "onset: $HOST did not answer what it is (ssh)" >&2; exit 1; }
-# The glibc floor is named, not inherited: zig builds against exactly
-# 2.31 (Ubuntu 20.04), so the result runs on that and everything newer,
-# and a machine older than it fails loudly at exec instead of subtly.
-case "$ARCH-$LIBC" in
-    x86_64-gnu) TARGET=x86_64-unknown-linux-gnu; ZIGTARGET=x86_64-unknown-linux-gnu.2.31 ;;
-    x86_64-musl) TARGET=x86_64-unknown-linux-musl; ZIGTARGET=$TARGET ;;
-    aarch64-gnu|arm64-gnu) TARGET=aarch64-unknown-linux-gnu; ZIGTARGET=aarch64-unknown-linux-gnu.2.31 ;;
-    aarch64-musl|arm64-musl) TARGET=aarch64-unknown-linux-musl; ZIGTARGET=$TARGET ;;
-    *) echo "onset: no build for $ARCH yet" >&2; exit 1 ;;
+. "$LIB"
+khor_install_components "$REPO/scripts/install.sh" "$REPO/scripts/install-components.sh" > "$STAGE/components.sh"
+. "$STAGE/components.sh"
+GH_REPO="${KHOR_REPO:-colehank/khor}"
+MIRROR="${KHOR_MIRROR:-}"
+quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+setting() { printf 'export %s=' "$1"; quote "$2"; printf '\n'; }
+installer() {
+    setting KHOR_VERSION "$RELEASE"
+    setting KHOR_REPO "$GH_REPO"
+    setting KHOR_MIRROR "$MIRROR"
+    setting KHOR_NO_SERVE "$( [ "$SERVE" = yes ] || printf 1 )"
+    # Do not inherit a previous session's transfer or runtime selection.
+    printf '%s\n' 'unset KHOR_HOME KHOR_SKIP_FETCH KHOR_ASSET_FILE KHOR_ASSET_SHA256 KHOR_RELEASE_FILE KHOR_RELEASE_SIGNATURE_FILE KHOR_INSTALL_SOURCE KHOR_RUNTIME_INSTALL_SOURCE'
+    cat "$REPO/scripts/install.sh"
+}
+installer > "$STAGE/install.sh"
+status=0
+ssh_ "sh -s" < "$STAGE/install.sh" || status=$?
+[ "$status" != 0 ] || exit 0
+[ "$status" = 75 ] || { echo "onset: target installation failed ($status); no replacement attempted" >&2; exit "$status"; }
+
+platform=$(ssh_ 'printf "%s-%s" "$(uname -s)" "$(uname -m)"')
+case "$platform" in
+    Linux-x86_64) ASSET=khor-linux-x86_64 ;;
+    Linux-aarch64|Linux-arm64) ASSET=khor-linux-aarch64 ;;
+    Darwin-arm64) ASSET=khor-macos-arm64 ;;
+    Darwin-x86_64) ASSET=khor-macos-x86_64 ;;
+    *) echo "onset: unsupported target platform: $platform" >&2; exit 1 ;;
 esac
-say "onset: $HOST is $ARCH → $ZIGTARGET"
-
-if [ "$LIBC" = musl ] && ssh_ 'command -v nvidia-smi >/dev/null 2>&1'; then
-    echo "onset: $HOST has an NVIDIA driver, and a static build cannot load NVML —" >&2
-    echo "       it would report no GPU on a machine that has one. Drop --musl." >&2
-    exit 1
-fi
-
-# scp does not expand the remote shell's variables, so the home is
-# asked for rather than spelled. Asked once, up here: every source
-# below lands the binary under it.
-REMOTE_HOME=$(ssh_ 'printf %s "$HOME"' | tr -d '\r')
-[ -n "$REMOTE_HOME" ] || { echo "onset: $HOST did not say where its home is" >&2; exit 1; }
-STAGED="$REMOTE_HOME/.local/bin/.khor.onset$$"
-
-case "$SOURCE" in
-build)
-    # ── built here, never there ──────────────────────────────
-    # Compiling on the target is the thing this mode exists to avoid:
-    # these boxes are shared (one carries 40 logged-in users), their
-    # homes are on NFS, and a toolchain install is a gigabyte of
-    # somebody else's disk. (`build-on.sh` is the deliberate exception,
-    # for a box that already carries a toolchain and *is* the floor.)
-    # Each attempt owns its Pi component, so concurrent target builds cannot
-    # silently embed whichever shared dist/khor-agent was written last.
-    AGENT_BUNDLE="$STAGE/khor-agent"
-    say "onset: preparing Pi for $TARGET"
-    ( cd "$REPO" && node apps/agent/build.mjs "$TARGET" "$AGENT_BUNDLE" )
-    [ -f "$AGENT_BUNDLE" ] && [ -s "$AGENT_BUNDLE" ] || { echo "onset: no standalone Pi component" >&2; exit 1; }
-    case "${CARGO_TARGET_DIR:-}" in
-        '') BUILD_TARGET_DIR="$REPO/target" ;;
-        /*) BUILD_TARGET_DIR="$CARGO_TARGET_DIR" ;;
-        *) BUILD_TARGET_DIR="$REPO/$CARGO_TARGET_DIR" ;;
-    esac
-    BIN="$BUILD_TARGET_DIR/$TARGET/release/khor"
-    say "onset: building $ZIGTARGET (this machine)"
-    ( cd "$REPO" && KHOR_AGENT_BUNDLE="$AGENT_BUNDLE" cargo zigbuild -q --locked -p khor-cli --bin khor --target "$ZIGTARGET" --release )
-    [ -f "$BIN" ] || { echo "onset: no binary at $BIN" >&2; exit 1; }
-    ;;
-release)
-    # ── fetched from the release the workflow built ─────────
-    case "$TARGET" in
-        x86_64-unknown-linux-gnu) ASSET=khor-linux-x86_64 ;;
-        aarch64-unknown-linux-gnu) ASSET=khor-linux-aarch64 ;;
-        *) echo "onset: the release ships no $TARGET" >&2; exit 1 ;;
-    esac
-    GH_REPO="${KHOR_REPO:-colehank/khor}"
-    (. "$LIB"; khor_install_components "$REPO/scripts/install.sh" "$REPO/scripts/install-components.sh") >/dev/null || {
-        echo "onset: local installer components are out of sync" >&2; exit 1;
-    }
-    . "$REPO/scripts/install-components.sh"
-    say "onset: fetching $ASSET ($RELEASE)"
-    (
-        unset KHOR_ASSET_FILE KHOR_ASSET_SHA256
-        khor_fetch_release "$GH_REPO" "$RELEASE" "${KHOR_MIRROR:-}" "$ASSET" "$STAGE"
-    )
-    BIN="$STAGE/khor"
-    case "$(head -c 4 "$BIN" | od -An -tx1 | tr -d ' \n')" in
-        7f454c46) : ;;
-        *) echo "onset: the selected Linux asset is not an ELF program" >&2; exit 1 ;;
-    esac
-    say "onset: $ASSET verified against its selected source SHA256"
-    ;;
-ontarget)
-    # ── already on the target ────────────────────────────────
-    # Under its `~/.local/bin`, so the rename below is a `rename(2)` on
-    # one filesystem and not a copy across two (the same rule the scp
-    # landing follows, for the same NFS reason).
-    case "$ONTARGET" in
-        "$REMOTE_HOME"/.local/bin/*|'$HOME'/.local/bin/*) : ;;
-        *) echo "onset: --bin-on-target must name a file under $REMOTE_HOME/.local/bin (got $ONTARGET)" >&2; exit 1 ;;
-    esac
-    ONTARGET=$(printf '%s' "$ONTARGET" | sed "s|^\$HOME|$REMOTE_HOME|")
-    BIN=""
-    ;;
+selected=$(khor_select_release "$GH_REPO" "$RELEASE" "$MIRROR" "$ASSET")
+newline='
+'
+RELEASE="${selected%%"$newline"*}"
+url="${selected#*"$newline"}"
+# Decompression here only validates the container; a target binary never runs here.
+khor_fetch_verify_place "$url" "$STAGE" "$ASSET" "$RELEASE" "${MIRROR:+mirror}" "$STAGE/archive.gz"
+metadata="https://github.com/$GH_REPO/releases/download/$RELEASE"
+[ -z "$MIRROR" ] || metadata="${MIRROR%/}/releases/$RELEASE"
+khor_download "$metadata/khor-release.json" "$STAGE/khor-release.json" 262144
+khor_download "$metadata/khor-release.json.sig" "$STAGE/khor-release.json.sig" 4096
+digest=$(khor_file_digest "$STAGE/archive.gz")
+landing=$(ssh_ 'mktemp -d "${TMPDIR:-/tmp}/khor-onset.XXXXXXXX"')
+case "$landing" in
+    *'
+'*) echo "onset: invalid target transfer directory" >&2; exit 1 ;;
+    /*/khor-onset.????????) ;;
+    *) echo "onset: invalid target transfer directory" >&2; exit 1 ;;
 esac
-
-if [ -n "$BIN" ]; then
-    # The one thing worth checking about the artefact is that it is the
-    # *asked-for* one: a stale file from the other libc under a target
-    # dir that looks right is exactly the kind of thing that installs
-    # fine and then behaves like the build nobody chose.
-    case "$LIBC-$(file "$BIN")" in
-        musl-*statically\ linked*) : ;;
-        gnu-*dynamically\ linked*) : ;;
-        *) echo "onset: $BIN is not a $LIBC build" >&2; exit 1 ;;
-    esac
-fi
-if [ "$DRY" = yes ]; then
-    if [ -n "$BIN" ]; then
-        say "onset: dry run — $BIN is ready ($(wc -c < "$BIN" | tr -d ' ') bytes, $(shasum -a 256 "$BIN" | cut -c1-12)…); nothing sent to $HOST"
-    else
-        say "onset: dry run — would install $ONTARGET on $HOST; nothing touched"
-    fi
-    exit 0
-fi
-ssh_ 'mkdir -p "$HOME/.local/bin"'
-if [ -n "$BIN" ]; then
-    say "onset: sending $(wc -c < "$BIN" | tr -d ' ') bytes"
-    # **Landed next to its destination, not in /tmp.** `mv` is only
-    # atomic within one filesystem; across two it degrades to
-    # copy-then-unlink, which can rewrite the bytes of a binary some
-    # other process is running — and on a cluster that other process is
-    # a different machine's resident serve, reading the same NFS file.
-    # Same directory, real `rename(2)`, old inode left alone for whoever
-    # is still running it.
-    scp_ "$BIN" "$STAGED"
-else
-    say "onset: taking $ONTARGET as the staged binary"
-    ssh_ "mv -f '$ONTARGET' '$STAGED'"
-fi
-# The pull-up script travels beside the binary and lands the same way.
-STAGED_UP="$REMOTE_HOME/.local/bin/.khor-serve-up.onset$$"
-scp_ "$STAGE/khor-serve-up" "$STAGED_UP"
-
-# ── install ──────────────────────────────────────────────
-# The store's root is decided **on the target**, because only it knows
-# whether its home is its own: a cluster mounts one NFS export on every
-# machine, so `~/.khor` is literally the same directory on all of them
-# (measured on this fleet). khor refuses to open another machine's store
-# — this puts one of its own in front of that refusal.
-cat > "$STAGE/on.sh" <<REMOTE
-set -eu
-src="$STAGED"
-up="$STAGED_UP"
-REMOTE
-cat >> "$STAGE/on.sh" <<'REMOTE'
-mkdir -p "$HOME/.local/bin"
-chmod +x "$src"
-
-# ⚠️ **Asked of the staged file, before anything is replaced.**
-#
-# The gate itself is the keeper's (`keeper.rs`: a new generation must
-# answer `version` before it is allowed to serve — a 0-byte file wearing
-# the binary's name took two machines down on 2026-08-19). An install
-# has the same question and did not ask it: the binary was moved into
-# place, the resident was started, `kill -0` found a pid for a moment,
-# and the script said 「serve is up」.
-#
-# **And the order matters more than the check.** On a shared home
-# `~/.local/bin/khor` is *one file for every machine on the mount* — so
-# an install onto a box that cannot run this build used to overwrite the
-# binary three healthy machines were running, and only then discover it
-# does not work. Measured 2026-09-06 on fodor (Ubuntu 18.04, glibc
-# 2.27, against a glibc 2.31 build): four `GLIBC_2.2x not found` lines,
-# and by then the file was already swapped.
-#
-# `if !` because `set -e` would take the shell down before the message
-# could be printed, and a bare exit code is the thing being replaced.
-if ! ver=$("$src" version 2>"$src.err"); then
-    echo "onset: khor does not run on $(hostname) — it never got as far as saying its version." >&2
-    echo "onset: what the machine said:" >&2
-    sed 's/^/onset:   /' "$src.err" >&2
-    echo "onset: nothing was replaced and nothing was started." >&2
-    rm -f "$src" "$src.err" "$up"
-    exit 1
-fi
-rm -f "$src.err"
-echo "onset: khor $ver runs here"
-
-# Source and release deployments use the installer's immutable activation.
-case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) asset=khor-linux-x86_64 ;;
-    Linux-aarch64|Linux-arm64) asset=khor-linux-aarch64 ;;
-    Darwin-arm64) asset=khor-macos-arm64 ;;
-    Darwin-x86_64) asset=khor-macos-x86_64 ;;
-    *) echo "onset: unsupported installation platform" >&2; exit 1 ;;
-esac
-khor_activate_release "$src" "$HOME/.local/bin" "$asset" "v$ver"
-rm -f "$src"
-# And the script every login runs to pull the resident up — install.sh's
-# current text, so it asks the binary just installed which store is
-# this machine's instead of working it out the way it did in August.
-chmod +x "$up"
-mv -f "$up" "$HOME/.local/bin/khor-serve-up"
-
-# **The third copy of this rule, and the one that cost a store.**
-# Until 2026-09-11 this block compared `$HOME/.khor/owner` to the
-# hostname itself. The owner file grew a `machine <fingerprint>` line
-# that day, the comparison stopped matching, and a machine that owns its
-# home was told it did not: it made `.khor-hosts/turing`, ran `khor id`
-# there, and minted a **second identity for a machine that already had
-# one** — the exact failure the fingerprint was added to prevent, walked
-# into through the back door by a script.
-#
-# So it asks `khor_root`, which asks the binary that was just installed.
-# One rule, one implementation, and the two moments with no khor to ask
-# are handled there rather than here.
-root=$(khor_root)
-[ "$root" = "$HOME" ] || echo "onset: this home is somebody else's — $(hostname) uses $root"
-mkdir -p "$root/.khor"
-# **No pointer file.** It lived at `~/.local/bin/.khor-root`, which on a
-# cluster with one shared home is one file for every machine — last
-# writer wins, and everyone else reads a path that is not theirs. The
-# root is asked for instead (`khor_root`).
-rm -f "$HOME/.local/bin/.khor-root"
-
-# The PATH line. Written once: appending on every run is how a .profile
-# ends up with twelve copies.
-if ! grep -qs 'HOME/.local/bin' "$HOME/.profile" 2>/dev/null; then
-    printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.profile"
-    echo "onset: PATH line added to ~/.profile"
-fi
-# **No KHOR_HOME line.** There used to be one here, written by whichever
-# machine found the home already claimed — and on a shared home
-# `~/.profile` is one file for the whole fleet, so the owner read it too
-# and got sent to a store that was not its own. See
-# `khor_drop_profile_line`, which takes an old one back out.
-khor_drop_profile_line "$HOME/.profile"
-
-# **No KHOR_HOME on the command line either** (round NET-11): khor works
-# out its own room (`Node::store_under`), and the room `khor_root` printed
-# above is that same answer. An explicit one is a second way to name the
-# store, which is how turing came to run two serve trees on one room:
-# this script's, with KHOR_HOME set, and the login pull-up's, without.
-env -u KHOR_HOME "$HOME/.local/bin/khor" id
-REMOTE
-remote "$STAGE/on.sh"
-
-# ── the resident ─────────────────────────────────────────
-if [ "$SERVE" = yes ]; then
-    cat > "$STAGE/serve.sh" <<'REMOTE'
-set -eu
-root=$(khor_root)
-pidf="$root/.khor/serve.pid"
-# Stopped by **its own pid file**, never by name: `pkill -f khor` on a
-# shared machine is somebody else's outage. And never on the file's word
-# alone — `khor_stop_serve` checks the pid really is khor's resident
-# before killing, because a number in a file is a claim about the past.
-if ! khor_stop_serve "$pidf"; then
-    echo "onset: refusing to start on top of that — check $pidf by hand" >&2
-    exit 1
-fi
-# setsid: the resident must outlive this ssh session, and be nobody's
-# child so a logout cannot take it along.
-# **Where the log ends before this start**, so what is read back
-# afterwards is this run's own words and not last week's. A `tail -5`
-# of a shared log is how an old error gets reported as a new one, and
-# how a new one gets scrolled off by a healthy start.
-was=0
-[ -f "$root/.khor/serve.log" ] && was=$(wc -c < "$root/.khor/serve.log")
-# Without KHOR_HOME, as the login pull-up starts it: one way to name the
-# room, so a second start is seen as a second serve on the same store and
-# stands down (`serves::beside`).
-env -u KHOR_HOME setsid nohup "$HOME/.local/bin/khor" serve >> "$root/.khor/serve.log" 2>&1 &
-echo $! > "$pidf"
-# **Alive twice, seconds apart, not once at two seconds.** A serve that
-# dies at load is a pid for a moment — long enough for one `kill -0` to
-# find it, which is the whole reason this check was worth nothing.
-alive=no
-i=0
-while [ "$i" -lt 8 ]; do
-    sleep 1
-    i=$((i + 1))
-    if kill -0 "$(cat "$pidf")" 2>/dev/null; then
-        [ "$i" -ge 4 ] && alive=yes && break
-    else
-        alive=no
-        break
-    fi
+cleanup() { ssh_ "rm -rf -- $(quote "$landing")" || :; }
+trap 'cleanup; ssh -O exit -o ControlPath="$STAGE/mux" "$HOST" 2>/dev/null || :; rm -rf "$STAGE"' EXIT
+for file in archive.gz khor-release.json khor-release.json.sig; do
+    scp_ "$STAGE/$file" "$(quote "$landing/$file")"
 done
-said=$(tail -c "+$((was + 1))" "$root/.khor/serve.log" 2>/dev/null || true)
-if [ "$alive" = yes ]; then
-    echo "onset: serve is up (pid $(cat "$pidf"), store $root)"
-    if [ -n "$said" ]; then
-        printf '%s\n' "$said" | sed 's/^/onset:   /'
-    fi
-else
-    echo "onset: serve did not stay up on $(hostname). What it wrote this time:" >&2
-    if [ -n "$said" ]; then
-        printf '%s\n' "$said" | sed 's/^/onset:   /' >&2
-    else
-        echo "onset:   (nothing — it did not get far enough to write a line)" >&2
-    fi
-    exit 1
-fi
-REMOTE
-    say "onset: (re)starting the resident"
-    remote "$STAGE/serve.sh"
-fi
-
-say "onset: done. next — pair it:"
-say "  khor invite                     # on a machine already in the mesh"
-say "  ssh $HOST khor pair <ticket>"
+{
+    installer | sed '$d'
+    # install.sh ends with its main invocation; use its existing native signed path.
+    setting KHOR_ASSET_FILE "$landing/archive.gz"
+    setting KHOR_ASSET_SHA256 "$digest"
+    setting KHOR_RELEASE_FILE "$landing/khor-release.json"
+    setting KHOR_RELEASE_SIGNATURE_FILE "$landing/khor-release.json.sig"
+    printf '%s\n' 'khor_install_main "$@"'
+} > "$STAGE/transferred.sh"
+ssh_ "sh -s" < "$STAGE/transferred.sh"

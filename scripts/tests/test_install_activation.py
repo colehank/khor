@@ -172,23 +172,6 @@ class ServeReportTest(unittest.TestCase):
         self.assertNotIn('PIDFile=', result.stdout)
         self.assertNotIn(str(Path.home()), result.stdout)
 
-    def test_healthy_serve_with_no_new_log_exits_successfully(self):
-        source = (ROOT / "scripts/onset.sh").read_text()
-        script = source.split('cat > "$STAGE/serve.sh" <<\'REMOTE\'\n', 1)[1].split('\nREMOTE\n', 1)[0]
-        with tempfile.TemporaryDirectory(prefix="khor-serve-report-") as directory:
-            root = Path(directory)
-            (root / ".khor").mkdir()
-            # Only the status/report logic runs: no real resident or kill.
-            prelude = '''khor_root() { printf '%s\\n' "$1"; }
-'''.replace('"$1"', "'" + directory + "'") + '''
-khor_stop_serve() { :; }
-env() { :; }
-sleep() { :; }
-kill() { :; }
-'''
-            result = subprocess.run(["sh", "-s"], input=prelude + script, text=True, capture_output=True, timeout=5)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn("serve is up", result.stdout)
 
 
 class InstallReleaseTest(unittest.TestCase):

@@ -1,62 +1,21 @@
 #!/bin/sh
-# Build khor **on** a Linux box that already carries a toolchain, and
-# install what it built through `onset.sh --bin-on-target`.
-#
-#   scripts/build-on.sh [<ssh-host>] [--no-install] [--no-serve]
-#
-# `onset.sh`'s rule is「built here, never there」, and this is its one
-# deliberate exception, for a box that is a better「here」than this Mac:
-#
-# - **Its glibc is the floor.** onset pins the fleet's floor at 2.31 by
-#   asking zig for it; a machine whose own glibc *is* 2.31 produces that
-#   floor natively, with no cross toolchain at all. That is checked
-#   below, not assumed — a newer box would raise the floor for every
-#   machine sharing the binary, silently, and the check refuses it.
-# - **Its product lands where the fleet reads it.** On a cluster with
-#   one NFS home, `~/.local/bin/khor` is the same file on every machine;
-#   built on the mount's own side, the binary is already there and
-#   nothing crosses the wire but the source.
-# - **It has the cores and the disk** this Mac's 97%-full target volume
-#   does not.
-#
-# What it costs, said up front: the box is shared. The load is read and
-# a busy machine is refused unless `KHOR_BUILD_FORCE=1` — somebody's
-# job waiting on the cores is a person waiting, not a number.
-#
-# **What ships is HEAD, never the working tree.** This tree usually has
-# two or three lanes' half-finished edits in it at once, and the first
-# run of this script shipped exactly that to three machines — a deleted
-# component, a card mid-edit — because rsync sends what is on disk. So
-# the source is `git archive HEAD` into a scratch dir, and the run says
-# which commit it is shipping and how many files it left behind.
-#
-# **The face is built in that export, first, every time.**
-# `crates/web/build.rs` compiles `apps/gui/dist` into the binary, and a
-# cargo run that finds a stale dist ships a stale face (measured
-# 2026-09-06: the deployed binary's web face lacked the strings the
-# tree had, because the GUI was built *after* the CLI). The export has
-# no node_modules of its own; the repo's is borrowed by symlink.
-#
-# Source and target dirs live on the box's **local** disk, never in the
-# NFS home: rsync into an NFS tree is minutes, cargo's target dir on
-# NFS is hours. `~/.cargo` (the toolchain and the registry cache) is
-# whatever the box has — on this fleet that is the NFS home, shared by
-# every node, which is fine for a cache and a compiler.
-#
-# `KHOR_SSH_OPTS` is passed to ssh and rsync verbatim, as onset does.
+# Build a development binary on a provisioned Linux builder without installing it.
+# Usage: scripts/build-on.sh [<ssh-host>] --no-install
+# Production deployment uses onset.sh and signed release artifacts.
 set -eu
 
 HOST=turing
 INSTALL=yes
-SERVE_FLAG=""
 for arg in "$@"; do
     case "$arg" in
         --no-install) INSTALL=no ;;
-        --no-serve) SERVE_FLAG=--no-serve ;;
+        --no-serve) : ;;
         -*) echo "unknown option: $arg" >&2; exit 2 ;;
         *) HOST="$arg" ;;
     esac
 done
+
+[ "$INSTALL" = no ] || { echo "build-on: development binaries are not deployable releases; use --no-install, or onset.sh for a signed release" >&2; exit 2; }
 
 REPO=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 say() { printf '%s\n' "$*"; }
@@ -165,16 +124,4 @@ HASH=$(ssh_ "sha256sum '$PRODUCT' 2>/dev/null | cut -c1-24" | tr -d '\r')
 [ -n "$HASH" ] || { echo "build-on: no product at $HOST:$PRODUCT" >&2; exit 1; }
 say "build-on: built $PRODUCT (${HASH}…)"
 
-if [ "$INSTALL" = no ]; then
-    say "build-on: --no-install; the product is at $HOST:$PRODUCT"
-    exit 0
-fi
-
-# ── into the fleet's file, through the same gate as every install ──
-# Copied under `~/.local/bin` first (the NFS side, where the fleet's
-# binary lives), then handed to onset, whose remote half asks it for
-# its version before anything is replaced and restarts the resident.
-STAGE_NAME=".khor.built.$$"
-ssh_ "mkdir -p \"\$HOME/.local/bin\" && cp '$PRODUCT' \"\$HOME/.local/bin/$STAGE_NAME\""
-say "build-on: staged as ~/.local/bin/$STAGE_NAME on $HOST; installing through onset.sh"
-exec "$REPO/scripts/onset.sh" "$HOST" "--bin-on-target=\$HOME/.local/bin/$STAGE_NAME" $SERVE_FLAG
+say "build-on: --no-install; the development product is at $HOST:$PRODUCT"
