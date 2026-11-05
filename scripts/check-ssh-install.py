@@ -53,7 +53,9 @@ def sign(signer, key, path, environment):
 
 def package(program, directory, signer, key, environment):
     info = json.loads(subprocess.check_output([str(program), "_release_info"], env=environment, text=True, timeout=30))
-    if info["component"] != "cli" or info["build"]["release"]["tag"] != environment["KHOR_RELEASE_TAG"]:
+    if (info["component"] != "cli" or info["build"]["source"] != environment["KHOR_BUILD_SOURCE"]
+            or info["build"]["release"]["tag"] != environment["KHOR_RELEASE_TAG"]
+            or info["build"]["release"]["build"] != int(environment["KHOR_RELEASE_BUILD"])):
         raise RuntimeError("SSH fixture binary has a different release identity")
     platform = info["platform"]
     names = {("macos", "aarch64"): "khor-macos-arm64", ("macos", "x86_64"): "khor-macos-x86_64",
