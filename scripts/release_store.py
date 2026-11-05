@@ -81,7 +81,7 @@ def signed_build(root, record):
     return build
 
 
-def asset_map(record):
+def asset_map(record, updates=None):
     assets = {}
     for platform, receipt in record["artifacts"].items():
         for filename, info in receipt["files"].items():
@@ -92,6 +92,19 @@ def asset_map(record):
                 raise ValueError("Release asset name collision")
             assets[name] = {"path": f"{platform}/{filename}", **info}
     assets["install.sh"] = {"path": "candidate-manifest/install.sh", **record["installer"]}
+    if updates is not None:
+        if updates.get("schema") != 1 or updates.get("built_from") != record["tag"]:
+            raise ValueError("Update publication belongs to a different candidate")
+        from release_updates import identity
+        if updates.get("identity") != identity(record, updates["identity"]["tag"]):
+            raise ValueError("Update publication has a different source or build")
+        for name, info in updates["files"].items():
+            if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name)
+                    or name in assets or name in {"manifest.json", "release.json", "receipt.json"}
+                    or not re.fullmatch(r"[0-9a-f]{64}", info["sha256"])
+                    or not 0 < info["bytes"] <= 256 * 1024):
+                raise ValueError("Invalid update publication asset")
+            assets[name] = {"path": "update-publication/" + name, **info}
     return assets
 
 
@@ -147,12 +160,15 @@ def fetch_release(tag, root, *, full=True):
         raise ValueError("Candidate release identity differs")
     if descriptor["manifest_sha256"] != digest(root / "candidate-manifest/manifest.json"):
         raise ValueError("Candidate manifest changed")
-    assets = asset_map(record)
+    updates = descriptor.get("updates")
+    if updates is not None and updates["identity"]["tag"] != tag:
+        raise ValueError("Stored update publication belongs to a different tag")
+    assets = asset_map(record, updates)
     for name, path in [("manifest.json", root / "candidate-manifest/manifest.json"), ("release.json", root / "release.json")]:
         assets[name] = {"sha256": digest(path), "bytes": path.stat().st_size}
     verify_remote_assets(release, assets)
-    for name, info in asset_map(record).items():
-        if full or info["path"].endswith(("/signed.txt", "/build.json", "/notarization.json")):
+    for name, info in asset_map(record, updates).items():
+        if full or info["path"].startswith("update-publication/") or info["path"].endswith(("/signed.txt", "/build.json", "/notarization.json")):
             target = root / info["path"]
             download_asset(tag, name, target)
             if digest(target) != info["sha256"] or target.stat().st_size != info["bytes"]:
@@ -160,6 +176,11 @@ def fetch_release(tag, root, *, full=True):
     for platform, receipt in record["artifacts"].items():
         (root / platform).mkdir(parents=True, exist_ok=True)
         (root / platform / "receipt.json").write_text(json.dumps(receipt))
+    if updates is not None:
+        publication = root / "update-publication"
+        (publication / "receipt.json").write_text(json.dumps(updates))
+        from release_updates import verify_publication
+        verify_publication(publication, record, tag)
     build = signed_build(root, record)
     validate_testflight(record, build, descriptor["testflight"])
     if full:
@@ -167,7 +188,7 @@ def fetch_release(tag, root, *, full=True):
     return record, descriptor
 
 
-def publish(tag, root, uploaded):
+def publish(tag, root, uploaded, publication=None):
     record = verify_candidate(root)
     release_tag = parse_tag(tag)
     if release_tag.version != record["version"] or (release_tag.prerelease and tag != record["tag"]):
@@ -178,9 +199,17 @@ def publish(tag, root, uploaded):
     validate_testflight(record, signed_build(root, record), uploaded)
     descriptor = {"schema": 1, "tag": tag, "candidate_tag": record["tag"],
                   "manifest_sha256": digest(root / "candidate-manifest/manifest.json"), "testflight": uploaded}
+    updates = None
+    if publication is not None:
+        from release_updates import verify_publication
+        updates = verify_publication(publication, record, tag)
+        descriptor["updates"] = updates
     descriptor_path = root / "release.json"
     descriptor_path.write_text(json.dumps(descriptor, sort_keys=True, indent=2) + "\n")
-    assets = asset_map(record)
+    assets = asset_map(record, updates)
+    if publication is not None:
+        for name in updates["files"]:
+            assets[name]["path"] = str((publication / name).resolve())
     for name, path in [("manifest.json", root / "candidate-manifest/manifest.json"), ("release.json", descriptor_path)]:
         assets[name] = {"path": str(path.relative_to(root)), "sha256": digest(path), "bytes": path.stat().st_size}
     release = release_info(tag)

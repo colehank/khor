@@ -91,6 +91,20 @@ class ArtifactReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "platform set"):
             candidate.assemble(self.root)
 
+    def test_report_must_belong_to_the_exact_compiled_source_tag_and_build(self):
+        product = self.root / "product"
+        product.mkdir()
+        (product / "archive.gz").write_bytes(b"immutable archive")
+        release = dict(tag="v1.2.3-rc.1", source="a" * 40, build=42)
+        info = dict(schema=1, build=dict(version="1.2.3", source="a" * 40, release=release))
+        environment = dict(GITHUB_REF="refs/tags/v1.2.3-rc.1", GITHUB_SHA="a" * 40, GITHUB_RUN_ID="42")
+        with patch.dict(manifest.os.environ, environment):
+            self.assertEqual(manifest.create(product, "product", self.frontend, program_info=info)["program"], info)
+            for changed in [dict(info, build={}), dict(info, schema=2),
+                            dict(info, build=dict(info["build"], release=dict(release, build=43)))]:
+                with self.assertRaisesRegex(ValueError, "release identity"):
+                    manifest.create(product, "product", self.frontend, program_info=changed)
+
     def test_ios_build_numbers_are_distinct_bounded_and_above_existing_builds(self):
         with patch.dict(apple.os.environ, {"GITHUB_RUN_NUMBER": "20", "GITHUB_RUN_ATTEMPT": "1"}):
             self.assertEqual(apple.build_number(), "1020.1")

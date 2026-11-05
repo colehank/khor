@@ -57,7 +57,7 @@ TestFlight使用App Store Connect发行导出，不能使用Internal Only。上�
 
 iOS build number为`1000+release workflow run_number.run_attempt`，高于历史62；超过Apple组件边界会拒绝。App Store提审核对已测试Apple build ID，Fastlane跳过二进制、截图和元数据上传，`automatic_release=false`。同一build已经在审核或待发布则不重复提交；发现另一个build正在审核则拒绝替换。协议、截图、隐私、加密申报等必要资料未齐时，错误如实保留。
 
-重试入口是`Distribute tagged release`，在main手工运行：
+重试入口是`Distribute tagged release`，选择原发布 tag 作为工作流 ref 后手工运行。签名环境仅接受 tag；不能选择 main 再填另一个 tag：
 
 - rc分发失败：填写原`tag`与`run_id`；复用已经通过全部检查的候选。若Actions产物已过期且rc尚未成功永久发布，需要创建新rc，不能拼接其它run。
 - 正式分发或提审失败：填写原正式`tag`；多个同源候选时再填写`candidate_tag`。已发布的相同GitHub资产会验证后跳过，Apple提审继续使用原build。
@@ -77,8 +77,17 @@ Mac继续走Developer ID签名、公证和商店外分发。当前`macos-private
 | apple-testflight | `v*-rc.*` | 上表除MAC三项外的7项 |
 | apple-store | `v*`，脚本再严格要求正式版本 | APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8 |
 | github-release | `v*` | 使用工作流GITHUB_TOKEN，不存个人token |
+| updater-signing | 仅 `v*` tag，脚本严格核对当前 ref | TAURI_SIGNING_PRIVATE_KEY、TAURI_SIGNING_PRIVATE_KEY_PASSWORD |
 
 另外启用仓库immutable releases，以及禁止更新/删除`refs/tags/v*`的规则。Tag创建仍由有推送权限的人执行，创建正式tag即确认发布和提审意图；不额外加一轮重复人工审批。签名私钥只通过Environment Secrets提供，临时keychain/profile/API文件在runner退出时清理。
+
+## 应用内与 CLI 更新清单
+
+六个桌面/CLI 构建的收据包含程序实际返回的 `_release_info`，绑定源码、候选 tag、原始构建 run、平台和协议契约。跨架构检查通过 Rosetta 或 QEMU 执行，不在 Python 中复制 Rust 的协议常量。iOS 继续由 TestFlight/App Store 更新。
+
+分发中的 `updates` job 在 TestFlight 阶段成功后运行于 GitHub 托管机器及 `updater-signing` 环境。它只签署已经验证的原始归档、`khor-release.json` 与相应签名，生成 Tauri SDK 使用的 `khor-tauri-update.json`；最终由原生 `_verify_release` 对内嵌信任根、六个原包、摘要和签名进行复验。私有租机和本地开发不接收正式私钥。
+
+独立的 `update-publication` 工件保存签名和清单收据，发布后随 `release.json` 永久保存在不可变 Release 中。稳定版复用候选原包与原包签名，只重新签署发布身份；`built_from` 和归档地址仍指向原候选。重试先恢复已有签名；未完成草稿必须恢复原签名工件，不能生成不同签名覆盖已上传资产。静态清单位于各 tag 的 Release 下载路径，不使用一个可覆写的 latest 文件。
 
 ## 验证
 

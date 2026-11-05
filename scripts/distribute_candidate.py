@@ -124,7 +124,46 @@ def publish_github():
         uploaded = json.loads(Path("testflight.json").read_text())
     else:
         uploaded = published_candidate(full=True)["testflight"]
-    publish(tag.name, ROOT, uploaded)
+    publish(tag.name, ROOT, uploaded, Path("signed-updates"))
+
+
+def update_source():
+    if parse_tag(required("RELEASE_TAG")).prerelease:
+        fetch()
+    else:
+        published_candidate(full=True)
+
+
+def restore_updates():
+    from mac_notarization import restore_artifact
+    tag = required("RELEASE_TAG")
+    if required("GITHUB_REF") != "refs/tags/" + tag:
+        raise ValueError("Retry distribution from its exact release tag, never from a branch")
+    output = Path("signed-updates")
+    release = release_info(tag)
+    if release:
+        if release["draft"]:
+            # A same-run artifact is the only permitted source for an interrupted draft.
+            restore_artifact("update-publication", output)
+            if not output.is_dir():
+                raise ValueError("Recover the original signing artifact before resuming this release draft")
+            return
+        if not release.get("immutable"):
+            raise ValueError("Update signatures require an immutable published release")
+        from release_store import download_asset
+        with tempfile.TemporaryDirectory() as temporary:
+            descriptor = Path(temporary) / "release.json"
+            download_asset(tag, "release.json", descriptor)
+            receipt = json.loads(descriptor.read_text())["updates"]
+            record = verify_candidate(ROOT)
+            from release_store import asset_map
+            asset_map(record, receipt)
+            output.mkdir()
+            for name in receipt["files"]:
+                download_asset(tag, name, output / name)
+            (output / "receipt.json").write_text(json.dumps(receipt))
+    else:
+        restore_artifact("update-publication", output)
 
 
 def appstore_review():
@@ -151,7 +190,8 @@ def appstore_review():
 
 if __name__ == "__main__":
     actions = {"check-build": check_build, "plan": plan, "fetch": fetch, "testflight": testflight,
-               "publish": publish_github, "appstore-review": appstore_review}
+               "publish": publish_github, "appstore-review": appstore_review,
+               "update-source": update_source, "restore-updates": restore_updates}
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=actions)
     args = parser.parse_args()

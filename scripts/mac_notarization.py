@@ -9,7 +9,7 @@ import time
 import uuid
 
 from apple_release import api_key, required, run
-from release_manifest import create, digest, files, source_sha, verify
+from release_manifest import create, digest, executable_info, files, source_sha, verify
 from release_store import gh, repository
 
 TARGETS = {"aarch64-apple-darwin": "khor-macos-arm64", "x86_64-apple-darwin": "khor-macos-x86_64"}
@@ -30,7 +30,8 @@ def package_build(target, signed, root, frontend, agent):
     run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)])
     archive.rename(root / f"{asset}-{required('GITHUB_RUN_ID')}-{digest(archive)}.zip")
     (root / "signed.txt").write_text(str(signed).lower() + "\n")
-    create(root, f"{asset}-app-build", frontend, app / "Contents/MacOS/khor-gui", agent)
+    program = app / "Contents/MacOS/khor-gui"
+    create(root, f"{asset}-app-build", frontend, program, agent, executable_info(program))
 
 
 def build_identity(root, asset):

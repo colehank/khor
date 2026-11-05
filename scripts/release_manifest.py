@@ -70,7 +70,17 @@ def check_linux_abi(executable):
         raise ValueError(f"{executable} does not meet the glibc 2.31 distribution floor: {sorted(versions)}")
 
 
-def create(root, kind, frontend=None, executable=None, agent=None):
+def executable_info(program, command=()):
+    output = subprocess.check_output([*command, str(program), "_release_info"], timeout=30)
+    if len(output) > 64 * 1024:
+        raise ValueError("Executable release report exceeds its limit")
+    info = json.loads(output)
+    if info.get("schema") != 1:
+        raise ValueError("Executable has no supported release report")
+    return info
+
+
+def create(root, kind, frontend=None, executable=None, agent=None, program_info=None):
     sha = source_sha()
     if kind == "frontend":
         html = (root / "dist/index.html").read_text()
@@ -95,6 +105,14 @@ def create(root, kind, frontend=None, executable=None, agent=None):
         "runner_image": os.environ.get("ImageVersion"),
         "agent_sha256": digest(agent) if agent else None,
     }
+    if program_info is not None:
+        build = program_info.get("build", {})
+        expected = compiler_identity(sha, receipt["version"], os.environ)
+        expected_release = {"tag": expected["KHOR_RELEASE_TAG"], "source": sha,
+                            "build": int(expected["KHOR_RELEASE_BUILD"])} if expected["KHOR_RELEASE_TAG"] else None
+        if program_info.get("schema") != 1 or build.get("source") != sha or build.get("version") != receipt["version"] or build.get("release") != expected_release:
+            raise ValueError("Executable release identity differs from the verified build")
+        receipt["program"] = program_info
     (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
 
@@ -107,6 +125,7 @@ def main():
     parser.add_argument("--frontend", type=Path)
     parser.add_argument("--executable", type=Path)
     parser.add_argument("--agent", type=Path)
+    parser.add_argument("--program-info", type=Path)
     parser.add_argument("--sha")
     parser.add_argument("--run-id")
     args = parser.parse_args()
@@ -127,7 +146,8 @@ def main():
     if args.action == "create":
         if not args.kind:
             parser.error("--kind is required")
-        result = create(args.root, args.kind, args.frontend, args.executable, args.agent)
+        info = json.loads(args.program_info.read_text()) if args.program_info else None
+        result = create(args.root, args.kind, args.frontend, args.executable, args.agent, info)
     else:
         result = verify(args.root, args.sha or source_sha(), kind=args.kind, run_id=args.run_id)
     print(json.dumps({key: result[key] for key in ["kind", "version", "source_sha", "ui_revision"]}))
