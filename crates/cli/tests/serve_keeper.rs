@@ -108,6 +108,30 @@ fn inode(path: &Path) -> u64 {
     fs::metadata(path).unwrap().ino()
 }
 
+fn copy_generation(path: &Path, tag: &str) {
+    fs::copy(env!("CARGO_BIN_EXE_khor"), path).unwrap();
+    #[cfg(target_os = "macos")]
+    {
+        // A different ad-hoc signature changes the digest without invalidating Mach-O execution.
+        let output = Command::new("codesign")
+            .args(["--force", "--sign", "-", "--identifier", tag])
+            .arg(path)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        use std::io::Write;
+        fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(tag.as_bytes())
+            .unwrap();
+    }
+}
+
 /// An assertion that panics must not leak a serve tree.
 struct Reaper(std::process::Child);
 impl std::ops::Deref for Reaper {
@@ -238,6 +262,15 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     let runtime_inode = running_inode(keeper.id()).unwrap();
     assert_ne!(runtime_inode, inode(&bin), "execute an owned local image");
 
+    let identical = home.join("identical");
+    fs::copy(env!("CARGO_BIN_EXE_khor"), &identical).unwrap();
+    fs::rename(&identical, &bin).unwrap();
+    // Allow both stable fingerprint observations; identical bytes are not an upgrade.
+    std::thread::sleep(Duration::from_secs(6));
+    assert_eq!(inner_pid(&home), Some(first));
+    assert!(alive(first));
+    assert_eq!(running_inode(keeper.id()), Some(runtime_inode));
+
     let read_log = || {
         let mut said = String::new();
         fs::File::open(&log)
@@ -273,7 +306,7 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
 
     // The real thing: a healthy binary lands, the serve hands over.
     let next = home.join("next");
-    fs::copy(env!("CARGO_BIN_EXE_khor"), &next).unwrap();
+    copy_generation(&next, "khor-keeper-generation-2");
     fs::rename(&next, &bin).unwrap();
     wait_for("the new generation to stand up", 30, || {
         inner_pid(&home).is_some_and(|pid| pid != first && alive(pid))
@@ -290,13 +323,11 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     // that is never restarted never gets there. A handover that leaves
     // the parent on the old image is half an upgrade.
     wait_for("the keeper to be on the new image", 10, || {
-        running_inode(keeper.id()) == Some(runtime_inode)
+        running_inode(second).is_some_and(|next_inode| {
+            next_inode != runtime_inode && running_inode(keeper.id()) == Some(next_inode)
+        })
     });
-    assert_eq!(
-        running_inode(second),
-        Some(runtime_inode),
-        "identical program bytes reuse their immutable runtime image"
-    );
+    let second_inode = running_inode(second).unwrap();
     let v = env!("CARGO_PKG_VERSION");
     let swap_line = after_stamp(&khor_catalog::msg::serve_swapping("\u{1}", v, v), '\u{1}');
     assert!(
@@ -317,20 +348,21 @@ fn a_new_binary_on_disk_takes_over_and_a_broken_one_is_refused() {
     // serve」, and a keeper that swapped itself once must still be
     // watching the install path afterwards.
     let again = home.join("again");
-    fs::copy(env!("CARGO_BIN_EXE_khor"), &again).unwrap();
+    copy_generation(&again, "khor-keeper-generation-3");
     fs::rename(&again, &bin).unwrap();
     wait_for("the third generation to stand up", 30, || {
         inner_pid(&home).is_some_and(|pid| pid != second && alive(pid))
     });
     let third = inner_pid(&home).unwrap();
     wait_for("the keeper to be on the newest image", 10, || {
-        running_inode(keeper.id()) == Some(runtime_inode)
+        running_inode(third).is_some_and(|next_inode| {
+            next_inode != second_inode && running_inode(keeper.id()) == Some(next_inode)
+        })
     });
     assert!(
         !alive(first) && !alive(second),
         "after two upgrades exactly one serve is left: the first two lives are gone"
     );
-    assert_eq!(running_inode(third), Some(runtime_inode));
 
     Command::new("kill")
         .args(["-TERM", &keeper.id().to_string()])
@@ -402,7 +434,7 @@ fn a_shielded_keeper_serves_from_a_local_copy_and_still_swaps() {
     // proof the keeper kept watching the install path rather than the
     // copy it runs from.
     let generation = home.join("generation-2");
-    fs::copy(env!("CARGO_BIN_EXE_khor"), &generation).unwrap();
+    copy_generation(&generation, "khor-keeper-shield-generation-2");
     let next = home.join("next");
     std::os::unix::fs::symlink(&generation, &next).unwrap();
     fs::rename(&next, &bin).unwrap();
