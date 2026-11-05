@@ -78,6 +78,33 @@ fn current() -> Result<Info, String> {
 
 /// Every native face and the re-executing integration harness enter here before Node::open.
 pub fn process_entry() {
+    if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_verify_release")) {
+        let result = (|| -> Result<String, String> {
+            let args = std::env::args_os().skip(2).collect::<Vec<_>>();
+            let [document, signature, archives] = args.as_slice() else {
+                return Err(
+                    "release verification expects manifest, signature, and archive directory"
+                        .into(),
+                );
+            };
+            let release = khor_update::TrustRoot::bundled()?.authenticate_files(
+                Path::new(document),
+                Path::new(signature),
+                Path::new(archives),
+            )?;
+            serde_json::to_string(&release.manifest().identity).map_err(|e| e.to_string())
+        })();
+        match result {
+            Ok(identity) => {
+                println!("{identity}");
+                std::process::exit(0);
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                std::process::exit(78);
+            }
+        }
+    }
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_release_info")) {
         match crate::updates::program_info()
             .and_then(|info| serde_json::to_string(&info).map_err(|error| error.to_string()))

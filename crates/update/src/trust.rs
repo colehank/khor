@@ -60,6 +60,24 @@ impl TrustRoot {
         self.authenticate(signed.document.as_bytes(), &signed.signature)
     }
 
+    pub fn authenticate_files(
+        &self,
+        document: &Path,
+        signature: &Path,
+        archives: &Path,
+    ) -> Result<VerifiedRelease, String> {
+        let document = read_bounded(document, MANIFEST_LIMIT)?;
+        let signature = read_bounded(signature, SIGNATURE_LIMIT)?;
+        let release = self.authenticate(
+            &document,
+            std::str::from_utf8(&signature).map_err(|e| e.to_string())?,
+        )?;
+        for asset in &release.manifest.artifacts {
+            self.verify_asset(&archives.join(&asset.file), asset)?;
+        }
+        Ok(release)
+    }
+
     pub fn verify_file(&self, path: &Path, signature: &str) -> Result<(), String> {
         let signature = signature_from_base64(signature)?;
         let mut verifier = self
@@ -118,6 +136,19 @@ impl TrustRoot {
             .verify(bytes, &signature_from_base64(&asset.signature)?, false)
             .map_err(|e| e.to_string())
     }
+}
+
+fn read_bounded(path: &Path, limit: usize) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    File::open(path)
+        .map_err(|e| e.to_string())?
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > limit {
+        return Err("release metadata exceeds its limit".into());
+    }
+    Ok(bytes)
 }
 
 fn signature_from_base64(encoded: &str) -> Result<Signature, String> {
@@ -243,6 +274,46 @@ mod tests {
     const KEY: &str = include_str!("../tests/fixtures/public-key.txt");
     const RELEASE: &[u8] = include_bytes!("../tests/fixtures/release.json");
     const SIGNATURE: &str = include_str!("../tests/fixtures/release.sig");
+
+    #[test]
+    fn file_verification_authenticates_every_original_asset_and_never_installs() {
+        let root = tempfile::tempdir().unwrap();
+        let document = root.path().join("release.json");
+        let signature = root.path().join("release.sig");
+        std::fs::write(&document, RELEASE).unwrap();
+        std::fs::write(&signature, SIGNATURE).unwrap();
+        let trust = TrustRoot::from_tauri_base64(KEY).unwrap();
+        let release = trust.authenticate(RELEASE, SIGNATURE).unwrap();
+        let archive = root.path().join(&release.manifest.artifacts[0].file);
+        assert!(
+            trust
+                .authenticate_files(&document, &signature, root.path())
+                .is_err()
+        );
+        std::fs::write(&archive, include_bytes!("../tests/fixtures/asset.gz")).unwrap();
+        assert_eq!(
+            trust
+                .authenticate_files(&document, &signature, root.path())
+                .unwrap()
+                .manifest
+                .identity,
+            release.manifest.identity
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 3);
+        std::fs::write(&archive, b"changed archive").unwrap();
+        assert!(
+            trust
+                .authenticate_files(&document, &signature, root.path())
+                .is_err()
+        );
+        std::fs::write(&document, vec![b'x'; MANIFEST_LIMIT + 1]).unwrap();
+        assert!(
+            trust
+                .authenticate_files(&document, &signature, root.path())
+                .is_err()
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 3);
+    }
 
     #[test]
     fn official_tauri_signatures_and_bundled_root_are_compatible_with_stream_verification() {
