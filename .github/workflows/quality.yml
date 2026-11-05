@@ -76,6 +76,36 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  mac-updates:
+    needs: frontend
+    if: ${{ inputs.suite != 'agent' && inputs.suite != 'runtime' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: quality-mac-updates
+          cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/restore-frontend
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - name: Verify native App update admission, rollback and component recovery
+        shell: bash
+        run: |
+          cargo test --locked -p khor-gui --lib update -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/app-updates.log"
+          grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/app-updates.log"
+          cargo test --locked -p khor-gui --lib app_companions -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/app-components.log"
+          grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/app-components.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mac-update-contracts
+          path: ${{ runner.temp }}/app-*.log
+          if-no-files-found: warn
+          retention-days: 7
+
   agent:
     if: ${{ inputs.suite != 'runtime' }}
     runs-on: ubuntu-24.04
