@@ -137,6 +137,8 @@ class ProvenanceTests(unittest.TestCase):
         self.put("dep/Cargo.toml", "[package]\nname='khor-node'\nversion='0.1.0'\n[lib]\nname='dep'\n")
         self.put("apps/agent/providers.json", '{"provider":"fixture"}\n')
         self.put("scripts/install.sh", "#!/bin/sh\n")
+        self.put("scripts/install-components.sh", "#!/bin/sh\n")
+        self.put("apps/agent/session-commands.json", "[]\n")
         self.assertFalse((self.root / "apps/gui/dist").exists())
         for request in (self.request.copy(),
                         {"package": "khor-node", "name": "dep", "kind": ["lib"], "test": False}):
@@ -720,19 +722,25 @@ class ProvenanceTests(unittest.TestCase):
         self.put("dep/Cargo.toml", "[package]\nname='khor-node'\nversion='0.1.0'\n[lib]\nname='dep'\n")
         providers = self.put("apps/agent/providers.json", '{"provider":"A"}\n')
         install = self.put("scripts/install.sh", "#!/bin/sh\nprintf A\n")
+        components = self.put("scripts/install-components.sh", "#!/bin/sh\nprintf A\n")
+        commands = self.put("apps/agent/session-commands.json", '["session"]\n')
+        inputs = (providers, install, components, commands)
         self.put("dep/src/lib.rs", 'pub const PROVIDERS: &str = include_str!("../../apps/agent/providers.json");\n'
-                 'pub const INSTALL: &str = include_str!("../../scripts/install.sh");\n')
+                 'pub const INSTALL: &str = include_str!("../../scripts/install.sh");\n'
+                 'pub const COMPONENTS: &str = include_str!("../../scripts/install-components.sh");\n'
+                 'pub const COMMANDS: &str = include_str!("../../apps/agent/session-commands.json");\n')
         prepared = self.prepare()
         rows = self.rows()
         library = Path(rows[0]["filenames"][0])
         dep = library.with_name(library.stem.removeprefix("lib") + ".d")
-        dep.write_text(f"{library}: {rows[0]['target']['src_path']} {providers} {install}\n{dep}:\n")
+        dep.write_text(f"{library}: {rows[0]['target']['src_path']} {providers} {install} {components} {commands}\n{dep}:\n")
         receipt = p.verify_build(prepared, rows)
         self.assertEqual(set(receipt["extra_inputs"]),
-                         {"apps/agent/providers.json", "scripts/install.sh"})
+                         {"apps/agent/providers.json", "scripts/install.sh",
+                          "scripts/install-components.sh", "apps/agent/session-commands.json"})
         p.require_provenance(receipt, self.root, rows[1])
-        originals = {path: (path.read_bytes(), path.stat()) for path in (providers, install)}
-        for path in (providers, install):
+        originals = {path: (path.read_bytes(), path.stat()) for path in inputs}
+        for path in inputs:
             with self.subTest(input=str(path.relative_to(self.root))):
                 for item, (data, stamp) in originals.items():
                     item.write_bytes(data)

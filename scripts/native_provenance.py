@@ -141,7 +141,8 @@ def build_state(root, metadata, tools, request):
         if package["name"] == "khor-gui":
             extras["apps/gui/src-tauri/capabilities"] = tree(root / "apps/gui/src-tauri/capabilities")
         if package["name"] == "khor-node":
-            for name in ("apps/agent/providers.json", "scripts/install.sh"):
+            for name in ("apps/agent/providers.json", "apps/agent/session-commands.json",
+                         "scripts/install.sh", "scripts/install-components.sh"):
                 extras[name] = tree(root / name)
         if package["name"] == "khor-node" and os.environ.get("KHOR_AGENT_BUNDLE"):
             extras[os.environ["KHOR_AGENT_BUNDLE"]] = tree(os.environ["KHOR_AGENT_BUNDLE"])
