@@ -46,9 +46,11 @@ try {
     assert(before.owner, 'the fixed heading must own the list scroll port');
     const touch = (type, x, y, cancelable = true, target = '[data-pane-body]', count = 1) => page.evaluate(({type, x, y, cancelable, target, count}) => {
       const el = document.querySelector(target);
-      const point = new Touch({identifier: 1, target: el, clientX: x, clientY: y});
-      const points = type === 'touchend' || type === 'touchcancel' ? [] : Array.from({length: count}, (_, i) => i === 0 ? point : new Touch({identifier: i + 1, target: el, clientX: x + 20, clientY: y}));
-      const event = new TouchEvent(type, {bubbles: true, cancelable, touches: points, targetTouches: points, changedTouches: [point]});
+      const point = {identifier: 1, target: el, clientX: x, clientY: y};
+      const points = type === 'touchend' || type === 'touchcancel' ? [] : Array.from({length: count}, (_, i) => i === 0 ? point : {...point, identifier: i + 1, clientX: x + 20});
+      // WebKit exposes Touch but disallows constructing it. This fixture tests the DOM event boundary.
+      const event = new Event(type, {bubbles: true, cancelable});
+      Object.defineProperties(event, {touches: {value: points}, targetTouches: {value: points}, changedTouches: {value: [point]}});
       el.dispatchEvent(event);
       return event.defaultPrevented;
     }, {type, x, y, cancelable, target, count});

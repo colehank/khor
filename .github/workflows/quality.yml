@@ -10,7 +10,7 @@ on:
       suite:
         description: Validation scope; releases always run the complete quality gate
         type: choice
-        options: [all, agent, runtime]
+        options: [all, agent, runtime, gui]
         default: all
   workflow_call:
     inputs:
@@ -29,13 +29,13 @@ env:
 
 jobs:
   runtime-store:
-    if: ${{ inputs.suite != 'agent' }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'agent' }}
     uses: ./.github/workflows/runtime-store.yml
   frontend:
     if: ${{ inputs.suite != 'agent' && inputs.suite != 'runtime' && !inputs.reuse_frontend }}
     uses: ./.github/workflows/frontend.yml
   scripts:
-    if: ${{ inputs.suite != 'agent' }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'agent' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,7 +61,7 @@ jobs:
       - run: node scripts/check-native-io.mjs
 
   mac-icon:
-    if: ${{ inputs.suite != 'agent' && inputs.suite != 'runtime' }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'agent' && inputs.suite != 'runtime' }}
     runs-on: macos-26
     timeout-minutes: 10
     steps:
@@ -78,7 +78,7 @@ jobs:
 
   mac-updates:
     needs: frontend
-    if: ${{ inputs.suite != 'agent' && inputs.suite != 'runtime' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'agent' && inputs.suite != 'runtime' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -107,7 +107,7 @@ jobs:
           retention-days: 7
 
   agent:
-    if: ${{ inputs.suite != 'runtime' }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'runtime' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -136,7 +136,7 @@ jobs:
 
   node-native:
     needs: frontend
-    if: ${{ inputs.suite != 'agent' && inputs.suite != 'runtime' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'agent' && inputs.suite != 'runtime' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
@@ -336,7 +336,7 @@ jobs:
           if-no-files-found: warn
 
   windows-agent-process:
-    if: ${{ inputs.suite != 'runtime' }}
+    if: ${{ inputs.suite != 'gui' && inputs.suite != 'runtime' }}
     runs-on: windows-2025
     timeout-minutes: 10
     steps:
