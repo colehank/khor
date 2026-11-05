@@ -2712,6 +2712,15 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+update-runtime-cache = "运行程序缓存"
+update-runtime-retained = "当前与回退版本"
+update-runtime-retained-hint = "保留当前版本和上一版，以便回退"
+update-runtime-active-old = "运行中的旧程序"
+update-runtime-active-hint = "会话使用期间保留，结束后自动清理"
+update-runtime-unknown = "其他保留项"
+update-runtime-idle = "已释放的旧程序"
+update-runtime-clean = "清理已释放版本"
+update-runtime-failed = "未能清理，可重试"
 update-label = "软件更新"
 update-restart = "重启以更新"
 update-save-files = "先保存未完成的文件编辑"

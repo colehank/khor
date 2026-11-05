@@ -9,7 +9,7 @@ pub use lease::Lease;
 pub use local::{
     available as available_space, local_directory, validate as validate_local_directory,
 };
-pub use store::{Collection, Image, Limits, Source, Store};
+pub use store::{Collection, Image, Limits, Source, Store, Usage};
 
 pub fn platform() -> String {
     format!("{}-{}", std::env::consts::OS, std::env::consts::ARCH)

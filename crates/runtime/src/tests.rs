@@ -128,6 +128,29 @@ fn old_occupied_generation_survives_until_last_cloned_lease_closes() {
 }
 
 #[test]
+fn usage_counts_retained_and_live_old_bytes_once_and_cleanup_only_releases_idle_images() {
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let old = image(&store, "one", b"first");
+    let lease = old.lease().try_clone().unwrap();
+    drop(old);
+    drop(image(&store, "two", b"second"));
+    drop(image(&store, "three", b"third"));
+    let usage = store.usage_all().unwrap();
+    assert_eq!(usage.retained_bytes, 11);
+    assert_eq!(usage.active_old_bytes, 5);
+    assert_eq!(usage.idle_bytes, 0);
+    store.collect_all().unwrap();
+    assert_eq!(store.usage_all().unwrap().active_old_bytes, 5);
+    drop(lease);
+    assert_eq!(store.usage_all().unwrap().idle_bytes, 5);
+    store.collect_all().unwrap();
+    let usage = store.usage_all().unwrap();
+    assert_eq!(usage.retained_bytes, 11);
+    assert_eq!(usage.active_old_bytes + usage.idle_bytes, 0);
+}
+
+#[test]
 fn node_collection_reaches_registered_cli_stores_and_preserves_live_and_rollback_images() {
     let fixture = Fixture::new();
     let store = fixture.store();

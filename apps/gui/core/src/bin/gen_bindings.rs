@@ -42,6 +42,7 @@ macro_rules! roots {
         $visit!(khor_gui_core::Ticket);
         $visit!(khor_gui_core::About);
         $visit!(khor_gui_core::updates::AppUpdateStatus);
+        $visit!(khor_gui_core::updates::RuntimeCacheUsage);
         $visit!(khor_gui_core::updates::MachineInstallation);
         $visit!(khor_gui_core::updates::MachineUpdateResult);
         $visit!(khor_gui_core::updates::MachineUpdateQueue);

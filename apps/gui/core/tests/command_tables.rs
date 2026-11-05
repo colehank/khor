@@ -240,6 +240,10 @@ fn command_finder_ignores_strings_and_patterns_outside_dispatch_arms() {
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
     (
+        "app_update_runtime_cache",
+        "local executable cache management is admitted only from bundled native application windows",
+    ),
+    (
         "app_update_status",
         "signed installation management is admitted only from bundled native application windows",
     ),

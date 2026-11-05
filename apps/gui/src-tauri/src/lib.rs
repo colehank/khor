@@ -5803,6 +5803,7 @@ pub fn run() {
             doctor_fix,
             about,
             updater_commands::app_update_status,
+            updater_commands::app_update_runtime_cache,
             updater_commands::machine_update_status,
             updater_commands::machine_update_check,
             updater_commands::machine_update_queue,

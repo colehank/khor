@@ -1253,6 +1253,8 @@ export const fetchAbout = () => call<About>("about");
 export type { AppUpdateStatus } from "./gen/bindings/AppUpdateStatus";
 export type { UpdatePreferences } from "./gen/bindings/UpdatePreferences";
 export const fetchAppUpdateStatus = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_status");
+export type { RuntimeCacheUsage } from "./gen/bindings/RuntimeCacheUsage";
+export const runtimeCacheUsage = (clean = false) => call<import("./gen/bindings/RuntimeCacheUsage").RuntimeCacheUsage>("app_update_runtime_cache", { clean });
 export const checkAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_check");
 export const downloadAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_download");
 export const installAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_install");

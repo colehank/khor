@@ -516,43 +516,60 @@ pub(crate) fn start(app: &AppHandle) {
     }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        startup(&app).await;
         let updates = app.state::<AppUpdates>();
-        updates.maintain().await;
-        let Ok(restored) = updates.restore_cached(&app) else {
-            return;
-        };
-        #[cfg(target_os = "macos")]
-        if restored.phase == UpdatePhase::Ready && restored.preferences.install_on_start {
-            let allowed = updates
-                .data
-                .lock()
-                .ok()
-                .and_then(|data| {
-                    data.selected
-                        .as_ref()
-                        .map(|selected| selected.release.manifest().identity.clone())
-                })
-                .is_some_and(|identity| {
-                    crate::app_update_install::automatic_allowed(&updates.root, &identity)
-                });
-            if allowed {
-                let _ = updates.install(&app, true).await;
-                return;
-            }
-        }
-        if !restored.preferences.automatic_check {
+        if !updates
+            .status()
+            .is_ok_and(|status| status.source == UpdateSource::Direct)
+        {
             return;
         }
-        match updates.check(&app).await {
-            Ok(status)
-                if status.phase == UpdatePhase::Available
-                    && status.preferences.automatic_download =>
-            {
-                let _ = updates.download(&app).await;
-            }
-            _ => {}
+        let mut beat = tokio::time::interval(Duration::from_secs(30));
+        beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        beat.tick().await;
+        loop {
+            beat.tick().await;
+            updates.maintain().await;
         }
     });
+}
+
+async fn startup(app: &AppHandle) {
+    let updates = app.state::<AppUpdates>();
+    updates.maintain().await;
+    let Ok(restored) = updates.restore_cached(app) else {
+        return;
+    };
+    #[cfg(target_os = "macos")]
+    if restored.phase == UpdatePhase::Ready && restored.preferences.install_on_start {
+        let allowed = updates
+            .data
+            .lock()
+            .ok()
+            .and_then(|data| {
+                data.selected
+                    .as_ref()
+                    .map(|selected| selected.release.manifest().identity.clone())
+            })
+            .is_some_and(|identity| {
+                crate::app_update_install::automatic_allowed(&updates.root, &identity)
+            });
+        if allowed {
+            let _ = updates.install(app, true).await;
+            return;
+        }
+    }
+    if !restored.preferences.automatic_check {
+        return;
+    }
+    match updates.check(app).await {
+        Ok(status)
+            if status.phase == UpdatePhase::Available && status.preferences.automatic_download =>
+        {
+            let _ = updates.download(app).await;
+        }
+        _ => {}
+    }
 }
 
 async fn collect_cache(staging: Arc<Staging>) {

@@ -5046,6 +5046,7 @@ dependencies = [
  "khor-commands",
  "khor-core",
  "khor-node",
+ "khor-runtime",
  "qrcode",
  "serde",
  "serde_json",

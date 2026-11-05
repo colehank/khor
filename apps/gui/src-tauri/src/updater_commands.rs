@@ -21,6 +21,21 @@ fn authorize(webview: &tauri::Webview) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub(crate) async fn app_update_runtime_cache(
+    webview: tauri::Webview,
+    clean: bool,
+) -> Result<khor_gui_core::updates::RuntimeCacheUsage, String> {
+    authorize(&webview)?;
+    #[cfg(desktop)]
+    return crate::off_main(move || khor_gui_core::updates::runtime_cache(clean)).await;
+    #[cfg(mobile)]
+    {
+        let _ = clean;
+        Err("runtime caches are managed by the host machine".into())
+    }
+}
+
+#[tauri::command]
 pub(crate) async fn app_update_prepared(
     app: tauri::AppHandle,
     webview: tauri::Webview,

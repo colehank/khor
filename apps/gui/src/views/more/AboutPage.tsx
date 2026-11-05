@@ -13,23 +13,10 @@ import { fetchAbout, launchOn, type About } from "@/api";
 import { ActionRow } from "@/components/settings/ActionRow";
 import { gui } from "@/gen/catalog";
 import { useHereHosts } from "@/lib/here";
+import { formatBytes } from "@/lib/format-bytes";
 import { MoreFact, MoreFrame, MoreSection } from "@/views/more/MorePage";
 import { UpdateSettings } from "./UpdateSettings";
-
-/** Bytes as a person reads them. **Binary steps and one decimal**, the
-    same shape the machine card's disk readings take — a store is
-    measured against a disk, and two units that disagree about what a
-    「GB」 is would be two numbers nobody can compare. */
-function bytes(n: bigint): string {
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let v = Number(n);
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${i === 0 ? v : v.toFixed(1)} ${units[i]}`;
-}
+import { RuntimeCacheSettings } from "./RuntimeCacheSettings";
 
 /** A path that breaks after its slashes, never inside a name (the audit
     fix plan F4.9; N23: 「/Volumes/disk0/kho / r-redesign-home」). */
@@ -117,12 +104,13 @@ export function AboutPage({ onClose }: { onClose: () => void }) {
               </MoreFact>
             )}
             <MoreFact name="store-size" label={gui.store_size}>
-              {bytes(about.store_bytes)}
+              {formatBytes(about.store_bytes)}
             </MoreFact>
           </MoreSection>
         </>
       )}
       <UpdateSettings />
+      <RuntimeCacheSettings enabled={opens} />
     </MoreFrame>
   );
 }

@@ -89,6 +89,28 @@ pub struct AppUpdateStatus {
     pub preferences: UpdatePreferences,
 }
 
+#[derive(Clone, Debug, Serialize, TS)]
+pub struct RuntimeCacheUsage {
+    pub retained_bytes: u64,
+    pub active_old_bytes: u64,
+    pub idle_bytes: u64,
+    pub unknown_items: u64,
+}
+
+pub fn runtime_cache(clean: bool) -> Result<RuntimeCacheUsage, String> {
+    let store = khor_runtime::Store::local().map_err(|e| e.to_string())?;
+    if clean {
+        store.collect_all().map_err(|e| e.to_string())?;
+    }
+    let usage = store.usage_all().map_err(|e| e.to_string())?;
+    Ok(RuntimeCacheUsage {
+        retained_bytes: usage.retained_bytes,
+        active_old_bytes: usage.active_old_bytes,
+        idle_bytes: usage.idle_bytes,
+        unknown_items: usage.unknown_items,
+    })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum MachineUpdateSource {

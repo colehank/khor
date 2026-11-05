@@ -12,9 +12,10 @@ const out=join(process.env.RUNNER_TEMP||tmpdir(),'khor-updates-ui');mkdirSync(ou
 writeFileSync(join(fixture,'index.html'),'<link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),`
 import React from 'react';import{createRoot}from'react-dom/client';import{UpdateSettings}from'/src/views/more/UpdateSettings';import{MachineUpdates}from'/src/views/MachineUpdates';
+import{RuntimeCacheSettings}from'/src/views/more/RuntimeCacheSettings';
 import{followUpdatePreparation}from'/src/lib/update-lifecycle';followUpdatePreparation();
 import{TooltipProvider}from'/src/components/ui/tooltip';import'/src/styles/tokens.css';import'/src/styles/app.css';
-createRoot(document.getElementById('root')).render(<TooltipProvider><UpdateSettings/><MachineUpdates row={window.machineRows[0]} rows={window.machineRows}/></TooltipProvider>);`);
+createRoot(document.getElementById('root')).render(<TooltipProvider><UpdateSettings/><RuntimeCacheSettings enabled={true}/><MachineUpdates row={window.machineRows[0]} rows={window.machineRows}/></TooltipProvider>);`);
 let server,browser;
 try {
   server=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:join(fixture,'.vite'),optimizeDeps:{entries:[join(fixture,'index.html')]},server:{host:'127.0.0.1',port:23839,strictPort:true,hmr:false},logLevel:'error'});await server.listen();
@@ -23,6 +24,7 @@ try {
   await page.addInitScript(()=>{
     const callbacks=new Map();let next=1;
     window.updateCalls=[];
+    window.cacheUsage={retained_bytes:10485760,active_old_bytes:2097152,idle_bytes:1048576,unknown_items:1};
     window.machineRows=['Alpha','Beta','App node'].map((shown,i)=>({id:String.fromCharCode(97+i).repeat(64),name:'host-'+i,shown,hosts:true,me:false,sponsor:null,face:null,vitals:null}));
     window.machineQueue={revision:0,jobs:[]};
     window.machineInfos=Object.fromEntries(window.machineRows.map((row,i)=>[row.id,{source:i===2?'app':'cli',running:'v0.2.0-rc.1',selected:'v0.2.0-rc.1',channel:'beta',service_ready:true,failed:null}]));
@@ -47,6 +49,10 @@ try {
         window.emitMachineQueue({revision:window.machineQueue.revision+1,jobs:window.machineQueue.jobs.filter(job=>job.machine!==args.machine||job.request!==args.request)});return structuredClone(window.machineQueue);
       }
       if(cmd==='app_update_status')return structuredClone(window.updateState);
+      if(cmd==='app_update_runtime_cache'){
+        if(args.clean){if(window.cacheFailOnce){window.cacheFailOnce=false;throw new Error('fixture cache cleanup unavailable');}window.cacheUsage.idle_bytes=0;}
+        return structuredClone(window.cacheUsage);
+      }
       if(cmd==='app_update_prepared')return null;
       if(cmd==='app_update_check')window.emitUpdate({phase:'available',available:'v0.2.0-rc.2',total:100,checked_at:'2026-11-05T00:00:00Z'});
       else if(cmd==='app_update_preferences')window.emitUpdate({preferences:args.preferences,phase:'idle',available:null});
@@ -96,6 +102,18 @@ try {
     assert.equal(await action.count(),0,'an externally owned installation has no direct-update action');
     assert.equal(await page.locator('[data-setting-row-name="update-channel"]').count(),0);
   }
+  const cache=page.locator('[data-more-section="runtime-cache"]');
+  await cache.locator('[data-more-fact="runtime-active-old"]').waitFor();
+  assert.match(await cache.locator('[data-more-fact="runtime-active-old"]').innerText(),/2.0 MB/);
+  assert.equal(await page.evaluate(()=>window.updateCalls.find(call=>call.cmd==='app_update_runtime_cache').args.clean),false,'opening settings only inspects runtime storage');
+  await page.evaluate(()=>{window.cacheFailOnce=true;});
+  await cache.getByRole('button').click();
+  await page.waitForFunction(()=>document.querySelector('[data-setting-row-name="runtime-clean"]').textContent.match(/重试|retry/));
+  assert.match(await cache.locator('[data-setting-row-name="runtime-clean"]').innerText(),/1.0 MB/,'a failed cleanup retains the last confirmed storage reading');
+  await cache.getByRole('button').click();
+  await page.waitForFunction(()=>document.querySelector('[data-setting-row-name="runtime-clean"]').textContent.includes('0 B'));
+  assert.match(await cache.locator('[data-more-fact="runtime-active-old"]').innerText(),/2.0 MB/,'cleaning released versions does not present active programs as removed');
+  assert.match(await cache.locator('[data-more-fact="runtime-retained"]').innerText(),/10.0 MB/);
   const machines=page.locator('[data-machine-updates]');
   await machines.getByRole('button',{name:/检查更新|Check for updates/}).click();
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='machine_update_check'));

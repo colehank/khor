@@ -105,6 +105,14 @@ pub struct Collection {
     pub unknown: Vec<String>,
 }
 
+#[derive(Default, Debug)]
+pub struct Usage {
+    pub retained_bytes: u64,
+    pub active_old_bytes: u64,
+    pub idle_bytes: u64,
+    pub unknown_items: u64,
+}
+
 impl Store {
     pub fn local() -> io::Result<Self> {
         Self::open(local::local_directory()?, Limits::default())
@@ -356,6 +364,53 @@ impl Store {
             result.removed.extend(next.removed);
             result.occupied.extend(next.occupied);
             result.unknown.extend(next.unknown);
+        }
+        Ok(result)
+    }
+
+    pub fn usage_all(&self) -> io::Result<Usage> {
+        let mut result = self.usage()?;
+        for child in self.cli_stores()? {
+            let next = child.usage()?;
+            result.retained_bytes = result.retained_bytes.saturating_add(next.retained_bytes);
+            result.active_old_bytes = result
+                .active_old_bytes
+                .saturating_add(next.active_old_bytes);
+            result.idle_bytes = result.idle_bytes.saturating_add(next.idle_bytes);
+            result.unknown_items = result.unknown_items.saturating_add(next.unknown_items);
+        }
+        Ok(result)
+    }
+
+    fn usage(&self) -> io::Result<Usage> {
+        let _catalog = self.catalog()?;
+        let index = self.index()?;
+        let protected = index.protected();
+        let mut result = Usage::default();
+        for entry in fs::read_dir(&self.root)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !valid_id(&name) {
+                continue;
+            }
+            let Ok(identity) = identity_at(&entry.path()) else {
+                result.unknown_items += 1;
+                continue;
+            };
+            let bytes = fs::metadata(entry.path().join(identity.role.executable()))?.len();
+            if bytes != identity.bytes {
+                result.unknown_items += 1;
+            } else if protected.contains(name.as_str()) {
+                result.retained_bytes = result.retained_bytes.saturating_add(bytes);
+            } else {
+                match Lease::vacant(&entry.path().join("lease")) {
+                    Ok(true) => result.idle_bytes = result.idle_bytes.saturating_add(bytes),
+                    Ok(false) => {
+                        result.active_old_bytes = result.active_old_bytes.saturating_add(bytes)
+                    }
+                    Err(_) => result.unknown_items += 1,
+                }
+            }
         }
         Ok(result)
     }

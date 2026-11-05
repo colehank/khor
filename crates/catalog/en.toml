@@ -1748,6 +1748,15 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+update-runtime-cache = "Runtime program cache"
+update-runtime-retained = "Current and rollback versions"
+update-runtime-retained-hint = "Keeps the current and previous versions for rollback"
+update-runtime-active-old = "Older programs still in use"
+update-runtime-active-hint = "Kept while sessions use them and collected after they finish"
+update-runtime-unknown = "Other retained items"
+update-runtime-idle = "Released older programs"
+update-runtime-clean = "Clean released versions"
+update-runtime-failed = "Cleanup failed; retry"
 update-label = "Software update"
 update-restart = "Restart to update"
 update-save-files = "Save unsaved file edits first"
