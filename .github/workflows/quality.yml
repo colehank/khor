@@ -223,7 +223,7 @@ jobs:
           cargo test --locked -p khor-node --lib join:: -- --test-threads=1
           cargo test --locked -p khor-core -p khor-node --lib activity -- --test-threads=1
           cargo test --locked -p khor-node --lib gui_run_rejects_old_and_unqualified_reports -- --test-threads=1
-          cargo test --locked -p khor-cli --test serve_keeper --test add_ssh -- --test-threads=1
+          cargo test --locked -p khor-cli --test serve_keeper -- --test-threads=1
       - name: Verify an actual published build upgrades and rolls back while both shells stay live
         run: |
           previous="$RUNNER_TEMP/khor-0.1.15-rc.3"
@@ -232,12 +232,18 @@ jobs:
           gzip --decompress --stdout "$previous.gz" > "$previous"
           echo "499dec3513b3af917be3dc866950081a09224880591f1e6950a0524ef8a8a709  $previous" | sha256sum --check
           chmod 555 "$previous"
-          KHOR_TEST_PREVIOUS_BIN="$previous" cargo test --locked -p khor-cli --test serve_keeper an_actual_published_release -- --ignored --nocapture --test-threads=1
+          KHOR_TEST_PREVIOUS_BIN="$previous" cargo test --locked -p khor-cli --test serve_keeper an_actual_published_release -- --ignored --nocapture --test-threads=1 | tee "$RUNNER_TEMP/previous-release.log"
+          grep -Eq '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/previous-release.log"
+      - name: Verify signed SSH installation and authentication in scratch homes
+        run: |
+          npm ci --prefix apps/gui
+          python3 scripts/check-ssh-install.py --output "$RUNNER_TEMP/ssh-native"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: node-native-close-evidence
           path: |
+            ${{ runner.temp }}/ssh-native
             ${{ runner.temp }}/node-artifacts.json
             ${{ runner.temp }}/node-metadata.json
             ${{ runner.temp }}/cli-artifacts.json

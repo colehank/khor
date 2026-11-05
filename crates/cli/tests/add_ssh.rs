@@ -171,44 +171,41 @@ fn sh(cmd: &mut Command) {
     assert!(st.success(), "{cmd:?}");
 }
 
-/// The same versioned archive and exact checksum used by both download paths.
+/// The same signed release and original archive used by both download paths.
 fn mirror(file: PathBuf) -> u16 {
     let l = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = l.local_addr().unwrap().port();
-    let checksum = if cfg!(target_os = "macos") {
-        Command::new("shasum")
-            .args(["-a", "256"])
-            .arg(&file)
-            .output()
-    } else {
-        Command::new("sha256sum").arg(&file).output()
+    let directory = file.parent().unwrap();
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(directory.join("khor-release.json")).unwrap()).unwrap();
+    let tag = manifest["identity"]["tag"].as_str().unwrap();
+    let want = file.file_name().unwrap().to_string_lossy().into_owned();
+    let mut routes = std::collections::BTreeMap::new();
+    for name in [
+        want.clone(),
+        format!("{want}.sha256"),
+        "khor-release.json".into(),
+        "khor-release.json.sig".into(),
+    ] {
+        routes.insert(
+            format!("/releases/{tag}/{name}"),
+            fs::read(directory.join(name)).unwrap(),
+        );
     }
-    .unwrap();
-    assert!(checksum.status.success());
-    let digest = String::from_utf8(checksum.stdout).unwrap();
-    let digest = digest.split_whitespace().next().unwrap().to_owned();
     std::thread::spawn(move || {
         for s in l.incoming() {
             let Ok(mut s) = s else { continue };
             let mut buf = [0u8; 2048];
             let n = s.read(&mut buf).unwrap_or(0);
             let req = String::from_utf8_lossy(&buf[..n]);
-            let want = file.file_name().unwrap().to_string_lossy().into_owned();
-            let path = format!("/releases/v{}/{want}", khor_node::VERSION);
-            let body = if req.starts_with(&format!("GET {path} ")) {
-                Some(fs::read(&file).unwrap())
-            } else if req.starts_with(&format!("GET {path}.sha256 ")) {
-                Some(format!("{digest}  {want}\n").into_bytes())
-            } else {
-                None
-            };
+            let body = req.split_whitespace().nth(1).and_then(|path| routes.get(path));
             if let Some(body) = body {
                 let _ = write!(
                     s,
                     "HTTP/1.0 200 OK\r\nContent-Length: {}\r\n\r\n",
                     body.len()
                 );
-                let _ = s.write_all(&body);
+                let _ = s.write_all(body);
             } else {
                 let _ = s.write_all(b"HTTP/1.0 404 Not Found\r\nContent-Length: 0\r\n\r\n");
             }
@@ -467,13 +464,14 @@ fn tree(home: &Path) -> BTreeSet<String> {
 }
 
 #[test]
+#[ignore = "requires a temporary signing root; run scripts/check-ssh-install.py"]
 fn add_over_ssh_in_a_scratch_world() {
     let Some(w) = build() else {
         eprintln!("no {SSHD}: skipped");
         return;
     };
     let dir = w.dir.clone();
-    // The asset the mirror serves: the binary under test.
+    // The driver built this CLI with a temporary root and signed this exact package.
     let asset = match (std::env::consts::OS, std::env::consts::ARCH) {
         ("macos", "aarch64") => "khor-macos-arm64",
         ("macos", _) => "khor-macos-x86_64",
@@ -481,11 +479,17 @@ fn add_over_ssh_in_a_scratch_world() {
         _ => "khor-linux-x86_64",
     };
     let gz = dir.join(format!("{asset}.gz"));
-    sh(Command::new("sh").arg("-c").arg(format!(
-        "gzip -c '{}' > '{}'",
-        env!("CARGO_BIN_EXE_khor"),
-        gz.display()
-    )));
+    let package = PathBuf::from(
+        std::env::var_os("KHOR_TEST_SSH_RELEASE_DIR").expect("signed SSH fixture directory"),
+    );
+    for name in [
+        format!("{asset}.gz"),
+        format!("{asset}.gz.sha256"),
+        "khor-release.json".into(),
+        "khor-release.json.sig".into(),
+    ] {
+        fs::copy(package.join(&name), dir.join(name)).unwrap();
+    }
     let m = format!("http://127.0.0.1:{}", mirror(gz));
 
     // **The far HOME is scratch, through the jump too, or nothing runs.**
