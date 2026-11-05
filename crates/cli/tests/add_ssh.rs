@@ -198,7 +198,10 @@ fn mirror(file: PathBuf) -> u16 {
             let mut buf = [0u8; 2048];
             let n = s.read(&mut buf).unwrap_or(0);
             let req = String::from_utf8_lossy(&buf[..n]);
-            let body = req.split_whitespace().nth(1).and_then(|path| routes.get(path));
+            let body = req
+                .split_whitespace()
+                .nth(1)
+                .and_then(|path| routes.get(path));
             if let Some(body) = body {
                 let _ = write!(
                     s,
