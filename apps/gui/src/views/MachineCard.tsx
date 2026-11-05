@@ -53,6 +53,7 @@ import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { RecognitionSummary } from "@/views/more/AgentRecognition";
+import { MachineUpdates } from "@/views/MachineUpdates";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { pagesHere } from "@/lib/here";
 import { CopyId } from "@/views/DetailPane";
@@ -321,6 +322,7 @@ function Body({
           {/* The pane's width, capped and centred (`DetailFrame`, UX-22). */}
           <DetailFrame className="flex flex-col gap-row">
             <Strip row={row} rows={rows} sayModel={sayModel} />
+            <MachineUpdates row={row} rows={rows} />
             {!!row.sponsor && row.sponsor === rows.find((r) => r.me)?.name && onPromote && (
               <div className="flex justify-end">
                 <Button data-promote onClick={() => onPromote(row)}>{gui.promote_ask}</Button>

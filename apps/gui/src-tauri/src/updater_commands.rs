@@ -1,5 +1,5 @@
 use khor_gui_core::updates::{AppUpdateStatus, UpdatePreferences};
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 fn authorize(webview: &tauri::Webview) -> Result<(), String> {
     let label = webview.label();
@@ -163,4 +163,70 @@ fn store_status() -> AppUpdateStatus {
         blocked: Vec::new(),
         preferences: UpdatePreferences::new(UpdateChannel::Stable),
     }
+}
+
+#[tauri::command]
+pub(crate) async fn machine_update_status(
+    webview: tauri::Webview,
+    machine: String,
+) -> Result<khor_gui_core::updates::MachineInstallation, String> {
+    authorize(&webview)?;
+    khor_gui_core::updates::machine_installation(&khor_node::Node::root_from_env(), &machine).await
+}
+
+#[tauri::command]
+pub(crate) async fn machine_update_check(
+    webview: tauri::Webview,
+    machine: String,
+    channel: Option<khor_gui_core::updates::UpdateChannel>,
+) -> Result<khor_gui_core::updates::MachineUpdateResult, String> {
+    authorize(&webview)?;
+    khor_gui_core::updates::machine_update(
+        &khor_node::Node::root_from_env(),
+        &machine,
+        true,
+        channel,
+    )
+    .await
+}
+
+#[tauri::command]
+pub(crate) async fn machine_update_queue(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+) -> Result<khor_gui_core::updates::MachineUpdateQueue, String> {
+    authorize(&webview)?;
+    app.state::<std::sync::Arc<crate::machine_updates::MachineUpdates>>()
+        .snapshot()
+}
+
+#[tauri::command]
+pub(crate) async fn machine_update_start(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    machines: Vec<String>,
+    channel: Option<khor_gui_core::updates::UpdateChannel>,
+) -> Result<khor_gui_core::updates::MachineUpdateQueue, String> {
+    authorize(&webview)?;
+    let manager = app.state::<std::sync::Arc<crate::machine_updates::MachineUpdates>>();
+    manager.enqueue(machines, channel)?;
+    let status = manager.snapshot()?;
+    let _ = app.emit("machine-updates:changed", &status);
+    crate::machine_updates::MachineUpdates::kick(&app);
+    Ok(status)
+}
+
+#[tauri::command]
+pub(crate) async fn machine_update_cancel(
+    app: tauri::AppHandle,
+    webview: tauri::Webview,
+    machine: String,
+    request: String,
+) -> Result<khor_gui_core::updates::MachineUpdateQueue, String> {
+    authorize(&webview)?;
+    let manager = app.state::<std::sync::Arc<crate::machine_updates::MachineUpdates>>();
+    manager.cancel_waiting(&machine, &request)?;
+    let status = manager.snapshot()?;
+    let _ = app.emit("machine-updates:changed", &status);
+    Ok(status)
 }

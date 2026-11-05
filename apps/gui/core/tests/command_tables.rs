@@ -56,7 +56,7 @@ fn tauri_commands() -> BTreeSet<String> {
         .split(',')
         .map(str::trim)
         .filter(|w| !w.is_empty())
-        .map(str::to_owned)
+        .map(|path| path.rsplit("::").next().unwrap_or(path).to_owned())
         .collect();
     if src.contains("native_io::dispatch(invoke)") {
         let native = repo_file("../src-tauri/src/native_io.rs");
@@ -239,6 +239,54 @@ fn command_finder_ignores_strings_and_patterns_outside_dispatch_arms() {
 /// (`khor-cli`'s `NOT_IN_USAGE`, same judgment). Delete a line here and
 /// that command goes red, which is the point.
 const ONE_SIDED: &[(&str, &str)] = &[
+    (
+        "app_update_status",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "app_update_check",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "app_update_download",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "app_update_preferences",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "app_update_prepared",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "app_update_install",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "app_update_ui_ready",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "machine_update_status",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
+    (
+        "machine_update_queue",
+        "durable native installation queue; HTTP pages cannot authorize executable installation",
+    ),
+    (
+        "machine_update_start",
+        "durable native installation queue; HTTP pages cannot authorize executable installation",
+    ),
+    (
+        "machine_update_cancel",
+        "durable native installation queue; HTTP pages cannot authorize executable installation",
+    ),
+    (
+        "machine_update_check",
+        "signed installation management is admitted only from bundled native application windows",
+    ),
     (
         "file_preview_supported",
         "reports native Quick Look availability; HTTP has no native Office preview",

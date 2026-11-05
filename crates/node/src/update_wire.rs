@@ -1,4 +1,4 @@
-use crate::updates::{self, ProgramInfo, UpgradeOutcome, UpgradeRequest};
+use crate::updates::{self, InstallationInfo, InstallationSource, UpgradeOutcome, UpgradeRequest};
 use iroh::endpoint::{Connection, RecvStream, SendStream};
 use khor_update::{Channel, Component, Download, Feed, SignedRelease, TrustRoot};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -20,18 +20,10 @@ enum Request {
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum Response {
-    Description {
-        program: ProgramInfo,
-        current: khor_update::ReleaseIdentity,
-        channel: Channel,
-    },
+    Description { installation: InstallationInfo },
     Upload,
-    Installed {
-        outcome: UpgradeOutcome,
-    },
-    Refused {
-        why: String,
-    },
+    Installed { outcome: UpgradeOutcome },
+    Refused { why: String },
 }
 
 async fn write<T: Serialize>(
@@ -81,15 +73,12 @@ pub(crate) async fn serve(
 #[cfg(unix)]
 async fn answer(send: &mut SendStream, recv: &mut RecvStream) -> Result<(), String> {
     let request = read::<Request>(recv).await?;
-    let (installation, program, current, default_channel) = updates::cli_installation()?;
     match request {
         Request::Describe => {
             write(
                 send,
                 &Response::Description {
-                    program,
-                    current,
-                    channel: default_channel,
+                    installation: updates::installation_info().await?,
                 },
             )
             .await
@@ -99,6 +88,10 @@ async fn answer(send: &mut SendStream, recv: &mut RecvStream) -> Result<(), Stri
             channel,
             expected,
         } => {
+            let (installation, program, current, _) =
+                tokio::task::spawn_blocking(updates::cli_installation)
+                    .await
+                    .map_err(|e| e.to_string())??;
             if current != expected {
                 return Err("this machine changed version; check again before updating".into());
             }
@@ -148,23 +141,38 @@ async fn answer(_: &mut SendStream, _: &mut RecvStream) -> Result<(), String> {
     Err("this installation uses its external package manager".into())
 }
 
+pub(crate) async fn describe(connection: &Connection) -> Result<InstallationInfo, String> {
+    let (mut send, mut recv) = connection.open_bi().await.map_err(|e| e.to_string())?;
+    write(&mut send, &Request::Describe).await?;
+    send.finish().map_err(|e| e.to_string())?;
+    match read::<Response>(&mut recv).await? {
+        Response::Description { installation } => Ok(installation),
+        Response::Refused { why } => Err(why),
+        _ => Err("machine returned an unexpected update description".into()),
+    }
+}
+
 pub(crate) async fn upgrade(
     connection: &Connection,
     request: UpgradeRequest,
     staging: &std::path::Path,
 ) -> Result<UpgradeOutcome, String> {
-    let (mut send, mut recv) = connection.open_bi().await.map_err(|e| e.to_string())?;
-    write(&mut send, &Request::Describe).await?;
-    send.finish().map_err(|e| e.to_string())?;
-    let (program, current, default_channel) = match read::<Response>(&mut recv).await? {
-        Response::Description {
-            program,
-            current,
-            channel,
-        } => (program, current, channel),
-        Response::Refused { why } => return Err(why),
-        _ => return Err("machine returned an unexpected update description".into()),
-    };
+    let installation = describe(connection).await?;
+    if installation.source != InstallationSource::Cli {
+        return Err(match installation.source {
+            InstallationSource::App => "update this machine from About in its Khor application",
+            InstallationSource::Development => "development builds are updated by their builder",
+            _ => "update this machine with its external package manager or installer",
+        }
+        .into());
+    }
+    let program = installation.selected.ok_or("machine has no selected CLI")?;
+    let current = installation
+        .current
+        .ok_or("machine has no release identity")?;
+    let default_channel = installation
+        .channel
+        .ok_or("machine has no update channel")?;
     let trust = TrustRoot::bundled()?;
     let channel = request.channel.unwrap_or(default_channel);
     let Some(release) = Feed::github(trust.clone())?

@@ -21,6 +21,7 @@ khor-net.workspace = true
 khor-sync.workspace = true
 khor-runtime.workspace = true
 khor-update.workspace = true
+tempfile = "3"
 serde.workspace = true
 serde_json.workspace = true
 toml_edit = "0.22.27"

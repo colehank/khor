@@ -513,6 +513,9 @@ pub enum Op {
         #[serde(with = "crate::delegation::wire_json")]
         action: crate::delegation::Action,
     },
+    InspectMachineInstallation {
+        machine: String,
+    },
     UpgradeMachine {
         machine: String,
         request: crate::updates::UpgradeRequest,
@@ -646,6 +649,9 @@ impl Op {
             Op::CodeOpenOn { .. } => ("CodeOpenOn", DEADLINE_SLOW),
             Op::Pull { .. } => ("Pull", DEADLINE_TRANSFER),
             Op::Take { .. } => ("Take", DEADLINE_TRANSFER),
+            Op::InspectMachineInstallation { .. } => {
+                ("InspectMachineInstallation", DEADLINE_TRANSFER)
+            }
             Op::UpgradeMachine { .. } => ("UpgradeMachine", DEADLINE_TRANSFER),
         }
     }
@@ -903,6 +909,9 @@ pub enum Reply {
     Delegation {
         #[serde(with = "crate::delegation::wire_json")]
         answer: crate::delegation::Answer,
+    },
+    MachineInstallation {
+        installation: crate::updates::InstallationInfo,
     },
     MachineUpgraded {
         outcome: crate::updates::UpgradeOutcome,

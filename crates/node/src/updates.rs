@@ -135,6 +135,74 @@ pub struct UpgradeOutcome {
     pub installed: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum InstallationSource {
+    Cli,
+    App,
+    External,
+    Development,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct InstallationInfo {
+    pub source: InstallationSource,
+    pub running: ProgramInfo,
+    pub selected: Option<ProgramInfo>,
+    pub current: Option<ReleaseIdentity>,
+    pub channel: Option<Channel>,
+    pub service_ready: bool,
+    pub failed: Option<ReleaseIdentity>,
+}
+
+pub async fn installation_info() -> Result<InstallationInfo, String> {
+    tokio::task::spawn_blocking(describe_installation)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn describe_installation() -> Result<InstallationInfo, String> {
+    let running = program_info()?;
+    let source = if running.build.release.is_none() {
+        InstallationSource::Development
+    } else if running.component == Component::DesktopApp {
+        InstallationSource::App
+    } else {
+        InstallationSource::External
+    };
+    #[cfg(unix)]
+    if source == InstallationSource::External
+        && khor_update::CliInstallation::detect(&crate::installed_exe()?, Platform::current()?)?
+            .is_some()
+    {
+        let (installation, selected, current, channel) = cli_installation()?;
+        let receipt = installation.receipt()?;
+        return Ok(InstallationInfo {
+            source: InstallationSource::Cli,
+            running,
+            selected: Some(selected),
+            current: Some(current),
+            channel: Some(channel),
+            service_ready: receipt
+                .as_ref()
+                .is_some_and(|r| r.service_ready && r.state == khor_update::InstallState::Complete),
+            failed: receipt
+                .filter(|r| r.state == khor_update::InstallState::RolledBack)
+                .map(|r| r.identity),
+        });
+    }
+    Ok(InstallationInfo {
+        current: running.build.release.clone(),
+        channel: running.build.release.as_ref().map(|r| r.tag.channel()),
+        source,
+        running,
+        selected: None,
+        service_ready: true,
+        failed: None,
+    })
+}
+
 #[cfg(unix)]
 pub(crate) fn cli_installation() -> Result<
     (

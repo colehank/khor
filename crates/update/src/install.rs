@@ -37,6 +37,8 @@ pub struct InstallReceipt {
     pub program_digest: String,
     pub previous: Option<PathBuf>,
     pub state: InstallState,
+    #[serde(default)]
+    pub service_ready: bool,
 }
 
 impl CliInstallation {
@@ -375,6 +377,7 @@ impl CliInstallation {
             program_digest: digest,
             previous: previous_relative,
             state: InstallState::Prepared,
+            service_ready: false,
         };
         self.record(&receipt)?;
         receipt.state = InstallState::Activating;
@@ -444,6 +447,39 @@ impl CliInstallation {
             self.retain_selected()?;
         }
         Ok(Some(receipt))
+    }
+
+    pub fn service_start_pending(&self, program: &Path) -> Result<bool, String> {
+        let Some(receipt) = self.receipt()? else {
+            return Ok(false);
+        };
+        if receipt.state != InstallState::Complete || receipt.service_ready {
+            return Ok(false);
+        }
+        Ok(
+            self.current()?.as_ref()
+                == Some(&fs::canonicalize(program).map_err(|e| e.to_string())?),
+        )
+    }
+
+    pub fn finish_service_start(&self, program: &Path, healthy: bool) -> Result<bool, String> {
+        let _lock = self.lock()?;
+        if !self.service_start_pending(program)? {
+            return Ok(false);
+        }
+        let mut receipt = self.receipt()?.ok_or("CLI startup record disappeared")?;
+        if healthy {
+            receipt.service_ready = true;
+        } else {
+            if receipt.previous.is_none() {
+                return Ok(false);
+            }
+            self.rollback(&receipt)?;
+            receipt.state = InstallState::RolledBack;
+        }
+        self.record(&receipt)?;
+        self.retain_selected()?;
+        Ok(true)
     }
 
     fn retain_selected(&self) -> Result<(), String> {
@@ -655,6 +691,51 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn failed_resident_startup_restores_previous_selection_but_late_results_cannot_rollback_it() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, _, _| Ok(()),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let candidate = install.current().unwrap().unwrap();
+        assert!(install.service_start_pending(&candidate).unwrap());
+        assert!(install.finish_service_start(&candidate, false).unwrap());
+        assert_eq!(install.current().unwrap().unwrap(), fixture.old);
+        assert_eq!(
+            install.receipt().unwrap().unwrap().state,
+            InstallState::RolledBack
+        );
+        assert!(!install.finish_service_start(&candidate, true).unwrap());
+        assert!(!install.finish_service_start(&candidate, false).unwrap());
+        assert_eq!(install.current().unwrap().unwrap(), fixture.old);
+    }
+
+    #[test]
+    fn ready_resident_clears_pending_startup_and_later_failure_is_not_an_installation_rollback() {
+        let fixture = Fixture::new();
+        let install = &fixture.install;
+        install
+            .install(
+                &Download::fixture(),
+                Channel::Stable,
+                |_, _, _| Ok(()),
+                |_, _| Ok(()),
+            )
+            .unwrap();
+        let candidate = install.current().unwrap().unwrap();
+        assert!(install.finish_service_start(&candidate, true).unwrap());
+        assert!(!install.service_start_pending(&candidate).unwrap());
+        assert!(!install.finish_service_start(&candidate, false).unwrap());
+        assert_eq!(install.current().unwrap().unwrap(), candidate);
+        assert!(install.receipt().unwrap().unwrap().service_ready);
+    }
+
     #[test]
     fn activation_rejects_incompatibility_and_rolls_back_failed_health_without_touching_old_bytes()
     {

@@ -1661,6 +1661,7 @@ impl Node {
             std::time::Instant,
         )>();
         let mut shutdown_reply = None;
+        crate::keeper::ready()?;
         loop {
             while services.try_join_next().is_some() {}
             tokio::select! {
@@ -2476,6 +2477,12 @@ impl Node {
                         moved,
                         dest: dest.display().to_string(),
                     },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            }
+            ipc::Op::InspectMachineInstallation { machine } => {
+                match self.installation_with(ep, &machine).await {
+                    Ok(installation) => ipc::Reply::MachineInstallation { installation },
                     Err(why) => ipc::Reply::Refused { why },
                 }
             }
@@ -13678,6 +13685,62 @@ mod current_inventory {
 }
 
 impl Node {
+    pub async fn installation_on(
+        &self,
+        machine: &str,
+    ) -> Result<crate::updates::InstallationInfo, String> {
+        if self.update_target(machine)?.is_none() {
+            return crate::updates::installation_info().await;
+        }
+        if let Some(ep) = self.current_ears() {
+            return self.installation_with(&ep, machine).await;
+        }
+        match self
+            .via_serve(ipc::Op::InspectMachineInstallation {
+                machine: machine.into(),
+            })
+            .await
+        {
+            Some(Ok(ipc::Reply::MachineInstallation { installation })) => Ok(installation),
+            Some(Ok(ipc::Reply::Refused { why })) | Some(Err(why)) => Err(why),
+            Some(Ok(_)) => Err("resident returned an unexpected installation reply".into()),
+            None => Err("start Khor on this machine before inspecting another machine".into()),
+        }
+    }
+
+    async fn installation_with(
+        &self,
+        ep: &iroh::Endpoint,
+        machine: &str,
+    ) -> Result<crate::updates::InstallationInfo, String> {
+        let Some(target) = self.update_target(machine)? else {
+            return crate::updates::installation_info().await;
+        };
+        let connection = self.dial_update(ep, &target).await?;
+        tokio::time::timeout(
+            ipc::DEADLINE_TRANSFER,
+            crate::update_wire::describe(&connection),
+        )
+        .await
+        .map_err(|_| "machine installation inspection timed out".to_owned())?
+    }
+
+    async fn dial_update(
+        &self,
+        ep: &iroh::Endpoint,
+        target: &DeviceInfo,
+    ) -> Result<iroh::endpoint::Connection, String> {
+        self.dial(
+            ep,
+            &target.id,
+            &target.addrs,
+            endpoint::UPDATE_ALPN,
+            Some(std::time::Instant::now() + DIAL_TIMEOUT),
+        )
+        .await
+        .map_err(|e| unreached_words(&target.shown(), e))
+    }
+
     pub async fn upgrade_on(
         &self,
         machine: &str,
@@ -13714,17 +13777,7 @@ impl Node {
             return crate::updates::upgrade_local(request, crate::updates::update_trust()?, |_| {})
                 .await;
         };
-        let channel = target.shown();
-        let connection = self
-            .dial(
-                ep,
-                &target.id,
-                &target.addrs,
-                endpoint::UPDATE_ALPN,
-                Some(std::time::Instant::now() + DIAL_TIMEOUT),
-            )
-            .await
-            .map_err(|e| unreached_words(&channel, e))?;
+        let connection = self.dial_update(ep, &target).await?;
         tokio::time::timeout(
             ipc::DEADLINE_TRANSFER,
             crate::update_wire::upgrade(

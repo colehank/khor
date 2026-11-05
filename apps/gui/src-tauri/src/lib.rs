@@ -2,6 +2,7 @@
 //! is one call into khor-node — CLI and GUI stay equivalent because they
 //! are the same functions (docs/KHOR.md 三条地基).
 
+mod machine_updates;
 mod menu_overlay;
 mod native_io;
 mod page_history;
@@ -5399,6 +5400,7 @@ pub fn run() {
                 app.manage(app_updates::AppUpdates::new().map_err(std::io::Error::other)?);
                 app.manage(std::sync::Arc::new(update_admission::UpdateAdmission::default()));
             }
+            machine_updates::start(app.handle());
             // The menu bar (macOS; a no-op elsewhere). Its items and the
             // page's last word on them live in `menu::Held`.
             #[cfg(desktop)]
@@ -5801,6 +5803,11 @@ pub fn run() {
             doctor_fix,
             about,
             updater_commands::app_update_status,
+            updater_commands::machine_update_status,
+            updater_commands::machine_update_check,
+            updater_commands::machine_update_queue,
+            updater_commands::machine_update_start,
+            updater_commands::machine_update_cancel,
             updater_commands::app_update_check,
             updater_commands::app_update_download,
             updater_commands::app_update_preferences,

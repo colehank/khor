@@ -1258,6 +1258,23 @@ export const downloadAppUpdate = () => call<import("./gen/bindings/AppUpdateStat
 export const installAppUpdate = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_install");
 export const setAppUpdatePreferences = (preferences: import("./gen/bindings/UpdatePreferences").UpdatePreferences) =>
   call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_preferences", { preferences });
+export type { MachineInstallation } from "./gen/bindings/MachineInstallation";
+export type { MachineUpdateResult } from "./gen/bindings/MachineUpdateResult";
+export const fetchMachineInstallation = (machine: string) =>
+  call<import("./gen/bindings/MachineInstallation").MachineInstallation>("machine_update_status", { machine });
+export const checkMachineUpdate = (machine: string, channel: import("./gen/bindings/UpdateChannel").UpdateChannel | null) =>
+  call<import("./gen/bindings/MachineUpdateResult").MachineUpdateResult>("machine_update_check", { machine, channel });
+export type { MachineUpdateQueue } from "./gen/bindings/MachineUpdateQueue";
+export type { MachineUpdateJob } from "./gen/bindings/MachineUpdateJob";
+export const fetchMachineUpdateQueue = () => call<import("./gen/bindings/MachineUpdateQueue").MachineUpdateQueue>("machine_update_queue");
+export const startMachineUpdates = (machines: string[], channel: import("./gen/bindings/UpdateChannel").UpdateChannel | null) =>
+  call<import("./gen/bindings/MachineUpdateQueue").MachineUpdateQueue>("machine_update_start", { machines, channel });
+export const cancelMachineUpdate = (machine: string, request: string) =>
+  call<import("./gen/bindings/MachineUpdateQueue").MachineUpdateQueue>("machine_update_cancel", { machine, request });
+export function onMachineUpdates(receive: (queue: import("./gen/bindings/MachineUpdateQueue").MachineUpdateQueue) => void): () => void {
+  if (!inApp) return () => {};
+  return listenNativeEvent<import("./gen/bindings/MachineUpdateQueue").MachineUpdateQueue>("machine-updates:changed", receive);
+}
 export function onAppUpdate(receive: (status: import("./gen/bindings/AppUpdateStatus").AppUpdateStatus) => void): () => void {
   if (!inApp) return () => {};
   return listenNativeEvent<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app-update:changed", receive);

@@ -4,6 +4,9 @@
 //! Each selected image keeps its OS lease through spawn or exec. Shared release
 //! packages and legacy shield directories are outside this collector's ownership.
 
+mod startup;
+
+pub(crate) use startup::ready;
 use std::sync::atomic::{AtomicI32, Ordering};
 
 use khor_catalog::msg;
@@ -177,6 +180,13 @@ pub fn keep() -> Result<(), String> {
         command
             .args(std::env::args_os().skip(1))
             .env(INNER_ENV, "1");
+        let mut startup = startup::Startup::for_image(&watched, source.path())?;
+        command
+            .env_remove(startup::READY_FILE)
+            .env_remove(startup::READY_PARENT);
+        if let Some(startup) = &startup {
+            startup.configure(&mut command);
+        }
         let mut child = source.spawn(&mut command).map_err(msg::host_wont_start)?;
         CHILD.store(child.id() as i32, Ordering::SeqCst);
         let born = std::time::Instant::now();
@@ -199,6 +209,16 @@ pub fn keep() -> Result<(), String> {
                 Err(error) => {
                     CHILD.store(0, Ordering::SeqCst);
                     return Err(error.to_string());
+                }
+            }
+            if let Some(pending) = &startup {
+                if pending.acknowledged(child.id()) {
+                    match pending.confirm() {
+                        Ok(()) => startup = None,
+                        Err(why) => eprintln!("could not confirm CLI service startup: {why}"),
+                    }
+                } else if pending.expired(born) {
+                    let _ = child.kill();
                 }
             }
             if let Some(t) = term_at
@@ -270,6 +290,7 @@ pub fn keep() -> Result<(), String> {
         };
         CHILD.store(0, Ordering::SeqCst);
         if let Some((next, from)) = swap {
+            drop(startup);
             // Only our serve has stopped. Durable hosts keep their independent leases.
             let mut command = std::process::Command::new(from.path());
             command
@@ -282,6 +303,17 @@ pub fn keep() -> Result<(), String> {
             source = from;
             backoff = 1;
             continue;
+        }
+        if let Some(pending) = startup {
+            if pending.rollback()? {
+                drop(pending);
+                let (_, previous) = take_generation(&watched)?;
+                let mut command = std::process::Command::new(previous.path());
+                command
+                    .args(std::env::args_os().skip(1))
+                    .env(SHIELD_FROM, &watched);
+                return Err(previous.exec(&mut command).to_string());
+            }
         }
         if status.success() {
             return Ok(());

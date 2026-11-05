@@ -88,3 +88,119 @@ pub struct AppUpdateStatus {
     pub blocked: Vec<UpdateBlocker>,
     pub preferences: UpdatePreferences,
 }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MachineUpdateSource {
+    Cli,
+    App,
+    External,
+    Development,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+pub struct MachineInstallation {
+    pub source: MachineUpdateSource,
+    pub running: String,
+    pub selected: Option<String>,
+    pub channel: Option<UpdateChannel>,
+    pub service_ready: bool,
+    pub failed: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+pub struct MachineUpdateResult {
+    pub current: String,
+    pub available: Option<String>,
+    pub enabled: bool,
+}
+
+pub async fn machine_installation(
+    root: &std::path::Path,
+    machine: &str,
+) -> Result<MachineInstallation, String> {
+    use khor_node::updates::InstallationSource;
+    let info = super::open_async(root)
+        .await?
+        .installation_on(machine)
+        .await?;
+    Ok(MachineInstallation {
+        source: match info.source {
+            InstallationSource::Cli => MachineUpdateSource::Cli,
+            InstallationSource::App => MachineUpdateSource::App,
+            InstallationSource::External => MachineUpdateSource::External,
+            InstallationSource::Development => MachineUpdateSource::Development,
+        },
+        running: info
+            .running
+            .build
+            .release
+            .map(|r| r.tag.as_str().to_owned())
+            .unwrap_or(info.running.build.version),
+        selected: info.current.map(|r| r.tag.as_str().to_owned()),
+        channel: info.channel.map(|channel| match channel {
+            khor_node::updates::Channel::Stable => UpdateChannel::Stable,
+            khor_node::updates::Channel::Beta => UpdateChannel::Beta,
+        }),
+        service_ready: info.service_ready,
+        failed: info.failed.map(|r| r.tag.as_str().to_owned()),
+    })
+}
+
+pub async fn machine_update(
+    root: &std::path::Path,
+    machine: &str,
+    check_only: bool,
+    channel: Option<UpdateChannel>,
+) -> Result<MachineUpdateResult, String> {
+    let outcome = super::open_async(root)
+        .await?
+        .upgrade_on(
+            machine,
+            khor_node::updates::UpgradeRequest {
+                check_only,
+                channel: channel.map(|channel| match channel {
+                    UpdateChannel::Stable => khor_node::updates::Channel::Stable,
+                    UpdateChannel::Beta => khor_node::updates::Channel::Beta,
+                }),
+                version: None,
+            },
+        )
+        .await?;
+    Ok(MachineUpdateResult {
+        current: outcome.current.tag.as_str().to_owned(),
+        available: outcome.target.map(|r| r.tag.as_str().to_owned()),
+        enabled: outcome.installed,
+    })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum MachineUpdatePhase {
+    Queued,
+    Waiting,
+    Checking,
+    Installing,
+    Confirming,
+    Complete,
+    Failed,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub struct MachineUpdateJob {
+    pub machine: String,
+    pub request: String,
+    #[serde(default)]
+    pub source: Option<MachineUpdateSource>,
+    pub phase: MachineUpdatePhase,
+    pub channel: Option<UpdateChannel>,
+    pub target: Option<String>,
+    pub failure: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, TS)]
+pub struct MachineUpdateQueue {
+    pub revision: u32,
+    pub jobs: Vec<MachineUpdateJob>,
+}
