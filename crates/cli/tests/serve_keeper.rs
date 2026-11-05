@@ -564,13 +564,28 @@ mod published_upgrade {
             command
         }
 
-        fn activate(&self, program: &Path, tag: &str) {
+        // This fixture switches a legacy shared pointer. Signed installation is checked separately.
+        fn point_legacy_installation(&self, program: &Path, tag: &str) {
+            use std::os::unix::fs::{PermissionsExt, symlink};
+            let root = self.bin.join(".khor/khor-linux-x86_64");
+            let relative = PathBuf::from("versions").join(tag).join("khor");
+            let target = root.join(&relative);
+            if target.is_file() {
+                assert_eq!(digest(&target), digest(program));
+            } else {
+                fs::create_dir_all(target.parent().unwrap()).unwrap();
+                fs::copy(program, &target).unwrap();
+                fs::set_permissions(&target, fs::Permissions::from_mode(0o555)).unwrap();
+            }
+            let next = root.join("next");
+            symlink(&relative, &next).unwrap();
+            fs::rename(next, self.pointer()).unwrap();
+            if self.bin.join("khor").is_file() {
+                return;
+            }
             let mut command = self.command(Path::new("/bin/sh"));
             command
-                .args(["-s", "--"])
-                .arg(program)
-                .arg(&self.bin)
-                .args(["khor-linux-x86_64", tag])
+                .arg("-s")
                 .stdin(Stdio::piped())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
@@ -579,12 +594,12 @@ mod published_upgrade {
             input
                 .write_all(include_bytes!("../../../scripts/install-components.sh"))
                 .unwrap();
-            input
-                .write_all(b"\nkhor_activate_release \"$1\" \"$2\" \"$3\" \"$4\"\n")
-                .unwrap();
+            input.write_all(b"\nkhor_launcher\n").unwrap();
             drop(input);
             let output = child.wait_with_output().unwrap();
-            assert!(output.status.success(), "activation: {output:?}");
+            assert!(output.status.success(), "legacy launcher: {output:?}");
+            fs::write(self.bin.join("khor"), output.stdout).unwrap();
+            fs::set_permissions(self.bin.join("khor"), fs::Permissions::from_mode(0o755)).unwrap();
         }
 
         fn pointer(&self) -> PathBuf {
@@ -708,7 +723,7 @@ mod published_upgrade {
         let runtime = home.join("node-local-runtime");
         fs::create_dir(&bin).unwrap();
         let installation = Installation { home, bin, runtime };
-        installation.activate(&old, "v0.1.15-rc.3");
+        installation.point_legacy_installation(&old, "v0.1.15-rc.3");
         let previous_package = fs::canonicalize(installation.pointer()).unwrap();
         let mut keeper = Reaper(
             installation
@@ -728,7 +743,7 @@ mod published_upgrade {
         let shell_birth = birth(existing.host.child_pid);
         existing.round_trip("BEFORE");
 
-        installation.activate(new, &format!("v{}-rc.1", khor_node::VERSION));
+        installation.point_legacy_installation(new, &format!("v{}-rc.1", khor_node::VERSION));
         wait_for("new resident", 30, || {
             inner_pid(&installation.home).is_some_and(|pid| pid != first && alive(pid))
         });
@@ -751,7 +766,7 @@ mod published_upgrade {
         created.round_trip("NEW");
 
         let second = inner_pid(&installation.home).unwrap();
-        installation.activate(&old, "v0.1.15-rc.3");
+        installation.point_legacy_installation(&old, "v0.1.15-rc.3");
         wait_for("compatible rollback", 30, || {
             inner_pid(&installation.home).is_some_and(|pid| pid != second && alive(pid))
         });

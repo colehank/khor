@@ -619,7 +619,29 @@ fn add_over_ssh_in_a_scratch_world() {
     assert!(out.status.success(), "{said}");
     assert!(said.contains("connected over SSH instead"), "{said}");
     assert_eq!(fs::read_to_string(archive).unwrap(), "user content");
-    assert!(far_home(&dir, "fragile").join(".local/bin/.khor").is_dir());
+    assert!(
+        far_home(&dir, "fragile").join(".local/bin/khor").is_file(),
+        "the installed launcher must remain available after a failed start: {said}"
+    );
+    let retained = Command::new("ssh")
+        .arg("-F")
+        .arg(dir.join("client/config"))
+        .args([
+            "-o",
+            "BatchMode=yes",
+            "fragile",
+            "\"$HOME/.local/bin/khor\" _release_info",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        retained.status.success(),
+        "retained installation: {retained:?}"
+    );
+    let actual: serde_json::Value = serde_json::from_slice(&retained.stdout).unwrap();
+    let signed: serde_json::Value =
+        serde_json::from_slice(&fs::read(package.join("khor-release.json")).unwrap()).unwrap();
+    assert_eq!(actual["build"]["release"], signed["identity"]);
     assert!(
         rows(&w, &m)
             .iter()
