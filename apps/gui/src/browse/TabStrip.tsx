@@ -394,6 +394,49 @@ function useRebalance(host: () => HTMLElement | null, active: string, kick = 0) 
   return { note };
 }
 
+export function TabFrontAct({face:f,tipSide="bottom"}:{face:TabFace|undefined;tipSide?:"top"|"bottom"}) {
+  if (!f?.act) return null;
+  // **已保存, said once at the button** (save-a, 「保存按钮只是作为一个
+  // 额外的确定」): the ✓ turns to ink and its name stands under it for
+  // the moment, without a hover — a confirmation nobody has to look
+  // for. Its own instance, so the open name is not the hover one's.
+  if (f.act.kind === "saved") {
+    return (
+      <Tooltip key="saved" open>
+        <TooltipTrigger asChild>
+          <GlassCircle
+            data-tab-act="saved"
+            data-tab-front-act
+            aria-label={f.act.label}
+            aria-disabled
+            className="pointer-events-none"
+          >
+            <IconCheck />
+          </GlassCircle>
+        </TooltipTrigger>
+        <TooltipContent side={tipSide} data-saved-said>
+          {f.act.label}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <GlassCircle
+          data-tab-act={f.act.kind}
+          data-tab-front-act
+          aria-label={f.act.label}
+          className={f.act.kind === "save" ? "text-brand-strong" : undefined}
+          onClick={() => f.act?.onPress()}
+        >
+          {f.act.kind === "save" ? <IconCheck /> : f.act.kind === "stop" ? <IconClose /> : <IconReload className={cn(f.loading && "animate-spin motion-reduce:animate-none")} />}
+        </GlassCircle>
+      </TooltipTrigger>
+      <TooltipContent side={tipSide}>{f.act.label}</TooltipContent>
+    </Tooltip>
+  );
+}
 /** Shared short divider for outer and nested tab controls. */
 export function TabDivider() {
   return <span aria-hidden="true" data-tab-divider className="mx-in h-4.5 w-px flex-none bg-border" />;
@@ -1151,50 +1194,7 @@ export function TabStrip({
           fold above); kept mounted, the verbs' seat is a portal's. */}
       <span ref={extras} data-tab-extras className={cn("flex flex-none items-center gap-in empty:hidden", folded && "hidden")}>
       {/* The front tab's one act, after the capsule (`frontAct`). */}
-      {frontAct && (() => {
-        const f = faces.find((x) => x.id === active);
-        if (!f?.act) return null;
-        // **已保存, said once at the button** (save-a, 「保存按钮只是作为一个
-        // 额外的确定」): the ✓ turns to ink and its name stands under it for
-        // the moment, without a hover — a confirmation nobody has to look
-        // for. Its own instance, so the open name is not the hover one's.
-        if (f.act.kind === "saved") {
-          return (
-            <Tooltip key="saved" open>
-              <TooltipTrigger asChild>
-                <GlassCircle
-                  data-tab-act="saved"
-                  data-tab-front-act
-                  aria-label={f.act.label}
-                  aria-disabled
-                  className="pointer-events-none"
-                >
-                  <IconCheck />
-                </GlassCircle>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" data-saved-said>
-                {f.act.label}
-              </TooltipContent>
-            </Tooltip>
-          );
-        }
-        return (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <GlassCircle
-                data-tab-act={f.act.kind}
-                data-tab-front-act
-                aria-label={f.act.label}
-                className={f.act.kind === "save" ? "text-brand-strong" : undefined}
-                onClick={() => f.act?.onPress()}
-              >
-                {f.act.kind === "save" ? <IconCheck /> : f.act.kind === "stop" ? <IconClose /> : <IconReload className={cn(f.loading && "animate-spin motion-reduce:animate-none")} />}
-              </GlassCircle>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{f.act.label}</TooltipContent>
-          </Tooltip>
-        );
-      })()}
+      {frontAct && <TabFrontAct face={faces.find(f=>f.id===active)}/>}
       {tail}
       </span>
       {grown.growth.mounted && (

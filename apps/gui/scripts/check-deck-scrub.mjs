@@ -148,19 +148,37 @@ console.log('pill gestures: approved 200/1200ms defaults, parking, local correct
 const bundle=await build({entryPoints:['src/lib/deck-joystick.ts'],bundle:true,format:'esm',write:false});
 const {deckJoystick:joystick,DECK_JOYSTICK_DEFAULTS:DEFAULTS}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 function fixture(count=12,initial=3){
- let now=0,id=0;const frames=new Map(),commits=[];let overviews=0;
+ let now=0,id=0;const frames=new Map(),commits=[];let overviews=0,created=0;
  const clock={now:()=>now,request(run){frames.set(++id,{at:now+16,run});return id;},cancel(id){frames.delete(id);}};
  const advance=ms=>{const until=now+ms;for(;;){const next=[...frames].filter(([,v])=>v.at<=until).sort((a,b)=>a[1].at-b[1].at)[0];if(!next)break;now=next[1].at;frames.delete(next[0]);next[1].run();}now=until;};
- const e=joystick(count,initial,()=>{},i=>commits.push(i),()=>overviews++,clock);
+ const e=joystick(count,initial,()=>{},i=>commits.push(i),()=>overviews++,clock,()=>DEFAULTS,()=>created++);
  e.start(200,500);
- return {e,advance,commits,frames,overviews:()=>overviews,hold:()=>advance(DEFAULTS.holdMs+16),move:(dx,dy=0)=>e.move(200+dx,500+dy)};
+ return {e,advance,commits,frames,overviews:()=>overviews,created:()=>created,hold:()=>advance(DEFAULTS.holdMs+16),move:(dx,dy=0)=>e.move(200+dx,500+dy)};
+}
+{
+ const f=fixture();f.hold();f.move(0,-55);f.e.release();
+ assert.equal(f.overviews(),0,'moving one pill height must not jump directly to all tabs');
+}
+{
+ const f=fixture();f.hold();f.move(0,-90);assert.equal(f.e.read().intent,'new');
+ assert.equal(f.created(),0);f.move(0,-180);assert.equal(f.e.read().intent,'overview');assert.equal(f.overviews(),0);
+ f.move(0,-90);assert.equal(f.e.read().intent,'new');f.e.release();f.e.release();
+ assert.equal(f.created(),1,'crossing both action regions only creates once when released in the near region');assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
+}
+{
+ const f=fixture();f.hold();f.move(0,-180);f.move(0,0);f.e.release();
+ assert.equal(f.created(),0);assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[],'returning home cancels all action previews');
+}
+{
+ const f=fixture();f.hold();f.move(32);const target=f.e.read().preview;f.e.release();f.e.release();
+ assert.deepEqual(f.commits,[target],'release over a valid adjacent candidate commits exactly once');
 }
 {
  const f=fixture();f.hold();assert.equal(f.e.read().phase,'steering');f.move(12);assert.equal(f.e.read().preview,3,'small motion follows without changing identity');assert(f.e.read().position<3);f.move(32);assert.equal(f.e.read().preview,2,'crossing the approved threshold accepts the adjacent identity');
  assert.deepEqual(f.commits,[]);f.advance(1800);assert(f.e.read().target<2,'stationary offset keeps browsing after snap and reading interval');
  f.move(0);const paused=f.e.read().preview;f.advance(4000);assert.equal(f.e.read().preview,paused,'return to origin pauses indefinitely');
  f.move(-50);assert.equal(f.e.read().preview,(paused+1)%12,'deliberate reverse crosses the approved threshold');f.move(0);const target=f.e.read().preview;
- f.e.release();f.e.release();f.move(56);assert.deepEqual(f.commits,target===3?[]:[target]);assert.equal(f.frames.size,0);
+ f.e.release();f.e.release();f.move(56);assert.deepEqual(f.commits,[],'releasing in neutral retains the original tab after browsing');assert.equal(f.frames.size,0);
 }
 {
  const slow=fixture(),fast=fixture();slow.hold();fast.hold();slow.move(32);fast.move(60);fast.move(60);slow.advance(2400);fast.advance(2400);
@@ -170,27 +188,27 @@ function fixture(count=12,initial=3){
  assert(fast.e.read().interval<slow.e.read().interval);slow.e.cancel();fast.e.cancel();
 }
 {
- const f=fixture();f.hold();f.move(56);f.advance(300);f.move(56,-55);const stopped=f.e.read().preview;f.advance(1000);
+ const f=fixture();f.hold();f.move(56);f.advance(300);f.move(0,-200);const stopped=f.e.read().preview;f.advance(1000);
  assert.equal(f.e.read().preview,stopped,'overview target pauses browsing');f.e.release();assert.equal(f.overviews(),1);assert.deepEqual(f.commits,[]);f.e.release();assert.equal(f.overviews(),1);
 }
 {
- const f=fixture();f.hold();f.move(56,-55);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
+ const f=fixture();f.hold();f.move(0,-200);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
 }
 for(const phase of ['pending','swipe','steering']){
  const f=fixture();if(phase==='steering')f.hold();if(phase==='swipe')f.move(-35);if(phase==='steering')f.move(56);
  f.e.cancel();f.e.release();f.advance(3000);assert.deepEqual(f.commits,[]);assert.equal(f.frames.size,0);assert.equal(f.e.read().preview,3);
 }
 for(const count of [0,1]){
- const f=fixture(count,0);f.hold();f.move(56);f.advance(2000);assert.equal(f.e.read().preview,0);f.move(0,-55);f.e.release();assert.equal(f.overviews(),1);assert.deepEqual(f.commits,[]);
+ const f=fixture(count,0);f.hold();f.move(56);f.advance(2000);assert.equal(f.e.read().preview,0);f.move(0,-200);f.e.release();assert.equal(f.overviews(),1);assert.deepEqual(f.commits,[]);
 }
 {
  const f=fixture();f.move(-35);assert.equal(f.e.read().phase,'swipe');f.e.release();assert.deepEqual(f.commits,[],'ordinary swipe is delegated without a second commit');
- const vertical=fixture();vertical.move(0,-55);assert.equal(vertical.e.read().phase,'pull');vertical.e.release();assert.equal(vertical.overviews(),1);assert.deepEqual(vertical.commits,[]);
+ const vertical=fixture();vertical.move(0,-55);assert.equal(vertical.e.read().phase,'pull');vertical.e.release();assert.equal(vertical.overviews(),0,'an upward stroke without a long press is not an action');assert.deepEqual(vertical.commits,[]);
  const down=fixture();down.move(0,55);assert.equal(down.e.read().phase,'idle');down.e.release();assert.deepEqual(down.commits,[]);
  const tap=fixture();assert.equal(tap.e.release(),'tap');assert.deepEqual(tap.commits,[]);
 }
 {
- const f=fixture();f.move(0,-20);assert.equal(f.e.read().phase,'pull');assert(!f.e.read().overview);f.move(0,-60);assert(f.e.read().overview);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
+ const f=fixture();f.move(0,-20);assert.equal(f.e.read().phase,'pull');assert(!f.e.read().overview);f.hold();f.move(0,-200);assert(f.e.read().overview);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
 }
 {
  const f=fixture();f.hold();f.move(12);assert.equal(f.e.read().tier,1);f.move(40);assert.equal(f.e.read().tier,2);f.move(60);assert.equal(f.e.read().tier,3);f.move(0);assert.equal(f.e.read().tier,0);assert.equal(f.e.read().direction,0);f.e.cancel();

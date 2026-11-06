@@ -173,7 +173,7 @@ import { Fault } from "@/components/Fault";
 import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { AddMachineDialog } from "@/views/AddMachine";
-import { AloneNote } from "@/views/PairDialogs";
+import { AddMachineHint } from "@/views/PairDialogs";
 import { QuotaLanding } from "@/views/QuotaLanding";
 import { SessionsList } from "@/views/SessionsList";
 import { Region, RegionLead } from "@/components/Region";
@@ -2290,8 +2290,8 @@ export default function App() {
             pinFailed={pinFailed}
           />
         )}
-        {devicesRead && devices.length === 1 && (sessions || landing === "devices") && !queries[landing] && (
-          <AloneNote onAdd={() => setDialog("add")} />
+        {devicesRead && devices.length === 0 && (sessions || landing === "devices") && !queries[landing] && (
+          <AddMachineHint onAdd={() => setDialog("add")} />
         )}
       </>
     </ListPane>

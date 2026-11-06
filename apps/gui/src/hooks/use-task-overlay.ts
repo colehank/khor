@@ -31,7 +31,8 @@ export function useTaskOverlay(el: HTMLDivElement|null, policy: Policy, dismiss:
   const geometry=useCallback(()=>{
     if(!sheet)return {half:0,full:0,room:0};
     const root=getComputedStyle(document.documentElement);
-    const top=(parseFloat(root.getPropertyValue('--safe-top'))||0)+(parseFloat(root.getPropertyValue('--gap-pane'))||0);
+    const configured=getComputedStyle(sheet).getPropertyValue('--task-sheet-top').trim();
+    const top=configured&&Number.isFinite(parseFloat(configured))?Math.max(0,parseFloat(configured)):(parseFloat(root.getPropertyValue('--safe-top'))||0)+(parseFloat(root.getPropertyValue('--gap-pane'))||0);
     const bounds={height:window.visualViewport?.height??window.innerHeight,top};
     const heights=overlayHeights(bounds,{initial:policy.initial,maximum:policy.maximum,content:contentHeight(sheet)});
     const room=overlayHeights(bounds,{initial:'large',maximum:policy.maximum==='fit'?'large':policy.maximum,content:0}).full;

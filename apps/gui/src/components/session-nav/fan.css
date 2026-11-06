@@ -9,9 +9,11 @@
 .lab-fan-avatar-face{display:grid;place-items:center;animation:deck-selector-title-in var(--dur-120) var(--ease-out)}
 .lab-fan-identities[data-dimmed]{opacity:.3}
 .lab-fan-overview{position:absolute;display:flex;flex-direction:column;align-items:center;gap:var(--gap-xxs);transform:translateX(-50%);white-space:nowrap;font-size:var(--text-callout);line-height:var(--text-callout--line-height);color:var(--muted-foreground)}
-.lab-thumb-fan[data-fan-placement=right] .lab-fan-overview>svg{rotate:-45deg;}
+.lab-thumb-fan[data-fan-placement=right] .lab-fan-overview:not(.lab-fan-create)>svg{rotate:-45deg;}
 .lab-fan-overview>svg{width:var(--gap-row);height:var(--gap-row)}
 .lab-fan-overview[data-active]{color:var(--foreground);translate:0 calc(-1 * var(--gap-xxs))}
+.lab-fan-current{display:inline-flex;vertical-align:middle;width:var(--text-caption);height:var(--text-caption);margin-inline-end:var(--gap-xxs)}
+.lab-fan-current>svg{width:100%;height:100%}
 .lab-fan-steering{position:absolute;inset:0}
 .lab-fan-guide{position:absolute;inset:0;fill:none;stroke:var(--muted-foreground);stroke-width:1;opacity:.2}
 .lab-fan-cue{position:absolute}

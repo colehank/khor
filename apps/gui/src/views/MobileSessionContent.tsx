@@ -61,7 +61,7 @@ export function ContentDocumentBand({session,face,content,navigation,title,onTit
     const identity=contentTabIdentity(t,content.pageIcon,navigation.forTab(session,key).get(session).scene);
     return {...face,...identity,session:undefined,face:identity.mark?.key==='new-tab'?null:face.face,hideFace:false,id:key};
   });
-  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
+  return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onNew={()=>navigation.add(session)} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,navigation,onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
   return <div className="mobile-content-deck" data-content-deck data-content-editing={editing||undefined}>
@@ -175,9 +175,8 @@ export function MobileContentSheet({children,onClose}: {children:ReactNode;onClo
   const overlay=useRef<HTMLDivElement>(null);
   const screen=()=>overlay.current?.closest<HTMLElement>('[data-session-screen]');
   useContentSheet(el,setDetent,onClose,()=>{
-    const host=screen(),top=host?.querySelector<HTMLElement>('[data-session-top]');
-    const gap=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--gap-in'))||0;
-    return {height:host?.clientHeight??innerHeight,foot:0,top:(top?.getBoundingClientRect().height||0)+gap};
+    const host=screen();
+    return {height:host?.clientHeight??innerHeight,foot:0,top:0};
   });
   useLayoutEffect(()=>{const host=screen();if(!host)return;const read=()=>overlay.current?.style.setProperty('--mobile-content-height',host.clientHeight+'px');read();const observer=new ResizeObserver(read);observer.observe(host);return()=>observer.disconnect();},[]);
   // Content is portaled into this DOM seat; React events bubble through

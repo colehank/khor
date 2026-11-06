@@ -15,8 +15,8 @@ import {DeckExplore} from './SessionExplore';
 import './deck-band.css';
 
 type Drag={pointer:number;touch:boolean;touchId:number|null;title:boolean;x:number;layout:DeckContactLayout;route:'joystick'|'swipe'};
-export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JOYSTICK_DEFAULTS,renderFace,placement='bottom'}: {
-  faces:TabFace[];active:string;onFocus:(id:string)=>void;onTitle?:()=>void;onOverview?:()=>void;
+export function DeckBand({faces,active,onFocus,onTitle,onOverview,onNew,tuning=DECK_JOYSTICK_DEFAULTS,renderFace,placement='bottom'}: {
+  faces:TabFace[];active:string;onFocus:(id:string)=>void;onTitle?:()=>void;onOverview?:()=>void;onNew?:()=>void;
   /** Isolated fixtures can tune one contact; the App uses the approved defaults. */
   tuning?:DeckJoystickTuning;
   renderFace?:(face:TabFace,role:'prev'|'cur'|'next')=>ReactNode;
@@ -25,11 +25,12 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
   const upward=placement==='bottom';
   const gesture=upward?gui.deck_gesture:gui.deck_gesture_down;
   const band=useRef<HTMLDivElement>(null),drag=useRef<Drag|null>(null),pendingTap=useRef(false);
-  const latest=useRef({faces,active,onFocus,onTitle,onOverview,tuning});latest.current={faces,active,onFocus,onTitle,onOverview,tuning};
+  const latest=useRef({faces,active,onFocus,onTitle,onOverview,onNew,tuning});latest.current={faces,active,onFocus,onTitle,onOverview,onNew,tuning};
   const at=Math.max(0,faces.findIndex(f=>f.id===active));
   const [state,setState]=useState<DeckScrubState>({opened:at,preview:at,position:at,mode:'idle',source:'swipe',direction:0,holding:false,...holdTiming(0,250)});
-  const [steering,setSteering]=useState<DeckJoystickState>({phase:'idle',preview:at,dx:0,dy:0,direction:0,interval:tuning.slowMs,overview:false,tier:0,pulse:0,position:at,target:at});
+  const [steering,setSteering]=useState<DeckJoystickState>({phase:'idle',preview:at,dx:0,dy:0,direction:0,interval:tuning.slowMs,overview:false,tier:0,pulse:0,position:at,target:at,opened:at,intent:'keep'});
   const alive=useRef(true),prior=useRef(at),focusDirection=useRef(0);
+  const priorIntent=useRef<DeckJoystickState['intent']>('keep');
   const focus=(index:number)=>{const now=latest.current,f=now.faces[index];if(f&&f.id!==now.active)now.onFocus(f.id);};
   const engine=useMemo(()=>deckScrubber(faces.length,at,s=>{
     if(!alive.current)return;
@@ -37,12 +38,14 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     prior.current=s.preview;setState(s);
   },focus,undefined,()=>({...DEFAULT_DECK_TUNING,longPressMs:Infinity})),[faces.length]);
   const steer=useMemo(()=>deckJoystick(faces.length,at,s=>{
+    if(s.phase==='steering'&&(s.intent==='new'||s.intent==='overview')&&s.intent!==priorIntent.current)feel('threshold');
+    priorIntent.current=s.intent;
     if(!alive.current)return;
     if(s.preview!==prior.current&&s.phase==='steering')feel('threshold');
     prior.current=s.preview;
     if((s.phase==='steering'||s.phase==='pull')&&engine.read().mode==='pending')engine.cancel();
     setSteering(s);
-  },focus,()=>latest.current.onOverview?.(),undefined,()=>latest.current.tuning),[faces.length,at]);
+  },focus,()=>latest.current.onOverview?.(),undefined,()=>latest.current.tuning,onNew?()=>latest.current.onNew?.():undefined),[faces.length,at,!!onNew]);
   const clearCapture=()=>{const d=drag.current;drag.current=null;if(d&&band.current?.hasPointerCapture(d.pointer))band.current.releasePointerCapture(d.pointer);};
   const cancel=()=>{pendingTap.current=false;clearCapture();steer.cancel();engine.select(Math.max(0,latest.current.faces.findIndex(f=>f.id===latest.current.active)));};
   const ids=JSON.stringify(faces.map(f=>f.id));
@@ -87,7 +90,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     // velocity history. Only the joystick may claim a stationary hold.
     const cs=getComputedStyle(band.current),step=parseFloat(cs.getPropertyValue('--glass-btn'))+3*parseFloat(cs.getPropertyValue('--gap-pane'));
     engine.start(e.clientX,e.clientY,band.current.clientWidth,step);
-    steer.start(e.clientX,upward?e.clientY:-e.clientY);e.preventDefault();band.current.setPointerCapture(e.pointerId);
+    steer.start(e.clientX,upward?e.clientY:-e.clientY,parseFloat(cs.getPropertyValue('--touch'))||44);e.preventDefault();band.current.setPointerCapture(e.pointerId);
   };
   const moving=(e:PointerEvent)=>{
     const d=drag.current;if(!d||d.pointer!==e.pointerId)return;
@@ -150,7 +153,7 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
     </>
     );
 
-  const exploring=steering.phase==='steering'||steering.phase==='pull';
+  const exploring=steering.phase==='steering';
   const following=state.mode==='swipe'||state.mode==='settling';
   const position=useDeckPosition(exploring?steering.preview:state.preview,faces.length,exploring?steering.direction:focusDirection.current,exploring?steering.position:following?state.position:undefined,ids);
   const anchor=Math.round(position),slots=nearbySlots(position,faces.length,1),past=state.mode==='swipe'&&state.preview!==state.opened;
@@ -172,12 +175,12 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,tuning=DECK_JO
         const f=faces[index],role=slot===anchor?'cur':slot<anchor?'prev':'next',offset=slot-position;
         return <div key={slot} data-band-id={f.id} data-band-seg={role} aria-hidden={f.id!==active||undefined}
           className="deck-band-face absolute inset-0 flex items-center overflow-hidden text-foreground will-change-transform"
-          style={{visibility:Math.abs(offset)>=1?'hidden':undefined,transform:`translate3d(calc(${offset} * var(--deck-band-width)),0,0)`,opacity:previewing&&((past&&index===state.opened)||(!past&&index!==state.opened))?.4:1}}>
+          style={{visibility:Math.abs(offset)>=1?'hidden':undefined,transform:`translate3d(calc(${offset} * var(--deck-band-width)),0,0)`,opacity:previewing&&((past&&index===state.opened)||(!past&&index!==state.opened)) ? .4 : 1}}>
           <div data-band-body className="flex h-full flex-none items-center gap-in overflow-hidden whitespace-nowrap pe-row" style={{width:'var(--deck-band-width)'}}>{body(f,f.id===active?'cur':slot<state.opened?'prev':'next')}</div>
         </div>;
       })}
       {selecting&&<span data-band-count className="deck-band-count" aria-hidden="true">{state.preview+1}/{faces.length}</span>}
     </div>
-    {exploring&&<DeckExplore placement={placement} band={band} faces={faces} state={steering} origin={drag.current?.x??0} reach={tuning.reach} overview={!!onOverview}/>}
+    {exploring&&<DeckExplore placement={placement} band={band} faces={faces} state={steering} origin={drag.current?.x??0} reach={tuning.reach} overview={!!onOverview} create={!!onNew}/>}
   </>;
 }

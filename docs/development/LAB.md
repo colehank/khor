@@ -59,7 +59,23 @@ python3 scripts/dev.py lab start --mode full --builder remote
 
 Refresh the browser after a bundle update or scene reset. For a full Lab, `lab restart` reopens its isolated native view with the active frontend and existing store, reusing its compiled host without a new build. Lab does not reload a page while someone is typing or composing with an input method. `/app/` is the stable latest entry. `snapshot_url` pins an acquired version until cache retention removes it; its assets and source manifest remain tied to that version.
 
-The scene set is `gui`, `codex`, `terminal`, `stream`, `content`, `page`, `list`; full uses `live`. Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
+Frontend scenes include `gui`, `codex`, `terminal`, `stream`, `content`, `page`, `list`, `devices`, `workspaces`, `workspace`, `quota` and `browser`; full uses `live`. A frontend link can select its own scene and fixture sizes, independently of the manager's default:
+
+```text
+/app/?scene=list&machines=6&items=5
+/app/?scene=quota&machines=3
+/app/?scene=workspaces&machines=3
+/app/?scene=workspace&machines=1
+/app/?scene=gui&items=2
+```
+
+`machines` accepts 0, 1, 3 or 6 (default 3); `items` accepts 2, 3 or 5 (default 5). The fixture includes distinct machine avatars and connection states, six subscription/balance/budget/error examples, fourteen usage days, four Git or plain-folder workspaces per machine, paginated commit history and documents stored independently by machine and path. Changing scene or sizes resets that browser Lab's isolated fixture state. Full mode does not accept a URL scene override.
+
+Synthetic facts must retain production domain behavior. Machine system marks use typed `vitals.system` facts. Avatars come from `khor_core::avatar` with the default style; directory templates are read and ordered by `khor_node::files::list_dir`. `lab_data` creates its own temporary workspace and never opens a node or a production store. Do not hand-write avatar paint, crop or mark-ink records, or sort a replacement directory array in the frontend fixture.
+
+`scripts/khor_lab/fixture_data.py` validates the source hashes in `data/world.generated.json`. Backend avatar/listing or template changes regenerate it; ordinary UI changes reuse it. Local builders and remote workflows prepare the same data. A source-only developer acquires the generated fixture artifact from the trusted Lab workflow; include the generated JSON with a fixture change. Developers with Rust can regenerate it with `python3 scripts/khor_lab/fixture_data.py .` from the repository root and verify it with `--check`.
+
+Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
 
 ## Defaults and isolation
 

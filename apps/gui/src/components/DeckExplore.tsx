@@ -36,7 +36,7 @@ export function DeckRateCue({side,state,x}:{side:number;state:Pick<DeckJoystickS
   </span>;
 }
 
-export function DeckExplore({band,faces,state,origin,reach,overview,placement='bottom'}:{band:RefObject<HTMLDivElement|null>;faces:TabFace[];state:DeckJoystickState;origin:number;reach:number;overview:boolean;placement?:'top'|'bottom'}){
+export function DeckExplore({band,faces,state,origin,reach,overview,placement='bottom'}:{band:RefObject<HTMLDivElement|null>;faces:TabFace[];state:DeckJoystickState;origin:number;reach:number;overview:boolean;create?:boolean;placement?:'top'|'bottom'}){
   const measure=()=>{
     const b=band.current!,r=b.getBoundingClientRect(),viewport=window.visualViewport;
     const host=b.closest('[data-deck-explore-host]')?.getBoundingClientRect();

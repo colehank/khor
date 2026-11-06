@@ -3,27 +3,35 @@ import {scenes, sessionIds, type Scene} from './scenes';
 
 type Runtime = {mode: 'frontend'|'full'; scene: Scene; tree: string; revision: string};
 const version = document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
-const runtime: Runtime = await fetch('/lab/runtime' + (version ? '?version=' + encodeURIComponent(version) : '')).then(r => {
+const settings: Runtime = await fetch('/lab/runtime' + (version ? '?version=' + encodeURIComponent(version) : '')).then(r => {
   if (!r.ok) throw new Error('Start this entry with khor-dev lab start');
   return r.json();
 });
+const query = new URLSearchParams(location.search);
+const requested = settings.mode === 'frontend' ? query.get('scene') : null;
+if (requested && !(requested in scenes)) throw new Error('Unknown Lab scene');
+const runtime = requested ? {...settings, scene: requested as Scene} : settings;
 if (!(runtime.scene in scenes)) throw new Error('Unknown Lab scene');
 const native = '__TAURI_INTERNALS__' in window;
 if (runtime.mode === 'full' && !native) throw new Error('Full Lab requires its isolated native host; use the frontend link for browser review');
 if (runtime.mode === 'frontend' && native) throw new Error('Frontend fixtures cannot replace the native backend');
-const query = new URLSearchParams(location.search);
 if (query.has('bridge')) throw new Error('Lab does not connect to external API bridges');
 const scene = scenes[runtime.scene];
-const identity = `${runtime.tree}/${runtime.scene}/${runtime.revision}`;
+const items = Number(query.get('items') ?? 5), machines = Number(query.get('machines') ?? 3);
+if (![2,3,5].includes(items) || ![0,1,3,6].includes(machines)) throw new Error('Lab data supports items=2/3/5 and machines=0/1/3/6');
+const identity = `${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}`;
 if (runtime.mode === 'frontend') {
   if (localStorage.getItem('khor.lab.identity') !== identity) {
     for (const key of Object.keys(localStorage)) if (key.startsWith('khor.')) localStorage.removeItem(key);
     localStorage.setItem('khor.lab.identity', identity);
     localStorage.setItem('khor.lang', 'zh');
-    localStorage.setItem('khor.sessions.tabs', JSON.stringify({tabs: sessionIds, active: scene.session ?? sessionIds[0]}));
-    localStorage.setItem('khor.place', JSON.stringify({landing: 'sessions', screen: 'list'}));
+    const active = scene.session ?? sessionIds[0];
+    const tabs = [active,...sessionIds.filter(id => id !== active)].slice(0,items);
+    localStorage.setItem('khor.sessions.tabs', JSON.stringify({tabs,active}));
+    const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : runtime.scene === 'devices' ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
+    localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
-  const fixture = createLabFixture(true, {origin: location.origin, content: ['content', 'page'].includes(runtime.scene)});
+  const fixture = createLabFixture(true, {origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines, page:runtime.scene==='page'});
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -73,6 +81,18 @@ if (runtime.mode === 'frontend' && runtime.scene === 'page') {
   const observer = new MutationObserver(openPage);
   observer.observe(document.body, {childList: true, subtree: true});
   setTimeout(() => observer.disconnect(), 15000);
+}
+if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
+  let opened = false;
+  const enter = () => {
+    const file = document.querySelector<HTMLElement>('[data-file-path="/preview/project/README.md"]');
+    if (file) {observer.disconnect();file.click();return;}
+    const row = [...document.querySelectorAll<HTMLElement>('[data-list] [data-ws-row]')].find(el => el.textContent?.includes('project'));
+    if (row && !opened) {opened=true;row.click();}
+  };
+  const observer = new MutationObserver(enter);
+  observer.observe(document.body, {childList:true,subtree:true});
+  setTimeout(() => observer.disconnect(),15000);
 }
 Object.defineProperty(window, '__KHOR_LAB__', {value: Object.freeze(runtime)});
 await import('../../src/main');

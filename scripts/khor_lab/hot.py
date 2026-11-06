@@ -8,6 +8,7 @@ import shutil
 import signal
 import socket
 import subprocess
+import sys
 import time
 
 from .artifacts import write_json
@@ -65,6 +66,8 @@ def prepare(root, home, environment):
     if not stamp.exists() or json.loads(stamp.read_text()).get('contract') != contract or not (generated / 'catalog.ts').exists():
         run('npm', 'run', 'gen', cwd=gui, env=environment, timeout=1800)
         write_json(stamp, {'contract': contract})
+    if (gui / 'dev/lab/world.ts').is_file():
+        run(sys.executable, str(root / 'scripts/khor_lab/fixture_data.py'), str(root), env=environment, timeout=1800)
 
 
 def development_home(config):

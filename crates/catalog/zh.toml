@@ -5006,9 +5006,8 @@ paste-a-ticket = "输入邀请码"
 # Between pressing 加入 and an answer (UX-8): a dial can wait ten seconds,
 # and a busy button alone said nothing for all of them.
 join-dialing = "正在连接生成邀请码的机器…"
-# Under the list while the table holds only this machine (UX-8, the first
-# run), above the two buttons that start a pairing.
-alone-how = "这里只有这台机器。在 ＋ 中添加另一台"
+devices-empty = "还没有机器"
+devices-empty-how = "在 ＋ 中添加一台机器"
 # The invite dialog once a machine joined with its ticket (UX-8): the
 # ticket is spent, so the dialog says who used it instead of offering it.
 ticket-used-by = "{0} 已用这个邀请码加入"

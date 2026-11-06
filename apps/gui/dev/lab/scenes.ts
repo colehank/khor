@@ -7,6 +7,11 @@ export const scenes = {
   page: {title: '会话内网页导航', session: 'gui/ai-elements-review', row: 'AI Elements · 组件总览'},
   list: {title: '会话列表', session: null, row: null},
   live: {title: '隔离的真实后端', session: null, row: null},
+  workspace: {title: '移动工作区文件', session: null, row: null},
+  workspaces: {title: '工作区列表', session: null, row: null},
+  quota: {title: '额度与账户', session: null, row: null},
+  devices: {title: '机器列表', session: null, row: null},
+  browser: {title: '浏览器', session: null, row: null},
 } as const;
 export type Scene = keyof typeof scenes;
 export const sessionIds = ['gui/ai-elements-review', 'gui/ai-elements-plan', 'gui/ai-elements-stream', 'gui/codex-review', 'wide/all', 'shell/layout-lab'];

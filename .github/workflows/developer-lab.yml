@@ -96,12 +96,19 @@ jobs:
           else
             echo 'Release contracts unavailable; generate this source instead.'
           fi
+      - name: Check canonical Lab fixture data
+        id: fixture-data
+        run: python3 snapshot/source/scripts/khor_lab/fixture_data.py snapshot/source --github-output "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@1.95.0
-        if: steps.released-contracts.outputs.ready != 'true'
+        if: steps.released-contracts.outputs.ready != 'true' || steps.fixture-data.outputs.ready != 'true'
       - name: Generate changed contracts from this exact source
         if: steps.released-contracts.outputs.ready != 'true'
         working-directory: snapshot/source/apps/gui
         run: npm run gen
+      - name: Generate canonical Lab fixture data
+        if: steps.fixture-data.outputs.ready != 'true'
+        working-directory: snapshot/source
+        run: python3 scripts/khor_lab/fixture_data.py .
       - run: npm ci
         working-directory: snapshot/source/apps/gui
       - name: Build complete App Lab
@@ -124,6 +131,12 @@ jobs:
           path: snapshot/source/apps/gui/src/gen
           if-no-files-found: error
           retention-days: 3
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: developer-lab-fixture-data
+          path: snapshot/source/apps/gui/dev/lab/data/world.generated.json
+          if-no-files-found: error
+          retention-days: 7
       - name: Prepare embedded web face for the full host
         if: inputs.mode == 'full' && inputs.native_required
         working-directory: snapshot/source/apps/gui
@@ -168,6 +181,10 @@ jobs:
         with:
           name: developer-lab-contracts
           path: snapshot/source/apps/gui/src/gen
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: developer-lab-fixture-data
+          path: snapshot/source/apps/gui/dev/lab/data
       - run: npm ci
         working-directory: snapshot/source/apps/gui
       - name: Check manager contracts
@@ -175,6 +192,8 @@ jobs:
         run: |
           python3 -m unittest discover -s scripts/tests -p test_developer_lab.py -v
           python3 -m unittest discover -s scripts/tests -p test_lab_development.py -v
+          python3 -m unittest discover -s scripts/tests -p test_lab_fixture_data.py -v
+          python3 scripts/khor_lab/fixture_data.py . --check
       - name: Validate source workflow changes
         working-directory: snapshot/source
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
@@ -184,6 +203,10 @@ jobs:
           LAB_BUNDLE: ${{ runner.temp }}/frontend
           LAB_REPORT: ${{ runner.temp }}/checks
         run: |
+          npm run test:types
+          npm run deck-scrub
+          npm run session-navigation
+          npm run session-follow
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk
           npx playwright-core install chromium

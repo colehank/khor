@@ -231,8 +231,8 @@ export function SessionScreen({
   active: string;
   onFocus: (id: string) => void;
   onClose: (id: string) => void;
-  /** ＋ at the end of the tabs sheet: a new tab of this page's kind (a
-      page, a session). The one place a new tab is opened from here. */
+  /** Creates a tab through this page's existing owner. Shared by the
+      sheet's first row and a confirmed upward gesture. */
   onNew?: () => void;
   /** ＋'s word where the new thing is not a page (「新会话」). */
   newLabel?: string;
@@ -514,7 +514,7 @@ export function SessionScreen({
             >
               <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1">
                 <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
-                <DeckBand placement={deckAt} faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} onOverview={() => onTabs ? onTabs() : setSheet(true)} />
+                <DeckBand placement={deckAt} faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} onNew={onNew} onOverview={() => onTabs ? onTabs() : setSheet(true)} />
                 {caption && (
                   // Gives way before the pill's own seats do (UX-22: a page's
                   // failure and its 重试 pushed reload out of the pill).
@@ -681,6 +681,19 @@ export type TabSheetRowsProps = {
 export function TabSheetRows({faces,active,onFocus,onClose,onNew,newLabel,canClose,actions,rowData}: TabSheetRowsProps) {
   return (
         <div className="flex min-w-0 flex-col">
+          {onNew && (
+            <button
+              type="button"
+              data-tab-sheet-new
+              onClick={onNew}
+              className="flex min-h-list-row items-center gap-row rounded-md px-in text-left text-body text-foreground"
+            >
+              <span className="grid size-list-face flex-none place-items-center">
+                <IconPlus />
+              </span>
+              {newLabel ?? gui.new_tab}
+            </button>
+          )}
           {faces.map((f) => (
             <div
               {...rowData?.(f)}
@@ -714,19 +727,7 @@ export function TabSheetRows({faces,active,onFocus,onClose,onNew,newLabel,canClo
               </button>}
             </div>
           ))}
-          {onNew && (
-            <button
-              type="button"
-              data-tab-sheet-new
-              onClick={onNew}
-              className="flex min-h-list-row items-center gap-row rounded-md px-in text-left text-body text-foreground"
-            >
-              <span className="grid size-list-face flex-none place-items-center">
-                <IconPlus />
-              </span>
-              {newLabel ?? gui.new_tab}
-            </button>
-          )}
+
         </div>
   );
 }

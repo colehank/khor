@@ -1,6 +1,6 @@
 // What is left of the devices pane's pairing pieces once 添加机器
 // (`AddMachine.tsx`, round join-d) took over both halves of joining:
-// the camera layer its khor 主机 page scans through, the alone note,
+// the camera layer its khor 主机 page scans through, the empty-device hint,
 // 待批, and the root's words.
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -65,22 +65,14 @@ export function ScanLayer() {
   );
 }
 
-/**
- * **Only this machine is here** (UX-8, the first run): under the list,
- * what to do next and the way to do it. A brand-new install landed on a
- * list holding one row, its own, with the way to add another two presses
- * away under ＋ and nothing saying so. It goes the moment a second
- * machine is in the table. One act since round join-d: 添加机器, whose
- * khor 主机 page holds both ends of a pairing.
- */
-export function AloneNote({ onAdd }: { onAdd: () => void }) {
+export function AddMachineHint({ onAdd }: { onAdd: () => void }) {
   return (
     // On the rows' own left line: the list's inset plus the row's, or the
     // narrow list's one inset (`SideList`).
-    <div data-alone className="px-in py-base [[data-narrow]_&]:px-0">
+    <div data-machine-add-guidance className="px-in py-base [[data-narrow]_&]:px-0">
       <div className="flex flex-col items-start gap-in px-row text-callout text-muted-foreground [[data-narrow]_&]:px-group">
-        <span>{gui.alone_how}</span>
-        <Button size="sm" data-alone-add className="pointer-coarse:min-h-touch" onClick={onAdd}>
+        <span>{gui.devices_empty_how}</span>
+        <Button size="sm" data-machine-add className="pointer-coarse:min-h-touch" onClick={onAdd}>
           {gui.add_machine}
         </Button>
       </div>

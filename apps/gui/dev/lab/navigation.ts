@@ -2,11 +2,15 @@ import type {TabRow} from '../../src/gen/bindings/TabRow';
 import type {WorkspaceRow} from '../../src/gen/bindings/WorkspaceRow';
 import type {FileText} from '../../src/gen/bindings/FileText';
 import type {RecentRow} from '../../src/gen/bindings/RecentRow';
+import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
+import type {GitCommitShow} from '../../src/gen/bindings/GitCommitShow';
+import {labCommits,labDirectory,labRoot,labText,labWorkspaces} from './world';
 
 const root = '/preview/project';
-const initialText = '# Khor Lab\n\nThis file is fixture data. The App uses its production editor and Markdown renderer.\n\nInline: \\(a+b\\).\n';
-export function navigationFixture(device: string, origin: string, seeded: boolean) {
-  let text = initialText, revision = 1, sequence = 0;
+export function navigationFixture(devices: DeviceRow[], origin: string, seeded: boolean, count=3, page=false) {
+  const device=devices[0]?.id??'e'.repeat(64);
+  let revision = 1, sequence = 0;
+  const documents = new Map<string,FileText>();
   const at = Date.now();
   const recents = new Map<string, RecentRow[]>([['page', seeded ? [{device, name:'验收环境', place:origin+'/lab/example', at_ms:at, session:'gui/ai-elements-review'}] : []]]);
   const tabs = new Map<string, {tabs: TabRow[]; active: string}>();
@@ -23,16 +27,34 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
     return id;
   };
   if (seeded) {
-    for (const [view, url, title] of [['workspace', root, 'project'], ['file', root + '/README.md', 'README.md'], ['page', origin + '/lab/example', 'Lab page']]) {
+    const file = ['file', root + '/README.md', 'README.md'], web = ['page', origin + '/lab/example', 'Lab page'];
+    const destinations = [['workspace', root, 'project'],...(page?[web,file]:[file,web]),['file',root+'/notes.md','notes.md'],['file',root+'/design.md','design.md']];
+    for (const [view, url, title] of destinations.slice(0,count)) {
       open('content', {session: 'gui/ai-elements-review', view, url, title});
     }
   }
-  const workspace: WorkspaceRow = {device, machine: '验收环境', path: root, name: 'project', pinned: false, branch: null,
-    changed: 0, changed_capped: false, changed_ms: at, git: null, newest: null};
-  const file = (): FileText => ({text, total: new TextEncoder().encode(text).length, at_ms: at + revision,
-    digest: 'fixture-' + revision, cut: false, binary: false});
+  const workspaces: WorkspaceRow[] = labWorkspaces(devices);
+  const histories = new Map<string,ReturnType<typeof labCommits>>();
+  const history = (path: string) => {if(!histories.has(path))histories.set(path,labCommits(path));return histories.get(path)!;};
+  const owner = (input: Record<string,unknown>) => devices.find(device=>device.id===input.machine||device.name===input.machine)??devices[0];
+  const pathOf = (input: Record<string,unknown>) => String(input.path||labRoot(owner(input))).replace(/\\/g,'/').replace(/\/$/,'');
+  const relative = (input: Record<string,unknown>) => {
+    const path=pathOf(input),base=labRoot(owner(input));
+    if(path===base)return '';
+    if(!path.startsWith(base+'/'))throw new Error('Path is outside the generated Lab filesystem: '+path);
+    return path.slice(base.length+1);
+  };
+  const documentKey = (input: Record<string,unknown>) => (owner(input)?.id??device)+':'+pathOf(input);
+  const file = (input: Record<string,unknown> = {}): FileText => {
+    const key=documentKey(input);
+    if (!documents.has(key)) {
+      const text=labText(relative(input));
+      documents.set(key,{text,total:new TextEncoder().encode(text).length,at_ms:at,digest:'fixture-'+revision,cut:false,binary:false});
+    }
+    return documents.get(key)!;
+  };
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -73,24 +95,40 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
         return null;
       }
       if (command === 'git_diff') return {hunks: [], more: false};
-      if (command === 'git_history') return {head: null, commits: [], next: null};
-      if (command === 'git_log') return {commits: [], more: false};
-      if (command === 'workspaces') return [workspace];
-      if (command === 'ls') return {path: String(input.path || root), entries: [
-        {name: 'README.md', dir: false, size: file().total, at_ms: at, from: null, received_ms: null},
-      ], truncated: false};
-      if (command === 'read_text' || command === 'stat_text') return file();
-      if (command === 'write_text') {
-        if (input.was !== file().digest) throw new Error('Fixture file changed; read it again before saving');
-        text = String(input.text);revision++;
-        return {digest: file().digest, at_ms: file().at_ms};
+      if (command === 'git_history') {
+        const commits=history(String(input.dir||root)),start=Number(input.cursor||0),limit=Number(input.limit)||40;
+        return {head:commits[0].id,commits:commits.slice(start,start+limit),next:start+limit<commits.length ? String(start+limit) : null};
       }
-      if (command === 'preview') return {kind: 'text', total: file().total, data: '', media: '', html: '', cut: false, empty: !text};
+      if (command === 'git_log') return {commits:history(String(input.path||root)).slice(0,20).map(commit=>({...commit,body:commit.subject})),more:false};
+      if (command === 'git_blame') return {commits:[],runs:[]};
+      if (command === 'git_show') return {text:file(input).text,cut:false,diff:{hunks:[],more:false}};
+      if (command === 'git_commit') {
+        const commits=history(String(input.dir||root)),commit=commits.find(commit=>commit.id===input.rev)??commits[0];
+        return {commit:{...commit,body:commit.subject+'\n\n完整 App Lab 的提交示例。\n\n保留中文、长路径、文件折叠与阅读位置。'},total:2,more:false,files:[
+          {path:'src/navigation.ts',from:'',status:'M',added:90,removed:90,binary:false,big:false,capped:false,
+            before:Array.from({length:90},(_,i)=>`const item${i} = "before";`).join('\n'),after:Array.from({length:90},(_,i)=>`const item${i} = "after";`).join('\n')},
+          {path:'docs/中文说明.md',from:'',status:'A',added:3,removed:0,binary:false,big:false,capped:false,before:'',after:'# 导航说明\n\n轻推预选，松手确认。\n'},
+        ]} satisfies GitCommitShow;
+      }
+      if (command === 'workspaces') return workspaces;
+      if (command === 'ls') {
+        return {path:pathOf(input),...labDirectory(relative(input))};
+      }
+      if (command === 'read_text' || command === 'stat_text') return file(input);
+      if (command === 'write_text') {
+        if (input.was !== file(input).digest) throw new Error('Fixture file changed; read it again before saving');
+        const text=String(input.text);revision++;
+        const next={...file(input),text,total:new TextEncoder().encode(text).length,digest:'fixture-'+revision,at_ms:at+revision};
+        documents.set(documentKey(input),next);
+        return {digest:next.digest,at_ms:next.at_ms};
+      }
+      if (command === 'preview') return {kind:'text',total:file(input).total,data:'',media:'',html:'',cut:false,empty:!file(input).text};
       if (command === 'touched') return at;
-      if (command === 'checkout') return false;
-      if (command === 'git_status') return {branch: '', rows: [], more: false, ahead: 0, behind: 0, fetched_ms: 0};
+      if (command === 'checkout') return workspaces.some(workspace=>workspace.git&&String(input.dir||root).startsWith(workspace.path));
+      if (command === 'git_status') return {branch:workspaces.find(workspace=>workspace.path===input.dir)?.branch??'main',rows:[{path:'README.md',mark:'M'},{path:'src/navigation.ts',mark:'M'},{path:'docs/中文说明.md',mark:'A'},{path:'notes.md',mark:'?'}],more:false,ahead:2,behind:1,fetched_ms:at};
       if (command === 'trash_here') return false;
       if (command === 'code_here') return {version: '', ready: false};
+      if (command === 'git_windows' || command === 'code_windows') return [];
       throw new Error('Unknown navigation fixture command');
     },
   };

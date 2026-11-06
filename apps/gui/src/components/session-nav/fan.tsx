@@ -3,7 +3,8 @@ import {GlassCircle} from '@/components/Glass';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type PointerEvent as ReactPointerEvent} from 'react';
 import {createPortal} from 'react-dom';
 import {TabAvatar,type TabFace} from '@/browse/TabStrip';
-import {IconChevronUp} from '@/components/icons';
+import {IconChevronUp,IconCheck,IconPlus} from '@/components/icons';
+import {gui} from '@/gen/catalog';
 import type {SessionHeaderProps} from '@/components/SessionBar';
 import {feel} from '@/lib/haptics';
 import {readDeckContactLayout,sameDeckContactLayout,type DeckContactLayout} from '@/lib/deck-contact';
@@ -26,9 +27,8 @@ function frameFor(button:HTMLElement):Frame{
 }
 type Closing={state:FanState;frame:Frame;contact:Contact;phase:'settling'|'fading';result:FanResult};
 function fanItems(position:number,count:number,frame:Frame){
-  const reach=frame.slots/2,candidates=nearbySlots(position,count,3).filter(s=>Math.abs(s.slot-position)<reach),unique=new Map<number,(typeof candidates)[number]>();
-  for(const item of candidates){const old=unique.get(item.index);if(!old||Math.abs(item.slot-position)<Math.abs(old.slot-position))unique.set(item.index,item);}
-  return [...unique.values()].map(({index,slot})=>{
+  const reach=frame.slots/2,candidates=nearbySlots(position,count,3).filter(s=>Math.abs(s.slot-position)<reach);
+  return candidates.map(({index,slot})=>{
     const offset=slot-position,focus=Math.exp(-offset*offset*.9),edge=Math.min(1,Math.max(0,(reach-Math.abs(offset))/.5));
     return {index,slot,...fanPoint(frame,offset),scale:fanScale(offset),opacity:edge*(.5+.5*focus)};
   });
@@ -38,21 +38,24 @@ function TitleWords({text}:{text:string}){
   return <>{words.map((word,i)=>/\p{Script=Han}/u.test(word)?<span data-fan-word key={i}>{word}</span>:word)}</>;
 }
 /** A fresh layer owns one continuous cyclic position per contact. */
-export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];state:FanState;frame:Frame;phase:string;duration:number}){
+export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:TabFace[];state:FanState;frame:Frame;phase:string;duration:number;create?:boolean}){
   const lastDirection=useRef(0);if(state.direction)lastDirection.current=state.direction;
   const closing=phase==='settling'||phase==='fading';
   const animated=useDeckArcPosition(closing?state.target:state.position,Math.max(1,state.ids.length),lastDirection.current,duration,!closing,false);
   const position=closing?animated:state.position;
   const items=fanItems(position,state.ids.length,frame),candidate=state.hot===null?null:faces.find(f=>f.id===state.ids[state.hot!]);
-  const extent=frame.placement==='right'&&!frame.horizontal?Math.max(.5,(frame.slots-1)/2):2;
+  const previewSlot=Math.round(state.target);
+  const openedSlot=state.opened+Math.round((position-state.opened)/Math.max(1,state.ids.length))*Math.max(1,state.ids.length);
+  const createPoint=frame.createTarget,overviewPoint=frame.target;
+  const extent=frame.guideExtent;
   const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
   const guide=Array.from({length:41},(_,i)=>outerPoint(frame,extent*(-1+i/20))).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
   return createPortal(<div data-deck-selector data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-cancel={state.cancelArmed||undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
-    <div className="lab-fan-identities" data-dimmed={state.lane==='overview'||state.cancelArmed||undefined} aria-hidden="true">
-      {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={state.hot===item.index||undefined} className="lab-fan-item" style={frame.placement==='bottom'?{left:item.x-frame.titleWidth/2,top:item.y-frame.face/2,width:frame.titleWidth,opacity:item.opacity,transform:`scale(${item.scale})`,transformOrigin:`50% ${frame.face/2}px`,gap:frame.gap/3}:{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
+    <div className="lab-fan-identities" data-dimmed={state.lane==='new'||state.lane==='overview'||undefined} aria-hidden="true">
+      {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={previewSlot===item.slot||undefined} data-opened={openedSlot===item.slot||undefined} className="lab-fan-item" style={frame.placement==='bottom'?{left:item.x-frame.titleWidth/2,top:item.y-frame.face/2,width:frame.titleWidth,opacity:item.opacity,transform:`scale(${item.scale})`,transformOrigin:`50% ${frame.face/2}px`,gap:frame.gap/3}:{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
         <span className="lab-fan-face"><TabAvatar f={face} bare="size-list-face" seat="row"/></span>
-        <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}><TitleWords text={titleOf(face)}/></span>
+        <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}>{openedSlot===item.slot&&<span className="lab-fan-current" data-lab-fan-opened><IconCheck/></span>}<TitleWords text={titleOf(face)}/></span>
       </span>;})}
     </div>
     <div className="lab-fan-steering" aria-hidden="true">
@@ -62,19 +65,23 @@ export function FanLayer({faces,state,frame,phase,duration}:{faces:TabFace[];sta
       <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
 
     </div>
-    <div data-lab-fan-overview data-active={state.lane==='overview'&&state.armed||undefined} className="lab-fan-overview" style={{left:frame.target.x,top:frame.target.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签</span></div>
-    {state.cancelArmed&&<span data-lab-fan-cancel-hint className="lab-fan-cancel-hint" style={{left:Math.max(frame.touch,Math.min(frame.width-frame.touch,frame.originX)),top:Math.max(frame.gap,frame.height-frame.touch*.65)}} aria-hidden="true">松手取消</span>}
+    {create&&<div data-lab-fan-new data-active={state.intent==='new'||undefined} className="lab-fan-overview lab-fan-create" style={{left:createPoint.x,top:createPoint.y}} aria-hidden="true"><IconPlus/><span>{gui.new_tab}</span></div>}
+    <div data-lab-fan-overview data-active={state.intent==='overview'||undefined} className="lab-fan-overview" style={{left:overviewPoint.x,top:overviewPoint.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签</span></div>
+    {state.cancelArmed&&<span data-lab-fan-cancel-hint className="lab-fan-cancel-hint" style={{left:frame.width/2,top:Math.max(frame.gap,frame.height-frame.touch*.65)}} aria-hidden="true">松开保留当前</span>}
   </div>,document.body);
 }
-export function SessionFanNavigator({faces,active,onFocus,onOverview,hidden}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'|'hidden'>){
+export function SessionFanNavigator({faces,active,onFocus,onOverview,onNew,hidden}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'|'onNew'|'hidden'>){
   const root=useRef<HTMLDivElement>(null),button=useRef<HTMLButtonElement>(null),contact=useRef<Contact|null>(null),pendingTap=useRef(false);
   const ids=faces.map(f=>f.id).join('\0'),{expanded,close,toggle}=useSessionPill(root,active,ids,hidden);
-  const latest=useRef({faces,active,ids,onFocus,onOverview,close,toggle});latest.current={faces,active,ids,onFocus,onOverview,close,toggle};
+  const latest=useRef({faces,active,ids,onFocus,onOverview,onNew,close,toggle});latest.current={faces,active,ids,onFocus,onOverview,onNew,close,toggle};
   const [state,setState]=useState<FanState|null>(null),[frame,setFrame]=useState<Frame|null>(null),[closing,setClosing]=useState<Closing|null>(null);
   const closingLive=useRef<Closing|null>(null),closingTimer=useRef<ReturnType<typeof setTimeout>|null>(null),frameLive=useRef<Frame|null>(null),timing=useRef({follow:180,fade:120});frameLive.current=frame;
   useLayoutEffect(()=>{if(button.current){const css=getComputedStyle(button.current);timing.current={follow:parseFloat(css.getPropertyValue('--dur-120')),fade:parseFloat(css.getPropertyValue('--dur-120'))};}},[]);
   const previous=useRef(0),cancelCue=useRef(false);
+  const priorIntent=useRef<FanState['intent']>('keep');
   const engine=useMemo(()=>thumbFanJoystick(next=>{
+    if(next.held&&(next.intent==='new'||next.intent==='overview')&&next.intent!==priorIntent.current)feel('threshold');
+    priorIntent.current=next.intent;
     if(next.pulse>0&&next.pulse!==previous.current||next.cancelArmed&&!cancelCue.current)feel('threshold');previous.current=next.pulse;cancelCue.current=!!next.cancelArmed;setState(next);
   }),[]);
   const clear=()=>{const c=contact.current;contact.current=null;if(c&&button.current?.hasPointerCapture(c.pointer))button.current.releasePointerCapture(c.pointer);};
@@ -86,6 +93,7 @@ export function SessionFanNavigator({faces,active,onFocus,onOverview,hidden}:Pic
     if(!button.current||!sameDeckContactLayout(c.layout,readDeckContactLayout(contactSeat(button.current)))||c.active!==latest.current.active||c.ids!==latest.current.ids){cancel();return;}
     if(point)engine.move(point);const snapshot=engine.read(),result=engine.release();clear();
     pendingTap.current=result.kind==='tap';
+    if(result.kind==='new'){cancel();latest.current.close();latest.current.onNew?.();return;}
     if(result.kind==='overview'){overview();return;}
     if(result.kind!=='focus'||!frameLive.current)return;
     if(stillMotion()){focus(result.id);return;}
@@ -106,7 +114,7 @@ export function SessionFanNavigator({faces,active,onFocus,onOverview,hidden}:Pic
       const t=Array.from(e.changedTouches).find(t=>t.target instanceof Node&&button.current?.contains(t.target));if(c.touch&&t)c.touchId=t.identifier;
     };
     const end=(e:TouchEvent)=>{const c=contact.current;if(!c?.touch)return;const t=Array.from(e.changedTouches).find(t=>t.identifier===c.touchId);if(!t)return;if(e.type==='touchcancel')cancel();else finish(c.pointer,{x:t.clientX,y:t.clientY});};
-    const move=(e:TouchEvent)=>{if(contact.current&&['fan','overview'].includes(engine.read().phase))e.preventDefault();};
+    const move=(e:TouchEvent)=>{if(contact.current&&['fan','new','overview'].includes(engine.read().phase))e.preventDefault();};
     window.addEventListener('keydown',key,true);window.addEventListener('pointerdown',multi,true);window.addEventListener('blur',blur);window.addEventListener('pagehide',blur);window.addEventListener('resize',blur);window.visualViewport?.addEventListener('resize',blur);document.addEventListener('visibilitychange',blur);
     window.addEventListener('touchstart',start,{capture:true,passive:true});window.addEventListener('touchend',end,{capture:true,passive:true});window.addEventListener('touchcancel',end,{capture:true,passive:true});window.addEventListener('touchmove',move,{capture:true,passive:false});
     return()=>{clear();engine.dispose();if(closingTimer.current)clearTimeout(closingTimer.current);closingLive.current=null;window.removeEventListener('keydown',key,true);window.removeEventListener('pointerdown',multi,true);window.removeEventListener('blur',blur);window.removeEventListener('pagehide',blur);window.removeEventListener('resize',blur);window.visualViewport?.removeEventListener('resize',blur);document.removeEventListener('visibilitychange',blur);window.removeEventListener('touchstart',start,true);window.removeEventListener('touchend',end,true);window.removeEventListener('touchcancel',end,true);window.removeEventListener('touchmove',move,true);};
@@ -118,14 +126,14 @@ export function SessionFanNavigator({faces,active,onFocus,onOverview,hidden}:Pic
     const c:Contact={pointer:e.pointerId,touch:e.pointerType==='touch',touchId:null,active:latest.current.active,ids:latest.current.ids,layout:readDeckContactLayout(contactSeat(button.current))};contact.current=c;button.current.setPointerCapture(c.pointer);
   };
   const shown=closing?.state??state,shownFrame=closing?.frame??frame;
-  const visible=!!closing||shown?.phase==='fan'||shown?.phase==='overview',candidate=shown?.hot==null?null:faces.find(f=>f.id===shown.ids[shown.hot!]),current=faces.find(f=>f.id===active);
+  const visible=!!closing||shown?.phase==='fan'||shown?.phase==='new'||shown?.phase==='overview',candidate=shown?.hot==null?null:faces.find(f=>f.id===shown.ids[shown.hot!]),current=faces.find(f=>f.id===active);
   const avatarFace=shown?.cancelArmed?current:candidate??current;
   return <div ref={root} className="lab-compose-nav" data-lab-session-navigation data-fan-open={visible||undefined}>
-    <GlassCircle ref={button} tip={false} data-session-avatar data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按后候选跟随斜向上下移动，越过阈值吸附，保持偏移循环翻选，弧上回中暂停，继续反拨倒退；回到原头像松手取消；向左上推远后松手展开全部标签，回撤恢复扫选" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
+    <GlassCircle ref={button} tip={false} data-session-avatar data-lab-compose-avatar data-lab-fan-avatar data-expanded={expanded||undefined} aria-label={`切换会话：${titleOf(current)}`} aria-expanded={expanded||visible} aria-description="点击展开药丸；长按后候选跟随斜向上下移动，越过阈值吸附，保持偏移循环翻选，弧上回中暂停，继续反拨倒退；回到原头像松手取消；向左上近推预选新建，再推远预选全部，松手确认；回到原头像松手保留当前" onPointerDown={down} onPointerMove={e=>{if(contact.current?.pointer===e.pointerId)engine.move({x:e.clientX,y:e.clientY});}} onPointerUp={e=>finish(e.pointerId,{x:e.clientX,y:e.clientY})} onPointerCancel={cancel} onLostPointerCapture={()=>{if(contact.current)cancel();}} onContextMenu={e=>e.preventDefault()} onClick={e=>{if(e.detail===0||pendingTap.current){cancel();toggle();}}} onKeyDown={e=>{if(e.key==='ArrowUp'){e.preventDefault();overview();}}}>
       {avatarFace&&<span key={avatarFace.id} data-lab-fan-avatar-preview={avatarFace.id} className="lab-fan-avatar-face"><TabAvatar f={avatarFace} bare="size-tab-face" seat="tab"/></span>}
     </GlassCircle>
-    {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onOverview={overview}/>}
+    {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onNew={onNew} onOverview={overview}/>}
     {visible&&shown&&shownFrame&&<FanLayer faces={faces} state={shown} frame={shownFrame} phase={closing?.phase??shown.phase} duration={closing?SETTLE_MS:timing.current.follow}/>}
-    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下跟手预选，越过阈值吸附，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
+    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='new'?'松手新建标签页，继续推远预选全部，回到原头像取消':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下跟手预选，越过阈值吸附，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
   </div>;
 }

@@ -1,4 +1,5 @@
 import { DECK_JOYSTICK_HOLD_MS, DECK_JOYSTICK_REPEAT_MS } from './tempo';
+import {deckIntent, type DeckIntent} from './deck-intent';
 
 export type DeckJoystickTuning = {
   holdMs: number; neutral: number; reach: number;
@@ -13,6 +14,7 @@ export type DeckJoystickState = {
   preview: number; position: number; target: number;
   dx: number; dy: number; direction: number; interval: number;
   overview: boolean; tier: number; pulse: number;
+  opened: number; intent: DeckIntent;
 };
 export type DeckJoystickClock = { now: () => number; request: (f: () => void) => number; cancel: (id: number) => void };
 type Motion = { from: number; to: number; at: number };
@@ -30,18 +32,20 @@ export function deckJoystick(
     now: () => performance.now(), request: run => requestAnimationFrame(run), cancel: id => cancelAnimationFrame(id),
   },
   getTuning: () => Readonly<DeckJoystickTuning> = () => DECK_JOYSTICK_DEFAULTS,
+  create?: () => void,
 ) {
   const wrap = (index: number) => count > 0 ? ((index % count) + count) % count : 0;
   const idle = (): DeckJoystickState => ({
     phase: 'idle', preview: wrap(initial), position: wrap(initial), target: wrap(initial),
     dx: 0, dy: 0, direction: 0, interval: DECK_JOYSTICK_DEFAULTS.slowMs,
-    overview: false, tier: 0, pulse: 0,
+    overview: false, tier: 0, pulse: 0, opened: wrap(initial), intent: 'keep',
   });
   let state = idle(), tuning = { ...getTuning() };
   let origin = { x: 0, y: 0 }, began = 0, frame = 0;
   let motion: Motion | null = null, autoSide = 0, nextAt = Infinity;
   let parked = false, crossedAt: number | null = null;
   let followX = 0, followPosition = state.position;
+  let touch = 44;
   const publish = () => changed({ ...state });
   const stop = () => { clock.cancel(frame); frame = 0; };
   const animate = (target: number) => {
@@ -54,6 +58,12 @@ export function deckJoystick(
     if (!motion || motion.to !== state.target) animate(state.target);
   };
   const pause = () => { if (state.phase === 'idle') return; park(); publish(); };
+  const updateIntent = () => {
+    const intent = deckIntent({dx: state.dx, up: -state.dy, touch, placement: 'bottom', previous: state.intent});
+    state.intent = intent === 'new' && !create ? 'switch' : intent;
+    state.overview = state.intent === 'overview';
+    return state.intent;
+  };
   const cancel = () => {
     stop(); motion = null; autoSide = 0; nextAt = Infinity;
     parked = false; crossedAt = null; state = idle(); publish();
@@ -82,8 +92,8 @@ export function deckJoystick(
   const tick = () => {
     frame = 0;
     const now = clock.now();
-    if (state.phase === 'pending' && now - began >= tuning.holdMs) {
-      state.phase = 'steering'; publish();
+    if ((state.phase === 'pending' || state.phase === 'pull') && now - began >= tuning.holdMs) {
+      state.phase = 'steering'; updateIntent(); publish();
     }
     if (state.phase === 'steering') {
       if (motion) {
@@ -91,10 +101,10 @@ export function deckJoystick(
         state.position = motion.from + (motion.to - motion.from) * (1 - (1 - progress) ** 3);
         if (progress === 1) {
           motion = null;
-          nextAt = autoSide && !state.overview ? now + state.interval : Infinity;
+          nextAt = autoSide && state.intent === 'switch' ? now + state.interval : Infinity;
         }
         publish();
-      } else if (autoSide && !state.overview && now >= nextAt) {
+      } else if (autoSide && state.intent === 'switch' && now >= nextAt) {
         accept(autoSide); publish();
       }
     }
@@ -104,8 +114,9 @@ export function deckJoystick(
     read: () => ({ ...state }), cancel, pause,
     restartReading() { if (autoSide && !motion) nextAt = clock.now() + state.interval; },
     dispose() { stop(); motion = null; autoSide = 0; state.phase = 'idle'; },
-    start(x: number, y: number) {
+    start(x: number, y: number, unit = 44) {
       cancel(); tuning = { ...getTuning() }; origin = { x, y }; began = clock.now();
+      touch = Math.max(1, unit);
       followX = 0; followPosition = state.position; state.phase = 'pending';
       publish(); frame = clock.request(tick);
     },
@@ -121,9 +132,9 @@ export function deckJoystick(
         } else state.phase = 'swipe';
       }
       if (state.phase === 'swipe') { publish(); return; }
-      state.overview = dy < -(state.overview ? 32 : 48);
       if (state.phase === 'pull') { publish(); return; }
-      if (state.overview) { park(); publish(); return; }
+      const intent = updateIntent();
+      if (intent === 'new' || intent === 'overview' || intent === 'keep' && autoSide) { park(); publish(); return; }
       if (count < 2) { publish(); return; }
       if (autoSide) {
         if (Math.abs(dx) <= tuning.neutral) { park(); publish(); return; }
@@ -158,10 +169,13 @@ export function deckJoystick(
       const before = { ...state };
       cancel();
       if (before.phase === 'pending') return 'tap';
-      if ((before.phase === 'steering' || before.phase === 'pull') && before.overview) {
+      if (before.phase === 'steering' && before.intent === 'overview') {
         overview(); return 'overview';
       }
-      if (before.phase === 'steering' && before.preview !== wrap(initial)) {
+      if (before.phase === 'steering' && before.intent === 'new') {
+        create?.(); return 'new';
+      }
+      if (before.phase === 'steering' && before.intent === 'switch' && before.preview !== wrap(initial)) {
         commit(before.preview); return 'commit';
       }
       return 'none';

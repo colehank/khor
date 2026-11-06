@@ -3,6 +3,7 @@ import {spawn} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {checkMobileNavigation} from './navigation-checks.mjs';
 const report = process.env.LAB_REPORT;
 await mkdir(report, {recursive: true});
 const port = 23918;
@@ -10,10 +11,12 @@ const server = spawn('python3', ['-m', 'khor_lab.preview', process.env.LAB_BUNDL
   cwd: path.resolve('../..'), env: {...process.env, PYTHONPATH: 'scripts'}, stdio: 'inherit',
 });
 
-async function inspect(browser, scene, size) {
+async function inspect(browser, scene, size, data = {}) {
   const context = await browser.newContext({viewport: size, isMobile: size.width < 500, hasTouch: size.width < 500});
   const page = await context.newPage(), errors = [];
-  const name = `${scene}-${size.width}x${size.height}`;
+  const machines = data.machines ?? 1;
+  const items=data.items??5;
+  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}`;
   let geometry = null;
   const contentLayout = [];
   async function checkContentToolbar(phase) {
@@ -43,9 +46,9 @@ async function inspect(browser, scene, size) {
   try {
     // Select data only; every layout and action belongs to the production App.
     await page.route('**/lab/runtime*', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({mode: 'frontend', scene, tree: 'browser-check', revision: 'one'})}));
-    await page.goto(`http://127.0.0.1:${port}/app/?theme=dark`);
+    await page.goto(`http://127.0.0.1:${port}/app/?scene=${scene}&theme=dark&machines=${machines}&items=${items}`);
     const selector = scene === 'page' ? '[data-content-visible="true"] .mobile-content-page' : scene === 'list' ? '[data-list]' : scene === 'terminal' ? '[data-terminal]'
-      : scene === 'content' ? '.cm-editor, [data-file-preview]' : '[data-chat-box]';
+      : ['content','workspace'].includes(scene) ? '.cm-editor, [data-file-preview]' : scene === 'quota' ? '[data-quota-row]' : ['devices','workspaces'].includes(scene) ? '[data-list]' : '[data-chat-box]';
     await page.waitForSelector(selector);
     if (scene === 'page') {
       const body = page.locator('[data-content-visible="true"]');
@@ -109,6 +112,52 @@ async function inspect(browser, scene, size) {
     if (size.width < 500 && ['gui', 'codex'].includes(scene)) await page.waitForSelector('[data-session-compose-row]');
     await page.waitForTimeout(800);
     assert.equal(await page.locator('[data-fault]:visible').count(), 0, 'The production App must render without an error boundary');
+    if (scene === 'workspace' && size.width < 500) {
+      assert.equal(await page.locator('[data-ws-tab-strip]:visible').count(),0,'Mobile workspace files must use the shared bottom pill, without a top tab strip');
+      const deck = page.locator('[data-ws-mid] [data-session-bar]');
+      assert.equal(await deck.count(),1,'Mobile workspace content must mount the production shared deck');
+      const rect = await deck.boundingBox();
+      assert(rect && rect.y >= size.height / 2 && rect.y + rect.height <= size.height + 1,'Workspace deck must sit inside the bottom viewport');
+    }
+    if (['list','devices'].includes(scene)) {
+      const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
+      assert.equal(count,machines,'Machine fixture count must reach the actual App');
+      assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
+      if(scene==='devices'&&machines===6){
+        const devices=await page.evaluate(async()=> (await fetch('/api/devices',{method:'POST',body:'{}'})).json());
+        assert.deepEqual(devices.map(device=>device.vitals?.vitals.system),['macos','linux','macos','windows','ios','android']);
+        for(const device of devices){
+          const row=page.locator(`[data-device="${device.name}"]`);
+          assert.equal(await row.locator('[data-side-mark]').getAttribute('data-side-mark'),device.vitals.vitals.system,'Machine marks must come from the actual system facts');
+          assert.equal(device.face.radius_ratio,.5,'Default fixture avatars use the real generator circle crop');
+          assert.equal(await row.locator('[data-face]').first().evaluate(el=>el.style.borderRadius),'50%');
+        }
+      }
+    }
+    if(scene==='quota'){
+      assert((await page.locator('[data-quota-row]:visible').count())>=6,'The actual quota page must render balances, windows and unavailable account examples');
+      await page.locator('[data-quota-row="fixture"]:visible').click();
+      await page.locator('[data-quota-detail="fixture"]:visible').waitFor();
+    }
+    if(scene==='workspaces'){
+      assert.equal(await page.locator('[data-ws-row]:visible').count(),machines*4,'Each machine supplies distinct Git and plain-folder workspaces');
+      await page.screenshot({path:path.join(report,name+'-list.png')});
+      await page.locator('[data-ws-row]:visible').first().click();
+      const names=await page.evaluate(async()=> (await (await fetch('/api/ls',{method:'POST',body:JSON.stringify({machine:'e'.repeat(64),path:'/preview/project'})})).json()).entries.map(entry=>entry.name));
+      assert.deepEqual(names,['docs','src','design.md','notes.md','package.json','plan.md','README.md','report.md','.config','.gitignore'],'Generated ls data must retain the real backend directory and dotfile ordering');
+      const visible=await page.locator('[data-file-tree] button[data-file-path]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-file-path').split('/').pop()));
+      assert.deepEqual(visible,names,'The actual file tree must display the backend order');
+      await page.locator('[data-workspace-navigation]').getByRole('button',{name:'提交历史',exact:true}).click();
+      const commits=page.locator('[data-workspace-log-commit]');
+      await commits.first().waitFor();
+      const first=await commits.first().getAttribute('data-workspace-log-commit');
+      await page.locator('[data-workspace-log-older]').click();
+      await page.waitForFunction(first=>document.querySelector('[data-workspace-log-commit]')?.getAttribute('data-workspace-log-commit')!==first,first);
+      await commits.first().click();
+      await page.locator('[data-commit-page]:visible').waitFor();
+      assert.equal(await page.locator('[data-ws-tab-strip]:visible').count(),0,'Mobile commits also retain the shared bottom deck');
+      assert.equal(await page.locator('[data-ws-mid] [data-session-bar]:visible').count(),1);
+    }
     geometry = await page.evaluate(() => {
       const row = document.querySelector('[data-session-compose-row]');
       const avatar = document.querySelector('[data-lab-composer-session-slot]');
@@ -121,6 +170,10 @@ async function inspect(browser, scene, size) {
       if (geometry.row?.bottom > geometry.height + 1) errors.push('Production composer falls below the viewport');
     }
     if (geometry.overflow) errors.push('App overflows horizontally');
+    if(data.gesture)await checkMobileNavigation(page,scene,items,async(phase,values)=>{
+      if(values)contentLayout.push({phase,...values});
+      await page.screenshot({path:path.join(report,`${name}-${phase}.png`)});
+    },data.gesture===true?'browse':data.gesture);
   } catch (error) {
     errors.push(String(error).slice(0, 1200));
     await writeFile(path.join(report, name + '-body.txt'), (await page.locator('body').innerText()).slice(0, 20000));
@@ -140,10 +193,26 @@ try {
   }
   browser = await chromium.launch({headless: true});
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
-    for (const scene of ['gui', 'codex', 'terminal', 'content', ...(size.width < 500 ? ['page'] : []), 'list']) {
+    for (const scene of ['gui', 'codex', 'terminal', 'content', 'workspace', ...(size.width < 500 ? ['page'] : []), 'list', 'devices']) {
       results.push(await inspect(browser, scene, size));
       await writeFile(path.join(report, 'results.json'), JSON.stringify(results, null, 2));
     }
+  }
+  for (const machines of [0,3]) for (const scene of ['list','devices']) {
+    results.push(await inspect(browser,scene,{width:390,height:844},{machines}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
+  for(const scene of ['devices','workspaces','quota']){
+    results.push(await inspect(browser,scene,{width:390,height:844},{machines:6}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
+  for(const items of [2,3,5])for(const scene of ['terminal','gui','content']) {
+    results.push(await inspect(browser,scene,{width:390,height:844},{items,gesture:true}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
+  for(const scene of ['terminal','gui','content']) {
+    results.push(await inspect(browser,scene,{width:390,height:844},{items:2,gesture:'create'}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   }
   console.log(JSON.stringify(results.map(({name, errors}) => ({name, errors}))));
   if (results.some(result => result.errors.length)) process.exitCode = 1;

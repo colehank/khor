@@ -33,9 +33,12 @@
 [data-content-mode]>[data-session-bar]{height:var(--content-deck-reserve);visibility:hidden;pointer-events:none}
 .mobile-content-overlay{position:absolute;inset:0;z-index:5;display:flex;justify-content:flex-end;flex-direction:column;pointer-events:none}
 .mobile-content-scrim{position:absolute;inset:0;background:var(--sheet-scrim);pointer-events:auto}
-.mobile-content-sheet{display:flex;flex-direction:column;position:relative;min-height:0;flex:none;height:var(--content-sheet-half-height,0rem);background:var(--canvas-solid);border-radius:var(--radius-xl) var(--radius-xl) 0 0;border-top:var(--hair) solid var(--border);pointer-events:auto;overflow:hidden;transition:height var(--dur-240) var(--ease-out);animation:sheet-up var(--dur-240) var(--ease-out)}
-.mobile-content-sheet[data-detent=full]{height:var(--content-sheet-full-height,0rem)}
+.mobile-content-sheet{--place-sheet-full:1;display:flex;flex-direction:column;position:relative;min-height:0;flex:none;height:var(--content-sheet-half-height,0rem);background:var(--canvas-solid);border-radius:var(--radius-xl) var(--radius-xl) 0 0;border-top:var(--hair) solid var(--border);pointer-events:auto;overflow:hidden;transition:height var(--dur-240) var(--ease-out);animation:sheet-up var(--dur-240) var(--ease-out)}
+.mobile-content-sheet[data-detent=full]{height:var(--content-sheet-full-height,0rem);padding-top:var(--safe-top)}
 .mobile-content-sheet[data-sheet-pulling]{transition:none}
+[data-tab-sheet]{--task-sheet-top:0}
+[data-narrow] [data-slot="dialog-content"][data-tab-sheet][data-detent=full]{padding-top:calc(var(--safe-top) + var(--gap-row) + var(--grabber-h))}
+[data-narrow] [data-tab-sheet][data-detent=full] [data-sheet-grabber]{top:var(--safe-top)}
 .mobile-content-grab{display:flex;align-items:center;justify-content:center;height:calc(2 * var(--grabber-top) + var(--grabber-h));flex:none;touch-action:none}
 .mobile-content-grab>span{height:var(--grabber-h);width:var(--grabber-w);border-radius:var(--radius-full);background:var(--tertiary)}
 [data-session-content-pane][data-mobile]{--content-tool-room:var(--gap-row)}

@@ -98,6 +98,8 @@ def local(config, destination, publish, cancelled):
     (gui / 'node_modules').symlink_to(dependencies / 'node_modules', target_is_directory=True)
     build_env = dict(os.environ, CARGO_TARGET_DIR=str(destination.parent.parent / 'native-target'))
     run('npm', 'run', 'gen', cwd=gui, env=build_env, timeout=1800)
+    if (gui / 'dev/lab/world.ts').is_file():
+        run(sys.executable, str(materialized / 'scripts/khor_lab/fixture_data.py'), str(materialized), env=build_env, timeout=1800)
     run('npx', 'tsc', '--project', 'dev/lab/tsconfig.json', cwd=gui)
     run('npx', 'vite', 'build', '--config', 'dev/lab/vite.config.ts', '--outDir', str(destination), cwd=gui, timeout=900)
     receipt = destination / 'source.json'

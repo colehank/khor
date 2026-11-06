@@ -41,7 +41,7 @@ import { type TabFace } from "@/browse/TabStrip";
 import { fileKind } from "@/components/SessionFace";
 import type { GitCommitSummary } from "@/gen/bindings/GitCommitSummary";
 import type { Avatar } from "@/gen/bindings/Avatar";
-import { Tabs } from "@/browse/Tabs";
+import { WorkspaceContentFrame } from "@/views/workspace/WorkspaceContentFrame";
 import { cli, gui } from "@/gen/catalog";
 import { useHidden } from "@/hooks/use-hidden";
 import { useDirectoryWatch } from "@/hooks/use-directory-watch";
@@ -1519,16 +1519,18 @@ export function WorkspacePane({
           // a `min-width` it would be a wedge instead of a stop: the
           // three columns would simply overflow the window, and the
           // face would scroll sideways rather than the seam refusing.
-          className={cn("relative flex min-w-0 flex-1 flex-col", narrow && "pt-safe-top")}
+          className="relative flex min-w-0 flex-1 flex-col"
         >
           <div ref={readFirst.box} className="contents">
-          <Tabs
+          <WorkspaceContentFrame
+            narrow={narrow}
+            onBack={() => setScreen("tree")}
             // **The session tabs' capsule** (UX-25, the owner 2026-10-05:
             // one tab language): pills in one glass capsule, the file's
             // kind in the icon seat, one line of name, × on the one in
             // front and under the pointer. ⚠️ 墓碑: the VS Code-style strip.
             faces={tabFaces}
-            head={narrow ? <GlassCircle aria-label={gui.back} data-ws-back onClick={() => setScreen("tree")}><IconBack /></GlassCircle> : regionLead}
+            head={regionLead}
             active={content.active ?? ""}
             onFocus={(id) => setContent((was) => selectWorkspaceTab(was, id))}
             onClose={closeTab}
@@ -1597,7 +1599,7 @@ export function WorkspacePane({
               onDraft={draftOf(file)}
             />
           )}
-          </Tabs>
+          </WorkspaceContentFrame>
           </div>
         </div>
         )}

@@ -429,12 +429,8 @@ export function DevicesList({
         query={query}
         filtered={words.length > 0}
         label={groupLabel}
-        // An empty device table cannot happen — this machine is always in
-        // it — so zero rows is always a filter, said in its own words:
-        // the box's or the ticks' (`empty` is what `SideList` draws when
-        // the ticks have left it nothing to hand over).
         empty={gui.no_matches}
-        none={gui.no_matches}
+        none={gui.devices_empty}
       />
       {/* An errand — 办完就回去 — so a window over the list, not a page.
           Picking a face keeps it open (the table is re-read, the window

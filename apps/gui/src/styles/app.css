@@ -799,7 +799,7 @@ aside[data-side] {
   bottom: var(--sheet-kb);
   width: 100%;
   max-width: none;
-  max-height: calc(var(--dialog-visible-height) - var(--safe-top) - var(--gap-pane));
+  max-height: var(--task-sheet-room, calc(var(--dialog-visible-height) - var(--safe-top) - var(--gap-pane)));
   overflow-y: auto;
   translate: none;
   transform: none;

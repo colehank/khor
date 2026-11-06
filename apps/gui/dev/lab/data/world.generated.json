@@ -1,0 +1,917 @@
+{
+  "schema": 1,
+  "machine_ids": [
+    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "2222222222222222222222222222222222222222222222222222222222222222",
+    "3333333333333333333333333333333333333333333333333333333333333333",
+    "4444444444444444444444444444444444444444444444444444444444444444",
+    "5555555555555555555555555555555555555555555555555555555555555555",
+    "6666666666666666666666666666666666666666666666666666666666666666"
+  ],
+  "avatars": {
+    "2222222222222222222222222222222222222222222222222222222222222222": {
+      "canvas": 80.0,
+      "background": "#50595c",
+      "radius_ratio": 0.5,
+      "paint": {
+        "variant": "marble",
+        "blur": 7.0,
+        "veins": [
+          {
+            "vein": "shard",
+            "scale": 1.2,
+            "rotate": -208.0,
+            "dx": -6.0,
+            "dy": -7.0,
+            "overlay": false,
+            "color": "#f8f8d6"
+          },
+          {
+            "vein": "sweep",
+            "scale": 1.5,
+            "rotate": 312.0,
+            "dx": -5.0,
+            "dy": -3.0,
+            "overlay": true,
+            "color": "#b3c67f"
+          }
+        ]
+      },
+      "mark": {
+        "ink": "dark",
+        "veil": 0.1
+      }
+    },
+    "3333333333333333333333333333333333333333333333333333333333333333": {
+      "canvas": 80.0,
+      "background": "#b3c67f",
+      "radius_ratio": 0.5,
+      "paint": {
+        "variant": "marble",
+        "blur": 7.0,
+        "veins": [
+          {
+            "vein": "shard",
+            "scale": 1.5,
+            "rotate": -200.0,
+            "dx": -3.0,
+            "dy": -4.0,
+            "overlay": false,
+            "color": "#50595c"
+          },
+          {
+            "vein": "sweep",
+            "scale": 1.5,
+            "rotate": -120.0,
+            "dx": -5.0,
+            "dy": -2.0,
+            "overlay": true,
+            "color": "#5d7e62"
+          }
+        ]
+      },
+      "mark": {
+        "ink": "dark",
+        "veil": 0.06
+      }
+    },
+    "4444444444444444444444444444444444444444444444444444444444444444": {
+      "canvas": 80.0,
+      "background": "#f8f8d6",
+      "radius_ratio": 0.5,
+      "paint": {
+        "variant": "marble",
+        "blur": 7.0,
+        "veins": [
+          {
+            "vein": "shard",
+            "scale": 1.4,
+            "rotate": 192.0,
+            "dx": 0.0,
+            "dy": -1.0,
+            "overlay": false,
+            "color": "#50595c"
+          },
+          {
+            "vein": "sweep",
+            "scale": 1.5,
+            "rotate": -288.0,
+            "dx": -4.0,
+            "dy": 1.0,
+            "overlay": true,
+            "color": "#5d7e62"
+          }
+        ]
+      },
+      "mark": {
+        "ink": "dark",
+        "veil": 0.1
+      }
+    },
+    "5555555555555555555555555555555555555555555555555555555555555555": {
+      "canvas": 80.0,
+      "background": "#b3c67f",
+      "radius_ratio": 0.5,
+      "paint": {
+        "variant": "marble",
+        "blur": 7.0,
+        "veins": [
+          {
+            "vein": "shard",
+            "scale": 1.5,
+            "rotate": 176.0,
+            "dx": -2.0,
+            "dy": -2.0,
+            "overlay": false,
+            "color": "#50595c"
+          },
+          {
+            "vein": "sweep",
+            "scale": 1.2,
+            "rotate": -264.0,
+            "dx": -3.0,
+            "dy": -7.0,
+            "overlay": true,
+            "color": "#5d7e62"
+          }
+        ]
+      },
+      "mark": {
+        "ink": "dark",
+        "veil": 0.06
+      }
+    },
+    "6666666666666666666666666666666666666666666666666666666666666666": {
+      "canvas": 80.0,
+      "background": "#5d7e62",
+      "radius_ratio": 0.5,
+      "paint": {
+        "variant": "marble",
+        "blur": 7.0,
+        "veins": [
+          {
+            "vein": "shard",
+            "scale": 1.2,
+            "rotate": -184.0,
+            "dx": -5.0,
+            "dy": -5.0,
+            "overlay": false,
+            "color": "#f8f8d6"
+          },
+          {
+            "vein": "sweep",
+            "scale": 1.3,
+            "rotate": 96.0,
+            "dx": -4.0,
+            "dy": 0.0,
+            "overlay": true,
+            "color": "#b3c67f"
+          }
+        ]
+      },
+      "mark": {
+        "ink": "dark",
+        "veil": 0.0
+      }
+    },
+    "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee": {
+      "canvas": 80.0,
+      "background": "#f8f8d6",
+      "radius_ratio": 0.5,
+      "paint": {
+        "variant": "marble",
+        "blur": 7.0,
+        "veins": [
+          {
+            "vein": "shard",
+            "scale": 1.2,
+            "rotate": -48.0,
+            "dx": 2.0,
+            "dy": 4.0,
+            "overlay": false,
+            "color": "#5d7e62"
+          },
+          {
+            "vein": "sweep",
+            "scale": 1.4,
+            "rotate": 72.0,
+            "dx": 3.0,
+            "dy": 6.0,
+            "overlay": true,
+            "color": "#50595c"
+          }
+        ]
+      },
+      "mark": {
+        "ink": "dark",
+        "veil": 0.0
+      }
+    }
+  },
+  "directories": {
+    "": {
+      "entries": [
+        {
+          "name": "design-system",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "project",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "research-notes",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "资料库",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "design-system": {
+      "entries": [
+        {
+          "name": "docs",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "src",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "design.md",
+          "dir": false,
+          "size": 89,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "notes.md",
+          "dir": false,
+          "size": 92,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "package.json",
+          "dir": false,
+          "size": 45,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "plan.md",
+          "dir": false,
+          "size": 103,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 265,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "report.md",
+          "dir": false,
+          "size": 111,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".config",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".gitignore",
+          "dir": false,
+          "size": 14,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "design-system/.config": {
+      "entries": [
+        {
+          "name": "preferences.json",
+          "dir": false,
+          "size": 17,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "design-system/docs": {
+      "entries": [
+        {
+          "name": "formulas.md",
+          "dir": false,
+          "size": 91,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "中文说明.md",
+          "dir": false,
+          "size": 83,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "design-system/src": {
+      "entries": [
+        {
+          "name": "app.ts",
+          "dir": false,
+          "size": 39,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "CodeEditor.tsx",
+          "dir": false,
+          "size": 336,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "navigation.ts",
+          "dir": false,
+          "size": 67,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "project": {
+      "entries": [
+        {
+          "name": "docs",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998835,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "src",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "design.md",
+          "dir": false,
+          "size": 89,
+          "at_ms": 1793975998834,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "notes.md",
+          "dir": false,
+          "size": 92,
+          "at_ms": 1793975998834,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "package.json",
+          "dir": false,
+          "size": 45,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "plan.md",
+          "dir": false,
+          "size": 103,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 265,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "report.md",
+          "dir": false,
+          "size": 111,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".config",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".gitignore",
+          "dir": false,
+          "size": 14,
+          "at_ms": 1793975998834,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "project/.config": {
+      "entries": [
+        {
+          "name": "preferences.json",
+          "dir": false,
+          "size": 17,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "project/docs": {
+      "entries": [
+        {
+          "name": "formulas.md",
+          "dir": false,
+          "size": 91,
+          "at_ms": 1793975998835,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "中文说明.md",
+          "dir": false,
+          "size": 83,
+          "at_ms": 1793975998835,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "project/src": {
+      "entries": [
+        {
+          "name": "app.ts",
+          "dir": false,
+          "size": 39,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "CodeEditor.tsx",
+          "dir": false,
+          "size": 336,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "navigation.ts",
+          "dir": false,
+          "size": 67,
+          "at_ms": 1793975998836,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "research-notes": {
+      "entries": [
+        {
+          "name": "docs",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "src",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "design.md",
+          "dir": false,
+          "size": 89,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "notes.md",
+          "dir": false,
+          "size": 92,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "package.json",
+          "dir": false,
+          "size": 45,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "plan.md",
+          "dir": false,
+          "size": 103,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 265,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "report.md",
+          "dir": false,
+          "size": 111,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".config",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".gitignore",
+          "dir": false,
+          "size": 14,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "research-notes/.config": {
+      "entries": [
+        {
+          "name": "preferences.json",
+          "dir": false,
+          "size": 17,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "research-notes/docs": {
+      "entries": [
+        {
+          "name": "formulas.md",
+          "dir": false,
+          "size": 91,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "中文说明.md",
+          "dir": false,
+          "size": 83,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "research-notes/src": {
+      "entries": [
+        {
+          "name": "app.ts",
+          "dir": false,
+          "size": 39,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "CodeEditor.tsx",
+          "dir": false,
+          "size": 336,
+          "at_ms": 1793975998838,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "navigation.ts",
+          "dir": false,
+          "size": 67,
+          "at_ms": 1793975998837,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "资料库": {
+      "entries": [
+        {
+          "name": "docs",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "src",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "design.md",
+          "dir": false,
+          "size": 89,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "notes.md",
+          "dir": false,
+          "size": 92,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "package.json",
+          "dir": false,
+          "size": 45,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "plan.md",
+          "dir": false,
+          "size": 103,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 265,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "report.md",
+          "dir": false,
+          "size": 111,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".config",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": ".gitignore",
+          "dir": false,
+          "size": 14,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "资料库/.config": {
+      "entries": [
+        {
+          "name": "preferences.json",
+          "dir": false,
+          "size": 17,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "资料库/docs": {
+      "entries": [
+        {
+          "name": "formulas.md",
+          "dir": false,
+          "size": 91,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "中文说明.md",
+          "dir": false,
+          "size": 83,
+          "at_ms": 1793975998839,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "资料库/src": {
+      "entries": [
+        {
+          "name": "app.ts",
+          "dir": false,
+          "size": 39,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "CodeEditor.tsx",
+          "dir": false,
+          "size": 336,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "navigation.ts",
+          "dir": false,
+          "size": 67,
+          "at_ms": 1793975998840,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    }
+  },
+  "documents": {
+    "design-system/.config/preferences.json": "{\"example\":true}\n",
+    "design-system/.gitignore": "node_modules/\n",
+    "design-system/README.md": "# Khor Lab\n\nThis file is fixture data. The App uses its production editor and Markdown renderer.\n\n行内公式：\\(a+b\\) 与 $E=mc^2$。\n\n\\[\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n\\]\n\n- 中文输入、选区、撤销与保存\n- 文件树、提交历史与阅读位置\n",
+    "design-system/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
+    "design-system/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
+    "design-system/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "design-system/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
+    "design-system/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
+    "design-system/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
+    "design-system/report.md": "# 实验报告\n\n| 场景 | 状态 |\n| --- | --- |\n| 窄屏布局 | 待验收 |\n| 原生键盘 | 单独验收 |\n",
+    "design-system/src/CodeEditor.tsx": "import {EditorState} from '@codemirror/state';\nimport {keymap} from '@codemirror/view';\nimport {defaultKeymap,history,historyKeymap} from '@codemirror/commands';\n\nconst extensions = [history(),keymap.of([...historyKeymap,...defaultKeymap])];\n\nexport function createEditor(doc: string) {\n  return EditorState.create({doc,extensions});\n}\n",
+    "design-system/src/app.ts": "export const title = '完整 App Lab';\n",
+    "design-system/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n",
+    "project/.config/preferences.json": "{\"example\":true}\n",
+    "project/.gitignore": "node_modules/\n",
+    "project/README.md": "# Khor Lab\n\nThis file is fixture data. The App uses its production editor and Markdown renderer.\n\n行内公式：\\(a+b\\) 与 $E=mc^2$。\n\n\\[\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n\\]\n\n- 中文输入、选区、撤销与保存\n- 文件树、提交历史与阅读位置\n",
+    "project/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
+    "project/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
+    "project/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "project/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
+    "project/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
+    "project/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
+    "project/report.md": "# 实验报告\n\n| 场景 | 状态 |\n| --- | --- |\n| 窄屏布局 | 待验收 |\n| 原生键盘 | 单独验收 |\n",
+    "project/src/CodeEditor.tsx": "import {EditorState} from '@codemirror/state';\nimport {keymap} from '@codemirror/view';\nimport {defaultKeymap,history,historyKeymap} from '@codemirror/commands';\n\nconst extensions = [history(),keymap.of([...historyKeymap,...defaultKeymap])];\n\nexport function createEditor(doc: string) {\n  return EditorState.create({doc,extensions});\n}\n",
+    "project/src/app.ts": "export const title = '完整 App Lab';\n",
+    "project/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n",
+    "research-notes/.config/preferences.json": "{\"example\":true}\n",
+    "research-notes/.gitignore": "node_modules/\n",
+    "research-notes/README.md": "# Khor Lab\n\nThis file is fixture data. The App uses its production editor and Markdown renderer.\n\n行内公式：\\(a+b\\) 与 $E=mc^2$。\n\n\\[\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n\\]\n\n- 中文输入、选区、撤销与保存\n- 文件树、提交历史与阅读位置\n",
+    "research-notes/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
+    "research-notes/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
+    "research-notes/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "research-notes/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
+    "research-notes/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
+    "research-notes/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
+    "research-notes/report.md": "# 实验报告\n\n| 场景 | 状态 |\n| --- | --- |\n| 窄屏布局 | 待验收 |\n| 原生键盘 | 单独验收 |\n",
+    "research-notes/src/CodeEditor.tsx": "import {EditorState} from '@codemirror/state';\nimport {keymap} from '@codemirror/view';\nimport {defaultKeymap,history,historyKeymap} from '@codemirror/commands';\n\nconst extensions = [history(),keymap.of([...historyKeymap,...defaultKeymap])];\n\nexport function createEditor(doc: string) {\n  return EditorState.create({doc,extensions});\n}\n",
+    "research-notes/src/app.ts": "export const title = '完整 App Lab';\n",
+    "research-notes/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n",
+    "资料库/.config/preferences.json": "{\"example\":true}\n",
+    "资料库/.gitignore": "node_modules/\n",
+    "资料库/README.md": "# Khor Lab\n\nThis file is fixture data. The App uses its production editor and Markdown renderer.\n\n行内公式：\\(a+b\\) 与 $E=mc^2$。\n\n\\[\n\\sum_{i=1}^{n} i = \\frac{n(n+1)}{2}\n\\]\n\n- 中文输入、选区、撤销与保存\n- 文件树、提交历史与阅读位置\n",
+    "资料库/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
+    "资料库/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
+    "资料库/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "资料库/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
+    "资料库/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
+    "资料库/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
+    "资料库/report.md": "# 实验报告\n\n| 场景 | 状态 |\n| --- | --- |\n| 窄屏布局 | 待验收 |\n| 原生键盘 | 单独验收 |\n",
+    "资料库/src/CodeEditor.tsx": "import {EditorState} from '@codemirror/state';\nimport {keymap} from '@codemirror/view';\nimport {defaultKeymap,history,historyKeymap} from '@codemirror/commands';\n\nconst extensions = [history(),keymap.of([...historyKeymap,...defaultKeymap])];\n\nexport function createEditor(doc: string) {\n  return EditorState.create({doc,extensions});\n}\n",
+    "资料库/src/app.ts": "export const title = '完整 App Lab';\n",
+    "资料库/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n"
+  },
+  "_source": {
+    "Cargo.lock": "7cbdde6f78ebb93f98e51fe81410906f833f58793296e592547e25e8f89ad705",
+    "crates/core/src/avatar.rs": "ac4b9db9c2c6a22c6579bb387c9c606f46cce8079b7d9822fe69bf268506a49d",
+    "crates/core/src/avatar/mark.rs": "14e6a45e011668bf05e9b3c89cd2c15b15c123a65b2adb68c0362fe88095b1d5",
+    "crates/node/src/files.rs": "0051245782015daebc893495748097bf088df7114e2978b483c073cac9aedeec",
+    "apps/gui/core/src/bin/lab_data.rs": "3ac717bc67e751978b27f2ce324df7034a1c33fc4b803a7f1640047a49d35252",
+    "apps/gui/dev/lab/data/workspace/.config/preferences.json": "d15be58e7eb7f9813a8f87e0f093475bdaeb61a22917641168ced318ca61b2e2",
+    "apps/gui/dev/lab/data/workspace/.gitignore": "4d56952b0fb13bf8f9b6c13a6d4c34a075bac3af447636a1df4335d7576e2f97",
+    "apps/gui/dev/lab/data/workspace/README.md": "ad36cf9e020c9284bdaa4987ebd05a1cb9187acaad651956ac8ffec8622b573d",
+    "apps/gui/dev/lab/data/workspace/design.md": "738e7b481a8c4ba3f4cdc4bb1171ae9d9bc3a9643a4a5a75060c9805d5a2ed74",
+    "apps/gui/dev/lab/data/workspace/docs/formulas.md": "833a87e9bfc98a37c076c1c8fa834681f1cc549a21f216a010852150707e6372",
+    "apps/gui/dev/lab/data/workspace/docs/中文说明.md": "9d74029ef03304ebd817e1385e80a3e5e6e6d1bde8345c20d3862d1be9995c33",
+    "apps/gui/dev/lab/data/workspace/notes.md": "5de2c9ce72d960bf66a6c1c99d8fea3ddc9396a840de3c01eb8e11b15fbb4c30",
+    "apps/gui/dev/lab/data/workspace/package.json": "532e45105028b94a968e65fb3c12ca69febc4799876569b52ebf33ee12f67862",
+    "apps/gui/dev/lab/data/workspace/plan.md": "458fbdc195ca00903530c1d0c943564de907a0d9b2778f034728b134377d0765",
+    "apps/gui/dev/lab/data/workspace/report.md": "16d0fe5faa9ab3e651ebada07a31d562616ba4c3710f3ac290ef120037981335",
+    "apps/gui/dev/lab/data/workspace/src/CodeEditor.tsx": "9b557408e1bc1d2918fe284726c50d67a2d00623ec8b7d90818de010cfb8c839",
+    "apps/gui/dev/lab/data/workspace/src/app.ts": "aa86c4f80a12ab65cd5ef6b71aae1636d7186648222e06f1e2b18a3dcac4ef05",
+    "apps/gui/dev/lab/data/workspace/src/navigation.ts": "aaeff633369c4afdbb21c8b53096d13afa98efa1b99bee609e05c6d8bcc07d0a"
+  },
+  "_payload_sha256": "c5c238800795152bd7e2e4f640f0d85aa2b1b70614b0755adfcf820a486b1c74"
+}

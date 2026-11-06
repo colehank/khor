@@ -51,6 +51,9 @@ jobs:
           cache: npm
           cache-dependency-path: apps/gui/package-lock.json
       - uses: ./.github/actions/restore-frontend
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - name: Prepare canonical Lab fixture data
+        run: python3 scripts/khor_lab/fixture_data.py .
       - run: npm ci
         working-directory: apps/gui
       - name: Check and build the real App Lab from this revision
@@ -73,6 +76,9 @@ jobs:
           LAB_BUNDLE: ${{ runner.temp }}/developer-lab
           LAB_REPORT: ${{ runner.temp }}/lab-report
         run: |
+          npm run deck-scrub
+          npm run session-navigation
+          npm run session-follow
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk
           npx playwright-core install chromium

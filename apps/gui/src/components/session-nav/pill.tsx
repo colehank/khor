@@ -17,9 +17,9 @@ export function useSessionPill(root:RefObject<HTMLDivElement|null>,active:string
   },[expanded]);
   return {expanded,close,toggle:()=>setExpanded(value=>!value)};
 }
-export function SessionPill({faces,active,onFocus,onOverview}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'>){
+export function SessionPill({faces,active,onFocus,onOverview,onNew}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'|'onNew'>){
   return <div data-lab-session-pill className="glass absolute lab-session-pill" role="group" aria-label="会话药丸">
-    <DeckBand faces={faces} active={active} onFocus={onFocus} onTitle={onOverview} onOverview={onOverview}/>
+    <DeckBand faces={faces} active={active} onFocus={onFocus} onTitle={onOverview} onNew={onNew} onOverview={onOverview}/>
     <button type="button" data-lab-pill-overview className="lab-pill-overview" aria-label="全部标签页" onClick={onOverview}><TabsGlyph n={faces.length}/></button>
   </div>;
 }
