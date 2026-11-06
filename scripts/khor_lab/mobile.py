@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import subprocess
 import time
+import xml.etree.ElementTree as ET
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
@@ -108,7 +109,23 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
                 time.sleep(1)
             if not point:
                 raise ValueError('The real browser address pill is missing')
+            evaluate("window.__labNativeAddressClicks=[];window.addEventListener('click',event=>{window.__labNativeAddressClicks.push({title:!!event.target.closest('[data-deck-title]'),detail:event.detail})},true);return true")
             command('/context', {'name':'NATIVE_APP'})
+            deadline = time.monotonic() + 30
+            while time.monotonic() < deadline:
+                source = command('/source', method='GET')
+                buttons = [node for node in ET.fromstring(source).iter()
+                           if node.get('type') == 'XCUIElementTypeButton' and node.get('visible') == 'true']
+                hit = next((node for node in buttons
+                            if float(node.get('x','0')) <= point['x'] <= float(node.get('x','0')) + float(node.get('width','0'))
+                            and float(node.get('y','0')) <= point['y'] <= float(node.get('y','0')) + float(node.get('height','0'))), None)
+                if hit is not None:
+                    (report / 'native-address-ready.xml').write_text(source)
+                    break
+                time.sleep(.2)
+            else:
+                (report / 'native-address-missing.xml').write_text(source)
+                raise ValueError('The native title button is not ready at the actual DOM address rectangle')
             command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
             visible = []
             for _ in range(30):
@@ -118,7 +135,10 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
                 time.sleep(.2)
             subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report / 'ios-keyboard.png')], check=True, timeout=30)
             if not visible:
-                raise ValueError('Tapping the actual browser pill did not show the iOS software keyboard')
+                main_context()
+                state = evaluate('return {clicks:window.__labNativeAddressClicks,focus:document.activeElement?.outerHTML.slice(0,400),fields:[...document.querySelectorAll("[data-page-address]")].map(input=>({html:input.outerHTML,visibility:getComputedStyle(input).visibility})),text:document.body.innerText.slice(-1000)}')
+                (report / 'native-address-failure.json').write_text(json.dumps(state,indent=2))
+                raise ValueError('Tapping the ready native browser title did not show the iOS software keyboard: ' + json.dumps(state))
             main_context()
             focused = evaluate('return document.activeElement?.matches("[data-page-address]") === true')
             if not focused:
