@@ -110,13 +110,13 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Prepare embedded web face for the full host
-        if: inputs.mode == 'full'
+        if: inputs.mode == 'full' && inputs.native_required
         working-directory: snapshot/source/apps/gui
         run: |
           npx vite build --outDir "$RUNNER_TEMP/embedded/dist"
           cp -R src/gen "$RUNNER_TEMP/embedded/gen"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: inputs.mode == 'full'
+        if: inputs.mode == 'full' && inputs.native_required
         with:
           name: developer-lab-embedded
           path: ${{ runner.temp }}/embedded
@@ -153,6 +153,7 @@ jobs:
           LAB_BUNDLE: ${{ runner.temp }}/frontend
           LAB_REPORT: ${{ runner.temp }}/checks
         run: |
+          sudo apt-get install --no-install-recommends -y fonts-noto-cjk
           npx playwright-core install chromium
           node dev/lab/check-app.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

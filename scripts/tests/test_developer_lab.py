@@ -222,6 +222,46 @@ class LabTests(unittest.TestCase):
             self.assertNotEqual(local_dependencies(gui, self.root / 'cache'), first)
         self.assertEqual(installed, ['first stub', 'updated stub'])
 
+    def test_restart_serves_last_valid_cached_frontend_while_next_build_is_pending(self):
+        home = self.root / 'manager'
+        lab = Lab(load(self.root), home)
+        version = home / 'versions/available'
+        version.mkdir(parents=True)
+        (version / 'index.html').write_text('cached App')
+        source = dict(tree='tree', base_commit='base', snapshot_commit='snapshot', native_contract='native')
+        write_json(version / 'lab-manifest.json', dict(schema=1, entry='production-app', **source))
+        lab.value.update(available=True, version='available', source=source)
+        lab.save()
+        restored = Lab(load(self.root), home)
+        self.assertTrue(restored.status()['available'])
+        self.assertEqual(restored.status()['source'], source)
+        self.assertNotEqual(restored.value['token'], lab.value['token'])
+
+    def test_local_unverified_host_cannot_satisfy_a_remote_host_request(self):
+        local = Lab(load(self.root, {'mode': 'full', 'scene': 'live', 'builder': 'local'}), self.root / 'local')
+        remote = Lab(load(self.root, {'mode': 'full', 'scene': 'live', 'builder': 'remote'}), self.root / 'remote')
+        built = {'managed_frontend': True, 'real_backend_verified': False}
+        self.assertTrue(local.host_usable(built))
+        self.assertFalse(remote.host_usable(built))
+        self.assertTrue(remote.host_usable({**built, 'real_backend_verified': True}))
+
+    def test_local_full_build_uses_its_existing_manager_without_binding_a_second_server(self):
+        from khor_lab.check_native import probe
+        home, frontend, output = self.root / 'manager', self.root / 'frontend', self.root / 'output'
+        frontend.mkdir();output.mkdir()
+        write_json(frontend / 'lab-manifest.json', {'tree': 'exact-tree', 'snapshot_commit': 'snapshot'})
+        lab = Lab(load(self.root, {'mode': 'full', 'scene': 'live', 'builder': 'local'}), home)
+        lab.value['source'] = {'tree': 'exact-tree'}
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        server.lab = lab
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        result = probe(self.root / 'not-built-yet.app', frontend, self.root, server.server_port, output)
+        self.assertTrue(result['managed_frontend'])
+        self.assertFalse(result['real_backend'])
+        self.assertTrue((output / 'native-probe.json').exists())
+
     def test_retention_keeps_active_version_even_if_older(self):
         for name in ('a', 'b', 'c'):
             (self.root / name).mkdir()

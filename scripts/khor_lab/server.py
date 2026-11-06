@@ -57,6 +57,11 @@ class Lab:
 
     def status(self):
         with self.lock:
+            if self.native and self.native.poll() is not None:
+                self.value['native_exit'] = self.native.returncode
+                self.native = None
+                self.value.pop('native_pid', None)
+                self.save()
             return {k: v for k, v in self.value.items() if k != 'token'}
 
     def update(self):
@@ -66,7 +71,8 @@ class Lab:
             if self.config['mode'] == 'full':
                 from .contract import digest
                 host = self.host_directory(digest(Path(self.config['root'])))
-                self.config['native_required'] = not (host / 'native-manifest.json').is_file()
+                manifest = host / 'native-manifest.json'
+                self.config['native_required'] = not manifest.is_file() or not self.host_usable(json.loads(manifest.read_text()))
             self.value.update(building=True, error=None, checks='pending')
             self.save()
             self.build = threading.Thread(target=self.build_latest, daemon=True)
@@ -109,9 +115,14 @@ class Lab:
                 self.value.update(version=identifier, available=True, source=info, manifest=manifest, snapshot_url=self.value['url'].replace('/app/', '/snapshots/' + identifier + '/app/'))
                 cached = self.host_directory(info['native_contract'])
                 if self.config['mode'] == 'full' and (cached / 'native-manifest.json').is_file():
-                    self.launch_native(cached, json.loads((cached / 'native-manifest.json').read_text()))
+                    retained = json.loads((cached / 'native-manifest.json').read_text())
+                    if self.host_usable(retained):
+                        self.launch_native(cached, retained)
             elif kind == 'native':
                 cached = self.host_directory(manifest['native_contract'])
+                if cached.exists() and not self.host_usable(json.loads((cached / 'native-manifest.json').read_text())):
+                    self.stop_native()
+                    shutil.rmtree(cached)
                 if not cached.exists():
                     shutil.copytree(self.home / 'versions' / identifier / 'native', cached)
                 retained = json.loads((cached / 'native-manifest.json').read_text())
@@ -122,8 +133,11 @@ class Lab:
     def host_directory(self, contract):
         return self.home / 'hosts' / (contract + '-' + str(self.config['port']))
 
+    def host_usable(self, manifest):
+        return manifest.get('managed_frontend') is True and (self.config['builder'] == 'local' or manifest.get('real_backend_verified') is True)
+
     def launch_native(self, directory, manifest):
-        if manifest.get('managed_frontend') is not True or manifest.get('real_backend_verified') is not True:
+        if not self.host_usable(manifest):
             raise ValueError('Native Lab has not verified the managed frontend and real backend')
         if manifest['platform'] != platform.system() or manifest['arch'] != platform.machine():
             raise ValueError('Native Lab architecture differs from this computer')
@@ -150,7 +164,7 @@ class Lab:
         time.sleep(1)
         if self.native.poll() is not None:
             raise ValueError('Native host exited during startup; inspect native.log')
-        self.value.update(native_pid=self.native.pid, native_source=manifest)
+        self.value.update(native_pid=self.native.pid, native_source=manifest, native_app=str(binary.parents[2]))
 
     def stop_native(self):
         if self.native and self.native.poll() is None:
@@ -166,6 +180,16 @@ class Lab:
     def control(self, action, body):
         if action == 'update':
             return self.update()
+        if action == 'restart':
+            with self.lock:
+                if self.config['mode'] != 'full' or not self.value.get('source'):
+                    raise ValueError('Use browser refresh for frontend Lab')
+                cached = self.host_directory(self.value['source']['native_contract'])
+                manifest = json.loads((cached / 'native-manifest.json').read_text())
+                self.stop_native()
+                self.launch_native(cached, manifest)
+                self.save()
+                return self.status()
         with self.lock:
             if action in ('scene', 'reset'):
                 if self.config['mode'] == 'full':

@@ -38,7 +38,7 @@ python3 scripts/dev.py lab start --mode full --builder remote
 
 `start` returns after starting its lightweight manager. Build, acquisition and checks continue asynchronously. `update` snapshots the current tracked source; stage new files first. Untracked files, including local settings and credentials, are excluded. `status` records the base commit, exact tree, snapshot commit, workflow URL, available bundle and check result. Availability, checks and human acceptance are separate fields. A failed check does not pretend the already available bundle has passed.
 
-Refresh the App after a bundle update or scene reset. Lab does not reload a page while someone is typing or composing with an input method. `/app/` is the stable latest entry. `snapshot_url` pins an acquired version until cache retention removes it; its assets and source manifest remain tied to that version.
+Refresh the browser after a bundle update or scene reset. For a full Lab, `lab restart` reopens its isolated native view with the active frontend and existing store, reusing its compiled host without a new build. Lab does not reload a page while someone is typing or composing with an input method. `/app/` is the stable latest entry. `snapshot_url` pins an acquired version until cache retention removes it; its assets and source manifest remain tied to that version.
 
 The first scene set is `gui`, `codex`, `terminal`, `stream`, `content`, `list`; full uses `live`. Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
 

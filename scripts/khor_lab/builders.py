@@ -54,13 +54,14 @@ def local_dependencies(gui, home):
             key.update(str(path.relative_to(gui)).encode() + b'\0' + path.read_bytes())
     dependency_key = key.hexdigest()
     dependencies = home / 'dependencies' / dependency_key
-    if not (dependencies / 'node_modules').is_dir():
+    if not (dependencies / 'node_modules').is_dir() or not (dependencies / '.lab-install.json').is_file():
         dependencies.mkdir(parents=True, exist_ok=True)
         for name in ('package.json', 'package-lock.json'):
             shutil.copyfile(gui / name, dependencies / name)
         for relative, target in linked:
             shutil.copytree(target, dependencies / relative, dirs_exist_ok=True)
         run('npm', 'ci', cwd=dependencies, timeout=900)
+        write_json(dependencies / '.lab-install.json', {'key': dependency_key})
     prune(dependencies.parent, 2, [dependency_key])
     return dependencies
 

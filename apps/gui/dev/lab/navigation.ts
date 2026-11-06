@@ -30,7 +30,7 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
   const file = (): FileText => ({text, total: new TextEncoder().encode(text).length, at_ms: at + revision,
     digest: 'fixture-' + revision, cut: false, binary: false});
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here']);
+    'recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -63,7 +63,8 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
         const batch = {cursor: String(revision), reset: false, dirs: [], workspace: false, coverage: [], retry_ms: 1000};
         return command === 'dirs_begin' ? {id: 'fixture-watch', machine_id: device, batch} : batch;
       }
-      if (command === 'dirs_leave') return null;
+      if (command === 'dirs_leave' || command === 'recent_visit') return null;
+      if (command === 'git_diff') return {hunks: [], more: false};
       if (command === 'git_history') return {head: null, commits: [], next: null};
       if (command === 'git_log') return {commits: [], more: false};
       if (command === 'workspaces') return [workspace];

@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 import threading
 from urllib.parse import parse_qs, urlsplit
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from .config import load
 from .server import Handler, Lab
@@ -17,6 +19,18 @@ from .artifacts import write_json
 def probe(app, frontend, root, port, output):
     ready = threading.Event()
     client = json.loads((frontend / 'lab-manifest.json').read_text())
+    try:
+        with urlopen(f'http://127.0.0.1:{port}/lab/status', timeout=2) as response:
+            manager = json.load(response)
+    except URLError:
+        manager = None
+    if manager is not None:
+        if manager.get('mode') != 'full' or manager.get('source', {}).get('tree') != client['tree']:
+            raise ValueError('Another App or source owns the configured native Lab port')
+        # The local manager already serves this exact UI and owns final native launch.
+        result = {'managed_frontend': True, 'real_backend': False, 'tree': client['tree'], 'snapshot_commit': client['snapshot_commit']}
+        write_json(output / 'native-probe.json', result)
+        return result
     class ProbeHandler(Handler):
         def do_GET(self):
             url = urlsplit(self.path)
@@ -47,7 +61,11 @@ def probe(app, frontend, root, port, output):
 
     with tempfile.TemporaryDirectory(prefix='khor-native-probe-') as temporary:
         home = Path(temporary)
-        shutil.copytree(frontend, home / 'versions/probe')
+        bundle = home / 'versions/probe'
+        bundle.mkdir(parents=True)
+        for name in ('index.html', 'lab-manifest.json'):
+            shutil.copyfile(frontend / name, bundle / name)
+        shutil.copytree(frontend / 'assets', bundle / 'assets')
         lab = Lab(load(root, {'mode': 'full', 'builder': 'local', 'scene': 'live', 'port': port}), home)
         lab.value.update(version='probe', available=True, source=client)
         server = ThreadingHTTPServer(('127.0.0.1', port), ProbeHandler)

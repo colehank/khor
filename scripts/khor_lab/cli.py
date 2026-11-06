@@ -17,7 +17,7 @@ from .artifacts import write_json
 
 def register(sub):
     parser = sub.add_parser('lab', help='Complete production App Lab, with independent mode and builder choices')
-    parser.add_argument('operation', choices=['start', 'update', 'status', 'open', 'stop', 'reset', 'scene', '_serve'])
+    parser.add_argument('operation', choices=['start', 'update', 'status', 'open', 'stop', 'reset', 'scene', 'restart', '_serve'])
     parser.add_argument('--mode', choices=['frontend', 'full'])
     parser.add_argument('--builder', choices=['local', 'remote'])
     parser.add_argument('--scene', choices=SCENES)
@@ -84,7 +84,7 @@ def main(args, root):
         if status['mode'] == 'full':
             if not status.get('native_pid'):
                 raise ValueError('Native host is still building; inspect lab status')
-            print('The isolated native Lab is running')
+            subprocess.run(['open', '-a', status['native_app']], check=True)
         else:
             webbrowser.open(status['url'])
         return
