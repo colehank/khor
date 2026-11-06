@@ -28,7 +28,9 @@ async function inspect(browser, scene, size, data = {}) {
       const toolbar = [...document.querySelectorAll(`[data-session-side] [data-content-toolbar="${kind}"]`)].find(el => el.getClientRects().length);
       const box = el => el ? {top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom} : null;
       const controls = toolbar ? [...toolbar.querySelectorAll('button')].filter(el => el.getClientRects().length && !el.matches(':disabled,[aria-disabled="true"]')) : [];
-      return {head:box(head), toolbar:box(toolbar), controlsReachable:controls.length > 0 && controls.every(el => {
+      return {head:box(head), toolbar:box(toolbar), side:box(document.querySelector('[data-session-side]')),
+        seam:box(document.querySelector('[data-session-side] [data-side-seam]')),
+        panes:box(document.querySelector('[data-session-panes]')), controlsReachable:controls.length > 0 && controls.every(el => {
         const rect = el.getBoundingClientRect();
         return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
       })};
@@ -36,6 +38,10 @@ async function inspect(browser, scene, size, data = {}) {
     contentLayout.push({phase,...layout});
     assert(layout.head && layout.toolbar, 'The actual session header and content toolbar must be present');
     assert(layout.toolbar.top >= layout.head.bottom - 1, `The content toolbar must stay below the session tabs (${phase}): ${JSON.stringify(layout)}`);
+    assert(layout.side && layout.seam && layout.panes, 'The actual split column and resize handle must be present');
+    assert(layout.side.top >= layout.head.bottom - 1, `The side column border must begin below the session tabs (${phase}): ${JSON.stringify(layout)}`);
+    assert(layout.seam.top >= layout.head.bottom - 1, `The resize handle must not cross the session tabs (${phase}): ${JSON.stringify(layout)}`);
+    assert(layout.side.bottom <= layout.panes.bottom + 1, `The inset column must stay inside the session body (${phase}): ${JSON.stringify(layout)}`);
     assert(layout.controlsReachable, `The session tabs must not cover the content controls (${phase})`);
     await page.screenshot({path:path.join(report,`${name}-${phase}.png`)});
   }
@@ -123,6 +129,10 @@ async function inspect(browser, scene, size, data = {}) {
       const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
       assert.equal(count,machines,'Machine fixture count must reach the actual App');
       assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
+      if(scene==='devices'){
+        assert.equal(await page.locator('[data-mandala-map]').count(),0,'An unselected machine page must leave its detail area empty');
+        assert.equal(await page.locator('[data-machine-card]').count(),0,'The machine overview must not silently select the first machine');
+      }
       if(scene==='devices'&&machines===6){
         const devices=await page.evaluate(async()=> (await fetch('/api/devices',{method:'POST',body:'{}'})).json());
         assert.deepEqual(devices.map(device=>device.vitals?.vitals.system),['macos','linux','macos','windows','ios','android']);

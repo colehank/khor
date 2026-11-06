@@ -10,8 +10,8 @@
 [data-tabs-nested] [data-tab-head].glass-sel,[data-tabs-nested] [data-sel-ghost]{background:var(--fill);box-shadow:inset 0 0 0 var(--hair) var(--border)}
 .session-content-host,.session-content-pane,.session-content-view,.session-content-start,.session-content-mode{position:relative;display:flex;min-width:0;min-height:0;flex:1;flex-direction:column}
 .session-content-host{height:100%}
-/* The chat scroller runs under the session tabs; independent side controls stay below them. */
-[data-band-over] > [data-board] > [data-session-panes] > [data-session-side]{padding-block-start:var(--band-h)}
+/* Chat scrolls under the tabs; the whole side column, including its seam, starts below them. */
+[data-band-over] > [data-board] > [data-session-panes] > [data-session-side]{margin-block-start:var(--band-h);height:auto}
 .session-content-mode[hidden]{display:none}
 /* Retain editor DOM, but remove inactive glass from compositing. */
 .session-content-retained{display:none}

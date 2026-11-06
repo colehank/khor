@@ -170,7 +170,6 @@ import { FullScreenProvider } from "@/lib/full-screen";
 import { MachineWeb } from "@/views/MachineWeb";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { Fault } from "@/components/Fault";
-import { MandalaMap, waitingOn } from "@/views/MandalaMap";
 import { MeshNow } from "@/views/MeshNow";
 import { AddMachineDialog } from "@/views/AddMachine";
 import { AddMachineHint } from "@/views/PairDialogs";
@@ -2297,14 +2296,6 @@ export default function App() {
     </ListPane>
   );
 
-  // Every pane has something to open now, and each gets the component
-  // that can say something true about what it opened.
-  //
-  // **The devices pane with nothing picked is the exception, and it is
-  // not a counter-example.** What used to sit there was an empty card,
-  // for exactly the reason above: there was nothing true to say. There is
-  // now — the whole mesh, which is what that pane is about — so the space
-  // holds the map rather than a sentence about being empty.
   const openDevice = devices.find((d) => d.id === selectedDevice) ?? null;
   /** R0's name on a 详情 page (docs/SHELL.md 第十五轮 第 5 条): the picked
       thing where something is picked, the landing where nothing is.
@@ -3107,14 +3098,10 @@ export default function App() {
     ) : null
   ) : landing === "devices" && !openDevice && selectedDevice !== null && !devicesRead ? (
     // A machine asked for (⌘K) before the device table has answered
-    // once: its card has never been read, so the board shows the
-    // skeleton (components/RegionState) — not the map, which is the
-    // answer to 「nothing picked」.
+    // once: its card has never been read, so the board shows the skeleton.
     <RegionState state="loading-never" />
   ) : landing === "devices" && !openDevice ? (
-    // The map's one home (2026-09-28): 待批 rides each seat, counted off
-    // the rows the shell already holds.
-    <MandalaMap rows={devices} onOpen={onSelectDevice} selected={selectedDevice} waiting={waitingOn(devices, rows)} />
+    null
   ) : landing === "devices" ? (
     <MachineCard
       row={openDevice}
