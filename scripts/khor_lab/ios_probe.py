@@ -55,6 +55,11 @@ def main():
         receipt.update(prepared=json.loads((home / 'development.json').read_text()), passed=True)
         write_json(report / 'ios.json', receipt)
         return
+    states = json.loads(run('xcrun', 'simctl', 'list', 'devices', 'available', '--json'))['devices']
+    selected = next(row for rows in states.values() for row in rows if row['udid'] == udid)
+    if selected['state'] != 'Booted':
+        subprocess.run(['xcrun', 'simctl', 'boot', udid], check=True, timeout=120)
+    subprocess.run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], check=True, timeout=180)
     child = None
     output = None
     fallback = threading.Event()
@@ -79,7 +84,11 @@ def main():
                 raise ValueError(f'iOS development exited ({child.returncode}); inspect ios-development.log')
             if (home / 'development.json').exists():
                 development = json.loads((home / 'development.json').read_text())
-                result = subprocess.run(['xcrun', 'simctl', 'get_app_container', udid, development['identifier'], 'app'], capture_output=True, text=True, timeout=15)
+                try:
+                    result = subprocess.run(['xcrun', 'simctl', 'get_app_container', udid, development['identifier'], 'app'], capture_output=True, text=True, timeout=30)
+                except subprocess.TimeoutExpired:
+                    print('Simulator service is still responding slowly; waiting within the installation deadline', flush=True)
+                    continue
                 if result.returncode == 0:
                     candidate = Path(result.stdout.strip())
                     info = plistlib.loads((candidate / 'Info.plist').read_bytes())
