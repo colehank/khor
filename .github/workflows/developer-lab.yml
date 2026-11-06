@@ -31,6 +31,10 @@ jobs:
   frontend:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -79,18 +83,23 @@ jobs:
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out: out.write('reuse=' + str(same).lower() + '\n')
           PY
       - name: Reuse compatible generated contracts from the trusted release
+        id: released-contracts
         if: steps.contract.outputs.reuse == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test "$(gh api repos/colehank/khor/actions/runs/42077223682 --jq .head_sha)" = 0f643908283d925efeae8dd850bdd5de29313ed6
-          gh run download 42077223682 --repo colehank/khor --name frontend --dir "$RUNNER_TEMP/generated"
-          mkdir -p snapshot/source/apps/gui/src/gen
-          cp -R "$RUNNER_TEMP/generated/gen/." snapshot/source/apps/gui/src/gen/
+          if test "$(gh api repos/colehank/khor/actions/runs/42077223682 --jq .head_sha)" = 0f643908283d925efeae8dd850bdd5de29313ed6 &&
+             gh run download 42077223682 --repo colehank/khor --name frontend --dir "$RUNNER_TEMP/generated"; then
+            mkdir -p snapshot/source/apps/gui/src/gen
+            cp -R "$RUNNER_TEMP/generated/gen/." snapshot/source/apps/gui/src/gen/
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'Release contracts unavailable; generate this source instead.'
+          fi
       - uses: dtolnay/rust-toolchain@1.95.0
-        if: steps.contract.outputs.reuse != 'true'
+        if: steps.released-contracts.outputs.ready != 'true'
       - name: Generate changed contracts from this exact source
-        if: steps.contract.outputs.reuse != 'true'
+        if: steps.released-contracts.outputs.ready != 'true'
         working-directory: snapshot/source/apps/gui
         run: npm run gen
       - run: npm ci
@@ -184,10 +193,6 @@ jobs:
         with:
           bun-version: 1.3.14
       - uses: dtolnay/rust-toolchain@1.95.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: snapshot/source
-          shared-key: developer-lab-arm64
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: developer-lab-embedded
