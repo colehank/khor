@@ -1,6 +1,7 @@
 """Small W3C client for the pinned Appium/XCUITest simulator probe."""
 import json
 import os
+from pathlib import Path
 import subprocess
 import time
 from urllib.request import Request, urlopen
@@ -55,27 +56,36 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
                 return command('/execute/sync', {'script':script, 'args':args or []})
             def main_context():
                 deadline = time.monotonic() + 60
+                observed = {}
                 while time.monotonic() < deadline:
-                    for context in command('/contexts', method='GET'):
+                    contexts = command('/contexts', method='GET')
+                    observed['contexts'] = contexts
+                    for context in contexts:
                         if not context.startswith('WEBVIEW'):
                             continue
                         try:
                             command('/context', {'name':context})
-                            if evaluate('return !!window.__KHOR_LAB__'):
+                            document = evaluate('return {lab:!!window.__KHOR_LAB__,url:location.href,title:document.title,ready:document.readyState,text:document.body?.innerText.slice(0,400),scripts:[...document.scripts].map(s=>s.src)}')
+                            observed[context] = document
+                            if document.get('lab'):
                                 return
-                        except Exception:
-                            pass
+                        except Exception as error:
+                            observed[context] = str(error)
                     time.sleep(1)
-                raise ValueError('The actual Khor Lab WebView is not available for inspection')
+                (report / 'webviews.json').write_text(json.dumps(observed, indent=2))
+                command('/context', {'name':'NATIVE_APP'})
+                (report / 'native-source.xml').write_text(command('/source', method='GET'))
+                subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report / 'ios-webview-failure.png')], check=True, timeout=30)
+                raise ValueError('The actual Khor Lab WebView is not available for inspection: ' + json.dumps(observed))
             main_context()
             command('/timeouts', {'script':30000})
             seed = '''const done=arguments[arguments.length-1]; (async()=>{
               const invoke=window.__TAURI_INTERNALS__.invoke;
               const devices=await invoke('devices'); const me=devices.find(d=>d.me);
               if(!me)throw Error('Missing actual local backend');
-              await invoke('tabs_open',{kind:'page',device:me.id,url:arguments[0]});
+              const tab=await invoke('tabs_open',{kind:'page',device:me.id,url:arguments[0]});
               localStorage.setItem('khor.place',JSON.stringify({landing:'browser',screen:'detail'}));
-              return {device:me.id,realBackend:true};
+              return {device:me.id,tab,realBackend:true};
             })().then(done,e=>done({error:String(e)}));'''
             backend = command('/execute/async', {'script':seed, 'args':[entry.replace('/app/', '/lab/example')]})
             if backend.get('error'):
@@ -83,6 +93,13 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
             evaluate('location.reload();return true')
             time.sleep(3)
             main_context()
+            for _ in range(60):
+                opened = evaluate("const row=document.querySelector('[data-side-row=\"'+CSS.escape(arguments[0])+'\"] [data-side-open]');if(!row)return false;row.click();return true", [backend['tab']])
+                if opened:
+                    break
+                time.sleep(.2)
+            else:
+                raise ValueError('The actual browser list did not offer the newly opened backend tab')
             point = None
             for _ in range(60):
                 point = evaluate('const el=document.querySelector("[data-session-deck] [data-deck-title]");if(!el)return null;const r=el.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}')
@@ -106,7 +123,25 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
             focused = evaluate('return document.activeElement?.matches("[data-page-address]") === true')
             if not focused:
                 raise ValueError('The iOS keyboard is visible but the browser address does not own focus')
-            return dict(keyboard_verified=True, real_backend=backend, automation='Appium 3.9.0 / XCUITest 12.12.4',
+            css = Path.cwd() / 'apps/gui/src/styles/app.css'
+            original = css.read_bytes()
+            address = evaluate('window.__labNativeHotIdentity="same-document";return document.activeElement.value')
+            try:
+                css.write_bytes(original + b'\n:root { --lab-native-hot-proof: received; }\n')
+                deadline = time.monotonic() + 20
+                while time.monotonic() < deadline:
+                    if evaluate('return getComputedStyle(document.documentElement).getPropertyValue("--lab-native-hot-proof").trim()') == 'received':
+                        break
+                    time.sleep(.2)
+                else:
+                    raise ValueError('The native WebView did not receive the source CSS hot update')
+                if evaluate('return window.__labNativeHotIdentity') != 'same-document':
+                    raise ValueError('The native hot update reloaded the document')
+                if evaluate('return document.activeElement?.value') != address:
+                    raise ValueError('The native hot update lost the active address editor')
+            finally:
+                css.write_bytes(original)
+            return dict(keyboard_verified=True, native_hmr_verified=True, real_backend=backend, automation='Appium 3.9.0 / XCUITest 12.12.4',
                         session_browser_native_verified=False, human_accepted=False)
         finally:
             if session:

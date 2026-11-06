@@ -60,6 +60,7 @@ def main():
     if selected['state'] != 'Booted':
         subprocess.run(['xcrun', 'simctl', 'boot', udid], check=True, timeout=120)
     subprocess.run(['xcrun', 'simctl', 'bootstatus', udid, '-b'], check=True, timeout=180)
+    (home / 'development.json').unlink(missing_ok=True)
     child = None
     output = None
     fallback = threading.Event()
@@ -84,6 +85,9 @@ def main():
                 raise ValueError(f'iOS development exited ({child.returncode}); inspect ios-development.log')
             if (home / 'development.json').exists():
                 development = json.loads((home / 'development.json').read_text())
+                if not development.get('deployed'):
+                    time.sleep(1)
+                    continue
                 try:
                     result = subprocess.run(['xcrun', 'simctl', 'get_app_container', udid, development['identifier'], 'app'], capture_output=True, text=True, timeout=30)
                 except subprocess.TimeoutExpired:

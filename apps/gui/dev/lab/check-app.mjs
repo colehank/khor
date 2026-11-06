@@ -37,12 +37,14 @@ async function inspect(browser, scene, size) {
           window.__labAddressGestureFocus = {title, focused:document.activeElement?.matches('[data-page-address]')};
         }, {once: true});
       });
+      await page.screenshot({path:path.join(report,name+'-page.png')});
       await body.locator('[data-deck-title]').first().tap();
       const focus = await page.evaluate(() => window.__labAddressGestureFocus);
       await writeFile(path.join(report,name+'-focus.json'), JSON.stringify(focus,null,2));
       assert.equal(await page.locator('[data-fault]:visible').count(), 0, 'Editing must not render an error boundary');
       assert.equal(focus.title, true, 'The gesture must begin on the actual address title');
       assert.equal(focus.focused, true, 'The address input must focus during the initiating tap, before animation frames');
+      await page.screenshot({path:path.join(report,name+'-address.png')});
       await body.locator('[data-content-edit-end]').click();
       const before = await page.evaluate(async () => (await fetch('/api/tabs_list', {method: 'POST', body: JSON.stringify({kind: 'content'})})).json());
       const back = body.locator('[data-content-back]');

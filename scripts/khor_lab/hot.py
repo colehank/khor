@@ -27,7 +27,7 @@ def development_plan(config, home, *, target='desktop', device=None):
             '--port', str(config['port']), '--host', '127.0.0.1']
     identifier = 'io.github.colehank.khor.developer-lab.d' + hashlib.sha256(str(home).encode()).hexdigest()[:12]
     tauri = dict(identifier=identifier, productName='KhorDeveloperLab',
-                 build=dict(devUrl=f'http://127.0.0.1:{config["port"]}/app/',
+                 build=dict(devUrl=f'http://127.0.0.1:{config["port"]}/' + ('' if target == 'ios' else 'app/'),
                             beforeDevCommand=''))
     command = vite
     if config['mode'] == 'full':
@@ -91,6 +91,7 @@ def develop(config, *, target='desktop', device=None, prepare_only=False):
     home.mkdir(parents=True, exist_ok=True)
     home.chmod(0o700)
     environment = dict(os.environ, KHOR_LAB_RUNTIME=str(home / 'runtime.json'),
+                       KHOR_LAB_VITE_PORT=str(config['port']),
                        KHOR_HOME=str(home / 'store'), CARGO_TARGET_DIR=os.environ.get('CARGO_TARGET_DIR', str(home / 'native-target')),
                        CARGO_PROFILE_DEV_DEBUG='0')
     if target == 'ios':
@@ -137,6 +138,8 @@ def develop(config, *, target='desktop', device=None, prepare_only=False):
                 raise ValueError(f'Source development stopped unexpectedly ({exited.returncode}); inspect the terminal output')
             if target == 'ios' and len(children) > 1 and children[1].poll() == 0 and not deployed:
                 deployed = True
+                receipt['deployed'] = True
+                write_json(home / 'development.json', receipt)
                 print('iOS deployment completed; keeping the frontend hot server alive until Ctrl+C', flush=True)
             time.sleep(.1)
     finally:

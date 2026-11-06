@@ -47,6 +47,14 @@ class DevelopmentTests(unittest.TestCase):
         self.assertIn('--no-watch', plan['command'])
         self.assertEqual(plan['tauri']['build']['devUrl'], plan['url'])
 
+    def test_ios_proxy_uses_server_root_for_module_and_runtime_requests(self):
+        config = load(self.root, {'mode':'full','scene':'live'})
+        with patch('khor_lab.hot.platform.system', return_value='Darwin'):
+            plan = development_plan(config, self.root / 'home', target='ios', device='Lab')
+        from urllib.parse import urlsplit
+        self.assertEqual(urlsplit(plan['tauri']['build']['devUrl']).path, '/',
+                         'Tauri mobile appends module and runtime paths to the dev URL')
+
     def test_ios_selects_only_an_available_named_ios_simulator(self):
         devices = {'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-0': [
             {'name': 'iPhone test', 'udid': 'iphone-udid', 'isAvailable': True},

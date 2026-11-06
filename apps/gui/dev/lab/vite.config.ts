@@ -2,6 +2,8 @@ import {defineConfig, mergeConfig} from 'vite';
 import {readFileSync} from 'node:fs';
 import base from '../../vite.config';
 
+const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
+
 export default mergeConfig(base, defineConfig({
   base: './',
   optimizeDeps: {entries: ['index.html']},
@@ -22,5 +24,5 @@ export default mergeConfig(base, defineConfig({
       });
     },
   }],
-  server: {port: Number(process.env.KHOR_LAB_VITE_PORT || 23911), strictPort: true, host: '127.0.0.1'},
+  server: {port, strictPort: true, host: '127.0.0.1', hmr: {protocol: 'ws', host: '127.0.0.1', clientPort: port}},
 }));
