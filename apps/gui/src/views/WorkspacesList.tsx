@@ -667,7 +667,7 @@ export function WorkspacesList({
   // it in its own `EmptyState`, so a second one here would pad it twice.
   const noneMatch = <span data-ws-none-match>{gui.no_matches}</span>;
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+    <div className="flex min-h-0 flex-1 flex-col">
       <SideList
         // Never read and nothing remembered: the rows' skeleton (V18).
         loading={!known}

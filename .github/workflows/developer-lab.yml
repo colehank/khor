@@ -197,11 +197,12 @@ jobs:
       - name: Validate source workflow changes
         working-directory: snapshot/source
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
-      - name: Exercise production App paths in Chromium
+      - name: Exercise production App paths in Chromium and WebKit
         working-directory: snapshot/source/apps/gui
         env:
           LAB_BUNDLE: ${{ runner.temp }}/frontend
           LAB_REPORT: ${{ runner.temp }}/checks
+          QUALITY_ENGINES: webkit
         run: |
           npm run test:types
           npm run deck-scrub
@@ -209,7 +210,9 @@ jobs:
           npm run session-follow
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk
-          npx playwright-core install chromium
+          npx playwright-core install --with-deps chromium webkit
+          npm run sticky-fade
+          npm run list-scroll-ui
           node dev/lab/check-app.mjs
           node dev/lab/check-hot.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

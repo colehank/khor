@@ -1,9 +1,10 @@
-import {chromium} from 'playwright-core';
+import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {checkMobileNavigation} from './navigation-checks.mjs';
+import {checkListScroll} from './list-scroll-checks.mjs';
 const report = process.env.LAB_REPORT;
 await mkdir(report, {recursive: true});
 const port = 23918;
@@ -16,10 +17,17 @@ async function inspect(browser, scene, size, data = {}) {
   const page = await context.newPage(), errors = [];
   const machines = data.machines ?? 1;
   const items=data.items??5;
-  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}`;
+  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}`;
   let geometry = null;
   const contentLayout = [];
   const workspaceLayout = [];
+  let listScroll = null;
+  async function checkScroll(nativePan = true) {
+    listScroll = await checkListScroll(page, async (phase, values) => {
+      listScroll = {...listScroll, ...values};
+      await page.screenshot({path:path.join(report,name+'-'+phase+'.png')});
+    }, {nativePan});
+  }
   async function checkWorkspaceSidebar() {
     const navigation=page.locator('[data-workspace-navigation][data-seat="workspace"]');
     await navigation.waitFor();
@@ -167,6 +175,7 @@ async function inspect(browser, scene, size, data = {}) {
     }
     if(scene==='workspace'&&size.width>=500)await checkWorkspaceSidebar();
     if (['list','devices'].includes(scene)) {
+      if (machines === 3 && size.width < 500) await checkScroll(false);
       const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
       assert.equal(count,machines,'Machine fixture count must reach the actual App');
       assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
@@ -191,6 +200,7 @@ async function inspect(browser, scene, size, data = {}) {
       await page.locator('[data-quota-detail="fixture"]:visible').waitFor();
     }
     if(scene==='workspaces'){
+      await checkScroll();
       assert.equal(await page.locator('[data-ws-row]:visible').count(),machines*4,'Each machine supplies distinct Git and plain-folder workspaces');
       await page.screenshot({path:path.join(report,name+'-list.png')});
       await page.locator('[data-ws-row]:visible').first().click();
@@ -233,7 +243,7 @@ async function inspect(browser, scene, size, data = {}) {
     await page.screenshot({path: path.join(report, name + '.png')});
     await context.close();
   }
-  return {name, geometry, contentLayout, workspaceLayout, errors};
+  return {name, geometry, contentLayout, workspaceLayout, listScroll, errors};
 }
 
 let browser;
@@ -265,6 +275,14 @@ try {
   for(const scene of ['terminal','gui','content']) {
     results.push(await inspect(browser,scene,{width:390,height:844},{items:2,gesture:'create'}));
     await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
+  if (process.env.QUALITY_ENGINES?.includes('webkit')) {
+    await browser.close();
+    browser = await webkit.launch({headless:true});
+    for (const scene of ['workspaces','list','devices']) {
+      results.push(await inspect(browser,scene,{width:390,height:844},{machines:scene === 'workspaces' ? 6 : 3,engine:'webkit'}));
+      await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+    }
   }
   console.log(JSON.stringify(results.map(({name, errors}) => ({name, errors}))));
   if (results.some(result => result.errors.length)) process.exitCode = 1;

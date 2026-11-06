@@ -1166,3 +1166,9 @@ Session content toolbar order: source selector (workspace/browser), optional wor
 GUI conversation drafts belong to their session. Reloading the app restores each open session’s unsent text independently; explicitly closing its tab releases that draft. A failed or oversized local write keeps the text in memory and reports an unsuccessful checkpoint, without evicting another session’s text. Corrupt saved data is not overwritten by an empty restore.
 
 The real `khor-conversations-ui` reload regression failed with an empty composer before the persistence change. `chat-drafts` covers quota failure/retry, capacity and closed-tab ownership. Restart admission must consume the checkpoint result; attachment and unconfirmed-send ownership remain separate from composer text.
+
+### 移动列表滚动归属（2026-11-07）
+
+同一列表由一个实际可滚动的容器负责原生纵向拖动、标题避让、滚动位置记忆和下拉刷新。`ListPane` 已提供滚动容器时，列表内容不得再嵌套不可滚动且阻断滚动传递的 `overflow-y-auto`。标题寻找滚动容器使用布局坐标，下拉和入场动画的视觉位移不得改变归属或清除标题内边距。
+
+门：`sticky-fade`、`list-scroll-ui`、Developer Lab 完整 App 的长工作区列表原生输入与机器／会话／工作区下拉期间内容更新。旧代码实测：普通页同一拖动 220→335，工作区停在220；顶部下拉中内容更新使容器高度844→792、顶部内边距52→0，松手后归属仍丢失。实际手机的连续拖动仍单独验证，合成事件不冒充系统手势。

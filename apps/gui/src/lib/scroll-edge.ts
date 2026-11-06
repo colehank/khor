@@ -43,6 +43,21 @@ function scrolls(el: HTMLElement): boolean {
   return y === "auto" || y === "scroll";
 }
 
+// Scroll ownership follows layout, not a pull/entrance animation's
+// painted position. offsetTop deliberately excludes CSS transforms.
+function layoutTop(el: HTMLElement): number {
+  let top = 0;
+  let at: HTMLElement | null = el;
+  while (at) {
+    top += at.offsetTop;
+    const parent: Element | null = at.offsetParent;
+    if (!(parent instanceof HTMLElement)) break;
+    top += parent.clientTop;
+    at = parent;
+  }
+  return top;
+}
+
 /**
  * The scroller standing at `under`'s top: `under` itself, or down
  * through the boxes that start where it starts, the first one that
@@ -50,7 +65,7 @@ function scrolls(el: HTMLElement): boolean {
  * a band's own parent belongs to that band, never to this one.
  */
 function topScroller(under: HTMLElement): HTMLElement | null {
-  const top = under.getBoundingClientRect().top;
+  const top = layoutTop(under);
   let at: HTMLElement | null = under;
   for (let depth = 0; at && depth < 12; depth++) {
     if (scrolls(at)) return at;
@@ -58,7 +73,7 @@ function topScroller(under: HTMLElement): HTMLElement | null {
     for (const c of at.children) {
       if (!(c instanceof HTMLElement)) continue;
       const r = c.getBoundingClientRect();
-      if (r.height === 0 || Math.abs(r.top - top) > 1) continue;
+      if (r.height === 0 || Math.abs(layoutTop(c) - top) > 1) continue;
       // A box kept mounted but hidden is not what stands there: a
       // machine's listing stays under an open file (`MachineFiles`,
       // invisible), and the band padded that listing and pulled the
