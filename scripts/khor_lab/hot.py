@@ -156,4 +156,7 @@ def simulator(device):
     if len(matches) != 1:
         choices = ', '.join(f'{d["name"]} ({d["udid"]})' for d in devices)
         raise ValueError('Choose an available iOS simulator with --device: ' + (choices or 'install an iOS runtime in Xcode'))
-    return matches[0]['udid']
+    name = matches[0]['name']
+    if sum(d['name'] == name for d in devices) != 1:
+        raise ValueError('Give the selected simulator a unique name in Xcode; Tauri selects simulators by name')
+    return name

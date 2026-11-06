@@ -4,6 +4,7 @@ import base from '../../vite.config';
 
 export default mergeConfig(base, defineConfig({
   base: './',
+  optimizeDeps: {entries: ['index.html']},
   plugins: [{
     name: 'complete-app-lab-entry',
     transformIndexHtml: {order: 'pre', handler: html => html.replace('src="/src/main.tsx"', 'src="/dev/lab/bootstrap.ts"')},

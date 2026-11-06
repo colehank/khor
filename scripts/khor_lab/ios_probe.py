@@ -6,6 +6,7 @@ from pathlib import Path
 import plistlib
 import subprocess
 import sys
+import threading
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -55,34 +56,52 @@ def main():
         write_json(report / 'ios.json', receipt)
         return
     child = None
+    output = None
+    fallback = threading.Event()
+    log = (report / 'ios-development.log').open('w')
     try:
-        with (report / 'ios-development.log').open('w') as log:
-            child = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT)
-            deadline = time.monotonic() + 5400
-            app = None
-            while time.monotonic() < deadline:
-                if child.poll() is not None:
-                    raise ValueError(f'iOS development exited ({child.returncode}); inspect ios-development.log')
-                if (home / 'development.json').exists():
-                    development = json.loads((home / 'development.json').read_text())
-                    result = subprocess.run(['xcrun', 'simctl', 'get_app_container', udid, development['identifier'], 'app'], capture_output=True, text=True, timeout=15)
-                    if result.returncode == 0:
-                        candidate = Path(result.stdout.strip())
-                        info = plistlib.loads((candidate / 'Info.plist').read_bytes())
-                        if info.get('KhorLabNativeContract') == receipt['native_contract'] and info.get('KhorLabEntryURL') == development['url']:
-                            app = candidate
-                            break
-                time.sleep(3)
-            if app is None:
-                raise ValueError('Timed out waiting for the exact isolated iOS app installation')
-            receipt.update(installed=True, app=str(app), identifier=development['identifier'], entry=development['url'])
-            subprocess.run(['xcrun', 'simctl', 'io', udid, 'screenshot', str(report / 'ios-app.png')], check=True, timeout=30)
-            receipt.update(keyboard_verified=False)
-            if args.phase == 'keyboard':
-                from khor_lab.mobile import keyboard_probe
-                receipt.update(keyboard_probe(cache, udid, development['identifier'], development['url'], report))
-            receipt.update(passed=True)
-            write_json(report / 'ios.json', receipt)
+        child = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        def relay():
+            for line in child.stdout:
+                log.write(line)
+                log.flush()
+                print(line, end='', flush=True)
+                if 'Opening Xcode' in line or 'Could not find an iOS Simulator matching' in line:
+                    fallback.set()
+        output = threading.Thread(target=relay, daemon=True)
+        output.start()
+        deadline = time.monotonic() + 5400
+        app = None
+        while time.monotonic() < deadline:
+            if fallback.is_set():
+                raise ValueError('Tauri did not start the requested simulator; inspect ios-development.log')
+            if child.poll() is not None:
+                raise ValueError(f'iOS development exited ({child.returncode}); inspect ios-development.log')
+            if (home / 'development.json').exists():
+                development = json.loads((home / 'development.json').read_text())
+                result = subprocess.run(['xcrun', 'simctl', 'get_app_container', udid, development['identifier'], 'app'], capture_output=True, text=True, timeout=15)
+                if result.returncode == 0:
+                    candidate = Path(result.stdout.strip())
+                    info = plistlib.loads((candidate / 'Info.plist').read_bytes())
+                    observed = {key:info.get(key) for key in ('CFBundleIdentifier','KhorLabNativeContract','KhorLabEntryURL')}
+                    if receipt.get('observed_app') != observed:
+                        receipt['observed_app'] = observed
+                        print('Installed iOS app metadata:', json.dumps(observed), flush=True)
+                        write_json(report / 'ios.json', receipt)
+                    if info.get('KhorLabNativeContract') == receipt['native_contract'] and info.get('KhorLabEntryURL') == development['url']:
+                        app = candidate
+                        break
+            time.sleep(3)
+        if app is None:
+            raise ValueError('Timed out waiting for the exact isolated iOS app installation')
+        receipt.update(installed=True, app=str(app), identifier=development['identifier'], entry=development['url'])
+        subprocess.run(['xcrun', 'simctl', 'io', udid, 'screenshot', str(report / 'ios-app.png')], check=True, timeout=30)
+        receipt.update(keyboard_verified=False)
+        if args.phase == 'keyboard':
+            from khor_lab.mobile import keyboard_probe
+            receipt.update(keyboard_probe(cache, udid, development['identifier'], development['url'], report))
+        receipt.update(passed=True)
+        write_json(report / 'ios.json', receipt)
     except Exception as error:
         receipt['error'] = str(error)
         raise
@@ -93,6 +112,10 @@ def main():
                 child.wait(timeout=30)
             except subprocess.TimeoutExpired:
                 child.kill()
+                child.wait(timeout=10)
+        if output:
+            output.join(timeout=5)
+        log.close()
         if receipt.get('identifier'):
             subprocess.run(['xcrun', 'simctl', 'terminate', udid, receipt['identifier']], capture_output=True, timeout=30)
         write_json(report / 'ios.json', receipt)

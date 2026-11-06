@@ -53,7 +53,8 @@ class DevelopmentTests(unittest.TestCase):
             {'name': 'Apple TV', 'udid': 'tv-udid', 'isAvailable': True}]}}
         with patch('khor_lab.hot.platform.system', return_value='Darwin'), \
              patch('khor_lab.hot.subprocess.check_output', return_value=json.dumps(devices)):
-            self.assertEqual(simulator('iPhone test'), 'iphone-udid')
+            self.assertEqual(simulator('iPhone test'), 'iPhone test')
+            self.assertEqual(simulator('iphone-udid'), 'iPhone test')
             with self.assertRaisesRegex(ValueError, 'Choose an available'):
                 simulator('tv-udid')
             with self.assertRaisesRegex(ValueError, 'Choose an available'):

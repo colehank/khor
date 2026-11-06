@@ -139,6 +139,31 @@ class LabTests(unittest.TestCase):
             release.set()
             lab.build.join(timeout=2)
 
+    def test_updates_during_build_coalesce_into_one_latest_build(self):
+        lab = Lab(load(self.root), self.root / 'manager')
+        entered, release, latest = threading.Event(), threading.Event(), threading.Event()
+        calls = []
+        def build(*_args):
+            calls.append(len(calls))
+            if len(calls) == 1:
+                entered.set()
+                release.wait(timeout=3)
+            else:
+                latest.set()
+            return {'checks': 'done'}
+        with patch('khor_lab.builders.local', side_effect=build):
+            lab.update()
+            self.assertTrue(entered.wait(timeout=2))
+            for _ in range(5):
+                lab.update()
+            queued = lab.status().get('queued_update')
+            release.set()
+            self.assertTrue(queued, 'An update accepted during a build must remain queued')
+            self.assertTrue(latest.wait(timeout=2))
+            lab.build.join(timeout=2)
+        self.assertEqual(len(calls), 2)
+        self.assertFalse(lab.status()['queued_update'])
+
     def test_artifact_redirect_keeps_github_token_off_storage_requests(self):
         from khor_lab.download import acquire
         memory = io.BytesIO()
