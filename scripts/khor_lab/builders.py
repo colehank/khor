@@ -31,13 +31,17 @@ def run(*args, cwd=None, env=None, timeout=180):
 
 def source(config):
     import dev
-    os.chdir(config['root'])
-    info = dev.snapshot()
+    before = Path.cwd()
+    try:
+        os.chdir(config['root'])
+        info = dev.snapshot()
+    finally:
+        os.chdir(before)
     info['native_contract'] = digest(Path(config['root']))
     return info
 
 
-def local_dependencies(gui, home):
+def dependency_inputs(gui):
     gui = gui.resolve()
     lock = json.loads((gui / 'package-lock.json').read_text())
     key = hashlib.sha256((gui / 'package-lock.json').read_bytes() + (gui / 'package.json').read_bytes())
@@ -52,7 +56,11 @@ def local_dependencies(gui, home):
         linked.append((resolved, target))
         for path in sorted(p for p in target.rglob('*') if p.is_file()):
             key.update(str(path.relative_to(gui)).encode() + b'\0' + path.read_bytes())
-    dependency_key = key.hexdigest()
+    return key.hexdigest(), linked
+
+
+def local_dependencies(gui, home):
+    dependency_key, linked = dependency_inputs(gui)
     dependencies = home / 'dependencies' / dependency_key
     if not (dependencies / 'node_modules').is_dir() or not (dependencies / '.lab-install.json').is_file():
         dependencies.mkdir(parents=True, exist_ok=True)

@@ -69,7 +69,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     ],
   }));
   const initialPreferences=structuredClone(preferences);
-  const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md'))] : [])];};
+  const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
   const makeCanonical = () => canonicalChatFixture({ids: ids.slice(0, 4),
     takeFrames: (id: string) => {

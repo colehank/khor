@@ -2,6 +2,7 @@ import {chromium} from 'playwright-core';
 import {spawn} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
+import assert from 'node:assert/strict';
 const report = process.env.LAB_REPORT;
 await mkdir(report, {recursive: true});
 const port = 23918;
@@ -22,9 +23,41 @@ async function inspect(browser, scene, size) {
     // Select data only; every layout and action belongs to the production App.
     await page.route('**/lab/runtime*', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({mode: 'frontend', scene, tree: 'browser-check', revision: 'one'})}));
     await page.goto(`http://127.0.0.1:${port}/app/?theme=dark`);
-    const selector = scene === 'list' ? '[data-list]' : scene === 'terminal' ? '[data-terminal]'
+    const selector = scene === 'page' ? '[data-content-visible="true"] .mobile-content-page' : scene === 'list' ? '[data-list]' : scene === 'terminal' ? '[data-terminal]'
       : scene === 'content' ? '.cm-editor, [data-file-preview]' : '[data-chat-box]';
     await page.waitForSelector(selector);
+    if (scene === 'page') {
+      const body = page.locator('[data-content-visible="true"]');
+      await page.evaluate(() => {
+        let title = false;
+        window.addEventListener('click', event => {title = event.target instanceof Element && !!event.target.closest('[data-deck-title]');}, {capture: true, once: true});
+        window.addEventListener('click', () => {window.__labAddressGestureFocus = title && document.activeElement?.matches('[data-page-address]');}, {once: true});
+      });
+      await body.locator('[data-deck-title]').first().tap();
+      assert.equal(await page.evaluate(() => window.__labAddressGestureFocus), true, 'The address input must focus during the initiating tap, before animation frames');
+      await body.locator('[data-content-edit-end]').click();
+      const before = await page.evaluate(async () => (await fetch('/api/tabs_list', {method: 'POST', body: JSON.stringify({kind: 'content'})})).json());
+      const back = body.locator('[data-content-back]');
+      assert.equal(await back.count(), 1, 'A session webpage must expose Back to its content picker');
+      await back.click();
+      await page.locator('[data-content-picker]:visible').waitFor();
+      const after = await page.evaluate(async () => (await fetch('/api/tabs_list', {method: 'POST', body: JSON.stringify({kind: 'content'})})).json());
+      assert.deepEqual(after.tabs.map(tab => tab.id), before.tabs.map(tab => tab.id), 'Back must preserve the content tab identities');
+      const picker = page.locator('[data-content-picker]:visible');
+      if (!(await picker.locator('.mobile-content-browser:not([hidden])').isVisible())) {
+        await picker.locator('[data-content-scope]').click();
+        await page.locator('[role="menuitem"][data-content-source="browser"]').click();
+      }
+      await picker.locator(`[data-place="http://127.0.0.1:${port}/lab/example"]`).click();
+      await page.locator('[data-content-visible="true"] .mobile-content-page').waitFor();
+      await page.locator('[data-content-visible="true"] [data-content-back]').click();
+      await picker.locator('[data-content-scope]').click();
+      await page.locator('[role="menuitem"][data-content-source="workspace"]').click();
+      await picker.locator('[data-file-path="/preview/project/README.md"]').click();
+      await page.locator('[data-content-visible="true"] .cm-editor, [data-content-visible="true"] [data-file-preview]').waitFor();
+      const final = await page.evaluate(async () => (await fetch('/api/tabs_list', {method: 'POST', body: JSON.stringify({kind: 'content'})})).json());
+      assert.deepEqual(final.tabs.map(tab => tab.id), before.tabs.map(tab => tab.id), 'Recent pages and workspace files must reuse the same content tab');
+    }
     if (scene === 'content') {
       const document = await page.locator('.cm-editor, [data-file-preview]').first().innerText();
       if (!document.includes('fixture data')) errors.push('Actual file body is missing');
@@ -62,7 +95,7 @@ try {
   }
   browser = await chromium.launch({headless: true});
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
-    for (const scene of ['gui', 'codex', 'terminal', 'content', 'list']) {
+    for (const scene of ['gui', 'codex', 'terminal', 'content', ...(size.width < 500 ? ['page'] : []), 'list']) {
       results.push(await inspect(browser, scene, size));
       await writeFile(path.join(report, 'results.json'), JSON.stringify(results, null, 2));
     }
