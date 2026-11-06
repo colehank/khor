@@ -129,11 +129,16 @@ def develop(config, *, target='desktop', device=None, prepare_only=False):
         children.append(subprocess.Popen(plan['vite'], cwd=root / 'apps/gui', env=environment, start_new_session=True))
         if native:
             children.append(subprocess.Popen(plan['command'], cwd=native / 'apps/gui', env=environment, start_new_session=True))
-        while all(child.poll() is None for child in children):
+        deployed = False
+        while not interrupted:
+            exited = next((child for index, child in enumerate(children) if child.poll() is not None
+                           and not (index == 1 and target == 'ios' and child.returncode == 0)), None)
+            if exited is not None:
+                raise ValueError(f'Source development stopped unexpectedly ({exited.returncode}); inspect the terminal output')
+            if target == 'ios' and len(children) > 1 and children[1].poll() == 0 and not deployed:
+                deployed = True
+                print('iOS deployment completed; keeping the frontend hot server alive until Ctrl+C', flush=True)
             time.sleep(.1)
-        exited = next(child for child in children if child.poll() is not None)
-        if not interrupted:
-            raise ValueError(f'Source development stopped unexpectedly ({exited.returncode}); inspect the terminal output')
     finally:
         stop()
         for child in children:
@@ -143,6 +148,8 @@ def develop(config, *, target='desktop', device=None, prepare_only=False):
                 if os.name != 'nt':
                     os.killpg(child.pid, signal.SIGKILL)
                 child.wait(timeout=5)
+        if native and target == 'ios':
+            subprocess.run(['xcrun', 'simctl', 'terminate', device, plan['tauri']['identifier']], capture_output=True, timeout=30)
         for sig, handler in previous.items():
             signal.signal(sig, handler)
 

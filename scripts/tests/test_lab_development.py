@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 import socket
 import os
+import signal
+import time
 import subprocess
 import sys
 import tempfile
@@ -59,6 +61,55 @@ class DevelopmentTests(unittest.TestCase):
                 simulator('tv-udid')
             with self.assertRaisesRegex(ValueError, 'Choose an available'):
                 simulator(None)
+
+    @unittest.skipIf(os.name == 'nt', 'Unix process-group ownership')
+    def test_ios_deployment_exit_keeps_hot_server_until_explicit_stop(self):
+        (self.root / 'apps/gui').mkdir(parents=True)
+        ready = self.root / 'server.pid'
+        deployed = self.root / 'deployed'
+        cleanup = self.root / 'cleanup.json'
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1', 0))
+            port = listener.getsockname()[1]
+        script = f"""
+import json, sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+sys.path.insert(0, {str(Path(__file__).resolve().parents[1])!r})
+from khor_lab import hot
+from khor_lab.config import load
+root=Path({str(self.root)!r})
+plan={{'vite':[sys.executable,'-c',"import os,time;open({str(ready)!r},'w').write(str(os.getpid()));time.sleep(60)"],
+       'command':[sys.executable,'-c',"open({str(deployed)!r},'w').write('deployed')"],
+       'runtime':{{'mutable':True}},'url':'http://127.0.0.1/', 'tauri':{{'identifier':'test.owned.lab'}}}}
+def cleanup(*args, **kwargs):
+    Path({str(cleanup)!r}).write_text(json.dumps(args[0]))
+    return SimpleNamespace(returncode=0)
+with patch.object(hot,'development_plan',return_value=plan), patch.object(hot,'simulator',return_value='Lab simulator'), \
+     patch.object(hot.shutil,'which',return_value='/usr/bin/true'), patch.object(hot,'prepare'), \
+     patch('khor_lab.workspace.materialize',return_value=root), patch.object(hot.subprocess,'run',side_effect=cleanup):
+    hot.develop(load(root,{{'mode':'full','scene':'live','port':{port}}}),target='ios',device='Lab simulator')
+"""
+        with (self.root / 'runner.log').open('w') as log:
+            process = subprocess.Popen([sys.executable, '-c', script], stdout=log, stderr=log)
+            try:
+                deadline = time.monotonic() + 5
+                while not (ready.exists() and deployed.exists()) and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(.02)
+                self.assertTrue(deployed.exists(), (self.root / 'runner.log').read_text())
+                time.sleep(.2)
+                self.assertIsNone(process.poll(), 'Deployment finished successfully; the frontend must stay alive')
+                server = int(ready.read_text())
+                os.kill(server, 0)
+            finally:
+                if process.poll() is None:
+                    process.send_signal(signal.SIGTERM)
+                process.wait(timeout=5)
+            self.assertEqual(process.returncode, 0, (self.root / 'runner.log').read_text())
+            with self.assertRaises(ProcessLookupError):
+                os.kill(server, 0)
+        self.assertEqual(json.loads(cleanup.read_text()), ['xcrun','simctl','terminate','Lab simulator','test.owned.lab'])
 
     def test_native_generation_preserves_checkout_and_reuses_host_after_css_edits(self):
         from khor_lab.workspace import materialize
