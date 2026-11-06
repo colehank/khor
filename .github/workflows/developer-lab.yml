@@ -1,0 +1,238 @@
+name: Developer Lab
+run-name: Developer Lab ${{ inputs.request_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      snapshot_sha:
+        required: true
+        type: string
+      request_id:
+        required: true
+        type: string
+      mode:
+        required: true
+        type: choice
+        options: [frontend, full]
+      port:
+        required: true
+        default: '23910'
+        type: string
+      native_required:
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  frontend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.snapshot_sha }}
+          path: snapshot
+          persist-credentials: false
+      - name: Verify snapshot envelope
+        env:
+          SNAPSHOT_SHA: ${{ inputs.snapshot_sha }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess
+          sha, request = os.environ['SNAPSHOT_SHA'], os.environ['REQUEST_ID']
+          assert re.fullmatch('[0-9a-f]{40}', sha) and re.fullmatch('[0-9a-f]{32}', request)
+          def git(*args): return subprocess.check_output(['git', '-C', 'snapshot', *args], text=True).strip()
+          assert git('rev-parse', 'HEAD') == sha
+          assert git('rev-list', '--parents', '-n', '1', 'HEAD') == sha
+          assert git('ls-tree', '--name-only', 'HEAD') == 'source'
+          message = git('show', '-s', '--format=%B', 'HEAD')
+          assert message.startswith('Khor developer snapshot\n\n')
+          info = json.loads(message.split('\n\n', 1)[1])
+          assert info['schema'] == 1 and info['tree'] == git('rev-parse', 'HEAD:source')
+          info['snapshot_commit'] = sha
+          pathlib.Path('source.json').write_text(json.dumps(info))
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: colehank/khor
+          ref: 0f643908283d925efeae8dd850bdd5de29313ed6
+          path: generated-baseline
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: snapshot/source/apps/gui/package-lock.json
+      - name: Check generated contract compatibility
+        id: contract
+        run: |
+          python3 - <<'PY'
+          import os, pathlib, sys
+          sys.path.insert(0, 'snapshot/source/scripts')
+          from khor_lab.contract import generated_digest
+          same = generated_digest(pathlib.Path('snapshot/source')) == generated_digest(pathlib.Path('generated-baseline'))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out: out.write('reuse=' + str(same).lower() + '\n')
+          PY
+      - name: Reuse compatible generated contracts from the trusted release
+        if: steps.contract.outputs.reuse == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(gh api repos/colehank/khor/actions/runs/42077223682 --jq .head_sha)" = 0f643908283d925efeae8dd850bdd5de29313ed6
+          gh run download 42077223682 --repo colehank/khor --name frontend --dir "$RUNNER_TEMP/generated"
+          mkdir -p snapshot/source/apps/gui/src/gen
+          cp -R "$RUNNER_TEMP/generated/gen/." snapshot/source/apps/gui/src/gen/
+      - uses: dtolnay/rust-toolchain@1.95.0
+        if: steps.contract.outputs.reuse != 'true'
+      - name: Generate changed contracts from this exact source
+        if: steps.contract.outputs.reuse != 'true'
+        working-directory: snapshot/source/apps/gui
+        run: npm run gen
+      - run: npm ci
+        working-directory: snapshot/source/apps/gui
+      - name: Build complete App Lab
+        working-directory: snapshot/source/apps/gui
+        env:
+          OUTPUT: ${{ runner.temp }}/frontend
+        run: |
+          npx tsc --project dev/lab/tsconfig.json
+          npx vite build --config dev/lab/vite.config.ts --outDir "$OUTPUT"
+          python3 ../../scripts/khor_lab/package.py ../.. "$OUTPUT" "$GITHUB_WORKSPACE/source.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: developer-lab-frontend
+          path: ${{ runner.temp }}/frontend
+          if-no-files-found: error
+          retention-days: 7
+      - name: Prepare embedded web face for the full host
+        if: inputs.mode == 'full'
+        working-directory: snapshot/source/apps/gui
+        run: |
+          npx vite build --outDir "$RUNNER_TEMP/embedded/dist"
+          cp -R src/gen "$RUNNER_TEMP/embedded/gen"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: inputs.mode == 'full'
+        with:
+          name: developer-lab-embedded
+          path: ${{ runner.temp }}/embedded
+          if-no-files-found: error
+          retention-days: 3
+
+  checks:
+    needs: frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.snapshot_sha }}
+          path: snapshot
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: snapshot/source/apps/gui/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: developer-lab-frontend
+          path: ${{ runner.temp }}/frontend
+      - run: npm ci
+        working-directory: snapshot/source/apps/gui
+      - name: Check manager contracts
+        working-directory: snapshot/source
+        run: python3 -m unittest discover -s scripts/tests -p test_developer_lab.py -v
+      - name: Exercise production App paths in Chromium
+        working-directory: snapshot/source/apps/gui
+        env:
+          LAB_BUNDLE: ${{ runner.temp }}/frontend
+          LAB_REPORT: ${{ runner.temp }}/checks
+        run: |
+          npx playwright-core install chromium
+          node dev/lab/check-app.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: developer-lab-checks
+          path: ${{ runner.temp }}/checks
+          if-no-files-found: warn
+          retention-days: 7
+
+  native:
+    needs: frontend
+    if: inputs.mode == 'full' && inputs.native_required
+    runs-on: macos-26
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.snapshot_sha }}
+          path: snapshot
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: snapshot/source/apps/agent/package-lock.json
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.14
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: snapshot/source
+          shared-key: developer-lab-arm64
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: developer-lab-embedded
+          path: ${{ runner.temp }}/embedded
+      - name: Build isolated native host
+        working-directory: snapshot/source
+        env:
+          KHOR_LAB_PORT: ${{ inputs.port }}
+          SNAPSHOT_SHA: ${{ inputs.snapshot_sha }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, re, subprocess
+          port = os.environ['KHOR_LAB_PORT']
+          assert re.fullmatch('[0-9]{4,5}', port) and 1024 <= int(port) <= 65534
+          message = subprocess.check_output(['git', 'show', '-s', '--format=%B', 'HEAD'], text=True)
+          info = json.loads(message.split('\n\n', 1)[1])
+          info['snapshot_commit'] = os.environ['SNAPSHOT_SHA']
+          pathlib.Path('source.json').write_text(json.dumps(info))
+          PY
+          cp -R "$RUNNER_TEMP/embedded/dist" apps/gui/dist
+          mkdir -p apps/gui/src/gen
+          cp -R "$RUNNER_TEMP/embedded/gen/." apps/gui/src/gen/
+          python3 scripts/khor_lab/native.py . "$RUNNER_TEMP/native" source.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: developer-lab-native
+          path: ${{ runner.temp }}/native
+          if-no-files-found: error
+          retention-days: 7
+
+  retire-snapshot:
+    needs: [frontend, checks, native]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Remove only this request snapshot ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST_ID: ${{ inputs.request_id }}
+          SNAPSHOT_SHA: ${{ inputs.snapshot_sha }}
+        run: |
+          [[ "$REQUEST_ID" =~ ^[0-9a-f]{32}$ ]]
+          [[ "$SNAPSHOT_SHA" =~ ^[0-9a-f]{40}$ ]]
+          ref="heads/dev-snapshots/$REQUEST_ID"
+          actual=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/$ref" --jq .object.sha) || exit 0
+          test "$actual" = "$SNAPSHOT_SHA"
+          gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/$ref"

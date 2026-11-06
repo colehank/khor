@@ -3,7 +3,7 @@
 const BODY_NOTES = new Set(['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update']);
 const COMMANDS = new Set(['attachment_begin', 'chat_open', 'chat_capture', 'chat_poll', 'chat_wait', 'chat_leave', 'history_begin', 'history_page', 'history_cancel']);
 
-export function canonicalChatFixture({ids, takeFrames, onOpen = () => {}, bindingPrefix = 'fixed-fixture'}) {
+export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) => {}, bindingPrefix = 'fixed-fixture'}) {
   const known = new Set(ids);
   const scenarios = new Map(), views = new Map(), reads = new Map();
   let serial = 0;

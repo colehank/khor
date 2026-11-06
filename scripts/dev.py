@@ -15,8 +15,8 @@ import time
 import uuid
 
 
-def command(*args, cwd=None, env=None):
-    return subprocess.check_output(args, cwd=cwd, env=env, text=True).strip()
+def command(*args, cwd=None, env=None, timeout=180):
+    return subprocess.check_output(args, cwd=cwd, env=env, text=True, timeout=timeout).strip()
 
 
 def git(*args, **kwargs):
@@ -52,6 +52,9 @@ def configure(restore=False, install_command=False):
         source = Path(__file__).with_name(name)
         if source.resolve() != (destination / name).resolve():
             shutil.copyfile(source, destination / name)
+    modules = Path(__file__).with_name('khor_lab')
+    if modules.resolve() != (destination / 'khor_lab').resolve():
+        shutil.copytree(modules, destination / 'khor_lab', dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
     for stage in ["pre-commit", "pre-push"]:
         hook = destination / stage
         graph = destination.parent.parent / "hooks/pre-commit.legacy"
@@ -95,6 +98,12 @@ def snapshot():
 
 
 def upload_snapshot(info):
+    from khor_lab.lock import source_transport_lock
+    with source_transport_lock(state_dir()):
+        _upload_snapshot(info)
+
+
+def _upload_snapshot(info):
     # The transport repository carries an artifact, not a branch being merged.
     # Its own hooks do not invoke the developer clone's full pre-push toolchain.
     with tempfile.TemporaryDirectory(prefix="khor-source-transport-") as directory:
@@ -198,10 +207,15 @@ def main():
     download = sub.choices["result"]
     download.add_argument("--output", required=True)
     download.add_argument("--lab", action="store_true")
+    from khor_lab.cli import register
+    register(sub)
     args = parser.parse_args()
     try:
         os.chdir(root())
-        if args.action == "configure-local":
+        if args.action == "lab":
+            from khor_lab.cli import main as lab_main
+            lab_main(args, root())
+        elif args.action == "configure-local":
             configure(args.restore, args.install_command)
         else:
             {"check": submit, "status": status, "result": result}[args.action](args)

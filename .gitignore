@@ -35,3 +35,6 @@ opencode.jsonc
 
 # Python test runner bytecode.
 __pycache__/
+
+# Developer-specific Lab defaults; project defaults are lab.config.json.
+.khor-lab.local.json

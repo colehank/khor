@@ -1,0 +1,8 @@
+{
+  "mode": "frontend",
+  "builder": "local",
+  "scene": "gui",
+  "port": 23910,
+  "builder_repo": "colehank/khor-build",
+  "keep_versions": 3
+}
