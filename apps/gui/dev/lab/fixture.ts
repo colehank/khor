@@ -1,4 +1,5 @@
 // Data-only fixture for the complete production App; never imported by its normal entry.
+import {navigationFixture} from './navigation';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
 import providers from '../../../agent/providers.json';
@@ -49,7 +50,8 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean} = {}) {
+  const navigation = navigationFixture(device.id, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false);
   const terminalLeases = new Set<string>();
   let terminalLeaseNumber = 0;
   const preferences=ids.map((_,i)=>({
@@ -67,7 +69,7 @@ export function createLabFixture(terminal = true) {
     ],
   }));
   const initialPreferences=structuredClone(preferences);
-  const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1)];};
+  const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md'))] : [])];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
   const makeCanonical = () => canonicalChatFixture({ids: ids.slice(0, 4),
     takeFrames: (id: string) => {
@@ -170,6 +172,7 @@ export function createLabFixture(terminal = true) {
           khorUpdates = [...initialKhorUpdates];
         return true;
       }
+      if (navigation.handles(path)) return structuredClone(navigation.request(path, body));
       if (path === 'face_note') return null;
       if (terminal && body.id === 'shell/layout-lab' && path === 'attachment_begin' && body.kind === 'terminal') {
         const lease = 'terminal-fixture-' + ++terminalLeaseNumber;

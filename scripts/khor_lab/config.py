@@ -1,10 +1,20 @@
 import json
 import re
+import os
+import sys
 from pathlib import Path
 
 DEFAULTS = dict(mode='frontend', builder='local', scene='gui', port=23910,
                 builder_repo='colehank/khor-build', keep_versions=3)
-SCENES = ('gui', 'codex', 'terminal', 'stream', 'list', 'live')
+SCENES = ('gui', 'codex', 'terminal', 'stream', 'content', 'list', 'live')
+
+
+def default_cache():
+    if os.name == 'nt':
+        return Path(os.environ.get('LOCALAPPDATA', Path.home() / 'AppData/Local')) / 'KhorDeveloperLab'
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library/Caches/KhorDeveloperLab'
+    return Path(os.environ.get('XDG_CACHE_HOME', Path.home() / '.cache')) / 'KhorDeveloperLab'
 
 
 def load(root, overrides=None):
@@ -28,5 +38,5 @@ def load(root, overrides=None):
     if not isinstance(values['keep_versions'], int) or not 1 <= values['keep_versions'] <= 10:
         raise ValueError('keep_versions must be 1..10')
     values['root'] = str(root.resolve())
-    values['cache_root'] = str(Path(values.get('cache_root', Path.home() / 'Library/Caches/KhorDeveloperLab')).expanduser().resolve())
+    values['cache_root'] = str(Path(values.get('cache_root', default_cache())).expanduser().resolve())
     return values

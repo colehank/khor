@@ -23,7 +23,7 @@ if (runtime.mode === 'frontend') {
     localStorage.setItem('khor.sessions.tabs', JSON.stringify({tabs: sessionIds, active: scene.session ?? sessionIds[0]}));
     localStorage.setItem('khor.place', JSON.stringify({landing: 'sessions', screen: 'list'}));
   }
-  const fixture = createLabFixture();
+  const fixture = createLabFixture(true, {origin: location.origin, content: runtime.scene === 'content'});
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -34,7 +34,7 @@ if (runtime.mode === 'frontend') {
       const command = url.pathname.slice('/api/'.length);
       const answer = fixture.request(command, await request.json());
       // Polling fixtures must yield so production loops cannot starve rendering.
-      if (['chat_wait', 'term_wait', 'term_stream'].includes(command)) await new Promise(r => setTimeout(r, 120));
+      if (['chat_wait', 'term_wait', 'term_stream', 'dirs_wait'].includes(command)) await new Promise(r => setTimeout(r, 120));
       return Response.json(answer);
     } catch (error) {
       console.error('[Lab fixture]', url.pathname, error);
@@ -53,6 +53,15 @@ if (runtime.mode === 'frontend' && scene.row) {
     if (row) {row.click();observer.disconnect();}
   };
   const observer = new MutationObserver(enter);
+  observer.observe(document.body, {childList: true, subtree: true});
+  setTimeout(() => observer.disconnect(), 15000);
+}
+if (runtime.mode === 'frontend' && runtime.scene === 'content') {
+  const openFile = () => {
+    const link = document.querySelector<HTMLElement>('[data-link="/preview/project/README.md"]');
+    if (link) {observer.disconnect();link.click();}
+  };
+  const observer = new MutationObserver(openFile);
   observer.observe(document.body, {childList: true, subtree: true});
   setTimeout(() => observer.disconnect(), 15000);
 }

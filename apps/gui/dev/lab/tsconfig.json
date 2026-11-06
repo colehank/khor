@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {"allowJs": true, "resolveJsonModule": true, "allowImportingTsExtensions": true},
-  "include": ["../../src", "./bootstrap.ts", "./fixture.ts", "./scenes.ts"]
+  "include": ["../../src", "./bootstrap.ts", "./fixture.ts", "./scenes.ts", "./navigation.ts"]
 }

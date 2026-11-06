@@ -13,9 +13,10 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from khor_lab.artifacts import write_json
 from khor_lab.contract import digest
+from khor_lab.check_native import probe
 
 
-def build(root, output, source):
+def build(root, output, source, frontend):
     if platform.system() != 'Darwin' or platform.machine() != 'arm64':
         raise ValueError('The initial full Lab host supports macOS arm64; frontend Lab is portable')
     port = int(os.environ.get('KHOR_LAB_PORT', '23910'))
@@ -36,7 +37,7 @@ def build(root, output, source):
     subprocess.run(['node', 'build.mjs', target, str(agent)], cwd=root / 'apps/agent', check=True)
     environment = dict(os.environ, TAURI_CONFIG=json.dumps(config), KHOR_AGENT_BUNDLE=str(agent),
                        CARGO_INCREMENTAL='0', CARGO_PROFILE_DEV_DEBUG='0')
-    subprocess.run(['cargo', 'build', '--locked', '-p', 'khor-gui'], cwd=root, env=environment, check=True)
+    subprocess.run(['cargo', 'build', '--locked', '-p', 'khor-gui', '--no-default-features', '--features', 'devtools'], cwd=root, env=environment, check=True)
     app = output / 'KhorDeveloperLab.app'
     programs = app / 'Contents/MacOS'
     programs.mkdir(parents=True, exist_ok=True)
@@ -50,12 +51,14 @@ def build(root, output, source):
     (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(plist))
     subprocess.run(['codesign', '--force', '--sign', '-', str(app)], check=True)
     subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+    result = probe(app, frontend, root, port, output)
     archive = output / 'native.zip'
     with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
         for path in app.rglob('*'):
             if path.is_file():
                 bundle.write(path, path.relative_to(output))
     write_json(output / 'native-manifest.json', {**info, 'native_contract': digest(root),
+               'managed_frontend': result['managed_frontend'], 'real_backend_verified': result['real_backend'],
                'platform': 'Darwin', 'arch': 'arm64', 'port': port, 'identifier': config['identifier'],
                'archive_sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'host': 'KhorDeveloperLab.app/Contents/MacOS/KhorDeveloperLab'})
     shutil.rmtree(app)

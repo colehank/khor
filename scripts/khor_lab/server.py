@@ -15,18 +15,20 @@ import time
 from urllib.parse import unquote, urlsplit
 
 from . import builders
-from .artifacts import prune, unpack, write_json
+from .artifacts import prune, unpack, write_json, validate
 
 
 class Lab:
     def __init__(self, config, home):
         self.config, self.home = config, home
+        prior_file = home / 'manager.json'
+        prior = json.loads(prior_file.read_text()) if prior_file.exists() else {}
         self.lock = threading.RLock()
         self.cancel = threading.Event()
         self.native = None
         self.build = None
+        self.last_progress = 0.0
         if config.pop('resume', False):
-            prior = json.loads((home / 'manager.json').read_text())
             run = prior.get('run')
             if not run:
                 raise ValueError('No prior Lab run to acquire')
@@ -40,6 +42,14 @@ class Lab:
                           mode=config['mode'], builder=config['builder'], scene=config['scene'],
                           revision=secrets.token_hex(8), available=False, checks='not-run', user_accepted=False,
                           url=f'http://127.0.0.1:{config["port"]}/app/', building=False)
+        if prior.get('available') and prior.get('mode') == config['mode']:
+            previous = home / 'versions' / prior['version']
+            try:
+                manifest = validate(previous, prior['source'])
+                self.value.update(version=prior['version'], available=True, source=prior['source'], manifest=manifest,
+                                  snapshot_url=self.value['url'].replace('/app/', '/snapshots/' + prior['version'] + '/app/'))
+            except (OSError, ValueError, KeyError):
+                pass
         self.save()
 
     def save(self):
@@ -85,7 +95,12 @@ class Lab:
         if self.cancel.is_set():
             return
         with self.lock:
-            if kind == 'requested':
+            if kind == 'progress':
+                self.value['progress'] = manifest
+                if time.monotonic() - self.last_progress < 2:
+                    return
+                self.last_progress = time.monotonic()
+            elif kind == 'requested':
                 self.value['run'] = manifest
             elif kind == 'frontend':
                 previous = self.value.get('source', {}).get('native_contract')
@@ -108,6 +123,8 @@ class Lab:
         return self.home / 'hosts' / (contract + '-' + str(self.config['port']))
 
     def launch_native(self, directory, manifest):
+        if manifest.get('managed_frontend') is not True or manifest.get('real_backend_verified') is not True:
+            raise ValueError('Native Lab has not verified the managed frontend and real backend')
         if manifest['platform'] != platform.system() or manifest['arch'] != platform.machine():
             raise ValueError('Native Lab architecture differs from this computer')
         if manifest['port'] != self.config['port'] or manifest['native_contract'] != self.value['source']['native_contract']:
@@ -117,7 +134,9 @@ class Lab:
             if current.get('native_contract') == manifest['native_contract']:
                 return
         archive = directory / 'native.zip'
-        if hashlib.sha256(archive.read_bytes()).hexdigest() != manifest['archive_sha256']:
+        with archive.open('rb') as stream:
+            actual_digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+        if actual_digest != manifest['archive_sha256']:
             raise ValueError('Native archive digest differs')
         unpack(archive, directory)
         binary = (directory / manifest['host']).resolve()
@@ -182,6 +201,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         path = unquote(urlsplit(self.path).path)
+        if path == '/lab/example':
+            return self.respond(200, b'<!doctype html><meta name="viewport" content="width=device-width"><title>Lab page</title><h1>Khor Lab page</h1><p>Isolated test page inside the real browser surface.</p><label>Text <input placeholder="Keyboard test"></label>', 'text/html; charset=utf-8')
         if path == '/lab/status':
             return self.respond(200, self.lab.status())
         if path == '/lab/runtime':
@@ -189,7 +210,7 @@ class Handler(BaseHTTPRequestHandler):
             status = self.lab.status()
             version = parse_qs(urlsplit(self.path).query).get('version', [status.get('version', '')])[0]
             manifest = self.lab.home / 'versions' / version / 'lab-manifest.json'
-            if '/' in version or '\\' in version or not version or not manifest.is_file():
+            if not version.isalnum() or not manifest.is_file():
                 return self.respond(404, 'Lab snapshot does not exist')
             source = json.loads(manifest.read_text())
             return self.respond(200, {k: status.get(k) for k in ('mode', 'scene', 'revision')} | {'tree': source['tree']})
@@ -219,7 +240,8 @@ class Handler(BaseHTTPRequestHandler):
         file = (self.lab.home / path.lstrip('/')).resolve()
         # Serve only built frontend files, never store, manager token, native archives or requests.
         relative = Path(path).parts
-        if len(relative) < 5 or relative[3] != 'assets' or not file.is_relative_to(directory.resolve()) or not file.is_file():
+        asset_root = directory / (relative[2] if len(relative) > 2 else '') / 'assets'
+        if len(relative) < 5 or not relative[2].isalnum() or relative[3] != 'assets' or not file.is_relative_to(asset_root.resolve()) or not file.is_file():
             return self.respond(404, 'Missing frontend asset')
         self.respond(200, file.read_bytes(), mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
 

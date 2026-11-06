@@ -16,12 +16,14 @@ def write_json(path, value):
 
 def unpack(archive, destination, limit=1024 * 1024 * 1024):
     with zipfile.ZipFile(archive) as bundle:
+        if len(bundle.infolist()) > 20000:
+            raise ValueError('Lab archive contains too many files')
         if sum(item.file_size for item in bundle.infolist()) > limit:
             raise ValueError('Lab archive exceeds its extraction budget')
         for item in bundle.infolist():
             name = PurePosixPath(item.filename)
             kind = (item.external_attr >> 16) & 0o170000
-            if name.is_absolute() or '..' in name.parts or '\\' in item.filename or kind == stat.S_IFLNK:
+            if name.is_absolute() or (name.parts and ':' in name.parts[0]) or '..' in name.parts or '\\' in item.filename or kind == stat.S_IFLNK:
                 raise ValueError('Lab archive contains an unsafe path')
         bundle.extractall(destination)
         for item in bundle.infolist():

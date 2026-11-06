@@ -17,7 +17,7 @@ try {
   }
   browser = await chromium.launch({headless: true});
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
-    for (const scene of ['gui', 'codex', 'terminal', 'list']) {
+    for (const scene of ['gui', 'codex', 'terminal', 'content', 'list']) {
       const context = await browser.newContext({viewport: size, isMobile: size.width < 500, hasTouch: size.width < 500});
       const page = await context.newPage();
       const errors = [];
@@ -28,6 +28,7 @@ try {
       await page.goto(`http://127.0.0.1:${port}/app/?theme=dark`);
       await page.waitForSelector(scene === 'list' ? '[data-list]' : scene === 'terminal' ? '[data-terminal]' : '[data-chat-box]');
       if (size.width < 500 && ['gui', 'codex'].includes(scene)) await page.waitForSelector('[data-session-compose-row]');
+      if (scene === 'content') await page.waitForSelector('[data-session-content-pane][aria-hidden="false"]');
       await page.waitForTimeout(800);
       const geometry = await page.evaluate(() => {
         const row = document.querySelector('[data-session-compose-row]');

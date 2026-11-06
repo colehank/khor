@@ -1,5 +1,9 @@
 """Behavioral boundaries for Lab configuration, snapshots, activation and lifecycle."""
 import json
+import io
+import hashlib
+from urllib.error import HTTPError
+from email.message import Message
 import os
 from unittest.mock import patch
 from pathlib import Path
@@ -71,6 +75,8 @@ class LabTests(unittest.TestCase):
         write_json(version / 'lab-manifest.json', {'tree': 'pinned-identity'})
         (version / 'index.html').write_text('<script src="./assets/app.js"></script>')
         (version / 'assets/app.js').write_text('production App')
+        (version / 'native').mkdir()
+        (version / 'native/private.json').write_text('must not be served')
         (home / 'store').mkdir()
         (home / 'store/secret').write_text('must not be served')
         lab.value.update(version='current', available=True, source={'tree': 'identity'})
@@ -89,7 +95,7 @@ class LabTests(unittest.TestCase):
             self.assertIn(b'/versions/current/assets/app.js', response.read())
         with urlopen(origin + '/lab/status') as response:
             self.assertNotIn('token', json.load(response))
-        for path in ('/store/secret', '/versions/current/../../manager.json'):
+        for path in ('/store/secret', '/versions/current/../../manager.json', '/versions/current/assets/../native/private.json'):
             try:
                 urlopen(origin + path)
                 self.fail('Sensitive path was served')
@@ -132,6 +138,89 @@ class LabTests(unittest.TestCase):
             self.assertFalse(lab.status()['available'])
             release.set()
             lab.build.join(timeout=2)
+
+    def test_artifact_redirect_keeps_github_token_off_storage_requests(self):
+        from khor_lab.download import acquire
+        memory = io.BytesIO()
+        with zipfile.ZipFile(memory, 'w') as archive:
+            archive.writestr('index.html', 'actual App bundle')
+        payload = memory.getvalue()
+        headers = Message()
+        headers['Location'] = 'https://test.blob.core.windows.net/artifact?sig=test-only'
+        redirect = HTTPError('https://api.github.com/artifact', 302, 'Found', headers, None)
+        response = io.BytesIO(payload)
+        metadata = {'id': 1, 'size_in_bytes': len(payload), 'digest': 'sha256:' + hashlib.sha256(payload).hexdigest()}
+        with patch('khor_lab.download.subprocess.check_output', return_value='test-github-token'), \
+             patch('khor_lab.download.build_opener') as opener, \
+             patch('khor_lab.download.urlopen', return_value=response) as storage:
+            opener.return_value.open.side_effect = redirect
+            acquire('owner/private', metadata, self.root)
+            api_request = opener.return_value.open.call_args.args[0]
+            self.assertEqual(api_request.get_header('Authorization'), 'Bearer test-github-token')
+            self.assertIsInstance(storage.call_args.args[0], str)
+            self.assertNotIn('headers', storage.call_args.kwargs)
+        self.assertEqual((self.root / 'index.html').read_text(), 'actual App bundle')
+
+    def test_parallel_artifact_ranges_are_checked_and_assembled_in_order(self):
+        from khor_lab.download import _ranges
+        payload = b'first' * (1024 * 1024)
+        class Response(io.BytesIO):
+            status = 206
+        def storage(request, **_kwargs):
+            self.assertIsNone(request.get_header('Authorization'))
+            start, end = map(int, request.get_header('Range').removeprefix('bytes=').split('-'))
+            response = Response(payload[start:end + 1])
+            response.headers = {'Content-Range': f'bytes {start}-{end}/{len(payload)}'}
+            return response
+        archive = self.root / 'ranges.zip'
+        with patch('khor_lab.download.urlopen', side_effect=storage):
+            _ranges('https://test.blob.core.windows.net/object', archive, len(payload), lambda *_: None)
+        self.assertEqual(hashlib.sha256(archive.read_bytes()).digest(), hashlib.sha256(payload).digest())
+
+    def test_interrupted_artifact_acquisition_reuses_completed_ranges(self):
+        from khor_lab.download import _ranges
+        from urllib.error import URLError
+        payload = b'part' * (1280 * 1024)
+        archive, receipt = self.root / 'partial.zip', self.root / 'ranges.json'
+        def response(request):
+            start, end = map(int, request.get_header('Range').removeprefix('bytes=').split('-'))
+            value = io.BytesIO(payload[start:end + 1])
+            value.status = 206
+            value.headers = {'Content-Range': f'bytes {start}-{end}/{len(payload)}'}
+            return value
+        def interrupted(request, **_kwargs):
+            if request.get_header('Range').startswith('bytes=4194304-'):
+                raise URLError('temporary interruption')
+            return response(request)
+        with patch('khor_lab.download.urlopen', side_effect=interrupted), patch('khor_lab.download.time.sleep'):
+            with self.assertRaises(URLError):
+                _ranges('https://test.blob.core.windows.net/object', archive, len(payload), lambda *_: None, receipt)
+        self.assertEqual(json.loads(receipt.read_text()), [0])
+        def retry(request, **_kwargs):
+            self.assertTrue(request.get_header('Range').startswith('bytes=4194304-'))
+            return response(request)
+        with patch('khor_lab.download.urlopen', side_effect=retry):
+            _ranges('https://test.blob.core.windows.net/object', archive, len(payload), lambda *_: None, receipt)
+        self.assertEqual(archive.read_bytes(), payload)
+
+    def test_local_npm_cache_preserves_and_tracks_file_dependencies(self):
+        from khor_lab.builders import local_dependencies
+        gui = self.root / 'gui'
+        stub = gui / 'vendor/stub'
+        stub.mkdir(parents=True)
+        (stub / 'index.js').write_text('first stub')
+        (gui / 'package.json').write_text('{"name":"fixture"}')
+        write_json(gui / 'package-lock.json', {'packages': {'node_modules/stub': {'link': True, 'resolved': 'vendor/stub'}}})
+        installed = []
+        def install(*_args, cwd, **_kwargs):
+            installed.append((cwd / 'vendor/stub/index.js').read_text())
+            (cwd / 'node_modules').mkdir()
+        with patch('khor_lab.builders.run', side_effect=install):
+            first = local_dependencies(gui, self.root / 'cache')
+            self.assertEqual(local_dependencies(gui, self.root / 'cache'), first)
+            (stub / 'index.js').write_text('updated stub')
+            self.assertNotEqual(local_dependencies(gui, self.root / 'cache'), first)
+        self.assertEqual(installed, ['first stub', 'updated stub'])
 
     def test_retention_keeps_active_version_even_if_older(self):
         for name in ('a', 'b', 'c'):

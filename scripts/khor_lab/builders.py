@@ -6,6 +6,8 @@ import shutil
 import subprocess
 import sys
 import hashlib
+import shlex
+import re
 import time
 import tarfile
 import uuid
@@ -14,10 +16,15 @@ from .artifacts import write_json, validate, prune
 from .contract import digest
 
 
-def run(*args, cwd=None, env=None):
-    # Keep failed download URLs/credentials out of the dashboard and status receipt.
-    result = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=180)
+def run(*args, cwd=None, env=None, timeout=180):
+    print('Lab:', shlex.join(map(str, args)), file=sys.stderr, flush=True)
+    try:
+        result = subprocess.run(args, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        raise ValueError(f'{Path(args[0]).name} exceeded its {timeout}s execution budget; inspect manager.log') from None
     if result.returncode:
+        detail = re.sub(r'(https?://[^\s?]+)\?[^\s]+', r'\1?[redacted]', result.stderr[-8000:] + result.stdout[-8000:])
+        print(detail, file=sys.stderr, flush=True)
         raise ValueError(f'{Path(args[0]).name} {args[1] if len(args) > 1 else ""} failed (exit {result.returncode}); inspect the build log')
     return result.stdout.strip()
 
@@ -28,6 +35,34 @@ def source(config):
     info = dev.snapshot()
     info['native_contract'] = digest(Path(config['root']))
     return info
+
+
+def local_dependencies(gui, home):
+    gui = gui.resolve()
+    lock = json.loads((gui / 'package-lock.json').read_text())
+    key = hashlib.sha256((gui / 'package-lock.json').read_bytes() + (gui / 'package.json').read_bytes())
+    linked = []
+    for package in lock['packages'].values():
+        resolved = package.get('resolved', '')
+        if not package.get('link') or resolved.startswith('node_modules/'):
+            continue
+        target = (gui / resolved).resolve()
+        if not target.is_relative_to(gui.resolve()) or not target.is_dir():
+            raise ValueError(f'Local npm link is outside the GUI source or missing: {resolved}')
+        linked.append((resolved, target))
+        for path in sorted(p for p in target.rglob('*') if p.is_file()):
+            key.update(str(path.relative_to(gui)).encode() + b'\0' + path.read_bytes())
+    dependency_key = key.hexdigest()
+    dependencies = home / 'dependencies' / dependency_key
+    if not (dependencies / 'node_modules').is_dir():
+        dependencies.mkdir(parents=True, exist_ok=True)
+        for name in ('package.json', 'package-lock.json'):
+            shutil.copyfile(gui / name, dependencies / name)
+        for relative, target in linked:
+            shutil.copytree(target, dependencies / relative, dirs_exist_ok=True)
+        run('npm', 'ci', cwd=dependencies, timeout=900)
+    prune(dependencies.parent, 2, [dependency_key])
+    return dependencies
 
 
 def local(config, destination, publish, cancelled):
@@ -50,25 +85,19 @@ def local(config, destination, publish, cancelled):
     gui = materialized / 'apps/gui'
     if not shutil.which('npm'):
         raise ValueError('Local builder requires Node/npm. Select --builder remote on a source-only computer')
-    dependency_key = hashlib.sha256((gui / 'package-lock.json').read_bytes()).hexdigest()
-    dependencies = destination.parent.parent / 'dependencies' / dependency_key
-    if not (dependencies / 'node_modules').is_dir():
-        dependencies.mkdir(parents=True, exist_ok=True)
-        for name in ('package.json', 'package-lock.json'):
-            shutil.copyfile(gui / name, dependencies / name)
-        run('npm', 'ci', cwd=dependencies)
+    dependencies = local_dependencies(gui, destination.parent.parent)
     (gui / 'node_modules').symlink_to(dependencies / 'node_modules', target_is_directory=True)
-    prune(dependencies.parent, 2, [dependency_key])
     build_env = dict(os.environ, CARGO_TARGET_DIR=str(destination.parent.parent / 'native-target'))
-    run('npm', 'run', 'gen', cwd=gui, env=build_env)
-    run('npx', 'vite', 'build', '--config', 'dev/lab/vite.config.ts', '--outDir', str(destination), cwd=gui)
+    run('npm', 'run', 'gen', cwd=gui, env=build_env, timeout=1800)
+    run('npx', 'tsc', '--project', 'dev/lab/tsconfig.json', cwd=gui)
+    run('npx', 'vite', 'build', '--config', 'dev/lab/vite.config.ts', '--outDir', str(destination), cwd=gui, timeout=900)
     receipt = destination / 'source.json'
     write_json(receipt, info)
-    run(sys.executable, str(Path(config['root']) / 'scripts/khor_lab/package.py'), str(materialized), str(destination), str(receipt))
+    run(sys.executable, str(materialized / 'scripts/khor_lab/package.py'), str(materialized), str(destination), str(receipt))
     publish('frontend', validate(destination, info), info)
     if config['mode'] == 'full' and config.get('native_required', True) and not cancelled():
         env = dict(build_env, KHOR_LAB_PORT=str(config['port']))
-        run(sys.executable, str(Path(config['root']) / 'scripts/khor_lab/native.py'), str(materialized), str(destination / 'native'), str(receipt), cwd=materialized, env=env)
+        run(sys.executable, str(materialized / 'scripts/khor_lab/native.py'), str(materialized), str(destination / 'native'), str(receipt), str(destination), cwd=materialized, env=env, timeout=7200)
         publish('native', json.loads((destination / 'native/native-manifest.json').read_text()), info)
     shutil.rmtree(materialized)
     return {'status': 'completed', 'conclusion': 'built-locally', 'checks': 'not-run'}
@@ -128,7 +157,7 @@ def remote(config, destination, publish, cancelled):
             directory.mkdir(parents=True, exist_ok=True)
             from .download import acquire
             artifact = next(a for a in artifacts if a['name'] == name and not a['expired'])
-            acquire(repository, artifact, directory)
+            acquire(repository, artifact, directory, lambda received, total: publish('progress', {'kind': kind, 'received': received, 'total': total}, info), cache=destination.parent.parent / 'downloads')
             manifest = validate(directory, info) if kind == 'frontend' else json.loads((directory / 'native-manifest.json').read_text())
             if kind == 'native' and any(manifest.get(key) != info[key] for key in ('tree', 'snapshot_commit', 'native_contract')):
                 raise ValueError('Native Lab provenance differs from the requested source')
@@ -136,6 +165,8 @@ def remote(config, destination, publish, cancelled):
             publish(kind, manifest, info)
         status = json.loads(run('gh', 'run', 'view', run_id, '--repo', repository, '--json', 'status,conclusion,url'))
         if status['status'] == 'completed':
+            if config['mode'] == 'full' and config.get('native_required', True) and 'developer-lab-native' not in acquired:
+                raise ValueError(f'Native host unavailable; inspect {active["url"]}')
             if 'developer-lab-frontend' not in acquired:
                 raise ValueError(f'Frontend bundle unavailable; inspect {active["url"]}')
             return status

@@ -21,7 +21,7 @@ From any Khor working tree, use `python3 scripts/dev.py`, or install `khor-dev` 
 # Local builder: Node/npm and the Rust generators must already be available.
 python3 scripts/dev.py lab start --mode frontend --builder local --scene gui
 
-# Source-only computer: needs Git, Python and authenticated gh; no Node, Cargo or Xcode.
+# Source-only computer: needs Git, Python 3.12+ and authenticated gh; no Node, Cargo or Xcode.
 python3 scripts/dev.py lab start --mode frontend --builder remote --scene gui
 python3 scripts/dev.py lab status
 python3 scripts/dev.py lab open
@@ -40,7 +40,7 @@ python3 scripts/dev.py lab start --mode full --builder remote
 
 Refresh the App after a bundle update or scene reset. Lab does not reload a page while someone is typing or composing with an input method. `/app/` is the stable latest entry. `snapshot_url` pins an acquired version until cache retention removes it; its assets and source manifest remain tied to that version.
 
-The first scene set is `gui`, `codex`, `terminal`, `stream`, `list`; full uses `live`. Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
+The first scene set is `gui`, `codex`, `terminal`, `stream`, `content`, `list`; full uses `live`. Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
 
 ## Defaults and isolation
 

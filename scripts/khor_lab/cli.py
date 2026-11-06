@@ -94,7 +94,9 @@ def main(args, root):
     if action == 'stop':
         # Only the manager authenticated above owns this process group and its children.
         try:
-            if os.getpgid(result['pid']) == result['pid']:
+            if os.name == 'nt':
+                subprocess.run(['taskkill', '/PID', str(result['pid']), '/T', '/F'], timeout=20, capture_output=True, check=False)
+            elif os.getpgid(result['pid']) == result['pid']:
                 os.killpg(result['pid'], signal.SIGTERM)
         except ProcessLookupError:
             pass
