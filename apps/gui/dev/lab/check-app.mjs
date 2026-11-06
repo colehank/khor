@@ -30,11 +30,19 @@ async function inspect(browser, scene, size) {
       const body = page.locator('[data-content-visible="true"]');
       await page.evaluate(() => {
         let title = false;
-        window.addEventListener('click', event => {title = event.target instanceof Element && !!event.target.closest('[data-deck-title]');}, {capture: true, once: true});
-        window.addEventListener('click', () => {window.__labAddressGestureFocus = title && document.activeElement?.matches('[data-page-address]');}, {once: true});
+        window.addEventListener('pointerdown', event => {
+          title = event.target instanceof Element && !!event.target.closest('[data-deck-title]');
+        }, {capture: true, once: true});
+        window.addEventListener('click', () => {
+          window.__labAddressGestureFocus = {title, focused:document.activeElement?.matches('[data-page-address]')};
+        }, {once: true});
       });
       await body.locator('[data-deck-title]').first().tap();
-      assert.equal(await page.evaluate(() => window.__labAddressGestureFocus), true, 'The address input must focus during the initiating tap, before animation frames');
+      const focus = await page.evaluate(() => window.__labAddressGestureFocus);
+      await writeFile(path.join(report,name+'-focus.json'), JSON.stringify(focus,null,2));
+      assert.equal(await page.locator('[data-fault]:visible').count(), 0, 'Editing must not render an error boundary');
+      assert.equal(focus.title, true, 'The gesture must begin on the actual address title');
+      assert.equal(focus.focused, true, 'The address input must focus during the initiating tap, before animation frames');
       await body.locator('[data-content-edit-end]').click();
       const before = await page.evaluate(async () => (await fetch('/api/tabs_list', {method: 'POST', body: JSON.stringify({kind: 'content'})})).json());
       const back = body.locator('[data-content-back]');
@@ -64,6 +72,7 @@ async function inspect(browser, scene, size) {
     }
     if (size.width < 500 && ['gui', 'codex'].includes(scene)) await page.waitForSelector('[data-session-compose-row]');
     await page.waitForTimeout(800);
+    assert.equal(await page.locator('[data-fault]:visible').count(), 0, 'The production App must render without an error boundary');
     geometry = await page.evaluate(() => {
       const row = document.querySelector('[data-session-compose-row]');
       const avatar = document.querySelector('[data-lab-composer-session-slot]');
