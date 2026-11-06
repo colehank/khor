@@ -1,4 +1,5 @@
 import {PageHistory,PageReload,usePageSteps} from '@/browse/PageControls';
+import {focusPageAddress} from '@/lib/page-address-focus';
 import { fileManagerLabel } from "@/lib/file-actions";
 // A browsing landing, whole: tabs, an address bar, and whatever the open
 // tab is showing.
@@ -533,6 +534,7 @@ export function BrowseLanding({
       machine's face and the address, Go on the keyboard, 取消 beside it.
       A fresh tab opens with the pill already editing. */
   const [editing, setEditing] = useState(!somewhere);
+  const addressSurface=useRef<HTMLElement>(null);
   useEffect(() => setEditing(!somewhere), [tabs.current.id]); // eslint-disable-line react-hooks/exhaustive-deps
   /** **The machine defaults to the last one used** (UX-18): a fresh tab
       with no machine takes it, once, if it is still reachable. */
@@ -861,7 +863,7 @@ export function BrowseLanding({
         // ＋ in the tabs sheet: a new page, as the list's ＋ opens one.
         onNew={newHere}
         onBack={() => onBack?.()}
-        onTitle={() => setEditing(true)}
+        onTitle={() => focusPageAddress(()=>setEditing(true),addressSurface.current?.closest('[data-session-screen]')??null)}
         caption={failedWord || saidWord || caption}
         editor={tabs.ready && editing ? pillEditor : undefined}
         editorAbove={pillList}
@@ -880,7 +882,7 @@ export function BrowseLanding({
         loading={pageLoading || pageShare !== undefined}
         loadingShare={pageShare ?? null}
       >
-        <section data-browse-landing={kind.kind} data-browse-bare={bare ? "page" : undefined} className="flex h-full min-h-0 flex-col">
+        <section ref={addressSurface} data-browse-landing={kind.kind} data-browse-bare={bare ? "page" : undefined} className="flex h-full min-h-0 flex-col">
           <div data-nav-clear={bare ? true : undefined} className="min-h-0 flex-1 overflow-hidden">
             {body}
           </div>

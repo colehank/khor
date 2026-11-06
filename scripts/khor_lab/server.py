@@ -41,7 +41,7 @@ class Lab:
         self.value = dict(schema=1, pid=os.getpid(), root=config['root'], token=secrets.token_hex(32),
                           mode=config['mode'], builder=config['builder'], scene=config['scene'],
                           revision=secrets.token_hex(8), available=False, checks='not-run', user_accepted=False,
-                          url=f'http://127.0.0.1:{config["port"]}/app/', building=False)
+                          url=f'http://127.0.0.1:{config["port"]}/app/', building=False, queued_update=False)
         if prior.get('available') and prior.get('mode') == config['mode']:
             previous = home / 'versions' / prior['version']
             try:
@@ -67,13 +67,15 @@ class Lab:
     def update(self):
         with self.lock:
             if self.value['building']:
+                self.value['queued_update'] = True
+                self.save()
                 return self.status()
             if self.config['mode'] == 'full':
                 from .contract import digest
                 host = self.host_directory(digest(Path(self.config['root'])))
                 manifest = host / 'native-manifest.json'
                 self.config['native_required'] = not manifest.is_file() or not self.host_usable(json.loads(manifest.read_text()))
-            self.value.update(building=True, error=None, checks='pending')
+            self.value.update(building=True, queued_update=False, error=None, checks='pending')
             self.save()
             self.build = threading.Thread(target=self.build_latest, daemon=True)
             self.build.start()
@@ -93,9 +95,13 @@ class Lab:
                 self.value['checks'] = 'failed'
         finally:
             with self.lock:
+                queued = self.value['queued_update']
                 self.value['building'] = False
+                self.value['queued_update'] = False
                 self.save()
                 prune(self.home / 'versions', self.config['keep_versions'], [self.value.get('version', '')])
+                if queued and not self.cancel.is_set():
+                    self.update()
 
     def publish(self, identifier, kind, manifest, info):
         if self.cancel.is_set():

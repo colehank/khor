@@ -17,7 +17,7 @@ from .artifacts import write_json
 
 def register(sub):
     parser = sub.add_parser('lab', help='Complete production App Lab, with independent mode and builder choices')
-    parser.add_argument('operation', choices=['start', 'update', 'status', 'open', 'stop', 'reset', 'scene', 'restart', '_serve'])
+    parser.add_argument('operation', choices=['dev', 'start', 'update', 'status', 'open', 'stop', 'reset', 'scene', 'restart', '_serve'])
     parser.add_argument('--mode', choices=['frontend', 'full'])
     parser.add_argument('--builder', choices=['local', 'remote'])
     parser.add_argument('--scene', choices=SCENES)
@@ -25,6 +25,9 @@ def register(sub):
     parser.add_argument('--builder-repo')
     parser.add_argument('--cache-root')
     parser.add_argument('--resume', action='store_true', help='Acquire the previous request again without rebuilding')
+    parser.add_argument('--target', choices=['desktop', 'ios'], default='desktop', help='Native development target for lab dev')
+    parser.add_argument('--device', help='Available iOS simulator name or UDID for lab dev')
+    parser.add_argument('--prepare-only', action='store_true', help='Prepare the source development target without launching it')
     parser.add_argument('--settings', help=argparse.SUPPRESS)
 
 
@@ -50,6 +53,10 @@ def main(args, root):
     if options['mode'] == 'full' and options['scene'] is None:
         options['scene'] = 'live'
     config = load(root, options)
+    if args.operation == 'dev':
+        from .hot import develop
+        develop(config, target=args.target, device=args.device, prepare_only=args.prepare_only)
+        return
     key = hashlib.sha256(str(root.resolve()).encode()).hexdigest()[:16] + '-' + str(config['port'])
     home = Path(config['cache_root']) / key
     if args.operation == 'start':

@@ -13,6 +13,25 @@ Choose the runtime and builder independently:
 
 The first full host supports macOS arm64. Frontend Lab is portable. Full Lab uses `live` data: create disposable workspaces and sessions in its isolated store. Browser fixtures do not claim to verify native keyboard, file sharing, WebView layering, process persistence or backend behavior.
 
+## Edit source with hot updates
+
+`lab dev` runs the actual App through Vite. It is a foreground development process: Ctrl+C stops its own server and native launcher. Its runtime declares `mutable: true`; use `lab start/update` for a fixed source version to review. The two entries use the same production App and fixture modules.
+
+```sh
+python3 scripts/dev.py lab dev --builder local --mode frontend --scene gui
+
+# A real desktop backend, separate from the installed App.
+python3 scripts/dev.py lab dev --builder local --mode full
+
+# On a development Mac with Xcode, xcodegen, CocoaPods and an iOS runtime.
+xcrun simctl list devices available
+python3 scripts/dev.py lab dev --builder local --mode full --target ios --device 'iPhone 17' --port 23920
+```
+
+Frontend changes update the running source view without packaging it again. Native development uses a disposable source project, a distinct application identifier and an isolated store. Platform generators may update that project; they never rewrite the developer checkout. Restart `lab dev` after Rust, native configuration or dependency changes to prepare the corresponding native inputs; frontend edits reuse the host. iOS uses its own application container. Its native `devUrl` points at the server root because Tauri’s mobile proxy appends resource paths; the browser entry remains `/app/`. HMR connects explicitly to the loopback development port, which works through the simulator’s custom-scheme page. Only an available simulator may be selected by this command; device signing is outside this development path.
+
+The execution computer needs Node/npm and Rust generators. An existing `CARGO_TARGET_DIR` is respected; otherwise development owns a target directory in its cache. A source-only computer keeps using `lab start --builder remote`. Developers can run `lab dev` on their chosen development worker and interact with it through remote desktop. Programs and assets from an untrusted worker must not be installed as trusted artifacts on the source-only computer.
+
 ## Commands
 
 From any Khor working tree, use `python3 scripts/dev.py`, or install `khor-dev` with the existing `configure-local --install-command` command:
@@ -40,7 +59,7 @@ python3 scripts/dev.py lab start --mode full --builder remote
 
 Refresh the browser after a bundle update or scene reset. For a full Lab, `lab restart` reopens its isolated native view with the active frontend and existing store, reusing its compiled host without a new build. Lab does not reload a page while someone is typing or composing with an input method. `/app/` is the stable latest entry. `snapshot_url` pins an acquired version until cache retention removes it; its assets and source manifest remain tied to that version.
 
-The first scene set is `gui`, `codex`, `terminal`, `stream`, `content`, `list`; full uses `live`. Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
+The scene set is `gui`, `codex`, `terminal`, `stream`, `content`, `page`, `list`; full uses `live`. Extend `apps/gui/dev/lab/scenes.ts` and the data-only fixture to cover additional scenarios. Enter a scenario through the actual list action. Keep component coordinates, CSS, viewport handling and gesture hosts in production source; never patch them in a scenario. Missing fixture commands fail explicitly.
 
 ## Defaults and isolation
 
@@ -66,3 +85,14 @@ Install `.github/workflows/developer-lab.yml` in a private build-control reposit
 The frontend job checks generated contract compatibility, reuses compatible trusted generation or regenerates from the submitted source, including when the release artifact has expired, builds the complete App and uploads the usable bundle before browser checks. A full request builds a separate debug Tauri host on a trusted macOS runner. No signing credentials or production store are required. Trusted native builds do not restore shared Rust caches writable by the rented worker. Native results from an untrusted rented worker must not be substituted for these artifacts.
 
 Use the source manifest and browser report together during review. Chromium size/touch emulation verifies browser geometry; it does not replace real iPhone or native WebView acceptance. The manager does not mark `user_accepted` automatically. Merge and release follow the project's normal review process.
+
+## Review and merge
+
+Keep the product edit and its Lab on the same feature branch. A reviewed interaction is already the production implementation; it does not need to be copied from a prototype later.
+
+1. Iterate in `lab dev`, running the affected behavior checks.
+2. Commit the intended change and acquire an immutable `lab start/update` preview. Record its exact tree, check result and human feedback separately.
+3. Open a focused PR. Quality builds the complete App Lab, exercises the shared browser scenarios and verifies CSS hot updates preserve a real composer draft. Source-only pre-commit checks remain lightweight. A newer PR revision cancels its outdated Quality run.
+4. Before merging, verify the latest base, required Quality and the relevant native/device checks. Update acceptance after a behavior change. Signing and distribution remain in the tag-driven release workflow.
+
+The private worker accepts `check --task ios-lab-prepare`, `ios-lab` and `ios-keyboard`. Preparation, native installation, actual Appium/XCUITest keyboard verification and human device acceptance are different results. The simulator probes own a dedicated `Khor Developer Lab` device and never reset another simulator or the installed product. The native probe waits for UIKit’s actual address control before tapping it, verifies the system software keyboard and input focus, then edits real source CSS and checks the same document and editor survive the native hot update. It enters the page through the actual browser list; it does not override the App’s narrow cold-start policy. The keyboard tool versions are pinned; the Appium server listens on loopback. Screenshots and JSON reports belong to the exact submitted source; a simulator keyboard result does not claim physical iPhone or Chinese IME acceptance.

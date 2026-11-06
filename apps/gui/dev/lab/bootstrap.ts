@@ -23,7 +23,7 @@ if (runtime.mode === 'frontend') {
     localStorage.setItem('khor.sessions.tabs', JSON.stringify({tabs: sessionIds, active: scene.session ?? sessionIds[0]}));
     localStorage.setItem('khor.place', JSON.stringify({landing: 'sessions', screen: 'list'}));
   }
-  const fixture = createLabFixture(true, {origin: location.origin, content: runtime.scene === 'content'});
+  const fixture = createLabFixture(true, {origin: location.origin, content: ['content', 'page'].includes(runtime.scene)});
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -62,6 +62,15 @@ if (runtime.mode === 'frontend' && runtime.scene === 'content') {
     if (link) {observer.disconnect();link.click();}
   };
   const observer = new MutationObserver(openFile);
+  observer.observe(document.body, {childList: true, subtree: true});
+  setTimeout(() => observer.disconnect(), 15000);
+}
+if (runtime.mode === 'frontend' && runtime.scene === 'page') {
+  const openPage = () => {
+    const link = document.querySelector<HTMLElement>('[data-md-link="' + location.origin + '/lab/example"]');
+    if (link) {observer.disconnect();link.click();}
+  };
+  const observer = new MutationObserver(openPage);
   observer.observe(document.body, {childList: true, subtree: true});
   setTimeout(() => observer.disconnect(), 15000);
 }

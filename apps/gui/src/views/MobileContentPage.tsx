@@ -1,6 +1,7 @@
 /** A session's webpage keeps the browser's address, exit choice and
  * native history. Its one deck carries the owning session identity. */
-import {useState,type ReactNode} from 'react';
+import {useRef,useState,type ReactNode} from 'react';
+import {focusPageAddress} from '@/lib/page-address-focus';
 import {forgetRecentByDevice,pageStep,said,type DeviceRow} from '@/api';
 import {useLoading} from '@/browse/use-loading';
 import {pageFail} from '@/browse/page-fail';
@@ -11,7 +12,7 @@ import {usePlaces} from '@/browse/use-places';
 import {PAGES} from '@/views/PagesKind';
 import {PageField} from '@/browse/PageField';
 import {GlassCircle} from '@/components/Glass';
-import {IconClose} from '@/components/icons';
+import {IconBack,IconClose} from '@/components/icons';
 import {PageHistory,PageReload,usePageSteps} from '@/browse/PageControls';
 import {gui} from '@/gen/catalog';
 import type {ContentTab} from '@/hooks/use-session-content';
@@ -23,6 +24,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
   onPoint:(device:DeviceRow,path:string)=>void;children:(onBusy:(busy:boolean)=>void,suspended?:boolean)=>ReactNode;
 }) {
   const places=usePlaces(PAGES);
+  const surface=useRef<HTMLDivElement>(null);
   const [error,setError]=useState('');
   const field=navigation.editor(handle),editing=!!field.editing,draft=editing?field.address??tab.url:tab.url;
   const setEditing=(editing:boolean)=>navigation.edit(handle,{editing,...(editing?{address:field.address??tab.url}:{})});
@@ -36,20 +38,21 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
   const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
   const revisit=(id:string,url:string)=>{const d=devices.find(d=>d.id===id);if(d)go(d,url);else navigation.edit(handle,{editing:true,address:url,exitPrompt:(field.exitPrompt??0)+1});};
   const forget=async(id:string,path:string)=>{try{await forgetRecentByDevice('page',id,path);places.reload();}catch(e){setError(said(e));}};
-  return <div className="mobile-content-page">
+  return <div ref={surface} className="mobile-content-page">
     <div className="session-content-web" hidden={editing}>{children(onBusy,editing)}</div>
     {editing&&<div data-content-page-landing className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow={!desktop} onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div>}
     {(error||failed)&&<p role="alert" className="session-content-error" title={failed?.detail}>{error||failed?.reason}{failed&&<button type="button" className="text-brand-strong" onClick={()=>void pageStep(handle,failed.pass?'pass':'retry').catch(()=>{})}>{failed.pass?gui.page_pass:gui.region_retry}</button>}</p>}
     <div ref={setListSeat} className="mobile-content-page-list"/>
-    {desktop?<ContentToolbar kind="page" source="browser" onSource={browse} onClose={close} pinned={tab.pinned}>
+    {desktop?<ContentToolbar kind="page" source="browser" onSource={browse} onBack={()=>navigation.returnToPicker(tab.session)} onClose={close} pinned={tab.pinned}>
       <PageHistory tab={handle} steps={steps}/>
       <PageField inPill suggestAddresses={false} steps={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} autoFocus={editing} onEditingChange={setEditing} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/>
       <PageReload tab={handle} busy={busy}/>
     </ContentToolbar>:<div data-content-deck className="mobile-content-deck">
+      <GlassCircle data-content-back aria-label={gui.back} onClick={()=>navigation.returnToPicker(tab.session)}><IconBack/></GlassCircle>
       <div className="glass mobile-content-pill relative">
         {!editing&&<PageHistory tab={handle} steps={steps}/>}
         {editing?<div className="mobile-content-page-editor"><PageField suggestAddresses={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} steps={false} autoFocus inPill listSeat={listSeat} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/></div>:<>
-          <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.title||tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>setEditing(true)}/></div>
+          <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.title||tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>focusPageAddress(()=>setEditing(true),surface.current)}/></div>
         </>}
         {!editing&&<PageReload tab={handle} busy={busy}/>}
         {(busy||share!==undefined)&&<PillProgress share={share??null}/>}

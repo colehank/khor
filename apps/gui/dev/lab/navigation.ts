@@ -1,12 +1,14 @@
 import type {TabRow} from '../../src/gen/bindings/TabRow';
 import type {WorkspaceRow} from '../../src/gen/bindings/WorkspaceRow';
 import type {FileText} from '../../src/gen/bindings/FileText';
+import type {RecentRow} from '../../src/gen/bindings/RecentRow';
 
 const root = '/preview/project';
 const initialText = '# Khor Lab\n\nThis file is fixture data. The App uses its production editor and Markdown renderer.\n\nInline: \\(a+b\\).\n';
 export function navigationFixture(device: string, origin: string, seeded: boolean) {
   let text = initialText, revision = 1, sequence = 0;
   const at = Date.now();
+  const recents = new Map<string, RecentRow[]>([['page', seeded ? [{device, name:'验收环境', place:origin+'/lab/example', at_ms:at, session:'gui/ai-elements-review'}] : []]]);
   const tabs = new Map<string, {tabs: TabRow[]; active: string}>();
   const collection = (kind: string) => {
     if (!tabs.has(kind)) tabs.set(kind, {tabs: [], active: ''});
@@ -30,7 +32,7 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
   const file = (): FileText => ({text, total: new TextEncoder().encode(text).length, at_ms: at + revision,
     digest: 'fixture-' + revision, cut: false, binary: false});
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -63,7 +65,13 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
         const batch = {cursor: String(revision), reset: false, dirs: [], workspace: false, coverage: [], retry_ms: 1000};
         return command === 'dirs_begin' ? {id: 'fixture-watch', machine_id: device, batch} : batch;
       }
-      if (command === 'dirs_leave' || command === 'recent_visit') return null;
+      if (command === 'dirs_leave') return null;
+      if (command === 'recents') return (recents.get(String(input.kind))??[]).slice(0,Number(input.limit)||100);
+      if (command === 'recent_visit') {
+        const kind=String(input.kind),place=String(input.place);
+        recents.set(kind,[{device,name:'验收环境',place,at_ms:Date.now(),session:typeof input.session==='string'?input.session:null},...(recents.get(kind)??[]).filter(row=>row.place!==place)]);
+        return null;
+      }
       if (command === 'git_diff') return {hunks: [], more: false};
       if (command === 'git_history') return {head: null, commits: [], next: null};
       if (command === 'git_log') return {commits: [], more: false};
@@ -81,6 +89,7 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
       if (command === 'touched') return at;
       if (command === 'checkout') return false;
       if (command === 'git_status') return {branch: '', rows: [], more: false, ahead: 0, behind: 0, fetched_ms: 0};
+      if (command === 'trash_here') return false;
       if (command === 'code_here') return {version: '', ready: false};
       throw new Error('Unknown navigation fixture command');
     },

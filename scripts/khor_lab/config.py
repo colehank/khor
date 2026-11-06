@@ -6,7 +6,7 @@ from pathlib import Path
 
 DEFAULTS = dict(mode='frontend', builder='local', scene='gui', port=23910,
                 builder_repo='colehank/khor-build', keep_versions=3)
-SCENES = ('gui', 'codex', 'terminal', 'stream', 'content', 'list', 'live')
+SCENES = ('gui', 'codex', 'terminal', 'stream', 'content', 'page', 'list', 'live')
 
 
 def default_cache():
