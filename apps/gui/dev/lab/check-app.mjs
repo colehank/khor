@@ -19,6 +19,46 @@ async function inspect(browser, scene, size, data = {}) {
   const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}`;
   let geometry = null;
   const contentLayout = [];
+  const workspaceLayout = [];
+  async function checkWorkspaceSidebar() {
+    const navigation=page.locator('[data-workspace-navigation][data-seat="workspace"]');
+    await navigation.waitFor();
+    await page.evaluate(async()=>{
+      await document.fonts.ready;
+      const nav=document.querySelector('[data-workspace-navigation][data-seat="workspace"]');
+      let previous=null,stable=0;
+      for(let frame=0;frame<120;frame++){
+        await new Promise(resolve=>requestAnimationFrame(resolve));
+        const rect=nav.getBoundingClientRect();
+        const next=[rect.left,rect.top,rect.right,rect.bottom];
+        stable=previous&&next.every((value,index)=>Math.abs(value-previous[index])<.01)?stable+1:0;
+        if(stable>=3)return;
+        previous=next;
+      }
+      throw new Error('The workspace sidebar never reached stable geometry');
+    });
+    const layout=await page.evaluate(()=>{
+      const nav=document.querySelector('[data-workspace-navigation][data-seat="workspace"]');
+      const back=[...document.querySelectorAll('[data-ws-list-back],[data-screen-head] [data-back]')].find(el=>el.getClientRects().length);
+      const search=document.querySelector('[data-ws-side-head] [data-search-open]');
+      const box=el=>{if(!el)return null;const r=el.getBoundingClientRect();return {left:r.left,right:r.right,center:r.left+r.width/2};};
+      return {back:box(back),search:box(search),branch:box(nav?.querySelector('[data-workspace-branch-icon]')),pill:box(nav?.querySelector('[data-glass-capsule]'))};
+    });
+    workspaceLayout.push(layout);
+    assert(layout.back&&layout.search&&layout.branch&&layout.pill,'The actual workspace header and sidebar controls must be present');
+    assert(Math.abs(layout.branch.center-layout.back.center)<=1,`The branch icon must align with Back: ${JSON.stringify(layout)}`);
+    assert(Math.abs(layout.pill.right-layout.search.right)<=1,`The sidebar pill must align with Search: ${JSON.stringify(layout)}`);
+    assert.equal(await navigation.locator('button').count(),3,'Workspace navigation has directory, history and sessions');
+    assert.equal(await page.locator('[data-ws-sessions-switch]').count(),0,'The workspace content must not retain a second sessions switch');
+    await navigation.locator('[data-workspace-view="sessions"]').click();
+    await page.locator('[data-ws-tree] [data-ws-sessions-list]').waitFor();
+    assert.equal(await navigation.locator('[aria-pressed=true]').count(),1,'Exactly one sidebar destination is selected');
+    assert((await page.locator('[data-ws-tree] [data-ws-sessions-list] [data-row-open]').count())>0,'The workspace sessions must appear in the left sidebar');
+    assert.equal(await page.locator('[data-ws-sessions]').count(),0,'Selecting the session list must not open a separate right column');
+    await page.screenshot({path:path.join(report,name+'-sessions.png')});
+    await navigation.locator('[data-workspace-view="files"]').click();
+    await page.locator('[data-file-tree]').waitFor();
+  }
   async function checkContentToolbar(phase) {
     const kind = phase.startsWith('file') ? 'file' : phase;
     await page.locator(`[data-session-side] [data-content-toolbar="${kind}"]:visible`).waitFor();
@@ -125,6 +165,7 @@ async function inspect(browser, scene, size, data = {}) {
       const rect = await deck.boundingBox();
       assert(rect && rect.y >= size.height / 2 && rect.y + rect.height <= size.height + 1,'Workspace deck must sit inside the bottom viewport');
     }
+    if(scene==='workspace'&&size.width>=500)await checkWorkspaceSidebar();
     if (['list','devices'].includes(scene)) {
       const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
       assert.equal(count,machines,'Machine fixture count must reach the actual App');
@@ -153,6 +194,7 @@ async function inspect(browser, scene, size, data = {}) {
       assert.equal(await page.locator('[data-ws-row]:visible').count(),machines*4,'Each machine supplies distinct Git and plain-folder workspaces');
       await page.screenshot({path:path.join(report,name+'-list.png')});
       await page.locator('[data-ws-row]:visible').first().click();
+      await checkWorkspaceSidebar();
       const names=await page.evaluate(async()=> (await (await fetch('/api/ls',{method:'POST',body:JSON.stringify({machine:'e'.repeat(64),path:'/preview/project'})})).json()).entries.map(entry=>entry.name));
       assert.deepEqual(names,['docs','src','design.md','notes.md','package.json','plan.md','README.md','report.md','.config','.gitignore'],'Generated ls data must retain the real backend directory and dotfile ordering');
       const visible=await page.locator('[data-file-tree] button[data-file-path]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-file-path').split('/').pop()));
@@ -191,7 +233,7 @@ async function inspect(browser, scene, size, data = {}) {
     await page.screenshot({path: path.join(report, name + '.png')});
     await context.close();
   }
-  return {name, geometry, contentLayout, errors};
+  return {name, geometry, contentLayout, workspaceLayout, errors};
 }
 
 let browser;

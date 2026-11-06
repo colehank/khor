@@ -1,6 +1,6 @@
+import { ActionRow } from "@/components/settings/ActionRow";
 import { useEffect, useRef, useState } from "react";
 import { agentRecognition, type DeviceRow, type RecognitionEntry } from "@/api";
-import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { RegionState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
@@ -79,9 +79,3 @@ export function AgentRecognition({ devices, machine, onMachine }: { devices: Dev
   </MoreSection>;
 }
 /** Machine detail links to the sole configuration home. */
-export function RecognitionSummary({ machine, onOpen }: { machine: string; onOpen: () => void }) {
-  const { entries, error } = useRecognition(machine);
-  return <ActionRow name="recognition-link" label={gui.agent_recognition}
-    hint={error ? gui.recognition_error : entries?.map((e) => `${e.agent === "claude" ? "Claude Code" : "Codex"} · ${word(e)}`).join(" / ")}
-    actionLabel={gui.recognition_open} onPress={onOpen} />;
-}

@@ -1048,17 +1048,7 @@ export default function App() {
     setDevicesRead(true);
   }, [arrangeBy]);
 
-  const openRecognition = (machine: string) => {
-    if (trafficLights && !settingsFace) {
-      openSettings("terminal", machine).catch(() => {});
-      return;
-    }
-    setRecognitionMachine(machine);
-    setSwitchingTabs(false);
-    listPane.expand();
-    setMorePage("terminal");
-    setScreen("detail");
-  };
+
 
   /**
    * Rows whose last pin attempt did not take, by row id.
@@ -2725,7 +2715,6 @@ export default function App() {
             row={row}
             narrow
             onBack={() => {}}
-            onRecognition={openRecognition}
           />
         );
       }
@@ -3092,7 +3081,6 @@ export default function App() {
         }
         onRevealSeen={() => setReveal(null)}
         narrow={narrow}
-        listOpen={!narrow && !listPane.collapsed}
         onBack={() => { setOpenWs(null); setWsTree(false); setScreen("list"); }}
       />
     ) : null
@@ -3110,7 +3098,6 @@ export default function App() {
       onPromote={(r) => setPromoting(r.name)}
       // An open file is left first (`MachineFiles`, one back button).
       onBack={() => (fileBack ? fileBack.go() : setScreen("list"))}
-      onRecognition={openRecognition}
       actions={narrow ? machineVerbs : undefined}
       body={
         !openDevice ? undefined : machineBody === "web" ? (

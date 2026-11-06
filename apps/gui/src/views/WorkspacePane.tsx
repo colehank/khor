@@ -1,4 +1,4 @@
-import { WorkspaceGitNavigation } from '@/components/WorkspaceGitNavigation';
+import { WorkspaceNavigation } from '@/components/WorkspaceNavigation';
 import { useFileHandoff } from "@/hooks/use-file-handoff";
 import { sessionInWorkspace } from "@/lib/session-cwd";
 import type { EditorHistorySlot } from "@/lib/code/history";
@@ -21,8 +21,8 @@ import { WorkspaceHistory } from "@/views/workspace/WorkspaceHistory";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconBranch, IconHistory, IconMore, IconEye, IconSessions } from "@/components/icons";
-import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
+import { IconBack, IconBranch, IconHistory, IconMore, IconEye } from "@/components/icons";
+import { GlassCapsule, GlassCircle } from "@/components/Glass";
 import { DeeperHeads, NarrowHead, SideSeat } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
@@ -103,7 +103,6 @@ export function WorkspacePane({
   onRevealSeen,
   narrow,
   side,
-  listOpen,
   onBack,
   status,
 }: {
@@ -212,10 +211,6 @@ export function WorkspacePane({
       is a screen of this pane's. ⚠️ 墓碑: `treePane`, a column of its own
       between the list and the file. */
   side: { on: boolean; pane: PaneWidth; set: (on: boolean) => void } | null;
-  /** Whether the workspace list is holding a column of its own. The
-      fifth column's existence is what decides the sessions' default,
-      and only the shell knows about it. */
-  listOpen: boolean;
   /** Out of this workspace, back to the list — the narrow face's first
       screen's way back (the shell's `screen`). */
   onBack?: () => void;
@@ -225,6 +220,9 @@ export function WorkspacePane({
   const regionLead = useContext(RegionLead);
   const navigationStore = useMemo(() => new WorkspaceNavigationStore(workspaceStorage, machine, root, targetOf), [machine, root]);
   const restoredNavigation = useMemo(() => navigationStore.restore(), [navigationStore]);
+  const [sidebarView, setSidebarView] = useWorkspaceField(memory, "sidebarView", () => restoredNavigation.historyOpen ? "history" : "files");
+  const historyOpen = sidebarView === "history";
+  const setHistoryOpen = (open: boolean) => setSidebarView(open ? "history" : "files");
   const [at, setAt] = useWorkspaceField(memory, "at", () => restoredNavigation.at);
   const [content, setContent] = useWorkspaceField(memory, "content", () => restoredNavigation.content);
   const tabs = content.items.filter((target) => target.kind !== "commit").map(keyOf);
@@ -364,14 +362,6 @@ export function WorkspacePane({
   // arrow keys walk the same stops」is one implementation and not three
   // that drift.
   //
-  // The head switches stay: a collapsed column cannot carry the control
-  // that brings it back, and a seam at width zero is a two-pixel strip.
-  // **Both ways of putting a column away write the same `collapsed`**,
-  // so they are one state with two gestures rather than two states.
-  // The tree's seam arrives from the shell (`treePane`): its switch is
-  // on the workspace's own row in the list now, and that row is not
-  // this pane's to draw (2026-09-16). The sessions seam is still made
-  // here — nothing outside this pane folds it.
   const sidePane = useListWidth(
     narrow,
     "ws-sessions",
@@ -383,11 +373,11 @@ export function WorkspacePane({
     roomBeside("[data-ws-sessions]"),
   );
   const tree = side?.on ?? false;
-  const sessions = !sidePane.collapsed;
+  const sessionDetailOpen = !sidePane.collapsed;
   // **Said as a state, never as a flip** (工作区批⑨): the default below
   // is declared from an effect, and an effect that flips is an effect
   // that undoes itself the second time React runs it.
-  const setSessions = sidePane.show;
+  const setSessionDetailOpen = sidePane.show;
   /** Whether this pane holds room in the window for the sessions column.
       **The window keeps the account of how much** (UX-46, `widenWindow`):
       the frame it grew from comes back exactly on the close. ⚠️ 墓碑
@@ -412,35 +402,11 @@ export function WorkspacePane({
      nothing about it changes how wide khor's window is — and a second
      counter for a column that does not exist is a number that can only
      be wrong. */
-  /** Open or shut the sessions column, and ask the window for the room
-      instead of taking it off the file.
-   *
-   * 「右上角的icon,都是点击后,在最右侧,拓宽窗口, 而不是挤占现有窗口」—
-   * the user, 2026-09-16.
-   *
-   * **Only this switch of the three widens, and that is the ruling read
-   * literally rather than narrowly.** 预览 changes what the middle
-   * column is showing and VS Code opens something outside khor; the
-   * sessions are the one press here that really adds a column, and a
-   * column is what needs the room.
-   *
-   * **It gives back what it took.** Not a width measured again on the
-   * way out — the seam is draggable, so the column a person closes may
-   * not be the width it opened at — but the window's own frame from the
-   * press, which the app keeps (UX-46, `widenWindow` / `giveBackWindow`):
-   * exactly that frame when nobody touched the window meanwhile, the
-   * pressed size where it stands when somebody only moved it, and their
-   * size left alone when somebody resized it.
-   *
-   * Narrow does none of this (33): there the column is a screen, and a
-   * window that could grow is not the situation. The web face does none
-   * of it either, one layer down — `widenWindow` is a no-op outside the
-   * app, because a browser window is not the page's to resize. */
-  const showSessions = (on: boolean) => {
+  const showSessionDetail = (on: boolean) => {
     if (narrow) {
       // One screen at a time: the switch walks to the sessions and the
       // 「←」 on that screen walks back to the file (ruling 33).
-      setSessions(on);
+      setSessionDetailOpen(on);
       setScreen(on ? "sessions" : "file");
       return;
     }
@@ -448,7 +414,7 @@ export function WorkspacePane({
       // Out first, room back second: the column goes, the window
       // follows it in. The other order would leave a gap where it was
       // for a frame.
-      setSessions(false);
+      setSessionDetailOpen(false);
       if (grew.current) {
         grew.current = false;
         void giveBackWindow("ws-sessions");
@@ -474,7 +440,7 @@ export function WorkspacePane({
     // one as every face did before ruling 25, which is the honest
     // answer rather than a column that refuses to open.
     grew.current = true;
-    void widenWindow("ws-sessions", sidePane.width).then(() => setSessions(true));
+    void widenWindow("ws-sessions", sidePane.width).then(() => setSessionDetailOpen(true));
   };
   // (The toolbar buttons' look, `toolClass`, went with them: the switches
   // are glass now, below.)
@@ -509,8 +475,9 @@ export function WorkspacePane({
     setMade(opened);
     // The column has to be on screen for the mark to be seen — and on
     // narrow it is a screen (33), which is the same sentence there.
-    if (sidePane.collapsed) showSessions(true);
-    else if (narrow) setScreen("sessions");
+    setSidebarView("sessions");
+    setSessionDetailOpen(false);
+    if (narrow) setScreen("tree");
     // Standing in some other session, the new row is behind a back
     // arrow; the list is where it is visible.
     setPicked(null);
@@ -522,7 +489,6 @@ export function WorkspacePane({
   // grow an initially empty header after its reading position was restored.
   const [branch, setBranch] = useWorkspaceField(memory, "branch", () => "");
   const [headCommit, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
-  const [historyOpen, setHistoryOpen] = useWorkspaceField(memory, "historyOpen", () => restoredNavigation.historyOpen);
   const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
@@ -705,51 +671,21 @@ export function WorkspacePane({
     [machine, here, root],
   );
 
-  // **Only the sessions column's default lives here now** (工作区批⑧).
-  // It used to also throw away the open file, both draft maps and the
-  // tree's position, on `[root, machine, narrow, listOpen]` — and the
-  // first two of those never change, because the shell remounts this
-  // pane per workspace (`App`'s `key`). What did change was the other
-  // two: dragging the window across the narrow breakpoint, or opening
-  // the workspace list, silently discarded every unsaved draft in the
-  // project. Nothing reported it, because the count that would have
-  // said so was in the same render that had just been reset.
-  //
-  // **…and a default is declared once, on arrival** (2026-09-17 ruling
-  // 53:「收起工作区list前, 没有打开session按钮, 收起再打开后, session
-  // 按钮就被打开了, 不要这样」— the user). `listOpen` was in the
-  // dependency list, which made folding the list a moment to work the
-  // default out again — so a column somebody had deliberately shut came
-  // back on the next press of the rail. Whether that column is open is
-  // **a person's state**, and the only thing khor gets to decide about
-  // it is where it starts: counted across the shell, rail plus list
-  // plus tree plus file plus sessions is five columns, and the one with
-  // a landing of its own is the one that yields (this file's own head).
-  // After that it is theirs.
-  //
-  // Narrow still reads it, and that is not the same rule wearing an
-  // exception: there a column is a screen (ruling 33), and which screen
-  // is in front is not a thing a person chose and left.
-  /** Whether the last declaration was made for the narrow face, or
-      `null` before any was. **What it is for is telling a face change
-      from a fold**: crossing the breakpoint is a different shape of
-      screen and gets a fresh default; folding the list beside it is
-      somebody pressing something, and gets nothing. */
   const declaredNarrow = useRef<boolean | null>(null);
   useEffect(() => {
     if (narrow) {
       // No room for a second column at all, so the default there is not
       // about the fifth one.
       declaredNarrow.current = true;
-      setSessions(false);
+      setSessionDetailOpen(false);
       return;
     }
     if (declaredNarrow.current === false) return;
     declaredNarrow.current = false;
     // Back from this column's new tab, or a session made there: the
     // column is where the person was (UX-45).
-    setSessions(!listOpen || back || opened !== null);
-    if (back) onBackSeen?.();
+    setSessionDetailOpen(picked !== null);
+    if (back) { setSidebarView("sessions"); onBackSeen?.(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [narrow]);
 
@@ -829,9 +765,9 @@ export function WorkspacePane({
   const axes = useMemo(() => sessionAxes(wordOptions), [wordOptions]);
 
   useLayoutEffect(() => {
-    memory.bindNavigationCheckpoint(() => navigationStore.save({ at: memory.read("at"), content: memory.read("content"), historyOpen: memory.read("historyOpen") }));
+    memory.bindNavigationCheckpoint(() => navigationStore.save({ at: memory.read("at"), content: memory.read("content"), historyOpen: memory.read("sidebarView") === "history" }));
   }, [memory, navigationStore]);
-  useEffect(() => { memory.checkpointNavigation(); }, [memory, at, content, historyOpen]);
+  useEffect(() => { memory.checkpointNavigation(); }, [memory, at, content, sidebarView]);
 
   const openTarget = useCallback((target: WorkspaceTarget, pinned: boolean) => {
     let next = openWorkspaceTab(memory.read("content"), target, pinned);
@@ -1212,10 +1148,9 @@ export function WorkspacePane({
     restore.current = topLine(mid.current);
     setFace("preview");
   };
-  const shortcuts = <GlassCapsule size="head" data-ws-switch-pair>
-    <GlassItem aria-label={gui.ws_sessions_toggle} aria-pressed={sessions} data-ws-sessions-switch on={sessions} onClick={() => showSessions(!sessions)}><IconSessions /></GlassItem>
-    {root !== "" && codeWin.offered && <CodeButton code={codeWin} className="h-head-item-h w-head-item-h rounded-full data-[on=true]:glass-sel" />}
-  </GlassCapsule>;
+  const shortcuts = root !== "" && codeWin.offered ? <GlassCapsule size="head" data-ws-code-control>
+    <CodeButton code={codeWin} className="h-head-item-h w-head-item-h rounded-full data-[on=true]:glass-sel" />
+  </GlassCapsule> : null;
   const workspaceActions = [
     ...(!narrow ? [{ key: "tree", label: gui.workspace_tree, run: () => side?.set(!tree) }] : []),
     { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); memory.repositoryHistory.invalidate(); } },
@@ -1272,7 +1207,7 @@ export function WorkspacePane({
             setGitAt((n) => n + 1);
           }}
           onMoved={moved}
-          onLocate={() => { requestFileLocation(machine, file); setHunt(""); if(root === "")setAt(directoryOf(file)); setScreen("tree"); side?.set(true); }}
+          onLocate={() => { requestFileLocation(machine, file); setSidebarView("files"); setHunt(""); if(root === "")setAt(directoryOf(file)); setScreen("tree"); side?.set(true); }}
           history={git !== null}
           previewing={face === "preview"}
           toolbar={{ leading: shortcuts, actions: [
@@ -1299,20 +1234,34 @@ export function WorkspacePane({
     <WindowControls />
   </div>;
 
+  const workspaceSessionList = (
+    <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
+      <SessionsList rows={mine} query={query} words={words} selected={picked ?? made}
+        onSelect={(row) => { setPicked(row.id); showSessionDetail(true); }}
+        onPin={onPin} onClose={onClose} pinFailed={pinFailed} closeRefused={closeRefused} showVia={false} />
+    </div>
+  );
+
   const workspaceTitle = (
     <div data-ws-side-head className="flex min-w-0 items-center gap-in">
       {!narrow && <GlassCircle aria-label={gui.back} data-ws-list-back onClick={onBack}><IconBack /></GlassCircle>}
       <PaneBar inline seat="side" title={root === "" ? machine : basename(root)}
-        searchLabel={historyOpen ? gui.git_history_search_page : gui.tree_search} query={historyOpen ? historyQuery : hunt}
-        onQuery={historyOpen ? setHistoryQuery : setHunt}
-        actions={root === "" ? undefined : [
+        searchLabel={sidebarView === "sessions" ? gui.search_sessions : historyOpen ? gui.git_history_search_page : gui.tree_search}
+        query={sidebarView === "sessions" ? query : historyOpen ? historyQuery : hunt}
+        onQuery={sidebarView === "sessions" ? setQuery : historyOpen ? setHistoryQuery : setHunt}
+        filterLabel={sidebarView === "sessions" ? gui.filter : undefined}
+        filter={sidebarView === "sessions" ? { options: wordOptions, chosen: words, onToggle: toggleWord } : undefined}
+        axes={sidebarView === "sessions" ? axes : undefined}
+        arrange={sidebarView === "sessions" ? { ...arrange, options: [...arrange.options] } : undefined}
+        create={sidebarView === "sessions" ? { label: gui.new_session, mark: "data-ws-new-session", onSelect: () => onNewSession(channel ?? machine, root) } : undefined}
+        actions={root === "" || sidebarView === "sessions" ? undefined : [
           { key: "file", label: gui.file_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "file", at: Date.now() }); } },
           { key: "dir", label: gui.dir_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "dir", at: Date.now() }); } },
         ]} />
     </div>
   );
   const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading>
-    <WorkspaceGitNavigation branch={branch} repo={git !== null || headCommit !== null} history={historyOpen} onHistory={setHistoryOpen}/>
+    <WorkspaceNavigation branch={branch} repo={git !== null || headCommit !== null} view={sidebarView} onView={setSidebarView} withSessions/>
   </div>;
 
 
@@ -1332,7 +1281,7 @@ export function WorkspacePane({
     {narrow && screen !== "file" && <NarrowHead>{() => screen === "tree" ? <>
       <GlassCircle aria-label={gui.back} data-back onClick={onBack}><IconBack /></GlassCircle>{workspaceTitle}
     </> : <>
-      <GlassCircle aria-label={gui.back} data-ws-back onClick={() => screen === "sessions" ? showSessions(false) : setScreen("tree")}><IconBack /></GlassCircle>
+      <GlassCircle aria-label={gui.back} data-ws-back onClick={() => screen === "sessions" ? showSessionDetail(false) : setScreen("tree")}><IconBack /></GlassCircle>
       <span className="flex-1" />
     </>}</NarrowHead>}
     <DeeperHeads>
@@ -1436,7 +1385,7 @@ export function WorkspacePane({
                 看它的文件 opens) keeps `FilesPane`, where 上一级 and the
                 address bar are the point — docs/WORKSPACE.md 第二轮 says
                 so in the user's own terms. */}
-            {historyOpen ? (
+            {sidebarView === "sessions" ? workspaceSessionList : historyOpen ? (
               <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={memory.repositoryHistory}
                     liveHead={liveHead} active={commit?.id ?? null} onOpen={openCommit} />
             ) : hunt.trim() !== "" ? (
@@ -1603,147 +1552,12 @@ export function WorkspacePane({
           </div>
         </div>
         )}
-        {(narrow ? screen === "sessions" : sessions) && (
-          <ListPane
-            mark="data-ws-sessions"
-            name={gui.workspace_sessions}
-            // The shell, like the tree one column over and like every
-            // list pane in the app (2026-09-20 第 6 条). **`side`
-            // right**: this column's rule is the edge facing the file,
-            // which is its left one. **The seam is drawn ahead of the
-            // pane by `ListPane`'s own order** — it is written after
-            // the column in that file and lands before it here because
-            // this pane sits on the far side; that is the one thing a
-            // right-hand pane has to say for itself.
-            mountSeamFirst
-            side="right"
-            pane={narrow ? null : sidePane}
-            narrow={narrow}
-            seam={{ "data-ws-seam": "sessions" }}
-            // **Neither half scrolls this box** (工作区批⑩). It used to
-            // be the scroller for the list; with a `PaneBar` on top of
-            // that list the bar would scroll away with the rows, and a
-            // search box you have to scroll back up to is a search box
-            // people stop using. So the scroller moved one level in, to
-            // the rows alone. `DetailPane` was already `h-full` with a
-            // scroller of its own.
-            scroll={false}
-            // Capped for the tree's reason, one column over — and on
-            // narrow it is the screen, for the tree's reason there too
-            // (ruling 33).
-            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}
-          >
-            {/* **A place to work, not a list of what exists**
-                (2026-09-13). Until now this column named the sessions
-                running on this project and did nothing with them — you
-                read a title and a state word and then went to the
-                sessions landing to actually say anything, which put the
-                project's files on one screen and its conversations on
-                another. Pressing a row now opens that session here,
-                beside its own files.
-
-                **Master and detail rather than a strip of tabs**, and
-                that is a fact about the column's width: this seam drags
-                as narrow as a person wants and its default is a third
-                of what the tree and the file leave over, which seats
-                one title comfortably and four never. A strip that
-                cannot show its tabs is a switcher you have to switch
-                to. The back arrow is the way out, the shell's own
-                gesture on its narrow face. */}
-            {/* ⚠️ 墓碑 (2026-09-28): the way back to the file stood here
-                on the narrow face, a row of its own over the column's
-                list (ruling 33). It is the pane's head in the window's
-                first row now (`NarrowHead` above); standing **in** a
-                session, that session's own head takes the row. */}
-            {picked === null ? (
-              // **The sessions landing's bar and the sessions landing's
-              // list, both of them the real ones** (工作区批⑩:
-              // 「工作区的 session list 是全功能的,和 session 页的 list
-              // 一致,可以搜索、新建和 filter」). This column used to
-              // hand-draw a title and a state word (three of the five
-              // questions missing); 批③ gave it the list; this batch
-              // gives it the bar. Neither is a second drawing — a second
-              // search box that behaves differently is the failure
-              // `PaneBar`'s own head warns about.
-              //
-              // What it does not take from the landing is the **ticks**
-              // and the **query**, which are this pane's (see `words`).
-              // What it does take is the arrangement, because there is
-              // one `rows` poll and the node does the ordering.
-              //
-              // Every row action comes with the list. A column where a
-              // row can be opened but not pinned or closed would be the
-              // same rows with fewer verbs, which is the thing a person
-              // has to learn twice.
-              <>
-                <PaneBar
-                  band
-                  searchLabel={gui.search_sessions}
-                  query={query}
-                  onQuery={setQuery}
-                  filterLabel={gui.filter}
-                  filter={{ options: wordOptions, chosen: words, onToggle: toggleWord }}
-                  axes={axes}
-                  arrange={{
-                    label: arrange.label,
-                    options: [...arrange.options],
-                    chosen: arrange.chosen,
-                    onChoose: arrange.onChoose,
-                  }}
-                  // **`create` and not `actions`**: this column has
-                  // exactly one thing to make, and a menu holding one
-                  // item is a menu that teaches people not to open
-                  // menus (`PaneBar`'s own judgment). The wizard opens
-                  // on **this** machine in **this** directory, which is
-                  // the whole of what 「加入我的工作区」 ever meant.
-                  //
-                  // The channel name, never the one on the glass: the
-                  // wizard hands what it is given straight to the node
-                  // (`openSession`), and the name a person retyped is
-                  // not a name the node files machines under. A machine
-                  // the device table has lost leaves `channel` null and
-                  // this column empty anyway; the shown name is then all
-                  // there is to send, and the node refuses it in its own
-                  // words.
-                  create={{
-                    label: gui.new_session,
-                    mark: "data-ws-new-session",
-                    onSelect: () => onNewSession(channel ?? machine, root),
-                  }}
-                />
-                <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
-                  <SessionsList
-                    rows={mine}
-                    query={query}
-                    words={words}
-                    selected={picked ?? made}
-                    onSelect={(r) => setPicked(r.id)}
-                    onPin={onPin}
-                    onClose={onClose}
-                    pinFailed={pinFailed}
-                    closeRefused={closeRefused}
-                    // The one difference a project's column earns: it
-                    // does not repeat the machine, because the workspace
-                    // this column belongs to already said which one.
-                    showVia={false}
-                  />
-                </div>
-              </>
-            ) : (
-              <DetailPane
-                row={mine.find((r) => r.id === picked) ?? null}
-                // **`narrow` is a fact about this column, not about the
-                // window** (工作区批③). `DetailPane` draws its back
-                // arrow and its own face only where 「the list is
-                // genuinely off-screen」 — which in a single column is
-                // true at every width, because this pane shows the list
-                // *or* the detail and never both. Passing the shell's
-                // `narrow` through left the wide face with a session
-                // open and no way out of it.
-                narrow
-                onBack={() => setPicked(null)}
-              />
-            )}
+        {picked !== null && (narrow ? screen === "sessions" : sessionDetailOpen) && (
+          <ListPane mark="data-ws-sessions" name={gui.workspace_sessions} mountSeamFirst side="right"
+            pane={narrow ? null : sidePane} narrow={narrow} seam={{ "data-ws-seam": "sessions" }} scroll={false}
+            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}>
+            <DetailPane row={mine.find((r) => r.id === picked) ?? null} narrow
+              onBack={() => { setPicked(null); showSessionDetail(false); setSidebarView("sessions"); if (narrow) setScreen("tree"); }} />
           </ListPane>
         )}
       </div>

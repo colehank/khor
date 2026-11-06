@@ -1,7 +1,7 @@
 import type { WorkspaceFields } from "./workspace-memory";
 import { emptyWorkspaceTabs, workspaceTabId, type WorkspaceTabs, type WorkspaceTarget } from "./workspace-tabs";
 
-export type WorkspaceNavigation = Pick<WorkspaceFields, "at" | "content" | "historyOpen">;
+export type WorkspaceNavigation = Pick<WorkspaceFields, "at" | "content"> & { historyOpen: boolean };
 type StoragePort = Pick<Storage, "getItem" | "setItem">;
 const LIMIT = 512 * 1024;
 

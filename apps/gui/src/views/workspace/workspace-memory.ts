@@ -16,11 +16,12 @@ export type WorkspaceMetadata = {
 };
 
 export type WorkspaceIdentity = { device: string; path: string };
+export type WorkspaceSidebarView = "files" | "history" | "sessions";
 export type WorkspaceFields = {
   at: string;
   content: WorkspaceTabs;
   recent: string[];
-  historyOpen: boolean;
+  sidebarView: WorkspaceSidebarView;
   historyQuery: string;
   branch: string;
   headCommit: GitCommitSummary | null;

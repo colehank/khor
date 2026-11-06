@@ -1,4 +1,4 @@
-import { WorkspaceGitNavigation } from '@/components/WorkspaceGitNavigation';
+import { WorkspaceNavigation } from '@/components/WorkspaceNavigation';
 import { WorkspaceHistory } from '@/views/workspace/WorkspaceHistory';
 import { WorkspaceHistoryMemory } from '@/views/workspace/workspace-history';
 import type { GitCommitSummary } from '@/gen/bindings/GitCommitSummary';
@@ -292,7 +292,7 @@ export function SideWorkspace({
       <div className={file !== null || commit !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
         {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
         {!hideFind && <SideFind onEnter={onSearchEnter} leading={findLeading} label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />}
-        {hosted && <WorkspaceGitNavigation branch={git?.branch??''} repo={repo} history={historyOpen} onHistory={setHistoryOpen} seat="session"/>}
+        {hosted && <WorkspaceNavigation branch={git?.branch??''} repo={repo} view={historyOpen?'history':'files'} onView={view=>setHistoryOpen(view==='history')} seat="session"/>}
         {hosted && historyOpen ? <WorkspaceHistory machine={machine} root={root} query={hunt} memory={historyMemory} active={null} onOpen={(commit,keep)=>onOpenCommit?.(commit,keep)}/>:hunt.trim() !== "" ? (
           <Hits
             found={found}

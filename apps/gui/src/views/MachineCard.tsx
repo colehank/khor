@@ -52,7 +52,6 @@ import { mount as mountDay } from "@/day/day-core.js";
 import type { DayPanel, DayWords } from "@/day/day-core.js";
 import "@/day/day.css";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
-import { RecognitionSummary } from "@/views/more/AgentRecognition";
 import { MachineUpdates } from "@/views/MachineUpdates";
 import { useHiddenRows, useOverflows, useTight } from "@/hooks/use-tight";
 import { pagesHere } from "@/lib/here";
@@ -79,7 +78,6 @@ export function MachineCard({
   row,
   narrow,
   onBack,
-  onRecognition,
   actions,
   body,
   rows = [],
@@ -99,7 +97,6 @@ export function MachineCard({
       dashboard. */
   body?: ReactNode;
   onBack: () => void;
-  onRecognition: (machine: string) => void;
   /** The page's own buttons on the narrow face, which has no R0 over a
       detail screen: they sit at the right end of the back bar, the same
       place R0 puts them wide (第十七轮 §3). */
@@ -199,7 +196,6 @@ export function MachineCard({
           // The head says the model at both widths now (the redesign's
           // narrow head has a second line), so the band does not.
           sayModel={false}
-          onRecognition={onRecognition}
           rows={rows}
           onPromote={onPromote}
         />
@@ -278,7 +274,6 @@ function HeadAvatar({ row }: { row: DeviceRow }) {
 function Body({
   row,
   sayModel,
-  onRecognition,
   rows,
   onPromote,
 }: {
@@ -288,7 +283,6 @@ function Body({
   /** The narrow face has no R0, so the model R0 says is the strip's to
       say there (`Strip`). A fact about the screen, like the way back. */
   sayModel: boolean;
-  onRecognition: (machine: string) => void;
 }) {
   const [sort, setSort] = useState<Sort>(SORT_FIRST);
   const { load, why, shown, asking, seen } = useLoad(row, sort);
@@ -359,9 +353,6 @@ function Body({
               `QuotaLanding`'s tombstone carries the whole road —
               `QuotaRings` itself went on 2026-09-06 when the band became
               a row. */}
-          {row.hosts && !row.sponsor && (
-            <RecognitionSummary key={row.id} machine={row.id} onOpen={() => onRecognition(row.id)} />
-          )}
           </DetailFrame>
         </div>
   );
