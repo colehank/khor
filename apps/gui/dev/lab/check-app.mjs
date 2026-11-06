@@ -15,6 +15,27 @@ async function inspect(browser, scene, size) {
   const page = await context.newPage(), errors = [];
   const name = `${scene}-${size.width}x${size.height}`;
   let geometry = null;
+  const contentLayout = [];
+  async function checkContentToolbar(phase) {
+    const kind = phase.startsWith('file') ? 'file' : phase;
+    await page.locator(`[data-session-side] [data-content-toolbar="${kind}"]:visible`).waitFor();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const layout = await page.evaluate(kind => {
+      const head = document.querySelector('[data-session-tabs]')?.closest('[data-region-head]');
+      const toolbar = [...document.querySelectorAll(`[data-session-side] [data-content-toolbar="${kind}"]`)].find(el => el.getClientRects().length);
+      const box = el => el ? {top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom} : null;
+      const controls = toolbar ? [...toolbar.querySelectorAll('button')].filter(el => el.getClientRects().length && !el.matches(':disabled,[aria-disabled="true"]')) : [];
+      return {head:box(head), toolbar:box(toolbar), controlsReachable:controls.length > 0 && controls.every(el => {
+        const rect = el.getBoundingClientRect();
+        return el.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2));
+      })};
+    }, kind);
+    contentLayout.push({phase,...layout});
+    assert(layout.head && layout.toolbar, 'The actual session header and content toolbar must be present');
+    assert(layout.toolbar.top >= layout.head.bottom - 1, `The content toolbar must stay below the session tabs (${phase}): ${JSON.stringify(layout)}`);
+    assert(layout.controlsReachable, `The session tabs must not cover the content controls (${phase})`);
+    await page.screenshot({path:path.join(report,`${name}-${phase}.png`)});
+  }
   page.on('pageerror', error => errors.push(String(error)));
   page.on('console', message => {
     if (message.type() === 'error' && message.text().includes('[Lab fixture]')) errors.push(message.text().split('\n')[0]);
@@ -71,6 +92,19 @@ async function inspect(browser, scene, size) {
     if (scene === 'content') {
       const document = await page.locator('.cm-editor, [data-file-preview]').first().innerText();
       if (!document.includes('fixture data')) errors.push('Actual file body is missing');
+      if (size.width >= 500) {
+        await checkContentToolbar('file');
+        for (const width of [1024,1280]) {
+          await page.setViewportSize({width,height:size.height});
+          await checkContentToolbar(`file-${width}`);
+        }
+        await page.locator('[data-session-side] [data-content-back]:visible').click();
+        await checkContentToolbar('picker');
+        const picker = page.locator('[data-content-picker]:visible');
+        await picker.locator('[data-content-source="browser"]').click();
+        await picker.locator(`[data-place="http://127.0.0.1:${port}/lab/example"]`).click();
+        await checkContentToolbar('page');
+      }
     }
     if (size.width < 500 && ['gui', 'codex'].includes(scene)) await page.waitForSelector('[data-session-compose-row]');
     await page.waitForTimeout(800);
@@ -94,7 +128,7 @@ async function inspect(browser, scene, size) {
     await page.screenshot({path: path.join(report, name + '.png')});
     await context.close();
   }
-  return {name, geometry, errors};
+  return {name, geometry, contentLayout, errors};
 }
 
 let browser;
