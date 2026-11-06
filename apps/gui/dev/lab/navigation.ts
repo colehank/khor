@@ -32,7 +32,7 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
   const file = (): FileText => ({text, total: new TextEncoder().encode(text).length, at_ms: at + revision,
     digest: 'fixture-' + revision, cut: false, binary: false});
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -89,6 +89,7 @@ export function navigationFixture(device: string, origin: string, seeded: boolea
       if (command === 'touched') return at;
       if (command === 'checkout') return false;
       if (command === 'git_status') return {branch: '', rows: [], more: false, ahead: 0, behind: 0, fetched_ms: 0};
+      if (command === 'trash_here') return false;
       if (command === 'code_here') return {version: '', ready: false};
       throw new Error('Unknown navigation fixture command');
     },

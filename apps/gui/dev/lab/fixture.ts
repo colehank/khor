@@ -12,8 +12,14 @@ const update = (sessionUpdate: string, rest: Record<string, unknown>): Frame => 
 const text = (value: string) => ({ content: { type: "text", text: value } });
 const ids = ["gui/ai-elements-review", "gui/ai-elements-plan", "gui/ai-elements-stream", "gui/codex-review", "wide/all"];
 const titles = ["AI Elements · 组件总览", "AI Elements · 计划与确认", "AI Elements · 流式响应", "Codex · 工具与补丁", "khor · 网络任务"];
-const device: DeviceRow = { id: "e".repeat(64), name: "验收环境", shown: "验收环境", label: null, me: true, paused: false, face: null, pinned: false,
-  vitals: null, hop: null, heard_ms: null, rtt_ms: null, down_ms: null, last_rtt_ms: null, since_ms: null, last_hop: null, relay: null, via: null, sponsor: null, ssh_jump: null, roads: [], watch: [], watched: null, seat: { left: 50, top: 50 }, hosts: true, receive_dir: null, receive_for: null, receive_why: null, receive_at: "/preview/files" };
+const device: DeviceRow = {
+  id: "e".repeat(64), name: "验收环境", shown: "验收环境", label: null,
+  me: true, paused: false, face: null, pinned: false, vitals: null,
+  hop: null, heard_ms: null, rtt_ms: null, down_ms: null, last_rtt_ms: null,
+  since_ms: null, last_hop: null, relay: null, via: null, sponsor: null, ssh_jump: null,
+  roads: [], watch: [], watched: null, seat: {left: 50, top: 50}, hosts: true,
+  receive_dir: null, receive_at: "/preview/files", receive_for: null, receive_why: null,
+};
 const boot = (): Frame => ({ kind: "agent", name: "Claude", replays: true, needs_login: false, images: false, embeds: false, lists: false });
 const editorSource = (updated: boolean) => [
   'import { EditorState } from "@codemirror/state";',
