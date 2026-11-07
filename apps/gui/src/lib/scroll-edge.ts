@@ -120,7 +120,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     scroller: null,
     sync: () => { if (!frame) frame = requestAnimationFrame(paint); },
   };
-  let frame = 0, stylesDirty = true, portPadding = 0;
+  let frame = 0, stylesDirty = true, portPadding = 0, tailPadding = 0;
   let overlap: HTMLElement | null = null;
   const setOverlap = (next: HTMLElement | null) => {
     if (next === overlap) return;
@@ -130,16 +130,22 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
   };
   const stickyTops = new Map<HTMLElement,number>();
   let targets: { body: HTMLElement; heading: boolean; groupHead: HTMLElement | null }[] = [];
+  const setStyle = (body: HTMLElement, name: string, value: string) => {
+    if (body.style.getPropertyValue(name) !== value) body.style.setProperty(name, value);
+  };
+  const releaseFade = (body: HTMLElement) => {
+    if (body !== b.scroller) size.unobserve(body);
+    if (fadeOwner.get(body) !== b) return;
+    body.removeAttribute('data-sticky-surface');
+    body.removeAttribute('data-sticky-fading');
+    body.removeAttribute('data-sticky-held');
+    body.style.removeProperty('--sticky-fade-start');
+    body.style.removeProperty('--sticky-fade-length');
+    body.style.removeProperty('--sticky-fade-strength');
+    fadeOwner.delete(body);
+  };
   const clearFades = () => {
-    for (const {body} of targets) {
-      size.unobserve(body);
-      if (fadeOwner.get(body) !== b) continue;
-      body.removeAttribute('data-sticky-fading');
-      body.removeAttribute('data-sticky-held');
-      body.style.removeProperty('--sticky-fade-start');
-      body.style.removeProperty('--sticky-fade-length');
-      fadeOwner.delete(body);
-    }
+    for (const {body} of targets) releaseFade(body);
     targets = [];
     stickyTops.clear();
     stylesDirty = true;
@@ -150,6 +156,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     if (stylesDirty) {
       stylesDirty = false;
       portPadding = b.scroller ? parseFloat(getComputedStyle(b.scroller).paddingTop) || 0 : 0;
+      tailPadding = parseFloat(getComputedStyle(parent).getPropertyValue('--gap-pane')) || 0;
       for (const {body,heading,groupHead} of targets) {
         for (const header of [heading ? body : null,groupHead])
           if (header && !stickyTops.has(header)) stickyTops.set(header,parseFloat(getComputedStyle(header).top) || 0);
@@ -158,7 +165,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     const edge = b.scroller?.getBoundingClientRect().top ?? 0;
     const stickyEdge = (header:HTMLElement) => edge+(b.scroller?.clientTop ?? 0)+portPadding+(stickyTops.get(header) ?? 0);
     const main = head?.getBoundingClientRect() ?? {top:edge,bottom:edge};
-    const tail = parseFloat(getComputedStyle(parent!).getPropertyValue('--gap-pane')) || 0;
+    const tail = tailPadding;
     const values = targets.map(({body,heading,groupHead}) => {
       const rect = body.getBoundingClientRect(), top = rect.top;
       const group = !heading && groupHead?.getBoundingClientRect();
@@ -172,22 +179,30 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
       const labelClear = line > 0 && group ? Math.min(group.height, (group.height + line) / 2) : 0;
       const start = (held ? group.top + labelClear : main.top) - top;
       const end = (held ? group.bottom : main.bottom) + (heading || flush ? 0 : tail) - top;
-      return {body,start,length:end-start,active:on && end>0,material:heading && on && rect.top<=stickyEdge(body)+1 && rect.bottom>stickyEdge(body)};
+      // A fixed visual viewport is ready before the first touch. Its mask
+      // strengthens continuously while the native scroller stays unmasked.
+      const strength = body.hasAttribute('data-scroll-viewport')
+        ? Math.min(1, Math.max(0, b.scroller?.scrollTop ?? 0) / Math.max(1, main.bottom - main.top))
+        : on && end > 0 ? 1 : 0;
+      return {body,heading,start,length:end-start,strength,active:on && end>0,material:heading && on && rect.top<=stickyEdge(body)+1 && rect.bottom>stickyEdge(body)};
     });
     head?.toggleAttribute('data-scrolled',on);
-    for (const {body,start,length,active,material} of values) {
+    for (const {body,heading,start,length,strength,active,material} of values) {
       if (fadeOwner.get(body) !== b) continue;
-      body.toggleAttribute('data-sticky-fading',active);
       body.toggleAttribute('data-sticky-held',material);
-      if (!active) continue;
-      body.style.setProperty('--sticky-fade-start',`${start}px`);
-      body.style.setProperty('--sticky-fade-length',`${length}px`);
+      if (heading) continue;
+      body.toggleAttribute('data-sticky-fading',active);
+      // Only the primary viewport needs a permanent mask. Offscreen
+      // document sections keep their existing on-demand paint cost.
+      if (!active && !body.hasAttribute('data-sticky-surface')) continue;
+      setStyle(body, '--sticky-fade-start', `${start}px`);
+      setStyle(body, '--sticky-fade-length', `${length}px`);
+      setStyle(body, '--sticky-fade-strength', `${strength}`);
     }
   }
   const discoverFades = () => {
-    clearFades();
     const scroller = b.scroller;
-    if (!scroller) return;
+    if (!scroller) { clearFades(); return; }
     const marker = '[data-sticky-head], [data-sticky-body]';
     const branches = marker+', [data-band]';
     const bodies:HTMLElement[] = [];
@@ -199,12 +214,25 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
     };
     if (scroller.querySelector(branches)) {
       for (const child of scroller.children) if (child instanceof HTMLElement) visit(child);
-    } else if (head) bodies.push(scroller);
+    } else if (head) {
+      const viewport = scroller.parentElement;
+      bodies.push(viewport?.hasAttribute('data-scroll-viewport') ? viewport : scroller);
+    }
+    const previous = new Set(targets.map(target => target.body));
+    const next = new Set(bodies);
+    for (const {body} of targets) if (!next.has(body)) releaseFade(body);
     targets = bodies.map(body => ({
       body,heading:body.hasAttribute('data-sticky-head'),
       groupHead:body.closest('[data-sticky-group]')?.querySelector<HTMLElement>(':scope > [data-sticky-head]') ?? null,
     }));
-    for (const {body} of targets) { fadeOwner.set(body,b);size.observe(body); }
+    for (const {body,heading} of targets) {
+      if (previous.has(body)) continue;
+      fadeOwner.set(body,b);
+      if (!heading && (body === scroller || body.hasAttribute('data-scroll-viewport'))) body.setAttribute('data-sticky-surface', '');
+      size.observe(body);
+    }
+    stickyTops.clear();
+    stylesDirty = true;
   };
   // **The band's height is on its parent before the first paint**
   // (2026-10-03, the owner's phone: a page opened with its facts row under

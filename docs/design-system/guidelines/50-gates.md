@@ -859,3 +859,5 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 `npm run updates-ui` renders the actual UpdateSettings component with the native transport boundary. It checks check/download/restart routing, blocked drafts, channel preference preservation, background progress and store/external/development ownership. It does not prove SDK installation or native health rollback. `chat-drafts` additionally checks live restart blockers, checkpoint refusal and unconfirmed sends.
 
 - 移动列表滚动回归补充（2026-11-07）：`sticky-fade` 增加动画中内容更新保持归属；`list-scroll-ui` 保留取消、多指、刷新和横向行操作；Developer Lab 在完整 App 长工作区列表中使用 Chromium 输入管线检查连续反向拖动，在 Chromium／WebKit 的机器、会话、工作区列表中检查下拉期间内容更新不会改变容器高度、内容高度或标题内边距。独立对照探针用相同输入确认普通页面可滚，避免把自动化输入失败算作产品 red。
+
+- 渐变边界回归（2026-11-07）：`sticky-fade` 补充四项视觉表面生命周期／写入检查；Developer Lab 的完整App列表检查增加0/1/3/52px与同指跨零点边界，记录原生mask、视觉mask与连续进度。`scripts/tests/test_lab_effects.py` 检查前端A/B覆盖隔离，HTTP测试验证模式与源版本标识；不会把这些检查称为实机流畅验收。Lab构建可在原生契约签名相同且来源为已通过可信Lab run时复用生成契约，否则正常生成并继续types/build检查。

@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import threading
 import time
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import builders
 from .artifacts import prune, unpack, write_json, validate
@@ -236,7 +236,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/lab/status':
             return self.respond(200, self.lab.status())
         if path == '/lab/runtime':
-            from urllib.parse import parse_qs
             status = self.lab.status()
             version = parse_qs(urlsplit(self.path).query).get('version', [status.get('version', '')])[0]
             manifest = self.lab.home / 'versions' / version / 'lab-manifest.json'
@@ -263,6 +262,13 @@ class Handler(BaseHTTPRequestHandler):
             html = (self.lab.home / 'versions' / version / 'index.html').read_text()
             html = html.replace('./assets/', f'/versions/{version}/assets/')
             html = html.replace('<head>', '<head><meta name="khor-lab-version" content="' + version + '">')
+            from .effects import isolate
+            try:
+                manifest = json.loads((self.lab.home / 'versions' / version / 'lab-manifest.json').read_text())
+                html = isolate(html, parse_qs(urlsplit(self.path).query).get('effects', [''])[0],
+                               frontend=status['mode'] == 'frontend', tree=manifest['tree'])
+            except ValueError as error:
+                return self.respond(400, str(error))
             return self.respond(200, html.encode(), 'text/html; charset=utf-8')
         if not path.startswith('/versions/'):
             return self.respond(404, 'Unknown Lab route')

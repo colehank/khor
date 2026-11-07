@@ -73,7 +73,7 @@ class LabTests(unittest.TestCase):
         version = home / 'versions/current'
         (version / 'assets').mkdir(parents=True)
         write_json(version / 'lab-manifest.json', {'tree': 'pinned-identity'})
-        (version / 'index.html').write_text('<script src="./assets/app.js"></script>')
+        (version / 'index.html').write_text('<html><head></head><body><script src="./assets/app.js"></script></body></html>')
         (version / 'assets/app.js').write_text('production App')
         (version / 'native').mkdir()
         (version / 'native/private.json').write_text('must not be served')
@@ -89,6 +89,15 @@ class LabTests(unittest.TestCase):
         origin = f'http://127.0.0.1:{server.server_port}'
         with urlopen(origin + '/app/') as response:
             self.assertIn(b'/versions/current/assets/app.js', response.read())
+        with urlopen(origin + '/app/?effects=content-mask-off') as response:
+            html = response.read()
+            self.assertIn(b'data-lab-effects="content-mask-off"', html)
+            self.assertIn(b'/versions/current/assets/app.js', html)
+            self.assertIn(b'Lab pinned-', html)
+        with self.assertRaises(HTTPError) as invalid:
+            urlopen(origin + '/app/?effects=arbitrary-css')
+        self.assertEqual(invalid.exception.code, 400)
+        invalid.exception.close()
         with urlopen(origin + '/lab/runtime?version=current') as response:
             self.assertEqual(json.load(response)['tree'], 'pinned-identity')
         with urlopen(origin + '/snapshots/current/app/') as response:

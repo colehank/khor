@@ -5,23 +5,32 @@ import assert from 'node:assert/strict';
 // Chromium input below separately exercises its native scrolling pipeline.
 export async function checkListScroll(page, shot, {nativePan = true} = {}) {
   const port = page.locator('[data-list] [data-pane-body]').first();
-  const facts = () => port.evaluate(el => ({
-    owner: el.hasAttribute('data-band-scroll'), height: el.clientHeight,
-    content: el.scrollHeight, padding: getComputedStyle(el).paddingTop,
-    top: el.scrollTop, pulling: !!el.closest('[data-pull-host]'),
-  }));
+  const facts = () => port.evaluate(el => {
+    const viewport=el.parentElement;
+    const css=getComputedStyle(el), surface=getComputedStyle(viewport);
+    return {
+      owner: el.hasAttribute('data-band-scroll'), height: el.clientHeight,
+      content: el.scrollHeight, padding: css.paddingTop,
+      top: el.scrollTop, pulling: !!el.closest('[data-pull-host]'),
+      nativeMask: css.maskImage || css.webkitMaskImage,
+      visualMask: surface.maskImage || surface.webkitMaskImage,
+      visualSurface: viewport.hasAttribute('data-scroll-viewport') && viewport.hasAttribute('data-sticky-surface'),
+      strength: Number(surface.getPropertyValue('--sticky-fade-strength')),
+    };
+  });
   await port.evaluate((el, pan) => { el.scrollTop = pan ? 220 : 0; }, nativePan);
   const before = await facts();
   assert(before.owner, 'The actual App heading must own its list scroll port');
   if (nativePan) assert(before.content > before.height + 400, 'The actual App list must have enough content to pan');
   const nativeInput = nativePan && page.context().browser().browserType().name() === 'chromium';
   const trace = [];
+  const boundaryTrace = [];
   if (nativeInput) {
     const cdp = await page.context().newCDPSession(page);
-    const input = async (type, y) => {
+    const input = async (type, y, records = trace) => {
       await cdp.send('Input.dispatchTouchEvent', {type, touchPoints: type === 'touchEnd' ? [] : [{x:200,y}]});
       await page.waitForTimeout(30);
-      trace.push(await facts());
+      records.push(await facts());
     };
     try {
       await input('touchStart', 280);
@@ -30,12 +39,28 @@ export async function checkListScroll(page, shot, {nativePan = true} = {}) {
       await shot('native-pan', {nativeInput, trace, before});
       assert(trace.at(-1).top > before.top + 40, `A native pan must continue after reversing direction: ${JSON.stringify(trace)}`);
       assert(trace.every(step => step.owner && !step.pulling && step.height === before.height && step.content === before.content), 'A native pan must retain one stable scroll port');
+      await page.waitForTimeout(500);
+      await port.evaluate(el => { el.scrollTop=0; });
+      await input('touchStart',280,boundaryTrace);
+      for (const y of [260,230,200,170,200,230,260,290,320,290,260,230,200,170]) await input('touchMove',y,boundaryTrace);
+      await input('touchEnd',170,boundaryTrace);
+      await shot('fade-boundary',{boundaryTrace});
+      assert(boundaryTrace.at(-1).top>40,'The same native gesture must cross rest and fade onset without losing scrolling');
+      assert(boundaryTrace.every(step => step.nativeMask === 'none' && step.visualSurface && step.visualMask !== 'none'), 'Only the persistent visual viewport may carry a mask at the top boundary');
     } finally {
       await cdp.detach();
     }
   }
-  // Let any native fling settle before testing a separate pull gesture.
+  // End native inertia before probing exact one-pixel positions.
   if (nativeInput) await page.waitForTimeout(500);
+  const fadeSamples=[];
+  for (const top of [0,1,3,52,0]) {
+    await port.evaluate((el,top)=>{el.scrollTop=top;},top);
+    await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+    const sample=await facts();fadeSamples.push(sample);
+    assert(sample.nativeMask==='none' && sample.visualSurface && sample.visualMask!=='none','Rest and fade onset must keep the native port unmasked and the visual surface present');
+  }
+  if (before.content-before.height>=3) assert(fadeSamples[1].strength>0&&fadeSamples[1].strength<fadeSamples[2].strength&&fadeSamples[2].strength<1,'The first pixels must strengthen the fade continuously');
   await port.evaluate(el => { el.scrollTop = 0; });
   const rest = await facts();
   const touch = (type, y) => port.evaluate((el, {type,y}) => {
@@ -63,5 +88,5 @@ export async function checkListScroll(page, shot, {nativePan = true} = {}) {
   } finally {
     await touch('touchcancel', 330);
   }
-  return {nativeInput, trace, rest, pulled, physicalIphone:'pending'};
+  return {nativeInput, trace, boundaryTrace, fadeSamples, rest, pulled, physicalIphone:'pending'};
 }

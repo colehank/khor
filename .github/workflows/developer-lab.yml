@@ -96,13 +96,43 @@ jobs:
           else
             echo 'Release contracts unavailable; generate this source instead.'
           fi
+      - name: Reuse matching contracts from a verified Lab build
+        id: lab-contracts
+        if: steps.released-contracts.outputs.ready != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CONTRACT_RUN: '42269979434'
+        run: |
+          if ! gh run download "$CONTRACT_RUN" --repo colehank/khor-build --name developer-lab-frontend --dir "$RUNNER_TEMP/contract-source"; then
+            echo 'Compatible Lab artifact unavailable; generate contracts normally.'
+            exit 0
+          fi
+          if python3 - <<'PYVERIFY'
+          import json, os, pathlib, subprocess, sys
+          sys.path.insert(0, 'snapshot/source/scripts')
+          from khor_lab.contract import digest
+          run = json.loads(subprocess.check_output(['gh', 'api', 'repos/colehank/khor-build/actions/runs/' + os.environ['CONTRACT_RUN']]))
+          assert run['path'] == '.github/workflows/developer-lab.yml' and run['conclusion'] == 'success'
+          assert run['head_sha'] == '2893ea480c565b89b85fdca3ad7acd393d77a1be'
+          cached = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'contract-source/lab-manifest.json').read_text())
+          assert cached['native_contract'] == digest(pathlib.Path('snapshot/source'))
+          PYVERIFY
+          then
+            if gh run download "$CONTRACT_RUN" --repo colehank/khor-build --name developer-lab-contracts --dir "$RUNNER_TEMP/contract-gen"; then
+              mkdir -p snapshot/source/apps/gui/src/gen
+              cp -R "$RUNNER_TEMP/contract-gen/." snapshot/source/apps/gui/src/gen/
+              echo 'ready=true' >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo 'Contract signature differs; generate this source normally.'
+          fi
       - name: Check canonical Lab fixture data
         id: fixture-data
         run: python3 snapshot/source/scripts/khor_lab/fixture_data.py snapshot/source --github-output "$GITHUB_OUTPUT"
       - uses: dtolnay/rust-toolchain@1.95.0
-        if: steps.released-contracts.outputs.ready != 'true' || steps.fixture-data.outputs.ready != 'true'
+        if: (steps.released-contracts.outputs.ready != 'true' && steps.lab-contracts.outputs.ready != 'true') || steps.fixture-data.outputs.ready != 'true'
       - name: Generate changed contracts from this exact source
-        if: steps.released-contracts.outputs.ready != 'true'
+        if: steps.released-contracts.outputs.ready != 'true' && steps.lab-contracts.outputs.ready != 'true'
         working-directory: snapshot/source/apps/gui
         run: npm run gen
       - name: Generate canonical Lab fixture data

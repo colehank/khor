@@ -222,8 +222,10 @@ export function ListPane({
           // at** — `app.css` keys the containment off the overflow
           // utility itself, and this attribute is what a probe measures
           // (第 1 条).
-          <div ref={setBody} data-pane-body className="min-h-0 flex-1 overflow-y-auto">
-            {children}
+          <div data-scroll-viewport className="min-h-0 flex-1 overflow-hidden">
+            <div ref={setBody} data-pane-body className="h-full overflow-y-auto">
+              {children}
+            </div>
           </div>
         ) : (
           children

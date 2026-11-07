@@ -2307,14 +2307,20 @@ aside[data-side] {
 }
 [data-band][data-scrolled]::before, [data-sticky-head][data-sticky-held]::before { opacity: 1; }
 [data-sticky-group]:has(> [data-sticky-body="flush"]) > [data-sticky-head]::before { bottom: 0; }
-[data-sticky-fading] {
+:is([data-sticky-surface], [data-sticky-fading]) {
+  --sticky-fade-strength: 0;
+  --sticky-fade-start: 0px;
+  --sticky-fade-length: 0px;
+  /* Keep one non-uniform mask installed. At rest its fade is above the
+     viewport, rather than switching to none or an opaque replacement. */
+  --sticky-fade-origin: calc(var(--sticky-fade-start) - (1 - var(--sticky-fade-strength)) * var(--sticky-fade-length));
   --sticky-content-mask: linear-gradient(to bottom,
-    transparent var(--sticky-fade-start),
-    color-mix(in srgb, var(--canvas-solid) 2%, transparent) calc(var(--sticky-fade-start) + var(--sticky-fade-length) * 0.2),
-    color-mix(in srgb, var(--canvas-solid) 8%, transparent) calc(var(--sticky-fade-start) + var(--sticky-fade-length) * 0.4),
-    color-mix(in srgb, var(--canvas-solid) 26%, transparent) calc(var(--sticky-fade-start) + var(--sticky-fade-length) * 0.6),
-    color-mix(in srgb, var(--canvas-solid) 62%, transparent) calc(var(--sticky-fade-start) + var(--sticky-fade-length) * 0.8),
-    var(--canvas-solid) calc(var(--sticky-fade-start) + var(--sticky-fade-length)));
+    transparent var(--sticky-fade-origin),
+    color-mix(in srgb, var(--canvas-solid) 2%, transparent) calc(var(--sticky-fade-origin) + var(--sticky-fade-length) * 0.2),
+    color-mix(in srgb, var(--canvas-solid) 8%, transparent) calc(var(--sticky-fade-origin) + var(--sticky-fade-length) * 0.4),
+    color-mix(in srgb, var(--canvas-solid) 26%, transparent) calc(var(--sticky-fade-origin) + var(--sticky-fade-length) * 0.6),
+    color-mix(in srgb, var(--canvas-solid) 62%, transparent) calc(var(--sticky-fade-origin) + var(--sticky-fade-length) * 0.8),
+    var(--canvas-solid) calc(var(--sticky-fade-origin) + var(--sticky-fade-length)));
   -webkit-mask-image: var(--sticky-content-mask);
   mask-image: var(--sticky-content-mask);
 }
