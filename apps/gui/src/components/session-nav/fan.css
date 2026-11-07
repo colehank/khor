@@ -5,7 +5,7 @@
 .lab-fan-item{position:absolute;display:flex;align-items:center;min-height:calc(1.32 * var(--touch));will-change:transform,opacity,left,top}
 .lab-fan-face{position:relative;display:grid;place-items:center;flex:none;width:calc(1.32 * var(--touch));height:calc(1.32 * var(--touch))}
 .lab-fan-face>span:first-child{transform:scale(1.32)}
-.lab-fan-label{flex:none;font-size:calc(var(--text-body) / var(--fan-scale));font-weight:var(--text-body--font-weight);line-height:var(--text-body--line-height);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted-foreground)}
+.lab-fan-label{flex:none;font-size:calc(var(--text-body) / var(--fan-scale));font-weight:var(--text-body--font-weight);line-height:calc(var(--text-body--line-height) / var(--fan-scale));overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted-foreground)}
 .lab-fan-item[data-selected] .lab-fan-label{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;white-space:normal;text-wrap:balance;color:var(--foreground);font-weight:var(--text-headline--font-weight)}
 .lab-fan-label [data-fan-word]{white-space:nowrap}
 .lab-fan-avatar-face{display:grid;place-items:center;animation:deck-selector-title-in var(--dur-120) var(--ease-out)}

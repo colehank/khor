@@ -27,7 +27,7 @@ function frameFor(button:HTMLElement):Frame{
 }
 type Closing={state:FanState;frame:Frame;contact:Contact;phase:'settling'|'fading';result:FanResult};
 function fanItems(position:number,count:number,frame:Frame){
-  const reach=frame.slots/2,candidates=nearbySlots(position,count,3).filter(s=>Math.abs(s.slot-position)<reach);
+  const reach=frame.slots/2+(frame.placement==='bottom'&&frame.slots>1?.5:0),candidates=nearbySlots(position,count,3).filter(s=>Math.abs(s.slot-position)<reach);
   return candidates.map(({index,slot})=>{
     const offset=slot-position,focus=Math.exp(-offset*offset*.9),edge=Math.min(1,Math.max(0,(reach-Math.abs(offset))/.5));
     return {index,slot,...fanPoint(frame,offset),scale:fanScale(offset),opacity:edge*(.5+.5*focus)};
@@ -61,7 +61,7 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
     <svg className="lab-fan-guide" width={frame.width} height={frame.height} aria-hidden="true"><path d={guide}/></svg>
     <div className="lab-fan-identities" data-dimmed={state.lane==='new'||state.lane==='overview'||undefined} aria-hidden="true">
       {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={previewSlot===item.slot||undefined} data-opened={openedSlot===item.slot||undefined} className="lab-fan-item" style={identityStyle(item,frame)}>
-        <span className="lab-fan-face"><TabAvatar f={face} bare="size-list-face" seat="row"/>{openedSlot===item.slot&&<span className="lab-fan-current glass" data-lab-fan-opened><IconCheck/></span>}</span>
+        <span className="lab-fan-face"><TabAvatar f={face} bare="size-list-face" seat="row"/>{openedSlot===item.slot&&<span className="lab-fan-current glass absolute" data-lab-fan-opened><IconCheck/></span>}</span>
         <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}><TitleWords text={titleOf(face)}/></span>
       </span>;})}
     </div>
@@ -71,8 +71,8 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
       <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
 
     </div>
-    {create&&<div data-lab-fan-new data-active={state.intent==='new'||undefined} className="lab-fan-overview lab-fan-create glass" style={{left:createPoint.x,top:createPoint.y}} aria-hidden="true"><IconPlus/><span>{gui.new_tab}</span></div>}
-    <div data-lab-fan-overview data-active={state.intent==='overview'||undefined} className="lab-fan-overview glass" style={{left:overviewPoint.x,top:overviewPoint.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签页</span></div>
+    {create&&<div data-lab-fan-new data-active={state.intent==='new'||undefined} className="lab-fan-overview lab-fan-create glass absolute" style={{left:createPoint.x,top:createPoint.y}} aria-hidden="true"><IconPlus/><span>{gui.new_tab}</span></div>}
+    <div data-lab-fan-overview data-active={state.intent==='overview'||undefined} className="lab-fan-overview glass absolute" style={{left:overviewPoint.x,top:overviewPoint.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签页</span></div>
     <span data-lab-fan-hint data-lab-fan-cancel-hint={state.cancelArmed||undefined} className="lab-fan-cancel-hint" style={{left:frame.width/2,top:Math.max(frame.gap,frame.height-frame.touch*.5)}} aria-hidden="true">{hint}</span>
   </div>,document.body);
 }

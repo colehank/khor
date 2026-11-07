@@ -11,8 +11,10 @@ function rightSweep(frame:FanFrame,offset:number){
 export function fanPoint(frame:FanFrame,offset:number){
   if(frame.placement==='bottom'){
     // Equal horizontal seats keep adjacent titles apart throughout a drag.
-    const center=frame.width/2+offset*(frame.width-2*frame.gap)/3;
-    return {x:center,y:frame.anchor.y-frame.pitch*(Math.sqrt(offset*offset+.1)-Math.sqrt(.1))};
+    const half=frame.width/2-frame.gap-frame.titleWidth*fanScale(offset)/2;
+    const center=frame.width/2+Math.max(-half,Math.min(half,offset*(frame.width-2*frame.gap)/3));
+    const peripheral=Math.max(0,Math.abs(offset)-1);
+    return {x:center,y:frame.anchor.y-frame.pitch*(Math.sqrt(offset*offset+.1)-Math.sqrt(.1))-peripheral*peripheral*frame.touch*4};
   }
   if(frame.horizontal)return {x:frame.anchor.x+offset*frame.pitch,y:frame.anchor.y};
   // Position the avatar on the sweep independently of its title's scale.
