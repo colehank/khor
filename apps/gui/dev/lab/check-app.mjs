@@ -13,11 +13,11 @@ const server = spawn('python3', ['-m', 'khor_lab.preview', process.env.LAB_BUNDL
 });
 
 async function inspect(browser, scene, size, data = {}) {
-  const context = await browser.newContext({viewport: size, isMobile: size.width < 500, hasTouch: size.width < 500});
+  const context = await browser.newContext({viewport: size, isMobile: size.width < 500 && !data.fine, hasTouch: size.width < 500 && !data.fine});
   const page = await context.newPage(), errors = [];
   const machines = data.machines ?? 1;
   const items=data.items??5;
-  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}`;
+  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}`;
   let geometry = null;
   const contentLayout = [];
   const workspaceLayout = [];
@@ -222,14 +222,23 @@ async function inspect(browser, scene, size, data = {}) {
     }
     geometry = await page.evaluate(() => {
       const row = document.querySelector('[data-session-compose-row]');
-      const avatar = document.querySelector('[data-lab-composer-session-slot]');
+      const avatar = document.querySelector('[data-lab-compose-avatar]');
       const capsule = document.querySelector('[data-chat-box]');
       const box = el => el ? {top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom} : null;
-      return {height: innerHeight, row: box(row), avatar: box(avatar), capsule: box(capsule), avatarOutsideCapsule: !!avatar && !capsule?.contains(avatar), overflow: document.documentElement.scrollWidth > innerWidth + 1};
+      return {height: innerHeight, row: box(row), avatar: box(avatar), capsule: box(capsule), singleLine:!!capsule&&!capsule.hasAttribute('data-lab-compose-expanded'),composerSearch:document.querySelectorAll('[data-chat-box] [data-history-find-open]').length,avatarOutsideCapsule: !!avatar && !capsule?.contains(avatar), overflow: document.documentElement.scrollWidth > innerWidth + 1};
     });
     if (size.width < 500 && ['gui', 'codex'].includes(scene)) {
       if (!geometry.avatarOutsideCapsule) errors.push('Avatar must be the production sibling of the composer capsule');
       if (geometry.row?.bottom > geometry.height + 1) errors.push('Production composer falls below the viewport');
+      assert.equal(geometry.composerSearch,0,'The composer no longer contains a search control');
+      if(geometry.singleLine){assert(Math.abs(geometry.avatar.bottom-geometry.capsule.bottom)<1,'Avatar and composer bottom edges align');assert(Math.abs((geometry.avatar.bottom-geometry.avatar.top)-(geometry.capsule.bottom-geometry.capsule.top))<1,'Single-line composer and session control share one height');}
+    }
+    if(data.fine){
+      const stale=await page.addStyleTag({content:'[data-lab-composer-session-slot],[data-lab-compose-avatar]{width:var(--glass-btn)!important;height:var(--glass-btn)!important}'});
+      const mismatch=await page.evaluate(()=>Math.abs(document.querySelector('[data-chat-box]').getBoundingClientRect().height-document.querySelector('[data-lab-compose-avatar]').getBoundingClientRect().height));
+      assert(mismatch>1,'The original fine-pointer sizing reproduces the reported mismatch');await stale.evaluate(el=>el.remove());
+      const field=page.locator('[data-composer-text]');await field.fill('第一行\n第二行');await page.locator('[data-lab-compose-expanded]').waitFor();
+      const edges=await page.evaluate(()=>({input:document.querySelector('[data-chat-box]').getBoundingClientRect().bottom,avatar:document.querySelector('[data-lab-compose-avatar]').getBoundingClientRect().bottom}));assert(Math.abs(edges.input-edges.avatar)<1,'Multiline input retains bottom alignment');await page.screenshot({path:path.join(report,name+'-multiline.png')});await field.fill('');
     }
     if (geometry.overflow) errors.push('App overflows horizontally');
     if(data.gesture)await checkMobileNavigation(page,scene,items,async(phase,values)=>{
@@ -276,6 +285,8 @@ try {
     results.push(await inspect(browser,scene,{width:390,height:844},{items:2,gesture:'create'}));
     await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   }
+  results.push(await inspect(browser,'gui',{width:496,height:844},{fine:true}));
+  await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});

@@ -3,8 +3,7 @@ import {GlassCircle} from '@/components/Glass';
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type PointerEvent as ReactPointerEvent} from 'react';
 import {createPortal} from 'react-dom';
 import {TabAvatar,type TabFace} from '@/browse/TabStrip';
-import {IconChevronUp,IconCheck,IconPlus} from '@/components/icons';
-import {gui} from '@/gen/catalog';
+import {IconCheck} from '@/components/icons';
 import type {SessionHeaderProps} from '@/components/SessionBar';
 import {feel} from '@/lib/haptics';
 import {readDeckContactLayout,sameDeckContactLayout,type DeckContactLayout} from '@/lib/deck-contact';
@@ -14,6 +13,7 @@ import {useDeckArcPosition,DeckRateCue} from '@/components/DeckExplore';
 import {thumbFanJoystick,type FanState,type FanPoint,type FanResult} from './state';
 import {fanFrame,fanPoint,outerPoint,fanScale,type FanFrame as Frame} from './geometry';
 import {SessionPill,useSessionPill} from './pill';
+import {FanActions} from './actions';
 import './fan.css';
 
 type Contact={pointer:number;touch:boolean;touchId:number|null;active:string;ids:string;layout:DeckContactLayout};
@@ -46,9 +46,10 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
   const items=fanItems(position,state.ids.length,frame),candidate=state.hot===null?null:faces.find(f=>f.id===state.ids[state.hot!]);
   const previewSlot=Math.round(state.target);
   const openedSlot=state.opened+Math.round((position-state.opened)/Math.max(1,state.ids.length))*Math.max(1,state.ids.length);
-  const createPoint=frame.createTarget,overviewPoint=frame.target;
   const extent=frame.guideExtent;
-  const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
+  const action=state.intent==='new'||state.intent==='overview',parkedSteering=useRef(0);
+  if(!action)parkedSteering.current=state.cursor??(state.deflection??0)*2;
+  const steering=parkedSteering.current,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
   const guide=Array.from({length:41},(_,i)=>outerPoint(frame,extent*(-1+i/20))).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
   const hint=state.cancelArmed?'松手保留当前':state.intent==='new'?'松手新建':state.intent==='overview'?'松手查看全部':'松手切换';
   return createPortal(<div data-deck-selector data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-cancel={state.cancelArmed||undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
@@ -66,8 +67,7 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
       <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
 
     </div>
-    {create&&<div data-lab-fan-new data-active={state.intent==='new'||undefined} className="lab-fan-overview lab-fan-create glass absolute" style={{left:createPoint.x,top:createPoint.y}} aria-hidden="true"><IconPlus/><span>{gui.new_tab}</span></div>}
-    <div data-lab-fan-overview data-active={state.intent==='overview'||undefined} className="lab-fan-overview glass absolute" style={{left:overviewPoint.x,top:overviewPoint.y}} aria-hidden="true"><IconChevronUp centred/><span>全部标签页</span></div>
+    <FanActions frame={frame} state={state} create={create}/>
     <span data-lab-fan-hint data-lab-fan-cancel-hint={state.cancelArmed||undefined} className="lab-fan-cancel-hint" style={{left:frame.width/2,top:Math.max(frame.gap,frame.height-frame.touch*.5)}} aria-hidden="true">{hint}</span>
   </div>,document.body);
 }

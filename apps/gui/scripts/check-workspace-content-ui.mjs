@@ -1,3 +1,4 @@
+import {DECK_ACTION_REACH} from '../src/lib/deck-intent.ts';
 // Actual workspace/session views and tab owners; only node IO uses an isolated in-memory fixture.
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
@@ -234,7 +235,7 @@ try{
  await until(()=>calls.some(c=>c.cmd==='hide_page'&&c.args.tab===handle));
  const reach=await band.evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--touch')));
  assert(reach>0,'The native page pill must expose its production touch size');
- await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y-reach*4}]});
+ await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y-reach*(DECK_ACTION_REACH.bottom.overview+.6)}]});
  await nativePhone.locator('[data-lab-fan-overview][data-active]').waitFor();
  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  const browserOverview=nativePhone.locator('[data-content-overview]:not([inert])');await browserOverview.waitFor();

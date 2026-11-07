@@ -117,7 +117,7 @@ test('upward actions require a hold and deliberate far reach; a short tap stays 
   const f = fixture(8, 3, false); assert.equal(f.engine.release(), 'tap');
   f.engine.start(200, 500); f.move(0, -60); assert.equal(f.engine.read().phase, 'pull');
   assert.equal(f.engine.release(), 'none'); assert.equal(f.overviews(), 0);
-  f.engine.start(200, 500); f.advance(288); f.move(0, -190);
+  f.engine.start(200, 500); f.advance(288); f.move(0, -240);
   assert.equal(f.engine.release(), 'overview'); assert.equal(f.overviews(), 1); assert.deepEqual(f.commits, []);
 });
 for (const count of [0, 1]) test(`empty/single collection stays still (${count})`, () => {

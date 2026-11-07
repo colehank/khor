@@ -1,7 +1,9 @@
+import {DECK_ACTION_REACH} from '../../src/lib/deck-intent.ts';
 import assert from 'node:assert/strict';
 
 export async function checkMobileNavigation(page,scene,items,capture,operation='browse') {
   const gui=scene==='gui',content=scene==='content';
+  const reach=DECK_ACTION_REACH[gui?'right':'bottom'];
   const selector=gui?'[data-lab-fan-avatar]:visible':content?'[data-content-visible="true"] [data-deck-band]:visible':'[data-session-screen] > [data-session-bar] [data-deck-band]:visible';
   const trigger=page.locator(selector).first();
   const bounds=await trigger.boundingBox();assert(bounds,'The production navigation control must be visible');
@@ -28,7 +30,7 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
   },{content,n:count(before)});
   try {
     if(operation==='create'){
-      await start();await action(touch*(gui?3.5:2.2));
+      await start();await action(touch*(reach.create+.4));
       await page.locator('[data-lab-fan-new][data-active]').waitFor();
       assert.deepEqual(await snapshot(),before,'Near action only previews before release');
       await send('touchEnd');await created();
@@ -67,17 +69,30 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     await page.locator('[data-lab-left-fan]').waitFor({state:'detached'});
     assert.deepEqual(await snapshot(),before,'Returning home and releasing keeps the original session or content tab');
 
-    await start();await action(touch*(gui?3.5:2.2));
+    await start();await action(touch*(reach.create+.4));
     await page.locator('[data-lab-fan-new][data-active]').waitFor();
     assert.deepEqual(await snapshot(),before,'Near action is a preview before release');
     await page.waitForFunction(()=>{const label=document.querySelector('[data-lab-fan-new][data-active]>span');return label&&Number(getComputedStyle(label).opacity)>.99;});
     await capture('new-preview');
-    await action(touch*(gui?5:4));
+    const cursor=page.locator('[data-lab-fan-cursor]');
+    const parked=await cursor.boundingBox();
+    await move(gui?-touch*(reach.create+.4)*Math.SQRT1_2-touch*.1:touch*.15,gui?-touch*(reach.create+.4)*Math.SQRT1_2:-touch*(reach.create+.4));
+    await action(touch*(reach.overview-.25));
+    await page.locator('[data-lab-fan-bond][data-connected]').waitFor();
+    const exchange=await page.locator('[data-lab-fan-actions]').getAttribute('data-transfer');
+    assert(Number(exchange)>.4&&Number(exchange)<.6,'The attachment is a continuous middle state');
+    const cursorDuring=await cursor.boundingBox();assert(Math.abs(cursorDuring.x-parked.x)<.01&&Math.abs(cursorDuring.y-parked.y)<.01,'Lower cursor stays parked while upper actions are selected');
+    assert.deepEqual(await snapshot(),before,'The lens exchange previews without creating or switching');
+    await capture('handoff');
+    await action(touch*(reach.create+.4));
+    await page.locator('[data-lab-fan-new][data-active]').waitFor();
+    await action(touch*(reach.overview+.6));
     await page.locator('[data-lab-fan-overview][data-active]').waitFor();
     assert.deepEqual(await snapshot(),before,'Passing new on the way to all must not create a tab');
     await page.waitForFunction(()=>{const current=document.querySelector('[data-lab-fan-overview][data-active]>span'),previous=document.querySelector('[data-lab-fan-new]>span');return current&&Number(getComputedStyle(current).opacity)>.99&&(!previous||Number(getComputedStyle(previous).opacity)<.01);});
     const actionBounds=await page.locator('[data-lab-fan-overview][data-active]').boundingBox();
     const viewport=page.viewportSize();assert(actionBounds.x>=0&&actionBounds.x+actionBounds.width<=viewport.width&&actionBounds.y>=0&&actionBounds.y+actionBounds.height<=viewport.height,'The expanded All prompt must fit after its glass transition');
+    const cursorFar=await cursor.boundingBox();assert(Math.abs(cursorFar.x-parked.x)<.01&&Math.abs(cursorFar.y-parked.y)<.01,'Selecting All also leaves the lower cursor parked');
     await capture('all-preview');
     await send('touchEnd');
     const rows=page.locator('.mobile-content-overview-list:visible,[data-tab-sheet]:visible');

@@ -60,7 +60,8 @@ export function fanFrame(b:Bounds):FanFrame{
     const actionHalf=Math.min(width/2-gap,1.7*touch);
     const x=Math.max(actionHalf+gap,Math.min(width-actionHalf-gap,outerPoint(frame,0).x));
     const y=Math.max(gap,Math.min(guideTop,candidateTop)-2*gap-2*actionHeight);
-    frame.target={x,y};frame.createTarget={x,y:y+actionHeight+gap};
+    const createY=y+actionHeight+gap,step=Math.min(touch*1.8,createY-gap);
+    frame.target={x,y:createY-step};frame.createTarget={x,y:createY};
   }
   return frame;
 }

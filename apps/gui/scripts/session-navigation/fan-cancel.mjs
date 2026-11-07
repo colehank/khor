@@ -15,7 +15,7 @@ let checks=0;
  const f=make();f.move(36);const hot=f.fan.read().hot;f.move(-30);assert.equal(f.fan.read().direction,0);for(const up of [-30,-31,-32])f.move(up);f.advance(4000);assert.equal(f.fan.read().hot,hot);f.move(-38);assert.equal(f.fan.read().direction,1);assert.equal(f.fan.read().hot,hot);f.move(-65);assert.equal(f.fan.read().hot,(hot+1)%5);f.fan.cancel();checks++;
 }
 {
- const f=make();f.fan.move(pointAt(45,240));assert.equal(f.fan.read().armed,true);f.fan.move(origin);assert.equal(f.fan.read().cancelArmed,true);assert.equal(f.fan.release().kind,'none');checks++;
+ const f=make();f.fan.move(pointAt(45,280));assert.equal(f.fan.read().armed,true);f.fan.move(origin);assert.equal(f.fan.read().cancelArmed,true);assert.equal(f.fan.release().kind,'none');checks++;
 }
 {
  const f=make(12);f.move(12);assert.equal(f.fan.read().hot,0);assert.equal(f.fan.read().direction,-1);f.advance(5000);assert.equal(f.fan.read().hot,0,'stationary subthreshold follow is never timed selection');f.move(32);f.advance(176+1440);assert.equal(f.fan.read().hot,3);f.move(0);assert.equal(f.fan.read().direction,0);f.fan.cancel();checks++;

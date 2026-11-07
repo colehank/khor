@@ -8,8 +8,8 @@
 .lab-compose-new{display:grid;place-items:center;flex:none;width:var(--glass-btn);height:var(--glass-btn);border-radius:var(--radius-full)}
 .lab-compose-new>svg{width:var(--ctl-glyph);height:var(--ctl-glyph)}
 [data-lab-compose-input]{position:relative;display:grid;grid-template-columns:var(--composer-item) minmax(0,1fr) auto;column-gap:var(--gap-xxs);align-items:end}
-[data-lab-composer-session-slot]{display:flex;align-items:center;justify-content:center;flex:none;width:var(--glass-btn);height:var(--glass-btn)}
-[data-lab-compose-avatar]{width:var(--glass-btn);height:var(--glass-btn);border-radius:var(--radius-full);touch-action:none;flex:none}
+[data-lab-composer-session-slot]{display:flex;align-items:center;justify-content:center;flex:none;width:var(--composer-h);height:var(--composer-h)}
+[data-lab-compose-avatar]{width:var(--composer-h);height:var(--composer-h);border-radius:var(--radius-full);touch-action:none;flex:none}
 [data-lab-compose-input]>[data-lab-add]{grid-column:1;grid-row:1}
 [data-lab-compose-input]>[data-composer-text]{grid-column:2;grid-row:1;width:100%;max-height:min(var(--chat-box),calc(var(--app-h,100dvh)/4))}
 [data-lab-compose-input]>:is([data-chat-send],[data-chat-stop]){grid-column:3;grid-row:1}

@@ -156,17 +156,20 @@ function fixture(count=12,initial=3){
  return {e,advance,commits,frames,overviews:()=>overviews,created:()=>created,hold:()=>advance(DEFAULTS.holdMs+16),move:(dx,dy=0)=>e.move(200+dx,500+dy)};
 }
 {
+ const f=fixture();f.hold();for(const distance of [90,130,180,200]){f.move(0,-distance);assert.equal(f.e.read().intent,'new','the old far reach remains in the expanded New region');}f.e.cancel();
+}
+{
  const f=fixture();f.hold();f.move(0,-55);f.e.release();
  assert.equal(f.overviews(),0,'moving one pill height must not jump directly to all tabs');
 }
 {
  const f=fixture();f.hold();f.move(0,-90);assert.equal(f.e.read().intent,'new');
- assert.equal(f.created(),0);f.move(0,-180);assert.equal(f.e.read().intent,'overview');assert.equal(f.overviews(),0);
+ assert.equal(f.created(),0);f.move(0,-240);assert.equal(f.e.read().intent,'overview');assert.equal(f.overviews(),0);
  f.move(0,-90);assert.equal(f.e.read().intent,'new');f.e.release();f.e.release();
  assert.equal(f.created(),1,'crossing both action regions only creates once when released in the near region');assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
 }
 {
- const f=fixture();f.hold();f.move(0,-180);f.move(0,0);f.e.release();
+ const f=fixture();f.hold();f.move(0,-240);f.move(0,0);f.e.release();
  assert.equal(f.created(),0);assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[],'returning home cancels all action previews');
 }
 {
@@ -188,18 +191,18 @@ function fixture(count=12,initial=3){
  assert(fast.e.read().interval<slow.e.read().interval);slow.e.cancel();fast.e.cancel();
 }
 {
- const f=fixture();f.hold();f.move(56);f.advance(300);f.move(0,-200);const stopped=f.e.read().preview;f.advance(1000);
+ const f=fixture();f.hold();f.move(56);f.advance(300);f.move(0,-240);const stopped=f.e.read().preview;f.advance(1000);
  assert.equal(f.e.read().preview,stopped,'overview target pauses browsing');f.e.release();assert.equal(f.overviews(),1);assert.deepEqual(f.commits,[]);f.e.release();assert.equal(f.overviews(),1);
 }
 {
- const f=fixture();f.hold();f.move(0,-200);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
+ const f=fixture();f.hold();f.move(0,-240);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
 }
 for(const phase of ['pending','swipe','steering']){
  const f=fixture();if(phase==='steering')f.hold();if(phase==='swipe')f.move(-35);if(phase==='steering')f.move(56);
  f.e.cancel();f.e.release();f.advance(3000);assert.deepEqual(f.commits,[]);assert.equal(f.frames.size,0);assert.equal(f.e.read().preview,3);
 }
 for(const count of [0,1]){
- const f=fixture(count,0);f.hold();f.move(56);f.advance(2000);assert.equal(f.e.read().preview,0);f.move(0,-200);f.e.release();assert.equal(f.overviews(),1);assert.deepEqual(f.commits,[]);
+ const f=fixture(count,0);f.hold();f.move(56);f.advance(2000);assert.equal(f.e.read().preview,0);f.move(0,-240);f.e.release();assert.equal(f.overviews(),1);assert.deepEqual(f.commits,[]);
 }
 {
  const f=fixture();f.move(-35);assert.equal(f.e.read().phase,'swipe');f.e.release();assert.deepEqual(f.commits,[],'ordinary swipe is delegated without a second commit');
@@ -208,7 +211,7 @@ for(const count of [0,1]){
  const tap=fixture();assert.equal(tap.e.release(),'tap');assert.deepEqual(tap.commits,[]);
 }
 {
- const f=fixture();f.move(0,-20);assert.equal(f.e.read().phase,'pull');assert(!f.e.read().overview);f.hold();f.move(0,-200);assert(f.e.read().overview);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
+ const f=fixture();f.move(0,-20);assert.equal(f.e.read().phase,'pull');assert(!f.e.read().overview);f.hold();f.move(0,-240);assert(f.e.read().overview);f.move(0,-20);assert(!f.e.read().overview);f.e.release();assert.equal(f.overviews(),0);assert.deepEqual(f.commits,[]);
 }
 {
  const f=fixture();f.hold();f.move(12);assert.equal(f.e.read().tier,1);f.move(40);assert.equal(f.e.read().tier,2);f.move(60);assert.equal(f.e.read().tier,3);f.move(0);assert.equal(f.e.read().tier,0);assert.equal(f.e.read().direction,0);f.e.cancel();

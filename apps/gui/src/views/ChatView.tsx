@@ -1924,7 +1924,6 @@ export function ChatView({
               seatYields={!inTurn && !!text.trim()}
               trail={
                 <>
-                  {sourceBinding && <Button data-history-find-open size="icon" variant="ghost" aria-label={gui.history_find} onClick={() => setFindingHistory(true)}><IconSearch /></Button>}
                   {!unifiedSession && modeSeat}
                   {!unifiedSession && <WhoSeat who={who} tip={!coarse} />}
                   {/* Send only while there is something to send and the

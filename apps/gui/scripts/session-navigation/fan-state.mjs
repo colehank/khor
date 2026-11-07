@@ -14,14 +14,14 @@ for(const [up,tier,interval] of [[32,1,1400],[40,2,1000],[60,3,700]]){
  const f=fanFixture();f.advance(288);const point=pointAt(30);f.fan.move(point);assert.equal(f.fan.read().hot,0);f.fan.move({x:point.x-6,y:point.y-17});assert.equal(f.fan.read().hot,0);assert(f.fan.read().position<0);f.fan.move({x:point.x-12,y:point.y-40});assert.equal(f.fan.read().hot,4);f.fan.move(point);f.advance(3000);assert.equal(f.fan.read().hot,4);checks++;f.fan.cancel();
 }
 {
- const f=fanFixture();f.acquire();f.move(32);const target=f.fan.read().hot;f.fan.move(pointAt(45,240));assert(f.fan.read().armed);f.fan.move(pointAt(45,220));assert(f.fan.read().armed);f.fan.move(pointAt(45,110));assert(!f.fan.read().armed);assert.equal(f.fan.read().hot,target);f.advance(3000);assert.equal(f.fan.read().hot,target,'overview retraction parks at a fresh neutral');const point=pointAt(45,110);f.fan.move({x:point.x+12,y:point.y+50});assert.equal(f.fan.read().hot,0);checks++;f.fan.cancel();
+ const f=fanFixture();f.acquire();f.move(32);const target=f.fan.read().hot;f.fan.move(pointAt(45,280));assert(f.fan.read().armed);f.fan.move(pointAt(45,268));assert(f.fan.read().armed);f.fan.move(pointAt(45,110));assert(!f.fan.read().armed);assert.equal(f.fan.read().hot,target);f.advance(3000);assert.equal(f.fan.read().hot,target,'overview retraction parks at a fresh neutral');const point=pointAt(45,110);f.fan.move({x:point.x+12,y:point.y+50});assert.equal(f.fan.read().hot,0);checks++;f.fan.cancel();
 }
 {
  const f=fanFixture();f.acquire();f.fan.move(pointAt(45,155));assert.equal(f.fan.read().intent,'new');assert.equal(f.fan.read().phase,'new');
- f.fan.move(pointAt(45,240));assert.equal(f.fan.read().intent,'overview');f.fan.move(pointAt(45,155));assert.equal(f.fan.read().intent,'new');
+ f.fan.move(pointAt(45,280));assert.equal(f.fan.read().intent,'overview');f.fan.move(pointAt(45,155));assert.equal(f.fan.read().intent,'new');
  assert.equal(f.fan.release().kind,'new');assert.equal(f.fan.release().kind,'none','an action commits once on release');checks++;
 }
-for(const held of [false,true]){const f=fanFixture();if(held)f.acquire();f.fan.move(pointAt(45,240));assert.equal(f.fan.release().kind,held?'overview':'none','the right fan requires the long-press before overview; a quick stray stroke is inert');checks++;}
+for(const held of [false,true]){const f=fanFixture();if(held)f.acquire();f.fan.move(pointAt(45,280));assert.equal(f.fan.release().kind,held?'overview':'none','the right fan requires the long-press before overview; a quick stray stroke is inert');checks++;}
 for(const count of [0,1,2,3]){const f=fanFixture({ids:['a','b','c'].slice(0,count)});f.acquire();f.move(50);assert.equal(f.fan.read().hot,count>1?count-1:0);f.fan.cancel();assert.equal(f.jobs.size,0);checks++;}
 {
  const f=fanFixture();f.acquire();f.move(17);assert.equal(f.fan.read().hot,0);assert(f.fan.read().position<0);f.move(0);f.advance(3000);assert.equal(f.fan.read().position,0);checks++;f.fan.cancel();
