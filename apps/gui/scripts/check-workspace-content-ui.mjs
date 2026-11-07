@@ -96,7 +96,7 @@ try{
    console.log(JSON.stringify(results));assert(results.every(r=>r.passed),'review regressions reproduced');
  } else {
  const box=await picker.locator('[data-workspace-navigation]').evaluate(nav=>{const b=nav.querySelector('button:last-child').getBoundingClientRect(),close=nav.closest('[data-content-picker]').querySelector('[data-content-close]')?.getBoundingClientRect();const first=nav.querySelector('button').getBoundingClientRect();return {history:b.x+b.width/2,close:close?close.x+close.width/2:null,widths:[first.width,b.width],heights:[first.height,b.height]};});
- assert.equal(box.history,box.close);assert.equal(box.widths[0],box.widths[1]);assert.equal(box.heights[0],box.heights[1]);
+ assert.equal(box.history,box.close,`The history and Close glyphs must share a center: ${JSON.stringify(box)}`);assert.equal(box.widths[0],box.widths[1]);assert.equal(box.heights[0],box.heights[1]);
  const source=await page.evaluate(()=>window.__workspaceProbe.content.tabs[0].id);
  const browse=()=>page.locator('[data-tab-open="session"]').click();
  const browseHistory=async()=>{await browse();await picker.getByRole('button',{name:'提交历史',exact:true}).click();};

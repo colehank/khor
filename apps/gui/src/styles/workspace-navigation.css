@@ -4,7 +4,8 @@
   padding-inline: var(--tree-inset) var(--page-inset);
   font-size: var(--text-body); line-height: var(--lh-body);
 }
-[data-workspace-navigation][data-seat="session"] { padding-inline-end: var(--gap-row); }
+/* The capsule's inner padding must not shift its final glyph away from Close. */
+[data-workspace-navigation][data-seat="session"] { padding-inline-end: calc(var(--gap-row) - var(--glass-pad)); }
 [data-workspace-navigation][data-seat="workspace"] { padding-inline: var(--gap-group) var(--gap-row); }
 [data-workspace-navigation][data-seat="workspace"] [data-workspace-branch-icon] { width: var(--glass-btn); }
 [data-workspace-branch-icon] { width: var(--tree-slot); display: grid; place-items: center; flex: none; color: var(--muted-foreground); }
