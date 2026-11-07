@@ -62,8 +62,10 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     assert.equal(geometry.collision,false,'Action prompts must stay outside full candidate identities, including entering avatars');
     for(const r of [...geometry.identities,...geometry.actions])assert(r.left>=-1&&r.right<=geometry.width+1&&r.top>=0&&r.bottom<=geometry.height+1,'Arc identities and actions must fit the actual App viewport');
     assert.deepEqual(await snapshot(),before,'Following and cycling only preview; the opened state remains unchanged');
+    assert.equal(await page.locator('[data-lab-fan-hint]').count(),0,'Switching needs no release instruction');
     await move(0,0);
-    await page.locator('[data-lab-fan-cancel-hint]').waitFor();
+    await page.waitForFunction(()=>document.querySelector('[data-lab-left-fan]')?.hasAttribute('data-fan-cancel'));
+    assert.equal(await page.locator('[data-lab-fan-hint]').count(),0,'Returning home needs no keep-current annotation');
     await capture('home');
     await send('touchEnd');
     await page.locator('[data-lab-left-fan]').waitFor({state:'detached'});
@@ -81,9 +83,17 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     await page.locator('[data-lab-fan-bond][data-connected]').waitFor();
     const exchange=await page.locator('[data-lab-fan-actions]').getAttribute('data-transfer');
     assert(Number(exchange)>.4&&Number(exchange)<.6,'The attachment is a continuous middle state');
+    assert.equal((await page.locator('[data-lab-fan-bond] path').getAttribute('d')).match(/M /g).length,1,'Joined glass is one continuous outline with no internal rims');
+    assert(await page.locator('[data-lab-fan-surface]').evaluate(el=>getComputedStyle(el).clipPath!=='none'),'The glass material follows the deformed outline');
+    assert.equal(await page.locator('[data-lab-fan-actions] .glass').count(),1,'One material surface owns both deforming lobes');
     const cursorDuring=await cursor.boundingBox();assert(Math.abs(cursorDuring.x-parked.x)<.01&&Math.abs(cursorDuring.y-parked.y)<.01,'Lower cursor stays parked while upper actions are selected');
     assert.deepEqual(await snapshot(),before,'The lens exchange previews without creating or switching');
     await capture('handoff');
+    if(items===5)for(const [name,progress] of [['stretch',.12],['joining',.3],['waist',.5],['splitting',.7],['release',.88]]){
+      await action(touch*(reach.overview-.9+1.3*progress));
+      await page.waitForFunction(progress=>Math.abs(Number(document.querySelector('[data-lab-fan-actions]')?.getAttribute('data-transfer'))-progress*progress*(3-2*progress))<.01,progress);
+      await capture('morph-'+name);
+    }
     await action(touch*(reach.create+.4));
     await page.locator('[data-lab-fan-new][data-active]').waitFor();
     await action(touch*(reach.overview+.6));

@@ -51,7 +51,7 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
   if(!action)parkedSteering.current=state.cursor??(state.deflection??0)*2;
   const steering=parkedSteering.current,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
   const guide=Array.from({length:41},(_,i)=>outerPoint(frame,extent*(-1+i/20))).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
-  const hint=state.cancelArmed?'松手保留当前':state.intent==='new'?'松手新建':state.intent==='overview'?'松手查看全部':'松手切换';
+  const hint=!state.cancelArmed&&(state.intent==='new'?'松手新建':state.intent==='overview'?'松手查看全部':null);
   return createPortal(<div data-deck-selector data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-cancel={state.cancelArmed||undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
     <div className="lab-fan-identities" data-dimmed={state.lane==='new'||state.lane==='overview'||undefined} aria-hidden="true">
@@ -68,7 +68,7 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
 
     </div>
     <FanActions frame={frame} state={state} create={create}/>
-    <span data-lab-fan-hint data-lab-fan-cancel-hint={state.cancelArmed||undefined} className="lab-fan-cancel-hint" style={{left:frame.width/2,top:Math.max(frame.gap,frame.height-frame.touch*.5)}} aria-hidden="true">{hint}</span>
+    {hint&&<span data-lab-fan-hint className="lab-fan-cancel-hint" style={{left:frame.width/2,top:Math.max(frame.gap,frame.height-frame.touch*.5)}} aria-hidden="true">{hint}</span>}
   </div>,document.body);
 }
 export function SessionFanNavigator({faces,active,onFocus,onOverview,onNew,hidden}:Pick<SessionHeaderProps,'faces'|'active'|'onFocus'|'onOverview'|'onNew'|'hidden'>){

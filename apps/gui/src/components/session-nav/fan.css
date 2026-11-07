@@ -10,7 +10,9 @@
 .lab-fan-avatar-face{display:grid;place-items:center;animation:deck-selector-title-in var(--dur-120) var(--ease-out)}
 .lab-fan-identities[data-dimmed]{opacity:.3}
 .lab-fan-actions{position:absolute;inset:0;pointer-events:none}
-.lab-fan-bond{position:absolute;inset:0;fill:var(--glass);stroke:var(--border);stroke-width:var(--hair);pointer-events:none}
+.lab-fan-surface{position:absolute;box-shadow:none}
+.lab-fan-surface::before{display:none}
+.lab-fan-bond{position:absolute;fill:none;stroke:var(--border);stroke-width:var(--hair);pointer-events:none}
 .lab-fan-overview{position:absolute;display:flex;align-items:center;justify-content:center;gap:calc(var(--gap-in) * var(--fan-grow));border-radius:var(--radius-full);transform:translateX(-50%);white-space:nowrap;font-size:var(--text-body);line-height:var(--text-body--line-height);color:var(--muted-foreground);padding-inline:calc(var(--gap-in) + var(--gap-xxs) * var(--fan-grow));transition:color var(--dur-120);will-change:width,height,left,top}
 .lab-thumb-fan[data-fan-placement=right] .lab-fan-overview:not(.lab-fan-create)>svg{rotate:-45deg}
 .lab-fan-overview>svg{flex:none;width:var(--gap-base);height:var(--gap-base)}
@@ -39,5 +41,3 @@
 
 .lab-thumb-fan[data-fan-cancel] .lab-fan-cancel-hint{color:var(--foreground)}
 @media(prefers-reduced-transparency:reduce){.lab-thumb-fan .deck-selector-dimmer{background:var(--card);backdrop-filter:none;-webkit-backdrop-filter:none}}
-
-@media(prefers-reduced-motion:reduce){.lab-fan-bond{display:none}}
