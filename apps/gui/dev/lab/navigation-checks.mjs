@@ -74,6 +74,9 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     await action(touch*(gui?5:4));
     await page.locator('[data-lab-fan-overview][data-active]').waitFor();
     assert.deepEqual(await snapshot(),before,'Passing new on the way to all must not create a tab');
+    await page.waitForFunction(()=>{const current=document.querySelector('[data-lab-fan-overview][data-active]>span'),previous=document.querySelector('[data-lab-fan-new]>span');return current&&Number(getComputedStyle(current).opacity)>.99&&(!previous||Number(getComputedStyle(previous).opacity)<.01);});
+    const actionBounds=await page.locator('[data-lab-fan-overview][data-active]').boundingBox();
+    const viewport=page.viewportSize();assert(actionBounds.x>=0&&actionBounds.x+actionBounds.width<=viewport.width&&actionBounds.y>=0&&actionBounds.y+actionBounds.height<=viewport.height,'The expanded All prompt must fit after its glass transition');
     await capture('all-preview');
     await send('touchEnd');
     const rows=page.locator('.mobile-content-overview-list:visible,[data-tab-sheet]:visible');
