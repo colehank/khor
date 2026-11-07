@@ -69,6 +69,8 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     await start();await action(touch*(gui?3.5:2.2));
     await page.locator('[data-lab-fan-new][data-active]').waitFor();
     assert.deepEqual(await snapshot(),before,'Near action is a preview before release');
+    await page.waitForFunction(()=>{const label=document.querySelector('[data-lab-fan-new][data-active]>span');return label&&Number(getComputedStyle(label).opacity)>.99;});
+    await capture('new-preview');
     await action(touch*(gui?5:4));
     await page.locator('[data-lab-fan-overview][data-active]').waitFor();
     assert.deepEqual(await snapshot(),before,'Passing new on the way to all must not create a tab');
