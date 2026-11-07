@@ -215,7 +215,7 @@
           "name": "design-system",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -223,7 +223,7 @@
           "name": "project",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -231,7 +231,7 @@
           "name": "research-notes",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -239,7 +239,7 @@
           "name": "资料库",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         }
@@ -252,7 +252,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -260,7 +260,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -268,7 +268,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -276,7 +276,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124716,
           "from": null,
           "received_ms": null
         },
@@ -284,7 +284,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -292,7 +292,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -300,7 +300,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -308,7 +308,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -316,7 +316,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -324,7 +324,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         }
@@ -337,7 +337,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         }
@@ -350,7 +350,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -358,7 +358,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         }
@@ -371,7 +371,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -379,7 +379,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -387,7 +387,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         }
@@ -400,7 +400,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998835,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -408,7 +408,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -416,7 +416,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1793975998834,
+          "at_ms": 1794033124713,
           "from": null,
           "received_ms": null
         },
@@ -424,7 +424,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1793975998834,
+          "at_ms": 1794033124713,
           "from": null,
           "received_ms": null
         },
@@ -432,7 +432,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -440,7 +440,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -448,7 +448,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -456,7 +456,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -464,7 +464,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -472,7 +472,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1793975998834,
+          "at_ms": 1794033124713,
           "from": null,
           "received_ms": null
         }
@@ -485,7 +485,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         }
@@ -498,7 +498,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1793975998835,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -506,7 +506,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1793975998835,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         }
@@ -519,7 +519,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -527,7 +527,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         },
@@ -535,7 +535,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1793975998836,
+          "at_ms": 1794033124714,
           "from": null,
           "received_ms": null
         }
@@ -548,7 +548,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -556,7 +556,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -564,7 +564,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -572,7 +572,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -580,7 +580,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -588,7 +588,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -596,7 +596,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -604,7 +604,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -612,7 +612,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -620,7 +620,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         }
@@ -633,7 +633,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124716,
           "from": null,
           "received_ms": null
         }
@@ -646,7 +646,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -654,7 +654,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         }
@@ -667,7 +667,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -675,7 +675,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1793975998838,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         },
@@ -683,7 +683,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1793975998837,
+          "at_ms": 1794033124715,
           "from": null,
           "received_ms": null
         }
@@ -696,7 +696,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -704,7 +704,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -712,7 +712,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -720,7 +720,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124717,
           "from": null,
           "received_ms": null
         },
@@ -728,7 +728,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -736,7 +736,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -744,7 +744,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -752,7 +752,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -760,7 +760,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -768,7 +768,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         }
@@ -781,7 +781,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         }
@@ -794,7 +794,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -802,7 +802,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1793975998839,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         }
@@ -815,7 +815,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -823,7 +823,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         },
@@ -831,7 +831,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1793975998840,
+          "at_ms": 1794033124718,
           "from": null,
           "received_ms": null
         }
@@ -898,7 +898,7 @@
     "crates/core/src/avatar.rs": "ac4b9db9c2c6a22c6579bb387c9c606f46cce8079b7d9822fe69bf268506a49d",
     "crates/core/src/avatar/mark.rs": "14e6a45e011668bf05e9b3c89cd2c15b15c123a65b2adb68c0362fe88095b1d5",
     "crates/node/src/files.rs": "0051245782015daebc893495748097bf088df7114e2978b483c073cac9aedeec",
-    "apps/gui/core/src/bin/lab_data.rs": "3ac717bc67e751978b27f2ce324df7034a1c33fc4b803a7f1640047a49d35252",
+    "apps/gui/core/src/bin/lab_data.rs": "e16b779071d446b0460480b421de821576100f18aea84c76c18c22bd27a7e0a0",
     "apps/gui/dev/lab/data/workspace/.config/preferences.json": "d15be58e7eb7f9813a8f87e0f093475bdaeb61a22917641168ced318ca61b2e2",
     "apps/gui/dev/lab/data/workspace/.gitignore": "4d56952b0fb13bf8f9b6c13a6d4c34a075bac3af447636a1df4335d7576e2f97",
     "apps/gui/dev/lab/data/workspace/README.md": "ad36cf9e020c9284bdaa4987ebd05a1cb9187acaad651956ac8ffec8622b573d",
@@ -913,5 +913,5 @@
     "apps/gui/dev/lab/data/workspace/src/app.ts": "aa86c4f80a12ab65cd5ef6b71aae1636d7186648222e06f1e2b18a3dcac4ef05",
     "apps/gui/dev/lab/data/workspace/src/navigation.ts": "aaeff633369c4afdbb21c8b53096d13afa98efa1b99bee609e05c6d8bcc07d0a"
   },
-  "_payload_sha256": "c5c238800795152bd7e2e4f640f0d85aa2b1b70614b0755adfcf820a486b1c74"
+  "_payload_sha256": "c9c9bd2960bbf796d4a3e5c53afd6347eaeacf80ee16439992c29356bebc5051"
 }
