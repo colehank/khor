@@ -245,6 +245,7 @@ jobs:
           npx playwright-core install --with-deps chromium webkit
           npm run sticky-fade
           npm run list-scroll-ui
+          PLAYWRIGHT_CHROMIUM_CHANNEL='' WORKSPACE_CONTENT_DIR="$LAB_REPORT/workspace-content" npm run workspace-content-ui
           node dev/lab/check-app.mjs
           node dev/lab/check-hot.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
