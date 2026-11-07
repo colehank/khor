@@ -49,10 +49,11 @@ export function liquidActionShape(overview:ActionCell,newTab:ActionCell|null,tog
       const join=(from:typeof a,to:typeof a,waist:Point,d:Point)=>{
         // Keep cap tangents, but never overshoot the narrower waist. This
         // makes each shoulder curve in once, without an extra lobe or kink.
-        const handle=(p:Point,tangent:Point,limit:number)=>Math.min(limit,Math.abs(crossAt(p)-crossAt(waist))*.7/Math.max(.001,Math.abs(crossAt(tangent))));
+        const distance=(p:Point)=>Math.abs((waist.x-p.x)*d.x+(waist.y-p.y)*d.y);
+        const handle=(p:Point,tangent:Point,limit:number)=>Math.min(limit,Math.abs(crossAt(p)-crossAt(waist))*.7/Math.max(.001,Math.abs(crossAt(tangent))),distance(p)*.8/Math.max(.001,Math.abs(tangent.x*d.x+tangent.y*d.y)));
         const first=offset(from.end,from.incoming,handle(from.end,from.incoming,from.handle));
         const last=offset(to.start,to.outgoing,-handle(to.start,to.outgoing,to.handle));
-        return `C ${xy(first)} ${xy(offset(waist,d,-stem))} ${xy(waist)} C ${xy(offset(waist,d,stem))} ${xy(last)} ${xy(to.start)}`;
+        return `C ${xy(first)} ${xy(offset(waist,d,-Math.min(stem,distance(from.end)*.8)))} ${xy(waist)} C ${xy(offset(waist,d,Math.min(stem,distance(to.start)*.8)))} ${xy(last)} ${xy(to.start)}`;
       };
       path=`M ${xy(a.start)} ${a.trace} ${join(a,b,offset(middle,cross,neck),axis)} ${b.trace} ${join(b,a,offset(middle,cross,-neck),{x:-axis.x,y:-axis.y})} Z`;
     }else path+=' '+separate(b);
