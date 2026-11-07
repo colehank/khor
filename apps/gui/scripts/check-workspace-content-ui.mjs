@@ -232,7 +232,10 @@ try{
  await nativePhone.locator('[data-lab-left-fan]').waitFor();
  await nativePhone.waitForFunction(()=>document.querySelector('[data-content-visible="true"] [data-page-host]')?.dataset.nativePageVisible==='false');
  await until(()=>calls.some(c=>c.cmd==='hide_page'&&c.args.tab===handle));
- await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y-90}]});
+ const reach=await band.evaluate(el=>parseFloat(getComputedStyle(el).getPropertyValue('--touch')));
+ assert(reach>0,'The native page pill must expose its production touch size');
+ await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{...point,y:point.y-reach*4}]});
+ await nativePhone.locator('[data-lab-fan-overview][data-active]').waitFor();
  await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
  const browserOverview=nativePhone.locator('[data-content-overview]:not([inert])');await browserOverview.waitFor();
  await browserOverview.locator('[data-content-overview-tab][data-on="true"]').click();await webpage.waitFor();
