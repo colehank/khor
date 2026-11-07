@@ -10,11 +10,9 @@ function rightSweep(frame:FanFrame,offset:number){
 }
 export function fanPoint(frame:FanFrame,offset:number){
   if(frame.placement==='bottom'){
-    // Equal horizontal seats keep adjacent titles apart throughout a drag.
-    const half=frame.width/2-frame.gap-frame.titleWidth*fanScale(offset)/2;
-    const center=frame.width/2+Math.max(-half,Math.min(half,offset*(frame.width-2*frame.gap)/3));
-    const peripheral=Math.max(0,Math.abs(offset)-1);
-    return {x:center,y:frame.anchor.y-frame.pitch*(Math.sqrt(offset*offset+.1)-Math.sqrt(.1))-peripheral*peripheral*frame.touch*4};
+    const row=frame.titleWidth,span=frame.width/2-frame.gap-row*.61/2;
+    const center=frame.width/2+Math.sign(offset)*span*(1-Math.exp(-Math.abs(offset)*1.8));
+    return {x:center,y:frame.anchor.y-frame.pitch*(Math.sqrt(offset*offset+.1)-Math.sqrt(.1))};
   }
   if(frame.horizontal)return {x:frame.anchor.x+offset*frame.pitch,y:frame.anchor.y};
   // Position the avatar on the sweep independently of its title's scale.
@@ -35,17 +33,17 @@ export function outerPoint(frame:FanFrame,offset:number){
 }
 export function fanFrame(b:Bounds):FanFrame{
   const placement=b.placement??'right',{width,height,touch,gap}=b,face=touch*1.32;
-  const actionHeight=touch*.8,rowActions=height<(placement==='bottom'?6.5:5)*touch,room=height-(rowActions?actionHeight+2*gap:2*actionHeight+3*gap);
-  const compact=room<6.8*touch+2*gap,horizontal=placement==='right'&&compact&&width>=12*touch,slots=placement==='bottom'?(room>=4.5*touch?3:1):compact?(horizontal||room>=4.5*touch?3:1):5;
-  const row=placement==='bottom'?Math.min(3*touch,(width-2*gap)/3):0;
+  const actionHeight=touch*.8,rowActions=height<5*touch,room=height-(rowActions?actionHeight+2*gap:2*actionHeight+3*gap);
+  const compact=room<6.8*touch+2*gap,horizontal=placement==='right'&&compact&&width>=12*touch,slots=compact?(horizontal||room>=4.5*touch?3:1):5;
+  const row=placement==='bottom'?Math.min(3*touch,(width-4*gap)*.39):0;
   const titleWidth=placement==='bottom'?row:horizontal?3*touch:3.4*touch;
-  const pitch=placement==='bottom'?touch*.8:horizontal?(width-2*gap-face-gap-titleWidth)/(slots-1):Math.min(1.5*touch,(height-2*gap-face*(slots===3 ? .76 : .61))/Math.max(1,slots-1));
+  const pitch=placement==='bottom'?Math.min(2.2*touch,Math.max(touch*.5,(height-face-3*gap)/Math.max(1,slots/2))):horizontal?(width-2*gap-face-gap-titleWidth)/(slots-1):Math.min(1.5*touch,(height-2*gap-face*(slots===3 ? .76 : .61))/Math.max(1,slots-1));
   // Reserve the right edge for the thumb guide; fit the entire title to
   // its left, flattening the curve when a narrow viewport needs room.
   const edge=(slots-1)/2,rightEdge=width-2*gap-face/2-touch*(.3+.28);
   // Keep the same inward seat even when a short viewport shows fewer items.
   const curve=Math.max(0,Math.min(touch*.45,(rightEdge-titleWidth-face/2-2*gap)/4));
-  const anchor={x:placement==='bottom'?width/2:horizontal?gap+face/2+pitch*(slots-1)/2:rightEdge-curve*4,y:placement==='bottom'?Math.max((rowActions?actionHeight:0)+gap+face/2,height-gap-face/2-touch*1.65):horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3 ? .76 : .61)/2-(slots-1)/2*pitch};
+  const anchor={x:placement==='bottom'?width/2:horizontal?gap+face/2+pitch*(slots-1)/2:rightEdge-curve*4,y:placement==='bottom'?height-gap-face/2-touch*1.65:horizontal||slots===1?Math.max(face/2,Math.min(height-face/2,height*.62)):height-gap-face*(slots===3 ? .76 : .61)/2-(slots-1)/2*pitch};
   if(placement==='right'&&!horizontal){
     anchor.x-=Math.min(touch*.3,Math.max(0,anchor.x-titleWidth-face/2-gap*1.5));
     anchor.y-=Math.min(touch*.7,Math.max(0,anchor.y-edge*pitch-face*fanScale(edge)/2-gap));
@@ -61,7 +59,7 @@ export function fanFrame(b:Bounds):FanFrame{
   }else{
     const actionHalf=Math.min(width/2-gap,1.7*touch);
     const x=Math.max(actionHalf+gap,Math.min(width-actionHalf-gap,outerPoint(frame,0).x));
-    const y=Math.max(gap,(placement==='bottom'?candidateTop:Math.min(guideTop,candidateTop))-2*gap-2*actionHeight);
+    const y=Math.max(gap,Math.min(guideTop,candidateTop)-2*gap-2*actionHeight);
     frame.target={x,y};frame.createTarget={x,y:y+actionHeight+gap};
   }
   return frame;

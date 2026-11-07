@@ -48,11 +48,12 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
       const identities=visible.map(box);
       const actions=[...fan.querySelectorAll('[data-lab-fan-new],[data-lab-fan-overview]')].map(box);
       const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
-      return {frame:box(fan),titles,actions,identities,ids:visible.map(el=>el.getAttribute('data-lab-fan-session')),
+      return {frame:box(fan),slots:Number(fan.dataset.fanSlots),titles,actions,identities,ids:visible.map(el=>el.getAttribute('data-lab-fan-session')),
         selected:fan.querySelectorAll('[data-selected]').length,opened:fan.querySelectorAll('[data-opened]').length,
         collision:actions.some(a=>identities.some(b=>intersects(a,b))),height:innerHeight,width:innerWidth};
     });
     await capture('following',geometry);
+    assert.equal(geometry.slots,5,'The normal phone viewport retains the existing five candidate seats');
     assert.equal(geometry.selected,1,'A cyclic presentation selects exactly one slot');
     assert(geometry.opened<=1,'The actual opened identity has one marker rather than marking every cyclic copy');
     assert(geometry.titles.length>=3,'Both sides of a two-tab cycle remain visible');
