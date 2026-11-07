@@ -49,8 +49,10 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
       const titles=visible.map(el=>box(el.querySelector('[data-lab-fan-title]')));
       const identities=visible.map(box);
       const actions=[...fan.querySelectorAll('[data-lab-fan-new],[data-lab-fan-overview]')].map(box);
+      const badge=fan.querySelector('[data-lab-fan-opened]');
+      const current=badge?{badge:box(badge),avatar:box(badge.closest('.lab-fan-face-identity')),onAvatar:!!badge.closest('[data-opened] .lab-fan-face'),inTitle:!!badge.closest('[data-lab-fan-title]')}:null;
       const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top;
-      return {frame:box(fan),slots:Number(fan.dataset.fanSlots),titles,actions,identities,ids:visible.map(el=>el.getAttribute('data-lab-fan-session')),
+      return {frame:box(fan),slots:Number(fan.dataset.fanSlots),titles,actions,identities,current,ids:visible.map(el=>el.getAttribute('data-lab-fan-session')),
         selected:fan.querySelectorAll('[data-selected]').length,opened:fan.querySelectorAll('[data-opened]').length,
         collision:actions.some(a=>identities.some(b=>intersects(a,b))),height:innerHeight,width:innerWidth};
     });
@@ -58,6 +60,9 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     assert.equal(geometry.slots,5,'The normal phone viewport retains the existing five candidate seats');
     assert.equal(geometry.selected,1,'A cyclic presentation selects exactly one slot');
     assert(geometry.opened<=1,'The actual opened identity has one marker rather than marking every cyclic copy');
+    assert(geometry.current?.onAvatar&&!geometry.current.inTitle,'Current session is marked on its avatar, outside the title');
+    const {badge,avatar}=geometry.current;
+    assert((badge.left+badge.right)/2<(avatar.left+avatar.right)/2&&(badge.top+badge.bottom)/2>(avatar.top+avatar.bottom)/2,'The current-session check sits at the avatar lower left');
     assert(geometry.titles.length>=3,'Both sides of a two-tab cycle remain visible');
     assert.equal(geometry.collision,false,'Action prompts must stay outside full candidate identities, including entering avatars');
     for(const r of [...geometry.identities,...geometry.actions])assert(r.left>=-1&&r.right<=geometry.width+1&&r.top>=0&&r.bottom<=geometry.height+1,'Arc identities and actions must fit the actual App viewport');
@@ -71,7 +76,18 @@ export async function checkMobileNavigation(page,scene,items,capture,operation='
     await page.locator('[data-lab-left-fan]').waitFor({state:'detached'});
     assert.deepEqual(await snapshot(),before,'Returning home and releasing keeps the original session or content tab');
 
-    await start();await action(touch*(reach.create+.4));
+    await start();
+    const entry=async progress=>{
+      await action(touch*(reach.create-1.2+1.2*progress));
+      await page.waitForFunction(progress=>Math.abs(Number(document.querySelector('[data-lab-fan-actions]')?.getAttribute('data-entry'))-progress*progress*(3-2*progress))<.01,progress);
+    };
+    await entry(.5);await page.locator('[data-lab-fan-actions][data-entering] [data-lab-fan-bond][data-connected]').waitFor();
+    const entryContour=await page.locator('[data-lab-fan-bond] path').getAttribute('d');
+    await entry(.75);await entry(.5);
+    assert.equal(await page.locator('[data-lab-fan-bond] path').getAttribute('d'),entryContour,'Withdrawing into the candidate area retraces the first glass handoff');
+    assert.deepEqual(await snapshot(),before,'Entry deformation previews without creating or switching tabs');
+    if(items===5)for(const [name,progress] of [['start',.15],['stretch',.35],['waist',.5],['gather',.7],['finish',.9]]){await entry(progress);await capture('entry-'+name);}
+    await action(touch*(reach.create+.4));
     await page.locator('[data-lab-fan-new][data-active]').waitFor();
     assert.deepEqual(await snapshot(),before,'Near action is a preview before release');
     await page.waitForFunction(()=>{const label=document.querySelector('[data-lab-fan-new][data-active]>span');return label&&Number(getComputedStyle(label).opacity)>.99;});

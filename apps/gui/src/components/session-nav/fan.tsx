@@ -56,8 +56,8 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
     <div className="deck-selector-dimmer"/>
     <div className="lab-fan-identities" data-dimmed={state.lane==='new'||state.lane==='overview'||undefined} aria-hidden="true">
       {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={previewSlot===item.slot||undefined} data-opened={openedSlot===item.slot||undefined} className="lab-fan-item" style={frame.placement==='bottom'?{left:item.x-frame.titleWidth/2,top:item.y-frame.face/2,width:frame.titleWidth,opacity:item.opacity,transform:`scale(${item.scale})`,transformOrigin:`50% ${frame.face/2}px`,gap:frame.gap/3}:{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
-        <span className="lab-fan-face"><TabAvatar f={face} bare="size-list-face" seat="row"/></span>
-        <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}>{openedSlot===item.slot&&<span className="lab-fan-current" data-lab-fan-opened><IconCheck/></span>}<TitleWords text={titleOf(face)}/></span>
+        <span className="lab-fan-face"><span className="lab-fan-face-identity"><TabAvatar f={face} bare="size-list-face" seat="row"/>{openedSlot===item.slot&&<span className="lab-fan-current" data-lab-fan-opened><IconCheck/></span>}</span></span>
+        <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}><TitleWords text={titleOf(face)}/></span>
       </span>;})}
     </div>
     <div className="lab-fan-steering" aria-hidden="true">

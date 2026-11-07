@@ -1,5 +1,6 @@
 export type ActionCell={x:number;y:number;width:number;height:number;grow:number};
 type Point={x:number;y:number};
+type ShapeBounds={left:number;top:number;width:number;height:number};
 const xy=(p:Point)=>`${Number(p.x.toFixed(3))} ${Number(p.y.toFixed(3))}`;
 const offset=(p:Point,d:Point,length:number):Point=>({x:p.x+d.x*length,y:p.y+d.y*length});
 
@@ -19,12 +20,16 @@ function cap(cell:ActionCell,vertical:boolean,facing:number,pull:number,left:num
   return {start,end,tip,trace,tail,incoming,outgoing,handle,a};
 }
 
-/** One glass silhouette: caps stretch into tips, meet, grow a waist, then split.
- * The shared outline has no overlapping rims or a separately painted connector. */
-export function liquidActionShape(overview:ActionCell,newTab:ActionCell|null,together:number,touch:number){
-  const cells=newTab?[overview,newTab]:[overview],pad=touch*.025;
+export function actionShapeBounds(cells:ActionCell[],touch:number):ShapeBounds{
+  const pad=touch*.025;
   const left=Math.min(...cells.map(c=>c.x-c.width/2))-pad,top=Math.min(...cells.map(c=>c.y-c.height/2))-pad;
   const width=Math.max(...cells.map(c=>c.x+c.width/2))+pad-left,height=Math.max(...cells.map(c=>c.y+c.height/2))+pad-top;
+  return {left,top,width,height};
+}
+/** One glass silhouette: caps stretch into tips, meet, grow a waist, then split.
+ * The shared outline has no overlapping rims or a separately painted connector. */
+export function liquidActionShape(overview:ActionCell,newTab:ActionCell|null,together:number,touch:number,space?:ShapeBounds){
+  const {left,top,width,height}=space??actionShapeBounds(newTab?[overview,newTab]:[overview],touch);
   const vertical=!newTab||Math.abs(newTab.y-overview.y)>=Math.abs(newTab.x-overview.x);
   const facing=!newTab?1:(vertical?Math.sign(newTab.y-overview.y):Math.sign(newTab.x-overview.x))||1;
   const pull=newTab?touch*.42*together:0;
@@ -38,7 +43,8 @@ export function liquidActionShape(overview:ActionCell,newTab:ActionCell|null,tog
     if(neck>0){
       const middle={x:(a.tip.x+b.tip.x)/2,y:(a.tip.y+b.tip.y)/2};
       const cross=vertical?{x:facing,y:0}:{x:0,y:facing};
-      const stem=Math.max(touch*.08,(Math.abs((b.start.x-a.end.x)*axis.x+(b.start.y-a.end.y)*axis.y))*.22);
+      const span=Math.abs((b.start.x-a.end.x)*axis.x+(b.start.y-a.end.y)*axis.y);
+      const stem=Math.min(Math.max(touch*.08,span*.22),span*.4);
       const crossAt=(p:Point)=>vertical?p.x:p.y;
       const join=(from:typeof a,to:typeof a,waist:Point,d:Point)=>{
         // Keep cap tangents, but never overshoot the narrower waist. This

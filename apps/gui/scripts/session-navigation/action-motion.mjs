@@ -42,4 +42,19 @@ for(const height of [180,728])for(const placement of ['bottom','right']){
  }
  assert(stretched&&joined,'Both short horizontal and normal vertical capsules stretch before joining');checks++;
 }
-console.log(`${checks} action separation, reversible glass deformation, shared contour and viewport bounds checks passed.`);
+for(const height of [180,728])for(const placement of ['bottom','right']){
+ const frame=fanFrame({left:0,top:0,width:390,height,touch:44,gap:12,originX:350,originY:752,placement});
+ const origin={x:350,y:752},reach=DECK_ACTION_REACH[placement];let prior=0,joined=false;
+ for(let i=0;i<=80;i++){
+  const travel=44*(reach.create-1.2+1.2*i/80),d=placement==='right'?travel*Math.SQRT1_2:0;
+  const state={origin,point:{x:origin.x-d,y:origin.y-(placement==='right'?d:travel)},cancelArmed:false};
+  const motion=fanActionMotion(frame,state);assert(motion.entry>=prior-1e-9);prior=motion.entry;
+  assert.deepEqual(motion,fanActionMotion(frame,state),'The candidate / New deformation retraces exactly on withdrawal');
+  assert(!/NaN|Infinity/.test(motion.shape.path));
+  if(i>0&&i<80){assert(motion.entering);if(motion.shape.joined)joined=true;}
+  if(i<79)assert.notEqual(deckIntent({dx:d,up:placement==='right'?d:travel,touch:44,placement,previous:'switch'}),'new','Glass stretching does not advance the New action threshold');
+  if(i===40){assert(motion.shape.joined&&motion.shape.pull>0,'The first handoff deforms glass with the same waist as New / All');assert.equal(motion.shape.path.match(/M /g).length,2,'All stays separate while New and its lower tail share a contour');}
+ }
+ assert(joined);checks++;
+}
+console.log(`${checks} action separation, reversible entry and glass deformation, shared contour and viewport bounds checks passed.`);
