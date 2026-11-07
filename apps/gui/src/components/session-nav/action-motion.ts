@@ -34,8 +34,9 @@ export function fanActionMotion(frame:FanFrame,state:Contact,create=true){
     // The first handoff pulls New out of the candidate zone using the same
     // stretching caps and pinched waist as the later New / All exchange.
     const pulse=4*ready*(1-ready),size=touch*.5*Math.sin(Math.PI*ready);
-    newTab.y=Math.min(frame.height-newTab.height/2,newTab.y+touch*.15*pulse);
-    const seed:ActionCell={x:newTab.x,y:Math.min(frame.height-size/2,newTab.y+touch*(.65+.25*(1-ready))),width:size,height:size,grow:0};
+    const sourceY=newTab.y+touch*.85;
+    newTab.y=Math.max(newTab.height/2,newTab.y-touch*.3*pulse);
+    const seed:ActionCell={x:newTab.x,y:Math.min(frame.height-size/2,sourceY),width:size,height:size,grow:0};
     const bounds=actionShapeBounds([overview,newTab,seed],touch);
     const tail=liquidActionShape(newTab,seed,pulse,touch,bounds),other=liquidActionShape(overview,null,0,touch,bounds);
     shape={...tail,path:other.path+' '+tail.path};
