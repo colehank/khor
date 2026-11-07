@@ -2309,8 +2309,6 @@ aside[data-side] {
 [data-sticky-group]:has(> [data-sticky-body="flush"]) > [data-sticky-head]::before { bottom: 0; }
 :is([data-sticky-surface], [data-sticky-fading]) {
   --sticky-fade-strength: 0;
-  --sticky-fade-start: 0px;
-  --sticky-fade-length: 0px;
   /* Keep one non-uniform mask installed. At rest its fade is above the
      viewport, rather than switching to none or an opaque replacement. */
   --sticky-fade-origin: calc(var(--sticky-fade-start) - (1 - var(--sticky-fade-strength)) * var(--sticky-fade-length));
