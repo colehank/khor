@@ -22,6 +22,7 @@ for(const placement of ['bottom','right']){
  assert.equal(near.newTab.grow,1);assert.equal(near.overview.grow,0);assert.equal(far.newTab.grow,0);assert.equal(far.overview.grow,1);
  assert(mid.shape.joined&&mid.shape.neck>frame.touch*.1&&mid.newTab.grow>.4&&mid.overview.grow>.4,'The glass silhouette itself grows a waist while exchanging size');
  assert.equal(mid.shape.path.match(/M /g).length,1,'Connected glass has one outer contour without overlapping capsule rims');
+ assert(mid.shape.neck<Math.min(mid.newTab.width,mid.newTab.height,mid.overview.width,mid.overview.height)/4,'The connecting waist stays narrower than the caps instead of growing extra shoulders');
  for(const endpoint of [near,far]){assert.equal(endpoint.shape.joined,false);assert.equal(endpoint.shape.pull,0);assert.equal(endpoint.shape.path.match(/M /g).length,2);}
  assert.equal(fanActionMotion(frame,{...state(500),cancelArmed:true}).newTab.grow,0);
  const before=state((reach.overview-.4)*44);assert.equal(deckIntent({dx:origin.x-before.point.x,up:origin.y-before.point.y,touch:44,placement,previous:'new'}),'new','Previewing the next lens cannot execute All before its threshold');

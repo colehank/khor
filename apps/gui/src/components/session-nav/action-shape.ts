@@ -34,12 +34,20 @@ export function liquidActionShape(overview:ActionCell,newTab:ActionCell|null,tog
   if(b&&newTab){
     const axis=vertical?{x:0,y:facing}:{x:facing,y:0};
     const overlap=(a.tip.x-b.tip.x)*axis.x+(a.tip.y-b.tip.y)*axis.y;
-    neck=Math.min(a.a,b.a)*Math.sqrt(Math.max(0,Math.min(1,overlap/(touch*.45))));
+    neck=Math.min(a.a,b.a)*.42*Math.sqrt(Math.max(0,Math.min(1,overlap/(touch*.45))));
     if(neck>0){
       const middle={x:(a.tip.x+b.tip.x)/2,y:(a.tip.y+b.tip.y)/2};
       const cross=vertical?{x:facing,y:0}:{x:0,y:facing};
       const stem=Math.max(touch*.08,(Math.abs((b.start.x-a.end.x)*axis.x+(b.start.y-a.end.y)*axis.y))*.22);
-      const join=(from:typeof a,to:typeof a,waist:Point,d:Point)=>`C ${xy(offset(from.end,from.incoming,from.handle))} ${xy(offset(waist,d,-stem))} ${xy(waist)} C ${xy(offset(waist,d,stem))} ${xy(offset(to.start,to.outgoing,-to.handle))} ${xy(to.start)}`;
+      const crossAt=(p:Point)=>vertical?p.x:p.y;
+      const join=(from:typeof a,to:typeof a,waist:Point,d:Point)=>{
+        // Keep cap tangents, but never overshoot the narrower waist. This
+        // makes each shoulder curve in once, without an extra lobe or kink.
+        const handle=(p:Point,tangent:Point,limit:number)=>Math.min(limit,Math.abs(crossAt(p)-crossAt(waist))*.7/Math.max(.001,Math.abs(crossAt(tangent))));
+        const first=offset(from.end,from.incoming,handle(from.end,from.incoming,from.handle));
+        const last=offset(to.start,to.outgoing,-handle(to.start,to.outgoing,to.handle));
+        return `C ${xy(first)} ${xy(offset(waist,d,-stem))} ${xy(waist)} C ${xy(offset(waist,d,stem))} ${xy(last)} ${xy(to.start)}`;
+      };
       path=`M ${xy(a.start)} ${a.trace} ${join(a,b,offset(middle,cross,neck),axis)} ${b.trace} ${join(b,a,offset(middle,cross,-neck),{x:-axis.x,y:-axis.y})} Z`;
     }else path+=' '+separate(b);
   }
