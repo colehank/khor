@@ -38,7 +38,10 @@ fn directory_data(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let (_, entries, truncated) =
         khor_node::files::list_dir(path.to_str().ok_or("Invalid fixture path")?)?;
-    directories.insert(relative.to_owned(), json!({"entries":entries,"truncated":truncated}));
+    directories.insert(
+        relative.to_owned(),
+        json!({"entries":entries,"truncated":truncated}),
+    );
     for entry in entries {
         let child = if relative.is_empty() {
             entry.name.clone()
@@ -58,10 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)?
         .as_nanos();
-    let path = std::env::temp_dir().join(format!(
-        "khor-lab-data-{}-{stamp}",
-        std::process::id()
-    ));
+    let path = std::env::temp_dir().join(format!("khor-lab-data-{}-{stamp}", std::process::id()));
     fs::create_dir(&path)?;
     let workspace = Workspace(path);
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../dev/lab/data/workspace");
