@@ -101,7 +101,7 @@ jobs:
         if: steps.released-contracts.outputs.ready != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          CONTRACT_RUN: '42269979434'
+          CONTRACT_RUN: '42346962839'
         run: |
           if ! gh run download "$CONTRACT_RUN" --repo colehank/khor-build --name developer-lab-frontend --dir "$RUNNER_TEMP/contract-source"; then
             echo 'Compatible Lab artifact unavailable; generate contracts normally.'
@@ -113,7 +113,7 @@ jobs:
           from khor_lab.contract import digest
           run = json.loads(subprocess.check_output(['gh', 'api', 'repos/colehank/khor-build/actions/runs/' + os.environ['CONTRACT_RUN']]))
           assert run['path'] == '.github/workflows/developer-lab.yml' and run['conclusion'] == 'success'
-          assert run['head_sha'] == '2893ea480c565b89b85fdca3ad7acd393d77a1be'
+          assert run['head_sha'] == '633ca2c12c7aac060a23f733e5afaa0c4a7f7202'
           cached = json.loads((pathlib.Path(os.environ['RUNNER_TEMP']) / 'contract-source/lab-manifest.json').read_text())
           assert cached['native_contract'] == digest(pathlib.Path('snapshot/source'))
           PYVERIFY
@@ -221,6 +221,7 @@ jobs:
         working-directory: snapshot/source
         run: |
           python3 -m unittest discover -s scripts/tests -p test_developer_lab.py -v
+          python3 -m unittest discover -s scripts/tests -p test_lab_effects.py -v
           python3 -m unittest discover -s scripts/tests -p test_lab_development.py -v
           python3 -m unittest discover -s scripts/tests -p test_lab_fixture_data.py -v
           python3 scripts/khor_lab/fixture_data.py . --check
@@ -234,6 +235,7 @@ jobs:
           LAB_REPORT: ${{ runner.temp }}/checks
           QUALITY_ENGINES: webkit
         run: |
+          npm run test:unit
           npm run test:types
           npm run deck-scrub
           npm run session-navigation
