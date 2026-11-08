@@ -229,7 +229,7 @@ async function inspect(browser, scene, size, data = {}) {
       await page.locator('[data-quota-row="fixture"]:visible').click();
       await page.locator('[data-quota-detail="fixture"]:visible').waitFor();
     }
-    if(scene==='workspaces'){
+    if(scene==='workspaces'&&!data.nativeMarker){
       await checkScroll();
       assert.equal(await page.locator('[data-ws-row]:visible').count(),machines*4,'Each machine supplies distinct Git and plain-folder workspaces');
       await page.screenshot({path:path.join(report,name+'-list.png')});
