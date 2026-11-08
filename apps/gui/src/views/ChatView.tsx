@@ -1429,11 +1429,11 @@ export function ChatView({
       (`settings` frame), never its own press. */
   const confirmedSettings=new Map<string,string|boolean>((settings?.options??[]).map(option=>[option.id,option.currentValue as string|boolean]));
   if(settings?.modes)confirmedSettings.set('mode:',settings.modes.currentModeId);
-  const settingRequest=useConfirmedSetting(confirmedSettings);
+  const settingRequest=useConfirmedSetting(confirmedSettings,id);
   settingReceipt.current=settingRequest.receipt;
-  const setOption=(token:string,option:string,value:string|boolean)=>withChat(view=>settings?.correlatedSettings
+  const requestOption=(token:string,option:string,value:string|boolean)=>withChat(view=>settings?.correlatedSettings
     ?view.control(token,'set_option',{option,value}):view.setOption(option,value));
-  const setMode=(token:string,mode:string)=>withChat(view=>settings?.correlatedSettings
+  const requestMode=(token:string,mode:string)=>withChat(view=>settings?.correlatedSettings
     ?view.control(token,'set_mode',{mode}):view.setMode(mode));
   const addOptions: AddOption[] = (settings?.options ?? []).map((o) =>
     o.type === "boolean"
@@ -1444,7 +1444,7 @@ export function ChatView({
           name: o.name,
           note: o.description ?? null,
           on: o.currentValue === true,
-          onToggle: () => settingRequest.request({key:o.id,value:o.currentValue!==true,name:o.name,run:token=>setOption(token,o.id,o.currentValue!==true)}),
+          onToggle: () => settingRequest.request({key:o.id,value:o.currentValue!==true,name:o.name,run:token=>requestOption(token,o.id,o.currentValue!==true)}),
         }
       : {
           kind: "values",
@@ -1459,7 +1459,7 @@ export function ChatView({
             note: v.value.description ?? null,
             heading: v.heading,
           })),
-          onPick: (v) => settingRequest.request({key:o.id,value:v,name:o.name,run:token=>setOption(token,o.id,v)}),
+          onPick: (v) => settingRequest.request({key:o.id,value:v,name:o.name,run:token=>requestOption(token,o.id,v)}),
         },
   );
   /** Who is answering, for the capsule's who seat. */
@@ -1495,7 +1495,7 @@ export function ChatView({
           note: modeNote(m.id, settings.modes?.availableModes ?? []),
         })),
       ]}
-      onPick={v=>settingRequest.request({key:"mode:",value:v,name:"执行权限",run:token=>setMode(token,v)})}
+      onPick={v=>settingRequest.request({key:"mode:",value:v,name:"执行权限",run:token=>requestMode(token,v)})}
     />
   ) : mode !== null && modeSaid(mode) !== null ? (
     <ModeSeat current={mode} word={modeSaid(mode) ?? mode} />

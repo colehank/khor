@@ -312,6 +312,18 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "presents the native original-file activity sheet; HTTP faces have no app-owned native presenter",
     ),
     (
+        "file_export_begin",
+        "native staging writer for the OS save/share panel; browsers use their own complete download writer",
+    ),
+    (
+        "file_export_append",
+        "bounded native staging chunks; browser exports never write server-side temporary files",
+    ),
+    (
+        "file_export_finish",
+        "atomic native staging commit before OS presentation; browser writer commits locally",
+    ),
+    (
         "file_handoff_save",
         "presents the native Save panel or original-file activity sheet for a completed app-owned handoff; HTTP faces use their browser file picker",
     ),

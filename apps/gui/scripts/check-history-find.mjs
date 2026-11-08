@@ -59,6 +59,9 @@ const presentationBuilt=await build({entryPoints:[resolve('src/lib/history-recor
 const presentationModule={exports:{}};
 Function('module','exports',presentationBuilt.outputFiles[0].text)(presentationModule,presentationModule.exports);
 const {presentHistoryRecord,historyRecordSlots}=presentationModule.exports;
+const writerBuilt=await build({entryPoints:[resolve('src/lib/native-file-writer.ts')],bundle:true,write:false,format:'cjs',platform:'node',plugins:[{name:'native-writer-io',setup(build){build.onLoad({filter:/[\\/]src[\\/]api\.ts$/},()=>({contents:['fileExportBegin','fileExportAppend','fileExportFinish','fileHandoffCancel','fileHandoffSave'].map(name=>`export const ${name}=(...args)=>globalThis.__nativeWriterIO.${name}(...args);`).join('\n'),loader:'ts'}));}}]});
+const writerModule={exports:{}};Function('module','exports',writerBuilt.outputFiles[0].text)(writerModule,writerModule.exports);
+const {nativeFileWriter}=writerModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, starts_message: true, record: null, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -715,6 +718,20 @@ test('semantic original records restore projected image data and text without ra
  const slots=historyRecordSlots([{historyRecords:[{record:{...ref,start:0,end:10,item:0}}]},
   {historyRecords:[{record:{...ref,start:100,end:110,item:0}}]},{}],[{...ref,start:10,end:100}]);
  assert.equal(slots[0].length,0);assert.equal(slots[1].length,1);assert.equal(slots[2].length,0);
+});
+test('native semantic writers retain late ACK ownership and publish only complete bytes',async()=>{
+ const begin=deferred(),entered=deferred(),calls=[];
+ globalThis.__nativeWriterIO={fileExportBegin:async()=>{calls.push('begin');entered.resolve();await begin.promise;},fileHandoffCancel:async()=>{calls.push('cancel');},fileExportAppend:async()=>{throw new Error('cancelled writer must not append');}};
+ const stop=new AbortController(),writer=nativeFileWriter('conversation.md',stop.signal);
+ const writing=writer.write(new Uint8Array([1,2,3]));const rejected=assert.rejects(writing,/取消/);
+ await entered.promise;stop.abort();assert.deepEqual(calls,['begin']);begin.resolve();await rejected;await writer.abort();
+ assert.deepEqual(calls,['begin','cancel']);
+ const parts=[],offsets=[];let total=null,saved=false,cancelled=false;
+ globalThis.__nativeWriterIO={fileExportBegin:async()=>{},fileExportAppend:async(_id,offset,data)=>{offsets.push(offset);parts.push(Buffer.from(data,'base64'));},fileExportFinish:async(_id,size)=>{total=size;},fileHandoffSave:async()=>{assert.equal(total,70000);saved=true;return true;},fileHandoffCancel:async()=>{cancelled=true;}};
+ const complete=nativeFileWriter('attachment.png',new AbortController().signal),bytes=Uint8Array.from({length:70000},(_,index)=>index%251);
+ await complete.write(bytes);assert.equal(saved,false);await complete.close();
+ assert.deepEqual(offsets,[0,65536]);assert.deepEqual(Buffer.concat(parts),Buffer.from(bytes));assert(saved&&cancelled);
+ delete globalThis.__nativeWriterIO;
 });
 test('native export owns late start ACKs and cancellation through the OS presenter', async () => {
   const ready = { moved: 12, total: 12, ready: true, cancelled: false, error: null };

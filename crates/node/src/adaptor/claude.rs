@@ -845,6 +845,11 @@ pub(crate) fn utterances_of(text: &str) -> Vec<Utterance> {
                         // replayed tool could never be drawn as failed.
                         (Some("tool_result"), true) => {
                             out.push(Utterance::ToolDone(b.clone()));
+                            if let Some(content)=b["content"].as_array(){
+                                for media in content {
+                                    if let Some(block)=super::media::claude(media){out.push(Utterance::Content{user:false,block});}
+                                }
+                            }
                         }
                         (Some("image" | "document"), _) => {
                             if let Some(block) = super::media::claude(b) {

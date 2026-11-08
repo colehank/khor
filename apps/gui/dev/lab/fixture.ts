@@ -69,6 +69,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const terminalLeases = new Set<string>();
   let terminalLeaseNumber = 0;
   const preferences=ids.map((_,i)=>({
+    correlatedSettings:true,
     model:i===3?'gpt-5.4':'claude-sonnet-4-6',
     modes:{currentModeId:'default',availableModes:[
       {id:'default',name:'逐次询问',description:'执行操作前向你确认'},
@@ -190,13 +191,13 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
-  let holdSettings=false;const pendingSettings:(()=>void)[]=[];
+  let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];
   const applySetting=(apply:()=>void)=>{if(holdSettings)pendingSettings.push(apply);else apply();};
   return {
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
-          holdSettings=false;pendingSettings.length=0;
+          holdSettings=false;refuseSetting=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
           for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
           preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
@@ -217,6 +218,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
         return {pending:pendingSettings.length};
       }
       if(path==='__ai_preview/settings-pending')return pendingSettings.length;
+      if(path==='__ai_preview/settings-refuse'){refuseSetting=body.refuse===true;return true;}
       if(path==='chat_put')return '/preview/uploads/'+String(body.name??'attachment');
       if(path==='chat_put_paths')return body.paths;
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
@@ -250,7 +252,19 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "__ai_preview/acp": frames[index].push(...(Array.isArray(body.frames)?body.frames:[]));answer=true;break;
           case "__ai_preview/answers":answer=interactionAnswers;break;
           case "chat_respond":interactionAnswers.push(body);frames[index].push({kind:'elicit_answered',ask:body.ask,response:{action:'accept'}});break;
-          case "chat_control":frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
+          case "chat_control":{
+            if(body.operation==='set_option'||body.operation==='set_mode'){
+              const refused=refuseSetting;
+              applySetting(()=>{
+                if(!refused){const payload=body.payload??{};
+                  if(body.operation==='set_mode')preferences[index].modes.currentModeId=String(payload.mode);
+                  else{const option=preferences[index].options.find(option=>option.id===payload.option);if(option)(option as {currentValue:unknown}).currentValue=payload.value;if(payload.option==='model')preferences[index].model=String(payload.value);}
+                  frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});
+                }
+                frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:null,error:refused?'setting-refused':null});
+              });
+            }else frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
+          }
           case "sessions": {
             const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: titles[i],
               activity: [], observation_owner: device.id, content_locator: null, imported: false, quiet: false,

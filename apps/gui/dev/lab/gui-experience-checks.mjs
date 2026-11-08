@@ -63,6 +63,15 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.waitForFunction(()=>document.querySelector('[data-lab-session-settings]')?.textContent.includes('Opus'));
   await page.getByRole('status').filter({hasText:'正在应用模型'}).waitFor({state:'detached'});
   await page.keyboard.press('Escape');
+  await api('__ai_preview/settings-refuse',{refuse:true});
+  await page.locator('[data-lab-session-settings]:visible').click();
+  await page.locator('[data-lab-option="model"]').click();
+  await page.locator('[data-option-value="claude-sonnet-4-6"]').click();
+  const refusal=page.getByRole('alert').filter({hasText:'未能确认模型'});await refusal.waitFor();
+  assert((await page.locator('[data-lab-session-settings]:visible').innerText()).includes('Opus'),'A correlated refusal preserves the authoritative value');
+  await api('__ai_preview/settings-refuse',{refuse:false});await refusal.getByRole('button',{name:'重试'}).click();
+  await refusal.waitFor({state:'detached'});
+  await page.waitForFunction(()=>document.querySelector('[data-lab-session-settings]')?.textContent.includes('Sonnet'));
   const download=page.waitForEvent('download');
   await page.locator('[data-lab-add]').click();await page.locator('[data-history-readable-export]').click();
   const exported=await download,body=await readFile(await exported.path(),'utf8');

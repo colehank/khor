@@ -1,9 +1,9 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 type Request={key:string;value:string|boolean;name:string;run:(token:string)=>Promise<unknown>};
 /** A queue acknowledgement is not a value acknowledgement. Keep the displayed
  * value canonical and wait for matching settings; stale failures cannot finish
  * a later request. Agents without correlated refusals time out as unconfirmed. */
-export function useConfirmedSetting(values:ReadonlyMap<string,string|boolean>){
+export function useConfirmedSetting(values:ReadonlyMap<string,string|boolean>,scope:string){
  const pending=useRef<(Request&{token:string})|null>(null);
  const [state,setState]=useState<{pending:boolean;name:string;error:boolean}>({pending:false,name:'',error:false});
  const retry=useRef<Request|null>(null),timer=useRef<ReturnType<typeof setTimeout>|null>(null);
@@ -20,6 +20,6 @@ export function useConfirmedSetting(values:ReadonlyMap<string,string|boolean>){
   const item=pending.current??retry.current;
   if(item&&values.get(item.key)===item.value){pending.current=null;retry.current=null;clearTimer();setState({pending:false,name:'',error:false});}
  },[values]);
- useEffect(()=>()=>{pending.current=null;clearTimer();},[]);
+ useLayoutEffect(()=>{pending.current=null;retry.current=null;clearTimer();setState({pending:false,name:'',error:false});return()=>{pending.current=null;retry.current=null;clearTimer();};},[scope]);
  return {...state,request,receipt:(token:string,error:string|null)=>{if(error)fail(token);},retry:()=>{if(retry.current)request(retry.current);}};
 }

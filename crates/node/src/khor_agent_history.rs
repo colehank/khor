@@ -3,7 +3,7 @@
 use super::*;
 use crate::session_content::{
     journal::{Identity, Journal, Opening, Outcome, Source},
-    reference::{ContentReference, ReadBinding},
+    ContentReference, ReadBinding,
 };
 pub(super) struct FullSource {
     journal: Journal,
