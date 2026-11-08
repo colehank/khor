@@ -29,6 +29,15 @@ const streamAt = (painted, entries, controls, flags = {}) => {
 const note = (sessionUpdate, extra = {}) => ({ kind: 'note', update: { update: { sessionUpdate, ...extra } } });
 const entry = (key, text = key) => ({ key, starts_message: true, record: null, frame: note('agent_message_chunk', { content: { type: 'text', text } }) });
 const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `after:${key}`, more = false, reset = false, refs = [] } = {}) => ({ entries: Array.from({ length: count }, (_, i) => entry(`${key}:${i}`)), older, newer, has_more: more, reset, references: refs, encoded_bytes: bytes });
+// Background fill must not turn a live reader into an old-history reader
+// when tiny streamed pages fill the bounded cache. Real upward input may.
+{
+ const full={...EMPTY,pages:Array.from({length:8},(_,i)=>page(String(i))),latest:true};
+ assert.equal(module.exports.canPrefetchOlder(full,true),false);
+ assert.equal(module.exports.canPrefetchOlder(full,true,true),true);
+ assert.equal(module.exports.canPrefetchOlder(full,false),true);
+ assert.equal(module.exports.canPrefetchOlder({...full,pages:[page('short')]},true),true);
+}
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const checks = [];

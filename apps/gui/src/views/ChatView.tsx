@@ -1274,7 +1274,7 @@ export function ChatView({
     historyMatch.current = null;
   }, [paint, history?.busy, history?.error]);
 
-  const loadOlderHistory = () => {
+  const loadOlderHistory = (preserveLatest=false) => {
     const element = scroller.current;
     if (element) {
       const top = element.getBoundingClientRect().top;
@@ -1285,12 +1285,12 @@ export function ChatView({
         historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top,
           ticket: capturePositionTicket(), point: item ? captureHistoryTextPoint(node, element, item) : null };
       }
-      following.current = false; readingLatest.current = false;
+      if(!preserveLatest){following.current = false; readingLatest.current = false;}
     }
     void historyView.current?.older();
   };
 
-  useHistoryPrefetch(scroller,history,loadOlderHistory,()=>{void historyView.current?.newer();});
+  useHistoryPrefetch(scroller,history,loadOlderHistory,()=>{void historyView.current?.newer();},readingLatest);
 
   const latestBody = useMemo(() => history
     ? latestHistoryBody(paint.past, historyEntries(history.window)) : null, [paint.past, history?.window]);
@@ -1668,7 +1668,7 @@ export function ChatView({
             do, and because a face that cannot read a field is the
             reason attaching one of them would otherwise need code. */}
         {history && <div className="space-y-in py-row" data-history-controls>
-          {history?.window.older && <Button size="sm" disabled={history.busy} onClick={loadOlderHistory}>{gui.history_older}</Button>}
+          {history?.window.older && <Button size="sm" disabled={history.busy} onClick={()=>loadOlderHistory()}>{gui.history_older}</Button>}
           {history?.reset && <p role="status" className="text-caption text-muted-foreground">{gui.history_changed}</p>}
           {history?.error != null && <div role="alert" className="text-caption text-destructive">
             {gui.history_read_failed} <Button size="sm" onClick={() => void historyView.current?.retry()}>{gui.region_retry}</Button>

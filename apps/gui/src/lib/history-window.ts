@@ -11,6 +11,14 @@ export type HistoryWindow = {
   latest: boolean;
 };
 export const EMPTY_HISTORY_WINDOW: HistoryWindow = { pages: [], older: null, newer: null, latest: true };
+/** Filling a short viewport must not evict the live tail. Reserve one maximum
+ * page before speculative reads; an explicit reader gesture can move the window. */
+export function canPrefetchOlder(window:HistoryWindow,readingLatest:boolean,readerUp=false){
+  if(!window.latest||!readingLatest||readerUp)return true;
+  return window.pages.length<HISTORY_CACHE_LIMITS.pages
+    &&window.pages.reduce((count,page)=>count+page.entries.length,0)<=HISTORY_CACHE_LIMITS.entries-128
+    &&window.pages.reduce((bytes,page)=>bytes+page.encoded_bytes,0)<=HISTORY_CACHE_LIMITS.bytes-PAGE_BYTES;
+}
 function referenceKey(reference: HistoryRecordRef) { return `${reference.start}:${reference.item ?? 'record'}`; }
 function pageHasContent(page: HistoryPage) { return page.entries.length > 0 || page.references.length > 0; }
 function exceedsBudget(pages: HistoryPage[]) {
