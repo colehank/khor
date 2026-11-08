@@ -646,6 +646,16 @@ mod loopback_tests {
         assert_eq!(closed.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
     }
 
+    #[tokio::test]
+    async fn a_closed_route_can_be_replaced_without_a_false_port_conflict() {
+        let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = free.local_addr().unwrap().port();
+        drop(free);
+        let first = hold_loopback("127.0.0.1", port, "127.0.0.1:19001").await.unwrap();
+        drop(first);
+        let _replacement = hold_loopback("127.0.0.1", port, "127.0.0.1:19002").await.unwrap();
+    }
+
     #[cfg(target_os = "macos")]
     #[tokio::test]
     #[ignore = "requires KHOR_WEBKIT_PROBE, an isolated native WKWebView fixture"]
