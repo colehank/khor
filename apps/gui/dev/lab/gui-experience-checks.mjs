@@ -34,6 +34,8 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.getByRole('dialog').waitFor();const preview=page.getByRole('dialog').locator('img');
   assert.equal(await preview.evaluate(image=>image.complete&&image.naturalWidth>0),true);
   assert((await preview.boundingBox()).width>thumbnailBox.width,'The image viewer enlarges the thumbnail instead of using the small question-dialog width');
+  const viewer=await page.getByRole('dialog').boundingBox(),viewport=page.viewportSize();
+  assert(viewer.x>=0&&viewer.y>=0&&viewer.x+viewer.width<=viewport.width&&viewer.y+viewer.height<=viewport.height,'The shared preview stays inside the visible viewport');
   await page.keyboard.press('Escape');
   const anchor=await page.locator('[data-chat-scroll]').evaluate(element=>{
    const top=element.getBoundingClientRect().top,node=[...element.querySelectorAll('[data-history-key]')].find(node=>node.getBoundingClientRect().bottom>top);

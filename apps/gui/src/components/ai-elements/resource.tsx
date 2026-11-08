@@ -3,7 +3,8 @@ import {inApp} from '@/api';
 import type {AcpResource} from '@/lib/acp-view';
 import {inlineMediaSource,resourceFilePath} from '@/lib/chat-media';
 import {Button} from '@/components/ui/button';
-import {Dialog,DialogContent,DialogHeader,DialogTitle} from '@/components/ui/dialog';
+import {Dialog,DialogContent,DialogHeader,DialogTitle,DialogBody,DialogFooter} from '@/components/ui/dialog';
+import {gui} from '@/gen/catalog';
 import {useLinkHome} from '@/views/linkHome';
 import {linkIntent} from '@/lib/content-link-intent';
 import {assertPageUrl,openSystemUrl} from '@/lib/client-opener';
@@ -17,11 +18,12 @@ export function AgentResource({item,onOpenFile}:{item:AcpResource;onOpenFile:(pa
   <button type="button" data-chat-media-preview aria-label={`查看图片：${name}`} className="block max-w-full rounded-md" onClick={()=>setOpen(true)}>
    <img data-chat-image loading="lazy" className="max-h-[60vh] max-w-full rounded-md object-contain" alt={name} src={source} onError={()=>setFailed(true)}/>
   </button>
-  <Dialog open={open} onOpenChange={setOpen}><DialogContent className="w-[90vw] max-w-[90vw]"><DialogHeader><DialogTitle>{name}</DialogTitle></DialogHeader>
-   <img className="max-h-[75vh] w-full object-contain" alt={name} src={source}/>
-   <div className="flex justify-end gap-in">{path&&<Button size="sm" onClick={()=>onOpenFile(path)}>在文件视图中打开</Button>}
+  <Dialog open={open} onOpenChange={setOpen}><DialogContent purpose="preview" scrollable><DialogHeader><DialogTitle>{name}</DialogTitle></DialogHeader>
+   <DialogBody className="overflow-hidden"><img className="h-full min-h-0 w-full object-contain" alt={name} src={source}/></DialogBody>
+   <DialogFooter>{path&&<Button size="sm" onClick={()=>onOpenFile(path)}>在文件视图中打开</Button>}
     {!inApp&&<a className="text-callout" href={source} download={name}>存储图片</a>}
-   </div>
+    <Button size="sm" variant="ghost" onClick={()=>setOpen(false)}>{gui.close}</Button>
+   </DialogFooter>
   </DialogContent></Dialog>
  </>;
  return <div data-chat-resource className="rounded-md bg-fill px-row py-in text-callout">
