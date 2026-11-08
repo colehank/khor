@@ -55,6 +55,10 @@ const exportBuilt = await build({ entryPoints: [resolve('src/lib/history-export.
 const exportModule = { exports: {} };
 Function('module', 'exports', exportBuilt.outputFiles[0].text)(exportModule, exportModule.exports);
 const { exportHistoryRecord, exportHistoryToApp, completeHistoryRecord } = exportModule.exports;
+const presentationBuilt=await build({entryPoints:[resolve('src/lib/history-record-presentation.ts')],bundle:true,write:false,format:'cjs',platform:'node'});
+const presentationModule={exports:{}};
+Function('module','exports',presentationBuilt.outputFiles[0].text)(presentationModule,presentationModule.exports);
+const {presentHistoryRecord,historyRecordSlots}=presentationModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, starts_message: true, record: null, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -691,6 +695,26 @@ test('valid JSON retains only source-proven physical record boundaries', async (
     assert.deepEqual([result.value.record.missing_start, result.value.record.missing_end], [!known, !known]);
     await scanner.return();
   }
+});
+test('semantic original records restore projected image data and text without raw JSON', async()=>{
+ const image='abcd'.repeat(20000),message='中文🪷'.repeat(12000);
+ const bytes=new TextEncoder().encode(JSON.stringify({image,message}));
+ const ref={start:0,end:bytes.length,cursor:'semantic-source',missing_start:false,missing_end:false,item:null};
+ const source={
+  page:async()=>{throw new Error('whole record does not page');},
+  record:async(_cursor,from)=>{const chunk=bytes.subarray(from,from+65536);return {offset:from,data:Buffer.from(chunk).toString('base64'),next:from+chunk.length<bytes.length?from+chunk.length:null};},
+  project:async(_cursor,_start,_end,scaffold)=>({record:ref,transforms:[],complete:true,entries:scaffold?[
+   note('projection:0',{sessionUpdate:'user_message_chunk',content:{type:'image',mimeType:'image/png',data:JSON.parse(scaffold).image}}),
+   text('projection:1',JSON.parse(scaffold).message)]:[]}),
+ };
+ const items=await presentHistoryRecord(source,ref,new AbortController().signal);
+ assert.equal(items.length,2);assert.equal(items[0].who,'resource');assert.equal(items[0].data,image);
+ assert.equal(items[1].text,message);assert(!JSON.stringify(items).includes('khor-record-string'));
+ await assert.rejects(presentHistoryRecord(source,ref,new AbortController().signal,1024),/预览范围/);
+ const stopped=new AbortController();stopped.abort();await assert.rejects(presentHistoryRecord(source,ref,stopped.signal),/取消/);
+ const slots=historyRecordSlots([{historyRecords:[{record:{...ref,start:0,end:10,item:0}}]},
+  {historyRecords:[{record:{...ref,start:100,end:110,item:0}}]},{}],[{...ref,start:10,end:100}]);
+ assert.equal(slots[0].length,0);assert.equal(slots[1].length,1);assert.equal(slots[2].length,0);
 });
 test('native export owns late start ACKs and cancellation through the OS presenter', async () => {
   const ready = { moved: 12, total: 12, ready: true, cancelled: false, error: null };

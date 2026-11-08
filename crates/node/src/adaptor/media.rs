@@ -40,6 +40,6 @@ mod tests {
         assert_eq!(image("https://example.com/a.png").unwrap()["uri"], "https://example.com/a.png");
         assert!(image("javascript:alert(1)").is_none());
         assert!(image("not-an-image").is_none());
-        let _: agent_client_protocol::ContentBlock = serde_json::from_value(block).unwrap();
+        let _: agent_client_protocol::schema::v1::ContentBlock = serde_json::from_value(block).unwrap();
     }
 }

@@ -680,7 +680,7 @@ fn said_in(bytes: &[u8], parse: fn(&str) -> Vec<Utterance>) -> Option<String> {
             // A thought or a tool name is the machine's bookkeeping — a
             // preview line should say what was *said*, and skipping back to
             // the newest real sentence reads better than "Read".
-            Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) => None,
+            Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) | Utterance::Content { .. } => None,
         })
 }
 

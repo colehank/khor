@@ -55,7 +55,9 @@ import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyEntries, historyReferences, historyWindowHasRoom } from '@/lib/history-window';
 import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContributionPoint, historyContributionPresent, type HistoryContributionPoint, type HistoryItem } from '@/lib/history-paint';
-import { HistoryRecords } from '@/components/history/HistoryRecords';
+import {HistoryRecordContent} from '@/components/history/HistoryRecordContent';
+import {historyRecordSlots} from '@/lib/history-record-presentation';
+import {Fragment} from 'react';
 
 /** Live control/state waits stay responsive while idle polling backs off. */
 const LIVE_MS = 50;
@@ -1560,6 +1562,10 @@ export function ChatView({
       ),
     [paint],
   );
+  const recordSlots=useMemo(()=>historyRecordSlots(items,history?historyReferences(history.window):[]),[items,history?.window]);
+  const recordContent=(slot:number)=>sourceBinding&&recordSlots[slot]?.map(reference=><HistoryRecordContent
+    key={`${historyEpoch}:${reference.start}:${reference.item??'record'}`} id={id} binding={sourceBinding}
+    reference={reference} exporter={historyExport} onOpenFile={openFile}/>);
   // **A turn is running — for the whole of it, and for how long.**
   //
   // 忙碌 in the conversation, wearing the state's own clothes rather
@@ -1770,10 +1776,9 @@ export function ChatView({
               {item.text}
             </div>
           );
-          return item.historyKey ? <div key={`${historyEpoch}:${item.displayKey ?? item.historyKey}`} data-history-key={item.displayKey ?? item.historyKey} className={matchedEntry && item.historyEntries?.includes(matchedEntry) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content;
+          return <Fragment key={`${historyEpoch}:${item.displayKey??item.historyKey??i}`}>{recordContent(i)}{item.historyKey ? <div data-history-key={item.displayKey ?? item.historyKey} className={matchedEntry && item.historyEntries?.includes(matchedEntry) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content}</Fragment>;
         })}
-        {history && sourceBinding && <HistoryRecords key={`${id}:${sourceBinding}:${historyEpoch}`} references={historyReferences(history.window)} exporter={historyExport} showExportStatus={!findingHistory}
-          read={(cursor, from, signal) => historyView.current?.record(cursor, from, signal) ?? Promise.resolve(null)} />}
+        {recordContent(items.length)}
         {history && !history.window.latest && <Button size="sm" disabled={history.busy}
           onClick={() => void historyView.current?.newer()}>{gui.history_newer}</Button>}
         {notice&&<div data-chat-notice role={notice.severity==='error'?'alert':'status'} className="rounded-md bg-fill p-row text-callout"><strong>{notice.title}</strong>{notice.message&&<p>{notice.message}</p>}<Button size="sm" onClick={()=>setNotice(null)}>关闭</Button></div>}

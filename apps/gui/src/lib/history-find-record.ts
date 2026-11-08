@@ -15,7 +15,7 @@ const CHUNK_BYTES = 64 * 1024;
 
 /** These are templates selected by the ordinary renderer projection. Static
  * separators remain in the stream, so a match may cross content blocks. */
-function segments(text: string, ranges: RecordStringRange[]): Segment[] | null {
+export function recordSegments(text: string, ranges: RecordStringRange[]): Segment[] | null {
   const parts: Segment[] = [];
   let from = 0;
   while (from < text.length) {
@@ -79,7 +79,7 @@ function recordReader(io: IO, ref: HistoryRecordRef) {
 /** A single record search is resumable at each hit. No complete raw JSON,
  * decoded body, or unbounded hit list is assembled in the worker. */
 export type RecordTextPart = { who:string; entry: string; part: number; before: string; record: HistoryRecordRef; complete: boolean; text: AsyncIterable<string> };
-async function projectRecord(ref: HistoryRecordRef, before: string, io: IO) {
+export async function projectRecord(ref: HistoryRecordRef, before: string, io: IO) {
   if (!Number.isSafeInteger(ref.start) || !Number.isSafeInteger(ref.end) || ref.start < 0 || ref.end <= ref.start
     || utf8.encode(ref.cursor).length > 4096 || utf8.encode(before).length > 4096)
     throw new Error('invalid history search record range');
@@ -157,7 +157,7 @@ export async function* recordText(
     const body = historyText(item);
     complete &&= body.complete;
     for (const [part, text] of body.texts.entries()) {
-      const template = segments(text, scaffold.strings);
+      const template = recordSegments(text, scaffold.strings);
       if (!template) { complete = false; continue; }
       const characters = async function* () {
         for (const segment of template) {

@@ -83,7 +83,7 @@ export type AcpUpdate = {
   compactionId?:string;summary?:{type?:string;text?:string}[]|null;error?:string|null;
   sessionUpdate?: string; toolCallId?: string; title?: string | null; kind?: string; status?: string;
   rawInput?: unknown; rawOutput?: unknown; locations?: { path?: string; line?: number }[];
-  content?: { type?: string; text?: string; uri?:string;name?:string;data?:string;mimeType?:string;resource?:{text?:string;uri?:string;mimeType?:string} } | { type?: string; content?: { type?: string; text?: string }; path?: string; oldText?: string | null; newText?: string }[] | null;
+  content?: { type?: string; text?: string; uri?:string;name?:string;data?:string;mimeType?:string;resource?:{text?:string;blob?:string;uri?:string;mimeType?:string} } | { type?: string; content?: { type?: string; text?: string }; path?: string; oldText?: string | null; newText?: string }[] | null;
   entries?: { content?: string; status?: string; priority?: string }[];
 };
 
@@ -128,7 +128,7 @@ export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], 
     if(!text){
       const c=!Array.isArray(u.content)?u.content:null;
       if(!c||c.type==='text')return false;
-      out.push({who:'resource',kind:c.type??'unknown',name:c.name??c.resource?.uri??c.uri??c.mimeType??'附件',uri:c.uri??c.resource?.uri,data:c.data,mime:c.mimeType});
+      out.push({who:'resource',kind:c.type??'unknown',name:c.name??c.resource?.uri??c.uri??c.mimeType??'附件',uri:c.uri??c.resource?.uri,data:c.data??c.resource?.blob,mime:c.mimeType??c.resource?.mimeType});
       if(c.resource?.text)out.push({who,text:c.resource.text});
       return true;
     }
