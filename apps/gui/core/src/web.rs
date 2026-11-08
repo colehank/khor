@@ -708,12 +708,20 @@ mod loopback_tests {
                 while !bytes.ends_with(b"\r\n\r\n") {
                     let mut byte = [0];
                     if stream.read(&mut byte).await.map_err(|e| e.to_string())? == 0 {
-                        return if bytes.is_empty() { Ok(None) } else { Err("partial HTTP header".into()) };
+                        return if bytes.is_empty() {
+                            Ok(None)
+                        } else {
+                            Err("partial HTTP header".into())
+                        };
                     }
                     bytes.push(byte[0]);
-                    if bytes.len() > 8192 { return Err("oversized HTTP header".into()); }
+                    if bytes.len() > 8192 {
+                        return Err("oversized HTTP header".into());
+                    }
                 }
-                String::from_utf8(bytes).map(Some).map_err(|e| e.to_string())
+                String::from_utf8(bytes)
+                    .map(Some)
+                    .map_err(|e| e.to_string())
             }
             let facts = std::sync::Arc::new(std::sync::Mutex::new(Facts::default()));
             let recording = facts.clone();
@@ -786,7 +794,10 @@ mod loopback_tests {
             let _ = answering.await;
             let facts = facts.lock().unwrap();
             eprintln!("native loopback {host}: {facts:?}");
-            assert_eq!(result["body"], "BORROWED_EXIT", "{host}: {result}; {facts:?}");
+            assert_eq!(
+                result["body"], "BORROWED_EXIT",
+                "{host}: {result}; {facts:?}"
+            );
             assert!(facts.errors.is_empty(), "{host}: {facts:?}");
             assert!(facts.served > 0, "{host}: {facts:?}");
             drop(lease);
