@@ -753,7 +753,7 @@ export function ChatView({
   const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, following, readingLatest } = useChatScroll(paint);
   const rememberReading=()=>{
     const element=scroller.current;
-    if(!sourceBinding||!element||!history?.loaded||history.busy||resumeReading.current)return;
+    if(!sourceBinding||!element||!history?.loaded||resumeReading.current)return;
     const key=readingKey(id,sourceBinding);
     if(following.current){readingPlaces.delete(key);return;}
     const top=element.getBoundingClientRect().top;
@@ -766,6 +766,11 @@ export function ChatView({
     readingPlaces.delete(key);readingPlaces.set(key,{before:page.newer,entry,top:node.getBoundingClientRect().top-top,point:captureHistoryTextPoint(node,element,item)});
     while(readingPlaces.size>64)readingPlaces.delete(readingPlaces.keys().next().value!);
   };
+  // A page read keeps its last confirmed window while busy. Record that
+  // window even if the final scroll happened during the read, and capture
+  // once before React detaches this session's DOM on a tab switch.
+  const rememberReadingNow=useRef(rememberReading);rememberReadingNow.current=rememberReading;
+  useLayoutEffect(()=>()=>rememberReadingNow.current(),[id]);
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
