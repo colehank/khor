@@ -31,6 +31,16 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.waitForFunction(()=>document.querySelectorAll('[data-chat-tool]').length>0);
   await page.locator('[data-chat-media-preview]').waitFor();await page.locator('[data-chat-media-preview]').click();
   await page.getByRole('dialog').waitFor();assert.equal(await page.getByRole('dialog').locator('img').evaluate(image=>image.complete&&image.naturalWidth>0),true);await page.keyboard.press('Escape');
+  const anchor=await page.locator('[data-chat-scroll]').evaluate(element=>{
+   const top=element.getBoundingClientRect().top,node=[...element.querySelectorAll('[data-history-key]')].find(node=>node.getBoundingClientRect().bottom>top);
+   return {key:node.dataset.historyKey,top:node.getBoundingClientRect().top-top};
+  });
+  await page.locator(`[data-session-tabs] [data-tab-open="${other}"]`).click();
+  await page.locator(`[data-session-tabs] [data-tab-open="${original}"]`).click();
+  await page.waitForFunction(anchor=>{
+   const root=document.querySelector('[data-chat-scroll]'),node=[...root.querySelectorAll('[data-history-key]')].find(node=>node.dataset.historyKey===anchor.key);
+   return node&&Math.abs(node.getBoundingClientRect().top-root.getBoundingClientRect().top-anchor.top)<3;
+  },anchor);
   assert(await page.locator('[data-copy-text]').count()>0,'Answer and code copying are discoverable');
   await page.locator('[data-lab-add]').click();await page.locator('[role=menuitem][data-history-find-open]').click();
   await page.locator('[data-history-search] input').waitFor();

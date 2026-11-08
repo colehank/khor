@@ -874,7 +874,7 @@ export function ChatView({
       setPaint(previous => ({...previous, past: []})); setHistory(null); setLoaded(false); setGone(false); setOpenWhy(null);
       if (still) { setTitle(null); setPlan([]); }
       setOpen(new Set()); toBottom();
-      const saved=before===undefined?readingPlaces.get(readingKey(id,readBinding)):undefined;
+      const saved=readingPlaces.get(readingKey(id,readBinding));
       resumeReading.current=saved?{saved,ticket:capturePositionTicket()}:null;
       if(saved){following.current=false;readingLatest.current=false;}
       setHistoryBinding({ id, binding: readBinding });
@@ -1290,7 +1290,7 @@ export function ChatView({
     void historyView.current?.older();
   };
 
-  useHistoryPrefetch(scroller,history,loadOlderHistory);
+  useHistoryPrefetch(scroller,history,loadOlderHistory,()=>{void historyView.current?.newer();});
 
   const latestBody = useMemo(() => history
     ? latestHistoryBody(paint.past, historyEntries(history.window)) : null, [paint.past, history?.window]);
