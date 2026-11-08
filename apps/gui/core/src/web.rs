@@ -264,6 +264,21 @@ mod open_link_tests {
     }
 }
 
+/// Stable WebKit store identity per browsing exit, shared by desktop
+/// and iOS. It keeps proxy configuration separate from the app's store.
+pub fn page_store_identifier(exit: &str) -> [u8; 16] {
+    let fnv = |seed: u64, bytes: &[u8]| {
+        bytes.iter().fold(seed, |hash, byte| {
+            (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+        })
+    };
+    let key = format!("khor-page:{exit}");
+    let mut id = [0u8; 16];
+    id[..8].copy_from_slice(&fnv(0xcbf2_9ce4_8422_2325, key.as_bytes()).to_le_bytes());
+    id[8..].copy_from_slice(&fnv(0x6c62_272e_07bb_0142, key.as_bytes()).to_le_bytes());
+    id
+}
+
 /// Where a page asks for this device's own loopback — `localhost`,
 /// `127.x.x.x`, `[::1]` — the host as written and the port (the scheme's
 /// when none is written). `None` for anything else.
@@ -297,70 +312,120 @@ pub fn loopback_of(url: &str) -> Option<(String, u16)> {
     (loop_ip || lower == "localhost" || lower == "localhost.").then_some((host, port))
 }
 
-/// One loopback forward: where its connections go on the far side, and
-/// through which borrow's proxy.
-type Loop = std::sync::Arc<std::sync::Mutex<(String, String)>>;
+/// A loopback forward belongs to the native pages retaining this lease.
+/// Closing the last page stops accepting and closes its in-flight pipes.
+#[derive(Clone, Debug)]
+pub struct LoopbackLease(std::sync::Arc<LoopbackForward>);
 
-fn loops() -> &'static std::sync::Mutex<std::collections::HashMap<u16, Loop>> {
-    static L: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<u16, Loop>>> =
-        std::sync::OnceLock::new();
-    L.get_or_init(Default::default)
+#[derive(Debug)]
+struct LoopbackForward {
+    target: String,
+    proxy: String,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
-/// **A loopback address through a machine is that machine's** (UX-38 §1,
-/// the owner 2026-10-06: `http://127.0.0.1:8765/…` on a tab through his
-/// Mac showed a blank page on the phone).
-///
-/// WebKit never sends a loopback address to a proxy: a data store's
-/// `proxyConfigurations` carry every other host through the borrow's
-/// CONNECT — names, private addresses — but `localhost`, `127.0.0.1` and
-/// the device's own addresses go straight out (measured with a logging
-/// proxy, macOS and the iOS simulator alike: no CONNECT, the load came
-/// from `com.apple.WebKit.Networking`). On a phone that is the phone's own
-/// loopback, where nothing listens. No setting changes it (`matchDomains`
-/// tried).
-///
-/// So the phone listens there itself: `127.0.0.1:<port>` on this device
-/// pipes every connection through the borrow's proxy as `CONNECT
-/// <host>:<port>`, which the machine resolves on its own side — its
-/// `localhost`, its dev server. The page keeps its address, its `Host`
-/// and its origin, and links to the same port keep working.
-///
-/// One forward per port, pointed at the page that asked last; asked again
-/// it is re-pointed, never bound twice. `Err` with the catalog's words
-/// when this device's port is taken.
-pub async fn hold_loopback(host: &str, port: u16, proxy: &str) -> Result<(), String> {
-    let target = format!("{host}:{port}");
-    if let Some(held) = loops().lock().map_err(|e| e.to_string())?.get(&port) {
-        if let Ok(mut at) = held.lock() {
-            *at = (target, proxy.to_owned());
+impl Drop for LoopbackForward {
+    fn drop(&mut self) {
+        for task in &self.tasks {
+            task.abort();
         }
-        return Ok(());
     }
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
-        .await
-        .map_err(|_| khor_catalog::msg::page_port_taken(port))?;
-    let held: Loop = std::sync::Arc::new(std::sync::Mutex::new((target, proxy.to_owned())));
-    loops()
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(port, held.clone());
-    tokio::spawn(async move {
-        while let Ok((sock, _)) = listener.accept().await {
-            let at = held.lock().map(|a| a.clone());
-            if let Ok((target, proxy)) = at {
-                tokio::spawn(async move {
-                    let _ = through(sock, &target, &proxy).await;
-                });
-            }
-        }
-    });
-    Ok(())
 }
 
-/// Whether this device's `port` is already piped to a machine.
+/// A page keeps earlier loopback origins for its back/forward history.
+/// Repeated layout/open requests do not accumulate duplicate leases.
+#[derive(Default)]
+pub struct LoopbackLeases(Vec<LoopbackLease>);
+
+impl LoopbackLeases {
+    pub fn retain(&mut self, lease: Option<LoopbackLease>) {
+        if let Some(lease) = lease
+            && !self.0.iter().any(|held| std::sync::Arc::ptr_eq(&held.0, &lease.0))
+        {
+            self.0.push(lease);
+        }
+    }
+}
+
+fn loops() -> &'static std::sync::Mutex<
+    std::collections::HashMap<u16, std::sync::Weak<LoopbackForward>>,
+> {
+    static LOOPS: std::sync::OnceLock<std::sync::Mutex<
+        std::collections::HashMap<u16, std::sync::Weak<LoopbackForward>>,
+    >> = std::sync::OnceLock::new();
+    LOOPS.get_or_init(Default::default)
+}
+
+/// WebKit bypasses a data store's CONNECT proxy for loopback URLs, even
+/// with explicit matchDomains (native macOS probe 2026-11-08). Bind only
+/// that loopback origin and pipe it through the chosen machine's proxy.
+/// The URL, Host, origin and TLS remain unchanged.
+///
+/// A live port can be shared only by the same target AND proxy. Another
+/// exit is refused instead of silently redirecting already-open pages.
+/// Drop every lease before replacing that route. An occupied local port
+/// is also refused: borrowing must never fall through to a local service.
+pub async fn hold_loopback(
+    host: &str,
+    port: u16,
+    proxy: &str,
+) -> Result<LoopbackLease, String> {
+    // A preceding page close may have aborted the last listener task.
+    // Let that task retire before trying to bind its port again.
+    tokio::task::yield_now().await;
+    let target = format!("{}:{port}", host.to_ascii_lowercase());
+    let mut loops = loops().lock().map_err(|e| e.to_string())?;
+    loops.retain(|_, held| held.strong_count() > 0);
+    if let Some(held) = loops.get(&port).and_then(std::sync::Weak::upgrade) {
+        return if held.target == target && held.proxy == proxy {
+            Ok(LoopbackLease(held))
+        } else {
+            Err(khor_catalog::msg::page_port_taken(port))
+        };
+    }
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    let addresses: Vec<std::net::IpAddr> = if bare.eq_ignore_ascii_case("localhost")
+        || bare.eq_ignore_ascii_case("localhost.")
+    {
+        vec![std::net::Ipv4Addr::LOCALHOST.into(), std::net::Ipv6Addr::LOCALHOST.into()]
+    } else {
+        let address: std::net::IpAddr = bare.parse().map_err(|_| "not a loopback address")?;
+        if !address.is_loopback() {
+            return Err("not a loopback address".into());
+        }
+        vec![address]
+    };
+    // Reserve every address before publishing or spawning anything. In
+    // particular localhost must not reach an unrelated IPv6 listener.
+    let listeners = addresses.into_iter().map(|address| {
+        let listener = std::net::TcpListener::bind((address, port))
+            .map_err(|_| khor_catalog::msg::page_port_taken(port))?;
+        listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+        tokio::net::TcpListener::from_std(listener).map_err(|e| e.to_string())
+    }).collect::<Result<Vec<_>, String>>()?;
+    let tasks = listeners.into_iter().map(|listener| {
+        let (target, proxy) = (target.clone(), proxy.to_owned());
+        tokio::spawn(async move {
+            let mut pipes = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((sock, _)) = accepted else { break };
+                        let (target, proxy) = (target.clone(), proxy.clone());
+                        pipes.spawn(async move { let _ = through(sock, &target, &proxy).await; });
+                    }
+                    _ = pipes.join_next(), if !pipes.is_empty() => {}
+                }
+            }
+        })
+    }).collect();
+    let held = std::sync::Arc::new(LoopbackForward { target, proxy: proxy.to_owned(), tasks });
+    loops.insert(port, std::sync::Arc::downgrade(&held));
+    Ok(LoopbackLease(held))
+}
+
 pub fn loopback_held(port: u16) -> bool {
-    loops().lock().is_ok_and(|l| l.contains_key(&port))
+    loops().lock().is_ok_and(|loops| loops.get(&port).is_some_and(|held| held.strong_count() > 0))
 }
 
 /// One connection, through the proxy as a CONNECT: the pipe once the
@@ -394,7 +459,7 @@ async fn through(mut sock: tokio::net::TcpStream, target: &str, proxy: &str) -> 
 
 #[cfg(test)]
 mod loopback_tests {
-    use super::{hold_loopback, loopback_of};
+    use super::{hold_loopback, loopback_of, page_store_identifier};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     #[test]
@@ -430,9 +495,17 @@ mod loopback_tests {
         }
     }
 
+    #[test]
+    fn browser_stores_keep_exits_separate_and_preserve_the_phone_identity() {
+        assert_ne!(page_store_identifier(""), page_store_identifier("home"));
+        assert_ne!(page_store_identifier("home"), page_store_identifier("work"));
+        // The previous iOS store_for used exactly these two FNV-1a seeds.
+        assert_eq!(page_store_identifier("home"), page_store_identifier("home"));
+    }
+
     /// The page connects to this device's port; what arrives is the far
     /// side's answer, asked through the proxy as the page's own host —
-    /// and a second ask re-points the same port.
+    /// and another page on that route shares the listener.
     #[tokio::test]
     async fn the_port_pipes_through_the_proxy_to_the_far_side() {
         // The far side: a server on a port of its own.
@@ -477,7 +550,7 @@ mod loopback_tests {
             let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             l.local_addr().unwrap().port()
         };
-        hold_loopback("localhost", port, &proxy_at).await.unwrap();
+        let first = hold_loopback("localhost", port, &proxy_at).await.unwrap();
         let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .unwrap();
@@ -488,8 +561,9 @@ mod loopback_tests {
             asked.recv().await.unwrap(),
             format!("CONNECT localhost:{port} HTTP/1.1")
         );
-        // Asked again for the same port: re-pointed, not bound twice.
-        hold_loopback("127.0.0.1", port, &proxy_at).await.unwrap();
+        // The same route is shared without changing the first page.
+        let second = hold_loopback("localhost", port, &proxy_at).await.unwrap();
+        drop(first);
         let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port))
             .await
             .unwrap();
@@ -497,8 +571,18 @@ mod loopback_tests {
         page.read_to_string(&mut got).await.unwrap();
         assert_eq!(
             asked.recv().await.unwrap(),
-            format!("CONNECT 127.0.0.1:{port} HTTP/1.1")
+            format!("CONNECT localhost:{port} HTTP/1.1")
         );
+        drop(second);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if let Ok(listener) = std::net::TcpListener::bind(("127.0.0.1", port)) {
+                    drop(listener);
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
     }
 
     #[tokio::test]
@@ -526,6 +610,50 @@ mod loopback_tests {
                 .is_err(),
             "a second page must not change the first page's exit"
         );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    #[ignore = "requires KHOR_WEBKIT_PROBE, an isolated native WKWebView fixture"]
+    async fn native_webkit_reaches_the_borrowed_loopback_origin() {
+        let program = std::env::var_os("KHOR_WEBKIT_PROBE").expect("native fixture required");
+        for host in ["127.0.0.1", "localhost", "[::1]"] {
+            let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let proxy_port = proxy.local_addr().unwrap().port();
+            let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = free.local_addr().unwrap().port();
+            drop(free);
+            let expected = format!("CONNECT {host}:{port} HTTP/1.1");
+            let answering = tokio::spawn(async move {
+                let (mut stream, _) = proxy.accept().await.unwrap();
+                let mut head = Vec::new();
+                loop {
+                    head.push(stream.read_u8().await.unwrap());
+                    assert!(head.len() < 8192);
+                    if head.ends_with(b"\r\n\r\n") { break }
+                }
+                assert_eq!(String::from_utf8_lossy(&head).lines().next().unwrap(), expected);
+                stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.unwrap();
+                head.clear();
+                loop {
+                    head.push(stream.read_u8().await.unwrap());
+                    assert!(head.len() < 8192);
+                    if head.ends_with(b"\r\n\r\n") { break }
+                }
+                assert!(String::from_utf8_lossy(&head).starts_with("GET / "));
+                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 13\r\nConnection: close\r\n\r\nBORROWED_EXIT").await.unwrap();
+            });
+            let lease = hold_loopback(host, port, &format!("127.0.0.1:{proxy_port}")).await.unwrap();
+            let mut process = tokio::process::Command::new(&program);
+            process.args(["default", &format!("http://{host}:{port}/"), &proxy_port.to_string()]);
+            process.kill_on_drop(true);
+            let output = tokio::time::timeout(std::time::Duration::from_secs(30), process.output()).await.unwrap().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+            let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+            assert_eq!(result["body"], "BORROWED_EXIT", "{host}: {result}");
+            tokio::time::timeout(std::time::Duration::from_secs(3), answering).await.unwrap().unwrap();
+            drop(lease);
+        }
     }
 }
 

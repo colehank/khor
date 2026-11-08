@@ -1765,6 +1765,25 @@ fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (
     EXITS.get_or_init(Default::default)
 }
 
+#[cfg(target_os = "macos")]
+fn page_loopbacks() -> &'static std::sync::Mutex<
+    std::collections::HashMap<String, khor_gui_core::web::LoopbackLeases>,
+> {
+    static LEASES: std::sync::OnceLock<std::sync::Mutex<
+        std::collections::HashMap<String, khor_gui_core::web::LoopbackLeases>,
+    >> = std::sync::OnceLock::new();
+    LEASES.get_or_init(Default::default)
+}
+
+#[cfg(target_os = "macos")]
+fn keep_page_loopback(label: &str, lease: Option<khor_gui_core::web::LoopbackLease>) {
+    if let Some(lease) = lease
+        && let Ok(mut pages) = page_loopbacks().lock()
+    {
+        pages.entry(label.to_owned()).or_default().retain(Some(lease));
+    }
+}
+
 /// **Whether the face wants each tab's page on screen: state, not an
 /// event** (the owner, 2026-10-05, iPhone: 「出了浏览器这个页面还在」).
 /// `open_page` attaches the page only after its borrow has dialled, which
@@ -1942,6 +1961,35 @@ async fn open_page(
         .as_ref()
         .map(|(exit, _)| exit == &machine)
         .unwrap_or(false);
+    if !same_exit {
+        // Retire this page before changing its route. Other pages retain
+        // their own leases, so their loopback port cannot be retargeted.
+        if let Some(live) = window.app_handle().get_webview(&label) {
+            #[cfg(target_os = "macos")]
+            page_fail::forget(&tab);
+            #[cfg(not(target_os = "macos"))]
+            page_navigation::with_pages(|pages| {
+                if let Some(key) = pages.key_for_tab(&tab) {
+                    pages.detach(key);
+                }
+            });
+            live.close().map_err(|e| e.to_string())?;
+        }
+        #[cfg(target_os = "macos")]
+        if let Ok(mut pages) = page_loopbacks().lock() {
+            pages.remove(&label);
+        }
+    }
+    #[cfg(target_os = "macos")]
+    let loopback = if !direct {
+        if let Some((host, port)) = khor_gui_core::web::loopback_of(&url) {
+            Some(khor_gui_core::web::hold_loopback(&host, port, &borrow.addr).await?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     if let Some(live) = window.app_handle().get_webview(&label) {
         if same_exit {
             // **Only navigate when it is somewhere else.** Coming back to
@@ -1969,17 +2017,10 @@ async fn open_page(
                 live.hide().map_err(|e| e.to_string())?;
             }
             tell_page_steps(&live, &tab);
+            #[cfg(target_os = "macos")]
+            keep_page_loopback(&label, loopback);
             return Ok(borrow);
         }
-        #[cfg(target_os = "macos")]
-        page_fail::forget(&tab);
-        #[cfg(not(target_os = "macos"))]
-        page_navigation::with_pages(|pages| {
-            if let Some(key) = pages.key_for_tab(&tab) {
-                pages.detach(key);
-            }
-        });
-        let _ = live.close();
     }
 
     // Every event goes to **this** window and no further. A page webview
@@ -2021,6 +2062,13 @@ async fn open_page(
     let initial = target;
     let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(initial))
         .background_color(ground(chosen_dark(desktop_is_dark)));
+    #[cfg(target_os = "macos")]
+    {
+        // Wry applies proxies to a data store, not a single webview.
+        // A borrowed page must never reconfigure the app's own store or
+        // a page using another exit.
+        builder = builder.data_store_identifier(khor_gui_core::web::page_store_identifier(&machine));
+    }
     if let Some(proxy) = proxy {
         // The two ride together or not at all — see `direct` above.
         builder = builder
@@ -2251,6 +2299,8 @@ async fn open_page(
         let _ = made.close();
         return Err(error);
     }
+    #[cfg(target_os = "macos")]
+    keep_page_loopback(&label, loopback);
     Ok(borrow)
 }
 
@@ -2809,6 +2859,10 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     });
     if let Ok(mut m) = page_exits().lock() {
         m.remove(&label);
+    }
+    #[cfg(target_os = "macos")]
+    if let Ok(mut pages) = page_loopbacks().lock() {
+        pages.remove(&label);
     }
     let Some(view) = app.get_webview(&label) else {
         return Ok(());
@@ -3379,17 +3433,31 @@ async fn open_page(
         } else {
             khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?
         };
+        // Close this tab's previous exit before acquiring a loopback port
+        // for a replacement. The operation runs on UIKit's main thread.
+        let (prepared, ready) = tokio::sync::oneshot::channel();
+        let (old_tab, new_exit) = (tab.clone(), machine.clone());
+        app.run_on_main_thread(move || {
+            phone_page::retire_other_exit(&old_tab, &new_exit);
+            let _ = prepared.send(());
+        }).map_err(|e| e.to_string())?;
+        ready.await.map_err(|e| e.to_string())?;
         // A loopback address is the machine's, not the phone's (UX-38 §1):
         // WebKit sends it past the proxy, so the phone's own port is piped
         // to the machine's (`hold_loopback`).
-        if !direct {
+        let loopback = if !direct {
             if let Some((host, port)) = khor_gui_core::web::loopback_of(&url) {
-                khor_gui_core::web::hold_loopback(&host, port, &borrow.addr).await?;
+                Some(khor_gui_core::web::hold_loopback(&host, port, &borrow.addr).await?)
+            } else {
+                None
             }
-        }
+        } else {
+            None
+        };
         let wiring = phone_page::Wiring {
             proxy: (!direct).then(|| borrow.addr.clone()),
             agent: if direct { None } else { as_a_browser(&agent) },
+            loopback,
         };
         let face = phone_page::face(&app).ok_or("no face")?;
         let (tx, rx) = tokio::sync::oneshot::channel();

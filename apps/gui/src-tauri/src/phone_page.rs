@@ -61,6 +61,7 @@ struct Page {
     /// Its borrow's proxy, for a loopback address the page goes to on its
     /// own (`failed`).
     proxy: Option<String>,
+    loopbacks: khor_gui_core::web::LoopbackLeases,
     /// Where the page last was, as asked or as it arrived.
     url: String,
     /// What the face was last told, so a poll reports changes only.
@@ -669,12 +670,7 @@ fn failed(view: *mut AnyObject, navigation: *mut AnyObject, error: *mut AnyObjec
         if !khor_gui_core::web::loopback_held(port) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                if khor_gui_core::web::hold_loopback(&host, port, &proxy)
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
+                let Ok(lease) = khor_gui_core::web::hold_loopback(&host, port, &proxy).await else { return };
                 let _ = app.run_on_main_thread(move || {
                     let current = crate::page_navigation::with_pages(|pages| {
                         pages.state(key).is_some_and(|state| {
@@ -686,8 +682,12 @@ fn failed(view: *mut AnyObject, navigation: *mut AnyObject, error: *mut AnyObjec
                     if !current {
                         return;
                     }
-                    if let Some(page) =
-                        PAGES.with(|pages| pages.borrow().get(&tab).map(|page| page.view.clone()))
+                    if let Some(page) = PAGES.with(|pages| {
+                        let mut pages = pages.borrow_mut();
+                        let page = pages.get_mut(&tab)?;
+                        page.loopbacks.retain(Some(lease));
+                        Some(page.view.clone())
+                    })
                     {
                         unsafe {
                             load(&page, &url);
@@ -1121,6 +1121,7 @@ pub struct Wiring {
     /// `host:port` of the borrow's local proxy; `None` goes direct.
     pub proxy: Option<String>,
     pub agent: Option<String>,
+    pub loopback: Option<khor_gui_core::web::LoopbackLease>,
 }
 
 /// The rectangle, in the superview's points, of a box the face measured
@@ -1204,18 +1205,7 @@ unsafe fn add_end_script(controller: *mut AnyObject, source: &str) {
 /// A persistent store per exit machine: its cookies are that exit's,
 /// and the face's own store never carries a proxy.
 unsafe fn store_for(exit: &str) -> Option<Retained<AnyObject>> {
-    // FNV-1a, spelled out (as `build_the_window`'s page store): std's
-    // hasher may change between releases, and a changed id is a store
-    // whose cookies are silently gone.
-    let fnv = |seed: u64, bytes: &[u8]| {
-        bytes.iter().fold(seed, |h, b| {
-            (h ^ u64::from(*b)).wrapping_mul(0x100_0000_01b3)
-        })
-    };
-    let key = format!("khor-page:{exit}");
-    let mut b = [0u8; 16];
-    b[..8].copy_from_slice(&fnv(0xcbf2_9ce4_8422_2325, key.as_bytes()).to_le_bytes());
-    b[8..].copy_from_slice(&fnv(0x6c62_272e_07bb_0142, key.as_bytes()).to_le_bytes());
+    let b = khor_gui_core::web::page_store_identifier(exit);
     let id = format!(
         "{:02X}{:02X}{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}-{:02X}{:02X}{:02X}{:02X}{:02X}{:02X}",
         b[0],
@@ -1279,7 +1269,7 @@ pub fn open(
     exit: &str,
     url: &str,
     at: PageBox,
-    wiring: Wiring,
+    mut wiring: Wiring,
 ) -> Result<(), String> {
     start_polling(app);
     let _ = APP.set(app.clone());
@@ -1291,6 +1281,7 @@ pub fn open(
             let mut pages = pages.borrow_mut();
             if let Some(page) = pages.get_mut(tab) {
                 if page.exit == exit {
+                    page.loopbacks.retain(wiring.loopback.take());
                     page.viewport_origin = viewport_origin;
                     if page.url != url {
                         page.url = url.to_owned();
@@ -1398,6 +1389,11 @@ pub fn open(
                     view,
                     exit: exit.to_owned(),
                     proxy: wiring.proxy.clone(),
+                    loopbacks: {
+                        let mut leases = khor_gui_core::web::LoopbackLeases::default();
+                        leases.retain(wiring.loopback.take());
+                        leases
+                    },
                     url: url.to_owned(),
                     told_url: url.to_owned(),
                     told_title: String::new(),
@@ -1495,6 +1491,13 @@ pub fn close(tab: &str) {
             }
         }
     });
+}
+
+pub fn retire_other_exit(tab: &str, exit: &str) {
+    let different = PAGES.with(|pages| pages.borrow().get(tab).is_some_and(|page| page.exit != exit));
+    if different {
+        close(tab);
+    }
 }
 
 /// **What is behind the folded capsule** (UX-29): the page's ground at
