@@ -1,3 +1,4 @@
+import {CopyText} from '@/components/CopyText';
 import {assertPageUrl,openSystemUrl} from "@/lib/client-opener";
 import {linkIntent} from "@/lib/content-link-intent";
 // Agents write markdown. Until this file, the conversation face painted
@@ -171,11 +172,7 @@ const parts: Components = {
   // that wrote it and stopped being true one batch later — the sentence
   // is kept as its own correction because a note that describes the
   // *previous* state reads exactly like a note describing this one.)
-  pre: (e) => (
-    <pre {...own(e, "my-2 overflow-x-auto rounded-md border bg-muted px-3 py-2 font-mono text-mono")}>
-      {e.children}
-    </pre>
-  ),
+  pre: (e) => <CopyableCode>{e.children}</CopyableCode>,
   // A table is the one part that can be wider than the pane; it scrolls
   // inside its own frame rather than pushing the conversation sideways.
   table: ({ node, ...e }) => (
@@ -745,3 +742,11 @@ export const HtmlFragment = memo(function HtmlFragment({
     </div>
   );
 });
+
+function CopyableCode({children}:{children:ReactNode}){
+ const pre=useRef<HTMLPreElement>(null);
+ return <div data-code-block className="my-2 min-w-0 rounded-md border bg-muted">
+  <div className="flex justify-end"><CopyText text={()=>pre.current?.textContent??''}/></div>
+  <pre ref={pre} className="overflow-x-auto px-3 py-2 font-mono text-mono">{children}</pre>
+ </div>;
+}

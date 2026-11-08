@@ -1,3 +1,4 @@
+import {CopyText} from '@/components/CopyText';
 import { useMemo, useState } from "react";
 import { Message, MessageContent } from "@/components/ui/ai/message";
 import { Markdown } from "@/components/Markdown";
@@ -17,7 +18,7 @@ export function AgentContent({ item, streaming, active = true, open, onOpenChang
   }
   if (item.who === "thought") return <AgentReasoning text={item.text} isStreaming={streaming} />;
   if (item.who === "tool") return <AgentTool tool={item} active={active} open={open} onOpenChange={onOpenChange} onOpenFile={onOpenFile} />;
-  return <Message data-chat-message className="text-read py-row"><MessageContent><Markdown text={item.text} className="text-read-ink" /></MessageContent></Message>;
+  return <Message role="article" aria-label="智能体" data-chat-message className="text-read py-row"><MessageContent><Markdown text={item.text} className="text-read-ink" />{item.who==='agent'&&!streaming&&<div className="flex"><CopyText text={item.text}/></div>}</MessageContent></Message>;
 }
 
 export function AgentTranscript({ updates, busy, fallback, onOpenFile }: {

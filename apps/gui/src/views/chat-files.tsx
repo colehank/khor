@@ -32,7 +32,7 @@ import { fileManagerLabel } from "@/lib/file-actions";
 // sentences for what it will not draw — read only, with the three things
 // a person does next: open it where it lives, copy its path, and hand it
 // on (Finder on the Mac, the system's share sheet on a phone).
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
@@ -51,20 +51,8 @@ import { defaultFaceOf, FileView, kindOf } from "@/views/FileView";
 import { useShowFile } from "@/views/linkHome";
 
 /** One file going along with the line being written. */
-export type Pending = {
-  key: string;
-  name: string;
-  /** Bytes, where the device said; `null` for a file named by path. */
-  size: number | null;
-  /** A small picture for the chip: an object URL, images under 1 MiB. */
-  thumb: string | null;
-  /** The picture itself for agents that take pictures, `[mime, base64]`. */
-  inline: [string, string] | null;
-  /** Where it is on the conversation's machine, once it is there. */
-  path: string | null;
-  /** Why it could not be put there. */
-  error: string | null;
-};
+export type Pending = import('@/lib/composer-files').PendingFile;
+import {composerFiles,composerReady} from '@/lib/composer-files';
 
 /** How large a picture still rides inline beside its path: 5 MB, the
     old picture road's limit again. A turn with pictures goes in slices,
@@ -92,91 +80,30 @@ async function base64Of(f: File): Promise<string> {
 export function usePendingFiles(upload: {
   put: (file: File, into: string | null) => Promise<string>;
   putPaths: (paths: string[], into: string | null) => Promise<string[]>;
-}, into: string | null = null) {
-  const [items, setItems] = useState<Pending[]>([]);
-  const seq = useRef(0);
-  const mounted = useRef(true);
-  // Set on every mount, not only in the ref's first value: React's
-  // development double mount runs the cleanup once in between.
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
-  const patch = (key: string, p: Partial<Pending>) =>
-    mounted.current && setItems((now) => now.map((i) => (i.key === key ? { ...i, ...p } : i)));
-
-  /** Files from the device: put on the machine at once. */
-  const addFiles = (files: File[]) => {
-    for (const f of files) {
-      const key = `f${++seq.current}`;
-      const picture = f.type.startsWith("image/");
-      setItems((now) => [
-        ...now,
-        {
-          key,
-          name: f.name || gui.chat_image(String(seq.current)),
-          size: f.size,
-          thumb: picture && f.size <= THUMB_MAX ? URL.createObjectURL(f) : null,
-          inline: null,
-          path: null,
-          error: null,
-        },
-      ]);
-      // Read for every small picture; whether it rides is the send's
-      // question, asked of the agent's handshake then.
-      if (picture && f.size <= INLINE_MAX) {
-        void base64Of(f).then((b) => patch(key, { inline: [f.type, b] }));
-      }
-      upload.put(f, into).then(
-        (path) => patch(key, { path }),
-        (e) => patch(key, { error: why(e) }),
-      );
+}, into: string | null = null, session = 'composer') {
+  const store=composerFiles(session);
+  const items=useSyncExternalStore(store.subscribe,store.snapshot);
+  const addFiles=(files:File[])=>{
+    for(const file of files){
+      const key=store.key(),picture=file.type.startsWith('image/'),encoding=picture&&file.size<=INLINE_MAX;
+      store.add([{key,name:file.name||gui.chat_image(key),size:file.size,
+        thumb:picture&&file.size<=THUMB_MAX?URL.createObjectURL(file):null,
+        inline:null,path:null,error:null,encoding}]);
+      if(encoding)void base64Of(file).then(data=>store.patch(key,{inline:[file.type,data],encoding:false}),
+        error=>store.patch(key,{encoding:false,error:why(error)}));
+      void upload.put(file,into).then(path=>store.patch(key,{path}),error=>store.patch(key,{error:why(error)}));
     }
   };
-
-  /** Paths this device has (a drop in the app): put on the machine. */
-  const addLocalPaths = (paths: string[]) => {
-    const keys = paths.map(() => `p${++seq.current}`);
-    setItems((now) => [
-      ...now,
-      ...paths.map((p, i) => ({ key: keys[i], name: baseName(p), size: null, thumb: null, inline: null, path: null, error: null })),
-    ]);
-    upload.putPaths(paths, into).then(
-      (landed) => landed.forEach((path, i) => patch(keys[i], { path })),
-      (e) => keys.forEach((k) => patch(k, { error: why(e) })),
-    );
+  const addLocalPaths=(paths:string[])=>{
+    const keys=paths.map(()=>store.key());
+    store.add(paths.map((path,index)=>({key:keys[index],name:baseName(path),size:null,thumb:null,inline:null,path:null,error:null})));
+    void upload.putPaths(paths,into).then(landed=>keys.forEach((key,index)=>store.patch(key,landed[index]
+      ?{path:landed[index]}:{error:gui.history_read_failed})),error=>keys.forEach(key=>store.patch(key,{error:why(error)})));
   };
-
-  /** Paths already on the conversation's machine: nothing to move. */
-  const addPaths = (paths: string[]) =>
-    setItems((now) => [
-      ...now,
-      ...paths.map((p) => ({ key: `m${++seq.current}`, name: baseName(p), size: null, thumb: null, inline: null, path: p, error: null })),
-    ]);
-
-  const remove = (key: string) =>
-    setItems((now) => {
-      const gone = now.find((i) => i.key === key);
-      if (gone?.thumb) URL.revokeObjectURL(gone.thumb);
-      return now.filter((i) => i.key !== key);
-    });
-  const clear = () =>
-    setItems((now) => {
-      for (const i of now) if (i.thumb) URL.revokeObjectURL(i.thumb);
-      return [];
-    });
-  /** Recovered picks already live on the session's machine. Thumbnail URLs
-      belonged to the old composer; metadata and inline strings can be reused. */
-  const restore = (remembered: readonly Pending[]) => {
-    if (!mounted.current) return;
-    const restored = remembered.map(item => ({ ...item, key: `r${++seq.current}`, thumb: null }));
-    setItems(now => [...now, ...restored]);
-  };
-  /** A file still on its way: sending waits for it. */
-  const busy = items.some((i) => i.path === null && i.error === null);
-  return { items, addFiles, addLocalPaths, addPaths, remove, clear, restore, busy };
+  const addPaths=(paths:string[])=>store.add(paths.map(path=>({key:store.key(),name:baseName(path),size:null,thumb:null,inline:null,path,error:null})));
+  const restore=(remembered:readonly Pending[])=>store.add(remembered.map(item=>({...item,key:store.key(),thumb:null})));
+  return {items,addFiles,addLocalPaths,addPaths,remove:(key:string)=>store.remove(key),clear:()=>store.clear(),restore,
+    busy:items.some(item=>!item.error&&(item.path===null||item.encoding)),ready:composerReady(items)};
 }
 
 /** The chips over the text: each file going along, with its × to take
@@ -192,7 +119,7 @@ export function PendingChips({ items, onRemove }: { items: Pending[]; onRemove: 
           key={i.key}
           data-chat-pending-file={i.name}
           data-placed={i.path !== null || undefined}
-          aria-busy={(i.path === null && i.error === null) || undefined}
+          aria-busy={(!i.error&&(i.path===null||i.encoding))||undefined}
           title={i.error ?? i.path ?? undefined}
           className={cn(
             "flex max-w-full min-w-0 items-center gap-in rounded-lg bg-fill py-1 ps-1 pe-0 text-callout",
@@ -541,11 +468,18 @@ type Facts = { size: number | null; thumb: string | null };
     question that could not be asked answers `null` and is forgotten, so
     the card asks again (`useFacts`). */
 const asked = new Map<string, Promise<Facts | null>>();
+const factBytes=new Map<string,number>();
+function forgetFact(key:string){asked.delete(key);factBytes.delete(key);}
+function trimFacts(){
+ while(asked.size>64||[...factBytes.values()].reduce((sum,n)=>sum+n,0)>8*1024*1024){
+  const oldest=asked.keys().next().value;if(oldest===undefined)break;forgetFact(oldest);
+ }
+}
 
 function factsOf(machine: string, path: string, stamp: string): Promise<Facts | null> {
   const key = `${machine}\n${path}\n${stamp}`;
   const had = asked.get(key);
-  if (had) return had;
+  if (had) {asked.delete(key);asked.set(key,had);return had;}
   const dir = path.slice(0, path.lastIndexOf("/")) || "/";
   const name = baseName(path);
   const p = fetchLs(machine, dir).then(
@@ -558,11 +492,12 @@ function factsOf(machine: string, path: string, stamp: string): Promise<Facts | 
       return { size: row.size, thumb };
     },
     () => {
-      asked.delete(key);
+      forgetFact(key);
       return null;
     },
   );
-  asked.set(key, p);
+  asked.set(key, p);trimFacts();
+  void p.then(facts=>{if(asked.get(key)!==p)return;factBytes.set(key,(facts?.thumb?.length??0)*2);trimFacts();},()=>{if(asked.get(key)===p)forgetFact(key);});
   return p;
 }
 
@@ -573,6 +508,7 @@ function useFacts(machine: string, path: string, stamp: string): Facts {
   const [facts, setFacts] = useState<Facts>({ size: null, thumb: null });
   useEffect(() => {
     let live = true;
+    setFacts({size:null,thumb:null});
     let timer: ReturnType<typeof setTimeout> | undefined;
     // A machine that could not be reached is asked again a little later,
     // a few times: a card left without its size for the life of the page

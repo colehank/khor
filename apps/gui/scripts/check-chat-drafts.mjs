@@ -1,3 +1,4 @@
+import {ComposerFiles,composerReady} from '../src/lib/composer-files.ts';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 import {fileURLToPath} from 'node:url';
@@ -152,3 +153,24 @@ await test('unsent draft checkpoint refuses quota loss without evicting another 
 });
 retain([]);
 console.log(`chat drafts: ${passed}/${passed} passed`);
+
+await test('composer keeps uploads with their session through detach and resolves only existing picks',()=>{
+ const revoked=[],a=new ComposerFiles(url=>revoked.push(url)),b=new ComposerFiles();
+ const key=a.key();a.add([{key,name:'photo.png',size:20,thumb:'blob:owned',inline:null,path:null,error:null,encoding:true}]);
+ a.patch(key,{path:'/receive/photo.png'});assert.equal(composerReady(a.snapshot()),false);
+ a.patch(key,{inline:['image/png','bytes'],encoding:false});assert.equal(composerReady(a.snapshot()),true);
+ assert.equal(b.snapshot().length,0);assert.equal(a.snapshot()[0].thumb,'blob:owned');
+ a.remove(key);assert.deepEqual(revoked,['blob:owned']);a.patch(key,{path:'late response'});assert.equal(a.snapshot().length,0);
+});
+await test('failed uploads and encoding cannot be silently filtered out of a send',()=>{
+ const files=new ComposerFiles();const key=files.key();
+ files.add([{key,name:'failed.pdf',size:null,thumb:null,inline:null,path:null,error:'offline'}]);
+ assert.equal(composerReady(files.snapshot()),false);
+ files.patch(key,{path:'/receive/file.pdf'});assert.equal(composerReady(files.snapshot()),false);
+ files.remove(key);assert.equal(composerReady(files.snapshot()),true);
+});
+await test('clear releases every owned preview and a late encode cannot repopulate sent draft',()=>{
+ const revoked=[],files=new ComposerFiles(url=>revoked.push(url)),key=files.key();
+ files.add([{key,name:'a.png',size:1,thumb:'blob:a',inline:null,path:'/a',error:null}]);
+ files.clear();files.patch(key,{inline:['image/png','late']});assert.equal(files.snapshot().length,0);assert.deepEqual(revoked,['blob:a']);
+});

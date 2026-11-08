@@ -1,3 +1,6 @@
+import {CopyText} from '@/components/CopyText';
+import {useHistoryPrefetch} from '@/hooks/use-history-prefetch';
+import {useSessionDocuments} from '@/hooks/use-session-documents';
 import { listenNativeDragDrop } from "@/lib/native-events";
 import { awaitChatDraftReceipt, chatDraftOwner, completeChatDraft, discardChatDraft, rememberChatDraft, recoverableChatDrafts, settleChatDraft, subscribeChatDrafts, unconfirmedChatDrafts, type ChatDraft } from '@/lib/chat-drafts';
 import {useSessionDraft} from '@/hooks/use-session-draft';
@@ -10,7 +13,7 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 import { offerTabAct } from "@/lib/tab-acts";
 import { failedNotice, offerNotice, rejoinNotice, type PillNotice } from "@/lib/pill-notices";
 import { takeHandOff, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   inApp,
@@ -696,12 +699,12 @@ export function ChatView({
   const files = usePendingFiles({
     put: (file, target) => withChat(view => view.put(file, target)),
     putPaths: (paths, target) => withChat(view => view.putPaths(paths, target)),
-  }, into);
+  }, into, id);
   const [pickOpen, setPickOpen] = useState(false);
   /** A terminal block handed to the next conversation (roadmap 2.3), as
       `[name, text]`: it rides as the prompt's own text, there being no
       file on any machine to point at. Cleared by sending. */
-  const [docs, setDocs] = useState<[string, string][]>(() => {
+  const [docs, setDocs] = useSessionDocuments(id, () => {
     const handed = takeHandOff();
     return handed ? [handed] : [];
   });
@@ -1230,6 +1233,8 @@ export function ChatView({
     void historyView.current?.older();
   };
 
+  useHistoryPrefetch(scroller,history,loadOlderHistory);
+
   const latestBody = useMemo(() => history
     ? latestHistoryBody(paint.past, historyEntries(history.window)) : null, [paint.past, history?.window]);
 
@@ -1418,9 +1423,11 @@ export function ChatView({
       if (mounted.current && currentSession.current === draft.session && reader.current === draft.reader && lastSay.current?.token === draft.token) setInTurn(false);
     });
   };
+  const hasComposerContent=!!text.trim()||files.items.length>0||docs.length>0;
+  const canSend=hasComposerContent&&!inTurn&&!gone&&files.ready;
   const say = () => {
     const line = text.trim();
-    if ((!line && files.items.length === 0 && docs.length === 0) || inTurn || gone || files.busy) return;
+    if (!canSend) return;
     const owner = chatDraftOwner(id);
     if (!owner) return;
     const placed = files.items.filter(file => file.path !== null);
@@ -1458,6 +1465,7 @@ export function ChatView({
   // typed so far. Open only while the box holds a single slash-word —
   // a space means the command is chosen and what follows is its
   // argument, which is the agent's business and not this menu's.
+  const commandMenuId=useId();
   const menu = matchingAgentCommands(commands, text);
   const complete = (name: string) => {
     // A trailing space: it closes the menu and leaves room for an
@@ -1600,7 +1608,7 @@ export function ChatView({
           {history?.window.older && <Button size="sm" disabled={history.busy} onClick={loadOlderHistory}>{gui.history_older}</Button>}
           {history?.reset && <p role="status" className="text-caption text-muted-foreground">{gui.history_changed}</p>}
           {history?.error != null && <div role="alert" className="text-caption text-destructive">
-            {gui.history_read_failed} <Button size="sm" onClick={() => void historyView.current?.latest()}>{gui.region_retry}</Button>
+            {gui.history_read_failed} <Button size="sm" onClick={() => void historyView.current?.retry()}>{gui.region_retry}</Button>
           </div>}
         </div>}
         {!still && captureWhy && <div role="alert" data-chat-capture-error className="text-caption text-destructive">
@@ -1645,10 +1653,13 @@ export function ChatView({
             (() => {
               const { words, paths } = splitAttachments(item.text);
               return (
-                <div key={item.displayKey ?? item.historyKey ?? i} className="flex flex-col items-end gap-in py-row">
+                <div role="article" aria-label="你" key={item.displayKey ?? item.historyKey ?? i} className="flex flex-col items-end gap-in py-row">
                   {words && (
                     <Bubble align="end" variant="muted"><BubbleContent data-said className="text-read"><Markdown text={words} /></BubbleContent></Bubble>
                   )}
+                  {words&&<div className="flex items-center gap-in"><CopyText text={words}/>{!still&&!gone&&<Button size="sm" variant="ghost" onClick={()=>{
+                    setText(now=>now?`${now}\n\n${item.text}`:item.text);box.current?.focus();
+                  }}>带回输入</Button>}</div>}
                   {paths.map((p, j) => (
                     <FileCard
                       key={`${j} ${p}`}
@@ -1890,7 +1901,7 @@ export function ChatView({
                 them. Absolute so opening it does not push the
                 conversation up — a list that moves the text you are
                 reading is worse than no list. */}
-            <AgentCommandMenu commands={menu} pick={pick} onPick={complete} />
+            <AgentCommandMenu id={commandMenuId} commands={menu} pick={pick} onPick={complete} />
             {/* ＋'s picker: any file, into the same path a paste takes. */}
             {canAttach && (
               <input
@@ -1930,8 +1941,8 @@ export function ChatView({
                       agent can take it; during a turn the interrupt
                       stands in its seat. At rest with an empty box,
                       neither: the mode is the capsule's last thing. */}
-                  {!inTurn && (text.trim() || files.items.length > 0) && (
-                    <SendSeat onSend={say} disabled={files.busy} />
+                  {!inTurn && hasComposerContent && (
+                    <SendSeat onSend={say} disabled={!canSend} />
                   )}
                   {inTurn && (
                     <StopSeat
@@ -1963,6 +1974,10 @@ export function ChatView({
             <Textarea
               ref={box}
               data-chat-input
+              aria-label="消息"
+              aria-controls={menu.length?commandMenuId:undefined}
+              aria-expanded={menu.length>0}
+              aria-activedescendant={menu.length?`${commandMenuId}-${Math.min(pick,menu.length-1)}`:undefined}
               onPaste={takePaste}
               rows={1}
               value={text}

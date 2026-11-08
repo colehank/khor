@@ -23,6 +23,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
   let failures = 0;
   let catchingUp = false;
   let wakePending = false;
+  let failed: {direction:HistoryDirection;before?:string|null;positioned:boolean}|null=null;
   let initialBefore: string | null = null;
   const publish = () => {
     if (!closed) changed(state);
@@ -59,6 +60,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       if (closed || pending !== controller || !page)
         return;
       failures = 0;
+      failed=null;
       initialBefore = null;
       catchingUp = direction === 'newer' && page.has_more;
       const nextWindow = receiveHistoryPage(state.window, page, direction);
@@ -69,6 +71,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       if (closed || pending !== controller || controller.signal.aborted)
         return;
       failures += 1;
+      failed={direction,before,positioned};
       state = { ...state, error };
     }
     finally {
@@ -89,6 +92,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       schedule();
     },
     at: (before: string) => load('tail', before, true),
+    retry: () => failed ? load(failed.direction,failed.before,failed.positioned) : load('tail'),
     older: () => load('older'),
     newer: () => load('newer'),
     latest: () => load('tail', null),
