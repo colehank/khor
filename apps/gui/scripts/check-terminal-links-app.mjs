@@ -4,28 +4,31 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,mkdirSync,rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {createServer} from 'vite';
+import {build,preview} from 'vite';
 import {chromium,webkit} from 'playwright-core';
 const gui=fileURLToPath(new URL('..',import.meta.url)),output=process.env.TERMINAL_LINK_UI_DIR;
 assert(output);mkdirSync(output,{recursive:true});
 const scratch=mkdtempSync(join(gui,'.terminal-app-check-'));
 process.env.KHOR_LAB_VITE_PORT='23836';process.env.KHOR_LAB_RUNTIME=join(scratch,'runtime.json');
 writeFileSync(process.env.KHOR_LAB_RUNTIME,JSON.stringify({mode:'frontend',scene:'terminal',tree:'terminal-link-check',revision:'one'}));
-let server;const results=[];
+let server;const results=[],errors=[];
 try {
- server=await createServer({root:gui,configFile:join(gui,'dev/lab/vite.config.ts'),logLevel:'error'});await server.listen();
+ await build({root:gui,configFile:join(gui,'dev/lab/vite.config.ts'),logLevel:'error',build:{outDir:join(scratch,'dist')}});
+ server=await preview({root:gui,configFile:join(gui,'dev/lab/vite.config.ts'),build:{outDir:join(scratch,'dist')},preview:{host:'127.0.0.1',port:23836,strictPort:true}});
  for(const [engine,type] of [['chromium',chromium],['webkit',webkit]]) {
   const browser=await type.launch({headless:true});
   try {
    const context=await browser.newContext({viewport:{width:1400,height:900}}),page=await context.newPage();page.setDefaultTimeout(12000);
+   page.on('pageerror',error=>errors.push(String(error)));
+   await page.route('**/lab/runtime*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({mode:'frontend',scene:'terminal',tree:'terminal-link-check',revision:'one'})}));
    await page.addInitScript(()=>{window.__linkEvents=[];window.addEventListener('khor:open-url',event=>window.__linkEvents.push(event.detail));});
    await page.route('**/terminal-target*',route=>route.fulfill({contentType:'text/html',body:'<p>Fixture destination</p>'}));
    await page.goto('http://127.0.0.1:23836/?scene=terminal&machines=3');
-   await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm?.buffer.active.getLine(0)?.translateToString().includes('layout-lab'));
+   await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm?.buffer.active.getLine(0)?.translateToString().includes('layout-lab'),null,{timeout:45000});
    for(const tracking of ['none','vt200','any'])for(const kind of ['URL','OSC8'])for(const modifier of [null,'Control','Meta']) {
     // Reload gives each activation a fresh, genuinely selected session. The
     // production App receives the event and owns the resulting content tab.
-    await page.reload();await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm?.buffer.active.getLine(0)?.translateToString().includes('layout-lab'));
+    await page.reload();await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm?.buffer.active.getLine(0)?.translateToString().includes('layout-lab'),null,{timeout:45000});
     const uri='http://127.0.0.1:23836/terminal-target?case='+tracking+'-'+kind+'-'+modifier;
     const paint=kind==='URL'?uri:'\x1b]8;;'+uri+'\x07Open fixture\x1b]8;;\x07';
     await page.evaluate(async({tracking,paint})=>{
@@ -52,5 +55,5 @@ try {
   } catch(error){for(const context of browser.contexts())for(const page of context.pages())await page.screenshot({path:join(output,'app-'+engine+'-failure.png')}).catch(()=>{});throw error;} finally {await browser.close();}
  }
 } catch(error){results.push({passed:false,error:String(error)});throw error;}
-finally{writeFileSync(join(output,'app-report.json'),JSON.stringify({results},null,2));await server?.close();rmSync(scratch,{recursive:true,force:true});}
+finally{writeFileSync(join(output,'app-report.json'),JSON.stringify({results,errors},null,2));await new Promise(resolve=>server?server.httpServer.close(resolve):resolve());rmSync(scratch,{recursive:true,force:true});}
 console.log(JSON.stringify(results));
