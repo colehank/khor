@@ -963,12 +963,15 @@ async fn unfinished_bootstrap_is_progress_and_never_a_false_completion() {
     // This test drives Pair phases directly. Mint through the real endpoint
     // without resident services whose blocking work can outlive task abort.
     let endpoint = issuer.bind_ears().await.unwrap();
+    issuer.publish_roads(&endpoint).unwrap();
     let handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
         .await
         .unwrap();
+    let cookie = super::super::fresh_hex().unwrap();
     issuer
-        .write_endpoint_file(&endpoint, &handoffs, &fresh_hex().unwrap())
+        .write_endpoint_file(&endpoint, &handoffs, &cookie)
         .unwrap();
+    issuer.trust_tick().unwrap();
     let ticket = khor_net::endpoint::Ticket::decode(&issuer.invite().unwrap()).unwrap();
     drop(handoffs);
     endpoint.close().await;
