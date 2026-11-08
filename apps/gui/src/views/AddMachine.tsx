@@ -662,7 +662,7 @@ function TicketPage({ machines, onClose, onJoined }: {
   return <>
     <Head title={gui.add_khor_host} />
     <Body>
-      <SegmentedControl label={gui.add_khor_host} value={mode}
+      <SegmentedControl label={gui.add_khor_host} value={mode} className="self-start"
         mark={{ "data-pairing-mode": mode }}
         options={[
           { key: "invite", label: gui.make_a_ticket, disabled: joining || outcome !== null },

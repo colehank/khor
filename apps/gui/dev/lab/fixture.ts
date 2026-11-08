@@ -247,6 +247,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           }
           case 'session_recovery': answer = {id: body.id, home: device.id, current_run: 'fixture-live', next_attempt_epoch: null,
             execution: 'live', action: 'join', native: null, previous: null, reason: null}; break;
+          case 'sync_now': answer = []; break;
           case 'day_strips': case 'page_icons': answer = {}; break;
           case 'face_here': break;
           case "devices": answer = devices; break;

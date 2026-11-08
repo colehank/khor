@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-export async function checkMachinePairing(page, capture) {
+export async function checkMachinePairing(page, capture, expectedFailure) {
   const fixture=async body=>page.evaluate(async body=>{
     const response=await fetch('/api/__ai_preview/pairing',{method:'POST',body:JSON.stringify(body)});
     if(!response.ok)throw new Error('Pairing fixture unavailable');
@@ -56,6 +56,7 @@ export async function checkMachinePairing(page, capture) {
     await input.fill('invalid-credential');await join.click();
     await dialog.locator('[data-dialog-error]').waitFor();
     assert.match(await dialog.locator('[data-dialog-error]').innerText(),/配对凭据无效/);
+    expectedFailure('[Lab fixture] /api/pair Error: 配对凭据无效或已过期，请重新获取');
     assert.equal(await input.inputValue(),'invalid-credential','Failed pairing retains the credential to fix');
     await dialog.getByRole('radio',{name:'邀请机器',exact:true}).click();
     await own.waitFor();assert.equal((await fixture({})).invitations,before.invitations,'Returning to Invite reuses its current invitation');

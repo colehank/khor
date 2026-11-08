@@ -22,6 +22,7 @@ async function inspect(browser, scene, size, data = {}) {
   const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}${data.setup?'-setup':''}${data.pairing?'-pairing':''}`;
   let geometry = null;
   const contentLayout = [];
+  const expectedConsoleErrors = [];
   const workspaceLayout = [];
   let listScroll = null;
   async function checkScroll(nativePan = true) {
@@ -243,7 +244,11 @@ async function inspect(browser, scene, size, data = {}) {
       const edges=await page.evaluate(()=>({input:document.querySelector('[data-chat-box]').getBoundingClientRect().bottom,avatar:document.querySelector('[data-lab-compose-avatar]').getBoundingClientRect().bottom}));assert(Math.abs(edges.input-edges.avatar)<1,'Multiline input retains bottom alignment');await page.screenshot({path:path.join(report,name+'-multiline.png')});await field.fill('');
     }
     if (geometry.overflow) errors.push('App overflows horizontally');
-    if(data.pairing)await checkMachinePairing(page,phase=>page.screenshot({path:path.join(report,`${name}-${phase}.png`)}));
+    if(data.pairing)await checkMachinePairing(page,phase=>page.screenshot({path:path.join(report,`${name}-${phase}.png`)}),message=>{
+      const at=errors.indexOf(message);
+      assert(at>=0,'The deliberately invalid credential must produce the expected handled fixture error');
+      expectedConsoleErrors.push(message);errors.splice(at,1);
+    });
     if(data.setup)await checkAgentSetup(page,size.width<500,phase=>page.screenshot({path:path.join(report,`${name}-${phase}.png`)}));
     if(data.gesture)await checkMobileNavigation(page,scene,items,async(phase,values)=>{
       if(values)contentLayout.push({phase,...values});
@@ -256,7 +261,7 @@ async function inspect(browser, scene, size, data = {}) {
     await page.screenshot({path: path.join(report, name + '.png')});
     await context.close();
   }
-  return {name, geometry, contentLayout, workspaceLayout, listScroll, errors};
+  return {name, geometry, contentLayout, workspaceLayout, listScroll, expectedConsoleErrors, errors};
 }
 
 let browser;
