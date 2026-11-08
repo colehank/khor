@@ -12,6 +12,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from .config import load
+from .environment import native_environment
 from .server import Handler, Lab
 from .artifacts import write_json
 
@@ -72,10 +73,9 @@ def probe(app, frontend, root, port, output):
         server.lab = lab
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        environment = dict(os.environ, KHOR_HOME=str(home / 'store'), KHOR_NAME='Khor native probe', KHOR_WEB_PORT='0')
-        environment.pop('KHOR_SESSION', None)
+        environment = native_environment(home, 'Khor native probe')
         with (output / 'native-probe.log').open('wb') as log:
-            process = subprocess.Popen([str(app / 'Contents/MacOS/KhorDeveloperLab')], env=environment, stdout=log, stderr=log)
+            process = subprocess.Popen([str(app / 'Contents/MacOS/KhorDeveloperLab')], env=environment, cwd=environment['HOME'], stdout=log, stderr=log)
             try:
                 if not ready.wait(timeout=40):
                     raise ValueError('Native host did not load the managed App and invoke its real backend; inspect native-probe.log')

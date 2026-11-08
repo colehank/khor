@@ -15,6 +15,7 @@ import time
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from . import builders
+from .environment import native_environment
 from .artifacts import prune, unpack, write_json, validate
 
 
@@ -163,10 +164,9 @@ class Lab:
         if not binary.is_relative_to(directory.resolve()) or not binary.is_file():
             raise ValueError('Native host path is invalid')
         self.stop_native()
-        environment = dict(os.environ, KHOR_HOME=str(self.home / 'store'), KHOR_NAME='Khor Developer Lab', KHOR_WEB_PORT='0')
-        environment.pop('KHOR_SESSION', None)
+        environment = native_environment(self.home, 'Khor Developer Lab')
         with (self.home / 'native.log').open('ab') as log:
-            self.native = subprocess.Popen([str(binary)], env=environment, stdout=log, stderr=log)
+            self.native = subprocess.Popen([str(binary)], env=environment, cwd=environment['HOME'], stdout=log, stderr=log)
         time.sleep(1)
         if self.native.poll() is not None:
             raise ValueError('Native host exited during startup; inspect native.log')
