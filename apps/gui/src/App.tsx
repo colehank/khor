@@ -222,7 +222,7 @@ type NewTabAt = { machine?: string; dir?: string; inPlace?: boolean };
     leaving a line is the wizard's first kind (`NewSessionPage`), one door
     for every kind of session; `new` left on 2026-10-07 (UX-45): 新建会话
     is a new tab's page. */
-type PlusDialog = "import" | "add" | "add-ticket" | "ws-add" | null;
+type PlusDialog = "import" | "add" | "add-ticket" | "add-ssh" | "ws-add" | null;
 
 const POLL_MS = 2000;
 /**
@@ -1415,8 +1415,8 @@ export default function App() {
     { key: "import", label: gui.import_sessions, onSelect: () => setDialog("import") },
   ];
   const deviceActions: PaneAction[] = [
-    // 添加机器 (round join-d): the one entry, both kinds of machine.
-    { key: "add", label: gui.add_machine, onSelect: () => setDialog("add") },
+    { key: "khor", label: gui.add_khor_choice, afterClose: true, onSelect: () => setDialog("add-ticket") },
+    { key: "ssh", label: gui.add_ssh_choice, afterClose: true, onSelect: () => setDialog("add-ssh") },
   ];
 
   // **The floating navigation** (the redesign, 2026-10-02). Its seats
@@ -3186,14 +3186,14 @@ export default function App() {
       {/* The machine page's VS Code: its consent and its refusal. */}
       {machineCode.dialog}
       <AddMachineDialog
-        open={dialog === "add" || dialog === "add-ticket" || promoting !== null}
+        open={dialog === "add" || dialog === "add-ticket" || dialog === "add-ssh" || promoting !== null}
         onOpenChange={(o) => {
           if (o) return;
           setDialog(null);
           setPromoting(null);
         }}
         machines={devices}
-        start={dialog === "add-ticket" ? "ticket" : "pick"}
+        start={dialog === "add-ssh" ? "ssh" : "ticket"}
         promote={promoting}
         onAdded={() => {
           fetchDevices()

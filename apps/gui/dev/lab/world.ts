@@ -8,9 +8,11 @@ import type {DirRow} from '../../src/gen/bindings/DirRow';
 import type {SystemKind} from '../../src/gen/bindings/SystemKind';
 import type {ModelKind} from '../../src/gen/bindings/ModelKind';
 import type {VitalsReading} from '../../src/gen/bindings/VitalsReading';
+import type {Ticket} from '../../src/gen/bindings/Ticket';
 import generated from './data/world.generated.json';
 
-const native = generated as {machine_ids:string[];avatars:Record<string,Avatar>;directories:Record<string,{entries:DirRow[];truncated:boolean}>;documents:Record<string,string>};
+const native = generated as {machine_ids:string[];avatars:Record<string,Avatar>;directories:Record<string,{entries:DirRow[];truncated:boolean}>;documents:Record<string,string>;pairing_ticket:Ticket};
+export const labPairingTicket = native.pairing_ticket;
 
 export function labDirectory(path: string) {
   const directory=native.directories[path];

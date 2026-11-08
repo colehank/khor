@@ -1,10 +1,9 @@
 // 添加机器 (round join-d): the one entry under ＋ that brings another
-// machine in, drawn as the owner approved it on the lab (redesign-join
-// cb5dbb54, `lab/join.tsx`). Two ways in:
+// machine in. The list's nearby + menu chooses Khor or SSH before
+// opening the corresponding task dialog. Two ways in:
 //
-// - **khor 主机** — it already runs khor: this machine's invitation code
-//   (QR and text), and a field for a code made elsewhere. Pairing has no
-//   direction (docs/NET.md), so both ends of the one act sit on one page.
+// - **khor 主机** — it already runs khor: Invite shows this machine's
+//   credential, while Join accepts the other machine's credential.
 // - **SSH 主机** — over ssh, installing khor there unless the switch is
 //   off (`khor add`; the node falls back to an SSH 主机 on its own when
 //   khor cannot stay, and removes what it put there).
@@ -36,11 +35,12 @@ import {
   type Ticket,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
-import { IconCheck, IconChevronRight, IconClose, IconDevices, IconSshHost } from "@/components/icons";
+import { IconCheck, IconChevronRight, IconClose } from "@/components/icons";
 import { Switch } from "@/components/settings/Switch";
 import { Button } from "@/components/ui/button";
 import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AddRun } from "@/gen/bindings/AddRun";
 import type { AddStep } from "@/gen/bindings/AddStep";
 import type { DeviceRow } from "@/gen/bindings/DeviceRow";
@@ -55,7 +55,7 @@ import { ScanLayer } from "@/views/PairDialogs";
 import { latency } from "@/words";
 
 /** The pages of the sheet. `run` is an add (or 安装 khor) under way. */
-type Page = "pick" | "ticket" | "ssh" | "jump" | "auth" | "proxy" | "reach" | "run" | "login" | "passphrase";
+type Page = "ticket" | "ssh" | "jump" | "auth" | "proxy" | "reach" | "run" | "login" | "passphrase";
 
 /** The SSH form's answers, kept above the pages so a page of choices and
     the form it returns to share them. */
@@ -259,7 +259,7 @@ function Failure({ text }: { text: string | null }) {
 }
 
 /** A copy button that says for a beat what the copy did. */
-function CopyButton({ text, label }: { text: string; label: string }) {
+function CopyButton({ text, label, primary = false }: { text: string; label: string; primary?: boolean }) {
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
     if (!copied) return;
@@ -268,6 +268,7 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   }, [copied]);
   return (
     <Button
+      variant={primary ? "primary" : "default"}
       className="flex-none"
       data-said={copied ?? undefined}
       onClick={() =>
@@ -297,8 +298,8 @@ export function AddMachineDialog({
   onOpenChange: (open: boolean) => void;
   /** The machine table as the lists read it. */
   machines: DeviceRow[];
-  /** The page to open on: `ticket` for the alone note's press. */
-  start?: "pick" | "ticket";
+  /** The nearby menu chooses the kind before the dialog opens. */
+  start?: "ticket" | "ssh";
   /** 安装 khor on this SSH 主机 (the machine page's act) instead of an add. */
   promote?: string | null;
   /** A machine came in or changed: the lists read the table again. */
@@ -306,7 +307,7 @@ export function AddMachineDialog({
   /** 上传公钥 opened a terminal session: show it. */
   onOpenSession?: (id: string) => void;
 }) {
-  const [page, setPage] = useKept<Page>(KEPT.page, "pick");
+  const [page, setPage] = useKept<Page>(KEPT.page, "ticket");
   const [form, setForm] = useKept<Form>(KEPT.form, blank);
   const set = (p: Partial<Form>) => setForm((f) => ({ ...f, ...p }));
   /** The password typed on the form or the login page, or the key's
@@ -346,7 +347,7 @@ export function AddMachineDialog({
     setRun(null);
     setRunOf(null);
     setError(null);
-    setPage(promote ? "run" : (start ?? "pick"));
+    setPage(promote ? "run" : (start ?? "ticket"));
     if (promote) begin(promote, true);
     return () => {
       live = false;
@@ -436,40 +437,8 @@ export function AddMachineDialog({
 
   let content: ReactNode;
   switch (page) {
-    case "pick":
-      content = (
-        <>
-          <Head title={gui.add_machine} />
-          <Body>
-            <Group mark="pick">
-              <Row
-                mark="khor"
-                lead={<IconDevices className="size-nav-glyph text-foreground" />}
-                title={gui.add_khor_host}
-                note={gui.add_khor_host_note}
-                chevron
-                onPress={() => setPage("ticket")}
-              />
-              <Row
-                mark="ssh"
-                lead={<IconSshHost className="size-nav-glyph text-foreground" />}
-                title={gui.add_ssh_host}
-                note={gui.add_ssh_host_note}
-                chevron
-                onPress={() => setPage("ssh")}
-              />
-            </Group>
-          </Body>
-          <DialogFooter>
-            <Button data-dialog-cancel onClick={close}>
-              {gui.delete_keep}
-            </Button>
-          </DialogFooter>
-        </>
-      );
-      break;
     case "ticket":
-      content = <TicketPage machines={machines} onBack={() => setPage("pick")} onClose={close} onJoined={onAdded} />;
+      content = <TicketPage machines={machines} onClose={close} onJoined={onAdded} />;
       break;
     case "ssh":
       content = (
@@ -522,8 +491,8 @@ export function AddMachineDialog({
             <Failure text={error} />
           </Body>
           <DialogFooter>
-            <Button data-dialog-cancel onClick={() => setPage("pick")}>
-              {gui.back}
+            <Button data-dialog-cancel onClick={close}>
+              {gui.delete_keep}
             </Button>
             <Button variant="primary" data-add-go onClick={add}>
               {gui.watch_add}
@@ -626,179 +595,132 @@ export function AddMachineDialog({
 
 // ---- khor 主机: the invitation code, and one made elsewhere -----------------
 
-function TicketPage({
-  machines,
-  onBack,
-  onClose,
-  onJoined,
-}: {
+function TicketPage({ machines, onClose, onJoined }: {
   machines: DeviceRow[];
-  onBack: () => void;
   onClose: () => void;
   onJoined?: () => void;
 }) {
+  const [mode, setMode] = useState<"invite" | "join">("invite");
   const [ticket, setTicket] = useState<Ticket | null>(null);
-  const [before] = useState(() => new Set(machines.map((m) => m.id)));
+  const [before] = useState(() => new Set(machines.map((machine) => machine.id)));
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const [theirs, setTheirs] = useState("");
   const [joining, setJoining] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
   const [scanner, setScanner] = useState(false);
   const [scanning, setScanning] = useState(false);
-  /** Why the camera gave nothing — said, never a dead button. */
   const [camera, setCamera] = useState<"denied" | "failed" | null>(null);
+  const joined = ticket ? machines.find((machine) => !before.has(machine.id)) : undefined;
 
-  // Minted on opening this page, not on mounting the dialog: a code
-  // burns on use, and one per glance at ＋ leaves a pile of live ones.
+  // Joining consumes another machine's credential; it never issues a new one.
   useEffect(() => {
+    if (mode !== "invite" || ticket || joined) return;
     let live = true;
-    invite()
-      .then((t) => live && setTicket(t))
-      .catch((e) => live && setError(said(e)));
-    fetchScannerHere().then((here) => live && setScanner(here));
-    return () => {
-      live = false;
-    };
-  }, []);
-  // Somebody used it (UX-8): the code goes and the line says who.
-  const joined = before.size > 0 && ticket ? machines.find((m) => !before.has(m.id)) : undefined;
-  const joinedId = joined?.id;
-  useEffect(() => {
-    if (joinedId) feel("success");
-  }, [joinedId]);
+    setInviteError(null);
+    invite().then(value => { if (live) setTicket(value); })
+      .catch(failure => { if (live) setInviteError(said(failure)); });
+    return () => { live = false; };
+  }, [mode, ticket, joined, retry]);
+  useEffect(() => { void fetchScannerHere().then(setScanner); }, []);
+  useEffect(() => { if (joined?.id) feel("success"); }, [joined?.id]);
 
-  const joinWith = (text: string) => {
-    const t = text.trim();
-    if (joining) return;
-    if (!t) {
+  const joinWith = (value: string) => {
+    const credential = value.trim();
+    if (joining || outcome) return;
+    if (!credential) {
       setError(gui.need_ticket);
       document.querySelector<HTMLElement>("[data-ticket-input]")?.focus();
       return;
     }
     setJoining(true);
     setError(null);
-    pair(t)
-      .then(() => {
-        feel("success");
-        onClose();
-        onJoined?.();
-      })
-      .catch((e) => {
-        feel("warning");
-        setError(said(e));
-      })
-      .finally(() => setJoining(false));
+    pair(credential).then(result => {
+      feel("success");
+      // The node also reports waiting for approval here. Preserve its actual
+      // result rather than claiming a successful dial means fully connected.
+      setOutcome(result);
+      onJoined?.();
+    }).catch(failure => {
+      feel("warning");
+      setError(said(failure));
+    }).finally(() => setJoining(false));
   };
   const scan = () => {
     setError(null);
     setCamera(null);
-    void scanTicket(() => setScanning(true)).then((read) => {
+    void scanTicket(() => setScanning(true)).then(read => {
       setScanning(false);
       if ("ticket" in read) {
         setTheirs(read.ticket);
         joinWith(read.ticket);
-      } else if ("refused" in read) {
-        setCamera(read.refused);
-      }
+      } else if ("refused" in read) setCamera(read.refused);
     });
   };
 
-  return (
-    <>
-      <Head title={gui.add_khor_host} />
-      <Body>
-        <div className="flex flex-col gap-in">
-          {joined ? (
-            <div data-ticket-used role="status" className="text-callout text-foreground">
-              {gui.ticket_used_by(joined.shown)}
-            </div>
-          ) : (
-            <>
-              {ticket?.qr ? (
-                <svg
-                  data-ticket-qr
-                  role="img"
-                  aria-label={gui.ticket_qr}
-                  viewBox={`0 0 ${ticket.qr.span} ${ticket.qr.span}`}
-                  shapeRendering="crispEdges"
-                  className="mx-auto size-60 flex-none text-foreground"
-                >
-                  <path d={ticket.qr.path} fill="currentColor" />
-                </svg>
-              ) : (
-                !ticket && <div aria-hidden className="mx-auto size-60 flex-none" />
-              )}
-              <Input
-                data-ticket
-                aria-label={gui.ticket}
-                readOnly
-                value={ticket?.token ?? ""}
-                onFocus={(e) => e.currentTarget.select()}
-                className="font-mono text-mono"
-              />
-              {ticket && (
-                <span data-ticket-window className="text-callout text-muted-foreground">
-                  {cli.invite_window(ticket.minutes)}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-        <Group head={gui.have_a_ticket} mark="their-ticket">
-          <Row mark="their-ticket">
-            <Input
-              data-ticket-input
-              aria-label={gui.paste_a_ticket}
-              placeholder={gui.paste_a_ticket}
-              value={theirs}
-              onChange={(e) => setTheirs(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && joinWith(theirs)}
-              className={bare}
-            />
-            {scanner && (
-              <Button data-scan-ticket className="flex-none" disabled={joining || scanning} onClick={scan}>
-                {gui.scan_a_ticket}
-              </Button>
-            )}
-            <Button
-              data-join
-              className="flex-none"
-              disabled={joining}
-              aria-busy={joining || undefined}
-              onClick={() => joinWith(theirs)}
-            >
-              {gui.join}
-            </Button>
-          </Row>
-        </Group>
-        {joining && (
-          <div data-join-dialing role="status" className="text-callout text-muted-foreground">
-            {gui.join_dialing}
+  return <>
+    <Head title={gui.add_khor_host} />
+    <Body>
+      <SegmentedControl label={gui.add_khor_host} value={mode}
+        mark={{ "data-pairing-mode": mode }}
+        options={[
+          { key: "invite", label: gui.make_a_ticket, disabled: joining || outcome !== null },
+          { key: "join", label: gui.join_with_a_ticket, disabled: joining || outcome !== null },
+        ]}
+        onChange={next => { setMode(next); setError(null); setCamera(null); }} />
+      {outcome !== null ? <p data-pair-outcome role="status" className="text-body">{outcome}</p>
+        : mode === "invite" ? <div data-pair-invite className="flex min-w-0 flex-col gap-group">
+          {joined ? <div data-ticket-used role="status" className="flex items-center gap-row text-body">
+            <Face row={joined} /><span>{gui.ticket_used_by(joined.shown)}</span>
+          </div> : <>
+            <p className="text-callout text-muted-foreground">{gui.pair_invite_hint}</p>
+            {ticket?.qr ? <svg data-ticket-qr role="img" aria-label={gui.ticket_qr}
+              viewBox={`0 0 ${ticket.qr.span} ${ticket.qr.span}`} shapeRendering="crispEdges"
+              className="mx-auto size-60 max-w-full flex-none text-foreground">
+              <path d={ticket.qr.path} fill="currentColor" />
+            </svg> : !ticket && !inviteError && <div aria-hidden className="mx-auto size-60 max-w-full flex-none" />}
+            {ticket && <div className="flex min-w-0 flex-col gap-in">
+              <label htmlFor="pair-local-ticket" className="text-callout text-muted-foreground">{gui.pair_local_ticket}</label>
+              <Input id="pair-local-ticket" data-ticket aria-label={gui.pair_local_ticket}
+                readOnly value={ticket.token} onFocus={event => event.currentTarget.select()}
+                className="font-mono text-mono" />
+              <span data-ticket-window className="text-caption text-muted-foreground">{cli.invite_window(ticket.minutes)}</span>
+            </div>}
+            <Failure text={inviteError} />
+            {inviteError && <Button onClick={() => setRetry(value => value + 1)}>{gui.region_retry}</Button>}
+          </>}
+        </div> : <div data-pair-join className="flex min-w-0 flex-col gap-group">
+          <p className="text-callout text-muted-foreground">{gui.pair_join_hint}</p>
+          {scanner && <Button data-scan-ticket disabled={joining || scanning}
+            className="self-start pointer-coarse:min-h-touch" onClick={scan}>{gui.scan_a_ticket}</Button>}
+          <div className="flex min-w-0 flex-col gap-in">
+            <label htmlFor="pair-remote-ticket" className="text-callout text-muted-foreground">{gui.pair_remote_ticket}</label>
+            <Input id="pair-remote-ticket" data-ticket-input aria-label={gui.pair_remote_ticket}
+              placeholder={gui.pair_remote_placeholder} value={theirs} autoComplete="off" spellCheck={false}
+              disabled={joining} onChange={event => { setTheirs(event.target.value); setError(null); }}
+              onKeyDown={event => { if (event.key === "Enter") joinWith(theirs); }} />
           </div>
-        )}
-        <Failure text={error} />
-        {camera === "denied" && (
-          <div data-scan-denied className="flex flex-col items-start gap-in text-callout text-destructive">
+          {joining && <p data-join-dialing role="status" className="text-callout text-muted-foreground">{gui.join_dialing}</p>}
+          <Failure text={error} />
+          {camera === "denied" && <div data-scan-denied className="flex flex-col items-start gap-in text-callout text-destructive">
             <span>{gui.scan_camera_denied}</span>
-            <Button size="sm" data-scan-settings className="pointer-coarse:min-h-touch" onClick={() => void openCameraSettings()}>
-              {gui.scan_open_settings}
-            </Button>
-          </div>
-        )}
-        {camera === "failed" && (
-          <div data-scan-failed className="text-callout text-destructive">
-            {gui.scan_no_camera}
-          </div>
-        )}
-      </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={onBack}>
-          {gui.back}
-        </Button>
-        {ticket && !joined && <CopyButton text={ticket.token} label={gui.copy_ticket} />}
-      </DialogFooter>
-      {scanning && <ScanLayer />}
-    </>
-  );
+            <Button size="sm" data-scan-settings className="pointer-coarse:min-h-touch"
+              onClick={() => void openCameraSettings()}>{gui.scan_open_settings}</Button>
+          </div>}
+          {camera === "failed" && <p data-scan-failed className="text-callout text-destructive">{gui.scan_no_camera}</p>}
+        </div>}
+    </Body>
+    <DialogFooter>
+      <Button data-dialog-cancel onClick={onClose}>{outcome !== null || joined ? gui.edit_done : gui.close}</Button>
+      {outcome === null && mode === "invite" && ticket && !joined
+        && <CopyButton primary text={ticket.token} label={gui.pair_copy_ticket} />}
+      {outcome === null && mode === "join" && <Button variant="primary" data-join
+        disabled={joining || !theirs.trim()} aria-busy={joining || undefined}
+        onClick={() => joinWith(theirs)}>{gui.join_with_a_ticket}</Button>}
+    </DialogFooter>
+    {scanning && <ScanLayer />}
+  </>;
 }
 
 // ---- SSH 主机: the host row and the pages of choices --------------------------

@@ -875,3 +875,7 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run acp-setup`：内置与扩展接入标签、有限启动原因、不回显任意 stderr、未知原因兜底；已加入 `test:unit`。
 - 完整 App Lab 的桌面/手机新建页：内置 Codex/Claude 读取成功状态、终端不发 ACP 设置、扩展失败原因和重试、请求沿所选机器；共用实际 NewSessionPage/AcpAgentSetup。fixture 仅模拟数据，不证明原生进程可用。
 - 原生 `acp_management::tests` 与 `acp_process::tests` 验证内置路由、真实扩展 stdin/stdout 初始化、执行节点的凭证目录、失败清理和重试；macOS 签名 App 宿主必须保留完整 bundle，不能用未签名 CLI 的检查代替。真机验收包括本机/远端的新建和读取、已有会话持续运行。
+
+### 添加机器的入口与配对方向（2026-11-08 Lab）
+
+Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真实机器页 ＋ 验证就地 Khor/SSH 候选、两种弹窗入口、邀请与加入互斥内容、复制、失败保留输入、切换复用邀请、待批准与完成，以及浅深主题/桌面/手机/低视口可达性。二维码由正式 `qr::encode` 生成不可用于真实配对的示例凭据；fixture 不连接设备。浏览器检查不代表真机相机、系统授权或真实网络入网验收。
