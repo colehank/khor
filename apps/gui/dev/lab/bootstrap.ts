@@ -17,6 +17,20 @@ if (!(runtime.scene in scenes)) throw new Error('Unknown Lab scene');
 const native = '__TAURI_INTERNALS__' in window;
 if (runtime.mode === 'full' && !native) throw new Error('Full Lab requires its isolated native host; use the frontend link for browser review');
 configureLabBackend(runtime.mode);
+// Native pointer diagnostics stay inside the isolated Lab. Record event state,
+// never terminal bytes, destinations or credentials; production has no listener.
+if (runtime.mode === 'full') {
+  const {faceNote} = await import('../../src/api');
+  let remaining = 32;
+  for (const type of ['mousedown', 'mouseup']) document.addEventListener(type, event => {
+    const mouse = event as MouseEvent;
+    const host = (event.target as Element | null)?.closest<HTMLElement>('[data-terminal]');
+    const term = (host as HTMLElement & {__xterm?: {hasSelection:()=>boolean;modes:{mouseTrackingMode:string};_core?:{linkifier?:{currentLink?:unknown}}}} | null)?.__xterm;
+    if (!term || remaining-- <= 0) return;
+    const state = {type,button:mouse.button,selected:term.hasSelection(),tracking:term.modes.mouseTrackingMode,linked:!!term._core?.linkifier?.currentLink,target:(event.target as Element).tagName};
+    void faceNote('Lab terminal pointer '+JSON.stringify(state)).catch(()=>{});
+  }, true);
+}
 if (query.has('bridge')) throw new Error('Lab does not connect to external API bridges');
 const scene = scenes[runtime.scene];
 const items = Number(query.get('items') ?? 5), machines = Number(query.get('machines') ?? 3);

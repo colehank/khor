@@ -228,7 +228,10 @@ try {
 
   await page.locator('[data-chat-bottom]').click();
   await until(() => page.locator('[data-history-records] button').count().then(count => count >= 2), 'latest raw references');
-  await page.locator('[data-history-records] button').nth(1).click({button: 'right'});
+  const rawReference = page.locator('[data-history-records] button').nth(1);
+  const rawDisclosure = rawReference.locator('xpath=ancestor::details[1]');
+  await rawDisclosure.locator(':scope > summary').click();
+  await rawReference.click({button: 'right'});
   await page.getByRole('menuitem', {name: words.history_export, exact: true}).click();
   await until(() => page.evaluate(() => Object.values(window.__historyWire.jobs).some(job => job.start === 1_281_000_000 && job.saved)), 'malformed raw record export without a search hit');
   await page.getByText(words.history_exported, {exact: true}).waitFor();
