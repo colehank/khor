@@ -298,6 +298,8 @@ try {
     assert.equal(await page.locator("[data-ask-answer]").count(), 0, "transport success must not imply server confirmation");
     assert.equal(await option.isDisabled(), true, "pending choice remains visible and disabled");
     await option.dispatchEvent("click");
+    const latestWhilePending = page.locator("[data-chat-bottom]");
+    if (await latestWhilePending.isVisible()) await latestWhilePending.click();
     queue.push(note("agent_message_chunk", {content: {type: "text", text: "确认期间的补充说明。"}}));
     await page.getByText("确认期间的补充说明。", {exact: false}).waitFor();
     assert.equal(await page.locator('[data-ask-pending]').getAttribute('data-ask-phase'), 'sending', 'source body insertion keeps the in-flight permission owner');
