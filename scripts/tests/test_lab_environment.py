@@ -14,9 +14,9 @@ class LabEnvironmentTests(unittest.TestCase):
                     'ANTHROPIC_AUTH_TOKEN': 'fixture-token', 'PATH': '/tools', 'LANG': 'en_US.UTF-8'}
         with tempfile.TemporaryDirectory() as directory:
             result = native_environment(Path(directory), 'Fixture Lab', original)
-            self.assertEqual(result['HOME'], str(Path(directory) / 'os-home'))
+            self.assertEqual(result['HOME'], str(Path(directory).resolve() / 'os-home'))
             self.assertTrue(Path(result['HOME']).is_dir())
-            self.assertEqual(result['KHOR_HOME'], str(Path(directory) / 'store'))
+            self.assertEqual(result['KHOR_HOME'], str(Path(directory).resolve() / 'store'))
             self.assertEqual(result['PATH'], '/tools')
             self.assertEqual(result['LANG'], original['LANG'])
             for key in ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'KHOR_SESSION', 'OPENAI_API_KEY', 'ANTHROPIC_AUTH_TOKEN']:

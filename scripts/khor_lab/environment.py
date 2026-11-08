@@ -13,8 +13,9 @@ def native_environment(home, name, inherited=None):
     # work through its own store and settings.
     for key in list(environment):
         if key in {'KHOR_SESSION', 'CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR',
-                   'PI_AGENT_DIR', 'ZDOTDIR', 'BASH_ENV', 'ENV', 'TMUX', 'STY', 'SSH_AUTH_SOCK'} \
-                or key.endswith(('_API_KEY', '_ACCESS_TOKEN', '_AUTH_TOKEN', '_SECRET_KEY')):
+                   'PI_AGENT_DIR', 'ZDOTDIR', 'BASH_ENV', 'ENV', 'TMUX', 'STY', 'SSH_AUTH_SOCK',
+                   'AWS_SHARED_CREDENTIALS_FILE', 'GOOGLE_APPLICATION_CREDENTIALS', 'NPM_CONFIG_USERCONFIG'} \
+                or key.endswith(('_KEY', '_KEY_ID', '_TOKEN', '_SECRET', '_PASSWORD')):
             environment.pop(key)
     environment.update(HOME=str(profile), KHOR_HOME=str(home / 'store'), KHOR_NAME=name, KHOR_WEB_PORT='0',
                        XDG_CONFIG_HOME=str(profile / '.config'), XDG_CACHE_HOME=str(profile / '.cache'),
