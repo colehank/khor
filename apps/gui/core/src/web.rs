@@ -612,6 +612,22 @@ mod loopback_tests {
         );
     }
 
+    #[tokio::test]
+    async fn closing_the_last_page_closes_an_inflight_pipe() {
+        let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = free.local_addr().unwrap().port();
+        drop(free);
+        let lease = hold_loopback("127.0.0.1", port, &proxy.local_addr().unwrap().to_string()).await.unwrap();
+        let mut page = tokio::net::TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let (mut upstream, _) = proxy.accept().await.unwrap();
+        // Wait until the forward owns both ends, then close its last page.
+        assert_eq!(upstream.read_u8().await.unwrap(), b'C');
+        drop(lease);
+        let closed = tokio::time::timeout(std::time::Duration::from_secs(2), page.read_u8()).await.unwrap();
+        assert_eq!(closed.unwrap_err().kind(), std::io::ErrorKind::UnexpectedEof);
+    }
+
     #[cfg(target_os = "macos")]
     #[tokio::test]
     #[ignore = "requires KHOR_WEBKIT_PROBE, an isolated native WKWebView fixture"]
