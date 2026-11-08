@@ -695,35 +695,72 @@ mod loopback_tests {
             let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = free.local_addr().unwrap().port();
             drop(free);
-            let expected = format!("CONNECT {host}:{port} HTTP/1.1");
+            #[derive(Debug, Default)]
+            struct Facts {
+                accepted: usize,
+                connect: Vec<String>,
+                served: usize,
+                idle: usize,
+                errors: Vec<String>,
+            }
+            async fn header(stream: &mut tokio::net::TcpStream) -> Result<Option<String>, String> {
+                let mut bytes = Vec::new();
+                while !bytes.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    if stream.read(&mut byte).await.map_err(|e| e.to_string())? == 0 {
+                        return if bytes.is_empty() { Ok(None) } else { Err("partial HTTP header".into()) };
+                    }
+                    bytes.push(byte[0]);
+                    if bytes.len() > 8192 { return Err("oversized HTTP header".into()); }
+                }
+                String::from_utf8(bytes).map(Some).map_err(|e| e.to_string())
+            }
+            let facts = std::sync::Arc::new(std::sync::Mutex::new(Facts::default()));
+            let recording = facts.clone();
+            let target = format!("{host}:{port}");
+            // A browser may preconnect without sending a request. The real
+            // borrow proxy accepts concurrently; this fixture must too.
             let answering = tokio::spawn(async move {
-                let (mut stream, _) = proxy.accept().await.unwrap();
-                let mut head = Vec::new();
+                let mut clients = tokio::task::JoinSet::new();
                 loop {
-                    head.push(stream.read_u8().await.unwrap());
-                    assert!(head.len() < 8192);
-                    if head.ends_with(b"\r\n\r\n") {
-                        break;
+                    tokio::select! {
+                        accepted = proxy.accept() => {
+                            let Ok((mut stream, _)) = accepted else { break };
+                            recording.lock().unwrap().accepted += 1;
+                            let (facts, target) = (recording.clone(), target.clone());
+                            clients.spawn(async move {
+                                let result: Result<(), String> = async {
+                                    let Some(head) = header(&mut stream).await? else {
+                                        facts.lock().unwrap().idle += 1;
+                                        return Ok(());
+                                    };
+                                    let line = head.lines().next().unwrap_or_default().to_owned();
+                                    facts.lock().unwrap().connect.push(line.clone());
+                                    if line != format!("CONNECT {target} HTTP/1.1") {
+                                        return Err(format!("wrong proxy target: {line}"));
+                                    }
+                                    stream.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n").await.map_err(|e| e.to_string())?;
+                                    let Some(request) = header(&mut stream).await? else {
+                                        facts.lock().unwrap().idle += 1;
+                                        return Ok(());
+                                    };
+                                    if !request.starts_with("GET / ") {
+                                        return Err(format!("wrong HTTP request: {}", request.lines().next().unwrap_or_default()));
+                                    }
+                                    let host = request.lines().filter_map(|line| line.split_once(':')).find_map(|(key, value)| key.eq_ignore_ascii_case("host").then(|| value.trim()));
+                                    if host != Some(target.as_str()) {
+                                        return Err(format!("wrong HTTP origin: {host:?}, expected {target}"));
+                                    }
+                                    stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 13\r\nConnection: close\r\n\r\nBORROWED_EXIT").await.map_err(|e| e.to_string())?;
+                                    facts.lock().unwrap().served += 1;
+                                    Ok(())
+                                }.await;
+                                if let Err(error) = result { facts.lock().unwrap().errors.push(error); }
+                            });
+                        }
+                        _ = clients.join_next(), if !clients.is_empty() => {}
                     }
                 }
-                assert_eq!(
-                    String::from_utf8_lossy(&head).lines().next().unwrap(),
-                    expected
-                );
-                stream
-                    .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
-                    .await
-                    .unwrap();
-                head.clear();
-                loop {
-                    head.push(stream.read_u8().await.unwrap());
-                    assert!(head.len() < 8192);
-                    if head.ends_with(b"\r\n\r\n") {
-                        break;
-                    }
-                }
-                assert!(String::from_utf8_lossy(&head).starts_with("GET / "));
-                stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 13\r\nConnection: close\r\n\r\nBORROWED_EXIT").await.unwrap();
             });
             let lease = hold_loopback(host, port, &format!("127.0.0.1:{proxy_port}"))
                 .await
@@ -745,11 +782,13 @@ mod loopback_tests {
                 String::from_utf8_lossy(&output.stderr)
             );
             let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-            assert_eq!(result["body"], "BORROWED_EXIT", "{host}: {result}");
-            tokio::time::timeout(std::time::Duration::from_secs(3), answering)
-                .await
-                .unwrap()
-                .unwrap();
+            answering.abort();
+            let _ = answering.await;
+            let facts = facts.lock().unwrap();
+            eprintln!("native loopback {host}: {facts:?}");
+            assert_eq!(result["body"], "BORROWED_EXIT", "{host}: {result}; {facts:?}");
+            assert!(facts.errors.is_empty(), "{host}: {facts:?}");
+            assert!(facts.served > 0, "{host}: {facts:?}");
             drop(lease);
         }
     }
