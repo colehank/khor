@@ -2067,7 +2067,8 @@ async fn open_page(
         // Wry applies proxies to a data store, not a single webview.
         // A borrowed page must never reconfigure the app's own store or
         // a page using another exit.
-        builder = builder.data_store_identifier(khor_gui_core::web::page_store_identifier(&machine));
+        let profile = format!("{}:{machine}", Node::root_from_env().display());
+        builder = builder.data_store_identifier(khor_gui_core::web::page_store_identifier(&profile));
     }
     if let Some(proxy) = proxy {
         // The two ride together or not at all — see `direct` above.

@@ -500,7 +500,7 @@ mod loopback_tests {
         assert_ne!(page_store_identifier(""), page_store_identifier("home"));
         assert_ne!(page_store_identifier("home"), page_store_identifier("work"));
         // The previous iOS store_for used exactly these two FNV-1a seeds.
-        assert_eq!(page_store_identifier("home"), page_store_identifier("home"));
+        assert_eq!(page_store_identifier("home"), [122, 107, 205, 55, 220, 70, 247, 199, 93, 13, 72, 35, 107, 212, 187, 146]);
     }
 
     /// The page connects to this device's port; what arrives is the far
