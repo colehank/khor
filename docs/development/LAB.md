@@ -94,6 +94,8 @@ Each working tree and port owns one loopback manager. Repeated `start` attaches 
 
 Native Lab has a separate bundle identifier, `KHOR_HOME`, browser profile and process. It does not install over `/Applications/Khor.app`. The generated/native input contract determines when a native host may be reused. A frontend-only edit can reuse a compatible host while retaining its original compiled-source identity. A backend, runtime or host-packaging change requires rebuilding the host. Cached versions and dependency sets have retention limits; active versions are protected. The native store persists across Lab restarts so persistence can be tested.
 
+Frontend Lab may also be viewed inside Khor's browser. The Lab build replaces only the backend-context boundary: frontend mode always uses its isolated HTTP fixture, even when the containing WebView exposes Tauri globals. It never deletes, replaces or invokes that host runtime. Full mode still requires the isolated native host and uses its native backend. The production build retains its original native-runtime detection.
+
 ## Remote workflow
 
 Install `.github/workflows/developer-lab.yml` in a private build-control repository, then select it with `--builder-repo owner/repository`. The repository must be private. Snapshots are parentless source envelopes under `source/`, so their workflows cannot run as control-repository workflows.

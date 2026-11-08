@@ -1,11 +1,13 @@
 import {defineConfig, mergeConfig} from 'vite';
 import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import base from '../../vite.config';
 
 const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
 
 export default mergeConfig(base, defineConfig({
   base: './',
+  resolve: {alias: [{find: '@/lib/backend-context', replacement: fileURLToPath(new URL('./backend-context.ts', import.meta.url))}]},
   optimizeDeps: {entries: ['index.html']},
   plugins: [{
     name: 'complete-app-lab-entry',

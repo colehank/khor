@@ -33,6 +33,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
   const load=useLoading([handle],handle),busy=load.busy(handle),share=load.share(handle),steps=usePageSteps(handle);
   const observed=load.state(handle),failed=observed?.phase==='failed'?pageFail(observed.error):null;
   const onBusy=(busy:boolean)=>load.errand(handle,busy);
+  const progress=(busy||share!==undefined)?<PillProgress share={share??null}/>:null;
   const [listSeat,setListSeat]=useState<HTMLDivElement|null>(null);
   const browse=(source:'workspace'|'browser')=>{navigation.update(tab.session,{source});navigation.browse(tab.session);};
   const close=()=>{if(!navigation.closePicker(tab.session))onClose();};
@@ -43,7 +44,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
     {editing&&<div data-content-page-landing className="mobile-content-places"><NewTabPage kind={PAGES} places={places} devices={devices} narrow={!desktop} onOpen={revisit} onForget={p=>void forget(p.device,p.place)}/></div>}
     {(error||failed)&&<p role="alert" className="session-content-error" title={failed?.detail}>{error||failed?.reason}{failed&&<button type="button" className="text-brand-strong" onClick={()=>void pageStep(handle,failed.pass?'pass':'retry').catch(()=>{})}>{failed.pass?gui.page_pass:gui.region_retry}</button>}</p>}
     <div ref={setListSeat} className="mobile-content-page-list"/>
-    {desktop?<ContentToolbar kind="page" source="browser" onSource={browse} onBack={()=>navigation.returnToPicker(tab.session)} onClose={close} pinned={tab.pinned}>
+    {desktop?<ContentToolbar kind="page" source="browser" onSource={browse} onBack={()=>navigation.returnToPicker(tab.session)} onClose={close} pinned={tab.pinned} progress={progress}>
       <PageHistory tab={handle} steps={steps}/>
       <PageField inPill suggestAddresses={false} steps={false} tab={handle} machine={device} devices={devices} at={draft} onDraft={setDraft} first={device.id} autoFocus={editing} onEditingChange={setEditing} onLeave={()=>setEditing(false)} onMachine={d=>onPoint(d,draft)} onGo={(url,d)=>go(d,url)}/>
       <PageReload tab={handle} busy={busy}/>
@@ -55,7 +56,7 @@ export function MobileContentPage({tab,handle,device,devices,face,content,naviga
           <div className="mobile-page-identity"><ContentDocumentBand session={tab.session} face={face} content={content} navigation={navigation} title={tab.title||tab.url.replace(/^https?:\/\//,'').replace(/\/$/,'')} onTitle={()=>focusPageAddress(()=>setEditing(true),surface.current)}/></div>
         </>}
         {!editing&&<PageReload tab={handle} busy={busy}/>}
-        {(busy||share!==undefined)&&<PillProgress share={share??null}/>}
+        {progress}
       </div>
       {editing&&<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={()=>{(document.activeElement as HTMLElement|null)?.blur();setEditing(false);}}><IconClose/></GlassCircle>}
     </div>}

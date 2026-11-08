@@ -1,4 +1,5 @@
 import type { ContentView } from '@/lib/content';
+import { hasNativeBackend } from '@/lib/backend-context';
 import type { AttachmentKind } from "./gen/bindings/AttachmentKind";
 import { attachmentView } from "./lib/attachment-view";
 import type { SessionContent } from "./gen/bindings/SessionContent";
@@ -230,7 +231,7 @@ const bridge = params.get("bridge");
  * tauri's own IPC global is present, rather than a guess from the
  * absence of something else.
  */
-export const inApp = "__TAURI_INTERNALS__" in window;
+export const inApp = hasNativeBackend();
 
 /**
  * The web face's key, taken off the link once and kept.

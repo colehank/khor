@@ -251,6 +251,9 @@ try{
  await nativePhone.screenshot({path:join(output,mobile?'mobile-browser-progress.png':'desktop-browser-progress.png')});
  await nativePhone.evaluate(tab=>window.__fixtureNavigation({tab,view:'1',navigation:'1',revision:'2',phase:'failed',estimate:.6,requested_url:'https://fixture.invalid/page',url:'https://fixture.invalid/page',exit:'',proxied:false,error:{domain:'NSURLErrorDomain',code:'-1004',description:'Connection refused',url:'https://fixture.invalid/page',underlying:[],truncated:false}}),handle);
  await progress.waitFor({state:'detached'});await webpage.locator('[role=alert]').waitFor();
+ if(mobile)await webpage.locator('[data-deck-title]').click();
+ const address=webpage.locator('[data-page-address]');await address.click();await address.fill('http://127.0.0.1:23910/app/?scene=workspaces&machines=3');await address.press('Enter');
+ await until(()=>calls.some(c=>c.cmd==='open_page'&&c.args.tab===handle&&c.args.url==='http://127.0.0.1:23910/app/?scene=workspaces&machines=3'));
  assert.equal(await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length),tabCount,'Load state must not create tabs');
  results.push({name:(mobile?'mobile':'desktop')+' native session browser clips actual progress and clears it on failure',passed:true});await nativePhone.close();
  }
