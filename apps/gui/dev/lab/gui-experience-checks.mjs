@@ -46,6 +46,17 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.locator('[data-history-search] input').waitFor();
   await page.screenshot({path:path.join(report,`gui-experience-${engine}.png`)});
   await page.keyboard.press('Escape');
+  await api('__ai_preview/settings-hold',{hold:true});
+  await page.locator('[data-lab-session-settings]:visible').click();
+  await page.locator('[data-lab-option="model"]').click();
+  await page.locator('[data-option-value="claude-opus-4-6"]').click();
+  await page.getByRole('status').filter({hasText:'正在应用模型'}).waitFor();
+  assert((await page.locator('[data-lab-session-settings]:visible').innerText()).includes('Sonnet'),'Queued transport does not replace the canonical model');
+  assert.equal(await api('__ai_preview/settings-pending'),1,'Only one model change is in flight');
+  await api('__ai_preview/settings-hold',{hold:false});
+  await page.waitForFunction(()=>document.querySelector('[data-lab-session-settings]')?.textContent.includes('Opus'));
+  await page.getByRole('status').filter({hasText:'正在应用模型'}).waitFor({state:'detached'});
+  await page.keyboard.press('Escape');
   const download=page.waitForEvent('download');
   await page.locator('[data-lab-add]').click();await page.locator('[data-history-readable-export]').click();
   const exported=await download,body=await readFile(await exported.path(),'utf8');

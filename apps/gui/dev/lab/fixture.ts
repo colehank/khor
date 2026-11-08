@@ -190,10 +190,13 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
+  let holdSettings=false;const pendingSettings:(()=>void)[]=[];
+  const applySetting=(apply:()=>void)=>{if(holdSettings)pendingSettings.push(apply);else apply();};
   return {
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
+          holdSettings=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
           for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
           preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
@@ -208,6 +211,12 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       if(path==='__ai_preview/upload-mode'){uploadMode=String(body.mode??'ok');return uploadMode;}
       if(path==='__ai_preview/upload-state')return uploadMode;
       if(path==='__ai_preview/says')return structuredClone(sentPrompts);
+      if(path==='__ai_preview/settings-hold'){
+        holdSettings=body.hold===true;
+        if(!holdSettings)for(const apply of pendingSettings.splice(0))apply();
+        return {pending:pendingSettings.length};
+      }
+      if(path==='__ai_preview/settings-pending')return pendingSettings.length;
       if(path==='chat_put')return '/preview/uploads/'+String(body.name??'attachment');
       if(path==='chat_put_paths')return body.paths;
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
@@ -265,12 +274,13 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "khor_agent": answer = agentAction(body); break;
           case "console_catalog": answer = []; break;
           case "launch_presets": answer = []; break;
-          case "chat_set_mode": preferences[index].modes.currentModeId=String(body.mode);frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
+          case "chat_set_mode": applySetting(()=>{preferences[index].modes.currentModeId=String(body.mode);frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});});break;
           case "chat_set_option": {
+            applySetting(()=>{
             const option=preferences[index].options.find(o=>o.id===body.option);
             if(option)(option as {currentValue:unknown}).currentValue=body.value;
             if(body.option==='model')preferences[index].model=String(body.value);
-            frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
+            frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});});break;
           }
           case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : "已确认。此处仅演示确认状态，不执行系统操作。"))), 900); break;
           case "chat_say": sentPrompts.push(structuredClone(body));run(index, "收到。这是验收环境的示例回复，没有调用模型或执行命令。你可以展开上面的工具调用，检查输出与复制按钮。"); break;
