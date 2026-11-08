@@ -56,13 +56,14 @@ try{
  for(const width of [900,1400]){
    await page.setViewportSize({width,height:900});
    const edges=await page.evaluate(()=>{
-     const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
+     const box=el=>{const r=el.getBoundingClientRect();return {width:r.width,left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
      const session=document.querySelector('[data-session-tabs]');
      const content=document.querySelector('[data-content-tabs]');
      return {session:box(session.closest('[data-region-head]')),content:box(content.closest('[data-region-head]')),
        nested:session.contains(content),toolbar:box(document.querySelector('[data-content-picker] [data-content-toolbar]'))};
    });
    await page.screenshot({path:join(output,`session-header-${width}.png`)});
+   assert(edges.session.width>=150&&edges.content.width>=150,`both columns remain visible at ${width}: ${JSON.stringify(edges)}`);
    assert(!edges.nested&&edges.content.left>=edges.session.right-1,`content owns a separate right column at ${width}: ${JSON.stringify(edges)}`);
    assert(Math.abs(edges.session.top-edges.content.top)<1&&Math.abs(edges.session.height-edges.content.height)<1,`both headers share top and height at ${width}: ${JSON.stringify(edges)}`);
    assert(edges.toolbar.top>=edges.content.bottom-1,'content toolbar clears its own header');

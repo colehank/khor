@@ -46,23 +46,36 @@ export async function checkGuiExperience(browser,{port,report,engine}){
  }finally{await context.close();}
 }
 
-export async function checkWorkspaceSessions(browser,{port,report,engine}){
- const context=await browser.newContext({viewport:{width:1500,height:900}});
+export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=false}){
+ const viewport=mobile?{width:390,height:844}:{width:1500,height:900};
+ const context=await browser.newContext({viewport,isMobile:mobile,hasTouch:mobile});
  const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',error=>errors.push(String(error)));
  try{
   await page.goto(`http://127.0.0.1:${port}/app/?scene=workspace&items=3&machines=1`);
+  if(mobile){await page.locator('[data-ws-mid] [data-session-bar] [data-back]:visible').waitFor();await page.locator('[data-ws-mid] [data-session-bar] [data-back]:visible').click();}
   const nav=page.locator('[data-workspace-navigation][data-seat="workspace"]');await nav.waitFor();
   await nav.locator('[data-workspace-view="sessions"]').click();
   const rows=page.locator('[data-ws-sessions-list] [data-row-open]');await rows.first().click();
+  if(mobile){
+   await page.locator('[data-ws-sessions] [data-chat-input]').waitFor();
+   assert.equal(await page.locator('[data-workspace-session-tabs]:visible').count(),0);
+   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('khor:open-path',{detail:{machine:'',path:'/preview/project/README.md',dir:false,line:null,session:'gui/ai-elements-review'}})));
+   await page.locator('[data-content-visible="true"] [data-file-page]').waitFor();
+   assert.equal(await page.locator('[data-content-visible="true"] [data-session-bar]:visible').count(),1,'Workspace session files use the same bottom content pill');
+   assert.deepEqual(page.viewportSize(),viewport);assert.deepEqual(errors,[]);
+   await page.screenshot({path:path.join(report,`workspace-sessions-mobile-${engine}.png`)});
+   return {name:`workspace shared mobile session ${engine}`,passed:true,errors};
+  }
   await page.locator('[data-workspace-session-tabs]').waitFor();
   const id=await page.locator('[data-workspace-session-tabs] [data-tab-open]').first().getAttribute('data-tab-open');
   await page.locator(`[data-workspace-session-tabs] [data-tab-open="${id}"]`).click();
   await page.locator('[data-session-content-head]').waitFor();
   const geometry=await page.evaluate(()=>{
-   const box=element=>{const r=element.getBoundingClientRect();return {top:r.top,height:r.height,left:r.left,right:r.right};};
+   const box=element=>{const r=element.getBoundingClientRect();return {top:r.top,height:r.height,width:r.width,left:r.left,right:r.right};};
    const session=document.querySelector('[data-workspace-session-tabs]'),content=document.querySelector('[data-session-content-head]');
    return {session:box(session.closest('[data-region-head]')),content:box(content.closest('[data-region-head]')),nested:session.contains(content),titles:document.querySelectorAll('[data-ws-sessions] [data-detail-header]').length};
   });
+  assert(geometry.session.width>=200&&geometry.content.width>=200,`Both workspace columns must remain usable: ${JSON.stringify(geometry)}`);
   assert(!geometry.nested&&geometry.content.left>=geometry.session.right-1);
   assert(Math.abs(geometry.session.top-geometry.content.top)<=1&&Math.abs(geometry.session.height-geometry.content.height)<=1);
   assert.equal(geometry.titles,0,'Workspace sessions use the same tab header without an extra detail title');

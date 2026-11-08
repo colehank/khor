@@ -1523,8 +1523,8 @@ export function WorkspacePane({
         {picked !== null && (narrow ? screen === "sessions" : sessionDetailOpen) && (
           <ListPane mark="data-ws-sessions" name={gui.workspace_sessions} mountSeamFirst side="right"
             pane={narrow ? null : sidePane} narrow={narrow} seam={{ "data-ws-seam": "sessions" }} scroll={false}
-            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}>
-            <SessionFrame mobile={narrow} grouped faces={sessionFaces} active={picked} onFocus={selectSession} onClose={closeSessionTab}
+            className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0",!narrow&&contentSide.open&&"min-w-[min(calc(2*var(--session-side-min)),calc(100%-var(--ws-mid-min)))]")}>
+            <SessionFrame mobile={narrow} contentMode={narrow&&contentSide.open} grouped faces={sessionFaces} active={picked} onFocus={selectSession} onClose={closeSessionTab}
               onNew={newSession} onReorder={sessionTabs.reorder} stripData={{'data-session-tabs':'','data-workspace-session-tabs':''}}
               onBack={()=>{showSessionDetail(false);setSidebarView('sessions');if(narrow)setScreen('tree');}}
               onTitle={()=>{if(picked)openSessionContent(picked);}}

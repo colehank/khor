@@ -25,9 +25,9 @@ export function AgentResource({item,onOpenFile}:{item:AcpResource;onOpenFile:(pa
   </DialogContent></Dialog>
  </>;
  return <div data-chat-resource className="rounded-md bg-fill px-row py-in text-callout">
-  <span>{name}</span>{failed&&<p role="status" className="text-caption text-muted-foreground">图片无法显示</p>}
+  <span>{name}</span>{failed&&<p role="status" className="text-caption text-muted-foreground">附件无法打开</p>}
   {path?<Button size="sm" variant="ghost" onClick={()=>onOpenFile(path)}>打开文件</Button>:item.uri&&/^https?:\/\//i.test(item.uri)?<Button size="sm" variant="ghost" onClick={event=>{
-    const url=item.uri!;assertPageUrl(url);if(linkIntent(event)==='system')void openSystemUrl(url);else home?.openPage?.(url);
+    const url=item.uri!;assertPageUrl(url);if(linkIntent(event)==='system')void openSystemUrl(url).catch(()=>setFailed(true));else if(home?.openPage)home.openPage(url);else void openSystemUrl(url).catch(()=>setFailed(true));
   }}>打开链接</Button>:<p className="text-caption text-muted-foreground">{item.data?'此媒体暂无法预览':'源内容不可用'}</p>}
  </div>;
 }
