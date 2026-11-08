@@ -41,7 +41,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
    const root=document.querySelector('[data-chat-scroll]'),node=[...root.querySelectorAll('[data-history-key]')].find(node=>node.dataset.historyKey===anchor.key);
    return node&&Math.abs(node.getBoundingClientRect().top-root.getBoundingClientRect().top-anchor.top)<3;
   },anchor);
-  assert(await page.locator('[data-copy-text]').count()>0,'Answer and code copying are discoverable');
+  await page.locator('[data-chat-message] [data-copy-text]').first().waitFor();
   await page.locator('[data-lab-add]').click();await page.locator('[role=menuitem][data-history-find-open]').click();
   await page.locator('[data-history-search] input').waitFor();
   await page.screenshot({path:path.join(report,`gui-experience-${engine}.png`)});
@@ -77,7 +77,17 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
    assert.equal(await page.locator('[data-workspace-session-tabs]:visible').count(),0);
    await page.evaluate(session=>window.dispatchEvent(new CustomEvent('khor:open-path',{detail:{machine:'',path:'/preview/project/README.md',dir:false,line:null,session}})),khor?'wide/all':'gui/ai-elements-review');
    await page.locator('[data-content-visible="true"] [data-file-page]').waitFor();
-   assert.equal(await page.locator('[data-content-visible="true"] [data-session-bar]:visible').count(),1,'Workspace session files use the same bottom content pill');
+   const deck=page.locator('[data-content-visible="true"] [data-file-deck]');
+   await deck.locator('[data-file-pill] [data-deck-band]').waitFor();
+   // FilePage supplies the production file deck; it is not a second
+   // SessionScreen. Wait for the sheet's entrance before checking reachability.
+   await page.waitForFunction(()=>{
+    const pill=document.querySelector('[data-content-visible="true"] [data-file-pill]');
+    if(!pill)return false;const r=pill.getBoundingClientRect();
+    return r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight;
+   });
+   assert.equal(await deck.count(),1,'Workspace session files keep one reachable bottom content pill');
+   assert.equal(await page.locator('[data-content-tabs]:visible').count(),0,'Mobile content never duplicates a desktop top tab strip');
    assert.deepEqual(page.viewportSize(),viewport);assert.deepEqual(errors,[]);
    await page.screenshot({path:path.join(report,`workspace-sessions-mobile-${engine}${khor?"-khor":""}.png`)});
    return {name:`workspace shared mobile session ${engine}${khor?" khor":""}`,passed:true,errors};
