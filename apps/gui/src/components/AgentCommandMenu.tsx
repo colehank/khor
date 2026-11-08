@@ -1,9 +1,11 @@
+import {useId} from 'react';
 import {MenuViewport} from '@/components/ui/menu-viewport';
 import type {AgentCommand} from '@/lib/agent-commands';
 import {gui} from '@/gen/catalog';
 import {cn} from '@/lib/utils';
 
-export function AgentCommandMenu({id,commands, pick, onPick}: {id:string;commands: AgentCommand[]; pick: number; onPick: (name: string) => void}) {
+export function AgentCommandMenu({id:providedId,commands, pick, onPick}: {id?:string;commands: AgentCommand[]; pick: number; onPick: (name: string) => void}) {
+  const fallbackId=useId(),id=providedId??fallbackId;
   if (!commands.length) return null;
   const selected = Math.min(pick, commands.length - 1);
   return <div id={id} data-slash-menu data-menu-frame role="listbox" aria-label={gui.agent_commands} className="glass absolute bottom-full left-0 z-20 mb-in w-full overflow-hidden rounded-menu border-0 bg-glass-menu shadow-[var(--glass-in),var(--glass-shadow)]">

@@ -52,6 +52,7 @@ export function findQuery(query: FindQuery): FindQuery {
 /** Search and message copying consume projected items, never JSON keys,
  * encoded attachments, or a mounted DOM subtree. Projection remains paintHistory's. */
 export function historyText(item: HistoryItem): { texts: string[]; complete: boolean; outputPart?: number } {
+  if(item.who==='plan')return {texts:item.entries.map(entry=>entry.content),complete:true};
   if ('text' in item) return { texts: [item.text], complete: true };
   if (item.who === 'compaction') return { texts: [item.summary, ...(item.error ? [item.error] : [])], complete: true };
   if (item.who === 'resource') return { texts: [item.name, ...(item.uri ? [item.uri] : [])], complete: true };

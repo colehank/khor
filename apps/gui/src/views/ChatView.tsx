@@ -1,3 +1,4 @@
+import {useConfirmedSetting} from '@/hooks/use-confirmed-setting';
 import {CopyText} from '@/components/CopyText';
 import {useHistoryPrefetch} from '@/hooks/use-history-prefetch';
 import {useSessionDocuments} from '@/hooks/use-session-documents';
@@ -65,6 +66,7 @@ const WAIT_MS = 1000;
 const FAILED_MS_MOST = 5000;
 /** One painted item, folded from the protocol's chunks. */
 type Item = (
+  | import("@/lib/acp-view").AcpPlan
   | import("@/lib/acp-view").AcpCompaction
   | import("@/lib/acp-view").AcpResource
   | { who: "user"; text: string; token?: string }
@@ -1197,6 +1199,13 @@ export function ChatView({
     }
     historyAnchor.current = null;
   }, [paint, acceptRestoredPosition]);
+  useEffect(()=>{
+    const element=dropBox.current as (HTMLDivElement&{__find?:()=>boolean})|null;
+    if(!element||!sourceBinding)return;
+    const find=()=>{setFindingHistory(true);return true;};
+    element.__find=find;
+    return()=>{if(element.__find===find)delete element.__find;};
+  },[sourceBinding]);
   const jumpHistoryMatch = (hit: FindHit) => {
     following.current = false; readingLatest.current = false;
     historyAnchor.current = null;
@@ -1351,6 +1360,9 @@ export function ChatView({
   /** The agent's own settings, in its own words, for ＋'s menu. The
       change is asked of the host and the control follows the answer
       (`settings` frame), never its own press. */
+  const confirmedSettings=new Map<string,string|boolean>((settings?.options??[]).map(option=>[option.id,option.currentValue as string|boolean]));
+  if(settings?.modes)confirmedSettings.set('mode:',settings.modes.currentModeId);
+  const settingRequest=useConfirmedSetting(confirmedSettings);
   const addOptions: AddOption[] = (settings?.options ?? []).map((o) =>
     o.type === "boolean"
       ? {
@@ -1360,7 +1372,7 @@ export function ChatView({
           name: o.name,
           note: o.description ?? null,
           on: o.currentValue === true,
-          onToggle: () => void withChat(view => view.setOption(o.id, o.currentValue !== true)).catch(() => {}),
+          onToggle: () => settingRequest.request({key:o.id,value:o.currentValue!==true,name:o.name,run:()=>withChat(view=>view.setOption(o.id,o.currentValue!==true))}),
         }
       : {
           kind: "values",
@@ -1375,7 +1387,7 @@ export function ChatView({
             note: v.value.description ?? null,
             heading: v.heading,
           })),
-          onPick: (v) => void withChat(view => view.setOption(o.id, v)).catch(() => {}),
+          onPick: (v) => settingRequest.request({key:o.id,value:v,name:o.name,run:()=>withChat(view=>view.setOption(o.id,v))}),
         },
   );
   /** Who is answering, for the capsule's who seat. */
@@ -1411,7 +1423,7 @@ export function ChatView({
           note: modeNote(m.id, settings.modes?.availableModes ?? []),
         })),
       ]}
-      onPick={(v) => void withChat(view => view.setMode(v)).catch(() => {})}
+      onPick={v=>settingRequest.request({key:"mode:",value:v,name:"执行权限",run:()=>withChat(view=>view.setMode(v))})}
     />
   ) : mode !== null && modeSaid(mode) !== null ? (
     <ModeSeat current={mode} word={modeSaid(mode) ?? mode} />
@@ -1511,6 +1523,7 @@ export function ChatView({
     <div
       ref={dropBox}
       data-chat-drop={dropping || undefined}
+      data-chat-searchable
       onKeyDownCapture={event => {
         if (sourceBinding && !imeKey(event) && !event.altKey && !event.shiftKey && (/Mac|iPhone|iPad/.test(navigator.userAgent) ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey) && event.key.toLowerCase() === 'f') {
           event.preventDefault(); event.stopPropagation(); setFindingHistory(true);
@@ -1619,7 +1632,7 @@ export function ChatView({
             {title}
           </div>
         )}
-        <AgentPlan key={id} entries={plan} />
+        {!items.some(item=>item.who==='plan')&&<AgentPlan key={id} entries={plan} />}
         {openedAt !== null && items.length === 0 && (
           <Waiting
             since={openedAt}
@@ -1672,7 +1685,7 @@ export function ChatView({
                 </div>
               );
             })()
-          ) : item.who === "agent" || item.who === "thought" || item.who === "tool" || item.who === "compaction" || item.who === "resource" ? (
+          ) : item.who === "agent" || item.who === "thought" || item.who === "tool" || item.who === "compaction" || item.who === "resource" || item.who === "plan" ? (
             <AgentContent key={item.displayKey ?? item.historyKey ?? (item.who === "tool" ? `${id}:${item.id}` : `${id}:${i}`)} item={item}
               streaming={inTurn && !still && history?.window.latest === true && item === latestBody} active={inTurn}
               open={item.who === "tool" && open.has(item.id)} onOpenFile={openFile}
@@ -1756,7 +1769,9 @@ export function ChatView({
           has its row of accessory keys, a chat has its input box」) —
           above the deck (2026-10-13); the deck sits on the keyboard.
           On the wide face it stands here, as it always did. */}
-      <BarSeat at="above">{unifiedSession && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn} />}
+      <BarSeat at="above">{unifiedSession && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn||settingRequest.pending} />}
+      {settingRequest.pending&&<p role="status" className="px-row text-caption text-muted-foreground">正在应用{settingRequest.name}</p>}
+      {settingRequest.error&&<div role="alert" className="flex items-center gap-in px-row text-caption text-destructive">未能确认{settingRequest.name}，保留当前设置<Button size="sm" variant="ghost" onClick={settingRequest.retry}>重试</Button></div>}
       {/* A recorded past has no channel to speak into: no input, and
           the only thing its footer can say is that the record is
           missing. */}
@@ -1926,6 +1941,7 @@ export function ChatView({
                     canAttach && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
                   }
                   options={addOptions}
+                  onFind={sourceBinding?()=>setFindingHistory(true):undefined}
                 />
               }
               // The seat gives way while there is text to send, where the

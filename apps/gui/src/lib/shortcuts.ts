@@ -429,6 +429,10 @@ export function useShortcuts(acts: ShellActs) {
           // or the selection is in, read-only ones included.
           const code = codeInUse();
           if (code?.__find) return code.__find();
+          const chats=[...document.querySelectorAll<HTMLElement&{__find?:()=>boolean}>('[data-chat-searchable]')].filter(element=>element.getClientRects().length&&element.__find);
+          const focused=chats.find(element=>element.contains(document.activeElement));
+          if(focused?.__find)return focused.__find();
+          if(chats.length===1&&!document.activeElement?.closest('[data-session-side],[data-pane-bar]'))return chats[0].__find!();
           const open = [...document.querySelectorAll<HTMLElement>("[data-pane-bar] [data-search-open]")].find((e) => e.offsetParent);
           const box = [...document.querySelectorAll<HTMLInputElement>("[data-pane-bar] input")].find((e) => e.offsetParent);
           if (open) open.click();

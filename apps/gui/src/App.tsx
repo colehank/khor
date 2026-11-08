@@ -18,7 +18,7 @@ import { tabAct, useTabActs } from "@/lib/tab-acts";
 import { noticesOf, useNotices } from "@/lib/pill-notices";
 import { rungOffScreen } from "@/lib/bell-marks";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT, askOpenPath, askOpenUrl } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
   faceHere,
   fetchDevices,

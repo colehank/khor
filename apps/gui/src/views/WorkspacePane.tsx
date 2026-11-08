@@ -1199,7 +1199,7 @@ export function WorkspacePane({
         <DropdownMenuContent align="end">{workspaceActions.map(action => <DropdownMenuItem key={action.key} onSelect={action.run}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>
     </>}
-    <WindowControls />
+    {!(picked!==null&&sessionDetailOpen)&&<WindowControls />}
   </div>;
 
   const workspaceSessionList = (

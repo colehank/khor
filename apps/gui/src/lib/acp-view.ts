@@ -8,7 +8,8 @@ export type AcpTool = {
 };
 export type AcpCompaction = {who:"compaction";id:string;status:string;summary:string;error:string|null};
 export type AcpResource = {who:"resource";kind:string;name:string;uri?:string;data?:string;mime?:string};
-export type AcpItem = AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string; messageId?: string } | (AcpTool & { who: "tool" });
+export type AcpPlan={who:"plan";entries:{content:string;status:string}[]};
+export type AcpItem = AcpPlan | AcpCompaction | AcpResource | { who: "user" | "agent" | "thought"; text: string; messageId?: string } | (AcpTool & { who: "tool" });
 
 // Count the JSON data's actual two-space display before materializing it.
 // Transport values are plain JSON; non-JSON/cyclic input cannot claim a
@@ -99,6 +100,14 @@ function details(u: AcpUpdate) {
 }
 
 export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], u: AcpUpdate, paintUser = true): boolean {
+  if(u.sessionUpdate==='plan'&&Array.isArray(u.entries)){
+    const plan:AcpPlan={who:'plan',entries:u.entries.filter(entry=>typeof entry.content==='string').map(entry=>({content:entry.content!,status:entry.status??'pending'}))};
+    for(let index=out.length-1;index>=0;index--){
+      if(out[index].who==='user'||out[index].who==='boundary')break;
+      if(out[index].who==='plan'){out[index]=plan;return true;}
+    }
+    out.push(plan);return true;
+  }
   if ((u.sessionUpdate==='compaction_update'||u.sessionUpdate==='compaction_summary_chunk')&&u.compactionId) {
     const at=out.findIndex(i=>i.who==='compaction'&&'id' in i&&i.id===u.compactionId);
     const prior: AcpCompaction=at<0?{who:'compaction',id:u.compactionId,status:'in_progress',summary:'',error:null}:out[at] as AcpCompaction;

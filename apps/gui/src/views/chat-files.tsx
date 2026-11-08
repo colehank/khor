@@ -32,7 +32,7 @@ import { fileManagerLabel } from "@/lib/file-actions";
 // sentences for what it will not draw — read only, with the three things
 // a person does next: open it where it lives, copy its path, and hand it
 // on (Finder on the Mac, the system's share sheet on a phone).
-import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import { DirPicker } from "@/components/DirPicker";
