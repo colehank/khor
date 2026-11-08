@@ -37,8 +37,11 @@ window.fixture={normalize,render:props=>flushSync(()=>root.render(<Fixture {...p
  const config=put(`scripts/${prefix}-config.ts`, `import base from '../vite.config';import path from 'node:path';export default {...base,optimizeDeps:{entries:[${JSON.stringify(`${prefix}.html`)}]},cacheDir:${JSON.stringify(join(artifact,'vite-cache'))},resolve:{alias:[{find:'@/api',replacement:${JSON.stringify(api)}},{find:'@',replacement:path.resolve(import.meta.dirname,'../src')}]}};`);
  put(`${prefix}.html`, `<!doctype html><html data-theme="dark"><body><div id="root"></div><script type="module">import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/${prefix}.tsx"></script></body></html>`);
  vite=spawn('node_modules/.bin/vite',['--config',config,'--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
- let ready=false,log='';vite.stdout.on('data',d=>ready||=String(d).includes(`:${port}`));vite.stderr.on('data',d=>log+=d);
- for(let i=0;i<100&&!ready;i++)await pause(100);assert(ready,log||'Vite did not start');
+ let ready=false,log='';const record=d=>log=(log+String(d)).slice(-32000);vite.stdout.on('data',record);vite.stderr.on('data',record);
+ // Readiness is the fixture's HTTP response, independent of ANSI log colors.
+ const deadline=Date.now()+20000;
+ while(!ready&&Date.now()<deadline){try{ready=(await fetch(`http://localhost:${port}/${prefix}.html`,{signal:AbortSignal.timeout(1000)})).ok;}catch{}if(!ready)await pause(100);}
+ assert(ready,log||'Vite did not serve the fixture');
  browser=await chromium.launch({channel:'chrome',headless:process.env.BROWSER_YIELD_HEADED!=='1'});const page=await browser.newPage({viewport:{width:1100,height:800}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto(`http://localhost:${port}/${prefix}.html`);await page.waitForFunction(()=>window.nativeFixture?.state('page')?.visible);
  for(const [address,want] of [['127.0.0.1:8924','http://127.0.0.1:8924/'],['localhost:8924/path?q=1','http://localhost:8924/path?q=1'],['LOCALHOST.:8924','http://localhost.:8924/'],['[::1]:8924','http://[::1]:8924/'],['127.1:8924','http://127.0.0.1:8924/'],['example.com','https://example.com'],['localhost.example.com','https://localhost.example.com'],['127.example.com','https://127.example.com'],['127.0.0.1.evil.example','https://127.0.0.1.evil.example'],['localhost@evil.example','https://localhost@evil.example'],['https://localhost:8924','https://localhost:8924'],['http://example.com','http://example.com'],['  ','']]) {
