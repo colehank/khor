@@ -15,7 +15,7 @@ type Clock = {
 };
 /** A reader has one page operation at a time. Following pauses while reading
  * away from the tail; explicit navigation never races an automatic page merge. */
-export function historyReader(source: Source, changed: (state: HistoryReaderState) => void, canFollow: () => boolean, clock: Clock, watch = true) {
+export function historyReader(source: Source, changed: (state: HistoryReaderState) => void, canFollow: (state:HistoryReaderState) => boolean, clock: Clock, watch = true) {
   let state: HistoryReaderState = { window: EMPTY_HISTORY_WINDOW, loaded: false, busy: false, error: null, reset: false };
   let closed = false;
   let pending: AbortController | null = null;
@@ -34,7 +34,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
     if (!closed && (!state.loaded || watch))
       timer = clock.schedule(() => {
         timer = null;
-        if (!pending && canFollow() && (!state.loaded || (watch && (state.window.latest || catchingUp))))
+        if (!pending && canFollow(state) && (!state.loaded || (watch && (state.window.latest || catchingUp))))
           void load(state.loaded ? 'newer' : 'tail');
         else
           schedule();
@@ -79,7 +79,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
         pending = null;
         state = { ...state, busy: false };
         publish();
-        if (wakePending && state.loaded && !state.error && watch && canFollow() && (state.window.latest || catchingUp))
+        if (wakePending && state.loaded && !state.error && watch && canFollow(state) && (state.window.latest || catchingUp))
           void load('newer');
         else schedule();
       }
@@ -88,7 +88,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
   return {
     start: (before?: string) => {
       initialBefore = before ?? null;
-      if (canFollow()) return load('tail', before);
+      if (canFollow(state)) return load('tail', before);
       schedule();
     },
     at: (before: string) => load('tail', before, true),
@@ -99,7 +99,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
     record: source.record,
     wake() {
       wakePending = true;
-      if (!pending && state.loaded && watch && canFollow() && (state.window.latest || catchingUp))
+      if (!pending && state.loaded && watch && canFollow(state) && (state.window.latest || catchingUp))
         void load('newer');
     },
     pause() {
@@ -110,7 +110,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       schedule();
     },
     resume() {
-      if (!pending && canFollow() && (!state.loaded || (watch && (state.window.latest || catchingUp))))
+      if (!pending && canFollow(state) && (!state.loaded || (watch && (state.window.latest || catchingUp))))
         void load(state.loaded ? 'newer' : 'tail');
     },
     async dispose() {

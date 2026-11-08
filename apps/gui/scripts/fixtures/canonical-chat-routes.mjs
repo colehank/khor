@@ -1,6 +1,9 @@
 // Fixed, already-projected scenario DTOs only. No vendor normalization, body
 // folding, source identity algorithm, reader or cache replaces production code.
 const BODY_NOTES = new Set(['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update','plan','compaction_update','compaction_summary_chunk']);
+// Match gui-core frame_of: these five become ContentChanged. Plans and
+// compaction facts are also recorded, but remain actual live Note receipts.
+const PROMOTED_NOTES=new Set(['user_message_chunk','agent_message_chunk','agent_thought_chunk','tool_call','tool_call_update']);
 const COMMANDS = new Set(['attachment_begin', 'chat_open', 'chat_capture', 'chat_poll', 'chat_wait', 'chat_leave', 'history_begin', 'history_page', 'history_cancel']);
 
 export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) => {}, bindingPrefix = 'fixed-fixture',pageSize=128}) {
@@ -37,7 +40,7 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) =>
       // payloads stay untouched; real paintHistory performs all body folding.
       if (frame.kind === 'note' && BODY_NOTES.has(frame.update?.update?.sessionUpdate)) {
         state.entries.push({key: `${state.entries.length}:0`, starts_message: false, record: null, frame});
-        state.pending.push({kind: 'content_changed'});
+        state.pending.push(PROMOTED_NOTES.has(frame.update.update.sessionUpdate)?{kind:'content_changed'}:frame);
       } else {
         if (frame.kind === 'turn') state.entries.push({key: `${state.entries.length}:0`, starts_message: true, record: null, frame});
         state.pending.push(frame);

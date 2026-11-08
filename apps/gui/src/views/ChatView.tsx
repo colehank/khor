@@ -53,7 +53,7 @@ import { HistorySearch } from '@/components/history/HistorySearch';
 import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
-import { historyEntries, historyReferences } from '@/lib/history-window';
+import { historyEntries, historyReferences, historyWindowHasRoom } from '@/lib/history-window';
 import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContributionPoint, historyContributionPresent, type HistoryContributionPoint, type HistoryItem } from '@/lib/history-paint';
 import { HistoryRecords } from '@/components/history/HistoryRecords';
 
@@ -911,7 +911,8 @@ export function ChatView({
             setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
           }
         } else if (!state.busy) historyAnchor.current = null;
-      }, () => !document.hidden && contentHeight > 0 && readingLatest.current, {
+      }, state => !document.hidden && contentHeight > 0 && (readingLatest.current
+        ||state.window.latest&&historyWindowHasRoom(state.window)), {
         schedule: (run, delay) => window.setTimeout(run, delay), cancel: timer => window.clearTimeout(timer),
       }, watch);
       historyView.current = view;
@@ -1154,7 +1155,7 @@ export function ChatView({
               const t = titleIn(f);
               if (t !== undefined) setTitle(t);
               const pl = planIn(f);
-              if (pl) setPlan(pl);
+              if (pl) {setPlan(pl);historyView.current?.wake();}
               const u2 = updateOf(f);
               if(u2?.sessionUpdate==='compaction_update')setUsage(null);
               if (u2?.sessionUpdate === "current_mode_update" && u2.currentModeId) {
@@ -1695,7 +1696,7 @@ export function ChatView({
             {title}
           </div>
         )}
-        {!items.some(item=>item.who==='plan')&&<AgentPlan key={id} entries={plan} />}
+        {!sourceBinding&&<AgentPlan key={id} entries={plan} />}
         {openedAt !== null && items.length === 0 && (
           <Waiting
             since={openedAt}
