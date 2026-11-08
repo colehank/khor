@@ -1,5 +1,5 @@
 import {chromium, webkit} from 'playwright-core';
-import {spawn} from 'node:child_process';
+import {spawn,execFileSync} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -16,10 +16,14 @@ const server = spawn('python3', ['-m', 'khor_lab.preview', process.env.LAB_BUNDL
 
 async function inspect(browser, scene, size, data = {}) {
   const context = await browser.newContext({viewport: size, isMobile: size.width < 500 && !data.fine, hasTouch: size.width < 500 && !data.fine});
+  if(data.nativeMarker)await context.addInitScript(()=>{
+    window.__labNativeCalls=[];
+    window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'khor-page-preview'}},invoke:async(...args)=>{window.__labNativeCalls.push(args);throw new Error('Frontend Lab must never invoke its browser host');}};
+  });
   const page = await context.newPage(), errors = [];
   const machines = data.machines ?? 1;
   const items=data.items??5;
-  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}${data.setup?'-setup':''}${data.pairing?'-pairing':''}`;
+  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}${data.setup?'-setup':''}${data.pairing?'-pairing':''}${data.nativeMarker?'-embedded':''}`;
   let geometry = null;
   const contentLayout = [];
   const expectedConsoleErrors = [];
@@ -124,6 +128,12 @@ async function inspect(browser, scene, size, data = {}) {
     const selector = scene === 'page' ? '[data-content-visible="true"] .mobile-content-page' : scene === 'list' ? '[data-list]' : scene === 'terminal' ? '[data-terminal]'
       : ['content','workspace'].includes(scene) ? '.cm-editor, [data-file-preview]' : scene === 'quota' ? '[data-quota-row]' : ['devices','workspaces'].includes(scene) ? '[data-list]' : '[data-chat-box]';
     await page.waitForSelector(selector);
+    if(data.nativeMarker){
+      await page.locator('[data-ws-row]').first().click();
+      await page.locator('[data-workspace-navigation]').waitFor();
+      assert.deepEqual(await page.evaluate(()=>window.__labNativeCalls),[],'An embedded frontend Lab must use only its isolated HTTP fixture');
+      assert.equal(await page.evaluate(()=>('__TAURI_INTERNALS__' in window)),true,'The page must not delete or replace its host runtime');
+    }
     if (scene === 'page') {
       const body = page.locator('[data-content-visible="true"]');
       await page.evaluate(() => {
@@ -289,6 +299,8 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true}));
+  await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
     for (const scene of ['gui', 'codex', 'terminal', 'content', 'workspace', ...(size.width < 500 ? ['page'] : []), 'list', 'devices']) {
       results.push(await inspect(browser, scene, size));
@@ -324,11 +336,16 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});
+    results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true,engine:'webkit'}));
     for (const scene of ['workspaces','list','devices']) {
       results.push(await inspect(browser,scene,{width:390,height:844},{machines:scene === 'workspaces' ? 6 : 3,engine:'webkit'}));
       await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
     }
   }
+  try{
+    execFileSync(process.execPath,['scripts/check-workspace-content-ui.mjs'],{env:{...process.env,WORKSPACE_CONTENT_DIR:path.join(report,'session-browser'),PLAYWRIGHT_CHROMIUM_CHANNEL:''},stdio:'inherit'});
+  }catch(error){results.push({name:'session-browser-native-boundary',errors:[String(error)]});}
+  await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   console.log(JSON.stringify(results.map(({name, errors}) => ({name, errors}))));
   if (results.some(result => result.errors.length)) process.exitCode = 1;
 } finally {
