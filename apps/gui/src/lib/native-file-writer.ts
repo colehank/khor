@@ -4,7 +4,7 @@ import {fileExportBegin,fileExportAppend,fileExportFinish,fileHandoffCancel,file
 export function nativeFileWriter(name:string,signal:AbortSignal){
  const id=crypto.randomUUID();let started:Promise<unknown>|null=null,done=false,offset=0;
  let cleanup:Promise<unknown>|null=null;
- const cancel=()=>cleanup??=(async()=>{if(started){await started.catch(()=>{});await fileHandoffCancel(id);}})();
+ const cancel=()=>cleanup??=(async()=>{if(started){await started.catch(()=>{});await fileHandoffCancel(id).catch(error=>console.warn('File export cleanup failed',String(error).slice(0,512)));}})();
  const check=()=>{if(signal.aborted||done)throw new Error('已取消导出');};
  const start=async()=>{check();started??=fileExportBegin(id,name);await started;check();};
  const abort=()=>{void cancel().catch(()=>{});};signal.addEventListener('abort',abort,{once:true});

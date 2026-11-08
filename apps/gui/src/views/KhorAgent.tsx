@@ -64,16 +64,16 @@ export function KhorAgentSettings({ view, onChanged, disabled: running, openRequ
 export function KhorAgentResult({ record: c, session="wide/all" }: { session?:string;record: CommandRecord }) {
   const [error, setError] = useState<string | null>(null), [acting, setActing] = useState(false);
   const [file, setFile] = useState<string | null>(null);
-  const [full,setFull]=useState<{id:string;binding:string}|null>(null);
+  const [full,setFull]=useState<{id:string;binding:string}|null>(null),[fullBusy,setFullBusy]=useState(false);
   const mounted=useRef(true);
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const readFull=async()=>{
-    if(acting)return;setActing(true);setError(null);
+    if(fullBusy)return;setFullBusy(true);setError(null);
     try{const answer=await khorAgent('history',c.owner,{run:c.id,session});
       const source=answer.data as {id?:unknown;binding?:unknown}|null;
       if(!source||typeof source.id!=='string'||typeof source.binding!=='string')throw new Error('完整记录不可用');
       if(mounted.current)setFull({id:source.id,binding:source.binding});
-    }catch(failure){if(mounted.current)setError(said(failure));}finally{if(mounted.current)setActing(false);}
+    }catch(failure){if(mounted.current)setError(said(failure));}finally{if(mounted.current)setFullBusy(false);}
   };
   const busy = c.status === "running" || c.status === "blocked", ask = c.agent?.approval;
   const action = async (name: string, extra: Record<string, unknown> = {}) => {
@@ -88,7 +88,7 @@ export function KhorAgentResult({ record: c, session="wide/all" }: { session?:st
     <Bubble align="end" variant="muted"><BubbleContent data-khor-agent-prompt className="text-read"><Markdown text={c.line} /></BubbleContent></Bubble>
     <div className="flex items-baseline gap-in text-caption text-secondary-foreground"><span>khor</span><span className="min-w-0 flex-1 truncate">{c.agent?.model} · {c.owner_name}</span><StatusWord word={word} />{busy && <Button data-khor-agent-stop variant="ghost" size="sm" disabled={acting} onClick={() => void action("stop")}>{gui.page_stop}</Button>}</div>
     <AgentTranscript updates={c.agent?.updates ?? []} busy={busy} fallback={c.stdout} onOpenFile={setFile} />
-    <div className="flex items-center gap-in text-caption">{c.agent?.updates_truncated&&<span className="text-muted-foreground">{gui.agent_detail_cut}</span>}<Button size="sm" variant="ghost" disabled={acting} onClick={()=>void readFull()}>查看完整内容</Button></div>
+    <div className="flex items-center gap-in text-caption">{c.agent?.updates_truncated&&<span className="text-muted-foreground">{gui.agent_detail_cut}</span>}<Button size="sm" variant="ghost" disabled={fullBusy} onClick={()=>void readFull()}>查看完整内容</Button></div>
     <Dialog open={full!==null} onOpenChange={open=>{if(!open)setFull(null);}}><TaskOverlay purpose="preview" scrollable>
       <DialogHeader><DialogTitle>完整内容</DialogTitle></DialogHeader>
       <DialogBody className="flex min-h-0 flex-col">{full&&<ChatView id={full.id} still binding={full.binding} home={c.owner} machine={c.owner_name} category="khor" watch={busy}/>}</DialogBody>
