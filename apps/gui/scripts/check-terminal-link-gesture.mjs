@@ -69,6 +69,8 @@ for(const change of ['text','range','target'])test('a changed '+change+' cannot 
 test('separate terminal instances cannot activate each other’s pending press',()=>{
   const a=fixture(),b=fixture();a.send('mousedown');b.send('mouseup');assert.deepEqual(a.calls,[]);assert.deepEqual(b.calls,[]);a.send('mouseup');assert.deepEqual(a.calls,['internal']);a.stop();b.stop();
 });
+test('a selection acquired during the pending click cancels activation',()=>{const f=fixture();f.send('mousedown');f.term.hasSelection=()=>true;f.send('mouseup');assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();});
+test('pointer cancellation drops the pending click',()=>{const f=fixture();f.send('mousedown');f.doc.dispatchEvent(new Event('pointercancel'));f.send('mouseup');assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();});
 test('release outside the terminal does not open',()=>{const f=fixture();f.send('mousedown');f.send('mouseup',{origin:f.doc});assert.deepEqual(f.calls,[]);f.stop();});
 test('blur cancels a pending claimed click',()=>{const f=fixture();f.send('mousedown');f.view.dispatchEvent(new Event('blur'));f.send('mouseup');assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();});
 test('dispose removes the ownership listeners',()=>{const f=fixture();f.send('mousedown');f.stop();f.send('mousedown');f.send('mouseup');assert.deepEqual(f.program,['down','up']);assert.deepEqual(f.calls,[]);});

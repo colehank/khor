@@ -40,7 +40,7 @@ try {
     await page.evaluate(async paint=>{
      const term=document.querySelector('[data-terminal]').__xterm,old=term._core.linkifier.currentLink.link;
      await new Promise(resolve=>term.write('\x1b7\x1b[1;1H\x1b[2K'+paint+'\x1b8',resolve));
-     await new Promise(resolve=>{const poll=()=>term._core.linkifier.currentLink?.link&&term._core.linkifier.currentLink.link!==old?resolve():requestAnimationFrame(poll);poll();});
+     await new Promise((resolve,reject)=>{const deadline=Date.now()+5000;const poll=()=>Date.now()>deadline?reject(new Error('App link did not resolve after redraw')):term._core.linkifier.currentLink?.link&&term._core.linkifier.currentLink.link!==old?resolve():requestAnimationFrame(poll);poll();});
     },paint);
     const popup=modifier?page.waitForEvent('popup'):null;await page.mouse.up();if(modifier)await page.keyboard.up(modifier);
     if(popup){const opened=await popup;await opened.waitForURL(uri);await opened.close();assert.deepEqual(await page.evaluate(()=>window.__linkEvents),[]);}

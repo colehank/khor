@@ -24,7 +24,8 @@ const wire=window.__terminalLinkWire={opened:[],bytes:[],ready:false};
 const open=(event:MouseEvent,uri:string)=>{if(canActivateTerminalLink(event,term))wire.opened.push({uri,intent:linkIntent(event)});};
 const term=new Terminal({cols:60,rows:12,fontSize:16,macOptionClickForcesSelection:true,linkHandler:{allowNonHttpProtocols:true,activate:open}});
 term.open(box);term.loadAddon(new WebLinksAddon(open));
-term.registerLinkProvider(pathLinks(term,'fixture',()=>'/fixture',(target,intent)=>wire.opened.push({uri:target.path,intent})));
+let cwd='/fixture';window.__terminalLinkSetCwd=(value:string)=>{cwd=value;};
+term.registerLinkProvider(pathLinks(term,'fixture',()=>cwd,(target,intent)=>wire.opened.push({uri:target.path,intent})));
 const at=(x:number,y:number)=>{const screen=box.querySelector('.xterm-screen')!.getBoundingClientRect();return {col:Math.floor((x-screen.left)/(screen.width/term.cols)),row:Math.floor((y-screen.top)/(screen.height/term.rows))+term.buffer.active.viewportY};};
 claimTerminalLinkClicks(term,box,at,10);
 term.onData(bytes=>wire.bytes.push(bytes));box.addEventListener('contextmenu',event=>event.preventDefault());
@@ -34,11 +35,11 @@ window.__terminalLinkSelection=()=>term.getSelection();
 window.__terminalLinkRedraw=async(row:number,value:string)=>{
   const old=term._core.linkifier.currentLink?.link;
   await new Promise<void>(resolve=>term.write('\u001b7\u001b['+(row+1)+';1H\u001b[2K'+value+'\u001b8',resolve));
-  return await new Promise(resolve=>{
-    const check=()=>{const link=term._core.linkifier.currentLink?.link;if(link&&link!==old)resolve({changed:true,text:link.text});else requestAnimationFrame(check);};check();
+  return await new Promise((resolve,reject)=>{
+    const deadline=Date.now()+5000;const check=()=>{if(Date.now()>deadline){reject(new Error('Provider did not resolve after redraw'));return;}const link=term._core.linkifier.currentLink?.link;if(link&&link!==old)resolve({changed:true,text:link.text});else requestAnimationFrame(check);};check();
   });
 };
-term.write("\u001b[?1000h\u001b[?1006hhttps://example.org/verified\r\n/fixture/a.md\r\n\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007\r\nplain program text",()=>{wire.ready=true;});
+term.write("\u001b[?1000h\u001b[?1006hhttps://example.org/verified\r\n/fixture/a.md\r\n\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007\r\nplain program text\r\na.md",()=>{wire.ready=true;});
 `);
 const fingerprint=()=>Object.fromEntries(['src/lib/term-link-gesture.ts','src/lib/term-links.ts','src/lib/content-link-intent.ts','src/views/TerminalPane.tsx'].map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
 const sources=fingerprint();
@@ -52,7 +53,7 @@ try{
  const point=(col,row)=>page.evaluate(([c,r])=>window.__terminalLinkPoint(c,r),[col,row]);
  const state=()=>page.evaluate(()=>window.__terminalLinkWire);
  const hover=async(col,row)=>{const p=await point(col,row);await page.mouse.move(p.x,p.y);await page.waitForFunction(()=>!!window.__terminalLinkCurrent());return p;};
- for(const [name,row,uri] of [['URL',0,'https://example.org/verified'],['path',1,'/fixture/a.md'],['OSC8',2,'https://example.org/osc8']]){
+ for(const [name,row,uri] of [['URL',0,'https://example.org/verified'],['path',1,'/fixture/a.md'],['OSC8',2,'https://example.org/osc8'],['relative path',4,'/fixture/a.md']]){
    for(const modifier of [null,process.platform==='darwin'?'Meta':'Control']){
      const p=await hover(3,row),before=await state();
      if(modifier)await page.keyboard.down(modifier);await page.mouse.click(p.x,p.y);if(modifier)await page.keyboard.up(modifier);
@@ -62,7 +63,7 @@ try{
  }
  // Hold the physical button while the actual renderer invalidates and resolves
  // its provider result again. No fabricated ILink or monkey-patched linkifier.
- for(const [name,row,uri,paint] of [['URL',0,'https://example.org/verified','https://example.org/verified'],['path',1,'/fixture/a.md','/fixture/a.md'],['OSC8',2,'https://example.org/osc8','\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007']]) {
+ for(const [name,row,uri,paint] of [['URL',0,'https://example.org/verified','https://example.org/verified'],['path',1,'/fixture/a.md','/fixture/a.md'],['relative path',4,'/fixture/a.md','a.md'],['OSC8',2,'https://example.org/osc8','\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007']]) {
    for(const modifier of [null,process.platform==='darwin'?'Meta':'Control']) {
      const p=await hover(3,row),before=await state();
      if(modifier)await page.keyboard.down(modifier);await page.mouse.down();
@@ -77,6 +78,9 @@ try{
    assert.equal((await state()).opened.length,before.opened.length,'changing '+name+' target must cancel activation');
    await page.evaluate(([row,paint])=>window.__terminalLinkRedraw(row,paint),[row,restore]);results.push({name:name+' changed target cancels',passed:true});
  }
+ await hover(1,4);let cwdBefore=await state();await page.mouse.down();await page.evaluate(()=>window.__terminalLinkSetCwd('/other'));
+ await page.evaluate(()=>window.__terminalLinkRedraw(4,'a.md'));await page.mouse.up();assert.equal((await state()).opened.length,cwdBefore.opened.length,'identical printed path resolving elsewhere must cancel');
+ await page.evaluate(()=>window.__terminalLinkSetCwd('/fixture'));await page.evaluate(()=>window.__terminalLinkRedraw(4,'a.md'));results.push({name:'relative path changed resolved destination cancels',passed:true});
  let p=await point(3,3),before=await state();await page.mouse.click(p.x,p.y);let after=await state();assert.equal(after.opened.length,before.opened.length);assert(after.bytes.length>before.bytes.length,'nonlink click still reaches program');results.push({name:'nonlink program mouse',passed:true});
  p=await hover(3,0);before=await state();await page.mouse.move(p.x,p.y);await page.mouse.down();await page.evaluate(()=>window.__terminalLinkRedraw(0,'https://example.org/verified'));await page.mouse.move(p.x+80,p.y+20,{steps:8});await page.mouse.up();after=await state();assert.equal(after.opened.length,before.opened.length,'drag is never also opening');assert(after.bytes.length>before.bytes.length,'drag returns program mouse ownership');results.push({name:'link drag returns program ownership',passed:true});
  p=await hover(3,0);before=await state();await page.mouse.click(p.x,p.y,{button:'right'});after=await state();assert.equal(after.opened.length,before.opened.length,'right click never opens');results.push({name:'right click stays separate',passed:true});
