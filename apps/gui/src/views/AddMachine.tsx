@@ -6,7 +6,7 @@
 //   credential, while Join accepts the other machine's credential.
 // - **SSH 主机** — over ssh, installing khor there unless the switch is
 //   off (`khor add`; the node falls back to an SSH 主机 on its own when
-//   khor cannot stay, and removes what it put there).
+//   khor cannot stay).
 //
 // Every page is a form dialog, so on a phone it is the bottom sheet.
 // Forms are lists on the one ground with hairlines — a row per answer,

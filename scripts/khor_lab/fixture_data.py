@@ -34,8 +34,10 @@ def validate(data):
         raise ValueError('Lab directory records are incomplete')
     if not {'project/README.md', 'project/src/navigation.ts', 'project/docs/中文说明.md'} <= data.get('documents', {}).keys():
         raise ValueError('Lab file records are incomplete')
-    ticket = data.get('pairing_ticket', {})
-    if not ticket.get('token', '').startswith('khorLAB_ONLY_') or not ticket.get('qr', {}).get('path'):
+    ticket = data.get('pairing_ticket')
+    if (not isinstance(ticket, dict) or not isinstance(ticket.get('token'), str)
+            or not ticket['token'].startswith('khorLAB_ONLY_') or not isinstance(ticket.get('qr'), dict)
+            or not ticket['qr'].get('path')):
         raise ValueError('Lab must contain a native-encoded non-production pairing QR code')
 
 
