@@ -7,6 +7,7 @@ type Patch=Partial<AcpTool>&{id:string};
  * facts remain when the media/body owner goes offscreen; no second body cache. */
 export function useRecordTools(owner:string,references:HistoryRecordRef[]){
  const keys=new Set(references.map(recordToolKey));
+ const selection=[...keys].join(";");
  const current=useRef({owner,keys});current.current={owner,keys};
  const [state,setState]=useState<{owner:string;records:Map<string,Patch[]>}>({owner,records:new Map()});
  const offer=(source:string,reference:HistoryRecordRef,items:AcpItem[],full:boolean)=>{
@@ -23,7 +24,11 @@ export function useRecordTools(owner:string,references:HistoryRecordRef[]){
  const patches=new Map<string,Patch>();
  if(state.owner===owner)for(const reference of references)for(const patch of state.records.get(recordToolKey(reference))??[])patches.set(patch.id,patch);
  useLayoutEffect(()=>{
-  setState(previous=>previous.owner===owner?previous:{owner,records:new Map()});
- },[owner]);
+  setState(previous=>{
+   if(previous.owner!==owner)return{owner,records:new Map()};
+   const records=new Map([...previous.records].filter(([key])=>current.current.keys.has(key)));
+   return records.size===previous.records.size?previous:{owner,records};
+  });
+ },[owner,selection]);
  return {offer,patches};
 }

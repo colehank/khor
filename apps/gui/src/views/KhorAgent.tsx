@@ -90,7 +90,7 @@ export function KhorAgentResult({ record: c, session="wide/all" }: { session?:st
     <AgentTranscript updates={c.agent?.updates ?? []} busy={busy} fallback={c.stdout} onOpenFile={setFile} />
     <div className="flex items-center gap-in text-caption">{c.agent?.updates_truncated&&<span className="text-muted-foreground">{gui.agent_detail_cut}</span>}<Button size="sm" variant="ghost" disabled={acting} onClick={()=>void readFull()}>查看完整内容</Button></div>
     <Dialog open={full!==null} onOpenChange={open=>{if(!open)setFull(null);}}><TaskOverlay purpose="preview" scrollable>
-      <DialogHeader><DialogTitle>完整对话</DialogTitle></DialogHeader>
+      <DialogHeader><DialogTitle>完整内容</DialogTitle></DialogHeader>
       <DialogBody className="flex min-h-0 flex-col">{full&&<ChatView id={full.id} still binding={full.binding} home={c.owner} machine={c.owner_name} category="khor" watch={busy}/>}</DialogBody>
     </TaskOverlay></Dialog>
     {c.stderr && <p className="text-callout text-secondary-foreground">{c.stderr}</p>}
