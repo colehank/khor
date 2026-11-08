@@ -24,11 +24,17 @@ import { openNativePage } from "@/lib/native-page-open";
 import { nativePageYielded, visiblePageOwner, watchNativePageYield } from "@/lib/native-page-yield";
 import { holdBorrow, holdPage } from "@/views/held";
 
-/** A page's scheme is optional to type; a bare host means https. */
+/** Bare loopback dev servers use HTTP; other bare hosts use HTTPS.
+ * An explicitly typed scheme always remains the user's choice. */
 export function normalize(raw: string): string | null {
   const t = raw.trim();
   if (!t) return null;
-  return /^[a-z]+:\/\//i.test(t) ? t : `https://${t}`;
+  if (/^[a-z]+:\/\//i.test(t)) return t;
+  try {
+    const local = new URL(`http://${t}`), host = local.hostname;
+    if (host === "localhost" || host === "localhost." || host === "[::1]" || /^127(?:\.\d+){3}$/.test(host)) return local.href;
+  } catch { /* Keep invalid input on the normal native URL-error path. */ }
+  return `https://${t}`;
 }
 
 /** Native webpages cannot be covered by DOM. Task UI takes the whole
