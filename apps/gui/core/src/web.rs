@@ -510,6 +510,23 @@ mod loopback_tests {
             .unwrap_err();
         assert!(said.contains(&port.to_string()), "{said}");
     }
+
+    #[tokio::test]
+    async fn an_open_page_cannot_be_retargeted_by_another_exit() {
+        let port = {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.local_addr().unwrap().port()
+        };
+        let _first = hold_loopback("127.0.0.1", port, "127.0.0.1:19001")
+            .await
+            .unwrap();
+        assert!(
+            hold_loopback("127.0.0.1", port, "127.0.0.1:19002")
+                .await
+                .is_err(),
+            "a second page must not change the first page's exit"
+        );
+    }
 }
 
 #[cfg(test)]
