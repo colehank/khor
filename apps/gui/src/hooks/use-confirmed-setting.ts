@@ -14,10 +14,10 @@ export function useConfirmedSetting(values:ReadonlyMap<string,string|boolean>){
   const token=++sequence.current;pending.current={...item,token};retry.current=item;
   setState({pending:true,name:item.name,error:false});
   timer.current=setTimeout(()=>fail(token),20000);
-  void item.run().catch(()=>fail(token));
+  void Promise.resolve().then(item.run).catch(()=>fail(token));
  };
  useEffect(()=>{
-  const item=pending.current;
+  const item=pending.current??retry.current;
   if(item&&values.get(item.key)===item.value){pending.current=null;retry.current=null;clearTimer();setState({pending:false,name:'',error:false});}
  },[values]);
  useEffect(()=>()=>{sequence.current++;pending.current=null;clearTimer();},[]);

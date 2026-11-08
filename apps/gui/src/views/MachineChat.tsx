@@ -1,8 +1,9 @@
+import {composerFiles,composerReady} from '@/lib/composer-files';
 import type {CommandRecord} from '@/gen/bindings/CommandRecord';
 import {KhorHeader,SessionAdd,KhorSend} from '@/views/SessionPreferences';
 import {useSessionDraft} from '@/hooks/use-session-draft';
 import {useUpdateBlocker} from '@/lib/update-readiness';
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import {
   compose,
@@ -23,7 +24,7 @@ import {
   type SessionRow,
 } from "@/api";
 import { PathCut } from "@/components/PathCut";
-import { FilePreview, PendingChips, type Pending } from "@/views/chat-files";
+import { FilePreview, PendingChips } from "@/views/chat-files";
 import { takeDraft } from "@/lib/composer-handoff";
 import { baseName } from "@/lib/paths";
 import { FileKindIcon } from "@/components/FileKindIcon";
@@ -52,6 +53,8 @@ function fmtSize(n: number): string {
   if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)}MB`;
   return `${(n / (1024 * 1024 * 1024)).toFixed(1)}GB`;
 }
+
+const khorPendingRuns=new Map<string,{line:string;token:string}>();
 
 /** Each Khor conversation sends prompts and commands to its own agent home. */
 export function MachineChat({ id, active = true, onSession, sessions = [] }: { id: string; active?: boolean; onSession?: (id: string) => void; sessions?: SessionRow[] }) {
@@ -150,20 +153,15 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   }, []);
 
   // ── the files going along with the line ──
-  const [pending, setPending] = useState<Pending[]>([]);
+  const pendingFiles=composerFiles('khor:'+id);
+  const pending=useSyncExternalStore(pendingFiles.subscribe,pendingFiles.snapshot);
   useUpdateBlocker("attachments", pending.length > 0);
-  const seq = useRef(0);
-  const placing = pending.some((p) => p.path === null && p.error === null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const attach = () => {
     setRefused(null);
     if (inApp) {
       void pickPaths().then(
-        (ps) =>
-          setPending((now) => [
-            ...now,
-            ...ps.map((p) => ({ key: `p${++seq.current}`, name: baseName(p), size: null, thumb: null, inline: null, path: p, error: null })),
-          ]),
+        ps=>pendingFiles.add(ps.map(path=>({key:pendingFiles.key(),name:baseName(path),size:null,thumb:null,inline:null,path,error:null}))),
         (e: unknown) => setRefused(said(e)),
       );
     } else {
@@ -172,15 +170,13 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
   };
   const picked = (files: File[]) => {
     for (const f of files) {
-      const key = `f${++seq.current}`;
-      setPending((now) => [...now, { key, name: f.name, size: f.size, thumb: null, inline: null, path: null, error: null }]);
-      stageFile(f).then(
-        (path) => setPending((now) => now.map((p) => (p.key === key ? { ...p, path } : p))),
-        (e: unknown) => setPending((now) => now.map((p) => (p.key === key ? { ...p, error: said(e) } : p))),
-      );
+      const key=pendingFiles.key();
+      pendingFiles.add([{key,name:f.name,size:f.size,thumb:null,inline:null,path:null,error:null}]);
+      void stageFile(f).then(path=>pendingFiles.patch(key,{path}),error=>pendingFiles.patch(key,{error:said(error)}));
     }
   };
 
+  const commandMenuId=useId();
   const [pick, setPick] = useState(0), [dismissed, setDismissed] = useState<string | null>(null);
   const commands = agentCommands((agent?.data as {commands?: unknown} | null)?.commands);
   const choices = dismissed === draft ? [] : matchingAgentCommands(commands, draft);
@@ -193,12 +189,11 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       box.current?.setSelectionRange(line.length, line.length);
     });
   };
-  const runToken = useRef<{ line: string; token: string } | null>(null);
 
   const send = () => {
     const text = draft.trim();
     const files = pending.flatMap((p) => (p.path === null ? [] : [p.path]));
-    if ((!text && files.length === 0) || sending || placing) return;
+    if ((!text && files.length === 0) || sending || !composerReady(pending)) return;
     // What this send carries: a file added while it is on its way stays
     // for the next one.
     const went = new Set(pending.map((p) => p.key));
@@ -208,17 +203,17 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       : [text, `Attached files on ${JSON.stringify(landsOn)}:`, ...files.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
     const agentPrompt = text.startsWith('/') || (id === 'wide/all' ? text.length > 0 && files.length === 0 : agentInput.length > 0);
     if (agentPrompt && !agent?.config) { setSending(false); setRefused(gui.agent_choose_first); return; }
-    if (agentPrompt && runToken.current?.line !== agentInput) {
-      runToken.current = { line: agentInput, token: crypto.randomUUID() };
-    }
+    if(agentPrompt&&khorPendingRuns.get(id)?.line!==agentInput)khorPendingRuns.set(id,{line:agentInput,token:crypto.randomUUID()});
+    const issued=khorPendingRuns.get(id);
     const posted = agentPrompt
-      ? khorAgent("prompt", agent!.config!.home, { text:agentInput, token: runToken.current!.token, session:id }) : compose(text, files);
+      ? khorAgent("prompt", agent!.config!.home, { text:agentInput, token: issued!.token, session:id }) : compose(text, files);
     posted.then(
       () => {
         setDraft((now) => (now.trim() === text ? "" : now));
-        setPending((now) => now.filter((p) => !went.has(p.key)));
+        for(const key of went)pendingFiles.remove(key);
+        if(khorPendingRuns.get(id)===issued)khorPendingRuns.delete(id);
+        if(currentId.current!==id)return;
         setSending(false);
-        runToken.current = null;
         setDismissed(null);
         toBottom();
         refresh();
@@ -226,12 +221,13 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       // A lost command response may follow a successful submission.
       // Keep the draft and token so retry asks for the same receipt.
       (e: unknown) => {
+        if(currentId.current!==id)return;
         setSending(false);
         setRefused(said(e));
       },
     );
   };
-  const ready = (draft.trim() !== "" || pending.some((p) => p.path !== null)) && !placing;
+  const ready = draft.trim()!==""||pending.length>0;
 
   return (
     <div data-machine-chat className="flex min-h-0 flex-1 flex-col">
@@ -303,8 +299,8 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       <BarSeat at="above"><KhorHeader session={id} view={agent} onChanged={setAgent} disabled={!!(runningAgent)} updates={agentUpdates} />
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
-        <AgentCommandMenu commands={choices} pick={pick} onPick={choose} />
-        <PendingChips items={pending} onRemove={(key) => setPending((now) => now.filter((p) => p.key !== key))} />
+        <AgentCommandMenu id={commandMenuId} commands={choices} pick={pick} onPick={choose} />
+        <PendingChips items={pending} onRemove={key=>pendingFiles.remove(key)} />
         <Composer
           lead={
             <SessionAdd onAttach={attach} options={[]} />
@@ -315,7 +311,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
             // **The keyboard stays up after a note** (P7, 2026-10-03, the
             // owner's ruling): the press does not take the focus from the
             // text, so the next line is typed at once, as in Messages.
-            <KhorSend session={id} record={runningAgent} onStopped={refresh} ready={ready} sending={sending} onSend={send} />
+            <KhorSend session={id} record={runningAgent} onStopped={refresh} ready={ready} blocked={!composerReady(pending)} sending={sending} onSend={send} />
           }
         >
         {/* The browser forms' picker: a real <input type=file>, hidden —
@@ -338,6 +334,8 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           ref={box}
           data-chat-composer
           aria-label={gui.message_text}
+          aria-controls={choices.length?commandMenuId:undefined}
+          aria-activedescendant={choices.length?`${commandMenuId}-${Math.min(pick,choices.length-1)}`:undefined}
           aria-expanded={pickerOpen}
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).

@@ -664,6 +664,7 @@ export function ChatView({
   // (UX-33): the same attempt its 重试 makes.
   useEffect(() => offerTabAct(id, { kind: "reload", run: () => setAttempt((n) => n + 1) }), [id]);
   const [inTurn, setInTurn] = useState(false);
+  const [turnStatus,setTurnStatus]=useState('');
   /** When the running turn started. Cleared with the turn, so a
       finished conversation counts nothing — and see `waiting` below for
       why a duration is the one thing worth adding to a screen that
@@ -1080,7 +1081,9 @@ export function ChatView({
             }
             for(const f of batch.frames){
               if(f.kind==='turn'||f.kind==='gone')setInTurn(false);
-              if(f.kind==='turning')setInTurn(true);
+              if(f.kind==='turning'){setInTurn(true);setTurnStatus('正在处理');}
+              if(f.kind==='turn')setTurnStatus(f.stop==='Cancelled'?'已停止':'回复完成');
+              if(f.kind==='ask'||f.kind==='elicit')setTurnStatus('等待确认');
             }
             for (const f of batch.frames) {
               if (f.kind === "agent") {
@@ -1479,7 +1482,7 @@ export function ChatView({
     });
   };
   const hasComposerContent=!!text.trim()||files.items.length>0||docs.length>0;
-  const canSend=hasComposerContent&&!inTurn&&!gone&&files.ready;
+  const canSend=hasComposerContent&&!inTurn&&!gone&&files.ready&&facts!==null&&!facts.needsLogin;
   const say = () => {
     const line = text.trim();
     if (!canSend) return;
@@ -1593,6 +1596,7 @@ export function ChatView({
         files.addFiles([...e.dataTransfer.files]);
       }}
     >
+      <span className="sr-only" role="status">{turnStatus}</span>
       {home !== null && (
         <MachineFilePick
           open={pickOpen}
@@ -1812,7 +1816,7 @@ export function ChatView({
           has its row of accessory keys, a chat has its input box」) —
           above the deck (2026-10-13); the deck sits on the keyboard.
           On the wide face it stands here, as it always did. */}
-      <BarSeat at="above">{unifiedSession && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn||settingRequest.pending} />}
+      <BarSeat at="above">{unifiedSession && <AcpHeader who={who} mode={modeSeat} options={addOptions} protocol={protocol} onControl={control} disabled={inTurn||settingRequest.pending} pending={settingRequest.pending} />}
       {settingRequest.pending&&<p role="status" className="px-row text-caption text-muted-foreground">正在应用{settingRequest.name}</p>}
       {settingRequest.error&&<div role="alert" className="flex items-center gap-in px-row text-caption text-destructive">未能确认{settingRequest.name}，保留当前设置<Button size="sm" variant="ghost" onClick={settingRequest.retry}>重试</Button></div>}
       {/* A recorded past has no channel to speak into: no input, and

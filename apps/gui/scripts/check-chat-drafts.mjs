@@ -1,3 +1,4 @@
+import {SessionContentDock} from '../src/lib/session-content-dock.ts';
 import {ReadFreshness} from '../src/lib/read-freshness.ts';
 import {ComposerFiles,composerReady} from '../src/lib/composer-files.ts';
 import assert from 'node:assert/strict';
@@ -180,4 +181,19 @@ await test('read failures expose an unconfirmed connection and recovery clears i
  const fresh=new ReadFreshness(1000);fresh.failure();assert.equal(fresh.stale(1200),false);
  fresh.failure();fresh.failure();assert.equal(fresh.stale(2600),true);
  fresh.success(2700);assert.equal(fresh.stale(2800),false);assert.equal(fresh.stale(12700),true);
+});
+
+await test('one retained content host moves owners; stale cleanup cannot steal it',()=>{
+ const original=globalThis.document;
+ class Element{parentElement=null;className='';children=[];appendChild(node){if(node.parentElement)node.parentElement.children=node.parentElement.children.filter(child=>child!==node);this.children.push(node);node.parentElement=this;}}
+ globalThis.document={createElement:()=>new Element()};
+ try{
+  const dock=new SessionContentDock(),parking=new Element(),ordinary=new Element(),workspace=new Element(),a={},b={};let scope={session:'a'};let changes=0;
+  dock.subscribe(()=>changes++);dock.parkAt(parking);const same=dock.host;
+  dock.present(a,ordinary,'a',()=>scope);assert.equal(dock.current().session,'a');
+  dock.present(a,ordinary,'a',()=>scope);assert.equal(changes,1);
+  dock.present(b,workspace,'b',()=>({session:'b'}));dock.release(a);
+  assert.equal(dock.host,same);assert.equal(dock.host.parentElement,workspace);assert.equal(dock.current().session,'b');
+  dock.release(b);assert.equal(dock.host.parentElement,parking);assert.equal(dock.current(),null);
+ }finally{globalThis.document=original;}
 });

@@ -12,7 +12,7 @@ export function AgentResource({item,onOpenFile}:{item:AcpResource;onOpenFile:(pa
  const [open,setOpen]=useState(false),[failed,setFailed]=useState(false);
  const home=useLinkHome(),path=resourceFilePath(item.uri),name=item.name||'附件';
  useEffect(()=>{setFailed(false);setOpen(false);},[source,item.uri]);
- if(source&&item.kind==='audio')return <audio data-chat-audio controls preload="none" aria-label={name} src={source}/>;
+ if(source&&item.kind==='audio'&&!failed)return <audio data-chat-audio controls preload="none" aria-label={name} src={source} onError={()=>setFailed(true)}/>;
  if(source&&item.kind==='image'&&!failed)return <>
   <button type="button" data-chat-media-preview aria-label={`查看图片：${name}`} className="block max-w-full rounded-md" onClick={()=>setOpen(true)}>
    <img data-chat-image loading="lazy" className="max-h-[60vh] max-w-full rounded-md object-contain" alt={name} src={source} onError={()=>setFailed(true)}/>

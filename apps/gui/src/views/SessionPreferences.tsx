@@ -82,7 +82,7 @@ function Preferences({model,agent,mode,options,disabled=false,children,danger,op
 function Fact({name,children}:{name:string;children:ReactNode}){
   return <DropdownMenuLabel className="composer-lab-fact"><span>{name}</span><span>{children}</span></DropdownMenuLabel>;
 }
-export function AcpHeader({who,mode,options,protocol,onControl,disabled=false}:{who:Who;mode:ReactNode;options:AddOption[];protocol?:AgentProtocol|null;onControl?:(operation:string,payload?:Record<string,unknown>)=>unknown;disabled?:boolean}){
+export function AcpHeader({who,mode,options,protocol,onControl,disabled=false,pending=false}:{who:Who;mode:ReactNode;options:AddOption[];protocol?:AgentProtocol|null;onControl?:(operation:string,payload?:Record<string,unknown>)=>unknown;disabled?:boolean;pending?:boolean}){
   const [open,setOpen]=useState(false),[deleting,setDeleting]=useState(false);
   const m=isValidElement(mode)?mode.props as ComponentProps<typeof ModeSeat>:null;
   const automatic=m&&['workspace','auto','acceptEdits','bypassPermissions','full-access'].includes(m.current);
@@ -90,7 +90,7 @@ export function AcpHeader({who,mode,options,protocol,onControl,disabled=false}:{
   const permissions:AddOption[]=m?.choices?.some(v=>!v.fixed)&&m.onPick?[{kind:'values',id:permissionId,name:'执行权限',note:null,current:m.current,values:m.choices.filter(v=>!v.fixed).map(v=>({value:v.id,name:v.name,note:v.note??null,heading:null})),onPick:value=>m.onPick?.(value)}]:[];
   return <><Preferences model={who.model} agent={who.name??'智能体'} mode={automatic?m.word:undefined} options={[...options,...permissions]} disabled={disabled} open={open} onOpen={setOpen}
     danger={protocol?.capabilities?.sessionCapabilities?.delete!=null&&<DropdownMenuItem className="text-destructive" disabled={disabled} onSelect={()=>{setOpen(false);setDeleting(true);}}>删除会话记录</DropdownMenuItem>}>
-    {disabled&&options.length>0&&<DropdownMenuLabel className="composer-lab-menu-note">本轮结束后可修改模型设置</DropdownMenuLabel>}
+    {disabled&&options.length>0&&<DropdownMenuLabel className="composer-lab-menu-note">{pending?"正在应用设置":"本轮结束后可修改模型设置"}</DropdownMenuLabel>}
     {m&&!permissions.length&&<Fact name="执行权限">{m.word}</Fact>}
     {who.usage&&<Fact name="上下文">{Math.round(who.usage.used/who.usage.size*100)}%</Fact>}
     {protocol?.authMethods?.filter(method=>!method.type||method.type==='agent').map(method=><DropdownMenuItem key={method.id} disabled={disabled} onSelect={()=>onControl?.('authenticate',{methodId:method.id})}>{method.name}</DropdownMenuItem>)}
@@ -147,7 +147,7 @@ export function SessionAdd({destination,onFind,...props}:ComponentProps<typeof A
   // DirPicker must survive closing the menu that opened it.
   return destination?cloneElement(destination,{render:menu}):menu();
 }
-export function KhorSend({record,onStopped,ready,sending,onSend,session="wide/all"}:{session?:string;record:CommandRecord|null;onStopped:()=>void;ready:boolean;sending:boolean;onSend:()=>void}){
+export function KhorSend({record,onStopped,ready,sending,onSend,blocked=false,session="wide/all"}:{session?:string;record:CommandRecord|null;onStopped:()=>void;ready:boolean;sending:boolean;onSend:()=>void;blocked?:boolean}){
   if(record)return <StopSeat tip={false} onStop={()=>{void khorAgent('stop',record.owner,{run:record.id,session}).then(onStopped);}}/>;
-  return ready?<SendSeat onSend={onSend} disabled={sending} keepFocus/>:null;
+  return ready?<SendSeat onSend={onSend} disabled={sending||blocked} busy={sending} keepFocus/>:null;
 }

@@ -4078,11 +4078,11 @@ export default function App() {
       <div hidden ref={element=>contentDock.parkAt(element)}/>
       <SessionContentPane container={contentDock.host} content={content} session={contentScope?.session??selectedRow?.id??null} devices={devices} rows={rows}
         mobile={contentScope?.mobile??narrow} navigation={contentNavigation} sessionFaces={contentScope?.faces??tabFaces}
-        onSelectSession={id=>(contentScope?.onSelectSession??selectContentSession)(id)}
-        onCloseSession={id=>(contentScope?.onCloseSession??closeSessionTab)(id)}
-        onNewSession={()=>contentScope?contentScope.onNewSession():openNewTab()}
+        onSelectSession={id=>(contentDock.current()?.onSelectSession??selectContentSession)(id)}
+        onCloseSession={id=>(contentDock.current()?.onCloseSession??closeSessionTab)(id)}
+        onNewSession={()=>contentDock.current()?contentDock.current()!.onNewSession():openNewTab()}
         visible={contentScope!==null&&!hidden&&morePage===null&&!switchingTabs}
-        onClose={()=>contentScope?.onClose()}
+        onClose={()=>contentDock.current()?.onClose()}
         />
     </TooltipProvider>
     </FullScreenProvider>
