@@ -960,9 +960,18 @@ async fn unfinished_bootstrap_is_progress_and_never_a_false_completion() {
     let case = Case::new("finish-progress");
     let issuer = case.node("issuer");
     let caller = case.node("caller");
-    let server = Server::start(issuer.root(), "issuer").await;
+    // This test drives Pair phases directly. Mint through the real endpoint
+    // without resident services whose blocking work can outlive task abort.
+    let endpoint = issuer.bind_ears().await.unwrap();
+    let handoffs = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    issuer
+        .write_endpoint_file(&endpoint, &handoffs, &fresh_hex().unwrap())
+        .unwrap();
     let ticket = khor_net::endpoint::Ticket::decode(&issuer.invite().unwrap()).unwrap();
-    server.stop().await;
+    drop(handoffs);
+    endpoint.close().await;
     let remote = id(caller.device_str()).unwrap();
     let local = id(issuer.device_str()).unwrap();
     let nonce = [27; 32];
