@@ -1484,6 +1484,10 @@ fn unwatch(page: &Page) {
 pub fn close(tab: &str) {
     deck(tab, None);
     crate::page_trust::forget(tab);
+    retire_view(tab);
+}
+
+fn retire_view(tab: &str) {
     PAGES.with(|pages| {
         if let Some(page) = pages.borrow_mut().remove(tab) {
             unwatch(&page);
@@ -1502,7 +1506,10 @@ pub fn retire_other_exit(tab: &str, exit: &str) {
             .is_some_and(|page| page.exit != exit)
     });
     if different {
-        close(tab);
+        // Rebuilding a route replaces its document, not its deck. The
+        // unchanged DOM chrome may not publish another drawing.
+        crate::page_trust::forget(tab);
+        retire_view(tab);
     }
 }
 
