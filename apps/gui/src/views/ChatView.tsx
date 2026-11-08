@@ -1797,7 +1797,10 @@ export function ChatView({
               {item.text}
             </div>
           );
-          return <Fragment key={`${historyEpoch}:${item.displayKey??item.historyKey??i}`}>{recordContent(i)}{item.historyKey ? <div data-history-key={item.displayKey ?? item.historyKey} className={matchedEntry && item.historyEntries?.includes(matchedEntry) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content}</Fragment>;
+          // Live confirmations retain their in-flight owner while source pages
+          // insert body content before them. Array position is not request identity.
+          const itemKey = item.who === 'ask' ? `${id}:ask:${item.ask}` : item.displayKey ?? item.historyKey ?? i;
+          return <Fragment key={`${historyEpoch}:${itemKey}`}>{recordContent(i)}{item.historyKey ? <div data-history-key={item.displayKey ?? item.historyKey} className={matchedEntry && item.historyEntries?.includes(matchedEntry) ? 'rounded-md bg-brand-wash' : undefined}>{content}</div> : content}</Fragment>;
         })}
         {recordContent(items.length)}
         {history && !history.window.latest && <Button size="sm" disabled={history.busy}
