@@ -9,6 +9,7 @@ import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigg
 import { CircleCheckIcon, CircleDotIcon, CircleIcon, FilePenLineIcon, FileTextIcon, LoaderCircleIcon, RouteIcon, SearchIcon, TerminalIcon, WrenchIcon } from "./icons";
 import { gui } from "@/gen/catalog";
 import { word } from "@/words";
+import {AgentResource} from "./resource";
 import { toolInputText, type AcpTool } from "@/lib/acp-view";
 
 const AgentDiff = lazy(() => import("./diff").then((module) => ({ default: module.AgentDiff })));
@@ -53,7 +54,7 @@ export function AgentTool({ tool, active = true, open, onOpenChange, onOpenFile 
   onOpenFile: (path: string) => void;
 }) {
   const diffs = tool.diffs ?? (tool.diff ? [tool.diff] : []), patches = tool.patches ?? [];
-  const more = diffs.length > 0 || patches.length > 0 || tool.out !== null || tool.raw !== null;
+  const more = (tool.media?.length??0)>0 || diffs.length > 0 || patches.length > 0 || tool.out !== null || tool.raw !== null;
   const live = active && running(tool.status), failed = tool.status === "failed";
   const icons: Record<string, typeof WrenchIcon> = { read: FileTextIcon, edit: FilePenLineIcon, search: SearchIcon, execute: TerminalIcon };
   const Icon = icons[tool.kind] ?? WrenchIcon;
@@ -75,6 +76,7 @@ export function AgentTool({ tool, active = true, open, onOpenChange, onOpenFile 
               <CodeBlockHeader><CodeBlockTitle>{input?.command ? gui.key_group_commands : gui.chat_tool_input}</CodeBlockTitle><CodeBlockActions><CodeBlockCopyButton value={input?.text ?? ''} aria-label={gui.copy_text} /></CodeBlockActions></CodeBlockHeader>
               <CodeBlockContent data-tool-raw className="max-h-64">{input?.text ?? ''}</CodeBlockContent>
             </CodeBlock>}
+            {tool.media?.map((item,index)=><AgentResource key={index} item={item} onOpenFile={onOpenFile}/>)}
             {tool.out !== null && <CodeBlock size="sm" variant={failed ? "destructive" : "default"}>
               <CodeBlockHeader><CodeBlockTitle>{failed ? word("failed") : gui.usage_axis_output}</CodeBlockTitle><CodeBlockActions><CodeBlockCopyButton value={tool.out} aria-label={gui.copy_text} /></CodeBlockActions></CodeBlockHeader>
               <CodeBlockContent data-tool-out className="max-h-64">{tool.out}</CodeBlockContent>

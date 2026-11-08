@@ -66,6 +66,7 @@ export function historyText(item: HistoryItem): { texts: string[]; complete: boo
     ...(item.out ? [item.out] : []),
     ...diffs.flatMap(diff => [diff.path, ...(diff.old ? [diff.old] : []), diff.next]),
     ...patches.flatMap(patch => [patch.path, patch.text]),
+    ...(item.media??[]).flatMap(resource=>[resource.name,...(resource.uri?[resource.uri]:[])]),
     ], complete: input?.complete !== false, ...(item.out ? { outputPart: 1 + (input?.text ? 1 : 0) } : {}) };
   }
   return { texts: [], complete: true };

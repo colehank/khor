@@ -5,7 +5,7 @@ export const recordToolKey=(reference:HistoryRecordRef)=>`${reference.start}:${r
 type Patch=Partial<AcpTool>&{id:string};
 /** Large result records settle the original tool widget. Only small status
  * facts remain when the media/body owner goes offscreen; no second body cache. */
-export function useRecordTools(owner:string,references:HistoryRecordRef[]){
+export function useRecordTools(owner:string,references:HistoryRecordRef[],opened:ReadonlySet<string>){
  const keys=new Set(references.map(recordToolKey));
  const selection=[...keys].join(";");
  const current=useRef({owner,keys});current.current={owner,keys};
@@ -30,5 +30,7 @@ export function useRecordTools(owner:string,references:HistoryRecordRef[]){
    return records.size===previous.records.size?previous:{owner,records};
   });
  },[owner,selection]);
- return {offer,patches};
+ const requested=new Set<string>();
+ if(state.owner===owner)for(const [key,tools] of state.records)if(keys.has(key)&&tools.some(tool=>opened.has(tool.id)))requested.add(key);
+ return {offer,patches,requested};
 }

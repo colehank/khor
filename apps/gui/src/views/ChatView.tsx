@@ -58,7 +58,7 @@ import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContribu
 import {HistoryRecordContent} from '@/components/history/HistoryRecordContent';
 import {historyRecordSlots} from '@/lib/history-record-presentation';
 import {Fragment} from 'react';
-import {useRecordTools} from '@/hooks/use-record-tools';
+import {useRecordTools,recordToolKey} from '@/hooks/use-record-tools';
 
 /** Live control/state waits stay responsive while idle polling backs off. */
 const LIVE_MS = 50;
@@ -1573,13 +1573,13 @@ export function ChatView({
   );
   const sourceReferences=useMemo(()=>history?historyReferences(history.window):[],[history?.window]);
   const recordOwner=JSON.stringify([id,sourceBinding,historyEpoch]);
-  const recordTools=useRecordTools(recordOwner,sourceReferences);
+  const recordTools=useRecordTools(recordOwner,sourceReferences,open);
   const originalToolIds=useMemo(()=>new Set(items.flatMap(item=>item.who==='tool'?[item.id]:[])),[items]);
   const recordSlots=useMemo(()=>historyRecordSlots(items,sourceReferences),[items,sourceReferences]);
   const recordContent=(slot:number)=>sourceBinding&&recordSlots[slot]?.map(reference=><HistoryRecordContent
     key={`${historyEpoch}:${reference.start}:${reference.item??'record'}`} id={id} binding={sourceBinding}
     reference={reference} exporter={historyExport} onOpenFile={openFile} owner={recordOwner}
-    existingTools={originalToolIds} onTools={recordTools.offer}/>);
+    existingTools={originalToolIds} onTools={recordTools.offer} requested={recordTools.requested.has(recordToolKey(reference))}/>);
   // **A turn is running — for the whole of it, and for how long.**
   //
   // 忙碌 in the conversation, wearing the state's own clothes rather

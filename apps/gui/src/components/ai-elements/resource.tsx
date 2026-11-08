@@ -13,7 +13,7 @@ export function AgentResource({item,onOpenFile}:{item:AcpResource;onOpenFile:(pa
  const [open,setOpen]=useState(false),[failed,setFailed]=useState(false);
  const saving=useRef<AbortController|null>(null),[busy,setBusy]=useState(false),[saveError,setSaveError]=useState('');
  const save=()=>{if(saving.current||!item.data)return;const owner=new AbortController();saving.current=owner;setBusy(true);setSaveError('');
-  void saveResource(item.data,item.mime,owner.signal).catch(error=>{if(!owner.signal.aborted)setSaveError(error instanceof Error?error.message:String(error));}).finally(()=>{if(saving.current===owner){saving.current=null;setBusy(false);}});};
+  void saveResource(item.data,item.mime,owner.signal).catch(error=>{if(!owner.signal.aborted&&!(error instanceof DOMException&&error.name==='AbortError')){setSaveError('附件未能存储，请重试');console.warn('Attachment save failed',String(error).slice(0,512));}}).finally(()=>{if(saving.current===owner){saving.current=null;setBusy(false);}});};
  const saveButton=downloadableResource(item.data)&&<Button size="sm" variant="ghost" disabled={busy} onClick={save}>{busy?'正在准备':'存储附件'}</Button>;
  const home=useLinkHome(),path=resourceFilePath(item.uri),name=item.name||'附件';
  useEffect(()=>{setFailed(false);setOpen(false);setSaveError('');setBusy(false);return()=>{saving.current?.abort();saving.current=null;};},[source,item.uri,item.data]);

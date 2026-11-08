@@ -14,12 +14,13 @@ import {gui} from '@/gen/catalog';
 
 /** The source, decoded media and in-flight work belong to this visible
  * record, not a second transcript cache. Offscreen records release all three. */
-export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,owner,existingTools,onTools}:{
+export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,owner,existingTools,onTools,requested}:{
  id:string;binding:string;reference:HistoryRecordRef;exporter:HistoryExportControl;onOpenFile:(path:string)=>void;
- owner:string;existingTools:ReadonlySet<string>;onTools:(owner:string,reference:HistoryRecordRef,items:AcpItem[],full:boolean)=>void;
+ requested:boolean;owner:string;existingTools:ReadonlySet<string>;onTools:(owner:string,reference:HistoryRecordRef,items:AcpItem[],full:boolean)=>void;
 }){
  const host=useRef<HTMLDivElement>(null),[visible,setVisible]=useState(false),[attempt,setAttempt]=useState(0);
  const [items,setItems]=useState<HistoryItem[]|null>(null),[error,setError]=useState('');
+ const active=visible||requested;
  const tools=useRef(onTools);tools.current=onTools;
  const [reservedHeight,setReservedHeight]=useState(0);
  const insertion=useRef<{scroll:HTMLElement;height:number}|null>(null);
@@ -31,7 +32,7 @@ export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,o
   observer.observe(host.current);return()=>observer.disconnect();
  },[]);
  useEffect(()=>{
-  setItems(null);setError('');if(!visible)return;
+  setItems(null);setError('');if(!active)return;
   const stop=new AbortController(),source=historyApi(id,binding);
   let release: (()=>void)|null=null;let settled:AcpItem[]=[];
   void (async()=>{const leave=await admitHistoryRecord(stop.signal);try{
@@ -41,7 +42,7 @@ export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,o
    if(!stop.signal.aborted)setError(failure instanceof Error?failure.message:String(failure));
   }).finally(()=>{void source.dispose();});
   return()=>{stop.abort();release?.();tools.current(owner,reference,settled,false);void source.dispose();};
- },[id,binding,reference.cursor,reference.start,reference.end,reference.item,visible,attempt,owner]);
+ },[id,binding,reference.cursor,reference.start,reference.end,reference.item,active,attempt,owner]);
  return <div ref={host} data-history-record-content style={{minHeight:visible&&items?undefined:reservedHeight||undefined}} className="min-h-touch py-in">
   {visible&&!items&&!error&&<p role="status" className="text-caption text-muted-foreground">正在读取内容</p>}
   {error&&<p role="status" className="text-caption text-muted-foreground">{error} <Button size="sm" variant="ghost" onClick={()=>setAttempt(value=>value+1)}>{gui.region_retry}</Button></p>}

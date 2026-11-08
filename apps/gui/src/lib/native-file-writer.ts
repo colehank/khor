@@ -17,7 +17,7 @@ export function nativeFileWriter(name:string,signal:AbortSignal){
    }
   },
   async close(){
-   try{await start();await fileExportFinish(id,offset);check();const saved=await fileHandoffSave(id);check();if(!saved)throw new Error('已取消存储');done=true;}
+   try{await start();await fileExportFinish(id,offset);check();const saved=await fileHandoffSave(id);check();if(!saved)throw new DOMException('已取消存储','AbortError');done=true;}
    finally{signal.removeEventListener('abort',abort);await cancel();}
   },
   async abort(){done=true;signal.removeEventListener('abort',abort);await cancel();},

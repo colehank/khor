@@ -4,7 +4,7 @@ export type AcpPatch = { path: string; text: string };
 export type AcpTool = {
   id: string; title: string; kind: string; status: string; raw: unknown;
   where: string[]; diff: AcpDiff | null; out: string | null;
-  diffs?: AcpDiff[]; patches?: AcpPatch[];
+  diffs?: AcpDiff[]; patches?: AcpPatch[]; media?:AcpResource[];
 };
 export type AcpCompaction = {who:"compaction";id:string;status:string;summary:string;error:string|null};
 export type AcpResource = {who:"resource";kind:string;name:string;uri?:string;data?:string;mime?:string};
@@ -78,12 +78,16 @@ export function toolInputText(raw: unknown, maxBytes = Infinity): {
     return { text: undefined, command: false, complete: false };
   return { text: JSON.stringify(raw, null, 2), command: false, complete: true };
 }
+type AcpBlock={type?:string;text?:string;uri?:string;name?:string;data?:string;mimeType?:string;resource?:{text?:string;blob?:string;uri?:string;mimeType?:string}};
+function contentResource(content:AcpBlock):AcpResource{
+ return {who:'resource',kind:content.type??'unknown',name:content.name??content.resource?.uri??content.uri??content.mimeType??'附件',uri:content.uri??content.resource?.uri,data:content.data??content.resource?.blob,mime:content.mimeType??content.resource?.mimeType};
+}
 export type AcpUpdate = {
   messageId?: string;
   compactionId?:string;summary?:{type?:string;text?:string}[]|null;error?:string|null;
   sessionUpdate?: string; toolCallId?: string; title?: string | null; kind?: string; status?: string;
   rawInput?: unknown; rawOutput?: unknown; locations?: { path?: string; line?: number }[];
-  content?: { type?: string; text?: string; uri?:string;name?:string;data?:string;mimeType?:string;resource?:{text?:string;blob?:string;uri?:string;mimeType?:string} } | { type?: string; content?: { type?: string; text?: string }; path?: string; oldText?: string | null; newText?: string }[] | null;
+  content?: AcpBlock | { type?: string; content?: AcpBlock; path?: string; oldText?: string | null; newText?: string }[] | null;
   entries?: { content?: string; status?: string; priority?: string }[];
 };
 
@@ -94,9 +98,10 @@ function details(u: AcpUpdate) {
   // Codex supplies unified patches, not full before/after files. Preserve that
   // distinction instead of treating a patch fragment as a complete new file.
   const patches: AcpPatch[] = (Array.isArray(raw.changes) ? raw.changes : []).filter((c) => c && typeof c.path === "string" && typeof c.diff === "string").map((c) => ({ path: c.path, text: c.diff }));
-  const texts = content.flatMap((c) => c.type === "content" && c.content?.type === "text" && typeof c.content.text === "string" ? [c.content.text] : []);
+  const texts = content.flatMap((c) => c.type === "content" && c.content?.type === "text" && typeof c.content.text === "string" ? [c.content.text] : c.type==='content'&&typeof c.content?.resource?.text==='string'?[c.content.resource.text]:[]);
+  const media=content.flatMap(c=>c.type==='content'&&c.content&&c.content.type!=='text'?[contentResource(c.content)]:[]);
   const rawText = "content" in u || u.rawOutput == null ? null : typeof u.rawOutput === "string" ? u.rawOutput : JSON.stringify(u.rawOutput, null, 2);
-  return { diffs, patches, out: texts.length ? texts.join("\n") : patches.length ? null : rawText };
+  return { diffs, patches, ...(media.length?{media}:{}), out: texts.length ? texts.join("\n") : patches.length ? null : rawText };
 }
 
 export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], u: AcpUpdate, paintUser = true): boolean {
@@ -128,7 +133,7 @@ export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], 
     if(!text){
       const c=!Array.isArray(u.content)?u.content:null;
       if(!c||c.type==='text')return false;
-      out.push({who:'resource',kind:c.type??'unknown',name:c.name??c.resource?.uri??c.uri??c.mimeType??'附件',uri:c.uri??c.resource?.uri,data:c.data??c.resource?.blob,mime:c.mimeType??c.resource?.mimeType});
+      out.push(contentResource(c));
       if(c.resource?.text)out.push({who,text:c.resource.text});
       return true;
     }
@@ -163,6 +168,7 @@ export function applyAcpUpdate<T extends { who: string }>(out: (AcpItem | T)[], 
       diff: clearsContent ? null : data.diffs[0] ?? at.diff,
       diffs: clearsContent ? [] : data.diffs.length ? data.diffs : at.diffs,
       patches: u.rawOutput != null ? data.patches : at.patches,
+      ...(replacesContent&&(at.media||data.media)?{media:data.media??[]}:{}),
       out: replacesContent || u.rawOutput != null ? data.out : at.out };
     return true;
   }

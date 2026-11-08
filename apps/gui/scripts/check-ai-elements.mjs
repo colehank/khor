@@ -30,6 +30,11 @@ const projected = projectAcp(encoded([editStart, { sessionUpdate: "tool_call_upd
 assert.equal(projected.items[0].diff.next, "new", "Claude's reported edit remains a transcript artifact with its result");
 assert.equal(projected.items[0].out, "done\nsecond result", "all result text blocks survive");
 assert.equal(projectAcp(encoded([editStart, { sessionUpdate: "tool_call_update", toolCallId: "edit", content: [] }])).items[0].diff, null, "explicit ACP clear removes earlier content artifacts");
+const toolMedia=projectAcp(encoded([editStart,{sessionUpdate:'tool_call_update',toolCallId:'edit',status:'completed',content:[{type:'content',content:{type:'image',mimeType:'image/png',data:'aW1hZ2U='}},{type:'content',content:{type:'resource',resource:{uri:'attachment:document',mimeType:'application/pdf',blob:'cGRm'}}}]}])).items[0];
+assert.equal(toolMedia.status,'completed');assert.equal(toolMedia.media.length,2);
+assert.equal(toolMedia.media[0].data,'aW1hZ2U=');assert.equal(toolMedia.media[1].mime,'application/pdf');
+const clearedMedia=projectAcp(encoded([editStart,{sessionUpdate:'tool_call_update',toolCallId:'edit',content:[{type:'content',content:{type:'image',mimeType:'image/png',data:'aW1hZ2U='}}]},{sessionUpdate:'tool_call_update',toolCallId:'edit',content:[]}])).items[0];
+assert.equal(clearedMedia.media.length,0,'Explicit clears retire tool media with the same owner');
 const codexPatch = { path: "/work/file", diff: "@@ -12 +12 @@\n-old\n+new" };
 const native = projectAcp(encoded([{ ...editStart, content: [] }, { sessionUpdate: "tool_call_update", toolCallId: "edit", status: "completed", rawOutput: { changes: [codexPatch] }, locations: [{ path: "/work/file" }] }]));
 assert.equal(native.items[0].patches[0].text, codexPatch.diff);

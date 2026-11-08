@@ -15,7 +15,7 @@ export function useReadableHistoryExport(id:string,binding:string|null,title:str
   const operation={controller:new AbortController(),source:historyApi(id,binding)};owner.current=operation;setBusy(true);setNotice('正在导出对话');
   void exportReadableHistory(operation.source,inApp?nativeFileWriter('conversation.md',operation.controller.signal):browserDownload('conversation.md','text/markdown;charset=utf-8'),title,operation.controller.signal).then(()=>{
    if(owner.current===operation)setNotice('对话已导出');
-  },error=>{if(owner.current===operation)setNotice(operation.controller.signal.aborted?'已取消导出':String(error instanceof Error?error.message:error));}).finally(async()=>{
+  },error=>{if(owner.current===operation)setNotice(operation.controller.signal.aborted||error instanceof DOMException&&error.name==='AbortError'?'已取消导出':String(error instanceof Error?error.message:error));}).finally(async()=>{
    await operation.source.dispose();if(owner.current===operation){owner.current=null;setBusy(false);}
   });
  };
