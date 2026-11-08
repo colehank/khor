@@ -1525,6 +1525,9 @@ export const fileHandoffStart = (id:string,machine:string,path:string) => call<F
 export const fileHandoffState = (id:string) => call<FileHandoff>("file_handoff_state",{id});
 export const fileHandoffCancel = (id:string) => call<null>("file_handoff_cancel",{id});
 export const fileHandoffOpen = (id:string) => call<boolean>("file_handoff_open",{id});
+export const fileExportBegin=(id:string,name:string)=>call<null>("file_export_begin",{id,name});
+export const fileExportAppend=(id:string,offset:number,data:string)=>call<null>("file_export_append",{id,offset,data});
+export const fileExportFinish=(id:string,total:number)=>call<null>("file_export_finish",{id,total});
 export const fileHandoffSave = (id: string) => call<boolean>("file_handoff_save", { id });
 export type FilePreviewKind = "document" | "pdf";
 export const filePreviewSupported = (kind: FilePreviewKind) => inApp ? call<boolean>("file_preview_supported", {kind}) : Promise.resolve(false);

@@ -1053,11 +1053,12 @@ async fn file_handoff_save(
         use tauri_plugin_dialog::DialogExt;
         // Validate the completed job before presenting an OS panel. The same
         // owner is rechecked after the panel in case the view was cancelled.
-        khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+        let source = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
+        let name = source.file_name().and_then(|name| name.to_str()).unwrap_or("export");
         let Some(file) = app
             .dialog()
             .file()
-            .set_file_name("history-record.jsonl")
+            .set_file_name(name)
             .blocking_save_file()
         else {
             return Ok(false);
@@ -1070,6 +1071,23 @@ async fn file_handoff_save(
     .map_err(|error| error.to_string())?;
     #[cfg(not(desktop))]
     file_handoff_open(app, webview, id).await
+}
+
+/// Renderer exports use the same staged native destination as remote files.
+#[tauri::command]
+fn file_export_begin(webview: tauri::Webview, id: String, name: String) -> Result<(), String> {
+    if webview.label() != "main" { return Err("file writing is only available in the app".into()); }
+    khor_gui_core::file_handoff::upload::begin(&Node::root_from_env(), &id, &name)
+}
+#[tauri::command]
+fn file_export_append(webview: tauri::Webview, id: String, offset: u64, data: String) -> Result<(), String> {
+    if webview.label() != "main" { return Err("file writing is only available in the app".into()); }
+    khor_gui_core::file_handoff::upload::append(&Node::root_from_env(), &id, offset, &data)
+}
+#[tauri::command]
+fn file_export_finish(webview: tauri::Webview, id: String, total: u64) -> Result<(), String> {
+    if webview.label() != "main" { return Err("file writing is only available in the app".into()); }
+    khor_gui_core::file_handoff::upload::finish(&Node::root_from_env(), &id, total)
 }
 
 #[tauri::command]
@@ -5782,6 +5800,9 @@ pub fn run() {
             file_handoff_start,
             history_export_start,
             file_handoff_save,
+            file_export_begin,
+            file_export_append,
+            file_export_finish,
             file_handoff_state,
             file_handoff_cancel,
             file_handoff_supported,

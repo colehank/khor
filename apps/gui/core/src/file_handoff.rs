@@ -10,6 +10,8 @@ use std::{
     time::{Duration, Instant},
 };
 use ts_rs::TS;
+#[path = "file_handoff_upload.rs"]
+pub mod upload;
 
 #[derive(Clone, Debug, Serialize, TS)]
 pub struct FileHandoff {
@@ -81,6 +83,7 @@ pub fn acquire_ready(root: &Path, id: &str) -> Result<ReadyFile, String> {
 enum Source {
     File { machine: String, path: String },
     History(crate::history_export::Selection),
+    Upload { name: String },
 }
 fn entries() -> &'static Mutex<HashMap<(PathBuf, String), Arc<Entry>>> {
     static ALL: OnceLock<Mutex<HashMap<(PathBuf, String), Arc<Entry>>>> = OnceLock::new();
@@ -199,6 +202,7 @@ fn start_source(root: &Path, id: &str, source: Source) -> Result<FileHandoff, St
                             )
                             .await
                         }
+                        Source::Upload { .. } => Err("uploads require an explicit writer".into()),
                     }
                 })
             });
@@ -217,6 +221,9 @@ pub fn cancel(root: &Path, id: &str) -> Result<(), String> {
         .stopped
         .store(true, std::sync::atomic::Ordering::Relaxed);
     entry.stopped.notify_one();
+    if matches!(entry.source, Source::Upload { .. }) && !entry.job.state().is_ok_and(|state| state.done) {
+        let _ = std::fs::remove_dir_all(upload::directory(root, id));
+    }
     Ok(())
 }
 /// Only a completed, app-owned job can ask the native adapter to open a
@@ -469,9 +476,9 @@ mod tests {
             "an unowned old original becomes eligible for normal eviction"
         );
     }
-    struct Scratch(PathBuf);
+    pub(super) struct Scratch(pub(super) PathBuf);
     impl Scratch {
-        fn new() -> Self {
+        pub(super) fn new() -> Self {
             static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
             let nonce = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let p = std::env::temp_dir().join(format!(
