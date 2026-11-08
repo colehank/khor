@@ -269,6 +269,14 @@ jobs:
         run: |
           cargo test --locked -p khor-node --lib acp_management::tests -- --test-threads=1
           cargo test --locked -p khor-node --lib acp_process::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib adaptor::media::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib adaptor::claude::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib adaptor::codex::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib gui_host::setting_receipt_tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib khor_agent::history::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib khor_agent::updates::tests -- --test-threads=1
+          cargo test --locked -p khor-gui-core --lib file_handoff:: -- --test-threads=1
+          cargo test --locked -p khor-gui-core --lib history_export:: -- --test-threads=1
           cargo test --locked -p khor-cli --test runtime_image -- --test-threads=1
           cargo test --locked -p khor-node --lib accounts::pi_usage -- --test-threads=1
           cargo test --locked -p khor-node --lib khor_agent::conversations::tests -- --test-threads=1 | tee "$RUNNER_TEMP/conversations.log"

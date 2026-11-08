@@ -2,8 +2,8 @@
 //! Per-turn identities preserve multi-machine ownership and existing Pi context.
 use super::*;
 use crate::session_content::{
-    journal::{Identity, Journal, Opening, Outcome, Source},
     ContentReference, ReadBinding,
+    journal::{Identity, Journal, Opening, Outcome, Source},
 };
 pub(super) struct FullSource {
     journal: Journal,

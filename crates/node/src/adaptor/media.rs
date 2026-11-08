@@ -58,8 +58,9 @@ mod tests {
         assert!(image("javascript:alert(1)").is_none());
         assert!(image("not-an-image").is_none());
         let document=claude(&json!({"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"cGRm"}})).unwrap();
-        assert_eq!(document["resource"]["blob"],"cGRm");
-        let _: agent_client_protocol::schema::v1::ContentBlock=serde_json::from_value(document).unwrap();
+        assert_eq!(document["resource"]["blob"], "cGRm");
+        let _: agent_client_protocol::schema::v1::ContentBlock =
+            serde_json::from_value(document).unwrap();
         let _: agent_client_protocol::schema::v1::ContentBlock =
             serde_json::from_value(block).unwrap();
     }

@@ -58,6 +58,7 @@ import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContribu
 import {HistoryRecordContent} from '@/components/history/HistoryRecordContent';
 import {historyRecordSlots} from '@/lib/history-record-presentation';
 import {Fragment} from 'react';
+import {useRecordTools} from '@/hooks/use-record-tools';
 
 /** Live control/state waits stay responsive while idle polling backs off. */
 const LIVE_MS = 50;
@@ -1570,10 +1571,15 @@ export function ChatView({
       ),
     [paint],
   );
-  const recordSlots=useMemo(()=>historyRecordSlots(items,history?historyReferences(history.window):[]),[items,history?.window]);
+  const sourceReferences=useMemo(()=>history?historyReferences(history.window):[],[history?.window]);
+  const recordOwner=JSON.stringify([id,sourceBinding,historyEpoch]);
+  const recordTools=useRecordTools(recordOwner,sourceReferences);
+  const originalToolIds=useMemo(()=>new Set(items.flatMap(item=>item.who==='tool'?[item.id]:[])),[items]);
+  const recordSlots=useMemo(()=>historyRecordSlots(items,sourceReferences),[items,sourceReferences]);
   const recordContent=(slot:number)=>sourceBinding&&recordSlots[slot]?.map(reference=><HistoryRecordContent
     key={`${historyEpoch}:${reference.start}:${reference.item??'record'}`} id={id} binding={sourceBinding}
-    reference={reference} exporter={historyExport} onOpenFile={openFile}/>);
+    reference={reference} exporter={historyExport} onOpenFile={openFile} owner={recordOwner}
+    existingTools={originalToolIds} onTools={recordTools.offer}/>);
   // **A turn is running — for the whole of it, and for how long.**
   //
   // 忙碌 in the conversation, wearing the state's own clothes rather
@@ -1736,7 +1742,13 @@ export function ChatView({
             {gui.chat_empty}
           </div>
         )}
-        {items.map((item, i) => {
+        {items.map((original, i) => {
+          const patch=original.who==='tool'?recordTools.patches.get(original.id):undefined;
+          const item=original.who==='tool'&&patch?{...original,...patch,
+            title:patch.title&&patch.title!==original.id?patch.title:original.title,
+            kind:patch.kind&&patch.kind!=='other'?patch.kind:original.kind,
+            raw:patch.raw===undefined?original.raw:patch.raw,
+            where:patch.where?.length?patch.where:original.where}:original;
           const content = item.who === "user" ? (
             // **The files a line carried are cards under it** (round CHAT
             // item 2), not the `@<path>` lines the agent was told them
