@@ -1,3 +1,5 @@
+import {retainComposerFiles} from '@/lib/composer-files';
+import {retainSessionDocuments} from '@/hooks/use-session-documents';
 import {SessionLinkScope} from "@/views/SessionLinkScope";
 import {SessionContentColumn} from "@/views/SessionContentColumn";
 import {SessionContentSeat,useSessionContentDock} from "@/hooks/use-session-content-dock";
@@ -183,7 +185,7 @@ import { SessionScreen } from "@/components/SessionBar";
 import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionPage } from "@/views/NewSessionPage";
-import { MachineChat } from "@/views/MachineChat";
+import { MachineChat,retainKhorPromptTokens } from "@/views/MachineChat";
 import { newTabKind } from "@/components/SessionFace";
 
 /**
@@ -2462,9 +2464,15 @@ export default function App() {
   // A tab closed forgets its 附栏's open (`keepSidesOf`).
   useEffect(() => {
     keepSidesOf(allSessionTabs);
-    retainSessionDrafts(allSessionTabs);
-    retainCancelledChatDrafts(allSessionTabs);
   }, [allSessionTabs]);
+  // Closing a view does not delete its session's draft. Retire only after a
+  // successful complete row snapshot and after every tab scope let go.
+  useEffect(()=>{
+    if(!rowsRead||stale)return;
+    const live=[...new Set([...allSessionTabs,...rawRows.map(row=>row.id)])];
+    retainSessionDrafts(live);retainCancelledChatDrafts(live);
+    retainComposerFiles(live);retainSessionDocuments(live);retainKhorPromptTokens(live);
+  },[allSessionTabs,rawRows,rowsRead,stale]);
   /**
    * **Opened again, the 附栏 is where it was left** (UX-47, the owner
    * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per

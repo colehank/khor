@@ -55,6 +55,7 @@ function fmtSize(n: number): string {
 }
 
 const khorPendingRuns=new Map<string,{line:string;token:string}>();
+export function retainKhorPromptTokens(sessions:readonly string[]){const live=new Set(sessions);for(const key of khorPendingRuns.keys())if(!live.has(key))khorPendingRuns.delete(key);}
 
 /** Each Khor conversation sends prompts and commands to its own agent home. */
 export function MachineChat({ id, active = true, onSession, sessions = [] }: { id: string; active?: boolean; onSession?: (id: string) => void; sessions?: SessionRow[] }) {

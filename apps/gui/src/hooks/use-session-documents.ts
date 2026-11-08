@@ -11,3 +11,7 @@ export function useSessionDocuments(session:string,initial:()=>Documents):[Docum
 }
 
 export function sessionDocumentsAtRisk(){return [...owners.values()].some(owner=>owner.value.length>0);}
+
+export function retainSessionDocuments(sessions:readonly string[]){
+ const live=new Set(sessions);for(const key of owners.keys())if(!live.has(key))owners.delete(key);
+}

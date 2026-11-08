@@ -8,7 +8,7 @@ type Operation={controller:AbortController;source:ReturnType<typeof historyApi>}
 export function useReadableHistoryExport(id:string,binding:string|null,title:string){
  const owner=useRef<Operation|null>(null),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  const retire=()=>{const active=owner.current;owner.current=null;if(active){active.controller.abort();void active.source.dispose();}};
- useEffect(()=>()=>retire(),[id,binding]);
+ useEffect(()=>{setBusy(false);setNotice('');return()=>retire();},[id,binding]);
  const run=()=>{
   if(!binding||owner.current||inApp)return;
   const operation={controller:new AbortController(),source:historyApi(id,binding)};owner.current=operation;setBusy(true);setNotice('正在导出对话');

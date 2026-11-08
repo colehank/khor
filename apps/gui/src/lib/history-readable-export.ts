@@ -18,7 +18,7 @@ export async function exportReadableHistory(source:Source,writer:Writer,title:st
  try{
   const pages:{cursor:string;first:string|null;last:string|null}[]=[],seen=new Set<string>();let cursor:string|null=null;
   for(;;){
-   const page=await read(cursor);pages.push({cursor:page.newer,first:page.entries[0]?.key??null,last:page.entries.at(-1)?.key??null});
+   const page=await read(cursor);await new Promise(resolve=>setTimeout(resolve,0));check();pages.push({cursor:page.newer,first:page.entries[0]?.key??null,last:page.entries.at(-1)?.key??null});
    if(pages.length>4096)throw new Error('对话超过单次导出范围');
    if(page.older===null)break;
    if(seen.has(page.older)||page.older===cursor)throw new Error('历史读取未前进');seen.add(page.older);cursor=page.older;

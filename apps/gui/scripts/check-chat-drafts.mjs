@@ -197,3 +197,10 @@ await test('one retained content host moves owners; stale cleanup cannot steal i
   dock.release(b);assert.equal(dock.host.parentElement,parking);assert.equal(dock.current(),null);
  }finally{globalThis.document=original;}
 });
+
+await test('retired composers release previews and reject late picker completions',()=>{
+ const revoked=[],files=new ComposerFiles(url=>revoked.push(url));
+ files.add([{key:files.key(),name:'a',thumb:'blob:old',size:1,path:null,inline:null,error:null}]);files.retire();
+ files.add([{key:files.key(),name:'late',thumb:'blob:late',size:1,path:null,inline:null,error:null}]);
+ assert.equal(files.snapshot().length,0);assert.deepEqual(revoked,['blob:old','blob:late']);
+});
