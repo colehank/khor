@@ -29,8 +29,12 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   const scroll=page.locator('[data-chat-scroll]:visible');await scroll.hover();
   for(let index=0;index<5;index++){await page.mouse.wheel(0,-1600);await page.waitForTimeout(200);}
   await page.waitForFunction(()=>document.querySelectorAll('[data-chat-tool]').length>0);
-  await page.locator('[data-chat-media-preview]').waitFor();await page.locator('[data-chat-media-preview]').click();
-  await page.getByRole('dialog').waitFor();assert.equal(await page.getByRole('dialog').locator('img').evaluate(image=>image.complete&&image.naturalWidth>0),true);await page.keyboard.press('Escape');
+  const thumbnail=page.locator('[data-chat-media-preview]');await thumbnail.waitFor();
+  const thumbnailBox=await thumbnail.boundingBox();await thumbnail.click();
+  await page.getByRole('dialog').waitFor();const preview=page.getByRole('dialog').locator('img');
+  assert.equal(await preview.evaluate(image=>image.complete&&image.naturalWidth>0),true);
+  assert((await preview.boundingBox()).width>thumbnailBox.width,'The image viewer enlarges the thumbnail instead of using the small question-dialog width');
+  await page.keyboard.press('Escape');
   const anchor=await page.locator('[data-chat-scroll]').evaluate(element=>{
    const top=element.getBoundingClientRect().top,node=[...element.querySelectorAll('[data-history-key]')].find(node=>node.getBoundingClientRect().bottom>top);
    return {key:node.dataset.historyKey,top:node.getBoundingClientRect().top-top};

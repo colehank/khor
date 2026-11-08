@@ -17,8 +17,8 @@ export function AgentResource({item,onOpenFile}:{item:AcpResource;onOpenFile:(pa
   <button type="button" data-chat-media-preview aria-label={`查看图片：${name}`} className="block max-w-full rounded-md" onClick={()=>setOpen(true)}>
    <img data-chat-image loading="lazy" className="max-h-[60vh] max-w-full rounded-md object-contain" alt={name} src={source} onError={()=>setFailed(true)}/>
   </button>
-  <Dialog open={open} onOpenChange={setOpen}><DialogContent className="max-w-[90vw]"><DialogHeader><DialogTitle>{name}</DialogTitle></DialogHeader>
-   <img className="max-h-[75vh] max-w-full object-contain" alt={name} src={source}/>
+  <Dialog open={open} onOpenChange={setOpen}><DialogContent className="w-[90vw] max-w-[90vw]"><DialogHeader><DialogTitle>{name}</DialogTitle></DialogHeader>
+   <img className="max-h-[75vh] w-full object-contain" alt={name} src={source}/>
    <div className="flex justify-end gap-in">{path&&<Button size="sm" onClick={()=>onOpenFile(path)}>在文件视图中打开</Button>}
     {!inApp&&<a className="text-callout" href={source} download={name}>存储图片</a>}
    </div>
