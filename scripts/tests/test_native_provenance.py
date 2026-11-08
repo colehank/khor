@@ -377,13 +377,24 @@ class ProvenanceTests(unittest.TestCase):
              "edition": "2024", "src_path": str(path)})
         return self.put("dep/input.toml", 'key="old"\n')
 
+    def stamp_current_generation(self, prepared, out):
+        # Kernel-created timestamps can lag time.time_ns() by a clock tick.
+        # These synthetic outputs declare a current invocation explicitly;
+        # stale/copy tests continue controlling their own timestamps.
+        stamp = prepared["prepared_ns"] + 1
+        for path in (out.parent / "output", *out.rglob("*")):
+            if path.is_file():
+                os.utime(path, ns=(stamp, stamp))
+
     def generated_row(self, prepared, current):
         out = self.target / "debug/build/dep-output/out"
         out.mkdir(parents=True, exist_ok=True)
         (out / "generated.rs").write_text('const KEY: &str = "old";\n')
         marker = out.parent / "output"
         marker.write_text("cargo::rerun-if-changed=input.toml\n")
-        if not current:
+        if current:
+            self.stamp_current_generation(prepared, out)
+        else:
             for path in (marker, out / "generated.rs"):
                 os.utime(path, ns=(1, 1))
         return {"reason": "build-script-executed", "package_id": "dep", "out_dir": str(out)}
@@ -612,6 +623,7 @@ class ProvenanceTests(unittest.TestCase):
         (out / "permissions.rs").write_text("const PERMISSIONS: &[&str] = &[];\n")
         marker = out.parent / "output"
         marker.write_text(f"cargo::rerun-if-changed={directory}\n")
+        self.stamp_current_generation(prepared, out)
         generated = {"reason": "build-script-executed", "package_id": "app", "out_dir": str(out)}
         receipt = p.verify_build(prepared, [generated, *self.rows()])
         self.assertEqual(len(receipt["generated"]), 1)
