@@ -422,6 +422,18 @@ test('wake during follow preserves one fresh intent without concurrent IO or bod
   assert.deepEqual(historyEntries(state.window).map(e=>e.key),['past:0','middle:0','latest:0']);
   await reader.dispose();
 });
+test('retry repeats the failed older cursor without jumping to the live tail',async()=>{
+ const calls=[];let failed=true,state;
+ const source={page:async(cursor,newer)=>{calls.push([cursor,newer]);if(cursor==='before:tail'&&failed){failed=false;throw new Error('offline');}return page(cursor?'older':'tail',{older:cursor?null:'before:tail'});},dispose:async()=>({failures:0,lastError:null})};
+ const reader=historyReader(source,next=>{state=next;},()=>true,{schedule:()=>1,cancel:()=>{}});
+ await reader.start();await reader.older();assert(state.error);await reader.retry();
+ assert.deepEqual(calls,[[null,false],['before:tail',false],['before:tail',false]]);assert.equal(state.error,null);await reader.dispose();
+});
+test('canonical plans retain separate turns and update only their own turn',()=>{
+ const plan=(key,status)=>({key,starts_message:false,record:null,frame:note('plan',{entries:[{content:key.startsWith('first')?'First task':'Second task',status}]})});
+ const items=paintHistory([entry('intro'),plan('first-a','pending'),plan('first-b','completed'),{key:'turn',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}},plan('second','pending')]);
+ assert.deepEqual(items.filter(item=>item.who==='plan').map(item=>item.entries),[[{content:'First task',status:'completed'}],[{content:'Second task',status:'pending'}]]);
+});
 let failures = 0;
 for (const [name, run] of checks) {
   try {

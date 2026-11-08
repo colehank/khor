@@ -105,6 +105,10 @@ function acceptHistory(previous: Painting, entries: Parameters<typeof paintHisto
 }
 
 type HistoryTextPoint = { tail: number; sampleFrom: number; sample: string; top: number; entries: string[]; contribution: HistoryContributionPoint | null };
+type SavedReading={before:string;entry:string;top:number;point:HistoryTextPoint|null};
+const readingPlaces=new Map<string,SavedReading>();
+const readingKey=(session:string,binding:string)=>JSON.stringify([session,binding]);
+
 function historyTextLength(root: HTMLElement): number {
   const nodes = root.ownerDocument.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   let size = 0;
@@ -636,6 +640,8 @@ export function ChatView({
   const [captureWhy, setCaptureWhy] = useState<string | null>(null);
   const captureNow = useRef<(() => void) | null>(null);
   const historyAnchor = useRef<{ key: string; top: number; ticket: number; point: HistoryTextPoint | null } | null>(null);
+  const resumeReading=useRef<{saved:SavedReading;ticket:number}|null>(null);
+
   const [loaded, setLoaded] = useState(false);
   /** The agent's own commands, as of the last frame that carried a set. */
   const [commands, setCommands] = useState<AgentCommand[]>([]);
@@ -741,6 +747,21 @@ export function ChatView({
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
   const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, following, readingLatest } = useChatScroll(paint);
+  const rememberReading=()=>{
+    const element=scroller.current;
+    if(!sourceBinding||!element||!history?.loaded||history.busy||resumeReading.current)return;
+    const key=readingKey(id,sourceBinding);
+    if(following.current){readingPlaces.delete(key);return;}
+    const top=element.getBoundingClientRect().top;
+    const node=[...element.querySelectorAll<HTMLElement>('[data-history-key]')].find(node=>node.getBoundingClientRect().bottom>top);
+    const item=paint.past.find(item=>(item.displayKey??item.historyKey)===node?.dataset.historyKey);
+    const page=history.window.pages.find(page=>page.entries.some(entry=>item?.historyEntries.includes(entry.key)));
+    if(!node||!item||!page)return;
+    const entry=item.historyEntries.find(key=>page.entries.some(candidate=>candidate.key===key));
+    if(!entry)return;
+    readingPlaces.delete(key);readingPlaces.set(key,{before:page.newer,entry,top:node.getBoundingClientRect().top-top,point:captureHistoryTextPoint(node,element,item)});
+    while(readingPlaces.size>64)readingPlaces.delete(readingPlaces.keys().next().value!);
+  };
   const box = useRef<HTMLTextAreaElement>(null);
   const coarse = useCoarse();
   // The box takes the keys the moment this pane opens, and any key
@@ -849,6 +870,9 @@ export function ChatView({
       setPaint(previous => ({...previous, past: []})); setHistory(null); setLoaded(false); setGone(false); setOpenWhy(null);
       if (still) { setTitle(null); setPlan([]); }
       setOpen(new Set()); toBottom();
+      const saved=before===undefined?readingPlaces.get(readingKey(id,readBinding)):undefined;
+      resumeReading.current=saved?{saved,ticket:capturePositionTicket()}:null;
+      if(saved){following.current=false;readingLatest.current=false;}
       setHistoryBinding({ id, binding: readBinding });
       const source = historyApi(id, readBinding);
       let previousPages: HistoryReaderState['window']['pages'] | null = null;
@@ -866,7 +890,7 @@ export function ChatView({
           setPaint(previous => acceptHistory(state.reset ? {...previous, past: []} : previous, historyEntries(state.window), historyReferences(state.window)));
           if (state.reset) {
             setFindingHistory(false); setMatchedEntry(null); historyMatch.current = null;
-            historyAnchor.current = null;
+            historyAnchor.current = null;resumeReading.current=null;readingPlaces.delete(readingKey(id,readBinding));
             setHistoryEpoch(epoch => epoch + 1); setOpen(new Set()); toBottom();
           }
         } else if (!state.busy) historyAnchor.current = null;
@@ -889,7 +913,7 @@ export function ChatView({
       });
       if (element) observer.observe(element);
       document.addEventListener('visibilitychange', visibility);
-      void view.start(before);
+      if(saved)void view.at(saved.before);else void view.start(before);
       historyCleanup = () => {
         disposed = true; observer.disconnect();
         document.removeEventListener('visibilitychange', visibility);
@@ -1206,6 +1230,16 @@ export function ChatView({
     element.__find=find;
     return()=>{if(element.__find===find)delete element.__find;};
   },[sourceBinding]);
+  useLayoutEffect(()=>{
+    const pending=resumeReading.current,element=scroller.current;
+    if(!pending||!element||!history?.loaded||history.busy||history.error)return;
+    const item=paint.past.find(item=>item.historyEntries.includes(pending.saved.entry));
+    const node=[...element.querySelectorAll<HTMLElement>('[data-history-key]')].find(node=>node.dataset.historyKey===(item?.displayKey??item?.historyKey));
+    if(node&&item)acceptRestoredPosition(pending.ticket,()=>{
+      if(!pending.saved.point||!restoreHistoryTextPoint(node,element,pending.saved.point,item))element.scrollTop+=node.getBoundingClientRect().top-element.getBoundingClientRect().top-pending.saved.top;
+    });
+    resumeReading.current=null;
+  },[paint,history,acceptRestoredPosition]);
   const jumpHistoryMatch = (hit: FindHit) => {
     following.current = false; readingLatest.current = false;
     historyAnchor.current = null;
@@ -1565,7 +1599,7 @@ export function ChatView({
       <div
         ref={scroller}
         data-chat-scroll
-        onScroll={onScroll}
+        onScroll={()=>{onScroll();rememberReading();}}
         onClickCapture={captureDisclosure}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [overflow-anchor:none]"
       >

@@ -1,3 +1,4 @@
+import {browserDownload} from '@/lib/browser-download';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { inApp, startHistoryExport, fileHandoffState, fileHandoffCancel, fileHandoffSave } from '@/api';
 import { gui } from '@/gen/catalog';
@@ -31,14 +32,14 @@ export function useHistoryExport(id: string, binding: string | null) {
   }, [id, binding]);
   const run = (reference: HistoryRecordRef): Operation | null => {
     const choose = picker();
-    if (!binding || current.current || (!inApp && !choose)) return null;
+    if (!binding || current.current) return null;
     const operation = { source: historyApi(id, binding), stop: new AbortController() };
     current.current = operation; setBusy(true); setNotice(gui.file_open_preparing);
     const finished = (async () => {
       try {
         // Browser file panels require the original click activation. Native
         // panels are presented later, after the app-owned original is staged.
-        const handle = inApp ? null : await choose!({ suggestedName: 'history-record.jsonl' });
+        const handle = !inApp&&choose ? await choose({ suggestedName: 'history-record.jsonl' }) : null;
         if (operation.stop.signal.aborted) return;
         const complete = await completeHistoryRecord(operation.source, reference, operation.stop.signal);
         let saved = true;
@@ -49,7 +50,7 @@ export function useHistoryExport(id: string, binding: string | null) {
             state: () => fileHandoffState(token), cancel: () => fileHandoffCancel(token), save: () => fileHandoffSave(token),
           }, complete, operation.stop.signal);
         } else {
-          const writer = await handle!.createWritable();
+          const writer = handle ? await handle.createWritable() : browserDownload("history-record.jsonl","application/x-ndjson");
           await exportHistoryRecord(operation.source, complete, writer, operation.stop.signal);
         }
         if (current.current === operation) setNotice(saved ? gui.history_exported : null);
@@ -69,7 +70,7 @@ export function useHistoryExport(id: string, binding: string | null) {
       if (current.current === operation) { current.current = null; setBusy(false); setNotice(null); }
     }, finished };
   };
-  return { busy, notice, available: !!binding && (inApp || !!picker()), run, stop,
+  return { busy, notice, available: !!binding, run, stop,
     clearNotice: () => { if (!current.current) setNotice(null); } };
 }
 export type HistoryExportControl = ReturnType<typeof useHistoryExport>;

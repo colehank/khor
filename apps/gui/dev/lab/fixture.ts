@@ -60,7 +60,7 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number} = {}) {
   const devices = labDevices(device,options.machines ?? 3);
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
@@ -84,7 +84,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const initialPreferences=structuredClone(preferences);
   const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
-  const makeCanonical = () => canonicalChatFixture({ids: ids.slice(0, 4),
+  const makeCanonical = () => canonicalChatFixture({pageSize:options.pageSize??128,ids: ids.slice(0, 4),
     takeFrames: (id: string) => {
       const index = ids.indexOf(id);
       return frames[index].splice(0).filter(frame => frame.kind !== 'turning' || streaming.has(index));
@@ -188,6 +188,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
+  let uploadMode='ok';const sentPrompts:unknown[]=[];
   return {
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
@@ -201,6 +202,11 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           khorUpdates = [...initialKhorUpdates];
         return true;
       }
+      if(path==='__ai_preview/upload-mode'){uploadMode=String(body.mode??'ok');return uploadMode;}
+      if(path==='__ai_preview/upload-state')return uploadMode;
+      if(path==='__ai_preview/says')return structuredClone(sentPrompts);
+      if(path==='chat_put')return '/preview/uploads/'+String(body.name??'attachment');
+      if(path==='chat_put_paths')return body.paths;
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
       if (path === '__ai_preview/acp-setup-calls') return structuredClone(acpSetupCalls);
       if (pairing.handles(path)) return structuredClone(pairing.request(path, body));
@@ -264,7 +270,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});break;
           }
           case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : "已确认。此处仅演示确认状态，不执行系统操作。"))), 900); break;
-          case "chat_say": run(index, "收到。这是验收环境的示例回复，没有调用模型或执行命令。你可以展开上面的工具调用，检查输出与复制按钮。"); break;
+          case "chat_say": sentPrompts.push(structuredClone(body));run(index, "收到。这是验收环境的示例回复，没有调用模型或执行命令。你可以展开上面的工具调用，检查输出与复制按钮。"); break;
           case "chat_stop": generation[index]++; streaming.delete(index); frames[index].push({ kind: "turn", stop: "Cancelled" }); break;
           // Explicit no-PIN fixture facts; a failed read never unlocks production.
           case "lock_state": answer = {on: false, has_pin: false, timeout_min: 0, timeouts: [0, 1, 5, 15, 60], pin_min: 6, system_door: false}; break;

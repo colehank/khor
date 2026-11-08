@@ -5,7 +5,8 @@ export class ComposerFiles {
   private items:PendingFile[]=[];
   private listeners=new Set<()=>void>();
   private sequence=0;
-  constructor(private revoke:(url:string)=>void=url=>URL.revokeObjectURL(url)){}
+  private revoke:(url:string)=>void;
+  constructor(revoke:(url:string)=>void=url=>URL.revokeObjectURL(url)){this.revoke=revoke;}
   readonly snapshot=()=>this.items;
   readonly subscribe=(listener:()=>void)=>{this.listeners.add(listener);return()=>{this.listeners.delete(listener);};};
   key(){return `attachment:${++this.sequence}`;}
@@ -22,3 +23,5 @@ const owners=new Map<string,ComposerFiles>();
 export function composerFiles(session:string){let files=owners.get(session);if(!files){files=new ComposerFiles();owners.set(session,files);}return files;}
 export function discardComposerFiles(session:string){owners.get(session)?.clear();owners.delete(session);}
 export function composerReady(items:readonly PendingFile[]){return items.every(item=>item.path!==null&&!item.encoding&&!item.error);}
+
+export function composerFilesAtRisk(){return [...owners.values()].some(files=>files.snapshot().length>0);}

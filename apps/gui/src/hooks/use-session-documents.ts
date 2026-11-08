@@ -9,3 +9,5 @@ export function useSessionDocuments(session:string,initial:()=>Documents):[Docum
  const value=useSyncExternalStore(listener=>{entry.listeners.add(listener);return()=>{entry.listeners.delete(listener);};},()=>entry.value);
  return [value,next=>{entry.value=typeof next==='function'?next(entry.value):next;for(const notify of entry.listeners)notify();}];
 }
+
+export function sessionDocumentsAtRisk(){return [...owners.values()].some(owner=>owner.value.length>0);}

@@ -1,3 +1,4 @@
+import {handOff} from '../../src/lib/composer-handoff';
 import {createLabFixture} from './fixture';
 import {scenes, sessionIds, type Scene} from './scenes';
 import {configureLabBackend} from './backend-context';
@@ -20,7 +21,8 @@ if (query.has('bridge')) throw new Error('Lab does not connect to external API b
 const scene = scenes[runtime.scene];
 const items = Number(query.get('items') ?? 5), machines = Number(query.get('machines') ?? 3);
 if (![2,3,5].includes(items) || ![0,1,3,6].includes(machines)) throw new Error('Lab data supports items=2/3/5 and machines=0/1/3/6');
-const identity = `${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}`;
+const pageSize=query.has('short-pages')?4:128;
+const identity = `${pageSize}/${query.has('handoff')}/${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}`;
 if (runtime.mode === 'frontend') {
   if (localStorage.getItem('khor.lab.identity') !== identity) {
     for (const key of Object.keys(localStorage)) if (key.startsWith('khor.')) localStorage.removeItem(key);
@@ -32,7 +34,7 @@ if (runtime.mode === 'frontend') {
     const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : runtime.scene === 'devices' ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
     localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
-  const fixture = createLabFixture(true, {origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines, page:runtime.scene==='page'});
+  const fixture = createLabFixture(true, {origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, page:runtime.scene==='page'});
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -41,7 +43,14 @@ if (runtime.mode === 'frontend') {
     if (request.signal.aborted) throw new DOMException('Aborted', 'AbortError');
     try {
       const command = url.pathname.slice('/api/'.length);
-      const answer = fixture.request(command, await request.json());
+      let body:Record<string,unknown>;
+      if(command==='chat_put'){
+        body=Object.fromEntries(url.searchParams);await request.arrayBuffer();
+        const mode=fixture.request('__ai_preview/upload-state');
+        if(mode==='fail')return Response.json('上传失败，请移除附件后重新添加',{status:503});
+        if(mode==='delay')await new Promise(resolve=>setTimeout(resolve,1200));
+      }else body=await request.json();
+      const answer = fixture.request(command,body);
       // Polling fixtures must yield so production loops cannot starve rendering.
       if (['chat_wait', 'term_wait', 'term_stream', 'dirs_wait'].includes(command)) await new Promise(r => setTimeout(r, 120));
       return Response.json(answer);
@@ -95,5 +104,6 @@ if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
   observer.observe(document.body, {childList:true,subtree:true});
   setTimeout(() => observer.disconnect(),15000);
 }
+if(runtime.mode==='frontend'&&query.has('handoff'))handOff('terminal.txt','$ example\nSynthetic terminal output');
 Object.defineProperty(window, '__KHOR_LAB__', {value: Object.freeze(runtime)});
 await import('../../src/main');

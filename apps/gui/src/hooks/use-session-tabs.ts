@@ -20,7 +20,7 @@
 // Ending a session is the header's 关闭, which goes through the node —
 // and when the row then leaves the list, the shell closes the tab
 // (`App`'s gone-row rule), not the other way round.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { stalestTab } from "@/browse/tab-limit";
 
@@ -60,6 +60,19 @@ function restore(storageKey = STORE_KEY): Tabs {
     return EMPTY;
   }
 }
+
+// Every workspace keeps its own tab scope while another landing is visible.
+// Recovery/side lifetimes must use their union, not just the main session bar.
+const scopes=new Map<string,readonly string[]>();
+try{for(let index=0;index<localStorage.length;index++){const key=localStorage.key(index);if(key&&(key===STORE_KEY||key.startsWith('khor.workspace.sessions.')))scopes.set(key,restore(key).tabs);}}catch{/* memory still works */}
+const scopeListeners=new Set<()=>void>();
+let allTabs=[...new Set([...scopes.values()].flat())];
+function publishScope(key:string,tabs:readonly string[]){
+ scopes.set(key,tabs);const next=[...new Set([...scopes.values()].flat())];
+ if(next.length===allTabs.length&&next.every((id,index)=>id===allTabs[index]))return;
+ allTabs=next;for(const notify of scopeListeners)notify();
+}
+export function useAllSessionTabs(){return useSyncExternalStore(notify=>{scopeListeners.add(notify);return()=>{scopeListeners.delete(notify);};},()=>allTabs);}
 
 export type SessionTabs = {
   tabs: string[];
@@ -102,6 +115,7 @@ export function useSessionTabs(
   const key = useRef(storageKey).current;
   const [state, setState] = useState<Tabs>(()=>restore(key));
   const wrote = useRef(false);
+  useLayoutEffect(()=>publishScope(key,state.tabs),[key,state.tabs]);
   /** When each tab was last put in front. A ref, read inside the state
       updaters below; and the two inputs ride refs too, so `open` keeps
       one identity (`App` lists it as an effect dependency). */

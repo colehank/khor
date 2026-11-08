@@ -110,7 +110,7 @@ import { useDayStrips, useStripWidth } from "@/hooks/use-day-strips";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
-import { isNewTab, newTabId, useSessionTabs } from "@/hooks/use-session-tabs";
+import { useAllSessionTabs, isNewTab, newTabId, useSessionTabs } from "@/hooks/use-session-tabs";
 import { tabsLimitOf } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
@@ -613,6 +613,7 @@ export default function App() {
   pinnedRows.current = new Set(rows.filter((r) => r.pinned).map((r) => r.id));
   const sessionTabs = useSessionTabs(tabsLimit, (id) => pinnedRows.current.has(id));
   const { tabs: openTabs, drop: dropTabs } = sessionTabs;
+  const allSessionTabs=useAllSessionTabs();
   const selected = sessionTabs.active;
   onScreen.current = (id) =>
     document.visibilityState === "visible" && document.hasFocus() && !lock.locked && morePage === null && !switchingTabs &&
@@ -2460,10 +2461,10 @@ export default function App() {
   }, [selected, sessions]);
   // A tab closed forgets its 附栏's open (`keepSidesOf`).
   useEffect(() => {
-    keepSidesOf(openTabs);
-    retainSessionDrafts(openTabs);
-    retainCancelledChatDrafts(openTabs);
-  }, [openTabs]);
+    keepSidesOf(allSessionTabs);
+    retainSessionDrafts(allSessionTabs);
+    retainCancelledChatDrafts(allSessionTabs);
+  }, [allSessionTabs]);
   /**
    * **Opened again, the 附栏 is where it was left** (UX-47, the owner
    * 2026-10-07, replacing UX-40 §3's 「每次打开都是显示最近」): per

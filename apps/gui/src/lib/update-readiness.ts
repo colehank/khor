@@ -1,3 +1,5 @@
+import {composerFilesAtRisk} from './composer-files';
+import {sessionDocumentsAtRisk} from '@/hooks/use-session-documents';
 import { useLayoutEffect, useRef } from "react";
 import type { UpdateBlocker } from "@/gen/bindings/UpdateBlocker";
 import { checkpointSessionDrafts } from "@/hooks/use-session-draft";
@@ -6,6 +8,7 @@ import { chatDraftsAtRisk } from "./chat-drafts";
 import { RestartChecklist } from "./restart-checklist";
 
 export const updateReadiness = new RestartChecklist();
+updateReadiness.register(()=>composerFilesAtRisk()||sessionDocumentsAtRisk()?"attachments":null);
 updateReadiness.register(() => draftCount() ? "unsaved-files" : null);
 updateReadiness.register(() => chatDraftsAtRisk() ? "unconfirmed-sends" : null);
 updateReadiness.register(() => checkpointSessionDrafts() ? null : "draft-storage");

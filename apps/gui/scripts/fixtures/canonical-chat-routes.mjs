@@ -1,9 +1,9 @@
 // Fixed, already-projected scenario DTOs only. No vendor normalization, body
 // folding, source identity algorithm, reader or cache replaces production code.
-const BODY_NOTES = new Set(['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update']);
+const BODY_NOTES = new Set(['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update','plan','compaction_update','compaction_summary_chunk']);
 const COMMANDS = new Set(['attachment_begin', 'chat_open', 'chat_capture', 'chat_poll', 'chat_wait', 'chat_leave', 'history_begin', 'history_page', 'history_cancel']);
 
-export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) => {}, bindingPrefix = 'fixed-fixture'}) {
+export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) => {}, bindingPrefix = 'fixed-fixture',pageSize=128}) {
   const known = new Set(ids);
   const scenarios = new Map(), views = new Map(), reads = new Map();
   let serial = 0;
@@ -91,8 +91,8 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) =>
       try {
         const at = offset(args.cursor, state.entries.length);
         if (at < 0 || at > state.entries.length) throw new Error('fixture cursor outside static entries');
-        const start = args.newer ? at : Math.max(0, at - 128);
-        const end = args.newer ? Math.min(state.entries.length, at + 128) : at;
+        const start = args.newer ? at : Math.max(0, at - pageSize);
+        const end = args.newer ? Math.min(state.entries.length, at + pageSize) : at;
         const value = {entries: state.entries.slice(start, end), references: [], older: start ? cursor(start) : null,
           newer: cursor(end), has_more: !!args.newer && end < state.entries.length, reset: false, encoded_bytes: 0};
         value.encoded_bytes = new TextEncoder().encode(JSON.stringify(value)).length + 32;
