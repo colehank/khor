@@ -266,6 +266,7 @@ jobs:
           cargo test --locked -p khor-node --lib khor_agent::conversations::tests -- --test-threads=1 | tee "$RUNNER_TEMP/conversations.log"
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/conversations.log"
           cargo test --locked -p khor-gui-core --lib console::tests::slash_receipts -- --test-threads=1 | tee "$RUNNER_TEMP/conversation-commands.log"
+          cargo test --locked -p khor-gui-core --lib web::loopback_tests -- --test-threads=1
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/conversation-commands.log"
           cargo test --locked -p khor-node --lib observer_tests -- --test-threads=1
           cargo test --locked -p khor-node --lib doc_transfer_state::io::tests -- --test-threads=1
