@@ -3,6 +3,20 @@ import type { ILink, Terminal } from '@xterm/xterm';
 const activations = new WeakMap<object, 'claimed' | 'cancelled'>();
 export const terminalLinkGesture = (event: object) => activations.get(event);
 
+// URLs and OSC8 expose their destination as ILink.text. A relative file's
+// printed text is insufficient: its resolved machine/path may change on redraw.
+const targets = new WeakMap<ILink, string>();
+export function terminalLinkTarget(link: ILink, target: string): ILink {
+  targets.set(link, target);
+  return link;
+}
+
+function sameLink(a: ILink, b: ILink): boolean {
+  return a.text === b.text && targets.get(a) === targets.get(b)
+    && a.range.start.x === b.range.start.x && a.range.start.y === b.range.start.y
+    && a.range.end.x === b.range.end.x && a.range.end.y === b.range.end.y;
+}
+
 type Cell = { col: number; row: number };
 type Press = { link: ILink; down: MouseEvent; phase: 'link' | 'program' | 'cancelled' };
 
@@ -64,10 +78,13 @@ export function claimTerminalLinkClicks(term: Terminal, box: HTMLElement, at: (x
     }
     consume(event);
     if (saved.phase === 'cancelled') return;
-    if (!box.contains(event.target as Node) || term.hasSelection() || currentLink(term) !== saved.link || !contains(saved.link, at(event.clientX, event.clientY))) return;
+    // xterm invalidates provider objects when their row is repainted. Match
+    // the resolved destination and range, then use the fresh provider callback.
+    const link = currentLink(term);
+    if (!box.contains(event.target as Node) || term.hasSelection() || !link || !sameLink(saved.link, link) || !contains(link, at(event.clientX, event.clientY))) return;
     if (Math.hypot(event.clientX - saved.down.clientX, event.clientY - saved.down.clientY) > slop) return;
     activations.set(event, 'claimed');
-    saved.link.activate(event, saved.link.text);
+    link.activate(event, link.text);
   };
   const cancel = () => {
     if (press?.phase === 'link') press.phase = 'cancelled';

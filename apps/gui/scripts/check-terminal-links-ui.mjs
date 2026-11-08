@@ -6,7 +6,7 @@ import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync} from 'node:fs';
 import {join,basename} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'vite';
-import {chromium} from 'playwright-core';
+import {chromium,webkit} from 'playwright-core';
 const gui=fileURLToPath(new URL('..',import.meta.url)),output=process.env.TERMINAL_LINK_UI_DIR;
 assert(output,'Set TERMINAL_LINK_UI_DIR');mkdirSync(output,{recursive:true});
 const fixture=mkdtempSync(join(gui,'.terminal-links-check-'));
@@ -48,7 +48,7 @@ try{
  const url=`http://127.0.0.1:${server.config.server.port}/${basename(fixture)}/index.html`;
  if(process.env.TERMINAL_LINK_LAB==='1'){console.log('Private terminal Lab '+url);await new Promise(r=>{process.once('SIGINT',r);process.once('SIGTERM',r);});}
  else{
- browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:600}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>window.__terminalLinkWire?.ready);
+ browser=process.env.TERMINAL_LINK_ENGINE==='webkit'?await webkit.launch({headless:true}):await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:600}});page.setDefaultTimeout(10000);const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>window.__terminalLinkWire?.ready);
  const point=(col,row)=>page.evaluate(([c,r])=>window.__terminalLinkPoint(c,r),[col,row]);
  const state=()=>page.evaluate(()=>window.__terminalLinkWire);
  const hover=async(col,row)=>{const p=await point(col,row);await page.mouse.move(p.x,p.y);await page.waitForFunction(()=>!!window.__terminalLinkCurrent());return p;};
@@ -72,8 +72,13 @@ try{
      results.push({name:name+' redraw '+(modifier||'plain'),redraw,passed:true});
    }
  }
+ for(const [name,row,changed,restore] of [['URL',0,'https://example.org/changedx','https://example.org/verified'],['OSC8',2,'\u001b]8;;https://example.org/changed\u0007OSC8 link\u001b]8;;\u0007','\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007']]){
+   await hover(3,row);const before=await state();await page.mouse.down();await page.evaluate(([row,paint])=>window.__terminalLinkRedraw(row,paint),[row,changed]);await page.mouse.up();
+   assert.equal((await state()).opened.length,before.opened.length,'changing '+name+' target must cancel activation');
+   await page.evaluate(([row,paint])=>window.__terminalLinkRedraw(row,paint),[row,restore]);results.push({name:name+' changed target cancels',passed:true});
+ }
  let p=await point(3,3),before=await state();await page.mouse.click(p.x,p.y);let after=await state();assert.equal(after.opened.length,before.opened.length);assert(after.bytes.length>before.bytes.length,'nonlink click still reaches program');results.push({name:'nonlink program mouse',passed:true});
- p=await hover(3,0);before=await state();await page.mouse.move(p.x,p.y);await page.mouse.down();await page.mouse.move(p.x+80,p.y+20,{steps:8});await page.mouse.up();after=await state();assert.equal(after.opened.length,before.opened.length,'drag is never also opening');assert(after.bytes.length>before.bytes.length,'drag returns program mouse ownership');results.push({name:'link drag returns program ownership',passed:true});
+ p=await hover(3,0);before=await state();await page.mouse.move(p.x,p.y);await page.mouse.down();await page.evaluate(()=>window.__terminalLinkRedraw(0,'https://example.org/verified'));await page.mouse.move(p.x+80,p.y+20,{steps:8});await page.mouse.up();after=await state();assert.equal(after.opened.length,before.opened.length,'drag is never also opening');assert(after.bytes.length>before.bytes.length,'drag returns program mouse ownership');results.push({name:'link drag returns program ownership',passed:true});
  p=await hover(3,0);before=await state();await page.mouse.click(p.x,p.y,{button:'right'});after=await state();assert.equal(after.opened.length,before.opened.length,'right click never opens');results.push({name:'right click stays separate',passed:true});
  const selectionModifier=process.platform==='darwin'?'Alt':'Shift';await page.keyboard.down(selectionModifier);p=await point(0,0);await page.mouse.move(p.x,p.y);await page.mouse.down();const end=await point(15,0);await page.mouse.move(end.x,end.y,{steps:8});await page.mouse.up();await page.keyboard.up(selectionModifier);assert(await page.evaluate(()=>window.__terminalLinkSelection()),'forced selection remains usable');results.push({name:'forced selection',passed:true});assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),sources,'production sources stayed fixed');await page.screenshot({path:join(output,'terminal.png')});
  }

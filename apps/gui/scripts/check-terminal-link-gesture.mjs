@@ -8,7 +8,7 @@ const plugins=baseline?[{name:'published-baseline',setup(build){
   build.onLoad({filter:/term-link-gesture\.ts$/},()=>({contents:'export const claimTerminalLinkClicks=()=>()=>{};',loader:'ts'}));
 }}]:[];
 const out=await build({stdin:{contents:"export * from './src/lib/term-link-gesture'; export * from './src/lib/content-link-intent';",resolveDir:process.cwd(),loader:'ts'},bundle:true,format:'esm',write:false,plugins});
-const {claimTerminalLinkClicks,canActivateTerminalLink,linkIntent}=await import('data:text/javascript;base64,'+Buffer.from(out.outputFiles[0].text).toString('base64'));
+const {claimTerminalLinkClicks,terminalLinkTarget,canActivateTerminalLink,linkIntent}=await import('data:text/javascript;base64,'+Buffer.from(out.outputFiles[0].text).toString('base64'));
 
 class Mouse extends Event {
   constructor(type,options={}) {
@@ -55,6 +55,20 @@ test('dragging hands the original press back and never opens',()=>{const f=fixtu
 test('a drag cannot open if tracking ends before release',()=>{const f=fixture();f.send('mousedown');f.send('mousemove',{clientX:16});f.term.modes.mouseTrackingMode='none';f.send('mouseup',{clientX:16});assert.deepEqual(f.calls,[]);f.stop();});
 test('release on another cell does not open the old link',()=>{const f=fixture();f.send('mousedown');f.send('mouseup',{clientX:25});assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();});
 test('changed provider result cannot open the old target',()=>{const f=fixture();f.send('mousedown');f.term._core.linkifier.currentLink=undefined;f.send('mouseup');assert.deepEqual(f.calls,[]);f.stop();});
+test('a fresh provider result for the same destination opens through its fresh callback',()=>{
+  const f=fixture();f.send('mousedown');const fresh=[];
+  f.term._core.linkifier.currentLink={link:{...f.link,activate:event=>fresh.push(linkIntent(event))}};
+  f.send('mouseup');assert.deepEqual(fresh,['internal']);assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();
+});
+for(const change of ['text','range','target'])test('a changed '+change+' cannot be activated by a pending press',()=>{
+  const f=fixture();terminalLinkTarget(f.link,'machine:/a');f.send('mousedown');
+  const next={...f.link,range:{start:{...f.link.range.start},end:{...f.link.range.end}}};terminalLinkTarget(next,change==='target'?'machine:/b':'machine:/a');
+  if(change==='text')next.text='another';if(change==='range')next.range.end.x--;
+  f.term._core.linkifier.currentLink={link:next};f.send('mouseup');assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();
+});
+test('separate terminal instances cannot activate each other’s pending press',()=>{
+  const a=fixture(),b=fixture();a.send('mousedown');b.send('mouseup');assert.deepEqual(a.calls,[]);assert.deepEqual(b.calls,[]);a.send('mouseup');assert.deepEqual(a.calls,['internal']);a.stop();b.stop();
+});
 test('release outside the terminal does not open',()=>{const f=fixture();f.send('mousedown');f.send('mouseup',{origin:f.doc});assert.deepEqual(f.calls,[]);f.stop();});
 test('blur cancels a pending claimed click',()=>{const f=fixture();f.send('mousedown');f.view.dispatchEvent(new Event('blur'));f.send('mouseup');assert.deepEqual(f.calls,[]);assert.deepEqual(f.program,[]);f.stop();});
 test('dispose removes the ownership listeners',()=>{const f=fixture();f.send('mousedown');f.stop();f.send('mousedown');f.send('mouseup');assert.deepEqual(f.program,['down','up']);assert.deepEqual(f.calls,[]);});
