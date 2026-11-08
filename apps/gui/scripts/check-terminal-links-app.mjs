@@ -21,7 +21,9 @@ try {
    const context=await browser.newContext({viewport:{width:1400,height:900}}),page=await context.newPage();page.setDefaultTimeout(12000);
    page.on('pageerror',error=>errors.push(String(error)));
    await page.route('**/lab/runtime*',route=>route.fulfill({contentType:'application/json',body:JSON.stringify({mode:'frontend',scene:'terminal',tree:'terminal-link-check',revision:'one'})}));
-   await page.addInitScript(()=>{window.__linkEvents=[];window.addEventListener('khor:open-url',event=>window.__linkEvents.push(event.detail));});
+   // Each reload creates a new in-memory fixture backend. Reset its browser
+   // state too, so a prior fixture tab key cannot refer to a discarded backend.
+   await page.addInitScript(()=>{localStorage.clear();window.__linkEvents=[];window.addEventListener('khor:open-url',event=>window.__linkEvents.push(event.detail));});
    await page.route('**/terminal-target*',route=>route.fulfill({contentType:'text/html',body:'<p>Fixture destination</p>'}));
    await page.goto('http://127.0.0.1:23836/?scene=terminal&machines=3');
    await page.waitForFunction(()=>document.querySelector('[data-terminal]')?.__xterm?.buffer.active.getLine(0)?.translateToString().includes('layout-lab'),null,{timeout:45000});
