@@ -5,12 +5,13 @@ import { gui } from "@/gen/catalog";
 import { Button } from "@/components/ui/button";
 import { ChoiceField } from "@/components/ui/choice-field";
 import { PiAccountDialog, PiModelField } from "@/views/PiAccount";
-import { Dialog, TaskOverlay, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogBody } from "@/components/ui/dialog";
 import { Markdown } from "@/components/Markdown";
 import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
 import { AgentConfirmation } from "@/components/ai-elements/agent";
 import { AgentTranscript } from "@/components/ai-elements/content";
 import { FilePreview } from "@/views/chat-files";
+import {ChatView} from "@/views/ChatView";
 import { StatusWord } from "@/components/StatusWord";
 
 export function KhorAgentSettings({ view, onChanged, disabled: running, openRequest=0, hideTrigger=false, session="wide/all" }: { session?:string;view: KhorAgentView | null; onChanged: (view: KhorAgentView) => void; disabled: boolean; openRequest?:number; hideTrigger?:boolean }) {
@@ -63,6 +64,17 @@ export function KhorAgentSettings({ view, onChanged, disabled: running, openRequ
 export function KhorAgentResult({ record: c, session="wide/all" }: { session?:string;record: CommandRecord }) {
   const [error, setError] = useState<string | null>(null), [acting, setActing] = useState(false);
   const [file, setFile] = useState<string | null>(null);
+  const [full,setFull]=useState<{id:string;binding:string}|null>(null);
+  const mounted=useRef(true);
+  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+  const readFull=async()=>{
+    if(acting)return;setActing(true);setError(null);
+    try{const answer=await khorAgent('history',c.owner,{run:c.id,session});
+      const source=answer.data as {id?:unknown;binding?:unknown}|null;
+      if(!source||typeof source.id!=='string'||typeof source.binding!=='string')throw new Error('完整记录不可用');
+      if(mounted.current)setFull({id:source.id,binding:source.binding});
+    }catch(failure){if(mounted.current)setError(said(failure));}finally{if(mounted.current)setActing(false);}
+  };
   const busy = c.status === "running" || c.status === "blocked", ask = c.agent?.approval;
   const action = async (name: string, extra: Record<string, unknown> = {}) => {
     if (acting) return;
@@ -76,7 +88,11 @@ export function KhorAgentResult({ record: c, session="wide/all" }: { session?:st
     <Bubble align="end" variant="muted"><BubbleContent data-khor-agent-prompt className="text-read"><Markdown text={c.line} /></BubbleContent></Bubble>
     <div className="flex items-baseline gap-in text-caption text-secondary-foreground"><span>khor</span><span className="min-w-0 flex-1 truncate">{c.agent?.model} · {c.owner_name}</span><StatusWord word={word} />{busy && <Button data-khor-agent-stop variant="ghost" size="sm" disabled={acting} onClick={() => void action("stop")}>{gui.page_stop}</Button>}</div>
     <AgentTranscript updates={c.agent?.updates ?? []} busy={busy} fallback={c.stdout} onOpenFile={setFile} />
-    {c.agent?.updates_truncated && <p className="text-caption text-muted-foreground">{gui.agent_detail_cut}</p>}
+    <div className="flex items-center gap-in text-caption">{c.agent?.updates_truncated&&<span className="text-muted-foreground">{gui.agent_detail_cut}</span>}<Button size="sm" variant="ghost" disabled={acting} onClick={()=>void readFull()}>查看完整内容</Button></div>
+    <Dialog open={full!==null} onOpenChange={open=>{if(!open)setFull(null);}}><TaskOverlay purpose="preview" scrollable>
+      <DialogHeader><DialogTitle>完整对话</DialogTitle></DialogHeader>
+      <DialogBody className="flex min-h-0 flex-col">{full&&<ChatView id={full.id} still binding={full.binding} home={c.owner} machine={c.owner_name} category="khor" watch={busy}/>}</DialogBody>
+    </TaskOverlay></Dialog>
     {c.stderr && <p className="text-callout text-secondary-foreground">{c.stderr}</p>}
     {ask && <div data-khor-agent-approval><AgentConfirmation key={ask.id} title={`${gui.agent_approve_hint}\n${ask.tool}\n${ask.arguments}`}
       options={[["allow", gui.approve], ["deny", gui.agent_deny]]} answer={null} canAnswer={c.status === "blocked"}

@@ -10,7 +10,7 @@ pub(super) fn directory(root: &Path, id: &str) -> PathBuf {
 }
 pub fn begin(root: &Path, id: &str, name: &str) -> Result<(), String> {
     valid(id)?;
-    if name.is_empty() || name.len() > 128 || name == "." || name == ".."
+    if name.is_empty() || name.len() > 128 || matches!(name, "." | ".." | "ready.json" | "ready.pending" | "body.part" | ".readers.lock")
         || !name.bytes().all(|byte| byte.is_ascii_alphanumeric() || b"-_.".contains(&byte)) {
         return Err("invalid exported file name".into());
     }

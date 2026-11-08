@@ -468,7 +468,7 @@ pub mod refused {
 /// (`khor_acp::MODEL_META`), held here like the rest so a face that
 /// attaches after the turn that taught it is still told.
 fn settings_json(s: &khor_acp::Settings) -> String {
-    serde_json::json!({ "modes": s.modes, "options": s.options, "model": s.model }).to_string()
+    serde_json::json!({ "modes": s.modes, "options": s.options, "model": s.model, "correlatedSettings": true }).to_string()
 }
 
 fn has_settings(s: &khor_acp::Settings) -> bool {
@@ -479,6 +479,28 @@ fn has_settings(s: &khor_acp::Settings) -> bool {
 enum Setting {
     Mode(String),
     Options { list: Vec<SessionConfigOption> },
+}
+
+/// Correlated settings reuse the existing Control/ControlResult wire lane.
+/// Old hosts keep receiving SetMode/SetOption until they advertise support.
+enum SettingRequest {
+    Mode(String),
+    Option { id: String, value: Choice },
+}
+fn setting_request(operation: &str, payload: &serde_json::Value) -> Result<SettingRequest, String> {
+    match operation {
+        "set_mode" => payload["mode"].as_str().filter(|mode| !mode.is_empty() && mode.len() <= 4096)
+            .map(|mode| SettingRequest::Mode(mode.into())),
+        "set_option" => payload["option"].as_str().filter(|id| !id.is_empty() && id.len() <= 4096).and_then(|id| {
+            let value = match &payload["value"] {
+                serde_json::Value::String(value) if value.len() <= 4096 => Choice::Value(value.clone()),
+                serde_json::Value::Bool(value) => Choice::Switch(*value),
+                _ => return None,
+            };
+            Some(SettingRequest::Option { id: id.into(), value })
+        }),
+        _ => None,
+    }.ok_or_else(|| "Invalid setting request".into())
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -1440,7 +1462,7 @@ fn gui_host_main_with_timeouts(
         // show no dial until the next turn ends.
         let mut usage: Option<String> = None;
         let (set_tx, mut set_rx) =
-            tokio::sync::mpsc::unbounded_channel::<(u64, Result<Setting, String>)>();
+            tokio::sync::mpsc::unbounded_channel::<(u64, Option<(String, String)>, Result<Setting, String>)>();
         let handle = Arc::new(handle);
         let mut controlling=false;
         let setting_gate=Arc::new(tokio::sync::Mutex::new(()));
@@ -1717,6 +1739,30 @@ match event {
                         }else{fanout.send_to(who,&GuiNote::Refused{why:refused::SETTING_REFUSED.into()});}
                     }
                     Some((who,GuiOp::Control{token,operation,payload}))=>{
+                        if matches!(operation.as_str(), "set_mode" | "set_option") {
+                            let request = if token.is_empty() || token.len()>128 || payload.len()>16*1024 {
+                                Err("Invalid setting request".into())
+                            } else { serde_json::from_str(&payload).map_err(|_| "Invalid setting request".into())
+                                .and_then(|payload| setting_request(&operation, &payload)) };
+                            let request = match request { Ok(request) => request, Err(error) => {
+                                fanout.send_to(who, &GuiNote::ControlResult { token, operation, data:None, error:Some(error) }); continue;
+                            }};
+                            let handle=handle.clone();let set_tx=set_tx.clone();let gate=setting_gate.clone();
+                            tasks.spawn(async move {
+                                let result=tokio::time::timeout(timeouts.control,async {
+                                    let _guard=gate.lock().await;
+                                    match request {
+                                        SettingRequest::Mode(mode)=>handle.set_mode(&mode).await.map(|()|Setting::Mode(mode)),
+                                        SettingRequest::Option{id,value}=>{
+                                            let value=match value { Choice::Value(value)=>SessionConfigOptionValue::value_id(value),Choice::Switch(value)=>SessionConfigOptionValue::boolean(value) };
+                                            handle.set_option(&id,value).await.map(|list|Setting::Options{list})
+                                        }
+                                    }
+                                }).await.unwrap_or_else(|_|Err("Setting confirmation timed out".into()));
+                                let _=set_tx.send((who,Some((token,operation)),result));
+                            });
+                            continue;
+                        }
                         if in_turn.is_some()||controlling{fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;}
                         let parsed=serde_json::from_str(&payload);
                         if token.is_empty()||token.len()>128||payload.len()>16*1024||operation.len()>64||parsed.is_err(){fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error:Some("Invalid session operation".into())});continue;}
@@ -1867,7 +1913,7 @@ match event {
                         let set_tx = set_tx.clone();let gate=setting_gate.clone();
                         tasks.spawn(async move {let _guard=gate.lock().await;
                             let out = handle.set_mode(&mode).await.map(|()| Setting::Mode(mode));
-                            let _ = set_tx.send((who, out));
+                            let _ = set_tx.send((who, None, out));
                         });
                     }
                     Some((who, GuiOp::SetOption { id: option, value })) => {
@@ -1882,7 +1928,7 @@ match event {
                                 .set_option(&option, wire)
                                 .await
                                 .map(|list| Setting::Options { list });
-                            let _ = set_tx.send((who, out));
+                            let _ = set_tx.send((who, None, out));
                         });
                     }
                     Some((_, GuiOp::Close)) => {asks.clear();elicits.clear();let _=handle.cancel();let _=tokio::time::timeout(std::time::Duration::from_secs(2),handle.control("close",&serde_json::json!({}))).await;break None;},
@@ -1923,7 +1969,8 @@ match event {
                     }
                 }
                 set = set_rx.recv() => {
-                    let Some((who, out)) = set else { continue };
+                    let Some((who, receipt, out)) = set else { continue };
+                    let error = out.as_ref().err().map(|_| refused::SETTING_REFUSED.to_owned());
                     match out {
                         Ok(Setting::Mode(mode)) => {
                             // The agent took it. Its own
@@ -1942,10 +1989,14 @@ match event {
                         // The agent said no; the screen keeps what it
                         // had, and the asker is told rather than left
                         // looking at a control that flipped for nobody.
-                        Err(_) => fanout.send_to(
+                        Err(_) if receipt.is_none() => fanout.send_to(
                             who,
                             &GuiNote::Refused { why: refused::SETTING_REFUSED.to_owned() },
                         ),
+                        Err(_) => {},
+                    }
+                    if let Some((token,operation))=receipt {
+                        fanout.send_to(who,&GuiNote::ControlResult{token,operation,data:None,error});
                     }
                 }
 
@@ -2533,6 +2584,20 @@ mod command_store_root_tests {
             std::fs::canonicalize(&root).unwrap()
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod setting_receipt_tests {
+    use super::*;
+    #[test]
+    fn setting_controls_accept_only_typed_values_and_advertise_receipts() {
+        assert!(matches!(setting_request("set_mode", &serde_json::json!({"mode":"plan"})),Ok(SettingRequest::Mode(mode)) if mode=="plan"));
+        assert!(matches!(setting_request("set_option", &serde_json::json!({"option":"model","value":"model-a"})),Ok(SettingRequest::Option{id,value:Choice::Value(value)}) if id=="model"&&value=="model-a"));
+        assert!(matches!(setting_request("set_option", &serde_json::json!({"option":"approve","value":false})),Ok(SettingRequest::Option{value:Choice::Switch(false),..})));
+        for payload in [serde_json::json!({"option":"model","value":2}),serde_json::json!({"option":"","value":"x"}),serde_json::json!({})] {
+            assert!(setting_request("set_option", &payload).is_err());
+        }
     }
 }
 

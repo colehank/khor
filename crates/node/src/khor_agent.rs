@@ -20,6 +20,8 @@ mod conversations;
 pub(crate) mod runtime;
 #[path = "khor_agent_updates.rs"]
 mod updates;
+#[path = "khor_agent_history.rs"]
+mod history;
 use conversations::{claim_in, execution_key};
 use output::TextStream;
 use std::{
@@ -570,6 +572,10 @@ impl Node {
             Action::Conversation { .. } | Action::CreateConversation { .. } => {
                 return Err(msg::agent_arguments().into());
             }
+            Action::Manage { request } if request["operation"]=="history" => {
+                let run=request["run"].as_str().ok_or_else(||msg::agent_arguments().to_owned())?;
+                report.data=Some(history::read(&root,&board,run,self.device_str())?);
+            }
             Action::Manage { request } => {
                 report.data = Some(self.manage_agent(request)?);
                 report.config = self.khor_agent_config_in(&board)?;
@@ -929,6 +935,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         if active.stopped.load(Ordering::SeqCst) {
             return Ok(());
         }
+        snapshots.start_source(&root, &saved)?;
         // Extraction and hashing of the bundled runtime stay off the reactor.
         let (mut command, _runtime_image) = sidecar(&root)?;
         // Pass only operating-system settings. Provider keys, tokens, Pi config
@@ -1133,6 +1140,7 @@ fn execute(root: PathBuf, mut saved: Saved, active: Arc<Running>, start: Value, 
         snapshots.finish(agent);
     }
     let stopped = active.stopped.load(Ordering::SeqCst) && process_stopped;
+    snapshots.finish_source(stopped,outcome.is_err());
     saved.record.status = if stopped {
         "cancelled"
     } else if outcome.is_ok() {

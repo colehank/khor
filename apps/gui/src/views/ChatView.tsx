@@ -319,6 +319,7 @@ type OptionListed = {
 /** What the session can be set to and is set to — `ChatFrame::Settings`,
     which the host sends whole on attach and on every change. */
 type Settings = {
+  correlatedSettings?:boolean;
   modes: { currentModeId: string; availableModes: ModeListed[] } | null;
   options: OptionListed[];
   /** The model id, when the agent said it (khor's shims, in `_meta`;
@@ -333,7 +334,7 @@ function settingsIn(frame: ChatFrame): Settings | null {
   if (frame.kind !== "settings") return null;
   const carried = frame.settings;
   if (typeof carried !== "object" || carried === null) return null;
-  const s = carried as { modes?: unknown; options?: unknown; model?: unknown };
+  const s = carried as { modes?: unknown; options?: unknown; model?: unknown; correlatedSettings?: unknown };
   const modes =
     typeof s.modes === "object" && s.modes !== null
       ? (s.modes as { currentModeId?: unknown; availableModes?: unknown })
@@ -348,6 +349,7 @@ function settingsIn(frame: ChatFrame): Settings | null {
               : [],
           }
         : null,
+    correlatedSettings:s.correlatedSettings===true,
     options: configOptions(s.options),
     model: typeof s.model === "string" && s.model.trim() ? s.model.trim() : null,
   };
@@ -706,6 +708,7 @@ export function ChatView({
   const [protocol,setProtocol]=useState<AgentProtocol|null>(null);
   const [interactions,setInteractions]=useState<{ask:number;request:InteractionRequest}[]>([]);
   const [notice,setNotice]=useState<{title:string;message?:string;severity?:string}|null>(null);
+  const settingReceipt=useRef<(token:string,error:string|null)=>void>(()=>{});
   const [controlError,setControlError]=useState<string|null>(null);
   const control=(operation:string,payload:Record<string,unknown>={})=>withChat(view => view.control(crypto.randomUUID(),operation,payload)).catch(e=>setControlError(String(e)));
   /** The directory on the conversation's machine its files go to, picked
@@ -1145,7 +1148,7 @@ export function ChatView({
               if(f.kind==='elicit')setInteractions(now=>now.some(v=>v.ask===f.ask)?now:[...now,{ask:f.ask,request:f.request as InteractionRequest}]);
               if(f.kind==='elicit_answered')setInteractions(now=>now.filter(v=>v.ask!==f.ask));
               if(f.kind==='gone'){setInteractions([]);setNotice(null);}
-              if(f.kind==='control_result')setControlError(f.error);
+              if(f.kind==='control_result'){if(f.operation==='set_mode'||f.operation==='set_option')settingReceipt.current(f.token,f.error);else setControlError(f.error);}
               if(f.kind==='note'){
                 const u=(f.update as {update?:{sessionUpdate?:string;title?:string;description?:string;severity?:string}})?.update;
                 if(u?.sessionUpdate==='notice')setNotice({title:u.title??'',message:u.description,severity:u.severity});
@@ -1427,6 +1430,11 @@ export function ChatView({
   const confirmedSettings=new Map<string,string|boolean>((settings?.options??[]).map(option=>[option.id,option.currentValue as string|boolean]));
   if(settings?.modes)confirmedSettings.set('mode:',settings.modes.currentModeId);
   const settingRequest=useConfirmedSetting(confirmedSettings);
+  settingReceipt.current=settingRequest.receipt;
+  const setOption=(token:string,option:string,value:string|boolean)=>withChat(view=>settings?.correlatedSettings
+    ?view.control(token,'set_option',{option,value}):view.setOption(option,value));
+  const setMode=(token:string,mode:string)=>withChat(view=>settings?.correlatedSettings
+    ?view.control(token,'set_mode',{mode}):view.setMode(mode));
   const addOptions: AddOption[] = (settings?.options ?? []).map((o) =>
     o.type === "boolean"
       ? {
@@ -1436,7 +1444,7 @@ export function ChatView({
           name: o.name,
           note: o.description ?? null,
           on: o.currentValue === true,
-          onToggle: () => settingRequest.request({key:o.id,value:o.currentValue!==true,name:o.name,run:()=>withChat(view=>view.setOption(o.id,o.currentValue!==true))}),
+          onToggle: () => settingRequest.request({key:o.id,value:o.currentValue!==true,name:o.name,run:token=>setOption(token,o.id,o.currentValue!==true)}),
         }
       : {
           kind: "values",
@@ -1451,7 +1459,7 @@ export function ChatView({
             note: v.value.description ?? null,
             heading: v.heading,
           })),
-          onPick: (v) => settingRequest.request({key:o.id,value:v,name:o.name,run:()=>withChat(view=>view.setOption(o.id,v))}),
+          onPick: (v) => settingRequest.request({key:o.id,value:v,name:o.name,run:token=>setOption(token,o.id,v)}),
         },
   );
   /** Who is answering, for the capsule's who seat. */
@@ -1487,7 +1495,7 @@ export function ChatView({
           note: modeNote(m.id, settings.modes?.availableModes ?? []),
         })),
       ]}
-      onPick={v=>settingRequest.request({key:"mode:",value:v,name:"执行权限",run:()=>withChat(view=>view.setMode(v))})}
+      onPick={v=>settingRequest.request({key:"mode:",value:v,name:"执行权限",run:token=>setMode(token,v)})}
     />
   ) : mode !== null && modeSaid(mode) !== null ? (
     <ModeSeat current={mode} word={modeSaid(mode) ?? mode} />

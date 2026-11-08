@@ -988,7 +988,7 @@ pub fn submit_control(
                 || token.len() > 128
                 || !matches!(
                     operation.as_str(),
-                    "close" | "delete" | "authenticate" | "logout"
+                    "close" | "delete" | "authenticate" | "logout" | "set_mode" | "set_option"
                 )
             {
                 return Err("Invalid session operation".into());
