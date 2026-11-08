@@ -44,12 +44,12 @@ try {
     },paint);
     const popup=modifier?page.waitForEvent('popup'):null;await page.mouse.up();if(modifier)await page.keyboard.up(modifier);
     if(popup){const opened=await popup;await opened.waitForURL(uri);await opened.close();assert.deepEqual(await page.evaluate(()=>window.__linkEvents),[]);}
-    else {await page.waitForFunction(()=>window.__linkEvents.length===1);const events=await page.evaluate(()=>window.__linkEvents);assert.equal(events[0].url,uri);assert(events[0].machine,'session machine remains attached');await page.locator('[data-content-toolbar="page"]:visible').waitFor();}
+    else {await page.waitForFunction(()=>window.__linkEvents.length===1);const events=await page.evaluate(()=>window.__linkEvents);assert.equal(events[0].url,uri);assert.equal(events[0].machine,'','the local fixture session keeps local machine routing');await page.locator('[data-content-toolbar="page"]:visible').waitFor();const tabs=await page.evaluate(async()=>(await fetch('/api/tabs_list',{method:'POST',body:JSON.stringify({kind:'content'})})).json());assert(tabs.tabs.some(tab=>tab.session==='shell/layout-lab'&&tab.url===uri),'the actual content tab belongs to the clicked session');}
     if(tracking!=='none')assert.equal(await page.evaluate(()=>window.__mouseBytes.length),bytes,'tracked activation is not also sent to the program');
     results.push({engine,tracking,kind,modifier,passed:true});
    }
    await page.screenshot({path:join(output,'app-'+engine+'.png')});await context.close();
-  } finally {await browser.close();}
+  } catch(error){for(const context of browser.contexts())for(const page of context.pages())await page.screenshot({path:join(output,'app-'+engine+'-failure.png')}).catch(()=>{});throw error;} finally {await browser.close();}
  }
 } catch(error){results.push({passed:false,error:String(error)});throw error;}
 finally{writeFileSync(join(output,'app-report.json'),JSON.stringify({results},null,2));await server?.close();rmSync(scratch,{recursive:true,force:true});}
