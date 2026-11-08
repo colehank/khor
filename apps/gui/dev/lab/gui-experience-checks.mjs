@@ -107,6 +107,8 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
   const id=await page.locator('[data-workspace-session-tabs] [data-tab-open]').first().getAttribute('data-tab-open');
   await page.locator(`[data-workspace-session-tabs] [data-tab-open="${id}"]`).click();
   await page.locator('[data-session-content-head]').waitFor();
+  await page.locator('[data-ws-sessions] [data-session-primary] [data-lab-session-settings]').waitFor();
+  assert.equal(await page.locator('[data-ws-sessions] [data-lab-session-settings]:visible').count(),1,'Workspace settings stay in their own shared session header');
   const readGeometry=()=>page.evaluate(()=>{
    const box=element=>{const r=element.getBoundingClientRect();return {top:r.top,height:r.height,width:r.width,left:r.left,right:r.right};};
    const session=document.querySelector('[data-workspace-session-tabs]'),content=document.querySelector('[data-session-content-head]');
