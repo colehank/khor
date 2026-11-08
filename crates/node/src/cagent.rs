@@ -902,6 +902,11 @@ pub fn replayed(u: crate::adaptor::claude::Utterance) -> Option<SessionUpdate> {
         Utterance::Thought(t) => Some(SessionUpdate::AgentThoughtChunk(ContentChunk::new(
             ContentBlock::Text(TextContent::new(t)),
         ))),
+        Utterance::Content { user, block } => {
+            let content = serde_json::from_value::<ContentBlock>(block).ok()?;
+            Some(if user { SessionUpdate::UserMessageChunk(ContentChunk::new(content)) }
+                else { SessionUpdate::AgentMessageChunk(ContentChunk::new(content)) })
+        }
         // `None` where the block carries nothing paintable — a
         // `tool_result` with no content, say. Dropping it is right:
         // the alternative is a line about a tool nobody can see.

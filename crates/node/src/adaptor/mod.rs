@@ -27,6 +27,7 @@ use khor_core::{SessionId, State};
 
 pub mod claude;
 pub mod codex;
+mod media;
 pub mod tmux;
 pub mod transcript_page;
 pub mod transcript_window;

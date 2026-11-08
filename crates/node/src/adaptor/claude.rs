@@ -715,6 +715,7 @@ pub enum Utterance {
     User(String),
     Agent(String),
     Thought(String),
+    Content { user: bool, block: serde_json::Value },
     /// A tool call, as **claude's own `tool_use` block, whole**.
     ///
     /// **It used to be the name alone**, on the reasoning that "a name
@@ -838,6 +839,11 @@ pub(crate) fn utterances_of(text: &str) -> Vec<Utterance> {
                         // replayed tool could never be drawn as failed.
                         (Some("tool_result"), true) => {
                             out.push(Utterance::ToolDone(b.clone()));
+                        }
+                        (Some("image" | "document"), _) => {
+                            if let Some(block) = super::media::claude(b) {
+                                out.push(Utterance::Content { user: from_user, block });
+                            }
                         }
                         _ => {}
                     }
@@ -978,6 +984,21 @@ impl Adaptor for Claude {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn native_image_survives_replay_with_its_author_and_mime() {
+        let record=serde_json::json!({"type":"user","message":{"content":[
+            {"type":"text","text":"look"},
+            {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aW1hZ2U="}}
+        ]}}).to_string();
+        let said=utterances_of(&record);
+        assert!(matches!(&said[0], Utterance::User(text) if text=="look"));
+        let image=crate::cagent::replayed(utterances_of(&record).pop().unwrap()).unwrap();
+        let image=serde_json::to_value(image).unwrap();
+        assert_eq!(image["sessionUpdate"],"user_message_chunk");
+        assert_eq!(image["content"]["mimeType"],"image/png");
+        assert_eq!(image["content"]["data"],"aW1hZ2U=");
+    }
+
     use super::*;
     use crate::adaptor::Proc;
 
