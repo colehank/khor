@@ -670,7 +670,9 @@ fn failed(view: *mut AnyObject, navigation: *mut AnyObject, error: *mut AnyObjec
         if !khor_gui_core::web::loopback_held(port) {
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
-                let Ok(lease) = khor_gui_core::web::hold_loopback(&host, port, &proxy).await else { return };
+                let Ok(lease) = khor_gui_core::web::hold_loopback(&host, port, &proxy).await else {
+                    return;
+                };
                 let _ = app.run_on_main_thread(move || {
                     let current = crate::page_navigation::with_pages(|pages| {
                         pages.state(key).is_some_and(|state| {
@@ -687,8 +689,7 @@ fn failed(view: *mut AnyObject, navigation: *mut AnyObject, error: *mut AnyObjec
                         let page = pages.get_mut(&tab)?;
                         page.loopbacks.retain(Some(lease));
                         Some(page.view.clone())
-                    })
-                    {
+                    }) {
                         unsafe {
                             load(&page, &url);
                         }
@@ -1494,7 +1495,12 @@ pub fn close(tab: &str) {
 }
 
 pub fn retire_other_exit(tab: &str, exit: &str) {
-    let different = PAGES.with(|pages| pages.borrow().get(tab).is_some_and(|page| page.exit != exit));
+    let different = PAGES.with(|pages| {
+        pages
+            .borrow()
+            .get(tab)
+            .is_some_and(|page| page.exit != exit)
+    });
     if different {
         close(tab);
     }

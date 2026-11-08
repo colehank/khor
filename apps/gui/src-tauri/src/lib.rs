@@ -1766,12 +1766,12 @@ fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (
 }
 
 #[cfg(target_os = "macos")]
-fn page_loopbacks() -> &'static std::sync::Mutex<
-    std::collections::HashMap<String, khor_gui_core::web::LoopbackLeases>,
-> {
-    static LEASES: std::sync::OnceLock<std::sync::Mutex<
-        std::collections::HashMap<String, khor_gui_core::web::LoopbackLeases>,
-    >> = std::sync::OnceLock::new();
+fn page_loopbacks()
+-> &'static std::sync::Mutex<std::collections::HashMap<String, khor_gui_core::web::LoopbackLeases>>
+{
+    static LEASES: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, khor_gui_core::web::LoopbackLeases>>,
+    > = std::sync::OnceLock::new();
     LEASES.get_or_init(Default::default)
 }
 
@@ -1780,7 +1780,10 @@ fn keep_page_loopback(label: &str, lease: Option<khor_gui_core::web::LoopbackLea
     if let Some(lease) = lease
         && let Ok(mut pages) = page_loopbacks().lock()
     {
-        pages.entry(label.to_owned()).or_default().retain(Some(lease));
+        pages
+            .entry(label.to_owned())
+            .or_default()
+            .retain(Some(lease));
     }
 }
 
@@ -2068,7 +2071,8 @@ async fn open_page(
         // A borrowed page must never reconfigure the app's own store or
         // a page using another exit.
         let profile = format!("{}:{machine}", Node::root_from_env().display());
-        builder = builder.data_store_identifier(khor_gui_core::web::page_store_identifier(&profile));
+        builder =
+            builder.data_store_identifier(khor_gui_core::web::page_store_identifier(&profile));
     }
     if let Some(proxy) = proxy {
         // The two ride together or not at all — see `direct` above.
@@ -3441,7 +3445,8 @@ async fn open_page(
         app.run_on_main_thread(move || {
             phone_page::retire_other_exit(&old_tab, &new_exit);
             let _ = prepared.send(());
-        }).map_err(|e| e.to_string())?;
+        })
+        .map_err(|e| e.to_string())?;
         ready.await.map_err(|e| e.to_string())?;
         // A loopback address is the machine's, not the phone's (UX-38 §1):
         // WebKit sends it past the proxy, so the phone's own port is piped
