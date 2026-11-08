@@ -70,11 +70,16 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
   const id=await page.locator('[data-workspace-session-tabs] [data-tab-open]').first().getAttribute('data-tab-open');
   await page.locator(`[data-workspace-session-tabs] [data-tab-open="${id}"]`).click();
   await page.locator('[data-session-content-head]').waitFor();
-  const geometry=await page.evaluate(()=>{
+  const readGeometry=()=>page.evaluate(()=>{
    const box=element=>{const r=element.getBoundingClientRect();return {top:r.top,height:r.height,width:r.width,left:r.left,right:r.right};};
    const session=document.querySelector('[data-workspace-session-tabs]'),content=document.querySelector('[data-session-content-head]');
    return {session:box(session.closest('[data-region-head]')),content:box(content.closest('[data-region-head]')),nested:session.contains(content),titles:document.querySelectorAll('[data-ws-sessions] [data-detail-header]').length};
   });
+  const oldStyle=await page.addStyleTag({content:'[data-session-primary],[data-ws-sessions]{min-width:0!important}'});
+  const oldGeometry=await readGeometry();
+  assert(oldGeometry.session.width<200,'Removing the two column floors reproduces the squeezed-away session');
+  await oldStyle.evaluate(element=>element.remove());
+  const geometry=await readGeometry();
   assert(geometry.session.width>=200&&geometry.content.width>=200,`Both workspace columns must remain usable: ${JSON.stringify(geometry)}`);
   assert(!geometry.nested&&geometry.content.left>=geometry.session.right-1);
   assert(Math.abs(geometry.session.top-geometry.content.top)<=1&&Math.abs(geometry.session.height-geometry.content.height)<=1);
