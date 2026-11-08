@@ -10,6 +10,9 @@ export function useHistoryPrefetch(root:RefObject<HTMLElement|null>,state:Histor
   const element=root.current;if(!element||!state?.loaded||state.busy||state.error)return;
   const ask=(readerUp=false)=>{
    if(element.clientHeight<=0||document.hidden)return;
+   // An actual upward gesture starts a new visit. The same cursor may have
+   // been prefetched and later evicted while following the live tail.
+   if(readerUp)visit.current={seen:new Set(),count:0};
    const nearTop=element.scrollTop<=element.clientHeight/2;
    const nearBottom=element.scrollHeight-element.clientHeight-element.scrollTop<=element.clientHeight/2;
    if(!nearTop&&!nearBottom){visit.current={seen:new Set(),count:0};return;}
