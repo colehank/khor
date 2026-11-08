@@ -15,7 +15,7 @@ function PillExplore({band,faces,state,origin,reach,create}:Props){
   useLayoutEffect(()=>{const update=()=>setFrame(measure()),observer=new ResizeObserver(update);observer.observe(exploreHost(band.current!));window.addEventListener('resize',update);window.visualViewport?.addEventListener('resize',update);return()=>{observer.disconnect();window.removeEventListener('resize',update);window.visualViewport?.removeEventListener('resize',update);};},[band]);
   const start={x:frame.originX,y:frame.originY};
   const action=state.intent==='new'?'new':state.overview?'overview':'fan';
-  const fan:FanState={phase:action,lane:action,held:true,origin:start,point:{x:start.x+state.dx,y:start.y+state.dy},ids:faces.map(f=>f.id),hot:state.preview,position:state.position,target:state.target,armed:state.overview,cancelArmed:state.intent==='keep',direction:state.direction,tier:state.tier,interval:state.interval,pulse:state.pulse,deflection:Math.max(-1,Math.min(1,state.dx/reach)),acquired:true,opened:state.opened,intent:state.intent};
+  const fan:FanState={phase:action,lane:state.intent==='handoff'?'handoff':action,held:true,origin:start,point:{x:start.x+state.dx,y:start.y+state.dy},ids:faces.map(f=>f.id),hot:state.preview,position:state.position,target:state.target,armed:state.overview,cancelArmed:state.intent==='keep',direction:state.direction,tier:state.tier,interval:state.interval,pulse:state.pulse,deflection:Math.max(-1,Math.min(1,state.dx/reach)),cursor:state.cursor,acquired:true,opened:state.opened,intent:state.intent};
   return <FanLayer faces={faces} state={fan} frame={frame} phase={fan.phase} create={create} duration={parseFloat(getComputedStyle(band.current!).getPropertyValue('--dur-120'))}/>;
 }
 export function DeckExplore(props:Props){

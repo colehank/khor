@@ -8,7 +8,6 @@
 .lab-fan-label{flex:none;font-size:var(--text-body);font-weight:var(--text-body--font-weight);line-height:var(--text-body--line-height);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;text-wrap:balance}
 .lab-fan-label [data-fan-word]{white-space:nowrap}
 .lab-fan-avatar-face{display:grid;place-items:center;animation:deck-selector-title-in var(--dur-120) var(--ease-out)}
-.lab-fan-identities[data-dimmed]{opacity:.3}
 .lab-fan-actions{position:absolute;inset:0;pointer-events:none}
 .lab-fan-surface{position:absolute;box-shadow:none}
 .lab-fan-surface::before{display:none}

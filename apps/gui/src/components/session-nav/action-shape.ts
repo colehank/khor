@@ -39,13 +39,17 @@ export function liquidActionShape(overview:ActionCell,newTab:ActionCell|null,tog
   if(b&&newTab){
     const axis=vertical?{x:0,y:facing}:{x:facing,y:0};
     const overlap=(a.tip.x-b.tip.x)*axis.x+(a.tip.y-b.tip.y)*axis.y;
-    neck=Math.min(a.a,b.a)*.42*Math.sqrt(Math.max(0,Math.min(1,overlap/(touch*.45))));
+    const crossAt=(p:Point)=>vertical?p.x:p.y;
+    const low=Math.max(Math.min(crossAt(a.start),crossAt(a.end)),Math.min(crossAt(b.start),crossAt(b.end)));
+    const high=Math.min(Math.max(crossAt(a.start),crossAt(a.end)),Math.max(crossAt(b.start),crossAt(b.end)));
+    neck=Math.min(Math.min(a.a,b.a)*.42*Math.sqrt(Math.max(0,Math.min(1,overlap/(touch*.45)))),Math.max(0,high-low)*.45);
     if(neck>0){
       const middle={x:(a.tip.x+b.tip.x)/2,y:(a.tip.y+b.tip.y)/2};
+      const waist=Math.max(low+neck,Math.min(high-neck,crossAt(middle)));
+      if(vertical)middle.x=waist;else middle.y=waist;
       const cross=vertical?{x:facing,y:0}:{x:0,y:facing};
       const span=Math.abs((b.start.x-a.end.x)*axis.x+(b.start.y-a.end.y)*axis.y);
       const stem=Math.min(Math.max(touch*.08,span*.22),span*.4);
-      const crossAt=(p:Point)=>vertical?p.x:p.y;
       const join=(from:typeof a,to:typeof a,waist:Point,d:Point)=>{
         // Keep cap tangents, but never overshoot the narrower waist. This
         // makes each shoulder curve in once, without an extra lobe or kink.

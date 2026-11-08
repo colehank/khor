@@ -14,6 +14,7 @@ import {thumbFanJoystick,type FanState,type FanPoint,type FanResult} from './sta
 import {fanFrame,fanPoint,outerPoint,fanScale,type FanFrame as Frame} from './geometry';
 import {SessionPill,useSessionPill} from './pill';
 import {FanActions} from './actions';
+import {fanActionMotion} from './action-motion';
 import './fan.css';
 
 type Contact={pointer:number;touch:boolean;touchId:number|null;active:string;ids:string;layout:DeckContactLayout};
@@ -47,14 +48,13 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
   const previewSlot=Math.round(state.target);
   const openedSlot=state.opened+Math.round((position-state.opened)/Math.max(1,state.ids.length))*Math.max(1,state.ids.length);
   const extent=frame.guideExtent;
-  const action=state.intent==='new'||state.intent==='overview',parkedSteering=useRef(0);
-  if(!action)parkedSteering.current=state.cursor??(state.deflection??0)*2;
-  const steering=parkedSteering.current,neutral=outerPoint(frame,0),cursor=outerPoint(frame,Math.max(-2,Math.min(2,Number.isFinite(steering)?steering:0))*extent/2);
+  const motion=fanActionMotion(frame,state,create);
+  const steering=state.cursor??(state.deflection??0)*2,neutral=outerPoint(frame,0);
   const guide=Array.from({length:41},(_,i)=>outerPoint(frame,extent*(-1+i/20))).map((p,i)=>`${i?'L':'M'} ${p.x} ${p.y}`).join(' ');
-  const hint=!state.cancelArmed&&(state.intent==='new'?'松手新建':state.intent==='overview'?'松手查看全部':null);
-  return createPortal(<div data-deck-selector data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-cancel={state.cancelArmed||undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
+  const hint=motion.control.intent==='new'?'松手新建':motion.control.intent==='overview'?'松手查看全部':null;
+  return createPortal(<div data-deck-selector data-lab-left-fan data-fan-placement={frame.placement} data-fan-slots={frame.slots} data-fan-phase={phase} data-fan-lane={state.lane??undefined} data-fan-cancel={state.cancelArmed||undefined} data-fan-selected={candidate?.id} data-fan-position={position} data-fan-total={state.ids.length} data-fan-intent={motion.control.intent} data-fan-progress={motion.control.progress} data-fan-direction={state.direction} data-fan-tier={state.tier} data-fan-interval={state.interval} data-fan-pulse={state.pulse} data-fan-cursor={steering} data-fan-angle={Math.atan2(state.origin.y-state.point.y,state.origin.x-state.point.x)*180/Math.PI} data-fan-radius={Math.hypot(state.point.x-state.origin.x,state.point.y-state.origin.y)} data-compact={frame.compact||undefined} className="lab-thumb-fan" style={{left:frame.left,top:frame.top,width:frame.width,height:frame.height}}>
     <div className="deck-selector-dimmer"/>
-    <div className="lab-fan-identities" data-dimmed={state.lane==='new'||state.lane==='overview'||undefined} aria-hidden="true">
+    <div className="lab-fan-identities" data-dimmed={motion.control.progress>0||undefined} style={{opacity:1-.7*motion.control.progress}} aria-hidden="true">
       {items.map(item=>{const id=state.ids[item.index],face=faces.find(f=>f.id===id);return face&&<span key={item.slot} data-lab-fan-session={id} data-selected={previewSlot===item.slot||undefined} data-opened={openedSlot===item.slot||undefined} className="lab-fan-item" style={frame.placement==='bottom'?{left:item.x-frame.titleWidth/2,top:item.y-frame.face/2,width:frame.titleWidth,opacity:item.opacity,transform:`scale(${item.scale})`,transformOrigin:`50% ${frame.face/2}px`,gap:frame.gap/3}:{left:item.x-frame.face/2,top:item.y,width:frame.face+frame.gap+frame.titleWidth,opacity:item.opacity,transform:`translateY(-50%) scale(${item.scale})`,transformOrigin:`${frame.face/2}px 50%`,gap:frame.horizontal?frame.gap/1.5:frame.gap}}>
         <span className="lab-fan-face"><span className="lab-fan-face-identity"><TabAvatar f={face} bare="size-list-face" seat="row"/>{openedSlot===item.slot&&<span className="lab-fan-current" data-lab-fan-opened><IconCheck/></span>}</span></span>
         <span className="lab-fan-label" data-lab-fan-title style={{width:frame.titleWidth}}><TitleWords text={titleOf(face)}/></span>
@@ -64,10 +64,10 @@ export function FanLayer({faces,state,frame,phase,duration,create=true}:{faces:T
       <svg className="lab-fan-guide" width={frame.width} height={frame.height}><path d={guide}/></svg>
       {[-1,1].map(side=>{const t=side*extent*.6,p=outerPoint(frame,t),q=outerPoint(frame,t+.02),rotation=Math.atan2(q.y-p.y,q.x-p.x)*180/Math.PI;return <span key={side} className="lab-fan-cue" style={{left:p.x,top:p.y,rotate:`${rotation}deg`}}><DeckRateCue side={side} state={{...state,direction:-state.direction,overview:state.armed}} x={0}/></span>;})}
       <span className="deck-selector-origin" data-lab-fan-neutral data-paused={state.direction===0||undefined} style={{left:neutral.x,top:neutral.y}}/>
-      <span className="lab-fan-cursor" data-lab-fan-cursor style={{left:cursor.x,top:cursor.y}}/>
+      <span className="lab-fan-cursor" data-lab-fan-arc-anchor style={{left:motion.arc.x,top:motion.arc.y,opacity:motion.control.progress*.18}}/>
 
     </div>
-    <FanActions frame={frame} state={state} create={create}/>
+    <FanActions motion={motion} create={create}/>
     {hint&&<span data-lab-fan-hint className="lab-fan-cancel-hint" style={{left:frame.width/2,top:Math.max(frame.gap,frame.height-frame.touch*.5)}} aria-hidden="true">{hint}</span>}
   </div>,document.body);
 }
@@ -81,8 +81,11 @@ export function SessionFanNavigator({faces,active,onFocus,onOverview,onNew,hidde
   const previous=useRef(0),cancelCue=useRef(false);
   const priorIntent=useRef<FanState['intent']>('keep');
   const engine=useMemo(()=>thumbFanJoystick(next=>{
-    if(next.held&&(next.intent==='new'||next.intent==='overview')&&next.intent!==priorIntent.current)feel('threshold');
-    priorIntent.current=next.intent;
+    if(next.phase==='idle'||next.intent==='keep')priorIntent.current='keep';
+    if(next.held&&next.intent!=='handoff'&&next.intent!=='keep'){
+      if(next.intent!==priorIntent.current&&(next.intent!=='switch'||priorIntent.current==='new'||priorIntent.current==='overview'))feel('threshold');
+      priorIntent.current=next.intent;
+    }
     if(next.pulse>0&&next.pulse!==previous.current||next.cancelArmed&&!cancelCue.current)feel('threshold');previous.current=next.pulse;cancelCue.current=!!next.cancelArmed;setState(next);
   }),[]);
   const clear=()=>{const c=contact.current;contact.current=null;if(c&&button.current?.hasPointerCapture(c.pointer))button.current.releasePointerCapture(c.pointer);};

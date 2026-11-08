@@ -38,8 +38,11 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,onNew,tuning=D
     prior.current=s.preview;setState(s);
   },focus,undefined,()=>({...DEFAULT_DECK_TUNING,longPressMs:Infinity})),[faces.length]);
   const steer=useMemo(()=>deckJoystick(faces.length,at,s=>{
-    if(s.phase==='steering'&&(s.intent==='new'||s.intent==='overview')&&s.intent!==priorIntent.current)feel('threshold');
-    priorIntent.current=s.intent;
+    if(s.phase==='idle'||s.intent==='keep')priorIntent.current='keep';
+    if(s.phase==='steering'&&s.intent!=='handoff'&&s.intent!=='keep'){
+      if(s.intent!==priorIntent.current&&(s.intent!=='switch'||priorIntent.current==='new'||priorIntent.current==='overview'))feel('threshold');
+      priorIntent.current=s.intent;
+    }
     if(!alive.current)return;
     if(s.preview!==prior.current&&s.phase==='steering')feel('threshold');
     prior.current=s.preview;

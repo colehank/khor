@@ -156,7 +156,7 @@ function fixture(count=12,initial=3){
  return {e,advance,commits,frames,overviews:()=>overviews,created:()=>created,hold:()=>advance(DEFAULTS.holdMs+16),move:(dx,dy=0)=>e.move(200+dx,500+dy)};
 }
 {
- const f=fixture();f.hold();for(const distance of [90,130,180,200]){f.move(0,-distance);assert.equal(f.e.read().intent,'new','the old far reach remains in the expanded New region');}f.e.cancel();
+ const f=fixture();f.hold();for(const distance of [90,130]){f.move(0,-distance);assert.equal(f.e.read().intent,'new');}for(const distance of [180,200]){f.move(0,-distance);assert.equal(f.e.read().intent,'handoff','The point between New and All has no early release destination');}f.e.cancel();
 }
 {
  const f=fixture();f.hold();f.move(0,-55);f.e.release();
