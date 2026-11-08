@@ -1644,6 +1644,7 @@ export function ChatView({
       )}
       <div className="relative flex min-h-0 flex-1 flex-col">
       {readableExport.notice&&<div role="status" className="flex items-center gap-in px-row text-caption">{readableExport.notice}{readableExport.busy&&<Button size="sm" variant="ghost" onClick={readableExport.cancel}>取消</Button>}</div>}
+      {!findingHistory && historyExport.notice && <p role="status" className="px-row text-caption">{historyExport.notice}</p>}
       {sourceBinding && <HistorySearch key={`${id}:${sourceBinding}:${historyEpoch}`} id={id} binding={sourceBinding}
         stop={stopHistorySearch} exporter={historyExport} open={findingHistory} onClose={() => { setFindingHistory(false); setMatchedEntry(null); }} onJump={jumpHistoryMatch} />}
       <div

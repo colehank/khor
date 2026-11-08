@@ -9,11 +9,10 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuLabel, Con
 type ReadRecord = (cursor: string, from: number, signal?: AbortSignal) => Promise<HistoryRecordChunk | null>;
 /** Only one raw section is retained. Next advances a streaming UTF-8 decoder;
  * reopening a reference starts a fresh stream rather than concatenating a file. */
-export function HistoryRecords({ references, read, exporter, showExportStatus }: {
+export function HistoryRecords({ references, read, exporter }: {
   references: HistoryRecordRef[];
   read: ReadRecord;
   exporter: HistoryExportControl;
-  showExportStatus: boolean;
 }) {
   const [selected, setSelected] = useState<HistoryRecordRef | null>(null);
   const [text, setText] = useState('');
@@ -64,7 +63,6 @@ export function HistoryRecords({ references, read, exporter, showExportStatus }:
           </ContextMenu>
         ))}
       </div>
-      {showExportStatus && exporter.notice && <p role="status" className="text-caption">{exporter.notice}</p>}
       {selected && (
         <div className="space-y-in">
           <div className="flex flex-wrap items-center gap-in">

@@ -51,7 +51,7 @@ export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,o
    <AgentContent key={item.historyKey} item={item} streaming={false} active={false} onOpenFile={onOpenFile}
     open={item.who==='tool'&&expanded.has(item.id)} onOpenChange={shown=>{if(item.who==='tool')setExpanded(now=>{const next=new Set(now);if(shown)next.add(item.id);else next.delete(item.id);return next;});}}/>)}
   <details className="text-caption text-muted-foreground"><summary>原始记录</summary>
-   <HistoryRecords references={[reference]} exporter={exporter} showExportStatus={true}
+   <HistoryRecords references={[reference]} exporter={exporter}
     read={async(cursor,from,signal)=>{const source=historyApi(id,binding);try{return await source.record(cursor,from,signal);}finally{await source.dispose();}}}/>
   </details>
  </div>;
