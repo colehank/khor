@@ -31,6 +31,13 @@ term.onData(bytes=>wire.bytes.push(bytes));box.addEventListener('contextmenu',ev
 window.__terminalLinkPoint=(col:number,row:number)=>{const b=box.querySelector('.xterm-screen')!.getBoundingClientRect();return {x:b.left+(col+.5)*b.width/term.cols,y:b.top+(row+.5)*b.height/term.rows};};
 window.__terminalLinkCurrent=()=>term._core.linkifier.currentLink?.link.text;
 window.__terminalLinkSelection=()=>term.getSelection();
+window.__terminalLinkRedraw=async(row:number,value:string)=>{
+  const old=term._core.linkifier.currentLink?.link;
+  await new Promise<void>(resolve=>term.write('\u001b7\u001b['+(row+1)+';1H\u001b[2K'+value+'\u001b8',resolve));
+  return await new Promise(resolve=>{
+    const check=()=>{const link=term._core.linkifier.currentLink?.link;if(link&&link!==old)resolve({changed:true,text:link.text});else requestAnimationFrame(check);};check();
+  });
+};
 term.write("\u001b[?1000h\u001b[?1006hhttps://example.org/verified\r\n/fixture/a.md\r\n\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007\r\nplain program text",()=>{wire.ready=true;});
 `);
 const fingerprint=()=>Object.fromEntries(['src/lib/term-link-gesture.ts','src/lib/term-links.ts','src/lib/content-link-intent.ts','src/views/TerminalPane.tsx'].map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
@@ -51,6 +58,18 @@ try{
      if(modifier)await page.keyboard.down(modifier);await page.mouse.click(p.x,p.y);if(modifier)await page.keyboard.up(modifier);
      const after=await state();assert.equal(after.opened.length,before.opened.length+1,name+' opens once');assert.deepEqual(after.opened.at(-1),{uri,intent:modifier?'system':'internal'});assert.equal(after.bytes.length,before.bytes.length,'claimed click emits no TUI mouse bytes');
      results.push({name:name+' '+(modifier||'plain'),passed:true});
+   }
+ }
+ // Hold the physical button while the actual renderer invalidates and resolves
+ // its provider result again. No fabricated ILink or monkey-patched linkifier.
+ for(const [name,row,uri,paint] of [['URL',0,'https://example.org/verified','https://example.org/verified'],['path',1,'/fixture/a.md','/fixture/a.md'],['OSC8',2,'https://example.org/osc8','\u001b]8;;https://example.org/osc8\u0007OSC8 link\u001b]8;;\u0007']]) {
+   for(const modifier of [null,process.platform==='darwin'?'Meta':'Control']) {
+     const p=await hover(3,row),before=await state();
+     if(modifier)await page.keyboard.down(modifier);await page.mouse.down();
+     const redraw=await page.evaluate(([row,paint])=>window.__terminalLinkRedraw(row,paint),[row,paint]);
+     assert.equal(redraw.changed,true,'renderer replaced the resolved link');await page.mouse.up();if(modifier)await page.keyboard.up(modifier);
+     const after=await state();assert.equal(after.opened.length,before.opened.length+1,name+' opens after redraw');assert.deepEqual(after.opened.at(-1),{uri,intent:modifier?'system':'internal'});assert.equal(after.bytes.length,before.bytes.length,'redraw click emits no program mouse bytes');
+     results.push({name:name+' redraw '+(modifier||'plain'),redraw,passed:true});
    }
  }
  let p=await point(3,3),before=await state();await page.mouse.click(p.x,p.y);let after=await state();assert.equal(after.opened.length,before.opened.length);assert(after.bytes.length>before.bytes.length,'nonlink click still reaches program');results.push({name:'nonlink program mouse',passed:true});
