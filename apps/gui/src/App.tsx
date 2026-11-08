@@ -2449,9 +2449,8 @@ export default function App() {
       a tab in front whose 附栏 was left open opens it again, where it was
       left (UX-47), and one left closed shows none; another landing draws
       none and forgets nothing, so coming back to the session is coming
-      back to its pill. The window's room follows (`sideWanted` below):
-      closed to open widens, open to closed gives back, open to open keeps
-      the room it has. The phone's sheet is each opening's glance, and
+      back to its pill. Columns share the user's chosen frame; navigation
+      never changes its outer size or position. The phone's sheet is each opening's glance, and
       goes. ⚠️ 墓碑 (UX-46 §1 → fix-e): leaving the session — another
       landing, another tab — closed it, and coming back found it closed. */
   // A layout effect: the place is back before the column is painted, so
@@ -2464,13 +2463,16 @@ export default function App() {
   // A tab closed forgets its 附栏's open (`keepSidesOf`).
   useEffect(() => {
     keepSidesOf(allSessionTabs);
+    // A sent attempt belongs to its open views. Closing every view retires
+    // old receipts/retry closures, while unsent composer content lives on.
+    retainCancelledChatDrafts(allSessionTabs);
   }, [allSessionTabs]);
   // Closing a view does not delete its session's draft. Retire only after a
   // successful complete row snapshot and after every tab scope let go.
   useEffect(()=>{
     if(!rowsRead||stale)return;
     const live=[...new Set([...allSessionTabs,...rawRows.map(row=>row.id)])];
-    retainSessionDrafts(live);retainCancelledChatDrafts(live);
+    retainSessionDrafts(live);
     retainComposerFiles(live);retainSessionDocuments(live);retainKhorPromptTokens(live);
   },[allSessionTabs,rawRows,rowsRead,stale]);
   /**
