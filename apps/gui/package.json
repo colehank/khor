@@ -128,6 +128,7 @@
     "chat-recovery": "node scripts/check-chat-recovery.mjs",
     "workspace-content-ui": "node scripts/check-workspace-content-ui.mjs",
     "terminal-links-ui": "node scripts/check-terminal-links-ui.mjs",
+    "terminal-links-app": "node scripts/check-terminal-links-app.mjs",
     "page-navigation": "node scripts/check-page-navigation.mjs",
     "content-link-intent": "node scripts/check-content-link-intent.mjs",
     "workspace-tabs": "node scripts/check-workspace-tabs.mjs",

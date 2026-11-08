@@ -14,6 +14,7 @@
 import type { IBufferLine, ILink, ILinkProvider, Terminal } from "@xterm/xterm";
 
 import { fetchLs } from "@/api";
+import {terminalLinkTarget} from "@/lib/term-link-gesture";
 import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
 
 /** What a path link opens. */
@@ -218,14 +219,14 @@ export function pathLinks(
   return {
     provideLinks(y, done) {
       void pathsOn(term, machine, cwdAt, y - 1).then((found) => {
-        const links: ILink[] = found.map((f) => ({
+        const links: ILink[] = found.map((f) => terminalLinkTarget({
           range: { start: { x: f.from.x, y: f.from.y + 1 }, end: { x: f.to.x, y: f.to.y + 1 } },
           text: f.text,
           decorations: { underline: true, pointerCursor: true },
           activate: (ev: MouseEvent) => {
             if(canActivateTerminalLink(ev,term))open(f.target,linkIntent(ev));
           },
-        }));
+        }, JSON.stringify([machine, f.target.path, f.target.dir, f.target.line, f.target.col])));
         done(links.length ? links : undefined);
       });
     },
