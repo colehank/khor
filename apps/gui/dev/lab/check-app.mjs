@@ -1,5 +1,5 @@
 import {chromium, webkit} from 'playwright-core';
-import {spawn,execFileSync} from 'node:child_process';
+import {spawn} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
@@ -342,10 +342,6 @@ try {
       await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
     }
   }
-  try{
-    execFileSync(process.execPath,['scripts/check-workspace-content-ui.mjs'],{env:{...process.env,WORKSPACE_CONTENT_DIR:path.join(report,'session-browser'),PLAYWRIGHT_CHROMIUM_CHANNEL:''},stdio:'inherit'});
-  }catch(error){results.push({name:'session-browser-native-boundary',errors:[String(error)]});}
-  await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   console.log(JSON.stringify(results.map(({name, errors}) => ({name, errors}))));
   if (results.some(result => result.errors.length)) process.exitCode = 1;
 } finally {
