@@ -100,6 +100,17 @@ fn an_invalid_executable_fails_before_a_lifecycle_is_published() {
 }
 
 #[test]
+fn setup_failure_categories_report_the_cause_without_echoing_arbitrary_stderr() {
+    assert_eq!(startup_reason("npm error ENOTDIR mkdir /private/user/.npm/_cacache token=private"), Some("npm_cache_unavailable"));
+    assert_eq!(startup_reason("npm ERR! EACCES npm cache /private/user"), Some("npm_cache_unavailable"));
+    assert_eq!(startup_reason("npm error ENOENT mkdir /private/user/.npm/_npx"), Some("npm_cache_unavailable"));
+    assert_eq!(startup_reason("npm error ETARGET No matching version"), Some("npm_package_unavailable"));
+    assert_eq!(startup_reason("npm error ECONNRESET registry"), Some("npm_download_failed"));
+    assert_eq!(startup_reason("env: node: No such file or directory"), Some("node_unavailable"));
+    assert_eq!(startup_reason("authentication token=private"), None);
+}
+
+#[test]
 fn acp_launch_uses_the_complete_environment_then_applies_explicit_overrides() {
     let command =
         command_of(r#"{"command":"synthetic","env":{"KHOR_ACP_EXPLICIT":"synthetic-value"}}"#)

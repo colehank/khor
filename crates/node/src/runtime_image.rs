@@ -251,9 +251,8 @@ impl HostImage {
     }
     pub(crate) fn generation(&self) -> &std::ffi::OsStr {
         self.image
-            .path()
-            .parent()
-            .and_then(Path::file_name)
+            .directory()
+            .file_name()
             .expect("owned runtime generation")
     }
     pub fn version(&self) -> &str {
@@ -331,6 +330,19 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
             source: source.into(),
         });
     }
+    let payload = Source::File(&executable);
+    #[cfg(target_os = "macos")]
+    let payload =
+        if selected.role == Role::DesktopHost && executable.ends_with("Contents/MacOS/khor-gui") {
+            Source::MacApp(
+                executable
+                    .ancestors()
+                    .nth(3)
+                    .ok_or("desktop host bundle is incomplete")?,
+            )
+        } else {
+            payload
+        };
     let image = Store::local()
         .map_err(|error| error.to_string())?
         .publish_checked(
@@ -338,7 +350,7 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
             &selected.version,
             selected.contract.clone(),
             selected.embedded.clone(),
-            Source::File(&executable),
+            payload,
             |image| {
                 let observed = inspect_supported(image.path()).map_err(io::Error::other)?;
                 if observed.release != selected {

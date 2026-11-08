@@ -866,3 +866,10 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 ### 操控点交接（2026-11-08）
 
 `npm run session-navigation` 的 `session-navigation/control-point.mjs` 直接运行底部与GUI生产引擎，覆盖完整回退前禁止恢复、暂停期间无候选累积、保存离开位置、重新建立中立点、途中松手无动作。Developer Lab完整App同步量点/锚点/形变/候选状态并采集回退各阶段，保留两段入口和原5候选位；`deck-scrub`继续运行原横滑、节奏与反向回归。旧回退用例先在42432202501准确红，不通过缩短形变或放宽暂停断言绕过。
+
+
+### 智能体能力读取与启动来源（2026-11-08）
+
+- `npm run acp-setup`：内置与扩展接入标签、有限启动原因、不回显任意 stderr、未知原因兜底；已加入 `test:unit`。
+- 完整 App Lab 的桌面/手机新建页：内置 Codex/Claude 读取成功状态、终端不发 ACP 设置、扩展失败原因和重试、请求沿所选机器；共用实际 NewSessionPage/AcpAgentSetup。fixture 仅模拟数据，不证明原生进程可用。
+- 原生 `acp_management::tests` 与 `acp_process::tests` 验证内置路由、真实扩展 stdin/stdout 初始化、执行节点的凭证目录、失败清理和重试；macOS 签名 App 宿主必须保留完整 bundle，不能用未签名 CLI 的检查代替。真机验收包括本机/远端的新建和读取、已有会话持续运行。

@@ -1,4 +1,4 @@
-use crate::{Contract, Lease, Role, local};
+use crate::{Contract, Lease, Role, bundle, local};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -29,6 +29,7 @@ impl Default for Limits {
 pub enum Source<'a> {
     File(&'a Path),
     Bytes(&'a [u8]),
+    MacApp(&'a Path),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -42,8 +43,41 @@ struct Identity {
     digest: String,
     bytes: u64,
     embedded: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    app_bundle: bool,
+}
+fn is_false(value: &bool) -> bool {
+    !value
 }
 impl Identity {
+    fn supported(&self) -> bool {
+        match (self.schema, self.app_bundle) {
+            (1, false) => true,
+            (2, true) => self.role == Role::DesktopHost,
+            _ => false,
+        }
+    }
+    fn payload(&self) -> &str {
+        if self.app_bundle {
+            bundle::NAME
+        } else {
+            self.role.executable()
+        }
+    }
+    fn executable(&self) -> &str {
+        if self.app_bundle {
+            bundle::PROGRAM
+        } else {
+            self.role.executable()
+        }
+    }
+    fn hash(&self, directory: &Path) -> io::Result<(String, u64)> {
+        if self.app_bundle {
+            bundle::hash(&directory.join(bundle::NAME))
+        } else {
+            hash_file(&directory.join(self.executable()))
+        }
+    }
     fn id(&self) -> io::Result<String> {
         Ok(blake3::hash(&serde_json::to_vec(self)?)
             .to_hex()
@@ -74,6 +108,12 @@ pub struct Image {
     lease: Lease,
 }
 impl Image {
+    pub fn directory(&self) -> &Path {
+        self.path
+            .ancestors()
+            .nth(if self.identity.app_bundle { 4 } else { 1 })
+            .expect("runtime generation")
+    }
     pub fn id(&self) -> io::Result<String> {
         self.identity.id()
     }
@@ -182,7 +222,12 @@ impl Store {
         if !program.is_absolute() {
             return Ok(None);
         }
-        let Some(directory) = program.parent() else {
+        let directory = if program.ends_with(bundle::PROGRAM) {
+            program.ancestors().nth(4)
+        } else {
+            program.parent()
+        };
+        let Some(directory) = directory else {
             return Ok(None);
         };
         let Some(id) = directory
@@ -249,9 +294,24 @@ impl Store {
         let (digest, bytes) = match source {
             Source::File(path) => hash_file(path)?,
             Source::Bytes(bytes) => (blake3::hash(bytes).to_hex().to_string(), bytes.len() as u64),
+            Source::MacApp(path) => {
+                if role != Role::DesktopHost {
+                    return Err(io::Error::other("app bundles are desktop hosts only"));
+                }
+                if !path.join("Contents/Info.plist").is_file()
+                    || !path.join("Contents/MacOS/khor-gui").is_file()
+                {
+                    return Err(io::Error::other("runtime app bundle is incomplete"));
+                }
+                bundle::hash(path)?
+            }
         };
         let identity = Identity {
-            schema: 1,
+            schema: if matches!(source, Source::MacApp(_)) {
+                2
+            } else {
+                1
+            },
             role,
             version: version.into(),
             platform: crate::platform(),
@@ -259,6 +319,7 @@ impl Store {
             digest,
             bytes,
             embedded,
+            app_bundle: matches!(source, Source::MacApp(_)),
         };
         let manifest = serde_json::to_vec(&identity)?;
         if manifest.len() as u64 > MANIFEST_LIMIT || version.is_empty() {
@@ -288,31 +349,35 @@ impl Store {
             fs::create_dir(&staging)?;
             let staged = (|| {
                 write_new(&staging.join("transaction.json"), &manifest)?;
-                let program = staging.join(role.executable());
-                let mut output = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(&program)?;
-                match source {
-                    Source::File(path) => {
-                        io::copy(&mut File::open(path)?, &mut output)?;
+                if let Source::MacApp(path) = source {
+                    bundle::copy(path, &staging.join(bundle::NAME))?;
+                } else {
+                    let program = staging.join(role.executable());
+                    let mut output = OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&program)?;
+                    match source {
+                        Source::File(path) => {
+                            io::copy(&mut File::open(path)?, &mut output)?;
+                        }
+                        Source::Bytes(bytes) => {
+                            output.write_all(bytes)?;
+                        }
+                        Source::MacApp(_) => unreachable!(),
                     }
-                    Source::Bytes(bytes) => {
-                        output.write_all(bytes)?;
+                    output.sync_all()?;
+                    drop(output);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        fs::set_permissions(&program, fs::Permissions::from_mode(0o500))?;
                     }
                 }
-                output.sync_all()?;
-                drop(output);
-                let observed = hash_file(&program)?;
-                if observed != (identity.digest.clone(), identity.bytes) {
+                if identity.hash(&staging)? != (identity.digest.clone(), identity.bytes) {
                     return Err(io::Error::other(
                         "runtime source changed during publication",
                     ));
-                }
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    fs::set_permissions(&program, fs::Permissions::from_mode(0o500))?;
                 }
                 write_new(&staging.join("manifest.json"), &manifest)?;
                 write_new(&staging.join("lease"), b"")?;
@@ -335,7 +400,7 @@ impl Store {
     pub fn select(&self, image: &Image) -> io::Result<()> {
         let _catalog = self.catalog()?;
         let id = image.identity.id()?;
-        if image.path != self.root.join(&id).join(image.identity.role.executable()) {
+        if image.path != self.root.join(&id).join(image.identity.executable()) {
             return Err(io::Error::other(
                 "runtime selection belongs to another store",
             ));
@@ -351,7 +416,7 @@ impl Store {
     pub fn reserve(&self, image: &Image) -> io::Result<()> {
         let _catalog = self.catalog()?;
         let id = image.id()?;
-        if image.path != self.root.join(&id).join(image.role().executable()) {
+        if image.path != self.root.join(&id).join(image.identity.executable()) {
             return Err(io::Error::other(
                 "runtime reservation belongs to another store",
             ));
@@ -470,8 +535,14 @@ impl Store {
                 result.unknown_items += 1;
                 continue;
             };
-            let bytes = fs::metadata(entry.path().join(identity.role.executable()))?.len();
-            if bytes != identity.bytes {
+            let observed = if identity.app_bundle {
+                bundle::bytes(&entry.path().join(bundle::NAME))
+            } else {
+                fs::metadata(entry.path().join(identity.executable()))
+                    .map(|metadata| metadata.len())
+            };
+            let bytes = identity.bytes;
+            if !observed.is_ok_and(|value| value == bytes) {
                 result.unknown_items += 1;
             } else if protected.contains(name.as_str()) {
                 result.retained_bytes = result.retained_bytes.saturating_add(bytes);
@@ -602,8 +673,8 @@ impl Store {
         }
         let directory = self.root.join(id);
         let identity = identity_at(&directory)?;
-        let path = directory.join(identity.role.executable());
-        if hash_file(&path)? != (identity.digest.clone(), identity.bytes) {
+        let path = directory.join(identity.executable());
+        if identity.hash(&directory)? != (identity.digest.clone(), identity.bytes) {
             return Err(io::Error::other(
                 "runtime program does not match its manifest",
             ));
@@ -647,7 +718,8 @@ impl Store {
             }
             match Lease::vacant(&directory.join("lease")) {
                 Ok(true) => {
-                    if !hash_file(&directory.join(identity.role.executable()))
+                    if !identity
+                        .hash(&directory)
                         .is_ok_and(|observed| observed == (identity.digest, identity.bytes))
                     {
                         result.unknown.push(name);
@@ -683,18 +755,27 @@ fn identity_at(directory: &Path) -> io::Result<Identity> {
         &directory.join("manifest.json"),
         MANIFEST_LIMIT,
     )?)?;
-    if identity.schema != 1
+    if !identity.supported()
         || identity.platform != crate::platform()
         || directory.file_name().and_then(|name| name.to_str()) != Some(identity.id()?.as_str())
     {
         return Err(io::Error::other("runtime manifest identity mismatch"));
     }
-    let allowed = [identity.role.executable(), "manifest.json", "lease"];
+    if identity.app_bundle && identity.role != Role::DesktopHost {
+        return Err(io::Error::other("invalid runtime bundle role"));
+    }
+    let allowed = [identity.payload(), "manifest.json", "lease"];
     let mut files = BTreeSet::new();
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        if !allowed.contains(&name.as_str()) || !entry.file_type()?.is_file() {
+        let kind = entry.file_type()?;
+        let expected_kind = if identity.app_bundle && name == bundle::NAME {
+            kind.is_dir()
+        } else {
+            kind.is_file()
+        };
+        if !allowed.contains(&name.as_str()) || !expected_kind {
             return Err(io::Error::other(
                 "runtime generation contains unknown resources",
             ));
@@ -715,15 +796,16 @@ fn finish_collection(directory: &Path, expected: &str) -> io::Result<()> {
         &directory.join("manifest.json"),
         MANIFEST_LIMIT,
     )?)?;
-    if identity.schema != 1 || identity.id()? != expected {
+    if !identity.supported() || identity.id()? != expected {
         return Err(io::Error::other("unknown runtime tombstone"));
     }
     check_files(
         directory,
-        &[identity.role.executable(), "lease", "manifest.json"],
+        &[identity.payload(), "lease", "manifest.json"],
+        identity.app_bundle,
     )?;
-    let program = directory.join(identity.role.executable());
-    if program.exists() && hash_file(&program)? != (identity.digest, identity.bytes) {
+    let program = directory.join(identity.payload());
+    if program.exists() && identity.hash(directory)? != (identity.digest.clone(), identity.bytes) {
         return Err(io::Error::other("runtime tombstone program changed"));
     }
     let lease = directory.join("lease");
@@ -731,7 +813,13 @@ fn finish_collection(directory: &Path, expected: &str) -> io::Result<()> {
         return Err(io::Error::other("runtime tombstone is occupied"));
     }
     // Catalog is held. Manifest is removed last so interrupted collection can resume.
-    for name in [identity.role.executable(), "lease", "manifest.json"] {
+    if identity.app_bundle {
+        bundle::remove(&program)?;
+    }
+    for name in [identity.payload(), "lease", "manifest.json"] {
+        if identity.app_bundle && name == bundle::NAME {
+            continue;
+        }
         match fs::remove_file(directory.join(name)) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
@@ -753,17 +841,18 @@ fn cleanup_staging(directory: &Path) -> io::Result<()> {
         }
         Err(error) => return Err(error),
     })?;
-    if identity.schema != 1 {
+    if !identity.supported() {
         return Err(io::Error::other("unknown runtime publication"));
     }
     check_files(
         directory,
         &[
-            identity.role.executable(),
+            identity.payload(),
             "lease",
             "manifest.json",
             "transaction.json",
         ],
+        identity.app_bundle,
     )?;
     for entry in fs::read_dir(directory)? {
         let path = entry?.path();
@@ -771,7 +860,11 @@ fn cleanup_staging(directory: &Path) -> io::Result<()> {
             .file_name()
             .is_some_and(|name| name != "transaction.json")
         {
-            fs::remove_file(path)?;
+            if identity.app_bundle && path.file_name().is_some_and(|name| name == bundle::NAME) {
+                bundle::remove(&path)?;
+            } else {
+                fs::remove_file(path)?;
+            }
         }
     }
     match fs::remove_file(directory.join("transaction.json")) {
@@ -782,15 +875,19 @@ fn cleanup_staging(directory: &Path) -> io::Result<()> {
     fs::remove_dir(directory)
 }
 
-fn check_files(directory: &Path, allowed: &[&str]) -> io::Result<()> {
+fn check_files(directory: &Path, allowed: &[&str], app_bundle: bool) -> io::Result<()> {
     if !fs::symlink_metadata(directory)?.is_dir() {
         return Err(io::Error::other("runtime transaction is not a directory"));
     }
     for entry in fs::read_dir(directory)? {
         let entry = entry?;
-        if !entry.file_type()?.is_file()
-            || !allowed.contains(&entry.file_name().to_string_lossy().as_ref())
-        {
+        let kind = entry.file_type()?;
+        let expected_kind = if app_bundle && entry.file_name() == bundle::NAME {
+            kind.is_dir()
+        } else {
+            kind.is_file()
+        };
+        if !expected_kind || !allowed.contains(&entry.file_name().to_string_lossy().as_ref()) {
             return Err(io::Error::other(
                 "runtime transaction contains unknown files",
             ));
@@ -824,7 +921,7 @@ fn read_bounded(path: &Path, limit: u64) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
-fn hash_file(path: &Path) -> io::Result<(String, u64)> {
+pub(crate) fn hash_file(path: &Path) -> io::Result<(String, u64)> {
     if !fs::symlink_metadata(path)?.is_file() {
         return Err(io::Error::other("runtime source is not a regular file"));
     }

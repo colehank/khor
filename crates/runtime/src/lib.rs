@@ -1,4 +1,5 @@
 //! Immutable, node-local execution resources. The store owns files, never sessions.
+mod bundle;
 mod lease;
 mod local;
 mod store;

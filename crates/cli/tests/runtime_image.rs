@@ -26,18 +26,27 @@ fn signed_desktop_hosts_keep_their_bundle_and_runtime_lease() {
             .unwrap();
         assert!(verified.status.success(), "{verified:?}");
         let mut command = Command::new(image.path());
-        command.arg("_runtime_info").stdout(std::process::Stdio::piped());
-        let output = image.spawn(&mut command).unwrap().wait_with_output().unwrap();
+        command
+            .arg("_runtime_info")
+            .stdout(std::process::Stdio::piped());
+        let output = image
+            .spawn(&mut command)
+            .unwrap()
+            .wait_with_output()
+            .unwrap();
         assert!(output.status.success(), "{output:?}");
         let info: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(info["release"]["role"], "desktop-host");
-        let held = khor_runtime::Store::image_for_program(image.path()).unwrap().unwrap();
+        let held = khor_runtime::Store::image_for_program(image.path())
+            .unwrap()
+            .unwrap();
         assert_eq!(held.role(), khor_runtime::Role::DesktopHost);
         assert_eq!(held.path(), image.path());
         return;
     }
     let fixture = Fixture(std::env::temp_dir().join(format!(
-        "khor-signed-host-{}", khor_node::link::fresh_hex().unwrap()
+        "khor-signed-host-{}",
+        khor_node::link::fresh_hex().unwrap()
     )));
     let bundle = fixture.0.join("Khor.app");
     let contents = bundle.join("Contents");
@@ -47,15 +56,36 @@ fn signed_desktop_hosts_keep_their_bundle_and_runtime_lease() {
 <plist version="1.0"><dict><key>CFBundleIdentifier</key><string>io.github.colehank.khor.host-fixture</string><key>CFBundleExecutable</key><string>khor-gui</string><key>CFBundlePackageType</key><string>APPL</string></dict></plist>"#).unwrap();
     fs::copy(env!("CARGO_BIN_EXE_khor"), contents.join("MacOS/khor-gui")).unwrap();
     let sign = Command::new("/usr/bin/codesign")
-        .args(["--force", "--sign", "-", "--options", "runtime", "--timestamp=none"])
-        .arg(&bundle).output().unwrap();
+        .args([
+            "--force",
+            "--sign",
+            "-",
+            "--options",
+            "runtime",
+            "--timestamp=none",
+        ])
+        .arg(&bundle)
+        .output()
+        .unwrap();
     assert!(sign.status.success(), "{sign:?}");
     let output = Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "signed_desktop_hosts_keep_their_bundle_and_runtime_lease", "--nocapture"])
-        .env(CHILD, &bundle).env("KHOR_RUNTIME_DIR", fixture.0.join("runtime"))
-        .env_remove("KHOR_RUNTIME_INSTALL_SOURCE").env_remove("KHOR_INSTALL_SOURCE")
-        .output().unwrap();
-    assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        .args([
+            "--exact",
+            "signed_desktop_hosts_keep_their_bundle_and_runtime_lease",
+            "--nocapture",
+        ])
+        .env(CHILD, &bundle)
+        .env("KHOR_RUNTIME_DIR", fixture.0.join("runtime"))
+        .env_remove("KHOR_RUNTIME_INSTALL_SOURCE")
+        .env_remove("KHOR_INSTALL_SOURCE")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

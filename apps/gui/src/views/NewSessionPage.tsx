@@ -1,4 +1,5 @@
 import {AcpAgentSetup,EMPTY_ENVIRONMENT,type SessionEnvironment} from "@/views/AcpAgentSetup";
+import {agentPresentation} from '@/lib/acp-session';
 import {managePi} from "@/lib/pi-accounts";
 import {KhorSessionSetup, type KhorModelSelection} from '@/views/KhorSessionSetup';
 // New session: the target, its current directory, and what to run. The same
@@ -149,7 +150,8 @@ export function NewSessionPage({
     }
   })), ...agents.map(name => ({
     id: 'agent:' + name,
-    label: (name === 'claude' ? 'Claude' : name === 'codex' ? 'Codex' : name) + ' · ' + gui.view_chat,
+    label: agentPresentation(name).name + ' · ' + gui.view_chat,
+    aside: agentPresentation(name).source,
     terms: name,
     icon: kindIcon('agent', name),
     launch: {

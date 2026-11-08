@@ -4962,6 +4962,14 @@ impl Node {
             .collect()
     }
 
+    fn picked_agent(&self, agent: &str) -> Result<Picked, String> {
+        Ok(match agent {
+            "" | adaptor::claude::VENDOR => Picked::Claude,
+            adaptor::codex::VENDOR => Picked::Codex,
+            name => Picked::Registered(name.to_owned(), self.agent_or_refuse(name)?),
+        })
+    }
+
     /// Opens a fresh agent session where the wizard pointed (会话身份批B:
     /// 建 session 四字段 — 目录、智能体、形式、名字). The two forms are
     /// the user ruling's two channels: `chat` hosts khor's own vendor
@@ -4987,11 +4995,7 @@ impl Node {
         agent: &str,
     ) -> Result<SessionId, String> {
         self.refuse_unless_hosting()?;
-        let picked = match agent {
-            "" | adaptor::claude::VENDOR => Picked::Claude,
-            adaptor::codex::VENDOR => Picked::Codex,
-            name => Picked::Registered(name.to_owned(), self.agent_or_refuse(name)?),
-        };
+        let picked = self.picked_agent(agent)?;
         // Registered agents have no terminal launch spelling. Their
         // scheduler form receives khor's tools through standard session MCP.
         match (&picked, form) {
@@ -5030,14 +5034,14 @@ impl Node {
         };
         match form {
             "chat" => {
-                let (cmd, vendor) = picked.launch()?;
-                self.open_gui_at(&path, &title, &cmd, Some(&vendor), false)
+                let (command, vendor) = picked.launch()?;
+                self.open_gui_at(&path, &title, &[command], Some(&vendor), false)
             }
             // 调度员 (docs/AGENT.md): the same conversation session, with
             // khor's own verbs in its hands — one flag's difference.
             "agent" => {
-                let (cmd, vendor) = picked.launch()?;
-                self.open_gui_at(&path, &title, &cmd, Some(&vendor), true)
+                let (command, vendor) = picked.launch()?;
+                self.open_gui_at(&path, &title, &[command], Some(&vendor), true)
             }
             "term" => {
                 // The TUI child resolves claude the same way the shim
@@ -6360,19 +6364,19 @@ impl Picked {
     /// khor's own two included: what `_cagent` spawns is `claude`, by
     /// bare name, and on a launchd-started serve that name is not on
     /// the PATH the process has.
-    fn launch(&self) -> Result<(Vec<String>, String), String> {
-        let mine = |shim: &str, vendor: &str| -> Result<(Vec<String>, String), String> {
+    fn launch(&self) -> Result<(String, String), String> {
+        let mine = |shim: &str, vendor: &str| -> Result<(String, String), String> {
             let exe = installed_exe()?;
             let spec = AgentSpec {
                 command: exe.display().to_string(),
                 args: vec![shim.to_owned()],
             };
-            Ok((vec![Node::agent_launch(&spec)?], vendor.to_owned()))
+            Ok((Node::agent_launch(&spec)?, vendor.to_owned()))
         };
         match self {
             Picked::Claude => mine("_cagent", adaptor::claude::VENDOR),
             Picked::Codex => mine("_codexagent", adaptor::codex::VENDOR),
-            Picked::Registered(name, spec) => Ok((vec![Node::agent_launch(spec)?], name.clone())),
+            Picked::Registered(name, spec) => Ok((Node::agent_launch(spec)?, name.clone())),
         }
     }
 }

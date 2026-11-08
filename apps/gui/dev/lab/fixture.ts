@@ -111,6 +111,8 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const khorAnswers:unknown[]=[];
   let jobCounter = 0;
   const jobs = new Map<string, any>();
+  let failAcpSetup = false;
+  const acpSetupCalls: {agent:string;machine:string;operation:string}[] = [];
   const interactionAnswers:unknown[]=[];
   const view = (data: unknown = null) => ({ config: modelConfig, accounts: modelAccounts, run: null, data });
   function agentAction(body: Record<string, any>) {
@@ -122,6 +124,15 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     if(body.action==='answer'&&p.run==='khor-preview-run'&&p.ask===khorApproval?.id){khorAnswers.push({ask:p.ask,allow:p.allow});khorApproval=null;khorRunning=false;return view();}
     if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
     if (body.action !== "manage") return view();
+    if (p.operation === 'acp_initialize' || p.operation === 'acp_authenticate') {
+      acpSetupCalls.push({agent:String(p.agent),machine:String(body.machine),operation:p.operation});
+      const id=`acp-${++jobCounter}`;
+      jobs.set(id,failAcpSetup?{status:'failed',error:'Incoming transport closed: initialize',reason:'npm_cache_unavailable'}:
+        {status:'done',result:{agentInfo:{name:String(p.agent).startsWith('codex')?'Codex':'Claude',version:'lab'},capabilities:{},authMethods:[]}});
+      return view({job:id,status:'running'});
+    }
+    if (p.operation === 'acp_poll') return view(jobs.get(p.job)??{status:'failed',error:'示例已结束'});
+    if (p.operation === 'acp_cancel') {jobs.delete(p.job);return view({status:'cancelled'});}
     if(p.operation==='session_settings'||p.operation==='session_set_option'){
       if(p.operation==='session_set_option'){
         if(p.configId==='model'){modelConfig.model=p.value;modelConfig.options.thought_level='medium';}
@@ -179,6 +190,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
+          failAcpSetup=false;acpSetupCalls.length=0;
           for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
           preferences.splice(0,preferences.length,...structuredClone(initialPreferences));
           modelConfig={home:device.id,account:account.id,model:account.default_model,options:{thought_level:"medium",auto_compaction:true}};
@@ -187,6 +199,8 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           khorUpdates = [...initialKhorUpdates];
         return true;
       }
+      if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
+      if (path === '__ai_preview/acp-setup-calls') return structuredClone(acpSetupCalls);
       if (navigation.handles(path)) return structuredClone(navigation.request(path, body));
       if (path === 'face_note') return null;
       if (terminal && body.id === 'shell/layout-lab' && path === 'attachment_begin' && body.kind === 'terminal') {
@@ -253,7 +267,9 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "quota_board": answer = quota; break;
           case "usage": answer = labUsage(); break;
           case "quota": answer = { quota:quota[0] ? {windows:quota[0].reading.windows,as_of:null,plan:'Max 20x',credits:null,fill:.36,source:'lab',limit_reached:false} : null,trouble:null }; break;
-          case "config": case "dir_pins": case "web_pins": case "agents": answer = []; break;
+          case "agents": answer = [{name:'codex-acp',command:'npx -y @agentclientprotocol/codex-acp@2.2.2'},
+            {name:'claude-acp',command:'npx -y @agentclientprotocol/claude-agent-acp@0.94.0'}];break;
+          case "config": case "dir_pins": case "web_pins": answer = []; break;
           case "seen_snapshot": case "seen": case "session_seen": break;
           default: throw new Error(`Lab fixture does not implement ${path}`);
         }

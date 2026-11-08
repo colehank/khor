@@ -69,6 +69,185 @@ fn id(image: &Image) -> String {
         .into()
 }
 
+fn app(fixture: &Fixture, resources: &[u8]) -> PathBuf {
+    let app = fixture.0.join("Khor.app");
+    fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
+    fs::create_dir_all(app.join("Contents/Resources")).unwrap();
+    fs::write(app.join("Contents/Info.plist"), b"sealed metadata").unwrap();
+    fs::write(app.join("Contents/MacOS/khor-gui"), b"desktop host").unwrap();
+    fs::write(app.join("Contents/Resources/icon"), resources).unwrap();
+    app
+}
+fn desktop(store: &Store, version: &str, source: &std::path::Path) -> Image {
+    store
+        .publish(
+            Role::DesktopHost,
+            version,
+            contract(),
+            BTreeMap::new(),
+            Source::MacApp(source),
+        )
+        .unwrap()
+}
+
+#[test]
+fn desktop_bundle_identity_owns_all_signed_resources_and_nested_lease() {
+    let source = Fixture::new();
+    let app = app(&source, b"first icon");
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let first = desktop(&store, "one", &app);
+    assert!(first.path().ends_with("Khor.app/Contents/MacOS/khor-gui"));
+    assert_eq!(
+        first.directory(),
+        store.directory().join(first.id().unwrap())
+    );
+    assert_eq!(
+        fs::read(first.directory().join("Khor.app/Contents/Info.plist")).unwrap(),
+        b"sealed metadata"
+    );
+    assert_eq!(
+        desktop(&store, "one", &app).id().unwrap(),
+        first.id().unwrap()
+    );
+    let nested = Store::image_for_program(first.path()).unwrap().unwrap();
+    assert_eq!(nested.path(), first.path());
+    fs::write(app.join("Contents/Resources/icon"), b"other icon").unwrap();
+    assert_ne!(
+        desktop(&store, "one", &app).id().unwrap(),
+        first.id().unwrap()
+    );
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&fs::read(first.directory().join("manifest.json")).unwrap())
+            .unwrap();
+    assert_eq!(manifest["schema"], 2);
+    assert_eq!(
+        manifest["bytes"],
+        b"sealed metadata".len() + b"desktop host".len() + b"first icon".len()
+    );
+}
+
+#[test]
+fn desktop_bundle_collection_retains_occupied_generations_and_removes_complete_payloads() {
+    let source = Fixture::new();
+    let app = app(&source, b"icon");
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let first = desktop(&store, "one", &app);
+    let path = first.directory().to_path_buf();
+    drop(desktop(&store, "two", &app));
+    drop(desktop(&store, "three", &app));
+    assert!(path.exists());
+    assert!(
+        store
+            .collect()
+            .unwrap()
+            .occupied
+            .contains(&first.id().unwrap())
+    );
+    drop(first);
+    let collected = store.collect().unwrap();
+    assert_eq!(collected.removed.len(), 1);
+    assert!(!path.exists());
+}
+
+#[test]
+fn changed_bundle_metadata_is_neither_reused_nor_collected() {
+    let source = Fixture::new();
+    let app = app(&source, b"icon");
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    let first = desktop(&store, "one", &app);
+    let identity = first.id().unwrap();
+    let path = first.directory().to_path_buf();
+    let metadata = path.join("Khor.app/Contents/Info.plist");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&metadata, fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    fs::write(&metadata, b"changed record").unwrap();
+    assert!(store.hold(&identity).is_err());
+    drop(first);
+    drop(desktop(&store, "two", &app));
+    drop(desktop(&store, "three", &app));
+    assert!(store.collect().unwrap().unknown.contains(&identity));
+    assert!(path.exists());
+}
+
+#[test]
+fn bundle_publication_budgets_resources_and_rejects_incomplete_or_wrong_role_payloads() {
+    let source = Fixture::new();
+    let app = app(&source, &[0; 128 * 1024]);
+    let fixture = Fixture::new();
+    let store = Store::open(
+        fixture.0.clone(),
+        Limits {
+            cache_bytes: 64 * 1024,
+            free_bytes: 0,
+        },
+    )
+    .unwrap();
+    let error = store
+        .publish(
+            Role::DesktopHost,
+            "one",
+            contract(),
+            BTreeMap::new(),
+            Source::MacApp(&app),
+        )
+        .err()
+        .unwrap();
+    assert_eq!(error.kind(), std::io::ErrorKind::StorageFull);
+    assert!(
+        store
+            .publish(
+                Role::Cli,
+                "one",
+                contract(),
+                BTreeMap::new(),
+                Source::MacApp(&app)
+            )
+            .is_err()
+    );
+    fs::remove_file(app.join("Contents/Info.plist")).unwrap();
+    assert!(
+        store
+            .publish(
+                Role::DesktopHost,
+                "one",
+                contract(),
+                BTreeMap::new(),
+                Source::MacApp(&app)
+            )
+            .is_err()
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn bundle_publication_rejects_links_without_following_their_targets() {
+    let source = Fixture::new();
+    let app = app(&source, b"icon");
+    let target = source.0.join("not-a-bundle-resource");
+    fs::write(&target, b"user data").unwrap();
+    std::os::unix::fs::symlink(&target, app.join("Contents/Resources/link")).unwrap();
+    let fixture = Fixture::new();
+    let store = fixture.store();
+    assert!(
+        store
+            .publish(
+                Role::DesktopHost,
+                "one",
+                contract(),
+                BTreeMap::new(),
+                Source::MacApp(&app)
+            )
+            .is_err()
+    );
+    assert_eq!(fs::read(&target).unwrap(), b"user data");
+}
+
 #[test]
 fn same_content_reuses_one_immutable_generation_and_changed_contract_does_not() {
     let fixture = Fixture::new();

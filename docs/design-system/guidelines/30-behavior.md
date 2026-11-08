@@ -1185,3 +1185,8 @@ The real `khor-conversations-ui` reload regression failed with an empty composer
 弧线、新建与全部共用一份手指交接进度。活动点从保存的弧线位置离开，成为玻璃软尾，捕获目标后被吸收；原处只留淡锚点。交接途中候选引擎与位置均暂停，完整接回原弧线位置后才重新接受拨动，不回中心、不补走停驻期间的轮转。交接中松手保持当前，点被目标完整接住后才新建或打开全部；高亮与触觉只跟随稳定捕获，往返进度可逆。
 
 门：`session-navigation` 中的 `control-point.mjs`，旧生产引擎在42432202501先红于New回退尚未完成即变switch。`deck-scrub`保留原直接横滑/快慢档/阅读节奏；Developer Lab实际root/GUI/content检查连续回退、停留、接回原位、唯一活动点和途中松手。浏览器检查不替代iPhone触觉与原生触摸验收。
+
+
+### 新建会话的接入方式与能力读取（2026-11-08）
+
+Codex/Claude 的终端与对话是同一智能体的呈现方式；内置对话入口复用执行机器上的安装与登录。另登记的 ACP 包标为扩展，不用包名让用户猜。读取能力和创建共用智能体解析及执行机器的凭证目录；读取成功给简短确认，失败显示可操作原因。普通终端不发送 ACP initialize。门见 `npm run acp-setup`、完整 App 的 setup 场景和原生管理回归。

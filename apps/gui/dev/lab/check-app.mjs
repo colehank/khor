@@ -5,6 +5,7 @@ import path from 'node:path';
 import assert from 'node:assert/strict';
 import {checkMobileNavigation} from './navigation-checks.mjs';
 import {checkListScroll} from './list-scroll-checks.mjs';
+import {checkAgentSetup} from './agent-setup-checks.mjs';
 const report = process.env.LAB_REPORT;
 await mkdir(report, {recursive: true});
 const port = 23918;
@@ -17,7 +18,7 @@ async function inspect(browser, scene, size, data = {}) {
   const page = await context.newPage(), errors = [];
   const machines = data.machines ?? 1;
   const items=data.items??5;
-  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}`;
+  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}${data.setup?'-setup':''}`;
   let geometry = null;
   const contentLayout = [];
   const workspaceLayout = [];
@@ -241,6 +242,7 @@ async function inspect(browser, scene, size, data = {}) {
       const edges=await page.evaluate(()=>({input:document.querySelector('[data-chat-box]').getBoundingClientRect().bottom,avatar:document.querySelector('[data-lab-compose-avatar]').getBoundingClientRect().bottom}));assert(Math.abs(edges.input-edges.avatar)<1,'Multiline input retains bottom alignment');await page.screenshot({path:path.join(report,name+'-multiline.png')});await field.fill('');
     }
     if (geometry.overflow) errors.push('App overflows horizontally');
+    if(data.setup)await checkAgentSetup(page,size.width<500,phase=>page.screenshot({path:path.join(report,`${name}-${phase}.png`)}));
     if(data.gesture)await checkMobileNavigation(page,scene,items,async(phase,values)=>{
       if(values)contentLayout.push({phase,...values});
       await page.screenshot({path:path.join(report,`${name}-${phase}.png`)});
@@ -287,6 +289,10 @@ try {
   }
   results.push(await inspect(browser,'gui',{width:496,height:844},{fine:true}));
   await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  for(const size of [{width:1280,height:900},{width:390,height:844}]){
+    results.push(await inspect(browser,'terminal',size,{items:2,setup:true}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});

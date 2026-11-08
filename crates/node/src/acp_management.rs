@@ -76,8 +76,7 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
     let name = request["agent"]
         .as_str()
         .ok_or("Missing registered ACP agent")?;
-    let spec = node.agent_or_refuse(name)?;
-    let command = Node::agent_launch(&spec)?;
+    let (command, vendor) = node.picked_agent(name)?.launch()?;
     if operation == "acp_open" {
         let environment: khor_acp::Environment =
             serde_json::from_value(request["environment"].clone())
@@ -135,7 +134,7 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
             &cwd,
             title,
             &[command],
-            name,
+            &vendor,
             &environment,
         )
         .map(|id| id.0);
@@ -193,10 +192,12 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
     }
     let owner_root = root.clone();
     let owner = std::thread::Builder::new().name("acp-setup".into()).spawn(move || {
+        let mut reason = None;
         let result = tokio::runtime::Builder::new_current_thread().enable_all().build()
             .map_err(|e|e.to_string()).and_then(|rt| rt.block_on(async {
                 if job.cancel.load(Ordering::SeqCst) { return Err("Cancelled".into()); }
-                let transport = crate::acp_process::spawn(&command)?;
+                let transport = crate::acp_process::spawn_setup(&command, &root)?;
+                let stderr = transport.stderr.clone();
                 let lifecycle = transport.lifecycle;
                 let mut setup = khor_acp::manage_on(transport.streams, method);
                 let mut next = 0u64;
@@ -249,7 +250,13 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
                 drop(setup);
                 lifecycle.request_shutdown();
                 match tokio::time::timeout(Duration::from_secs(5), lifecycle.confirmed_exit()).await {
-                    Ok(Ok(_)) => result,
+                    Ok(Ok(_)) => {
+                        if result.is_err() {
+                            let captured = stderr.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                            reason = crate::acp_process::startup_reason(&String::from_utf8_lossy(&captured.iter().copied().collect::<Vec<_>>()));
+                        }
+                        result
+                    },
                     _ => {
                         crate::khor_agent::runtime::unconfirmed(&root);
                         Err("ACP setup process cleanup is unconfirmed".into())
@@ -261,7 +268,7 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
         } else {
             match result {
                 Ok(value) => json!({"status":"done","result":value}),
-                Err(error) => json!({"status":"failed","error":error}),
+                Err(error) => json!({"status":"failed","error":error,"reason":reason}),
             }
         };
     });
@@ -277,4 +284,80 @@ pub(super) fn manage(node: &Node, request: &Value) -> Result<Value, String> {
     };
     crate::khor_agent::runtime::register_producer(&owner_root, owner);
     Ok(json!({"job":id,"status":"running"}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settled(node: &Node, id: &str) -> Value {
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let state = manage(node, &json!({"operation":"acp_poll","job":id})).unwrap();
+            if matches!(state["status"].as_str(), Some("done" | "failed" | "cancelled")) { return state; }
+            assert!(Instant::now() < deadline, "setup did not settle: {state}");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    #[test]
+    fn capability_management_accepts_native_names_without_registry_entries() {
+        let root = crate::testdir::TempTree::fresh("setup-native-admission");
+        let node = Node::open_hosting(root.path(), "setup-test", false).unwrap();
+        for name in ["codex", "claude"] {
+            let started = manage(&node, &json!({"operation":"acp_initialize","agent":name})).unwrap();
+            // The unit-test executable is not a vendor shim. This case checks
+            // admission and cleanup; real installed shims have separate probes.
+            let id = started["job"].as_str().unwrap();
+            let state = settled(&node, id);
+            assert!(matches!(state["status"].as_str(), Some("done" | "failed")));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extension_setup_captures_startup_causes_and_can_retry_after_failure() {
+        let root = crate::testdir::TempTree::fresh("setup-extension-retry");
+        let node = Node::open_hosting(root.path(), "setup-test", false).unwrap();
+        let script = root.join("adapter.py");
+        std::fs::write(&script, "import sys\nsys.stderr.write('npm error ENOTDIR mkdir ~/.npm/_cacache token=private-test-secret\\n')\nsys.exit(12)\n").unwrap();
+        node.register_agent("test-extension", &["python3".into(), "-I".into(), "-S".into(), script.display().to_string()]).unwrap();
+        let started = manage(&node, &json!({"operation":"acp_initialize","agent":"test-extension"})).unwrap();
+        let failed = settled(&node, started["job"].as_str().unwrap());
+        assert_eq!(failed["status"], "failed");
+        assert_eq!(failed["reason"], "npm_cache_unavailable");
+        assert!(!failed.to_string().contains("private-test-secret"));
+        std::fs::write(&script, r#"import json,os,sys
+from pathlib import Path
+request=json.loads(sys.stdin.readline())
+assert request['method']=='initialize'
+Path('setup-context.json').write_text(json.dumps({'codex':os.environ['CODEX_HOME'],'claude':os.environ['CLAUDE_CONFIG_DIR'],'cwd':os.getcwd()}))
+print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':{'protocolVersion':1,'agentCapabilities':{},'authMethods':[],'agentInfo':{'name':'fixture','version':'1'}}}),flush=True)
+sys.stdin.read()
+"#).unwrap();
+        let started = manage(&node, &json!({"operation":"acp_initialize","agent":"test-extension"})).unwrap();
+        let done = settled(&node, started["job"].as_str().unwrap());
+        assert_eq!(done["status"], "done");
+        assert_eq!(done["result"]["agentInfo"]["name"], "fixture");
+        let context: Value = serde_json::from_slice(&std::fs::read(root.join("setup-context.json")).unwrap()).unwrap();
+        assert_eq!(context["codex"], json!(crate::adaptor::codex_home(&root)));
+        assert_eq!(context["claude"], json!(crate::adaptor::claude_home(&root)));
+        assert_eq!(context["cwd"], json!(std::fs::canonicalize(&root).unwrap()));
+    }
+
+    #[test]
+    fn setup_and_creation_resolve_builtins_without_extension_registrations() {
+        let root = crate::testdir::TempTree::fresh("setup-native-routing");
+        let node = Node::open(root.path()).unwrap();
+        for (name, shim) in [("codex", "_codexagent"), ("claude", "_cagent")] {
+            assert!(node.agent(name).unwrap().is_none());
+            let (command, vendor) = node.picked_agent(name).unwrap().launch().unwrap();
+            let launch: Value = serde_json::from_str(&command).unwrap();
+            assert_eq!(launch["args"], json!([shim]));
+            assert_eq!(vendor, name);
+            assert_eq!(Path::new(launch["command"].as_str().unwrap()), crate::installed_exe().unwrap());
+        }
+        let missing = match node.picked_agent("not-registered") { Err(error) => error, Ok(_) => panic!("unknown extension was accepted") };
+        assert_eq!(missing, node.agent_or_refuse("not-registered").unwrap_err());
+    }
 }
