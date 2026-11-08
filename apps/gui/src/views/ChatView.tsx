@@ -510,6 +510,14 @@ function updateOf(frame: ChatFrame): Update | null {
  */
 function eat(out: Item[], frame: ChatFrame, paintUser: boolean): boolean {
   if (frame.kind === "ask") {
+    const at=out.findIndex(item=>item.who==='ask'&&item.ask===frame.ask),previous=out[at];
+    if(previous?.who==='ask'){
+      // Reattachment can repeat pending controls. Their identity is the
+      // request, and a repeat must never reopen an already answered one.
+      if(previous.title===frame.title&&previous.options.length===frame.options.length
+        &&previous.options.every(([id,label],index)=>id===frame.options[index][0]&&label===frame.options[index][1]))return false;
+      out[at]={...previous,title:frame.title,options:frame.options};return true;
+    }
     out.push({
       who: "ask",
       ask: frame.ask,

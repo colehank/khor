@@ -10,8 +10,9 @@ const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries
 // Read the production AgentContent prop itself: this counterexample must fail
 // on the old overall-tail rule rather than on a missing helper/export.
 const chatSource = ts.createSourceFile('ChatView.tsx', readFileSync(resolve('src/views/ChatView.tsx'),'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-let streamingExpression;
+let streamingExpression,controlFold;
 function findStreaming(node) {
+  if(ts.isFunctionDeclaration(node)&&node.name?.text==='eat')controlFold=node.getText(chatSource);
   if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(chatSource) === 'AgentContent') {
     const prop = node.attributes.properties.find(prop => ts.isJsxAttribute(prop) && prop.name.getText(chatSource) === 'streaming');
     streamingExpression = prop?.initializer?.expression?.getText(chatSource);
@@ -19,6 +20,17 @@ function findStreaming(node) {
   ts.forEachChild(node, findStreaming);
 }
 findStreaming(chatSource);
+assert(controlFold,'production control fold exists');
+const eatControl=Function(ts.transpileModule(controlFold,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText+';return eat;')();
+{
+ const rows=[],ask={kind:'ask',ask:99,title:'Confirm',options:[['allow','Allow']]};
+ assert.equal(eatControl(rows,ask,false),true);
+ assert.equal(eatControl(rows,structuredClone(ask),false),false);
+ assert.equal(rows.length,1,'reattachment repeats one control rather than another clickable card');
+ eatControl(rows,{kind:'answered',ask:99,option:'allow'},false);
+ eatControl(rows,ask,false);assert.equal(rows[0].answer,'allow','repeated ask never reopens a completed decision');
+ eatControl(rows,{...ask,ask:100},false);assert.equal(rows.length,2,'different pending requests stay independent');
+}
 assert(streamingExpression, 'production AgentContent streaming prop exists');
 const streamAt = (painted, entries, controls, flags = {}) => {
   const items = [...painted, ...controls], item = painted.at(-1), i = painted.length - 1;
