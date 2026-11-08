@@ -1,5 +1,6 @@
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture} from './navigation';
+import {pairingFixture} from './pairing';
 import {labDevices,labModels,labQuota,labRoot,labUsage} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
@@ -61,6 +62,7 @@ function sample(index: number): Frame[] {
 
 export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean} = {}) {
   const devices = labDevices(device,options.machines ?? 3);
+  const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
   const quota = labQuota(devices);
   const terminalLeases = new Set<string>();
@@ -201,6 +203,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       }
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
       if (path === '__ai_preview/acp-setup-calls') return structuredClone(acpSetupCalls);
+      if (pairing.handles(path)) return structuredClone(pairing.request(path, body));
       if (navigation.handles(path)) return structuredClone(navigation.request(path, body));
       if (path === 'face_note') return null;
       if (terminal && body.id === 'shell/layout-lab' && path === 'attachment_begin' && body.kind === 'terminal') {
@@ -244,6 +247,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           }
           case 'session_recovery': answer = {id: body.id, home: device.id, current_run: 'fixture-live', next_attempt_epoch: null,
             execution: 'live', action: 'join', native: null, previous: null, reason: null}; break;
+          case 'sync_now': answer = []; break;
           case 'day_strips': case 'page_icons': answer = {}; break;
           case 'face_here': break;
           case "devices": answer = devices; break;

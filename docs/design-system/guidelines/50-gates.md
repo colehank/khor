@@ -804,6 +804,8 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 
 `npm run content-model` verifies first-tab initialization, rapid in-tab cross-type navigation, explicit New only, target/tab isolation and commit address/reload behavior. `WORKSPACE_CONTENT_DIR=<evidence> npm run workspace-content-ui` uses the actual WorkspacePane, original session TabStrip/ContentPicker and CommitPage with private in-memory node IO; checks history pagination, session commit/file/browser in-tab navigation, independent drafts after New, standalone preview/double-click keep, collapse and desktop alignment. It does not run a user session or prove native/phone behavior. Add `WORKSPACE_CONTENT_LAB=1` to keep that isolated fixture available locally. `cargo test --lib -p khor-node tabs::tests` covers durable renderer/address storage and existing tab mutation rules.
 
+The same workspace-content UI gate projects native navigation events through the real desktop/mobile session browser: progress must show the issued estimate inside the complete pill and disappear on failure. The complete App Lab suite also runs this gate and tests opening its frontend inside a WebView-like runtime in Chromium and WebKit, requiring zero host IPC calls. These are controlled transport checks, not an assertion that a physical native WebView was exercised.
+
 `TERMINAL_LINK_UI_DIR=<evidence> npm run terminal-links-ui` mounts the real xterm6 renderer with production path/link-intent/gesture providers and browser input. It observes opening intents and actual mouse-report bytes without launching a PTY or an external app. Checks URL/path/OSC8 plain and platform modifier clicks, no dual TUI mouse report, ordinary program input, drag, secondary click and platform forced selection. Native Mac uses Cmd and Option-drag; Ctrl-primary policy on other platforms remains covered by the event harness unless run there. This does not substitute for a real Codex TUI/iPhone acceptance.
 
 ## 第四轮补齐的检查入口
@@ -875,3 +877,9 @@ CodeBlock 等组件；Lucide 只允许集中适配文件导入，应用导航仍
 - `npm run acp-setup`：内置与扩展接入标签、有限启动原因、不回显任意 stderr、未知原因兜底；已加入 `test:unit`。
 - 完整 App Lab 的桌面/手机新建页：内置 Codex/Claude 读取成功状态、终端不发 ACP 设置、扩展失败原因和重试、请求沿所选机器；共用实际 NewSessionPage/AcpAgentSetup。fixture 仅模拟数据，不证明原生进程可用。
 - 原生 `acp_management::tests` 与 `acp_process::tests` 验证内置路由、真实扩展 stdin/stdout 初始化、执行节点的凭证目录、失败清理和重试；macOS 签名 App 宿主必须保留完整 bundle，不能用未签名 CLI 的检查代替。真机验收包括本机/远端的新建和读取、已有会话持续运行。
+
+### 添加机器的入口与配对方向（2026-11-08 Lab）
+
+Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真实机器页 ＋ 验证就地 Khor/SSH 候选、两种弹窗入口、邀请与加入互斥内容、复制、失败保留输入、切换复用邀请、待批准与完成，以及浅深主题/桌面/手机/低视口可达性。二维码由正式 `qr::encode` 生成不可用于真实配对的示例凭据；fixture 不连接设备。浏览器检查不代表真机相机、系统授权或真实网络入网验收。
+
+工作区三选一导航在所有视图保留同一宽度；session视图的左右边界分别对齐上方“筛选＋新建”组左边与搜索右边，三个槽位等宽。App Lab workspace检查先注入旧三槽本征宽度复现左侧偏差，撤除后检查两端、等宽和跨视图位置；覆盖宽窄屏与已有WebKit场景。

@@ -23,7 +23,8 @@ class FixtureDataCache(unittest.TestCase):
         self.data = dict(schema=1, machine_ids=ids,
                          avatars={key: dict(radius_ratio=.5, mark=dict(ink='dark')) for key in ids},
                          directories={key: {} for key in ('', 'project', 'project/src', 'project/docs', 'project/.config')},
-                         documents={key: '' for key in ('project/README.md', 'project/src/navigation.ts', 'project/docs/中文说明.md')})
+                         documents={key: '' for key in ('project/README.md', 'project/src/navigation.ts', 'project/docs/中文说明.md')},
+                         pairing_ticket={'token':'khorLAB_ONLY_TEST','qr':{'span':29,'path':'M4 4h1v1h-1z'}})
 
     def save(self):
         (self.root / OUTPUT).write_text(json.dumps(cache_record(self.data, self.root)))

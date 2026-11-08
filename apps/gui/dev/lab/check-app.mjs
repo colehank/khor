@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import {checkMobileNavigation} from './navigation-checks.mjs';
 import {checkListScroll} from './list-scroll-checks.mjs';
 import {checkAgentSetup} from './agent-setup-checks.mjs';
+import {checkMachinePairing} from './pairing-checks.mjs';
 const report = process.env.LAB_REPORT;
 await mkdir(report, {recursive: true});
 const port = 23918;
@@ -15,12 +16,17 @@ const server = spawn('python3', ['-m', 'khor_lab.preview', process.env.LAB_BUNDL
 
 async function inspect(browser, scene, size, data = {}) {
   const context = await browser.newContext({viewport: size, isMobile: size.width < 500 && !data.fine, hasTouch: size.width < 500 && !data.fine});
+  if(data.nativeMarker)await context.addInitScript(()=>{
+    window.__labNativeCalls=[];
+    window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'khor-page-preview'}},invoke:async(...args)=>{window.__labNativeCalls.push(args);throw new Error('Frontend Lab must never invoke its browser host');}};
+  });
   const page = await context.newPage(), errors = [];
   const machines = data.machines ?? 1;
   const items=data.items??5;
-  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}${data.setup?'-setup':''}`;
+  const name = `${scene}-${size.width}x${size.height}${data.machines===undefined?'':`-machines-${machines}`}${data.gesture?`-gesture-${data.gesture}-${items}`:''}${data.engine?`-${data.engine}`:''}${data.fine?'-fine':''}${data.setup?'-setup':''}${data.pairing?'-pairing':''}${data.nativeMarker?'-embedded':''}`;
   let geometry = null;
   const contentLayout = [];
+  const expectedConsoleErrors = [];
   const workspaceLayout = [];
   let listScroll = null;
   async function checkScroll(nativePan = true) {
@@ -64,6 +70,23 @@ async function inspect(browser, scene, size, data = {}) {
     assert.equal(await navigation.locator('[aria-pressed=true]').count(),1,'Exactly one sidebar destination is selected');
     assert((await page.locator('[data-ws-tree] [data-ws-sessions-list] [data-row-open]').count())>0,'The workspace sessions must appear in the left sidebar');
     assert.equal(await page.locator('[data-ws-sessions]').count(),0,'Selecting the session list must not open a separate right column');
+    const sessionEdges=()=>page.evaluate(()=>{
+      const nav=document.querySelector('[data-workspace-navigation][data-seat="workspace"]');
+      const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};
+      return {actions:box(document.querySelector('[data-ws-side-head] [data-glass-capsule]')),
+        search:box(document.querySelector('[data-ws-side-head] [data-search-open]')),
+        pill:box(nav.querySelector('[data-glass-capsule]')),
+        items:[...nav.querySelectorAll('[data-glass-item]')].map(box)};
+    });
+    const oldWidth=await page.addStyleTag({content:'[data-workspace-navigation][data-seat="workspace"][data-with-sessions] > .glass {width:calc(3 * var(--strip-item) + 2 * var(--glass-pad))!important}'});
+    const oldEdges=await sessionEdges();
+    assert(oldEdges.pill.left-oldEdges.actions.left>1,'The original intrinsic three-slot width reproduces the reported left-edge mismatch');
+    await oldWidth.evaluate(el=>el.remove());
+    const aligned=await sessionEdges();workspaceLayout.push({sessions:aligned,original:oldEdges});
+    assert(Math.abs(aligned.pill.left-aligned.actions.left)<=1,'Sessions pill must share the upper action group left edge');
+    assert(Math.abs(aligned.pill.right-aligned.search.right)<=1,'Sessions pill must share Search right edge');
+    assert(Math.max(...aligned.items.map(item=>item.width))-Math.min(...aligned.items.map(item=>item.width))<=1,'All three destinations retain equal widths');
+    assert(Math.abs(aligned.pill.left-layout.pill.left)<=1,'Switching views must not move the navigation pill');
     await page.screenshot({path:path.join(report,name+'-sessions.png')});
     await navigation.locator('[data-workspace-view="files"]').click();
     await page.locator('[data-file-tree]').waitFor();
@@ -105,6 +128,12 @@ async function inspect(browser, scene, size, data = {}) {
     const selector = scene === 'page' ? '[data-content-visible="true"] .mobile-content-page' : scene === 'list' ? '[data-list]' : scene === 'terminal' ? '[data-terminal]'
       : ['content','workspace'].includes(scene) ? '.cm-editor, [data-file-preview]' : scene === 'quota' ? '[data-quota-row]' : ['devices','workspaces'].includes(scene) ? '[data-list]' : '[data-chat-box]';
     await page.waitForSelector(selector);
+    if(data.nativeMarker){
+      await page.locator('[data-ws-row]').first().click();
+      await page.locator('[data-workspace-navigation]').waitFor();
+      assert.deepEqual(await page.evaluate(()=>window.__labNativeCalls),[],'An embedded frontend Lab must use only its isolated HTTP fixture');
+      assert.equal(await page.evaluate(()=>('__TAURI_INTERNALS__' in window)),true,'The page must not delete or replace its host runtime');
+    }
     if (scene === 'page') {
       const body = page.locator('[data-content-visible="true"]');
       await page.evaluate(() => {
@@ -200,7 +229,7 @@ async function inspect(browser, scene, size, data = {}) {
       await page.locator('[data-quota-row="fixture"]:visible').click();
       await page.locator('[data-quota-detail="fixture"]:visible').waitFor();
     }
-    if(scene==='workspaces'){
+    if(scene==='workspaces'&&!data.nativeMarker){
       await checkScroll();
       assert.equal(await page.locator('[data-ws-row]:visible').count(),machines*4,'Each machine supplies distinct Git and plain-folder workspaces');
       await page.screenshot({path:path.join(report,name+'-list.png')});
@@ -242,6 +271,11 @@ async function inspect(browser, scene, size, data = {}) {
       const edges=await page.evaluate(()=>({input:document.querySelector('[data-chat-box]').getBoundingClientRect().bottom,avatar:document.querySelector('[data-lab-compose-avatar]').getBoundingClientRect().bottom}));assert(Math.abs(edges.input-edges.avatar)<1,'Multiline input retains bottom alignment');await page.screenshot({path:path.join(report,name+'-multiline.png')});await field.fill('');
     }
     if (geometry.overflow) errors.push('App overflows horizontally');
+    if(data.pairing)await checkMachinePairing(page,phase=>page.screenshot({path:path.join(report,`${name}-${phase}.png`)}),message=>{
+      const at=errors.indexOf(message);
+      assert(at>=0,'The deliberately invalid credential must produce the expected handled fixture error');
+      expectedConsoleErrors.push(message);errors.splice(at,1);
+    });
     if(data.setup)await checkAgentSetup(page,size.width<500,phase=>page.screenshot({path:path.join(report,`${name}-${phase}.png`)}));
     if(data.gesture)await checkMobileNavigation(page,scene,items,async(phase,values)=>{
       if(values)contentLayout.push({phase,...values});
@@ -254,7 +288,7 @@ async function inspect(browser, scene, size, data = {}) {
     await page.screenshot({path: path.join(report, name + '.png')});
     await context.close();
   }
-  return {name, geometry, contentLayout, workspaceLayout, listScroll, errors};
+  return {name, geometry, contentLayout, workspaceLayout, listScroll, expectedConsoleErrors, errors};
 }
 
 let browser;
@@ -265,6 +299,8 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true}));
+  await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
     for (const scene of ['gui', 'codex', 'terminal', 'content', 'workspace', ...(size.width < 500 ? ['page'] : []), 'list', 'devices']) {
       results.push(await inspect(browser, scene, size));
@@ -293,9 +329,14 @@ try {
     results.push(await inspect(browser,'terminal',size,{items:2,setup:true}));
     await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   }
+  for(const size of [{width:1280,height:900},{width:900,height:440},{width:390,height:844},{width:390,height:400}]){
+    results.push(await inspect(browser,'devices',size,{machines:1,pairing:true}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});
+    results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true,engine:'webkit'}));
     for (const scene of ['workspaces','list','devices']) {
       results.push(await inspect(browser,scene,{width:390,height:844},{machines:scene === 'workspaces' ? 6 : 3,engine:'webkit'}));
       await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));

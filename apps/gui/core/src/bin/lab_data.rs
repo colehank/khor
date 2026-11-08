@@ -82,9 +82,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             (id.clone(), face)
         })
         .collect();
+    // A scanable, deliberately invalid invitation: the Lab never opens a node
+    // or issues a credential that could admit a real machine.
+    let token = format!("khorLAB_ONLY_{}", "NOT_A_PAIRING_CREDENTIAL".repeat(8));
+    let pairing_ticket = khor_gui_core::Ticket {
+        qr: khor_gui_core::qr::encode(&token),
+        token,
+        minutes: khor_node::link::invite_window_minutes(),
+    };
     println!(
         "{}",
-        json!({"schema":1,"machine_ids":ids,"avatars":avatars,"directories":directories,"documents":documents})
+        json!({"schema":1,"machine_ids":ids,"avatars":avatars,"directories":directories,"documents":documents,"pairing_ticket":pairing_ticket})
     );
     Ok(())
 }

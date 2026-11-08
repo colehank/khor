@@ -1060,7 +1060,7 @@ for line in sys.stdin:
       khor 主机 page. */
   const toTicketPage = async () => {
     await page.locator("[data-side-head] [data-pane-new]").click();
-    await page.locator('[data-add-machine] [data-add-row="khor"]').click();
+    await page.locator('[role="menu"] [data-new-item="khor"]').click();
   };
   const openLanding = async (tab) => {
     // Re-clicking the open landing now collapses its list (App.tsx 再点
@@ -1205,6 +1205,7 @@ for line in sys.stdin:
     throw new Error("alpha is in the table before pairing — the control is void");
   }
   await toTicketPage();
+  await page.locator('[data-pairing-mode] [data-segment="join"]').click();
   await page.locator("[data-ticket-input]").fill(ticketA);
   await page.locator("[data-join]").click();
   await until("alpha's row, wearing its own face", 30_000, async () => {
@@ -1212,6 +1213,9 @@ for line in sys.stdin:
     if (err) throw new Error(await page.locator("[data-dialog-error]").innerText());
     return (await page.locator('[data-device="alpha"] [data-face] svg').count()) === 1;
   });
+
+  await page.locator('[data-pair-outcome]').waitFor();
+  await page.locator('[data-add-machine] [data-dialog-cancel]').click();
 
   // 2) no pane wears a title. The probe is proven alive first: the name
   //    has to be readable, and it has to be the same fact the rail

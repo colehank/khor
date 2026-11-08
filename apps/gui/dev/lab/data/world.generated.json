@@ -215,7 +215,7 @@
           "name": "design-system",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -223,7 +223,7 @@
           "name": "project",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885030,
           "from": null,
           "received_ms": null
         },
@@ -231,7 +231,7 @@
           "name": "research-notes",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -239,7 +239,7 @@
           "name": "资料库",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         }
@@ -252,7 +252,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -260,7 +260,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -268,7 +268,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -276,7 +276,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794033124716,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -284,7 +284,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -292,7 +292,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -300,7 +300,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -308,7 +308,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -316,7 +316,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -324,7 +324,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         }
@@ -337,7 +337,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         }
@@ -350,7 +350,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -358,7 +358,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         }
@@ -371,7 +371,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -379,7 +379,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         },
@@ -387,7 +387,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885033,
           "from": null,
           "received_ms": null
         }
@@ -400,7 +400,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885028,
           "from": null,
           "received_ms": null
         },
@@ -408,7 +408,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885030,
           "from": null,
           "received_ms": null
         },
@@ -416,7 +416,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794033124713,
+          "at_ms": 1794149885027,
           "from": null,
           "received_ms": null
         },
@@ -424,7 +424,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794033124713,
+          "at_ms": 1794149885027,
           "from": null,
           "received_ms": null
         },
@@ -432,7 +432,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885029,
           "from": null,
           "received_ms": null
         },
@@ -440,7 +440,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885029,
           "from": null,
           "received_ms": null
         },
@@ -448,7 +448,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885029,
           "from": null,
           "received_ms": null
         },
@@ -456,7 +456,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885029,
           "from": null,
           "received_ms": null
         },
@@ -464,7 +464,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885030,
           "from": null,
           "received_ms": null
         },
@@ -472,7 +472,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794033124713,
+          "at_ms": 1794149885027,
           "from": null,
           "received_ms": null
         }
@@ -485,7 +485,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885031,
           "from": null,
           "received_ms": null
         }
@@ -498,7 +498,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885029,
           "from": null,
           "received_ms": null
         },
@@ -506,7 +506,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885028,
           "from": null,
           "received_ms": null
         }
@@ -519,7 +519,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885030,
           "from": null,
           "received_ms": null
         },
@@ -527,7 +527,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885030,
           "from": null,
           "received_ms": null
         },
@@ -535,7 +535,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794033124714,
+          "at_ms": 1794149885030,
           "from": null,
           "received_ms": null
         }
@@ -548,7 +548,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885031,
           "from": null,
           "received_ms": null
         },
@@ -556,7 +556,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -564,7 +564,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885031,
           "from": null,
           "received_ms": null
         },
@@ -572,7 +572,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885031,
           "from": null,
           "received_ms": null
         },
@@ -580,7 +580,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -588,7 +588,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -596,7 +596,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -604,7 +604,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -612,7 +612,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -620,7 +620,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885031,
           "from": null,
           "received_ms": null
         }
@@ -633,7 +633,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794033124716,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         }
@@ -646,7 +646,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -654,7 +654,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885031,
           "from": null,
           "received_ms": null
         }
@@ -667,7 +667,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -675,7 +675,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         },
@@ -683,7 +683,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794033124715,
+          "at_ms": 1794149885032,
           "from": null,
           "received_ms": null
         }
@@ -696,7 +696,7 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885034,
           "from": null,
           "received_ms": null
         },
@@ -704,7 +704,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -712,7 +712,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885034,
           "from": null,
           "received_ms": null
         },
@@ -720,7 +720,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794033124717,
+          "at_ms": 1794149885034,
           "from": null,
           "received_ms": null
         },
@@ -728,7 +728,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -736,7 +736,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -744,7 +744,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -752,7 +752,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -760,7 +760,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -768,7 +768,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885034,
           "from": null,
           "received_ms": null
         }
@@ -781,7 +781,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         }
@@ -794,7 +794,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885034,
           "from": null,
           "received_ms": null
         },
@@ -802,7 +802,7 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885034,
           "from": null,
           "received_ms": null
         }
@@ -815,7 +815,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -823,7 +823,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         },
@@ -831,7 +831,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794033124718,
+          "at_ms": 1794149885035,
           "from": null,
           "received_ms": null
         }
@@ -893,12 +893,21 @@
     "资料库/src/app.ts": "export const title = '完整 App Lab';\n",
     "资料库/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n"
   },
+  "pairing_ticket": {
+    "token": "khorLAB_ONLY_NOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIAL",
+    "minutes": 15,
+    "qr": {
+      "span": 69,
+      "path": "M4 4h7v1h-7zM13 4h1v1h-1zM15 4h1v1h-1zM17 4h1v1h-1zM20 4h6v1h-6zM28 4h1v1h-1zM30 4h2v1h-2zM33 4h4v1h-4zM38 4h3v1h-3zM44 4h4v1h-4zM49 4h3v1h-3zM55 4h2v1h-2zM58 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM12 5h2v1h-2zM15 5h3v1h-3zM19 5h2v1h-2zM23 5h1v1h-1zM27 5h7v1h-7zM35 5h1v1h-1zM37 5h1v1h-1zM41 5h1v1h-1zM44 5h1v1h-1zM51 5h1v1h-1zM53 5h1v1h-1zM55 5h2v1h-2zM58 5h1v1h-1zM64 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM14 6h2v1h-2zM19 6h2v1h-2zM22 6h1v1h-1zM24 6h3v1h-3zM28 6h1v1h-1zM31 6h1v1h-1zM33 6h5v1h-5zM40 6h2v1h-2zM43 6h1v1h-1zM47 6h1v1h-1zM49 6h3v1h-3zM54 6h3v1h-3zM58 6h1v1h-1zM60 6h3v1h-3zM64 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM14 7h1v1h-1zM16 7h3v1h-3zM21 7h3v1h-3zM26 7h1v1h-1zM28 7h2v1h-2zM31 7h5v1h-5zM37 7h3v1h-3zM41 7h7v1h-7zM49 7h1v1h-1zM51 7h4v1h-4zM56 7h1v1h-1zM58 7h1v1h-1zM60 7h3v1h-3zM64 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h1v1h-1zM16 8h5v1h-5zM24 8h1v1h-1zM26 8h2v1h-2zM30 8h1v1h-1zM32 8h6v1h-6zM40 8h2v1h-2zM43 8h3v1h-3zM48 8h3v1h-3zM53 8h3v1h-3zM58 8h1v1h-1zM60 8h3v1h-3zM64 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM13 9h3v1h-3zM17 9h1v1h-1zM20 9h1v1h-1zM23 9h2v1h-2zM26 9h1v1h-1zM28 9h3v1h-3zM32 9h1v1h-1zM36 9h2v1h-2zM39 9h1v1h-1zM41 9h1v1h-1zM43 9h1v1h-1zM45 9h3v1h-3zM49 9h3v1h-3zM53 9h2v1h-2zM58 9h1v1h-1zM64 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h1v1h-1zM32 10h1v1h-1zM34 10h1v1h-1zM36 10h1v1h-1zM38 10h1v1h-1zM40 10h1v1h-1zM42 10h1v1h-1zM44 10h1v1h-1zM46 10h1v1h-1zM48 10h1v1h-1zM50 10h1v1h-1zM52 10h1v1h-1zM54 10h1v1h-1zM56 10h1v1h-1zM58 10h7v1h-7zM13 11h1v1h-1zM15 11h2v1h-2zM18 11h1v1h-1zM20 11h1v1h-1zM22 11h1v1h-1zM27 11h3v1h-3zM32 11h1v1h-1zM36 11h1v1h-1zM39 11h1v1h-1zM41 11h1v1h-1zM45 11h2v1h-2zM51 11h2v1h-2zM54 11h3v1h-3zM4 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM10 12h1v1h-1zM14 12h1v1h-1zM16 12h2v1h-2zM19 12h2v1h-2zM23 12h1v1h-1zM25 12h2v1h-2zM30 12h1v1h-1zM32 12h5v1h-5zM40 12h1v1h-1zM42 12h2v1h-2zM45 12h1v1h-1zM47 12h2v1h-2zM50 12h1v1h-1zM52 12h1v1h-1zM60 12h1v1h-1zM63 12h1v1h-1zM4 13h5v1h-5zM12 13h3v1h-3zM19 13h5v1h-5zM25 13h2v1h-2zM29 13h1v1h-1zM32 13h3v1h-3zM37 13h4v1h-4zM43 13h2v1h-2zM46 13h2v1h-2zM51 13h1v1h-1zM55 13h1v1h-1zM57 13h4v1h-4zM62 13h1v1h-1zM64 13h1v1h-1zM4 14h5v1h-5zM10 14h1v1h-1zM14 14h3v1h-3zM20 14h3v1h-3zM24 14h1v1h-1zM27 14h2v1h-2zM31 14h1v1h-1zM36 14h1v1h-1zM40 14h3v1h-3zM45 14h2v1h-2zM48 14h4v1h-4zM54 14h1v1h-1zM56 14h2v1h-2zM60 14h2v1h-2zM64 14h1v1h-1zM4 15h1v1h-1zM7 15h1v1h-1zM11 15h1v1h-1zM13 15h2v1h-2zM16 15h1v1h-1zM19 15h7v1h-7zM27 15h3v1h-3zM35 15h1v1h-1zM37 15h1v1h-1zM39 15h1v1h-1zM41 15h1v1h-1zM43 15h1v1h-1zM49 15h1v1h-1zM53 15h3v1h-3zM57 15h1v1h-1zM59 15h1v1h-1zM61 15h4v1h-4zM6 16h1v1h-1zM8 16h3v1h-3zM13 16h1v1h-1zM16 16h1v1h-1zM18 16h2v1h-2zM21 16h3v1h-3zM25 16h1v1h-1zM28 16h7v1h-7zM36 16h3v1h-3zM40 16h1v1h-1zM42 16h1v1h-1zM44 16h2v1h-2zM48 16h2v1h-2zM51 16h2v1h-2zM54 16h1v1h-1zM56 16h1v1h-1zM59 16h5v1h-5zM6 17h1v1h-1zM11 17h1v1h-1zM15 17h1v1h-1zM17 17h3v1h-3zM21 17h2v1h-2zM28 17h2v1h-2zM32 17h2v1h-2zM37 17h2v1h-2zM43 17h1v1h-1zM46 17h1v1h-1zM48 17h1v1h-1zM52 17h2v1h-2zM55 17h1v1h-1zM57 17h1v1h-1zM59 17h1v1h-1zM61 17h2v1h-2zM4 18h3v1h-3zM10 18h1v1h-1zM12 18h1v1h-1zM19 18h2v1h-2zM23 18h2v1h-2zM26 18h1v1h-1zM29 18h2v1h-2zM34 18h3v1h-3zM39 18h4v1h-4zM44 18h1v1h-1zM46 18h2v1h-2zM49 18h1v1h-1zM51 18h1v1h-1zM53 18h1v1h-1zM56 18h1v1h-1zM58 18h2v1h-2zM61 18h1v1h-1zM63 18h2v1h-2zM4 19h1v1h-1zM6 19h1v1h-1zM8 19h1v1h-1zM12 19h4v1h-4zM17 19h3v1h-3zM26 19h2v1h-2zM31 19h2v1h-2zM36 19h1v1h-1zM42 19h1v1h-1zM48 19h2v1h-2zM51 19h2v1h-2zM54 19h2v1h-2zM59 19h2v1h-2zM62 19h1v1h-1zM4 20h1v1h-1zM6 20h5v1h-5zM12 20h2v1h-2zM17 20h1v1h-1zM20 20h2v1h-2zM26 20h6v1h-6zM35 20h4v1h-4zM40 20h3v1h-3zM44 20h3v1h-3zM48 20h2v1h-2zM53 20h2v1h-2zM57 20h3v1h-3zM64 20h1v1h-1zM6 21h2v1h-2zM11 21h1v1h-1zM13 21h2v1h-2zM19 21h1v1h-1zM23 21h4v1h-4zM29 21h6v1h-6zM41 21h2v1h-2zM46 21h1v1h-1zM48 21h4v1h-4zM55 21h4v1h-4zM61 21h4v1h-4zM6 22h2v1h-2zM10 22h2v1h-2zM18 22h2v1h-2zM21 22h1v1h-1zM24 22h1v1h-1zM26 22h2v1h-2zM30 22h2v1h-2zM35 22h1v1h-1zM37 22h1v1h-1zM40 22h1v1h-1zM44 22h2v1h-2zM52 22h1v1h-1zM54 22h2v1h-2zM60 22h2v1h-2zM63 22h2v1h-2zM4 23h1v1h-1zM8 23h1v1h-1zM12 23h1v1h-1zM14 23h2v1h-2zM17 23h1v1h-1zM19 23h1v1h-1zM21 23h1v1h-1zM26 23h1v1h-1zM28 23h1v1h-1zM32 23h4v1h-4zM39 23h1v1h-1zM41 23h1v1h-1zM44 23h2v1h-2zM48 23h2v1h-2zM51 23h1v1h-1zM53 23h5v1h-5zM64 23h1v1h-1zM4 24h2v1h-2zM9 24h2v1h-2zM12 24h2v1h-2zM16 24h2v1h-2zM20 24h1v1h-1zM22 24h3v1h-3zM26 24h3v1h-3zM30 24h1v1h-1zM34 24h1v1h-1zM38 24h1v1h-1zM40 24h1v1h-1zM42 24h3v1h-3zM46 24h1v1h-1zM48 24h3v1h-3zM53 24h1v1h-1zM56 24h2v1h-2zM60 24h1v1h-1zM64 24h1v1h-1zM6 25h3v1h-3zM11 25h2v1h-2zM14 25h2v1h-2zM17 25h2v1h-2zM20 25h1v1h-1zM23 25h1v1h-1zM25 25h1v1h-1zM27 25h2v1h-2zM31 25h2v1h-2zM34 25h2v1h-2zM37 25h1v1h-1zM41 25h1v1h-1zM45 25h1v1h-1zM47 25h6v1h-6zM54 25h1v1h-1zM61 25h4v1h-4zM9 26h2v1h-2zM12 26h2v1h-2zM16 26h1v1h-1zM18 26h1v1h-1zM20 26h1v1h-1zM22 26h4v1h-4zM28 26h1v1h-1zM31 26h2v1h-2zM38 26h2v1h-2zM41 26h1v1h-1zM43 26h2v1h-2zM46 26h1v1h-1zM48 26h2v1h-2zM55 26h1v1h-1zM57 26h1v1h-1zM59 26h1v1h-1zM63 26h2v1h-2zM5 27h4v1h-4zM11 27h3v1h-3zM15 27h2v1h-2zM18 27h1v1h-1zM21 27h2v1h-2zM24 27h2v1h-2zM29 27h3v1h-3zM34 27h1v1h-1zM36 27h2v1h-2zM39 27h1v1h-1zM41 27h1v1h-1zM44 27h2v1h-2zM47 27h1v1h-1zM50 27h1v1h-1zM53 27h1v1h-1zM56 27h2v1h-2zM59 27h1v1h-1zM61 27h1v1h-1zM63 27h1v1h-1zM4 28h3v1h-3zM8 28h1v1h-1zM10 28h2v1h-2zM13 28h1v1h-1zM15 28h2v1h-2zM26 28h4v1h-4zM31 28h2v1h-2zM34 28h5v1h-5zM40 28h4v1h-4zM46 28h1v1h-1zM48 28h1v1h-1zM51 28h1v1h-1zM54 28h1v1h-1zM57 28h2v1h-2zM62 28h1v1h-1zM64 28h1v1h-1zM5 29h2v1h-2zM14 29h2v1h-2zM17 29h2v1h-2zM21 29h7v1h-7zM30 29h2v1h-2zM34 29h2v1h-2zM37 29h1v1h-1zM39 29h1v1h-1zM41 29h1v1h-1zM43 29h1v1h-1zM45 29h1v1h-1zM47 29h1v1h-1zM49 29h5v1h-5zM55 29h1v1h-1zM59 29h2v1h-2zM63 29h2v1h-2zM5 30h3v1h-3zM10 30h1v1h-1zM13 30h4v1h-4zM21 30h1v1h-1zM23 30h3v1h-3zM27 30h2v1h-2zM30 30h1v1h-1zM32 30h1v1h-1zM35 30h1v1h-1zM37 30h2v1h-2zM40 30h3v1h-3zM44 30h1v1h-1zM46 30h1v1h-1zM48 30h1v1h-1zM51 30h2v1h-2zM54 30h1v1h-1zM56 30h1v1h-1zM58 30h1v1h-1zM60 30h2v1h-2zM4 31h1v1h-1zM6 31h4v1h-4zM11 31h2v1h-2zM14 31h1v1h-1zM19 31h3v1h-3zM23 31h3v1h-3zM27 31h1v1h-1zM29 31h1v1h-1zM31 31h7v1h-7zM40 31h1v1h-1zM43 31h1v1h-1zM45 31h2v1h-2zM50 31h1v1h-1zM52 31h1v1h-1zM54 31h3v1h-3zM58 31h2v1h-2zM61 31h3v1h-3zM8 32h5v1h-5zM14 32h1v1h-1zM16 32h1v1h-1zM18 32h2v1h-2zM21 32h1v1h-1zM25 32h2v1h-2zM28 32h1v1h-1zM30 32h1v1h-1zM32 32h6v1h-6zM39 32h1v1h-1zM41 32h1v1h-1zM47 32h1v1h-1zM49 32h1v1h-1zM54 32h1v1h-1zM56 32h6v1h-6zM64 32h1v1h-1zM5 33h4v1h-4zM12 33h3v1h-3zM17 33h3v1h-3zM23 33h1v1h-1zM26 33h4v1h-4zM32 33h1v1h-1zM36 33h1v1h-1zM42 33h4v1h-4zM48 33h1v1h-1zM51 33h2v1h-2zM55 33h2v1h-2zM60 33h2v1h-2zM5 34h1v1h-1zM8 34h1v1h-1zM10 34h1v1h-1zM12 34h6v1h-6zM19 34h3v1h-3zM24 34h2v1h-2zM29 34h2v1h-2zM32 34h1v1h-1zM34 34h1v1h-1zM36 34h1v1h-1zM39 34h2v1h-2zM42 34h3v1h-3zM47 34h2v1h-2zM50 34h2v1h-2zM53 34h2v1h-2zM56 34h1v1h-1zM58 34h1v1h-1zM60 34h1v1h-1zM62 34h1v1h-1zM64 34h1v1h-1zM7 35h2v1h-2zM12 35h1v1h-1zM18 35h2v1h-2zM21 35h5v1h-5zM27 35h4v1h-4zM32 35h1v1h-1zM36 35h3v1h-3zM40 35h2v1h-2zM43 35h1v1h-1zM45 35h3v1h-3zM51 35h1v1h-1zM55 35h2v1h-2zM60 35h2v1h-2zM63 35h1v1h-1zM4 36h9v1h-9zM15 36h3v1h-3zM22 36h2v1h-2zM29 36h1v1h-1zM31 36h6v1h-6zM38 36h3v1h-3zM42 36h1v1h-1zM44 36h1v1h-1zM46 36h1v1h-1zM48 36h7v1h-7zM56 36h5v1h-5zM62 36h1v1h-1zM64 36h1v1h-1zM6 37h1v1h-1zM11 37h1v1h-1zM14 37h2v1h-2zM17 37h1v1h-1zM22 37h3v1h-3zM26 37h6v1h-6zM33 37h2v1h-2zM36 37h1v1h-1zM38 37h1v1h-1zM40 37h1v1h-1zM45 37h1v1h-1zM47 37h1v1h-1zM49 37h1v1h-1zM51 37h3v1h-3zM55 37h1v1h-1zM57 37h3v1h-3zM61 37h2v1h-2zM4 38h1v1h-1zM6 38h1v1h-1zM10 38h2v1h-2zM13 38h1v1h-1zM15 38h1v1h-1zM17 38h1v1h-1zM19 38h2v1h-2zM23 38h2v1h-2zM26 38h6v1h-6zM33 38h2v1h-2zM37 38h2v1h-2zM40 38h1v1h-1zM42 38h1v1h-1zM44 38h1v1h-1zM46 38h1v1h-1zM48 38h1v1h-1zM50 38h2v1h-2zM53 38h2v1h-2zM57 38h2v1h-2zM60 38h1v1h-1zM62 38h2v1h-2zM4 39h1v1h-1zM8 39h1v1h-1zM12 39h3v1h-3zM16 39h3v1h-3zM21 39h2v1h-2zM24 39h4v1h-4zM30 39h6v1h-6zM38 39h2v1h-2zM41 39h1v1h-1zM43 39h1v1h-1zM47 39h2v1h-2zM50 39h2v1h-2zM55 39h1v1h-1zM57 39h1v1h-1zM59 39h1v1h-1zM61 39h1v1h-1zM63 39h2v1h-2zM5 40h2v1h-2zM8 40h1v1h-1zM10 40h1v1h-1zM12 40h2v1h-2zM15 40h4v1h-4zM21 40h5v1h-5zM27 40h1v1h-1zM29 40h2v1h-2zM33 40h3v1h-3zM38 40h2v1h-2zM43 40h1v1h-1zM46 40h1v1h-1zM48 40h2v1h-2zM52 40h1v1h-1zM55 40h1v1h-1zM58 40h1v1h-1zM60 40h1v1h-1zM63 40h1v1h-1zM4 41h1v1h-1zM14 41h2v1h-2zM17 41h2v1h-2zM20 41h1v1h-1zM23 41h1v1h-1zM25 41h4v1h-4zM31 41h1v1h-1zM34 41h1v1h-1zM36 41h10v1h-10zM49 41h1v1h-1zM54 41h1v1h-1zM56 41h2v1h-2zM61 41h2v1h-2zM8 42h1v1h-1zM10 42h2v1h-2zM13 42h1v1h-1zM15 42h1v1h-1zM22 42h3v1h-3zM26 42h1v1h-1zM29 42h1v1h-1zM35 42h1v1h-1zM38 42h2v1h-2zM41 42h1v1h-1zM43 42h1v1h-1zM45 42h3v1h-3zM50 42h1v1h-1zM55 42h1v1h-1zM58 42h1v1h-1zM62 42h1v1h-1zM64 42h1v1h-1zM4 43h3v1h-3zM8 43h1v1h-1zM14 43h1v1h-1zM19 43h4v1h-4zM25 43h1v1h-1zM27 43h1v1h-1zM29 43h3v1h-3zM33 43h3v1h-3zM37 43h1v1h-1zM39 43h2v1h-2zM42 43h2v1h-2zM45 43h1v1h-1zM47 43h1v1h-1zM52 43h1v1h-1zM55 43h1v1h-1zM57 43h1v1h-1zM59 43h1v1h-1zM63 43h1v1h-1zM5 44h7v1h-7zM13 44h1v1h-1zM16 44h1v1h-1zM18 44h1v1h-1zM20 44h2v1h-2zM26 44h1v1h-1zM28 44h2v1h-2zM34 44h1v1h-1zM38 44h1v1h-1zM42 44h1v1h-1zM44 44h1v1h-1zM46 44h2v1h-2zM50 44h1v1h-1zM54 44h1v1h-1zM58 44h1v1h-1zM60 44h1v1h-1zM64 44h1v1h-1zM4 45h4v1h-4zM9 45h1v1h-1zM11 45h1v1h-1zM13 45h1v1h-1zM17 45h1v1h-1zM19 45h1v1h-1zM21 45h1v1h-1zM23 45h1v1h-1zM25 45h2v1h-2zM28 45h2v1h-2zM31 45h1v1h-1zM34 45h4v1h-4zM39 45h1v1h-1zM45 45h1v1h-1zM48 45h3v1h-3zM53 45h1v1h-1zM55 45h3v1h-3zM59 45h1v1h-1zM61 45h3v1h-3zM5 46h1v1h-1zM9 46h4v1h-4zM15 46h2v1h-2zM19 46h1v1h-1zM22 46h1v1h-1zM24 46h1v1h-1zM26 46h1v1h-1zM32 46h2v1h-2zM38 46h1v1h-1zM43 46h1v1h-1zM46 46h1v1h-1zM52 46h1v1h-1zM54 46h1v1h-1zM56 46h1v1h-1zM60 46h1v1h-1zM64 46h1v1h-1zM4 47h1v1h-1zM7 47h1v1h-1zM11 47h2v1h-2zM14 47h3v1h-3zM19 47h3v1h-3zM23 47h2v1h-2zM28 47h1v1h-1zM31 47h1v1h-1zM35 47h2v1h-2zM38 47h1v1h-1zM42 47h2v1h-2zM46 47h2v1h-2zM49 47h1v1h-1zM51 47h1v1h-1zM53 47h1v1h-1zM55 47h4v1h-4zM61 47h1v1h-1zM63 47h1v1h-1zM5 48h3v1h-3zM10 48h2v1h-2zM15 48h1v1h-1zM17 48h3v1h-3zM21 48h3v1h-3zM26 48h2v1h-2zM30 48h1v1h-1zM32 48h2v1h-2zM35 48h2v1h-2zM40 48h1v1h-1zM44 48h1v1h-1zM47 48h2v1h-2zM50 48h3v1h-3zM54 48h1v1h-1zM62 48h1v1h-1zM64 48h1v1h-1zM5 49h1v1h-1zM7 49h2v1h-2zM11 49h1v1h-1zM13 49h1v1h-1zM19 49h2v1h-2zM23 49h1v1h-1zM25 49h1v1h-1zM27 49h3v1h-3zM31 49h2v1h-2zM35 49h1v1h-1zM38 49h2v1h-2zM42 49h3v1h-3zM46 49h1v1h-1zM50 49h1v1h-1zM53 49h1v1h-1zM56 49h1v1h-1zM58 49h1v1h-1zM60 49h1v1h-1zM63 49h2v1h-2zM4 50h1v1h-1zM7 50h1v1h-1zM10 50h3v1h-3zM14 50h1v1h-1zM16 50h3v1h-3zM20 50h4v1h-4zM26 50h7v1h-7zM34 50h3v1h-3zM38 50h3v1h-3zM42 50h1v1h-1zM44 50h1v1h-1zM46 50h2v1h-2zM49 50h3v1h-3zM54 50h7v1h-7zM62 50h1v1h-1zM4 51h5v1h-5zM11 51h1v1h-1zM13 51h1v1h-1zM15 51h1v1h-1zM19 51h4v1h-4zM24 51h1v1h-1zM27 51h1v1h-1zM29 51h2v1h-2zM32 51h1v1h-1zM36 51h3v1h-3zM41 51h2v1h-2zM44 51h3v1h-3zM49 51h1v1h-1zM51 51h1v1h-1zM53 51h2v1h-2zM56 51h2v1h-2zM60 51h1v1h-1zM64 51h1v1h-1zM7 52h1v1h-1zM10 52h1v1h-1zM14 52h1v1h-1zM16 52h1v1h-1zM18 52h2v1h-2zM24 52h3v1h-3zM28 52h1v1h-1zM31 52h1v1h-1zM34 52h5v1h-5zM40 52h1v1h-1zM42 52h2v1h-2zM45 52h1v1h-1zM47 52h1v1h-1zM49 52h3v1h-3zM53 52h2v1h-2zM58 52h1v1h-1zM60 52h4v1h-4zM6 53h1v1h-1zM8 53h1v1h-1zM13 53h1v1h-1zM18 53h1v1h-1zM20 53h8v1h-8zM30 53h2v1h-2zM35 53h2v1h-2zM39 53h1v1h-1zM41 53h1v1h-1zM43 53h2v1h-2zM47 53h1v1h-1zM51 53h2v1h-2zM55 53h6v1h-6zM63 53h1v1h-1zM6 54h5v1h-5zM12 54h6v1h-6zM20 54h2v1h-2zM23 54h1v1h-1zM26 54h1v1h-1zM28 54h1v1h-1zM32 54h1v1h-1zM34 54h5v1h-5zM40 54h1v1h-1zM42 54h3v1h-3zM46 54h1v1h-1zM48 54h3v1h-3zM53 54h2v1h-2zM56 54h3v1h-3zM61 54h1v1h-1zM63 54h2v1h-2zM4 55h3v1h-3zM8 55h1v1h-1zM11 55h3v1h-3zM17 55h1v1h-1zM21 55h1v1h-1zM23 55h1v1h-1zM26 55h2v1h-2zM29 55h5v1h-5zM35 55h1v1h-1zM38 55h4v1h-4zM43 55h1v1h-1zM45 55h1v1h-1zM47 55h3v1h-3zM51 55h1v1h-1zM53 55h3v1h-3zM61 55h4v1h-4zM4 56h4v1h-4zM10 56h1v1h-1zM12 56h4v1h-4zM17 56h1v1h-1zM20 56h5v1h-5zM28 56h1v1h-1zM30 56h1v1h-1zM32 56h7v1h-7zM42 56h4v1h-4zM48 56h1v1h-1zM50 56h4v1h-4zM55 56h6v1h-6zM62 56h2v1h-2zM12 57h2v1h-2zM16 57h1v1h-1zM18 57h3v1h-3zM23 57h1v1h-1zM27 57h3v1h-3zM32 57h1v1h-1zM36 57h1v1h-1zM39 57h3v1h-3zM46 57h1v1h-1zM48 57h2v1h-2zM52 57h1v1h-1zM55 57h2v1h-2zM60 57h3v1h-3zM4 58h7v1h-7zM13 58h1v1h-1zM15 58h1v1h-1zM17 58h4v1h-4zM25 58h2v1h-2zM29 58h1v1h-1zM32 58h1v1h-1zM34 58h1v1h-1zM36 58h1v1h-1zM38 58h3v1h-3zM42 58h1v1h-1zM44 58h1v1h-1zM46 58h2v1h-2zM50 58h2v1h-2zM54 58h1v1h-1zM56 58h1v1h-1zM58 58h1v1h-1zM60 58h2v1h-2zM63 58h1v1h-1zM4 59h1v1h-1zM10 59h1v1h-1zM13 59h1v1h-1zM15 59h1v1h-1zM20 59h3v1h-3zM28 59h5v1h-5zM36 59h2v1h-2zM47 59h4v1h-4zM52 59h5v1h-5zM60 59h1v1h-1zM62 59h2v1h-2zM4 60h1v1h-1zM6 60h3v1h-3zM10 60h1v1h-1zM12 60h2v1h-2zM15 60h4v1h-4zM20 60h2v1h-2zM23 60h1v1h-1zM25 60h3v1h-3zM30 60h7v1h-7zM38 60h1v1h-1zM40 60h1v1h-1zM42 60h1v1h-1zM44 60h5v1h-5zM50 60h2v1h-2zM56 60h5v1h-5zM4 61h1v1h-1zM6 61h3v1h-3zM10 61h1v1h-1zM13 61h1v1h-1zM15 61h1v1h-1zM21 61h1v1h-1zM26 61h1v1h-1zM31 61h3v1h-3zM41 61h1v1h-1zM46 61h2v1h-2zM50 61h4v1h-4zM55 61h3v1h-3zM59 61h1v1h-1zM62 61h2v1h-2zM4 62h1v1h-1zM6 62h3v1h-3zM10 62h1v1h-1zM12 62h1v1h-1zM15 62h4v1h-4zM20 62h3v1h-3zM24 62h2v1h-2zM28 62h1v1h-1zM30 62h3v1h-3zM34 62h1v1h-1zM36 62h1v1h-1zM40 62h3v1h-3zM44 62h2v1h-2zM47 62h4v1h-4zM54 62h1v1h-1zM58 62h1v1h-1zM60 62h2v1h-2zM64 62h1v1h-1zM4 63h1v1h-1zM10 63h1v1h-1zM13 63h3v1h-3zM17 63h1v1h-1zM20 63h3v1h-3zM25 63h1v1h-1zM27 63h1v1h-1zM31 63h2v1h-2zM37 63h1v1h-1zM39 63h2v1h-2zM42 63h1v1h-1zM44 63h1v1h-1zM46 63h3v1h-3zM50 63h1v1h-1zM53 63h1v1h-1zM55 63h1v1h-1zM57 63h1v1h-1zM59 63h1v1h-1zM63 63h1v1h-1zM4 64h7v1h-7zM12 64h3v1h-3zM18 64h1v1h-1zM21 64h3v1h-3zM27 64h2v1h-2zM30 64h2v1h-2zM33 64h9v1h-9zM43 64h5v1h-5zM50 64h4v1h-4zM56 64h2v1h-2zM61 64h1v1h-1zM63 64h2v1h-2z"
+    }
+  },
   "_source": {
     "Cargo.lock": "7cbdde6f78ebb93f98e51fe81410906f833f58793296e592547e25e8f89ad705",
     "crates/core/src/avatar.rs": "ac4b9db9c2c6a22c6579bb387c9c606f46cce8079b7d9822fe69bf268506a49d",
     "crates/core/src/avatar/mark.rs": "14e6a45e011668bf05e9b3c89cd2c15b15c123a65b2adb68c0362fe88095b1d5",
     "crates/node/src/files.rs": "0051245782015daebc893495748097bf088df7114e2978b483c073cac9aedeec",
-    "apps/gui/core/src/bin/lab_data.rs": "e16b779071d446b0460480b421de821576100f18aea84c76c18c22bd27a7e0a0",
+    "apps/gui/core/src/bin/lab_data.rs": "eed761b4349375da36cbde6d36093e8678314bc34b3273212fadd7962b135aa3",
+    "apps/gui/core/src/qr.rs": "9e1bd73fcdd6e7afe7bf5d2d71c8551e139562e53c4ced190cef6d9dcc0f07dd",
     "apps/gui/dev/lab/data/workspace/.config/preferences.json": "d15be58e7eb7f9813a8f87e0f093475bdaeb61a22917641168ced318ca61b2e2",
     "apps/gui/dev/lab/data/workspace/.gitignore": "4d56952b0fb13bf8f9b6c13a6d4c34a075bac3af447636a1df4335d7576e2f97",
     "apps/gui/dev/lab/data/workspace/README.md": "ad36cf9e020c9284bdaa4987ebd05a1cb9187acaad651956ac8ffec8622b573d",
@@ -913,5 +922,5 @@
     "apps/gui/dev/lab/data/workspace/src/app.ts": "aa86c4f80a12ab65cd5ef6b71aae1636d7186648222e06f1e2b18a3dcac4ef05",
     "apps/gui/dev/lab/data/workspace/src/navigation.ts": "aaeff633369c4afdbb21c8b53096d13afa98efa1b99bee609e05c6d8bcc07d0a"
   },
-  "_payload_sha256": "c9c9bd2960bbf796d4a3e5c53afd6347eaeacf80ee16439992c29356bebc5051"
+  "_payload_sha256": "b5437123d327fb3873ffedb4d58398d450a0c7c2998e165a16d77b962c579b69"
 }

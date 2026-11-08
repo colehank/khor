@@ -8,7 +8,7 @@ export function WorkspaceNavigation({branch,repo,view,onView,withSessions=false,
   branch:string;repo:boolean;view:WorkspaceSidebarView;onView:(view:WorkspaceSidebarView)=>void;withSessions?:boolean;seat?:'workspace'|'session';
 }) {
   if(!repo&&!withSessions)return null;
-  return <div data-workspace-navigation data-seat={seat} data-view={view} className="min-h-12 pb-1.5">
+  return <div data-workspace-navigation data-seat={seat} data-view={view} data-with-sessions={withSessions || undefined} className="min-h-12 pb-1.5">
     <span data-workspace-branch-icon>{repo&&<IconBranch/>}</span>
     <span data-workspace-branch title={branch}>{branch}</span>
     <GlassCapsule role="group" aria-label={gui.workspaces_tab}>

@@ -7,9 +7,9 @@ import {gui} from '@/gen/catalog';
 import type {ContentSource} from '@/hooks/use-content-navigation';
 import {band} from '@/lib/scroll-edge';
 
-export function ContentToolbar({kind,source,onSource,children,actions,onClose,onBack,pinned=false}:{
+export function ContentToolbar({kind,source,onSource,children,actions,progress,onClose,onBack,pinned=false}:{
   kind:'picker'|'file'|'page'|'commit';source:ContentSource;onSource:(source:ContentSource)=>void;
-  children:ReactNode;actions?:ReactNode;onClose:()=>void;onBack?:()=>void;pinned?:boolean;
+  children:ReactNode;actions?:ReactNode;progress?:ReactNode;onClose:()=>void;onBack?:()=>void;pinned?:boolean;
 }) {
   const bind=useCallback((head:HTMLDivElement|null)=>{
     const locateLanding=kind==='page'?()=>head?.parentElement?.querySelector<HTMLElement>(':scope > [data-content-page-landing]')??null:undefined;
@@ -18,7 +18,7 @@ export function ContentToolbar({kind,source,onSource,children,actions,onClose,on
   return <div ref={bind} data-band data-content-toolbar={kind} data-content-page-bar={kind==='page'||undefined} className="session-content-location-bar">
     <ContentScope value={source} onChange={onSource} segmented/>
     {onBack&&<GlassCircle data-content-back aria-label={gui.back} tipSide="top" onClick={onBack}><IconBack/></GlassCircle>}
-    <div data-content-location-layer className="glass content-location-pill">{children}</div>
+    <div data-content-location-layer className="glass content-location-pill relative">{children}{progress}</div>
     {actions}
     <GlassCircle data-content-close disabled={pinned} aria-label={gui.close_tab} tipSide="top" onClick={onClose}><IconClose/></GlassCircle>
   </div>;

@@ -1,5 +1,6 @@
 import {createLabFixture} from './fixture';
 import {scenes, sessionIds, type Scene} from './scenes';
+import {configureLabBackend} from './backend-context';
 
 type Runtime = {mode: 'frontend'|'full'; scene: Scene; tree: string; revision: string};
 const version = document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
@@ -14,7 +15,7 @@ const runtime = requested ? {...settings, scene: requested as Scene} : settings;
 if (!(runtime.scene in scenes)) throw new Error('Unknown Lab scene');
 const native = '__TAURI_INTERNALS__' in window;
 if (runtime.mode === 'full' && !native) throw new Error('Full Lab requires its isolated native host; use the frontend link for browser review');
-if (runtime.mode === 'frontend' && native) throw new Error('Frontend fixtures cannot replace the native backend');
+configureLabBackend(runtime.mode);
 if (query.has('bridge')) throw new Error('Lab does not connect to external API bridges');
 const scene = scenes[runtime.scene];
 const items = Number(query.get('items') ?? 5), machines = Number(query.get('machines') ?? 3);

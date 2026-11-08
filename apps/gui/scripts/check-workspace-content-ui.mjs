@@ -207,7 +207,8 @@ try{
  await phone.screenshot({path:join(output,'mobile-picker-overview.png')});
  results.push({name:'mobile commit Back, deck and overview use the current scene identity',passed:true});await phone.close();
  {
- const nativePhone=await browser.newPage({viewport:{width:390,height:844},isMobile:true,hasTouch:true});
+ for(const mobile of [false,true]){
+ const nativePhone=await browser.newPage({viewport:mobile?{width:390,height:844}:{width:1400,height:900},isMobile:mobile,hasTouch:mobile});
  nativePhone.on('pageerror',e=>errors.push(e.message));
  await nativePhone.addInitScript(()=>{
    const callbacks=new Map(),listeners=new Map();let serial=0;
@@ -222,11 +223,12 @@ try{
    window.__TAURI_EVENT_PLUGIN_INTERNALS__={unregisterListener:()=>{}};
    window.__fixtureNavigation=payload=>{for(const [id,listener]of listeners)if(listener.event==='page:navigation')callbacks.get(listener.handler)?.({id,event:listener.event,payload});};
  });
- await nativePhone.goto(url+'?mobile=1');await nativePhone.waitForFunction(()=>window.__workspaceProbe?.content.ready);
+ await nativePhone.goto(url+(mobile?'?mobile=1':''));await nativePhone.waitForFunction(()=>window.__workspaceProbe?.content.ready);
  await nativePhone.evaluate(async()=>{const {content,navigation}=window.__workspaceProbe;await content.point('source','fixture','https://fixture.invalid/page','page');navigation.select(content.allTabs.find(t=>t.id==='source'));});
  const webpage=nativePhone.locator('[data-content-visible="true"] .mobile-content-page'),host=webpage.locator('[data-page-host]');
  await host.waitFor();await nativePhone.waitForFunction(()=>document.querySelector('[data-content-visible="true"] [data-page-host]')?.dataset.nativePageVisible==='true');
  const handle=await host.getAttribute('data-native-page-tab'),tabCount=await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length);
+ if(mobile){
  const band=webpage.locator('[data-deck-band]'),box=await band.boundingBox();assert(box&&box.width>0);
  const touch=await nativePhone.context().newCDPSession(nativePhone),point={x:box.x+box.width/2,y:box.y+box.height/2,id:1};
  await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[point]});
@@ -241,10 +243,20 @@ try{
  const browserOverview=nativePhone.locator('[data-content-overview]:not([inert])');await browserOverview.waitFor();
  await browserOverview.locator('[data-content-overview-tab][data-on="true"]').click();await webpage.waitFor();
  assert.equal(await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length),tabCount,'overview gestures preserve the current tab');
+ }
  await nativePhone.evaluate(tab=>window.__fixtureNavigation({tab,view:'1',navigation:'1',revision:'1',phase:'started',estimate:.6,requested_url:'https://fixture.invalid/page',url:'https://fixture.invalid/page',exit:'',proxied:false,error:null}),handle);
  const progress=webpage.locator('[data-pill-progress]');await progress.waitFor();
- assert(await progress.evaluate(line=>{const pill=line.closest('.mobile-content-pill'),shape=pill.getBoundingClientRect();for(let p=line;p&&p!==pill.parentElement;p=p.parentElement){const s=getComputedStyle(p),r=p.getBoundingClientRect();if(s.overflowX==='hidden'&&parseFloat(s.borderBottomLeftRadius)>0&&Math.abs(r.left-shape.left)<1&&Math.abs(r.width-shape.width)<1)return true;}return false;}),'loading progress is clipped to the complete pill shape');
- results.push({name:'native session browser keeps its gesture selector above the page and clips pill progress',passed:true});await nativePhone.close();
+ assert.equal(await progress.getAttribute('data-pill-progress'),'0.6','The pill projects the actual native estimate');
+ assert(await progress.evaluate(line=>{const pill=line.closest('.mobile-content-pill,.content-location-pill'),shape=pill.getBoundingClientRect();for(let p=line;p&&p!==pill.parentElement;p=p.parentElement){const s=getComputedStyle(p),r=p.getBoundingClientRect();if(s.overflowX==='hidden'&&parseFloat(s.borderBottomLeftRadius)>0&&Math.abs(r.left-shape.left)<1&&Math.abs(r.width-shape.width)<1)return true;}return false;}),'loading progress is clipped to the complete pill shape');
+ await nativePhone.screenshot({path:join(output,mobile?'mobile-browser-progress.png':'desktop-browser-progress.png')});
+ await nativePhone.evaluate(tab=>window.__fixtureNavigation({tab,view:'1',navigation:'1',revision:'2',phase:'failed',estimate:.6,requested_url:'https://fixture.invalid/page',url:'https://fixture.invalid/page',exit:'',proxied:false,error:{domain:'NSURLErrorDomain',code:'-1004',description:'Connection refused',url:'https://fixture.invalid/page',underlying:[],truncated:false}}),handle);
+ await progress.waitFor({state:'detached'});await webpage.locator('[role=alert]').waitFor();
+ if(mobile)await webpage.locator('[data-deck-title]').click();
+ const address=webpage.locator('[data-page-address]');await address.click();await address.fill('http://127.0.0.1:23910/app/?scene=workspaces&machines=3');await address.press('Enter');
+ await until(()=>calls.some(c=>c.cmd==='open_page'&&c.args.tab===handle&&c.args.url==='http://127.0.0.1:23910/app/?scene=workspaces&machines=3'));
+ assert.equal(await nativePhone.evaluate(()=>window.__workspaceProbe.content.allTabs.length),tabCount,'Load state must not create tabs');
+ results.push({name:(mobile?'mobile':'desktop')+' native session browser clips actual progress and clears it on failure',passed:true});await nativePhone.close();
+ }
  }
 
  }
