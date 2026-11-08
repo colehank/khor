@@ -58,7 +58,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   assert.equal((await api('__ai_preview/says')).length,0,'Reconnect only resumes reads; it never resends a prompt');
   assert.deepEqual(errors,[]);
   return {name:`GUI composer and reader ${engine}`,passed:true,errors};
- }finally{await context.close();}
+ }catch(error){await page.screenshot({path:path.join(report,`gui-experience-${engine}-failure.png`)}).catch(()=>{});throw error;}finally{await context.close();}
 }
 
 export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=false}){
@@ -102,5 +102,5 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
   assert.deepEqual(page.viewportSize(),{width:1500,height:900});assert.deepEqual(errors,[]);
   await page.screenshot({path:path.join(report,`workspace-sessions-${engine}.png`)});
   return {name:`workspace shared session frame ${engine}`,passed:true,geometry,errors};
- }finally{await context.close();}
+ }catch(error){await page.screenshot({path:path.join(report,`workspace-sessions-${mobile?"mobile":"desktop"}-${engine}-failure.png`)}).catch(()=>{});throw error;}finally{await context.close();}
 }
