@@ -612,7 +612,7 @@ function TicketPage({ machines, onClose, onJoined }: {
   const [scanner, setScanner] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [camera, setCamera] = useState<"denied" | "failed" | null>(null);
-  const joined = ticket ? machines.find((machine) => !before.has(machine.id)) : undefined;
+  const joined = mode === "invite" && ticket ? machines.find((machine) => !before.has(machine.id)) : undefined;
 
   // Joining consumes another machine's credential; it never issues a new one.
   useEffect(() => {

@@ -27327,10 +27327,8 @@ try {
 
     // (c) 邀请设备: the token and its QR code.
     // 添加机器 → khor 主机 (round join-d): the code is on that page.
-    const toTicket = async () =>
-      (await until(2_000, async () => (await page.locator('[data-add-machine] [data-add-row="khor"]').count()) === 1)) &&
-      (await page.locator('[data-add-machine] [data-add-row="khor"]').click(), true);
-    if (!(await open("devices")) || !["menu", "direct"].includes(await plus("add")) || !(await toTicket())) {
+    const toTicket = async () => until(3_000, async () => (await page.locator('[data-add-machine="ticket"] [data-ticket]').count()) === 1);
+    if (!(await open("devices")) || await plus("khor") !== "menu" || !(await toTicket())) {
       fail("probe dead: acts (c) could not press ＋ on 机器");
     } else if (!(await until(3_000, async () => (await page.locator('[data-add-machine="ticket"] [data-ticket]').count()) === 1))) {
       fail("probe dead: acts (c) · 邀请设备 opened no dialog with a token in it");
@@ -29907,10 +29905,10 @@ try {
       await wait(300);
       if (!(await press("[data-side-head] [data-pane-new]"))) return false;
       // 添加机器 → khor 主机 (round join-d): the code field is on that page.
-      if ((await count('[role="menu"]')) > 0 && !(await press('[role="menu"] [data-new-item="add"]'))) return false;
-      if (!(await until(3_000, async () => (await count('[data-add-machine] [data-add-row="khor"]')) === 1))) return false;
-      if (!(await press('[data-add-machine] [data-add-row="khor"]'))) return false;
-      return until(3_000, async () => (await count('[data-add-machine="ticket"]')) === 1);
+      if (!(await press('[role="menu"] [data-new-item="khor"]'))) return false;
+      if (!(await until(3_000, async () => (await count('[data-pairing-mode] [data-segment="join"]')) === 1))) return false;
+      if (!(await press('[data-pairing-mode] [data-segment="join"]'))) return false;
+      return until(3_000, async () => (await count('[data-add-machine="ticket"] [data-ticket-input]')) === 1);
     };
     const reload = async (size) => {
       await page.evaluate(() => window.localStorage.clear());
@@ -37941,31 +37939,27 @@ try {
       await tap('[data-rail-item][data-landing="sessions"]');
       return tap('[data-rail-item][data-landing="devices"]');
     };
-    const openAdd = async () => (await toDevices()) && (await tap("[data-side-head] [data-pane-new]")) && (await until(3_000, async () => (await count('[data-add-machine="pick"]')) === 1));
+    const openAdd = async (menuOnly = false) => {
+      if (!(await toDevices()) || !(await tap("[data-side-head] [data-pane-new]"))) return false;
+      if (!(await until(3_000, async () => (await count('[role="menu"] [data-new-item="ssh"]')) === 1))) return false;
+      if (menuOnly) return true;
+      return (await tap('[role="menu"] [data-new-item="ssh"]')) && (await until(3_000, async () => (await count('[data-add-machine="ssh"]')) === 1));
+    };
 
-    // a.
-    if (!(await openAdd())) {
-      fail("join a · ＋ on 机器 did not open 添加机器 by itself — one act, so ＋ is it");
+    // a. The kind is selected at + before opening a task dialog.
+    if (!(await openAdd(true))) {
+      fail("join a · ＋ on 机器 did not open its nearby choices");
     } else {
-      const pick = await page.evaluate(() => {
-        const box = (k) => document.querySelector(`[data-add-machine] [data-add-row="${k}"] svg`)?.getBoundingClientRect();
-        const body = (k) => document.querySelector(`[data-add-machine] [data-add-row="${k}"] svg [data-body]`)?.getBoundingClientRect();
-        const [a, b, c, d] = [box("khor"), box("ssh"), body("khor"), body("ssh")];
-        return {
-          menu: document.querySelectorAll('[role="menu"]').length,
-          rows: document.querySelectorAll("[data-add-machine] [data-add-row]").length,
-          glyphs: a && b ? [a.width, a.height, b.width, b.height].map((v) => +v.toFixed(1)) : null,
-          bodies: c && d ? [c.width, d.width].map((v) => +v.toFixed(1)) : null,
-        };
-      });
-      console.log(`join a · ${JSON.stringify(pick)}`);
-      if (pick.menu !== 0) fail("join a · ＋ on 机器 dropped a menu — 添加机器 is its one act");
-      if (pick.rows !== 2) fail(`join a · the first page has ${pick.rows} rows — khor 主机 and SSH 主机`);
-      if (!pick.glyphs || pick.glyphs[0] !== pick.glyphs[2] || pick.glyphs[1] !== pick.glyphs[3]) fail(`join a · the two glyphs paint ${JSON.stringify(pick.glyphs)} — one icon weight`);
-      if (!pick.bodies || pick.bodies[0] !== pick.bodies[1]) fail(`join a · the two solid bodies are ${JSON.stringify(pick.bodies)} wide — the SSH host is the rack's own box`);
+      const pick = await page.evaluate(() => ({
+        menus: document.querySelectorAll('[role="menu"]').length,
+        choices: [...document.querySelectorAll('[role="menu"] [data-new-item]')].map(el => el.getAttribute('data-new-item')),
+        dialogs: document.querySelectorAll('[data-add-machine]').length,
+      }));
+      if (pick.menus !== 1 || pick.choices.join(',') !== 'khor,ssh' || pick.dialogs !== 0)
+        fail(`join a · expected nearby Khor/SSH choices before a dialog: ${JSON.stringify(pick)}`);
 
       // b.
-      await tap('[data-add-machine] [data-add-row="ssh"]');
+      await tap('[role="menu"] [data-new-item="ssh"]');
       await until(2_000, async () => (await count('[data-add-machine="ssh"]')) === 1);
       await page.locator("#add-host").blur();
       // The list lingers 250 ms after the field lets go (`HostRow`).
@@ -38048,10 +38042,10 @@ try {
       await wait(900);
       const seat = await tap('[data-nav-item][data-landing="devices"]');
       const plusN = seat && (await tap("[data-pane-new]"));
-      const opened = plusN && (await until(3_000, async () => (await count('[data-add-machine="pick"]')) === 1));
+      const opened = plusN && (await until(3_000, async () => (await count('[role="menu"] [data-new-item="ssh"]')) === 1));
       if (!opened) console.log(`join e · narrow: seat ${seat}, ＋ ${plusN}, pane-new ${await count("[data-pane-new]")}, dialogs ${await count("[data-add-machine]")}`);
       if (opened) {
-        await tap('[data-add-machine] [data-add-row="ssh"]');
+        await tap('[role="menu"] [data-new-item="ssh"]');
         await page.locator("#add-host").fill("gpu-box");
         const pressed = await tap("[data-add-machine] [data-add-go]");
         if (!pressed) console.log("join e · narrow: 添加 could not be pressed");
@@ -38111,7 +38105,6 @@ try {
     // g.
     run = { marks: [{ step: "connect", state: "live", note: "", refusal: null }], done: null };
     if (await openAdd()) {
-      await tap('[data-add-machine] [data-add-row="ssh"]');
       await page.locator("#add-host").fill("gpu-box");
       await page.locator("#add-host").blur();
       await wait(400);

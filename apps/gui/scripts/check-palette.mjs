@@ -330,7 +330,7 @@ try {
     // join-d); its SSH 主机 page holds the dialog's primary 添加.
     await page.locator("[data-side-head] [data-pane-new]").click();
     await wait(400);
-    const ssh = page.locator('[data-add-machine] [data-add-row="ssh"]');
+    const ssh = page.locator('[role="menu"] [data-new-item="ssh"]');
     if ((await ssh.count()) !== 1) throw new Error("probe dead: 添加机器 did not open on the machines landing's ＋");
     await ssh.click();
     await wait(600);
