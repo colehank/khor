@@ -55,13 +55,18 @@ try{
  await page.goto(url+(process.env.WORKSPACE_REVIEW_THEME==='light'?'?theme=light':''));const picker=page.locator('[data-content-picker]:visible');await picker.locator('[data-workspace-navigation]').waitFor();
  for(const width of [900,1400]){
    await page.setViewportSize({width,height:900});
-   const edges=await page.evaluate(()=>({
-     tabs:document.querySelector('[data-session-tabs] > [data-tab-bar] > [data-tab-capsule]').getBoundingClientRect().right,
-     close:document.querySelector('[data-content-picker] [data-content-close]').getBoundingClientRect().right,
-   }));
+   const edges=await page.evaluate(()=>{
+     const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,height:r.height};};
+     const session=document.querySelector('[data-session-tabs]');
+     const content=document.querySelector('[data-content-tabs]');
+     return {session:box(session.closest('[data-region-head]')),content:box(content.closest('[data-region-head]')),
+       nested:session.contains(content),toolbar:box(document.querySelector('[data-content-picker] [data-content-toolbar]'))};
+   });
    await page.screenshot({path:join(output,`session-header-${width}.png`)});
-   assert(Math.abs(edges.tabs-edges.close)<1,`session capsule and content Close must align at ${width}: ${JSON.stringify(edges)}`);
-   results.push({name:`session header shares content right edge at ${width}`,passed:true,edges});
+   assert(!edges.nested&&edges.content.left>=edges.session.right-1,`content owns a separate right column at ${width}: ${JSON.stringify(edges)}`);
+   assert(Math.abs(edges.session.top-edges.content.top)<1&&Math.abs(edges.session.height-edges.content.height)<1,`both headers share top and height at ${width}: ${JSON.stringify(edges)}`);
+   assert(edges.toolbar.top>=edges.content.bottom-1,'content toolbar clears its own header');
+   results.push({name:`independent aligned session and content headers at ${width}`,passed:true,edges});
  }
  if(process.env.WORKSPACE_REVIEW_REQUIRE==='1'){
    await picker.locator('[data-content-source="browser"]').click();

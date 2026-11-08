@@ -44,6 +44,8 @@ export function Tabs({
   children,
   grouped,
   onReorder,
+  windowControls,
+  headerOverlay,
 }: {
   /** The front tab's act at the capsule's end (`TabStrip` `frontAct`). */
   grouped?: boolean;
@@ -76,6 +78,8 @@ export function Tabs({
    */
   frame?: boolean;
   children: ReactNode;
+  windowControls?: boolean;
+  headerOverlay?: boolean;
 }) {
   const strip = (
     <div {...stripData} className="flex min-w-0 flex-1 flex-col">
@@ -95,7 +99,7 @@ export function Tabs({
     </div>
   );
   return frame ? (
-    <Region kind="tabs" head={strip} caption={caption} className={bodyClass}>
+    <Region kind="tabs" head={strip} caption={caption} className={bodyClass} windowControls={windowControls} headerOverlay={headerOverlay}>
       {children}
     </Region>
   ) : (

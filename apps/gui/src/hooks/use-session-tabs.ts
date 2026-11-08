@@ -44,9 +44,9 @@ const NEW_TAB = "new-tab:";
 export const isNewTab = (id: string | null | undefined): boolean => !!id && id.startsWith(NEW_TAB);
 export const newTabId = (): string => `${NEW_TAB}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
-function restore(): Tabs {
+function restore(storageKey = STORE_KEY): Tabs {
   try {
-    const raw = window.localStorage.getItem(STORE_KEY);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return EMPTY;
     const v: unknown = JSON.parse(raw);
     if (typeof v !== "object" || v === null) return EMPTY;
@@ -96,8 +96,11 @@ export type SessionTabs = {
 export function useSessionTabs(
   limit: number | null = null,
   keep: (id: string) => boolean = () => false,
+  /** A mounted owner keeps one storage scope; workspaces mount by identity. */
+  storageKey = STORE_KEY,
 ): SessionTabs {
-  const [state, setState] = useState<Tabs>(restore);
+  const key = useRef(storageKey).current;
+  const [state, setState] = useState<Tabs>(()=>restore(key));
   const wrote = useRef(false);
   /** When each tab was last put in front. A ref, read inside the state
       updaters below; and the two inputs ride refs too, so `open` keeps
@@ -113,11 +116,11 @@ export function useSessionTabs(
       return;
     }
     try {
-      window.localStorage.setItem(STORE_KEY, JSON.stringify(state));
+      window.localStorage.setItem(key, JSON.stringify(state));
     } catch {
       /* the tabs still work; only the memory of them is lost */
     }
-  }, [state]);
+  }, [state,key]);
 
   const open = useCallback((id: string) => {
     touched.current.set(id, Date.now());

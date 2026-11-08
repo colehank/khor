@@ -50,16 +50,16 @@ export function askOpenDir(machine: string, path: string) {
     directory as that machine's files, a file in the file view at its
     line. `App`'s listener. */
 export const OPEN_PATH_EVENT = "khor:open-path";
-export function askOpenPath(machine: string, path: string, dir: boolean, line: number | null) {
-  window.dispatchEvent(new CustomEvent(OPEN_PATH_EVENT, { detail: { machine, path, dir, line } }));
+export function askOpenPath(machine: string, path: string, dir: boolean, line: number | null, session?:string) {
+  window.dispatchEvent(new CustomEvent(OPEN_PATH_EVENT, { detail: { machine, path, dir, line, ...(session?{session}:{}) } }));
 }
 
 /** Asks the app to open a URL a terminal printed in a browsing tab that
     goes out through that terminal's machine (roadmap 3.2): `localhost`
     there is the dev server running there. `App`'s listener. */
 export const OPEN_URL_EVENT = "khor:open-url";
-export function askOpenUrl(machine: string, url: string) {
-  window.dispatchEvent(new CustomEvent(OPEN_URL_EVENT, { detail: { machine, url } }));
+export function askOpenUrl(machine: string, url: string, session?:string) {
+  window.dispatchEvent(new CustomEvent(OPEN_URL_EVENT, { detail: { machine, url, ...(session?{session}:{}) } }));
 }
 
 /** Asks the app to show the next (`1`) or previous (`-1`) session tab

@@ -883,3 +883,10 @@ The same workspace-content UI gate projects native navigation events through the
 Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真实机器页 ＋ 验证就地 Khor/SSH 候选、两种弹窗入口、邀请与加入互斥内容、复制、失败保留输入、切换复用邀请、待批准与完成，以及浅深主题/桌面/手机/低视口可达性。二维码由正式 `qr::encode` 生成不可用于真实配对的示例凭据；fixture 不连接设备。浏览器检查不代表真机相机、系统授权或真实网络入网验收。
 
 工作区三选一导航在所有视图保留同一宽度；session视图的左右边界分别对齐上方“筛选＋新建”组左边与搜索右边，三个槽位等宽。App Lab workspace检查先注入旧三槽本征宽度复现左侧偏差，撤除后检查两端、等宽和跨视图位置；覆盖宽窄屏与已有WebKit场景。
+
+
+## Session 与内容同高分栏（2026-11-09）
+
+会话条只列会话；当前会话的内容标签独立占右列的同高页头，不嵌套、不另加一行。普通会话与工作区内会话复用 SessionFrame，保留所有会话标签与同一个内容渲染宿主。导航、新建、关闭和返回只重排窗口内部，不自动改变原生窗口尺寸或位置，取代之前的自动扩窗约定。
+
+`workspace-content-ui` 与完整 App Lab 检查两栏顶边/高度、非嵌套、工具栏可点及视口不变；工作区会话与普通会话都列入批末 Lab 验收。真实窗口外框不变仍需原生验收，浏览器视口与合成 IPC 不能独自证明。

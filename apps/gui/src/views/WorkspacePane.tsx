@@ -1,6 +1,14 @@
+import {SessionFrame} from "@/components/SessionFrame";
+import {SessionContentColumn,type SessionContentContext} from "@/views/SessionContentColumn";
+import {SessionContentSeat} from "@/hooks/use-session-content-dock";
+import {SessionLinkScope} from "@/views/SessionLinkScope";
+import {setSessionSide,useSessionSide} from "@/hooks/use-session-side";
+import {MobileContentSheet} from "@/views/MobileSessionContent";
+import {useSessionTabs} from "@/hooks/use-session-tabs";
+import {termName} from "@/components/DoingLine";
 import { WorkspaceNavigation } from '@/components/WorkspaceNavigation';
 import { useFileHandoff } from "@/hooks/use-file-handoff";
-import { sessionInWorkspace } from "@/lib/session-cwd";
+import { sessionCwdOnScreen, sessionInWorkspace } from "@/lib/session-cwd";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
@@ -10,8 +18,6 @@ import {
   fetchGitHistory,
 
   searchIn,
-  widenWindow,
-  giveBackWindow,
   type Found,
   type SearchHit,
   type GitStatus,
@@ -105,7 +111,9 @@ export function WorkspacePane({
   side,
   onBack,
   status,
+  sessionContent,
 }: {
+  sessionContent?:SessionContentContext;
   memory: WorkspaceMemory;
   status?: string;
   machine: string;
@@ -378,69 +386,10 @@ export function WorkspacePane({
   // is declared from an effect, and an effect that flips is an effect
   // that undoes itself the second time React runs it.
   const setSessionDetailOpen = sidePane.show;
-  /** Whether this pane holds room in the window for the sessions column.
-      **The window keeps the account of how much** (UX-46, `widenWindow`):
-      the frame it grew from comes back exactly on the close. ⚠️ 墓碑
-      (2026-09-16 → UX-46): `grew`, the pixels asked for, given back as a
-      negative — less than that was granted against the screen's edge,
-      and the window came back narrower each time.
-
-      A ref and not state: nothing on the glass is derived from it. */
-  const grew = useRef(false);
-  // **Leaving the workspace gives the room back** (UX-46 §2): the column
-  // goes with the page, and nothing else would ever ask for it — the
-  // window stayed grown by a column no longer there.
-  useEffect(
-    () => () => {
-      if (grew.current) void giveBackWindow("ws-sessions");
-    },
-    [],
-  );
-  /* ⚠️ **Tombstone: `grewCode` held the same count for the editor's
-     column** (2026-09-16 ruling 45 → 2026-09-17 ruling 46). The editor
-     was a column for one batch and is a window of its own now, so
-     nothing about it changes how wide khor's window is — and a second
-     counter for a column that does not exist is a number that can only
-     be wrong. */
+  // Opening a session uses the workspace's existing frame.
   const showSessionDetail = (on: boolean) => {
-    if (narrow) {
-      // One screen at a time: the switch walks to the sessions and the
-      // 「←」 on that screen walks back to the file (ruling 33).
-      setSessionDetailOpen(on);
-      setScreen(on ? "sessions" : "file");
-      return;
-    }
-    if (!on) {
-      // Out first, room back second: the column goes, the window
-      // follows it in. The other order would leave a gap where it was
-      // for a frame.
-      setSessionDetailOpen(false);
-      if (grew.current) {
-        grew.current = false;
-        void giveBackWindow("ws-sessions");
-      }
-      return;
-    }
-    // **The window grows first and the column arrives into the room it
-    // made** (2026-09-17 ruling 51:「应该是icon所在页固定不动,右侧衍生出
-    // 的宽度给session, 而不是icon所在页也变宽」— the user).
-    //
-    // It used to be one frame the other way round: the column was
-    // declared and the window asked to grow in the same breath, so the
-    // browser laid out the old width with a new column in it — the
-    // middle column gave up its room — and the next frame handed it
-    // back. What a person saw was the page jumping, and against the
-    // edge of the screen, where the window cannot grow at all, the
-    // middle column simply stayed narrow.
-    //
-    // Awaiting the window means the middle column is wide for exactly
-    // one frame (it really is wider — the window grew) and then the
-    // column lands in the new room and it is the width it was. Where
-    // the window cannot grow, the column takes its room off the middle
-    // one as every face did before ruling 25, which is the honest
-    // answer rather than a column that refuses to open.
-    grew.current = true;
-    void widenWindow("ws-sessions", sidePane.width).then(() => setSessionDetailOpen(true));
+    setSessionDetailOpen(on);
+    if (narrow) setScreen(on ? "sessions" : "file");
   };
   // (The toolbar buttons' look, `toolClass`, went with them: the switches
   // are glass now, below.)
@@ -461,7 +410,27 @@ export function WorkspacePane({
       tree's position and the open file: a session belongs to one
       project, and carrying it across would leave somebody looking at a
       conversation about a directory that is no longer on screen. */
-  const [picked, setPicked] = useState<string | null>(null);
+  const sessionTabs = useSessionTabs(limit, id=>rows.some(row=>row.id===id&&row.pinned),
+    'khor.workspace.sessions.'+JSON.stringify([machine,root]));
+  const picked = sessionTabs.active;
+  const selectedSession=rows.find(row=>row.id===picked)??null;
+  const contentSide=useSessionSide(picked);
+  const openSessionContent=(id:string)=>{
+    if(!sessionContent)return;
+    sessionContent.navigation.resume(id);setSessionSide(id,{open:true,seat:'workspace'});
+  };
+  const selectSession=(id:string)=>{sessionTabs.focus(id);if(contentSide.open)openSessionContent(id);};
+  const closeSessionTab=(id:string)=>{sessionTabs.close(id);if(sessionTabs.tabs.length===1)showSessionDetail(false);};
+  const newSession=()=>onNewSession(channel??machine,root);
+  const sessionFaces=sessionTabs.tabs.map(id=>{
+    const row=rows.find(row=>row.id===id);
+    return {id,label:row?termName(row):id,path:row?sessionCwdOnScreen(row)||'':'',face:row?.face??null,
+      session:row?{word:row.word,kind:row.kind,category:row.category}:undefined,
+      again:sessionContent?{hint:gui.session_tabs_focus,expanded:id===picked&&contentSide.open,
+        toggle:()=>{if(id===picked&&contentSide.open)setSessionSide(id,{open:false});else openSessionContent(id);}}:undefined};
+  });
+  const contentScope=picked?{session:picked,mobile:narrow,faces:sessionFaces,onSelectSession:selectSession,
+    onCloseSession:closeSessionTab,onNewSession:newSession,onClose:()=>setSessionSide(picked,{open:false})}:null;
   /** …and the one the wizard just made here, marked on the list until
       somebody presses a row. **Not `picked`**: `picked` is 「this column
       is standing in that session」 and opens its detail, while this is
@@ -476,11 +445,10 @@ export function WorkspacePane({
     // The column has to be on screen for the mark to be seen — and on
     // narrow it is a screen (33), which is the same sentence there.
     setSidebarView("sessions");
-    setSessionDetailOpen(false);
-    if (narrow) setScreen("tree");
+    sessionTabs.open(opened);
+    showSessionDetail(true);
     // Standing in some other session, the new row is behind a back
     // arrow; the list is where it is visible.
-    setPicked(null);
     onOpenedSeen();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
@@ -1237,7 +1205,7 @@ export function WorkspacePane({
   const workspaceSessionList = (
     <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
       <SessionsList rows={mine} query={query} words={words} selected={picked ?? made}
-        onSelect={(row) => { setPicked(row.id); showSessionDetail(true); }}
+        onSelect={(row) => { sessionTabs.open(row.id); showSessionDetail(true); }}
         onPin={onPin} onClose={onClose} pinFailed={pinFailed} closeRefused={closeRefused} showVia={false} />
     </div>
   );
@@ -1556,8 +1524,18 @@ export function WorkspacePane({
           <ListPane mark="data-ws-sessions" name={gui.workspace_sessions} mountSeamFirst side="right"
             pane={narrow ? null : sidePane} narrow={narrow} seam={{ "data-ws-seam": "sessions" }} scroll={false}
             className={cn(narrow ? "min-w-0 flex-1" : "max-w-[calc(100%-var(--ws-mid-min))] shrink-0")}>
-            <DetailPane row={mine.find((r) => r.id === picked) ?? null} narrow
-              onBack={() => { setPicked(null); showSessionDetail(false); setSidebarView("sessions"); if (narrow) setScreen("tree"); }} />
+            <SessionFrame mobile={narrow} grouped faces={sessionFaces} active={picked} onFocus={selectSession} onClose={closeSessionTab}
+              onNew={newSession} onReorder={sessionTabs.reorder} stripData={{'data-session-tabs':'','data-workspace-session-tabs':''}}
+              onBack={()=>{showSessionDetail(false);setSidebarView('sessions');if(narrow)setScreen('tree');}}
+              onTitle={()=>{if(picked)openSessionContent(picked);}}
+              aside={!narrow&&selectedSession&&sessionContent&&contentSide.open?<SessionContentColumn row={selectedSession}
+                context={sessionContent} faces={sessionFaces} onSelectSession={selectSession} onCloseSession={closeSessionTab} onNewSession={newSession}/>:undefined}>
+              <SessionLinkScope row={selectedSession}><DetailPane row={selectedSession} narrow={narrow} openIds={sessionTabs.tabs}
+                onBack={() => { showSessionDetail(false); setSidebarView("sessions"); if (narrow) setScreen("tree"); }} /></SessionLinkScope>
+              {narrow&&contentSide.open&&sessionContent&&contentScope&&<MobileContentSheet onClose={contentScope.onClose}>
+                <SessionContentSeat dock={sessionContent.dock} scope={contentScope}/>
+              </MobileContentSheet>}
+            </SessionFrame>
           </ListPane>
         )}
       </div>

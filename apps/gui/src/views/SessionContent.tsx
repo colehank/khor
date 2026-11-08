@@ -5,10 +5,12 @@ import { CommitPage, type CommitPageState } from '@/views/CommitPage';
 import {useDraftState} from '@/hooks/use-draft-count';
 /** Desktop session content. The session's terminal stays in its own pane;
  * these are its files and pages, using the same node tab handles throughout. */
-import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ComponentProps } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, Fragment, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { recentVisit, type DeviceRow, type SessionRow } from "@/api";
-import { TabStrip, TabDivider, type TabFace } from "@/browse/TabStrip";
+import type { TabFace } from "@/browse/TabStrip";
+import { Tabs } from "@/browse/Tabs";
+import { RegionLead } from "@/components/Region";
 import { gui } from "@/gen/catalog";
 import { NarrowBox } from "@/hooks/use-narrow";
 import { type ContentTab, type SessionContent } from "@/hooks/use-session-content";
@@ -35,9 +37,9 @@ import {TabAvatar} from '@/browse/TabStrip';
 import { MobileContentPage } from '@/views/MobileContentPage';
 const quiet = (work: Promise<unknown>) => { void work.catch(() => {}); };
 
-/** Only the children scroll. The group head and the add button keep their
- * seats; entering/leaving the group fades the row without shrinking the outer capsule. */
-export function ContentTabs({session,open,devices,content,navigation,onAdd,onFocus,onHide}:{session:string;open:boolean;devices:DeviceRow[];content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void}) {
+/** This session's content has its own column header, sharing Tabs with
+ * session/workspace/browser columns. It never expands a session pill. */
+export function ContentTabs({session,open,devices,content,navigation,onAdd,onFocus,onHide,children}:{session:string;open:boolean;devices:DeviceRow[];content:SessionContent;navigation:ContentNavigation;onAdd:()=>void;onFocus:()=>void;onHide:()=>void;children?:ReactNode}) {
   const tabs=content.allTabs.filter(t=>t.session===session),state=navigation.get(session);
   const targets=contentTabTargets(tabs,content.handle);
   const faces=[...targets].map(([key,tab])=>{
@@ -49,9 +51,11 @@ export function ContentTabs({session,open,devices,content,navigation,onAdd,onFoc
   const pick=(key:string)=>{const tab=targets.get(key);if(tab){onFocus();navigation.select(tab);quiet(content.focus(tab.id));}};
   const close=(key:string)=>{const tab=targets.get(key);if(!tab)return;
     if(state.key===key&&tabs.length===1){navigation.dismiss(session);onHide();}quiet(content.close(tab.id));};
-  return <div data-content-tabs={session} data-open={open} aria-hidden={!open} inert={!open} className="session-content-reveal" style={{width:open?`calc(${tabs.length} * var(--tab-w-even) + 5 * var(--gap-in) + 3 * var(--hair) + var(--glass-tab))`:0}}>
-    <TabDivider/><TabStrip nested grouped faces={faces} active={state.key||''} onFocus={pick} onClose={close} onNew={onAdd} newLabel={gui.content_new} onReorder={ids=>content.reorder(session,ids)}/>
-  </div>;
+  return open ? <RegionLead.Provider value={null}><Tabs headerOverlay={false} faces={faces} active={state.key||''}
+    onFocus={pick} onClose={close} onNew={onAdd} onReorder={ids=>content.reorder(session,ids)}
+    stripData={{'data-content-tabs':session,'data-session-content-head':''}} bodyClass="flex min-h-0 flex-col">
+    {children}
+  </Tabs></RegionLead.Provider> : null;
 }
 
 /** Stable scroller names survive remounts and the wide/narrow portal move.

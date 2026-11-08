@@ -100,7 +100,8 @@ async function inspect(browser, scene, size, data = {}) {
       const toolbar = [...document.querySelectorAll(`[data-session-side] [data-content-toolbar="${kind}"]`)].find(el => el.getClientRects().length);
       const box = el => el ? {top:el.getBoundingClientRect().top,bottom:el.getBoundingClientRect().bottom} : null;
       const controls = toolbar ? [...toolbar.querySelectorAll('button')].filter(el => el.getClientRects().length && !el.matches(':disabled,[aria-disabled="true"]')) : [];
-      return {head:box(head), toolbar:box(toolbar), side:box(document.querySelector('[data-session-side]')),
+      const contentHead=document.querySelector('[data-session-content-head]')?.closest('[data-region-head]');
+      return {head:box(head),contentHead:box(contentHead),nested:!!head?.querySelector('[data-content-tabs]'), toolbar:box(toolbar), side:box(document.querySelector('[data-session-side]')),
         seam:box(document.querySelector('[data-session-side] [data-side-seam]')),
         panes:box(document.querySelector('[data-session-panes]')), controlsReachable:controls.length > 0 && controls.every(el => {
         const rect = el.getBoundingClientRect();
@@ -111,8 +112,9 @@ async function inspect(browser, scene, size, data = {}) {
     assert(layout.head && layout.toolbar, 'The actual session header and content toolbar must be present');
     assert(layout.toolbar.top >= layout.head.bottom - 1, `The content toolbar must stay below the session tabs (${phase}): ${JSON.stringify(layout)}`);
     assert(layout.side && layout.seam && layout.panes, 'The actual split column and resize handle must be present');
-    assert(layout.side.top >= layout.head.bottom - 1, `The side column border must begin below the session tabs (${phase}): ${JSON.stringify(layout)}`);
-    assert(layout.seam.top >= layout.head.bottom - 1, `The resize handle must not cross the session tabs (${phase}): ${JSON.stringify(layout)}`);
+    assert(layout.contentHead&&!layout.nested&&Math.abs(layout.contentHead.top-layout.head.top)<=1&&Math.abs((layout.contentHead.bottom-layout.contentHead.top)-(layout.head.bottom-layout.head.top))<=1, `Independent column headers align (${phase}): ${JSON.stringify(layout)}`);
+    assert(Math.abs(layout.side.top-layout.head.top)<=1, `The content column starts at the same top edge (${phase}): ${JSON.stringify(layout)}`);
+    assert(Math.abs(layout.seam.top-layout.head.top)<=1, `The content resize handle starts at the shared header edge (${phase}): ${JSON.stringify(layout)}`);
     assert(layout.side.bottom <= layout.panes.bottom + 1, `The inset column must stay inside the session body (${phase}): ${JSON.stringify(layout)}`);
     assert(layout.controlsReachable, `The session tabs must not cover the content controls (${phase})`);
     await page.screenshot({path:path.join(report,`${name}-${phase}.png`)});

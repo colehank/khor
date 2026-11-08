@@ -304,10 +304,10 @@ function asksToFind(ev: KeyboardEvent): boolean {
 }
 
 /** Internal URLs use the same session content route on app and web. */
-async function follow(uri: string, machine: string | null | undefined, intent:LinkIntent='internal') {
+async function follow(uri: string, machine: string | null | undefined, intent:LinkIntent='internal', session?:string) {
   assertPageUrl(uri);
   if(intent==='system')await openSystemUrl(uri);
-  else askOpenUrl(machine??'',uri);
+  else askOpenUrl(machine??'',uri,session);
 }
 
 /** Base64 → bytes, the shape `term.write` takes. The api boundary is
@@ -1470,7 +1470,7 @@ export function TerminalPane({
     /** Opens an OSC 8 `file://` link; set once the session's machine
         and the path opener are known (below). */
     let fileLink = (_uri: string, _intent:LinkIntent='internal') => {};
-    const openUrl=(uri:string,intent:LinkIntent='internal')=>{void activateLink(()=>follow(uri,machine,intent));};
+    const openUrl=(uri:string,intent:LinkIntent='internal')=>{void activateLink(()=>follow(uri,machine,intent,id));};
     const term = new Terminal({
       // The unicode addon is a proposed API; without this flag it throws.
       allowProposedApi: true,
@@ -1896,7 +1896,7 @@ export function TerminalPane({
     // item 53); the host's ledger still knows where the shell stands.
     const cwdAt = (line: number) => blockAt(marks, line)?.cwd ?? marks.cwd() ?? doingRef.current?.cwd ?? undefined;
     const openPath = (t: { path: string; dir: boolean; line: number | null },intent:LinkIntent='internal') => {
-      void activateLink(()=>intent==='system'?openSystemPath(t.path):askOpenPath(here,t.path,t.dir,t.line));
+      void activateLink(()=>intent==='system'?openSystemPath(t.path):askOpenPath(here,t.path,t.dir,t.line,id));
     };
     fileLink = (uri,intent='internal') => {
       if(intent==='system'){void activateLink(()=>openSystemFileUri(uri));return;}

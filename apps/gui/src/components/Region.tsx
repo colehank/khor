@@ -312,6 +312,8 @@ export function Region({
   capped,
   className,
   children,
+  windowControls = true,
+  headerOverlay = true,
 }: {
   /** **The head stands over the page's content** (W-V5; UX-22): on a
       page in a `DetailFrame`, R0's name starts on the content's left
@@ -345,6 +347,9 @@ export function Region({
   /** How the board lays its content out. */
   className?: string;
   children: ReactNode;
+  windowControls?: boolean;
+  /** Fixed toolbars beneath this header keep their own vertical seat. */
+  headerOverlay?: boolean;
 }) {
   const lead = useContext(RegionLead);
   const [seat, setSeat] = useState<HTMLElement | null>(null);
@@ -385,7 +390,7 @@ export function Region({
         data-region-head
         // The page's head is a band: the board's scroller passes under it
         // on glass (`lib/scroll-edge`, round HEADS).
-        ref={band}
+        ref={headerOverlay ? band : undefined}
         data-band
         // R0 is one of the window's three handles, marked by the shell
         // (`shell.ts`): its blank moves the window, and what is pressable
@@ -427,7 +432,7 @@ export function Region({
             {caption}
           </span>
         )}
-        <WindowControls />
+        {windowControls && <WindowControls />}
         {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand" />}
       </div>
       {/* The board. On narrow it is the whole screen and wears no

@@ -1,5 +1,6 @@
 import {KhorAgentSettings} from '@/views/KhorAgent';
 import {gui} from '@/gen/catalog';
+import {useSessionSettingsSeat} from '@/components/SessionFrame';
 /** Shared model, permissions, context and attachment controls for GUI sessions. */
 import {useEffect,useLayoutEffect,useRef,useState,isValidElement,cloneElement,Fragment,type ReactNode,type ReactElement,type ComponentProps} from 'react';
 import {createPortal} from 'react-dom';
@@ -22,14 +23,15 @@ const shortModel=(model:string|null)=>{
   return model.replace(/^claude-sonnet-(\d+)-(\d+).*$/,'Sonnet $1.$2').replace(/^claude-opus-(\d+)-(\d+).*$/,'Opus $1.$2').replace(/^grok-(\d+)\.(\d+)$/,'Grok $1.$2').replace(/^gpt-/,'GPT-');
 };
 export function HeaderSeat({children}:{children:ReactNode}){
-  const inBar=useInBar(),[wide,setWide]=useState<Element|null>(null);
+  const inBar=useInBar(),scope=useSessionSettingsSeat(),[wide,setWide]=useState<Element|null>(null);
   useLayoutEffect(()=>{
-    if(inBar)return;
+    if(inBar||scope!==undefined)return;
     const find=()=>setWide(document.querySelector('[data-lab-session-settings-slot]'));
     find();const observer=new MutationObserver(find);observer.observe(document.body,{childList:true,subtree:true});
     return()=>observer.disconnect();
-  },[inBar]);
-  return inBar?<BarSeat at="trail">{children}</BarSeat>:wide?createPortal(children,wide):null;
+  },[inBar,scope]);
+  const target=scope===undefined?wide:scope;
+  return inBar?<BarSeat at="trail">{children}</BarSeat>:target?createPortal(children,target):null;
 }
 /** Session actions share App's 更多 menu. Choices replace its rows, so
  * phone users never have to chase a submenu beside the screen. */

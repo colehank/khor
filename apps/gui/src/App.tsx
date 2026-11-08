@@ -1,3 +1,6 @@
+import {SessionLinkScope} from "@/views/SessionLinkScope";
+import {SessionContentColumn} from "@/views/SessionContentColumn";
+import {SessionContentSeat,useSessionContentDock} from "@/hooks/use-session-content-dock";
 import { IconRecent } from "@/components/icons";
 import { NotificationsPage } from "@/views/NotificationsPage";
 import { receiveNotifications, sessionNotificationsEnabled, useNotificationInbox } from "@/lib/notifications";
@@ -27,8 +30,6 @@ import {
   recentVisit,
   syncNow,
   fetchWorkspaces,
-  widenWindow,
-  giveBackWindow,
   inApp,
   closeSession,
   forgetDevice,
@@ -83,9 +84,9 @@ import { GlassCircle } from "@/components/Glass";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { BrowseLanding } from "@/browse/BrowseLanding";
 import { TabCount, TabSwitcher, type TabFace } from "@/browse/TabStrip";
-import { Tabs } from "@/browse/Tabs";
+import { SessionFrame } from "@/components/SessionFrame";
 import { useSessionContent, type ContentView } from "@/hooks/use-session-content";
-import { ContentTabs, SessionContentPane } from "@/views/SessionContent";
+import { SessionContentPane } from "@/views/SessionContent";
 import { useContentNavigation } from "@/hooks/use-content-navigation";
 import { MobileContentSheet } from "@/views/MobileSessionContent";
 import { useBrowseTabs } from "@/browse/use-browse-tabs";
@@ -97,11 +98,9 @@ import {
   keepSidesOf,
   placeFile,
   setSessionSide,
-  setSideWidth,
   sidePlace,
   sidePlaces,
   useSessionSide,
-  useSideWidth,
   type SidePlace,
   type StoreSpot,
   type SideSeat as PlaceSeat,
@@ -140,12 +139,12 @@ import { cn } from "@/lib/utils";
 import { type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
 import { SessionPlaceSheet } from "@/views/SessionPlaceSheet";
-import { SIDE_ID, SessionSide } from "@/views/SessionSide";
+import { SIDE_ID } from "@/views/SessionSide";
 import { DayToday } from "@/views/DayToday";
 import { SideRecent } from "@/views/SideRecent";
 import { useSideRecent, type RecentItem } from "@/hooks/use-side-recent";
 import { useDayTotals } from "@/hooks/use-day-totals";
-import { holding, LinkHomeProvider, ShowFileProvider, useKnownFiles, type LinkHome, type ShowFile } from "@/views/linkHome";
+import { holding, type ShowFile } from "@/views/linkHome";
 import { PAGES } from "@/views/PagesKind";
 import { DevicesList, useDeviceFilter } from "@/views/DevicesList";
 import { WorkspacePane } from "@/views/WorkspacePane";
@@ -702,15 +701,10 @@ export default function App() {
   // 附栏's state is.
   const [sideBrowsing, setSideBrowsing] = useState(false);
   const pageTabs = useBrowseTabs(PAGES.kind, landing === "browser" || sideBrowsing);
-  const content = useSessionContent(landing === "sessions");
+  const content = useSessionContent(landing === "sessions" || landing === "workspaces");
   const contentNavigation = useContentNavigation(content);
-  // One portal container keeps editors mounted when the slot moves between
-  // sessions/landings. React owns its children; the shell only seats the box.
-  const [contentHost] = useState(() => { const el = document.createElement("div"); el.className = "session-content-host"; return el; });
-  const contentParking = useRef<HTMLDivElement | null>(null);
-  const seatContent = useCallback((el: HTMLDivElement | null) => {
-    (el ?? contentParking.current)?.appendChild(contentHost);
-  }, [contentHost]);
+  const {dock:contentDock,scope:contentScope}=useSessionContentDock();
+  const contentContext={content,navigation:contentNavigation,dock:contentDock,devices};
 
   const browsing = { kind: PAGES, tabs: pageTabs };
   // Narrow face only: which single screen is up. Wide ignores it.
@@ -1259,9 +1253,7 @@ export default function App() {
   //
   // **The machine is the session's own**, so an answer about a file is
   // an answer from the disk the conversation is happening on.
-  const sessionMachine = selectedRow?.home ?? "";
   const sessionRoot = sessionCwdOnScreen(selectedRow) ?? "";
-  const { known: sessionKnown, see: seeInSession } = useKnownFiles(sessionMachine, sessionRoot);
   /** A file a press in a conversation asked this shell to show, handed
       to whichever workspace pane opens next (`WorkspacePane`'s
       `reveal`). */
@@ -1270,17 +1262,6 @@ export default function App() {
     line: number | null;
     at: number;
   } | null>(null);
-  const sessionHome = useMemo<LinkHome | null>(() => {
-    if (!selectedRow) return null;
-    return {
-      machine: sessionMachine,
-      root: sessionRoot,
-      known: sessionKnown,
-      see: seeInSession,
-      open: (path, line) => askOpenPath(sessionMachine, path, false, line),
-      openPage: (url) => askOpenUrl(sessionMachine, url),
-    };
-  }, [selectedRow?.id, sessionMachine, sessionRoot, sessionKnown, seeInSession]);
   // ⚠️ **The open row's workspace word left with the detail header**
   // (第十四轮 第 1 条): 「工作区 · 类型」 was the tab's own content said
   // a second time one row lower, and the user struck the whole row out.
@@ -2027,9 +2008,8 @@ export default function App() {
   /** The 附栏's 工作区 seat, pointed somewhere (and the 附栏 opened on
       it): a directory, or a file to open in place — the file page inside
       the 附栏, whose ‹ is the seat's own (the listing, then up). */
-  const openContent = (view: ContentView, machine: string, path: string, line?: number | null) => {
-    if (!selectedRow) return;
-    const session = selectedRow.id;
+  const openContent = (view: ContentView, machine: string, path: string, line?: number | null, session = selectedRow?.id) => {
+    if (!session) return;
     const device = devices.find(d => machine ? d.name === machine || d.id === machine : d.me);
     if (!device) return content.fail(gui.content_machine_gone);
     (document.activeElement as HTMLElement|null)?.blur();
@@ -2068,7 +2048,7 @@ export default function App() {
   // it, or in its own directory's, at its line (`reveal`, the
   // conversation's road); a URL is a browsing tab out through that
   // terminal's machine.
-  const openPathRef = useRef<(machine: string, path: string, dir: boolean, line: number | null) => void>(() => {});
+  const openPathRef = useRef<(machine: string, path: string, dir: boolean, line: number | null, session?:string) => void>(() => {});
   /** The main area's road for a file: the workspace that holds it, at
       its line. */
   const openPathMain = (machine: string, path: string, dir: boolean, line: number | null) => {
@@ -2091,7 +2071,8 @@ export default function App() {
         setScreen("detail");
       });
   };
-  openPathRef.current = (machine, path, dir, line) => {
+  openPathRef.current = (machine, path, dir, line, session) => {
+    if(session)return openContent(dir?"workspace":"file",machine,path,line,session);
     touched(dir ? "dir" : "file", machine || (devices.find((x) => x.me)?.name ?? ""), path);
     if (inColumn()) {
       const name = machine || (devices.find((x) => x.me)?.name ?? "");
@@ -2099,7 +2080,7 @@ export default function App() {
     }
     openPathMain(machine, path, dir, line);
   };
-  const openUrlRef = useRef<(machine: string, url: string) => void>(() => {});
+  const openUrlRef = useRef<(machine: string, url: string, session?:string) => void>(() => {});
   /** A page, as a browsing tab out through that machine; in the column's
       browser with a session in front, else on the browser landing.
       **By the record's device id where there is one, this machine
@@ -2128,15 +2109,15 @@ export default function App() {
       })
       .catch(() => {});
   };
-  openUrlRef.current = (machine, url) => openUrlMain(machine, url, inColumn());
+  openUrlRef.current = (machine, url, session) => session?openContent("page",machine,url,null,session):openUrlMain(machine,url,inColumn());
   useEffect(() => {
     const path = (e: Event) => {
-      const { machine, path: p, dir, line } = (e as CustomEvent<{ machine: string; path: string; dir: boolean; line: number | null }>).detail;
-      openPathRef.current(machine, p, dir, line);
+      const { machine, path: p, dir, line, session } = (e as CustomEvent<{ machine: string; path: string; dir: boolean; line: number | null;session?:string }>).detail;
+      openPathRef.current(machine, p, dir, line,session);
     };
     const url = (e: Event) => {
-      const { machine, url: u } = (e as CustomEvent<{ machine: string; url: string }>).detail;
-      openUrlRef.current(machine, u);
+      const { machine, url: u, session } = (e as CustomEvent<{ machine: string; url: string;session?:string }>).detail;
+      openUrlRef.current(machine, u,session);
     };
     window.addEventListener(OPEN_PATH_EVENT, path);
     window.addEventListener(OPEN_URL_EVENT, url);
@@ -2756,161 +2737,21 @@ export default function App() {
         );
     }
   };
-  /**
-   * **The column extends the window to the right; it does not take the
-   * session's width** (UX-39, the owner 2026-10-06 23:15: 「保留 app 宽度，
-   * 拓展到右侧的，就像现在在工作区点 chat 一样」 — `WorkspacePane`'s
-   * `showSessions`, rulings 2026-09-16 and 51). The window grows first and
-   * the column arrives into the room it made; shut, the window gives back
-   * exactly the frame it had (UX-46 §2, the owner 2026-10-07: 「打开多大，
-   * 关闭了不影响原来的大小」) — the app keeps that account (`widenWindow`),
-   * by any road the column goes: the tab pressed again, the seam, leaving
-   * the session. Where the window cannot grow (the screen's edges,
-   * fullscreen, the web face) the column takes its room off the session,
-   * as before.
-   *
-   * **Nothing beside the column moves while the window does** (UX-46 §3,
-   * the owner: 「收起附栏的时候，按钮从左边跑到右边去了」). The column went
-   * first and the window followed a moment later, so for that moment the
-   * strip ran to the still-wide window's edge and its end — the verbs
-   * seat's ↻, the front tab's × — jumped right, then back as the window
-   * narrowed; opening did the same the other way round. The session's
-   * side is held at its width (`sideHold`) from before the ask until the
-   * window has answered, and the column comes or goes in the same frame
-   * the hold lets go.
-   *
-   * A narrow window draws no column and asks nothing: the room stays
-   * on the account while the 附栏 stays open, and its close asks for it
-   * back — which a window the person resized (into the narrow layout or
-   * not) declines: their size stands (the lead's ruling, 2026-10-07).
-   *
-   * **The column takes what the right edge has, down to its floor**
-   * (sb-a, 2026-10-09, the owner: 「侧栏展开时, 原来的页面位置不要动, 侧栏
-   * 展开自己额外扩展出去」): it asks for its seat's width (640, or what
-   * was dragged there, per seat) and the least it lives with (360); the
-   * window answers what it grew by (`room.rs`), and the column is that
-   * wide for this opening. **A seat of another width refits the window**:
-   * the room is given back and asked for again at the new width, the
-   * session held still between. **As the window narrows the column gives
-   * way first** (「缩小窗口不能把整个顶部导航给略缩畸形了」): the session
-   * stands at a flex basis of what it had beside the column (`sideBasis`)
-   * and barely shrinks, the column's basis shrinks to its floor, and only
-   * then does the session narrow, to `--session-main-min`.
-   */
+  // Navigation changes the columns inside the user's window, never its frame.
   const sideWanted = sessions && side.open && selectedRow !== null;
-  const [sideShown, setSideShown] = useState(false);
-  const [sideHold, setSideHold] = useState<number | null>(null);
-  const sideMain = useRef<HTMLDivElement | null>(null);
-  /** The row the session and the column share. */
-  const sideRow = useRef<HTMLDivElement | null>(null);
-  /** The width the seat asks for: dragged there, else the token's. */
-  const sideKept = useSideWidth(side.seat);
-  const sidePx = (name: string) => Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0;
-  /** What the window gave this opening, where it gave less than asked
-      (the right edge); `null` = the asked width. */
-  const [sideFit, setSideFit] = useState<number | null>(null);
-  /** The session's flex basis beside the column (above). */
-  const [sideBasis, setSideBasis] = useState<number | null>(null);
-  /** Whether the window holds room for the column now. */
-  const sideAsked = useRef(false);
-  /** The width the window was last asked for, to know a seat's own. */
-  const sideAskedW = useRef<number | null>(null);
-  /** Bumped each turn: an answer from the window that a later turn
-      overtook changes nothing. */
-  const sideTurn = useRef(0);
-  /** The session's basis from the row as it stands, less the column. */
-  const baseBeside = (paneW: number) => {
-    const row = sideRow.current?.getBoundingClientRect().width;
-    setSideBasis(row === undefined ? null : Math.max(0, row - paneW));
+  const sideShown = sideWanted && !narrow;
+  const selectContentSession=(id:string)=>{
+    previousContentGroup.current.open=false;
+    if(selected)hideSessionContent(selected);
+    hideSessionContent(id);sessionTabs.focus(id);setScreen("detail");
   };
-  // A layout effect: the hold is measured with the column still drawn and
-  // set in the same frame it goes, before anything is painted.
-  useLayoutEffect(() => {
-    const turn = ++sideTurn.current;
-    const want = sideKept ?? sidePx("--session-side-w");
-    const least = sidePx("--session-side-min");
-    const hold = () => setSideHold(sideMain.current ? sideMain.current.getBoundingClientRect().width : null);
-    /** The window's answer, as this opening's width. */
-    const fit = (grew: number) => {
-      const w = grew <= 0 ? want : Math.max(grew, least);
-      setSideFit(w === want ? null : w);
-      return w;
-    };
-    const ask = () =>
-      widenWindow("session-side", want, least).then((grew) => {
-        if (turn !== sideTurn.current) return;
-        sideAskedW.current = want;
-        baseBeside(fit(grew));
-        setSideShown(true);
-        setSideHold(null);
-      });
-    if (sideWanted && !narrow && sideAsked.current && sideShown && sideAskedW.current !== null && sideAskedW.current !== want) {
-      // Another seat, another width: the room given back and asked again.
-      hold();
-      void giveBackWindow("session-side").then((gave) => {
-        if (turn !== sideTurn.current) return;
-        if (gave > 0) return ask();
-        // The person resized the window meanwhile: their size stands, and
-        // the column takes its new width off the session.
-        sideAskedW.current = want;
-        setSideFit(null);
-        baseBeside(want);
-        setSideHold(null);
-      });
-      return;
-    }
-    if (sideWanted === sideAsked.current || (sideWanted && narrow)) {
-      setSideShown(sideWanted && !narrow);
-      setSideHold(null);
-      return;
-    }
-    hold();
-    if (sideWanted) {
-      sideAsked.current = true;
-      void ask();
-      return;
-    }
-    sideAsked.current = false;
-    sideAskedW.current = null;
-    setSideShown(false);
-    setSideFit(null);
-    void giveBackWindow("session-side").then(() => turn === sideTurn.current && setSideHold(null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sideWanted, narrow, sideKept, side.seat]);
-  /** The seam moved by hand: the seat keeps the width, and the session
-      gives or takes the same pixels (the window does not change). */
-  const sideDragged = (w: number | null) => {
-    const to = w ?? sidePx("--session-side-w");
-    sideAskedW.current = w === null ? sidePx("--session-side-w") : w;
-    setSideFit(null);
-    baseBeside(to);
-    setSideWidth(side.seat, w);
-  };
-  const sideLive = (w: number | null) => {
-    const row = sideRow.current?.getBoundingClientRect().width;
-    if (row !== undefined && sideMain.current) sideMain.current.style.flexBasis = `${Math.max(0, row - (w ?? sidePx("--session-side-w")))}px`;
-  };
-  // Drawn until the window effect lets it go (`sideShown`), not until the
-  // store says closed: the hold is measured with it still there.
-  const sessionSide =
-    sideShown && selectedRow ? (
-      <SessionSide
-        embedded
-        maximized={false}
-        key={selectedRow.id}
-        session={selectedRow.id}
-        width={sideFit ?? sideKept}
-        seat={side.seat}
-        onSeat={enterSeat}
-        onWidth={sideDragged}
-        onLive={sideLive}
-        onClose={() => hideSessionContent(selectedRow.id)}
-        boxRef={setDetailBox}
-        who={{ face: selectedRow.face, title: termName(selectedRow), word: selectedRow.word, kind: selectedRow.kind, category: selectedRow.category }}
-      >
-        <div ref={seatContent} className="flex min-h-0 min-w-0 flex-1 flex-col" />
-      </SessionSide>
-    ) : undefined;
+  const closeSessionTab=(id:string)=>{if(openTabs.length===1)setScreen("list");sessionTabs.close(id);};
+  const ordinaryContentScope=selectedRow?{
+    session:selectedRow.id,mobile:narrow,faces:tabFaces,onSelectSession:selectContentSession,
+    onCloseSession:closeSessionTab,onNewSession:()=>openNewTab(),onClose:()=>hideSessionContent(selectedRow.id),
+  }:null;
+  const sessionSide=sideShown&&selectedRow?<SessionContentColumn row={selectedRow} context={contentContext} faces={tabFaces}
+    onSelectSession={selectContentSession} onCloseSession={closeSessionTab} onNewSession={()=>openNewTab()} boxRef={setDetailBox}/>:undefined;
 
   const detail = sessions && isNewTab(selected) ? (
     // A new tab's page (UX-45): the wizard's questions laid out in the
@@ -2944,8 +2785,7 @@ export default function App() {
     // ruling 54). **Null where the row has no directory**, which is
     // `linkHome`'s own default and leaves every path as the prose it
     // already was.
-    <LinkHomeProvider value={sessionHome}>
-    <ShowFileProvider value={showFile}>
+    <SessionLinkScope row={selectedRow}>
     <DetailPane
       row={selectedRow}
       onReading={observeSessionReading}
@@ -2993,8 +2833,7 @@ export default function App() {
         )
       }
     />
-    </ShowFileProvider>
-    </LinkHomeProvider>
+    </SessionLinkScope>
   ) : landing === "workspaces" ? (
     // One workspace's files. **`FilesPane` unchanged from when it was a
     // browsing tab's body** (2026-09-11 工作区替代文件): what it does —
@@ -3009,6 +2848,7 @@ export default function App() {
     openWs ? (
       <WorkspacePane
         status={stale ? gui.backend_unreachable : undefined}
+        sessionContent={contentContext}
         memory={workspaceMemories.retain(openWs)}
         // Views detach on navigation; the identity's model retains its
         // tabs, drafts and reading state without background view work.
@@ -3291,7 +3131,7 @@ export default function App() {
     >
       {detail}
       {narrow && side.open && selectedRow && tabFaces.find(f => f.id === selectedRow.id) && <>
-        <MobileContentSheet onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }}><div ref={seatContent} className="flex min-h-0 min-w-0 flex-1 flex-col" /></MobileContentSheet>
+        <MobileContentSheet onClose={() => { (document.activeElement as HTMLElement | null)?.blur(); setSessionSide(selectedRow.id, { open: false }); }}>{ordinaryContentScope&&<SessionContentSeat dock={contentDock} scope={ordinaryContentScope}/>}</MobileContentSheet>
       </>}
 
       {placeSheet && selectedRow && (
@@ -4169,11 +4009,11 @@ export default function App() {
                   axis was this pane's; it is the column's now
                   (`SessionSide` `boxRef`). */}
               {sessions && openTabs.length > 0 ? (
-                <Tabs
-                  tail={<span data-lab-session-settings-slot className="empty:hidden"/>}
+                <SessionFrame
+                  aside={sessionSide && <Fault name="side" reset={seamAt}>{sessionSide}</Fault>}
                   grouped
                   bodyClass="flex min-h-0 flex-col"
-                  faces={tabFaces.filter(f => !sessionTabsFocused || isNewTab(selected ?? "") || f.id === selected).map(f => ({ ...f,
+                  faces={tabFaces.map(f => ({ ...f,
                     again: !isNewTab(f.id) ? {
                       hint: sessionTabsFocused ? gui.session_tabs_all : gui.session_tabs_focus,
                       expanded: sessionTabsFocused,
@@ -4184,30 +4024,21 @@ export default function App() {
                         } else hideSessionContent(f.id);
                       },
                     } : undefined,
-                    group: !isNewTab(f.id) ? <ContentTabs devices={devices} session={f.id} open={f.id === selected && sessionTabsFocused} content={content} navigation={contentNavigation} onHide={()=>hideSessionContent(f.id)} onFocus={()=>{sessionTabs.focus(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});}} onAdd={()=>{
-                    contentNavigation.add(f.id);setSessionSide(f.id,{open:true,seat:"workspace"});
-                  }} /> : undefined }))}
+                  }))}
                   active={selected ?? ""}
                   seek={sessionTabs.picks}
                   onFocus={id => { sessionTabs.focus(id); setScreen("detail"); }}
                   onClose={sessionTabs.close}
-                  onNew={sessionTabsFocused && !isNewTab(selected) ? undefined : () => openNewTab()}
+                  onNew={() => openNewTab()}
                   onReorder={sessionTabs.reorder}
                   stripData={{ "data-session-tabs": "", "aria-label": gui.session_tabs }}
                   caption={stale ? gui.backend_unreachable : !side.open ? content.error : undefined}
 
                 >
-                  <div ref={sideRow} data-session-panes className={cn("flex min-h-0 min-w-0 flex-1 flex-row", sideHold !== null && "overflow-hidden")}>
-                    <div ref={sideMain} data-side-held={sideHold !== null ? "" : undefined} className="flex min-h-0 min-w-0 flex-1 flex-col" style={
-                      sideHold !== null ? { flex: "none", width: sideHold } : sessionSide && sideBasis !== null ? { flex: `1 1 ${sideBasis}px`, minWidth: "min(var(--session-main-min), 50%)" } : undefined
-                    }>
-                      <Fault name="detail" reset={seamAt}>{detail}</Fault>
-                    </div>
-                    {sessionSide && <Fault name="side" reset={seamAt}>{sessionSide}</Fault>}
-                  </div>
-                </Tabs>
+                  <Fault name="detail" reset={seamAt}>{detail}</Fault>
+                </SessionFrame>
               ) : (
-                <div ref={sideMain} className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   {landing === "workspaces" && openWs !== null ? <div data-ws-region data-region data-region-kind="tabs" className="flex min-h-0 flex-1 flex-col"><Fault name="detail" reset={seamAt}>{detail}</Fault></div> : <Region
                     kind={sessions ? "tabs" : "detail"}
                     title={pageTitle}
@@ -4243,21 +4074,14 @@ export default function App() {
           <StatusBar items={status.items} onDismiss={status.dismiss} />
         </div>
       )}
-      <div hidden ref={el => { contentParking.current = el; if (el && !contentHost.parentElement) el.appendChild(contentHost); }} />
-      <SessionContentPane container={contentHost} content={content} session={selectedRow?.id ?? null} devices={devices} rows={rows}
-        mobile={narrow} navigation={contentNavigation} sessionFaces={tabFaces}
-        onSelectSession={id=>{
-          // Choosing a session leaves the overview, including when it is
-          // already current. Its documents remain available on the next tap.
-          previousContentGroup.current.open=false;
-          if(selected)hideSessionContent(selected);
-          hideSessionContent(id);
-          sessionTabs.focus(id);setScreen("detail");
-        }}
-        onCloseSession={id=>{if(openTabs.length===1)setScreen("list");sessionTabs.close(id);}}
-        onNewSession={()=>openNewTab()}
-        visible={sessions && side.open && (narrow ? inSession : sideShown) && !hidden && morePage === null && !switchingTabs}
-        onClose={() => { if (selected) hideSessionContent(selected); }}
+      <div hidden ref={element=>contentDock.parkAt(element)}/>
+      <SessionContentPane container={contentDock.host} content={content} session={contentScope?.session??selectedRow?.id??null} devices={devices} rows={rows}
+        mobile={contentScope?.mobile??narrow} navigation={contentNavigation} sessionFaces={contentScope?.faces??tabFaces}
+        onSelectSession={id=>(contentScope?.onSelectSession??selectContentSession)(id)}
+        onCloseSession={id=>(contentScope?.onCloseSession??closeSessionTab)(id)}
+        onNewSession={()=>contentScope?contentScope.onNewSession():openNewTab()}
+        visible={contentScope!==null&&!hidden&&morePage===null&&!switchingTabs}
+        onClose={()=>contentScope?.onClose()}
         />
     </TooltipProvider>
     </FullScreenProvider>
