@@ -259,6 +259,8 @@ jobs:
         run: python3 scripts/run-node-acceptance.py --suite runtime-close --artifacts "${{ runner.temp }}/node-artifacts.json" --provenance "${{ runner.temp }}/node-provenance.json" --worker-provenance "${{ runner.temp }}/cli-provenance.json" --output "${{ runner.temp }}/node-native-close"
       - name: Verify terminal connection failure and recovery boundaries
         run: |
+          cargo test --locked -p khor-node --lib acp_management::tests -- --test-threads=1
+          cargo test --locked -p khor-node --lib acp_process::tests -- --test-threads=1
           cargo test --locked -p khor-cli --test runtime_image -- --test-threads=1
           cargo test --locked -p khor-node --lib accounts::pi_usage -- --test-threads=1
           cargo test --locked -p khor-node --lib khor_agent::conversations::tests -- --test-threads=1 | tee "$RUNNER_TEMP/conversations.log"
