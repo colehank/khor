@@ -62,6 +62,9 @@ const {presentHistoryRecord,historyRecordSlots}=presentationModule.exports;
 const writerBuilt=await build({entryPoints:[resolve('src/lib/native-file-writer.ts')],bundle:true,write:false,format:'cjs',platform:'node',plugins:[{name:'native-writer-io',setup(build){build.onLoad({filter:/[\\/]src[\\/]api\.ts$/},()=>({contents:['fileExportBegin','fileExportAppend','fileExportFinish','fileHandoffCancel','fileHandoffSave'].map(name=>`export const ${name}=(...args)=>globalThis.__nativeWriterIO.${name}(...args);`).join('\n'),loader:'ts'}));}}]});
 const writerModule={exports:{}};Function('module','exports',writerBuilt.outputFiles[0].text)(writerModule,writerModule.exports);
 const {nativeFileWriter}=writerModule.exports;
+const budgetBuilt=await build({entryPoints:[resolve('src/lib/history-record-budget.ts')],bundle:true,write:false,format:'cjs',platform:'node'});
+const budgetModule={exports:{}};Function('module','exports',budgetBuilt.outputFiles[0].text)(budgetModule,budgetModule.exports);
+const {admitHistoryRecord,retainHistoryRecord}=budgetModule.exports;
 const query = (text, caseSensitive = false) => ({ text, caseSensitive });
 const note = (key, update) => ({ key, starts_message: true, record: null, frame: { kind: 'note', update: { update } } });
 const text = (key, value) => note(key, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: value } });
@@ -718,6 +721,37 @@ test('semantic original records restore projected image data and text without ra
  const slots=historyRecordSlots([{historyRecords:[{record:{...ref,start:0,end:10,item:0}}]},
   {historyRecords:[{record:{...ref,start:100,end:110,item:0}}]},{}],[{...ref,start:10,end:100}]);
  assert.equal(slots[0].length,0);assert.equal(slots[1].length,1);assert.equal(slots[2].length,0);
+});
+test('native data URL images restore the exact normalized base64 field',async()=>{
+ const image='abcd'.repeat(20000),url='data:image/png;base64,'+image;
+ const bytes=new TextEncoder().encode(JSON.stringify({image:url}));
+ const ref={start:0,end:bytes.length,cursor:'image-source',missing_start:false,missing_end:false,item:0};
+ const source={page:async()=>{throw new Error('whole record does not page');},
+  record:async(_cursor,from)=>{const chunk=bytes.subarray(from,from+65536);return {offset:from,data:Buffer.from(chunk).toString('base64'),next:from+chunk.length<bytes.length?from+chunk.length:null};},
+  project:async(_cursor,_start,_end,scaffold)=>({record:ref,transforms:[],complete:true,entries:scaffold?[note('projection:0',{sessionUpdate:'user_message_chunk',content:{type:'image',mimeType:'image/png',data:JSON.parse(scaffold).image.split(';base64,')[1]}})]:[]}),
+ };
+ const items=await presentHistoryRecord(source,ref,new AbortController().signal);
+ assert.equal(items[0].data,image);assert(!items[0].data.startsWith('data:'));
+});
+test('semantic record admission cancels queued reads and releases its retained budget',async()=>{
+ const first=await admitHistoryRecord(new AbortController().signal),second=await admitHistoryRecord(new AbortController().signal);
+ const stop=new AbortController(),waiting=admitHistoryRecord(stop.signal);const rejected=assert.rejects(waiting,/取消/);stop.abort();await rejected;
+ let entered=false;const next=admitHistoryRecord(new AbortController().signal).then(release=>{entered=true;return release;});
+ await Promise.resolve();assert.equal(entered,false);first();first();const third=await next;
+ const retained=retainHistoryRecord('x'.repeat(24*1024*1024));
+ assert.throws(()=>retainHistoryRecord('x'.repeat(16*1024*1024)),/附件较多/);
+ retained();retained();const restored=retainHistoryRecord('x'.repeat(24*1024*1024));restored();
+ second();third();
+});
+test('large native tool output applies the producer clipping policy before materializing its body',async()=>{
+ const bytes=new TextEncoder().encode(JSON.stringify({output:'x'.repeat(2*1024*1024)}));
+ const ref={start:0,end:bytes.length,cursor:'tool-source',missing_start:false,missing_end:false,item:0};
+ const source={page:async()=>{throw new Error('whole record does not page');},
+  record:async(_cursor,from)=>{const chunk=bytes.subarray(from,from+65536);return {offset:from,data:Buffer.from(chunk).toString('base64'),next:from+chunk.length<bytes.length?from+chunk.length:null};},
+  project:async(_cursor,_start,_end,scaffold)=>({record:ref,transforms:[{kind:'tool_output',item:0,max_bytes:16384,suffix:'cut'}],complete:true,entries:scaffold?[note('projection:0',{sessionUpdate:'tool_call_update',toolCallId:'same-tool',status:'completed',content:[{type:'content',content:{type:'text',text:JSON.parse(scaffold).output}}]})]:[]}),
+ };
+ const items=await presentHistoryRecord(source,ref,new AbortController().signal);
+ assert.equal(items[0].id,'same-tool');assert.equal(items[0].status,'completed');assert.equal(items[0].out,'x'.repeat(16384)+'cut');
 });
 test('native semantic writers retain late ACK ownership and publish only complete bytes',async()=>{
  const begin=deferred(),entered=deferred(),calls=[];

@@ -34,7 +34,17 @@ export async function presentHistoryRecord(source:Source,reference:HistoryRecord
  const restore=async(value:unknown,media=false,depth=0):Promise<unknown>=>{
   check();if(depth>128)throw new Error('内容层级过深');
   if(typeof value==='string'){
-   const parts=recordSegments(value,prepared.scaffold.strings);
+   let parts=recordSegments(value,prepared.scaffold.strings);
+   const prefixes=new Map<string,string>();
+   if(!parts&&media){
+    // The ACP image normalizer removes a data-URL header from `data`.
+    // Keep this one exact, validated header transform on binary fields only.
+    const ranges=prepared.scaffold.strings.map(range=>{
+     const header=/^data:image\/[A-Za-z0-9.+-]+;base64,/.exec(range.prefix)?.[0];
+     if(!header)return range;prefixes.set(range.marker,header);return{...range,prefix:range.prefix.slice(header.length)};
+    });
+    parts=recordSegments(value,ranges);
+   }
    if(!parts)throw new Error('内容来源无法确认');
    let result='',size=0;
    const add=(text:string)=>{
@@ -44,11 +54,14 @@ export async function presentHistoryRecord(source:Source,reference:HistoryRecord
    };
    for(const part of parts){
     if('text' in part){add(part.text);continue;}
-    let chunk='';
+    let chunk='',prefix=prefixes.get(part.range.marker)??'';
     for await(const char of recordString(part.range,prepared.read,prepared.account)){
-     check();chunk+=part.escaped?JSON.stringify(char).slice(1,-1):char;
+     check();
+     if(prefix){if(!prefix.startsWith(char))throw new Error('图片来源已变化');prefix=prefix.slice(char.length);continue;}
+     chunk+=part.escaped?JSON.stringify(char).slice(1,-1):char;
      if(chunk.length>=4096){add(chunk);chunk='';}
     }
+    if(prefix)throw new Error('图片来源不完整');
     if(chunk)add(chunk);
    }
    return result;

@@ -27,7 +27,7 @@ export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,o
  const [expanded,setExpanded]=useState<ReadonlySet<string>>(new Set());
  useEffect(()=>{
   if(!host.current)return;
-  const observer=new IntersectionObserver(entries=>{const next=entries.some(entry=>entry.isIntersecting);if(!next&&host.current)setReservedHeight(host.current.getBoundingClientRect().height);setVisible(next);},{rootMargin:'100% 0px'});
+  const observer=new IntersectionObserver(entries=>{const next=entries.some(entry=>entry.isIntersecting);if(!next&&host.current)setReservedHeight(host.current.getBoundingClientRect().height);setVisible(next);},{rootMargin:'100% 0%'});
   observer.observe(host.current);return()=>observer.disconnect();
  },[]);
  useEffect(()=>{
@@ -43,7 +43,7 @@ export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile,o
   return()=>{stop.abort();release?.();tools.current(owner,reference,settled,false);void source.dispose();};
  },[id,binding,reference.cursor,reference.start,reference.end,reference.item,visible,attempt,owner]);
  return <div ref={host} data-history-record-content style={{minHeight:visible&&items?undefined:reservedHeight||undefined}} className="min-h-touch py-in">
-  {!items&&!error&&<p role="status" className="text-caption text-muted-foreground">正在读取内容</p>}
+  {visible&&!items&&!error&&<p role="status" className="text-caption text-muted-foreground">正在读取内容</p>}
   {error&&<p role="status" className="text-caption text-muted-foreground">{error} <Button size="sm" variant="ghost" onClick={()=>setAttempt(value=>value+1)}>{gui.region_retry}</Button></p>}
   {items?.filter(item=>item.who!=='tool'||!existingTools.has(item.id)).map(item=>item.who==='sys'?<p key={item.historyKey} className="text-caption">{item.text}</p>:item.who==='user'?
    <div key={item.historyKey} role="article" aria-label="你" className="py-row"><Markdown text={item.text}/></div>:
