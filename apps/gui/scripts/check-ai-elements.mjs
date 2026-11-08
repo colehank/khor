@@ -144,6 +144,15 @@ try {
   for (const [name, width, scheme] of [["desktop-light", 1280, "light"], ["desktop-dark", 1280, "dark"], ["mobile-light", 390, "light"], ["mobile-dark", 390, "dark"]]) {
     const context = await browser.newContext({ viewport: { width, height: 844 }, locale: "zh-CN", colorScheme: scheme, reducedMotion: "reduce", hasTouch: width < 600, isMobile: width < 600 });
     const page = await context.newPage(), errors = [], requests = [], openedLeases = new Map();
+    await page.addInitScript(() => {
+      window.__chatScrollTrace = [];
+      for (const type of ['scroll', 'pointerdown', 'wheel', 'keydown']) document.addEventListener(type, event => {
+        const el = event.target instanceof Element ? event.target.closest('[data-chat-scroll]') : null;
+        if (!el) return;
+        window.__chatScrollTrace.push({type,at:performance.now(),top:el.scrollTop,height:el.scrollHeight,view:el.clientHeight,focus:document.activeElement?.tagName});
+        if (window.__chatScrollTrace.length > 80) window.__chatScrollTrace.shift();
+      }, {capture:true,passive:true});
+    });
     currentPage = page;
     currentTrace = {requests: [], failed: [], http: [], count: 0, commandCounts: {}, opened: [], openCount: 0, navigation: [], viteConsole: []};
     const trace = currentTrace;
@@ -420,6 +429,7 @@ try {
     const state = await currentPage.evaluate(() => ({
       focus: document.activeElement?.outerHTML?.slice(0,1024),
       body: document.body.innerText.slice(0,4096),
+      scrollTrace: window.__chatScrollTrace,
       scroll: (() => {const el=document.querySelector('[data-chat-scroll]');return el?{top:el.scrollTop,height:el.scrollHeight,view:el.clientHeight,rect:el.getBoundingClientRect().toJSON()}:null;})(),
       reader: {latestButton: document.querySelector('[data-chat-bottom]')?.textContent?.slice(0,256) ?? null,
         captureError: document.querySelector('[data-chat-capture-error]')?.textContent?.slice(0,512) ?? null,

@@ -1296,7 +1296,10 @@ export function ChatView({
 
   const loadOlderHistory = (preserveLatest=false) => {
     const element = scroller.current;
-    if (element) {
+    // A speculative page while following latest belongs to the live tail.
+    // Only an explicit older-reading intent may restore a text anchor later.
+    historyAnchor.current = null;
+    if (element && !preserveLatest) {
       const top = element.getBoundingClientRect().top;
       const node = [...element.querySelectorAll<HTMLElement>('[data-history-key]')]
         .find(candidate => candidate.getBoundingClientRect().bottom > top);
@@ -1305,7 +1308,7 @@ export function ChatView({
         historyAnchor.current = { key: node.dataset.historyKey, top: node.getBoundingClientRect().top - top,
           ticket: capturePositionTicket(), point: item ? captureHistoryTextPoint(node, element, item) : null };
       }
-      if(!preserveLatest){following.current = false; readingLatest.current = false;}
+      following.current = false; readingLatest.current = false;
     }
     void historyView.current?.older();
   };
