@@ -370,15 +370,29 @@ pub async fn hold_loopback(
     port: u16,
     proxy: &str,
 ) -> Result<LoopbackLease, String> {
-    // A preceding page close may have aborted the last listener task.
-    // Let that task retire before trying to bind its port again.
-    tokio::task::yield_now().await;
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(250);
+    loop {
+        if let Some(lease) = try_hold_loopback(host, port, proxy)? {
+            return Ok(lease);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(khor_catalog::msg::page_port_taken(port));
+        }
+        // The last owner aborted this port's old task. Its socket closes
+        // when Tokio retires that task; never race it with a new route.
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+}
+
+/// None means an unowned listener is still retiring, never a live conflict.
+fn try_hold_loopback(host: &str, port: u16, proxy: &str) -> Result<Option<LoopbackLease>, String> {
     let target = format!("{}:{port}", host.to_ascii_lowercase());
     let mut loops = loops().lock().map_err(|e| e.to_string())?;
-    loops.retain(|_, held| held.strong_count() > 0);
+    loops.retain(|at, held| *at == port || held.strong_count() > 0);
+    let retiring = loops.contains_key(&port);
     if let Some(held) = loops.get(&port).and_then(std::sync::Weak::upgrade) {
         return if held.target == target && held.proxy == proxy {
-            Ok(LoopbackLease(held))
+            Ok(Some(LoopbackLease(held)))
         } else {
             Err(khor_catalog::msg::page_port_taken(port))
         };
@@ -397,12 +411,16 @@ pub async fn hold_loopback(
     };
     // Reserve every address before publishing or spawning anything. In
     // particular localhost must not reach an unrelated IPv6 listener.
-    let listeners = addresses.into_iter().map(|address| {
-        let listener = std::net::TcpListener::bind((address, port))
-            .map_err(|_| khor_catalog::msg::page_port_taken(port))?;
+    let mut listeners = Vec::new();
+    for address in addresses {
+        let listener = match std::net::TcpListener::bind((address, port)) {
+            Ok(listener) => listener,
+            Err(error) if retiring && error.kind() == std::io::ErrorKind::AddrInUse => return Ok(None),
+            Err(_) => return Err(khor_catalog::msg::page_port_taken(port)),
+        };
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
-        tokio::net::TcpListener::from_std(listener).map_err(|e| e.to_string())
-    }).collect::<Result<Vec<_>, String>>()?;
+        listeners.push(tokio::net::TcpListener::from_std(listener).map_err(|e| e.to_string())?);
+    }
     let tasks = listeners.into_iter().map(|listener| {
         let (target, proxy) = (target.clone(), proxy.to_owned());
         tokio::spawn(async move {
@@ -421,7 +439,7 @@ pub async fn hold_loopback(
     }).collect();
     let held = std::sync::Arc::new(LoopbackForward { target, proxy: proxy.to_owned(), tasks });
     loops.insert(port, std::sync::Arc::downgrade(&held));
-    Ok(LoopbackLease(held))
+    Ok(Some(LoopbackLease(held)))
 }
 
 pub fn loopback_held(port: u16) -> bool {
