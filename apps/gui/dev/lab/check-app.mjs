@@ -305,6 +305,7 @@ try {
   results.push(await checkGuiExperience(browser,{port,report,engine:'chromium'}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium'}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium',mobile:true}));
+  results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium',mobile:true,khor:true}));
   results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true}));
   await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
@@ -345,6 +346,7 @@ try {
     results.push(await checkGuiExperience(browser,{port,report,engine:'webkit'}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit'}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true}));
+    results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true,khor:true}));
     results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true,engine:'webkit'}));
     for (const scene of ['workspaces','list','devices']) {
       results.push(await inspect(browser,scene,{width:390,height:844},{machines:scene === 'workspaces' ? 6 : 3,engine:'webkit'}));

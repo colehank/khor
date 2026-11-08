@@ -61,7 +61,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
  }catch(error){await page.screenshot({path:path.join(report,`gui-experience-${engine}-failure.png`)}).catch(()=>{});throw error;}finally{await context.close();}
 }
 
-export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=false}){
+export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=false,khor=false}){
  const viewport=mobile?{width:390,height:844}:{width:1500,height:900};
  const context=await browser.newContext({viewport,isMobile:mobile,hasTouch:mobile});
  const page=await context.newPage();page.setDefaultTimeout(15000);const errors=[];page.on('pageerror',error=>errors.push(String(error)));
@@ -70,16 +70,17 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
   if(mobile){await page.locator('[data-ws-mid] [data-session-bar] [data-back]:visible').waitFor();await page.locator('[data-ws-mid] [data-session-bar] [data-back]:visible').click();}
   const nav=page.locator('[data-workspace-navigation][data-seat="workspace"]');await nav.waitFor();
   await nav.locator('[data-workspace-view="sessions"]').click();
-  const rows=page.locator('[data-ws-sessions-list] [data-row-open]');await rows.first().click();
+  const rows=page.locator('[data-ws-sessions-list] [data-row-open]');if(khor)await page.locator('[data-ws-sessions-list] [data-row="wide/all"] [data-row-open]').click();else await rows.first().click();
   if(mobile){
-   await page.locator('[data-ws-sessions] [data-chat-input]').waitFor();
+   await page.locator(khor?'[data-ws-sessions] [data-machine-chat]':'[data-ws-sessions] [data-chat-input]').waitFor();
+   await page.locator('[data-ws-sessions] [data-lab-model-header]').waitFor();
    assert.equal(await page.locator('[data-workspace-session-tabs]:visible').count(),0);
-   await page.evaluate(()=>window.dispatchEvent(new CustomEvent('khor:open-path',{detail:{machine:'',path:'/preview/project/README.md',dir:false,line:null,session:'gui/ai-elements-review'}})));
+   await page.evaluate(session=>window.dispatchEvent(new CustomEvent('khor:open-path',{detail:{machine:'',path:'/preview/project/README.md',dir:false,line:null,session}})),khor?'wide/all':'gui/ai-elements-review');
    await page.locator('[data-content-visible="true"] [data-file-page]').waitFor();
    assert.equal(await page.locator('[data-content-visible="true"] [data-session-bar]:visible').count(),1,'Workspace session files use the same bottom content pill');
    assert.deepEqual(page.viewportSize(),viewport);assert.deepEqual(errors,[]);
-   await page.screenshot({path:path.join(report,`workspace-sessions-mobile-${engine}.png`)});
-   return {name:`workspace shared mobile session ${engine}`,passed:true,errors};
+   await page.screenshot({path:path.join(report,`workspace-sessions-mobile-${engine}${khor?"-khor":""}.png`)});
+   return {name:`workspace shared mobile session ${engine}${khor?" khor":""}`,passed:true,errors};
   }
   await page.locator('[data-workspace-session-tabs]').waitFor();
   const id=await page.locator('[data-workspace-session-tabs] [data-tab-open]').first().getAttribute('data-tab-open');

@@ -13,7 +13,8 @@ export function SessionFrame({aside,children,tail,mobile=false,contentMode=false
 }) {
   const [settings,setSettings]=useState<HTMLSpanElement|null>(null);
   if(mobile){
-    const chat=tabs.faces.find(face=>face.id===tabs.active)?.session?.kind==='gui';
+    const kind=tabs.faces.find(face=>face.id===tabs.active)?.session?.kind;
+    const chat=kind==='gui'||kind==='broadcast';
     return <SettingsSeat.Provider value={settings}><SessionScreen faces={tabs.faces} active={tabs.active}
       onFocus={tabs.onFocus} onClose={tabs.onClose} onNew={tabs.onNew} onBack={onBack??(()=>tabs.onClose(tabs.active))}
       onTitle={onTitle} contentMode={contentMode} renderHeader={chat?props=><SessionHeader {...props}/>:undefined} deckAt={chat?'top':'bottom'}>
