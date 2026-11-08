@@ -43,6 +43,7 @@ export function SegmentedControl<K extends string>({
   onChange,
   mark,
   className,
+  appearance = "standard",
 }: {
   /** What the group is called, for a screen reader — the row's label. */
   label: string;
@@ -52,6 +53,7 @@ export function SegmentedControl<K extends string>({
   /** Anchors on the group. */
   mark?: Record<string, string | boolean | undefined>;
   className?: string;
+  appearance?: "standard" | "glass";
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const at = options.findIndex((o) => o.key === value);
@@ -100,7 +102,7 @@ export function SegmentedControl<K extends string>({
       // **As tall as its segments** (`--hit`: 28 under a mouse, 44 under
       // a finger — V02): the track is the item plus its two pads, never a
       // 28 track under a 44 piece. ⚠️ 墓碑: `h-ctl-md` at every pointer.
-      className={cn("inline-flex h-(--hit) max-w-full min-w-0 items-center rounded-full bg-fill", className)}
+      className={cn("inline-flex max-w-full min-w-0 items-center rounded-full", appearance === "glass" ? "glass h-glass-btn" : "h-(--hit) bg-fill", className)}
     >
       {options.map((o, i) => {
         const on = i === at;
@@ -136,6 +138,7 @@ export function SegmentedControl<K extends string>({
               // a mouse the floor (`--hit`) is the track's own `ctl-md`;
               // a finger gets `--touch` around the same drawing.
               "relative flex min-h-touch min-w-touch flex-initial items-center justify-center rounded-sm px-row text-body text-foreground",
+              appearance === "glass" && "h-full flex-1 rounded-full",
               "focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-ring",
               rule &&
                 "before:absolute before:top-1/2 before:left-0 before:h-3.5 before:w-px before:-translate-y-1/2 before:bg-border before:content-['']",
@@ -145,7 +148,7 @@ export function SegmentedControl<K extends string>({
               <span
                 aria-hidden
                 data-segment-face
-                className="absolute inset-x-0.75 top-1/2 h-[calc(100%-6px)] -translate-y-1/2 rounded-full bg-segment shadow-knob"
+                className={cn("absolute inset-x-0.75 top-1/2 h-[calc(100%-6px)] -translate-y-1/2 rounded-full", appearance === "glass" ? "glass-sel" : "bg-segment shadow-knob")}
               />
             )}
             <span className="relative min-w-0 truncate">{o.label}</span>

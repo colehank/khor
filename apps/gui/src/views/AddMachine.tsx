@@ -233,9 +233,9 @@ function FieldRow({
   );
 }
 
-function Head({ title }: { title: string }) {
+function Head({ title, centered = false }: { title: string; centered?: boolean }) {
   return (
-    <DialogHeader>
+    <DialogHeader className={centered ? "items-center text-center" : undefined}>
       <DialogTitle>{title}</DialogTitle>
     </DialogHeader>
   );
@@ -259,7 +259,7 @@ function Failure({ text }: { text: string | null }) {
 }
 
 /** A copy button that says for a beat what the copy did. */
-function CopyButton({ text, label, primary = false }: { text: string; label: string; primary?: boolean }) {
+function CopyButton({ text, label, accessibleLabel }: { text: string; label: string; accessibleLabel?: string }) {
   const [copied, setCopied] = useState<"copied" | "failed" | null>(null);
   useEffect(() => {
     if (!copied) return;
@@ -268,7 +268,7 @@ function CopyButton({ text, label, primary = false }: { text: string; label: str
   }, [copied]);
   return (
     <Button
-      variant={primary ? "primary" : "default"}
+      aria-label={copied ? undefined : accessibleLabel}
       className="flex-none"
       data-said={copied ?? undefined}
       onClick={() =>
@@ -443,7 +443,7 @@ export function AddMachineDialog({
     case "ssh":
       content = (
         <>
-          <Head title={gui.add_ssh_host} />
+          <Head title={gui.add_ssh_choice} />
           <Body>
             <Group
               mark="ssh"
@@ -660,9 +660,9 @@ function TicketPage({ machines, onClose, onJoined }: {
   };
 
   return <>
-    <Head title={gui.add_khor_host} />
+    <Head title={gui.add_khor_choice} centered />
     <Body>
-      <SegmentedControl label={gui.add_khor_host} value={mode} className="self-start"
+      <SegmentedControl label={gui.add_khor_host} value={mode} appearance="glass" className="self-center"
         mark={{ "data-pairing-mode": mode }}
         options={[
           { key: "invite", label: gui.make_a_ticket, disabled: joining || outcome !== null },
@@ -674,7 +674,7 @@ function TicketPage({ machines, onClose, onJoined }: {
           {joined ? <div data-ticket-used role="status" className="flex items-center gap-row text-body">
             <Face row={joined} /><span>{gui.ticket_used_by(joined.shown)}</span>
           </div> : <>
-            <p className="text-callout text-muted-foreground">{gui.pair_invite_hint}</p>
+            <p className="text-balance text-center text-callout text-muted-foreground">{gui.pair_invite_hint}</p>
             {ticket?.qr ? <svg data-ticket-qr role="img" aria-label={gui.ticket_qr}
               viewBox={`0 0 ${ticket.qr.span} ${ticket.qr.span}`} shapeRendering="crispEdges"
               className="mx-auto size-60 max-w-full flex-none text-foreground">
@@ -682,16 +682,19 @@ function TicketPage({ machines, onClose, onJoined }: {
             </svg> : !ticket && !inviteError && <div aria-hidden className="mx-auto size-60 max-w-full flex-none" />}
             {ticket && <div className="flex min-w-0 flex-col gap-in">
               <label htmlFor="pair-local-ticket" className="text-callout text-muted-foreground">{gui.pair_local_ticket}</label>
-              <Input id="pair-local-ticket" data-ticket aria-label={gui.pair_local_ticket}
-                readOnly value={ticket.token} onFocus={event => event.currentTarget.select()}
-                className="font-mono text-mono" />
+              <div className="flex min-w-0 items-center gap-in rounded-lg bg-fill px-row py-in">
+                <Input id="pair-local-ticket" data-ticket aria-label={gui.pair_local_ticket}
+                  readOnly value={ticket.token} onFocus={event => event.currentTarget.select()}
+                  className={cn(bare, "min-w-0 flex-1 font-mono text-mono")} />
+                <CopyButton text={ticket.token} label={gui.copy_text} accessibleLabel={gui.pair_copy_ticket} />
+              </div>
               <span data-ticket-window className="text-caption text-muted-foreground">{cli.invite_window(ticket.minutes)}</span>
             </div>}
             <Failure text={inviteError} />
             {inviteError && <Button onClick={() => setRetry(value => value + 1)}>{gui.region_retry}</Button>}
           </>}
         </div> : <div data-pair-join className="flex min-w-0 flex-col gap-group">
-          <p className="text-callout text-muted-foreground">{gui.pair_join_hint}</p>
+          <p className="text-balance text-center text-callout text-muted-foreground">{gui.pair_join_hint}</p>
           {scanner && <Button data-scan-ticket disabled={joining || scanning}
             className="self-start pointer-coarse:min-h-touch" onClick={scan}>{gui.scan_a_ticket}</Button>}
           <div className="flex min-w-0 flex-col gap-in">
@@ -713,8 +716,6 @@ function TicketPage({ machines, onClose, onJoined }: {
     </Body>
     <DialogFooter>
       <Button data-dialog-cancel onClick={onClose}>{outcome !== null || joined ? gui.edit_done : gui.close}</Button>
-      {outcome === null && mode === "invite" && ticket && !joined
-        && <CopyButton primary text={ticket.token} label={gui.pair_copy_ticket} />}
       {outcome === null && mode === "join" && <Button variant="primary" data-join
         disabled={joining || !theirs.trim()} aria-busy={joining || undefined}
         onClick={() => joinWith(theirs)}>{gui.join_with_a_ticket}</Button>}
