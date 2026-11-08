@@ -25,9 +25,14 @@ export async function exportReadableHistory(source:Source,writer:Writer,title:st
   }
   await write(`# ${title.replace(/[\r\n]+/g,' ')}\n\n图片和附件保留名称与路径，文件本身不嵌入本文\n\n`);
   const records=new Set<string>();
-  const itemText=async(item:HistoryItem)=>{
+  let previousText:{who:string;messageId?:string}|null=null;
+  const itemText=async(item:HistoryItem,starts:boolean)=>{
    const body=historyText(item);if(!body.complete)throw new Error('部分内容无法完整读取，请单独导出原始记录');
-   await write(`## ${label(item.who)}\n\n${body.texts.join('\n\n')}\n\n`);
+   const messageId='messageId' in item?item.messageId:undefined;
+   const continued='text' in item&&!starts&&previousText?.who===item.who
+    &&(previousText.messageId===undefined||messageId===undefined||previousText.messageId===messageId);
+   await write(`${continued?'':`\n\n## ${label(item.who)}\n\n`}${body.texts.join('\n\n')}`);
+   previousText='text' in item?{who:item.who,messageId:messageId??(continued?previousText?.messageId:undefined)}:null;
   };
   for(const saved of pages.reverse()){
    const page=await read(saved.cursor);
@@ -36,22 +41,32 @@ export async function exportReadableHistory(source:Source,writer:Writer,title:st
    if(page.references.length&&items.some(item=>!item.historyRecords.some(source=>source.record)))throw new Error('无法确认原记录的顺序，请单独导出原始记录');
    const ordered=[...items.map(item=>({at:item.historyRecords.find(source=>source.record)?.record?.start??Infinity,item,reference:null})),
     ...page.references.map(reference=>({at:reference.start,item:null,reference}))].sort((a,b)=>a.at-b.at);
+   let lastEntry=-1;
+   const barrier=(from:number,to:number)=>page.entries.slice(from,to).some(entry=>entry.frame.kind==='turn'||entry.frame.kind==='capture_gap');
    for(const entry of ordered){
-    if(entry.item){await itemText(entry.item);continue;}
+    if(entry.item){
+     const indexes=entry.item.historyEntries.map(key=>page.entries.findIndex(source=>source.key===key)).filter(index=>index>=0);
+     const first=Math.min(...indexes);
+     if(barrier(lastEntry+1,first))previousText=null;
+     await itemText(entry.item,!!page.entries[first]?.starts_message);
+     lastEntry=Math.max(lastEntry,...indexes);continue;
+    }
+    previousText=null;
     const reference=entry.reference!;const key=`${reference.start}:${reference.end}:${reference.item??'record'}`;
     if(records.has(key))continue;records.add(key);
     if(reference.missing_start||reference.missing_end)throw new Error('原记录尚不完整，请稍后导出');
     const stream=recordText(reference,page.newer,{record:(cursor,from)=>source.record(cursor,from,signal),project:(cursor,start,end,scaffold)=>source.project(cursor,start,end,scaffold,signal)});let result=await stream.next();
     while(!result.done){
-     const part=result.value;await write(`## ${label(part.who)}\n\n`);let buffer='';
+     const part=result.value;await write(`\n\n## ${label(part.who)}\n\n`);let buffer='';
      for await(const text of part.text){check();buffer+=text;if(buffer.length>=16384){await write(buffer);buffer='';}}
      await write(buffer+'\n\n');if(!part.complete)throw new Error('部分内容无法完整读取，请单独导出原始记录');
      result=await stream.next();
     }
     if(!result.value)throw new Error('部分内容无法完整读取，请单独导出原始记录');
    }
+   if(barrier(lastEntry+1,page.entries.length))previousText=null;
    await new Promise(resolve=>setTimeout(resolve,0));check();
   }
-  await writer.close();committed=true;
+  await write("\n");await writer.close();committed=true;
  }finally{if(!committed)await writer.abort().catch(()=>{});}
 }

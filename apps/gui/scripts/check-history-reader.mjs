@@ -457,6 +457,15 @@ test('readable export aborts a changed or failed source instead of publishing pa
  {write:async()=>{},close:async()=>{closed++;},abort:async()=>{aborted++;}},'session',new AbortController().signal),/source unavailable/);
  assert.equal(closed,0);assert.equal(aborted,1);
 });
+test('readable export preserves a fenced code block across source page boundaries',async()=>{
+ const old={...page('old',{older:null,newer:'old-end'}),entries:[{...entry('old','```ts\nconst value = '),starts_message:false}]};
+ const next={...page('next',{older:'old',newer:'next-end'}),entries:[{...entry('next','1;\n```'),starts_message:false}]};
+ const bytes=[];
+ await module.exports.exportReadableHistory({page:async cursor=>cursor===null||cursor==='next-end'?next:old},
+ {write:async value=>bytes.push(value),close:async()=>{},abort:async()=>{}},'Code',new AbortController().signal);
+ const text=new TextDecoder().decode(Buffer.concat(bytes));
+ assert(text.includes('```ts\nconst value = 1;\n```'));assert.equal((text.match(/## 智能体/g)??[]).length,1);
+});
 let failures = 0;
 for (const [name, run] of checks) {
   try {
