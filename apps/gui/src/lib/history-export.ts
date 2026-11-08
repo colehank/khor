@@ -1,7 +1,7 @@
 import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 import type { historySource } from './history-source';
 import type { FileHandoff } from '@/gen/bindings/FileHandoff';
-type Writer = {write:(bytes:Uint8Array)=>Promise<void>;close:()=>Promise<void>;abort:()=>Promise<void>};
+type Writer = {write:(bytes:Uint8Array<ArrayBuffer>)=>Promise<void>;close:()=>Promise<void>;abort:()=>Promise<void>};
 
 /** Locate physical JSONL boundaries from the same reader's window facts.
  * Keep one original cursor and scalar bounds, never whole records or a list

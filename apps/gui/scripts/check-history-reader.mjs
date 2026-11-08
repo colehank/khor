@@ -3,7 +3,7 @@ import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
+const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view','chat-media'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
 const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween, historyContributionPoint, historyContributionPresent } = module.exports;
@@ -433,6 +433,15 @@ test('canonical plans retain separate turns and update only their own turn',()=>
  const plan=(key,status)=>({key,starts_message:false,record:null,frame:note('plan',{entries:[{content:key.startsWith('first')?'First task':'Second task',status}]})});
  const items=paintHistory([entry('intro'),plan('first-a','pending'),plan('first-b','completed'),{key:'turn',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}},plan('second','pending')]);
  assert.deepEqual(items.filter(item=>item.who==='plan').map(item=>item.entries),[[{content:'First task',status:'completed'}],[{content:'Second task',status:'pending'}]]);
+});
+test('inline media never fetches a URI, permits raster data, and rejects active content',()=>{
+ const {inlineMediaSource,resourceFilePath}=module.exports;
+ assert.equal(inlineMediaSource({who:'resource',kind:'image',mime:'image/png',data:'YWJj',name:'image'}),'data:image/png;base64,YWJj');
+ assert.equal(inlineMediaSource({who:'resource',kind:'image',mime:'image/svg+xml',data:'YWJj',name:'svg'}),null);
+ assert.equal(inlineMediaSource({who:'resource',kind:'image',mime:'image/png',uri:'https://private.example/image',name:'remote'}),null);
+ assert.equal(inlineMediaSource({who:'resource',kind:'image',mime:'image/png',data:'<invalid>',name:'bad'}),null);
+ assert.equal(resourceFilePath('file:///tmp/my%20file.png'),'/tmp/my file.png');
+ assert.equal(resourceFilePath('file://other-host/share.png'),null);assert.equal(resourceFilePath('https://example.com/a'),null);
 });
 let failures = 0;
 for (const [name, run] of checks) {

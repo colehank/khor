@@ -14,7 +14,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await input.fill('Draft belongs to the original session');
   await api('__ai_preview/upload-mode',{mode:'fail'});
   await page.locator('input[type=file]').last().setInputFiles({name:'failed.txt',mimeType:'text/plain',buffer:Buffer.from('synthetic attachment')});
-  const failed=page.locator('[data-chat-pending-file="failed.txt"]');await failed.getByText('上传失败',{exact:false}).waitFor();
+  const failed=page.locator('[data-chat-pending-file="failed.txt"]');await page.waitForFunction(()=>document.querySelector('[data-chat-pending-file="failed.txt"]')?.title.includes('上传失败'));
   assert.equal(await page.locator('[data-chat-send]').isDisabled(),true,'An upload failure blocks the entire send, including keyboard Enter');
   await input.press('Enter');assert.equal((await api('__ai_preview/says')).length,0);
   const original='gui/ai-elements-review',other='gui/ai-elements-plan';
@@ -28,6 +28,8 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   const scroll=page.locator('[data-chat-scroll]:visible');await scroll.hover();
   for(let index=0;index<5;index++){await page.mouse.wheel(0,-1600);await page.waitForTimeout(200);}
   await page.waitForFunction(()=>document.querySelectorAll('[data-chat-tool]').length>0);
+  await page.locator('[data-chat-media-preview]').waitFor();await page.locator('[data-chat-media-preview]').click();
+  await page.getByRole('dialog').waitFor();assert.equal(await page.getByRole('dialog').locator('img').evaluate(image=>image.complete&&image.naturalWidth>0),true);await page.keyboard.press('Escape');
   assert(await page.locator('[data-copy-text]').count()>0,'Answer and code copying are discoverable');
   await page.locator('[data-lab-add]').click();await page.locator('[role=menuitem][data-history-find-open]').click();
   await page.locator('[data-history-search] input').waitFor();

@@ -1,3 +1,4 @@
+import {AgentResource} from './resource';
 import {CopyText} from '@/components/CopyText';
 import { useMemo, useState } from "react";
 import { Message, MessageContent } from "@/components/ui/ai/message";
@@ -12,11 +13,7 @@ export function AgentContent({ item, streaming, active = true, open, onOpenChang
 }) {
   if(item.who==='plan')return <AgentPlan entries={item.entries}/>;
   if(item.who==='compaction')return <details data-chat-compaction data-compaction-id={item.id} data-compaction-status={item.status} className="rounded-md bg-fill px-row py-in text-callout"><summary>{item.status==='in_progress'?'正在压缩上下文':item.status==='completed'?'上下文已压缩':item.status==='cancelled'?'已取消压缩':item.status==='failed'?'上下文压缩失败':`上下文压缩 · ${item.status}`}</summary>{item.summary&&<Markdown text={item.summary}/>}{item.error&&<p role="alert" className="text-destructive">{item.error}</p>}</details>;
-  if(item.who==='resource'){
-    if(item.kind==='audio'&&item.data&&item.mime?.startsWith('audio/'))return <audio data-chat-audio controls aria-label={item.name} src={`data:${item.mime};base64,${item.data}`}/>;
-    if(item.kind==='image'&&item.data&&item.mime?.startsWith('image/')&&item.mime!=='image/svg+xml')return <img data-chat-image className="max-w-full rounded-md" alt={item.name} src={`data:${item.mime};base64,${item.data}`}/>;
-    return <div data-chat-resource className="rounded-md bg-fill px-row py-in text-callout"><span>{item.name}</span>{item.uri&&<code className="block break-all text-caption">{item.uri}</code>}</div>;
-  }
+  if(item.who==='resource')return <AgentResource item={item} onOpenFile={onOpenFile}/>;
   if (item.who === "thought") return <AgentReasoning text={item.text} isStreaming={streaming} />;
   if (item.who === "tool") return <AgentTool tool={item} active={active} open={open} onOpenChange={onOpenChange} onOpenFile={onOpenFile} />;
   return <Message role="article" aria-label="智能体" data-chat-message className="text-read py-row"><MessageContent><Markdown text={item.text} className="text-read-ink" />{item.who==='agent'&&!streaming&&<div className="flex"><CopyText text={item.text}/></div>}</MessageContent></Message>;
