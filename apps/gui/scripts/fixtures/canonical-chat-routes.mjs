@@ -9,7 +9,7 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) =>
   let serial = 0;
   const key = () => (++serial).toString(16).padStart(32, '0');
   const scenario = id => {
-    if (!scenarios.has(id)) scenarios.set(id, {binding: `${bindingPrefix}:${id}`, entries: [], pending: [], cursor: 0});
+    if (!scenarios.has(id)) scenarios.set(id, {binding: `${bindingPrefix}:${id}`, entries: [], pending: [], cursor: 0, opened:false, snapshots:new Map()});
     return scenarios.get(id);
   };
   const cursor = offset => `fixture-offset:${offset}`;
@@ -23,6 +23,15 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) =>
   const flush = id => {
     const state = scenario(id);
     for (const frame of takeFrames(id)) {
+      const update=frame.kind==='note'?frame.update?.update:null;
+      const fact=['agent','settings','capabilities','turning'].includes(frame.kind)?frame.kind
+        :['available_commands_update','usage_update','current_mode_update'].includes(update?.sessionUpdate)?update.sessionUpdate:null;
+      if(fact)state.snapshots.set(fact,structuredClone(frame));
+      if(frame.kind==='turn'||frame.kind==='gone')state.snapshots.delete('turning');
+      if(frame.kind==='ask'||frame.kind==='elicit')state.snapshots.set(`${frame.kind}:${frame.ask}`,structuredClone(frame));
+      if(frame.kind==='answered'||frame.kind==='elicit_answered'){
+        state.snapshots.delete(`ask:${frame.ask}`);state.snapshots.delete(`elicit:${frame.ask}`);
+      }
       if (frame.kind === 'history' || frame.kind === 'history_end') throw new Error('retired History DTO in current fixture');
       // These five source facts are explicit in these scenarios. Original SDK
       // payloads stay untouched; real paintHistory performs all body folding.
@@ -54,7 +63,8 @@ export function canonicalChatFixture({ids, takeFrames, onOpen = (_id, _lease) =>
       if (command === 'chat_open') {
         const owner = views.get(args.lease);
         if (!owner || owner.id !== args.id || owner.claimed || owner.closed) throw new Error('fixture claim is not pending');
-        owner.claimed = true;onOpen(args.id, args.lease);return {value: true};
+        owner.claimed = true;onOpen(args.id, args.lease);const state=flush(args.id),fresh=!state.opened;state.opened=true;
+        if(!fresh)state.pending.push(...structuredClone([...state.snapshots.values()]));return {value:fresh};
       }
       if (command === 'chat_leave') {
         const owner = views.get(args.lease);

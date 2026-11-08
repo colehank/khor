@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 export async function checkGuiExperience(browser,{port,report,engine}){
@@ -23,7 +24,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.locator('[data-chat-doc]').waitFor();await failed.waitFor();
   assert.equal(await input.inputValue(),'Draft belongs to the original session');
   await failed.locator('[data-chat-pending-drop]').click();
-  assert.equal(await page.locator('[data-chat-send]').isEnabled(),true);
+  await page.waitForFunction(()=>{const send=document.querySelector('[data-chat-send]');return send&&!send.disabled;});
   // Read older pages using a real reader gesture, without touching Load older.
   const scroll=page.locator('[data-chat-scroll]:visible');await scroll.hover();
   for(let index=0;index<5;index++){await page.mouse.wheel(0,-1600);await page.waitForTimeout(200);}
@@ -35,6 +36,10 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.locator('[data-history-search] input').waitFor();
   await page.screenshot({path:path.join(report,`gui-experience-${engine}.png`)});
   await page.keyboard.press('Escape');
+  const download=page.waitForEvent('download');
+  await page.locator('[data-lab-add]').click();await page.locator('[data-history-readable-export]').click();
+  const exported=await download,body=await readFile(await exported.path(),'utf8');
+  assert(body.includes('修一下编辑器')&&!body.includes('iVBOR'),'Readable export reads canonical text and media names, never encoded payloads');
   await api('__ai_preview/poll-mode',{mode:'fail'});
   await page.locator('[data-session-tabs] [data-tab-notice="rejoin"]').waitFor();
   assert.equal(await input.inputValue(),'Draft belongs to the original session');

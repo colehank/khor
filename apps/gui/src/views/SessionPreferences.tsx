@@ -130,13 +130,14 @@ export function KhorHeader({view,onChanged,disabled,updates=[],session="wide/all
     {error&&<DropdownMenuLabel role="alert" className="composer-lab-menu-note text-state-failed">{error}</DropdownMenuLabel>}
   </Preferences><KhorAgentSettings session={session} view={view} onChanged={onChanged} disabled={disabled} openRequest={configure} hideTrigger/></>;
 }
-export function SessionAdd({destination,onFind,...props}:ComponentProps<typeof AddSeat>&{destination?:ReactElement<ComponentProps<typeof SendInto>>|null;onFind?:()=>void}){
+export function SessionAdd({destination,onFind,onExport,exportBusy,...props}:ComponentProps<typeof AddSeat>&{destination?:ReactElement<ComponentProps<typeof SendInto>>|null;onFind?:()=>void;onExport?:()=>void;exportBusy?:boolean}){
 
-  if(!props.onAttach&&!props.onAttachMachine&&!onFind)return null;
+  if(!props.onAttach&&!props.onAttachMachine&&!onFind&&!onExport)return null;
   const menu=(target?:SendIntoControl)=><DropdownMenu>
     <DropdownMenuTrigger asChild><PlusSeat data-lab-add aria-label="添加附件"/></DropdownMenuTrigger>
     <DropdownMenuContent side="top" align="start" sideOffset={16} alignOffset={-6} data-lab-attachments className="min-w-nav-menu composer-lab-menu" onCloseAutoFocus={e=>e.preventDefault()}>
       {onFind&&<DropdownMenuItem data-history-find-open onSelect={onFind}>查找对话</DropdownMenuItem>}
+      {onExport&&<DropdownMenuItem data-history-readable-export disabled={exportBusy} onSelect={onExport}>导出对话</DropdownMenuItem>}
       {props.onAttach&&<DropdownMenuItem data-lab-attach-device onSelect={props.onAttach}><IconUpload className="size-nav-glyph"/>从这台设备添加</DropdownMenuItem>}
       {props.onAttachMachine&&<DropdownMenuItem onSelect={props.onAttachMachine.pick}><IconFiles className="size-nav-glyph"/>{props.onAttachMachine.label}</DropdownMenuItem>}
       {target&&<><DropdownMenuSeparator/><DropdownMenuItem data-send-into-change onSelect={target.pick}><span>上传位置</span><span data-send-into-path className="composer-lab-menu-value ml-auto">{target.path}</span><IconChevronRight className="size-affordance text-muted-foreground"/></DropdownMenuItem>

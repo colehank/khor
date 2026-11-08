@@ -3,7 +3,7 @@ import { build } from 'esbuild';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import ts from 'typescript';
-const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view','chat-media'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
+const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view','chat-media','history-readable-export'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
 const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween, historyContributionPoint, historyContributionPresent } = module.exports;
@@ -442,6 +442,20 @@ test('inline media never fetches a URI, permits raster data, and rejects active 
  assert.equal(inlineMediaSource({who:'resource',kind:'image',mime:'image/png',data:'<invalid>',name:'bad'}),null);
  assert.equal(resourceFilePath('file:///tmp/my%20file.png'),'/tmp/my file.png');
  assert.equal(resourceFilePath('file://other-host/share.png'),null);assert.equal(resourceFilePath('https://example.com/a'),null);
+});
+test('readable export reads all source pages chronologically, independent of the visible cache',async()=>{
+ const newest=page('new',{older:'old-cursor',newer:'new-end'}),oldest=page('old',{older:null,newer:'old-end'});
+ const calls=[],bytes=[];let closed=0,aborted=0;
+ const source={page:async(cursor)=>{calls.push(cursor);return cursor===null||cursor==='new-end'?newest:oldest;}};
+ await module.exports.exportReadableHistory(source,{write:async value=>bytes.push(value),close:async()=>{closed++;},abort:async()=>{aborted++;}},'A session',new AbortController().signal);
+ const text=new TextDecoder().decode(Buffer.concat(bytes));assert(text.indexOf('old:0')<text.indexOf('new:0'));assert(text.includes('# A session'));
+ assert.deepEqual(calls,[null,'old-cursor','old-end','new-end']);assert.equal(closed,1);assert.equal(aborted,0);
+});
+test('readable export aborts a changed or failed source instead of publishing partial history',async()=>{
+ let count=0,closed=0,aborted=0;
+ await assert.rejects(()=>module.exports.exportReadableHistory({page:async()=>{if(++count===2)throw new Error('source unavailable');return page('tail',{older:null});}},
+ {write:async()=>{},close:async()=>{closed++;},abort:async()=>{aborted++;}},'session',new AbortController().signal),/source unavailable/);
+ assert.equal(closed,0);assert.equal(aborted,1);
 });
 let failures = 0;
 for (const [name, run] of checks) {

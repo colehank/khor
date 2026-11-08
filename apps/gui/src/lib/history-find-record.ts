@@ -78,7 +78,7 @@ function recordReader(io: IO, ref: HistoryRecordRef) {
 
 /** A single record search is resumable at each hit. No complete raw JSON,
  * decoded body, or unbounded hit list is assembled in the worker. */
-export type RecordTextPart = { entry: string; part: number; before: string; record: HistoryRecordRef; complete: boolean; text: AsyncIterable<string> };
+export type RecordTextPart = { who:string; entry: string; part: number; before: string; record: HistoryRecordRef; complete: boolean; text: AsyncIterable<string> };
 async function projectRecord(ref: HistoryRecordRef, before: string, io: IO) {
   if (!Number.isSafeInteger(ref.start) || !Number.isSafeInteger(ref.end) || ref.start < 0 || ref.end <= ref.start
     || utf8.encode(ref.cursor).length > 4096 || utf8.encode(before).length > 4096)
@@ -178,7 +178,7 @@ export async function* recordText(
           yield char;
         }
       };
-      yield { before, entry: `${ref.start}:${item.historyKey.split(':')[1]}`, part, record,
+      yield { who:item.who,before, entry: `${ref.start}:${item.historyKey.split(':')[1]}`, part, record,
         complete: projected.complete && body.complete, text: textStream() };
     }
   }
