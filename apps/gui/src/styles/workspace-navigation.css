@@ -19,3 +19,11 @@
 [data-workspace-navigation] > .glass > button { width: var(--strip-item); height: var(--strip-item-h); }
 :root[data-narrow] [data-workspace-navigation] { min-height: var(--list-head); padding-bottom: 0; }
 :root[data-narrow] [data-workspace-navigation][data-seat="workspace"] { padding-inline: var(--gap-group); }
+
+/* Three destinations share the span of the head's two actions and Search.
+   Keep the span in every view so selecting Sessions never shifts the pill. */
+[data-workspace-navigation][data-seat="workspace"][data-with-sessions] > .glass {
+  width: calc(2 * var(--glass-item-w) + 2 * var(--glass-pad) + var(--gap-in) + var(--glass-btn));
+  grid-auto-columns: minmax(0, 1fr);
+}
+[data-workspace-navigation][data-seat="workspace"][data-with-sessions] > .glass > button { width: 100%; }

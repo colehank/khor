@@ -66,6 +66,23 @@ async function inspect(browser, scene, size, data = {}) {
     assert.equal(await navigation.locator('[aria-pressed=true]').count(),1,'Exactly one sidebar destination is selected');
     assert((await page.locator('[data-ws-tree] [data-ws-sessions-list] [data-row-open]').count())>0,'The workspace sessions must appear in the left sidebar');
     assert.equal(await page.locator('[data-ws-sessions]').count(),0,'Selecting the session list must not open a separate right column');
+    const sessionEdges=()=>page.evaluate(()=>{
+      const nav=document.querySelector('[data-workspace-navigation][data-seat="workspace"]');
+      const box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};
+      return {actions:box(document.querySelector('[data-ws-side-head] [data-glass-capsule]')),
+        search:box(document.querySelector('[data-ws-side-head] [data-search-open]')),
+        pill:box(nav.querySelector('[data-glass-capsule]')),
+        items:[...nav.querySelectorAll('[data-glass-item]')].map(box)};
+    });
+    const oldWidth=await page.addStyleTag({content:'[data-workspace-navigation][data-seat="workspace"][data-with-sessions] > .glass {width:calc(3 * var(--strip-item) + 2 * var(--glass-pad))!important}'});
+    const oldEdges=await sessionEdges();
+    assert(oldEdges.pill.left-oldEdges.actions.left>1,'The original intrinsic three-slot width reproduces the reported left-edge mismatch');
+    await oldWidth.evaluate(el=>el.remove());
+    const aligned=await sessionEdges();workspaceLayout.push({sessions:aligned,original:oldEdges});
+    assert(Math.abs(aligned.pill.left-aligned.actions.left)<=1,'Sessions pill must share the upper action group left edge');
+    assert(Math.abs(aligned.pill.right-aligned.search.right)<=1,'Sessions pill must share Search right edge');
+    assert(Math.max(...aligned.items.map(item=>item.width))-Math.min(...aligned.items.map(item=>item.width))<=1,'All three destinations retain equal widths');
+    assert(Math.abs(aligned.pill.left-layout.pill.left)<=1,'Switching views must not move the navigation pill');
     await page.screenshot({path:path.join(report,name+'-sessions.png')});
     await navigation.locator('[data-workspace-view="files"]').click();
     await page.locator('[data-file-tree]').waitFor();
