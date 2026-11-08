@@ -189,7 +189,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
-  let uploadMode='ok';const sentPrompts:unknown[]=[];
+  let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   return {
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
@@ -203,6 +203,8 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           khorUpdates = [...initialKhorUpdates];
         return true;
       }
+      if(path==='__ai_preview/poll-mode'){pollMode=String(body.mode??'ok');return pollMode;}
+      if(path==='__ai_preview/poll-state')return pollMode;
       if(path==='__ai_preview/upload-mode'){uploadMode=String(body.mode??'ok');return uploadMode;}
       if(path==='__ai_preview/upload-state')return uploadMode;
       if(path==='__ai_preview/says')return structuredClone(sentPrompts);

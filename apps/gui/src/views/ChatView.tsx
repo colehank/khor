@@ -1,3 +1,4 @@
+import {ReadFreshness} from '@/lib/read-freshness';
 import {useConfirmedSetting} from '@/hooks/use-confirmed-setting';
 import {CopyText} from '@/components/CopyText';
 import {useHistoryPrefetch} from '@/hooks/use-history-prefetch';
@@ -985,6 +986,12 @@ export function ChatView({
     let asking = false;
     let retryDelay = 0;
     let retryNotBefore = 0;
+    const freshness=new ReadFreshness(Date.now());let observing=false;
+    const freshnessTimer=window.setInterval(()=>{
+      if(stopped||finished||!observing||document.hidden||!freshness.stale(Date.now()))return;
+      setStall(was=>was??{kind:'other',machine:machine??null,raw:'读取暂时中断'});
+      setStallSince(since=>since||Date.now());
+    },1000);
     const tick = () => {
       if (stopped || finished) return;
       if (timer !== null) {
@@ -1021,6 +1028,7 @@ export function ChatView({
           if (inactive) return;
           cursor = batch.next;
           setSending(batch.sending_of > 0 ? [batch.sending, batch.sending_of] : null);
+          freshness.success(Date.now());
           const held = retired ? null : (batch.stall ?? null);
           setStall((was) => (was && held && was.kind === held.kind && was.raw === held.raw ? was : held));
           setStallSince((t) => (held ? t || Date.now() : 0));
@@ -1146,6 +1154,7 @@ export function ChatView({
           outcome = retired ? "ended" : "live";
         })
         .catch(() => {
+          freshness.failure();
           // A failed wait may return immediately; it has not paid a beat.
         })
         .finally(() => {
@@ -1174,7 +1183,7 @@ export function ChatView({
     attachment.open()
       .then((fresh) => {
         if (stopped) return;
-        setOpenedAt(null);
+        setOpenedAt(null);observing=true;freshness.success(Date.now());
         draftOwner ??= chatDraftOwner(id);
         if (fresh) {
           unconfirmedChatDrafts(id, draftOwner, {reader: reading, except: true});
@@ -1195,7 +1204,7 @@ export function ChatView({
         setGone(true);
       });
     return () => {
-      stopped = true;
+      stopped = true;window.clearInterval(freshnessTimer);
       if (timer !== null) window.clearTimeout(timer);
       if (captureTimer !== null) window.clearTimeout(captureTimer);
       if (captureNow.current === capture) captureNow.current = null;
@@ -1992,7 +2001,7 @@ export function ChatView({
                       stands in its seat. At rest with an empty box,
                       neither: the mode is the capsule's last thing. */}
                   {!inTurn && hasComposerContent && (
-                    <SendSeat onSend={say} disabled={!canSend} />
+                    <SendSeat onSend={say} disabled={!canSend} busy={files.busy} />
                   )}
                   {inTurn && (
                     <StopSeat

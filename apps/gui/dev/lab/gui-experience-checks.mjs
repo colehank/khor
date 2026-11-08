@@ -35,6 +35,12 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.locator('[data-history-search] input').waitFor();
   await page.screenshot({path:path.join(report,`gui-experience-${engine}.png`)});
   await page.keyboard.press('Escape');
+  await api('__ai_preview/poll-mode',{mode:'fail'});
+  await page.locator('[data-session-tabs] [data-tab-notice="rejoin"]').waitFor();
+  assert.equal(await input.inputValue(),'Draft belongs to the original session');
+  await api('__ai_preview/poll-mode',{mode:'ok'});
+  await page.locator('[data-session-tabs] [data-tab-notice="rejoin"]').waitFor({state:'detached'});
+  assert.equal((await api('__ai_preview/says')).length,0,'Reconnect only resumes reads; it never resends a prompt');
   assert.deepEqual(errors,[]);
   return {name:`GUI composer and reader ${engine}`,passed:true,errors};
  }finally{await context.close();}

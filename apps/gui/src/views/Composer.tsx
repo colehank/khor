@@ -175,10 +175,12 @@ export function PlusSeat(props: React.ComponentProps<"button">) {
 export function SendSeat({
   onSend,
   disabled,
+  busy,
   keepFocus = false,
 }: {
   onSend: () => void;
   disabled?: boolean;
+  busy?:boolean;
   /** The press leaves the focus in the text, so the keyboard stays up
       for the next line (a 留言, P7: Messages' way). Without it the press
       takes the focus, as a button does, and the keyboard goes down. */
@@ -193,7 +195,7 @@ export function SendSeat({
       disabled={disabled}
       onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined}
       onClick={onSend}
-      aria-busy={disabled || undefined}
+      aria-busy={(busy??disabled)||undefined}
       className={cn(SEAT, "bg-brand-strong text-on-brand aria-busy:animate-pulse motion-reduce:aria-busy:animate-none")}
     >
       <IconChevronUp />

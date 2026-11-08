@@ -1,3 +1,4 @@
+import {ReadFreshness} from '../src/lib/read-freshness.ts';
 import {ComposerFiles,composerReady} from '../src/lib/composer-files.ts';
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
@@ -173,4 +174,10 @@ await test('clear releases every owned preview and a late encode cannot repopula
  const revoked=[],files=new ComposerFiles(url=>revoked.push(url)),key=files.key();
  files.add([{key,name:'a.png',size:1,thumb:'blob:a',inline:null,path:'/a',error:null}]);
  files.clear();files.patch(key,{inline:['image/png','late']});assert.equal(files.snapshot().length,0);assert.deepEqual(revoked,['blob:a']);
+});
+
+await test('read failures expose an unconfirmed connection and recovery clears it without finishing a task',()=>{
+ const fresh=new ReadFreshness(1000);fresh.failure();assert.equal(fresh.stale(1200),false);
+ fresh.failure();fresh.failure();assert.equal(fresh.stale(2600),true);
+ fresh.success(2700);assert.equal(fresh.stale(2800),false);assert.equal(fresh.stale(12700),true);
 });

@@ -50,6 +50,7 @@ if (runtime.mode === 'frontend') {
         if(mode==='fail')return Response.json('上传失败，请移除附件后重新添加',{status:503});
         if(mode==='delay')await new Promise(resolve=>setTimeout(resolve,1200));
       }else body=await request.json();
+      if(['chat_poll','chat_wait'].includes(command)&&fixture.request('__ai_preview/poll-state')==='fail')return Response.json('读取暂时中断',{status:503});
       const answer = fixture.request(command,body);
       // Polling fixtures must yield so production loops cannot starve rendering.
       if (['chat_wait', 'term_wait', 'term_stream', 'dirs_wait'].includes(command)) await new Promise(r => setTimeout(r, 120));
