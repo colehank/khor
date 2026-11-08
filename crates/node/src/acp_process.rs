@@ -3,11 +3,11 @@ use agent_client_protocol::{AcpAgent, ByteStreams};
 use std::{
     collections::VecDeque,
     io::Read,
+    path::Path,
     process::Command,
     str::FromStr,
     sync::{Arc, Mutex},
     thread::JoinHandle,
-    path::Path,
 };
 use tokio::sync::watch;
 
@@ -97,7 +97,8 @@ pub(crate) fn spawn(command: &str) -> Result<Transport, String> {
 /// Login/capability setup uses the same execution-node vendor stores as a session host.
 pub(crate) fn spawn_setup(command: &str, root: &Path) -> Result<Transport, String> {
     let mut command = command_of(command)?;
-    command.current_dir(root)
+    command
+        .current_dir(root)
         .env("CODEX_HOME", crate::adaptor::codex_home(root))
         .env("CLAUDE_CONFIG_DIR", crate::adaptor::claude_home(root));
     spawn_command_observed(command, |_, _| ()).map(|(transport, ())| transport)
@@ -107,11 +108,30 @@ pub(crate) fn spawn_setup(command: &str, root: &Path) -> Result<Transport, Strin
 pub(crate) fn startup_reason(stderr: &str) -> Option<&'static str> {
     let text = stderr.to_ascii_lowercase();
     if (text.contains("enotdir") || text.contains("enoent") || text.contains("eacces"))
-        && (text.contains("_cacache") || text.contains("_npx") || text.contains("npm cache")) { Some("npm_cache_unavailable") }
-    else if text.contains("npm err") && (text.contains("etarget") || text.contains("e404")) { Some("npm_package_unavailable") }
-    else if text.contains("npm err") && ["econnreset", "eai_again", "enotfound", "etimedout", "unable_to_get_issuer_cert"].iter().any(|code| text.contains(code)) { Some("npm_download_failed") }
-    else if text.contains("node") && (text.contains("no such file or directory") || text.contains("is not recognized")) { Some("node_unavailable") }
-    else { None }
+        && (text.contains("_cacache") || text.contains("_npx") || text.contains("npm cache"))
+    {
+        Some("npm_cache_unavailable")
+    } else if text.contains("npm err") && (text.contains("etarget") || text.contains("e404")) {
+        Some("npm_package_unavailable")
+    } else if text.contains("npm err")
+        && [
+            "econnreset",
+            "eai_again",
+            "enotfound",
+            "etimedout",
+            "unable_to_get_issuer_cert",
+        ]
+        .iter()
+        .any(|code| text.contains(code))
+    {
+        Some("npm_download_failed")
+    } else if text.contains("node")
+        && (text.contains("no such file or directory") || text.contains("is not recognized"))
+    {
+        Some("node_unavailable")
+    } else {
+        None
+    }
 }
 
 /// Capture finite facts before the Session's supervisor starts. The same Control
@@ -126,7 +146,10 @@ pub(crate) fn spawn_observed<T>(
     spawn_command_observed(command, observe)
 }
 
-fn spawn_command_observed<T>(command: Command, observe: impl FnOnce(Option<u32>, &Arc<Control>) -> T) -> Result<(Transport, T), String> {
+fn spawn_command_observed<T>(
+    command: Command,
+    observe: impl FnOnce(Option<u32>, &Arc<Control>) -> T,
+) -> Result<(Transport, T), String> {
     let control = Arc::new(Control::default());
     let (
         session,

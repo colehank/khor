@@ -294,7 +294,12 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(8);
         loop {
             let state = manage(node, &json!({"operation":"acp_poll","job":id})).unwrap();
-            if matches!(state["status"].as_str(), Some("done" | "failed" | "cancelled")) { return state; }
+            if matches!(
+                state["status"].as_str(),
+                Some("done" | "failed" | "cancelled")
+            ) {
+                return state;
+            }
             assert!(Instant::now() < deadline, "setup did not settle: {state}");
             std::thread::sleep(Duration::from_millis(10));
         }
@@ -305,7 +310,8 @@ mod tests {
         let root = crate::testdir::TempTree::fresh("setup-native-admission");
         let node = Node::open_hosting(root.path(), "setup-test", false).unwrap();
         for name in ["codex", "claude"] {
-            let started = manage(&node, &json!({"operation":"acp_initialize","agent":name})).unwrap();
+            let started =
+                manage(&node, &json!({"operation":"acp_initialize","agent":name})).unwrap();
             // The unit-test executable is not a vendor shim. This case checks
             // admission and cleanup; real installed shims have separate probes.
             let id = started["job"].as_str().unwrap();
@@ -321,8 +327,21 @@ mod tests {
         let node = Node::open_hosting(root.path(), "setup-test", false).unwrap();
         let script = root.join("adapter.py");
         std::fs::write(&script, "import sys\nsys.stderr.write('npm error ENOTDIR mkdir ~/.npm/_cacache token=private-test-secret\\n')\nsys.exit(12)\n").unwrap();
-        node.register_agent("test-extension", &["python3".into(), "-I".into(), "-S".into(), script.display().to_string()]).unwrap();
-        let started = manage(&node, &json!({"operation":"acp_initialize","agent":"test-extension"})).unwrap();
+        node.register_agent(
+            "test-extension",
+            &[
+                "python3".into(),
+                "-I".into(),
+                "-S".into(),
+                script.display().to_string(),
+            ],
+        )
+        .unwrap();
+        let started = manage(
+            &node,
+            &json!({"operation":"acp_initialize","agent":"test-extension"}),
+        )
+        .unwrap();
         let failed = settled(&node, started["job"].as_str().unwrap());
         assert_eq!(failed["status"], "failed");
         assert_eq!(failed["reason"], "npm_cache_unavailable");
@@ -335,11 +354,17 @@ Path('setup-context.json').write_text(json.dumps({'codex':os.environ['CODEX_HOME
 print(json.dumps({'jsonrpc':'2.0','id':request['id'],'result':{'protocolVersion':1,'agentCapabilities':{},'authMethods':[],'agentInfo':{'name':'fixture','version':'1'}}}),flush=True)
 sys.stdin.read()
 "#).unwrap();
-        let started = manage(&node, &json!({"operation":"acp_initialize","agent":"test-extension"})).unwrap();
+        let started = manage(
+            &node,
+            &json!({"operation":"acp_initialize","agent":"test-extension"}),
+        )
+        .unwrap();
         let done = settled(&node, started["job"].as_str().unwrap());
         assert_eq!(done["status"], "done");
         assert_eq!(done["result"]["agentInfo"]["name"], "fixture");
-        let context: Value = serde_json::from_slice(&std::fs::read(root.join("setup-context.json")).unwrap()).unwrap();
+        let context: Value =
+            serde_json::from_slice(&std::fs::read(root.join("setup-context.json")).unwrap())
+                .unwrap();
         assert_eq!(context["codex"], json!(crate::adaptor::codex_home(&root)));
         assert_eq!(context["claude"], json!(crate::adaptor::claude_home(&root)));
         assert_eq!(context["cwd"], json!(std::fs::canonicalize(&root).unwrap()));
@@ -355,9 +380,15 @@ sys.stdin.read()
             let launch: Value = serde_json::from_str(&command).unwrap();
             assert_eq!(launch["args"], json!([shim]));
             assert_eq!(vendor, name);
-            assert_eq!(Path::new(launch["command"].as_str().unwrap()), crate::installed_exe().unwrap());
+            assert_eq!(
+                Path::new(launch["command"].as_str().unwrap()),
+                crate::installed_exe().unwrap()
+            );
         }
-        let missing = match node.picked_agent("not-registered") { Err(error) => error, Ok(_) => panic!("unknown extension was accepted") };
+        let missing = match node.picked_agent("not-registered") {
+            Err(error) => error,
+            Ok(_) => panic!("unknown extension was accepted"),
+        };
         assert_eq!(missing, node.agent_or_refuse("not-registered").unwrap_err());
     }
 }

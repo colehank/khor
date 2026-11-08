@@ -7,6 +7,33 @@ impl Drop for Fixture {
     }
 }
 
+#[test]
+fn version_flags_are_metadata_only_even_when_runtime_storage_is_unavailable() {
+    let fixture = Fixture(std::env::temp_dir().join(format!(
+        "khor-version-{}",
+        khor_node::link::fresh_hex().unwrap()
+    )));
+    fs::create_dir(&fixture.0).unwrap();
+    let unavailable = fixture.0.join("not-a-runtime-directory");
+    fs::write(&unavailable, b"unrelated user data").unwrap();
+    let home = fixture.0.join("unopened-home");
+    for flag in ["--version", "-V"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_khor"))
+            .arg(flag)
+            .env("KHOR_RUNTIME_DIR", &unavailable)
+            .env("KHOR_HOME", &home)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            String::from_utf8(output.stdout).unwrap().trim(),
+            khor_node::VERSION
+        );
+    }
+    assert!(!home.exists());
+    assert_eq!(fs::read(unavailable).unwrap(), b"unrelated user data");
+}
+
 /// An app-bundle signature seals Info.plist as well as the Mach-O. Unsigned
 /// integration binaries did not exercise the installed desktop's host path.
 #[cfg(target_os = "macos")]

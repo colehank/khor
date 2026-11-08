@@ -73,6 +73,12 @@ mod upgrade;
 /// Process entry hook for terminal sessions created by the slash interface.
 /// Each native binary supports its own commands; no companion CLI is required.
 pub fn console_main_if_requested(start_web: fn(&std::path::Path)) -> Option<i32> {
+    // The desktop command answers version checks without opening a window.
+    // Metadata must remain readable even if a runtime store needs recovery.
+    if std::env::args().skip(1).eq(["--version"]) || std::env::args().skip(1).eq(["-V"]) {
+        println!("{}", khor_node::VERSION);
+        return Some(0);
+    }
     // Retired hooks may remain loaded in an already running agent.
     if std::env::args().skip(1).eq(["state", "--hook"]) {
         return Some(0);
