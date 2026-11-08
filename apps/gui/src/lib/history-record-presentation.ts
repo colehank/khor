@@ -20,6 +20,16 @@ export async function presentHistoryRecord(source:Source,reference:HistoryRecord
  if(!prepared||!prepared.projected.complete)throw new Error('这段内容暂无法展开，可导出原始记录');
  const entries=ref.item===null?prepared.projected.entries:prepared.projected.entries.filter(entry=>entry.key===`projection:${ref.item}`);
  if(!entries.length)throw new Error('这段记录没有可显示的内容');
+ const expand=async function*(text:string){
+  const parts=recordSegments(text,prepared.scaffold.strings);
+  if(!parts)throw new Error('内容来源无法确认');
+  for(const part of parts){
+   if('text' in part){yield*part.text;continue;}
+   for await(const char of recordString(part.range,prepared.read,prepared.account)){
+    check();yield*part.escaped?JSON.stringify(char).slice(1,-1):char;
+   }
+  }
+ };
  let retained=0;
  const restore=async(value:unknown,media=false,depth=0):Promise<unknown>=>{
   check();if(depth>128)throw new Error('内容层级过深');
@@ -53,12 +63,10 @@ export async function presentHistoryRecord(source:Source,reference:HistoryRecord
  };
  const items:HistoryItem[]=[];
  for(const item of paintHistory(entries)){
-  const restored=await restore(item) as HistoryItem;
-  if(restored.who==='tool'&&restored.out!==null){
-   const policy=prepared.projected.transforms.find(fact=>fact.kind==='tool_output'&&fact.item===Number(item.historyKey.split(':')[1]));
-   if(policy?.kind==='tool_output')restored.out=await limitedToolOutput((async function*(){yield*restored.out!;})(),policy.max_bytes,policy.suffix);
-  }
-  items.push(restored);
+  const policy=prepared.projected.transforms.find(fact=>fact.kind==='tool_output'&&fact.item===Number(item.historyKey.split(':')[1]));
+  const bounded=item.who==='tool'&&item.out!==null&&policy?.kind==='tool_output'
+    ?{...item,out:await limitedToolOutput(expand(item.out),policy.max_bytes,policy.suffix)}:item;
+  items.push(await restore(bounded) as HistoryItem);
  }
  check();return items;
 }
@@ -67,7 +75,10 @@ export async function presentHistoryRecord(source:Source,reference:HistoryRecord
  * controls without a physical record retain their order after history. */
 export function historyRecordSlots<T extends {historyRecords?:{record:HistoryRecordRef|null}[]}>(items:T[],references:HistoryRecordRef[]){
  const slots:HistoryRecordRef[][]=Array.from({length:items.length+1},()=>[]);
+ let prior:HistoryRecordRef|null=null;
  for(const reference of references){
+  const continuation=prior?.missing_end&&reference.missing_start&&prior.end===reference.start&&prior.item===reference.item;
+  prior=reference;if(continuation)continue;
   const index=items.findIndex(item=>{
    const record=item.historyRecords?.find(part=>part.record)?.record;
    return record?record.start>=reference.end||(record.start===reference.start&&record.end===reference.end

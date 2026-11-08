@@ -48,15 +48,36 @@ impl<'a> Recorder<'a> {
         }
     }
 
-    pub(super) fn start_source(&mut self, root: &std::path::Path, saved: &super::Saved) -> Result<(), String> {
-        self.full=Some(super::history::FullSource::begin(root,saved,self.key)?);Ok(())
+    pub(super) fn start_source(
+        &mut self,
+        root: &std::path::Path,
+        saved: &super::Saved,
+    ) -> Result<(), String> {
+        self.full = Some(super::history::FullSource::begin(root, saved, self.key)?);
+        Ok(())
     }
-    fn fail_source(&mut self) { if let Some(source)=self.full.take(){source.fail();} }
-    fn record_full(&mut self,value:&Value) {
-        if self.full.as_mut().is_some_and(|source|source.note(value).is_err()){self.fail_source();}
+    fn fail_source(&mut self) {
+        if let Some(source) = self.full.take() {
+            source.fail();
+        }
     }
-    pub(super) fn finish_source(&mut self,stopped:bool,failed:bool) {
-        if self.full.as_mut().is_some_and(|source|source.finish(stopped,failed).is_err()){self.fail_source();}
+    fn record_full(&mut self, value: &Value) {
+        if self
+            .full
+            .as_mut()
+            .is_some_and(|source| source.note(value).is_err())
+        {
+            self.fail_source();
+        }
+    }
+    pub(super) fn finish_source(&mut self, stopped: bool, failed: bool) {
+        if self
+            .full
+            .as_mut()
+            .is_some_and(|source| source.finish(stopped, failed).is_err())
+        {
+            self.fail_source();
+        }
     }
 
     fn retained_len(&self) -> usize {
@@ -133,7 +154,9 @@ impl<'a> Recorder<'a> {
             let stream = self.streams.get_mut(key).unwrap();
             if !stream.writable {
                 agent.updates_truncated = true;
-                if self.full.is_none() { return; }
+                if self.full.is_none() {
+                    return;
+                }
             }
             for (index, text) in texts {
                 let display = stream.text.push(&text);
@@ -153,12 +176,17 @@ impl<'a> Recorder<'a> {
             }
         }
         self.record_full(&value);
-        let writable=active.as_ref().and_then(|key|self.streams.get(key)).is_none_or(|stream|stream.writable);
+        let writable = active
+            .as_ref()
+            .and_then(|key| self.streams.get(key))
+            .is_none_or(|stream| stream.writable);
         let stored = writable && store(agent, value);
         if !stored {
             if let Some(stream) = active.and_then(|key| self.streams.get_mut(&key)) {
                 stream.writable = false;
-                if self.full.is_none(){stream.text.finish();}
+                if self.full.is_none() {
+                    stream.text.finish();
+                }
             }
         }
     }
@@ -166,11 +194,17 @@ impl<'a> Recorder<'a> {
     pub(super) fn finish(&mut self, agent: &mut AgentTurn) {
         for (key, mut stream) in std::mem::take(&mut self.streams) {
             let tail = stream.text.finish();
-            if tail.is_empty() { continue; }
-            let mut update=serde_json::json!({"sessionUpdate":match &key{StreamKey::Message=>"agent_message_chunk",StreamKey::Thought=>"agent_thought_chunk",StreamKey::Compaction(_)=>"compaction_summary_chunk"},"content":{"type":"text","text":tail}});
-            if let StreamKey::Compaction(id)=&key {update["compactionId"]=redact_text(id,self.key).into_owned().into();}
+            if tail.is_empty() {
+                continue;
+            }
+            let mut update = serde_json::json!({"sessionUpdate":match &key{StreamKey::Message=>"agent_message_chunk",StreamKey::Thought=>"agent_thought_chunk",StreamKey::Compaction(_)=>"compaction_summary_chunk"},"content":{"type":"text","text":tail}});
+            if let StreamKey::Compaction(id) = &key {
+                update["compactionId"] = redact_text(id, self.key).into_owned().into();
+            }
             self.record_full(&update);
-            if !stream.writable { continue; }
+            if !stream.writable {
+                continue;
+            }
             let kind = match &key {
                 StreamKey::Message => "agent_message_chunk",
                 StreamKey::Thought => "agent_thought_chunk",

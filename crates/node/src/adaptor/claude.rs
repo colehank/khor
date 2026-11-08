@@ -680,7 +680,10 @@ fn said_in(bytes: &[u8], parse: fn(&str) -> Vec<Utterance>) -> Option<String> {
             // A thought or a tool name is the machine's bookkeeping — a
             // preview line should say what was *said*, and skipping back to
             // the newest real sentence reads better than "Read".
-            Utterance::Thought(_) | Utterance::Tool(_) | Utterance::ToolDone(_) | Utterance::Content { .. } => None,
+            Utterance::Thought(_)
+            | Utterance::Tool(_)
+            | Utterance::ToolDone(_)
+            | Utterance::Content { .. } => None,
         })
 }
 
@@ -715,7 +718,10 @@ pub enum Utterance {
     User(String),
     Agent(String),
     Thought(String),
-    Content { user: bool, block: serde_json::Value },
+    Content {
+        user: bool,
+        block: serde_json::Value,
+    },
     /// A tool call, as **claude's own `tool_use` block, whole**.
     ///
     /// **It used to be the name alone**, on the reasoning that "a name
@@ -842,7 +848,10 @@ pub(crate) fn utterances_of(text: &str) -> Vec<Utterance> {
                         }
                         (Some("image" | "document"), _) => {
                             if let Some(block) = super::media::claude(b) {
-                                out.push(Utterance::Content { user: from_user, block });
+                                out.push(Utterance::Content {
+                                    user: from_user,
+                                    block,
+                                });
                             }
                         }
                         _ => {}
@@ -986,17 +995,18 @@ impl Adaptor for Claude {
 mod tests {
     #[test]
     fn native_image_survives_replay_with_its_author_and_mime() {
-        let record=serde_json::json!({"type":"user","message":{"content":[
+        let record = serde_json::json!({"type":"user","message":{"content":[
             {"type":"text","text":"look"},
             {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aW1hZ2U="}}
-        ]}}).to_string();
-        let said=utterances_of(&record);
+        ]}})
+        .to_string();
+        let said = utterances_of(&record);
         assert!(matches!(&said[0], Utterance::User(text) if text=="look"));
-        let image=crate::cagent::replayed(utterances_of(&record).pop().unwrap()).unwrap();
-        let image=serde_json::to_value(image).unwrap();
-        assert_eq!(image["sessionUpdate"],"user_message_chunk");
-        assert_eq!(image["content"]["mimeType"],"image/png");
-        assert_eq!(image["content"]["data"],"aW1hZ2U=");
+        let image = crate::cagent::replayed(utterances_of(&record).pop().unwrap()).unwrap();
+        let image = serde_json::to_value(image).unwrap();
+        assert_eq!(image["sessionUpdate"], "user_message_chunk");
+        assert_eq!(image["content"]["mimeType"], "image/png");
+        assert_eq!(image["content"]["data"], "aW1hZ2U=");
     }
 
     use super::*;

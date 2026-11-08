@@ -436,9 +436,16 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                                     });
                                 }
                                 for content in item["content"].as_array().into_iter().flatten() {
-                                    if matches!(content["type"].as_str(), Some("image" | "Image" | "input_image"))
-                                        && let Some(block) = content["image_url"].as_str().and_then(super::media::image) {
-                                        out.push(Utterance::Content { user: kind == Some("UserMessage"), block });
+                                    if matches!(
+                                        content["type"].as_str(),
+                                        Some("image" | "Image" | "input_image")
+                                    ) && let Some(block) =
+                                        content["image_url"].as_str().and_then(super::media::image)
+                                    {
+                                        out.push(Utterance::Content {
+                                            user: kind == Some("UserMessage"),
+                                            block,
+                                        });
                                     }
                                 }
                             }
@@ -463,13 +470,29 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                             "name": name,
                             "input": input,
                         })));
-                    } else if matches!(p["type"].as_str(), Some("function_call_output" | "custom_tool_call_output" | "local_shell_call_output")) {
+                    } else if matches!(
+                        p["type"].as_str(),
+                        Some(
+                            "function_call_output"
+                                | "custom_tool_call_output"
+                                | "local_shell_call_output"
+                        )
+                    ) {
                         if let Some(id) = p["call_id"].as_str() {
-                            let decoded = p["output"].as_str().and_then(|text| serde_json::from_str::<serde_json::Value>(text).ok());
-                            let output = decoded.as_ref().filter(|value| value.get("output").is_some()).unwrap_or(&p["output"]);
+                            let decoded = p["output"].as_str().and_then(|text| {
+                                serde_json::from_str::<serde_json::Value>(text).ok()
+                            });
+                            let output = decoded
+                                .as_ref()
+                                .filter(|value| value.get("output").is_some())
+                                .unwrap_or(&p["output"]);
                             let content = output.get("output").unwrap_or(output);
-                            let failed = p["is_error"].as_bool() == Some(true) || p["status"] == "failed"
-                                || p["exit_code"].as_i64().or_else(|| output["metadata"]["exit_code"].as_i64()).is_some_and(|code| code != 0);
+                            let failed = p["is_error"].as_bool() == Some(true)
+                                || p["status"] == "failed"
+                                || p["exit_code"]
+                                    .as_i64()
+                                    .or_else(|| output["metadata"]["exit_code"].as_i64())
+                                    .is_some_and(|code| code != 0);
                             out.push(Utterance::ToolDone(serde_json::json!({
                                 "type":"tool_result","tool_use_id":id,"is_error":failed,
                                 "content":if content.is_string() || content.is_array() { content.clone() } else { serde_json::Value::String(content.to_string()) }
@@ -477,9 +500,16 @@ pub(crate) fn utterances_of(text: &str) -> Vec<super::claude::Utterance> {
                         }
                     } else if p["type"] == "message" {
                         for content in p["content"].as_array().into_iter().flatten() {
-                            if matches!(content["type"].as_str(), Some("input_image" | "output_image"))
-                                && let Some(block) = content["image_url"].as_str().and_then(super::media::image) {
-                                out.push(Utterance::Content { user: p["role"] == "user", block });
+                            if matches!(
+                                content["type"].as_str(),
+                                Some("input_image" | "output_image")
+                            ) && let Some(block) =
+                                content["image_url"].as_str().and_then(super::media::image)
+                            {
+                                out.push(Utterance::Content {
+                                    user: p["role"] == "user",
+                                    block,
+                                });
                             }
                         }
                     }
@@ -989,16 +1019,23 @@ fn collect(dir: &Path, out: &mut Vec<Rollout>, depth: usize) {
 mod tests {
     #[test]
     fn native_image_and_tool_output_use_the_shared_replay_semantics() {
-        let image=serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[
+        let image = serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user","content":[
             {"type":"input_image","image_url":"data:image/png;base64,aW1hZ2U="}
         ]}});
-        let result=serde_json::json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-7","output":"{\"output\":\"permission denied\",\"metadata\":{\"exit_code\":1}}"}});
-        let updates=utterances_of(&format!("{image}\n{result}\n")).into_iter().filter_map(crate::cagent::replayed).map(|update|serde_json::to_value(update).unwrap()).collect::<Vec<_>>();
-        assert_eq!(updates.len(),2);
-        assert_eq!(updates[0]["content"]["type"],"image");
-        assert_eq!(updates[1]["toolCallId"],"call-7");
-        assert_eq!(updates[1]["status"],"failed");
-        assert_eq!(updates[1]["content"][0]["content"]["text"],"permission denied");
+        let result = serde_json::json!({"type":"response_item","payload":{"type":"function_call_output","call_id":"call-7","output":"{\"output\":\"permission denied\",\"metadata\":{\"exit_code\":1}}"}});
+        let updates = utterances_of(&format!("{image}\n{result}\n"))
+            .into_iter()
+            .filter_map(crate::cagent::replayed)
+            .map(|update| serde_json::to_value(update).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(updates.len(), 2);
+        assert_eq!(updates[0]["content"]["type"], "image");
+        assert_eq!(updates[1]["toolCallId"], "call-7");
+        assert_eq!(updates[1]["status"], "failed");
+        assert_eq!(
+            updates[1]["content"][0]["content"]["text"],
+            "permission denied"
+        );
     }
 
     use super::*;

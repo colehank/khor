@@ -1054,13 +1054,11 @@ async fn file_handoff_save(
         // Validate the completed job before presenting an OS panel. The same
         // owner is rechecked after the panel in case the view was cancelled.
         let source = khor_gui_core::file_handoff::ready_path(&Node::root_from_env(), &id)?;
-        let name = source.file_name().and_then(|name| name.to_str()).unwrap_or("export");
-        let Some(file) = app
-            .dialog()
-            .file()
-            .set_file_name(name)
-            .blocking_save_file()
-        else {
+        let name = source
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("export");
+        let Some(file) = app.dialog().file().set_file_name(name).blocking_save_file() else {
             return Ok(false);
         };
         let path = file.into_path().map_err(|error| error.to_string())?;
@@ -1076,17 +1074,28 @@ async fn file_handoff_save(
 /// Renderer exports use the same staged native destination as remote files.
 #[tauri::command]
 fn file_export_begin(webview: tauri::Webview, id: String, name: String) -> Result<(), String> {
-    if webview.label() != "main" { return Err("file writing is only available in the app".into()); }
+    if webview.label() != "main" {
+        return Err("file writing is only available in the app".into());
+    }
     khor_gui_core::file_handoff::upload::begin(&Node::root_from_env(), &id, &name)
 }
 #[tauri::command]
-fn file_export_append(webview: tauri::Webview, id: String, offset: u64, data: String) -> Result<(), String> {
-    if webview.label() != "main" { return Err("file writing is only available in the app".into()); }
+fn file_export_append(
+    webview: tauri::Webview,
+    id: String,
+    offset: u64,
+    data: String,
+) -> Result<(), String> {
+    if webview.label() != "main" {
+        return Err("file writing is only available in the app".into());
+    }
     khor_gui_core::file_handoff::upload::append(&Node::root_from_env(), &id, offset, &data)
 }
 #[tauri::command]
 fn file_export_finish(webview: tauri::Webview, id: String, total: u64) -> Result<(), String> {
-    if webview.label() != "main" { return Err("file writing is only available in the app".into()); }
+    if webview.label() != "main" {
+        return Err("file writing is only available in the app".into());
+    }
     khor_gui_core::file_handoff::upload::finish(&Node::root_from_env(), &id, total)
 }
 

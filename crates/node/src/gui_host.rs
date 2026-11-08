@@ -489,18 +489,29 @@ enum SettingRequest {
 }
 fn setting_request(operation: &str, payload: &serde_json::Value) -> Result<SettingRequest, String> {
     match operation {
-        "set_mode" => payload["mode"].as_str().filter(|mode| !mode.is_empty() && mode.len() <= 4096)
+        "set_mode" => payload["mode"]
+            .as_str()
+            .filter(|mode| !mode.is_empty() && mode.len() <= 4096)
             .map(|mode| SettingRequest::Mode(mode.into())),
-        "set_option" => payload["option"].as_str().filter(|id| !id.is_empty() && id.len() <= 4096).and_then(|id| {
-            let value = match &payload["value"] {
-                serde_json::Value::String(value) if value.len() <= 4096 => Choice::Value(value.clone()),
-                serde_json::Value::Bool(value) => Choice::Switch(*value),
-                _ => return None,
-            };
-            Some(SettingRequest::Option { id: id.into(), value })
-        }),
+        "set_option" => payload["option"]
+            .as_str()
+            .filter(|id| !id.is_empty() && id.len() <= 4096)
+            .and_then(|id| {
+                let value = match &payload["value"] {
+                    serde_json::Value::String(value) if value.len() <= 4096 => {
+                        Choice::Value(value.clone())
+                    }
+                    serde_json::Value::Bool(value) => Choice::Switch(*value),
+                    _ => return None,
+                };
+                Some(SettingRequest::Option {
+                    id: id.into(),
+                    value,
+                })
+            }),
         _ => None,
-    }.ok_or_else(|| "Invalid setting request".into())
+    }
+    .ok_or_else(|| "Invalid setting request".into())
 }
 
 /// Where the freshly-minted session id is written for the opener —
@@ -1715,6 +1726,7 @@ match event {
                         match &op {
                             Some((who,GuiOp::Capture{token}))=> { fanout.send_to(*who, &captured_note(*token, Err(CaptureFailure::NotReady))); continue; },
                             Some((_,GuiOp::Close|GuiOp::Stop))|None=>{},
+                            Some((who,GuiOp::Control{token,operation,..}))=> {fanout.send_to(*who,&GuiNote::ControlResult{token:token.clone(),operation:operation.clone(),data:None,error:Some(refused::TURN_IN_FLIGHT.into())});continue;},
                             Some((who,_))=> { fanout.send_to(*who,&GuiNote::Refused { why:refused::TURN_IN_FLIGHT.to_owned() }); continue; },
                         }
                     }
@@ -2592,10 +2604,27 @@ mod setting_receipt_tests {
     use super::*;
     #[test]
     fn setting_controls_accept_only_typed_values_and_advertise_receipts() {
-        assert!(matches!(setting_request("set_mode", &serde_json::json!({"mode":"plan"})),Ok(SettingRequest::Mode(mode)) if mode=="plan"));
-        assert!(matches!(setting_request("set_option", &serde_json::json!({"option":"model","value":"model-a"})),Ok(SettingRequest::Option{id,value:Choice::Value(value)}) if id=="model"&&value=="model-a"));
-        assert!(matches!(setting_request("set_option", &serde_json::json!({"option":"approve","value":false})),Ok(SettingRequest::Option{value:Choice::Switch(false),..})));
-        for payload in [serde_json::json!({"option":"model","value":2}),serde_json::json!({"option":"","value":"x"}),serde_json::json!({})] {
+        assert!(
+            matches!(setting_request("set_mode", &serde_json::json!({"mode":"plan"})),Ok(SettingRequest::Mode(mode)) if mode=="plan")
+        );
+        assert!(
+            matches!(setting_request("set_option", &serde_json::json!({"option":"model","value":"model-a"})),Ok(SettingRequest::Option{id,value:Choice::Value(value)}) if id=="model"&&value=="model-a")
+        );
+        assert!(matches!(
+            setting_request(
+                "set_option",
+                &serde_json::json!({"option":"approve","value":false})
+            ),
+            Ok(SettingRequest::Option {
+                value: Choice::Switch(false),
+                ..
+            })
+        ));
+        for payload in [
+            serde_json::json!({"option":"model","value":2}),
+            serde_json::json!({"option":"","value":"x"}),
+            serde_json::json!({}),
+        ] {
             assert!(setting_request("set_option", &payload).is_err());
         }
     }

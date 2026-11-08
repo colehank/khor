@@ -221,7 +221,9 @@ pub fn cancel(root: &Path, id: &str) -> Result<(), String> {
         .stopped
         .store(true, std::sync::atomic::Ordering::Relaxed);
     entry.stopped.notify_one();
-    if matches!(entry.source, Source::Upload { .. }) && !entry.job.state().is_ok_and(|state| state.done) {
+    if matches!(entry.source, Source::Upload { .. })
+        && !entry.job.state().is_ok_and(|state| state.done)
+    {
         let _ = std::fs::remove_dir_all(upload::directory(root, id));
     }
     Ok(())

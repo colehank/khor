@@ -89,7 +89,7 @@ type Item = (
       answer: string | null;
     }
   | { who: "sys"; text: string }
-  | { who: "seal" }) & { historyKey?: string; historyEntries?: string[]; displayKey?: string };
+  | { who: "seal" }) & { historyRecords?:HistoryItem["historyRecords"];historyKey?: string; historyEntries?: string[]; displayKey?: string };
 
 /** Canonical pages own all body content. Live paint holds only current
  * optimistic inputs and bounded control notices; unresolved permissions remain actionable. */

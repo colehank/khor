@@ -1,7 +1,8 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import type {HistoryRecordRef} from '@/gen/bindings/HistoryRecordRef';
 import type {HistoryItem} from '@/lib/history-paint';
 import {historyApi} from '@/lib/history-api';
+import {admitHistoryRecord,retainHistoryRecord} from '@/lib/history-record-budget';
 import {presentHistoryRecord} from '@/lib/history-record-presentation';
 import {AgentContent} from '@/components/ai-elements/content';
 import {Markdown} from '@/components/Markdown';
@@ -17,21 +18,28 @@ export function HistoryRecordContent({id,binding,reference,exporter,onOpenFile}:
 }){
  const host=useRef<HTMLDivElement>(null),[visible,setVisible]=useState(false),[attempt,setAttempt]=useState(0);
  const [items,setItems]=useState<HistoryItem[]|null>(null),[error,setError]=useState('');
+ const [reservedHeight,setReservedHeight]=useState(0);
+ const insertion=useRef<{scroll:HTMLElement;height:number}|null>(null);
+ useLayoutEffect(()=>{const before=insertion.current;insertion.current=null;if(before&&host.current)before.scroll.scrollTop+=host.current.getBoundingClientRect().height-before.height;},[items]);
  const [expanded,setExpanded]=useState<ReadonlySet<string>>(new Set());
  useEffect(()=>{
   if(!host.current)return;
-  const observer=new IntersectionObserver(entries=>setVisible(entries.some(entry=>entry.isIntersecting)),{rootMargin:'100% 0px'});
+  const observer=new IntersectionObserver(entries=>{const next=entries.some(entry=>entry.isIntersecting);if(!next&&host.current)setReservedHeight(host.current.getBoundingClientRect().height);setVisible(next);},{rootMargin:'100% 0px'});
   observer.observe(host.current);return()=>observer.disconnect();
  },[]);
  useEffect(()=>{
   setItems(null);setError('');if(!visible)return;
   const stop=new AbortController(),source=historyApi(id,binding);
-  void presentHistoryRecord(source,reference,stop.signal).then(value=>{if(!stop.signal.aborted)setItems(value);},failure=>{
+  let release: (()=>void)|null=null;
+  void (async()=>{const leave=await admitHistoryRecord(stop.signal);try{
+    const value=await presentHistoryRecord(source,reference,stop.signal);
+    if(!stop.signal.aborted){release=retainHistoryRecord(value);const rect=host.current?.getBoundingClientRect(),scroll=host.current?.closest<HTMLElement>('[data-chat-scroll]');if(rect&&scroll&&rect.top<scroll.getBoundingClientRect().top)insertion.current={scroll,height:rect.height};setItems(value);}
+  }finally{leave();}})().catch(failure=>{
    if(!stop.signal.aborted)setError(failure instanceof Error?failure.message:String(failure));
   }).finally(()=>{void source.dispose();});
-  return()=>{stop.abort();void source.dispose();};
+  return()=>{stop.abort();release?.();void source.dispose();};
  },[id,binding,reference.cursor,reference.start,reference.end,reference.item,visible,attempt]);
- return <div ref={host} data-history-record-content className="min-h-touch py-in">
+ return <div ref={host} data-history-record-content style={{minHeight:visible&&items?undefined:reservedHeight||undefined}} className="min-h-touch py-in">
   {!items&&!error&&<p role="status" className="text-caption text-muted-foreground">正在读取内容</p>}
   {error&&<p role="status" className="text-caption text-muted-foreground">{error} <Button size="sm" variant="ghost" onClick={()=>setAttempt(value=>value+1)}>{gui.region_retry}</Button></p>}
   {items?.map(item=>item.who==='sys'?<p key={item.historyKey} className="text-caption">{item.text}</p>:item.who==='user'?
