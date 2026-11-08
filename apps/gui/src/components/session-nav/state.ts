@@ -1,6 +1,6 @@
 /** Right-thumb travel adapts the same continuous engine as the bottom pill. */
 import {deckJoystick,DECK_JOYSTICK_DEFAULTS,type DeckJoystickClock,type DeckJoystickState} from '@/lib/deck-joystick';
-import {deckControl,deckIntent,type DeckIntent} from '@/lib/deck-intent';
+import {deckControl,deckHandoffBoundary,deckIntent,type DeckIntent} from '@/lib/deck-intent';
 export type FanPoint={x:number;y:number};
 export type FanState={phase:'idle'|'pending'|'fan'|'new'|'overview';lane:'fan'|'handoff'|'new'|'overview'|null;held:boolean;origin:FanPoint;point:FanPoint;ids:string[];hot:number|null;position:number;target:number;armed:boolean;cancelArmed?:boolean;direction:number;tier:number;interval:number;pulse:number;deflection:number;cursor?:number;acquired:boolean;opened:number;intent:DeckIntent};
 export type FanResult={kind:'none'|'tap'|'new'|'overview'}|{kind:'focus';id:string};
@@ -18,6 +18,7 @@ export function thumbFanJoystick(changed: (state: FanState) => void, clock?: Dec
   let state = idle();
   let initial = 0, unit = 44, travelled = false, wasAction = false,cursorBase=0;
   let neutral: FanPoint = { x: 0, y: 0 }, home: FanPoint = neutral;
+  let previousPoint:FanPoint=neutral;
   let engine: ReturnType<typeof deckJoystick> | null = null;
   const read = () => ({ ...state, origin: { ...state.origin }, point: { ...state.point }, ids: [...state.ids] });
   const publish = () => changed(read());
@@ -26,6 +27,14 @@ export function thumbFanJoystick(changed: (state: FanState) => void, clock?: Dec
     travelled ||= control.distance > unit * .55;
     if (!state.held) { publish(); return; }
     const homeDistance = Math.min(control.distance, Math.hypot(state.point.x - home.x, state.point.y - home.y));
+    if(!wasAction){
+      const from={dx:state.origin.x-previousPoint.x,up:state.origin.y-previousPoint.y,touch:unit,placement:'right' as const,previous:state.intent};
+      const boundary=deckHandoffBoundary(from,{...from,dx:state.origin.x-state.point.x,up:state.origin.y-state.point.y});
+      if(boundary){
+        const destination=state.point;state.point={x:state.origin.x-boundary.dx,y:state.origin.y-boundary.up};
+        update();state.point=destination;
+      }
+    }
     state.intent=deckControl({dx:state.origin.x-state.point.x,up:state.origin.y-state.point.y,touch:unit,placement:'right',previous:state.intent,homeDistance}).intent;
     if (state.intent === 'keep') {
       state.cancelArmed = true;
@@ -67,11 +76,12 @@ export function thumbFanJoystick(changed: (state: FanState) => void, clock?: Dec
       dispose();
       initial = Math.max(0, ids.indexOf(active)); unit = touch; travelled = wasAction = false;cursorBase=0;
       neutral = { ...origin }; home = { ...cancelSeat };
+      previousPoint={...origin};
       state = { ...idle(), phase: 'pending', origin: { ...origin }, point: { ...origin }, ids: [...ids], position: initial, target: initial, opened: initial };
       engine = deckJoystick(ids.length, initial, sync, () => {}, () => {}, clock);
       engine.start(0, 0, unit);
     },
-    move(point: FanPoint) { if (state.phase !== 'idle') { state.point = { ...point }; update(); } },
+    move(point: FanPoint) { if (state.phase !== 'idle') { previousPoint=state.point;state.point = { ...point }; update(); } },
     cancel() { dispose(); state = idle(); publish(); },
     release(): FanResult {
       if (state.phase === 'idle') return { kind: 'none' };

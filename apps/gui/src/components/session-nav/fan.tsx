@@ -138,6 +138,6 @@ export function SessionFanNavigator({faces,active,onFocus,onOverview,onNew,hidde
     </GlassCircle>
     {expanded&&<SessionPill faces={faces} active={active} onFocus={focus} onNew={onNew} onOverview={overview}/>}
     {visible&&shown&&shownFrame&&<FanLayer faces={faces} state={shown} frame={shownFrame} phase={closing?.phase??shown.phase} duration={closing?SETTLE_MS:timing.current.follow}/>}
-    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='new'?'松手新建标签页，继续推远预选全部，回到原头像取消':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下跟手预选，越过阈值吸附，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
+    <span className="sr-only" role="status" aria-live="polite">{visible?shown?.intent==='handoff'?'操控点交接中，松手保留当前会话':shown?.cancelArmed?'松手取消，离开原头像可恢复预选':shown?.lane==='new'?'松手新建标签页，继续推远预选全部，回到原头像取消':shown?.lane==='overview'?shown.armed?'松手展开全部标签':'向左上推远展开，回撤恢复扫选':candidate?`预选 ${titleOf(candidate)}，松手切换，弧上回中暂停，回到原头像松手取消`:'斜向上下跟手预选，越过阈值吸附，保持偏移循环翻选，回中暂停，向左上推远展开全部标签':''}</span>
   </div>;
 }

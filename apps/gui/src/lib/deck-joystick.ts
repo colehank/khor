@@ -1,5 +1,5 @@
 import { DECK_JOYSTICK_HOLD_MS, DECK_JOYSTICK_REPEAT_MS } from './tempo';
-import {deckControl, type DeckIntent} from './deck-intent';
+import {deckControl,deckHandoffBoundary, type DeckIntent} from './deck-intent';
 
 export type DeckJoystickTuning = {
   holdMs: number; neutral: number; reach: number;
@@ -121,7 +121,7 @@ export function deckJoystick(
     }
     if (state.phase !== 'idle') frame = clock.request(tick);
   };
-  return {
+  const api={
     read: () => ({ ...state }), cancel, pause,suspend,resume,
     restartReading() { if (autoSide && !motion) nextAt = clock.now() + state.interval; },
     dispose() { stop(); motion = null; autoSide = 0; state.phase = 'idle'; },
@@ -131,8 +131,9 @@ export function deckJoystick(
       followX = 0; followPosition = state.position; state.phase = 'pending';
       publish(); frame = clock.request(tick);
     },
-    move(x: number, y: number) {
+    move(x: number, y: number):void {
       if (state.phase === 'idle') return;
+      const previous={dx:state.dx,up:-state.dy,touch,placement:'bottom' as const,previous:state.intent};
       const rawX = x - origin.x, dy = y - origin.y;
       state.dx = rawX; state.dy = dy;
       let dx=rawX-anchorX;
@@ -146,7 +147,17 @@ export function deckJoystick(
       if (state.phase === 'swipe') { publish(); return; }
       if (state.phase === 'pull') { publish(); return; }
       const intent = updateIntent();
-      if(intent==='handoff'||intent==='new'||intent==='overview'){suspend();return;}
+      if(intent==='handoff'||intent==='new'||intent==='overview'){
+        if(!suspended){
+          const boundary=deckHandoffBoundary(previous,{...previous,dx:rawX,up:-dy},!!create);
+          if(boundary){
+            state.dx=previous.dx;state.dy=-previous.up;state.intent=previous.previous;
+            api.move(origin.x+boundary.dx,origin.y-boundary.up);
+            state.dx=rawX;state.dy=dy;updateIntent();
+          }
+        }
+        suspend();return;
+      }
       if(suspended){
         if(intent==='keep'){publish();return;}
         resume(rawX);publish();return;
@@ -200,4 +211,5 @@ export function deckJoystick(
       return 'none';
     },
   };
+  return api;
 }

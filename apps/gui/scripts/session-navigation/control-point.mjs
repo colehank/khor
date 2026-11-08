@@ -52,4 +52,12 @@ for(const placement of ['bottom','right'])for(const destination of ['new','all']
  }
  checks++;
 }
-console.log(`${checks} bottom/GUI entry and exchange stops, full rejoin, rebase and safe releases passed.`);
+{
+ const coarse=fanFixture(),fine=fanFixture();
+ for(const f of [coarse,fine]){f.acquire();f.move(18,18);}
+ coarse.move(40,40);for(let up=19;up<=40;up++)fine.move(up,up);
+ assert.equal(coarse.fan.read().hot,4,'A coalesced diagonal event preserves the selection before leaving the arc');
+ assert.equal(coarse.fan.read().hot,fine.fan.read().hot);assert.equal(coarse.fan.read().pulse,fine.fan.read().pulse);
+ assert.equal(coarse.fan.read().intent,'handoff');coarse.fan.cancel();fine.fan.cancel();checks++;
+}
+console.log(`${checks} bottom/GUI entry and exchange stops, full rejoin, rebase, coalesced boundaries and safe releases passed.`);

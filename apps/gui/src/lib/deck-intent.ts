@@ -40,3 +40,15 @@ export function deckControl(contact:DeckIntentContact,create=true){
   return {intent,entry,transfer,travel,parked:progress>0,progress};
 }
 export function deckIntent(contact:DeckIntentContact):DeckIntent{return deckControl(contact).intent;}
+
+/** Preserve arc travel when one coalesced pointer event crosses into a handoff. */
+export function deckHandoffBoundary(from:DeckIntentContact,to:DeckIntentContact,create=true){
+  if(deckControl(from,create).parked||!deckControl(to,create).parked)return null;
+  let low=0,high=1;
+  const at=(t:number)=>({...to,dx:from.dx+(to.dx-from.dx)*t,up:from.up+(to.up-from.up)*t});
+  for(let i=0;i<20;i++){
+    const middle=(low+high)/2;
+    if(deckControl(at(middle),create).parked)high=middle;else low=middle;
+  }
+  return at(low);
+}
