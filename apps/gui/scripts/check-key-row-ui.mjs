@@ -35,7 +35,7 @@ try{
  assert.equal(await menu.locator('[data-slot="dropdown-menu-label"]').count(),2);
  assert(await menu.locator('[data-popup-option="gamma"]').innerText().then(text=>text.includes('Rich choice detail')));
  const font=await menu.evaluate(el=>({menu:getComputedStyle(el).fontFamily,body:getComputedStyle(document.body).fontFamily}));assert.equal(font.menu,font.body);
- await choicesPage.keyboard.press('ArrowUp');await choicesPage.keyboard.press('Enter');await menu.waitFor({state:'detached'});assert.equal(await choicesPage.locator('[data-choice-value]').textContent(),'alpha');
+ await choicesPage.keyboard.press('ArrowUp');await choicesPage.waitForFunction(()=>document.activeElement?.getAttribute('data-popup-option')==='alpha');await choicesPage.keyboard.press('Enter');await menu.waitFor({state:'detached'});assert.equal(await choicesPage.locator('[data-choice-value]').textContent(),'alpha');
  const choicesTrigger=choicesPage.locator('[data-popup-trigger]').first();await choicesTrigger.focus();await choicesPage.keyboard.press('ArrowDown');await choicesPage.keyboard.press('g');
  await choicesPage.waitForFunction(()=>document.activeElement?.getAttribute('data-popup-option')==='gamma');await choicesPage.keyboard.press('End');
  await choicesPage.waitForFunction(()=>document.activeElement?.getAttribute('data-popup-option')==='item-39');
