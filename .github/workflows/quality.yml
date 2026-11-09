@@ -360,8 +360,6 @@ jobs:
       - run: npm run gates && npm run mobile:static
       - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
       - name: Run the selected interaction groups and retain all failures
-        env:
-          KHOR_QUALITY_SUITE: ${{ inputs.suite }}
         run: |
           failed=0
           gates=(updates-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui)
@@ -381,6 +379,7 @@ jobs:
           done
           exit "$failed"
         env:
+          KHOR_QUALITY_SUITE: ${{ inputs.suite }}
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
           KHOR_TEST_FRONTEND: dist
           QUALITY_ENGINES: chrome,webkit
