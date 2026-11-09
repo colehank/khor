@@ -35,7 +35,7 @@ function TerminalSizeRow() {
   };
   return <div data-setting-row="slider" data-setting-row-name="term-size" className="flex flex-col gap-in px-row py-in">
     <div className="flex items-center gap-row">
-      <label htmlFor="terminal-size" className="min-w-0 flex-1 text-body">{gui.term_size}</label>
+      <label htmlFor="terminal-size" className="min-w-0 flex-1 text-body">{gui.type_size}</label>
       <Input id="terminal-size" data-term-size-number type="number" inputMode="numeric" min={TERM_MIN} max={TERM_MAX} step={1}
         value={draft} onChange={event=>{
           const next=event.target.value;setDraft(next);
@@ -44,7 +44,7 @@ function TerminalSizeRow() {
         }} onBlur={commit} onKeyDown={event=>{if(event.key==="Enter"){event.preventDefault();commit();}}}
         className="w-16 min-w-0 text-right tabular-nums"/>
     </div>
-    <Slider label={gui.term_size} min={TERM_MIN} max={TERM_MAX} value={size.term}
+    <Slider label={gui.type_size} min={TERM_MIN} max={TERM_MAX} value={size.term}
       ticks={(TERM_MAX-TERM_MIN)/2+1} onChange={term=>setTypeSize({...size,term})}
       small={<span className="text-caption">A</span>} large={<span className="text-title-sm">A</span>}/>
   </div>;

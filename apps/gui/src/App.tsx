@@ -926,7 +926,7 @@ export default function App() {
   }, [sessionTabs.open, readSession]);
 
   const openNotification = (item: NotificationBanner): boolean => {
-    const row = rows.find((r) => r.id === item.session && r.execution_home === item.home);
+    const row = rawRows.find((r) => r.id === item.session && r.execution_home === item.home);
     if (!row) return false;
     setMorePage(null);
     setSwitchingTabs(false);

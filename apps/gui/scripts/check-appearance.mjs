@@ -26,7 +26,7 @@ try {
 import {createRoot} from 'react-dom/client';
 import {TooltipProvider} from '../src/components/ui/tooltip';
 import {SettingsProvider,SettingsRereadProvider} from '../src/settings';
-import {TerminalThemeSection} from '../src/views/more/TerminalThemeSection';
+import {TerminalSection} from '../src/views/more/TerminalSettings';
 import {WindowAppearanceSection} from '../src/views/more/WindowAppearanceSection';
 import {TerminalPane,EndedPane} from '../src/views/TerminalPane';
 import {FaceMark} from '../src/components/FaceMark';
@@ -37,7 +37,7 @@ import {speakLang} from '../src/lang';
 import '../src/styles/tokens.css';import '../src/styles/app.css';
 speakLang('zh');palette.wearTermPalette();followWindowSurface();window.palette=palette;window.windowChoice=windowChoice;window.wearWindowChoice=wearWindowChoice;
 function Lab(){const [kept,setKept]=useState(false),[front,setFront]=useState(false),[concealed,setConcealed]=useState(false);window.hideTerminals=setConcealed;window.keepTerminal=()=>setKept(true);window.closeKept=()=>setKept(false);window.frontKept=setFront;const [ended,setEnded]=useState(false);window.showEnded=()=>setEnded(true);const [rows,setRows]=useState([]);const read=()=>fetchConfig().then(setRows);useEffect(()=>{read()},[]);const surface=windowChoice(rows);useEffect(()=>{if(surface)wearWindowChoice(surface)},[surface?.material,surface?.opacity,surface?.outline]);
-return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}><div data-retained-front className={front||concealed?'pointer-events-none invisible absolute inset-0 flex flex-col':'contents'}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active={!front} />}</div>{kept&&<div data-retained-back className={front&&!concealed?'contents':'pointer-events-none invisible absolute inset-0 flex flex-col'} aria-hidden={!front||undefined}><TerminalPane id='shell/appearance-kept' active={front}/></div>}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalThemeSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
+return <SettingsProvider value={rows}><SettingsRereadProvider value={read}><TooltipProvider><div style={{display:'flex',height:'100vh',color:'var(--foreground)'}}><div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',position:'relative'}}><div data-retained-front className={front||concealed?'pointer-events-none invisible absolute inset-0 flex flex-col':'contents'}>{ended?<EndedPane id='shell/appearance-test' at={1}/>:<TerminalPane id='shell/appearance-test' active={!front} />}</div>{kept&&<div data-retained-back className={front&&!concealed?'contents':'pointer-events-none invisible absolute inset-0 flex flex-col'} aria-hidden={!front||undefined}><TerminalPane id='shell/appearance-kept' active={front}/></div>}</div><aside style={{width:400,overflow:'auto',padding:'var(--gap-base)'}}><div data-halo-lab style={{display:'flex',gap:40,padding:32}}><FaceMark face={{machine:null}} halo="done"/><div data-tab-bar><FaceMark face={{machine:null}} halo="done" size="tab"/></div></div><WindowAppearanceSection/><TerminalSection/></aside></div></TooltipProvider></SettingsRereadProvider></SettingsProvider>}
 createRoot(document.getElementById('root')).render(<Lab/>);
 `);
   vite = await createServer({configFile: `${gui}/vite.config.ts`, root: gui, cacheDir: cache,
@@ -282,7 +282,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   assert.equal(await outline().count(),0,'outline setting must disappear when returning to solid');
   blur = false; await page.reload(); await page.locator('[data-setting-select="window-material"]').waitFor();
   assert.equal(await page.locator('[data-setting-select="window-material"] option[value="frost"]').count(), 0, "Linux does not offer native blur");
-  await page.setViewportSize({ width: 760, height: 900 }); await page.locator("[data-term-theme-edit]").click();
+  await page.setViewportSize({ width: 760, height: 900 }); await page.locator('[data-setting-select="term-theme"]').selectOption("custom"); await page.locator("[data-term-theme-edit]").click();
   assert(await page.locator("[data-term-theme-editor]").evaluate(el => el.getBoundingClientRect().right <= innerWidth));
   const validation = await page.evaluate(() => {
     const p = window.palette;

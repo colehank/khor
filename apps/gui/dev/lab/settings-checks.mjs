@@ -86,6 +86,27 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.ok(preview.height>100,'The actual terminal preview retains its height in the scroll body');
     if(!mobile)assert.equal(await more.locator('[data-more-open="session"]').getAttribute('aria-current'),'page');
     await page.screenshot({path:path.join(report,`settings-terminal-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    // These are the production controls and real renderer, not a picture of them.
+    await page.locator('[data-term-size-number]').fill('18');
+    await page.locator('[data-term-size-number]').blur();
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
+    await page.locator('[data-term-cursor-color]').fill('#aabbcc');
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');
+    await page.locator('[data-term-cursor-auto]').click();
+    await page.locator('[data-setting-select="term-theme"]').selectOption('custom');
+    assert.equal(await page.locator('[data-term-theme-custom] button').count(),2,'Custom theme exposes Import and Settings only');
+    await page.locator('[data-term-theme-edit]').click();
+    const dialog=page.locator('[data-term-theme-editor]');await dialog.waitFor();
+    const geometry=await dialog.evaluate(el=>{
+      const preview=el.querySelector('[data-term-theme-preview]').getBoundingClientRect();
+      const section=el.querySelector('.term-theme-grid').getBoundingClientRect();
+      const body=el.querySelector('[data-slot="dialog-body"]');
+      return {height:preview.height,bottom:preview.bottom,formTop:section.top,body:!!body};
+    });
+    assert.ok(geometry.height>100&&geometry.bottom<=geometry.formTop,'The palette preview cannot shrink or overlap colour fields');
+    await page.screenshot({path:path.join(report,`settings-palette-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
+
     for(const key of ['doctor','store'])await pick(key);
     if(mobile)await back();
     await page.locator('[data-landing="devices"]:visible').click();

@@ -87,8 +87,8 @@ export function TerminalThemeSection() {
   };
   return <>
     <div ref={sectionRef} data-setting-row="popup" data-setting-row-name="term-theme" className="flex items-center gap-row px-row py-in">
-      <span className="min-w-0 flex-1 text-body">{gui.term_theme_palette}</span>
-      <PopupButton label={gui.term_theme_palette} value={choice.selected} choices={names}
+      <span className="min-w-0 flex-1 text-body">{gui.term_theme_title}</span>
+      <PopupButton label={gui.term_theme_title} value={choice.selected} choices={names}
         onPick={selected=>{const stored=setTermTheme({...choice,selected});setNotice(null);setError(stored?null:gui.term_theme_storage_error);}}
         mark={{"data-setting-select":"term-theme"}} className="-mr-xxs"/>
     </div>
