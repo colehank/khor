@@ -59,7 +59,7 @@ try{
         await page.waitForFunction(before=>{const now=window.__composeFixture.intent();return now.requests>before.requests&&now.shown!==before.shown;},prior);
         result.resumed=await page.evaluate(()=>window.__composeFixture.intent());
         assert.equal(result.resumed.following,true);assert.equal(result.resumed.readingLatest,true);assert.deepEqual(result.errors,[]);result.status='passed';
-      }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
+      }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} disclosure=${size}`);save();await context.close();}
     }
     for(const probe of (transitionsOnly||disclosureOnly?[]:[false,true]))for(const long of [false,true])for(const reader of [false,true])for(const changeRevision of [false,true]){
@@ -79,7 +79,7 @@ try{
         if(reader)assert(visible.every(value=>value.first===result.before.first&&Math.abs(value.firstOffset-result.before.firstOffset)<=2),'Parent render changes the reading anchor');
         else assert(visible.every(value=>Math.abs(value.gap)<=2),'Parent render temporarily leaves the live tail');
         result.status='passed';
-      }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
+      }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} probe=${probe} long=${long} reader=${reader} freshRevision=${changeRevision}`);save();await context.close();}
     }
     for(const reader of (scenarios!=='parent'&&!disclosureOnly?[false,true]:[])){
@@ -102,7 +102,7 @@ try{
           if(!draft)assert(value.cap<=50,'Clearing the draft restores the compact composer');
         }
         assert.deepEqual(result.errors,[]);result.status='passed';
-      }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
+      }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} draft-and-width-transitions reader=${reader}`);save();await context.close();}
     }
     if(!disclosureOnly){
@@ -127,7 +127,7 @@ try{
         result.afterInput=await page.evaluate(()=>window.__composeFixture.snapshot('real-reader-input'));
         assert(result.afterInput.gap>100,'Real reader input still takes ownership during layout settling');
         assert.deepEqual(result.errors,[]);result.status='passed';
-      }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
+      }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} delayed-layout-scroll-and-reader-intent`);save();await context.close();}
     }
     if(!disclosureOnly)for(const input of ['pointer','space']){

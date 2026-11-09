@@ -14,6 +14,7 @@ import '@/styles/session-layout.css';
 
 type Sample={reason:string;at:number;top:number;view:number;total:number;gap:number;cap:number;row:number;field:number;styleHeight:string;expanded:boolean;active:string;first:string|null;firstOffset:number|null};
 let readings:Sample[]=[];
+const inputTrace:unknown[]=[];
 const disclosure = new URLSearchParams(location.search).get('disclosure');
 const disclosureCase = disclosure === 'short' || disclosure === 'long';
 const controlCase = new URLSearchParams(location.search).get('control') === '1';
@@ -100,9 +101,15 @@ function Conversation({revision,epoch}:{revision:object;epoch:number}){
   </div>;
 }
 
-type Fixture={intent:()=>Intent;toBottom:()=>void;snapshot:typeof snapshot;rerender:(changeRevision:boolean)=>Sample;observe:(ms:number)=>Promise<Sample[]>;readings:()=>Sample[]};
+type Fixture={intent:()=>Intent;toBottom:()=>void;snapshot:typeof snapshot;rerender:(changeRevision:boolean)=>Sample;observe:(ms:number)=>Promise<Sample[]>;readings:()=>Sample[];trace:()=>unknown[]};
 declare global{interface Window{__composeFixture:Fixture}}
-window.__composeFixture={intent:()=>({following:true,readingLatest:true,requests:0,shown:null}),toBottom:()=>{},snapshot,rerender:()=>{throw new Error('not mounted')},observe:async()=>[],readings:()=>readings};
+window.__composeFixture={intent:()=>({following:true,readingLatest:true,requests:0,shown:null}),toBottom:()=>{},snapshot,rerender:()=>{throw new Error('not mounted')},observe:async()=>[],readings:()=>readings,trace:()=>inputTrace};
+for(const name of ['wheel','touchmove','pointerdown','pointermove','keydown','focusin','focusout','scroll'])document.addEventListener(name,event=>{
+  const target=event.target instanceof Element?event.target:null;
+  if(name==='pointermove'&&event instanceof PointerEvent&&event.buttons===0)return;
+  inputTrace.push({event:name,at:performance.now(),target:target?.tagName,composer:target?.hasAttribute('data-composer-text'),key:event instanceof KeyboardEvent?event.key:undefined,intent:window.__composeFixture.intent(),scroll:document.querySelector('[data-compose-scroll]')?snapshot(name):null});
+  if(inputTrace.length>80)inputTrace.shift();
+},{capture:true,passive:true});
 
 function Fixture(){
   const [epoch,setEpoch]=useState(0),[revision,setRevision]=useState<object>({});
