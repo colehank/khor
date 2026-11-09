@@ -13,3 +13,7 @@ runs:
         mkdir -p apps/gui/src
         cp -R frontend/dist apps/gui/dist
         cp -R frontend/gen apps/gui/src/gen
+        if test -f frontend/lab-world.generated.json; then
+          mkdir -p apps/gui/dev/lab/data
+          cp frontend/lab-world.generated.json apps/gui/dev/lab/data/world.generated.json
+        fi

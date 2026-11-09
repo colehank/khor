@@ -40,6 +40,16 @@ class ArtifactReceiptTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "bytes changed"):
             manifest.verify(self.frontend)
 
+    def test_lab_domain_cache_is_covered_by_the_frontend_receipt(self):
+        cache = self.frontend / "lab-world.generated.json"
+        cache.write_text('{"schema":1}')
+        receipt = manifest.create(self.frontend, "frontend")
+        self.assertIn(cache.name, receipt["files"])
+        manifest.verify(self.frontend, "a" * 40)
+        cache.write_text('{"schema":2}')
+        with self.assertRaisesRegex(ValueError, "bytes changed"):
+            manifest.verify(self.frontend, "a" * 40)
+
     def test_product_must_embed_the_verified_frontend_and_pi(self):
         product = self.root / "product"
         product.mkdir()

@@ -27,11 +27,14 @@ jobs:
       - run: python3 scripts/release_manifest.py version
       - run: npm ci --prefix apps/gui
       - run: npm run build --prefix apps/gui
+      - name: Generate Lab domain data with the already-compiled core
+        run: python3 scripts/khor_lab/fixture_data.py .
       - name: Record the frontend consumed by every native platform
         run: |
           mkdir -p frontend
           cp -R apps/gui/dist frontend/dist
           cp -R apps/gui/src/gen frontend/gen
+          cp apps/gui/dev/lab/data/world.generated.json frontend/lab-world.generated.json
           python3 scripts/release_manifest.py create --root frontend --kind frontend
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -1403,8 +1403,7 @@ export default function App() {
       window's buttons, then 更多. The open landing pressed again folds its
       list, and once more brings it back; another landing switches and
       brings it back (the owner: no toggle button). */
-  /** **更多's four, on both bars** (UX-16; UX-19 gave the wide strip the
-      phone's menu): 我的 khor, the landings past the fourth, 设置, 诊断. */
+  /** Native settings requests select a category inside the same More shell. */
   const enterSettings = (request: SettingsRequest = {}) => {
     const pane = request.pane;
     const explicit = isSettingsPage(pane);
@@ -3013,9 +3012,8 @@ export default function App() {
     </SessionScreen>
   );
 
-  /** Out of a 「…」 page. Narrow, a settings page goes one screen back to
-      设置's list; 我的 khor and 诊断 are 更多's own items (UX-16), pushed
-      over the landing they were opened from, so they go back to it. */
+  /** Every More detail returns to the same More list on mobile; desktop
+      closes the destination over the landing retained underneath. */
   const leaveMorePage = () => {
     if (narrow && morePage !== null) {
       setScreen("list");
@@ -3360,8 +3358,7 @@ export default function App() {
    *
    * - A landing's page uncovers the landing's list (额度's and the
    *   browser's are their own landings drawn on their list screen).
-   * - A settings page uncovers 设置's list; 我的 khor and 诊断 uncover
-   *   the landing they were opened over (UX-16).
+   * - Every More page uncovers the same grouped More list.
    * - The tab switcher uncovers its page's own chrome — the session bar,
    *   without its terminal: a live terminal is never drawn twice.
    * - A file uncovers nothing here: its listing is the machine page's
