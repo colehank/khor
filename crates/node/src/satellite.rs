@@ -836,22 +836,43 @@ pub fn touch(host: &Dest, path: &str) -> Result<(), String> {
 /// differently from another.
 const RENAME_SH: &str = r#"
 set -u
+system=$(uname -s)
 exists() { [ -e "$1" ] || [ -L "$1" ]; }
+device() {
+  if [ "$system" = Linux ]; then stat -c %d "$1" 2>/dev/null
+  else stat -f %d "$1" 2>/dev/null; fi
+}
 inode() { LC_ALL=C ls -di "$1" 2>/dev/null | while read -r number rest; do printf '%s' "$number"; done; }
 # GNU -T and BSD -h prevent a raced symlink-to-directory from becoming
 # an unintended destination. -n keeps another entry's bytes untouched.
 move_name() {
-  if [ "$(uname -s)" = Linux ]; then mv -n -T "$1" "$2" 2>/dev/null
+  expected=$(inode "$1")
+  if [ "$system" = Linux ]; then mv -n -T "$1" "$2" 2>/dev/null
   else mv -n -h "$1" "$2" 2>/dev/null; fi
-  ! exists "$1"
+  exists "$1" && return 1
+  [ -n "$expected" ] && [ "$(inode "$2")" = "$expected" ] && return 0
+  # BSD mv can enter a real directory created after our precheck. Keep
+  # the bytes and name their actual location instead of claiming success.
+  nested="$2/${1##*/}"
+  if [ -n "$expected" ] && [ "$(inode "$nested")" = "$expected" ]; then
+    printf 'recovery:%s\n' "$nested"
+  else
+    printf 'recovery:%s\n' "$2"
+  fi
+  exit 0
 }
 if ! exists "$KHOR_FROM"; then
   printf 'gone\n'
   exit 0
 fi
+# Keep this endpoint a rename like files::rename_path; mv must not
+# silently fall back to copying and deleting across filesystems.
+source_directory=${KHOR_FROM%/*}
+target_directory=${KHOR_TO%/*}
+source_device=$(device "$KHOR_FROM")
+target_device=$(device "${target_directory:-/}")
+if [ -z "$source_device" ] || [ "$source_device" != "$target_device" ]; then printf 'no\n'; exit 0; fi
 if exists "$KHOR_TO"; then
-  source_directory=${KHOR_FROM%/*}
-  target_directory=${KHOR_TO%/*}
   source_parent=$(cd -P "${source_directory:-/}" 2>/dev/null && pwd -P) || exit 1
   target_parent=$(cd -P "${target_directory:-/}" 2>/dev/null && pwd -P) || exit 1
   source_id=$(inode "$KHOR_FROM")

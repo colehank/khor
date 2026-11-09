@@ -63,6 +63,15 @@ def shell_checks():
         assert move(source, target / "source ' $x") == 'done'
         assert not source.exists() and (target / "source ' $x/draft").read_text(encoding="utf-8") == 'draft'
         assert not list(root.glob('.khor-rename-*'))
+        shared_memory = Path('/dev/shm')
+        if shared_memory.is_dir() and shared_memory.stat().st_dev != root.stat().st_dev:
+            crossing = root / 'cross-device'
+            crossing.write_text('original')
+            with tempfile.TemporaryDirectory(dir=shared_memory, prefix='khor-rename-check-') as other:
+                landing = Path(other) / 'landing'
+                assert move(crossing, landing) == 'no'
+                assert crossing.read_text() == 'original' and not landing.exists()
+            print('PASS production SSH rename: cross-device move refuses before copying')
         if insensitive:
             # Fail the landing, then separately fail rollback. Exercise the
             # actual production shell, substituting only the OS move command.
@@ -85,6 +94,16 @@ def shell_checks():
             parked = Path(result.removeprefix('recovery:'))
             assert parked.read_text() == 'saved' and not (root / 'Rollback').exists()
             print('PASS production SSH rename: landing failure rolls back; rollback failure preserves source at reported recovery path')
+            if os.uname().sysname == 'Darwin':
+                # Insert a real destination directory between the production
+                # precheck and BSD mv. No wrong-target success is allowed.
+                counter.unlink()
+                wrapper.write_text('#!/bin/sh\nn=0; [ ! -f "$KHOR_COUNTER" ] || n=$(cat "$KHOR_COUNTER"); n=$((n+1)); printf "%s" "$n" > "$KHOR_COUNTER"\nif [ "$n" = 2 ]; then for destination do :; done; mkdir "$destination"; fi\nexec ' + shlex.quote(real_mv) + ' "$@"\n', encoding='utf-8')
+                (root / 'Race').write_text('preserved')
+                result = move(root / 'Race', root / 'race', env)
+                assert result.startswith('recovery:'), result
+                assert Path(result.removeprefix('recovery:')).read_text() == 'preserved'
+                print('PASS production SSH rename: raced BSD destination directory reports preserved recovery location')
         print(f'PASS production SSH rename: case_insensitive={insensitive}; files, directories, links, physical parent aliases, conflicts, descendants, quoting, cleanup')
 
 
