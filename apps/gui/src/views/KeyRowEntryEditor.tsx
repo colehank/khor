@@ -1,4 +1,4 @@
-import {useEffect,useRef,useState} from "react";
+import {useEffect,useLayoutEffect,useRef,useState} from "react";
 import {IconChevronDown,IconChevronUp,IconClose} from "@/components/icons";
 import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
@@ -26,7 +26,7 @@ export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady}: {
     if(b.left<a.left)strip.scrollLeft-=a.left-b.left;else if(b.right>a.right)strip.scrollLeft+=b.right-a.right;
   },[active,steps.length]);
   const complete=steps.map(completeKeyboardStroke),ready=complete.every(Boolean)&&[...label.trim()].length<=KEY_ROW_LIMITS.labelCharacters&&new TextEncoder().encode(label.trim()).length<=KEY_ROW_LIMITS.labelBytes;
-  useEffect(()=>onReady(ready),[ready,onReady]);
+  useLayoutEffect(()=>onReady(ready),[ready,onReady]);
   const current=steps[active]??steps[0],picked=completeKeyboardStroke(current);
   const update=(next:KeyStrokeUpdate)=>{setSteps(previous=>previous.map((step,index)=>index===active?{...step,...next}:step));setError(null);};
   const move=(index:number,by:number)=>{const next=[...steps];[next[index],next[index+by]]=[next[index+by],next[index]];setSteps(next);setActive(index+by);};

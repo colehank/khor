@@ -23,7 +23,7 @@ function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,
     <div data-popup-button={look} className={cn("relative flex h-ctl-md min-w-0 items-center",look==="field"?"w-full":"flex-none",className)}>
       <DropdownMenuTrigger asChild><button type="button" value={values[0]??""} disabled={disabled} aria-label={`${label}: ${current}`} title={selected[0]?.note}
         data-popup-trigger data-popup-owner={id} {...mark}
-        className={cn("flex min-h-touch min-w-0 items-center rounded-sm text-body outline-hidden focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40",look==="field"&&"w-full")}>
+        className={cn("flex min-h-touch min-w-0 items-center rounded-sm text-body disabled:opacity-40",look==="field"&&"w-full")}>
         <span className={cn("flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in hover:bg-fill",look==="field"&&"w-full bg-fill hover:bg-fill-strong")}>
           {!multiple&&selected[0]?.preview&&<span aria-hidden className="grid size-5 flex-none place-items-center">{selected[0].preview}</span>}
           <span data-popup-value className={cn("min-w-0 truncate tabular-nums",look==="field"&&"flex-1")}>{current}</span>
