@@ -28,19 +28,12 @@
 //     disagrees with the first the moment one is saved;
 //   - a satellite's ssh host is `khor add`'s, set when it joined.
 //
-// # 完成, and no 取消
-//
-// The face writes on every pick (the node paints; see `FaceSettings`), so
-// there is nothing a 取消 could take back — a 取消 beside picks that have
-// already landed would be a promise the window cannot keep. The name is
-// typed, and half a name is not a name, so it waits: 完成 (or Enter)
-// writes it, Esc leaves it as it was. One primary button, the dialog's
-// one (components/Dialog).
+// Profile changes apply immediately. Renaming is a draft step in the same frame.
 import { useEffect, useState } from "react";
 
 import { renameMachine, type DeviceRow } from "@/api";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, DialogBody, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
@@ -60,6 +53,7 @@ export function MachineEditDialog({
       and name on screen moves in the same frame. */
   onChanged: () => void;
 }) {
+  const [editingName, setEditingName] = useState(false);
   const [typed, setTyped] = useState("");
   const [going, setGoing] = useState(false);
   const [refused, setRefused] = useState<string | null>(null);
@@ -74,6 +68,7 @@ export function MachineEditDialog({
     setTyped(row.label ?? "");
     setRefused(null);
     setGoing(false);
+    setEditingName(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -82,7 +77,7 @@ export function MachineEditDialog({
     const name = typed.trim();
     // Nothing typed differs from what is stored: nothing to write.
     if (name === (row.label ?? "").trim()) {
-      onClose();
+      setEditingName(false);
       return;
     }
     setGoing(true);
@@ -91,7 +86,7 @@ export function MachineEditDialog({
       () => {
         setGoing(false);
         onChanged();
-        onClose();
+        setEditingName(false);
       },
       // **The node's own sentence, under the box**, and the window stays:
       // closing it would paint the picture a rename that took paints.
@@ -109,46 +104,20 @@ export function MachineEditDialog({
           <DialogTitle>{row ? gui.machine_edit_title(row.shown) : ""}</DialogTitle>
         </DialogHeader>
         <DialogBody>
-        {row && (
-          <FaceSettings machine={row.id} onChanged={onChanged}>
-            <FormLabel htmlFor="khor-machine-edit-name">{gui.machine_name}</FormLabel>
-            {/* Its own form, so Enter in the box is 完成 — and only the
-                box: the face's buttons are not inside it, and a button
-                with no type inside a form would submit it. */}
-            <form
-              className="flex min-w-0 flex-col gap-xxs"
-              onSubmit={(e) => {
-                e.preventDefault();
-                done();
-              }}
-            >
-              <Input
-                id="khor-machine-edit-name"
-                data-machine-edit-name
-                autoComplete="off"
-                spellCheck={false}
-                value={typed}
-                placeholder={row.name}
-                onChange={(e) => {
-                  setTyped(e.target.value);
-                  setRefused(null);
-                }}
-                className="w-full"
-              />
-              {refused !== null && (
-                <p data-machine-edit-refused className="text-callout text-destructive">
-                  {refused}
-                </p>
-              )}
-            </form>
-          </FaceSettings>
-        )}
+          {row && (editingName ? <form id="machine-name-form" className="flex flex-col gap-in" onSubmit={event => {event.preventDefault(); done();}}>
+            <label htmlFor="khor-machine-edit-name">{gui.machine_name}</label>
+            <Input id="khor-machine-edit-name" data-machine-edit-name autoFocus autoComplete="off" spellCheck={false} value={typed} placeholder={row.name}
+              onChange={event => {setTyped(event.target.value);setRefused(null);}}/>
+            {refused !== null && <p data-machine-edit-refused role="alert" className="text-callout text-destructive">{refused}</p>}
+          </form> : <FaceSettings machine={row.id} onChanged={onChanged}>
+            <FormLabel>{gui.machine_name}</FormLabel>
+            <Button data-machine-name-step className="justify-self-start" onClick={() => {setTyped(row.label ?? "");setRefused(null);setEditingName(true);}}>{row.shown}</Button>
+          </FaceSettings>)}
         </DialogBody>
-        <DialogFooter>
-          <Button variant="primary" data-machine-edit-done data-footer-trailing className="min-h-touch" disabled={going} aria-busy={going || undefined} onClick={done}>
-            {gui.edit_done}
-          </Button>
-        </DialogFooter>
+        {editingName ? <TaskActions busy={going} dirty={typed !== (row?.label ?? "")}
+          back={<Button onClick={() => setEditingName(false)}>{gui.back}</Button>}
+          primary={<Button type="submit" form="machine-name-form" data-machine-edit-done aria-busy={going || undefined}>{gui.watch_save}</Button>}/>
+          : <TaskActions close={<Button onClick={onClose}>{gui.close}</Button>}/>}
       </TaskOverlay>
     </Dialog>
   );

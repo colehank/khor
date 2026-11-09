@@ -105,7 +105,7 @@ export function HistorySheet({
   }, [open, machine, path, key]);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <TaskOverlay purpose="selection" scrollable data-file-history data-history-overlay className="!gap-0">
+      <TaskOverlay layout="content" purpose="selection" scrollable data-file-history data-history-overlay className="!gap-0">
         <DialogTitle className={narrow ? "sr-only" : "px-in pb-in"}>{repo ? gui.commit_history : gui.file_history}</DialogTitle>
         <DialogBody ref={scroller} data-history-scroll onScroll={e=>{position.current.top=e.currentTarget.scrollTop;}} className="gap-0 px-in">
         {refused !== null ? (

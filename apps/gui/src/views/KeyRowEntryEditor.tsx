@@ -11,13 +11,16 @@ import {BASE_KEYS,KEY_ROW_LIMITS,type CustomKeyEntry} from "@/lib/term-key-model
 import {completeKeyboardStroke,emptyKeyboardStroke,keyboardGroup,type KeyboardStroke} from "@/lib/term-keyboard-layout";
 import {TerminalKeyboard} from "@/views/TerminalKeyboard";
 
-export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady}: {
+export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady,onDirty}: {
   entry:CustomKeyEntry|null;onSave:(entry:CustomKeyEntry)=>void;onDelete?:()=>void;
-  formId:string;onReady:(ready:boolean)=>void;
+  formId:string;onReady:(ready:boolean)=>void;onDirty?:(dirty:boolean)=>void;
 }) {
   const [id]=useState(()=>entry?.id??`custom:${crypto.randomUUID()}`);
   const [label,setLabel]=useState(entry?.label??"");
   const [steps,setSteps]=useState<KeyboardStroke[]>(()=>entry?entry.kind==="chord"?[{...entry.stroke}]:entry.steps.map(step=>({...step})):[emptyKeyboardStroke()]);
+  const [start]=useState(()=>JSON.stringify({label:entry?.label??"",steps}));
+  const dirty=JSON.stringify({label,steps})!==start;
+  useLayoutEffect(()=>onDirty?.(dirty),[dirty,onDirty]);
   const [active,setActive]=useState(0),[keyboard,setKeyboard]=useState(true),[error,setError]=useState<string|null>(null);
   const stepStrip=useRef<HTMLDivElement>(null);
   useEffect(()=>{

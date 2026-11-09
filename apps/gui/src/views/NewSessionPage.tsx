@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { ChoiceField, type ChoiceOption } from '@/components/ui/choice-field';
 import { Input } from '@/components/ui/input';
 import { FormGrid, FormLabel } from '@/components/ui/form-grid';
-import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, TaskOverlay, TaskActions, DialogBody, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { IconClose, IconGear, IconPencil, IconPlus } from '@/components/icons';
 import { gui } from '@/gen/catalog';
 import { dropHandOff, peekHandOff } from '@/lib/composer-handoff';
@@ -327,7 +327,7 @@ export function NewSessionPage({
             ...was,
             command: e.target.value
           })} />
-  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><DialogFooter><Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button><Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button></DialogFooter></TaskOverlay></Dialog>
+  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><TaskActions busy={saving} cancel={<Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button>} primary={<Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button>}/></TaskOverlay></Dialog>
   <Dialog open={manage && !browsing} onOpenChange={setManage}>
     <TaskOverlay purpose="selection" scrollable data-launch-manage>
       <DialogTitle>{gui.launch_method}</DialogTitle>
@@ -339,11 +339,7 @@ export function NewSessionPage({
         setEditError(null);
         setRemoving(p);
       }}/></DialogBody>
-      <DialogFooter className="flex-wrap">
-        <Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button>
-        <Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button>
-        <Button data-footer-trailing onClick={() => setManage(false)}>{gui.edit_done}</Button>
-      </DialogFooter>
+      <TaskActions close={<Button data-footer-trailing onClick={() => setManage(false)}>{gui.close}</Button>} tools={<><Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button><Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button></>}/>
     </TaskOverlay>
   </Dialog>
   <Dialog open={manage && browsing} onOpenChange={on => {if(!on)setBrowsing(false)}}>
@@ -359,7 +355,7 @@ export function NewSessionPage({
         {snapshot && !snapshot.some(k=>`${k.id} ${k.name} ${k.about}`.toLowerCase().includes(query.toLowerCase())) && <p className="text-callout text-muted-foreground">{gui.no_matches}</p>}
       </DialogBody>
       {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
-      <DialogFooter><Button onClick={()=>setBrowsing(false)}>{gui.back}</Button></DialogFooter>
+      <TaskActions busy={attaching !== null} back={<Button onClick={()=>setBrowsing(false)}>{gui.back}</Button>}/>
     </TaskOverlay>
   </Dialog>
   <Dialog open={!!removing} onOpenChange={on => !on && setRemoving(null)}><DialogContent><DialogTitle>{gui.launch_remove}</DialogTitle><p className="text-body">{removing?.name}</p>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}<DialogFooter><Button disabled={saving} onClick={() => setRemoving(null)}>{gui.delete_keep}</Button><Button disabled={saving} onClick={remove}>{gui.delete}</Button></DialogFooter></DialogContent></Dialog>

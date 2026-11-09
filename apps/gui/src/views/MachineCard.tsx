@@ -36,7 +36,7 @@ import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
 import { SeatPick } from "@/components/SeatTitle";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
@@ -628,10 +628,10 @@ function ConnectionFact({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
       {narrow ? (
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>{info}</DialogTrigger>
-          <TaskOverlay purpose="preview" initialHeight="fit" className="grid-rows-[auto_minmax(0,1fr)]">
+          <TaskOverlay purpose="preview" initialHeight="fit">
             <DialogHeader><DialogTitle>{gui.map_facts}</DialogTitle></DialogHeader>
             {details}
-            <DialogFooter><Button data-footer-trailing onClick={() => setOpen(false)}>{gui.close}</Button></DialogFooter>
+            <TaskActions close={<Button data-footer-trailing onClick={() => setOpen(false)}>{gui.close}</Button>}/>
           </TaskOverlay>
         </Dialog>
       ) : (

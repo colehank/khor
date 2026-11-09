@@ -45,7 +45,7 @@ export function SymbolsSheet({ open, onOpenChange, path }: { open: boolean; onOp
       <TaskOverlay
         purpose="selection"
         data-file-symbols
-        className="flex flex-col !gap-0"
+
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           if (document.documentElement.hasAttribute("data-narrow") || window.matchMedia("(pointer: coarse)").matches) return;
@@ -57,9 +57,9 @@ export function SymbolsSheet({ open, onOpenChange, path }: { open: boolean; onOp
           setQuery("");
         }}
       >
-        <DialogTitle className="px-in pb-in">{gui.keys_group_symbol}</DialogTitle>
+        <DialogTitle >{gui.keys_group_symbol}</DialogTitle>
         <SideFind label={gui.keys_group_symbol} query={query} onQuery={setQuery} onEnter={() => shown.length === 1 && go(shown[0])} className="px-0 pb-in" />
-        <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto">
+        <div className="flex min-w-0 flex-col">
           {shown.length === 0 ? (
             <div data-file-symbols-none className="px-in py-2 text-callout text-muted-foreground">
               {gui.no_matches}

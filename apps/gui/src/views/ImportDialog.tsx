@@ -42,7 +42,7 @@ import {
 import { ImportCalm as Calm, ImportMachinePicker, ImportResult, ImportSearch, importMachineAway, importMachineInScope, toggleImportMachine } from "@/components/ImportPicker";
 import { sessionMark } from "@/components/BrandIcons";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogBody, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { useHereHosts } from "@/lib/here";
@@ -337,11 +337,9 @@ export function ImportDialog({
             </p>
           )}
         </DialogBody>
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
-            {gui.delete_keep}
-          </Button>
-        </DialogFooter>
+        <TaskActions busy={going !== null} close={<Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
+            {gui.close}
+          </Button>}/>
       </TaskOverlay>
     </Dialog>
   );

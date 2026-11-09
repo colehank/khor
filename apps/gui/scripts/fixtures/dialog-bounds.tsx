@@ -4,8 +4,9 @@ import {createRoot} from 'react-dom/client';
 import {NewSessionPage} from '../../src/views/NewSessionPage';
 import {TerminalThemeSection} from '../../src/views/more/TerminalThemeSection';
 import {ImportDialog} from '../../src/views/ImportDialog';
-import {Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter} from '../../src/components/ui/dialog';
+import {Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter, TaskActions} from '../../src/components/ui/dialog';
 import {Button} from '../../src/components/ui/button';
+import {Input} from '../../src/components/ui/input';
 import {DirPicker} from '../../src/components/DirPicker';
 import {PathField} from '../../src/components/PathField';
 import {OmniMenu} from '../../src/components/OmniMenu';
@@ -52,21 +53,33 @@ function TaskPan({open,onClose}:{open:boolean;onClose:()=>void}) {
     const before=root.getBoundingClientRect().height,prevented=pan(target,up);
     setResult(JSON.stringify({before,prevented,dragged:root.hasAttribute('data-sheet-dragged')}));
   };
-  return <Dialog open={open} onOpenChange={on=>{if(!on)onClose()}}><TaskOverlay purpose="selection" scrollable data-task-pan><DialogTitle>选择任务</DialogTitle><DialogBody><div data-task-main>主内容</div><OmniMenu rows={{at:-1,groups:[{key:'choices',label:'',role:'text',candidates:Array.from({length:30},(_,i)=>({key:String(i),label:'候选 '+(i+1)}))}]}} onPick={()=>{}}/><output data-task-pan-result>{result}</output></DialogBody><DialogFooter><Button onClick={()=>test(true,true)}>上滑菜单</Button><Button onClick={()=>test(false,true)}>上滑内容</Button><Button onClick={()=>test(false,false)}>下滑内容</Button><Button onClick={onClose}>取消</Button></DialogFooter></TaskOverlay></Dialog>;
+  return <Dialog open={open} onOpenChange={on=>{if(!on)onClose()}}><TaskOverlay purpose="selection" scrollable data-task-pan><DialogTitle>选择任务</DialogTitle><DialogBody><div data-task-main>主内容</div><OmniMenu rows={{at:-1,groups:[{key:'choices',label:'',role:'text',candidates:Array.from({length:30},(_,i)=>({key:String(i),label:'候选 '+(i+1)}))}]}} onPick={()=>{}}/><output data-task-pan-result>{result}</output></DialogBody><TaskActions cancel={<Button onClick={onClose}>取消</Button>} tools={<><Button onClick={()=>test(true,true)}>上滑菜单</Button><Button onClick={()=>test(false,true)}>上滑内容</Button><Button onClick={()=>test(false,false)}>下滑内容</Button></>}/></TaskOverlay></Dialog>;
+}
+function DraftTask({onClose}:{onClose:()=>void}) {
+  const [value,setValue]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(false);
+  const save=()=>{if(busy)return;setBusy(true);setError(false);(window as unknown as {failTask:()=>void}).failTask=()=>{setBusy(false);setError(true);};};
+  return <Dialog open onOpenChange={open=>{if(!open)onClose();}}><TaskOverlay purpose="edit" data-task-proof>
+    <DialogTitle>编辑一个需要保留草稿与正确返回行为的较长任务标题</DialogTitle>
+    <label htmlFor="task-proof-name">名称</label><Input id="task-proof-name" value={value} onChange={event=>setValue(event.target.value)}/>
+    {error&&<p role="alert" data-task-proof-error>保存失败，草稿仍在</p>}
+    <TaskActions dirty={!!value} busy={busy} cancel={<Button data-task-proof-cancel onClick={onClose}>取消</Button>} primary={<Button data-task-proof-save onClick={save}>保存</Button>}/>
+  </TaskOverlay></Dialog>;
 }
 function Proof(){
+  const[draft,setDraft]=useState(false);
   const[mode,setMode]=useState('new'),[question,setQuestion]=useState(false),[imports,setImports]=useState(false),[pathOpen,setPathOpen]=useState(false),[path,setPath]=useState('~/'),[result,setResult]=useState(''),[directory,setDirectory]=useState(false),[task,setTask]=useState(false);
   return <SettingsProvider value={null}><TooltipProvider><main style={{height:'100dvh',padding:'var(--gap-pane)',color:'var(--foreground)'}}>
-    <nav style={{display:'flex',gap:8,flexWrap:'wrap'}}><Button onClick={()=>setMode('new')}>新建页面</Button><Button onClick={()=>setImports(true)}>导入会话</Button><Button onClick={()=>setQuestion(true)}>确认弹窗</Button><Button onClick={()=>setPathOpen(true)}>路径表单</Button><Button onClick={()=>setMode('pan')}>手势检查</Button><Button onClick={()=>setMode('theme')}>终端配色</Button><Button onClick={()=>setDirectory(true)}>目录选择</Button><Button onClick={()=>setTask(true)}>任务手势</Button></nav>
+    <nav style={{display:'flex',gap:8,flexWrap:'wrap'}}><Button onClick={()=>setDraft(true)}>草稿任务</Button><Button onClick={()=>setMode('new')}>新建页面</Button><Button onClick={()=>setImports(true)}>导入会话</Button><Button onClick={()=>setQuestion(true)}>确认弹窗</Button><Button onClick={()=>setPathOpen(true)}>路径表单</Button><Button onClick={()=>setMode('pan')}>手势检查</Button><Button onClick={()=>setMode('theme')}>终端配色</Button><Button onClick={()=>setDirectory(true)}>目录选择</Button><Button onClick={()=>setTask(true)}>任务手势</Button></nav>
     {mode==='new'?<NewSessionPage dir="~/" onCancel={()=>{}} onOpened={()=>{}}/>:mode==='theme'?<TerminalThemeSection/>:<ContentPan/>}
+    {draft&&<DraftTask onClose={()=>setDraft(false)}/>}
     <TaskPan open={task} onClose={()=>setTask(false)}/>
     <DirPicker open={directory} onOpenChange={setDirectory} machine="fixture" fixed onPick={()=>{}}/>
     <ImportDialog open={imports} onOpenChange={setImports} onImported={()=>{}}/>
     <Dialog open={question} onOpenChange={setQuestion}><DialogContent><DialogTitle>删除启动方式？</DialogTitle><p>测试条目</p><DialogFooter><Button onClick={()=>setQuestion(false)}>取消</Button><Button onClick={()=>setQuestion(false)}>删除</Button></DialogFooter></DialogContent></Dialog>
-    <Dialog open={pathOpen} onOpenChange={setPathOpen}><TaskOverlay purpose="edit" data-pan-form><DialogTitle>选择目录</DialogTitle><PathField machine="fixture" value={path} onValueChange={setPath}/><output data-form-pan-result>{result}</output><DialogFooter><Button onMouseDown={e=>e.preventDefault()} onClick={()=>{
+    <Dialog open={pathOpen} onOpenChange={setPathOpen}><TaskOverlay purpose="edit" data-pan-form><DialogTitle>选择目录</DialogTitle><PathField machine="fixture" value={path} onValueChange={setPath}/><output data-form-pan-result>{result}</output><TaskActions cancel={<Button onClick={()=>setPathOpen(false)}>取消</Button>} tools={<Button onMouseDown={e=>e.preventDefault()} onClick={()=>{
       const root=document.querySelector('[data-pan-form]')!, target=root.querySelector('[data-menu-viewport] button')!;
       const prevented=pan(target,false);setResult(JSON.stringify({prevented,pulling:root.hasAttribute('data-sheet-pulling'),dragged:root.hasAttribute('data-sheet-dragged'),pull:(root as HTMLElement).style.getPropertyValue('--sheet-pull')}));
-    }}>下滑推荐菜单</Button><Button onClick={()=>setPathOpen(false)}>取消</Button></DialogFooter></TaskOverlay></Dialog>
+    }}>下滑推荐菜单</Button>}/></TaskOverlay></Dialog>
   </main></TooltipProvider></SettingsProvider>;
 }
 createRoot(document.getElementById('root')!).render(<Proof/>);

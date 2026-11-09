@@ -9,6 +9,8 @@ import { gui } from "@/gen/catalog";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 
 import { Fault } from "@/components/Fault";
+import { Button } from "@/components/ui/button";
+import { IconBack, IconClose } from "@/components/icons";
 import { cn } from "@/lib/utils";
 
 function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
@@ -61,11 +63,14 @@ function DialogContent({
   maxHeight,
   dismiss: dismissMode,
   scrollable = false,
+  onRequestDismiss,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & Omit<OverlayOptions,"purpose"> & {
   purpose?: OverlayOptions["purpose"];
   /** Long tasks put their one scroller in DialogBody. */
   scrollable?: boolean;
+  /** All implicit exits share the task's cancellation/step policy. */
+  onRequestDismiss?: () => void;
 }) {
   const narrow=useWindowNarrow();
   const policy=overlayPolicy({purpose,initialHeight,maxHeight,dismiss:dismissMode},narrow);
@@ -90,7 +95,10 @@ function DialogContent({
   // State, not a ref: the content mounts when the dialog opens, after
   // this component did, and the sheet's listeners need that moment.
   const [sheet, setSheet] = React.useState<HTMLDivElement | null>(null);
-  const dismiss = React.useCallback(() => close.current?.click(), []);
+  const dismiss = React.useCallback(() => {
+    if (onRequestDismiss) onRequestDismiss();
+    else close.current?.click();
+  }, [onRequestDismiss]);
   // Every dialog follows the visible viewport, including short alerts that
   // may open while a keyboard is already up. Never use innerHeight as the
   // keyboard cover on WKWebView (lib/viewport).
@@ -167,6 +175,7 @@ function DialogContent({
           const scrim=target instanceof Element && !!target.closest('[data-scrim]');
           if (!policy.outside || (policy.presentation==='sheet' && !scrim)) e.preventDefault();
           onInteractOutside?.(e);
+          if (!e.defaultPrevented && onRequestDismiss) { e.preventDefault(); dismiss(); }
         }}
         className={cn(
           // components/Dialog: `dialog-w` 380 for a question, 32rem for a
@@ -201,6 +210,7 @@ function DialogContent({
             return;
           }
           props.onEscapeKeyDown?.(e);
+          if (!e.defaultPrevented && onRequestDismiss) { e.preventDefault(); dismiss(); }
         }}
       >
         {/* **On a phone a form is a sheet** (the audit fix plan F7.4;
@@ -208,7 +218,7 @@ function DialogContent({
             the bottom, rides above the soft keyboard, and the grabber is
             where a finger pulls it down to put it away. Drawn only on
             the narrow face. */}
-        {policy.task && <button type="button" data-sheet-grabber data-resizable={taskSheet.resizable || undefined} tabIndex={taskSheet.resizable ? 0 : -1} aria-label={taskSheet.detent==='half'?gui.content_expand_sheet:gui.content_collapse_sheet} aria-hidden={!taskSheet.resizable || undefined} onClick={taskSheet.resizable?taskSheet.cycle:undefined}><span/></button> }
+        {policy.task && (taskSheet.resizable || policy.dismissible) && <button type="button" data-sheet-grabber data-resizable={taskSheet.resizable || undefined} tabIndex={taskSheet.resizable ? 0 : -1} aria-label={taskSheet.detent==='half'?gui.content_expand_sheet:gui.content_collapse_sheet} aria-hidden={!taskSheet.resizable || undefined} onClick={taskSheet.resizable?taskSheet.cycle:undefined}><span/></button> }
         {/* A dialog that fails to draw says so inside its own frame
             (`components/Fault`), and Esc still puts it away. */}
         <Fault name="dialog">{children}</Fault>
@@ -222,19 +232,100 @@ function DialogContent({
   );
 }
 
-/** A task's public entry point: the page supplies intent and content slots;
- * the shared policy chooses dialog/sheet, focus, stops and dismissal. */
-function TaskOverlay(props: Omit<React.ComponentProps<typeof DialogContent>, "purpose"> & {purpose: TaskPurpose}) {
-  return <DialogContent {...props}/>;
+type TaskButton = React.ReactElement<React.ComponentProps<typeof Button>>;
+type TaskActionSlots = {
+  cancel?: TaskButton;
+  back?: TaskButton;
+  close?: TaskButton;
+  primary?: TaskButton | false | null;
+  tools?: React.ReactNode;
+  /** Only uncommitted edits; never mark persisted management changes dirty. */
+  dirty?: boolean;
+  /** Non-cancellable write in progress. Authentication can supply a Close that aborts. */
+  busy?: boolean;
+};
+type TaskSlots = {
+  title: (title: React.ReactNode) => void;
+  actions: (actions: TaskActionSlots | null) => void;
+};
+const TaskContext = React.createContext<TaskSlots | null>(null);
+
+/** Semantic actions may be declared beside their state, even in a child form.
+ * Only the common frame chooses where they are drawn. No label inspection. */
+function TaskActions(props: TaskActionSlots) {
+  const slots = React.useContext(TaskContext);
+  const {cancel, back, close, primary, tools, dirty, busy} = props;
+  React.useLayoutEffect(() => {
+    slots?.actions({cancel, back, close, primary, tools, dirty, busy});
+  }, [slots, cancel, back, close, primary, tools, dirty, busy]);
+  React.useLayoutEffect(() => () => slots?.actions(null), [slots]);
+  return null;
+}
+
+/** Persistent decks opt out explicitly; all tasks share semantic chrome. */
+function TaskOverlay({layout = "task", ...props}: Omit<React.ComponentProps<typeof DialogContent>, "purpose"> & {purpose: TaskPurpose; layout?: "task" | "content"}) {
+  return layout === "content" ? <DialogContent {...props}/> : <TaskFrame {...props}/>;
+}
+function TaskFrame({children, ...props}: Omit<React.ComponentProps<typeof DialogContent>, "purpose"> & {purpose: TaskPurpose}) {
+  const [title, setTitle] = React.useState<React.ReactNode>(null);
+  const [actions, setActions] = React.useState<TaskActionSlots | null>(null);
+  const [discarding, setDiscarding] = React.useState(false);
+  const frame = React.useRef<HTMLDivElement>(null);
+  const close = React.useRef<HTMLButtonElement>(null);
+  const slots = React.useMemo<TaskSlots>(() => ({title:setTitle, actions:setActions}), []);
+  const role = actions?.back ? "back" : actions?.cancel ? "cancel" : "close";
+  const source = actions?.back ?? actions?.cancel ?? actions?.close;
+  const leave = () => {
+    const button = frame.current?.parentElement?.querySelector<HTMLButtonElement>('[data-task-action="leading"] button');
+    button?.click();
+  };
+  const requestDismiss = () => {
+    if (actions?.busy) return;
+    if (actions?.dirty) setDiscarding(true);
+    else leave();
+  };
+  const leading = source ?? <Button onClick={() => close.current?.click()}>{gui.close}</Button>;
+  return <>
+    <DialogContent {...props} scrollable data-task-frame data-task-leading-role={role} data-task-footer={role !== "close" || actions?.primary || actions?.tools ? "" : undefined} onRequestDismiss={requestDismiss}>
+      <div data-task-heading>{title}</div>
+      <div data-task-action="leading" data-task-role={role}>
+        {React.cloneElement(leading, {
+          type: "button", disabled: actions?.busy || leading.props.disabled,
+          variant: role === "close" ? "ghost" : "default",
+          "aria-label": role === "close" ? gui.close : leading.props["aria-label"],
+          children: role === "close" ? <IconClose className="size-icon-mark"/> : role === "back" ? <><IconBack className="size-icon-mark"/>{leading.props.children}</> : leading.props.children,
+        })}
+      </div>
+      {actions?.primary && <div data-task-action="primary">{React.cloneElement(actions.primary, {variant:"primary", disabled:actions.busy || actions.primary.props.disabled, "aria-busy":actions.busy || actions.primary.props["aria-busy"]})}</div>}
+      <div ref={frame} data-slot="dialog-body" className="flex min-h-0 min-w-0 flex-1 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain">
+        <TaskContext.Provider value={slots}>{children}</TaskContext.Provider>
+      </div>
+      {actions?.tools && <div data-task-tools className="flex min-w-0 flex-wrap gap-in">{actions.tools}</div>}
+      <DialogPrimitive.Close ref={close} hidden tabIndex={-1} aria-hidden="true"/>
+    </DialogContent>
+    <Dialog open={discarding} onOpenChange={setDiscarding}>
+      <DialogContent data-task-discard>
+        <DialogTitle>{gui.watch_unsaved}</DialogTitle>
+        <DialogFooter>
+          <Button onClick={() => setDiscarding(false)}>{gui.tab_close_keep}</Button>
+          <Button variant="destructive" onClick={() => {setDiscarding(false); leave();}}>{gui.tab_close_drop}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  </>;
 }
 
 /** One scrolling content region in a long dialog, between its fixed title
  * and actions. min-height:0 lets it yield to the keyboard and short windows. */
 function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
+  const task = React.useContext(TaskContext);
+  if (task) return <div data-task-content className={cn("flex min-w-0 flex-col gap-row", className)} {...props}/>;
   return <div data-slot="dialog-body" className={cn("flex min-h-0 min-w-0 flex-1 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain", className)} {...props} />;
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
+  const task = React.useContext(TaskContext);
+  if (task) return <>{props.children}</>;
   return (
     <div
       data-slot="dialog-header"
@@ -257,6 +348,13 @@ function DialogFooter({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
+  const task = React.useContext(TaskContext);
+  const {children, ref, tabIndex, id} = props;
+  React.useLayoutEffect(() => {
+    task?.title(<DialogPrimitive.Title data-slot="dialog-title" className={cn("text-title-md font-title", className)} ref={ref} tabIndex={tabIndex} id={id}>{children}</DialogPrimitive.Title>);
+  }, [task, children, className, ref, tabIndex, id]);
+  React.useLayoutEffect(() => () => task?.title(null), [task]);
+  if (task) return null;
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
@@ -284,6 +382,7 @@ export {
   DialogClose,
   DialogContent,
   TaskOverlay,
+  TaskActions,
   DialogBody,
   DialogDescription,
   DialogFooter,

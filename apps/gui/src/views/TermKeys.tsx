@@ -51,7 +51,7 @@ import { IconAttach, IconChevronDown, IconChevronRight, IconChevronUp, IconGrip,
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, TaskOverlay, DialogTitle, DialogBody } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogTitle, DialogBody } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { afterKey, GROUPS, KEYS, keyDefinition, pressLatch, resetKeyRow, setKeyRow, useKeyRow, useKeyRowState, type KeyDef, type Mods } from "@/lib/term-keys";
@@ -414,11 +414,11 @@ const nameOf = (k: KeyDef) => k.label ?? k.cap;
 function KeyActionFailure({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent purpose="confirmation">
+      <TaskOverlay purpose="preview" initialHeight="fit">
         <DialogTitle>{gui.term_key_row}</DialogTitle>
         <p role="alert" className="text-body">{gui.key_row_unsupported}</p>
-        <Button className="min-h-touch self-end" onClick={() => onOpenChange(false)}>{gui.edit_done}</Button>
-      </DialogContent>
+        <TaskActions close={<Button onClick={() => onOpenChange(false)}>{gui.close}</Button>}/>
+      </TaskOverlay>
     </Dialog>
   );
 }
@@ -426,20 +426,18 @@ function KeyActionFailure({ open, onOpenChange }: { open: boolean; onOpenChange:
 /** Settings and the keyboard panel share one device-local row editor. */
 export function KeyRowEditor({open,onOpenChange}: {open:boolean;onOpenChange:(open:boolean)=>void}) {
   const coarse=useCoarse(),wake=useTermWake(),keysHw=useTermKeysHw(),haptic=useTermJoyHaptic();
-  const [editing,setEditing]=useState<CustomKeyEntry|null>(),[canSave,setCanSave]=useState(false);
+  const [editing,setEditing]=useState<CustomKeyEntry|null>(),[canSave,setCanSave]=useState(false),[dirty,setDirty]=useState(false);
   const formId=useId();
-  const edit=(entry:CustomKeyEntry|null|undefined)=>{setCanSave(false);setEditing(entry);};
+  const edit=(entry:CustomKeyEntry|null|undefined)=>{setCanSave(false);setDirty(false);setEditing(entry);};
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" dismiss="explicit" scrollable data-key-row-editor className="w-[min(56rem,calc(100%-2rem))]"
+    <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" scrollable data-key-row-editor className="w-[min(56rem,calc(100%-2rem))]"
       onOpenAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>document.querySelector<HTMLElement>('[data-key-row-done]')?.focus({preventScroll:true}));}}>
-      <div className="flex items-center gap-row">
-        {editing!==undefined&&<Button data-key-entry-cancel-visible className="min-h-touch" variant="ghost" onClick={()=>edit(undefined)}>{gui.delete_keep}</Button>}
-        <DialogTitle className="min-w-0 flex-1">{editing===undefined?gui.term_key_row:editing?gui.key_row_edit:gui.key_row_add}</DialogTitle>
-        {editing===undefined?<button type="button" data-key-row-done onClick={()=>onOpenChange(false)} className="flex min-h-touch flex-none items-center text-body font-label">{gui.edit_done}</button>:
-          <Button type="submit" form={formId} data-key-entry-save className="min-h-touch" variant="primary" disabled={!canSave}>{gui.edit_done}</Button>}
-      </div>
+      <DialogTitle>{editing===undefined?gui.term_key_row:editing?gui.key_row_edit:gui.key_row_add}</DialogTitle>
+      {editing===undefined ? <TaskActions close={<Button data-key-row-done onClick={()=>onOpenChange(false)}>{gui.close}</Button>}/> :
+        <TaskActions dirty={dirty} back={<Button data-key-entry-cancel-visible onClick={()=>edit(undefined)}>{gui.back}</Button>}
+          primary={<Button type="submit" form={formId} data-key-entry-save disabled={!canSave}>{gui.watch_save}</Button>}/>}
       <DialogBody className="flex min-w-0 flex-col gap-row">
-        <KeyRowList editing={editing} setEditing={edit} formId={formId} onReady={setCanSave}/>
+        <KeyRowList editing={editing} setEditing={edit} formId={formId} onReady={setCanSave} onDirty={setDirty}/>
         {editing===undefined&&coarse&&<div data-key-row-preferences className="flex flex-col rounded-lg bg-grouped">
           <PopupRow name="term-wake" label={gui.term_wake} value={wake} choices={WAKES.map(w=>({value:w,label:{auto:gui.term_wake_auto,screen:gui.term_wake_screen,button:gui.term_wake_button}[w]}))} onPick={w=>setTermWake(w as Wake)}/>
           <SwitchRow name="term-keys-hw" label={gui.term_keys_hw} on={keysHw} onToggle={()=>setTermKeysHw(!keysHw)}/>
@@ -451,7 +449,7 @@ export function KeyRowEditor({open,onOpenChange}: {open:boolean;onOpenChange:(op
 }
 
 /** The editor's list: the seats, their switches and grips. */
-function KeyRowList({editing,setEditing,formId,onReady}: {editing:CustomKeyEntry|null|undefined;setEditing:(entry:CustomKeyEntry|null|undefined)=>void;formId:string;onReady:(ready:boolean)=>void}) {
+function KeyRowList({editing,setEditing,formId,onReady,onDirty}: {editing:CustomKeyEntry|null|undefined;setEditing:(entry:CustomKeyEntry|null|undefined)=>void;formId:string;onReady:(ready:boolean)=>void;onDirty:(dirty:boolean)=>void}) {
   const { entries: row, problem, temporary } = useKeyRowState();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -503,7 +501,7 @@ function KeyRowList({editing,setEditing,formId,onReady}: {editing:CustomKeyEntry
       {error && <p role="alert" className="text-callout text-destructive">{gui.key_row_invalid}</p>}
       {editing === undefined && problem === null && row.length < KEY_ROW_LIMITS.entries && <Button data-key-row-add className="min-h-touch my-in self-start" onClick={() => { setError(false); setEditing(null); }}>{gui.key_row_add}</Button>}
       {editing !== undefined && problem === null ? (
-        <KeyRowEntryEditor key={editing?.id ?? "new"} formId={formId} onReady={onReady} entry={editing} onSave={save} onDelete={editing ? remove : undefined} />
+        <KeyRowEntryEditor key={editing?.id ?? "new"} formId={formId} onReady={onReady} onDirty={onDirty} entry={editing} onSave={save} onDelete={editing ? remove : undefined} />
       ) : row.map((s) => {
         const k = keyDefinition(s);
         if (!k) return null;

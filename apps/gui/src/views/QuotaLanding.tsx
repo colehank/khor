@@ -66,14 +66,7 @@ import { SideList, type SideRow } from "@/components/SideList";
 import { rowWindow } from "@/lib/row-facts";
 import { DIAL_CARD_RATIO, DIAL_CARD_SIZE, DIAL_CARD_STROKE, Face, type Pip } from "@/components/Face";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  TaskOverlay,
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogBody, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { PopupButton } from "@/components/ui/popup-button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -2284,11 +2277,9 @@ function EditDialog({
             </p>
           )}
         </div>
-        <DialogFooter>
-          <Button variant="primary" data-quota-save disabled={busy} aria-busy={busy || undefined} onClick={save}>
-            {gui.accounts_edit}
-          </Button>
-        </DialogFooter>
+        <TaskActions busy={busy} dirty={name !== acc.reading.name || baseUrl !== (acc.base_url ?? "") || !!key || budget !== (acc.budget == null ? "" : String(acc.budget)) || unit !== (acc.unit ?? "")} cancel={<Button data-dialog-cancel onClick={onClose}>{gui.delete_keep}</Button>} primary={<Button variant="primary" data-quota-save disabled={busy} aria-busy={busy || undefined} onClick={save}>
+            {gui.watch_save}
+          </Button>}/>
       </TaskOverlay>
     </Dialog>
   );
@@ -2452,14 +2443,11 @@ export function RegisterDialog({
           )}
         </FormGrid>
         </DialogBody>
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+        <TaskActions busy={busy} dirty={!!(name || baseUrl || key || budget)} cancel={<Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.delete_keep}
-          </Button>
-          <Button variant="primary" data-quota-create disabled={busy} aria-busy={busy || undefined} onClick={create}>
+          </Button>} primary={<Button variant="primary" data-quota-create disabled={busy} aria-busy={busy || undefined} onClick={create}>
             {gui.accounts_register}
-          </Button>
-        </DialogFooter>
+          </Button>}/>
         </>}
       </TaskOverlay>
     </Dialog>

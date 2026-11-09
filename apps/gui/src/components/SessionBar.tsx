@@ -733,7 +733,7 @@ export function TabSheetRows({faces,active,onFocus,onClose,onNew,newLabel,canClo
 }
 export function TabSheet({open,onOpenChange,...rows}: TabSheetRowsProps & {open:boolean;onOpenChange:(open:boolean)=>void}) {
   return <Dialog open={open} onOpenChange={onOpenChange}>
-    <TaskOverlay purpose="selection" data-tab-sheet className="!gap-0 overflow-y-auto">
+    <TaskOverlay layout="content" purpose="selection" data-tab-sheet className="!gap-0 overflow-y-auto">
       <DialogTitle className="sr-only">{gui.session_tabs}</DialogTitle>
       <TabSheetRows {...rows}/>
     </TaskOverlay>

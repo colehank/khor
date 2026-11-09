@@ -5,7 +5,7 @@ import { config, gui } from "@/gen/catalog";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, TaskOverlay, TaskActions, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { ANSI_KEYS, BASE_KEYS, PRESETS, THEME_FAMILIES, DEFAULT_CONTRAST, colorHex, clonePalette, importPalette, readPalette, removePalette, savePalette, setTermTheme, termTheme, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
 import { useWindowSupport } from "@/lib/window-surface";
 
@@ -44,6 +44,7 @@ export function TerminalThemeSection() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [editor, setEditor] = useState<{ name: string; theme: Palette; id?: string } | null>(null);
   const lastPreview = useRef<Palette | null>(null);
+  const draftStart = useRef("");
   const [extra, setExtra] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -54,7 +55,7 @@ export function TerminalThemeSection() {
   const names = [{ value: "follow", label: gui.term_theme_follow },{value:"custom",label:gui.term_theme_customize}, ...THEME_FAMILIES.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_automatic })), ...PRESETS.map(p => ({ value: p.id, label: ({ soft: gui.term_theme_soft, warm: gui.term_theme_warm, contrast: gui.term_theme_contrast } as Record<string, string>)[p.id] ?? p.name, group: gui.term_theme_presets })), ...choice.customs.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_mine }))];
   const selectedName = names.find(n => n.value === choice.selected)?.label ?? gui.term_theme_follow;
   const clone = () => clonePalette(sectionRef.current ?? document.body);
-  const edit = () => { setError(null); const theme = clone(); lastPreview.current = theme; setEditor({ name: (!making&&custom?.name) || gui.term_theme_copy_name(selectedName), theme, id: making?undefined:custom?.id }); setExtra(theme.extendedAnsi?.join(" ") ?? ""); };
+  const edit = () => { setError(null); const theme = clone(); lastPreview.current = theme; setEditor({ name: (!making&&custom?.name) || gui.term_theme_copy_name(selectedName), theme, id: making?undefined:custom?.id }); setExtra(theme.extendedAnsi?.join(" ") ?? ""); draftStart.current = JSON.stringify({name:(!making&&custom?.name) || gui.term_theme_copy_name(selectedName),theme,extra:theme.extendedAnsi?.join(" ") ?? ""}); };
   let valid: Palette | null = null;
   let invalid: string | null = null;
   if (editor) try {
@@ -121,7 +122,7 @@ export function TerminalThemeSection() {
           <details className="text-callout"><summary>{gui.term_theme_extended}</summary><p className="my-in text-muted-foreground">{gui.term_theme_extended_note}</p><textarea data-term-theme-extended aria-label={gui.term_theme_extended} value={extra} onChange={e => setExtra(e.target.value)} spellCheck={false} className="h-24 w-full rounded-sm border bg-fill p-in font-mono text-callout" /></details>
           {(invalid || error) && <p role="status" className="text-callout text-destructive">{invalid ?? error}</p>}
           </DialogBody>
-          <DialogFooter><div className="mr-auto flex flex-wrap gap-in"><Button data-term-theme-export onClick={()=>void exportFile()}>{gui.term_theme_export}</Button>{editor.id && <Button data-term-theme-remove variant="ghost" onClick={()=>setRemoving({id:editor.id!,name:editor.name})}>{gui.remove}</Button>}</div><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setMaking(false); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
+          <TaskActions dirty={JSON.stringify({name:editor.name,theme:editor.theme,extra}) !== draftStart.current} tools={<><Button data-term-theme-export onClick={()=>void exportFile()}>{gui.term_theme_export}</Button>{editor.id && <Button data-term-theme-remove variant="ghost" onClick={()=>setRemoving({id:editor.id!,name:editor.name})}>{gui.remove}</Button>}</>} cancel={<Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button>} primary={<Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setMaking(false); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button>}/>
         </>}
       </TaskOverlay>
     </Dialog>

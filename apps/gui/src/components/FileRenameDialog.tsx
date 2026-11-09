@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 
@@ -18,18 +18,21 @@ export function RenameDialog({
   onClose: () => void;
   onRename: (name: string) => Promise<void>;
 }) {
+  const [busy,setBusy]=useState(false);
   const [value, setValue] = useState(name);
   const [refused, setRefused] = useState<string | null>(null);
   useEffect(() => {
     if (open) {
+      setBusy(false);
       setValue(name);
       setRefused(null);
     }
   }, [open, name]);
   const go = () => {
     const v = value.trim();
-    if (!v || v.includes("/")) return;
-    onRename(v).then(onClose, (e: unknown) => setRefused(String((e as Error)?.message ?? e)));
+    if (busy || !v || v.includes("/")) return;
+    setBusy(true);
+    onRename(v).then(onClose, (e: unknown) => setRefused(String((e as Error)?.message ?? e))).finally(()=>setBusy(false));
   };
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -45,14 +48,11 @@ export function RenameDialog({
           onKeyDown={(e) => e.key === "Enter" && !e.nativeEvent.isComposing && go()}
         />
         {refused && <span className="text-callout text-state-failed">{refused}</span>}
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={onClose}>
+        <TaskActions busy={busy} dirty={value !== name} cancel={<Button data-dialog-cancel onClick={onClose}>
             {gui.delete_keep}
-          </Button>
-          <Button variant="primary" data-file-rename-go onClick={go}>
+          </Button>} primary={<Button variant="primary" data-file-rename-go onClick={go}>
             {gui.rename}
-          </Button>
-        </DialogFooter>
+          </Button>}/>
       </TaskOverlay>
     </Dialog>
   );

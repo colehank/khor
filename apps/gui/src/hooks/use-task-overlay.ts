@@ -10,6 +10,15 @@ function contentHeight(el: HTMLElement): number {
   const css=getComputedStyle(el);
   const px=(value:string)=>parseFloat(value)||0;
   const children=[...el.children].filter((child):child is HTMLElement=>child instanceof HTMLElement&&getComputedStyle(child).display!=='none'&&!['absolute','fixed'].includes(getComputedStyle(child).position));
+  if (el.hasAttribute('data-task-frame')) {
+    const rows=new Map<number,number>();
+    for (const child of children) {
+      const row=parseInt(getComputedStyle(child).gridRowStart)||0;
+      const height=child.dataset.slot==='dialog-body'?contentHeight(child):child.offsetHeight;
+      rows.set(row,Math.max(rows.get(row)??0,height));
+    }
+    return px(css.paddingTop)+px(css.paddingBottom)+px(css.borderTopWidth)+px(css.borderBottomWidth)+Math.max(0,rows.size-1)*px(css.rowGap)+[...rows.values()].reduce((sum,height)=>sum+height,0);
+  }
   return px(css.paddingTop)+px(css.paddingBottom)+px(css.borderTopWidth)+px(css.borderBottomWidth)+Math.max(0,children.length-1)*px(css.rowGap)+children.reduce((height,child)=>{
     const style=getComputedStyle(child);
     const intrinsic=child.dataset.slot==='dialog-body'?contentHeight(child):child.offsetHeight+Math.max(0,child.scrollHeight-child.clientHeight);

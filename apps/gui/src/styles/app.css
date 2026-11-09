@@ -905,6 +905,54 @@ aside[data-side] {
   line-height: var(--text-headline--line-height);
 }
 
+/* Task action positions belong to this frame, never to individual pages.
+   The same buttons stay mounted when the window crosses the breakpoint. */
+[data-slot="dialog-content"][data-task-frame] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--gap-row);
+  overflow: hidden;
+}
+[data-slot="dialog-content"][data-task-frame][data-task-footer] { grid-template-rows: auto minmax(0, 1fr) auto; }
+[data-task-frame] > [data-task-heading] {
+  grid-area: 1 / 1 / 2 / 4;
+  min-width: 0;
+  align-self: center;
+  overflow-wrap: anywhere;
+}
+[data-task-frame][data-task-leading-role="close"] > [data-task-heading] { grid-column-end: 3; }
+[data-task-frame] > [data-slot="dialog-body"] {
+  grid-area: 2 / 1 / 3 / 4;
+  align-self: stretch;
+}
+[data-task-frame] > [data-task-action="leading"] { grid-area: 3 / 2; }
+[data-task-frame] > [data-task-action="primary"] { grid-area: 3 / 3; }
+[data-task-frame][data-task-leading-role="close"] > [data-task-action="leading"] { grid-area: 1 / 3; }
+[data-task-frame] > [data-task-tools] { grid-area: 3 / 1; }
+[data-task-frame] > [data-task-action] { justify-self: end; }
+[data-task-frame] > [data-task-action] > button { min-height: var(--ctl-md); }
+[data-task-frame] > [data-task-action][data-task-role="close"] > button { width: var(--ctl-md); padding-inline: 0; }
+[data-narrow] [data-slot="dialog-content"][data-task-frame] {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+[data-narrow] [data-task-frame] > [data-task-heading],
+[data-narrow] [data-task-frame][data-task-leading-role="close"] > [data-task-heading] {
+  grid-area: 1 / 2;
+  text-align: center;
+}
+[data-narrow] [data-task-frame] > [data-task-heading] [data-slot="dialog-title"] {
+  font-size: var(--text-headline);
+  line-height: var(--text-headline--line-height);
+}
+[data-narrow] [data-task-frame] > [data-task-action="leading"],
+[data-narrow] [data-task-frame][data-task-leading-role="close"] > [data-task-action="leading"] { grid-area: 1 / 1; justify-self: start; }
+[data-narrow] [data-task-frame] > [data-task-action="primary"] { grid-area: 1 / 3; }
+[data-narrow] [data-task-frame] > [data-task-tools] { grid-area: 3 / 1 / 4 / 4; }
+[data-narrow] [data-task-frame] > [data-task-action] > button { min-width: var(--touch); min-height: var(--touch); }
+
 /* **A back swipe** (`hooks/use-edge-swipe`, F7.3; V01): the page —
    its first row and its screen — follows the finger (`--swipe`) over
    the page it came from, which is drawn whole under it

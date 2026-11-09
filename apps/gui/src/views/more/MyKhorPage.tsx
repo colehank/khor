@@ -438,7 +438,7 @@ export function MyKhorPage({
         )}
       {narrow && (
         <Dialog open={opened !== null && card !== null} onOpenChange={(o) => !o && close()}>
-          <TaskOverlay
+          <TaskOverlay layout="content"
             purpose="preview" initialHeight="fit"
             data-dial-sheet
             data-dial-card

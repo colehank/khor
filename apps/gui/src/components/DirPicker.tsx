@@ -16,14 +16,7 @@ import { useEffect, useState } from "react";
 import { fetchDevices, type DeviceRow } from "@/api";
 import { PathField, settledPath } from "@/components/PathField";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  TaskOverlay,
-  DialogBody,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogBody, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MachineField } from "@/components/MachineField";
 import { FormGrid, FormLabel } from "@/components/ui/form-grid";
 import { gui } from "@/gen/catalog";
@@ -168,11 +161,9 @@ export function DirPicker({
           )}
         </FormGrid>
         </DialogBody>
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
+        <TaskActions busy={taking} cancel={<Button data-dialog-cancel onClick={() => onOpenChange(false)} className="min-h-touch">
             {gui.delete_keep}
-          </Button>
-          <Button
+          </Button>} primary={<Button
             variant="primary"
             data-dir-picker-take
             disabled={taking || pending}
@@ -182,8 +173,7 @@ export function DirPicker({
             className="min-h-touch"
           >
             {gui.dir_picker_take}
-          </Button>
-        </DialogFooter>
+          </Button>}/>
       </TaskOverlay>
     </Dialog>
   );

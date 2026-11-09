@@ -5,6 +5,7 @@ import {createServer} from 'vite';
 import {fileURLToPath} from 'node:url';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
+import {mkdir} from 'node:fs/promises';
 const root=fileURLToPath(new URL('..',import.meta.url));
 const port=Number(process.env.DIALOGS_PORT||23604);
 let presets=Array.from({length:15},(_,i)=>({id:'preset-'+i,name:'工作流 '+(i+1),command:'codex --profile project-'+(i+1)}));
@@ -66,7 +67,7 @@ if(process.argv.includes('--serve')){
       await frame.getByRole('textbox',{name:'搜索智能体'}).fill('Poolside 38');
       assert.equal(await frame.locator('[data-launch-catalog-rows] > div').count(),1);
       await frame.getByRole('button',{name:'返回',exact:true}).click();
-      await frame.getByRole('button',{name:'完成',exact:true}).click();
+      await frame.getByRole('button',{name:'关闭',exact:true}).click();
       await frame.getByRole('button',{name:'导入会话',exact:true}).click();
       await frame.locator('[data-import-row]').last().waitFor();
       await bounded();
@@ -84,7 +85,7 @@ if(process.argv.includes('--serve')){
       const fitted=await frame.getByRole('dialog').evaluate(el=>el.getBoundingClientRect().height);
       await frame.getByRole('searchbox',{name:'搜索可导入的会话'}).fill('终端 30');
       assert(Math.abs(await frame.getByRole('dialog').evaluate(el=>el.getBoundingClientRect().height)-fitted)<1,'filter moved the import sheet');
-      await frame.getByRole('button',{name:'取消',exact:true}).click();
+      await frame.getByRole('button',{name:'关闭',exact:true}).click();
     }
     await frame.getByRole('combobox',{name:'启动方式',exact:true}).click();
     await frame.getByRole('option',{name:'管理启动方式',exact:true}).click();
@@ -128,6 +129,51 @@ if(process.argv.includes('--serve')){
     await page.waitForFunction(()=>{const el=document.querySelector('iframe').contentDocument.querySelector('[data-task-pan]');return Math.abs(el.getBoundingClientRect().height-parseFloat(el.style.getPropertyValue('--task-sheet-height')))<1;});
     await frame.getByRole('button',{name:'下滑内容',exact:true}).click();
     assert.equal(await frame.locator('[data-task-pan]').getAttribute('data-detent'),'half');
-    console.log('PASS: dialog viewport bounds, fixed actions, compact import, menu pan isolation and main-content handoff');
+    await frame.getByRole('button',{name:'取消',exact:true}).click();
+    // Same production frame: position, one scroller, responsive identity,
+    // dirty implicit exits, explicit cancellation, in-flight failure.
+    const report=process.env.FILE_HANDOFF_OUT;
+    if(report)await mkdir(report,{recursive:true});
+    for(const size of ['桌面','低窗口','手机','手机短视口']) {
+      await page.getByRole('button',{name:size,exact:true}).click();
+      await frame.getByRole('button',{name:'草稿任务',exact:true}).click();
+      const task=frame.locator('[data-task-proof]'),input=task.locator('#task-proof-name');
+      await input.fill('保留这段草稿');
+      await bounded();
+      const boxes=await task.evaluate(root=>{
+        const rect=selector=>{const b=root.querySelector(selector).getBoundingClientRect();return {top:b.top,bottom:b.bottom,left:b.left,right:b.right};};
+        return {body:rect('[data-slot="dialog-body"]'),title:rect('[data-task-heading]'),leading:rect('[data-task-action="leading"]'),primary:rect('[data-task-action="primary"]'),narrow:document.documentElement.hasAttribute('data-narrow'),legacy:root.querySelectorAll('[data-slot="dialog-footer"]').length};
+      });
+      assert.equal(boxes.legacy,0,'Task actions do not remain in a page footer');
+      assert.ok(boxes.narrow?boxes.leading.bottom<=boxes.body.top+1&&boxes.primary.bottom<=boxes.body.top+1:boxes.leading.top>=boxes.body.bottom-1&&boxes.primary.top>=boxes.body.bottom-1,'Task actions use their platform slots: '+JSON.stringify(boxes));
+      if(boxes.narrow)assert.ok(boxes.leading.right<=boxes.title.left+1&&boxes.title.right<=boxes.primary.left+1,'Long title cannot overlap actions');
+      if(report)await task.screenshot({path:path.join(report,`task-frame-${size}.png`),animations:'disabled'});
+      await input.press('Escape');
+      await frame.locator('[data-task-discard]').waitFor();
+      await frame.locator('[data-task-discard] button').first().click();
+      await frame.locator('[data-task-discard]').waitFor({state:'detached'});
+      assert.equal(await input.inputValue(),'保留这段草稿');
+      await task.locator('[data-task-proof-save]').click();
+      await input.press('Escape');
+      assert.equal(await frame.locator('[data-task-discard]').count(),0,'A non-cancellable write does not offer to discard');
+      assert.equal(await task.locator('[data-task-proof-cancel]').isDisabled(),true);
+      await task.evaluate(()=>window.failTask());
+      await task.locator('[data-task-proof-error]').waitFor();
+      assert.equal(await input.inputValue(),'保留这段草稿','Failed submit keeps edits');
+      await input.evaluate(el=>el.dataset.identity='original');
+      await page.getByRole('button',{name:size.startsWith('手机')?'桌面':'手机',exact:true}).click();
+      assert.equal(await input.getAttribute('data-identity'),'original','Reflow keeps the input mounted');
+      assert.equal(await input.inputValue(),'保留这段草稿');
+      await input.press('Escape');
+      await frame.locator('[data-task-discard]').waitFor();
+      await frame.locator('[data-task-discard] button').last().click();
+      await task.waitFor({state:'detached'});
+      await frame.getByRole('button',{name:'草稿任务',exact:true}).click();
+      await frame.locator('#task-proof-name').fill('显式取消');
+      await frame.locator('[data-task-proof-cancel]').click();
+      await frame.locator('[data-task-proof]').waitFor({state:'detached'});
+      assert.equal(await frame.locator('[data-task-discard]').count(),0);
+    }
+    console.log('PASS: task action positions, draft exits, responsive identity, async failure, viewport bounds, compact import and pan isolation');
   }finally{await browser?.close();await server.close();}
 }

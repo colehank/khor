@@ -5,7 +5,7 @@ import { SectionHead } from "@/components/SectionHead";
 import { MachineFace } from "@/components/SessionFace";
 import { Button } from "@/components/ui/button";
 import { PopupButton } from "@/components/ui/popup-button";
-import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle, TaskOverlay } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogHeader, DialogTitle, TaskOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 
 function jobLabel(job: MachineUpdateJob): string {
@@ -168,10 +168,7 @@ function MachineUpdateBatch({ open, onOpenChange, rows, updates }: {
         </div>
         {updates.failure && <p role="alert" className="text-callout text-muted-foreground">{gui.update_failed}</p>}
       </DialogBody>
-      <DialogFooter>
-        <Button onClick={() => onOpenChange(false)}>{gui.close}</Button>
-        <Button data-footer-trailing disabled={starting || !ids.length} onClick={() => void start()}>{gui.update_start}</Button>
-      </DialogFooter>
+      <TaskActions busy={starting} close={<Button onClick={() => onOpenChange(false)}>{gui.close}</Button>} primary={<Button data-footer-trailing disabled={starting || !ids.length} onClick={() => void start()}>{gui.update_start}</Button>}/>
     </TaskOverlay>
   </Dialog>;
 }

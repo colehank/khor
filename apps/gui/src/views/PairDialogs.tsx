@@ -14,13 +14,7 @@ import {
   type Waiting,
 } from "@/api";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cli, gui } from "@/gen/catalog";
 
 /**
@@ -208,7 +202,7 @@ export function RootWordsDialog({ open, onClose }: { open: boolean; onClose: () 
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent data-root-words-dialog>
+      <TaskOverlay purpose="preview" initialHeight="fit" data-root-words-dialog>
         <DialogHeader>
           <DialogTitle>{gui.root_words_title}</DialogTitle>
         </DialogHeader>
@@ -228,12 +222,10 @@ export function RootWordsDialog({ open, onClose }: { open: boolean; onClose: () 
             {error}
           </div>
         )}
-        <DialogFooter>
-          <Button data-root-words-done onClick={onClose}>
+        <TaskActions close={<Button data-root-words-done onClick={onClose}>
             {gui.close}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+          </Button>}/>
+      </TaskOverlay>
     </Dialog>
   );
 }

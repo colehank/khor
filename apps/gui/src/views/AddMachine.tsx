@@ -38,7 +38,7 @@ import { MachineAvatar } from "@/components/Avatar";
 import { IconCheck, IconChevronRight, IconClose } from "@/components/icons";
 import { Switch } from "@/components/settings/Switch";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { AddRun } from "@/gen/bindings/AddRun";
@@ -490,14 +490,11 @@ export function AddMachineDialog({
             </Group>
             <Failure text={error} />
           </Body>
-          <DialogFooter>
-            <Button data-dialog-cancel onClick={close}>
+          <TaskActions dirty={JSON.stringify(form) !== JSON.stringify(blank) || !!secret} cancel={<Button data-dialog-cancel onClick={close}>
               {gui.delete_keep}
-            </Button>
-            <Button variant="primary" data-add-go onClick={add}>
+            </Button>} primary={<Button variant="primary" data-add-go onClick={add}>
               {gui.watch_add}
-            </Button>
-          </DialogFooter>
+            </Button>}/>
         </>
       );
       break;
@@ -714,12 +711,9 @@ function TicketPage({ machines, onClose, onJoined }: {
           {camera === "failed" && <p data-scan-failed className="text-callout text-destructive">{gui.scan_no_camera}</p>}
         </div>}
     </Body>
-    <DialogFooter>
-      <Button data-dialog-cancel onClick={onClose}>{outcome !== null || joined ? gui.edit_done : gui.close}</Button>
-      {outcome === null && mode === "join" && <Button variant="primary" data-join
+    <TaskActions close={<Button data-dialog-cancel onClick={onClose}>{gui.close}</Button>} primary={outcome === null && mode === "join" && <Button variant="primary" data-join
         disabled={joining || !theirs.trim()} aria-busy={joining || undefined}
-        onClick={() => joinWith(theirs)}>{gui.join_with_a_ticket}</Button>}
-    </DialogFooter>
+        onClick={() => joinWith(theirs)}>{gui.join_with_a_ticket}</Button>}/>
     {scanning && <ScanLayer />}
   </>;
 }
@@ -890,11 +884,9 @@ function JumpPage({
           </Group>
         )}
       </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={() => (other.trim() ? pick(other.trim()) : onDone())}>
+      <TaskActions back={<Button data-dialog-cancel onClick={() => (other.trim() ? pick(other.trim()) : onDone())}>
           {gui.back}
-        </Button>
-      </DialogFooter>
+        </Button>}/>
     </>
   );
 }
@@ -968,11 +960,9 @@ function AuthPage({ form, set, onDone }: { form: Form; set: (f: Partial<Form>) =
           </Group>
         )}
       </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={onDone}>
+      <TaskActions back={<Button data-dialog-cancel onClick={onDone}>
           {gui.back}
-        </Button>
-      </DialogFooter>
+        </Button>}/>
     </>
   );
 }
@@ -1016,11 +1006,9 @@ function ProxyPage({ form, khorMachines, onBack }: { form: Form; khorMachines: D
           </>
         )}
       </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={onBack}>
+      <TaskActions back={<Button data-dialog-cancel onClick={onBack}>
           {gui.back}
-        </Button>
-      </DialogFooter>
+        </Button>}/>
     </>
   );
 }
@@ -1120,11 +1108,9 @@ function Reachers({
         )}
         <Failure text={error} />
       </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={onBack}>
+      <TaskActions back={<Button data-dialog-cancel onClick={onBack}>
           {gui.back}
-        </Button>
-      </DialogFooter>
+        </Button>}/>
     </>
   );
 }
@@ -1229,24 +1215,9 @@ function Running({
         )}
         <Failure text={error ?? (end && !end.id && !marks.some((m) => m.state === "failed") ? end.error : null)} />
       </Body>
-      <DialogFooter>
-        {end && !end.id && onBack ? (
-          <Button data-dialog-cancel onClick={onBack}>
+      <TaskActions back={end && !end.id && onBack ? <Button data-dialog-cancel onClick={onBack}>
             {gui.back}
-          </Button>
-        ) : (
-          !end && (
-            <Button data-dialog-cancel onClick={onClose}>
-              {gui.close}
-            </Button>
-          )
-        )}
-        {end && (
-          <Button variant="primary" data-add-done data-footer-trailing onClick={onClose}>
-            {gui.edit_done}
-          </Button>
-        )}
-      </DialogFooter>
+          </Button> : undefined} close={<Button data-add-done onClick={onClose}>{gui.close}</Button>}/>
     </>
   );
 }
@@ -1305,14 +1276,11 @@ function LoginPage({
         </Group>
         <Failure text={error} />
       </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={onCancel}>
+      <TaskActions  cancel={<Button data-dialog-cancel onClick={onCancel}>
           {gui.delete_keep}
-        </Button>
-        <Button variant="primary" data-login-go onClick={go}>
+        </Button>} primary={<Button variant="primary" data-login-go onClick={go}>
           {way === "copy" ? gui.login_copy_id : gui.watch_add}
-        </Button>
-      </DialogFooter>
+        </Button>}/>
     </>
   );
 }
@@ -1339,14 +1307,11 @@ function PassphrasePage({
         </Group>
         <Failure text={error} />
       </Body>
-      <DialogFooter>
-        <Button data-dialog-cancel onClick={onCancel}>
+      <TaskActions  cancel={<Button data-dialog-cancel onClick={onCancel}>
           {gui.delete_keep}
-        </Button>
-        <Button variant="primary" data-passphrase-go onClick={go}>
+        </Button>} primary={<Button variant="primary" data-passphrase-go onClick={go}>
           {gui.watch_add}
-        </Button>
-      </DialogFooter>
+        </Button>}/>
     </>
   );
 }

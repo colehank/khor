@@ -42,7 +42,7 @@ import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { gui } from "@/gen/catalog";
 import { MoreFact, MoreSection } from "@/views/more/MorePage";
@@ -322,12 +322,9 @@ export function RelayAddDialog({
             {refused}
           </p>
         )}
-        <DialogFooter>
-          <Button onClick={onClose}>{gui.delete_keep}</Button>
-          <Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
+        <TaskActions dirty={!!(typed || typedKey)} cancel={<Button onClick={onClose}>{gui.delete_keep}</Button>} primary={<Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
             {gui.watch_add}
-          </Button>
-        </DialogFooter>
+          </Button>}/>
       </TaskOverlay>
     </Dialog>
   );

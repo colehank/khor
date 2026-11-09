@@ -5,7 +5,7 @@ import { gui } from "@/gen/catalog";
 import { Button } from "@/components/ui/button";
 import { ChoiceField } from "@/components/ui/choice-field";
 import { PiAccountDialog, PiModelField } from "@/views/PiAccount";
-import { Dialog, TaskOverlay, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogBody } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle, DialogDescription, DialogBody } from "@/components/ui/dialog";
 import { Markdown } from "@/components/Markdown";
 import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
 import { AgentConfirmation } from "@/components/ai-elements/agent";
@@ -19,6 +19,7 @@ export function KhorAgentSettings({ view, onChanged, disabled: running, openRequ
   const [saving, setSaving] = useState(false), [error, setError] = useState<string | null>(null);
   const [setup, setSetup] = useState(false), [editing, setEditing] = useState<string | undefined>();
   const title = useRef<HTMLHeadingElement>(null);
+  const draftStart = useRef("");
   const conversation = (view?.data as {conversation?:{home?:string}} | null)?.conversation;
   const accounts = session === 'wide/all' ? view?.accounts ?? [] : view?.accounts.filter(a=>a.home===conversation?.home||a.home===view.config?.home) ?? [];
   const picked = accounts.find((a) => a.id === account);
@@ -26,6 +27,7 @@ export function KhorAgentSettings({ view, onChanged, disabled: running, openRequ
     if (value) {
       const picked = accounts.find((a) => a.id === view?.config?.account) ?? accounts[0];
       setAccount(picked?.id ?? ""); setModel(view?.config?.model ?? picked?.default_model ?? ""); setError(null);
+      draftStart.current=JSON.stringify([picked?.id ?? "",view?.config?.model ?? picked?.default_model ?? ""]);
     }
     setOpen(value);
   };
@@ -52,7 +54,7 @@ export function KhorAgentSettings({ view, onChanged, disabled: running, openRequ
           {picked?.configured && <Button variant="ghost" size="sm" onClick={() => add(picked.id)}>{gui.agent_model_account}</Button>}
           {error && <p role="alert" className="text-callout text-state-failed">{error}</p>}
         </div>
-        <DialogFooter><Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>{gui.delete_keep}</Button><Button data-khor-agent-save disabled={!account || !model.trim() || picked?.configured === false || saving} onClick={() => void save()}>{gui.agent_save_and_use}</Button></DialogFooter>
+        <TaskActions dirty={JSON.stringify([account,model]) !== draftStart.current} busy={saving} cancel={<Button variant="ghost" onClick={() => setOpen(false)} disabled={saving}>{gui.delete_keep}</Button>} primary={<Button data-khor-agent-save disabled={!account || !model.trim() || picked?.configured === false || saving} onClick={() => void save()}>{gui.agent_save_and_use}</Button>}/>
       </TaskOverlay>
     </Dialog>
     <PiAccountDialog restoreFocus={false} open={setup} onOpenChange={(value) => { setSetup(value); if (!value) setOpen(true); }} account={view?.accounts.find((a) => a.id === editing)} onDone={(next, id) => {

@@ -41,7 +41,7 @@ import { PathCut } from "@/components/PathCut";
 import { PathField } from "@/components/PathField";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
-import { Dialog, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { baseName, shownName } from "@/lib/paths";
@@ -261,14 +261,11 @@ export function MachineFilePick({
           <DialogTitle>{gui.chat_attach_machine_title(shown)}</DialogTitle>
         </DialogHeader>
         <PathField machine={machine} value={value} onValueChange={setValue} onSubmit={take} files autoFocus />
-        <DialogFooter>
-          <Button data-dialog-cancel onClick={() => onOpenChange(false)}>
+        <TaskActions dirty={!!value} cancel={<Button data-dialog-cancel onClick={() => onOpenChange(false)}>
             {gui.delete_keep}
-          </Button>
-          <Button variant="primary" data-chat-machine-pick-add onClick={take}>
+          </Button>} primary={<Button variant="primary" data-chat-machine-pick-add onClick={take}>
             {gui.watch_add}
-          </Button>
-        </DialogFooter>
+          </Button>}/>
       </TaskOverlay>
     </Dialog>
   );
@@ -372,15 +369,7 @@ export function FilePreview({
         // The phone's sheet (grabber, pulled down to put away); a window
         // over the scrim elsewhere, closed by a press outside or Esc.
         purpose="preview"
-        // Important: the dialog's own `p-pane`, `gap-row` and `w-dialog`
-        // are tokens tailwind-merge cannot tell are a padding, a gap and a
-        // width, so it keeps both and theirs wins. The phone's sheet keeps
-        // its own width and its top (the grabber) and bottom (the home
-        // indicator); only its sides go, the head and the file have theirs.
-        className={cn(
-          "flex flex-col overflow-hidden !gap-0",
-          narrow ? "!px-0" : "!p-0",
-        )}
+
       >
         {path !== null && (
           <>
@@ -388,12 +377,8 @@ export function FilePreview({
               data-file-preview-head
               className={cn("flex flex-none flex-col gap-in px-pane pb-row", !narrow && "pt-pane")}
             >
-              <div className="flex min-w-0 items-center gap-row">
-                <DialogTitle className="min-w-0 flex-1 truncate">{shownName(path)}</DialogTitle>
-                <Button size="sm" data-file-preview-close onClick={onClose}>
-                  {gui.close}
-                </Button>
-              </div>
+              <DialogTitle>{shownName(path)}</DialogTitle>
+              <TaskActions close={<Button data-file-preview-close onClick={onClose}>{gui.close}</Button>}/>
               <div className="flex min-w-0 text-caption text-muted-foreground">
                 {shown && <span className="flex-none">{shown}&nbsp;·&nbsp;</span>}
                 <PathCut text={path} className="min-w-0 flex-1" />

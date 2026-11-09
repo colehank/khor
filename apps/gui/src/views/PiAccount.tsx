@@ -7,7 +7,7 @@ import { ChoiceField } from "@/components/ui/choice-field";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PopupButton } from "@/components/ui/popup-button";
-import { Dialog, TaskOverlay, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { MachineAvatar } from "@/components/Avatar";
 import { managePi, piJob, type PiJob, type PiModel, type PiProvider } from "@/lib/pi-accounts";
 
@@ -104,9 +104,7 @@ export function PiAccountForm({ account, home: initialHome = "", onDone, onCance
     </div>}
     {ready && <div className="space-y-row"><div className="flex items-center gap-in"><p className="min-w-0 flex-1 text-callout text-secondary-foreground">{gui.agent_account_ready}</p><Button variant="ghost" size="sm" onClick={() => { setReady(undefined); setState(null); }}>{gui.agent_auth_retry}</Button></div><label className="text-callout">{gui.agent_default_model}</label><PiModelField account={ready} value={model} onChange={setModel} label={gui.agent_default_model} /></div>}
     {error && <p role="alert" className="whitespace-pre-wrap break-words text-callout text-state-failed">{error}</p>}
-    <DialogFooter><Button variant="ghost" onClick={() => { operation.current?.abort(); onCancel(); }}>{gui.delete_keep}</Button>
-      {ready ? <Button variant="primary" data-pi-save-default disabled={busy || !model.trim()} onClick={() => void finish()}>{gui.agent_model_save_default}</Button> : !busy && <Button variant="primary" disabled={!provider || !home} data-pi-connect onClick={() => void connect()}>{gui.agent_connect}</Button>}
-    </DialogFooter>
+    <TaskActions close={<Button variant="ghost" onClick={() => { operation.current?.abort(); onCancel(); }}>{gui.close}</Button>} primary={ready ? <Button variant="primary" data-pi-save-default disabled={busy || !model.trim()} onClick={() => void finish()}>{gui.agent_model_save_default}</Button> : !busy && <Button variant="primary" disabled={!provider || !home} data-pi-connect onClick={() => void connect()}>{gui.agent_connect}</Button>}/>
   </div>;
 }
 export function PiAccountDialog({ open, onOpenChange, account, home, onDone, restoreFocus = true }: { open: boolean; onOpenChange: (open: boolean) => void; account?: KhorAgentAccount; home?: string; onDone: (view: KhorAgentView, id: string) => void; restoreFocus?: boolean }) {
