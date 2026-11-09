@@ -1,4 +1,4 @@
-import {useComposeLayout} from '@/hooks/use-compose-layout';
+import {keepComposeHeight,useComposeLayout} from '@/hooks/use-compose-layout';
 import {useComposeNavigation} from '@/components/SessionBar';
 /**
  * **The conversation's input: one glass capsule** (the redesign,
@@ -133,8 +133,10 @@ export function useGrowingText(box: React.RefObject<HTMLTextAreaElement | null>,
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    keepComposeHeight(el.closest<HTMLElement>("[data-chat-box]"), () => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
 }

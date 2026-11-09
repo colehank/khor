@@ -237,7 +237,9 @@ def publish(tag, root, uploaded, publication=None):
                 continue
             staged = Path(temporary) / name
             os.link(root / info["path"], staged)
-            gh("release", "upload", tag, str(staged), "--repo", repository())
+            endpoint = f"https://uploads.github.com/repos/{repository()}/releases/{release['id']}/assets?name={name}"
+            gh("api", endpoint, "--method", "POST", "--header", "Content-Type: application/octet-stream",
+               "--input", str(staged))
     verify_remote_assets(api(f"repos/{repository()}/releases/{release['id']}"), assets)
     published = api(f"repos/{repository()}/releases/{release['id']}", "PATCH",
                     {"draft": False, "prerelease": release_tag.prerelease,

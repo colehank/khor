@@ -74,6 +74,10 @@ def candidate_at(root):
     return record, uploaded
 
 
+def is_asset_upload(command):
+    return command[0] == "api" and command[1].startswith("https://uploads.github.com/")
+
+
 class FakeReleases:
     def __init__(self):
         self.releases, self.contents, self.commands = {}, {}, []
@@ -86,8 +90,12 @@ class FakeReleases:
         self.commands.append(args)
         if args[:2] == ("api", "repos/owner/repo/commits/v1.2.3") or args[:2] == ("api", "repos/owner/repo/commits/" + RC):
             return json.dumps({"sha": SHA})
-        if args[:2] == ("release", "upload"):
-            tag, path = args[2], Path(args[3])
+        if is_asset_upload(args):
+            tag = args[1].split("/releases/", 1)[1].split("/assets?", 1)[0]
+            path = Path(args[args.index("--input") + 1])
+            assert args[args.index("--method") + 1] == "POST"
+            assert args[args.index("--header") + 1] == "Content-Type: application/octet-stream"
+            assert args[1].endswith("?name=" + path.name)
             if path.name == self.fail_upload:
                 self.fail_upload = None
                 raise RuntimeError("temporary upload outage")
@@ -182,6 +190,10 @@ class ReleaseStorageTest(unittest.TestCase):
         release = self.remote.releases[RC]
         self.assertFalse(release["draft"])
         self.assertTrue(release["immutable"])
+        uploads = [command for command in self.remote.commands if is_asset_upload(command)]
+        self.assertTrue(uploads)
+        self.assertTrue(all(f"/releases/{release['id']}/assets?" in command[1] for command in uploads))
+        self.assertFalse(any(command[:2] == ("release", "upload") for command in self.remote.commands))
         self.assertEqual(set(asset["name"] for asset in release["assets"]),
                          set(store.asset_map(self.record)) | {"manifest.json", "release.json"})
 
@@ -189,7 +201,7 @@ class ReleaseStorageTest(unittest.TestCase):
         wrong = {"id": 42, "tag_name": "v9.9.9", "draft": True, "prerelease": True, "assets": []}
         with patch.object(store, "api", return_value=wrong), self.assertRaisesRegex(ValueError, "identity differs"):
             store.publish(RC, self.root, self.uploaded)
-        self.assertFalse(any(command[:2] == ("release", "upload") for command in self.remote.commands))
+        self.assertFalse(any(is_asset_upload(command) for command in self.remote.commands))
 
     def test_interrupted_upload_resumes_without_overwriting_existing_assets(self):
         self.remote.fail_upload = "manifest.json"
@@ -202,7 +214,7 @@ class ReleaseStorageTest(unittest.TestCase):
         self.assertTrue(all(self.remote.contents[key] == value for key, value in previous.items()))
         count = len(self.remote.commands)
         store.publish(RC, self.root, self.uploaded)
-        self.assertFalse(any(c[:2] == ("release", "upload") for c in self.remote.commands[count:]))
+        self.assertFalse(any(is_asset_upload(c) for c in self.remote.commands[count:]))
 
     def test_existing_different_asset_is_never_overwritten(self):
         store.publish(RC, self.root, self.uploaded)
