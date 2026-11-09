@@ -5,8 +5,9 @@ Scope: existing Khor settings, same production App and design tokens. Main-windo
 ## Implemented
 
 - Main App, FloatNav, shortcut, macOS menu and editor requests converge on the same settings navigation; native code no longer creates a settings window. Existing main frame is focused without resizing.
-- Settings has its own seven-category sidebar/title, without My Khor/storage/diagnostics mixed into that sidebar. Utilities retain their existing routes. No new General category.
-- Last category is stored on the viewing device, restored on the next opening, and stale/unavailable storage falls back safely. Explicit deep links retain their category and validated machine target.
+- Following the owner’s later direction, More now has one stable sidebar across My Khor, the seven-category Settings group, Storage, Notifications and Diagnostics. Settings remain a visibly labeled group; changing utilities no longer swaps navigation structures. There is no new General category.
+- The last More page and Settings category are stored on the viewing device and restored when reopening. Unavailable storage falls back safely. Explicit deep links retain their category and validated machine target.
+- My Khor presents network membership with a shared network mark, real member-machine avatars and existing connection actions. The current access machine is a member, not the cluster identity. Overview/map/matrix are modes of the same page; leave/reset actions explicitly affect the current machine. No account or shared editable cluster-profile fields are invented.
 - Selected categories expose aria-current. Existing keyboard list navigation, grouped forms, native selects and switches are reused.
 - Lab configuration rows now come from the canonical Rust metadata/defaults and real localization catalog, with isolated Lab browser values. No handwritten configuration inventory.
 
