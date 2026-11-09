@@ -81,8 +81,8 @@ try{
  await pickPopup(key(),'KeyB');await modifier('shift',false);await modifier('ctrl',true);
  await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'KeyN');
  await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'KeyC');
- assert.equal(await editor.locator('[data-key-entry-steps] [data-key-step-remove],[data-key-entry-steps] [data-key-step-up],[data-key-entry-steps] [data-key-step-down]').count(),0,'Steps remain plain selectable keys');await editor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-up]').click();assert.match(await editor.locator('[data-key-step-select="1"]').innerText(),/C/);
- await editor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-remove]').click();
+ assert.equal(await editor.locator('[data-key-entry-steps] [data-key-step-remove],[data-key-entry-steps] [data-key-step-up],[data-key-entry-steps] [data-key-step-down]').count(),0,'Steps remain plain selectable keys');await editor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-up]').click();await page.locator('[data-key-step-up]').waitFor({state:'detached'});assert.match(await editor.locator('[data-key-step-select="1"]').innerText(),/C/);
+ await editor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-remove]').click();await page.locator('[data-key-step-remove]').waitFor({state:'detached'});
  await editor.locator('[data-key-entry-save]').click();assert.deepEqual((await custom()).steps.map(step=>step.key),['KeyB','KeyN']);
  mark('single-key editing, reversible draft and ordered sequence');
  const seat=editor.locator(`[data-key-row-seat="${first.id}"]`);await seat.getByRole('switch').click();assert.equal((await custom()).on,false);await seat.getByRole('switch').click();
