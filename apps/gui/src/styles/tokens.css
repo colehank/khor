@@ -2991,8 +2991,9 @@
      neighbours' ink, with the same 8–9 of air above and below in the 36
      cap. ⚠️ 墓碑: `size-5`, the caps' box, 20. */
   --key-pad-glyph: 26px;
-  /* 外观's sliders: iOS's 28 knob on a 4 track. */
-  --slider-knob: 28px;
+  /* Compact pointer thumb; coarse pointers retain the mobile thumb below.
+     Hit area stays independent of the visible knob. */
+  --slider-knob: 16px;
   --slider-half: calc(var(--slider-knob) / 2);
   --list-head: var(--pane-head);
   /* What a scroller under the floating navigation keeps clear at its
@@ -3001,6 +3002,7 @@
 }
 @media (pointer: coarse) {
   :root {
+    --slider-knob: 28px;
     --glass-btn: 44px;
     --ctl-glyph: 26px;
     --nav-h: 64px;

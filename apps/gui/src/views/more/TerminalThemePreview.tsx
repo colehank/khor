@@ -10,7 +10,7 @@ import {trackMarks} from "@/lib/term-marks";
 import {useTermBlockLines} from "@/lib/term-block-lines";
 import {termBell,useTermBell,TERM_BELL_MS} from "@/lib/term-bell";
 import {stackOf,useTermFont} from "@/lib/term-font";
-import {useTypeSize} from "@/lib/type-size";
+import {terminalSize,useTypeSize} from "@/lib/type-size";
 import {useTermCursor} from "@/lib/term-cursor";
 import {onTermTheme,termTheme,terminalAppearance,type Palette} from "@/lib/term-theme";
 
@@ -26,9 +26,10 @@ const SAMPLE=mark("A")+"\x1b[34m~/khor\x1b[0m \ue0a0 main $ "+mark("B")+"printf 
 export function TerminalThemePreview({theme}: {theme?:Palette}) {
   const box=useRef<HTMLDivElement>(null);
   const font=useTermFont(),size=useTypeSize(),cursor=useTermCursor();
+  const point=terminalSize(size);
   const lines=useTermBlockLines(),bell=useTermBell();
-  const current=useRef({theme,font:font.choice,size:size.term,cursor,lines});
-  current.current={theme,font:font.choice,size:size.term,cursor,lines};
+  const current=useRef({theme,font:font.choice,size:point,cursor,lines});
+  current.current={theme,font:font.choice,size:point,cursor,lines};
   const repaint=useRef<(()=>void)|null>(null),activate=useRef<(()=>void)|null>(null);
   const previousBell=useRef(bell);
   useLayoutEffect(()=>{
@@ -128,7 +129,7 @@ export function TerminalThemePreview({theme}: {theme?:Palette}) {
       delete marked.__xterm;term.dispose();
     };
   },[]);
-  useEffect(()=>{repaint.current?.();},[font.choice,size.term,cursor,theme,lines]);
+  useEffect(()=>{repaint.current?.();},[font.choice,point,cursor,theme,lines]);
   useEffect(()=>{if(bell&&!previousBell.current)activate.current?.();previousBell.current=bell;},[bell]);
   return <div ref={box} data-term-theme-preview role="button" tabIndex={0} aria-label={gui.term_preview_activate}
     onMouseDown={event=>event.preventDefault()} onClick={()=>activate.current?.()}

@@ -103,7 +103,7 @@ import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
-import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
+import { setTypeSize, TERM_MAX, TERM_MIN, terminalSize, typeSize } from "@/lib/type-size";
 import { termBell, TERM_BELL_MS as BELL_MS } from "@/lib/term-bell";
 import { searchable, useFindHow, type FindHow } from "@/lib/term-find";
 import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
@@ -1068,9 +1068,10 @@ function phoneGestures(term: Terminal, box: HTMLElement): () => void {
     if (fingers === 2) {
       if (travel > 12) {
         const t = typeSize();
-        const want = Math.round((t.term * scale) / 2) * 2;
+        const currentSize = terminalSize(t);
+        const want = Math.round((currentSize * scale) / 2) * 2;
         const term_ = Math.max(TERM_MIN, Math.min(TERM_MAX, want));
-        if (term_ !== t.term) setTypeSize({ ...t, term: term_ });
+        if (term_ !== currentSize) setTypeSize({ ...t, term: term_, termFollowSystem: false });
       } else if (took < TWO_TAP_MS) {
         term.input("\x1b", true);
       }

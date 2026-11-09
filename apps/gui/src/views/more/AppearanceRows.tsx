@@ -22,7 +22,7 @@ export function TypeSizeSection() {
     <MoreSection name="type-size" label={gui.type_size}>
       <SwitchRow
         name="ui-size-system"
-        label={gui.ui_size_system}
+        label={gui.size_system}
         on={t.followSystem}
         onToggle={() => setTypeSize({ ...t, followSystem: !t.followSystem })}
       />

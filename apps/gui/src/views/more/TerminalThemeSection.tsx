@@ -31,7 +31,7 @@ function ColorField({ name, value, onChange }: { name: ColorKey; value: string; 
   if (hex) previous.current = hex;
   const shown = hex ?? colorHex(previous.current, alpha) ?? PRESETS[0].theme[name];
   return <div data-theme-color={name} className="flex min-w-0 items-center gap-in rounded-sm bg-fill p-in">
-    <label htmlFor={`theme-${name}`} className="min-w-0 flex-1 text-callout">{label}</label>
+    <label htmlFor={`theme-${name}`} className="min-w-0 flex-1 text-body">{label}</label>
     <input type="color" aria-label={gui.term_color_pick(label)} value={shown.slice(0, 7)} onChange={e => onChange(e.target.value + (alpha && shown.length === 9 ? shown.slice(7) : ""))} className="term-theme-well" />
     <Input id={`theme-${name}`} aria-label={gui.term_color_hex(label)} aria-invalid={!hex} value={value} onChange={e => onChange(e.target.value)} spellCheck={false} maxLength={alpha ? 9 : 7} className="term-theme-hex h-ctl-md font-mono text-callout tabular-nums" />
   </div>;

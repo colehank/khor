@@ -48,7 +48,7 @@ export function Slider({
         {small}
       </span>
       {/* The drawing box is the hit's height (44 under a finger, the
-          knob's 28 under a mouse — V03), so the input filling it centres
+          compact knob under a mouse — V03), so the input filling it centres
           its thumb on the track drawn at its middle. */}
       <div className="relative h-[max(var(--slider-knob),var(--hit))] min-w-0 flex-1">
         <div className="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-fill-strong" />

@@ -76,6 +76,19 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       await page.locator(`[data-more-page="${key}"]:visible`).waitFor();
       if(!mobile)assert.deepEqual(await inventory(),original,'Every More page keeps the same navigation');
     };
+    await pick('appearance');
+    const uiAuto=page.locator('[data-setting-row-name="ui-size-system"] [role="switch"]');
+    assert.equal(await uiAuto.getAttribute('aria-checked'),'true');
+    assert.equal(await page.locator('[data-setting-row-name="ui-size"] input[type="range"]').count(),0,'System interface size has no manual slider');
+    await uiAuto.click();
+    const uiRange=page.locator('[data-setting-row-name="ui-size"] input[type="range"]');await uiRange.waitFor();
+    const sliderGeometry=await uiRange.evaluate(el=>({knob:parseFloat(getComputedStyle(el).getPropertyValue('--slider-knob')),hit:parseFloat(getComputedStyle(el).getPropertyValue('--hit')),height:el.getBoundingClientRect().height,coarse:matchMedia('(pointer: coarse)').matches}));
+    assert.equal(sliderGeometry.knob,sliderGeometry.coarse?28:16,'Visible slider knob adapts to the pointer');
+    assert.ok(sliderGeometry.height>=sliderGeometry.hit,'A smaller knob retains its independent hit area');
+    await uiRange.focus();await page.keyboard.press('ArrowRight');const savedStep=await uiRange.inputValue();
+    await uiAuto.click();assert.equal(await uiRange.count(),0);
+    await uiAuto.click();assert.equal(await uiRange.inputValue(),savedStep,'System mode preserves the custom interface step');
+    await uiAuto.click();
     await pick('session');
     assert.equal(await page.locator('[data-settings-child="terminal"]').count(),0);
     await page.locator('[data-terminal-settings]').waitFor();
@@ -102,9 +115,12 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
         }
         return NaN;
       };
-      return {title:textEdge(section.querySelector('[data-settings-heading]')),row:textEdge(section.querySelector('[data-setting-row]'))};
+      const heading=section.querySelector('[data-settings-heading]'),row=section.querySelector('[data-setting-row]');
+      const label=row.querySelector('.text-body')??row;
+      return {title:textEdge(heading),row:textEdge(row),titleSize:getComputedStyle(heading).fontSize,rowSize:getComputedStyle(label).fontSize,titleWeight:Number(getComputedStyle(heading).fontWeight),rowWeight:Number(getComputedStyle(label).fontWeight)};
     }));
     assert.ok(titleEdges.every(edge=>Math.abs(edge.title-edge.row)<=1),`Titles align with row text without hierarchical indentation: ${JSON.stringify(titleEdges)}`);
+    assert.ok(titleEdges.every(edge=>edge.titleSize===edge.rowSize&&edge.titleWeight>edge.rowWeight),'Settings headings use the row text size, distinguished by weight only');
     const sample=page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.dataset.previewRows);
     const sizeToContent=await sample.evaluate(el=>{
@@ -147,8 +163,16 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await sample.getAttribute('data-test-bell-count'),bellCount,'Disabled completion cue stays silent in preview');await cue.click();
 
     // These are the production controls and real renderer, not a picture of them.
+    const termAuto=page.locator('[data-setting-row-name="term-size-system"] [role="switch"]');
+    assert.equal(await termAuto.getAttribute('aria-checked'),'true');
+    assert.equal(await page.locator('[data-term-size-number]').count(),0,'System terminal size has no custom input or slider');
+    await termAuto.click();
     await page.locator('[data-term-size-number]').fill('18');
     await page.locator('[data-term-size-number]').blur();
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
+    await termAuto.click();assert.equal(await page.locator('[data-term-size-number]').count(),0);
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===14);
+    await termAuto.click();assert.equal(await page.locator('[data-term-size-number]').inputValue(),'18','System mode retains custom terminal points');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
     await page.locator('[data-term-cursor-color]').fill('#aabbcc');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');

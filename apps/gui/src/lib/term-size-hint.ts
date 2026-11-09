@@ -7,7 +7,7 @@
 // a shell this device opens starts at the size this device's terminals
 // were last fitted to — or, before any has been, at what the window holds
 // at the terminal's type size. This device's, in its `localStorage`.
-import { typeSize } from "@/lib/type-size";
+import { terminalSize } from "@/lib/type-size";
 
 const KEY = "khor.term-size-hint";
 
@@ -31,7 +31,7 @@ export function termSizeHint(): { cols: number; rows: number } {
   }
   // A monospaced cell is about 0.6 of the type size wide and 1.2 tall;
   // the pane's side margins are 8 each.
-  const px = typeSize().term;
+  const px = terminalSize();
   return {
     cols: Math.max(20, Math.floor((window.innerWidth - 16) / (px * 0.6))),
     rows: Math.max(5, Math.floor((window.innerHeight * 0.8) / (px * 1.2))),

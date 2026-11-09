@@ -33,7 +33,10 @@ function TerminalSizeRow() {
     const term=Math.max(TERM_MIN,Math.min(TERM_MAX,Math.round(value)));
     setDraft(String(term));setTypeSize({...size,term});
   };
-  return <div data-setting-row="slider" data-setting-row-name="term-size" className="flex flex-col gap-in px-row py-in">
+  return <>
+    <SwitchRow name="term-size-system" label={gui.size_system} on={size.termFollowSystem}
+      onToggle={()=>setTypeSize({...size,termFollowSystem:!size.termFollowSystem})}/>
+    {!size.termFollowSystem&&<div data-setting-row="slider" data-setting-row-name="term-size" className="flex flex-col gap-in px-row py-in">
     <div className="flex items-center gap-row">
       <label htmlFor="terminal-size" className="min-w-0 flex-1 text-body">{gui.type_size}</label>
       <Input id="terminal-size" data-term-size-number type="number" inputMode="numeric" min={TERM_MIN} max={TERM_MAX} step={1}
@@ -47,7 +50,8 @@ function TerminalSizeRow() {
     <Slider label={gui.type_size} min={TERM_MIN} max={TERM_MAX} value={size.term}
       ticks={(TERM_MAX-TERM_MIN)/2+1} onChange={term=>setTypeSize({...size,term})}
       small={<span className="text-caption">A</span>} large={<span className="text-title-sm">A</span>}/>
-  </div>;
+  </div>}
+  </>;
 }
 
 function CursorColorRow() {

@@ -38,13 +38,13 @@ export const TERM_MIN = 10;
 export const TERM_MAX = 22;
 export const TERM_DEFAULT = 14;
 
-export type TypeSize = { followSystem: boolean; uiStep: number; term: number };
+export type TypeSize = { followSystem: boolean; uiStep: number; term: number; termFollowSystem: boolean };
 
 const KEY = "khor.type-size";
 const CHANGED = "khor:type-size";
 
 function stored(): TypeSize {
-  const fallback: TypeSize = { followSystem: true, uiStep: 3, term: TERM_DEFAULT };
+  const fallback: TypeSize = { followSystem: true, uiStep: 3, term: TERM_DEFAULT, termFollowSystem: true };
   try {
     const raw = JSON.parse(window.localStorage.getItem(KEY) ?? "null") as Partial<TypeSize> | null;
     if (!raw || typeof raw !== "object") return fallback;
@@ -52,6 +52,8 @@ function stored(): TypeSize {
       followSystem: typeof raw.followSystem === "boolean" ? raw.followSystem : true,
       uiStep: clamp(Math.round(Number(raw.uiStep)), 0, UI_STEPS.length - 1, 3),
       term: clamp(Math.round(Number(raw.term)), TERM_MIN, TERM_MAX, TERM_DEFAULT),
+      // Existing non-default terminal sizes remain deliberate custom choices.
+      termFollowSystem: typeof raw.termFollowSystem === "boolean" ? raw.termFollowSystem : !Number.isFinite(Number(raw.term)) || Number(raw.term) === TERM_DEFAULT,
     };
   } catch {
     return fallback;
@@ -80,16 +82,22 @@ export function systemScale(): number {
   return Number.isFinite(px) && px > 0 ? px / SYSTEM_BODY : 1;
 }
 
+/** Effective terminal points; the stored manual size survives system mode. */
+export function terminalSize(t: TypeSize = stored()): number {
+  return t.termFollowSystem ? Math.max(TERM_MIN, Math.round(TERM_DEFAULT * systemScale())) : t.term;
+}
+
 /** Stamp the sizes on the root, where the ramp and the terminal read them. */
 function wear(t: TypeSize) {
   const root = document.documentElement.style;
   const scale = t.followSystem ? systemScale() : UI_STEPS[t.uiStep] / UI_BASE;
   root.setProperty("--ui-scale", String(scale));
-  root.setProperty("--text-term", `${t.term}px`);
+  const term = terminalSize(t);
+  root.setProperty("--text-term", `${term}px`);
   // The leading keeps the token's ratio (20 over 14) for the pane's own
   // text and 外观's sample line; xterm's rows take no leading
   // (`TerminalPane`'s `fontOf`).
-  root.setProperty("--text-term--line-height", `${Math.round(t.term * (20 / 14))}px`);
+  root.setProperty("--text-term--line-height", `${Math.round(term * (20 / 14))}px`);
 }
 
 /** At startup, before the first frame (`main.tsx`), and again whenever the
@@ -98,7 +106,11 @@ function wear(t: TypeSize) {
 export function wearTypeSize() {
   wear(stored());
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") wear(stored());
+    if (document.visibilityState === "visible") {
+      const t = stored();
+      wear(t);
+      window.dispatchEvent(new CustomEvent(CHANGED, { detail: t }));
+    }
   });
   // **Set in another window of this app** (fix-c, 2026-10-08, the owner:
   // 字号「改不动」). On the Mac 外观 is the settings window, a page of its
@@ -137,7 +149,7 @@ export function useTypeSize(): TypeSize {
 
 /** A terminal's hook on the size: called with the new point size. */
 export function onTermSize(run: (px: number) => void): () => void {
-  const on = (e: Event) => run((e as CustomEvent<TypeSize>).detail.term);
+  const on = (e: Event) => run(terminalSize((e as CustomEvent<TypeSize>).detail));
   window.addEventListener(CHANGED, on);
   return () => window.removeEventListener(CHANGED, on);
 }

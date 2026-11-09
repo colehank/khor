@@ -79,7 +79,7 @@
 import { useEffect, useRef, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent } from "react";
 
 import { hear, inApp, menuState, onWebFace, trafficLights } from "@/api";
-import { setTypeSize, TERM_DEFAULT, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
+import { setTypeSize, TERM_MAX, TERM_MIN, terminalSize, typeSize } from "@/lib/type-size";
 
 export type Act =
   | "landing-1"
@@ -493,8 +493,11 @@ export function useShortcuts(acts: ShellActs) {
           // While a terminal is on screen, where the change can be seen.
           if (!document.querySelector("[data-detail-pane] [data-kept-terminal][data-active] [data-terminal]")) return false;
           const t = typeSize();
-          const term = act === "term-actual" ? TERM_DEFAULT : Math.min(TERM_MAX, Math.max(TERM_MIN, t.term + (act === "term-bigger" ? 1 : -1)));
-          if (term !== t.term) setTypeSize({ ...t, term });
+          if (act === "term-actual") setTypeSize({ ...t, termFollowSystem: true });
+          else {
+            const term = Math.min(TERM_MAX, Math.max(TERM_MIN, terminalSize(t) + (act === "term-bigger" ? 1 : -1)));
+            if (term !== terminalSize(t)) setTypeSize({ ...t, term, termFollowSystem: false });
+          }
           return true;
         }
         case "next-tab":
