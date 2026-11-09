@@ -1,5 +1,7 @@
 name: Workspace file operations
 on:
+  push:
+    branches: [fix/workspace-file-ops-20261109]
   workflow_dispatch:
 permissions:
   contents: read
