@@ -130,6 +130,30 @@ try{
       }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} delayed-layout-scroll-and-reader-intent`);save();await context.close();}
     }
+    if(!disclosureOnly)for(const input of ['pointer','space']){
+      const context=await browser.newContext({viewport:{width:402,height:714}}),page=await context.newPage();
+      const result={engine,scenario:'control-shrink-is-not-reader-scroll',input,errors:[]};report.results.push(result);
+      page.on('pageerror',error=>result.errors.push(error.message));
+      try{
+        await page.goto(`${base}/lab/scroll-compose.html?control=1`);await page.locator('[data-composer-text]').waitFor();
+        await page.evaluate(()=>window.__composeFixture.toBottom());await page.waitForTimeout(300);
+        result.before=await page.evaluate(()=>window.__composeFixture.snapshot('before-control'));
+        assert(Math.abs(result.before.gap)<=2,'Control action starts at the live tail');
+        const control=page.locator('[data-lab-shrink]');
+        if(input==='pointer')await control.click();else await control.press('Space');
+        await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
+        result.after=await page.evaluate(()=>window.__composeFixture.snapshot('after-control'));
+        result.intent=await page.evaluate(()=>window.__composeFixture.intent());
+        assert(result.after.total<result.before.total,'The actual action must shrink transcript layout');
+        assert(Math.abs(result.after.gap)<=2,'Control layout change stays at the live tail');
+        assert.equal(result.intent.following,true,'Activating a control does not express upward reading');
+        assert.equal(result.intent.readingLatest,true,'A control must not pause canonical body loading');
+        const bounds=await control.boundingBox();await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.mouse.wheel(0,-250);
+        await page.waitForFunction(()=>!window.__composeFixture.intent().readingLatest);
+        assert.deepEqual(result.errors,[]);result.status='passed';
+      }catch(error){result.status='failed';result.error=error.stack??String(error);console.error(result.error);process.exitCode=1;}
+      finally{console.log(`${result.status} ${engine} control-shrink input=${input}`);save();await context.close();}
+    }
     await browser.close();browser=null;
   }
 }catch(error){report.error=error.stack??String(error);process.exitCode=1;}

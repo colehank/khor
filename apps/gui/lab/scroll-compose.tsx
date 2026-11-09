@@ -5,6 +5,7 @@ import {BarSeat,SessionScreen} from '@/components/SessionBar';
 import {Composer,COMPOSER_TEXT,useGrowingText} from '@/views/Composer';
 import {useChatScroll} from '@/hooks/use-chat-scroll';
 import {AgentReasoning} from '@/components/ai-elements/agent';
+import {Button} from '@/components/ui/button';
 import {historySource} from '@/lib/history-source';
 import {historyReader} from '@/lib/history-reader';
 import '@/styles/tokens.css';
@@ -15,6 +16,7 @@ type Sample={reason:string;at:number;top:number;view:number;total:number;gap:num
 let readings:Sample[]=[];
 const disclosure = new URLSearchParams(location.search).get('disclosure');
 const disclosureCase = disclosure === 'short' || disclosure === 'long';
+const controlCase = new URLSearchParams(location.search).get('control') === '1';
 type Intent={following:boolean;readingLatest:boolean;requests:number;shown:string|null};
 function snapshot(reason:string):Sample {
   const box=document.querySelector<HTMLElement>('[data-compose-scroll]')!;
@@ -47,6 +49,7 @@ if(new URLSearchParams(location.search).get('probe')==='1'){
 
 function Conversation({revision,epoch}:{revision:object;epoch:number}){
   const [draft,setDraft]=useState('');
+  const [paragraphCount,setParagraphCount]=useState(60);
   const field=useRef<HTMLTextAreaElement>(null);
   const {scroller,column,onScroll,toBottom,following,readingLatest,captureDisclosure}=useChatScroll(revision);
   const requests=useRef(0),[shown,setShown]=useState<string|null>(null);
@@ -82,7 +85,8 @@ function Conversation({revision,epoch}:{revision:object;epoch:number}){
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scroller} data-compose-scroll onScroll={onScroll} onClickCapture={disclosureCase?captureDisclosure:undefined} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [overflow-anchor:none]">
         <div ref={column} className="mx-auto w-full max-w-measure space-y-2 text-read">
-          {Array.from({length:disclosure==='short'?0:60},(_,i)=><p key={i}>第 {i+1} 段　输入框测量不应让阅读位置离开末尾。读历史时，保持这一段的位置。</p>)}
+          {Array.from({length:disclosure==='short'?0:paragraphCount},(_,i)=><p key={i}>第 {i+1} 段　输入框测量不应让阅读位置离开末尾。读历史时，保持这一段的位置。</p>)}
+          {controlCase&&<Button data-lab-shrink onClick={()=>setParagraphCount(value=>value-1)}>完成此操作</Button>}
           {disclosureCase&&<><AgentReasoning isStreaming={false} text={disclosure==='long'?Array.from({length:40},(_,i)=>`第 ${i+1} 条展开内容。真实控件保留自己的位置，规范读取仍由原reader继续。`).join('\n\n'):'短内容仍能继续读取。'}/><output data-compose-reader className="sr-only">{shown}</output></>}
         </div>
       </div>
