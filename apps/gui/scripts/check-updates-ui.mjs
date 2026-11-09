@@ -101,6 +101,22 @@ try {
   await page.evaluate(()=>window.emitUpdate({phase:'downloading',received:42,total:100}));
   await page.waitForFunction(()=>document.querySelector('[data-setting-row-name="update-check"]').textContent.includes('42%'));
   assert.equal(await action.isDisabled(),true,'a native background operation owns its action');
+  // A failed metadata refresh must not retry a stale download just because
+  // the previous offer is still visible. Native failure context survives events.
+  await page.evaluate(()=>window.emitUpdate({phase:'failed',retry:'check',failure:'fixture: release metadata unavailable',available:'v0.2.0-rc.2',blocked:[]}));
+  const failure=page.locator('[data-update-failure]');
+  await failure.locator('summary').click();
+  assert.match(await failure.innerText(),/fixture: release metadata unavailable/,'native errors remain available for diagnosis');
+  let before=await page.evaluate(()=>window.updateCalls.length);
+  await action.click();
+  await page.waitForFunction(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_check'),before);
+  assert.equal(await page.evaluate(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_download'),before),false);
+  await page.evaluate(()=>window.emitUpdate({phase:'failed',retry:'install',failure:'fixture: application folder unavailable',available:'v0.2.0-rc.2'}));
+  before=await page.evaluate(()=>window.updateCalls.length);
+  await action.click();
+  await page.waitForFunction(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_install'),before);
+  assert.equal(await page.evaluate(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_download'),before),false,'an installation retry keeps the verified download');
+  await page.evaluate(()=>window.emitUpdate({phase:'idle',retry:null,failure:null}));
   await page.evaluate(()=>window.emitUpdate({phase:'idle',blocked:[],restart_required:false,companions:[
     {id:'registered-one',path:'/owned/one/bin/khor',current:'v0.2.0-rc.1',available:'v0.2.0-rc.2',selected:false,phase:'available',failure:null},
     {id:'registered-two',path:'/owned/two/bin/khor',current:'v0.2.0-rc.1',available:'v0.2.0-rc.2',selected:false,phase:'available',failure:null}
@@ -110,6 +126,11 @@ try {
   await companion.click();
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='app_update_companions'));
   assert.equal(await companion.getAttribute('aria-checked'),'false','failed persistence must not pretend the CLI was selected');
+  assert.match(await page.locator('[data-update-operation-failure]').innerText(),/重试|Retry/);
+  await page.locator('[data-update-operation-failure] button').click();
+  await page.waitForFunction(()=>window.updateState.companions[0].selected===true);
+  await companion.click();
+  await page.waitForFunction(()=>window.updateState.companions[0].selected===false);
   await page.waitForFunction(()=>!document.querySelector('[data-setting-row-name="update-check"] button').disabled);
   await companion.click();
   await page.waitForFunction(()=>window.updateState.companions[0].selected===true);
