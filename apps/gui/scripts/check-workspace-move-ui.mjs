@@ -25,8 +25,14 @@ speakLang('zh');window.moves=[];
 createRoot(document.getElementById('root')).render(<TooltipProvider><FileTree machine='fixture' root='/project' here marks={null} open={null} onOpen={()=>{}} onGone={()=>{}} onMoved={(from,to)=>window.moves.push({from,to})}/></TooltipProvider>);`);
  server=spawn(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
  server.stderr.on('data',data=>process.stderr.write(data));
- let ready=false;server.stdout.on('data',data=>{ready ||= String(data).includes(`:${port}`)});
- for(let i=0;i<100&&!ready;i++){assert.equal(server.exitCode,null);await new Promise(r=>setTimeout(r,100));}assert(ready);
+ server.stdout.on('data',data=>process.stdout.write(data));
+ let ready=false;
+ for(let i=0;i<300&&!ready;i++){
+  assert.equal(server.exitCode,null);
+  ready=await fetch(`http://localhost:${port}/`,{signal:AbortSignal.timeout(1000)}).then(response=>response.ok).catch(()=>false);
+  if(!ready)await new Promise(resolve=>setTimeout(resolve,100));
+ }
+ assert(ready,'Vite HTTP readiness');
  browser=await chromium.launch({headless:true,args:['--no-proxy-server']});
  page=await browser.newPage({viewport:{width:700,height:700},hasTouch:false});page.on('pageerror',error=>errors.push(error.message));
  await page.route('**/*',async route=>{

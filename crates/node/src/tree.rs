@@ -241,7 +241,36 @@ pub(crate) fn rename_new(from: &Path, to: &Path) -> Result<(), String> {
             Err(std::io::Error::last_os_error().to_string())
         };
     }
-    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux")))]
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        let wide = |path: &Path| -> Result<Vec<u16>, String> {
+            let mut units: Vec<u16> = path.as_os_str().encode_wide().collect();
+            if units.contains(&0) {
+                return Err("path contains NUL".into());
+            }
+            units.push(0);
+            Ok(units)
+        };
+        let (from, to) = (wide(from)?, wide(to)?);
+        // SAFETY: NUL-terminated UTF-16 paths remain alive for the call.
+        // No REPLACE_EXISTING or COPY_ALLOWED: refuse occupied names and
+        // cross-volume moves, just like the exclusive Unix operations above.
+        let result = unsafe {
+            windows_sys::Win32::Storage::FileSystem::MoveFileExW(from.as_ptr(), to.as_ptr(), 0)
+        };
+        return if result != 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error().to_string())
+        };
+    }
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "linux",
+        windows
+    )))]
     std::fs::rename(from, to).map_err(|e| e.to_string())
 }
 

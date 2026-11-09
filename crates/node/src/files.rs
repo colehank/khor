@@ -1859,6 +1859,18 @@ mod rename_tests {
     }
 
     #[test]
+    fn exclusive_rename_never_replaces_an_occupied_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::write(&source, "source").unwrap();
+        fs::write(&target, "target").unwrap();
+        assert!(crate::tree::rename_new(&source, &target).is_err());
+        assert_eq!(fs::read_to_string(&source).unwrap(), "source");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "target");
+    }
+
+    #[test]
     fn moves_subtrees_and_refuses_descendants_and_existing_directories() {
         let dir = tempfile::tempdir().unwrap();
         let source = dir.path().join("source");

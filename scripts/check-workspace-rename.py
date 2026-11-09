@@ -97,7 +97,7 @@ def rust_checks():
     with tempfile.TemporaryDirectory(prefix='khor-rename-rust-') as scratch:
         root = Path(scratch)
         (root / 'src').mkdir()
-        (root / 'Cargo.toml').write_text('[package]\nname="khor-rename-check"\nversion="0.0.0"\nedition="2024"\n[dependencies]\nlibc="0.2"\ntempfile="3"\n')
+        (root / 'Cargo.toml').write_text('[package]\nname="khor-rename-check"\nversion="0.0.0"\nedition="2024"\n[dependencies]\nlibc="0.2"\ntempfile="3"\n[target.\'cfg(windows)\'.dependencies]\nwindows-sys={version="=0.61.2",features=["Win32_Storage_FileSystem"]}\n')
         (root / 'src/lib.rs').write_text('mod msg {\npub fn path_not_absolute(p: &str) -> String { p.into() }\npub fn name_taken(p: &str) -> String { p.into() }\npub fn cant_move_name(p: &str, e: impl std::fmt::Display) -> String { format!("{p}: {e}") }\n}\nmod tree { use std::path::Path;\n' + rename_new + '\n}\n' + functions + tests, encoding='utf-8')
         subprocess.run(['cargo', 'test', '--manifest-path', str(root / 'Cargo.toml')], check=True)
 
