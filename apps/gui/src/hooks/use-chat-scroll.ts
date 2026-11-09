@@ -130,13 +130,15 @@ export function useChatScroll(revision: unknown) {
       for (const input of inputs) el.removeEventListener(input, readerInput);
     };
   }, [sync, releaseLayout, releaseReader]);
-  // Draft and control renders can change the viewport without changing the
-  // transcript revision. Reconcile after every React layout, before paint;
-  // the observer remains responsible for native/viewport-only changes.
-  useLayoutEffect(sync);
+  // Draft and control renders can change the live viewport without changing
+  // the transcript revision. History scrolling owns its position until the
+  // browser delivers its scroll event; unrelated renders must not restore it.
+  useLayoutEffect(() => { if (following.current) sync(); });
   useLayoutEffect(() => {
+    if (following.current) return;
+    sync();
     if (!following.current) setFresh(true);
-  }, [revision]);
+  }, [revision, sync]);
 
   const capturePositionTicket = useCallback(() => positionRevision.current, []);
   /** A late page may restore only the position it captured. The guard runs
