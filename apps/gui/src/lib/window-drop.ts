@@ -9,9 +9,9 @@
 // an OS drag, which no browser can synthesize with paths in it.
 import { inApp } from "@/api";
 import { listenNativeDragDrop } from "./native-events";
-import { clearPathDrag, nativePathEnter, nativePathLeave, takeNativePath } from "./path-drag";
+import { clearPathDrag, nativePathEnter, nativePathLeave, takeNativePath, currentPathDrag, type DraggedPath, type WorkspaceDrag } from "./path-drag";
 
-export type WindowDrop = { paths: string[]; x: number; y: number; from?: string | null };
+export type WindowDrop = { paths: string[]; x: number; y: number; from?: string | null; workspace?: WorkspaceDrag };
 
 export const WINDOW_DROP_EVENT = "khor:window-drop";
 
@@ -20,6 +20,19 @@ export const WINDOW_DROP_EVENT = "khor:window-drop";
 export function dropPoint(position: { x: number; y: number }, platform: string, scale: number) {
   const divisor = /Win/i.test(platform) ? scale : 1;
   return { x: position.x / divisor, y: position.y / divisor };
+}
+
+export type WindowDrag = { x: number; y: number; source: DraggedPath } | null;
+const dragHandlers = new Set<(drag: WindowDrag) => void>();
+const preview = (drag: WindowDrag) => {
+  for (const handler of dragHandlers) {
+    try { handler(drag); }
+    catch { console.error("khor: window drag handler failed"); }
+  }
+};
+export function onWindowDrag(handler: (drag: WindowDrag) => void) {
+  dragHandlers.add(handler);
+  return () => { dragHandlers.delete(handler); };
 }
 
 const handlers = new Set<(d: WindowDrop) => void>();
@@ -43,13 +56,19 @@ export function onWindowDrop(handler: (d: WindowDrop) => void): () => void {
     let undo: (() => void) | undefined;
     if (inApp) undo = listenNativeDragDrop((e) => {
       const payload = e.payload;
-      if (payload.type === "enter") { nativePathEnter(payload.paths); return; }
-      if (payload.type === "leave") { nativePathLeave(); return; }
+      if (payload.type === "leave") { nativePathLeave(); preview(null); return; }
+      if (payload.type === "enter") nativePathEnter(payload.paths);
+      if (payload.type === "enter" || payload.type === "over") {
+        const source = currentPathDrag();
+        preview(source && payload.position ? { source, ...dropPoint(payload.position, navigator.platform, devicePixelRatio) } : null);
+        return;
+      }
       if (payload.type !== "drop" || !payload.position) return;
       const source = payload.paths.length ? null : takeNativePath();
       if (payload.paths.length) nativePathEnter(payload.paths);
       if (!payload.paths.length && !source) return;
-      deliver({ paths: source ? [source.path] : payload.paths, from: source?.machine ?? null,
+      preview(null);
+      deliver({ ...(source?.workspace ? { workspace: source.workspace } : {}), paths: source ? [source.path] : payload.paths, from: source?.machine ?? null,
         ...dropPoint(payload.position, navigator.platform, devicePixelRatio) });
     });
     const seam = (e: Event) => {

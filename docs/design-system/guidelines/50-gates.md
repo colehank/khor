@@ -895,3 +895,10 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 ### Main-window settings navigation (2026-11-09)
 
 `npm run settings-navigation` (`node scripts/check-settings-navigation.mjs`) covers last-category restoration, stale or unavailable storage, and parity with native settings categories. Developer Lab `settings-checks.mjs` runs the actual App at desktop and mobile widths: a stable More navigation containing My Khor, grouped settings and utilities, selected accessibility state, leave/reopen/reload restoration, one page, unchanged viewport. The settings group itself keeps exactly the seven native categories. It does not claim to validate macOS native menu delivery or an iPhone keyboard. Native route changes require the native compile gate; manual review uses the same built App bundle.
+
+### Workspace rename and drag movement (2026-11-09)
+
+- `npm run workspace-move` (`node scripts/check-workspace-move.mjs`) checks real target resolution, workspace/machine scope, same-parent/self/descendant refusal, occupied names and root blank targets.
+- `npm run workspace-move-lab` (`node scripts/check-workspace-move-lab.mjs`) checks finite Lab transport moves, subtrees, old-path removal, read/write caches and per-machine separation; it does not claim filesystem behavior. Both models run in test:unit.
+- `npm run workspace-move-ui` (`node scripts/check-workspace-move-ui.mjs`) mounts production FileTree against a disk transport fixture in Chromium: actual file/directory drag, root blank, subtree expansion, refresh, callbacks, conflicts and server failures. Included in test:interaction and Quality GUI. Native Wry drag gestures still need real-App review.
+- `python3 scripts/check-workspace-rename.py` runs verbatim native rename helpers/tests and the production SSH script. Source-only Macs may use only `--shell-only`; Rust runs remotely. The dedicated three-platform validation is recorded in docs/handoff/workspace-file-ops-20261109.md.

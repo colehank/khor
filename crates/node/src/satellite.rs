@@ -836,20 +836,76 @@ pub fn touch(host: &Dest, path: &str) -> Result<(), String> {
 /// differently from another.
 const RENAME_SH: &str = r#"
 set -u
-if [ ! -e "$KHOR_FROM" ] && [ ! -L "$KHOR_FROM" ]; then
-  printf 'gone
-'
+system=$(uname -s)
+exists() { [ -e "$1" ] || [ -L "$1" ]; }
+device() {
+  if [ "$system" = Linux ]; then stat -c %d "$1" 2>/dev/null
+  else stat -f %d "$1" 2>/dev/null; fi
+}
+inode() { LC_ALL=C ls -di "$1" 2>/dev/null | while read -r number rest; do printf '%s' "$number"; done; }
+# GNU -T and BSD -h prevent a raced symlink-to-directory from becoming
+# an unintended destination. -n keeps another entry's bytes untouched.
+move_name() {
+  expected=$(inode "$1")
+  if [ "$system" = Linux ]; then mv -n -T "$1" "$2" 2>/dev/null
+  else mv -n -h "$1" "$2" 2>/dev/null; fi
+  exists "$1" && return 1
+  [ -n "$expected" ] && [ "$(inode "$2")" = "$expected" ] && return 0
+  # BSD mv can enter a real directory created after our precheck. Keep
+  # the bytes and name their actual location instead of claiming success.
+  nested="$2/${1##*/}"
+  if [ -n "$expected" ] && [ "$(inode "$nested")" = "$expected" ]; then
+    printf 'recovery:%s\n' "$nested"
+  else
+    printf 'recovery:%s\n' "$2"
+  fi
+  exit 0
+}
+if ! exists "$KHOR_FROM"; then
+  printf 'gone\n'
   exit 0
 fi
-if [ -e "$KHOR_TO" ] || [ -L "$KHOR_TO" ]; then
-  printf 'taken
-'
-  exit 0
+# Keep this endpoint a rename like files::rename_path; mv must not
+# silently fall back to copying and deleting across filesystems.
+source_directory=${KHOR_FROM%/*}
+target_directory=${KHOR_TO%/*}
+source_device=$(device "$KHOR_FROM")
+target_device=$(device "${target_directory:-/}")
+if [ -z "$source_device" ] || [ "$source_device" != "$target_device" ]; then printf 'no\n'; exit 0; fi
+if exists "$KHOR_TO"; then
+  source_parent=$(cd -P "${source_directory:-/}" 2>/dev/null && pwd -P) || exit 1
+  target_parent=$(cd -P "${target_directory:-/}" 2>/dev/null && pwd -P) || exit 1
+  source_id=$(inode "$KHOR_FROM")
+  target_id=$(inode "$KHOR_TO")
+  same=no
+  if [ "$source_parent" = "$target_parent" ] && [ -n "$source_id" ] && [ "$source_id" = "$target_id" ] && [ "${KHOR_FROM##*/}" != "${KHOR_TO##*/}" ]; then
+    count=0
+    exact=no
+    for entry in "$source_parent"/* "$source_parent"/.[!.]* "$source_parent"/..?*; do
+      exists "$entry" || continue
+      [ "${entry##*/}" != "${KHOR_TO##*/}" ] || exact=yes
+      [ "$(inode "$entry")" != "$source_id" ] || count=$((count + 1))
+    done
+    [ "$exact" != yes ] && [ "$count" = 1 ] && same=yes
+  fi
+  if [ "$same" != yes ]; then printf 'taken\n'; exit 0; fi
+  staging=$(mktemp -d "$source_parent/.khor-rename-XXXXXXXX") || { printf 'no\n'; exit 0; }
+  if ! move_name "$KHOR_FROM" "$staging/entry"; then rmdir "$staging" 2>/dev/null; printf 'no\n'; exit 0; fi
+  if exists "$KHOR_TO" || ! move_name "$staging/entry" "$KHOR_TO"; then
+    if ! exists "$KHOR_FROM" && move_name "$staging/entry" "$KHOR_FROM"; then
+      rmdir "$staging" 2>/dev/null
+      printf 'no\n'
+    else
+      # Never recursively remove a staging directory holding user data.
+      printf 'recovery:%s\n' "$staging/entry"
+    fi
+    exit 0
+  fi
+  rmdir "$staging" 2>/dev/null
+else
+  move_name "$KHOR_FROM" "$KHOR_TO" || { printf 'no\n'; exit 0; }
 fi
-mv "$KHOR_FROM" "$KHOR_TO" 2>/dev/null || { printf 'no
-'; exit 0; }
-printf 'done
-'
+printf 'done\n'
 exit 0
 "#;
 
@@ -875,6 +931,7 @@ pub fn rename_path(host: &Dest, from: &str, to: &str) -> Result<(), String> {
         "done" => Ok(()),
         "gone" => Err(msg::cant_move_name(from, "No such file or directory")),
         "taken" => Err(msg::name_taken(to)),
+        recovery if recovery.starts_with("recovery:") => Err(msg::cant_move_name(from, recovery)),
         _ => Err(msg::cant_move_name(from, "mv")),
     }
 }

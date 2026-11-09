@@ -23,7 +23,7 @@
 // Which branches are open is remembered per workspace in this face's own
 // storage, so reopening a project finds it where it was left — the same
 // class of memory as a column width, not a decision about the mesh.
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 
 import { EmptyState, RegionState, Waiting } from "@/components/RegionState";
 import { fetchLs, pullFile, makeDir, makeFile, renamePath, type DirListing } from "@/api";
@@ -39,7 +39,9 @@ import { FileKindIcon } from "@/components/FileKindIcon";
 import { IconChevronRight } from "@/components/icons";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
-import { pathDrag } from "@/lib/path-drag";
+import { pathDrag, currentPathDrag, droppedPath, clearPathDrag, type DraggedPath } from "@/lib/path-drag";
+import { onWindowDrop, onWindowDrag } from "@/lib/window-drop";
+import { workspaceMoveTarget } from "@/lib/workspace-move";
 import { consumeFileLocation, fileLocationAncestors, onFileLocation, pendingFileLocation, sameFileLocation } from "@/lib/file-location";
 import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
@@ -520,6 +522,96 @@ export function FileTree({
     return null;
   };
 
+  const [dropTarget, setDropTarget] = useState<{ dir: string | null; valid: boolean } | null>(null);
+  const [moveError, setMoveError] = useState<string | null>(null);
+  const moving = useRef(false);
+  const dragMachine = here ? null : machine;
+  const targetDirectory = (target: Element | null) => {
+    const list = treeElement.current?.querySelector("[data-files-list]");
+    if (!target || !list?.contains(target)) return null;
+    if (target.closest("input, [role=menu], [data-new-name]")) return null;
+    const row = target.closest<HTMLElement>("[data-tree-entry]");
+    return row ? row.dataset.treeDirectory ?? null : root;
+  };
+  const destination = (source: DraggedPath | null, dir: string | null) => workspaceMoveTarget(
+    source, dragMachine, root, dir, dir ? listings.get(dir)?.entries.map(entry => entry.name) : [],
+  );
+  const dragPreview = (source: DraggedPath | null, dir: string | null) => {
+    if (!source?.workspace) { setDropTarget(null); return; }
+    const valid = !moving.current && naming === null && destination(source, dir) !== null;
+    setDropTarget(was => was?.dir === dir && was.valid === valid ? was : { dir, valid });
+  };
+  const moveDropped = async (source: DraggedPath | null, dir: string | null) => {
+    setDropTarget(null);
+    const to = destination(source, dir);
+    if (!source || !to || !dir || moving.current || naming !== null) return;
+    moving.current = true;
+    setMoveError(null);
+    try {
+      await renamePath(machine, source.path, to);
+      onMoved?.(source.path, to);
+      const before = source.path.slice(0, source.path.lastIndexOf("/")) || "/";
+      // Demand both listings now, even when a native watch is available.
+      // A watcher may report the move after the user's next interaction.
+      refresh([before, dir]);
+      for (const [path, request] of requests.current) {
+        if (path === before || path === dir || path === source.path || path.startsWith(`${source.path}/`)) {
+          requests.current.set(path, request + 1);
+        }
+      }
+      // Old parent listings would otherwise pronounce the newly moved
+      // expanded branch gone before its destination read can arrive.
+      setListings(was => new Map([...was].filter(([path]) => path !== before && path !== dir &&
+        path !== source.path && !path.startsWith(`${source.path}/`))));
+      const after = (path: string) => path === source.path ? to : path.startsWith(`${source.path}/`) ? `${to}${path.slice(source.path.length)}` : path;
+      setWant(was => new Set([...was].map(after).concat(before, dir)));
+      setExpanded(was => {
+        const next = new Set([...was].map(after));
+        if (dir !== root) next.add(dir);
+        try { localStorage.setItem(openKey(machine, root), JSON.stringify([...next])); } catch { /* Opening still succeeds. */ }
+        return next;
+      });
+      for (const changed of new Set([before, dir])) treeChanged({ machine, here, dir: changed });
+    } catch (error) {
+      setMoveError(String(error instanceof Error ? error.message : error));
+    } finally {
+      moving.current = false;
+    }
+  };
+  const dragOver = (event: DragEvent) => {
+    const source = currentPathDrag();
+    if (!source?.workspace) return;
+    event.preventDefault();
+    const dir = targetDirectory(event.target as Element);
+    dragPreview(source, dir);
+    event.dataTransfer.dropEffect = destination(source, dir) && !moving.current && naming === null ? "move" : "none";
+  };
+  // The shared native resolver consumes the source once. Bounds and the
+  // actual hit-tested production row choose the visible workspace owner.
+  const dropHandlers = useRef({ dragPreview, moveDropped, targetDirectory });
+  dropHandlers.current = { dragPreview, moveDropped, targetDirectory };
+  useEffect(() => {
+    const hit = (x: number, y: number) => {
+      const tree = treeElement.current;
+      if (!tree || hidden || !watchActive || tree.closest('[inert], [hidden], [aria-hidden="true"]')) return null;
+      const target = document.elementFromPoint(x, y);
+      return target && tree.contains(target) ? target : null;
+    };
+    const offDrag = onWindowDrag(drag => {
+      const target = drag ? hit(drag.x, drag.y) : null;
+      if (!drag || !target) { setDropTarget(null); return; }
+      dropHandlers.current.dragPreview(drag.source, dropHandlers.current.targetDirectory(target));
+    });
+    const offDrop = onWindowDrop(drop => {
+      if (!drop.workspace || drop.paths.length !== 1) return;
+      const target = hit(drop.x, drop.y);
+      if (!target) return;
+      void dropHandlers.current.moveDropped({ machine: drop.from ?? null, path: drop.paths[0], workspace: drop.workspace },
+        dropHandlers.current.targetDirectory(target));
+    });
+    return () => { offDrag(); offDrop(); };
+  }, [hidden, watchActive]);
+
   /** 新建文件 / 新建目录 / 复制路径 / 重命名, on top of 删掉. **A
       directory offers all five and a file three**: there is nothing to
       make inside a file, and a menu item that could only refuse is worse
@@ -684,7 +776,18 @@ export function FileTree({
     // the dot stays 8 (2026-09-16 「太小了,小到现在都看不清是什么颜色」,
     // and check-face holds it there) and the letter stays regular. What
     // the lab kept is the slot: dot and letter in one trailing column.
-    <section ref={treeElement} data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
+    <section ref={treeElement}
+      onDragOver={dragOver}
+      onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); }}
+      onDragEnd={() => setDropTarget(null)}
+      onDrop={event => {
+        if (!currentPathDrag()?.workspace) return;
+        event.preventDefault();
+        const source = droppedPath(event);
+        clearPathDrag();
+        void moveDropped(source, targetDirectory(event.target as Element));
+      }} data-file-tree data-tree-root={root} data-drop-valid={dropTarget ? String(dropTarget.valid) : undefined}
+      className="flex h-full min-w-0 flex-col">
       {/* **Commit line above the tree** (WS-LAB item 1): subject · short
           id · age — present whenever the root is a repository with a
           HEAD and the first commit has arrived. Re-asked via
@@ -702,7 +805,9 @@ export function FileTree({
           <span className="flex-none">{ago(headCommit.when_ms)}</span>
         </button>
       )}
-      <div data-files-list className="min-h-0 flex-1 overflow-y-auto">
+      {moveError && <div role="alert" className="px-4 py-2 text-callout text-state-failed">{moveError}</div>}
+      <div data-files-list data-drop-target={dropTarget?.dir === root ? String(dropTarget.valid) : undefined}
+        className={cn("min-h-0 flex-1 overflow-y-auto", dropTarget?.dir === root && dropTarget.valid && "bg-fill")}>
         {rootError !== undefined ? (
           // **The one thing this must never be is blank** — the node's
           // own sentence, at the size of something meant to be read
@@ -765,6 +870,9 @@ export function FileTree({
               const row = r.dir ? (
                 <div
                   key={r.full}
+                  data-tree-entry
+                  data-tree-directory={r.full}
+                  data-drop-target={dropTarget?.dir === r.full ? String(dropTarget.valid) : undefined}
                   data-depth={r.depth}
                   style={indent(r.depth)}
                   // The wash is the row's and the target fills it, the
@@ -773,6 +881,7 @@ export function FileTree({
                   className={cn(
                     "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout hover:bg-muted/50",
                     faded && "text-muted-foreground",
+                    dropTarget?.dir === r.full && dropTarget.valid && "bg-fill-strong",
                   )}
                 >
                   {/* **The whole row toggles, and the chevron is a
@@ -791,7 +900,7 @@ export function FileTree({
                     <button
                       type="button"
                       // Dragged onto a terminal, the path (item 60).
-                      {...pathDrag(here ? null : machine, r.full)}
+                      {...pathDrag(here ? null : machine, r.full, { root, dir: r.dir })}
                       data-dir={r.name}
                       data-file-path={r.full}
                       data-on={on}
@@ -852,6 +961,7 @@ export function FileTree({
                 <div
                   key={r.full}
                   data-file={r.name}
+                  data-tree-entry
                   data-depth={r.depth}
                   data-open={open === r.full}
                   style={indent(r.depth)}
@@ -889,7 +999,7 @@ export function FileTree({
                       // default rather than a second copy of it.
                       data-picked={picked?.full === r.full ? "" : undefined}
                       data-file-path={r.full}
-                      {...pathDrag(here ? null : machine, r.full)}
+                      {...pathDrag(here ? null : machine, r.full, { root, dir: r.dir })}
                       onClick={() => {
                         setPicked({ full: r.full, dir: false });
                         onOpen(r.full, clickPins);

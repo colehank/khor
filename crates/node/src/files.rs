@@ -455,12 +455,9 @@ pub fn touch(path: &str) -> Result<(), String> {
 /// Moves a name on this disk: rename inside a directory, across two of
 /// them, both.
 ///
-/// **The target is checked first and never overwritten.**
-/// `std::fs::rename` replaces an existing file silently on unix, so a
-/// mistyped destination would take another file with it and answer
-/// 「done」. The check is a window — somebody could create that name in
-/// between — and it is the right size of answer for what this is: a
-/// person renaming a row in a tree, not a build step.
+/// Existing names are never replaced. A case-insensitive alias is allowed
+/// only when directory enumeration proves that it is the same entry, not
+/// another hard link or symlink to the same content.
 pub fn rename_path(from: &str, to: &str) -> Result<(), String> {
     let (a, b) = (std::path::Path::new(from), std::path::Path::new(to));
     if !a.is_absolute() {
@@ -469,12 +466,90 @@ pub fn rename_path(from: &str, to: &str) -> Result<(), String> {
     if !b.is_absolute() {
         return Err(msg::path_not_absolute(to));
     }
-    // The same name twice is not a move and not an error worth its own
-    // sentence — it is the name already being taken, by itself.
     if std::fs::symlink_metadata(b).is_ok() {
-        return Err(msg::name_taken(to));
+        if !same_directory_entry(a, b) {
+            return Err(msg::name_taken(to));
+        }
+        // Staging avoids both case-insensitive rename no-ops and replacing a
+        // new occupant. Keep the directory until rollback succeeds: dropping
+        // a TempDir after a failed rollback would delete the user's source.
+        let staging = tempfile::Builder::new()
+            .prefix(".khor-rename-")
+            .tempdir_in(a.parent().ok_or_else(|| msg::name_taken(to))?)
+            .map_err(|e| msg::cant_move_name(from, e))?
+            .keep();
+        let parked = staging.join("entry");
+        let result = crate::tree::rename_new(a, &parked).and_then(|()| {
+            crate::tree::rename_new(&parked, b).map_err(|error| {
+                match crate::tree::rename_new(&parked, a) {
+                    Ok(()) => error,
+                    Err(rollback) => format!("{error}; {rollback}; {}", parked.display()),
+                }
+            })
+        });
+        // Only remove an empty staging directory, including on failure.
+        let _ = std::fs::remove_dir(&staging);
+        return result.map_err(|e| msg::cant_move_name(from, e));
     }
-    std::fs::rename(a, b).map_err(|e| msg::cant_move_name(from, e))
+    crate::tree::rename_new(a, b).map_err(|e| msg::cant_move_name(from, e))
+}
+
+fn same_directory_entry(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let (Some(parent), Some(other_parent), Some(name)) = (a.parent(), b.parent(), b.file_name())
+    else {
+        return false;
+    };
+    let (Ok(parent), Ok(other_parent)) = (parent.canonicalize(), other_parent.canonicalize())
+    else {
+        return false;
+    };
+    if parent != other_parent || a.file_name() == b.file_name() {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return false;
+    };
+    let mut aliases = 0;
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return false;
+        };
+        // An exact target spelling is a real occupied name, even when its
+        // inode equals the source (two directory entries can be hard links).
+        if entry.file_name() == name {
+            return false;
+        }
+        if same_name_identity(&entry.path(), a) {
+            aliases += 1;
+        }
+    }
+    aliases == 1 && same_name_identity(a, b)
+}
+
+fn same_name_identity(a: &std::path::Path, b: &std::path::Path) -> bool {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        match (std::fs::symlink_metadata(a), std::fs::symlink_metadata(b)) {
+            (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
+            _ => false,
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        // Conservatively refuse link aliases on platforms without lstat
+        // identity; canonicalization of a link identifies its target instead.
+        if [a, b]
+            .iter()
+            .any(|p| p.symlink_metadata().is_ok_and(|m| m.is_symlink()))
+        {
+            return false;
+        }
+        match (a.canonicalize(), b.canonicalize()) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 /// What this machine opens paths and pages with, if anything.
@@ -1712,5 +1787,113 @@ mod search_tests {
         let found = search(dir.to_str().unwrap(), "keeper").unwrap();
         assert_eq!(found.lines.len(), SEARCH_LINES);
         assert!(found.more, "the cap cut it and nothing said so");
+    }
+}
+
+#[cfg(test)]
+mod rename_tests {
+    use super::rename_path;
+    use std::fs;
+
+    #[test]
+    fn case_changes_files_and_directories_without_replacing_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("Methods.md");
+        let new = dir.path().join("methods.md");
+        fs::write(&old, "keeper").unwrap();
+        rename_path(old.to_str().unwrap(), new.to_str().unwrap()).unwrap();
+        assert_eq!(fs::read_to_string(&new).unwrap(), "keeper");
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from("methods.md")]);
+        let old_dir = dir.path().join("Source");
+        let new_dir = dir.path().join("source");
+        fs::create_dir(&old_dir).unwrap();
+        fs::write(old_dir.join("draft"), "draft").unwrap();
+        rename_path(old_dir.to_str().unwrap(), new_dir.to_str().unwrap()).unwrap();
+        assert_eq!(fs::read_to_string(new_dir.join("draft")).unwrap(), "draft");
+        fs::write(&old, "other").unwrap();
+        // On insensitive filesystems this writes the same name; use an
+        // unrelated name for the conflict assertion on every filesystem.
+        let occupied = dir.path().join("occupied");
+        fs::write(&occupied, "untouched").unwrap();
+        assert!(rename_path(new.to_str().unwrap(), occupied.to_str().unwrap()).is_err());
+        assert_eq!(fs::read_to_string(&occupied).unwrap(), "untouched");
+        assert!(rename_path(new.to_str().unwrap(), new.to_str().unwrap()).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn hardlinks_symlinks_and_parent_aliases_are_directory_entries() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let old = dir.path().join("Methods.md");
+        let new = dir.path().join("methods.md");
+        fs::write(&old, "keeper").unwrap();
+        if !new.exists() {
+            fs::hard_link(&old, &new).unwrap();
+            assert!(rename_path(old.to_str().unwrap(), new.to_str().unwrap()).is_err());
+            assert_eq!(fs::read_to_string(&old).unwrap(), "keeper");
+            fs::remove_file(&new).unwrap();
+        }
+        let alias = dir.path().join("alias");
+        symlink(dir.path(), &alias).unwrap();
+        rename_path(
+            old.to_str().unwrap(),
+            alias.join("methods.md").to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(&new).unwrap(), "keeper");
+        let link = dir.path().join("Link");
+        let renamed = dir.path().join("link");
+        symlink("missing-target", &link).unwrap();
+        rename_path(link.to_str().unwrap(), renamed.to_str().unwrap()).unwrap();
+        assert_eq!(
+            fs::read_link(&renamed).unwrap(),
+            std::path::Path::new("missing-target")
+        );
+        assert!(rename_path(new.to_str().unwrap(), renamed.to_str().unwrap()).is_err());
+        assert_eq!(fs::read_to_string(&new).unwrap(), "keeper");
+    }
+
+    #[test]
+    fn exclusive_rename_never_replaces_an_occupied_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::write(&source, "source").unwrap();
+        fs::write(&target, "target").unwrap();
+        assert!(crate::tree::rename_new(&source, &target).is_err());
+        assert_eq!(fs::read_to_string(&source).unwrap(), "source");
+        assert_eq!(fs::read_to_string(&target).unwrap(), "target");
+        fs::remove_file(&target).unwrap();
+        fs::hard_link(&source, &target).unwrap();
+        assert!(rename_path(source.to_str().unwrap(), target.to_str().unwrap()).is_err());
+        assert!(source.exists() && target.exists());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "source");
+    }
+
+    #[test]
+    fn moves_subtrees_and_refuses_descendants_and_existing_directories() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source");
+        let target = dir.path().join("target");
+        fs::create_dir(&source).unwrap();
+        fs::create_dir(&target).unwrap();
+        fs::write(source.join("draft"), "keeper").unwrap();
+        assert!(
+            rename_path(
+                source.to_str().unwrap(),
+                source.join("child").to_str().unwrap()
+            )
+            .is_err()
+        );
+        assert!(rename_path(source.to_str().unwrap(), target.to_str().unwrap()).is_err());
+        let moved = target.join("source");
+        rename_path(source.to_str().unwrap(), moved.to_str().unwrap()).unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read_to_string(moved.join("draft")).unwrap(), "keeper");
     }
 }

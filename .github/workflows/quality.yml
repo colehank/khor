@@ -366,7 +366,7 @@ jobs:
       - name: Run the selected interaction groups and retain all failures
         run: |
           failed=0
-          gates=(updates-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui)
+          gates=(updates-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui workspace-move-ui)
           if [ "$KHOR_QUALITY_SUITE" = updates ]; then
             gates=(updates-ui)
           fi
