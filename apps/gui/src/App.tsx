@@ -51,7 +51,6 @@ import {
 import {
   IconBack,
   IconBrowser,
-  IconClose,
   IconDevices,
   IconFiles,
   IconQuota,
