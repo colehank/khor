@@ -107,6 +107,21 @@ try{
     }
     if(!disclosureOnly){
       const context=await browser.newContext({viewport:{width:402,height:714}}),page=await context.newPage();
+      const result={engine,scenario:'growing-text-remeasure-keeps-tail',errors:[]};report.results.push(result);
+      try{
+        await page.goto(`${base}/lab/scroll-compose.html`);const field=page.locator('[data-composer-text]');await field.waitFor();
+        await field.fill('draft words '.repeat(24));await field.evaluate(el=>el.blur());
+        await page.evaluate(()=>window.__composeFixture.toBottom());await page.waitForTimeout(300);
+        result.before=await page.evaluate(()=>window.__composeFixture.snapshot('before-remeasure'));
+        assert(Math.abs(result.before.gap)<=2,'Remeasure starts at the live tail');
+        result.after=await page.evaluate(()=>window.__composeFixture.rerender(false));
+        assert(Math.abs(result.after.gap)<=2,'Text measurement must not temporarily clamp the live tail');
+        result.status='passed';
+      }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
+      finally{console.log(`${result.status} ${engine} growing-text-remeasure`);save();await context.close();}
+    }
+    if(!disclosureOnly){
+      const context=await browser.newContext({viewport:{width:402,height:714}}),page=await context.newPage();
       const result={engine,scenario:'delayed-layout-scroll-and-reader-intent',errors:[]};report.results.push(result);
       page.on('pageerror',error=>result.errors.push(error.message));
       try{

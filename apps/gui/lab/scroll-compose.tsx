@@ -77,7 +77,7 @@ function Conversation({revision,epoch}:{revision:object;epoch:number}){
     void reader.start();
     return()=>{stopped=true;void reader.dispose();};
   },[scroller,readingLatest]);
-  useGrowingText(field,draft);
+  useGrowingText(field,draft,epoch);
   useLayoutEffect(()=>{
     if(field.current&&document.querySelector('[data-chat-box]'))snapshot('conversation-layout-effect');
   });
