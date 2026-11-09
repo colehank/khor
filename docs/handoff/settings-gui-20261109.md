@@ -1,6 +1,6 @@
 # Settings GUI · review ready, publication held
 
-Latest user: settings within the main app, no separate popup; audit against Apple HIG. Earlier instruction explicitly holds merge/ship for settings discussion. Root serial; no new agents, no local Node/Bun/Rust/Xcode builds. Installed user App and live session hosts untouched.
+Latest user: settings within the main app, no separate popup; audit against Apple HIG. Earlier instruction explicitly holds merge/ship for settings discussion. Root handles Settings GUI; one workspace-file-ops agent explicitly authorized by the latest user request. No local Node/Bun/Rust/Xcode builds. Installed user App and live session hosts untouched.
 
 ## Source
 
@@ -31,3 +31,7 @@ Source-only Python fixture-cache tests4/4 pass. Macserver SSH repeatedly timed o
 ## Next
 
 Review remaining GUI run(s), keep evidence/record failures precisely. If the user steers settings UX meanwhile, preserve this task and hold release. Do not merge main or ship without renewed instruction. Official HIG links are in the audit document.
+
+## New user scope: workspace file operations
+
+User adds this round: Methods.md → methods.md wrongly reports existing file; workspace file/directory dragging into another directory should move it. Explicitly authorizes one agent while root stays with GUI discussion. Agent /root/workspace_file_ops owns /Volumes/disk0/Khor/worktrees/current/khor-workspace-file-ops-20261109, branch fix/workspace-file-ops-20261109, base137fc856. Agent must not spawn others, merge/ship/install/restart App. It will maintain docs/handoff/workspace-file-ops-20261109.md and submit commits for root integration. Root will not edit its target file-operation paths. Scope should cover shared standalone/session workspace components and real safe backend move/rename behavior. Root asked optional settings-GUI focus question; no new GUI design choice inferred yet. Publication stays on hold.
