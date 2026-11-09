@@ -935,7 +935,7 @@ aside[data-side] {
 [data-task-frame] > [data-task-action] > button { min-height: var(--ctl-md); }
 [data-task-frame] > [data-task-action][data-task-role="close"] > button { width: var(--ctl-md); padding-inline: 0; }
 [data-narrow] [data-slot="dialog-content"][data-task-frame] {
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: var(--task-action-span, var(--touch)) minmax(0, 1fr) var(--task-action-span, var(--touch));
   grid-template-rows: auto minmax(0, 1fr);
 }
 [data-narrow] [data-task-frame] > [data-task-heading],

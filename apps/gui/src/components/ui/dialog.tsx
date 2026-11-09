@@ -266,24 +266,42 @@ function TaskFrame({children, ...props}: Omit<React.ComponentProps<typeof Dialog
   const [title, setTitle] = React.useState<React.ReactNode>(null);
   const [actions, setActions] = React.useState<TaskActionSlots | null>(null);
   const [discarding, setDiscarding] = React.useState(false);
-  const frame = React.useRef<HTMLDivElement>(null);
+  const [body, setBody] = React.useState<HTMLDivElement | null>(null);
   const close = React.useRef<HTMLButtonElement>(null);
   const nativeClose = React.useRef<() => void>(() => {});
   const slots = React.useMemo<TaskSlots>(() => ({title:setTitle, actions:setActions}), []);
   const role = actions?.back ? "back" : actions?.cancel ? "cancel" : "close";
   const source = actions?.back ?? actions?.cancel ?? actions?.close;
   const leave = () => {
-    const button = frame.current?.parentElement?.querySelector<HTMLButtonElement>('[data-task-action="leading"] button');
+    const button = body?.parentElement?.querySelector<HTMLButtonElement>('[data-task-action="leading"] button');
     if (button) button.click();
     else nativeClose.current();
   };
   const requestDismiss = (fallback: () => void) => {
     nativeClose.current = fallback;
-    if (!frame.current) { fallback(); return; }
+    if (!body) { fallback(); return; }
     if (actions?.busy) return;
     if (actions?.dirty) setDiscarding(true);
     else leave();
   };
+  // Equal edge tracks keep the mobile title on the screen centre, even
+  // with Back versus a longer translated submit label. Measure real buttons,
+  // not their grid tracks or their animated bounding boxes.
+  React.useLayoutEffect(() => {
+    const root = body?.parentElement;
+    if (!root) return;
+    const buttons = [...root.querySelectorAll<HTMLElement>(':scope > [data-task-action] > button')];
+    const sync = () => {
+      const span = Math.max(0, ...buttons.map(button => button.offsetWidth));
+      const value = `${span}px`;
+      if (span && root.style.getPropertyValue('--task-action-span') !== value) root.style.setProperty('--task-action-span', value);
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(root);
+    buttons.forEach(button => observer.observe(button));
+    sync();
+    return () => observer.disconnect();
+  }, [body, actions]);
   const leading = source ?? <Button onClick={() => close.current?.click()}>{gui.close}</Button>;
   return <>
     <DialogContent {...props} scrollable data-task-frame data-task-leading-role={role} data-task-footer={role !== "close" || actions?.primary || actions?.tools ? "" : undefined} onRequestDismiss={requestDismiss}>
@@ -297,7 +315,7 @@ function TaskFrame({children, ...props}: Omit<React.ComponentProps<typeof Dialog
         })}
       </div>
       {actions?.primary && <div data-task-action="primary">{React.cloneElement(actions.primary, {variant:"primary", disabled:actions.busy || actions.primary.props.disabled, "aria-busy":actions.busy || actions.primary.props["aria-busy"]})}</div>}
-      <div ref={frame} data-slot="dialog-body" inert={actions?.busy || undefined} aria-busy={actions?.busy || undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain">
+      <div ref={setBody} data-slot="dialog-body" inert={actions?.busy || undefined} aria-busy={actions?.busy || undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain">
         <Fault name="task"><TaskContext.Provider value={slots}>{children}</TaskContext.Provider></Fault>
       </div>
       {actions?.tools && <div data-task-tools className="flex min-w-0 flex-wrap gap-in">{actions.tools}</div>}

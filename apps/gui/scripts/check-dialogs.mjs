@@ -147,7 +147,10 @@ if(process.argv.includes('--serve')){
       });
       assert.equal(boxes.legacy,0,'Task actions do not remain in a page footer');
       assert.ok(boxes.narrow?boxes.leading.bottom<=boxes.body.top+1&&boxes.primary.bottom<=boxes.body.top+1:boxes.leading.top>=boxes.body.bottom-1&&boxes.primary.top>=boxes.body.bottom-1,'Task actions use their platform slots: '+JSON.stringify(boxes));
-      if(boxes.narrow)assert.ok(boxes.leading.right<=boxes.title.left+1&&boxes.title.right<=boxes.primary.left+1,'Long title cannot overlap actions');
+      if(boxes.narrow){
+        assert.ok(boxes.leading.right<=boxes.title.left+1&&boxes.title.right<=boxes.primary.left+1,'Long title cannot overlap actions');
+        assert.ok(Math.abs((boxes.title.left+boxes.title.right-boxes.body.left-boxes.body.right)/2)<1,'Mobile title stays on the screen centre despite different action widths');
+      }
       if(report)await task.screenshot({path:path.join(report,`task-frame-${size}.png`),animations:'disabled'});
       await input.press('Escape');
       await frame.locator('[data-task-discard]').waitFor();

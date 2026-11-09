@@ -68,7 +68,8 @@ export async function checkMachinePairing(page, capture, expectedFailure) {
     const outcome=dialog.locator('[data-pair-outcome]');await outcome.waitFor();
     assert.match(await outcome.innerText(),/等待网络批准/,'A pairing response may require approval, never call it connected');
     await capture(theme+'-pending');
-    await dialog.getByRole('button',{name:'完成',exact:true}).click();
+    assert.equal(await dialog.locator('[data-task-role="close"] button').count(),1,'Completed pairing has a Close exit, not a fake commit');
+    await dialog.getByRole('button',{name:'关闭',exact:true}).click();
     await fixture({pending:false});
     dialog=await choose('khor');await dialog.locator('[data-ticket]').waitFor();
     await dialog.getByRole('radio',{name:'加入网络',exact:true}).click();
@@ -76,7 +77,8 @@ export async function checkMachinePairing(page, capture, expectedFailure) {
     await dialog.locator('[data-pair-outcome]').waitFor();
     assert.equal(await dialog.locator('[data-pair-outcome]').innerText(),'已加入示例网络');
     await capture(theme+'-joined');
-    await dialog.getByRole('button',{name:'完成',exact:true}).click();
+    assert.equal(await dialog.locator('[data-task-role="close"] button').count(),1,'Completed pairing has a Close exit, not a fake commit');
+    await dialog.getByRole('button',{name:'关闭',exact:true}).click();
     dialog=await choose('ssh');
     await dialog.locator('[data-add-group="ssh"]').waitFor();
     assert.equal(await dialog.locator('[data-pairing-mode]').count(),0,'SSH opens its own form directly');
