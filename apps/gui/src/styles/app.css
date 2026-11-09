@@ -3049,8 +3049,28 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
 /* Readable glass over busy content: reuse the denser menu tint and the
    common rim/blur/shadow, rather than the navigation's thin control tint. */
 .notification-banner {
+  touch-action: none;
+  animation: notification-arrive var(--dur-240) var(--ease-out) both;
+  transition: transform var(--dur-240) var(--ease-out), opacity var(--dur-180) var(--ease-out);
   pointer-events: auto;
   background: var(--glass-menu);
+}
+@keyframes notification-arrive {
+  from { opacity: 0; transform: translateY(calc(-100% - var(--safe-top) - var(--gap-row))); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes notification-depart {
+  to { opacity: 0; transform: translateY(calc(-100% - var(--safe-top) - var(--gap-row))); }
+}
+.notification-banner[data-notification-arrived] { animation: none; }
+.notification-banner[data-notification-dragging] { animation: none; transition: none; }
+.notification-banner[data-notification-closing] {
+  animation: notification-depart var(--dur-180) var(--ease-out) forwards;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notification-banner { animation: none; transition: none; }
+  .notification-banner[data-notification-closing] { animation: none; }
 }
 @supports not ((backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0))) {
   .notification-banner { background: var(--popover); }

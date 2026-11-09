@@ -11,9 +11,10 @@ import '/src/styles/app.css';
 document.documentElement.dataset.theme=new URL(location.href).searchParams.get('theme')||'dark';
 const event=(id,kind)=>({id,kind,at_ms:Date.now(),resolved:false,text:null,duration_ms:null,exit:null});
 const sessions=[
- {id:'gui/khor',title:'Khor-main',kind:'gui',category:'khor',word:'idle',execution_home:'a'.repeat(64),home:'Mac',face:null,imported:false,observation_owner:null,activity:[]},
- {id:'gui/codex',title:'AcaPartner',kind:'gui',category:'codex',word:'idle',execution_home:'b'.repeat(64),home:'Linux',face:null,imported:false,observation_owner:null,activity:[]},
- {id:'shell/build',title:'构建',kind:'shell',category:'shell',word:'idle',execution_home:'b'.repeat(64),home:'Linux',face:null,imported:false,observation_owner:null,activity:[]},
+ {id:'gui/khor',title:'Khor-main',kind:'gui',category:'khor',word:'idle',execution_home:'a'.repeat(64),home:'Mac',face:null,imported:false,observation_owner:null,activity:[],last:'已完成修改，请检查工作区中的最新文件',doing:null},
+ {id:'gui/codex',title:'AcaPartner',kind:'gui',category:'codex',word:'idle',execution_home:'b'.repeat(64),home:'Linux',face:null,imported:false,observation_owner:null,activity:[],last:'已完成修改，请检查工作区中的最新文件',doing:null},
+ {id:'shell/build',title:'构建',kind:'shell',category:'shell',word:'idle',execution_home:'b'.repeat(64),home:'Linux',face:null,imported:false,observation_owner:null,activity:[],last:'已完成修改，请检查工作区中的最新文件',doing:null},
+ ...Array.from({length:5},(_,i)=>({id:'gui/extra-'+i,title:'项目 '+(i+1),kind:'gui',category:'codex',word:'idle',execution_home:'b'.repeat(64),home:'Linux',face:null,imported:false,observation_owner:null,activity:[],last:'任务已完成，等待检查',doing:null})),
 ];
 let serial=0;
 receiveNotifications(sessions,()=>false);
@@ -30,12 +31,14 @@ function Lab(){
   <div data-lab-controls className="mt-32 flex flex-wrap items-center gap-in">
    <Button data-lab-complete onClick={()=>send(0)}>会话完成</Button>
    <Button data-lab-burst onClick={()=>{send(0,'needs_input');send(1);send(2);}}>三个会话</Button>
+   <Button data-lab-summary onClick={()=>{for(let i=0;i<sessions.length;i++)send(i);}}>八个会话</Button>
+   <Button data-lab-clear onClick={()=>clearNotifications()}>清空横幅</Button>
    <Button data-lab-resolve onClick={()=>{sessions[0].activity=sessions[0].activity.map(e=>({...e,resolved:true}));receiveNotifications(sessions,()=>false);}}>已处理</Button>
    <Button data-lab-mute onClick={()=>setSessionNotifications(sessions[0],false)}>静音</Button>
    <Button data-lab-follow onClick={()=>setSessionNotifications(sessions[0],true)}>开启通知</Button>
    <output data-lab-opened>{opened}</output>
   </div>
-  <NotificationBanners state={state} sessions={sessions} narrow={narrow} onOpen={item=>{setOpened(item.session+'@'+item.home.slice(0,4));return true;}}/>
+  <NotificationBanners state={state} sessions={sessions} narrow={narrow} onOpen={item=>{setOpened(item.members?'sessions':item.session+'@'+item.home.slice(0,4));return true;}}/>
  </main></TooltipProvider>;
 }
 createRoot(document.getElementById('root')!).render(<Lab/>);

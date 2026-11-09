@@ -928,6 +928,13 @@ export default function App() {
   }, [sessionTabs.open, readSession]);
 
   const openNotification = (item: NotificationBanner): boolean => {
+    if (item.members) {
+      setMorePage(null);
+      setSwitchingTabs(false);
+      setLanding("sessions");
+      setScreen("list");
+      return true;
+    }
     const row = rawRows.find((r) => r.id === item.session && r.execution_home === item.home);
     if (!row) return false;
     setMorePage(null);

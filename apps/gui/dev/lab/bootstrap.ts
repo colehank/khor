@@ -48,7 +48,7 @@ if (runtime.mode === 'frontend') {
     const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : runtime.scene === 'devices' ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
     localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
-  const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, notices:query.get('notices')==='1', page:runtime.scene==='page'});
+  const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page'});
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);

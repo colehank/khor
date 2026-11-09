@@ -295,6 +295,14 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active==='gui/ai-elements-plan');
     const metadata=await page.evaluate(()=>JSON.parse(localStorage.getItem('khor.notification-preferences')));
     assert.equal('items' in metadata,false,'Actual App never archives notification content');
+    await page.goto(`http://127.0.0.1:${port}/app/?scene=list&machines=3&notices=burst`);
+    const summary=page.locator('[data-notification-banner="notification-summary"]');
+    await summary.waitFor({timeout:25000});
+    assert.equal(await page.locator('[data-notification-banner]').count(),1,'Real App collapses a burst into one notice');
+    assert.match(await summary.innerText(),/个会话有更新/);
+    await page.screenshot({path:path.join(report,`app-notification-summary-${engine}-${mobile?'mobile':'desktop'}.png`),animations:'disabled'});
+    await summary.locator('[data-notification-open]').click();
+    if(mobile)await page.locator('[data-chat-box]:visible').waitFor({state:'hidden'});
     assert.deepEqual(errors,[]);
     return {name:`settings-navigation-${engine}-${mobile?'mobile':'desktop'}`,errors};
   } catch(error) {

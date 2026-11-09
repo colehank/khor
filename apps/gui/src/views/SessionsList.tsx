@@ -1,3 +1,4 @@
+import { sessionContentPreview } from "@/lib/session-preview";
 import { useNotifications, setSessionNotifications } from "@/lib/notifications";
 import { notificationsEnabled } from "@/lib/notification-banners";
 import { sessionCwdOnScreen } from "@/lib/session-cwd";
@@ -340,11 +341,11 @@ export function SessionsList({
       // A terminal whose shell marks its commands says what it runs
       // (roadmap 2.1), not what its prompt looks like.
       <DoingLine doing={r.doing} />
-    ) : r.last && /[\p{L}\p{N}]/u.test(r.last) ? (
+    ) : sessionContentPreview(r) ? (
       // A line with something to read: a prompt's frame (「╰─ ─╯」) is
       // no preview (F2.3; the node skips it too, `says_something`).
       <span data-last className="block min-w-0 truncate">
-        {r.last}
+        {sessionContentPreview(r)}
       </span>
     ) : undefined,
     // The right column: the state word (this row's `fact`) over the age

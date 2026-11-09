@@ -61,7 +61,7 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean} = {}) {
   const devices = labDevices(device,options.machines ?? 3);
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
@@ -192,6 +192,11 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   // Opt-in event data exercises the production App banner controller everywhere.
   // Default Lab scenes remain quiet; no alternate notification UI is mounted.
   const noticeEvents=(index:number):SessionRow['activity']=>{
+    if(options.noticeBurst) {
+      const round=Math.floor((Date.now()-previewAt-2000)/18000);
+      return round<1||index>7?[]:[{id:`lab-burst:${index}:${round}`,at_ms:previewAt+2000+round*18000,
+        kind:"turn_completed",resolved:false,text:null,duration_ms:null,exit:null}];
+    }
     if(!options.notices||index>2)return [];
     const round=Math.floor((Date.now()-previewAt-2000)/18000);
     const offset=(index+2)%3;
@@ -296,13 +301,13 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           }
           case "sessions": {
             const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: titles[i],
-              activity: noticeEvents(i), observation_owner: options.notices?null:device.id, content_locator: null, imported: false, quiet: false,
+              activity: noticeEvents(i), observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
               word: streaming.has(i)||i===2 ? 'busy' : i===1 ? 'blocked' : 'idle', at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
               stale: false, category: i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude', group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,
               hosted: true, can_control: true, attachable: false, last: '隔离示例 · 不连接真实智能体',
               via: null, via_face: null, home: devices[i%Math.max(1,devices.length)]?.name??device.name, execution_home: devices[i%Math.max(1,devices.length)]?.id??device.id, place:labRoot(devices[i%Math.max(1,devices.length)])+'/project', doing: null, mux: false, ended: null}));
             if (terminal) rows.push({...rows[0], id: 'shell/layout-lab', kind: 'shell', title: '终端 · 布局试验',
-              category: 'shell', activity:[], attachable: true, last: '隔离终端示例'});
+              category: 'shell', activity:options.noticeBurst?noticeEvents(ids.length):[], attachable: true, last: '隔离终端示例'});
             answer = devices.length ? rows : [];
             break;
           }

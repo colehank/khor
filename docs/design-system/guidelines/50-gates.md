@@ -849,7 +849,7 @@ The same workspace-content UI gate projects native navigation events through the
 - `npm run workspace-memory`：`node scripts/check-workspace-memory.mjs`。
 
 - `npm run notification-banners`：临时通知的到期、去重、后台消费、静音、显式订阅、准确目标及仅元数据持久化。
-- `npm run notification-ui`：真实临时横幅宽窄定位、到期/悬停暂停、关闭、静音、准确目标与刷新后不恢复内容；node IO由专用Lab事件替代。
+- `npm run notification-ui`：真实临时横幅宽窄定位、可见后计时、触摸/悬停暂停、上滑关闭/短拖回弹/取消/不误点、同源合并、突发汇总、最近内容、减少动态效果、静音、准确目标与刷新后不恢复内容；node IO由专用Lab事件替代。
 
 - `npm run khor-conversations-ui`：真实新建页与MachineChat，覆盖空/手工标题、创建丢响应原token重试、多会话历史及Stop归属、智能体自有命令补全/执行经对应Pi，不调用Khor CLI，命令全量替换/清空与输入提示，Chromium与WebKit在CI运行。 第六轮另验两会话分别输入未发送文本，真实 page.reload 后逐一恢复；内存Map旧实现已有效重现为空。
 
