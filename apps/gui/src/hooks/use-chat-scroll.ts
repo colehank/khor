@@ -145,7 +145,7 @@ export function useChatScroll(revision: unknown) {
     const composerOwnsLayout = focus?.matches("[data-composer-text]")
       || (composerHadFocus.current && (focus === document.body || !document.hasFocus()));
     // Native caret restoration can outlive composer focus; BODY is not a reader action.
-    if (composerOwnsLayout || layoutFrame.current || performance.now() < layoutUntil.current || el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport) {
+    if (composerOwnsLayout || layoutFrame.current || (following.current && performance.now() < layoutUntil.current) || el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport) {
       sync();
       return;
     }
