@@ -59,7 +59,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await page.locator('[data-network-member]').count(),3,'Members are the actual machine rows');
     await page.locator('[data-network-action="topology"]').click();
     await page.locator('[data-more-page="me"][data-dial-view="map"]:visible').waitFor();
-    await page.locator(mobile ? '[data-dial-back]:visible' : '[data-more-close]:visible').click();
+    await page.locator('[data-dial-segment] [data-dial-view="overview"]:visible').click();
     await page.locator('[data-network-profile]:visible').waitFor();
     if(!mobile) {
       assert.equal(await page.locator('[data-dial-top]').count(),0,'My Khor shares the page header');

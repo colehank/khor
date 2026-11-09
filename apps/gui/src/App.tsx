@@ -151,7 +151,7 @@ import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { ConnectionPage } from "@/views/more/ConnectionPage";
 import { SessionPage, TerminalPage, WorkspacePage } from "@/views/more/GroupPages";
-import { MyKhorPage, type MyKhorView } from "@/views/more/MyKhorPage";
+import { MyKhorPage } from "@/views/more/MyKhorPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { AboutPage } from "@/views/more/AboutPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
@@ -770,7 +770,6 @@ export default function App() {
   // here is a registration (`Node::adopt_subscriptions`, docs/SHELL.md
   // 第七轮 第 3 条) and comes in with the board like every other row.
 
-  const [khorView,setKhorView] = useState<MyKhorView>("overview");
   const [recognitionMachine, setRecognitionMachine] = useState<string | null>(null);
   const settingsOpener = useRef<((request: SettingsRequest) => void) | null>(null);
   useEffect(() => {
@@ -1420,7 +1419,6 @@ export default function App() {
   const enterMore = () => {
     if (!narrow && morePage !== null) { listPane.toggle(); return; }
     setMorePage(morePage ?? lastMorePage());
-    setKhorView("overview");
     setScreen(narrow ? "list" : "detail");
     setSwitchingTabs(false);
     listPane.expand();
@@ -3127,10 +3125,9 @@ export default function App() {
       />
     ) : (
       <MyKhorPage
-        view={khorView} onView={setKhorView}
         devices={devices}
         rows={rows}
-        onClose={()=>khorView !== "overview" ? setKhorView("overview") : leaveMorePage()}
+        onClose={leaveMorePage}
         // The card's acts (UX-26 rule 6): each one is a road the app
         // already has — the machine's page on its sessions, the wizard
         // with the machine picked, a landing narrowed to the machine
@@ -3177,7 +3174,7 @@ export default function App() {
     <MoreNavigation page={morePage} narrow={narrow}
       overflow={navOrder.slice(NAV_SHOWN).map(seatOf)}
       unread={inbox.items.filter(item=>!item.read).length}
-      onPage={page=>{setKhorView("overview");setMorePage(page);setScreen("detail");}}
+      onPage={page=>{setMorePage(page);setScreen("detail");}}
       onLanding={key=>goLanding(key as Landing)}
     />
   );
@@ -3650,7 +3647,7 @@ export default function App() {
           {morePage ? (
             <Region
               kind="detail"
-              title={morePage === "me" && khorView !== "overview" ? gui.khor_network_topology : moreName(morePage)}
+              title={moreName(morePage)}
               caption={stale ? gui.backend_unreachable : undefined}
               // The way out, at R0's right end with the page's other
               // buttons (components/Toolbar, D9) — not a second head in
@@ -3662,8 +3659,8 @@ export default function App() {
               // plan F4.9; W21).
               actions={
                 (
-                  <GlassCircle aria-label={morePage === "me" && khorView !== "overview" ? gui.back : gui.close} data-more-close onClick={() => morePage === "me" && khorView !== "overview" ? setKhorView("overview") : setMorePage(null)}>
-                    {morePage === "me" && khorView !== "overview" ? <IconBack/> : <IconClose/>}
+                  <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
+                    <IconClose/>
                   </GlassCircle>
                 )
               }

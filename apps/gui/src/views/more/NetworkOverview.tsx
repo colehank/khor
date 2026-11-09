@@ -26,7 +26,7 @@ export function NetworkOverview({devices,me,holdsRoot,onClose,onMachine,onAdd,on
     {status?.map(line=><p key={line} role="status" className="text-callout text-muted-foreground">{line}</p>)}
     <header data-network-profile className="flex flex-col items-center gap-in py-group text-center">
       <NetworkMark large/>
-      <h2 className="text-title-lg font-title">{gui.my_khor}</h2>
+      <h2 className="text-title-lg font-title">{gui.khor_network}</h2>
       <p className="text-body text-muted-foreground">{gui.khor_network_members(devices.length)}</p>
       {me && <p className="text-callout text-muted-foreground">{gui.khor_network_current(me.shown)}</p>}
     </header>

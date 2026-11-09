@@ -86,8 +86,7 @@ import { RelayAddDialog } from "@/views/NetSettings";
 import { RootWordsDialog } from "@/views/PairDialogs";
 import { agoOf, downWord, latency } from "@/words";
 
-type View = "map" | "matrix";
-export type MyKhorView = "overview" | View;
+type View = "overview" | "map" | "matrix";
 
 /** What the card is about: this machine, or another by id. */
 type Opened = { id: string; at: DOMRect | null };
@@ -144,8 +143,6 @@ function wayWord(l: Link): string {
 }
 
 export function MyKhorPage({
-  view,
-  onView,
   devices,
   rows,
   onClose,
@@ -160,8 +157,6 @@ export function MyKhorPage({
   onChanged,
   onReset,
 }: {
-  view:MyKhorView;
-  onView:(view:MyKhorView)=>void;
   /** The shell's own polled table — **not fetched again here** (two
       readers of one answer is how two surfaces disagree). */
   devices: DeviceRow[];
@@ -190,6 +185,7 @@ export function MyKhorPage({
   /** This machine's identity was reset. */
   onReset: () => void;
 }) {
+  const [view,setView] = useState<View>("overview");
   const narrow = useNarrow();
   const coarse = useCoarse();
   // The phone: the whole window (no first row, no landings' bar), as
@@ -296,14 +292,15 @@ export function MyKhorPage({
   const segment = (mark: string) => (
     <SegmentedControl<View>
       label={gui.my_khor}
-      value={view === "overview" ? "map" : view}
+      value={view}
       onChange={(v) => {
         close();
-        onView(v);
+        setView(v);
       }}
       mark={{ [mark]: true }}
       className="flex-none"
       options={[
+        { key: "overview", label: gui.khor_network_overview, mark: { "data-dial-view": "overview" } },
         { key: "map", label: gui.dial_view_map, mark: { "data-dial-view": "map" } },
         { key: "matrix", label: gui.dial_view_matrix, mark: { "data-dial-view": "matrix" } },
       ]}
@@ -383,7 +380,7 @@ export function MyKhorPage({
       {view === "overview" ? <NetworkOverview
         devices={devices} me={me} holdsRoot={inApp && holdsRoot} onClose={onClose}
         onMachine={(row,at)=>setOpened({id:row.id,at})}
-        onAdd={()=>onAdd()} onConnections={onOpenRelays} onTopology={()=>{close();onView("map");}}
+        onAdd={()=>onAdd()} onConnections={onOpenRelays} onTopology={()=>{close();setView("map");}}
         onWords={()=>setShowingWords(true)} onLeave={alone ? undefined : ()=>ask("leave")}
         onReset={()=>ask("reset")} status={said}
       /> : <>
