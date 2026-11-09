@@ -439,6 +439,7 @@ try {
       tools: [...document.querySelectorAll("[data-chat-tool]")].slice(0,16).map(el => ({ kind: el.getAttribute("data-tool-kind"), expanded: el.querySelector("[data-tool-toggle]")?.getAttribute("aria-expanded"), text: el.textContent?.slice(0,512) })),
     })).catch(() => null);
     writeFileSync(join(out, "failure.json"), JSON.stringify({ error: String(error), state, trace: currentTrace, viteStdoutTail }, null, 2));
+    console.error("AI Elements failure:", JSON.stringify({ error: String(error), scroll: state?.scroll, latestButton: state?.reader?.latestButton, scrollTrace: state?.scrollTrace?.slice(-12) }).slice(0, 4096));
   }
   throw error;
 } finally {

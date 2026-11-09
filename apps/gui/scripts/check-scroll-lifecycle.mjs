@@ -198,7 +198,7 @@ async function commitCase(page, mode, evidence) {
 }
 
 async function labBlurCase(page, evidence) {
-  const reset = await page.request.post(`${base}/__ai_preview/reset`);
+  const reset = await page.request.post(`${base}/__ai_preview/reset`, { maxRetries: 2 });
   assert(reset.ok(), 'Isolated Lab reset succeeds');
   await page.goto(`${base}/lab/quality.html`);
   await page.getByRole('button', { name: '载入长回复', exact: true }).click();
@@ -324,7 +324,7 @@ async function chatCase(page, kind, evidence, phase = 'tail') {
     if (waitForBody || kind !== 'acp') await page.getByText(last, { exact: true }).waitFor({ state: 'attached' });
     return last;
   };
-  const reset = await page.request.post(`${base}/__ai_preview/reset`);
+  const reset = await page.request.post(`${base}/__ai_preview/reset`, { maxRetries: 2 });
   assert(reset.ok(), 'Isolated fixture reset succeeds');
   if (kind === 'khor') await page.route('**/machine_log', async route => {
     const upstream = await route.fetch(), value = await upstream.json();

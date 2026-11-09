@@ -90,9 +90,19 @@ export function useChatScroll(revision: unknown) {
     const observer = new ResizeObserver(sync);
     observer.observe(el); observer.observe(body);
     const readerInput = (event: Event) => {
-      if (event instanceof KeyboardEvent && (!/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(event.key)
-        || (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable]")))) return;
-      if (event instanceof PointerEvent && event.type === "pointermove" && event.buttons === 0) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (event instanceof KeyboardEvent) {
+        if (!/^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End| )$/.test(event.key)
+          || target?.closest("input, textarea, select, [contenteditable]")) return;
+        if (event.key === " " && target?.closest("button, [role=button]")) return;
+      }
+      if (event instanceof PointerEvent) {
+        if (event.type === "pointermove" && event.buttons === 0) return;
+        // Activating a control may shrink its card and clamp scrollTop. That
+        // is layout, not a request to pause canonical reading. Wheel/touch
+        // gestures over the same control still take ownership below.
+        if (target?.closest("button, [role=button], a, input, textarea, select, [contenteditable=true]")) return;
+      }
       positionRevision.current++;
       readerUntil.current = performance.now() + SCROLL_IDLE_MS;
       cancelAnimationFrame(readerFrame.current);

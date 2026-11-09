@@ -86,10 +86,7 @@ class FakeReleases:
         self.commands.append(args)
         if args[:2] == ("api", "repos/owner/repo/commits/v1.2.3") or args[:2] == ("api", "repos/owner/repo/commits/" + RC):
             return json.dumps({"sha": SHA})
-        if args[:2] == ("release", "create"):
-            tag = args[2]
-            self.releases[tag] = {"id": tag, "tag_name": tag, "draft": True, "prerelease": "--prerelease" in args, "immutable": False, "assets": []}
-        elif args[:2] == ("release", "upload"):
+        if args[:2] == ("release", "upload"):
             tag, path = args[2], Path(args[3])
             if path.name == self.fail_upload:
                 self.fail_upload = None
@@ -104,6 +101,13 @@ class FakeReleases:
     def api(self, path, method="GET", data=None):
         if path.endswith("/immutable-releases"):
             return {"enabled": True}
+        if method == "POST" and path == "repos/owner/repo/releases":
+            tag = data["tag_name"]
+            self.releases[tag] = {"id": tag, "tag_name": tag, "draft": data["draft"],
+                                  "prerelease": data["prerelease"], "immutable": False, "assets": []}
+            return copy.deepcopy(self.releases[tag])
+        if method == "GET":
+            return copy.deepcopy(self.releases[path.rsplit("/", 1)[1]])
         assert method == "PATCH"
         release = self.releases[path.rsplit("/", 1)[1]]
         release.update(data, immutable=True)
@@ -168,6 +172,24 @@ class ReleaseStorageTest(unittest.TestCase):
         self.assertFalse(self.remote.releases["v1.2.3"]["prerelease"])
         self.assertTrue(self.remote.releases["v1.2.3"]["immutable"])
         self.assertFalse(any("build" in command for command in self.remote.commands))
+
+    def test_creation_response_does_not_depend_on_tag_index_visibility(self):
+        def published_only(tag):
+            release = self.remote.info(tag)
+            return release if release and not release["draft"] else None
+        with patch.object(store, "release_info", side_effect=published_only):
+            store.publish(RC, self.root, self.uploaded)
+        release = self.remote.releases[RC]
+        self.assertFalse(release["draft"])
+        self.assertTrue(release["immutable"])
+        self.assertEqual(set(asset["name"] for asset in release["assets"]),
+                         set(store.asset_map(self.record)) | {"manifest.json", "release.json"})
+
+    def test_wrong_create_response_never_uploads_candidate_assets(self):
+        wrong = {"id": 42, "tag_name": "v9.9.9", "draft": True, "prerelease": True, "assets": []}
+        with patch.object(store, "api", return_value=wrong), self.assertRaisesRegex(ValueError, "identity differs"):
+            store.publish(RC, self.root, self.uploaded)
+        self.assertFalse(any(command[:2] == ("release", "upload") for command in self.remote.commands))
 
     def test_interrupted_upload_resumes_without_overwriting_existing_assets(self):
         self.remote.fail_upload = "manifest.json"

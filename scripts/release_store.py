@@ -219,11 +219,17 @@ def publish(tag, root, uploaded, publication=None):
         verify_remote_assets(release, assets)
         return
     if release is None:
-        args = ["release", "create", tag, "--repo", repository(), "--verify-tag", "--draft", "--generate-notes"]
-        if release_tag.prerelease:
-            args.append("--prerelease")
-        gh(*args)
-        release = release_info(tag)
+        # The create response owns this draft. Tag/list indexes can lag even
+        # though creation succeeded; never turn that lag into a second create.
+        release = api(f"repos/{repository()}/releases", "POST", {
+            "tag_name": tag, "target_commitish": record["source_sha"], "name": tag,
+            "draft": True, "prerelease": release_tag.prerelease,
+            "generate_release_notes": True, "make_latest": "false",
+        })
+        if (not isinstance(release, dict) or release.get("tag_name") != tag
+                or release.get("draft") is not True
+                or release.get("prerelease") != release_tag.prerelease or not release.get("id")):
+            raise ValueError("Created release identity differs from the selected candidate")
     existing = verify_remote_assets(release, assets, complete=False)
     with tempfile.TemporaryDirectory(dir=root.parent) as temporary:
         for name, info in assets.items():
@@ -232,7 +238,7 @@ def publish(tag, root, uploaded, publication=None):
             staged = Path(temporary) / name
             os.link(root / info["path"], staged)
             gh("release", "upload", tag, str(staged), "--repo", repository())
-    verify_remote_assets(release_info(tag), assets)
+    verify_remote_assets(api(f"repos/{repository()}/releases/{release['id']}"), assets)
     published = api(f"repos/{repository()}/releases/{release['id']}", "PATCH",
                     {"draft": False, "prerelease": release_tag.prerelease,
                      "make_latest": "false" if release_tag.prerelease else "true"})
