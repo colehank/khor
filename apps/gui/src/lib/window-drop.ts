@@ -24,7 +24,12 @@ export function dropPoint(position: { x: number; y: number }, platform: string, 
 
 export type WindowDrag = { x: number; y: number; source: DraggedPath } | null;
 const dragHandlers = new Set<(drag: WindowDrag) => void>();
-const preview = (drag: WindowDrag) => { for (const handler of dragHandlers) handler(drag); };
+const preview = (drag: WindowDrag) => {
+  for (const handler of dragHandlers) {
+    try { handler(drag); }
+    catch { console.error("khor: window drag handler failed"); }
+  }
+};
 export function onWindowDrag(handler: (drag: WindowDrag) => void) {
   dragHandlers.add(handler);
   return () => { dragHandlers.delete(handler); };

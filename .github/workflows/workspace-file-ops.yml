@@ -2,6 +2,11 @@ name: Workspace file operations
 on:
   push:
     branches: [fix/workspace-file-ops-20261109]
+    paths:
+      - apps/gui/**
+      - crates/node/**
+      - scripts/check-workspace-rename.py
+      - .github/workflows/workspace-file-ops.yml
   workflow_dispatch:
 permissions:
   contents: read

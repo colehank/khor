@@ -554,6 +554,15 @@ export function FileTree({
       // Demand both listings now, even when a native watch is available.
       // A watcher may report the move after the user's next interaction.
       refresh([before, dir]);
+      for (const [path, request] of requests.current) {
+        if (path === before || path === dir || path === source.path || path.startsWith(`${source.path}/`)) {
+          requests.current.set(path, request + 1);
+        }
+      }
+      // Old parent listings would otherwise pronounce the newly moved
+      // expanded branch gone before its destination read can arrive.
+      setListings(was => new Map([...was].filter(([path]) => path !== before && path !== dir &&
+        path !== source.path && !path.startsWith(`${source.path}/`))));
       const after = (path: string) => path === source.path ? to : path.startsWith(`${source.path}/`) ? `${to}${path.slice(source.path.length)}` : path;
       setWant(was => new Set([...was].map(after).concat(before, dir)));
       setExpanded(was => {
@@ -768,6 +777,7 @@ export function FileTree({
     // and check-face holds it there) and the letter stays regular. What
     // the lab kept is the slot: dot and letter in one trailing column.
     <section ref={treeElement}
+      onDragStart={() => setMoveError(null)}
       onDragOver={dragOver}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); }}
       onDragEnd={() => setDropTarget(null)}
@@ -777,7 +787,8 @@ export function FileTree({
         const source = droppedPath(event);
         clearPathDrag();
         void moveDropped(source, targetDirectory(event.target as Element));
-      }} data-file-tree data-tree-root={root} className="flex h-full min-w-0 flex-col">
+      }} data-file-tree data-tree-root={root} data-drop-valid={dropTarget ? String(dropTarget.valid) : undefined}
+      className={cn("flex h-full min-w-0 flex-col", dropTarget && !dropTarget.valid && "cursor-not-allowed")}>
       {/* **Commit line above the tree** (WS-LAB item 1): subject · short
           id · age — present whenever the root is a repository with a
           HEAD and the first commit has arrived. Re-asked via
