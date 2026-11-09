@@ -96,3 +96,9 @@ Uncommitted implementation on top917: extracted existing production drawBlocks u
 - Repairf352d4a8 run42654436521: frontend and GUI (units/types/static/notice+key UI) SUCCESS, complete App Lab still running at latest fetch. Red86a8b229 run42654081229 confirmed BOTH cursor hue collapse and stripe output omission. Native overlays remain unverified, publication held.
 
 - Latest steering: ALL settings content group titles use one level; no hierarchical indent, align with text below. Extracted common components/settings/SectionHeading (same h2/type tokens, zero margin), shared by all More groups, General and palette Basic/ANSI groups; containers provide exactly their row padding. Added actual text-edge geometry and zero-margin peer measurements. Mobile page/overlay navigation titles remain the shell's own slots. Old terminal key panel headings are outside Settings and unchanged.
+
+- Latest authoritative sourceb055cdeb; exact heading run42657173937 running. e88 scoped run42656665235 cancelled as superseded (no red required for cosmetic change). Design SettingsGroup guideline updated to the user's flat-heading rule, pending documentation commit. Cursor/stripef352 ALL GREEN, artifact prepared immutable but live845 retained until latest headings ready.
+
+## Validation result · 2026-11-10
+- b055cdeb exact run42657173937 ALL SUCCESS: frontend, GUI unit/types/static and notice/key interactions, complete production App Lab. Computed typography/inset/card-gap and real text-edge checks passed on desktop/mobile; light/dark visible cursor paint, full output stripe and mobile palette bounds also passed. Artifact settings-terminal-v5/compiled-lab downloading for immutable23950 handover; no installed App or host touched.
+- This follow-up only documents the approved heading standard and validation; product code is exactly the tested b055cdeb. Keep source revision explicit when serving.
