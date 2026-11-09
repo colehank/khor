@@ -68,14 +68,15 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const quota = labQuota(devices);
   // Only Lab browser storage is touched; metadata comes from the native key table.
   const settingsKey = 'khor.lab.settings-values';
+  const readSetting = (key:string) => { try { return localStorage.getItem(key); } catch { return null; } };
   // Match the synthetic review profile seeded by bootstrap, rather than
   // replacing its language/theme with the browser runner's environment.
-  const settingsProfile = {lang:localStorage.getItem('khor.lang') ?? 'zh',theme:localStorage.getItem('khor.theme') ?? 'auto'};
+  const settingsProfile = {lang:readSetting('khor.lang') ?? 'zh',theme:readSetting('khor.theme') ?? 'auto'};
   let settingsValues: Record<string,string> = {...settingsProfile};
-  try { settingsValues = {...settingsProfile,...JSON.parse(localStorage.getItem(settingsKey) ?? '{}')}; } catch { /* Fresh isolated defaults. */ }
+  try { settingsValues = {...settingsProfile,...JSON.parse(readSetting(settingsKey) ?? '{}')}; } catch { /* Fresh isolated defaults. */ }
   const settingsRows = () => {
     const lang = settingsValues.lang ?? 'auto';
-    const language = lang === 'zh' || (lang === 'auto' && navigator.language.startsWith('zh')) ? 'zh' : 'en';
+    const language = lang === 'zh' || (lang === 'auto' && typeof navigator !== 'undefined' && navigator.language.startsWith('zh')) ? 'zh' : 'en';
     return labSettings[language].map(row => ({...row, value:settingsValues[row.name] ?? row.value}));
   };
   const terminalLeases = new Set<string>();
@@ -209,7 +210,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
-          settingsValues={...settingsProfile};localStorage.removeItem(settingsKey);
+          settingsValues={...settingsProfile};try { localStorage.removeItem(settingsKey); } catch { /* Server fixture has no browser storage. */ }
           holdSettings=false;refuseSetting=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
           for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
@@ -324,7 +325,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             const row = settingsRows().find(row => row.name === body.name);
             if(!row?.choices.some(choice => choice.value === body.value))throw new Error('Invalid Lab setting');
             settingsValues[body.name] = body.value;
-            localStorage.setItem(settingsKey,JSON.stringify(settingsValues));
+            try { localStorage.setItem(settingsKey,JSON.stringify(settingsValues)); } catch { /* Server fixture keeps its values in memory. */ }
             answer=settingsRows();break;
           }
           case "dir_pins": case "web_pins": answer = []; break;
