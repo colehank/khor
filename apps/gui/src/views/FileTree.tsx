@@ -777,7 +777,6 @@ export function FileTree({
     // and check-face holds it there) and the letter stays regular. What
     // the lab kept is the slot: dot and letter in one trailing column.
     <section ref={treeElement}
-      onDragStart={() => setMoveError(null)}
       onDragOver={dragOver}
       onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null); }}
       onDragEnd={() => setDropTarget(null)}
