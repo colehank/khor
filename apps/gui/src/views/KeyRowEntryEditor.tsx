@@ -5,7 +5,7 @@ import {Input} from "@/components/ui/input";
 import {PopupRow} from "@/components/settings/PopupRow";
 import {SwitchRow} from "@/components/settings/SwitchRow";
 import {gui} from "@/gen/catalog";
-import {actionCaption,baseKeyCaption,strokeCaption} from "@/lib/term-key-codec";
+import {baseKeyCaption,strokeCaption} from "@/lib/term-key-codec";
 import {BASE_KEYS,KEY_ROW_LIMITS,type CustomKeyEntry} from "@/lib/term-key-model";
 import {completeKeyboardStroke,emptyKeyboardStroke,keyboardGroup,type KeyboardStroke} from "@/lib/term-keyboard-layout";
 import {TerminalKeyboard} from "@/views/TerminalKeyboard";
@@ -21,13 +21,12 @@ export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady}: {
   const complete=steps.map(completeKeyboardStroke),ready=complete.every(Boolean)&&[...label.trim()].length<=KEY_ROW_LIMITS.labelCharacters&&new TextEncoder().encode(label.trim()).length<=KEY_ROW_LIMITS.labelBytes;
   useEffect(()=>onReady(ready),[ready,onReady]);
   const current=steps[active]??steps[0],picked=completeKeyboardStroke(current);
-  const caption=ready?actionCaption(complete.length===1?{kind:"chord",stroke:complete[0]!}:{kind:"sequence",steps:complete.map(step=>step!)}):gui.key_row_choose;
   const update=(next:KeyStrokeUpdate)=>{setSteps(previous=>previous.map((step,index)=>index===active?{...step,...next}:step));setError(null);};
   const move=(index:number,by:number)=>{const next=[...steps];[next[index],next[index+by]]=[next[index+by],next[index]];setSteps(next);setActive(index+by);};
   const save=()=>{if(!ready)return;try{const action=complete.length===1?{kind:"chord" as const,stroke:complete[0]!}:{kind:"sequence" as const,steps:complete.map(step=>step!)};onSave({id,on:entry?.on??true,label:label.trim(),...action});}catch{setError(gui.key_row_invalid);}};
   const group=(key:string)=>({letters:gui.key_row_letters,symbols:gui.keys_group_symbol,function:gui.key_row_function,navigation:gui.nav})[keyboardGroup(key)];
   return <form id={formId} data-key-entry-editor onSubmit={event=>{event.preventDefault();save();}} className="flex min-w-0 flex-col gap-row">
-    <div data-key-entry-result className="sticky top-0 z-10 flex min-w-0 flex-col gap-in bg-background py-in">
+    <div data-key-entry-result data-key-entry-preview className="sticky top-0 z-10 flex min-w-0 flex-col gap-in bg-background py-in">
       <div className="flex min-w-0 flex-wrap items-center gap-in" data-key-entry-steps>
         {steps.map((_step,index)=><div key={index} data-key-entry-step={index} className="flex min-w-0 items-center gap-xxs">
           {index>0&&<span aria-hidden className="text-muted-foreground">→</span>}
@@ -38,7 +37,7 @@ export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady}: {
         </div>)}
         {steps.length<KEY_ROW_LIMITS.steps&&<Button type="button" data-key-step-add disabled={!picked} onClick={()=>{setSteps([...steps,emptyKeyboardStroke()]);setActive(steps.length);}}>{gui.key_row_add_step}</Button>}
       </div>
-      <span data-key-entry-preview className="break-words text-body font-title">{label.trim()||caption}</span>
+      {label.trim()&&<span className="break-words text-body font-title">{label.trim()}</span>}
     </div>
     <div data-settings-card className="flex min-w-0 flex-col">
       <PopupRow name="key-entry-base" label={gui.key_row_base_key} value={current.key??""} choices={[
@@ -47,7 +46,7 @@ export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady}: {
       {([['ctrl','Ctrl'],['alt','Alt / ⌥'],['shift','Shift / ⇧']] as const).map(([modifier,name])=><SwitchRow key={modifier} name={`key-entry-${modifier}`} label={name} on={current[modifier]} onToggle={()=>update({[modifier]:!current[modifier]})}/>)}
       <div data-setting-row="value" className="flex min-w-0 items-center gap-in px-row py-in"><label htmlFor={`${formId}-name`} className="flex-none text-body">{gui.key_row_name}</label><Input id={`${formId}-name`} data-key-entry-name value={label} maxLength={KEY_ROW_LIMITS.labelCharacters*2} placeholder={gui.key_row_name_auto} onChange={event=>{setLabel(event.target.value);setError(null);}} className="min-w-0 flex-1"/></div>
     </div>
-    <div className="flex flex-wrap gap-in"><Button type="button" data-key-show-keyboard aria-expanded={keyboard} onClick={()=>setKeyboard(!keyboard)}>{gui.keyboard_show}</Button>{current.key&&<Button type="button" data-key-entry-clear variant="ghost" onClick={()=>update({key:null})}>{gui.key_row_clear}</Button>}</div>
+    <div className="flex flex-wrap gap-in"><Button type="button" data-key-show-keyboard aria-expanded={keyboard} onClick={()=>setKeyboard(!keyboard)}>{keyboard?gui.keyboard_hide:gui.keyboard_show}</Button>{current.key&&<Button type="button" data-key-entry-clear variant="ghost" onClick={()=>update({key:null})}>{gui.key_row_clear}</Button>}</div>
     {keyboard&&<TerminalKeyboard stroke={current} onChange={stroke=>update(stroke)}/>}
     {error&&<p role="alert" className="text-callout text-destructive">{error}</p>}
     {onDelete&&<Button type="button" data-key-entry-delete className="min-h-touch self-start" variant="ghost" onClick={onDelete}>{gui.delete}</Button>}

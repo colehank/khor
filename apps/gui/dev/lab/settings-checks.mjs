@@ -164,6 +164,12 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const bellCount=await sample.getAttribute('data-test-bell-count');await sample.click();await page.waitForTimeout(200);
     assert.equal(await sample.getAttribute('data-test-bell-count'),bellCount,'Disabled completion cue stays silent in preview');await cue.click();
 
+    const cursorMenuTrigger=page.locator('[data-setting-select="term-cursor"]');await cursorMenuTrigger.click();
+    const cursorChoices=page.locator('[data-popup-menu]:visible');await cursorChoices.waitFor();
+    assert.equal(await cursorChoices.locator('[data-cursor-option]').count(),3,'Cursor choices show the actual three shapes');
+    await page.screenshot({path:path.join(report,`settings-cursor-menu-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await page.keyboard.press('Escape');await cursorChoices.waitFor({state:'detached'});
+
     // These are the production controls and real renderer, not a picture of them.
     const termAuto=page.locator('[data-setting-row-name="term-size-system"] [role="switch"]');
     assert.equal(await termAuto.getAttribute('aria-checked'),'true');
