@@ -173,6 +173,11 @@ export function MoreFrame({
  * had to find a section by its translated text would be reading the
  * catalog to check the catalog.
  */
+/** Peer settings groups share one title, inset and typographic hierarchy. */
+export function MoreSectionHeading({children}: {children:ReactNode}) {
+  return <h2 className="ml-row text-title-sm font-title text-foreground">{children}</h2>;
+}
+
 export function MoreSection({
   name,
   label,
@@ -200,7 +205,7 @@ export function MoreSection({
     // where the text does. `app.css` `[data-settings-card]` draws the
     // lines and pads whatever in it is not a settings row.
     <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
-      {shown && <h2 className="ml-row text-headline text-foreground">{shown}</h2>}
+      {shown && <MoreSectionHeading>{shown}</MoreSectionHeading>}
       <div data-settings-card {...mark} className="flex min-w-0 flex-col">
         {children}
       </div>

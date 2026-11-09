@@ -88,6 +88,12 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     if(!mobile)assert.equal(await more.locator('[data-more-open="session"]').getAttribute('aria-current'),'page');
     await page.screenshot({path:path.join(report,`settings-terminal-${engine}-${mobile?'mobile':'desktop'}.png`)});
     assert.equal(await page.locator('[data-terminal-settings] > h2').count(),0,'Only Terminal appearance and Terminal features identify the groups');
+    const peerHeadings=await page.locator('[data-session-general] > h2,[data-more-section="terminal-appearance"] > h2,[data-more-section="terminal-functions"] > h2').evaluateAll(headings=>headings.map(node=>{
+      const style=getComputedStyle(node);
+      return {size:style.fontSize,weight:style.fontWeight,height:style.lineHeight,color:style.color,inset:style.marginLeft,gap:getComputedStyle(node.parentElement).rowGap};
+    }));
+    assert.equal(peerHeadings.length,3);
+    assert.deepEqual(peerHeadings,[peerHeadings[0],peerHeadings[0],peerHeadings[0]],'General, Terminal appearance and Terminal features are peer headings');
     const sample=page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.dataset.previewRows);
     const sizeToContent=await sample.evaluate(el=>{

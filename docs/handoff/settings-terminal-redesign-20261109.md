@@ -90,3 +90,7 @@ Uncommitted implementation on top917: extracted existing production drawBlocks u
 - Added regressions86a8b229: shared cursor pair must preserve distinct low-contrast hue paths; actual App Lab measures decoration colour and stripe bottom, plus OSC D-before-LF/after-CR/after-LF unit boundaries. Trusted red run dispatched before repair.
 - Repair: track D row occupancy without shifting its marker; shared renderer includes occupied D row, excludes following empty/prompt boundary. Shared cursor protection uses existing readableRgb minimum-movement contrast adjustment instead of pole replacement. Native colour input streams changes and commits with de-duplication.
 - Mobile palette width05d3b5cf included; still pending exact trusted validation and live update. No publication/install/restart authorized.
+
+## Peer heading feedback · 2026-11-10
+- User: 终端外观、终端功能这俩标题和通用一致，都是一个类型的标题. General used15pt title with12pt gap, while shared MoreSection used13pt headline/4pt gap. Unified actual MoreSectionHeading at existing title-sm/font-title token, row inset; General uses same heading and card gap, terminal groups share standard group spacing. Actual App compares computed typography/inset/gap for all three.
+- Repairf352d4a8 run42654436521: frontend and GUI (units/types/static/notice+key UI) SUCCESS, complete App Lab still running at latest fetch. Red86a8b229 run42654081229 confirmed BOTH cursor hue collapse and stripe output omission. Native overlays remain unverified, publication held.
