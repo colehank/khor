@@ -68,8 +68,11 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const quota = labQuota(devices);
   // Only Lab browser storage is touched; metadata comes from the native key table.
   const settingsKey = 'khor.lab.settings-values';
-  let settingsValues: Record<string,string> = {};
-  try { settingsValues = JSON.parse(localStorage.getItem(settingsKey) ?? '{}') ?? {}; } catch { /* Fresh isolated defaults. */ }
+  // Match the synthetic review profile seeded by bootstrap, rather than
+  // replacing its language/theme with the browser runner's environment.
+  const settingsProfile = {lang:localStorage.getItem('khor.lang') ?? 'zh',theme:localStorage.getItem('khor.theme') ?? 'auto'};
+  let settingsValues: Record<string,string> = {...settingsProfile};
+  try { settingsValues = {...settingsProfile,...JSON.parse(localStorage.getItem(settingsKey) ?? '{}')}; } catch { /* Fresh isolated defaults. */ }
   const settingsRows = () => {
     const lang = settingsValues.lang ?? 'auto';
     const language = lang === 'zh' || (lang === 'auto' && navigator.language.startsWith('zh')) ? 'zh' : 'en';
@@ -206,7 +209,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
-          settingsValues={};localStorage.removeItem(settingsKey);
+          settingsValues={...settingsProfile};localStorage.removeItem(settingsKey);
           holdSettings=false;refuseSetting=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
           for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
