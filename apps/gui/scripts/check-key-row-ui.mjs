@@ -61,13 +61,13 @@ try{
  await choicesPage.waitForFunction(()=>document.activeElement?.getAttribute('data-popup-option')==='item-39');
  const long=await menu.evaluate(el=>{const box=el.getBoundingClientRect(),item=document.activeElement.getBoundingClientRect();return {top:box.top,bottom:box.bottom,left:box.left,right:box.right,itemTop:item.top,itemBottom:item.bottom,height:innerHeight,width:innerWidth}});
  assert.ok(long.top>=0&&long.bottom<=long.height&&long.left>=0&&long.right<=long.width&&long.itemTop>=long.top&&long.itemBottom<=long.bottom,JSON.stringify(long));
- await choicesPage.keyboard.press('Escape');assert.equal(await choicesTrigger.evaluate(el=>document.activeElement===el),true);
+ await choicesPage.keyboard.press('Escape');await menu.waitFor({state:'detached'});assert.equal(await choicesTrigger.evaluate(el=>document.activeElement===el),true);
  const ring=await choicesTrigger.evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:parseFloat(getComputedStyle(el).outlineWidth)}));assert.ok(ring.style!=='none'&&ring.width>0,'Keyboard return keeps a visible focus ring');
  const form=choicesPage.locator('[data-agent-interaction]');await form.getByRole('button',{name:'确认',exact:true}).click();await form.getByRole('alert').waitFor();assert.deepEqual(await choicesPage.evaluate(()=>window.__keyWire.answers),[]);
  await pickPopup(form.getByRole('button',{name:/^Machine:/}),'remote');await form.getByRole('button',{name:/^Agents:/}).click();
  const multi=choicesPage.locator('[data-popup-menu]:visible');await multi.getByRole('menuitemcheckbox',{name:'claude',exact:true}).click();await multi.getByRole('menuitemcheckbox',{name:'codex',exact:true}).click();
  assert.equal(await multi.getByRole('menuitemcheckbox',{name:'claude',exact:true}).getAttribute('aria-checked'),'true');await multi.getByRole('menuitemcheckbox',{name:'claude',exact:true}).click();
- await choicesPage.keyboard.press('Escape');await form.getByRole('button',{name:'确认',exact:true}).click();
+ await choicesPage.keyboard.press('Escape');await multi.waitFor({state:'detached'});await form.getByRole('button',{name:'确认',exact:true}).click();
  assert.deepEqual(await choicesPage.evaluate(()=>window.__keyWire.answers),[{action:'accept',content:{agents:['codex'],machine:'remote'}}]);await choicesPage.close();
  mark('shared menu grouping, disabled choices, current focus, typeahead, long-list bounds, Khor font, multi-select and required agent answers');
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
@@ -81,7 +81,7 @@ try{
  // Shared Khor choice menu: rich cursor shapes and keyboard dismissal.
  const cursor=page.locator('[data-setting-select="term-cursor"]');await cursor.click();
  const cursorMenu=page.locator('[data-popup-menu]:visible');assert.equal(await cursorMenu.locator('[data-cursor-option]').count(),3);
- await page.keyboard.press('Escape');assert.equal(await cursor.evaluate(el=>document.activeElement===el),true);
+ await page.keyboard.press('Escape');await cursorMenu.waitFor({state:'detached'});assert.equal(await cursor.evaluate(el=>document.activeElement===el),true);
  await pickPopup(cursor,'bar');assert.equal(await cursor.getAttribute('value'),'bar');
  await open();await add();assert.equal(await editor.locator('[data-key-entry-save]').isDisabled(),true);
  assert.equal(await editor.locator('[data-key-entry-name]').evaluate(el=>document.activeElement===el),false);
