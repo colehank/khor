@@ -37,6 +37,8 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const inventory=()=>more.locator('[data-more-open]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-more-open')));
     const navigation=page.locator('[data-settings-navigation]:visible');
     await navigation.waitFor();
+    if(mobile)assert.equal(await navigation.locator('[aria-current="page"],[data-on="true"]').count(),0,'Entering More on a phone does not preselect a page');
+    if(mobile)await page.screenshot({path:path.join(report,`settings-navigation-${engine}-mobile.png`),animations:'disabled'});
     assert.equal(await navigation.locator('[data-more-open]').count(),8,'More has the exact grouped destinations without a separate Terminal or Notifications entry');
     assert.equal(await more.locator('[data-more-open="me"]').count(),0,'My Khor belongs only to the overflow chooser');
     const original=await inventory();
@@ -67,7 +69,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await open();
     if(mobile) {
       await navigation.waitFor();
-      assert.equal(await navigation.locator('[data-more-open="workspace"]').getAttribute('aria-current'),'page');
+      assert.equal(await navigation.locator('[aria-current="page"],[data-on="true"]').count(),0,'A narrow navigation list has no selected detail until entered');
       await navigation.locator('[data-more-open="workspace"]').click();
     }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
@@ -237,8 +239,16 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await keyEditor.locator('[data-key-entry-name]').evaluate(el=>document.activeElement===el),false);
     await pickPopup(keyEditor.locator('[data-setting-select="key-entry-base"]'),'KeyC');
     await keyEditor.locator('[data-setting-row-name="key-entry-ctrl"] [role="switch"]').click();
-    await keyEditor.locator('[data-key-show-keyboard]').click();
+    assert.equal(await keyEditor.locator('[data-key-show-keyboard]').getAttribute('aria-expanded'),'true');await keyEditor.locator('[data-terminal-keyboard]').waitFor();
     await page.screenshot({path:path.join(report,`settings-key-editor-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    for(const key of ['KeyV','KeyN']){await keyEditor.locator('[data-key-step-add]').click();await keyEditor.locator(`button[data-skbtn="{${key}}"]`).click();}
+    assert.equal(await keyEditor.locator('[data-key-step-select="2"]').getAttribute('aria-pressed'),'true');
+    assert.equal(await keyEditor.locator('[data-key-entry-steps] [data-key-step-remove]').count(),0,'Sequence preview has no repeated delete or movement controls');
+    await page.screenshot({path:path.join(report,`settings-key-sequence-${engine}-${mobile?'mobile':'desktop'}.png`),animations:'disabled'});
+    await keyEditor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-up]').waitFor();
+    await page.screenshot({path:path.join(report,`settings-key-step-menu-${engine}-${mobile?'mobile':'desktop'}.png`),animations:'disabled'});
+    await page.keyboard.press('Escape');await page.locator('[data-key-step-up]').waitFor({state:'detached'});
+
     await keyEditor.locator('[data-key-entry-cancel-visible]').click();await keyEditor.locator('[data-key-row-done]').click();await keyEditor.waitFor({state:'detached'});
 
     for(const key of ['doctor','store'])await pick(key);
@@ -266,7 +276,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       // Mobile cold start intentionally restores the landing, not a pushed page.
       await open();
       await navigation.waitFor();
-      assert.equal(await navigation.locator('[data-more-open="workspace"]').getAttribute('aria-current'),'page');
+      assert.equal(await navigation.locator('[aria-current="page"],[data-on="true"]').count(),0,'A narrow navigation list has no selected detail until entered');
       await navigation.locator('[data-more-open="workspace"]').click();
     }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();

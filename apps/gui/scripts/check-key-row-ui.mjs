@@ -81,8 +81,8 @@ try{
  await pickPopup(key(),'KeyB');await modifier('shift',false);await modifier('ctrl',true);
  await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'KeyN');
  await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'KeyC');
- await editor.locator('[data-key-entry-step="2"] [data-key-step-up]').click();assert.match(await editor.locator('[data-key-step-select="1"]').innerText(),/C/);
- await editor.locator('[data-key-entry-step="1"] [data-key-step-remove]').click();
+ assert.equal(await editor.locator('[data-key-entry-steps] [data-key-step-remove],[data-key-entry-steps] [data-key-step-up],[data-key-entry-steps] [data-key-step-down]').count(),0,'Steps remain plain selectable keys');await editor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-up]').click();assert.match(await editor.locator('[data-key-step-select="1"]').innerText(),/C/);
+ await editor.locator('[data-key-step-menu]').click();await page.locator('[data-key-step-remove]').click();
  await editor.locator('[data-key-entry-save]').click();assert.deepEqual((await custom()).steps.map(step=>step.key),['KeyB','KeyN']);
  mark('single-key editing, reversible draft and ordered sequence');
  const seat=editor.locator(`[data-key-row-seat="${first.id}"]`);await seat.getByRole('switch').click();assert.equal((await custom()).on,false);await seat.getByRole('switch').click();
@@ -123,16 +123,18 @@ try{
   await small.goto(url);await open(small);await small.locator('[data-key-row-add]').click();
   assert.equal(await small.locator('[data-key-entry-name]').evaluate(el=>document.activeElement===el),false);
   assert.equal(await small.locator('[data-key-entry-save]').isDisabled(),true);
-  await small.locator('[data-key-show-keyboard]').click();
+  assert.equal(await small.locator('[data-key-show-keyboard]').getAttribute('aria-expanded'),'true');await small.locator('[data-terminal-keyboard]').waitFor();
   await small.locator('button[data-skbtn="{ArrowLeft}"]').click();await small.locator('button[data-skbtn="{ArrowLeft}"]').click();assert.equal(await small.locator('[data-key-entry-save]').isDisabled(),true);
   await small.locator('[data-setting-row-name="key-entry-ctrl"] [role="switch"]').click();
   await small.getByRole('radio',{name:'字母',exact:true}).click();await small.locator('button[data-skbtn="{KeyC}"]').click();
   assert.match(await small.locator('[data-key-entry-preview]').innerText(),/⌃C/);
   const geometry=await small.locator('[data-terminal-keyboard]').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth,keys:[...el.querySelectorAll('button[data-skbtn]')].map(key=>{const r=key.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,height:r.height};})}));
   assert.ok(geometry.scroll<=geometry.width+1,'Visual key picker fits the phone');assert.ok(geometry.keys.every(key=>key.left>=0&&key.right<=width&&key.width>=40&&key.height>=40));
+  const firstAddBounds=await small.locator('[data-key-step-add]').boundingBox();
   for(let index=0;index<5;index++){await small.locator('[data-key-step-add]').click();await small.locator('button[data-skbtn="{KeyC}"]').click();}
   const strip=await small.locator('[data-key-entry-steps]').evaluate(el=>({height:el.getBoundingClientRect().height,client:el.clientWidth,scroll:el.scrollWidth}));
   assert.ok(strip.height<=60&&strip.scroll>strip.client,'Many steps scroll horizontally and leave the mobile editor available');
+  const addBounds=await small.locator('[data-key-step-add]').boundingBox();assert.ok(addBounds&&addBounds.x>=0&&addBounds.x+addBounds.width<=width&&addBounds.width>=44,'Add stays visible beside the step strip');assert.ok(Math.abs(addBounds.x-firstAddBounds.x)<1,'Adding steps keeps the Add target in the same place');
   const save=await small.locator('[data-key-entry-save]').boundingBox();assert.ok(save&&save.x>=0&&save.x+save.width<=width,'Save remains in the fixed header');
   await small.screenshot({path:join(evidence,`mobile-key-editor-${width}.png`),fullPage:true});
   await small.locator('[data-key-entry-name]').fill('手机组合');await small.evaluate(()=>window.__keyWire.keyboard());await small.waitForFunction(()=>window.__keyWire.shown());

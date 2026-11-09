@@ -20,12 +20,13 @@ export function MoreNavigation({page,narrow,onPage}: {
   page:MorePage|null;narrow:boolean;
   onPage:(page:MorePage)=>void;
 }) {
-  const selected = page === "terminal" ? "session" : page;
+  const selected = narrow ? null : page === "terminal" ? "session" : page;
+  const tabStop = selected ?? groups[0][0];
   const row = (key:NavigationPage) => {
     const Glyph = glyphs[key];
     return <button key={key} type="button" data-setting-row="nav" data-more-open={key}
       data-on={selected === key}
-      aria-current={selected === key ? "page" : undefined} tabIndex={selected === key ? 0 : -1}
+      aria-current={selected === key ? "page" : undefined} tabIndex={tabStop === key ? 0 : -1}
       onClick={()=>onPage(key)}
       className={cn("flex min-h-touch min-w-0 items-center gap-in text-start focus-visible:-outline-offset-2",
         narrow ? "px-row text-body" : "mx-in rounded-md px-3 text-headline",
