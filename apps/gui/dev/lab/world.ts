@@ -18,7 +18,8 @@ import generated from './data/world.generated.json';
 
 const native = generated as {machine_ids:string[];avatars:Record<string,Avatar>;directories:Record<string,{entries:DirRow[];truncated:boolean}>;documents:Record<string,string>;pairing_ticket:Ticket;settings:Record<'zh'|'en',ConfigRow[]>};
 // Explicit synthetic readings: the Lab never diagnoses the actual host.
-export const labAbout:About = {version:'0.0.0-lab',root:'/preview/.khor',paused:false,store_bytes:0,faces:[]};
+// Rust emits a JSON number on the wire; generated u64 bindings name bigint.
+export const labAbout:Omit<About,'store_bytes'> & {store_bytes:number} = {version:'0.0.0-lab',root:'/preview/.khor',paused:false,store_bytes:0,faces:[]};
 export const labRelays:RelayChoices = {mine:[],keyed:[],in_use:[],only_mine:false,preferred:null};
 export const labRoadShare:RoadShare = {direct:0,settled:0,unread:'no-serve'};
 export const labDoctor:DoctorRow[] = [{key:'lab',name:'预览环境',state:'unmeasured',said:'此预览不检查真实机器',group:'lab',group_label:'预览环境',fix:null}];
