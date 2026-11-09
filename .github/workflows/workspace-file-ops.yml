@@ -8,6 +8,7 @@ permissions:
 jobs:
   rename:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-26, windows-2025]
     runs-on: ${{ matrix.os }}
@@ -44,3 +45,5 @@ jobs:
           npx tsc --noEmit
           node scripts/check-workspace-move.mjs
           node scripts/check-terminal-drop.mjs
+          npx playwright-core install chromium
+          node scripts/check-workspace-move-ui.mjs

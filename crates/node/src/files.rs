@@ -495,19 +495,25 @@ pub fn rename_path(from: &str, to: &str) -> Result<(), String> {
 }
 
 fn same_directory_entry(a: &std::path::Path, b: &std::path::Path) -> bool {
-    let (Some(parent), Some(other_parent), Some(name)) = (a.parent(), b.parent(), b.file_name()) else {
+    let (Some(parent), Some(other_parent), Some(name)) = (a.parent(), b.parent(), b.file_name())
+    else {
         return false;
     };
-    let (Ok(parent), Ok(other_parent)) = (parent.canonicalize(), other_parent.canonicalize()) else {
+    let (Ok(parent), Ok(other_parent)) = (parent.canonicalize(), other_parent.canonicalize())
+    else {
         return false;
     };
     if parent != other_parent || a.file_name() == b.file_name() {
         return false;
     }
-    let Ok(entries) = std::fs::read_dir(parent) else { return false; };
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return false;
+    };
     let mut aliases = 0;
     for entry in entries {
-        let Ok(entry) = entry else { return false; };
+        let Ok(entry) = entry else {
+            return false;
+        };
         // An exact target spelling is a real occupied name, even when its
         // inode equals the source (two directory entries can be hard links).
         if entry.file_name() == name {
@@ -533,7 +539,10 @@ fn same_name_identity(a: &std::path::Path, b: &std::path::Path) -> bool {
     {
         // Conservatively refuse link aliases on platforms without lstat
         // identity; canonicalization of a link identifies its target instead.
-        if [a, b].iter().any(|p| p.symlink_metadata().is_ok_and(|m| m.is_symlink())) {
+        if [a, b]
+            .iter()
+            .any(|p| p.symlink_metadata().is_ok_and(|m| m.is_symlink()))
+        {
             return false;
         }
         match (a.canonicalize(), b.canonicalize()) {
@@ -1794,7 +1803,10 @@ mod rename_tests {
         fs::write(&old, "keeper").unwrap();
         rename_path(old.to_str().unwrap(), new.to_str().unwrap()).unwrap();
         assert_eq!(fs::read_to_string(&new).unwrap(), "keeper");
-        let names: Vec<_> = fs::read_dir(dir.path()).unwrap().map(|e| e.unwrap().file_name()).collect();
+        let names: Vec<_> = fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
         assert_eq!(names, vec![std::ffi::OsString::from("methods.md")]);
         let old_dir = dir.path().join("Source");
         let new_dir = dir.path().join("source");
@@ -1828,13 +1840,20 @@ mod rename_tests {
         }
         let alias = dir.path().join("alias");
         symlink(dir.path(), &alias).unwrap();
-        rename_path(old.to_str().unwrap(), alias.join("methods.md").to_str().unwrap()).unwrap();
+        rename_path(
+            old.to_str().unwrap(),
+            alias.join("methods.md").to_str().unwrap(),
+        )
+        .unwrap();
         assert_eq!(fs::read_to_string(&new).unwrap(), "keeper");
         let link = dir.path().join("Link");
         let renamed = dir.path().join("link");
         symlink("missing-target", &link).unwrap();
         rename_path(link.to_str().unwrap(), renamed.to_str().unwrap()).unwrap();
-        assert_eq!(fs::read_link(&renamed).unwrap(), std::path::Path::new("missing-target"));
+        assert_eq!(
+            fs::read_link(&renamed).unwrap(),
+            std::path::Path::new("missing-target")
+        );
         assert!(rename_path(new.to_str().unwrap(), renamed.to_str().unwrap()).is_err());
         assert_eq!(fs::read_to_string(&new).unwrap(), "keeper");
     }
@@ -1847,7 +1866,13 @@ mod rename_tests {
         fs::create_dir(&source).unwrap();
         fs::create_dir(&target).unwrap();
         fs::write(source.join("draft"), "keeper").unwrap();
-        assert!(rename_path(source.to_str().unwrap(), source.join("child").to_str().unwrap()).is_err());
+        assert!(
+            rename_path(
+                source.to_str().unwrap(),
+                source.join("child").to_str().unwrap()
+            )
+            .is_err()
+        );
         assert!(rename_path(source.to_str().unwrap(), target.to_str().unwrap()).is_err());
         let moved = target.join("source");
         rename_path(source.to_str().unwrap(), moved.to_str().unwrap()).unwrap();
