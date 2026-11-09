@@ -61,7 +61,7 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean} = {}) {
   const devices = labDevices(device,options.machines ?? 3);
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
@@ -75,6 +75,9 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   let settingsValues: Record<string,string> = {...settingsProfile};
   try { settingsValues = {...settingsProfile,...JSON.parse(readSetting(settingsKey) ?? '{}')}; } catch { /* Fresh isolated defaults. */ }
   const settingsRows = () => {
+    // Component harnesses keep their existing minimal config answer. Only the
+    // complete App Lab opts into rows generated for its source revision.
+    if(!options.settings)return [];
     const lang = settingsValues.lang ?? 'auto';
     const language = lang === 'zh' || (lang === 'auto' && typeof navigator !== 'undefined' && navigator.language.startsWith('zh')) ? 'zh' : 'en';
     return labSettings[language].map(row => ({...row, value:settingsValues[row.name] ?? row.value}));
