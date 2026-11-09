@@ -34,7 +34,7 @@ function publish(next: NotificationState): void {
 heardFrom(KEY, () => {
   try {
     const stored = restoreNotifications(window.localStorage.getItem(KEY));
-    publish(filterNotifications({ ...snapshot(), ...notificationMetadata(stored) }, item=>notificationsEnabled(stored,{id:item.session,execution_home:item.home} as SessionRow)));
+    publish(filterNotifications({ ...snapshot(), ...notificationMetadata(stored) }, item=>stored.preferences[sourceKey({id:item.session,execution_home:item.home})]!==false));
   } catch { /* Keep this window's choices. */ }
 });
 function subscribe(listener: () => void): () => void { listeners.add(listener); return ()=>{listeners.delete(listener);}; }

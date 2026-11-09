@@ -85,13 +85,16 @@ function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOp
 export function NotificationBanners({state,sessions,onOpen,narrow}: {state:NotificationState;sessions:SessionRow[];onOpen:(item:NotificationBanner)=>boolean;narrow:boolean}) {
   useLayoutEffect(()=>configureNotifications(narrow?1:3),[narrow]);
   useEffect(()=>{
-    const blur=()=>focusNotifications(false),focus=()=>focusNotifications(true);
+    const blur=()=>focusNotifications(false),focus=()=>focusNotifications(!document.hidden);
+    const visibility=()=>{if(!document.hidden)focusNotifications(document.hasFocus());};
+    focusNotifications(!document.hidden&&document.hasFocus());
     window.addEventListener("blur",blur);window.addEventListener("focus",focus);
-    return()=>{window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);};
+    document.addEventListener("visibilitychange",visibility);
+    return()=>{window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);document.removeEventListener("visibilitychange",visibility);};
   },[]);
   const latest=state.items.at(-1);
   return <aside data-notification-banners role="region" aria-label={gui.notifications} className="notification-banners pointer-events-none fixed z-40 flex flex-col gap-in">
-    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)} · ${notificationText(latest)}`:""}</span>
+    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)} · ${notificationText(latest)}${latest.members||!latest.preview?"":` · ${latest.preview}`}`:""}</span>
     {state.items.map(item=>{
       const row=sessions.find(row=>row.id===item.session&&row.execution_home===item.home);
       return row||item.members?<Banner key={item.key} item={item} row={row} onOpen={onOpen}/>:null;

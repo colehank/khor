@@ -943,9 +943,12 @@ export default function App() {
     onSelect(row);
     return true;
   };
+  const notificationsAbsent = useRef(true);
   useEffect(() => {
-    if (!rowsRead || lock.locked) return;
-    receiveNotifications(rawRows, (id) => onScreen.current(id), !hidden);
+    if (!rowsRead) { notificationsAbsent.current = true; return; }
+    const present = !hidden && !lock.locked;
+    receiveNotifications(rawRows, (id) => onScreen.current(id), present && !notificationsAbsent.current);
+    notificationsAbsent.current = !present;
   }, [rawRows, rowsRead, lock.locked, hidden, morePage, switchingTabs]);
 
   useEffect(() => { if (hidden || lock.locked) clearNotifications(); }, [hidden, lock.locked]);

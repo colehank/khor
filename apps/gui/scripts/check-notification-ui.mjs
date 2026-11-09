@@ -49,6 +49,12 @@ try {
     await page.mouse.up();
    }
    await page.clock.runFor(400);
+   if(await banners.count()===1&&!await banners.getAttribute('data-notification-closing')){
+    const state=await banners.evaluate(node=>({dragging:node.hasAttribute('data-notification-dragging'),inline:node.style.transform,paint:getComputedStyle(node).transform}));
+    assert.equal(state.dragging,false,JSON.stringify(state));assert.equal(state.inline,'',JSON.stringify(state));
+    // Playwright's JS clock does not own the compositor's CSS animation timeline.
+    await banners.evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));
+   }
   };
   await drag(.15);assert.equal(await banners.count(),1,'Short swipe springs back');
   assert.equal(await page.locator('[data-lab-opened]').innerText(),opened,'Drag is never a click through to a session');
