@@ -503,7 +503,7 @@ function KeyRowList({editing,setEditing,formId,onReady}: {editing:CustomKeyEntry
       {error && <p role="alert" className="text-callout text-destructive">{gui.key_row_invalid}</p>}
       {editing === undefined && problem === null && row.length < KEY_ROW_LIMITS.entries && <Button data-key-row-add className="min-h-touch my-in self-start" onClick={() => { setError(false); setEditing(null); }}>{gui.key_row_add}</Button>}
       {editing !== undefined && problem === null ? (
-        <KeyRowEntryEditor key={editing?.id ?? "new"} formId={formId} onReady={onReady} entry={editing} onSave={save} onCancel={() => setEditing(undefined)} onDelete={editing ? remove : undefined} />
+        <KeyRowEntryEditor key={editing?.id ?? "new"} formId={formId} onReady={onReady} entry={editing} onSave={save} onDelete={editing ? remove : undefined} />
       ) : row.map((s) => {
         const k = keyDefinition(s);
         if (!k) return null;

@@ -14,6 +14,7 @@ export function TerminalKeyboard({stroke,onChange}: {stroke:KeyboardStroke;onCha
   const [page,setPage]=useState(keyboardGroup(stroke.key));
   useEffect(()=>{if(stroke.key)setPage(keyboardGroup(stroke.key));},[stroke.key]);
   const labels=keyboardLabels(platform,stroke.shift);
+  if(narrow){labels["{Backspace}"]="⌫";labels["{Enter}"]="↵";}
   const codes=keyboardRows(platform).join(" ").split(" ").map(key=>key.slice(1,-1)).filter(key=>BASE_KEYS.includes(key as typeof BASE_KEYS[number])&&keyboardGroup(key)===page);
   const compact=Array.from({length:Math.ceil(codes.length/5)},(_,row)=>codes.slice(row*5,row*5+5).map(key=>`{${key}}`).join(" "));
   const rows=narrow?compact:keyboardRows(platform);

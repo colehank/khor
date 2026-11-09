@@ -62,6 +62,7 @@ try{
  const long=await menu.evaluate(el=>{const box=el.getBoundingClientRect(),item=document.activeElement.getBoundingClientRect();return {top:box.top,bottom:box.bottom,left:box.left,right:box.right,itemTop:item.top,itemBottom:item.bottom,height:innerHeight,width:innerWidth}});
  assert.ok(long.top>=0&&long.bottom<=long.height&&long.left>=0&&long.right<=long.width&&long.itemTop>=long.top&&long.itemBottom<=long.bottom,JSON.stringify(long));
  await choicesPage.keyboard.press('Escape');assert.equal(await choicesTrigger.evaluate(el=>document.activeElement===el),true);
+ const ring=await choicesTrigger.evaluate(el=>({style:getComputedStyle(el).outlineStyle,width:parseFloat(getComputedStyle(el).outlineWidth)}));assert.ok(ring.style!=='none'&&ring.width>0,'Keyboard return keeps a visible focus ring');
  const form=choicesPage.locator('[data-agent-interaction]');await form.getByRole('button',{name:'确认',exact:true}).click();await form.getByRole('alert').waitFor();assert.deepEqual(await choicesPage.evaluate(()=>window.__keyWire.answers),[]);
  await pickPopup(form.getByRole('button',{name:/^Machine:/}),'remote');await form.getByRole('button',{name:/^Agents:/}).click();
  const multi=choicesPage.locator('[data-popup-menu]:visible');await multi.getByRole('menuitemcheckbox',{name:'claude',exact:true}).click();await multi.getByRole('menuitemcheckbox',{name:'codex',exact:true}).click();

@@ -10,8 +10,8 @@ import {BASE_KEYS,KEY_ROW_LIMITS,type CustomKeyEntry} from "@/lib/term-key-model
 import {completeKeyboardStroke,emptyKeyboardStroke,keyboardGroup,type KeyboardStroke} from "@/lib/term-keyboard-layout";
 import {TerminalKeyboard} from "@/views/TerminalKeyboard";
 
-export function KeyRowEntryEditor({entry,onSave,onCancel,onDelete,formId,onReady}: {
-  entry:CustomKeyEntry|null;onSave:(entry:CustomKeyEntry)=>void;onCancel:()=>void;onDelete?:()=>void;
+export function KeyRowEntryEditor({entry,onSave,onDelete,formId,onReady}: {
+  entry:CustomKeyEntry|null;onSave:(entry:CustomKeyEntry)=>void;onDelete?:()=>void;
   formId:string;onReady:(ready:boolean)=>void;
 }) {
   const [id]=useState(()=>entry?.id??`custom:${crypto.randomUUID()}`);
@@ -51,7 +51,6 @@ export function KeyRowEntryEditor({entry,onSave,onCancel,onDelete,formId,onReady
     {keyboard&&<TerminalKeyboard stroke={current} onChange={stroke=>update(stroke)}/>}
     {error&&<p role="alert" className="text-callout text-destructive">{error}</p>}
     {onDelete&&<Button type="button" data-key-entry-delete className="min-h-touch self-start" variant="ghost" onClick={onDelete}>{gui.delete}</Button>}
-    <button type="button" data-key-entry-cancel className="sr-only" onClick={onCancel}>{gui.key_row_cancel}</button>
   </form>;
 }
 type KeyStrokeUpdate=Partial<KeyboardStroke>;
