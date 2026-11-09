@@ -77,7 +77,8 @@ export function TerminalThemePreview({theme}: {theme?:Palette}) {
       // Read the renderer's actual cell height, including the chosen font.
       const screen=el.querySelector<HTMLElement>(".xterm-screen");
       if(!screen)return;
-      const cell=screen.getBoundingClientRect().height/term.rows;
+      // Intrinsic CSS height ignores the dialog's opening scale animation.
+      const cell=parseFloat(getComputedStyle(screen).height)/term.rows;
       if(!Number.isFinite(cell)||cell<=0)return;
       const occupied=term.buffer.active.cursorY+1;
       const css=getComputedStyle(el);

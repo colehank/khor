@@ -142,9 +142,12 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       const preview=el.querySelector('[data-term-theme-preview]').getBoundingClientRect();
       const section=el.querySelector('.term-theme-grid').getBoundingClientRect();
       const body=el.querySelector('[data-slot="dialog-body"]');
-      return {height:preview.height,bottom:preview.bottom,formTop:section.top,body:!!body};
+      const node=el.querySelector('[data-term-theme-preview]'),style=getComputedStyle(node);
+      const extra=node.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom)-node.querySelector('.xterm-screen').getBoundingClientRect().height;
+      return {height:preview.height,bottom:preview.bottom,formTop:section.top,body:!!body,extra};
     });
     assert.ok(geometry.height>40&&geometry.bottom<=geometry.formTop,'The palette preview cannot shrink or overlap colour fields');
+    assert.ok(Math.abs(geometry.extra)<=2,'Opening scale animation cannot change the fitted terminal height');
     await page.screenshot({path:path.join(report,`settings-palette-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
 
