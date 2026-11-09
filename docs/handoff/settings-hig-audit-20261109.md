@@ -5,9 +5,9 @@ Scope: existing Khor settings, same production App and design tokens. Main-windo
 ## Implemented
 
 - Main App, FloatNav, shortcut, macOS menu and editor requests converge on the same settings navigation; native code no longer creates a settings window. Existing main frame is focused without resizing.
-- Following the owner’s later direction, More now has one stable sidebar across My Khor, the seven-category Settings group, Storage, Notifications and Diagnostics. Settings remain a visibly labeled group; changing utilities no longer swaps navigation structures. There is no new General category.
+- More keeps a stable sidebar for six Settings categories, Storage, Notifications and Diagnostics. My Khor and Browser are separate overflow destinations. Session is the sole sidebar entry for common session settings and its Terminal subpage; existing native Terminal deep links remain valid.
 - The last More page and Settings category are stored on the viewing device and restored when reopening. Unavailable storage falls back safely. Explicit deep links retain their category and validated machine target.
-- User Lab revision: the overflow chooser keeps Browser and More as peer destinations. Browser retains its own list. My Khor restores the existing map/matrix directly, without the new cluster overview. All More list glyphs share one size and treatment. Desktop removes the duplicated page title and close X; mobile retains title/back. No account or shared editable cluster-profile fields are invented.
+- User Lab revisions: My Khor returns to the overflow chooser and its original standalone map/matrix. Its menu glyph matches the others. More desktop pages omit duplicated title/close; mobile preserves title/back. Terminal is a Session child, with parent selection and explicit return/swipe to Session.
 - Selected categories expose aria-current. Existing keyboard list navigation, grouped forms, native selects and switches are reused.
 - Lab configuration rows now come from the canonical Rust metadata/defaults and real localization catalog, with isolated Lab browser values. No handwritten configuration inventory.
 

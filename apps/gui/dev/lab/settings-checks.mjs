@@ -17,8 +17,14 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const size=page.viewportSize();
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').click();
     assert.deepEqual(await page.locator('[data-nav-menu] [role="menuitem"]').evaluateAll(items=>items.map(item=>item.hasAttribute('data-nav-me')?'me':item.getAttribute('data-more-landing')??'more')),['me','browser','more']);
-    const marks=await page.locator('[data-nav-menu] [role="menuitem"] svg').evaluateAll(items=>items.map(item=>({width:item.getBoundingClientRect().width,height:item.getBoundingClientRect().height})));
-    assert.ok(marks.length>1&&marks.every(mark=>mark.width===marks[0].width&&mark.height===marks[0].height),'My Khor matches other chooser glyphs');
+    await page.locator('[data-nav-menu]').evaluate(async node=>{
+      await Promise.all(node.getAnimations({subtree:true}).map(animation=>animation.finished.catch(()=>{})));
+    });
+    const marks=await page.locator('[data-nav-menu] [role="menuitem"] svg').evaluateAll(items=>items.map(item=>{
+      const style=getComputedStyle(item),rect=item.getBoundingClientRect();
+      return {width:style.width,height:style.height,paintedWidth:rect.width,paintedHeight:rect.height};
+    }));
+    assert.ok(marks.length===3&&marks.every(mark=>mark.width===marks[0].width&&mark.height===marks[0].height&&mark.paintedWidth>0&&Math.abs(mark.paintedWidth-marks[0].paintedWidth)<0.5&&Math.abs(mark.paintedHeight-marks[0].paintedHeight)<0.5),`My Khor matches other chooser glyphs: ${JSON.stringify(marks)}`);
     await page.screenshot({path:path.join(report,`navigation-chooser-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await page.locator('[data-nav-menu] [data-more-landing="browser"]').click();
     await page.locator('[data-nav-menu]').waitFor({state:'detached'});
