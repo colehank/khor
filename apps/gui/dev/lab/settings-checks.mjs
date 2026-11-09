@@ -167,7 +167,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const cursorMenuTrigger=page.locator('[data-setting-select="term-cursor"]');await cursorMenuTrigger.click();
     const cursorChoices=page.locator('[data-popup-menu]:visible');await cursorChoices.waitFor();
     assert.equal(await cursorChoices.locator('[data-cursor-option]').count(),3,'Cursor choices show the actual three shapes');
-    await page.screenshot({path:path.join(report,`settings-cursor-menu-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await page.screenshot({path:path.join(report,`settings-cursor-menu-${engine}-${mobile?'mobile':'desktop'}.png`),animations:"disabled"});
     await page.keyboard.press('Escape');await cursorChoices.waitFor({state:'detached'});
 
     // These are the production controls and real renderer, not a picture of them.
