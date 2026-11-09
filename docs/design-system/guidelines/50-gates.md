@@ -891,3 +891,7 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 会话条只列会话；当前会话的内容标签独立占右列的同高页头，不嵌套、不另加一行。普通会话与工作区内会话复用 SessionFrame，保留所有会话标签与同一个内容渲染宿主。导航、新建、关闭和返回只重排窗口内部，不自动改变原生窗口尺寸或位置，取代之前的自动扩窗约定。
 
 `workspace-content-ui` 与完整 App Lab 检查两栏顶边/高度、非嵌套、工具栏可点及视口不变；工作区会话与普通会话都列入批末 Lab 验收。真实窗口外框不变仍需原生验收，浏览器视口与合成 IPC 不能独自证明。
+
+### Main-window settings navigation (2026-11-09)
+
+`npm run settings-navigation` covers last-category restoration, stale or unavailable storage, and parity with native settings categories. Developer Lab `settings-checks.mjs` runs the actual App at desktop and mobile widths: settings-only category list, selected accessibility state, leave/reopen/reload restoration, one page, unchanged viewport. It does not claim to validate macOS native menu delivery or an iPhone keyboard. Native route changes require the native compile gate; manual review uses the same built App bundle.

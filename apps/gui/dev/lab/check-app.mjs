@@ -346,6 +346,8 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});
+    results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
+    results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkGuiExperience(browser,{port,report,engine:'webkit'}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit'}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true}));

@@ -21,6 +21,12 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     if(!mobile)await page.locator('[data-more-page="appearance"]:visible').waitFor();
     await navigation.locator('[data-more-open="workspace"]').click();
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
+    const picker=page.locator('[data-more-page="workspace"] select').first();
+    await picker.waitFor();
+    const chosen=await picker.locator('option').evaluateAll((options,current)=>options.find(option=>option.value!==current)?.value,await picker.inputValue());
+    assert.ok(chosen,'The Lab exposes real configurable native choices');
+    await picker.selectOption(chosen);
+    await page.waitForFunction(value=>JSON.parse(localStorage.getItem('khor.lab.settings-values')??'{}')['files-click']===value,chosen);
     if(!mobile)assert.equal(await navigation.locator('[data-more-open="workspace"]').getAttribute('aria-current'),'page');
     if(mobile) {
       await page.locator('[data-more-back]:visible').click();
@@ -39,6 +45,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     await page.reload();
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
+    assert.equal(await page.locator('[data-more-page="workspace"] select').first().inputValue(),chosen,'Lab settings survive reopening and reload');
     assert.equal(context.pages().length,1,'Opening settings keeps one application surface');
     assert.deepEqual(page.viewportSize(),size,'Opening and switching settings keeps the viewport');
     await page.screenshot({path:path.join(report,`settings-${engine}-${mobile?'mobile':'desktop'}.png`)});

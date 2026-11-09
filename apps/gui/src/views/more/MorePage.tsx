@@ -50,9 +50,8 @@ export type MorePage =
   | "doctor"
   | "notifications";
 
-/** Every page, in the order the wide list (and the Mac settings
-    window's sidebar) shows them: 我的 khor at the head, like System
-    Settings' account, then 设置's seven, then 存储 and 诊断. */
+/** More utilities retain their routes; the settings sidebar filters this
+    inventory to its seven settings categories. */
 export const morePageOrder: readonly MorePage[] = [
   "me",
   ...settingsPages,
