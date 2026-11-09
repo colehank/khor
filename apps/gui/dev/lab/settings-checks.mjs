@@ -84,6 +84,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-terminal-appearance-preview]').scrollIntoViewIfNeeded();
     const preview=await page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]').boundingBox();
     assert.ok(preview.height>100,'The actual terminal preview retains its height in the scroll body');
+    assert.equal(await page.locator('[data-terminal-appearance-preview] .xterm-helper-textarea').evaluate(el=>getComputedStyle(el).opacity),'0','The preview owns its renderer stylesheet even before any terminal tab is opened');
     if(!mobile)assert.equal(await more.locator('[data-more-open="session"]').getAttribute('aria-current'),'page');
     await page.screenshot({path:path.join(report,`settings-terminal-${engine}-${mobile?'mobile':'desktop'}.png`)});
     // These are the production controls and real renderer, not a picture of them.
@@ -97,6 +98,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await page.locator('[data-term-theme-custom] button').count(),2,'Custom theme exposes Import and Settings only');
     await page.locator('[data-term-theme-edit]').click();
     const dialog=page.locator('[data-term-theme-editor]');await dialog.waitFor();
+    await dialog.evaluate(async el=>{await Promise.all(el.getAnimations({subtree:true}).map(a=>a.finished.catch(()=>{})));});
     const geometry=await dialog.evaluate(el=>{
       const preview=el.querySelector('[data-term-theme-preview]').getBoundingClientRect();
       const section=el.querySelector('.term-theme-grid').getBoundingClientRect();
@@ -119,7 +121,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.screenshot({path:path.join(report,`more-map-${engine}-${mobile?'mobile':'desktop'}.png`)});
     if(!mobile) {
       assert.equal(await page.locator('[data-dial-top]').count(),1,'Standalone My Khor owns one header');
-      assert.equal(await page.locator('[data-side]:visible').count(),0,'Standalone My Khor has no More sidebar');
+      assert.equal(await page.locator('[data-side=""]:visible').count(),0,'Standalone My Khor has no More sidebar');
     }
     assert.equal(await more.count(),0,'My Khor does not include More navigation');
     await page.locator('[data-dial-back]:visible').click();

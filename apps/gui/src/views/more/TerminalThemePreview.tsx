@@ -1,6 +1,7 @@
 import {useEffect,useLayoutEffect,useRef} from "react";
 import {Terminal} from "@xterm/xterm";
 import {FitAddon} from "@xterm/addon-fit";
+import "@xterm/xterm/css/xterm.css";
 import {protectTerminal} from "@/lib/term-legibility";
 import {stackOf,useTermFont} from "@/lib/term-font";
 import {useTypeSize} from "@/lib/type-size";

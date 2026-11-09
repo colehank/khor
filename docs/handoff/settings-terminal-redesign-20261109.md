@@ -38,3 +38,13 @@ User authorized this work, serial root only. Active worktree /Volumes/disk0/Khor
 - Updated meaningful unit/UI checks for expanded hierarchy, preview, visual keyboard/sequence and transient lifecycle. Local Tree-sitter/TOML/JSON parsing passes so far; no local JS/Rust build or tests run. Need trusted remote compiler/tests, inspect actual artifact and update Lab23950 only after success.
 - Previous42627749202 completed: frontend and GUI passed, Developer Lab failed. Its old hierarchy checks are superseded by this new expanded design; retrieve bounded failure details if still relevant.
 - Pending: validate types/build, new UI behavior/geometry, exact new Lab acceptance. Native touch/keyboard/notifications integration still explicit review boundary; publication HOLD unchanged.
+
+## Remote validation checkpoint
+- Candidatef3a79ecd:42639102870 frontend stopped at catalog build: duplicate gui.session-general/gui.settings text. Corrected by reusing canonical gui.settings,gui.type_size,gui.term_theme_title and removing redundant keys. Static bilingual key + per-section text uniqueness check now passes.
+- Current candidatea10103d4, trusted GUI run42639729812. No latest compiled Lab yet. Source tree clean. Frontend/GUI/Developer Lab outcomes still pending; require exact-source artifact before updating23950.
+- Additional actual-App checks now cover shared terminal preview font size/cursor paint and noncollapsed palette-dialog geometry. Source-only constraint observed; no local Node/Rust build.
+
+## Native acceptance boundary
+Transient notifications use shared App DOM. Before marking this round fully complete, verify them with native sibling browser/PDF views (particularly iOS), whose layering can cover DOM overlays. Do not hide a user's native page for the lifetime of a nonmodal notification or inject private notices into untrusted site DOM. Existing native completion overlay is an isolated trusted document, but singleton-menu ownership must not be reused in a way that interrupts editing. Native layering is not proven by frontend Lab.
+
+- Run42639729812: frontend build + GUI unit/types/static gates passed. Developer Lab reached new terminal/cursor/palette checks successfully, then failed an old `[data-side]` assertion (also matches Radix tooltip data-side attributes). Narrow to the actual empty-valued sidebar marker. Screenshot review additionally found preview was missing xterm CSS on a cold settings-first start, rendering helper textarea/measurement glyphs. Fix preview to own its CSS and add an actual computed-opacity regression. Headerless Region still preserves meaningful stale/busy chrome. Codec unit suite added to mandatory unit gate. These corrections are pending next commit/run.

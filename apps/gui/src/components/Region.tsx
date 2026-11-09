@@ -355,7 +355,7 @@ export function Region({
   headerless?: boolean;
 }) {
   const lead = useContext(RegionLead);
-  const showHeader = !headerless || !!lead || windowsApp;
+  const showHeader = !headerless || !!lead || windowsApp || !!caption || !!busy;
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
