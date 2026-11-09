@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "tools": {
+    "resvg": "0.47.0",
+    "Pillow": "12.2.0"
+  },
+  "inputs": {
+    "apps/gui/dev/icon-lab/renderer.mjs": "f834a7e02fa46b15cfad8c6c28af6ee5a0c032a01e4da25f1707da3cf66d7001",
+    "apps/gui/dev/icon-lab/render.mjs": "260968042db08ca273d88b9b3fc7778d7d6d32f44cd844e1d90832603794f1f4",
+    "apps/gui/src-tauri/icons/src/app-icon.json": "8de142d60d37532204f6d91b4fd945cac15af70add77c423ff0527c3e7ee4ebc",
+    "apps/gui/src-tauri/icons/Icon.icon/icon.json": "a6aa60bd6fec9304c4ed04a15d5ca791f26fdc8e59288bf341c4b5b55a674cee",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/Contents.json": "74b5f59cb4e1093a02b9b71eece40e91f3d34ac82ca7d19a95c9cf581e323571",
+    "scripts/app_icon.py": "ef2f19a1bddf57517b5411d30a0d08b46b97166fc8764aabc2f7b19db16092c3",
+    "scripts/requirements-app-icon.txt": "498a7f2f1d3c408c01789ce028c7f4901d5a53e4740edd9d3d49741779f900a8"
+  },
+  "outputs": {
+    "apps/gui/src-tauri/icons/src/mandala-glass.svg": "aee25b394ac9b1d353cf28167addb55f9c5ef68ce392e59e382ae25c2da212aa",
+    "apps/gui/src-tauri/icons/Icon.icon/Assets/app-icon.png": "ee8dfc5089df1b664a0dbd92701f6877ab0aaec085e3f390c064da19a5869c36",
+    "apps/gui/src-tauri/icons/icon.png": "540da37605574ee19032dfdf8a2ced5ece846b97b906ef446ff329bca4bdfab9",
+    "apps/gui/src-tauri/icons/icon.icns": "de0c12154039c83639f151685a20d04de1e6c4d96bf3e0a0a02674a688791053",
+    "apps/gui/src-tauri/icons/icon.ico": "d1e1295cd6ae0636c164e73ba1dd3a7fcc8ccc059b2bb7d1e38309b0401c4658",
+    "apps/gui/dev/icon-lab/native-macos.png": "78540877b279242a042b79af007893d1cc08f36814aee19515f166d1b033c0e6",
+    "apps/gui/dev/icon-lab/native-ios.png": "78540877b279242a042b79af007893d1cc08f36814aee19515f166d1b033c0e6",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@2x.png": "2039180b63b6b473d2dbc4df982d19e460af3977541ff6a783a4a0b7be7f7bec",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@3x.png": "cd7abe473c4a0f2ca8baa63f919e4c248985114c70f497a02940e063c80b9d5a",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@2x-1.png": "e0eeb372efd42087bb522252f585d346662ce36fa445ee284eb671b5f8971a6e",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@3x.png": "6999d7604c37b2cada1e0a4cc5d26547ece82b7b1034720aaa096e8b4c3d98c2",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@2x.png": "ebdb5dc7d1e8bbde5c9d3a96c612bba617fe63140d03751592d2fe58a5e43fb3",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@3x.png": "07fd687b495f309dbd6f5b2c588c08e7557316534ad18c4d4a87aae57318b02b",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-60x60@2x.png": "07fd687b495f309dbd6f5b2c588c08e7557316534ad18c4d4a87aae57318b02b",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-60x60@3x.png": "8dd0347acd787848683d9e2f83f40f3e21c627c8b397ffc4373ba9696e81874c",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@1x.png": "ab65da32b8ef54f29b7ffe0fa6da9f7de731be521fb9cc9bf7ed98fe5f63fdce",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-20x20@2x-1.png": "2039180b63b6b473d2dbc4df982d19e460af3977541ff6a783a4a0b7be7f7bec",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@1x.png": "5e7c6fd1559338f5cd2687fe93e418e4904a0f3ee27bab40b8ad1518de9f35f0",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-29x29@2x.png": "e0eeb372efd42087bb522252f585d346662ce36fa445ee284eb671b5f8971a6e",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@1x.png": "2039180b63b6b473d2dbc4df982d19e460af3977541ff6a783a4a0b7be7f7bec",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-40x40@2x-1.png": "ebdb5dc7d1e8bbde5c9d3a96c612bba617fe63140d03751592d2fe58a5e43fb3",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-76x76@1x.png": "fa31c020d90de29862597b70b0078088920ac07de8b50fc7e3a7fa1a46c49ab0",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-76x76@2x.png": "6c17a1ca30310c4c7392a75812366c43c7dd5a3b8de713e07021281eb41420cb",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-83.5x83.5@2x.png": "c8cad1fadcfd26447fcdd8fd9f9e863e4b0e8e3710845b1a9809945cc261912f",
+    "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png": "ee8dfc5089df1b664a0dbd92701f6877ab0aaec085e3f390c064da19a5869c36"
+  }
+}

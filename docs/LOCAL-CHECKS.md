@@ -35,3 +35,17 @@ pre-commit run --all-files --hook-stage pre-push
 首次推送或修改hook配置会运行更多检查；平时按改动文件分流。不要通过`--no-verify`或`SKIP`把失败当作通过，缺依赖应先补齐，失败应保留并修复。
 
 机制参考：[pre-commit官方文档](https://pre-commit.com/#install)。
+
+## App 图标与调校台
+
+独立工具入口：`python3 scripts/app_icon.py serve`。统一生成说明位于
+[图标源码](../apps/gui/src-tauri/icons/src/README.md)。提交图稿、参数、绘制程序或安装资源时运行：
+
+```sh
+node --test apps/gui/dev/icon-lab/renderer.test.mjs
+python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'
+python3 scripts/app_icon.py check
+```
+
+最后一项需要 `scripts/requirements-app-icon.txt` 的固定 Pillow 版本；不会构建 App。
+`App icon` 工作流独立复核资源，并在 macOS 26 编译原生图标 catalog。

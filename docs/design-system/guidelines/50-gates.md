@@ -891,3 +891,12 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 会话条只列会话；当前会话的内容标签独立占右列的同高页头，不嵌套、不另加一行。普通会话与工作区内会话复用 SessionFrame，保留所有会话标签与同一个内容渲染宿主。导航、新建、关闭和返回只重排窗口内部，不自动改变原生窗口尺寸或位置，取代之前的自动扩窗约定。
 
 `workspace-content-ui` 与完整 App Lab 检查两栏顶边/高度、非嵌套、工具栏可点及视口不变；工作区会话与普通会话都列入批末 Lab 验收。真实窗口外框不变仍需原生验收，浏览器视口与合成 IPC 不能独自证明。
+
+## 安装图标与独立调校工具（2026-11-10）
+
+入口 `python3 scripts/app_icon.py check` 检查共享参数与生成 SVG、安装图标的清单/哈希/
+尺寸/颜色模式及 iOS/macOS 母图一致性。`node --test apps/gui/dev/icon-lab/renderer.test.mjs`
+守外光向对侧透出、内外光独立和旧参数兼容；`python3 -m unittest discover -s scripts/tests
+-p 'test_app_icon.py'` 守工具服务的文件边界和输入错误。CI `App icon` 额外编译 macOS
+原生 catalog。调校台不属于 App 路由，不增加 npm 脚本；界面从产品 token 获取颜色和字号，
+光学图稿中的坐标和光色属于被编辑的素材。手机布局及安装后实际外缘仍需人工验收。
