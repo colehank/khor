@@ -13,6 +13,10 @@ INPUTS = (
     'crates/node/src/files.rs',
     'apps/gui/core/src/bin/lab_data.rs',
     'apps/gui/core/src/qr.rs',
+    'apps/gui/core/src/lib.rs',
+    'crates/node/src/config.rs',
+    'crates/catalog/zh.toml',
+    'crates/catalog/en.toml',
 )
 
 
@@ -39,6 +43,14 @@ def validate(data):
             or not ticket['token'].startswith('khorLAB_ONLY_') or not isinstance(ticket.get('qr'), dict)
             or not ticket['qr'].get('path')):
         raise ValueError('Lab must contain a native-encoded non-production pairing QR code')
+
+    settings = data.get('settings', {})
+    for language in ('zh', 'en'):
+        rows = settings.get(language, [])
+        if not rows or not all(row.get('name') and row.get('label') and row.get('choices') for row in rows):
+            raise ValueError('Lab settings require localized native configuration rows')
+    if [row['name'] for row in settings['zh']] != [row['name'] for row in settings['en']]:
+        raise ValueError('Lab settings languages must share the same native keys')
 
 
 def payload_checksum(data):

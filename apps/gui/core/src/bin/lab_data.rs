@@ -90,9 +90,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         token,
         minutes: khor_node::link::invite_window_minutes(),
     };
+    let previous = khor_catalog::lang::current();
+    khor_catalog::lang::set(khor_catalog::lang::Lang::Zh);
+    let zh = khor_gui_core::config_rows(&workspace.0);
+    khor_catalog::lang::set(khor_catalog::lang::Lang::En);
+    let en = khor_gui_core::config_rows(&workspace.0);
+    khor_catalog::lang::set(previous);
     println!(
         "{}",
-        json!({"schema":1,"machine_ids":ids,"avatars":avatars,"directories":directories,"documents":documents,"pairing_ticket":pairing_ticket})
+        json!({"schema":1,"machine_ids":ids,"avatars":avatars,"directories":directories,"documents":documents,"pairing_ticket":pairing_ticket,"settings":{"zh":zh,"en":en}})
     );
     Ok(())
 }

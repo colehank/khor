@@ -20,7 +20,8 @@ class FixtureDataCache(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text('original source\n')
         ids = ['e' * 64] + [format(index, 'x') * 64 for index in range(2, 7)]
-        self.data = dict(schema=1, machine_ids=ids,
+        settings = {lang: [dict(name='lang', label='Language', choices=[dict(value='auto',label='Auto')])] for lang in ('zh','en')}
+        self.data = dict(schema=1, machine_ids=ids, settings=settings,
                          avatars={key: dict(radius_ratio=.5, mark=dict(ink='dark')) for key in ids},
                          directories={key: {} for key in ('', 'project', 'project/src', 'project/docs', 'project/.config')},
                          documents={key: '' for key in ('project/README.md', 'project/src/navigation.ts', 'project/docs/中文说明.md')},
@@ -37,7 +38,7 @@ class FixtureDataCache(unittest.TestCase):
         self.assertTrue(ready(self.root))
 
     def test_backend_and_template_edits_require_regeneration(self):
-        for name in ('crates/core/src/avatar.rs', 'apps/gui/dev/lab/data/workspace/README.md'):
+        for name in ('crates/core/src/avatar.rs', 'crates/node/src/config.rs', 'crates/catalog/zh.toml', 'apps/gui/dev/lab/data/workspace/README.md'):
             self.save()
             (self.root / name).write_text('changed domain input')
             self.assertFalse(ready(self.root))

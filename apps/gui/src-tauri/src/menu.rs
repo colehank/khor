@@ -591,11 +591,10 @@ pub fn on_event(app: &AppHandle, id: &str) {
     if !ACTS.contains(&id) {
         return;
     }
-    // ⌘, opens the settings window from anywhere, the page not asked
-    // (UX-10): it is a window of khor's own, not a page of the main one.
+    // ⌘, from any editor returns to the main application's settings page.
     if id == "settings" {
         if let Err(e) = crate::show_settings(app, None) {
-            eprintln!("khor: the settings window did not open: {e}");
+            eprintln!("khor: settings navigation failed: {e}");
         }
         return;
     }

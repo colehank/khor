@@ -26,6 +26,7 @@ import { GlassCircle } from "@/components/Glass";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
+import { settingsPages, isSettingsPage, type SettingsPage } from "@/lib/settings-navigation";
 
 /**
  * Which page of 更多 is open. `null` is none — the landing underneath is
@@ -43,14 +44,8 @@ import { config, gui } from "@/gen/catalog";
  * received files and where they land (`views/StorePage`).
  */
 export type MorePage =
+  | SettingsPage
   | "me"
-  | "appearance"
-  | "terminal"
-  | "session"
-  | "workspace"
-  | "connection"
-  | "security"
-  | "about"
   | "store"
   | "doctor"
   | "notifications";
@@ -60,13 +55,7 @@ export type MorePage =
     Settings' account, then 设置's seven, then 存储 and 诊断. */
 export const morePageOrder: readonly MorePage[] = [
   "me",
-  "appearance",
-  "terminal",
-  "session",
-  "workspace",
-  "connection",
-  "security",
-  "about",
+  ...settingsPages,
   "store",
   "notifications",
   "doctor",
@@ -76,7 +65,7 @@ export const morePageOrder: readonly MorePage[] = [
     than one 更多's menu opens by itself (我的 khor, 存储, 诊断; UX-16). On the
     narrow face the second kind is pushed over the landing it was opened
     from, so its way back is that landing, not 设置's list. */
-export const inSettings = (page: MorePage): boolean => page !== "me" && page !== "store" && page !== "doctor" && page !== "notifications";
+export const inSettings = isSettingsPage;
 
 /** The section names, in one place, so the list item and the page head
     cannot come to call the same section two things.

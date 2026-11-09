@@ -2,7 +2,7 @@
  * rectangle and paint their chosen palette once, so 85% never becomes
  * 97.75% by stacking two backgrounds. Output/scroll does not remeasure it. */
 import { useEffect, useState } from "react";
-import { inApp, isMenuFace, settingsFace, windowAppearanceSupport, setWindowAppearance, type ConfigRow } from "@/api";
+import { inApp, isMenuFace, windowAppearanceSupport, setWindowAppearance, type ConfigRow } from "@/api";
 
 declare global { interface Window { __KHOR_WINDOW_SURFACE__?: boolean; __KHOR_WINDOW_PLATFORM__?: string; __KHOR_WINDOW_PREF__?: WindowChoice } }
 export type WindowMaterial = "solid" | "clear" | "frost";
@@ -15,7 +15,7 @@ export function normalizeWindowOpacity(value: unknown): number {
 }
 let choice: WindowChoice = { material: "solid", opacity: 100 };
 let nativeMaterial: WindowMaterial | null = null;
-const main = () => inApp && window.__KHOR_WINDOW_SURFACE__ === true && !settingsFace && !isMenuFace;
+const main = () => inApp && window.__KHOR_WINDOW_SURFACE__ === true && !isMenuFace;
 export function windowChoice(rows: ConfigRow[] | null): WindowChoice | null {
   const m = rows?.find(r => r.name === "window-material")?.value;
   const o = rows?.find(r => r.name === "window-opacity")?.value;

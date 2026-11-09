@@ -2,7 +2,7 @@ import labMedia from './data/media.generated.json';
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture} from './navigation';
 import {pairingFixture} from './pairing';
-import {labDevices,labModels,labQuota,labRoot,labUsage} from './world';
+import {labDevices,labModels,labQuota,labRoot,labUsage,labSettings} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
@@ -66,6 +66,15 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
   const quota = labQuota(devices);
+  // Only Lab browser storage is touched; metadata comes from the native key table.
+  const settingsKey = 'khor.lab.settings-values';
+  let settingsValues: Record<string,string> = {};
+  try { settingsValues = JSON.parse(localStorage.getItem(settingsKey) ?? '{}') ?? {}; } catch { /* Fresh isolated defaults. */ }
+  const settingsRows = () => {
+    const lang = settingsValues.lang ?? 'auto';
+    const language = lang === 'zh' || (lang === 'auto' && navigator.language.startsWith('zh')) ? 'zh' : 'en';
+    return labSettings[language].map(row => ({...row, value:settingsValues[row.name] ?? row.value}));
+  };
   const terminalLeases = new Set<string>();
   let terminalLeaseNumber = 0;
   const preferences=ids.map((_,i)=>({
@@ -197,6 +206,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
+          settingsValues={};localStorage.removeItem(settingsKey);
           holdSettings=false;refuseSetting=false;pendingSettings.length=0;
           failAcpSetup=false;acpSetupCalls.length=0;
           for (const timer of timers) clearTimeout(timer); timers.clear(); streaming.clear(); khorRunning=false; khorApproval=null; khorAnswers.length=0; generation.fill(0);
@@ -306,7 +316,15 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "quota": answer = { quota:quota[0] ? {windows:quota[0].reading.windows,as_of:null,plan:'Max 20x',credits:null,fill:.36,source:'lab',limit_reached:false} : null,trouble:null }; break;
           case "agents": answer = [{name:'codex-acp',command:'npx -y @agentclientprotocol/codex-acp@2.2.2'},
             {name:'claude-acp',command:'npx -y @agentclientprotocol/claude-agent-acp@0.94.0'}];break;
-          case "config": case "dir_pins": case "web_pins": answer = []; break;
+          case "config": answer = settingsRows(); break;
+          case "set_config": {
+            const row = settingsRows().find(row => row.name === body.name);
+            if(!row?.choices.some(choice => choice.value === body.value))throw new Error('Invalid Lab setting');
+            settingsValues[body.name] = body.value;
+            localStorage.setItem(settingsKey,JSON.stringify(settingsValues));
+            answer=settingsRows();break;
+          }
+          case "dir_pins": case "web_pins": answer = []; break;
           case "seen_snapshot": case "seen": case "session_seen": break;
           default: throw new Error(`Lab fixture does not implement ${path}`);
         }

@@ -1,3 +1,4 @@
+import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
@@ -302,6 +303,8 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
+  results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
   results.push(await checkGuiExperience(browser,{port,report,engine:'chromium'}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium'}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium',mobile:true}));

@@ -2918,20 +2918,11 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
 // uses the prewarmed keyless window; iOS hosts the shared menu's inert DOM
 // above sibling webpages without copying app IPC or changing the page.
 
-/// The settings window's label (UX-10).
+/// Legacy auxiliary label retained by close and draft handling; no new settings window is created.
 #[cfg(desktop)]
 const SETTINGS: &str = "settings";
 
-/// **Settings in a window of their own** (UX-10; ux-9 M1). HIG Settings
-/// (macOS): a settings window opened by ⌘, from the app menu, its title
-/// the pane's name, minimise and zoom dimmed, and 「Avoid adding settings
-/// buttons to a window's toolbar」 — they had been the main window's
-/// list and content, reached through the 「…」 circle in its first row.
-/// The same page, told which half of itself to be (`?face=settings`,
-/// read once at boot like the overlay's `face=menu`), so the panes are
-/// the very pages they were; one window, brought forward when it exists,
-/// `pane` choosing which to show. The page store is the main window's
-/// (`on_the_page_store`), so the theme mirror and the type sizes agree.
+/// All settings requests return to the main application without changing its frame.
 #[cfg(desktop)]
 pub(crate) fn show_settings(app: &tauri::AppHandle, pane: Option<String>) -> tauri::Result<()> {
     show_settings_for(app, pane, None)
@@ -2944,75 +2935,34 @@ fn show_settings_for(
     machine: Option<String>,
 ) -> tauri::Result<()> {
     use tauri::{Emitter, Manager};
-    if let Some(w) = app.get_webview_window(SETTINGS) {
-        if let Some(m) = machine {
-            let _ = w.emit_to(SETTINGS, "settings:machine", m);
-        }
-        if let Some(p) = pane {
-            let _ = w.emit_to(SETTINGS, "settings:pane", p);
-        }
-        let _ = w.show();
-        return w.set_focus();
-    }
-    let at = pane.map(|p| format!("&pane={p}")).unwrap_or_default();
-    let target = machine.map(|m| format!("&machine={m}")).unwrap_or_default();
-    let win = tauri::WebviewWindowBuilder::new(
-        app,
-        SETTINGS,
-        tauri::WebviewUrl::App(format!("index.html?face=settings{at}{target}").into()),
-    )
-    .title(khor_catalog::gui::nav_settings())
-    .inner_size(780.0, 560.0)
-    // Never the narrow face (`use-narrow`'s 760): a settings window
-    // has its panes beside their content, not a bottom bar.
-    .min_inner_size(760.0, 420.0)
-    .minimizable(false)
-    .maximizable(false)
-    .background_color(ground(chosen_dark(desktop_is_dark)));
-    on_the_page_store(win).build().map(|_| ())
+    let main = app.get_webview_window("main")
+        .ok_or_else(|| std::io::Error::other("main application window is unavailable"))?;
+    main.show()?;
+    main.unminimize()?;
+    main.set_focus()?;
+    main.emit("settings:open", serde_json::json!({ "pane": pane, "machine": machine }))
 }
 
-/// ⌘, and 设置… — the page's road to `show_settings`.
-#[cfg(desktop)]
 #[tauri::command]
 async fn open_settings(
     app: tauri::AppHandle,
     pane: Option<String>,
     machine: Option<String>,
 ) -> Result<(), String> {
-    if machine
-        .as_ref()
-        .is_some_and(|m| m.len() != 64 || !m.bytes().all(|c| c.is_ascii_hexdigit()))
-    {
+    if pane.as_ref().is_some_and(|page| !khor_node::config::PAGES.contains(&page.as_str())) {
+        return Err("unknown settings category".into());
+    }
+    if machine.as_ref().is_some_and(|id| id.len() != 64 || !id.bytes().all(|c| c.is_ascii_hexdigit())) {
         return Err("invalid settings machine id".into());
     }
-    show_settings_for(&app, pane, machine).map_err(|e| e.to_string())
-}
-
-/// The settings window's title follows its pane (HIG Settings: the
-/// window's title is the current pane's name).
-#[cfg(desktop)]
-#[tauri::command]
-fn name_settings(app: tauri::AppHandle, title: String) {
-    use tauri::Manager;
-    if let Some(w) = app.get_webview_window(SETTINGS) {
-        let _ = w.set_title(&title);
+    #[cfg(desktop)]
+    return show_settings_for(&app, pane, machine).map_err(|error| error.to_string());
+    #[cfg(mobile)]
+    {
+        use tauri::Emitter;
+        app.emit_to("main", "settings:open", serde_json::json!({ "pane": pane, "machine": machine }))
+            .map_err(|error| error.to_string())
     }
-}
-
-/// A phone's settings are a page of the one window, so there is no
-/// window to open: refused by name, the `show_menu` kind of mobile half.
-#[cfg(not(desktop))]
-#[tauri::command]
-async fn open_settings(pane: Option<String>, machine: Option<String>) -> Result<(), String> {
-    let _ = (pane, machine);
-    Err("no settings window on a phone".into())
-}
-
-#[cfg(not(desktop))]
-#[tauri::command]
-fn name_settings(title: String) {
-    let _ = title;
 }
 
 /// Native completion hosting. Only khor's actual trusted WebView may own a
@@ -5845,7 +5795,6 @@ pub fn run() {
             joy_haptic,
             haptic,
             open_settings,
-            name_settings,
             face_note,
             notify_finished,
             term_drop_progress,

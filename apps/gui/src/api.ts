@@ -354,13 +354,6 @@ export const onWebFace = !inApp && bridge === null;
  */
 export const isMenuFace = params.get("face") === "menu";
 
-/** **The settings window** (UX-10; ux-9 M1): the same page told to be
-    the 「…」 pages alone, in a window of their own (`show_settings`),
-    with the pane to open first. */
-export const settingsFace = params.get("face") === "settings";
-export const settingsPane = params.get("pane");
-export const settingsMachine = params.get("machine");
-
 async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
   if (inApp) {
@@ -2090,10 +2083,8 @@ export const joyHaptic = (kind: "prepare" | "tick" | "turn" | "end") => call<nul
     light impact, UX-49). The app's only; nothing for a browser to reach
     (`lib/haptics`). */
 export const haptic = (kind: "selection" | "success" | "warning" | "threshold") => call<null>("haptic", { kind });
-/** Opens the settings window, or brings it forward on `pane` (UX-10). */
+/** Opens a settings category in the main application, including requests from editor windows. */
 export const openSettings = (pane?: string, machine?: string) => call<null>("open_settings", { pane: pane ?? null, machine: machine ?? null });
-/** The settings window's title, its pane's name (HIG Settings). */
-export const nameSettings = (title: string) => call<null>("name_settings", { title });
 /** A finished command, said by the system (roadmap 2.4, `lib/finished`). */
 export const notifyFinished = (title: string, body: string) => call<null>("notify_finished", { title, body });
 /** Files dropped on a terminal. The paths go over as they are and the

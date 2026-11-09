@@ -35,17 +35,12 @@ import {
   inApp,
   closeSession,
   forgetDevice,
-  nameSettings,
   onFullscreen,
-  openSettings,
   onQuitRequested,
   pinDevice,
   quitNow,
   pinSession,
   setMachinePaused,
-  settingsFace,
-  settingsPane,
-  settingsMachine,
   systemUnlock,
   trafficLights,
   trafficRoom,
@@ -158,6 +153,8 @@ import { LockScreen } from "@/views/LockScreen";
 import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
 import { StorePage, StoreScreen } from "@/views/StorePage";
 import { rememberPlace, storedPlace } from "@/lib/place";
+import { isSettingsPage, lastSettingsPage, rememberSettingsPage, type SettingsRequest } from "@/lib/settings-navigation";
+import { listenNativeEvent } from "@/lib/native-events";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { ConnectionPage } from "@/views/more/ConnectionPage";
@@ -491,8 +488,6 @@ export default function App() {
   // the condition and nothing else.
   const [quitting, setQuitting] = useState<number | null>(null);
   useEffect(() => {
-    // The settings window holds no drafts and closes as any window does.
-    if (settingsFace) return;
     // **Unsaved edits are written first** (save-a): every open file's
     // pending text goes, and the window closes when nothing is left
     // unsaved. Only what could not be saved asks — that is the warning.
@@ -780,43 +775,12 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(() =>
-    // **The settings window is 设置's seven and nothing else** (UX-10;
-    // UX-16): it opens on the pane it was asked for, or 外观, and never on
-    // a landing, 我的 khor or 诊断.
-    settingsFace
-      ? morePageOrder.some((p) => p === settingsPane && inSettings(p))
-        ? (settingsPane as MorePage)
-        : "appearance"
-      : (morePageOrder as readonly string[]).includes(place.more ?? "")
-        ? (place.more as MorePage)
-        : null,
+    (morePageOrder as readonly string[]).includes(place.more ?? "") ? place.more as MorePage : null,
   );
-  // …and written back whenever it changes, for the next start — by the
-  // main window only: the settings window's pane is not where the app was.
   useEffect(() => {
-    if (!settingsFace) rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs });
+    rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs });
+    if (isSettingsPage(morePage)) rememberSettingsPage(morePage);
   }, [landing, morePage, screen, selectedDevice, openWs]);
-  // The settings window: never off its pages, its title the pane's name,
-  // and a later ⌘, from the menu brings it to the pane it names.
-  useEffect(() => {
-    if (!settingsFace) return;
-    if (morePage === null || !inSettings(morePage)) setMorePage("appearance");
-    else nameSettings(moreName(morePage)).catch(() => {});
-  }, [morePage]);
-  useEffect(() => {
-    if (!settingsFace || !inApp) return;
-    let stop: (() => void) | undefined;
-    let gone = false;
-    void import("@tauri-apps/api/event").then(({ listen }) =>
-      listen<string>("settings:pane", (e) => {
-        if (morePageOrder.some((p) => p === e.payload && inSettings(p))) setMorePage(e.payload as MorePage);
-      }).then((un) => (gone ? un() : (stop = un))),
-    );
-    return () => {
-      gone = true;
-      stop?.();
-    };
-  }, []);
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
   // there has ever been, eighteen seconds for the first pass on the
@@ -829,16 +793,11 @@ export default function App() {
   // here is a registration (`Node::adopt_subscriptions`, docs/SHELL.md
   // 第七轮 第 3 条) and comes in with the board like every other row.
 
-  const [recognitionMachine, setRecognitionMachine] = useState<string | null>(settingsFace ? settingsMachine : null);
+  const [recognitionMachine, setRecognitionMachine] = useState<string | null>(null);
+  const settingsOpener = useRef<((request: SettingsRequest) => void) | null>(null);
   useEffect(() => {
-    if (!settingsFace || !inApp) return;
-    let stop: (() => void) | undefined;
-    let gone = false;
-    void import("@tauri-apps/api/event").then(({ listen }) =>
-      listen<string>("settings:machine", (e) => setRecognitionMachine(e.payload))
-        .then((un) => (gone ? un() : (stop = un))),
-    );
-    return () => { gone = true; stop?.(); };
+    if (!inApp) return;
+    return listenNativeEvent<SettingsRequest>("settings:open", request => settingsOpener.current?.(request));
   }, []);
 
   const hidden = useHidden();
@@ -1001,9 +960,9 @@ export default function App() {
     return true;
   };
   useEffect(() => {
-    if (!rowsRead || settingsFace || lock.locked) return;
+    if (!rowsRead || lock.locked) return;
     receiveNotifications(rawRows, (id) => onScreen.current(id));
-  }, [rawRows, rowsRead, settingsFace, lock.locked, hidden, morePage, switchingTabs]);
+  }, [rawRows, rowsRead, lock.locked, hidden, morePage, switchingTabs]);
   const openNotifications = () => {
     setMorePage("notifications");
     setSwitchingTabs(false);
@@ -1472,27 +1431,25 @@ export default function App() {
       list column folds away for the page's lifetime (nothing beside it)
       and ‹ at its top-left closes it back to the landing it was opened
       over. The column's own fold state is untouched — it comes back as
-      it was. The settings window never shows it (UX-16). */
-  const dial = !narrow && morePage === "me" && !settingsFace;
+      it was. */
+  const dial = !narrow && morePage === "me";
   /** The wide face's top row (方案 B): the landings' glyphs beside the
       window's buttons, then 更多. The open landing pressed again folds its
       list, and once more brings it back; another landing switches and
       brings it back (the owner: no toggle button). */
   /** **更多's four, on both bars** (UX-16; UX-19 gave the wide strip the
       phone's menu): 我的 khor, the landings past the fourth, 设置, 诊断. */
-  const moreSettings = () => {
-    // A Mac opens the settings window, from either bar.
-    if (trafficLights && !settingsFace) {
-      openSettings().catch(() => {});
-      return;
-    }
-    setMorePage("appearance");
+  const enterSettings = (request: SettingsRequest = {}) => {
+    const pane = request.pane;
+    const explicit = isSettingsPage(pane);
+    setMorePage(explicit ? pane : lastSettingsPage());
+    if (request.machine && /^[a-f0-9]{64}$/i.test(request.machine)) setRecognitionMachine(request.machine);
     setSwitchingTabs(false);
-    // Narrow: 设置's list of seven, one screen; wide: its first page
-    // beside the list in the list column.
-    setScreen(narrow ? "list" : "detail");
+    setScreen(narrow && !explicit ? "list" : "detail");
     listPane.expand();
   };
+  settingsOpener.current = enterSettings;
+  const moreSettings = () => enterSettings();
   const moreDoctor = () => {
     setMorePage("doctor");
     setScreen("detail");
@@ -1569,18 +1526,7 @@ export default function App() {
       active={morePage === null ? landing : null}
       moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
       onGo={(key) => goLanding(key as Landing)}
-      onSettings={() => {
-        // A Mac window dragged narrow opens the settings window too.
-        if (trafficLights && !settingsFace) {
-          openSettings().catch(() => {});
-          return;
-        }
-        setMorePage("appearance");
-        setSwitchingTabs(false);
-        // Narrow: 设置's list of seven, one screen; wide: its first page
-        // beside the list in the list column.
-        setScreen(narrow ? "list" : "detail");
-      }}
+      onSettings={moreSettings}
       onDoctor={() => {
         setMorePage("doctor");
         setScreen("detail");
@@ -1662,16 +1608,7 @@ export default function App() {
       setSwitchingTabs(false);
       listPane.expand();
     },
-    settings: () => {
-      // ⌘, on a Mac: the settings window (UX-10; ux-9 M1).
-      if (trafficLights && !settingsFace) {
-        openSettings().catch(() => {});
-        return;
-      }
-      setMorePage("appearance");
-      setScreen("detail");
-      setSwitchingTabs(false);
-    },
+    settings: moreSettings,
     me: () => {
       setMorePage("me");
       setScreen("detail");
@@ -3307,15 +3244,7 @@ export default function App() {
         onPin={onPinDevice}
         onForget={onForgetDevice}
         onAdd={(start) => setDialog(start === "ticket" ? "add-ticket" : "add")}
-        onOpenRelays={() => {
-          if (trafficLights && !settingsFace) {
-            openSettings("connection").catch(() => {});
-            return;
-          }
-          setMorePage("connection");
-          setScreen("detail");
-          listPane.expand();
-        }}
+        onOpenRelays={() => enterSettings({ pane: "connection" })}
         onChanged={() => {
           refresh().catch(() => {});
         }}
@@ -3339,7 +3268,8 @@ export default function App() {
   const moreList = (
     <nav
       data-more-list
-      aria-label={gui.rail_more}
+      data-settings-navigation={inSettings(morePage) ? "" : undefined}
+      aria-label={inSettings(morePage) ? gui.nav_settings : gui.rail_more}
       // ↑ ↓ Home End between the sections, System Settings' sidebar.
       onKeyDown={(e) => walkList(e, "[data-more-landing], [data-more-open]")}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1"
@@ -3353,10 +3283,9 @@ export default function App() {
         </NarrowHead>
       ) : (
         <SideSeat>
-          {/* 更多's list on a wide face (我的 khor · 设置's seven · 诊断);
-              the settings window's own sidebar is 设置. */}
+          {/* Settings have their own category list within the same app shell. */}
           <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
-            {settingsFace ? gui.nav_settings : gui.rail_more}
+            {inSettings(morePage) ? gui.nav_settings : gui.rail_more}
           </h1>
         </SideSeat>
       )}
@@ -3364,10 +3293,8 @@ export default function App() {
           face left the top row and lives in 更多): this machine's face and
           name, over the word for the page. Narrow keeps it in its place
           among the sections; its 更多 menu already leads to it. */}
-      {/* **The settings window holds settings and nothing else** (UX-16
-          ruling, 2026-10-05): no 我的 khor at its head, no 诊断 at its
-          foot — the app menu opens those two in the main window. */}
-      {!narrow && !settingsFace && (
+      {/* Utilities keep their current routes; settings show only settings categories. */}
+      {!narrow && !inSettings(morePage) && (
         <button
           type="button"
           data-more-open="me"
@@ -3407,6 +3334,7 @@ export default function App() {
               type="button"
               data-setting-row="nav"
               data-more-open={p}
+              aria-current={morePage === p ? "page" : undefined}
               tabIndex={p === (morePage ?? "appearance") ? 0 : -1}
               onClick={() => {
                 setMorePage(p);
@@ -3426,16 +3354,16 @@ export default function App() {
           ))}
         </div>
       ) : (
-        // **Wide** (and the Mac settings window's sidebar): 我的 khor at
-        // the head (above), 设置's seven, then — a step apart — 诊断.
+        // Stable category navigation in the main window.
         morePageOrder
-          .filter((p) => (settingsFace ? inSettings(p) : p !== "me"))
+          .filter((p) => inSettings(morePage) ? inSettings(p) : p !== "me")
           .map((p) => (
             <button
               key={p}
               type="button"
               data-more-open={p}
               data-on={morePage === p}
+              aria-current={morePage === p ? "page" : undefined}
               tabIndex={morePage === p ? 0 : -1}
               onClick={() => {
                 setMorePage(p);
@@ -3717,7 +3645,7 @@ export default function App() {
       on top has none (a session, full screen) — elsewhere the one on
       screen is already the list's, and stays put. Never under the
       switcher, whose page is a session. */
-  const underNav = !switchingTabs && !settingsFace;
+  const underNav = !switchingTabs;
   /** **The landings' bar belongs to the landings** (2026-10-03, the owner
       on a phone: the capsule sat over a file's text). It floats over a
       landing's own list — 机器, 会话, 额度, 更多's list and the landings
@@ -3732,10 +3660,7 @@ export default function App() {
     morePage !== null || quotas || browses
       ? screen !== "detail"
       : !(switchingTabs && openTabs.length > 0) && !(screen === "detail" && detail);
-  // **The settings window is the settings page alone** (UX-19, the owner
-  // 2026-10-05: the window carried the bar's capsule and 更多): no bar in
-  // it at any width.
-  const navShown = !switchingTabs && onLanding && !settingsFace;
+  const navShown = !switchingTabs && onLanding;
 
   return (
     <SettingsProvider value={settings.rows}>
@@ -3908,9 +3833,7 @@ export default function App() {
                 over the column's rows (`lib/scroll-edge`, round HEADS):
                 the list passes under both on one glass. */}
             <div ref={band} data-band data-wide-band className="flex flex-none flex-col">
-              {/* The settings window has the system's title bar and no
-                  landings: no first row of khor's own (UX-10). */}
-              {!settingsFace && (
+              {(
                 <div
                   data-wide-top
                   {...WINDOW_DRAG}
@@ -3961,9 +3884,7 @@ export default function App() {
               // A glass circle like every head's way out (the audit fix
               // plan F4.9; W21).
               actions={
-                // The settings window closes as a window does (⌘W, the
-                // red button); a ✕ of its own would be a second way out.
-                settingsFace ? undefined : (
+                (
                   <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
                     <IconClose />
                   </GlassCircle>
