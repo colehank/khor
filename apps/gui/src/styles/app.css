@@ -3046,7 +3046,22 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
   right: var(--gap-pane);
   width: min(var(--dialog-w), calc(100% - 2 * var(--gap-row)));
 }
-.notification-banner { pointer-events: auto; }
+/* Readable glass over busy content: reuse the denser menu tint and the
+   common rim/blur/shadow, rather than the navigation's thin control tint. */
+.notification-banner {
+  pointer-events: auto;
+  background: var(--glass-menu);
+}
+@supports not ((backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0))) {
+  .notification-banner { background: var(--popover); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .notification-banner {
+    background: var(--popover);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
 :root[data-narrow] .notification-banners {
   left: var(--gap-row); right: var(--gap-row); width: auto;
 }

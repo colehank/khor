@@ -19,19 +19,19 @@ function Banner({item,row,onOpen}: {item:NotificationBanner;row:SessionRow;onOpe
   const [missing,setMissing]=useState(false);
   const hovered=useRef(false),focused=useRef(false);
   const pause=()=>pauseNotification(item.key,hovered.current||focused.current);
-  return <div data-notification-banner={item.key} className="notification-banner glass flex min-w-0 items-center gap-in rounded-lg p-in shadow-(--shadow-float)"
+  return <div data-notification-banner={item.key} className="notification-banner glass flex min-w-0 items-start gap-in rounded-2xl p-row"
     onMouseEnter={()=>{hovered.current=true;pause();}} onMouseLeave={()=>{hovered.current=false;pause();}}
     onFocusCapture={()=>{focused.current=true;pause();}} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){focused.current=false;pause();}}}>
-    <button type="button" className="flex min-h-touch min-w-0 flex-1 items-center gap-in text-start" data-notification-open
+    <button type="button" className="flex min-h-touch min-w-0 flex-1 items-center gap-row rounded-xl text-start focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" data-notification-open
       onClick={()=>{if(onOpen(item))dismissNotification(item.key);else setMissing(true);}}>
-      <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="tab"/>
-      <span className="flex min-w-0 flex-1 flex-col">
-        <span className="truncate text-body font-label">{row.title}</span>
-        <span className="text-callout text-muted-foreground">{missing?gui.notification_missing:notificationText(item)}</span>
+      <SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="row"/>
+      <span className="flex min-w-0 flex-1 flex-col gap-xxs">
+        <span className="truncate text-body font-title">{row.title}</span>
+        <span className="line-clamp-2 break-words text-callout text-muted-foreground">{missing?gui.notification_missing:notificationText(item)}</span>
       </span>
     </button>
-    <button type="button" data-notification-dismiss aria-label={gui.close} className="flex min-h-touch min-w-touch items-center justify-center rounded-full"
-      onClick={()=>dismissNotification(item.key)}><IconClose className="size-affordance"/></button>
+    <button type="button" data-notification-dismiss aria-label={gui.close} className="group flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      onClick={()=>dismissNotification(item.key)}><span aria-hidden className="grid size-ctl-sm place-items-center rounded-full bg-fill text-muted-foreground group-hover:bg-fill-strong group-hover:text-foreground"><IconClose className="size-affordance"/></span></button>
   </div>;
 }
 /** App chrome only: no saved list, no focus grab, and no banner while locked. */
