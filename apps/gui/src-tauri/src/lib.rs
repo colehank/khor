@@ -2935,12 +2935,16 @@ fn show_settings_for(
     machine: Option<String>,
 ) -> tauri::Result<()> {
     use tauri::{Emitter, Manager};
-    let main = app.get_webview_window("main")
+    let main = app
+        .get_webview_window("main")
         .ok_or_else(|| std::io::Error::other("main application window is unavailable"))?;
     main.show()?;
     main.unminimize()?;
     main.set_focus()?;
-    main.emit("settings:open", serde_json::json!({ "pane": pane, "machine": machine }))
+    main.emit(
+        "settings:open",
+        serde_json::json!({ "pane": pane, "machine": machine }),
+    )
 }
 
 #[tauri::command]
@@ -2949,10 +2953,16 @@ async fn open_settings(
     pane: Option<String>,
     machine: Option<String>,
 ) -> Result<(), String> {
-    if pane.as_ref().is_some_and(|page| !khor_node::config::PAGES.contains(&page.as_str())) {
+    if pane
+        .as_ref()
+        .is_some_and(|page| !khor_node::config::PAGES.contains(&page.as_str()))
+    {
         return Err("unknown settings category".into());
     }
-    if machine.as_ref().is_some_and(|id| id.len() != 64 || !id.bytes().all(|c| c.is_ascii_hexdigit())) {
+    if machine
+        .as_ref()
+        .is_some_and(|id| id.len() != 64 || !id.bytes().all(|c| c.is_ascii_hexdigit()))
+    {
         return Err("invalid settings machine id".into());
     }
     #[cfg(desktop)]
@@ -2960,8 +2970,12 @@ async fn open_settings(
     #[cfg(mobile)]
     {
         use tauri::Emitter;
-        app.emit_to("main", "settings:open", serde_json::json!({ "pane": pane, "machine": machine }))
-            .map_err(|error| error.to_string())
+        app.emit_to(
+            "main",
+            "settings:open",
+            serde_json::json!({ "pane": pane, "machine": machine }),
+        )
+        .map_err(|error| error.to_string())
     }
 }
 

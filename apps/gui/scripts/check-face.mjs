@@ -22978,18 +22978,20 @@ try {
       if (row.after === null || row.after < 0) fail(`UX-39 §8 · 更多's circle starts ${row.after} after the capsule's end — after it, not over it`);
       // The storage page joined the menu with the storage lane (store-b steps 4-5).
       if (menu.join(",") !== "me,browser,store,settings,doctor") fail(`UX-39 §8 · 更多's menu reads ${JSON.stringify(menu)} — 我的 khor, 浏览器, 存储, 设置, 诊断`);
-      // The settings window (`?face=settings`) is the settings page alone.
-      // It shares this origin's storage, and a window that narrow puts the
-      // list away — so what the walk left is put back after it.
-      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&face=settings`, { waitUntil: "load" });
-      await wait(1_200);
+      // Settings now use the existing application surface at both widths.
+      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
+      await page.setViewportSize({ width: 900, height: 700 });
+      await press('[data-rail-more]:visible,[data-nav-more]:visible');
+      await press('[data-nav-settings]:visible');
+      await page.locator('[data-settings-navigation]:visible').waitFor();
+      await press('[data-settings-navigation] [data-more-open="appearance"]');
+      const pagesBefore = page.context().pages().length;
       for (const size of [{ width: 900, height: 700 }, { width: 420, height: 700 }]) {
         await page.setViewportSize(size);
         await wait(400);
+        await page.locator('[data-more-page="appearance"]:visible').waitFor();
         if (shotsAt) await page.screenshot({ path: join(shotsAt, `ux19-settings-${size.width}.png`) });
-        const bars = await page.locator("[data-landing-strip], [data-float-nav], [data-rail-more]").count();
-        console.log(`UX-19 · the settings window at ${size.width}: ${bars} nav piece(s)`);
-        if (bars !== 0) fail(`UX-19 · the settings window at ${size.width} draws ${bars} piece(s) of the main window's navigation — it is the settings page alone`);
+        if (page.context().pages().length !== pagesBefore) fail('Settings created another application surface');
       }
       await page.setViewportSize({ width: 1400, height: 900 });
       await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });

@@ -130,7 +130,7 @@ export function checkMobileSources(gui) {
     "hide_menu", "widen", "unwiden", "move_page", "hide_page", "show_page", "close_page",
     // The phone's native deck over its page, and the ground under its folded capsule (UIKit, queued).
     "page_deck", "page_sheet", "page_ground", "page_state",
-    "window_minimize", "window_maximize_toggle", "window_close", "name_settings",
+    "window_minimize", "window_maximize_toggle", "window_close",
     // A line to the app's log; a notification handed to the OS; a haptic
     // handed to UIKit's thread (`bell_haptic` queues it and returns).
     "face_note", "notify_finished", "bell_haptic", "joy_haptic", "haptic",
