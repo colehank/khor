@@ -25,7 +25,8 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-browse-tabs]:visible').waitFor();
     assert.equal(await page.locator('[data-more-list]:visible').count(),0,'Browser has its own list outside More');
     await open();
-    const more=page.locator('[data-more-list]:visible');
+    // A swipe underlay is visible behind the current detail but inert.
+    const more=page.locator('[data-swipe-host] [data-more-list]:visible,[data-side] [data-more-list]:visible');
     const inventory=()=>more.locator('[data-more-open]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-more-open')));
     const navigation=page.locator('[data-settings-navigation]:visible');
     await navigation.waitFor();
