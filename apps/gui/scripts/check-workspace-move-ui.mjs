@@ -34,13 +34,16 @@ createRoot(document.getElementById('root')).render(<TooltipProvider><FileTree ma
  }
  assert(ready,'Vite HTTP readiness');
  browser=await chromium.launch({headless:true,args:['--no-proxy-server']});
- page=await browser.newPage({viewport:{width:700,height:700},hasTouch:false});page.on('pageerror',error=>errors.push(error.message));
- await page.route('**/*',async route=>{
-  const request=route.request();if(request.method()!=='POST'){await route.continue();return;}
-  const command=new URL(request.url()).pathname.slice(1),args=request.postDataJSON();let result=null;
+ page=await browser.newPage({viewport:{width:700,height:700},hasTouch:false});page.on('pageerror',error=>{errors.push(error.message);console.error(error.message)});
+ page.on('requestfailed',request=>console.error('fixture request failed',request.url(),request.failure()));
+ await page.route(`http://127.0.0.1:${port}/**`,async route=>{
+  const request=route.request();
+  const headers={'access-control-allow-origin':'*','access-control-allow-headers':'content-type'};
+  if(request.method()==='OPTIONS'){await route.fulfill({status:204,headers});return;}
+  const command=new URL(request.url()).pathname.slice(1),args=request.postDataJSON()||{};let result=null;
   if(command==='ls'){reads.push(args.path);result={path:args.path,entries:entries.get(args.path)||[],truncated:false};}
   else if(command==='rename_path'){
-   calls.push(args);if(refuse){await route.fulfill({status:409,json:'fixture occupied'});return;}
+   calls.push(args);if(refuse){await route.fulfill({status:409,headers,json:'fixture occupied'});return;}
    const parent=path=>path.slice(0,path.lastIndexOf('/'))||'/',name=path=>path.slice(path.lastIndexOf('/')+1);
    const source=entries.get(parent(args.from)).find(entry=>entry.name===name(args.from));assert(source);
    entries.set(parent(args.from),entries.get(parent(args.from)).filter(entry=>entry!==source));
@@ -50,7 +53,7 @@ createRoot(document.getElementById('root')).render(<TooltipProvider><FileTree ma
   else if(command==='dirs_begin')result={};
   else if(command==='about')result={hosts:true,faces:[]};
   else if(command==='trash_here')result=false;
-  await route.fulfill({json:result});
+  await route.fulfill({headers,json:result});
  });
  await page.route('**/__workspace_move?**',route=>route.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme="dark"><body><div id="root" class="h-screen"></div><script type="module">import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type="module" src="/scripts/.workspace-move-${process.pid}.tsx"></script></body></html>`}));
  await page.goto(`http://localhost:${port}/__workspace_move?bridge=${port}`);
@@ -74,6 +77,9 @@ createRoot(document.getElementById('root')).render(<TooltipProvider><FileTree ma
  assert.equal(calls.length,4);assert.equal((await page.evaluate(()=>window.moves)).length,3);
  assert.deepEqual(errors,[]);
  console.log('PASS production FileTree DOM drag: files, directories, root blank, target refresh, subtree expansion, onMoved, invalid targets, occupied target and backend refusal');
+} catch(error) {
+ console.error({errors,reads,calls,body:await page?.locator('body').innerText().catch(()=>null)});
+ throw error;
 } finally {
  await browser?.close();server?.kill('SIGTERM');rmSync(entry,{force:true});
 }

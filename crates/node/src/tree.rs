@@ -265,12 +265,7 @@ pub(crate) fn rename_new(from: &Path, to: &Path) -> Result<(), String> {
             Err(std::io::Error::last_os_error().to_string())
         };
     }
-    #[cfg(not(any(
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "linux",
-        windows
-    )))]
+    #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", windows)))]
     std::fs::rename(from, to).map_err(|e| e.to_string())
 }
 

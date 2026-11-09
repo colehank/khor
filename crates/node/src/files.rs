@@ -1868,6 +1868,11 @@ mod rename_tests {
         assert!(crate::tree::rename_new(&source, &target).is_err());
         assert_eq!(fs::read_to_string(&source).unwrap(), "source");
         assert_eq!(fs::read_to_string(&target).unwrap(), "target");
+        fs::remove_file(&target).unwrap();
+        fs::hard_link(&source, &target).unwrap();
+        assert!(rename_path(source.to_str().unwrap(), target.to_str().unwrap()).is_err());
+        assert!(source.exists() && target.exists());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "source");
     }
 
     #[test]
