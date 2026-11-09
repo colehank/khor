@@ -123,6 +123,9 @@ try{
   assert.match(await small.locator('[data-key-entry-preview]').innerText(),/⌃C/);
   const geometry=await small.locator('[data-terminal-keyboard]').evaluate(el=>({width:el.clientWidth,scroll:el.scrollWidth,keys:[...el.querySelectorAll('button[data-skbtn]')].map(key=>{const r=key.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,height:r.height};})}));
   assert.ok(geometry.scroll<=geometry.width+1,'Visual key picker fits the phone');assert.ok(geometry.keys.every(key=>key.left>=0&&key.right<=width&&key.width>=40&&key.height>=40));
+  for(let index=0;index<5;index++){await small.locator('[data-key-step-add]').click();await small.locator('button[data-skbtn="{KeyC}"]').click();}
+  const strip=await small.locator('[data-key-entry-steps]').evaluate(el=>({height:el.getBoundingClientRect().height,client:el.clientWidth,scroll:el.scrollWidth}));
+  assert.ok(strip.height<=60&&strip.scroll>strip.client,'Many steps scroll horizontally and leave the mobile editor available');
   const save=await small.locator('[data-key-entry-save]').boundingBox();assert.ok(save&&save.x>=0&&save.x+save.width<=width,'Save remains in the fixed header');
   await small.screenshot({path:join(evidence,`mobile-key-editor-${width}.png`),fullPage:true});
   await small.locator('[data-key-entry-name]').fill('手机组合');await small.evaluate(()=>window.__keyWire.keyboard());await small.waitForFunction(()=>window.__keyWire.shown());
