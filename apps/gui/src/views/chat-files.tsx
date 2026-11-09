@@ -43,7 +43,6 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Button } from "@/components/ui/button";
 import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
-import { useNarrow } from "@/hooks/use-narrow";
 import { baseName, shownName } from "@/lib/paths";
 import { cn } from "@/lib/utils";
 import { sizeWord } from "@/views/FilesPane";
@@ -328,7 +327,6 @@ export function FilePreview({
   const opening = initialFace ?? (path === null ? "source" : defaultFaceOf(path));
   const [face, setFace] = useState(opening);
   useEffect(() => setFace(opening), [machine, path, opening]);
-  const narrow = useNarrow();
   const show = useShowFile();
   const [finder, setFinder] = useState(false);
   const [said, setSaid] = useState<"copied" | "failed" | string | null>(null);
@@ -375,7 +373,7 @@ export function FilePreview({
           <>
             <div
               data-file-preview-head
-              className={cn("flex flex-none flex-col gap-in px-pane pb-row", !narrow && "pt-pane")}
+              className="flex flex-none flex-col gap-in"
             >
               <DialogTitle>{shownName(path)}</DialogTitle>
               <TaskActions close={<Button data-file-preview-close onClick={onClose}>{gui.close}</Button>}/>
@@ -436,7 +434,7 @@ export function FilePreview({
                 reading
               />
             </div>
-            {footer && <div className="flex flex-none items-center justify-between gap-row border-t px-pane py-in">{footer}</div>}
+            {footer && <div className="flex flex-none items-center justify-between gap-row border-t py-in">{footer}</div>}
           </>
         )}
       </TaskOverlay>

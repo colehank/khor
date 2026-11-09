@@ -55,11 +55,13 @@ function TaskPan({open,onClose}:{open:boolean;onClose:()=>void}) {
   };
   return <Dialog open={open} onOpenChange={on=>{if(!on)onClose()}}><TaskOverlay purpose="selection" scrollable data-task-pan><DialogTitle>选择任务</DialogTitle><DialogBody><div data-task-main>主内容</div><OmniMenu rows={{at:-1,groups:[{key:'choices',label:'',role:'text',candidates:Array.from({length:30},(_,i)=>({key:String(i),label:'候选 '+(i+1)}))}]}} onPick={()=>{}}/><output data-task-pan-result>{result}</output></DialogBody><TaskActions cancel={<Button onClick={onClose}>取消</Button>} tools={<><Button onClick={()=>test(true,true)}>上滑菜单</Button><Button onClick={()=>test(false,true)}>上滑内容</Button><Button onClick={()=>test(false,false)}>下滑内容</Button></>}/></TaskOverlay></Dialog>;
 }
+function BrokenTask():React.ReactElement {throw new Error("disposable task body failure");}
 function DraftTask({onClose}:{onClose:()=>void}) {
-  const [value,setValue]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(false);
+  const [value,setValue]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(false),[broken,setBroken]=useState(false);
   const save=()=>{if(busy)return;setBusy(true);setError(false);(window as unknown as {failTask:()=>void}).failTask=()=>{setBusy(false);setError(true);};};
   return <Dialog open onOpenChange={open=>{if(!open)onClose();}}><TaskOverlay purpose="edit" data-task-proof>
     <DialogTitle>编辑一个需要保留草稿与正确返回行为的较长任务标题</DialogTitle>
+    <Button data-task-proof-break onClick={()=>setBroken(true)}>触发内容错误</Button>{broken&&<BrokenTask/>}
     <label htmlFor="task-proof-name">名称</label><Input id="task-proof-name" value={value} onChange={event=>setValue(event.target.value)}/>
     {error&&<p role="alert" data-task-proof-error>保存失败，草稿仍在</p>}
     <TaskActions dirty={!!value} busy={busy} cancel={<Button data-task-proof-cancel onClick={onClose}>取消</Button>} primary={<Button data-task-proof-save onClick={save}>保存</Button>}/>

@@ -908,3 +908,7 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 `npm run type-size` (`node scripts/check-type-size.mjs`), included in test:unit, checks independent interface/terminal system modes, system accessibility scale, preserved custom terminal points across mode changes, migration of legacy custom values, reload, and foreground/other-window updates to the real renderer callback. Developer Lab checks both sliders hidden in system mode, restoration of custom values, effective xterm font changes, pointer-specific visible knob sizes with independent hit areas, and settings titles matching row text size with bold weight only. Native Dynamic Type and trackpad gestures still need native review.
 
 2026-11-10：`npm run key-row-ui` 同时覆盖共享 Khor 选择菜单（当前项焦点／分组／禁用／输入查找／内部滚动与边界／字体／多选）与智能体必填答案，以及320／390宽按键编辑、可逆主键／修饰键／连续步骤、固定完成栏。完整App Lab验证正式设置入口。
+
+### 任务操作槽位（2026-11-10）
+
+`npm run dialogs` 增加公共 `TaskActions` 的桌面右下／手机顶部布局、长标题不遮挡操作、草稿保留／丢弃、显式取消、不可取消写入、失败保留输入、断点切换 DOM 身份验证。与原有视口、长列表、目录补全与手势检查一起运行；Quality 的 settings 和 all 交互组均包含它。截图由 `gui-interaction-evidence/quality-dialogs` 保留。

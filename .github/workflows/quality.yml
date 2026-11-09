@@ -455,6 +455,7 @@ jobs:
             ${{ runner.temp }}/quality-terminal-links
             ${{ runner.temp }}/quality-key-row
             ${{ runner.temp }}/quality-notifications
+            ${{ runner.temp }}/quality-dialogs
           if-no-files-found: warn
 
   windows-agent-process:

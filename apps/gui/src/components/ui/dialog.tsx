@@ -70,7 +70,7 @@ function DialogContent({
   /** Long tasks put their one scroller in DialogBody. */
   scrollable?: boolean;
   /** All implicit exits share the task's cancellation/step policy. */
-  onRequestDismiss?: () => void;
+  onRequestDismiss?: (close: () => void) => void;
 }) {
   const narrow=useWindowNarrow();
   const policy=overlayPolicy({purpose,initialHeight,maxHeight,dismiss:dismissMode},narrow);
@@ -96,7 +96,7 @@ function DialogContent({
   // this component did, and the sheet's listeners need that moment.
   const [sheet, setSheet] = React.useState<HTMLDivElement | null>(null);
   const dismiss = React.useCallback(() => {
-    if (onRequestDismiss) onRequestDismiss();
+    if (onRequestDismiss) onRequestDismiss(() => close.current?.click());
     else close.current?.click();
   }, [onRequestDismiss]);
   // Every dialog follows the visible viewport, including short alerts that
@@ -268,14 +268,18 @@ function TaskFrame({children, ...props}: Omit<React.ComponentProps<typeof Dialog
   const [discarding, setDiscarding] = React.useState(false);
   const frame = React.useRef<HTMLDivElement>(null);
   const close = React.useRef<HTMLButtonElement>(null);
+  const nativeClose = React.useRef<() => void>(() => {});
   const slots = React.useMemo<TaskSlots>(() => ({title:setTitle, actions:setActions}), []);
   const role = actions?.back ? "back" : actions?.cancel ? "cancel" : "close";
   const source = actions?.back ?? actions?.cancel ?? actions?.close;
   const leave = () => {
     const button = frame.current?.parentElement?.querySelector<HTMLButtonElement>('[data-task-action="leading"] button');
-    button?.click();
+    if (button) button.click();
+    else nativeClose.current();
   };
-  const requestDismiss = () => {
+  const requestDismiss = (fallback: () => void) => {
+    nativeClose.current = fallback;
+    if (!frame.current) { fallback(); return; }
     if (actions?.busy) return;
     if (actions?.dirty) setDiscarding(true);
     else leave();
@@ -293,8 +297,8 @@ function TaskFrame({children, ...props}: Omit<React.ComponentProps<typeof Dialog
         })}
       </div>
       {actions?.primary && <div data-task-action="primary">{React.cloneElement(actions.primary, {variant:"primary", disabled:actions.busy || actions.primary.props.disabled, "aria-busy":actions.busy || actions.primary.props["aria-busy"]})}</div>}
-      <div ref={frame} data-slot="dialog-body" className="flex min-h-0 min-w-0 flex-1 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain">
-        <TaskContext.Provider value={slots}>{children}</TaskContext.Provider>
+      <div ref={frame} data-slot="dialog-body" inert={actions?.busy || undefined} aria-busy={actions?.busy || undefined} className="flex min-h-0 min-w-0 flex-1 flex-col gap-row overflow-x-hidden overflow-y-auto overscroll-contain">
+        <Fault name="task"><TaskContext.Provider value={slots}>{children}</TaskContext.Provider></Fault>
       </div>
       {actions?.tools && <div data-task-tools className="flex min-w-0 flex-wrap gap-in">{actions.tools}</div>}
       <DialogPrimitive.Close ref={close} hidden tabIndex={-1} aria-hidden="true"/>
@@ -349,7 +353,7 @@ function DialogTitle({ className, ...props }: React.ComponentProps<typeof Dialog
   React.useLayoutEffect(() => {
     task?.title(<DialogPrimitive.Title data-slot="dialog-title" className={cn("text-title-md font-title", className)} ref={ref} tabIndex={tabIndex} id={id}>{children}</DialogPrimitive.Title>);
   }, [task, children, className, ref, tabIndex, id]);
-  React.useLayoutEffect(() => () => task?.title(null), [task]);
+  // Keep the task identity if its body fails; the frame and Close remain usable.
   if (task) return null;
   return (
     <DialogPrimitive.Title

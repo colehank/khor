@@ -20,7 +20,7 @@ const server=await createServer({root,configFile:path.join(root,'vite.config.ts'
   let body='';for await(const chunk of req)body+=chunk;
   const args=body?JSON.parse(body):{},cmd=req.url.slice(1);
   let result;
-  if(cmd==='devices')result=[];
+  if(cmd==='devices')result=[{id:'fixture',name:'fixture',shown:'验收环境',label:null,me:true,paused:false,hosts:true,sponsor:null,face:null,pinned:false,vitals:null,hop:null,heard_ms:null,rtt_ms:null,down_ms:null,last_rtt_ms:null,since_ms:null,last_hop:null,relay:null,via:null,ssh_jump:null,roads:[],watch:[],watched:null,seat:{left:50,top:50},receive_dir:null,receive_at:'/preview/files',receive_for:null,receive_why:null}];
   else if(cmd==='agents')result=[{name:'claude-acp'},{name:'codex-acp'}];
   else if(cmd==='agent_seen')result={said:'unasked',rows:[]};
   else if(cmd==='launch_presets')result=presets;
@@ -158,6 +158,7 @@ if(process.argv.includes('--serve')){
       await input.press('Escape');
       assert.equal(await frame.locator('[data-task-discard]').count(),0,'A non-cancellable write does not offer to discard');
       assert.equal(await task.locator('[data-task-proof-cancel]').isDisabled(),true);
+      assert.equal(await input.evaluate(el=>!!el.closest('[inert]')),true,'A write freezes its draft until it succeeds or fails');
       await task.evaluate(()=>window.failTask());
       await task.locator('[data-task-proof-error]').waitFor();
       assert.equal(await input.inputValue(),'保留这段草稿','Failed submit keeps edits');
@@ -175,6 +176,11 @@ if(process.argv.includes('--serve')){
       await frame.locator('[data-task-proof]').waitFor({state:'detached'});
       assert.equal(await frame.locator('[data-task-discard]').count(),0);
     }
+    await frame.getByRole('button',{name:'草稿任务',exact:true}).click();
+    await frame.locator('[data-task-proof-break]').click();
+    await frame.locator('[data-task-proof] [data-fault="task"]').waitFor();
+    await frame.locator('[data-task-proof] [data-task-role="close"] button').click();
+    await frame.locator('[data-task-proof]').waitFor({state:'detached'});
     console.log('PASS: task action positions, draft exits, responsive identity, async failure, viewport bounds, compact import and pan isolation');
   }finally{await browser?.close();await server.close();}
 }
