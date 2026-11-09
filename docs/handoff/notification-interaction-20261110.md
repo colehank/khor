@@ -1,5 +1,23 @@
 # 通知交互与调度（2026-11-10）
 
+## 当前完成状态
+
+已实现并在 Lab 交付，等待用户视觉／真机验收；发布继续暂停。
+
+- 产品来源：`98a3d2e9c8440159ee72c2abb14176fdd2357fdc`，tree `1ea106af015d7582cd30ee85949b8e7d89256134`。
+- [公开托管 Quality42722300514](https://github.com/colehank/khor/actions/runs/42722300514) 全绿：frontend；GUI units/types/static；notification-ui／key-row-ui／appearance／dialogs；56项完整App Lab和热更新。
+- 通知6组（1100／390／320 × 浅／深）检查上滑、短拖复位、触摸取消与暂停、不误点、同源合并、汇总、内容摘要、静音、减少动态效果及不保存收件内容。
+- 第二行使用与 SessionsList 共用的 `sessionContentPreview`；正在交互时保留当前内容，新状态结束交互后再更新。关闭不调用会话已读／已处理接口。
+- 桌面最多3条、手机1条；排队不计时、32来源上限、5及以上可合并来源突发汇总。悬停／触摸／焦点／失焦暂停；窗口恢复等待实际新snapshot安静消费，不被旧缓存提前放行。
+- 手机／桌面普通通知及汇总的实际App截图已检查（CJK字体与正式头像）。`native_verified=false`／`user_accepted=false` 保持真实。
+- LIVE：[普通通知](http://127.0.0.1:23950/app/?scene=list&machines=3&notices=1)（约2秒后出现）；[突发汇总](http://127.0.0.1:23950/app/?scene=list&machines=3&notices=burst)（约20秒后出现）。
+- 服务PID22365／exec session34521；只替换核对过argv的旧Lab PID36315，没有重启真实App或宿主。保留294／3a／394／ce0／269／pinned旧快照及JS；新页与旧资源HTTP200。
+- 可信产物 `/Volumes/disk0/Khor/evidence/more-network-gui-20261109/notification-98a-review/developer-lab`；浏览器证据 `notification-98a-gui/quality-notifications/results.json`；线上版本校验 `notification-interaction-live-verification.json`。
+
+原生浏览器／PDF上方叠层、物理iPhone安全区／系统手势仍未作真机验证；全轮发行回归、main合并和ship继续等待后续授权与验收。本轮没有声称整个仓库／所有平台发行检查均通过。
+
+## 实施记录
+
 用户已授权实现成熟通知行为；本轮只提交开发分支和更新 Lab，发布继续暂停。单智能体串行。本机只处理源码与可信 CI 静态产物，测试／构建走公开 GitHub 托管 runner。
 
 ## 目标
