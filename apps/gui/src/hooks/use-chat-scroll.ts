@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent } from "react";
 
 type Anchor = { node: Element; top: number };
-const READER_SCROLL_IDLE_MS = 200;
+const SCROLL_IDLE_MS = 200;
 
 /** One scroll owner for streaming, disclosures, and viewport changes.
  * Layout-driven scroll events must not be mistaken for a reader leaving the tail.
@@ -10,6 +10,7 @@ export function useChatScroll(revision: unknown) {
   const scroller = useRef<HTMLDivElement>(null), column = useRef<HTMLDivElement>(null);
   const following = useRef(true), readingLatest = useRef(true), anchor = useRef<Anchor | null>(null);
   const layoutFrame = useRef(0), readerUntil = useRef(0), positionRevision = useRef(0);
+  const layoutUntil = useRef(0);
   const readerFrame = useRef(0);
   const composerHadFocus = useRef(false);
   const position = useRef({ top: 0, height: 0, viewport: 0 });
@@ -24,6 +25,7 @@ export function useChatScroll(revision: unknown) {
   const releaseLayout = useCallback(() => {
     cancelAnimationFrame(layoutFrame.current);
     layoutFrame.current = 0;
+    layoutUntil.current = 0;
   }, []);
   const releaseReader = useCallback(() => {
     cancelAnimationFrame(readerFrame.current);
@@ -49,7 +51,7 @@ export function useChatScroll(revision: unknown) {
     // Inertia extends ownership; an input that never scrolls expires on its own.
     cancelAnimationFrame(readerFrame.current);
     readerFrame.current = 0;
-    readerUntil.current = performance.now() + READER_SCROLL_IDLE_MS;
+    readerUntil.current = performance.now() + SCROLL_IDLE_MS;
     releaseLayout();
     readPosition();
     return true;
@@ -59,6 +61,10 @@ export function useChatScroll(revision: unknown) {
     if (!el || el.clientHeight === 0) return;
     if (acceptReaderScroll()) return;
     const resized = el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport;
+    // Native offset restoration may arrive after the observer's follow-up
+    // frame. Keep that layout ownership until it settles; real input above
+    // always wins immediately and clears this lease.
+    if (resized) layoutUntil.current = performance.now() + SCROLL_IDLE_MS;
     if (resized && !layoutFrame.current) {
       // Caret/layout scroll restoration can arrive after ResizeObserver.
       layoutFrame.current = requestAnimationFrame(() => {
@@ -88,12 +94,12 @@ export function useChatScroll(revision: unknown) {
         || (event.target instanceof Element && event.target.closest("input, textarea, [contenteditable]")))) return;
       if (event instanceof PointerEvent && event.type === "pointermove" && event.buttons === 0) return;
       positionRevision.current++;
-      readerUntil.current = performance.now() + READER_SCROLL_IDLE_MS;
+      readerUntil.current = performance.now() + SCROLL_IDLE_MS;
       cancelAnimationFrame(readerFrame.current);
       // Start idle time after the browser can apply this input, even after a busy handler.
       readerFrame.current = requestAnimationFrame(() => {
         readerFrame.current = 0;
-        readerUntil.current = performance.now() + READER_SCROLL_IDLE_MS;
+        readerUntil.current = performance.now() + SCROLL_IDLE_MS;
       });
       releaseLayout();
     };
@@ -139,7 +145,7 @@ export function useChatScroll(revision: unknown) {
     const composerOwnsLayout = focus?.matches("[data-composer-text]")
       || (composerHadFocus.current && (focus === document.body || !document.hasFocus()));
     // Native caret restoration can outlive composer focus; BODY is not a reader action.
-    if (composerOwnsLayout || layoutFrame.current || el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport) {
+    if (composerOwnsLayout || layoutFrame.current || performance.now() < layoutUntil.current || el.scrollHeight !== position.current.height || el.clientHeight !== position.current.viewport) {
       sync();
       return;
     }
