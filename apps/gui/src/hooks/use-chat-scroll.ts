@@ -130,10 +130,13 @@ export function useChatScroll(revision: unknown) {
       for (const input of inputs) el.removeEventListener(input, readerInput);
     };
   }, [sync, releaseLayout, releaseReader]);
+  // Draft and control renders can change the viewport without changing the
+  // transcript revision. Reconcile after every React layout, before paint;
+  // the observer remains responsible for native/viewport-only changes.
+  useLayoutEffect(sync);
   useLayoutEffect(() => {
-    sync();
     if (!following.current) setFresh(true);
-  }, [revision, sync]);
+  }, [revision]);
 
   const capturePositionTicket = useCallback(() => positionRevision.current, []);
   /** A late page may restore only the position it captured. The guard runs

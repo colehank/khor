@@ -116,6 +116,11 @@ try{
         assert(Math.abs(result.before.gap)<=2,'Remeasure starts at the live tail');
         result.after=await page.evaluate(()=>window.__composeFixture.rerender(false));
         assert(Math.abs(result.after.gap)<=2,'Text measurement must not temporarily clamp the live tail');
+        result.transitions=[];
+        for(const draft of ['short','draft words '.repeat(24),'']){
+          const value=await page.evaluate(value=>window.__composeFixture.draft(value),draft);result.transitions.push(value);
+          assert(Math.abs(value.gap)<=2,'React draft layout must reconcile the tail before paint');
+        }
         result.status='passed';
       }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} growing-text-remeasure`);save();await context.close();}

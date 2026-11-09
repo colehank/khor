@@ -82,6 +82,7 @@ function Conversation({revision,epoch}:{revision:object;epoch:number}){
     if(field.current&&document.querySelector('[data-chat-box]'))snapshot('conversation-layout-effect');
   });
   useLayoutEffect(()=>{window.__composeFixture.toBottom=toBottom;},[toBottom]);
+  useLayoutEffect(()=>{window.__composeFixture.draft=(value:string)=>{flushSync(()=>setDraft(value));return snapshot('draft-layout');};});
   return <div data-compose-epoch={epoch} className="flex min-h-0 flex-1 flex-col">
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div ref={scroller} data-compose-scroll onScroll={onScroll} onClickCapture={disclosureCase?captureDisclosure:undefined} className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [overflow-anchor:none]">
@@ -101,9 +102,9 @@ function Conversation({revision,epoch}:{revision:object;epoch:number}){
   </div>;
 }
 
-type Fixture={intent:()=>Intent;toBottom:()=>void;snapshot:typeof snapshot;rerender:(changeRevision:boolean)=>Sample;observe:(ms:number)=>Promise<Sample[]>;readings:()=>Sample[];trace:()=>unknown[]};
+type Fixture={draft:(value:string)=>Sample;intent:()=>Intent;toBottom:()=>void;snapshot:typeof snapshot;rerender:(changeRevision:boolean)=>Sample;observe:(ms:number)=>Promise<Sample[]>;readings:()=>Sample[];trace:()=>unknown[]};
 declare global{interface Window{__composeFixture:Fixture}}
-window.__composeFixture={intent:()=>({following:true,readingLatest:true,requests:0,shown:null}),toBottom:()=>{},snapshot,rerender:()=>{throw new Error('not mounted')},observe:async()=>[],readings:()=>readings,trace:()=>inputTrace};
+window.__composeFixture={draft:()=>{throw new Error('not mounted')},intent:()=>({following:true,readingLatest:true,requests:0,shown:null}),toBottom:()=>{},snapshot,rerender:()=>{throw new Error('not mounted')},observe:async()=>[],readings:()=>readings,trace:()=>inputTrace};
 for(const name of ['wheel','touchmove','pointerdown','pointermove','keydown','focusin','focusout','scroll'])document.addEventListener(name,event=>{
   const target=event.target instanceof Element?event.target:null;
   if(name==='pointermove'&&event instanceof PointerEvent&&event.buttons===0)return;
