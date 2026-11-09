@@ -121,6 +121,15 @@ try{
           const value=await page.evaluate(value=>window.__composeFixture.draft(value),draft);result.transitions.push(value);
           assert(Math.abs(value.gap)<=2,'React draft layout must reconcile the tail before paint');
         }
+        const bounds=await page.locator('[data-compose-scroll]').boundingBox();
+        await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.mouse.wheel(0,-300);
+        await page.waitForFunction(()=>!window.__composeFixture.intent().following);
+        await page.waitForTimeout(350);
+        result.history=await page.evaluate(()=>{
+          const box=document.querySelector('[data-compose-scroll]');box.scrollTop-=80;const chosen=box.scrollTop;
+          const after=window.__composeFixture.rerender(false);return {chosen,after};
+        });
+        assert(Math.abs(result.history.after.top-result.history.chosen)<=2,'An unrelated React render must not undo ordinary history scrolling');
         result.status='passed';
       }catch(error){result.status='failed';result.error=error.stack??String(error);result.diagnosis=await page.evaluate(()=>({intent:window.__composeFixture.intent(),trace:window.__composeFixture.trace()})).catch(()=>null);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} growing-text-remeasure`);save();await context.close();}
