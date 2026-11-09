@@ -245,6 +245,7 @@ export function RelayAddDialog({
   /** The node's answer after the write: both halves of the relay list. */
   onWritten?: (choices: RelayChoices) => void;
 }) {
+  const [saving,setSaving]=useState(false);
   const [typed, setTyped] = useState("");
   const [typedKey, setTypedKey] = useState("");
   const [refused, setRefused] = useState<string | null>(null);
@@ -274,6 +275,7 @@ export function RelayAddDialog({
           className="flex flex-col gap-in"
           onSubmit={async (e) => {
             e.preventDefault();
+            if(saving)return;
             const url = typed.trim();
             // Always pressable (`components/Why`): with no address,
             // say so and put the caret in its box.
@@ -284,13 +286,14 @@ export function RelayAddDialog({
             }
             const token = typedKey.trim() || null;
             const mine = was?.mine ?? [];
+            setSaving(true);
             try {
               const next = await setRelays([...mine.filter((u) => u !== url).map(kept), { url, token }], arming || (was?.only_mine ?? false));
               onWritten?.(next);
               onClose();
             } catch (err) {
               setRefused(String(err instanceof Error ? err.message : err));
-            }
+            } finally {setSaving(false);}
           }}
         >
           <Input
@@ -322,7 +325,7 @@ export function RelayAddDialog({
             {refused}
           </p>
         )}
-        <TaskActions dirty={!!(typed || typedKey)} cancel={<Button onClick={onClose}>{gui.delete_keep}</Button>} primary={<Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
+        <TaskActions busy={saving} dirty={!!(typed || typedKey)} cancel={<Button onClick={onClose}>{gui.delete_keep}</Button>} primary={<Button type="submit" form="relay-add" variant="primary" data-relay-add-do>
             {gui.watch_add}
           </Button>}/>
       </TaskOverlay>

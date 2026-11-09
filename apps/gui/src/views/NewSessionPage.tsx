@@ -74,6 +74,8 @@ export function NewSessionPage({
     [edit, setEdit] = useState<LaunchPreset | null>(null),
     [saving, setSaving] = useState(false),
     [editError, setEditError] = useState<string | null>(null);
+  const editStart=useRef("");
+  const beginEdit=(value:LaunchPreset)=>{editStart.current=JSON.stringify(value);setEdit(value);};
   const [removing, setRemoving] = useState<LaunchPreset | null>(null);
   const [snapshot, setSnapshot] = useState<KnownAgent[] | null>(null),
     [taken, setTaken] = useState<[string, number, number] | null>(null),
@@ -229,7 +231,7 @@ export function NewSessionPage({
   };
   const add = () => {
     setEditError(null);
-    setEdit({
+    beginEdit({
       id: crypto.randomUUID(),
       name: '',
       command
@@ -327,19 +329,18 @@ export function NewSessionPage({
             ...was,
             command: e.target.value
           })} />
-  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><TaskActions busy={saving} cancel={<Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button>} primary={<Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button>}/></TaskOverlay></Dialog>
-  <Dialog open={manage && !browsing} onOpenChange={setManage}>
+  </FormGrid>{editError && <p role="alert" className="text-callout text-destructive">{editError}</p>}</DialogBody><TaskActions busy={saving} dirty={JSON.stringify(edit) !== editStart.current} back={manage ? <Button onClick={() => setEdit(null)}>{gui.back}</Button> : undefined} cancel={!manage ? <Button disabled={saving} onClick={() => setEdit(null)}>{gui.delete_keep}</Button> : undefined} primary={<Button variant="primary" disabled={saving} onClick={save}>{gui.watch_save}</Button>}/></TaskOverlay></Dialog>
+  <Dialog open={manage && !browsing && !edit} onOpenChange={setManage}>
     <TaskOverlay purpose="selection" scrollable data-launch-manage>
       <DialogTitle>{gui.launch_method}</DialogTitle>
       <DialogBody><MenuRows choices={allChoices} presets={presets} onEdit={p => {
-        setManage(false);
         setEditError(null);
-        setEdit({...p});
+        beginEdit({...p});
       }} onRemove={p => {
         setEditError(null);
         setRemoving(p);
       }}/></DialogBody>
-      <TaskActions close={<Button data-footer-trailing onClick={() => setManage(false)}>{gui.close}</Button>} tools={<><Button onClick={()=>{setManage(false);add()}}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button><Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button></>}/>
+      <TaskActions close={<Button data-footer-trailing onClick={() => setManage(false)}>{gui.close}</Button>} tools={<><Button onClick={add}><IconPlus className="size-kind-mark"/>{gui.launch_add_title}</Button><Button variant="ghost" onClick={browse}>{gui.launch_attach_agent}</Button></>}/>
     </TaskOverlay>
   </Dialog>
   <Dialog open={manage && browsing} onOpenChange={on => {if(!on)setBrowsing(false)}}>

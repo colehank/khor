@@ -92,7 +92,8 @@ if(process.argv.includes('--serve')){
     await frame.getByRole('button',{name:'新建启动方式',exact:true}).click();
     await settled();
     assert.equal(await frame.locator('#launch-preset-name').evaluate(el=>el===document.activeElement),true,'outgoing task stole edit focus');
-    await frame.getByRole('button',{name:'取消',exact:true}).click();
+    await frame.getByRole('button',{name:'返回',exact:true}).click();
+    await frame.locator('[data-launch-manage] [data-task-role=close] button').click();
     await page.getByRole('button',{name:'手机短视口',exact:true}).click();
     await frame.getByRole('button',{name:'目录选择',exact:true}).click();
     const directory=frame.getByRole('combobox',{name:'目录',exact:true});

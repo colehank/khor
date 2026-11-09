@@ -26211,7 +26211,7 @@ try {
           return {
             who: el?.getAttribute("data-machine-edit") ?? null,
             role: el?.getAttribute("role") ?? null,
-            name: el?.querySelectorAll("[data-machine-edit-name]").length ?? 0,
+            name: el?.querySelectorAll("[data-machine-name-step]").length ?? 0,
             face: el?.querySelectorAll("[data-face-settings]").length ?? 0,
             // The dialog's one primary act wears `bg-primary` (ui/button's
             // `primary` variant — the class the sheet gate counts too).
@@ -26230,11 +26230,13 @@ try {
         fail(`entity b · 编辑 is ${dialog.sheet ? "a sheet" : `role=${dialog.role}`} — it is a centred dialog`);
       }
       if (dialog.name !== 1 || dialog.face !== 1) {
-        fail(`entity b · the edit dialog holds ${dialog.name} name box(es) and ${dialog.face} face editor(s) — one of each`);
+        fail(`entity b · profile has ${dialog.name} rename entry/entries and ${dialog.face} live face editor(s) — one of each`);
       }
-      if (dialog.primary !== 1) fail(`entity b · the edit dialog has ${dialog.primary} primary button(s) — exactly one`);
+      if (dialog.primary !== 0) fail(`entity b · live profile has ${dialog.primary} commit button(s) — Close does not save already-persisted changes`);
       // What it writes goes to the row pressed: a name, then a face.
+      await page.locator("[data-machine-edit] [data-machine-name-step]").click();
       const box = page.locator("[data-machine-edit] [data-machine-edit-name]");
+      await box.waitFor();
       if ((await box.count()) === 1) {
         await box.fill("隔壁");
         await box.press("Enter");
@@ -26244,10 +26246,11 @@ try {
         if (!sent || sent.id !== peerId || sent.name !== "隔壁") {
           fail(`entity b · the edit dialog's name went out as ${JSON.stringify(sent)} — peer's id and 「隔壁」`);
         }
-        // A name that took closes the window (完成 / Enter).
-        if (!(await until(3_000, async () => (await page.locator("[data-machine-edit]").count()) === 0))) {
-          fail("entity b · Enter wrote the name and left the edit window open — a rename that took closes it");
+        // Save returns to the immediate profile in the same task container.
+        if (!(await until(3_000, async () => (await page.locator("[data-machine-edit] [data-machine-name-step]").count()) === 1))) {
+          fail("entity b · saving the name did not return to the profile");
         }
+        if ((await page.locator("[data-machine-edit]").count()) !== 1) fail("entity b · renaming must preserve the profile task");
       }
       if ((await page.locator("[data-machine-edit]").count()) === 0) {
         await menuKeys("peer");

@@ -5,7 +5,7 @@ import { SectionHead } from "@/components/SectionHead";
 import { MachineFace } from "@/components/SessionFace";
 import { Button } from "@/components/ui/button";
 import { PopupButton } from "@/components/ui/popup-button";
-import { Dialog, DialogBody, DialogHeader, DialogTitle, TaskOverlay } from "@/components/ui/dialog";
+import { Dialog, DialogBody, DialogHeader, DialogTitle, TaskOverlay, TaskActions } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 
 function jobLabel(job: MachineUpdateJob): string {

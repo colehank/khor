@@ -1276,7 +1276,7 @@ function LoginPage({
         </Group>
         <Failure text={error} />
       </Body>
-      <TaskActions  cancel={<Button data-dialog-cancel onClick={onCancel}>
+      <TaskActions dirty={!!password} cancel={<Button data-dialog-cancel onClick={onCancel}>
           {gui.delete_keep}
         </Button>} primary={<Button variant="primary" data-login-go onClick={go}>
           {way === "copy" ? gui.login_copy_id : gui.watch_add}
@@ -1307,7 +1307,7 @@ function PassphrasePage({
         </Group>
         <Failure text={error} />
       </Body>
-      <TaskActions  cancel={<Button data-dialog-cancel onClick={onCancel}>
+      <TaskActions dirty={!!passphrase} cancel={<Button data-dialog-cancel onClick={onCancel}>
           {gui.delete_keep}
         </Button>} primary={<Button variant="primary" data-passphrase-go onClick={go}>
           {gui.watch_add}

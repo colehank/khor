@@ -1,6 +1,6 @@
 # 弹窗与任务底栏统一（2026-11-10）
 
-状态：执行中。用户已同意按 Apple HIG 与 Khor 的任务语义统一整个 app 的弹层。
+状态：实现与验证中。用户已同意按 Apple HIG 与 Khor 的任务语义统一整个 app 的弹层。
 工作副本：`integrate/settings-gui-20261109`；基线 `39db2fe1`。发布继续暂停；不合并、不 ship、不重启用户 App。根 agent 串行执行，不新增智能体。
 
 ## 约定
@@ -15,10 +15,10 @@
 ## 计划与完成条件
 
 1. 已完成：读设计规范、官方 HIG；盘点 38 处弹层，图谱没有覆盖后使用定向源码读取。
-2. 实现公共标题与语义操作槽位，统一平台摆放、正文滚动和退出策略。
+2. 已实现第一版公共标题与语义操作槽位，统一平台摆放、正文滚动和退出策略。
 3. 逐一迁移任务弹层；短确认保留公共确认布局；明确记录持续浏览例外，修正混合即时／草稿语义。
 4. 更新设计规范，删除旧的“任何弹窗都没有关闭”和手机底部提交等冲突规则。
-5. GitHub 托管 CI 验证公共组件与真实 App Lab：桌面／窄屏、长标题、滚动、键盘、退出、子步骤、异步失败与草稿。
+5. GitHub 托管 CI 验证（首版 d2b68522 / 42696470999；当前正补充子步骤与遗漏的订阅导入）公共组件与真实 App Lab：桌面／窄屏、长标题、滚动、键盘、退出、子步骤、异步失败与草稿。
 6. 提供可信构建的实时 Lab，等待用户验收，不发布。
 
 ## 恢复入口
@@ -30,3 +30,11 @@
 - 旧任务记录：`docs/handoff/settings-terminal-redesign-20261109.md`。
 
 官方依据：[Sheets](https://developer.apple.com/design/human-interface-guidelines/sheets)、[Modality](https://developer.apple.com/design/human-interface-guidelines/modality)、[Popovers](https://developer.apple.com/design/human-interface-guidelines/popovers)、[Toolbars](https://developer.apple.com/design/human-interface-guidelines/toolbars)、[Alerts](https://developer.apple.com/design/human-interface-guidelines/alerts)。
+
+## 当前实现与验证注意
+
+- 公共 `TaskActions` 按明确 cancel/back/close/primary/tools 槽位摆放，不根据文案猜。真实字段跨断点不重挂载。长内容固定标题／操作，一个正文 scroller。
+- 键行管理即时变化用关闭；子键稿返回／保存；机器头像管理即时变化，改名为同容器子步骤。配色、重命名、额度等保护草稿；进行中的不可取消写入禁止重复退出。
+- 已迁移账户、网络、添加机器各步骤、预览、导入、启动方式、目录、键行。短确认沿用共享确认布局。
+- `dialogs` 已加入 settings/all 的 GUI 交互组，探针保留原视口／手势断言，并新增平台动作位置、长标题、草稿退出、失败保留、断点 DOM 身份检查。
+- 上轮 087a272c 的 Quality 42686283647 已确认全部成功；不能作为本轮改动的验证结果。

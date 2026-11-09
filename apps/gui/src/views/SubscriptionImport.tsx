@@ -5,7 +5,7 @@ import { sessionMark } from "@/components/BrandIcons";
 import { ImportCalm, ImportMachinePicker, ImportResult, ImportSearch, importMachineAway, importMachineInScope, toggleImportMachine } from "@/components/ImportPicker";
 import { RegionState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
-import { DialogBody, DialogFooter } from "@/components/ui/dialog";
+import { DialogBody, TaskActions } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { imeKey } from "@/lib/ime";
 import { connectionKeyWord } from "@/words";
@@ -118,8 +118,6 @@ export function SubscriptionImport({ devices, registered, onImported, onCancel }
       {error && <span role="alert" data-subscription-error className="flex-none text-callout text-destructive">{error}</span>}
       {rows.length > 0 && <p className="flex-none text-caption text-muted-foreground">{gui.subscriptions_note}</p>}
     </DialogBody>
-    <DialogFooter>
-      <Button data-dialog-cancel className="min-h-touch" onClick={onCancel}>{gui.delete_keep}</Button>
-    </DialogFooter>
+    <TaskActions busy={going !== null} close={<Button data-dialog-cancel onClick={onCancel}>{gui.close}</Button>}/>
   </>;
 }

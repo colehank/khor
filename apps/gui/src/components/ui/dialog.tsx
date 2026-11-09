@@ -223,10 +223,6 @@ function DialogContent({
             (`components/Fault`), and Esc still puts it away. */}
         <Fault name="dialog">{children}</Fault>
         <DialogPrimitive.Close ref={close} hidden tabIndex={-1} aria-hidden="true" />
-        {/* ⚠️ 墓碑 (2026-09-30): the sheet's close mark stood here, a 16
-            cross in the corner grown to a finger's box. A dialog has no
-            cross (components/Dialog): its way out is 取消 left of its one
-            act — the form dialogs now carry one — and Esc. */}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   );
