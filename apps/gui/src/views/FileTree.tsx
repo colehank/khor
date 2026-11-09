@@ -787,7 +787,7 @@ export function FileTree({
         clearPathDrag();
         void moveDropped(source, targetDirectory(event.target as Element));
       }} data-file-tree data-tree-root={root} data-drop-valid={dropTarget ? String(dropTarget.valid) : undefined}
-      className={cn("flex h-full min-w-0 flex-col", dropTarget && !dropTarget.valid && "cursor-not-allowed")}>
+      className="flex h-full min-w-0 flex-col">
       {/* **Commit line above the tree** (WS-LAB item 1): subject · short
           id · age — present whenever the root is a repository with a
           HEAD and the first commit has arrived. Re-asked via
@@ -807,7 +807,7 @@ export function FileTree({
       )}
       {moveError && <div role="alert" className="px-4 py-2 text-callout text-state-failed">{moveError}</div>}
       <div data-files-list data-drop-target={dropTarget?.dir === root ? String(dropTarget.valid) : undefined}
-        className={cn("min-h-0 flex-1 overflow-y-auto", dropTarget?.dir === root && (dropTarget.valid ? "bg-fill" : "cursor-not-allowed"))}>
+        className={cn("min-h-0 flex-1 overflow-y-auto", dropTarget?.dir === root && dropTarget.valid && "bg-fill")}>
         {rootError !== undefined ? (
           // **The one thing this must never be is blank** — the node's
           // own sentence, at the size of something meant to be read
@@ -881,7 +881,7 @@ export function FileTree({
                   className={cn(
                     "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout hover:bg-muted/50",
                     faded && "text-muted-foreground",
-                    dropTarget?.dir === r.full && (dropTarget.valid ? "bg-fill-strong" : "cursor-not-allowed"),
+                    dropTarget?.dir === r.full && dropTarget.valid && "bg-fill-strong",
                   )}
                 >
                   {/* **The whole row toggles, and the chevron is a

@@ -266,7 +266,16 @@ pub(crate) fn rename_new(from: &Path, to: &Path) -> Result<(), String> {
         };
     }
     #[cfg(not(any(target_os = "macos", target_os = "ios", target_os = "linux", windows)))]
-    std::fs::rename(from, to).map_err(|e| e.to_string())
+    {
+        // Android and other targets have no verified exclusive primitive
+        // here. A precheck plus std::fs::rename could overwrite a raced name.
+        let _ = (from, to);
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "exclusive rename is unsupported on this target",
+        )
+        .to_string())
+    }
 }
 
 pub fn permissions(root: &Path, manifest: &Manifest) -> Result<(), String> {

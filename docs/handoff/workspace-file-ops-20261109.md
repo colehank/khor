@@ -1,6 +1,6 @@
 # Workspace file operations · 2026-11-09
 
-Status: implemented and verified. Branch `fix/workspace-file-ops-20261109`, base `137fc856`. Product and Lab source at `c6df625f` passed [focused CI 42610650989](https://github.com/colehank/khor/actions/runs/42610650989). The final cleanup only removes the temporary branch-specific workflow and updates this handoff; no product source changes follow that green revision.
+Status: implemented and verified. Branch `fix/workspace-file-ops-20261109`, base `137fc856`. Product and Lab source at `c6df625f` passed [focused CI 42610650989](https://github.com/colehank/khor/actions/runs/42610650989). The temporary branch-specific workflow was removed. A later integration-review patch is recorded below; the earlier green run does not claim compilation of its unsupported-target branch.
 
 ## Scope and boundaries
 
@@ -38,3 +38,12 @@ Actual Wry/AppKit drag gestures/cursors, a real SSH host and user App behavior w
 ## Integration
 
 Apply the full branch range from `137fc856`, not only the final cleanup commit. To keep temporary CI history out of the product integration commit, use `git cherry-pick --no-commit 137fc856..<final-delivery-sha>`, review the accumulated diff, then create one integration commit. The final accumulated diff contains no workflow file. Main/release authorization remains with the parent/user.
+
+
+## Integration-review follow-up
+
+- Android is an explicit application/file-handoff target (`apps/gui/src-tauri/Cargo.toml`, `file_handoff_supported/open` and `native-files`), while `hosts_here=false` only describes process hosting. `Link::land_tree` and local `tree::copy_into` both publish via `Landing::publish` without a mobile/hosts cfg gate. Other targets also compile this generic helper. The old generic `std::fs::rename` fallback therefore could not safely satisfy the no-replacement contract.
+- `tree::rename_new` now fails with `io::ErrorKind::Unsupported` for every target outside macOS/iOS/Linux/Windows. It neither renames nor copies in that branch. No Android syscall/linker assumptions, toolchains or dependencies were added. The four existing exclusive implementations remain unchanged; Android/other uncovered targets must not be described as supporting this exclusive operation.
+- Removed all three newly added `cursor-not-allowed` classes from FileTree to obey the existing control-cursor rule. Existing neutral target marking/data attributes and `dropEffect="none"` remain.
+- Validation of this follow-up is source-only: Python assertions verify that the fallback contains Unsupported and no filesystem rename call, that FileTree contains none of the prohibited cursor class, and that blocked DOM drops retain `dropEffect=none`; `git diff --check` passed. The prior hosted Linux/macOS/Windows compile/tests cover unchanged native branches, not a new Android cross-compile. A bounded macserver probe again failed during SSH banner exchange, so no fresh Rust/Node compilation is claimed. The parent should run its normal integration checks on the resulting combined source.
+- SSH `mv -n` validation remains the scoped evidence above. No general transactional/atomic guarantee is made for arbitrary SSH utilities, concurrent parent replacement or mounts. No temporary workflow was restored.
