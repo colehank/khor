@@ -105,6 +105,30 @@ try{
       }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
       finally{console.log(`${result.status} ${engine} draft-and-width-transitions reader=${reader}`);save();await context.close();}
     }
+    if(!disclosureOnly){
+      const context=await browser.newContext({viewport:{width:402,height:714}}),page=await context.newPage();
+      const result={engine,scenario:'delayed-layout-scroll-and-reader-intent',errors:[]};report.results.push(result);
+      page.on('pageerror',error=>result.errors.push(error.message));
+      try{
+        await page.goto(`${base}/lab/scroll-compose.html`);await page.locator('[data-composer-text]').waitFor();
+        await page.evaluate(()=>window.__composeFixture.toBottom());await page.waitForTimeout(300);
+        await page.setViewportSize({width:402,height:684});
+        // The browser can restore an old offset after ResizeObserver and its
+        // follow-up frame. This models that late layout scroll, not user input.
+        await page.evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);
+          const box=document.querySelector('[data-compose-scroll]');box.scrollTop-=12;box.dispatchEvent(new Event('scroll'));});
+        result.afterLayout=await page.evaluate(()=>window.__composeFixture.snapshot('delayed-layout'));
+        assert(Math.abs(result.afterLayout.gap)<=2,'A late layout scroll must not retire the live tail');
+        assert.equal(await page.evaluate(()=>window.__composeFixture.intent().following),true);
+        const bounds=await page.locator('[data-compose-scroll]').boundingBox();
+        await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.mouse.wheel(0,-300);
+        await page.waitForFunction(()=>!window.__composeFixture.intent().following);
+        result.afterInput=await page.evaluate(()=>window.__composeFixture.snapshot('real-reader-input'));
+        assert(result.afterInput.gap>100,'Real reader input still takes ownership during layout settling');
+        assert.deepEqual(result.errors,[]);result.status='passed';
+      }catch(error){result.status='failed';result.error=error.stack??String(error);process.exitCode=1;}
+      finally{console.log(`${result.status} ${engine} delayed-layout-scroll-and-reader-intent`);save();await context.close();}
+    }
     await browser.close();browser=null;
   }
 }catch(error){report.error=error.stack??String(error);process.exitCode=1;}
