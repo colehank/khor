@@ -1,6 +1,6 @@
 use crate::updater_package::DesktopPackage;
 use khor_gui_core::updates::{
-    AppUpdateStatus, UpdateChannel, UpdatePhase, UpdatePreferences, UpdateSource,
+    AppUpdateStatus, UpdateAction, UpdateChannel, UpdatePhase, UpdatePreferences, UpdateSource,
 };
 use khor_update::{
     BuildIdentity, Channel, Component, Feed, Platform, Staging, TrustRoot, VerifiedRelease,
@@ -84,6 +84,7 @@ impl AppUpdates {
             received: 0,
             total: None,
             checked_at: None,
+            retry: preference_failure.as_ref().map(|_| UpdateAction::Check),
             failure: preference_failure,
             blocked: Vec::new(),
             preferences,
@@ -128,6 +129,10 @@ impl AppUpdates {
                 .lock()
                 .map_err(|_| "update state is unavailable")?;
             update(&mut data);
+            if data.status.phase != UpdatePhase::Failed {
+                data.status.retry = None;
+                data.status.failure = None;
+            }
             data.status.clone()
         };
         let _ = app.emit("app-update:changed", &status);
@@ -223,7 +228,7 @@ impl AppUpdates {
         let result = self.check_inner(app).await;
         match result {
             Ok(status) => Ok(status),
-            Err(error) => self.failed(app, error),
+            Err(error) => self.failed(app, UpdateAction::Check, error),
         }
     }
 
@@ -242,13 +247,15 @@ impl AppUpdates {
         let trust = TrustRoot::bundled()?;
         let channel = self.channel()?;
         let staging = self.store()?;
-        if let Ok(Some(release)) = staging.selected_release(&trust) {
-            self.adopt_release(app, release, false).await?;
-        }
+        // Refresh does not depend on a previously selected offer still being usable.
+        // Startup already restores cached downloads; a fresh check must be able to
+        // replace an interrupted or obsolete selection.
         #[cfg(unix)]
         let plan = {
             let root = self.root.clone();
-            crate::off_main(move || crate::app_companions::Plan::discover(&root)).await?
+            crate::off_main(move || crate::app_companions::Plan::discover(&root))
+                .await
+                .map_err(|error| format!("local CLI discovery: {error}"))?
         };
         #[cfg(unix)]
         let current = plan.oldest(&current);
@@ -312,7 +319,11 @@ impl AppUpdates {
             plan
         };
         let package = match offer {
-            Some(offer) if checked => Some(DesktopPackage::check(app, offer, trust).await?),
+            Some(offer) if checked => Some(
+                DesktopPackage::check(app, offer, trust)
+                    .await
+                    .map_err(|error| format!("application update metadata: {error}"))?,
+            ),
             _ => self
                 .data
                 .lock()
@@ -393,10 +404,14 @@ impl AppUpdates {
             .operation
             .try_lock()
             .map_err(|_| "an update operation is already running")?;
+        self.change(app, |data| {
+            data.status.phase = UpdatePhase::Downloading;
+            data.status.received = 0;
+        })?;
         let result = self.download_inner(app).await;
         match result {
             Ok(status) => Ok(status),
-            Err(error) => self.failed(app, error),
+            Err(error) => self.failed(app, UpdateAction::Download, error),
         }
     }
 
@@ -477,10 +492,24 @@ impl AppUpdates {
         self.adopt_release(app, release, false).await
     }
 
-    fn failed(&self, app: &AppHandle, error: String) -> Result<AppUpdateStatus, String> {
+    fn failed(
+        &self,
+        app: &AppHandle,
+        action: UpdateAction,
+        error: String,
+    ) -> Result<AppUpdateStatus, String> {
+        eprintln!("application update {action:?} failed: {error}");
+        // LaunchServices normally discards stderr. Keep one bounded diagnostic in
+        // the already admitted private staging directory, without blocking retry.
+        if self.staging.lock().is_ok_and(|staging| staging.is_some()) {
+            if let Err(record_error) = record_failure(&self.root, action, &error) {
+                eprintln!("application update diagnostic unavailable: {record_error}");
+            }
+        }
         self.change(app, |data| {
             data.status.phase = UpdatePhase::Failed;
             data.status.failure = Some(error);
+            data.status.retry = Some(action);
         })
     }
 
@@ -497,7 +526,7 @@ impl AppUpdates {
         let result = self.install_inner(app, automatic).await;
         match result {
             Ok(status) => Ok(status),
-            Err(error) => self.failed(app, error),
+            Err(error) => self.failed(app, UpdateAction::Install, error),
         }
     }
 
@@ -739,8 +768,12 @@ pub(crate) fn start(app: &AppHandle) {
 async fn startup(app: &AppHandle) {
     let updates = app.state::<AppUpdates>();
     updates.maintain().await;
-    let Ok(restored) = updates.restore_cached(app).await else {
-        return;
+    let restored = match updates.restore_cached(app).await {
+        Ok(status) => status,
+        Err(error) => match updates.failed(app, UpdateAction::Check, error) {
+            Ok(status) => status,
+            Err(_) => return,
+        },
     };
     #[cfg(target_os = "macos")]
     if restored.phase == UpdatePhase::Ready && restored.preferences.install_on_start {
@@ -790,6 +823,22 @@ async fn collect_cache(staging: Arc<Staging>) {
     }
 }
 
+fn record_failure(root: &Path, action: UpdateAction, error: &str) -> Result<(), String> {
+    let record = serde_json::json!({
+        "action": action,
+        "at": jiff::Timestamp::now().to_string(),
+        "error": error.chars().take(4096).collect::<String>(),
+    });
+    let mut file = tempfile::NamedTempFile::new_in(root).map_err(|error| error.to_string())?;
+    serde_json::to_writer(file.as_file_mut(), &record).map_err(|error| error.to_string())?;
+    file.as_file()
+        .sync_all()
+        .map_err(|error| error.to_string())?;
+    file.persist(root.join("last-failure.json"))
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 fn installation_source(build: &BuildIdentity) -> Result<UpdateSource, String> {
     if build.release.is_none() {
         return Ok(UpdateSource::Development);
@@ -829,4 +878,37 @@ fn write_preferences(root: &Path, preferences: &UpdatePreferences) -> Result<(),
     file.persist(root.join("preferences.json"))
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_failure_keeps_one_private_bounded_diagnostic_and_retry_stage() {
+        let root = tempfile::tempdir().unwrap();
+        record_failure(root.path(), UpdateAction::Check, "metadata unavailable").unwrap();
+        record_failure(root.path(), UpdateAction::Install, &"错".repeat(5000)).unwrap();
+        let path = root.path().join("last-failure.json");
+        let record: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(record["action"], "install");
+        assert_eq!(record["error"].as_str().unwrap().chars().count(), 4096);
+        assert!(
+            record["at"]
+                .as_str()
+                .unwrap()
+                .parse::<jiff::Timestamp>()
+                .is_ok()
+        );
+        assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 1);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(path).unwrap().permissions().mode() & 0o077,
+                0
+            );
+        }
+    }
 }

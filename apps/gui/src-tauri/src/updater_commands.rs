@@ -194,6 +194,7 @@ fn store_status() -> AppUpdateStatus {
         total: None,
         checked_at: None,
         failure: None,
+        retry: None,
         blocked: Vec::new(),
         preferences: UpdatePreferences::new(UpdateChannel::Stable),
         companions: Vec::new(),

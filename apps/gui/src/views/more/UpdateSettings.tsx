@@ -4,7 +4,7 @@ import { ActionRow } from "@/components/settings/ActionRow";
 import { PopupRow } from "@/components/settings/PopupRow";
 import { SwitchRow } from "@/components/settings/SwitchRow";
 import { gui } from "@/gen/catalog";
-import { MoreFact, MoreSection } from "./MorePage";
+import { MoreFact, MoreFold, MoreSection } from "./MorePage";
 
 function stateLabel(status: AppUpdateStatus): string {
   switch (status.phase) {
@@ -15,48 +15,84 @@ function stateLabel(status: AppUpdateStatus): string {
     case "ready": return gui.update_ready;
     case "installing": case "awaiting-health": return gui.update_installing;
     case "complete": return gui.update_complete;
-    case "failed": return gui.update_failed;
+    case "failed": return status.retry === "check" ? gui.update_check_failed
+      : status.retry === "download" ? gui.update_download_failed
+      : status.retry === "install" ? gui.update_install_failed : gui.update_failed;
     case "idle": return status.checked_at ? gui.update_app_current : gui.update_label;
   }
+}
+
+type UpdateWork = () => Promise<AppUpdateStatus>;
+type OperationFailure = { message: string; retry: UpdateWork };
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function FailureDetails({ message }: { message: string }) {
+  return <div data-update-failure>
+    <MoreFold name="update-error" label={gui.update_error_details}>
+      <p className="select-text whitespace-pre-wrap px-row text-callout text-muted-foreground [overflow-wrap:anywhere]">{message}</p>
+    </MoreFold>
+  </div>;
 }
 
 export function UpdateSettings() {
   const [status, setStatus] = useState<AppUpdateStatus | null>(null);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<OperationFailure | null>(null);
+  const running = useRef(false);
   const alive = useRef(false);
   useEffect(() => {
     if (!inApp) return;
     alive.current = true;
-    const receive = (next: AppUpdateStatus) => { if (alive.current) { setStatus(next); setFailed(false); } };
+    const receive = (next: AppUpdateStatus) => { if (alive.current) { setStatus(next); } };
     const stop = onAppUpdate(receive);
-    void fetchAppUpdateStatus().then(receive).catch(() => { if (alive.current) setFailed(true); });
+    void fetchAppUpdateStatus().then(receive).catch(error => { if (alive.current) setFailure({ message: errorMessage(error), retry: fetchAppUpdateStatus }); });
     return () => { alive.current = false; stop(); };
   }, []);
   if (!inApp) return null;
-  const run = (work: () => Promise<AppUpdateStatus>) => {
-    if (busy) return;
-    setBusy(true); setFailed(false);
-    void work().then(next => { if (alive.current) setStatus(next); }).catch(() => { if (alive.current) setFailed(true); })
-      .finally(() => { if (alive.current) setBusy(false); });
+  const run = (work: UpdateWork) => {
+    if (running.current) return;
+    running.current = true;
+    setBusy(true); setFailure(null);
+    void work().then(next => { if (alive.current) setStatus(next); }).catch(error => {
+      if (alive.current) setFailure({ message: errorMessage(error), retry: work });
+    }).finally(() => {
+      running.current = false;
+      if (alive.current) setBusy(false);
+    });
   };
-  if (!status) return failed ? (
-    <MoreSection name="app-update"><ActionRow name="update-retry" label={gui.update_failed} actionLabel={gui.region_retry} busy={busy} onPress={() => run(fetchAppUpdateStatus)} /></MoreSection>
-  ) : null;
+  const operationFailure = failure && <div data-update-operation-failure>
+    <ActionRow name="update-retry" label={gui.update_failed} actionLabel={gui.region_retry}
+      busy={busy} onPress={() => run(failure.retry)} />
+    <FailureDetails message={failure.message} />
+  </div>;
+  if (!status) return <MoreSection name="app-update">{operationFailure ??
+    <ActionRow name="update-loading" label={gui.update_checking} actionLabel={gui.update_check} busy onPress={() => {}} />
+  }</MoreSection>;
   if (status.source !== "direct") {
     const hint = status.source === "store" ? gui.update_store : status.source === "development" ? gui.update_development : gui.update_external;
     return <MoreSection name="app-update"><MoreFact name="update-source" label={gui.update_label}>{hint}</MoreFact></MoreSection>;
   }
   const working = busy || ["checking", "downloading", "verifying", "installing", "awaiting-health"].includes(status.phase);
-  const download = status.phase === "available" || (status.phase === "failed" && status.available !== null);
+  const retry = status.phase === "failed";
+  const download = status.phase === "available";
+  // A failed check may retain an older offer; only the backend knows which
+  // operation failed. Older backends safely refresh instead of guessing.
+  const retryWork = status.retry === "install" ? installAppUpdate
+    : status.retry === "download" ? downloadAppUpdate : checkAppUpdate;
   const ready = status.phase === "ready";
   const blocked = status.blocked.map(reason => ({"unsaved-files":gui.update_save_files,"attachments":gui.update_finish_attachments,"unconfirmed-sends":gui.update_finish_sends,"draft-storage":gui.update_draft_storage,"navigation-storage":gui.update_draft_storage,"window-not-ready":gui.update_window_not_ready,"input-in-progress":gui.update_finish_input,"user-active":gui.update_later})[reason]).join(" · ");
   const preferences = (next: Partial<UpdatePreferences>) => run(() => setAppUpdatePreferences({ ...status.preferences, ...next }));
   return (
     <>
     <MoreSection name="app-update">
-      <ActionRow name="update-check" label={failed ? gui.update_failed : stateLabel(status)} value={status.available ?? undefined}
-        hint={blocked || undefined} actionLabel={ready ? (status.restart_required ? gui.update_restart : gui.update_apply_selected) : download ? gui.update_download : gui.update_check} busy={working} onPress={() => run(ready ? installAppUpdate : download ? downloadAppUpdate : checkAppUpdate)} />
+      <MoreFact name="update-current-version" label={gui.update_current_version}>{status.current}</MoreFact>
+      <ActionRow name="update-check" label={stateLabel(status)} value={status.available ?? undefined}
+        hint={blocked || undefined} actionLabel={retry ? gui.region_retry : ready ? (status.restart_required ? gui.update_restart : gui.update_apply_selected) : download ? gui.update_download : gui.update_check} busy={working} onPress={() => run(retry ? retryWork : ready ? installAppUpdate : download ? downloadAppUpdate : checkAppUpdate)} />
+      {status.phase === "failed" && status.failure && <FailureDetails message={status.failure} />}
+      {operationFailure}
       <PopupRow name="update-channel" label={gui.update_channel} value={status.preferences.channel}
         choices={[{ value: "stable", label: gui.update_stable }, { value: "beta", label: gui.update_beta }]}
         onPick={value => { if (!working && (value === "stable" || value === "beta")) preferences({ channel: value }); }} />
@@ -80,6 +116,7 @@ export function UpdateSettings() {
         <MoreFact name={`update-cli-result-${index}`} label={gui.axis_state}>
           {companion.phase === "complete" ? gui.update_cli_complete : companion.phase === "failed" ? gui.update_failed : companion.phase === "installing" ? gui.update_installing : companion.available ? gui.update_available : gui.update_component_current}
         </MoreFact>
+        {companion.failure && <FailureDetails message={companion.failure} />}
       </MoreSection>
     ))}
     </>

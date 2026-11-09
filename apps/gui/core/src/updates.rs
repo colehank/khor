@@ -34,6 +34,14 @@ pub enum UpdatePhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
+pub enum UpdateAction {
+    Check,
+    Download,
+    Install,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "kebab-case")]
 pub enum UpdateBlocker {
     UnsavedFiles,
     Attachments,
@@ -85,6 +93,9 @@ pub struct AppUpdateStatus {
     pub total: Option<u64>,
     pub checked_at: Option<String>,
     pub failure: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub retry: Option<UpdateAction>,
     pub blocked: Vec<UpdateBlocker>,
     pub preferences: UpdatePreferences,
     pub companions: Vec<CompanionUpdate>,

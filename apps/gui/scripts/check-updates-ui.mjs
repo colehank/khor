@@ -24,6 +24,7 @@ try {
   await page.addInitScript(()=>{
     const callbacks=new Map();let next=1;
     window.updateCalls=[];
+    window.statusFailOnce=new URL(location.href).searchParams.has('status-failure');
     window.cacheUsage={retained_bytes:10485760,active_old_bytes:2097152,idle_bytes:1048576,unknown_items:1};
     window.machineRows=['Alpha','Beta','App node'].map((shown,i)=>({id:String.fromCharCode(97+i).repeat(64),name:'host-'+i,shown,hosts:true,me:false,sponsor:null,face:null,vitals:null}));
     window.machineQueue={revision:0,jobs:[]};
@@ -48,7 +49,10 @@ try {
       if(cmd==='machine_update_cancel'){
         window.emitMachineQueue({revision:window.machineQueue.revision+1,jobs:window.machineQueue.jobs.filter(job=>job.machine!==args.machine||job.request!==args.request)});return structuredClone(window.machineQueue);
       }
-      if(cmd==='app_update_status')return structuredClone(window.updateState);
+      if(cmd==='app_update_status'){
+        if(window.statusFailOnce){window.statusFailOnce=false;throw new Error('fixture: native update status unavailable');}
+        return structuredClone(window.updateState);
+      }
       if(cmd==='app_update_companions'){
         if(window.companionFailOnce){window.companionFailOnce=false;throw new Error('fixture choice persistence failure');}
         window.emitUpdate({companions:window.updateState.companions.map(item=>({...item,selected:args.ids.includes(item.id)}))});
@@ -196,6 +200,12 @@ try {
   assert.match(await page.getByRole('dialog').innerText(),/更新未完成|Update/,'closing the chooser does not lose the per-machine result');
   await page.getByRole('dialog').locator('[data-slot="dialog-footer"]').getByRole('button',{name:/关闭|Close/}).click();
   assert.deepEqual(errors,[]);
+  await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?status-failure=1`);
+  await page.locator('[data-update-operation-failure] summary').click();
+  assert.match(await page.locator('[data-update-operation-failure]').innerText(),/fixture: native update status unavailable/);
+  await page.locator('[data-setting-row-name="update-retry"] button').click();
+  await page.locator('[data-more-fact="update-current-version"]').waitFor();
+  assert.equal(await page.locator('[data-update-operation-failure]').count(),0,'status failure retry recovers the settings page');
   await page.screenshot({path:join(out,'update-source.png')});
   console.log('PASS update UI: IME admission/freeze/resume, check/download/restart, blocked work, preserved channel preferences, native progress, installation ownership; machine stable IDs, explicit batch selection, waiting cancellation, independent outcomes and stale reply ordering');
 } finally {await browser?.close();await server?.close();rmSync(fixture,{recursive:true,force:true});}
