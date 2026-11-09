@@ -1,0 +1,19 @@
+import React,{useEffect,useRef,useState} from 'react';import {createRoot} from 'react-dom/client';
+import {Terminal} from '@xterm/xterm';import {TermKeys} from '/src/views/TermKeys';import {TerminalSection} from '/src/views/more/AppearanceRows';
+import {TooltipProvider} from '/src/components/ui/tooltip';import {kittyProtocol} from '/src/lib/term-kitty';import {keyRow} from '/src/lib/term-keys';
+import {followVisualViewport,keyboardShown} from '/src/lib/viewport';
+import {PopupButton} from '/src/components/ui/popup-button';import {AgentInteraction} from '/src/components/AgentInteraction';
+import '/src/styles/tokens.css';import '/src/styles/app.css';import '@xterm/xterm/css/xterm.css';
+document.documentElement.dataset.theme='light';document.documentElement.style.setProperty('--kb','320px');
+const wire=window.__keyWire={inputs:[],data:[],unknown:[],answers:[],keyRow};
+const originalFetch=window.fetch.bind(window);window.fetch=(input,init)=>{const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname.startsWith('/api/')){wire.unknown.push(url.pathname);throw Error('unexpected API '+url.pathname)}return originalFetch(input,init)};
+wire.shown=keyboardShown;wire.keyboard=()=>{Object.defineProperty(window.visualViewport,'height',{configurable:true,value:window.innerHeight-260});window.visualViewport.dispatchEvent(new Event('resize'))};
+function Choices(){const [value,setValue]=useState('gamma');return <><PopupButton label="Grouped choices" value={value} onPick={setValue} choices={[{value:'alpha',label:'Alpha',group:'Letters'},{value:'beta',label:'Beta',disabled:true,group:'Letters'},{value:'gamma',label:'Gamma',note:'Rich choice detail',group:'Letters'},...Array.from({length:40},(_,i)=>({value:'item-'+i,label:'Choice '+String(i).padStart(2,'0'),group:'Long list'}))]}/><output data-choice-value>{value}</output><AgentInteraction request={{mode:'form',message:'Choose agents',requestedSchema:{required:['machine','agents'],properties:{machine:{type:'string',title:'Machine',enum:['local','remote']},agents:{type:'array',title:'Agents',items:{enum:['claude','codex']}}}}}} onAnswer={async value=>{wire.answers.push(value)}}/></>}
+function Probe(){useEffect(()=>followVisualViewport(),[]);const box=useRef(null),term=useRef(null),[ready,setReady]=useState(false),[mods,setMods]=useState({ctrl:false,alt:false});
+ useEffect(()=>{if(!box.current)return;const t=new Terminal({cols:40,rows:6,allowProposedApi:true});t.open(box.current);term.current=t;
+  const original=t.input.bind(t);t.input=(value,user)=>{wire.inputs.push(value);original(value,user)};t.onData(value=>wire.data.push(value));const protocol=kittyProtocol(t,()=>{});
+  wire.negotiate=value=>new Promise(done=>t.write(value,done));wire.focus=()=>t.focus();wire.lock=()=>setMods({ctrl:true,alt:true,lock:{ctrl:true,alt:true}});wire.clear=()=>{wire.inputs=[];wire.data=[]};setReady(true);
+  return()=>{protocol.dispose();t.dispose();term.current=null};},[]);
+ const terminal=new URLSearchParams(location.search).has('terminal');
+ return <TooltipProvider><main>{new URLSearchParams(location.search).has('choices')?<Choices/>:terminal?<><div ref={box}/><output data-key-mods>{JSON.stringify(mods)}</output>{ready&&<TermKeys term={term} mods={mods} onMods={setMods} files={{dropFiles:()=>{throw Error('unexpected file drop')}}}/>}</>:<TerminalSection/>}</main></TooltipProvider>;
+}createRoot(document.getElementById('root')).render(<Probe/>);

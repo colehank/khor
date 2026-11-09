@@ -16,7 +16,7 @@ const cache = mkdtempSync(`${gui}/.appearance-cache-`);
 let bootStyle = readFileSync(`${gui}/index.html`, "utf8").match(/<style>([\s\S]*?)<\/style>/)?.[1];
 assert(bootStyle, "first-frame styles missing");
 const calls = [], errors = [];
-let vite, browser, blur = true;
+let vite, browser, context, blur = true;
 let rows = [
   { name: "window-material", value: "solid", choices: ["solid", "clear", "frost"].map(value => ({ value, label: value })), page: "appearance", section: "window" },
   { name: "window-outline", value: "on", choices: [], page: "appearance", section: "window" },
@@ -48,7 +48,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   assert(address && typeof address === 'object', 'appearance server has no listening address');
   port = address.port;
   browser = await chromium.launch({ channel: "chrome", headless: process.env.APPEARANCE_HEADLESS === "1", args: ["--no-proxy-server", "--disable-features=LocalNetworkAccessChecks"] });
-  const context = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
+  context = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce" });
   await context.addInitScript(installAttachmentLeases);
   await context.addInitScript(() => {
     window.__TAURI_INTERNALS__ = { invoke: async () => 0, transformCallback: () => 0, unregisterCallback: () => {} };
@@ -58,7 +58,14 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await context.route(`http://127.0.0.1:${port}/**`, async route => {
     const cmd = new URL(route.request().url()).pathname.slice(1), args = route.request().postDataJSON() ?? {};
     calls.push({ cmd, args });
-    const admission = await route.request().frame().evaluate(({cmd,args}) => window.__attachmentLeases(cmd,args), {cmd,args});
+    let admission;
+    try { admission = await route.request().frame().evaluate(({cmd,args}) => window.__attachmentLeases(cmd,args), {cmd,args}); }
+    catch(error) {
+      // A reload destroys the old document while its polling requests can
+      // still be waiting for interception. Abort only that cancelled context.
+      if(!/Execution context was destroyed|Frame was detached|Target page, context or browser has been closed/.test(String(error)))throw error;
+      await route.abort().catch(()=>{});return;
+    }
     if (admission.handled) return route.fulfill({contentType: 'application/json', body: JSON.stringify(admission.value)});
     let result = null;
     if (cmd === "window_appearance_support") result = { supported: true, blur };
@@ -383,7 +390,8 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   if(process.env.APPEARANCE_SHOT) await page.screenshot({path:process.env.APPEARANCE_SHOT.replace(/\.png$/, '-ansi.png')});
   assert.deepEqual(errors, []);
   console.log("appearance: presets/DIY/JSON, cross-window sync, same PTY/buffer/scroll, retained/hidden tab backgrounds, background-only single-layer alpha in WebGL/DOM/recovery at 1x/2x, unsupported blur, parser bounds and narrow editor passed");
+} catch(error) { console.error("appearance primary failure:",error);throw error;
 } finally {
-  try { if (browser) await browser.close(); }
+  try { if(context)await context.unrouteAll({behavior:"wait"});if (browser) await browser.close(); }
   finally { if (vite) await vite.close(); rmSync(entry, {force: true}); rmSync(cache, {recursive: true, force: true}); }
 }
