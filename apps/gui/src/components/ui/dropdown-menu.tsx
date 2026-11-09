@@ -120,8 +120,9 @@ const DropdownMenuRadioGroup = DropdownMenuPrimitive.RadioGroup;
 function DropdownMenuRadioItem({
   className,
   children,
+  indicator = "dot",
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem> & {indicator?:"dot"|"check"}) {
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
@@ -133,7 +134,7 @@ function DropdownMenuRadioItem({
     >
       <span className="pointer-events-none absolute left-[7px] flex size-4 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
-          <span className="block size-2 rounded-full bg-current" />
+          {indicator==="check"?<IconCheck/>:<span className="block size-2 rounded-full bg-current" />}
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
       {children}

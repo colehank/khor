@@ -1,3 +1,4 @@
+import {pickPopup,popupChoices} from '../../scripts/popup-helpers.mjs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
@@ -45,11 +46,11 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     if(!mobile)await page.locator('[data-more-page="session"]:visible').waitFor();
     await navigation.locator('[data-more-open="workspace"]').click();
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
-    const picker=page.locator('[data-more-page="workspace"] select').first();
+    const picker=page.locator('[data-more-page="workspace"] [data-popup-trigger]').first();
     await picker.waitFor();
-    const chosen=await picker.locator('option').evaluateAll((options,current)=>options.find(option=>option.value!==current)?.value,await picker.inputValue());
-    assert.ok(chosen,'The Lab exposes real configurable native choices');
-    await picker.selectOption(chosen);
+    const chosen=(await popupChoices(picker)).find(choice=>!choice.selected&&!choice.disabled)?.value;
+    assert.ok(chosen,'The Lab exposes real configurable Khor choices');
+    await pickPopup(picker,chosen);
     await page.waitForFunction(value=>JSON.parse(localStorage.getItem('khor.lab.settings-values')??'{}')['files-click']===value,chosen);
     if(!mobile)assert.equal(await navigation.locator('[data-more-open="workspace"]').getAttribute('aria-current'),'page');
     if(mobile) {
@@ -149,11 +150,11 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] .term-preview-cursor')?.dataset.blink==="true");
     assert.ok(await sample.locator('.term-preview-cursor').evaluate(el=>el.getAnimations().some(a=>a.playState==='running')),'Cursor blinks while a settings control owns focus');
     assert.equal(await sample.locator('.xterm-helper-textarea').evaluate(el=>document.activeElement===el),false);
-    await page.locator('[data-setting-select="term-cursor"]').selectOption('bar');
+    await pickPopup(page.locator('[data-setting-select="term-cursor"]'),'bar');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] .term-preview-cursor')?.dataset.shape==='bar');
-    await page.locator('[data-setting-select="term-cursor"]').selectOption('underline');
+    await pickPopup(page.locator('[data-setting-select="term-cursor"]'),'underline');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] .term-preview-cursor')?.dataset.shape==='underline');
-    await page.locator('[data-setting-select="term-cursor"]').selectOption('block');await blinkSwitch.click();
+    await pickPopup(page.locator('[data-setting-select="term-cursor"]'),'block');await blinkSwitch.click();
     await sample.evaluate(el=>{el.dataset.testBellCount='0';const observer=new MutationObserver(()=>{if(el.dataset.previewBell==='true')el.dataset.testBellCount=String(Number(el.dataset.testBellCount)+1);});observer.observe(el,{attributes:true,attributeFilter:['data-preview-bell']});});
     const cue=page.locator('[data-setting-row-name="term-bell"] [role="switch"]');
     if(await cue.getAttribute('aria-checked')!=="true")await cue.click();
@@ -180,9 +181,9 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-term-cursor-color]').fill('#aabbcc');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');
     await sample.evaluate(el=>{el.__cursorPaintWatch=el.__xterm.onRender(()=>{el.dataset.testRenderedCursor=el.__xterm.options.theme.cursor;});});
-    const themePicker=page.locator('[data-setting-select="term-theme"]'),originalTheme=await themePicker.inputValue();
+    const themePicker=page.locator('[data-setting-select="term-theme"]'),originalTheme=await themePicker.getAttribute('value');
     for(const [theme,colors] of [['latte',['#ffaaaa','#aaaaff']],['mocha',['#660000','#000066']]]) {
-      await themePicker.selectOption(theme);
+      await pickPopup(themePicker,theme);
       const cursorPaint=[];
       for(const color of colors) {
         await page.locator('[data-term-cursor-color]').fill(color);
@@ -196,10 +197,10 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       assert.notEqual(cursorPaint[0],cursorPaint[1],`${theme}: changing cursor colour changes visible paint, not only configuration`);
     }
     await sample.evaluate(el=>{el.__cursorPaintWatch.dispose();delete el.__cursorPaintWatch;});
-    await themePicker.selectOption(originalTheme);
+    await pickPopup(themePicker,originalTheme);
     await page.locator('[data-term-cursor-auto]').click();
     const activePalette=await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background);
-    await page.locator('[data-setting-select="term-theme"]').selectOption('custom');
+    await pickPopup(page.locator('[data-setting-select="term-theme"]'),'custom');
     assert.equal(await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background),activePalette,'Entering custom mode preserves the current terminal paint');
     assert.equal(await page.locator('[data-term-theme-custom] > span').innerText(),'自定义配色');
     assert.equal(await page.locator('[data-term-theme-custom] button').count(),2,'Custom theme exposes Import and Settings only');
@@ -222,6 +223,17 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(geometry.fits,true,'Palette editor and every colour/action control fit the viewport');
     await page.screenshot({path:path.join(report,`settings-palette-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
+
+    // The actual application entry shares the editor used by the terminal panel.
+    await page.locator('[data-setting-row-name="term-key-row"]').click();
+    const keyEditor=page.locator('[data-key-row-editor]');await keyEditor.waitFor();await keyEditor.locator('[data-key-row-add]').click();
+    assert.equal(await keyEditor.locator('[data-key-entry-save]').isDisabled(),true);
+    assert.equal(await keyEditor.locator('[data-key-entry-name]').evaluate(el=>document.activeElement===el),false);
+    await pickPopup(keyEditor.locator('[data-setting-select="key-entry-base"]'),'KeyC');
+    await keyEditor.locator('[data-setting-row-name="key-entry-ctrl"] [role="switch"]').click();
+    await keyEditor.locator('[data-key-show-keyboard]').click();
+    await page.screenshot({path:path.join(report,`settings-key-editor-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await keyEditor.locator('[data-key-entry-cancel-visible]').click();await keyEditor.locator('[data-key-row-done]').click();await keyEditor.waitFor({state:'detached'});
 
     for(const key of ['doctor','store'])await pick(key);
     if(mobile)await back();
@@ -252,7 +264,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       await navigation.locator('[data-more-open="workspace"]').click();
     }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
-    assert.equal(await page.locator('[data-more-page="workspace"] select').first().inputValue(),chosen,'Lab settings survive reopening and reload');
+    assert.equal(await page.locator('[data-more-page="workspace"] [data-popup-trigger]').first().getAttribute('value'),chosen,'Lab settings survive reopening and reload');
     assert.equal(context.pages().length,1,'Opening settings keeps one application surface');
     assert.deepEqual(page.viewportSize(),size,'Opening and switching settings keeps the viewport');
     await page.screenshot({path:path.join(report,`settings-${engine}-${mobile?'mobile':'desktop'}.png`)});

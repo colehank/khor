@@ -1,14 +1,8 @@
-// PopupRow — a setting with a fixed set of choices, shown as `value ⌃⌄`
-// and answered by the **system's** menu (docs/SHELL.md 第十七轮 §2,
-// docs/design-system components/PopupButton): a native `<select>` sits
-// transparent over the drawn button, so the OS draws the picker — never
-// Radix, never a menu of our own.
-//
-// `data-setting-row="popup"` is the gate anchor; the `<select>` inside it
-// is what a gate checks to prove the system menu is the one that opens.
+// PopupRow — a fixed choice, rendered by the shared Khor choice menu.
+// Rich previews, typography, focus and viewport rules live in PopupButton.
 import type { ReactNode } from "react";
 
-import { PopupButton } from "@/components/ui/popup-button";
+import { PopupButton, type PopupChoice } from "@/components/ui/popup-button";
 
 export function PopupRow({
   name,
@@ -24,7 +18,7 @@ export function PopupRow({
   label: string;
   hint?: string;
   value: string;
-  choices: { value: string; label: string }[];
+  choices: PopupChoice[];
   onPick: (value: string) => void;
   /** Extra anchors on the row (a gate reads the row's value off it). */
   mark?: Record<string, string>;

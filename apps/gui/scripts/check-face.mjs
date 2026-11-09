@@ -1,3 +1,4 @@
+import {pickPopup,popupChoices} from './popup-helpers.mjs';
 import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The type gate, rendered half: what the letterforms actually weigh on
 // the glass. The static half (`check-type.mjs`) proves nobody wrote a
@@ -2666,25 +2667,20 @@ try {
     return press(`[role="menu"] [data-new-item="${key}"]`);
   };
   // A settings value, chosen the way a person chooses it since round 17:
-  // through the row's native select (`components/settings/PopupRow`).
+  // through the row's Khor choice menu (`components/settings/PopupRow`).
   // True when the select was there to choose from.
   /** The day's 叠放 / 统计, chosen the way a person chooses it: a popup
       button's option since the redesign, a segment before. */
-  const pickDay = async (view) => {
-    const o = page.locator(`[data-machine-card] [data-day-view-pick="${view}"]`).first();
-    if ((await o.evaluate((e) => e.tagName).catch(() => null)) === "OPTION") {
-      await page.locator("[data-machine-card] select:has([data-day-view-pick])").first().selectOption(view);
-    } else {
-      await o.click();
-    }
-  };
+  const pickDay = async view=>pickPopup(page.locator('[data-day-view][data-popup-trigger]').first(),view);
+  await page.exposeFunction('__khorPickDay',pickDay);
+  await page.exposeFunction('__khorDayChoices',async()=>(await popupChoices(page.locator('[data-day-view][data-popup-trigger]').first())).map(choice=>choice.value));
   // **A long run of numbers is a stepper** since the audit fix plan F4.9
   // (W21: 标签页上限 was a picker of 47): − and ＋ walked until the row
   // says the value, 「关」 standing below every number.
   const choose = async (name, value) => {
     const sel = page.locator(`[data-setting-select="${name}"]`);
     if ((await sel.count()) > 0) {
-      await sel.first().selectOption(value);
+      await pickPopup(sel.first(),value);
       await wait(150);
       return true;
     }
@@ -19784,24 +19780,10 @@ try {
   //     measure — a panel that reset its cursor on the way out and back
   //     would come home saying nothing.)
   const readings = await page.evaluate(async () => {
-    const pick = (k) => {
-      // 叠放 / 统计 is a popup button (a native select) since the redesign:
-      // its options are chosen, not clicked.
-      const o = document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
-      if (!o || o.tagName !== "OPTION") return o;
-      return {
-        click: () => {
-          const sel = o.closest("select");
-          sel.value = o.value;
-          sel.dispatchEvent(new Event("change", { bubbles: true }));
-        },
-      };
-    };
+    const pick=k=>({click:()=>window.__khorPickDay(k)});
     const band = () => document.querySelector("[data-machine-card] [data-day-band]");
     const readout = () => document.querySelector("[data-machine-card] [data-day-at]")?.innerText.trim() ?? null;
-    const words = [...document.querySelectorAll("[data-machine-card] [data-day-view-pick]")].map(
-      (b) => b.dataset.dayViewPick,
-    );
+    const words=await window.__khorDayChoices();
     if (words.length !== 2) return { words };
     // Park the cursor a third of the way along the first band.
     const b = band().getBoundingClientRect();
@@ -19823,12 +19805,12 @@ try {
     put();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const onHeat = readout();
-    pick("para").click();
+    await pick("para").click();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const paraViews = [...document.querySelectorAll("[data-machine-card] [data-day-view]")].map(
       (n) => n.dataset.dayView,
     );
-    pick("heat").click();
+    await pick("heat").click();
     await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const backOnHeat = readout();
     return { words, onHeat, paraViews, backOnHeat };
@@ -19890,23 +19872,11 @@ try {
   await wait(300);
   const beforeSwitching = thrown.length;
   const spoken = await page.evaluate(async () => {
-    const pick = (k) => {
-      // 叠放 / 统计 is a popup button (a native select) since the redesign:
-      // its options are chosen, not clicked.
-      const o = document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
-      if (!o || o.tagName !== "OPTION") return o;
-      return {
-        click: () => {
-          const sel = o.closest("select");
-          sel.value = o.value;
-          sel.dispatchEvent(new Event("change", { bubbles: true }));
-        },
-      };
-    };
+    const pick=k=>({click:()=>window.__khorPickDay(k)});
     const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
     const out = {};
     for (const view of ["heat", "para"]) {
-      pick(view)?.click();
+      await pick(view)?.click();
       await frame();
       await new Promise((ok) => setTimeout(ok, 120));
       const band = document.querySelector("[data-machine-card] [data-day-band]");
@@ -19918,7 +19888,7 @@ try {
         texts: band ? [...band.querySelectorAll("text")].map((t) => t.textContent) : [],
       };
     }
-    pick("heat")?.click();
+    await pick("heat")?.click();
     await frame();
     return out;
   });
@@ -20006,23 +19976,11 @@ try {
       await wait(400);
       return page.evaluate(async () => {
         const floor = ((n) => { const e = document.createElement("div"); e.style.cssText = "position:absolute;visibility:hidden"; e.style.height = `var(${n})`; document.body.append(e); const h = e.getBoundingClientRect().height; e.remove(); return h; })("--text-caption");
-        const pick = (k) => {
-      // 叠放 / 统计 is a popup button (a native select) since the redesign:
-      // its options are chosen, not clicked.
-      const o = document.querySelector(`[data-machine-card] [data-day-view-pick="${k}"]`);
-      if (!o || o.tagName !== "OPTION") return o;
-      return {
-        click: () => {
-          const sel = o.closest("select");
-          sel.value = o.value;
-          sel.dispatchEvent(new Event("change", { bubbles: true }));
-        },
-      };
-    };
+        const pick=k=>({click:()=>window.__khorPickDay(k)});
         const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
         const out = { floor, views: {} };
         for (const view of ["heat", "para"]) {
-          pick(view)?.click();
+          await pick(view)?.click();
           await frame();
           await new Promise((ok) => setTimeout(ok, 150));
           const card = document.querySelector("[data-machine-card]");
@@ -20047,7 +20005,7 @@ try {
           }
           out.views[view] = { words, excused, under, band: !!card.querySelector("[data-day-band] text") };
         }
-        pick("heat")?.click();
+        await pick("heat")?.click();
         await frame();
         return out;
       });
@@ -23663,7 +23621,7 @@ try {
     // Five claims, each written before the change it guards and seen
     // red against the tree it replaced (docs/handoff/001.md 第十七轮):
     //   (a) every selectable setting on More is one of the four row kinds,
-    //       and a popup row opens the system's menu (a native select);
+    //       and a popup row opens the shared Khor choice menu;
     //   (b) the brand-strong push button is a dialog's, at most one each,
     //       and never on a page — **but one**: the new tab's 创建, the page
     //       that replaced the new-session dialog (the owner 2026-10-07),
@@ -23695,7 +23653,7 @@ try {
           const kinds = [...el.querySelectorAll("[data-setting-row]")].map((r) => ({
             kind: r.getAttribute("data-setting-row"),
             name: r.getAttribute("data-setting-row-name"),
-            select: r.querySelectorAll("select").length,
+            select: r.querySelectorAll("[data-popup-trigger]").length,
           }));
           // A setting drawn some other way: an old ladder switch, a Radix
           // trigger, or a config row that is not one of the four.
@@ -23719,7 +23677,7 @@ try {
         // one's own is added from the same menu.
         const blind = rows.kinds.filter((r) => r.kind === "popup" && r.select !== 1 && r.name !== "term-font");
         if (blind.length) {
-          fail(`round 17 (a): More -> ${key} has ${blind.length} popup row(s) without a native select — the system draws the menu`);
+          fail(`round 17 (a): More -> ${key} has ${blind.length} popup row(s) without the shared Khor choice trigger`);
         }
         if (rows.loose) {
           fail(`round 17 (a): More -> ${key} draws ${rows.loose} setting control(s) outside the four row kinds (src/components/settings)`);
@@ -28953,7 +28911,7 @@ try {
       await page.locator('[data-files-select="notes.md"]').click();
       await page.locator("[data-files-review]").click();
       check(await page.locator("[data-files-selected]").count() === 3, "selection spans machines");
-      await page.locator("[data-files-destination]").selectOption("cwd");
+      await pickPopup(page.locator("[data-files-destination]"),"cwd");
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => batches.length === 1), "one mixed-source operation");
       check(batches[0].into === "/srv/w" && batches[0].items.length === 3 && batches[0].items[0].from === "elder" && batches[0].items[2].from === "peer", "each source and chosen destination preserved");
@@ -28975,7 +28933,7 @@ try {
       drops.length = 0;
       await pick(["data/nested/a.txt", "data/b.txt"], true);
       check(folders.length === 0 && drops.length === 0, "choosing device folder does not send");
-      await page.locator("[data-files-destination]").selectOption("receive");
+      await pickPopup(page.locator("[data-files-destination]"),"receive");
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => drops.length > 0), "folder sent");
       check(folders.length === 1 && JSON.stringify(folders[0].dirs) === '["nested"]' && children.length === 2 && children[0].path === "nested/a.txt", "browser staging preserves paths");
@@ -29499,7 +29457,7 @@ try {
         await press("[data-more-close]");
         return true;
       }
-      await page.locator('[data-setting-select="corner-is"]').selectOption(value);
+      await pickPopup(page.locator('[data-setting-select="corner-is"]'),value);
       const took = await until(3_000, async () => configValues["corner-is"] === value && (await row.getAttribute("data-value")) === value);
       if (!took) fail(`mark d · choosing ${value} on 角标是 did not reach the store (it holds ${configValues["corner-is"]})`);
       await press("[data-more-close]");
@@ -29518,7 +29476,7 @@ try {
       }
       const note = (await row.locator("[data-setting-note]").textContent().catch(() => null))?.trim() ?? "";
       if (note === "") fail("mark b · the 类型标记 row says nothing under its name — a setting's note says what it does (ConfigRow.note)");
-      await page.locator('[data-setting-select="kind-mark"]').selectOption(value);
+      await pickPopup(page.locator('[data-setting-select="kind-mark"]'),value);
       const took = await until(3_000, async () => configValues["kind-mark"] === value && (await row.getAttribute("data-value")) === value);
       if (!took) fail(`mark b · choosing ${value} on 外观 did not reach the store (it holds ${configValues["kind-mark"]})`);
       await press("[data-more-close]");
@@ -36061,11 +36019,11 @@ try {
 
     // b. the switcher
     {
-      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await pickPopup(page.locator(`${box} [data-store-machine-pick]`),"peer");
       await until(3_000, async () => (await read(box))?.machine === "peer");
       await wait(500);
       const peer = await read(box);
-      await page.locator(`${box} [data-store-machine-pick]`).selectOption("elder");
+      await pickPopup(page.locator(`${box} [data-store-machine-pick]`),"elder");
       await until(3_000, async () => (await read(box))?.machine === "elder");
       await wait(500);
       const elder = await read(box);
@@ -36075,7 +36033,7 @@ try {
       if (peer?.reset !== 1) fail("store b · peer has a setting and no 恢复默认");
       if (elder?.note !== places.elder.receive_why) fail(`store b · elder fell back and the page says ${JSON.stringify(elder?.note)} — the machine's own sentence`);
       if (elder?.empty !== "还没有收到的文件") fail(`store b · elder's empty directory says ${JSON.stringify(elder?.empty)} — 还没有收到的文件`);
-      await page.locator(`${box} [data-store-machine-pick]`).selectOption("gate");
+      await pickPopup(page.locator(`${box} [data-store-machine-pick]`),"gate");
       await until(3_000, async () => (await read(box))?.machine === "gate");
       await wait(500);
     }
@@ -36250,7 +36208,7 @@ try {
       // A far machine, watched: nothing asked while nothing changes, and
       // the window's return asks nothing either.
       const peerDir = places.peer.receive_at;
-      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await pickPopup(page.locator(`${box} [data-store-machine-pick]`),"peer");
       await until(3_000, async () => (await read(box))?.machine === "peer" && (await rowsNow()).length > 0);
       const held = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(peerDir)));
       await wait(500);
@@ -36285,7 +36243,7 @@ try {
       // changes go unheard there, so the window's return reads again.
       const elderDir = places.elder.receive_at;
       watch.unreported.add(elderDir);
-      await page.locator(`${box} [data-store-machine-pick]`).selectOption("elder");
+      await pickPopup(page.locator(`${box} [data-store-machine-pick]`),"elder");
       await until(3_000, async () => (await read(box))?.machine === "elder");
       await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(elderDir)));
       await wait(500);
@@ -36327,7 +36285,7 @@ try {
       const opened = await openMore("store");
       await until(3_000, async () => (await count(`${box} [data-store-row]`)) > 0);
       const peerDir = places.peer.receive_at;
-      await page.locator(`${box} [data-store-machine-pick]`).selectOption("peer");
+      await pickPopup(page.locator(`${box} [data-store-machine-pick]`),"peer");
       await until(3_000, async () => (await read(box))?.machine === "peer" && ((await read(box))?.rows ?? []).length > 0);
       const held = await until(3_000, async () => watch.pending.some((e) => e.dirs.includes(peerDir)));
       await wait(800);
@@ -38649,9 +38607,9 @@ try {
       const configWas = await told(CONFIG_TOLD);
       const pick = page.locator('[data-setting-select="theme"]');
       const chosen = (await pick.count()) > 0;
-      if (chosen) await pick.first().selectOption("dark");
+      if (chosen) await pickPopup(pick.first(),"dark");
       const toldConfig = chosen && (await until(3_000, async () => (await told(CONFIG_TOLD)) !== configWas));
-      if (chosen) await pick.first().selectOption("auto");
+      if (chosen) await pickPopup(pick.first(),"auto");
       console.log(`follow · d · 主题 chosen here: told the others ${toldConfig}`);
       if (!chosen) fail("probe dead: follow d · 外观 drew no 主题 row");
       else if (!toldConfig) fail("follow · d · this page chose 主题 and told no other window (src/api.ts setConfig)");

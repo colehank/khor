@@ -390,7 +390,7 @@ jobs:
           if [ "$KHOR_QUALITY_SUITE" = updates ]; then
             gates=(updates-ui)
           elif [ "$KHOR_INTERACTION_SCOPE" = settings ]; then
-            gates=(notification-ui key-row-ui)
+            gates=(notification-ui key-row-ui appearance)
           fi
           for gate in "${gates[@]}"; do
             echo "::group::$gate"
@@ -405,6 +405,7 @@ jobs:
           done
           exit "$failed"
         env:
+          APPEARANCE_HEADLESS: '1'
           KHOR_QUALITY_SUITE: ${{ inputs.suite }}
           KHOR_INTERACTION_SCOPE: ${{ inputs.interaction_scope }}
           PLAYWRIGHT_CHROMIUM_CHANNEL: ${{ steps.interaction-browser.outputs.channel }}

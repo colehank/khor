@@ -43,7 +43,7 @@
 // out of the terminal, or the keyboard would drop on every press — so a
 // press is answered on `mousedown` with `preventDefault` (WebKit's tap
 // focuses on its synthesized mousedown) and acted on at the click.
-import { useEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import type { Terminal } from "@xterm/xterm";
 
@@ -424,44 +424,37 @@ function KeyActionFailure({ open, onOpenChange }: { open: boolean; onOpenChange:
 }
 
 /** Settings and the keyboard panel share one device-local row editor. */
-export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function KeyRowEditor({open,onOpenChange}: {open:boolean;onOpenChange:(open:boolean)=>void}) {
   const coarse=useCoarse(),wake=useTermWake(),keysHw=useTermKeysHw(),haptic=useTermJoyHaptic();
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <TaskOverlay
-        purpose="edit" initialHeight="medium" maxHeight="large" dismiss="outside"
-        data-key-row-editor className="w-[min(56rem,calc(100%-2rem))]"
-      >
-        <div className="flex items-center gap-row">
-          <DialogTitle className="min-w-0 flex-1">{gui.term_key_row}</DialogTitle>
-          <button
-            type="button"
-            data-key-row-done
-            onClick={() => onOpenChange(false)}
-            className="flex min-h-touch flex-none items-center text-body font-label"
-          >
-            {gui.edit_done}
-          </button>
-        </div>
-        <DialogBody className="flex min-w-0 flex-col gap-row">
-          <KeyRowList />
-          {coarse&&<div data-key-row-preferences className="flex flex-col rounded-lg bg-grouped">
-            <PopupRow name="term-wake" label={gui.term_wake} value={wake} choices={WAKES.map(w=>({value:w,label:{auto:gui.term_wake_auto,screen:gui.term_wake_screen,button:gui.term_wake_button}[w]}))} onPick={w=>setTermWake(w as Wake)}/>
-            <SwitchRow name="term-keys-hw" label={gui.term_keys_hw} on={keysHw} onToggle={()=>setTermKeysHw(!keysHw)}/>
-            <SwitchRow name="term-joy-haptic" label={gui.term_joy_haptic} on={haptic} onToggle={()=>setTermJoyHaptic(!haptic)}/>
-          </div>}
-        </DialogBody>
-      </TaskOverlay>
-    </Dialog>
-  );
+  const [editing,setEditing]=useState<CustomKeyEntry|null>(),[canSave,setCanSave]=useState(false);
+  const formId=useId();
+  const edit=(entry:CustomKeyEntry|null|undefined)=>{setCanSave(false);setEditing(entry);};
+  return <Dialog open={open} onOpenChange={onOpenChange}>
+    <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" dismiss="explicit" scrollable data-key-row-editor className="w-[min(56rem,calc(100%-2rem))]"
+      onOpenAutoFocus={event=>{event.preventDefault();requestAnimationFrame(()=>document.querySelector<HTMLElement>('[data-key-row-done]')?.focus({preventScroll:true}));}}>
+      <div className="flex items-center gap-row">
+        {editing!==undefined&&<Button data-key-entry-cancel-visible className="min-h-touch" variant="ghost" onClick={()=>edit(undefined)}>{gui.delete_keep}</Button>}
+        <DialogTitle className="min-w-0 flex-1">{editing===undefined?gui.term_key_row:editing?gui.key_row_edit:gui.key_row_add}</DialogTitle>
+        {editing===undefined?<button type="button" data-key-row-done onClick={()=>onOpenChange(false)} className="flex min-h-touch flex-none items-center text-body font-label">{gui.edit_done}</button>:
+          <Button type="submit" form={formId} data-key-entry-save className="min-h-touch" variant="primary" disabled={!canSave}>{gui.edit_done}</Button>}
+      </div>
+      <DialogBody className="flex min-w-0 flex-col gap-row">
+        <KeyRowList editing={editing} setEditing={edit} formId={formId} onReady={setCanSave}/>
+        {editing===undefined&&coarse&&<div data-key-row-preferences className="flex flex-col rounded-lg bg-grouped">
+          <PopupRow name="term-wake" label={gui.term_wake} value={wake} choices={WAKES.map(w=>({value:w,label:{auto:gui.term_wake_auto,screen:gui.term_wake_screen,button:gui.term_wake_button}[w]}))} onPick={w=>setTermWake(w as Wake)}/>
+          <SwitchRow name="term-keys-hw" label={gui.term_keys_hw} on={keysHw} onToggle={()=>setTermKeysHw(!keysHw)}/>
+          <SwitchRow name="term-joy-haptic" label={gui.term_joy_haptic} on={haptic} onToggle={()=>setTermJoyHaptic(!haptic)}/>
+        </div>}
+      </DialogBody>
+    </TaskOverlay>
+  </Dialog>;
 }
 
 /** The editor's list: the seats, their switches and grips. */
-function KeyRowList() {
+function KeyRowList({editing,setEditing,formId,onReady}: {editing:CustomKeyEntry|null|undefined;setEditing:(entry:CustomKeyEntry|null|undefined)=>void;formId:string;onReady:(ready:boolean)=>void}) {
   const { entries: row, problem, temporary } = useKeyRowState();
   const box = useRef<HTMLDivElement>(null);
   const [dragging, setDragging] = useState<string | null>(null);
-  const [editing, setEditing] = useState<CustomKeyEntry | null>();
   const [error, setError] = useState(false);
   useEffect(() => { if (problem !== null) setEditing(undefined); }, [problem]);
   const save = (entry: CustomKeyEntry) => {
@@ -510,7 +503,7 @@ function KeyRowList() {
       {error && <p role="alert" className="text-callout text-destructive">{gui.key_row_invalid}</p>}
       {editing === undefined && problem === null && row.length < KEY_ROW_LIMITS.entries && <Button data-key-row-add className="min-h-touch my-in self-start" onClick={() => { setError(false); setEditing(null); }}>{gui.key_row_add}</Button>}
       {editing !== undefined && problem === null ? (
-        <KeyRowEntryEditor key={editing?.id ?? "new"} entry={editing} onSave={save} onCancel={() => setEditing(undefined)} onDelete={editing ? remove : undefined} />
+        <KeyRowEntryEditor key={editing?.id ?? "new"} formId={formId} onReady={onReady} entry={editing} onSave={save} onCancel={() => setEditing(undefined)} onDelete={editing ? remove : undefined} />
       ) : row.map((s) => {
         const k = keyDefinition(s);
         if (!k) return null;

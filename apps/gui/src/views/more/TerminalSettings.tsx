@@ -85,7 +85,9 @@ export function TerminalSection() {
       <TerminalSizeRow/>
       <TerminalReadabilityRow/>
       <PopupRow name="term-cursor" label={gui.term_cursor} value={cursor.shape} choices={[
-        {value:"block",label:gui.term_cursor_block},{value:"bar",label:gui.term_cursor_bar},{value:"underline",label:gui.term_cursor_underline},
+        {value:"block",label:gui.term_cursor_block,preview:<span data-cursor-option="block" className="h-4 w-3 bg-foreground"/>},
+        {value:"bar",label:gui.term_cursor_bar,preview:<span data-cursor-option="bar" className="h-4 w-0.5 bg-foreground"/>},
+        {value:"underline",label:gui.term_cursor_underline,preview:<span data-cursor-option="underline" className="h-0.5 w-4 bg-foreground"/>},
       ]} onPick={shape=>setTermCursor({...cursor,shape:shape as CursorShape})}/>
       <SwitchRow name="term-cursor-blink" label={gui.term_cursor_blink} on={cursor.blink} onToggle={()=>setTermCursor({...cursor,blink:!cursor.blink})}/>
       <CursorColorRow/>

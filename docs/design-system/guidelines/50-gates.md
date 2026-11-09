@@ -906,3 +906,5 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 ### System and custom text sizes (2026-11-10)
 
 `npm run type-size` (`node scripts/check-type-size.mjs`), included in test:unit, checks independent interface/terminal system modes, system accessibility scale, preserved custom terminal points across mode changes, migration of legacy custom values, reload, and foreground/other-window updates to the real renderer callback. Developer Lab checks both sliders hidden in system mode, restoration of custom values, effective xterm font changes, pointer-specific visible knob sizes with independent hit areas, and settings titles matching row text size with bold weight only. Native Dynamic Type and trackpad gestures still need native review.
+
+2026-11-10：`npm run key-row-ui` 同时覆盖共享 Khor 选择菜单（当前项焦点／分组／禁用／输入查找／内部滚动与边界／字体／多选）与智能体必填答案，以及320／390宽按键编辑、可逆主键／修饰键／连续步骤、固定完成栏。完整App Lab验证正式设置入口。

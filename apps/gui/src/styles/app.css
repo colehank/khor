@@ -2466,15 +2466,6 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
 [role="switch"]:focus-visible {
   outline-offset: var(--ring-off);
 }
-/* The popup button's `<select>` is invisible: the ring goes on the box
-   that is drawn. */
-[data-popup-button]:has(select:focus-visible) > div {
-  outline: var(--ring-w) solid var(--ring);
-  outline-offset: var(--ring-off);
-}
-html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visible) > div {
-  outline: none;
-}
 /* A tab's ring inside its capsule, round like the tab. */
 [data-tab-open]:focus-visible {
   outline-offset: calc(-1 * var(--ring-off));
@@ -3035,3 +3026,8 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 .term-preview-cursor[data-shape="bar"] { width: var(--hair) !important; }
 .term-preview-cursor[data-shape="underline"] { background: transparent; border-bottom: var(--hair) solid var(--khor-term-cursor, var(--term-preview-cursor-color)); }
 [data-term-theme-preview][data-preview-bell="true"] { box-shadow: inset 0 0 0 var(--ring-w) var(--term-preview-bell-color); }
+
+[data-keyboard-compact] { overflow-x: hidden; }
+[data-keyboard-compact] .khor-keyboard { min-width: 0; width: 100%; }
+[data-keyboard-compact] .hg-button { min-width: 0; flex-basis: 0; padding-inline: var(--gap-xxs); }
+[data-keyboard-compact] .hg-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }

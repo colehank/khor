@@ -27,6 +27,8 @@ test('visual keyboard covers every terminal base key with safe Mac/PC modifiers'
     assert.equal(m.keyboardLabels(platform,false)['{AltLeft}'],platform==='mac'?'⌥':'Alt');
     assert.equal(m.keyboardLabels(platform,true)['{Digit1}'],'!');
   }
+  const empty=m.emptyKeyboardStroke();assert.equal(empty.key,null);assert.equal(m.completeKeyboardStroke(empty),null);
+  const once=m.chooseKeyboardKey(empty,'{ArrowLeft}');assert.equal(once.key,'ArrowLeft');assert.equal(m.chooseKeyboardKey(once,'{ArrowLeft}').key,null,'Selected base key can be cleared');
   const original=stroke('ArrowLeft',{shift:true});
   assert.equal(m.chooseKeyboardKey(original,'{ShiftRight}').shift,false);
   const selected=m.chooseKeyboardKey(m.chooseKeyboardKey(original,'{ControlLeft}'),'{KeyB}');

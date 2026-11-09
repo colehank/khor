@@ -1,140 +1,50 @@
-// PopupButton — 「从几个里选一个」 (docs/design-system components/PopupButton):
-// the current value, and a `radius-xs` chip holding the family's two
-// chevrons at its trailing end. **The menu is the system's**: a native
-// `<select>` sits transparent over the drawn button, so the OS draws the
-// picker, its keyboard, its scrolling and its long-list behaviour — never
-// Radix, never a menu of our own.
-//
-// Two looks, one control:
-//
-//   - `plain` — a settings row's trailing control (`PopupRow`): clear
-//     ground, `fill` under the pointer, as wide as its value.
-//   - `field` — a row of a form in a dialog (新会话's 目标机器, 导入's two
-//     filters): the `fill` ground a search field and a segmented
-//     control's track wear, `radius-sm`, as wide as the column, so the
-//     dialog's controls read as one family and the ⌃⌄ stands at the
-//     field's end where a person looks for it.
-//
-// `data-popup-button` is on the drawn box and `data-popup-value` on the
-// value it shows; the `<select>` inside carries whatever `mark` the
-// caller hands it, and each `<option>` its own marks — a gate picks by
-// `selectOption`, reads `data-on` off the options, and reads what the
-// button says it is set to off `data-popup-value` (the select's own text
-// is every option's).
-//
-// Choices that name a `group` are laid out under that heading, the way
-// the system's menu does it (`<optgroup>`); a `note` rides on its item
-// and, for the chosen one, on the button's tooltip — a native menu has
-// no second line to put a description in (the conversation's mode and
-// option pickers, 2026-09-28).
-import { IconChevronDown, IconChevronUp } from "@/components/icons";
-import { cn } from "@/lib/utils";
+// Khor choice menus share the app's typography, glass, viewport and focus rules.
+import {useId,useRef,type ReactNode} from "react";
+import {IconChevronDown,IconChevronUp} from "@/components/icons";
+import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuRadioGroup,DropdownMenuRadioItem,DropdownMenuCheckboxItem,DropdownMenuLabel} from "@/components/ui/dropdown-menu";
+import {cn} from "@/lib/utils";
 
-export type PopupChoice = {
-  value: string;
-  /** The words in the system's menu. */
-  label: string;
-  /** What the button shows when this is the chosen one, where the
-      menu's words are too long for it (a path's last part). */
-  short?: string;
-  disabled?: boolean;
-  /** The heading this choice sits under in the menu. Consecutive
-      choices with the same group share one heading. */
-  group?: string;
-  /** A sentence about this choice: its item's tooltip, and the
-      button's while it is the chosen one. */
-  note?: string;
-  /** Anchors on this choice's `<option>`. */
-  mark?: Record<string, string | boolean | undefined>;
+export type PopupChoice={
+  value:string;label:string;short?:string;disabled?:boolean;group?:string;note?:string;
+  preview?:ReactNode;
+  mark?:Record<string,string|boolean|undefined>;
 };
+type Props={choices:PopupChoice[];label:string;disabled?:boolean;look?:"plain"|"field";
+  mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string};
 
-export function PopupButton({
-  value,
-  choices,
-  onPick,
-  label,
-  disabled = false,
-  look = "plain",
-  mark,
-  className,
-}: {
-  value: string;
-  choices: PopupChoice[];
-  onPick: (value: string) => void;
-  /** What a screen reader hears — the row's or the field's label. */
-  label: string;
-  disabled?: boolean;
-  look?: "plain" | "field";
-  /** Anchors on the `<select>` itself. */
-  mark?: Record<string, string | boolean | undefined>;
-  className?: string;
-}) {
-  const chosen = choices.find((c) => c.value === value);
-  const current = chosen ? (chosen.short ?? chosen.label) : value;
-  // Runs of one group, in the caller's order.
-  const runs: { group: string | null; items: PopupChoice[] }[] = [];
-  for (const c of choices) {
-    const g = c.group ?? null;
-    const last = runs.at(-1);
-    if (last && last.group === g) last.items.push(c);
-    else runs.push({ group: g, items: [c] });
-  }
-  const option = (c: PopupChoice) => (
-    <option key={c.value} value={c.value} disabled={c.disabled} title={c.note} data-on={c.value === value} {...c.mark}>
-      {c.label}
-    </option>
-  );
-  return (
-    <div
-      data-popup-button={look}
-      title={chosen?.note}
-      className={cn("group relative min-w-0", look === "field" ? "flex w-full" : "flex-none", className)}
-    >
-      <div
-        aria-hidden
-        className={cn(
-          // components/PopupButton: the value in `body` ink (never
-          // `secondary` — that is a settings row's note), and a
-          // `radius-xs` chip holding the two chevrons at 10 — not the
-          // ⌃⌄ keys. Disabled at the push button's 0.4.
-          "flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in text-body",
-          look === "field" ? "w-full bg-fill" : "",
-          look === "field" ? "group-hover:bg-fill-strong" : "group-hover:bg-fill",
-        )}
-      >
-        <span data-popup-value className={cn("min-w-0 truncate tabular-nums", look === "field" && "flex-1")}>
-          {current}
+function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",mark,className,placeholder}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
+  const id=useId(),menu=useRef<HTMLDivElement>(null);
+  const selected=choices.filter(choice=>values.includes(choice.value));
+  const current=selected.map(choice=>choice.short??choice.label).join(", ")||placeholder||values.join(", ");
+  const runs:{group:string|undefined;items:PopupChoice[]}[]=[];
+  for(const choice of choices){const last=runs.at(-1);if(last&&last.group===choice.group)last.items.push(choice);else runs.push({group:choice.group,items:[choice]});}
+  const body=(choice:PopupChoice)=><>{choice.preview&&<span aria-hidden className="grid size-5 flex-none place-items-center">{choice.preview}</span>}<span className="min-w-0 flex-1"><span className="block break-words">{choice.label}</span>{choice.note&&<span className="block break-words text-callout text-muted-foreground">{choice.note}</span>}</span></>;
+  return <DropdownMenu modal={false}>
+    <div data-popup-button={look} className={cn("relative flex h-ctl-md min-w-0 items-center",look==="field"?"w-full":"flex-none",className)}>
+      <DropdownMenuTrigger asChild><button type="button" value={values[0]??""} disabled={disabled} aria-label={`${label}: ${current}`} title={selected[0]?.note}
+        data-popup-trigger data-popup-owner={id} {...mark}
+        className={cn("flex min-h-touch min-w-0 items-center rounded-sm text-body outline-none focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-40",look==="field"&&"w-full")}>
+        <span className={cn("flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in hover:bg-fill",look==="field"&&"w-full bg-fill hover:bg-fill-strong")}>
+          {!multiple&&selected[0]?.preview&&<span aria-hidden className="grid size-5 flex-none place-items-center">{selected[0].preview}</span>}
+          <span data-popup-value className={cn("min-w-0 truncate tabular-nums",look==="field"&&"flex-1")}>{current}</span>
+          <span data-setting-trail className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"><IconChevronUp centred className="-mb-(--chevron-pair) size-2.5"/><IconChevronDown centred className="size-2.5"/></span>
         </span>
-        <span
-          data-setting-trail
-          className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"
-        >
-          <IconChevronUp centred className="-mb-[3px] size-2.5" />
-          <IconChevronDown centred className="size-2.5" />
-        </span>
-      </div>
-      <select
-        value={value}
-        disabled={disabled}
-        aria-label={label}
-        onChange={(e) => onPick(e.target.value)}
-        {...mark}
-        // Centred on the drawn button and at least the finger floor
-        // tall: the look is the pointer's, the hit area the finger's.
-        // The arrow, not the hand: a control is not a link (the
-        // native-feel batch, `check-face` §3).
-        className="absolute inset-x-0 top-1/2 h-full min-h-touch w-full -translate-y-1/2 opacity-0"
-      >
-        {runs.map((r, i) =>
-          r.group === null ? (
-            r.items.map(option)
-          ) : (
-            <optgroup key={`${r.group}:${i}`} label={r.group}>
-              {r.items.map(option)}
-            </optgroup>
-          ),
-        )}
-      </select>
+      </button></DropdownMenuTrigger>
     </div>
-  );
+    <DropdownMenuContent ref={menu} data-popup-menu={id} align="end" aria-label={label}
+      className="min-w-(--radix-dropdown-menu-trigger-width) max-w-[calc(100vw-2*var(--gap-in))] font-sans"
+      onEntryFocus={event=>{event.preventDefault();requestAnimationFrame(()=>{const chosen=menu.current?.querySelector<HTMLElement>('[data-on="true"]:not([data-disabled])')??menu.current?.querySelector<HTMLElement>('[data-popup-option]:not([data-disabled])');chosen?.focus({preventScroll:true});});}}>
+      <DropdownMenuRadioGroup value={values[0]??""} onValueChange={multiple?undefined:onPick}>
+        {runs.map((run,index)=><div key={index}>{run.group&&<DropdownMenuLabel>{run.group}</DropdownMenuLabel>}{run.items.map(choice=>multiple?
+          <DropdownMenuCheckboxItem key={choice.value} checked={values.includes(choice.value)} disabled={choice.disabled} textValue={choice.label} data-popup-option={choice.value} data-on={values.includes(choice.value)} {...choice.mark} onSelect={event=>event.preventDefault()} onCheckedChange={()=>onPick(choice.value)}>{body(choice)}</DropdownMenuCheckboxItem>:
+          <DropdownMenuRadioItem key={choice.value} indicator="check" value={choice.value} disabled={choice.disabled} textValue={choice.label} data-popup-option={choice.value} data-on={values.includes(choice.value)} {...choice.mark}>{body(choice)}</DropdownMenuRadioItem>)}</div>)}
+      </DropdownMenuRadioGroup>
+    </DropdownMenuContent>
+  </DropdownMenu>;
+}
+export function PopupButton({value,onPick,...props}:Props&{value:string;onPick:(value:string)=>void}) {
+  return <ChoicePopup {...props} values={[value]} onPick={onPick}/>;
+}
+export function MultiPopupButton({value,onPick,...props}:Props&{value:string[];onPick:(value:string[])=>void}) {
+  return <ChoicePopup {...props} multiple values={value} onPick={key=>onPick(value.includes(key)?value.filter(item=>item!==key):[...value,key])}/>;
 }

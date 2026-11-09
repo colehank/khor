@@ -35,7 +35,7 @@ import { MoreSection, type MorePage } from "@/views/more/MorePage";
  * ⚠️ 墓碑 (第十七轮): up to eight choices were a ladder of `MoreSwitch`
  * buttons and past eight a Radix menu. Two shapes for one question, and
  * the second was a menu khor drew itself — the thing 「系统的东西交给系统
- * 画」 forbids. Both are one native `<select>` now.
+ * 画」 forbids. Both use the shared Khor choice menu.
  *
  * `data-config-row` / `data-value` carry the **key**, not the word, so a
  * gate never reads the catalog to check the catalog.

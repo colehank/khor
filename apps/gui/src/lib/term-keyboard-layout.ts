@@ -28,9 +28,16 @@ export function keyboardLabels(platform:KeyboardPlatform,shift:boolean):Record<s
   }
   return Object.fromEntries(Object.entries(labels).map(([code,label])=>[token(code),label]));
 }
-export function chooseKeyboardKey(stroke:KeyStroke,key:string):KeyStroke {
+export type KeyboardStroke=Omit<KeyStroke,"key">&{key:BaseKey|null};
+export const emptyKeyboardStroke=():KeyboardStroke=>({key:null,ctrl:false,alt:false,shift:false});
+export function completeKeyboardStroke(stroke:KeyboardStroke):KeyStroke|null {return stroke.key?{...stroke,key:stroke.key}:null;}
+export function chooseKeyboardKey(stroke:KeyboardStroke,key:string):KeyboardStroke {
   const code=key.replace(/^\{|\}$/g,"");
   const modifier=modifierKeys[code as keyof typeof modifierKeys];
   if(modifier)return {...stroke,[modifier]:!stroke[modifier]};
-  return (BASE_KEYS as readonly string[]).includes(code)?{...stroke,key:code as BaseKey}:stroke;
+  return (BASE_KEYS as readonly string[]).includes(code)?{...stroke,key:stroke.key===code?null:code as BaseKey}:stroke;
+}
+
+export function keyboardGroup(key:string|null):"navigation"|"letters"|"symbols"|"function" {
+  return !key?"navigation":/^Key[A-Z]$/.test(key)?"letters":/^F\d+$/.test(key)?"function":/^(Digit|Backquote|Minus|Equal|Bracket|Backslash|Semicolon|Quote|Comma|Period|Slash)/.test(key)?"symbols":"navigation";
 }

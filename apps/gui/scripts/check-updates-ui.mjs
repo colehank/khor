@@ -1,3 +1,4 @@
+import {pickPopup,popupChoices} from './popup-helpers.mjs';
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,rmSync,mkdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
@@ -96,7 +97,7 @@ try {
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='app_update_install'));
   assert.match(await page.locator('[data-setting-row-name="update-check"]').innerText(),/保存|Save/,'a blocked restart explains the unresolved work');
   assert.match(await page.locator('[data-setting-row-name="update-check"]').innerText(),/附件|attachments/);
-  await page.locator('[data-setting-select="update-channel"]').selectOption('stable');
+  await pickPopup(page.locator('[data-setting-select="update-channel"]'),'stable');
   await page.waitForFunction(()=>window.updateState.preferences.channel==='stable');
   const prefs=await page.evaluate(()=>window.updateState.preferences);
   assert.deepEqual(prefs,{channel:'stable',automatic_check:true,automatic_download:true,install_on_start:false},'changing the channel must preserve the other preferences');
