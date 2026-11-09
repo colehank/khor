@@ -19,7 +19,7 @@ export function notificationText(item: NotificationBanner): string {
 const title = (item: NotificationBanner): string => item.members
   ? gui.notification_summary(String(item.members.length)) : item.title;
 function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOpen:(item:NotificationBanner)=>boolean}) {
-  const [missing,setMissing]=useState(false),[offset,setOffset]=useState(0),[closing,setClosing]=useState(false),[arrived,setArrived]=useState(false);
+  const [missing,setMissing]=useState(false),[offset,setOffset]=useState(0),[closing,setClosing]=useState(false),[arrived,setArrived]=useState(false),[dragging,setDragging]=useState(false);
   const element=useRef<HTMLDivElement>(null);
   const hovered=useRef(false),focused=useRef(false),touching=useRef(false),swallow=useRef(false);
   const drag=useRef<{id:number;x:number;y:number;dy:number;moved:boolean}|null>(null);
@@ -34,13 +34,13 @@ function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOp
   },[closing,item.key]);
   const release=(cancelled:boolean)=>{
     const current=drag.current;if(!current)return;
-    drag.current=null;touching.current=false;swallow.current=current.moved||cancelled;
+    drag.current=null;touching.current=false;setDragging(false);swallow.current=current.moved||cancelled;
     const height=element.current?.getBoundingClientRect().height??0;
     if(!cancelled&&current.dy < -height*.45){close();return;}
     setOffset(0);pause();
   };
   return <div ref={element} data-notification-banner={item.key} data-notification-closing={closing||undefined}
-    data-notification-arrived={arrived||undefined} data-notification-dragging={touching.current||undefined}
+    data-notification-arrived={arrived||undefined} data-notification-dragging={dragging||undefined}
     style={offset?{transform:`translateY(${offset}px)`,opacity:Math.max(.3,1-Math.abs(offset)/(element.current?.offsetHeight??1))}:undefined}
     className="notification-banner glass flex min-w-0 items-start gap-in rounded-2xl p-row"
     onPointerEnter={event=>{if(event.pointerType==="mouse"){hovered.current=true;pause();}}}
@@ -48,7 +48,7 @@ function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOp
     onFocusCapture={()=>{focused.current=true;pause();}} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){focused.current=false;pause();}}}
     onPointerDown={event=>{
       if(!event.isPrimary||event.button!==0||closing)return;
-      swallow.current=false;touching.current=true;setArrived(true);
+      swallow.current=false;touching.current=true;setDragging(true);setArrived(true);
       drag.current={id:event.pointerId,x:event.clientX,y:event.clientY,dy:0,moved:false};pause();
     }}
     onPointerMove={event=>{
@@ -61,7 +61,7 @@ function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOp
       setOffset(dy<0?dy:Math.sqrt(dy)*2);
     }}
     onPointerUp={event=>{if(drag.current?.id===event.pointerId)release(false);}}
-    onPointerCancel={()=>release(true)} onLostPointerCapture={()=>release(true)}
+    onPointerCancel={()=>release(true)} onLostPointerCapture={event=>{if(event.target===event.currentTarget)release(true);}}
     onClickCapture={event=>{if(swallow.current&&event.detail!==0){event.preventDefault();event.stopPropagation();}}}
     onKeyDown={event=>{if(event.key==="Escape"){event.preventDefault();event.stopPropagation();close();}}}
     onAnimationEnd={event=>{if(event.target!==event.currentTarget)return;if(closing)dismissNotification(item.key);else setArrived(true);}}>

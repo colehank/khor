@@ -112,6 +112,13 @@ export function scheduleNotifications(state: NotificationState, now: number): No
     : item.expires === null ? { ...item, expires: now + item.remaining } : item);
   return { ...state, items, queue: queue.slice(-QUEUE_LIMIT) };
 }
+export type NotificationPresence = { waiting: boolean; snapshot: unknown };
+/** On resume, stale cached rows are not the fresh host snapshot we must consume. */
+export function notificationPresence(previous: NotificationPresence, snapshot: unknown, present: boolean): { next: NotificationPresence; deliver: boolean } {
+  if (!present) return { next: { waiting: true, snapshot }, deliver: false };
+  if (previous.waiting) return { next: { waiting: previous.snapshot === snapshot, snapshot }, deliver: false };
+  return { next: { waiting: false, snapshot }, deliver: true };
+}
 export function collectNotifications(state: NotificationState, rows: SessionRow[], options: {
   now: number; commandSeconds: number; present: boolean; onScreen: (id: string) => boolean;
 }): NotificationState {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {build} from 'esbuild';
 const built=await build({entryPoints:['src/lib/notification-banners.ts'],bundle:true,write:false,format:'esm',platform:'node'});
-const {collectNotifications,emptyNotifications,restoreNotifications,notificationMetadata,expireNotifications,sourceKey,scheduleNotifications,QUEUE_LIMIT,BANNER_DURATION}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
+const {collectNotifications,emptyNotifications,restoreNotifications,notificationMetadata,expireNotifications,sourceKey,scheduleNotifications,notificationPresence,QUEUE_LIMIT,BANNER_DURATION}=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
 const now=1700000000000;
 const event=(id,at_ms=now,kind='turn_completed',extra={})=>({id,at_ms,kind,resolved:false,text:null,duration_ms:null,exit:null,...extra});
 const row=(activity=[],extra={})=>({id:'gui/a',execution_home:'a'.repeat(64),title:'Private title',imported:false,observation_owner:null,activity,...extra});
@@ -80,3 +80,14 @@ const stale=expireNotifications({...baselineMany,capacity:1,queue:[{...event('st
 assert.equal(stale.items.length,0);assert.equal(stale.queue.length,0,'Stale queued notices are discarded');
 assert.equal(JSON.stringify(notificationMetadata(burst)).includes('Content'),false);
 console.log('Notification scheduling: coalescing, visible-only clocks, touch/window pause, stable interaction, bounded queue, burst summaries and previews passed');
+
+const cachedRows={},freshRows={},laterRows={};
+let presence=notificationPresence({waiting:true,snapshot:null},cachedRows,false);
+assert.equal(presence.deliver,false);
+presence=notificationPresence(presence.next,cachedRows,true);
+assert.equal(presence.deliver,false);assert.equal(presence.next.waiting,true,'Cached resume rows cannot release catch-up suppression');
+presence=notificationPresence(presence.next,freshRows,true);
+assert.equal(presence.deliver,false);assert.equal(presence.next.waiting,false,'First new host snapshot seeds quietly');
+presence=notificationPresence(presence.next,laterRows,true);assert.equal(presence.deliver,true,'Only events after the fresh foreground snapshot notify');
+presence=notificationPresence(presence.next,laterRows,false);assert.equal(presence.deliver,false);assert.equal(presence.next.waiting,true);
+console.log('Notification presence: cached/fresh foreground boundary and background suppression passed');

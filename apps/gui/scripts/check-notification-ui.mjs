@@ -26,7 +26,7 @@ try {
   await page.locator('[data-notification-open]').last().click();
   assert.match(await page.locator('[data-lab-opened]').innerText(),width<500?/gui\/khor@aaaa/:/shell\/build@bbbb/);
   const clear=async()=>{await page.locator('[data-lab-clear]').click();await banners.waitFor({state:'detached'});};
-  const complete=async()=>{await page.locator('[data-lab-complete]').click();await banners.waitFor();await page.clock.runFor(300);};
+  const complete=async()=>{await page.locator('[data-lab-complete]').click();await banners.waitFor();await page.clock.runFor(300);await banners.evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));};
   await clear();await complete();
   await banners.hover();await page.clock.fastForward(9000);assert.equal(await banners.count(),1,'Hover pauses auto dismissal');
   await page.mouse.move(0,800);await page.clock.fastForward(9000);assert.equal(await banners.count(),0,'Visible notice expires after pause');

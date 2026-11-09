@@ -5,7 +5,7 @@ import {SessionContentColumn} from "@/views/SessionContentColumn";
 import {SessionContentSeat,useSessionContentDock} from "@/hooks/use-session-content-dock";
 import { NotificationBanners } from "@/views/NotificationBanners";
 import { clearNotifications, receiveNotifications, sessionNotificationsEnabled, useNotifications } from "@/lib/notifications";
-import type { NotificationBanner } from "@/lib/notification-banners";
+import { notificationPresence, type NotificationBanner, type NotificationPresence } from "@/lib/notification-banners";
 import {SessionHeader} from '@/components/SessionHeader';
 import {retainSessionDrafts} from '@/hooks/use-session-draft';
 import {retainCancelledChatDrafts} from '@/lib/chat-drafts';
@@ -943,12 +943,11 @@ export default function App() {
     onSelect(row);
     return true;
   };
-  const notificationsAbsent = useRef(true);
+  const notificationsPresence = useRef<NotificationPresence>({ waiting: true, snapshot: null });
   useEffect(() => {
-    if (!rowsRead) { notificationsAbsent.current = true; return; }
-    const present = !hidden && !lock.locked;
-    receiveNotifications(rawRows, (id) => onScreen.current(id), present && !notificationsAbsent.current);
-    notificationsAbsent.current = !present;
+    const gate = notificationPresence(notificationsPresence.current, rawRows, rowsRead && !hidden && !lock.locked);
+    notificationsPresence.current = gate.next;
+    if (rowsRead) receiveNotifications(rawRows, (id) => onScreen.current(id), gate.deliver);
   }, [rawRows, rowsRead, lock.locked, hidden, morePage, switchingTabs]);
 
   useEffect(() => { if (hidden || lock.locked) clearNotifications(); }, [hidden, lock.locked]);
