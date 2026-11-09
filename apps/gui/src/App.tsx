@@ -1421,6 +1421,12 @@ export default function App() {
     setSwitchingTabs(false);
     listPane.expand();
   };
+  const openMyKhor = () => {
+    setMorePage("me");
+    setScreen("detail");
+    setSwitchingTabs(false);
+  };
+  const dial = !narrow && morePage === "me";
   const strip = (
     <LandingStrip
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
@@ -1434,6 +1440,7 @@ export default function App() {
         else goLanding(key as Landing);
       }}
       onMore={enterMore}
+      onMe={openMyKhor}
     />
   );
   /** **Folded, the strip does not move** (the audit fix plan F3.1; W01):
@@ -1460,6 +1467,7 @@ export default function App() {
       moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
       onGo={(key) => goLanding(key as Landing)}
       onMore={enterMore}
+      onMe={openMyKhor}
       className="absolute bottom-[var(--nav-bottom)] left-1/2 z-30 -translate-x-1/2"
     />
   );
@@ -3016,7 +3024,12 @@ export default function App() {
   /** Every More detail returns to the same More list on mobile; desktop
       closes the destination over the landing retained underneath. */
   const leaveMorePage = () => {
-    if (narrow && morePage !== null) {
+    if (morePage === "terminal") {
+      setMorePage("session");
+      setScreen("detail");
+      return;
+    }
+    if (narrow && morePage !== null && morePage !== "me") {
       setScreen("list");
       return;
     }
@@ -3080,6 +3093,7 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [narrow, shownKey, screen]);
 
+  const sessionSettings = <SessionPage onClose={leaveMorePage} onSettingChanged={settings.reread} onTerminal={()=>setMorePage("terminal")} />;
   const morePageEl =
     morePage === null ? null : morePage === "notifications" ? (
       <NotificationsPage inbox={inbox} sessions={rows} onOpen={openNotification} onClose={leaveMorePage} />
@@ -3098,7 +3112,7 @@ export default function App() {
     ) : morePage === "terminal" ? (
       <TerminalPage onClose={leaveMorePage} devices={devices} machine={recognitionMachine} onMachine={setRecognitionMachine} />
     ) : morePage === "session" ? (
-      <SessionPage onClose={leaveMorePage} onSettingChanged={settings.reread} />
+      sessionSettings
     ) : morePage === "workspace" ? (
       <WorkspacePage onClose={leaveMorePage} onSettingChanged={settings.reread} />
     ) : morePage === "security" ? (
@@ -3380,7 +3394,9 @@ export default function App() {
               {null}
             </SessionScreen>
           )
-        : morePage !== null
+        : morePage === "terminal"
+          ? sessionSettings
+          : morePage !== null && morePage !== "me"
           ? moreList
           : quotas
             ? (
@@ -3597,7 +3613,7 @@ export default function App() {
           <aside
             data-side
             data-search-glass
-            hidden={folded}
+            hidden={folded || dial}
             className="flex flex-none flex-col border-r bg-side"
             style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
           >
@@ -3626,7 +3642,7 @@ export default function App() {
               {sideHead}
             </div>
             <div ref={seats.setList} data-side-list-seat className="flex min-h-0 min-w-0 flex-1">
-              {morePage !== null && moreList}
+              {morePage !== null && !dial && moreList}
             </div>
           </aside>
           {/* **The right side**: the app's ground, a first row at the
@@ -3640,7 +3656,7 @@ export default function App() {
               content has a seam of its own inside, so a broken page
               keeps its R0 and the list beside it. */}
           <Fault name="page" reset={seamAt}>
-          {morePage ? (
+          {dial ? morePageEl : morePage ? (
             <Region
               kind="detail"
               caption={stale ? gui.backend_unreachable : undefined}

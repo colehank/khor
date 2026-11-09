@@ -18,20 +18,28 @@ try {
   globalThis.window={localStorage:{getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)}};
   assert.equal(lastSettingsPage(),'appearance');
   rememberSettingsPage('workspace');assert.equal(lastSettingsPage(),'workspace');
+  rememberSettingsPage('terminal');assert.equal(lastSettingsPage(),'terminal','Existing Terminal deep links remain a Session child route');
+  assert.equal(isSettingsPage('terminal'),true);
   for(const page of settingsPages){rememberSettingsPage(page);assert.equal(lastSettingsPage(),page);}
-  assert.equal(lastMorePage(),'me');
-  assert.deepEqual(morePageOrder,['me',...settingsPages,'store','notifications','doctor']);
+  assert.equal(lastMorePage(),'appearance');
+  assert.deepEqual(morePageOrder,[...settingsPages,'store','notifications','doctor']);
   for(const page of morePageOrder){rememberMorePage(page);assert.equal(lastMorePage(),page);assert.equal(isMorePage(page),true);}
-  values.set('khor.more-page','removed-more-section');assert.equal(lastMorePage(),'me');
+  rememberMorePage('workspace');rememberMorePage('me');assert.equal(lastMorePage(),'workspace');
+  rememberMorePage('terminal');assert.equal(lastMorePage(),'terminal');
+  values.set('khor.more-page','me');assert.equal(lastMorePage(),'appearance','Old My Khor preference cannot reopen it inside More');
+  assert.equal(isMorePage('me'),true,'Persisted standalone My Khor routes remain valid');
+  values.set('khor.more-page','removed-more-section');assert.equal(lastMorePage(),'appearance');
   for(const invalid of [null,undefined,{},'settings','network','<script>'])assert.equal(isMorePage(invalid),false);
   values.set('khor.settings-pane','deleted-category');assert.equal(lastSettingsPage(),'appearance');
   for(const invalid of [null,undefined,{},'me','doctor','settings','<script>'])assert.equal(isSettingsPage(invalid),false);
   window.localStorage.getItem=()=>{throw new Error('storage unavailable');};
   window.localStorage.setItem=()=>{throw new Error('storage unavailable');};
-  assert.equal(lastMorePage(),'me');assert.doesNotThrow(()=>rememberMorePage('doctor'));
+  assert.equal(lastMorePage(),'appearance');assert.doesNotThrow(()=>rememberMorePage('doctor'));
   assert.equal(lastSettingsPage(),'appearance');assert.doesNotThrow(()=>rememberSettingsPage('terminal'));
   const native=readFileSync(new URL('../../../crates/node/src/config.rs',import.meta.url),'utf8');
   const inventory=native.match(/pub const PAGES:[\s\S]*?=\s*&\[([\s\S]*?)\];/)[1];
-  assert.deepEqual(settingsPages,[...inventory.matchAll(/"([^"]+)"/g)].map(match=>match[1]),'Navigation and native deep links use the same settings categories');
+  const nativePages=[...inventory.matchAll(/"([^"]+)"/g)].map(match=>match[1]);
+  assert.deepEqual(settingsPages,nativePages.filter(page=>page!=='terminal'),'The native Terminal category is a Session child rather than another sidebar entry');
+  assert.ok(nativePages.every(isSettingsPage),'Every native settings deep link remains valid');
   console.log('PASS settings navigation: restoration, invalid/stale state, denied storage, native category inventory');
 } finally {rmSync(folder,{recursive:true,force:true});}

@@ -80,6 +80,7 @@ export function LandingStrip({
   moreOn,
   onGo,
   onMore,
+  onMe,
 }: {
   /** The four landings on the bar (`NAV_SHOWN`), as the phone's. */
   seats: StripSeat[];
@@ -91,6 +92,7 @@ export function LandingStrip({
   onGo: (key: string) => void;
   /** Opens the shared More destination, or folds its current list. */
   onMore: () => void;
+  onMe: () => void;
 }) {
   // The chosen pill slides to the landing pressed (F7.2, `lib/travel`).
   const strip = useRef<HTMLElement>(null);
@@ -120,7 +122,7 @@ export function LandingStrip({
           </Seat>
         ))}
       </nav>
-      <NavigationOverflow seats={more} onGo={onGo} onMore={onMore}><GlassCircle
+      <NavigationOverflow seats={more} onGo={onGo} onMore={onMore} onMe={onMe}><GlassCircle
         data-rail-item data-rail-more data-on={moreOn}
         aria-label={gui.rail_more} aria-current={moreOn ? "page" : undefined}
         className={cn("data-[state=open]:glass-sel",moreOn && "glass-sel text-[var(--rail-on-ink)]")}

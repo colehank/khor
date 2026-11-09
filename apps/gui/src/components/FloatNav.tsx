@@ -59,13 +59,14 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
 }
 
 /** More is a destination alongside the four primary landings. */
-export function FloatNav({seats,more,active,moreOn,onGo,onMore,unreadNotifications=0,className}: {
+export function FloatNav({seats,more,active,moreOn,onGo,onMore,onMe,unreadNotifications=0,className}: {
   seats:NavSeat[];
   more:NavSeat[];
   active:string|null;
   moreOn:boolean;
   onGo:(key:string)=>void;
   onMore:()=>void;
+  onMe:()=>void;
   unreadNotifications?:number;
   className?:string;
 }) {
@@ -91,7 +92,7 @@ export function FloatNav({seats,more,active,moreOn,onGo,onMore,unreadNotificatio
       {seats.map((s) => (
         <Seat key={s.key} seat={s} on={active === s.key} onClick={() => onGo(s.key)} />
       ))}
-      <NavigationOverflow seats={more} onGo={onGo} onMore={onMore} mobile><button
+      <NavigationOverflow seats={more} onGo={onGo} onMore={onMore} onMe={onMe} mobile><button
         type="button" data-slot="button" data-nav-more data-on={moreOn}
         aria-label={gui.rail_more} aria-current={moreOn ? "page" : undefined}
         className={cn(NAV_SEAT,"data-[state=open]:glass-sel")}

@@ -63,7 +63,8 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { GlassCircle } from "@/components/Glass";
 import { MachineFace } from "@/components/SessionFace";
 import { IconBack, IconMore } from "@/components/icons";
-import { PageAction } from "@/components/Region";
+import { WindowControls } from "@/components/Region";
+import { WINDOW_DRAG } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -375,7 +376,12 @@ export function MyKhorPage({
 
   return (
     <div data-dial-page data-narrow-page={narrow || undefined} className="relative flex h-full min-h-0 flex-1 flex-col bg-card">
-      {!narrow && <PageAction>{segment("data-dial-segment")}</PageAction>}
+      {!narrow && <div data-dial-top {...WINDOW_DRAG} className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-row select-none">
+        <GlassCircle aria-label={gui.back} data-dial-back onClick={onClose}><IconBack/></GlassCircle>
+        <h1 className="min-w-0 flex-1 truncate text-title-sm font-title">{gui.my_khor}</h1>
+        {segment("data-dial-segment")}
+        <WindowControls/>
+      </div>}
       <section
         data-more-page="me"
         data-dial-view={view}

@@ -1,11 +1,12 @@
 /** Settings navigation belongs to the viewing device, never a remote node. */
-export const settingsPages = ["appearance", "terminal", "session", "workspace", "connection", "security", "about"] as const;
-export type SettingsPage = typeof settingsPages[number];
+export const settingsPages = ["appearance", "session", "workspace", "connection", "security", "about"] as const;
+/** Terminal remains a deep-linkable child of Session. */
+export type SettingsPage = "terminal" | typeof settingsPages[number];
 export type SettingsRequest = { pane?: string | null; machine?: string | null };
 const KEY = "khor.settings-pane";
 
 export function isSettingsPage(value: unknown): value is SettingsPage {
-  return typeof value === "string" && (settingsPages as readonly string[]).includes(value);
+  return value === "terminal" || typeof value === "string" && (settingsPages as readonly string[]).includes(value);
 }
 
 export function lastSettingsPage(): SettingsPage {

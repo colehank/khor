@@ -5,6 +5,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
   const context=await browser.newContext({viewport:mobile?{width:390,height:844}:{width:1280,height:900},isMobile:mobile,hasTouch:mobile});
   const page=await context.newPage();page.setDefaultTimeout(15000);
   const errors=[];page.on('pageerror',error=>errors.push(String(error)));
+  const back=()=>page.locator('[data-side-l0] [data-more-back]:visible').click();
   const open=async()=>{
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').click();
     await page.locator('[data-nav-more-page]:visible').click();
@@ -15,24 +16,26 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').waitFor();
     const size=page.viewportSize();
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').click();
-    assert.deepEqual(await page.locator('[data-nav-menu] [role="menuitem"]').evaluateAll(items=>items.map(item=>item.getAttribute('data-more-landing')??'more')),['browser','more']);
+    assert.deepEqual(await page.locator('[data-nav-menu] [role="menuitem"]').evaluateAll(items=>items.map(item=>item.hasAttribute('data-nav-me')?'me':item.getAttribute('data-more-landing')??'more')),['me','browser','more']);
+    const marks=await page.locator('[data-nav-menu] [role="menuitem"] svg').evaluateAll(items=>items.map(item=>({width:item.getBoundingClientRect().width,height:item.getBoundingClientRect().height})));
+    assert.ok(marks.length>1&&marks.every(mark=>mark.width===marks[0].width&&mark.height===marks[0].height),'My Khor matches other chooser glyphs');
     await page.screenshot({path:path.join(report,`navigation-chooser-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await page.locator('[data-nav-menu] [data-more-landing="browser"]').click();
     await page.locator('[data-nav-menu]').waitFor({state:'detached'});
-    await page.locator('[data-browse-landing]:visible').waitFor();
+    await page.locator('[data-browse-tabs]:visible').waitFor();
     assert.equal(await page.locator('[data-more-list]:visible').count(),0,'Browser has its own list outside More');
     await open();
     const more=page.locator('[data-more-list]:visible');
     const inventory=()=>more.locator('[data-more-open]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-more-open')));
     const navigation=page.locator('[data-settings-navigation]:visible');
     await navigation.waitFor();
-    assert.equal(await navigation.locator('[data-more-open]').count(),7,'Settings categories are not mixed with machines, storage or diagnostics');
-    assert.equal(await more.locator('[data-more-me]').count(),1);
+    assert.equal(await navigation.locator('[data-more-open]').count(),6,'Settings has one Session entry, without a separate Terminal entry');
+    assert.equal(await more.locator('[data-more-open="me"]').count(),0,'My Khor belongs only to the overflow chooser');
     const original=await inventory();
-    assert.deepEqual(original,['me','appearance','terminal','session','workspace','connection','security','about','store','notifications','doctor']);
+    assert.deepEqual(original,['appearance','session','workspace','connection','security','about','store','notifications','doctor']);
     assert.equal(await more.locator('[data-more-landing]').count(),0,'Hidden landings are not More utilities');
     assert.equal(await page.locator('[data-nav-menu]').count(),0,'Choosing More dismisses the navigation chooser');
-    if(!mobile)await page.locator('[data-more-page="me"]:visible').waitFor();
+    if(!mobile)await page.locator('[data-more-page="appearance"]:visible').waitFor();
     await navigation.locator('[data-more-open="workspace"]').click();
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     const picker=page.locator('[data-more-page="workspace"] select').first();
@@ -43,7 +46,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.waitForFunction(value=>JSON.parse(localStorage.getItem('khor.lab.settings-values')??'{}')['files-click']===value,chosen);
     if(!mobile)assert.equal(await navigation.locator('[data-more-open="workspace"]').getAttribute('aria-current'),'page');
     if(mobile) {
-      await page.locator('[data-more-back]:visible').click();
+      await back();
       await navigation.waitFor();
       await page.locator('[data-nav-item="devices"]:visible').click();
     } else {
@@ -60,22 +63,37 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     const pick=async key=>{
-      if(mobile){await page.locator('[data-more-back]:visible').click();await more.waitFor();}
+      if(mobile&&!await more.isVisible()){await back();await more.waitFor();}
       await more.locator(`[data-more-open="${key}"]`).click();
       await page.locator(`[data-more-page="${key}"]:visible`).waitFor();
       if(!mobile)assert.deepEqual(await inventory(),original,'Every More page keeps the same navigation');
     };
-    for(const key of ['doctor','store','me'])await pick(key);
+    await pick('session');
+    await page.locator('[data-settings-child="terminal"]').click();
+    await page.locator('[data-more-page="terminal"]:visible').waitFor();
+    if(!mobile)assert.equal(await more.locator('[data-more-open="session"]').getAttribute('aria-current'),'page');
+    assert.equal(await more.locator('[data-more-open="terminal"]').count(),0);
+    if(mobile)await back();else await page.locator('[data-settings-parent]:visible').click();
+    await page.locator('[data-more-page="session"]:visible').waitFor();
+    for(const key of ['doctor','store'])await pick(key);
+    if(mobile)await back();
+    await page.locator('[data-landing="devices"]:visible').click();
+    await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').click();
+    await page.locator('[data-nav-me]:visible').click();
+    await page.locator('[data-nav-menu]').waitFor({state:'detached'});
     await page.locator('[data-more-page="me"][data-dial-view="map"]:visible').waitFor();
     assert.equal(await page.locator('[data-network-profile]').count(),0,'My Khor opens the original map without a redundant profile');
     assert.equal(await page.locator('[data-dial-segment] [data-dial-view="overview"]').count(),0);
     await page.screenshot({path:path.join(report,`more-map-${engine}-${mobile?'mobile':'desktop'}.png`)});
     if(!mobile) {
-      assert.equal(await page.locator('[data-dial-top]').count(),0,'My Khor shares the page header');
-      assert.ok(await page.locator('[data-side]:visible').count(),'My Khor keeps the More sidebar');
-      const marks=await more.locator('[data-more-glyph] svg').evaluateAll(items=>items.map(item=>({width:item.getBoundingClientRect().width,height:item.getBoundingClientRect().height})));
-      assert.ok(marks.length>1&&marks.every(mark=>mark.width===marks[0].width&&mark.height===marks[0].height),'My Khor uses the same glyph dimensions as every other entry');
+      assert.equal(await page.locator('[data-dial-top]').count(),1,'Standalone My Khor owns one header');
+      assert.equal(await page.locator('[data-side]:visible').count(),0,'Standalone My Khor has no More sidebar');
     }
+    assert.equal(await more.count(),0,'My Khor does not include More navigation');
+    await page.locator('[data-dial-back]:visible').click();
+    await page.waitForFunction(()=>!document.querySelector('[data-dial-page]'));
+    assert.equal(await more.count(),0,'My Khor returns to its original landing');
+    await open();
     await pick('workspace');
     await page.reload();
     if(mobile) {
