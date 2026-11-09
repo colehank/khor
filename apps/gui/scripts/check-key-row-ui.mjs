@@ -14,7 +14,7 @@ mkdirSync(evidence,{recursive:true});
 const fixture=mkdtempSync(join(gui,'.key-row-check-'));
 const sourceFiles=['src/views/TermKeys.tsx','src/views/KeyRowEntryEditor.tsx','src/views/TerminalKeyboard.tsx','src/lib/term-keyboard-layout.ts','src/views/more/AppearanceRows.tsx','src/views/TerminalPane.tsx','src/lib/term-key-model.ts','src/lib/term-key-codec.ts','src/lib/term-keys.ts','src/lib/term-kitty.ts','src/gen/catalog.ts','src/components/ui/popup-button.tsx','src/components/ui/dropdown-menu.tsx','src/components/AgentInteraction.tsx','scripts/fixtures/key-row-probe.tsx','scripts/popup-helpers.mjs','scripts/check-key-row-ui.mjs'];
 const fingerprint=()=>Object.fromEntries(sourceFiles.map(file=>[file,createHash('sha256').update(readFileSync(join(gui,file))).digest('hex')]));
-const before=fingerprint(),results=[],errors=[];
+const before=fingerprint(),results=[],errors=[],groupErrors=[];
 writeFileSync(join(fixture,'index.html'),'<meta name="viewport" content="width=device-width, initial-scale=1"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),readFileSync(new URL('./fixtures/key-row-probe.tsx',import.meta.url)));
 let server,browser;
@@ -27,6 +27,7 @@ try{
  const url=`http://127.0.0.1:${port}/${fixture.split('/').pop()}/index.html`;
  // Exercise the production shared menu and agent form, including keyboard and long lists.
  const choicesPage=await context.newPage();choicesPage.on('pageerror',error=>errors.push(error.message));await choicesPage.goto(url+'?choices=1');
+ try{
  const trigger=choicesPage.getByRole('button',{name:'Grouped choices: Gamma',exact:true});await trigger.focus();await choicesPage.keyboard.press('ArrowDown');
  const menu=choicesPage.locator('[data-popup-menu]:visible');await menu.waitFor();
  await choicesPage.waitForFunction(()=>document.activeElement?.getAttribute('data-popup-option')==='gamma');
@@ -50,6 +51,9 @@ try{
  await choicesPage.keyboard.press('Escape');await multi.waitFor({state:'detached'});await form.getByRole('button',{name:'确认',exact:true}).click();
  assert.deepEqual(await choicesPage.evaluate(()=>window.__keyWire.answers),[{action:'accept',content:{agents:['codex'],machine:'remote'}}]);await choicesPage.close();
  mark('shared menu grouping, disabled choices, current focus, typeahead, long-list bounds, Khor font, multi-select and required agent answers');
+ }catch(error){groupErrors.push({group:'choice-menu',error:String(error),stack:error.stack});await choicesPage.screenshot({path:join(evidence,'choice-menu-failure.png'),fullPage:true}).catch(()=>{});}
+ finally{await choicesPage.close();}
+
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
  page.setDefaultTimeout(10000);await page.goto(url);
  const editor=page.locator('[data-key-row-editor]');
@@ -132,6 +136,6 @@ try{
   await small.locator('[data-key-entry-save]').click();assert.equal(await small.evaluate(()=>JSON.parse(localStorage.getItem('khor.term-key-row')).entries.filter(entry=>entry.label==='手机组合').length),1);
   assert.equal(await small.evaluate(()=>window.__keyWire.inputs.length),0);await narrow.close();mark(`mobile ${width}: reversible selection, modifiers, compact keyboard, fixed save and keyboard viewport`);
  }
- assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),before);writeFileSync(join(evidence,'result.json'),JSON.stringify({passed:results.length,results,sources:before,unchanged:true,errors},null,2));console.log(JSON.stringify({passed:results.length,evidence}));
-}catch(error){const screenshots=[];for(const context of browser?.contexts()??[])for(const page of context.pages()){const path=join(evidence,`failure-${screenshots.length}.png`);try{await page.screenshot({path,fullPage:true,timeout:5000});screenshots.push({path})}catch(capture){screenshots.push({path,error:String(capture)})}}writeFileSync(join(evidence,'failure.json'),JSON.stringify({error:String(error),stack:error.stack,results,errors,screenshots,before,after:fingerprint()},null,2));throw error}
+ assert.deepEqual(groupErrors,[]);assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),before);writeFileSync(join(evidence,'result.json'),JSON.stringify({passed:results.length,results,sources:before,unchanged:true,errors},null,2));console.log(JSON.stringify({passed:results.length,evidence}));
+}catch(error){const screenshots=[];for(const context of browser?.contexts()??[])for(const page of context.pages()){const path=join(evidence,`failure-${screenshots.length}.png`);try{await page.screenshot({path,fullPage:true,timeout:5000});screenshots.push({path})}catch(capture){screenshots.push({path,error:String(capture)})}}writeFileSync(join(evidence,'failure.json'),JSON.stringify({error:String(error),stack:error.stack,results,errors,groupErrors,screenshots,before,after:fingerprint()},null,2));throw error}
 finally{await browser?.close();await server?.close();rmSync(fixture,{recursive:true,force:true})}
