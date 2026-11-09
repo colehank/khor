@@ -10,15 +10,25 @@ try {
   const file=join(folder,'navigation.mjs');
   writeFileSync(file,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
   const {settingsPages,isSettingsPage,lastSettingsPage,rememberSettingsPage}=await import(pathToFileURL(file));
+  const moreSource=readFileSync(new URL('../src/lib/more-navigation.ts',import.meta.url),'utf8');
+  const moreFile=join(folder,'more.mjs');
+  writeFileSync(moreFile,ts.transpileModule(moreSource,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText.replace('./settings-navigation','./navigation.mjs'));
+  const {morePageOrder,isMorePage,lastMorePage,rememberMorePage}=await import(pathToFileURL(moreFile));
   const values=new Map();
   globalThis.window={localStorage:{getItem:key=>values.get(key)??null,setItem:(key,value)=>values.set(key,value)}};
   assert.equal(lastSettingsPage(),'appearance');
   rememberSettingsPage('workspace');assert.equal(lastSettingsPage(),'workspace');
   for(const page of settingsPages){rememberSettingsPage(page);assert.equal(lastSettingsPage(),page);}
+  assert.equal(lastMorePage(),'me');
+  assert.deepEqual(morePageOrder,['me',...settingsPages,'store','notifications','doctor']);
+  for(const page of morePageOrder){rememberMorePage(page);assert.equal(lastMorePage(),page);assert.equal(isMorePage(page),true);}
+  values.set('khor.more-page','removed-more-section');assert.equal(lastMorePage(),'me');
+  for(const invalid of [null,undefined,{},'settings','network','<script>'])assert.equal(isMorePage(invalid),false);
   values.set('khor.settings-pane','deleted-category');assert.equal(lastSettingsPage(),'appearance');
   for(const invalid of [null,undefined,{},'me','doctor','settings','<script>'])assert.equal(isSettingsPage(invalid),false);
   window.localStorage.getItem=()=>{throw new Error('storage unavailable');};
   window.localStorage.setItem=()=>{throw new Error('storage unavailable');};
+  assert.equal(lastMorePage(),'me');assert.doesNotThrow(()=>rememberMorePage('doctor'));
   assert.equal(lastSettingsPage(),'appearance');assert.doesNotThrow(()=>rememberSettingsPage('terminal'));
   const native=readFileSync(new URL('../../../crates/node/src/config.rs',import.meta.url),'utf8');
   const inventory=native.match(/pub const PAGES:[\s\S]*?=\s*&\[([\s\S]*?)\];/)[1];

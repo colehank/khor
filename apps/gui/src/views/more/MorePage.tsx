@@ -1,21 +1,5 @@
-// The four pages behind 「…」 and the avatar (docs/MORE.md), and the one
-// frame all four wear.
-//
-// **A page, not a dialog, and that is the ruling rather than a taste.**
-// 设置 was a `Dialog` until 2026-09-19 — 「进一步点击都是独立的界面」 —
-// and the difference shows up in three places a dialog cannot follow:
-// a page takes the whole region beside the rail (a dialog is a box over
-// whatever was behind it, which on the narrow face means a screen
-// pretending to be a sheet), a page's head is a drag region like every
-// other landing's head (第八轮 第 59 条), and a page is the thing on
-// screen — so the rail still answers 我在哪一页 while it is open.
-//
-// **What a page does *not* get is a rail seat.** These are not landings
-// (`App.tsx`'s `Landing`): a landing is a list beside a detail and is
-// where you are; one of these is opened, read, and closed back to
-// wherever you were. That is the same structural line the mark's place
-// sits on, and it is why the open page is held apart from the landing
-// rather than being another value of it.
+// More is one main-app destination with stable navigation. Its page bodies
+// share the existing Region on desktop and list/detail navigation on mobile.
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { MidName } from "@/browse/TabStrip";
@@ -26,7 +10,9 @@ import { GlassCircle } from "@/components/Glass";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
-import { settingsPages, isSettingsPage, type SettingsPage } from "@/lib/settings-navigation";
+import { isSettingsPage } from "@/lib/settings-navigation";
+import type { MorePage } from "@/lib/more-navigation";
+export { morePageOrder, type MorePage } from "@/lib/more-navigation";
 
 /**
  * Which page of 更多 is open. `null` is none — the landing underneath is
@@ -43,23 +29,6 @@ import { settingsPages, isSettingsPage, type SettingsPage } from "@/lib/settings
  * STORE-BRIEF phase 1, 2026-10-07) joined 更多's own items beside 诊断:
  * received files and where they land (`views/StorePage`).
  */
-export type MorePage =
-  | SettingsPage
-  | "me"
-  | "store"
-  | "doctor"
-  | "notifications";
-
-/** More utilities retain their routes; the settings sidebar filters this
-    inventory to its seven settings categories. */
-export const morePageOrder: readonly MorePage[] = [
-  "me",
-  ...settingsPages,
-  "store",
-  "notifications",
-  "doctor",
-];
-
 /** Whether a page is one of 设置's — reached through its list — rather
     than one 更多's menu opens by itself (我的 khor, 存储, 诊断; UX-16). On the
     narrow face the second kind is pushed over the landing it was opened

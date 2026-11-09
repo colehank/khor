@@ -3,7 +3,6 @@ import {retainSessionDocuments} from '@/hooks/use-session-documents';
 import {SessionLinkScope} from "@/views/SessionLinkScope";
 import {SessionContentColumn} from "@/views/SessionContentColumn";
 import {SessionContentSeat,useSessionContentDock} from "@/hooks/use-session-content-dock";
-import { IconRecent } from "@/components/icons";
 import { NotificationsPage } from "@/views/NotificationsPage";
 import { receiveNotifications, sessionNotificationsEnabled, useNotificationInbox } from "@/lib/notifications";
 import type { InboxItem } from "@/lib/notification-inbox";
@@ -49,27 +48,20 @@ import {
   type SessionRow,
   type WorkspaceRow,
 } from "@/api";
-import { MachineAvatar } from "@/components/Avatar";
 import {
-  IconAppearance,
   IconBack,
   IconBrowser,
-  IconChevronRight,
   IconClose,
   IconDevices,
   IconFiles,
-  IconGear,
-  IconNetwork,
-  IconPulse,
   IconQuota,
   IconSessions,
-  IconShield,
-  IconStore,
-  IconTerminal,
 } from "@/components/icons";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { DirPicker } from "@/components/DirPicker";
-import { FloatNav, MoreMenuItems, type NavSeat } from "@/components/FloatNav";
+import { FloatNav, type NavSeat } from "@/components/FloatNav";
+import {MoreNavigation} from "@/views/more/MoreNavigation";
+import {isMorePage,lastMorePage,rememberMorePage} from "@/lib/more-navigation";
 import { LandingStrip } from "@/components/LandingStrip";
 import { ListPane } from "@/components/ListPane";
 import { type OmniAxis } from "@/components/Omnibox";
@@ -150,7 +142,7 @@ import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspaceMemories, workspaceIdentity } from "@/views/workspace/workspace-memory";
 import { WorkspaceDraftOwner } from "@/views/workspace/use-workspace-memory";
 import { LockScreen } from "@/views/LockScreen";
-import { inSettings, moreName, morePageOrder, type MorePage } from "@/views/more/MorePage";
+import { moreName, type MorePage } from "@/views/more/MorePage";
 import { StorePage, StoreScreen } from "@/views/StorePage";
 import { rememberPlace, storedPlace } from "@/lib/place";
 import { isSettingsPage, lastSettingsPage, rememberSettingsPage, type SettingsRequest } from "@/lib/settings-navigation";
@@ -159,7 +151,7 @@ import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { ConnectionPage } from "@/views/more/ConnectionPage";
 import { SessionPage, TerminalPage, WorkspacePage } from "@/views/more/GroupPages";
-import { MyKhorPage } from "@/views/more/MyKhorPage";
+import { MyKhorPage, type MyKhorView } from "@/views/more/MyKhorPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { AboutPage } from "@/views/more/AboutPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
@@ -177,9 +169,9 @@ import { Region, RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { useKeptScroll } from "@/hooks/use-kept-scroll";
 import { useEdgeSwipe } from "@/hooks/use-edge-swipe";
-import { FIND_ALL, NarrowHead, SideHead, SideSeat, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
+import { FIND_ALL, NarrowHead, SideHead, SideSeatsProvider, useSideSeats } from "@/components/SideHead";
 import { SessionScreen } from "@/components/SessionBar";
-import { useShortcuts, useTabHost, walkList } from "@/lib/shortcuts";
+import { useShortcuts, useTabHost } from "@/lib/shortcuts";
 import { ImportDialog } from "@/views/ImportDialog";
 import { NewSessionPage } from "@/views/NewSessionPage";
 import { MachineChat,retainKhorPromptTokens } from "@/views/MachineChat";
@@ -334,22 +326,6 @@ const NO_QUERIES: Record<Landing, string> = {
   browser: "",
 };
 
-/** The glyph beside each 更多 page in its list (`me` wears this
-    machine's face instead, drawn where the list is). 关于 has no glyph of
-    its own in the set yet and wears the gear, 设置's. */
-const MORE_GLYPH: Record<Exclude<MorePage, "me">, (p: { className?: string }) => ReactNode> = {
-  appearance: IconAppearance,
-  terminal: IconTerminal,
-  session: IconSessions,
-  workspace: IconFiles,
-  connection: IconNetwork,
-  security: IconShield,
-  about: IconGear,
-  // 存储 wears its own tray (store-c): received files, not a page.
-  store: IconStore,
-  doctor: IconPulse,
-  notifications: IconRecent,
-};
 
 /** **A dropping file's name on the pill: no extension, no count** (the
     owner 2026-10-07 13:15): the line is the whole drop's, files after
@@ -775,11 +751,12 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(() =>
-    (morePageOrder as readonly string[]).includes(place.more ?? "") ? place.more as MorePage : null,
+    isMorePage(place.more) ? place.more : null,
   );
   useEffect(() => {
     rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs });
     if (isSettingsPage(morePage)) rememberSettingsPage(morePage);
+    if (morePage !== null) rememberMorePage(morePage);
   }, [landing, morePage, screen, selectedDevice, openWs]);
   // **What the agents have cost is no longer asked for here at all.**
   // This used to hold a `usage` answer beside the quota — every day
@@ -793,6 +770,7 @@ export default function App() {
   // here is a registration (`Node::adopt_subscriptions`, docs/SHELL.md
   // 第七轮 第 3 条) and comes in with the board like every other row.
 
+  const [khorView,setKhorView] = useState<MyKhorView>("overview");
   const [recognitionMachine, setRecognitionMachine] = useState<string | null>(null);
   const settingsOpener = useRef<((request: SettingsRequest) => void) | null>(null);
   useEffect(() => {
@@ -963,11 +941,6 @@ export default function App() {
     if (!rowsRead || lock.locked) return;
     receiveNotifications(rawRows, (id) => onScreen.current(id));
   }, [rawRows, rowsRead, lock.locked, hidden, morePage, switchingTabs]);
-  const openNotifications = () => {
-    setMorePage("notifications");
-    setSwitchingTabs(false);
-    setScreen("detail");
-  };
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
     setSelectedDevice(row.id);
@@ -1427,12 +1400,6 @@ export default function App() {
   const me = devices.find((d) => d.me) ?? null;
   /** The wide face's list put away by pressing the open landing again. */
   const folded = !narrow && listPane.collapsed;
-  /** **我的 khor is one page, the dial** (UX-26): on the wide face the
-      list column folds away for the page's lifetime (nothing beside it)
-      and ‹ at its top-left closes it back to the landing it was opened
-      over. The column's own fold state is untouched — it comes back as
-      it was. */
-  const dial = !narrow && morePage === "me";
   /** The wide face's top row (方案 B): the landings' glyphs beside the
       window's buttons, then 更多. The open landing pressed again folds its
       list, and once more brings it back; another landing switches and
@@ -1450,42 +1417,14 @@ export default function App() {
   };
   settingsOpener.current = enterSettings;
   const moreSettings = () => enterSettings();
-  const moreDoctor = () => {
-    setMorePage("doctor");
-    setScreen("detail");
+  const enterMore = () => {
+    if (!narrow && morePage !== null) { listPane.toggle(); return; }
+    setMorePage(morePage ?? lastMorePage());
+    setKhorView("overview");
+    setScreen(narrow ? "list" : "detail");
     setSwitchingTabs(false);
     listPane.expand();
   };
-  const moreStore = () => {
-    setMorePage("store");
-    setScreen("detail");
-    setSwitchingTabs(false);
-    listPane.expand();
-  };
-  const moreMe = () => {
-    setMorePage("me");
-    setScreen("detail");
-    setSwitchingTabs(false);
-    listPane.expand();
-  };
-  const moreMenu = (
-    <MoreMenuItems
-      more={navOrder.slice(NAV_SHOWN).map(seatOf)}
-      // The open landing chosen again folds its list, the strip's one
-      // rule, from 更多's menu too (wide; narrow `goLanding` pops it).
-      onGo={(key) => {
-        if (!narrow && morePage === null && landing === key) listPane.toggle();
-        else goLanding(key as Landing);
-      }}
-      onSettings={moreSettings}
-      onDoctor={moreDoctor}
-      onStore={moreStore}
-      onNotifications={openNotifications}
-      unreadNotifications={inbox.items.filter((item) => !item.read).length}
-      me={me ? { face: me.face } : null}
-      onMe={moreMe}
-    />
-  );
   const strip = (
     <LandingStrip
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
@@ -1497,9 +1436,7 @@ export default function App() {
         if (morePage === null && landing === key) listPane.toggle();
         else goLanding(key as Landing);
       }}
-      // ⚠️ 墓碑 (UX-19): `onMore`, a circle of its own that opened 我的 khor
-      // beside 更多's list, and none on a Mac (UX-10).
-      moreMenu={moreMenu}
+      onMore={enterMore}
     />
   );
   /** **Folded, the strip does not move** (the audit fix plan F3.1; W01):
@@ -1519,32 +1456,12 @@ export default function App() {
   ) : null;
   const nav = (
     <FloatNav
-      onNotifications={openNotifications}
       unreadNotifications={inbox.items.filter((item) => !item.read).length}
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
-      more={navOrder.slice(NAV_SHOWN).map(seatOf)}
       active={morePage === null ? landing : null}
       moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
       onGo={(key) => goLanding(key as Landing)}
-      onSettings={moreSettings}
-      onDoctor={() => {
-        setMorePage("doctor");
-        setScreen("detail");
-        setSwitchingTabs(false);
-      }}
-      onStore={() => {
-        setMorePage("store");
-        setScreen("detail");
-        setSwitchingTabs(false);
-      }}
-      me={me ? { face: me.face } : null}
-      onMe={() => {
-        setMorePage("me");
-        setScreen("detail");
-        setSwitchingTabs(false);
-      }}
-      // Floating over the foot of whatever holds it — the screen, or the
-      // list column — centred, clear of a phone's home indicator.
+      onMore={enterMore}
       className="absolute bottom-[var(--nav-bottom)] left-1/2 z-30 -translate-x-1/2"
     />
   );
@@ -3102,7 +3019,7 @@ export default function App() {
       设置's list; 我的 khor and 诊断 are 更多's own items (UX-16), pushed
       over the landing they were opened from, so they go back to it. */
   const leaveMorePage = () => {
-    if (narrow && morePage !== null && inSettings(morePage)) {
+    if (narrow && morePage !== null) {
       setScreen("list");
       return;
     }
@@ -3210,9 +3127,10 @@ export default function App() {
       />
     ) : (
       <MyKhorPage
+        view={khorView} onView={setKhorView}
         devices={devices}
         rows={rows}
-        onClose={leaveMorePage}
+        onClose={()=>khorView !== "overview" ? setKhorView("overview") : leaveMorePage()}
         // The card's acts (UX-26 rule 6): each one is a road the app
         // already has — the machine's page on its sessions, the wizard
         // with the machine picked, a landing narrowed to the machine
@@ -3255,152 +3173,13 @@ export default function App() {
       />
     );
 
-  /**
-   * **更多's L2** (docs/SHELL.md 第十七轮 §1): its six sections, in the
-   * spec's order, as a list beside the page — System Settings' shape.
-   * 「…」 used to open a menu of four pages; it opens this landing now,
-   * and every door that menu had is a row here (网络 / 通用 / 安全 / 诊断)
-   * or, on the narrow bar, one of the folded landings at the top.
-   *
-   * `data-more-open` keeps the key the menu items wore, so every walk
-   * that pressed 「…」 then a page still presses the same two things.
-   */
   const moreList = (
-    <nav
-      data-more-list
-      data-settings-navigation={inSettings(morePage) ? "" : undefined}
-      aria-label={inSettings(morePage) ? gui.nav_settings : gui.rail_more}
-      // ↑ ↓ Home End between the sections, System Settings' sidebar.
-      onKeyDown={(e) => walkList(e, "[data-more-landing], [data-more-open]")}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1"
-    >
-      {/* The list page's title, 设置 — in the head row on the narrow face,
-          a row of its own under the window's corner on the wide one (the
-          same two places `PaneBar` puts a landing's). */}
-      {narrow ? (
-        <NarrowHead>
-          {() => <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.nav_settings}</h1>}
-        </NarrowHead>
-      ) : (
-        <SideSeat>
-          {/* Settings have their own category list within the same app shell. */}
-          <h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">
-            {inSettings(morePage) ? gui.nav_settings : gui.rail_more}
-          </h1>
-        </SideSeat>
-      )}
-      {/* **这台机器 first, on the wide face** (the owner, 2026-10-02: its
-          face left the top row and lives in 更多): this machine's face and
-          name, over the word for the page. Narrow keeps it in its place
-          among the sections; its 更多 menu already leads to it. */}
-      {/* Utilities keep their current routes; settings show only settings categories. */}
-      {!narrow && !inSettings(morePage) && (
-        <button
-          type="button"
-          data-more-open="me"
-          data-more-me
-          data-on={morePage === "me"}
-          // **One Tab stop for the list** (F3.8): the open section's row,
-          // or this first one; ↑ ↓ walk the rest.
-          tabIndex={morePage === null || morePage === "me" ? 0 : -1}
-          onClick={() => {
-            setMorePage("me");
-            setScreen("detail");
-          }}
-          className={cn(
-            "mx-in mb-xxs flex min-h-row-2 items-center gap-row rounded-md px-3 text-start text-headline focus-visible:-outline-offset-2",
-            morePage === "me" ? "bg-fill-strong" : "hover:bg-fill",
-          )}
-        >
-          <span className="flex w-list-face flex-none items-center justify-center">
-            <MachineAvatar face={me?.face ?? null} className="size-avatar flex-none" />
-          </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate">{me?.shown ?? moreName("me")}</span>
-            <span className="truncate text-callout text-muted-foreground">{moreName("me")}</span>
-          </span>
-        </button>
-      )}
-      {/* **Narrow: 设置's seven, as iOS Settings' first screen** (UX-16):
-          one inset-grouped card on the ground, a row per page — its
-          glyph, its name, the chevron that says it opens a page — with
-          the card's hairlines between them. 我的 khor and 诊断 are 更多's
-          own items and are not here. */}
-      {narrow ? (
-        <div data-settings-card data-more-card className="mx-page mt-in mb-pane flex min-w-0 flex-col">
-          {morePageOrder.filter(inSettings).map((p) => (
-            <button
-              key={p}
-              type="button"
-              data-setting-row="nav"
-              data-more-open={p}
-              aria-current={morePage === p ? "page" : undefined}
-              tabIndex={p === (morePage ?? "appearance") ? 0 : -1}
-              onClick={() => {
-                setMorePage(p);
-                setScreen("detail");
-              }}
-              className="flex min-h-touch items-center gap-row px-row text-start text-body focus-visible:-outline-offset-2"
-            >
-              <span data-more-glyph={p} className="flex flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
-                {(() => {
-                  const Glyph = MORE_GLYPH[p as Exclude<MorePage, "me">];
-                  return <Glyph className="size-nav-glyph" />;
-                })()}
-              </span>
-              <span className="min-w-0 flex-1 truncate">{moreName(p)}</span>
-              <IconChevronRight className="size-affordance flex-none text-tertiary" />
-            </button>
-          ))}
-        </div>
-      ) : (
-        // Stable category navigation in the main window.
-        morePageOrder
-          .filter((p) => inSettings(morePage) ? inSettings(p) : p !== "me")
-          .map((p) => (
-            <button
-              key={p}
-              type="button"
-              data-more-open={p}
-              data-on={morePage === p}
-              aria-current={morePage === p ? "page" : undefined}
-              tabIndex={morePage === p ? 0 : -1}
-              onClick={() => {
-                setMorePage(p);
-                setScreen("detail");
-              }}
-              // **A list row like every other list's** (the audit fix plan
-              // F2.1): the glyph in the face's slot so the words start on
-              // the x the 我的 khor row's do, the title `headline`, and the
-              // hairline under the words.
-              className={cn(
-                // The ring inside the row, as every list row's (W-V6).
-                "mx-in flex min-h-touch items-stretch gap-row rounded-md ps-3 text-start text-headline focus-visible:-outline-offset-2",
-                p === "store" && "mt-group",
-                morePage === p ? "bg-fill-strong" : "hover:bg-fill",
-              )}
-            >
-              <span data-more-glyph={p} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
-                {(() => {
-                  const Glyph = MORE_GLYPH[p as Exclude<MorePage, "me">];
-                  return <Glyph className="size-nav-glyph" />;
-                })()}
-              </span>
-              <span
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-row py-1 pe-3",
-                  // Its hairline ends where a list's does (W-V10); none
-                  // under the last of the seven or under 诊断.
-                  p !== "about" && p !== "doctor" && "border-b",
-                  morePage === p && "border-transparent",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate">{moreName(p)}</span>
-              </span>
-            </button>
-          ))
-      )}
-    </nav>
+    <MoreNavigation page={morePage} narrow={narrow}
+      overflow={navOrder.slice(NAV_SHOWN).map(seatOf)}
+      unread={inbox.items.filter(item=>!item.read).length}
+      onPage={page=>{setKhorView("overview");setMorePage(page);setScreen("detail");}}
+      onLanding={key=>goLanding(key as Landing)}
+    />
   );
 
   /**
@@ -3608,7 +3387,7 @@ export default function App() {
               {null}
             </SessionScreen>
           )
-        : morePage !== null && inSettings(morePage)
+        : morePage !== null
           ? moreList
           : quotas
             ? (
@@ -3825,7 +3604,7 @@ export default function App() {
           <aside
             data-side
             data-search-glass
-            hidden={folded || dial}
+            hidden={folded}
             className="flex flex-none flex-col border-r bg-side"
             style={{ "--list-w": `${listPane.width}px` } as CSSProperties}
           >
@@ -3868,12 +3647,10 @@ export default function App() {
               content has a seam of its own inside, so a broken page
               keeps its R0 and the list beside it. */}
           <Fault name="page" reset={seamAt}>
-          {dial ? (
-            morePageEl
-          ) : morePage ? (
+          {morePage ? (
             <Region
               kind="detail"
-              title={moreName(morePage)}
+              title={morePage === "me" && khorView !== "overview" ? gui.khor_network_topology : moreName(morePage)}
               caption={stale ? gui.backend_unreachable : undefined}
               // The way out, at R0's right end with the page's other
               // buttons (components/Toolbar, D9) — not a second head in
@@ -3885,8 +3662,8 @@ export default function App() {
               // plan F4.9; W21).
               actions={
                 (
-                  <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
-                    <IconClose />
+                  <GlassCircle aria-label={morePage === "me" && khorView !== "overview" ? gui.back : gui.close} data-more-close onClick={() => morePage === "me" && khorView !== "overview" ? setKhorView("overview") : setMorePage(null)}>
+                    {morePage === "me" && khorView !== "overview" ? <IconBack/> : <IconClose/>}
                   </GlassCircle>
                 )
               }

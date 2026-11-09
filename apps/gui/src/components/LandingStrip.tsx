@@ -24,7 +24,6 @@ import { useRef, type ReactNode } from "react";
 
 import { GlassCircle } from "@/components/Glass";
 import { IconMore } from "@/components/icons";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { useTravel } from "@/lib/travel";
@@ -78,7 +77,7 @@ export function LandingStrip({
   active,
   moreOn,
   onGo,
-  moreMenu,
+  onMore,
 }: {
   /** The four landings on the bar (`NAV_SHOWN`), as the phone's. */
   seats: StripSeat[];
@@ -87,8 +86,8 @@ export function LandingStrip({
   /** Whether 更多 holds the page on screen. */
   moreOn: boolean;
   onGo: (key: string) => void;
-  /** 更多's menu: 我的 khor, the folded landings, 设置, 诊断 (`MoreMenuItems`). */
-  moreMenu: ReactNode;
+  /** Opens the shared More destination, or folds its current list. */
+  onMore: () => void;
 }) {
   // The chosen pill slides to the landing pressed (F7.2, `lib/travel`).
   const strip = useRef<HTMLElement>(null);
@@ -118,30 +117,14 @@ export function LandingStrip({
           </Seat>
         ))}
       </nav>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <GlassCircle
-            data-rail-item
-            data-rail-more
-            data-on={moreOn}
-            aria-label={gui.rail_more}
-            className={cn("data-[state=open]:glass-sel", moreOn && "glass-sel text-[var(--rail-on-ink)]")}
-          >
-            <IconMore />
-          </GlassCircle>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          side="bottom"
-          align="end"
-          sideOffset={8}
-          data-nav-menu
-          data-rail-more-menu
-          onCloseAutoFocus={(e) => e.preventDefault()}
-          className="min-w-nav-menu"
-        >
-          {moreMenu}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <GlassCircle
+        data-rail-item data-rail-more data-on={moreOn}
+        aria-label={gui.rail_more} aria-current={moreOn ? "page" : undefined}
+        onClick={onMore}
+        className={cn(moreOn && "glass-sel text-[var(--rail-on-ink)]")}
+      >
+        <IconMore />
+      </GlassCircle>
     </div>
   );
 }

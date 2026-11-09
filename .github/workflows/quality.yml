@@ -54,6 +54,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.95.0
       - name: Prepare canonical Lab fixture data
         run: python3 scripts/khor_lab/fixture_data.py .
+      - name: Preserve the canonical domain cache for source-only reviews
+        run: |
+          mkdir -p "$RUNNER_TEMP/lab-report"
+          cp apps/gui/dev/lab/data/world.generated.json "$RUNNER_TEMP/lab-report/native-world.generated.json"
       - run: npm ci
         working-directory: apps/gui
       - name: Check and build the real App Lab from this revision

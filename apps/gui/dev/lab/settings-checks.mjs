@@ -7,18 +7,22 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
   const errors=[];page.on('pageerror',error=>errors.push(String(error)));
   const open=async()=>{
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').click();
-    await page.locator('[data-nav-settings]:visible').click();
   };
   try {
     await page.goto(`http://127.0.0.1:${port}/app/?scene=devices&machines=3`);
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').waitFor();
     const size=page.viewportSize();
     await open();
+    const more=page.locator('[data-more-list]:visible');
+    const inventory=()=>more.locator('[data-more-open]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-more-open')));
     const navigation=page.locator('[data-settings-navigation]:visible');
     await navigation.waitFor();
     assert.equal(await navigation.locator('[data-more-open]').count(),7,'Settings categories are not mixed with machines, storage or diagnostics');
-    assert.equal(await navigation.locator('[data-more-me]').count(),0);
-    if(!mobile)await page.locator('[data-more-page="appearance"]:visible').waitFor();
+    assert.equal(await more.locator('[data-more-me]').count(),1);
+    const original=await inventory();
+    assert.deepEqual(original,['me','appearance','terminal','session','workspace','connection','security','about','store','notifications','doctor']);
+    assert.equal(await page.locator('[data-nav-menu]').count(),0,'More opens a page rather than a popup');
+    if(!mobile)await page.locator('[data-more-page="me"]:visible').waitFor();
     await navigation.locator('[data-more-open="workspace"]').click();
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     const picker=page.locator('[data-more-page="workspace"] select').first();
@@ -43,6 +47,25 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       await navigation.locator('[data-more-open="workspace"]').click();
     }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
+    const pick=async key=>{
+      if(mobile){await page.locator('[data-more-back]:visible').click();await more.waitFor();}
+      await more.locator(`[data-more-open="${key}"]`).click();
+      await page.locator(`[data-more-page="${key}"]:visible`).waitFor();
+      if(!mobile)assert.deepEqual(await inventory(),original,'Every More page keeps the same navigation');
+    };
+    for(const key of ['doctor','store','me'])await pick(key);
+    await page.locator('[data-network-profile]:visible').waitFor();
+    assert.equal(await page.locator('[data-network-profile] [data-network-mark]').count(),1,'The network has its own identity mark');
+    assert.equal(await page.locator('[data-network-member]').count(),3,'Members are the actual machine rows');
+    await page.locator('[data-network-action="topology"]').click();
+    await page.locator('[data-more-page="me"][data-dial-view="map"]:visible').waitFor();
+    await page.locator(mobile ? '[data-dial-back]:visible' : '[data-more-close]:visible').click();
+    await page.locator('[data-network-profile]:visible').waitFor();
+    if(!mobile) {
+      assert.equal(await page.locator('[data-dial-top]').count(),0,'My Khor shares the page header');
+      assert.ok(await page.locator('[data-side]:visible').count(),'My Khor keeps the More sidebar');
+    }
+    await pick('workspace');
     await page.reload();
     if(mobile) {
       // Mobile cold start intentionally restores the landing, not a pushed page.

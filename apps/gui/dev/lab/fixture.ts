@@ -2,7 +2,7 @@ import labMedia from './data/media.generated.json';
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture} from './navigation';
 import {pairingFixture} from './pairing';
-import {labDevices,labModels,labQuota,labRoot,labUsage,labSettings} from './world';
+import {labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labRoadShare,labDoctor} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
@@ -323,6 +323,10 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "quota": answer = { quota:quota[0] ? {windows:quota[0].reading.windows,as_of:null,plan:'Max 20x',credits:null,fill:.36,source:'lab',limit_reached:false} : null,trouble:null }; break;
           case "agents": answer = [{name:'codex-acp',command:'npx -y @agentclientprotocol/codex-acp@2.2.2'},
             {name:'claude-acp',command:'npx -y @agentclientprotocol/claude-agent-acp@0.94.0'}];break;
+          case "about": answer=labAbout;break;
+          case "relays": answer=labRelays;break;
+          case "road_share": answer=labRoadShare;break;
+          case "doctor": answer=labDoctor;break;
           case "config": answer = settingsRows(); break;
           case "set_config": {
             const row = settingsRows().find(row => row.name === body.name);

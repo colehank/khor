@@ -1,8 +1,5 @@
-// 我的 khor is one page, the dial (UX-26, the owner 2026-10-06, agreed on
-// the prototype `audit/my-khor-dial.html`): no settings nav beside it,
-// no card ground, no face block on top. Wide: the list column folds and
-// ‹ goes back to 更多; phone: the content pages' deck (‹ · 「我的 khor」
-// with the 地图/矩阵 segment · 「…」).
+// My Khor shares the More navigation and desktop page header. Its map/matrix
+// remains the page body; the mobile deck returns to the same More list.
 //
 // **The dial.** This machine in the middle on the page's one olive (the
 // `brand-halo` disc); three hairline rings — 30 ms, 120 ms and the rim
@@ -66,8 +63,8 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { GlassCircle } from "@/components/Glass";
 import { MachineFace } from "@/components/SessionFace";
 import { IconBack, IconMore } from "@/components/icons";
-import { WindowControls } from "@/components/Region";
-import { WINDOW_DRAG } from "@/components/shell";
+import { PageAction } from "@/components/Region";
+import {NetworkOverview} from "./NetworkOverview";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -90,6 +87,7 @@ import { RootWordsDialog } from "@/views/PairDialogs";
 import { agoOf, downWord, latency } from "@/words";
 
 type View = "map" | "matrix";
+export type MyKhorView = "overview" | View;
 
 /** What the card is about: this machine, or another by id. */
 type Opened = { id: string; at: DOMRect | null };
@@ -146,6 +144,8 @@ function wayWord(l: Link): string {
 }
 
 export function MyKhorPage({
+  view,
+  onView,
   devices,
   rows,
   onClose,
@@ -160,6 +160,8 @@ export function MyKhorPage({
   onChanged,
   onReset,
 }: {
+  view:MyKhorView;
+  onView:(view:MyKhorView)=>void;
   /** The shell's own polled table — **not fetched again here** (two
       readers of one answer is how two surfaces disagree). */
   devices: DeviceRow[];
@@ -192,8 +194,7 @@ export function MyKhorPage({
   const coarse = useCoarse();
   // The phone: the whole window (no first row, no landings' bar), as
   // every content page.
-  useFullScreen(narrow);
-  const [view, setView] = useState<View>("map");
+  useFullScreen(narrow && view !== "overview");
   const [about, setAbout] = useState<About | null>(null);
   const [relays, setRelaysKnown] = useState<RelayChoices | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
@@ -248,6 +249,7 @@ export function MyKhorPage({
     setOpened(null);
     setLooked(null);
   }, []);
+  useEffect(()=>{ close(); },[view,close]);
   // A machine that left the table while its card was open.
   useEffect(() => {
     if (opened && !devices.some((d) => d.id === opened.id)) close();
@@ -294,10 +296,10 @@ export function MyKhorPage({
   const segment = (mark: string) => (
     <SegmentedControl<View>
       label={gui.my_khor}
-      value={view}
+      value={view === "overview" ? "map" : view}
       onChange={(v) => {
         close();
-        setView(v);
+        onView(v);
       }}
       mark={{ [mark]: true }}
       className="flex-none"
@@ -378,21 +380,14 @@ export function MyKhorPage({
 
   return (
     <div data-dial-page data-narrow-page={narrow || undefined} className="relative flex h-full min-h-0 flex-1 flex-col bg-card">
-      {/* **The wide face's first row** — the page's own, since the page
-          stands alone in the window (rule 1): the way back where every
-          detail screen's ‹ is, the name, the 地图/矩阵 segment at the
-          right end with the page's buttons. The row is one of the
-          window's handles (`WINDOW_DRAG`). */}
-      {!narrow && (
-        <div data-dial-top {...WINDOW_DRAG} className="flex h-pane-head flex-none items-center gap-in ps-wide-lead-start pe-row select-none">
-          <GlassCircle aria-label={gui.back} data-more-close data-dial-back onClick={onClose}>
-            <IconBack />
-          </GlassCircle>
-          <h1 className="min-w-0 flex-1 truncate text-title-sm font-title">{gui.my_khor}</h1>
-          {segment("data-dial-segment")}
-          <WindowControls />
-        </div>
-      )}
+      {view === "overview" ? <NetworkOverview
+        devices={devices} me={me} holdsRoot={inApp && holdsRoot} onClose={onClose}
+        onMachine={(row,at)=>setOpened({id:row.id,at})}
+        onAdd={()=>onAdd()} onConnections={onOpenRelays} onTopology={()=>{close();onView("map");}}
+        onWords={()=>setShowingWords(true)} onLeave={alone ? undefined : ()=>ask("leave")}
+        onReset={()=>ask("reset")} status={said}
+      /> : <>
+      {!narrow && <PageAction>{segment("data-dial-segment")}</PageAction>}
       <section
         data-more-page="me"
         data-dial-view={view}
@@ -436,6 +431,9 @@ export function MyKhorPage({
             {line}
           </p>
         ))}
+
+      </section>
+      </>}
         {/* **The card**: a popover beside the face on the wide face, the
             phone's sheet on the narrow one (UX-21: the scrim closes it, a
             pull closes it, Esc closes it). */}
@@ -445,7 +443,6 @@ export function MyKhorPage({
             <Float at={opened.at}>{card}</Float>
           </>
         )}
-      </section>
       {narrow && (
         <Dialog open={opened !== null && card !== null} onOpenChange={(o) => !o && close()}>
           <TaskOverlay
@@ -465,14 +462,14 @@ export function MyKhorPage({
       )}
       {/* **The phone's deck** (rule 1): ‹ · the pill with the name and the
           segment · 「…」 for the add menu. */}
-      {narrow && (
+      {narrow && view !== "overview" && (
         <div data-dial-deck className="pointer-events-none absolute inset-x-0 bottom-[var(--safe-bottom)] flex flex-col items-stretch">
           <div className="pointer-events-auto flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
             <GlassCircle aria-label={gui.back} data-more-back data-more-close data-dial-back onClick={onClose}>
               <IconBack />
             </GlassCircle>
             <div data-dial-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-row pe-1">
-              <span className="min-w-0 flex-1 truncate text-body font-title">{gui.my_khor}</span>
+              <span className="min-w-0 flex-1 truncate text-body font-title">{gui.khor_network_topology}</span>
               {segment("data-dial-segment")}
             </div>
             <DropdownMenu>

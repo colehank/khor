@@ -8,11 +8,20 @@ import type {DirRow} from '../../src/gen/bindings/DirRow';
 import type {SystemKind} from '../../src/gen/bindings/SystemKind';
 import type {ModelKind} from '../../src/gen/bindings/ModelKind';
 import type {VitalsReading} from '../../src/gen/bindings/VitalsReading';
+import type {About} from '../../src/gen/bindings/About';
+import type {RelayChoices} from '../../src/gen/bindings/RelayChoices';
+import type {DoctorRow} from '../../src/gen/bindings/DoctorRow';
+import type {RoadShare} from '../../src/gen/bindings/RoadShare';
 import type {Ticket} from '../../src/gen/bindings/Ticket';
 import type {ConfigRow} from '../../src/gen/bindings/ConfigRow';
 import generated from './data/world.generated.json';
 
 const native = generated as {machine_ids:string[];avatars:Record<string,Avatar>;directories:Record<string,{entries:DirRow[];truncated:boolean}>;documents:Record<string,string>;pairing_ticket:Ticket;settings:Record<'zh'|'en',ConfigRow[]>};
+// Explicit synthetic readings: the Lab never diagnoses the actual host.
+export const labAbout:About = {version:'0.0.0-lab',root:'/preview/.khor',paused:false,store_bytes:0,faces:[]};
+export const labRelays:RelayChoices = {mine:[],keyed:[],in_use:[],only_mine:false,preferred:null};
+export const labRoadShare:RoadShare = {direct:0,settled:0,unread:'no-serve'};
+export const labDoctor:DoctorRow[] = [{key:'lab',name:'预览环境',state:'unmeasured',said:'此预览不检查真实机器',group:'lab',group_label:'预览环境',fix:null}];
 export const labSettings = native.settings;
 export const labPairingTicket = native.pairing_ticket;
 
