@@ -25,6 +25,7 @@ try{
  browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});
  const context=await browser.newContext({viewport:{width:1100,height:800}});
  const url=`http://127.0.0.1:${port}/${fixture.split('/').pop()}/index.html`;
+ const open=async p=>{await p.locator('[data-setting-row-name="term-key-row"]').click();await p.locator('[data-key-row-editor]').waitFor()};
  // Exercise the production shared menu and agent form, including keyboard and long lists.
  const choicesPage=await context.newPage();choicesPage.on('pageerror',error=>errors.push(error.message));await choicesPage.goto(url+'?choices=1');
  try{
@@ -54,10 +55,10 @@ try{
  }catch(error){groupErrors.push({group:'choice-menu',error:String(error),stack:error.stack});await choicesPage.screenshot({path:join(evidence,'choice-menu-failure.png'),fullPage:true}).catch(()=>{});}
  finally{await choicesPage.close();}
 
+ try{
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
  page.setDefaultTimeout(10000);await page.goto(url);
  const editor=page.locator('[data-key-row-editor]');
- const open=async(p=page)=>{await p.locator('[data-setting-row-name="term-key-row"]').click();await p.locator('[data-key-row-editor]').waitFor()};
  const row=async()=>page.evaluate(()=>JSON.parse(localStorage.getItem('khor.term-key-row')));
  const custom=async()=>{const value=await row();return value.entries.find(entry=>entry.kind!=='builtin')};
  const add=async()=>{await editor.locator('[data-key-row-add]').click();await editor.locator('[data-key-entry-name]').waitFor()};
@@ -67,7 +68,7 @@ try{
  const cursorMenu=page.locator('[data-popup-menu]:visible');assert.equal(await cursorMenu.locator('[data-cursor-option]').count(),3);
  await page.keyboard.press('Escape');await cursorMenu.waitFor({state:'detached'});assert.equal(await cursor.evaluate(el=>document.activeElement===el),true);
  await pickPopup(cursor,'bar');assert.equal(await cursor.getAttribute('value'),'bar');
- await open();await add();assert.equal(await editor.locator('[data-key-entry-save]').isDisabled(),true);
+ await open(page);await add();assert.equal(await editor.locator('[data-key-entry-save]').isDisabled(),true);
  assert.equal(await editor.locator('[data-key-entry-name]').evaluate(el=>document.activeElement===el),false);
  const key=()=>editor.locator('[data-setting-select="key-entry-base"]');
  const modifier=async(name,on)=>{const toggle=editor.locator(`[data-setting-row-name="key-entry-${name}"] [role="switch"]`);if((await toggle.getAttribute('aria-checked')==='true')!==on)await toggle.click();};
@@ -86,7 +87,7 @@ try{
  mark('single-key editing, reversible draft and ordered sequence');
  const seat=editor.locator(`[data-key-row-seat="${first.id}"]`);await seat.getByRole('switch').click();assert.equal((await custom()).on,false);await seat.getByRole('switch').click();
  await seat.locator('[data-key-row-grip]').focus();await page.keyboard.press('ArrowUp');const ordered=(await row()).entries.map(entry=>entry.id);
- await editor.locator('[data-key-row-done]').click();await page.reload();await open();assert.deepEqual((await row()).entries.map(entry=>entry.id),ordered);
+ await editor.locator('[data-key-row-done]').click();await page.reload();await open(page);assert.deepEqual((await row()).entries.map(entry=>entry.id),ordered);
  mark('visibility, order and persistence');
  const other=await context.newPage();other.on('pageerror',error=>errors.push(error.message));await other.goto(url);await open(other);
  await editor.locator(`[data-key-row-edit="${first.id}"]`).click();await editor.locator('[data-key-entry-name]').fill('同步按键');await editor.locator('[data-key-entry-save]').click();
@@ -106,8 +107,9 @@ try{
  await page.evaluate(()=>window.__keyWire.clear());const tab=page.locator('[data-term-key="tab"]');await tab.scrollIntoViewIfNeeded();const tabBox=await tab.boundingBox();assert(tabBox);await page.mouse.move(tabBox.x+tabBox.width/2,tabBox.y+tabBox.height/2);await page.mouse.down();await page.clock.runFor(900);await page.mouse.up();assert((await page.evaluate(()=>window.__keyWire.inputs.length))>1,'the existing builtin Tab still repeats');
  assert.deepEqual(await page.evaluate(()=>window.__keyWire.unknown),[]);mark('actual xterm input, modifier isolation, negotiated mode, focus, custom no-repeat and builtin repeat');
 
- await page.goto(url);await open();await add();await pickPopup(key(),'KeyN');await modifier('shift',true);await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'Digit1');await modifier('ctrl',true);await editor.locator('[data-key-entry-name]').fill('unsupported');await editor.locator('[data-key-entry-save]').click();const bad=(await row()).entries.find(entry=>entry.label==='unsupported');assert(bad);await editor.locator('[data-key-row-done]').click();await page.goto(url+'?terminal=1');await page.locator('[data-term-keys]').waitFor();await page.locator(`[data-term-key="${bad.id}"]`).click();await page.getByRole('alert').waitFor();assert.equal(await page.evaluate(()=>window.__keyWire.inputs.length),0);mark('unsupported sequence does not send a partial prefix');
- await context.close();
+ await page.goto(url);await open(page);await add();await pickPopup(key(),'KeyN');await modifier('shift',true);await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'Digit1');await modifier('ctrl',true);await editor.locator('[data-key-entry-name]').fill('unsupported');await editor.locator('[data-key-entry-save]').click();const bad=(await row()).entries.find(entry=>entry.label==='unsupported');assert(bad);await editor.locator('[data-key-row-done]').click();await page.goto(url+'?terminal=1');await page.locator('[data-term-keys]').waitFor();await page.locator(`[data-term-key="${bad.id}"]`).click();await page.getByRole('alert').waitFor();assert.equal(await page.evaluate(()=>window.__keyWire.inputs.length),0);mark('unsupported sequence does not send a partial prefix');
+ }catch(error){groupErrors.push({group:'desktop-editor',error:String(error),stack:error.stack});for(const [index,page] of context.pages().entries())await page.screenshot({path:join(evidence,`desktop-editor-failure-${index}.png`),fullPage:true}).catch(()=>{});}
+ finally{await context.close();}
  const broken=await browser.newContext({viewport:{width:1100,height:800}}),damaged=await broken.newPage();
  await damaged.addInitScript(()=>localStorage.setItem('khor.term-key-row','{"version":999,"entries":[]}'));
  await damaged.goto(url);await open(damaged);assert.equal(await damaged.locator('[data-key-row-add]').count(),0);
@@ -117,6 +119,7 @@ try{
  await broken.close();mark('damaged configuration visible and explicit reset unlocks editing');
  for(const width of [320,390]) {
   const narrow=await browser.newContext({viewport:{width,height:844},isMobile:true,hasTouch:true}),small=await narrow.newPage();small.on('pageerror',error=>errors.push(error.message));
+  try{
   await small.goto(url);await open(small);await small.locator('[data-key-row-add]').click();
   assert.equal(await small.locator('[data-key-entry-name]').evaluate(el=>document.activeElement===el),false);
   assert.equal(await small.locator('[data-key-entry-save]').isDisabled(),true);
@@ -134,7 +137,9 @@ try{
   await small.screenshot({path:join(evidence,`mobile-key-editor-${width}.png`),fullPage:true});
   await small.locator('[data-key-entry-name]').fill('手机组合');await small.evaluate(()=>window.__keyWire.keyboard());await small.waitForFunction(()=>window.__keyWire.shown());
   await small.locator('[data-key-entry-save]').click();assert.equal(await small.evaluate(()=>JSON.parse(localStorage.getItem('khor.term-key-row')).entries.filter(entry=>entry.label==='手机组合').length),1);
-  assert.equal(await small.evaluate(()=>window.__keyWire.inputs.length),0);await narrow.close();mark(`mobile ${width}: reversible selection, modifiers, compact keyboard, fixed save and keyboard viewport`);
+  assert.equal(await small.evaluate(()=>window.__keyWire.inputs.length),0);mark(`mobile ${width}: reversible selection, modifiers, compact keyboard, fixed save and keyboard viewport`);
+  }catch(error){groupErrors.push({group:`mobile-${width}`,error:String(error),stack:error.stack});await small.screenshot({path:join(evidence,`mobile-${width}-failure.png`),fullPage:true}).catch(()=>{});}
+  finally{await narrow.close();}
  }
  assert.deepEqual(groupErrors,[]);assert.deepEqual(errors,[]);assert.deepEqual(fingerprint(),before);writeFileSync(join(evidence,'result.json'),JSON.stringify({passed:results.length,results,sources:before,unchanged:true,errors},null,2));console.log(JSON.stringify({passed:results.length,evidence}));
 }catch(error){const screenshots=[];for(const context of browser?.contexts()??[])for(const page of context.pages()){const path=join(evidence,`failure-${screenshots.length}.png`);try{await page.screenshot({path,fullPage:true,timeout:5000});screenshots.push({path})}catch(capture){screenshots.push({path,error:String(capture)})}}writeFileSync(join(evidence,'failure.json'),JSON.stringify({error:String(error),stack:error.stack,results,errors,groupErrors,screenshots,before,after:fingerprint()},null,2));throw error}
