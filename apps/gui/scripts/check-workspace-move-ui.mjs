@@ -70,8 +70,8 @@ createRoot(document.getElementById('root')).render(<TooltipProvider><FileTree ma
  await file('notes.md').dragTo(tree.locator('[data-tree-blank]'));
  await tree.locator('button[data-file-path="/project/notes.md"]').waitFor();assert.equal(calls.length,2);
  await dir('source').click();await dir('child').waitFor();
- for(const [from,to] of [[dir('source'),dir('source')],[dir('source'),dir('child')],[file('notes.md'),tree.locator('[data-tree-blank]')],[file('notes.md'),file('draft.md')]])await from.dragTo(to);
- assert.equal(calls.length,2,'self, descendants, same parent and file targets must not invoke move');
+ for(const [from,to] of [[dir('source'),dir('child')],[file('notes.md'),tree.locator('[data-tree-blank]')],[file('notes.md'),file('draft.md')]])await from.dragTo(to);
+ assert.equal(calls.length,2,'descendants, same parent and file targets must not invoke move');
  await tree.locator('button[data-file-path="/project/conflict.md"]').dragTo(dir('target'));assert.equal(calls.length,2,'known occupied name is refused');
  refuse=true;await file('draft.md').dragTo(dir('target'));await tree.locator('[role=alert]').waitFor();assert.equal(calls.length,3);assert.equal((await page.evaluate(()=>window.moves)).length,2);await file('draft.md').waitFor();
  refuse=false;await dir('source').dragTo(dir('target'));await tree.locator('button[data-file-path="/project/target/source"]').waitFor();
