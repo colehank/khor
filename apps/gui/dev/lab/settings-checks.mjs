@@ -8,6 +8,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
   const open=async()=>{
     await page.locator('[data-rail-more]:visible,[data-nav-more]:visible').click();
     await page.locator('[data-nav-more-page]:visible').click();
+    await page.locator('[data-nav-menu]').waitFor({state:'detached'});
   };
   try {
     await page.goto(`http://127.0.0.1:${port}/app/?scene=devices&machines=3`);
@@ -17,6 +18,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.deepEqual(await page.locator('[data-nav-menu] [role="menuitem"]').evaluateAll(items=>items.map(item=>item.getAttribute('data-more-landing')??'more')),['browser','more']);
     await page.screenshot({path:path.join(report,`navigation-chooser-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await page.locator('[data-nav-menu] [data-more-landing="browser"]').click();
+    await page.locator('[data-nav-menu]').waitFor({state:'detached'});
     await page.locator('[data-browse-landing]:visible').waitFor();
     assert.equal(await page.locator('[data-more-list]:visible').count(),0,'Browser has its own list outside More');
     await open();
@@ -90,5 +92,8 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.screenshot({path:path.join(report,`settings-${engine}-${mobile?'mobile':'desktop'}.png`)});
     assert.deepEqual(errors,[]);
     return {name:`settings-navigation-${engine}-${mobile?'mobile':'desktop'}`,errors};
+  } catch(error) {
+    await page.screenshot({path:path.join(report,`settings-failure-${engine}-${mobile?'mobile':'desktop'}.png`)}).catch(()=>{});
+    throw error;
   } finally {await context.close();}
 }
