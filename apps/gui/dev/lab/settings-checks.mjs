@@ -90,10 +90,21 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await page.locator('[data-terminal-settings] > h2').count(),0,'Only Terminal appearance and Terminal features identify the groups');
     const peerHeadings=await page.locator('[data-session-general] > h2,[data-more-section="terminal-appearance"] > h2,[data-more-section="terminal-functions"] > h2').evaluateAll(headings=>headings.map(node=>{
       const style=getComputedStyle(node);
-      return {size:style.fontSize,weight:style.fontWeight,height:style.lineHeight,color:style.color,inset:style.marginLeft,gap:getComputedStyle(node.parentElement).rowGap};
+      return {size:style.fontSize,weight:style.fontWeight,height:style.lineHeight,color:style.color,inset:style.marginLeft,padding:style.paddingLeft,gap:getComputedStyle(node.parentElement).rowGap};
     }));
     assert.equal(peerHeadings.length,3);
     assert.deepEqual(peerHeadings,[peerHeadings[0],peerHeadings[0],peerHeadings[0]],'General, Terminal appearance and Terminal features are peer headings');
+    const titleEdges=await page.locator('[data-session-general],[data-more-section="terminal-appearance"],[data-more-section="terminal-functions"]').evaluateAll(sections=>sections.map(section=>{
+      const textEdge=node=>{
+        const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);
+        for(let text=walker.nextNode();text;text=walker.nextNode())if(text.textContent.trim()){
+          const range=document.createRange();range.selectNodeContents(text);return range.getBoundingClientRect().left;
+        }
+        return NaN;
+      };
+      return {title:textEdge(section.querySelector('[data-settings-heading]')),row:textEdge(section.querySelector('[data-setting-row]'))};
+    }));
+    assert.ok(titleEdges.every(edge=>Math.abs(edge.title-edge.row)<=1),`Titles align with row text without hierarchical indentation: ${JSON.stringify(titleEdges)}`);
     const sample=page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.dataset.previewRows);
     const sizeToContent=await sample.evaluate(el=>{

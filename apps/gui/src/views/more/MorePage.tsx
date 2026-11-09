@@ -8,6 +8,8 @@ import { PageAction, PageSubtitle } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { GlassCircle } from "@/components/Glass";
 import { cn } from "@/lib/utils";
+import {SectionHeading} from "@/components/settings/SectionHeading";
+export {SectionHeading as MoreSectionHeading} from "@/components/settings/SectionHeading";
 import { config, gui } from "@/gen/catalog";
 import { isSettingsPage } from "@/lib/settings-navigation";
 import type { MorePage } from "@/lib/more-navigation";
@@ -173,11 +175,6 @@ export function MoreFrame({
  * had to find a section by its translated text would be reading the
  * catalog to check the catalog.
  */
-/** Peer settings groups share one title, inset and typographic hierarchy. */
-export function MoreSectionHeading({children}: {children:ReactNode}) {
-  return <h2 className="ml-row text-title-sm font-title text-foreground">{children}</h2>;
-}
-
 export function MoreSection({
   name,
   label,
@@ -200,12 +197,12 @@ export function MoreSection({
   const shown = label && label !== page ? label : undefined;
   return (
     // components/SettingsGroup: the name above the card and outside it
-    // (`group` 11/600 tertiary, in by `gap-row`), the card `card` on the
+    // (one peer title, padded to the row text), the card `card` on the
     // page's `canvas` at `radius-lg`, one hairline between rows starting
     // where the text does. `app.css` `[data-settings-card]` draws the
     // lines and pads whatever in it is not a settings row.
     <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
-      {shown && <MoreSectionHeading>{shown}</MoreSectionHeading>}
+      {shown && <SectionHeading className="px-row">{shown}</SectionHeading>}
       <div data-settings-card {...mark} className="flex min-w-0 flex-col">
         {children}
       </div>

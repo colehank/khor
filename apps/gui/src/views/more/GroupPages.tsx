@@ -8,7 +8,7 @@ import {gui} from "@/gen/catalog";
 export function SessionPage({onClose,onSettingChanged}: {onClose:()=>void;onSettingChanged:()=>void}) {
   return <MoreFrame page="session" onClose={onClose}>
     <section data-session-general className="flex min-w-0 flex-col gap-xxs">
-      <MoreSectionHeading>{gui.settings}</MoreSectionHeading>
+      <MoreSectionHeading className="px-row">{gui.settings}</MoreSectionHeading>
       <ConfigSections page="session" onChanged={onSettingChanged} after={{session:<FinishedNotifyRow/>}}/>
     </section>
     <section data-terminal-settings className="flex min-w-0 flex-col gap-group">

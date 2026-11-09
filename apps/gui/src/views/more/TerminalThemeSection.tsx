@@ -1,3 +1,4 @@
+import {SectionHeading} from "@/components/settings/SectionHeading";
 import { useEffect, useRef, useState } from "react";
 import { inApp, saveTerminalPalette } from "@/api";
 import { config, gui } from "@/gen/catalog";
@@ -113,9 +114,9 @@ export function TerminalThemeSection() {
           <DialogBody>
           <label className="flex flex-none items-center gap-row text-body"><span className="flex-none whitespace-nowrap">{gui.new_session_name}</span><Input className="min-w-0 flex-1" aria-label={gui.new_session_name} value={editor.name} maxLength={48} onChange={e => setEditor({ ...editor, name: e.target.value })} /></label>
           <TerminalThemePreview theme={valid ?? lastPreview.current ?? undefined} />
-          <h3 className="flex-none text-headline">{gui.term_theme_basic}</h3>
+          <SectionHeading className="px-in">{gui.term_theme_basic}</SectionHeading>
           <div className="term-theme-grid">{BASE_KEYS.map(k => <ColorField key={k} name={k} value={editor.theme[k]} onChange={v => setEditor({ ...editor, theme: { ...editor.theme, [k]: v } })} />)}</div>
-          <h3 className="flex-none text-headline">{gui.term_theme_ansi}</h3>
+          <SectionHeading className="px-in">{gui.term_theme_ansi}</SectionHeading>
           <div className="term-theme-grid">{Array.from({ length: 8 }, (_, i) => [ANSI_KEYS[i], ANSI_KEYS[i + 8]]).flat().map(k => <ColorField key={k} name={k} value={editor.theme[k]} onChange={v => setEditor({ ...editor, theme: { ...editor.theme, [k]: v } })} />)}</div>
           <details className="text-callout"><summary>{gui.term_theme_extended}</summary><p className="my-in text-muted-foreground">{gui.term_theme_extended_note}</p><textarea data-term-theme-extended aria-label={gui.term_theme_extended} value={extra} onChange={e => setExtra(e.target.value)} spellCheck={false} className="h-24 w-full rounded-sm border bg-fill p-in font-mono text-callout" /></details>
           {(invalid || error) && <p role="status" className="text-callout text-destructive">{invalid ?? error}</p>}
