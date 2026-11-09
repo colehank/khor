@@ -142,6 +142,16 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(context.pages().length,1,'Opening settings keeps one application surface');
     assert.deepEqual(page.viewportSize(),size,'Opening and switching settings keeps the viewport');
     await page.screenshot({path:path.join(report,`settings-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await page.goto(`http://127.0.0.1:${port}/app/?scene=list&machines=3&notices=1`);
+    const notice=page.locator('[data-notification-banner]').first();
+    await notice.waitFor({timeout:20000});
+    const notificationGeometry=await notice.boundingBox();
+    assert.ok(notificationGeometry.y<100&&notificationGeometry.x+notificationGeometry.width<=size.width,'The actual App presents notices at the top inside the viewport');
+    await page.screenshot({path:path.join(report,`app-notification-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await notice.locator('[data-notification-open]').click();
+    await page.locator('[data-session-screen]:visible').waitFor();
+    const metadata=await page.evaluate(()=>JSON.parse(localStorage.getItem('khor.notification-preferences')));
+    assert.equal('items' in metadata,false,'Actual App never archives notification content');
     assert.deepEqual(errors,[]);
     return {name:`settings-navigation-${engine}-${mobile?'mobile':'desktop'}`,errors};
   } catch(error) {

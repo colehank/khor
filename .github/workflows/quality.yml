@@ -12,6 +12,11 @@ on:
         type: choice
         options: [all, agent, runtime, gui, node, updates]
         default: all
+      interaction_scope:
+        description: Focus UI iteration checks; releases always use all interactions
+        type: choice
+        options: [all, settings]
+        default: all
   workflow_call:
     inputs:
       reuse_frontend:
@@ -369,6 +374,8 @@ jobs:
           gates=(updates-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui key-row-ui workspace-move-ui)
           if [ "$KHOR_QUALITY_SUITE" = updates ]; then
             gates=(updates-ui)
+          elif [ "$KHOR_INTERACTION_SCOPE" = settings ]; then
+            gates=(notification-ui key-row-ui)
           fi
           for gate in "${gates[@]}"; do
             echo "::group::$gate"
@@ -384,6 +391,7 @@ jobs:
           exit "$failed"
         env:
           KHOR_QUALITY_SUITE: ${{ inputs.suite }}
+          KHOR_INTERACTION_SCOPE: ${{ inputs.interaction_scope }}
           PLAYWRIGHT_CHROMIUM_CHANNEL: ''
           KHOR_TEST_FRONTEND: dist
           QUALITY_ENGINES: chrome,webkit
