@@ -94,7 +94,9 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-term-cursor-color]').fill('#aabbcc');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');
     await page.locator('[data-term-cursor-auto]').click();
+    const activePalette=await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background);
     await page.locator('[data-setting-select="term-theme"]').selectOption('custom');
+    assert.equal(await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background),activePalette,'Entering custom mode preserves the current terminal paint');
     assert.equal(await page.locator('[data-term-theme-custom] button').count(),2,'Custom theme exposes Import and Settings only');
     await page.locator('[data-term-theme-edit]').click();
     const dialog=page.locator('[data-term-theme-editor]');await dialog.waitFor();
@@ -149,7 +151,8 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.ok(notificationGeometry.y<100&&notificationGeometry.x+notificationGeometry.width<=size.width,'The actual App presents notices at the top inside the viewport');
     await page.screenshot({path:path.join(report,`app-notification-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await notice.locator('[data-notification-open]').click();
-    await page.locator('[data-session-screen]:visible').waitFor();
+    await page.locator('[data-chat-box]:visible').waitFor();
+    await page.waitForFunction(()=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active==='gui/ai-elements-plan');
     const metadata=await page.evaluate(()=>JSON.parse(localStorage.getItem('khor.notification-preferences')));
     assert.equal('items' in metadata,false,'Actual App never archives notification content');
     assert.deepEqual(errors,[]);

@@ -139,8 +139,8 @@ test('production onData keeps locks out of custom input and preserves ordinary i
   const js=ts.transpileModule(`const handler=${callback};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
   const t=await terminal(),sent=[],latches=[];
   try {
-    const parameters=['term','isEncodedKeyInput','isReply','replaying','isFocusReport','selectionHolds','ownSize','modsRef','MOUSE_REPORT','blink','kittyTyped','typed','latch','afterKey','send','predict'];
-    const handler=Function(...parameters,`${js};return handler;`)(t.term,m.isEncodedKeyInput,()=>false,0,()=>false,()=>false,()=>{},{current:{ctrl:true,alt:true,lock:{ctrl:true,alt:true}}},/^not-a-mouse-report$/, {typed(){}},m.kittyTyped,m.typed,value=>latches.push(value),m.afterKey,value=>sent.push(value),{typed(){}});
+    const parameters=['term','isEncodedKeyInput','isReply','replaying','isFocusReport','selectionHolds','ownSize','modsRef','MOUSE_REPORT','blink','kittyTyped','typed','latch','afterKey','send','predict','recoveryRetired'];
+    const handler=Function(...parameters,`${js};return handler;`)(t.term,m.isEncodedKeyInput,()=>false,0,()=>false,()=>false,()=>{},{current:{ctrl:true,alt:true,lock:{ctrl:true,alt:true}}},/^not-a-mouse-report$/, {typed(){}},m.kittyTyped,m.typed,value=>latches.push(value),m.afterKey,value=>sent.push(value),{typed(){}},{current:false});
     t.term.onData(handler);
     m.pressKeyAction(t.term,{kind:'chord',stroke:stroke('KeyN')});assert.deepEqual(sent,['n']);assert.deepEqual(latches,[]);
     t.term.input('n',true);assert.deepEqual(sent,['n','\x1b\x0e']);assert.equal(latches.length,1);
@@ -156,8 +156,8 @@ test('production callback does not drop a custom focus-shaped sequence but still
   for(const [replaying,selected] of [[1,false],[0,true]]){
     const t=await terminal(),sent=[];
     try {
-      const parameters=['term','isEncodedKeyInput','isReply','replaying','isFocusReport','selectionHolds','ownSize','modsRef','MOUSE_REPORT','blink','kittyTyped','typed','latch','afterKey','send','predict'];
-      const handler=Function(...parameters,`${js};return handler;`)(t.term,m.isEncodedKeyInput,m.isReply,replaying,m.isFocusReport,()=>selected,()=>{},{current:{ctrl:false,alt:false}},/^not-a-mouse-report$/,{typed(){}},m.kittyTyped,m.typed,()=>{},m.afterKey,value=>sent.push(value),{typed(){}});
+      const parameters=['term','isEncodedKeyInput','isReply','replaying','isFocusReport','selectionHolds','ownSize','modsRef','MOUSE_REPORT','blink','kittyTyped','typed','latch','afterKey','send','predict','recoveryRetired'];
+      const handler=Function(...parameters,`${js};return handler;`)(t.term,m.isEncodedKeyInput,m.isReply,replaying,m.isFocusReport,()=>selected,()=>{},{current:{ctrl:false,alt:false}},/^not-a-mouse-report$/,{typed(){}},m.kittyTyped,m.typed,()=>{},m.afterKey,value=>sent.push(value),{typed(){}},{current:false});
       t.term.onData(handler);
       assert.equal(m.encodeKeyAction(t.term,focusLike),'\x1b[I');
       m.pressKeyAction(t.term,focusLike);assert.deepEqual(sent,['\x1b[I'],'explicit user input must reach its terminal');

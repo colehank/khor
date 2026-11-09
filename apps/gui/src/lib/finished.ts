@@ -8,12 +8,11 @@
 // and kitty (`notify_on_cmd_finish`, with its `invisible` default and a
 // minimum duration) do the same from the same marks.
 //
-// On a Mac the system says it (`notify_finished`, the notification
-// plugin) and the page keeps a notice that opens the session. A phone's
-// page is asleep while the app is in the background, so v1 shows what it
-// missed the moment it comes back; a notification pushed to a sleeping
-// phone needs the host's word to travel to Apple's push service, a later
-// net item.
+// Foreground app notices come from the bounded activity ledger in
+// notification-banners, not a saved inbox. This watcher retains the existing
+// OS delivery path for commands observed running; App suppresses that path
+// while the foreground banner is available. Push delivery to sleeping phones
+// remains separate and is not implemented here.
 //
 // The threshold is this device's, in its `localStorage`.
 import { useEffect, useState } from "react";

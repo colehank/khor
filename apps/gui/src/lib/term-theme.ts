@@ -30,7 +30,7 @@ export const THEME_FAMILIES = [
   { id: "auto-catppuccin", name: "Catppuccin", light: "latte", dark: "mocha" },
   { id: "auto-tokyo", name: "Tokyo Night / Day", light: "tokyo-day", dark: "tokyo" },
 ] as const;
-const validId = (id: string, customs: UserPalette[]) => id === "follow" || id === "custom" || THEME_FAMILIES.some(p => p.id === id) || PRESETS.some(p => p.id === id) || customs.some(p => p.id === id);
+const validId = (id: string, customs: UserPalette[]) => id === "follow" || THEME_FAMILIES.some(p => p.id === id) || PRESETS.some(p => p.id === id) || customs.some(p => p.id === id);
 const contrastOf = (choice: ThemeChoice) => CONTRAST_LEVELS.some(v => v === choice.contrast) ? choice.contrast! : DEFAULT_CONTRAST;
 function terminalMode(): "light" | "dark" {
   const stamped = document.documentElement.dataset.theme;

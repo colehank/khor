@@ -550,6 +550,8 @@ export default function App() {
     // For the gates, as `__xterm` is: what was announced, in order.
     const said = window as unknown as { __finished?: Finished[] };
     if (done.length) said.__finished = [...(said.__finished ?? []), ...done];
+    // The foreground uses in-app banners; keep existing OS delivery for the background.
+    if (document.visibilityState === "visible" && document.hasFocus()) return;
     for (const f of done) {
       const took = lasting(f.ms);
       const body =

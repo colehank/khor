@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { inApp, saveTerminalPalette } from "@/api";
 import { config, gui } from "@/gen/catalog";
 import { PopupButton } from "@/components/ui/popup-button";
@@ -46,12 +46,14 @@ export function TerminalThemeSection() {
   const [extra, setExtra] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [removing, setRemoving] = useState(false);
+  const [removing, setRemoving] = useState<{id:string;name:string}|null>(null);
   const custom = choice.customs.find(p => p.id === choice.selected);
+  const [making,setMaking]=useState(false);
+  useEffect(()=>setMaking(false),[choice.selected]);
   const names = [{ value: "follow", label: gui.term_theme_follow },{value:"custom",label:gui.term_theme_customize}, ...THEME_FAMILIES.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_automatic })), ...PRESETS.map(p => ({ value: p.id, label: ({ soft: gui.term_theme_soft, warm: gui.term_theme_warm, contrast: gui.term_theme_contrast } as Record<string, string>)[p.id] ?? p.name, group: gui.term_theme_presets })), ...choice.customs.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_mine }))];
   const selectedName = names.find(n => n.value === choice.selected)?.label ?? gui.term_theme_follow;
   const clone = () => clonePalette(sectionRef.current ?? document.body);
-  const edit = () => { setError(null); const theme = clone(); lastPreview.current = theme; setEditor({ name: custom?.name ?? gui.term_theme_copy_name(selectedName), theme, id: custom?.id }); setExtra(theme.extendedAnsi?.join(" ") ?? ""); };
+  const edit = () => { setError(null); const theme = clone(); lastPreview.current = theme; setEditor({ name: (!making&&custom?.name) || gui.term_theme_copy_name(selectedName), theme, id: making?undefined:custom?.id }); setExtra(theme.extendedAnsi?.join(" ") ?? ""); };
   let valid: Palette | null = null;
   let invalid: string | null = null;
   if (editor) try {
@@ -67,6 +69,7 @@ export function TerminalThemeSection() {
       if (file.size > THEME_FILE_MAX) throw new Error("large");
       const p = importPalette(await file.text(), clone());
       savePalette(p.name || file.name.replace(/\.json$/i, ""), p.theme);
+      setMaking(false);
       setNotice(gui.term_theme_imported);
     } catch (e) { setError(colorError(e)); }
   };
@@ -88,11 +91,15 @@ export function TerminalThemeSection() {
   return <>
     <div ref={sectionRef} data-setting-row="popup" data-setting-row-name="term-theme" className="flex items-center gap-row px-row py-in">
       <span className="min-w-0 flex-1 text-body">{gui.term_theme_title}</span>
-      <PopupButton label={gui.term_theme_title} value={choice.selected} choices={names}
-        onPick={selected=>{const stored=setTermTheme({...choice,selected});setNotice(null);setError(stored?null:gui.term_theme_storage_error);}}
+      <PopupButton label={gui.term_theme_title} value={making?"custom":choice.selected} choices={names}
+        onPick={selected=>{
+          setNotice(null);setError(null);
+          if(selected==="custom"){setMaking(true);return;}
+          setMaking(false);const stored=setTermTheme({...choice,selected});setError(stored?null:gui.term_theme_storage_error);
+        }}
         mark={{"data-setting-select":"term-theme"}} className="-mr-xxs"/>
     </div>
-    {(choice.selected === "custom" || custom) && <div data-setting-row="action" data-term-theme-custom className="flex flex-wrap items-center justify-end gap-in px-row py-in">
+    {(making || custom) && <div data-setting-row="action" data-term-theme-custom className="flex flex-wrap items-center justify-end gap-in px-row py-in">
       <Button data-term-theme-import onClick={()=>fileRef.current?.click()}>{gui.import_sessions}</Button>
       <Button data-term-theme-edit onClick={edit}>{gui.nav_settings}</Button>
     </div>}
@@ -112,11 +119,11 @@ export function TerminalThemeSection() {
           <details className="text-callout"><summary>{gui.term_theme_extended}</summary><p className="my-in text-muted-foreground">{gui.term_theme_extended_note}</p><textarea data-term-theme-extended aria-label={gui.term_theme_extended} value={extra} onChange={e => setExtra(e.target.value)} spellCheck={false} className="h-24 w-full rounded-sm border bg-fill p-in font-mono text-callout" /></details>
           {(invalid || error) && <p role="status" className="text-callout text-destructive">{invalid ?? error}</p>}
           </DialogBody>
-          <DialogFooter><div className="mr-auto flex flex-wrap gap-in"><Button data-term-theme-export onClick={()=>void exportFile()}>{gui.term_theme_export}</Button>{custom && <Button data-term-theme-remove variant="ghost" onClick={()=>setRemoving(true)}>{gui.remove}</Button>}</div><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
+          <DialogFooter><div className="mr-auto flex flex-wrap gap-in"><Button data-term-theme-export onClick={()=>void exportFile()}>{gui.term_theme_export}</Button>{editor.id && <Button data-term-theme-remove variant="ghost" onClick={()=>setRemoving({id:editor.id!,name:editor.name})}>{gui.remove}</Button>}</div><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setMaking(false); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
         </>}
       </TaskOverlay>
     </Dialog>
-    <Dialog open={removing} onOpenChange={setRemoving}><DialogContent><DialogTitle>{gui.term_theme_remove_name(custom?.name ?? "")}</DialogTitle><DialogFooter><Button onClick={() => setRemoving(false)}>{gui.delete_keep}</Button><Button variant="destructive" onClick={() => { if (custom && !removePalette(custom.id)) setError(gui.term_theme_storage_error);else setEditor(null); setRemoving(false); }}>{gui.remove}</Button></DialogFooter></DialogContent></Dialog>
+    <Dialog open={removing!==null} onOpenChange={open=>{if(!open)setRemoving(null);}}><DialogContent><DialogTitle>{gui.term_theme_remove_name(removing?.name ?? "")}</DialogTitle><DialogFooter><Button onClick={() => setRemoving(null)}>{gui.delete_keep}</Button><Button variant="destructive" onClick={() => { if (removing && !removePalette(removing.id)) setError(gui.term_theme_storage_error);else setEditor(null); setRemoving(null); }}>{gui.remove}</Button></DialogFooter></DialogContent></Dialog>
   </>;
 }
 

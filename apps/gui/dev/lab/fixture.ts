@@ -194,8 +194,9 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const noticeEvents=(index:number):SessionRow['activity']=>{
     if(!options.notices||index>2)return [];
     const round=Math.floor((Date.now()-previewAt-2000)/18000);
-    if(round<index)return [];
-    const last=round-(round-index)%3;
+    const offset=(index+2)%3;
+    if(round<offset)return [];
+    const last=round-(round-offset)%3;
     return [{id:`lab-notice:${index}:${last}`,at_ms:previewAt+2000+last*18000,
       kind:(["turn_completed","needs_input","failed"] as const)[index],resolved:false,
       text:null,duration_ms:null,exit:null}];
@@ -301,7 +302,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
               hosted: true, can_control: true, attachable: false, last: '隔离示例 · 不连接真实智能体',
               via: null, via_face: null, home: devices[i%Math.max(1,devices.length)]?.name??device.name, execution_home: devices[i%Math.max(1,devices.length)]?.id??device.id, place:labRoot(devices[i%Math.max(1,devices.length)])+'/project', doing: null, mux: false, ended: null}));
             if (terminal) rows.push({...rows[0], id: 'shell/layout-lab', kind: 'shell', title: '终端 · 布局试验',
-              category: 'shell', attachable: true, last: '隔离终端示例'});
+              category: 'shell', activity:[], attachable: true, last: '隔离终端示例'});
             answer = devices.length ? rows : [];
             break;
           }
