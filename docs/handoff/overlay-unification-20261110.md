@@ -1,3 +1,34 @@
+# LIVE · 弹窗与任务底栏统一 · 2026-11-10
+
+实现完成，等待用户 Lab 验收；发布继续暂停。用户未授权本轮 merge/ship。根 agent 串行；本机仅源码和可信静态产物服务，所有构建与浏览器测试都在公开 GitHub 托管 CI。
+
+## 权威状态
+
+- 工作副本：`/Volumes/disk0/Khor/worktrees/current/khor-settings-gui-20261109`，分支 `integrate/settings-gui-20261109`。
+- 已验证并 LIVE 的源：`3a203ac38e9b1dc852efdec88596b6814022d8bf`，tree `e49c98e004f5341004fcec5193368a62204b0baa`。3a 相对产品 df021ca6 只修测试选择器。
+- 精确 Quality：[42700929380](https://github.com/colehank/khor/actions/runs/42700929380) **SUCCESS**。frontend、GUI unit/types/static、通知／键行／外观／dialogs 全部通过；真实 App Lab **56 项无错误**，热更新保留草稿通过。旧失败与取消记录不算当前验证。
+- Lab：`http://127.0.0.1:23950/app/?scene=devices&machines=3`。可信产物 `evidence/more-network-gui-20261109/overlay-3a-review/developer-lab`；Python exec session **92335**。新页面和 JS、旧394／ce0／269／pinned 的 snapshot 页面和 JS 均已 HTTP200 核验。
+- 已看真实 App 的手机／桌面键行、手机配色、390×400 深色配对结果截图。标题现在落在屏幕中心；正文滚动，操作固定。
+- 只替换已核对 PID 与 argv 的旧 Lab Python15607；安装版、宿主、用户浏览器导航与刷新没有操作。未用 CUA。
+
+## 最终行为
+
+`TaskOverlay` 管标题、正文及 `TaskActions` 的 cancel/back/close/primary/tools 槽位。编辑操作桌面右下、手机顶部；即时管理和只读内容用标准关闭；子步骤返回／保存。手机左右轨取真实动作宽度的最大值，标题精确居中。跨断点保持同一份 DOM；未保存内容在隐式退出时保护，进行中的不可取消写入冻结草稿；正文出错保留标题和关闭入口。
+
+已迁移机器添加各步骤、机器资料与改名、额度／Pi 认证、网络、导入、目录、文件预览、重命名、启动方式、键行与配色。短确认保留公共确认布局；持续浏览的会话标签总览、历史甲板和网络图机器卡显式 `layout="content"`。机器头像即时写，名称为同一个容器中的草稿子步骤；启动方式保存返回管理页。
+
+## 用户验收入口
+
+1. 更多 → 会话 → 快捷键行：管理关闭、添加／编辑返回与保存，两种窗口宽度的位置与标题。
+2. 会话 → 配色 → 自定义 → 设置：取消／保存配色、长表单滚动、Escape 草稿保留／丢弃。
+3. 机器 ＋ → Khor／SSH：标题与动作一致；配对已提交／已加入后只有关闭，不能伪装成取消或再提交。
+
+浏览器 Lab 不冒充 WKWebView 原生键盘、惯性与安全区实测；这些仍需真机验收。规范已写入 `docs/design-system/components/Dialog/README.md`，检查已加入 Quality 的 settings/all 范围。
+
+以下为执行历史（以此顶部状态为准）。
+
+---
+
 # 弹窗与任务底栏统一（2026-11-10）
 
 状态：实现与验证中。用户已同意按 Apple HIG 与 Khor 的任务语义统一整个 app 的弹层。
