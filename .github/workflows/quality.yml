@@ -367,7 +367,22 @@ jobs:
       - uses: ./.github/actions/restore-frontend
       - run: npm run test:unit && npm run test:types
       - run: npm run gates && npm run mobile:static
-      - run: node node_modules/playwright-core/cli.js install --with-deps chromium webkit
+      - name: Prepare the browsers required by this interaction scope
+        id: interaction-browser
+        env:
+          KHOR_INTERACTION_SCOPE: ${{ inputs.interaction_scope }}
+        run: |
+          if [ "$KHOR_INTERACTION_SCOPE" = settings ] && command -v google-chrome >/dev/null; then
+            google-chrome --version
+            echo 'channel=chrome' >> "$GITHUB_OUTPUT"
+          else
+            if [ "$KHOR_INTERACTION_SCOPE" = settings ]; then
+              node node_modules/playwright-core/cli.js install --with-deps chromium
+            else
+              node node_modules/playwright-core/cli.js install --with-deps chromium webkit
+            fi
+            echo 'channel=' >> "$GITHUB_OUTPUT"
+          fi
       - name: Run the selected interaction groups and retain all failures
         run: |
           failed=0
@@ -392,7 +407,7 @@ jobs:
         env:
           KHOR_QUALITY_SUITE: ${{ inputs.suite }}
           KHOR_INTERACTION_SCOPE: ${{ inputs.interaction_scope }}
-          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ${{ steps.interaction-browser.outputs.channel }}
           KHOR_TEST_FRONTEND: dist
           QUALITY_ENGINES: chrome,webkit
           QUALITY_HEADLESS: '1'
