@@ -123,6 +123,7 @@ try{
         const bounds=await page.locator('[data-compose-scroll]').boundingBox();
         await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);await page.mouse.wheel(0,-300);
         await page.waitForFunction(()=>!window.__composeFixture.intent().following);
+        await page.waitForFunction(()=>{const box=document.querySelector('[data-compose-scroll]');return box.scrollHeight-box.clientHeight-box.scrollTop>100;});
         result.afterInput=await page.evaluate(()=>window.__composeFixture.snapshot('real-reader-input'));
         assert(result.afterInput.gap>100,'Real reader input still takes ownership during layout settling');
         assert.deepEqual(result.errors,[]);result.status='passed';
