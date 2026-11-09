@@ -39,8 +39,10 @@ function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,
         if(event.target!==event.currentTarget)return;
         const node=event.currentTarget;
         requestAnimationFrame(()=>{
-          if(!node.isConnected||!node.contains(document.activeElement))return;
-          const chosen=node.querySelector<HTMLElement>('[data-on="true"]:not([data-disabled])')??node.querySelector<HTMLElement>('[data-popup-option]:not([data-disabled])');
+          const first=node.querySelector<HTMLElement>('[data-popup-option]:not([data-disabled])');
+          // Do not undo a key or pointer move made during the opening frame.
+          if(!node.isConnected||(document.activeElement!==node&&document.activeElement!==first))return;
+          const chosen=node.querySelector<HTMLElement>('[data-on="true"]:not([data-disabled])')??first;
           chosen?.focus({preventScroll:true});
         });
       }}>
