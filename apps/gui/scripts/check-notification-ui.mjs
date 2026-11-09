@@ -18,6 +18,7 @@ try {
   const banners=page.locator('[data-notification-banner]');await banners.first().waitFor();
   assert.equal(await banners.count(),width<500?1:3);
   const bounds=await page.locator('[data-notification-banners]').boundingBox();assert(bounds.y<40);assert(bounds.x>=(width<500?0:width/2));assert(bounds.x+bounds.width<=width);
+  if(width<500){const inset=await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-row")));assert.ok(Math.abs(bounds.x-inset)<1&&Math.abs(width-bounds.x-bounds.width-inset)<1,"Phone banner follows the actual App safe horizontal inset");}
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.equal(await page.locator('[data-notification-list]').count(),0,'No notification history UI');
   await page.screenshot({path:join(out,`notifications-${width}-${theme}.png`)});

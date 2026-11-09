@@ -1,10 +1,10 @@
-import React,{useEffect,useState} from 'react';
+import React,{useEffect,useLayoutEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {TooltipProvider} from '/src/components/ui/tooltip';
 import {Button} from '/src/components/ui/button';
 import {NotificationBanners} from '/src/views/NotificationBanners';
 import {receiveNotifications,useNotifications,clearNotifications,setSessionNotifications} from '/src/lib/notifications';
-import {useNarrow} from '/src/hooks/use-narrow';
+import {useWindowNarrow} from '/src/hooks/use-narrow';
 import '/src/styles/tokens.css';
 import '/src/styles/app.css';
 
@@ -21,7 +21,8 @@ function send(index,kind='turn_completed'){
  sessions[index].activity=[...sessions[index].activity,event('event-'+(++serial),kind)];receiveNotifications(sessions,()=>false);
 }
 function Lab(){
- const state=useNotifications(),narrow=useNarrow();
+ const state=useNotifications(),narrow=useWindowNarrow();
+ useLayoutEffect(()=>{document.documentElement.toggleAttribute("data-narrow",narrow);},[narrow]);
  const [opened,setOpened]=useState('');
  useEffect(()=>{const update=()=>{if(document.hidden)clearNotifications();};document.addEventListener('visibilitychange',update);return()=>document.removeEventListener('visibilitychange',update);},[]);
  return <TooltipProvider><main className="flex h-full flex-col gap-row p-pane">
