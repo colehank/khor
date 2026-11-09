@@ -1,4 +1,4 @@
-import {pickPopup,popupChoices} from './popup-helpers.mjs';
+import {pickPopup,popupChoices} from "./popup-helpers.mjs";
 // Real-connection acceptance for the GUI. No mocks anywhere: three homes
 // on real UDP, the dev bridge is the real backend behind an HTTP skin,
 // the browser is the system Chrome. What is asserted:

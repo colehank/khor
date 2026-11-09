@@ -1,4 +1,4 @@
-import {pickPopup} from './popup-helpers.mjs';
+import {pickPopup} from "./popup-helpers.mjs";
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync} from 'node:fs';

@@ -133,3 +133,5 @@ User authorized the mobile approach with “做出来看看” and resumed with 
 Shared selector migration also adds the existing appearance interaction gate to the focused settings CI scope (headless hosted Chrome), so actual terminal palette/material persistence and cross-window updates are rechecked. Full release scope remains unchanged.
 
 First e2fc run42673226471 stopped at frontend TypeScript: DropdownMenu deliberately omits onEntryFocus from public props. Fixed using the supported content focus event after Radix entry, with connected/focus ownership guard, preserving default entry/return handling. Added visible keyboard-return focus-ring assertion, removed duplicate hidden Cancel, and used compact mobile Return/Delete glyphs. Exact rerun required.
+
+Run42674280931 frontend, all unit and TypeScript checks passed. GUI registry stopped before interactions: check-gates recognizes helper imports only in double quotes, while the new helper imports used single quotes. Changed helper import formatting to the existing discoverable convention; no gate bypass or assertion change. Actual App Lab still running at time of fix.

@@ -1,4 +1,4 @@
-import {pickPopup,popupChoices} from './popup-helpers.mjs';
+import {pickPopup,popupChoices} from "./popup-helpers.mjs";
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,rmSync,mkdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';

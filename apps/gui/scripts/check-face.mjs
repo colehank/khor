@@ -1,4 +1,4 @@
-import {pickPopup,popupChoices} from './popup-helpers.mjs';
+import {pickPopup,popupChoices} from "./popup-helpers.mjs";
 import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The type gate, rendered half: what the letterforms actually weigh on
 // the glass. The static half (`check-type.mjs`) proves nobody wrote a

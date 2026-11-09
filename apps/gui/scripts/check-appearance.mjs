@@ -1,4 +1,4 @@
-import {pickPopup,popupChoices} from './popup-helpers.mjs';
+import {pickPopup,popupChoices} from "./popup-helpers.mjs";
 // Real settings components + TerminalPane/xterm. Only transport is a fixture.
 // Checks paint updates preserve the attachment, buffer and scroll position;
 // native desktop material itself is checked separately in the real app.
