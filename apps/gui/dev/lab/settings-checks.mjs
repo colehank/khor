@@ -85,6 +85,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const sliderGeometry=await uiRange.evaluate(el=>({knob:parseFloat(getComputedStyle(el).getPropertyValue('--slider-knob')),hit:parseFloat(getComputedStyle(el).getPropertyValue('--hit')),height:el.getBoundingClientRect().height,coarse:matchMedia('(pointer: coarse)').matches}));
     assert.equal(sliderGeometry.knob,sliderGeometry.coarse?28:16,'Visible slider knob adapts to the pointer');
     assert.ok(sliderGeometry.height>=sliderGeometry.hit,'A smaller knob retains its independent hit area');
+    await page.screenshot({path:path.join(report,`settings-interface-size-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await uiRange.focus();await page.keyboard.press('ArrowRight');const savedStep=await uiRange.inputValue();
     await uiAuto.click();assert.equal(await uiRange.count(),0);
     await uiAuto.click();assert.equal(await uiRange.inputValue(),savedStep,'System mode preserves the custom interface step');
@@ -170,12 +171,15 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.locator('[data-term-size-number]').fill('18');
     await page.locator('[data-term-size-number]').blur();
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
+    await page.locator('[data-setting-row-name="term-size"]').scrollIntoViewIfNeeded();
+    await page.screenshot({path:path.join(report,`settings-terminal-size-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await termAuto.click();assert.equal(await page.locator('[data-term-size-number]').count(),0);
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===14);
     await termAuto.click();assert.equal(await page.locator('[data-term-size-number]').inputValue(),'18','System mode retains custom terminal points');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
     await page.locator('[data-term-cursor-color]').fill('#aabbcc');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');
+    await sample.evaluate(el=>{el.__cursorPaintWatch=el.__xterm.onRender(()=>{el.dataset.testRenderedCursor=el.__xterm.options.theme.cursor;});});
     const themePicker=page.locator('[data-setting-select="term-theme"]'),originalTheme=await themePicker.inputValue();
     for(const [theme,colors] of [['latte',['#ffaaaa','#aaaaff']],['mocha',['#660000','#000066']]]) {
       await themePicker.selectOption(theme);
@@ -183,12 +187,15 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       for(const color of colors) {
         await page.locator('[data-term-cursor-color]').fill(color);
         await page.waitForFunction(color=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor===color,color);
-        // Wait for the renderer pass, then measure the visible decoration.
-        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+        // xterm intentionally pauses offscreen. Observe a real render of
+        // this colour after scrolling the sample into view, not a fixed delay.
+        await sample.scrollIntoViewIfNeeded();
+        await page.waitForFunction(color=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.dataset.testRenderedCursor===color,color);
         cursorPaint.push(await sample.locator('.term-preview-cursor').evaluate(el=>getComputedStyle(el).backgroundColor));
       }
       assert.notEqual(cursorPaint[0],cursorPaint[1],`${theme}: changing cursor colour changes visible paint, not only configuration`);
     }
+    await sample.evaluate(el=>{el.__cursorPaintWatch.dispose();delete el.__cursorPaintWatch;});
     await themePicker.selectOption(originalTheme);
     await page.locator('[data-term-cursor-auto]').click();
     const activePalette=await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background);
