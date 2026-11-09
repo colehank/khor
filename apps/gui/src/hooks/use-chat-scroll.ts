@@ -116,8 +116,17 @@ export function useChatScroll(revision: unknown) {
     const focusChanged = () => {
       composerHadFocus.current = document.activeElement?.matches("[data-composer-text]") ?? false;
     };
+    const viewportChanged = () => {
+      if (layoutFrame.current) return;
+      layoutFrame.current = requestAnimationFrame(() => {
+        layoutFrame.current = 0;
+        sync();
+      });
+    };
     focusChanged();
     document.addEventListener("focusin", focusChanged);
+    window.addEventListener("resize", viewportChanged);
+    window.visualViewport?.addEventListener("resize", viewportChanged);
     const inputs = ["wheel", "touchmove", "pointerdown", "pointermove", "keydown"] as const;
     // A passive WebKit wheel may scroll before delivering its input intent.
     for (const input of inputs) el.addEventListener(input, readerInput, { passive: input !== "wheel" });
@@ -125,6 +134,8 @@ export function useChatScroll(revision: unknown) {
     return () => {
       observer.disconnect();
       document.removeEventListener("focusin", focusChanged);
+      window.removeEventListener("resize", viewportChanged);
+      window.visualViewport?.removeEventListener("resize", viewportChanged);
       releaseLayout();
       releaseReader();
       for (const input of inputs) el.removeEventListener(input, readerInput);
