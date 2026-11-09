@@ -35,3 +35,5 @@ pre-commit run --all-files --hook-stage pre-push
 首次推送或修改hook配置会运行更多检查；平时按改动文件分流。不要通过`--no-verify`或`SKIP`把失败当作通过，缺依赖应先补齐，失败应保留并修复。
 
 机制参考：[pre-commit官方文档](https://pre-commit.com/#install)。
+
+更新修复可以手动运行 Quality 的 `suite=updates`：生成并构建前端、GUI 单元／类型／设计检查、真实更新页交互、三平台 runtime/update 测试及 Mac 原生更新／回滚回归。它跳过未改动的智能体、终端全量集成、图标与其他页面交互；普通 main/PR 检查和 Release 仍运行全套。

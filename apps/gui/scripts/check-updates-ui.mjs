@@ -8,7 +8,7 @@ import {chromium} from 'playwright-core';
 
 const gui=fileURLToPath(new URL('..',import.meta.url));
 const fixture=mkdtempSync(join(gui,'.updates-check-'));
-const out=join(process.env.RUNNER_TEMP||tmpdir(),'khor-updates-ui');mkdirSync(out,{recursive:true});
+const out=process.env.FILE_HANDOFF_OUT||join(process.env.RUNNER_TEMP||tmpdir(),'khor-updates-ui');mkdirSync(out,{recursive:true});
 writeFileSync(join(fixture,'index.html'),'<link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),`
 import React from 'react';import{createRoot}from'react-dom/client';import{UpdateSettings}from'/src/views/more/UpdateSettings';import{MachineUpdates}from'/src/views/MachineUpdates';
@@ -110,6 +110,8 @@ try {
   await page.evaluate(()=>window.emitUpdate({phase:'failed',retry:'check',failure:'fixture: release metadata unavailable',available:'v0.2.0-rc.2',blocked:[]}));
   const failure=page.locator('[data-update-failure]');
   await failure.locator('summary').click();
+  await failure.getByText('fixture: release metadata unavailable',{exact:true}).waitFor();
+  await page.screenshot({path:join(out,'update-failure.png')});
   assert.match(await failure.innerText(),/fixture: release metadata unavailable/,'native errors remain available for diagnosis');
   let before=await page.evaluate(()=>window.updateCalls.length);
   await action.click();
@@ -137,7 +139,7 @@ try {
   assert.equal(await companion.getAttribute('aria-checked'),'false','failed persistence must not pretend the CLI was selected');
   assert.match(await page.locator('[data-update-operation-failure]').innerText(),/重试|Retry/);
   await page.evaluate(()=>window.emitUpdate({phase:'downloading'}));
-  assert.equal(await page.locator('[data-update-operation-failure] button').isDisabled(),true,'a transport failure does not offer a concurrent retry while native work continues');
+  await page.waitForFunction(()=>document.querySelector('[data-update-operation-failure] button')?.disabled===true,undefined,{timeout:5000});
   await page.evaluate(()=>window.emitUpdate({phase:'idle'}));
   await page.locator('[data-update-operation-failure] button').click();
   await page.waitForFunction(()=>window.updateState.companions[0].selected===true);
@@ -210,6 +212,7 @@ try {
   assert.deepEqual(errors,[]);
   await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?status-failure=1`);
   await page.locator('[data-update-operation-failure] summary').click();
+  await page.locator('[data-update-operation-failure]').getByText('fixture: native update status unavailable',{exact:true}).waitFor();
   assert.match(await page.locator('[data-update-operation-failure]').innerText(),/fixture: native update status unavailable/);
   await page.locator('[data-setting-row-name="update-retry"] button').click();
   await page.locator('[data-more-fact="update-current-version"]').waitFor();
