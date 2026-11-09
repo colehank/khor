@@ -58,7 +58,7 @@ import { useReadingSession, type SessionReading } from "@/hooks/use-session-atte
 //     the top right corner, muted on a wash — 「zgh@Mac-mini:/Volumes/…」
 //     over the output. It is not drawn any more, and not kept.
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { Terminal, type IDisposable } from "@xterm/xterm";
+import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { ImageAddon } from "@xterm/addon-image";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
@@ -98,12 +98,13 @@ import { keepWebgl } from "@/lib/term-atlas";
 import { protectTerminal } from "@/lib/term-legibility";
 import { keepTerminalGlass } from "@/lib/term-glass";
 import { keepTerminalIme } from "@/lib/term-ime";
+import {drawBlocks} from "@/lib/term-block-decoration";
 import { onTermBlockLines, termBlockLines } from "@/lib/term-block-lines";
 import { onTermHistory, termHistory } from "@/lib/term-history";
 import { inInput, trackMarks, type Block, type Cursor, type Marks } from "@/lib/term-marks";
 import { askNewSession, askOpenPath, askOpenUrl, askStepTab, handOff } from "@/lib/composer-handoff";
 import { setTypeSize, TERM_MAX, TERM_MIN, typeSize } from "@/lib/type-size";
-import { termBell } from "@/lib/term-bell";
+import { termBell, TERM_BELL_MS as BELL_MS } from "@/lib/term-bell";
 import { searchable, useFindHow, type FindHow } from "@/lib/term-find";
 import { covers, pathLinks, pathsOn, urlAt } from "@/lib/term-links";
 import { endedWord, programOf, QUIET_EXITS, shortDir } from "@/components/DoingLine";
@@ -183,10 +184,6 @@ const CATCH_UP_MS = 2_000;
     (T-16). */
 const CHUNK_CHARS = 16 * 1024;
 
-
-/** How long the frame lights for a bell (BEL). iTerm2's visual bell is
-    a flash; a flash that stays is a border, and a border says nothing. */
-const BELL_MS = 160;
 
 /** A pane's picture store (MB, oldest out first) and the largest picture
     it decodes (pixels). The addon's defaults are 128 MB and 4096²; a pane
@@ -888,57 +885,6 @@ function commandOf(term: Terminal, b: Block): string {
   if (!b.input) return "";
   const end = b.output ? b.output.line : b.input.marker.line + 1;
   return linesText(term, b.input.marker.line, end).slice(b.input.col).trim();
-}
-
-/**
- * **Command blocks, drawn** (roadmap 2.3): a hairline where each prompt
- * starts, and once a command has ended, its exit status as a 2 px stripe
- * in the left margin beside the whole block — the state inks, done green
- * for 0 and failed red otherwise. xterm decorations pinned to the marks'
- * markers, so they ride the scrollback; VS Code draws its command
- * decorations the same way (a gutter mark per command, coloured by exit).
- */
-function drawBlocks(term: Terminal, marks: Marks): { dispose: () => void; size: () => number } {
-  const drawn = new Map<Block, IDisposable[]>();
-  const draw = () => {
-    // A block whose lines left the scrollback took its markers, and with
-    // them its decorations; its entry goes too, or one stays per command
-    // for the pane's life (the load pass, 2026-10-04).
-    for (const [b, ds] of drawn) {
-      if (b.prompt.isDisposed) {
-        ds.forEach((d) => d.dispose());
-        drawn.delete(b);
-      }
-    }
-    for (const b of marks.blocks()) {
-      const has = drawn.get(b) ?? [];
-      if (has.length === 0) {
-        const hair = term.registerDecoration({ marker: b.prompt, width: term.cols, height: 1 });
-        hair?.onRender((el) => el.classList.add("term-block-hair"));
-        if (hair) has.push(hair);
-      }
-      if (b.end && has.length === 1) {
-        const height = Math.max(1, b.end.line - b.prompt.line);
-        const tint = term.registerDecoration({ marker: b.prompt, x: 0, width: 1, height });
-        tint?.onRender((el) => {
-          el.classList.add("term-block-tint");
-          el.dataset.exit = String(b.exit ?? "");
-        });
-        if (tint) has.push(tint);
-      }
-      drawn.set(b, has);
-    }
-  };
-  const changed = marks.onChange(draw);
-  draw();
-  return {
-    dispose: () => {
-      changed.dispose();
-      drawn.forEach((ds) => ds.forEach((d) => d.dispose()));
-      drawn.clear();
-    },
-    size: () => drawn.size,
-  };
 }
 
 /** A tmux row's id (`adaptor::tmux::is_tmux_leaf`): the session's

@@ -1748,6 +1748,8 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+term-preview-activate = "Terminal preview. Activate to preview the completion cue"
+term-theme-custom-row = "Custom palette"
 session-association = "Session association"
 key-row-system-key = "This key is handled by the operating system"
 term-appearance = "Terminal appearance"

@@ -12,7 +12,6 @@ export function SessionPage({onClose,onSettingChanged}: {onClose:()=>void;onSett
       <ConfigSections page="session" onChanged={onSettingChanged} after={{session:<FinishedNotifyRow/>}}/>
     </section>
     <section data-terminal-settings className="flex min-w-0 flex-col gap-row">
-      <h2 className="text-title-sm font-title">{gui.view_terminal}</h2>
       <TerminalSection/>
     </section>
   </MoreFrame>;

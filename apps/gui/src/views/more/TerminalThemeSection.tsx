@@ -99,7 +99,8 @@ export function TerminalThemeSection() {
         }}
         mark={{"data-setting-select":"term-theme"}} className="-mr-xxs"/>
     </div>
-    {(making || custom) && <div data-setting-row="action" data-term-theme-custom className="flex flex-wrap items-center justify-end gap-in px-row py-in">
+    {(making || custom) && <div data-setting-row="action" data-term-theme-custom className="flex flex-wrap items-center gap-in px-row py-in">
+      <span className="min-w-0 flex-1 text-body">{gui.term_theme_custom_row}</span>
       <Button data-term-theme-import onClick={()=>fileRef.current?.click()}>{gui.import_sessions}</Button>
       <Button data-term-theme-edit onClick={edit}>{gui.nav_settings}</Button>
     </div>}

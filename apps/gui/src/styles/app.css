@@ -2378,20 +2378,20 @@ aside[data-side] {
 /* **Command blocks** (roadmap 2.3, `drawBlocks`): a hairline where each
    prompt starts; the exit status as a stripe the focus ring's width in the
    middle of the left margin, the state inks. Never in the way of a press. */
-[data-terminal] .term-block-hair {
+:is([data-terminal], [data-term-theme-preview]) .term-block-hair {
   border-top: var(--hair) solid var(--border);
   pointer-events: none;
 }
-[data-terminal] .term-block-tint {
+:is([data-terminal], [data-term-theme-preview]) .term-block-tint {
   width: var(--ring-w) !important;
   margin-left: calc(var(--gap-in) / -2);
   background: var(--state-failed);
   pointer-events: none;
 }
-[data-terminal] .term-block-tint[data-exit="0"] {
+:is([data-terminal], [data-term-theme-preview]) .term-block-tint[data-exit="0"] {
   background: var(--state-done);
 }
-[data-terminal] .term-block-tint[data-exit=""] {
+:is([data-terminal], [data-term-theme-preview]) .term-block-tint[data-exit=""] {
   background: var(--state-idle);
 }
 [data-terminal] .xterm-scrollable-element > .scrollbar {
@@ -3029,3 +3029,9 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
 .khor-keyboard [data-skbtn="{Backspace}"], .khor-keyboard [data-skbtn="{Tab}"],
 .khor-keyboard [data-skbtn="{Enter}"], .khor-keyboard [data-skbtn="{ShiftLeft}"],
 .khor-keyboard [data-skbtn="{ShiftRight}"], .khor-keyboard [data-skbtn="{CapsLock}"] { flex: 1.5; }
+
+/* The preview cursor stays visible while a settings control owns keyboard focus. */
+.term-preview-cursor { pointer-events: none; background: var(--khor-term-cursor, var(--term-preview-cursor-color)); }
+.term-preview-cursor[data-shape="bar"] { width: var(--hair) !important; }
+.term-preview-cursor[data-shape="underline"] { background: transparent; border-bottom: var(--hair) solid var(--khor-term-cursor, var(--term-preview-cursor-color)); }
+[data-term-theme-preview][data-preview-bell="true"] { box-shadow: inset 0 0 0 var(--ring-w) var(--term-preview-bell-color); }

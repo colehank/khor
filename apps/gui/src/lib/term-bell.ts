@@ -7,6 +7,9 @@ import { useEffect, useState } from "react";
 
 import { heardFrom } from "@/lib/other-windows";
 
+/** One brief completion flash, shared by live terminals and settings preview. */
+export const TERM_BELL_MS = 160;
+
 const KEY = "khor.term-bell";
 const CHANGED = "khor:term-bell";
 let session: boolean | null = null;

@@ -83,10 +83,46 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]').count(),1);
     await page.locator('[data-terminal-appearance-preview]').scrollIntoViewIfNeeded();
     const preview=await page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]').boundingBox();
-    assert.ok(preview.height>100,'The actual terminal preview retains its height in the scroll body');
+    assert.ok(preview.height>40,'The actual terminal preview retains its rendered height in the scroll body');
     assert.equal(await page.locator('[data-terminal-appearance-preview] .xterm-helper-textarea').evaluate(el=>getComputedStyle(el).opacity),'0','The preview owns its renderer stylesheet even before any terminal tab is opened');
     if(!mobile)assert.equal(await more.locator('[data-more-open="session"]').getAttribute('aria-current'),'page');
     await page.screenshot({path:path.join(report,`settings-terminal-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    assert.equal(await page.locator('[data-terminal-settings] > h2').count(),0,'Only Terminal appearance and Terminal features identify the groups');
+    const sample=page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]');
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.dataset.previewRows);
+    const sizeToContent=await sample.evaluate(el=>{
+      const t=el.__xterm,style=getComputedStyle(el),screen=el.querySelector('.xterm-screen').getBoundingClientRect();
+      return {rows:t.rows,used:t.buffer.active.cursorY+1,base:t.buffer.active.baseY,extra:el.clientHeight-parseFloat(style.paddingTop)-parseFloat(style.paddingBottom)-screen.height,
+        first:t.buffer.active.getLine(0).translateToString(true)};
+    });
+    assert.equal(sizeToContent.rows,sizeToContent.used,'Preview ends at the current prompt');
+    assert.equal(sizeToContent.base,0,'Wrapping never drops the sample start');
+    assert.ok(Math.abs(sizeToContent.extra)<=2,`Preview has no unused bottom rows: ${JSON.stringify(sizeToContent)}`);
+    assert.match(sizeToContent.first,/khor/);
+    const blocks=page.locator('[data-setting-row-name="term-block-lines"] [role="switch"]');
+    if(await blocks.getAttribute('aria-checked')!=="true")await blocks.click();
+    await page.waitForFunction(()=>document.querySelectorAll('[data-terminal-appearance-preview] .term-block-hair').length===2);
+    await blocks.click();
+    await page.waitForFunction(()=>!document.querySelector('[data-terminal-appearance-preview] .term-block-hair'));
+    const blinkSwitch=page.locator('[data-setting-row-name="term-cursor-blink"] [role="switch"]');
+    if(await blinkSwitch.getAttribute('aria-checked')!=="true")await blinkSwitch.click();
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] .term-preview-cursor')?.dataset.blink==="true");
+    assert.ok(await sample.locator('.term-preview-cursor').evaluate(el=>el.getAnimations().some(a=>a.playState==='running')),'Cursor blinks while a settings control owns focus');
+    assert.equal(await sample.locator('.xterm-helper-textarea').evaluate(el=>document.activeElement===el),false);
+    await page.locator('[data-setting-select="term-cursor"]').selectOption('bar');
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] .term-preview-cursor')?.dataset.shape==='bar');
+    await page.locator('[data-setting-select="term-cursor"]').selectOption('underline');
+    await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] .term-preview-cursor')?.dataset.shape==='underline');
+    await page.locator('[data-setting-select="term-cursor"]').selectOption('block');await blinkSwitch.click();
+    await sample.evaluate(el=>{el.dataset.testBellCount='0';const observer=new MutationObserver(()=>{if(el.dataset.previewBell==='true')el.dataset.testBellCount=String(Number(el.dataset.testBellCount)+1);});observer.observe(el,{attributes:true,attributeFilter:['data-preview-bell']});});
+    const cue=page.locator('[data-setting-row-name="term-bell"] [role="switch"]');
+    if(await cue.getAttribute('aria-checked')!=="true")await cue.click();
+    await sample.click();await page.waitForFunction(()=>Number(document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').dataset.testBellCount)>0);
+    await cue.click();
+    await page.waitForFunction(()=>!document.querySelector('[data-terminal-appearance-preview] [data-preview-bell="true"]'));
+    const bellCount=await sample.getAttribute('data-test-bell-count');await sample.click();await page.waitForTimeout(200);
+    assert.equal(await sample.getAttribute('data-test-bell-count'),bellCount,'Disabled completion cue stays silent in preview');await cue.click();
+
     // These are the production controls and real renderer, not a picture of them.
     await page.locator('[data-term-size-number]').fill('18');
     await page.locator('[data-term-size-number]').blur();
@@ -97,6 +133,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const activePalette=await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background);
     await page.locator('[data-setting-select="term-theme"]').selectOption('custom');
     assert.equal(await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background),activePalette,'Entering custom mode preserves the current terminal paint');
+    assert.equal(await page.locator('[data-term-theme-custom] > span').innerText(),'自定义配色');
     assert.equal(await page.locator('[data-term-theme-custom] button').count(),2,'Custom theme exposes Import and Settings only');
     await page.locator('[data-term-theme-edit]').click();
     const dialog=page.locator('[data-term-theme-editor]');await dialog.waitFor();
@@ -107,7 +144,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       const body=el.querySelector('[data-slot="dialog-body"]');
       return {height:preview.height,bottom:preview.bottom,formTop:section.top,body:!!body};
     });
-    assert.ok(geometry.height>100&&geometry.bottom<=geometry.formTop,'The palette preview cannot shrink or overlap colour fields');
+    assert.ok(geometry.height>40&&geometry.bottom<=geometry.formTop,'The palette preview cannot shrink or overlap colour fields');
     await page.screenshot({path:path.join(report,`settings-palette-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await page.keyboard.press('Escape');await dialog.waitFor({state:'detached'});
 
