@@ -39,7 +39,7 @@ const port=Number(process.env.KEY_ROW_CHECK_PORT||23840);
 const mark=(name,data={})=>results.push({name,...data});
 try{
  server=await createServer({root:gui,configFile:join(gui,'vite.config.ts'),server:{host:'127.0.0.1',port,strictPort:true}});await server.listen();
- browser=await chromium.launch({channel:process.env.PLAYWRIGHT_CHROMIUM_CHANNEL||'chrome',headless:true});
+ browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});
  const context=await browser.newContext({viewport:{width:1100,height:800}});
  const url=`http://127.0.0.1:${port}/${fixture.split('/').pop()}/index.html`;
  const page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));

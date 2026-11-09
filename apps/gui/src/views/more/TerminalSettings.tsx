@@ -7,7 +7,7 @@ import {Button} from "@/components/ui/button";
 import {Input} from "@/components/ui/input";
 import {gui} from "@/gen/catalog";
 import {useCoarse} from "@/hooks/use-coarse";
-import {setTermCursor,useTermCursor,type CursorShape} from "@/lib/term-cursor";
+import {setTermCursor,termCursor,useTermCursor,type CursorShape} from "@/lib/term-cursor";
 import {HISTORY_CHOICES,setTermHistory,useTermHistory} from "@/lib/term-history";
 import {setTermBell,useTermBell} from "@/lib/term-bell";
 import {setTermBlockLines,useTermBlockLines} from "@/lib/term-block-lines";
@@ -54,12 +54,16 @@ function CursorColorRow() {
   const cursor=useTermCursor();
   const [paletteColor,setPaletteColor]=useState(()=>clonePalette(document.body).cursor);
   useEffect(()=>onTermTheme(()=>setPaletteColor(clonePalette(document.body).cursor)),[]);
+  const colorChanged=(color:string)=>{
+    const latest=termCursor();
+    if(latest.color!==color)setTermCursor({...latest,color});
+  };
   return <div data-setting-row="value" data-setting-row-name="term-cursor-color" className={ROW}>
     <span className="min-w-0 flex-1 text-body">{gui.term_cursor_color}</span>
     {cursor.color ? <Button variant="ghost" size="sm" data-term-cursor-auto onClick={()=>setTermCursor({...cursor,color:null})}>{gui.term_color_auto}</Button>
       : <span className="text-callout text-muted-foreground">{gui.term_color_auto}</span>}
     <input type="color" data-term-cursor-color aria-label={gui.term_cursor_color} value={cursor.color??paletteColor}
-      onChange={event=>setTermCursor({...cursor,color:event.target.value})} className="term-theme-well"/>
+      onInput={event=>colorChanged(event.currentTarget.value)} onChange={event=>colorChanged(event.target.value)} className="term-theme-well"/>
   </div>;
 }
 

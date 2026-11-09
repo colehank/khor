@@ -29,7 +29,9 @@ export function drawBlocks(term: Terminal, marks: Marks): { dispose: () => void;
         if (hair) has.push(hair);
       }
       if (b.end && has.length === 1) {
-        const height = Math.max(1, b.end.line - b.prompt.line);
+        // Include D's row only when it still contains output. A D after
+        // newline belongs to the boundary before the next prompt instead.
+        const height = Math.max(1, b.end.line - b.prompt.line + (b.endRowOccupied ? 1 : 0));
         const tint = term.registerDecoration({ marker: b.prompt, x: 0, width: 1, height });
         tint?.onRender((el) => {
           el.classList.add("term-block-tint");

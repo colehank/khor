@@ -19,6 +19,8 @@ export type Block = {
   output?: IMarker;
   /** Where it ended (D), and how. */
   end?: IMarker;
+  /** D can arrive before LF (occupied row) or after LF (next blank row). */
+  endRowOccupied?: boolean;
   exit?: number | null;
   command?: string;
   /** Where the shell stood when it ran (OSC 7). */
@@ -111,6 +113,8 @@ export function trackMarks(term: Terminal): Marks {
         const m = here();
         if (!m) return;
         b.end = m;
+        const buffer = term.buffer.active;
+        b.endRowOccupied = buffer.cursorX > 0 || !!buffer.getLine(m.line)?.translateToString(true).length;
         const n = parseInt(params[0] ?? "", 10);
         b.exit = Number.isFinite(n) ? n : null;
         changed();

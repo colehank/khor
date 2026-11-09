@@ -39,10 +39,10 @@ export function cursorPair(background: number, cursor: number, accent: number, r
   cursor: number;
   accent: number;
 } {
-  // Keep a user's cursor colour when it is already legible. A stable pole
-  // avoids slightly different grey cursors for every shade of input surface.
+  // Keep the selected hue: raise contrast only as far as the input surface
+  // requires, using the same minimum-movement adjustment as terminal text.
   const target = Math.max(3, ratio);
-  const ink = contrastRatio(cursor, background) >= target ? cursor : contrastRatio(0, background) > contrastRatio(0xffffff, background) ? 0 : 0xffffff;
+  const ink = readableRgb(cursor, background, target);
   const glyph = contrastRatio(accent, ink) >= Math.max(4.5, ratio) ? accent : contrastRatio(0, ink) > contrastRatio(0xffffff, ink) ? 0 : 0xffffff;
   return { cursor: ink, accent: glyph };
 }

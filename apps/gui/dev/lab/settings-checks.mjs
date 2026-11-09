@@ -107,6 +107,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       return {bottom:stripe.bottom,expected:screen.top+t.buffer.active.cursorY*screen.height/t.rows};
     });
     assert.ok(Math.abs(stripeBounds.bottom-stripeBounds.expected)<=1,'Completed block covers the final output row and ends before the current prompt');
+    await page.screenshot({path:path.join(report,`settings-command-stripe-${engine}-${mobile?'mobile':'desktop'}.png`)});
     await blocks.click();
     await page.waitForFunction(()=>!document.querySelector('[data-terminal-appearance-preview] .term-block-hair'));
     const blinkSwitch=page.locator('[data-setting-row-name="term-cursor-blink"] [role="switch"]');
@@ -134,15 +135,20 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
     await page.locator('[data-term-cursor-color]').fill('#aabbcc');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');
-    const cursorPaint=[];
-    for(const color of ['#ffaaaa','#aaaaff']) {
-      await page.locator('[data-term-cursor-color]').fill(color);
-      await page.waitForFunction(color=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor===color,color);
-      // Wait for the actual renderer pass, then measure the visible decoration.
-      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-      cursorPaint.push(await sample.locator('.term-preview-cursor').evaluate(el=>getComputedStyle(el).backgroundColor));
+    const themePicker=page.locator('[data-setting-select="term-theme"]'),originalTheme=await themePicker.inputValue();
+    for(const [theme,colors] of [['latte',['#ffaaaa','#aaaaff']],['mocha',['#660000','#000066']]]) {
+      await themePicker.selectOption(theme);
+      const cursorPaint=[];
+      for(const color of colors) {
+        await page.locator('[data-term-cursor-color]').fill(color);
+        await page.waitForFunction(color=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor===color,color);
+        // Wait for the renderer pass, then measure the visible decoration.
+        await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+        cursorPaint.push(await sample.locator('.term-preview-cursor').evaluate(el=>getComputedStyle(el).backgroundColor));
+      }
+      assert.notEqual(cursorPaint[0],cursorPaint[1],`${theme}: changing cursor colour changes visible paint, not only configuration`);
     }
-    assert.notEqual(cursorPaint[0],cursorPaint[1],'Changing cursor colour changes its visible paint, not only configuration');
+    await themePicker.selectOption(originalTheme);
     await page.locator('[data-term-cursor-auto]').click();
     const activePalette=await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background);
     await page.locator('[data-setting-select="term-theme"]').selectOption('custom');

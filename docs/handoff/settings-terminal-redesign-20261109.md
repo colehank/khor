@@ -85,3 +85,8 @@ Uncommitted implementation on top917: extracted existing production drawBlocks u
 - Need verify actual DOM cursor colour (previous checks only verified options.theme.cursor). Keep chosen hue with legibility adjustments, verify native colour input event commits too. For blocks, distinguish D at an occupied output row from D at the next blank/prompt line.
 - Handoff was accidentally overwritten by a script variable during05d3b5cf commit; restored here from845 version plus this authoritative continuation. No product code was affected by that documentation error.
 - Still serial/root, source-only local (no Node/Bun/Rust/Xcode builds/tests); Python/static/source reads and trusted public GH build/test allowed. No agents/main merge/ship/install/user-app or live-host restart. Native notifications over sibling browser/PDF views still unverified; older broad WebKit commit-escape lifecycle failure needs full-release follow-up.
+
+## Cursor / stripe repair · 2026-11-10
+- Added regressions86a8b229: shared cursor pair must preserve distinct low-contrast hue paths; actual App Lab measures decoration colour and stripe bottom, plus OSC D-before-LF/after-CR/after-LF unit boundaries. Trusted red run dispatched before repair.
+- Repair: track D row occupancy without shifting its marker; shared renderer includes occupied D row, excludes following empty/prompt boundary. Shared cursor protection uses existing readableRgb minimum-movement contrast adjustment instead of pole replacement. Native colour input streams changes and commits with de-duplication.
+- Mobile palette width05d3b5cf included; still pending exact trusted validation and live update. No publication/install/restart authorized.
