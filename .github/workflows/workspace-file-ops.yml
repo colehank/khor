@@ -44,6 +44,8 @@ jobs:
       - run: npm ci --prefix apps/gui
       - name: Generate production bindings
         run: npm run gen --prefix apps/gui
+      - name: Prepare canonical App Lab data
+        run: python3 scripts/khor_lab/fixture_data.py .
       - name: Check production types and focused drag tests
         working-directory: apps/gui
         run: |
