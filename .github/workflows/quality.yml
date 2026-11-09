@@ -366,7 +366,7 @@ jobs:
       - name: Run the selected interaction groups and retain all failures
         run: |
           failed=0
-          gates=(updates-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui workspace-move-ui)
+          gates=(updates-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui key-row-ui workspace-move-ui)
           if [ "$KHOR_QUALITY_SUITE" = updates ]; then
             gates=(updates-ui)
           fi
@@ -405,6 +405,7 @@ jobs:
           AI_ELEMENTS_OUT: ${{ runner.temp }}/quality-elements
           WORKSPACE_CONTENT_DIR: ${{ runner.temp }}/quality-workspace
           TERMINAL_LINK_UI_DIR: ${{ runner.temp }}/quality-terminal-links
+          KEY_ROW_CHECK_DIR: ${{ runner.temp }}/quality-key-row
           NOTIFICATION_UI_DIR: ${{ runner.temp }}/quality-notifications
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
@@ -428,6 +429,7 @@ jobs:
             ${{ runner.temp }}/quality-compose
             ${{ runner.temp }}/quality-workspace
             ${{ runner.temp }}/quality-terminal-links
+            ${{ runner.temp }}/quality-key-row
             ${{ runner.temp }}/quality-notifications
           if-no-files-found: warn
 

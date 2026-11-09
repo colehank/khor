@@ -53,7 +53,7 @@ function RecognitionRows({ machine }: { machine: string }) {
   const { entries, error, busy, request } = useRecognition(machine);
   if (error) return <RegionState state="error" message={error} onRetry={() => void request("read")} />;
   if (!entries) return <RegionState state="loading-never" />;
-  return <>{entries.map((entry) => {
+  return <>{entries.filter(entry=>entry.agent==="codex").map((entry) => {
     const label = entry.agent === "claude" ? "Claude Code" : "Codex";
     const canChange = entry.agent === "codex" && entry.state !== "absent" && entry.state !== "error" && (entry.state !== "configured" || entry.managed);
     const note = entry.error ?? (entry.state === "configured" && !entry.managed ? gui.recognition_user_config : entry.agent === "claude" ? gui.recognition_claude_note : gui.recognition_codex_note);
@@ -69,11 +69,11 @@ function RecognitionRows({ machine }: { machine: string }) {
       </div>;
   })}</>;
 }
-export function AgentRecognition({ devices, machine, onMachine }: { devices: DeviceRow[]; machine: string | null; onMachine: (id: string) => void }) {
+export function SessionAssociation({ devices, machine, onMachine }: { devices: DeviceRow[]; machine: string | null; onMachine: (id: string) => void }) {
   const computers = devices.filter((d) => d.hosts && !d.sponsor);
   const target = machine === null ? computers.find((d) => d.me) ?? computers[0] : computers.find((d) => d.id === machine);
   useEffect(() => { if (machine === null && target) onMachine(target.id); }, [machine, target?.id, onMachine]);
-  return <MoreSection name="agent-recognition" label={gui.agent_recognition}>
+  return <MoreSection name="session-association" label={gui.session_association}>
     {computers.length > 0 && <PopupRow name="recognition-machine" label={gui.recognition_machine} value={target?.id ?? ""} choices={[...(!target ? [{ value: "", label: gui.recognition_empty }] : []), ...computers.map((d) => ({ value: d.id, label: d.shown }))]} onPick={(id) => { if (id) onMachine(id); }} />}
     {target ? <RecognitionRows key={target.id} machine={target.id} /> : <RegionState state="empty" message={gui.recognition_empty} />}
   </MoreSection>;

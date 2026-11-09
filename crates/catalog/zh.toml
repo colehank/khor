@@ -2712,6 +2712,13 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+session-association = "会话关联"
+key-row-system-key = "系统按键由操作系统处理"
+session-general = "通用"
+term-appearance = "终端外观"
+term-functions = "终端功能"
+term-cursor-color = "光标颜色"
+term-color-auto = "跟随配色"
 update-runtime-cache = "运行程序缓存"
 update-runtime-retained = "更新保留"
 update-runtime-retained-hint = "保留当前、回退和等待确认的更新，完成后自动整理"
@@ -2922,13 +2929,13 @@ term-theme-soft = "柔和深色"
 term-theme-warm = "暖浅色"
 term-theme-contrast = "高对比度"
 term-theme-automatic = "随明暗切换"
-term-theme-readability = "可读性保护"
+term-theme-readability = "可读性增强"
 term-theme-readability-note = "调整与背景过于接近的文字颜色"
 term-theme-protect-light = "轻度"
 term-theme-protect-standard = "标准"
 term-theme-protect-strong = "加强"
 term-theme-title = "配色"
-term-theme-palette = "终端配色"
+term-theme-palette = "配色"
 term-theme-follow = "跟随 khor"
 term-theme-presets = "预设配色"
 term-theme-mine = "我的配色"
@@ -3156,7 +3163,7 @@ nav-order-note = "前四项显示在底部，其余在「更多」里"
 type-size = "字号"
 ui-size-system = "界面字号跟随系统"
 ui-size = "界面字号"
-term-size = "终端字号"
+term-size = "字号"
 # The terminal group's one line in the chosen font (F7.6): a prompt with
 # the characters fonts confuse (Il1 O0) and two Nerd glyphs — a branch
 # and a folder — that the bundled symbols face draws when the font
@@ -3218,19 +3225,19 @@ command-history-runs = "{0} 次"
 term-picture = "图片"
 # Appearance → Terminal: whether a terminal's bell is shown or felt
 # (roadmap 4.2).
-term-bell = "响铃"
+term-bell = "完成提示"
 term-bell-note = "终端响铃时，Mac 上闪一下边框，手机上轻震一下"
 # The mark on a tab and a list row whose terminal rang its bell while it
 # was off screen (item 67): what VoiceOver reads for the dot.
 bell-rang = "响过铃"
-term-predict = "预测输入"
+term-predict = "预测回显"
 term-predict-note = "远端回显慢时，按下的字先带下划线显示，等远端确认"
 # Appearance → Terminal (item 21): the one ~/.zshrc line that makes shells
 # the person starts in tmux themselves mark their commands, with a copy
 # button. Panes opened from khor's own tmux client already do.
 # Appearance → Terminal (item 27): the command blocks' hairline and exit
 # stripe, off by default; the block menu and the jumps work either way.
-term-block-lines = "命令分隔线"
+term-block-lines = "命令块分隔"
 term-block-lines-note = "在每条命令之间画一条细线，左侧用色条标出退出状态"
 # Appearance → Terminal (UX-12): where the key row starts with a hardware
 # keyboard, a phone's only; the name is the owner's.
@@ -3241,7 +3248,7 @@ term-joy-haptic = "摇杆震动"
 term-joy-haptic-note = "用光标摇杆时，每发出一个方向键轻震一下，换方向时稍重一下"
 # Appearance → Terminal (item 22): Terminal.app's own words for the same
 # switch (描述文件 › 键盘), off by default there and here.
-term-option-meta = "将 Option 键用作 Meta 键"
+term-option-meta = "Option 键作为 Meta 键"
 term-option-meta-note = "关闭时 Option 键输入特殊字符，如 ⌥2 输入 ™；打开后 ⌥B、⌥F 这类组合发给 shell。⌥← ⌥→ ⌥⌫ 两种情况下都按词移动和删除。"
 term-tmux-marks = "在 tmux 里启用命令标记"
 term-tmux-marks-note = "把这一行加进 ~/.zshrc，tmux 里的 shell 就会标出命令：会话行、历史命令和跳到上一条命令都能用。在 khor 里新开的窗格不用加。"
@@ -3255,7 +3262,7 @@ term-cursor-underline = "下划线"
 term-cursor-blink = "光标闪烁"
 # Appearance → Terminal (item 17): how many lines of history a terminal
 # keeps, and what that costs in memory for each open terminal.
-term-history = "历史行数"
+term-history = "缓存行数"
 term-history-note = "约 {0} MB 每个终端"
 # A machine's page: its sessions instead of its dashboard.
 machine-sessions = "这台机器上的会话"
@@ -4418,7 +4425,7 @@ keys-group-mod = "修饰"
 keys-group-symbol = "符号"
 keys-group-function = "功能键"
 keys-edit-row = "编辑这一行"
-term-key-row = "终端键行"
+term-key-row = "快捷键行"
 # The key row's 📎 (UX-41, item 60 part 3): a panel in the keyboard's place
 # that puts files into the terminal as paths.
 key-attach-name = "放文件进终端"

@@ -266,9 +266,9 @@ export function PageHead({
             cut before the directory's own name is. On `caption`'s
             leading, so the line stays the name's 18 tall. */}
         <div className="flex min-w-0 items-baseline gap-in">
-          <h1 data-page-title className="min-w-0 truncate text-title-sm font-title">
+          {title && <h1 data-page-title className="min-w-0 truncate text-title-sm font-title">
             {title}
-          </h1>
+          </h1>}
           {asideRef && (
             <span
               ref={asideRef}
@@ -314,6 +314,7 @@ export function Region({
   children,
   windowControls = true,
   headerOverlay = true,
+  headerless = false,
 }: {
   /** **The head stands over the page's content** (W-V5; UX-22): on a
       page in a `DetailFrame`, R0's name starts on the content's left
@@ -350,8 +351,11 @@ export function Region({
   windowControls?: boolean;
   /** Fixed toolbars beneath this header keep their own vertical seat. */
   headerOverlay?: boolean;
+  /** Form pages need no empty header; real folded navigation/native controls keep theirs. */
+  headerless?: boolean;
 }) {
   const lead = useContext(RegionLead);
+  const showHeader = !headerless || !!lead || windowsApp;
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
@@ -386,7 +390,7 @@ export function Region({
   }, [capped, over]);
   return (
     <div data-region data-region-kind={kind} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div
+      {showHeader && <div
         data-region-head
         // The page's head is a band: the board's scroller passes under it
         // on glass (`lib/scroll-edge`, round HEADS).
@@ -434,7 +438,7 @@ export function Region({
         )}
         {windowControls && <WindowControls />}
         {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand" />}
-      </div>
+      </div>}
       {/* The board. On narrow it is the whole screen and wears no
           margin and no corner (`app.css`, keyed on `data-narrow`).
           **A block, not a flex column**: what it holds is written
@@ -459,10 +463,10 @@ export function Region({
         )}
       >
         <RegionLead.Provider value={null}>
-        <ActionsSeat.Provider value={head ? undefined : seat}>
-          <SubtitleSeat.Provider value={head ? undefined : sub}>
-            <AsideSeat.Provider value={head ? undefined : aside}>
-              <AvatarSeat.Provider value={head ? undefined : avatar}>{children}</AvatarSeat.Provider>
+        <ActionsSeat.Provider value={!showHeader || head ? undefined : seat}>
+          <SubtitleSeat.Provider value={!showHeader || head ? undefined : sub}>
+            <AsideSeat.Provider value={!showHeader || head ? undefined : aside}>
+              <AvatarSeat.Provider value={!showHeader || head ? undefined : avatar}>{children}</AvatarSeat.Provider>
             </AsideSeat.Provider>
           </SubtitleSeat.Provider>
         </ActionsSeat.Provider>

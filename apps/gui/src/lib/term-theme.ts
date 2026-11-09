@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import type { ITheme } from "@xterm/xterm";
 import { heardFrom } from "@/lib/other-windows";
+import {onTermCursor,termCursor} from "@/lib/term-cursor";
 import presets from "@/lib/term-palettes.json";
 
 export const TERM_THEME_KEY = "khor.term-theme";
@@ -29,7 +30,7 @@ export const THEME_FAMILIES = [
   { id: "auto-catppuccin", name: "Catppuccin", light: "latte", dark: "mocha" },
   { id: "auto-tokyo", name: "Tokyo Night / Day", light: "tokyo-day", dark: "tokyo" },
 ] as const;
-const validId = (id: string, customs: UserPalette[]) => id === "follow" || THEME_FAMILIES.some(p => p.id === id) || PRESETS.some(p => p.id === id) || customs.some(p => p.id === id);
+const validId = (id: string, customs: UserPalette[]) => id === "follow" || id === "custom" || THEME_FAMILIES.some(p => p.id === id) || PRESETS.some(p => p.id === id) || customs.some(p => p.id === id);
 const contrastOf = (choice: ThemeChoice) => CONTRAST_LEVELS.some(v => v === choice.contrast) ? choice.contrast! : DEFAULT_CONTRAST;
 function terminalMode(): "light" | "dark" {
   const stamped = document.documentElement.dataset.theme;
@@ -99,6 +100,9 @@ export function onTermTheme(run: () => void): () => void {
   return () => window.removeEventListener(CHANGED, run);
 }
 heardFrom(TERM_THEME_KEY, () => { cached = null; wearTermPalette(); window.dispatchEvent(new Event(CHANGED)); });
+// Cursor colour is a viewer preference; every existing appearance subscriber
+// (live, retained, ended and preview) repaints through the same path.
+onTermCursor(()=>window.dispatchEvent(new Event(CHANGED)));
 export function useTermTheme(): ThemeChoice {
   const [value, setValue] = useState(termTheme);
   useEffect(() => onTermTheme(() => setValue(termTheme())), []);
@@ -142,7 +146,9 @@ export function terminalTheme(el: HTMLElement, choice = termTheme()): ITheme {
 /** Rendering policy belongs to this viewer. Updating these options never
  * rewrites cells, resets the terminal or changes the program's RGB bytes. */
 export function terminalAppearance(el: HTMLElement, choice = termTheme(), preview?: Palette): { theme: ITheme; minimumContrastRatio: number } {
-  return { theme: preview ? { ...preview, extendedAnsi: preview.extendedAnsi?.slice() } : terminalTheme(el, choice), minimumContrastRatio: contrastOf(choice) };
+  const theme=preview ? { ...preview, extendedAnsi: preview.extendedAnsi?.slice() } : terminalTheme(el, choice);
+  const color=termCursor().color;
+  return {theme:color && !preview ? {...theme,cursor:color} : theme,minimumContrastRatio:contrastOf(choice)};
 }
 /** Resolve Follow to an opaque, portable HEX palette for cloning/export. */
 export function clonePalette(el: HTMLElement, choice = termTheme()): Palette {

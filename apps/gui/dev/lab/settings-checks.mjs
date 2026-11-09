@@ -36,13 +36,13 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const inventory=()=>more.locator('[data-more-open]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-more-open')));
     const navigation=page.locator('[data-settings-navigation]:visible');
     await navigation.waitFor();
-    assert.equal(await navigation.locator('[data-more-open]').count(),6,'Settings has one Session entry, without a separate Terminal entry');
+    assert.equal(await navigation.locator('[data-more-open]').count(),8,'More has the exact grouped destinations without a separate Terminal or Notifications entry');
     assert.equal(await more.locator('[data-more-open="me"]').count(),0,'My Khor belongs only to the overflow chooser');
     const original=await inventory();
-    assert.deepEqual(original,['appearance','session','workspace','connection','security','about','store','notifications','doctor']);
+    assert.deepEqual(original,['session','workspace','appearance','connection','security','store','doctor','about']);
     assert.equal(await more.locator('[data-more-landing]').count(),0,'Hidden landings are not More utilities');
     assert.equal(await page.locator('[data-nav-menu]').count(),0,'Choosing More dismisses the navigation chooser');
-    if(!mobile)await page.locator('[data-more-page="appearance"]:visible').waitFor();
+    if(!mobile)await page.locator('[data-more-page="session"]:visible').waitFor();
     await navigation.locator('[data-more-open="workspace"]').click();
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     const picker=page.locator('[data-more-page="workspace"] select').first();
@@ -58,7 +58,8 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       await page.locator('[data-nav-item="devices"]:visible').click();
     } else {
       assert.equal(await page.locator('[data-more-close]:visible').count(),0,'More has no redundant close button');
-      assert.equal(await page.locator('[data-main] [data-page-title]').first().innerText(),'','The selected sidebar row identifies the page without another title');
+      assert.equal(await page.locator('[data-main] [data-page-title]').count(),0,'The selected sidebar row identifies the page without an empty title');
+      assert.equal(await page.locator('[data-main] [data-region-head]').count(),0,'Headerless More does not reserve an empty toolbar');
       await page.locator('[data-landing="devices"]:visible').click();
     }
     await page.waitForFunction(()=>!document.querySelector('[data-more-page="workspace"]')?.getClientRects().length);
@@ -76,12 +77,15 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
       if(!mobile)assert.deepEqual(await inventory(),original,'Every More page keeps the same navigation');
     };
     await pick('session');
-    await page.locator('[data-settings-child="terminal"]').click();
-    await page.locator('[data-more-page="terminal"]:visible').waitFor();
+    assert.equal(await page.locator('[data-settings-child="terminal"]').count(),0);
+    await page.locator('[data-terminal-settings]').waitFor();
+    assert.equal(await page.locator('[data-more-page="terminal"]').count(),0);
+    assert.equal(await page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]').count(),1);
+    await page.locator('[data-terminal-appearance-preview]').scrollIntoViewIfNeeded();
+    const preview=await page.locator('[data-terminal-appearance-preview] [data-term-theme-preview]').boundingBox();
+    assert.ok(preview.height>100,'The actual terminal preview retains its height in the scroll body');
     if(!mobile)assert.equal(await more.locator('[data-more-open="session"]').getAttribute('aria-current'),'page');
-    assert.equal(await more.locator('[data-more-open="terminal"]').count(),0);
-    if(mobile)await back();else await page.locator('[data-settings-parent]:visible').click();
-    await page.locator('[data-more-page="session"]:visible').waitFor();
+    await page.screenshot({path:path.join(report,`settings-terminal-${engine}-${mobile?'mobile':'desktop'}.png`)});
     for(const key of ['doctor','store'])await pick(key);
     if(mobile)await back();
     await page.locator('[data-landing="devices"]:visible').click();

@@ -1,7 +1,6 @@
 import type {ComponentType, ReactNode} from "react";
-import {IconAppearance, IconChevronRight, IconFiles, IconGear, IconNetwork, IconPulse, IconRecent, IconSessions, IconShield, IconStore} from "@/components/icons";
+import {IconAppearance, IconChevronRight, IconFiles, IconGear, IconNetwork, IconPulse, IconSessions, IconShield, IconStore} from "@/components/icons";
 import {NarrowHead,SideSeat} from "@/components/SideHead";
-import {settingsPages} from "@/lib/settings-navigation";
 import type {MorePage} from "@/lib/more-navigation";
 import {walkList} from "@/lib/shortcuts";
 import {cn} from "@/lib/utils";
@@ -12,13 +11,13 @@ type NavigationPage = Exclude<MorePage,"me"|"terminal">;
 const glyphs:Record<NavigationPage,ComponentType<{className?:string}>> = {
   appearance:IconAppearance,session:IconSessions,workspace:IconFiles,
   connection:IconNetwork,security:IconShield,about:IconGear,
-  store:IconStore,notifications:IconRecent,doctor:IconPulse,
+  store:IconStore,doctor:IconPulse,
 };
-const utilities = ["store","notifications","doctor"] as const;
+const groups = [["session","workspace","appearance"],["connection","security","store","doctor"],["about"]] as const;
 
 /** The same grouped navigation stays beside every More page. */
-export function MoreNavigation({page,narrow,unread,onPage}: {
-  page:MorePage|null;narrow:boolean;unread:number;
+export function MoreNavigation({page,narrow,onPage}: {
+  page:MorePage|null;narrow:boolean;
   onPage:(page:MorePage)=>void;
 }) {
   const selected = page === "terminal" ? "session" : page;
@@ -28,17 +27,16 @@ export function MoreNavigation({page,narrow,unread,onPage}: {
       data-on={selected === key}
       aria-current={selected === key ? "page" : undefined} tabIndex={selected === key ? 0 : -1}
       onClick={()=>onPage(key)}
-      className={cn("flex min-h-touch min-w-0 items-center gap-row text-start focus-visible:-outline-offset-2",
+      className={cn("flex min-h-touch min-w-0 items-center gap-in text-start focus-visible:-outline-offset-2",
         narrow ? "px-row text-body" : "mx-in rounded-md px-3 text-headline",
         selected === key ? "bg-fill-strong" : "hover:bg-fill")}
     >
-      <span data-more-glyph={key} className="flex w-list-face flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
+      <span data-more-glyph={key} className="flex w-nav-glyph flex-none items-center justify-center text-rail-ink [&>svg]:size-nav-glyph">
         <Glyph/>
       </span>
       <span className="flex min-w-0 flex-1 flex-col py-1">
         <span className="truncate">{moreName(key)}</span>
       </span>
-      {key === "notifications" && unread > 0 && <span className="text-caption tabular-nums text-muted-foreground">{unread}</span>}
       {narrow && <IconChevronRight className="size-affordance flex-none text-tertiary"/>}
     </button>;
   };
@@ -49,10 +47,8 @@ export function MoreNavigation({page,narrow,unread,onPage}: {
     className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1",narrow && "pb-[var(--nav-room)]")}>
     {narrow ? <NarrowHead>{()=><h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.rail_more}</h1>}</NarrowHead>
       : <SideSeat><h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.rail_more}</h1></SideSeat>}
-    <section data-settings-navigation data-more-group="settings" aria-label={gui.nav_settings} className="mt-group">
-      <h2 className="px-row pb-in text-caption text-muted-foreground">{gui.nav_settings}</h2>
-      {group(settingsPages.map(row))}
-    </section>
-    <div data-more-utilities className="mt-group mb-pane">{group(utilities.map(row))}</div>
+    <div data-settings-navigation className="flex min-w-0 flex-col gap-group pb-pane">
+      {groups.map((items,index)=><section key={index} data-more-group={index}>{group(items.map(row))}</section>)}
+    </div>
   </nav>;
 }

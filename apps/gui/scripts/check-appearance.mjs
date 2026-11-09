@@ -240,6 +240,7 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.getByRole("slider", { name: "背景不透明度" }).fill("85");
   await page.waitForFunction(() => document.documentElement.style.getPropertyValue("--window-opacity") === "85%");
 
+  await page.locator('[data-setting-select="term-theme"]').selectOption("custom");
   await page.locator("[data-term-theme-edit]").click();
   await page.getByRole("textbox", { name: "名称", exact: true }).fill("我的配色");
   await page.getByRole("textbox", { name: "背景 HEX", exact: true }).fill("#102030");
@@ -253,7 +254,10 @@ createRoot(document.getElementById('root')).render(<Lab/>);
   await page.locator("[data-term-theme-save]").click();
   await page.waitForFunction(() => document.querySelector("[data-terminal]").__xterm.options.theme.brightRed === "#ffaa99");
   assert.deepEqual(await page.evaluate(() => document.querySelector("[data-terminal]").__xterm.options.theme.extendedAnsi), ["#123456", "#abcdef"]);
+  await page.locator("[data-term-theme-edit]").click();
   await page.locator("[data-term-theme-export]").click();
+  await page.keyboard.press("Escape");
+  await page.locator("[data-term-theme-editor]").waitFor({state:"detached"});
   const exported = JSON.parse(calls.findLast(c => c.cmd === "save_terminal_palette").args.text);
   assert.equal(exported.name, "我的配色"); assert.equal(exported.theme.brightRed, "#ffaa99");
   await page.locator("[data-term-theme-file]").setInputFiles({ name: "bad.json", mimeType: "application/json", buffer: Buffer.from('{"background":"oops"}') });

@@ -51,7 +51,7 @@ import { IconAttach, IconChevronDown, IconChevronRight, IconChevronUp, IconGrip,
 import { GlassCircle } from "@/components/Glass";
 import { Switch } from "@/components/settings/Switch";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, TaskOverlay, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, TaskOverlay, DialogTitle, DialogBody } from "@/components/ui/dialog";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { gui } from "@/gen/catalog";
 import { afterKey, GROUPS, KEYS, keyDefinition, pressLatch, resetKeyRow, setKeyRow, useKeyRow, useKeyRowState, type KeyDef, type Mods } from "@/lib/term-keys";
@@ -63,6 +63,11 @@ import { useHeldKey } from "@/lib/key-repeat";
 import { pasteInto } from "@/lib/term-paste";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
+import { useCoarse } from "@/hooks/use-coarse";
+import { PopupRow } from "@/components/settings/PopupRow";
+import { SwitchRow } from "@/components/settings/SwitchRow";
+import { setTermKeysHw, useTermKeysHw } from "@/lib/term-keys-hw";
+import { setTermJoyHaptic, useTermJoyHaptic } from "@/lib/term-joy-haptic";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
 import { TermFiles, type FilesRoad } from "@/views/TermFiles";
@@ -420,11 +425,12 @@ function KeyActionFailure({ open, onOpenChange }: { open: boolean; onOpenChange:
 
 /** Settings and the keyboard panel share one device-local row editor. */
 export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const coarse=useCoarse(),wake=useTermWake(),keysHw=useTermKeysHw(),haptic=useTermJoyHaptic();
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <TaskOverlay
         purpose="edit" initialHeight="medium" maxHeight="large" dismiss="outside"
-        data-key-row-editor
+        data-key-row-editor className="w-[min(56rem,calc(100%-2rem))]"
       >
         <div className="flex items-center gap-row">
           <DialogTitle className="min-w-0 flex-1">{gui.term_key_row}</DialogTitle>
@@ -437,7 +443,14 @@ export function KeyRowEditor({ open, onOpenChange }: { open: boolean; onOpenChan
             {gui.edit_done}
           </button>
         </div>
-        <KeyRowList />
+        <DialogBody className="flex min-w-0 flex-col gap-row">
+          <KeyRowList />
+          {coarse&&<div data-key-row-preferences className="flex flex-col rounded-lg bg-grouped">
+            <PopupRow name="term-wake" label={gui.term_wake} value={wake} choices={WAKES.map(w=>({value:w,label:{auto:gui.term_wake_auto,screen:gui.term_wake_screen,button:gui.term_wake_button}[w]}))} onPick={w=>setTermWake(w as Wake)}/>
+            <SwitchRow name="term-keys-hw" label={gui.term_keys_hw} on={keysHw} onToggle={()=>setTermKeysHw(!keysHw)}/>
+            <SwitchRow name="term-joy-haptic" label={gui.term_joy_haptic} on={haptic} onToggle={()=>setTermJoyHaptic(!haptic)}/>
+          </div>}
+        </DialogBody>
       </TaskOverlay>
     </Dialog>
   );

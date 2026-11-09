@@ -18,11 +18,11 @@ import { useEffect, useState } from "react";
 import { heardFrom } from "@/lib/other-windows";
 
 export type CursorShape = "block" | "bar" | "underline";
-export type CursorChoice = { shape: CursorShape; blink: boolean };
+export type CursorChoice = { shape: CursorShape; blink: boolean; color?: string | null };
 
 const KEY = "khor.term-cursor";
 const CHANGED = "khor:term-cursor";
-const DEFAULT: CursorChoice = { shape: "block", blink: false };
+const DEFAULT: CursorChoice = { shape: "block", blink: false, color: null };
 const SHAPES: CursorShape[] = ["block", "bar", "underline"];
 
 /** This session's choice once it has been set, for a face whose storage
@@ -38,19 +38,21 @@ export function termCursor(): CursorChoice {
     return {
       shape: SHAPES.includes(v.shape as CursorShape) ? (v.shape as CursorShape) : DEFAULT.shape,
       blink: typeof v.blink === "boolean" ? v.blink : DEFAULT.blink,
+      color: typeof v.color === "string" && /^#[\da-f]{6}$/i.test(v.color) ? v.color.toLowerCase() : null,
     };
   } catch {
     return DEFAULT;
   }
 }
 
-export function setTermCursor(next: CursorChoice) {
+export function setTermCursor(choice: CursorChoice) {
+  const next: CursorChoice = {
+    shape: SHAPES.includes(choice.shape) ? choice.shape : DEFAULT.shape,
+    blink: typeof choice.blink === "boolean" ? choice.blink : DEFAULT.blink,
+    color: typeof choice.color === "string" && /^#[\da-f]{6}$/i.test(choice.color) ? choice.color.toLowerCase() : null,
+  };
   session = next;
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(next));
-  } catch {
-    // Kept for this session only.
-  }
+  try { window.localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* Session-local fallback. */ }
   window.dispatchEvent(new CustomEvent(CHANGED, { detail: next }));
 }
 

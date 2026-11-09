@@ -53,7 +53,6 @@ export const moreName = (page: MorePage): string =>
     about: gui.settings_about,
     store: gui.settings_store,
     doctor: gui.doctor,
-    notifications: gui.notifications,
   })[page];
 
 /** The name the page's head says, for the sections inside it: a group
@@ -201,7 +200,7 @@ export function MoreSection({
     // where the text does. `app.css` `[data-settings-card]` draws the
     // lines and pads whatever in it is not a settings row.
     <section data-more-section={name} className="flex min-w-0 flex-col gap-xxs">
-      {shown && <h2 className="ml-row text-group text-muted-foreground">{shown}</h2>}
+      {shown && <h2 className="ml-row text-headline text-foreground">{shown}</h2>}
       <div data-settings-card {...mark} className="flex min-w-0 flex-col">
         {children}
       </div>

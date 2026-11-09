@@ -1,42 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { protectTerminal } from "@/lib/term-legibility";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
+import { useRef, useState } from "react";
 import { inApp, saveTerminalPalette } from "@/api";
 import { config, gui } from "@/gen/catalog";
-import { MoreSection } from "@/views/more/MorePage";
 import { PopupButton } from "@/components/ui/popup-button";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, TaskOverlay, DialogBody, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { ANSI_KEYS, BASE_KEYS, PRESETS, THEME_FAMILIES, DEFAULT_CONTRAST, colorHex, clonePalette, importPalette, onTermTheme, readPalette, removePalette, savePalette, setTermTheme, termTheme, terminalAppearance, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
+import { ANSI_KEYS, BASE_KEYS, PRESETS, THEME_FAMILIES, DEFAULT_CONTRAST, colorHex, clonePalette, importPalette, readPalette, removePalette, savePalette, setTermTheme, termTheme, useTermTheme, THEME_FILE_MAX, type Palette, type ColorKey } from "@/lib/term-theme";
 import { useWindowSupport } from "@/lib/window-surface";
 
-const SAMPLE = "\x1b[32mzgh@MacLab\x1b[0m \x1b[34m~/khor\x1b[0m\r\n中文 · English · \x1b[31merror\x1b[0m · \x1b[33mwarning\x1b[0m\r\n\x1b[30m0 \x1b[31m1 \x1b[32m2 \x1b[33m3 \x1b[34m4 \x1b[35m5 \x1b[36m6 \x1b[37m7\x1b[0m    \x1b[90m8 \x1b[91m9 \x1b[92m10 \x1b[93m11 \x1b[94m12 \x1b[95m13 \x1b[96m14 \x1b[97m15\x1b[0m\r\n\x1b[38;5;16m16\x1b[0m · \x1b[38;2;128;160;200mRGB\x1b[0m \x1b[48;2;31;31;31m RGB background \x1b[0m > ";
-
-/** A real xterm preview; it has no host, input handler or live session. */
-export function TerminalThemePreview({ theme }: { theme?: Palette }) {
-  const box = useRef<HTMLDivElement>(null);
-  const termRef = useRef<Terminal | null>(null);
-  const themeRef = useRef(theme); themeRef.current = theme;
-  const [ready, setReady] = useState(false);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const css = getComputedStyle(el);
-    const term = new Terminal({ cols: 58, rows: 4, disableStdin: true, scrollback: 0, cursorBlink: false, fontFamily: css.fontFamily, fontSize: parseFloat(css.fontSize), ...terminalAppearance(el, termTheme(), theme) });
-    termRef.current = term;
-    const fit = new FitAddon(); term.loadAddon(fit); term.open(el); const stopLegibility = protectTerminal(term); term.write(SAMPLE);
-    (el as HTMLDivElement & { __xterm?: Terminal }).__xterm = term;
-    const paint = () => { term.options = terminalAppearance(el, termTheme(), themeRef.current); };
-    const stop = onTermTheme(paint);
-    const resized = new ResizeObserver(() => { if (el.clientWidth) fit.fit(); }); resized.observe(el);
-    setReady(true);
-    return () => { resized.disconnect(); stop(); stopLegibility(); term.dispose(); termRef.current = null; };
-  }, []);
-  useEffect(() => { if (ready && termRef.current && box.current) termRef.current.options = terminalAppearance(box.current, termTheme(), theme); }, [ready, theme]);
-  return <div ref={box} data-term-theme-preview className="overflow-hidden rounded-md p-in font-term text-term text-foreground" style={{ backgroundColor: theme?.background ?? "var(--term-bg)", color: theme?.foreground ?? "var(--term-fg)", height: "var(--theme-preview-h)", fontFamily: "var(--font-term)", fontSize: "var(--text-term)" }} />;
-}
+import {TerminalThemePreview} from "./TerminalThemePreview";
+export {TerminalThemePreview} from "./TerminalThemePreview";
 
 const labels = (): Record<ColorKey, string> => ({
   background: gui.term_color_background, foreground: gui.term_color_foreground, cursor: gui.key_cursor, cursorAccent: gui.term_color_cursor_accent,
@@ -75,7 +48,7 @@ export function TerminalThemeSection() {
   const [notice, setNotice] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
   const custom = choice.customs.find(p => p.id === choice.selected);
-  const names = [{ value: "follow", label: gui.term_theme_follow }, ...THEME_FAMILIES.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_automatic })), ...PRESETS.map(p => ({ value: p.id, label: ({ soft: gui.term_theme_soft, warm: gui.term_theme_warm, contrast: gui.term_theme_contrast } as Record<string, string>)[p.id] ?? p.name, group: gui.term_theme_presets })), ...choice.customs.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_mine }))];
+  const names = [{ value: "follow", label: gui.term_theme_follow },{value:"custom",label:gui.term_theme_customize}, ...THEME_FAMILIES.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_automatic })), ...PRESETS.map(p => ({ value: p.id, label: ({ soft: gui.term_theme_soft, warm: gui.term_theme_warm, contrast: gui.term_theme_contrast } as Record<string, string>)[p.id] ?? p.name, group: gui.term_theme_presets })), ...choice.customs.map(p => ({ value: p.id, label: p.name, group: gui.term_theme_mine }))];
   const selectedName = names.find(n => n.value === choice.selected)?.label ?? gui.term_theme_follow;
   const clone = () => clonePalette(sectionRef.current ?? document.body);
   const edit = () => { setError(null); const theme = clone(); lastPreview.current = theme; setEditor({ name: custom?.name ?? gui.term_theme_copy_name(selectedName), theme, id: custom?.id }); setExtra(theme.extendedAnsi?.join(" ") ?? ""); };
@@ -112,48 +85,54 @@ export function TerminalThemeSection() {
       }
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
   };
-  return <div ref={sectionRef}>
-    <MoreSection name="term-theme" label={gui.term_theme_title}>
-      <div data-setting-row="popup" data-setting-row-name="term-theme" className="flex items-center gap-row px-row py-in">
-        <span className="min-w-0 flex-1 text-body">{gui.term_theme_palette}</span>
-        <PopupButton label={gui.term_theme_palette} value={choice.selected} choices={names} onPick={selected => { const stored = setTermTheme({ ...choice, selected }); setNotice(null); setError(stored ? null : gui.term_theme_storage_error); }} mark={{ "data-setting-select": "term-theme" }} className="-mr-xxs" />
-      </div>
-      <div data-setting-row="popup" data-setting-row-name="term-contrast" className="flex items-center gap-row px-row py-in">
-        <span className="min-w-0 flex-1 text-body">{gui.term_theme_readability}</span>
-        <PopupButton label={gui.term_theme_readability} value={String(choice.contrast ?? DEFAULT_CONTRAST)} choices={[
-          {value:"1",label:config.off}, {value:"3",label:gui.term_theme_protect_light},
-          {value:"4.5",label:gui.term_theme_protect_standard}, {value:"7",label:gui.term_theme_protect_strong},
-        ]} onPick={value => { const stored = setTermTheme({...choice,contrast:Number(value)}); setNotice(null);setError(stored?null:gui.term_theme_storage_error); }} mark={{"data-setting-select":"term-contrast"}} className="-mr-xxs" />
-      </div>
-      <p className="px-row pb-in text-callout text-muted-foreground">{gui.term_theme_readability_note}</p>
-      <div className="px-row pb-in"><TerminalThemePreview /></div>
-      <div className="flex flex-wrap items-center justify-end gap-in px-row pb-in">
-        <Button data-term-theme-edit onClick={edit}>{custom ? gui.accounts_edit : gui.term_theme_customize}</Button>
-        <Button data-term-theme-import onClick={() => fileRef.current?.click()}>{gui.import_sessions}</Button>
-        <Button data-term-theme-export onClick={() => void exportFile()}>{gui.term_theme_export}</Button>
-        {custom && <Button data-term-theme-remove onClick={() => setRemoving(true)} className="text-destructive">{gui.remove}</Button>}
-      </div>
-      <input ref={fileRef} data-term-theme-file type="file" accept=".json,application/json" className="hidden" onChange={e => { void importFile(e.target.files?.[0]); e.target.value = ""; }} />
-    </MoreSection>
-    {(error || notice) && <p role="status" className={`mb-group text-callout ${error ? "text-destructive" : "text-muted-foreground"}`}>{error ?? notice}</p>}
+  return <>
+    <div ref={sectionRef} data-setting-row="popup" data-setting-row-name="term-theme" className="flex items-center gap-row px-row py-in">
+      <span className="min-w-0 flex-1 text-body">{gui.term_theme_palette}</span>
+      <PopupButton label={gui.term_theme_palette} value={choice.selected} choices={names}
+        onPick={selected=>{const stored=setTermTheme({...choice,selected});setNotice(null);setError(stored?null:gui.term_theme_storage_error);}}
+        mark={{"data-setting-select":"term-theme"}} className="-mr-xxs"/>
+    </div>
+    {(choice.selected === "custom" || custom) && <div data-setting-row="action" data-term-theme-custom className="flex flex-wrap items-center justify-end gap-in px-row py-in">
+      <Button data-term-theme-import onClick={()=>fileRef.current?.click()}>{gui.import_sessions}</Button>
+      <Button data-term-theme-edit onClick={edit}>{gui.nav_settings}</Button>
+    </div>}
+    <input ref={fileRef} data-term-theme-file type="file" accept=".json,application/json" className="hidden" onChange={event=>{void importFile(event.target.files?.[0]);event.target.value="";}}/>
+    {(error || notice) && <p role="status" className={`px-row py-in text-callout ${error?"text-destructive":"text-muted-foreground"}`}>{error??notice}</p>}
     <Dialog open={editor !== null} onOpenChange={open => { if (!open) setEditor(null); }}>
-      <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)! overflow-y-auto">
+      <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)!">
         <DialogTitle>{gui.term_theme_customize_title}</DialogTitle>
         {editor && <>
           <DialogBody>
-          <label className="flex items-center gap-row text-body">{gui.new_session_name}<Input aria-label={gui.new_session_name} value={editor.name} maxLength={48} onChange={e => setEditor({ ...editor, name: e.target.value })} /></label>
+          <label className="flex flex-none items-center gap-row text-body"><span className="flex-none whitespace-nowrap">{gui.new_session_name}</span><Input className="min-w-0 flex-1" aria-label={gui.new_session_name} value={editor.name} maxLength={48} onChange={e => setEditor({ ...editor, name: e.target.value })} /></label>
           <TerminalThemePreview theme={valid ?? lastPreview.current ?? undefined} />
-          <h3 className="text-callout text-muted-foreground">{gui.term_theme_basic}</h3>
+          <h3 className="flex-none text-headline">{gui.term_theme_basic}</h3>
           <div className="term-theme-grid">{BASE_KEYS.map(k => <ColorField key={k} name={k} value={editor.theme[k]} onChange={v => setEditor({ ...editor, theme: { ...editor.theme, [k]: v } })} />)}</div>
-          <h3 className="text-callout text-muted-foreground">{gui.term_theme_ansi}</h3>
+          <h3 className="flex-none text-headline">{gui.term_theme_ansi}</h3>
           <div className="term-theme-grid">{Array.from({ length: 8 }, (_, i) => [ANSI_KEYS[i], ANSI_KEYS[i + 8]]).flat().map(k => <ColorField key={k} name={k} value={editor.theme[k]} onChange={v => setEditor({ ...editor, theme: { ...editor.theme, [k]: v } })} />)}</div>
           <details className="text-callout"><summary>{gui.term_theme_extended}</summary><p className="my-in text-muted-foreground">{gui.term_theme_extended_note}</p><textarea data-term-theme-extended aria-label={gui.term_theme_extended} value={extra} onChange={e => setExtra(e.target.value)} spellCheck={false} className="h-24 w-full rounded-sm border bg-fill p-in font-mono text-callout" /></details>
           {(invalid || error) && <p role="status" className="text-callout text-destructive">{invalid ?? error}</p>}
           </DialogBody>
-          <DialogFooter><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
+          <DialogFooter><div className="mr-auto flex flex-wrap gap-in"><Button data-term-theme-export onClick={()=>void exportFile()}>{gui.term_theme_export}</Button>{custom && <Button data-term-theme-remove variant="ghost" onClick={()=>setRemoving(true)}>{gui.remove}</Button>}</div><Button onClick={() => setEditor(null)}>{gui.delete_keep}</Button><Button data-term-theme-save variant="primary" disabled={!valid || !editor.name.trim()} onClick={() => { if (!valid) return; try { savePalette(editor.name, valid, editor.id); setEditor(null); setNotice(gui.term_theme_saved); } catch (e) { if (e instanceof Error && e.message === "storage") setEditor({ ...editor, id: termTheme().selected }); setError(colorError(e)); } }}>{gui.term_theme_save}</Button></DialogFooter>
         </>}
       </TaskOverlay>
     </Dialog>
-    <Dialog open={removing} onOpenChange={setRemoving}><DialogContent><DialogTitle>{gui.term_theme_remove_name(custom?.name ?? "")}</DialogTitle><DialogFooter><Button onClick={() => setRemoving(false)}>{gui.delete_keep}</Button><Button variant="destructive" onClick={() => { if (custom && !removePalette(custom.id)) setError(gui.term_theme_storage_error); setRemoving(false); }}>{gui.remove}</Button></DialogFooter></DialogContent></Dialog>
-  </div>;
+    <Dialog open={removing} onOpenChange={setRemoving}><DialogContent><DialogTitle>{gui.term_theme_remove_name(custom?.name ?? "")}</DialogTitle><DialogFooter><Button onClick={() => setRemoving(false)}>{gui.delete_keep}</Button><Button variant="destructive" onClick={() => { if (custom && !removePalette(custom.id)) setError(gui.term_theme_storage_error);else setEditor(null); setRemoving(false); }}>{gui.remove}</Button></DialogFooter></DialogContent></Dialog>
+  </>;
+}
+
+
+export function TerminalReadabilityRow() {
+  const choice=useTermTheme();
+  const [error,setError]=useState(false);
+  return <>
+    <div data-setting-row="popup" data-setting-row-name="term-contrast" className="flex items-center gap-row px-row py-in">
+      <span className="min-w-0 flex-1 text-body">{gui.term_theme_readability}</span>
+      <PopupButton label={gui.term_theme_readability} value={String(choice.contrast??DEFAULT_CONTRAST)} choices={[
+        {value:"1",label:config.off},{value:"3",label:gui.term_theme_protect_light},
+        {value:"4.5",label:gui.term_theme_protect_standard},{value:"7",label:gui.term_theme_protect_strong},
+      ]} onPick={value=>setError(!setTermTheme({...choice,contrast:Number(value)}))}
+        mark={{"data-setting-select":"term-contrast"}} className="-mr-xxs"/>
+    </div>
+    {error && <p role="alert" className="px-row py-in text-callout text-destructive">{gui.term_theme_storage_error}</p>}
+  </>;
 }

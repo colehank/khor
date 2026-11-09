@@ -12,15 +12,20 @@ function load(storage=new Map()){
   const events=new Map(),heard=new Map(),observers=[];
   const window={localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(k,fn){const list=events.get(k)||new Set();list.add(fn);events.set(k,list)},removeEventListener(k,fn){events.get(k)?.delete(fn)},dispatchEvent(e){for(const fn of events.get(e.type)||[])fn(e)}};
   class MutationObserver{constructor(fn){this.fn=fn}observe(){observers.push(this)}disconnect(){}}
-  const context={exports:{},window,document:{documentElement:root},MutationObserver,Event:class{constructor(type){this.type=type}},structuredClone,crypto:{randomUUID:()=>String(storage.size)},getComputedStyle:()=>({color:root.dataset.theme==='dark'?'rgb(238, 238, 231)':'rgb(26, 26, 20)',getPropertyValue:k=>k==='--canvas-solid'?(root.dataset.theme==='dark'?'#000000':'#f4f4ef'):''}),require:name=>{
+  let cursorApi;
+  const context={exports:{},window,CustomEvent:class{constructor(type,{detail}){this.type=type;this.detail=detail}},document:{documentElement:root},MutationObserver,Event:class{constructor(type){this.type=type}},structuredClone,crypto:{randomUUID:()=>String(storage.size)},getComputedStyle:()=>({color:root.dataset.theme==='dark'?'rgb(238, 238, 231)':'rgb(26, 26, 20)',getPropertyValue:k=>k==='--canvas-solid'?(root.dataset.theme==='dark'?'#000000':'#f4f4ef'):''}),require:name=>{
     if(name==='react')return {useEffect(){},useState(){}};
     if(name.includes('other-windows'))return {heardFrom:(k,fn)=>heard.set(k,fn)};
+    if(name.endsWith('term-cursor'))return cursorApi;
     if(name.endsWith('term-palettes.json'))return {default:presets};
     throw Error(name);
   }};
+  const cursorContext={...context,exports:{}};
+  const cursorSource=readFileSync(new URL('../src/lib/term-cursor.ts',import.meta.url),'utf8');
+  vm.runInNewContext(ts.transpileModule(cursorSource,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,cursorContext);cursorApi=cursorContext.exports;
   vm.runInNewContext(js,context);
   const api=context.exports;
-  return {api,root,storage,mode(value){root.dataset.theme=value;for(const o of [...observers])o.fn([])},other(value){storage.set(api.TERM_THEME_KEY,JSON.stringify(value));heard.get(api.TERM_THEME_KEY)()}};
+  return {api,cursor:cursorApi,root,storage,mode(value){root.dataset.theme=value;for(const o of [...observers])o.fn([])},other(value){storage.set(api.TERM_THEME_KEY,JSON.stringify(value));heard.get(api.TERM_THEME_KEY)()}};
 }
 const env=load(),p=env.api,el={};
 assert.equal(typeof p.terminalAppearance,'function','one resolver must supply theme and contrast to every terminal');
@@ -78,6 +83,19 @@ assert.equal(p.terminalAppearance(el).minimumContrastRatio,3);
 assert.equal(p.terminalAppearance(el).theme.background,presets.latte.theme.background);
 env.mode('dark');assert.equal(p.terminalAppearance(el).theme.background,presets.mocha.theme.background);
 assert(notices>=2,'other-window and theme changes notify retained viewers');stop();
+// A per-viewer cursor override reaches every existing appearance subscriber.
+let cursorChanges=0;const stopCursorPaint=p.onTermTheme(()=>cursorChanges++);
+env.cursor.setTermCursor({shape:'bar',blink:true,color:'#AABBCC'});
+assert.equal(p.terminalAppearance(el).theme.cursor,'#aabbcc');assert.equal(cursorChanges,1);
+assert.equal(load(env.storage).cursor.termCursor().color,'#aabbcc','Cursor colour survives reload');
+assert.equal(p.terminalAppearance(el,p.termTheme(),copy).theme.cursor,copy.cursor,'Palette editor draft remains independent');
+env.cursor.setTermCursor({shape:'block',blink:false,color:null});
+assert.equal(p.terminalAppearance(el).theme.cursor,p.clonePalette(el).cursor,'Follow restores palette cursor');
+env.cursor.setTermCursor({shape:'bad',blink:'no',color:'red'});
+assert.equal(env.cursor.termCursor().shape,'block');assert.equal(env.cursor.termCursor().blink,false);assert.equal(env.cursor.termCursor().color,null);
+const legacy=load(new Map([['khor.term-cursor',JSON.stringify({shape:'underline',blink:true})]]));
+assert.equal(legacy.cursor.termCursor().color,null);assert.equal(legacy.cursor.termCursor().shape,'underline');
+stopCursorPaint();
 console.log('terminal colours: paired/fixed/DIY, default/off/invalid contrast, surface updates, cross-window/reload, isolated preview and standard colour cube passed');
 
 {

@@ -10,7 +10,7 @@ const windowBefore=globalThis.window;
 const storage={getItem:key=>values.get(key)??null,setItem:(key,value)=>{if(refuseStorage)throw Error('fixture storage unavailable');values.set(key,value)}};
 globalThis.window=Object.assign(new EventTarget(),{localStorage:storage});
 const alias={name:'alias',setup(b){b.onResolve({filter:/^@\//},args=>b.resolve(`./src/${args.path.slice(2)}`,{resolveDir:process.cwd(),kind:args.kind}))}};
-const built=await build({stdin:{contents:`export * from './src/lib/term-key-model';export * from './src/lib/term-key-codec';export * from './src/lib/term-keys';export * from './src/lib/term-kitty';export * from './src/lib/term-replies';export {Terminal} from '@xterm/xterm';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',plugins:[alias]});
+const built=await build({stdin:{contents:`export * from './src/lib/term-keyboard-layout';export * from './src/lib/term-key-model';export * from './src/lib/term-key-codec';export * from './src/lib/term-keys';export * from './src/lib/term-kitty';export * from './src/lib/term-replies';export {Terminal} from '@xterm/xterm';`,resolveDir:process.cwd(),loader:'ts'},bundle:true,write:false,format:'cjs',platform:'node',plugins:[alias]});
 const module={exports:{}};Function('module','exports',built.outputFiles[0].text)(module,module.exports);
 const m=module.exports, names=m.KEYS.map(key=>key.name);
 const stroke=(key,mods={})=>({key,ctrl:false,alt:false,shift:false,...mods});
@@ -20,6 +20,20 @@ const decode=value=>m.decodeKeyRow(value,names);
 const refresh=()=>{const event=new Event('storage');Object.defineProperties(event,{key:{value:STORE},storageArea:{value:storage}});window.dispatchEvent(event)};
 const tests=[];const test=(name,run)=>tests.push([name,run]);
 
+test('visual keyboard covers every terminal base key with safe Mac/PC modifiers',()=>{
+  for(const platform of ['mac','pc']){
+    const keys=m.keyboardRows(platform).join(' ').split(' ').map(k=>k.slice(1,-1));
+    assert(m.BASE_KEYS.every(key=>keys.includes(key)),platform+' covers every supported key');
+    assert.equal(m.keyboardLabels(platform,false)['{AltLeft}'],platform==='mac'?'⌥':'Alt');
+    assert.equal(m.keyboardLabels(platform,true)['{Digit1}'],'!');
+  }
+  const original=stroke('ArrowLeft',{shift:true});
+  assert.equal(m.chooseKeyboardKey(original,'{ShiftRight}').shift,false);
+  const selected=m.chooseKeyboardKey(m.chooseKeyboardKey(original,'{ControlLeft}'),'{KeyB}');
+  assert.deepEqual(selected,stroke('KeyB',{ctrl:true,shift:true}));
+  assert.strictEqual(m.chooseKeyboardKey(original,'{MetaLeft}'),original,'System Command/Win is never misencoded as terminal Ctrl');
+  assert.equal(m.keyboardPlatform('MacIntel'),'mac');assert.equal(m.keyboardPlatform('Win32'),'pc');
+});
 test('defaults and old builtin visibility/order migrate without a second execution format',()=>{
   assert.deepEqual(m.defaultRow().filter(entry=>entry.on).map(entry=>entry.id),['esc','ctrl','tab','backtab','paste','/','-','|',':']);
   const old=JSON.stringify([{name:'tab',on:false},{name:'esc',on:true}]);

@@ -3000,3 +3000,32 @@ html:not([data-modality="keyboard"]) [data-popup-button]:has(select:focus-visibl
   min-width: min(var(--tab-w-even), 100%);
 }
 :root[data-narrow] [data-ws-mid] [data-tab-bar] { padding-inline: var(--gap-in); }
+
+/* Transient app notices respect the safe area; content remains interactive. */
+.notification-banners {
+  top: calc(var(--safe-top) + var(--gap-row));
+  right: var(--gap-pane);
+  width: min(var(--dialog-w), calc(100% - 2 * var(--gap-row)));
+}
+.notification-banner { pointer-events: auto; }
+:root[data-narrow] .notification-banners {
+  left: var(--gap-row); right: var(--gap-row); width: auto;
+}
+
+/* Keep physical key geometry usable on touch; narrow devices scroll sideways. */
+.terminal-keyboard-scroll { min-width: 0; overflow-x: auto; overscroll-behavior-x: contain; padding-block: var(--gap-in); }
+.khor-keyboard { min-width: calc(15 * var(--touch) + 14 * var(--gap-xxs)); display: flex; flex-direction: column; gap: var(--gap-xxs); }
+.khor-keyboard .hg-row { display: flex; gap: var(--gap-xxs); }
+.khor-keyboard .hg-button {
+  display: flex; flex: 1; align-items: center; justify-content: center;
+  min-width: var(--touch); min-height: var(--touch); padding-inline: var(--gap-in);
+  border: var(--hair) solid var(--border); border-radius: var(--radius-sm);
+  background: var(--fill); color: var(--foreground); font: inherit; font-size: var(--text-callout);
+}
+.khor-keyboard .hg-button.key-selected { background: var(--fill-strong); color: var(--foreground); box-shadow: inset 0 0 0 var(--hair) var(--foreground); }
+.khor-keyboard .hg-button:focus-visible { outline: calc(2 * var(--hair)) solid var(--ring); outline-offset: var(--hair); }
+.khor-keyboard .hg-button:disabled { color: var(--muted-foreground); }
+.khor-keyboard [data-skbtn="{Space}"] { flex: 6; }
+.khor-keyboard [data-skbtn="{Backspace}"], .khor-keyboard [data-skbtn="{Tab}"],
+.khor-keyboard [data-skbtn="{Enter}"], .khor-keyboard [data-skbtn="{ShiftLeft}"],
+.khor-keyboard [data-skbtn="{ShiftRight}"], .khor-keyboard [data-skbtn="{CapsLock}"] { flex: 1.5; }

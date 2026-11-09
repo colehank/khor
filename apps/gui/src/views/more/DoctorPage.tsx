@@ -29,6 +29,9 @@ import { ActionRow } from "@/components/settings/ActionRow";
 import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { MoreFold, MoreFrame, MoreSection } from "@/views/more/MorePage";
+import { SessionAssociation } from "@/views/more/AgentRecognition";
+import { TMUX_ZSHRC } from "@/lib/term-shell-tmux";
+import { useCoarse } from "@/hooks/use-coarse";
 import { NetStatusSections } from "@/views/more/NetStatus";
 
 /**
@@ -84,6 +87,9 @@ export function DoctorPage({
   devices: DeviceRow[];
   onClose: () => void;
 }) {
+  const coarse=useCoarse();
+  const [associationMachine,setAssociationMachine]=useState<string|null>(null);
+  const [marksCopied,setMarksCopied]=useState(false);
   const [rows, setRows] = useState<DoctorRow[] | null>(null);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -273,6 +279,15 @@ export function DoctorPage({
       {/* The network's readings (UX-16): 网络's status rows and its
           per-machine 连接 group, readings rather than settings. */}
       <NetStatusSections devices={devices} />
+      <MoreFold name="session-integration" label={gui.session_association}>
+        <SessionAssociation devices={devices} machine={associationMachine} onMachine={setAssociationMachine}/>
+        {!coarse&&<MoreSection name="shell-marks" label={gui.term_tmux_marks}>
+          <ActionRow name="term-tmux-marks" label={gui.term_tmux_marks}
+            hint={<>{gui.term_tmux_marks_note}<code data-term-tmux-line className="mt-xxs block select-all break-words font-mono text-caption">{TMUX_ZSHRC}</code></>}
+            actionLabel={marksCopied?gui.copied:gui.term_tmux_marks_copy}
+            onPress={()=>void navigator.clipboard.writeText(TMUX_ZSHRC).then(()=>setMarksCopied(true),()=>setMarksCopied(false))}/>
+        </MoreSection>}
+      </MoreFold>
     </MoreFrame>
   );
 }

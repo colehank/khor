@@ -3,9 +3,9 @@ import {retainSessionDocuments} from '@/hooks/use-session-documents';
 import {SessionLinkScope} from "@/views/SessionLinkScope";
 import {SessionContentColumn} from "@/views/SessionContentColumn";
 import {SessionContentSeat,useSessionContentDock} from "@/hooks/use-session-content-dock";
-import { NotificationsPage } from "@/views/NotificationsPage";
-import { receiveNotifications, sessionNotificationsEnabled, useNotificationInbox } from "@/lib/notifications";
-import type { InboxItem } from "@/lib/notification-inbox";
+import { NotificationBanners } from "@/views/NotificationBanners";
+import { clearNotifications, receiveNotifications, sessionNotificationsEnabled, useNotifications } from "@/lib/notifications";
+import type { NotificationBanner } from "@/lib/notification-banners";
 import {SessionHeader} from '@/components/SessionHeader';
 import {retainSessionDrafts} from '@/hooks/use-session-draft';
 import {retainCancelledChatDrafts} from '@/lib/chat-drafts';
@@ -149,7 +149,7 @@ import { listenNativeEvent } from "@/lib/native-events";
 import { AppearancePage } from "@/views/more/AppearancePage";
 import { DoctorPage } from "@/views/more/DoctorPage";
 import { ConnectionPage } from "@/views/more/ConnectionPage";
-import { SessionPage, TerminalPage, WorkspacePage } from "@/views/more/GroupPages";
+import { SessionPage, WorkspacePage } from "@/views/more/GroupPages";
 import { MyKhorPage } from "@/views/more/MyKhorPage";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { AboutPage } from "@/views/more/AboutPage";
@@ -558,7 +558,7 @@ export default function App() {
       notifyFinished(f.title, body).catch(() => {});
     }
   }, []);
-  const inbox = useNotificationInbox();
+  const notifications = useNotifications();
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   /** Whether this machine can host — `false` on a phone, said by its own
       row (`lib/here`, docs/IOS.md 第二步). Handed down as a context; read
@@ -750,7 +750,7 @@ export default function App() {
    * 自检...点击后是就地的菜单栏,进一步点击都是独立的界面」).
    */
   const [morePage, setMorePage] = useState<MorePage | null>(() =>
-    isMorePage(place.more) ? place.more : null,
+    isMorePage(place.more) ? place.more === "terminal" ? "session" : place.more : null,
   );
   useEffect(() => {
     rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs });
@@ -769,7 +769,6 @@ export default function App() {
   // here is a registration (`Node::adopt_subscriptions`, docs/SHELL.md
   // 第七轮 第 3 条) and comes in with the board like every other row.
 
-  const [recognitionMachine, setRecognitionMachine] = useState<string | null>(null);
   const settingsOpener = useRef<((request: SettingsRequest) => void) | null>(null);
   useEffect(() => {
     if (!inApp) return;
@@ -926,7 +925,7 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionTabs.open, readSession]);
 
-  const openNotification = (item: InboxItem): boolean => {
+  const openNotification = (item: NotificationBanner): boolean => {
     const row = rows.find((r) => r.id === item.session && r.execution_home === item.home);
     if (!row) return false;
     setMorePage(null);
@@ -937,8 +936,10 @@ export default function App() {
   };
   useEffect(() => {
     if (!rowsRead || lock.locked) return;
-    receiveNotifications(rawRows, (id) => onScreen.current(id));
+    receiveNotifications(rawRows, (id) => onScreen.current(id), !hidden);
   }, [rawRows, rowsRead, lock.locked, hidden, morePage, switchingTabs]);
+
+  useEffect(() => { if (hidden || lock.locked) clearNotifications(); }, [hidden, lock.locked]);
 
   const onSelectDevice = useCallback((row: DeviceRow) => {
     setSelectedDevice(row.id);
@@ -1403,20 +1404,25 @@ export default function App() {
       list, and once more brings it back; another landing switches and
       brings it back (the owner: no toggle button). */
   /** Native settings requests select a category inside the same More shell. */
+  const [settingsAnchor,setSettingsAnchor] = useState<string|null>(null);
   const enterSettings = (request: SettingsRequest = {}) => {
     const pane = request.pane;
     const explicit = isSettingsPage(pane);
-    setMorePage(explicit ? pane : lastSettingsPage());
-    if (request.machine && /^[a-f0-9]{64}$/i.test(request.machine)) setRecognitionMachine(request.machine);
+    setMorePage(explicit ? pane === "terminal" ? "session" : pane : lastSettingsPage());
+    setSettingsAnchor(pane === "terminal" ? "terminal" : null);
     setSwitchingTabs(false);
     setScreen(narrow && !explicit ? "list" : "detail");
     listPane.expand();
   };
+  useEffect(()=>{
+    if (settingsAnchor !== "terminal" || morePage !== "session" || narrow && screen !== "detail") return;
+    const surface=document.querySelector('[data-main] [data-terminal-settings], [data-swipe-host] [data-terminal-settings]');
+    if (surface) { surface.scrollIntoView({block:"start"}); setSettingsAnchor(null); }
+  },[settingsAnchor,morePage,screen,narrow]);
   settingsOpener.current = enterSettings;
   const moreSettings = () => enterSettings();
   const enterMore = () => {
-    if (!narrow && morePage !== null) { listPane.toggle(); return; }
-    setMorePage(morePage ?? lastMorePage());
+    setMorePage(morePage === "me" || morePage === "terminal" ? lastMorePage() : morePage ?? lastMorePage());
     setScreen(narrow ? "list" : "detail");
     setSwitchingTabs(false);
     listPane.expand();
@@ -1460,7 +1466,6 @@ export default function App() {
   ) : null;
   const nav = (
     <FloatNav
-      unreadNotifications={inbox.items.filter((item) => !item.read).length}
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
       more={navOrder.slice(NAV_SHOWN).map(seatOf)}
       active={morePage === null ? landing : null}
@@ -3093,11 +3098,9 @@ export default function App() {
     return () => window.clearTimeout(t);
   }, [narrow, shownKey, screen]);
 
-  const sessionSettings = <SessionPage onClose={leaveMorePage} onSettingChanged={settings.reread} onTerminal={()=>setMorePage("terminal")} />;
+  const sessionSettings = <SessionPage onClose={leaveMorePage} onSettingChanged={settings.reread} />;
   const morePageEl =
-    morePage === null ? null : morePage === "notifications" ? (
-      <NotificationsPage inbox={inbox} sessions={rows} onOpen={openNotification} onClose={leaveMorePage} />
-    ) : morePage === "connection" ? (
+    morePage === null ? null : morePage === "connection" ? (
       <ConnectionPage
         devices={devices}
         onClose={leaveMorePage}
@@ -3109,9 +3112,7 @@ export default function App() {
       />
     ) : morePage === "appearance" ? (
       <AppearancePage onClose={leaveMorePage} onSettingChanged={settings.reread} me={me} />
-    ) : morePage === "terminal" ? (
-      <TerminalPage onClose={leaveMorePage} devices={devices} machine={recognitionMachine} onMachine={setRecognitionMachine} />
-    ) : morePage === "session" ? (
+    ) : morePage === "terminal" || morePage === "session" ? (
       sessionSettings
     ) : morePage === "workspace" ? (
       <WorkspacePage onClose={leaveMorePage} onSettingChanged={settings.reread} />
@@ -3185,7 +3186,6 @@ export default function App() {
 
   const moreList = (
     <MoreNavigation page={morePage} narrow={narrow}
-      unread={inbox.items.filter(item=>!item.read).length}
       onPage={page=>{setMorePage(page);setScreen("detail");}}
     />
   );
@@ -3394,9 +3394,7 @@ export default function App() {
               {null}
             </SessionScreen>
           )
-        : morePage === "terminal"
-          ? sessionSettings
-          : morePage !== null && morePage !== "me"
+        : morePage !== null && morePage !== "me"
           ? moreList
           : quotas
             ? (
@@ -3457,6 +3455,7 @@ export default function App() {
     <HereHostsProvider value={hosts}>
     <FullScreenProvider value={claimFull}>
     <TooltipProvider>
+      <NotificationBanners state={notifications} sessions={rawRows} onOpen={openNotification} narrow={narrow}/>
       {workspaceMemories.entries().map(([key, memory]) => <WorkspaceDraftOwner key={key} memory={memory} />)}
       {narrow ? (
         // **As tall as `#root`, not the screen** (2026-10-02): `#root`
@@ -3658,7 +3657,7 @@ export default function App() {
           <Fault name="page" reset={seamAt}>
           {dial ? morePageEl : morePage ? (
             <Region
-              kind="detail"
+              kind="detail" headerless
               caption={stale ? gui.backend_unreachable : undefined}
             >
               <Fault name="more" reset={seamAt}>

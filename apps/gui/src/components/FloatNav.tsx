@@ -59,7 +59,7 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
 }
 
 /** More is a destination alongside the four primary landings. */
-export function FloatNav({seats,more,active,moreOn,onGo,onMore,onMe,unreadNotifications=0,className}: {
+export function FloatNav({seats,more,active,moreOn,onGo,onMore,onMe,className}: {
   seats:NavSeat[];
   more:NavSeat[];
   active:string|null;
@@ -67,7 +67,6 @@ export function FloatNav({seats,more,active,moreOn,onGo,onMore,onMe,unreadNotifi
   onGo:(key:string)=>void;
   onMore:()=>void;
   onMe:()=>void;
-  unreadNotifications?:number;
   className?:string;
 }) {
   // The chosen seat slides to the one pressed (F7.2, `lib/travel`).
@@ -99,7 +98,6 @@ export function FloatNav({seats,more,active,moreOn,onGo,onMore,onMe,unreadNotifi
       >
         <IconMore />
         <span className="text-nav-label">{gui.rail_more}</span>
-        {unreadNotifications > 0 && <span data-nav-badge className="absolute top-1 right-3 min-w-4 rounded-full bg-badge px-1 text-center text-caption leading-4 tabular-nums text-badge-foreground">{unreadNotifications}</span>}
       </button></NavigationOverflow>
     </nav>
   );
