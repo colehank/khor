@@ -38,3 +38,11 @@ User clarified MacBook Air. Connected over existing paired Khor, used three isol
 
 ## Red evidence recorded
 Quality42575257612 finished FAILURE only GUI. Job129022956465 log shows updates-ui failed at check-updates-ui.mjs:108 waiting for [data-update-failure] summary: old component discards native error. Full log retained locally at evidence/gui-update-20261109/red-gui.log. Existing other interaction groups passed. New transport tests cover API-independent beta discovery, public stable permalink history, prerelease-only stable404 and canonical XML links. Native record boundedness/privacy test added.
+
+## Current validation
+Implementation commit99759531 pushed, Quality all run42577804511 active. runtime-store workflow already runs khor-update tests on Linux/macOS/Windows, including new feed cases; do not add duplicate gate. Red42575257612 completed failure only updates-ui; old-code failure log inspected.
+Own Air diagnostic sessions shell/e60c07d55f508268, shell/f4fab135dd3e68db, shell/c274a0121395f308 closed successfully; six owned /tmp report/header/body/XML files removed. Local evidence retained. No user App or host stopped.
+Worktree source is clean after997 except this progress note. Remaining: inspect CI outcomes, fix failures if any, actual updater validation/review and decide release within current authorization. Do not conflate code committed with installed fix. Current local MacLab stillRC8, Air diskRC11; no updater repair installed yet.
+
+## Review follow-up
+Added typed InstallFailure recovery: if ready cache was removed, next action is Download; if offer/CLI plan is missing, next action is Check; actual installation failures retain Install. This prevents an install-retry loop after cache cleanup. IPC-error retry is disabled while native work continues, with UI regression. These changes are not covered by997 validation; require fresh native/GUI checks. Remote formatted source inspected; no generated executable run locally.

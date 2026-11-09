@@ -13,6 +13,39 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager};
 
+#[cfg(target_os = "macos")]
+struct InstallFailure {
+    retry: UpdateAction,
+    message: String,
+}
+
+#[cfg(target_os = "macos")]
+impl InstallFailure {
+    fn at(retry: UpdateAction, message: &str) -> Self {
+        Self {
+            retry,
+            message: message.into(),
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl From<String> for InstallFailure {
+    fn from(message: String) -> Self {
+        Self {
+            retry: UpdateAction::Install,
+            message,
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl From<&str> for InstallFailure {
+    fn from(message: &str) -> Self {
+        Self::from(message.to_owned())
+    }
+}
+
 struct Selection {
     release: VerifiedRelease,
     package: Option<DesktopPackage>,
@@ -526,7 +559,7 @@ impl AppUpdates {
         let result = self.install_inner(app, automatic).await;
         match result {
             Ok(status) => Ok(status),
-            Err(error) => self.failed(app, UpdateAction::Install, error),
+            Err(error) => self.failed(app, error.retry, error.message),
         }
     }
 
@@ -535,7 +568,7 @@ impl AppUpdates {
         &self,
         app: &AppHandle,
         automatic: bool,
-    ) -> Result<AppUpdateStatus, String> {
+    ) -> Result<AppUpdateStatus, InstallFailure> {
         let trust = TrustRoot::bundled()?;
         let release = self
             .data
@@ -544,7 +577,9 @@ impl AppUpdates {
             .selected
             .as_ref()
             .map(|selection| selection.release.clone())
-            .ok_or("download an update first")?;
+            .ok_or_else(|| {
+                InstallFailure::at(UpdateAction::Check, "check updates before installing")
+            })?;
         let staging = self.store()?;
         self.change(app, |data| {
             data.status.phase = UpdatePhase::Verifying;
@@ -554,7 +589,10 @@ impl AppUpdates {
         let application = if let Some(offer) = self.app_offer(&release)? {
             let path = staging.archive(&offer);
             if !staging.is_ready(&trust, &offer)? {
-                return Err("download the complete application update first".into());
+                return Err(InstallFailure::at(
+                    UpdateAction::Download,
+                    "download the complete application update first",
+                ));
             }
             let held = self
                 .data
@@ -592,10 +630,12 @@ impl AppUpdates {
             match admission.prepare(app, automatic).await {
                 Ok(permit) => Some(permit),
                 Err(blocked) => {
-                    return self.change(app, |data| {
-                        data.status.phase = UpdatePhase::Ready;
-                        data.status.blocked = blocked;
-                    });
+                    return self
+                        .change(app, |data| {
+                            data.status.phase = UpdatePhase::Ready;
+                            data.status.blocked = blocked;
+                        })
+                        .map_err(InstallFailure::from);
                 }
             }
         } else {
@@ -603,10 +643,12 @@ impl AppUpdates {
         };
         self.apply_companions(app, &release, automatic).await?;
         let Some((package, path)) = application else {
-            return self.change(app, |data| {
-                data.status.phase = UpdatePhase::Complete;
-                data.status.available = None;
-            });
+            return self
+                .change(app, |data| {
+                    data.status.phase = UpdatePhase::Complete;
+                    data.status.available = None;
+                })
+                .map_err(InstallFailure::from);
         };
         self.change(app, |data| data.status.phase = UpdatePhase::Installing)?;
         let install_root = staging.root().to_path_buf();
@@ -632,14 +674,16 @@ impl AppUpdates {
         app: &AppHandle,
         release: &VerifiedRelease,
         automatic: bool,
-    ) -> Result<(), String> {
+    ) -> Result<(), InstallFailure> {
         let plan = self
             .data
             .lock()
             .map_err(|_| "update state is unavailable")?
             .companions
             .clone()
-            .ok_or("check the component update plan first")?;
+            .ok_or_else(|| {
+                InstallFailure::at(UpdateAction::Check, "check the component update plan first")
+            })?;
         if automatic && plan.automatic_blocked() {
             return Err("retry the failed CLI update manually".into());
         }
@@ -655,9 +699,14 @@ impl AppUpdates {
                     channel,
                     None,
                 )?
-                .ok_or("CLI no longer has the planned update")?;
+                .ok_or_else(|| {
+                    InstallFailure::at(UpdateAction::Check, "CLI no longer has the planned update")
+                })?;
             if !staging.is_ready(&trust, &offer)? {
-                return Err("download the complete CLI update first".into());
+                return Err(InstallFailure::at(
+                    UpdateAction::Download,
+                    "download the complete CLI update first",
+                ));
             }
             self.companion_progress(app, &entry.status.id, UpdatePhase::Installing, None)
                 .await?;

@@ -63,9 +63,10 @@ export function UpdateSettings() {
       if (alive.current) setBusy(false);
     });
   };
+  const working = busy || (status !== null && ["checking", "downloading", "verifying", "installing", "awaiting-health"].includes(status.phase));
   const operationFailure = failure && <div data-update-operation-failure>
     <ActionRow name="update-retry" label={gui.update_failed} actionLabel={gui.region_retry}
-      busy={busy} onPress={() => run(failure.retry)} />
+      busy={working} onPress={() => run(failure.retry)} />
     <FailureDetails message={failure.message} />
   </div>;
   if (!status) return <MoreSection name="app-update">{operationFailure ??
@@ -75,7 +76,7 @@ export function UpdateSettings() {
     const hint = status.source === "store" ? gui.update_store : status.source === "development" ? gui.update_development : gui.update_external;
     return <MoreSection name="app-update"><MoreFact name="update-source" label={gui.update_label}>{hint}</MoreFact></MoreSection>;
   }
-  const working = busy || ["checking", "downloading", "verifying", "installing", "awaiting-health"].includes(status.phase);
+
   const retry = status.phase === "failed";
   const download = status.phase === "available";
   // A failed check may retain an older offer; only the backend knows which

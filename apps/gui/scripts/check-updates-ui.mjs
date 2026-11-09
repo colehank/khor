@@ -120,6 +120,11 @@ try {
   await action.click();
   await page.waitForFunction(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_install'),before);
   assert.equal(await page.evaluate(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_download'),before),false,'an installation retry keeps the verified download');
+  await page.evaluate(()=>window.emitUpdate({phase:'failed',retry:'download',failure:'fixture: downloaded package was removed',available:'v0.2.0-rc.2'}));
+  before=await page.evaluate(()=>window.updateCalls.length);
+  await action.click();
+  await page.waitForFunction(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_download'),before);
+  assert.equal(await page.evaluate(count=>window.updateCalls.slice(count).some(call=>call.cmd==='app_update_install'),before),false,'a missing verified package is downloaded before retrying installation');
   await page.evaluate(()=>window.emitUpdate({phase:'idle',retry:null,failure:null}));
   await page.evaluate(()=>window.emitUpdate({phase:'idle',blocked:[],restart_required:false,companions:[
     {id:'registered-one',path:'/owned/one/bin/khor',current:'v0.2.0-rc.1',available:'v0.2.0-rc.2',selected:false,phase:'available',failure:null},
@@ -131,6 +136,9 @@ try {
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='app_update_companions'));
   assert.equal(await companion.getAttribute('aria-checked'),'false','failed persistence must not pretend the CLI was selected');
   assert.match(await page.locator('[data-update-operation-failure]').innerText(),/重试|Retry/);
+  await page.evaluate(()=>window.emitUpdate({phase:'downloading'}));
+  assert.equal(await page.locator('[data-update-operation-failure] button').isDisabled(),true,'a transport failure does not offer a concurrent retry while native work continues');
+  await page.evaluate(()=>window.emitUpdate({phase:'idle'}));
   await page.locator('[data-update-operation-failure] button').click();
   await page.waitForFunction(()=>window.updateState.companions[0].selected===true);
   await companion.click();
