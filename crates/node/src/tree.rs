@@ -215,7 +215,7 @@ impl Drop for Landing {
     }
 }
 
-fn rename_new(from: &Path, to: &Path) -> Result<(), String> {
+pub(crate) fn rename_new(from: &Path, to: &Path) -> Result<(), String> {
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "linux"))]
     {
         use std::os::unix::ffi::OsStrExt;

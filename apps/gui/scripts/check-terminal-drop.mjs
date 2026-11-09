@@ -18,7 +18,7 @@ try {
  assert.deepEqual(mod.dropPoint({x:1400,y:600},'Win32',2),point);
  for(const platform of ['MacIntel','Linux x86_64'])for(const scale of [1,2])assert.deepEqual(mod.dropPoint(point,platform,scale),point);
  assert.deepEqual(mod.dropPoint(point,'MacIntel',2),point);assert.deepEqual(mod.dropPoint(point,'MacIntel',1),point);
- const drag=(machine='far',path='/srv/x y.txt')=>{const store=new Map(),source={isConnected:true};const dataTransfer={dropEffect:'none',setData:(k,v)=>store.set(k,v),getData:k=>store.get(k)||'',types:[mod.PATH_DRAG]};const props=mod.pathDrag(machine,path);props.onDragStart({currentTarget:source,dataTransfer});return {end:()=>props.onDragEnd({currentTarget:source,dataTransfer}),dataTransfer};};
+ const drag=(machine='far',path='/srv/x y.txt',workspace)=>{const store=new Map(),source={isConnected:true};const dataTransfer={dropEffect:'none',setData:(k,v)=>store.set(k,v),getData:k=>store.get(k)||'',types:[mod.PATH_DRAG]};const props=mod.pathDrag(machine,path,workspace);props.onDragStart({currentTarget:source,dataTransfer});return {end:()=>props.onDragEnd({currentTarget:source,dataTransfer}),dataTransfer};};
  const enter=()=>emit({type:'enter',paths:[],position:point}),drop=()=>emit({type:'drop',paths:[],position:point});
  let d=drag();enter();drop();d.end();assert.equal(seen.length,1);assert.equal(seen.pop().from,'far');assert.equal(mod.droppedPath(d),null,'DOM fallback must not paste a consumed native drop twice');drop();assert.equal(seen.length,0);
  d=drag(null,'/tmp/local');enter();d.end();drop();assert.deepEqual(seen.pop(),{paths:['/tmp/local'],from:null,...point});
@@ -29,6 +29,11 @@ try {
  d=drag();enter();d.end();await new Promise(r=>setTimeout(r,550));drop();assert.equal(seen.length,0,'expired source cannot paste');
  d=drag();enter();emit({type:'drop',paths:['/tmp/Finder'],position:point});assert.deepEqual(seen.pop().paths,['/tmp/Finder']);drop();assert.equal(seen.length,0,'OS file paths never inherit a remote source');
  d=drag();enter();assert.deepEqual(mod.droppedPath(d),{machine:'far',path:'/srv/x y.txt'});drop();assert.equal(seen.length,0,'DOM then native is once');
+ const hovered=[];const offHover=mod.onWindowDrag(value=>hovered.push(value));
+ d=drag(null,'/project/notes.md',{root:'/project',dir:false});enter();
+ assert.deepEqual(hovered.at(-1),{source:{machine:null,path:'/project/notes.md',workspace:{root:'/project',dir:false}},...point});
+ drop();assert.deepEqual(seen.pop(),{paths:['/project/notes.md'],from:null,workspace:{root:'/project',dir:false},...point});
+ assert.equal(hovered.at(-1),null);assert.equal(mod.droppedPath(d),null);offHover();
  off();offHidden();assert.equal(unlistened,1);assert.deepEqual(hidden,[]);
  // One native subscription fans out to active consumers. A failed pane must
  // not suppress another pane, and diagnostics must not expose dropped paths.

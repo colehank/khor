@@ -14,7 +14,8 @@ import type { DragEvent } from "react";
 export const PATH_DRAG = "application/x-khor-path";
 
 /** A dragged row: the machine it is on (`null`: this one) and its path. */
-export type DraggedPath = { machine: string | null; path: string };
+export type WorkspaceDrag = { root: string; dir: boolean };
+export type DraggedPath = { machine: string | null; path: string; workspace?: WorkspaceDrag };
 
 // Native Wry intercepts the target's HTML drop, including an internal
 // path with no OS file paths. Keep its source only for this drag. Native
@@ -56,7 +57,11 @@ export function takeNativePath(): DraggedPath | null {
 const drags = () => typeof window !== "undefined" && !window.matchMedia("(pointer: coarse)").matches;
 
 /** The props that make a row's button a drag of its path. */
-export function pathDrag(machine: string | null, path: string) {
+export function currentPathDrag(): DraggedPath | null {
+  return pending?.source.isConnected ? pending.path : null;
+}
+
+export function pathDrag(machine: string | null, path: string, workspace?: WorkspaceDrag) {
   if (!drags()) return {};
   return {
     draggable: true,
@@ -66,10 +71,10 @@ export function pathDrag(machine: string | null, path: string) {
       consumed = null;
       window.addEventListener("keydown", cancelKey, true);
       window.addEventListener("blur", clearPathDrag);
-      pending = { token, source: e.currentTarget, path: { machine, path }, entered: false, ended: false };
-      e.dataTransfer.setData(PATH_DRAG, JSON.stringify({ machine, path, token }));
+      pending = { token, source: e.currentTarget, path: { machine, path, ...(workspace ? { workspace } : {}) }, entered: false, ended: false };
+      e.dataTransfer.setData(PATH_DRAG, JSON.stringify({ machine, path, token, ...(workspace ? { workspace } : {}) }));
       e.dataTransfer.setData("text/plain", path);
-      e.dataTransfer.effectAllowed = "copy";
+      e.dataTransfer.effectAllowed = workspace ? "copyMove" : "copy";
     },
     onDragEnd: (e: DragEvent) => {
       if (!pending || pending.source !== e.currentTarget) return;
@@ -103,7 +108,9 @@ export function droppedPath(e: Pick<DragEvent, "dataTransfer">): DraggedPath | n
       consumed = v.token;
       if (pending?.token === v.token) clearPending();
     }
-    return { machine: typeof v.machine === "string" && v.machine ? v.machine : null, path: v.path };
+    const workspace = v.workspace;
+    return { machine: typeof v.machine === "string" && v.machine ? v.machine : null, path: v.path,
+      ...(workspace && typeof workspace.root === "string" && typeof workspace.dir === "boolean" ? { workspace } : {}) };
   } catch {
     return null;
   }

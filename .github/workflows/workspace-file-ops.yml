@@ -1,0 +1,44 @@
+name: Workspace file operations
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  rename:
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, macos-26, windows-2025]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+      - name: Test isolated production rename functions
+        run: python3 scripts/check-workspace-rename.py --rust-only
+      - name: Test production SSH rename script
+        if: runner.os != 'Windows'
+        run: python3 scripts/check-workspace-rename.py --shell-only
+      - name: Check changed Rust formatting
+        if: runner.os == 'Linux'
+        run: rustfmt --edition 2024 --check crates/node/src/files.rs crates/node/src/satellite.rs crates/node/src/tree.rs
+  gui:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - run: npm ci --prefix apps/gui
+      - name: Generate production bindings
+        run: npm run gen --prefix apps/gui
+      - name: Check production types and focused drag tests
+        working-directory: apps/gui
+        run: |
+          npx tsc --noEmit
+          node scripts/check-workspace-move.mjs
+          node scripts/check-terminal-drop.mjs

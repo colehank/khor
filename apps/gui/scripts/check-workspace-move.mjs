@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {build} from 'esbuild';
+const bundle=await build({entryPoints:['src/lib/workspace-move.ts'],bundle:true,format:'esm',write:false});
+const {workspaceMoveTarget:target}=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
+const source={machine:'remote',path:'/project/docs/Methods.md',workspace:{root:'/project',dir:false}};
+assert.equal(target(source,'remote','/project','/project/src'),'/project/src/Methods.md');
+for(const dir of [null,'/outside','/project/docs'])assert.equal(target(source,'remote','/project',dir),null);
+assert.equal(target(source,'other','/project','/project/src'),null,'cross-machine drag is not a move');
+assert.equal(target({...source,workspace:undefined},'remote','/project','/project/src'),null,'OS/plain path drag is not a workspace move');
+assert.equal(target(source,'remote','/project','/project/src',['Methods.md']),null,'occupied name is not overwritten');
+assert.equal(target({...source,path:'/project/docs',workspace:{root:'/project',dir:true}},'remote','/project','/project/docs/child'),null);
+assert.equal(target({...source,path:'/project/docs',workspace:{root:'/project',dir:true}},'remote','/project','/project/docs'),null);
+assert.equal(target({...source,path:'/project/docs',workspace:{root:'/project',dir:true}},'remote','/project','/project/src'),'/project/src/docs');
+assert.equal(target({...source,machine:null},null,'/project','/project'),'/project/Methods.md');
+assert.equal(target({...source,path:'/project/../other'},'remote','/project','/project/src'),null);
+assert.equal(target({...source,path:'/project'},'remote','/project','/project/src'),null,'workspace root cannot move');
+console.log('PASS workspace move targets: local/remote scope, directories, root blank, same parent, subtree, collisions and external/cross-machine rejection');
