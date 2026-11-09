@@ -107,7 +107,7 @@ export function TerminalThemeSection() {
     <input ref={fileRef} data-term-theme-file type="file" accept=".json,application/json" className="hidden" onChange={event=>{void importFile(event.target.files?.[0]);event.target.value="";}}/>
     {(error || notice) && <p role="status" className={`px-row py-in text-callout ${error?"text-destructive":"text-muted-foreground"}`}>{error??notice}</p>}
     <Dialog open={editor !== null} onOpenChange={open => { if (!open) setEditor(null); }}>
-      <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)!">
+      <TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" scrollable data-term-theme-editor className="term-theme-editor w-(--theme-editor-w)">
         <DialogTitle>{gui.term_theme_customize_title}</DialogTitle>
         {editor && <>
           <DialogBody>
