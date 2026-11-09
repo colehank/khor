@@ -44,6 +44,13 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     await page.reload();
+    if(mobile) {
+      // Mobile cold start intentionally restores the landing, not a pushed page.
+      await open();
+      await navigation.waitFor();
+      assert.equal(await navigation.locator('[data-more-open="workspace"]').getAttribute('aria-current'),'page');
+      await navigation.locator('[data-more-open="workspace"]').click();
+    }
     await page.locator('[data-more-page="workspace"]:visible').waitFor();
     assert.equal(await page.locator('[data-more-page="workspace"] select').first().inputValue(),chosen,'Lab settings survive reopening and reload');
     assert.equal(context.pages().length,1,'Opening settings keeps one application surface');
