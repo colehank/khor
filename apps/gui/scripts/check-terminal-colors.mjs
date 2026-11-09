@@ -115,6 +115,16 @@ for(const bg of [0,0x1e1e1e,0x282828,0xf4f4ef,0xffffff,0x007acc,0x777777])for(co
   assert(contrastRatio(pair.accent,pair.cursor)>=Math.min(Math.max(4.5,ratio),Math.max(contrastRatio(0,pair.cursor),contrastRatio(0xffffff,pair.cursor))));
   assert.equal(readableRgb(fg,bg,1),fg);
 }
+// Low contrast must adjust lightness along the selected colour's path,
+// rather than turning every distinct choice into the same black/white pole.
+for(const [bg,choices] of [[0xffffff,[0xffaaaa,0xaaaaff]],[0,[0x660000,0x000066]]]) {
+  const inks=choices.map(choice=>cursorPair(bg,choice,0xffffff,4.5).cursor);
+  assert.notEqual(inks[0],inks[1],'Distinct selected cursor hues remain distinct');
+  for(let i=0;i<inks.length;i++) {
+    assert.equal(inks[i],readableRgb(choices[i],bg,4.5));
+    assert(contrastRatio(inks[i],bg)>=4.5);
+  }
+}
 const rgb=(n,css='#'+n.toString(16).padStart(6,'0'))=>({rgba:((n<<8)|255)>>>0,css});
 const DIM=0x8000000,RGB=0x3000000,INVERSE=0x4000000;
 const colors={foreground:rgb(0x1a1a14),background:rgb(0xf4f4ef),cursor:rgb(0x1a1a14,'rgba(26,26,20,.94)'),cursorAccent:rgb(0xf4f4ef),ansi:Array.from({length:256},(_,n)=>rgb(n<8?0x282828:0xf4f4ef))};
@@ -134,7 +144,7 @@ const translucentBg={rgba:((0x1a1a14<<8)|240)>>>0,css:'rgba(26,26,20,.94)'};
 renderer._rowFactory._applyMinimumContrast(el,translucentBg,colors.background,cell);
 assert(contrastRatio(parseInt(el.style.color.slice(1),16),paint.mixRgb(0x1a1a14,0xf4f4ef,240/255))>=4.5,'DOM inverse ground includes palette alpha');
 renderer.renderRows(0,23);
-assert.equal(properties.get('--khor-term-cursor'),'#ffffff','dark input gets visible cursor');
+assert.equal(properties.get('--khor-term-cursor'),paint.rgbCss(readableRgb(0x1a1a14,0x1e1e1e,4.5)),'dark input gets a legible cursor preserving the chosen colour');
 assert.equal(JSON.stringify(colors),originalPalette,'colour query values stay original');
 term.options.minimumContrastRatio=1;renderer.renderRows(0,23);
 assert.equal(properties.get('--khor-term-cursor'),colors.cursor.css,'off retains cursor alpha');
@@ -165,4 +175,22 @@ assert.equal(resolver.resolve,originalResolve);assert.throws(()=>broken.renderRo
 stopPaint();stopPaint();assert.equal(service.setRenderer,originalSet);assert.equal(properties.size,0);
 console.log('terminal paint: full DIM floor, adaptive cursor, RGB/ANSI/inverse, off, palette/buffer isolation, renderer fallback and teardown passed');
 
+}
+
+{
+const load=name=>{const exports={};vm.runInNewContext(ts.transpileModule(readFileSync(new URL(`../src/lib/${name}.ts`,import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports});return exports;};
+const {trackMarks}=load('term-marks'),{drawBlocks}=load('term-block-decoration');
+for(const [endText,endCol,expected] of [['last output',11,4],['last output',0,4],['',0,3]]) {
+  const handlers=new Map(),decorations=[];
+  const buffer={type:'normal',baseY:0,cursorY:0,cursorX:0,getLine:()=>({translateToString:()=>endText})};
+  const term={cols:80,buffer:{active:buffer},parser:{registerOscHandler:(id,f)=>{handlers.set(id,f);return {dispose(){}};}},registerMarker:()=>({line:buffer.cursorY,isDisposed:false,dispose(){this.isDisposed=true;}}),registerDecoration:options=>{decorations.push(options);return {onRender(){},dispose(){}};}};
+  const marks=trackMarks(term),drawing=drawBlocks(term,marks),osc=data=>handlers.get(133)(data);
+  osc('A');osc('B');osc('C');buffer.cursorY=3;buffer.cursorX=endCol;osc('D;0');
+  const tint=decorations.find(d=>d.width===1);
+  assert.equal(tint.height,expected,`D at ${JSON.stringify(endText)} col ${endCol} covers the occupied final row only`);
+  buffer.cursorY=expected;buffer.cursorX=0;osc('A');
+  assert.equal(tint.height,expected,'Following prompt never expands the previous block');
+  drawing.dispose();marks.dispose();
+}
+console.log('command stripes: D before newline, after CR, and after newline cover the complete output without the next prompt');
 }

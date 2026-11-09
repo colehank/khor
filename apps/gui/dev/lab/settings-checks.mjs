@@ -102,6 +102,11 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const blocks=page.locator('[data-setting-row-name="term-block-lines"] [role="switch"]');
     if(await blocks.getAttribute('aria-checked')!=="true")await blocks.click();
     await page.waitForFunction(()=>document.querySelectorAll('[data-terminal-appearance-preview] .term-block-hair').length===2);
+    const stripeBounds=await sample.evaluate(el=>{
+      const t=el.__xterm,screen=el.querySelector('.xterm-screen').getBoundingClientRect(),stripe=el.querySelector('.term-block-tint').getBoundingClientRect();
+      return {bottom:stripe.bottom,expected:screen.top+t.buffer.active.cursorY*screen.height/t.rows};
+    });
+    assert.ok(Math.abs(stripeBounds.bottom-stripeBounds.expected)<=1,'Completed block covers the final output row and ends before the current prompt');
     await blocks.click();
     await page.waitForFunction(()=>!document.querySelector('[data-terminal-appearance-preview] .term-block-hair'));
     const blinkSwitch=page.locator('[data-setting-row-name="term-cursor-blink"] [role="switch"]');
@@ -129,6 +134,15 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.fontSize===18);
     await page.locator('[data-term-cursor-color]').fill('#aabbcc');
     await page.waitForFunction(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor==='#aabbcc');
+    const cursorPaint=[];
+    for(const color of ['#ffaaaa','#aaaaff']) {
+      await page.locator('[data-term-cursor-color]').fill(color);
+      await page.waitForFunction(color=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]')?.__xterm?.options.theme.cursor===color,color);
+      // Wait for the actual renderer pass, then measure the visible decoration.
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+      cursorPaint.push(await sample.locator('.term-preview-cursor').evaluate(el=>getComputedStyle(el).backgroundColor));
+    }
+    assert.notEqual(cursorPaint[0],cursorPaint[1],'Changing cursor colour changes its visible paint, not only configuration');
     await page.locator('[data-term-cursor-auto]').click();
     const activePalette=await page.evaluate(()=>document.querySelector('[data-terminal-appearance-preview] [data-term-theme-preview]').__xterm.options.theme.background);
     await page.locator('[data-setting-select="term-theme"]').selectOption('custom');
