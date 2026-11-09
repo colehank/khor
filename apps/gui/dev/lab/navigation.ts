@@ -45,16 +45,47 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     return path.slice(base.length+1);
   };
   const documentKey = (input: Record<string,unknown>) => (owner(input)?.id??device)+':'+pathOf(input);
+  // Mutable copies of the finite generated snapshot. This is a frontend Lab
+  // transport, never a filesystem implementation or evidence of OS rename.
+  const directories = new Map<string,ReturnType<typeof labDirectory>>();
+  const originals = new Map<string,string>();
+  const seededDevices = new Set<string>();
+  const seedFiles = (input: Record<string,unknown>) => {
+    const machine = owner(input), id = machine?.id??device, base = labRoot(machine);
+    if (seededDevices.has(id)) return;
+    const walk = (relative: string) => {
+      const path = base + (relative ? '/'+relative : '');
+      const listing = labDirectory(relative);
+      directories.set(id+':'+path,{...listing,entries:listing.entries.map(entry=>({...entry}))});
+      for (const entry of listing.entries) {
+        const child = (relative ? relative+'/' : '')+entry.name;
+        if (entry.dir) walk(child);
+        else originals.set(id+':'+base+'/'+child,child);
+      }
+    };
+    walk('');
+    seededDevices.add(id);
+  };
+  const directory = (input: Record<string,unknown>) => {
+    relative(input);
+    seedFiles(input);
+    const listing = directories.get(documentKey(input));
+    if (!listing) throw new Error('No fixture directory: '+pathOf(input));
+    return listing;
+  };
   const file = (input: Record<string,unknown> = {}): FileText => {
-    const key=documentKey(input);
+    relative(input);
+    seedFiles(input);
+    const key=documentKey(input), original=originals.get(key);
+    if (original===undefined) throw new Error('No fixture file: '+pathOf(input));
     if (!documents.has(key)) {
-      const text=labText(relative(input));
+      const text=labText(original);
       documents.set(key,{text,total:new TextEncoder().encode(text).length,at_ms:at,digest:'fixture-'+revision,cut:false,binary:false});
     }
     return documents.get(key)!;
   };
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -111,8 +142,27 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
         ]} satisfies GitCommitShow;
       }
       if (command === 'workspaces') return workspaces;
-      if (command === 'ls') {
-        return {path:pathOf(input),...labDirectory(relative(input))};
+      if (command === 'ls') return {path:pathOf(input),...directory(input)};
+      if (command === 'rename_path') {
+        const from=pathOf({...input,path:input.from}),to=pathOf({...input,path:input.to});
+        if (from===to||to.startsWith(from+'/')||[from,to].some(path=>path.split('/').some(part=>part==='.'||part==='..'))) {
+          throw new Error('Invalid fixture move');
+        }
+        relative({...input,path:from});relative({...input,path:to});
+        const parent=(path:string)=>path.slice(0,path.lastIndexOf('/'));
+        const name=(path:string)=>path.slice(path.lastIndexOf('/')+1);
+        const source=directory({...input,path:parent(from)}),target=directory({...input,path:parent(to)});
+        const entry=source.entries.find(entry=>entry.name===name(from));
+        if (!entry) throw new Error('No fixture entry: '+from);
+        if (target.entries.some(entry=>entry.name===name(to))) throw new Error('Fixture name already exists: '+to);
+        const prefix=documentKey({...input,path:from}),next=documentKey({...input,path:to});
+        const relocate=<T,>(map:Map<string,T>)=>{for(const [key,value] of [...map])if(key===prefix||key.startsWith(prefix+'/')){map.delete(key);map.set(next+key.slice(prefix.length),value);}};
+        source.entries=source.entries.filter(row=>row!==entry);
+        target.entries.push({...entry,name:name(to)});
+        target.entries.sort((a,b)=>Number(b.dir)-Number(a.dir)||a.name.localeCompare(b.name));
+        relocate(directories);relocate(originals);relocate(documents);
+        revision++;
+        return null;
       }
       if (command === 'read_text' || command === 'stat_text') return file(input);
       if (command === 'write_text') {

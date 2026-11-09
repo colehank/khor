@@ -48,7 +48,9 @@ jobs:
         working-directory: apps/gui
         run: |
           npx tsc --noEmit
+          npx tsc --project dev/lab/tsconfig.json
           node scripts/check-workspace-move.mjs
+          node scripts/check-workspace-move-lab.mjs
           node scripts/check-terminal-drop.mjs
           npx playwright-core install chromium
           node scripts/check-workspace-move-ui.mjs
