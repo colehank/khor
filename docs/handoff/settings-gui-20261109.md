@@ -1,41 +1,33 @@
-# Settings GUI — active, no publication
+# Settings GUI · review ready, publication held
 
-User requests settings within the main app, no separate window, and an Apple HIG standard audit. Only this requested UI work is authorized; no merge or ship. Root serial; source-only local (no Node/Rust/Bun/Xcode builds). Worktree `/Volumes/disk0/Khor/worktrees/current/khor-settings-gui-20261109`, branch `integrate/settings-gui-20261109`, base639f3df8 includes the verified updater repair (product b53048d6, Quality42581741576 SUCCESS).
+Latest user: settings within the main app, no separate popup; audit against Apple HIG. Earlier instruction explicitly holds merge/ship for settings discussion. Root serial; no new agents, no local Node/Bun/Rust/Xcode builds. Installed user App and live session hosts untouched.
 
-## Current implementation (uncommitted)
+## Source
 
-- Remove dedicated settings-face frontend branches and native window creation. Native menu/editor requests focus the existing main window and emit settings:open with pane/machine; main UI entries share one handler. No window resize.
-- Settings-specific category list/header, current category aria-current, per-device last-category restoration. Seven existing categories retained.
-- Shared settings-navigation module holds the existing category inventory and last-page storage. No new visual skin, tokens or icons.
-- Native validation reuses khor_node::config::PAGES; old auxiliary label remains only in existing close/draft compatibility guards.
+Worktree /Volumes/disk0/Khor/worktrees/current/khor-settings-gui-20261109, branch integrate/settings-gui-20261109. Product48fc2bca, based on639f3df8, includes previously verified updater repair. Original source-only main checkout remains467c37ab with user-owned lab-preview/ preserved. Read actual git state after this documentation commit.
 
-## Audit findings to discuss / Lab
+Implemented: no new native settings window; native menu/editor requests focus main and emit settings:open; UI clicks/shortcut share one main-page handler. Seven settings-only categories, localized Settings title, current-category aria semantics, last-category restoration with safe storage fallback. Existing main frame/material and controls reused. Mobile cold start continues to restore landing only; reopening Settings restores category.
 
-Apple official references: https://developer.apple.com/design/human-interface-guidelines/settings ; https://developer.apple.com/design/human-interface-guidelines/search-fields ; https://developer.apple.com/design/human-interface-guidelines/selection-and-input . Read their current official Markdown versions too. HIG allows a separate macOS settings window: main-window integration is the user's product choice, not a claim that HIG prohibits windows.
+Audit: docs/handoff/settings-hig-audit-20261109.md separates implemented changes from proposals: local/remote scope, setting-item search, saving/errors (including silent About failures), About hierarchy, long-label/larger-text/focus checks. HIG permits an independent macOS settings window; main-container choice follows the owner, not a purported HIG prohibition.
 
-1. Entry paths split by platform/viewport and method (menu, click, shortcut). Being unified now.
-2. Settings mixed with My Khor/storage/diagnostics and labeled More; selected item only data-on. Being clarified now.
-3. Always opens Appearance rather than last pane. Being fixed now.
-4. Missing search of actual settings. Need a real item index/location flow, not category-name filtering. Proposal only.
-5. Local viewing preferences vs remote-machine AgentRecognition in TerminalPage have different scopes with insufficient separation. Proposal only; do not silently remove capability or call all recognition Hook-based without backend verification.
-6. Save state/error handling varies: ConfigSections fires mutations without row pending/order handling, WindowAppearance has its own queue, local settings have different paths. Needs delayed/failure interaction tests before claiming a reproduced race. Proposal only.
-7. About combines version/update, raw store paths/cache and CLI technical facts. Keep normal info clear; technical details progressive disclosure. Do not reintroduce a General category without discussion (earlier owner removed it).
-8. Long labels/value/button rows, larger font, mobile keyboard/focus/back restoration need real layout checks; not yet proven defects. Existing grouped cards/native pickers/tokens are reusable.
+## Preview and evidence
 
-## Lab data
+http://127.0.0.1:23950/app/?scene=devices&machines=3 ; More → Settings. Own Python-only preview session42859, serving trusted GH artifact at /Volumes/disk0/Khor/evidence/settings-gui-20261109/final-lab/developer-lab. Snapshot80743a7f, real production App. Its production UI/native sources equal48fc2bca; later changes only fix/scoped test data storage on Node. Do not claim preview includes those later harness edits.
 
-Lab native domain generator now emits bilingual ConfigRow metadata from actual config_rows over its temporary empty store, no Node opened. Fixture config/set_config use those rows with Lab-only browser values; no duplicated setting inventory or production credentials. Python fixture cache tests4/4 pass locally.
+Trusted run42599476841: developer-lab job SUCCESS,56 App scenarios,0 errors; settings desktop/mobile navigation, native-derived setting changes and persistence passed. Screenshots inspected, Chinese layout clean. Overall run FAILURE because the shared component-test fixture touched localStorage in Node.
+
+Fixed in c9629a09: safe browser storage, in-memory Node values; no direct browser API outside guard. Follow-up48fc2bca makes canonical settings metadata opt-in only for full App Lab (bootstrap settings:true). Legacy component harnesses retain their original config=[] contract; complete App Lab regenerates validated native metadata. The tracked generated world data is an old domain cache, NOT untracked: do not assume it already has settings.
+
+Native focused run42598784540 onfbd71678 SUCCESS: native build/tests, actual native WebKit, unit/types, static gates, scripts/format and three-platform runtime checks. native-source-equivalence.json proves all changed native/App-routing sources match48fc2bca. Temporary verify/settings-native-20261109 branch deleted after success.
+
+## Still running — do not claim all GUI green
+
+42601894665 targets c9629a09 (safe Node storage); follow-up final GUI run42602592900 targets48fc2bca and is queued. Check actual status/IDs. No more product changes are planned just to keep CI busy. Publication remains held regardless of success. Broader GUI regression must be green before merge. User can review Settings preview while these run.
+
+The appearance/check-face legacy settings-window assertions and mobile-static obsolete command inventory were updated. The appearance/check-face standalone legacy walks were NOT run this turn; no claim of real macOS CmdComma/window-focus interaction or iPhone keyboard verification.
+
+Source-only Python fixture-cache tests4/4 pass. Macserver SSH repeatedly timed out at banner (one echo succeeded), isolated clone did not start; do not install a local compiler to compensate. Graph MCP Transport closed, targeted reads used; Git hooks updated graph. CUA browser host unavailable, completion summary sent; no user browser/App was changed. Preview HTTP200.
 
 ## Next
 
-Add regression for single main surface, all entries, category restoration and selected accessibility semantics; use the real App Lab, no recreated settings mock page. New source files must be staged for snapshots. Graph MCP Transport closed; fallback targeted rg reads used; .codegraph absent at original root. khor-design and design README/layout read. Need audit final document and lab preview; do not fix all other findings unasked.
-
-Lab docs docs/development/LAB.md; source-only uses frontend mode/remote trusted GitHub. Dedicated public developer-lab.yml exists, configured by scripts/khor_lab/builders.py. Private control repo can have billing failures; don't run untrusted macserver binaries on this Mac. Macserver can give development feedback through isolated source checkouts and shared caches; trusted GitHub validates deliverables. Existing Lab23930 is older baseline and must not be presented as this modification.
-
-## Verification checkpoint
-
-Product fbd71678 pushed on integrate/settings-gui-20261109. First GUI run42597844198 tests5f0a62b0; final GUI run42598733258 targetsfbd71678 and is queued. Temporary verify/settings-native-20261109 ref points to exactlyfbd71678 so focused native/update Quality can run in parallel without canceling GUI validation; delete after verification. Native-source formatting aligned manually; actual compiler/formatter result still required. Macserver SSH repeatedly times out at banner, one simple echo succeeded, isolated clone never started. No local compiler fallback.
-
-Python fixture cache tests4/4 pass. docs/handoff/settings-hig-audit-20261109.md contains implemented vs proposed changes. Need obtain trusted Lab bundle, serve23950, inspect desktop/mobile forms and report native limitations accurately; no merge/ship.
-
-First GUI run unit/types passed, then gates refused the newly added script because the initial revision had no gate documentation. Current docs now name both npm command and script filename (the registry requires the filename). Mobile App deliberately restores only its landing on cold start; regression updated to reopen Settings and check the saved category instead of changing that existing policy. Canceled queued42598733258 before its outdated checks consumed build time. Focused native run42598784540 usesfbd71678 (same Rust sources), may report obsolete GUI docs separately; native compile evidence must be read by job.
+Review remaining GUI run(s), keep evidence/record failures precisely. If the user steers settings UX meanwhile, preserve this task and hold release. Do not merge main or ship without renewed instruction. Official HIG links are in the audit document.
