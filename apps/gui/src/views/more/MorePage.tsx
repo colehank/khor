@@ -3,11 +3,10 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 import { MidName } from "@/browse/TabStrip";
-import { IconBack, IconChevronRight, IconClose } from "@/components/icons";
+import { IconBack, IconChevronRight } from "@/components/icons";
 import { PageAction, PageSubtitle } from "@/components/Region";
 import { NarrowHead } from "@/components/SideHead";
 import { GlassCircle } from "@/components/Glass";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { config, gui } from "@/gen/catalog";
 import { isSettingsPage } from "@/lib/settings-navigation";
@@ -65,17 +64,9 @@ export const moreName = (page: MorePage): string =>
     a section named after their page. */
 const PageName = createContext<string | null>(null);
 
-/**
- * The frame: a head with the page's name and its way out, and a column
- * of sections under it.
- *
- * **The name is drawn, unlike every landing's** (docs/UX.md: no pane
- * wears its name where you can see it). A landing's name is answered by
- * the rail glyph that is lit; nothing in the rail is lit for one of
- * these, so the only thing on screen that could say which page this is
- * is the page. The close button is the other half of the same sentence:
- * a landing is never closed, and one of these always is.
- */
+/** More shares the main window. Desktop selection names the page in the
+ * sidebar; mobile retains its own title and back button. Page actions still
+ * use the existing Region action slot on desktop. */
 export function MoreFrame({
   page,
   onClose,
@@ -136,17 +127,7 @@ export function MoreFrame({
             </span>
           </PageSubtitle>
         )}
-        {/* The page's own head. **On the wide face it is not drawn**
-            (`app.css` `[data-board] [data-more-head]`): R0 above the
-            board already says the name and holds the way out, and only
-            the page's buttons travel up there (`PageAction`).
-
-            **On the narrow face it is the window's first row**
-            (`NarrowHead`, 2026-09-28) — 「‹」 and the name, like every
-            other detail screen there. ⚠️ 墓碑: it was 「×」 in a bar of
-            its own under L0's magnifier, the one detail screen whose way
-            out was not 「返回」 (10-layout 窄档: 「列表一屏 ⇄ 详情一屏，
-            R0 左上角是返回」). 「‹」 goes one screen back, to 更多's list. */}
+        {/* Only mobile needs a page title and a way back to the list. */}
         <NarrowHead>
           {(seated) =>
             seated ? (
@@ -169,23 +150,7 @@ export function MoreFrame({
                 )}
               </header>
             ) : (
-              <header
-                data-more-head
-                className="flex min-h-ctl-lg flex-none items-center gap-row border-b px-3"
-              >
-                <h1 className="min-w-0 flex-1 truncate text-title-md font-title">{moreName(page)}</h1>
-                {actions && <PageAction>{actions}</PageAction>}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={gui.close}
-                  data-more-close
-                  onClick={onClose}
-                  className="min-h-touch min-w-touch"
-                >
-                  <IconClose className="size-affordance" />
-                </Button>
-              </header>
+              actions && <PageAction>{actions}</PageAction>
             )
           }
         </NarrowHead>

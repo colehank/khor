@@ -24,6 +24,7 @@ import { useRef, type ReactNode } from "react";
 
 import { GlassCircle } from "@/components/Glass";
 import { IconMore } from "@/components/icons";
+import {NavigationOverflow} from "@/components/NavigationOverflow";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { gui } from "@/gen/catalog";
 import { useTravel } from "@/lib/travel";
@@ -74,6 +75,7 @@ function Seat({
 
 export function LandingStrip({
   seats,
+  more,
   active,
   moreOn,
   onGo,
@@ -81,6 +83,7 @@ export function LandingStrip({
 }: {
   /** The four landings on the bar (`NAV_SHOWN`), as the phone's. */
   seats: StripSeat[];
+  more: StripSeat[];
   /** The open landing, or null while a 「…」 page is up. */
   active: string | null;
   /** Whether 更多 holds the page on screen. */
@@ -117,14 +120,13 @@ export function LandingStrip({
           </Seat>
         ))}
       </nav>
-      <GlassCircle
+      <NavigationOverflow seats={more} onGo={onGo} onMore={onMore}><GlassCircle
         data-rail-item data-rail-more data-on={moreOn}
         aria-label={gui.rail_more} aria-current={moreOn ? "page" : undefined}
-        onClick={onMore}
-        className={cn(moreOn && "glass-sel text-[var(--rail-on-ink)]")}
+        className={cn("data-[state=open]:glass-sel",moreOn && "glass-sel text-[var(--rail-on-ink)]")}
       >
         <IconMore />
-      </GlassCircle>
+      </GlassCircle></NavigationOverflow>
     </div>
   );
 }

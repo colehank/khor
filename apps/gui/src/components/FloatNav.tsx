@@ -6,9 +6,7 @@
  * centred, over the foot of the screen. The wide face
  * has the landings' strip in its top row instead (`LandingStrip`).
  *
- * 更多 opens the shared More navigation page. Its grouped list contains
- * My Khor, overflow landings, Settings, Storage, Notifications and Diagnostics.
- * It stays selected throughout those pages.
+ * The overflow chooser opens hidden landings or the separate More page.
  *
  * The open seat is the ground showing through the glass (`glass-sel`)
  * with the brand's deep ink, its glyph's solid piece filled (`rail-on-ink`,
@@ -16,6 +14,7 @@
  */
 import { useRef, type ReactNode } from "react";
 import { IconMore } from "@/components/icons";
+import {NavigationOverflow} from "@/components/NavigationOverflow";
 import { useTravel } from "@/lib/travel";
 import { gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
@@ -60,8 +59,9 @@ function Seat({ seat, on, onClick }: { seat: NavSeat; on: boolean; onClick: () =
 }
 
 /** More is a destination alongside the four primary landings. */
-export function FloatNav({seats,active,moreOn,onGo,onMore,unreadNotifications=0,className}: {
+export function FloatNav({seats,more,active,moreOn,onGo,onMore,unreadNotifications=0,className}: {
   seats:NavSeat[];
+  more:NavSeat[];
   active:string|null;
   moreOn:boolean;
   onGo:(key:string)=>void;
@@ -91,15 +91,15 @@ export function FloatNav({seats,active,moreOn,onGo,onMore,unreadNotifications=0,
       {seats.map((s) => (
         <Seat key={s.key} seat={s} on={active === s.key} onClick={() => onGo(s.key)} />
       ))}
-      <button
+      <NavigationOverflow seats={more} onGo={onGo} onMore={onMore} mobile><button
         type="button" data-slot="button" data-nav-more data-on={moreOn}
         aria-label={gui.rail_more} aria-current={moreOn ? "page" : undefined}
-        onClick={onMore} className={NAV_SEAT}
+        className={cn(NAV_SEAT,"data-[state=open]:glass-sel")}
       >
         <IconMore />
         <span className="text-nav-label">{gui.rail_more}</span>
         {unreadNotifications > 0 && <span data-nav-badge className="absolute top-1 right-3 min-w-4 rounded-full bg-badge px-1 text-center text-caption leading-4 tabular-nums text-badge-foreground">{unreadNotifications}</span>}
-      </button>
+      </button></NavigationOverflow>
     </nav>
   );
 }

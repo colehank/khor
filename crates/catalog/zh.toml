@@ -3092,14 +3092,6 @@ nav-settings = "设置"
 # 更多's first item (UX-16, the owner 2026-10-05): this machine's face,
 # the network's map and the identity; it replaces 这台机器.
 my-khor = "我的 khor"
-khor-network = "网络集群"
-khor-network-members = "{0} 台机器组成的网络"
-khor-network-current = "当前通过 {0} 访问"
-khor-network-connections = "连接设置"
-khor-network-overview = "概览"
-khor-network-topology = "网络关系"
-khor-network-this-machine = "仅当前机器"
-khor-network-reset-this-machine = "重置本机身份"
 # The topology map (UX-16, 我的 khor and the machines overview): a
 # link's latency is row-rtt (`latency`). ⚠️ 墓碑 (WORDS-1008): map-last-seen
 # 「无法获取 · 上次 {0}前」——连不上叫不通，用 link-last-heard 和 hop.down 说（`downWord`）。

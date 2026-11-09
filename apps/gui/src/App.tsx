@@ -142,7 +142,7 @@ import { WorkspacesList, useWorkspaceFilter } from "@/views/WorkspacesList";
 import { WorkspaceMemories, workspaceIdentity } from "@/views/workspace/workspace-memory";
 import { WorkspaceDraftOwner } from "@/views/workspace/use-workspace-memory";
 import { LockScreen } from "@/views/LockScreen";
-import { moreName, type MorePage } from "@/views/more/MorePage";
+import type { MorePage } from "@/views/more/MorePage";
 import { StorePage, StoreScreen } from "@/views/StorePage";
 import { rememberPlace, storedPlace } from "@/lib/place";
 import { isSettingsPage, lastSettingsPage, rememberSettingsPage, type SettingsRequest } from "@/lib/settings-navigation";
@@ -1425,6 +1425,7 @@ export default function App() {
   const strip = (
     <LandingStrip
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
+      more={navOrder.slice(NAV_SHOWN).map(seatOf)}
       active={morePage === null ? landing : null}
       // Tinted on every page reached through it, 我的 khor too (F3.6; W23),
       // and while the open landing is one of the folded ones.
@@ -1455,6 +1456,7 @@ export default function App() {
     <FloatNav
       unreadNotifications={inbox.items.filter((item) => !item.read).length}
       seats={navOrder.slice(0, NAV_SHOWN).map(seatOf)}
+      more={navOrder.slice(NAV_SHOWN).map(seatOf)}
       active={morePage === null ? landing : null}
       moreOn={morePage !== null || navOrder.slice(NAV_SHOWN).includes(landing)}
       onGo={(key) => goLanding(key as Landing)}
@@ -3170,10 +3172,8 @@ export default function App() {
 
   const moreList = (
     <MoreNavigation page={morePage} narrow={narrow}
-      overflow={navOrder.slice(NAV_SHOWN).map(seatOf)}
       unread={inbox.items.filter(item=>!item.read).length}
       onPage={page=>{setMorePage(page);setScreen("detail");}}
-      onLanding={key=>goLanding(key as Landing)}
     />
   );
 
@@ -3644,23 +3644,7 @@ export default function App() {
           {morePage ? (
             <Region
               kind="detail"
-              title={moreName(morePage)}
               caption={stale ? gui.backend_unreachable : undefined}
-              // The way out, at R0's right end with the page's other
-              // buttons (components/Toolbar, D9) — not a second head in
-              // the board, which would say the page's name twice. The
-              // narrow face has no R0 and keeps the frame's own head.
-              // A page's own buttons (网络's two, 安全's 立即锁定) are
-              // seated before this by the page itself (`PageAction`).
-              // A glass circle like every head's way out (the audit fix
-              // plan F4.9; W21).
-              actions={
-                (
-                  <GlassCircle aria-label={gui.close} data-more-close onClick={() => setMorePage(null)}>
-                    <IconClose/>
-                  </GlassCircle>
-                )
-              }
             >
               <Fault name="more" reset={seamAt}>
                 {morePageEl}

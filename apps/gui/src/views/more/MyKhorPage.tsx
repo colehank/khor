@@ -64,7 +64,6 @@ import { GlassCircle } from "@/components/Glass";
 import { MachineFace } from "@/components/SessionFace";
 import { IconBack, IconMore } from "@/components/icons";
 import { PageAction } from "@/components/Region";
-import {NetworkOverview} from "./NetworkOverview";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Dialog, DialogContent, TaskOverlay, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -86,7 +85,7 @@ import { RelayAddDialog } from "@/views/NetSettings";
 import { RootWordsDialog } from "@/views/PairDialogs";
 import { agoOf, downWord, latency } from "@/words";
 
-type View = "overview" | "map" | "matrix";
+type View = "map" | "matrix";
 
 /** What the card is about: this machine, or another by id. */
 type Opened = { id: string; at: DOMRect | null };
@@ -185,12 +184,12 @@ export function MyKhorPage({
   /** This machine's identity was reset. */
   onReset: () => void;
 }) {
-  const [view,setView] = useState<View>("overview");
+  const [view,setView] = useState<View>("map");
   const narrow = useNarrow();
   const coarse = useCoarse();
   // The phone: the whole window (no first row, no landings' bar), as
   // every content page.
-  useFullScreen(narrow && view !== "overview");
+  useFullScreen(narrow);
   const [about, setAbout] = useState<About | null>(null);
   const [relays, setRelaysKnown] = useState<RelayChoices | null>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceRow[]>([]);
@@ -300,7 +299,6 @@ export function MyKhorPage({
       mark={{ [mark]: true }}
       className="flex-none"
       options={[
-        { key: "overview", label: gui.khor_network_overview, mark: { "data-dial-view": "overview" } },
         { key: "map", label: gui.dial_view_map, mark: { "data-dial-view": "map" } },
         { key: "matrix", label: gui.dial_view_matrix, mark: { "data-dial-view": "matrix" } },
       ]}
@@ -377,13 +375,6 @@ export function MyKhorPage({
 
   return (
     <div data-dial-page data-narrow-page={narrow || undefined} className="relative flex h-full min-h-0 flex-1 flex-col bg-card">
-      {view === "overview" ? <NetworkOverview
-        devices={devices} me={me} holdsRoot={inApp && holdsRoot} onClose={onClose}
-        onMachine={(row,at)=>setOpened({id:row.id,at})}
-        onAdd={()=>onAdd()} onConnections={onOpenRelays} onTopology={()=>{close();setView("map");}}
-        onWords={()=>setShowingWords(true)} onLeave={alone ? undefined : ()=>ask("leave")}
-        onReset={()=>ask("reset")} status={said}
-      /> : <>
       {!narrow && <PageAction>{segment("data-dial-segment")}</PageAction>}
       <section
         data-more-page="me"
@@ -430,7 +421,6 @@ export function MyKhorPage({
         ))}
 
       </section>
-      </>}
         {/* **The card**: a popover beside the face on the wide face, the
             phone's sheet on the narrow one (UX-21: the scrim closes it, a
             pull closes it, Esc closes it). */}
@@ -459,14 +449,14 @@ export function MyKhorPage({
       )}
       {/* **The phone's deck** (rule 1): ‹ · the pill with the name and the
           segment · 「…」 for the add menu. */}
-      {narrow && view !== "overview" && (
+      {narrow && (
         <div data-dial-deck className="pointer-events-none absolute inset-x-0 bottom-[var(--safe-bottom)] flex flex-col items-stretch">
           <div className="pointer-events-auto flex h-[calc(var(--glass-btn)+2*var(--gap-in))] flex-none items-center gap-in px-row">
             <GlassCircle aria-label={gui.back} data-more-back data-more-close data-dial-back onClick={onClose}>
               <IconBack />
             </GlassCircle>
             <div data-dial-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-row pe-1">
-              <span className="min-w-0 flex-1 truncate text-body font-title">{gui.khor_network_topology}</span>
+              <span className="min-w-0 flex-1 truncate text-body font-title">{gui.my_khor}</span>
               {segment("data-dial-segment")}
             </div>
             <DropdownMenu>
