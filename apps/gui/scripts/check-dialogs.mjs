@@ -154,11 +154,11 @@ if(process.argv.includes('--serve')){
       if(report)await task.screenshot({path:path.join(report,`task-frame-${size}.png`),animations:'disabled'});
       await input.press('Escape');
       await frame.locator('[data-task-discard]').waitFor();
-      await frame.locator('[data-task-discard] button').first().click();
+      await frame.locator('[data-task-discard] [data-slot="dialog-footer"] button').first().click();
       await frame.locator('[data-task-discard]').waitFor({state:'detached'});
       assert.equal(await input.inputValue(),'保留这段草稿');
       await task.locator('[data-task-proof-save]').click();
-      await input.press('Escape');
+      await page.keyboard.press('Escape');
       assert.equal(await frame.locator('[data-task-discard]').count(),0,'A non-cancellable write does not offer to discard');
       assert.equal(await task.locator('[data-task-proof-cancel]').isDisabled(),true);
       assert.equal(await input.evaluate(el=>!!el.closest('[inert]')),true,'A write freezes its draft until it succeeds or fails');
@@ -171,7 +171,7 @@ if(process.argv.includes('--serve')){
       assert.equal(await input.inputValue(),'保留这段草稿');
       await input.press('Escape');
       await frame.locator('[data-task-discard]').waitFor();
-      await frame.locator('[data-task-discard] button').last().click();
+      await frame.locator('[data-task-discard] [data-slot="dialog-footer"] button').last().click();
       await task.waitFor({state:'detached'});
       await frame.getByRole('button',{name:'草稿任务',exact:true}).click();
       await frame.locator('#task-proof-name').fill('显式取消');
