@@ -49,8 +49,10 @@ createRoot(document.getElementById('root')).render(<TooltipProvider><FileTree ma
    entries.set(parent(args.from),entries.get(parent(args.from)).filter(entry=>entry!==source));
    entries.set(parent(args.to),[...(entries.get(parent(args.to))||[]),{...source,name:name(args.to)}]);
    if(source.dir)for(const [path,value] of [...entries])if(path===args.from||path.startsWith(args.from+'/')){entries.delete(path);entries.set(args.to+path.slice(args.from.length),value);}
-  }else if(command==='dirs_wait')result={seq:0,dirs:[],unavailable:true,unreported:[]};
-  else if(command==='dirs_begin')result={};
+  }else if(command==='dirs_begin'||command==='dirs_wait'){
+   const batch={cursor:'0',reset:false,dirs:[],workspace:false,coverage:[],retry_ms:1000};
+   result=command==='dirs_begin'?{id:'move-fixture-watch',machine_id:'fixture',batch}:batch;
+  }
   else if(command==='about')result={hosts:true,faces:[]};
   else if(command==='trash_here')result=false;
   await route.fulfill({headers,json:result});
