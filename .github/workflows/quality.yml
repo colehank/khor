@@ -12,6 +12,7 @@ permissions:
 jobs:
   source-format:
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -44,7 +45,7 @@ jobs:
           npm ci --prefix apps/gui
           cd apps/gui
           npm run test:types
-          NOTIFICATION_UI_DIR="$RUNNER_TEMP/notice-fast" PLAYWRIGHT_CHROMIUM_CHANNEL=chrome node scripts/check-native-notification-ui.mjs
+          NOTIFICATION_UI_DIR="$RUNNER_TEMP/notice-fast" PLAYWRIGHT_CHROMIUM_CHANNEL=chrome timeout --kill-after=5s 90s node scripts/check-native-notification-ui.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
