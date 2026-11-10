@@ -88,7 +88,7 @@ fn summary(child: &Child, record: Option<&Record>) -> Value {
         _ => "unavailable",
     };
     let result = record.and_then(|r| r.task.status.message.as_ref()).map(|message| {
-        message.parts().iter().filter_map(|part| match &part.content {
+        message.parts.iter().filter_map(|part| match &part.content {
             protocol::PartContent::Text(text) => Some(text.as_str()),
             _ => None,
         }).collect::<Vec<_>>().join("\n").chars().take(16 * 1024).collect::<String>()

@@ -6648,6 +6648,21 @@ mod tests {
             .unwrap();
         let dir = initial.dir_of(&id).unwrap();
         host.serve(&dir, 5001);
+        let shell_rows = || {
+            LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
+                .discovering(Arc::new(Discovery::at(&root).with_procs(Procs::of([
+                    (5001, process("zsh", Some(host.pid()))),
+                ]))))
+                .rows(|_| 0)
+        };
+        let check_shell = |rows: Vec<Session>| {
+            let live: Vec<_> = rows.iter().filter(|row| row.term && !row.dead).collect();
+            assert_eq!(live.len(), 1);
+            assert_eq!(live[0].id, id);
+            assert_eq!(live[0].kind.0, khor_core::kind::SHELL);
+            assert_eq!(live[0].title, "SJTWorkshop fixture");
+        };
+        check_shell(shell_rows());
         for (label, stopped, title, selected) in [
             (
                 "old suspended, current selected",
@@ -6691,6 +6706,8 @@ mod tests {
                 .iter()
                 .find(|r| r.id == id)
                 .expect("the original hosted terminal");
+            assert_eq!(terminal.title, "SJTWorkshop fixture", "{label}");
+            assert_eq!(rows.iter().filter(|row| row.term && !row.dead).count(), 1, "{label}");
             if let Some((thread, pid, answer)) = selected {
                 assert_eq!(
                     terminal.category.as_deref(),
@@ -6717,6 +6734,7 @@ mod tests {
                 assert_eq!(terminal.unread, 0, "{label}");
             }
         }
+        check_shell(shell_rows());
     }
 
     #[test]
