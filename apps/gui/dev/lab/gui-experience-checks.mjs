@@ -1,10 +1,10 @@
-import {readFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 export async function checkGuiExperience(browser,{port,report,engine}){
  const context=await browser.newContext({viewport:{width:1280,height:900}});
  const page=await context.newPage();page.setDefaultTimeout(15000);
- const errors=[];page.on('pageerror',error=>errors.push(String(error)));
+ const errors=[];let readingAnchor=null;page.on('pageerror',error=>errors.push(String(error)));
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  try{
   await page.goto(`http://127.0.0.1:${port}/app/?scene=gui&items=3&machines=1&short-pages&handoff`);
@@ -43,6 +43,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   });
   await page.locator(`[data-session-tabs] [data-tab-open="${other}"]`).click();
   await page.locator(`[data-session-tabs] [data-tab-open="${original}"]`).click();
+  readingAnchor=anchor;
   await page.waitForFunction(anchor=>{
    const root=document.querySelector('[data-chat-scroll]'),node=[...root.querySelectorAll('[data-history-key]')].find(node=>node.dataset.historyKey===anchor.key);
    return node&&Math.abs(node.getBoundingClientRect().top-root.getBoundingClientRect().top-anchor.top)<3;
@@ -84,7 +85,13 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   assert.equal((await api('__ai_preview/says')).length,0,'Reconnect only resumes reads; it never resends a prompt');
   assert.deepEqual(errors,[]);
   return {name:`GUI composer and reader ${engine}`,passed:true,errors};
- }catch(error){await page.screenshot({path:path.join(report,`gui-experience-${engine}-failure.png`)}).catch(()=>{});throw error;}finally{await context.close();}
+ }catch(error){
+  errors.push(String(error));await page.screenshot({path:path.join(report,`gui-experience-${engine}-failure.png`)}).catch(()=>{});
+  const reading=await page.locator('[data-chat-scroll]').evaluate(root=>({top:root.scrollTop,height:root.scrollHeight,viewport:root.clientHeight,
+   items:[...root.querySelectorAll('[data-history-key]')].map(node=>({key:node.dataset.historyKey,top:node.getBoundingClientRect().top-root.getBoundingClientRect().top,text:node.textContent.slice(0,120)}))})).catch(()=>null);
+  await writeFile(path.join(report,`gui-experience-${engine}-failure.json`),JSON.stringify({readingAnchor,reading,errors},null,2));
+  return {name:`GUI composer and reader ${engine}`,passed:false,errors};
+ }finally{await context.close();}
 }
 
 export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=false,khor=false}){

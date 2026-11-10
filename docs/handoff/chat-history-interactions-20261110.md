@@ -61,3 +61,7 @@ Artifact已校验564项CRC/size。小页diagnosis只有2次backward（tail+1次o
 ## 原生游标边界核查
 
 进一步核对apps/gui/core/src/chat.rs和crates/node/src/adaptor/transcript_page.rs：原生before/after游标可用不同record position表示相邻边界，不能只靠字符串相等合并。receiveHistoryPage新增可选requestedCursor，由单pending的historyReader传入当次真实游标；只在匹配当前window边界时允许新入页和既有边页合并，旧页间仍需要一致边界。新增不同opaque编码与stale请求模型反例。不解码前端游标。该补充当前dirty，等5daCI返回一并处理实际结果后再提交最终版。
+
+## 已复现阅读位置回归并修复
+
+5da/Quality42766916003：frontend、GUI units/types/static/4交互组绿；App在既有checkGuiExperience的切换标签后恢复锚点严格<3px检查失败，尚未运行新长历史案例。日志chat-history-5da-app.log，官方artifact transfer42853进行中。原因：原rememberReading保存匹配页的newer；合并页后这个newer可能距离当前条目很多个wirepages，小页恢复读回最后4entries，缺少原条目。缓存合并现在保留每个原始wirepage的checkpoint（仅游标与已有entrykey引用，数量<=512entry上限）；historyResumeCursor恢复精确原wirepage，ChatView复用。模型验证400entries全部100个原wire恢复边界及原生不同opaque编码。既有严格3px检查保留；harness失败会捕获诊断并继续其余App案例，不把单一失败掩盖其余结果。e9d4/Quality42767913845只含原生边界适配和本地化，目前运行；新checkpoint修复尚dirty。

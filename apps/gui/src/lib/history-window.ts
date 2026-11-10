@@ -4,8 +4,9 @@ import type { HistoryRecordRef } from '@/gen/bindings/HistoryRecordRef';
 export const HISTORY_CACHE_LIMITS = { pages: 8, entries: 512, bytes: 2 * 1024 * 1024 } as const;
 const PAGE_BYTES = 512 * 1024;
 export type HistoryDirection = 'tail' | 'older' | 'newer';
+type CachedHistoryPage=HistoryPage&{checkpoints?:{newer:string;entries:string[]}[]};
 export type HistoryWindow = {
-  pages: HistoryPage[];
+  pages: CachedHistoryPage[];
   older: string | null;
   newer: string | null;
   latest: boolean;
@@ -40,8 +41,8 @@ function exceedsBudget(pages: HistoryPage[]) {
 /** A server may send tiny pages while a reply streams. Pack only proven
  * contiguous body pages; keep wire-size and cache-size bounds unchanged.
  * Reference-only ranges retain their replacement semantics below. */
-function packHistoryPages(source:HistoryPage[],connected?:'older'|'newer'):HistoryPage[]{
- const packed:HistoryPage[]=[];
+function packHistoryPages(source:CachedHistoryPage[],connected?:'older'|'newer'):CachedHistoryPage[]{
+ const packed:CachedHistoryPage[]=[];
  for(const [index,right] of source.entries()){
   const left=packed.at(-1);
   // Native before/after cursors can name the same boundary with different
@@ -55,10 +56,18 @@ function packHistoryPages(source:HistoryPage[],connected?:'older'|'newer'):Histo
    &&left.encoded_bytes+right.encoded_bytes<=PAGE_BYTES){
    packed[packed.length-1]={...right,older:left.older,reset:false,
     entries:[...left.entries,...right.entries],references:[...left.references,...right.references],
+    checkpoints:[...(left.checkpoints??[{newer:left.newer,entries:left.entries.map(entry=>entry.key)}]),
+     ...(right.checkpoints??[{newer:right.newer,entries:right.entries.map(entry=>entry.key)}])],
     encoded_bytes:left.encoded_bytes+right.encoded_bytes};
   }else packed.push(right);
  }
  return packed;
+}
+/** Resume from the original wire page, even after small pages were packed.
+ * A packed page's far edge may be many responses past the visible entry. */
+export function historyResumeCursor(window:HistoryWindow,entry:string):string|null{
+ const page=window.pages.find(page=>page.entries.some(candidate=>candidate.key===entry));
+ return page?.checkpoints?.find(checkpoint=>checkpoint.entries.includes(entry))?.newer??page?.newer??null;
 }
 /** Admit a bounded wire page before folding or rendering any of its entries. */
 export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, direction: HistoryDirection,requestedCursor?:string|null): HistoryWindow {

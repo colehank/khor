@@ -102,6 +102,7 @@ test('contiguous streamed short pages retain a viewport-sized history within the
  assert.equal(w.latest,true,'Small wire pages must not discard latest history while room remains');
  assert.equal(historyEntries(w).length,400,'Capacity is measured in content, not the server page count');
  assert.equal(w.older,null);assert.equal(w.newer,'at:400');assert(w.pages.length<=8);
+ for(let entry=0;entry<400;entry++)assert.equal(module.exports.historyResumeCursor(w,String(entry)),`at:${Math.floor(entry/4)*4+4}`,'Packed content retains every original wire-page resume point');
  for(const retained of w.pages)assert(retained.entries.length<=128&&retained.encoded_bytes<=512*1024);
  const middle=receive(w,chunk(400,404),'newer');assert.equal(historyEntries(middle).length,404);assert.equal(middle.older,null);
  const separated=receive(receive(EMPTY,page('tail'),'tail'),page('unrelated'),'older');
@@ -115,6 +116,8 @@ test('native before and after cursor encodings join only through their completed
  assert.equal(joined.pages.length,1,'The serialized reader request proves adjacency without decoding opaque cursor positions');
  assert.deepEqual(historyEntries(joined).map(e=>e.key),['older:0','tail:0']);
  assert.equal(joined.older,'before:older');assert.equal(joined.newer,'after:tail');
+ assert.equal(module.exports.historyResumeCursor(joined,'older:0'),'opaque-after-record-A');
+ assert.equal(module.exports.historyResumeCursor(joined,'tail:0'),'after:tail');
  assert.equal(receive(w,older,'older','another-request').pages.length,2,'A stale or unrelated request does not authorize a merge');
  const next=page('next',{older:'opaque-before-record-C'});
  const after=receive(w,next,'newer',w.newer);assert.equal(after.pages.length,1);

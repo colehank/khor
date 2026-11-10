@@ -54,7 +54,7 @@ import { HistorySearch } from '@/components/history/HistorySearch';
 import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
-import { historyEntries, historyReferences, historyWindowHasRoom } from '@/lib/history-window';
+import { historyResumeCursor, historyEntries, historyReferences, historyWindowHasRoom } from '@/lib/history-window';
 import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContributionPoint, historyContributionPresent, type HistoryContributionPoint, type HistoryItem } from '@/lib/history-paint';
 import {HistoryRecordContent} from '@/components/history/HistoryRecordContent';
 import {historyRecordSlots} from '@/lib/history-record-presentation';
@@ -774,11 +774,13 @@ export function ChatView({
     const top=element.getBoundingClientRect().top;
     const node=[...element.querySelectorAll<HTMLElement>('[data-history-key]')].find(node=>node.getBoundingClientRect().bottom>top);
     const item=paint.past.find(item=>(item.displayKey??item.historyKey)===node?.dataset.historyKey);
-    const page=history.window.pages.find(page=>page.entries.some(entry=>item?.historyEntries.includes(entry.key)));
-    if(!node||!item||!page)return;
-    const entry=item.historyEntries.find(key=>page.entries.some(candidate=>candidate.key===key));
+    if(!node||!item)return;
+    const point=captureHistoryTextPoint(node,element,item),source=point?.contribution?.entry;
+    const page=history.window.pages.find(page=>page.entries.some(entry=>source?entry.key===source:item.historyEntries.includes(entry.key)));
+    if(!page)return;
+    const entry=source??item.historyEntries.find(key=>page.entries.some(candidate=>candidate.key===key));
     if(!entry)return;
-    readingPlaces.delete(key);readingPlaces.set(key,{before:page.newer,entry,top:node.getBoundingClientRect().top-top,point:captureHistoryTextPoint(node,element,item)});
+    readingPlaces.delete(key);readingPlaces.set(key,{before:historyResumeCursor(history.window,entry)??page.newer,entry,top:node.getBoundingClientRect().top-top,point});
     while(readingPlaces.size>64)readingPlaces.delete(readingPlaces.keys().next().value!);
   };
   // A page read keeps its last confirmed window while busy. Record that
