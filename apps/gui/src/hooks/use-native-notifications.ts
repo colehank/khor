@@ -43,7 +43,7 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
           else {fallback=true;hide();el.setAttribute("data-notification-yield","");}
         },()=>{if(alive&&held&&last===fingerprint){fallback=true;hide();el.setAttribute("data-notification-yield","");}});
       }
-      if(el.getAnimations({subtree:true}).some(animation=>animation.playState==="running"))schedule();
+
     };
     const stop=hear<{id:string;event:NotificationInput}>("menu:input",message=>{
       if(message.id!==id||!held||blocked())return;

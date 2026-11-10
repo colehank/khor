@@ -44,6 +44,15 @@ function copyStyle(style: CSSStyleDeclaration, to: HTMLElement | SVGElement) {
 }
 
 export function nativeMenuSnapshot(menu: HTMLElement): string {
+  const notification = menu.hasAttribute("data-notification-banners");
+  const keyframes: string[] = [];
+  if (notification) {
+    const visit = (rules: CSSRuleList) => { for (const rule of rules) {
+      if (rule instanceof CSSKeyframesRule && ["notification-arrive", "notification-depart"].includes(rule.name)) keyframes.push(rule.cssText);
+      else if ("cssRules" in rule) visit((rule as CSSGroupingRule).cssRules);
+    }};
+    for (const sheet of document.styleSheets) { try { visit(sheet.cssRules); } catch { /* Cross-origin styles cannot supply app animation. */ } }
+  }
   const clone = menu.cloneNode(true) as HTMLElement;
   const originals = [menu, ...menu.querySelectorAll<HTMLElement | SVGElement>("*")];
   const copies = [clone, ...clone.querySelectorAll<HTMLElement | SVGElement>("*")];
@@ -60,7 +69,18 @@ export function nativeMenuSnapshot(menu: HTMLElement): string {
       }
     }
     to.removeAttribute("style");
-    copyStyle(getComputedStyle(from), to);
+    const resolved = getComputedStyle(from);
+    copyStyle(resolved, to);
+    if (notification && from.hasAttribute("data-notification-banner")) {
+      // Reuse the owner's CSS motion, not a sequence of expensive DOM screenshots.
+      // Its underlying inline pose is the gesture target; CSS interpolates it.
+      to.style.transform = from.style.transform || "none";
+      to.style.opacity = from.style.opacity || "1";
+      to.style.transition = resolved.transition;
+      to.style.animation = resolved.animation;
+      const animation = from.getAnimations().find(animation => animation instanceof CSSAnimation && animation.animationName === resolved.animationName);
+      if (animation && typeof animation.currentTime === "number") to.style.animationDelay = `${-animation.currentTime}ms`;
+    }
     // Decorative generated boxes (glass rims) are not cloneNode children.
     // Freeze their actual resolved styles into ordinary inert boxes, in
     // the same before/after paint order. No second copy of the rim CSS.
@@ -88,7 +108,11 @@ export function nativeMenuSnapshot(menu: HTMLElement): string {
   clone.style.top = "auto";
   clone.style.margin = "0";
   clone.style.width = "100%";
+  if (notification) {
+    const root = getComputedStyle(document.documentElement);
+    for (const name of ["--safe-top", "--gap-row"]) clone.style.setProperty(name, root.getPropertyValue(name));
+  }
   const scheme = getComputedStyle(menu).colorScheme;
   const safeScheme = scheme === "dark" ? "dark" : "light";
-  return `<!doctype html><html style="color-scheme:${safeScheme}"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'none'"><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}*{box-sizing:border-box}</style></head><body>${clone.outerHTML}</body></html>`;
+  return `<!doctype html><html style="color-scheme:${safeScheme}"><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; script-src 'none'"><style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}*{box-sizing:border-box}${keyframes.join("\n")}</style></head><body>${clone.outerHTML}</body></html>`;
 }
