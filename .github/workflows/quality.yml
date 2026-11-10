@@ -72,6 +72,11 @@ jobs:
         with:
           key: session-lifecycle-delegation
           save-if: 'false'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - run: npm ci --prefix apps/gui
+      - run: npm run build --prefix apps/gui
       - name: Exercise real ACP delegation, retirement and resume
         run: |
           set -euo pipefail
