@@ -11,6 +11,7 @@ import secrets
 import subprocess
 import tarfile
 import tempfile
+import time
 from release_manifest import version
 from apple_api import AppleClient
 from mac_icon import compile_icon, verify_app
@@ -32,6 +33,10 @@ def run(args, **kwargs):
     result = subprocess.run(args, **kwargs)
     if result.returncode:
         raise RuntimeError(f"{Path(args[0]).name} failed ({result.returncode})")
+
+
+def run_signed_mac_build(args, **kwargs):
+    run(args, **kwargs)
 
 
 def build_number():
@@ -135,7 +140,8 @@ def mac_build(target, signed):
                    "--config", json.dumps(config), "--bundles", "app", "--", "--locked"]
         if not signed:
             command.insert(command.index("--bundles"), "--no-sign")
-        run(command, cwd=GUI, env={key: value for key, value in os.environ.items() if key not in notarization_keys})
+        build = run_signed_mac_build if signed else run
+        build(command, cwd=GUI, env={key: value for key, value in os.environ.items() if key not in notarization_keys})
     app = Path("target") / target / "release/bundle/macos/Khor.app"
     verify_app(app)
     if signed:
