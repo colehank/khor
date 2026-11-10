@@ -19,6 +19,31 @@ use std::{
     time::{Duration, Instant},
 };
 
+/// Birth record for a session opened specifically for a Khor delegation.
+/// Receiving a task on an existing session never makes that session owned.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct ChildOwner {
+    pub(crate) parent: TaskRef,
+    pub(crate) context: String,
+}
+
+fn start_gate(root: &Path, context: &str) -> Result<fs::File, String> {
+    let path = root.join(".khor/a2a").join(format!(
+        "start-{}.lock",
+        blake3::hash(context.as_bytes()).to_hex()
+    ));
+    let mut options = fs::OpenOptions::new();
+    options.create(true).truncate(false).read(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let gate = options.open(path).map_err(|e| e.to_string())?;
+    gate.lock().map_err(|e| e.to_string())?;
+    Ok(gate)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Action {
     ResolveBinding {
@@ -542,27 +567,34 @@ impl Node {
     ) -> Result<(), String> {
         // Serialize session creation across request handlers/processes. The ACP
         // host separately owns the execution lease for the entire prompt.
-        let path = self.root().join(".khor/a2a").join(format!(
-            "start-{}.lock",
-            blake3::hash(record.task.context_id.as_bytes()).to_hex()
-        ));
-        let mut options = fs::OpenOptions::new();
-        options.create(true).truncate(false).read(true).write(true);
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::OpenOptionsExt;
-            options.mode(0o600);
-        }
-        let gate = options.open(path).map_err(|e| e.to_string())?;
-        gate.lock().map_err(|e| e.to_string())?;
+        let _gate = start_gate(self.root(), &record.task.context_id)?;
         let current = store
             .get(record.caller, &record.target, &record.task.id)
             .map_err(|e| e.to_string())?;
         if current.task.status.state != protocol::TaskState::Submitted {
             return Ok(());
         }
-        let session = if let Some(session) = &current.context_session {
-            session.id.clone()
+        store
+            .check_context_idle(&current.task.context_id)
+            .map_err(|e| e.to_string())?;
+        let mut connection = if let Some(session) = &current.context_session {
+            match connect_host(self.root(), &session.id) {
+                Ok(connection) => connection,
+                Err(error) => {
+                    let Some((native, cwd, title)) = self.live.retired_child(
+                        &session.id,
+                        &current.task.context_id,
+                        current.caller,
+                    )? else { return Err(error) };
+                    let spec = self.agent_or_refuse(&record.target.agent)?;
+                    let launch = Node::agent_launch(&spec)?;
+                    let resumed = self.reopen_gui_as(&cwd, &title, &[launch], &native.agent, &native.native_id)?;
+                    if resumed != session.id {
+                        return Err("Delegation resumed a different session identity".into());
+                    }
+                    connect_host(self.root(), &resumed)?
+                }
+            }
         } else {
             let spec = self.agent_or_refuse(&record.target.agent)?;
             let launch = Node::agent_launch(&spec)?;
@@ -582,15 +614,16 @@ impl Node {
                         .into(),
                 );
             }
-            self.open_gui_at(
-                &cwd,
-                &record.target.agent,
-                &[launch],
-                Some(&record.target.agent),
-                false,
-            )?
+            self.refuse_unless_hosting()?;
+            let owner = current.parent.clone().map(|parent| ChildOwner {
+                parent,
+                context: current.task.context_id.clone(),
+            });
+            let session = crate::gui_host::spawn_delegated_host(
+                self.root(), &cwd, &record.target.agent, &[launch], owner.as_ref(),
+            )?;
+            connect_host(self.root(), &session)?
         };
-        let mut connection = connect_host(self.root(), &session)?;
         write_frame(
             &mut connection,
             &GuiOp::Delegate {
@@ -663,6 +696,7 @@ pub(crate) struct HostedTask {
     output: String,
     pending: Option<Value>,
     published: Instant,
+    owned: bool,
 }
 impl HostedTask {
     pub fn claim(
@@ -674,6 +708,10 @@ impl HostedTask {
         let node = Node::open(root.to_path_buf())?;
         let mut execution =
             Execution::claim(node.delegation_store()?, task, message).map_err(|e| e.to_string())?;
+        let owned = node.live.child_owner(session).is_some_and(|owner| {
+            owner.context == execution.record().task.context_id
+                && owner.parent.home == execution.record().caller
+        });
         if let Err(error) = execution.bind_session(SessionRef {
             home: node.device(),
             id: session.clone(),
@@ -701,6 +739,7 @@ impl HostedTask {
                 output: String::new(),
                 pending: None,
                 published: Instant::now(),
+                owned,
             },
             text,
         ))
@@ -736,6 +775,13 @@ impl HostedTask {
     }
     pub fn cancel_requested(&self) -> bool {
         self.execution.cancellation_requested().unwrap_or(true)
+    }
+    /// Serialize automatic retirement with reopening this context. The caller
+    /// holds the guard through driver shutdown and durable exit publication.
+    pub fn retirement_gate(&self, root: &Path) -> Result<Option<fs::File>, String> {
+        self.owned
+            .then(|| start_gate(root, &self.execution.record().task.context_id))
+            .transpose()
     }
     pub fn finish(&mut self, stop: &str) -> Result<(), String> {
         let state = match stop {

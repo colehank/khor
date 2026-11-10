@@ -111,6 +111,8 @@ pub struct Meta {
     pub(crate) gui_native: Option<crate::session_content::journal::Identity>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) gui_run: Option<GuiRun>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) child_owner: Option<crate::delegation::ChildOwner>,
     /// Fresh shell ancestry is metadata, never an argv replay instruction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) shell_run: Option<ShellRun>,
@@ -519,6 +521,7 @@ impl LiveKind {
             gui_native: None,
             activity: Default::default(),
             gui_run: None,
+            child_owner: None,
             category: category.map(str::to_owned),
             id: id.0.clone(),
             vendor_leaf: None,
@@ -644,6 +647,7 @@ impl LiveKind {
             &run_id,
             State::Idle,
             None,
+            None,
         )
     }
 
@@ -662,6 +666,7 @@ impl LiveKind {
         run_id: &str,
         word: State,
         place: Option<&Path>,
+        child_owner: Option<&crate::delegation::ChildOwner>,
     ) -> Result<RunKey, String> {
         let dir = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
         if gate.dir != dir || native.home != self.device || !matches_logical_source(id, native) {
@@ -708,6 +713,7 @@ impl LiveKind {
             gui_native: None,
             activity: Default::default(),
             gui_run: None,
+            child_owner: None,
         });
         meta.kind = khor_core::kind::GUI.into();
         meta.title = title.into();
@@ -716,6 +722,9 @@ impl LiveKind {
         meta.activity
             .report(&run.id, word, None, run.state.at_ms.max(0) as u64);
         meta.gui_run = Some(run.clone());
+        if fresh {
+            meta.child_owner = child_owner.cloned();
+        }
         if meta.place.is_none() {
             meta.place = place.map(|cwd| cwd.display().to_string());
         }
@@ -847,6 +856,7 @@ impl LiveKind {
             gui_native: None,
             activity: Default::default(),
             gui_run: None,
+            child_owner: None,
             category: None,
             id: id.0.clone(),
             vendor_leaf: None,
@@ -1782,6 +1792,30 @@ impl LiveKind {
                     || self.published_observation(&row.id).ok().flatten().is_some()
             })
             .collect()
+    }
+
+    pub(crate) fn child_owner(&self, id: &SessionId) -> Option<crate::delegation::ChildOwner> {
+        read_meta(&self.dir_of(id)?).ok()?.child_owner
+    }
+
+    /// A matching task context may load its closed native session. Neither
+    /// a title nor an unreachable socket establishes ownership or retirement.
+    pub(crate) fn retired_child(
+        &self,
+        id: &SessionId,
+        context: &str,
+        caller: DeviceId,
+    ) -> Result<Option<(crate::session_content::journal::Identity, PathBuf, String)>, String> {
+        let Some(dir) = self.dir_of(id) else { return Ok(None) };
+        let meta = read_meta(&dir)?;
+        if !meta.child_owner.as_ref().is_some_and(|owner| {
+            owner.context == context && owner.parent.home == caller
+        }) || !gui_slot_ended(&meta) {
+            return Ok(None);
+        }
+        let native = meta.gui_native.ok_or("Delegated session lost its native identity")?;
+        let place = meta.place.ok_or("Delegated session lost its working directory")?;
+        Ok(Some((native, PathBuf::from(place), meta.title)))
     }
 
     /// The agent row whose form `id` is wearing, if it wears one — the
@@ -2867,6 +2901,14 @@ impl LiveKind {
                         || self.published_observation(&row.id).ok().flatten() == Some(true))
             };
         }
+        // Keep owned rows in the join above so native discovery cannot
+        // publish an alias for the same process as an independent session.
+        let managed: std::collections::HashSet<_> = registered
+            .iter()
+            .filter(|entry| entry.managed_child)
+            .map(|entry| &entry.row.id)
+            .collect();
+        out.retain(|row| !managed.contains(&row.id));
         let input_owners = out
             .iter()
             .filter(|row| row.can_control)
@@ -2985,6 +3027,7 @@ impl LiveKind {
                     Some(cwd.to_string_lossy().into_owned());
             }
             out.push(RegistryRow {
+                managed_child: meta.child_owner.is_some(),
                 word_outranks_disk: state.word_outranks_disk(),
                 vendor_leaf: meta.vendor_leaf.clone(),
                 raw,
@@ -3158,6 +3201,7 @@ enum Form {
 /// [`Session`] does not carry: who is running it, and how good its word
 /// is.
 struct RegistryRow {
+    managed_child: bool,
     row: Session,
     pid: Option<u32>,
     /// See [`LiveState::source`]. False only for a word read off the
@@ -3757,6 +3801,7 @@ impl LiveKind {
                 run_id,
                 word,
                 place,
+                None,
             )?;
             fs::write(ready, &id.0).map_err(|error| error.to_string())?;
             Ok(key)
@@ -3824,6 +3869,7 @@ impl LiveKind {
         word: State,
         place: Option<&Path>,
         ready: &Path,
+        child_owner: Option<&crate::delegation::ChildOwner>,
     ) -> Result<RunKey, String> {
         // The potentially long finite prefix is durable before the short gate.
         journal.prepare_base()?;
@@ -3857,6 +3903,7 @@ impl LiveKind {
                     run_id,
                     word,
                     place,
+                    child_owner,
                 )?;
                 // This is the actual existing opener marker, not a synthetic Ready.
                 // Any failure leaves durable PublishingRun/partial publication and

@@ -792,12 +792,51 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
         !absent(host.host_pid),
         "durable _ghost must outlive its MCP worker"
     );
-    drop(hosts);
-    let by = Instant::now() + Duration::from_secs(3);
+    assert!(
+        !node.sessions().unwrap().iter().any(|row| row.session.id == context.id),
+        "owned delegation appeared as an independent session"
+    );
+    let store = node.delegation_store().unwrap();
+    let read = || store.get(node.device(), &record.target, &record.task.id).unwrap();
+    let by = Instant::now() + Duration::from_secs(5);
+    let ask = loop {
+        if let Some(ask) = crate::delegation::approval(&read()).and_then(|a| a["ask"].as_u64()) {
+            break ask;
+        }
+        assert!(Instant::now() < by, "stub did not ask for permission");
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!absent(host.host_pid), "permission wait retired the child");
+    let mut worker = tool(
+        &node, "task_answer",
+        json!({"agent":"fixture","task":record.task.id,"ask":ask.to_string(),"option":"go"}),
+        true,
+    );
+    finish(&mut worker).unwrap();
+    let by = Instant::now() + Duration::from_secs(10);
     while !absent(host.host_pid) && Instant::now() < by {
         thread::sleep(Duration::from_millis(10));
     }
     assert!(absent(host.host_pid), "owned delegated host did not retire");
+    let finished = read();
+    assert_eq!(finished.task.status.state, crate::delegation::protocol::TaskState::Completed);
+    assert_eq!(finished.context_session.as_ref(), Some(context));
+    assert!(serde_json::to_string(&finished.task.status.message).unwrap().contains("picked:go"));
+
+    let mut followup = tool(
+        &node, "delegate",
+        json!({"agent":"fixture","request":"durable-followup","prompt":"follow up","context":record.task.context_id}),
+        true,
+    );
+    let answer: crate::delegation::Answer =
+        serde_json::from_str(&finish(&mut followup).unwrap()).unwrap();
+    let crate::delegation::Answer::Task { record: resumed } = answer else {
+        panic!("follow-up returned no task");
+    };
+    assert_ne!(resumed.task.id, finished.task.id);
+    assert_eq!(resumed.context_session.as_ref(), Some(context));
+    assert_eq!(resumed.task.status.state, crate::delegation::protocol::TaskState::Working);
+    drop(hosts);
 }
 
 struct ShellHost {

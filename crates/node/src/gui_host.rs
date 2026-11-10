@@ -51,7 +51,7 @@
 //! batch atomically before the host publishes readiness.
 
 use std::net::{TcpListener, TcpStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use agent_client_protocol::schema::v1::{
@@ -552,6 +552,18 @@ pub fn spawn_gui_host_context(
     )
 }
 
+pub(crate) fn spawn_delegated_host(
+    root: &Path,
+    cwd: &Path,
+    agent: &str,
+    cmd: &[String],
+    owner: Option<&crate::delegation::ChildOwner>,
+) -> Result<SessionId, String> {
+    spawn_ghost_prepared(
+        root, Some(cwd), agent, cmd, None, Some(agent), false, None, None, owner,
+    )
+}
+
 /// [`spawn_gui_host`], but resuming an existing vendor session — the
 /// takeover (批C): the ghost loads the recorded conversation instead of
 /// opening a fresh one, and re-seats the existing row (`LiveKind::reopen`)
@@ -592,6 +604,7 @@ pub fn spawn_gui_host_reopen(
 /// stays what every existing binary parses (`VIEWER_ENV`'s precedent).
 const RESUME_ENV: &str = "KHOR_GHOST_RESUME";
 const RECOVERY_ENV: &str = "KHOR_GHOST_RECOVERY";
+const CHILD_OWNER_ENV: &str = "KHOR_GHOST_CHILD_OWNER";
 
 /// Whose session this is, when the **opener** knows — the wizard's own
 /// 智能体 field, which is the user saying it, not khor guessing from an
@@ -698,6 +711,7 @@ fn spawn_ghost_context(
         agent,
         environment,
         None,
+        None,
     )
 }
 
@@ -722,6 +736,7 @@ pub(crate) fn spawn_gui_host_claimed(
         false,
         Some(context),
         Some(claim),
+        None,
     )
 }
 
@@ -735,6 +750,7 @@ fn spawn_ghost_prepared(
     agent: bool,
     environment: Option<&khor_acp::Environment>,
     prepared_claim: Option<&str>,
+    owner: Option<&crate::delegation::ChildOwner>,
 ) -> Result<SessionId, String> {
     if prepared_claim.is_some() && resume.is_none() {
         return Err("a recovery claim cannot start a New session".into());
@@ -748,6 +764,13 @@ fn spawn_ghost_prepared(
     let mut c = ghost_command(root, image.path())?;
     // A fresh New must never inherit another invocation's claim.
     c.env_remove(RECOVERY_ENV);
+    c.env_remove(CHILD_OWNER_ENV);
+    if let Some(owner) = owner {
+        c.env(
+            CHILD_OWNER_ENV,
+            serde_json::to_string(owner).map_err(|e| e.to_string())?,
+        );
+    }
     match environment {
         Some(context) => {
             c.env(
@@ -1072,6 +1095,10 @@ fn gui_host_main_with_timeouts(
     // has pinned the process elsewhere (第十四轮 第 4 条).
     let cwd = crate::cwd::standing().unwrap_or_else(std::env::temp_dir);
     let resume = std::env::var(RESUME_ENV).ok();
+    let child_owner: Option<crate::delegation::ChildOwner> = std::env::var(CHILD_OWNER_ENV)
+        .ok()
+        .map(|value| serde_json::from_str(&value).map_err(|e| e.to_string()))
+        .transpose()?;
     let environment = gui_environment(&root, resume.as_deref())?;
     let retained_environment = environment.clone();
     let launch = serde_json::to_vec(&(&cwd, &title, &cmd, &retained_environment))
@@ -1232,6 +1259,9 @@ fn gui_host_main_with_timeouts(
     let mut retained_journal: Option<Journal> = None;
     let mut initial: Option<crate::live::GuiInitial> = None;
     let mut new_collision = false;
+    // Kept outside the event loop so the next turn cannot reopen before
+    // shutdown, exit publication and the journal's final release.
+    let mut retirement = None;
     let result = (|| -> Result<(), String> {
         // Keep the full provider identity; the row's clean_leaf is only a
         // retained spelling, never authority to replace another conversation.
@@ -1426,6 +1456,7 @@ fn gui_host_main_with_timeouts(
         let run_in_loop = &mut run;
         let initial_in_loop = initial.as_ref();
         let recovery_in_loop = recovery.as_ref();
+        let retirement = &mut retirement;
         let ending = rt.block_on(async move {
         let (live, id, fanout) = (loop_live, loop_id, loop_fanout);
         // The pending asks, each with the very note it was announced
@@ -1491,7 +1522,7 @@ fn gui_host_main_with_timeouts(
                     };
                     match live.publish_gui_new(
                         initial, journal, &title, vendor.as_deref(), word,
-                        initial_place.as_deref(), &loop_ready,
+                        initial_place.as_deref(), &loop_ready, child_owner.as_ref(),
                     ) { Ok(key) => key, Err(why) => break Some(why) }
                 } else if let Some(recovery) = recovery_in_loop {
                     let word = match &*run_in_loop {
@@ -1524,6 +1555,12 @@ let turn = Some(result);
                     cancellation_sent = None;
                     if let Some(mut task) = delegated.take() {
                         let stop = match &turn { Some(Ok(stop)) => stop.as_str(), Some(Err(why)) => why.as_str(), None => "ACP turn disconnected" };
+                        if matches!(&turn, Some(Ok(stop)) if matches!(stop.as_str(), "EndTurn" | "Cancelled")) {
+                            match task.retirement_gate(&root) {
+                                Ok(gate) => *retirement = gate,
+                                Err(error) => break Some(error),
+                            }
+                        }
                         if let Err(error) = task.finish(stop) { break Some(error); }
                     }
                     asks.clear();
@@ -1544,6 +1581,7 @@ let turn = Some(result);
                         }
                         None => {}
                     }
+                    if retirement.is_some() { break None; }
                 }
 HostCompletion::Control { who, token, operation, result, .. } => {
                         controlling=false;

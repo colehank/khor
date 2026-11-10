@@ -2402,6 +2402,7 @@ mod tests {
         held.publish_run(&first, |gate, run_id| {
             // This is a phase/row fixture, not an ACP Ready or Journal test.
             gate.write_meta(&crate::live::Meta {
+                child_owner: None,
                 shell_run: None,
                 kind: khor_core::kind::GUI.into(),
                 title: "fixture".into(),
@@ -2841,6 +2842,7 @@ mod tests {
         held.publish_base(&writer, None, |_| Ok(())).unwrap();
         held.publish_run(&writer, |gate, run_id| {
             gate.write_meta(&crate::live::Meta {
+                child_owner: None,
                 shell_run: None,
                 kind: khor_core::kind::GUI.into(),
                 title: "same producer".into(),
@@ -3169,6 +3171,7 @@ mod tests {
                 |gate, journal, run_id| {
                     journal.bind(&gate.dir)?;
                     gate.write_meta(&crate::live::Meta {
+                        child_owner: None,
                         shell_run: None,
                         kind: khor_core::kind::GUI.into(),
                         title: record.title.clone(),
@@ -3300,6 +3303,7 @@ mod tests {
         let failed: Result<(), String> =
             held.publish_initial_run(&authority, &mut journal, &control, |gate, _, run_id| {
                 gate.write_meta(&crate::live::Meta {
+                    child_owner: None,
                     shell_run: None,
                     kind: khor_core::kind::GUI.into(),
                     title: "partial publication".into(),
@@ -3424,6 +3428,7 @@ mod tests {
             let mut conflict = native.clone();
             conflict.agent = "another-agent".into();
             let mut meta = crate::live::Meta {
+                child_owner: None,
                 shell_run: None,
                 kind: khor_core::kind::GUI.into(),
                 title: "collision fixture".into(),
@@ -3574,6 +3579,7 @@ mod tests {
                         &control,
                         |gate, _, run_id| {
                             gate.write_meta(&crate::live::Meta {
+                                child_owner: None,
                                 shell_run: None,
                                 kind: khor_core::kind::GUI.into(),
                                 title: "model new".into(),

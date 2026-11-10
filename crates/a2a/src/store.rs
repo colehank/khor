@@ -354,6 +354,14 @@ impl Store {
         try_lease(&self.directory.join("leases").join(name))
     }
 
+    /// Fail fast before talking to a host whose current turn still owns the
+    /// context. This is advisory; claiming an input still acquires the lease.
+    pub fn check_context_idle(&self, context: &str) -> Result<()> {
+        opaque(context)?;
+        drop(self.lease(context)?);
+        Ok(())
+    }
+
     /// Accept a client message after host authentication and policy checks.
     /// This only writes a receipt; dispatch is a separate, explicit action.
     pub fn accept(
