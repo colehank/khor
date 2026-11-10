@@ -10,62 +10,17 @@ permissions:
   contents: read
   actions: read
 jobs:
-  source-format:
+  recovery:
     runs-on: ubuntu-24.04
-    timeout-minutes: 8
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [default, software]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: d2d3a93171b62ee0faef40200acce979293401d6
-      - uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          components: rustfmt
-      - run: |
-          python3 scripts/check-rust-format.py --write
-          git diff --binary > "$RUNNER_TEMP/rustfmt.patch"
-          git rev-parse HEAD > "$RUNNER_TEMP/source-sha.txt"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: source-format
-          path: |
-            ${{ runner.temp }}/rustfmt.patch
-            ${{ runner.temp }}/source-sha.txt
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: 22.19.0
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: frontend
-          run-id: 42786231805
-          github-token: ${{ github.token }}
-          path: frontend
-      - run: |
-          python3 scripts/release_manifest.py verify --root frontend --sha ed99da53d9a8ec9bad2536a34d989629bb366eca --run-id 42786231805
-          cp -R frontend/gen apps/gui/src/gen
-          npm ci --prefix apps/gui
-          cd apps/gui
-          npm run test:types
-          NOTIFICATION_UI_DIR="$RUNNER_TEMP/notice-fast" PLAYWRIGHT_CHROMIUM_CHANNEL=chrome timeout --kill-after=5s 90s node scripts/check-native-notification-ui.mjs
-      - run: AI_ELEMENTS_OUT="$RUNNER_TEMP/title-check" PLAYWRIGHT_CHROMIUM_CHANNEL=chrome timeout --kill-after=5s 180s npm run ai-elements
-        working-directory: apps/gui
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: notice-fast
-          path: |
-            ${{ runner.temp }}/notice-fast
-            ${{ runner.temp }}/title-check
-
-  ios-probe:
-    runs-on: macos-26
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: d2d3a93171b62ee0faef40200acce979293401d6
-      - uses: dtolnay/rust-toolchain@1.95.0
-        with:
-          targets: aarch64-apple-ios-sim
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22.19.0
@@ -75,32 +30,38 @@ jobs:
           run-id: 42800418972
           github-token: ${{ github.token }}
           path: frontend
-      - run: |
+      - name: Prepare the same production source and browser dependencies
+        run: |
           python3 scripts/release_manifest.py verify --root frontend --sha 36071117ce4ba74ffda83c1c29fea8ca190c69ee --run-id 42800418972
           cp -R frontend/gen apps/gui/src/gen
           npm ci --prefix apps/gui
-          sudo xcode-select -s /Applications/Xcode_26.5.app
-          (cd apps/gui && node node_modules/playwright-core/cli.js install chromium)
-      - name: Verify actual iOS native notification adapter
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          cd apps/gui
+          node node_modules/playwright-core/cli.js install --with-deps chromium webkit
+      - name: Compare unchanged directory recovery under each Mesa mode
+        env:
+          MODE: ${{ matrix.mode }}
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          CHAT_RECOVERY_SCENARIOS: directory-required-shell
+          CHAT_RECOVERY_WEBKIT: '1'
+          DEBUG: pw:browser
         run: |
-          mkdir -p "$RUNNER_TEMP/native-notice-ui"
-          python3 - <<'PYCODE'
-          import os, signal, subprocess
-          env = dict(os.environ, PLAYWRIGHT_CHROMIUM_CHANNEL='', NOTIFICATION_UI_DIR=os.environ['RUNNER_TEMP'] + '/native-notice-ui', NATIVE_NOTIFICATION_SNAPSHOT_OUT=os.environ['RUNNER_TEMP'] + '/native-notice.html')
-          child = subprocess.Popen(['node', 'scripts/check-native-notification-ui.mjs'], cwd='apps/gui', env=env, start_new_session=True)
-          try:
-              raise SystemExit(child.wait(timeout=120))
-          except subprocess.TimeoutExpired:
-              os.killpg(child.pid, signal.SIGKILL)
-              raise SystemExit('Native notice UI did not finish within 120 seconds')
-          PYCODE
-          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
-          PLAYWRIGHT_CHROMIUM_CHANNEL='' python3 apps/gui/scripts/native-menu-probe/run.py --fetch --out "$RUNNER_TEMP/native-notice-ios" --simulator "$SIMULATOR_ID" --notification-snapshot "$RUNNER_TEMP/native-notice.html"
+          if [ "$MODE" = software ]; then
+            export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+          else
+            unset LIBGL_ALWAYS_SOFTWARE GALLIUM_DRIVER
+          fi
+          failed=0
+          for attempt in 1 2 3; do
+            if CHAT_RECOVERY_CHECK_DIR="$RUNNER_TEMP/recovery-$attempt" timeout --kill-after=5s 120s npm run chat-recovery --prefix apps/gui; then
+              echo "attempt $attempt passed"
+            else
+              failed=1
+            fi
+          done
+          exit "$failed"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: native-ios-fast
-          path: |
-            ${{ runner.temp }}/native-notice-ui/*results.json
-            ${{ runner.temp }}/native-notice-ios/probe-*.json
-            ${{ runner.temp }}/native-notice-ios/native-menu.png
+          name: recovery-${{ matrix.mode }}
+          path: ${{ runner.temp }}/recovery-*/report.json
