@@ -76,6 +76,13 @@ export function nativeMenuSnapshot(menu: HTMLElement): string {
     }
   }
   clone.style.position = "relative";
+  clone.style.right = "auto";
+  clone.style.bottom = "auto";
+  clone.style.opacity = "1";
+  clone.style.visibility = "visible";
+  clone.removeAttribute("data-notification-native");
+  // The owner alone announces notices. The mirror retains actionable buttons.
+  clone.querySelectorAll('[aria-live]').forEach(node=>node.remove());
   clone.style.left = "auto";
   clone.style.top = "auto";
   clone.style.margin = "0";

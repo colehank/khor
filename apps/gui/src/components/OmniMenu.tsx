@@ -8,6 +8,7 @@ import type { Avatar } from "@/gen/bindings/Avatar";
 import { MachineAvatar } from "@/components/Avatar";
 import { IconBrowser, IconCheck } from "@/components/icons";
 import { cn } from "@/lib/utils";
+import {NativeNotificationFace} from "@/components/NativeNotificationFace";
 import {MenuViewport} from "@/components/ui/menu-viewport";
 export {MENU_TALLEST} from "@/components/ui/menu-viewport";
 
@@ -244,7 +245,7 @@ export function MenuFace() {
   const box = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const el = box.current;
-    if (!el) return;
+    if (!el || state?.rows.notification) return;
     const tell = () => {
       if (state) sizeMenu(state.id, el.getBoundingClientRect().height).catch(() => {});
     };
@@ -257,6 +258,7 @@ export function MenuFace() {
   // Nothing to show is not a state this window sits in — the app hides it
   // — so an empty render is a frame between two lists, and drawing a bare
   // bordered box for it would flash a white rectangle over the page.
+  if (state?.rows.notification) return <NativeNotificationFace key={state.id} state={state}/>;
   if (!rows || rows.groups.length === 0) return null;
   return (
     <div ref={box} data-menu-native>

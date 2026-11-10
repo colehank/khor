@@ -1763,7 +1763,7 @@ export type Spot = { x: number; y: number; w: number; view: number; across: numb
  * browsers and Android currently have no independent embedded page layer.
  * A presenter refusal also uses that DOM fallback (`useFloatedMenu`).
  */
-export type NativeMenuState = { id: string; rows: MenuRows };
+export type NativeMenuState = { id: string; rows: MenuRows & { notification?: boolean }; html?: string };
 export type MenuRequest = NativeMenuState & { at: Spot & { above: boolean }; html?: string };
 const nativeMenus = nativeMenuQueue<MenuRequest>({
   show: request => call<boolean>("show_menu", { request }),
@@ -1856,6 +1856,10 @@ export const sizeMenu = (id: string, h: number) =>
     webview still loading cannot be listening yet. */
 export const menuRows = () =>
   inApp ? call<NativeMenuState | null>("menu_rows", {}) : Promise.resolve(null);
+
+/** Private renderer input is lease/candidate validated by the native host. */
+export const menuInput = (id:string,event:import("@/lib/native-notification-dom").NotificationInput) =>
+  inApp ? call<null>("menu_input", {id,event}) : Promise.resolve(null);
 
 /** A row was pressed. Goes back to the face that opened the menu. */
 export const menuPick = (id: string, key: string) =>

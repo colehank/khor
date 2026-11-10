@@ -3055,6 +3055,7 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
   pointer-events: auto;
   background: var(--glass-menu);
 }
+[data-notification-native] { opacity: 0; }
 .notification-dismiss { display: none; }
 @media (hover: hover) and (pointer: fine) {
   .notification-dismiss {
@@ -3064,6 +3065,7 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
     pointer-events: none;
     transition: opacity var(--dur-120) var(--ease-out);
   }
+  .notification-banner[data-notification-engaged] .notification-dismiss,
   .notification-banner:hover .notification-dismiss,
   .notification-banner:focus-within .notification-dismiss {
     opacity: 1;

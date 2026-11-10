@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SessionRow } from "@/api";
+import { nativeFilePreviewActive } from "@/lib/native-file-preview";
+import { useNativeNotifications } from "@/hooks/use-native-notifications";
 import { SessionFace } from "@/components/SessionFace";
 import { IconClose, IconSessions } from "@/components/icons";
 import { gui } from "@/gen/catalog";
@@ -13,7 +15,7 @@ export function notificationText(item: NotificationBanner): string {
 const title = (item: NotificationBanner): string => item.members
   ? gui.notification_summary(String(item.members.length)) : item.title;
 function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionRow;onOpen:(item:NotificationBanner)=>boolean;narrow:boolean}) {
-  const [missing,setMissing]=useState(false),[offset,setOffset]=useState(0),[closing,setClosing]=useState(false),[arrived,setArrived]=useState(false),[dragging,setDragging]=useState(false);
+  const [missing,setMissing]=useState(false),[offset,setOffset]=useState(0),[closing,setClosing]=useState(false),[arrived,setArrived]=useState(false),[dragging,setDragging]=useState(false),[engaged,setEngaged]=useState(false);
   const content=missing?gui.notification_missing:notificationText(item);
   const element=useRef<HTMLDivElement>(null);
   const hovered=useRef(false),focused=useRef(false),touching=useRef(false),swallow=useRef(false);
@@ -35,11 +37,11 @@ function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionR
     setOffset(0);pause();
   };
   return <div ref={element} data-notification-banner={item.key} data-notification-closing={closing||undefined}
-    data-notification-arrived={arrived||undefined} data-notification-dragging={dragging||undefined}
+    data-notification-engaged={engaged||undefined} data-notification-arrived={arrived||undefined} data-notification-dragging={dragging||undefined}
     style={offset?{transform:`translateY(${offset}px)`,opacity:Math.max(.3,1-Math.abs(offset)/(element.current?.offsetHeight??1))}:undefined}
     className="notification-banner glass flex min-w-0 items-start gap-in rounded-2xl p-row"
-    onPointerEnter={event=>{if(event.pointerType==="mouse"){hovered.current=true;pause();}}}
-    onPointerLeave={event=>{if(event.pointerType==="mouse"){hovered.current=false;pause();}}}
+    onPointerEnter={event=>{if(event.pointerType==="mouse"){hovered.current=true;setEngaged(true);pause();}}}
+    onPointerLeave={event=>{if(event.pointerType==="mouse"){hovered.current=false;setEngaged(false);pause();}}}
     onFocusCapture={()=>{focused.current=true;pause();}} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){focused.current=false;pause();}}}
     onPointerDown={event=>{
       if(!event.isPrimary||event.button!==0||closing)return;
@@ -52,7 +54,7 @@ function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionR
       if(Math.hypot(dx,dy)>6)current.moved=true;
       if(!current.moved||Math.abs(dy)<Math.abs(dx))return;
       current.dy=dy;event.preventDefault();
-      event.currentTarget.setPointerCapture(event.pointerId);
+      if(event.isTrusted)event.currentTarget.setPointerCapture(event.pointerId);
       setOffset(dy<0?dy:Math.sqrt(dy)*2);
     }}
     onPointerUp={event=>{if(drag.current?.id===event.pointerId)release(false);}}
@@ -75,17 +77,20 @@ function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionR
 }
 /** App chrome only: no saved list, no focus grab, and no banner while locked. */
 export function NotificationBanners({state,sessions,onOpen,narrow}: {state:NotificationState;sessions:SessionRow[];onOpen:(item:NotificationBanner)=>boolean;narrow:boolean}) {
+  const root=useRef<HTMLElement>(null);
+  useNativeNotifications(root);
   useLayoutEffect(()=>configureNotifications(narrow?1:3),[narrow]);
   useEffect(()=>{
-    const blur=()=>focusNotifications(false),focus=()=>focusNotifications(!document.hidden);
-    const visibility=()=>{if(!document.hidden)focusNotifications(document.hasFocus());};
-    focusNotifications(!document.hidden&&document.hasFocus());
+    const blur=()=>focusNotifications(false),focus=()=>focusNotifications(!document.hidden&&document.hasFocus()&&!nativeFilePreviewActive());
+    const visibility=focus;
+    focus();
+    window.addEventListener("khor:native-file-preview",focus);
     window.addEventListener("blur",blur);window.addEventListener("focus",focus);
     document.addEventListener("visibilitychange",visibility);
-    return()=>{window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);document.removeEventListener("visibilitychange",visibility);};
+    return()=>{window.removeEventListener("khor:native-file-preview",focus);window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);document.removeEventListener("visibilitychange",visibility);};
   },[]);
   const latest=state.items.at(-1),latestContent=latest?notificationText(latest):"";
-  return <aside data-notification-banners role="region" aria-label={gui.notifications} className="notification-banners pointer-events-none fixed z-40 flex flex-col gap-in">
+  return <aside ref={root} data-notification-banners role="region" aria-label={gui.notifications} className="notification-banners pointer-events-none fixed z-40 flex flex-col gap-in">
     <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)}${latestContent?` · ${latestContent}`:""}`:""}</span>
     {state.items.map(item=>{
       const row=sessions.find(row=>row.id===item.session&&row.execution_home===item.home);

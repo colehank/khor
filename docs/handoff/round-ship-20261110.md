@@ -28,3 +28,7 @@
 ## 首次全量回归
 
 main图标同步后effe2793/Quality42779150845前端在catalog生成时红：最新SSH主机文案和已有gui.add-ssh-host同文，目录禁止两个key同文本。已改为复用原有add-khor-host/add-ssh-host，删除新增choice别名，App菜单/弹窗标题共用同一词，Khor统一大小写。没有绕过去重门。原生通知确认BrowserPane子WebView不能由DOM盖住，正在复用既有menu_overlay可信浮层通道，实际通知状态/React事件仍由主界面拥有，不造第二套业务或外部系统通知。
+
+## 原生通知补齐（进行中）
+
+45c5a375为先红探针，独立verify/native-notification-red-20261110运行42783272495；74791dd9全量Quality42781818432仍在跑。原生通知复用menu_overlay的可信lease、resolved DOM快照以及同一份自包含输入桥（桌面脚本禁用iframe与iOS私有WKUserScript），状态、计时、滑动阈值、点击均回送原始React组件。native menu_input只接受当前lease现存候选的有限原始输入，远端page不能调用。系统文档预览通过promise租约暂停通知计时，返回继续；不会宣称DOM盖住QuickLook。refusal才短暂yield retained webpage，正常不隐藏浏览器。

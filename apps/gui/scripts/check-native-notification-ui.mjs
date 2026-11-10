@@ -1,7 +1,6 @@
 // Real notification UI/state. Only native presentation IPC is replaced.
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,mkdirSync,rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {createServer} from 'vite';
@@ -14,13 +13,15 @@ try{
  const api=put('api.ts',`export const inApp=true;const listeners=new Map();export const calls=[];
  export const hear=(name,fn)=>{let set=listeners.get(name);if(!set)listeners.set(name,set=new Set());set.add(fn);return()=>set.delete(fn);};
  export const emit=(name,value)=>listeners.get(name)?.forEach(fn=>fn(value));
- export const showMenu=async request=>{calls.push({command:'show',request});return true;};
+ export const showMenu=async request=>{calls.push({command:'show',request});emit('menu:rows',request);return true;};
+ export const sizeMenu=async(id,h)=>{calls.push({command:'size',id,h});};
+ export const menuInput=async(id,event)=>{calls.push({command:'input',id,event});emit('menu:input',{id,event});};
  export const hideMenu=async id=>{calls.push({command:'hide',id});};
  window.nativeNotice={calls,emit};`);
- put('entry.tsx',`import React from 'react';import{createRoot}from'react-dom/client';import{NotificationBanners}from'@/views/NotificationBanners';import{receiveNotifications,useNotifications}from'@/lib/notifications';import{TooltipProvider}from'@/components/ui/tooltip';import'@/styles/tokens.css';import'@/styles/app.css';
+ put('entry.tsx',`import React,{useEffect,useState} from 'react';import{hear}from'@/api';import{NativeNotificationFace}from'@/components/NativeNotificationFace';import{createRoot}from'react-dom/client';import{NotificationBanners}from'@/views/NotificationBanners';import{receiveNotifications,useNotifications}from'@/lib/notifications';import{TooltipProvider}from'@/components/ui/tooltip';import'@/styles/tokens.css';import'@/styles/app.css';
  const row={id:'gui/test',title:'Native notice',kind:'gui',category:'khor',word:'idle',execution_home:'host',home:'Mac',face:null,imported:false,observation_owner:null,activity:[],last:'The same session preview',doing:null};
  receiveNotifications([row],()=>false);row.activity=[{id:'done',kind:'turn_completed',at_ms:Date.now(),resolved:false,text:null,duration_ms:null,exit:null}];receiveNotifications([row],()=>false);
- function Face(){const state=useNotifications();return <TooltipProvider><div data-native-page-visible="true" style={{position:'fixed',inset:0,zIndex:100,background:'black',color:'white'}}>Native page stand-in</div><NotificationBanners state={state} sessions={[row]} narrow={false} onOpen={()=>true}/></TooltipProvider>;}createRoot(document.getElementById('root')).render(<Face/>);`);
+ function Face(){const state=useNotifications(),[mirror,setMirror]=useState(null);useEffect(()=>hear('menu:rows',setMirror),[]);return <TooltipProvider><div data-native-page-visible="true" style={{position:'fixed',inset:0,zIndex:100,background:'black',color:'white'}}>Native page stand-in</div><NotificationBanners state={state} sessions={[row]} narrow={false} onOpen={()=>{window.opened=true;return true;}}/>{mirror&&<div data-menu-native style={{position:'fixed',left:mirror.at.x,top:mirror.at.y,zIndex:200,width:mirror.at.w}}><NativeNotificationFace key={mirror.id} state={mirror}/></div>}</TooltipProvider>;}createRoot(document.getElementById('root')).render(<Face/>);`);
  put('index.html',`<!doctype html><html data-theme="dark"><body><div id="root"></div><script type="module" src="/${name}/entry.tsx"></script></body></html>`);
  server=await createServer({root:gui,configFile:join(gui,'vite.config.ts'),cacheDir:join(out,'native-vite'),optimizeDeps:{entries:[join(dir,'index.html')]},resolve:{alias:[{find:'@/api',replacement:api},{find:'@',replacement:join(gui,'src')}]},server:{host:'127.0.0.1',port:0,hmr:false},logLevel:'error'});await server.listen();
  browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:820}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));
@@ -29,5 +30,17 @@ try{
  catch(error){await page.screenshot({path:join(out,'native-notification-red.png')});writeFileSync(join(out,'native-notification-errors.json'),JSON.stringify({errors,calls:await page.evaluate(()=>nativeNotice.calls)},null,2));throw error;}
  const request=await page.evaluate(()=>nativeNotice.calls.find(call=>call.command==='show').request);
  assert(request.html?.includes('The same session preview'),'The native document carries the actual rendered banner');
- assert.deepEqual(errors,[]);writeFileSync(join(out,'native-notification-results.json'),JSON.stringify({nativePresenter:true,sharedRenderedContent:true,errors},null,2));
+ const mirror=page.frameLocator('iframe[data-native-notification-face]'),banner=mirror.locator('[data-notification-banner]');
+ await banner.waitFor();await page.waitForFunction(()=>document.querySelector('[data-notification-banners]').hasAttribute('data-notification-native'));
+ await page.waitForFunction(()=>nativeNotice.calls.some(call=>call.command==='size'&&call.h>0));
+ const originalKey=await banner.getAttribute('data-notification-banner');
+ await banner.hover();await page.waitForTimeout(150);
+ assert(await page.locator('[data-notification-banner]').first().getAttribute('data-notification-engaged'),'Native hover reaches the owner');
+ // Pointer capture remains in the private frame while the owner updates its rendered transform.
+ const rect=await banner.boundingBox();await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height*.8);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2,rect.y-rect.height,{steps:10});await page.mouse.up();
+ await page.waitForFunction(()=>document.querySelector('[data-notification-closing]'),null,{timeout:1000});
+ await page.locator('[data-notification-banner]').first().waitFor({state:'detached'});
+ assert.equal(await page.evaluate(()=>window.opened===true),false,'Swipe does not open a session');
+ assert((await page.evaluate(()=>nativeNotice.calls.filter(call=>call.command==='input').map(call=>call.event.key))).every(key=>key===originalKey),'Inputs preserve the original lease candidate');
+ assert.deepEqual(errors,[]);writeFileSync(join(out,'native-notification-results.json'),JSON.stringify({nativePresenter:true,sharedRenderedContent:true,hoverForwarding:true,swipeDismissal:true,noClickAfterSwipe:true,errors},null,2));
 }finally{await browser?.close();await server?.close();rmSync(dir,{recursive:true,force:true});}

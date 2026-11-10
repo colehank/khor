@@ -11,6 +11,7 @@ import {
   type FilePreviewKind,
 } from "@/api";
 import { FILE_HANDOFF_POLL_MS } from "@/lib/tempo";
+import { holdNativeFilePreview } from "@/lib/native-file-preview";
 import { visiblePageOwner } from "@/lib/native-page-yield";
 
 type Progress = {
@@ -119,7 +120,9 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
       if (state.ready) {
         job.opening = true;
         try {
-          await (intent === "preview" ? filePreviewOpen(job.id) : fileHandoffOpen(job.id));
+          const release = intent === "preview" ? holdNativeFilePreview() : () => {};
+          try { await (intent === "preview" ? filePreviewOpen(job.id) : fileHandoffOpen(job.id)); }
+          finally { release(); }
           // Dismissing the system sheet is an ordinary end, with the
           // file, scroll position and deck height left where they were.
           if (pending.current === job) {

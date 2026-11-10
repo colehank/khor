@@ -105,7 +105,7 @@ define_class!(
             PANEL.with(|panel| {
                 let panel = panel.borrow();
                 let Some(p) = panel.as_ref() else { return false; };
-                if !std::ptr::eq(&*p.outside, recognizer) { return false; }
+                if !std::ptr::eq(&*p.outside, recognizer) || p.request.rows["notification"].as_bool() == Some(true) { return false; }
                 unsafe {
                     let touched: *mut AnyObject = msg_send![touch, view];
                     if !touched.is_null() {
@@ -155,12 +155,18 @@ define_class!(
 // Injected as a document-end, main-frame-only WKUserScript. CSP remains
 // script-src 'none': snapshot markup itself cannot install any script.
 const BRIDGE: &str = r#"(()=>{
- let id='', observer;
+ let id='', observer, notices;
  const post=value=>window.webkit.messageHandlers.khorMenu.postMessage({...value,id});
  function size(){const menu=document.querySelector('[data-omni-menu]');if(menu)post({h:menu.getBoundingClientRect().height,radius:parseFloat(getComputedStyle(menu).borderRadius)||0,dark:getComputedStyle(document.documentElement).colorScheme==='dark'});}
  function mounted(next){id=next;observer?.disconnect();const menu=document.querySelector('[data-omni-menu]');if(menu){observer=new ResizeObserver(size);observer.observe(menu);const active=menu.querySelector('[data-on="true"]');active?.scrollIntoView({block:'nearest'});}size();}
  window.__khorMenuReplace=(html,next)=>{
    const parsed=new DOMParser().parseFromString(html,'text/html');
+   if(parsed.querySelector('[data-notification-banners]')){
+     id=next;
+     notices??=notificationDOM(window,post);
+     notices.update(html);return;
+   }
+   notices?.dispose();notices=null;
    document.documentElement.style.colorScheme=parsed.documentElement.style.colorScheme;
    const previous=document.querySelector('[data-menu-viewport]');
    const scroll=previous?.scrollTop||0;
@@ -248,7 +254,9 @@ pub fn show(
             msg_send![class!(WKWebsiteDataStore), nonPersistentDataStore];
         let _: () = msg_send![&*config, setWebsiteDataStore: &*store];
         let controller: *mut AnyObject = msg_send![&*config, userContentController];
-        let source = NSString::from_str(BRIDGE);
+        let shared = include_str!("../../../src/lib/native-notification-dom.js")
+            .replacen("export function notificationDOM", "function notificationDOM", 1);
+        let source = NSString::from_str(&format!("{shared}\n{BRIDGE}"));
         let script: Allocated<AnyObject> = msg_send![class!(WKUserScript), alloc];
         let script: Retained<AnyObject> = msg_send![script, initWithSource: &*source, injectionTime: 1isize, forMainFrameOnly: true];
         let _: () = msg_send![controller, addUserScript: &*script];
@@ -412,6 +420,14 @@ fn receive(message: *mut AnyObject) {
     }
     if value["dismiss"].as_bool() == Some(true) {
         dismiss_current(true);
+        return;
+    }
+    if let Some(input) = value.get("input") {
+        if let Ok(event) = serde_json::from_value::<super::NotificationInput>(input.clone()) {
+            if let (Some(owner), Some(app)) = (super::input_owner(id, &event), APP.get()) {
+                let _ = app.emit_to(owner, "menu:input", serde_json::json!({"id":id,"event":event}));
+            }
+        }
         return;
     }
     if let Some(key) = value["key"].as_str() {

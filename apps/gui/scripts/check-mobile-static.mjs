@@ -126,7 +126,7 @@ export function checkMobileSources(gui) {
     "merge_text", "trash_here", "pdf_here", "scanner_here", "traffic_room", "menu_rows",
     "reveal_here", "file_handoff_supported", "file_preview_supported",
     // The system's: windows, menus, the theme, a link handed to the OS.
-    "set_window_theme", "set_window_appearance", "window_appearance_support", "menu_state", "open_link", "size_menu", "menu_pick",
+    "set_window_theme", "set_window_appearance", "window_appearance_support", "menu_state", "open_link", "size_menu", "menu_pick", "menu_input",
     "hide_menu", "widen", "unwiden", "move_page", "hide_page", "show_page", "close_page",
     // The phone's native deck over its page, and the ground under its folded capsule (UIKit, queued).
     "page_deck", "page_sheet", "page_ground", "page_state",

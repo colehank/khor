@@ -3079,6 +3079,17 @@ fn menu_rows(webview: tauri::Webview) -> Result<Option<menu_overlay::MenuSnapsho
     }
 }
 #[tauri::command]
+fn menu_input(webview: tauri::Webview, id: String, event: menu_overlay::NotificationInput) -> Result<(), String> {
+    use tauri::Manager;
+    menu_renderer(&webview)?;
+    if let Some(owner) = menu_overlay::input_owner(&id, &event) {
+        use tauri::Emitter;
+        webview.app_handle().emit_to(owner, "menu:input", serde_json::json!({"id":id,"event":event})).map_err(|e|e.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn menu_pick(webview: tauri::Webview, id: String, key: String) -> Result<(), String> {
     menu_renderer(&webview)?;
     #[cfg(desktop)]
@@ -5833,6 +5844,7 @@ pub fn run() {
             size_menu,
             menu_rows,
             menu_pick,
+            menu_input,
             open_session,
             open_shell,
             launch_presets,

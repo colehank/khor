@@ -41,7 +41,7 @@ export function normalize(raw: string): string | null {
  * page out of presentation until it finishes; the same handle stays alive.
  * Tooltip wrappers are filtered separately: hints never take the page away. */
 const OVERLAYS =
-  '[data-deck-selector],[data-radix-popper-content-wrapper],[data-omni-menu],[data-scrim],[data-slot="dialog-overlay"],[data-slot="popover-content"],[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
+  '[data-notification-yield],[data-deck-selector],[data-radix-popper-content-wrapper],[data-omni-menu],[data-scrim],[data-slot="dialog-overlay"],[data-slot="popover-content"],[aria-modal="true"],[role="dialog"],[role="alertdialog"],[role="menu"],[role="listbox"]';
 
 /** Presentation belongs to the latest mounted owner of a tab. Async work
  * may finish after that owner has left, but must not present its page. */

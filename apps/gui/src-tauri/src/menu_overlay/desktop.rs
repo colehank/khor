@@ -19,6 +19,7 @@ pub fn hang(app: &tauri::AppHandle) {
         tauri::WebviewUrl::App("index.html?face=menu".into()),
     )
     .title("")
+    .transparent(true)
     .decorations(false)
     .resizable(false)
     .skip_taskbar(true)

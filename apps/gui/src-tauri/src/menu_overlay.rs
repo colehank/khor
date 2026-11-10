@@ -35,6 +35,36 @@ pub struct MenuRequest {
 pub struct MenuSnapshot {
     pub id: String,
     pub rows: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub html: Option<String>,
+}
+
+/// Only raw input from the private renderer. Never accepts commands or markup.
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct NotificationInput {
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub key: String,
+    pub action: String,
+    pub x: f64,
+    pub y: f64,
+    pub pointer_id: i32,
+    pub pointer_type: String,
+    pub button: i16,
+    pub is_primary: bool,
+    pub detail: u16,
+}
+
+impl NotificationInput {
+    fn valid(&self) -> bool {
+        matches!(self.kind.as_str(), "pointerdown" | "pointermove" | "pointerup" | "pointercancel" | "pointerover" | "pointerout" | "click" | "keydown" | "focusin" | "focusout")
+            && matches!(self.action.as_str(), "open" | "dismiss")
+            && matches!(self.pointer_type.as_str(), "mouse" | "touch" | "pen")
+            && self.key.len() <= 1024
+            && [self.x, self.y].iter().all(|n| n.is_finite() && n.abs() <= 100_000.0)
+            && (-1..=5).contains(&self.button)
+    }
 }
 
 impl MenuRequest {
@@ -73,6 +103,7 @@ impl MenuRequest {
         MenuSnapshot {
             id: self.id.clone(),
             rows: self.rows.clone(),
+            html: (self.rows["notification"].as_bool() == Some(true)).then(|| self.html.clone()).flatten(),
         }
     }
 
@@ -133,6 +164,13 @@ impl Lease {
             && self.held.as_ref().is_some_and(|held| held.request.id == id)
     }
 
+    fn input(&self, id: &str, event: &NotificationInput) -> Option<String> {
+        if !event.valid() { return None; }
+        self.held.as_ref()
+            .filter(|held| held.request.id == id && held.request.rows["notification"].as_bool() == Some(true) && held.request.contains(&event.key))
+            .map(|held| held.owner.clone())
+    }
+
     fn pick(&self, id: &str, key: &str) -> Option<String> {
         self.held
             .as_ref()
@@ -175,6 +213,10 @@ pub fn accepts_size(id: &str, height: f64) -> bool {
     lease().lock().is_ok_and(|state| state.resize(id, height))
 }
 
+pub fn input_owner(id: &str, event: &NotificationInput) -> Option<String> {
+    lease().lock().ok()?.input(id, event)
+}
+
 /// Native adapters call this only from their own trusted renderer channel.
 pub fn pick_owner(id: &str, key: &str) -> Option<String> {
     lease().lock().ok()?.pick(id, key)
@@ -213,6 +255,29 @@ mod tests {
         assert_eq!(state.pick("new", "m:local"), Some("settings".into()));
         assert!(state.dismiss("settings", "new"));
         assert!(!state.resize("new", 100.0));
+    }
+
+    #[test]
+    fn notification_input_is_bounded_and_lease_scoped() {
+        let mut state = Lease::default();
+        let mut notice = request("notice");
+        let mut input: NotificationInput = serde_json::from_value(serde_json::json!({"type":"pointerup","key":"m:local","action":"open","x":2.0,"y":3.0,"pointerId":1,"pointerType":"touch","button":0,"isPrimary":true,"detail":0})).unwrap();
+        state.claim("main", &notice).unwrap();
+        assert_eq!(state.input("notice", &input), None); // Ordinary menu cannot relay notice input.
+        notice.rows["notification"] = true.into();
+        notice.html = Some("<body>trusted</body>".into());
+        state.claim("main", &notice).unwrap();
+        assert_eq!(state.input("notice", &input), Some("main".into()));
+        assert_eq!(notice.snapshot().html, notice.html);
+        assert_eq!(state.input("expired", &input), None);
+        input.key = "removed".into();
+        assert_eq!(state.input("notice", &input), None);
+        input.key = "m:local".into();
+        input.x = f64::NAN;
+        assert_eq!(state.input("notice", &input), None);
+        input.x = 0.0;
+        input.kind = "execute".into();
+        assert_eq!(state.input("notice", &input), None);
     }
 
     #[test]
