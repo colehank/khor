@@ -51,6 +51,8 @@ Mac 构建与公证分为三个独立任务。`mac-app` 只编译、签名，将
 
 公证查询每次最多等待30分钟，任务上限40分钟，为下载、打包和状态保存留出时间；编译仍有独立的90分钟预算。等待超时不取消 Apple 上的处理。在原 Actions run 选择 **Re-run failed jobs**，继续查询同一请求，复用原始签名包，不重新编译、签名或提交。已有最终包也会校验后复用。不要使用 Re-run all jobs 恢复公证。
 
+Mac 签名明确返回 `A timestamp was expected but was not found` 时，构建适配器在同一作业内最多尝试三次，间隔5秒和15秒；复用当前 Cargo 输出和图标目录，保留实时日志。安全时间戳、公证与最终签名验证保持必需。其他编译、证书或签名错误直接失败；超出重试上限也明确失败。
+
 `notary-status-<平台>-<attempt>` 保存最后状态，Apple 拒绝时同时保存诊断日志。`In Progress` 可稍后重试；查询暂时不可用会在等待时限内重试；`Invalid`/`Rejected` 需要修复后创建新候选。提交回执丢失时，按包含平台、run 与完整归档摘要的唯一名称从 Apple history 恢复 ID；历史记录有歧义或暂时查不到时明确停止，绝不盲目重复提交。原始包、提交意图和请求记录保留14天，过期后创建新候选，不混用其它 run 的产物。
 
 TestFlight使用App Store Connect发行导出，不能使用Internal Only。上传前查询同一应用、营销版本和build number：已存在就检查处理状态，避免重复上传。Apple处理超过等待上限时明确失败；重试仍使用原build。处理成功不等同外部测试审核通过或用户已安装；测试组的自动分发设置及外部Beta审核由App Store Connect管理。

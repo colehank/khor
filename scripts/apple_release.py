@@ -9,6 +9,7 @@ import plistlib
 import re
 import secrets
 import subprocess
+import sys
 import tarfile
 import tempfile
 import time
@@ -36,7 +37,27 @@ def run(args, **kwargs):
 
 
 def run_signed_mac_build(args, **kwargs):
-    run(args, **kwargs)
+    # Keep the same Cargo output and icon catalog while the timestamp
+    # service recovers. The mandatory secure timestamp stays enabled.
+    for attempt in range(3):
+        tail = ""
+        with subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                              text=True, errors="replace", bufsize=1, **kwargs) as child:
+            for line in child.stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                tail = (tail + line)[-8192:]
+            code = child.wait()
+        if code == 0:
+            return
+        timestamp_failure = ("A timestamp was expected but was not found" in tail
+                             and "failed codesign application" in tail)
+        if not timestamp_failure or attempt == 2:
+            raise RuntimeError(f"{Path(args[0]).name} failed ({code})")
+        delay = (5, 15)[attempt]
+        print(f"Signing timestamp unavailable; retrying the same Mac build in {delay}s "
+              f"({attempt + 2}/3)", flush=True)
+        time.sleep(delay)
 
 
 def build_number():

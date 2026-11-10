@@ -52,6 +52,30 @@ print('signed with secure timestamp', flush=True)
         self.assertEqual(counter.read_text(), '1')
         sleep.assert_not_called()
 
+    def test_success_does_not_repeat_signing(self):
+        command, counter = self.exercise(0)
+        with contextlib.redirect_stdout(io.StringIO()), patch('apple_release.time.sleep') as sleep:
+            apple.run_signed_mac_build(command)
+        self.assertEqual(counter.read_text(), '1')
+        sleep.assert_not_called()
+
+    def test_only_signed_mac_builds_use_timestamp_recovery(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            gui = Path(temporary)
+            (gui / 'src-tauri').mkdir()
+            (gui / 'src-tauri/tauri.ci.json').write_text('{"bundle":{"icon":[]}}')
+            for signed in (False, True):
+                with self.subTest(signed=signed), patch.object(apple, 'GUI', gui), \
+                        patch.object(apple, 'required', return_value='synthetic-secret'), \
+                        patch.object(apple, 'compile_icon'), patch.object(apple, 'verify_app'), \
+                        patch.object(apple, 'run_signed_mac_build') as recovery, patch.object(apple, 'run') as run:
+                    apple.mac_build('x86_64-apple-darwin', signed)
+                    self.assertEqual(recovery.call_count, int(signed))
+                    if signed:
+                        self.assertEqual(run.call_args.args[0][:2], ['codesign', '--verify'])
+                    else:
+                        self.assertIn('--no-sign', run.call_args.args[0])
+
 
 if __name__ == '__main__':
     unittest.main()
