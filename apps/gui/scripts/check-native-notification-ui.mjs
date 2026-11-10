@@ -17,7 +17,7 @@ try{
  export const showMenu=async request=>{calls.push({command:'show',request});return true;};
  export const hideMenu=async id=>{calls.push({command:'hide',id});};
  window.nativeNotice={calls,emit};`);
- put('entry.tsx',`import React from 'react';import{createRoot}from'react-dom/client';import{NotificationBanners}from'@/views/NotificationBanners';import{receiveNotifications,useNotifications}from'@/lib/notifications';import{TooltipProvider}from'@/components/ui/tooltip';import'@/styles/tokens.css';import'@/styles/app.css';
+ put('entry.tsx',`import './api';import React from 'react';import{createRoot}from'react-dom/client';import{NotificationBanners}from'@/views/NotificationBanners';import{receiveNotifications,useNotifications}from'@/lib/notifications';import{TooltipProvider}from'@/components/ui/tooltip';import'@/styles/tokens.css';import'@/styles/app.css';
  const row={id:'gui/test',title:'Native notice',kind:'gui',category:'khor',word:'idle',execution_home:'host',home:'Mac',face:null,imported:false,observation_owner:null,activity:[],last:'The same session preview',doing:null};
  receiveNotifications([row],()=>false);row.activity=[{id:'done',kind:'turn_completed',at_ms:Date.now(),resolved:false,text:null,duration_ms:null,exit:null}];receiveNotifications([row],()=>false);
  function Face(){const state=useNotifications();return <TooltipProvider><div data-native-page-visible="true" style={{position:'fixed',inset:0,zIndex:100,background:'black',color:'white'}}>Native page stand-in</div><NotificationBanners state={state} sessions={[row]} narrow={false} onOpen={()=>true}/></TooltipProvider>;}createRoot(document.getElementById('root')).render(<Face/>);`);
