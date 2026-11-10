@@ -14,12 +14,12 @@ mod io;
 #[path = "khor_agent_output.rs"]
 mod output;
 use crate::agent_process as process;
-#[path = "khor_agent_conversations.rs"]
-mod conversations;
 #[path = "khor_agent_children.rs"]
 mod children;
 #[path = "khor_agent_commands.rs"]
 pub(crate) mod commands;
+#[path = "khor_agent_conversations.rs"]
+mod conversations;
 #[path = "khor_agent_history.rs"]
 mod history;
 #[path = "khor_agent_runtime.rs"]

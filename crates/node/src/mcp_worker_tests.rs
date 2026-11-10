@@ -869,7 +869,10 @@ struct ShellHost {
 async fn a_real_command_task_returns_a_durable_receipt_without_a_session() {
     let (_scratch, node) = configured("worker-command-task").await;
     let list_ids = || {
-        node.sessions().unwrap().into_iter().map(|row| row.session.id.0)
+        node.sessions()
+            .unwrap()
+            .into_iter()
+            .map(|row| row.session.id.0)
             .collect::<std::collections::BTreeSet<_>>()
     };
     let before = list_ids();

@@ -6650,9 +6650,10 @@ mod tests {
         host.serve(&dir, 5001);
         let shell_rows = || {
             LiveKind::new(root.to_path_buf(), DeviceId([9; 32]))
-                .discovering(Arc::new(Discovery::at(&root).with_procs(Procs::of([
-                    (5001, process("zsh", Some(host.pid()))),
-                ]))))
+                .discovering(Arc::new(
+                    Discovery::at(&root)
+                        .with_procs(Procs::of([(5001, process("zsh", Some(host.pid())))])),
+                ))
                 .rows(|_| 0)
         };
         let check_shell = |rows: Vec<Session>| {
@@ -6707,7 +6708,11 @@ mod tests {
                 .find(|r| r.id == id)
                 .expect("the original hosted terminal");
             assert_eq!(terminal.title, "SJTWorkshop fixture", "{label}");
-            assert_eq!(rows.iter().filter(|row| row.term && !row.dead).count(), 1, "{label}");
+            assert_eq!(
+                rows.iter().filter(|row| row.term && !row.dead).count(),
+                1,
+                "{label}"
+            );
             if let Some((thread, pid, answer)) = selected {
                 assert_eq!(
                     terminal.category.as_deref(),

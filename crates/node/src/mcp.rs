@@ -88,11 +88,13 @@ const TOOLS: &[Tool] = &[
         name: "run_command",
         reads: false,
         about: msg::mcp_run_command,
-        schema: || json!({"type":"object","properties":{
+        schema: || {
+            json!({"type":"object","properties":{
             "command":{"type":"string"},
             "cwd":{"type":"string"},
             "request":{"type":"string","description":"Unique stable request ID. Reuse it only to read the same execution receipt."}
-        },"required":["command","request"],"additionalProperties":false}),
+        },"required":["command","request"],"additionalProperties":false})
+        },
     },
     Tool {
         name: "open",
@@ -551,8 +553,16 @@ pub(crate) fn call_with_parent(
             Ok(id.0)
         }
         "run_command" => {
-            let parent = parent.as_ref().ok_or("This command needs a Khor session owner")?;
-            crate::khor_agent::commands::execute(&n, parent, &s("request"), &s("command"), &s("cwd"))
+            let parent = parent
+                .as_ref()
+                .ok_or("This command needs a Khor session owner")?;
+            crate::khor_agent::commands::execute(
+                &n,
+                parent,
+                &s("request"),
+                &s("command"),
+                &s("cwd"),
+            )
         }
         "read" => {
             let (total, _, bytes, truncated) =
