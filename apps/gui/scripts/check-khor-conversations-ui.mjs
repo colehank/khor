@@ -25,7 +25,7 @@ window.showNew=()=>window.showNewWith('fixture','/fixture');
 window.showKhorMarks=()=>render(<div data-khor-mark-samples>{[
   ['row','gui','khor','row'],['tab','gui','khor','tab'],['broadcast','broadcast','khor','row'],
   ['transfer','transfer','khor','row'],['shell','shell','khor','row'],['unknown','gui',null,'row'],
-].map(([name,kind,category,size])=><div key={name} data-khor-mark-sample={name}><SessionFace face={null} word={null} kind={kind} category={category} size={size}/></div>)}</div>);
+].map(([name,kind,category,size])=><div key={name} data-khor-mark-sample={name} className="flex items-center gap-row"><SessionFace face={null} word={null} kind={kind} category={category} size={size}/><span>{name}</span></div>)}</div>);
 window.showNew();`);
 let server,browser;
 const results=[];
