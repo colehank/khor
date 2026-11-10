@@ -93,7 +93,7 @@ export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, dir
     }
   }
   const connected=requestedCursor!==undefined&&requestedCursor===(direction==='older'?window.older:window.newer);
-  pages=packHistoryPages(pages,connected&&direction!=='tail'?direction:undefined);
+  pages=packHistoryPages(pages,connected?direction:undefined);
   let evictedNewer = false;
   let evictedOlder = false;
   while (pages.length > 1 && exceedsBudget(pages)) {
