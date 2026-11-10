@@ -100,3 +100,20 @@
 ## `compose`（2026-10-23，GUI 会话布局 Lab）
 
 新建会话使用方框与斜笔，沿用 16 画布的 `Mark`、描边比例和 live area。笔杆是 `data-body` 的实心块；方框完整绘制，由前景笔的等宽遮罩切开重叠处，保持家族的间隙。用于 Lab 右上独立的新建入口，与模型选择的文字下箭头分工。当前是待确认字形，未合入 main。
+
+## khor 会话品牌标记（2026-11-10）
+
+`BrandIcons.IconKhor` 从 `src-tauri/icons/src/mandala-glyph.svg` 读取单色坛城，与应用图标
+共享外圆、菱形、内圆和五颗珠的识别结构。最终参数保存在同目录
+`khor-session-avatar.json`：外圆/菱形线宽 40、内圆线宽 45，外珠半径 55、心珠半径 69，
+内圆半径 170。圆形活区保持品牌家族的 92%；只在 khor 的浮现/类型底座上，实际图形
+占头像直径 65%，列表、标签和手机按同一比例绘制。其他会话保留原图稿和尺寸。
+只有 `currentColor`，没有底板、渐变、玻璃或固定主题色。
+
+`sessionMark` 为 `category=khor` 返回它，广播和专属的 transfer / borrow / shell
+仍优先按 kind 画自己的形。新建 khor 会话使用与创建后的会话相同的类型判断；列表、
+标签及药丸继续走 `sessionKind` / `SessionFace`，不另外复制路径或按尺寸更换图稿。
+
+检查入口仍是 `npm run khor-conversations-ui`：新建入口与真实 `SessionFace` 的行/标签
+尺寸共用相同图稿，桌面/手机、浅/深色验证 khor 的 65% 占比；Claude、Codex、Cursor、
+未知 Agent、广播和其他专属类型的图稿及尺寸不被替换。

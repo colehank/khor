@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 
 import type { SystemKind } from "@/gen/bindings/SystemKind";
+import khorMarkSource from "../../src-tauri/icons/src/mandala-glyph.svg?raw";
 import { IconDevices, IconFile, IconFinder, IconLink, IconNetwork, IconTerminal } from "./icons";
 
 /**
@@ -32,16 +33,24 @@ import { IconDevices, IconFile, IconFinder, IconLink, IconNetwork, IconTerminal 
 type IconProps = { className?: string };
 
 const brand =
-  (body: string, box: string): ComponentType<IconProps> =>
+  (body: string, box: string, name?: string): ComponentType<IconProps> =>
   ({ className }: IconProps) => (
     <svg
       className={className}
       viewBox={box}
       fill="currentColor"
       aria-hidden="true"
+      data-brand-mark={name}
       dangerouslySetInnerHTML={{ __html: body }}
     />
   );
+
+// The small monochrome form of the installed app's mandala. Read the
+// canonical SVG's framing and paths together so every session surface
+// uses the same artwork, including its optical sizing for small marks.
+const khorMark = /<svg\b[^>]*\bviewBox="([^"]+)"[^>]*>([\s\S]*)<\/svg>\s*$/.exec(khorMarkSource);
+if (!khorMark) throw new Error("Invalid khor brand mark SVG");
+export const IconKhor = brand(khorMark[2], khorMark[1], "khor");
 
 /** Claude Code. */
 export const IconClaude = brand(
@@ -158,6 +167,8 @@ export function sessionMark(kind: string, category: string | null): ComponentTyp
       break;
   }
   switch (category) {
+    case "khor":
+      return IconKhor;
     case "claude":
       return IconClaude;
     case "codex":

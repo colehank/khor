@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "size": 65,
+  "outer": 40,
+  "diamond": 40,
+  "inner": 45,
+  "satellite": 55,
+  "core": 69,
+  "innerRadius": 170,
+  "opacity": 100,
+  "veil": 0,
+  "machine": 0,
+  "ink": "auto",
+  "theme": "system",
+  "compareSize": 48,
+  "equalSize": false
+}

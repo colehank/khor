@@ -15,12 +15,18 @@ writeFileSync(join(fixture,'index.html'),'<link rel="icon" href="data:,"><div id
 writeFileSync(join(fixture,'probe.tsx'),`
 import React from 'react';import{createRoot}from'react-dom/client';import{flushSync}from'react-dom';
 import{NewSessionPage}from'/src/views/NewSessionPage';import{MachineChat}from'/src/views/MachineChat';
+import{SessionFace}from'/src/components/SessionFace';
 import{TooltipProvider}from'/src/components/ui/tooltip';import'/src/styles/tokens.css';import'/src/styles/app.css';
 const root=createRoot(document.getElementById('root'));let serial=0;
 const render=element=>flushSync(()=>root.render(<TooltipProvider><main style={{height:'100vh',display:'flex',flexDirection:'column'}}>{element}</main></TooltipProvider>));
 window.showChat=id=>render(<MachineChat key={id} id={id} active sessions={[]}/>);
 window.showNewWith=(machine='',dir='')=>render(<NewSessionPage key={'new-'+(++serial)} machine={machine} dir={dir} onCancel={()=>{}} onOpened={window.showChat}/>);
 window.showNew=()=>window.showNewWith('fixture','/fixture');
+window.showKhorMarks=()=>render(<div data-khor-mark-samples>{[
+  ['row','gui','khor','row'],['tab','gui','khor','tab'],['broadcast','broadcast',null,'row'],
+  ['transfer','transfer','khor','row'],['borrow','borrow','khor','row'],['shell','shell','khor','row'],['unknown','gui',null,'row'],
+  ['claude-row','gui','claude','row'],['claude-tab','gui','claude','tab'],['codex-row','gui','codex','row'],['cursor-row','gui','cursor','row'],
+].map(([name,kind,category,size])=><div key={name} data-khor-mark-sample={name} className="flex items-center gap-row"><SessionFace face={null} word={null} kind={kind} category={category} size={size}/><span>{name}</span></div>)}</div>);
 window.showNew();`);
 let server,browser;
 const results=[];
@@ -74,6 +80,9 @@ try {
   await choose('agent:fixture-acp');await page.locator('[data-acp-setup] > summary').click();await page.getByLabel('MCP servers',{exact:true}).fill('{');
   assert(await page.locator('[data-new-session-create]').isDisabled());
   await choose('khor');await page.locator('[data-new-khor-model] input').waitFor();
+  const selectedKhorMark=page.locator('[data-new-session-launch][data-selected="khor"] [data-brand-mark="khor"]');
+  await selectedKhorMark.waitFor();
+  const khorArtwork=await selectedKhorMark.innerHTML();
   await page.locator('[data-new-khor-account] input').click();
   assert.equal(await page.locator('[data-choice-option="billing-only"]').count(),0);
   assert.equal(await page.locator('[data-choice-option="other-home"]').count(),0);
@@ -155,6 +164,28 @@ try {
   assert.equal(await page.locator('[data-chat-composer]').inputValue(),'会话 A 的未发送草稿 / draft A','an app restart must restore its independent unsent session draft');
   await page.evaluate(id=>window.showChat(id),B);await page.locator('[data-chat-composer]').waitFor();
   assert.equal(await page.locator('[data-chat-composer]').inputValue(),'会话 B 的未发送草稿 / draft B');
+  await page.evaluate(()=>window.showKhorMarks());
+  for(const viewport of [{width:1000,height:760},{width:390,height:720}]) {
+   await page.setViewportSize(viewport);
+   for(const theme of ['light','dark']) {
+    await page.evaluate(theme=>{document.documentElement.dataset.theme=theme;},theme);
+    for(const sample of ['row','tab']) {
+     const glyph=page.locator(`[data-khor-mark-sample="${sample}"] [data-brand-mark="khor"]`);
+     assert.equal(await glyph.count(),1,`${sample} must identify khor instead of the generic agent`);
+     assert.equal(await glyph.innerHTML(),khorArtwork,`${sample} must share the new-session artwork`);
+     const coverage=await glyph.evaluate(svg=>svg.getBoundingClientRect().width*.92/svg.closest('[data-side-face]').getBoundingClientRect().width);
+     assert.ok(Math.abs(coverage-.65)<.002,`${sample} must keep the accepted 65% painted coverage`);
+    }
+    for(const sample of ['broadcast','transfer','borrow','shell','unknown','claude-row','claude-tab','codex-row','cursor-row']) {
+     const face=page.locator(`[data-khor-mark-sample="${sample}"]`);
+     assert.equal(await face.locator('[data-brand-mark="khor"]').count(),0,`${sample} must retain its own type mark`);
+     const expected=await face.evaluate((_,tab)=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue(tab?'--kind-mark-tab':'--kind-mark')),sample.endsWith('-tab'));
+     const width=await face.locator('[data-mark-at="face"] > svg').evaluate(svg=>svg.getBoundingClientRect().width);
+     assert.ok(Math.abs(width-expected)<.01,`${sample} must retain its existing avatar mark size`);
+    }
+    await page.screenshot({path:join(out,`${name}-khor-marks-${viewport.width}-${theme}.png`)});
+   }
+  }
   assert.deepEqual(errors,[]);results.push({engine:name,passed:true});await browser.close();browser=null;
  }
  console.log('Khor conversations UI: creation lifecycle, independent tasks, account/model ownership, machine preferences and agent-owned command routing passed');

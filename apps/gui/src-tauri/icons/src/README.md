@@ -10,6 +10,10 @@
 `mandala-16.svg`、`mandala-glyph.svg`、`tray.svg` 是独立的小字形/托盘用途，
 不作为 App 安装图标的另一个来源。
 
+`khor-session-avatar.json` 保留用户定稿的会话头像参数，`mandala-glyph.svg` 按其中的
+几何绘制；khor 浮现头像的实际标记占比为 65%。预览机型、主题与对照选项仅用于调校，
+生产头像继续读取每台机器自己的底图、墨色和基础衬色，其他会话类型不变。
+
 ## 调整与生成
 
 在仓库根目录打开[调校台](../../../dev/icon-lab/README.md)：
@@ -46,3 +50,9 @@ Icon Composer 的单图层不再附加玻璃材质或阴影，背景与外缘仍
 `App icon` CI 先对工具运行 strict TypeScript 检查和行为测试，再检查参数与 SVG 一致、生成资源清单/哈希/尺寸/颜色模式、iOS/macOS
 母图相同，并在 macOS 26 编译实际 layered catalog。完整安装后的 Finder、Dock、
 启动器与 iOS 主屏幕验收仍需后续安装构建；浏览器或 `ictool` 预览不能替代这些验收。
+
+## 会话中的品牌图标
+
+`mandala-glyph.svg` 是独立维护的小尺寸单色品牌图稿，保留 07 的外圆、菱形、内圆及
+五颗珠；它不进入安装图标生成，也不随材质参数变化。`BrandIcons.IconKhor` 直接读取
+这一份 SVG，统一新建 khor 会话、列表、标签和手机药丸的类型标记。
