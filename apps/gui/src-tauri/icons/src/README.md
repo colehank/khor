@@ -10,6 +10,10 @@
 `mandala-16.svg`、`mandala-glyph.svg`、`tray.svg` 是独立的小字形/托盘用途，
 不作为 App 安装图标的另一个来源。
 
+`khor-session-avatar.json` 保留用户定稿的会话头像参数，`mandala-glyph.svg` 按其中的
+几何绘制；khor 浮现头像的实际标记占比为 65%。预览机型、主题与对照选项仅用于调校，
+生产头像继续读取每台机器自己的底图、墨色和基础衬色，其他会话类型不变。
+
 ## 调整与生成
 
 在仓库根目录打开[调校台](../../../dev/icon-lab/README.md)：

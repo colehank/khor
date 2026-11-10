@@ -1,20 +1,17 @@
-<svg width="1024" height="1024" viewBox="68.52 68.52 886.96 886.96" xmlns="http://www.w3.org/2000/svg">
-  <!-- khor brand mark: the accepted 07 mandala reduced to currentColor.
-       Shared by the new-session choice, session rows, tabs and pills.
-       The 368 / 172 rings, diamond vertices and heart match the app art.
-       Wider strokes and 40-unit gate pearls keep the identity readable
-       at 12–18 px; the painted live area is the round brand family's 92%.
-       No background, glass, lighting, fixed color or instance IDs. -->
+<svg width="1024" height="1024" viewBox="52.21739130 52.21739130 919.56521739 919.56521739" xmlns="http://www.w3.org/2000/svg">
+  <!-- Accepted session mark: khor-session-avatar.json, 2026-11-10.
+       The complete painted diameter occupies 92% of this viewBox.
+       FaceMark scopes its 65% face coverage to this khor mark alone. -->
   <g fill="none" stroke="currentColor">
-    <circle cx="512" cy="512" r="368" stroke-width="48"/>
-    <path d="M512 144 L880 512 L512 880 L144 512 Z" stroke-width="32" stroke-linejoin="round"/>
-    <circle cx="512" cy="512" r="172" stroke-width="44"/>
+    <circle cx="512" cy="512" r="368" stroke-width="40"/>
+    <path d="M512 144 L880 512 L512 880 L144 512 Z" stroke-width="40" stroke-linejoin="round"/>
+    <circle cx="512" cy="512" r="170" stroke-width="45"/>
   </g>
   <g fill="currentColor">
-    <circle cx="512" cy="144" r="40"/>
-    <circle cx="880" cy="512" r="40"/>
-    <circle cx="512" cy="880" r="40"/>
-    <circle cx="144" cy="512" r="40"/>
+    <circle cx="512" cy="144" r="55"/>
+    <circle cx="880" cy="512" r="55"/>
+    <circle cx="512" cy="880" r="55"/>
+    <circle cx="144" cy="512" r="55"/>
     <circle cx="512" cy="512" r="69"/>
   </g>
 </svg>

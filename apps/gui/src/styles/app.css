@@ -116,6 +116,15 @@ svg [data-body] {
   fill-opacity: 1;
 }
 
+/* Accepted khor session avatar (khor-session-avatar.json): the painted
+   mark covers 65% of its face at every size. Its SVG live area is 92%.
+   Keep every other session's existing size tokens, and keep corner
+   badges at their own size. */
+:is([data-mark-at="face"], [data-mark-at="base"]) > [data-brand-mark="khor"] {
+  width: calc(65% / 0.92);
+  height: calc(65% / 0.92);
+}
+
 /* **Tombstone: the open item used to wear a block, and it does not now.**
  *
  * It was `background-color: var(--rail-on)` — the brand green, thinned —

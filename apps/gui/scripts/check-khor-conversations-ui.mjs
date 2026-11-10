@@ -24,7 +24,8 @@ window.showNewWith=(machine='',dir='')=>render(<NewSessionPage key={'new-'+(++se
 window.showNew=()=>window.showNewWith('fixture','/fixture');
 window.showKhorMarks=()=>render(<div data-khor-mark-samples>{[
   ['row','gui','khor','row'],['tab','gui','khor','tab'],['broadcast','broadcast','khor','row'],
-  ['transfer','transfer','khor','row'],['shell','shell','khor','row'],['unknown','gui',null,'row'],
+  ['transfer','transfer','khor','row'],['borrow','borrow','khor','row'],['shell','shell','khor','row'],['unknown','gui',null,'row'],
+  ['claude-row','gui','claude','row'],['claude-tab','gui','claude','tab'],['codex-row','gui','codex','row'],['cursor-row','gui','cursor','row'],
 ].map(([name,kind,category,size])=><div key={name} data-khor-mark-sample={name} className="flex items-center gap-row"><SessionFace face={null} word={null} kind={kind} category={category} size={size}/><span>{name}</span></div>)}</div>);
 window.showNew();`);
 let server,browser;
@@ -172,8 +173,16 @@ try {
      const glyph=page.locator(`[data-khor-mark-sample="${sample}"] [data-brand-mark="khor"]`);
      assert.equal(await glyph.count(),1,`${sample} must identify khor instead of the generic agent`);
      assert.equal(await glyph.innerHTML(),khorArtwork,`${sample} must share the new-session artwork`);
+     const coverage=await glyph.evaluate(svg=>svg.getBoundingClientRect().width*.92/svg.closest('[data-side-face]').getBoundingClientRect().width);
+     assert.ok(Math.abs(coverage-.65)<.002,`${sample} must keep the accepted 65% painted coverage`);
     }
-    for(const sample of ['transfer','shell','unknown']) assert.equal(await page.locator(`[data-khor-mark-sample="${sample}"] [data-brand-mark="khor"]`).count(),0,`${sample} must retain its own type mark`);
+    for(const sample of ['transfer','borrow','shell','unknown','claude-row','claude-tab','codex-row','cursor-row']) {
+     const face=page.locator(`[data-khor-mark-sample="${sample}"]`);
+     assert.equal(await face.locator('[data-brand-mark="khor"]').count(),0,`${sample} must retain its own type mark`);
+     const expected=await face.evaluate((_,tab)=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue(tab?'--kind-mark-tab':'--kind-mark')),sample.endsWith('-tab'));
+     const width=await face.locator('[data-mark-at="face"] > svg').evaluate(svg=>svg.getBoundingClientRect().width);
+     assert.ok(Math.abs(width-expected)<.01,`${sample} must retain its existing avatar mark size`);
+    }
     await page.screenshot({path:join(out,`${name}-khor-marks-${viewport.width}-${theme}.png`)});
    }
   }

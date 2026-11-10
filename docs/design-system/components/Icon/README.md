@@ -104,8 +104,10 @@
 ## khor 会话品牌标记（2026-11-10）
 
 `BrandIcons.IconKhor` 从 `src-tauri/icons/src/mandala-glyph.svg` 读取单色坛城，与应用图标
-共享外圆、菱形、内圆和五颗珠的识别结构。图稿的圆心、菱形顶点、368/172 环半径和
-69 心珠取自 07；线条与外珠为小尺寸作光学校正，圆形活区保持品牌家族的 92%。
+共享外圆、菱形、内圆和五颗珠的识别结构。最终参数保存在同目录
+`khor-session-avatar.json`：外圆/菱形线宽 40、内圆线宽 45，外珠半径 55、心珠半径 69，
+内圆半径 170。圆形活区保持品牌家族的 92%；只在 khor 的浮现/类型底座上，实际图形
+占头像直径 65%，列表、标签和手机按同一比例绘制。其他会话保留原图稿和尺寸。
 只有 `currentColor`，没有底板、渐变、玻璃或固定主题色。
 
 `sessionMark` 为 `category=khor` 和自带广播返回它，专属的 transfer / borrow / shell
@@ -113,4 +115,5 @@
 标签及药丸继续走 `sessionKind` / `SessionFace`，不另外复制路径或按尺寸更换图稿。
 
 检查入口仍是 `npm run khor-conversations-ui`：新建入口与真实 `SessionFace` 的行/标签
-尺寸共用相同图稿，桌面/手机、浅/深色验证，未知 Agent 和其他专属类型不被替换。
+尺寸共用相同图稿，桌面/手机、浅/深色验证 khor 的 65% 占比；Claude、Codex、Cursor、
+未知 Agent 和其他专属类型的图稿及尺寸不被替换。
