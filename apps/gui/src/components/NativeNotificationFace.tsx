@@ -1,35 +1,30 @@
-import {useCallback,useEffect,useLayoutEffect,useRef} from "react";
+import {useLayoutEffect,useRef} from "react";
 import * as native from "@/api";
 import type {NativeMenuState} from "@/api";
-import {gui} from "@/gen/catalog";
 import {notificationDOM} from "@/lib/native-notification-dom";
-/** Scriptless frozen document: no site, app controller, or IPC in the frame. */
+/** Trusted owner-sanitized DOM in a private style tree. No site, navigation,
+ * second app controller, or script-bearing HTML enters this renderer. */
 export function NativeNotificationFace({state}:{state:NativeMenuState}) {
-  const frame=useRef<HTMLIFrameElement>(null),html=useRef(state.html??"");
+  const host=useRef<HTMLDivElement>(null),html=useRef(state.html??"");
   const bridge=useRef<ReturnType<typeof notificationDOM>|null>(null);
   html.current=state.html??"";
   useLayoutEffect(()=>{
-    const elements=[document.documentElement,document.body];
-    const previous=elements.map(el=>el.style.background);
+    const el=host.current;if(!el)return;
+    const root=el.shadowRoot??el.attachShadow({mode:"open"});
+    const head=document.createElement("div"),body=document.createElement("div");
+    root.replaceChildren(head,body);
+    const elements=[document.documentElement,document.body],previous=elements.map(el=>el.style.background);
     elements.forEach(el=>{el.style.background="transparent";});
-    return()=>elements.forEach((el,index)=>{el.style.background=previous[index];});
-  },[]);
-  const mount=useCallback(()=>{
-    const scope=frame.current?.contentWindow;if(!scope)return;
-    bridge.current?.dispose();
-    bridge.current=notificationDOM(scope,value=>{
+    const face=notificationDOM({DOMParser,ResizeObserver,getComputedStyle:window.getComputedStyle.bind(window),document:{
+      documentElement:el,head,body,querySelector:root.querySelector.bind(root),
+      addEventListener:root.addEventListener.bind(root),removeEventListener:root.removeEventListener.bind(root),
+    }},value=>{
       if("input"in value)void native.menuInput(state.id,value.input).catch(()=>{});
-      else {if(frame.current)frame.current.style.height=`${value.h}px`;void native.sizeMenu(state.id,value.h).catch(()=>{});}
+      else void native.sizeMenu(state.id,value.h).catch(()=>{});
     });
-    bridge.current.update(html.current);
+    bridge.current=face;face.update(html.current);
+    return()=>{face.dispose();bridge.current=null;root.replaceChildren();elements.forEach((el,index)=>{el.style.background=previous[index];});};
   },[state.id]);
-  useEffect(()=>{bridge.current?.update(html.current);},[state.html]);
-  useEffect(()=>{
-    // StrictMode can retire effects after an early srcDoc load. Reattach
-    // to the already loaded document as well as listening for a fresh load.
-    if(frame.current?.contentDocument?.readyState==="complete")mount();
-    return()=>{bridge.current?.dispose();bridge.current=null;};
-  },[mount]);
-  return <iframe ref={frame} data-native-notification-face title={gui.notifications} sandbox="allow-same-origin" className="block w-full border-0 bg-transparent" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none';style-src 'unsafe-inline';img-src data:;script-src 'none'"></head><body></body></html>`}
-    onLoad={mount}/>;
+  useLayoutEffect(()=>{bridge.current?.update(html.current);},[state.html]);
+  return <div ref={host} data-native-notification-face className="block w-full bg-transparent"/>;
 }

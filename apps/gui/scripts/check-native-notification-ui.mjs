@@ -27,18 +27,15 @@ try{
   if(id.endsWith('/native-notification-dom.js'))return source.replace('export function notificationDOM(scope, emit) {',"let traceCount=0;const trace=(s)=>{if(traceCount++<30)console.info('NATIVE_NOTICE_DOM',s)};export function notificationDOM(scope, emit) {").replace('    update(html) {',"    update(html) { trace('update:start');").replace('size();\n    },',"size();trace('update:end');\n    },");
   if(id.endsWith('/use-native-notifications.ts'))return source.replace('export function useNativeNotifications',"let traceCount=0;const trace=(s:string)=>{if(traceCount++<30)console.info('NATIVE_NOTICE_OWNER',s)};export function useNativeNotifications").replace('frame=0;if(!alive)return;',"frame=0;trace('frame:start');if(!alive)return;").replace('const fingerprint=JSON.stringify([html,geometry]);',"trace('snapshot:done');const fingerprint=JSON.stringify([html,geometry]);");
  }}],root:gui,configFile:join(gui,'vite.config.ts'),cacheDir:join(out,'native-vite'),optimizeDeps:{entries:[join(dir,'index.html')]},resolve:{alias:[{find:'@/api',replacement:api},{find:'@',replacement:join(gui,'src')}]},server:{host:'127.0.0.1',port:0,hmr:false},logLevel:'error'});await server.listen();
- browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:820}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));page.on('console',message=>{if(message.text().startsWith('NATIVE_NOTICE'))appendFileSync(join(out,'native-notification-trace.txt'),message.text()+'\n');});
+ browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:820}});page.setDefaultTimeout(5000);const errors=[];page.on('pageerror',e=>errors.push(String(e)));page.on('console',message=>{if(message.text().startsWith('NATIVE_NOTICE'))appendFileSync(join(out,'native-notification-trace.txt'),message.text()+'\n');});
  await page.goto(server.resolvedUrls.local[0]+name+'/index.html');await page.locator('[data-notification-banner]').waitFor();
  try{await page.waitForFunction(()=>nativeNotice.calls.some(call=>call.command==='show'),null,{timeout:5000});}
  catch(error){await page.screenshot({path:join(out,'native-notification-red.png')});writeFileSync(join(out,'native-notification-errors.json'),JSON.stringify({errors,calls:await page.evaluate(()=>nativeNotice.calls)},null,2));throw error;}
  const request=await page.evaluate(()=>nativeNotice.calls.find(call=>call.command==='show').request);
  assert(request.html?.includes('The same session preview'),'The native document carries the actual rendered banner');
- // The renderer deliberately forbids iframe scripts. Playwright's child-frame
- // hover stability helper waits on that disabled frame's rAF. Drive real input
- // through the parent viewport, exactly as the native window receives it.
+ // Drive actual pointer input against the isolated resolved-DOM face.
  await page.waitForFunction(()=>{
-  const frame=document.querySelector('iframe[data-native-notification-face]');
-  return frame?.contentDocument?.querySelector('[data-notification-banner]')&&document.querySelector('[data-notification-arrived]');
+  return document.querySelector('[data-native-notification-face]')?.shadowRoot?.querySelector('[data-notification-banner]');
  });
  await page.waitForFunction(()=>document.querySelector('[data-notification-banners]').hasAttribute('data-notification-native'));
  await page.waitForFunction(()=>nativeNotice.calls.some(call=>call.command==='size'&&call.h>0));
@@ -47,9 +44,10 @@ try{
   writeFileSync(process.env.NATIVE_NOTIFICATION_SNAPSHOT_OUT,html.replace(/data-notification-banner="[^"]*"/g,'data-notification-banner="m:local"'));
  }
  const nativeBox=()=>page.evaluate(()=>{
-  const f=document.querySelector('iframe[data-native-notification-face]'),outer=f.getBoundingClientRect(),banner=f.contentDocument.querySelector('[data-notification-banner]'),inner=banner.getBoundingClientRect();
-  return {x:outer.x+inner.x,y:outer.y+inner.y,width:inner.width,height:inner.height,key:banner.getAttribute('data-notification-banner')};
+  const banner=document.querySelector('[data-native-notification-face]').shadowRoot.querySelector('[data-notification-banner]'),inner=banner.getBoundingClientRect();
+  return {x:inner.x,y:inner.y,width:inner.width,height:inner.height,key:banner.getAttribute('data-notification-banner')};
  });
+ await page.waitForTimeout(300);
  let rect=await nativeBox();const originalKey=rect.key;
  await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);
  await page.waitForFunction(()=>document.querySelector('[data-notification-engaged]'),null,{timeout:3000});
@@ -60,4 +58,4 @@ try{
  assert.equal(await page.evaluate(()=>window.opened===true),false,'Swipe does not open a session');
  assert((await page.evaluate(()=>nativeNotice.calls.filter(call=>call.command==='input').map(call=>call.event.key))).every(key=>key===originalKey),'Inputs preserve the original lease candidate');
  assert.deepEqual(errors,[]);writeFileSync(join(out,'native-notification-results.json'),JSON.stringify({nativePresenter:true,sharedRenderedContent:true,hoverForwarding:true,swipeDismissal:true,noClickAfterSwipe:true,errors},null,2));
-}finally{await browser?.close();await server?.close();rmSync(dir,{recursive:true,force:true});}
+}catch(error){writeFileSync(join(out,'native-notification-failure.json'),JSON.stringify({error:String(error),stack:error.stack},null,2));console.error(error);throw error;}finally{await browser?.close();await server?.close();rmSync(dir,{recursive:true,force:true});}
