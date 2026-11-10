@@ -414,6 +414,10 @@ async fn main() -> agent_client_protocol::Result<()> {
                     ))?;
                     let stop = if canceled.load(std::sync::atomic::Ordering::SeqCst) {
                         StopReason::Cancelled
+                    } else if word == "picked:stop"
+                        && std::env::args().any(|arg| arg == "--refuse-on-reject")
+                    {
+                        StopReason::Refusal
                     } else {
                         StopReason::EndTurn
                     };

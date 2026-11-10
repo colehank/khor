@@ -758,6 +758,7 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
         &[
             stub.to_string_lossy().into_owned(),
             "--unique-session".into(),
+            "--refuse-on-reject".into(),
         ],
     )
     .unwrap();
@@ -856,6 +857,45 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
         resumed.task.status.state,
         crate::delegation::protocol::TaskState::Working
     );
+    let resumed_host = crate::host::read_host_file(&live.dir_of(&context.id).unwrap()).unwrap();
+    let read_resumed = || {
+        store
+            .get(node.device(), &resumed.target, &resumed.task.id)
+            .unwrap()
+    };
+    let by = Instant::now() + Duration::from_secs(5);
+    let ask = loop {
+        if let Some(ask) = crate::delegation::approval(&read_resumed()).and_then(|a| a["ask"].as_u64())
+        {
+            break ask;
+        }
+        assert!(Instant::now() < by, "resumed stub did not ask for permission");
+        thread::sleep(Duration::from_millis(10));
+    };
+    assert!(!absent(resumed_host.host_pid));
+    let mut reject = tool(
+        &node,
+        "task_answer",
+        json!({"agent":"fixture","task":resumed.task.id,"ask":ask.to_string(),"option":"stop"}),
+        true,
+    );
+    finish(&mut reject).unwrap();
+    let by = Instant::now() + Duration::from_secs(10);
+    while !absent(resumed_host.host_pid) && Instant::now() < by {
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(absent(resumed_host.host_pid), "refused child did not retire");
+    let failed = read_resumed();
+    assert_eq!(
+        failed.task.status.state,
+        crate::delegation::protocol::TaskState::Failed
+    );
+    assert!(
+        serde_json::to_string(&failed.task.status.message)
+            .unwrap()
+            .contains("ACP ended: Refusal")
+    );
+    assert_eq!(failed.parent, finished.parent);
     drop(hosts);
 }
 
