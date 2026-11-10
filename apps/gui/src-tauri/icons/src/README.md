@@ -46,3 +46,9 @@ Icon Composer 的单图层不再附加玻璃材质或阴影，背景与外缘仍
 `App icon` CI 检查参数与 SVG 一致、生成资源清单/哈希/尺寸/颜色模式、iOS/macOS
 母图相同，并在 macOS 26 编译实际 layered catalog。完整安装后的 Finder、Dock、
 启动器与 iOS 主屏幕验收仍需后续安装构建；浏览器或 `ictool` 预览不能替代这些验收。
+
+## 会话中的品牌图标
+
+`mandala-glyph.svg` 是独立维护的小尺寸单色品牌图稿，保留 07 的外圆、菱形、内圆及
+五颗珠；它不进入安装图标生成，也不随材质参数变化。`BrandIcons.IconKhor` 直接读取
+这一份 SVG，统一新建 khor 会话、列表、标签和手机药丸的类型标记。

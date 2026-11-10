@@ -130,7 +130,7 @@ export function NewSessionPage({
   const machineId = target?.id ?? '';
   const dir = paths[machineId] ?? (machineId === contextMachine.current && at ? at : preferences.machines[machineId]?.dir ?? '');
   const agents = [...new Set(['claude', 'codex', ...known.map(a => a.name)])];
-  const allChoices: LaunchOption[] = [{id:'khor',label:'khor',icon:kindIcon('broadcast','khor'),launch:{kind:'khor'}}, {
+  const allChoices: LaunchOption[] = [{id:'khor',label:'khor',icon:kindIcon('gui','khor'),launch:{kind:'khor'}}, {
     id: 'shell',
     label: 'Shell',
     icon: kindIcon('shell', null),
