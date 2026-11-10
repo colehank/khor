@@ -86,7 +86,7 @@ jobs:
           cargo build --locked -p khor-acp --bin acp-stub
           export KHOR_TEST_MCP_EXECUTABLE="$PWD/target/debug/khor"
           export KHOR_TEST_ACP_STUB="$PWD/target/debug/acp-stub"
-          cargo test --locked -p khor-node --lib a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/delegation.log"
+          cargo test --locked -p khor-node --lib a_real_ -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/delegation.log"
       - if: always()
         run: |
           cargo fmt --all
