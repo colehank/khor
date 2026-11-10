@@ -54,7 +54,7 @@ createRoot(document.getElementById('root')).render(<Fixture/>);`);
  vite=spawn('node_modules/.bin/vite',['--config',config,'--port',String(port),'--strictPort'],{cwd:gui,env:{...process.env,KHOR_FACE_GATE:'1'},stdio:['ignore','pipe','pipe']});
  let ready=false,log='';vite.stdout.on('data',b=>ready||=String(b).includes(`:${port}`));vite.stderr.on('data',b=>log+=b);
  for(let i=0;i<100&&!ready;i++)await new Promise(r=>setTimeout(r,100));assert(ready,log||'Vite did not start');
- browser=await chromium.launch({channel:'chrome',headless:process.env.NATIVE_MENU_UI_HEADED!=='1'});
+ browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:process.env.NATIVE_MENU_UI_HEADED!=='1'});
  const url=`http://localhost:${port}/${prefix}.html`;
  const page=await browser.newPage({viewport:{width:1100,height:800}}),errors=[];
  page.on('pageerror',e=>errors.push(e.message));await page.goto(url);await page.waitForFunction(()=>window.fixture);

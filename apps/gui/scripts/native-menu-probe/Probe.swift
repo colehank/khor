@@ -131,7 +131,36 @@ import WebKit
         await pause(0.15)
         check("replacement valid pick accepted",events().contains{(($0["payload"] as? [String:Any])?["key"] as? String)=="m:remote"})
         check("field still responder after all updates",field.isFirstResponder)
+        hide("lease-2")
+        if let url=Bundle.main.url(forResource:"notice",withExtension:"html"),let notice=try? String(contentsOf:url,encoding:.utf8) {
+            await checkNotices(notice)
+        }
         finish()
+    }
+    func checkNotices(_ document:String) async {
+        let before=await js(site,"window.identity") as? String
+        check("notification adapter accepted",open("notice-1",document))
+        guard let notice=await waitMenu() else {check("notification WK exists",false);return}
+        await pause(0.3)
+        check("notification above retained website",view.subviews.last === notice.superview)
+        check("notification native dimensions measured",notice.frame.height>20 && notice.superview?.isHidden==false)
+        check("notification uses owner resolved DOM",(await js(notice,"!!document.querySelector('[data-notification-banner] [data-notification-open]')") as? Bool)==true)
+        _=await js(notice,"window.__heldNotice=document.querySelector('[data-notification-banner]')")
+        check("notification same lease update accepted",open("notice-1",document.replacingOccurrences(of:"The same session preview",with:"Updated session preview")))
+        await pause(0.2)
+        check("notification updates preserve active pointer target",(await js(notice,"window.__heldNotice===document.querySelector('[data-notification-banner]')") as? Bool)==true)
+        probe_clear()
+        _=await js(notice,"document.querySelector('[data-notification-open]').click()")
+        await pause(0.2)
+        check("notification input returns to actual owner",events().contains{($0["event"] as? String)=="menu:input" && ($0["owner"] as? String)=="main" && (($0["payload"] as? [String:Any])?["event"] as? [String:Any])?["action"] as? String == "open"},events())
+        probe_clear()
+        _=await js(notice,"window.webkit.messageHandlers.khorMenu.postMessage({id:'old-notice',input:{type:'click',key:'m:local',action:'open',x:0,y:0,pointerId:0,pointerType:'mouse',button:0,isPrimary:true,detail:1}})")
+        await pause(0.15)
+        check("notification stale input ignored",events().isEmpty,events())
+        check("notification keeps underlying document",(await js(site,"window.identity") as? String)==before)
+        check("notification does not steal native keyboard",field.isFirstResponder)
+        hide("notice-1")
+        check("notification presenter removed on current hide",!probe_active())
     }
     func finish() {
         let result:[String:Any]=["passed":checks.allSatisfy{($0["passed"] as? Bool)==true},"checks":checks,"limits":["Production Rust iOS adapter with AppHandle event collector only; no Tauri transport mocked native rendering","Native hit testing and responder verified; no injected physical UITouch or actual device finger feel","Dedicated simulator only; no user app, credentials, network or sessions used"]]

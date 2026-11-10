@@ -171,6 +171,16 @@ jobs:
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/native-notification-protocol.log"
           cargo test --locked -p khor-gui --lib app_companions -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/app-components.log"
           grep -Eq '^test result: ok\. [1-9][0-9]* passed;' "$RUNNER_TEMP/app-components.log"
+      - name: Verify shared notification DOM and actual iOS native presenter
+        if: runner.arch == 'ARM64'
+        run: |
+          npm ci --prefix apps/gui
+          (cd apps/gui && node node_modules/playwright-core/cli.js install chromium)
+          rustup target add aarch64-apple-ios-sim
+          mkdir -p "$RUNNER_TEMP/native-notice-ui"
+          (cd apps/gui && PLAYWRIGHT_CHROMIUM_CHANNEL='' NOTIFICATION_UI_DIR="$RUNNER_TEMP/native-notice-ui" NATIVE_NOTIFICATION_SNAPSHOT_OUT="$RUNNER_TEMP/native-notice.html" node scripts/check-native-notification-ui.mjs)
+          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
+          PLAYWRIGHT_CHROMIUM_CHANNEL='' python3 apps/gui/scripts/native-menu-probe/run.py --fetch --out "$RUNNER_TEMP/native-notice-ios" --simulator "$SIMULATOR_ID" --notification-snapshot "$RUNNER_TEMP/native-notice.html"
       - name: Verify borrowed loopback in actual native WebKit
         shell: bash
         run: |
@@ -181,7 +191,12 @@ jobs:
         if: always()
         with:
           name: mac-update-contracts
-          path: ${{ runner.temp }}/app-*.log
+          path: |
+            ${{ runner.temp }}/app-*.log
+            ${{ runner.temp }}/native-notification-protocol.log
+            ${{ runner.temp }}/native-notice-ui/*results.json
+            ${{ runner.temp }}/native-notice-ios/probe-*.json
+            ${{ runner.temp }}/native-notice-ios/native-menu.png
           if-no-files-found: warn
           retention-days: 7
 

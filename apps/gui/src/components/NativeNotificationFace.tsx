@@ -1,5 +1,6 @@
 import {useEffect,useLayoutEffect,useRef} from "react";
-import {menuInput,sizeMenu,type NativeMenuState} from "@/api";
+import * as native from "@/api";
+import type {NativeMenuState} from "@/api";
 import {notificationDOM} from "@/lib/native-notification-dom";
 /** Scriptless frozen document: no site, app controller, or IPC in the frame. */
 export function NativeNotificationFace({state}:{state:NativeMenuState}) {
@@ -19,8 +20,8 @@ export function NativeNotificationFace({state}:{state:NativeMenuState}) {
       const scope=frame.current?.contentWindow;if(!scope)return;
       bridge.current?.dispose();
       bridge.current=notificationDOM(scope,value=>{
-        if("input"in value)void menuInput(state.id,value.input).catch(()=>{});
-        else {if(frame.current)frame.current.style.height=`${value.h}px`;void sizeMenu(state.id,value.h).catch(()=>{});}
+        if("input"in value)void native.menuInput(state.id,value.input).catch(()=>{});
+        else {if(frame.current)frame.current.style.height=`${value.h}px`;void native.sizeMenu(state.id,value.h).catch(()=>{});}
       });
       bridge.current.update(html.current);
     }}/>;

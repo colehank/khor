@@ -42,6 +42,8 @@ def main():
                         help="dedicated available iOS simulator UUID")
     parser.add_argument("--snapshot", type=Path,
                         help="existing production snapshot; otherwise native-menu-ui exports one")
+    parser.add_argument("--notification-snapshot", type=Path, help="also verify the shared notification presenter")
+    parser.add_argument("--fetch", action="store_true", help="allow dependency fetch on a clean CI host")
     args = parser.parse_args()
     scratch = args.out.expanduser().resolve()
     if scratch == REPO or REPO in scratch.parents:
@@ -76,6 +78,12 @@ def main():
         elif destination.exists():
             raise RuntimeError(f"Refusing to replace unexpected file {destination}")
         destination.symlink_to(source)
+    # include_str! is relative to the lexical module path in the isolated crate.
+    bridge = (module / "../../../src/lib/native-notification-dom.js").resolve()
+    bridge.parent.mkdir(parents=True, exist_ok=True)
+    if bridge.is_symlink(): bridge.unlink()
+    elif bridge.exists(): raise RuntimeError("Unexpected native bridge file")
+    bridge.symlink_to(GUI / "src/lib/native-notification-dom.js")
     lock = (REPO / "Cargo.lock").read_text()
     shutil.copyfile(REPO / "Cargo.lock", rust / "Cargo.lock")
     versions = {name: pinned(lock, name) for name in
@@ -96,13 +104,18 @@ block2 = "={versions['block2']}"
 [workspace]
 ''')
     hashes = {str(path): hashlib.sha256(path.read_bytes()).hexdigest()
-              for path in [production, ios, HERE / "Probe.swift", HERE / "lib.rs", snapshot]}
+              for path in [production, ios, GUI / "src/lib/native-notification-dom.js", HERE / "Probe.swift", HERE / "lib.rs", snapshot]}
     target = rust / "target"
+    if args.fetch:
+        run("cargo", "fetch", "--manifest-path", rust / "Cargo.toml")
     run("cargo", "build", "--offline", "--manifest-path", rust / "Cargo.toml",
         "--target", "aarch64-apple-ios-sim", "--target-dir", target)
     app = scratch / "KhorMenuProbe.app"
     app.mkdir(exist_ok=True)
     shutil.copyfile(snapshot, app / "menu.html")
+    if args.notification_snapshot:
+        shutil.copyfile(args.notification_snapshot, app / "notice.html")
+        hashes[str(args.notification_snapshot.resolve())] = hashlib.sha256(args.notification_snapshot.read_bytes()).hexdigest()
     with (app / "Info.plist").open("wb") as file:
         plistlib.dump({"CFBundleIdentifier": BUNDLE, "CFBundleName": "KhorMenuProbe",
                       "CFBundleExecutable": "KhorMenuProbe", "CFBundlePackageType": "APPL",

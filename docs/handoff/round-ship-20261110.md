@@ -32,3 +32,5 @@ main图标同步后effe2793/Quality42779150845前端在catalog生成时红：最
 ## 原生通知补齐（进行中）
 
 45c5a375为先红探针，独立verify/native-notification-red-20261110运行42783272495；74791dd9全量Quality42781818432仍在跑。原生通知复用menu_overlay的可信lease、resolved DOM快照以及同一份自包含输入桥（桌面脚本禁用iframe与iOS私有WKUserScript），状态、计时、滑动阈值、点击均回送原始React组件。native menu_input只接受当前lease现存候选的有限原始输入，远端page不能调用。系统文档预览通过promise租约暂停通知计时，返回继续；不会宣称DOM盖住QuickLook。refusal才短暂yield retained webpage，正常不隐藏浏览器。
+
+全量74791dd9的GUI完成：WebKit滚动/resize本次已过，updates-ui仍找旧dialog-footer关闭钮，已改新TaskActions leading槽；recovery的directory-required-shell报告facts=null/errors=[Browser page crashed]，是原生WebKit测试进程崩溃，尚不当作业务结论，最终源码会复跑。45c5先红有探针未显式初始化transport的问题，已用独立baseline分支5c8ef87e/42785087686修正再跑，不能把前一次ReferenceError说成预期红证据。新增共享DOM native notice桥已在8dec7839/e0bdb71f，完善iOS生产adapter隔离simulator探针与CI receipt，非物理触摸。

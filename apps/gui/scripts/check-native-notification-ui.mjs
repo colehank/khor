@@ -33,6 +33,11 @@ try{
  const mirror=page.frameLocator('iframe[data-native-notification-face]'),banner=mirror.locator('[data-notification-banner]');
  await banner.waitFor();await page.waitForFunction(()=>document.querySelector('[data-notification-banners]').hasAttribute('data-notification-native'));
  await page.waitForFunction(()=>nativeNotice.calls.some(call=>call.command==='size'&&call.h>0));
+ if(process.env.NATIVE_NOTIFICATION_SNAPSHOT_OUT){
+  await page.waitForTimeout(300);
+  const html=await page.evaluate(()=>nativeNotice.calls.filter(call=>call.command==='show').at(-1).request.html);
+  writeFileSync(process.env.NATIVE_NOTIFICATION_SNAPSHOT_OUT,html.replace(/data-notification-banner="[^"]*"/g,'data-notification-banner="m:local"'));
+ }
  const originalKey=await banner.getAttribute('data-notification-banner');
  await banner.hover();await page.waitForTimeout(150);
  assert(await page.locator('[data-notification-banner]').first().getAttribute('data-notification-engaged'),'Native hover reaches the owner');

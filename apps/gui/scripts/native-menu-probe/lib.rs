@@ -50,6 +50,8 @@ pub unsafe extern "C" fn probe_show(
     height: f64,
     width: f64,
 ) -> bool {
+    let document = unsafe { text(html) };
+    let notification = document.contains("data-notification-banners");
     let request = menu_overlay::MenuRequest {
         id: unsafe { text(id) },
         at: menu_overlay::MenuSpot {
@@ -60,8 +62,8 @@ pub unsafe extern "C" fn probe_show(
             across: width,
             above,
         },
-        rows: serde_json::json!({"groups":[{"candidates":[{"key":"m:local"},{"key":"m:remote"}]}],"at":0}),
-        html: Some(unsafe { text(html) }),
+        rows: serde_json::json!({"notification":notification,"groups":[{"candidates":[{"key":"m:local"},{"key":"m:remote"}]}],"at":0}),
+        html: Some(document),
     };
     match menu_overlay::ios::show(&AppHandle, face.cast(), "main", request) {
         Ok(took) => took,
