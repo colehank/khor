@@ -68,3 +68,11 @@ Artifact已校验564项CRC/size。小页diagnosis只有2次backward（tail+1次o
 
 
 远端e9d4/Quality42767913845前端类型检查报TS2367：tail分支已返回后，冗余`direction!=='tail'`比较被TS判为不可能。已删除多余比较；前端不是通过。e130/42768731685同源也会受影响，需取消旧run，重新验证本修复。不得以Python语法解析冒充TS类型检查。
+
+## 用户已明确澄清
+
+用户异步回答原话：`选择文本`；`修改用户消息并重新生成`。不再是待确认／推测。选择文本实现符合回答。编辑需求确认为任意历史用户消息编辑并从该处重新生成；当前宿主缺可靠anchoredrewind，沿用用户原话“不行就算了”本轮暂不开放，已明确告知用户。不能把appendprompt称为编辑。
+
+## a24验证结果
+
+Quality42768918548：frontend+GUI全绿；原有56App案例全绿（严格<3px会话切换锚点已恢复）；桌面long-history普通页和4entry小页均绿，包含填充/自动older/回到底部/复制失败重试/选择文本。两项手机longhistory在进入会话前等待scroller失败：fixture会话标题改为长历史，而bootstrap仍按旧标题找要点击的行。改为真实会话ID与行data-row匹配，继续走正式row.click，避免任何标题改名造成Lab无法进入；不改生产组件。a24官方artifact transfer5067进行中，到chat-history-a24-review。新手机菜单尚未验证，不能声称全部完成。下一run只含Lab入口修复。

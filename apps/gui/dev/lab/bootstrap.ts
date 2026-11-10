@@ -87,7 +87,7 @@ if (theme && ['light', 'dark', 'auto'].includes(theme)) localStorage.setItem('kh
 if (runtime.mode === 'frontend' && scene.row) {
   const enter = () => {
     if (document.querySelector('[data-session-screen]')) {observer.disconnect();return;}
-    const row = [...document.querySelectorAll<HTMLElement>('[data-list] [data-row-open]')].find(el => el.textContent?.includes(scene.row!));
+    const row = [...document.querySelectorAll<HTMLElement>('[data-list] [data-row-open]')].find(el => el.closest('[data-row]')?.getAttribute('data-row')===scene.session);
     if (row) {row.click();observer.disconnect();}
   };
   const observer = new MutationObserver(enter);
