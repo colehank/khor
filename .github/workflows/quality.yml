@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction]
+        options: [sync, delegation, installer, format, interaction, mac-package]
         default: sync
 permissions:
   contents: read
@@ -153,3 +153,56 @@ jobs:
             ${{ runner.temp }}/khor-updates-ui
             /tmp/khor-attachment-ui-check/ui
           if-no-files-found: warn
+
+  mac-package:
+    if: inputs.slice == 'mac-package'
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      TARGET: aarch64-apple-darwin
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/native-tools
+        with:
+          target: aarch64-apple-darwin
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - run: npm ci --prefix apps/gui && npm run build --prefix apps/gui
+      - run: npm ci --prefix apps/agent && node apps/agent/build.mjs "$TARGET" apps/agent/dist/khor-agent
+      - name: Build the actual unsigned App with its matching CLI
+        env:
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+        run: |
+          set -euo pipefail
+          cargo build --locked -p khor-cli --bin khor --target "$TARGET" --release
+          mkdir -p apps/gui/src-tauri/binaries
+          cp "target/$TARGET/release/khor" "apps/gui/src-tauri/binaries/khor-$TARGET"
+          python3 scripts/apple_release.py mac-build --target "$TARGET" --signed false
+      - name: Verify the same program identities survive the real PKG
+        run: |
+          mkdir -p "$RUNNER_TEMP/mac-package-proof"
+          PYTHONPATH=scripts python3 - <<'PYCODE'
+          import json, os, pathlib, subprocess
+          from mac_installer import build, extract
+          from release_manifest import executable_info, source_sha, version
+          app = pathlib.Path("target") / os.environ["TARGET"] / "release/bundle/macos/Khor.app"
+          directory = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mac-package-proof"
+          package = directory / "Khor.pkg"
+          build(app, package, version(), False)
+          installed = extract(package, pathlib.Path(os.environ["RUNNER_TEMP"]) / "package-expansion")
+          gui = executable_info(installed / "Contents/MacOS/khor-gui")
+          cli = executable_info(installed / "Contents/MacOS/khor")
+          assert gui["component"] == "desktop-app" and cli["component"] == "cli"
+          assert all(gui[key] == cli[key] for key in ("build", "platform", "contract"))
+          assert (installed / "Contents/MacOS/khor").read_bytes() == (app / "Contents/MacOS/khor").read_bytes()
+          (directory / "proof.json").write_text(json.dumps({"source": source_sha(), "app": gui, "cli": cli}, indent=2))
+          PYCODE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: mac-package-proof
+          path: ${{ runner.temp }}/mac-package-proof/proof.json
+          if-no-files-found: error
