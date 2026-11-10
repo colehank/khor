@@ -185,6 +185,18 @@ async function inspect(browser, scene, size, data = {}) {
       const document = await page.locator('.cm-editor, [data-file-preview]').first().innerText();
       if (!document.includes('fixture data')) errors.push('Actual file body is missing');
       if (size.width >= 500) {
+        // Click real conversation links, not the content picker's in-tab road.
+        const tabs=()=>page.evaluate(async()=>(await(await fetch('/api/tabs_list',{method:'POST',body:JSON.stringify({kind:'content'})})).json()).tabs);
+        const beforeLinks=await tabs(),fileTab=beforeLinks.find(tab=>tab.url==='/preview/project/README.md');
+        assert(fileTab,'The first clicked file is a durable content tab');
+        await page.getByRole('link',{name:'Open Lab page',exact:true}).click();
+        await page.locator('[data-content-visible="true"] .mobile-content-page').waitFor();
+        const afterPage=await tabs();
+        assert.equal(afterPage.find(tab=>tab.id===fileTab.id)?.url,fileTab.url,'A second message link must not replace the first document');
+        assert(afterPage.some(tab=>tab.url.endsWith('/lab/example')&&tab.id!==fileTab.id),'The webpage has its own tab');
+        await page.locator('[data-link="/preview/project/README.md"]').click();
+        await page.locator('[data-content-visible="true"] .cm-editor, [data-content-visible="true"] [data-file-preview]').waitFor();
+        assert.equal((await tabs()).find(tab=>tab.id===fileTab.id)?.url,fileTab.url,'Reopening a message link selects its existing file');
         await checkContentToolbar('file');
         for (const width of [1024,1280]) {
           await page.setViewportSize({width,height:size.height});

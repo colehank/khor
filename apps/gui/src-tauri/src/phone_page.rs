@@ -1296,6 +1296,7 @@ pub fn open(
                     return true;
                 }
                 unwatch(page);
+                crate::page_retire::stop(&page.view);
                 let _: () = msg_send![&*page.view, removeFromSuperview];
                 pages.remove(tab);
             }
@@ -1492,6 +1493,7 @@ fn retire_view(tab: &str) {
         if let Some(page) = pages.borrow_mut().remove(tab) {
             unwatch(&page);
             unsafe {
+                crate::page_retire::stop(&page.view);
                 let _: () = msg_send![&*page.view, removeFromSuperview];
             }
         }

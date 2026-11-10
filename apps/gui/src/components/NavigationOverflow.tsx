@@ -2,7 +2,7 @@ import type {ReactElement} from "react";
 import type {NavSeat} from "@/components/FloatNav";
 import {IconGear,IconNetwork} from "@/components/icons";
 import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger} from "@/components/ui/dropdown-menu";
-import {menu} from "@/gen/catalog";
+import {gui,menu} from "@/gen/catalog";
 
 /** Hidden landings and More are peers; each opens its own navigation. */
 export function NavigationOverflow({seats,onGo,onMore,onMe,mobile=false,children}: {

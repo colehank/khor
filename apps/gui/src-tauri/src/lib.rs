@@ -7,6 +7,8 @@ mod menu_overlay;
 mod native_io;
 mod page_history;
 mod page_navigation;
+#[cfg(any(target_os = "macos", target_os = "ios"))]
+mod page_retire;
 mod updater_commands;
 
 #[cfg(all(desktop, unix))]
@@ -2910,6 +2912,11 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     let Some(view) = app.get_webview(&label) else {
         return Ok(());
     };
+    #[cfg(target_os = "macos")]
+    view.with_webview(|native| unsafe {
+        let page = &*(native.inner() as *mut objc2::runtime::AnyObject);
+        page_retire::stop(page);
+    }).map_err(|e| e.to_string())?;
     view.close().map_err(|e| e.to_string())
 }
 
