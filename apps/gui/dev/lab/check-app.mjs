@@ -232,6 +232,20 @@ async function inspect(browser, scene, size, data = {}) {
       const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
       assert.equal(count,machines,'Machine fixture count must reach the actual App');
       assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
+      if (scene==='list' && size.width >= 500 && machines===3) {
+        const parent=page.locator('[data-row="wide/all"] [data-row-open]');
+        await parent.click();
+        await parent.click();
+        const tasks=page.locator('[data-child-task-row]');
+        await tasks.first().waitFor();
+        assert.equal(await tasks.count(),3,'The active Khor row opens its child list');
+        await tasks.first().click();
+        assert.match(await page.locator('[data-child-task-detail]').innerText(),/3 checks passed/);
+        await page.keyboard.press('Escape');
+        await tasks.first().waitFor();
+        await page.keyboard.press('Escape');
+        await tasks.first().waitFor({state:'detached'});
+      }
       if(scene==='devices'){
         assert.equal(await page.locator('[data-mandala-map]').count(),0,'An unselected machine page must leave its detail area empty');
         assert.equal(await page.locator('[data-machine-card]').count(),0,'The machine overview must not silently select the first machine');

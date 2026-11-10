@@ -152,6 +152,7 @@ import { DoctorPage } from "@/views/more/DoctorPage";
 import { ConnectionPage } from "@/views/more/ConnectionPage";
 import { SessionPage, WorkspacePage } from "@/views/more/GroupPages";
 import { MyKhorPage } from "@/views/more/MyKhorPage";
+import { ChildTasks } from "@/views/ChildTasks";
 import { SecurityPage } from "@/views/more/SecurityPage";
 import { AboutPage } from "@/views/more/AboutPage";
 import { MachineCard, MachineVerbs } from "@/views/MachineCard";
@@ -928,6 +929,12 @@ export default function App() {
     // `open` is a stable callback; the object around it is not.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionTabs.open, readSession]);
+
+  const [childTasks, setChildTasks] = useState<SessionRow | null>(null);
+  const openSessionRow = (row: SessionRow) => {
+    if (row.id === selected && row.category === "khor" && row.execution_home) setChildTasks(row);
+    else onSelect(row);
+  };
 
   const openNotification = (item: NotificationBanner): boolean => {
     if (item.members) {
@@ -2097,7 +2104,7 @@ export default function App() {
             query={queries.sessions}
             words={words.sessions}
             selected={selected}
-            onSelect={onSelect}
+            onSelect={openSessionRow}
             onPin={onPinSession}
             onClose={onCloseSession}
             pinFailed={pinFailed}
@@ -2871,6 +2878,7 @@ export default function App() {
       {/* 退出时还有草稿 (ruling 39). The app's half — a browser is
           asked by `beforeunload` in its own words and never sees this.
           No 存 button: `CloseDraftDialog`'s head says why. */}
+      {childTasks && <ChildTasks key={childTasks.id} parent={childTasks} onClose={() => setChildTasks(null)}/>}
       <CloseDraftDialog
         name={null}
         quitting={quitting ?? undefined}

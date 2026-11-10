@@ -1749,6 +1749,13 @@ journal-why-no-public = "this machine does not know its public address (no relay
 journal-why-punched = "{0} round(s) of hole punching, none of its candidates answered"
 
 [gui]
+child_tasks = "Child tasks"
+child_tasks_empty = "No child tasks yet"
+child_task_waiting = "Waiting for input"
+child_task_unavailable = "Status unavailable"
+child_task_cancel = "Cancel task"
+child_task_retry = "Retry task"
+child_task_canceled = "Canceled"
 term-preview-activate = "Terminal preview. Activate to preview the completion cue"
 term-theme-custom-row = "Custom palette"
 session-association = "Session association"

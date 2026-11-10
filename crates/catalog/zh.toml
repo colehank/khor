@@ -2713,6 +2713,13 @@ journal-why-no-public = "本机不知道自己的公网地址（没有中继提�
 journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
+child_tasks = "子任务"
+child_tasks_empty = "还没有子任务"
+child_task_waiting = "等待输入"
+child_task_unavailable = "暂时无法读取状态"
+child_task_cancel = "取消任务"
+child_task_retry = "重试任务"
+child_task_canceled = "已取消"
 term-preview-activate = "终端预览，点击体验完成提示"
 term-theme-custom-row = "自定义配色"
 session-association = "会话关联"

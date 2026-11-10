@@ -16,6 +16,8 @@ mod output;
 use crate::agent_process as process;
 #[path = "khor_agent_conversations.rs"]
 mod conversations;
+#[path = "khor_agent_children.rs"]
+mod children;
 #[path = "khor_agent_history.rs"]
 mod history;
 #[path = "khor_agent_runtime.rs"]
@@ -571,6 +573,9 @@ impl Node {
         match action {
             Action::Conversation { .. } | Action::CreateConversation { .. } => {
                 return Err(msg::agent_arguments().into());
+            }
+            Action::Manage { request } if request["operation"] == "children" => {
+                report.data = Some(children::read(self, &board, &request).await?);
             }
             Action::Manage { request } if request["operation"] == "history" => {
                 let run = request["run"]

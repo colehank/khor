@@ -138,6 +138,12 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const acpSetupCalls: {agent:string;machine:string;operation:string}[] = [];
   const interactionAnswers:unknown[]=[];
   const view = (data: unknown = null) => ({ config: modelConfig, accounts: modelAccounts, run: null, data });
+  const childTasks = [
+    {agent:'codex-acp', machine:'MacLab', state:'completed', result:'3 checks passed'},
+    {agent:'claude-acp', machine:'HPC-Linux', state:'waiting', result:null},
+    {agent:'a2a:review', machine:'Mac mini 构建机', state:'failed', result:'The review did not finish'},
+  ].map((task,i)=>({...task,run:'fixture-run',key:'fixture-child-'+i,task:'task-'+i,context:'context-'+i,
+    can_cancel:task.state==='waiting',can_retry:task.state==='failed'}));
   function agentAction(body: Record<string, any>) {
     if (body.action === "catalog") return view(providers);
     const p = body.payload ?? {};
@@ -147,6 +153,15 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     if(body.action==='answer'&&p.run==='khor-preview-run'&&p.ask===khorApproval?.id){khorAnswers.push({ask:p.ask,allow:p.allow});khorApproval=null;khorRunning=false;return view();}
     if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
     if (body.action !== "manage") return view();
+    if (p.operation === "children") {
+      const task = childTasks.find(child=>child.run===p.run&&child.key===p.key);
+      if (p.action==="cancel" && task?.can_cancel) {
+        task.state="canceled";task.can_cancel=false;task.can_retry=true;
+      } else if (p.action==="retry" && task?.can_retry) {
+        task.state="working";task.can_cancel=true;task.can_retry=false;task.result=null;
+      }
+      return view({children:childTasks});
+    }
     if (p.operation === 'acp_initialize' || p.operation === 'acp_authenticate') {
       acpSetupCalls.push({agent:String(p.agent),machine:String(body.machine),operation:p.operation});
       const id=`acp-${++jobCounter}`;
