@@ -86,7 +86,9 @@ jobs:
           cargo build --locked -p khor-acp --bin acp-stub
           export KHOR_TEST_MCP_EXECUTABLE="$PWD/target/debug/khor"
           export KHOR_TEST_ACP_STUB="$PWD/target/debug/acp-stub"
-          cargo test --locked -p khor-node --lib a_real_ -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/delegation.log"
+          cargo test --locked -p khor-node --lib mcp_worker::tests::a_real_ -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/delegation.log"
+          cargo test --locked -p khor-node --lib a_stopped_codex_does_not_demote_its_hosts_active_selected_thread -- --test-threads=1
+          cargo test --locked -p khor-node --test pairing pairing_joins_both_tables_and_chat_flows_both_ways -- --test-threads=1
       - if: always()
         run: |
           cargo fmt --all
