@@ -57,3 +57,7 @@ Quality42764941090（dae42cfe）：前端构建和GUI绿，完整App56既有案�
 ## 官方红例进一步定位（不能仅归因8页）
 
 Artifact已校验564项CRC/size。小页diagnosis只有2次backward（tail+1次older），724/792px视口仅1个残缺agent条目，之后22次无新增的newer轮询。直接原因是useHistoryPrefetch中`const older=...&&canPrefetchOlder()`最后是boolean，seen键一直`older:true`，第一次补页后误当重复游标停止。新增historyPrefetchTarget保留真实opaque cursor，hook用direction+cursor去重；新增模型反例。前一轮pack和IO预算仍解决后续小页容量问题，不能说红例已走到8页。正常页红例读取锚点/自动补页已经工作；玻璃data属性测试错误已修。
+
+## 原生游标边界核查
+
+进一步核对apps/gui/core/src/chat.rs和crates/node/src/adaptor/transcript_page.rs：原生before/after游标可用不同record position表示相邻边界，不能只靠字符串相等合并。receiveHistoryPage新增可选requestedCursor，由单pending的historyReader传入当次真实游标；只在匹配当前window边界时允许新入页和既有边页合并，旧页间仍需要一致边界。新增不同opaque编码与stale请求模型反例。不解码前端游标。该补充当前dirty，等5daCI返回一并处理实际结果后再提交最终版。

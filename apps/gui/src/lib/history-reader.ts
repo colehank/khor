@@ -63,7 +63,7 @@ export function historyReader(source: Source, changed: (state: HistoryReaderStat
       failed=null;
       initialBefore = null;
       catchingUp = direction === 'newer' && page.has_more;
-      const nextWindow = receiveHistoryPage(state.window, page, direction);
+      const nextWindow = receiveHistoryPage(state.window, page, direction,cursor);
       state = { ...state, window: positioned && !page.reset ? { ...nextWindow, latest: false } : nextWindow, loaded: true,
         reset: page.reset, error: null };
     }

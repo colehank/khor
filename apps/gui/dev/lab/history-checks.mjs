@@ -54,7 +54,7 @@ async function checkMessageActions(page,context,{mobile,engine,report,name}){
   await page.waitForFunction(()=>!!window.__chatCopied);assert((await tool.getAttribute('aria-label'))==='已复制');
  }else{
   await openMenu();await page.locator('[data-menu-item="copy"]').click();
-  await page.getByText('复制失败，请重试',{exact:true}).last().waitFor();assert.equal(await page.locator('[data-row-menu]:visible').count(),1,'Copy failure remains actionable');
+  await page.locator('[data-menu-note=copy]').waitFor();assert.equal(await page.locator('[data-row-menu]:visible').count(),1,'Copy failure remains actionable');
   await page.evaluate(()=>window.__chatCopyFails=false);await page.locator('[data-menu-item="copy"]').click();
   await page.waitForFunction(()=>!!window.__chatCopied);
  }

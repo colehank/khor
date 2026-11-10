@@ -107,6 +107,19 @@ test('contiguous streamed short pages retain a viewport-sized history within the
  const separated=receive(receive(EMPTY,page('tail'),'tail'),page('unrelated'),'older');
  assert.equal(separated.pages.length,2,'Opaque cursors must prove contiguity before combining cached pages');
 });
+test('native before and after cursor encodings join only through their completed request',()=>{
+ const tail=page('tail',{older:'opaque-before-record-B'}),older=page('older',{newer:'opaque-after-record-A'});
+ const w=receive(EMPTY,tail,'tail');
+ assert.equal(receive(w,older,'older').pages.length,2,'Cursor strings alone do not prove this native boundary');
+ const joined=receive(w,older,'older',w.older);
+ assert.equal(joined.pages.length,1,'The serialized reader request proves adjacency without decoding opaque cursor positions');
+ assert.deepEqual(historyEntries(joined).map(e=>e.key),['older:0','tail:0']);
+ assert.equal(joined.older,'before:older');assert.equal(joined.newer,'after:tail');
+ assert.equal(receive(w,older,'older','another-request').pages.length,2,'A stale or unrelated request does not authorize a merge');
+ const next=page('next',{older:'opaque-before-record-C'});
+ const after=receive(w,next,'newer',w.newer);assert.equal(after.pages.length,1);
+ assert.equal(after.older,w.older);assert.equal(after.newer,'after:next');
+});
 test('packed history still evicts at the original entry budget and exposes a reload cursor',()=>{
  const chunk=(from,to)=>({entries:Array.from({length:to-from},(_,i)=>entry(String(from+i))),references:[],
   older:from?`at:${from}`:null,newer:`at:${to}`,has_more:false,reset:false,encoded_bytes:(to-from)*100});

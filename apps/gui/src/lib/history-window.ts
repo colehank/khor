@@ -40,11 +40,16 @@ function exceedsBudget(pages: HistoryPage[]) {
 /** A server may send tiny pages while a reply streams. Pack only proven
  * contiguous body pages; keep wire-size and cache-size bounds unchanged.
  * Reference-only ranges retain their replacement semantics below. */
-function packHistoryPages(source:HistoryPage[]):HistoryPage[]{
+function packHistoryPages(source:HistoryPage[],connected?:'older'|'newer'):HistoryPage[]{
  const packed:HistoryPage[]=[];
- for(const right of source){
+ for(const [index,right] of source.entries()){
   const left=packed.at(-1);
-  if(left&&left.entries.length&&right.entries.length&&left.newer!==null&&left.newer===right.older
+  // Native before/after cursors can name the same boundary with different
+  // record positions. The serialized request, not decoding cursor internals,
+  // proves adjacency at the newly admitted edge.
+  const adjacent=left&&(left.newer===right.older
+   ||(connected==='older'&&index===1)||(connected==='newer'&&index===source.length-1));
+  if(left&&adjacent&&left.entries.length&&right.entries.length
    &&left.entries.length+right.entries.length<=128
    &&left.references.length+right.references.length<=256
    &&left.encoded_bytes+right.encoded_bytes<=PAGE_BYTES){
@@ -56,7 +61,7 @@ function packHistoryPages(source:HistoryPage[]):HistoryPage[]{
  return packed;
 }
 /** Admit a bounded wire page before folding or rendering any of its entries. */
-export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, direction: HistoryDirection): HistoryWindow {
+export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, direction: HistoryDirection,requestedCursor?:string|null): HistoryWindow {
   if (!Number.isSafeInteger(page.encoded_bytes) || page.encoded_bytes < 0 || page.encoded_bytes > PAGE_BYTES
     || page.entries.length > 128 || page.references.length > 256)
     throw new Error('History page exceeds its declared budget');
@@ -78,7 +83,8 @@ export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, dir
       pages = [...window.pages.slice(0, -1), { ...page, older: last.older }];
     }
   }
-  pages=packHistoryPages(pages);
+  const connected=requestedCursor!==undefined&&requestedCursor===(direction==='older'?window.older:window.newer);
+  pages=packHistoryPages(pages,connected&&direction!=='tail'?direction:undefined);
   let evictedNewer = false;
   let evictedOlder = false;
   while (pages.length > 1 && exceedsBudget(pages)) {
