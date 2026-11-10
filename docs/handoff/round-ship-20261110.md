@@ -34,3 +34,12 @@ main图标同步后effe2793/Quality42779150845前端在catalog生成时红：最
 45c5a375为先红探针，独立verify/native-notification-red-20261110运行42783272495；74791dd9全量Quality42781818432仍在跑。原生通知复用menu_overlay的可信lease、resolved DOM快照以及同一份自包含输入桥（桌面脚本禁用iframe与iOS私有WKUserScript），状态、计时、滑动阈值、点击均回送原始React组件。native menu_input只接受当前lease现存候选的有限原始输入，远端page不能调用。系统文档预览通过promise租约暂停通知计时，返回继续；不会宣称DOM盖住QuickLook。refusal才短暂yield retained webpage，正常不隐藏浏览器。
 
 全量74791dd9的GUI完成：WebKit滚动/resize本次已过，updates-ui仍找旧dialog-footer关闭钮，已改新TaskActions leading槽；recovery的directory-required-shell报告facts=null/errors=[Browser page crashed]，是原生WebKit测试进程崩溃，尚不当作业务结论，最终源码会复跑。45c5先红有探针未显式初始化transport的问题，已用独立baseline分支5c8ef87e/42785087686修正再跑，不能把前一次ReferenceError说成预期红证据。新增共享DOM native notice桥已在8dec7839/e0bdb71f，完善iOS生产adapter隔离simulator探针与CI receipt，非物理触摸。
+
+## 17:00收口进展
+
+- 原生通知源码已到236cef38（远端integration同），新增iOS实际adapter隔离simulator探针，源码bridge+WebView层级/响应器/原网页保留都会验；物理UITouch仍不宣称覆盖。上游MenuFace旧fixture对新menuInput改namespace导入保持未调用路径的兼容。
+- baseline5c8ef87e/42785087686 notification-ui按预期showMenu5000ms超时，明确无ReferenceError；外部native-notification-red-receipt.json保留。前一45c5探针初始化错误不能算红证据。
+- ed99da53全量42786231805正在运行；scripts只报3Rust格式文件（lib.rs/menu_overlay.rs/ios.rs），其余动作lint过。用临时baseline验证分支覆盖quality.yml仅作remote rustfmt写出source-only patch，run42786844142固定checkout236cef38。补丁待取回并核对SHA/gitapply，临时workflow不合并进main。
+- 74791dd9全量42781818432曾有GUI两红（旧footer selector已改，WebKit页面崩溃待最终复跑）。为让新源码验证开始，旧运行取消于node-native最后的signedSSH验收，不把cancelled称绿；新全量会重跑。
+- 42784959928/42785435107为相同integration ref排队的过期运行，GitHub pending replacement可自动cancel；不拿这些作发布证据。
+- 下一步：格式补丁、新native UI/原生compile探针错误修复，最终全Quality；Lab handover；合main/tagRC12/全发行分发直到TF+updater+GH完成。尚无新tag/release，用户已解除HOLD。

@@ -254,8 +254,11 @@ pub fn show(
             msg_send![class!(WKWebsiteDataStore), nonPersistentDataStore];
         let _: () = msg_send![&*config, setWebsiteDataStore: &*store];
         let controller: *mut AnyObject = msg_send![&*config, userContentController];
-        let shared = include_str!("../../../src/lib/native-notification-dom.js")
-            .replacen("export function notificationDOM", "function notificationDOM", 1);
+        let shared = include_str!("../../../src/lib/native-notification-dom.js").replacen(
+            "export function notificationDOM",
+            "function notificationDOM",
+            1,
+        );
         let source = NSString::from_str(&format!("{shared}\n{BRIDGE}"));
         let script: Allocated<AnyObject> = msg_send![class!(WKUserScript), alloc];
         let script: Retained<AnyObject> = msg_send![script, initWithSource: &*source, injectionTime: 1isize, forMainFrameOnly: true];
@@ -425,7 +428,11 @@ fn receive(message: *mut AnyObject) {
     if let Some(input) = value.get("input") {
         if let Ok(event) = serde_json::from_value::<super::NotificationInput>(input.clone()) {
             if let (Some(owner), Some(app)) = (super::input_owner(id, &event), APP.get()) {
-                let _ = app.emit_to(owner, "menu:input", serde_json::json!({"id":id,"event":event}));
+                let _ = app.emit_to(
+                    owner,
+                    "menu:input",
+                    serde_json::json!({"id":id,"event":event}),
+                );
             }
         }
         return;

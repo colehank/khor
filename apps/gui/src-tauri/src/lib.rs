@@ -3079,12 +3079,23 @@ fn menu_rows(webview: tauri::Webview) -> Result<Option<menu_overlay::MenuSnapsho
     }
 }
 #[tauri::command]
-fn menu_input(webview: tauri::Webview, id: String, event: menu_overlay::NotificationInput) -> Result<(), String> {
+fn menu_input(
+    webview: tauri::Webview,
+    id: String,
+    event: menu_overlay::NotificationInput,
+) -> Result<(), String> {
     use tauri::Manager;
     menu_renderer(&webview)?;
     if let Some(owner) = menu_overlay::input_owner(&id, &event) {
         use tauri::Emitter;
-        webview.app_handle().emit_to(owner, "menu:input", serde_json::json!({"id":id,"event":event})).map_err(|e|e.to_string())?;
+        webview
+            .app_handle()
+            .emit_to(
+                owner,
+                "menu:input",
+                serde_json::json!({"id":id,"event":event}),
+            )
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }

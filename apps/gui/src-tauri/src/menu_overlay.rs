@@ -58,11 +58,24 @@ pub struct NotificationInput {
 
 impl NotificationInput {
     fn valid(&self) -> bool {
-        matches!(self.kind.as_str(), "pointerdown" | "pointermove" | "pointerup" | "pointercancel" | "pointerover" | "pointerout" | "click" | "keydown" | "focusin" | "focusout")
-            && matches!(self.action.as_str(), "open" | "dismiss")
+        matches!(
+            self.kind.as_str(),
+            "pointerdown"
+                | "pointermove"
+                | "pointerup"
+                | "pointercancel"
+                | "pointerover"
+                | "pointerout"
+                | "click"
+                | "keydown"
+                | "focusin"
+                | "focusout"
+        ) && matches!(self.action.as_str(), "open" | "dismiss")
             && matches!(self.pointer_type.as_str(), "mouse" | "touch" | "pen")
             && self.key.len() <= 1024
-            && [self.x, self.y].iter().all(|n| n.is_finite() && n.abs() <= 100_000.0)
+            && [self.x, self.y]
+                .iter()
+                .all(|n| n.is_finite() && n.abs() <= 100_000.0)
             && (-1..=5).contains(&self.button)
     }
 }
@@ -103,7 +116,9 @@ impl MenuRequest {
         MenuSnapshot {
             id: self.id.clone(),
             rows: self.rows.clone(),
-            html: (self.rows["notification"].as_bool() == Some(true)).then(|| self.html.clone()).flatten(),
+            html: (self.rows["notification"].as_bool() == Some(true))
+                .then(|| self.html.clone())
+                .flatten(),
         }
     }
 
@@ -165,9 +180,16 @@ impl Lease {
     }
 
     fn input(&self, id: &str, event: &NotificationInput) -> Option<String> {
-        if !event.valid() { return None; }
-        self.held.as_ref()
-            .filter(|held| held.request.id == id && held.request.rows["notification"].as_bool() == Some(true) && held.request.contains(&event.key))
+        if !event.valid() {
+            return None;
+        }
+        self.held
+            .as_ref()
+            .filter(|held| {
+                held.request.id == id
+                    && held.request.rows["notification"].as_bool() == Some(true)
+                    && held.request.contains(&event.key)
+            })
             .map(|held| held.owner.clone())
     }
 
