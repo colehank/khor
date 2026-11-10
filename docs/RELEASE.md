@@ -98,3 +98,5 @@ Python测试覆盖tag分类、错源/错run拒绝、失败Quality阻断、公证
 官方参考：[Tauri GitHub流水线](https://v2.tauri.app/distribute/pipelines/github/)、[Apple测试与正式分发](https://developer.apple.com/documentation/xcode/distributing-your-app-for-beta-testing-and-releases/)、[GitHub不可变Release](https://docs.github.com/en/code-security/concepts/supply-chain-security/immutable-releases)。
 
 公证参考：[Apple自定义公证工作流](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow)、[Tauri macOS签名](https://v2.tauri.app/distribute/sign/macos/)。
+
+macOS 更新／原生 WebKit 借网和 iOS 模拟器 UI 分别运行在 `mac-updates` 与 `ios-native-ui` 两个独立托管作业中，均消费当前提交的同一前端工件。模拟器生命周期不再与 Mac 原生网络探针共用宿主；全部断言保留，候选聚合作业继续要求整个 Quality 成功。
