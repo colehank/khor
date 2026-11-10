@@ -206,10 +206,10 @@ try {
   assert.match(await dialog.innerText(),/设置.*关于|Settings.*About/,'externally owned App installations keep their own update route');
   await page.setViewportSize({width:390,height:800});
   await page.screenshot({path:join(out,'machine-updates-mobile.png')});
-  await dialog.locator('[data-slot="dialog-footer"]').getByRole('button',{name:/关闭|Close/}).click();
+  await dialog.locator('[data-task-action="leading"]').getByRole('button',{name:/关闭|Close/}).click();
   await machines.getByRole('button',{name:/更新多台机器|Update multiple machines/}).click();
   assert.match(await page.getByRole('dialog').innerText(),/更新未完成|Update/,'closing the chooser does not lose the per-machine result');
-  await page.getByRole('dialog').locator('[data-slot="dialog-footer"]').getByRole('button',{name:/关闭|Close/}).click();
+  await page.getByRole('dialog').locator('[data-task-action="leading"]').getByRole('button',{name:/关闭|Close/}).click();
   assert.deepEqual(errors,[]);
   await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?status-failure=1`);
   await page.locator('[data-update-operation-failure] summary').click();

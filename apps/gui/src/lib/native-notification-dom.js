@@ -6,7 +6,7 @@ export function notificationDOM(scope, emit) {
   let observer, captured = null;
   function size() {
     const root = doc.querySelector('[data-notification-banners]');
-    if (root) emit({h: root.getBoundingClientRect().height, radius: 0, dark: doc.documentElement.style.colorScheme === 'dark'});
+    if (root) emit({h: root.getBoundingClientRect().height, radius: parseFloat(scope.getComputedStyle(root.querySelector('[data-notification-banner]') || root).borderRadius) || 0, dark: doc.documentElement.style.colorScheme === 'dark'});
   }
   function sync(old, next) {
     if (old.nodeType !== next.nodeType || old.nodeName !== next.nodeName) { old.replaceWith(next.cloneNode(true)); return; }
