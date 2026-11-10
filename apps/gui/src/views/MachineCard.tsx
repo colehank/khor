@@ -24,13 +24,7 @@ import { DIAL_CARD_SIZE, DIAL_CARD_STROKE, hugRatio } from "@/components/Face";
    ended is this card reading them. */
 import { AxisLabel, PlotSettings } from "@/components/PlotControls";
 import { PLOT, dotRadius, dotSpan, everyRowHas, labelSeat, tickFractions, usePlotBox, xTickY } from "@/lib/plot";
-import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconCode, IconFiles, IconMore, IconPlus, IconSessions } from "@/components/icons";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { IconBack, IconBrowser, IconChevronDown, IconChevronUp, IconFiles, IconPlus, IconSessions } from "@/components/icons";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { useNarrow } from "@/hooks/use-narrow";
 import { NarrowHead } from "@/components/SideHead";
@@ -316,7 +310,6 @@ function Body({
           {/* The pane's width, capped and centred (`DetailFrame`, UX-22). */}
           <DetailFrame className="flex flex-col gap-row">
             <Strip row={row} rows={rows} sayModel={sayModel} />
-            <MachineUpdates row={row} rows={rows} />
             {!!row.sponsor && row.sponsor === rows.find((r) => r.me)?.name && onPromote && (
               <div className="flex justify-end">
                 <Button data-promote onClick={() => onPromote(row)}>{gui.promote_ask}</Button>
@@ -585,7 +578,7 @@ function JournalRow({ row }: { row: DeviceRow }) {
       {lines === null ? !why && <RegionState state="loading-never" /> : (
         <>
           <div data-journal-summary className="text-callout text-muted-foreground tabular-nums">{summary}</div>
-          {lines.map((l, i) => (
+          {lines.toSorted((a, b) => b.at - a.at).map((l, i) => (
             <div key={`${l.at}-${i}`} data-journal-line={l.trouble ? "trouble" : "ok"} className="flex gap-row text-callout">
               <span className="flex-none text-caption text-tertiary tabular-nums">{l.when}</span>
               <span className="min-w-0 flex-1 break-words text-muted-foreground">
@@ -647,6 +640,36 @@ function ConnectionFact({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
   );
 }
 
+function VersionFact({row,version}:{row:DeviceRow;version:string}) {
+  const [open,setOpen]=useState(false);
+  const narrow=useNarrow();
+  const info=<button type="button" data-version-info aria-label={gui.identity_version}
+    className="inline-flex size-touch -my-in -me-in flex-none items-center justify-center rounded-full text-muted-foreground hover:bg-fill focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+    <span aria-hidden="true" className="inline-flex size-4 items-center justify-center rounded-full border border-current text-caption">i</span>
+  </button>;
+  const details=<div data-version-details className="flex min-h-0 flex-col gap-base overflow-y-auto">
+    <span className="tabular-nums">{version}</span>
+    <MachineUpdates row={row}/>
+  </div>;
+  return <span className="flex min-w-0 items-center gap-xxs">
+    <span data-vitals-unit="version" className="tabular-nums">{version}</span>
+    {narrow?<Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>{info}</DialogTrigger>
+      <TaskOverlay purpose="preview" initialHeight="fit">
+        <DialogHeader><DialogTitle>{gui.identity_version}</DialogTitle></DialogHeader>
+        {details}
+        <TaskActions close={<Button data-footer-trailing onClick={()=>setOpen(false)}>{gui.close}</Button>}/>
+      </TaskOverlay>
+    </Dialog>:<Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>{info}</PopoverTrigger>
+      <PopoverContent align="start" className="flex w-dialog max-w-[calc(100vw-var(--gap-pane)*2)] flex-col gap-base p-base" aria-label={gui.identity_version}>
+        <div className="text-headline">{gui.identity_version}</div>
+        {details}
+      </PopoverContent>
+    </Popover>}
+  </span>;
+}
+
 function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; sayModel: boolean }) {
   const far = isFar(row);
   const v = row.vitals?.vitals ?? null;
@@ -681,9 +704,7 @@ function Strip({ row, rows, sayModel }: { row: DeviceRow; rows: DeviceRow[]; say
     facts.push([
       "version",
       gui.identity_version,
-      <span data-vitals-unit="version" className="tabular-nums">
-        {v.version}
-      </span>,
+      <VersionFact key={row.id} row={row} version={v.version}/>,
     ]);
   }
   facts.push(["connection", gui.card_connection, <ConnectionFact key={row.id} row={row} rows={rows} />]);
@@ -869,7 +890,6 @@ export function MachineVerbs({
   webOn: boolean;
   onWeb: () => void;
 }) {
-  const narrow = useNarrow();
   type Verb = {
     key: string;
     word: string;
@@ -889,7 +909,7 @@ export function MachineVerbs({
     // 浏览, where this face can open a page at all (`pagesHere`; it used
     // to ask whether this machine hosts, which a phone never does though
     // it browses): in place since round 14, so it is a switch at every
-    // width — the narrow head folds it into 「…」 when it does not fit.
+    // width — the same navigation stays available on a narrow head.
     ...(pagesHere ? [{ key: "borrow-web", word: gui.borrow_web, Icon: IconBrowser, on: webOn, run: onWeb }] : []),
   ];
   const coded = !!code?.offered;
@@ -952,118 +972,15 @@ export function MachineVerbs({
     </>
   );
 
-  // **Narrow: when they do not fit, they fold into one 「…」** (the owner,
-  // 2026-10-02: 「窄窗口在放不下的情况下，就干脆这几个按钮收为一个 "..."」).
-  // Decided by measuring, not by counting or by a width: the unfolded
-  // pair is laid out unseen (`measure`), and the head folds when what the
-  // name would keep beside it is under its floor (`--head-name-floor`).
-  // The name and the buttons share the row's flexible room, so that sum
-  // does not move when the buttons fold — no flicker at the edge.
+  // Keep the same navigation controls while opening sessions or resizing.
+  // Folding changed both the target and the title's available width.
   const box = useRef<HTMLDivElement>(null);
-  const probe = useRef<HTMLDivElement>(null);
-  const [folded, setFolded] = useState(false);
-  const verbsKey = `${verbs.map((v) => v.key).join(",")}|${coded}`;
-  useLayoutEffect(() => {
-    if (!narrow) {
-      setFolded(false);
-      return;
-    }
-    const el = box.current;
-    const row = el?.parentElement;
-    if (!el || !row) return;
-    const check = () => {
-      const name = row.querySelector<HTMLElement>("[data-head-name]");
-      const full = probe.current?.getBoundingClientRect().width ?? 0;
-      if (!name || full === 0) return;
-      const cs = getComputedStyle(row);
-      const gap = parseFloat(cs.columnGap) || 0;
-      const floor = parseFloat(cs.getPropertyValue("--head-name-floor")) || 0;
-      const room = name.getBoundingClientRect().width + el.getBoundingClientRect().width;
-      setFolded(room - gap - full < floor);
-    };
-    check();
-    const ro = new ResizeObserver(check);
-    ro.observe(row);
-    return () => ro.disconnect();
-  }, [narrow, verbsKey]);
-
-  const anyOn = sessionsOn || filesOn || webOn || !!code?.up;
-  // The chosen verb's piece slides to the one pressed (F7.2, `lib/travel`).
   useTravel(
     "verbs",
     () => box.current?.querySelector<HTMLElement>("[data-machine-verbs]") ?? null,
     sessionsOn ? "sessions" : filesOn ? "files" : webOn ? "web" : null,
   );
-  return (
-    <div ref={box} data-machine-head-buttons data-folded={folded || undefined} className="relative flex flex-none items-center gap-in">
-      {narrow && (
-        <div ref={probe} aria-hidden inert className="pointer-events-none invisible absolute top-0 right-0 flex items-center gap-in">
-          {pair(true)}
-        </div>
-      )}
-      {!folded ? (
-        pair(false)
-      ) : (
-        <div className="glass grid size-head-ctl flex-none place-items-center rounded-full">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                data-slot="button"
-                data-verbs-more
-                data-on={anyOn}
-                aria-label={gui.rail_more}
-                className={cn(
-                  "relative grid size-head-item-h place-items-center rounded-full text-foreground",
-                  "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
-                  "data-[on=true]:glass-sel data-[state=open]:glass-sel",
-                )}
-              >
-                <IconMore />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="end"
-              sideOffset={8}
-              data-verbs-menu
-              onCloseAutoFocus={(e) => e.preventDefault()}
-              className="min-w-nav-menu"
-            >
-              {verbs.map(({ key, word, Icon, on, run }) => (
-                <DropdownMenuItem
-                  key={key}
-                  data-verb={key}
-                  data-on={on || undefined}
-                  onSelect={run}
-                  className={cn(
-                    "[&_svg]:size-nav-glyph",
-                    on && "glass-sel text-[var(--rail-on-ink)]",
-                  )}
-                >
-                  <Icon />
-                  {word}
-                </DropdownMenuItem>
-              ))}
-              {coded && code && (
-                <DropdownMenuItem
-                  data-verb="code"
-                  data-on={code.up || undefined}
-                  onSelect={code.want}
-                  className={cn(
-                    "[&_svg]:size-nav-glyph",
-                    code.up && "glass-sel",
-                  )}
-                >
-                  <IconCode />
-                  {gui.code_tab}
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      )}
-    </div>
-  );
+  return <div ref={box} data-machine-head-buttons className="relative flex flex-none items-center gap-in">{pair(false)}</div>;
 }
 
 /** One region of the card, in a box of its own.

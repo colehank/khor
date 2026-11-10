@@ -16,12 +16,13 @@ import React from 'react';import{createRoot}from'react-dom/client';import{Update
 import{RuntimeCacheSettings}from'/src/views/more/RuntimeCacheSettings';
 import{followUpdatePreparation}from'/src/lib/update-lifecycle';followUpdatePreparation();
 import{TooltipProvider}from'/src/components/ui/tooltip';import'/src/styles/tokens.css';import'/src/styles/app.css';
-createRoot(document.getElementById('root')).render(<TooltipProvider><UpdateSettings/><RuntimeCacheSettings enabled={true}/><MachineUpdates row={window.machineRows[0]} rows={window.machineRows}/></TooltipProvider>);`);
-let server,browser;
+createRoot(document.getElementById('root')).render(<TooltipProvider><UpdateSettings/><RuntimeCacheSettings enabled={true}/><MachineUpdates row={window.machineRows[0]} ${process.env.MACHINE_UPDATE_LEGACY_INPUT==='1'?'rows={window.machineRows}':''}/></TooltipProvider>);`);
+let server,browser,page;
+const errors=[];
 try {
   server=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:join(fixture,'.vite'),optimizeDeps:{entries:[join(fixture,'index.html')]},server:{host:'127.0.0.1',port:23839,strictPort:true,hmr:false},logLevel:'error'});await server.listen();
   browser=await chromium.launch({headless:true,...(process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{})});
-  const page=await browser.newPage({viewport:{width:800,height:760},locale:'zh-CN'});const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  page=await browser.newPage({viewport:{width:800,height:760},locale:'zh-CN'});page.on('pageerror',error=>errors.push(error.stack||error.message));
   await page.addInitScript(()=>{
     const callbacks=new Map();let next=1;
     window.updateCalls=[];
@@ -74,6 +75,7 @@ try {
   });
   await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/`);
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='plugin:event|listen'&&call.args.event==='app-update:prepare'));
+  await page.locator('[data-setting-row-name="update-check"]').waitFor({timeout:10000});
   await page.evaluate(()=>{const input=document.createElement('textarea');input.id='composition-fixture';document.body.append(input);input.focus();input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));window.emitPreparation('app-update:prepare','ime');});
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='app_update_prepared'&&call.args.nonce==='ime'));
   assert.deepEqual(await page.evaluate(()=>window.updateCalls.find(call=>call.cmd==='app_update_prepared'&&call.args.nonce==='ime').args.blocked),['input-in-progress']);
@@ -185,31 +187,18 @@ try {
   await machines.getByRole('button',{name:/取消等待|Cancel waiting/}).click();
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='machine_update_cancel'));
   assert.deepEqual(await page.evaluate(()=>window.updateCalls.find(call=>call.cmd==='machine_update_cancel').args),{machine:'a'.repeat(64),request:'choice-0'});
-  await machines.getByRole('button',{name:/更新多台机器|Update multiple machines/}).click();
-  const dialog=page.getByRole('dialog');
-  await dialog.locator('label').filter({hasText:'Beta'}).getByRole('checkbox').check();
-  await page.evaluate(()=>{window.machineStartFailOnce=true;});
-  await dialog.getByRole('button',{name:/开始更新|Start update/}).click();
-  await dialog.getByRole('alert').waitFor();
-  assert.equal(await dialog.locator('label').filter({hasText:'Beta'}).getByRole('checkbox').isChecked(),true,'a failed durable enqueue must preserve the reviewed selection');
-  await dialog.getByRole('button',{name:/开始更新|Start update/}).click();
-  await page.waitForFunction(()=>window.updateCalls.filter(call=>call.cmd==='machine_update_start').length===3);
-  assert.deepEqual(await page.evaluate(()=>window.updateCalls.filter(call=>call.cmd==='machine_update_start').at(-1).args.machines),['b'.repeat(64)],'batch update installs only the reviewed selection');
+  assert.equal(await machines.getByRole('button',{name:/更新多台机器|Update multiple machines/}).count(),0,'machine page offers no batch update');
   const job=await page.evaluate(()=>window.machineQueue.jobs[0]);
   await page.evaluate(job=>window.emitMachineQueue({revision:100,jobs:[{...job,phase:'installing'}]}),job);
-  await page.waitForFunction(()=>/正在更新|Updating|Installing/.test(document.querySelector('[role="dialog"]').textContent));
+  await page.waitForFunction(()=>/正在更新|Updating|Installing/.test(document.querySelector('[data-machine-updates]').textContent));
   await page.evaluate(job=>window.emitMachineQueue({revision:99,jobs:[{...job,phase:'complete'}]}),job);
-  assert.match(await dialog.innerText(),/正在更新|Updating/,'an older cross-window reply cannot overwrite newer progress');
-  await page.evaluate(job=>window.emitMachineQueue({revision:101,jobs:[{...job,machine:'a'.repeat(64),source:'cli',phase:'complete'},{...job,source:'cli',phase:'failed'},{...job,machine:'c'.repeat(64),source:'app',phase:'failed'}]}),job);
-  assert.match(await dialog.innerText(),/更新完成|Update complete/);
-  assert.match(await dialog.innerText(),/更新未完成|Update.*failed|Update.*complete/);
-  assert.match(await dialog.innerText(),/设置.*关于|Settings.*About/,'externally owned App installations keep their own update route');
+  assert.match(await machines.innerText(),/正在更新|Updating/,'an older reply cannot overwrite newer progress');
+  await page.evaluate(job=>window.emitMachineQueue({revision:101,jobs:[{...job,machine:'a'.repeat(64),source:'cli',phase:'complete'},{...job,machine:'b'.repeat(64),target:'OTHER_MACHINE_ONLY',source:'cli',phase:'failed'}]}),job);
+  assert.match(await machines.innerText(),/更新完成|Update complete/);
+  assert.doesNotMatch(await machines.innerText(),/OTHER_MACHINE_ONLY/,'other machines results stay out of this machine page');
+  assert.deepEqual(await page.evaluate(()=>window.updateCalls.filter(call=>call.cmd==='machine_update_start').flatMap(call=>call.args.machines)),['a'.repeat(64)]);
   await page.setViewportSize({width:390,height:800});
   await page.screenshot({path:join(out,'machine-updates-mobile.png')});
-  await dialog.locator('[data-task-action="leading"]').getByRole('button',{name:/关闭|Close/}).click();
-  await machines.getByRole('button',{name:/更新多台机器|Update multiple machines/}).click();
-  assert.match(await page.getByRole('dialog').innerText(),/更新未完成|Update/,'closing the chooser does not lose the per-machine result');
-  await page.getByRole('dialog').locator('[data-task-action="leading"]').getByRole('button',{name:/关闭|Close/}).click();
   assert.deepEqual(errors,[]);
   await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?status-failure=1`);
   await page.locator('[data-update-operation-failure] summary').click();
@@ -219,5 +208,8 @@ try {
   await page.locator('[data-more-fact="update-current-version"]').waitFor();
   assert.equal(await page.locator('[data-update-operation-failure]').count(),0,'status failure retry recovers the settings page');
   await page.screenshot({path:join(out,'update-source.png')});
-  console.log('PASS update UI: IME admission/freeze/resume, check/download/restart, blocked work, preserved channel preferences, native progress, installation ownership; machine stable IDs, explicit batch selection, waiting cancellation, independent outcomes and stale reply ordering');
+  console.log('PASS update UI: IME admission/freeze/resume, check/download/restart, blocked work, preserved channel preferences, native progress, installation ownership; machine stable IDs, single-machine isolation, waiting cancellation, independent outcomes and stale reply ordering');
+} catch(error) {
+  if(page){writeFileSync(join(out,'failure.json'),JSON.stringify({error:String(error),errors,body:await page.locator('body').innerText(),calls:await page.evaluate(()=>window.updateCalls)},null,2));await page.screenshot({path:join(out,'failure.png')}).catch(()=>{});}
+  throw error;
 } finally {await browser?.close();await server?.close();rmSync(fixture,{recursive:true,force:true});}

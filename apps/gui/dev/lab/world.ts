@@ -64,7 +64,7 @@ export function labDevices(base: DeviceRow, count: number): DeviceRow[] {
   const kinds:ModelKind[] = ['macbook','server','mac-mini','unknown','unknown','unknown'];
   const readings = (index:number):VitalsReading => ({vitals:{system:systems[index],model:{kind:kinds[index],name:names[index]},
     cpu_pct:8+index*11,cores:index===1?64:8,mem:{used:(4+index)*1024**3,total:(index===1?128:16)*1024**3},
-    disk:{used:(80+index*20)*1024**3,total:512*1024**3},gpu:null,gpus:[],volumes:[],uptime_s:86400*(index+1),version:null},
+    disk:{used:(80+index*20)*1024**3,total:512*1024**3},gpu:null,gpus:[],volumes:[],uptime_s:86400*(index+1),version:'0.0.0-lab'},
     age_ms:index===3?3_600_000:1000,mem_strain:null,disk_strain:null,vram_strain:null,volume_strains:[],stale:index===3?['cpu','mem','disk']:[]});
   return Array.from({length:count},(_,index)=>({...base,
     id:native.machine_ids[index],

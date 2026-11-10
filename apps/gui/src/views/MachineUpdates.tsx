@@ -1,11 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { cancelMachineUpdate, checkMachineUpdate, fetchMachineInstallation, fetchMachineUpdateQueue, inApp, onMachineUpdates, startMachineUpdates, type DeviceRow, type MachineInstallation, type MachineUpdateJob, type MachineUpdateQueue } from "@/api";
 import type { UpdateChannel } from "@/gen/bindings/UpdateChannel";
-import { SectionHead } from "@/components/SectionHead";
-import { MachineFace } from "@/components/SessionFace";
 import { Button } from "@/components/ui/button";
 import { PopupButton } from "@/components/ui/popup-button";
-import { Dialog, DialogBody, DialogHeader, DialogTitle, TaskOverlay, TaskActions } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 
 function jobLabel(job: MachineUpdateJob): string {
@@ -48,12 +45,12 @@ function useMachineUpdates() {
   return { jobs: queue.jobs, failure, start, cancel };
 }
 
-export function MachineUpdates({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
+export function MachineUpdates({ row }: { row: DeviceRow }) {
   if (!inApp || !row.hosts || row.sponsor) return null;
-  return <MachineUpdateControls key={row.id} row={row} rows={rows} />;
+  return <MachineUpdateControls key={row.id} row={row} />;
 }
 
-function MachineUpdateControls({ row, rows }: { row: DeviceRow; rows: DeviceRow[] }) {
+function MachineUpdateControls({ row }: { row: DeviceRow }) {
   const updates = useMachineUpdates();
   const [installation, setInstallation] = useState<MachineInstallation | null>(null);
   const [channel, setChannel] = useState<UpdateChannel | null>(null);
@@ -61,7 +58,6 @@ function MachineUpdateControls({ row, rows }: { row: DeviceRow; rows: DeviceRow[
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [batch, setBatch] = useState(false);
   const alive = useRef(false);
   const job = updates.jobs.find(job => job.machine === row.id);
   useEffect(() => {
@@ -98,10 +94,7 @@ function MachineUpdateControls({ row, rows }: { row: DeviceRow; rows: DeviceRow[
     : failed || updates.failure ? gui.update_failed : available ? gui.update_available
     : checked ? gui.update_current : job?.phase === "complete" ? gui.update_complete : gui.update_label;
   return (
-    <section data-machine-updates className="border-t border-border">
-      <SectionHead title={gui.update_label}>
-        <Button onClick={() => setBatch(true)}>{gui.update_machines}</Button>
-      </SectionHead>
+    <section data-machine-updates data-machine-update-target={row.id}>
       <div className="flex items-center gap-row py-in">
         <div className="min-w-0 flex-1">
           <div className="text-body">{hint ?? label}</div>
@@ -119,56 +112,6 @@ function MachineUpdateControls({ row, rows }: { row: DeviceRow; rows: DeviceRow[
           choices={[{ value: "stable", label: gui.update_stable }, { value: "beta", label: gui.update_beta }]}
           onPick={value => { if (!working && (value === "stable" || value === "beta")) { setChannel(value); setChecked(false); setAvailable(null); } }} />
       </div>}
-      <MachineUpdateBatch open={batch} onOpenChange={setBatch} rows={rows} updates={updates} />
     </section>
   );
-}
-
-function MachineUpdateBatch({ open, onOpenChange, rows, updates }: {
-  open: boolean; onOpenChange: (open: boolean) => void; rows: DeviceRow[];
-  updates: ReturnType<typeof useMachineUpdates>;
-}) {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [starting, setStarting] = useState(false);
-  const eligible = rows.filter(row => row.hosts && !row.sponsor);
-  const allowed = new Set(eligible.map(row => row.id));
-  const ids = selected.filter(id => allowed.has(id));
-  const start = async () => {
-    if (starting || !ids.length) return;
-    setStarting(true);
-    try { if (await updates.start(ids, null)) setSelected([]); }
-    finally { setStarting(false); }
-  };
-  return <Dialog open={open} onOpenChange={onOpenChange}>
-    <TaskOverlay purpose="selection" initialHeight="fit" scrollable>
-      <DialogHeader><DialogTitle>{gui.update_machines}</DialogTitle></DialogHeader>
-      <DialogBody>
-        <p className="text-callout text-muted-foreground">{gui.update_selected_hint}</p>
-        <div className="divide-y divide-border">
-          {eligible.map(row => {
-            const job = updates.jobs.find(job => job.machine === row.id);
-            const running = !!job && ["queued", "checking", "installing", "confirming", "waiting"].includes(job.phase);
-            return <div key={row.id} className="flex items-center gap-row py-in">
-              <label className="flex min-w-0 flex-1 items-center gap-row">
-                <input type="checkbox" className="size-4 min-h-touch min-w-touch" checked={ids.includes(row.id)} disabled={running}
-                  onChange={event => {
-                    const checked = event.currentTarget.checked;
-                    setSelected(previous => checked ? previous.includes(row.id) ? previous : [...previous, row.id] : previous.filter(id => id !== row.id));
-                  }} />
-                <MachineFace face={row.face} system={row.vitals?.vitals.system} />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-headline">{row.shown}</span>
-                  {job && <span className="block truncate text-callout text-muted-foreground">{jobLabel(job)}{job.target ? ` · ${job.target}` : ""}</span>}
-                </span>
-              </label>
-              {job?.phase === "waiting" && <Button onClick={() => void updates.cancel(job)}>{gui.update_cancel_waiting}</Button>}
-              {job && ["complete", "failed"].includes(job.phase) && <Button onClick={() => void updates.cancel(job)}>{gui.update_clear_record}</Button>}
-            </div>;
-          })}
-        </div>
-        {updates.failure && <p role="alert" className="text-callout text-muted-foreground">{gui.update_failed}</p>}
-      </DialogBody>
-      <TaskActions busy={starting} close={<Button onClick={() => onOpenChange(false)}>{gui.close}</Button>} primary={<Button data-footer-trailing disabled={starting || !ids.length} onClick={() => void start()}>{gui.update_start}</Button>}/>
-    </TaskOverlay>
-  </Dialog>;
 }
