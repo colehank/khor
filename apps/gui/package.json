@@ -163,7 +163,7 @@
     "directory-watch": "node scripts/check-directory-watch.mjs",
     "file-acceptance": "node scripts/check-file-acceptance.mjs",
     "workspace-memory": "node scripts/check-workspace-memory.mjs",
-    "notification-ui": "node scripts/check-notification-ui.mjs",
+    "notification-ui": "node scripts/check-notification-ui.mjs && node scripts/check-native-notification-ui.mjs",
     "settings-navigation": "node scripts/check-settings-navigation.mjs",
     "workspace-move": "node scripts/check-workspace-move.mjs",
     "workspace-move-lab": "node scripts/check-workspace-move-lab.mjs",

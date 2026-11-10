@@ -921,3 +921,5 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 -p 'test_app_icon.py'` 守工具服务的文件边界和输入错误。CI `App icon` 额外编译 macOS
 原生 catalog。调校台不属于 App 路由，不增加 npm 脚本；界面从产品 token 获取颜色和字号，
 光学图稿中的坐标和光色属于被编辑的素材。手机布局及安装后实际外缘仍需人工验收。
+
+通知的`notification-ui`同时运行`check-native-notification-ui.mjs`，覆盖独立原生网页层重叠时使用可信原生承载、同一正式横幅内容及事件桥；仅替换IPC，不能冒称真实OS合成器已验证。
