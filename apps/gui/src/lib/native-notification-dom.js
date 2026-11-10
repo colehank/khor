@@ -22,7 +22,8 @@ export function notificationDOM(scope, emit) {
       const match = key && available.get(key);
       if (match && old.childNodes[i] !== match) old.insertBefore(match, old.childNodes[i] || null);
       const current = old.childNodes[i];
-      if (current) sync(current, n); else old.append(n.cloneNode(true));
+      if (key && !match) old.insertBefore(n.cloneNode(true), current || null);
+      else if (current) sync(current, n); else old.append(n.cloneNode(true));
     });
     while (old.childNodes.length > next.childNodes.length) old.lastChild.remove();
   }
@@ -33,7 +34,10 @@ export function notificationDOM(scope, emit) {
     if ((event.type === 'pointerover' || event.type === 'pointerout') && banner?.contains(event.relatedTarget)) return;
     if (event.type === 'keydown' && event.key !== 'Escape') return;
     const action = event.target.closest?.('[data-notification-dismiss]') ? 'dismiss' : 'open';
-    if (event.type === 'pointerdown') captured = {key, element:banner, id:event.pointerId};
+    if (event.type === 'pointerdown') {
+      captured = {key, element:event.target.closest?.('button') || banner, id:event.pointerId};
+      try { captured.element.setPointerCapture(event.pointerId); } catch {}
+    }
     if (event.type === 'pointermove' && captured && captured.id === event.pointerId && !captured.element.hasPointerCapture(event.pointerId)) {
       try { captured.element.setPointerCapture(event.pointerId); } catch {}
     }
