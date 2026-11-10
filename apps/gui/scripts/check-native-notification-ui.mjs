@@ -28,6 +28,12 @@ try{
   if(id.endsWith('/use-native-notifications.ts'))return source.replace('export function useNativeNotifications',"let traceCount=0;const trace=(s:string)=>{if(traceCount++<30)console.info('NATIVE_NOTICE_OWNER',s)};export function useNativeNotifications").replace('frame=0;if(!alive)return;',"frame=0;trace('frame:start');if(!alive)return;").replace('const fingerprint=JSON.stringify([html,geometry]);',"trace('snapshot:done');const fingerprint=JSON.stringify([html,geometry]);");
  }}],root:gui,configFile:join(gui,'vite.config.ts'),cacheDir:join(out,'native-vite'),optimizeDeps:{entries:[join(dir,'index.html')]},resolve:{alias:[{find:'@/api',replacement:api},{find:'@',replacement:join(gui,'src')}]},server:{host:'127.0.0.1',port:0,hmr:false},logLevel:'error'});await server.listen();
  browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:820}});const errors=[];page.on('pageerror',e=>errors.push(String(e)));page.on('console',message=>{if(message.text().startsWith('NATIVE_NOTICE'))appendFileSync(join(out,'native-notification-trace.txt'),message.text()+'\n');});
+ const debuggerSession=await page.context().newCDPSession(page);await debuggerSession.send('Debugger.enable');
+ debuggerSession.on('Debugger.paused',data=>{
+  writeFileSync(join(out,'native-notification-stack.json'),JSON.stringify(data.callFrames.map(frame=>({functionName:frame.functionName,url:frame.url,location:frame.location})),null,2));
+  const frame=data.callFrames[0];
+  if(frame)void debuggerSession.send('Debugger.evaluateOnCallFrame',{callFrameId:frame.callFrameId,returnByValue:true,expression:`JSON.stringify({url:location.href,source:document.querySelector('[data-notification-banners]')?.outerHTML.slice(0,400),calls:window.nativeNotice?.calls.slice(-4).map(c=>({command:c.command,event:c.event,id:c.request?.id})),count:window.nativeNotice?.calls.length})`}).then(value=>writeFileSync(join(out,'native-notification-paused.json'),JSON.stringify(value,null,2))).finally(()=>debuggerSession.send('Debugger.resume').catch(()=>{}));
+ });
  await page.goto(server.resolvedUrls.local[0]+name+'/index.html');await page.locator('[data-notification-banner]').waitFor();
  try{await page.waitForFunction(()=>nativeNotice.calls.some(call=>call.command==='show'),null,{timeout:5000});}
  catch(error){await page.screenshot({path:join(out,'native-notification-red.png')});writeFileSync(join(out,'native-notification-errors.json'),JSON.stringify({errors,calls:await page.evaluate(()=>nativeNotice.calls)},null,2));throw error;}
@@ -44,6 +50,8 @@ try{
  const originalKey=await banner.getAttribute('data-notification-banner');
  try{await banner.hover({timeout:2500});}
  catch(error){
+  await Promise.race([debuggerSession.send('Debugger.pause'),new Promise(resolve=>setTimeout(resolve,2000))]);
+  await page.waitForTimeout(500);
   const diagnostic=await page.evaluate(()=>{
    const box=node=>node?{rect:node.getBoundingClientRect().toJSON(),style:node.getAttribute('style'),attributes:[...node.attributes].map(a=>[a.name,a.value]),animations:node.getAnimations({subtree:true}).map(a=>({state:a.playState,time:a.currentTime}))}:null;
    const f=document.querySelector('iframe'),doc=f?.contentDocument;
