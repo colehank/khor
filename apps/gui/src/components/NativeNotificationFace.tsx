@@ -1,6 +1,7 @@
 import {useEffect,useLayoutEffect,useRef} from "react";
 import * as native from "@/api";
 import type {NativeMenuState} from "@/api";
+import {gui} from "@/gen/catalog";
 import {notificationDOM} from "@/lib/native-notification-dom";
 /** Scriptless frozen document: no site, app controller, or IPC in the frame. */
 export function NativeNotificationFace({state}:{state:NativeMenuState}) {
@@ -15,7 +16,7 @@ export function NativeNotificationFace({state}:{state:NativeMenuState}) {
   },[]);
   useEffect(()=>{bridge.current?.update(html.current);},[state.html]);
   useEffect(()=>()=>{bridge.current?.dispose();bridge.current=null;},[]);
-  return <iframe ref={frame} data-native-notification-face title="" sandbox="allow-same-origin" className="block w-full border-0 bg-transparent" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none';style-src 'unsafe-inline';img-src data:;script-src 'none'"></head><body></body></html>`}
+  return <iframe ref={frame} data-native-notification-face title={gui.notifications} sandbox="allow-same-origin" className="block w-full border-0 bg-transparent" srcDoc={`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none';style-src 'unsafe-inline';img-src data:;script-src 'none'"></head><body></body></html>`}
     onLoad={()=>{
       const scope=frame.current?.contentWindow;if(!scope)return;
       bridge.current?.dispose();

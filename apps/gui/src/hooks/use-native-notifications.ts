@@ -13,7 +13,7 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
     const id=`notice:${crypto.randomUUID()}`;
     let alive=true,frame=0,last="",held=false,fallback=false;
     const hide=()=>{
-      last="";el.removeAttribute("data-notification-native");
+      last="";el.removeAttribute("data-notification-native");el.removeAttribute("aria-hidden");el.removeAttribute("inert");
       if(held){
         held=false;
         for(const banner of el.querySelectorAll('[data-notification-banner]')){
@@ -39,7 +39,7 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
         last=fingerprint;held=true;
         void showMenu({id,at:geometry,html,rows:{notification:true,groups:[{key:"notifications",label:"",candidates:keys.map(key=>({key,label:key}))}],at:0}}).then(accepted=>{
           if(!alive||!held||last!==fingerprint)return;
-          if(accepted)el.setAttribute("data-notification-native","");
+          if(accepted){el.setAttribute("data-notification-native","");el.setAttribute("aria-hidden","true");el.setAttribute("inert","");}
           else {fallback=true;hide();el.setAttribute("data-notification-yield","");}
         },()=>{if(alive&&held&&last===fingerprint){fallback=true;hide();el.setAttribute("data-notification-yield","");}});
       }

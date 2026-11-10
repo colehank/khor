@@ -90,11 +90,12 @@ export function NotificationBanners({state,sessions,onOpen,narrow}: {state:Notif
     return()=>{window.removeEventListener("khor:native-file-preview",focus);window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);document.removeEventListener("visibilitychange",visibility);};
   },[]);
   const latest=state.items.at(-1),latestContent=latest?notificationText(latest):"";
-  return <aside ref={root} data-notification-banners role="region" aria-label={gui.notifications} className="notification-banners pointer-events-none fixed z-40 flex flex-col gap-in">
+  return <>
     <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)}${latestContent?` · ${latestContent}`:""}`:""}</span>
+    <aside ref={root} data-notification-banners role="region" aria-label={gui.notifications} className="notification-banners pointer-events-none fixed z-40 flex flex-col gap-in">
     {state.items.map(item=>{
       const row=sessions.find(row=>row.id===item.session&&row.execution_home===item.home);
       return row||item.members?<Banner key={item.key} item={item} row={row} onOpen={onOpen} narrow={narrow}/>:null;
     })}
-  </aside>;
+  </aside></>;
 }

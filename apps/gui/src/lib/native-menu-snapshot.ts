@@ -81,6 +81,7 @@ export function nativeMenuSnapshot(menu: HTMLElement): string {
   clone.style.opacity = "1";
   clone.style.visibility = "visible";
   clone.removeAttribute("data-notification-native");
+  if (clone.hasAttribute("data-notification-banners")) { clone.removeAttribute("aria-hidden"); clone.removeAttribute("inert"); }
   // The owner alone announces notices. The mirror retains actionable buttons.
   clone.querySelectorAll('[aria-live]').forEach(node=>node.remove());
   clone.style.left = "auto";
