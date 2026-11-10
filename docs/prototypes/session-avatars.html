@@ -24,11 +24,11 @@
  <details><summary>实际尺寸 · 16–64 px</summary><div id="actual-sizes"></div></details>
 </section>
 <aside class="controls" aria-label="调整头像">
- <section class="group"><h2>标记大小</h2><div class="button-row"><button type="button" data-preset="large">放大版</button><button type="button" data-preset="original">现有尺寸</button></div><div class="control"><div class="control-label"><label>占头像直径</label><span>实际图形占比</span></div><div class="range-row" data-range="size" aria-label="标记占比"></div></div><label class="setting"><span>对照图标使用相同占比</span><input type="checkbox" data-param="equalSize"></label></section>
+ <section class="group"><h2>标记大小</h2><div class="button-row"><button type="button" data-preset="accepted">定稿 65%</button><button type="button" data-preset="large">放大版</button><button type="button" data-preset="original">现有尺寸</button></div><div class="control"><div class="control-label"><label>占头像直径</label><span>实际图形占比</span></div><div class="range-row" data-range="size" aria-label="标记占比"></div></div><label class="setting"><span>对照图标使用相同占比</span><input type="checkbox" data-param="equalSize"></label></section>
  <section class="group"><h2>机器底图</h2><div id="machine-choices" class="machine-choices"></div><p class="note">来自现有机器头像渲染器的六张样本，同一底图用于所有类型</p></section>
  <section class="group"><h2>标记与底图</h2><label class="setting"><span>标记颜色</span><select data-param="ink"><option value="auto">按机器底图自动</option><option value="dark">深色</option><option value="light">浅色</option></select></label><div class="control"><div class="control-label"><label>标记不透明度</label></div><div class="range-row" data-range="opacity" aria-label="标记不透明度"></div></div><div class="control"><div class="control-label"><label>增加底图衬色</label><span>柔化图案干扰</span></div><div class="range-row" data-range="veil" aria-label="底图衬色"></div></div><p class="note">自动颜色和基础衬色沿用机器头像的原始参数</p>
  <details class="advanced"><summary>调整坛城几何</summary><div class="control"><label>外圆线宽</label><div class="range-row" data-range="outer" aria-label="外圆线宽"></div></div><div class="control"><label>菱形线宽</label><div class="range-row" data-range="diamond" aria-label="菱形线宽"></div></div><div class="control"><label>内圆线宽</label><div class="range-row" data-range="inner" aria-label="内圆线宽"></div></div><div class="control"><label>四颗外珠半径</label><div class="range-row" data-range="satellite" aria-label="外珠半径"></div></div><div class="control"><label>中心珠半径</label><div class="range-row" data-range="core" aria-label="中心珠半径"></div></div><div class="control"><label>内圆半径</label><div class="range-row" data-range="innerRadius" aria-label="内圆半径"></div></div></details></section>
- <section class="group"><h2>保存这一版</h2><div class="export-grid"><button type="button" class="primary" id="export-svg">导出头像 SVG</button><button type="button" id="export-mark">导出单色标记</button><button type="button" id="export-json">导出参数</button><button type="button" id="import-json">导入参数</button><button type="button" id="reset">恢复放大版</button></div><p id="save-status" class="save-status" role="status"></p><input type="file" id="import-file" accept=".json,application/json" hidden></section>
+ <section class="group"><h2>保存这一版</h2><div class="export-grid"><button type="button" class="primary" id="export-svg">导出头像 SVG</button><button type="button" id="export-mark">导出单色标记</button><button type="button" id="export-json">导出参数</button><button type="button" id="import-json">导入参数</button><button type="button" id="reset">恢复定稿</button></div><p id="save-status" class="save-status" role="status"></p><input type="file" id="import-file" accept=".json,application/json" hidden></section>
 </aside>
 </main>
 <div id="notice" role="status" aria-live="polite"></div>
@@ -38,7 +38,7 @@
                                            
                                                                                                                                                                                                                                                          
 const data                                                                              = JSON.parse(document.querySelector('#avatar-data') .textContent );
-const defaults         = { size: 80.5, outer: 48, diamond: 32, inner: 44, satellite: 40, core: 69, innerRadius: 172, opacity: 100, veil: 0, machine: 0, ink: 'auto', theme: 'system', compareSize: 48, equalSize: false };
+const defaults         = { size: 65, outer: 40, diamond: 40, inner: 45, satellite: 55, core: 69, innerRadius: 170, opacity: 100, veil: 0, machine: 0, ink: 'auto', theme: 'system', compareSize: 48, equalSize: false };
 const limits                                           = { size: [30, 94, .25], outer: [8, 96, 1], diamond: [0, 80, 1], inner: [8, 96, 1], satellite: [0, 76, 1], core: [20, 128, 1], innerRadius: [120, 224, 1], opacity: [30, 100, 1], veil: [0, 35, 1] };
 const storageKey = 'khor.session-avatar-tuner.v1';
 let params         = { ...defaults };
@@ -111,7 +111,7 @@ function render()       {
     for (const key of ['ink', 'theme', 'compareSize']) (document.querySelector(`[data-param="${key}"]`)                     ).value = String((params                                      )[key]);
     (document.querySelector('[data-param="equalSize"]')                    ).checked = params.equalSize;
     document.querySelectorAll                   ('[data-machine]').forEach(button => { button.setAttribute('aria-pressed', String(Number(button.dataset.machine) === params.machine)); });
-    document.querySelectorAll                   ('[data-preset]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.preset === (params.size === 80.5 ? 'large' : params.size === 51.75 ? 'original' : ''))); });
+    document.querySelectorAll                   ('[data-preset]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.preset === (params.size === 65 ? 'accepted' : params.size === 80.5 ? 'large' : params.size === 51.75 ? 'original' : ''))); });
 }
 function save()       {
     try { localStorage.setItem(storageKey, JSON.stringify(params)); document.querySelector('#save-status') .textContent = '已保存在此设备'; }
@@ -148,9 +148,9 @@ document.addEventListener('change', event => {
 document.addEventListener('click', event => {
     const button = (event.target           ).closest                   ('button'); if (!button) return;
     if (button.dataset.machine !== undefined) { params.machine = Number(button.dataset.machine); render(); save(); }
-    if (button.dataset.preset) { params.size = button.dataset.preset === 'large' ? 80.5 : 51.75; render(); save(); }
+    if (button.dataset.preset) { if (button.dataset.preset === 'accepted') params = { ...params, size: defaults.size, outer: defaults.outer, diamond: defaults.diamond, inner: defaults.inner, satellite: defaults.satellite, core: defaults.core, innerRadius: defaults.innerRadius, opacity: defaults.opacity, veil: defaults.veil, ink: defaults.ink }; else params.size = button.dataset.preset === 'large' ? 80.5 : 51.75; render(); save(); }
 });
-document.querySelector('#reset') .addEventListener('click', () => { params = { ...defaults, theme: params.theme }; render(); save(); announce('已恢复放大版参数'); });
+document.querySelector('#reset') .addEventListener('click', () => { params = { ...defaults, theme: params.theme }; render(); save(); announce('已恢复定稿参数'); });
 document.querySelector('#export-json') .addEventListener('click', () => download('khor-session-avatar.json', JSON.stringify({ version: 1, ...params }, null, 2), 'application/json'));
 document.querySelector('#export-svg') .addEventListener('click', () => download('khor-session-avatar.svg', avatar('khor', 512), 'image/svg+xml'));
 document.querySelector('#export-mark') .addEventListener('click', () => { const glyph = mark(); download('khor-session-mark.svg', `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="${glyph.box}" fill="currentColor">${glyph.body}</svg>`, 'image/svg+xml'); });
