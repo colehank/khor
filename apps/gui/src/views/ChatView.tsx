@@ -1,3 +1,4 @@
+import { raiseKeyboard } from "@/lib/soft-keyboard";
 import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {useReadableHistoryExport} from '@/hooks/use-readable-history-export';
 import {ReadFreshness} from '@/lib/read-freshness';
@@ -1505,6 +1506,7 @@ export function ChatView({
     const images = facts?.images ? placed.flatMap(file => file.inline ? [file.inline] : []) : [];
     const draft = rememberChatDraft({owner, reader: reader.current, session: id, token: crypto.randomUUID(), text, full, images, documents: docs, attachments: files.items});
     if (!draft) return;
+    if (placed.length > 0 && box.current) raiseKeyboard(box.current);
     composer.current = {session: id, text: "", documents: [], attachments: []};
     setText("");
     setInTurn(true);
@@ -1926,7 +1928,7 @@ export function ChatView({
               {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}
             </div>
           )}
-          <PendingChips items={files.items} onRemove={files.remove} />
+          <PendingChips key={id} items={files.items} onRemove={files.remove} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
               {docs.map(([name], i) => (
@@ -1996,7 +1998,7 @@ export function ChatView({
                       stands in its seat. At rest with an empty box,
                       neither: the mode is the capsule's last thing. */}
                   {!inTurn && hasComposerContent && (
-                    <SendSeat onSend={say} disabled={!canSend} busy={files.busy} />
+                    <SendSeat onSend={say} disabled={!canSend} busy={files.busy} keepFocus={files.items.length > 0} />
                   )}
                   {inTurn && (
                     <StopSeat

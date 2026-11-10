@@ -1852,7 +1852,7 @@ match event {
                                 active_operation = process_control.begin_operation();
                                 if active_operation.is_none() { break Some("ACP process is retiring".into()); }
                                 let turn=match crate::link::fresh_hex() { Ok(turn)=>turn, Err(why)=>break Some(why) };
-                                if let Err(why)=journal.accept(&turn,&text,&[],&[],None) { let _=execution.finish(&why); break Some(why); }
+                                if let Err(why)=journal.accept(&turn,&text,&[],&[],None) { let _=execution.finish(Err(&why)); break Some(why); }
                                 journal_turn=Some(turn);
                                 delegated = Some(execution);
                                 cancellation_sent = None;

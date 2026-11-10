@@ -1,3 +1,4 @@
+import { raiseKeyboard } from "@/lib/soft-keyboard";
 import {MessageActions} from '@/components/MessageActions';
 import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {composerFiles,composerReady} from '@/lib/composer-files';
@@ -208,6 +209,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     if (agentPrompt && !agent?.config) { setSending(false); setRefused(gui.agent_choose_first); return; }
     if(agentPrompt&&khorPendingRuns.get(id)?.line!==agentInput)khorPendingRuns.set(id,{line:agentInput,token:crypto.randomUUID()});
     const issued=khorPendingRuns.get(id);
+    if (files.length > 0 && box.current) raiseKeyboard(box.current);
     const posted = agentPrompt
       ? khorAgent("prompt", agent!.config!.home, { text:agentInput, token: issued!.token, session:id }) : compose(text, files);
     posted.then(
@@ -301,7 +303,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
         <AgentCommandMenu id={commandMenuId} commands={choices} pick={pick} onPick={choose} />
-        <PendingChips items={pending} onRemove={key=>pendingFiles.remove(key)} />
+        <PendingChips key={id} items={pending} onRemove={key=>pendingFiles.remove(key)} machine={landsOn} here />
         <Composer
           lead={
             <SessionAdd onAttach={attach} options={[]} />

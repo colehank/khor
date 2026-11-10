@@ -105,52 +105,60 @@ export function usePendingFiles(upload: {
     busy:items.some(item=>!item.error&&(item.path===null||item.encoding)),ready:composerReady(items)};
 }
 
-/** The chips over the text: each file going along, with its × to take
-    it back off. A thumbnail for a small picture, the kind's icon
-    otherwise; the size where it is known; busy while it travels to the
-    machine, the reason where it did not get there. */
-export function PendingChips({ items, onRemove }: { items: Pending[]; onRemove: (key: string) => void }) {
+/** Unsent files retain their independent preview and removal controls. */
+export function PendingChips({ items, onRemove, machine, here }: {
+  items: Pending[];
+  onRemove: (key: string) => void;
+  machine: string;
+  here: boolean;
+}) {
+  const [looking, setLooking] = useState<string | null>(null);
   if (items.length === 0) return null;
+  const path = items.find(item => item.key === looking)?.path ?? null;
   return (
     <div data-chat-pending className="flex flex-wrap items-center gap-in px-2 pb-in">
-      {items.map((i) => (
-        <span
-          key={i.key}
-          data-chat-pending-file={i.name}
-          data-placed={i.path !== null || undefined}
-          aria-busy={(!i.error&&(i.path===null||i.encoding))||undefined}
-          title={i.error ?? i.path ?? undefined}
-          className={cn(
-            "flex max-w-full min-w-0 items-center gap-in rounded-lg bg-fill py-1 ps-1 pe-0 text-callout",
-            "aria-busy:animate-pulse motion-reduce:aria-busy:animate-none",
-          )}
+      {items.map(item => (
+        <div
+          key={item.key}
+          data-chat-pending-file={item.name}
+          data-placed={item.path !== null || undefined}
+          aria-busy={(!item.error && (item.path === null || item.encoding)) || undefined}
+          title={item.error ?? item.path ?? undefined}
+          className="flex max-w-full min-w-0 items-center rounded-lg bg-fill text-callout aria-busy:animate-pulse motion-reduce:aria-busy:animate-none"
         >
-          {i.thumb ? (
-            <img src={i.thumb} alt="" className="size-7 flex-none rounded-md object-cover" />
-          ) : (
-            <FileKindIcon name={i.name} className="size-7 flex-none" />
-          )}
-          <span className="flex min-w-0 flex-col">
-            <span className="max-w-48 min-w-0 truncate">{i.name}</span>
-            {(i.error || i.size !== null) && (
-              <span
-                className={cn("text-caption tabular-nums", i.error ? "text-state-failed" : "text-muted-foreground")}
-              >
-                {i.error ? gui.chat_put_failed : sizeWord(i.size ?? 0)}
-              </span>
-            )}
-          </span>
+          <button
+            type="button"
+            data-chat-pending-preview
+            disabled={item.path === null}
+            onClick={() => setLooking(item.key)}
+            className="flex min-h-touch min-w-0 items-center gap-in px-in text-left"
+          >
+            {item.thumb ? <img src={item.thumb} alt="" className="size-7 flex-none rounded-md object-cover" />
+              : <FileKindIcon name={item.name} className="size-7 flex-none" />}
+            <span className="flex min-w-0 flex-col">
+              <span className="max-w-48 truncate">{item.name}</span>
+              {(item.error || item.size !== null) && (
+                <span className={cn("text-caption tabular-nums", item.error ? "text-state-failed" : "text-muted-foreground")}>
+                  {item.error ? gui.chat_put_failed : sizeWord(item.size ?? 0)}
+                </span>
+              )}
+            </span>
+          </button>
           <button
             type="button"
             data-chat-pending-drop
-            aria-label={gui.remove}
-            onClick={() => onRemove(i.key)}
+            aria-label={`${gui.remove} ${item.name}`}
+            onClick={() => {
+              if (looking === item.key) setLooking(null);
+              onRemove(item.key);
+            }}
             className="grid min-h-touch min-w-touch flex-none place-items-center text-muted-foreground pointer-fine:min-h-ctl-md pointer-fine:min-w-ctl-md"
           >
             ×
           </button>
-        </span>
+        </div>
       ))}
+      {path !== null && <FilePreview machine={machine} shown={machine} here={here} path={path} onClose={() => setLooking(null)} />}
     </div>
   );
 }
