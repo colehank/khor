@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: c5acf0c68fc8983a23a7da5ae14365b83d564ba0
+          ref: 2b3e035e8eaadd6c86926e8c6bdcc8b50d23de75
       - shell: bash
         run: python3 -m unittest discover -s scripts/tests -p 'test_mac_signing_retry.py' -v 2>&1 | tee "$RUNNER_TEMP/signing-retry.log"
       - shell: bash
