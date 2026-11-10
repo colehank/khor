@@ -2,7 +2,9 @@
 //! (docs/NET.md: seen is a decision — clear on the phone, the
 //! desktop badge clears too).
 //!
-//! Shape: `seen : Map<session_id, watermark_ms>` retains broad CLI marks.
+//! Broad marks retain `seen : Map<session_id, watermark_ms>` for older readers.
+//! `progress : Map<[session_id, reader], watermark_ms>` is merged by maximum,
+//! so an offline reader with a later write clock cannot lower read progress.
 //! `snapshots : Map<[session_id, message_id, at_ms], true>` acknowledges only
 //! versions actually rendered by the GUI. Immutable version keys merge as a
 //! union: a stale receipt cannot erase a newer one, and equal timestamps on
@@ -52,7 +54,7 @@
 //! this one replicates through them untouched (loro merges maps it was
 //! never asked to read).
 
-use std::path::{Path, PathBuf};
+use std::{sync::Mutex, collections::HashMap, path::{Path, PathBuf}};
 
 use loro::{LoroDoc, LoroValue, VersionVector};
 
@@ -70,6 +72,7 @@ pub fn seen_dir(home: &Path) -> PathBuf {
 const SEEN: &str = "seen";
 const CLOSED: &str = "closed";
 const SNAPSHOTS: &str = "snapshots";
+const PROGRESS: &str = "progress";
 
 /// One rendered message version; `at_ms` is the message's sender timestamp.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize, ts_rs::TS)]
@@ -86,41 +89,63 @@ fn version_key(session: &str, message: &str, at_ms: i64) -> String {
 
 pub struct SeenDoc {
     inner: LoroDoc,
+    // Built once per loaded/merged document, rather than scanning every
+    // reader's marks for every row in a large session list.
+    watermarks: Mutex<Option<HashMap<String, i64>>>,
 }
 
 impl SeenDoc {
     pub fn new(peer: u64) -> Result<Self, String> {
         Ok(Self {
             inner: glue::with_peer(peer)?,
+            watermarks: Mutex::new(None),
         })
     }
 
     /// The session's watermark; 0 = never seen.
     pub fn watermark(&self, session: &str) -> i64 {
-        match self
-            .inner
-            .get_map(SEEN)
-            .get(session)
-            .and_then(|v| v.into_value().ok())
-        {
-            Some(LoroValue::I64(n)) => n,
-            _ => 0,
-        }
+        self.with_watermarks(|marks| marks.get(session).copied().unwrap_or(0))
+    }
+
+    fn with_watermarks<T>(&self, read: impl FnOnce(&mut HashMap<String, i64>) -> T) -> T {
+        let mut cache = self.watermarks.lock().expect("seen watermark cache poisoned");
+        let marks = cache.get_or_insert_with(|| {
+            let mut marks = HashMap::new();
+            // Keep broad receipts written by previous versions readable.
+            self.inner.get_map(SEEN).for_each(|session, value| {
+                if let Ok(LoroValue::I64(at)) = value.into_value() {
+                    marks.insert(session.to_owned(), at);
+                }
+            });
+            self.inner.get_map(PROGRESS).for_each(|key, value| {
+                let Ok((session, _reader)) = serde_json::from_str::<(String, u64)>(key) else { return; };
+                if let Ok(LoroValue::I64(at)) = value.into_value() {
+                    marks.entry(session).and_modify(|current| *current = (*current).max(at)).or_insert(at);
+                }
+            });
+            marks
+        });
+        read(marks)
     }
 
     /// Raises the watermark. Monotonic: a lower mark writes nothing, so a
     /// stale local mark can never bounce read back to unread — and a
     /// no-op mark must not grow the version vector.
     pub fn mark(&self, session: &str, at_ms: i64) -> Result<(), String> {
-        if at_ms <= self.watermark(session) {
-            return Ok(());
-        }
-        self.inner
-            .get_map(SEEN)
-            .insert(session, at_ms)
-            .map_err(|e| e.to_string())?;
-        self.inner.commit();
-        Ok(())
+        self.with_watermarks(|marks| {
+            if at_ms <= marks.get(session).copied().unwrap_or(0) {
+                return Ok(());
+            }
+            self.inner.get_map(SEEN).insert(session, at_ms).map_err(|e| e.to_string())?;
+            // Independent writer keys form a max register. A device with a
+            // later CRDT clock but an older reading cannot overwrite another
+            // reader's larger mark. One key per reader/session stays bounded.
+            let key = serde_json::to_string(&(session, self.inner.peer_id())).expect("read progress key serializes");
+            self.inner.get_map(PROGRESS).insert(&key, at_ms).map_err(|e| e.to_string())?;
+            self.inner.commit();
+            marks.insert(session.to_owned(), at_ms);
+            Ok(())
+        })
     }
 
     /// A GUI receipt covers exactly this version, not other messages with
@@ -202,11 +227,14 @@ impl Doc for SeenDoc {
     }
 
     fn merge_report(&self, bytes: &[u8]) -> Result<crate::store::MergeReport, String> {
-        glue::merge_report(&self.inner, bytes)
+        let mut cache = self.watermarks.lock().expect("seen watermark cache poisoned");
+        let result = glue::merge_report(&self.inner, bytes);
+        *cache = None;
+        result
     }
 
     fn items(&self) -> usize {
-        self.inner.get_map(SEEN).keys().count() + self.inner.get_map(SNAPSHOTS).keys().count()
+        self.with_watermarks(|marks| marks.len()) + self.inner.get_map(SNAPSHOTS).keys().count()
     }
 }
 

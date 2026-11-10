@@ -19,6 +19,7 @@ pub unsafe fn stop(view: &AnyObject) {
         // Replacing the document also ends script/audio contexts and players
         // inside cross-origin frames. Keep the data store/cookies untouched.
         let blank = NSString::from_str("");
-        let _: *mut AnyObject = msg_send![view, loadHTMLString: &*blank, baseURL: std::ptr::null::<AnyObject>()];
+        let _: *mut AnyObject =
+            msg_send![view, loadHTMLString: &*blank, baseURL: std::ptr::null::<AnyObject>()];
     }
 }

@@ -2916,7 +2916,8 @@ fn close_page(app: tauri::AppHandle, tab: String) -> Result<(), String> {
     view.with_webview(|native| unsafe {
         let page = &*(native.inner() as *mut objc2::runtime::AnyObject);
         page_retire::stop(page);
-    }).map_err(|e| e.to_string())?;
+    })
+    .map_err(|e| e.to_string())?;
     view.close().map_err(|e| e.to_string())
 }
 
