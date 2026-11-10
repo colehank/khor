@@ -84,6 +84,16 @@ test('page eviction retains reload endpoints', () => {
   w = receive(w, page('8'), 'newer');
   assert.equal(w.older, 'before:1');
 });
+test('prefetch identity advances with each opaque history cursor',()=>{
+ const w=receive(EMPTY,page('tail'),'tail');
+ const first=module.exports.historyPrefetchTarget(w,true,true,true);
+ const next=module.exports.historyPrefetchTarget({...w,older:'opaque:second'},true,true,true);
+ assert.deepEqual(first,{direction:'older',cursor:'before:tail'});
+ assert.deepEqual(next,{direction:'older',cursor:'opaque:second'});
+ assert.notEqual(first.direction+':'+first.cursor,next.direction+':'+next.cursor,'permission true cannot substitute for a cursor');
+ assert.equal(module.exports.historyPrefetchTarget(w,false,true,true),null);
+ assert.deepEqual(module.exports.historyPrefetchTarget({...w,latest:false},false,true,false),{direction:'newer',cursor:'after:tail'});
+});
 test('contiguous streamed short pages retain a viewport-sized history within the existing budget',()=>{
  const chunk=(from,to)=>({entries:Array.from({length:to-from},(_,i)=>entry(String(from+i))),references:[],
   older:from?`at:${from}`:null,newer:`at:${to}`,has_more:false,reset:false,encoded_bytes:(to-from)*100});

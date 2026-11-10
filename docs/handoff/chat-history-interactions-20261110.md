@@ -53,3 +53,7 @@ LIVE23950仍是0286，ownedPID57328/exec92502。新GUI证据notification-clean-1
 Quality42764941090（dae42cfe）：前端构建和GUI绿，完整App56既有案例绿。长历史两种小页场景都Timeout15000ms，尚不能在DOM重建第240轮；普通页两例已通过fill/read步骤，到玻璃data属性断言`true!==''`才失败（检查已修为hasAttribute）。红例原始日志chat-history-red-dae-app.log已保存，官方artifact正在校验下载。
 
 修复：receiveHistoryPage只合并边界游标严格相等、各自有bodyentries的相邻页，合并结果仍<=128entries/256refs/512KiB；reference-only原替换行为保留。总8逻辑页/512entries/2MiB不变，容量满仍按原方向逐页淘汰并保留reload游标。预读每visit最多512wire读（与最低1-entry页填满现有entry预算一致），重复游标／失败仍停止，实际向上输入重置visit。
+
+## 官方红例进一步定位（不能仅归因8页）
+
+Artifact已校验564项CRC/size。小页diagnosis只有2次backward（tail+1次older），724/792px视口仅1个残缺agent条目，之后22次无新增的newer轮询。直接原因是useHistoryPrefetch中`const older=...&&canPrefetchOlder()`最后是boolean，seen键一直`older:true`，第一次补页后误当重复游标停止。新增historyPrefetchTarget保留真实opaque cursor，hook用direction+cursor去重；新增模型反例。前一轮pack和IO预算仍解决后续小页容量问题，不能说红例已走到8页。正常页红例读取锚点/自动补页已经工作；玻璃data属性测试错误已修。

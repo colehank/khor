@@ -21,6 +21,15 @@ export function historyWindowHasRoom(window:HistoryWindow){
 export function canPrefetchOlder(window:HistoryWindow,readingLatest:boolean,readerUp=false){
   return !window.latest||!readingLatest||readerUp||historyWindowHasRoom(window);
 }
+/** Keep the actual opaque cursor in the prefetch identity. A boolean
+ * permission is shared by every older page and would stop after one read. */
+export function historyPrefetchTarget(window:HistoryWindow,nearTop:boolean,nearBottom:boolean,readingLatest:boolean,readerUp=false){
+ if(nearTop&&window.older!==null&&canPrefetchOlder(window,readingLatest,readerUp))
+  return {direction:'older' as const,cursor:window.older};
+ if(nearBottom&&!window.latest&&window.newer!==null)
+  return {direction:'newer' as const,cursor:window.newer};
+ return null;
+}
 function referenceKey(reference: HistoryRecordRef) { return `${reference.start}:${reference.item ?? 'record'}`; }
 function pageHasContent(page: HistoryPage) { return page.entries.length > 0 || page.references.length > 0; }
 function exceedsBudget(pages: HistoryPage[]) {

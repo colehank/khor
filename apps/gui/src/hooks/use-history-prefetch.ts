@@ -1,6 +1,6 @@
 import {useEffect,useRef,type RefObject} from 'react';
 import type {HistoryReaderState} from '@/lib/history-reader';
-import {canPrefetchOlder,HISTORY_CACHE_LIMITS} from '@/lib/history-window';
+import {historyPrefetchTarget,HISTORY_CACHE_LIMITS} from '@/lib/history-window';
 /** Fill short pages and prefetch near the upper edge. One-frame wire pages
  * must be able to fill the existing entry budget. Each visit still bounds IO;
  * repeated cursors and failures require an explicit retry. */
@@ -17,11 +17,10 @@ export function useHistoryPrefetch(root:RefObject<HTMLElement|null>,state:Histor
    const nearTop=element.scrollTop<=element.clientHeight/2;
    const nearBottom=element.scrollHeight-element.clientHeight-element.scrollTop<=element.clientHeight/2;
    if(!nearTop&&!nearBottom){visit.current={seen:new Set(),count:0};return;}
-   const older=nearTop&&state.window.older&&canPrefetchOlder(state.window,readingLatest.current,readerUp);
-   const forward=!older&&nearBottom&&!state.window.latest;
-   const cursor=older?'older:'+older:forward?'newer:'+state.window.newer:null;
+   const target=historyPrefetchTarget(state.window,nearTop,nearBottom,readingLatest.current,readerUp);
+   const cursor=target?`${target.direction}:${target.cursor}`:null;
    if(!cursor||visit.current.seen.has(cursor)||visit.current.count>=HISTORY_CACHE_LIMITS.entries)return;
-   visit.current.seen.add(cursor);visit.current.count++;if(older)latest.current.load(!readerUp&&readingLatest.current);else latest.current.newer();
+   visit.current.seen.add(cursor);visit.current.count++;if(target?.direction==='older')latest.current.load(!readerUp&&readingLatest.current);else latest.current.newer();
   };
   const scroll=()=>ask(),wheel=(event:WheelEvent)=>{if(event.deltaY<0)ask(true);};
   let touchY:number|null=null;
