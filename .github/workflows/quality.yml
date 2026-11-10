@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: abb22d3d
+          ref: abb22d3d551e4f04540686e002393eb7bd3c10b7
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt
