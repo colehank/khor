@@ -1,10 +1,10 @@
 # 图标调校台
 
-独立开发工具，不打包进产品。浏览器与资源生成器共用 `renderer.mjs`，默认读取
+独立开发工具，不打包进产品。浏览器与资源生成器共用 `renderer.ts`，默认读取
 `../../src-tauri/icons/src/app-icon.json`。新浏览器从当前生产参数开始，已有的浏览器调整
 继续保存在 `khor.icon-lab.v1`；“恢复当前图标”可回到生产参数。
 
-在仓库根目录运行（Python 3.11+，无需 npm 安装或 App 构建）：
+在仓库根目录运行（Python 3.11+、Node 22.19+，无需 npm 安装或 App 构建）：
 
 ```sh
 python3 scripts/app_icon.py serve
@@ -30,6 +30,21 @@ python3 scripts/app_icon.py serve
 另一侧透出绿色；外光关闭时透出光也关闭。内部总发光共同控制五颗圆珠和内环，
 独立于外光。反射和背景晕染是可调的二维 SVG 模拟。
 
+## 类型与运行链路
+
+`app.ts`、`renderer.ts`、`render.ts`、`renderer.test.ts` 是唯一维护源码。
+参数键从控件定义推导；JSON 和浏览器存储在 `unknown` 边界校验，UI 状态、预设、
+光源结果、渐变与圆珠几何有明确类型。DOM 绑定验证实际元素类型，避免把任意元素断言成输入框。
+
+Node 直接运行可擦除类型的 TS；服务通过 Node 内置 `stripTypeScriptTypes` 派生浏览器
+JavaScript 响应，`.ts` 模块以 `text/javascript` 提供，保留模块的 `.ts` 导入路径。
+旧 `.mjs` URL 是同一源码的兼容别名。派生 JS 不写入仓库，也没有第二套手写实现。
+运行时剥离类型不执行类型检查；`npm run check` 是独立的 strict 类型门，CI 必跑。
+它同时启用 `noUncheckedIndexedAccess`、`exactOptionalPropertyTypes` 和 `erasableSyntaxOnly`。
+严格检查只安装这个工具的固定 TypeScript/Node 类型依赖，无需整套 GUI 依赖。
+
+类型擦除机制见 [Node 22.19 官方 API](https://nodejs.org/download/release/v22.19.0/docs/api/module.html#modulestriptypescripttypescode-options)。
+
 ## 来源与维护
 
 `reference-07.png` 是本轮用户选定的 07 静态视觉参照（此前生图迭代产物），只用于对照，
@@ -38,7 +53,9 @@ python3 scripts/app_icon.py serve
 不再产生固定方向的绿色光。新参数缺省值兼容旧导出文件。
 
 ```sh
-node --test apps/gui/dev/icon-lab/renderer.test.mjs
+npm ci --prefix apps/gui/dev/icon-lab
+npm run check --prefix apps/gui/dev/icon-lab
+npm test --prefix apps/gui/dev/icon-lab
 python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'
 python3 scripts/app_icon.py check
 ```

@@ -1,0 +1,17 @@
+{
+  "name": "@khor/icon-studio",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "tsc --project tsconfig.json",
+    "test": "node --test renderer.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

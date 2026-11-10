@@ -35,7 +35,7 @@ class IconInputTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "Node is required for the shared renderer")
     def test_cli_rejects_invalid_preset_before_producing_svg(self):
-        result = subprocess.run(["node", str(app_icon.ROOT / app_icon.LAB / "render.mjs")],
+        result = subprocess.run(["node", str(app_icon.ROOT / app_icon.LAB / "render.ts")],
                                 input=b'{"format":"unknown"}', capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"")
@@ -59,12 +59,23 @@ class StudioServerTests(unittest.TestCase):
         cls.thread.join(timeout=2)
 
     def test_serves_current_preset_and_module_without_build(self):
-        for path, mime in [("/", "text/html"), ("/renderer.mjs", "text/javascript"),
+        for path, mime in [("/", "text/html"), ("/renderer.ts", "text/javascript"),
                            ("/current-preset.json", "application/json")]:
             with contextlib.closing(urlopen(self.url + path, timeout=2)) as response:
                 self.assertIn(mime, response.headers["Content-Type"])
                 self.assertEqual(response.headers["Cache-Control"], "no-store")
                 self.assertTrue(response.read())
+
+    def test_browser_modules_are_executable_javascript_from_the_shared_ts_source(self):
+        for module in ["app", "renderer"]:
+            with contextlib.closing(urlopen(self.url + f"/{module}.ts", timeout=3)) as response:
+                javascript = response.read()
+            result = subprocess.run(["node", "--input-type=module", "--check"],
+                                    input=javascript, capture_output=True)
+            self.assertEqual(result.returncode, 0, result.stderr.decode())
+            with contextlib.closing(urlopen(self.url + f"/{module}.mjs", timeout=3)) as response:
+                self.assertEqual(response.read(), javascript)
+        self.assertIn(b"./renderer.ts", app_icon.browser_javascript((app_icon.ROOT / app_icon.LAB / "app.ts").read_bytes()))
 
     def test_never_exposes_repository_files_or_directory_listings(self):
         for path in ["/.git/config", "/../../.git/config", "/%2e%2e/.git/config",
