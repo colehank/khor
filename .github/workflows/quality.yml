@@ -15,11 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: f8f17e63d0303d2f4255a0deb9d57ae3f82653cf
+          ref: c5acf0c68fc8983a23a7da5ae14365b83d564ba0
       - shell: bash
         run: python3 -m unittest discover -s scripts/tests -p 'test_mac_signing_retry.py' -v 2>&1 | tee "$RUNNER_TEMP/signing-retry.log"
+      - shell: bash
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/scripts-all.log"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
           name: signing-retry
-          path: ${{ runner.temp }}/signing-retry.log
+          path: |
+            ${{ runner.temp }}/signing-retry.log
+            ${{ runner.temp }}/scripts-all.log
