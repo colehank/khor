@@ -865,11 +865,15 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
     };
     let by = Instant::now() + Duration::from_secs(5);
     let ask = loop {
-        if let Some(ask) = crate::delegation::approval(&read_resumed()).and_then(|a| a["ask"].as_u64())
+        if let Some(ask) =
+            crate::delegation::approval(&read_resumed()).and_then(|a| a["ask"].as_u64())
         {
             break ask;
         }
-        assert!(Instant::now() < by, "resumed stub did not ask for permission");
+        assert!(
+            Instant::now() < by,
+            "resumed stub did not ask for permission"
+        );
         thread::sleep(Duration::from_millis(10));
     };
     assert!(!absent(resumed_host.host_pid));
@@ -884,7 +888,10 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
     while !absent(resumed_host.host_pid) && Instant::now() < by {
         thread::sleep(Duration::from_millis(10));
     }
-    assert!(absent(resumed_host.host_pid), "refused child did not retire");
+    assert!(
+        absent(resumed_host.host_pid),
+        "refused child did not retire"
+    );
     let failed = read_resumed();
     assert_eq!(
         failed.task.status.state,

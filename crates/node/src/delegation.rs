@@ -805,7 +805,8 @@ impl HostedTask {
                 protocol::TaskState::Failed
             }
             Err(error) => {
-                self.output.push_str(&format!("\nACP prompt failed: {error}"));
+                self.output
+                    .push_str(&format!("\nACP prompt failed: {error}"));
                 protocol::TaskState::Failed
             }
         };
