@@ -284,6 +284,7 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(context.pages().length,1,'Opening settings keeps one application surface');
     assert.deepEqual(page.viewportSize(),size,'Opening and switching settings keeps the viewport');
     await page.screenshot({path:path.join(report,`settings-${engine}-${mobile?'mobile':'desktop'}.png`)});
+    await page.route('**/lab/runtime*',async route=>{await new Promise(resolve=>setTimeout(resolve,3000));await route.continue();},{times:1});
     await page.goto(`http://127.0.0.1:${port}/app/?scene=list&machines=3&notices=1`);
     const notice=page.locator('[data-notification-banner]').first();
     await notice.waitFor({timeout:20000});
@@ -293,6 +294,18 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     await notice.locator('[data-notification-open]').click();
     await page.locator('[data-chat-box]:visible').waitFor();
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('khor.sessions.tabs')).active==='gui/ai-elements-plan');
+    // Same identity, restored active Plan: the previous fixed Plan-only trigger vanished here.
+    await page.reload();
+    await page.locator('[data-lab-notice-trigger]').waitFor();
+    const repeated=page.locator('[data-notification-banner]').first();
+    await repeated.waitFor({timeout:15000});
+    assert.ok(!(await repeated.innerText()).includes('计划与确认'),'The demo chooses a session other than the restored active one');
+    await repeated.locator('[data-notification-dismiss]').click();
+    await repeated.waitFor({state:'detached'});
+    await page.locator('[data-lab-notice-trigger]').click();
+    await page.locator('[data-notification-banner]').first().waitFor({timeout:10000});
+    assert.match(await page.locator('[data-lab-notice-result]').innerText(),/正在触发/,'Explicit Lab retrigger is observable');
+    await page.screenshot({path:path.join(report,`app-notification-retrigger-${engine}-${mobile?'mobile':'desktop'}.png`),animations:'disabled'});
     const metadata=await page.evaluate(()=>JSON.parse(localStorage.getItem('khor.notification-preferences')));
     assert.equal('items' in metadata,false,'Actual App never archives notification content');
     await page.goto(`http://127.0.0.1:${port}/app/?scene=list&machines=3&notices=burst`);

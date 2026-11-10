@@ -91,3 +91,24 @@ assert.equal(presence.deliver,false);assert.equal(presence.next.waiting,false,'F
 presence=notificationPresence(presence.next,laterRows,true);assert.equal(presence.deliver,true,'Only events after the fresh foreground snapshot notify');
 presence=notificationPresence(presence.next,laterRows,false);assert.equal(presence.deliver,false);assert.equal(presence.next.waiting,true);
 console.log('Notification presence: cached/fresh foreground boundary and background suppression passed');
+
+const labBuild=await build({entryPoints:['dev/lab/notice-fixture.ts'],bundle:true,write:false,format:'esm',platform:'node'});
+const {noticeFixture}=await import('data:text/javascript;base64,'+Buffer.from(labBuild.outputFiles[0].text).toString('base64'));
+let labNow=now+5000;
+const demoRows=Array.from({length:6},(_,i)=>row([],{id:'gui/demo-'+i,title:'Demo '+i,last:'Preview '+i}));
+const demo=noticeFixture({normal:true,burst:false},{now:()=>labNow,active:()=>demoRows[1].id,enabled:()=>true});
+let demoState=collect(emptyNotifications(),demo.snapshot(demoRows),{now:labNow});
+assert.equal(demoState.items.length,0,'A slow import still seeds a quiet first snapshot');
+labNow+=2000;demoState=collect(demoState,demo.snapshot(demoRows),{now:labNow});
+assert.equal(demoState.items.length,1,'Ordinary demo starts after the baseline snapshot');
+assert.notEqual(demoState.items[0].session,demoRows[1].id,'A restored open session cannot swallow the demo');
+assert.equal(demo.trigger(false).length,1);demoState=collect({...demoState,items:[]},demo.snapshot(demoRows),{now:labNow});
+assert.equal(demoState.items.length,0,'Manual trigger leaves one fresh resume baseline quiet');
+demoState=collect(demoState,demo.snapshot(demoRows),{now:labNow});
+assert.equal(demoState.items.length,1,'Manual retrigger produces a new event even in the same millisecond');
+assert.equal(demo.trigger(true).length,5);demoState=collect({...demoState,items:[]},demo.snapshot(demoRows),{now:labNow});
+demoState=collect(demoState,demo.snapshot(demoRows),{now:labNow});
+assert.equal(demoState.items[0].members.length,5,'Manual summary uses real production grouping');
+const mutedDemo=noticeFixture({normal:true,burst:false},{now:()=>labNow,active:()=>null,enabled:()=>false});
+mutedDemo.snapshot(demoRows);assert.equal(mutedDemo.trigger(false).length,0,'Lab controls respect explicit mute choices');
+console.log('Notification Lab: delayed bootstrap, restored selection, manual retrigger and real summary passed');

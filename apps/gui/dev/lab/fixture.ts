@@ -1,4 +1,5 @@
 import labMedia from './data/media.generated.json';
+import {noticeFixture} from './notice-fixture';
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture} from './navigation';
 import {pairingFixture} from './pairing';
@@ -189,23 +190,10 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     return view();
   }
   const previewAt = Date.now();
-  // Opt-in event data exercises the production App banner controller everywhere.
-  // Default Lab scenes remain quiet; no alternate notification UI is mounted.
-  const noticeEvents=(index:number):SessionRow['activity']=>{
-    if(options.noticeBurst) {
-      const round=Math.floor((Date.now()-previewAt-2000)/18000);
-      return round<1||index>7?[]:[{id:`lab-burst:${index}:${round}`,at_ms:previewAt+2000+round*18000,
-        kind:"turn_completed",resolved:false,text:null,duration_ms:null,exit:null}];
-    }
-    if(!options.notices||index>2)return [];
-    const round=Math.floor((Date.now()-previewAt-2000)/18000);
-    const offset=(index+2)%3;
-    if(round<offset)return [];
-    const last=round-(round-offset)%3;
-    return [{id:`lab-notice:${index}:${last}`,at_ms:previewAt+2000+last*18000,
-      kind:(["turn_completed","needs_input","failed"] as const)[index],resolved:false,
-      text:null,duration_ms:null,exit:null}];
-  };
+  const notices=noticeFixture({normal:!!options.notices,burst:!!options.noticeBurst},{now:()=>Date.now(),
+    active:()=>{try{return JSON.parse(readSetting('khor.sessions.tabs')??'{}').active??null;}catch{return null;}},
+    enabled:row=>{try{return JSON.parse(readSetting('khor.notification-preferences')??'{}').preferences?.[JSON.stringify([row.execution_home,row.id])]!==false;}catch{return true;}},
+  });
   const khorReceipt = () => ({ id: "khor-preview-run", at_ms: previewAt, from: device.name, from_me: true, to: [], text: null, files: null, note: null, unknown: null, retracted: false,
     command: { id: "khor-preview-run", line: khorPrompt, owner: device.id, owner_name: device.name, status: khorApproval ? "blocked" : khorRunning ? "running" : "done", started_at_ms: Date.now() - 2000, ended_at_ms: khorRunning ? null : Date.now(), stdout: "", stderr: "", data_json: null, session: null, error: null,
       agent: { model: "fixture-model", approval: khorApproval, updated_at_ms: 100, updates: khorUpdates, updates_truncated: false } } });
@@ -280,6 +268,8 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
+          case "__ai_preview/notification-ready":answer=notices.ready;break;
+          case "__ai_preview/notification":answer=notices.trigger(body.burst===true);break;
           case "__ai_preview/khor-approval":khorRunning=body.pending!==false;khorApproval=body.pending===false?null:{id:`approval-${++jobCounter}`,tool:"close",arguments:JSON.stringify({session:"fixture-session",machine:"临时测试设备"})};answer=khorApproval;break;
           case "__ai_preview/khor-long": khorUpdates = [...initialKhorUpdates, JSON.stringify({ sessionUpdate: "agent_message_chunk", ...text(String(body.text ?? "")) })]; answer = true; break;
           case "__ai_preview/khor-answers":answer=khorAnswers;break;
@@ -301,14 +291,14 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           }
           case "sessions": {
             const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: titles[i],
-              activity: noticeEvents(i), observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
+              activity: [], observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
               word: streaming.has(i)||i===2 ? 'busy' : i===1 ? 'blocked' : 'idle', at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
               stale: false, category: i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude', group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,
               hosted: true, can_control: true, attachable: false, last: '隔离示例 · 不连接真实智能体',
               via: null, via_face: null, home: devices[i%Math.max(1,devices.length)]?.name??device.name, execution_home: devices[i%Math.max(1,devices.length)]?.id??device.id, place:labRoot(devices[i%Math.max(1,devices.length)])+'/project', doing: null, mux: false, ended: null}));
             if (terminal) rows.push({...rows[0], id: 'shell/layout-lab', kind: 'shell', title: '终端 · 布局试验',
-              category: 'shell', activity:options.noticeBurst?noticeEvents(ids.length):[], attachable: true, last: '隔离终端示例'});
-            answer = devices.length ? rows : [];
+              category: 'shell', activity:[], attachable: true, last: '隔离终端示例'});
+            answer = notices.snapshot(devices.length ? rows : []);
             break;
           }
           case 'session_recovery': answer = {id: body.id, home: device.id, current_run: 'fixture-live', next_attempt_epoch: null,
