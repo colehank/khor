@@ -33,6 +33,9 @@
 
 | 入口 | 验证 |
 |---|---|
+| `npm run session-directory` | 实际会话目录 planner：完整父目录事实才判缺失，输入阶段无写入，创建时逐级 mkdir；权限、离线、截断、并发创建、取消与 App Lab 传输一致性 |
+| `npm run viewport-resume` | 实际 visual viewport 监听：后台键盘旧高度恢复，pageshow/focus/原生前台事件重新测量，保留原输入和焦点并清理监听 |
+| `npm run workspace-navigation` | 正式工作区导航：普通目录不显示 Git 历史，Git 目录显示；Lab 普通目录、子目录、相邻路径与跨机器仓库事实一致 |
 | `npm run subscription-import` | 正式额度登记弹窗：复用会话导入控件、机器搜索／多选／全部、订阅搜索、逐机发现、已登记排除／空／不通／旧版本、重试、点行导入、失败保留筛选、防止重复提交、计费登记回归；隔离 API fixture，不读取真实登录 |
 | `npm run session-content` | 正式 App + 独立节点/PTY：内容原地转换、自动保存、预览保持、会话隔离、CLI 同步与持久化、放大/恢复、拥挤时头像与两个 ＋、桌面临时浏览与无空记录、来源按钮与菜单尺寸对齐、无图标浏览标签、共享返回与草稿、手机单甲板与 PTY 位置保留、首次／最近文档恢复、逐级返回、两层标签入口和末尾新建行、临时查看与原地保留、目录滚动、真实触控取消与会话隔离；需先构建 CLI 与 bridge，可用 `CARGO_TARGET_DIR`、`CONTENT_CHECK_DIR` 指定外置盘 |
 | `npm run session-cwd` | cd、活动 pane、地点筛选/搜索、工作区归属、旧附栏恢复、默认跟随与主动固定目录 |
