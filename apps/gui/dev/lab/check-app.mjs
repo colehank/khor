@@ -1,4 +1,5 @@
 import {checkLongHistory} from './history-checks.mjs';
+import {checkWorkspaceBack} from './workspace-back-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
@@ -316,6 +317,7 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  results.push(await checkWorkspaceBack(browser,{port,report}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
   results.push(await checkGuiExperience(browser,{port,report,engine:'chromium'}));

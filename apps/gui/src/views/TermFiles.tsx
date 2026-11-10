@@ -53,7 +53,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   };
   const [error, setError] = useState<string | null>(null), [result, setResult] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
-  const generation = useRef(0), mounted = useRef(false);
+  const generation = useRef(0), mounted = useRef(false), sending=useRef(false);
   const trail = useRef<{ at: Place | null; query: string }[]>([]);
   const refreshDevices = useCallback(() => {
     const mark = ++deviceGeneration.current;
@@ -132,12 +132,15 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const destination = into === "cwd" && road.cwd ? road.cwd : null;
   const direct = (entries: Attachment[]) => entries.length > 0 && !destination && entries.every((e) => !e.device && e.from === road.machine);
   const send = async (entries: Attachment[]) => {
-    if (road.busy || !entries.length) return;
-    setError(null); closePreview();
-    const ok = await road.send(entries, destination);
-    if (!mounted.current) return;
-    setResult(ok ? gui.files_sent(entries.length) : gui.files_retry_ready);
-    if (ok) {setQueue(false);onSent();}
+    if (road.busy || sending.current || !entries.length) return;
+    sending.current=true;setError(null);closePreview();
+    try{
+      const ok = await road.send(entries, destination);
+      if (!mounted.current) return;
+      setResult(ok ? gui.files_sent(entries.length) : gui.files_retry_ready);
+      if (ok) {setQueue(false);onSent();}
+    }catch(error){if(mounted.current)setError(said(error));}
+    finally{sending.current=false;}
   };
   const back = () => {
     if (queue) { setQueue(false); return; }
@@ -149,8 +152,8 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const entries = at?.listing?.entries.filter((e) => e.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   return <div data-files-panel className="flex min-h-0 flex-1 flex-col">
     <div data-files-head className="flex min-h-touch flex-none items-center gap-in border-b px-row">
-      {at||queue?<button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button>:<Button data-files-cancel variant="ghost" disabled={road.busy} onClick={onClose}>{gui.cancel}</Button>}
-      <div className="min-w-0 flex-1"><h3 className="truncate text-body font-label">{gui.files_select_hint}</h3>{at && !queue && <p className="truncate font-mono text-caption text-muted-foreground" title={at.path}>{at.path}</p>}</div>
+      {(at||queue)&&!road.busy?<button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button>:<Button data-files-cancel variant="ghost" disabled={road.stopping} onClick={road.busy?road.cancel:onClose}>{road.busy?gui.term_drop_stop:gui.cancel}</Button>}
+      <div className="min-w-0 flex-1"><h3 className="truncate text-body font-label">{gui.files_picker_title}</h3>{at && !queue && <p className="truncate font-mono text-caption text-muted-foreground" title={at.path}>{at.path}</p>}</div>
       {!road.busy&&<Button data-files-send disabled={!road.selected.length||picking} className="min-h-touch flex-none" onClick={()=>void send(road.selected)}>{direct(road.selected)?gui.files_insert_count(road.selected.length):gui.files_send_count(road.selected.length)}</Button>}
     </div>
     <div data-key-panel-scroll className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-row">
@@ -192,7 +195,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
     <input ref={folders} type="file" multiple hidden {...{ webkitdirectory: "" }} onChange={(e) => { addDevice([...(e.target.files ?? [])], true); e.target.value = ""; }} />
     <div className="flex flex-none flex-col gap-in border-t px-row py-in">
       {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
-      {road.busy ? <div data-files-transfer data-stopping={road.stopping || undefined} className="flex min-h-touch items-center gap-row"><span role="status" className="min-w-0 flex-1 truncate text-callout">{road.stopping ? gui.files_cancelling : gui.files_sending(road.selected.map((x) => x.name).join(", "))}</span>{!road.stopping && <span className="text-caption tabular-nums">{Math.round((road.progress ?? 0) * 100)}%</span>}{!road.stopping && <Button size="sm" onClick={road.cancel}>{gui.term_drop_stop}</Button>}</div> : <>
+      {road.busy ? <div data-files-transfer data-stopping={road.stopping || undefined} className="flex min-h-touch items-center gap-row"><span role="status" className="min-w-0 flex-1 truncate text-callout">{road.stopping ? gui.files_cancelling : gui.files_sending(road.selected.map((x) => x.name).join(", "))}</span>{!road.stopping && <span className="text-caption tabular-nums">{Math.round((road.progress ?? 0) * 100)}%</span>}</div> : <>
         {road.selected.length > 0 && road.cwd && <PopupButton value={into} onPick={setInto} label={gui.send_into} mark={{ "data-files-destination": true }} look="field" choices={[{ value: "receive", label: gui.files_receive }, { value: "cwd", label: gui.files_current_dir, note: road.cwd }]} />}
         <button type="button" data-files-review disabled={!road.selected.length} onClick={() => setQueue(!queue)} className="min-h-touch min-w-0 truncate text-left text-callout disabled:text-muted-foreground">{road.selected.length ? gui.files_selected_count(road.selected.length) : result || gui.files_select_hint}</button>
       </>}
@@ -203,8 +206,8 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
 function AttachmentCard({entry,pending,onOpen}:{entry:Attachment;pending:boolean;onOpen:()=>void}){
   const file=entry.dir?null:entry.device?.files[0]?.file;
   const [thumb,setThumb]=useState<string|null>(null);
-  useEffect(()=>{if(!file?.type.startsWith('image/'))return;const url=URL.createObjectURL(file);setThumb(url);return()=>URL.revokeObjectURL(url);},[file]);
-  return <button type="button" data-files-card-preview aria-busy={pending||undefined} onClick={onOpen} className="flex min-h-touch w-full min-w-0 items-center gap-in p-in text-left">
+  useEffect(()=>{if(!file?.type.startsWith('image/')||file.size>1024*1024)return;const url=URL.createObjectURL(file);setThumb(url);return()=>URL.revokeObjectURL(url);},[file]);
+  return <button type="button" data-files-card-preview aria-busy={pending||undefined} onClick={onOpen} className="flex min-h-touch w-full min-w-0 items-center gap-in p-in text-left aria-busy:animate-pulse motion-reduce:aria-busy:animate-none">
     {thumb?<img src={thumb} alt="" className="size-10 flex-none rounded-md object-cover"/>:<Mark entry={entry}/>}
     <span className="min-w-0 flex-1"><span className="block truncate text-body">{entry.name}</span>{entry.size!==null&&<span className="block text-caption tabular-nums text-muted-foreground">{sizeWord(entry.size)}</span>}</span>
   </button>;

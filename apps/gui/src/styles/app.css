@@ -988,25 +988,17 @@ aside[data-side] {
 :root[data-settling]:not([data-swipe-kind="file"]) [data-screen-under] > :not([data-float-nav]) {
   transition: transform var(--dur-240) var(--ease-out);
 }
-:root[data-swiping]:not([data-swipe-kind="file"]) :is([data-side-l0], [data-swipe-host]) {
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-screen-front] {
   position: relative;
   z-index: 1;
 }
-/* The head stays over the screen pulled up under it (`[data-band]`). */
-:root[data-swiping]:not([data-swipe-kind="file"]) [data-side-l0][data-band] {
-  z-index: 3;
-}
-:root[data-swiping]:not([data-swipe-kind="file"]) [data-side-l0] {
-  transform: translateX(var(--swipe));
-}
-:root[data-settling]:not([data-swipe-kind="file"]) [data-side-l0] {
-  transition: transform var(--dur-240) var(--ease-out);
-}
-:root[data-swiping]:not([data-swipe-kind="file"]) [data-swipe-host] > [data-screen] {
+/* The title and its document travel on one opaque page. A glass title
+   must sample that page, not the preceding list behind it. */
+:root[data-swiping]:not([data-swipe-kind="file"]) [data-screen-front] {
   transform: translateX(var(--swipe));
   box-shadow: var(--shadow-swipe);
 }
-:root[data-settling]:not([data-swipe-kind="file"]) [data-swipe-host] > [data-screen] {
+:root[data-settling]:not([data-swipe-kind="file"]) [data-screen-front] {
   transition: transform var(--dur-240) var(--ease-out);
 }
 /* The screen is opaque, so the page under never shows through it. */

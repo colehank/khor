@@ -235,18 +235,31 @@ export function followVisualViewport(): () => void {
   vv.addEventListener("scroll", apply);
   // Focus moves before the keyboard has finished rising on some
   // versions; asking again a beat later costs nothing.
-  const late = () =>
-    window.setTimeout(() => {
+  let lateTimer=0;
+  const late = () => {
+    window.clearTimeout(lateTimer);
+    lateTimer=window.setTimeout(() => {
       apply();
       takeBack();
     }, 350);
+  };
+  const resumed = (event:Event) => {
+    if(document.hidden&&event.type!=='khor:foreground')return;
+    apply();takeBack();late();
+  };
   window.addEventListener("focusin", late);
   window.addEventListener("focusout", late);
+  document.addEventListener('visibilitychange',resumed);
+  for(const event of ['pageshow','focus','khor:foreground'])window.addEventListener(event,resumed);
   return () => {
     if (reapply === apply) reapply = null;
     vv.removeEventListener("resize", apply);
     vv.removeEventListener("scroll", apply);
     window.removeEventListener("focusin", late);
     window.removeEventListener("focusout", late);
+    document.removeEventListener('visibilitychange',resumed);
+    for(const event of ['pageshow','focus','khor:foreground'])window.removeEventListener(event,resumed);
+    window.clearTimeout(lateTimer);
+    window.clearTimeout(settle);
   };
 }

@@ -2584,12 +2584,13 @@ export function TerminalPane({
     const viaHistory = () => !!tmuxHistory?.over();
     // **No refit while a selection is up** (item 73): a keyboard that
     // rose or fell under it would cost it; the refit runs when it ends.
-    let fitOwed = false;
+    let fitOwed = false, measureOwed = false;
     const refit = () => {
       if (selectionUp()) {
         fitOwed = true;
         return;
       }
+      if(measureOwed){measureOwed=false;term.resize(term.cols,term.rows);}
       fit.fit();
     };
     selectsNow = window.matchMedia("(pointer: coarse)").matches
@@ -2774,7 +2775,7 @@ export function TerminalPane({
     // height (`--app-h`) still follows every step, so the deck rides.
     let raf = 0;
     let still = 0;
-    const observer = new ResizeObserver(() => {
+    const scheduleFit = () => {
       if (viewportMoving(KEYBOARD_MOVING_MS)) {
         window.cancelAnimationFrame(raf);
         raf = 0;
@@ -2793,8 +2794,17 @@ export function TerminalPane({
         raf = 0;
         refit();
       });
-    });
+    };
+    const observer = new ResizeObserver(scheduleFit);
     observer.observe(box);
+    // WebKit may restore a stale visual viewport/cell measurement without
+    // issuing ResizeObserver, especially after backgrounding while typing.
+    const resumed = (event:Event) => {
+      if(stopped||document.hidden&&event.type!=='khor:foreground')return;
+      measureOwed=true;scheduleFit();
+    };
+    document.addEventListener('visibilitychange',resumed);
+    for(const event of ['pageshow','focus','khor:foreground'])window.addEventListener(event,resumed);
     // 外观's 终端字号 (the redesign, 2026-10-02): a new size reaches the
     // open terminal at once — xterm re-measures its cells and the fit
     // tells the far side the new rows and columns.
@@ -2847,6 +2857,8 @@ export function TerminalPane({
       pollNow.current = () => {};
       if (raf) window.cancelAnimationFrame(raf);
       observer.disconnect();
+      document.removeEventListener('visibilitychange',resumed);
+      for(const event of ['pageshow','focus','khor:foreground'])window.removeEventListener(event,resumed);
       window.clearTimeout(still);
       data.dispose();
       term.textarea?.removeEventListener("paste", pasted, true);

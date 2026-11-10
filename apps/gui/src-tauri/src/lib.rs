@@ -5198,6 +5198,7 @@ fn repaint_the_face(app: &tauri::AppHandle) {
             let _: () = msg_send![scroll, setContentOffset: at];
         }
     });
+    let _ = face.eval("window.dispatchEvent(new Event('khor:foreground'))");
 }
 
 /// **The Mac woke from sleep** (`NSWorkspaceDidWakeNotification`): the

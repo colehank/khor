@@ -3506,6 +3506,7 @@ export default function App() {
               </SideSeatsProvider>
             </div>
           )}
+          <div ref={setSwipeHost} data-swipe-host data-screen-front className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
           {!fullScreen && sideHead}
           {/* ⚠️ 墓碑 (2026-09-23, docs/SHELL.md 第十轮, 第十三轮): a
               `[data-traffic-room]` spacer stood here, holding the head of
@@ -3520,7 +3521,6 @@ export default function App() {
               and re-keying on the row would replay the slide (and
               remount a live terminal) every time the list is clicked.
               `data-screen` is what app.css keys the direction off. */}
-          <div ref={setSwipeHost} data-swipe-host className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
           <div
             key={morePage ? `more:${screen === "detail" ? morePage : "list"}` : screen}
             data-screen={morePage ? "more" : screen}
