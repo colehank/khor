@@ -15,9 +15,11 @@ const CLI_IN_APP: &str = "Contents/MacOS/khor";
 const PROGRAM_IN_APP: &str = "Contents/MacOS/khor-gui";
 
 #[cfg(target_os = "macos")]
-fn bundle_of_cli(cli: &Path) -> Option<&Path> {
+fn bundle_of_cli(cli: &Path) -> Option<PathBuf> {
+    let cli = std::fs::canonicalize(cli).ok()?;
     let app = cli.ancestors().nth(3)?;
-    (cli.ends_with(CLI_IN_APP) && app.extension().is_some_and(|ext| ext == "app")).then_some(app)
+    (cli.ends_with(CLI_IN_APP) && app.extension().is_some_and(|ext| ext == "app"))
+        .then(|| app.to_path_buf())
 }
 
 /// A CLI delivered inside the signed Mac bundle is replaced with the App.
@@ -39,7 +41,7 @@ fn installed_apps(cli: &Path) -> Vec<PathBuf> {
     {
         let mut apps = Vec::new();
         if let Some(app) = bundle_of_cli(cli) {
-            apps.push(app.to_path_buf());
+            apps.push(app);
         }
         apps.push(PathBuf::from("/Applications/Khor.app"));
         if let Some(home) = std::env::var_os("HOME") {
