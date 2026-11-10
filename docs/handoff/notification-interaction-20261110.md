@@ -1,12 +1,22 @@
 # 通知交互与调度（2026-11-10）
-## 用户反馈后的演示修复（进行中）
+## 用户反馈后的演示修复（已完成）
 
 用户反馈普通通知没有反应。发现旧Lab数据在bootstrap创建时按绝对时间给固定Plan会话发事件：慢导入会把事件当首屏历史消费，已打开Plan则正常被onScreen抑制。此前CI只在新状态下进入，未覆盖同identity重开。
 
-改为首个会话快照后开始计时，避开当前选中会话并尊重静音。通知演示页添加标明Lab的“再次触发／汇总”按钮，经数据fixture生成新事件，仍由正式App收集和绘制；不放宽生产抑制规则。增加恢复已选Plan后reload、手动再次触发、慢启动基线与实际生产汇总检查。旧98a继续LIVE，待新可信产物验证后切换。
+改为首个会话快照后开始计时，避开当前选中会话并尊重静音。通知演示页添加标明Lab的“再次触发／汇总”按钮，经数据fixture生成新事件，仍由正式App收集和绘制；不放宽生产抑制规则。增加恢复已选Plan后reload、手动再次触发、慢启动基线与实际生产汇总检查。已切换到新可信0286版本，旧98a快照继续可用。
 
 
-## 当前完成状态
+## 本次修复验收
+
+- 产品 `0286ec5d64e97872df899aea9e04112057ca5691`，tree `d2c059ff7430ff80026acbb082530e21f2111734`。
+- [Quality42747491212](https://github.com/colehank/khor/actions/runs/42747491212) 全绿：新Lab数据检查、GUI units/types、原通知手势等settings交互组；56项实际App Lab及热更新通过。
+- 实际App已检查保留Plan后刷新仍通知其他会话、关闭后点击“再次触发”重新出现；手机／桌面截图 `app-notification-retrigger-chromium-mobile/desktop.png` 已检查。
+- 当前地址 `http://127.0.0.1:23950/app/?scene=list&machines=3&notices=1&review=repeat-v2`。下方Lab工具只在通知演示页挂载；“再次触发／汇总”通过数据fixture发事件，正式App规则和通知UI不变。
+- LIVE来源 `notification-demo-028-transfer/extracted-fast/developer-lab`；此前下载中断，最终从同一GitHub artifact13731688051分段续传，完整ZIP CRC、manifest源码/tree均核对。临时ZIP和分段已清理。
+- 服务PID57328／exec92502；原98a及294／3a／394／ce0／269／pinned页和JS保留HTTP200，新工具chunk同样HTTP200。线上验证 `notification-demo-live-verification.json`。
+- 本轮不发布；真实手机／native浏览器叠层仍待验收。
+
+## 前次交付（98a）
 
 已实现并在 Lab 交付，等待用户视觉／真机验收；发布继续暂停。
 
