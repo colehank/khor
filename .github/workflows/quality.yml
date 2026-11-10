@@ -8,60 +8,16 @@ on:
         type: string
 permissions:
   contents: read
-  actions: read
 jobs:
-  recovery:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 12
-    strategy:
-      fail-fast: false
-      matrix:
-        mode: [default, software]
+  loopback-network:
+    runs-on: macos-26
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          ref: d2d3a93171b62ee0faef40200acce979293401d6
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
-        with:
-          node-version: 22.19.0
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: frontend
-          run-id: 42800418972
-          github-token: ${{ github.token }}
-          path: frontend
-      - name: Prepare the same production source and browser dependencies
-        run: |
-          python3 scripts/release_manifest.py verify --root frontend --sha 36071117ce4ba74ffda83c1c29fea8ca190c69ee --run-id 42800418972
-          cp -R frontend/gen apps/gui/src/gen
-          npm ci --prefix apps/gui
-          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
-          cd apps/gui
-          node node_modules/playwright-core/cli.js install --with-deps chromium webkit
-      - name: Compare unchanged directory recovery under each Mesa mode
-        env:
-          MODE: ${{ matrix.mode }}
-          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
-          CHAT_RECOVERY_SCENARIOS: directory-required-shell
-          CHAT_RECOVERY_WEBKIT: '1'
-          DEBUG: pw:browser
-        run: |
-          if [ "$MODE" = software ]; then
-            export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
-          else
-            unset LIBGL_ALWAYS_SOFTWARE GALLIUM_DRIVER
-          fi
-          failed=0
-          for attempt in 1 2 3; do
-            if CHAT_RECOVERY_CHECK_DIR="$RUNNER_TEMP/recovery-$attempt" timeout --kill-after=5s 120s npm run chat-recovery --prefix apps/gui; then
-              echo "attempt $attempt passed"
-            else
-              failed=1
-            fi
-          done
-          exit "$failed"
+      - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - run: python3 loopback_network_diagnostic.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: recovery-${{ matrix.mode }}
-          path: ${{ runner.temp }}/recovery-*/report.json
+          name: loopback-network-diagnostic
+          path: ${{ runner.temp }}/loopback-diagnostic/results.json
