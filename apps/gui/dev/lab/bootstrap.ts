@@ -55,6 +55,7 @@ if (runtime.mode === 'frontend') {
     ready:()=>fixture.request('__ai_preview/notification-ready')===true,
     trigger:burst=>fixture.request('__ai_preview/notification',{burst}) as string[],
   };
+  const uploadedText = new Map<string, {text: string; total: number; at_ms: number; digest: string; cut: boolean; binary: boolean}>();
   const original = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const request = new Request(input, init);
@@ -65,13 +66,20 @@ if (runtime.mode === 'frontend') {
       const command = url.pathname.slice('/api/'.length);
       let body:Record<string,unknown>;
       if(command==='chat_put'){
-        body=Object.fromEntries(url.searchParams);await request.arrayBuffer();
+        body=Object.fromEntries(url.searchParams);
+        const bytes=await request.arrayBuffer();
         const mode=fixture.request('__ai_preview/upload-state');
         if(mode==='fail')return Response.json('上传失败，请移除附件后重新添加',{status:503});
         if(mode==='delay')await new Promise(resolve=>setTimeout(resolve,1200));
+        const path=fixture.request(command,body);
+        if(typeof path==='string' && path.endsWith('.txt')){
+          uploadedText.set(path,{text:new TextDecoder().decode(bytes),total:bytes.byteLength,at_ms:Date.now(),digest:crypto.randomUUID(),cut:false,binary:false});
+        }
+        return Response.json(path);
       }else body=await request.json();
       if(['chat_poll','chat_wait'].includes(command)&&fixture.request('__ai_preview/poll-state')==='fail')return Response.json('读取暂时中断',{status:503});
-      const answer = fixture.request(command,body);
+      const text = (command === 'read_text' || command === 'stat_text') && uploadedText.get(String(body.path));
+      const answer = text || fixture.request(command,body);
       // Polling fixtures must yield so production loops cannot starve rendering.
       if (['chat_wait', 'term_wait', 'term_stream', 'dirs_wait'].includes(command)) await new Promise(r => setTimeout(r, 120));
       return Response.json(answer);

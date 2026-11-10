@@ -83,6 +83,18 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await api('__ai_preview/poll-mode',{mode:'ok'});
   await page.locator('[data-session-tabs] [data-tab-notice="rejoin"]').waitFor({state:'detached'});
   assert.equal((await api('__ai_preview/says')).length,0,'Reconnect only resumes reads; it never resends a prompt');
+  await api('__ai_preview/upload-mode',{mode:'ok'});
+  await page.locator('input[type=file]').last().setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('This selected file can be previewed.')});
+  const card=page.locator('[data-chat-pending-file="notes.txt"][data-placed]');
+  await card.locator('[data-chat-pending-preview]').click();
+  const file=page.locator('[data-file-preview="/preview/uploads/notes.txt"]');
+  await file.waitFor();
+  await file.getByText('This selected file can be previewed.',{exact:false}).last().waitFor();
+  await file.locator('[data-file-preview-close]').click();
+  await card.waitFor();
+  await page.locator('[data-chat-send]').click();
+  await page.waitForFunction(()=>document.activeElement?.matches('[data-chat-input]'));
+  await card.waitFor({state:'detached'});
   assert.deepEqual(errors,[]);
   return {name:`GUI composer and reader ${engine}`,passed:true,errors};
  }catch(error){
