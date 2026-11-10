@@ -2,7 +2,7 @@
 // native page overlay/borrow rendering requires desktop app acceptance.
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdirSync,writeFileSync,readFileSync,copyFileSync,rmSync} from 'node:fs';
+import {mkdirSync,writeFileSync,existsSync,copyFileSync,rmSync} from 'node:fs';
 import {join,resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
@@ -13,7 +13,6 @@ const repo=resolve(gui,'../..');
 const scratch=process.env.CONTENT_CHECK_DIR||join(tmpdir(),'khor-attachment-ui-check');
 const target=process.env.CARGO_TARGET_DIR||join(repo,'target');
 const port=Number(process.env.CONTENT_VITE_PORT||1482), bridgePort=Number(process.env.CONTENT_BRIDGE_PORT||1483);
-const word=key=>readFileSync(join(repo,'crates/catalog/zh.toml'),'utf8').match(new RegExp('^'+key+' = "([^"]*)"','m'))?.[1];
 const children=[],sessions=[];
 let browser,usage,page;
 const until=async(fn,ms=20000)=>{const end=Date.now()+ms;let last;do{const failed=children.find(c=>c.exitCode!==null&&c.exitCode!==0);if(failed)throw Error('Private test service exited: '+failed.exitCode);try{last=await fn();if(last)return last;}catch(e){last=e;}await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);throw Error('Timed out: '+last);};
@@ -53,14 +52,14 @@ try{
   const remote={...device,id:'a'.repeat(64),name:'audit-remote',shown:'远端 A',me:false,hop:'direct',hosts:true,paused:false};
   await page.route('**/devices',r=>r.fulfill({json:[device,remote]}));
   await page.route('**/ls',r=>{const asked=r.request().postDataJSON().path;const path=asked||projects[0];const child=path===folder;return r.fulfill({json:{path,entries:child?[{name:'child.md',dir:false,size:8,at_ms:0}]:[{name:'folder',dir:true,size:0,at_ms:0},{name:'notes.md',dir:false,size:8,at_ms:0}],truncated:false}});});
-  await page.route('**/read_text',r=>r.fulfill({json:{total:8,at_ms:0,text:'# Audit\n',cut:false,binary:false,digest:'audit'}}));
+  await page.route('**/read_text',r=>r.request().postDataJSON().path.endsWith('/preview-local.txt')?r.fallback():r.fulfill({json:{total:8,at_ms:0,text:'# Audit\n',cut:false,binary:false,digest:'audit'}}));
   await page.route('**/stat_text',r=>r.fulfill({json:{total:8,at_ms:0,digest:'audit'}}));
   let hold=null,release;const staged=[],sent=[],forgotten=[],cancelled=[];
-  await page.route(/\/term_drop_stage\?/,async r=>{const name=new URL(r.request().url()).searchParams.get('name');staged.push(name);if(hold)await hold;await r.fulfill({json:'/stage/'+staged.length+'/'+name});});
+  await page.route(/\/term_drop_stage\?/,async r=>{const name=new URL(r.request().url()).searchParams.get('name');if(name==='preview-local.txt')return r.fallback();staged.push(name);if(hold)await hold;await r.fulfill({json:'/stage/'+staged.length+'/'+name});});
   await page.route('**/term_drop',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.paths,miss:null}});});
   await page.route('**/term_drop_items',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.items.map(x=>x.path),miss:null}});});
   await page.route('**/term_drop_cancel',r=>{cancelled.push(r.request().postDataJSON());return r.fulfill({json:null});});
-  await page.route('**/term_drop_forget',r=>{forgotten.push(...r.request().postDataJSON().paths);return r.fulfill({json:null});});
+  await page.route('**/term_drop_forget',r=>{const {paths}=r.request().postDataJSON();if(paths.some(path=>path.endsWith('/preview-local.txt')))return r.fallback();forgotten.push(...paths);return r.fulfill({json:null});});
   await page.route('**/term_drop_progress',r=>r.fulfill({json:null}));
   if(!(await page.locator('[data-deck-title]').isVisible()))await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();
   const keys=page.locator('[data-key-row-switch]:visible');if(await keys.getAttribute('aria-expanded')!=='true')await keys.click();await page.locator('[data-term-key=attach]:visible').click();await page.locator('[data-files-machine]').first().waitFor();
@@ -83,6 +82,28 @@ try{
     await page.locator('[data-files-selected] [data-chat-file]').click();await page.locator('[data-file-preview] [data-file-view]').waitFor();await page.locator('[data-file-preview-close]').click();
     await page.locator('[data-files-send]').click();await until(()=>sent.length>0);await sentToKeyboard();note('attachment-send',{sent:sent.length,operation:sent[0]});
   });
+  await step('local-file-preview',async()=>{
+    await reopen();
+    await panel().locator('input[type=file]:not([webkitdirectory])').setInputFiles([
+      {name:'preview-local.txt',mimeType:'text/plain',buffer:Buffer.from('Previewed from actual staged bytes')},
+      {name:'keep-local.txt',mimeType:'text/plain',buffer:Buffer.from('Kept in selection')},
+    ]);
+    const previewCard=panel().locator('[data-files-selected="preview-local.txt"]');
+    const keepCard=panel().locator('[data-files-selected="keep-local.txt"]');
+    await previewCard.getByRole('button').first().click();
+    const preview=page.locator('[data-file-preview]');
+    await preview.getByText('Previewed from actual staged bytes',{exact:false}).last().waitFor();
+    const path=await preview.getAttribute('data-file-preview');
+    assert.equal(existsSync(path),true,'preview owns a real temporary file');
+    await preview.locator('[data-file-preview-close]').click();
+    await until(()=>!existsSync(path));
+    await previewCard.getByRole('button').last().click();
+    await previewCard.waitFor({state:'detached'});
+    await keepCard.waitFor();
+    await keepCard.getByRole('button').last().click();
+    await keepCard.waitFor({state:'detached'});
+    note('local-file-preview',{retired:!existsSync(path),independentSelection:true});
+  });
   await step('cancel-immediate-retry',async()=>{
     await reopen();
     const file=panel().locator('input[type=file]:not([webkitdirectory])');await file.setInputFiles([{name:'retry-a.txt',mimeType:'text/plain',buffer:Buffer.from('a')},{name:'retry-b.txt',mimeType:'text/plain',buffer:Buffer.from('b')}]);
@@ -91,10 +112,10 @@ try{
     hold=new Promise(r=>release=r);
     try{
       await page.locator('[data-files-send]').click();await until(()=>staged.length===1);
-      await panel().getByRole('button',{name:word('term-drop-stop'),exact:true}).click();
+      await page.locator('[data-files-panel]:has([data-files-transfer]) [data-files-cancel]').click();
       assert.equal(await page.locator('[data-files-send]').count(),0,'cancel exposed an early retry');
       await page.locator('[data-files-transfer][data-stopping]').waitFor();
-      assert.equal(await panel().getByRole('button',{name:word('term-drop-stop'),exact:true}).isDisabled(),true,'cancel cannot be repeated during cleanup');
+      assert.equal(await panel().locator('[data-files-cancel]').isDisabled(),true,'cancel cannot be repeated during cleanup');
       release();hold=null;await until(()=>forgotten.length>0);
       assert.equal(await page.locator('[data-files-send]').count(),0,'retry unlocked before cancellation acknowledgement');
       finishCancel();await page.locator('[data-files-send]').waitFor();await page.locator('[data-files-send]').click();
@@ -105,7 +126,9 @@ try{
   await step('empty-system-change',async()=>{
     await reopen();
     await panel().locator('input[type=file]:not([webkitdirectory])').setInputFiles([]);
-    assert.equal(await panel().getByText(word('files-empty-selection'),{exact:true}).count(),0,'empty change entered empty queue');note('empty-system-change',{emptyQueue:await panel().getByText(word('files-empty-selection'),{exact:true}).count(),sources:await page.locator('[data-files-machine]').count(),header:await panel().locator('h3').first().innerText()});
+    assert.equal(await panel().locator('[data-files-selected]').count(),0,'empty change entered a selection');
+    assert.equal(await panel().locator('[data-files-mesh]').isVisible(),true,'empty change remains on the sources page');
+    note('empty-system-change',{sources:await panel().locator('[data-files-machine]').count()});
   });
   writeFileSync(join(out,'attachment-results.json'),JSON.stringify({results,errors},null,2));assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('attachment UI gate: clean');
 }catch(e){await page?.screenshot({path:join(scratch,'failed.png')}).catch(()=>{});console.error(e);throw e;}
