@@ -303,7 +303,7 @@ function KeyPanel({
             className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background pb-safe-bottom font-sans text-foreground"
           >
             {kind === "files" ? (
-              <TermFiles road={files} />
+              <TermFiles road={files} onClose={()=>{keyPanelGone();const field=term.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}} onSent={()=>{keyPanelGone();const field=term.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}} />
             ) : (
               <div data-key-panel-scroll className="flex min-h-0 flex-1 touch-pan-y flex-col gap-base overflow-y-auto overscroll-contain px-row pt-in">
                 {GROUPS.map(({ group, label }) => (

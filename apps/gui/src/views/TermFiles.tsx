@@ -1,7 +1,7 @@
 /** Attachment browser in the existing key-panel band. Browsing never
  * sends: files open read-only; selection is sent through the pane. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termPickFolders, type DeviceRow } from "@/api";
+import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termDropStage, termPickFolders, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu } from "@/components/RowMenu";
 import { IconBack, IconCheck, IconClose, IconFile, IconFiles } from "@/components/icons";
@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { isDown } from "@/lib/topology";
 import { hopWord } from "@/words";
 import { sizeWord } from "@/views/FilesPane";
-import { FilePreview } from "@/views/chat-files";
+import { FileCard, FilePreview } from "@/views/chat-files";
 
 export type FilesRoad = {
   machine: string | null; cwd: string | null;
@@ -33,8 +33,8 @@ export function machinesFor(devices: DeviceRow[], machine: string | null): Devic
 }
 type Place = { machine: DeviceRow; path: string; listing: DirListing | null; error?: string };
 /** `face` left out: the file's own default (`defaultFaceOf`). */
-type Look = { entry: Attachment; machine: DeviceRow; face?: "source" | "preview" };
-export function TermFiles({ road }: { road: FilesRoad }) {
+type Look = { entry: Attachment; machine: DeviceRow; path?: string; face?: "source" | "preview" };
+export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose: () => void; onSent: () => void }) {
   const picker = useRef<HTMLInputElement>(null), folders = useRef<HTMLInputElement>(null);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [sourceError, setSourceError] = useState<string | null>(null);
@@ -43,6 +43,14 @@ export function TermFiles({ road }: { road: FilesRoad }) {
   const [queue, setQueue] = useState(false), [query, setQuery] = useState("");
   const [into, setInto] = useState("receive");
   const [look, setLook] = useState<Look | null>(null);
+  const preview = useRef<{turn:number;path:string|null}>({turn:0,path:null});
+  const [previewing,setPreviewing]=useState<string|null>(null);
+  const closePreview=()=>{
+    preview.current.turn++;
+    const path=preview.current.path;preview.current.path=null;
+    if(path)void termDropForget([path]).catch(()=>{});
+    setLook(null);setPreviewing(null);
+  };
   const [error, setError] = useState<string | null>(null), [result, setResult] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const generation = useRef(0), mounted = useRef(false);
@@ -60,6 +68,8 @@ export function TermFiles({ road }: { road: FilesRoad }) {
     document.addEventListener("visibilitychange", visible);
     return () => {
       mounted.current = false; generation.current++; deviceGeneration.current++;
+      preview.current.turn++;
+      if(preview.current.path)void termDropForget([preview.current.path]).catch(()=>{});
       window.removeEventListener("focus", visible);
       document.removeEventListener("visibilitychange", visible);
     };
@@ -76,6 +86,22 @@ export function TermFiles({ road }: { road: FilesRoad }) {
     }).catch((e: unknown) => { if (mark === generation.current) setAt({ machine, path, listing: null, error: said(e) }); });
   };
   const selected = (e: Attachment) => road.selected.some((x) => x.key === e.key);
+  const inspect = async (entry: Attachment) => {
+    closePreview();setError(null);
+    const machine=devices.find(device=>entry.from?device.name===entry.from:device.me);
+    if(!machine){setError(gui.content_machine_gone);return;}
+    if(entry.dir&&!entry.device){setQueue(false);open(machine,entry.path);return;}
+    if(entry.dir){setError(gui.files_browser_dir);return;}
+    if(!entry.device){setLook({entry,machine});return;}
+    const turn=preview.current.turn;
+    setPreviewing(entry.key);
+    try{
+      const path=await termDropStage(entry.device.files[0].file);
+      if(!mounted.current||preview.current.turn!==turn){void termDropForget([path]).catch(()=>{});return;}
+      preview.current.path=path;setLook({entry,machine,path});
+    }catch(error){if(mounted.current&&preview.current.turn===turn)setError(said(error));}
+    finally{if(mounted.current&&preview.current.turn===turn)setPreviewing(null);}
+  };
   const included = (e: Attachment) => road.selected.some((x) => includesAttachment(x, e));
   const toggle = (e: Attachment) => {
     if (road.busy || included(e)) return;
@@ -107,11 +133,11 @@ export function TermFiles({ road }: { road: FilesRoad }) {
   const direct = (entries: Attachment[]) => entries.length > 0 && !destination && entries.every((e) => !e.device && e.from === road.machine);
   const send = async (entries: Attachment[]) => {
     if (road.busy || !entries.length) return;
-    setError(null); setLook(null);
+    setError(null); closePreview();
     const ok = await road.send(entries, destination);
     if (!mounted.current) return;
     setResult(ok ? gui.files_sent(entries.length) : gui.files_retry_ready);
-    if (ok) setQueue(false);
+    if (ok) {setQueue(false);onSent();}
   };
   const back = () => {
     if (queue) { setQueue(false); return; }
@@ -122,17 +148,19 @@ export function TermFiles({ road }: { road: FilesRoad }) {
   };
   const entries = at?.listing?.entries.filter((e) => e.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   return <div data-files-panel className="flex min-h-0 flex-1 flex-col">
-    {(at || queue) && <div data-files-head className="flex min-h-touch flex-none items-center gap-in border-b px-row">
-      <button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button>
-      <div className="min-w-0 flex-1"><h3 className="truncate text-body font-label">{queue ? gui.files_selected : at?.machine.shown}</h3>{at && !queue && <p className="truncate font-mono text-caption text-muted-foreground" title={at.path}>{at.path}</p>}</div>
-      {at && !queue && <input data-files-filter aria-label={gui.filter} placeholder={gui.filter} value={query} onChange={(e) => setQuery(e.target.value)} onMouseDown={(e) => e.stopPropagation()} className="h-ctl-md min-h-touch w-20 rounded-sm bg-fill px-in text-callout outline-none focus-visible:ring-2 focus-visible:ring-ring" />}
-    </div>}
+    <div data-files-head className="flex min-h-touch flex-none items-center gap-in border-b px-row">
+      {at||queue?<button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button>:<Button data-files-cancel variant="ghost" disabled={road.busy} onClick={onClose}>{gui.cancel}</Button>}
+      <div className="min-w-0 flex-1"><h3 className="truncate text-body font-label">{gui.files_select_hint}</h3>{at && !queue && <p className="truncate font-mono text-caption text-muted-foreground" title={at.path}>{at.path}</p>}</div>
+      {!road.busy&&<Button data-files-send disabled={!road.selected.length||picking} className="min-h-touch flex-none" onClick={()=>void send(road.selected)}>{direct(road.selected)?gui.files_insert_count(road.selected.length):gui.files_send_count(road.selected.length)}</Button>}
+    </div>
     <div data-key-panel-scroll className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain px-row">
-      {queue ? road.selected.length ? road.selected.map((e) => <div data-files-selected={e.name} key={e.key} className="flex min-h-touch items-center gap-row border-b py-in">
-        <Mark entry={e} /><div className="min-w-0 flex-1"><p className="truncate text-body">{e.name}</p><p className="truncate text-caption text-muted-foreground" title={e.path}>{e.shown} · {e.path}</p></div>
-        {e.size !== null && <span className="flex-none text-caption tabular-nums text-muted-foreground">{sizeWord(e.size)}</span>}
-        <button type="button" disabled={road.busy} aria-label={`${gui.files_deselect} ${e.name}`} onClick={() => road.remove(e)} className="grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4" /></button>
-      </div>) : <p className="py-pane text-center text-callout text-muted-foreground">{gui.files_empty_selection}</p> : !at ? <>
+      {road.selected.length>0&&<div data-files-cards className={cn("flex gap-in py-in",queue?"flex-wrap":"overflow-x-auto")}>
+        {road.selected.map(entry=><div data-files-selected={entry.name} key={entry.key} className="relative w-64 max-w-full flex-none rounded-lg bg-fill pe-touch">
+          {entry.device||entry.dir?<AttachmentCard entry={entry} pending={previewing===entry.key} onOpen={()=>void inspect(entry)}/>:<FileCard machine={entry.from??""} shown={entry.shown} path={entry.path} onOpen={()=>void inspect(entry)}/>}
+          <button type="button" disabled={road.busy} aria-label={`${gui.files_deselect} ${entry.name}`} onClick={()=>{if(look?.entry.key===entry.key)closePreview();road.remove(entry);}} className="absolute right-0 top-0 grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4"/></button>
+        </div>)}
+      </div>}
+      {queue ? !road.selected.length&&<p className="py-pane text-center text-callout text-muted-foreground">{gui.files_empty_selection}</p> : !at ? <>
         <h3 className="pb-in pt-in text-group text-muted-foreground">{gui.machine_here}</h3>
         <div className="flex gap-in pb-row"><Button data-files-pick="device" disabled={road.busy} className="min-h-touch flex-1" onClick={() => picker.current?.click()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFile /></span>{gui.files_local_file}</Button><Button data-files-pick="folder" disabled={road.busy || picking} className="min-h-touch flex-1" onClick={() => void pickFolders()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFiles /></span>{picking ? gui.files_reading_folder : gui.ws_kind_folder}</Button></div>
         <section data-files-mesh><h3 className="pb-in text-group text-muted-foreground">{gui.devices_tab}</h3>
@@ -166,11 +194,20 @@ export function TermFiles({ road }: { road: FilesRoad }) {
       {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
       {road.busy ? <div data-files-transfer data-stopping={road.stopping || undefined} className="flex min-h-touch items-center gap-row"><span role="status" className="min-w-0 flex-1 truncate text-callout">{road.stopping ? gui.files_cancelling : gui.files_sending(road.selected.map((x) => x.name).join(", "))}</span>{!road.stopping && <span className="text-caption tabular-nums">{Math.round((road.progress ?? 0) * 100)}%</span>}{!road.stopping && <Button size="sm" onClick={road.cancel}>{gui.term_drop_stop}</Button>}</div> : <>
         {road.selected.length > 0 && road.cwd && <PopupButton value={into} onPick={setInto} label={gui.send_into} mark={{ "data-files-destination": true }} look="field" choices={[{ value: "receive", label: gui.files_receive }, { value: "cwd", label: gui.files_current_dir, note: road.cwd }]} />}
-        <div className="flex items-center gap-row"><button type="button" data-files-review disabled={!road.selected.length} onClick={() => setQueue(!queue)} className="min-h-touch min-w-0 flex-1 truncate text-left text-callout disabled:text-muted-foreground">{road.selected.length ? gui.files_selected_count(road.selected.length) : result || gui.files_select_hint}</button><Button data-files-send disabled={!road.selected.length || picking} className="min-h-touch" onClick={() => void send(road.selected)}>{direct(road.selected) ? gui.files_insert_count(road.selected.length) : gui.files_send_count(road.selected.length)}</Button></div>
+        <button type="button" data-files-review disabled={!road.selected.length} onClick={() => setQueue(!queue)} className="min-h-touch min-w-0 truncate text-left text-callout disabled:text-muted-foreground">{road.selected.length ? gui.files_selected_count(road.selected.length) : result || gui.files_select_hint}</button>
       </>}
     </div>
-    <FilePreview machine={look?.machine.name ?? ""} shown={look?.machine.shown ?? ""} here={look?.machine.me ?? false} path={look?.entry.path ?? null} initialFace={look?.face} onClose={() => setLook(null)} footer={look && <><Button disabled={road.busy || included(look.entry)} onClick={() => toggle(look.entry)}>{selected(look.entry) ? gui.files_deselect : gui.files_select}</Button><Button disabled={road.busy} onClick={() => void send([look.entry])}>{direct([look.entry]) ? gui.files_insert_path : gui.files_send_session}</Button></>} />
+    <FilePreview machine={look?.machine.name ?? ""} shown={look?.machine.shown ?? ""} here={look?.machine.me ?? false} path={look?.path??look?.entry.path ?? null} initialFace={look?.face} onClose={closePreview} footer={look && <><Button disabled={road.busy || included(look.entry)} onClick={() => toggle(look.entry)}>{selected(look.entry) ? gui.files_deselect : gui.files_select}</Button><Button disabled={road.busy} onClick={() => void send([look.entry])}>{direct([look.entry]) ? gui.files_insert_path : gui.files_send_session}</Button></>} />
   </div>;
+}
+function AttachmentCard({entry,pending,onOpen}:{entry:Attachment;pending:boolean;onOpen:()=>void}){
+  const file=entry.dir?null:entry.device?.files[0]?.file;
+  const [thumb,setThumb]=useState<string|null>(null);
+  useEffect(()=>{if(!file?.type.startsWith('image/'))return;const url=URL.createObjectURL(file);setThumb(url);return()=>URL.revokeObjectURL(url);},[file]);
+  return <button type="button" data-files-card-preview aria-busy={pending||undefined} onClick={onOpen} className="flex min-h-touch w-full min-w-0 items-center gap-in p-in text-left">
+    {thumb?<img src={thumb} alt="" className="size-10 flex-none rounded-md object-cover"/>:<Mark entry={entry}/>}
+    <span className="min-w-0 flex-1"><span className="block truncate text-body">{entry.name}</span>{entry.size!==null&&<span className="block text-caption tabular-nums text-muted-foreground">{sizeWord(entry.size)}</span>}</span>
+  </button>;
 }
 function Mark({ entry }: { entry: Attachment }) {
   return entry.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={entry.name} className="size-kind-mark flex-none" />;

@@ -457,7 +457,7 @@ export function WorkspacePane({
   // Keep the last header facts through detach so restoring a log does not
   // grow an initially empty header after its reading position was restored.
   const [branch, setBranch] = useWorkspaceField(memory, "branch", () => "");
-  const [headCommit, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
+  const [, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
   const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */

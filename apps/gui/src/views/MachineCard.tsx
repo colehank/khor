@@ -578,7 +578,7 @@ function JournalRow({ row }: { row: DeviceRow }) {
       {lines === null ? !why && <RegionState state="loading-never" /> : (
         <>
           <div data-journal-summary className="text-callout text-muted-foreground tabular-nums">{summary}</div>
-          {lines.toSorted((a, b) => b.at - a.at).map((l, i) => (
+          {[...lines].sort((a, b) => b.at - a.at).map((l, i) => (
             <div key={`${l.at}-${i}`} data-journal-line={l.trouble ? "trouble" : "ok"} className="flex gap-row text-callout">
               <span className="flex-none text-caption text-tertiary tabular-nums">{l.when}</span>
               <span className="min-w-0 flex-1 break-words text-muted-foreground">
