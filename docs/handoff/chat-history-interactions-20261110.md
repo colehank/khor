@@ -37,3 +37,19 @@ LIVE23950仍是0286，ownedPID57328/exec92502。新GUI证据notification-clean-1
 - 消息actions开始写：正式共享MessageActions使用已有RowMenu长按／右键，桌面hover/focus显复制icon，手机无常驻按钮；复制失败保留原位置重试。选择文本使用共享TaskOverlay＋原生可选文本。`选择文件`暂按常见的选择文本处理，已向用户说明，仍可纠正。
 - 任意turn修改暂不能可靠实现：当前crates/acp control仅标准会话生命周期；apps/agent ACP没有锚点回退／truncate，GUI的HistoryEntry也没有vendorUUID映射。官方ACP schema没有anchored rewind；不显示虚假修改入口，不把追加新prompt冒充编辑。用户允许“不行就算了”。
 - 原CopyText仍留Markdown代码块，不是整条消息常驻动作；ChatView用户/AgentContent/网络普通消息复用新动作。
+
+## 实际验收清单
+
+- `scene=gui&machines=3&history=long`：240轮结构化历史，停在最新，首屏自动补足；向上自动补页时不跳回最新；回到底部只见右下角下箭头玻璃，按下回到第240轮，抵达后消失。
+- 追加 `short-pages=1`：4-entry服务分页，仍能自动填充，不靠点“加载更早内容”；后台缓存保持512entries／2MiB／8逻辑页，不因页变小而丢掉最新尾部。
+- 桌面消息：闲置不显示常驻复制；hover和键盘focus显示icon；拒绝clipboard后原位可重试，成功才报已复制。
+- 手机消息：正常拖动滚动不弹菜单，长按复制／选择文本；选择页沿用TaskOverlay，内容可由系统选择。浏览器触摸模拟不等于物理iPhone系统选择手柄验证。
+- 代码块自身复制保持原有行为；图片仍由正式AgentResource显示，绝不把base64当正文。
+- 普通Khor网络消息同样使用共享操作，终端／Khor／GUI的回到底部复用同一GlassCircle组件。
+- 任意turn修改不做前端伪造；当前缺可靠host能力，需后续按agent的真实会话分支／回退接口接入再开放。
+
+## 已看到红例
+
+Quality42764941090（dae42cfe）：前端构建和GUI绿，完整App56既有案例绿。长历史两种小页场景都Timeout15000ms，尚不能在DOM重建第240轮；普通页两例已通过fill/read步骤，到玻璃data属性断言`true!==''`才失败（检查已修为hasAttribute）。红例原始日志chat-history-red-dae-app.log已保存，官方artifact正在校验下载。
+
+修复：receiveHistoryPage只合并边界游标严格相等、各自有bodyentries的相邻页，合并结果仍<=128entries/256refs/512KiB；reference-only原替换行为保留。总8逻辑页/512entries/2MiB不变，容量满仍按原方向逐页淘汰并保留reload游标。预读每visit最多512wire读（与最低1-entry页填满现有entry预算一致），重复游标／失败仍停止，实际向上输入重置visit。

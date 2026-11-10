@@ -297,7 +297,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             }else frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
           }
           case "sessions": {
-            const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: titles[i],
+            const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: options.longHistory&&i===0?'长对话历史 · 240轮':titles[i],
               activity: [], observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
               word: streaming.has(i)||i===2 ? 'busy' : i===1 ? 'blocked' : 'idle', at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
               stale: false, category: i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude', group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,

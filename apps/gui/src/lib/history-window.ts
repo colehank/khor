@@ -28,6 +28,24 @@ function exceedsBudget(pages: HistoryPage[]) {
     || pages.reduce((count, page) => count + page.entries.length, 0) > HISTORY_CACHE_LIMITS.entries
     || pages.reduce((bytes, page) => bytes + page.encoded_bytes, 0) > HISTORY_CACHE_LIMITS.bytes;
 }
+/** A server may send tiny pages while a reply streams. Pack only proven
+ * contiguous body pages; keep wire-size and cache-size bounds unchanged.
+ * Reference-only ranges retain their replacement semantics below. */
+function packHistoryPages(source:HistoryPage[]):HistoryPage[]{
+ const packed:HistoryPage[]=[];
+ for(const right of source){
+  const left=packed.at(-1);
+  if(left&&left.entries.length&&right.entries.length&&left.newer!==null&&left.newer===right.older
+   &&left.entries.length+right.entries.length<=128
+   &&left.references.length+right.references.length<=256
+   &&left.encoded_bytes+right.encoded_bytes<=PAGE_BYTES){
+   packed[packed.length-1]={...right,older:left.older,reset:false,
+    entries:[...left.entries,...right.entries],references:[...left.references,...right.references],
+    encoded_bytes:left.encoded_bytes+right.encoded_bytes};
+  }else packed.push(right);
+ }
+ return packed;
+}
 /** Admit a bounded wire page before folding or rendering any of its entries. */
 export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, direction: HistoryDirection): HistoryWindow {
   if (!Number.isSafeInteger(page.encoded_bytes) || page.encoded_bytes < 0 || page.encoded_bytes > PAGE_BYTES
@@ -51,6 +69,7 @@ export function receiveHistoryPage(window: HistoryWindow, page: HistoryPage, dir
       pages = [...window.pages.slice(0, -1), { ...page, older: last.older }];
     }
   }
+  pages=packHistoryPages(pages);
   let evictedNewer = false;
   let evictedOlder = false;
   while (pages.length > 1 && exceedsBudget(pages)) {
