@@ -54,7 +54,11 @@
 //! this one replicates through them untouched (loro merges maps it was
 //! never asked to read).
 
-use std::{sync::Mutex, collections::HashMap, path::{Path, PathBuf}};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::Mutex,
+};
 
 use loro::{LoroDoc, LoroValue, VersionVector};
 
@@ -108,7 +112,10 @@ impl SeenDoc {
     }
 
     fn with_watermarks<T>(&self, read: impl FnOnce(&mut HashMap<String, i64>) -> T) -> T {
-        let mut cache = self.watermarks.lock().expect("seen watermark cache poisoned");
+        let mut cache = self
+            .watermarks
+            .lock()
+            .expect("seen watermark cache poisoned");
         let marks = cache.get_or_insert_with(|| {
             let mut marks = HashMap::new();
             // Keep broad receipts written by previous versions readable.
@@ -118,9 +125,14 @@ impl SeenDoc {
                 }
             });
             self.inner.get_map(PROGRESS).for_each(|key, value| {
-                let Ok((session, _reader)) = serde_json::from_str::<(String, u64)>(key) else { return; };
+                let Ok((session, _reader)) = serde_json::from_str::<(String, u64)>(key) else {
+                    return;
+                };
                 if let Ok(LoroValue::I64(at)) = value.into_value() {
-                    marks.entry(session).and_modify(|current| *current = (*current).max(at)).or_insert(at);
+                    marks
+                        .entry(session)
+                        .and_modify(|current| *current = (*current).max(at))
+                        .or_insert(at);
                 }
             });
             marks
@@ -136,12 +148,19 @@ impl SeenDoc {
             if at_ms <= marks.get(session).copied().unwrap_or(0) {
                 return Ok(());
             }
-            self.inner.get_map(SEEN).insert(session, at_ms).map_err(|e| e.to_string())?;
+            self.inner
+                .get_map(SEEN)
+                .insert(session, at_ms)
+                .map_err(|e| e.to_string())?;
             // Independent writer keys form a max register. A device with a
             // later CRDT clock but an older reading cannot overwrite another
             // reader's larger mark. One key per reader/session stays bounded.
-            let key = serde_json::to_string(&(session, self.inner.peer_id())).expect("read progress key serializes");
-            self.inner.get_map(PROGRESS).insert(&key, at_ms).map_err(|e| e.to_string())?;
+            let key = serde_json::to_string(&(session, self.inner.peer_id()))
+                .expect("read progress key serializes");
+            self.inner
+                .get_map(PROGRESS)
+                .insert(&key, at_ms)
+                .map_err(|e| e.to_string())?;
             self.inner.commit();
             marks.insert(session.to_owned(), at_ms);
             Ok(())
@@ -227,7 +246,10 @@ impl Doc for SeenDoc {
     }
 
     fn merge_report(&self, bytes: &[u8]) -> Result<crate::store::MergeReport, String> {
-        let mut cache = self.watermarks.lock().expect("seen watermark cache poisoned");
+        let mut cache = self
+            .watermarks
+            .lock()
+            .expect("seen watermark cache poisoned");
         let result = glue::merge_report(&self.inner, bytes);
         *cache = None;
         result
@@ -324,10 +346,18 @@ mod tests {
         }
         offline.mark("shell/shared", 300).unwrap();
         online.mark("shell/shared", 700).unwrap();
-        offline.merge(&online.changes_since(&offline.version()).unwrap()).unwrap();
-        online.merge(&offline.changes_since(&online.version()).unwrap()).unwrap();
+        offline
+            .merge(&online.changes_since(&offline.version()).unwrap())
+            .unwrap();
+        online
+            .merge(&offline.changes_since(&online.version()).unwrap())
+            .unwrap();
         for seen in [&offline, &online] {
-            assert_eq!(seen.watermark("shell/shared"), 700, "a stale device must never revive another device's red dot");
+            assert_eq!(
+                seen.watermark("shell/shared"),
+                700,
+                "a stale device must never revive another device's red dot"
+            );
         }
         let restarted = SeenDoc::new(43).unwrap();
         restarted.merge(&offline.snapshot().unwrap()).unwrap();
