@@ -53,14 +53,18 @@ class SigningBoundaryTest(unittest.TestCase):
         ]}
         with patch.dict(os.environ, credentials, clear=True), patch.object(apple, "compile_icon"), \
                 patch.object(apple, "run") as run, \
+                patch.object(apple, "run_signed_mac_build") as build, \
                 patch.object(apple, "verify_app") as verify:
             apple.mac_build("aarch64-apple-darwin", True)
         verify.assert_called_once_with(Path("target/aarch64-apple-darwin/release/bundle/macos/Khor.app"))
-        environment = run.call_args_list[0].kwargs["env"]
+        build.assert_called_once()
+        self.assertNotIn("--no-sign", build.call_args.args[0])
+        environment = build.call_args.kwargs["env"]
         self.assertEqual(environment["APPLE_SIGNING_IDENTITY"], "test")
         self.assertFalse("APPLE_API_KEY" in environment)
         self.assertFalse("APPLE_ID" in environment)
-        self.assertFalse(any("stapler" in call.args[0] for call in run.call_args_list))
+        self.assertFalse(any("stapler" in call.args[0] for call in [*build.call_args_list, *run.call_args_list]))
+        self.assertEqual(run.call_args.args[0][:4], ["codesign", "--verify", "--deep", "--strict"])
 
 
 class NotarizationRecoveryTest(unittest.TestCase):
