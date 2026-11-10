@@ -42,10 +42,12 @@ pre-commit run --all-files --hook-stage pre-push
 [图标源码](../apps/gui/src-tauri/icons/src/README.md)。提交图稿、参数、绘制程序或安装资源时运行：
 
 ```sh
-node --test apps/gui/dev/icon-lab/renderer.test.mjs
+npm ci --prefix apps/gui/dev/icon-lab
+npm run check --prefix apps/gui/dev/icon-lab
+npm test --prefix apps/gui/dev/icon-lab
 python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'
 python3 scripts/app_icon.py check
 ```
 
 最后一项需要 `scripts/requirements-app-icon.txt` 的固定 Pillow 版本；不会构建 App。
-`App icon` 工作流独立复核资源，并在 macOS 26 编译原生图标 catalog。
+`App icon` 工作流在固定 Node 22.19 上验证严格 TS 类型、Node/浏览器共用源码和资源，并在 macOS 26 编译原生图标 catalog。

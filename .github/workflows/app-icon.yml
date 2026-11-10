@@ -34,7 +34,9 @@ jobs:
         with:
           node-version: 22.19.0
       - run: python3 -m pip install -r scripts/requirements-app-icon.txt
-      - run: node --test apps/gui/dev/icon-lab/renderer.test.mjs
+      - run: npm ci --prefix apps/gui/dev/icon-lab
+      - run: npm run check --prefix apps/gui/dev/icon-lab
+      - run: npm test --prefix apps/gui/dev/icon-lab
       - run: python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'
       - run: python3 scripts/app_icon.py check
   native-catalog:

@@ -3,7 +3,7 @@
 当前图标：07 对齐。Mobile 与 Desktop 由一份参数和一份绘制程序生成：
 
 - `app-icon.json`：生产参数，调校台的新会话默认值。
-- `../../../dev/icon-lab/renderer.mjs`：纯 SVG 绘制程序，浏览器与 CLI 共用。
+- `../../../dev/icon-lab/renderer.ts`：纯 SVG 绘制程序，浏览器与 CLI 共用。
 - `mandala-glass.svg`：生成的 1024 × 1024 完整方形图稿，不手工修改。
 - `generated.json`：输入、输出的 SHA-256 与生成工具版本，用于检测资源失同步。
 
@@ -18,7 +18,7 @@
 python3 scripts/app_icon.py serve
 ```
 
-定稿后导出参数 JSON。在具备 Node 22+、Python 3.11+、resvg 0.47.0 和
+定稿后导出参数 JSON。在具备 Node 22.19+、Python 3.11+、resvg 0.47.0 和
 带 Icon Composer 的 Xcode 26 的 macOS 上运行：
 
 ```sh
@@ -43,7 +43,7 @@ Icon Composer 的单图层不再附加玻璃材质或阴影，背景与外缘仍
 透明蒙版，不额外绘制玻璃外缘。不同系统的遮罩、布局和材质处理仍可能产生外观差异。
 不要用手工拷贝某张 PNG 的方式只更新一个平台。
 
-`App icon` CI 检查参数与 SVG 一致、生成资源清单/哈希/尺寸/颜色模式、iOS/macOS
+`App icon` CI 先对工具运行 strict TypeScript 检查和行为测试，再检查参数与 SVG 一致、生成资源清单/哈希/尺寸/颜色模式、iOS/macOS
 母图相同，并在 macOS 26 编译实际 layered catalog。完整安装后的 Finder、Dock、
 启动器与 iOS 主屏幕验收仍需后续安装构建；浏览器或 `ictool` 预览不能替代这些验收。
 

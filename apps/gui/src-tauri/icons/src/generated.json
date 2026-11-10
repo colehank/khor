@@ -5,12 +5,15 @@
     "Pillow": "12.2.0"
   },
   "inputs": {
-    "apps/gui/dev/icon-lab/renderer.mjs": "f834a7e02fa46b15cfad8c6c28af6ee5a0c032a01e4da25f1707da3cf66d7001",
-    "apps/gui/dev/icon-lab/render.mjs": "260968042db08ca273d88b9b3fc7778d7d6d32f44cd844e1d90832603794f1f4",
+    "apps/gui/dev/icon-lab/renderer.ts": "d92f1620cc83e6ea0f591d0a4a57eec9685f84a016313eeec163e3d52166384f",
+    "apps/gui/dev/icon-lab/render.ts": "243c35a4292d3a01fff88777e2d652415d59515c47cb39adf66f2176467cdb48",
+    "apps/gui/dev/icon-lab/package.json": "f2455377b4a873aba68ba8bcc86b69a0bd56f3d81ad7ba299aacb2186e406e51",
+    "apps/gui/dev/icon-lab/package-lock.json": "bdfb53d57a0c78c6ba02113dd1226e96d6a0241ce7bd3f0d63029a3d96eb4190",
+    "apps/gui/dev/icon-lab/tsconfig.json": "e9b53780e59c65ab52656e05586e3b9540da0dfe46cdfbbe0691b4ccf72b7dd8",
     "apps/gui/src-tauri/icons/src/app-icon.json": "8de142d60d37532204f6d91b4fd945cac15af70add77c423ff0527c3e7ee4ebc",
     "apps/gui/src-tauri/icons/Icon.icon/icon.json": "a6aa60bd6fec9304c4ed04a15d5ca791f26fdc8e59288bf341c4b5b55a674cee",
     "apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset/Contents.json": "74b5f59cb4e1093a02b9b71eece40e91f3d34ac82ca7d19a95c9cf581e323571",
-    "scripts/app_icon.py": "ef2f19a1bddf57517b5411d30a0d08b46b97166fc8764aabc2f7b19db16092c3",
+    "scripts/app_icon.py": "6039121a2e7fb89a0fc5fc525aa3267479f8def249abc2b7df85037a2e32196f",
     "scripts/requirements-app-icon.txt": "498a7f2f1d3c408c01789ce028c7f4901d5a53e4740edd9d3d49741779f900a8"
   },
   "outputs": {

@@ -3,7 +3,7 @@
  * Light transport is an authored 2D approximation, not a ray tracer.
  */
 const VERSION = 1;
-const controls = [
+const controlDefinitions = [
   { id: 'external', name: '外光强度', min: 0, max: 2, step: .01, value: .94, group: 'external' },
   { id: 'angle', name: '照射方向', min: 0, max: 359, step: 1, value: 225, unit: '°', group: 'external' },
   { id: 'softness', name: '柔光宽度', min: .15, max: 1, step: .01, value: .72, group: 'external' },
@@ -32,27 +32,63 @@ const controls = [
   { id: 'innerWidth', name: '内环宽度', min: 10, max: 32, step: 1, value: 22, unit: 'px', group: 'geometry' },
   { id: 'pearlSize', name: '中心圆珠半径', min: 46, max: 82, step: 1, value: 69, unit: 'px', group: 'geometry' },
   { id: 'polish', name: '圆珠表面高光', min: 0, max: 1.5, step: .01, value: .92, group: 'geometry' }
-];
-const defaults = Object.freeze({ ...Object.fromEntries(controls.map(c => [c.id, c.value])), directionalSpill: false });
+] as const;
+
+export type ControlKey = typeof controlDefinitions[number]['id'];
+export type ControlGroup = 'external' | 'internal' | 'glass' | 'background' | 'geometry';
+export interface Control {
+  readonly id: ControlKey;
+  readonly name: string;
+  readonly min: number;
+  readonly max: number;
+  readonly step: number;
+  readonly value: number;
+  readonly group: ControlGroup;
+  readonly unit?: string;
+  readonly optional?: boolean;
+  readonly legacy?: boolean;
+}
+export type IconParameters = Record<ControlKey, number> & { directionalSpill: boolean };
+export interface IconPreset {
+  format: 'khor-icon-lab';
+  version: typeof VERSION;
+  name: string;
+  reference: '07';
+  parameters: IconParameters;
+}
+export interface LightingState {
+  incident: { angle: number; power: number };
+  transmitted: { angle: number; power: number; x: number; y: number };
+  internal: { power: number };
+}
+type ColorStop = readonly [offset: number | string, color: string, opacity?: number];
+type Pearl = readonly [x: number, y: number, radius: number, emission: number];
+const controls: readonly Control[] = controlDefinitions;
+
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+const defaults: Readonly<IconParameters> = Object.freeze(normalize({}));
 // Calibrated against the accepted 07 artwork. Existing saved values remain
 // untouched; the UI exposes this as an explicit starting preset.
-const aligned07 = Object.freeze({ ...defaults,
+const aligned07: Readonly<IconParameters> = Object.freeze({ ...defaults,
   external:.98, softness:.86, transmission:.52, transmissionSpread:1.22,
   emission:.92, satellites:.88, bloom:.62, hue:69,
   glass:.52, transparency:.72, edge:1.08, outerGlass:.68, frost:.10,
   reflection:.10, diffusion:.75, background:.027, ambient:.62,
   spill:.20, spread:1.08, polish:1.02
 });
-function normalize(input) {
-  const source = input && typeof input === 'object' ? input : {};
+function normalize(input: unknown): IconParameters {
+  const source = isRecord(input) ? input : {};
   return { ...Object.fromEntries(controls.map(c => {
     const raw = source[c.id];
     const n = typeof raw === 'number' && Number.isFinite(raw) ? raw : c.value;
     return [c.id, Math.min(c.max, Math.max(c.min, n))];
-  })), directionalSpill: source.directionalSpill === true };
+  })) as Record<ControlKey, number>, directionalSpill: source.directionalSpill === true };
 }
-function parsePreset(payload) {
-  if (!payload || payload.format !== 'khor-icon-lab' || payload.version !== VERSION || !payload.parameters || typeof payload.parameters !== 'object') {
+function parsePreset(payload: unknown): IconParameters {
+  if (!isRecord(payload) || payload.format !== 'khor-icon-lab' || payload.version !== VERSION || !isRecord(payload.parameters)) {
     throw new Error('这不是支持的 khor 图标参数文件');
   }
   for (const c of controls) {
@@ -63,18 +99,18 @@ function parsePreset(payload) {
   if (payload.parameters.directionalSpill !== undefined && typeof payload.parameters.directionalSpill !== 'boolean') throw new Error('定向晕染开关必须为布尔值');
   return normalize(payload.parameters);
 }
-function packagePreset(parameters, name) {
+function packagePreset(parameters: unknown, name?: string): IconPreset {
   return { format: 'khor-icon-lab', version: VERSION, name: String(name || '我的图标'), reference: '07', parameters: normalize(parameters) };
 }
-function rgb(h, s, l) {
+function rgb(h: number, s: number, l: number): string {
   s /= 100; l /= 100;
   const a = s * Math.min(l, 1 - l);
-  const f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+  const f = (n: number) => { const k = (n + h / 30) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
   return '#' + [f(0), f(8), f(4)].map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('');
 }
-const n = v => Number(v.toFixed(4));
-const op = v => n(Math.min(1, Math.max(0, v)));
-function lightingState(input) {
+const n = (v: number) => Number(v.toFixed(4));
+const op = (v: number) => n(Math.min(1, Math.max(0, v)));
+function lightingState(input: unknown): LightingState {
   const p=normalize(input);
   const radians=p.angle*Math.PI/180;
   return {
@@ -83,14 +119,14 @@ function lightingState(input) {
     internal: { power:p.emission*(p.center*.35+p.satellites*.2+p.innerRing*.45) }
   };
 }
-function render(input, prefix = 'icon') {
+function render(input: unknown, prefix = 'icon'): string {
   const p = normalize(input);
   // Prefix is used only for filter/gradient references and cannot inject markup.
   const id = String(prefix).replace(/[^a-zA-Z0-9_-]/g, '') || 'icon';
-  const u = name => `url(#${id}-${name})`;
+  const u = (name: string) => `url(#${id}-${name})`;
   const a = p.angle * Math.PI / 180;
   const lx = Math.cos(a), ly = Math.sin(a);
-  const point = (d, k = 1) => [n(512 + lx * d * k), n(512 + ly * d * k)];
+  const point = (d: number, k = 1): [number, number] => [n(512 + lx * d * k), n(512 + ly * d * k)];
   const [x1, y1] = point(510), [x2, y2] = point(-510);
   const lighting=lightingState(p);
   const T=lighting.transmitted.power, tx=lighting.transmitted.x, ty=lighting.transmitted.y;
@@ -104,13 +140,13 @@ function render(input, prefix = 'icon') {
   const ambientTint=rgb(p.hue,40,66);
   const diamond = 'M512 144 L880 512 L512 880 L144 512 Z';
   const r = 368, w = p.outerWidth, ir = 172;
-  const stops = values => values.map(v => `<stop offset="${v[0]}" stop-color="${v[1]}" stop-opacity="${op(v[2] ?? 1)}"/>`).join('');
-  const linear = (name, values, attrs = '') => `<linearGradient id="${id}-${name}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${attrs}>${stops(values)}</linearGradient>`;
-  const radial = (name, values) => `<radialGradient id="${id}-${name}">${stops(values)}</radialGradient>`;
-  const blur = (name, sd) => `<filter id="${id}-${name}" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="${n(sd)}"/></filter>`;
-  const glow = (x, y, rx, ry, fill, opacity, rotation = 0) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx)}" ry="${n(ry)}" fill="${fill}" opacity="${op(opacity)}"${rotation ? ` transform="rotate(${n(rotation)} ${n(x)} ${n(y)})"` : ''}/>`;
-  const glowCircle = (x, y, rad, opacity) => `<circle cx="${x}" cy="${y}" r="${n(rad)}" fill="${u('light-wash')}" opacity="${op(opacity)}"/>`;
-  const pearls = [[512, 512, p.pearlSize, p.center], [512, 144, 18.5, p.satellites], [880, 512, 18.5, p.satellites], [512, 880, 18.5, p.satellites], [144, 512, 18.5, p.satellites]];
+  const stops = (values: readonly ColorStop[]) => values.map(v => `<stop offset="${v[0]}" stop-color="${v[1]}" stop-opacity="${op(v[2] ?? 1)}"/>`).join('');
+  const linear = (name: string, values: readonly ColorStop[], attrs = '') => `<linearGradient id="${id}-${name}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" ${attrs}>${stops(values)}</linearGradient>`;
+  const radial = (name: string, values: readonly ColorStop[]) => `<radialGradient id="${id}-${name}">${stops(values)}</radialGradient>`;
+  const blur = (name: string, sd: number) => `<filter id="${id}-${name}" x="-100%" y="-100%" width="300%" height="300%" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="${n(sd)}"/></filter>`;
+  const glow = (x: number, y: number, rx: number, ry: number, fill: string, opacity: number, rotation = 0) => `<ellipse cx="${n(x)}" cy="${n(y)}" rx="${n(rx)}" ry="${n(ry)}" fill="${fill}" opacity="${op(opacity)}"${rotation ? ` transform="rotate(${n(rotation)} ${n(x)} ${n(y)})"` : ''}/>`;
+  const glowCircle = (x: number, y: number, rad: number, opacity: number) => `<circle cx="${x}" cy="${y}" r="${n(rad)}" fill="${u('light-wash')}" opacity="${op(opacity)}"/>`;
+  const pearls: Pearl[] = [[512, 512, p.pearlSize, p.center], [512, 144, 18.5, p.satellites], [880, 512, 18.5, p.satellites], [512, 880, 18.5, p.satellites], [144, 512, 18.5, p.satellites]];
   let defs = `<clipPath id="${id}-diamond"><path d="${diamond}"/></clipPath>`;
   defs += `<clipPath id="${id}-annulus"><path clip-rule="evenodd" fill-rule="evenodd" d="M${512+r+w/2} 512 a${r+w/2} ${r+w/2} 0 1 0 -${2*(r+w/2)} 0 a${r+w/2} ${r+w/2} 0 1 0 ${2*(r+w/2)} 0 M${512+r-w/2} 512 a${r-w/2} ${r-w/2} 0 1 0 -${2*(r-w/2)} 0 a${r-w/2} ${r-w/2} 0 1 0 ${2*(r-w/2)} 0"/></clipPath>`;
   defs += linear('glass-band', [[0, '#f8f9ec', p.outerGlass * .88 * E], [.30, '#dce0c7', p.outerGlass * .4 * E], [.53, '#c8d49a', .045 + p.outerGlass * .07], [.72, green, p.outerGlass * .10 * glassLight], [1, green, p.outerGlass * .40 * glassLight]]);
@@ -120,9 +156,9 @@ function render(input, prefix = 'icon') {
   defs += linear('diamond-edge', [[0, '#ffffff', E], [.34, '#fafbf2', .85 * E], [.54, '#dce2c9', .12], [.77, soft, .20 * glassLight], [1, pale, .62 * glassLight]]);
   const ringLight = Math.min(81, 26 + E * 14 + I * p.innerRing * 23);
   const [rx1,ry1]=point(ir), [rx2,ry2]=point(-ir);
-  const ringGradient = (name, values) => `<linearGradient id="${id}-${name}" gradientUnits="userSpaceOnUse" x1="${rx1}" y1="${ry1}" x2="${rx2}" y2="${ry2}">${stops(values)}</linearGradient>`;
+  const ringGradient = (name: string, values: readonly ColorStop[]) => `<linearGradient id="${id}-${name}" gradientUnits="userSpaceOnUse" x1="${rx1}" y1="${ry1}" x2="${rx2}" y2="${ry2}">${stops(values)}</linearGradient>`;
   const ringExposure=ringLight-60.9;
-  const ringColor=(h,s,l)=>rgb(h+p.hue-69,s,Math.min(90,Math.max(12,l+ringExposure)));
+  const ringColor=(h: number,s: number,l: number)=>rgb(h+p.hue-69,s,Math.min(90,Math.max(12,l+ringExposure)));
   defs += ringGradient('ring-solid', [
     [0,ringColor(66.2,90.7,79),1],
     [.1464,ringColor(67.8,83.2,67.3),1],
@@ -143,7 +179,7 @@ function render(input, prefix = 'icon') {
   const haloRadius=290, sigma=18+p.bloom*33;
   defs += radial('ring-halo', Array.from({length:33}, (_,i) => {
     const t=i/32;
-    return [t,green,Math.exp(-.5*((t*haloRadius-ir)/sigma)**2)*.32];
+    return [t,green,Math.exp(-.5*((t*haloRadius-ir)/sigma)**2)*.32] as const;
   }));
   defs += blur('shadow', 9);
   defs += blur('pearl-soft', 2.4);
