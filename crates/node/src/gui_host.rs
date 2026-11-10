@@ -1563,14 +1563,18 @@ let turn = Some(result);
                     in_turn = None;
                     cancellation_sent = None;
                     if let Some(mut task) = delegated.take() {
-                        let stop = match &turn { Some(Ok(stop)) => stop.as_str(), Some(Err(why)) => why.as_str(), None => "ACP turn disconnected" };
-                        if matches!(&turn, Some(Ok(stop)) if matches!(stop.as_str(), "EndTurn" | "Cancelled")) {
+                        let result = match &turn {
+                            Some(Ok(stop)) => Ok(stop.as_str()),
+                            Some(Err(error)) => Err(error.as_str()),
+                            None => Err("ACP turn disconnected"),
+                        };
+                        if matches!(result, Ok("EndTurn" | "Cancelled" | "Refusal" | "MaxTokens" | "MaxTurnRequests")) {
                             match task.retirement_gate(&root) {
                                 Ok(gate) => *retirement = gate,
                                 Err(error) => break Some(error),
                             }
                         }
-                        if let Err(error) = task.finish(stop) { break Some(error); }
+                        if let Err(error) = task.finish(result) { break Some(error); }
                     }
                     asks.clear();
                     cancel_elicits(&mut elicits,&fanout);

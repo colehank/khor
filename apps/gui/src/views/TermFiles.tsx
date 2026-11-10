@@ -160,7 +160,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
       {road.selected.length>0&&<div data-files-cards className={cn("flex gap-in py-in",queue?"flex-wrap":"overflow-x-auto")}>
         {road.selected.map(entry=><div data-files-selected={entry.name} key={entry.key} className="relative w-64 max-w-full flex-none rounded-lg bg-fill pe-touch">
           {entry.device||entry.dir?<AttachmentCard entry={entry} pending={previewing===entry.key} onOpen={()=>void inspect(entry)}/>:<FileCard machine={entry.from??""} shown={entry.shown} path={entry.path} onOpen={()=>void inspect(entry)}/>}
-          <button type="button" disabled={road.busy} aria-label={`${gui.files_deselect} ${entry.name}`} onClick={()=>{if(look?.entry.key===entry.key)closePreview();road.remove(entry);}} className="absolute right-0 top-0 grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4"/></button>
+          <button type="button" disabled={road.busy} aria-label={`${gui.files_deselect} ${entry.name}`} onClick={()=>{if(look?.entry.key===entry.key||previewing===entry.key)closePreview();road.remove(entry);}} className="absolute right-0 top-0 grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4"/></button>
         </div>)}
       </div>}
       {queue ? !road.selected.length&&<p className="py-pane text-center text-callout text-muted-foreground">{gui.files_empty_selection}</p> : !at ? <>
@@ -176,7 +176,10 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
         {entries.map((row) => {
           const entry = pathAttachment(joinAttachmentPath(at.listing!.path, row.name), at.machine.me ? null : at.machine.name, at.machine.shown, row.dir, row.dir ? null : row.size);
           const own = selected(entry), inherited = included(entry);
-          const view = (face?: "source" | "preview") => setLook({ entry, machine: at.machine, face });
+          const view = (face?: "source" | "preview") => {
+            closePreview();
+            setLook({ entry, machine: at.machine, face });
+          };
           return <RowMenu key={entry.key} items={[
             ...(entry.dir ? [] : [{ key: "preview", label: gui.file_face_preview, run: () => view("preview") }]),
             ...(!inherited && !road.busy ? [{ key: "select", label: own ? gui.files_deselect : gui.files_select, run: () => toggle(entry) }] : []),

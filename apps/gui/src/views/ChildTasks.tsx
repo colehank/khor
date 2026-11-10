@@ -88,7 +88,7 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
   return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
     <TaskOverlay purpose="preview" initialHeight="fit">
       <DialogHeader><DialogTitle>{task?.agent ?? gui.child_tasks}</DialogTitle></DialogHeader>
-      {error && <p role="alert" className="text-fact text-destructive">{error}</p>}
+      {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
       {task ? <div className="flex min-w-0 flex-col gap-row" data-child-task-detail>
         <div className="flex items-center justify-between gap-row">
           <span>{task.machine}</span><TaskStatus state={task.state}/>
@@ -116,7 +116,7 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
           </button>)}
           </div>
           </section>)}
-      </div> : <p aria-busy={groups === null && !error} className="text-fact text-muted-foreground">
+      </div> : <p aria-busy={groups === null && !error} className="text-callout text-muted-foreground">
         {groups !== null ? gui.child_tasks_empty : null}
       </p>}
       <TaskActions

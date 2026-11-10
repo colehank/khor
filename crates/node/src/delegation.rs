@@ -796,12 +796,16 @@ impl HostedTask {
             .then(|| start_gate(root, &self.execution.record().task.context_id))
             .transpose()
     }
-    pub fn finish(&mut self, stop: &str) -> Result<(), String> {
-        let state = match stop {
-            "EndTurn" => protocol::TaskState::Completed,
-            "Cancelled" => protocol::TaskState::Canceled,
-            _ => {
+    pub fn finish(&mut self, result: Result<&str, &str>) -> Result<(), String> {
+        let state = match result {
+            Ok("EndTurn") => protocol::TaskState::Completed,
+            Ok("Cancelled") => protocol::TaskState::Canceled,
+            Ok(stop) => {
                 self.output.push_str(&format!("\nACP ended: {stop}"));
+                protocol::TaskState::Failed
+            }
+            Err(error) => {
+                self.output.push_str(&format!("\nACP prompt failed: {error}"));
                 protocol::TaskState::Failed
             }
         };
