@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { SessionRow } from "@/api";
 import { nativeFilePreviewActive } from "@/lib/native-file-preview";
 import { useNativeNotifications } from "@/hooks/use-native-notifications";
+import { useWindowFocus } from "@/hooks/use-window-focus";
 import { SessionFace } from "@/components/SessionFace";
 import { IconClose, IconSessions } from "@/components/icons";
 import { gui } from "@/gen/catalog";
@@ -78,17 +79,17 @@ function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionR
 /** App chrome only: no saved list, no focus grab, and no banner while locked. */
 export function NotificationBanners({state,sessions,onOpen,narrow}: {state:NotificationState;sessions:SessionRow[];onOpen:(item:NotificationBanner)=>boolean;narrow:boolean}) {
   const root=useRef<HTMLElement>(null);
-  useNativeNotifications(root);
+  const focused=useWindowFocus();
+  useNativeNotifications(root,focused);
   useLayoutEffect(()=>configureNotifications(narrow?1:3),[narrow]);
   useEffect(()=>{
-    const blur=()=>focusNotifications(false),focus=()=>focusNotifications(!document.hidden&&document.hasFocus()&&!nativeFilePreviewActive());
+    const focus=()=>focusNotifications(!document.hidden&&focused&&!nativeFilePreviewActive());
     const visibility=focus;
     focus();
     window.addEventListener("khor:native-file-preview",focus);
-    window.addEventListener("blur",blur);window.addEventListener("focus",focus);
     document.addEventListener("visibilitychange",visibility);
-    return()=>{window.removeEventListener("khor:native-file-preview",focus);window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);document.removeEventListener("visibilitychange",visibility);};
-  },[]);
+    return()=>{window.removeEventListener("khor:native-file-preview",focus);document.removeEventListener("visibilitychange",visibility);};
+  },[focused]);
   const latest=state.items.at(-1),latestContent=latest?notificationText(latest):"";
   return <>
     <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)}${latestContent?` · ${latestContent}`:""}`:""}</span>

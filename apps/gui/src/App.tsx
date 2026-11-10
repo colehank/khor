@@ -10,6 +10,7 @@ import {SessionHeader} from '@/components/SessionHeader';
 import {retainSessionDrafts} from '@/hooks/use-session-draft';
 import {retainCancelledChatDrafts} from '@/lib/chat-drafts';
 import { useSessionAttention } from "@/hooks/use-session-attention";
+import { useWindowFocus } from "@/hooks/use-window-focus";
 import { useSessionReads } from "@/hooks/use-session-reads";
 import { sessionCwdOnScreen, workspaceCwd, followsSessionCwd } from "@/lib/session-cwd";
 import { startTransition, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -338,6 +339,7 @@ const stemOf = (name: string) => {
 
 export default function App() {
   const narrow = useNarrow();
+  const windowFocused = useWindowFocus();
   /**
    * The app lock (docs/MORE.md 安全).
    *
@@ -551,7 +553,7 @@ export default function App() {
     const said = window as unknown as { __finished?: Finished[] };
     if (done.length) said.__finished = [...(said.__finished ?? []), ...done];
     // The foreground uses in-app banners; keep existing OS delivery for the background.
-    if (document.visibilityState === "visible" && document.hasFocus()) return;
+    if (document.visibilityState === "visible" && windowFocused) return;
     for (const f of done) {
       const took = lasting(f.ms);
       const body =
@@ -559,7 +561,7 @@ export default function App() {
         (f.exit === null ? gui.finished_on_plain(f.command, f.machine, took) : gui.finished_on(f.command, f.machine, f.exit, took));
       notifyFinished(f.title, body).catch(() => {});
     }
-  }, []);
+  }, [windowFocused]);
   const notifications = useNotifications();
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   /** Whether this machine can host — `false` on a phone, said by its own
@@ -590,7 +592,7 @@ export default function App() {
   const allSessionTabs=useAllSessionTabs();
   const selected = sessionTabs.active;
   onScreen.current = (id) =>
-    document.visibilityState === "visible" && document.hasFocus() && !lock.locked && morePage === null && !switchingTabs &&
+    document.visibilityState === "visible" && windowFocused && !lock.locked && morePage === null && !switchingTabs &&
     landing === "sessions" && selected === id && (!narrow || screen === "detail");
   // Whether the open tabs are up as a list to pick from (`TabSwitcher`)
   // instead of the front tab's content. The narrow face's only way to

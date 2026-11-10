@@ -9,7 +9,7 @@ import {chromium, webkit} from 'playwright-core';
 import {nativeEventRuntime} from './fixtures/native-events/runtime.mjs';
 
 const guiUrl = new URL('../', import.meta.url), gui = fileURLToPath(guiUrl);
-const known = ['page-late', 'page-live', 'page-ready-close', 'page-closed-before-import', 'fullscreen-late', 'fullscreen-query', 'quit-late', 'quit-prevent', 'quit-destroy', 'quit-close-in-handler', 'quit-destroy-rejected', 'window-drop-late', 'window-drop-partial', 'drag-payloads', 'drag-close-during-admission', 'drag-partial', 'drag-unlisten-rejected', 'sdk-drag-payloads', 'callback-throws-peer'];
+const known = ['page-late', 'page-live', 'page-ready-close', 'page-closed-before-import', 'fullscreen-late', 'fullscreen-query', 'window-focus-live', 'window-focus-late', 'quit-late', 'quit-prevent', 'quit-destroy', 'quit-close-in-handler', 'quit-destroy-rejected', 'window-drop-late', 'window-drop-partial', 'drag-payloads', 'drag-close-during-admission', 'drag-partial', 'drag-unlisten-rejected', 'sdk-drag-payloads', 'callback-throws-peer'];
 const scenarios = process.env.NATIVE_HELPERS_SCENARIOS?.split(',') ?? known;
 assert(scenarios.length && new Set(scenarios).size === scenarios.length);
 for (const name of scenarios) assert(known.includes(name), `Unknown scenario ${name}`);
@@ -39,11 +39,26 @@ async function exercise(page, name) {
     await turn(); await turn();
     const actual = await state(); assert.equal(actual.messages.length, 0, 'Closed owner must not allocate a listener'); return actual;
   }
-  const mode = name === 'sdk-drag-payloads' ? 'sdk-drag' : name === 'callback-throws-peer' ? 'peer' : name.startsWith('page') ? name === 'page-ready-close' ? name : 'page' : name.startsWith('fullscreen') ? 'fullscreen' : name.startsWith('window-drop') ? 'window-drop' : name.startsWith('drag') ? 'drag' : name === 'quit-destroy-rejected' ? 'quit-destroy' : name;
+  const mode = name === 'sdk-drag-payloads' ? 'sdk-drag' : name === 'callback-throws-peer' ? 'peer' : name.startsWith('page') ? name === 'page-ready-close' ? name : 'page' : name.startsWith('fullscreen') ? 'fullscreen' : name.startsWith('window-focus') ? 'window-focus' : name.startsWith('window-drop') ? 'window-drop' : name.startsWith('drag') ? 'drag' : name === 'quit-destroy-rejected' ? 'quit-destroy' : name;
   await act('mount', mode);
   let messages = await listens(1);
   const expectedTarget = mode === 'page' || mode === 'page-ready-close' || mode === 'peer' ? {kind: 'Any'} : mode === 'window-drop' || mode === 'drag' || mode === 'sdk-drag' ? {kind: 'Webview', label: 'webview-alpha'} : {kind: 'Window', label: 'window-alpha'};
   assert.deepEqual(messages[0].target, expectedTarget, 'Preserve the SDK event target exactly');
+  if (name.startsWith('window-focus')) {
+    messages = await listens(2);
+    for (const message of messages) { assert.deepEqual(message.target, expectedTarget); await act('accept', message.index); }
+    await page.waitForFunction(()=>window.__helperProbe.state().messages.some(m=>m.cmd==='plugin:window|is_focused'));
+    const query=(await state()).messages.find(m=>m.cmd==='plugin:window|is_focused');
+    if (name==='window-focus-late') {
+      await act('close'); await act('reply',query.index,true); await act('emit','tauri://focus',null);
+      const actual=await finish(); assert.deepEqual(actual.received,[]); assert.equal(actual.callbacks,0); assert.deepEqual(actual.native,[]); return actual;
+    }
+    // A late initial query cannot overwrite a newer loss of native focus.
+    await act('emit','tauri://blur',null); await act('reply',query.index,true); await turn();
+    assert.deepEqual((await state()).received,[false]);
+    await act('emit','tauri://focus',null);
+    const actual=await finish(); assert.deepEqual(actual.received,[false,true]); assert.equal(actual.callbacks,0); assert.deepEqual(actual.native,[]); return actual;
+  }
   if (name === 'callback-throws-peer') {
     messages = await listens(2);
     for (const message of messages) await act('accept', message.index);

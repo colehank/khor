@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "window-focus-state",
+  "description": "Only Khor's main webview may read its own window focus; sibling browsing webviews receive no permission.",
+  "webviews": ["main"],
+  "permissions": ["core:window:allow-is-focused"]
+}

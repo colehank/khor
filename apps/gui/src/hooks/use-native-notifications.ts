@@ -7,7 +7,7 @@ import type {NotificationInput} from "@/lib/native-notification-dom";
 
 /** One owner-rendered face above a retained native page. The native host
  * mirrors its inert DOM; all input returns to the original React handlers. */
-export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
+export function useNativeNotifications(root:RefObject<HTMLElement|null>,focused:boolean) {
   useEffect(()=>{
     const el=root.current;if(!inApp||!el)return;
     const id=`notice:${crypto.randomUUID()}`;
@@ -24,7 +24,7 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
         void hideMenu(id).catch(()=>{});
       }
     };
-    const blocked=()=>nativeFilePreviewActive()||document.hidden||!document.hasFocus()||!!document.querySelector('[data-omni-menu],[data-slot="dialog-overlay"],[data-scrim],[aria-modal="true"],[role="menu"],[role="listbox"]');
+    const blocked=()=>nativeFilePreviewActive()||document.hidden||!focused||!!document.querySelector('[data-omni-menu],[data-slot="dialog-overlay"],[data-scrim],[aria-modal="true"],[role="menu"],[role="listbox"]');
     const schedule=()=>{if(alive&&!frame)frame=requestAnimationFrame(update);};
     const update=()=>{
       frame=0;if(!alive)return;
@@ -65,5 +65,5 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
     for(const event of ["resize","focus","blur","khor:native-file-preview"])window.addEventListener(event,schedule);
     document.addEventListener("visibilitychange",schedule);schedule();
     return()=>{alive=false;cancelAnimationFrame(frame);stop();observer.disconnect();size.disconnect();hide();el.removeAttribute("data-notification-yield");for(const event of ["resize","focus","blur","khor:native-file-preview"])window.removeEventListener(event,schedule);document.removeEventListener("visibilitychange",schedule);};
-  },[root]);
+  },[root,focused]);
 }

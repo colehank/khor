@@ -2003,6 +2003,43 @@ export function onFullscreen(tell: (full: boolean) => void): () => void {
   };
 }
 
+/** A sibling native page can own keyboard focus without deactivating its
+ * desktop window. Listen to that window, not the main document's blur. */
+export function onWindowFocus(tell: (focused: boolean) => void): () => void {
+  const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent + navigator.platform)
+    || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 0);
+  if (!inApp || mobile) {
+    const sync = () => tell(!document.hidden && document.hasFocus());
+    window.addEventListener("focus", sync);
+    window.addEventListener("blur", sync);
+    document.addEventListener("visibilitychange", sync);
+    sync();
+    return () => {
+      window.removeEventListener("focus", sync);
+      window.removeEventListener("blur", sync);
+      document.removeEventListener("visibilitychange", sync);
+    };
+  }
+  let alive = true, revision = 0;
+  const drops: (() => void)[] = [];
+  void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+    if (!alive) return;
+    const win = getCurrentWindow(), target = { kind: "Window" as const, label: win.label };
+    const listeners = ([true, false] as const).map(focused => listenNativeEvent(
+      focused ? "tauri://focus" : "tauri://blur",
+      () => { if (alive) { revision++; tell(focused); } }, { target },
+    ));
+    drops.push(...listeners);
+    const ready = await Promise.all(listeners.map(listener => listener.ready));
+    if (!alive) return;
+    if (ready.some(value => !value)) { for (const drop of drops) drop(); tell(false); return; }
+    const at = revision, focused = await win.isFocused();
+    // A newer native event wins over an in-flight initial query.
+    if (alive && at === revision) tell(focused);
+  }).catch(error => { if (alive) { tell(false); console.error("khor: cannot watch window focus", error); } });
+  return () => { alive = false; for (const drop of drops) drop(); };
+}
+
 /** Attaches a terminal to a hosted session at cols×rows; the host
     resizes its PTY to match, and keeps `history` rows of it (the face's
     历史行数, item 56; capped by the host). */

@@ -1,4 +1,4 @@
-import { hear, onPageWord, onFullscreen, onQuitRequested } from '/src/api';
+import { hear, onPageWord, onFullscreen, onWindowFocus, onQuitRequested } from '/src/api';
 import { onWindowDrop } from '/src/lib/window-drop';
 import * as owned from '/src/lib/native-events';
 import { PhysicalPosition } from '@tauri-apps/api/dpi';
@@ -33,6 +33,7 @@ window.__helperProbe = {
     }
     else if (mode.startsWith('page')) close = onPageWord('page:title', 'alpha', text => received.push(text), () => { ready++; if (mode === 'page-ready-close') close?.(); });
     else if (mode === 'fullscreen') close = onFullscreen(full => received.push(full));
+    else if (mode === 'window-focus') close = onWindowFocus(focused => received.push(focused));
     else if (mode.startsWith('quit')) close = onQuitRequested(() => {
       received.push('asked');
       if (mode === 'quit-close-in-handler') queueMicrotask(() => close?.());
