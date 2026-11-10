@@ -39,7 +39,7 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
         last=fingerprint;held=true;
         void showMenu({id,at:geometry,html,rows:{notification:true,groups:[{key:"notifications",label:"",candidates:keys.map(key=>({key,label:key}))}],at:0}}).then(accepted=>{
           if(!alive||!held||last!==fingerprint)return;
-          if(accepted){el.setAttribute("data-notification-native","");el.setAttribute("aria-hidden","true");el.setAttribute("inert","");}
+          if(accepted){if(!el.hasAttribute("data-notification-native")){el.setAttribute("data-notification-native","");el.setAttribute("aria-hidden","true");el.setAttribute("inert","");}}
           else {fallback=true;hide();el.setAttribute("data-notification-yield","");}
         },()=>{if(alive&&held&&last===fingerprint){fallback=true;hide();el.setAttribute("data-notification-yield","");}});
       }
