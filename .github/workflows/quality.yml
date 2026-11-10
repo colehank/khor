@@ -402,6 +402,9 @@ jobs:
             google-chrome --version
             echo 'channel=chrome' >> "$GITHUB_OUTPUT"
           else
+            # Use the same HTTPS Ubuntu mirror as the Lab job. The hosted
+            # Azure HTTP mirror can spend minutes retrying individual packages.
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
             if [ "$KHOR_INTERACTION_SCOPE" = settings ]; then
               node node_modules/playwright-core/cli.js install --with-deps chromium
             else
