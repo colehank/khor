@@ -4,7 +4,7 @@
 
 唯一单色图稿：`apps/gui/src-tauri/icons/src/mandala-glyph.svg`。`BrandIcons.IconKhor`
 读取它的 viewBox 与路径，所有会话表面通过已有的 `sessionMark` / `sessionKind` /
-`SessionFace` 使用。khor category 和自带广播使用品牌标记；传输、借网与终端保留专属
+`SessionFace` 使用。只有 khor category 使用品牌标记；广播、传输、借网与终端保留专属
 类型；未知 Agent 保留通用标记。新建入口与创建后的 khor 会话使用相同判断。
 
 最终以用户导出的 `khor-session-avatar.json` 为准，原文件完整保存在图稿同目录。

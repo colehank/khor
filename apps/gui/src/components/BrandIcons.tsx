@@ -2,7 +2,7 @@ import type { ComponentType } from "react";
 
 import type { SystemKind } from "@/gen/bindings/SystemKind";
 import khorMarkSource from "../../src-tauri/icons/src/mandala-glyph.svg?raw";
-import { IconDevices, IconFile, IconFinder, IconLink, IconTerminal } from "./icons";
+import { IconDevices, IconFile, IconFinder, IconLink, IconNetwork, IconTerminal } from "./icons";
 
 /**
  * **Identity marks**: what a session *is*, not how it is doing. Ported
@@ -153,10 +153,10 @@ export function machineMark(system: SystemKind | null | undefined): ComponentTyp
  */
 export function sessionMark(kind: string, category: string | null): ComponentType<IconProps> {
   switch (kind) {
-    // The khor's own group conversation: the brand's mark, on a blank
+    // The khor's own group conversation: the network's mark, on a blank
     // face — it is every machine's, so it wears none of theirs.
     case "broadcast":
-      return IconKhor;
+      return IconNetwork;
     case "transfer":
       return IconFile;
     case "borrow":
