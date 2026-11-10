@@ -3130,3 +3130,11 @@ html:not([data-modality="keyboard"]) :is([data-search-field], [data-search-wrap]
 [data-keyboard-compact] .khor-keyboard { min-width: 0; width: 100%; }
 [data-keyboard-compact] .hg-button { min-width: 0; flex-basis: 0; padding-inline: var(--gap-xxs); }
 [data-keyboard-compact] .hg-row { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
+/* A phone discovers message operations by long press. A mouse reveals them
+   on the same message, and keyboard focus keeps them reachable. */
+[data-message-toolbar]{display:none}
+@media(hover:hover) and (pointer:fine){
+ [data-message-toolbar]{display:flex;visibility:hidden;pointer-events:none}
+ [data-message-actions]:is(:hover,:focus-within) [data-message-toolbar]{visibility:visible;pointer-events:auto}
+}

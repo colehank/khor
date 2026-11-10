@@ -1,3 +1,4 @@
+import {MessageActions} from '@/components/MessageActions';
 import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {composerFiles,composerReady} from '@/lib/composer-files';
 import type {CommandRecord} from '@/gen/bindings/CommandRecord';
@@ -484,7 +485,7 @@ function MsgLine({
           // (afix-a; the audit's S2: a long URL ran past the bubble and
           // off a phone's screen, its tail unreadable). `anywhere`, so a
           // URL with no break of its own still wraps.
-          <div
+          <MessageActions text={m.text} align={m.from_me?'end':'start'}><div
             data-msg-text
             className={cn(
               "whitespace-pre-wrap [overflow-wrap:anywhere] rounded-lg px-3 py-1.5 text-read-ink",
@@ -492,7 +493,7 @@ function MsgLine({
             )}
           >
             {m.text}
-          </div>
+          </div></MessageActions>
         ) : m.files !== null ? (
           <>
             {m.note && (

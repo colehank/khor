@@ -1,5 +1,5 @@
 import {AgentResource} from './resource';
-import {CopyText} from '@/components/CopyText';
+import {MessageActions} from '@/components/MessageActions';
 import { useMemo, useState } from "react";
 import { Message, MessageContent } from "@/components/ui/ai/message";
 import { Markdown } from "@/components/Markdown";
@@ -16,7 +16,7 @@ export function AgentContent({ item, streaming, active = true, open, onOpenChang
   if(item.who==='resource')return <AgentResource item={item} onOpenFile={onOpenFile}/>;
   if (item.who === "thought") return <AgentReasoning text={item.text} isStreaming={streaming} />;
   if (item.who === "tool") return <AgentTool tool={item} active={active} open={open} onOpenChange={onOpenChange} onOpenFile={onOpenFile} />;
-  return <Message role="article" aria-label="智能体" data-chat-message className="text-read py-row"><MessageContent><Markdown text={item.text} className="text-read-ink" />{item.who==='agent'&&!streaming&&<div className="flex"><CopyText text={item.text}/></div>}</MessageContent></Message>;
+  return <Message role="article" aria-label="智能体" data-chat-message className="text-read py-row"><MessageContent>{item.who==='agent'&&!streaming?<MessageActions text={item.text}><Markdown text={item.text} className="text-read-ink"/></MessageActions>:<Markdown text={item.text} className="text-read-ink"/>}</MessageContent></Message>;
 }
 
 export function AgentTranscript({ updates, busy, fallback, onOpenFile }: {
@@ -30,6 +30,6 @@ export function AgentTranscript({ updates, busy, fallback, onOpenFile }: {
       streaming={busy && i === items.length - 1} active={busy}
       open={item.who === "tool" && open.has(item.id)} onOpenFile={onOpenFile}
       onOpenChange={(shown) => { if (item.who === "tool") setOpen((now) => { const next = new Set(now); if (shown) next.add(item.id); else next.delete(item.id); return next; }); }} />)}
-    {!items.some((item) => item.who === "agent") && fallback && <Message data-chat-message className="text-read py-row"><MessageContent><Markdown text={fallback} className="text-read-ink" /></MessageContent></Message>}
+    {!items.some((item) => item.who === "agent") && fallback && <Message data-chat-message className="text-read py-row"><MessageContent><MessageActions text={fallback}><Markdown text={fallback} className="text-read-ink"/></MessageActions></MessageContent></Message>}
   </>;
 }

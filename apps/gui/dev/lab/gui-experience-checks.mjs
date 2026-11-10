@@ -47,7 +47,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
    const root=document.querySelector('[data-chat-scroll]'),node=[...root.querySelectorAll('[data-history-key]')].find(node=>node.dataset.historyKey===anchor.key);
    return node&&Math.abs(node.getBoundingClientRect().top-root.getBoundingClientRect().top-anchor.top)<3;
   },anchor);
-  await page.locator('[data-chat-message] [data-copy-text]').first().waitFor();
+  await page.locator('[data-chat-message] [data-message-actions]').first().waitFor();
   await page.locator('[data-lab-add]').click();await page.locator('[role=menuitem][data-history-find-open]').click();
   await page.locator('[data-history-search] input').waitFor();
   await page.screenshot({path:path.join(report,`gui-experience-${engine}.png`)});

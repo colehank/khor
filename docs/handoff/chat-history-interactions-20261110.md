@@ -30,3 +30,10 @@ LIVE23950仍是0286，ownedPID57328/exec92502。新GUI证据notification-clean-1
 ## 通知交付更新
 
 13bd所有验证已绿且LIVE23950，serverPID33675/exec66857；通知无状态词、桌面hover/focus X、手机无X截图已看。来源notification-clean-13b-review/developer-lab，tree d89c8ad77a762af378011096b7c1d583f2826bef。旧0286与98a等快照保留。无需重新为13bd跑检查；后续新chat代码再跑。
+
+## 新状态
+
+- dae42cfe已push，Quality42764941090是长历史／箭头基线，等待实际红例；未发布或合并。
+- 消息actions开始写：正式共享MessageActions使用已有RowMenu长按／右键，桌面hover/focus显复制icon，手机无常驻按钮；复制失败保留原位置重试。选择文本使用共享TaskOverlay＋原生可选文本。`选择文件`暂按常见的选择文本处理，已向用户说明，仍可纠正。
+- 任意turn修改暂不能可靠实现：当前crates/acp control仅标准会话生命周期；apps/agent ACP没有锚点回退／truncate，GUI的HistoryEntry也没有vendorUUID映射。官方ACP schema没有anchored rewind；不显示虚假修改入口，不把追加新prompt冒充编辑。用户允许“不行就算了”。
+- 原CopyText仍留Markdown代码块，不是整条消息常驻动作；ChatView用户/AgentContent/网络普通消息复用新动作。

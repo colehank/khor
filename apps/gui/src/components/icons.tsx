@@ -139,6 +139,7 @@ const LIVE = {
   arrow: reshare(fit(1.36, 1.36, 13.29), PLAIN, BARE),
   // The file page's two (round UX-3, 2026-10-04), on the 16 canvas: a
   // pencil laid on the diagonal (round), and the tray with its arrow.
+  copy: fit(1.1, 1.1, 13.8), // square: two complete pages, foreground cuts the rear
   pencil: fit(1.99, 1.95, 12.06), // round
   compose: fit(1.1, 0.7, 13.9), // square: frame and diagonal pen
   share: fit(1.2, 0.9, 13.6),
@@ -1130,6 +1131,15 @@ export function IconLink({ className }: IconProps) {
       <path d="M9.4 6.6a2.6 2.6 0 0 0-3.9-.3L3.8 8a2.6 2.6 0 0 0 3.7 3.7l1-1" />
     </Mark>
   );
+}
+
+/** Copy: two complete pages, with the family's mask between their edges. */
+export function IconCopy({className}:IconProps){
+  const front="M6.5 5h6a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z";
+  return <Mark className={className} live={LIVE.copy} icon="copy" cut={<path d={front} fill="black" stroke="black" strokeWidth={cutOf(LIVE.copy)}/>}>{cutId=><>
+    <rect mask={`url(#${cutId})`} x="2.5" y="2" width="8" height="9" rx="1"/>
+    <path data-body d={front}/>
+  </>}</Mark>;
 }
 
 /** 编辑 (round UX-3, the file page's bottom-right circle): a pencil on

@@ -2,7 +2,7 @@ import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {useReadableHistoryExport} from '@/hooks/use-readable-history-export';
 import {ReadFreshness} from '@/lib/read-freshness';
 import {useConfirmedSetting} from '@/hooks/use-confirmed-setting';
-import {CopyText} from '@/components/CopyText';
+import {MessageActions} from '@/components/MessageActions';
 import {useHistoryPrefetch} from '@/hooks/use-history-prefetch';
 import {useSessionDocuments} from '@/hooks/use-session-documents';
 import { listenNativeDragDrop } from "@/lib/native-events";
@@ -1762,12 +1762,9 @@ export function ChatView({
               const { words, paths } = splitAttachments(item.text);
               return (
                 <div role="article" aria-label="你" key={item.displayKey ?? item.historyKey ?? i} className="flex flex-col items-end gap-in py-row">
-                  {words && (
+                  {words && <MessageActions text={words} align="end"><div className="flex justify-end">
                     <Bubble align="end" variant="muted"><BubbleContent data-said className="text-read"><Markdown text={words} /></BubbleContent></Bubble>
-                  )}
-                  {words&&<div className="flex items-center gap-in"><CopyText text={words}/>{!still&&!gone&&<Button size="sm" variant="ghost" onClick={()=>{
-                    setText(now=>now?`${now}\n\n${item.text}`:item.text);box.current?.focus();
-                  }}>带回输入</Button>}</div>}
+                  </div></MessageActions>}
                   {paths.map((p, j) => (
                     <FileCard
                       key={`${j} ${p}`}

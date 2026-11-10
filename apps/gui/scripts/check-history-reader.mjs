@@ -84,6 +84,28 @@ test('page eviction retains reload endpoints', () => {
   w = receive(w, page('8'), 'newer');
   assert.equal(w.older, 'before:1');
 });
+test('contiguous streamed short pages retain a viewport-sized history within the existing budget',()=>{
+ const chunk=(from,to)=>({entries:Array.from({length:to-from},(_,i)=>entry(String(from+i))),references:[],
+  older:from?`at:${from}`:null,newer:`at:${to}`,has_more:false,reset:false,encoded_bytes:(to-from)*100});
+ let w=receive(EMPTY,chunk(396,400),'tail');
+ for(let from=392;from>=0;from-=4)w=receive(w,chunk(from,from+4),'older');
+ assert.equal(w.latest,true,'Small wire pages must not discard latest history while room remains');
+ assert.equal(historyEntries(w).length,400,'Capacity is measured in content, not the server page count');
+ assert.equal(w.older,null);assert.equal(w.newer,'at:400');assert(w.pages.length<=8);
+ for(const retained of w.pages)assert(retained.entries.length<=128&&retained.encoded_bytes<=512*1024);
+ const middle=receive(w,chunk(400,404),'newer');assert.equal(historyEntries(middle).length,404);assert.equal(middle.older,null);
+ const separated=receive(receive(EMPTY,page('tail'),'tail'),page('unrelated'),'older');
+ assert.equal(separated.pages.length,2,'Opaque cursors must prove contiguity before combining cached pages');
+});
+test('packed history still evicts at the original entry budget and exposes a reload cursor',()=>{
+ const chunk=(from,to)=>({entries:Array.from({length:to-from},(_,i)=>entry(String(from+i))),references:[],
+  older:from?`at:${from}`:null,newer:`at:${to}`,has_more:false,reset:false,encoded_bytes:(to-from)*100});
+ let w=receive(EMPTY,chunk(596,600),'tail');
+ for(let from=592;from>=0;from-=4)w=receive(w,chunk(from,from+4),'older');
+ assert(historyEntries(w).length<=512);assert.equal(historyEntries(w)[0].key,'0');
+ assert.equal(w.latest,false);assert.notEqual(w.newer,'at:600');assert.notEqual(w.newer,null);
+ assert(w.pages.length<=8);assert(w.pages.reduce((n,p)=>n+p.encoded_bytes,0)<=2*1024*1024);
+});
 test('frame and byte caps independently evict', () => {
   let w = EMPTY;
   for (let i = 0; i < 5; i++)
