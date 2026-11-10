@@ -300,7 +300,20 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     const repeated=page.locator('[data-notification-banner]').first();
     await repeated.waitFor({timeout:15000});
     assert.ok(!(await repeated.innerText()).includes('计划与确认'),'The demo chooses a session other than the restored active one');
-    await repeated.locator('[data-notification-dismiss]').click();
+    assert.doesNotMatch(await repeated.innerText(),/等你处理|回复已完成|执行出错|命令已结束/);
+    if(mobile){
+      assert.equal(await repeated.locator('[data-notification-dismiss]').count(),0,'Actual phone App has no close icon');
+      const box=await repeated.boundingBox(),x=box.x+box.width/2,y=box.y+box.height*.85;
+      if(engine==='chromium'){
+        const touch=await context.newCDPSession(page);
+        await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+        await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-box.height*.7}]});
+        await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touch.detach();
+      }else{await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y-box.height*.7,{steps:6});await page.mouse.up();}
+    }else{
+      const close=repeated.locator('[data-notification-dismiss]');
+      assert.equal(await close.isVisible(),false);await repeated.hover();assert.equal(await close.isVisible(),true);await close.click();
+    }
     await repeated.waitFor({state:'detached'});
     await page.locator('[data-lab-notice-trigger]').click();
     await page.locator('[data-notification-banner]').first().waitFor({timeout:10000});

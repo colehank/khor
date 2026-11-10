@@ -8,18 +8,13 @@ import { configureNotifications, dismissNotification, focusNotifications, pauseN
 
 export function notificationText(item: NotificationBanner): string {
   if (item.members) return gui.notification_view_sessions;
-  switch (item.kind) {
-    case "needs_input": return gui.notification_needs_input;
-    case "turn_completed": return gui.notification_completed;
-    case "failed": return gui.notification_failed;
-    case "command_finished": return item.exit !== null && item.exit !== 0 ? gui.notification_failed : gui.notification_command;
-    case "notice": return item.text ?? gui.notification_notice;
-  }
+  return item.preview ?? (item.kind === "notice" ? item.text ?? "" : "");
 }
 const title = (item: NotificationBanner): string => item.members
   ? gui.notification_summary(String(item.members.length)) : item.title;
-function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOpen:(item:NotificationBanner)=>boolean}) {
+function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionRow;onOpen:(item:NotificationBanner)=>boolean;narrow:boolean}) {
   const [missing,setMissing]=useState(false),[offset,setOffset]=useState(0),[closing,setClosing]=useState(false),[arrived,setArrived]=useState(false),[dragging,setDragging]=useState(false);
+  const content=missing?gui.notification_missing:notificationText(item);
   const element=useRef<HTMLDivElement>(null);
   const hovered=useRef(false),focused=useRef(false),touching=useRef(false),swallow=useRef(false);
   const drag=useRef<{id:number;x:number;y:number;dy:number;moved:boolean}|null>(null);
@@ -70,15 +65,12 @@ function Banner({item,row,onOpen}: {item:NotificationBanner;row?:SessionRow;onOp
       {row&&!item.members?<SessionFace face={row.face} word={row.word} kind={row.kind} category={row.category} size="row"/>:
         <span className="grid size-list-face flex-none place-items-center rounded-full bg-fill text-muted-foreground"><IconSessions className="size-kind-mark"/></span>}
       <span className="flex min-w-0 flex-1 flex-col gap-xxs">
-        <span className="flex min-w-0 items-baseline gap-in">
-          <span className="min-w-0 flex-1 truncate text-body font-title">{title(item)}</span>
-          {!item.members&&item.preview?<span className="flex-none text-caption text-muted-foreground">{notificationText(item)}</span>:null}
-        </span>
-        <span className="line-clamp-2 break-words text-callout text-muted-foreground">{missing?gui.notification_missing:item.members?notificationText(item):item.preview??notificationText(item)}</span>
+        <span className="truncate text-body font-title">{title(item)}</span>
+        {content?<span className="line-clamp-2 break-words text-callout text-muted-foreground">{content}</span>:null}
       </span>
     </button>
-    <button type="button" data-notification-dismiss aria-label={gui.close} className="group flex min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-      onClick={close}><span aria-hidden className="grid size-ctl-sm place-items-center rounded-full bg-fill text-muted-foreground group-hover:bg-fill-strong group-hover:text-foreground"><IconClose className="size-affordance"/></span></button>
+    {!narrow&&<button type="button" data-notification-dismiss aria-label={gui.close} className="notification-dismiss group min-h-touch min-w-touch flex-none items-center justify-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      onClick={close}><span aria-hidden className="grid size-ctl-sm place-items-center rounded-full bg-fill text-muted-foreground group-hover:bg-fill-strong group-hover:text-foreground"><IconClose className="size-affordance"/></span></button>}
   </div>;
 }
 /** App chrome only: no saved list, no focus grab, and no banner while locked. */
@@ -92,12 +84,12 @@ export function NotificationBanners({state,sessions,onOpen,narrow}: {state:Notif
     document.addEventListener("visibilitychange",visibility);
     return()=>{window.removeEventListener("blur",blur);window.removeEventListener("focus",focus);document.removeEventListener("visibilitychange",visibility);};
   },[]);
-  const latest=state.items.at(-1);
+  const latest=state.items.at(-1),latestContent=latest?notificationText(latest):"";
   return <aside data-notification-banners role="region" aria-label={gui.notifications} className="notification-banners pointer-events-none fixed z-40 flex flex-col gap-in">
-    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)} · ${notificationText(latest)}${latest.members||!latest.preview?"":` · ${latest.preview}`}`:""}</span>
+    <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">{latest?`${title(latest)}${latestContent?` · ${latestContent}`:""}`:""}</span>
     {state.items.map(item=>{
       const row=sessions.find(row=>row.id===item.session&&row.execution_home===item.home);
-      return row||item.members?<Banner key={item.key} item={item} row={row} onOpen={onOpen}/>:null;
+      return row||item.members?<Banner key={item.key} item={item} row={row} onOpen={onOpen} narrow={narrow}/>:null;
     })}
   </aside>;
 }

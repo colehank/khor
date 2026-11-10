@@ -21,6 +21,9 @@ try {
   if(width<500){const inset=await page.evaluate(()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--gap-row")));assert.ok(Math.abs(bounds.x-inset)<1&&Math.abs(width-bounds.x-bounds.width-inset)<1,"Phone banner follows the actual App safe horizontal inset");}
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
   assert.equal(await page.locator('[data-notification-list]').count(),0,'No notification history UI');
+  assert.doesNotMatch(await banners.first().innerText(),/等你处理|回复已完成|执行出错|命令已结束/,'Notices show content without generic state labels');
+  if(width<500)assert.equal(await banners.locator('[data-notification-dismiss]').count(),0,'Phone notices have no close icon');
+  else assert.equal(await banners.first().locator('[data-notification-dismiss]').isVisible(),false,'Desktop close is hidden until hover/focus');
   await page.screenshot({path:join(out,`notifications-${width}-${theme}.png`)});
   assert.match(await banners.first().innerText(),/已完成修改/,'Second line contains the same recent content as the session list');
   await page.locator('[data-notification-open]').last().click();
@@ -28,7 +31,16 @@ try {
   const clear=async()=>{await page.locator('[data-lab-clear]').click();await banners.waitFor({state:'detached'});};
   const complete=async()=>{await page.locator('[data-lab-complete]').click();await banners.waitFor();await page.clock.runFor(300);await banners.evaluate(node=>Promise.all(node.getAnimations().map(animation=>animation.finished.catch(()=>{}))));};
   await clear();await complete();
-  await banners.hover();await page.clock.fastForward(9000);assert.equal(await banners.count(),1,'Hover pauses auto dismissal');
+  if(width>=500){
+   const close=banners.locator('[data-notification-dismiss]');
+   await banners.locator('[data-notification-open]').focus();assert.equal(await close.isVisible(),true,'Keyboard focus reveals desktop close');
+   await page.locator('[data-lab-complete]').focus();assert.equal(await close.isVisible(),false,'Close hides after keyboard focus leaves');
+  }
+  await banners.hover();
+  if(width>=500){assert.equal(await banners.locator('[data-notification-dismiss]').isVisible(),true,'Mouse hover reveals desktop close');
+   await banners.locator('[data-notification-dismiss]').evaluate(node=>Promise.all(node.getAnimations().map(a=>a.finished.catch(()=>{}))));
+   await page.screenshot({path:join(out,`notification-hover-${width}-${theme}.png`)});}
+  await page.clock.fastForward(9000);assert.equal(await banners.count(),1,'Hover pauses auto dismissal');
   await page.mouse.move(0,800);await page.clock.fastForward(9000);assert.equal(await banners.count(),0,'Visible notice expires after pause');
   await complete();
   const key=await banners.getAttribute('data-notification-banner');
@@ -61,7 +73,10 @@ try {
   const rest=await banners.evaluate(node=>getComputedStyle(node).transform);assert.ok(rest==='none'||rest==='matrix(1, 0, 0, 1, 0, 0)',rest);
   if(cdp){await drag(.7,true);assert.equal(await banners.count(),1,'OS cancellation does not dismiss');}
   await drag(.7);await banners.waitFor({state:'detached'});assert.equal(await page.locator('[data-lab-opened]').innerText(),opened,'Upward dismissal cannot navigate');
-  await complete();await banners.locator('[data-notification-dismiss]').click();await banners.waitFor({state:'detached'});
+  await complete();
+  if(width<500)await drag(.7);
+  else{await banners.hover();await banners.locator('[data-notification-dismiss]').click();}
+  await banners.waitFor({state:'detached'});
   await page.locator('[data-lab-mute]').click();await page.locator('[data-lab-complete]').click();assert.equal(await banners.count(),0);
   await page.locator('[data-lab-follow]').click();await page.locator('[data-lab-summary]').click();
   await banners.waitFor();assert.equal(await banners.count(),1);assert.match(await banners.innerText(),/8 个会话有更新/);
@@ -69,10 +84,12 @@ try {
   await banners.locator('[data-notification-open]').click();assert.equal(await page.locator('[data-lab-opened]').innerText(),'sessions');
   await clear();await page.emulateMedia({reducedMotion:'reduce'});await complete();
   assert.equal(await banners.evaluate(node=>getComputedStyle(node).animationName),'none','Reduced motion removes entrance travel');
+  await clear();await page.locator('[data-lab-empty]').click();await banners.waitFor();
+  assert.equal((await banners.innerText()).trim(),'Khor-main','Missing preview does not fall back to a state label');
   const stored=await page.evaluate(()=>Object.fromEntries(Object.entries(localStorage).filter(([key])=>key.startsWith('khor.notification'))));
   assert(!('khor.notification-inbox' in stored));assert(!stored['khor.notification-preferences'].includes('Khor-main'));assert(!stored['khor.notification-preferences'].includes('items'));
   await page.reload();await page.locator('[data-lab-complete]').waitFor();assert.equal(await banners.count(),0,'Reload never restores banner content');
-  assert.deepEqual(errors,[]);results.push({width,theme,position:bounds,expiry:true,pause:true,mute:true,exactTarget:true,noHistory:true,swipe:true,coalescing:true,summary:true,preview:true,reducedMotion:true});await page.close();
+  assert.deepEqual(errors,[]);results.push({width,theme,position:bounds,expiry:true,pause:true,mute:true,exactTarget:true,noHistory:true,swipe:true,coalescing:true,summary:true,preview:true,reducedMotion:true,noStateLabels:true,contextualClose:true});await page.close();
  }
  writeFileSync(join(out,'results.json'),JSON.stringify(results,null,2));console.log('Transient notification UI:',results);
 }finally{await browser?.close();await server?.close();}

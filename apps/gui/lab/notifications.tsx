@@ -32,6 +32,7 @@ function Lab(){
    <Button data-lab-complete onClick={()=>send(0)}>会话完成</Button>
    <Button data-lab-burst onClick={()=>{send(0,'needs_input');send(1);send(2);}}>三个会话</Button>
    <Button data-lab-summary onClick={()=>{for(let i=0;i<sessions.length;i++)send(i);}}>八个会话</Button>
+   <Button data-lab-empty onClick={()=>{sessions[0].last="";send(0);}}>无内容</Button>
    <Button data-lab-clear onClick={()=>clearNotifications()}>清空横幅</Button>
    <Button data-lab-resolve onClick={()=>{sessions[0].activity=sessions[0].activity.map(e=>({...e,resolved:true}));receiveNotifications(sessions,()=>false);}}>已处理</Button>
    <Button data-lab-mute onClick={()=>setSessionNotifications(sessions[0],false)}>静音</Button>
