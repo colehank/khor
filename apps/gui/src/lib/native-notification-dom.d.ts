@@ -6,8 +6,8 @@ export type NotificationDOMScope = {
   document: {
     documentElement: HTMLElement;head: ParentNode;body: ParentNode;
     querySelector: (selector:string)=>Element|null;
-    addEventListener: (type:string,listener:EventListenerOrEventListenerObject|null)=>void;
-    removeEventListener: (type:string,listener:EventListenerOrEventListenerObject|null)=>void;
+    addEventListener: (type:string,listener:EventListenerOrEventListenerObject)=>void;
+    removeEventListener: (type:string,listener:EventListenerOrEventListenerObject)=>void;
   };
 };
 export function notificationDOM(scope: NotificationDOMScope, emit:(value:NotificationSignal)=>void): {update(html:string):void;dispose():void};
