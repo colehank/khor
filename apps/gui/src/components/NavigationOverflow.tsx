@@ -1,8 +1,8 @@
 import type {ReactElement} from "react";
 import type {NavSeat} from "@/components/FloatNav";
-import {IconMore,IconNetwork} from "@/components/icons";
+import {IconGear,IconNetwork} from "@/components/icons";
 import {DropdownMenu,DropdownMenuContent,DropdownMenuItem,DropdownMenuTrigger} from "@/components/ui/dropdown-menu";
-import {gui} from "@/gen/catalog";
+import {menu} from "@/gen/catalog";
 
 /** Hidden landings and More are peers; each opens its own navigation. */
 export function NavigationOverflow({seats,onGo,onMore,onMe,mobile=false,children}: {
@@ -21,7 +21,7 @@ export function NavigationOverflow({seats,onGo,onMore,onMe,mobile=false,children
         {!!seat.badge && <span className="text-caption tabular-nums text-muted-foreground">{seat.badge}</span>}
       </DropdownMenuItem>)}
       <DropdownMenuItem data-nav-more-page className="[&_svg]:size-nav-glyph" onSelect={onMore}>
-        <IconMore/>{gui.rail_more}
+        <IconGear/>{menu.settings}
       </DropdownMenuItem>
     </DropdownMenuContent>
   </DropdownMenu>;

@@ -37,6 +37,15 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
   const histories = new Map<string,ReturnType<typeof labCommits>>();
   const history = (path: string) => {if(!histories.has(path))histories.set(path,labCommits(path));return histories.get(path)!;};
   const owner = (input: Record<string,unknown>) => devices.find(device=>device.id===input.machine||device.name===input.machine)??devices[0];
+  const repository = (input: Record<string,unknown>) => {
+    const path=String(input.dir||root).replace(/\\/g,'/').replace(/\/$/,'');
+    return workspaces.find(workspace=>workspace.device===owner(input)?.id&&workspace.git&&(path===workspace.path||path.startsWith(workspace.path+'/')));
+  };
+  const requireRepository = (input: Record<string,unknown>) => {
+    const workspace=repository(input);
+    if(!workspace)throw new Error('No Git repository: '+String(input.dir||root));
+    return workspace;
+  };
   const pathOf = (input: Record<string,unknown>) => String(input.path||labRoot(owner(input))).replace(/\\/g,'/').replace(/\/$/,'');
   const relative = (input: Record<string,unknown>) => {
     const path=pathOf(input),base=labRoot(owner(input));
@@ -127,6 +136,7 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
       }
       if (command === 'git_diff') return {hunks: [], more: false};
       if (command === 'git_history') {
+        requireRepository(input);
         const commits=history(String(input.dir||root)),start=Number(input.cursor||0),limit=Number(input.limit)||40;
         return {head:commits[0].id,commits:commits.slice(start,start+limit),next:start+limit<commits.length ? String(start+limit) : null};
       }
@@ -174,8 +184,8 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
       }
       if (command === 'preview') return {kind:'text',total:file(input).total,data:'',media:'',html:'',cut:false,empty:!file(input).text};
       if (command === 'touched') return at;
-      if (command === 'checkout') return workspaces.some(workspace=>workspace.git&&String(input.dir||root).startsWith(workspace.path));
-      if (command === 'git_status') return {branch:workspaces.find(workspace=>workspace.path===input.dir)?.branch??'main',rows:[{path:'README.md',mark:'M'},{path:'src/navigation.ts',mark:'M'},{path:'docs/中文说明.md',mark:'A'},{path:'notes.md',mark:'?'}],more:false,ahead:2,behind:1,fetched_ms:at};
+      if (command === 'checkout') return !!repository(input);
+      if (command === 'git_status') return {branch:requireRepository(input).branch,rows:[{path:'README.md',mark:'M'},{path:'src/navigation.ts',mark:'M'},{path:'docs/中文说明.md',mark:'A'},{path:'notes.md',mark:'?'}],more:false,ahead:2,behind:1,fetched_ms:at};
       if (command === 'trash_here') return false;
       if (command === 'code_here') return {version: '', ready: false};
       if (command === 'git_windows' || command === 'code_windows') return [];

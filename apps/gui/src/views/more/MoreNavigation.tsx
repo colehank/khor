@@ -4,7 +4,7 @@ import {NarrowHead,SideSeat} from "@/components/SideHead";
 import type {MorePage} from "@/lib/more-navigation";
 import {walkList} from "@/lib/shortcuts";
 import {cn} from "@/lib/utils";
-import {gui} from "@/gen/catalog";
+import {menu} from "@/gen/catalog";
 import {moreName} from "./MorePage";
 
 type NavigationPage = Exclude<MorePage,"me"|"terminal">;
@@ -43,11 +43,11 @@ export function MoreNavigation({page,narrow,onPage}: {
   };
   const group = (children:ReactNode) => <div data-more-card data-settings-card={narrow ? "" : undefined}
     className={cn("flex min-w-0 flex-col",narrow ? "mx-page" : "gap-px")}>{children}</div>;
-  return <nav data-more-list aria-label={gui.rail_more}
+  return <nav data-more-list aria-label={menu.settings}
     onKeyDown={event=>walkList(event,"[data-more-open]")}
     className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto bg-side py-1",narrow && "pb-[var(--nav-room)]")}>
-    {narrow ? <NarrowHead>{()=><h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.rail_more}</h1>}</NarrowHead>
-      : <SideSeat><h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{gui.rail_more}</h1></SideSeat>}
+    {narrow ? <NarrowHead>{()=><h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{menu.settings}</h1>}</NarrowHead>
+      : <SideSeat><h1 data-list-title className="min-w-0 flex-1 truncate text-title-lg">{menu.settings}</h1></SideSeat>}
     <div data-settings-navigation className="flex min-w-0 flex-col gap-group pb-pane">
       {groups.map((items,index)=><section key={index} data-more-group={index}>{group(items.map(row))}</section>)}
     </div>

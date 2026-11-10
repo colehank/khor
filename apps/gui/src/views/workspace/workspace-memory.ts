@@ -9,6 +9,7 @@ import type { WorkspaceTabs } from "./workspace-tabs";
 import { WorkspaceHistoryMemory } from "./workspace-history";
 
 export type WorkspaceMetadata = {
+  repository?: boolean;
   status: GitStatus | null;
   headKnown: boolean;
   head: string | null;

@@ -16,6 +16,7 @@ import { flushSync } from "react-dom";
 import {
   fetchGitStatus,
   fetchGitHistory,
+  fetchCheckout,
 
   searchIn,
   type Found,
@@ -564,30 +565,37 @@ export function WorkspacePane({
   const dropHunt = () => setHunt("");
 
   const [liveHead, setLiveHead] = useState<{ known: boolean; id: string | null }>({ known: false, id: null });
+  const [repository, setRepository] = useState(false);
   useLayoutEffect(() => {
     if (hidden || root === "") return;
     return memory.metadata.attach(async () => {
-      const [status, head] = await Promise.allSettled([
-        fetchGitStatus(machine, root), fetchGitHistory(machine, root, null, 1),
+      const [status, head, checkout] = await Promise.allSettled([
+        fetchGitStatus(machine, root), fetchGitHistory(machine, root, null, 1), fetchCheckout(machine, root),
       ]);
       return {
         status: status.status === "fulfilled" ? status.value : null,
         headKnown: head.status === "fulfilled",
         head: head.status === "fulfilled" ? head.value.head : null,
         commit: head.status === "fulfilled" ? head.value.commits[0] ?? null : null,
+        repository: status.status === "fulfilled" || head.status === "fulfilled" ? true : checkout.status === "fulfilled" ? checkout.value : undefined,
       };
     }, facts => {
       setGit(facts.status);
       setBranch(facts.status?.branch ?? "");
       setHeadCommit(facts.commit);
       setLiveHead({ known: facts.headKnown, id: facts.head });
+      setRepository(facts.repository ?? facts.status !== null);
+      if (facts.repository === false) {
+        setSidebarView(previous => previous === "history" ? "files" : previous);
+      }
     }, () => {
       setGit(null);
       setBranch("");
       setHeadCommit(null);
       setLiveHead({ known: false, id: null });
+      setRepository(false);
     });
-  }, [memory, machine, root, hidden, setBranch, setHeadCommit]);
+  }, [memory, machine, root, hidden, setBranch, setHeadCommit, setSidebarView]);
   const gitAsked = useRef(gitAt);
   useEffect(() => {
     if (gitAsked.current === gitAt) return;
@@ -1229,7 +1237,7 @@ export function WorkspacePane({
     </div>
   );
   const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading>
-    <WorkspaceNavigation branch={branch} repo={git !== null || headCommit !== null} view={sidebarView} onView={setSidebarView} withSessions/>
+    <WorkspaceNavigation branch={branch} repo={repository} view={sidebarView} onView={setSidebarView} withSessions/>
   </div>;
 
 
