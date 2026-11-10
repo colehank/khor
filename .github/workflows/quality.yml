@@ -9,38 +9,17 @@ on:
 permissions:
   contents: read
 jobs:
-  loopback-core:
+  window-focus:
     runs-on: macos-26
-    timeout-minutes: 20
-    env:
-      CARGO_INCREMENTAL: '0'
-      CARGO_PROFILE_DEV_DEBUG: '0'
-      CARGO_PROFILE_TEST_DEBUG: '0'
-      CARGO_BUILD_JOBS: '2'
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: dtolnay/rust-toolchain@1.95.0
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-targets: false
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - run: |
-          python3 loopback_core_diagnostic.py
-          xcrun swiftc -swift-version 5 apps/gui/core/tests/fixtures/webkit_loopback.swift -o "$RUNNER_TEMP/webkit-loopback"
-      - name: Compare actual Rust bridge and native WebKit paths
-        run: |
-          failed=0
-          for mode in default direct explicit; do
-            if KHOR_WEBKIT_MODE="$mode" KHOR_WEBKIT_PROBE="$RUNNER_TEMP/webkit-loopback" cargo test --locked -p khor-gui-core --lib web::loopback_tests::native_webkit_reaches_the_borrowed_loopback_origin -- --ignored --test-threads=1 --nocapture > "$RUNNER_TEMP/loopback-$mode.log" 2>&1; then
-              echo "$mode passed"
-            else
-              tail -n 45 "$RUNNER_TEMP/loopback-$mode.log"
-              failed=1
-            fi
-          done
-          exit "$failed"
+          xcrun swiftc -swift-version 5 window_focus_diagnostic.swift -o "$RUNNER_TEMP/window-focus"
+          "$RUNNER_TEMP/window-focus" > "$RUNNER_TEMP/window-focus.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: loopback-core-diagnostic
-          path: ${{ runner.temp }}/loopback-*.log
+          name: window-focus-diagnostic
+          path: ${{ runner.temp }}/window-focus.json
