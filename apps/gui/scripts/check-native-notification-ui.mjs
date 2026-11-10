@@ -39,7 +39,16 @@ try{
   writeFileSync(process.env.NATIVE_NOTIFICATION_SNAPSHOT_OUT,html.replace(/data-notification-banner="[^"]*"/g,'data-notification-banner="m:local"'));
  }
  const originalKey=await banner.getAttribute('data-notification-banner');
- await banner.hover();await page.waitForTimeout(150);
+ try{await banner.hover({timeout:2500});}
+ catch(error){
+  const diagnostic=await page.evaluate(()=>{
+   const box=node=>node?{rect:node.getBoundingClientRect().toJSON(),style:node.getAttribute('style'),attributes:[...node.attributes].map(a=>[a.name,a.value]),animations:node.getAnimations({subtree:true}).map(a=>({state:a.playState,time:a.currentTime}))}:null;
+   const f=document.querySelector('iframe'),doc=f?.contentDocument;
+   return {errors:window.noticeErrors,source:box(document.querySelector('[data-notification-banners]')),banner:box(document.querySelector('[data-notification-banner]')),frame:box(f),mirror:box(doc?.querySelector('[data-notification-banners]')),mirroredBanner:box(doc?.querySelector('[data-notification-banner]')),calls:nativeNotice.calls.slice(-8).map(c=>({...c,request:c.request?{...c.request,html:c.request.html?.slice(0,100)}:undefined})),totalCalls:nativeNotice.calls.length};
+  });
+  writeFileSync(join(out,'native-notification-hover.json'),JSON.stringify({errors,diagnostic},null,2));await page.screenshot({path:join(out,'native-notification-hover.png')});throw error;
+ }
+ await page.waitForTimeout(150);
  assert(await page.locator('[data-notification-banner]').first().getAttribute('data-notification-engaged'),'Native hover reaches the owner');
  // Pointer capture remains in the private frame while the owner updates its rendered transform.
  const rect=await banner.boundingBox();await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height*.8);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2,rect.y-rect.height,{steps:10});await page.mouse.up();
