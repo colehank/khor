@@ -23,3 +23,8 @@
 分支integrate/settings-gui-20261109（原HEAD5eb971f5，已合并main为7ca9bd5f）。源码main的未跟踪lab-preview保留。旧Lab23950仍dc946c83/PID6019/exec99444，后续替换仅核对过归属的静态服务并保留旧版本资产。
 
 后续精确SHA/run/tag/receipt持续写入本文件及外部evidence状态，compact从本节和实际git状态继续，不重走旧HOLD。
+
+
+## 首次全量回归
+
+main图标同步后effe2793/Quality42779150845前端在catalog生成时红：最新SSH主机文案和已有gui.add-ssh-host同文，目录禁止两个key同文本。已改为复用原有add-khor-host/add-ssh-host，删除新增choice别名，App菜单/弹窗标题共用同一词，Khor统一大小写。没有绕过去重门。原生通知确认BrowserPane子WebView不能由DOM盖住，正在复用既有menu_overlay可信浮层通道，实际通知状态/React事件仍由主界面拥有，不造第二套业务或外部系统通知。

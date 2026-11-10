@@ -443,7 +443,7 @@ export function AddMachineDialog({
     case "ssh":
       content = (
         <>
-          <Head title={gui.add_ssh_choice} />
+          <Head title={gui.add_ssh_host} />
           <Body>
             <Group
               mark="ssh"
@@ -657,7 +657,7 @@ function TicketPage({ machines, onClose, onJoined }: {
   };
 
   return <>
-    <Head title={gui.add_khor_choice} centered />
+    <Head title={gui.add_khor_host} centered />
     <Body>
       <SegmentedControl label={gui.add_khor_host} value={mode} appearance="glass" className="self-center"
         mark={{ "data-pairing-mode": mode }}

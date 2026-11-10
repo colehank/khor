@@ -1341,8 +1341,8 @@ export default function App() {
     { key: "import", label: gui.import_sessions, onSelect: () => setDialog("import") },
   ];
   const deviceActions: PaneAction[] = [
-    { key: "khor", label: gui.add_khor_choice, afterClose: true, onSelect: () => setDialog("add-ticket") },
-    { key: "ssh", label: gui.add_ssh_choice, afterClose: true, onSelect: () => setDialog("add-ssh") },
+    { key: "khor", label: gui.add_khor_host, afterClose: true, onSelect: () => setDialog("add-ticket") },
+    { key: "ssh", label: gui.add_ssh_host, afterClose: true, onSelect: () => setDialog("add-ssh") },
   ];
 
   // **The floating navigation** (the redesign, 2026-10-02). Its seats
