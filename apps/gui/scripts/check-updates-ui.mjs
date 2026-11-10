@@ -12,11 +12,18 @@ const fixture=mkdtempSync(join(gui,'.updates-check-'));
 const out=process.env.FILE_HANDOFF_OUT||join(process.env.RUNNER_TEMP||tmpdir(),'khor-updates-ui');mkdirSync(out,{recursive:true});
 writeFileSync(join(fixture,'index.html'),'<link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),`
-import React from 'react';import{createRoot}from'react-dom/client';import{UpdateSettings}from'/src/views/more/UpdateSettings';import{MachineUpdates}from'/src/views/MachineUpdates';
+import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{UpdateSettings}from'/src/views/more/UpdateSettings';import{MachineUpdates}from'/src/views/MachineUpdates';
 import{RuntimeCacheSettings}from'/src/views/more/RuntimeCacheSettings';
 import{followUpdatePreparation}from'/src/lib/update-lifecycle';followUpdatePreparation();
 import{TooltipProvider}from'/src/components/ui/tooltip';import'/src/styles/tokens.css';import'/src/styles/app.css';
-createRoot(document.getElementById('root')).render(<TooltipProvider><UpdateSettings/><RuntimeCacheSettings enabled={true}/><MachineUpdates row={window.machineRows[0]} ${process.env.MACHINE_UPDATE_LEGACY_INPUT==='1'?'rows={window.machineRows}':''}/></TooltipProvider>);`);
+function Probe(){
+ const [selected,setSelected]=useState(0);
+ return <TooltipProvider><UpdateSettings/><RuntimeCacheSettings enabled={true}/>
+  {window.machineRows.map((row,index)=><button key={row.id} data-machine-fixture={index} onClick={()=>setSelected(index)}>{row.shown}</button>)}
+  <MachineUpdates row={window.machineRows[selected]}/>
+ </TooltipProvider>;
+}
+createRoot(document.getElementById('root')).render(<Probe/>);`);
 let server,browser,page;
 const errors=[];
 try {
@@ -183,20 +190,30 @@ try {
   await machines.getByRole('button',{name:/开始更新|Start update/}).click();
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='machine_update_start'));
   assert.deepEqual(await page.evaluate(()=>window.updateCalls.find(call=>call.cmd==='machine_update_start').args.machines),['a'.repeat(64)],'a machine action targets its stable identity, never its display name or the whole network');
-  await page.evaluate(()=>window.emitMachineQueue({revision:10,jobs:[{...window.machineQueue.jobs[0],phase:'waiting'}]}));
+  const job=await page.evaluate(()=>window.machineQueue.jobs[0]);
+  assert.equal(job.machine,'a'.repeat(64));
+  await page.evaluate(job=>window.emitMachineQueue({revision:10,jobs:[{...job,phase:'waiting'}]}),job);
   await machines.getByRole('button',{name:/取消等待|Cancel waiting/}).click();
   await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='machine_update_cancel'));
   assert.deepEqual(await page.evaluate(()=>window.updateCalls.find(call=>call.cmd==='machine_update_cancel').args),{machine:'a'.repeat(64),request:'choice-0'});
   assert.equal(await machines.getByRole('button',{name:/更新多台机器|Update multiple machines/}).count(),0,'machine page offers no batch update');
-  const job=await page.evaluate(()=>window.machineQueue.jobs[0]);
   await page.evaluate(job=>window.emitMachineQueue({revision:100,jobs:[{...job,phase:'installing'}]}),job);
   await page.waitForFunction(()=>/正在更新|Updating|Installing/.test(document.querySelector('[data-machine-updates]').textContent));
   await page.evaluate(job=>window.emitMachineQueue({revision:99,jobs:[{...job,phase:'complete'}]}),job);
   assert.match(await machines.innerText(),/正在更新|Updating/,'an older reply cannot overwrite newer progress');
   await page.evaluate(job=>window.emitMachineQueue({revision:101,jobs:[{...job,machine:'a'.repeat(64),source:'cli',phase:'complete'},{...job,machine:'b'.repeat(64),target:'OTHER_MACHINE_ONLY',source:'cli',phase:'failed'}]}),job);
-  assert.match(await machines.innerText(),/更新完成|Update complete/);
+  await page.waitForFunction(()=>/更新完成|Update complete/.test(document.querySelector('[data-machine-updates]').textContent));
   assert.doesNotMatch(await machines.innerText(),/OTHER_MACHINE_ONLY/,'other machines results stay out of this machine page');
   assert.deepEqual(await page.evaluate(()=>window.updateCalls.filter(call=>call.cmd==='machine_update_start').flatMap(call=>call.args.machines)),['a'.repeat(64)]);
+  await page.locator('[data-machine-fixture="1"]').click();
+  await machines.getByText('OTHER_MACHINE_ONLY',{exact:true}).waitFor();
+  await machines.getByRole('button',{name:/开始更新|Start update/}).click();
+  await page.waitForFunction(()=>window.updateCalls.filter(call=>call.cmd==='machine_update_start').length===2);
+  assert.deepEqual(await page.evaluate(()=>window.updateCalls.filter(call=>call.cmd==='machine_update_start').at(-1).args.machines),['b'.repeat(64)]);
+  await page.locator('[data-machine-fixture="2"]').click();
+  await page.waitForFunction(()=>window.updateCalls.some(call=>call.cmd==='machine_update_status'&&call.args.machine==='c'.repeat(64)));
+  await machines.getByRole('button',{name:/检查更新|Check for updates/}).waitFor({state:'detached'});
+  assert.doesNotMatch(await machines.innerText(),/OTHER_MACHINE_ONLY/);
   await page.setViewportSize({width:390,height:800});
   await page.screenshot({path:join(out,'machine-updates-mobile.png')});
   assert.deepEqual(errors,[]);
