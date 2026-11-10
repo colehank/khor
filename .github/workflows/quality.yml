@@ -90,6 +90,8 @@ jobs:
           cargo test --locked -p khor-node --lib mcp_worker::tests::a_real_ -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/delegation.log"
           cargo test --locked -p khor-node --lib a_stopped_codex_does_not_demote_its_hosts_active_selected_thread -- --test-threads=1
           cargo test --locked -p khor-node --test pairing pairing_joins_both_tables_and_chat_flows_both_ways -- --test-threads=1
+          cargo test --locked -p khor-node --test delegation_wire -- --exact paired_bound_delegation_keeps_authenticated_identity_and_original_parent
+          cargo test --locked -p khor-node --test delegation_wire -- --exact paired_cancel_input_fences_absent_message_before_late_send
       - if: always()
         run: |
           cargo fmt --all
@@ -136,7 +138,18 @@ jobs:
         run: |
           npm run viewport-resume
           npm run updates-ui
-      - run: cargo build --locked -p khor-cli --bin khor -p khor-gui-core --bin bridge
+      - if: ${{ !cancelled() }}
+        id: attachment-binaries
+        run: cargo build --locked -p khor-cli --bin khor -p khor-gui-core --bin bridge
       - name: Verify attachments with a real App, PTY and file transport
+        if: ${{ !cancelled() && steps.attachment-binaries.outcome == 'success' }}
         working-directory: apps/gui
         run: npm run attachment-ui
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: interaction-evidence
+          path: |
+            ${{ runner.temp }}/khor-updates-ui
+            /tmp/khor-attachment-ui-check/ui
+          if-no-files-found: warn
