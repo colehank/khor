@@ -140,6 +140,8 @@ jobs:
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - name: Compile the actual macOS layered icon
         run: python3 scripts/mac_icon.py compile --output "${{ runner.temp }}/khor-icon"
+      - name: Verify the unsigned Mac installer and CLI ownership in a scratch volume
+        run: python3 scripts/check-mac-installer.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-icon

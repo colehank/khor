@@ -155,6 +155,7 @@ def mac_build(target, signed):
         catalog = Path(temporary)
         compile_icon(catalog)
         config = json.loads((GUI / "src-tauri/tauri.ci.json").read_text())
+        config["bundle"]["externalBin"] = ["binaries/khor"]
         config["bundle"]["icon"] = [str(catalog / "Assets.car") if Path(icon).suffix == ".icon" else icon
                                     for icon in config["bundle"]["icon"]]
         command = ["npm", "run", "tauri", "--", "build", "--ci", "--target", target,

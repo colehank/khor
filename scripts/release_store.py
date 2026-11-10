@@ -75,6 +75,11 @@ def signed_build(root, record):
                 or not re.fullmatch(r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}", proof.get("request_id", ""))
                 or not re.fullmatch(r"[0-9a-f]{64}", proof.get("archive_sha256", ""))):
             raise ValueError("Mac candidate has no accepted notarization for this exact build")
+        if proof.get("archive", "").endswith(".pkg"):
+            asset = name.removesuffix("-app")
+            if (proof["archive"] != f"{asset}-{record['run_id']}-{proof['archive_sha256']}.pkg"
+                    or f"{asset}.pkg" not in record["artifacts"][name]["files"]):
+                raise ValueError("Mac candidate has no installer bound to its notarization")
     build = json.loads((root / "ios-archive/build.json").read_text())
     if build["signed"] is not True or build["version"] != record["version"]:
         raise ValueError("iOS candidate must be signed at the same version")

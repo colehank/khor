@@ -47,7 +47,11 @@ GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才�
 
 ## Apple阶段与失败重试
 
-Mac 构建与公证分为三个独立任务。`mac-app` 只编译、签名，将原始 zip 和源码、前端、Pi、文件摘要收据保存为 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后附加公证票据，执行 `codesign` 与 `stapler validate`，最后生成 App 包和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录；仅签名不能分发。
+Mac 构建与公证分为三个独立任务。`mac-app` 编译 App 和同版本 CLI，以 Developer ID Application 签名，再用独立的 Developer ID Installer 签发 PKG。原始 PKG 与源码、前端、Pi、文件摘要收据保存在 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后为 PKG 和其中的 App 附加票据，验证安装包与 App 签名，再保存 PKG、供 Tauri updater 使用的 App 归档和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录。
+
+用户安装选择 `khor-macos-arm64.pkg`（Apple 芯片）或 `khor-macos-x86_64.pkg`（Intel）。两者都安装到 `/Applications/Khor.app`，并在空闲时为 `/usr/local/bin/khor` 建立指向包内 CLI 的链接。App 更新会一起替换其 CLI。独立 CLI 安装继续用 `khor upgrade`；在仅安装 CLI 的机器上可用 `khor web`，装好 App 后用 `khor gui` 打开。普通用户对 `/Applications` 没有写权限时，用新版 PKG 更新。
+
+已有的独立安装优先保留：安装器不会覆盖 `/usr/local/bin/khor` 上的其他文件，也不会动用户目录。可用 `type -a khor` 查看实际命令来源，决定是否调整 PATH 或按原安装方式卸载；只有确认旧 `khor-gui` 是指向 App 内部程序的外部软链接时，才用 `unlink` 移除它。用户可用 `/Applications/Khor.app/Contents/MacOS/khor --version` 核对随 App 的版本。
 
 公证查询每次最多等待30分钟，任务上限40分钟，为下载、打包和状态保存留出时间；编译仍有独立的90分钟预算。等待超时不取消 Apple 上的处理。在原 Actions run 选择 **Re-run failed jobs**，继续查询同一请求，复用原始签名包，不重新编译、签名或提交。已有最终包也会校验后复用。不要使用 Re-run all jobs 恢复公证。
 
@@ -75,8 +79,8 @@ Mac继续走Developer ID签名、公证和商店外分发。当前`macos-private
 
 | 环境 | 允许的tag | Secrets |
 | --- | --- | --- |
-| apple-signing | `v*-rc.*` | MAC_CERTIFICATE_P12、MAC_CERTIFICATE_PASSWORD、MAC_SIGNING_IDENTITY、APPLE_DEVELOPMENT_TEAM、IOS_CERTIFICATE_P12、IOS_CERTIFICATE_PASSWORD、IOS_PROFILE、APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8 |
-| apple-testflight | `v*-rc.*` | 上表除MAC三项外的7项 |
+| apple-signing | `v*-rc.*` | MAC_CERTIFICATE_P12、MAC_CERTIFICATE_PASSWORD、MAC_SIGNING_IDENTITY、MAC_INSTALLER_CERTIFICATE_P12、MAC_INSTALLER_CERTIFICATE_PASSWORD、MAC_INSTALLER_SIGNING_IDENTITY、APPLE_DEVELOPMENT_TEAM、IOS_CERTIFICATE_P12、IOS_CERTIFICATE_PASSWORD、IOS_PROFILE、APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8 |
+| apple-testflight | `v*-rc.*` | 上表除 MAC 六项外的七项 |
 | apple-store | `v*`，脚本再严格要求正式版本 | APPLE_API_KEY_ID、APPLE_API_ISSUER_ID、APPLE_API_KEY_P8 |
 | github-release | `v*` | 使用工作流GITHUB_TOKEN，不存个人token |
 | updater-signing | 仅 `v*` tag，脚本严格核对当前 ref | TAURI_SIGNING_PRIVATE_KEY、TAURI_SIGNING_PRIVATE_KEY_PASSWORD |

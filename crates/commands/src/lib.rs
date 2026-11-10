@@ -68,6 +68,7 @@ pub use execution::{
 /// `khor relay` — its own file because it is its own program: a server
 /// with its own access control and meter (`relay.rs` head).
 mod relay;
+mod desktop;
 mod upgrade;
 
 /// Process entry hook for terminal sessions created by the slash interface.
@@ -4932,49 +4933,13 @@ fn start_web_face(root: &std::path::Path) {
 /// `--new` mints a fresh key, which is also how a link is taken back:
 /// there is no list of issued links to revoke one from, and there does
 /// not need to be — the key *is* the link.
-/// Opens the desktop app's window.
-///
-/// The desktop app is its own binary, `khor-gui` (the tauri crate, named
-/// by cargo after its package), installed **beside** `khor` the way
-/// `_ghost` and `_host` are found beside it: one directory, no registry,
-/// nothing to configure. Spawned into its own session so the window
-/// outlives the terminal that asked for it; the CLI returns at once
-/// because a window is not something to wait on. A missing binary is said
-/// in words that name where to put it, never as a generic "not found".
-///
-/// **Only `khor-gui` is looked for, never tauri's `Khor`.** tauri also
-/// emits a copy named after `productName`, and on the case-insensitive
-/// APFS this Mac runs, `Khor` *is* `khor` — the same inode as the CLI
-/// (measured: both 28 MB, one inode; the real app is the 34 MB
-/// `khor-gui`). A fallback to that name would have this verb exec the
-/// CLI itself and call it a window.
+/// Opens the installed desktop application; a CLI-only install still
+/// has the Web interface and can install the desktop application later.
 fn gui(rest: &[String]) -> Result<(), String> {
     if !rest.is_empty() {
         return Err(usage_text().into());
     }
-    let me = khor_node::installed_exe()?;
-    let dir = me
-        .parent()
-        .ok_or_else(|| msg::gui_not_installed(me.display()))?;
-    let bin = dir.join("khor-gui");
-    if !bin.is_file() {
-        return Err(msg::gui_not_installed(dir.display()));
-    }
-    let mut c = std::process::Command::new(&bin);
-    c.stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    #[cfg(unix)]
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        c.pre_exec(|| {
-            libc::setsid();
-            Ok(())
-        });
-    }
-    c.spawn()
-        .map_err(|e| msg::gui_wont_start(format_args!("{e}")))?;
-    Ok(())
+    desktop::launch()
 }
 
 fn web(rest: &[String]) -> Result<(), String> {

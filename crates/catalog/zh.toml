@@ -2242,7 +2242,8 @@ host-wont-start = "宿主无法启动：{0}"
 # `khor gui` looks for the desktop app beside itself. Naming the directory
 # it looked in (not just "not found") is what lets a person fix it in one
 # move — the fix is a copy into exactly that place.
-gui-not-installed = "桌面 app 没装在 khor 旁边（{0}）：把 target/release/khor-gui 拷到那里"
+gui-not-installed = "从 {0} 安装 Khor 桌面应用，或使用 khor web"
+gui-app-upgrade = "此命令行随 Khor 安装。在「设置 → 关于 → 检查更新」可同时更新应用和命令行。"
 gui-wont-start = "桌面 app 无法启动：{0}"
 # **This is now the "it really did hang" answer and nothing else.**
 # A host that dies on the way up leaves its own sentence behind

@@ -26,6 +26,7 @@ class SigningBoundaryTest(unittest.TestCase):
         def build(command, **_):
             self.assertEqual(len(catalogs), 1, "compile the catalog before starting Tauri")
             config = json.loads(command[command.index("--config") + 1])
+            self.assertEqual(config["bundle"]["externalBin"], ["binaries/khor"])
             icons = config["bundle"]["icon"]
             self.assertEqual(Path(icons[0]), catalogs[0])
             self.assertTrue(catalogs[0].is_file())
@@ -78,9 +79,9 @@ class NotarizationRecoveryTest(unittest.TestCase):
         patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REPOSITORY": "owner/repo",
                                "GITHUB_OUTPUT": str(self.base / "outputs")}, clear=True).start()
         patch.object(mac, "source_sha", return_value=SHA).start()
-        self.archive = self.root / "payload.zip"
-        self.archive.write_bytes(b"signed Mac zip fixture")
-        self.archive = self.archive.rename(self.root / f"{ASSET}-42-{manifest.digest(self.archive)}.zip")
+        self.archive = self.root / "payload.pkg"
+        self.archive.write_bytes(b"signed Mac installer fixture")
+        self.archive = self.archive.rename(self.root / f"{ASSET}-42-{manifest.digest(self.archive)}.pkg")
         (self.root / "signed.txt").write_text("true\n")
         self.receipt = {"schema": 1, "kind": f"{ASSET}-app-build", "source_sha": SHA, "run_id": "42",
                         "version": "1.2.3", "ui_revision": "the-built-ui", "agent_sha256": "c" * 64,
@@ -91,6 +92,7 @@ class NotarizationRecoveryTest(unittest.TestCase):
         self.client.call.side_effect = self.api
         self.calls = []
         self.history, self.status = [], "Accepted"
+        patch.object(mac, "extract_installer", side_effect=self.fake_extract).start()
 
     def api(self, action, *args):
         self.calls.append((action, args))
@@ -107,9 +109,13 @@ class NotarizationRecoveryTest(unittest.TestCase):
     def submit(self, allow=True):
         return mac.submit(self.root, ASSET, self.state, allow, self.client)
 
+    def fake_extract(self, package, destination):
+        self.assertEqual(package.read_bytes(), self.archive.read_bytes())
+        app = destination / "Payload/Applications/Khor.app"
+        app.mkdir(parents=True)
+        return app
+
     def fake_package(self, command, **_):
-        if command[:3] == ["ditto", "-x", "-k"]:
-            (Path(command[-1]) / "Khor.app").mkdir()
         if command[:2] == ["tar", "-czf"]:
             Path(command[2]).write_bytes(b"stapled final archive")
 
@@ -201,6 +207,8 @@ class NotarizationRecoveryTest(unittest.TestCase):
             mac.finalize(self.root, ASSET, self.state, self.output, self.client, 0)
             self.assertIn(["xcrun", "stapler", "validate"], [call.args[0][:3] for call in run.call_args_list])
         receipt = manifest.verify(self.output, SHA)
+        self.assertIn(f"{ASSET}.pkg", receipt["files"])
+        self.assertIn(f"{ASSET}.app.tar.gz", receipt["files"])
         self.assertEqual(receipt["kind"], f"{ASSET}-app")
         self.assertEqual(receipt["ui_revision"], self.receipt["ui_revision"])
         self.assertEqual(receipt["agent_sha256"], self.receipt["agent_sha256"])

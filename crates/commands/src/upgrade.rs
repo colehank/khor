@@ -2,6 +2,9 @@ use khor_node::updates::{self, Channel, UpgradeRequest};
 
 pub(super) fn run(args: &[String]) -> Result<(), String> {
     let (machine, request, json) = parse(args)?;
+    if machine.is_none() && super::desktop::owns_cli(&khor_node::installed_exe()?) {
+        return Err(khor_catalog::msg::gui_app_upgrade().into());
+    }
     let result = if let Some(machine) = machine {
         let node = super::node()?;
         super::rt()?.block_on(node.upgrade_on(&machine, request))?

@@ -1,15 +1,17 @@
-"""Persist signed Mac builds and resume notarization without rebuilding them."""
+"""Persist Mac installers and resume notarization without rebuilding them."""
 import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
 import uuid
 
 from apple_release import api_key, required, run
-from release_manifest import create, digest, executable_info, files, source_sha, verify
+from mac_installer import build as build_installer, extract as extract_installer
+from release_manifest import create, digest, executable_info, files, source_sha, verify, version
 from release_store import gh, repository
 
 TARGETS = {"aarch64-apple-darwin": "khor-macos-arm64", "x86_64-apple-darwin": "khor-macos-x86_64"}
@@ -26,12 +28,19 @@ def package_build(target, signed, root, frontend, agent):
     asset = TARGETS[target]
     app = Path("target") / target / "release/bundle/macos/Khor.app"
     root.mkdir(parents=True, exist_ok=True)
-    archive = root / "upload.zip"
-    run(["ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", str(app), str(archive)])
-    archive.rename(root / f"{asset}-{required('GITHUB_RUN_ID')}-{digest(archive)}.zip")
-    (root / "signed.txt").write_text(str(signed).lower() + "\n")
     program = app / "Contents/MacOS/khor-gui"
-    create(root, f"{asset}-app-build", frontend, program, agent, executable_info(program))
+    info = executable_info(program)
+    cli = executable_info(app / "Contents/MacOS/khor")
+    if (info.get("component") != "desktop-app" or cli.get("component") != "cli"
+            or any(cli.get(key) != info.get(key) for key in ("build", "platform", "contract"))):
+        raise ValueError("The App and its CLI must have the same build, platform and runtime contract")
+    archive = root / "upload.pkg"
+    # Installer receipts use the numeric bundle version; the App and CLI
+    # keep their complete release identities, including the RC.
+    build_installer(app, archive, version().split("-")[0], signed)
+    archive.rename(root / f"{asset}-{required('GITHUB_RUN_ID')}-{digest(archive)}.pkg")
+    (root / "signed.txt").write_text(str(signed).lower() + "\n")
+    create(root, f"{asset}-app-build", frontend, program, agent, info)
 
 
 def build_identity(root, asset):
@@ -40,12 +49,12 @@ def build_identity(root, asset):
     receipt = verify(root, source_sha())
     if receipt["kind"] != f"{asset}-app-build" or receipt["run_id"] != required("GITHUB_RUN_ID"):
         raise ValueError("Mac build belongs to a different platform or run")
-    archives = list(root.glob("*.zip"))
+    archives = list(root.glob("*.pkg"))
     if len(archives) != 1:
         raise ValueError("Mac build must contain exactly one upload archive")
     archive = archives[0]
     sha = digest(archive)
-    if archive.name != f"{asset}-{receipt['run_id']}-{sha}.zip":
+    if archive.name != f"{asset}-{receipt['run_id']}-{sha}.pkg":
         raise ValueError("Notary upload name does not identify these exact bytes")
     signed = (root / "signed.txt").read_text().strip()
     if signed not in {"true", "false"}:
@@ -164,18 +173,20 @@ def finalize(root, asset, state, output, client, timeout):
     if identity["signed"]:
         wait_for_acceptance(record, state, client, timeout)
     with tempfile.TemporaryDirectory() as temporary:
-        unpacked = Path(temporary)
-        run(["ditto", "-x", "-k", str(root / identity["archive"]), str(unpacked)])
-        app = unpacked / "Khor.app"
-        if not app.is_dir():
-            raise ValueError("Mac archive has no Khor.app")
+        work = Path(temporary)
+        package = work / f"{asset}.pkg"
+        shutil.copyfile(root / identity["archive"], package)
+        app = extract_installer(package, work / "expanded")
         if identity["signed"]:
             run(["codesign", "--verify", "--deep", "--strict", str(app)])
-            run(["xcrun", "stapler", "staple", str(app)])
-            run(["xcrun", "stapler", "validate", str(app)])
+            for item in (package, app):
+                run(["xcrun", "stapler", "staple", str(item)])
+                run(["xcrun", "stapler", "validate", str(item)])
+            run(["spctl", "-a", "-t", "install", str(package)])
             run(["codesign", "--verify", "--deep", "--strict", str(app)])
         output.mkdir(parents=True, exist_ok=True)
-        run(["tar", "-czf", str(output / f"{asset}.app.tar.gz"), "-C", str(unpacked), "Khor.app"])
+        run(["tar", "-czf", str(output / f"{asset}.app.tar.gz"), "-C", str(app.parent), app.name])
+        shutil.copyfile(package, output / package.name)
     (output / "signed.txt").write_text(str(identity["signed"]).lower() + "\n")
     write_json(output / "notarization.json", proof)
     receipt = json.loads((root / "receipt.json").read_text())

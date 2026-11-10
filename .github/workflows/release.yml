@@ -182,6 +182,14 @@ jobs:
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - if: matrix.target == 'x86_64-apple-darwin'
         run: sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Stage the matching CLI inside the desktop app
+        env:
+          TARGET: ${{ matrix.target }}
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+        run: |
+          cargo build --locked -p khor-cli --bin khor --target "$TARGET" --release
+          mkdir -p apps/gui/src-tauri/binaries
+          cp "target/$TARGET/release/khor" "apps/gui/src-tauri/binaries/khor-$TARGET"
       - name: Build Mac App from the same frontend and runtime
         env:
           TARGET: ${{ matrix.target }}
@@ -193,10 +201,13 @@ jobs:
         run: |
           npm ci --prefix apps/gui
           python3 scripts/apple_release.py mac-build --target "$TARGET" --signed "$SIGNED"
-      - name: Preserve the signed build before contacting Apple
+      - name: Preserve the signed installer before contacting Apple
         env:
           TARGET: ${{ matrix.target }}
           SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
+          MAC_INSTALLER_CERTIFICATE_P12: ${{ secrets.MAC_INSTALLER_CERTIFICATE_P12 }}
+          MAC_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MAC_INSTALLER_CERTIFICATE_PASSWORD }}
+          MAC_INSTALLER_SIGNING_IDENTITY: ${{ secrets.MAC_INSTALLER_SIGNING_IDENTITY }}
         run: python3 scripts/mac_notarization.py package-build --target "$TARGET" --signed "$SIGNED"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
