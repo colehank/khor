@@ -284,6 +284,30 @@ mod tests {
         assert_eq!(desk.closed_watermark("chat/mac"), Some(500));
     }
 
+    #[test]
+    fn concurrent_read_progress_never_regresses_to_an_older_read() {
+        let offline = SeenDoc::new(41).unwrap();
+        let online = SeenDoc::new(42).unwrap();
+        // An offline device can have a later Lamport clock while having
+        // read less of this session. Wall time of the CRDT write is not
+        // the amount of conversation the person has read.
+        for at in 1..20 {
+            offline.mark("unrelated", at).unwrap();
+        }
+        offline.mark("shell/shared", 300).unwrap();
+        online.mark("shell/shared", 700).unwrap();
+        offline.merge(&online.changes_since(&offline.version()).unwrap()).unwrap();
+        online.merge(&offline.changes_since(&online.version()).unwrap()).unwrap();
+        for seen in [&offline, &online] {
+            assert_eq!(seen.watermark("shell/shared"), 700, "a stale device must never revive another device's red dot");
+        }
+        let restarted = SeenDoc::new(43).unwrap();
+        restarted.merge(&offline.snapshot().unwrap()).unwrap();
+        assert_eq!(restarted.watermark("shell/shared"), 700);
+        restarted.mark("shell/shared", 400).unwrap();
+        assert_eq!(restarted.watermark("shell/shared"), 700);
+    }
+
     /// Two devices mark concurrently: whichever LWW picks, the watermark
     /// stays at one of the two marks — never below both.
     #[test]

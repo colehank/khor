@@ -152,7 +152,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const entries = at?.listing?.entries.filter((e) => e.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   return <div data-files-panel className="flex min-h-0 flex-1 flex-col">
     <div data-files-head className="flex min-h-touch flex-none items-center gap-in border-b px-row">
-      {(at||queue)&&!road.busy?<button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button>:<Button data-files-cancel variant="ghost" disabled={road.stopping} onClick={road.busy?road.cancel:onClose}>{road.busy?gui.term_drop_stop:gui.cancel}</Button>}
+      {(at||queue)&&!road.busy?<button type="button" data-files-up aria-label={gui.back} onClick={back} className="grid min-h-touch min-w-touch place-items-center"><IconBack className="size-5" /></button>:<Button data-files-cancel variant="ghost" disabled={road.stopping} onClick={road.busy?road.cancel:onClose}>{road.busy?gui.term_drop_stop:gui.delete_keep}</Button>}
       <div className="min-w-0 flex-1"><h3 className="truncate text-body font-label">{gui.files_picker_title}</h3>{at && !queue && <p className="truncate font-mono text-caption text-muted-foreground" title={at.path}>{at.path}</p>}</div>
       {!road.busy&&<Button data-files-send disabled={!road.selected.length||picking} className="min-h-touch flex-none" onClick={()=>void send(road.selected)}>{direct(road.selected)?gui.files_insert_count(road.selected.length):gui.files_send_count(road.selected.length)}</Button>}
     </div>
