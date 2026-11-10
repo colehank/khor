@@ -1,3 +1,9 @@
+# 最新追加：机器添加入口命名（2026-11-10）
+
+用户要求机器页＋菜单改为Khor主机／SSH主机。已在共享目录gui.add-khor-choice／add-ssh-choice改为「Khor 主机」「SSH 主机」，英文同步Khor Host／SSH Host；AddMachine弹窗标题共用相同key，自动一致。仅文案值变化，TOML解析并比对仅4个值改变，没有新增测试／本地构建。当前Lab仍是已验证dc946c83，尚未为该文案重新构建，不可声称Lab已同步。main合并与发布继续HOLD。下次正常Lab构建一并带入，不为两项同长文案重复整套10分钟构建。
+
+---
+
 # 已交付 Lab · 长历史与消息交互 · 2026-11-10
 
 本任务已完成并更新同一Lab；没有合并main或发布，发布继续HOLD。根智能体串行，本机source-only，无本地Node/Rust构建测试、无用户App／宿主重启。
