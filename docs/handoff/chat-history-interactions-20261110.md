@@ -1,3 +1,22 @@
+# 已交付 Lab · 长历史与消息交互 · 2026-11-10
+
+本任务已完成并更新同一Lab；没有合并main或发布，发布继续HOLD。根智能体串行，本机source-only，无本地Node/Rust构建测试、无用户App／宿主重启。
+
+- LIVE来源 `dc946c8366460cd803453ecfcacdde0c2f07c2a6`，tree `e9174e0e0650cbd881bdd536cfd6d5d6a9356e82`；[完整长历史Lab](http://127.0.0.1:23950/app/?scene=gui&machines=3&history=long&review=history-v1)，240轮，普通页128entry；追加`&short-pages=1`可看4entry压力分页。
+- [Quality42772593033](https://github.com/colehank/khor/actions/runs/42772593033) 全部所选作业绿：frontend；GUI单位／类型／静态及notification-ui/key-row-ui/appearance/dialogs；60项真实App Lab（包含桌面／手机×普通／4entry长历史）与热更新通过。
+- 修复真实underfill：预读去重误用boolean，第一页后停止；按实际opaque cursor区分。相邻小页按已完成分页请求确认连接并合并，保留8逻辑页／512entries／2MiB边界。每个wirepage的恢复游标保留，避免切换标签丢阅读位置。400entry／100wire恢复边界模型与既有严格3px锚点回归通过。
+- GUI/Khor/终端共用右下角下箭头GlassCircle；消息不再常驻整条复制和带回输入。桌面hover/focus复制图标；手机长按复制／选择文本；复制拒绝可重试。选择页复用TaskOverlay，手机截图已看，系统原生选择手柄仍待真机。
+- 用户明确回答`选择文本`和`修改用户消息并重新生成`。任意历史用户turn编辑＋重新生成暂不提供：当前宿主未暴露可靠anchoredrewind／native messageID映射；依据用户原话“不行就算了”省略，已明说；没有伪装追加prompt为编辑，也没有失效修改入口。
+- 图片沿用正式AgentResource，长历史含思考／工具／表格／代码／链接／图片。代码块独立复制保留，不是整条消息常驻动作。
+- 官方artifact13742594387，提取`chat-history-dc9-review`；完整App285文件＋全部JSON＋本任务截图共311项逐项官方ZIP CRC/size校验。其他264截图保留在官方artifact，不冒称已下载。范围helper`fetch_chat_review.py`已对4d完整包做285文件集合/SHA256自检，当前只需1.67MB网络传输。证据`chat-history-dc9-verification.json`和`chat-history-live-verification.json`。
+- 仅停止已核对argv／listener的旧LabPID33675，当前ownedPID6019／exec99444；21项HTTP校验通过（新页／模块／runtime.tree，以及13bd、0286、98a、294、3a、394、ce0、269、pinned旧快照与JS）。没有强制刷新用户标签。
+
+原生iPhone键盘／惯性／系统选择手柄、原生浏览器/PDF上的通知层仍未验证；全仓／全平台发行检查未在本次重新跑，不声称可立即ship。用户后续验收或允许发布时，再按整轮剩余项与发行检查推进。
+
+以下保留实施过程与失败证据，当前状态以本节为准。
+
+---
+
 # 长历史与消息交互（2026-11-10）
 
 用户在通知精简处理中追加，原通知改动保留；当前串行进行，不派智能体，不发布。本机source-only；构建／执行仍走公开托管CI。
@@ -80,3 +99,7 @@ Quality42768918548：frontend+GUI全绿；原有56App案例全绿（严格<3px�
 ## 4d3手机检查结果
 
 Quality42770674720：frontend/GUI/既有56App/桌面2longhistory全绿；手机两例已通过fill/older/returnglass/copy失败重试，失败在第二次长按后点选择文本。日志明确先解析到select-text项，再等待稳定时退场脱离DOM。测试openMenu第二次立刻wait copy，匹配上一菜单退出动画仍保留的旧DOM，提前结束长按，导致它退出后没有新菜单。检查改为开始每次长按前等待旧菜单detached，等待open-state新菜单；仍使用CDP真实touchStart/hold/touchEnd，不强制点击。选择截图禁用有限动画以看清最终布局。生产消息组件未变。官方artifact transfer99157进行中 chat-history-4d3-review。新测试修复需完整App回归通过后才能更新Lab。
+
+## 可信产物拉取提速（本机仅Python HTTP／校验，无编译或App执行）
+
+新external helper `/Volumes/disk0/Khor/evidence/more-network-gui-20261109/fetch_chat_review.py` 复用已验证Range/ZIP/CRC逻辑，只选择完整developer-lab（所有文件）+全部lab-report JSON+long-history/gui-experience PNG。其他264截图保留在官方immutable artifact，不下载。输出明确`selected_entry_crc_size_verified=true`、`all_entry_crc_size_verified=false`（若未全取），不会冒称全归档已验。对完整4d3做自检，app全部文件集合和SHA256逐项完全相等；选中308项只用138228网络bytes，probe删除保留报告。未来最终handover用此helper即可；完整artifact仍可用旧fetch_review_cached.py，4d3完整572项CRC/size已校验。

@@ -1,3 +1,9 @@
+# 通知当前交付状态（2026-11-10）
+
+通知精简已于13bd验证完成；当前同一Lab已更新为dc946c8366460cd803453ecfcacdde0c2f07c2a6（新增长历史／消息交互），通知实现保持原精简版本。普通通知可看 http://127.0.0.1:23950/app/?scene=list&machines=3&notices=1&review=history-v1 。当前ownedLabPID6019/exec99444，所有旧快照保留。新Quality42772593033所选作业全绿；原生浏览器/PDF叠层、物理设备手势仍未验证；main/ship继续HOLD。详见chat-history-interactions-20261110.md当前交付节。以下是先前实施记录。
+
+---
+
 # 通知交互与调度（2026-11-10）
 ## 当前用户调整（进行中）
 
