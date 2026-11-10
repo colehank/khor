@@ -1,5 +1,6 @@
 import labMedia from './data/media.generated.json';
 import {noticeFixture} from './notice-fixture';
+import {longHistoryFrames} from './long-history';
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture} from './navigation';
 import {pairingFixture} from './pairing';
@@ -62,7 +63,7 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean} = {}) {
   const devices = labDevices(device,options.machines ?? 3);
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
@@ -101,8 +102,9 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     ],
   }));
   const initialPreferences=structuredClone(preferences);
-  const sampleWithSettings=(i:number)=>{const source=sample(i);return [source[0],...(i===0?[update('user_message_chunk',{content:{type:'image',mimeType:'image/png',name:'设备协作示例.png',data:labMedia.image}})]:[]),{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
+  const sampleWithSettings=(i:number)=>{const source=sample(i);if(options.longHistory&&i===0)return [source[0],{kind:'settings',settings:preferences[i]},...longHistoryFrames(240,labMedia.image)];return [source[0],...(i===0?[update('user_message_chunk',{content:{type:'image',mimeType:'image/png',name:'设备协作示例.png',data:labMedia.image}})]:[]),{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
+  const historyStats={pages:0,backward:0,forward:0,last:[] as {cursor:unknown;newer:boolean}[]};
   const makeCanonical = () => canonicalChatFixture({pageSize:options.pageSize??128,ids: ids.slice(0, 4),
     takeFrames: (id: string) => {
       const index = ids.indexOf(id);
@@ -261,6 +263,10 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
         return path === 'term_attach' ? {bytes: btoa(screen), seq: 1}
           : ['term_stream', 'term_wait'].includes(path) ? {bytes: '', seq: 1, gone: false, reset: false, stall: null} : null;
       }
+      if(path==='history_page'){
+        historyStats.pages++;if(body.newer)historyStats.forward++;else historyStats.backward++;
+        historyStats.last=[...historyStats.last,{cursor:body.cursor,newer:!!body.newer}].slice(-16);
+      }
       const projected = canonical.answer(path, body);
       if (projected !== null) {
         try { return structuredClone(projected.value); } finally { projected.finish?.(); }
@@ -268,6 +274,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
         const index = Math.max(0, ids.indexOf(String(body.id)));
         let answer: unknown = null;
         switch (path) {
+          case "__ai_preview/history-stats":answer=historyStats;break;
           case "__ai_preview/notification-ready":answer=notices.ready;break;
           case "__ai_preview/notification":answer=notices.trigger(body.burst===true);break;
           case "__ai_preview/khor-approval":khorRunning=body.pending!==false;khorApproval=body.pending===false?null:{id:`approval-${++jobCounter}`,tool:"close",arguments:JSON.stringify({session:"fixture-session",machine:"临时测试设备"})};answer=khorApproval;break;

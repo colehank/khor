@@ -1,3 +1,4 @@
+import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {linkIntent,canActivateTerminalLink,type LinkIntent} from "@/lib/content-link-intent";
 import {claimTerminalLinkClicks} from "@/lib/term-link-gesture";
 import {assertPageUrl,openSystemUrl,openSystemPath,openSystemFileUri} from "@/lib/client-opener";
@@ -80,7 +81,7 @@ import { termPredict } from "@/lib/term-predict-setting";
 import { rememberTermSize } from "@/lib/term-size-hint";
 import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
-import { IconArrow, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
+import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui, menu, msg } from "@/gen/catalog";
 import { baseName } from "@/lib/paths";
@@ -3530,33 +3531,14 @@ export function TerminalPane({
           bottom" are different reasons to press it, and one word for
           both would make the arrival silent. Absent at the bottom,
           which is what lets it go to zero. */}
-      {back && (
-        <button
-          type="button"
-          data-term-bottom
-          data-fresh={freshBelow}
-          onClick={() => {
-            const history = tmuxHistoryRef.current;
-            if (history?.over()) history.toBottom();
-            else termRef.current?.scrollToBottom();
-            termRef.current?.focus();
-          }}
-          // The same floating language as the find bar above it —
-          // it was a pill with a shadow of its own (2026-09-28). Over the
-          // folded capsule it rises as the capsule does (`app.css`,
-          // `--fold-lift`; ux-q).
-          className="absolute bottom-2 left-1/2 z-10 -translate-x-1/2 rounded-lg border bg-popover px-3 py-1 text-caption shadow-(--shadow-float)"
-        >
-          {freshBelow ? (
-            <span className="flex items-center gap-xxs">
-              <IconArrow to="down" className="size-3.5" />
-              {gui.term_new_output}
-            </span>
-          ) : (
-            gui.to_bottom
-          )}
-        </button>
-      )}
+      {back && <ScrollToBottom data-term-bottom fresh={freshBelow}
+        aria-label={freshBelow?gui.term_new_output:gui.to_bottom}
+        onClick={() => {
+          const history = tmuxHistoryRef.current;
+          if (history?.over()) history.toBottom();
+          else termRef.current?.scrollToBottom();
+          termRef.current?.focus();
+        }}/>}
       {/* ⚠️ 墓碑 (NOTICE-BRIEF, IMG_5412): reconnecting was a bubble
           floating at the top of the screen it held (`RejoinPill`), over
           the program's text. It is the session pill's now. */}

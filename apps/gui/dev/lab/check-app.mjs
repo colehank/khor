@@ -1,3 +1,4 @@
+import {checkLongHistory} from './history-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
@@ -357,6 +358,10 @@ try {
       results.push(await inspect(browser,scene,{width:390,height:844},{machines:scene === 'workspaces' ? 6 : 3,engine:'webkit'}));
       await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
     }
+  }
+  for(const mobile of [false,true])for(const short of [false,true]){
+    results.push(await checkLongHistory(browser,{port,report,mobile,short,engine:process.env.QUALITY_ENGINES?.includes('webkit')?'webkit':'chromium'}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   }
   console.log(JSON.stringify(results.map(({name, errors}) => ({name, errors}))));
   if (results.some(result => result.errors.length)) process.exitCode = 1;

@@ -1,3 +1,4 @@
+import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {composerFiles,composerReady} from '@/lib/composer-files';
 import type {CommandRecord} from '@/gen/bindings/CommandRecord';
 import {KhorHeader,SessionAdd,KhorSend} from '@/views/SessionPreferences';
@@ -281,9 +282,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
         ))}
         </div>
       </div>
-      {away && <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2">
-        <Button data-machine-chat-bottom size="sm" variant="secondary" className="pointer-events-auto shadow" onClick={toBottom}>{gui.to_bottom}</Button>
-      </div>}
+      {away && <ScrollToBottom data-machine-chat-bottom onClick={toBottom}/>}
       </div>
       {/* The node's refusal, where the act was started (the pin's rule):
           a target not reachable names the machine, and nothing was sent. */}

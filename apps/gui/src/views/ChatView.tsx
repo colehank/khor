@@ -1,3 +1,4 @@
+import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {useReadableHistoryExport} from '@/hooks/use-readable-history-export';
 import {ReadFreshness} from '@/lib/read-freshness';
 import {useConfirmedSetting} from '@/hooks/use-confirmed-setting';
@@ -25,7 +26,7 @@ import {
 } from "@/api";
 import { AgentContent } from "@/components/ai-elements/content";
 import { Bubble, BubbleContent } from "@/components/ui/ai/bubble";
-import { IconBack, IconSearch } from "@/components/icons";
+import { IconSearch } from "@/components/icons";
 import { AgentConfirmation, AgentPlan, ToolDot, type AgentToolData, type AgentPlanEntry } from "@/components/ai-elements/agent";
 import { Markdown } from "@/components/Markdown";
 import { Waiting } from "@/components/RegionState";
@@ -1840,25 +1841,8 @@ export function ChatView({
           the text under it every time somebody scrolled. Absent at the
           bottom — that is what makes it able to go to zero, and it is
           why the fresh flag is cleared in the same breath. */}
-      {away && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center pb-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            data-chat-bottom
-            data-fresh={fresh}
-            className="pointer-events-auto shadow"
-            onClick={() => { toBottom(); if (history && !history.window.latest) void historyView.current?.latest(); }}
-          >
-            {/* The back chevron, turned to point the way this goes.
-                Turned rather than drawn again: a second glyph would be
-                the same shape at a different stroke ratio the first time
-                somebody redrew it by eye (icons.tsx — one family). */}
-            <IconBack className="-rotate-90" />
-            {fresh ? gui.new_below : gui.to_bottom}
-          </Button>
-        </div>
-      )}
+      {away && <ScrollToBottom data-chat-bottom fresh={fresh}
+        onClick={() => { toBottom(); if (history && !history.window.latest) void historyView.current?.latest(); }}/>}
       </div>
       {/* **On the narrow face the footer is the session bar's second
           row** (`components/SessionBar`, 2026-10-02: 「where a terminal
