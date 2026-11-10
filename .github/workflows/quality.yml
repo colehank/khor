@@ -7,13 +7,13 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer]
+        options: [sync, delegation, installer, format, interaction]
         default: sync
 permissions:
   contents: read
 jobs:
   seen:
-    if: inputs.slice == 'sync'
+    if: inputs.slice == 'sync' || inputs.slice == 'format'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -29,6 +29,7 @@ jobs:
           key: session-lifecycle-focused
           save-if: 'false'
       - name: Complete sync crate regression
+        if: inputs.slice == 'sync'
         shell: bash
         env:
           CARGO_PROFILE_DEV_DEBUG: '0'
@@ -111,3 +112,31 @@ jobs:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - run: python3 scripts/check-mac-installer.py
+  interaction:
+    if: inputs.slice == 'interaction'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - run: npm ci --prefix apps/gui
+      - run: npm run build --prefix apps/gui
+      - run: node apps/gui/node_modules/playwright-core/cli.js install chromium
+      - name: Verify resumed viewport and version-scoped machine updates
+        working-directory: apps/gui
+        run: |
+          npm run viewport-resume
+          npm run updates-ui
+      - run: cargo build --locked -p khor-cli --bin khor -p khor-gui-core --bin bridge
+      - name: Verify attachments with a real App, PTY and file transport
+        working-directory: apps/gui
+        run: npm run attachment-ui
