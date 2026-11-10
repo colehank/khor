@@ -12,7 +12,18 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
     const el=root.current;if(!inApp||!el)return;
     const id=`notice:${crypto.randomUUID()}`;
     let alive=true,frame=0,last="",held=false,fallback=false;
-    const hide=()=>{last="";el.removeAttribute("data-notification-native");if(held){held=false;void hideMenu(id).catch(()=>{});}};
+    const hide=()=>{
+      last="";el.removeAttribute("data-notification-native");
+      if(held){
+        held=false;
+        for(const banner of el.querySelectorAll('[data-notification-banner]')){
+          banner.dispatchEvent(new PointerEvent("pointerout",{bubbles:true,pointerType:"mouse"}));
+          banner.dispatchEvent(new PointerEvent("pointercancel",{bubbles:true}));
+          banner.dispatchEvent(new FocusEvent("focusout",{bubbles:true}));
+        }
+        void hideMenu(id).catch(()=>{});
+      }
+    };
     const blocked=()=>nativeFilePreviewActive()||document.hidden||!document.hasFocus()||!!document.querySelector('[data-omni-menu],[data-slot="dialog-overlay"],[data-scrim],[aria-modal="true"],[role="menu"],[role="listbox"]');
     const schedule=()=>{if(alive&&!frame)frame=requestAnimationFrame(update);};
     const update=()=>{
@@ -27,10 +38,10 @@ export function useNativeNotifications(root:RefObject<HTMLElement|null>) {
       if(fingerprint!==last){
         last=fingerprint;held=true;
         void showMenu({id,at:geometry,html,rows:{notification:true,groups:[{key:"notifications",label:"",candidates:keys.map(key=>({key,label:key}))}],at:0}}).then(accepted=>{
-          if(!alive)return;
+          if(!alive||!held||last!==fingerprint)return;
           if(accepted)el.setAttribute("data-notification-native","");
           else {fallback=true;hide();el.setAttribute("data-notification-yield","");}
-        },()=>{if(alive){fallback=true;hide();el.setAttribute("data-notification-yield","");}});
+        },()=>{if(alive&&held&&last===fingerprint){fallback=true;hide();el.setAttribute("data-notification-yield","");}});
       }
       if(el.getAnimations({subtree:true}).some(animation=>animation.playState==="running"))schedule();
     };
