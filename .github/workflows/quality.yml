@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5c352674a6ecd3152b362ca3519b7f6645d5286e
+          ref: d2d3a93171b62ee0faef40200acce979293401d6
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt
@@ -62,7 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 5c352674a6ecd3152b362ca3519b7f6645d5286e
+          ref: d2d3a93171b62ee0faef40200acce979293401d6
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           targets: aarch64-apple-ios-sim
