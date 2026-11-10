@@ -3679,6 +3679,7 @@ card-uptime = "已运行"
 card-reading = "读数"
 # 这台机器开着哪几张 khor 界面(桌面 app、网页);只有本机答得出。
 card-faces = "界面"
+new-session-directory-create = "此目录不存在，创建会话时将新建"
 new-session-dir = "目录"
 # The placeholder in every directory box a 「+」 opens (`PathField`).
 # **Says what to type**, because the box is all there is: 2026-09-27

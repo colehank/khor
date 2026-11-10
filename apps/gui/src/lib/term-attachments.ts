@@ -37,13 +37,8 @@ export function joinAttachmentPath(dir: string, name: string): string {
   const separator = dir.includes("\\") ? "\\" : "/";
   return dir.replace(/[\\/]+$/, "") + separator + name;
 }
-export function parentAttachmentPath(path: string): string | null {
-  if (/^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+\\?)$/i.test(path)) return null;
-  const cut = path.replace(/[\\/]+$/, "");
-  const at = Math.max(cut.lastIndexOf("/"), cut.lastIndexOf("\\"));
-  if (at < 0) return null;
-  return at === 2 && /^[a-z]:/i.test(cut) ? cut.slice(0, 3) : cut.slice(0, at) || "/";
-}
+export {parentPath as parentAttachmentPath} from "@/lib/path-input";
+
 function safeRelative(path: string): string {
   if (!path || /[\\:\0]/.test(path) || path.split("/").some((p) => !p || p === "." || p === "..") || path.split("/").length > 64) throw new Error(msg.tree_bad_path(path));
   return path;

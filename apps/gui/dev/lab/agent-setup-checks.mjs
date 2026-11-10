@@ -14,6 +14,16 @@ export async function checkAgentSetup(page,mobile,capture){
     return setup;
   };
   const machine=await body.locator('[data-new-session-machines]').getAttribute('data-machine');
+  const directory=body.locator('[data-new-session-dir]');
+  const original=await directory.inputValue();
+  await directory.fill('/preview/new-session-directory/nested');
+  await body.locator('[data-new-session-directory-missing]').waitFor();
+  assert.equal(await body.locator('[data-new-session-directory-missing]').innerText(),'此目录不存在，创建会话时将新建');
+  const parent=await page.evaluate(async(machine)=>(await(await fetch('/api/ls',{method:'POST',body:JSON.stringify({machine,path:'/preview'})})).json()),machine);
+  assert(!parent.entries.some(entry=>entry.name==='new-session-directory'),'Typing a new directory must not create it');
+  await capture('missing-directory');
+  await directory.fill(original);
+  await body.locator('[data-new-session-directory-missing]').waitFor({state:'detached'});
   for(const name of ['Codex','Claude']){
     await select(name+' · 对话');const setup=await read();
     await setup.locator('[data-acp-setup-ready]').waitFor();

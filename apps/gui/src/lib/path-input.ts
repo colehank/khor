@@ -26,3 +26,11 @@ export function splitPath(typed: string): {
 export function homeRelative(home: string, relative: string): string {
   return directoryPrefix(home) + relative.replace(/[\\/]/g, pathSeparator(home));
 }
+
+export function parentPath(path: string): string | null {
+  if (/^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+\\?)$/i.test(path)) return null;
+  const cut = path.replace(/[\\/]+$/, "");
+  const at = Math.max(cut.lastIndexOf("/"), cut.lastIndexOf("\\"));
+  if (at < 0) return null;
+  return at === 2 && /^[a-z]:/i.test(cut) ? cut.slice(0, 3) : cut.slice(0, at) || "/";
+}

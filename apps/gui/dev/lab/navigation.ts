@@ -94,7 +94,7 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     return documents.get(key)!;
   };
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','mkdir','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -153,6 +153,16 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
       }
       if (command === 'workspaces') return workspaces;
       if (command === 'ls') return {path:pathOf(input),...directory(input)};
+      if (command === 'mkdir') {
+        const path=pathOf(input);relative({...input,path});
+        if(path.split('/').some(part=>part==='.'||part==='..'))throw new Error('Invalid fixture path');
+        const split=path.lastIndexOf('/'),parent=path.slice(0,split),name=path.slice(split+1);
+        const listing=directory({...input,path:parent}),key=documentKey({...input,path});
+        if(directories.has(key)||listing.entries.some(entry=>entry.name===name))throw new Error('Fixture name already exists: '+path);
+        listing.entries.push({name,dir:true,size:0,at_ms:at,from:null,received_ms:null});
+        listing.entries.sort((a,b)=>Number(a.name.startsWith('.'))-Number(b.name.startsWith('.'))||Number(b.dir)-Number(a.dir)||(a.name.toLowerCase()<b.name.toLowerCase()?-1:a.name.toLowerCase()>b.name.toLowerCase()?1:0));
+        directories.set(key,{entries:[],truncated:false});revision++;return null;
+      }
       if (command === 'rename_path') {
         const from=pathOf({...input,path:input.from}),to=pathOf({...input,path:input.to});
         if (from===to||to.startsWith(from+'/')||[from,to].some(path=>path.split('/').some(part=>part==='.'||part==='..'))) {

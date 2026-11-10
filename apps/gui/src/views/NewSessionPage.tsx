@@ -5,7 +5,7 @@ import {KhorSessionSetup, type KhorModelSelection} from '@/views/KhorSessionSetu
 // New session: the target, its current directory, and what to run. The same
 // page sits behind the desktop strip and the narrow screen's bottom deck.
 import { useEffect, useRef, useState } from 'react';
-import { agentAsk, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, khorAgent, registerKnownAgent, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
+import { agentAsk, fetchLs, makeDir, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, khorAgent, registerKnownAgent, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
 import { MachineField } from '@/components/MachineField';
 import { PathField, settledPath } from '@/components/PathField';
 import { sessionKind } from '@/components/SessionFace';
@@ -21,6 +21,7 @@ import {launchId, readNewSessionChoices, recentLaunchChoices, rememberNewSession
 import { useHereHosts } from '@/lib/here';
 import { useSetting } from '@/settings';
 import { imeKey } from '@/lib/ime';
+import {inspectSessionDirectory,ensureSessionDirectory,type SessionDirectory} from '@/lib/session-directory';
 type LaunchOption = ChoiceOption & {
   launch: Launch;
 };
@@ -131,6 +132,20 @@ export function NewSessionPage({
   const channel = target?.name || '';
   const machineId = target?.id ?? '';
   const dir = paths[machineId] ?? (machineId === contextMachine.current && at ? at : preferences.machines[machineId]?.dir ?? '');
+  const [directory,setDirectory]=useState<{key:string;facts:SessionDirectory}|null>(null);
+  const directoryKey=JSON.stringify([machineId,dir]);
+  useEffect(()=>{
+    if(!target?.hosts||!settledPath(dir))return;
+    let live=true;
+    const key=directoryKey;
+    const wait=window.setTimeout(()=>{
+      void inspectSessionDirectory(dir,{list:path=>fetchLs(channel,path),mkdir:path=>makeDir(channel,path)},()=>live).then(facts=>{
+        if(live)setDirectory({key,facts});
+      }).catch(()=>{});
+    },250);
+    return()=>{live=false;window.clearTimeout(wait);};
+  },[directoryKey,target?.hosts,channel]);
+  const directoryFacts=directory?.key===directoryKey?directory.facts:null;
   const agents = [...new Set(['claude', 'codex', ...known.map(a => a.name)])];
   const allChoices: LaunchOption[] = [{id:'khor',label:'khor',icon:kindIcon('gui','khor'),launch:{kind:'khor'}}, {
     id: 'shell',
@@ -211,7 +226,8 @@ export function NewSessionPage({
     const ownsRequest = () => generation.current === version && creation.current?.token === token;
     setOpening(true);
     setError(null);
-    createSession({launch, target, cwd, title, token, environment, selection}).then(id => {
+    ensureSessionDirectory(cwd,{list:path=>fetchLs(channel,path),mkdir:path=>makeDir(channel,path)},ownsRequest)
+      .then(resolved=>{if(!ownsRequest())throw new DOMException('Cancelled','AbortError');return createSession({launch,target,cwd:resolved,title,token,environment,selection});}).then(id => {
       if (!ownsRequest()) return;
       creation.current = null;
       remember(target.id, {dir: cwd, launch});
@@ -287,10 +303,13 @@ export function NewSessionPage({
   <div data-new-session-page className="h-full min-h-0 overflow-y-auto"><div className="mx-auto flex w-full max-w-measure flex-col gap-group px-page pt-pane pb-nav-room">
    <FormGrid data-new-session-form>
     <FormLabel>{gui.new_session_machine}</FormLabel><div data-new-session-machines data-machine={channel}><MachineField devices={devices.filter(d=>d.sponsor===null)} value={channel || machine} disabled={opening} onPick={pickMachine} onPendingChange={setPending} /></div>
-    <FormLabel>{gui.new_session_dir}</FormLabel><PathField key={channel} data-new-session-dir aria-label={gui.new_session_dir} machine={channel} value={dir} disabled={opening || !target} onValueChange={value => {setPaths(was => ({
+    <FormLabel>{gui.new_session_dir}</FormLabel><div className="flex min-w-0 flex-col gap-in"><PathField key={channel} data-new-session-dir aria-label={gui.new_session_dir} machine={channel} value={dir} disabled={opening || !target} onValueChange={value => {setPaths(was => ({
             ...was,
             [machineId]: value
           })); remember(machineId, {dir: value});}} onSubmit={create} />
+      {directoryFacts?.state==='missing'&&<p data-new-session-directory-missing className="text-callout text-muted-foreground">{gui.new_session_directory_create}</p>}
+      {directoryFacts?.state==='unavailable'&&<p data-new-session-directory-error role="status" className="text-callout text-muted-foreground">{String(directoryFacts.error instanceof Error?directoryFacts.error.message:directoryFacts.error)}</p>}
+    </div>
     <FormLabel>{gui.launch_method}</FormLabel><div data-new-session-launch data-kind={launch.kind} data-selected={selected?.id} className="flex min-w-0 flex-col gap-in"><ChoiceField label={gui.launch_method} value={launch.kind === 'shell' ? launch.command : selected?.label || (launch.kind === 'agent' ? launch.agent : 'khor')} selected={selected?.id} options={choices} disabled={opening || !target} multiline placeholder={gui.launch_shell_hint} onInput={text => pickLaunch({
               kind: 'shell',
               command: text
