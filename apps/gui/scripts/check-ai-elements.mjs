@@ -240,8 +240,10 @@ try {
     const reasoning = page.locator("[data-reasoning-toggle]").first();
     await reasoning.waitFor();
     await page.waitForFunction(() => document.querySelector("[data-reasoning-toggle]")?.getAttribute("aria-expanded") === "true");
-    queue.push(thought("\n路径和权限都需要确认。"));
+    queue.push(note("session_info_update", {title:"hi"}), thought("\n路径和权限都需要确认。"));
     await page.getByText("路径和权限都需要确认。", { exact: false }).waitFor();
+    assert.equal(await page.locator("[data-chat-title]").count(),0,"Session metadata never becomes a duplicated leading heading");
+    assert.equal(await page.locator("[data-chat-column]").getByText("hi",{exact:true}).count(),0,"A metadata-only first prompt is not repeated in the conversation");
     await reasoning.click();
     queue.push(thought("\n仍在思考。"));
     await sleep(650);
