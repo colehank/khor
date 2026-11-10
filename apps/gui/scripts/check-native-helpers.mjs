@@ -9,7 +9,7 @@ import {chromium, webkit} from 'playwright-core';
 import {nativeEventRuntime} from './fixtures/native-events/runtime.mjs';
 
 const guiUrl = new URL('../', import.meta.url), gui = fileURLToPath(guiUrl);
-const known = ['page-late', 'page-live', 'page-ready-close', 'page-closed-before-import', 'fullscreen-late', 'fullscreen-query', 'window-focus-live', 'window-focus-late', 'quit-late', 'quit-prevent', 'quit-destroy', 'quit-close-in-handler', 'quit-destroy-rejected', 'window-drop-late', 'window-drop-partial', 'drag-payloads', 'drag-close-during-admission', 'drag-partial', 'drag-unlisten-rejected', 'sdk-drag-payloads', 'callback-throws-peer'];
+const known = ['page-late', 'page-live', 'page-ready-close', 'page-closed-before-import', 'fullscreen-late', 'fullscreen-query', 'window-focus-live', 'window-focus-late', 'window-focus-mobile', 'quit-late', 'quit-prevent', 'quit-destroy', 'quit-close-in-handler', 'quit-destroy-rejected', 'window-drop-late', 'window-drop-partial', 'drag-payloads', 'drag-close-during-admission', 'drag-partial', 'drag-unlisten-rejected', 'sdk-drag-payloads', 'callback-throws-peer'];
 const scenarios = process.env.NATIVE_HELPERS_SCENARIOS?.split(',') ?? known;
 assert(scenarios.length && new Set(scenarios).size === scenarios.length);
 for (const name of scenarios) assert(known.includes(name), `Unknown scenario ${name}`);
@@ -34,6 +34,13 @@ async function exercise(page, name) {
     return (await state()).messages.filter(m => m.cmd === 'plugin:event|listen');
   };
   const finish = async () => { await act('close'); await act('close'); await settle(); return state(); };
+  if (name==='window-focus-mobile') {
+    await page.evaluate(()=>{Object.defineProperty(navigator,'platform',{value:'iPhone'});document.hasFocus=()=>false;});
+    await act('mount','window-focus'); assert.deepEqual((await state()).received,[true],'A native phone remains foreground when its sibling page owns input');
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:true});document.dispatchEvent(new Event('visibilitychange'));});
+    await page.evaluate(()=>{Object.defineProperty(document,'hidden',{configurable:true,value:false});document.dispatchEvent(new Event('visibilitychange'));});
+    const actual=await finish(); assert.deepEqual(actual.received,[true,false,true]); assert.deepEqual(actual.messages,[]); return actual;
+  }
   if (name === 'page-closed-before-import') {
     await page.evaluate(() => { window.__helperProbe.mount('page'); window.__helperProbe.close(); });
     await turn(); await turn();

@@ -2009,7 +2009,9 @@ export function onWindowFocus(tell: (focused: boolean) => void): () => void {
   const mobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent + navigator.platform)
     || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 0);
   if (!inApp || mobile) {
-    const sync = () => tell(!document.hidden && document.hasFocus());
+    // A phone has one application window; a sibling WKWebView taking the
+    // keyboard is not backgrounding. System previews have their own lease.
+    const sync = () => tell(!document.hidden && (inApp || document.hasFocus()));
     window.addEventListener("focus", sync);
     window.addEventListener("blur", sync);
     document.addEventListener("visibilitychange", sync);
