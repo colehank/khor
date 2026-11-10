@@ -23,7 +23,7 @@ jobs:
         with:
           key: session-lifecycle-focused
           save-if: 'false'
-      - name: Exact read-progress regression
+      - name: Complete sync crate regression
         shell: bash
         env:
           CARGO_PROFILE_DEV_DEBUG: '0'
@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           git rev-parse HEAD
-          cargo test --locked -p khor-sync --lib seen:: -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/seen.log"
+          cargo test --locked -p khor-sync --lib -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/seen.log"
       - name: Export formatter patch for source-only editing
         if: always()
         shell: bash
