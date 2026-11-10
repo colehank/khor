@@ -2,7 +2,7 @@
 //!
 //! UI and filtering remain the shared OmniMenu. Only its inert, resolved DOM
 //! crosses this boundary; the new configuration has no Tauri IPC, proxy, page
-//! shim or app scheme handler. WebKit can send only height and candidate keys.
+//! shim or app scheme handler. WebKit can send only measurements and lease-bound candidate input.
 //! All UIKit/WebKit operations in this module run on the main thread.
 use super::MenuRequest;
 use objc2::rc::{Allocated, Retained};

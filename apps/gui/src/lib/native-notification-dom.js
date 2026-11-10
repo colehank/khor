@@ -55,7 +55,7 @@ export function notificationDOM(scope, emit) {
       const current = doc.querySelector('[data-notification-banners]'), incoming = next.querySelector('[data-notification-banners]');
       if (!incoming) return;
       if (current) sync(current,incoming);
-      else { doc.head.replaceChildren(...next.head.childNodes); doc.body.replaceChildren(...next.body.childNodes); }
+      else { doc.head.replaceChildren(...[...next.head.children].filter(node => node.tagName === 'STYLE')); doc.body.replaceChildren(...next.body.childNodes); }
       observer?.disconnect(); observer = new scope.ResizeObserver(size); observer.observe(doc.querySelector('[data-notification-banners]')); size();
     },
     dispose() { observer?.disconnect(); stops.forEach(stop=>stop()); }

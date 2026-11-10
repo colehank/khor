@@ -41,8 +41,8 @@ function Banner({item,row,onOpen,narrow}: {item:NotificationBanner;row?:SessionR
     style={offset?{transform:`translateY(${offset}px)`,opacity:Math.max(.3,1-Math.abs(offset)/(element.current?.offsetHeight??1))}:undefined}
     className="notification-banner glass flex min-w-0 items-start gap-in rounded-2xl p-row"
     onPointerEnter={event=>{if(event.pointerType==="mouse"){hovered.current=true;setEngaged(true);pause();}}}
-    onPointerLeave={event=>{if(event.pointerType==="mouse"){hovered.current=false;setEngaged(false);pause();}}}
-    onFocusCapture={()=>{focused.current=true;pause();}} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){focused.current=false;pause();}}}
+    onPointerLeave={event=>{if(event.pointerType==="mouse"){hovered.current=false;setEngaged(focused.current);pause();}}}
+    onFocusCapture={()=>{focused.current=true;setEngaged(true);pause();}} onBlurCapture={event=>{if(!event.currentTarget.contains(event.relatedTarget)){focused.current=false;setEngaged(hovered.current);pause();}}}
     onPointerDown={event=>{
       if(!event.isPrimary||event.button!==0||closing)return;
       swallow.current=false;touching.current=true;setDragging(true);setArrived(true);

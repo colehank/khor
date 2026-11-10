@@ -110,6 +110,7 @@ pub fn show(window: &tauri::Window, request: &MenuRequest) -> Result<bool, Strin
     };
     let replaced = super::held().is_some_and(|held| held.request.id != request.id);
     super::claim(window.label(), request)?;
+    owner_moved(window);
     if replaced {
         menu.hide().map_err(|e| e.to_string())?;
     }
