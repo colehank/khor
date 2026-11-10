@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f4f4ef">
+<title>khor · 会话头像</title>
+<style>
+:root{color-scheme:light;--canvas:#f4f4ef;--ink:rgba(26,26,20,.94);--secondary:rgba(26,26,20,.7);--line:rgba(26,26,20,.12);--fill:rgba(26,26,20,.06);--accent:#5d7b06;--on-accent:#fff;--selected:#fff;--gap:16px;--pane:24px;--row:12px;--in:8px;--radius:6px;--touch:44px;--control:36px;--font:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;--body:13px;--callout:12px;--title:17px;--caption:11px;--input:16px;--hero:208px;--preview-size:48px}
+:root[data-theme="dark"]{color-scheme:dark;--canvas:#000;--ink:rgba(238,238,231,.96);--secondary:rgba(238,238,231,.62);--line:rgba(238,238,231,.14);--fill:rgba(244,244,239,.08);--accent:#99bb36;--on-accent:#151513;--selected:#262624}
+*{box-sizing:border-box}body{margin:0;background:var(--canvas);color:var(--ink);font:var(--body)/1.5 var(--font);font-variant-numeric:tabular-nums;accent-color:var(--accent);caret-color:var(--accent)}::selection{background:var(--fill);color:var(--ink)}button,input,select{font:inherit;color:inherit}button,select{cursor:default}button{min-height:var(--touch);border:1px solid var(--line);border-radius:var(--radius);padding:var(--in) var(--row);background:transparent;white-space:nowrap}button:hover{background:var(--fill)}button:active{background:var(--fill)}button[aria-pressed="true"]{background:var(--fill);border-color:var(--ink)}:focus-visible{outline:2px solid var(--accent);outline-offset:3px}select{min-height:var(--touch);max-width:100%;padding:var(--in);border:1px solid var(--line);border-radius:var(--radius);background:transparent}h1,h2,p,figure{margin:0}h1{font-size:var(--title);font-weight:600}h2{font-size:var(--body);font-weight:600}svg{display:block;flex-shrink:0}header{display:flex;align-items:center;justify-content:space-between;gap:var(--gap);padding:var(--in) var(--pane);border-bottom:1px solid var(--line)}header span{color:var(--secondary);font-size:var(--callout)}.layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;max-width:1160px;margin:0 auto;min-height:calc(100dvh - 61px)}.preview{position:sticky;top:0;align-self:start;padding:40px var(--pane) var(--pane);background:var(--canvas)}.hero-stage{display:flex;flex-direction:column;align-items:center;gap:var(--gap);padding-bottom:32px}#hero>svg{width:var(--hero);height:var(--hero)}.hero-info{text-align:center}.hero-info strong{font-size:var(--title);font-weight:600}.hero-info p{color:var(--secondary);font-size:var(--callout);margin-top:4px}.comparison-head{display:flex;align-items:center;justify-content:space-between;gap:var(--in);padding-bottom:var(--gap)}.comparison-head select{font-size:var(--callout)}#comparisons{display:grid;grid-template-columns:repeat(6,minmax(var(--comparison-size,48px),1fr));gap:var(--in);overflow-x:auto;padding-bottom:4px}.comparison{display:flex;align-items:center;flex-direction:column;gap:var(--in);min-width:0}.comparison-avatar{width:var(--preview-size);height:var(--preview-size)}.comparison-avatar svg{width:100%;height:100%}figcaption{color:var(--secondary);font-size:var(--caption);white-space:nowrap}.is-khor figcaption{font-weight:600;color:var(--ink)}.note{font-size:var(--callout);color:var(--secondary);margin-top:var(--gap)}details{border-top:1px solid var(--line);margin-top:var(--pane)}summary{min-height:var(--touch);display:flex;align-items:center;justify-content:space-between;list-style:none;cursor:default;font-size:var(--callout);color:var(--secondary)}summary::-webkit-details-marker{display:none}summary::after{content:"+";font-size:var(--input)}details[open]>summary::after{content:"−"}#actual-sizes{display:flex;align-items:end;justify-content:center;gap:var(--gap);padding:var(--in) 0 var(--gap)}#actual-sizes figure{text-align:center}#actual-sizes figure>div{height:64px;display:flex;align-items:end;justify-content:center}#actual-sizes figcaption{margin-top:var(--in)}.controls{border-left:1px solid var(--line);padding:var(--pane);min-width:0}.group{padding:0 0 var(--pane);margin-bottom:var(--pane);border-bottom:1px solid var(--line)}.group>h2{margin-bottom:var(--row)}.group:last-child{margin-bottom:0;border-bottom:0}.button-row{display:flex;gap:var(--in);flex-wrap:wrap}.button-row>button{flex:1}.control{margin-top:var(--gap)}.control-label{display:flex;align-items:center;justify-content:space-between;gap:var(--in)}.control-label span{font-size:var(--callout);color:var(--secondary)}.range-row{display:flex;align-items:center;gap:var(--row);min-height:var(--touch)}input[type="range"]{flex:1;width:100%;min-width:0;height:var(--touch);margin:0;touch-action:pan-y}.numeric{display:flex;align-items:center;gap:4px;min-width:72px;justify-content:flex-end;color:var(--secondary);font-size:var(--callout)}input[type="number"]{width:60px;min-height:var(--touch);border:1px solid var(--line);border-radius:var(--radius);background:transparent;text-align:center;font-size:var(--input);appearance:textfield}input[type="number"]::-webkit-inner-spin-button{appearance:none}.setting{display:flex;justify-content:space-between;align-items:center;gap:var(--gap);min-height:var(--touch);margin-top:var(--in)}.setting input[type="checkbox"]{width:20px;height:20px;margin:var(--row) 0}.machine-choices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--in)}.machine-choices button{padding:var(--in) 4px;font-size:var(--callout)}.advanced{margin-top:var(--gap)}.advanced summary{color:var(--ink);font-size:var(--body)}.primary{background:var(--accent);color:var(--on-accent);border-color:transparent}.primary:hover{background:var(--accent);filter:brightness(.95)}.export-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--in)}.export-grid .primary{grid-column:1/-1}.save-status{font-size:var(--caption);color:var(--secondary);margin-top:var(--row)}.quiet{border-color:transparent;font-size:var(--callout);color:var(--secondary);padding:var(--in) 0}#notice{position:fixed;bottom:max(var(--pane),env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:calc(100vw - 32px);padding:var(--in) var(--gap);border-radius:var(--radius);background:var(--ink);color:var(--canvas);font-size:var(--callout);pointer-events:none;z-index:3}#notice:empty{display:none}.header-title{display:flex;align-items:baseline;gap:var(--row)}
+@media(max-width:740px){:root{--pane:16px;--hero:88px}.layout{display:flex;flex-direction:column;min-height:0}.preview{z-index:2;top:0;padding:var(--gap) var(--pane) var(--row);border-bottom:1px solid var(--line)}.hero-stage{flex-direction:row;justify-content:center;gap:var(--pane);padding-bottom:var(--gap)}.hero-info{text-align:left}.hero-info strong{font-size:var(--title)}.comparison-head{padding-bottom:var(--in)}.comparison-head h2{font-size:var(--callout)}.comparison-head select{min-height:var(--control);padding:4px var(--in)}.comparison{gap:4px}#comparison-note{display:none}.preview>details{margin-top:var(--row)}.preview>details>summary{min-height:var(--control)}.controls{border-left:0;padding:var(--pane) var(--pane) max(var(--pane),env(safe-area-inset-bottom))}.group{margin-bottom:var(--pane);padding-bottom:var(--pane)}header{padding:var(--in) var(--pane)}header span{display:none}header select{min-height:var(--control)}.header-title{gap:var(--in)}.export-grid button{min-height:48px}}
+@media(prefers-reduced-motion:no-preference){button{transition:background-color .12s ease-out}}
+</style>
+</head>
+<body>
+<header><div class="header-title"><h1>会话头像</h1><span>khor</span></div><select data-param="theme" aria-label="预览主题"><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></header>
+<main class="layout">
+<section class="preview" aria-label="头像预览">
+ <div class="hero-stage"><div id="hero"></div><div class="hero-info"><strong>khor</strong><p>标记占比 <b id="size-value"></b></p><p>机器底图 · <span id="machine-value"></span></p></div></div>
+ <div class="comparison-head"><h2>会话类型对比</h2><select data-param="compareSize" aria-label="对照头像尺寸"><option value="24">24 px</option><option value="32">32 px</option><option value="48">48 px</option><option value="64">64 px</option></select></div>
+ <div id="comparisons"></div>
+ <p id="comparison-note" class="note"></p>
+ <details><summary>实际尺寸 · 16–64 px</summary><div id="actual-sizes"></div></details>
+</section>
+<aside class="controls" aria-label="调整头像">
+ <section class="group"><h2>标记大小</h2><div class="button-row"><button type="button" data-preset="large">放大版</button><button type="button" data-preset="original">现有尺寸</button></div><div class="control"><div class="control-label"><label>占头像直径</label><span>实际图形占比</span></div><div class="range-row" data-range="size" aria-label="标记占比"></div></div><label class="setting"><span>对照图标使用相同占比</span><input type="checkbox" data-param="equalSize"></label></section>
+ <section class="group"><h2>机器底图</h2><div id="machine-choices" class="machine-choices"></div><p class="note">来自现有机器头像渲染器的六张样本，同一底图用于所有类型</p></section>
+ <section class="group"><h2>标记与底图</h2><label class="setting"><span>标记颜色</span><select data-param="ink"><option value="auto">按机器底图自动</option><option value="dark">深色</option><option value="light">浅色</option></select></label><div class="control"><div class="control-label"><label>标记不透明度</label></div><div class="range-row" data-range="opacity" aria-label="标记不透明度"></div></div><div class="control"><div class="control-label"><label>增加底图衬色</label><span>柔化图案干扰</span></div><div class="range-row" data-range="veil" aria-label="底图衬色"></div></div><p class="note">自动颜色和基础衬色沿用机器头像的原始参数</p>
+ <details class="advanced"><summary>调整坛城几何</summary><div class="control"><label>外圆线宽</label><div class="range-row" data-range="outer" aria-label="外圆线宽"></div></div><div class="control"><label>菱形线宽</label><div class="range-row" data-range="diamond" aria-label="菱形线宽"></div></div><div class="control"><label>内圆线宽</label><div class="range-row" data-range="inner" aria-label="内圆线宽"></div></div><div class="control"><label>四颗外珠半径</label><div class="range-row" data-range="satellite" aria-label="外珠半径"></div></div><div class="control"><label>中心珠半径</label><div class="range-row" data-range="core" aria-label="中心珠半径"></div></div><div class="control"><label>内圆半径</label><div class="range-row" data-range="innerRadius" aria-label="内圆半径"></div></div></details></section>
+ <section class="group"><h2>保存这一版</h2><div class="export-grid"><button type="button" class="primary" id="export-svg">导出头像 SVG</button><button type="button" id="export-mark">导出单色标记</button><button type="button" id="export-json">导出参数</button><button type="button" id="import-json">导入参数</button><button type="button" id="reset">恢复放大版</button></div><p id="save-status" class="save-status" role="status"></p><input type="file" id="import-file" accept=".json,application/json" hidden></section>
+</aside>
+</main>
+<div id="notice" role="status" aria-live="polite"></div>
+<script id="avatar-data" type="application/json">{"machines": [{"name": "iPhone", "face": {"canvas": 80, "background": "#b3c67f", "radius_ratio": 0.5, "paint": {"variant": "marble", "blur": 7, "veins": [{"vein": "shard", "scale": 1.5, "rotate": 176, "dx": -2, "dy": -2, "overlay": false, "color": "#50595c"}, {"vein": "sweep", "scale": 1.2, "rotate": -264, "dx": -3, "dy": -7, "overlay": true, "color": "#5d7e62"}]}, "mark": {"ink": "dark", "veil": 0.06}}}, {"name": "MacBook", "face": {"canvas": 80, "background": "#f8f8d6", "radius_ratio": 0.5, "paint": {"variant": "marble", "blur": 7, "veins": [{"vein": "shard", "scale": 1.2, "rotate": -48, "dx": 2, "dy": 4, "overlay": false, "color": "#5d7e62"}, {"vein": "sweep", "scale": 1.4, "rotate": 72, "dx": 3, "dy": 6, "overlay": true, "color": "#50595c"}]}, "mark": {"ink": "dark", "veil": 0}}}, {"name": "Linux", "face": {"canvas": 80, "background": "#50595c", "radius_ratio": 0.5, "paint": {"variant": "marble", "blur": 7, "veins": [{"vein": "shard", "scale": 1.2, "rotate": -208, "dx": -6, "dy": -7, "overlay": false, "color": "#f8f8d6"}, {"vein": "sweep", "scale": 1.5, "rotate": 312, "dx": -5, "dy": -3, "overlay": true, "color": "#b3c67f"}]}, "mark": {"ink": "dark", "veil": 0.1}}}, {"name": "Mac mini", "face": {"canvas": 80, "background": "#b3c67f", "radius_ratio": 0.5, "paint": {"variant": "marble", "blur": 7, "veins": [{"vein": "shard", "scale": 1.5, "rotate": -200, "dx": -3, "dy": -4, "overlay": false, "color": "#50595c"}, {"vein": "sweep", "scale": 1.5, "rotate": -120, "dx": -5, "dy": -2, "overlay": true, "color": "#5d7e62"}]}, "mark": {"ink": "dark", "veil": 0.06}}}, {"name": "Windows", "face": {"canvas": 80, "background": "#f8f8d6", "radius_ratio": 0.5, "paint": {"variant": "marble", "blur": 7, "veins": [{"vein": "shard", "scale": 1.4, "rotate": 192, "dx": 0, "dy": -1, "overlay": false, "color": "#50595c"}, {"vein": "sweep", "scale": 1.5, "rotate": -288, "dx": -4, "dy": 1, "overlay": true, "color": "#5d7e62"}]}, "mark": {"ink": "dark", "veil": 0.1}}}, {"name": "Android", "face": {"canvas": 80, "background": "#5d7e62", "radius_ratio": 0.5, "paint": {"variant": "marble", "blur": 7, "veins": [{"vein": "shard", "scale": 1.2, "rotate": -184, "dx": -5, "dy": -5, "overlay": false, "color": "#f8f8d6"}, {"vein": "sweep", "scale": 1.3, "rotate": 96, "dx": -4, "dy": 0, "overlay": true, "color": "#b3c67f"}]}, "mark": {"ink": "dark", "veil": 0}}}], "glyphs": {"Claude": {"body": "<path d=\"M263.33184 664.28928l161.01376-90.35776 2.70336-7.86432-2.70336-4.34176h-7.86432l-26.95168-1.6384-91.99616-2.49856-79.79008-3.35872-77.29152-4.096-19.49696-4.17792-18.2272-24.04352 1.8432-12.00128 16.384-10.97728 23.42912 2.048 51.8144 3.52256 77.70112 5.40672 56.36096 3.2768 83.51744 8.72448h13.27104l1.8432-5.36576-4.5056-3.31776-3.56352-3.31776-80.40448-54.4768-87.04-57.63072-45.58848-33.1776-24.65792-16.7936-12.45184-15.72864-5.36576-34.4064 22.36416-24.65792 30.06464 2.048 7.65952 2.08896 30.47424 23.42912 65.04448 50.3808 84.992 62.54592 12.41088 10.36288 4.99712-3.52256 0.6144-2.4576-5.61152-9.33888-46.20288-83.5584-49.31584-84.95104-21.95456-35.2256-5.81632-21.13536a101.45792 101.45792 0 0 1-3.52256-24.86272l25.47712-34.6112 14.09024-4.54656 33.9968 4.54656 14.336 12.45184 21.0944 48.29184 34.2016 76.02176 53.0432 103.424 15.5648 30.67904 8.27392 28.38528 3.11296 8.72448h5.36576v-4.99712l4.38272-58.24512 8.06912-71.4752 7.86432-92.03712 2.70336-25.88672 12.86144-31.08864 25.47712-16.7936 19.90656 9.54368 16.384 23.42912-2.29376 15.1552-9.74848 63.16032-19.0464 99.08224-12.45184 66.31424h7.24992l8.31488-8.31488 33.5872-44.52352 56.32-70.4512 24.90368-28.01664 28.99968-30.88384 18.6368-14.70464h35.2256l25.92768 38.54336-11.63264 39.81312-36.2496 45.99808-30.06464 38.95296-43.08992 58.04032-26.95168 46.40768 2.4576 3.72736 6.47168-0.6144 97.40288-20.72576 52.6336-9.54368 62.79168-10.77248 28.38528 13.27104 3.11296 13.47584-11.18208 27.56608-67.1744 16.5888-78.72512 15.72864-117.30944 27.77088-1.4336 1.024 1.6384 2.048 52.8384 4.99712 22.60992 1.2288h55.296l103.0144 7.70048 26.95168 17.8176 16.1792 21.74976-2.70336 16.5888-41.45152 21.13536-55.95136-13.27104-130.58048-31.08864-44.72832-11.18208h-6.22592v3.72736l37.2736 36.4544 68.4032 61.76768 85.6064 79.58528 4.34176 19.6608-10.97728 15.5648-11.63264-1.6384-75.20256-56.56576-28.99968-25.51808-65.69984-55.296h-4.38272v5.77536l15.1552 22.15936 79.99488 120.2176 4.13696 36.864-5.81632 12.04224-20.72576 7.24992-22.77376-4.13696-46.85824-65.69984-48.29184-73.97376-38.912-66.3552-4.79232 2.70336-23.01952 247.68512-10.77248 12.61568-24.86272 9.54368-20.72576-15.7696-10.97728-25.47712 10.97728-50.3808 13.27104-65.65888 10.77248-52.224 9.74848-64.88064 5.81632-21.54496-0.4096-1.4336-4.79232 0.6144-48.90624 67.13344-74.38336 100.51584-58.85952 62.99648-14.09024 5.61152-24.45312-12.6976 2.2528-22.528 13.68064-20.11136 81.46944-103.6288 49.11104-64.26624 31.70304-37.0688-0.2048-5.40672h-1.88416l-216.35072 140.4928-38.5024 4.99712-16.62976-15.5648 2.08896-25.47712 7.86432-8.27392 65.08544-44.76928-0.2048 0.2048z\">", "box": "67.45 84.58 889.11 889.11"}, "Codex": {"body": "<path d=\"M482.878 128c-84.345 0-156.575 52.808-185.68 126.983-60.887 8.128-115.29 43.622-146.595 97.837-42.163 72.994-32.556 161.882 17.137 224.158-23.38 56.748-19.853 121.597 11.424 175.782 42.18 73.024 124.095 109.152 202.937 97.235C419.585 898.621 477.51 928 540.121 928c84.346 0 156.576-52.808 185.68-126.983 60.888-8.128 115.291-43.622 146.596-97.837 42.163-72.994 32.556-161.882-17.137-224.158 23.38-56.748 19.853-121.597-11.424-175.782-42.18-73.024-124.095-109.152-202.937-97.235C603.415 157.379 545.49 128 482.879 128m0 61.538c35.593 0 68.972 13.99 94.223 37.74-1.928 1.031-3.925 1.845-5.832 2.946L434.594 309.13c-14.223 8.184-23.028 23.353-23.09 39.783l-0.841 183.594-65.722-38.341V327.399c0-76 61.895-137.86 137.937-137.86m197.706 75.902c44.186 3.142 86.154 27.435 109.917 68.57 17.794 30.797 22.38 66.692 14.43 100.42-1.879-1.169-3.6-2.491-5.531-3.605l-136.734-78.907a46.232 46.232 0 0 0-46-0.06l-159.463 91.106 0.36-76.022 144.492-83.413c24.694-14.25 52.017-19.974 78.53-18.09M283.67 320.849c-0.071 2.19-0.3 4.343-0.3 6.55v157.752a46.185 46.185 0 0 0 22.91 39.904l158.68 92.488-66.021 37.68-144.552-83.353c-65.852-38-88.47-122.526-50.448-188.341 17.783-30.78 46.556-52.689 79.731-62.68m340.393 79.927l144.552 83.354c65.852 38 88.47 122.526 50.448 188.341-17.783 30.78-46.556 52.689-79.731 62.68 0.071-2.19 0.3-4.343 0.3-6.55V570.849a46.185 46.185 0 0 0-22.91-39.904l-158.68-92.488zM511.801 464.84l54.537 31.79-0.3 63.222-54.839 31.31-54.537-31.85 0.3-63.162z m100.536 58.654l65.722 38.341v166.767c0 76-61.895 137.86-137.937 137.86-35.593 0-68.972-13.988-94.223-37.74 1.928-1.03 3.925-1.844 5.832-2.945l136.675-78.906c14.223-8.184 23.028-23.353 23.09-39.783z m-46.54 89.543l-0.36 76.022-144.492 83.413c-65.852 38-150.425 15.335-188.446-50.48-17.794-30.798-22.38-66.693-14.43-100.421 1.879 1.169 3.6 2.491 5.531 3.605l136.735 78.907a46.232 46.232 0 0 0 45.999 0.06z\">", "box": "77.37 93.37 869.26 869.26"}, "Cursor": {"body": "<path d=\"M901.162667 270.08L531.2 57.728a38.613333 38.613333 0 0 0-38.4 0L122.837333 270.08a32.085333 32.085333 0 0 0-16.170666 27.818667v428.202666c0 11.52 6.144 22.101333 16.170666 27.818667l369.962667 212.352c11.861333 6.826667 26.538667 6.826667 38.4 0l370.005333-212.352a32.085333 32.085333 0 0 0 16.128-27.818667V297.898667a32.085333 32.085333 0 0 0-16.170666-27.818667z m-23.210667 44.970667l-357.162667 614.997333c-2.432 4.138667-8.789333 2.432-8.789333-2.346667v-402.688a22.570667 22.570667 0 0 0-11.349333-19.541333L149.845333 304.128c-4.138667-2.389333-2.432-8.704 2.389334-8.704H866.56c10.112 0 16.469333 10.922667 11.392 19.626667z\">", "box": "0 0 1024 1024"}, "Agent": {"body": "<path d=\"M942.08 512c0 237.52704-192.55296 430.08-430.08 430.08s-430.08-192.55296-430.08-430.08 192.55296-430.08 430.08-430.08c21.66784 0 42.96704 1.60256 63.77472 4.69504 24.1152 3.584 38.15936 27.83744 32.1024 51.45088-6.0416 23.59296-30.12608 37.50912-54.30272 34.58048a345.32864 345.32864 0 0 0-41.5744-2.5088c-188.80512 0-341.8624 153.05728-341.8624 341.8624s153.05728 341.8624 341.8624 341.8624 341.8624-153.05728 341.8624-341.8624v-0.26624c-0.02048-24.064 16.59392-45.69088 40.46848-48.75264l0.49152-0.06144c24.18688-3.10272 46.5408 14.17216 47.1296 38.5536 0.08704 3.49696 0.128 7.00416 0.128 10.52672z m-110.27456-209.52576c60.9024 0 110.27456-49.37216 110.27456-110.27968C942.08 131.29216 892.70784 81.92 831.80544 81.92c-60.90752 0-110.27968 49.37216-110.27968 110.27456 0 60.90752 49.37216 110.27968 110.27968 110.27968zM423.77216 528.5376h0.00512v77.19424h-0.00512a44.10368 44.10368 0 1 1-88.20736 0h-0.01024V528.5376h0.01024a44.10368 44.10368 0 0 1 88.20736 0z m242.60608 0h0.01024v77.19424h-0.01024a44.10368 44.10368 0 1 1-88.20224 0h-0.01024V528.5376h0.01024a44.10368 44.10368 0 0 1 88.20224 0z\">", "box": "44.77 44.77 934.46 934.46"}, "终端": {"box": "1.75625 1.86625 12.4875 12.4875", "body": "<g fill=\"none\" stroke=\"currentColor\" stroke-width=\"0.8991\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3.4 4.6L6.6 8l-3.2 3.4\"/><path d=\"M8.2 11.6h4.4\"/><\/g>"}}}</script>
+<script type="module">                                                                                                                     
+                                                                                                                                                      
+                                           
+                                                                                                                                                                                                                                                         
+const data                                                                              = JSON.parse(document.querySelector('#avatar-data') .textContent );
+const defaults         = { size: 80.5, outer: 48, diamond: 32, inner: 44, satellite: 40, core: 69, innerRadius: 172, opacity: 100, veil: 0, machine: 0, ink: 'auto', theme: 'system', compareSize: 48, equalSize: false };
+const limits                                           = { size: [30, 94, .25], outer: [8, 96, 1], diamond: [0, 80, 1], inner: [8, 96, 1], satellite: [0, 76, 1], core: [20, 128, 1], innerRadius: [120, 224, 1], opacity: [30, 100, 1], veil: [0, 35, 1] };
+const storageKey = 'khor.session-avatar-tuner.v1';
+let params         = { ...defaults };
+let uid = 0;
+let noticeTimer = 0;
+const paths                         = {
+    shard: 'M32.414 59.35L50.376 70.5H72.5v-71H33.728L26.5 13.381l19.057 27.08L32.414 59.35z',
+    sweep: 'M22.216 24L0 46.75l14.108 38.129L78 86l-3.081-59.276-22.378 4.005 12.972 20.186-23.35 27.395L22.215 24z'
+};
+function clean(value         )         {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('参数格式不正确');
+    const result = { ...defaults };
+    const input = value                           ;
+    for (const [key, [min, max, step]] of Object.entries(limits)) {
+        const number = input[key];
+        if (typeof number === 'number' && Number.isFinite(number)) (result                                      )[key] = Math.round(Math.min(max, Math.max(min, number)) / step) * step;
+    }
+    if (typeof input.machine === 'number' && Number.isInteger(input.machine)) result.machine = Math.min(data.machines.length - 1, Math.max(0, input.machine));
+    if (['auto', 'dark', 'light'].includes(String(input.ink))) result.ink = String(input.ink);
+    if (['system', 'light', 'dark'].includes(String(input.theme))) result.theme = String(input.theme);
+    if ([24, 32, 48, 64].includes(Number(input.compareSize))) result.compareSize = Number(input.compareSize);
+    if (typeof input.equalSize === 'boolean') result.equalSize = input.equalSize;
+    return result;
+}
+try { const saved = localStorage.getItem(storageKey); if (saved) params = clean(JSON.parse(saved)); } catch { /* File/private browsing can deny storage. */ }
+function mark()        {
+    const radius = Math.max(368 + params.outer / 2, 368 + params.satellite, 368 + params.diamond / 2);
+    const side = 2 * radius / .92;
+    const min = 512 - side / 2;
+    return {
+        box: `${min} ${min} ${side} ${side}`,
+        body: `<g fill="none" stroke="currentColor"><circle cx="512" cy="512" r="368" stroke-width="${params.outer}"/><path d="M512 144L880 512L512 880L144 512Z" stroke-width="${params.diamond}" stroke-linejoin="round"/><circle cx="512" cy="512" r="${params.innerRadius}" stroke-width="${params.inner}"/></g><g fill="currentColor"><circle cx="512" cy="144" r="${params.satellite}"/><circle cx="880" cy="512" r="${params.satellite}"/><circle cx="512" cy="880" r="${params.satellite}"/><circle cx="144" cy="512" r="${params.satellite}"/><circle cx="512" cy="512" r="${params.core}"/></g>`
+    };
+}
+function ink(face      )         { return (params.ink === 'auto' ? face.mark.ink : params.ink) === 'dark' ? '#14140f' : '#ffffff'; }
+function avatar(type = 'khor', pixels = 80)         {
+    const face = data.machines[params.machine].face;
+    const c = face.canvas;
+    const id = `face-${++uid}`;
+    const blur = face.paint.blur;
+    const glyph = type === 'khor' ? mark() : data.glyphs[type];
+    const box = c * (type === 'khor' || params.equalSize ? params.size / 92 : .5625);
+    const offset = (c - box) / 2;
+    const veil = Math.min(.42, face.mark.veil + params.veil / 100);
+    // Core-provided ink and veil stay attached to the face, independent of page theme.
+    const veilInk = face.mark.ink === 'dark' ? '#ffffff' : '#000000';
+    const body = `<defs><clipPath id="${id}"><rect width="${c}" height="${c}" rx="${c * face.radius_ratio}"/></clipPath><filter id="${id}-blur" filterUnits="userSpaceOnUse" x="${-blur * 3.43}" y="${-blur * 3.43}" width="${c + blur * 6.86}" height="${c + blur * 6.86}" color-interpolation-filters="sRGB"><feGaussianBlur stdDeviation="${blur}"/></filter></defs><g clip-path="url(#${id})"><g style="isolation:isolate"><rect width="${c}" height="${c}" fill="${face.background}"/>${face.paint.veins.map(v => `<path d="${paths[v.vein]}" fill="${v.color}" filter="url(#${id}-blur)" transform="translate(${v.dx} ${v.dy}) rotate(${v.rotate} ${c / 2} ${c / 2}) scale(${v.scale})"${v.overlay ? ' style="mix-blend-mode:overlay"' : ''}/>`).join('')}</g><rect width="${c}" height="${c}" fill="${veilInk}" opacity="${veil}"/><svg x="${offset}" y="${offset}" width="${box}" height="${box}" viewBox="${glyph.box}" fill="currentColor" color="${ink(face)}" opacity="${params.opacity / 100}">${glyph.body}</svg></g>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pixels}" height="${pixels}" viewBox="0 0 ${c} ${c}" role="img" aria-label="${type} 会话头像">${body}</svg>`;
+}
+function announce(message        )       {
+    const node = document.querySelector             ('#notice') ;
+    node.textContent = message;
+    window.clearTimeout(noticeTimer);
+    noticeTimer = window.setTimeout(() => { node.textContent = ''; }, 3000);
+}
+function render()       {
+    const theme = params.theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : params.theme;
+    document.documentElement.dataset.theme = theme;
+    document.querySelector('#hero') .innerHTML = avatar('khor', 224);
+    document.querySelector('#size-value') .textContent = `${params.size.toFixed(1)}%`;
+    document.querySelector('#machine-value') .textContent = data.machines[params.machine].name;
+    (document.querySelector('#comparisons')               ).style.setProperty('--comparison-size', `${params.compareSize}px`);
+    document.querySelector('#comparisons') .innerHTML = ['khor', 'Claude', 'Codex', 'Cursor', '终端', 'Agent'].map(type => `<figure class="comparison${type === 'khor' ? ' is-khor' : ''}"><div class="comparison-avatar" style="--preview-size:${params.compareSize}px">${avatar(type, params.compareSize)}</div><figcaption>${type}</figcaption></figure>`).join('');
+    document.querySelector('#actual-sizes') .innerHTML = [16, 24, 32, 48, 64].map(size => `<figure><div>${avatar('khor', size)}</div><figcaption>${size} px</figcaption></figure>`).join('');
+    document.querySelector('#comparison-note') .textContent = params.equalSize ? '各标记使用相同占比，方便比较视觉重量' : '其他类型保留现有占比；khor 使用左侧当前参数';
+    for (const [key] of Object.entries(limits)) {
+        const value = (params                                     )[key];
+        document.querySelectorAll                  (`[data-param="${key}"]`).forEach(control => { if (document.activeElement !== control) control.value = String(value); });
+    }
+    for (const key of ['ink', 'theme', 'compareSize']) (document.querySelector(`[data-param="${key}"]`)                     ).value = String((params                                      )[key]);
+    (document.querySelector('[data-param="equalSize"]')                    ).checked = params.equalSize;
+    document.querySelectorAll                   ('[data-machine]').forEach(button => { button.setAttribute('aria-pressed', String(Number(button.dataset.machine) === params.machine)); });
+    document.querySelectorAll                   ('[data-preset]').forEach(button => { button.setAttribute('aria-pressed', String(button.dataset.preset === (params.size === 80.5 ? 'large' : params.size === 51.75 ? 'original' : ''))); });
+}
+function save()       {
+    try { localStorage.setItem(storageKey, JSON.stringify(params)); document.querySelector('#save-status') .textContent = '已保存在此设备'; }
+    catch { document.querySelector('#save-status') .textContent = '当前浏览器无法自动保存，请导出参数'; }
+}
+function download(name        , content        , mime        )       {
+    const url = URL.createObjectURL(new Blob([content], { type: mime }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = name; anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+    announce(`已导出 ${name}`);
+}
+document.querySelector('#machine-choices') .innerHTML = data.machines.map((machine, index) => `<button type="button" data-machine="${index}" aria-pressed="false">${machine.name}</button>`).join('');
+for (const [key, [min, max, step]] of Object.entries(limits)) {
+    const slot = document.querySelector(`[data-range="${key}"]`) ;
+    const label = slot.getAttribute('aria-label') ;
+    slot.innerHTML = `<input type="range" min="${min}" max="${max}" step="${step}" data-param="${key}" aria-label="${label}"><span class="numeric"><input type="number" min="${min}" max="${max}" step="${step}" inputmode="decimal" data-param="${key}" aria-label="${label}数值">${['size', 'opacity', 'veil'].includes(key) ? '<span>%</span>' : ''}</span>`;
+}
+document.addEventListener('input', event => {
+    const target = event.target                                        ;
+    const key = target.dataset.param;
+    if (!key) return;
+    let value         ;
+    if (key in limits) { if (target.value.trim() === '') return; value = Number(target.value); if (!Number.isFinite(value)) return; }
+    else if (key === 'equalSize') value = (target                    ).checked;
+    else if (key === 'compareSize') value = Number(target.value);
+    else value = target.value;
+    params = clean({ ...params, [key]: value });
+    render(); save();
+});
+document.addEventListener('change', event => {
+    const input = event.target                    ;
+    if (input.matches('input[type="number"][data-param]')) { input.value = String((params                                      )[input.dataset.param ]); }
+});
+document.addEventListener('click', event => {
+    const button = (event.target           ).closest                   ('button'); if (!button) return;
+    if (button.dataset.machine !== undefined) { params.machine = Number(button.dataset.machine); render(); save(); }
+    if (button.dataset.preset) { params.size = button.dataset.preset === 'large' ? 80.5 : 51.75; render(); save(); }
+});
+document.querySelector('#reset') .addEventListener('click', () => { params = { ...defaults, theme: params.theme }; render(); save(); announce('已恢复放大版参数'); });
+document.querySelector('#export-json') .addEventListener('click', () => download('khor-session-avatar.json', JSON.stringify({ version: 1, ...params }, null, 2), 'application/json'));
+document.querySelector('#export-svg') .addEventListener('click', () => download('khor-session-avatar.svg', avatar('khor', 512), 'image/svg+xml'));
+document.querySelector('#export-mark') .addEventListener('click', () => { const glyph = mark(); download('khor-session-mark.svg', `<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="${glyph.box}" fill="currentColor">${glyph.body}</svg>`, 'image/svg+xml'); });
+document.querySelector('#import-json') .addEventListener('click', () => (document.querySelector('#import-file')                    ).click());
+document.querySelector('#import-file') .addEventListener('change', async event => {
+    const input = event.target                    ; const file = input.files?.[0]; if (!file) return;
+    try {
+        if (file.size > 100000) throw new Error('参数文件过大，请选择导出的 JSON');
+        const value = JSON.parse(await file.text());
+        if (!value || typeof value !== 'object' || !('size' in value)) throw new Error('请选择头像工具导出的 JSON');
+        params = clean(value); render(); save(); announce('已导入参数');
+    } catch (error) { announce(error instanceof Error ? error.message : '无法读取参数文件'); }
+    input.value = '';
+});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (params.theme === 'system') render(); });
+render(); save();
+</script>
+</body>
+</html>
