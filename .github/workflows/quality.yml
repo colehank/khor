@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: 236cef38b11263f3bb1bfe4e8649e7b32f3c48c7
+          ref: 971416c05581d7b21f861fdd96fb703e7c60f1a2
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt
@@ -39,7 +39,7 @@ jobs:
           github-token: ${{ github.token }}
           path: frontend
       - run: |
-          python3 scripts/release_manifest.py verify --root frontend
+          python3 scripts/release_manifest.py verify --root frontend --sha ed99da53d9a8ec9bad2536a34d989629bb366eca --run-id 42786231805
           cp -R frontend/gen apps/gui/src/gen
           npm ci --prefix apps/gui
           cd apps/gui
