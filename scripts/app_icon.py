@@ -4,6 +4,7 @@ No app build is needed. Native catalog compilation belongs to mac_icon.py / CI.
 """
 import argparse
 import hashlib
+from functools import lru_cache
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
@@ -27,13 +28,34 @@ PILLOW_VERSION = "12.2.0"
 MASK = ("M330 0 L694 0 C894 0 1024 130 1024 330 L1024 694 "
         "C1024 894 894 1024 694 1024 L330 1024 C130 1024 0 894 0 694 "
         "L0 330 C0 130 130 0 330 0 Z")
-INPUTS = [LAB / "renderer.mjs", LAB / "render.mjs", PRESET,
+INPUTS = [LAB / "renderer.ts", LAB / "render.ts", LAB / "package.json",
+          LAB / "package-lock.json", LAB / "tsconfig.json", PRESET,
           ICONS / "Icon.icon/icon.json", IOS / "Contents.json",
           Path("scripts/app_icon.py"), Path("scripts/requirements-app-icon.txt")]
 
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+@lru_cache(maxsize=1)
+def check_node():
+    version = subprocess.check_output(["node", "--version"], text=True).strip()
+    parts = tuple(map(int, version.removeprefix("v").split(".")[:2]))
+    if parts < (22, 19):
+        raise ValueError(f"Node 22.19+ required for the TypeScript studio (found {version})")
+
+
+@lru_cache(maxsize=8)
+def browser_javascript(source):
+    """Derive browser JavaScript from the sole TS source, without a build tree."""
+    check_node()
+    return subprocess.check_output([
+        "node", "--input-type=module", "--eval",
+        "import { readFileSync } from 'node:fs';"
+        "import { stripTypeScriptTypes } from 'node:module';"
+        "process.stdout.write(stripTypeScriptTypes(readFileSync(0, 'utf8')));",
+    ], input=source)
 
 
 def pillow():
@@ -46,7 +68,8 @@ def pillow():
 
 
 def render(preset):
-    return subprocess.check_output(["node", str(ROOT / LAB / "render.mjs")], input=preset)
+    check_node()
+    return subprocess.check_output(["node", str(ROOT / LAB / "render.ts")], input=preset)
 
 
 def ios_sizes(root=ROOT):
@@ -193,13 +216,17 @@ def generate(preset_path):
 
 def served_files():
     files = {"/" + name: ROOT / LAB / name for name in [
-        "index.html", "styles.css", "app.mjs", "renderer.mjs", "reference-07.png",
+        "index.html", "styles.css", "app.ts", "renderer.ts", "reference-07.png",
         "native.html", "native-macos.png", "native-ios.png",
     ]}
     files["/"] = files["/index.html"]
     files["/icon-lab.html"] = files["/index.html"]
     files["/current-preset.json"] = ROOT / PRESET
     files["/tokens.css"] = ROOT / "apps/gui/src/styles/tokens.css"
+    # Existing open tabs may still request the former URLs. Both aliases are
+    # derived from the same TS source; there is no second JS implementation.
+    files["/app.mjs"] = files["/app.ts"]
+    files["/renderer.mjs"] = files["/renderer.ts"]
     return files
 
 
@@ -216,6 +243,13 @@ class StudioHandler(SimpleHTTPRequestHandler):
             self.send_error(404)
             return
         data = path.read_bytes()
+        if path.suffix == ".ts":
+            try:
+                data = browser_javascript(data)
+            except (OSError, ValueError, subprocess.CalledProcessError) as error:
+                self.log_error("Cannot prepare TypeScript module: %s", error)
+                self.send_error(500, "TypeScript module unavailable")
+                return
         if path.name == "tokens.css":
             # This zero-build tool consumes the authoritative product tokens.
             # Tailwind's theme containers become ordinary CSS variables; its
@@ -224,7 +258,7 @@ class StudioHandler(SimpleHTTPRequestHandler):
             css = re.sub(r'@theme (?:inline|static)\s*\{', ':root {', css)
             data = css.encode()
         self.send_response(200)
-        mime = "text/javascript" if path.suffix == ".mjs" else self.guess_type(str(path))
+        mime = "text/javascript" if path.suffix == ".ts" else self.guess_type(str(path))
         self.send_header("Content-Type", mime)
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", "no-store")
@@ -250,6 +284,7 @@ def main():
         elif args.action == "check":
             check()
         else:
+            check_node()
             with ThreadingHTTPServer((args.host, args.port), StudioHandler) as http:
                 print(f"Icon studio: http://{args.host}:{args.port}/", flush=True)
                 http.serve_forever()
