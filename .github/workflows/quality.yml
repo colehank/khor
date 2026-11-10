@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          ref: b977f7878d33fb21e6136711388a498d206283ce
+          ref: b83ec7c04c92805bc9b6eb978422c6f49a6143cb
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt
@@ -49,6 +49,7 @@ jobs:
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           npx playwright-core install --with-deps webkit
           NATIVE_HELPERS_SCENARIOS=window-focus-live,window-focus-late,window-focus-mobile NATIVE_HELPERS_CHECK_DIR="$RUNNER_TEMP/focus-helpers" PLAYWRIGHT_CHROMIUM_CHANNEL=chrome timeout --kill-after=5s 90s npm run native-helpers
+          QUALITY_ENGINES=chromium,webkit KHOR_TEST_CHROME=1 LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe timeout --kill-after=5s 180s npm run khor-conversations-ui
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
@@ -56,3 +57,4 @@ jobs:
           path: |
             ${{ runner.temp }}/notice-fast
             ${{ runner.temp }}/focus-helpers
+            ${{ runner.temp }}/khor-conversations-ui-evidence
