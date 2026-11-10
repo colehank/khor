@@ -13,6 +13,7 @@ try{
  const api=put('api.ts',`export const inApp=true;const listeners=new Map();export const calls=[];
  export const hear=(name,fn)=>{let set=listeners.get(name);if(!set)listeners.set(name,set=new Set());set.add(fn);return()=>set.delete(fn);};
  export const emit=(name,value)=>listeners.get(name)?.forEach(fn=>fn(value));
+ export const onWindowFocus=receive=>{receive(true);return hear('fixture:window-focus',receive);};
  export const showMenu=async request=>{calls.push({command:'show',request});emit('menu:rows',request);return true;};
  export const sizeMenu=async(id,h)=>{calls.push({command:'size',id,h});};
  export const menuInput=async(id,event)=>{calls.push({command:'input',id,event});emit('menu:input',{id,event});};
@@ -25,6 +26,9 @@ try{
  put('index.html',`<!doctype html><html data-theme="dark"><body><div id="root"></div><script type="module" src="/${name}/entry.tsx"></script></body></html>`);
  server=await createServer({root:gui,configFile:join(gui,'vite.config.ts'),cacheDir:join(out,'native-vite'),optimizeDeps:{entries:[join(dir,'index.html')]},resolve:{alias:[{find:'@/api',replacement:api},{find:'@',replacement:join(gui,'src')}]},server:{host:'127.0.0.1',port:0,hmr:false},logLevel:'error'});await server.listen();
  browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true});const page=await browser.newPage({viewport:{width:1100,height:820}});page.setDefaultTimeout(5000);const errors=[];page.on('pageerror',e=>errors.push(String(e)));
+ // A sibling native WebView is first responder while its NSWindow remains key.
+ // The main document correctly reports false; it must still present notices.
+ await page.addInitScript(()=>{document.hasFocus=()=>false;});
  await page.goto(server.resolvedUrls.local[0]+name+'/index.html');await page.waitForFunction(()=>document.querySelector('[data-notification-banner]'));
  try{await page.waitForFunction(()=>nativeNotice.calls.some(call=>call.command==='show'),null,{timeout:5000});}
  catch(error){await page.screenshot({path:join(out,'native-notification-red.png')});writeFileSync(join(out,'native-notification-errors.json'),JSON.stringify({errors,calls:await page.evaluate(()=>nativeNotice.calls)},null,2));throw error;}
