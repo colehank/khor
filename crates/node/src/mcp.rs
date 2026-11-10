@@ -85,6 +85,16 @@ const TOOLS: &[Tool] = &[
         },
     },
     Tool {
+        name: "run_command",
+        reads: false,
+        about: msg::mcp_run_command,
+        schema: || json!({"type":"object","properties":{
+            "command":{"type":"string"},
+            "cwd":{"type":"string"},
+            "request":{"type":"string","description":"Unique stable request ID. Reuse it only to read the same execution receipt."}
+        },"required":["command","request"],"additionalProperties":false}),
+    },
+    Tool {
         name: "open",
         reads: false,
         about: msg::mcp_open,
@@ -249,7 +259,7 @@ pub fn serve_stdio(root: std::path::PathBuf) -> Result<(), String> {
                 "capabilities": { "tools": {} },
                 "serverInfo": { "name": "khor", "version": env!("CARGO_PKG_VERSION") }
             }),
-            "tools/list" => tools(),
+            "tools/list" => tools(false),
             "tools/call" => {
                 let name = req["params"]["name"].as_str().unwrap_or("");
                 let args = req["params"]
@@ -540,6 +550,10 @@ pub(crate) fn call_with_parent(
             ))?;
             Ok(id.0)
         }
+        "run_command" => {
+            let parent = parent.as_ref().ok_or("This command needs a Khor session owner")?;
+            crate::khor_agent::commands::execute(&n, parent, &s("request"), &s("command"), &s("cwd"))
+        }
         "read" => {
             let (total, _, bytes, truncated) =
                 runtime()?.block_on(n.read_all(&s("machine"), &s("path"), 48 * 1024))?;
@@ -577,8 +591,8 @@ fn decode_text(bytes: &[u8], truncated: bool) -> Result<&str, String> {
 
 /// The same catalogue and dispatcher are used by external MCP clients and
 /// khor's private Pi bridge. Tool metadata never grants permission by itself.
-pub(crate) fn tools() -> Value {
-    json!({"tools": TOOLS.iter().map(|t| json!({
+pub(crate) fn tools(owned: bool) -> Value {
+    json!({"tools": TOOLS.iter().filter(|t| owned || t.name != "run_command").map(|t| json!({
         "name": t.name, "description": (t.about)(), "inputSchema": (t.schema)(),
         "annotations": {"readOnlyHint": t.reads}
     })).collect::<Vec<_>>()})

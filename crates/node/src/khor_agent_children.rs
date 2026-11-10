@@ -14,17 +14,10 @@ struct Child {
     link: ChildLink,
 }
 
-fn collect(node: &Node, board: &str) -> Result<Vec<Child>, String> {
-    let log = node.chat.log(board)?;
+fn collect(node: &Node, board: &str, runs: &[CommandRecord]) -> Result<Vec<Child>, String> {
     let mut seen = HashSet::new();
     let mut children = Vec::new();
-    for run in log.messages.into_iter().rev().filter_map(|message| message.command) {
-        if run.owner != node.device_str() || run.agent.is_none()
-            || !run.id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-            || run.id.len() > 128
-        {
-            continue;
-        }
+    for run in runs {
         let directory = delegation::children_dir(node.root(), &run.id);
         let names = crate::remote_cancel::names(&directory, crate::remote_cancel::CHILD_LIMIT * 2)?;
         if names.is_empty() { continue; }
@@ -121,7 +114,14 @@ fn summary(child: &Child, record: Option<&Record>) -> Value {
 }
 
 pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Value, String> {
-    let children = collect(node, board)?;
+    let runs: Vec<_> = node.chat.log(board)?.messages.into_iter().rev()
+        .filter_map(|message| message.command)
+        .filter(|run| {
+            run.owner == node.device_str() && run.agent.is_some()
+                && !run.id.is_empty() && run.id.len() <= 128
+                && run.id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        }).collect();
+    let children = collect(node, board, &runs)?;
     if let Some(action) = request["action"].as_str() {
         let child = children.iter().find(|child| {
             request["run"] == child.run && request["key"] == child.key
@@ -179,5 +179,6 @@ pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Va
         };
         summary(&child, record.as_ref())
     }).buffered(8).collect().await;
-    Ok(json!({"children": rows}))
+    let commands = super::commands::summaries(node, board, &runs)?;
+    Ok(json!({"children": rows, "commands": commands}))
 }

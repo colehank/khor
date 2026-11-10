@@ -793,11 +793,19 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
         "durable _ghost must outlive its MCP worker"
     );
     assert!(
-        !node.sessions().unwrap().iter().any(|row| row.session.id == context.id),
+        !node
+            .sessions()
+            .unwrap()
+            .iter()
+            .any(|row| row.session.id == context.id),
         "owned delegation appeared as an independent session"
     );
     let store = node.delegation_store().unwrap();
-    let read = || store.get(node.device(), &record.target, &record.task.id).unwrap();
+    let read = || {
+        store
+            .get(node.device(), &record.target, &record.task.id)
+            .unwrap()
+    };
     let by = Instant::now() + Duration::from_secs(5);
     let ask = loop {
         if let Some(ask) = crate::delegation::approval(&read()).and_then(|a| a["ask"].as_u64()) {
@@ -808,7 +816,8 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
     };
     assert!(!absent(host.host_pid), "permission wait retired the child");
     let mut worker = tool(
-        &node, "task_answer",
+        &node,
+        "task_answer",
         json!({"agent":"fixture","task":record.task.id,"ask":ask.to_string(),"option":"go"}),
         true,
     );
@@ -819,12 +828,20 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
     }
     assert!(absent(host.host_pid), "owned delegated host did not retire");
     let finished = read();
-    assert_eq!(finished.task.status.state, crate::delegation::protocol::TaskState::Completed);
+    assert_eq!(
+        finished.task.status.state,
+        crate::delegation::protocol::TaskState::Completed
+    );
     assert_eq!(finished.context_session.as_ref(), Some(context));
-    assert!(serde_json::to_string(&finished.task.status.message).unwrap().contains("picked:go"));
+    assert!(
+        serde_json::to_string(&finished.task.status.message)
+            .unwrap()
+            .contains("picked:go")
+    );
 
     let mut followup = tool(
-        &node, "delegate",
+        &node,
+        "delegate",
         json!({"agent":"fixture","request":"durable-followup","prompt":"follow up","context":record.task.context_id}),
         true,
     );
@@ -835,13 +852,43 @@ async fn a_real_delegated_acp_host_survives_the_worker_and_keeps_its_parent() {
     };
     assert_ne!(resumed.task.id, finished.task.id);
     assert_eq!(resumed.context_session.as_ref(), Some(context));
-    assert_eq!(resumed.task.status.state, crate::delegation::protocol::TaskState::Working);
+    assert_eq!(
+        resumed.task.status.state,
+        crate::delegation::protocol::TaskState::Working
+    );
     drop(hosts);
 }
 
 struct ShellHost {
     release: PathBuf,
     pid: Option<u32>,
+}
+
+#[tokio::test]
+#[ignore = "requires the exact newly built CLI via KHOR_TEST_MCP_EXECUTABLE"]
+async fn a_real_command_task_returns_a_durable_receipt_without_a_session() {
+    let (_scratch, node) = configured("worker-command-task").await;
+    let list_ids = || {
+        node.sessions().unwrap().into_iter().map(|row| row.session.id.0)
+            .collect::<std::collections::BTreeSet<_>>()
+    };
+    let before = list_ids();
+    let input = json!({
+        "command":"printf x >> witness; printf 'command output'; exit 7",
+        "request":"durable-command-fixture",
+        "cwd":node.root(),
+    });
+    let execute = || {
+        let mut worker = tool(&node, "run_command", input.clone(), true);
+        serde_json::from_str::<Value>(&finish(&mut worker).unwrap()).unwrap()
+    };
+    let first = execute();
+    assert_eq!(first["exit"], 7);
+    assert_eq!(first["state"], "failed");
+    assert_eq!(first["stdout"], "command output");
+    assert_eq!(execute(), first);
+    assert_eq!(fs::read(node.root().join("witness")).unwrap(), b"x");
+    assert_eq!(list_ids(), before);
 }
 impl Drop for ShellHost {
     fn drop(&mut self) {

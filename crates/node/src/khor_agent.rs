@@ -18,6 +18,8 @@ use crate::agent_process as process;
 mod conversations;
 #[path = "khor_agent_children.rs"]
 mod children;
+#[path = "khor_agent_commands.rs"]
+pub(crate) mod commands;
 #[path = "khor_agent_history.rs"]
 mod history;
 #[path = "khor_agent_runtime.rs"]
@@ -1423,7 +1425,7 @@ fn mcp_request(request: &Value) -> Result<Option<Value>, String> {
             json!({"protocolVersion":"2024-11-05","capabilities":{"tools":{}},"serverInfo":{"name":"khor","version":env!("CARGO_PKG_VERSION")}})
         }
         "ping" => json!({}),
-        "tools/list" => crate::mcp::tools(),
+        "tools/list" => crate::mcp::tools(true),
         _ => {
             return Ok(Some(
                 json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":msg::unknown_action(method)}}),

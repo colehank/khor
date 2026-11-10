@@ -16,6 +16,7 @@ type ChildTask = {
   result: string | null;
   can_cancel: boolean;
   can_retry: boolean;
+  truncated?: boolean;
 };
 
 const identity = (child: ChildTask) => child.run + "/" + child.key;
@@ -33,13 +34,13 @@ function TaskStatus({ state }: {state: string}) {
 }
 
 export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: () => void }) {
-  const [rows, setRows] = useState<ChildTask[] | null>(null);
+  const [groups, setGroups] = useState<{children: ChildTask[]; commands: ChildTask[]} | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [revision, refresh] = useState(0);
   const token = useRef<{ child: string; value: string } | null>(null);
-  const task = rows?.find(child => identity(child) === detail);
+  const task = groups && [...groups.children, ...groups.commands].find(child => identity(child) === detail);
   const home = parent.execution_home ?? "", session = parent.id;
 
   useEffect(() => {
@@ -48,9 +49,9 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
     const read = async () => {
       try {
         const {data} = await khorAgent("manage", home, {operation: "children", session});
-        const children = (data as { children?: ChildTask[] } | null)?.children;
-        if (!Array.isArray(children)) throw new Error(gui.child_task_unavailable);
-        if (!stopped) setRows(children);
+        const rows = data as { children?: ChildTask[]; commands?: ChildTask[] } | null;
+        if (!Array.isArray(rows?.children)) throw new Error(gui.child_task_unavailable);
+        if (!stopped) setGroups({children: rows.children, commands: rows.commands ?? []});
       } catch (why) {
         if (!stopped) setError(String(why));
       } finally {
@@ -94,12 +95,17 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
         </div>
         {task.context && <span className="break-all text-caption text-muted-foreground">{task.context}</span>}
         {task.result && <p className="whitespace-pre-wrap break-words text-read">{task.result}</p>}
+        {task.truncated && <span className="text-caption text-muted-foreground">{gui.child_task_output_truncated}</span>}
         <div className="flex flex-wrap gap-in">
           {task.can_cancel && <Button disabled={busy} onClick={() => void act("cancel", task)}>{gui.child_task_cancel}</Button>}
           {task.can_retry && <Button disabled={busy} onClick={() => void act("retry", task)}>{gui.child_task_retry}</Button>}
         </div>
-      </div> : rows?.length ? <div className="divide-y divide-border" data-child-tasks>
-        {rows.map(child => <button key={identity(child)} type="button" data-child-task-row
+      </div> : groups && (groups.children.length > 0 || groups.commands.length > 0) ? <div className="flex flex-col gap-base" data-child-tasks>
+        {([[gui.child_task_agents, groups.children], [gui.key_group_commands, groups.commands]] as const).map(([label, rows]) =>
+          rows.length > 0 && <section key={label} aria-label={label}>
+          <h3 className="text-headline">{label}</h3>
+          <div className="divide-y divide-border">
+          {rows.map(child => <button key={identity(child)} type="button" data-child-task-row
           className="flex min-h-touch w-full items-center justify-between gap-row py-in text-left"
           onClick={() => { setDetail(identity(child)); setError(""); }}>
           <span className="flex min-w-0 flex-col">
@@ -107,9 +113,11 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
             <span className="truncate text-caption text-muted-foreground">{child.machine}</span>
           </span>
           <TaskStatus state={child.state}/>
-        </button>)}
-      </div> : <p aria-busy={rows === null && !error} className="text-fact text-muted-foreground">
-        {rows !== null ? gui.child_tasks_empty : null}
+          </button>)}
+          </div>
+          </section>)}
+      </div> : <p aria-busy={groups === null && !error} className="text-fact text-muted-foreground">
+        {groups !== null ? gui.child_tasks_empty : null}
       </p>}
       <TaskActions
         back={task ? <Button onClick={() => {setDetail(null); setError("");}}>{gui.back}</Button> : undefined}

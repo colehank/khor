@@ -65,10 +65,10 @@ pub use execution::{
     parse_line, private_invocation,
 };
 
+mod desktop;
 /// `khor relay` — its own file because it is its own program: a server
 /// with its own access control and meter (`relay.rs` head).
 mod relay;
-mod desktop;
 mod upgrade;
 
 /// Process entry hook for terminal sessions created by the slash interface.

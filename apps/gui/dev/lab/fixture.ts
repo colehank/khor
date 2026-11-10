@@ -160,7 +160,10 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       } else if (p.action==="retry" && task?.can_retry) {
         task.state="working";task.can_cancel=true;task.can_retry=false;task.result=null;
       }
-      return view({children:childTasks});
+      return view({children:childTasks,commands:[{
+        agent:'git status',machine:'MacLab',state:'completed',result:'Working tree clean',
+        run:'fixture-run',key:'fixture-command',task:null,context:null,can_cancel:false,can_retry:false,
+      }]});
     }
     if (p.operation === 'acp_initialize' || p.operation === 'acp_authenticate') {
       acpSetupCalls.push({agent:String(p.agent),machine:String(body.machine),operation:p.operation});

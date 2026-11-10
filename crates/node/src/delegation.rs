@@ -585,10 +585,19 @@ impl Node {
                         &session.id,
                         &current.task.context_id,
                         current.caller,
-                    )? else { return Err(error) };
+                    )?
+                    else {
+                        return Err(error);
+                    };
                     let spec = self.agent_or_refuse(&record.target.agent)?;
                     let launch = Node::agent_launch(&spec)?;
-                    let resumed = self.reopen_gui_as(&cwd, &title, &[launch], &native.agent, &native.native_id)?;
+                    let resumed = self.reopen_gui_as(
+                        &cwd,
+                        &title,
+                        &[launch],
+                        &native.agent,
+                        &native.native_id,
+                    )?;
                     if resumed != session.id {
                         return Err("Delegation resumed a different session identity".into());
                     }
@@ -620,7 +629,11 @@ impl Node {
                 context: current.task.context_id.clone(),
             });
             let session = crate::gui_host::spawn_delegated_host(
-                self.root(), &cwd, &record.target.agent, &[launch], owner.as_ref(),
+                self.root(),
+                &cwd,
+                &record.target.agent,
+                &[launch],
+                owner.as_ref(),
             )?;
             connect_host(self.root(), &session)?
         };

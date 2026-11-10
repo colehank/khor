@@ -238,7 +238,7 @@ async function inspect(browser, scene, size, data = {}) {
         await parent.click();
         const tasks=page.locator('[data-child-task-row]');
         await tasks.first().waitFor();
-        assert.equal(await tasks.count(),3,'The active Khor row opens its child list');
+        assert.equal(await tasks.count(),4,'The active Khor row opens its agent and command tasks');
         await tasks.first().click();
         assert.match(await page.locator('[data-child-task-detail]').innerText(),/3 checks passed/);
         await page.keyboard.press('Escape');

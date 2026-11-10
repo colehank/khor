@@ -1806,15 +1806,24 @@ impl LiveKind {
         context: &str,
         caller: DeviceId,
     ) -> Result<Option<(crate::session_content::journal::Identity, PathBuf, String)>, String> {
-        let Some(dir) = self.dir_of(id) else { return Ok(None) };
+        let Some(dir) = self.dir_of(id) else {
+            return Ok(None);
+        };
         let meta = read_meta(&dir)?;
-        if !meta.child_owner.as_ref().is_some_and(|owner| {
-            owner.context == context && owner.parent.home == caller
-        }) || !gui_slot_ended(&meta) {
+        if !meta
+            .child_owner
+            .as_ref()
+            .is_some_and(|owner| owner.context == context && owner.parent.home == caller)
+            || !gui_slot_ended(&meta)
+        {
             return Ok(None);
         }
-        let native = meta.gui_native.ok_or("Delegated session lost its native identity")?;
-        let place = meta.place.ok_or("Delegated session lost its working directory")?;
+        let native = meta
+            .gui_native
+            .ok_or("Delegated session lost its native identity")?;
+        let place = meta
+            .place
+            .ok_or("Delegated session lost its working directory")?;
         Ok(Some((native, PathBuf::from(place), meta.title)))
     }
 

@@ -1,6 +1,8 @@
 use crate::runtime_image;
 use khor_runtime::Contract;
-pub use khor_update::{BuildIdentity, Channel, Component, DownloadProgress, ReleaseIdentity, ReleaseTag};
+pub use khor_update::{
+    BuildIdentity, Channel, Component, DownloadProgress, ReleaseIdentity, ReleaseTag,
+};
 use khor_update::{Download, Feed, Offer, Platform, TrustRoot};
 use serde::{Deserialize, Serialize};
 use std::{ffi::OsStr, path::Path};

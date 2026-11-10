@@ -251,7 +251,7 @@ pub(crate) fn read<T: DeserializeOwned>(path: &Path, limit: u64) -> Result<T, St
     serde_json::from_slice(&bytes).map_err(|_| "InvalidRecord".into())
 }
 /// The boolean means an authoritative rename may have happened.
-fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), (String, bool)> {
+pub(crate) fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), (String, bool)> {
     let bytes = serde_json::to_vec(value).map_err(|_| ("EncodeFailed".into(), false))?;
     if bytes.len() as u64 > SMALL {
         return Err(("ResourceLimit".into(), false));

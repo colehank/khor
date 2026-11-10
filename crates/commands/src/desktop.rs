@@ -17,8 +17,7 @@ const PROGRAM_IN_APP: &str = "Contents/MacOS/khor-gui";
 #[cfg(target_os = "macos")]
 fn bundle_of_cli(cli: &Path) -> Option<&Path> {
     let app = cli.ancestors().nth(3)?;
-    (cli.ends_with(CLI_IN_APP) && app.extension().is_some_and(|ext| ext == "app"))
-        .then_some(app)
+    (cli.ends_with(CLI_IN_APP) && app.extension().is_some_and(|ext| ext == "app")).then_some(app)
 }
 
 /// A CLI delivered inside the signed Mac bundle is replaced with the App.

@@ -1625,6 +1625,7 @@ mcp-ls = "Lists a directory on a machine. Without a path, that machine's home di
 mcp-ls-machine = "The machine's name (as devices lists it)"
 mcp-ls-path = "An absolute path; omitted means the home directory"
 mcp-open = "Opens a persistent session on a machine running one command. **This starts a process on that machine.**"
+mcp-run-command = "Run a command on this Khor conversation's execution machine and return its result as a child command task."
 mcp-open-machine = "Which machine to open it on"
 mcp-open-command = "The command to run (handed to that machine's shell)"
 mcp-open-title = "What the row is called; omitted means the command itself"
@@ -1750,12 +1751,14 @@ journal-why-punched = "{0} round(s) of hole punching, none of its candidates ans
 
 [gui]
 child_tasks = "Child tasks"
+child_task_agents = "Agents"
 child_tasks_empty = "No child tasks yet"
 child_task_waiting = "Waiting for input"
 child_task_unavailable = "Status unavailable"
 child_task_cancel = "Cancel task"
 child_task_retry = "Retry task"
 child_task_canceled = "Canceled"
+child_task_output_truncated = "Output truncated"
 term-preview-activate = "Terminal preview. Activate to preview the completion cue"
 term-theme-custom-row = "Custom palette"
 session-association = "Session association"

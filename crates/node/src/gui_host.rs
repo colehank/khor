@@ -560,7 +560,16 @@ pub(crate) fn spawn_delegated_host(
     owner: Option<&crate::delegation::ChildOwner>,
 ) -> Result<SessionId, String> {
     spawn_ghost_prepared(
-        root, Some(cwd), agent, cmd, None, Some(agent), false, None, None, owner,
+        root,
+        Some(cwd),
+        agent,
+        cmd,
+        None,
+        Some(agent),
+        false,
+        None,
+        None,
+        owner,
     )
 }
 
