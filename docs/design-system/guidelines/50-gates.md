@@ -912,3 +912,12 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 ### 任务操作槽位（2026-11-10）
 
 `npm run dialogs` 增加公共 `TaskActions` 的桌面右下／手机顶部布局、长标题不遮挡操作、草稿保留／丢弃、显式取消、不可取消写入、失败保留输入、断点切换 DOM 身份验证。与原有视口、长列表、目录补全与手势检查一起运行；Quality 的 settings 和 all 交互组均包含它。截图由 `gui-interaction-evidence/quality-dialogs` 保留。
+
+## 安装图标与独立调校工具（2026-11-10）
+
+入口 `python3 scripts/app_icon.py check` 检查共享参数与生成 SVG、安装图标的清单/哈希/
+尺寸/颜色模式及 iOS/macOS 母图一致性。`node --test apps/gui/dev/icon-lab/renderer.test.mjs`
+守外光向对侧透出、内外光独立和旧参数兼容；`python3 -m unittest discover -s scripts/tests
+-p 'test_app_icon.py'` 守工具服务的文件边界和输入错误。CI `App icon` 额外编译 macOS
+原生 catalog。调校台不属于 App 路由，不增加 npm 脚本；界面从产品 token 获取颜色和字号，
+光学图稿中的坐标和光色属于被编辑的素材。手机布局及安装后实际外缘仍需人工验收。

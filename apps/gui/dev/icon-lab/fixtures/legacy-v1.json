@@ -1,0 +1,32 @@
+{
+  "format": "khor-icon-lab",
+  "version": 1,
+  "name": "07 方向 · 初始校准",
+  "reference": "07",
+  "parameters": {
+    "external": 0.94,
+    "angle": 225,
+    "softness": 0.72,
+    "emission": 0.88,
+    "center": 1,
+    "satellites": 0.8,
+    "innerRing": 1,
+    "bloom": 0.52,
+    "hue": 71,
+    "glass": 0.42,
+    "edge": 0.86,
+    "outerGlass": 0.6,
+    "frost": 0.18,
+    "reflection": 0.32,
+    "diffusion": 0.69,
+    "background": 0.018,
+    "ambient": 0.52,
+    "spill": 0.42,
+    "spread": 0.82,
+    "spillAngle": 45,
+    "outerWidth": 30,
+    "innerWidth": 22,
+    "pearlSize": 69,
+    "polish": 0.92
+  }
+}

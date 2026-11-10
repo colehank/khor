@@ -37,3 +37,17 @@ pre-commit run --all-files --hook-stage pre-push
 机制参考：[pre-commit官方文档](https://pre-commit.com/#install)。
 
 更新修复可以手动运行 Quality 的 `suite=updates`：生成并构建前端、GUI 单元／类型／设计检查、真实更新页交互、三平台 runtime/update 测试及 Mac 原生更新／回滚回归。它跳过未改动的智能体、终端全量集成、图标与其他页面交互；普通 main/PR 检查和 Release 仍运行全套。
+
+## App 图标与调校台
+
+独立工具入口：`python3 scripts/app_icon.py serve`。统一生成说明位于
+[图标源码](../apps/gui/src-tauri/icons/src/README.md)。提交图稿、参数、绘制程序或安装资源时运行：
+
+```sh
+node --test apps/gui/dev/icon-lab/renderer.test.mjs
+python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'
+python3 scripts/app_icon.py check
+```
+
+最后一项需要 `scripts/requirements-app-icon.txt` 的固定 Pillow 版本；不会构建 App。
+`App icon` 工作流独立复核资源，并在 macOS 26 编译原生图标 catalog。

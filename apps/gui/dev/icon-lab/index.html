@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>khor · 图标调校</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <header class="app-head">
+    <div class="identity"><h1>khor <span>图标调校</span></h1><span class="method">SVG 绘制</span></div>
+    <div class="head-actions"><span id="save-state" class="secondary">自动保存在此浏览器</span><button id="undo" title="撤销（⌘Z）" disabled>撤销</button><button id="redo" title="重做（⇧⌘Z）" disabled>重做</button><button id="reset">恢复当前图标</button></div>
+  </header>
+  <div class="workbench">
+    <main class="workspace" aria-label="图标预览">
+      <div class="view-bar">
+        <div class="segmented" aria-label="预览内容"><button data-view="single" aria-pressed="false">当前</button><button data-view="compare" aria-pressed="true">对照 07</button><button data-view="snapshot" aria-pressed="false" id="snapshot-view" disabled>对照暂存</button></div>
+        <div id="mobile-snapshot-slot"></div>
+        <div class="view-options"><label>外形 <select id="shape"><option value="rounded">圆角示意</option><option value="square">完整方形</option></select></label><label>环境 <select id="ground"><option value="paper">浅色</option><option value="dark">深色</option><option value="gray">中性灰</option></select></label></div>
+      </div>
+      <div class="preview-ground" data-ground="paper">
+        <div class="preview-pair" data-view="compare" data-shape="rounded">
+          <figure id="reference-figure" class="icon-figure"><div class="icon-wrap reference-wrap"><img id="reference-image" src="reference-07.png" alt="07 原图，作为视觉参照" width="1024" height="1024"><div id="snapshot-render" hidden></div></div><figcaption><strong id="reference-title">07 · 视觉参照</strong><span id="reference-caption">原始静态图稿</span></figcaption></figure>
+          <figure class="icon-figure"><div id="current-render" class="icon-wrap" aria-live="off"></div><figcaption><strong>当前 · 可调图稿</strong><span id="current-caption">纯 SVG · 参数实时生效</span></figcaption></figure>
+        </div>
+        <p class="preview-note">圆角只示意安装后的外形。Apple 系统外缘需在参数定稿后单独导出验收。</p>
+      </div>
+      <div id="extra-tools">
+      <div class="mobile-only mobile-help"><p>图标上方的圆角为外形示意，Apple 系统外缘需另行导出验收。</p><button id="mobile-reset">恢复当前图标</button></div>
+      <div class="size-strip"><span class="secondary">小尺寸</span><div class="size-item"><div id="size-96" class="mini-icon"></div><span>96</span></div><div class="size-item"><div id="size-64" class="mini-icon"></div><span>64</span></div><div class="size-item"><div id="size-32" class="mini-icon"></div><span>32</span></div><div class="size-strip-end"><button id="snapshot">暂存</button><span id="snapshot-note" class="secondary">留一版，边调边比</span></div></div>
+      <section class="export-area" aria-label="保存和导出">
+        <div class="export-heading"><h2>保存与导出</h2><span class="secondary">参数可再次导入，继续调整</span></div>
+        <div class="export-actions"><button id="export-json">导出参数</button><button id="import-json">导入参数</button><span class="divider"></span><button id="export-svg">导出 SVG</button><select id="export-size" aria-label="PNG 导出尺寸"><option value="1024">1024 × 1024</option><option value="2048">2048 × 2048</option></select><button id="export-png" class="primary">导出 PNG</button></div>
+        <input id="import-file" type="file" accept=".json,application/json" hidden>
+        <p class="secondary export-note">图稿始终导出完整方形；Mobile 与 Desktop 共用同一份。预览外形与环境色不进入导出。</p>
+      </section>
+      <details class="about"><summary>这版如何绘制</summary><p>以 07 为参照重新绘制几何、渐变、柔晕和薄边高光。当前图稿完全由 SVG 代码生成，没有把 07 当底图叠效果。五颗圆珠与内环为不透明材质，菱形和外环为模拟玻璃。光的传导与反射采用可调的二维视觉模拟；07 是视觉参照，当前图标为参数化重绘。</p><p>参数只保存在本浏览器。导出参数文件可备份或换设备继续；刷新会恢复最后一次调整。</p><p><a href="native.html" target="_blank" rel="noopener">查看当前图标的两端系统效果</a></p></details>
+      </div>
+    </main>
+    <aside class="inspector" aria-label="图标参数">
+      <div class="inspector-head"><h2>材质与光</h2><label class="preset-label">起点 <select id="preset"><option value="current">当前图标</option><option value="aligned07">07 对齐</option><option value="calibrated">初始校准 · 旧参数</option><option value="soft">柔光更温润</option><option value="inner">内部含光</option><option value="clear">玻璃更清透</option><option value="custom" disabled>自定义参数</option></select></label></div>
+      <nav id="group-tabs" aria-label="参数分类"></nav>
+      <div id="inspector-body">
+      <div id="controls"></div>
+      <p class="inspector-foot">数值可以直接输入。外光为 0 会关闭外部照明；内部总发光为 0 会关闭五颗圆珠与内环的发光。材质本身仍然存在。</p>
+      </div>
+    </aside>
+  </div>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+  <noscript>此调校台需要启用 JavaScript 才能渲染与调整 SVG 图标。</noscript>
+</body>
+</html>
