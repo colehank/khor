@@ -40,11 +40,14 @@ async function checkMessageActions(page,context,{mobile,engine,report,name}){
  await page.mouse.move(0,0);assert.equal(await tool.isVisible(),false,'Whole-message controls are absent at rest');
  await page.evaluate(()=>{window.__chatCopied=null;window.__chatCopyFails=true;Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{if(window.__chatCopyFails)throw new Error('Synthetic permission denial');window.__chatCopied=text;}}});});
  const openMenu=async()=>{
+  // Radix retains the closing menu during its exit animation. Never mistake
+  // that old Copy item for the result of the next physical long press.
+  await page.locator('[data-row-menu]').waitFor({state:'detached'});
   await message.scrollIntoViewIfNeeded();
   const b=await message.boundingBox(),x=b.x+b.width/2,y=b.y+Math.min(b.height/2,20);
   if(mobile&&engine==='chromium'){
    const touch=await context.newCDPSession(page);await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
-   await page.locator('[data-menu-item="copy"]').waitFor();await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touch.detach();
+   await page.locator('[data-row-menu][data-state=open] [data-menu-item="copy"]').waitFor();await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touch.detach();
   }else await message.click({button:'right',position:{x:b.width/2,y:Math.min(b.height/2,20)}});
  };
  if(!mobile){
@@ -62,6 +65,6 @@ async function checkMessageActions(page,context,{mobile,engine,report,name}){
  const selection=page.locator('[data-message-selection]');await selection.waitFor();
  assert.equal(await selection.innerText(),await page.evaluate(()=>window.__chatCopied));
  assert.equal(await selection.evaluate(node=>getComputedStyle(node).userSelect),'text');
- await page.screenshot({path:path.join(report,name+'-select-text.png')});
+ await page.screenshot({path:path.join(report,name+'-select-text.png'),animations:'disabled'});
  await page.keyboard.press('Escape');await selection.waitFor({state:'detached'});
 }

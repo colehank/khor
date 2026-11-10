@@ -76,3 +76,7 @@ Artifact已校验564项CRC/size。小页diagnosis只有2次backward（tail+1次o
 ## a24验证结果
 
 Quality42768918548：frontend+GUI全绿；原有56App案例全绿（严格<3px会话切换锚点已恢复）；桌面long-history普通页和4entry小页均绿，包含填充/自动older/回到底部/复制失败重试/选择文本。两项手机longhistory在进入会话前等待scroller失败：fixture会话标题改为长历史，而bootstrap仍按旧标题找要点击的行。改为真实会话ID与行data-row匹配，继续走正式row.click，避免任何标题改名造成Lab无法进入；不改生产组件。a24官方artifact transfer5067进行中，到chat-history-a24-review。新手机菜单尚未验证，不能声称全部完成。下一run只含Lab入口修复。
+
+## 4d3手机检查结果
+
+Quality42770674720：frontend/GUI/既有56App/桌面2longhistory全绿；手机两例已通过fill/older/returnglass/copy失败重试，失败在第二次长按后点选择文本。日志明确先解析到select-text项，再等待稳定时退场脱离DOM。测试openMenu第二次立刻wait copy，匹配上一菜单退出动画仍保留的旧DOM，提前结束长按，导致它退出后没有新菜单。检查改为开始每次长按前等待旧菜单detached，等待open-state新菜单；仍使用CDP真实touchStart/hold/touchEnd，不强制点击。选择截图禁用有限动画以看清最终布局。生产消息组件未变。官方artifact transfer99157进行中 chat-history-4d3-review。新测试修复需完整App回归通过后才能更新Lab。
