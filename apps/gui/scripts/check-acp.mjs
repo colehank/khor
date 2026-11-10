@@ -39,11 +39,7 @@ import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 //      both numbers, and the assertion is on the printed string —
 //      dividing the wrong way holds the right two numbers and prints
 //      313%, which is a bug no assertion on the numbers can see.
-//   7. a `session_info_update` title is drawn. **claude never sends
-//      one** (measured off a real stream-json run: it writes `ai-title`
-//      to its transcript and nothing to the stream), so this claim is
-//      about registry agents — and an ability nothing exercises is one
-//      nobody finds out is broken.
+//   7. session metadata never becomes a duplicated heading in the transcript.
 //   8. handshake facts reach the face: login explains an empty composer,
 //      while NoLoad does not deny independently captured canonical content.
 //   9. a `plan` reaches the screen in order, and a finished step reads
@@ -148,10 +144,7 @@ const frames = [
   // so the share the face prints is a real one and not a round number
   // chosen to make the arithmetic obvious.
   { kind: "note", update: { update: { sessionUpdate: "usage_update", used: 320000, size: 1000000, cost: { amount: 0.38777300000000003, currency: "USD" } } } },
-  // A title, which claude never sends — see `ChatView`'s note. In the
-  // fixture because the *face's* ability to read it is what the next
-  // batch depends on, and an ability nothing exercises is one nobody
-  // finds out is broken.
+  // Session names belong to the tab/list, never to the transcript body.
   { kind: "note", update: { update: { sessionUpdate: "session_info_update", title: "把工具调用的状态接上" } } },
   // A plan, which claude also never sends — its 128-tool list here has
   // nothing todo-shaped. Three entries so all three statuses are
@@ -1412,10 +1405,9 @@ try {
         console.log(`${say}: plan `+m.plan.map((row,index)=>`${row.status} L*${pl[index]?.toFixed(1)} opacity${row.opacity}`).join('  '));
       }
 
-      // 7) the agent's own title, which claude never sends and other
-      //    agents do.
-      if (m.title !== "把工具调用的状态接上") {
-        fail(`${say}: session_info_update carried a title and the face drew ${JSON.stringify(m.title)}`);
+      // 7) Session metadata belongs to navigation, not the transcript.
+      if (m.title !== null) {
+        fail(`${say}: session_info_update duplicated its title in the transcript: ${JSON.stringify(m.title)}`);
       }
 
       // 4) Reduced motion removes movement, never the running fact.
