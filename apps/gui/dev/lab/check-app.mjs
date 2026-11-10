@@ -190,11 +190,16 @@ async function inspect(browser, scene, size, data = {}) {
         const tabs=()=>page.evaluate(async()=>(await(await fetch('/api/tabs_list',{method:'POST',body:JSON.stringify({kind:'content'})})).json()).tabs);
         const beforeLinks=await tabs(),fileTab=beforeLinks.find(tab=>tab.url==='/preview/project/README.md');
         assert(fileTab,'The first clicked file is a durable content tab');
-        await page.getByRole('link',{name:'Open Lab page',exact:true}).click();
+        const messageUrl=`http://127.0.0.1:${port}/lab/example?from=message`;
+        await page.locator(`[data-md-link="${messageUrl}"]`).click();
         await page.locator('[data-content-visible="true"] .mobile-content-page').waitFor();
+        await page.waitForFunction(async url => {
+          const {tabs}=await (await fetch('/api/tabs_list',{method:'POST',body:JSON.stringify({kind:'content'})})).json();
+          return tabs.some(tab=>tab.url===url);
+        },messageUrl);
         const afterPage=await tabs();
         assert.equal(afterPage.find(tab=>tab.id===fileTab.id)?.url,fileTab.url,'A second message link must not replace the first document');
-        assert(afterPage.some(tab=>tab.url.endsWith('/lab/example')&&tab.id!==fileTab.id),'The webpage has its own tab');
+        assert.equal(afterPage.length,beforeLinks.length+1,'The previously unopened webpage has its own tab');
         await page.locator('[data-link="/preview/project/README.md"]').click();
         await page.locator('[data-content-visible="true"] .cm-editor, [data-content-visible="true"] [data-file-preview]').waitFor();
         assert.equal((await tabs()).find(tab=>tab.id===fileTab.id)?.url,fileTab.url,'Reopening a message link selects its existing file');

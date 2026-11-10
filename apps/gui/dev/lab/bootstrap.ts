@@ -2,6 +2,7 @@ import {handOff} from '../../src/lib/composer-handoff';
 import {createLabFixture} from './fixture';
 import {scenes, sessionIds, type Scene} from './scenes';
 import {configureLabBackend} from './backend-context';
+import {FixtureRefusal} from './navigation';
 
 type Runtime = {mode: 'frontend'|'full'; scene: Scene; tree: string; revision: string};
 const version = document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
@@ -75,7 +76,7 @@ if (runtime.mode === 'frontend') {
       if (['chat_wait', 'term_wait', 'term_stream', 'dirs_wait'].includes(command)) await new Promise(r => setTimeout(r, 120));
       return Response.json(answer);
     } catch (error) {
-      console.error('[Lab fixture]', url.pathname, error);
+      if (!(error instanceof FixtureRefusal)) console.error('[Lab fixture]', url.pathname, error);
       return Response.json(String(error), {status: 400});
     }
   };

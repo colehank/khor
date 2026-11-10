@@ -6,6 +6,9 @@ import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {GitCommitShow} from '../../src/gen/bindings/GitCommitShow';
 import {labCommits,labDirectory,labRoot,labText,labWorkspaces} from './world';
 
+/** A valid transport refusal represented by the finite fixture. */
+export class FixtureRefusal extends Error {}
+
 const root = '/preview/project';
 export function navigationFixture(devices: DeviceRow[], origin: string, seeded: boolean, count=3, page=false) {
   const device=devices[0]?.id??'e'.repeat(64);
@@ -43,7 +46,7 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
   };
   const requireRepository = (input: Record<string,unknown>) => {
     const workspace=repository(input);
-    if(!workspace)throw new Error('No Git repository: '+String(input.dir||root));
+    if(!workspace)throw new FixtureRefusal('No Git repository: '+String(input.dir||root));
     return workspace;
   };
   const pathOf = (input: Record<string,unknown>) => String(input.path||labRoot(owner(input))).replace(/\\/g,'/').replace(/\/$/,'');
@@ -79,7 +82,7 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     relative(input);
     seedFiles(input);
     const listing = directories.get(documentKey(input));
-    if (!listing) throw new Error('No fixture directory: '+pathOf(input));
+    if (!listing) throw new FixtureRefusal('No fixture directory: '+pathOf(input));
     return listing;
   };
   const file = (input: Record<string,unknown> = {}): FileText => {

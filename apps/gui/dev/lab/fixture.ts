@@ -102,7 +102,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     ],
   }));
   const initialPreferences=structuredClone(preferences);
-  const sampleWithSettings=(i:number)=>{const source=sample(i);if(options.longHistory&&i===0)return [source[0],{kind:'settings',settings:preferences[i]},...longHistoryFrames(240,labMedia.image)];return [source[0],...(i===0?[update('user_message_chunk',{content:{type:'image',mimeType:'image/png',name:'设备协作示例.png',data:labMedia.image}})]:[]),{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
+  const sampleWithSettings=(i:number)=>{const source=sample(i);if(options.longHistory&&i===0)return [source[0],{kind:'settings',settings:preferences[i]},...longHistoryFrames(240,labMedia.image)];return [source[0],...(i===0?[update('user_message_chunk',{content:{type:'image',mimeType:'image/png',name:'设备协作示例.png',data:labMedia.image}})]:[]),{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example' + (options.page ? '' : '?from=message') + ')'))] : [])];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
   const historyStats={pages:0,backward:0,forward:0,last:[] as {cursor:unknown;newer:boolean}[]};
   const makeCanonical = () => canonicalChatFixture({pageSize:options.pageSize??128,ids: ids.slice(0, 4),
