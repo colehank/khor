@@ -28891,6 +28891,8 @@ try {
         await page.locator("[data-files-machine]").first().waitFor();
       };
       const home = async () => {
+        if(await page.locator("[data-files-panel]").count()===0)await page.locator('[data-term-key="attach"]').filter({visible:true}).first().click();
+        await page.locator("[data-files-panel]").waitFor();
         for (let i = 0; i < 8 && !(await page.locator("[data-files-machine]").count()); i++) await page.locator("[data-files-up]").click();
         check(await page.locator("[data-files-machine]").count(), "returned to machine sources");
       };
@@ -28918,7 +28920,8 @@ try {
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => batches.length === 1), "one mixed-source operation");
       check(batches[0].into === "/srv/w" && batches[0].items.length === 3 && batches[0].items[0].from === "elder" && batches[0].items[2].from === "peer", "each source and chosen destination preserved");
-      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      check(await until(3000,async()=>await page.locator("[data-files-panel]").count()===0),"successful send returns to keyboard");
+      check(await page.evaluate(()=>document.activeElement?.matches('.xterm-helper-textarea')),"the original terminal owns focus after sending");
       await home();
       const pick = async (names, directory = false) => {
         check(await page.evaluate(({ names, directory }) => {
@@ -28940,14 +28943,15 @@ try {
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => drops.length > 0), "folder sent");
       check(folders.length === 1 && JSON.stringify(folders[0].dirs) === '["nested"]' && children.length === 2 && children[0].path === "nested/a.txt", "browser staging preserves paths");
-      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      check(await until(3000,async()=>await page.locator("[data-files-panel]").count()===0),"successful send returns to keyboard");
+      check(await page.evaluate(()=>document.activeElement?.matches('.xterm-helper-textarea')),"the original terminal owns focus after sending");
       await home();
       staged.length = 0; drops.length = 0;
       stageHold = new Promise((r) => { unstage = r; });
       await pick(["one.txt", "two.txt"]);
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => staged.length === 1), "staging started");
-      await page.locator("[data-term-drop-stop]").filter({ visible: true }).first().click();
+      await page.locator("[data-files-cancel]").click();
       unstage(); stageHold = null;
       check(await until(3000, async () => forgotten.includes("/stage/1/one.txt")), "cancel cleans only staged upload");
       check(drops.length === 0 && staged.length === 1 && cancels.length === 1, "cancel stops remaining files and paste");
@@ -28955,7 +28959,8 @@ try {
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => drops.length === 1), "cancelled selection retries");
       check(drops[0].paths.length === 2 && drops[0].from === null, "retried device files paste together");
-      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      check(await until(3000,async()=>await page.locator("[data-files-panel]").count()===0),"successful send returns to keyboard");
+      check(await page.evaluate(()=>document.activeElement?.matches('.xterm-helper-textarea')),"the original terminal owns focus after sending");
       // A failure retried from the panel supersedes its pill notice
       // and releases that attempt's staged bytes.
       await home();
@@ -28970,7 +28975,9 @@ try {
       await page.locator("[data-files-send]").click();
       check(await until(3000, async () => drops.length === beforeRetry + 2 && await page.locator('[data-deck-notice="failed"]').count() === 0), "panel retry clears stale pill retry");
       check(forgotten.includes(abandoned), "superseded upload released without cancelling new transfer");
-      await until(3000, async () => await page.locator("[data-files-send]").isDisabled());
+      check(await until(3000,async()=>await page.locator("[data-files-panel]").count()===0),"successful send returns to keyboard");
+      check(await page.evaluate(()=>document.activeElement?.matches('.xterm-helper-textarea')),"the original terminal owns focus after sending");
+      await home();
       await page.locator('[data-term-key="attach"]').filter({ visible: true }).first().click();
       check(await until(3000, async () => await page.locator("[data-files-panel]").count() === 0), "attachment button closes panel");
       await panelFor("tui/face-term");

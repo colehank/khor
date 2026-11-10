@@ -65,6 +65,12 @@ try{
   if(!(await page.locator('[data-deck-title]').isVisible()))await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();
   const keys=page.locator('[data-key-row-switch]:visible');if(await keys.getAttribute('aria-expanded')!=='true')await keys.click();await page.locator('[data-term-key=attach]:visible').click();await page.locator('[data-files-machine]').first().waitFor();
   const panel=()=>page.locator('[data-files-panel]');
+  const reopen=async()=>{if(await panel().count()===0)await page.locator('[data-term-key=attach]:visible').click();await panel().waitFor();};
+  const sentToKeyboard=async()=>{
+    await panel().waitFor({state:'detached'});
+    assert.equal(await page.evaluate(()=>document.activeElement?.matches('.xterm-helper-textarea')),true,'Sending returns focus to the same terminal');
+    assert.equal(await page.locator('[data-terminal]:visible .xterm-helper-textarea').getAttribute('inputmode'),'text');
+  };
   await step('preview-selection',async()=>{
     await page.locator('[data-files-machine="audit-remote"]').click();await page.locator('[data-files-name="notes.md"]>button').first().click();await page.locator('[data-file-preview] [data-file-view]').waitFor();
     assert.equal(await page.locator('[data-file-preview] [contenteditable=true]').count(),0);assert.equal(sent.length,0);note('attachment-preview',{editable:await page.locator('[data-file-preview] [contenteditable=true]').count(),sent:sent.length,source:await page.locator('[data-file-preview] [role=radio][aria-checked=true]').textContent()});
@@ -72,9 +78,13 @@ try{
     assert(await page.locator('[data-files-select="child.md"]').isDisabled());note('directory-inclusion',{childDisabled:await page.locator('[data-files-select="child.md"]').isDisabled()});await page.locator('[data-files-up]').click();await page.locator('[data-files-select=folder]').click();
     assert.equal(await page.locator('[data-files-select=folder]').getAttribute('aria-pressed'),'false');note('directory-deselect',{selected:await page.locator('[data-files-select=folder]').getAttribute('aria-pressed')});
     await page.locator('[data-files-select="notes.md"]').click();await page.locator('[data-files-review]').click();note('attachment-queue',{selected:await page.locator('[data-files-selected]').count()});
-    await page.locator('[data-files-send]').click();await until(()=>sent.length>0);await until(()=>page.locator('[data-files-send]').isDisabled());note('attachment-send',{sent:sent.length,operation:sent[0]});
+    const header=await page.locator('[data-files-head]').boundingBox(),send=await page.locator('[data-files-send]').boundingBox();
+    assert(send.y>=header.y&&send.y+send.height<=header.y+header.height+1,'Send stays in the top toolbar, clear of the home gesture');
+    await page.locator('[data-files-selected] [data-chat-file]').click();await page.locator('[data-file-preview] [data-file-view]').waitFor();await page.locator('[data-file-preview-close]').click();
+    await page.locator('[data-files-send]').click();await until(()=>sent.length>0);await sentToKeyboard();note('attachment-send',{sent:sent.length,operation:sent[0]});
   });
   await step('cancel-immediate-retry',async()=>{
+    await reopen();
     const file=panel().locator('input[type=file]:not([webkitdirectory])');await file.setInputFiles([{name:'retry-a.txt',mimeType:'text/plain',buffer:Buffer.from('a')},{name:'retry-b.txt',mimeType:'text/plain',buffer:Buffer.from('b')}]);
     let finishCancel;const ack=new Promise(r=>finishCancel=r);
     await page.unroute('**/term_drop_cancel');await page.route('**/term_drop_cancel',async r=>{cancelled.push(r.request().postDataJSON());await ack;await r.fulfill({json:null});});
@@ -84,15 +94,16 @@ try{
       await panel().getByRole('button',{name:word('term-drop-stop'),exact:true}).click();
       assert.equal(await page.locator('[data-files-send]').count(),0,'cancel exposed an early retry');
       await page.locator('[data-files-transfer][data-stopping]').waitFor();
-      assert.equal(await panel().getByRole('button',{name:word('term-drop-stop'),exact:true}).count(),0,'cancel can be repeated during cleanup');
+      assert.equal(await panel().getByRole('button',{name:word('term-drop-stop'),exact:true}).isDisabled(),true,'cancel cannot be repeated during cleanup');
       release();hold=null;await until(()=>forgotten.length>0);
       assert.equal(await page.locator('[data-files-send]').count(),0,'retry unlocked before cancellation acknowledgement');
       finishCancel();await page.locator('[data-files-send]').waitFor();await page.locator('[data-files-send]').click();
-      await until(()=>sent.length>=2);await until(()=>page.locator('[data-files-send]').isDisabled());
+      await until(()=>sent.length>=2);await sentToKeyboard();
       note('cancel-retry',{staged:staged.length,sent:sent.length,cancels:cancelled.length});
     }finally{release?.();hold=null;finishCancel?.();}
   });
   await step('empty-system-change',async()=>{
+    await reopen();
     await panel().locator('input[type=file]:not([webkitdirectory])').setInputFiles([]);
     assert.equal(await panel().getByText(word('files-empty-selection'),{exact:true}).count(),0,'empty change entered empty queue');note('empty-system-change',{emptyQueue:await panel().getByText(word('files-empty-selection'),{exact:true}).count(),sources:await page.locator('[data-files-machine]').count(),header:await panel().locator('h3').first().innerText()});
   });
