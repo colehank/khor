@@ -301,6 +301,25 @@ jobs:
       - if: runner.os == 'Windows'
         name: Install, launch and remove the Windows package
         run: python scripts/check-desktop-installer.py --package desktop-package/${{ matrix.filename }} --output desktop-package/proof.json
+      - name: Preserve compiled Windows programs and WiX diagnostics on failure
+        if: failure() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $proof = 'desktop-package/rebuild'
+          New-Item -ItemType Directory -Force $proof | Out-Null
+          $release = "target/$env:TARGET/release"
+          foreach ($file in @('khor.exe','khor-gui.exe')) {
+            $source = Join-Path $release $file
+            if (Test-Path $source) { Copy-Item $source $proof }
+          }
+          foreach ($directory in @('wix','bundle')) {
+            $source = Join-Path $release $directory
+            if (Test-Path $source) { Copy-Item -Recurse $source $proof }
+          }
+          if (Test-Path 'apps/gui/src-tauri/binaries') { Copy-Item -Recurse 'apps/gui/src-tauri/binaries' $proof }
+          if (Test-Path 'apps/agent/dist') { Copy-Item -Recurse 'apps/agent/dist' "$proof/agent" }
+          git rev-parse HEAD | Set-Content "$proof/source.txt"
+          Get-ChildItem -Recurse -File $proof | Get-FileHash | ConvertTo-Json | Set-Content "$proof/hashes.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
