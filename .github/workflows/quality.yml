@@ -573,6 +573,8 @@ jobs:
     steps:
       - name: Generate original tiny test media
         run: |
+          sudo apt-get -o Acquire::Retries=2 update
+          sudo apt-get -o Acquire::Retries=2 install -y --no-install-recommends ffmpeg
           mkdir -p "$RUNNER_TEMP/media-fixture"
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=24:duration=5' -an -c:v libx264 -preset fast -crf 32 -pix_fmt yuv420p -movflags +faststart "$RUNNER_TEMP/media-fixture/clip.mp4"
           ffmpeg -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:sample_rate=8000:duration=5' -c:a pcm_s16le "$RUNNER_TEMP/media-fixture/audio.wav"
