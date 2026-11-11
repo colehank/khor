@@ -59,7 +59,7 @@ try{
   await page.route('**/term_drop',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.paths,miss:null}});});
   await page.route('**/term_drop_items',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.items.map(x=>x.path),miss:null}});});
   await page.route('**/term_drop_cancel',r=>{cancelled.push(r.request().postDataJSON());return r.fulfill({json:null});});
-  await page.route('**/term_drop_forget',r=>{const {paths}=r.request().postDataJSON();if(paths.some(path=>path.endsWith('/preview-local.txt')))return r.fallback();forgotten.push(...paths);return r.fulfill({json:null});});
+  await page.route('**/term_drop_forget',r=>{const {paths}=r.request().postDataJSON();if(paths.some(path=>/\/(preview-local|folder-preview)\.txt$/.test(path)))return r.fallback();forgotten.push(...paths);return r.fulfill({json:null});});
   await page.route('**/term_drop_progress',r=>r.fulfill({json:null}));
   if(!(await page.locator('[data-deck-title]').isVisible()))await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();
   const keys=page.locator('[data-key-row-switch]:visible');if(await keys.getAttribute('aria-expanded')!=='true')await keys.click();await page.locator('[data-term-key=attach]:visible').click();await page.locator('[data-files-machine]').first().waitFor();
