@@ -131,6 +131,7 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
    if(mobile){
     await page.locator('[data-ws-sessions] [data-session-screen][data-deck-at="bottom"] [data-session-bar]:visible').waitFor();
     assert.equal(await page.locator('[data-ws-back]:visible').count(),0,'The session frame owns mobile navigation without an extra workspace back header');
+    assert.equal(await page.locator('[data-side-l0]:visible').count(),0,'Workspace session frames suppress the landing search header just like main sessions');
    }
    else assert.equal(await page.locator('[data-workspace-session-tabs] [data-tab-open^="delegated-session:"]').count(),1);
    await page.screenshot({path:path.join(report,`workspace-child-${mobile?'mobile':'desktop'}-${engine}.png`)});

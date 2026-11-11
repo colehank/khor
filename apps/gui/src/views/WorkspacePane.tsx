@@ -1101,7 +1101,7 @@ export function WorkspacePane({
     ];
   }
 
-  useFullScreen(narrow && screen === "file");
+  useFullScreen(narrow && (screen === "file" || screen === "sessions"));
   /** What the view hands back about its unsaved copy, for one file.
       **Nothing is written when nothing changed** (reported from an effect,
       `FileView`); typing pins a preview tab (「在里面打了字,就钉住」). */
