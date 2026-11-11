@@ -24,7 +24,7 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
  process.env.KHOR_FACE_GATE='1';
  vite=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:cache,optimizeDeps:{entries:[entry]},server:{host:'127.0.0.1',port,strictPort:true,hmr:false},logLevel:'error'});
  await vite.listen();
- browser=await chromium.launch({...(process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{}),headless:true,args:['--no-proxy-server']});
+ browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true,args:['--no-proxy-server']});
  const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
  await context.addInitScript(({officePreview,pdfPreview})=>{
   Object.defineProperty(navigator,'platform',{get:()=> 'iPhone'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5});

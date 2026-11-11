@@ -28,7 +28,7 @@ let server,browser,page;
 const errors=[];
 try {
   server=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:join(fixture,'.vite'),optimizeDeps:{entries:[join(fixture,'index.html')]},server:{host:'127.0.0.1',port:23839,strictPort:true,hmr:false},logLevel:'error'});await server.listen();
-  browser=await chromium.launch({headless:true,...(process.env.KHOR_TEST_CHROME?{channel:'chrome'}:{})});
+  browser=await chromium.launch({headless:true,channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined});
   page=await browser.newPage({viewport:{width:800,height:760},locale:'zh-CN'});page.on('pageerror',error=>errors.push(error.stack||error.message));
   await page.addInitScript(()=>{
     const callbacks=new Map();let next=1;
