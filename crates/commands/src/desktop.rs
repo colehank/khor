@@ -22,8 +22,32 @@ fn bundle_of_cli(cli: &Path) -> Option<PathBuf> {
         .then(|| app.to_path_buf())
 }
 
-/// A CLI delivered inside the signed Mac bundle is replaced with the App.
-/// Keep it out of the independent CLI runtime activation transaction.
+#[cfg(not(target_os = "macos"))]
+fn packaged_gui(cli: &Path) -> Option<PathBuf> {
+    let cli = std::fs::canonicalize(cli).ok()?;
+    let directory = cli.parent()?;
+    #[cfg(not(target_os = "windows"))]
+    if cli != Path::new("/usr/bin/khor") {
+        return None;
+    }
+    #[cfg(target_os = "windows")]
+    let (program, marker) = (directory.join("khor-gui.exe"), directory.join("cli-owner.json"));
+    #[cfg(not(target_os = "windows"))]
+    let (program, marker) = (directory.join("khor-gui"), PathBuf::from("/usr/share/khor/cli-owner.json"));
+    let ownership: serde_json::Value = serde_json::from_slice(&std::fs::read(marker).ok()?).ok()?;
+    if ownership["schema"] != 1 || ownership["component"] != "desktop-app" {
+        return None;
+    }
+    let app = updates::inspect(&program).ok()?;
+    let command = updates::program_info().ok()?;
+    (app.component == Component::DesktopApp
+        && app.build == command.build
+        && app.platform == command.platform
+        && app.contract == command.contract)
+        .then_some(program)
+}
+
+/// App-owned commands follow their application or system package installer.
 pub(super) fn owns_cli(cli: &Path) -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -31,8 +55,7 @@ pub(super) fn owns_cli(cli: &Path) -> bool {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = cli;
-        false
+        packaged_gui(cli).is_some()
     }
 }
 
@@ -65,12 +88,17 @@ fn installed_apps(cli: &Path) -> Vec<PathBuf> {
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
         let mut apps = Vec::new();
+        if let Ok(cli) = std::fs::canonicalize(cli)
+            && let Some(directory) = cli.parent()
+        {
+            apps.push(directory.join("khor-gui"));
+        }
         if let Some(home) = std::env::var_os("HOME") {
             apps.push(PathBuf::from(home).join(".local/lib/khor/khor-gui"));
         }
         apps.push(PathBuf::from("/usr/lib/khor/khor-gui"));
+        apps.push(PathBuf::from("/usr/bin/khor-gui"));
         apps.push(PathBuf::from("/opt/Khor/khor-gui"));
-        let _ = cli;
         apps
     }
 }

@@ -3,7 +3,10 @@ use khor_node::updates::{self, Channel, UpgradeRequest};
 pub(super) fn run(args: &[String]) -> Result<(), String> {
     let (machine, request, json) = parse(args)?;
     if machine.is_none() && super::desktop::owns_cli(&khor_node::installed_exe()?) {
+        #[cfg(target_os = "macos")]
         return Err(khor_catalog::msg::gui_app_upgrade().into());
+        #[cfg(not(target_os = "macos"))]
+        return Err(khor_catalog::msg::gui_package_upgrade().into());
     }
     let result = if let Some(machine) = machine {
         let node = super::node()?;

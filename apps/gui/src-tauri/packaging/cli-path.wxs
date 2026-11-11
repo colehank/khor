@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="KhorCliPath" Guid="E0DD4BED-D84F-4415-BD31-93080357AA32">
+        <RegistryValue Root="HKCU" Key="Software\Khor" Name="CliPath" Value="[INSTALLDIR]" Type="string" KeyPath="yes" />
+        <Environment Id="KhorCliEnvironment" Name="PATH" Value="[INSTALLDIR]" Action="set" Part="last" System="no" Permanent="no" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>
