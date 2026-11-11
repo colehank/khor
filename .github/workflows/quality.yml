@@ -56,8 +56,29 @@ jobs:
             (target/'khor-windows-x86_64.msi').write_bytes(source.read(matches[0]))
           # Diagnostics only: retain the real MSI log without changing its actions.
           checker=pathlib.Path('scripts/check-desktop-installer.py')
-          text=checker.read_text().replace('"/qn", "/norestart",','"/qn", "/norestart", "/L*V", str(Path("windows-install/install.log").resolve()),').replace('"/qn", "/norestart"]','"/qn", "/norestart", "/L*V", str(Path("windows-install/uninstall.log").resolve())]')
-          checker.write_text(text.replace('timeout=600','timeout=180'))
+          text=checker.read_text()
+          start=text.index('            result = subprocess.run(["msiexec.exe", "/i"')
+          end=text.index('            assert result.returncode',start)
+          text=text[:start]+'            result = invoke_msi("/i", package, destination)\n'+text[end:]
+          start=text.index('                result = subprocess.run(["msiexec.exe", "/x"')
+          end=text.index('                assert result.returncode',start)
+          text=text[:start]+'                result = invoke_msi("/x", package)\n'+text[end:]
+          helper='''def invoke_msi(action, package, destination=None):
+              executable=Path(os.environ["SystemRoot"])/"System32/msiexec.exe"
+              log=Path("windows-install/install.log" if action=="/i" else "windows-install/uninstall.log").resolve()
+              command=f'"{executable}" {action} "{package}" /qn /norestart /L*V "{log}"'
+              if destination is not None: command+=f' INSTALLDIR="{destination}"'
+              print("MSI command",command,flush=True)
+              try: return subprocess.run(command,timeout=180)
+              finally:
+                  diagnostic=subprocess.run(["powershell.exe","-NoProfile","-Command","Get-CimInstance Win32_Process | Where-Object Name -match 'msiexec' | Select-Object Name,ProcessId,CommandLine | ConvertTo-Json"],capture_output=True,text=True,timeout=20)
+                  Path("windows-install/processes.json").write_text(diagnostic.stdout)
+          '''
+          # MSI parses PROPERTY="value with spaces", unlike CRT argv quoting
+          # which surrounds the entire PROPERTY=value argument.
+          import textwrap
+          text=text.replace('def windows(package, expected_source):',textwrap.dedent(helper)+'\n\ndef windows(package, expected_source):')
+          checker.write_text(text)
           PYCODE
           python scripts/check-desktop-installer.py --package windows-install/khor-windows-x86_64.msi --expected-source 6ffcd3d3b437495f86005539175a72a54ea081a2 --output windows-install/proof.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
