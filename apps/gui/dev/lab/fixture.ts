@@ -236,8 +236,6 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     notes:'',received:0,total:null,checked_at:null,failure:null,retry:undefined,blocked:[],companions:[],restart_required:false,
     preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
   const resourcePreviews=new Map<string,string>();let resourceSequence=0;
-  const version=document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
-  const resourceBase=location.origin+(version?'/versions/'+version:'')+'/assets/preview-fixtures/media/';
   let updateMode='current';
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];
@@ -276,6 +274,11 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       if (pairing.handles(path)) return structuredClone(pairing.request(path, body));
       if(path==='__ai_preview/resource-state')return {active:resourcePreviews.size};
       if(path==='file_resource_open') {
+        // This fixture is also constructed by the Node quality preview bridge.
+        // DOM/blob resources belong to the browser-side App Lab only.
+        if(typeof document==='undefined')throw new FixtureRefusal('Open media in the frontend App Lab browser');
+        const version=document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
+        const resourceBase=location.origin+(version?'/versions/'+version:'')+'/assets/preview-fixtures/media/';
         const name=String(body.path).split('/').pop();
         if(!['preview.html','clip.mp4','audio.wav'].includes(name??''))throw new FixtureRefusal('No browser resource fixture for this file');
         const id='lab-resource-'+ ++resourceSequence;
