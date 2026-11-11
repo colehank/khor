@@ -9,12 +9,12 @@ import "../styles/story.css";
 const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But", "one mind."], ["How about letting", "them work together?"], ["Meet", "Khor."]];
 ---
 <Base description="连接各台设备上的智能体、网页与文件，从手边的设备继续工作">
-  <a class="skip-story" href="#experience">跳过开场</a>
-  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="#experience">体验</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
+  <a class="skip-story" href="#features">跳过开场</a>
+  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="#features">功能</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
   <main class="story-home">
     <section class="opening" aria-label="认识 khor" data-opening>
-      <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
       <div class="opening-sticky">
+        <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
         <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <p class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><span>{lead}</span><br />{phrase}</p>)}</div>
         <h1 class="sr-only">You have many devices. With many harnesses. But one mind. How about letting them work together? Meet Khor.</h1>
         <div class="assembly" data-assembly><Mandala /></div>
@@ -22,24 +22,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
         <nav class="story-steps" aria-label="开场章节">{lines.map(([, phrase], index) => <button type="button" aria-label={`跳到 ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
       </div>
     </section>
-    <section class="handoff" id="experience" aria-labelledby="handoff-title" data-handoff>
-      <div class="handoff-sticky">
-        <div class="handoff-copy"><h2 id="handoff-title"><span data-desktop-title>Meet Khor.</span><span data-phone-title>Keep going.</span></h2><p class="handoff-caption"><span data-desktop-caption>打开 khor，看看你的智能体在做什么</span><span data-phone-caption>合上电脑，在手机上接着做</span></p></div>
-        <div class="device-stage" data-device-stage>
-          <div class="laptop" aria-hidden="true"><div class="laptop-lid"><div class="camera"></div></div><div class="laptop-base"><div class="laptop-notch"></div></div></div>
-          <div class="phone" aria-hidden="true"><div class="phone-island"></div><div class="phone-home"></div></div>
-          <dialog class="screen" data-screen open aria-label="khor 交互体验">
-            <iframe title="khor 交互体验，使用示例数据" data-demo-frame data-src="/experience/app/index.html?scene=gui&amp;items=3&amp;machines=3&amp;theme=light" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" loading="lazy"></iframe>
-            <button class="launch-khor" type="button" data-launch><img src={icon.src} alt="" width="112" height="112" /><span>打开 khor</span></button>
-            <button class="close-expanded" type="button" data-close-expanded hidden>收起体验 ×</button>
-            <div class="demo-loading" role="status" hidden data-demo-loading>正在打开 khor…</div>
-            <svg class="demo-cursor" viewBox="0 0 28 36" aria-hidden="true"><path d="M3 2v27l7-7 6 11 5-3-6-10h10z" /></svg>
-          </dialog>
-        </div>
-        <div class="experience-actions"><p>真实界面 · 示例数据</p><button type="button" class="text-action" data-fullscreen>展开体验 <span aria-hidden="true">↗</span></button><button type="button" class="text-action" data-reset>重新开始</button></div>
-      </div>
-    </section>
-    <section class="resource-story" aria-labelledby="resources-title">
+    <section class="resource-story" id="features" aria-labelledby="resources-title">
       <div class="resource-intro"><p class="eyebrow">From wherever you are.</p><h2 id="resources-title">设备上的工作，<br />手边接着做。</h2></div>
       <div class="resource-lines">
         <a href="/experience/app/index.html?scene=gui&amp;items=3&amp;machines=3&amp;theme=light"><span>智能体</span><p>查看进展、处理审批，让不同设备上的智能体协作</p><span aria-hidden="true">↗</span></a>
@@ -56,7 +39,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
   </main>
   <footer class="story-footer"><Mark /><span>坛城（Kyil-khor），意为连接</span><nav><a href="/docs/">文档</a><a href={REPO}>GitHub</a></nav></footer>
 
-  <noscript><style>.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}.handoff{height:auto}.handoff-sticky{position:relative}</style><p class="no-script">开启 JavaScript 可观看动效与体验界面。<a href="/download/">下载 khor</a></p></noscript>
+  <noscript><style>.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">开启 JavaScript 可观看动效。<a href="/download/">下载 khor</a></p></noscript>
 </Base>
 <script>
   import { mountStory } from "../scripts/story";

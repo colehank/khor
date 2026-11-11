@@ -7,26 +7,23 @@ const poses:IconPose[] = [
   {...resting,presence:1,harness:1,mind:1,focus:1,connection:1},
   {...resting,presence:1,harness:1,mind:1,focus:1,connection:1,light:1},
 ];
-const duration = [840,700,900,1200,1500];
+export const iconStops = [0,.22,.44,.66,.88];
 
-/** A chapter has one target pose and one uninterrupted transition into it. */
+/** Every scroll position resolves to a pose; there is no chapter playback clock. */
 export function createIconMotion(host:HTMLElement) {
   const paint=animateIcon(host);
-  let current={...resting},from={...resting};
-  let scene=-1,started=0,settled=false;
-  return (requested:number,now:number,reduced:boolean,tile=0)=>{
-    // A direct jump still connects the simple circle before the light enters.
-    const next=!reduced&&requested===4&&current.connection<1?3:requested;
-    if(next!==scene){from={...current};scene=next;started=now;settled=false;}
-    const time=reduced?1:clamp((now-started)/duration[scene]);
-    const t=time===1?1:1-Math.pow(1-time,3);
-    for(const key of Object.keys(current) as (keyof IconPose)[])current[key]=from[key]+(poses[scene][key]-from[key])*t;
-    if(time===1){current={...poses[scene]};settled=true;}
-    paint(current,tile);
-    host.dataset.iconScene=['devices','harnesses','mind','together','meet'][requested];
-    host.dataset.iconMotion=settled&&scene===requested?'settled':'running';
+  return (progress:number,reduced:boolean)=>{
+    const phase=Math.min(poses.length-1,clamp(progress)/iconStops[1]);
+    const from=Math.floor(phase),to=Math.min(from+1,poses.length-1);
+    const current={...poses[from]};
+    const t=reduced?Math.round(phase-from):phase-from;
+    for(const key of Object.keys(current) as (keyof IconPose)[])current[key]+=(poses[to][key]-current[key])*t;
+    paint(current);
+    host.dataset.iconScene=['devices','harnesses','mind','together','meet'][Math.round(phase)];
+    host.dataset.iconMotion='scrubbed';
+    host.dataset.iconProgress=String(progress);
     host.dataset.iconColor=String(current.light);
-    return {settled:settled&&scene===requested,color:current.light};
+    return {phase,color:current.light};
   };
 }
 
@@ -45,7 +42,7 @@ export function animateIcon(host:HTMLElement) {
   const art=svg?.querySelector<SVGGElement>('g[transform="translate(2.6 .88) scale(.9922)"]');
   if(!svg||!art)throw new Error('The canonical khor icon layer contract has changed');
   const children=[...art.children];
-  // Let the icon's own environment fill the scene before it becomes an app tile.
+  // Let the icon's own environment fill the scene without a square tile edge.
   // Only the background is projected; the evolving mark remains the same SVG.
   const environment=host.closest('[data-opening]')?.querySelector('[data-meet-environment]');
   if(environment){
@@ -140,14 +137,15 @@ export function animateIcon(host:HTMLElement) {
   const light=lightMask('story-light');
   const unlit=lightMask('story-unlit',true);
   const ground=[...svg.children].filter(el=>el!==defs&&el!==art);
-  const litLayers=[outer,diamond,...ground,...innerLight];
+  ground.forEach(node=>(node as SVGElement).style.opacity='0');
+  const litLayers=[outer,diamond,...innerLight];
   const opacity=new Map(litLayers.map(node=>[node,Number(node.getAttribute('opacity')??1)]));
   const style=(node:Element,values:Record<string,string|number>)=>{for(const [key,value]of Object.entries(values))(node as SVGElement).style.setProperty(key,String(value));};
-  return (pose:IconPose,tile=0)=>{
+  return (pose:IconPose)=>{
     const front=-256+1440*pose.light;
     for(const gradient of [light,unlit])gradient.setAttribute('gradientTransform',`translate(${front} ${front})`);
     for(const layer of litLayers){
-      style(layer,{opacity:pose.light===0?0:opacity.get(layer)!*(ground.includes(layer)?tile:1)});
+      style(layer,{opacity:pose.light===0?0:opacity.get(layer)!});
       if(pose.light===1)layer.removeAttribute('mask');else layer.setAttribute('mask','url(#story-light)');
     }
     for(const line of [connection,diamondEdge]){
@@ -173,7 +171,6 @@ export function animateIcon(host:HTMLElement) {
       style(overlays[0][i],{opacity:pose.presence*(1-pose.harness)*(1-pose.focus)});
       style(overlays[1][i],{opacity:pose.presence*pose.harness*(1-pose.focus)});
     });
-    host.dataset.iconTile=String(tile);
     if(!ready){canvas.dataset.iconReady='';ready=true;}
   };
 }
