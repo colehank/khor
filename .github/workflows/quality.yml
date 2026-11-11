@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts]
         default: sync
       desktop_target:
         type: choice
@@ -263,3 +263,30 @@ jobs:
           name: desktop-package-${{ matrix.target }}
           path: desktop-package/
           if-no-files-found: warn
+
+  scripts:
+    if: inputs.slice == 'scripts'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+      - if: always()
+        run: cargo fmt --all && git diff --binary > "$RUNNER_TEMP/format.patch"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: script-verification
+          path: ${{ runner.temp }}/format.patch
