@@ -31,9 +31,15 @@ fn packaged_gui(cli: &Path) -> Option<PathBuf> {
         return None;
     }
     #[cfg(target_os = "windows")]
-    let (program, marker) = (directory.join("khor-gui.exe"), directory.join("cli-owner.json"));
+    let (program, marker) = (
+        directory.join("khor-gui.exe"),
+        directory.join("cli-owner.json"),
+    );
     #[cfg(not(target_os = "windows"))]
-    let (program, marker) = (directory.join("khor-gui"), PathBuf::from("/usr/share/khor/cli-owner.json"));
+    let (program, marker) = (
+        directory.join("khor-gui"),
+        PathBuf::from("/usr/share/khor/cli-owner.json"),
+    );
     let ownership: serde_json::Value = serde_json::from_slice(&std::fs::read(marker).ok()?).ok()?;
     if ownership["schema"] != 1 || ownership["component"] != "desktop-app" {
         return None;

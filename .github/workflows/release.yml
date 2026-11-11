@@ -69,6 +69,7 @@ jobs:
         with:
           bun-version: 1.3.14
       - name: Build and record the target Pi runtime once
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: |
