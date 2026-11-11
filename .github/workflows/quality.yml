@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, windows-install, published-rollback]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback]
         default: sync
       frontend_run:
         type: string
@@ -353,7 +353,7 @@ jobs:
           if-no-files-found: error
 
   package-frontend:
-    if: inputs.slice == 'desktop-package' || inputs.slice == 'mac-package' || inputs.slice == 'gui-regression' || inputs.slice == 'recents' || inputs.slice == 'updates'
+    if: inputs.slice == 'desktop-package' || inputs.slice == 'mac-package' || inputs.slice == 'gui-regression' || inputs.slice == 'recents' || inputs.slice == 'updates' || inputs.slice == 'frontend-only'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -376,10 +376,16 @@ jobs:
           node-version: 22.19.0
       - run: npm ci --prefix apps/gui
       - run: npm run build --prefix apps/gui
+      - name: Generate canonical Lab data and check native formatting
+        if: inputs.slice == 'frontend-only'
+        run: |
+          python3 scripts/khor_lab/fixture_data.py .
+          cargo fmt --all --check
       - run: |
           mkdir -p frontend
           cp -R apps/gui/dist frontend/dist
           cp -R apps/gui/src/gen frontend/gen
+          if [ -f apps/gui/dev/lab/data/world.generated.json ]; then cp apps/gui/dev/lab/data/world.generated.json frontend/lab-world.generated.json; fi
           python3 scripts/release_manifest.py create --root frontend --kind frontend
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
