@@ -60,7 +60,7 @@ try{
         const root=document.querySelector('[data-new-tab]'),box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};};
         const rows=[...root.querySelectorAll('[data-place]')].map(open=>{
          const close=open.parentElement.querySelector('[data-forget-place]'),r=close.getBoundingClientRect();
-         return {open:box(open),close:box(close),glyph:box(close.querySelector('svg')),hit:close.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};
+         return {open:box(open),name:box(open.querySelector('[data-recent-name]')),close:box(close),glyph:box(close.querySelector('svg')),hit:close.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};
         });
         return {root:box(root),client:root.clientWidth,scroll:root.scrollWidth,body:document.documentElement.scrollWidth,viewport:innerWidth,rows};
        });
@@ -71,7 +71,9 @@ try{
         assert(row.close.left>=geometry.root.left&&row.close.right<=geometry.root.right+1,'The entire close target stays inside the list');
         assert(row.glyph.left>=row.close.left&&row.glyph.right<=row.close.right,'The close glyph stays inside its own hit area');
         assert(row.hit,'The close target must be hit-testable');
+        if(width<=264)assert(row.name.width>row.open.width/2,'Compact recents reserve the readable text area for the destination');
        }
+       if(width===200||width===900)await page.screenshot({path:join(out,name+'.png')});
        const first=page.locator('[data-place]').first(),place=await first.getAttribute('data-place'),device=await first.getAttribute('data-place-device');
        await first.click();assert.deepEqual(await page.evaluate(()=>window.opened),[{device,place}]);
        await page.locator('[data-forget-place]').first().click();
@@ -79,7 +81,6 @@ try{
        assert.equal((await page.evaluate(()=>window.forgotten))[0].place,place);
        assert.equal((await page.evaluate(()=>window.opened)).length,1,'Closing must not also navigate');
        results.push({name,passed:true,geometry});
-       if(width===200)await page.screenshot({path:join(out,name+'.png')});
       }catch(error){failures.push({name,error:String(error)});await page.screenshot({path:join(out,name+'-failure.png')});}
      }
      assert.deepEqual(errors,[]);

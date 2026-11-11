@@ -95,7 +95,7 @@ export function NewTabPage({
   if (rows.length === 0) return <div data-no-places className="h-full" />;
 
   return (
-    <div data-new-tab className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-2">
+    <div data-new-tab className="@container/recent min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-2">
       {rows.map((place, i) => {
         const first = i === 0;
         const leaf = kind.leafOf(place.place);
@@ -127,20 +127,21 @@ export function NewTabPage({
                 className="flex min-h-touch min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left"
               >
                 <MachineAvatar face={face} className="size-kind-mark flex-none" />
-                {/* The containing column, not the viewport, decides how
-                    much text fits. Every text slot yields before the
-                    separate close target, including on a wide desktop. */}
-                <span title={leaf} className="min-w-0 truncate text-callout font-label">{leaf}</span>
-                <span title={place.name} className="min-w-0 truncate text-caption text-muted-foreground">{place.name}</span>
+                {/* The column decides how much detail fits. Keep the
+                    destination readable before offering its metadata;
+                    the close target retains its own separate slot. */}
+                <span data-recent-name title={leaf} className="min-w-0 flex-1 truncate text-callout font-label">{leaf}</span>
+                <span data-recent-machine title={place.name} className="hidden min-w-0 max-w-[var(--tab-w)] truncate text-caption text-muted-foreground @min-xl/recent:block">{place.name}</span>
                 <span
+                  data-recent-address
                   title={place.place}
-                  className="min-w-0 flex-1 truncate text-caption text-muted-foreground"
+                  className="hidden min-w-0 flex-1 truncate text-caption text-muted-foreground @min-3xl/recent:block"
                 >
                   {place.place}
                 </span>
                 {/* How lately, on the rows that have a "lately". */}
                 {place.at_ms !== null && (
-                  <span className="min-w-0 truncate text-caption tabular-nums text-muted-foreground">
+                  <span data-recent-age className="hidden flex-none text-caption tabular-nums text-muted-foreground @min-sm/recent:block">
                     {ago(place.at_ms)}
                   </span>
                 )}

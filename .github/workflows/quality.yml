@@ -507,6 +507,7 @@ jobs:
             ${{ runner.temp }}/khor-conversations-ui-evidence
             ${{ runner.temp }}/khor-list-scroll-evidence
             ${{ runner.temp }}/quality-file-handoff
+            ${{ runner.temp }}/quality-recent-places-ui
             ${{ runner.temp }}/quality-quicklook
             ${{ runner.temp }}/quality-file-pdf-ui
             ${{ runner.temp }}/quality-scroll
