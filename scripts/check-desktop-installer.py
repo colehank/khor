@@ -170,6 +170,17 @@ def macos(package, expected_source):
             run("sudo", "/usr/sbin/pkgutil", "--forget", mac_installer.IDENTIFIER)
 
 
+def invoke_msi(action, package, destination=None):
+    executable = Path(os.environ["SystemRoot"]) / "System32/msiexec.exe"
+    log = package.with_suffix(".install.log" if action == "/i" else ".uninstall.log")
+    # MSI has its own parser: quote the property value, not PROPERTY=value
+    # as one CRT argv element. The latter opens an invisible usage dialog.
+    command = f'"{executable}" {action} "{package}" /qn /norestart /L*V "{log}"'
+    if destination is not None:
+        command += f' INSTALLDIR="{destination}"'
+    return subprocess.run(command, timeout=600)
+
+
 def windows(package, expected_source):
     import winreg
     with tempfile.TemporaryDirectory(prefix="khor-desktop-") as temporary:
@@ -186,8 +197,7 @@ def windows(package, expected_source):
             winreg.SetValueEx(key, "Path", 0, kind, before)
         installed = False
         try:
-            result = subprocess.run(["msiexec.exe", "/i", str(package), "/qn", "/norestart",
-                                     "INSTALLDIR=" + str(destination)], timeout=600)
+            result = invoke_msi("/i", package, destination)
             assert result.returncode in (0, 3010), result.returncode
             installed = True
             proof = same_programs(destination, expected_source)
@@ -201,7 +211,7 @@ def windows(package, expected_source):
             return proof
         finally:
             if installed:
-                result = subprocess.run(["msiexec.exe", "/x", str(package), "/qn", "/norestart"], timeout=600)
+                result = invoke_msi("/x", package)
                 assert result.returncode in (0, 3010), result.returncode
                 assert not (destination / "khor.exe").exists()
                 with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
