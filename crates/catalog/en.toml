@@ -1752,6 +1752,8 @@ journal-why-punched = "{0} round(s) of hole punching, none of its candidates ans
 
 [gui]
 child_tasks = "Child tasks"
+child_sessions = "Child sessions"
+child_sessions_collapse = "Collapse"
 child_task_agents = "Agents"
 child_tasks_empty = "No child tasks yet"
 child_task_waiting = "Waiting for input"

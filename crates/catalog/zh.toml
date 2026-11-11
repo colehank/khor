@@ -2716,6 +2716,8 @@ journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 
 [gui]
 child_tasks = "子任务"
+child_sessions = "子会话"
+child_sessions_collapse = "收起"
 child_task_agents = "委派"
 child_tasks_empty = "还没有子任务"
 child_task_waiting = "等待输入"

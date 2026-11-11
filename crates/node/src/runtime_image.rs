@@ -57,8 +57,9 @@ fn current() -> Result<Info, String> {
     // terminals and published residents retain their compatibility contract.
     // Every other source revision keeps its own fingerprint and fails closed.
     let compatible_fingerprint = match fingerprint.as_str() {
-        "f317c5ec5fa618a54ef5848016cc23219c37cbc39d6abd52cd4b361526d21f29" =>
-            "7bdf9a8cedcc26b783f3a6714899df875cbcb429e2f1ee64aa5a7d065e75fcda",
+        "f317c5ec5fa618a54ef5848016cc23219c37cbc39d6abd52cd4b361526d21f29" => {
+            "7bdf9a8cedcc26b783f3a6714899df875cbcb429e2f1ee64aa5a7d065e75fcda"
+        }
         other => other,
     };
     Ok(Info {
