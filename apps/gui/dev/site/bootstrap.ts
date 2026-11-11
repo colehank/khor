@@ -1,6 +1,6 @@
 import {createSiteFixture} from './fixture';
 import {configureLabBackend} from '../lab/backend-context';
-import {scenes,sessionIds,type Scene} from '../lab/scenes';
+import {scenes,type Scene} from '../lab/scenes';
 import {projects,tasks} from './world';
 import {constrainDemoInteractions} from './interaction';
 import {setSessionSide,setSideWidth} from '../../src/hooks/use-session-side';
@@ -16,12 +16,12 @@ const requested = query.get('scene') ?? 'gui';
 const hero=query.get('hero')==='1';
 if (!(requested in scenes)) throw new Error('Unknown demo scene');
 const scene = scenes[requested as Scene];
-const active = scene.session ?? sessionIds[0];
-const identity = `site-v5/${hero?'hero':requested}`;
+const active = hero||requested==='gui'||requested==='content'?tasks[0].id:scene.session??tasks[0].id;
+const identity = `site-v6/${hero?'hero':requested}`;
 if(localStorage.getItem('khor.site.identity')!==identity){
   localStorage.setItem('khor.site.identity',identity);
   localStorage.setItem('khor.lang','zh');
-  localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:[active,...sessionIds.filter(id=>id!==active)].slice(0,3),active}));
+  localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:[active,...tasks.map(task=>task.id).filter(id=>id!==active)].slice(0,3),active}));
   const landing=['workspace','workspaces'].includes(requested)?'workspaces':requested==='devices'?'devices':'sessions';
   localStorage.setItem('khor.place',JSON.stringify({landing,screen:'list'}));
 }
@@ -82,7 +82,7 @@ window.fetch=async(input,init)=>{
 window.addEventListener('pagehide',()=>fixture.dispose(),{once:true});
 const enter=()=>{
   if(scene.row){
-    const row=[...document.querySelectorAll<HTMLElement>('[data-list] [data-row-open]')].find(el=>el.closest('[data-row]')?.getAttribute('data-row')===scene.session);
+    const row=[...document.querySelectorAll<HTMLElement>('[data-list] [data-row-open]')].find(el=>el.closest('[data-row]')?.getAttribute('data-row')===active);
     if(row){row.click();if(hero)setSessionSide(active,{open:true,seat:'workspace'});observer.disconnect();}
   }else if(requested==='workspace'){
     const file=document.querySelector<HTMLElement>('[data-file-path="'+projects[0].root+'/README.md"]');

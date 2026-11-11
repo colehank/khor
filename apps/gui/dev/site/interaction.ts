@@ -14,6 +14,7 @@ const unavailable=[
   '[data-file-refresh]','[data-file-reread]','[data-file-save]','[data-tab-act]',
   '[data-workspace-view]','[data-content-commit-location]',
   '[data-link]',
+  '[data-khor-agent-turn] button','[data-khor-agent-settings]',
 ].join(',');
 
 export function constrainDemoInteractions() {

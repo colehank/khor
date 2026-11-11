@@ -2,7 +2,7 @@ import {exportAfter,exportBefore,machines,meeting,roots,tasks,terminalScreen} fr
 
 const update = (sessionUpdate: string, values: Record<string, unknown>) => ({kind:'note',update:{update:{sessionUpdate,...values}}});
 const text = (type: string, value: string) => update(type,{content:{type:'text',text:value}});
-const boot = {kind:'agent',name:'Claude',replays:true,needs_login:false,images:false,embeds:false,lists:false};
+const boot = {kind:'agent',name:'Khor',replays:true,needs_login:false,images:false,embeds:false,lists:false};
 const user=(value:string)=>text('user_message_chunk',value);
 const agent=(value:string)=>text('agent_message_chunk',value);
 const turn={kind:'turn',stop:'EndTurn'};
@@ -48,7 +48,7 @@ export const scenario = {
       tool('payment-check','检查重复与并发回调','npm test -- payment','PASS payment callbacks\nnormal payment: 1 record\nreplayed payment: 1 record\n8 concurrent callbacks: 1 record\ninvalid signature: rejected'),
       agent('重复通知会返回成功，但不会再次入账。8 个并发回调最终也只保留 1 条记录。签名校验失败仍返回 401，没有绕过原来的校验。\n\n改动和检查结果在 `src/payment.ts`、`prisma/schema.prisma` 和 `docs/回调检查.md`。'),
     ],
-    [{...boot,name:'Khor'},
+    [{...boot,name:'Claude'},
       user('帮我把刚才远航的周会记录整理一下：首批 3 个部门，反馈 18 条，处理了 14 条。下周二加 2 个部门试用。林晨发名单模板和培训邀请，陈蕾补权限说明，小周确认导出日期，赵明收剩下的问题。审批人和培训时间还没确认。'),
       agent('已整理到「远航项目周会.md」，并把你负责的事项放进「本周待办.md」。\n\n'+meeting.replace('# 远航项目周会纪要\n\n','')),turn,
       user('名单模板今天 16 点发，培训邀请等时间定了再发。两件没确认的事给我单独留着。'),

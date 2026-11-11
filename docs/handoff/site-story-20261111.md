@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 用户进一步纠正「展示 Khor GUI，而不是 Claude」：此前首项虽在 Khor App 外壳里，实际仍为 Claude ACP 会话。已将首项改为 `wide/all` 内置 Khor，会话用真实 `MachineChat`、`KhorHeader` 和 `KhorAgentResult` 渲染本地命令回执，模型为 GPT-5.4；其他四项保留 Cursor、Codex、Claude、Shell 类型。三标签、右侧 Markdown、固定下载回复与不灰化的限制继续保持，首图同步更新。
+- 导航清晰度修订：移除整个 iframe 外层的 transform scale，改为 CSS zoom 参与布局，避免玻璃与 SVG 图层先合成后缩小。Chrome 已对比静止、按下、松开三态；实际鼠标按屏幕坐标切到机器页再返回成功，Khor 内置会话有两轮记录，发送后得到固定下载回复，页面错误为空。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/khor-gui`；没有扩大浏览器测试矩阵。
 - 2026-11-12 最新范围：保留真实 Khor GUI，用户已撤回 Claude Code TUI 要求。机器、会话、额度和工作区各只开放第一项；会话、资源侧栏和工作区显示三个标签，只保留当前选中项可用；「…」及复杂操作不开放。不可点项保持正常颜色和不透明度，不做灰化。主会话仍可发送消息并获得固定下载回复。
 - 网站数据收拢为 `world.ts` 的有限自洽世界，列表、对话、项目路径、文件内容与 Git 修改数引用同一来源。主任务为订单导出日期与列名修复，三个未提交文件、8 项示例测试结果与 Markdown 记录一致；其余列表展示报销校验、支付回调、周会纪要等普通任务。第一台 MacBook Pro 补齐 CPU/GPU/内存/磁盘仪表、日趋势和进程；额度扩至六个正常账户名。右侧和首个工作区直接展示包含表格、代码、清单的富 Markdown；网站 FileView alias 仅改变默认阅读姿态，生产 App 源码不改。
 - Chrome 聚焦检查已确认四类列表仅第一项可点、三标签固定当前、所有不可点项 opacity=1、首个工作区的 Markdown 与固定下载回复正常，页面错误为空。演示类型检查、演示打包与 Astro 静态构建通过，首图按新场景更新深浅两张 WebP（合计约 508KB）。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/coherent-demo/focused.json` 及同目录截图；未扩展 WebKit 或原生验证。

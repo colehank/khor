@@ -12,10 +12,10 @@ export const machines=[
 
 export const roots={web:'/Users/lin/Projects/atlas-web',api:'/home/lin/atlas-api',office:'/Users/lin/Documents/工作',expense:'C:/Users/Lin/Projects/expense-portal'};
 export const tasks=[
-  {id:'gui/ai-elements-review',title:'修复订单导出的日期偏移',category:'claude',machine:0,root:roots.web,preview:'已修复时区和列名，8 项测试通过',minutes:3},
+  {id:'wide/all',title:'修复订单导出的日期偏移',category:'khor',machine:0,root:roots.web,preview:'已修复时区和列名，8 项测试通过',minutes:3},
   {id:'gui/ai-elements-plan',title:'报销表单增加附件校验',category:'cursor',machine:3,root:roots.expense,preview:'超过 500 元时要求上传发票',minutes:12},
   {id:'gui/ai-elements-stream',title:'支付回调的幂等性检查',category:'codex',machine:1,root:roots.api,preview:'同一笔交易重复回调只入账一次',minutes:28},
-  {id:'gui/codex-review',title:'整理远航项目周会纪要',category:'khor',machine:2,root:roots.office,preview:'已整理 5 项待办和 2 个待确认问题',minutes:46},
+  {id:'gui/codex-review',title:'整理远航项目周会纪要',category:'claude',machine:2,root:roots.office,preview:'已整理 5 项待办和 2 个待确认问题',minutes:46},
   {id:'shell/layout-lab',title:'atlas-web',category:'shell',machine:0,root:roots.web,preview:'npm test -- export',minutes:65},
 ] as const;
 

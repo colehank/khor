@@ -11,6 +11,8 @@ import type {DirRow} from '../../src/gen/bindings/DirRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
 import type {WorkspaceRow} from '../../src/gen/bindings/WorkspaceRow';
 import type {AccountRing} from '../../src/gen/bindings/AccountRing';
+import type {ChatMsgRow} from '../../src/gen/bindings/ChatMsgRow';
+import type {KhorAgentView} from '../../src/gen/bindings/KhorAgentView';
 
 export function createSiteFixture(origin:string) {
   const base=createLabFixture(true,{...scenario,reply:`Let's try Khor, [download it here.](${origin}/download/)`,origin,settings:true,items:3,machines:machines.length});
@@ -33,6 +35,29 @@ export function createSiteFixture(origin:string) {
       }},
     };
   });
+  // The first session is the App's own Khor conversation (MachineChat),
+  // backed by durable command receipts, rather than an ACP/Claude chat.
+  const model='gpt-5.4';
+  const agentView=(data:unknown=null):KhorAgentView=>({
+    config:{home:devices[0].id,account:'site-openai',model,options:{thought_level:'medium',auto_compaction:true}},
+    accounts:[{id:'site-openai',name:'OpenAI API',home:devices[0].id,home_name:devices[0].name,provider:'openai',default_model:model,configured:true,base_url:null,auth_type:'api_key'}],
+    run:null,data,
+  });
+  const messages:ChatMsgRow[]=[];
+  const receipt=(line:string,time:number):ChatMsgRow=>{
+    const id='site-khor-'+(messages.length+1);
+    return {id,at_ms:time,from:devices[0].name,from_me:true,text:null,files:null,unknown:null,retracted:false,edited:false,
+      step:null,moved:0,landed:[],why:null,got:null,of:null,via:null,to:[],note:null,pushed:false,
+      command:{id,line,owner:devices[0].id,owner_name:devices[0].name,status:'done',started_at_ms:time,ended_at_ms:time+1200,
+        stdout:'',stderr:'',data_json:null,session:null,error:null,agent:{model,approval:null,updated_at_ms:time+1200,updates:[],updates_truncated:false}}};
+  };
+  for(const frame of scenario.samples[0]){
+    const update=(frame as {update?:{update?:{sessionUpdate:string;content?:{text?:string}}}}).update?.update;
+    if(!update)continue;
+    if(update.sessionUpdate==='user_message_chunk')messages.push(receipt(update.content?.text??'',at-360000+messages.length*180000));
+    else messages.at(-1)?.command?.agent?.updates.push(JSON.stringify(update));
+  }
+  const initialMessages=messages.length;
   const owner=(name:unknown)=>devices.find(row=>row.name===name||row.id===name)??devices[0];
   const pathOf=(body:Record<string,any>)=>String(body.path??body.dir??'').replace(/\\/g,'/').replace(/\/$/,'');
   const sourceProject=(body:Record<string,any>)=>{
@@ -66,7 +91,7 @@ export function createSiteFixture(origin:string) {
       newest:project.branch?null:{path:'远航项目周会.md',at_ms:at-2760000,added:false}};
   });
   const quota=(base.request('quota_board') as AccountRing[]).map((account,index)=>{
-    const home=devices[[0,1,0,2,3,2][index]],names=['Claude Max','ChatGPT Pro','DeepSeek','OpenRouter','团队 API','OpenAI API'];
+    const home=devices[[0,1,0,2,3,0][index]],names=['Claude Max','ChatGPT Pro','DeepSeek','OpenRouter','团队 API','OpenAI API'];
     const short=index===0?36:48,long=index===0?28:54,remaining=[0,0,128.64,56.78,72.5,35.4][index];
     const limit=index===3?200:index===4?300:null,spent=limit===null?null:limit-remaining;
     return {...account,home_name:home.name,mine:home.me,age_ms:0,strain:null,pinned:index===0,budget:limit,
@@ -94,11 +119,24 @@ export function createSiteFixture(origin:string) {
       case 'devices':return structuredClone(devices);
       case 'sessions':{
         const rows=base.request(command,body) as SessionRow[];
-        return rows.filter(row=>tasks.some(task=>task.id===row.id)).map(row=>{
-          const task=tasks.find(task=>task.id===row.id)!,home=devices[task.machine];
-          return {...row,title:task.title,last:task.preview,home:home.name,execution_home:home.id,observation_owner:home.id,face:home.face,place:task.root,
+        return tasks.map((task,index)=>{
+          const row=rows.find(row=>row.id===task.id)!,home=devices[task.machine];
+          return {...row,title:task.title,category:task.category,pinned:index===0,last:task.id===tasks[0].id&&messages.length>initialMessages?"Let's try Khor, download it here.":task.preview,home:home.name,execution_home:home.id,observation_owner:home.id,face:home.face,place:task.root,
             at_ms:at-task.minutes*60000,unread:0,source:null,stale:false,group:'',can_control:task.category!=='shell'};
         });
+      }
+      case 'machine_log':return {messages:structuredClone(messages),broken:0};
+      case 'khor_agent':{
+        if(body.action==='prompt'){
+          const message=receipt(String(body.payload?.text??''),Date.now());
+          message.command!.agent!.updates.push(JSON.stringify({sessionUpdate:'agent_message_chunk',content:{type:'text',text:`Let's try Khor, [download it here.](${origin}/download/)`}}));
+          messages.push(message);
+        }
+        if(body.action==='manage'){
+          if(body.payload?.operation==='session_settings')return agentView({job:'site-settings',status:'running'});
+          if(body.payload?.operation==='poll')return agentView({status:'done',result:{model,configOptions:[{id:'model',name:'模型',category:'model',type:'select',currentValue:model,options:[{value:model,name:'GPT-5.4'}]}]}});
+        }
+        return agentView();
       }
       case 'visit':return null;
       case 'load':return load(body);
