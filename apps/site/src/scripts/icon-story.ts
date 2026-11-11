@@ -14,7 +14,7 @@ export function createIconMotion(host:HTMLElement) {
   const paint=animateIcon(host);
   let current={...resting},from={...resting};
   let scene=-1,started=0,settled=false;
-  return (requested:number,now:number,reduced:boolean)=>{
+  return (requested:number,now:number,reduced:boolean,tile=0)=>{
     // A direct jump still connects the simple circle before the light enters.
     const next=!reduced&&requested===4&&current.connection<1?3:requested;
     if(next!==scene){from={...current};scene=next;started=now;settled=false;}
@@ -22,7 +22,7 @@ export function createIconMotion(host:HTMLElement) {
     const t=time===1?1:1-Math.pow(1-time,3);
     for(const key of Object.keys(current) as (keyof IconPose)[])current[key]=from[key]+(poses[scene][key]-from[key])*t;
     if(time===1){current={...poses[scene]};settled=true;}
-    paint(current);
+    paint(current,tile);
     host.dataset.iconScene=['devices','harnesses','mind','together','meet'][requested];
     host.dataset.iconMotion=settled&&scene===requested?'settled':'running';
     host.dataset.iconColor=String(current.light);
@@ -45,6 +45,15 @@ export function animateIcon(host:HTMLElement) {
   const art=svg?.querySelector<SVGGElement>('g[transform="translate(2.6 .88) scale(.9922)"]');
   if(!svg||!art)throw new Error('The canonical khor icon layer contract has changed');
   const children=[...art.children];
+  // Let the icon's own environment fill the scene before it becomes an app tile.
+  // Only the background is projected; the evolving mark remains the same SVG.
+  const environment=host.closest('[data-opening]')?.querySelector('[data-meet-environment]');
+  if(environment){
+    const backdrop=svg.cloneNode(true) as SVGSVGElement;
+    backdrop.querySelector('g[transform="translate(2.6 .88) scale(.9922)"]')!.remove();
+    backdrop.setAttribute('preserveAspectRatio','none');
+    environment.innerHTML=backdrop.outerHTML.replaceAll('artwork-','scene-artwork-');
+  }
   const canvas=host.querySelector<HTMLElement>('.canonical-icon')!;
   let ready=false;
   const diamondStart=children.findIndex(el=>el.tagName==='path');
@@ -65,8 +74,13 @@ export function animateIcon(host:HTMLElement) {
   const inner=wrap(innerNodes,'inner');
   const pearlGroups=pearlBodies.map((body,i)=>{
     const index=children.indexOf(body!);
-    const group=wrap(children.slice(index-1,index+3),i===0?'mind':`node-${i}`);
-    return {group,x:Number(body!.getAttribute('cx')),y:Number(body!.getAttribute('cy'))};
+    const material=children.slice(index-1,index+3);
+    const group=wrap(material,i===0?'mind':`node-${i}`);
+    const flat=body!.cloneNode(false) as SVGCircleElement;
+    const colour=svg.querySelector(`#artwork-pearl-${i} stop[offset="0.72"]`)!.getAttribute('stop-color')!;
+    flat.setAttribute('fill',colour);flat.dataset.storySurface='flat';
+    group.prepend(flat);
+    return {group,flat,material:material.map(node=>({node,opacity:Number(node.getAttribute('opacity')??1)})),x:Number(body!.getAttribute('cx')),y:Number(body!.getAttribute('cy'))};
   });
   const overlays=['device','harness'].map(kind=>{
     const source=host.querySelector<HTMLElement>(`[data-${kind}-marks]`)!;
@@ -100,12 +114,15 @@ export function animateIcon(host:HTMLElement) {
     filter.channels.forEach(channel=>channel.setAttribute('slope',String(brightness)));
     node.setAttribute('filter',`url(#${filter.id})`);
   };
-  // Trace the canonical circumference once. Meet replaces this line with glass
-  // along an upper-left light front; it never draws the circumference again.
+  // Trace the final-width band and diamond edge once. Meet changes their
+  // material along the light front; it never draws the geometry again.
   const ringSource=children.find(el=>el.getAttribute('stroke')==='url(#artwork-glass-band)')!;
   const connection=ringSource.cloneNode(false) as SVGCircleElement;
-  for(const [key,value]of Object.entries({stroke:'currentColor','stroke-width':'2.2',pathLength:'1','stroke-dasharray':'1',transform:'rotate(-90 512 512)',class:'connection-line'}))connection.setAttribute(key,value);
+  for(const [key,value]of Object.entries({stroke:'currentColor',pathLength:'1','stroke-dasharray':'1',transform:'rotate(-90 512 512)',class:'connection-line'}))connection.setAttribute(key,value);
   connection.dataset.storyLayer='connection';art.insertBefore(connection,outer);
+  const diamondEdge=children[haloStart-1].cloneNode(false) as SVGPathElement;
+  for(const [key,value]of Object.entries({stroke:'currentColor',pathLength:'1','stroke-dasharray':'1',class:'connection-line'}))diamondEdge.setAttribute(key,value);
+  diamondEdge.dataset.storyLayer='diamond-outline';art.insertBefore(diamondEdge,diamond);
   const lightMask=(id:string,inverse=false)=>{
     const gradient=make('linearGradient',{id:`${id}-gradient`,gradientUnits:'userSpaceOnUse',x1:'0',y1:'0',x2:'256',y2:'256'});
     gradient.append(make('stop',{offset:'0','stop-color':inverse?'black':'white'}),make('stop',{offset:'1','stop-color':inverse?'white':'black'}));
@@ -119,19 +136,26 @@ export function animateIcon(host:HTMLElement) {
   const litLayers=[outer,diamond,...ground,...innerLight];
   const opacity=new Map(litLayers.map(node=>[node,Number(node.getAttribute('opacity')??1)]));
   const style=(node:Element,values:Record<string,string|number>)=>{for(const [key,value]of Object.entries(values))(node as SVGElement).style.setProperty(key,String(value));};
-  return (pose:IconPose)=>{
+  return (pose:IconPose,tile=0)=>{
     const front=-256+1440*pose.light;
     for(const gradient of [light,unlit])gradient.setAttribute('gradientTransform',`translate(${front} ${front})`);
     for(const layer of litLayers){
-      style(layer,{opacity:pose.light===0?0:opacity.get(layer)!});
+      style(layer,{opacity:pose.light===0?0:opacity.get(layer)!*(ground.includes(layer)?tile:1)});
       if(pose.light===1)layer.removeAttribute('mask');else layer.setAttribute('mask','url(#story-light)');
     }
-    style(connection,{opacity:pose.connection===0||pose.light===1?0:1});
-    connection.setAttribute('stroke-dashoffset',String(1-pose.connection));
-    if(pose.light===0)connection.removeAttribute('mask');else connection.setAttribute('mask','url(#story-unlit)');
+    for(const line of [connection,diamondEdge]){
+      style(line,{opacity:pose.connection===0||pose.light===1?0:1});
+      line.setAttribute('stroke-dashoffset',String(1-pose.connection));
+      if(pose.light===0)line.removeAttribute('mask');else line.setAttribute('mask','url(#story-unlit)');
+    }
     const centre=pearlGroups[0];
     style(centre.group,{opacity:pose.mind});
     style(inner,{opacity:pose.mind});
+    pearlGroups.forEach(pearl=>{
+      const localLight=pose.light===1?1:ease(front,(pearl.x+pearl.y)/2-256,(pearl.x+pearl.y)/2);
+      style(pearl.flat,{opacity:localLight===1?0:1});
+      pearl.material.forEach(({node,opacity})=>style(node,{opacity:opacity*localLight}));
+    });
     pearlGroups.slice(1).forEach((pearl,i)=>{
       const scale=(2.25-1.25*pose.focus)*(.96+.04*pose.presence);
       const initial=[.78,.69,.64,.74][i];
@@ -142,6 +166,7 @@ export function animateIcon(host:HTMLElement) {
       style(overlays[0][i],{opacity:pose.presence*(1-pose.harness)*(1-pose.focus)});
       style(overlays[1][i],{opacity:pose.presence*pose.harness*(1-pose.focus)});
     });
+    host.dataset.iconTile=String(tile);
     if(!ready){canvas.dataset.iconReady='';ready=true;}
   };
 }

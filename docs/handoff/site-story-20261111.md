@@ -7,26 +7,25 @@
 - 预览：`http://127.0.0.1:23820`，Astro dev daemon（启动报告 PID 4944）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
 
-## 当前叙事定稿（五幕修订，替代下方历史顺序）
+## 当前叙事定稿（材质与整幕背景修订，替代下方历史顺序）
 
-1. **You have many devices.** 四颗灰珠戴机器标记，顺时针为 Linux、macOS（Finder）、Windows、iOS（Apple），明暗略有不同。
-2. **With many harnesses.** 同一批珠在原位将标记切换为 Claude、Codex、Cursor、Shell，继续保持灰色。
-3. **But one mind.** 四个外节点缩到原图最终尺寸并变暗，harness 标记淡出；中心珠和内圆同时以原图最终的绿色、尺寸、形态与材质浮现。不缩放中心，不提前显现光晕。
-4. **How about letting them work together?** 一次连续动效沿标准外圆的几何画一根简单灰线，连接四个灰节点。没有菱形、背景、玻璃或环境光；中心珠和内圆保持绿色。停止滚动也会完成这一幕。
-5. **Meet Khor.** 一束光从左上方向右下推进，显出原图的菱形、背景和玻璃外圆，四个外珠随光恢复绿色。外圆已在上一幕连好，此处不再描一遍圆周。最后完整回到真实 SVG 图稿。
-6. 同一个 SVG 缩入笔记本；屏内光标短距离移动并点击一次，打开真实前端。随后 **Keep going.** 笔记本合盖，手机接续同一个 App 和任务草稿。
+1. **You have many devices.** 四个普通灰色圆节点戴机器标记，顺时针为 Linux、macOS（Finder）、Windows、iOS（Apple），明暗略有不同。Meet 之前不出现珠光高亮、渐变、边缘反光或珠子的投影。
+2. **With many harnesses.** 同一批节点在原位将标记切换为 Claude、Codex、Cursor、Shell，继续保持灰色。
+3. **But one mind.** 四个外节点缩到原图最终尺寸并变暗，harness 标记淡出；中心节点和内圆同时浮现。中心从第一帧起就是原图的最终绿色和尺寸，但先是纯色圆，光泽等到 Meet。内圆保持原图绿色与几何；不提前显现环境光晕。
+4. **How about letting them work together?** 一次连续动效画出与最终玻璃外环同样宽的灰环，以及只有边缘的菱形。没有菱形填充、玻璃或环境光；四个外节点灰色，中心节点和内圆绿色。停止滚动也会完成这一幕。
+5. **Meet Khor.** 原图的暗色环境铺满整个画面，左上方的光让菱形填充、玻璃外环和珠子的高光逐渐显现，四个外节点随光恢复绿色。外环和菱形不重新描线；此时标志没有方形底板边界。
+6. 下滑时，整幕环境逐渐收回成同一 SVG 的圆角图标底板，同时缩入笔记本；屏内光标移动并点击一次，打开真实前端。随后 **Keep going.** 笔记本合盖，手机接续同一个 App 和任务草稿。
 
 ## 本轮实现与验证
 
-- 仍使用真实 `mandala-glass.svg` 的连续图层，保留原图的路径、渐变、阴影和绘制顺序。临时连线取自该 SVG 的外圆，不另画一套图标。
-- 机器与 harness 标记由 App 的 `machineMark` / `sessionMark` 在构建时输出静态 SVG，取消原来的源码正则提取；网站不因此加载 React 客户端。Finder 遮罩 ID 保持唯一。
-- Mind 与内圆不参加灰阶处理；灰珠保留原生 SVG `feColorMatrix` / `feComponentTransfer`，保持 Khor 内置 WebKit 的颜色兼容性。首帧隐藏门和减少动态效果按章节显示的修复保留。
-- How about 只驱动连接进度。Meet 的材质用方向渐变遮罩照亮，连接线对应部分退场；四珠使用同一光照方向恢复原色。Meet 不改变圆周描线进度。
-- 审查时发现 One mind 过渡中的机器标记可能短暂回闪，已让 harness 状态维持到标记完全退场。
-- Chrome 与 WebKit 均已通过五幕、灰阶、内圆/中心几何、无提前光晕、Meet 连线不重描、倒滚、390px 无横向溢出、减少动态效果的定向检查；页面错误为空。
-- 两个内核另通过浅色主题、harness 淡出不回闪机器标记、屏内单次点击、笔记本/手机同一 iframe 与草稿接续；网页动效 TypeScript、包含静态标记模块的 demo TypeScript 和 Astro 静态构建通过。
-- 完成图对照标准 SVG：主要图形一致；截图差异集中在圆角裁切边缘（不足千像素，单通道最大 8/255），Chrome 另有少量 1/255 的栅格舍入，不宣称本轮截图逐像素零差异。
-- 验证脚本：`/private/tmp/playwright-test-khor-five-scenes.js` 与 `playwright-test-khor-five-handoff.js`。截图和收据：`/Volumes/disk0/Khor/evidence/site-story-20261111/five-scenes`。
+- 所有形状依旧来自 `mandala-glass.svg`。How about 的外环保留源图 `stroke-width=30`，菱形轮廓直接取源图边缘路径。
+- 五颗珠增加同几何的临时纯色表面，颜色取原图珠体渐变的实色 stop；原始渐变、阴影、反光与高光图层在 Meet 前均为零透明度，光经过时恢复。
+- 将标准 SVG 的背景图层单独投射到整幕，独立命名 SVG 资源 ID。Meet 时图标内的背景不显示，避免圆角方块突然贴上页面；缩入电脑时，背景透明度按行程从整幕交给图标底板，恢复原始完整图标。
+- 导航与开场文字随整幕背景调整明暗；退出开场后恢复页面原主题。减少动态效果仍按章节展示，进入体验后释放整幕背景，保留手动打开入口。
+- 保留 Khor 内置 WebKit 所需的原生 SVG 灰阶过滤、首帧隐藏门、唯一的 Finder 遮罩 ID，以及在构建时复用 App 机器/harness 标记的方式。
+- Chrome / WebKit × 浅色 / 深色四组均通过：纯色节点、外环同宽、空心菱形、Mind/外节点几何稳定、Meet 整幕环境、缩入电脑后恢复完整底板、自动打开、倒滚恢复、390px 无横向溢出、减少动态效果与手动打开。页面错误为空。
+- 实际截图中中心节点的两处内点在四组均为 `(206,227,85)`，确认原高光区也已经是均匀纯色。
+- 动效 TypeScript 与 Astro 静态构建通过。脚本 `/private/tmp/playwright-test-khor-material-scene.js`；截图、姿态收据与像素检查在 `/Volumes/disk0/Khor/evidence/site-story-20261111/material-scene`。
 
 以下为此前实现与迭代记录；叙事冲突一律以本页当前定稿为准。
 

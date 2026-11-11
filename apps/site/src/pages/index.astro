@@ -13,6 +13,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
   <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="#experience">体验</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
   <main class="story-home">
     <section class="opening" aria-label="认识 khor" data-opening>
+      <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
       <div class="opening-sticky">
         <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <p class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><span>{lead}</span><br />{phrase}</p>)}</div>
         <h1 class="sr-only">You have many devices. With many harnesses. But one mind. How about letting them work together? Meet Khor.</h1>

@@ -144,7 +144,12 @@ export function mountStory() {
       if (index === active) step.setAttribute('aria-current', 'step');
       else step.removeAttribute('aria-current');
     });
-    const iconState=updateIcon(active,now,reduced.matches);
+    const departure = topOpening + openingTravel;
+    const arrival=topHandoff+handoffTravel*.10;
+    const travel=ramp(scroll,departure,arrival);
+    const tile=reduced.matches?(scroll>departure?1:0):ramp(travel,.18,.68);
+    const iconState=updateIcon(active,now,reduced.matches,tile);
+    property(document.documentElement,'--meet-world',ramp(iconState.color,0,.55)*(1-tile));
     property(opening!,'--story-controls-opacity',1-ramp(progress,.9,1));
     handoffProgress = reduced.matches ? 0 : clamp((scroll - topHandoff) / handoffTravel);
     if (scroll + innerHeight > topHandoff - innerHeight * .5) prepareDemo();
@@ -152,12 +157,11 @@ export function mountStory() {
     geometry(handoffProgress);
     const click=animateClick(now,iconState.settled&&iconState.color===1);
     handoff!.querySelector<HTMLElement>('.handoff-copy')!.style.opacity = reduced.matches ? '1' : String(ramp(scroll, topHandoff-innerHeight*.25, topHandoff+handoffTravel*.07));
-    const departure = topOpening + openingTravel;
     const travelling = !reduced.matches && scroll > departure;
     assembly!.classList.toggle('is-travelling', travelling);
     if(travelling){
       const target=iconImage.getBoundingClientRect();
-      const t=ramp(scroll,departure,topHandoff+handoffTravel*.10);
+      const t=travel;
       const width=mix(iconHome.width,target.width,t);
       assembly!.style.left=`${mix(iconHome.left,target.left,t)+width*(1-click.press)/2}px`;
       assembly!.style.top=`${mix(iconHome.top,target.top,t)+width*(1-click.press)/2}px`;
