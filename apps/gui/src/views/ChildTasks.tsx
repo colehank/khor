@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { SessionFace } from "@/components/SessionFace";
+import { IconChevronRight } from "@/components/icons";
 
 type ChildTask = {
   run: string;
@@ -116,6 +117,7 @@ export function ChildTasks({ parent, id, devices }: { parent: SessionRow; id: st
                     <span className="truncate text-callout text-muted-foreground">{preview}</span>
                   </span>
                   <span className="min-w-0 flex-none"><TaskStatus state={child.state}/></span>
+                  <IconChevronRight aria-hidden className="size-affordance flex-none text-tertiary"/>
                 </span>
               </button>;})}
             </section>) : <p aria-busy={groups === null && !error} className="text-callout text-muted-foreground">
