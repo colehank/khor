@@ -19,7 +19,7 @@ export function useResourcePreview(machine:string,path:string,html?:string) {
       if(!inApp && /^https?:$/.test(location.protocol))url.hostname=location.hostname;
       setState({key,preview:{...preview,url:url.href}});
     },error=>{if(live)setState({key,error:said(error)});}),html===undefined?0:300);
-    const pulse=()=>{if(owned)void fileResourceTouch(owned.id).catch(error=>{if(live){const failed=owned;owned=undefined;if(failed)release(failed);setState({key,error:said(error)});}});};
+    const pulse=()=>{if(owned)void fileResourceTouch(owned.id).catch(()=>{if(live){const failed=owned;owned=undefined;if(failed)release(failed);setRetry(n=>n+1);}});};
     const heartbeat=setInterval(pulse,30_000);
     document.addEventListener('visibilitychange',pulse);
     return()=>{live=false;clearTimeout(timer);clearInterval(heartbeat);document.removeEventListener('visibilitychange',pulse);if(owned)release(owned);};
