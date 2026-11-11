@@ -405,6 +405,7 @@ jobs:
           cargo test --locked -p khor-node --lib delegated_trace_retains_only_bounded_task_process_without_failing_execution -- --exact delegation::tests::delegated_trace_retains_only_bounded_task_process_without_failing_execution --test-threads=1
           cargo test --locked -p khor-node --lib child_transcript_is_task_scoped_and_deduplicates_the_current_reply -- --test-threads=1
           cargo test --locked -p khor-node --lib child_reader_rejects_path_and_unicode_references_without_panicking -- --test-threads=1
+          cargo test --locked -p khor-node --lib child_command_detail_reads_only_its_owned_receipt_without_reexecution -- --test-threads=1
 
   desktop-package:
     needs: package-frontend
@@ -843,7 +844,7 @@ jobs:
         run: |
           [[ "$CHECKER_SHA" =~ ^[0-9a-f]{40}$ ]]
           git fetch --depth=1 origin "$CHECKER_SHA"
-          for script in check-app.mjs resource-checks.mjs gui-experience-checks.mjs; do
+          for script in check-app.mjs resource-checks.mjs gui-experience-checks.mjs child-command-checks.mjs; do
             git show "$CHECKER_SHA:apps/gui/dev/lab/$script" > "apps/gui/dev/lab/$script"
           done
           mkdir -p "$RUNNER_TEMP/lab-report"
