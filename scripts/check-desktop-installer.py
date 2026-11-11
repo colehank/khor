@@ -15,14 +15,14 @@ def run(*args):
     return subprocess.run(list(map(str, args)), check=True, capture_output=True, text=True, timeout=600)
 
 
-def same_programs(directory):
+def same_programs(directory, expected_source):
     suffix = ".exe" if os.name == "nt" else ""
     cli, gui = directory / ("khor" + suffix), directory / ("khor-gui" + suffix)
     command, application = executable_info(cli), executable_info(gui)
     assert command["component"] == "cli"
     assert application["component"] == "desktop-app"
     assert all(command[key] == application[key] for key in ("build", "platform", "contract"))
-    assert command["build"]["source"] == source_sha()
+    assert command["build"]["source"] == expected_source
     upgraded = subprocess.run([str(cli), "upgrade", "--check"], capture_output=True, timeout=30)
     assert upgraded.returncode != 0, "The bundled CLI must follow its package owner"
     guidance = upgraded.stderr.decode(errors="replace").lower()
@@ -60,16 +60,43 @@ def launch_installed(directory):
                             pass
             return [(pid, path) for pid, path in rows if path == application or path.is_relative_to(runtime)]
 
+        service = None
+        log = None
         try:
+            # The packaged CLI must run a real node, not only print metadata.
+            log = (Path(temporary) / "serve.log").open("wb")
+            service = subprocess.Popen([str(directory / ("khor" + suffix)), "serve"],
+                                       env=environment, stdout=log, stderr=subprocess.STDOUT)
+            endpoint = Path(environment["KHOR_HOME"]) / ".khor/endpoint.json"
+            deadline = time.monotonic() + 30
+            while not endpoint.is_file() and time.monotonic() < deadline:
+                if service.poll() is not None:
+                    raise AssertionError("Packaged serve exited before publishing its endpoint")
+                time.sleep(0.1)
+            assert endpoint.is_file(), "The packaged CLI did not start its resident"
+            subprocess.run([str(directory / ("khor" + suffix)), "quit"], env=environment,
+                           check=True, timeout=30)
+            service.wait(timeout=10)
+            deadline = time.monotonic() + 10
+            while processes() and time.monotonic() < deadline:
+                time.sleep(0.1)
+            assert not processes(), "Quitting the packaged node must not leave or respawn its resident"
             subprocess.run([str(directory / ("khor" + suffix)), "gui"], env=environment,
                            check=True, timeout=30)
             deadline = time.monotonic() + 20
             while time.monotonic() < deadline:
                 if any(path.name == application.name for _, path in processes()):
+                    time.sleep(1)
+                    assert any(path.name == application.name for _, path in processes()), "The installed App exited during startup"
                     return
                 time.sleep(0.1)
             raise AssertionError("khor gui did not launch the installed application")
         finally:
+            if service is not None and service.poll() is None:
+                service.kill()
+                service.wait(timeout=10)
+            if log is not None:
+                log.close()
             for pid, _ in processes():
                 if os.name == "nt":
                     subprocess.run(["taskkill.exe", "/PID", str(pid), "/T", "/F"], capture_output=True)
@@ -84,7 +111,7 @@ def launch_installed(directory):
             assert not processes(), "The installation check must retire its own processes"
 
 
-def linux(package):
+def linux(package, expected_source):
     cli = Path("/usr/bin/khor")
     assert not cli.exists() and not cli.is_symlink(), "Use a fresh runner"
     with tempfile.TemporaryDirectory(prefix="khor-independent-") as temporary:
@@ -99,7 +126,7 @@ def linux(package):
             run("sudo", "rm", cli)
     run("sudo", "dpkg", "-i", package)
     try:
-        proof = same_programs(Path("/usr/bin"))
+        proof = same_programs(Path("/usr/bin"), expected_source)
         assert Path("/usr/share/khor/cli-owner.json").is_file()
         launch_installed(Path("/usr/bin"))
         return proof
@@ -108,7 +135,7 @@ def linux(package):
         assert not cli.exists()
 
 
-def macos(package):
+def macos(package, expected_source):
     import mac_installer
     application = Path("/Applications/Khor.app")
     cli = Path("/usr/local/bin/khor")
@@ -130,7 +157,7 @@ def macos(package):
         run("sudo", "/usr/sbin/installer", "-pkg", package, "-target", "/")
         assert cli.is_symlink() and str(cli.readlink()) == mac_installer.CLI
         programs = application / "Contents/MacOS"
-        proof = same_programs(programs)
+        proof = same_programs(programs, expected_source)
         launch_installed(programs)
         return proof
     finally:
@@ -143,7 +170,7 @@ def macos(package):
             run("sudo", "/usr/sbin/pkgutil", "--forget", mac_installer.IDENTIFIER)
 
 
-def windows(package):
+def windows(package, expected_source):
     import winreg
     with tempfile.TemporaryDirectory(prefix="khor-desktop-") as temporary:
         destination = Path(temporary) / "Installed Khor"
@@ -163,7 +190,7 @@ def windows(package):
                                      "INSTALLDIR=" + str(destination)], timeout=600)
             assert result.returncode in (0, 3010), result.returncode
             installed = True
-            proof = same_programs(destination)
+            proof = same_programs(destination, expected_source)
             assert (destination / "cli-owner.json").is_file()
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
                 after, _ = winreg.QueryValueEx(key, "Path")
@@ -191,10 +218,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--package", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--expected-source", default=None, help="Pinned package source when checking an earlier build")
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true":
         parser.error("Installation checks require an isolated GitHub runner")
     package = args.package.resolve(strict=True)
-    proof = windows(package) if os.name == "nt" else macos(package) if sys.platform == "darwin" else linux(package)
+    expected_source = args.expected_source or source_sha()
+    if len(expected_source) != 40 or any(c not in "0123456789abcdef" for c in expected_source):
+        parser.error("Package source must be a complete commit SHA")
+    proof = windows(package, expected_source) if os.name == "nt" else macos(package, expected_source) if sys.platform == "darwin" else linux(package, expected_source)
+    proof["validation"] = {"test_source": source_sha(), "package_source": expected_source, "resident_start_stop": True, "app_launch": True}
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(proof, indent=2) + "\n")

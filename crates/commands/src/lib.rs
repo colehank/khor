@@ -5933,7 +5933,9 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
 
     struct Restore<T>(T, fn(&T));
     impl<T> Drop for Restore<T> {
-        fn drop(&mut self) { (self.1)(&self.0); }
+        fn drop(&mut self) {
+            (self.1)(&self.0);
+        }
     }
     let saved = Restore(raw_on()?, raw_off);
     let detached = std::sync::Arc::new(AtomicBool::new(false));
@@ -6039,7 +6041,6 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
     Ok(())
 }
 
-
 #[cfg(unix)]
 fn tty_size() -> Option<(u16, u16)> {
     unsafe {
@@ -6056,9 +6057,13 @@ fn tty_size() -> Option<(u16, u16)> {
 fn tty_size() -> Option<(u16, u16)> {
     use windows_sys::Win32::System::Console::*;
     let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
-    if unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &mut info) } == 0 { return None; }
-    Some(((info.srWindow.Right - info.srWindow.Left + 1) as u16,
-          (info.srWindow.Bottom - info.srWindow.Top + 1) as u16))
+    if unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &mut info) } == 0 {
+        return None;
+    }
+    Some((
+        (info.srWindow.Right - info.srWindow.Left + 1) as u16,
+        (info.srWindow.Bottom - info.srWindow.Top + 1) as u16,
+    ))
 }
 
 #[cfg(unix)]
@@ -6085,20 +6090,35 @@ fn raw_off(saved: &libc::termios) {
 }
 
 #[cfg(windows)]
-struct ConsoleModes { input: u32, output: u32 }
+struct ConsoleModes {
+    input: u32,
+    output: u32,
+}
 #[cfg(windows)]
 fn raw_on() -> Result<ConsoleModes, String> {
     use windows_sys::Win32::System::Console::*;
-    let mut saved = ConsoleModes { input: 0, output: 0 };
+    let mut saved = ConsoleModes {
+        input: 0,
+        output: 0,
+    };
     unsafe {
         let input = GetStdHandle(STD_INPUT_HANDLE);
         let output = GetStdHandle(STD_OUTPUT_HANDLE);
-        if GetConsoleMode(input, &mut saved.input) == 0 || GetConsoleMode(output, &mut saved.output) == 0 {
+        if GetConsoleMode(input, &mut saved.input) == 0
+            || GetConsoleMode(output, &mut saved.output) == 0
+        {
             return Err(msg::no_termios().into());
         }
-        let raw_input = (saved.input & !(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT | ENABLE_QUICK_EDIT_MODE))
-            | ENABLE_EXTENDED_FLAGS | ENABLE_VIRTUAL_TERMINAL_INPUT;
-        if SetConsoleMode(input, raw_input) == 0 { return Err(msg::no_raw_mode().into()); }
+        let raw_input = (saved.input
+            & !(ENABLE_LINE_INPUT
+                | ENABLE_ECHO_INPUT
+                | ENABLE_PROCESSED_INPUT
+                | ENABLE_QUICK_EDIT_MODE))
+            | ENABLE_EXTENDED_FLAGS
+            | ENABLE_VIRTUAL_TERMINAL_INPUT;
+        if SetConsoleMode(input, raw_input) == 0 {
+            return Err(msg::no_raw_mode().into());
+        }
         if SetConsoleMode(output, saved.output | ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0 {
             SetConsoleMode(input, saved.input);
             return Err(msg::no_raw_mode().into());
