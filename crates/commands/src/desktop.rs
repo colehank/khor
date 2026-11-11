@@ -45,7 +45,7 @@ fn packaged_gui(cli: &Path) -> Option<PathBuf> {
         return None;
     }
     let app = updates::inspect(&program).ok()?;
-    let command = updates::program_info().ok()?;
+    let command = updates::inspect(&cli).ok()?;
     (app.component == Component::DesktopApp
         && app.build == command.build
         && app.platform == command.platform
