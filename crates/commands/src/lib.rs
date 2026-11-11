@@ -5931,7 +5931,11 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
     let mut stream = connect_at(addr, cookie, cols, rows)?;
     eprintln!("{}", cli::attached(&id.0));
 
-    let saved = raw_on()?;
+    struct Restore<T>(T, fn(&T));
+    impl<T> Drop for Restore<T> {
+        fn drop(&mut self) { (self.1)(&self.0); }
+    }
+    let saved = Restore(raw_on()?, raw_off);
     let detached = std::sync::Arc::new(AtomicBool::new(false));
     let (tx, rx) = std::sync::mpsc::channel::<ClientOp>();
     {
@@ -6010,7 +6014,7 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
             }
         }
     }
-    raw_off(&saved);
+    drop(saved);
     if detached.load(Ordering::SeqCst) {
         eprintln!("{}", cli::detached(&id.0));
     } else {
