@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, windows-install]
         default: sync
       frontend_run:
         type: string
@@ -26,6 +26,48 @@ permissions:
   contents: read
   actions: read
 jobs:
+  windows-install:
+    if: inputs.slice == 'windows-install'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12.10'
+      - name: Reuse the exact previously compiled Windows MSI and retain installation diagnostics
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PYCODE'
+          import hashlib, pathlib, subprocess, zipfile
+          target=pathlib.Path('windows-install');target.mkdir()
+          archive=target/'compiled.zip'
+          with archive.open('wb') as output:
+            subprocess.run(['gh','api','repos/colehank/khor/actions/artifacts/13849127806/zip'],stdout=output,check=True,timeout=180)
+          assert hashlib.sha256(archive.read_bytes()).hexdigest()=='3fe5eee1862b384873d756d75cb9b9a9b6fa3263a39d14a6154f4bce2f3f26c8'
+          with zipfile.ZipFile(archive) as source:
+            matches=[item for item in source.namelist() if item.endswith('/khor-windows-x86_64.msi') or item=='khor-windows-x86_64.msi']
+            assert len(matches)==1,matches
+            (target/'khor-windows-x86_64.msi').write_bytes(source.read(matches[0]))
+          # Diagnostics only: retain the real MSI log without changing its actions.
+          checker=pathlib.Path('scripts/check-desktop-installer.py')
+          text=checker.read_text().replace('"/qn", "/norestart",','"/qn", "/norestart", "/L*V", str(Path("windows-install/install.log").resolve()),').replace('"/qn", "/norestart"]','"/qn", "/norestart", "/L*V", str(Path("windows-install/uninstall.log").resolve())]')
+          checker.write_text(text.replace('timeout=600','timeout=180'))
+          PYCODE
+          python scripts/check-desktop-installer.py --package windows-install/khor-windows-x86_64.msi --expected-source 6ffcd3d3b437495f86005539175a72a54ea081a2 --output windows-install/proof.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: windows-install-diagnosis
+          path: |
+            windows-install/*.log
+            windows-install/*.json
+          retention-days: 7
   seen:
     if: inputs.slice == 'sync' || inputs.slice == 'format'
     runs-on: ubuntu-24.04
