@@ -397,6 +397,14 @@ jobs:
       - name: Check native formatting after preserving compiled inputs
         if: inputs.slice == 'frontend-only'
         run: cargo fmt --all --check
+      - name: Readonly delegated task isolation and bounded process retention
+        if: inputs.slice == 'frontend-only'
+        env:
+          CARGO_PROFILE_TEST_DEBUG: '0'
+        run: |
+          cargo test --locked -p khor-node --lib delegated_trace_retains_only_bounded_task_process_without_failing_execution -- --exact delegation::tests::delegated_trace_retains_only_bounded_task_process_without_failing_execution --test-threads=1
+          cargo test --locked -p khor-node --lib child_transcript_is_task_scoped_and_deduplicates_the_current_reply -- --test-threads=1
+          cargo test --locked -p khor-node --lib child_reader_rejects_path_and_unicode_references_without_panicking -- --test-threads=1
 
   desktop-package:
     needs: package-frontend
