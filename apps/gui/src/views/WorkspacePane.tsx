@@ -1186,10 +1186,8 @@ export function WorkspacePane({
           onLocate={() => { requestFileLocation(machine, file); setSidebarView("files"); setHunt(""); if(root === "")setAt(directoryOf(file)); setScreen("tree"); side?.set(true); }}
           history={git !== null}
           previewing={face === "preview"}
-          toolbar={{ leading: shortcuts, actions: [
-            ...(rendererOf(file) !== null ? [{ key: "face", label: face === "preview" ? gui.file_face_source : gui.file_face_preview, run: face === "preview" ? editHere : readHere }] : []),
-            ...workspaceActions,
-          ] }}
+          faceToggle={rendererOf(file) !== null ? {face, run: face === "preview" ? editHere : readHere} : undefined}
+          toolbar={{ leading: shortcuts, actions: workspaceActions }}
           onRevision={(c) => {
             setRev(c);
             setRevCompare(false);

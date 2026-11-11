@@ -14,8 +14,10 @@ export async function checkResourceFiles(browser,{port,report,mobile=false,engin
  async function open(file){await page.goto(`http://127.0.0.1:${port}/app/?scene=workspace&machines=3&file=media/${file}`);}
  try{
   await open('preview.html');
-  await page.locator('[data-file-more]:visible').first().click();
-  await page.locator('[data-file-more-item="face"]:visible').click();
+  // The workspace and a session's files expose the same preview/more capsule.
+  // Do not accept hiding preview behind a different workspace menu entry.
+  const preview=page.locator('[data-file-face-toggle]:visible');
+  await preview.waitFor();await preview.click();
   const frame=page.frameLocator('[data-html-frame]');
   await frame.locator('html[data-resources-ready=yes]').waitFor();
   assert.match(await frame.locator('#result').innerText(),/JavaScript 模块、相对样式和 JSON 均已加载/);
