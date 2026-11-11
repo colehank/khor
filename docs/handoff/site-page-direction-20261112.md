@@ -40,7 +40,7 @@ Codex 当前页面先给居中的产品图标、短标题、一句补充和双�
 
 首屏标题为 “Work across your devices.”，副文案为 “Your agents, files, and web apps. From any device.”。Fog 只用于首屏，后面的图文段使用干净底色。参数集中于 `apps/site/src/scripts/fog-options.ts`；本地固定分发 three.js r134 与 Vanta 0.5.24，许可证随附。减少动态效果与加载失败时使用本页同参数画布的干净截图，不改速度或颜色。
 
-首屏 GUI 改为生产 App 的单层半透明背景（70%），保留前景完整 opacity；父窗口用 24px 模糊取样 Fog，解决 iframe 不能从内部取样父页面的问题。没有启用原生后端、调用 Tauri 或改变用户 App 设置。加载首图也保留 alpha。Chrome 已核对左右位置、真实背景 alpha、完整前景和固定回复；WebKit 手机布局仍为完整 1360 视口。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/glass-hero`。
+首屏 GUI 使用生产 App 的单层半透明背景（最新为 50%），保留前景完整 opacity；父窗口用 24px 模糊取样 Fog，解决 iframe 不能从内部取样父页面的问题。没有启用原生后端、调用 Tauri 或改变用户 App 设置。加载首图也保留 alpha。外框不画白边，圆角和 GUI 共用缩放系数，避免手机上红黄绿按钮被裁切。Chrome 已核对左右位置、真实背景 alpha、完整前景和固定回复；WebKit 手机布局仍为完整 1360 视口。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/glass-hero`。
 
 Chrome 已确认实际 WebGL 画布、kapestack 链接、唯一 H1、大幅 GUI 发送与固定下载回复、三组图文、完整 Meet 形态；1440 与 390 视口无横向溢出，减少动态效果不创建画布。页面错误与运行时外部请求为空。证据在 `/Volumes/disk0/Khor/evidence/site-story-20261112/codex-layout`。
 

@@ -2,9 +2,13 @@ export function mountDesktopPreview() {
   const preview=document.querySelector<HTMLElement>('[data-desktop-preview]');
   const stage=document.querySelector<HTMLElement>('[data-desktop-stage]');
   const frame=document.querySelector<HTMLIFrameElement>('[data-desktop-demo]');
-  if(!preview||!stage||!frame)return;
+  const shell=preview?.closest<HTMLElement>('.macos-window');
+  if(!preview||!stage||!frame||!shell)return;
   // Preserve the complete desktop shell instead of switching to mobile.
-  const resize=new ResizeObserver(()=>stage.style.setProperty('--desktop-scale',String(preview.clientWidth/stage.offsetWidth)));
+  // The containing window's corner shares the same scale as its controls.
+  const measure=()=>shell.style.setProperty('--desktop-scale',String(preview.clientWidth/stage.offsetWidth));
+  const resize=new ResizeObserver(measure);
+  measure();
   resize.observe(preview);
   const show=()=>{
     // WebKit can report the intended innerWidth while actually laying the

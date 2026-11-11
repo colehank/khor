@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 按用户要求把玻璃背景从 70% 调到 50%，前景 opacity 仍为 1，深浅首图 alpha 更新为 127/255。修复系统按钮被裁：原外框固定圆角 14.4px，在小预览上过大；将缩放变量提升到窗口共同祖先，让圆角按原生 24px 与 GUI 同比缩放。WebKit 手机视口下原圆角裁掉 17 个按钮轮廓采样点，修后圆角约 6.19px，裁切点为 0；桌面也为 0，窗口没有白色外描边或内描边。对照数据 `glass-hero/controls.json`，最新手机和深浅截图同目录。GUI 打包与脚本类型检查通过。
 - 2026-11-12 最新首屏恢复左介绍 / 右 GUI；Khor 图标与产品名横排，左右共同落在原参数 Fog 中。网站 hero 只设置生产 `data-window-transparent` 和 `--window-opacity:70%`，复用实际单背景面；前景 opacity=1，父窗口 blur(24px) 对 Fog 取样。不伪造原生运行时或打开原生后端。深浅 WebP 改为 RGBA，背景 alpha 178、文字最高 255，首图与实际 App 都可透出 Fog。Chrome 已确认左右位置、玻璃属性和固定回复，WebKit 手机布局仍为 1360；深浅与手机截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/glass-hero`。
 - 2026-11-12 iPhone 预览白块修复：用本机已有 WebKit 2336、390×844、iPhone UA / 触屏复现。外层 CSS zoom 让 iframe 的实际 `documentElement.clientWidth` 从 1360 变成 356（`innerWidth` 仍说 1360），App 切成窄屏，之后又被外层缩小，剩余区域为白块。触屏 / 窄屏改用 transform，鼠标桌面仍用 zoom；ready 前检查真实布局宽度，不一致时回退，并等两帧再交出首图。修后 WebKit 与 Chrome 的根布局 / body 均为 1360×850，根 `data-narrow` 为 false，预览外宽 356，完整三栏铺满，固定回复可发送。类型检查与静态构建通过；只做此问题定向检查，未下载浏览器。红绿数据、截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/phone-preview`。注意附栏内部有合法的 `data-narrow-box`，断言应看根，不能查任意后代的 `data-narrow`。
 - 2026-11-12 Codex 参考改版已获「先做」授权并本地实现：kapestack 导航、原参数 Fog 居中首屏、大幅 GUI、支持标识、三组交替真实 GUI 配图、短图标故事、下载收尾。完整方向与依赖说明见 `site-page-direction-20261112.md`。Fog 两个分发文件与许可证本地固定；减少动态效果使用本页画布的干净帧，没有外站文字。Chrome 已检查 WebGL、消息回复、链接、完整 Meet、明暗与窄屏，错误与外部请求为空；证据 `evidence/site-story-20261112/codex-layout`（绝对前缀 `/Volumes/disk0/Khor`）。旧的左字右 GUI、九屏顺序均为历史版本。

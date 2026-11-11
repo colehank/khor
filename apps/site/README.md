@@ -21,7 +21,7 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 
 - `src/components/Mandala.astro` 读取完整的 `mandala-glass.svg` 和既有 session 字形；`icon-story.ts` 在原图层上控制演化，不替换成另一幅图。
 - `src/components/ProductHero.astro` 首屏为左侧 Khor、介绍和双入口，右侧完整 Desktop GUI，共同落在 Fog 上；窄屏上下排列，下面继续系统 / harness 标识。左上角与页脚是链接到 `kapestack.top` 的 kapestack。Desktop 外层带 macOS 圆角窗口边框，红黄绿按钮与原有导航同一行；首图由真实 App 接管为可操作的同源 iframe，不连接 Lab 或真实设备，没有「打开体验」入口。
-- Hero 复用生产 App 的 `data-window-transparent` 与 `--window-opacity:70%` 单层背景，不改变前景 opacity，不启用原生后端。模糊在父窗口对真实 Fog 取样，iframe 内保留原有玻璃控件与正文；深浅首图保留 alpha（背景 178/255，文字可达 255/255），加载前后材质一致。
+- Hero 复用生产 App 的 `data-window-transparent` 与 `--window-opacity:50%` 单层背景，不改变前景 opacity，不启用原生后端。模糊在父窗口对真实 Fog 取样，iframe 内保留原有玻璃控件与正文；深浅首图保留 alpha（背景 127/255，文字可达 255/255），加载前后材质一致。窗口圆角和 GUI 共用缩放系数，避免窄屏时裁掉红黄绿按钮；外层没有白色描边。
 - 首屏 `fog-options.ts` 完整保留用户指定的 Vanta Fog 参数。three.js r134 和 Vanta Fog 0.5.24 固定存于 `public/vendor`，许可证同目录，运行时不访问 CDN。效果离开视口后由 Vanta 跳过绘制；减少动态效果或无法加载时，显示从本页同参数画布截取的干净帧。首屏颜色不随主题重配，正文与 GUI 继续跟随浏览器。
 - `FeatureStory.astro` 用三组交替图文介绍会话、文件与历史、设备和网页访问；配图均为同一个本地示例 App 的真实深浅截图。原图标演化移到功能介绍之后，滚动行程由九屏缩为 2.6 屏；图层、灰珠、Mind 内环、线条和 Meet 扫光逻辑保持原样。
 - 示例数据包含 macOS、Windows、Linux、iOS、Android 五种系统的六台设备，Claude、Cursor、Codex、Khor、Shell 五种会话类型；全部是浏览器内的合成连接状态。会话字形沿用生产 App 的类型标记。
