@@ -34,14 +34,15 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--pane-head) + var(
 .product-learn { display:inline-block; margin-top:var(--gap-pane); padding-block:var(--gap-in); color:var(--secondary); }
 .product-learn:hover { color:var(--ink); }
 .product-desktop { min-width:0; }
-.desktop-preview { position:relative; width:100%; aspect-ratio:8/5; overflow:hidden; border:var(--hair) solid var(--hairline); border-radius:var(--radius-xl); background:var(--canvas); box-shadow:var(--shadow-float); }
-.desktop-poster { width:100%; height:100%; display:block; object-fit:cover; }
+.macos-window { overflow:hidden; border:var(--hair) solid var(--hairline); border-radius:calc(var(--radius-xl)*1.2); background:var(--canvas); box-shadow:inset 0 0 0 var(--hair) var(--hairline),var(--shadow-float); }
+.desktop-preview { position:relative; width:100%; aspect-ratio:8/5; overflow:hidden; background:var(--canvas); }
+.desktop-poster,.desktop-poster img { width:100%; height:100%; display:block; }
+.desktop-poster img { object-fit:cover; }
 .desktop-stage { position:absolute; inset:0 auto auto 0; width:calc(var(--list-w)*4); aspect-ratio:8/5; transform:scale(var(--desktop-scale,0)); transform-origin:top left; opacity:0; pointer-events:none; }
 .desktop-stage iframe { width:100%; height:100%; display:block; border:0; }
 .desktop-preview[data-ready] .desktop-stage { opacity:1; pointer-events:auto; }
 .desktop-preview[data-ready] .desktop-poster { visibility:hidden; }
-.desktop-caption { display:flex; justify-content:space-between; gap:var(--gap-base); font-size:var(--text-callout); color:var(--secondary); margin-top:var(--gap-base); }
-.desktop-caption a:hover { color:var(--ink); }
+.desktop-caption { font-size:var(--text-callout); color:var(--secondary); margin-top:var(--gap-base); }
 .opening { height:calc(var(--opening-screens,10)*100svh); position:relative; z-index:10; color:var(--scene-ink); }
 .meet-environment { position:absolute; inset:0; pointer-events:none; opacity:var(--meet-world,0); background:var(--mark-veil-dark); }
 .meet-environment > svg { width:100%; height:100%; display:block; }

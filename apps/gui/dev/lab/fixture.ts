@@ -66,13 +66,20 @@ function sample(index: number): Frame[] {
 export type LabFixtureOptions = {
   origin?:string; content?:boolean; items?:number; machines?:number; page?:boolean;
   pageSize?:number; settings?:boolean; notices?:boolean; noticeBurst?:boolean; longHistory?:boolean;
-  samples?:Frame[][]; sessionTitles?:string[]; sessionPreviews?:string[]; deviceNames?:string[]; sampleImage?:boolean; reply?:string; thinking?:string[];
-  contentText?:string; answerText?:string; replyDelayMs?:number; replyChunkMs?:number;
+  samples?:Frame[][]; sessionTitles?:string[]; sessionPreviews?:string[]; sessionCategories?:string[]; deviceNames?:string[]; sampleImage?:boolean; reply?:string; thinking?:string[];
+  contentText?:string; answerText?:string; replyDelayMs?:number; replyChunkMs?:number; devicesOnline?:boolean;
 };
 
 export function createLabFixture(terminal = true, options: LabFixtureOptions = {}) {
   const devices = labDevices(device,options.machines ?? 3);
-  devices.forEach((row,i)=>{if(options.deviceNames?.[i])row.name=row.shown=options.deviceNames[i];});
+  devices.forEach((row,i)=>{
+    if(options.deviceNames?.[i])row.name=row.shown=options.deviceNames[i];
+    if(options.devicesOnline){
+      row.paused=false;row.down_ms=null;
+      if(!row.me){row.hop=row.last_hop='direct';row.heard_ms=1000;row.rtt_ms=row.last_rtt_ms=12+i*4;row.relay=null;}
+      if(row.vitals){row.vitals.age_ms=1000;row.vitals.stale=[];}
+    }
+  });
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
   const quota = labQuota(devices);
@@ -309,7 +316,7 @@ export function createLabFixture(terminal = true, options: LabFixtureOptions = {
             const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: options.longHistory&&i===0?'长对话历史 · 240轮':(options.sessionTitles?.[i] ?? titles[i]),
               activity: [], observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
               word: streaming.has(i)||i===2 ? 'busy' : i===1 ? 'blocked' : 'idle', at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
-              stale: false, category: i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude', group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,
+              stale: false, category: options.sessionCategories?.[i] ?? (i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude'), group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,
               hosted: true, can_control: true, attachable: false, last: options.sessionPreviews?.[i] ?? '隔离示例 · 不连接真实智能体',
               via: null, via_face: null, home: devices[i%Math.max(1,devices.length)]?.name??device.name, execution_home: devices[i%Math.max(1,devices.length)]?.id??device.id, place:labRoot(devices[i%Math.max(1,devices.length)])+'/project', doing: null, mux: false, ended: null}));
             if (terminal) rows.push({...rows[0], id: 'shell/layout-lab', kind: 'shell', title: options.sessionTitles?.[5] ?? '终端 · 布局试验',

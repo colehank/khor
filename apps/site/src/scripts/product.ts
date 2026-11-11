@@ -7,7 +7,6 @@ export function mountDesktopPreview() {
   const resize=new ResizeObserver(()=>stage.style.setProperty('--desktop-scale',String(preview.clientWidth/stage.offsetWidth)));
   resize.observe(preview);
   const url=new URL(frame.dataset.src!,location.origin);
-  url.searchParams.set('theme',matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
   frame.src=url.href;
   window.addEventListener('message',event=>{
     if(event.origin!==location.origin||event.source!==frame.contentWindow)return;

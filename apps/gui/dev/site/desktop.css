@@ -1,0 +1,5 @@
+/* The static website illustrates AppKit's controls in the real shell's
+ * reserved corner. This never enables a native backend or adds a header row. */
+html:root[data-site-macos] { --traffic:calc(var(--gap-pane)*3 + var(--gap-xxs)); }
+html:root[data-site-macos] :is([data-wide-top],[data-folded-lead]) { padding-inline-start:var(--wide-lead-start); }
+.site-macos-controls { position:fixed; z-index:100; left:var(--gap-in); top:calc((var(--pane-head) - var(--gap-row))/2); height:var(--gap-row); width:auto; pointer-events:none; user-select:none; }

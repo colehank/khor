@@ -3,6 +3,8 @@ import {configureLabBackend} from '../lab/backend-context';
 import {scenes,sessionIds,type Scene} from '../lab/scenes';
 import {scenario} from './scenario';
 import {setSessionSide,setSideWidth} from '../../src/hooks/use-session-side';
+import controls from './macos-controls.svg?url';
+import './desktop.css';
 
 // This entry uses the production App with browser-local, synthetic data only.
 configureLabBackend('frontend');
@@ -12,7 +14,7 @@ const hero=query.get('hero')==='1';
 if (!(requested in scenes)) throw new Error('Unknown demo scene');
 const scene = scenes[requested as Scene];
 const active = scene.session ?? sessionIds[0];
-const identity = `site-v2/${hero?'hero':requested}`;
+const identity = `site-v3/${hero?'hero':requested}`;
 if(localStorage.getItem('khor.site.identity')!==identity){
   localStorage.setItem('khor.site.identity',identity);
   localStorage.setItem('khor.lang','zh');
@@ -20,9 +22,17 @@ if(localStorage.getItem('khor.site.identity')!==identity){
   const landing=['workspace','workspaces'].includes(requested)?'workspaces':requested==='devices'?'devices':'sessions';
   localStorage.setItem('khor.place',JSON.stringify({landing,screen:'list'}));
 }
-localStorage.setItem('khor.theme',query.get('theme')==='dark'?'dark':'light');
-const fixture=createLabFixture(true,{...scenario,reply:`Let's try Khor, [download it here.](${location.origin}/download/)`,origin:location.origin,contentText:'项目文件：/preview/project/README.md\n\n[打开项目网页]('+location.origin+'/lab/example)',settings:true,content:!hero&&['content','page'].includes(requested),page:requested==='page',items:3,machines:3});
+const theme=query.get('theme')==='dark'?'dark':query.get('theme')==='light'?'light':'auto';
+localStorage.setItem('khor.theme',theme);
+const fixture=createLabFixture(true,{...scenario,reply:`Let's try Khor, [download it here.](${location.origin}/download/)`,origin:location.origin,contentText:'项目文件：/preview/project/README.md\n\n[打开项目网页]('+location.origin+'/lab/example)',settings:true,content:!hero&&['content','page'].includes(requested),page:requested==='page',items:3,machines:scenario.deviceNames.length});
+// Discard a previous demo's pinned theme; the production theme listener
+// follows the browser live while its preference is auto.
+fixture.request('set_config',{name:'theme',value:theme});
 if(hero){
+  document.documentElement.dataset.siteMacos='';
+  const lights=document.createElement('img');
+  lights.src=controls;lights.alt='';lights.className='site-macos-controls';lights.setAttribute('aria-hidden','true');
+  document.body.append(lights);
   const readme={machine:'MacBook Pro',path:'/preview/project/README.md'};
   const before=fixture.request('read_text',readme) as {digest:string};
   fixture.request('write_text',{...readme,was:before.digest,text:'# Website\n\n## 首页适配\n\n让桌面和手机上的工作衔接起来。\n\n- [x] 查看现有首页\n- [x] 调整布局\n- [x] 预览修改\n\n## 接着做\n\n在会话中说明下一步，文件与修改记录都留在这里。\n'});
