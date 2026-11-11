@@ -7,8 +7,14 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front]
         default: sync
+      frontend_run:
+        type: string
+        default: '42999557910'
+      bindings_sha:
+        type: string
+        default: '6ffcd3d3b437495f86005539175a72a54ea081a2'
       checker_sha:
         type: string
         default: ''
@@ -18,6 +24,7 @@ on:
         default: all
 permissions:
   contents: read
+  actions: read
 jobs:
   seen:
     if: inputs.slice == 'sync' || inputs.slice == 'format'
@@ -602,3 +609,85 @@ jobs:
         with:
           name: original-test-media
           path: ${{ runner.temp }}/media-fixture
+
+  lab-front:
+    if: inputs.slice == 'lab-front'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: cached-frontend
+          run-id: ${{ inputs.frontend_run }}
+          github-token: ${{ github.token }}
+      - name: Verify the native inputs before reusing generated types
+        env:
+          BINDINGS_SHA: ${{ inputs.bindings_sha }}
+          BINDINGS_RUN: ${{ inputs.frontend_run }}
+        run: |
+          set -euo pipefail
+          git diff --exit-code "$BINDINGS_SHA" HEAD -- Cargo.toml Cargo.lock crates apps/gui/core apps/gui/src-tauri apps/gui/dev/lab/data/workspace apps/gui/scripts/generate.mjs scripts/khor_lab/fixture_data.py
+          python3 scripts/release_manifest.py verify --root cached-frontend --sha "$BINDINGS_SHA" --run-id "$BINDINGS_RUN" --kind frontend
+          mkdir -p apps/gui/src apps/gui/dev/lab/data
+          cp -R cached-frontend/gen apps/gui/src/gen
+          cp cached-frontend/lab-world.generated.json apps/gui/dev/lab/data/world.generated.json
+          python3 scripts/khor_lab/fixture_data.py . --check
+      - run: npm ci --prefix apps/gui
+      - name: Build the latest real frontend and App Lab without regenerating identical Rust types
+        working-directory: apps/gui
+        run: |
+          npx tsc --noEmit
+          npx vite build
+          npx tsc --project dev/lab/tsconfig.json
+          npx vite build --config dev/lab/vite.config.ts --outDir "$RUNNER_TEMP/developer-lab"
+          python3 - <<'PYCODE'
+          import json, os, pathlib, subprocess
+          git=lambda *args:subprocess.check_output(['git',*args],text=True).strip()
+          source=pathlib.Path(os.environ['RUNNER_TEMP'])/'lab-source.json'
+          source.write_text(json.dumps(dict(schema=1,base_commit=git('rev-parse','HEAD'),tree=git('rev-parse','HEAD^{tree}'),snapshot_commit=git('rev-parse','HEAD'),dirty=False)))
+          subprocess.run(['python3','../../scripts/khor_lab/package.py','../..',os.environ['RUNNER_TEMP']+'/developer-lab',str(source)],check=True)
+          PYCODE
+      - name: Prepare Chromium and WebKit media engines
+        working-directory: apps/gui
+        run: |
+          sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk gstreamer1.0-libav
+          npx playwright-core install --with-deps chromium webkit
+      - name: Exercise the actual App and its live update path
+        working-directory: apps/gui
+        env:
+          LAB_BUNDLE: ${{ runner.temp }}/developer-lab
+          LAB_REPORT: ${{ runner.temp }}/lab-report
+          QUALITY_ENGINES: chromium,webkit
+        run: |
+          node dev/lab/check-app.mjs
+          node dev/lab/check-hot.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: lab-diagnosis
+          path: |
+            ${{ runner.temp }}/lab-report/*.json
+            ${{ runner.temp }}/lab-report/*.txt
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: developer-lab-review
+          path: |
+            ${{ runner.temp }}/developer-lab
+            ${{ runner.temp }}/lab-report/*.json
+            ${{ runner.temp }}/lab-report/*.png
+          retention-days: 7
