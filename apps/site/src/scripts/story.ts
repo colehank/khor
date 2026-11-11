@@ -137,14 +137,14 @@ export function mountStory() {
     scheduled = false;
     if (disposed) return;
     const scroll = window.scrollY;
-    const progress = reduced.matches ? 1 : clamp((scroll - topOpening) / openingTravel);
+    const progress = clamp((scroll - topOpening) / openingTravel);
     const active = starts.findLastIndex(start => progress >= start);
     lines.forEach((line, index) => line.classList.toggle('is-current', index === active));
     steps.forEach((step, index) => {
       if (index === active) step.setAttribute('aria-current', 'step');
       else step.removeAttribute('aria-current');
     });
-    const iconState=updateIcon(reduced.matches?4:active,now,reduced.matches);
+    const iconState=updateIcon(active,now,reduced.matches);
     property(opening!,'--story-controls-opacity',1-ramp(progress,.9,1));
     handoffProgress = reduced.matches ? 0 : clamp((scroll - topHandoff) / handoffTravel);
     if (scroll + innerHeight > topHandoff - innerHeight * .5) prepareDemo();

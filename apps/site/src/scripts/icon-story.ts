@@ -16,7 +16,7 @@ export function createIconMotion(host:HTMLElement) {
   let scene=-1,started=0,settled=false;
   return (requested:number,now:number,reduced:boolean)=>{
     // A direct jump to Meet still finishes the neutral structure before its colour reveal.
-    const next=reduced?4:requested===4&&current.form<1?3:requested;
+    const next=!reduced&&requested===4&&current.form<1?3:requested;
     if(next!==scene){from={...current};scene=next;started=now;settled=false;}
     const time=reduced?1:clamp((now-started)/duration[scene]);
     const t=time===1?1:1-Math.pow(1-time,3);
@@ -45,6 +45,8 @@ export function animateIcon(host:HTMLElement) {
   const art=svg?.querySelector<SVGGElement>('g[transform="translate(2.6 .88) scale(.9922)"]');
   if(!svg||!art)throw new Error('The canonical khor icon layer contract has changed');
   const children=[...art.children];
+  const canvas=host.querySelector<HTMLElement>('.canonical-icon')!;
+  let ready=false;
   const diamondStart=children.findIndex(el=>el.tagName==='path');
   const haloStart=children.findIndex(el=>el.getAttribute('fill')==='url(#artwork-ring-halo)');
   const pearlBodies=Array.from({length:5},(_,i)=>children.find(el=>el.getAttribute('fill')===`url(#artwork-pearl-${i})`));
@@ -114,5 +116,6 @@ export function animateIcon(host:HTMLElement) {
     reveal(inner,'story-inner-reveal',ring);innerReveal.setAttribute('stroke-dashoffset',String(1-ring));
     reveal(diamond,'story-diamond-reveal',glass);diamondReveal.setAttribute('r',String(glass*750));
     reveal(outer,'story-outer-reveal',rim);outerReveal.setAttribute('stroke-dashoffset',String(1-rim));
+    if(!ready){canvas.dataset.iconReady='';ready=true;}
   };
 }
