@@ -704,7 +704,7 @@ mod published_upgrade {
 
     #[test]
     #[ignore = "requires the exact published v0.1.15-rc.3 CLI supplied by native CI"]
-    fn an_actual_published_release_upgrades_and_rolls_back_without_replacing_shells() {
+    fn an_actual_published_release_upgrade_rejects_incompatible_rollback_without_replacing_shells() {
         let old = PathBuf::from(
             std::env::var_os("KHOR_TEST_PREVIOUS_BIN").expect("verified old release"),
         );
@@ -767,15 +767,21 @@ mod published_upgrade {
 
         let second = inner_pid(&installation.home).unwrap();
         installation.point_legacy_installation(&old, "v0.1.15-rc.3");
-        wait_for("compatible rollback", 30, || {
-            inner_pid(&installation.home).is_some_and(|pid| pid != second && alive(pid))
+        // New file-resource RPCs changed the exact node wire contract. A
+        // downgrade must retain the current resident and both live shells.
+        wait_for("incompatible rollback refusal", 30, || {
+            fs::read_to_string(installation.home.join("serve.log"))
+                .is_ok_and(|log| log.contains("runtime protocols or storage format are incompatible"))
         });
+        assert_eq!(inner_pid(&installation.home), Some(second));
+        assert!(alive(second));
         assert_eq!(
             digest(&fs::read_link(format!("/proc/{}/exe", keeper.id())).unwrap()),
-            digest(&old)
+            digest(new)
         );
-        existing.round_trip("ROLLBACK");
+        existing.round_trip("ROLLBACK_REFUSED");
         created.round_trip("RETAINED");
+        installation.point_legacy_installation(new, &format!("v{}-rc.1", khor_node::VERSION));
 
         Command::new("kill")
             .args(["-TERM", &keeper.id().to_string()])
@@ -795,6 +801,11 @@ mod published_upgrade {
         let info: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
         let contract: khor_runtime::Contract =
             serde_json::from_value(info["release"]["contract"].clone()).unwrap();
+        assert_ne!(
+            contract.node,
+            "khor/0:sha256:7bdf9a8cedcc26b783f3a6714899df875cbcb429e2f1ee64aa5a7d065e75fcda",
+            "the published release has a different node wire contract"
+        );
         let store =
             khor_runtime::Store::open(installation.runtime.clone(), Default::default()).unwrap();
         for value in [b"gc-sentinel-1", b"gc-sentinel-2"] {
