@@ -743,8 +743,9 @@ jobs:
           LAB_BUNDLE: ${{ runner.temp }}/developer-lab
           LAB_REPORT: ${{ runner.temp }}/lab-report
           QUALITY_ENGINES: chromium,webkit
+          QUALITY_HEADLESS: '0'
         run: |
-          node dev/lab/check-app.mjs
+          xvfb-run -a node dev/lab/check-app.mjs
           node dev/lab/check-hot.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
