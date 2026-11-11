@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, windows-install]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, windows-install, published-rollback]
         default: sync
       frontend_run:
         type: string
@@ -26,6 +26,49 @@ permissions:
   contents: read
   actions: read
 jobs:
+  published-rollback:
+    if: inputs.slice == 'published-rollback'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/native-tools
+        with:
+          target: x86_64-unknown-linux-gnu
+      - name: Embed the actual agent and verify the two real published runtimes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          npm ci --prefix apps/agent
+          node apps/agent/build.mjs x86_64-unknown-linux-gnu apps/agent/dist/khor-agent
+          export KHOR_AGENT_BUNDLE="$PWD/apps/agent/dist/khor-agent"
+          previous="$RUNNER_TEMP/khor-0.1.15-rc.3"
+          timeout 120s gh release download v0.1.15-rc.3 --repo colehank/khor --pattern khor-linux-x86_64.gz --output "$previous.gz"
+          echo "92bf83cca3773456f9da55630d4d7819dc52ade3079720b79379121aacf58208  $previous.gz" | sha256sum --check
+          gzip --decompress --stdout "$previous.gz" > "$previous"
+          echo "499dec3513b3af917be3dc866950081a09224880591f1e6950a0524ef8a8a709  $previous" | sha256sum --check
+          chmod 555 "$previous"
+          KHOR_TEST_PREVIOUS_BIN="$previous" cargo test --locked -p khor-cli --test serve_keeper an_actual_published_release -- --ignored --nocapture --test-threads=1 2>&1 | tee "$RUNNER_TEMP/previous-release.log"
+          grep -Eq '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "$RUNNER_TEMP/previous-release.log"
+      - name: Retain formatting from the remote Rust toolchain
+        if: always()
+        run: cargo fmt --all && git diff --binary > "$RUNNER_TEMP/format.patch"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: published-rollback
+          path: |
+            ${{ runner.temp }}/previous-release.log
+            ${{ runner.temp }}/format.patch
+          retention-days: 7
   windows-install:
     if: inputs.slice == 'windows-install'
     runs-on: windows-2025
@@ -701,7 +744,7 @@ jobs:
           BINDINGS_RUN: ${{ inputs.frontend_run }}
         run: |
           set -euo pipefail
-          git diff --exit-code "$BINDINGS_SHA" HEAD -- Cargo.toml Cargo.lock crates apps/gui/core apps/gui/dev/lab/data/workspace apps/gui/scripts/generate.mjs scripts/khor_lab/fixture_data.py ':!apps/gui/core/src/resource_preview.rs'
+          git diff --exit-code "$BINDINGS_SHA" HEAD -- Cargo.toml Cargo.lock crates apps/gui/core apps/gui/dev/lab/data/workspace apps/gui/scripts/generate.mjs scripts/khor_lab/fixture_data.py ':!apps/gui/core/src/resource_preview.rs' ':!crates/node/src/runtime_image.rs'
           python3 - <<'PYCODE'
           import os,pathlib,subprocess
           path='apps/gui/core/src/resource_preview.rs'
@@ -710,6 +753,11 @@ jobs:
           # The complete imports/attributes/exported TS declaration precede this
           # private implementation. All other core/crate bytes were checked above.
           assert old.split('struct Context {',1)[0]==new.split('struct Context {',1)[0], 'ResourcePreview binding declaration changed; regenerate it'
+          path='crates/node/src/runtime_image.rs'
+          old=subprocess.check_output(['git','show',os.environ['BINDINGS_SHA']+':'+path],text=True)
+          new=pathlib.Path(path).read_text()
+          assert old.split('fn current()',1)[0]==new.split('fn current()',1)[0], 'Runtime types/imports changed; regenerate bindings'
+          assert old.split('pub fn process_entry()',1)[1]==new.split('pub fn process_entry()',1)[1], 'Runtime code outside current metadata changed; regenerate bindings'
           PYCODE
           python3 scripts/release_manifest.py verify --root cached-frontend --sha "$BINDINGS_SHA" --run-id "$BINDINGS_RUN" --kind frontend
           mkdir -p apps/gui/src apps/gui/dev/lab/data
