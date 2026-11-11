@@ -925,3 +925,12 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 光学图稿中的坐标和光色属于被编辑的素材。手机布局及安装后实际外缘仍需人工验收。
 
 通知的`notification-ui`同时运行`check-native-notification-ui.mjs`，覆盖独立原生网页层重叠时使用可信原生承载、同一正式横幅内容及事件桥；仅替换IPC，不能冒称真实OS合成器已验证。
+
+### App 安装图标（2026-11-12）
+
+已有 `App icon` workflow 的入口是 `python3 scripts/app_icon.py check`、
+`python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'`。
+它验证同一外观策略、已定稿浅色、深色参数/SVG、生成清单及两端母图字节一致；
+macOS job 编译 macOS / iOS catalog、保留资源清单，并导出 Default / Dark 核验两种图稿都被选中。
+只需图标生成工具依赖，不触发完整 App 构建；实际安装验收另记。
+规范唯一入口为 [App 图标规范](../../../apps/gui/src-tauri/icons/src/README.md)。

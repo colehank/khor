@@ -20,6 +20,23 @@ spec.loader.exec_module(app_icon)
 
 
 class IconInputTests(unittest.TestCase):
+    def test_single_size_catalog_resolves_both_appearances_without_scale(self):
+        self.assertEqual(set(app_icon.ios_assets().values()), {(1024, "light"), (1024, "dark")})
+
+    def test_policy_rejects_shared_assets_and_paths_outside_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / app_icon.APPEARANCES
+            path.parent.mkdir(parents=True)
+            original = app_icon.appearance_policy()
+            for field, value in [("asset", original["appearances"]["light"]["asset"]),
+                                 ("artwork", "../outside.svg")]:
+                policy = json.loads(json.dumps(original))
+                policy["appearances"]["dark"][field] = value
+                path.write_text(json.dumps(policy))
+                with self.assertRaises(ValueError):
+                    app_icon.appearance_policy(root)
+
     def test_ios_inventory_rejects_escaping_filename_and_fractional_pixels(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -39,6 +56,54 @@ class IconInputTests(unittest.TestCase):
                                 input=b'{"format":"unknown"}', capture_output=True)
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(result.stdout, b"")
+
+
+class AppearanceAssetTests(unittest.TestCase):
+    """Exercise drift that a regenerated hash alone would otherwise conceal."""
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        paths = {*app_icon.INPUTS, *map(Path, app_icon.asset_spec()), app_icon.MANIFEST}
+        for path in paths:
+            target = self.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(app_icon.ROOT / path, target)
+
+    def resign(self, relative, section):
+        manifest_path = self.root / app_icon.MANIFEST
+        manifest = json.loads(manifest_path.read_text())
+        manifest[section][str(relative)] = app_icon.digest((self.root / relative).read_bytes())
+        manifest_path.write_text(json.dumps(manifest))
+
+    def test_dark_ios_cannot_drift_from_mac_even_with_updated_hash(self):
+        Image, _ = app_icon.pillow()
+        path = app_icon.IOS / "AppIcon-dark.png"
+        with Image.open(self.root / path) as source:
+            image = source.copy()
+        image.putpixel((0, 0), (255, 0, 0))
+        image.save(self.root / path)
+        self.resign(path, "outputs")
+        with self.assertRaisesRegex(ValueError, "dark artwork must be identical"):
+            app_icon.check_assets(self.root)
+
+    def test_native_document_cannot_drop_dark_specialization(self):
+        path = app_icon.ICONS / "Icon.icon/icon.json"
+        document = json.loads((self.root / path).read_text())
+        layer = document["groups"][0]["layers"][0]
+        layer["image-name"] = layer.pop("image-name-specializations")[0]["value"]
+        (self.root / path).write_text(json.dumps(document))
+        self.resign(path, "outputs")
+        with self.assertRaisesRegex(ValueError, "Native appearance mapping"):
+            app_icon.check_assets(self.root)
+
+    def test_light_final_cannot_change_by_only_regenerating_manifest(self):
+        path = app_icon.ICONS / "src/app-icon-light.svg"
+        with (self.root / path).open("ab") as output:
+            output.write(b"\n")
+        self.resign(path, "inputs")
+        with self.assertRaisesRegex(ValueError, "approved final"):
+            app_icon.check_assets(self.root)
 
 
 class StudioServerTests(unittest.TestCase):

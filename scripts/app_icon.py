@@ -1,4 +1,4 @@
-"""Serve the icon studio, or generate/check every installed app icon from one preset.
+"""Serve the icon studio, or generate/check installed icons from approved appearances.
 
 No app build is needed. Native catalog compilation belongs to mac_icon.py / CI.
 """
@@ -21,6 +21,7 @@ LAB = Path("apps/gui/dev/icon-lab")
 ICONS = Path("apps/gui/src-tauri/icons")
 PRESET = ICONS / "src/app-icon.json"
 MANIFEST = ICONS / "src/generated.json"
+APPEARANCES = ICONS / "src/app-icon-appearances.json"
 IOS = Path("apps/gui/src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset")
 RESVG_VERSION = "0.47.0"
 PILLOW_VERSION = "12.2.0"
@@ -30,7 +31,8 @@ MASK = ("M330 0 L694 0 C894 0 1024 130 1024 330 L1024 694 "
         "L0 330 C0 130 130 0 330 0 Z")
 INPUTS = [LAB / "renderer.ts", LAB / "render.ts", LAB / "package.json",
           LAB / "package-lock.json", LAB / "tsconfig.json", PRESET,
-          ICONS / "Icon.icon/icon.json", IOS / "Contents.json",
+          APPEARANCES, ICONS / "src/app-icon-light.svg",
+          ICONS / "src/app-icon-light-approval.json",
           Path("scripts/app_icon.py"), Path("scripts/requirements-app-icon.txt")]
 
 
@@ -72,7 +74,56 @@ def render(preset):
     return subprocess.check_output(["node", str(ROOT / LAB / "render.ts")], input=preset)
 
 
-def ios_sizes(root=ROOT):
+def appearance_policy(root=ROOT):
+    policy = json.loads((root / APPEARANCES).read_text())
+    if (policy.get("version") != 1 or policy.get("selection") != "system-icon-appearance"
+            or set(policy.get("appearances", {})) != {"light", "dark"}
+            or policy.get("default") != "light"
+            or policy.get("fallback") not in {"light", "dark"}):
+        raise ValueError("Invalid app icon appearance policy")
+    for variant in policy["appearances"].values():
+        for key, suffix in [("artwork", ".svg"), ("asset", ".png")]:
+            name = variant[key]
+            if Path(name).name != name or not name.endswith(suffix):
+                raise ValueError(f"Invalid icon {key}: {name}")
+    for key in ["artwork", "asset"]:
+        if len({v[key] for v in policy["appearances"].values()}) != 2:
+            raise ValueError("Light and dark must have separate artwork and assets")
+    if {key: value["artwork"] for key, value in policy["appearances"].items()} != {
+            "light": "app-icon-light.svg", "dark": "mandala-glass.svg"}:
+        raise ValueError("Artwork must use the approved light and generated dark source paths")
+    return policy
+
+
+def native_document(policy):
+    variants = policy["appearances"]
+    return {
+        "fill": {"solid": "srgb:0.95686,0.95294,0.92941,1.00000"},
+        "groups": [{"layers": [{
+            "blend-mode": "normal", "fill": "automatic", "glass": False, "hidden": False,
+            # Composer uses specializations INSTEAD OF a fixed image-name.
+            "image-name-specializations": [
+                {"value": variants[policy["default"]]["asset"]},
+                {"appearance": "dark", "value": variants["dark"]["asset"]},
+            ],
+            "name": "辉心", "position": {"scale": 1, "translation-in-points": [0, 0]},
+        }], "shadow": {"kind": "neutral", "opacity": 0},
+            "translucency": {"enabled": False, "value": 0}}],
+        "supported-platforms": {"squares": "shared"},
+    }
+
+
+def ios_document(policy):
+    # Apple's single-size catalog generates legacy sizes too. Dark icons are
+    # selected by iOS 18+ Home Screen appearance, independently of app UI theme.
+    return {"images": [
+        {"filename": "AppIcon-512@2x.png", "idiom": "universal", "platform": "ios", "size": "1024x1024"},
+        {"filename": "AppIcon-dark.png", "idiom": "universal", "platform": "ios", "size": "1024x1024",
+         "appearances": [{"appearance": "luminosity", "value": "dark"}]},
+    ], "info": {"author": "xcode", "version": 1}}
+
+
+def ios_assets(root=ROOT):
     entries = json.loads((root / IOS / "Contents.json").read_text())["images"]
     sizes = {}
     for entry in entries:
@@ -80,43 +131,65 @@ def ios_sizes(root=ROOT):
         if Path(filename).name != filename or not filename.endswith(".png"):
             raise ValueError(f"Invalid iOS icon filename: {filename}")
         width, height = map(float, entry["size"].split("x"))
-        pixels = width * float(entry["scale"].removesuffix("x"))
+        pixels = width * float(entry.get("scale", "1x").removesuffix("x"))
         if width != height or not pixels.is_integer() or pixels <= 0:
             raise ValueError(f"Invalid iOS icon size: {entry}")
-        size = int(pixels)
-        if filename in sizes and sizes[filename] != size:
+        appearance = "light"
+        if entry.get("appearances"):
+            if entry["appearances"] != [{"appearance": "luminosity", "value": "dark"}]:
+                raise ValueError(f"Unsupported iOS icon appearance: {entry}")
+            appearance = "dark"
+        item = (int(pixels), appearance)
+        if filename in sizes and sizes[filename] != item:
             raise ValueError(f"Conflicting iOS icon sizes: {filename}")
-        sizes[filename] = size
+        sizes[filename] = item
     return sizes
 
 
-def asset_spec():
+def ios_sizes(root=ROOT):
+    return {name: item[0] for name, item in ios_assets(root).items()}
+
+
+def asset_spec(root=ROOT):
+    policy = appearance_policy(root)
     spec = {
         str(ICONS / "src/mandala-glass.svg"): None,
-        str(ICONS / "Icon.icon/Assets/app-icon.png"): (1024, "RGB"),
+        str(ICONS / "Icon.icon/icon.json"): None,
+        str(IOS / "Contents.json"): None,
         str(ICONS / "icon.png"): (512, "RGBA"),
         str(ICONS / "icon.icns"): (1024, "RGBA"),
         str(ICONS / "icon.ico"): (256, "RGBA"),
         str(LAB / "native-macos.png"): (1024, "RGBA"),
         str(LAB / "native-ios.png"): (1024, "RGBA"),
+        str(LAB / "native-macos-dark.png"): (1024, "RGBA"),
+        str(LAB / "native-ios-dark.png"): (1024, "RGBA"),
     }
-    spec.update({str(IOS / name): (size, "RGB") for name, size in ios_sizes().items()})
+    spec.update({str(ICONS / "Icon.icon/Assets" / v["asset"]): (1024, "RGB")
+                 for v in policy["appearances"].values()})
+    spec.update({str(IOS / name): (size, "RGB") for name, size in ios_sizes(root).items()})
     return spec
 
 
-def check():
+def check_assets(root=ROOT):
     Image, _ = pillow()
-    manifest = json.loads((ROOT / MANIFEST).read_text())
-    expected_inputs = {str(path): digest((ROOT / path).read_bytes()) for path in INPUTS}
-    if manifest.get("version") != 1 or manifest.get("inputs") != expected_inputs:
+    policy = appearance_policy(root)
+    manifest = json.loads((root / MANIFEST).read_text())
+    expected_inputs = {str(path): digest((root / path).read_bytes()) for path in INPUTS}
+    if manifest.get("version") != 2 or manifest.get("inputs") != expected_inputs:
         raise ValueError("Icon inputs changed; run app_icon.py generate")
-    if render((ROOT / PRESET).read_bytes()) != (ROOT / ICONS / "src/mandala-glass.svg").read_bytes():
-        raise ValueError("SVG does not match the current preset and renderer")
-    spec = asset_spec()
+    if json.loads((root / IOS / "Contents.json").read_text()) != ios_document(policy):
+        raise ValueError("iOS appearance mapping differs from the shared policy")
+    if json.loads((root / ICONS / "Icon.icon/icon.json").read_text()) != native_document(policy):
+        raise ValueError("Native appearance mapping differs from the shared policy")
+    approval = json.loads((root / ICONS / "src/app-icon-light-approval.json").read_text())
+    light = root / ICONS / "src" / policy["appearances"]["light"]["artwork"]
+    if digest(light.read_bytes()) != approval["sha256"]["artwork.svg"]:
+        raise ValueError("Light artwork differs from the approved final")
+    spec = asset_spec(root)
     if set(manifest["outputs"]) != set(spec):
         raise ValueError("Generated icon inventory is incomplete or contains unexpected files")
     for filename, image_spec in spec.items():
-        path = ROOT / filename
+        path = root / filename
         if digest(path.read_bytes()) != manifest["outputs"][filename]:
             raise ValueError(f"Generated icon changed: {filename}")
         if image_spec:
@@ -127,14 +200,22 @@ def check():
                     raise ValueError(f"Wrong icon dimensions or color mode: {filename}")
                 if path.suffix == ".ico" and image.info["sizes"] != {(s, s) for s in [16, 24, 32, 48, 64, 128, 256]}:
                     raise ValueError("ICO is missing required sizes")
-    master = (ROOT / ICONS / "Icon.icon/Assets/app-icon.png").read_bytes()
-    if master != (ROOT / IOS / "AppIcon-512@2x.png").read_bytes():
-        raise ValueError("macOS and iOS must share the exact same 1024px artwork")
-    icon = json.loads((ROOT / ICONS / "Icon.icon/icon.json").read_text())
-    layer = icon["groups"][0]["layers"][0]
-    if layer["image-name"] != "app-icon.png" or layer["glass"] or layer["position"] != {"scale": 1, "translation-in-points": [0, 0]}:
-        raise ValueError("Native icon must use the shared artwork at full size without an extra glass layer")
-    print(f"PASS: shared preset/SVG, {len(spec)} generated assets, iOS/macOS source equality")
+    for name, (size, appearance) in ios_assets(root).items():
+        if size == 1024:
+            master = root / ICONS / "Icon.icon/Assets" / policy["appearances"][appearance]["asset"]
+            if master.read_bytes() != (root / IOS / name).read_bytes():
+                raise ValueError(f"macOS and iOS {appearance} artwork must be identical")
+    expected_ios = {name for name, _ in ios_assets(root).items()} | {"Contents.json"}
+    if {p.name for p in (root / IOS).iterdir() if p.is_file()} != expected_ios:
+        raise ValueError("iOS catalog contains stale or untracked icon assets")
+    return len(spec)
+
+
+def check():
+    count = check_assets()
+    if render((ROOT / PRESET).read_bytes()) != (ROOT / ICONS / "src/mandala-glass.svg").read_bytes():
+        raise ValueError("SVG does not match the current preset and renderer")
+    print(f"PASS: approved light, dark preset/SVG, {count} assets, both iOS/macOS appearances equal")
 
 
 def find_ictool():
@@ -151,8 +232,24 @@ def generate(preset_path):
     if version.split()[-1] != RESVG_VERSION:
         raise ValueError(f"resvg {RESVG_VERSION} required (found {version})")
     ictool = find_ictool()
-    preset = preset_path.read_bytes()
-    svg = render(preset)  # Validate before changing any tracked file.
+    policy = appearance_policy()
+    previous = json.loads((ROOT / MANIFEST).read_text())
+    previous_ios = {Path(name).name for name in previous["outputs"] if Path(name).parent == IOS}
+    if {p.name for p in (ROOT / IOS).iterdir() if p.is_file()} - previous_ios - {"Contents.json"}:
+        raise ValueError("Unexpected files in iOS catalog; preserve them before regeneration")
+    preset = (preset_path or ROOT / PRESET).read_bytes()
+    if preset_path:
+        svg = render(preset)  # Validate before changing any tracked file.
+    else:
+        # Repackage accepted artwork without running a TS toolchain. If its
+        # preset/renderer changed, require an explicit re-render instead.
+        for path in [p for p in INPUTS if p == PRESET or p.parts[:len(LAB.parts)] == LAB.parts]:
+            if previous["inputs"].get(str(path)) != digest((ROOT / path).read_bytes()):
+                raise ValueError("Dark rendering inputs changed; generate with --preset")
+        path = ICONS / "src/mandala-glass.svg"
+        svg = (ROOT / path).read_bytes()
+        if previous["outputs"].get(str(path)) != digest(svg):
+            raise ValueError("Dark SVG changed; generate with --preset")
     with tempfile.TemporaryDirectory(prefix="khor-icon-") as directory:
         stage = Path(directory)
 
@@ -169,10 +266,16 @@ def generate(preset_path):
             with Image.open(output) as image:
                 return image.convert("RGBA")
 
-        full = raster(svg, "full")
-        if full.getchannel("A").getextrema() != (255, 255):
-            raise ValueError("Installed Apple artwork must have an opaque background")
-        master = full.convert("RGB")
+        for path in INPUTS:
+            shutil.copyfile(ROOT / path, target(path))
+        variants = {appearance: svg if appearance == "dark" else (ROOT / ICONS / "src" / v["artwork"]).read_bytes()
+                    for appearance, v in policy["appearances"].items()}
+        masters = {}
+        for appearance, source in variants.items():
+            full = raster(source, appearance)
+            if full.size != (1024, 1024) or full.getchannel("A").getextrema() != (255, 255):
+                raise ValueError("Installed artwork must be opaque and 1024px square")
+            masters[appearance] = full.convert("RGB")
         srgb = PngImagePlugin.PngInfo()
         srgb.add(b"sRGB", b"\x00")
 
@@ -181,11 +284,14 @@ def generate(preset_path):
 
         target(PRESET).write_bytes(preset)
         target(ICONS / "src/mandala-glass.svg").write_bytes(svg)
-        png(master, ICONS / "Icon.icon/Assets/app-icon.png")
-        for name, size in ios_sizes().items():
-            png(master.resize((size, size), Image.Resampling.LANCZOS), IOS / name)
+        target(ICONS / "Icon.icon/icon.json").write_text(json.dumps(native_document(policy), indent=2, ensure_ascii=False) + "\n")
+        target(IOS / "Contents.json").write_text(json.dumps(ios_document(policy), indent=2) + "\n")
+        for appearance, master in masters.items():
+            png(master, ICONS / "Icon.icon/Assets" / policy["appearances"][appearance]["asset"])
+        for name, (size, appearance) in ios_assets(stage).items():
+            png(masters[appearance].resize((size, size), Image.Resampling.LANCZOS), IOS / name)
         # Clip only compatibility assets. No hand-painted outer glass treatment.
-        body = svg.decode().split(">", 1)[1].rsplit("</svg>", 1)[0]
+        body = variants[policy["fallback"]].decode().split(">", 1)[1].rsplit("</svg>", 1)[0]
         clipped = ('<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024">'
                    f'<defs><clipPath id="legacy-mask"><path d="{MASK}"/></clipPath></defs>'
                    f'<g clip-path="url(#legacy-mask)">{body}</g></svg>')
@@ -194,30 +300,36 @@ def generate(preset_path):
         legacy.save(target(ICONS / "icon.icns"), format="ICNS")
         legacy.save(target(ICONS / "icon.ico"), format="ICO",
                     sizes=[(size, size) for size in [16, 24, 32, 48, 64, 128, 256]])
-        shutil.copyfile(ROOT / ICONS / "Icon.icon/icon.json", target(ICONS / "Icon.icon/icon.json"))
         for platform, name in [("macOS", "macos"), ("iOS", "ios")]:
-            output = target(LAB / f"native-{name}.png")
-            subprocess.run([str(ictool), str(stage / ICONS / "Icon.icon"), "--export-image",
-                            "--output-file", str(output), "--platform", platform,
-                            "--rendition", "Default", "--width", "1024", "--height", "1024", "--scale", "1"],
-                           check=True, stdout=subprocess.DEVNULL)
-        inputs = {str(path): digest((stage / path if path == PRESET else ROOT / path).read_bytes()) for path in INPUTS}
-        outputs = {path: digest((stage / path).read_bytes()) for path in asset_spec()}
-        manifest = {"version": 1, "tools": {"resvg": RESVG_VERSION, "Pillow": PILLOW_VERSION},
+            for suffix, rendition in [("", "Default"), ("-dark", "Dark")]:
+                output = target(LAB / f"native-{name}{suffix}.png")
+                subprocess.run([str(ictool), str(stage / ICONS / "Icon.icon"), "--export-image",
+                                "--output-file", str(output), "--platform", platform,
+                                "--rendition", rendition, "--width", "1024", "--height", "1024", "--scale", "1"],
+                               check=True, stdout=subprocess.DEVNULL)
+        inputs = {str(path): digest((stage / path).read_bytes()) for path in INPUTS}
+        outputs = {path: digest((stage / path).read_bytes()) for path in asset_spec(stage)}
+        manifest = {"version": 2, "tools": {"resvg": RESVG_VERSION, "Pillow": PILLOW_VERSION},
                     "inputs": inputs, "outputs": outputs}
         target(MANIFEST).write_text(json.dumps(manifest, indent=2) + "\n")
+        check_assets(stage)
         # All rendering/exports must succeed before publishing the staged files.
         for path in [PRESET, *map(Path, outputs), MANIFEST]:
             source, destination = stage / path, ROOT / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, destination)
-    check()
+        for name in previous["outputs"]:
+            path = Path(name)
+            if path.parent == IOS and path.suffix == ".png" and name not in outputs:
+                (ROOT / path).unlink(missing_ok=True)
+    count = check_assets()
+    print(f"Generated {count} assets from approved light/dark artwork; run check for renderer verification")
 
 
 def served_files():
     files = {"/" + name: ROOT / LAB / name for name in [
         "index.html", "styles.css", "app.ts", "renderer.ts", "reference-07.png",
-        "native.html", "native-macos.png", "native-ios.png",
+        "native.html", "native-macos.png", "native-ios.png", "native-macos-dark.png", "native-ios-dark.png",
     ]}
     files["/"] = files["/index.html"]
     files["/icon-lab.html"] = files["/index.html"]
@@ -276,7 +388,7 @@ def main():
     server.add_argument("--port", type=int, default=23962)
     commands.add_parser("check", help="Read-only source and generated asset validation")
     generator = commands.add_parser("generate", help="Regenerate assets and native previews on macOS")
-    generator.add_argument("--preset", type=Path, default=ROOT / PRESET)
+    generator.add_argument("--preset", type=Path, help="Re-render dark artwork from a studio preset")
     args = parser.parse_args()
     try:
         if args.action == "generate":

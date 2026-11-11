@@ -1,6 +1,6 @@
 {
   "fill": {
-    "automatic-gradient": "extended-srgb:0.03137,0.03137,0.02745,1.00000"
+    "solid": "srgb:0.95686,0.95294,0.92941,1.00000"
   },
   "groups": [
     {
@@ -10,8 +10,16 @@
           "fill": "automatic",
           "glass": false,
           "hidden": false,
-          "image-name": "app-icon.png",
-          "name": "\u8f89\u5fc3",
+          "image-name-specializations": [
+            {
+              "value": "app-icon.png"
+            },
+            {
+              "appearance": "dark",
+              "value": "app-icon-dark.png"
+            }
+          ],
+          "name": "辉心",
           "position": {
             "scale": 1,
             "translation-in-points": [
