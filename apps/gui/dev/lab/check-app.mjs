@@ -240,6 +240,7 @@ async function inspect(browser, scene, size, data = {}) {
         assert.equal(await disclosure.getAttribute('aria-expanded'),'true');
         assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Expanding tasks stays in the session list');
         assert.equal(await parent.isVisible(),true,'The parent remains visible above its inline children');
+        await page.screenshot({path:path.join(report,name+'-child-tree.png')});
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
         await parent.click();
@@ -261,6 +262,7 @@ async function inspect(browser, scene, size, data = {}) {
         assert.equal(await tasks.count(),4,'The active Khor row opens its agent and command tasks');
         assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Task branches expand in the original list');
         assert.equal(await page.locator('[data-side-list] [data-child-tasks="wide/all"]').count(),1);
+        await page.screenshot({path:path.join(report,name+'-child-tree.png')});
         await tasks.first().click();
         assert.match(await page.locator('[data-child-task-detail]').innerText(),/3 checks passed/);
         await page.keyboard.press('Escape');

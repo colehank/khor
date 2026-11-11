@@ -221,6 +221,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('content-type', content_type)
         self.send_header('content-length', str(len(body)))
         self.send_header('cache-control', 'no-store')
+        if '/assets/preview-fixtures/' in urlsplit(self.path).path:
+            self.send_header('access-control-allow-origin', '*')
         self.send_header('x-content-type-options', 'nosniff')
         self.end_headers()
         self.wfile.write(body)

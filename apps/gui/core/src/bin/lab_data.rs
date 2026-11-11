@@ -51,7 +51,9 @@ fn directory_data(
         if entry.dir {
             directory_data(&path.join(&entry.name), &child, directories, documents)?;
         } else {
-            documents.insert(child, fs::read_to_string(path.join(entry.name))?);
+            if let Ok(text) = fs::read_to_string(path.join(entry.name)) {
+                documents.insert(child, text);
+            }
         }
     }
     Ok(())

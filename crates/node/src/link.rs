@@ -8577,13 +8577,7 @@ impl Node {
         offset: Option<u64>,
     ) -> Result<crate::file_resource::Slice, String> {
         if machine.is_empty() || machine == self.name() {
-            let workspaces = self
-                .workspaces()?
-                .into_iter()
-                .filter(|w| w.device == self.device_str())
-                .map(|w| w.path)
-                .collect::<Vec<_>>();
-            return crate::file_resource::read(anchor, resource, offset, &workspaces);
+            return self.file_resource_here(anchor, resource, offset).await;
         }
         if let Some(reply) = self
             .via_serve(ipc::Op::FileResource {
@@ -8624,13 +8618,7 @@ impl Node {
     ) -> Result<crate::file_resource::Slice, String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
-            let workspaces = self
-                .workspaces()?
-                .into_iter()
-                .filter(|w| w.device == self.device_str())
-                .map(|w| w.path)
-                .collect::<Vec<_>>();
-            return crate::file_resource::read(anchor, resource, offset, &workspaces);
+            return self.file_resource_here(anchor, resource, offset).await;
         }
         let target = self
             .devices_loaded()?
@@ -8674,6 +8662,12 @@ impl Node {
             Response::Refused { why } => Err(why),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
+    }
+
+    async fn file_resource_here(&self, anchor: &str, resource: &str, offset: Option<u64>) -> Result<crate::file_resource::Slice, String> {
+        let workspaces = self.workspaces()?.into_iter().filter(|w| w.device == self.device_str()).map(|w|w.path).collect::<Vec<_>>();
+        let (anchor, resource) = (anchor.to_owned(), resource.to_owned());
+        tokio::task::spawn_blocking(move || crate::file_resource::read(&anchor, &resource, offset, &workspaces)).await.map_err(|e|e.to_string())?
     }
 
     /// One slice of a file at `offset`, off any machine. The general

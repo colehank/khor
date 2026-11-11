@@ -123,9 +123,13 @@ if (runtime.mode === 'frontend' && runtime.scene === 'page') {
   setTimeout(() => observer.disconnect(), 15000);
 }
 if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
-  let opened = false;
+  let opened = false,folderOpened=false;
   const enter = () => {
-    const file = document.querySelector<HTMLElement>('[data-file-path="/preview/project/README.md"]');
+    const requested=query.get('file');
+    const name=requested&&['media/preview.html','media/clip.mp4','media/audio.wav'].includes(requested)?requested:'README.md';
+    const file = document.querySelector<HTMLElement>('[data-file-path="/preview/project/'+name+'"]');
+    const folder=name.startsWith('media/')?document.querySelector<HTMLElement>('[data-file-path="/preview/project/media"]'):null;
+    if(!file&&folder&&!folderOpened){folderOpened=true;folder.click();return;}
     if (file) {observer.disconnect();file.click();return;}
     const row = [...document.querySelectorAll<HTMLElement>('[data-list] [data-ws-row]')].find(el => el.textContent?.includes('project'));
     if (row && !opened) {opened=true;row.click();}

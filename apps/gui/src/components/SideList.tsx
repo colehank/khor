@@ -573,8 +573,8 @@ export function SideList({
             {r.disclosure && <button type="button" data-side-disclosure={r.id}
               aria-expanded={r.disclosure.expanded} aria-controls={r.disclosure.controls} aria-label={r.disclosure.label}
               onClick={r.disclosure.toggle}
-              className={cn("absolute inset-y-0 left-0 z-10 flex min-h-touch min-w-touch items-center pl-1 text-muted-foreground", RING)}>
-              <IconChevronRight className={cn("size-affordance transition-transform", r.disclosure.expanded && "rotate-90")}/>
+              className={cn("absolute inset-y-0 z-10 flex w-list-face min-h-touch min-w-touch items-center text-muted-foreground", narrow ? "left-group" : "left-row", RING)}>
+              <span className="relative size-list-face"><IconChevronRight className={cn("absolute left-0 bottom-0 size-affordance rounded-full border bg-popover transition-transform", r.disclosure.expanded && "rotate-90")}/></span>
             </button>}
             {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
             {r.after}

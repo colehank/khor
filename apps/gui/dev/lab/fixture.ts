@@ -235,12 +235,15 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const appUpdate: Omit<AppUpdateStatus, "received" | "total"> & {received:number;total:number|null} = {source:'direct',phase:'idle',current:'0.2.0',built_from:null,source_commit:null,available:null,
     notes:'',received:0,total:null,checked_at:null,failure:null,retry:undefined,blocked:[],companions:[],restart_required:false,
     preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
+  const resourcePreviews=new Map<string,string>();let resourceSequence=0;
+  const version=document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
+  const resourceBase=location.origin+(version?'/versions/'+version:'')+'/assets/preview-fixtures/media/';
   let updateMode='current';
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];
   const applySetting=(apply:()=>void)=>{if(holdSettings)pendingSettings.push(apply);else apply();};
   return {
-    dispose() { for (const timer of timers) clearTimeout(timer); timers.clear(); },
+    dispose() { for(const url of resourcePreviews.values())URL.revokeObjectURL(url);resourcePreviews.clear();for (const timer of timers) clearTimeout(timer); timers.clear(); },
     request(path: string, body: Record<string, any> = {}): unknown {
       if (path === '__ai_preview/reset') {
           settingsValues={...settingsProfile};try { localStorage.removeItem(settingsKey); } catch { /* Server fixture has no browser storage. */ }
@@ -271,6 +274,20 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
       if (path === '__ai_preview/acp-setup-calls') return structuredClone(acpSetupCalls);
       if (pairing.handles(path)) return structuredClone(pairing.request(path, body));
+      if(path==='file_resource_open') {
+        const name=String(body.path).split('/').pop();
+        if(!['preview.html','clip.mp4','audio.wav'].includes(name??''))throw new FixtureRefusal('No browser resource fixture for this file');
+        const id='lab-resource-'+ ++resourceSequence;
+        let url=resourceBase+name;
+        if(typeof body.html==='string'){
+          const document=new DOMParser().parseFromString(body.html,'text/html');
+          const base=document.createElement('base');base.href=resourceBase;document.head.prepend(base);
+          url=URL.createObjectURL(new Blob(['<!doctype html>'+document.documentElement.outerHTML],{type:'text/html'}));
+        }
+        resourcePreviews.set(id,url);return {id,url};
+      }
+      if(path==='file_resource_touch'){if(!resourcePreviews.has(String(body.id)))throw new FixtureRefusal('File preview has closed');return null;}
+      if(path==='file_resource_close'){const url=resourcePreviews.get(String(body.id));if(url)URL.revokeObjectURL(url);resourcePreviews.delete(String(body.id));return null;}
       if (navigation.handles(path)) return structuredClone(navigation.request(path, body));
       if (path === 'face_note') return null;
       if (terminal && body.id === 'shell/layout-lab' && path === 'attachment_begin' && body.kind === 'terminal') {

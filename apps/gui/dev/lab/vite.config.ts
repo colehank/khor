@@ -1,8 +1,11 @@
 import {defineConfig, mergeConfig} from 'vite';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import base from '../../vite.config';
 
+const previewFiles = fileURLToPath(new URL('./data/workspace/media/', import.meta.url));
+const previewPrefix = '/assets/preview-fixtures/media/';
+const previewTypes:Record<string,string>={html:'text/html',css:'text/css',js:'text/javascript',json:'application/json',mp4:'video/mp4',wav:'audio/wav'};
 const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
 
 export default mergeConfig(base, defineConfig({
@@ -12,7 +15,17 @@ export default mergeConfig(base, defineConfig({
   plugins: [{
     name: 'complete-app-lab-entry',
     transformIndexHtml: {order: 'pre', handler: html => html.replace('src="/src/main.tsx"', 'src="/dev/lab/bootstrap.ts"')},
+    generateBundle() {
+      for(const name of readdirSync(previewFiles))this.emitFile({type:'asset',fileName:previewPrefix.slice(1)+name,source:readFileSync(previewFiles+name)});
+    },
     configureServer(server) {
+      server.middlewares.use(previewPrefix,(request,response,next)=>{
+        const name=request.url?.split('?')[0]?.replace(/^\//,'');
+        if(!name||!readdirSync(previewFiles).includes(name))return next();
+        response.setHeader('Access-Control-Allow-Origin','*');
+        response.setHeader('Content-Type',previewTypes[name.split('.').pop()??'']??'application/octet-stream');
+        response.end(readFileSync(previewFiles+name));
+      });
       const runtime = process.env.KHOR_LAB_RUNTIME;
       if (!runtime) return;
       server.middlewares.use('/lab/runtime', (_request, response) => {
