@@ -38,7 +38,7 @@ const items = Number(query.get('items') ?? 5), machines = Number(query.get('mach
 if (![2,3,5].includes(items) || ![0,1,3,6].includes(machines)) throw new Error('Lab data supports items=2/3/5 and machines=0/1/3/6');
 const pageSize=query.has('short-pages')?4:128;
 let noticeDriver:{ready:()=>boolean;trigger:(burst:boolean)=>string[]}|undefined;
-const identity = `${query.get('history')??'default'}/${pageSize}/${query.has('handoff')}/${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}`;
+const identity = `${query.get('history')??'default'}/${pageSize}/${query.has('handoff')}/${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}/${query.get('file')??''}`;
 if (runtime.mode === 'frontend') {
   if (localStorage.getItem('khor.lab.identity') !== identity) {
     for (const key of Object.keys(localStorage)) if (key.startsWith('khor.')) localStorage.removeItem(key);
