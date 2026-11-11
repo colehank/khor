@@ -12,6 +12,7 @@ export { hopRoad } from "./lib/topology";
  * prints goes through here, the GUI's twin of `khor_catalog::count`.
  */
 export const count = {
+  childSessions: (n: number, atLeast = false) => atLeast ? gui.child_sessions_count_more(n) : n === 1 ? one.child_sessions_count(n) : gui.child_sessions_count(n),
   seconds: (n: number) => (n === 1 ? one.second(n) : cli.age_seconds(n)),
   minutes: (n: number) => (n === 1 ? one.minute(n) : cli.age_minutes(n)),
   hours: (n: number) => (n === 1 ? one.hour(n) : cli.age_hours(n)),

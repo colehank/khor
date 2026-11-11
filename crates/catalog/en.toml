@@ -1753,6 +1753,8 @@ journal-why-punched = "{0} round(s) of hole punching, none of its candidates ans
 [gui]
 child_tasks = "Child tasks"
 child_sessions = "Child sessions"
+child_sessions_count = "{0} child sessions"
+child_sessions_count_more = "At least {0} child sessions"
 child_sessions_collapse = "Collapse"
 child_task_agents = "Agents"
 child_tasks_empty = "No child tasks yet"
@@ -3313,6 +3315,7 @@ prev-tab = "Show Previous Tab"
 front = "Bring All to Front"
 
 [one]
+child_sessions_count = "{0} child session"
 second = "{0} second"
 minute = "{0} minute"
 hour = "{0} hour"

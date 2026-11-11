@@ -155,6 +155,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
     if (body.action !== "manage") return view();
     if (p.operation === "children") {
+      if (p.summary_only && !p.action) return view({count:childTasks.length,at_least:false});
       const task = childTasks.find(child=>child.run===p.run&&child.key===p.key);
       if (p.action==="cancel" && task?.can_cancel) {
         task.state="canceled";task.can_cancel=false;task.can_retry=true;

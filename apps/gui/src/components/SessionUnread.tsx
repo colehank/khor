@@ -13,8 +13,3 @@ export function SessionUnread({ count }: { count: number }) {
     />
   );
 }
-
-export function SessionUnreadCount({ count }: { count: number }) {
-  if (count <= 1) return null;
-  return <span data-unread-count aria-hidden className="flex-none text-caption font-body tabular-nums text-muted-foreground">{count}</span>;
-}

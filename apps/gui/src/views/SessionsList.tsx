@@ -5,10 +5,11 @@ import { sessionCwdOnScreen } from "@/lib/session-cwd";
 import { useId, useMemo, useState } from "react";
 import { useNarrow } from "@/hooks/use-narrow";
 import { ChildTasks } from "@/views/ChildTasks";
+import { childSessionKey, useChildSessionCounts } from "@/hooks/use-child-session-counts";
 
 import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
-import { SessionUnread, SessionUnreadCount } from "@/components/SessionUnread";
+import { SessionUnread } from "@/components/SessionUnread";
 import { takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
@@ -22,7 +23,7 @@ import { useSetting } from "@/settings";
 import { closeWarning } from "@/views/DetailPane";
 import { isDown } from "@/lib/topology";
 import { sessionSearchText, visibleSessions } from "@/lib/session-filter";
-import { agoOf, groupLabel, lasting, placeLabels, quietFor } from "@/words";
+import { agoOf, count, groupLabel, lasting, placeLabels, quietFor } from "@/words";
 
 /**
  * Which rows the pane bar's search and filter leave standing.
@@ -105,6 +106,7 @@ export function SessionsList({
       not come back at all and this sentence says why. */
   const notificationPreferences = useNotifications();
   const narrow = useNarrow();
+  const childCounts = useChildSessionCounts(rows);
   const treePrefix = useId();
   const [expandedTasks, setExpandedTasks] = useState<ReadonlySet<string>>(() => new Set());
   const toggleTasks = (id: string) => setExpandedTasks(previous => {
@@ -303,6 +305,7 @@ export function SessionsList({
   const side: SideRow[] = ticked.map((r) => {
     const away = far(r);
     const ownsTasks = r.category === "khor" && !!r.execution_home;
+    const childCount = childCounts.get(childSessionKey(r));
     const tasksOpen = expandedTasks.has(r.id);
     const treeId = `${treePrefix}-${encodeURIComponent(r.id)}`;
     return {
@@ -330,7 +333,6 @@ export function SessionsList({
           open={renaming === r.id ? true : undefined}
           onClose={() => setRenaming(null)}
         />
-        <SessionUnreadCount count={r.unread} />
       </span>
     ),
     name: r.title,
@@ -410,7 +412,7 @@ export function SessionsList({
     old: r.stale,
     menu: actions(r),
     onOpen: () => ownsTasks && !narrow && r.id === selected ? toggleTasks(r.id) : onSelect(r),
-    disclosure: ownsTasks ? { expanded: tasksOpen, controls: treeId, label: gui.child_sessions, collapseLabel: gui.child_sessions_collapse, toggle: () => toggleTasks(r.id) } : undefined,
+    disclosure: ownsTasks ? { expanded: tasksOpen, controls: treeId, label: childCount ? count.childSessions(childCount.count, childCount.atLeast) : gui.child_sessions, collapseLabel: gui.child_sessions_collapse, toggle: () => toggleTasks(r.id) } : undefined,
     below: ownsTasks && tasksOpen ? <ChildTasks key={r.id} parent={r} id={treeId} devices={devices}/> : undefined,
     // The anchors this list has always answered to — the gates and the
     // smoke read them, and they are facts about a session, not about a

@@ -166,6 +166,14 @@ pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Va
         })
         .collect();
     let children = collect(node, board, &runs)?;
+    // A list label needs only the parent's retained links. Do not contact
+    // every child agent or read command output just to paint that count.
+    if request["summary_only"] == true && request["action"].is_null() {
+        return Ok(json!({
+            "count": children.len(),
+            "at_least": children.len() >= PAGE,
+        }));
+    }
     if let Some(action) = request["action"].as_str() {
         let child = children
             .iter()

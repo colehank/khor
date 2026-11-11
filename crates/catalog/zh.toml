@@ -2717,6 +2717,8 @@ journal-why-punched = "打洞 {0} 轮，对方的候选地址都没有回应"
 [gui]
 child_tasks = "子任务"
 child_sessions = "子会话"
+child_sessions_count = "{0} 个子会话"
+child_sessions_count_more = "至少 {0} 个子会话"
 child_sessions_collapse = "收起"
 child_task_agents = "委派"
 child_tasks_empty = "还没有子任务"
@@ -5905,6 +5907,7 @@ front = "前置全部窗口"
 # `khor_catalog::count` (Rust) and `words.ts` `count` (the GUI), never
 # at a call site.
 [one]
+child_sessions_count = "{0} 个子会话"
 second = "{0} 秒"
 minute = "{0} 分钟"
 hour = "{0} 小时"

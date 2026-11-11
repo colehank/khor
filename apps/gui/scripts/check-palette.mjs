@@ -910,6 +910,7 @@ try {
       for (let n = 0; n < WORDS.length; n++) {
         const row = page.locator(`[data-side-row="tui/palette-gate-${n}"]`);
         const badge = row.locator('[data-unread]');
+        if (await row.locator('[data-unread-count]').count()) fail(`${scheme}: session lists must not show unread numbers`);
         if (n === 0) {
           if (await badge.count()) fail(`${scheme}: read session still has an unread mark`);
         } else {
@@ -922,16 +923,6 @@ try {
           if (!box || (dotSize && (box.width !== dotSize.width || box.height !== dotSize.height)))
             fail(`${scheme}: unread dot changes size with the count`);
           dotSize ??= box;
-          const number = row.locator('[data-unread-count]');
-          if ((await number.count() ? (await number.textContent())?.trim() : undefined) !== (n === 2 ? "3" : undefined))
-            fail(`${scheme}: unread numeric label does not match its count`);
-          if (n === 2 && !(await row.locator('[data-side-title] [data-unread-count]').count()))
-            fail(`${scheme}: unread numeric label is not beside the title`);
-          if (n === 2 && await number.count()) {
-            const paint = await number.evaluate((el) => ({ color: getComputedStyle(el).color, bg: getComputedStyle(el).backgroundColor }));
-            if (oklch(rgb(paint.color)).c > 0.02 || parse(paint.bg)[3] !== 0)
-              fail(`${scheme}: unread count needs neutral text with no background`);
-          } else if (n === 2 || await number.count()) fail(`${scheme}: unread numeric label does not match its count`);
         }
         await row.locator('[data-row-open]').click();
         await wait(100);
