@@ -49,6 +49,14 @@ const make = (name:string,attrs:Record<string,string>) => {
   for(const [key,value]of Object.entries(attrs))node.setAttribute(key,value);
   return node;
 };
+// Coordinates use the canonical 1024 canvas. Independent paths become the
+// icon's fixed geometry only when One mind brings the nodes into place.
+const journeys = [
+  {device:{x:350,y:245,scale:3.2},harness:{x:265,y:185,scale:3.1},bend:{x:32,y:-28},start:0,end:.60},
+  {device:{x:785,y:380,scale:4.1},harness:{x:820,y:295,scale:3.6},bend:{x:38,y:18},start:.12,end:.75},
+  {device:{x:640,y:795,scale:2.6},harness:{x:735,y:800,scale:2.9},bend:{x:-18,y:-32},start:.25,end:.90},
+  {device:{x:245,y:635,scale:3.5},harness:{x:195,y:720,scale:3.35},bend:{x:-32,y:22},start:.40,end:1},
+];
 
 /** Wrap contiguous original paint layers; preserve every path, gradient and paint order. */
 export function animateIcon(host:HTMLElement) {
@@ -176,14 +184,22 @@ export function animateIcon(host:HTMLElement) {
       pearl.material.forEach(({node,opacity})=>style(node,{opacity:opacity*localLight}));
     });
     pearlGroups.slice(1).forEach((pearl,i)=>{
-      const scale=(2.25-1.25*pose.focus)*(.96+.04*pose.presence);
+      const journey=journeys[i];
+      const personal=ease(pose.harness,journey.start,journey.end);
+      const arc=Math.sin(Math.PI*personal);
+      const looseX=journey.device.x+(journey.harness.x-journey.device.x)*personal+journey.bend.x*arc;
+      const looseY=journey.device.y+(journey.harness.y-journey.device.y)*personal+journey.bend.y*arc;
+      const looseScale=journey.device.scale+(journey.harness.scale-journey.device.scale)*personal;
+      const x=looseX+(pearl.x-looseX)*pose.focus;
+      const y=looseY+(pearl.y-looseY)*pose.focus;
+      const scale=(looseScale+(1-looseScale)*pose.focus)*(.96+.04*pose.presence);
       const initial=[.78,.69,.64,.74][i];
       const grey=initial+(.48-initial)*pose.focus;
       const localLight=pose.light===1?1:ease(front,(pearl.x+pearl.y)/2-256,(pearl.x+pearl.y)/2);
       applyColour(pearl.group,nodeColours[i],localLight,grey+(1-grey)*localLight);
-      style(pearl.group,{opacity:pose.presence,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
-      style(overlays[0][i],{opacity:pose.presence*(1-pose.harness)*(1-pose.focus)});
-      style(overlays[1][i],{opacity:pose.presence*pose.harness*(1-pose.focus)});
+      style(pearl.group,{opacity:pose.presence,transform:pose.focus===1?'none':`translate(${x}px,${y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
+      style(overlays[0][i],{opacity:pose.presence*(1-personal)*(1-pose.focus)});
+      style(overlays[1][i],{opacity:pose.presence*personal*(1-pose.focus)});
     });
     if(!ready){canvas.dataset.iconReady='';ready=true;}
   };
