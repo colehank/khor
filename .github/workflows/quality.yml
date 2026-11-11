@@ -843,7 +843,7 @@ jobs:
         run: |
           [[ "$CHECKER_SHA" =~ ^[0-9a-f]{40}$ ]]
           git fetch --depth=1 origin "$CHECKER_SHA"
-          for script in check-app.mjs resource-checks.mjs; do
+          for script in check-app.mjs resource-checks.mjs gui-experience-checks.mjs; do
             git show "$CHECKER_SHA:apps/gui/dev/lab/$script" > "apps/gui/dev/lab/$script"
           done
           mkdir -p "$RUNNER_TEMP/lab-report"
