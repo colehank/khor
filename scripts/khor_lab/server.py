@@ -215,7 +215,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
 
-    def respond(self, code, data, content_type='application/json'):
+    def respond(self, code, data, content_type='application/json', headers=None):
         body = data if isinstance(data, bytes) else json.dumps(data, ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header('content-type', content_type)
@@ -224,8 +224,14 @@ class Handler(BaseHTTPRequestHandler):
         if '/assets/preview-fixtures/' in urlsplit(self.path).path:
             self.send_header('access-control-allow-origin', '*')
         self.send_header('x-content-type-options', 'nosniff')
+        for name, value in (headers or {}).items():
+            self.send_header(name, value)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != 'HEAD':
+            self.wfile.write(body)
+
+    def do_HEAD(self):
+        self.do_GET()
 
     @property
     def lab(self):
@@ -281,7 +287,31 @@ class Handler(BaseHTTPRequestHandler):
         asset_root = directory / (relative[2] if len(relative) > 2 else '') / 'assets'
         if len(relative) < 5 or not relative[2].isalnum() or relative[3] != 'assets' or not file.is_relative_to(asset_root.resolve()) or not file.is_file():
             return self.respond(404, 'Missing frontend asset')
-        self.respond(200, file.read_bytes(), mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
+        body = file.read_bytes()
+        content_type = mimetypes.guess_type(file.name)[0] or 'application/octet-stream'
+        if '/assets/preview-fixtures/' in path:
+            # Browser media seeks exercise the production Range contract even
+            # in a frontend-only Lab. These are finite public test fixtures.
+            headers = {'accept-ranges': 'bytes'}
+            requested = self.headers.get('range', '')
+            if self.command == 'GET' and requested.startswith('bytes='):
+                try:
+                    first, last = requested[6:].split('-', 1)
+                    if first:
+                        start, end = int(first), min(int(last), len(body) - 1) if last else len(body) - 1
+                    else:
+                        count = int(last)
+                        if count <= 0:
+                            raise ValueError('Empty suffix')
+                        start, end = max(0, len(body) - count), len(body) - 1
+                    if not 0 <= start <= end < len(body):
+                        raise ValueError('Unsatisfiable range')
+                except ValueError:
+                    return self.respond(416, b'', content_type, headers | {'content-range': f'bytes */{len(body)}'})
+                headers['content-range'] = f'bytes {start}-{end}/{len(body)}'
+                return self.respond(206, body[start:end + 1], content_type, headers)
+            return self.respond(200, body, content_type, headers)
+        self.respond(200, body, content_type)
 
     def do_POST(self):
         token = self.headers.get('authorization', '')

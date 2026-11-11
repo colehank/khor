@@ -13,9 +13,13 @@ export async function pickPopup(trigger,value) {
   // Wait for the finite opening transform before the real pointer action.
   // click already scrolls; a separate scroll action can race the next menu's
   // opening frame in WebKit. Do not wait for infinite content animations.
-  await menu.evaluate(async node=>{await Promise.all(node.getAnimations().filter(animation=>animation.effect?.getComputedTiming().iterations!==Infinity).map(animation=>animation.finished.catch(()=>{})));});
-  try{await chosen.click();}catch(error){
-    console.error('Khor popup action failed',JSON.stringify(await menu.evaluate(node=>({rect:node.getBoundingClientRect().toJSON(),active:document.activeElement?.outerHTML,options:[...node.querySelectorAll('[data-popup-option]')].map(item=>({value:item.dataset.popupOption,rect:item.getBoundingClientRect().toJSON()})),animations:node.getAnimations().map(animation=>({state:animation.playState,timing:animation.effect?.getComputedTiming()}))}))));throw error;
+  let timer;
+  try{
+    await Promise.race([menu.evaluate(async node=>{await Promise.all(node.getAnimations().filter(animation=>animation.effect?.getComputedTiming().iterations!==Infinity).map(animation=>animation.finished.catch(()=>{})));}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Khor popup opening animation did not finish')),5000);})]);
+    clearTimeout(timer);await chosen.click();
+  }catch(error){
+    console.error('Khor popup action failed',JSON.stringify(await menu.evaluate(node=>({rect:node.getBoundingClientRect().toJSON(),active:document.activeElement?.outerHTML,options:[...node.querySelectorAll('[data-popup-option]')].map(item=>({value:item.dataset.popupOption,rect:item.getBoundingClientRect().toJSON()})),animations:node.getAnimations().map(animation=>({state:animation.playState,timing:animation.effect?.getComputedTiming()}))})).catch(()=>null)));throw error;
+  }finally{clearTimeout(timer);
   }
   await menu.waitFor({state:'detached'});
 }

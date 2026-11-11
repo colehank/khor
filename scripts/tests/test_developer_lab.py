@@ -121,6 +121,34 @@ class LabTests(unittest.TestCase):
             self.assertEqual(json.load(response)['scene'], 'terminal')
         self.assertEqual(lab.status()['source']['tree'], 'identity')
 
+    def test_static_media_fixture_ranges_and_head_match_browser_seeks(self):
+        home = self.root / 'manager'
+        lab = Lab(load(self.root), home)
+        media = home / 'versions/current/assets/preview-fixtures/media'
+        media.mkdir(parents=True)
+        (media / 'clip.mp4').write_bytes(b'0123456789')
+        server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        server.lab = lab
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        url = f'http://127.0.0.1:{server.server_port}/versions/current/assets/preview-fixtures/media/clip.mp4'
+        for requested, expected, interval in [('bytes=2-3', b'23', '2-3'), ('bytes=7-', b'789', '7-9'), ('bytes=-2', b'89', '8-9')]:
+            with urlopen(Request(url, headers={'Range': requested})) as response:
+                self.assertEqual(response.status, 206)
+                self.assertEqual(response.headers['Content-Range'], f'bytes {interval}/10')
+                self.assertEqual(response.headers['Access-Control-Allow-Origin'], '*')
+                self.assertEqual(response.read(), expected)
+        with urlopen(Request(url, method='HEAD', headers={'Range': 'bytes=2-3'})) as response:
+            self.assertEqual(response.status, 200)
+            self.assertEqual(response.headers['Content-Length'], '10')
+            self.assertEqual(response.read(), b'')
+        with self.assertRaises(HTTPError) as invalid:
+            urlopen(Request(url, headers={'Range': 'bytes=10-'}))
+        self.assertEqual(invalid.exception.code, 416)
+        self.assertEqual(invalid.exception.headers['Content-Range'], 'bytes */10')
+        invalid.exception.close()
+
     def test_failed_update_preserves_available_bundle(self):
         lab = Lab(load(self.root), self.root / 'manager')
         lab.value.update(version='reviewed', available=True)

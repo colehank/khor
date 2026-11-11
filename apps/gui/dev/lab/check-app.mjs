@@ -298,7 +298,7 @@ async function inspect(browser, scene, size, data = {}) {
       await page.locator('[data-ws-row]:visible').first().click();
       await checkWorkspaceSidebar();
       const names=await page.evaluate(async()=> (await (await fetch('/api/ls',{method:'POST',body:JSON.stringify({machine:'e'.repeat(64),path:'/preview/project'})})).json()).entries.map(entry=>entry.name));
-      assert.deepEqual(names,['docs','src','design.md','notes.md','package.json','plan.md','README.md','report.md','.config','.gitignore'],'Generated ls data must retain the real backend directory and dotfile ordering');
+      assert.deepEqual(names,['docs','media','src','design.md','notes.md','package.json','plan.md','README.md','report.md','.config','.gitignore'],'Generated ls data must retain the real backend directory and dotfile ordering');
       const visible=await page.locator('[data-file-tree] button[data-file-path]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-file-path').split('/').pop()));
       assert.deepEqual(visible,names,'The actual file tree must display the backend order');
       await page.locator('[data-workspace-navigation]').getByRole('button',{name:'提交历史',exact:true}).click();
