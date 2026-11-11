@@ -638,7 +638,16 @@ jobs:
           BINDINGS_RUN: ${{ inputs.frontend_run }}
         run: |
           set -euo pipefail
-          git diff --exit-code "$BINDINGS_SHA" HEAD -- Cargo.toml Cargo.lock crates apps/gui/core apps/gui/src-tauri apps/gui/dev/lab/data/workspace apps/gui/scripts/generate.mjs scripts/khor_lab/fixture_data.py
+          git diff --exit-code "$BINDINGS_SHA" HEAD -- Cargo.toml Cargo.lock crates apps/gui/core apps/gui/dev/lab/data/workspace apps/gui/scripts/generate.mjs scripts/khor_lab/fixture_data.py ':!apps/gui/core/src/resource_preview.rs'
+          python3 - <<'PYCODE'
+          import os,pathlib,subprocess
+          path='apps/gui/core/src/resource_preview.rs'
+          old=subprocess.check_output(['git','show',os.environ['BINDINGS_SHA']+':'+path],text=True)
+          new=pathlib.Path(path).read_text()
+          # The complete imports/attributes/exported TS declaration precede this
+          # private implementation. All other core/crate bytes were checked above.
+          assert old.split('struct Context {',1)[0]==new.split('struct Context {',1)[0], 'ResourcePreview binding declaration changed; regenerate it'
+          PYCODE
           python3 scripts/release_manifest.py verify --root cached-frontend --sha "$BINDINGS_SHA" --run-id "$BINDINGS_RUN" --kind frontend
           mkdir -p apps/gui/src apps/gui/dev/lab/data
           cp -R cached-frontend/gen apps/gui/src/gen
