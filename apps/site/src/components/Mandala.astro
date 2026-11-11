@@ -1,11 +1,7 @@
 ---
 import artwork from "../../../gui/src-tauri/icons/src/mandala-glass.svg?raw";
-import brands from "../../../gui/src/components/BrandIcons.tsx?raw";
-const faces = ["Claude", "Codex", "Cursor", "Agent"].map(name => {
-  const match = new RegExp(`export const Icon${name} = brand\\(\\s*\x60([\\s\\S]*?)\x60,\\s*"([^"]+)"`).exec(brands);
-  if (!match) throw new Error(`Missing app session mark: ${name}`);
-  return {body:match[1],box:match[2]};
-});
+import {deviceMarks,harnessMarks} from "../../../gui/dev/site/identity-marks";
 ---
 <div class="canonical-icon" set:html={artwork} aria-hidden="true"></div>
-<div data-session-marks hidden>{faces.map(face => <svg viewBox={face.box} fill="currentColor" set:html={face.body}/>)}</div>
+<div data-device-marks hidden>{deviceMarks.map(mark => <span data-mark={mark.name} set:html={mark.svg}/>)}</div>
+<div data-harness-marks hidden>{harnessMarks.map(mark => <span data-mark={mark.name} set:html={mark.svg}/>)}</div>

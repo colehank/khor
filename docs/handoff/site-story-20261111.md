@@ -7,23 +7,28 @@
 - 预览：`http://127.0.0.1:23820`，Astro dev daemon（启动报告 PID 4944）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
 
-## 叙事定稿
+## 当前叙事定稿（五幕修订，替代下方历史顺序）
 
-1. You have many devices. 四颗明暗不同的珠。
-2. With many agents. 珠上出现 session face。
-3. But one mind. 四个外节点缩到最终尺寸并变暗，face 淡出；中心珠以原图最终的绿色、尺寸和材质浮现。
-4. How about letting them work together? 一次连续动效形成内环与菱形等灰阶结构，Mind 始终绿色，四个外节点在此转绿，外圆不出现；停在这一句也会自动完成，不拆成多个滚动步骤。
-5. Meet khor. 显现外圆并恢复外围原图颜色与光泽，形成完整 icon，随后同一个 SVG 缩入笔记本；屏内光标短距离移动并只点击一次，打开真实前端。
-6. Keep going. 笔记本合盖，手机接续同一个任务。
+1. **You have many devices.** 四颗灰珠戴机器标记，顺时针为 Linux、macOS（Finder）、Windows、iOS（Apple），明暗略有不同。
+2. **With many harnesses.** 同一批珠在原位将标记切换为 Claude、Codex、Cursor、Shell，继续保持灰色。
+3. **But one mind.** 四个外节点缩到原图最终尺寸并变暗，harness 标记淡出；中心珠和内圆同时以原图最终的绿色、尺寸、形态与材质浮现。不缩放中心，不提前显现光晕。
+4. **How about letting them work together?** 一次连续动效沿标准外圆的几何画一根简单灰线，连接四个灰节点。没有菱形、背景、玻璃或环境光；中心珠和内圆保持绿色。停止滚动也会完成这一幕。
+5. **Meet Khor.** 一束光从左上方向右下推进，显出原图的菱形、背景和玻璃外圆，四个外珠随光恢复绿色。外圆已在上一幕连好，此处不再描一遍圆周。最后完整回到真实 SVG 图稿。
+6. 同一个 SVG 缩入笔记本；屏内光标短距离移动并点击一次，打开真实前端。随后 **Keep going.** 笔记本合盖，手机接续同一个 App 和任务草稿。
 
-## 最新用户修正
+## 本轮实现与验证
 
-用户指出网站图标应为真实 khor icon，最后从简化图跳到完整图标生硬。随后明确四个外节点在 Meet 前保持灰暗，Meet 后再上色；How about 是一步演化到最终形态。
-已删除单色几何到整图的换图方式，直接使用 `mandala-glass.svg` 原始图层：
-不改原图，运行时为连续图层加动画容器与揭示遮罩，保留路径、渐变、阴影和绘制顺序。
-每句文案对应一个目标姿态和一次连续动效；How about 的所有图层共用同一演化进度并重叠展开。整枚叙事图标在 Meet 前保持灰阶，Meet 时才恢复原色。外珠初始放大幅度已降低，位置保持不变。
-成形后的同一个 DOM SVG 持续缩入笔记本，直到打开真实 App。
-favicon、导航和下载图标全部使用同一标准图稿。
+- 仍使用真实 `mandala-glass.svg` 的连续图层，保留原图的路径、渐变、阴影和绘制顺序。临时连线取自该 SVG 的外圆，不另画一套图标。
+- 机器与 harness 标记由 App 的 `machineMark` / `sessionMark` 在构建时输出静态 SVG，取消原来的源码正则提取；网站不因此加载 React 客户端。Finder 遮罩 ID 保持唯一。
+- Mind 与内圆不参加灰阶处理；灰珠保留原生 SVG `feColorMatrix` / `feComponentTransfer`，保持 Khor 内置 WebKit 的颜色兼容性。首帧隐藏门和减少动态效果按章节显示的修复保留。
+- How about 只驱动连接进度。Meet 的材质用方向渐变遮罩照亮，连接线对应部分退场；四珠使用同一光照方向恢复原色。Meet 不改变圆周描线进度。
+- 审查时发现 One mind 过渡中的机器标记可能短暂回闪，已让 harness 状态维持到标记完全退场。
+- Chrome 与 WebKit 均已通过五幕、灰阶、内圆/中心几何、无提前光晕、Meet 连线不重描、倒滚、390px 无横向溢出、减少动态效果的定向检查；页面错误为空。
+- 两个内核另通过浅色主题、harness 淡出不回闪机器标记、屏内单次点击、笔记本/手机同一 iframe 与草稿接续；网页动效 TypeScript、包含静态标记模块的 demo TypeScript 和 Astro 静态构建通过。
+- 完成图对照标准 SVG：主要图形一致；截图差异集中在圆角裁切边缘（不足千像素，单通道最大 8/255），Chrome 另有少量 1/255 的栅格舍入，不宣称本轮截图逐像素零差异。
+- 验证脚本：`/private/tmp/playwright-test-khor-five-scenes.js` 与 `playwright-test-khor-five-handoff.js`。截图和收据：`/Volumes/disk0/Khor/evidence/site-story-20261111/five-scenes`。
+
+以下为此前实现与迭代记录；叙事冲突一律以本页当前定稿为准。
 
 ## 实现与验证
 

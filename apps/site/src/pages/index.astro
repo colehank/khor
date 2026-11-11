@@ -6,7 +6,7 @@ import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import { release } from "../releases";
 import "../styles/story.css";
-const lines = [["You have", "many devices."], ["With", "many agents."], ["But", "one mind."], ["How about letting", "them work together?"], ["Meet", "khor."]];
+const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But", "one mind."], ["How about letting", "them work together?"], ["Meet", "Khor."]];
 ---
 <Base description="连接各台设备上的智能体、网页与文件，从手边的设备继续工作">
   <a class="skip-story" href="#experience">跳过开场</a>
@@ -15,7 +15,7 @@ const lines = [["You have", "many devices."], ["With", "many agents."], ["But", 
     <section class="opening" aria-label="认识 khor" data-opening>
       <div class="opening-sticky">
         <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <p class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><span>{lead}</span><br />{phrase}</p>)}</div>
-        <h1 class="sr-only">You have many devices. With many agents. But one mind. How about letting them work together? Meet khor.</h1>
+        <h1 class="sr-only">You have many devices. With many harnesses. But one mind. How about letting them work together? Meet Khor.</h1>
         <div class="assembly" data-assembly><Mandala /></div>
         <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"></span></div>
         <nav class="story-steps" aria-label="开场章节">{lines.map(([, phrase], index) => <button type="button" aria-label={`跳到 ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
@@ -23,7 +23,7 @@ const lines = [["You have", "many devices."], ["With", "many agents."], ["But", 
     </section>
     <section class="handoff" id="experience" aria-labelledby="handoff-title" data-handoff>
       <div class="handoff-sticky">
-        <div class="handoff-copy"><h2 id="handoff-title"><span data-desktop-title>Meet khor.</span><span data-phone-title>Keep going.</span></h2><p class="handoff-caption"><span data-desktop-caption>打开 khor，看看你的智能体在做什么</span><span data-phone-caption>合上电脑，在手机上接着做</span></p></div>
+        <div class="handoff-copy"><h2 id="handoff-title"><span data-desktop-title>Meet Khor.</span><span data-phone-title>Keep going.</span></h2><p class="handoff-caption"><span data-desktop-caption>打开 khor，看看你的智能体在做什么</span><span data-phone-caption>合上电脑，在手机上接着做</span></p></div>
         <div class="device-stage" data-device-stage>
           <div class="laptop" aria-hidden="true"><div class="laptop-lid"><div class="camera"></div></div><div class="laptop-base"><div class="laptop-notch"></div></div></div>
           <div class="phone" aria-hidden="true"><div class="phone-island"></div><div class="phone-home"></div></div>

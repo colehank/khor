@@ -1,4 +1,5 @@
 import { defineConfig } from "astro/config";
+import { fileURLToPath } from "node:url";
 
 export default defineConfig({
   site: "https://khor.cloud",
@@ -8,5 +9,9 @@ export default defineConfig({
   markdown: { syntaxHighlight: false },
   // The app icon and the tokens are read from where they are decided
   // (apps/gui, docs/design-system), not copied in.
-  vite: { server: { fs: { allow: ["../.."] } } },
+  vite: {
+    server: { fs: { allow: ["../.."] } },
+    resolve: {alias: {"@": fileURLToPath(new URL("../gui/src",import.meta.url))}},
+    esbuild: {jsx: "automatic"},
+  },
 });
