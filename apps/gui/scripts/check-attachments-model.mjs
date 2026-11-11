@@ -28,6 +28,14 @@ const f = (name, path) => { const file = new File(["abc"], name); Object.defineP
 const picked = m.deviceAttachments([f("a.txt", "data/nested/a.txt"), f("b.txt", "data/b.txt")], true, "here");
 assert.deepEqual(picked[0].device.dirs, ["nested"]);
 assert.equal(picked[0].size, 6);
+const browse = m.deviceFolderEntries(picked[0]);
+assert.deepEqual(browse.map(row=>[row.name,row.dir]),[["nested",true],["b.txt",false]]);
+assert.equal(m.deviceFolderEntries(picked[0],"nested")[0].file,picked[0].device.files[0].file,'Preview retains the original selected File without staging or changing selection');
+assert.deepEqual(calls,[],'Listing a selected folder never contacts the staging transport');
+assert.throws(()=>m.deviceFolderEntries(picked[0],"../other"));
+assert.deepEqual(m.deviceFolderEntries({...picked[0],device:{files:[],dirs:["empty"]}},"empty"),[]);
+const names=m.deviceAttachments([f(".hidden","data/.hidden"),f("z.txt","data/z.txt"),f("A.txt","data/A.txt"),f("inside","data/B/inside")],true,"here");
+assert.deepEqual(m.deviceFolderEntries(names[0]).map(row=>row.name),["B","A.txt","z.txt",".hidden"],'Local ordering matches node/files.rs instead of browser enumeration order');
 const native = m.pathAttachment("/native/data", null, "here", true, null, true);
 const made = await m.prepareAttachments([other, native, ...picked], () => false);
 assert.deepEqual(made.items, [{ path: other.path, from: "another", keep: false }, { path: native.path, from: null, keep: true }, { path: "/stage/data", from: null, keep: false }]);

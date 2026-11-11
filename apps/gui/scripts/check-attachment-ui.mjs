@@ -52,10 +52,10 @@ try{
   const remote={...device,id:'a'.repeat(64),name:'audit-remote',shown:'远端 A',me:false,hop:'direct',hosts:true,paused:false};
   await page.route('**/devices',r=>r.fulfill({json:[device,remote]}));
   await page.route('**/ls',r=>{const asked=r.request().postDataJSON().path;const path=asked||projects[0];const child=path===folder;return r.fulfill({json:{path,entries:child?[{name:'child.md',dir:false,size:8,at_ms:0}]:[{name:'folder',dir:true,size:0,at_ms:0},{name:'notes.md',dir:false,size:8,at_ms:0}],truncated:false}});});
-  await page.route('**/read_text',r=>r.request().postDataJSON().path.endsWith('/preview-local.txt')?r.fallback():r.fulfill({json:{total:8,at_ms:0,text:'# Audit\n',cut:false,binary:false,digest:'audit'}}));
+  await page.route('**/read_text',r=>/\/(preview-local|folder-preview)\.txt$/.test(r.request().postDataJSON().path)?r.fallback():r.fulfill({json:{total:8,at_ms:0,text:'# Audit\n',cut:false,binary:false,digest:'audit'}}));
   await page.route('**/stat_text',r=>r.fulfill({json:{total:8,at_ms:0,digest:'audit'}}));
   let hold=null,release;const staged=[],sent=[],forgotten=[],cancelled=[];
-  await page.route(/\/term_drop_stage\?/,async r=>{const name=new URL(r.request().url()).searchParams.get('name');if(name==='preview-local.txt')return r.fallback();staged.push(name);if(hold)await hold;await r.fulfill({json:'/stage/'+staged.length+'/'+name});});
+  await page.route(/\/term_drop_stage\?/,async r=>{const name=new URL(r.request().url()).searchParams.get('name');if(['preview-local.txt','folder-preview.txt'].includes(name))return r.fallback();staged.push(name);if(hold)await hold;await r.fulfill({json:'/stage/'+staged.length+'/'+name});});
   await page.route('**/term_drop',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.paths,miss:null}});});
   await page.route('**/term_drop_items',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.items.map(x=>x.path),miss:null}});});
   await page.route('**/term_drop_cancel',r=>{cancelled.push(r.request().postDataJSON());return r.fulfill({json:null});});
@@ -103,6 +103,32 @@ try{
     await keepCard.getByRole('button').last().click();
     await keepCard.waitFor({state:'detached'});
     note('local-file-preview',{retired:!existsSync(path),independentSelection:true});
+  });
+  await step('local-folder-preview',async()=>{
+    await reopen();
+    const folder=join(scratch,'browser-folder');mkdirSync(join(folder,'nested'),{recursive:true});
+    writeFileSync(join(folder,'README.txt'),'Root file');writeFileSync(join(folder,'.hidden'),'Hidden file');
+    writeFileSync(join(folder,'nested','folder-preview.txt'),'Actual bytes inside the selected browser folder');
+    const before=sent.length;
+    await panel().locator('input[webkitdirectory]').setInputFiles(folder);
+    const card=panel().locator('[data-files-selected="browser-folder"]');
+    await card.locator('[data-files-card-preview]').click();
+    await panel().locator('[data-files-device-folder]').waitFor();
+    assert.deepEqual(await panel().locator('[data-files-local-entry]').evaluateAll(nodes=>nodes.map(node=>node.dataset.filesLocalEntry)),['nested','README.txt','.hidden']);
+    await panel().locator('[data-files-local-entry="nested"]').click();
+    await panel().locator('[data-files-local-entry="nested/folder-preview.txt"]').click();
+    const preview=page.locator('[data-file-preview]');
+    await preview.getByText('Actual bytes inside the selected browser folder',{exact:false}).last().waitFor();
+    const path=await preview.getAttribute('data-file-preview');assert(existsSync(path));
+    await preview.locator('[data-file-preview-close]').click();await until(()=>!existsSync(path));
+    assert.match(await panel().locator('[data-files-local-path]').innerText(),/browser-folder\/nested/);
+    assert.equal(await panel().locator('[data-files-selected]').count(),1,'Browsing preserves the folder as one selected attachment');
+    assert.equal(sent.length,before,'Browsing and previewing never sends');
+    await panel().locator('[data-files-up]').click();
+    assert.equal(await panel().locator('[data-files-local-entry="nested"]').count(),1);
+    await card.getByRole('button').last().click();await card.waitFor({state:'detached'});
+    assert.equal(await panel().locator('[data-files-device-folder]').count(),0);
+    note('local-folder-preview',{actualBytes:true,selectionPreserved:true,retired:!existsSync(path)});
   });
   await step('cancel-immediate-retry',async()=>{
     await reopen();

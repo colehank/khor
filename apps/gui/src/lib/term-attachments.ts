@@ -65,6 +65,28 @@ export function deviceAttachments(files: File[], folders: boolean, shown: string
   }
   return [...groups].map(([name, tree]) => deviceAttachment(name, true, { ...tree, dirs: [...new Set(tree.dirs)] }, shown));
 }
+export type DeviceFolderEntry = { name: string; relative: string; dir: boolean; file?: File };
+/** Browse the selected File objects; no server path or staging is needed to list them. */
+export function deviceFolderEntries(root: Attachment, prefix = ""): DeviceFolderEntry[] {
+  if (!root.dir || !root.device) throw new Error(msg.tree_bad_path(root.path));
+  const base = prefix ? safeRelative(prefix) + "/" : "";
+  const rows = new Map<string, DeviceFolderEntry>();
+  const add = (relative: string, dir: boolean, file?: File) => {
+    safeRelative(relative);
+    if (!relative.startsWith(base)) return;
+    const tail = relative.slice(base.length);
+    if (!tail) return;
+    const [name, ...rest] = tail.split("/");
+    const folder = dir || rest.length > 0;
+    const prior = rows.get(name);
+    if (!prior || folder) rows.set(name, {name, relative: base + name, dir: folder, file: folder ? undefined : file});
+  };
+  for (const dir of root.device.dirs) add(dir, true);
+  for (const entry of root.device.files) add(entry.relative, false, entry.file);
+  // Match node/files.rs: visible names, directories, then case-insensitive names.
+  return [...rows.values()].sort((a,b) => Number(a.name.startsWith('.'))-Number(b.name.startsWith('.'))
+    || Number(b.dir)-Number(a.dir) || (a.name.toLowerCase()<b.name.toLowerCase()?-1:a.name.toLowerCase()>b.name.toLowerCase()?1:0));
+}
 /** Capture handles during drop; enumerate asynchronously after the DOM event. */
 export async function droppedAttachments(data: DataTransfer, shown: string): Promise<Attachment[]> {
   const roots = [...data.items].filter((i) => i.kind === "file").map((i) => i.webkitGetAsEntry());
