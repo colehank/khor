@@ -52,4 +52,4 @@ python3 scripts/app_icon.py check
 ```
 
 最后一项需要 `scripts/requirements-app-icon.txt` 的固定 Pillow 版本；不会构建 App。
-`App icon` 工作流在固定 Node 22.19 上验证严格 TS 类型、Node/浏览器共用源码和资源，并在 macOS 26 编译原生图标 catalog。
+`App icon` 工作流在固定 Node 22.19 上验证严格 TS 类型、Node/浏览器共用源码和资源，并在 macOS 26 编译 macOS / iOS 图标 catalog、验证原生浅深导出。定稿与外观选择只在上述图标规范维护。

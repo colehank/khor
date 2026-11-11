@@ -68,7 +68,7 @@ jobs:
           done
           python3 - "$RUNNER_TEMP/khor-icon" <<'PY'
           from pathlib import Path
-          import sys
+          import json, sys
           from PIL import Image, ImageStat
           root = Path(sys.argv[1])
           for platform in ['macOS', 'iOS']:
@@ -79,6 +79,17 @@ jobs:
                       means.append(sum(ImageStat.Stat(image.convert('RGB').crop((256, 256, 768, 768))).mean) / 3)
               assert means[0] - means[1] > 80, (platform, means)
               print(platform, 'selects distinct approved light and dark artwork', means)
+          mac = json.loads((root / 'macos-assets.json').read_text())
+          stacks = {entry.get('Appearance') for entry in mac if entry.get('AssetType') == 'IconImageStack'}
+          assert {'NSAppearanceNameAqua', 'NSAppearanceNameDarkAqua'} <= stacks, stacks
+          ios = json.loads((root / 'ios-assets.json').read_text())
+          for idiom in ['phone', 'pad']:
+              icons = {entry.get('Appearance', 'UIAppearanceAny'): entry for entry in ios
+                       if entry.get('AssetType') == 'Icon Image' and entry.get('Name') == 'AppIcon'
+                       and entry.get('Idiom') == idiom and entry.get('PixelWidth') == 1024}
+              assert {'UIAppearanceAny', 'UIAppearanceDark'} <= icons.keys(), (idiom, icons)
+              assert icons['UIAppearanceAny']['SHA1Digest'] != icons['UIAppearanceDark']['SHA1Digest'], idiom
+          print('Compiled macOS, iPhone and iPad catalogs retain both appearances')
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
