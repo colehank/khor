@@ -29,6 +29,7 @@ pub mod launch;
 pub mod miss;
 pub mod qr;
 pub mod recents;
+pub mod resource_preview;
 pub mod rejoin;
 pub mod subscriptions;
 pub mod tabs;

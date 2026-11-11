@@ -699,6 +699,9 @@ pub enum Request {
         #[serde(with = "crate::delegation::wire_json")]
         action: crate::delegation::Action,
     },
+    /// Read-only browser resource, confined on the source machine. Older peers
+    /// refuse this word; it is never downgraded to an unconfined file read.
+    FileResource { sat: Option<String>, anchor: String, resource: String, offset: Option<u64> },
 }
 
 /// Smaller than the general business frame, including all serde envelopes.
@@ -1361,6 +1364,7 @@ pub enum Response {
         #[serde(with = "crate::delegation::wire_json")]
         answer: crate::delegation::Answer,
     },
+    FileResource { slice: crate::file_resource::Slice },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1442,6 +1446,7 @@ impl Request {
                 | Request::Usage
                 | Request::Vitals
                 | Request::Ls { .. }
+                | Request::FileResource { .. }
                 | Request::FetchPath { .. }
                 | Request::FetchTree { .. }
                 | Request::SatFetchTree { .. }
@@ -1515,6 +1520,7 @@ impl Request {
                 | Request::Usage
                 | Request::Vitals
                 | Request::Ls { .. }
+                | Request::FileResource { .. }
                 | Request::FetchPath { .. }
                 | Request::SatVitals { .. }
                 | Request::SatLs { .. }
@@ -1565,7 +1571,8 @@ impl Request {
             Request::Offer { .. } => Duration::from_secs(280),
             Request::DocTransfer { .. }
             | Request::Fetch { .. }
-            | Request::FetchPath { .. }
+            | Request::FileResource { .. }
+                | Request::FetchPath { .. }
             | Request::SatFetchPath { .. }
             | Request::Pair { .. }
             | Request::Vouch { .. } => Duration::from_secs(30),

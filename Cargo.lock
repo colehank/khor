@@ -5043,6 +5043,12 @@ version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
+ "bytes",
+ "futures",
+ "getrandom 0.3.4",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "khor-catalog",
  "khor-commands",
  "khor-core",
@@ -5054,6 +5060,8 @@ dependencies = [
  "tiny_http",
  "tokio",
  "ts-rs",
+ "url",
+ "urlencoding",
  "vt100",
 ]
 

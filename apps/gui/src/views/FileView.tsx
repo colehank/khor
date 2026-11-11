@@ -53,6 +53,7 @@ import { CodeEditor, preloadEditor } from "@/components/CodeEditor.lazy";
 import { editorIn, focusAtTop } from "@/lib/code/place";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
+import {ResourcePreview} from "@/components/ResourcePreview";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
@@ -151,10 +152,12 @@ export type Draft = { text: string; was: string; by: string };
 const IMAGES = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "avif"];
 const DOCS = ["docx", "xlsx", "pptx", "doc", "xls", "ppt"];
 
-export function kindOf(path: string): "image" | "svg" | "pdf" | "doc" | "text" {
+export function kindOf(path: string): "image" | "svg" | "pdf" | "doc" | "video" | "audio" | "text" {
   const name = path.split("/").pop() ?? "";
   const dot = name.lastIndexOf(".");
   const e = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (["mp4","m4v","webm","mov","ogv"].includes(e)) return "video";
+  if (["mp3","m4a","aac","wav","ogg","oga","opus","flac"].includes(e)) return "audio";
   if (IMAGES.includes(e)) return "image";
   if (e === "svg") return "svg";
   if (e === "pdf") return "pdf";
@@ -533,7 +536,7 @@ function FileBody({
     return () => URL.revokeObjectURL(pdfAt);
   }, [pdfAt]);
 
-  const previewMode = kind === "text" || (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
+  const previewMode = kind === "text" || kind === "video" || kind === "audio" || (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
     ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
@@ -952,6 +955,7 @@ function FileBody({
       </div>
     </div>}
   </div>;
+  if (kind === "video" || kind === "audio") return previewSurface(<ResourcePreview machine={machine} path={path} media={kind}/>);
   if (nativePreview) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
   if (kindOf(path) !== "text") {
     if (look === null) return previewSurface(lookError === null ? <div className="flex-1" /> :

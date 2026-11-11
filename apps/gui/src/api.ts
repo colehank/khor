@@ -557,6 +557,11 @@ export const mergeFileText = (base: string, mine: string, theirs: string) =>
     It reads up to 4 MB, which is measured to cover every image and pdf
     on this person's disk; bigger files come back `cut` with nothing to
     draw. */
+export type {ResourcePreview} from "./gen/bindings/ResourcePreview";
+import type {ResourcePreview} from "./gen/bindings/ResourcePreview";
+export const fileResourceOpen=(machine:string,path:string,html?:string)=>call<ResourcePreview>("file_resource_open",{machine,path,html:html??null});
+export const fileResourceTouch=(id:string)=>call<void>("file_resource_touch",{id});
+export const fileResourceClose=(id:string)=>call<void>("file_resource_close",{id});
 export const fetchPreview = (machine: string, path: string) =>
   call<Preview>("preview", { machine, path });
 export const fetchCodeHere = (machine: string) => call<Editor>("code_here", { machine });

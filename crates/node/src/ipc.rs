@@ -520,6 +520,7 @@ pub enum Op {
         machine: String,
         request: crate::updates::UpgradeRequest,
     },
+    FileResource { machine: String, anchor: String, resource: String, offset: Option<u64> },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -601,6 +602,7 @@ impl Op {
             Op::Ls { .. } => ("Ls", DEADLINE_FAR),
             Op::ReadHead { .. } => ("ReadHead", DEADLINE_FAR),
             Op::ReadAt { .. } => ("ReadAt", DEADLINE_FAR),
+            Op::FileResource { .. } => ("FileResource", DEADLINE_FAR),
             Op::TouchedOn { .. } => ("TouchedOn", DEADLINE_FAR),
             Op::CheckoutOn { .. } => ("CheckoutOn", DEADLINE_FAR),
             Op::GitStatusOn { .. } => ("GitStatusOn", DEADLINE_FAR),
@@ -916,6 +918,7 @@ pub enum Reply {
     MachineUpgraded {
         outcome: crate::updates::UpgradeOutcome,
     },
+    FileResource { slice: crate::file_resource::Slice },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

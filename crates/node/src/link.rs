@@ -2819,6 +2819,12 @@ impl Node {
                 },
                 Err(why) => ipc::Reply::Refused { why },
             },
+            ipc::Op::FileResource { machine, anchor, resource, offset } => {
+                match self.file_resource_with(ep, &machine, &anchor, &resource, offset).await {
+                    Ok(slice) => ipc::Reply::FileResource { slice },
+                    Err(why) => ipc::Reply::Refused { why },
+                }
+            },
             ipc::Op::ReadAt {
                 machine,
                 path,
@@ -4978,6 +4984,22 @@ impl Node {
                 }
                 let run = run.lock().unwrap_or_else(|p| p.into_inner()).clone();
                 Ok(Response::Adding { run })
+            }
+            Request::FileResource { sat, anchor, resource, offset } => {
+                let slice = if let Some(sat) = sat {
+                    let target = self.devices_loaded()?.doc.get(&sat)
+                        .ok_or_else(|| msg::machine_left_table(&sat))?;
+                    if target.sponsor.as_deref() != Some(self.device_str()) {
+                        return Err("not this satellite's sponsor".into());
+                    }
+                    let host = crate::satellite::Dest::of(&target)
+                        .ok_or_else(|| msg::sat_no_ssh_host(&sat))?;
+                    tokio::task::spawn_blocking(move || crate::satellite::file_resource(&host, &anchor, &resource, offset)).await.map_err(|e|e.to_string())??
+                } else {
+                    let workspaces = self.workspaces()?.into_iter().filter(|w| w.device == self.device_str()).map(|w| w.path).collect::<Vec<_>>();
+                    tokio::task::spawn_blocking(move || crate::file_resource::read(&anchor, &resource, offset, &workspaces)).await.map_err(|e|e.to_string())??
+                };
+                Ok(Response::FileResource { slice })
             }
             Request::FetchPath { path, offset } => {
                 // Off the reactor with Ls, for Ls's reason.
@@ -8513,6 +8535,43 @@ impl Node {
             // reason `DropBorrow` does: the caller wanted it gone.
             Response::Refused { .. } => Ok(()),
             other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
+        }
+    }
+
+    /// Browser resources are resolved and confined where the file lives, before
+    /// bytes leave that machine. Each response is one bounded existing file slice.
+    pub async fn file_resource(&self, machine: &str, anchor: &str, resource: &str, offset: Option<u64>) -> Result<crate::file_resource::Slice, String> {
+        if machine.is_empty() || machine == self.name() {
+            let workspaces = self.workspaces()?.into_iter().filter(|w| w.device == self.device_str()).map(|w| w.path).collect::<Vec<_>>();
+            return crate::file_resource::read(anchor, resource, offset, &workspaces);
+        }
+        if let Some(reply) = self.via_serve(ipc::Op::FileResource { machine: machine.into(), anchor: anchor.into(), resource: resource.into(), offset }).await {
+            return match reply? { ipc::Reply::FileResource { slice } => Ok(slice), ipc::Reply::Refused { why } => Err(why), other => Err(msg::serve_non_answer(format_args!("{other:?}"))) };
+        }
+        let ep = endpoint::bind_with(self.secret_key().clone(), self.relay_map(), self.relays_n0()).await.map_err(|e|e.to_string())?;
+        let result = self.file_resource_with(&ep, machine, anchor, resource, offset).await;
+        ep.close().await;
+        result
+    }
+
+    async fn file_resource_with(&self, ep: &iroh::Endpoint, machine: &str, anchor: &str, resource: &str, offset: Option<u64>) -> Result<crate::file_resource::Slice, String> {
+        let (channel, home) = self.resolve(machine)?;
+        if home == self.device() {
+            let workspaces = self.workspaces()?.into_iter().filter(|w| w.device == self.device_str()).map(|w| w.path).collect::<Vec<_>>();
+            return crate::file_resource::read(anchor, resource, offset, &workspaces);
+        }
+        let target = self.devices_loaded()?.doc.by_name(&channel).ok_or_else(|| msg::machine_left_table(&channel))?;
+        let (peer, sat) = if let Some(sp) = target.sponsor.clone() {
+            if sp == self.device_str() {
+                let host = crate::satellite::Dest::of(&target).ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let (anchor, resource) = (anchor.to_owned(), resource.to_owned());
+                return tokio::task::spawn_blocking(move || crate::satellite::file_resource(&host, &anchor, &resource, offset)).await.map_err(|e|e.to_string())?;
+            }
+            let sponsor = self.devices_loaded()?.doc.get(&sp).ok_or_else(|| msg::machine_left_table(&channel))?;
+            (sponsor.name, Some(target.id))
+        } else { (channel, None) };
+        match self.ask(ep, &peer, &Request::FileResource { sat, anchor: anchor.into(), resource: resource.into(), offset }).await? {
+            Response::FileResource { slice } => Ok(slice), Response::Refused { why } => Err(why), other => Err(msg::peer_non_answer(format_args!("{other:?}"))),
         }
     }
 

@@ -45,6 +45,7 @@ pub(crate) mod egress;
 pub mod face;
 pub mod favicon;
 pub mod files;
+pub mod file_resource;
 pub mod git;
 pub mod gui_host;
 pub mod hardware;

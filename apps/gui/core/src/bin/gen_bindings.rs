@@ -57,6 +57,7 @@ macro_rules! roots {
         $visit!(khor_gui_core::AgentRow);
         $visit!(khor_gui_core::workspaces::WorkspaceRow);
         $visit!(khor_gui_core::files::FileText);
+        $visit!(khor_gui_core::resource_preview::ResourcePreview);
         $visit!(khor_gui_core::file_handoff::FileHandoff);
         $visit!(khor_gui_core::files::FileStat);
         $visit!(khor_gui_core::files::DirWatchScope);
