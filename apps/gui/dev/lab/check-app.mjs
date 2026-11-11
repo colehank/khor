@@ -238,7 +238,7 @@ async function inspect(browser, scene, size, data = {}) {
         const control=row.locator('[data-side-disclosure]');
         await page.waitForFunction(()=>document.querySelector('[data-side-disclosure="wide/all"]')?.getAttribute('aria-label')==='3 个子会话');
         assert.equal(await page.locator('[data-unread-count]').count(),0,'The list does not show unread numbers');
-        if(size.width>=500)await control.hover();
+        if(size.width>=500){await control.hover();await control.focus();}
         const spacing=await control.evaluate(button=>{
           const rect=button.getBoundingClientRect(),title=button.closest('[data-side-title]').getBoundingClientRect();
           const sub=button.closest('[data-row-open]').querySelector('[data-side-sub]').getBoundingClientRect();

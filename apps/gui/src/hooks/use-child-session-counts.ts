@@ -6,11 +6,12 @@ export const childSessionKey = (row: SessionRow) => JSON.stringify([row.id, row.
 
 /** Read only retained parent links; full child status belongs to the expanded tree. */
 export function useChildSessionCounts(rows: readonly SessionRow[]) {
-  const owners = JSON.stringify(rows.filter(row => row.category === "khor" && row.execution_home)
-    .map(row => [row.id, row.execution_home]));
+  // Canonicalize query identities only; activity reordering must not restart the poll.
+  const owners = JSON.stringify([...new Set(rows.filter(row => row.category === "khor" && row.execution_home)
+    .map(childSessionKey))].sort());
   const [counts, setCounts] = useState<ReadonlyMap<string, ChildSessionCount>>(() => new Map());
   useEffect(() => {
-    const parents = JSON.parse(owners) as [string, string][];
+    const parents = (JSON.parse(owners) as string[]).map(value => JSON.parse(value) as [string, string]);
     const keys = new Set(parents.map(parent => JSON.stringify(parent)));
     setCounts(previous => new Map([...previous].filter(([key]) => keys.has(key))));
     let stopped = false;
