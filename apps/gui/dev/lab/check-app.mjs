@@ -376,6 +376,17 @@ async function inspect(browser, scene, size, data = {}) {
 let browser;
 const results = [];
 try {
+  if (process.env.LAB_CHECKS === 'child-tree') {
+    for (const engine of ['chromium', ...(process.env.QUALITY_ENGINES?.includes('webkit') ? ['webkit'] : [])]) {
+      browser = await (engine === 'webkit' ? webkit : chromium).launch({headless:engine !== 'webkit' || process.env.QUALITY_HEADLESS !== '0'});
+      for (const size of [{width:1280,height:900},{width:390,height:844}]) {
+        results.push(await inspect(browser,'list',size,{machines:3,engine}));
+        await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      }
+      await browser.close();
+      browser = undefined;
+    }
+  } else {
   for (let i = 0; i < 100; i++) {
     try {if ((await fetch(`http://127.0.0.1:${port}/lab/status`)).ok) break;} catch {}
     await new Promise(r => setTimeout(r, 100));
@@ -401,6 +412,8 @@ try {
     results.push(await inspect(browser,scene,{width:390,height:844},{machines}));
     await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   }
+  results.push(await inspect(browser,'list',{width:1280,height:900},{machines:3}));
+  await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   for(const scene of ['devices','workspaces','quota']){
     results.push(await inspect(browser,scene,{width:390,height:844},{machines:6}));
     await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
@@ -434,6 +447,8 @@ try {
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true,khor:true}));
     results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true,engine:'webkit'}));
+    results.push(await inspect(browser,'list',{width:1280,height:900},{machines:3,engine:'webkit'}));
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
     for (const scene of ['workspaces','list','devices']) {
       results.push(await inspect(browser,scene,{width:390,height:844},{machines:scene === 'workspaces' ? 6 : 3,engine:'webkit'}));
       await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
@@ -442,6 +457,7 @@ try {
   for(const mobile of [false,true])for(const short of [false,true]){
     results.push(await checkLongHistory(browser,{port,report,mobile,short,engine:process.env.QUALITY_ENGINES?.includes('webkit')?'webkit':'chromium'}));
     await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  }
   }
   console.log(JSON.stringify(results.map(({name, errors}) => ({name, errors}))));
   if (results.some(result => result.errors.length)) process.exitCode = 1;
