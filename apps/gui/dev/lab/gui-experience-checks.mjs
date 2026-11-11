@@ -116,6 +116,26 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
   const nav=page.locator('[data-workspace-navigation][data-seat="workspace"]');await nav.waitFor();
   await nav.locator('[data-workspace-view="sessions"]').click();
   const rows=page.locator('[data-ws-sessions-list] [data-row-open]');if(khor)await page.locator('[data-ws-sessions-list] [data-row="wide/all"] [data-row-open]').click();else await rows.first().click();
+  if(khor){
+   await page.locator('[data-ws-sessions] [data-machine-chat-scroll]:visible').waitFor();
+   if(mobile)await page.locator('[data-ws-sessions] [data-lab-model-back]:visible').click();
+   await page.locator('[data-ws-sessions-list] [data-side-disclosure="wide/all"]').click();
+   await page.locator('[data-ws-sessions-list] [data-child-task-row]').first().click();
+   const child=page.locator('[data-ws-sessions] [data-child-session]:visible');
+   await child.locator('[data-child-session-message]').first().waitFor();
+   assert.match(await child.innerText(),/3 checks passed/);
+   assert.equal(await page.locator('[role="dialog"]:visible').count(),0);
+   assert.equal(await page.locator('[data-chat-input]:visible,[data-chat-send]:visible').count(),0);
+   const scopes=await page.evaluate(()=>Object.entries(localStorage).filter(([key])=>key.startsWith('khor.workspace.sessions.')).map(([,value])=>JSON.parse(value)));
+   assert(scopes.some(scope=>scope.tabs.includes('wide/all')&&scope.tabs.some(id=>id.startsWith('delegated-session:'))),'The readonly child joins this workspace tab scope');
+   if(mobile)await page.locator('[data-ws-sessions] [data-session-screen][data-deck-at="bottom"] [data-session-bar]:visible').waitFor();
+   else assert.equal(await page.locator('[data-workspace-session-tabs] [data-tab-open^="delegated-session:"]').count(),1);
+   await page.screenshot({path:path.join(report,`workspace-child-${mobile?'mobile':'desktop'}-${engine}.png`)});
+   await page.locator('[data-child-session-parent]:visible').click();
+   await child.waitFor({state:'detached'});
+   await page.locator('[data-ws-sessions] [data-machine-chat-scroll]:visible').waitFor();
+   if(!mobile){assert.deepEqual(errors,[]);return {name:`workspace readonly child tab ${engine}`,passed:true,errors};}
+  }
   if(mobile){
    await page.locator(khor?'[data-ws-sessions] [data-machine-chat]':'[data-ws-sessions] [data-chat-input]').waitFor();
    await page.locator('[data-ws-sessions] [data-lab-model-header]').waitFor();

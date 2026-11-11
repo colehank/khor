@@ -436,6 +436,8 @@ try {
       for (const size of [{width:1280,height:900},{width:390,height:844}]) {
         results.push(await inspect(browser,'list',size,{machines:3,engine}));
         await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+        results.push(await checkWorkspaceSessions(browser,{port,report,engine,mobile:size.width<500,khor:true}));
+        await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
       }
       await browser.close();
       browser = undefined;

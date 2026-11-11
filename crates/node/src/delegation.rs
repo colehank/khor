@@ -713,9 +713,18 @@ struct DelegatedTrace {
 impl DelegatedTrace {
     fn note(&mut self, update: &Value) -> Result<(), String> {
         let kind = update["sessionUpdate"].as_str().unwrap_or_default();
-        let display = matches!(kind, "agent_thought_chunk" | "tool_call" | "tool_call_update" | "plan" | "compaction_update" | "compaction_summary_chunk")
-            || kind == "agent_message_chunk" && update["content"]["type"] != "text";
-        if !display { return Ok(()); }
+        let display = matches!(
+            kind,
+            "agent_thought_chunk"
+                | "tool_call"
+                | "tool_call_update"
+                | "plan"
+                | "compaction_update"
+                | "compaction_summary_chunk"
+        ) || kind == "agent_message_chunk" && update["content"]["type"] != "text";
+        if !display {
+            return Ok(());
+        }
         let encoded = serde_json::to_string(update).map_err(|error| error.to_string())?;
         // Retention is bounded and optional: overflow must never abort the task.
         if self.updates.len() >= 512 || self.bytes + encoded.len() > 128 * 1024 {
@@ -845,7 +854,9 @@ impl HostedTask {
         let mut metadata = std::collections::HashMap::new();
         metadata.insert("khor.acp_trace".into(), json!(1));
         metadata.insert("khor.acp_updates".into(), json!(self.trace.updates));
-        if self.trace.partial { metadata.insert("khor.acp_trace_partial".into(), json!(true)); }
+        if self.trace.partial {
+            metadata.insert("khor.acp_trace_partial".into(), json!(true));
+        }
         if let Some(pending) = &self.pending {
             metadata.insert("khor.approval".into(), pending.clone());
         }
@@ -889,7 +900,9 @@ mod tests {
         assert!(trace.partial);
         assert_eq!(trace.updates.len(), 1);
         for _ in 0..600 {
-            trace.note(&json!({"sessionUpdate":"plan","entries":[]})).unwrap();
+            trace
+                .note(&json!({"sessionUpdate":"plan","entries":[]}))
+                .unwrap();
         }
         assert_eq!(trace.updates.len(), 512);
         assert!(trace.bytes <= 128 * 1024);
