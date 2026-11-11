@@ -419,7 +419,7 @@ export function SideList({
       <button type="button" data-side-disclosure={r.id} aria-expanded={r.disclosure.expanded}
         aria-controls={r.disclosure.controls} aria-label={r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}
         onClick={event=>{event.stopPropagation();r.disclosure?.toggle();}}
-        className={cn("pointer-events-auto absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-sm text-callout font-body text-muted-foreground hover:bg-fill", narrow ? "h-touch" : "h-ctl-md", RING)}>
+        className={cn("pointer-events-auto absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 rounded-sm text-callout font-body text-muted-foreground hover:bg-fill", narrow ? "h-touch" : "h-ctl-md", RING)}>
         {r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}
       </button>
     </span>;
@@ -449,7 +449,7 @@ export function SideList({
               by its weight (F2.1; SYS-05, N15, W09). */}
           {r.aside ? (
             <span data-side-title className={cn("flex min-w-0 items-baseline gap-in text-headline", dim && "text-muted-foreground")}>
-              <span data-side-name className={cn("max-w-full min-w-0 shrink-0 truncate", r.disclosure && "pointer-events-auto")}>
+              <span data-side-name className={cn("max-w-full min-w-0 shrink-0 truncate", r.disclosure && "pointer-events-auto relative z-10")}>
                 {r.title}
               </span>
               {/* The name keeps its width (cut only past the whole line);
@@ -462,7 +462,7 @@ export function SideList({
             </span>
           ) : (
             <span data-side-title className={cn(r.disclosure ? "flex min-w-0 items-center gap-in text-headline" : "block min-w-0 truncate text-headline", dim && "text-muted-foreground")}>
-              {r.disclosure ? <><span data-side-name className="pointer-events-auto min-w-0 truncate">{r.title}</span>{disclosure}</> : r.title}
+              {r.disclosure ? <><span data-side-name className="pointer-events-auto relative z-10 min-w-0 truncate">{r.title}</span>{disclosure}</> : r.title}
             </span>
           )}
           {/* Always drawn, empty where a row has nothing to say under its
