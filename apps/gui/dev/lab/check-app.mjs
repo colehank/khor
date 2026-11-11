@@ -287,6 +287,9 @@ async function inspect(browser, scene, size, data = {}) {
         assert.equal(await disclosure.evaluate(button=>document.activeElement===button),true,'Arrow navigation reaches the independent title action');
         await page.keyboard.press('Space');await tasks.first().waitFor();
         await page.keyboard.press('Space');await tasks.first().waitFor({state:'detached'});
+        await parent.locator('[data-editable-name]').first().dblclick();
+        await parent.locator('[data-title-input]').waitFor();
+        await page.keyboard.press('Escape');await parent.locator('[data-title-input]').waitFor({state:'detached'});
       }
       if(scene==='devices'){
         assert.equal(await page.locator('[data-mandala-map]').count(),0,'An unselected machine page must leave its detail area empty');
