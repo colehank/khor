@@ -428,7 +428,7 @@ jobs:
           cache-dependency-path: apps/gui/package-lock.json
       - run: npm ci
       - uses: ./.github/actions/restore-frontend
-      - run: npm run test:unit && npm run test:types
+      - run: npm run test:unit && npm run attachments && npm run test:types
       - run: npm run gates && npm run mobile:static
       - name: Prepare the browsers required by this interaction scope
         id: interaction-browser
@@ -449,10 +449,14 @@ jobs:
             fi
             echo 'channel=' >> "$GITHUB_OUTPUT"
           fi
+      - name: Build the real attachment transport for full interaction checks
+        if: ${{ inputs.interaction_scope != 'settings' && inputs.suite != 'updates' }}
+        working-directory: .
+        run: cargo build --locked -p khor-cli --bin khor -p khor-gui-core --bin bridge
       - name: Run the selected interaction groups and retain all failures
         run: |
           failed=0
-          gates=(updates-ui recent-places-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel viewport-resume page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui key-row-ui workspace-move-ui dialogs)
+          gates=(updates-ui recent-places-ui lock-state ai-elements scroll-lifecycle scroll-compose editor-overwrite chat-poll chat-cancel viewport-resume page-retention-ui browser-yield native-events native-helpers chat-recovery khor-conversations-ui list-scroll-ui file-handoff quicklook file-pdf-ui workspace-content-ui terminal-links-ui notification-ui key-row-ui workspace-move-ui dialogs attachment-ui)
           if [ "$KHOR_QUALITY_SUITE" = updates ]; then
             gates=(updates-ui)
           elif [ "$KHOR_INTERACTION_SCOPE" = settings ]; then
@@ -506,6 +510,7 @@ jobs:
         with:
           name: gui-interaction-evidence
           path: |
+            /tmp/khor-attachment-ui-check/ui
             ${{ runner.temp }}/khor-conversations-ui-evidence
             ${{ runner.temp }}/khor-list-scroll-evidence
             ${{ runner.temp }}/quality-file-handoff

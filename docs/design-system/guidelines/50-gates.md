@@ -929,3 +929,8 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 光学图稿中的坐标和光色属于被编辑的素材。手机布局及安装后实际外缘仍需人工验收。
 
 通知的`notification-ui`同时运行`check-native-notification-ui.mjs`，覆盖独立原生网页层重叠时使用可信原生承载、同一正式横幅内容及事件桥；仅替换IPC，不能冒称真实OS合成器已验证。
+
+
+### 附件中的浏览器本地文件夹（2026-11-12）
+
+`npm run attachments` 验证实际选中File对象的层级、空目录、与node/files.rs一致的排序及不触发暂存/发送；`npm run attachment-ui` 使用正式TermFiles、真实私有节点和字节暂存，覆盖逐层返回、预览原文件字节、临时副本回收、保持文件夹整项选择与移除。完整Quality显式运行模型检查，构建CLI/bridge后将attachment-ui加入实际交互组；它不替代物理手机目录选择器/键盘验收。
