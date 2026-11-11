@@ -81,8 +81,8 @@ export type SideRow = {
   /** Beside the row and outside what opens it — a control of its own
       (a tab's ×) or a drawing of state (a workspace's chevron). */
   after?: ReactNode;
-  /** An independent disclosure before the face, without moving other rows. */
-  disclosure?: { expanded: boolean; controls: string; label: string; toggle: () => void };
+  /** Independent inline action beside the title; never covers the face. */
+  disclosure?: { expanded: boolean; controls: string; label: string; collapseLabel: string; toggle: () => void };
   /** Expanded content belongs immediately below its row and shares its group. */
   below?: ReactNode;
   /** What the box finds this row by. **What the row says**, and nothing
@@ -414,19 +414,16 @@ export function SideList({
     // on the picked block; the corners keep their own inks. A picked row
     // is never greyed (no transparency on the selection, README 颜色).
     const dim = !!r.dim && !picked;
-    const button = (
-      <button
-        type="button"
-        data-side-open
-        {...r.openData}
-        tabIndex={r.id === stop ? 0 : -1}
-        onClick={r.onOpen}
-        className={cn(
-          "flex min-h-list-row min-w-0 flex-1 items-stretch gap-row text-left",
-          narrow ? "ps-group" : "ps-row",
-          RING,
-        )}
-      >
+    const disclosure = r.disclosure && <span data-side-disclosure-slot className={cn("relative inline-flex flex-none items-center text-callout font-body", narrow ? "min-w-touch" : "px-in")}>
+      <span aria-hidden className="pointer-events-none opacity-0">{r.disclosure.label}</span>
+      <button type="button" data-side-disclosure={r.id} aria-expanded={r.disclosure.expanded}
+        aria-controls={r.disclosure.controls} aria-label={r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}
+        onClick={event=>{event.stopPropagation();r.disclosure?.toggle();}}
+        className={cn("pointer-events-auto absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-sm text-callout font-body text-muted-foreground hover:bg-fill", narrow ? "h-touch" : "h-ctl-md", RING)}>
+        {r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}
+      </button>
+    </span>;
+    const contents = <>
         {/* **One leading slot** (the audit fix plan F2.1): the face's
             width on every list, so the words start on one x whatever the
             face is — a session's, a machine's, the 额度 dial. */}
@@ -452,7 +449,7 @@ export function SideList({
               by its weight (F2.1; SYS-05, N15, W09). */}
           {r.aside ? (
             <span data-side-title className={cn("flex min-w-0 items-baseline gap-in text-headline", dim && "text-muted-foreground")}>
-              <span data-side-name className="max-w-full min-w-0 shrink-0 truncate">
+              <span data-side-name className={cn("max-w-full min-w-0 shrink-0 truncate", r.disclosure && "pointer-events-auto")}>
                 {r.title}
               </span>
               {/* The name keeps its width (cut only past the whole line);
@@ -461,10 +458,11 @@ export function SideList({
               <span data-side-aside className="min-w-0 flex-1 truncate text-callout font-body text-muted-foreground">
                 {r.aside}
               </span>
+              {disclosure}
             </span>
           ) : (
-            <span data-side-title className={cn("block min-w-0 truncate text-headline", dim && "text-muted-foreground")}>
-              {r.title}
+            <span data-side-title className={cn(r.disclosure ? "flex min-w-0 items-center gap-in text-headline" : "block min-w-0 truncate text-headline", dim && "text-muted-foreground")}>
+              {r.disclosure ? <><span data-side-name className="pointer-events-auto min-w-0 truncate">{r.title}</span>{disclosure}</> : r.title}
             </span>
           )}
           {/* Always drawn, empty where a row has nothing to say under its
@@ -482,8 +480,19 @@ export function SideList({
             page. A content row opens what it names; only a settings row
             keeps its ›. */}
         </span>
-      </button>
-    );
+      </>;
+    const rowClass = cn("flex min-h-list-row min-w-0 flex-1 items-stretch gap-row text-left", narrow ? "ps-group" : "ps-row");
+    // A stretched primary button and the independent title action are siblings.
+    // Keep real keyboard controls without nesting one button inside another.
+    const button = r.disclosure ? <div {...r.openData} className={cn(rowClass,"relative")} onClick={event=>{
+      event.currentTarget.querySelector<HTMLButtonElement>('[data-side-open]')?.focus({preventScroll:true});r.onOpen();
+    }}>
+      <button type="button" data-side-open tabIndex={r.id === stop ? 0 : -1}
+        aria-label={r.name ?? r.find} className={cn("absolute inset-0",RING)}
+        onClick={event=>{event.stopPropagation();r.onOpen();}}/>
+      <div className="pointer-events-none contents">{contents}</div>
+    </div> : <button type="button" data-side-open {...r.openData} tabIndex={r.id === stop ? 0 : -1}
+      onClick={r.onOpen} className={cn(rowClass,RING)}>{contents}</button>;
     return (
       <Fragment key={keyOf.get(r) ?? r.id}>
         {/* One rule where the pinned group ends and the rest begins
@@ -570,12 +579,6 @@ export function SideList({
                 reaches it and the keyboard's Menu key opens it. Slid
                 left, the row shows what can be done to it
                 (`components/SwipeRow`). */}
-            {r.disclosure && <button type="button" data-side-disclosure={r.id}
-              aria-expanded={r.disclosure.expanded} aria-controls={r.disclosure.controls} aria-label={r.disclosure.label}
-              onClick={r.disclosure.toggle}
-              className={cn("absolute inset-y-0 z-10 flex w-list-face min-h-touch min-w-touch items-center text-muted-foreground", narrow ? "left-group" : "left-row", RING)}>
-              <span className="relative size-list-face"><IconChevronRight className={cn("absolute left-0 bottom-0 size-affordance rounded-full border bg-popover transition-transform", r.disclosure.expanded && "rotate-90")}/></span>
-            </button>}
             {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
             {r.after}
           </SwipeRow>

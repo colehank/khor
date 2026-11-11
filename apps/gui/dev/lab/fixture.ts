@@ -143,7 +143,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     {agent:'codex-acp', machine:'MacLab', state:'completed', result:'3 checks passed'},
     {agent:'claude-acp', machine:'HPC-Linux', state:'waiting', result:null},
     {agent:'a2a:review', machine:'Mac mini 构建机', state:'failed', result:'The review did not finish'},
-  ].map((task,i)=>({...task,run:'fixture-run',key:'fixture-child-'+i,task:'task-'+i,context:'context-'+i,
+  ].map((task,i)=>({...task,home:devices[i]?.id,run:'fixture-run',key:'fixture-child-'+i,task:'task-'+i,context:'context-'+i,
     can_cancel:task.state==='waiting',can_retry:task.state==='failed'}));
   function agentAction(body: Record<string, any>) {
     if (body.action === "catalog") return view(providers);

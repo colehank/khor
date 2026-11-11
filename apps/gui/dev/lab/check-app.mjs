@@ -236,14 +236,24 @@ async function inspect(browser, scene, size, data = {}) {
       if (scene==='list' && size.width < 500 && machines===3) {
         const parent=page.locator('[data-screen="list"] [data-row="wide/all"] [data-row-open]');
         const disclosure=page.locator('[data-screen="list"] [data-side-disclosure="wide/all"]');
+        assert.equal(await disclosure.innerText(),'子会话');
+        assert.equal(await disclosure.locator('svg').count(),0,'Disclosure leaves the parent avatar intact');
+        assert.equal(await disclosure.evaluate(button=>button.parentElement.closest('button')===null),true,'Independent actions are never nested inside the row button');
+        const controlBounds=await disclosure.boundingBox();assert(controlBounds&&controlBounds.width>=44&&controlBounds.height>=44,'Mobile disclosure keeps a full touch target');
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"] [data-child-task-row]').first().waitFor();
         assert.equal(await disclosure.getAttribute('aria-expanded'),'true');
+        assert.equal(await disclosure.innerText(),'收起');
+        const childFaces=page.locator('[data-child-tasks="wide/all"] [data-child-task-face] [data-side-face]');
+        assert.equal(await childFaces.count(),4,'Agents and command records reuse the session avatar assembly');
+        const devices=await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()));
+        assert.deepEqual(await page.locator('[data-child-task-face]').evaluateAll(nodes=>nodes.slice(0,3).map(node=>node.dataset.childTaskFace)),devices.slice(0,3).map(device=>device.id),'Child avatars resolve the stable machine identity rather than a display name');
         assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Expanding tasks stays in the session list');
         assert.equal(await parent.isVisible(),true,'The parent remains visible above its inline children');
         await page.screenshot({path:path.join(report,name+'-child-tree.png')});
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
+        assert.equal(await disclosure.innerText(),'子会话');
         await parent.click();
         await page.locator('[data-machine-chat-scroll]:visible').waitFor();
         await page.locator('[data-lab-model-back]:visible').click();

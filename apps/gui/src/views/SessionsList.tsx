@@ -410,8 +410,8 @@ export function SessionsList({
     old: r.stale,
     menu: actions(r),
     onOpen: () => ownsTasks && !narrow && r.id === selected ? toggleTasks(r.id) : onSelect(r),
-    disclosure: ownsTasks ? { expanded: tasksOpen, controls: treeId, label: gui.child_tasks, toggle: () => toggleTasks(r.id) } : undefined,
-    below: ownsTasks && tasksOpen ? <ChildTasks key={r.id} parent={r} id={treeId}/> : undefined,
+    disclosure: ownsTasks ? { expanded: tasksOpen, controls: treeId, label: gui.child_sessions, collapseLabel: gui.child_sessions_collapse, toggle: () => toggleTasks(r.id) } : undefined,
+    below: ownsTasks && tasksOpen ? <ChildTasks key={r.id} parent={r} id={treeId} devices={devices}/> : undefined,
     // The anchors this list has always answered to — the gates and the
     // smoke read them, and they are facts about a session, not about a
     // sidebar.

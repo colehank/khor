@@ -1,17 +1,17 @@
 import { useEffect, useRef, useState } from "react";
-import { khorAgent, type SessionRow } from "@/api";
+import { khorAgent, type DeviceRow, type SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
-import { sessionKind } from "@/components/SessionFace";
-import { IconTerminal } from "@/components/icons";
+import { SessionFace } from "@/components/SessionFace";
 
 type ChildTask = {
   run: string;
   key: string;
   agent: string;
   machine: string;
+  home?: string;
   state: string;
   task: string | null;
   context: string | null;
@@ -35,7 +35,7 @@ function TaskStatus({ state }: {state: string}) {
   }
 }
 
-export function ChildTasks({ parent, id }: { parent: SessionRow; id: string }) {
+export function ChildTasks({ parent, id, devices }: { parent: SessionRow; id: string; devices: readonly DeviceRow[] }) {
   const [groups, setGroups] = useState<{children: ChildTask[]; commands: ChildTask[]} | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -99,18 +99,25 @@ export function ChildTasks({ parent, id }: { parent: SessionRow; id: string }) {
           ([[gui.child_task_agents, groups.children, false], [gui.key_group_commands, groups.commands, true]] as const).map(([label, rows, command]) =>
             rows.length > 0 && <section key={label} aria-label={label}>
               <h3 className="pb-xxs text-group text-muted-foreground">{label}</h3>
-              {rows.map(child => <button key={identity(child)} type="button" data-side-child-open data-child-task-row={identity(child)}
-                className="flex min-h-touch w-full min-w-0 items-center gap-in rounded-md py-in text-left hover:bg-fill focus-visible:outline-ring"
+              {rows.map(child => {
+                const device=devices.find(device=>device.id===child.home);
+                const face=device?.face ?? (command || child.home && (child.home===parent.home || child.home===parent.execution_home) ? parent.face : null);
+                const halo=({submitted:'busy',working:'busy',waiting:'blocked',completed:'done',failed:'failed',canceled:'idle'} as Record<string,string>)[child.state]??null;
+                const preview=child.result?.trim().split('\n')[0] || device?.shown || child.machine;
+                return <button key={identity(child)} type="button" data-side-child-open data-child-task-row={identity(child)}
+                className="flex min-h-list-row w-full min-w-0 items-stretch gap-row rounded-md text-left hover:bg-fill focus-visible:outline-ring"
                 onClick={() => { setDetail(identity(child)); setError(""); }}>
-                <span className="grid size-kind-mark flex-none place-items-center" aria-hidden>
-                  {command ? <IconTerminal className="size-kind-mark"/> : sessionKind("gui", child.agent).glyph("size-kind-mark")}
+                <span data-child-task-face={child.home ?? parent.execution_home ?? ''} className="flex w-list-face flex-none items-center justify-center" aria-hidden>
+                  <SessionFace face={face} word={halo} kind={command?'shell':'gui'} category={command?null:child.agent}/>
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-headline">{child.agent}</span>
-                  <span className="truncate text-caption text-muted-foreground">{child.machine}</span>
+                <span className="flex min-w-0 flex-1 items-center gap-row border-b py-1">
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="truncate text-headline">{child.agent}</span>
+                    <span className="truncate text-callout text-muted-foreground">{preview}</span>
+                  </span>
+                  <span className="min-w-0 flex-none"><TaskStatus state={child.state}/></span>
                 </span>
-                <span className="min-w-0 flex-none"><TaskStatus state={child.state}/></span>
-              </button>)}
+              </button>;})}
             </section>) : <p aria-busy={groups === null && !error} className="text-callout text-muted-foreground">
               {groups !== null ? gui.child_tasks_empty : null}
             </p>}
