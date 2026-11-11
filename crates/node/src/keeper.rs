@@ -21,6 +21,11 @@ pub fn is_inner() -> bool {
     std::env::var_os(INNER_ENV).is_some()
 }
 
+/// Unix reparents a kept serve to init after the keeper exits.
+pub(crate) fn parent_gone() -> bool {
+    is_inner() && unsafe { libc::getppid() } == 1
+}
+
 /// Set on the shielded keeper by its own pre-exec self: the install
 /// path — the one to watch for new generations — which `current_exe`
 /// no longer answers once the process runs from a local copy.

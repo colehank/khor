@@ -1115,8 +1115,31 @@ fn repaint_foreground(leader: Option<i32>) {
     }
 }
 
-#[cfg(not(unix))]
-fn repaint_foreground(_leader: Option<i32>) {}
+fn repaint_terminal(master: &dyn portable_pty::MasterPty) {
+    #[cfg(unix)]
+    repaint_foreground(master.process_group_leader());
+    #[cfg(windows)]
+    if let Ok(size) = master.get_size() {
+        // ConPTY refreshes through ResizePseudoConsole, not SIGWINCH.
+        let mut transient = size;
+        transient.cols = if size.cols == u16::MAX { size.cols - 1 } else { size.cols + 1 };
+        let _ = master.resize(transient);
+        let _ = master.resize(size);
+    }
+}
+
+fn shell_owns_terminal(master: &dyn portable_pty::MasterPty, child: u32) -> Option<bool> {
+    #[cfg(unix)]
+    { master.process_group_leader().map(|pid| pid as u32 == child) }
+    #[cfg(windows)]
+    {
+        let _ = master;
+        // Reset stale mouse mode only when no program remains under the shell.
+        let processes = crate::adaptor::Procs::snapshot();
+        processes.get(child)?;
+        Some(processes.subtree(&[child]).len() == 1)
+    }
+}
 
 /// The least time between two repaints asked for after a panic: a
 /// program whose every repaint panics vt100 is not kept redrawing.
@@ -2011,12 +2034,7 @@ fn host_serving(
                 // a mouse mode is on.
                 let reset = shells_own
                     && ledger.lock().unwrap().mouse_on()
-                    && master
-                        .lock()
-                        .unwrap()
-                        .process_group_leader()
-                        .map(|p| p as u32)
-                        == Some(child_pid);
+                    && shell_owns_terminal(&**master.lock().unwrap(), child_pid) == Some(true);
                 let data: std::borrow::Cow<[u8]> = if reset {
                     ledger
                         .lock()
@@ -2074,7 +2092,7 @@ fn host_serving(
                 // themselves; to them the repaint is one more frame.
                 if lost && repainted.is_none_or(|t| t.elapsed() >= REPAINT_EVERY) {
                     repainted = Some(std::time::Instant::now());
-                    repaint_foreground(master.lock().unwrap().process_group_leader());
+                    repaint_terminal(&**master.lock().unwrap());
                 }
                 // Never for a tmux client (`mux_client`): its bottom
                 // line is tmux's status bar, which is true of the
@@ -2140,17 +2158,19 @@ fn host_serving(
             let mut last = State::Busy;
             while !output_done.load(Ordering::SeqCst) {
                 std::thread::sleep(FACE_POLL);
-                let leader = master.lock().unwrap().process_group_leader();
-                let word = match leader {
-                    Some(pid) if pid as u32 != child_pid => State::Busy,
-                    Some(_) => State::Idle,
-                    None => continue,
-                };
+                let Some(owns) = shell_owns_terminal(&**master.lock().unwrap(), child_pid) else { continue; };
+                let word = if owns { State::Idle } else { State::Busy };
+                #[cfg(unix)]
+                let source = crate::live::Source::Reported;
+                // ConPTY has no Unix foreground process group. Descendants
+                // provide a conservative observation, not a kernel report.
+                #[cfg(windows)]
+                let source = crate::live::Source::Screen;
                 // Reported, not read off a screen: this is the kernel's
                 // answer to "who owns the terminal", not an appearance.
                 if word != last
                     && live
-                        .report(&id, word, crate::live::Source::Reported)
+                        .report(&id, word, source)
                         .is_ok()
                 {
                     last = word;
@@ -2340,6 +2360,7 @@ fn host_serving(
                     }
                     shared.clients.lock().unwrap().push(client);
                     drop(ring);
+                    #[cfg(unix)]
                     if mux_client {
                         redraw_tmux_client(&cmd, master.lock().unwrap().tty_name());
                     }

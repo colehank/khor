@@ -227,13 +227,7 @@ impl Hold {
         // purpose: what is held is one read-modify-write of a few
         // hundred bytes, so the wait is bounded by that and not by
         // anything a person or a network does.
-        let got = unsafe { libc::flock(std::os::unix::io::AsRawFd::as_raw_fd(&f), libc::LOCK_EX) };
-        if got != 0 {
-            return Err(msg::cant_write(
-                p.display(),
-                std::io::Error::last_os_error(),
-            ));
-        }
+        f.lock().map_err(|e| msg::cant_write(p.display(), e))?;
         Ok(Hold(f))
     }
 }
@@ -242,12 +236,7 @@ impl Drop for Hold {
     fn drop(&mut self) {
         // Closing the fd releases it; this is the explicit spelling so
         // the release is not a thing a reader has to know about `File`.
-        let _ = unsafe {
-            libc::flock(
-                std::os::unix::io::AsRawFd::as_raw_fd(&self.0),
-                libc::LOCK_UN,
-            )
-        };
+        let _ = self.0.unlock();
     }
 }
 

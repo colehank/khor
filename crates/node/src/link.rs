@@ -2057,7 +2057,7 @@ impl Node {
                     // its parent was launchd — so the window exited on
                     // its own, with the sentence on a terminal nobody
                     // had any more.
-                    if !resumable && crate::keeper::is_inner() && unsafe { libc::getppid() } == 1 {
+                    if !resumable && crate::keeper::parent_gone() {
                         let stamp =
                             jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("{}", msg::serve_orphaned(&stamp));
@@ -10675,6 +10675,7 @@ impl Node {
         }
         let inner = endpoint.map(|e| e.pid);
         let served = keeper.is_some() || inner.is_some();
+        #[cfg(unix)]
         if let Some(pid) = keeper {
             unsafe {
                 libc::kill(pid as libc::pid_t, libc::SIGTERM);
@@ -10694,6 +10695,12 @@ impl Node {
                     libc::kill(pid as libc::pid_t, libc::SIGTERM);
                 }
             }
+        }
+        #[cfg(windows)]
+        {
+            // Stop the supervisor before its child, so it cannot respawn it.
+            if let Some(pid) = keeper { crate::win_process::terminate(pid, false)?; }
+            if let Some(pid) = inner { crate::win_process::terminate(pid, false)?; }
         }
         if served {
             // Let both lives leave before sweeping hosts, so the
@@ -10717,11 +10724,17 @@ impl Node {
                     continue;
                 }
                 hosts += 1;
+                #[cfg(unix)]
                 unsafe {
                     // The child's group first (the shell or agent under
                     // the pty), then the host — the order `close` uses.
                     libc::kill(-(hf.child_pid as libc::pid_t), libc::SIGTERM);
                     libc::kill(hf.host_pid as libc::pid_t, libc::SIGTERM);
+                }
+                #[cfg(windows)]
+                {
+                    crate::win_process::terminate(hf.child_pid, true)?;
+                    crate::win_process::terminate(hf.host_pid, false)?;
                 }
             }
         }
@@ -13005,17 +13018,9 @@ pub(crate) fn pid_alive(pid: u32) -> bool {
         }
         std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        // Windows bring-up owns this (on the ledger): the answer there is
-        // OpenProcess/GetExitCodeProcess, not a signal. Saying "alive"
-        // here would park every dead session on its last word forever,
-        // and saying "dead" would bury every live one — so the honest
-        // placeholder is the one that keeps a word standing until a real
-        // implementation can pronounce it, which is what a missing pid
-        // already means everywhere else in this file.
-        let _ = pid;
-        true
+        crate::win_process::alive(pid)
     }
 }
 

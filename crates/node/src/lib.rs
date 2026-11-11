@@ -55,7 +55,13 @@ pub mod integration;
 pub mod ipc;
 pub mod join;
 pub mod journal;
+#[cfg(unix)]
 pub mod keeper;
+#[cfg(windows)]
+#[path = "keeper_windows.rs"]
+pub mod keeper;
+#[cfg(windows)]
+mod win_process;
 pub mod khor_agent;
 pub mod legacy_codex;
 pub mod link;

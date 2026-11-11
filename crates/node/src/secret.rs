@@ -139,19 +139,8 @@ fn sweep_with(
 /// Keeps `password` for `key`, replacing what was there.
 pub fn put(key: &str, password: &str) -> Result<(), String> {
     if let Some(dir) = door() {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
         std::fs::create_dir_all(&dir).map_err(|e| msg::secret_store_failed(e.to_string()))?;
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(door_file(&dir, key))
-            .map_err(|e| msg::secret_store_failed(e.to_string()))?;
-        return f
-            .write_all(password.as_bytes())
-            .map_err(|e| msg::secret_store_failed(e.to_string()));
+        return crate::link::write_private(&door_file(&dir, key), password.as_bytes());
     }
     os::put(key, password)
 }
@@ -223,11 +212,17 @@ pub fn answer_askpass_if_asked() {
 /// The askpass answers only ssh: anything else that sets
 /// [`ASKPASS_KEY`] and starts khor gets nothing out of the store.
 fn parent_is_ssh() -> bool {
+    #[cfg(unix)]
     let ppid = std::os::unix::process::parent_id();
+    #[cfg(windows)]
+    let Some(ppid) = crate::win_process::parent_id() else { return false; };
     let Some(path) = exe_of(ppid) else {
         return false;
     };
-    path.file_name().is_some_and(|n| n == "ssh")
+    path.file_name().is_some_and(|n| {
+        let name = n.to_string_lossy();
+        name == "ssh" || (cfg!(windows) && name.eq_ignore_ascii_case("ssh.exe"))
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -242,9 +237,14 @@ fn exe_of(pid: u32) -> Option<PathBuf> {
     Some(PathBuf::from(String::from_utf8(buf).ok()?))
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(unix, not(target_os = "macos")))]
 fn exe_of(pid: u32) -> Option<PathBuf> {
     std::fs::read_link(format!("/proc/{pid}/exe")).ok()
+}
+
+#[cfg(windows)]
+fn exe_of(pid: u32) -> Option<PathBuf> {
+    crate::win_process::executable(pid)
 }
 
 #[cfg(target_os = "macos")]
