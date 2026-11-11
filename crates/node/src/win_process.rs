@@ -73,7 +73,7 @@ pub(crate) fn terminate(pid: u32, descendants: bool) -> Result<(), String> {
             Err(error) => return Err(error.to_string()),
         }
     }
-    for handle in handles {
+    for handle in &handles {
         if unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } != WAIT_TIMEOUT {
             continue;
         }
@@ -81,6 +81,20 @@ pub(crate) fn terminate(pid: u32, descendants: bool) -> Result<(), String> {
             && unsafe { WaitForSingleObject(handle.as_raw_handle(), 0) } == WAIT_TIMEOUT
         {
             return Err(std::io::Error::last_os_error().to_string());
+        }
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    for handle in handles {
+        let remaining = deadline
+            .saturating_duration_since(std::time::Instant::now())
+            .as_millis() as u32;
+        if unsafe { WaitForSingleObject(handle.as_raw_handle(), remaining) }
+            != windows_sys::Win32::Foundation::WAIT_OBJECT_0
+        {
+            return Err(std::io::Error::from_raw_os_error(
+                windows_sys::Win32::Foundation::ERROR_TIMEOUT as i32,
+            )
+            .to_string());
         }
     }
     Ok(())

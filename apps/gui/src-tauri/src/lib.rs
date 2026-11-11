@@ -5995,9 +5995,9 @@ async fn take_the_home(n: &Node) {
     eprintln!(
         "[{stamp}] khor app: a kept serve (pid {keeper}) holds this home; asking it to leave"
     );
-    // SAFETY: a signal to the pid this home's own serve.pid names.
-    unsafe {
-        libc::kill(keeper as libc::pid_t, libc::SIGTERM);
+    if let Err(error) = n.release_kept_resident(keeper) {
+        eprintln!("[{stamp}] khor app: could not retire the kept serve: {error}");
+        return;
     }
     for _ in 0..50 {
         if n.kept_resident().is_none() {

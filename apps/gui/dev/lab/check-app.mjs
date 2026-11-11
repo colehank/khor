@@ -236,12 +236,12 @@ async function inspect(browser, scene, size, data = {}) {
         const parent=page.locator('[data-screen="list"] [data-row="wide/all"] [data-row-open]');
         await parent.click();
         await page.locator('[data-machine-chat-scroll]:visible').waitFor();
-        await page.locator('[data-back]:visible').first().click();
+        await page.locator('[data-lab-model-back]:visible').click();
         await parent.waitFor({state:'visible'});
         await parent.click();
         await page.locator('[data-machine-chat-scroll]:visible').waitFor();
         assert.equal(await page.locator('[data-child-task-row]').count(),0,'Returning from the mobile list opens the selected conversation before its child tasks');
-        await page.locator('[data-back]:visible').first().click();
+        await page.locator('[data-lab-model-back]:visible').click();
         await parent.waitFor({state:'visible'});
       }
       if (scene==='list' && size.width >= 500 && machines===3) {

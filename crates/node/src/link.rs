@@ -10768,6 +10768,29 @@ impl Node {
             .filter(|&p| p != std::process::id() && pid_running(p))
     }
 
+    /// Release this home's recorded keeper and resident for App takeover.
+    /// Durable session hosts retain their own leases and are not retired here.
+    pub fn release_kept_resident(&self, expected: u32) -> Result<bool, String> {
+        if self.kept_resident() != Some(expected) {
+            return Ok(false);
+        }
+        #[cfg(unix)]
+        if unsafe { libc::kill(expected as libc::pid_t, libc::SIGTERM) } != 0 {
+            return Err(std::io::Error::last_os_error().to_string());
+        }
+        #[cfg(windows)]
+        {
+            let inner = self
+                .endpoint_file()?
+                .filter(|endpoint| !endpoint.app && endpoint.pid != std::process::id());
+            crate::win_process::terminate(expected, false)?;
+            if let Some(inner) = inner {
+                crate::win_process::terminate(inner.pid, false)?;
+            }
+        }
+        Ok(true)
+    }
+
     /// Creates a one-time pairing ticket. Needs `khor serve` running —
     /// the ticket carries the live endpoint's addresses.
     ///
