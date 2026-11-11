@@ -1,0 +1,4 @@
+{
+  "extends": "../lab/tsconfig.json",
+  "include": ["../../src", "./bootstrap.ts", "./scenario.ts", "../lab/fixture.ts"]
+}

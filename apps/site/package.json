@@ -8,8 +8,10 @@
     "predev": "npm run tokens",
     "dev": "ASTRO_TELEMETRY_DISABLED=1 astro dev",
     "prebuild": "npm run tokens",
-    "build": "ASTRO_TELEMETRY_DISABLED=1 astro build",
-    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview"
+    "build": "npm run demo:build && ASTRO_TELEMETRY_DISABLED=1 astro build",
+    "preview": "ASTRO_TELEMETRY_DISABLED=1 astro preview",
+    "demo:build": "cd ../gui && vite build --config dev/site/vite.config.ts --outDir ../site/public/experience/app --emptyOutDir",
+    "demo:check": "cd ../gui && tsc --noEmit --project dev/site/tsconfig.json"
   },
   "dependencies": {
     "astro": "^7.3.5"

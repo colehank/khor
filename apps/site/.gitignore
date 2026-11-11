@@ -3,3 +3,4 @@ dist/
 .astro/
 src/styles/tokens.gen.css
 .mirror/
+public/experience/app/

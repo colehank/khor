@@ -1,127 +1,63 @@
 ---
 import Base from "../layouts/Base.astro";
 import Mark from "../components/Mark.astro";
+import Mandala from "../components/Mandala.astro";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
-import { INSTALL, REPO, TAGLINE } from "../site";
-
-// The six state words, in the order the app lists them.
-const words = [
-  ["busy", "忙碌"],
-  ["blocked", "待批"],
-  ["done", "完成"],
-  ["errored", "中断"],
-  ["failed", "失败"],
-  ["idle", "空闲"],
-];
+import { INSTALL, REPO } from "../site";
+import { release } from "../releases";
+import "../styles/story.css";
+const lines = [["You have", "many devices."], ["With", "many agents."], ["But", "one mind."], ["How about letting", "them work together?"]];
 ---
-
-<Base>
-  <header class="bar">
-    <Mark />
-    <nav>
-      <a class="bar-link" href="/docs/">文档</a>
-      <a class="bar-link" href={REPO}>GitHub</a>
-    </nav>
-  </header>
-
-  <main class="home">
-    <section class="hero">
-      <img src={icon.src} alt="" width="96" height="96" />
-      <h1>khor</h1>
-      <p class="tagline">{TAGLINE}</p>
-      <div class="cmd">
-        <span class="cmd-prompt">$</span>
-        <code id="install">{INSTALL}</code>
-        <button class="btn" type="button" data-copy="install">复制</button>
-      </div>
-      <p class="hero-note">Linux 与 macOS，不需要 root</p>
-      <a class="btn btn-primary" href="/docs/install/">开始使用</a>
-    </section>
-
-    <section class="grid3">
-      <div class="group">
-        <h2>一张网，没有中心</h2>
-        <p>每台机器既是客户端也是服务器。配对任意一台就入网，数据只在你自己的设备之间流动；中继只转发，不存内容</p>
-      </div>
-      <div class="group">
-        <h2>所有会话，一个列表</h2>
-        <p>shell、智能体、对话、文件传输在同一个列表里，用同一套状态词</p>
-        <ul class="words">
-          {words.map(([key, word]) => <li style={`color: var(--state-${key})`}>{word}</li>)}
-        </ul>
-      </div>
-      <div class="group">
-        <h2>命令行与界面等价</h2>
-        <p>同一个后端。界面上能做的，命令行都能做</p>
+<Base description="连接各台设备上的智能体、网页与文件，从手边的设备继续工作">
+  <a class="skip-story" href="#experience">跳过开场</a>
+  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="#experience">体验</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
+  <main class="story-home">
+    <section class="opening" aria-label="认识 khor" data-opening>
+      <div class="opening-sticky">
+        <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <p class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><span>{lead}</span><br />{phrase}</p>)}</div>
+        <h1 class="sr-only">You have many devices. With many agents. But one mind. How about letting them work together? Meet khor.</h1>
+        <div class="assembly" data-assembly><Mandala /></div>
+        <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"></span></div>
+        <nav class="story-steps" aria-label="开场章节">{lines.map(([, phrase], index) => <button type="button" aria-label={`跳到 ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
       </div>
     </section>
-
-    <h2 class="section-title">三步</h2>
-    <section class="group rows">
-      <div class="row">
-        <span class="row-n">1</span>
-        <div>
-          <h3>安装</h3>
-          <p>每台设备上跑一遍，装完它就常驻</p>
-          <pre><code>{INSTALL}</code></pre>
+    <section class="handoff" id="experience" aria-labelledby="handoff-title" data-handoff>
+      <div class="handoff-sticky">
+        <div class="handoff-copy"><h2 id="handoff-title"><span data-desktop-title>Meet khor.</span><span data-phone-title>Keep going.</span></h2><p class="handoff-caption"><span data-desktop-caption>打开 khor，看看你的智能体在做什么</span><span data-phone-caption>合上电脑，在手机上接着做</span></p></div>
+        <div class="device-stage" data-device-stage>
+          <div class="laptop" aria-hidden="true"><div class="laptop-lid"><div class="camera"></div></div><div class="laptop-base"><div class="laptop-notch"></div></div></div>
+          <div class="phone" aria-hidden="true"><div class="phone-island"></div><div class="phone-home"></div></div>
+          <dialog class="screen" data-screen open aria-label="khor 交互体验">
+            <iframe title="khor 交互体验，使用示例数据" data-demo-frame data-src="/experience/app/index.html?scene=gui&amp;items=3&amp;machines=3&amp;theme=light" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" loading="lazy"></iframe>
+            <button class="launch-khor" type="button" data-launch><img src={icon.src} alt="" width="112" height="112" /><span>打开 khor</span></button>
+            <button class="close-expanded" type="button" data-close-expanded hidden>收起体验 ×</button>
+            <div class="demo-loading" role="status" hidden data-demo-loading>正在打开 khor…</div>
+          </dialog>
+          <svg class="demo-cursor" viewBox="0 0 28 36" aria-hidden="true"><path d="M3 2v27l7-7 6 11 5-3-6-10h10z" /></svg>
         </div>
-      </div>
-      <div class="row">
-        <span class="row-n">2</span>
-        <div>
-          <h3>入网</h3>
-          <p>在已经装好的那台上出一张票，在新机器上用掉它。票 15 分钟内有效，只能用一次</p>
-          <pre><code>khor invite
-khor pair &lt;票&gt;</code></pre>
-        </div>
-      </div>
-      <div class="row">
-        <span class="row-n">3</span>
-        <div>
-          <h3>打开</h3>
-          <p>发一个链接，拿手机或者别的电脑打开，就是整张网</p>
-          <pre><code>khor web</code></pre>
-        </div>
+        <div class="experience-actions"><p>真实界面 · 示例数据</p><button type="button" class="text-action" data-fullscreen>展开体验 <span aria-hidden="true">↗</span></button><button type="button" class="text-action" data-reset>重新开始</button></div>
       </div>
     </section>
-
-    <h2 class="section-title">能做什么</h2>
-    <section class="group rows features">
-      <div class="row">
-        <h3>监控</h3>
-        <p>每台机器的 CPU、GPU、内存、磁盘，每个会话的状态</p>
-      </div>
-      <div class="row">
-        <h3>发起</h3>
-        <p>在任意一台设备上开会话、传文件、借另一台机器的网</p>
-      </div>
-      <div class="row">
-        <h3>智能体</h3>
-        <p>Claude Code、Codex 的会话装上就出现在列表里；有动作等你准许的排在最前</p>
-      </div>
-      <div class="row">
-        <h3>网页脸</h3>
-        <p>任一台机器出一张网页，手机上什么都不用装</p>
+    <section class="resource-story" aria-labelledby="resources-title">
+      <div class="resource-intro"><p class="eyebrow">From wherever you are.</p><h2 id="resources-title">设备上的工作，<br />手边接着做。</h2></div>
+      <div class="resource-lines">
+        <a href="/experience/app/index.html?scene=gui&amp;items=3&amp;machines=3&amp;theme=light"><span>智能体</span><p>查看进展、处理审批，让不同设备上的智能体协作</p><span aria-hidden="true">↗</span></a>
+        <a href="/experience/app/index.html?scene=workspace&amp;items=3&amp;machines=3&amp;theme=light"><span>文件与 Git</span><p>打开远程项目，编辑文件，查看每一次变化</p><span aria-hidden="true">↗</span></a>
+        <a href="/experience/app/index.html?scene=page&amp;items=3&amp;machines=3&amp;theme=light"><span>Web</span><p>从这台设备，访问另一台设备上的网页</p><span aria-hidden="true">↗</span></a>
+        <a href="/docs/pair/"><span>你的设备网</span><p>通过点对点连接，把自己的设备连在一起</p><span aria-hidden="true">↗</span></a>
       </div>
     </section>
-
-    <footer class="foot">
-      <span>坛城（Kyil-khor），意为连接</span>
-      <nav>
-        <a href="/docs/">文档</a>
-        <a href={REPO}>GitHub</a>
-      </nav>
-    </footer>
+    <section class="download-section" id="download" aria-labelledby="download-title">
+      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">从你的设备开始。</h2>
+      <a class="download-main" href="/download/">下载 khor <span aria-hidden="true">↓</span></a><a class="other-downloads" href="/download/">所有下载与安装方式</a>
+      <div class="install-line"><code id="install">{INSTALL}</code><button type="button" data-copy="install">复制</button></div><p class="download-note">当前预览版 {release.version} · macOS App · Linux / macOS CLI</p>
+    </section>
   </main>
-</Base>
+  <footer class="story-footer"><Mark /><span>坛城（Kyil-khor），意为连接</span><nav><a href="/docs/">文档</a><a href={REPO}>GitHub</a></nav></footer>
 
+  <noscript><style>.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}.handoff{height:auto}.handoff-sticky{position:relative}</style><p class="no-script">开启 JavaScript 可观看动效与体验界面。<a href="/download/">下载 khor</a></p></noscript>
+</Base>
 <script>
-  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-copy]")) {
-    button.addEventListener("click", async () => {
-      const source = document.getElementById(button.dataset.copy!);
-      await navigator.clipboard.writeText(source?.textContent ?? "");
-      button.textContent = "已复制";
-      setTimeout(() => (button.textContent = "复制"), 1600);
-    });
-  }
+  import { mountStory } from "../scripts/story";
+  mountStory();
 </script>

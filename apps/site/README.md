@@ -1,44 +1,34 @@
 # khor.cloud
 
-官网和文档，一个静态站。中继和寻址不在这里：它们是常驻服务，各有自己的机器和
-`relay-*.khor.cloud` 记录（见 `deploy/cloudflared.yml` 头上那段）。
+Astro 官网、文档和真实前端的交互演示。演示入口为
+`apps/gui/dev/site`：复用生产 App 与浏览器内的示例数据，不连接实际设备。
 
-- 值从 `docs/design-system/tokens.json` 生成（`scripts/tokens.mjs`），图标读
-  `apps/gui/src-tauri/icons/src/`，这里不留第二份。
-- 文档一篇一个文件：`src/content/docs/*.md`，`order` 定先后，`summary` 是总览里那一行。
-- `public/install.sh` 是 `curl -fsSL https://khor.cloud/install.sh | sh` 的入口，
-  只把 `scripts/install.sh` 指到本站的镜像 `/dl`。
+## 本地迭代
 
 ```sh
-npm ci
-npm run dev        # 本地看
-npm run build      # 出 dist/
+npm ci --prefix apps/site
+npm ci --prefix apps/gui
+npm run demo:build --prefix apps/site
+npm run dev --prefix apps/site -- --host 127.0.0.1 --port 23820
 ```
+
+前端需要已有的 `apps/gui/src/gen` 生成契约。当前 worktree 复用 RC12 官方
+frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前基线相同），
+没有触发 Rust 编译。全新环境按仓库前端生成流程准备契约。
+
+改官网文案、动效和 CSS 后由 Astro 自动刷新；仅修改演示数据或 App 组件时重跑
+`demo:build`。`demo:check` 检查演示与生产前端类型；`npm run build` 先打包演示再输出静态站。
+
+- `src/components/Mandala.astro` 读取完整的 `mandala-glass.svg` 和既有 session 字形；`icon-story.ts` 在原图层上控制演化，不替换成另一幅图。
+- `src/scripts/story.ts` 用实际滚动位置控制组装、合盖和手机接续；同一 iframe 原地调整尺寸，保留任务与输入。
+- 减少动态效果模式直接显示成形图标，保留手动打开体验与下载。
+- `src/releases.ts` 是下载页和 `/download.json` 的共同来源，仅列已验证的发行资产。
+- 站点 token 从 `docs/design-system/tokens.json` 生成；不另存调色板与字体。
+- 演示产物在 `public/experience/app`，由构建生成并忽略；没有重新实现一套 App 页面。
 
 ## 部署
 
-源站在境内一台机器上，只听回环口；外面经 Cloudflare Tunnel 进来，机器不开公网端口。
-
-那台机器上，一次：
-
-```sh
-cloudflared tunnel login
-cloudflared tunnel create khor-site        # 凭据放到 /etc/cloudflared/khor-site.json
-cloudflared tunnel route dns khor-site khor.cloud
-cloudflared tunnel route dns khor-site www.khor.cloud
-cp deploy/cloudflared.yml /etc/cloudflared/config.yml && cloudflared service install
-caddy run --config deploy/Caddyfile         # 或者挂成服务
-```
-
-之后每次发布，在有这个仓库的机器上：
-
-```sh
-deploy/push.sh <ssh主机>
-```
-
-它构建页面，把一个已选定发行版同步进 `.mirror/releases/<tag>/`，再上传到远端独占暂存目录。
-远端重新校验压缩归档摘要、gzip 和程序头；完整目录落位后才原子切换 `/dl/VERSION`。
-既有版本保留，已选旧版本的客户端可以继续下载。页面同步保护 `/dl`，不删除它的历史版本。
-部署端需要支持 `--protect-args` 的 rsync，远端需要 sh、gzip、SHA256 工具与基础文件命令。
-出了新发行版也跑这一条，镜像才跟上。布局、失败恢复和旧镜像迁移见
-[镜像维护](../../scripts/release-mirror.md)。
+本轮只作本地预览，没有合并或线上部署。
+现有 `deploy/push.sh` 继续负责静态站与下载镜像的分阶段同步；页面同步保护 `/dl`，
+版本校验完成后才推进下载指针。详细约定见 [镜像维护](../../scripts/release-mirror.md)。
+中继、寻址和官网分别部署。

@@ -63,7 +63,14 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean} = {}) {
+export type LabFixtureOptions = {
+  origin?:string; content?:boolean; items?:number; machines?:number; page?:boolean;
+  pageSize?:number; settings?:boolean; notices?:boolean; noticeBurst?:boolean; longHistory?:boolean;
+  samples?:Frame[][]; sessionTitles?:string[]; sampleImage?:boolean; reply?:string; thinking?:string[];
+  contentText?:string; answerText?:string;
+};
+
+export function createLabFixture(terminal = true, options: LabFixtureOptions = {}) {
   const devices = labDevices(device,options.machines ?? 3);
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);
@@ -102,7 +109,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     ],
   }));
   const initialPreferences=structuredClone(preferences);
-  const sampleWithSettings=(i:number)=>{const source=sample(i);if(options.longHistory&&i===0)return [source[0],{kind:'settings',settings:preferences[i]},...longHistoryFrames(240,labMedia.image)];return [source[0],...(i===0?[update('user_message_chunk',{content:{type:'image',mimeType:'image/png',name:'设备协作示例.png',data:labMedia.image}})]:[]),{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text('Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
+  const sampleWithSettings=(i:number)=>{const source=options.samples?.[i] ?? sample(i);if(options.longHistory&&i===0)return [source[0],{kind:'settings',settings:preferences[i]},...longHistoryFrames(240,labMedia.image)];return [source[0],...(i===0&&options.sampleImage!==false?[update('user_message_chunk',{content:{type:'image',mimeType:'image/png',name:'设备协作示例.png',data:labMedia.image}})]:[]),{kind:'settings',settings:preferences[i]},...source.slice(1), ...(options.content ? [update('agent_message_chunk', text(options.contentText ?? 'Open Lab file: /preview/project/README.md\n\n[Open Lab page](' + options.origin + '/lab/example)'))] : [])];};
   let frames = ids.map((_, i) => sampleWithSettings(i));
   const historyStats={pages:0,backward:0,forward:0,last:[] as {cursor:unknown;newer:boolean}[]};
   const makeCanonical = () => canonicalChatFixture({pageSize:options.pageSize??128,ids: ids.slice(0, 4),
@@ -207,9 +214,9 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     streaming.add(index); frames[index].push({ kind: "turning" });
     const revision = ++generation[index];
     const publish = (frame: Frame) => { if (generation[index] === revision) frames[index].push(frame); };
-    const thought = ["先检查输入。", "\n确认消息、思考与工具调用各自的状态。", "\n使用上游的文字与展开方式，不替换成应用诊断图标。"];
+    const thought = options.thinking ?? ["先检查输入。", "\n确认消息、思考与工具调用各自的状态。", "\n使用上游的文字与展开方式，不替换成应用诊断图标。"];
     thought.forEach((part, i) => later(() => publish(update("agent_thought_chunk", text(part))), 300 + i * 650));
-    const chunks = message.match(/.{1,5}/gu) ?? [];
+    const chunks = (options.reply ?? message).match(/.{1,5}/gu) ?? [];
     chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
@@ -297,7 +304,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             }else frames[index].push({kind:'control_result',token:body.token,operation:body.operation,data:{},error:null});break;
           }
           case "sessions": {
-            const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: options.longHistory&&i===0?'长对话历史 · 240轮':titles[i],
+            const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: options.longHistory&&i===0?'长对话历史 · 240轮':(options.sessionTitles?.[i] ?? titles[i]),
               activity: [], observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
               word: streaming.has(i)||i===2 ? 'busy' : i===1 ? 'blocked' : 'idle', at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
               stale: false, category: i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude', group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,
@@ -327,7 +334,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
             if(body.option==='model')preferences[index].model=String(body.value);
             frames[index].push({kind:'settings',settings:structuredClone(preferences[index])});});break;
           }
-          case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : "已确认。此处仅演示确认状态，不执行系统操作。"))), 900); break;
+          case "chat_answer": later(() => frames[index].push({ kind: "answered", ask: body.ask, option: body.option }, update("agent_message_chunk", text(body.option === "deny" ? "已取消。这次预览没有执行任何系统操作。" : (options.answerText ?? "已确认。此处仅演示确认状态，不执行系统操作。")))), 900); break;
           case "chat_say": sentPrompts.push(structuredClone(body));run(index, "收到。这是验收环境的示例回复，没有调用模型或执行命令。你可以展开上面的工具调用，检查输出与复制按钮。"); break;
           case "chat_stop": generation[index]++; streaming.delete(index); frames[index].push({ kind: "turn", stop: "Cancelled" }); break;
           // Explicit no-PIN fixture facts; a failed read never unlocks production.
