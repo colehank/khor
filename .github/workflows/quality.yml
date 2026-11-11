@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime]
         default: sync
       desktop_target:
         type: choice
@@ -331,3 +331,35 @@ jobs:
         with:
           name: script-verification
           path: ${{ runner.temp }}/format.patch
+
+  agent-runtime:
+    if: inputs.slice == 'agent-runtime'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - shell: bash
+        run: |
+          npm ci --prefix apps/agent
+          node apps/agent/build.mjs x86_64-pc-windows-msvc apps/agent/dist/khor-agent
+          python - <<'PYCODE'
+          from pathlib import Path
+          import hashlib, json, subprocess
+          program = Path('apps/agent/dist/khor-agent')
+          assert program.read_bytes()[:2] == b'MZ'
+          Path('agent-runtime-proof.json').write_text(json.dumps({'source': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), 'target':'x86_64-pc-windows-msvc', 'sha256':hashlib.sha256(program.read_bytes()).hexdigest(), 'bytes':program.stat().st_size}))
+          PYCODE
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: windows-agent-runtime-proof
+          path: agent-runtime-proof.json
+          if-no-files-found: error
