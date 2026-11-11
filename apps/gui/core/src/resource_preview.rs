@@ -220,9 +220,16 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
     let cookie_name = format!("khor_preview_{}", &context.id[..16]);
     let cookie = format!("{cookie_name}={}", context.id);
     let capability = req.uri().path().strip_prefix(&prefix);
-    let allowed = capability.is_some()
-        || header_text(&req, header::COOKIE)
-            .is_some_and(|s| s.split(';').any(|c| c.trim() == cookie));
+    let cookie_allowed=header_text(&req, header::COOKIE).is_some_and(|s|s.split(';').any(|c|c.trim()==cookie));
+    // A browser frame may refuse third-party cookies. A same-origin referrer
+    // carrying this capability can canonicalize root URLs without weakening
+    // authentication to an Origin/Host check alone.
+    let referrer_allowed=header_text(&req, header::REFERER)
+        .and_then(|value|url::Url::parse(value).ok()).is_some_and(|referer|{
+            let host=header_text(&req,header::HOST).and_then(|host|url::Url::parse(&format!("http://{host}")).ok());
+            host.is_some_and(|host|host.origin()==referer.origin())&&referer.path().starts_with(&prefix)
+        });
+    let allowed=capability.is_some()||cookie_allowed||referrer_allowed;
     if !allowed {
         return empty(StatusCode::NOT_FOUND);
     }
@@ -232,6 +239,16 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
         return empty(StatusCode::FORBIDDEN);
     }
     *context.touched.lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
+    if capability.is_none() {
+        let mut location=format!("{prefix}{}",req.uri().path().trim_start_matches('/'));
+        if let Some(query)=req.uri().query(){location.push('?');location.push_str(query);}
+        let mut reply=empty(StatusCode::TEMPORARY_REDIRECT);
+        let Ok(location)=hyper::header::HeaderValue::from_str(&location) else{return empty(StatusCode::BAD_REQUEST)};
+        reply.headers_mut().insert(header::LOCATION,location);
+        reply.headers_mut().insert(header::CACHE_CONTROL,hyper::header::HeaderValue::from_static("no-store"));
+        reply.headers_mut().insert("referrer-policy",hyper::header::HeaderValue::from_static("same-origin"));
+        return reply;
+    }
     let raw = capability.unwrap_or(req.uri().path().trim_start_matches('/'));
     let Ok(decoded) = urlencoding::decode(raw) else {
         return empty(StatusCode::BAD_REQUEST);
@@ -265,7 +282,7 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
         .header(header::CACHE_CONTROL, "no-store")
         .header(header::ETAG, &etag)
         .header("X-Content-Type-Options", "nosniff")
-        .header("Referrer-Policy", "no-referrer")
+        .header("Referrer-Policy", "same-origin")
         .header(
             header::SET_COOKIE,
             format!("{cookie}; Path=/; HttpOnly; SameSite=Strict"),
@@ -483,8 +500,12 @@ mod http_tests {
             &format!("Cookie: {cookie}\r\n"),
         )
         .await;
-        assert!(head.contains("text/javascript"));
-        assert!(body.starts_with(b"document.body"));
+        assert!(head.starts_with("http/1.1 307"));assert!(body.is_empty());
+        let (head,_)=get(&format!("{base}/app.js"),"GET",&format!("Referer: {}\r\n",html.url)).await;
+        assert!(head.starts_with("http/1.1 307"));assert!(head.contains(&format!("location: /_khor/{}/app.js",html.id)));
+        assert!(get(&format!("{base}/app.js"),"GET","Referer: http://evil.example/_khor/unknown/pages/index.html\r\n").await.0.starts_with("http/1.1 404"));
+        let (head,body)=get(&format!("{base}/_khor/{}/app.js",html.id),"GET", "").await;
+        assert!(head.contains("text/javascript"));assert!(body.starts_with(b"document.body"));
         let h = get(&html.url, "HEAD", "").await;
         assert!(h.1.is_empty());
         assert!(h.0.contains(&format!(
