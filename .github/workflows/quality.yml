@@ -800,6 +800,18 @@ jobs:
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk gstreamer1.0-libav
           npx playwright-core install --with-deps chromium webkit
+      - name: Apply new regression checks to an unchanged old UI for a red baseline
+        if: inputs.checker_sha != ''
+        env:
+          CHECKER_SHA: ${{ inputs.checker_sha }}
+        run: |
+          [[ "$CHECKER_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --depth=1 origin "$CHECKER_SHA"
+          for script in check-app.mjs resource-checks.mjs; do
+            git show "$CHECKER_SHA:apps/gui/dev/lab/$script" > "apps/gui/dev/lab/$script"
+          done
+          mkdir -p "$RUNNER_TEMP/lab-report"
+          printf '{"implementation":"%s","regression":"%s"}\n' "$(git rev-parse HEAD)" "$CHECKER_SHA" > "$RUNNER_TEMP/lab-report/regression-source.json"
       - name: Exercise the actual App and its live update path
         working-directory: apps/gui
         env:
