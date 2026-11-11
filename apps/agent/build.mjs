@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, renameSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,4 +21,8 @@ if (catalog.error) throw catalog.error;
 if (catalog.status !== 0) throw new Error("Failed to generate Pi provider catalog");
 const result = spawnSync("bun", ["build", "--compile", "--no-compile-autoload-bunfig", "--no-compile-autoload-dotenv", `--target=${requested ? targets[requested] : "bun"}`, "--outfile", output, "src/host.ts"], { cwd, stdio: "inherit" });
 if (result.error) throw result.error;
+if (result.status === 0 && !existsSync(output) && existsSync(output + ".exe")) {
+  renameSync(output + ".exe", output);
+}
+if (result.status === 0 && !existsSync(output)) throw new Error("Compiled Pi runtime is missing");
 process.exitCode = result.status ?? 1;

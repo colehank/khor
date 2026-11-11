@@ -8,9 +8,9 @@ import tempfile
 import tomllib
 from apple_api import AppleClient
 from apple_release import required, run, upload_ios
-from release_candidate import PLATFORMS
+from release_candidate import platforms
 from release_policy import matching_candidate, parse_tag
-from release_store import api, fetch_release, gh, publish, release_info, repository, verify_candidate
+from release_store import api, fetch_release, gh, publish, read_manifest, release_info, repository, validate_manifest, verify_candidate
 
 ROOT = Path("candidate")
 
@@ -92,7 +92,12 @@ def fetch():
     pages = json.loads(gh("api", f"repos/{repository()}/actions/runs/{run_id}/jobs?filter=all&per_page=100", "--paginate", "--slurp"))
     if not any(job["name"] == "candidate" and job["conclusion"] == "success" for page in pages for job in page["jobs"]):
         raise ValueError("The candidate aggregation and all required checks must succeed first")
-    for name in sorted(PLATFORMS | {"candidate-manifest"}):
+    gh("run", "download", run_id, "--repo", repository(), "--name", "candidate-manifest",
+       "--dir", str(ROOT / "candidate-manifest"))
+    declared = validate_manifest(read_manifest(ROOT))
+    if declared["source_sha"] != source or declared["tag"] != tag.name or declared["run_id"] != run_id:
+        raise ValueError("Candidate declaration differs from the selected tag and run")
+    for name in sorted(platforms(declared)):
         gh("run", "download", run_id, "--repo", repository(), "--name", name, "--dir", str(ROOT / name))
     record = verify_candidate(ROOT)
     if record["source_sha"] != source or record["tag"] != tag.name or record["run_id"] != run_id:

@@ -64,8 +64,9 @@ def candidate_at(root):
                    "ui_revision": "same-ui", "run_id": "42", "attempt": "1", "files": release_manifest.files(folder)}
         (folder / "receipt.json").write_text(json.dumps(receipt))
     (root / "install.sh").write_text("original verified installer")
-    with patch.object(release_candidate, "version", return_value="1.2.3"), patch.object(release_candidate, "source_sha", return_value=SHA), patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REF_TYPE": "tag", "GITHUB_REF": "refs/tags/" + RC}):
+    with patch.object(release_candidate, "CURRENT_PLATFORMS", release_candidate.PLATFORMS), patch.object(release_candidate, "version", return_value="1.2.3"), patch.object(release_candidate, "source_sha", return_value=SHA), patch.dict(os.environ, {"GITHUB_RUN_ID": "42", "GITHUB_REF_TYPE": "tag", "GITHUB_REF": "refs/tags/" + RC}):
         record = release_candidate.assemble(root)
+        record["schema"] = 1  # The immutable seven-platform releases remain readable.
     (root / "candidate-manifest").mkdir()
     (root / "install.sh").rename(root / "candidate-manifest/install.sh")
     (root / "candidate-manifest/manifest.json").write_text(json.dumps(record))
@@ -249,6 +250,22 @@ class ReleaseStorageTest(unittest.TestCase):
         self.remote.contents[RC, name] = b'{"status":"In Progress"}'
         with self.assertRaisesRegex(ValueError, "Downloaded release asset changed"):
             store.fetch_release(RC, self.base / "metadata", full=False)
+
+    def test_new_desktop_packages_require_the_full_set_and_preserve_legacy_manifests(self):
+        self.assertEqual(store.validate_manifest(self.record), self.record)
+        expanded = copy.deepcopy(self.record)
+        expanded["schema"] = 2
+        for name in release_candidate.DESKTOP_PLATFORMS:
+            receipt = copy.deepcopy(expanded["artifacts"]["khor-linux-x86_64"])
+            receipt["kind"] = name
+            expanded["artifacts"][name] = receipt
+        self.assertEqual(store.validate_manifest(expanded), expanded)
+        del expanded["artifacts"]["khor-windows-x86_64-app"]
+        with self.assertRaisesRegex(ValueError, "Incomplete platform"):
+            store.validate_manifest(expanded)
+        expanded["schema"] = 1
+        with self.assertRaisesRegex(ValueError, "Incomplete platform"):
+            store.validate_manifest(expanded)
 
     def test_tampering_unsigned_and_mixed_provenance_fail_closed(self):
         for field, value in [("source_sha", "b" * 40), ("run_id", "43"), ("version", "1.2.4")]:

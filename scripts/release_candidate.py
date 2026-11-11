@@ -9,11 +9,20 @@ PLATFORMS = {
     "khor-linux-x86_64", "khor-linux-aarch64", "khor-macos-arm64",
     "khor-macos-x86_64", "khor-macos-arm64-app", "khor-macos-x86_64-app", "ios-archive",
 }
+DESKTOP_PLATFORMS = {"khor-linux-x86_64-app", "khor-linux-aarch64-app", "khor-windows-x86_64-app"}
+CURRENT_PLATFORMS = PLATFORMS | DESKTOP_PLATFORMS
+
+
+def platforms(record):
+    expected = {1: PLATFORMS, 2: CURRENT_PLATFORMS}.get(record.get("schema"))
+    if expected is None or set(record.get("artifacts", {})) != expected:
+        raise ValueError("Incomplete platform manifest")
+    return expected
 
 
 def assemble(root):
     receipts = {p.name: verify(p, source_sha()) for p in root.iterdir() if p.is_dir()}
-    if receipts.keys() != PLATFORMS:
+    if receipts.keys() != CURRENT_PLATFORMS:
         raise ValueError(f"Candidate platform set differs: {sorted(receipts)}")
     if len({v["ui_revision"] for v in receipts.values()}) != 1:
         raise ValueError("Platforms were built with different frontend artifacts")
@@ -22,7 +31,7 @@ def assemble(root):
            for name, v in receipts.items()):
         raise ValueError("Platforms must belong to this run and version")
     installer = root / "install.sh"
-    return {"schema": 1, "source_sha": source_sha(), "version": version(), "run_id": run_id,
+    return {"schema": 2, "source_sha": source_sha(), "version": version(), "run_id": run_id,
             "tag": os.environ.get("GITHUB_REF", "").removeprefix("refs/tags/") if os.environ.get("GITHUB_REF_TYPE") == "tag" else None,
             "artifacts": receipts,
             "installer": {"sha256": digest(installer), "bytes": installer.stat().st_size}}

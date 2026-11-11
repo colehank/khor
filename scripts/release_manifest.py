@@ -94,7 +94,9 @@ def create(root, kind, frontend=None, executable=None, agent=None, program_info=
         ui = verify(frontend, sha)["ui_revision"]
         if executable:
             assert_embedded(executable, ui, agent)
-            if kind.startswith("khor-linux-"):
+            # Standalone servers retain the glibc 2.31 distribution floor.
+            # Desktop Debian packages declare their GTK/WebKit dependencies.
+            if kind.startswith("khor-linux-") and not kind.endswith("-app"):
                 check_linux_abi(executable)
                 if agent:
                     check_linux_abi(agent)

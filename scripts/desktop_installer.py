@@ -6,7 +6,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from release_manifest import executable_info
+from release_manifest import create, executable_info
 
 GUI = Path("apps/gui")
 TARGETS = {
@@ -64,7 +64,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--target", choices=TARGETS, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--frontend", type=Path)
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true":
         parser.error("Desktop package builds run on the build runner")
-    build(args.target, args.output)
+    app = build(args.target, args.output)
+    if args.frontend is not None:
+        agent = Path(os.environ["KHOR_AGENT_BUNDLE"])
+        create(args.output, TARGETS[args.target][1] + "-app", args.frontend,
+               app, agent, executable_info(app))

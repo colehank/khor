@@ -6,7 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
-from release_candidate import PLATFORMS
+from release_candidate import platforms
 from release_manifest import digest, verify
 from release_policy import parse_tag
 
@@ -36,8 +36,7 @@ def read_manifest(root):
 
 
 def validate_manifest(record):
-    if record["schema"] != 1 or set(record["artifacts"]) != PLATFORMS:
-        raise ValueError("Incomplete platform manifest")
+    platforms(record)
     tag = parse_tag(record["tag"])
     if not tag.prerelease or tag.version != record["version"]:
         raise ValueError("Candidate manifest needs its matching rc tag")
