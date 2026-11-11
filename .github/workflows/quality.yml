@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package]
         default: sync
 permissions:
   contents: read
@@ -209,3 +209,59 @@ jobs:
           name: mac-package-proof
           path: ${{ runner.temp }}/mac-package-proof/proof.json
           if-no-files-found: error
+
+  desktop-package:
+    if: inputs.slice == 'desktop-package'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            filename: khor-linux-x86_64.deb
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            filename: khor-windows-x86_64.msi
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    env:
+      TARGET: ${{ matrix.target }}
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/native-tools
+        with:
+          target: ${{ matrix.target }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev xvfb dbus-x11
+      - shell: bash
+        run: npm ci --prefix apps/gui && npm run build --prefix apps/gui
+      - shell: bash
+        run: npm ci --prefix apps/agent && node apps/agent/build.mjs "$TARGET" apps/agent/dist/khor-agent
+      - name: Build the actual desktop package
+        shell: bash
+        env:
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+        run: python scripts/desktop_installer.py --target "$TARGET" --output desktop-package
+      - if: runner.os == 'Linux'
+        name: Install, launch and remove the Debian package
+        run: xvfb-run -a dbus-run-session -- python3 scripts/check-desktop-installer.py --package desktop-package/${{ matrix.filename }} --output desktop-package/proof.json
+      - if: runner.os == 'Windows'
+        name: Install, launch and remove the Windows package
+        run: python scripts/check-desktop-installer.py --package desktop-package/${{ matrix.filename }} --output desktop-package/proof.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: desktop-package-${{ matrix.target }}
+          path: desktop-package/
+          if-no-files-found: warn
