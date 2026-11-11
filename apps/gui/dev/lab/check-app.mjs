@@ -1,3 +1,4 @@
+import {checkResourceFiles} from './resource-checks.mjs';
 import {checkLongHistory} from './history-checks.mjs';
 import {checkWorkspaceBack} from './workspace-back-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
@@ -361,6 +362,7 @@ try {
   }
   browser = await chromium.launch({headless: true});
   results.push(await checkWorkspaceBack(browser,{port,report}));
+  for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
   results.push(await checkGuiExperience(browser,{port,report,engine:'chromium'}));
@@ -404,6 +406,7 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});
+    for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkGuiExperience(browser,{port,report,engine:'webkit'}));

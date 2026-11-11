@@ -274,6 +274,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
       if (path === '__ai_preview/acp-setup-calls') return structuredClone(acpSetupCalls);
       if (pairing.handles(path)) return structuredClone(pairing.request(path, body));
+      if(path==='__ai_preview/resource-state')return {active:resourcePreviews.size};
       if(path==='file_resource_open') {
         const name=String(body.path).split('/').pop();
         if(!['preview.html','clip.mp4','audio.wav'].includes(name??''))throw new FixtureRefusal('No browser resource fixture for this file');
