@@ -266,11 +266,27 @@ jobs:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: session-review-native-inputs-20261111
+          cache-targets: true
+          save-if: 'false'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22.19.0
       - run: npm ci --prefix apps/gui
       - run: npm run build --prefix apps/gui
+      - name: Apply only the attachment regressions after building the pinned implementation
+        if: inputs.checker_sha != ''
+        env:
+          CHECKER_SHA: ${{ inputs.checker_sha }}
+        run: |
+          git fetch --depth=1 origin "$CHECKER_SHA"
+          for script in check-attachments-model.mjs check-attachment-ui.mjs; do
+            git show "$CHECKER_SHA:apps/gui/scripts/$script" > "apps/gui/scripts/$script"
+          done
+      - working-directory: apps/gui
+        run: npm run attachments
       - run: node apps/gui/node_modules/playwright-core/cli.js install chromium
       - name: Verify resumed viewport and version-scoped machine updates
         working-directory: apps/gui
