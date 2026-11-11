@@ -7,33 +7,27 @@ const poses:IconPose[] = [
   {...resting,presence:1,harness:1,mind:1,focus:1,connection:1},
   {...resting,presence:1,harness:1,mind:1,focus:1,connection:1,light:1},
 ];
-// Viewport lengths: each complete pose has room to read before the next move.
-const chapters = [
-  {start:0,end:.8},
-  {start:1.55,end:2.5},
-  {start:3.35,end:4.65},
-  {start:5.55,end:6.45},
-  {start:7.5,end:9},
-];
-export const iconScrollScreens=chapters.at(-1)!.end;
-export const iconStops=chapters.map(({start,end})=>(start+end)/2/iconScrollScreens);
+// Long reading distances, without stationary ranges before a move can begin.
+const landmarks = [0,2,4.1,6.2,9];
+export const iconScrollScreens=landmarks.at(-1)!;
+export const iconStops=landmarks.map(position=>position/iconScrollScreens);
 
 /** Every scroll position resolves to a pose; there is no chapter playback clock. */
 export function createIconMotion(host:HTMLElement) {
   const paint=animateIcon(host);
   return (progress:number,reduced:boolean)=>{
     const position=clamp(progress)*iconScrollScreens;
-    const from=chapters.findLastIndex(chapter=>position>=chapter.start);
+    const from=landmarks.findLastIndex(landmark=>position>=landmark);
     const to=Math.min(from+1,poses.length-1);
-    const move=from===to?0:clamp((position-chapters[from].end)/(chapters[to].start-chapters[from].end));
+    const move=from===to?0:clamp((position-landmarks[from])/(landmarks[to]-landmarks[from]));
     const current={...poses[from]};
-    const t=reduced?Math.round(move):ease(move,.18,.94);
+    const t=reduced?Math.round(move):move;
     const phase=from+t;
     const copyPhase=reduced?Math.round(phase):from+ease(move,0,.55);
     for(const key of Object.keys(current) as (keyof IconPose)[])current[key]+=(poses[to][key]-current[key])*t;
     if(from===1&&to===2){
       // The satellites settle first; the fixed-size mind then takes the focus.
-      current.focus=reduced?Math.round(move):1-Math.pow(1-clamp((move-.12)/.76),3);
+      current.focus=reduced?Math.round(move):1-Math.pow(1-move,3);
       current.mind=reduced?Math.round(move):ease(move,.42,.96);
     }
     paint(current);

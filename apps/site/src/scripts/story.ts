@@ -35,7 +35,8 @@ export function mountStory() {
       else step.removeAttribute('aria-current');
     });
     const exit=ramp(scrollY,topOpening+openingTravel,topOpening+openingTravel+innerHeight*.7);
-    document.documentElement.style.setProperty('--meet-world',String(ramp(state.color,0,.55)*(1-exit)));
+    const light=clamp(state.color/.55);
+    document.documentElement.style.setProperty('--meet-world',String((.35*light+.65*ramp(state.color,0,.55))*(1-exit)));
     opening!.style.setProperty('--story-controls-opacity',String(1-ramp(progress,.9,1)));
     opening!.style.setProperty('--scroll-cue-opacity',String(1-ramp(state.copyPhase,0,.45)));
   }
