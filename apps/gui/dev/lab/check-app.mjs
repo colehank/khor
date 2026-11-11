@@ -406,7 +406,7 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:true});
-    for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));
+    for(const mobile of [false,true]){results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkGuiExperience(browser,{port,report,engine:'webkit'}));

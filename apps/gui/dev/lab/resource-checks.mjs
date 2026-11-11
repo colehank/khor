@@ -45,7 +45,7 @@ export async function checkResourceFiles(browser,{port,report,mobile=false,engin
    assert(await page.evaluate(()=>window.__mediaRetired.some(event=>event.method==='load'&&!event.hasSource)),'Leaving clears the source and unloads the native player');
    assert(!requests.some(r=>['preview','read_text'].includes(r.command)&&String(r.body?.path).endsWith(file)),'Media never enters the whole-file base64/text pipeline');
   }
- }catch(error){errors.push(String(error));await writeFile(path.join(report,name+'-body.txt'),(await page.locator('body').innerText()).slice(0,16000));}
+ }catch(error){errors.push(String(error));await writeFile(path.join(report,name+'-body.txt'),(await page.locator('body').innerText()).slice(0,16000));await writeFile(path.join(report,name+'-failure.json'),JSON.stringify({error:String(error),players:await page.locator('audio,video').evaluateAll(nodes=>nodes.map(node=>({tag:node.tagName,ready:node.readyState,network:node.networkState,error:node.error?{code:node.error.code,message:node.error.message}:null,current:node.currentTime,paused:node.paused,duration:node.duration})))},null,2));}
  finally{await page.screenshot({path:path.join(report,name+'.png')});await context.close();}
  return {name,errors};
 }
