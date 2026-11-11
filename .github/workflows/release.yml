@@ -218,6 +218,17 @@ jobs:
           path: mac-build/
           if-no-files-found: error
           retention-days: 14
+      - name: Install and launch the actual Mac package on this isolated runner
+        run: |
+          packages=(mac-build/*.pkg)
+          test "${#packages[@]}" -eq 1
+          python3 scripts/check-desktop-installer.py --package "${packages[0]}" --output "$RUNNER_TEMP/mac-installation-proof.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-installation-${{ matrix.asset }}
+          path: ${{ runner.temp }}/mac-installation-proof.json
+          if-no-files-found: error
+          retention-days: 14
   mac-submit:
     needs: [prepare, mac-app]
     runs-on: macos-26

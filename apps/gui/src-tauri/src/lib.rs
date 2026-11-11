@@ -6058,7 +6058,11 @@ fn say_signals() {
             put(&mut buf, &mut at, b"] khor app: signal ");
             num(&mut buf, &mut at, sig as i64);
             put(&mut buf, &mut at, b" from pid ");
-            num(&mut buf, &mut at, (*info).si_pid as i64);
+            #[cfg(target_os = "linux")]
+            let sender = (*info).si_pid();
+            #[cfg(not(target_os = "linux"))]
+            let sender = (*info).si_pid;
+            num(&mut buf, &mut at, sender as i64);
             put(&mut buf, &mut at, b" - exiting\n");
             libc::write(2, buf.as_ptr().cast(), at);
             libc::signal(sig, libc::SIG_DFL);

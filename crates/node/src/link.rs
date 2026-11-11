@@ -10699,8 +10699,12 @@ impl Node {
         #[cfg(windows)]
         {
             // Stop the supervisor before its child, so it cannot respawn it.
-            if let Some(pid) = keeper { crate::win_process::terminate(pid, false)?; }
-            if let Some(pid) = inner { crate::win_process::terminate(pid, false)?; }
+            if let Some(pid) = keeper {
+                crate::win_process::terminate(pid, false)?;
+            }
+            if let Some(pid) = inner {
+                crate::win_process::terminate(pid, false)?;
+            }
         }
         if served {
             // Let both lives leave before sweeping hosts, so the

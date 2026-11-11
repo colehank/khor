@@ -200,9 +200,13 @@ fn leave_stuck(quiet: Duration) {
     });
     let _ = rx.recv_timeout(Duration::from_secs(5));
     #[cfg(unix)]
-    unsafe { libc::_exit(STUCK_EXIT) }
+    unsafe {
+        libc::_exit(STUCK_EXIT)
+    }
     #[cfg(windows)]
-    unsafe { windows_sys::Win32::System::Threading::ExitProcess(STUCK_EXIT as u32) }
+    unsafe {
+        windows_sys::Win32::System::Threading::ExitProcess(STUCK_EXIT as u32)
+    }
 }
 
 #[cfg(test)]

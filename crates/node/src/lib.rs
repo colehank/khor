@@ -60,8 +60,6 @@ pub mod keeper;
 #[cfg(windows)]
 #[path = "keeper_windows.rs"]
 pub mod keeper;
-#[cfg(windows)]
-mod win_process;
 pub mod khor_agent;
 pub mod legacy_codex;
 pub mod link;
@@ -110,6 +108,8 @@ pub mod usage;
 pub mod vitals;
 pub mod watch;
 pub mod wide;
+#[cfg(windows)]
+mod win_process;
 pub(crate) mod wires;
 pub mod workspace;
 pub(crate) mod wsfacts;

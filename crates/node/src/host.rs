@@ -1122,7 +1122,11 @@ fn repaint_terminal(master: &dyn portable_pty::MasterPty) {
     if let Ok(size) = master.get_size() {
         // ConPTY refreshes through ResizePseudoConsole, not SIGWINCH.
         let mut transient = size;
-        transient.cols = if size.cols == u16::MAX { size.cols - 1 } else { size.cols + 1 };
+        transient.cols = if size.cols == u16::MAX {
+            size.cols - 1
+        } else {
+            size.cols + 1
+        };
         let _ = master.resize(transient);
         let _ = master.resize(size);
     }
@@ -1130,7 +1134,9 @@ fn repaint_terminal(master: &dyn portable_pty::MasterPty) {
 
 fn shell_owns_terminal(master: &dyn portable_pty::MasterPty, child: u32) -> Option<bool> {
     #[cfg(unix)]
-    { master.process_group_leader().map(|pid| pid as u32 == child) }
+    {
+        master.process_group_leader().map(|pid| pid as u32 == child)
+    }
     #[cfg(windows)]
     {
         let _ = master;
@@ -2158,7 +2164,9 @@ fn host_serving(
             let mut last = State::Busy;
             while !output_done.load(Ordering::SeqCst) {
                 std::thread::sleep(FACE_POLL);
-                let Some(owns) = shell_owns_terminal(&**master.lock().unwrap(), child_pid) else { continue; };
+                let Some(owns) = shell_owns_terminal(&**master.lock().unwrap(), child_pid) else {
+                    continue;
+                };
                 let word = if owns { State::Idle } else { State::Busy };
                 #[cfg(unix)]
                 let source = crate::live::Source::Reported;
@@ -2168,11 +2176,7 @@ fn host_serving(
                 let source = crate::live::Source::Screen;
                 // Reported, not read off a screen: this is the kernel's
                 // answer to "who owns the terminal", not an appearance.
-                if word != last
-                    && live
-                        .report(&id, word, source)
-                        .is_ok()
-                {
+                if word != last && live.report(&id, word, source).is_ok() {
                     last = word;
                 }
             }

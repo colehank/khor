@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -24,7 +25,11 @@ def same_programs(directory):
     assert command["build"]["source"] == source_sha()
     upgraded = subprocess.run([str(cli), "upgrade", "--check"], capture_output=True, timeout=30)
     assert upgraded.returncode != 0, "The bundled CLI must follow its package owner"
-    assert b"installer" in upgraded.stderr or "安装包" in upgraded.stderr.decode(errors="replace")
+    guidance = upgraded.stderr.decode(errors="replace").lower()
+    if sys.platform == "darwin":
+        assert "settings" in guidance or "设置" in guidance, guidance
+    else:
+        assert "installer" in guidance or "安装包" in guidance, guidance
     return {"cli": command, "app": application}
 
 
@@ -41,6 +46,10 @@ def launch_installed(directory):
                 source = run("powershell.exe", "-NoProfile", "-Command",
                              "@(Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath } | Select-Object ProcessId,ExecutablePath) | ConvertTo-Json -Compress").stdout
                 rows = [(row["ProcessId"], Path(row["ExecutablePath"])) for row in json.loads(source)]
+            elif sys.platform == "darwin":
+                lines = run("ps", "-wwax", "-o", "pid=", "-o", "comm=").stdout.splitlines()
+                rows = [(int(parts[0]), Path(parts[1])) for line in lines
+                        if len(parts := line.strip().split(maxsplit=1)) == 2]
             else:
                 rows = []
                 for entry in Path("/proc").iterdir():
@@ -99,6 +108,41 @@ def linux(package):
         assert not cli.exists()
 
 
+def macos(package):
+    import mac_installer
+    application = Path("/Applications/Khor.app")
+    cli = Path("/usr/local/bin/khor")
+    assert not application.exists() and not cli.exists() and not cli.is_symlink(), "Use a fresh runner"
+    installed = False
+    try:
+        # The first real installation must preserve a pre-existing CLI.
+        run("sudo", "mkdir", "-p", cli.parent)
+        with tempfile.TemporaryDirectory(prefix="khor-independent-") as temporary:
+            independent = Path(temporary) / "khor"
+            independent.write_text("Independent CLI installation\n")
+            run("sudo", "cp", independent, cli)
+            run("sudo", "/usr/sbin/installer", "-pkg", package, "-target", "/")
+            installed = True
+            assert cli.read_bytes() == independent.read_bytes()
+        run("sudo", "rm", cli)
+        # Reinstall after removing our sentinel: the App's public CLI link is
+        # established and remains paired with the installed application's bytes.
+        run("sudo", "/usr/sbin/installer", "-pkg", package, "-target", "/")
+        assert cli.is_symlink() and str(cli.readlink()) == mac_installer.CLI
+        programs = application / "Contents/MacOS"
+        proof = same_programs(programs)
+        launch_installed(programs)
+        return proof
+    finally:
+        if cli.is_symlink() and str(cli.readlink()) == mac_installer.CLI:
+            run("sudo", "rm", cli)
+        elif cli.is_file() and cli.read_text(errors="replace") == "Independent CLI installation\n":
+            run("sudo", "rm", cli)
+        if installed:
+            run("sudo", "rm", "-rf", application)
+            run("sudo", "/usr/sbin/pkgutil", "--forget", mac_installer.IDENTIFIER)
+
+
 def windows(package):
     import winreg
     with tempfile.TemporaryDirectory(prefix="khor-desktop-") as temporary:
@@ -151,6 +195,6 @@ if __name__ == "__main__":
     if os.environ.get("GITHUB_ACTIONS") != "true":
         parser.error("Installation checks require an isolated GitHub runner")
     package = args.package.resolve(strict=True)
-    proof = windows(package) if os.name == "nt" else linux(package)
+    proof = windows(package) if os.name == "nt" else macos(package) if sys.platform == "darwin" else linux(package)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(proof, indent=2) + "\n")

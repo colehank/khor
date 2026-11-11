@@ -215,7 +215,9 @@ fn parent_is_ssh() -> bool {
     #[cfg(unix)]
     let ppid = std::os::unix::process::parent_id();
     #[cfg(windows)]
-    let Some(ppid) = crate::win_process::parent_id() else { return false; };
+    let Some(ppid) = crate::win_process::parent_id() else {
+        return false;
+    };
     let Some(path) = exe_of(ppid) else {
         return false;
     };
