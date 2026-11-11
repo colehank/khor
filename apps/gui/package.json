@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "gen": "mkdir -p src/gen && cargo run --locked -q -p khor-catalog --bin gen_ts > src/gen/catalog.ts && cargo run --locked -q -p khor-gui-core --bin gen_bindings",
+    "gen": "node scripts/generate.mjs",
     "predev": "npm run gen",
     "dev": "vite",
     "prebuild": "npm run gen",
