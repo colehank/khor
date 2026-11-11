@@ -280,6 +280,13 @@ async function inspect(browser, scene, size, data = {}) {
         await tasks.first().waitFor();
         await page.locator('[data-side-disclosure="wide/all"]').click();
         await tasks.first().waitFor({state:'detached'});
+        await parent.focus();
+        assert.equal(await parent.locator('[data-side-open]').evaluate(button=>document.activeElement===button),true,'Programmatic/menu focus returns to the native primary control');
+        await page.keyboard.press('ArrowDown');
+        const disclosure=page.locator('[data-side-disclosure="wide/all"]');
+        assert.equal(await disclosure.evaluate(button=>document.activeElement===button),true,'Arrow navigation reaches the independent title action');
+        await page.keyboard.press('Space');await tasks.first().waitFor();
+        await page.keyboard.press('Space');await tasks.first().waitFor({state:'detached'});
       }
       if(scene==='devices'){
         assert.equal(await page.locator('[data-mandala-map]').count(),0,'An unselected machine page must leave its detail area empty');
