@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture]
         default: sync
       checker_sha:
         type: string
@@ -565,3 +565,19 @@ jobs:
             ${{ runner.temp }}/resource-http.log
             ${{ runner.temp }}/resource-commands.log
             ${{ runner.temp }}/format.patch
+
+  media-fixture:
+    if: inputs.slice == 'media-fixture'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Generate original tiny test media
+        run: |
+          mkdir -p "$RUNNER_TEMP/media-fixture"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i 'testsrc2=size=320x180:rate=24:duration=5' -an -c:v libx264 -preset fast -crf 32 -pix_fmt yuv420p -movflags +faststart "$RUNNER_TEMP/media-fixture/clip.mp4"
+          ffmpeg -hide_banner -loglevel error -f lavfi -i 'sine=frequency=440:sample_rate=8000:duration=5' -c:a pcm_s16le "$RUNNER_TEMP/media-fixture/audio.wav"
+          sha256sum "$RUNNER_TEMP/media-fixture/"*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: original-test-media
+          path: ${{ runner.temp }}/media-fixture
