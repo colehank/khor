@@ -34,6 +34,40 @@ async function inspect(browser, scene, size, data = {}) {
   const expectedConsoleErrors = [];
   const workspaceLayout = [];
   let listScroll = null;
+  async function checkChildConversation() {
+    const reader=page.locator('[data-child-session]:visible');
+    await reader.waitFor();
+    await reader.locator('[data-child-session-message]').first().waitFor();
+    assert.match(await reader.innerText(),/3 checks passed/);
+    assert.match(await reader.innerText(),/检查编辑器快捷键/);
+    assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'A child opens a conversation tab rather than a task dialog');
+    assert.equal(await page.locator('[data-chat-input]:visible,[data-chat-send]:visible,[data-machine-chat] textarea:visible').count(),0,'Readonly child tabs never mount a reply composer');
+    await page.screenshot({path:path.join(report,name+'-child-conversation.png')});
+    const id=await reader.getAttribute('data-child-session-ref');
+    if(size.width>=500){
+      const childTab=page.locator('[data-session-tabs] [data-tab]').filter({has:page.locator('[data-tab-open]').filter({hasText:'codex-acp'})});
+      assert.equal(await childTab.count(),1,'The delegated conversation participates in the ordinary session tab strip');
+      await page.locator('[data-session-tabs] [data-tab-open="wide/all"]').click();
+      await page.locator('[data-machine-chat-scroll]:visible').waitFor();
+      await page.locator('[data-child-task-row]').first().click();
+      await reader.waitFor();
+      assert.equal(await childTab.count(),1,'Opening the same child focuses its existing tab');
+      await childTab.locator('[data-tab-close]').click();
+      await page.locator('[data-child-session]').waitFor({state:'detached'});
+      assert.equal(await page.locator('[data-session-tabs] [data-tab-open="wide/all"]').count(),1,'Closing the child view keeps the parent tab');
+      await page.locator('[data-session-tabs] [data-tab-open="wide/all"]').click();
+    }else{
+      const deck=page.locator('[data-session-screen][data-deck-at="bottom"] [data-session-bar]:visible');
+      await deck.waitFor();
+      assert.equal(await deck.locator('[data-deck-pill]').count(),1,'Readonly conversations use the ordinary mobile session pill');
+      await page.locator('[data-child-session-parent]:visible').click();
+      await page.locator('[data-child-session]').waitFor({state:'detached'});
+      const tabs=await page.evaluate(()=>JSON.parse(localStorage.getItem('khor.sessions.tabs')));
+      assert(tabs.tabs.includes(id)&&tabs.tabs.includes('wide/all'),'Returning to the parent keeps both ordinary tabs open');
+      assert.equal(tabs.active,'wide/all');
+    }
+    await page.locator('[data-machine-chat-scroll]:visible').waitFor();
+  }
   async function checkScroll(nativePan = true) {
     listScroll = await checkListScroll(page, async (phase, values) => {
       listScroll = {...listScroll, ...values};
@@ -268,6 +302,10 @@ async function inspect(browser, scene, size, data = {}) {
         assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Expanding tasks stays in the session list');
         assert.equal(await parent.isVisible(),true,'The parent remains visible above its inline children');
         await page.screenshot({path:path.join(report,name+'-child-tree.png')});
+        await page.locator('[data-child-task-row]').first().click();
+        await checkChildConversation();
+        await page.locator('[data-lab-model-back]:visible').click();
+        await parent.waitFor({state:'visible'});
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
         assert.equal((await disclosure.innerText()).trim(),'3 个子会话');
@@ -292,8 +330,7 @@ async function inspect(browser, scene, size, data = {}) {
         assert.equal(await page.locator('[data-side-list] [data-child-tasks="wide/all"]').count(),1);
         await page.screenshot({path:path.join(report,name+'-child-tree.png')});
         await tasks.first().click();
-        assert.match(await page.locator('[data-child-task-detail]').innerText(),/3 checks passed/);
-        await page.keyboard.press('Escape');
+        await checkChildConversation();
         await tasks.first().waitFor();
         await page.locator('[data-side-disclosure="wide/all"]').click();
         await tasks.first().waitFor({state:'detached'});

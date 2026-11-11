@@ -134,6 +134,9 @@ fn summary(child: &Child, record: Option<&Record>) -> Value {
         "home": child.link.binding.home.hex(),
         "task": child.link.task,
         "context": record.map(|r| r.task.context_id.as_str()),
+        "cwd": record.and_then(|r| r.task.history.as_ref()).and_then(|history| {
+            history.iter().rev().find_map(|message| message.metadata.as_ref()?.get("khor.cwd")?.as_str())
+        }),
         "state": state,
         "result": result,
         "can_cancel": record.is_some_and(|r| {
@@ -146,7 +149,52 @@ fn summary(child: &Child, record: Option<&Record>) -> Value {
     })
 }
 
+fn owned_child(node: &Node, board: &str, run: &str, key: &str) -> Result<Child, String> {
+    if run.is_empty() || run.len() > 128 || !run.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+        || key.len() != 69 || !key.ends_with(".json") || !key.as_bytes()[..64].iter().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Invalid child reference".into());
+    }
+    let saved: Saved = crate::remote_cancel::read(&file(node.root(), run), 8 * 1024 * 1024)?;
+    if saved.board != board || saved.record.id != run || saved.record.owner != node.device_str() || saved.record.agent.is_none() {
+        return Err("Child does not belong to this conversation".into());
+    }
+    let link: ChildLink = crate::remote_cancel::read(&delegation::children_dir(node.root(), run).join(key), 16 * 1024)?;
+    if link.binding.caller != node.device() || key != delegation::child_key(&link.binding, &link.message)? {
+        return Err("Child link identity mismatch".into());
+    }
+    Ok(Child { run: run.into(), key: key.into(), link })
+}
+
+fn transcript_messages(record: &Record) -> Vec<Value> {
+    let mut messages: Vec<_> = record.task.history.iter().flatten().collect();
+    if let Some(current) = &record.task.status.message {
+        if !messages.iter().any(|message| message.message_id == current.message_id) { messages.push(current); }
+    }
+    messages.into_iter().map(|message| {
+        let metadata = message.metadata.as_ref();
+        json!({
+            "id": message.message_id,
+            "role": if message.role == protocol::Role::User { "user" } else { "agent" },
+            "parts": message.parts,
+            "updates": metadata.and_then(|values| values.get("khor.acp_updates")),
+            "trace_partial": metadata.is_some_and(|values| values.get("khor.acp_trace_partial") == Some(&Value::Bool(true))),
+        })
+    }).collect()
+}
+
 pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Value, String> {
+    if let Some(detail) = request.get("detail") {
+        if !detail.is_object() { return Err("Invalid child reference".into()); }
+        if !request["action"].is_null() { return Err("A child transcript is read-only".into()); }
+        let child = owned_child(node, board, detail["run"].as_str().ok_or("Missing child run")?, detail["key"].as_str().ok_or("Missing child key")?)?;
+        let task = child.link.task.clone().ok_or("Child has no confirmed task")?;
+        let record = call(node, &child, BoundAction::Get { task }).await?;
+        let mut result = summary(&child, Some(&record));
+        result["messages"] = json!(transcript_messages(&record));
+        result["artifacts"] = json!(record.task.artifacts);
+        result["terminal"] = json!(record.task.status.state.is_terminal());
+        return Ok(result);
+    }
     let runs: Vec<_> = node
         .chat
         .log(board)?
@@ -293,4 +341,55 @@ pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Va
         .await;
     let commands = super::commands::summaries(node, board, &runs)?;
     Ok(json!({"children": rows, "commands": commands}))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn child_transcript_is_task_scoped_and_deduplicates_the_current_reply() {
+        let scratch = tempfile::tempdir().unwrap();
+        let node = Node::open_as(scratch.path().into(), "child-reader").unwrap();
+        node.register_agent("fixture-agent", &["must-not-spawn".into()]).unwrap();
+        let target = node.delegation_target("fixture-agent").unwrap();
+        let store = node.delegation_store().unwrap();
+        let input = protocol::Message::new(protocol::Role::User, vec![protocol::Part::text("first task only")]);
+        let first = store.accept(node.device(), &target, &input, None).unwrap();
+        let mut execution = delegation::Execution::claim(store.clone(), &first.record.task.id, &input.message_id).unwrap();
+        let mut output = protocol::Message::new(protocol::Role::Agent, vec![protocol::Part::text("first result")]);
+        output.metadata = Some(std::collections::HashMap::from([
+            ("khor.acp_updates".into(), json!(["retained-process"])),
+            ("khor.acp_trace_partial".into(), json!(true)),
+        ]));
+        execution.update(protocol::TaskState::Completed, Some(output), None).unwrap();
+        drop(execution);
+        let record = store.get(node.device(), &target, &first.record.task.id).unwrap();
+        let messages = transcript_messages(&record);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0]["role"], "user");
+        assert_eq!(messages[0]["parts"][0]["text"], "first task only");
+        assert_eq!(messages[1]["updates"], json!(["retained-process"]));
+        assert_eq!(messages[1]["trace_partial"], true);
+        let mut next = protocol::Message::new(protocol::Role::User, vec![protocol::Part::text("a later unrelated task")]);
+        next.context_id = Some(record.task.context_id.clone());
+        let second = store.accept(node.device(), &target, &next, None).unwrap();
+        assert_ne!(second.record.task.id, record.task.id);
+        let original = store.get(node.device(), &target, &record.task.id).unwrap();
+        assert_eq!(transcript_messages(&original), messages, "Context reuse never changes the earlier task's transcript");
+        assert_eq!(transcript_messages(&second.record).len(), 1);
+    }
+
+    #[test]
+    fn child_reader_rejects_path_and_unicode_references_without_panicking() {
+        let scratch = tempfile::tempdir().unwrap();
+        let node = Node::open_as(scratch.path().into(), "child-reader").unwrap();
+        for (run, key) in [
+            ("../other", format!("{}.json", "a".repeat(64))),
+            ("valid-run", "../other.json".into()),
+            ("valid-run", format!("a{}{}.json", "中".repeat(21), "")),
+        ] {
+            assert!(owned_child(&node, "parent", run, &key).is_err());
+        }
+    }
 }

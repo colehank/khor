@@ -704,9 +704,34 @@ fn host_op(root: &Path, session: &SessionId, op: &GuiOp) -> Result<(), String> {
 
 /// Held in the detached GUI host, so closing a caller or restarting the node
 /// does not abandon a live agent. Errors fail the task and cancel the prompt.
+#[derive(Default)]
+struct DelegatedTrace {
+    updates: Vec<String>,
+    bytes: usize,
+    partial: bool,
+}
+impl DelegatedTrace {
+    fn note(&mut self, update: &Value) -> Result<(), String> {
+        let kind = update["sessionUpdate"].as_str().unwrap_or_default();
+        let display = matches!(kind, "agent_thought_chunk" | "tool_call" | "tool_call_update" | "plan" | "compaction_update" | "compaction_summary_chunk")
+            || kind == "agent_message_chunk" && update["content"]["type"] != "text";
+        if !display { return Ok(()); }
+        let encoded = serde_json::to_string(update).map_err(|error| error.to_string())?;
+        // Retention is bounded and optional: overflow must never abort the task.
+        if self.updates.len() >= 512 || self.bytes + encoded.len() > 128 * 1024 {
+            self.partial = true;
+        } else {
+            self.bytes += encoded.len();
+            self.updates.push(encoded);
+        }
+        Ok(())
+    }
+}
+
 pub(crate) struct HostedTask {
     execution: Execution,
     output: String,
+    trace: DelegatedTrace,
     pending: Option<Value>,
     published: Instant,
     owned: bool,
@@ -750,6 +775,7 @@ impl HostedTask {
             Self {
                 execution,
                 output: String::new(),
+                trace: DelegatedTrace::default(),
                 pending: None,
                 published: Instant::now(),
                 owned,
@@ -760,6 +786,7 @@ impl HostedTask {
     pub fn note(&mut self, json: &str) -> Result<(), String> {
         let value: Value = serde_json::from_str(json).map_err(|e| e.to_string())?;
         let update = &value["update"];
+        self.trace.note(update)?;
         if update["sessionUpdate"] == "agent_message_chunk" {
             if let Some(text) = update["content"]["text"].as_str() {
                 if self.output.len() + text.len() > 96 * 1024 {
@@ -815,9 +842,14 @@ impl HostedTask {
     }
     fn publish(&mut self, state: protocol::TaskState) -> Result<(), String> {
         let mut message = agent_message(&self.output);
+        let mut metadata = std::collections::HashMap::new();
+        metadata.insert("khor.acp_trace".into(), json!(1));
+        metadata.insert("khor.acp_updates".into(), json!(self.trace.updates));
+        if self.trace.partial { metadata.insert("khor.acp_trace_partial".into(), json!(true)); }
         if let Some(pending) = &self.pending {
-            message.metadata = Some([("khor.approval".into(), pending.clone())].into());
+            metadata.insert("khor.approval".into(), pending.clone());
         }
+        message.metadata = Some(metadata);
         self.execution
             .update(state, Some(message), None)
             .map_err(|e| e.to_string())?;
@@ -842,6 +874,26 @@ impl Drop for HostedTask {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delegated_trace_retains_only_bounded_task_process_without_failing_execution() {
+        let mut trace = DelegatedTrace::default();
+        for kind in ["user_message_chunk", "agent_message_chunk"] {
+            trace.note(&json!({"sessionUpdate":kind,"content":{"type":"text","text":"already retained in canonical history"}})).unwrap();
+        }
+        assert!(trace.updates.is_empty());
+        trace.note(&json!({"sessionUpdate":"tool_call","toolCallId":"one","title":"check","status":"completed"})).unwrap();
+        assert_eq!(trace.updates.len(), 1);
+        let oversized = json!({"sessionUpdate":"agent_thought_chunk","content":{"type":"text","text":"x".repeat(128 * 1024)}});
+        trace.note(&oversized).unwrap();
+        assert!(trace.partial);
+        assert_eq!(trace.updates.len(), 1);
+        for _ in 0..600 {
+            trace.note(&json!({"sessionUpdate":"plan","entries":[]})).unwrap();
+        }
+        assert_eq!(trace.updates.len(), 512);
+        assert!(trace.bytes <= 128 * 1024);
+    }
 
     #[test]
     fn delegation_uses_the_existing_registry_and_this_nodes_private_store() {

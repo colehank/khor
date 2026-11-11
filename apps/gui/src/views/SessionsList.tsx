@@ -6,6 +6,7 @@ import { useId, useMemo, useState } from "react";
 import { useNarrow } from "@/hooks/use-narrow";
 import { ChildTasks } from "@/views/ChildTasks";
 import { childSessionKey, useChildSessionCounts } from "@/hooks/use-child-session-counts";
+import type { DelegatedChild } from "@/lib/delegated-sessions";
 
 import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
@@ -59,6 +60,7 @@ export function SessionsList({
   words,
   selected,
   onSelect,
+  onChildSession,
   onPin,
   onClose,
   pinFailed,
@@ -77,6 +79,7 @@ export function SessionsList({
   words: string[];
   selected: string | null;
   onSelect: (row: SessionRow) => void;
+  onChildSession: (parent: SessionRow, child: DelegatedChild) => void;
   /** **Rejects when the write did not take** — that is how the menu
       knows to stay open on the item that was pressed, instead of
       closing over a row that did not move (`RowMenu`, `App`). */
@@ -413,7 +416,7 @@ export function SessionsList({
     menu: actions(r),
     onOpen: () => ownsTasks && !narrow && r.id === selected ? toggleTasks(r.id) : onSelect(r),
     disclosure: ownsTasks ? { expanded: tasksOpen, controls: treeId, label: childCount ? count.childSessions(childCount.count, childCount.atLeast) : gui.child_sessions, collapseLabel: gui.child_sessions_collapse, toggle: () => toggleTasks(r.id) } : undefined,
-    below: ownsTasks && tasksOpen ? <ChildTasks key={r.id} parent={r} id={treeId} devices={devices}/> : undefined,
+    below: ownsTasks && tasksOpen ? <ChildTasks key={r.id} parent={r} id={treeId} devices={devices} selected={selected} onOpen={onChildSession}/> : undefined,
     // The anchors this list has always answered to — the gates and the
     // smoke read them, and they are facts about a session, not about a
     // sidebar.

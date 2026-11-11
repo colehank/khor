@@ -5,6 +5,7 @@ import {SessionLinkScope} from "@/views/SessionLinkScope";
 import {setSessionSide,useSessionSide} from "@/hooks/use-session-side";
 import {MobileContentSheet} from "@/views/MobileSessionContent";
 import {useSessionTabs} from "@/hooks/use-session-tabs";
+import {delegatedSessionId,rememberDelegatedSession,useSessionRowLookup} from "@/lib/delegated-sessions";
 import {termName} from "@/components/DoingLine";
 import { WorkspaceNavigation } from '@/components/WorkspaceNavigation';
 import { useFileHandoff } from "@/hooks/use-file-handoff";
@@ -417,7 +418,8 @@ export function WorkspacePane({
   const sessionTabs = useSessionTabs(limit, id=>rows.some(row=>row.id===id&&row.pinned),
     'khor.workspace.sessions.'+JSON.stringify([machine,root]));
   const picked = sessionTabs.active;
-  const selectedSession=rows.find(row=>row.id===picked)??null;
+  const sessionRowOf=useSessionRowLookup(rows,devices);
+  const selectedSession=sessionRowOf(picked);
   const contentSide=useSessionSide(picked);
   const openSessionContent=(id:string)=>{
     if(!sessionContent)return;
@@ -427,7 +429,7 @@ export function WorkspacePane({
   const closeSessionTab=(id:string)=>{sessionTabs.close(id);if(sessionTabs.tabs.length===1)showSessionDetail(false);};
   const newSession=()=>onNewSession(channel??machine,root);
   const sessionFaces=sessionTabs.tabs.map(id=>{
-    const row=rows.find(row=>row.id===id);
+    const row=sessionRowOf(id);
     return {id,label:row?termName(row):id,path:row?sessionCwdOnScreen(row)||'':'',face:row?.face??null,
       session:row?{word:row.word,kind:row.kind,category:row.category}:undefined,
       again:sessionContent?{hint:gui.session_tabs_focus,expanded:id===picked&&contentSide.open,
@@ -1215,6 +1217,7 @@ export function WorkspacePane({
     <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
       <SessionsList rows={mine} devices={devices} query={query} words={words} selected={picked ?? made}
         onSelect={(row) => { sessionTabs.open(row.id); showSessionDetail(true); }}
+        onChildSession={(parent,child)=>{const id=delegatedSessionId(parent,child);rememberDelegatedSession(id,child);sessionTabs.open(parent.id);sessionTabs.open(id);showSessionDetail(true);}}
         onPin={onPin} onClose={onClose} pinFailed={pinFailed} closeRefused={closeRefused} showVia={false} />
     </div>
   );
@@ -1539,7 +1542,8 @@ export function WorkspacePane({
               onTitle={()=>{if(picked)openSessionContent(picked);}}
               aside={!narrow&&selectedSession&&sessionContent&&contentSide.open?<SessionContentColumn row={selectedSession}
                 context={sessionContent} faces={sessionFaces} onSelectSession={selectSession} onCloseSession={closeSessionTab} onNewSession={newSession}/>:undefined}>
-              <SessionLinkScope row={selectedSession}><DetailPane row={selectedSession} narrow={narrow} openIds={sessionTabs.tabs}
+              <SessionLinkScope row={selectedSession}><DetailPane row={selectedSession} narrow={narrow} openIds={sessionTabs.tabs} sessions={rows}
+                onSession={id=>{sessionTabs.open(id);showSessionDetail(true);}}
                 onBack={() => { showSessionDetail(false); setSidebarView("sessions"); if (narrow) setScreen("tree"); }} /></SessionLinkScope>
               {narrow&&contentSide.open&&sessionContent&&contentScope&&<MobileContentSheet onClose={contentScope.onClose}>
                 <SessionContentSeat dock={sessionContent.dock} scope={contentScope}/>

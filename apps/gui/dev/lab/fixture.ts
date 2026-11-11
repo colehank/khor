@@ -155,6 +155,18 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
     if (body.action !== "manage") return view();
     if (p.operation === "children") {
+      if (p.detail) {
+        if (p.action) throw new FixtureRefusal('A child transcript is read-only');
+        const task=childTasks.find(child=>child.run===p.detail.run&&child.key===p.detail.key);
+        if (!task) throw new FixtureRefusal('Child does not belong to this conversation');
+        return view({...task,cwd:'/preview/project',terminal:['completed','failed','canceled'].includes(task.state),messages:[
+          {id:task.task+'-input',role:'user',parts:[{text:'检查编辑器快捷键，保留每个文件的撤销历史。'}]},
+          {id:task.task+'-reply',role:'agent',parts:[{text:task.result??'正在检查快捷键和文件切换。'}],updates:[
+            JSON.stringify({sessionUpdate:'agent_thought_chunk',...text('检查每个文件的历史是否独立。')}),
+            JSON.stringify({sessionUpdate:'tool_call',toolCallId:'child-check',title:'npm run editor-history',kind:'execute',status:'completed',rawInput:{command:'npm run editor-history'},content:[{type:'content',content:{type:'text',text:'3 checks passed'}}]}),
+          ]},
+        ],artifacts:[{artifactId:task.task+'-report',name:'检查记录',parts:[{text:'已验证撤销、重做与文件切换。'}]}]});
+      }
       if (p.summary_only && !p.action) return view({count:childTasks.length,at_least:false});
       const task = childTasks.find(child=>child.run===p.run&&child.key===p.key);
       if (p.action==="cancel" && task?.can_cancel) {

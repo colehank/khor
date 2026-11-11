@@ -100,6 +100,7 @@ import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
 import { useWoken } from "@/hooks/use-woken";
 import { LIST_PANE, roomBeside, useListWidth } from "@/hooks/use-list-width";
 import { useAllSessionTabs, isNewTab, newTabId, useSessionTabs } from "@/hooks/use-session-tabs";
+import { delegatedSessionId, delegatedSessionRef, rememberDelegatedSession, useSessionRowLookup, type DelegatedChild } from "@/lib/delegated-sessions";
 import { tabsLimitOf } from "@/browse/tab-limit";
 import { useLock } from "@/hooks/use-lock";
 import { useStoredSettings } from "@/hooks/use-settings";
@@ -929,6 +930,14 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionTabs.open, readSession]);
 
+  const openChildSession = useCallback((parent: SessionRow, child: DelegatedChild) => {
+    const id = delegatedSessionId(parent, child);
+    rememberDelegatedSession(id, child);
+    sessionTabs.open(parent.id);
+    sessionTabs.open(id);
+    setMorePage(null); setSwitchingTabs(false); setLanding("sessions"); setScreen("detail");
+  }, [sessionTabs.open]);
+
 
   const openNotification = (item: NotificationBanner): boolean => {
     if (item.members) {
@@ -1181,9 +1190,10 @@ export default function App() {
   // What is happening that nobody is watching — see the hook for the
   // two rules about what may appear here.
   const status = useStatusBar(rows);
-  const selectedRow = rows.find((r) => r.id === selected) ?? null;
+  const sessionRowOf = useSessionRowLookup(rows, devices);
+  const selectedRow = sessionRowOf(selected);
   /** A session's machine, by name (the browser's machine chips, UX-42). */
-  const homeOf = (id: string) => rows.find((r) => r.id === id)?.home ?? null;
+  const homeOf = (id: string) => sessionRowOf(id)?.home ?? null;
   // **A session the wizard just opened, not listed yet** (UX-8, the first
   // run): its row arrives with the next sync, and a machine that went away
   // in between left the pane showing the network's overview under a tab
@@ -1677,7 +1687,15 @@ export default function App() {
             path: "",
             menu: [{ key: "close", label: gui.close_tab, run: () => sessionTabs.close(id) }],
           };
-        const r = rows.find((row) => row.id === id);
+        const r = sessionRowOf(id);
+        const child = delegatedSessionRef(id);
+        if (child && r) return {
+          id, label: r.title, face: r.face, path: sessionCwdOnScreen(r) ?? "",
+          session: {word:r.word,kind:r.kind,category:r.category},
+          menu: [{key:"parent",label:gui.child_session_parent,run:()=>sessionTabs.open(child.parent)},
+            {key:"close",label:gui.close_tab,run:()=>sessionTabs.close(id)}],
+          act:{kind:"reload" as const,label:gui.term_reload,onPress:()=>{sessionTabs.focus(id);tabAct(id)?.run();}},
+        };
         // **The broadcast the list does not show** (UX-45): put away with
         // nothing newer (docs/SESSION.md 动作) it is still there, and 留言
         // opens it; its first message brings the row back.
@@ -1776,7 +1794,7 @@ export default function App() {
           : { id, label: id, face: null, path: "", again };
       }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [openTabs, rows, devices, side, actsVersion, noticesVersion, days, selected, rung, narrow, content.tabs],
+    [openTabs, rows, sessionRowOf, devices, side, actsVersion, noticesVersion, days, selected, rung, narrow, content.tabs],
   );
   // The open tabs as rows to pick from — one switcher, written once,
   // whichever face asked for it (`BrowseLanding`'s rule). No `onNew`:
@@ -2099,6 +2117,7 @@ export default function App() {
             words={words.sessions}
             selected={selected}
             onSelect={onSelect}
+            onChildSession={openChildSession}
             onPin={onPinSession}
             onClose={onCloseSession}
             pinFailed={pinFailed}
@@ -2856,6 +2875,7 @@ export default function App() {
                 setLanding("sessions");
                 onSelect(r);
               }}
+              onChildSession={openChildSession}
               onPin={onPinSession}
               onClose={onCloseSession}
               pinFailed={pinFailed}

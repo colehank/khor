@@ -6,21 +6,10 @@ import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/c
 import { gui } from "@/gen/catalog";
 import { SessionFace } from "@/components/SessionFace";
 import { IconChevronRight } from "@/components/icons";
+import { delegatedSessionId, type DelegatedChild } from "@/lib/delegated-sessions";
+import { cn } from "@/lib/utils";
 
-type ChildTask = {
-  run: string;
-  key: string;
-  agent: string;
-  machine: string;
-  home?: string;
-  state: string;
-  task: string | null;
-  context: string | null;
-  result: string | null;
-  can_cancel: boolean;
-  can_retry: boolean;
-  truncated?: boolean;
-};
+type ChildTask = DelegatedChild;
 
 const identity = (child: ChildTask) => child.run + "/" + child.key;
 
@@ -36,7 +25,10 @@ function TaskStatus({ state }: {state: string}) {
   }
 }
 
-export function ChildTasks({ parent, id, devices }: { parent: SessionRow; id: string; devices: readonly DeviceRow[] }) {
+export function ChildTasks({ parent, id, devices, selected, onOpen }: {
+  parent: SessionRow; id: string; devices: readonly DeviceRow[]; selected: string | null;
+  onOpen: (parent: SessionRow, child: DelegatedChild) => void;
+}) {
   const [groups, setGroups] = useState<{children: ChildTask[]; commands: ChildTask[]} | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -106,8 +98,9 @@ export function ChildTasks({ parent, id, devices }: { parent: SessionRow; id: st
                 const halo=({submitted:'busy',working:'busy',waiting:'blocked',completed:'done',failed:'failed',canceled:'idle'} as Record<string,string>)[child.state]??null;
                 const preview=child.result?.trim().split('\n')[0] || device?.shown || child.machine;
                 return <button key={identity(child)} type="button" data-side-child-open data-child-task-row={identity(child)}
-                className="flex min-h-list-row w-full min-w-0 items-stretch gap-row rounded-md text-left hover:bg-fill focus-visible:outline-ring"
-                onClick={() => { setDetail(identity(child)); setError(""); }}>
+                data-selected={!command && selected === delegatedSessionId(parent, child) || undefined}
+                className={cn("flex min-h-list-row w-full min-w-0 items-stretch gap-row rounded-md text-left focus-visible:outline-ring", !command && selected === delegatedSessionId(parent, child) ? "bg-fill-strong" : "hover:bg-fill")}
+                onClick={() => { if (!command) onOpen(parent, child); else setDetail(identity(child)); setError(""); }}>
                 <span data-child-task-face={child.home ?? parent.execution_home ?? ''} className="flex w-list-face flex-none items-center justify-center" aria-hidden>
                   <SessionFace face={face} word={halo} kind={command?'shell':'gui'} category={command?null:child.agent}/>
                 </span>

@@ -21,6 +21,8 @@ import { cn } from "@/lib/utils";
 import { ChatView } from "@/views/ChatView";
 import { DAY_ROW_ID, daySwitch, type Day } from "@/views/DayStrip";
 import { MachineChat } from "@/views/MachineChat";
+import { DelegatedSessionView } from "@/views/DelegatedSessionView";
+import { delegatedSessionRef } from "@/lib/delegated-sessions";
 import { RecoveryActions } from "@/views/RecoveryActions";
 import type { TerminalRecoveryOwner } from "@/views/TerminalPane";
 
@@ -620,7 +622,10 @@ export function DetailPane({
       />}
       <div data-detail-row className="flex min-h-0 min-w-0 flex-1 flex-row">
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
-      {waitingForSeat && row ? (
+      {row && delegatedSessionRef(row.id) ? (
+        <DelegatedSessionView key={row.id} row={row} active={active}
+          onParent={onSession && sessions?.some(parent=>parent.id===delegatedSessionRef(row.id)!.parent)?()=>onSession(delegatedSessionRef(row.id)!.parent):undefined}/>
+      ) : waitingForSeat && row ? (
         row.kind === "gui" || row.kind === "tui" ? <ObservedSession key={viewKey} row={row} onReading={onReading} />
           : <div role="status" className="grid min-h-0 flex-1 place-items-center p-row text-callout text-muted-foreground">{gui.recovery_waiting_owner}</div>
       ) : terminalShown ? null : row && row.kind === "broadcast" ? (

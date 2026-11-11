@@ -1,7 +1,7 @@
 import {inApp} from '@/api';
 import {browserDownload} from './browser-download';
 import {nativeFileWriter} from './native-file-writer';
-const extensions:Record<string,string>={'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif','image/avif':'avif','application/pdf':'pdf','audio/mpeg':'mp3','audio/mp4':'m4a','audio/wav':'wav','audio/ogg':'ogg','text/plain':'txt'};
+const extensions:Record<string,string>={'application/json':'json','image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif','image/avif':'avif','application/pdf':'pdf','audio/mpeg':'mp3','audio/mp4':'m4a','audio/wav':'wav','audio/ogg':'ogg','text/plain':'txt'};
 export function downloadableResource(data?:string){return !!data&&data.length<=24*1024*1024&&data.length%4===0&&/^[A-Za-z0-9+/]*={0,2}$/.test(data);}
 /** Only explicit user saving decodes inline bytes. Unknown formats are saved
  * as binary; they are never inserted into a webview as active content. */
