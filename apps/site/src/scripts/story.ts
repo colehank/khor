@@ -26,9 +26,9 @@ export function mountStory() {
     const active=Math.round(state.copyPhase);
     lines.forEach((line,index)=>{
       const distance=Math.abs(state.copyPhase-index);
-      line.style.opacity=String(reduced.matches?Number(index===active):1-ramp(distance,.25,.75));
+      line.style.opacity=String(reduced.matches?Number(index===active):1-ramp(distance,.18,.56));
       const shift=clamp(index-state.copyPhase)-clamp(state.copyPhase-index);
-      line.style.transform=reduced.matches?'none':`translateY(calc(${shift} * var(--story-title) * 2.4))`;
+      line.style.transform=reduced.matches?'none':`translateY(calc(${shift} * var(--gap-pane)))`;
     });
     steps.forEach((step,index)=>{
       if(index===active)step.setAttribute('aria-current','step');
@@ -37,6 +37,7 @@ export function mountStory() {
     const exit=ramp(scrollY,topOpening+openingTravel,topOpening+openingTravel+innerHeight*.7);
     document.documentElement.style.setProperty('--meet-world',String(ramp(state.color,0,.55)*(1-exit)));
     opening!.style.setProperty('--story-controls-opacity',String(1-ramp(progress,.9,1)));
+    opening!.style.setProperty('--scroll-cue-opacity',String(1-ramp(state.copyPhase,0,.45)));
   }
   function requestRender() {
     if(scheduled)return;

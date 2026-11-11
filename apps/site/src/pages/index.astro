@@ -6,7 +6,7 @@ import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import { release } from "../releases";
 import "../styles/story.css";
-const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But", "one mind."], ["How about letting", "them work together?"], ["Meet", "Khor."]];
+const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But", "one mind."], ["How about", "letting them\nwork together?"], ["Meet", "Khor."]];
 ---
 <Base description="连接各台设备上的智能体、网页与文件，从手边的设备继续工作">
   <a class="skip-story" href="#features">跳过开场</a>
@@ -15,7 +15,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
     <section class="opening" aria-label="认识 khor" data-opening>
       <div class="opening-sticky">
         <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
-        <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <p class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><span>{lead}</span><br />{phrase}</p>)}</div>
+        <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <p class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><span class="line-lead">{lead}</span>{phrase.split("\n").map(text => <span class="line-phrase">{text}</span>)}</p>)}</div>
         <h1 class="sr-only">You have many devices. With many harnesses. But one mind. How about letting them work together? Meet Khor.</h1>
         <div class="assembly" data-assembly><Mandala /></div>
         <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"></span></div>
