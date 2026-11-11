@@ -1,19 +1,31 @@
 ---
 import Base from "../layouts/Base.astro";
-import Mark from "../components/Mark.astro";
 import Mandala from "../components/Mandala.astro";
 import ProductHero from "../components/ProductHero.astro";
+import FeatureStory from "../components/FeatureStory.astro";
+import desktop from "../assets/product/desktop.webp";
+import desktopDark from "../assets/product/desktop-dark.webp";
+import workspace from "../assets/product/workspace.webp";
+import workspaceDark from "../assets/product/workspace-dark.webp";
+import devices from "../assets/product/devices.webp";
+import devicesDark from "../assets/product/devices-dark.webp";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import { release } from "../releases";
 import "../styles/story.css";
 const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But", "one mind."], ["How about", "letting them\nwork together?"], ["Meet", "Khor."]];
 ---
-<Base description="连接各台设备上的智能体、网页与文件，从手边的设备继续工作">
-  <a class="skip-story" href="#features">跳过开场</a>
-  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="#features">功能</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
+<Base title="Work across your devices." description="Your agents, files, and web apps. From any device. Khor by kapestack.">
+  <a class="skip-story" href="#product">跳到产品界面</a>
+  <header class="story-nav" data-over-hero><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><nav aria-label="主导航"><a class="nav-product" href="#product">Khor</a><a href="#features">功能</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
   <main class="story-home">
     <ProductHero />
+    <section class="features" id="features" aria-labelledby="features-title">
+      <div class="section-intro"><h2 id="features-title">Keep your work together.</h2><p>会话、文件和设备，放回同一处。</p></div>
+      <FeatureStory title="Your agents. Your choice." description="Claude、Codex、Cursor，或 Khor 自己的智能体。把不同设备上的会话放在一起，查看进展、给出下一步，再接着做。" href="/docs/sessions/" link="了解会话" image={desktop} darkImage={desktopDark} alt="Khor 会话列表包含不同设备上的 Khor、Cursor、Codex、Claude 和 Shell" />
+      <FeatureStory title="Files, with their history." description="直接打开另一台设备上的项目。阅读文档、编辑文件，用 Git 看清每一次变化；文件留在它原本所在的设备上。" href="/docs/" link="了解文件与工作区" image={workspace} darkImage={workspaceDark} alt="Khor 工作区打开项目中的 Markdown 修复记录，旁边保留文件与修改状态" reverse />
+      <FeatureStory title="Your devices, within reach." description="通过点对点网络连接自己的设备。查看机器状态、访问远端资源，也能打开只在另一台设备上运行的网页。" href="/docs/web/" link="了解设备网与网页访问" image={devices} darkImage={devicesDark} alt="Khor 设备页展示不同配色的机器头像、资源仪表、24 小时趋势与进程散点图" />
+    </section>
     <section class="opening" id="story" aria-label="认识 khor" data-opening>
       <div class="opening-sticky">
         <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
@@ -24,24 +36,15 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
         <nav class="story-steps" aria-label="开场章节">{lines.map(([, phrase], index) => <button type="button" aria-label={`跳到 ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
       </div>
     </section>
-    <section class="resource-story" id="features" aria-labelledby="resources-title">
-      <div class="resource-intro"><p class="eyebrow">From wherever you are.</p><h2 id="resources-title">设备上的工作，<br />手边接着做。</h2></div>
-      <div class="resource-lines">
-        <a href="/experience/app/index.html?scene=gui"><span>智能体</span><p>查看进展、处理审批，让不同设备上的智能体协作</p><span aria-hidden="true">↗</span></a>
-        <a href="/experience/app/index.html?scene=workspace"><span>文件与 Git</span><p>打开远程项目，编辑文件，查看每一次变化</p><span aria-hidden="true">↗</span></a>
-        <a href="/docs/web/"><span>Web</span><p>从这台设备，访问另一台设备上的网页</p><span aria-hidden="true">↗</span></a>
-        <a href="/docs/pair/"><span>你的设备网</span><p>通过点对点连接，把自己的设备连在一起</p><span aria-hidden="true">↗</span></a>
-      </div>
-    </section>
     <section class="download-section" id="download" aria-labelledby="download-title">
-      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">从你的设备开始。</h2>
+      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor.</h2><p class="download-description">从你手边的设备开始。</p>
       <a class="download-main" href="/download/" data-device-download><span data-download-label>下载 Khor</span> <span aria-hidden="true">↓</span></a><a class="other-downloads" href="/download/">所有下载与安装方式</a>
       <div class="install-line"><code id="install">{INSTALL}</code><button type="button" data-copy="install">复制</button></div><p class="download-note">当前预览版 {release.version} · macOS App · Linux / macOS CLI</p>
     </section>
   </main>
-  <footer class="story-footer"><Mark /><span>坛城（Kyil-khor），意为连接</span><nav><a href="/docs/">文档</a><a href={REPO}>GitHub</a></nav></footer>
+  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices.</span><nav><a href="/docs/">文档</a><a href={REPO}>GitHub</a></nav></footer>
 
-  <noscript><style>.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">开启 JavaScript 可观看动效。<a href="/download/">下载 khor</a></p></noscript>
+  <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">开启 JavaScript 可观看动效。<a href="/download/">下载 khor</a></p></noscript>
 </Base>
 <script>
   import { mountStory } from "../scripts/story";

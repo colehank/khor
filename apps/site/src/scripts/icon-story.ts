@@ -7,8 +7,8 @@ const poses:IconPose[] = [
   {...resting,presence:1,harness:1,mind:1,focus:1,connection:1},
   {...resting,presence:1,harness:1,mind:1,focus:1,connection:1,light:1},
 ];
-// Long reading distances, without stationary ranges before a move can begin.
-const landmarks = [0,2,4.1,6.2,9];
+// A compact brand interlude; the product and its capabilities come first.
+const landmarks = [0,.55,1.15,1.8,2.6];
 export const iconScrollScreens=landmarks.at(-1)!;
 export const iconStops=landmarks.map(position=>position/iconScrollScreens);
 

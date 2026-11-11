@@ -1,31 +1,40 @@
 ---
 import desktop from "../assets/product/desktop.webp";
 import desktopDark from "../assets/product/desktop-dark.webp";
+import fog from "../assets/product/fog.webp";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
+import {supportedDevices,supportedHarnesses} from "../../../gui/dev/site/identity-marks";
+import {fogOptions} from "../scripts/fog-options";
 ---
-<section class="product-hero" aria-labelledby="product-title" data-product-hero>
+<section class="product-hero" id="khor-hero" aria-labelledby="product-title" data-product-hero style={`--fog-base:#${fogOptions.baseColor.toString(16)}`}>
+  <div class="hero-ground" data-fog aria-hidden="true"><img class="fog-fallback" src={fog.src} alt="" width={fog.width} height={fog.height} loading="eager" /></div>
   <div class="product-copy">
-    <h1 id="product-title"><img src={icon.src} alt="" width="56" height="56" />Khor</h1>
-    <p class="product-tagline">Work across your devices and harnesses.</p>
-    <p class="product-description">在一处访问各台设备上的智能体、文件和网页。</p>
+    <a class="product-identity" href="#khor-hero" aria-label="Khor 首页"><img src={icon.src} alt="" width="80" height="80" /><span>Khor</span></a>
+    <h1 id="product-title">Work across your devices.</h1>
+    <p class="product-description">Your agents, files, and web apps.<br class="mobile-break" /> From any device.</p>
     <div class="product-actions">
       <a class="product-download" href="/download/" data-device-download><span data-download-label>下载 Khor</span><span aria-hidden="true">↓</span></a>
       <a class="product-docs" href="/docs/">阅读文档 <span aria-hidden="true">↗</span></a>
     </div>
     <p class="product-availability" data-download-note>macOS App · Linux / macOS CLI</p>
-    <a class="product-learn" href="#story">了解 Khor <span aria-hidden="true">⌄</span></a>
   </div>
-  <div class="product-desktop">
+</section>
+<section class="product-showcase" id="product" aria-label="Khor 桌面界面">
     <div class="macos-window">
       <div class="desktop-preview" data-desktop-preview>
         <picture class="desktop-poster"><source media="(prefers-color-scheme: dark)" srcset={desktopDark.src} /><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor 完整桌面界面：Khor 内置对话、远程资源窗格，以及 Cursor、Codex、Claude 和 Shell 会话" loading="eager" fetchpriority="high" /></picture>
         <div class="desktop-stage" data-desktop-stage><iframe title="试用 Khor 桌面界面" data-desktop-demo data-src="/experience/app/index.html?scene=content&amp;hero=1" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
       </div>
     </div>
-    <p class="desktop-caption">试着发条消息。</p>
-  </div>
+    <p class="desktop-caption"><span>Khor Desktop</span><span>试着发条消息。</span></p>
+</section>
+<section class="compatibility" aria-label="支持的系统与会话类型">
+  <p>Across your devices and harnesses.</p>
+  <div class="compatibility-row">{supportedDevices.map(mark=><span><span class="compatibility-glyph" set:html={mark.svg}></span>{mark.name}</span>)}</div>
+  <div class="compatibility-row harness-row">{supportedHarnesses.map(mark=><span><span class="compatibility-glyph" set:html={mark.svg}></span>{mark.name}</span>)}</div>
 </section>
 <script>
   import {mountDesktopPreview} from "../scripts/product";
-  mountDesktopPreview();
+  import {mountFog} from "../scripts/fog";
+  mountDesktopPreview();mountFog();
 </script>

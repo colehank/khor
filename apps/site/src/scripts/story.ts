@@ -21,7 +21,10 @@ export function mountStory() {
   function render() {
     scheduled=false;
     if(disposed)return;
-    const progress=clamp((scrollY-topOpening)/openingTravel);
+    // Browser scroll offsets are rounded while the section can start at a
+    // fractional pixel. Its final bookmark must still paint the exact icon.
+    const distance=scrollY-topOpening;
+    const progress=distance>=openingTravel-1?1:clamp(distance/openingTravel);
     const state=updateIcon(progress,reduced.matches);
     const active=Math.round(state.copyPhase);
     lines.forEach((line,index)=>{
@@ -36,7 +39,7 @@ export function mountStory() {
     });
     const exit=ramp(scrollY,topOpening+openingTravel,topOpening+openingTravel+innerHeight*.7);
     const light=clamp(state.color/.55);
-    document.documentElement.style.setProperty('--meet-world',String((.35*light+.65*ramp(state.color,0,.55))*(1-exit)));
+    opening!.style.setProperty('--meet-world',String((.35*light+.65*ramp(state.color,0,.55))*(1-exit)));
     opening!.style.setProperty('--story-controls-opacity',String(1-ramp(progress,.9,1)));
     opening!.style.setProperty('--scroll-cue-opacity',String(1-ramp(state.copyPhase,0,.45)));
   }
