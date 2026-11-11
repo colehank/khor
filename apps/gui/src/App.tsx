@@ -2740,6 +2740,7 @@ export default function App() {
         status={stale ? gui.backend_unreachable : undefined}
         sessionContent={contentContext}
         memory={workspaceMemories.retain(openWs)}
+        devices={devices}
         // Views detach on navigation; the identity's model retains its
         // tabs, drafts and reading state without background view work.
         key={workspaceIdentity(openWs)}

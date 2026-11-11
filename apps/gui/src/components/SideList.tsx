@@ -485,11 +485,11 @@ export function SideList({
     // A stretched primary button and the independent title action are siblings.
     // Keep real keyboard controls without nesting one button inside another.
     const button = r.disclosure ? <div {...r.openData} className={cn(rowClass,"relative")} onClick={event=>{
-      event.currentTarget.querySelector<HTMLButtonElement>('[data-side-open]')?.focus({preventScroll:true});r.onOpen();
+      event.currentTarget.querySelector<HTMLButtonElement>('[data-side-open]')?.focus({preventScroll:true});r.onOpen?.();
     }}>
       <button type="button" data-side-open tabIndex={r.id === stop ? 0 : -1}
         aria-label={r.name ?? r.find} className={cn("absolute inset-0",RING)}
-        onClick={event=>{event.stopPropagation();r.onOpen();}}/>
+        onClick={event=>{event.stopPropagation();r.onOpen?.();}}/>
       <div className="pointer-events-none contents">{contents}</div>
     </div> : <button type="button" data-side-open {...r.openData} tabIndex={r.id === stop ? 0 : -1}
       onClick={r.onOpen} className={cn(rowClass,RING)}>{contents}</button>;

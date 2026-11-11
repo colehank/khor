@@ -23,6 +23,7 @@ import {
   type SearchHit,
   type GitStatus,
   type SessionRow,
+  type DeviceRow,
 } from "@/api";
 import { WorkspaceHistory } from "@/views/workspace/WorkspaceHistory";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
@@ -95,6 +96,7 @@ export function WorkspacePane({
   here,
   root,
   rows,
+  devices = [],
   channel,
   onPin,
   onClose,
@@ -132,6 +134,7 @@ export function WorkspacePane({
       this pane's subject, and the shell holds the list for its own
       reasons already. */
   rows: SessionRow[];
+  devices?: readonly DeviceRow[];
   /** This workspace's machine as the **channel** name — what
       `SessionRow.home` is spelled in — resolved from `device` by the
       shell, which is where the device table lives (工作区批③).
@@ -1210,7 +1213,7 @@ export function WorkspacePane({
 
   const workspaceSessionList = (
     <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
-      <SessionsList rows={mine} query={query} words={words} selected={picked ?? made}
+      <SessionsList rows={mine} devices={[...devices]} query={query} words={words} selected={picked ?? made}
         onSelect={(row) => { sessionTabs.open(row.id); showSessionDetail(true); }}
         onPin={onPin} onClose={onClose} pinFailed={pinFailed} closeRefused={closeRefused} showVia={false} />
     </div>
