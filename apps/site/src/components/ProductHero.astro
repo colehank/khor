@@ -3,7 +3,6 @@ import desktop from "../assets/product/desktop.webp";
 import desktopDark from "../assets/product/desktop-dark.webp";
 import fog from "../assets/product/fog.webp";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
-import {supportedDevices,supportedHarnesses} from "../../../gui/dev/site/identity-marks";
 import {fogOptions} from "../scripts/fog-options";
 ---
 <section class="product-hero" id="khor-hero" aria-labelledby="product-title" data-product-hero style={`--fog-base:#${fogOptions.baseColor.toString(16)}`}>
@@ -25,13 +24,7 @@ import {fogOptions} from "../scripts/fog-options";
         <div class="desktop-stage" data-desktop-stage><iframe title="试用 Khor 桌面界面" data-desktop-demo data-src="/experience/app/index.html?scene=content&amp;hero=1" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
       </div>
     </div>
-    <p class="desktop-caption"><span>Khor Desktop</span><span>试着发条消息。</span></p>
 </section>
-</section>
-<section class="compatibility" aria-label="支持的系统与会话类型">
-  <p>Across your devices and harnesses.</p>
-  <div class="compatibility-row">{supportedDevices.map(mark=><span><span class="compatibility-glyph" set:html={mark.svg}></span>{mark.name}</span>)}</div>
-  <div class="compatibility-row harness-row">{supportedHarnesses.map(mark=><span><span class="compatibility-glyph" set:html={mark.svg}></span>{mark.name}</span>)}</div>
 </section>
 <script>
   import {mountDesktopPreview} from "../scripts/product";

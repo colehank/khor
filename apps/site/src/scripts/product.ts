@@ -11,11 +11,6 @@ export function mountDesktopPreview() {
   measure();
   resize.observe(preview);
   const show=()=>{
-    // WebKit can report the intended innerWidth while actually laying the
-    // document out at the zoomed width. Check its real layout before
-    // replacing the full-size poster with an interactive frame.
-    const layoutWidth=frame.contentDocument?.documentElement.clientWidth;
-    if(layoutWidth&&Math.abs(layoutWidth-stage.offsetWidth)>2)stage.dataset.scaleMode='transform';
     requestAnimationFrame(()=>requestAnimationFrame(()=>preview.setAttribute('data-ready','')));
   };
   window.addEventListener('message',event=>{

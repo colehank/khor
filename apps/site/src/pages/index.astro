@@ -2,13 +2,6 @@
 import Base from "../layouts/Base.astro";
 import Mandala from "../components/Mandala.astro";
 import ProductHero from "../components/ProductHero.astro";
-import FeatureStory from "../components/FeatureStory.astro";
-import desktop from "../assets/product/desktop.webp";
-import desktopDark from "../assets/product/desktop-dark.webp";
-import workspace from "../assets/product/workspace.webp";
-import workspaceDark from "../assets/product/workspace-dark.webp";
-import devices from "../assets/product/devices.webp";
-import devicesDark from "../assets/product/devices-dark.webp";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import { release } from "../releases";
@@ -17,15 +10,9 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
 ---
 <Base title="Work across your devices." description="Your agents, files, and web apps. From any device. Khor by kapestack.">
   <a class="skip-story" href="#product">跳到产品界面</a>
-  <header class="story-nav" data-over-hero><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><nav aria-label="主导航"><a class="nav-product" href="#product">Khor</a><a href="#features">功能</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
+  <header class="story-nav" data-over-hero><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><nav aria-label="主导航"><a class="nav-product" href="#product">Khor</a><a href="#story">了解</a><a href="/docs/">文档</a><a class="nav-download" href="#download">下载</a></nav></header>
   <main class="story-home">
     <ProductHero />
-    <section class="features" id="features" aria-labelledby="features-title">
-      <div class="section-intro"><h2 id="features-title">Keep your work together.</h2><p>会话、文件和设备，放回同一处。</p></div>
-      <FeatureStory title="Your agents. Your choice." description="Claude、Codex、Cursor，或 Khor 自己的智能体。把不同设备上的会话放在一起，查看进展、给出下一步，再接着做。" href="/docs/sessions/" link="了解会话" image={desktop} darkImage={desktopDark} alt="Khor 会话列表包含不同设备上的 Khor、Cursor、Codex、Claude 和 Shell" />
-      <FeatureStory title="Files, with their history." description="直接打开另一台设备上的项目。阅读文档、编辑文件，用 Git 看清每一次变化；文件留在它原本所在的设备上。" href="/docs/" link="了解文件与工作区" image={workspace} darkImage={workspaceDark} alt="Khor 工作区打开项目中的 Markdown 修复记录，旁边保留文件与修改状态" reverse />
-      <FeatureStory title="Your devices, within reach." description="通过点对点网络连接自己的设备。查看机器状态、访问远端资源，也能打开只在另一台设备上运行的网页。" href="/docs/web/" link="了解设备网与网页访问" image={devices} darkImage={devicesDark} alt="Khor 设备页展示不同配色的机器头像、资源仪表、24 小时趋势与进程散点图" />
-    </section>
     <section class="opening" id="story" aria-label="认识 khor" data-opening>
       <div class="opening-sticky">
         <div class="meet-environment" data-meet-environment aria-hidden="true"></div>

@@ -9,17 +9,19 @@
 
 ## 当前叙事定稿（Codex 参考改版，替代下方历史顺序）
 
-0. **Work across your devices.** 左上是 kapestack（链接 `https://www.kapestack.top`），最新首屏恢复左介绍 / 右 GUI，共同落在原参数 Vanta Fog 上；GUI 复用 App 的半透明背景层与毛玻璃效果，窄屏上下排列。下面是五种系统与五类 harness 标识、三组交替图文，再接下列图标故事。真实 GUI 和有限合成数据不变，发送仍固定回复下载链接；下载继续按平台与可靠架构推荐。全程不接真实 Lab、模型或设备。
+0. **Work across your devices.** 左上是 kapestack（链接 `https://www.kapestack.top`），首屏左介绍 / 右 GUI，共同落在原参数 Vanta Fog 上；GUI 为 50% 背景毛玻璃，窄屏上下排列。首屏下滑直接接下列图标故事，不显示系统 / harness 标识、图文介绍及 GUI 旁注。真实 GUI 和有限合成数据不变，发送仍固定回复下载链接；下载继续按平台与可靠架构推荐。全程不接真实 Lab、模型或设备。
 
 1. **You have many devices.** 四个普通灰色圆节点松散分布，大小与明暗各异，分别戴 Linux、macOS（Finder）、Windows、iOS（Apple）机器标记。前两幕不预先排成图标的四个固定位置。Meet 之前不出现珠光高亮、渐变、边缘反光或珠子的投影。
 2. **With many harnesses.** 节点沿各自的短弧线移动，错开将标记切换为 Claude、Codex、Cursor、Shell，继续保持灰色；每个节点的移动起止与缩放不同。
 3. **But one mind.** 四个外节点先开始收拢，临近最终位置时减速、缩小并变暗，harness 标记淡出；中心节点和内圆稍后同时以固定尺寸浮现。中心从第一帧起就是原图的最终绿色和尺寸，但先是纯色圆，光泽等到 Meet。内圆保持原图绿色与几何，Meet 前也使用纯色环，不提前显现渐变、阴影或环境光晕。
 4. **How about letting them work together?** 一次连续动效画出外环的内外两道细边，以及只有边缘的菱形；三条线统一细度、灰度，环带中间留空，保留最终玻璃环的占位宽度。没有菱形填充、玻璃或环境光；四个外节点灰色，中心节点和内圆绿色。绘制进度跟随滚动位置，停止滚动就停在当前形态。
 5. **Meet Khor.** 原图的暗色环境铺满整个画面，左上方的光让菱形填充、玻璃外环和珠子的高光逐渐显现，四个外节点随光恢复绿色。外环和菱形不重新描线；此时标志没有方形底板边界。
-6. 原来的笔记本合盖、手机接续与鼠标点击段保持移除。图标故事现在位于功能介绍之后，连续滚动行程为 2.6 屏，之后接下载。导航「功能」指向图文段，键盘跳过入口直接到大 GUI。
+6. 原来的笔记本合盖、手机接续与鼠标点击段保持移除。图标故事位于首屏之后，连续滚动行程为 2.6 屏，之后接下载。导航「了解」指向图标故事，键盘跳过入口直接到 GUI。
 
 ## 本轮实现与验证
 
+- 2026-11-12 用户要求延长首屏渐变，并先调研后续动画。渐变从 120px 延长到至少 40svh。调研见 [site-scroll-research-20261112.md](site-scroll-research-20261112.md)，记录 2.6 屏过短、文案提前半段切完、逐帧约 44 次属性更新与稳定视口问题；建议单一原生滚动时间轴、分层材质、移动端更长行程。动画方案尚未实施，桌面 Chrome 模拟不作为真机 FPS 结论。
+- 2026-11-12 桌面 WebKit 窄屏锁存修复：1050 视口下复现 root `data-narrow=true`，即使 iframe 的布局 / 媒体查询已恢复 1360，React 仍保留初始窄屏状态，窗口拉宽也不恢复。移除全部布局 zoom 与事后模式切换，从首次载入起只用 transform 呈现固定桌面视口。WebKit / Chrome 各核对 1050→1440→1050，所有根布局为 1360，narrow=false，固定回复正常。另按用户要求移除 “Khor Desktop / 试着发条消息”、系统 / harness 标识及三组图文，DOM 只剩首屏→故事→下载；导航「功能」改为「了解」到故事。截图与数据 `glass-hero/desktop-viewport-*-after.png`、同名 JSON。
 - 2026-11-12 按用户要求把玻璃背景从 70% 调到 50%，前景 opacity 仍为 1，深浅首图 alpha 更新为 127/255。修复系统按钮被裁：原外框固定圆角 14.4px，在小预览上过大；将缩放变量提升到窗口共同祖先，让圆角按原生 24px 与 GUI 同比缩放。WebKit 手机视口下原圆角裁掉 17 个按钮轮廓采样点，修后圆角约 6.19px，裁切点为 0；桌面也为 0，窗口没有白色外描边或内描边。对照数据 `glass-hero/controls.json`，最新手机和深浅截图同目录。GUI 打包与脚本类型检查通过。
 - 2026-11-12 最新首屏恢复左介绍 / 右 GUI；Khor 图标与产品名横排，左右共同落在原参数 Fog 中。网站 hero 只设置生产 `data-window-transparent` 和 `--window-opacity:70%`，复用实际单背景面；前景 opacity=1，父窗口 blur(24px) 对 Fog 取样。不伪造原生运行时或打开原生后端。深浅 WebP 改为 RGBA，背景 alpha 178、文字最高 255，首图与实际 App 都可透出 Fog。Chrome 已确认左右位置、玻璃属性和固定回复，WebKit 手机布局仍为 1360；深浅与手机截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/glass-hero`。
 - 2026-11-12 iPhone 预览白块修复：用本机已有 WebKit 2336、390×844、iPhone UA / 触屏复现。外层 CSS zoom 让 iframe 的实际 `documentElement.clientWidth` 从 1360 变成 356（`innerWidth` 仍说 1360），App 切成窄屏，之后又被外层缩小，剩余区域为白块。触屏 / 窄屏改用 transform，鼠标桌面仍用 zoom；ready 前检查真实布局宽度，不一致时回退，并等两帧再交出首图。修后 WebKit 与 Chrome 的根布局 / body 均为 1360×850，根 `data-narrow` 为 false，预览外宽 356，完整三栏铺满，固定回复可发送。类型检查与静态构建通过；只做此问题定向检查，未下载浏览器。红绿数据、截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/phone-preview`。注意附栏内部有合法的 `data-narrow-box`，断言应看根，不能查任意后代的 `data-narrow`。
