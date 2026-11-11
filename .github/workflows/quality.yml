@@ -157,10 +157,13 @@ jobs:
   mac-package:
     if: inputs.slice == 'mac-package'
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: '3'
       CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
       TARGET: aarch64-apple-darwin
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
