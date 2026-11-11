@@ -5,7 +5,7 @@ export async function checkCommandTab(page,{report,name,mobile,workspace=false})
   const rows=page.locator(workspace?'[data-ws-sessions-list]':'[data-side-list]');
   await rows.locator('[data-child-task-row="fixture-run/fixture-command"]').click();
   assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Commands open ordinary readonly tabs, never the old task dialog');
-  const reader=page.locator('[data-child-session]:visible');
+  const reader=page.locator('[data-child-session]:visible').filter({has:page.locator('[data-child-command]')});
   await reader.locator('[data-child-command]').waitFor();
   assert.equal((await reader.locator('[data-child-command-line]').innerText()).trim(),'git status');
   assert.equal((await reader.locator('[data-child-command-stdout]').innerText()).trim(),'Working tree clean');
@@ -26,6 +26,9 @@ export async function checkCommandTab(page,{report,name,mobile,workspace=false})
     assert.equal(await reader.getAttribute('data-child-session-ref'),id);
     await tab.locator('[data-tab-close]').click();
     await reader.waitFor({state:'detached'});
+    const parent=page.locator('[data-session-tabs] [data-tab-open="wide/all"]');
+    assert.equal(await parent.count(),1,'Closing a command view preserves its parent tab');
+    await parent.click();
     await page.locator('[data-machine-chat-scroll]:visible').waitFor();
   }
 }
