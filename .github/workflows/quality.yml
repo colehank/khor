@@ -808,7 +808,12 @@ jobs:
       - name: Prepare Chromium for a small visual change
         if: inputs.lab_checks == 'child-tree-chromium'
         working-directory: apps/gui
-        run: npx playwright-core install chromium
+        run: |
+          mkdir -p "$HOME/.local/share/fonts"
+          curl --fail --location --retry 2 --connect-timeout 10 --max-time 90 https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf --output "$HOME/.local/share/fonts/NotoSansCJKsc-Regular.otf"
+          fc-cache -f
+          fc-match 'Noto Sans CJK SC'
+          npx playwright-core install chromium
       - name: Check shared frontend rules for the final tree controls
         if: inputs.lab_checks != 'all'
         working-directory: apps/gui
