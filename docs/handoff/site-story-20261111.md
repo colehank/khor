@@ -11,7 +11,7 @@
 
 1. You have many devices. 四颗明暗不同的珠。
 2. With many agents. 珠上出现 session face。
-3. But one mind. 外珠与 face 淡下，中心珠浮现。
+3. But one mind. 四个外节点缩到最终尺寸并变暗，face 淡出；中心珠以原图最终的绿色、尺寸和材质浮现。
 4. How about letting them work together? 一次连续动效演化到完整灰阶 icon；停在这一句也会自动完成，不拆成多个滚动步骤。
 5. Meet khor. 恢复原图颜色与光泽，随后同一个 SVG 缩入笔记本；屏内光标短距离移动并只点击一次，打开真实前端。
 6. Keep going. 笔记本合盖，手机接续同一个任务。
@@ -47,3 +47,9 @@ favicon、导航和下载图标全部使用同一标准图稿。
 - 验证通过：How about 停止滚动后完整成形且无彩色；Meet 上色；倒滚回灰；屏内点击一次；App/草稿/手机接续与展开返回；390px 无横向溢出；减少动态效果/键盘入口。
 - 第二轮完成图仍与标准 SVG 的 780×780 参照逐像素相同。灰阶图中部区域的 RGB 通道差为 0。
 - 新证据在 `/Volumes/disk0/Khor/evidence/site-story-20261111/revision-2`；脚本 `/private/tmp/playwright-test-khor-revision-2.js`。
+
+## Mind 与外节点修订
+
+用户明确 Mind 从浮现开始就应保持最终绿色与形态；四个外节点在 One mind 时就缩到最终大小。
+已将灰阶处理移到外围结构和外珠，中心珠始终使用原图材质且不再缩放。外珠缩放由 focus（One mind）驱动，How about 和 Meet 阶段不再改变它们的大小与位置。
+浏览器确认 One mind、How about、Meet 的全部五珠几何矩阵相同；中心材质保持原始绿色，四个外珠在 Meet 前仍为灰阶。类型检查与定向浏览器检查通过。截图与收据在 evidence 的 `mind-final` 子目录。

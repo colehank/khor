@@ -15,7 +15,7 @@ export function createIconMotion(host:HTMLElement) {
   let current={...resting},from={...resting};
   let scene=-1,started=0,settled=false;
   return (requested:number,now:number,reduced:boolean)=>{
-    // A direct jump to Meet still finishes the grey form before revealing colour.
+    // A direct jump to Meet still finishes the neutral structure before its colour reveal.
     const next=reduced?4:requested===4&&current.form<1?3:requested;
     if(next!==scene){from={...current};scene=next;started=now;settled=false;}
     const time=reduced?1:clamp((now-started)/duration[scene]);
@@ -97,16 +97,17 @@ export function animateIcon(host:HTMLElement) {
     const glass=ease(pose.form,.02,.92);
     const rim=ease(pose.form,.05,1);
     const back=ease(pose.form,.12,1);
-    svg.style.filter=pose.color===1?'none':`grayscale(${1-pose.color})`;
-    ground.forEach(node=>style(node,{opacity:back*opacity.get(node)!}));
+    const grey=pose.color===1?'none':`grayscale(${1-pose.color})`;
+    for(const layer of [outer,diamond,inner])style(layer,{filter:grey});
+    ground.forEach(node=>style(node,{opacity:back*opacity.get(node)!,filter:grey}));
     const centre=pearlGroups[0];
-    style(centre.group,{opacity:pose.mind,transform:pose.mind===1?'none':`translate(512px,512px) scale(${.92+.08*pose.mind}) translate(-512px,-512px)`});
+    style(centre.group,{opacity:pose.mind});
     pearlGroups.slice(1).forEach((pearl,i)=>{
-      const scale=(2.25-1.25*pose.form)*(.96+.04*pose.presence);
+      const scale=(2.25-1.25*pose.focus)*(.96+.04*pose.presence);
       const initial=[.68,.56,.45,.61][i];
       const grey=initial+(.68-initial)*pose.form;
       const brightness=(grey+(1-grey)*pose.color)*(1-.78*pose.focus*(1-pose.form)*(1-pose.color));
-      style(pearl.group,{opacity:pose.presence,filter:pose.color===1?'none':`brightness(${brightness})`,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
+      style(pearl.group,{opacity:pose.presence,filter:pose.color===1?'none':`grayscale(${1-pose.color}) brightness(${brightness})`,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
       style(overlays[i],{opacity:pose.agents});
     });
     satelliteHalos.forEach(node=>style(node,{opacity:pose.form*opacity.get(node)!}));
