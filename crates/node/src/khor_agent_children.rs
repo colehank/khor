@@ -149,7 +149,7 @@ fn summary(child: &Child, record: Option<&Record>) -> Value {
     })
 }
 
-fn owned_child(node: &Node, board: &str, run: &str, key: &str) -> Result<Child, String> {
+pub(super) fn owned_run(node: &Node, board: &str, run: &str, key: &str) -> Result<Saved, String> {
     if run.is_empty()
         || run.len() > 128
         || !run
@@ -169,6 +169,11 @@ fn owned_child(node: &Node, board: &str, run: &str, key: &str) -> Result<Child, 
     {
         return Err("Child does not belong to this conversation".into());
     }
+    Ok(saved)
+}
+
+fn owned_child(node: &Node, board: &str, run: &str, key: &str) -> Result<Child, String> {
+    owned_run(node, board, run, key)?;
     let link: ChildLink = crate::remote_cancel::read(
         &delegation::children_dir(node.root(), run).join(key),
         16 * 1024,
@@ -214,6 +219,14 @@ pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Va
         }
         if !request["action"].is_null() {
             return Err("A child transcript is read-only".into());
+        }
+        if detail["kind"] == "command" {
+            return super::commands::detail(node, board,
+                detail["run"].as_str().ok_or("Missing child run")?,
+                detail["key"].as_str().ok_or("Missing child key")?);
+        }
+        if !detail["kind"].is_null() && detail["kind"] != "agent" {
+            return Err("Invalid child kind".into());
         }
         let child = owned_child(
             node,

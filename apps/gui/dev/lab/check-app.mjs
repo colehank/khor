@@ -3,6 +3,7 @@ import {checkLongHistory} from './history-checks.mjs';
 import {checkWorkspaceBack} from './workspace-back-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
+import {checkCommandTab} from './child-command-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
@@ -309,6 +310,11 @@ async function inspect(browser, scene, size, data = {}) {
         assert.equal(await disclosure.getAttribute('aria-expanded'),'false','Returning to the mobile list restores its ordinary collapsed rows');
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"] [data-child-task-row]').first().waitFor();
+        await checkCommandTab(page,{report,name,mobile:true});
+        await page.locator('[data-lab-model-back]:visible').click();
+        await parent.waitFor({state:'visible'});
+        await disclosure.click();
+        await page.locator('[data-child-tasks="wide/all"] [data-child-task-row]').first().waitFor();
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
         assert.equal((await disclosure.innerText()).trim(),'3 个子会话');
@@ -335,6 +341,7 @@ async function inspect(browser, scene, size, data = {}) {
         await tasks.first().click();
         await checkChildConversation();
         await tasks.first().waitFor();
+        await checkCommandTab(page,{report,name,mobile:false});
         await page.locator('[data-side-disclosure="wide/all"]').click();
         await tasks.first().waitFor({state:'detached'});
         await parent.focus();

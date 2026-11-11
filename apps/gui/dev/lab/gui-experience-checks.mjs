@@ -1,3 +1,4 @@
+import {checkCommandTab} from './child-command-checks.mjs';
 import {readFile,writeFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -138,6 +139,11 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
    await page.locator('[data-child-session-parent]:visible').click();
    await child.waitFor({state:'detached'});
    await page.locator('[data-ws-sessions] [data-machine-chat-scroll]:visible').waitFor();
+   if(mobile){
+    await page.locator('[data-ws-sessions] [data-lab-model-back]:visible').click();
+    await page.locator('[data-ws-sessions-list] [data-side-disclosure="wide/all"]').click();
+   }
+   await checkCommandTab(page,{report,name:`workspace-${mobile?'mobile':'desktop'}-${engine}`,mobile,workspace:true});
    if(!mobile){assert.deepEqual(errors,[]);return {name:`workspace readonly child tab ${engine}`,passed:true,errors};}
   }
   if(mobile){

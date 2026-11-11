@@ -19,7 +19,7 @@ import type { AcpResource } from "@/lib/acp-view";
 
 type Part = { text?: string; raw?: string; url?: string; data?: unknown; filename?: string; mediaType?: string };
 type TranscriptMessage = { id: string; role: "user" | "agent"; parts: Part[]; updates?: string[] | null; trace_partial?: boolean };
-type Readout = DelegatedChild & { messages: TranscriptMessage[]; artifacts?: {artifactId?: string; name?: string; parts: Part[]}[] | null; terminal: boolean };
+type Readout = DelegatedChild & { messages: TranscriptMessage[]; artifacts?: {artifactId?: string; name?: string; parts: Part[]}[] | null; terminal: boolean; stdout?:string; stderr?:string; exit?:number|null };
 const positions = new Map<string, {top:number; following:boolean}>();
 
 function ResourcePart({ part, onOpenFile }: { part: Part; onOpenFile: (path: string) => void }) {
@@ -68,7 +68,7 @@ export function DelegatedSessionView({ row, active, onParent }: { row: SessionRo
     const read = async () => {
       let terminal = false;
       try {
-        const {data} = await khorAgent("manage", reference.owner, {operation:"children",session:reference.parent,detail:{run:reference.run,key:reference.key}});
+        const {data} = await khorAgent("manage", reference.owner, {operation:"children",session:reference.parent,detail:{run:reference.run,key:reference.key,kind:reference.kind}});
         const value = data as Readout | null;
         if (!Array.isArray(value?.messages) || value.run !== reference.run || value.key !== reference.key) throw new Error(gui.child_task_unavailable);
         terminal = value.terminal;
@@ -85,6 +85,13 @@ export function DelegatedSessionView({ row, active, onParent }: { row: SessionRo
       <div ref={column} data-chat-column data-selectable className="mx-auto w-full max-w-measure space-y-1 break-words text-read">
         {failure && <div role="status" className="flex items-center gap-in py-in text-callout text-muted-foreground"><span>{failure}</span><Button size="sm" onClick={()=>setAttempt(value=>value+1)}>{gui.region_retry}</Button></div>}
         {!readout && !failure && <p role="status" className="py-row text-callout text-muted-foreground">{gui.content_loading}</p>}
+        {readout?.kind==="command" && <section data-child-command className="space-y-row py-row">
+          <pre data-child-command-line className="whitespace-pre-wrap break-words font-mono text-read">{readout.agent}</pre>
+          {readout.stdout&&<pre data-child-command-stdout className="whitespace-pre-wrap break-words font-mono text-read">{readout.stdout}</pre>}
+          {readout.stderr&&<pre data-child-command-stderr className="whitespace-pre-wrap break-words font-mono text-read">{readout.stderr}</pre>}
+          {readout.exit!=null&&<p data-child-command-exit className="text-caption text-muted-foreground">{gui.command_history_exit(String(readout.exit))}</p>}
+          {readout.truncated&&<p className="text-caption text-muted-foreground">{gui.child_task_output_truncated}</p>}
+        </section>}
         {readout?.messages.map(message => {
           const text = message.parts.filter(part=>typeof part.text==="string").map(part=>part.text!).join("\n");
           return <div key={message.id} data-child-session-message={message.id} data-child-session-role={message.role}>
@@ -99,7 +106,7 @@ export function DelegatedSessionView({ row, active, onParent }: { row: SessionRo
           {artifact.name&&<h3 className="text-body font-title">{artifact.name}</h3>}
           {artifact.parts.map((part,index)=>typeof part.text==="string"?<Markdown key={index} text={part.text}/>:<ResourcePart key={index} part={part} onOpenFile={openFile}/>)}
         </section>)}
-        {readout && readout.messages.length===0 && !readout.artifacts?.length && <p className="py-row text-callout text-muted-foreground">{gui.child_session_empty}</p>}
+        {readout && readout.kind!=="command" && readout.messages.length===0 && !readout.artifacts?.length && <p className="py-row text-callout text-muted-foreground">{gui.child_session_empty}</p>}
       </div>
     </div>
     {away&&<ScrollToBottom fresh={fresh} onClick={toBottom}/>}

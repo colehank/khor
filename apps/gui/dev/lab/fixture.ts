@@ -157,6 +157,12 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     if (p.operation === "children") {
       if (p.detail) {
         if (p.action) throw new FixtureRefusal('A child transcript is read-only');
+        if(p.detail.kind==='command') {
+          if(p.detail.run!=='fixture-run'||p.detail.key!=='fixture-command')throw new FixtureRefusal('Command does not belong to this conversation');
+          return view({kind:'command',agent:'git status',machine:devices[0]?.name??'MacLab',home:devices[0]?.id,
+            state:'completed',result:'Working tree clean',run:'fixture-run',key:'fixture-command',task:null,context:null,
+            can_cancel:false,can_retry:false,exit:0,truncated:false,stdout:'Working tree clean\n',stderr:'',terminal:true,messages:[]});
+        }
         const task=childTasks.find(child=>child.run===p.detail.run&&child.key===p.detail.key);
         if (!task) throw new FixtureRefusal('Child does not belong to this conversation');
         return view({...task,cwd:'/preview/project',terminal:['completed','failed','canceled'].includes(task.state),messages:[

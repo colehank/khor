@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { khorAgent, type DeviceRow, type SessionRow } from "@/api";
 import { StatusWord } from "@/components/StatusWord";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
 import { SessionFace } from "@/components/SessionFace";
 import { IconChevronRight } from "@/components/icons";
@@ -30,12 +29,8 @@ export function ChildTasks({ parent, id, devices, selected, onOpen }: {
   onOpen: (parent: SessionRow, child: DelegatedChild) => void;
 }) {
   const [groups, setGroups] = useState<{children: ChildTask[]; commands: ChildTask[]} | null>(null);
-  const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
   const [revision, refresh] = useState(0);
-  const token = useRef<{ child: string; value: string } | null>(null);
-  const task = groups && [...groups.children, ...groups.commands].find(child => identity(child) === detail);
   const home = parent.execution_home ?? "", session = parent.id;
 
   useEffect(() => {
@@ -57,29 +52,6 @@ export function ChildTasks({ parent, id, devices, selected, onOpen }: {
     return () => { stopped = true; clearTimeout(timer); };
   }, [home, session, revision]);
 
-  const act = async (action: "cancel" | "retry", child: ChildTask) => {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    if (action === "retry" && token.current?.child !== identity(child)) {
-      const bytes = crypto.getRandomValues(new Uint8Array(16));
-      token.current = {child: identity(child), value: Array.from(bytes, byte => byte.toString(16).padStart(2, "0")).join("")};
-    }
-    try {
-      await khorAgent("manage", home, {
-        operation: "children", session, action, run: child.run, key: child.key,
-        ...(action === "retry" ? {token: token.current?.value} : {}),
-      });
-      token.current = null;
-      if (action === "retry") setDetail(null);
-      refresh(value => value + 1);
-    } catch (why) {
-      setError(String(why));
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return <>
     <div id={id} data-child-tasks={parent.id} role="group" aria-label={gui.child_tasks}
       className="min-w-0 py-in pl-[calc(var(--rows-inset)+var(--list-face)/2)] pr-row">
@@ -92,15 +64,16 @@ export function ChildTasks({ parent, id, devices, selected, onOpen }: {
           ([[gui.child_task_agents, groups.children, false], [gui.key_group_commands, groups.commands, true]] as const).map(([label, rows, command]) =>
             rows.length > 0 && <section key={label} aria-label={label}>
               <h3 className="pb-xxs text-group text-muted-foreground">{label}</h3>
-              {rows.map(child => {
+              {rows.map(record => {
+                const child: ChildTask={...record,kind:command?"command":"agent",home:record.home??(command?parent.execution_home??undefined:undefined)};
                 const device=devices.find(device=>device.id===child.home);
                 const face=device?.face ?? (command || child.home && (child.home===parent.home || child.home===parent.execution_home) ? parent.face : null);
                 const halo=({submitted:'busy',working:'busy',waiting:'blocked',completed:'done',failed:'failed',canceled:'idle'} as Record<string,string>)[child.state]??null;
                 const preview=child.result?.trim().split('\n')[0] || device?.shown || child.machine;
                 return <button key={identity(child)} type="button" data-side-child-open data-child-task-row={identity(child)}
-                data-selected={!command && selected === delegatedSessionId(parent, child) || undefined}
-                className={cn("flex min-h-list-row w-full min-w-0 items-stretch gap-row rounded-md text-left focus-visible:outline-ring", !command && selected === delegatedSessionId(parent, child) ? "bg-fill-strong" : "hover:bg-fill")}
-                onClick={() => { if (!command) onOpen(parent, child); else setDetail(identity(child)); setError(""); }}>
+                data-selected={selected === delegatedSessionId(parent, child) || undefined}
+                className={cn("flex min-h-list-row w-full min-w-0 items-stretch gap-row rounded-md text-left focus-visible:outline-ring", selected === delegatedSessionId(parent, child) ? "bg-fill-strong" : "hover:bg-fill")}
+                onClick={() => { onOpen(parent, child); setError(""); }}>
                 <span data-child-task-face={child.home ?? parent.execution_home ?? ''} className="flex w-list-face flex-none items-center justify-center" aria-hidden>
                   <SessionFace face={face} word={halo} kind={command?'shell':'gui'} category={command?null:child.agent}/>
                 </span>
@@ -118,24 +91,5 @@ export function ChildTasks({ parent, id, devices, selected, onOpen }: {
             </p>}
       </div>
     </div>
-    {task && <Dialog open onOpenChange={open => { if (!open) setDetail(null); }}>
-      <TaskOverlay purpose="preview" initialHeight="fit">
-        <DialogHeader><DialogTitle>{task.agent}</DialogTitle></DialogHeader>
-        <div className="flex min-w-0 flex-col gap-row" data-child-task-detail>
-          <div className="flex min-w-0 items-center justify-between gap-row">
-            <span className="min-w-0 truncate">{task.machine}</span><TaskStatus state={task.state}/>
-          </div>
-          {task.context && <span className="break-all text-caption text-muted-foreground">{task.context}</span>}
-          {task.result && <p className="whitespace-pre-wrap break-words text-read">{task.result}</p>}
-          {task.truncated && <span className="text-caption text-muted-foreground">{gui.child_task_output_truncated}</span>}
-          <div className="flex flex-wrap gap-in">
-            {task.can_cancel && <Button disabled={busy} onClick={() => void act("cancel", task)}>{gui.child_task_cancel}</Button>}
-            {task.can_retry && <Button disabled={busy} onClick={() => void act("retry", task)}>{gui.child_task_retry}</Button>}
-          </div>
-          {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
-        </div>
-        <TaskActions close={<Button onClick={() => setDetail(null)}>{gui.close}</Button>}/>
-      </TaskOverlay>
-    </Dialog>}
   </>;
 }
