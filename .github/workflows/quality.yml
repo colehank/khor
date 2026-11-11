@@ -20,7 +20,7 @@ on:
         default: ''
       lab_checks:
         type: choice
-        options: [all, child-tree]
+        options: [all, child-tree, child-tree-chromium]
         default: all
       desktop_target:
         type: choice
@@ -799,13 +799,18 @@ jobs:
           subprocess.run(['python3','../../scripts/khor_lab/package.py','../..',os.environ['RUNNER_TEMP']+'/developer-lab',str(source)],check=True)
           PYCODE
       - name: Prepare Chromium and WebKit media engines
+        if: inputs.lab_checks != 'child-tree-chromium'
         working-directory: apps/gui
         run: |
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk gstreamer1.0-libav
           npx playwright-core install --with-deps chromium webkit
+      - name: Prepare Chromium for a small visual change
+        if: inputs.lab_checks == 'child-tree-chromium'
+        working-directory: apps/gui
+        run: npx playwright-core install chromium
       - name: Check shared frontend rules for the final tree controls
-        if: inputs.lab_checks == 'child-tree'
+        if: inputs.lab_checks != 'all'
         working-directory: apps/gui
         run: npm run test:unit && npm run gates && npm run mobile:static
       - name: Apply new regression checks to an unchanged old UI for a red baseline
@@ -825,9 +830,9 @@ jobs:
         env:
           LAB_BUNDLE: ${{ runner.temp }}/developer-lab
           LAB_REPORT: ${{ runner.temp }}/lab-report
-          QUALITY_ENGINES: chromium,webkit
+          QUALITY_ENGINES: ${{ inputs.lab_checks == 'child-tree-chromium' && 'chromium' || 'chromium,webkit' }}
           QUALITY_HEADLESS: '0'
-          LAB_CHECKS: ${{ inputs.lab_checks }}
+          LAB_CHECKS: ${{ inputs.lab_checks == 'child-tree-chromium' && 'child-tree' || inputs.lab_checks }}
         run: |
           xvfb-run -a node dev/lab/check-app.mjs
           node dev/lab/check-hot.mjs
