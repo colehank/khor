@@ -92,10 +92,10 @@ export function animateIcon(host:HTMLElement) {
     style(node,{opacity:amount});
   };
   return (pose:IconPose)=>{
-    // Every layer follows the same form transition; the curves overlap throughout.
+    // Inner geometry shares one transition; the outer rim appears with Meet.
     const ring=ease(pose.form,0,.84);
     const glass=ease(pose.form,.02,.92);
-    const rim=ease(pose.form,.05,1);
+    const rim=ease(pose.color,0,1);
     const back=ease(pose.form,.12,1);
     const grey=pose.color===1?'none':`grayscale(${1-pose.color})`;
     for(const layer of [outer,diamond,inner])style(layer,{filter:grey});

@@ -20,7 +20,7 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 `demo:build`。`demo:check` 检查演示与生产前端类型；`npm run build` 先打包演示再输出静态站。
 
 - `src/components/Mandala.astro` 读取完整的 `mandala-glass.svg` 和既有 session 字形；`icon-story.ts` 在原图层上控制演化，不替换成另一幅图。
-- `src/scripts/story.ts` 按滚动位置进入章节，每句触发一次完整演化；One mind 时外珠缩到最终尺寸，中心珠以最终绿色浮现；How about 一步形成外围灰阶结构，Meet 再为外围上色。合盖和手机接续共用原地调整尺寸的同一 iframe，保留任务与输入。
+- `src/scripts/story.ts` 按滚动位置进入章节，每句触发一次完整演化；One mind 时外珠缩到最终尺寸，中心珠以最终绿色浮现；How about 一步形成灰阶内部结构且不出现外圆，Meet 再显现外圆并为外围上色。合盖和手机接续共用原地调整尺寸的同一 iframe，保留任务与输入。
 - 减少动态效果模式直接显示成形图标，保留手动打开体验与下载。
 - `src/releases.ts` 是下载页和 `/download.json` 的共同来源，仅列已验证的发行资产。
 - 站点 token 从 `docs/design-system/tokens.json` 生成；不另存调色板与字体。

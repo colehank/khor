@@ -12,8 +12,8 @@
 1. You have many devices. 四颗明暗不同的珠。
 2. With many agents. 珠上出现 session face。
 3. But one mind. 四个外节点缩到最终尺寸并变暗，face 淡出；中心珠以原图最终的绿色、尺寸和材质浮现。
-4. How about letting them work together? 一次连续动效演化到完整灰阶 icon；停在这一句也会自动完成，不拆成多个滚动步骤。
-5. Meet khor. 恢复原图颜色与光泽，随后同一个 SVG 缩入笔记本；屏内光标短距离移动并只点击一次，打开真实前端。
+4. How about letting them work together? 一次连续动效形成内环与菱形等灰阶结构，Mind 始终绿色，外圆不出现；停在这一句也会自动完成，不拆成多个滚动步骤。
+5. Meet khor. 显现外圆并恢复外围原图颜色与光泽，形成完整 icon，随后同一个 SVG 缩入笔记本；屏内光标短距离移动并只点击一次，打开真实前端。
 6. Keep going. 笔记本合盖，手机接续同一个任务。
 
 ## 最新用户修正
@@ -53,3 +53,7 @@ favicon、导航和下载图标全部使用同一标准图稿。
 用户明确 Mind 从浮现开始就应保持最终绿色与形态；四个外节点在 One mind 时就缩到最终大小。
 已将灰阶处理移到外围结构和外珠，中心珠始终使用原图材质且不再缩放。外珠缩放由 focus（One mind）驱动，How about 和 Meet 阶段不再改变它们的大小与位置。
 浏览器确认 One mind、How about、Meet 的全部五珠几何矩阵相同；中心材质保持原始绿色，四个外珠在 Meet 前仍为灰阶。类型检查与定向浏览器检查通过。截图与收据在 evidence 的 `mind-final` 子目录。
+
+## 外圆推迟到 Meet
+
+用户明确 How about 时除 Mind 外都为灰阶、没有圆周，Meet 后再显示完整。按外圆理解并已在 commentary 说明：外圆的显现随 Meet 的 colour 进度，How about 仅完成内部灰阶结构。Mind 的最终绿色、外珠在 One mind 达到最终尺寸的约定继续保留。
