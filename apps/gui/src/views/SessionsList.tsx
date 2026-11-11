@@ -69,7 +69,7 @@ export function SessionsList({
   rows: SessionRow[];
   /** The machine table, for whether a row's machine can be reached (the
       redesign: a row from one that cannot is dimmed, and says so). */
-  devices?: DeviceRow[];
+  devices?: readonly DeviceRow[];
   /** Not answered yet: a skeleton rather than 「there are none」. */
   loading?: boolean;
   query: string;

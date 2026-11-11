@@ -1213,7 +1213,7 @@ export function WorkspacePane({
 
   const workspaceSessionList = (
     <div data-ws-sessions-list className="min-h-0 flex-1 overflow-y-auto">
-      <SessionsList rows={mine} devices={[...devices]} query={query} words={words} selected={picked ?? made}
+      <SessionsList rows={mine} devices={devices} query={query} words={words} selected={picked ?? made}
         onSelect={(row) => { sessionTabs.open(row.id); showSessionDetail(true); }}
         onPin={onPin} onClose={onClose} pinFailed={pinFailed} closeRefused={closeRefused} showVia={false} />
     </div>
