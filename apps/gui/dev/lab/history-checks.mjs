@@ -18,7 +18,14 @@ export async function checkLongHistory(browser,{port,report,mobile=false,short=f
   assert(fill.items<=512,'Rendered history stays bounded');
   await page.screenshot({path:path.join(report,name+'-initial.png')});
   const bounds=await scroller.boundingBox();await page.mouse.move(bounds.x+bounds.width/2,bounds.y+bounds.height/2);
-  for(let i=0;i<5;i++){await page.mouse.wheel(0,-Math.max(600,bounds.height));await page.waitForTimeout(160);}
+  for(let i=0;i<5;i++){
+   // Playwright exposes no mobile WebKit wheel input. This suite checks
+   // pagination/scroll anchoring; physical touch gestures have their own Lab.
+   const delta=-Math.max(600,bounds.height);
+   if(mobile&&engine==='webkit')await scroller.evaluate((node,amount)=>node.scrollBy(0,amount),delta);
+   else await page.mouse.wheel(0,delta);
+   await page.waitForTimeout(160);
+  }
   await page.waitForFunction(async before=>{const r=await fetch('/api/__ai_preview/history-stats',{method:'POST',headers:{'content-type':'application/json'},body:'{}'});return (await r.json()).backward>before;},fill.io.backward);
   read={...await geometry(),io:await stats()};assert(read.height-read.viewport-read.top>32,'Older loading keeps the reader away from the latest tail');
   const bottom=page.locator('[data-chat-bottom]');await bottom.waitFor();assert.equal(await bottom.innerText(),'');assert.equal(await bottom.evaluate(node=>node.hasAttribute('data-glass-circle')),true);
@@ -64,7 +71,7 @@ async function checkMessageActions(page,context,{mobile,engine,report,name}){
  await openMenu();await page.locator('[data-menu-item="select-text"]').click();
  const selection=page.locator('[data-message-selection]');await selection.waitFor();
  assert.equal(await selection.innerText(),await page.evaluate(()=>window.__chatCopied));
- assert.equal(await selection.evaluate(node=>getComputedStyle(node).userSelect),'text');
+ assert.equal(await selection.evaluate(node=>{const style=getComputedStyle(node);return style.userSelect??style.webkitUserSelect;}),'text');
  await page.screenshot({path:path.join(report,name+'-select-text.png'),animations:'disabled'});
  await page.keyboard.press('Escape');await selection.waitFor({state:'detached'});
 }
