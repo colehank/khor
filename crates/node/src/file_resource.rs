@@ -69,7 +69,7 @@ pub fn read(
             .map_err(|e| e.to_string())?
             .components()
             .any(|part| {
-                let name = part.as_os_str().to_string_lossy();
+                let name = part.as_os_str().to_string_lossy().to_ascii_lowercase();
                 matches!(
                     name.as_ref(),
                     ".git"
@@ -147,6 +147,7 @@ mod tests {
         );
         assert!(head.bytes.is_empty());
         std::fs::write(root.join(".env"), "TOKEN=private").unwrap();
+        std::fs::write(root.join(".git/config"), "token=private").unwrap();
         assert!(read(path, ".env", None, 0, &[]).is_err());
         assert!(read(path, ".git/config", None, 0, &[]).is_err());
         assert_eq!(

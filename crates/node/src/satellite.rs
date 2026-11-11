@@ -3253,7 +3253,7 @@ if s and (s.startswith('/') or '\\' in s or any(p in ('','..','.') for p in s.sp
 p=(r/s).resolve(strict=True) if s else a
 parts=p.relative_to(r).parts
 private={'.git','.ssh','.khor','.codex','.claude','.aws','.env','.npmrc','.netrc','.pypirc','id_rsa','id_ed25519'}
-if p!=a and any(n in private or n.startswith('.env.') for n in parts): raise ValueError('private configuration is not a browser resource')
+if p!=a and any(n.lower() in private or n.lower().startswith('.env.') for n in parts): raise ValueError('private configuration is not a browser resource')
 if not p.is_file(): raise ValueError('not a regular file')
 with p.open('rb') as f:
  m=f.stat() if hasattr(f,'stat') else __import__('os').fstat(f.fileno())
