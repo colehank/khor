@@ -493,6 +493,10 @@ const ONE_SIDED: &[(&str, &str)] = &[
         "hands the menu window the rows it should draw — there is no such window here",
     ),
     (
+        "menu_input",
+        "relays text from the app's native overlay webview to its owning window; browser menus use DOM input and have no sibling overlay webview",
+    ),
+    (
         "menu_pick",
         "carries a choice from that window back to the face that opened it",
     ),
