@@ -33,8 +33,8 @@ def source_sha():
 
 
 def version():
-    value = tomllib.loads(Path("Cargo.toml").read_text())["workspace"]["package"]["version"]
-    if value != json.loads(Path("apps/gui/src-tauri/tauri.conf.json").read_text())["version"]:
+    value = tomllib.loads(Path("Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
+    if value != json.loads(Path("apps/gui/src-tauri/tauri.conf.json").read_text(encoding="utf-8"))["version"]:
         raise ValueError("Cargo and App versions differ")
     ref = os.environ.get("GITHUB_REF", "")
     if ref.startswith("refs/tags/") and parse_tag(ref.removeprefix("refs/tags/")).version != value:
