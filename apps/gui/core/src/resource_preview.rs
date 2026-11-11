@@ -54,7 +54,7 @@ pub async fn open(
     html: Option<String>,
 ) -> Result<ResourcePreview, String> {
     let node = Arc::new(Node::open(root.to_path_buf())?);
-    let meta = node.file_resource(machine, path, "", None).await?;
+    let meta = node.file_resource(machine, path, "", None, 0).await?;
     if html.as_ref().is_some_and(|s| s.len() > 8 * 1024 * 1024) {
         return Err("HTML preview buffer is too large".into());
     }
@@ -206,7 +206,9 @@ fn byte_range(value: Option<&str>, total: u64) -> Result<Option<(u64, u64)>, ()>
 }
 async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body> {
     if !matches!(*req.method(), hyper::Method::GET | hyper::Method::HEAD) {
-        return empty(StatusCode::METHOD_NOT_ALLOWED);
+        let mut reply = empty(StatusCode::METHOD_NOT_ALLOWED);
+        reply.headers_mut().insert(header::ALLOW, hyper::header::HeaderValue::from_static("GET, HEAD"));
+        return reply;
     }
     if !header_text(&req, header::HOST).is_some_and(|s| valid_host(s, context.port)) {
         return empty(StatusCode::FORBIDDEN);
@@ -237,7 +239,7 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
     } else {
         match context
             .node
-            .file_resource(&context.machine, &context.anchor, &resource, None)
+            .file_resource(&context.machine, &context.anchor, &resource, None, 0)
             .await
         {
             Ok(slice) => (slice.total, slice.at_ms),
@@ -260,10 +262,10 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
             header::SET_COOKIE,
             format!("{cookie}; Path=/; HttpOnly; SameSite=Strict"),
         );
-    let requested = if header_text(&req, header::IF_RANGE).is_some_and(|value| value != etag) {
+    let requested = if req.method() != hyper::Method::GET || header_text(&req, header::IF_RANGE).is_some_and(|value| value != etag) {
         None
     } else {
-        header_text(&req, header::RANGE)
+        header_text(&req, header::RANGE).filter(|value|value.starts_with("bytes="))
     };
     let range = match byte_range(requested, total) {
         Ok(range) => range,
@@ -304,7 +306,7 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
             }
             let slice = context
                 .node
-                .file_resource(&context.machine, &context.anchor, &resource, Some(offset))
+                .file_resource(&context.machine, &context.anchor, &resource, Some(offset), left)
                 .await
                 .map_err(std::io::Error::other)?;
             if slice.total != total || slice.at_ms != at_ms || slice.bytes.is_empty() {
@@ -504,6 +506,11 @@ mod http_tests {
         .await;
         assert!(head.starts_with("http/1.1 200"));
         assert_eq!(body, bytes);
+        let (head, body)=get(&video.url,"HEAD","Range: bytes=0-1\r\n").await;
+        assert!(head.starts_with("http/1.1 200"));assert!(head.contains("content-length: 1200003"));assert!(body.is_empty());
+        let (head, body)=get(&video.url,"GET","Range: records=0-1\r\n").await;
+        assert!(head.starts_with("http/1.1 200"));assert_eq!(body.len(),1200003);
+        let (head, _)=get(&video.url,"POST", "").await;assert!(head.starts_with("http/1.1 405"));assert!(head.contains("allow: get, head"));
         let port = url::Url::parse(&video.url).unwrap().port().unwrap();
         touch(&video.id).unwrap();
         close(&video.id);

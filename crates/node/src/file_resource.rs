@@ -19,6 +19,7 @@ pub fn read(
     anchor: &str,
     resource: &str,
     offset: Option<u64>,
+    limit: u64,
     workspaces: &[String],
 ) -> Result<Slice, String> {
     let anchor = Path::new(anchor);
@@ -60,6 +61,10 @@ pub fn read(
         return Err("resource escapes preview root".into());
     }
     if !target.is_file() { return Err("resource is not a regular file".into()); }
+    if target != anchor && target.strip_prefix(root).map_err(|e|e.to_string())?.components().any(|part| {
+        let name=part.as_os_str().to_string_lossy();
+        matches!(name.as_ref(), ".git"|".ssh"|".khor"|".codex"|".claude"|".aws"|".env"|".npmrc"|".netrc"|".pypirc"|"id_rsa"|"id_ed25519") || name.starts_with(".env.")
+    }) { return Err("private configuration is not a browser resource".into()); }
     // Open once, then stat this handle, so headers and bytes name one file.
     let mut file = std::fs::File::open(&target).map_err(|e| e.to_string())?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
@@ -80,7 +85,7 @@ pub fn read(
         }
         file.seek(SeekFrom::Start(offset))
             .map_err(|e| e.to_string())?;
-        bytes.resize((total - offset).min(crate::proto::SLICE) as usize, 0);
+        bytes.resize((total - offset).min(limit).min(crate::proto::SLICE) as usize, 0);
         file.read_exact(&mut bytes).map_err(|e| e.to_string())?;
     }
     Ok(Slice {
@@ -104,23 +109,27 @@ mod tests {
         std::fs::write(&anchor, "<script src='/app.js'></script>").unwrap();
         std::fs::write(root.join("app.js"), "hello").unwrap();
         let path = anchor.to_str().unwrap();
-        let head = read(path, "", None, &[]).unwrap();
+        let head = read(path, "", None, 0, &[]).unwrap();
         assert_eq!(head.entry, "pages/index.html");
+        assert_eq!(read(path, "app.js", Some(0), 2, &[]).unwrap().bytes.as_ref(), b"he");
         assert!(head.bytes.is_empty());
+        std::fs::write(root.join(".env"), "TOKEN=private").unwrap();
+        assert!(read(path, ".env", None, 0, &[]).is_err());
+        assert!(read(path, ".git/config", None, 0, &[]).is_err());
         assert_eq!(
-            read(path, "app.js", Some(2), &[]).unwrap().bytes.as_ref(),
+            read(path, "app.js", Some(2), crate::proto::SLICE, &[]).unwrap().bytes.as_ref(),
             b"llo"
         );
-        assert!(read(path, "../outside", None, &[]).is_err());
-        assert!(read(path, "/etc/passwd", None, &[]).is_err());
-        assert!(read(path, "pages", None, &[]).is_err());
-        assert!(read(path, "app.js", Some(6), &[]).is_err());
+        assert!(read(path, "../outside", None, 0, &[]).is_err());
+        assert!(read(path, "/etc/passwd", None, 0, &[]).is_err());
+        assert!(read(path, "pages", None, 0, &[]).is_err());
+        assert!(read(path, "app.js", Some(6), crate::proto::SLICE, &[]).is_err());
         #[cfg(unix)]
         {
             let outside = dir.path().join("secret");
             std::fs::write(&outside, "secret").unwrap();
             std::os::unix::fs::symlink(outside, root.join("escape")).unwrap();
-            assert!(read(path, "escape", None, &[]).is_err());
+            assert!(read(path, "escape", None, 0, &[]).is_err());
         }
     }
 }

@@ -525,6 +525,7 @@ pub enum Op {
         anchor: String,
         resource: String,
         offset: Option<u64>,
+        limit: u64,
     },
 }
 

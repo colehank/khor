@@ -3240,6 +3240,7 @@ pub fn file_resource(
     anchor: &str,
     resource: &str,
     offset: Option<u64>,
+    limit: u64,
 ) -> Result<crate::file_resource::Slice, String> {
     let program = r#"import pathlib,sys
 p=pathlib.Path(sys.argv[1])
@@ -3250,7 +3251,10 @@ r=next((p for p in (a.parent,*a.parent.parents) if (p/'.git').exists()),a.parent
 s=sys.argv[2]
 if s and (s.startswith('/') or '\\' in s or any(p in ('','..','.') for p in s.split('/'))): raise ValueError('resource escapes preview root')
 p=(r/s).resolve(strict=True) if s else a
-p.relative_to(r)
+parts=p.relative_to(r).parts
+private={'.git','.ssh','.khor','.codex','.claude','.aws','.env','.npmrc','.netrc','.pypirc','id_rsa','id_ed25519'}
+if p!=a and any(n in private or n.startswith('.env.') for n in parts): raise ValueError('private configuration is not a browser resource')
+if not p.is_file(): raise ValueError('not a regular file')
 with p.open('rb') as f:
  m=f.stat() if hasattr(f,'stat') else __import__('os').fstat(f.fileno())
  if not __import__('stat').S_ISREG(m.st_mode): raise ValueError('not a regular file')
@@ -3268,7 +3272,7 @@ with p.open('rb') as f:
         sh_quote(anchor),
         sh_quote(resource),
         offset.map(|o| o.to_string()).unwrap_or_else(|| "-1".into()),
-        crate::proto::SLICE
+        limit.min(crate::proto::SLICE)
     );
     let out = ssh_base(host)
         .arg(script)

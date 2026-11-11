@@ -2824,9 +2824,10 @@ impl Node {
                 anchor,
                 resource,
                 offset,
+                limit,
             } => {
                 match self
-                    .file_resource_with(ep, &machine, &anchor, &resource, offset)
+                    .file_resource_with(ep, &machine, &anchor, &resource, offset, limit)
                     .await
                 {
                     Ok(slice) => ipc::Reply::FileResource { slice },
@@ -4998,6 +4999,7 @@ impl Node {
                 anchor,
                 resource,
                 offset,
+                limit,
             } => {
                 let slice = if let Some(sat) = sat {
                     let target = self
@@ -5011,7 +5013,7 @@ impl Node {
                     let host = crate::satellite::Dest::of(&target)
                         .ok_or_else(|| msg::sat_no_ssh_host(&sat))?;
                     tokio::task::spawn_blocking(move || {
-                        crate::satellite::file_resource(&host, &anchor, &resource, offset)
+                        crate::satellite::file_resource(&host, &anchor, &resource, offset, limit)
                     })
                     .await
                     .map_err(|e| e.to_string())??
@@ -5023,7 +5025,7 @@ impl Node {
                         .map(|w| w.path)
                         .collect::<Vec<_>>();
                     tokio::task::spawn_blocking(move || {
-                        crate::file_resource::read(&anchor, &resource, offset, &workspaces)
+                        crate::file_resource::read(&anchor, &resource, offset, limit, &workspaces)
                     })
                     .await
                     .map_err(|e| e.to_string())??
@@ -8575,9 +8577,10 @@ impl Node {
         anchor: &str,
         resource: &str,
         offset: Option<u64>,
+        limit: u64,
     ) -> Result<crate::file_resource::Slice, String> {
         if machine.is_empty() || machine == self.name() {
-            return self.file_resource_here(anchor, resource, offset).await;
+            return self.file_resource_here(anchor, resource, offset, limit).await;
         }
         if let Some(reply) = self
             .via_serve(ipc::Op::FileResource {
@@ -8585,6 +8588,7 @@ impl Node {
                 anchor: anchor.into(),
                 resource: resource.into(),
                 offset,
+                limit,
             })
             .await
         {
@@ -8602,7 +8606,7 @@ impl Node {
         .await
         .map_err(|e| e.to_string())?;
         let result = self
-            .file_resource_with(&ep, machine, anchor, resource, offset)
+            .file_resource_with(&ep, machine, anchor, resource, offset, limit)
             .await;
         ep.close().await;
         result
@@ -8615,10 +8619,11 @@ impl Node {
         anchor: &str,
         resource: &str,
         offset: Option<u64>,
+        limit: u64,
     ) -> Result<crate::file_resource::Slice, String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
-            return self.file_resource_here(anchor, resource, offset).await;
+            return self.file_resource_here(anchor, resource, offset, limit).await;
         }
         let target = self
             .devices_loaded()?
@@ -8631,7 +8636,7 @@ impl Node {
                     .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
                 let (anchor, resource) = (anchor.to_owned(), resource.to_owned());
                 return tokio::task::spawn_blocking(move || {
-                    crate::satellite::file_resource(&host, &anchor, &resource, offset)
+                    crate::satellite::file_resource(&host, &anchor, &resource, offset, limit)
                 })
                 .await
                 .map_err(|e| e.to_string())?;
@@ -8654,6 +8659,7 @@ impl Node {
                     anchor: anchor.into(),
                     resource: resource.into(),
                     offset,
+                    limit,
                 },
             )
             .await?
@@ -8664,10 +8670,10 @@ impl Node {
         }
     }
 
-    async fn file_resource_here(&self, anchor: &str, resource: &str, offset: Option<u64>) -> Result<crate::file_resource::Slice, String> {
+    async fn file_resource_here(&self, anchor: &str, resource: &str, offset: Option<u64>, limit: u64) -> Result<crate::file_resource::Slice, String> {
         let workspaces = self.workspaces()?.into_iter().filter(|w| w.device == self.device_str()).map(|w|w.path).collect::<Vec<_>>();
         let (anchor, resource) = (anchor.to_owned(), resource.to_owned());
-        tokio::task::spawn_blocking(move || crate::file_resource::read(&anchor, &resource, offset, &workspaces)).await.map_err(|e|e.to_string())?
+        tokio::task::spawn_blocking(move || crate::file_resource::read(&anchor, &resource, offset, limit, &workspaces)).await.map_err(|e|e.to_string())?
     }
 
     /// One slice of a file at `offset`, off any machine. The general
