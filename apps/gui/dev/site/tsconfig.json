@@ -1,4 +1,4 @@
 {
   "extends": "../lab/tsconfig.json",
-  "include": ["../../src", "./bootstrap.ts", "./scenario.ts", "./identity-marks.ts", "../lab/fixture.ts"]
+  "include": ["../../src", "./bootstrap.ts", "./scenario.ts", "./identity-marks.ts", "./file-view.ts", "../lab/fixture.ts"]
 }

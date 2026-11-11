@@ -20,6 +20,9 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 最新范围：保留真实 Khor GUI，用户已撤回 Claude Code TUI 要求。机器、会话、额度和工作区各只开放第一项；会话、资源侧栏和工作区显示三个标签，只保留当前选中项可用；「…」及复杂操作不开放。不可点项保持正常颜色和不透明度，不做灰化。主会话仍可发送消息并获得固定下载回复。
+- 网站数据收拢为 `world.ts` 的有限自洽世界，列表、对话、项目路径、文件内容与 Git 修改数引用同一来源。主任务为订单导出日期与列名修复，三个未提交文件、8 项示例测试结果与 Markdown 记录一致；其余列表展示报销校验、支付回调、周会纪要等普通任务。第一台 MacBook Pro 补齐 CPU/GPU/内存/磁盘仪表、日趋势和进程；额度扩至六个正常账户名。右侧和首个工作区直接展示包含表格、代码、清单的富 Markdown；网站 FileView alias 仅改变默认阅读姿态，生产 App 源码不改。
+- Chrome 聚焦检查已确认四类列表仅第一项可点、三标签固定当前、所有不可点项 opacity=1、首个工作区的 Markdown 与固定下载回复正常，页面错误为空。演示类型检查、演示打包与 Astro 静态构建通过，首图按新场景更新深浅两张 WebP（合计约 508KB）。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/coherent-demo/focused.json` 及同目录截图；未扩展 WebKit 或原生验证。
 - 2026-11-12 点击失效修复：先用浏览器保存的 `site-v3/hero` + `khor.place=devices` 复现，旧逻辑等待聊天输入框和资源列才解除首图，导致 pointer-events 一直为 none。改为生产 App 任意页面挂载即发 ready，父页先注册事件再设置 iframe URL，并以同源 load DOM 兜底，首图不接收指针。Chrome 同一恢复入口现为 pointer-events auto，真实鼠标依次切换设备→会话、发送固定下载回复、再切设备成功，错误为空。顶部导航与当前 App 源码的 LandingStrip/样式一致，没有单独覆盖选中样式；已核对选中高亮随当前页变化、颜色与生产 rail-on-ink token 相同。红/绿收据和截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/interaction`。
 - 2026-11-12 最新修订：Desktop 外层补上 macOS 圆角边框与阴影。用户指出真实 Khor 没有额外标题行，红黄绿按钮已改为占原有导航第一行的左侧留白，与导航图标及右侧标签同高；网站演示独立绘制，不启用原生后端。移除「打开体验」链接，保留直接输入发送。网站演示扩至六台设备，系统包含 macOS / Windows / Linux / iOS / Android；会话类别包含 Claude / Cursor / Codex / Khor / Shell，字形由实际 App 渲染。设备连接状态为合成的在线示例；其他 Lab 的默认连接状态和类别不变。Chrome 已确认五种系统及会话类型，Khor 会话可发送并得到固定下载回复，无页面错误或实际 API 网络请求。新证据目录 `/Volumes/disk0/Khor/evidence/site-story-20261112/macos-frame`。
 - GUI 主题按用户新要求跟随访问浏览器：默认 auto，不再把初始明暗写死进 iframe URL；网站 fixture 启动时同步覆盖旧演示存下的主题，资源体验链接也移除强制浅色参数。生产 App 的主题监听负责实时切换，不重新加载 iframe。首图提供深浅两张 WebP，由 picture media 选择。Chrome 已从浅→深→浅验证背景和主题同步、草稿保留；证据同目录 `theme.json`。红黄绿与原有导航行中心均为源视口 y=26，导航起点 x=80，按钮末端 x=60，无额外标题行。

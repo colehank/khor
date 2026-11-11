@@ -66,8 +66,8 @@ function sample(index: number): Frame[] {
 export type LabFixtureOptions = {
   origin?:string; content?:boolean; items?:number; machines?:number; page?:boolean;
   pageSize?:number; settings?:boolean; notices?:boolean; noticeBurst?:boolean; longHistory?:boolean;
-  samples?:Frame[][]; sessionTitles?:string[]; sessionPreviews?:string[]; sessionCategories?:string[]; deviceNames?:string[]; sampleImage?:boolean; reply?:string; thinking?:string[];
-  contentText?:string; answerText?:string; replyDelayMs?:number; replyChunkMs?:number; devicesOnline?:boolean;
+  samples?:Frame[][]; sessionTitles?:string[]; sessionPreviews?:string[]; sessionCategories?:string[]; sessionWords?:string[]; deviceNames?:string[]; sampleImage?:boolean; reply?:string; thinking?:string[];
+  contentText?:string; answerText?:string; replyDelayMs?:number; replyChunkMs?:number; devicesOnline?:boolean; autoStream?:boolean; terminalScreen?:string;
 };
 
 export function createLabFixture(terminal = true, options: LabFixtureOptions = {}) {
@@ -125,7 +125,7 @@ export function createLabFixture(terminal = true, options: LabFixtureOptions = {
       const index = ids.indexOf(id);
       return frames[index].splice(0).filter(frame => frame.kind !== 'turning' || streaming.has(index));
     },
-    onOpen: (id: string) => {const index = ids.indexOf(id);if (index === 2 && generation[index] === 0) run(index);},
+    onOpen: (id: string) => {const index = ids.indexOf(id);if (options.autoStream!==false&&index === 2 && generation[index] === 0) run(index);},
   });
   let canonical = makeCanonical();
   const streaming = new Set<number>();
@@ -275,7 +275,7 @@ export function createLabFixture(terminal = true, options: LabFixtureOptions = {
         if (path === 'term_ended') return null;
         if (!terminalLeases.has(body.lease)) throw new Error('Unknown fixture terminal attachment');
         if (path === 'term_leave') terminalLeases.delete(body.lease);
-        const screen = '\x1b[2J\x1b[Hkhor / layout-lab\r\n\r\n$ git status --short\r\n  clean working tree\r\n\r\nIsolated terminal: input is not executed.\r\npreview % ';
+        const screen = options.terminalScreen ?? '\x1b[2J\x1b[Hkhor / layout-lab\r\n\r\n$ git status --short\r\n  clean working tree\r\n\r\nIsolated terminal: input is not executed.\r\npreview % ';
         return path === 'term_attach' ? {bytes: btoa(screen), seq: 1}
           : ['term_stream', 'term_wait'].includes(path) ? {bytes: '', seq: 1, gone: false, reset: false, stall: null} : null;
       }
@@ -315,7 +315,7 @@ export function createLabFixture(terminal = true, options: LabFixtureOptions = {
           case "sessions": {
             const rows: SessionRow[] = ids.map((id, i) => ({id, kind: i === 4 ? 'broadcast' : 'gui', title: options.longHistory&&i===0?'长对话历史 · 240轮':(options.sessionTitles?.[i] ?? titles[i]),
               activity: [], observation_owner: options.notices||options.noticeBurst?null:device.id, content_locator: null, imported: false, quiet: false,
-              word: streaming.has(i)||i===2 ? 'busy' : i===1 ? 'blocked' : 'idle', at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
+              word: streaming.has(i) ? 'busy' : (options.sessionWords?.[i] ?? (i===2 ? 'busy' : i===1 ? 'blocked' : 'idle')), at_ms: previewAt-i*45_000, unread:i===1 ? 3 : 0, source: null, pinned:i===0,
               stale: false, category: options.sessionCategories?.[i] ?? (i === 4 ? 'khor' : i === 3 ? 'codex' : 'claude'), group: '', face: devices[i%Math.max(1,devices.length)]?.face??null,
               hosted: true, can_control: true, attachable: false, last: options.sessionPreviews?.[i] ?? '隔离示例 · 不连接真实智能体',
               via: null, via_face: null, home: devices[i%Math.max(1,devices.length)]?.name??device.name, execution_home: devices[i%Math.max(1,devices.length)]?.id??device.id, place:labRoot(devices[i%Math.max(1,devices.length)])+'/project', doing: null, mux: false, ended: null}));

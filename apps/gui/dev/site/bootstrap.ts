@@ -1,10 +1,13 @@
-import {createLabFixture} from '../lab/fixture';
+import {createSiteFixture} from './fixture';
 import {configureLabBackend} from '../lab/backend-context';
 import {scenes,sessionIds,type Scene} from '../lab/scenes';
-import {scenario} from './scenario';
+import {projects,tasks} from './world';
+import {constrainDemoInteractions} from './interaction';
 import {setSessionSide,setSideWidth} from '../../src/hooks/use-session-side';
 import controls from './macos-controls.svg?url';
 import './desktop.css';
+import {WorkspaceNavigationStore} from '../../src/views/workspace/workspace-navigation-storage';
+import {workspaceTabId} from '../../src/views/workspace/workspace-tabs';
 
 // This entry uses the production App with browser-local, synthetic data only.
 configureLabBackend('frontend');
@@ -14,7 +17,7 @@ const hero=query.get('hero')==='1';
 if (!(requested in scenes)) throw new Error('Unknown demo scene');
 const scene = scenes[requested as Scene];
 const active = scene.session ?? sessionIds[0];
-const identity = `site-v3/${hero?'hero':requested}`;
+const identity = `site-v5/${hero?'hero':requested}`;
 if(localStorage.getItem('khor.site.identity')!==identity){
   localStorage.setItem('khor.site.identity',identity);
   localStorage.setItem('khor.lang','zh');
@@ -24,7 +27,10 @@ if(localStorage.getItem('khor.site.identity')!==identity){
 }
 const theme=query.get('theme')==='dark'?'dark':query.get('theme')==='light'?'light':'auto';
 localStorage.setItem('khor.theme',theme);
-const fixture=createLabFixture(true,{...scenario,reply:`Let's try Khor, [download it here.](${location.origin}/download/)`,origin:location.origin,contentText:'项目文件：/preview/project/README.md\n\n[打开项目网页]('+location.origin+'/lab/example)',settings:true,content:!hero&&['content','page'].includes(requested),page:requested==='page',items:3,machines:scenario.deviceNames.length});
+localStorage.setItem('khor.preview-ground','auto');
+const fixture=createSiteFixture(location.origin);
+const workspacePaths=['README.md','src/export.ts','src/export.test.ts'].map(path=>({kind:'file' as const,path:projects[0].root+'/'+path}));
+new WorkspaceNavigationStore(()=>localStorage,'MacBook Pro',projects[0].root,path=>({kind:'file',path})).save({at:projects[0].root,historyOpen:false,content:{items:workspacePaths,active:workspaceTabId(workspacePaths[0]),preview:null}});
 // Discard a previous demo's pinned theme; the production theme listener
 // follows the browser live while its preference is auto.
 fixture.request('set_config',{name:'theme',value:theme});
@@ -33,15 +39,23 @@ if(hero){
   const lights=document.createElement('img');
   lights.src=controls;lights.alt='';lights.className='site-macos-controls';lights.setAttribute('aria-hidden','true');
   document.body.append(lights);
-  const readme={machine:'MacBook Pro',path:'/preview/project/README.md'};
-  const before=fixture.request('read_text',readme) as {digest:string};
-  fixture.request('write_text',{...readme,was:before.digest,text:'# Website\n\n## 首页适配\n\n让桌面和手机上的工作衔接起来。\n\n- [x] 查看现有首页\n- [x] 调整布局\n- [x] 预览修改\n\n## 接着做\n\n在会话中说明下一步，文件与修改记录都留在这里。\n'});
-  for(const [view,url,title] of [['workspace','/preview/project','project'],['file','/preview/project/notes.md','notes.md'],['file','/preview/project/README.md','README.md']]){
-    fixture.request('tabs_open',{kind:'content',session:active,view,url,title});
-  }
   setSessionSide(active,{open:true,seat:'workspace'});
   setSideWidth('workspace',innerWidth*.38);
 }
+if(hero||requested==='content'){
+  const devices=fixture.request('devices') as {id:string;name:string}[];
+  for(const task of tasks.slice(0,1)){
+    const project=projects.find(project=>project.root===task.root)!;
+    const paths=['README.md','src/export.ts','src/export.test.ts'];
+    let first='';
+    for(const path of paths){
+      const id=fixture.request('tabs_open',{kind:'content',session:task.id,device:devices[task.machine].id,view:'file',url:project.root+'/'+path,title:path.split('/').pop()}) as string;
+      if(!first)first=id;
+    }
+    fixture.request('tabs_focus',{kind:'content',id:first});
+  }
+}
+constrainDemoInteractions();
 document.addEventListener('click',event=>{
   const link=(event.target as Element).closest<HTMLElement>('[data-md-link]');
   if(link?.dataset.mdLink!==location.origin+'/download/')return;
@@ -57,8 +71,11 @@ window.fetch=async(input,init)=>{
   try{
     const command=url.pathname.slice('/api/'.length);
     const body=command==='chat_put'?Object.fromEntries(url.searchParams):await request.json();
+    if((command==='chat_wait'&&body.id!==tasks[0].id)||['term_wait','term_stream','dirs_wait'].includes(command)){
+      return await new Promise<Response>((_,reject)=>request.signal.addEventListener('abort',()=>reject(new DOMException('Aborted','AbortError')),{once:true}));
+    }
     const answer=fixture.request(command,body);
-    if(['chat_wait','term_wait','term_stream','dirs_wait'].includes(command))await new Promise(resolve=>setTimeout(resolve,120));
+    if(command==='chat_wait')await new Promise(resolve=>setTimeout(resolve,300));
     return Response.json(answer);
   }catch(error){return Response.json(String(error),{status:400});}
 };
@@ -68,9 +85,9 @@ const enter=()=>{
     const row=[...document.querySelectorAll<HTMLElement>('[data-list] [data-row-open]')].find(el=>el.closest('[data-row]')?.getAttribute('data-row')===scene.session);
     if(row){row.click();if(hero)setSessionSide(active,{open:true,seat:'workspace'});observer.disconnect();}
   }else if(requested==='workspace'){
-    const file=document.querySelector<HTMLElement>('[data-file-path="/preview/project/README.md"]');
+    const file=document.querySelector<HTMLElement>('[data-file-path="'+projects[0].root+'/README.md"]');
     if(file){file.click();observer.disconnect();return;}
-    const row=[...document.querySelectorAll<HTMLElement>('[data-list] [data-ws-row]')].find(el=>el.textContent?.includes('project'));
+    const row=[...document.querySelectorAll<HTMLElement>('[data-list] [data-ws-row]')].find(el=>el.textContent?.includes(projects[0].name));
     if(row&&!workspaceOpened){workspaceOpened=true;row.click();}
   }
 };
