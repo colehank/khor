@@ -1,4 +1,4 @@
-import {createIconMotion,iconStops} from './icon-story';
+import {createIconMotion,iconStops,iconScrollScreens} from './icon-story';
 const clamp = (value:number) => Math.min(1,Math.max(0,value));
 const ramp = (value:number,from:number,to:number) => {
   const t=clamp((value-from)/(to-from));
@@ -16,17 +16,18 @@ export function mountStory() {
   const controller=new AbortController();
   const on={signal:controller.signal};
   let scheduled=false,disposed=false,topOpening=0,openingTravel=1;
+  opening.style.setProperty('--opening-screens',String(iconScrollScreens+1));
 
   function render() {
     scheduled=false;
     if(disposed)return;
     const progress=clamp((scrollY-topOpening)/openingTravel);
     const state=updateIcon(progress,reduced.matches);
-    const active=Math.round(state.phase);
+    const active=Math.round(state.copyPhase);
     lines.forEach((line,index)=>{
-      const distance=Math.abs(state.phase-index);
+      const distance=Math.abs(state.copyPhase-index);
       line.style.opacity=String(reduced.matches?Number(index===active):1-ramp(distance,.25,.75));
-      const shift=clamp(index-state.phase)-clamp(state.phase-index);
+      const shift=clamp(index-state.copyPhase)-clamp(state.copyPhase-index);
       line.style.transform=reduced.matches?'none':`translateY(calc(${shift} * var(--story-title) * 2.4))`;
     });
     steps.forEach((step,index)=>{
