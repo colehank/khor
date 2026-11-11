@@ -520,7 +520,12 @@ pub enum Op {
         machine: String,
         request: crate::updates::UpgradeRequest,
     },
-    FileResource { machine: String, anchor: String, resource: String, offset: Option<u64> },
+    FileResource {
+        machine: String,
+        anchor: String,
+        resource: String,
+        offset: Option<u64>,
+    },
 }
 
 /// How often a visible face says so ([`Op::FaceHere`]); a face not heard
@@ -918,7 +923,9 @@ pub enum Reply {
     MachineUpgraded {
         outcome: crate::updates::UpgradeOutcome,
     },
-    FileResource { slice: crate::file_resource::Slice },
+    FileResource {
+        slice: crate::file_resource::Slice,
+    },
 }
 
 /// One verb, one connection: write the frame, half-close, read the reply.

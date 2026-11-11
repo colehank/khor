@@ -295,9 +295,20 @@ pub fn answer(
         // image, an SVG, or a document rendered to HTML. One call,
         // because what a file turns out to be is the node's answer and
         // not a question the face can ask first.
-        "file_resource_open" => to_json(&rt.block_on(crate::resource_preview::open(root,&arg("machine")?,&arg("path")?,args.get("html").and_then(|v|v.as_str()).map(str::to_owned)))?),
-        "file_resource_touch" => {crate::resource_preview::touch(&arg("id")?)?;Ok("null".into())},
-        "file_resource_close" => {crate::resource_preview::close(&arg("id")?);Ok("null".into())},
+        "file_resource_open" => to_json(&rt.block_on(crate::resource_preview::open(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+            args.get("html").and_then(|v| v.as_str()).map(str::to_owned),
+        ))?),
+        "file_resource_touch" => {
+            crate::resource_preview::touch(&arg("id")?)?;
+            Ok("null".into())
+        }
+        "file_resource_close" => {
+            crate::resource_preview::close(&arg("id")?);
+            Ok("null".into())
+        }
         "preview" => {
             to_json(&rt.block_on(crate::files::preview(root, &arg("machine")?, &arg("path")?))?)
         }

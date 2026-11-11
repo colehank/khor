@@ -3235,7 +3235,12 @@ mod script_tests {
 
 /// Scoped browser reads on an SSH-only source. Python resolves links on that
 /// source; no staged whole-file copy and no client-side path normalization.
-pub fn file_resource(host: &Dest, anchor: &str, resource: &str, offset: Option<u64>) -> Result<crate::file_resource::Slice, String> {
+pub fn file_resource(
+    host: &Dest,
+    anchor: &str,
+    resource: &str,
+    offset: Option<u64>,
+) -> Result<crate::file_resource::Slice, String> {
     let program = r#"import pathlib,sys
 p=pathlib.Path(sys.argv[1])
 if not p.is_absolute(): raise ValueError('preview path must be absolute')
@@ -3257,14 +3262,43 @@ with p.open('rb') as f:
  h=str(m.st_size)+'\0'+str(m.st_mtime_ns//1000000)+'\0'+a.relative_to(r).as_posix()+'\0'
  sys.stdout.buffer.write(h.encode()+b)
 "#;
-    let script=format!("python3 -c {} {} {} {} {}", sh_quote(program), sh_quote(anchor), sh_quote(resource), offset.map(|o|o.to_string()).unwrap_or_else(||"-1".into()), crate::proto::SLICE);
-    let out=ssh_base(host).arg(script).output().map_err(msg::ssh_wont_run)?;
-    if !out.status.success() { return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr))); }
-    let mut parts=out.stdout.splitn(4,|b|*b==0);
-    let total=parts.next().and_then(|b|std::str::from_utf8(b).ok()).and_then(|s|s.parse().ok()).ok_or("invalid resource size")?;
-    let at_ms=parts.next().and_then(|b|std::str::from_utf8(b).ok()).and_then(|s|s.parse().ok()).ok_or("invalid resource timestamp")?;
-    let entry=std::str::from_utf8(parts.next().ok_or("missing resource name")?).map_err(|e|e.to_string())?.to_owned();
-    let bytes=parts.next().ok_or("missing resource bytes")?;
-    if bytes.len() as u64>crate::proto::SLICE { return Err("oversized resource response".into()); }
-    Ok(crate::file_resource::Slice { entry,total,at_ms,bytes:bytes.to_vec().into() })
+    let script = format!(
+        "python3 -c {} {} {} {} {}",
+        sh_quote(program),
+        sh_quote(anchor),
+        sh_quote(resource),
+        offset.map(|o| o.to_string()).unwrap_or_else(|| "-1".into()),
+        crate::proto::SLICE
+    );
+    let out = ssh_base(host)
+        .arg(script)
+        .output()
+        .map_err(msg::ssh_wont_run)?;
+    if !out.status.success() {
+        return Err(cant_reach(host, &String::from_utf8_lossy(&out.stderr)));
+    }
+    let mut parts = out.stdout.splitn(4, |b| *b == 0);
+    let total = parts
+        .next()
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .and_then(|s| s.parse().ok())
+        .ok_or("invalid resource size")?;
+    let at_ms = parts
+        .next()
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .and_then(|s| s.parse().ok())
+        .ok_or("invalid resource timestamp")?;
+    let entry = std::str::from_utf8(parts.next().ok_or("missing resource name")?)
+        .map_err(|e| e.to_string())?
+        .to_owned();
+    let bytes = parts.next().ok_or("missing resource bytes")?;
+    if bytes.len() as u64 > crate::proto::SLICE {
+        return Err("oversized resource response".into());
+    }
+    Ok(crate::file_resource::Slice {
+        entry,
+        total,
+        at_ms,
+        bytes: bytes.to_vec().into(),
+    })
 }

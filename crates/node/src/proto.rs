@@ -701,7 +701,12 @@ pub enum Request {
     },
     /// Read-only browser resource, confined on the source machine. Older peers
     /// refuse this word; it is never downgraded to an unconfined file read.
-    FileResource { sat: Option<String>, anchor: String, resource: String, offset: Option<u64> },
+    FileResource {
+        sat: Option<String>,
+        anchor: String,
+        resource: String,
+        offset: Option<u64>,
+    },
 }
 
 /// Smaller than the general business frame, including all serde envelopes.
@@ -1364,7 +1369,9 @@ pub enum Response {
         #[serde(with = "crate::delegation::wire_json")]
         answer: crate::delegation::Answer,
     },
-    FileResource { slice: crate::file_resource::Slice },
+    FileResource {
+        slice: crate::file_resource::Slice,
+    },
 }
 
 /// One place a file differs from HEAD, in the coordinates of the file
@@ -1572,7 +1579,7 @@ impl Request {
             Request::DocTransfer { .. }
             | Request::Fetch { .. }
             | Request::FileResource { .. }
-                | Request::FetchPath { .. }
+            | Request::FetchPath { .. }
             | Request::SatFetchPath { .. }
             | Request::Pair { .. }
             | Request::Vouch { .. } => Duration::from_secs(30),

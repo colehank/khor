@@ -330,11 +330,21 @@ fn update_account(
 }
 
 #[tauri::command]
-async fn file_resource_open(machine:String,path:String,html:Option<String>)->Result<khor_gui_core::resource_preview::ResourcePreview,String>{khor_gui_core::resource_preview::open(&Node::root_from_env(),&machine,&path,html).await}
+async fn file_resource_open(
+    machine: String,
+    path: String,
+    html: Option<String>,
+) -> Result<khor_gui_core::resource_preview::ResourcePreview, String> {
+    khor_gui_core::resource_preview::open(&Node::root_from_env(), &machine, &path, html).await
+}
 #[tauri::command]
-async fn file_resource_touch(id:String)->Result<(),String>{khor_gui_core::resource_preview::touch(&id)}
+async fn file_resource_touch(id: String) -> Result<(), String> {
+    khor_gui_core::resource_preview::touch(&id)
+}
 #[tauri::command]
-async fn file_resource_close(id:String){khor_gui_core::resource_preview::close(&id)}
+async fn file_resource_close(id: String) {
+    khor_gui_core::resource_preview::close(&id)
+}
 
 /// One file shaped for a screen (`khor_gui_core::files::preview`).
 #[tauri::command]
