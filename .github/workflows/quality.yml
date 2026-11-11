@@ -128,6 +128,7 @@ jobs:
         run: pipx run --spec pre-commit==4.5.1 pre-commit run --all-files --hook-stage pre-commit
         env:
           SKIP: khor-gui-types,khor-agent-types
+      - run: python3 -m pip install -r scripts/requirements-app-icon.txt
       - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - run: node scripts/check-native-io.mjs
 

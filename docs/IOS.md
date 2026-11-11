@@ -33,7 +33,7 @@ xcrun simctl install booted src-tauri/gen/apple/build/arm64-sim/Khor.app
 
 - `project.yml` 加了 `SystemConfiguration.framework`：iroh 读网卡用它（netdev、system-configuration），模板里没有，缺了就链接失败。改 `project.yml` 后在 `gen/apple` 里 `xcodegen generate`，**先把 `Externals` 清空**，否则 xcodegen 把构建产物的空目录写进工程。
 - 它的 `.gitignore` 去掉了 `build/`、`Externals/` 的斜杠：把这两处链到外置盘时它们是符号链接，带斜杠的写法挡不住。
-- 图标：`AppIcon.appiconset` 换成 `icons/Icon.icon/Assets/mandala-glass-bleed.svg` 渲出来的（模板是 Tauri 的默认图标）；1024 那张带 alpha，上架前要去掉。
+- 图标：`AppIcon.appiconset` 由[统一 App 图标生成器](../apps/gui/src-tauri/icons/src/README.md)管理，使用已定稿的浅色 / 深色母图；1024 图无 alpha，不在 iOS 工程里另画或手工替换。主题选择与旧系统降级也以该规范为准。
 
 `npm run tauri -- ios init` 不要再跑：它会重写这个目录，还会自己调 Homebrew 装 / 重装 `libimobiledevice`（2026-10-02 就这样发生过一次）。
 
