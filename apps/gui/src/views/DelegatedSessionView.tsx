@@ -96,7 +96,7 @@ export function DelegatedSessionView({ row, active, onParent }: { row: SessionRo
           </div>;
         })}
         {readout?.artifacts?.map((artifact,index)=><section key={artifact.artifactId??index} data-child-session-artifact className="py-row">
-          {artifact.name&&<h3 className="text-body font-semibold">{artifact.name}</h3>}
+          {artifact.name&&<h3 className="text-body font-title">{artifact.name}</h3>}
           {artifact.parts.map((part,index)=>typeof part.text==="string"?<Markdown key={index} text={part.text}/>:<ResourcePart key={index} part={part} onOpenFile={openFile}/>)}
         </section>)}
         {readout && readout.messages.length===0 && !readout.artifacts?.length && <p className="py-row text-callout text-muted-foreground">{gui.child_session_empty}</p>}
