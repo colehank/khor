@@ -1307,7 +1307,12 @@ pub fn open(
             crate::menu_overlay::ios::raise();
             return Ok(());
         }
-        let store = store_for(exit).ok_or_else(|| "no data store".to_string())?;
+        let store = if tab.starts_with("file-preview-") {
+            // Do not retain a file preview's storage after its native page closes.
+            msg_send![class!(WKWebsiteDataStore), nonPersistentDataStore]
+        } else {
+            store_for(exit).ok_or_else(|| "no data store".to_string())?
+        };
         if let Some(addr) = &wiring.proxy {
             let can: bool =
                 msg_send![&*store, respondsToSelector: objc2::sel!(setProxyConfigurations:)];

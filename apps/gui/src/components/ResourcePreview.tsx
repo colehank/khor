@@ -12,7 +12,8 @@ export function ResourcePreview({machine,path,html,media}:{machine:string;path:s
   const [failed,setFailed]=useState(false);
   const element=useRef<HTMLMediaElement|null>(null);
   const id=state.preview?.id;
-  const native=media===undefined&&inApp&&id!==undefined;
+  // Android currently has no native child-page adapter; retain its browser iframe.
+  const native=media===undefined&&inApp&&!/\bAndroid\b/i.test(navigator.userAgent)&&id!==undefined;
   useEffect(()=>{
     setFailed(false);
     if(!id)return;

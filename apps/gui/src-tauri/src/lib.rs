@@ -2121,6 +2121,8 @@ async fn open_page(
     #[cfg(not(target_os = "macos"))]
     let initial = target;
     let mut builder = tauri::webview::WebviewBuilder::new(&label, WebviewUrl::External(initial))
+        // A file origin owns only this preview, including storage and workers.
+        .incognito(tab.starts_with("file-preview-"))
         .background_color(ground(chosen_dark(desktop_is_dark)));
     #[cfg(target_os = "macos")]
     {

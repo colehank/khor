@@ -226,6 +226,11 @@ async fn answer(context: Arc<Context>, req: Request<Incoming>) -> Response<Body>
     if !allowed {
         return empty(StatusCode::NOT_FOUND);
     }
+    // Ephemeral preview ports must not acquire persistent request interceptors.
+    // Dedicated/shared workers remain ordinary read-only file resources.
+    if req.headers().contains_key("service-worker") {
+        return empty(StatusCode::FORBIDDEN);
+    }
     *context.touched.lock().unwrap_or_else(|p| p.into_inner()) = Instant::now();
     let raw = capability.unwrap_or(req.uri().path().trim_start_matches('/'));
     let Ok(decoded) = urlencoding::decode(raw) else {
@@ -454,6 +459,7 @@ mod http_tests {
         assert!(head.starts_with("http/1.1 200"));
         assert!(head.contains("text/html"));
         assert!(body.starts_with(b"<script"));
+        assert!(get(&html.url,"GET","Service-Worker: script\r\n").await.0.starts_with("http/1.1 403"));
         let cookie = head
             .lines()
             .find_map(|l| l.strip_prefix("set-cookie: "))

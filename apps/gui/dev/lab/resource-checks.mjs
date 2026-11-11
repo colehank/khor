@@ -37,7 +37,7 @@ export async function checkResourceFiles(browser,{port,report,mobile=false,engin
    // Leave the workspace through its real navigation. The component has to
    // retire its player and lease; destroying the browser is not the test.
    for(let i=0;i<3&&await player.count();i++){
-    const back=page.locator('[data-ws-back]:visible,[data-ws-list-back]:visible,[data-screen-head] [data-back]:visible').first();
+    const back=page.locator('[data-ws-back]:visible,[data-ws-list-back]:visible,[data-back]:visible').first();
     await back.click();await page.waitForTimeout(100);
    }
    await player.waitFor({state:'detached'});
