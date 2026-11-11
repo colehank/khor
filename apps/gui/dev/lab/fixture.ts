@@ -67,7 +67,7 @@ export type LabFixtureOptions = {
   origin?:string; content?:boolean; items?:number; machines?:number; page?:boolean;
   pageSize?:number; settings?:boolean; notices?:boolean; noticeBurst?:boolean; longHistory?:boolean;
   samples?:Frame[][]; sessionTitles?:string[]; sessionPreviews?:string[]; deviceNames?:string[]; sampleImage?:boolean; reply?:string; thinking?:string[];
-  contentText?:string; answerText?:string;
+  contentText?:string; answerText?:string; replyDelayMs?:number; replyChunkMs?:number;
 };
 
 export function createLabFixture(terminal = true, options: LabFixtureOptions = {}) {
@@ -218,8 +218,9 @@ export function createLabFixture(terminal = true, options: LabFixtureOptions = {
     const thought = options.thinking ?? ["先检查输入。", "\n确认消息、思考与工具调用各自的状态。", "\n使用上游的文字与展开方式，不替换成应用诊断图标。"];
     thought.forEach((part, i) => later(() => publish(update("agent_thought_chunk", text(part))), 300 + i * 650));
     const chunks = (options.reply ?? message).match(/.{1,5}/gu) ?? [];
-    chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
-    later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
+    const delay=options.replyDelayMs??2500,interval=options.replyChunkMs??180;
+    chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), delay + i * interval));
+    later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, delay + 300 + chunks.length * interval);
   }
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];

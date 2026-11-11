@@ -22,5 +22,9 @@ const { title, description = TAGLINE } = Astro.props;
   </head>
   <body>
     <slot />
+    <script>
+      import {mountDeviceDownloads} from "../scripts/download";
+      mountDeviceDownloads();
+    </script>
   </body>
 </html>

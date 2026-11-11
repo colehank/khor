@@ -35,7 +35,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
     </section>
     <section class="download-section" id="download" aria-labelledby="download-title">
       <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">从你的设备开始。</h2>
-      <a class="download-main" href="/download/">下载 khor <span aria-hidden="true">↓</span></a><a class="other-downloads" href="/download/">所有下载与安装方式</a>
+      <a class="download-main" href="/download/" data-device-download><span data-download-label>下载 Khor</span> <span aria-hidden="true">↓</span></a><a class="other-downloads" href="/download/">所有下载与安装方式</a>
       <div class="install-line"><code id="install">{INSTALL}</code><button type="button" data-copy="install">复制</button></div><p class="download-note">当前预览版 {release.version} · macOS App · Linux / macOS CLI</p>
     </section>
   </main>

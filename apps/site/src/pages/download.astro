@@ -6,10 +6,11 @@ import {INSTALL} from '../site';
 import '../styles/story.css';
 ---
 <Base title="下载" description="下载 khor，连接你的设备与智能体">
-  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="/#experience">体验</a><a href="/docs/install/">安装文档</a></nav></header>
+  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="/#features">功能</a><a href="/docs/install/">安装文档</a></nav></header>
   <main class="downloads-page">
     <p class="eyebrow">{release.version} · 预览版</p><h1>下载 khor。</h1><p class="downloads-description">从一台设备开始，再把其他设备连进来。</p>
-    <div class="downloads-table">{release.downloads.map(item => <a href={item.url}><span>{item.platform}</span><span>{item.arch}</span><span aria-label="下载">↓</span></a>)}</div>
+    <p class="download-detected" data-download-note>macOS App · Linux / macOS CLI</p>
+    <div class="downloads-table">{release.downloads.map(item => <a href={item.url} data-download-platform={item.platform==='macOS App'?'macos':item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden>推荐</small></span><span>{item.arch}</span><span aria-label="下载">↓</span></a>)}</div>
     <p class="download-note">macOS App 下载后解压，将 Khor.app 放入「应用程序」</p>
     <h2>命令行安装</h2><div class="install-line"><code>{INSTALL}</code></div><p class="download-note">安装与配对步骤见 <a href="/docs/install/">安装文档</a></p>
     <a class="release-notes" href={release.url}>更新说明与完整发布文件 ↗</a>
@@ -20,4 +21,5 @@ import '../styles/story.css';
 h1 {font-size:var(--story-heading);font-weight:600;line-height:1.15} .downloads-description{font-size:var(--text-read);color:var(--secondary);margin-top:var(--gap-pane)}
 .downloads-table{margin:calc(var(--gap-pane)*2) 0 var(--gap-pane)} .downloads-table a{display:grid;grid-template-columns:1fr 1fr auto;gap:var(--gap-base);padding:var(--gap-group) 0;border-bottom:var(--hair) solid var(--hairline);font-size:var(--text-read)} .downloads-table a:hover{color:var(--secondary)} .downloads-table a span:nth-child(2){color:var(--secondary)}
 h2{font-size:var(--text-title-lg);margin-top:calc(var(--gap-pane)*2)} .release-notes{display:block;margin-top:calc(var(--gap-pane)*2);font-size:var(--text-read)} .download-note a{text-decoration:underline}
+.download-detected{margin-top:var(--gap-base);color:var(--secondary)} .downloads-table [data-recommended]{background:var(--fill);padding-inline:var(--gap-base);border-radius:var(--radius-md)} [data-recommend-label]{margin-left:var(--gap-base);font-size:var(--text-caption);color:var(--secondary)}
 </style>
