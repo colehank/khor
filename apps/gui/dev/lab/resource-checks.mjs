@@ -26,8 +26,9 @@ export async function checkResourceFiles(browser,{port,report,mobile=false,engin
   for(const [file,tag] of [['clip.mp4','video'],['audio.wav','audio']]){
    await open(file);const player=page.locator(`[data-resource-preview=${tag}] ${tag}`);
    await player.waitFor();await player.evaluate(node=>{node.muted=true;});
-   await player.click();await player.evaluate(node=>node.play());
-   await player.evaluate(node=>{if(node.readyState>=1)return;return new Promise((resolve,reject)=>{node.addEventListener('loadedmetadata',resolve,{once:true});node.addEventListener('error',()=>reject(new Error('Media decode failed')),{once:true});});});
+   await writeFile(path.join(report,name+'-'+tag+'-before-play.json'),JSON.stringify(await player.evaluate(node=>({src:node.getAttribute('src'),current:node.currentSrc,ready:node.readyState,network:node.networkState,error:node.error?.code,duration:node.duration})),null,2));
+   await player.click();await player.evaluate(node=>Promise.race([node.play(),new Promise((_,reject)=>setTimeout(()=>reject(new Error('play() did not settle: '+JSON.stringify({src:node.getAttribute('src'),current:node.currentSrc,ready:node.readyState,network:node.networkState,error:node.error?.code}))),10_000))]));
+   await player.evaluate(node=>{if(node.readyState>=1)return;return new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Media metadata did not arrive')),10_000);node.addEventListener('loadedmetadata',()=>{clearTimeout(timer);resolve();},{once:true});node.addEventListener('error',()=>{clearTimeout(timer);reject(new Error('Media decode failed'));},{once:true});});});
    const facts=await player.evaluate(node=>({controls:node.controls,duration:node.duration,src:node.currentSrc}));
    assert(facts.controls&&facts.duration>4.8&&facts.duration<5.2,`${file} decodes through native browser controls`);
    await player.evaluate(node=>{node.currentTime=2;});
