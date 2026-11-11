@@ -68,11 +68,15 @@ import WebKit
     }
     func run() async {
         await pause(1.0)
-        for _ in 0..<200 {
-            if (await js(site,"window.identity") as? String)=="same-loaded-document" { break }
+        // A cold simulator can launch its first WebContent process slowly.
+        // Never record a scroll baseline from the initial blank document.
+        var documentReady = false
+        for _ in 0..<600 {
+            if (await js(site,"window.identity") as? String)=="same-loaded-document" { documentReady = true; break }
             await pause(0.05)
         }
-        check("site document ready before baseline",(await js(site,"window.identity") as? String)=="same-loaded-document")
+        check("site document ready before baseline",documentReady)
+        guard documentReady else { finish(); return }
         do {html=try String(contentsOf:Bundle.main.url(forResource:"menu",withExtension:"html")!,encoding:.utf8)} catch {check("production snapshot loaded",false,String(describing:error));finish();return}
         check("production snapshot loaded", html.contains("m:local") && html.contains("m:remote"),html.utf8.count)
         _=await js(site,"window.scrollTo(0,240)")
