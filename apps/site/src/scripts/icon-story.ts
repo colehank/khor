@@ -1,11 +1,11 @@
-export type IconPose = {presence:number; agents:number; mind:number; focus:number; form:number; color:number};
-const resting:IconPose = {presence:0,agents:0,mind:0,focus:0,form:0,color:0};
+export type IconPose = {presence:number; agents:number; mind:number; focus:number; form:number; nodeColor:number; color:number};
+const resting:IconPose = {presence:0,agents:0,mind:0,focus:0,form:0,nodeColor:0,color:0};
 const poses:IconPose[] = [
   {...resting,presence:1},
   {...resting,presence:1,agents:1},
   {...resting,presence:1,mind:1,focus:1},
-  {...resting,presence:1,mind:1,focus:1,form:1},
-  {...resting,presence:1,mind:1,focus:1,form:1,color:1},
+  {...resting,presence:1,mind:1,focus:1,form:1,nodeColor:1},
+  {...resting,presence:1,mind:1,focus:1,form:1,nodeColor:1,color:1},
 ];
 const duration = [840,700,900,1600,1100];
 
@@ -76,6 +76,24 @@ export function animateIcon(host:HTMLElement) {
     face.classList.add('session-face');pearl.group.append(face);return face;
   });
   const defs=svg.querySelector('defs')!;
+  // Native SVG primitives work on WebKit SVG groups; CSS filter functions do not.
+  const colourFilter=(id:string)=>{
+    const filter=make('filter',{id,x:'-50%',y:'-50%',width:'200%',height:'200%','color-interpolation-filters':'sRGB'});
+    const saturation=make('feColorMatrix',{type:'saturate',values:'0'});
+    const transfer=make('feComponentTransfer',{});
+    const channels=['feFuncR','feFuncG','feFuncB'].map(name=>make(name,{type:'linear',slope:'1'}));
+    channels.forEach(channel=>transfer.append(channel));filter.append(saturation,transfer);defs.append(filter);
+    return {id,saturation,channels};
+  };
+  const structureColour=colourFilter('story-structure-colour');
+  const nodeColours=pearlGroups.slice(1).map((_,i)=>colourFilter(`story-node-colour-${i}`));
+  const applyColour=(node:Element,filter:ReturnType<typeof colourFilter>,saturation:number,brightness=1)=>{
+    (node as SVGElement).style.removeProperty('filter');
+    if(saturation===1&&brightness===1){node.removeAttribute('filter');return;}
+    filter.saturation.setAttribute('values',String(saturation));
+    filter.channels.forEach(channel=>channel.setAttribute('slope',String(brightness)));
+    node.setAttribute('filter',`url(#${filter.id})`);
+  };
   const mask=(id:string,r:number,width:number)=>{
     const node=make('mask',{id,maskUnits:'userSpaceOnUse',x:'0',y:'0',width:'1024',height:'1024'});
     const circle=make('circle',{cx:'512',cy:'512',r:String(r),fill:'none',stroke:'white','stroke-width':String(width),pathLength:'1','stroke-dasharray':'1',transform:'rotate(-90 512 512)'});
@@ -99,17 +117,17 @@ export function animateIcon(host:HTMLElement) {
     const glass=ease(pose.form,.02,.92);
     const rim=ease(pose.color,0,1);
     const back=ease(pose.form,.12,1);
-    const grey=pose.color===1?'none':`grayscale(${1-pose.color})`;
-    for(const layer of [outer,diamond,inner])style(layer,{filter:grey});
-    ground.forEach(node=>style(node,{opacity:back*opacity.get(node)!,filter:grey}));
+    for(const layer of [outer,diamond,inner])applyColour(layer,structureColour,pose.color);
+    ground.forEach(node=>{style(node,{opacity:back*opacity.get(node)!});applyColour(node,structureColour,pose.color);});
     const centre=pearlGroups[0];
     style(centre.group,{opacity:pose.mind});
     pearlGroups.slice(1).forEach((pearl,i)=>{
       const scale=(2.25-1.25*pose.focus)*(.96+.04*pose.presence);
       const initial=[.68,.56,.45,.61][i];
       const grey=initial+(.68-initial)*pose.form;
-      const brightness=(grey+(1-grey)*pose.color)*(1-.78*pose.focus*(1-pose.form)*(1-pose.color));
-      style(pearl.group,{opacity:pose.presence,filter:pose.color===1?'none':`grayscale(${1-pose.color}) brightness(${brightness})`,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
+      const brightness=(grey+(1-grey)*pose.nodeColor)*(1-.78*pose.focus*(1-pose.form)*(1-pose.nodeColor));
+      applyColour(pearl.group,nodeColours[i],pose.nodeColor,brightness);
+      style(pearl.group,{opacity:pose.presence,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
       style(overlays[i],{opacity:pose.agents});
     });
     satelliteHalos.forEach(node=>style(node,{opacity:pose.form*opacity.get(node)!}));

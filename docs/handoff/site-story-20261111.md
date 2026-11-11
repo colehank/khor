@@ -12,7 +12,7 @@
 1. You have many devices. 四颗明暗不同的珠。
 2. With many agents. 珠上出现 session face。
 3. But one mind. 四个外节点缩到最终尺寸并变暗，face 淡出；中心珠以原图最终的绿色、尺寸和材质浮现。
-4. How about letting them work together? 一次连续动效形成内环与菱形等灰阶结构，Mind 始终绿色，外圆不出现；停在这一句也会自动完成，不拆成多个滚动步骤。
+4. How about letting them work together? 一次连续动效形成内环与菱形等灰阶结构，Mind 始终绿色，四个外节点在此转绿，外圆不出现；停在这一句也会自动完成，不拆成多个滚动步骤。
 5. Meet khor. 显现外圆并恢复外围原图颜色与光泽，形成完整 icon，随后同一个 SVG 缩入笔记本；屏内光标短距离移动并只点击一次，打开真实前端。
 6. Keep going. 笔记本合盖，手机接续同一个任务。
 
@@ -63,3 +63,12 @@ favicon、导航和下载图标全部使用同一标准图稿。
 用户报告刚进入时所有节点都是绿色。通过阻断页面脚本及模拟 prefers-reduced-motion 的浏览器入口得到明确失败：脚本就绪前原始全彩 SVG 可见，减少动态效果在 scroll=0 时直接进入 Meet/color=1。普通模式稳定后仍为 devices/color=0，因此此前只验稳定态漏掉了这两项。
 修复：图稿在首个正确姿态画好前保持不可见，避免原图闪现；减少动态效果只跳过动画，不再跳过章节，仍从 devices/color=0 开始。无 JavaScript 时用静态灰阶图稿兜底。
 同一个原始入口检查修前失败、修后通过，包含阻断脚本、减少动态效果、普通模式。命令 `PHASE=after node .../playwright-skill/run.js /private/tmp/playwright-test-khor-first-paint.js`；证据 `evidence/site-story-20261111/first-paint/before.json` 与 `after.json`（绝对前缀 /Volumes/disk0/Khor）。
+
+## Khor 内置浏览器颜色问题（用户已确认解决）
+
+用户截图显示 You have many devices 的四个节点仍为绿色，随后说明是在 Khor 内部浏览器观看。最新明确顺序：四珠首屏灰，One mind 缩到最终尺寸，How about 再变绿；Meet 才显现外圆。该指令替代此前 How about 四珠仍灰的约定。
+Mac Khor 网页由 WKWebView/WebKit 直接加载，入口 apps/gui/src-tauri/src/lib.rs:2104。已有 WebKit issue 246106 记录 SVG 图层上的 CSS filter 函数不生效；尚待同内核对照复现，不先归因 Khor 自己的业务代码。
+当前网页未提交修改已改为 feColorMatrix/feComponentTransfer 原生 SVG 颜色处理，nodeColor 在 How about 恢复。Chrome 深色首屏截图像素为 (155,155,155)，类型检查通过。
+保留的旧网页产物：/Volumes/disk0/Khor/artifacts/site-story/css-filter-baseline-58026204，Python 23821（exec session 21958）只作旧实现对照。主预览仍 23820。WebKit 测试内核正下载到 /Volumes/disk0/Khor/caches/playwright/site-story，exec session 94778；不是应用/系统升级。基线/新版本脚本 /private/tmp/playwright-test-khor-webkit-colour.js，环境 BASE_URL/PHASE/ONLY；证据 webkit-colour 子目录。
+
+用户最后回复“解决了”，确认在 Khor 实际内置浏览器中网页的原生 SVG 颜色处理已生效。此轮仅修改网页，Khor 原生浏览器代码未改。四珠仍按最新约定在 How about 转绿，外圆在 Meet 出现。类型检查、静态构建、Chrome 深色实际像素检查通过；不把尚未执行的独立 WebKit 对照记为通过。临时 23821 对照服务及未完成的测试内核下载已停止，主预览 23820 保留。无需为了本问题继续下载或扩大测试。
