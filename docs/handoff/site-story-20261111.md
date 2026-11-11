@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 图表与头像精修：六台机器分别使用浅绿、深靛、珊瑚、金黄、紫和深绿头像；使用原生几何及出厂色板的有限示例记录，不改变真实 App 的画笔或 token。额度主项扩至六个 Claude 模型、30 天记录，日汇总直接加总逐模型的四类 token，堆叠趋势、散点、统计表同源。MacBook Pro 补成 44 个进程（约 12.62 GiB 小于当前 14.2 GiB 总占用；CPU 总计约 215.8%，折算 12 核为 18%），日趋势有工作节律与短编译峰，内存更平稳、磁盘缓慢增长，最后一个桶与仪表同值。Chrome 确认六张不同脸、六个可见模型点、汇总一致且无页面错误；截图和读数在 `/Volumes/disk0/Khor/evidence/site-story-20261112/telemetry`。深浅首图同步更新。
+- 下一步页面方向待讨论，尚未改首页布局与文案：全面参考 OpenAI Codex 页，使用用户指定 Vanta Fog 原参数；左上角为 `kapestack`，链接 `https://www.kapestack.top`，Khor 是产品身份。讨论草案与完整参数见 `site-page-direction-20261112.md`。
 - 2026-11-12 用户进一步纠正「展示 Khor GUI，而不是 Claude」：此前首项虽在 Khor App 外壳里，实际仍为 Claude ACP 会话。已将首项改为 `wide/all` 内置 Khor，会话用真实 `MachineChat`、`KhorHeader` 和 `KhorAgentResult` 渲染本地命令回执，模型为 GPT-5.4；其他四项保留 Cursor、Codex、Claude、Shell 类型。三标签、右侧 Markdown、固定下载回复与不灰化的限制继续保持，首图同步更新。
 - 导航清晰度修订：移除整个 iframe 外层的 transform scale，改为 CSS zoom 参与布局，避免玻璃与 SVG 图层先合成后缩小。Chrome 已对比静止、按下、松开三态；实际鼠标按屏幕坐标切到机器页再返回成功，Khor 内置会话有两轮记录，发送后得到固定下载回复，页面错误为空。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/khor-gui`；没有扩大浏览器测试矩阵。
 - 2026-11-12 最新范围：保留真实 Khor GUI，用户已撤回 Claude Code TUI 要求。机器、会话、额度和工作区各只开放第一项；会话、资源侧栏和工作区显示三个标签，只保留当前选中项可用；「…」及复杂操作不开放。不可点项保持正常颜色和不透明度，不做灰化。主会话仍可发送消息并获得固定下载回复。

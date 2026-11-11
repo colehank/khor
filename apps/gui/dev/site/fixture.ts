@@ -2,10 +2,12 @@ import {createLabFixture} from '../lab/fixture';
 import {scenario} from './scenario';
 import {GiB,machines,projects,tasks} from './world';
 import {release} from '../../../site/src/releases';
+import avatars from './data/avatars.json';
+import {siteLoad,siteUsage} from './telemetry';
+import type {Avatar} from '../../src/gen/bindings/Avatar';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SystemKind} from '../../src/gen/bindings/SystemKind';
 import type {ModelKind} from '../../src/gen/bindings/ModelKind';
-import type {Load} from '../../src/gen/bindings/Load';
 import type {FileText} from '../../src/gen/bindings/FileText';
 import type {DirRow} from '../../src/gen/bindings/DirRow';
 import type {SessionRow} from '../../src/gen/bindings/SessionRow';
@@ -22,7 +24,7 @@ export function createSiteFixture(origin:string) {
     const disk={used:profile.disk[0]*GiB,total:profile.disk[1]*GiB};
     const mount=profile.system==='windows'?'C:/':profile.system==='android'?'/storage/emulated/0':'/';
     const gpuMemory=profile.system==='linux'?{used:1.4*GiB,total:12*GiB}:null;
-    return {...original[index],name:profile.name,shown:profile.name,paused:false,pinned:index===1,hosts:index<4,
+    return {...original[index],face:avatars[index] as Avatar,name:profile.name,shown:profile.name,paused:false,pinned:index===1,hosts:index<4,
       hop:index===0?null:'direct',last_hop:index===0?null:'direct',rtt_ms:index===0?null:12+index*4,last_rtt_ms:index===0?null:12+index*4,
       down_ms:null,heard_ms:index===0?null:800,since_ms:index===0?null:7200000,relay:null,via:null,sponsor:null,
       roads:[],watch:[],watched:{rows:[],age_ms:0},
@@ -58,6 +60,7 @@ export function createSiteFixture(origin:string) {
     else messages.at(-1)?.command?.agent?.updates.push(JSON.stringify(update));
   }
   const initialMessages=messages.length;
+  const usage=siteUsage(at);
   const owner=(name:unknown)=>devices.find(row=>row.name===name||row.id===name)??devices[0];
   const pathOf=(body:Record<string,any>)=>String(body.path??body.dir??'').replace(/\\/g,'/').replace(/\/$/,'');
   const sourceProject=(body:Record<string,any>)=>{
@@ -99,21 +102,6 @@ export function createSiteFixture(origin:string) {
         trouble:null,at_ms:at,remaining:index<2?null:remaining,limit,spent,
         windows:account.reading.windows.map((window,i)=>({...window,used_pct:i===0?short:long,severity:null}))}};
   });
-  function load(body:Record<string,any>):Load {
-    const index=devices.indexOf(owner(body.machine)),profile=machines[index],vitals=devices[index].vitals!.vitals;
-    const systemNames=profile.system==='linux'?['systemd','sshd','nginx','containerd','journald','cron','bash','tmux','systemd-resolved','python3']:
-      profile.system==='windows'?['System','explorer.exe','MsMpEng.exe','dwm.exe','svchost.exe','OneDrive.exe','conhost.exe','RuntimeBroker.exe','SearchIndexer.exe','spoolsv.exe']:
-      profile.system==='ios'?['SpringBoard','backboardd','mediaserverd','sharingd','cloudd','mobileassetd','secd','locationd','bluetoothd','notifyd']:
-      profile.system==='android'?['system_server','surfaceflinger','zygote64','audioserver','media.codec','netd','vold','logd','keystore2','com.android.settings']:
-      ['launchd','WindowServer','mds_stores','cfprefsd','cloudd','kernel_task','distnoted','trustd','nsurlsessiond','sharingd'];
-    const processes:[string,number,number][]=[...profile.processes.map(([name,cpu,mem]):[string,number,number]=>[name,cpu,mem]),...systemNames.map((name,i):[string,number,number]=>[name,1.2+i*.7,.04+i*.025])];
-    const weight=processes.reduce((sum,row)=>sum+row[1],0);
-    const top:Load['top']=processes.map(([name,cpu,mem],i)=>({pid:1800+index*100+i,name,user:i>=profile.processes.length?'root':'lin',cpu_pct:Math.round(cpu/weight*profile.cpu*profile.cores*10)/10,mem:mem*GiB,gpu_pct:null,gpu_mem:null,run_secs:2400+i*600,arg:name.includes('node')?(index===1?'src/server.ts':'vite'):null,ppid:1,status:i%3===0?'run':'sleep',cpu_ms:Math.round(cpu*24000),io_bytes:(32+i*12)*1024**2}));
-    const field=body.by==='mem'?'mem':body.by==='pid'?'pid':'cpu_pct';
-    top.sort((a,b)=>(body.desc===false?1:-1)*(a[field]-b[field]));
-    const series=(value:number)=>Array.from({length:288},(_,i)=>i===287?value:Math.round(Math.max(1,Math.min(96,value*.7+Math.sin(i/13+index)*value*.25+(i%7)*.6))*10)/10);
-    return {top:top.slice(0,Number(body.top)||200),cpu_day:{bucket_ms:300000,now_ms:at,buckets:series(vitals.cpu_pct),mem:series(vitals.mem.used/vitals.mem.total*100),gpu:vitals.gpu?series(vitals.gpu.util_pct):[],disk:series(vitals.disk!.used/vitals.disk!.total*100),vram:vitals.gpu?.mem?series(vitals.gpu.mem.used/vitals.gpu.mem.total*100):[]}};
-  }
   return {dispose:()=>base.dispose(),request(command:string,body:Record<string,any>={}):unknown {
     switch(command){
       case 'devices':return structuredClone(devices);
@@ -139,7 +127,8 @@ export function createSiteFixture(origin:string) {
         return agentView();
       }
       case 'visit':return null;
-      case 'load':return load(body);
+      case 'load':return siteLoad(devices.indexOf(owner(body.machine)),at,body.by,body.desc,body.top);
+      case 'usage':return structuredClone(usage);
       case 'journal':return [{at:at-7200000,when:new Date(at-7200000).toLocaleTimeString('zh-CN',{hour12:false}),machine:owner(body.machine).name,text:'点对点连接已建立',trouble:false}];
       case 'about':return {version,root:'/Users/lin/.khor',paused:false,store_bytes:18*1024**2,faces:[{key:'gui',name:'桌面',up:true,said:'运行中'},{key:'web',name:'网页',up:true,said:'运行中'}]};
       case 'quota_board':return structuredClone(quota);
