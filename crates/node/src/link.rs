@@ -8580,7 +8580,9 @@ impl Node {
         limit: u64,
     ) -> Result<crate::file_resource::Slice, String> {
         if machine.is_empty() || machine == self.name() {
-            return self.file_resource_here(anchor, resource, offset, limit).await;
+            return self
+                .file_resource_here(anchor, resource, offset, limit)
+                .await;
         }
         if let Some(reply) = self
             .via_serve(ipc::Op::FileResource {
@@ -8623,7 +8625,9 @@ impl Node {
     ) -> Result<crate::file_resource::Slice, String> {
         let (channel, home) = self.resolve(machine)?;
         if home == self.device() {
-            return self.file_resource_here(anchor, resource, offset, limit).await;
+            return self
+                .file_resource_here(anchor, resource, offset, limit)
+                .await;
         }
         let target = self
             .devices_loaded()?
@@ -8670,10 +8674,25 @@ impl Node {
         }
     }
 
-    async fn file_resource_here(&self, anchor: &str, resource: &str, offset: Option<u64>, limit: u64) -> Result<crate::file_resource::Slice, String> {
-        let workspaces = self.workspaces()?.into_iter().filter(|w| w.device == self.device_str()).map(|w|w.path).collect::<Vec<_>>();
+    async fn file_resource_here(
+        &self,
+        anchor: &str,
+        resource: &str,
+        offset: Option<u64>,
+        limit: u64,
+    ) -> Result<crate::file_resource::Slice, String> {
+        let workspaces = self
+            .workspaces()?
+            .into_iter()
+            .filter(|w| w.device == self.device_str())
+            .map(|w| w.path)
+            .collect::<Vec<_>>();
         let (anchor, resource) = (anchor.to_owned(), resource.to_owned());
-        tokio::task::spawn_blocking(move || crate::file_resource::read(&anchor, &resource, offset, limit, &workspaces)).await.map_err(|e|e.to_string())?
+        tokio::task::spawn_blocking(move || {
+            crate::file_resource::read(&anchor, &resource, offset, limit, &workspaces)
+        })
+        .await
+        .map_err(|e| e.to_string())?
     }
 
     /// One slice of a file at `offset`, off any machine. The general

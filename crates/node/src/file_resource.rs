@@ -50,8 +50,8 @@ pub fn read(
     } else {
         let path = Path::new(resource);
         if path
-                .components()
-                .any(|p| !matches!(p, Component::Normal(_)))
+            .components()
+            .any(|p| !matches!(p, Component::Normal(_)))
         {
             return Err("resource escapes preview root".into());
         }
@@ -60,11 +60,35 @@ pub fn read(
     if !target.starts_with(root) {
         return Err("resource escapes preview root".into());
     }
-    if !target.is_file() { return Err("resource is not a regular file".into()); }
-    if target != anchor && target.strip_prefix(root).map_err(|e|e.to_string())?.components().any(|part| {
-        let name=part.as_os_str().to_string_lossy();
-        matches!(name.as_ref(), ".git"|".ssh"|".khor"|".codex"|".claude"|".aws"|".env"|".npmrc"|".netrc"|".pypirc"|"id_rsa"|"id_ed25519") || name.starts_with(".env.")
-    }) { return Err("private configuration is not a browser resource".into()); }
+    if !target.is_file() {
+        return Err("resource is not a regular file".into());
+    }
+    if target != anchor
+        && target
+            .strip_prefix(root)
+            .map_err(|e| e.to_string())?
+            .components()
+            .any(|part| {
+                let name = part.as_os_str().to_string_lossy();
+                matches!(
+                    name.as_ref(),
+                    ".git"
+                        | ".ssh"
+                        | ".khor"
+                        | ".codex"
+                        | ".claude"
+                        | ".aws"
+                        | ".env"
+                        | ".npmrc"
+                        | ".netrc"
+                        | ".pypirc"
+                        | "id_rsa"
+                        | "id_ed25519"
+                ) || name.starts_with(".env.")
+            })
+    {
+        return Err("private configuration is not a browser resource".into());
+    }
     // Open once, then stat this handle, so headers and bytes name one file.
     let mut file = std::fs::File::open(&target).map_err(|e| e.to_string())?;
     let meta = file.metadata().map_err(|e| e.to_string())?;
@@ -85,7 +109,10 @@ pub fn read(
         }
         file.seek(SeekFrom::Start(offset))
             .map_err(|e| e.to_string())?;
-        bytes.resize((total - offset).min(limit).min(crate::proto::SLICE) as usize, 0);
+        bytes.resize(
+            (total - offset).min(limit).min(crate::proto::SLICE) as usize,
+            0,
+        );
         file.read_exact(&mut bytes).map_err(|e| e.to_string())?;
     }
     Ok(Slice {
@@ -111,13 +138,22 @@ mod tests {
         let path = anchor.to_str().unwrap();
         let head = read(path, "", None, 0, &[]).unwrap();
         assert_eq!(head.entry, "pages/index.html");
-        assert_eq!(read(path, "app.js", Some(0), 2, &[]).unwrap().bytes.as_ref(), b"he");
+        assert_eq!(
+            read(path, "app.js", Some(0), 2, &[])
+                .unwrap()
+                .bytes
+                .as_ref(),
+            b"he"
+        );
         assert!(head.bytes.is_empty());
         std::fs::write(root.join(".env"), "TOKEN=private").unwrap();
         assert!(read(path, ".env", None, 0, &[]).is_err());
         assert!(read(path, ".git/config", None, 0, &[]).is_err());
         assert_eq!(
-            read(path, "app.js", Some(2), crate::proto::SLICE, &[]).unwrap().bytes.as_ref(),
+            read(path, "app.js", Some(2), crate::proto::SLICE, &[])
+                .unwrap()
+                .bytes
+                .as_ref(),
             b"llo"
         );
         assert!(read(path, "../outside", None, 0, &[]).is_err());
