@@ -306,6 +306,9 @@ async function inspect(browser, scene, size, data = {}) {
         await checkChildConversation();
         await page.locator('[data-lab-model-back]:visible').click();
         await parent.waitFor({state:'visible'});
+        assert.equal(await disclosure.getAttribute('aria-expanded'),'false','Returning to the mobile list restores its ordinary collapsed rows');
+        await disclosure.click();
+        await page.locator('[data-child-tasks="wide/all"] [data-child-task-row]').first().waitFor();
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
         assert.equal((await disclosure.innerText()).trim(),'3 个子会话');

@@ -1258,7 +1258,7 @@ export function WorkspacePane({
     // a path into a press on the middle one (ruling 35, `linkHome`).
     <LinkHomeProvider value={linkHome}>
     <RegionLead.Provider value={null}>
-    {narrow && screen !== "file" && <NarrowHead>{() => screen === "tree" ? <>
+    {narrow && screen !== "file" && screen !== "sessions" && <NarrowHead>{() => screen === "tree" ? <>
       <GlassCircle aria-label={gui.back} data-back onClick={onBack}><IconBack /></GlassCircle>{workspaceTitle}
     </> : <>
       <GlassCircle aria-label={gui.back} data-ws-back onClick={() => screen === "sessions" ? showSessionDetail(false) : setScreen("tree")}><IconBack /></GlassCircle>

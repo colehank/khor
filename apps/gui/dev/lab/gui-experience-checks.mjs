@@ -128,7 +128,10 @@ export async function checkWorkspaceSessions(browser,{port,report,engine,mobile=
    assert.equal(await page.locator('[data-chat-input]:visible,[data-chat-send]:visible').count(),0);
    const scopes=await page.evaluate(()=>Object.entries(localStorage).filter(([key])=>key.startsWith('khor.workspace.sessions.')).map(([,value])=>JSON.parse(value)));
    assert(scopes.some(scope=>scope.tabs.includes('wide/all')&&scope.tabs.some(id=>id.startsWith('delegated-session:'))),'The readonly child joins this workspace tab scope');
-   if(mobile)await page.locator('[data-ws-sessions] [data-session-screen][data-deck-at="bottom"] [data-session-bar]:visible').waitFor();
+   if(mobile){
+    await page.locator('[data-ws-sessions] [data-session-screen][data-deck-at="bottom"] [data-session-bar]:visible').waitFor();
+    assert.equal(await page.locator('[data-ws-back]:visible').count(),0,'The session frame owns mobile navigation without an extra workspace back header');
+   }
    else assert.equal(await page.locator('[data-workspace-session-tabs] [data-tab-open^="delegated-session:"]').count(),1);
    await page.screenshot({path:path.join(report,`workspace-child-${mobile?'mobile':'desktop'}-${engine}.png`)});
    await page.locator('[data-child-session-parent]:visible').click();

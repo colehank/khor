@@ -56,7 +56,7 @@ export function DelegatedSessionView({ row, active, onParent }: { row: SessionRo
   useLayoutEffect(()=>{
     const element=root.current,scroll=scroller.current;
     return()=>{
-      if(scroll){positions.set(row.id,{top:scroll.scrollTop,following:following.current});if(positions.size>256)positions.delete(positions.keys().next().value!);}
+      if(scroll&&!restore.current){positions.set(row.id,{top:scroll.scrollTop,following:following.current});if(positions.size>256)positions.delete(positions.keys().next().value!);}
       element?.querySelectorAll<HTMLMediaElement>('audio,video').forEach(media=>{media.pause();media.removeAttribute('src');media.load();});
     };
   },[row.id,scroller,following]);
