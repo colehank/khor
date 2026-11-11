@@ -60,7 +60,10 @@ try{
         const root=document.querySelector('[data-new-tab]'),box=el=>{const r=el.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width};};
         const rows=[...root.querySelectorAll('[data-place]')].map(open=>{
          const close=open.parentElement.querySelector('[data-forget-place]'),r=close.getBoundingClientRect();
-         return {open:box(open),name:box(open.querySelector('[data-recent-name]')),close:box(close),glyph:box(close.querySelector('svg')),hit:close.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};
+         return {open:box(open),textEnd:open.getBoundingClientRect().right-parseFloat(getComputedStyle(open).paddingRight),
+          name:box(open.querySelector('[data-recent-name]')),
+          details:['machine','address','age'].map(slot=>open.querySelector('[data-recent-'+slot+']').getClientRects().length>0),
+          close:box(close),glyph:box(close.querySelector('svg')),hit:close.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};
         });
         return {root:box(root),client:root.clientWidth,scroll:root.scrollWidth,body:document.documentElement.scrollWidth,viewport:innerWidth,rows};
        });
@@ -71,7 +74,11 @@ try{
         assert(row.close.left>=geometry.root.left&&row.close.right<=geometry.root.right+1,'The entire close target stays inside the list');
         assert(row.glyph.left>=row.close.left&&row.glyph.right<=row.close.right,'The close glyph stays inside its own hit area');
         assert(row.hit,'The close target must be hit-testable');
-        if(width<=264)assert(row.name.width>row.open.width/2,'Compact recents reserve the readable text area for the destination');
+        if(width<=264){
+         assert(row.name.width>0&&Math.abs(row.name.right-row.textEnd)<=1,'Compact recents give the destination all space after the avatar');
+         assert.deepEqual(row.details,[false,false,false],'Compact recents omit secondary metadata');
+        }
+        if(width===900)assert.deepEqual(row.details,[true,true,true],'A wide list retains machine, address and time');
        }
        if(width===200||width===900)await page.screenshot({path:join(out,name+'.png')});
        const first=page.locator('[data-place]').first(),place=await first.getAttribute('data-place'),device=await first.getAttribute('data-place-device');
