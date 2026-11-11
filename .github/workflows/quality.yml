@@ -11,7 +11,7 @@ on:
         default: sync
       desktop_target:
         type: choice
-        options: [all, windows, linux-arm]
+        options: [all, windows, linux-arm, linux-x86]
         default: all
 permissions:
   contents: read
@@ -159,6 +159,7 @@ jobs:
           if-no-files-found: warn
 
   mac-package:
+    needs: package-frontend
     if: inputs.slice == 'mac-package'
     runs-on: macos-26
     timeout-minutes: 120
@@ -178,8 +179,9 @@ jobs:
         with:
           target: aarch64-apple-darwin
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
-      - run: npm ci --prefix apps/gui && npm run build --prefix apps/gui
+      - run: npm ci --prefix apps/gui
       - run: npm ci --prefix apps/agent && node apps/agent/build.mjs "$TARGET" apps/agent/dist/khor-agent
+      - uses: ./.github/actions/restore-frontend
       - name: Build the actual unsigned App with its matching CLI
         env:
           KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
@@ -200,6 +202,7 @@ jobs:
           directory = pathlib.Path(os.environ["RUNNER_TEMP"]) / "mac-package-proof"
           package = directory / "Khor.pkg"
           build(app, package, version(), False)
+          subprocess.run(['python3', 'scripts/check-desktop-installer.py', '--package', str(package), '--output', str(directory / 'installation.json')], check=True)
           installed = extract(package, pathlib.Path(os.environ["RUNNER_TEMP"]) / "package-expansion")
           gui = executable_info(installed / "Contents/MacOS/khor-gui")
           cli = executable_info(installed / "Contents/MacOS/khor")
@@ -211,15 +214,52 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: mac-package-proof
-          path: ${{ runner.temp }}/mac-package-proof/proof.json
+          path: ${{ runner.temp }}/mac-package-proof/*.json
+          if-no-files-found: error
+
+  package-frontend:
+    if: inputs.slice == 'desktop-package' || inputs.slice == 'mac-package'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: frontend-registry
+          cache-targets: false
+          save-if: 'false'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - run: npm ci --prefix apps/gui
+      - run: npm run build --prefix apps/gui
+      - run: |
+          mkdir -p frontend
+          cp -R apps/gui/dist frontend/dist
+          cp -R apps/gui/src/gen frontend/gen
+          python3 scripts/release_manifest.py create --root frontend --kind frontend
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: frontend
+          path: frontend/
+          include-hidden-files: true
           if-no-files-found: error
 
   desktop-package:
+    needs: package-frontend
     if: inputs.slice == 'desktop-package'
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.desktop_target == 'windows' && '[{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]' || inputs.desktop_target == 'linux-arm' && '[{"runner":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-gnu","filename":"khor-linux-aarch64.deb"}]' || '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","filename":"khor-linux-x86_64.deb"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]') }}
+        include: ${{ fromJSON(inputs.desktop_target == 'windows' && '[{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]' || inputs.desktop_target == 'linux-arm' && '[{"runner":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-gnu","filename":"khor-linux-aarch64.deb"}]' || inputs.desktop_target == 'linux-x86' && '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","filename":"khor-linux-x86_64.deb"}]' || '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","filename":"khor-linux-x86_64.deb"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
@@ -242,8 +282,9 @@ jobs:
           target: ${{ matrix.target }}
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install --no-install-recommends -y libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev xvfb dbus-x11
+      - uses: ./.github/actions/restore-frontend
       - shell: bash
-        run: npm ci --prefix apps/gui && npm run build --prefix apps/gui
+        run: npm ci --prefix apps/gui
       - shell: bash
         run: npm ci --prefix apps/agent && node apps/agent/build.mjs "$TARGET" apps/agent/dist/khor-agent
       - name: Build the actual desktop package
