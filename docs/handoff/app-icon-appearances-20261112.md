@@ -2,7 +2,9 @@
 
 实现位于独立 worktree `/Volumes/disk0/Khor/worktrees/current/khor-app-icon-appearances-20261112`，
 branch `feat/app-icon-appearances-20261112`，main 基线 `97bbf2a4`。
-当前未合并 main，未构建/发布/安装 App，未更改其他运行中的 Lab 或用户的 App。
+初次交付时尚未合并 main；用户随后要求推 main，并明确选择等待、重试全量 Quality。
+图标实现已以 `7f60f9b00ac7297f4ae65dd3e7b7be1cff4e6328` 快进合入并推送 main。
+本次未构建发行包、发布或安装 App，未更改其他运行中的 Lab 或用户的 App。
 
 ## 唯一维护入口
 
@@ -42,5 +44,17 @@ macOS 与 iPhone/iPad catalog 编译通过；原生 Default / Dark 导出的中�
 ## 交付边界
 
 实际安装后的 Finder、Dock、启动器、iPhone/iPad 主屏幕，以及自动/固定明暗、着色、透明和旧系统降级，
-仍需在后续安装构建中验收。原生 catalog 与预览通过不代表安装验收或完整 Quality 全部通过。
-本轮没有 main 合并、tag、商店提交、发布或替换用户 App。
+仍需在后续安装构建中验收。原生 catalog 与预览通过不代表安装验收通过。
+本次已完成 main 合入；没有 tag、商店提交、发布或替换用户 App。
+
+## main 合入验证
+
+[完整 Quality 43058179751](https://github.com/colehank/khor/actions/runs/43058179751)
+在精确候选 `7f60f9b00ac7297f4ae65dd3e7b7be1cff4e6328` 上，最终 13 项 job 全部 SUCCESS。
+第一轮 Lab 的中文字体下载遇到 Ubuntu DNS 失败；GUI 的浏览器依赖安装遇到 DNS 失败和旧软件包 404，
+两者均未开始浏览器断言。保留首次失败记录，仅重试这两项；第二轮两项均通过，其他 11 项通过结果保留。
+没有改代码、断言、门或依赖获取逻辑来规避失败。
+
+源 main 从 `97bbf2a4` 快进至已通过完整检查的 `7f60f9b0`，没有引入其他 worktree 的改动。
+推送从干净的图标 worktree 执行；本地 main 原有修改和未跟踪文件在合入前后做 SHA-256 核对。
+本提交只补充合入记录，产品源码、图稿和资源与上述绿色候选完全一致；main 的常规自动 CI 仍会正常触发。
