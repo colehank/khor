@@ -18,6 +18,10 @@ on:
       checker_sha:
         type: string
         default: ''
+      lab_checks:
+        type: choice
+        options: [all, child-tree]
+        default: all
       desktop_target:
         type: choice
         options: [all, windows, linux-arm, linux-x86]
@@ -800,6 +804,10 @@ jobs:
           sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk gstreamer1.0-libav
           npx playwright-core install --with-deps chromium webkit
+      - name: Check shared frontend rules for the final tree controls
+        if: inputs.lab_checks == 'child-tree'
+        working-directory: apps/gui
+        run: npm run test:unit && npm run gates && npm run mobile:static
       - name: Apply new regression checks to an unchanged old UI for a red baseline
         if: inputs.checker_sha != ''
         env:
@@ -819,6 +827,7 @@ jobs:
           LAB_REPORT: ${{ runner.temp }}/lab-report
           QUALITY_ENGINES: chromium,webkit
           QUALITY_HEADLESS: '0'
+          LAB_CHECKS: ${{ inputs.lab_checks }}
         run: |
           xvfb-run -a node dev/lab/check-app.mjs
           node dev/lab/check-hot.mjs
