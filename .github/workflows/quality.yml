@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe]
         default: sync
       checker_sha:
         type: string
@@ -481,3 +481,44 @@ jobs:
           path: |
             ${{ runner.temp }}/khor-scroll
             ${{ runner.temp }}/format.patch
+
+  wix-probe:
+    if: inputs.slice == 'wix-probe'
+    runs-on: windows-2025
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - name: Reproduce and validate the isolated WiX fragment
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Join-Path $env:RUNNER_TEMP 'wix.zip'
+          Invoke-WebRequest 'https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip' -OutFile $zip
+          Get-FileHash $zip
+          $wix = Join-Path $env:RUNNER_TEMP 'wix'
+          Expand-Archive $zip $wix
+          $proof = Join-Path $env:RUNNER_TEMP 'wix-proof'
+          New-Item -ItemType Directory $proof | Out-Null
+          $source = Get-Content -Raw 'apps/gui/src-tauri/packaging/cli-path.wxs'
+          $red = Join-Path $proof 'red.wxs'
+          $green = Join-Path $proof 'green.wxs'
+          [IO.File]::WriteAllText($red, $source)
+          [IO.File]::WriteAllText($green, $source.Replace('Win64="$(var.Win64)"', 'Win64="yes"'))
+          & "$wix/candle.exe" -nologo -arch x64 -out "$proof/red.wixobj" $red *> "$proof/red.log"
+          $redExit = $LASTEXITCODE
+          Get-Content "$proof/red.log"
+          if ($redExit -eq 0 -or -not ((Get-Content -Raw "$proof/red.log") -match 'Undefined preprocessor variable.*Win64')) { throw 'Did not reproduce the undefined fragment variable' }
+          & "$wix/candle.exe" -nologo -arch x64 -out "$proof/green.wixobj" $green *> "$proof/green.log"
+          $greenExit = $LASTEXITCODE
+          Get-Content "$proof/green.log"
+          if ($greenExit -ne 0) { throw 'Corrected fragment still fails candle' }
+          @{source=(git rev-parse HEAD);red=$redExit;green=$greenExit} | ConvertTo-Json | Set-Content "$proof/result.json"
+          exit 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: wix-fragment-proof
+          path: ${{ runner.temp }}/wix-proof
