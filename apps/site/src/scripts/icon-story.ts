@@ -114,11 +114,18 @@ export function animateIcon(host:HTMLElement) {
     filter.channels.forEach(channel=>channel.setAttribute('slope',String(brightness)));
     node.setAttribute('filter',`url(#${filter.id})`);
   };
-  // Trace the final-width band and diamond edge once. Meet changes their
-  // material along the light front; it never draws the geometry again.
+  // Keep the band's final footprint, but only draw its two fine boundaries.
+  // Meet fills that empty space with glass along the light front.
   const ringSource=children.find(el=>el.getAttribute('stroke')==='url(#artwork-glass-band)')!;
-  const connection=ringSource.cloneNode(false) as SVGCircleElement;
-  for(const [key,value]of Object.entries({stroke:'currentColor',pathLength:'1','stroke-dasharray':'1',transform:'rotate(-90 512 512)',class:'connection-line'}))connection.setAttribute(key,value);
+  const lineWidth=Number(children[haloStart-1].getAttribute('stroke-width'));
+  const radius=Number(ringSource.getAttribute('r'));
+  const inset=(Number(ringSource.getAttribute('stroke-width'))-lineWidth)/2;
+  const connection=make('g',{}) as SVGGElement;
+  for(const r of [radius-inset,radius+inset]){
+    const edge=ringSource.cloneNode(false) as SVGCircleElement;
+    for(const [key,value]of Object.entries({r:String(r),stroke:'currentColor','stroke-width':String(lineWidth),pathLength:'1','stroke-dasharray':'1',transform:'rotate(-90 512 512)',class:'connection-line'}))edge.setAttribute(key,value);
+    connection.append(edge);
+  }
   connection.dataset.storyLayer='connection';art.insertBefore(connection,outer);
   const diamondEdge=children[haloStart-1].cloneNode(false) as SVGPathElement;
   for(const [key,value]of Object.entries({stroke:'currentColor',pathLength:'1','stroke-dasharray':'1',class:'connection-line'}))diamondEdge.setAttribute(key,value);
