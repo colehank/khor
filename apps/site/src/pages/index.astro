@@ -6,7 +6,7 @@ import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import { release } from "../releases";
 import "../styles/story.css";
-const lines = [["You have", "many devices."], ["With", "many agents."], ["But", "one mind."], ["How about letting", "them work together?"]];
+const lines = [["You have", "many devices."], ["With", "many agents."], ["But", "one mind."], ["How about letting", "them work together?"], ["Meet", "khor."]];
 ---
 <Base description="连接各台设备上的智能体、网页与文件，从手边的设备继续工作">
   <a class="skip-story" href="#experience">跳过开场</a>
@@ -32,8 +32,8 @@ const lines = [["You have", "many devices."], ["With", "many agents."], ["But", 
             <button class="launch-khor" type="button" data-launch><img src={icon.src} alt="" width="112" height="112" /><span>打开 khor</span></button>
             <button class="close-expanded" type="button" data-close-expanded hidden>收起体验 ×</button>
             <div class="demo-loading" role="status" hidden data-demo-loading>正在打开 khor…</div>
+            <svg class="demo-cursor" viewBox="0 0 28 36" aria-hidden="true"><path d="M3 2v27l7-7 6 11 5-3-6-10h10z" /></svg>
           </dialog>
-          <svg class="demo-cursor" viewBox="0 0 28 36" aria-hidden="true"><path d="M3 2v27l7-7 6 11 5-3-6-10h10z" /></svg>
         </div>
         <div class="experience-actions"><p>真实界面 · 示例数据</p><button type="button" class="text-action" data-fullscreen>展开体验 <span aria-hidden="true">↗</span></button><button type="button" class="text-action" data-reset>重新开始</button></div>
       </div>

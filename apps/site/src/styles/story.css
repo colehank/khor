@@ -23,9 +23,9 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--pane-head) + var(
 .opening { height:520svh; position:relative; z-index:10; }
 .opening-sticky { position:sticky; top:0; height:100svh; display:flex; align-items:center; }
 .opening-copy { position:absolute; left:8.5%; top:31%; width:48%; z-index:2; }
-.opening-line { position:absolute; inset:0; font-size:var(--story-title); font-weight:600; line-height:1.08; opacity:0; transform:translateY(var(--gap-base)); text-wrap:balance; }
+.opening-line { position:absolute; inset:0; font-size:var(--story-title); font-weight:600; line-height:1.08; opacity:0; transform:translateY(var(--gap-base)); text-wrap:balance; transition:opacity var(--dur-420),transform var(--dur-420); }
 .opening-line span { color:var(--secondary); }
-.opening-line[data-line="3"] { font-size:clamp(calc(var(--text-title-lg)*1.45),3.6vw,calc(var(--text-title-lg)*2.8)); }
+.opening-line[data-line="3"] { font-size:clamp(calc(var(--text-title-lg)*1.45),3.25vw,calc(var(--text-title-lg)*2.8)); }
 .opening-line.is-current { opacity:1; transform:none; }
 .assembly { position:absolute; width:min(56vw,80svh); aspect-ratio:1; right:1.5%; top:50%; transform:translateY(-47%); border-radius:22%; overflow:hidden; transition:opacity var(--dur-420); pointer-events:none; }
 .assembly.is-travelling { position:fixed; right:auto; aspect-ratio:1; transform:none; z-index:8; }

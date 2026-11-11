@@ -1,3 +1,35 @@
+export type IconPose = {presence:number; agents:number; mind:number; focus:number; form:number; color:number};
+const resting:IconPose = {presence:0,agents:0,mind:0,focus:0,form:0,color:0};
+const poses:IconPose[] = [
+  {...resting,presence:1},
+  {...resting,presence:1,agents:1},
+  {...resting,presence:1,mind:1,focus:1},
+  {...resting,presence:1,mind:1,focus:1,form:1},
+  {...resting,presence:1,mind:1,focus:1,form:1,color:1},
+];
+const duration = [840,700,900,1600,1100];
+
+/** A chapter has one target pose and one uninterrupted transition into it. */
+export function createIconMotion(host:HTMLElement) {
+  const paint=animateIcon(host);
+  let current={...resting},from={...resting};
+  let scene=-1,started=0,settled=false;
+  return (requested:number,now:number,reduced:boolean)=>{
+    // A direct jump to Meet still finishes the grey form before revealing colour.
+    const next=reduced?4:requested===4&&current.form<1?3:requested;
+    if(next!==scene){from={...current};scene=next;started=now;settled=false;}
+    const time=reduced?1:clamp((now-started)/duration[scene]);
+    const t=time===1?1:1-Math.pow(1-time,3);
+    for(const key of Object.keys(current) as (keyof IconPose)[])current[key]=from[key]+(poses[scene][key]-from[key])*t;
+    if(time===1){current={...poses[scene]};settled=true;}
+    paint(current);
+    host.dataset.iconScene=['devices','agents','mind','together','meet'][requested];
+    host.dataset.iconMotion=settled&&scene===requested?'settled':'running';
+    host.dataset.iconColor=String(current.color);
+    return {settled:settled&&scene===requested,color:current.color};
+  };
+}
+
 const namespace = 'http://www.w3.org/2000/svg';
 const clamp = (x:number) => Math.max(0,Math.min(1,x));
 const ease = (x:number,a:number,b:number) => {const t=clamp((x-a)/(b-a));return t*t*(3-2*t);};
@@ -59,26 +91,25 @@ export function animateIcon(host:HTMLElement) {
     if(amount>=1)node.removeAttribute('mask');else node.setAttribute('mask',`url(#${maskId})`);
     style(node,{opacity:amount});
   };
-  return (p:number)=>{
-    const agents=ease(p,.17,.25)*(1-ease(p,.35,.42));
-    const dim=ease(p,.37,.44)*(1-ease(p,.70,.84));
-    const mind=ease(p,.42,.52);
-    const ring=ease(p,.55,.69);
-    const glass=ease(p,.62,.80);
-    const green=ease(p,.70,.85);
-    const rim=ease(p,.81,.96);
-    const back=ease(p,.64,.96);
+  return (pose:IconPose)=>{
+    // Every layer follows the same form transition; the curves overlap throughout.
+    const ring=ease(pose.form,0,.84);
+    const glass=ease(pose.form,.02,.92);
+    const rim=ease(pose.form,.05,1);
+    const back=ease(pose.form,.12,1);
+    svg.style.filter=pose.color===1?'none':`grayscale(${1-pose.color})`;
     ground.forEach(node=>style(node,{opacity:back*opacity.get(node)!}));
     const centre=pearlGroups[0];
-    style(centre.group,{opacity:mind,transform:mind===1?'none':`translate(512px,512px) scale(${.86+.14*mind}) translate(-512px,-512px)`});
+    style(centre.group,{opacity:pose.mind,transform:pose.mind===1?'none':`translate(512px,512px) scale(${.92+.08*pose.mind}) translate(-512px,-512px)`});
     pearlGroups.slice(1).forEach((pearl,i)=>{
-      const scale=3.05-2.05*ease(p,.65,.88);
-      const initial=[1.06,.90,.64,.78][i];
-      const brightness=(initial+(1-initial)*green)*(1-.83*dim);
-      style(pearl.group,{filter:green>=1?'none':`grayscale(${1-green}) brightness(${brightness})`,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
-      style(overlays[i],{opacity:agents});
+      const scale=(2.25-1.25*pose.form)*(.96+.04*pose.presence);
+      const initial=[.68,.56,.45,.61][i];
+      const grey=initial+(.68-initial)*pose.form;
+      const brightness=(grey+(1-grey)*pose.color)*(1-.78*pose.focus*(1-pose.form)*(1-pose.color));
+      style(pearl.group,{opacity:pose.presence,filter:pose.color===1?'none':`brightness(${brightness})`,transform:scale===1?'none':`translate(${pearl.x}px,${pearl.y}px) scale(${scale}) translate(${-pearl.x}px,${-pearl.y}px)`});
+      style(overlays[i],{opacity:pose.agents});
     });
-    satelliteHalos.forEach(node=>style(node,{opacity:green*opacity.get(node)!}));
+    satelliteHalos.forEach(node=>style(node,{opacity:pose.form*opacity.get(node)!}));
     reveal(inner,'story-inner-reveal',ring);innerReveal.setAttribute('stroke-dashoffset',String(1-ring));
     reveal(diamond,'story-diamond-reveal',glass);diamondReveal.setAttribute('r',String(glass*750));
     reveal(outer,'story-outer-reveal',rim);outerReveal.setAttribute('stroke-dashoffset',String(1-rim));

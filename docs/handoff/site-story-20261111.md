@@ -12,16 +12,16 @@
 1. You have many devices. 四颗明暗不同的珠。
 2. With many agents. 珠上出现 session face。
 3. But one mind. 外珠与 face 淡下，中心珠浮现。
-4. How about letting them work together? 内环照出菱形，珠子变绿，外环及底板显现。
-5. Meet khor. 同一个 SVG 缩入笔记本，鼠标点击并打开真实前端。
+4. How about letting them work together? 一次连续动效演化到完整灰阶 icon；停在这一句也会自动完成，不拆成多个滚动步骤。
+5. Meet khor. 恢复原图颜色与光泽，随后同一个 SVG 缩入笔记本；屏内光标短距离移动并只点击一次，打开真实前端。
 6. Keep going. 笔记本合盖，手机接续同一个任务。
 
 ## 最新用户修正
 
-用户指出网站图标应为真实 khor icon，最后从简化图跳到完整图标生硬。
+用户指出网站图标应为真实 khor icon，最后从简化图跳到完整图标生硬。随后明确四个外节点在 Meet 前保持灰暗，Meet 后再上色；How about 是一步演化到最终形态。
 已删除单色几何到整图的换图方式，直接使用 `mandala-glass.svg` 原始图层：
 不改原图，运行时为连续图层加动画容器与揭示遮罩，保留路径、渐变、阴影和绘制顺序。
-外珠的明暗、饱和度与放大倍率逐步回到原值；中心、内环、菱形、外环和底板按顺序显现。
+每句文案对应一个目标姿态和一次连续动效；How about 的所有图层共用同一演化进度并重叠展开。整枚叙事图标在 Meet 前保持灰阶，Meet 时才恢复原色。外珠初始放大幅度已降低，位置保持不变。
 成形后的同一个 DOM SVG 持续缩入笔记本，直到打开真实 App。
 favicon、导航和下载图标全部使用同一标准图稿。
 
@@ -38,3 +38,12 @@ favicon、导航和下载图标全部使用同一标准图稿。
 证据：`/Volumes/disk0/Khor/evidence/site-story-20261111`，包含截图、构建日志和 `verification.json`。
 浏览器脚本保存在 `/private/tmp/playwright-test-khor-*.js`；检查使用独立 Chrome 实例，不接管用户已有浏览器。
 后续继续本地调整观感与节奏；这不是实际 P2P 或跨硬件任务同步的验收。
+
+## 第二轮观感修订
+
+- 场景入口触发完整的动效，停下滚动也会完成当前句子的演化；How about 1600ms，Meet 1100ms。
+- 单一动画循环处理姿态插值，快速滚动重新定向当前姿态；直接跳 Meet 会先完成灰阶形态再上色。减少动态效果直接显示完成图并保留手动入口。
+- 光标已移入笔记本屏幕的裁切区域，完成短移动与一次点击后退出。点击过程不会抢焦点或重复执行。
+- 验证通过：How about 停止滚动后完整成形且无彩色；Meet 上色；倒滚回灰；屏内点击一次；App/草稿/手机接续与展开返回；390px 无横向溢出；减少动态效果/键盘入口。
+- 第二轮完成图仍与标准 SVG 的 780×780 参照逐像素相同。灰阶图中部区域的 RGB 通道差为 0。
+- 新证据在 `/Volumes/disk0/Khor/evidence/site-story-20261111/revision-2`；脚本 `/private/tmp/playwright-test-khor-revision-2.js`。

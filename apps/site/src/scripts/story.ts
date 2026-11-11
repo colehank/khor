@@ -1,4 +1,4 @@
-import {animateIcon} from './icon-story';
+import {createIconMotion} from './icon-story';
 const clamp = (value: number) => Math.min(1, Math.max(0, value));
 const ramp = (value: number, from: number, to: number) => {
   const t = clamp((value - from) / (to - from));
@@ -19,11 +19,10 @@ export function mountStory() {
   const lines = [...document.querySelectorAll<HTMLElement>('[data-line]')];
   const steps = [...document.querySelectorAll<HTMLButtonElement>('[data-step]')];
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
-  const starts = [0, .18, .38, .55];
-  const paintIcon = animateIcon(assembly);
+  const starts = [0, .20, .40, .60, .80];
+  const updateIcon = createIconMotion(assembly);
   const iconImage = launch.querySelector<HTMLImageElement>('img')!;
   let iconHome = {left:0,top:0,width:0};
-  const laptop = stage.querySelector<HTMLElement>('.laptop')!;
   const lid = stage.querySelector<HTMLElement>('.laptop-lid')!;
   const base = stage.querySelector<HTMLElement>('.laptop-base')!;
   let frameKeys: AbortController | null = null;
@@ -32,6 +31,7 @@ export function mountStory() {
   let scheduled = false;
   let disposed = false;
   let handoffProgress = 0;
+  let clickStarted: number | null = null;
   let topOpening = 0, topHandoff = 0;
   let openingTravel = 1, handoffTravel = 1;
   const controller = new AbortController();
@@ -50,7 +50,7 @@ export function mountStory() {
     launch!.tabIndex = -1;
     launch!.setAttribute('aria-hidden', 'true');
     frame!.removeAttribute('inert');
-    if (focus) frame!.focus({ preventScroll: true });
+    if (focus) { clickStarted = null; frame!.focus({ preventScroll: true }); }
   }
   frame.setAttribute('inert', '');
   frame.addEventListener('load', () => {
@@ -112,38 +112,45 @@ export function mountStory() {
       appRoot.style.setProperty('--safe-top', viewportWidth < 760 ? '32px' : '0px');
       appRoot.style.setProperty('--safe-bottom', viewportWidth < 760 ? '24px' : '0px');
     }
-    const cursor = ramp(progress, .02, .13);
-    property(stage!, '--cursor-x', `${mix(63, 50, cursor)}%`);
-    property(stage!, '--cursor-y', `${mix(65, 50, cursor)}%`);
-    property(stage!, '--cursor-opacity', ramp(progress, 0, .03) * (1 - ramp(progress, .16, .20)));
-    property(stage!, '--cursor-scale', progress > .13 && progress < .15 ? .84 : 1);
   }
 
-  function render() {
+  function animateClick(now:number, ready:boolean) {
+    const expanded=screen!.classList.contains('is-expanded');
+    const inLaptop=handoffProgress>=.10&&handoffProgress<.40;
+    if(!opened&&ready&&!reduced.matches&&inLaptop&&!expanded&&clickStarted===null)clickStarted=now;
+    const t=clickStarted===null?0:clamp((now-clickStarted)/900);
+    const cursor=screen!.querySelector<SVGElement>('.demo-cursor')!;
+    if(clickStarted===null||reduced.matches||!inLaptop||expanded){cursor.style.opacity='0';return {moving:false,press:1};}
+    const target=iconImage.getBoundingClientRect(),bounds=screen!.getBoundingClientRect();
+    const move=ramp(t,.05,.56);
+    const x=target.left+target.width*.5-bounds.left;
+    const y=target.top+target.height*.5-bounds.top;
+    cursor.style.left=`${mix(x+44,x,move)}px`;
+    cursor.style.top=`${mix(y+52,y,move)}px`;
+    cursor.style.opacity=String(ramp(t,0,.12)*(1-ramp(t,.76,1)));
+    const press=1-.045*ramp(t,.50,.55)*(1-ramp(t,.63,.70));
+    if(t>=.62&&!opened)openDemo();
+    return {moving:t<1,press};
+  }
+
+  function render(now:number) {
     scheduled = false;
     if (disposed) return;
     const scroll = window.scrollY;
     const progress = reduced.matches ? 1 : clamp((scroll - topOpening) / openingTravel);
     const active = starts.findLastIndex(start => progress >= start);
-    lines.forEach((line, index) => {
-      const start = starts[index], end = starts[index + 1] ?? 1.15;
-      const visible = (index === 0 ? 1 : ramp(progress, start, start + .025)) * (1 - ramp(progress, end - .035, end));
-      line.style.opacity = String(visible);
-      line.style.transform = `translateY(${(1 - visible) * 14}px)`;
-      line.classList.toggle('is-current', index === active);
-    });
+    lines.forEach((line, index) => line.classList.toggle('is-current', index === active));
     steps.forEach((step, index) => {
       if (index === active) step.setAttribute('aria-current', 'step');
       else step.removeAttribute('aria-current');
     });
-    paintIcon(progress);
+    const iconState=updateIcon(reduced.matches?4:active,now,reduced.matches);
     property(opening!,'--story-controls-opacity',1-ramp(progress,.9,1));
     handoffProgress = reduced.matches ? 0 : clamp((scroll - topHandoff) / handoffTravel);
     if (scroll + innerHeight > topHandoff - innerHeight * .5) prepareDemo();
-    if (!reduced.matches && handoffProgress > .145 && scroll < topHandoff + handoffTravel + innerHeight) {
-      if (!opened) openDemo();
-    }
+    if (!reduced.matches && iconState.settled && handoffProgress>=.40 && !opened)openDemo();
     geometry(handoffProgress);
+    const click=animateClick(now,iconState.settled&&iconState.color===1);
     handoff!.querySelector<HTMLElement>('.handoff-copy')!.style.opacity = reduced.matches ? '1' : String(ramp(scroll, topHandoff-innerHeight*.25, topHandoff+handoffTravel*.07));
     const departure = topOpening + openingTravel;
     const travelling = !reduced.matches && scroll > departure;
@@ -151,15 +158,17 @@ export function mountStory() {
     if(travelling){
       const target=iconImage.getBoundingClientRect();
       const t=ramp(scroll,departure,topHandoff+handoffTravel*.10);
-      assembly!.style.left=`${mix(iconHome.left,target.left,t)}px`;
-      assembly!.style.top=`${mix(iconHome.top,target.top,t)}px`;
-      assembly!.style.width=`${mix(iconHome.width,target.width,t)}px`;
+      const width=mix(iconHome.width,target.width,t);
+      assembly!.style.left=`${mix(iconHome.left,target.left,t)+width*(1-click.press)/2}px`;
+      assembly!.style.top=`${mix(iconHome.top,target.top,t)+width*(1-click.press)/2}px`;
+      assembly!.style.width=`${width*click.press}px`;
       property(stage!,'--launch-icon-opacity',0);
     }else{
       for(const name of ['left','top','width'])assembly!.style.removeProperty(name);
       property(stage!,'--launch-icon-opacity',1);
     }
     assembly!.style.opacity=opened&&scroll>=topHandoff?'0':'1';
+    if(!iconState.settled||click.moving)requestRender();
   }
   function requestRender() {
     if (scheduled) return;
