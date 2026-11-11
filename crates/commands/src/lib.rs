@@ -5897,7 +5897,6 @@ fn help(_rest: &[String]) -> Result<(), String> {
 /// Raw passthrough to a hosted session: keystrokes and size changes go
 /// out framed, PTY bytes come back raw. Ctrl-\ detaches; the session
 /// stays. One writer thread frames everything so ops never interleave.
-#[cfg(unix)]
 /// The machine a session lives on, when that is not this one. `None`
 /// means "mine" — including for a row this machine has never heard of,
 /// which then fails the ordinary local way with the ordinary local
@@ -5925,7 +5924,7 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
     // isatty decides whether this is a terminal; the size is separate —
     // a pty freshly made by script(1) or a GUI reports 0×0, which is a
     // default-worthy size, not a disqualification.
-    if unsafe { libc::isatty(0) } != 1 {
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
         return Err(msg::attach_needs_tty().into());
     }
     let (cols, rows) = tty_size().unwrap_or((80, 24));
@@ -6036,10 +6035,6 @@ fn attach_at(n: &Node, id: &SessionId, addr: &str, cookie: &str) -> Result<(), S
     Ok(())
 }
 
-#[cfg(not(unix))]
-fn attach_to(_n: &Node, _id: &SessionId) -> Result<(), String> {
-    Err(msg::attach_windows_later().into())
-}
 
 #[cfg(unix)]
 fn tty_size() -> Option<(u16, u16)> {
@@ -6053,9 +6048,13 @@ fn tty_size() -> Option<(u16, u16)> {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
 fn tty_size() -> Option<(u16, u16)> {
-    None
+    use windows_sys::Win32::System::Console::*;
+    let mut info = CONSOLE_SCREEN_BUFFER_INFO::default();
+    if unsafe { GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &mut info) } == 0 { return None; }
+    Some(((info.srWindow.Right - info.srWindow.Left + 1) as u16,
+          (info.srWindow.Bottom - info.srWindow.Top + 1) as u16))
 }
 
 #[cfg(unix)]
@@ -6078,6 +6077,37 @@ fn raw_on() -> Result<libc::termios, String> {
 fn raw_off(saved: &libc::termios) {
     unsafe {
         libc::tcsetattr(0, libc::TCSANOW, saved);
+    }
+}
+
+#[cfg(windows)]
+struct ConsoleModes { input: u32, output: u32 }
+#[cfg(windows)]
+fn raw_on() -> Result<ConsoleModes, String> {
+    use windows_sys::Win32::System::Console::*;
+    let mut saved = ConsoleModes { input: 0, output: 0 };
+    unsafe {
+        let input = GetStdHandle(STD_INPUT_HANDLE);
+        let output = GetStdHandle(STD_OUTPUT_HANDLE);
+        if GetConsoleMode(input, &mut saved.input) == 0 || GetConsoleMode(output, &mut saved.output) == 0 {
+            return Err(msg::no_termios().into());
+        }
+        let raw_input = (saved.input & !(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT | ENABLE_QUICK_EDIT_MODE))
+            | ENABLE_EXTENDED_FLAGS | ENABLE_VIRTUAL_TERMINAL_INPUT;
+        if SetConsoleMode(input, raw_input) == 0 { return Err(msg::no_raw_mode().into()); }
+        if SetConsoleMode(output, saved.output | ENABLE_VIRTUAL_TERMINAL_PROCESSING) == 0 {
+            SetConsoleMode(input, saved.input);
+            return Err(msg::no_raw_mode().into());
+        }
+    }
+    Ok(saved)
+}
+#[cfg(windows)]
+fn raw_off(saved: &ConsoleModes) {
+    use windows_sys::Win32::System::Console::*;
+    unsafe {
+        SetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), saved.input);
+        SetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), saved.output);
     }
 }
 

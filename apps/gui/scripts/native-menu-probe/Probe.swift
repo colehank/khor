@@ -58,9 +58,10 @@ import WebKit
         guard let ptr=probe_events() else{return []}; defer{probe_free(ptr)}
         return (try? JSONSerialization.jsonObject(with:Data(String(cString:ptr).utf8))) as? [[String:Any]] ?? []
     }
-    func waitMenu() async -> WKWebView? {
-        for _ in 0..<100 {
-            if let menu=menu(), menu.frame.height>20, menu.superview?.isHidden==false { return menu }
+    func waitMenu(_ selector:String = "[data-omni-menu]") async -> WKWebView? {
+        for _ in 0..<300 {
+            if let menu=menu(), menu.frame.height>20, menu.superview?.isHidden==false,
+               (await js(menu,"!!document.querySelector('\(selector)')") as? Bool)==true { return menu }
             await pause(0.05)
         }
         return menu()
@@ -140,7 +141,7 @@ import WebKit
     func checkNotices(_ document:String) async {
         let before=await js(site,"window.identity") as? String
         check("notification adapter accepted",open("notice-1",document))
-        guard let notice=await waitMenu() else {check("notification WK exists",false);return}
+        guard let notice=await waitMenu("[data-notification-banner] [data-notification-open]") else {check("notification WK exists",false);return}
         await pause(0.3)
         check("notification above retained website",view.subviews.last === notice.superview)
         check("notification native dimensions measured",notice.frame.height>20 && notice.superview?.isHidden==false)
