@@ -221,9 +221,12 @@ pub(super) async fn read(node: &Node, board: &str, request: &Value) -> Result<Va
             return Err("A child transcript is read-only".into());
         }
         if detail["kind"] == "command" {
-            return super::commands::detail(node, board,
+            return super::commands::detail(
+                node,
+                board,
                 detail["run"].as_str().ok_or("Missing child run")?,
-                detail["key"].as_str().ok_or("Missing child key")?);
+                detail["key"].as_str().ok_or("Missing child key")?,
+            );
         }
         if !detail["kind"].is_null() && detail["kind"] != "agent" {
             return Err("Invalid child kind".into());

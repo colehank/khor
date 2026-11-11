@@ -177,7 +177,13 @@ pub(super) fn summaries(
         for key in names {
             let path = dir.join(&key);
             let receipt: Receipt = remote_cancel::read(&path, RECEIPT)?;
-            rows.push(summary(node, &run.id, &key, &receipt, command_state(&receipt, &saved, &path)));
+            rows.push(summary(
+                node,
+                &run.id,
+                &key,
+                &receipt,
+                command_state(&receipt, &saved, &path),
+            ));
             if rows.len() >= 24 {
                 return Ok(rows);
             }
@@ -187,9 +193,17 @@ pub(super) fn summaries(
 }
 
 fn command_state<'a>(receipt: &'a Receipt, saved: &Saved, path: &Path) -> &'a str {
-    if receipt.state != "working" { return &receipt.state; }
-    if saved.record.status == "cancelled" { return "canceled"; }
-    if remote_cancel::gate(&path.with_extension("lock")).as_ref().err().is_some_and(|why| why == "Busy") {
+    if receipt.state != "working" {
+        return &receipt.state;
+    }
+    if saved.record.status == "cancelled" {
+        return "canceled";
+    }
+    if remote_cancel::gate(&path.with_extension("lock"))
+        .as_ref()
+        .err()
+        .is_some_and(|why| why == "Busy")
+    {
         "working"
     } else {
         "unavailable"
@@ -197,8 +211,11 @@ fn command_state<'a>(receipt: &'a Receipt, saved: &Saved, path: &Path) -> &'a st
 }
 
 fn summary(node: &Node, run: &str, key: &str, receipt: &Receipt, state: &str) -> Value {
-    let result = [receipt.stdout.trim(), receipt.stderr.trim()].into_iter()
-        .filter(|text| !text.is_empty()).collect::<Vec<_>>().join("\n");
+    let result = [receipt.stdout.trim(), receipt.stderr.trim()]
+        .into_iter()
+        .filter(|text| !text.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
     json!({"kind":"command","run":run,"key":key,"agent":receipt.title,"machine":node.shown_name(),"home":node.device_str(),
         "state":state,"task":null,"context":null,"result":result,
         "can_cancel":false,"can_retry":false,"exit":receipt.exit,"truncated":receipt.truncated})
@@ -227,18 +244,37 @@ mod tests {
         let scratch = tempfile::tempdir().unwrap();
         let node = Node::open_as(scratch.path().into(), "command-reader").unwrap();
         let run = "command-parent-run";
-        let saved = Saved {board:"parent-board".into(),fingerprint:"fixture".into(),record:CommandRecord {
-            id:run.into(),owner:node.device_str().into(),status:"done".into(),agent:Some(AgentTurn {
-                model:"fixture".into(),approval:None,updated_at_ms:0,updates:vec![],updates_truncated:false,
-            }),..Default::default()
-        }};
+        let saved = Saved {
+            board: "parent-board".into(),
+            fingerprint: "fixture".into(),
+            record: CommandRecord {
+                id: run.into(),
+                owner: node.device_str().into(),
+                status: "done".into(),
+                agent: Some(AgentTurn {
+                    model: "fixture".into(),
+                    approval: None,
+                    updated_at_ms: 0,
+                    updates: vec![],
+                    updates_truncated: false,
+                }),
+                ..Default::default()
+            },
+        };
         remote_cancel::write(&file(node.root(), run), &saved).unwrap();
         let key = format!("{}.json", "a".repeat(64));
         let path = tasks(node.root(), run).join(&key);
         // If an implementation accidentally executed this title it would create a file.
         let sentinel = scratch.path().join("must-not-exist");
-        let receipt = Receipt {fingerprint:"fixture".into(),title:format!("touch {}", sentinel.display()),
-            state:"completed".into(),exit:Some(0),stdout:"  exact output\n".into(),stderr:"retained stderr\n".into(),truncated:true};
+        let receipt = Receipt {
+            fingerprint: "fixture".into(),
+            title: format!("touch {}", sentinel.display()),
+            state: "completed".into(),
+            exit: Some(0),
+            stdout: "  exact output\n".into(),
+            stderr: "retained stderr\n".into(),
+            truncated: true,
+        };
         remote_cancel::write(&path, &receipt).unwrap();
         let before = fs::read(&path).unwrap();
         for _ in 0..2 {
