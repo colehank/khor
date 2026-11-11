@@ -484,7 +484,9 @@ export function SideList({
     const rowClass = cn("flex min-h-list-row min-w-0 flex-1 items-stretch gap-row text-left", narrow ? "ps-group" : "ps-row");
     // A stretched primary button and the independent title action are siblings.
     // Keep real keyboard controls without nesting one button inside another.
-    const button = r.disclosure ? <div {...r.openData} className={cn(rowClass,"relative")} onClick={event=>{
+    const button = r.disclosure ? <div {...r.openData} tabIndex={-1} className={cn(rowClass,"relative")}
+    onFocus={event=>{if(event.target===event.currentTarget)event.currentTarget.querySelector<HTMLButtonElement>('[data-side-open]')?.focus({preventScroll:true});}}
+    onClick={event=>{
       event.currentTarget.querySelector<HTMLButtonElement>('[data-side-open]')?.focus({preventScroll:true});r.onOpen?.();
     }}>
       <button type="button" data-side-open tabIndex={r.id === stop ? 0 : -1}
