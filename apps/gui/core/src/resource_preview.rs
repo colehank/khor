@@ -132,7 +132,7 @@ fn media_type(path:&str)-> &'static str {
     match path.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(){
         "html"|"htm"=>"text/html; charset=utf-8","js"|"mjs"=>"text/javascript; charset=utf-8","css"=>"text/css; charset=utf-8",
         "json"|"map"=>"application/json","wasm"=>"application/wasm","svg"=>"image/svg+xml","png"=>"image/png","jpg"|"jpeg"=>"image/jpeg","gif"=>"image/gif","webp"=>"image/webp","avif"=>"image/avif","ico"=>"image/x-icon",
-        "mp4"|"m4v"=>"video/mp4","webm"=>"video/webm","mov"=>"video/quicktime","ogv"=>"video/ogg","mp3"=>"audio/mpeg","m4a"|"aac"=>"audio/mp4","wav"=>"audio/wav","ogg"|"oga"|"opus"=>"audio/ogg","flac"=>"audio/flac",
+        "mp4"|"m4v"=>"video/mp4","webm"=>"video/webm","mov"=>"video/quicktime","ogv"=>"video/ogg","mp3"=>"audio/mpeg","m4a"=>"audio/mp4","aac"=>"audio/aac","wav"=>"audio/wav","ogg"|"oga"|"opus"=>"audio/ogg","flac"=>"audio/flac",
         "woff"=>"font/woff","woff2"=>"font/woff2","ttf"=>"font/ttf","otf"=>"font/otf","pdf"=>"application/pdf",_=>"application/octet-stream"
     }
 }
@@ -141,4 +141,46 @@ mod tests {
     use super::*;
     #[test]fn ranges(){assert_eq!(byte_range(Some("bytes=2-4"),10),Ok(Some((2,4))));assert_eq!(byte_range(Some("bytes=-3"),10),Ok(Some((7,9))));assert_eq!(byte_range(Some("bytes=8-"),10),Ok(Some((8,9))));assert_eq!(byte_range(Some("bytes=1-999"),10),Ok(Some((1,9))));for r in ["bytes=10-","bytes=3-2","bytes=-0","bytes=0-1,3-4","cats=0-1"]{assert!(byte_range(Some(r),10).is_err());}assert!(byte_range(Some("bytes=0-"),0).is_err());}
     #[test]fn origins(){assert!(valid_host("127.0.0.1:1234",1234));assert!(valid_host("192.168.1.3:1234",1234));assert!(!valid_host("evil.example:1234",1234));assert!(!valid_host("127.0.0.1:1235",1234));}
+}
+
+#[cfg(test)]
+mod http_tests {
+    use super::*;
+    use tokio::io::{AsyncReadExt,AsyncWriteExt};
+    struct Fixture(std::path::PathBuf);
+    impl Drop for Fixture{fn drop(&mut self){let _=std::fs::remove_dir_all(&self.0);}}
+    async fn get(url:&str,method:&str,extra:&str)->(String,Vec<u8>){
+        let url=url::Url::parse(url).unwrap();
+        let mut socket=tokio::net::TcpStream::connect(("127.0.0.1",url.port().unwrap())).await.unwrap();
+        socket.write_all(format!("{method} {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nConnection: close\r\n{extra}\r\n",url.path(),url.port().unwrap()).as_bytes()).await.unwrap();
+        let mut reply=Vec::new();socket.read_to_end(&mut reply).await.unwrap();
+        let split=reply.windows(4).position(|w|w==b"\r\n\r\n").unwrap();
+        (String::from_utf8(reply[..split].to_vec()).unwrap().to_lowercase(),reply[split+4..].to_vec())
+    }
+    #[tokio::test(flavor="multi_thread",worker_threads=2)]
+    async fn real_http_origin_assets_ranges_and_close(){
+        let scratch=Fixture(std::env::temp_dir().join(format!("khor-resource-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos())));
+        let project=scratch.0.join("project");std::fs::create_dir_all(project.join("pages")).unwrap();std::fs::create_dir(project.join(".git")).unwrap();
+        let anchor=project.join("pages/index.html");std::fs::write(&anchor,b"<script type='module' src='../app.js'></script>").unwrap();
+        std::fs::write(project.join("app.js"),b"document.body.dataset.ready='yes'").unwrap();
+        let bytes=(0..1_200_003).map(|n|(n%251) as u8).collect::<Vec<_>>();let media=project.join("clip.mp4");std::fs::write(&media,&bytes).unwrap();
+        let html=open(&scratch.0,"",anchor.to_str().unwrap(),None).await.unwrap();
+        let (head,body)=get(&html.url,"GET","").await;assert!(head.starts_with("http/1.1 200"));assert!(head.contains("text/html"));assert!(body.starts_with(b"<script"));
+        let cookie=head.lines().find_map(|l|l.strip_prefix("set-cookie: ")).unwrap().split(';').next().unwrap();
+        let base=url::Url::parse(&html.url).unwrap().origin().ascii_serialization();
+        assert!(get(&format!("{base}/app.js"),"GET","").await.0.starts_with("http/1.1 404"));
+        let (head,body)=get(&format!("{base}/app.js"),"GET",&format!("Cookie: {cookie}\r\n")).await;
+        assert!(head.contains("text/javascript"));assert!(body.starts_with(b"document.body"));
+        let h=get(&html.url,"HEAD","").await;assert!(h.1.is_empty());assert!(h.0.contains(&format!("content-length: {}",b"<script type='module' src='../app.js'></script>".len())));
+        let (headers,_)=get(&format!("{base}/_khor/{}/%2e%2e/secret",html.id),"GET","").await;assert!(headers.starts_with("http/1.1 404"));
+        let video=open(&scratch.0,"",media.to_str().unwrap(),None).await.unwrap();
+        let (head,body)=get(&video.url,"GET","Range: bytes=524280-1048580\r\n").await;
+        assert!(head.starts_with("http/1.1 206"));assert!(head.contains("content-range: bytes 524280-1048580/1200003"));assert_eq!(body,bytes[524280..1048581]);
+        assert_eq!(get(&video.url,"GET","Range: bytes=-4\r\n").await.1,bytes[bytes.len()-4..]);
+        let (head,body)=get(&video.url,"GET","Range: bytes=99999999-\r\n").await;assert!(head.starts_with("http/1.1 416"));assert!(head.contains("content-range: bytes */1200003"));assert!(body.is_empty());
+        let (head,body)=get(&video.url,"GET","Range: bytes=4-8\r\nIf-Range: \"stale\"\r\n").await;assert!(head.starts_with("http/1.1 200"));assert_eq!(body,bytes);
+        let port=url::Url::parse(&video.url).unwrap().port().unwrap();touch(&video.id).unwrap();close(&video.id);close(&html.id);
+        tokio::time::sleep(Duration::from_millis(30)).await;
+        assert!(touch(&video.id).is_err());assert!(tokio::net::TcpStream::connect(("127.0.0.1",port)).await.is_err());
+    }
 }
