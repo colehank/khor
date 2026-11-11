@@ -11,7 +11,7 @@ on:
         default: sync
       frontend_run:
         type: string
-        default: '42999557910'
+        default: '42999100740'
       bindings_sha:
         type: string
         default: '6ffcd3d3b437495f86005539175a72a54ea081a2'
