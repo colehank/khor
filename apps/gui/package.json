@@ -57,6 +57,7 @@
     "console": "node scripts/check-console.mjs",
     "khor-conversations-ui": "node scripts/check-khor-conversations-ui.mjs",
     "updates-ui": "node scripts/check-updates-ui.mjs",
+    "recent-places-ui": "node scripts/check-recent-places-ui.mjs",
     "list-scroll-ui": "node scripts/check-list-scroll-ui.mjs",
     "session-directory": "node scripts/check-session-directory.mjs",
     "new-session-choices": "node scripts/check-new-session-choices.mjs",

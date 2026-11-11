@@ -95,7 +95,7 @@ export function NewTabPage({
   if (rows.length === 0) return <div data-no-places className="h-full" />;
 
   return (
-    <div data-new-tab className="min-h-0 overflow-y-auto p-2">
+    <div data-new-tab className="min-h-0 min-w-0 overflow-x-hidden overflow-y-auto p-2">
       {rows.map((place, i) => {
         const first = i === 0;
         const leaf = kind.leafOf(place.place);
@@ -114,7 +114,7 @@ export function NewTabPage({
                 pressable part its old height inside a taller stripe
                 that lights up. The wash is the row's and the row is
                 exactly as tall as what is in it. */}
-            <div className="group flex items-center gap-1 rounded-md hover:bg-muted/50">
+            <div className="group flex min-w-0 items-center gap-1 rounded-md hover:bg-muted/50">
               <button
                 type="button"
                 data-place={place.place}
@@ -124,11 +124,14 @@ export function NewTabPage({
                 // list of one-line rows, so nothing but the floor decides
                 // how tall a row is, and the hover paints exactly what
                 // opens (tokens.css `--touch`). Measured before: 34.
-                className="flex min-h-touch min-w-0 flex-1 items-center gap-2 rounded-md px-3 py-2 text-left"
+                className="flex min-h-touch min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-md px-3 py-2 text-left"
               >
                 <MachineAvatar face={face} className="size-kind-mark flex-none" />
-                <span className="flex-none text-callout font-label">{leaf}</span>
-                <span className="flex-none text-caption text-muted-foreground">{place.name}</span>
+                {/* The containing column, not the viewport, decides how
+                    much text fits. Every text slot yields before the
+                    separate close target, including on a wide desktop. */}
+                <span title={leaf} className="min-w-0 truncate text-callout font-label">{leaf}</span>
+                <span title={place.name} className="min-w-0 truncate text-caption text-muted-foreground">{place.name}</span>
                 <span
                   title={place.place}
                   className="min-w-0 flex-1 truncate text-caption text-muted-foreground"
@@ -137,7 +140,7 @@ export function NewTabPage({
                 </span>
                 {/* How lately, on the rows that have a "lately". */}
                 {place.at_ms !== null && (
-                  <span className="flex-none text-caption tabular-nums text-muted-foreground">
+                  <span className="min-w-0 truncate text-caption tabular-nums text-muted-foreground">
                     {ago(place.at_ms)}
                   </span>
                 )}

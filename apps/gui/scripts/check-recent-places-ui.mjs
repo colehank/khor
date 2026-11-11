@@ -10,7 +10,7 @@ import {chromium,webkit} from 'playwright-core';
 
 const gui=fileURLToPath(new URL('..',import.meta.url));
 const fixture=mkdtempSync(join(gui,'.recent-places-check-'));
-const out=process.env.RECENT_PLACES_OUT||join(process.env.RUNNER_TEMP||tmpdir(),'khor-recent-places-ui');
+const out=process.env.RECENT_PLACES_OUT||process.env.FILE_HANDOFF_OUT||join(process.env.RUNNER_TEMP||tmpdir(),'khor-recent-places-ui');
 mkdirSync(out,{recursive:true});
 writeFileSync(join(fixture,'index.html'),'<link rel="icon" href="data:,"><div id="root"></div><script type="module" src="./probe.tsx"></script>');
 writeFileSync(join(fixture,'probe.tsx'),`
