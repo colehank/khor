@@ -1,0 +1,36 @@
+---
+import desktop from "../assets/product/desktop.webp";
+import mobile from "../assets/product/mobile.webp";
+import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
+import {scenario} from "../../../gui/dev/site/scenario";
+
+// Real App captures and a CLI transcript using the command engine's actual
+// field order. Task content is synthetic and shared with the site demo.
+const sessions = `gui/ai-elements-review  空闲  未读 0  ${scenario.sessionTitles[0]}（置顶）\ngui/codex-review        空闲  未读 0  检查修改`;
+---
+<section class="product-hero" aria-labelledby="product-title" data-product-hero>
+  <div class="product-copy">
+    <p class="product-name"><img src={icon.src} alt="" width="32" height="32" /><span>Khor</span></p>
+    <h1 id="product-title"><span class="sr-only">Khor. </span><span>Work across your devices</span><span>and harnesses.</span></h1>
+    <p class="product-description">在一处访问各台设备上的智能体、文件和网页。</p>
+    <div class="product-actions"><a class="product-download" href="/download/">下载 Khor <span aria-hidden="true">↓</span></a><a class="product-learn" href="#story">了解 Khor <span aria-hidden="true">⌄</span></a></div>
+  </div>
+  <div class="product-showcase" aria-label="同一个任务的 Desktop、Mobile 和命令行界面示例">
+    <figure class="product-surface surface-desktop">
+      <figcaption>Desktop</figcaption>
+      <div class="surface-frame"><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor 桌面界面：查看首页适配任务、修改计划和待确认的检查" fetchpriority="high" loading="eager" /></div>
+    </figure>
+    <figure class="product-surface surface-mobile">
+      <figcaption>Mobile</figcaption>
+      <div class="surface-frame"><img src={mobile.src} width={mobile.width} height={mobile.height} alt="Khor 手机界面：在同一个首页适配任务中查看进展与确认操作" loading="eager" /></div>
+    </figure>
+    <figure class="product-surface surface-terminal">
+      <figcaption>Terminal</figcaption>
+      <div class="surface-frame terminal-frame" role="img" aria-label="Khor 命令行示例：列出首页适配会话，查看 Linux 项目的 Git 修改">
+        <div class="terminal-title">khor</div>
+        <div class="terminal-output"><p class="terminal-command"><span aria-hidden="true">%</span> khor sessions</p><pre>{sessions}</pre><p class="terminal-command"><span aria-hidden="true">%</span> khor git status Linux /preview/project</p><pre>main<br />M  src/app.ts</pre><p class="terminal-prompt" aria-hidden="true">% <span></span></p></div>
+      </div>
+    </figure>
+  </div>
+  <p class="product-caption">同一个任务，三种方式。</p>
+</section>

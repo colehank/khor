@@ -5,7 +5,9 @@ const ask = (id: number, title: string) => ({kind:'ask',ask:id,title,options:[['
 export const scenario = {
   sampleImage:false,
   answerText:"\n\n检查已完成。修改已保留，你可以接着处理下一个任务。",
-  sessionTitles:['首页适配','检查移动布局','整理项目文档','Codex · 检查修改','设备与任务'],
+  sessionTitles:['首页适配','检查移动布局','整理项目文档','Codex · 检查修改','设备与任务','项目终端'],
+  sessionPreviews:['移动布局已调整，等你确认','准备检查标题和按钮','项目说明已整理','已查看首页修改','设备已连接','查看项目与修改记录'],
+  deviceNames:['MacBook Pro','Linux','iPhone'],
   reply:'收到。这里使用示例数据，你可以继续查看会话、文件和修改记录。',
   thinking:['先查看任务和项目文件。','\n确认需要修改的内容。','\n整理结果，等待你的下一步。'],
   samples:[

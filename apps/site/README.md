@@ -20,8 +20,10 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 `demo:build`。`demo:check` 检查演示与生产前端类型；`npm run build` 先打包演示再输出静态站。
 
 - `src/components/Mandala.astro` 读取完整的 `mandala-glass.svg` 和既有 session 字形；`icon-story.ts` 在原图层上控制演化，不替换成另一幅图。
-- `src/scripts/story.ts` 按滚动位置进入章节，每句触发一次完整演化；One mind 时外珠缩到最终尺寸，中心珠以最终绿色浮现；How about 一步形成灰阶内部结构并让四珠变绿，外圆不出现；Meet 再显现外圆并恢复其余材质原色。合盖和手机接续共用原地调整尺寸的同一 iframe，保留任务与输入。
-- 减少动态效果模式按章节直接展示静态姿态，首屏仍为四颗灰珠，保留手动打开体验与下载。
+- `src/components/ProductHero.astro` 是产品首屏：Desktop、Mobile 使用真实前端的静态截图，CLI 使用已核对命令格式的示例输出。三种界面共用首页适配任务；没有嵌入交互体验。
+- `src/assets/product` 的两张 WebP 来自本地 `/experience/app/index.html?scene=gui&items=3&machines=3&theme=light`，Chrome 视口分别为 1080×680 与 390×780，2× 像素密度、WebP quality 92。App 或 `apps/gui/dev/site/scenario.ts` 更新后重新截图；全部任务、设备与输出都是演示数据。
+- `src/scripts/story.ts` 在产品首屏后按滚动位置连续演化图标，停止滚动即停在当前姿态。One mind 时外珠归位缩小，中心珠和内圆保持最终绿色与几何；How about 画出外环双细边与菱形轮廓，外珠仍灰；Meet 的左上扫光恢复原始材质与外珠绿色。
+- 减少动态效果模式按当前章节直接展示静态姿态，图标故事仍从四颗灰珠开始。产品首屏、功能、资源体验与下载均可直接访问。
 - `src/releases.ts` 是下载页和 `/download.json` 的共同来源，仅列已验证的发行资产。
 - 站点 token 从 `docs/design-system/tokens.json` 生成；不另存调色板与字体。
 - 演示产物在 `public/experience/app`，由构建生成并忽略；没有重新实现一套 App 页面。

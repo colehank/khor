@@ -64,6 +64,8 @@ export function mountStory() {
   reduced.addEventListener('change',measure,on);
   const resize=new ResizeObserver(measure);
   resize.observe(opening);
+  const hero=document.querySelector<HTMLElement>('[data-product-hero]');
+  if(hero)resize.observe(hero);
   measure();
   window.addEventListener('pagehide',event=>{
     if(event.persisted)return;
