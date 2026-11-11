@@ -11,7 +11,7 @@ on:
         default: sync
       desktop_target:
         type: choice
-        options: [all, windows]
+        options: [all, windows, linux-arm]
         default: all
 permissions:
   contents: read
@@ -219,7 +219,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(inputs.desktop_target == 'windows' && '[{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]' || '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","filename":"khor-linux-x86_64.deb"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]') }}
+        include: ${{ fromJSON(inputs.desktop_target == 'windows' && '[{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]' || inputs.desktop_target == 'linux-arm' && '[{"runner":"ubuntu-24.04-arm","target":"aarch64-unknown-linux-gnu","filename":"khor-linux-aarch64.deb"}]' || '[{"runner":"ubuntu-24.04","target":"x86_64-unknown-linux-gnu","filename":"khor-linux-x86_64.deb"},{"runner":"windows-2025","target":"x86_64-pc-windows-msvc","filename":"khor-windows-x86_64.msi"}]') }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     env:
