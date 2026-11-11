@@ -932,7 +932,7 @@ export default function App() {
 
   const [childTasks, setChildTasks] = useState<SessionRow | null>(null);
   const openSessionRow = (row: SessionRow) => {
-    if (row.id === selected && row.category === "khor" && row.execution_home) setChildTasks(row);
+    if (row.id === selected && (!narrow || screen === "detail") && row.category === "khor" && row.execution_home) setChildTasks(row);
     else onSelect(row);
   };
 

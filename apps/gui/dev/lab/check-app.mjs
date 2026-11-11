@@ -232,6 +232,18 @@ async function inspect(browser, scene, size, data = {}) {
       const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
       assert.equal(count,machines,'Machine fixture count must reach the actual App');
       assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
+      if (scene==='list' && size.width < 500 && machines===3) {
+        const parent=page.locator('[data-screen="list"] [data-row="wide/all"] [data-row-open]');
+        await parent.click();
+        await page.locator('[data-machine-chat-scroll]:visible').waitFor();
+        await page.locator('[data-back]:visible').first().click();
+        await parent.waitFor({state:'visible'});
+        await parent.click();
+        await page.locator('[data-machine-chat-scroll]:visible').waitFor();
+        assert.equal(await page.locator('[data-child-task-row]').count(),0,'Returning from the mobile list opens the selected conversation before its child tasks');
+        await page.locator('[data-back]:visible').first().click();
+        await parent.waitFor({state:'visible'});
+      }
       if (scene==='list' && size.width >= 500 && machines===3) {
         const parent=page.locator('[data-row="wide/all"] [data-row-open]');
         await parent.click();
