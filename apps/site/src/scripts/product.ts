@@ -6,12 +6,16 @@ export function mountDesktopPreview() {
   // Preserve the complete desktop shell instead of switching to mobile.
   const resize=new ResizeObserver(()=>stage.style.setProperty('--desktop-scale',String(preview.clientWidth/stage.offsetWidth)));
   resize.observe(preview);
-  const url=new URL(frame.dataset.src!,location.origin);
-  frame.src=url.href;
+  const show=()=>preview.setAttribute('data-ready','');
   window.addEventListener('message',event=>{
     if(event.origin!==location.origin||event.source!==frame.contentWindow)return;
-    if(event.data?.type==='khor-demo-ready')preview.dataset.ready='';
+    if(event.data?.type==='khor-demo-ready')show();
     if(event.data?.type==='khor-demo-download')location.assign(document.querySelector<HTMLAnchorElement>('[data-device-download]')?.href??'/download/');
   });
+  // The same-origin DOM is also a readiness receipt after a cached load.
+  frame.addEventListener('load',()=>{
+    if(frame.contentDocument?.getElementById('root')?.childElementCount)show();
+  });
+  frame.src=new URL(frame.dataset.src!,location.origin).href;
   window.addEventListener('pagehide',event=>{if(!event.persisted)resize.disconnect();},{once:true});
 }

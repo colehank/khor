@@ -24,6 +24,7 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 - 示例数据包含 macOS、Windows、Linux、iOS、Android 五种系统的六台设备，Claude、Cursor、Codex、Khor、Shell 五种会话类型；全部是浏览器内的合成连接状态。会话字形沿用生产 App 的类型标记。
 - `src/assets/product/desktop.webp` 与 `desktop-dark.webp` 来自本地 `/experience/app/index.html?scene=content&hero=1`，Chrome 1360×850、2× 像素密度、WebP quality 92，分别在浏览器浅色和深色偏好下截图。App 或 `apps/gui/dev/site/scenario.ts` 更新后重新截图。首图与可操作 GUI 均跟随浏览器明暗偏好；GUI 使用生产 App 的 auto 主题监听，实时切换不重载会话。所有任务与文件均为浏览器内的演示数据；发送消息固定回复 “Let's try Khor, download it here.”，链接进入同一套下载推荐。
 - `src/scripts/product.ts` 保持完整桌面布局并按展示宽度缩放；`src/scripts/download.ts` 根据平台与可用架构信息推荐已有的发行包。macOS 的旧 UA 不用于猜测芯片，信息不足时进入平台选择页；未提供安装包的平台展示所有选项。
+- 演示在 App 挂载后交出首图，包括从设备、设置等非聊天页恢复的入口；不以聊天输入框是否存在作为可交互条件。顶部导航直接使用生产 `LandingStrip` 及其选中态，不在官网另画高亮。
 - `src/scripts/story.ts` 在产品首屏后按滚动位置连续演化图标，停止滚动即停在当前姿态。One mind 时外珠归位缩小，中心珠和内圆保持最终绿色与几何；How about 画出外环双细边与菱形轮廓，外珠仍灰；Meet 的左上扫光恢复原始材质与外珠绿色。
 - 减少动态效果模式按当前章节直接展示静态姿态，图标故事仍从四颗灰珠开始。产品首屏、功能、资源体验与下载均可直接访问。
 - `src/releases.ts` 是下载页和 `/download.json` 的共同来源，仅列已验证的发行资产。

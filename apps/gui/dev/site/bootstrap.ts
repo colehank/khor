@@ -89,7 +89,9 @@ if(requested==='page'){
 Object.defineProperty(window,'__KHOR_SITE_DEMO__',{value:Object.freeze({scene:requested,synthetic:true})});
 if(hero&&parent!==window){
   const ready=new MutationObserver(()=>{
-    if(!document.querySelector('[placeholder="发消息…"]')||!document.querySelector('[data-session-content]'))return;
+    // Any mounted App page is interactive. A restored devices/settings page
+    // has no composer and must not remain trapped behind the static poster.
+    if(!document.getElementById('root')?.childElementCount)return;
     ready.disconnect();parent.postMessage({type:'khor-demo-ready'},location.origin);
   });
   ready.observe(document.body,{childList:true,subtree:true});

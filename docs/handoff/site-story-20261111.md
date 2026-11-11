@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 点击失效修复：先用浏览器保存的 `site-v3/hero` + `khor.place=devices` 复现，旧逻辑等待聊天输入框和资源列才解除首图，导致 pointer-events 一直为 none。改为生产 App 任意页面挂载即发 ready，父页先注册事件再设置 iframe URL，并以同源 load DOM 兜底，首图不接收指针。Chrome 同一恢复入口现为 pointer-events auto，真实鼠标依次切换设备→会话、发送固定下载回复、再切设备成功，错误为空。顶部导航与当前 App 源码的 LandingStrip/样式一致，没有单独覆盖选中样式；已核对选中高亮随当前页变化、颜色与生产 rail-on-ink token 相同。红/绿收据和截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/interaction`。
 - 2026-11-12 最新修订：Desktop 外层补上 macOS 圆角边框与阴影。用户指出真实 Khor 没有额外标题行，红黄绿按钮已改为占原有导航第一行的左侧留白，与导航图标及右侧标签同高；网站演示独立绘制，不启用原生后端。移除「打开体验」链接，保留直接输入发送。网站演示扩至六台设备，系统包含 macOS / Windows / Linux / iOS / Android；会话类别包含 Claude / Cursor / Codex / Khor / Shell，字形由实际 App 渲染。设备连接状态为合成的在线示例；其他 Lab 的默认连接状态和类别不变。Chrome 已确认五种系统及会话类型，Khor 会话可发送并得到固定下载回复，无页面错误或实际 API 网络请求。新证据目录 `/Volumes/disk0/Khor/evidence/site-story-20261112/macos-frame`。
 - GUI 主题按用户新要求跟随访问浏览器：默认 auto，不再把初始明暗写死进 iframe URL；网站 fixture 启动时同步覆盖旧演示存下的主题，资源体验链接也移除强制浅色参数。生产 App 的主题监听负责实时切换，不重新加载 iframe。首图提供深浅两张 WebP，由 picture media 选择。Chrome 已从浅→深→浅验证背景和主题同步、草稿保留；证据同目录 `theme.json`。红黄绿与原有导航行中心均为源视口 y=26，导航起点 x=80，按钮末端 x=60，无额外标题行。
 - 最新版首屏改为左侧 Khor、宣传语、设备下载按钮与文档，右侧完整 Desktop。`product.ts` 按共享 list-w 的四倍固定桌面视口、等比缩放，不因预览宽度切成手机布局；加载前使用 1360×850、2× WebP（约 143KB）作静态首图。已删除 Mobile 图与 CLI 展示。
