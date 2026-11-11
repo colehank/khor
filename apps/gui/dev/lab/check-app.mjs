@@ -233,17 +233,32 @@ async function inspect(browser, scene, size, data = {}) {
       const count = await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()).length);
       assert.equal(count,machines,'Machine fixture count must reach the actual App');
       assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
+      if (scene==='list' && machines===3) {
+        const row=page.locator(size.width<500?'[data-screen="list"] [data-row="wide/all"] [data-row-open]':'[data-row="wide/all"] [data-row-open]');
+        const control=row.locator('[data-side-disclosure]');
+        if(size.width>=500)await control.hover();
+        const spacing=await control.evaluate(button=>{
+          const rect=button.getBoundingClientRect(),title=button.closest('[data-side-title]').getBoundingClientRect();
+          const sub=button.closest('[data-row-open]').querySelector('[data-side-sub]').getBoundingClientRect();
+          const style=getComputedStyle(button);
+          return {top:rect.top,bottom:rect.bottom,titleTop:title.top,titleBottom:title.bottom,subTop:sub.top,paddingLeft:parseFloat(style.paddingLeft),paddingRight:parseFloat(style.paddingRight)};
+        });
+        assert(spacing.top>=spacing.titleTop-0.5&&spacing.bottom<=spacing.titleBottom+0.5,'The disclosure hover/focus box reserves its height inside the title line');
+        assert(spacing.bottom<=spacing.subTop+0.5,'The disclosure does not cover the session summary');
+        assert(spacing.paddingLeft>0&&spacing.paddingRight>0,'The label and chevron have horizontal breathing room');
+        assert.equal(await control.locator('svg').count(),1,'The text action shows its own chevron beside the name');
+        await page.screenshot({path:path.join(report,name+'-disclosure.png')});
+      }
       if (scene==='list' && size.width < 500 && machines===3) {
         const parent=page.locator('[data-screen="list"] [data-row="wide/all"] [data-row-open]');
         const disclosure=page.locator('[data-screen="list"] [data-side-disclosure="wide/all"]');
-        assert.equal(await disclosure.innerText(),'子会话');
-        assert.equal(await disclosure.locator('svg').count(),0,'Disclosure leaves the parent avatar intact');
+        assert.equal((await disclosure.innerText()).trim(),'子会话');
         assert.equal(await disclosure.evaluate(button=>button.parentElement.closest('button')===null),true,'Independent actions are never nested inside the row button');
         const controlBounds=await disclosure.boundingBox();assert(controlBounds&&controlBounds.width>=44&&controlBounds.height>=44,'Mobile disclosure keeps a full touch target');
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"] [data-child-task-row]').first().waitFor();
         assert.equal(await disclosure.getAttribute('aria-expanded'),'true');
-        assert.equal(await disclosure.innerText(),'收起');
+        assert.equal((await disclosure.innerText()).trim(),'收起');
         const childFaces=page.locator('[data-child-tasks="wide/all"] [data-child-task-face] [data-side-face]');
         assert.equal(await childFaces.count(),4,'Agents and command records reuse the session avatar assembly');
         const devices=await page.evaluate(async()=> (await (await fetch('/api/devices',{method:'POST',body:'{}'})).json()));
@@ -253,12 +268,12 @@ async function inspect(browser, scene, size, data = {}) {
         await page.screenshot({path:path.join(report,name+'-child-tree.png')});
         await disclosure.click();
         await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
-        assert.equal(await disclosure.innerText(),'子会话');
-        await parent.click();
+        assert.equal((await disclosure.innerText()).trim(),'子会话');
+        await parent.locator('[data-side-name]').click();
         await page.locator('[data-machine-chat-scroll]:visible').waitFor();
         await page.locator('[data-lab-model-back]:visible').click();
         await parent.waitFor({state:'visible'});
-        await parent.click();
+        await parent.locator('[data-side-name]').click();
         await page.locator('[data-machine-chat-scroll]:visible').waitFor();
         assert.equal(await page.locator('[data-child-task-row]').count(),0,'Returning from the mobile list opens the selected conversation before its child tasks');
         await page.locator('[data-lab-model-back]:visible').click();
@@ -266,8 +281,8 @@ async function inspect(browser, scene, size, data = {}) {
       }
       if (scene==='list' && size.width >= 500 && machines===3) {
         const parent=page.locator('[data-row="wide/all"] [data-row-open]');
-        await parent.click();
-        await parent.click();
+        await parent.locator('[data-side-name]').click();
+        await parent.locator('[data-side-name]').click();
         const tasks=page.locator('[data-child-task-row]');
         await tasks.first().waitFor();
         assert.equal(await tasks.count(),4,'The active Khor row opens its agent and command tasks');

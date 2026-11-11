@@ -414,15 +414,16 @@ export function SideList({
     // on the picked block; the corners keep their own inks. A picked row
     // is never greyed (no transparency on the selection, README 颜色).
     const dim = !!r.dim && !picked;
-    const disclosure = r.disclosure && <span data-side-disclosure-slot className={cn("relative inline-flex flex-none items-center text-callout font-body", narrow ? "min-w-touch" : "px-in")}>
-      <span aria-hidden className="pointer-events-none opacity-0">{r.disclosure.label}</span>
-      <button type="button" data-side-disclosure={r.id} aria-expanded={r.disclosure.expanded}
+    const disclosure = r.disclosure && <button type="button" data-side-disclosure={r.id} aria-expanded={r.disclosure.expanded}
         aria-controls={r.disclosure.controls} aria-label={r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}
         onClick={event=>{event.stopPropagation();r.disclosure?.toggle();}}
-        className={cn("pointer-events-auto absolute inset-x-0 top-1/2 z-10 -translate-y-1/2 rounded-sm text-callout font-body text-muted-foreground hover:bg-fill", narrow ? "h-touch" : "h-ctl-md", RING)}>
-        {r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}
-      </button>
-    </span>;
+        className={cn("pointer-events-auto relative z-10 inline-flex flex-none items-center justify-center gap-xxs rounded-md px-in text-callout font-body text-muted-foreground hover:bg-fill", narrow ? "h-touch min-w-touch" : "h-ctl-md", RING)}>
+        <span className="inline-grid">
+          <span aria-hidden className="invisible col-start-1 row-start-1">{r.disclosure.label}</span>
+          <span className="col-start-1 row-start-1">{r.disclosure.expanded ? r.disclosure.collapseLabel : r.disclosure.label}</span>
+        </span>
+        <IconChevronRight className={cn("size-affordance flex-none transition-transform", r.disclosure.expanded && "rotate-90")}/>
+      </button>;
     const contents = <>
         {/* **One leading slot** (the audit fix plan F2.1): the face's
             width on every list, so the words start on one x whatever the
