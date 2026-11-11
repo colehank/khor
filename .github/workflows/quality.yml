@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents]
         default: sync
       desktop_target:
         type: choice
@@ -218,7 +218,7 @@ jobs:
           if-no-files-found: error
 
   package-frontend:
-    if: inputs.slice == 'desktop-package' || inputs.slice == 'mac-package' || inputs.slice == 'gui-regression'
+    if: inputs.slice == 'desktop-package' || inputs.slice == 'mac-package' || inputs.slice == 'gui-regression' || inputs.slice == 'recents'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -371,6 +371,33 @@ jobs:
           path: agent-runtime-proof.json
           if-no-files-found: error
 
+  recents:
+    if: inputs.slice == 'recents'
+    needs: package-frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - uses: ./.github/actions/restore-frontend
+      - run: npm ci --prefix apps/gui
+      - working-directory: apps/gui
+        run: npx playwright-core install --with-deps chromium webkit
+      - working-directory: apps/gui
+        env:
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+        run: node scripts/check-recent-places-ui.mjs
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: recent-places
+          path: ${{ runner.temp }}/khor-recent-places-ui
+
   gui-regression:
     if: inputs.slice == 'gui-regression'
     needs: package-frontend
@@ -387,6 +414,8 @@ jobs:
           ref: ${{ inputs.source_sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22.19.0
