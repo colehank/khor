@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources]
         default: sync
       checker_sha:
         type: string
@@ -522,3 +522,46 @@ jobs:
         with:
           name: wix-fragment-proof
           path: ${{ runner.temp }}/wix-proof
+
+  resources:
+    if: inputs.slice == 'resources'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: frontend-registry
+          cache-targets: false
+          save-if: 'false'
+      - name: Run source confinement and real HTTP lifecycle tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p khor-node --lib file_resource:: -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/resource-source.log"
+          cargo test --locked -p khor-gui-core --lib resource_preview:: -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/resource-http.log"
+          cargo test --locked -p khor-gui-core --test command_tables -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/resource-commands.log"
+      - name: Export formatter patch without local compilation
+        if: always()
+        run: |
+          cargo fmt --all
+          git diff --binary > "$RUNNER_TEMP/format.patch"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: resource-stream-evidence
+          path: |
+            ${{ runner.temp }}/resource-source.log
+            ${{ runner.temp }}/resource-http.log
+            ${{ runner.temp }}/resource-commands.log
+            ${{ runner.temp }}/format.patch
