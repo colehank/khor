@@ -39,10 +39,25 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/native-tools
         with:
           target: x86_64-unknown-linux-gnu
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: cached-frontend
+          run-id: '43011160399'
+          github-token: ${{ github.token }}
+      - name: Restore the real verified unchanged frontend required by the CLI
+        run: |
+          python3 scripts/release_manifest.py verify --root cached-frontend --sha 00555d064314e358d4e613d1df35183284c4a55e --run-id 43011160399 --kind frontend
+          git diff --exit-code 00555d064314e358d4e613d1df35183284c4a55e HEAD -- apps/gui/src apps/gui/package.json apps/gui/package-lock.json apps/gui/vite.config.ts crates/catalog
+          mkdir -p apps/gui/src
+          cp -R cached-frontend/dist apps/gui/dist
+          cp -R cached-frontend/gen apps/gui/src/gen
+          rustup component add rustfmt
       - name: Embed the actual agent and verify the two real published runtimes
         env:
           GH_TOKEN: ${{ github.token }}
