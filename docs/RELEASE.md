@@ -11,7 +11,7 @@
 | 操作 | 自动结果 |
 | --- | --- |
 | PR、普通main提交 | Quality检查与测试，不构建分发包、不上传Apple |
-| 推送`vX.Y.Z-rc.N` | 全部Quality门和七平台产物通过后，上传TestFlight并确认Apple处理成功，再发布GitHub预发布资产 |
+| 推送`vX.Y.Z-rc.N` | 全部Quality门和十平台产物通过后，上传TestFlight并确认Apple处理成功，再发布GitHub预发布资产 |
 | 在通过的候选提交上推送`vX.Y.Z` | 读取已经发布的候选，复用同一批字节发布GitHub正式版本，并将同一Apple build提交App Store审核 |
 | Apple审核通过 | 保留手动上线；自动流程不替用户上线 |
 
@@ -37,11 +37,11 @@ git push origin v0.1.15
 
 `release.yml`只自动响应rc tag；手工`Release candidates`仍可在main进行签名或未签名诊断构建，main手工构建不会自动分发。
 
-前端只生成一次，Quality与原生平台消费相同dist与生成类型。四个CLI（Linux x86_64/arm64、Mac Intel/Apple Silicon）、两个Mac App和一个iOS archive分别产出收据，再聚合manifest。收据包含源SHA、前端标识、run/attempt、大小与SHA256；实际原生程序检查嵌入前端，CLI/Mac App还检查嵌入Pi及Linux glibc 2.31下限。
+前端只生成一次，Quality与原生平台消费相同dist与生成类型。四个CLI（Linux x86_64/arm64、Mac Intel/Apple Silicon）、两个Mac App、两个Linux桌面App、一个Windows桌面App和一个iOS archive分别产出收据，再聚合manifest。收据包含源SHA、前端标识、run/attempt、大小与SHA256；实际原生程序检查嵌入前端，CLI/Mac App还检查嵌入Pi及Linux glibc 2.31下限。
 
-`agent-runtime` 为每个目标平台制作一次 Pi，CLI 的 `native` 与 `mac-app` 校验源码、目标平台、run 和文件摘要后复用相同字节。两类原生构建独立调度，各有90分钟预算；Mac App不再接在CLI编译之后共用一个任务时限。中间的 `agent-runtime-*` 工件不进入最终七平台发布集合。
+`agent-runtime` 为每个目标平台制作一次 Pi，CLI 的 `native` 与 `mac-app` 校验源码、目标平台、run 和文件摘要后复用相同字节。两类原生构建独立调度，各有90分钟预算；Mac App不再接在CLI编译之后共用一个任务时限。中间的 `agent-runtime-*` 工件不进入最终十平台发布集合。
 
-工具链使用Rust1.95、Node22.19、Bun1.3.14、Xcode26.5及锁文件。Rust目标目录不跨运行缓存。Actions前端保留7天，候选14天；成功rc会将七平台产物、iOS归档/构建号、manifest、原始安装器及TestFlight记录保存在GitHub不可变预发布资产。正式晋升从该预发布读取，Actions文件过期不会导致重编。
+工具链使用Rust1.95、Node22.19、Bun1.3.14、Xcode26.5及锁文件。Rust目标目录不跨运行缓存。Actions前端保留7天，候选14天；成功rc会将十平台产物、iOS归档/构建号、manifest、原始安装器及TestFlight记录保存在GitHub不可变预发布资产。正式晋升从该预发布读取，Actions文件过期不会导致重编。
 
 GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才发布。重试仅补齐缺失的相同文件；发现同名不同内容立即拒绝，绝不覆盖。发布后的资产由GitHub immutable releases保护；正式Release中的程序字节与候选一致。默认latest只指向正式版本。
 
@@ -50,6 +50,12 @@ GitHub资产先上传到草稿，逐个校验摘要和大小，全部就绪才�
 Mac 构建与公证分为三个独立任务。`mac-app` 编译 App 和同版本 CLI，以 Developer ID Application 签名，再用独立的 Developer ID Installer 签发 PKG。原始 PKG 与源码、前端、Pi、文件摘要收据保存在 `mac-build-<平台>`；Tauri 构建子进程不接收公证凭据。`mac-submit` 先保存提交意图，再非等待提交 Apple，立即将请求 ID 保存为 `notary-request-<平台>`。`mac-notarize` 查询这个 ID，通过后为 PKG 和其中的 App 附加票据，验证安装包与 App 签名，再保存 PKG、供 Tauri updater 使用的 App 归档和 `notarization.json`。候选分发要求两个 Mac 包都有相同源码/run 的 Accepted 记录。
 
 用户安装选择 `khor-macos-arm64.pkg`（Apple 芯片）或 `khor-macos-x86_64.pkg`（Intel）。两者都安装到 `/Applications/Khor.app`，并在空闲时为 `/usr/local/bin/khor` 建立指向包内 CLI 的链接。App 更新会一起替换其 CLI。独立 CLI 安装继续用 `khor upgrade`；在仅安装 CLI 的机器上可用 `khor web`，装好 App 后用 `khor gui` 打开。普通用户对 `/Applications` 没有写权限时，用新版 PKG 更新。
+
+Linux 桌面提供 x86_64、arm64 的 Debian 安装包，面向 Ubuntu 24.04 及兼容发行版，随附同版本 CLI；GTK/WebKit 依赖交给包管理器。独立服务器 CLI 保持 glibc 2.31 下限。Windows 提供 x86_64 MSI，安装目录内同时包含 App 与 CLI，将该目录追加到当前用户的 PATH。已有用户 PATH 项的顺序保留，新的终端可使用命令。两个平台的系统安装包使用原安装器或包管理器更新，应用设置展示其安装归属。
+
+Linux 包不会覆盖独立放置于 /usr/bin/khor 的文件；已有 Khor Debian 包可以原位升级。Windows 卸载移除本次安装器加入的 PATH 项。发行构建会在隔离 runner 上实际安装、检查 App/CLI 的源码与运行契约、通过 khor gui 启动应用，再卸载并核对独立 CLI 的保留。
+
+新增候选清单使用 schema 2，要求完整十平台收据。历史 schema 1 七平台候选继续按原集合校验和下载，晋升历史候选时保持原有产物。
 
 已有的独立安装优先保留：安装器不会覆盖 `/usr/local/bin/khor` 上的其他文件，也不会动用户目录。可用 `type -a khor` 查看实际命令来源，决定是否调整 PATH 或按原安装方式卸载；只有确认旧 `khor-gui` 是指向 App 内部程序的外部软链接时，才用 `unlink` 移除它。用户可用 `/Applications/Khor.app/Contents/MacOS/khor --version` 核对随 App 的版本。
 
@@ -71,7 +77,7 @@ iOS build number为`1000+release workflow run_number.run_attempt`，高于历史
 
 GitHub正式发布与Apple审核是独立阶段：GitHub可能已经发布，而Apple因资料缺失仍未提交。此时补齐资料并重试分发，不能把GitHub成功当作App Store上线。
 
-Mac继续走Developer ID签名、公证和商店外分发。当前`macos-private-api`配置不等同Mac App Store兼容。Android/Windows安装包未纳入本轮。
+Mac继续走Developer ID签名、公证和商店外分发。当前`macos-private-api`配置不等同Mac App Store兼容。Android 安装包尚未接入分发。
 
 ## GitHub一次性配置
 
