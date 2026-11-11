@@ -98,6 +98,7 @@ const LIVE = {
   browser: fit(2.93, 2.93, 18.15), // round
   more: fit(2.92, 2.92, 18.16),
   gear: fit(2.92, 2.92, 18.17), // round
+  info: fit(1.98, 1.98, 20.05), // round, same ring as Recent
   appearance: fit(2.92, 2.92, 18.17), // round
   shield: fit(1.19, 1.33, 21.62),
   network: fit(1.44, 0.74, 21.12), // round
@@ -467,6 +468,15 @@ export function IconGear({ className }: IconProps) {
       <circle data-body cx="12" cy="12" r="2.8" />
     </RailGlyph>
   );
+}
+
+/** About is information, distinct from the Settings gear. */
+export function IconInfo({ className }: IconProps) {
+  return <RailGlyph className={className} live={LIVE.info}>
+    <circle cx="12" cy="12" r="8.5"/>
+    <circle cx="12" cy="7.8" r="0.8" fill="currentColor" stroke="none"/>
+    <path d="M12 11.2v5.6"/>
+  </RailGlyph>;
 }
 
 /** 外观 = light and dark: a ring, and the half of it that is dark as the

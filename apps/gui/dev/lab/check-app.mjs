@@ -234,6 +234,14 @@ async function inspect(browser, scene, size, data = {}) {
       assert.equal(await page.locator('[data-alone]:visible,[data-machine-add-guidance]:visible').count(),machines===0?1:0,'Only a zero-machine list offers add-machine guidance');
       if (scene==='list' && size.width < 500 && machines===3) {
         const parent=page.locator('[data-screen="list"] [data-row="wide/all"] [data-row-open]');
+        const disclosure=page.locator('[data-screen="list"] [data-side-disclosure="wide/all"]');
+        await disclosure.click();
+        await page.locator('[data-child-tasks="wide/all"] [data-child-task-row]').first().waitFor();
+        assert.equal(await disclosure.getAttribute('aria-expanded'),'true');
+        assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Expanding tasks stays in the session list');
+        assert.equal(await parent.isVisible(),true,'The parent remains visible above its inline children');
+        await disclosure.click();
+        await page.locator('[data-child-tasks="wide/all"]').waitFor({state:'detached'});
         await parent.click();
         await page.locator('[data-machine-chat-scroll]:visible').waitFor();
         await page.locator('[data-lab-model-back]:visible').click();
@@ -251,11 +259,13 @@ async function inspect(browser, scene, size, data = {}) {
         const tasks=page.locator('[data-child-task-row]');
         await tasks.first().waitFor();
         assert.equal(await tasks.count(),4,'The active Khor row opens its agent and command tasks');
+        assert.equal(await page.locator('[role="dialog"]:visible').count(),0,'Task branches expand in the original list');
+        assert.equal(await page.locator('[data-side-list] [data-child-tasks="wide/all"]').count(),1);
         await tasks.first().click();
         assert.match(await page.locator('[data-child-task-detail]').innerText(),/3 checks passed/);
         await page.keyboard.press('Escape');
         await tasks.first().waitFor();
-        await page.keyboard.press('Escape');
+        await page.locator('[data-side-disclosure="wide/all"]').click();
         await tasks.first().waitFor({state:'detached'});
       }
       if(scene==='devices'){

@@ -3,3 +3,5 @@
 export function hasNativeBackend(): boolean {
   return '__TAURI_INTERNALS__' in window;
 }
+
+export const hasAppUpdates = hasNativeBackend;

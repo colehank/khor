@@ -43,6 +43,9 @@ export async function checkSettingsNavigation(browser,{port,report,mobile=false,
     assert.equal(await more.locator('[data-more-open="me"]').count(),0,'My Khor belongs only to the overflow chooser');
     const original=await inventory();
     assert.deepEqual(original,['session','workspace','appearance','connection','security','store','doctor','about']);
+    const info=page.locator('[data-more-glyph="about"] svg');
+    assert.equal(await info.locator('[stroke-dasharray]').count(),0,'About uses information rather than the Settings gear');
+    assert.ok((await info.locator('circle').count())>=2,'The information glyph has its ring and dot');
     assert.equal(await more.locator('[data-more-landing]').count(),0,'Hidden landings are not More utilities');
     assert.equal(await page.locator('[data-nav-menu]').count(),0,'Choosing More dismisses the navigation chooser');
     if(!mobile)await page.locator('[data-more-page="session"]:visible').waitFor();

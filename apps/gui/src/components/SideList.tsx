@@ -81,6 +81,10 @@ export type SideRow = {
   /** Beside the row and outside what opens it — a control of its own
       (a tab's ×) or a drawing of state (a workspace's chevron). */
   after?: ReactNode;
+  /** An independent disclosure before the face, without moving other rows. */
+  disclosure?: { expanded: boolean; controls: string; label: string; toggle: () => void };
+  /** Expanded content belongs immediately below its row and shares its group. */
+  below?: ReactNode;
   /** What the box finds this row by. **What the row says**, and nothing
       it does not: a match on a field nobody can see leaves a person
       looking at a row that has nothing to do with what they typed. */
@@ -135,7 +139,7 @@ function offsetOf(row: HTMLElement): number {
  * measurement is skipped, not given a zero duration — that would be a
  * flicker instead of a move.
  */
-function useRowFlip(deps: string) {
+function useRowFlip(deps: string, extensions: string) {
   const box = useRef<HTMLDivElement>(null);
   const was = useRef(new Map<string, number>());
   useLayoutEffect(() => {
@@ -164,12 +168,25 @@ function useRowFlip(deps: string) {
     }
     was.current = now;
   }, [deps]);
+  // Disclosure content can grow after its network reply. Keep the next
+  // reorder anchored to that layout, rather than to the folded list.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const record = () => { was.current = new Map(Array.from(el.querySelectorAll<HTMLElement>("[data-side-row]"), row => [row.dataset.sideRow!, row.offsetTop])); };
+    record();
+    const panels = el.querySelectorAll<HTMLElement>("[data-side-extension]");
+    if (!panels.length || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(record);
+    panels.forEach(panel => observer.observe(panel));
+    return () => observer.disconnect();
+  }, [deps, extensions]);
   return box;
 }
 
 /** Where the keyboard's focus stops in a list: each row's open button,
     each group's heading, the fold at the foot — in reading order. */
-const WALK = "[data-side-open], [data-side-group], [data-old-fold]";
+const WALK = "[data-side-open], [data-side-disclosure], [data-side-child-open], [data-side-group], [data-old-fold]";
 
 /** The focus ring on a list's buttons: the brand's ring colour, drawn
     inside the row so the next row does not cover it (README: the ring is
@@ -290,6 +307,7 @@ export function SideList({
       .filter((r) => !shutOf(r.group))
       .map((r) => r.id)
       .join("\n"),
+    rows.filter(r => r.below).map(r => r.id).join("\n"),
   );
   // Slide a row left for what it offers (F7.5, UX-44 §3; narrow).
   // On only while the rows are drawn: the loading and empty faces are
@@ -540,7 +558,7 @@ export function SideList({
             // nothing on the narrow one, where the list is a screen of its
             // own and the picked thing is the next screen (the redesign).
             className={cn(
-              "flex w-full items-center",
+              "relative flex w-full items-center",
               !narrow && "rounded-lg",
               !picked && !narrow && "hover:bg-fill",
             )}
@@ -552,10 +570,17 @@ export function SideList({
                 reaches it and the keyboard's Menu key opens it. Slid
                 left, the row shows what can be done to it
                 (`components/SwipeRow`). */}
+            {r.disclosure && <button type="button" data-side-disclosure={r.id}
+              aria-expanded={r.disclosure.expanded} aria-controls={r.disclosure.controls} aria-label={r.disclosure.label}
+              onClick={r.disclosure.toggle}
+              className={cn("absolute inset-y-0 left-0 z-10 flex min-h-touch min-w-touch items-center pl-1 text-muted-foreground", RING)}>
+              <IconChevronRight className={cn("size-affordance transition-transform", r.disclosure.expanded && "rotate-90")}/>
+            </button>}
             {r.menu.length > 0 ? <RowMenu items={menuOf(r)}>{button}</RowMenu> : button}
             {r.after}
           </SwipeRow>
         )}
+        {open && r.below && <div data-side-extension={r.id} className="min-w-0">{r.below}</div>}
       </Fragment>
     );
   };

@@ -11,3 +11,9 @@ export function hasNativeBackend(): boolean {
   if (mode === null) throw new Error('Configure the Lab backend before entering the App');
   return mode === 'full' && '__TAURI_INTERNALS__' in window;
 }
+
+/** Exercise the real updater UI through fixture HTTP, never the host App. */
+export function hasAppUpdates(): boolean {
+  if (mode === null) throw new Error('Configure the Lab backend before entering the App');
+  return mode === 'frontend' || hasNativeBackend();
+}

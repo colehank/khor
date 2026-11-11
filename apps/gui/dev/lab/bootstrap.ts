@@ -78,6 +78,7 @@ if (runtime.mode === 'frontend') {
         return Response.json(path);
       }else body=await request.json();
       if(['chat_poll','chat_wait'].includes(command)&&fixture.request('__ai_preview/poll-state')==='fail')return Response.json('读取暂时中断',{status:503});
+      if(command==='app_update_check')await new Promise(resolve=>setTimeout(resolve,900));
       const text = (command === 'read_text' || command === 'stat_text') && uploadedText.get(String(body.path));
       const answer = text || fixture.request(command,body);
       // Polling fixtures must yield so production loops cannot starve rendering.

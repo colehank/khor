@@ -1,5 +1,5 @@
 import type { ContentView } from '@/lib/content';
-import { hasNativeBackend } from '@/lib/backend-context';
+import { hasAppUpdates, hasNativeBackend } from '@/lib/backend-context';
 import type { AttachmentKind } from "./gen/bindings/AttachmentKind";
 import { attachmentView } from "./lib/attachment-view";
 import type { SessionContent } from "./gen/bindings/SessionContent";
@@ -232,6 +232,7 @@ const bridge = params.get("bridge");
  * absence of something else.
  */
 export const inApp = hasNativeBackend();
+export const appUpdatesAvailable = hasAppUpdates();
 
 /**
  * The web face's key, taken off the link once and kept.

@@ -4,6 +4,8 @@ import { StatusWord } from "@/components/StatusWord";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogHeader, DialogTitle, TaskActions, TaskOverlay } from "@/components/ui/dialog";
 import { gui } from "@/gen/catalog";
+import { sessionKind } from "@/components/SessionFace";
+import { IconTerminal } from "@/components/icons";
 
 type ChildTask = {
   run: string;
@@ -33,7 +35,7 @@ function TaskStatus({ state }: {state: string}) {
   }
 }
 
-export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: () => void }) {
+export function ChildTasks({ parent, id }: { parent: SessionRow; id: string }) {
   const [groups, setGroups] = useState<{children: ChildTask[]; commands: ChildTask[]} | null>(null);
   const [detail, setDetail] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -51,7 +53,7 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
         const {data} = await khorAgent("manage", home, {operation: "children", session});
         const rows = data as { children?: ChildTask[]; commands?: ChildTask[] } | null;
         if (!Array.isArray(rows?.children)) throw new Error(gui.child_task_unavailable);
-        if (!stopped) setGroups({children: rows.children, commands: rows.commands ?? []});
+        if (!stopped) { setGroups({children: rows.children, commands: rows.commands ?? []}); setError(""); }
       } catch (why) {
         if (!stopped) setError(String(why));
       } finally {
@@ -85,43 +87,53 @@ export function ChildTasks({ parent, onClose }: { parent: SessionRow; onClose: (
     }
   };
 
-  return <Dialog open onOpenChange={open => { if (!open) onClose(); }}>
-    <TaskOverlay purpose="preview" initialHeight="fit">
-      <DialogHeader><DialogTitle>{task?.agent ?? gui.child_tasks}</DialogTitle></DialogHeader>
-      {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
-      {task ? <div className="flex min-w-0 flex-col gap-row" data-child-task-detail>
-        <div className="flex items-center justify-between gap-row">
-          <span>{task.machine}</span><TaskStatus state={task.state}/>
-        </div>
-        {task.context && <span className="break-all text-caption text-muted-foreground">{task.context}</span>}
-        {task.result && <p className="whitespace-pre-wrap break-words text-read">{task.result}</p>}
-        {task.truncated && <span className="text-caption text-muted-foreground">{gui.child_task_output_truncated}</span>}
-        <div className="flex flex-wrap gap-in">
-          {task.can_cancel && <Button disabled={busy} onClick={() => void act("cancel", task)}>{gui.child_task_cancel}</Button>}
-          {task.can_retry && <Button disabled={busy} onClick={() => void act("retry", task)}>{gui.child_task_retry}</Button>}
-        </div>
-      </div> : groups && (groups.children.length > 0 || groups.commands.length > 0) ? <div className="flex flex-col gap-base" data-child-tasks>
-        {([[gui.child_task_agents, groups.children], [gui.key_group_commands, groups.commands]] as const).map(([label, rows]) =>
-          rows.length > 0 && <section key={label} aria-label={label}>
-          <h3 className="text-headline">{label}</h3>
-          <div className="divide-y divide-border">
-          {rows.map(child => <button key={identity(child)} type="button" data-child-task-row
-          className="flex min-h-touch w-full items-center justify-between gap-row py-in text-left"
-          onClick={() => { setDetail(identity(child)); setError(""); }}>
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-headline">{child.agent}</span>
-            <span className="truncate text-caption text-muted-foreground">{child.machine}</span>
-          </span>
-          <TaskStatus state={child.state}/>
-          </button>)}
+  return <>
+    <div id={id} data-child-tasks={parent.id} role="group" aria-label={gui.child_tasks}
+      className="min-w-0 py-in pl-[calc(var(--rows-inset)+var(--list-face)/2)] pr-row">
+      <div className="flex min-w-0 flex-col gap-in border-l pl-row">
+        {error && <div role="alert" className="flex min-w-0 items-center gap-in text-callout text-destructive">
+          <span className="min-w-0 flex-1 break-words">{error}</span>
+          <Button size="sm" onClick={() => refresh(value => value + 1)}>{gui.region_retry}</Button>
+        </div>}
+        {groups && (groups.children.length > 0 || groups.commands.length > 0) ?
+          ([[gui.child_task_agents, groups.children, false], [gui.key_group_commands, groups.commands, true]] as const).map(([label, rows, command]) =>
+            rows.length > 0 && <section key={label} aria-label={label}>
+              <h3 className="pb-xxs text-group text-muted-foreground">{label}</h3>
+              {rows.map(child => <button key={identity(child)} type="button" data-side-child-open data-child-task-row={identity(child)}
+                className="flex min-h-touch w-full min-w-0 items-center gap-in rounded-md py-in text-left hover:bg-fill focus-visible:outline-ring"
+                onClick={() => { setDetail(identity(child)); setError(""); }}>
+                <span className="grid size-kind-mark flex-none place-items-center" aria-hidden>
+                  {command ? <IconTerminal className="size-kind-mark"/> : sessionKind("gui", child.agent).glyph("size-kind-mark")}
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-headline">{child.agent}</span>
+                  <span className="truncate text-caption text-muted-foreground">{child.machine}</span>
+                </span>
+                <span className="min-w-0 flex-none"><TaskStatus state={child.state}/></span>
+              </button>)}
+            </section>) : <p aria-busy={groups === null && !error} className="text-callout text-muted-foreground">
+              {groups !== null ? gui.child_tasks_empty : null}
+            </p>}
+      </div>
+    </div>
+    {task && <Dialog open onOpenChange={open => { if (!open) setDetail(null); }}>
+      <TaskOverlay purpose="preview" initialHeight="fit">
+        <DialogHeader><DialogTitle>{task.agent}</DialogTitle></DialogHeader>
+        <div className="flex min-w-0 flex-col gap-row" data-child-task-detail>
+          <div className="flex min-w-0 items-center justify-between gap-row">
+            <span className="min-w-0 truncate">{task.machine}</span><TaskStatus state={task.state}/>
           </div>
-          </section>)}
-      </div> : <p aria-busy={groups === null && !error} className="text-callout text-muted-foreground">
-        {groups !== null ? gui.child_tasks_empty : null}
-      </p>}
-      <TaskActions
-        back={task ? <Button onClick={() => {setDetail(null); setError("");}}>{gui.back}</Button> : undefined}
-        close={<Button onClick={onClose}>{gui.close}</Button>}/>
-    </TaskOverlay>
-  </Dialog>;
+          {task.context && <span className="break-all text-caption text-muted-foreground">{task.context}</span>}
+          {task.result && <p className="whitespace-pre-wrap break-words text-read">{task.result}</p>}
+          {task.truncated && <span className="text-caption text-muted-foreground">{gui.child_task_output_truncated}</span>}
+          <div className="flex flex-wrap gap-in">
+            {task.can_cancel && <Button disabled={busy} onClick={() => void act("cancel", task)}>{gui.child_task_cancel}</Button>}
+            {task.can_retry && <Button disabled={busy} onClick={() => void act("retry", task)}>{gui.child_task_retry}</Button>}
+          </div>
+          {error && <p role="alert" className="text-callout text-destructive">{error}</p>}
+        </div>
+        <TaskActions close={<Button onClick={() => setDetail(null)}>{gui.close}</Button>}/>
+      </TaskOverlay>
+    </Dialog>}
+  </>;
 }

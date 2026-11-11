@@ -33,12 +33,16 @@ try {
   await page.addInitScript(()=>{
     const callbacks=new Map();let next=1;
     window.updateCalls=[];
+    const entry=new URL(location.href).searchParams;
+    window.entryCheck=entry.has('entry-check');
+    window.manualEntry=entry.has('manual-entry');
+    window.entryFailure=entry.has('entry-failure');
     window.statusFailOnce=new URL(location.href).searchParams.has('status-failure');
     window.cacheUsage={retained_bytes:10485760,active_old_bytes:2097152,idle_bytes:1048576,unknown_items:1};
     window.machineRows=['Alpha','Beta','App node'].map((shown,i)=>({id:String.fromCharCode(97+i).repeat(64),name:'host-'+i,shown,hosts:true,me:false,sponsor:null,face:null,vitals:null}));
     window.machineQueue={revision:0,jobs:[]};
     window.machineInfos=Object.fromEntries(window.machineRows.map((row,i)=>[row.id,{source:i===2?'app':'cli',running:'v0.2.0-rc.1',selected:'v0.2.0-rc.1',channel:'beta',service_ready:true,failed:null}]));
-    window.updateState={source:'direct',phase:'idle',current:'v0.2.0-rc.1',built_from:'v0.2.0-rc.1',source_commit:'a'.repeat(40),available:null,notes:'',received:0,total:null,checked_at:null,failure:null,blocked:[],companions:[],restart_required:false,preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
+    window.updateState={source:'direct',phase:'idle',current:'v0.2.0-rc.1',built_from:'v0.2.0-rc.1',source_commit:'a'.repeat(40),available:null,notes:'',received:0,total:null,checked_at:(window.entryCheck||window.manualEntry)?'2020-01-01T00:00:00Z':null,failure:null,blocked:[],companions:[],restart_required:false,preferences:{channel:'beta',automatic_check:window.entryCheck,automatic_download:true,install_on_start:false}};
     let events=[];
     window.emitUpdate=patch=>{Object.assign(window.updateState,patch);for(const event of events)if(event.event==='app-update:changed')callbacks.get(event.handler)?.({event:'app-update:changed',id:event.id,payload:structuredClone(window.updateState)});};
     window.emitMachineQueue=patch=>{window.machineQueue=structuredClone(patch);for(const event of events)if(event.event==='machine-updates:changed')callbacks.get(event.handler)?.({event:'machine-updates:changed',id:event.id,payload:structuredClone(patch)});};
@@ -72,6 +76,13 @@ try {
         return structuredClone(window.cacheUsage);
       }
       if(cmd==='app_update_prepared')return null;
+      if(cmd==='app_update_check'&&window.entryCheck){
+        window.emitUpdate({phase:'checking'});
+        await new Promise(resolve=>{window.finishEntryCheck=resolve;});
+        if(window.entryFailure)throw new Error('fixture: offline during entry check');
+        window.emitUpdate({phase:'idle',available:null,checked_at:new Date().toISOString()});
+        return structuredClone(window.updateState);
+      }
       if(cmd==='app_update_check')window.emitUpdate({phase:'available',restart_required:true,available:'v0.2.0-rc.2',total:100,checked_at:'2026-11-05T00:00:00Z'});
       else if(cmd==='app_update_preferences')window.emitUpdate({preferences:args.preferences,phase:'idle',available:null});
       else if(cmd==='app_update_download')window.emitUpdate({phase:'ready',received:100,total:100});
@@ -109,7 +120,7 @@ try {
   await pickPopup(page.locator('[data-setting-select="update-channel"]'),'stable');
   await page.waitForFunction(()=>window.updateState.preferences.channel==='stable');
   const prefs=await page.evaluate(()=>window.updateState.preferences);
-  assert.deepEqual(prefs,{channel:'stable',automatic_check:true,automatic_download:true,install_on_start:false},'changing the channel must preserve the other preferences');
+  assert.deepEqual(prefs,{channel:'stable',automatic_check:false,automatic_download:true,install_on_start:false},'changing the channel must preserve the other preferences');
   await page.locator('[data-setting-row-name="update-install-on-start"] button').click();
   await page.waitForFunction(()=>window.updateState.preferences.install_on_start===true);
   await page.evaluate(()=>window.emitUpdate({phase:'downloading',received:42,total:100}));
@@ -217,6 +228,22 @@ try {
   await page.setViewportSize({width:390,height:800});
   await page.screenshot({path:join(out,'machine-updates-mobile.png')});
   assert.deepEqual(errors,[]);
+  for(const fail of [false,true]){
+    await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?entry-check=1${fail?'&entry-failure=1':''}`);
+    await page.waitForFunction(()=>typeof window.finishEntryCheck==='function');
+    const checkRow=page.locator('[data-setting-row-name="update-check"]');
+    assert.match(await checkRow.innerText(),/正在检查|Checking/,'Opening About performs a real check before claiming a current version');
+    assert.doesNotMatch(await checkRow.innerText(),/最新版本|up to date/i,'Cached success cannot satisfy the new check');
+    await page.evaluate(()=>window.finishEntryCheck());
+    if(fail){
+      await page.locator('[data-update-operation-failure]').waitFor();
+      assert.doesNotMatch(await checkRow.innerText(),/最新版本|up to date/i,'A failed check cannot preserve the cached current-version claim');
+    }else await page.waitForFunction(()=>/最新版本|up to date/i.test(document.querySelector('[data-setting-row-name="update-check"]').textContent));
+  }
+  await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?manual-entry=1`);
+  await page.locator('[data-setting-row-name="update-check"]').waitFor();
+  assert.equal(await page.evaluate(()=>window.updateCalls.filter(call=>call.cmd==='app_update_check').length),0,'Automatic checking remains disabled when the user turned it off');
+  assert.doesNotMatch(await page.locator('[data-setting-row-name="update-check"]').innerText(),/最新版本|up to date/i,'A previous visit is not a check during this visit');
   await page.goto(`http://127.0.0.1:23839/${basename(fixture)}/?status-failure=1`);
   await page.locator('[data-update-operation-failure] summary').click();
   await page.locator('[data-update-operation-failure]').getByText('fixture: native update status unavailable',{exact:true}).waitFor();

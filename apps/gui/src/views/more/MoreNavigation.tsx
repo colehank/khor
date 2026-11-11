@@ -1,5 +1,5 @@
 import type {ComponentType, ReactNode} from "react";
-import {IconAppearance, IconChevronRight, IconFiles, IconGear, IconNetwork, IconPulse, IconSessions, IconShield, IconStore} from "@/components/icons";
+import {IconAppearance, IconChevronRight, IconFiles, IconInfo, IconNetwork, IconPulse, IconSessions, IconShield, IconStore} from "@/components/icons";
 import {NarrowHead,SideSeat} from "@/components/SideHead";
 import type {MorePage} from "@/lib/more-navigation";
 import {walkList} from "@/lib/shortcuts";
@@ -10,7 +10,7 @@ import {moreName} from "./MorePage";
 type NavigationPage = Exclude<MorePage,"me"|"terminal">;
 const glyphs:Record<NavigationPage,ComponentType<{className?:string}>> = {
   appearance:IconAppearance,session:IconSessions,workspace:IconFiles,
-  connection:IconNetwork,security:IconShield,about:IconGear,
+  connection:IconNetwork,security:IconShield,about:IconInfo,
   store:IconStore,doctor:IconPulse,
 };
 const groups = [["session","workspace","appearance"],["connection","security","store","doctor"],["about"]] as const;

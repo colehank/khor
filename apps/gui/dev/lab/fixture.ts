@@ -2,7 +2,8 @@ import labMedia from './data/media.generated.json';
 import {noticeFixture} from './notice-fixture';
 import {longHistoryFrames} from './long-history';
 // Data-only fixture for the complete production App; never imported by its normal entry.
-import {navigationFixture} from './navigation';
+import {navigationFixture,FixtureRefusal} from './navigation';
+import type {AppUpdateStatus} from '../../src/gen/bindings/AppUpdateStatus';
 import {pairingFixture} from './pairing';
 import {labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labRoadShare,labDoctor} from './world';
 import {canonicalChatFixture} from '../../scripts/fixtures/canonical-chat-routes.mjs';
@@ -231,6 +232,10 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
+  const appUpdate: AppUpdateStatus = {source:'direct',phase:'idle',current:'0.2.0',built_from:null,source_commit:null,available:null,
+    notes:'',received:0,total:null,checked_at:null,failure:null,retry:null,blocked:[],companions:[],restart_required:false,
+    preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
+  let updateMode='current';
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];
   const applySetting=(apply:()=>void)=>{if(holdSettings)pendingSettings.push(apply);else apply();};
@@ -356,6 +361,17 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "agents": answer = [{name:'codex-acp',command:'npx -y @agentclientprotocol/codex-acp@2.2.2'},
             {name:'claude-acp',command:'npx -y @agentclientprotocol/claude-agent-acp@0.94.0'}];break;
           case "about": answer=labAbout;break;
+          case '__ai_preview/update-mode': updateMode=String(body.mode??'current');answer=true;break;
+          case 'app_update_status': answer=appUpdate;break;
+          case 'app_update_check':
+            if(updateMode==='offline')throw new FixtureRefusal('Lab: update service is unavailable');
+            appUpdate.checked_at=new Date().toISOString();appUpdate.failure=null;appUpdate.retry=null;
+            appUpdate.phase=updateMode==='available'?'available':'idle';
+            appUpdate.available=updateMode==='available'?'v0.2.1':null;answer=appUpdate;break;
+          case 'app_update_preferences': appUpdate.preferences={...appUpdate.preferences,...body.preferences};answer=appUpdate;break;
+          case 'app_update_download': appUpdate.phase='ready';answer=appUpdate;break;
+          case 'app_update_companions': answer=appUpdate;break;
+          case 'app_update_install': throw new FixtureRefusal('Lab does not install applications');
           case "relays": answer=labRelays;break;
           case "road_share": answer=labRoadShare;break;
           case "doctor": answer=labDoctor;break;

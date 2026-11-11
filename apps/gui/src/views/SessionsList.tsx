@@ -2,7 +2,9 @@ import { sessionContentPreview } from "@/lib/session-preview";
 import { useNotifications, setSessionNotifications } from "@/lib/notifications";
 import { notificationsEnabled } from "@/lib/notification-banners";
 import { sessionCwdOnScreen } from "@/lib/session-cwd";
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
+import { useNarrow } from "@/hooks/use-narrow";
+import { ChildTasks } from "@/views/ChildTasks";
 
 import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
@@ -102,6 +104,14 @@ export function SessionsList({
       — the row comes back in its new form on the next poll, or it does
       not come back at all and this sentence says why. */
   const notificationPreferences = useNotifications();
+  const narrow = useNarrow();
+  const treePrefix = useId();
+  const [expandedTasks, setExpandedTasks] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleTasks = (id: string) => setExpandedTasks(previous => {
+    const next = new Set(previous);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [turnRefused, setTurnRefused] = useState<Map<string, string>>(new Map());
   /** The row whose title box the menu's 重命名 opened, if any. */
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -292,6 +302,9 @@ export function SessionsList({
   };
   const side: SideRow[] = ticked.map((r) => {
     const away = far(r);
+    const ownsTasks = r.category === "khor" && !!r.execution_home;
+    const tasksOpen = expandedTasks.has(r.id);
+    const treeId = `${treePrefix}-${encodeURIComponent(r.id)}`;
     return {
     id: r.id,
     group: r.group,
@@ -396,7 +409,9 @@ export function SessionsList({
     dim: r.quiet || away !== null,
     old: r.stale,
     menu: actions(r),
-    onOpen: () => onSelect(r),
+    onOpen: () => ownsTasks && !narrow && r.id === selected ? toggleTasks(r.id) : onSelect(r),
+    disclosure: ownsTasks ? { expanded: tasksOpen, controls: treeId, label: gui.child_tasks, toggle: () => toggleTasks(r.id) } : undefined,
+    below: ownsTasks && tasksOpen ? <ChildTasks key={r.id} parent={r} id={treeId}/> : undefined,
     // The anchors this list has always answered to — the gates and the
     // smoke read them, and they are facts about a session, not about a
     // sidebar.
