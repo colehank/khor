@@ -9,7 +9,7 @@
 
 ## 当前叙事定稿（Codex 参考改版，替代下方历史顺序）
 
-0. **Work across your devices.** 参考 OpenAI Codex 页面重排：左上是 kapestack（链接 `https://www.kapestack.top`），首屏为用户原参数的 Vanta Fog、居中 Khor 图标、短标题和双按钮；下面是大幅可操作 Desktop、五种系统与五类 harness 标识、三组交替图文，再接下列图标故事。真实 GUI 和有限合成数据不变，发送仍固定回复下载链接；下载继续按平台与可靠架构推荐。全程不接真实 Lab、模型或设备。
+0. **Work across your devices.** 左上是 kapestack（链接 `https://www.kapestack.top`），最新首屏恢复左介绍 / 右 GUI，共同落在原参数 Vanta Fog 上；GUI 复用 App 的半透明背景层与毛玻璃效果，窄屏上下排列。下面是五种系统与五类 harness 标识、三组交替图文，再接下列图标故事。真实 GUI 和有限合成数据不变，发送仍固定回复下载链接；下载继续按平台与可靠架构推荐。全程不接真实 Lab、模型或设备。
 
 1. **You have many devices.** 四个普通灰色圆节点松散分布，大小与明暗各异，分别戴 Linux、macOS（Finder）、Windows、iOS（Apple）机器标记。前两幕不预先排成图标的四个固定位置。Meet 之前不出现珠光高亮、渐变、边缘反光或珠子的投影。
 2. **With many harnesses.** 节点沿各自的短弧线移动，错开将标记切换为 Claude、Codex、Cursor、Shell，继续保持灰色；每个节点的移动起止与缩放不同。
@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 最新首屏恢复左介绍 / 右 GUI；Khor 图标与产品名横排，左右共同落在原参数 Fog 中。网站 hero 只设置生产 `data-window-transparent` 和 `--window-opacity:70%`，复用实际单背景面；前景 opacity=1，父窗口 blur(24px) 对 Fog 取样。不伪造原生运行时或打开原生后端。深浅 WebP 改为 RGBA，背景 alpha 178、文字最高 255，首图与实际 App 都可透出 Fog。Chrome 已确认左右位置、玻璃属性和固定回复，WebKit 手机布局仍为 1360；深浅与手机截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/glass-hero`。
 - 2026-11-12 iPhone 预览白块修复：用本机已有 WebKit 2336、390×844、iPhone UA / 触屏复现。外层 CSS zoom 让 iframe 的实际 `documentElement.clientWidth` 从 1360 变成 356（`innerWidth` 仍说 1360），App 切成窄屏，之后又被外层缩小，剩余区域为白块。触屏 / 窄屏改用 transform，鼠标桌面仍用 zoom；ready 前检查真实布局宽度，不一致时回退，并等两帧再交出首图。修后 WebKit 与 Chrome 的根布局 / body 均为 1360×850，根 `data-narrow` 为 false，预览外宽 356，完整三栏铺满，固定回复可发送。类型检查与静态构建通过；只做此问题定向检查，未下载浏览器。红绿数据、截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/phone-preview`。注意附栏内部有合法的 `data-narrow-box`，断言应看根，不能查任意后代的 `data-narrow`。
 - 2026-11-12 Codex 参考改版已获「先做」授权并本地实现：kapestack 导航、原参数 Fog 居中首屏、大幅 GUI、支持标识、三组交替真实 GUI 配图、短图标故事、下载收尾。完整方向与依赖说明见 `site-page-direction-20261112.md`。Fog 两个分发文件与许可证本地固定；减少动态效果使用本页画布的干净帧，没有外站文字。Chrome 已检查 WebGL、消息回复、链接、完整 Meet、明暗与窄屏，错误与外部请求为空；证据 `evidence/site-story-20261112/codex-layout`（绝对前缀 `/Volumes/disk0/Khor`）。旧的左字右 GUI、九屏顺序均为历史版本。
 - 2026-11-12 图表与头像精修：六台机器分别使用浅绿、深靛、珊瑚、金黄、紫和深绿头像；使用原生几何及出厂色板的有限示例记录，不改变真实 App 的画笔或 token。额度主项扩至六个 Claude 模型、30 天记录，日汇总直接加总逐模型的四类 token，堆叠趋势、散点、统计表同源。MacBook Pro 补成 44 个进程（约 12.62 GiB 小于当前 14.2 GiB 总占用；CPU 总计约 215.8%，折算 12 核为 18%），日趋势有工作节律与短编译峰，内存更平稳、磁盘缓慢增长，最后一个桶与仪表同值。Chrome 确认六张不同脸、六个可见模型点、汇总一致且无页面错误；截图和读数在 `/Volumes/disk0/Khor/evidence/site-story-20261112/telemetry`。深浅首图同步更新。

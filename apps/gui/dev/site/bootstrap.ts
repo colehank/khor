@@ -36,6 +36,12 @@ new WorkspaceNavigationStore(()=>localStorage,'MacBook Pro',projects[0].root,pat
 fixture.request('set_config',{name:'theme',value:theme});
 if(hero){
   document.documentElement.dataset.siteMacos='';
+  // Reuse the production window's single translucent background plane.
+  // Browser frost is painted by the parent window, behind this iframe;
+  // the fixture remains HTTP-only and never enables a native backend.
+  document.documentElement.dataset.windowTransparent='';
+  document.documentElement.dataset.siteMaterial='frost';
+  document.documentElement.style.setProperty('--window-opacity','70%');
   const lights=document.createElement('img');
   lights.src=controls;lights.alt='';lights.className='site-macos-controls';lights.setAttribute('aria-hidden','true');
   document.body.append(lights);
