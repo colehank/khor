@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 iPhone 预览白块修复：用本机已有 WebKit 2336、390×844、iPhone UA / 触屏复现。外层 CSS zoom 让 iframe 的实际 `documentElement.clientWidth` 从 1360 变成 356（`innerWidth` 仍说 1360），App 切成窄屏，之后又被外层缩小，剩余区域为白块。触屏 / 窄屏改用 transform，鼠标桌面仍用 zoom；ready 前检查真实布局宽度，不一致时回退，并等两帧再交出首图。修后 WebKit 与 Chrome 的根布局 / body 均为 1360×850，根 `data-narrow` 为 false，预览外宽 356，完整三栏铺满，固定回复可发送。类型检查与静态构建通过；只做此问题定向检查，未下载浏览器。红绿数据、截图在 `/Volumes/disk0/Khor/evidence/site-story-20261112/phone-preview`。注意附栏内部有合法的 `data-narrow-box`，断言应看根，不能查任意后代的 `data-narrow`。
 - 2026-11-12 Codex 参考改版已获「先做」授权并本地实现：kapestack 导航、原参数 Fog 居中首屏、大幅 GUI、支持标识、三组交替真实 GUI 配图、短图标故事、下载收尾。完整方向与依赖说明见 `site-page-direction-20261112.md`。Fog 两个分发文件与许可证本地固定；减少动态效果使用本页画布的干净帧，没有外站文字。Chrome 已检查 WebGL、消息回复、链接、完整 Meet、明暗与窄屏，错误与外部请求为空；证据 `evidence/site-story-20261112/codex-layout`（绝对前缀 `/Volumes/disk0/Khor`）。旧的左字右 GUI、九屏顺序均为历史版本。
 - 2026-11-12 图表与头像精修：六台机器分别使用浅绿、深靛、珊瑚、金黄、紫和深绿头像；使用原生几何及出厂色板的有限示例记录，不改变真实 App 的画笔或 token。额度主项扩至六个 Claude 模型、30 天记录，日汇总直接加总逐模型的四类 token，堆叠趋势、散点、统计表同源。MacBook Pro 补成 44 个进程（约 12.62 GiB 小于当前 14.2 GiB 总占用；CPU 总计约 215.8%，折算 12 核为 18%），日趋势有工作节律与短编译峰，内存更平稳、磁盘缓慢增长，最后一个桶与仪表同值。Chrome 确认六张不同脸、六个可见模型点、汇总一致且无页面错误；截图和读数在 `/Volumes/disk0/Khor/evidence/site-story-20261112/telemetry`。深浅首图同步更新。
 - 下一步页面方向待讨论，尚未改首页布局与文案：全面参考 OpenAI Codex 页，使用用户指定 Vanta Fog 原参数；左上角为 `kapestack`，链接 `https://www.kapestack.top`，Khor 是产品身份。讨论草案与完整参数见 `site-page-direction-20261112.md`。

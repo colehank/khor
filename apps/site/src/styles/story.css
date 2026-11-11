@@ -41,9 +41,14 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--pane-head) + var(
 .desktop-preview { position:relative; width:100%; aspect-ratio:8/5; overflow:hidden; background:var(--canvas); }
 .desktop-poster,.desktop-poster img { width:100%; height:100%; display:block; pointer-events:none; }
 .desktop-poster img { object-fit:cover; }
-/* Scale during layout so the iframe's glass/SVG layers are rasterized at
-   their display size, rather than downsampling a composited texture. */
+/* Mouse desktop: scale during layout to keep glass/SVG layers sharp. */
 .desktop-stage { position:absolute; inset:0 auto auto 0; width:calc(var(--list-w)*4); aspect-ratio:8/5; zoom:var(--desktop-scale,1); opacity:0; pointer-events:none; }
+/* Touch WebKit applies zoom to the iframe's layout viewport too. Keep
+   its desktop viewport intact and only scale the finished presentation. */
+.desktop-stage[data-scale-mode="transform"] { zoom:1; transform:scale(var(--desktop-scale,1)); transform-origin:top left; }
+@media (hover:none), (max-width:760px) {
+  .desktop-stage { zoom:1; transform:scale(var(--desktop-scale,1)); transform-origin:top left; }
+}
 .desktop-stage iframe { width:100%; height:100%; display:block; border:0; }
 .desktop-preview[data-ready] .desktop-stage { opacity:1; pointer-events:auto; }
 .desktop-preview[data-ready] .desktop-poster { visibility:hidden; }

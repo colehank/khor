@@ -6,7 +6,14 @@ export function mountDesktopPreview() {
   // Preserve the complete desktop shell instead of switching to mobile.
   const resize=new ResizeObserver(()=>stage.style.setProperty('--desktop-scale',String(preview.clientWidth/stage.offsetWidth)));
   resize.observe(preview);
-  const show=()=>preview.setAttribute('data-ready','');
+  const show=()=>{
+    // WebKit can report the intended innerWidth while actually laying the
+    // document out at the zoomed width. Check its real layout before
+    // replacing the full-size poster with an interactive frame.
+    const layoutWidth=frame.contentDocument?.documentElement.clientWidth;
+    if(layoutWidth&&Math.abs(layoutWidth-stage.offsetWidth)>2)stage.dataset.scaleMode='transform';
+    requestAnimationFrame(()=>requestAnimationFrame(()=>preview.setAttribute('data-ready','')));
+  };
   window.addEventListener('message',event=>{
     if(event.origin!==location.origin||event.source!==frame.contentWindow)return;
     if(event.data?.type==='khor-demo-ready')show();
