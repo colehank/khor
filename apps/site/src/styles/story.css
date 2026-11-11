@@ -23,7 +23,7 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--pane-head) + var(
 .meet-environment { position:absolute; inset:0; pointer-events:none; opacity:var(--meet-world,0); background:var(--mark-veil-dark); }
 .meet-environment > svg { width:100%; height:100%; display:block; }
 .opening-sticky { position:sticky; top:0; height:100svh; display:flex; align-items:center; }
-.opening-copy { position:absolute; left:8.5%; top:31%; width:48%; z-index:2; }
+.opening-copy { position:absolute; left:8.5%; top:31%; width:48%; min-height:calc(var(--story-title)*2.5); z-index:2; }
 .opening-line { position:absolute; inset:0; font-size:var(--story-title); font-weight:600; line-height:1.08; opacity:0; transform:translateY(var(--gap-base)); text-wrap:balance; }
 .opening-line span { color:var(--scene-secondary); }
 .opening-line[data-line="3"] { font-size:clamp(calc(var(--text-title-lg)*1.45),3.25vw,calc(var(--text-title-lg)*2.8)); }

@@ -20,6 +20,7 @@
 
 - 最新观感修订：Devices 使用不等大的散布节点；Harnesses 以四条独立弧线和不同的标记切换区间打破同步；One mind 才统一归位。运动仍随滚动进度，停留区内不自行漂浮。最终 focus=1 时明确移除外围节点 transform，保持标准图稿几何。
 - 本次只在 Chrome 查看首幕、错开切换、Harnesses、One mind 和 Meet；One mind / Meet 的四个外节点 transform 均为 none，TypeScript 与 diff 格式检查通过。截图：`/Volumes/disk0/Khor/evidence/site-story-20261111/scattered-nodes`。下面的滚轮节奏数据属于上一轮距离调整，本次未重跑。
+- Chrome 目视还发现零高度的绝对定位文字容器会漏绘 With 一句中的 many；给 copy 明确的最小高度后，同一截图完整显示。修前 `harnesses.png`、修后 `harnesses-text.png` 保留在上述证据目录。
 - 用户反馈连续直线映射仍容易一次跳过几幕。经对照 Apple 官方 AirPods / Vision Pro 页，用户授权按「看清当前状态 → 演化 → 新状态停留」重排距离；保持原生滚动，不做滚轮拦截或整屏吸附。
 - 开场实际滚动行程从 4.2 屏增至 9 屏，页面段总高度 10 屏，由时间线数据设置 CSS 变量，移动端共用同一相对视口行程。五个完整姿态的稳定区间依次是 `0–.8 / 1.55–2.5 / 3.35–4.65 / 5.55–6.45 / 7.5–9` 屏。
 - 区间之间仍按滚动位置连续插值，停止即停止，倒滑可重现中间态。One mind 稳定停留 1.3 屏，Meet 停留 1.5 屏，其余约 .8–.95 屏。
