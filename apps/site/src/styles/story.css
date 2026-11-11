@@ -37,7 +37,7 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--pane-head) + var(
 .product-docs:hover { background:color-mix(in srgb,var(--mark-ink-dark) 14%,transparent); }
 .product-availability { font-size:var(--text-callout); opacity:.75; margin-top:var(--gap-base); }
 .product-showcase { position:relative; z-index:2; min-width:0; width:100%; margin:0; scroll-margin-top:var(--gap-pane); }
-.macos-window { overflow:hidden; border:var(--hair) solid color-mix(in srgb,var(--mark-ink-light) 35%,var(--hairline)); border-radius:calc(var(--radius-xl)*1.2); background:transparent; -webkit-backdrop-filter:blur(var(--gap-pane)); backdrop-filter:blur(var(--gap-pane)); box-shadow:inset 0 0 0 var(--hair) var(--hairline),var(--shadow-float); }
+.macos-window { overflow:hidden; border:0; border-radius:calc(var(--radius-xl)*1.2); background:transparent; -webkit-backdrop-filter:blur(var(--gap-pane)); backdrop-filter:blur(var(--gap-pane)); box-shadow:var(--shadow-float); }
 .desktop-preview { position:relative; width:100%; aspect-ratio:8/5; overflow:hidden; background:transparent; }
 .desktop-poster,.desktop-poster img { width:100%; height:100%; display:block; pointer-events:none; }
 .desktop-poster img { object-fit:cover; }
