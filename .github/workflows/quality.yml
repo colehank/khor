@@ -353,10 +353,17 @@ jobs:
           node apps/agent/build.mjs x86_64-pc-windows-msvc apps/agent/dist/khor-agent
           python - <<'PYCODE'
           from pathlib import Path
-          import hashlib, json, subprocess
+          import hashlib, json, subprocess, shutil, tempfile
           program = Path('apps/agent/dist/khor-agent')
           assert program.read_bytes()[:2] == b'MZ'
-          Path('agent-runtime-proof.json').write_text(json.dumps({'source': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), 'target':'x86_64-pc-windows-msvc', 'sha256':hashlib.sha256(program.read_bytes()).hexdigest(), 'bytes':program.stat().st_size}))
+          with tempfile.TemporaryDirectory(prefix='khor-agent-native-') as temporary:
+              executable = Path(temporary)/'host.exe'
+              shutil.copyfile(program, executable)
+              reply = subprocess.run([str(executable)],input='not-json\n',capture_output=True,text=True,timeout=30)
+              assert reply.returncode == 1, (reply.returncode,reply.stderr)
+              result = json.loads(reply.stdout)
+              assert result == {'type':'failed','error':'Invalid host protocol message'}, result
+          Path('agent-runtime-proof.json').write_text(json.dumps({'source': subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(), 'target':'x86_64-pc-windows-msvc', 'sha256':hashlib.sha256(program.read_bytes()).hexdigest(), 'bytes':program.stat().st_size, 'executed_on_windows':True, 'host_protocol_confirmed':True}))
           PYCODE
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
