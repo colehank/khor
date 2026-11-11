@@ -232,8 +232,8 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     chunks.forEach((part, i) => later(() => publish(update("agent_message_chunk", text(part))), 2500 + i * 180));
     later(() => { if (generation[index] !== revision) return; frames[index].push({ kind: "turn", stop: "EndTurn" }); streaming.delete(index); }, 2800 + chunks.length * 180);
   }
-  const appUpdate: AppUpdateStatus = {source:'direct',phase:'idle',current:'0.2.0',built_from:null,source_commit:null,available:null,
-    notes:'',received:0,total:null,checked_at:null,failure:null,retry:null,blocked:[],companions:[],restart_required:false,
+  const appUpdate: Omit<AppUpdateStatus, "received" | "total"> & {received:number;total:number|null} = {source:'direct',phase:'idle',current:'0.2.0',built_from:null,source_commit:null,available:null,
+    notes:'',received:0,total:null,checked_at:null,failure:null,retry:undefined,blocked:[],companions:[],restart_required:false,
     preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
   let updateMode='current';
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
@@ -365,7 +365,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case 'app_update_status': answer=appUpdate;break;
           case 'app_update_check':
             if(updateMode==='offline')throw new FixtureRefusal('Lab: update service is unavailable');
-            appUpdate.checked_at=new Date().toISOString();appUpdate.failure=null;appUpdate.retry=null;
+            appUpdate.checked_at=new Date().toISOString();appUpdate.failure=null;appUpdate.retry=undefined;
             appUpdate.phase=updateMode==='available'?'available':'idle';
             appUpdate.available=updateMode==='available'?'v0.2.1':null;answer=appUpdate;break;
           case 'app_update_preferences': appUpdate.preferences={...appUpdate.preferences,...body.preferences};answer=appUpdate;break;
