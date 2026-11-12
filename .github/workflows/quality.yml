@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, runtime-cold, recovery-debug]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, runtime-cold, recovery-debug, installer-receipt]
         default: sync
       frontend_run:
         type: string
@@ -30,6 +30,93 @@ permissions:
   contents: read
   actions: read
 jobs:
+  receipt-regression:
+    if: inputs.slice == 'installer-receipt'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Prove the previous installer fails the new isolation regressions
+        env:
+          SOURCE: ${{ inputs.source_sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/receipt-regression"
+          git show c6fda5e0032d556a27c0ff5514f615c34c503431:scripts/check-desktop-installer.py > scripts/check-desktop-installer.py
+          set +e
+          python3 -m unittest discover -s scripts/tests -p test_desktop_installer_processes.py -v > "$RUNNER_TEMP/receipt-regression/red.log" 2>&1
+          result=$?
+          set -e
+          cat "$RUNNER_TEMP/receipt-regression/red.log"
+          test "$result" -ne 0
+          grep -F 'Ran 5 tests' "$RUNNER_TEMP/receipt-regression/red.log"
+          grep -F 'FAILED (failures=2)' "$RUNNER_TEMP/receipt-regression/red.log"
+          git show "$SOURCE":scripts/check-desktop-installer.py > scripts/check-desktop-installer.py
+      - name: Require all original cleanup and new log-isolation tests to pass
+        run: python3 -m unittest discover -s scripts/tests -p test_desktop_installer_processes.py -v 2>&1 | tee "$RUNNER_TEMP/receipt-regression/green.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: installer-receipt-regression
+          path: ${{ runner.temp }}/receipt-regression
+          if-no-files-found: error
+  receipt-windows:
+    if: inputs.slice == 'installer-receipt'
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: khor-windows-x86_64-app
+          path: original
+          run-id: '43202395646'
+          github-token: ${{ github.token }}
+      - name: Validate the exact original MSI and retain its diagnostic-only extras
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json, pathlib, shutil, sys
+          sys.path.insert(0, 'scripts')
+          from release_manifest import files, verify
+          root = pathlib.Path('original')
+          receipt = json.loads((root / 'receipt.json').read_text())
+          actual = files(root)
+          assert set(actual) - set(receipt['files']) == {'khor-windows-x86_64.install.log', 'khor-windows-x86_64.uninstall.log'}
+          assert all(actual[n] == v for n, v in receipt['files'].items())
+          product = pathlib.Path('product'); product.mkdir()
+          for name in [*receipt['files'], 'receipt.json']:
+              shutil.copy2(root / name, product / name)
+          verify(product, 'c6fda5e0032d556a27c0ff5514f615c34c503431', kind='khor-windows-x86_64-app', run_id='43202395646')
+          PY
+      - name: Install and uninstall the same MSI using the fixed checker
+        run: python scripts/check-desktop-installer.py --package product/khor-windows-x86_64.msi --expected-source c6fda5e0032d556a27c0ff5514f615c34c503431 --output "${{ runner.temp }}/installation.json"
+      - name: Require the original receipt to remain strictly valid after the real installation
+        shell: bash
+        run: |
+          python scripts/release_manifest.py verify --root product --sha c6fda5e0032d556a27c0ff5514f615c34c503431 --kind khor-windows-x86_64-app --run-id 43202395646
+          python - <<'PY'
+          import json, os, pathlib
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          logs = sorted((root / 'khor-installer-logs').glob('*.log'))
+          assert len(logs) == 2 and all(p.stat().st_size for p in logs)
+          (root / 'receipt-after-install.json').write_text(json.dumps({'original_source': 'c6fda5e0032d556a27c0ff5514f615c34c503431', 'original_run': '43202395646', 'unchanged_receipt': True, 'diagnostic_logs': [p.name for p in logs]}, indent=2))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: installer-receipt-windows
+          path: |
+            ${{ runner.temp }}/installation.json
+            ${{ runner.temp }}/receipt-after-install.json
+            ${{ runner.temp }}/khor-installer-logs/*.log
+          if-no-files-found: error
   recovery-debug:
     if: inputs.slice == 'recovery-debug'
     runs-on: ubuntu-24.04
