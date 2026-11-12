@@ -2,18 +2,27 @@
 import desktop from "../assets/product/desktop.webp";
 import desktopDark from "../assets/product/desktop-dark.webp";
 import fog from "../assets/product/fog.webp";
-import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
+import {supportedDevices} from "../../../gui/dev/site/identity-marks";
+import {release} from '../releases';
 import {fogOptions} from "../scripts/fog-options";
+const platforms=supportedDevices.map(platform=>{
+  const id=platform.name.toLowerCase();
+  const available=release.downloads.some(item=>item.platform.toLowerCase().startsWith(id));
+  return {...platform,id,available};
+});
 ---
 <section class="product-hero" id="khor-hero" aria-labelledby="product-title" data-product-hero style={`--fog-base:#${fogOptions.baseColor.toString(16)}`}>
   <div class="hero-ground" data-fog aria-hidden="true"><img class="fog-fallback" src={fog.src} alt="" width={fog.width} height={fog.height} loading="eager" /></div>
+  <div class="product-main">
   <div class="product-copy">
-    <a class="product-identity" href="#khor-hero" aria-label="Khor 首页"><img src={icon.src} alt="" width="80" height="80" /><span>Khor</span></a>
-    <h1 id="product-title" lang="en">Work across your devices and agents.</h1>
-    <p class="product-description" lang="en">Your agents, files, and web apps.<br class="mobile-break" /> From any device, peer to peer.</p>
+    <h1 id="product-title">Khor</h1>
+    <div class="product-description" lang="en">
+      <p>Work across your devices and agents.<br />Edit files, track changes, and use your web apps.</p>
+      <p>From any device, peer to peer.<br />Efficient, secure, and delightful.</p>
+    </div>
     <div class="product-actions">
-      <a class="product-download" href="/download/" data-device-download><span data-download-label>下载 Khor</span><span aria-hidden="true">↓</span></a>
-      <a class="product-docs" href="/docs/">阅读文档 <span aria-hidden="true">↗</span></a>
+      <a class="product-download" href="/download/" data-device-download>下载</a>
+      <a class="product-docs" href="/docs/">文档</a>
     </div>
   </div>
 <section class="product-showcase" id="product" aria-label="Khor 桌面界面" data-product-showcase>
@@ -24,6 +33,13 @@ import {fogOptions} from "../scripts/fog-options";
       </div>
     </div>
 </section>
+  </div>
+  <nav class="product-platforms" aria-label="安装方式">
+    {platforms.map(platform=>platform.available?
+      <a class="platform-option" href={`/download/?platform=${platform.id}`} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'安装 Linux CLI':'安装 macOS App 或 CLI'}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span></a>:
+      <button class="platform-option" type="button" aria-disabled="true" aria-label={platform.name} aria-describedby={`platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-tooltip" role="tooltip" id={`platform-${platform.id}-soon`}>Coming soon</span></button>
+    )}
+  </nav>
 </section>
 <script>
   import {mountDesktopPreview} from "../scripts/product";

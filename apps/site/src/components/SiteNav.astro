@@ -1,11 +1,11 @@
 ---
+import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 interface Props { home?:boolean; current?:'docs'|'download'; }
 const {home=false,current}=Astro.props;
 ---
 <header class="story-nav" data-over-hero={home?true:undefined}>
-  <a class="parent-brand" href="https://www.kapestack.top">kapestack</a>
+  <a class="site-brand" href={home?'#khor-hero':'/'} aria-label="Khor 首页"><img src={icon.src} alt="" width="24" height="24" /><span>Khor</span></a>
   <nav aria-label="主导航">
-    <a class="nav-product" href={home?'#product':'/#product'}>Khor</a>
     <a href={home?'#story':'/#story'}>了解</a>
     <a href="/docs/" aria-current={current==='docs'?'page':undefined}>文档</a>
     <a class="nav-download" href="/download/" data-device-download aria-current={current==='download'?'page':undefined}>下载</a>

@@ -4,7 +4,7 @@
 
 ## 已确认的约束
 
-- 左上角品牌是 `kapestack`，链接到 https://www.kapestack.top；Khor 是产品名，对应 OpenAI / Codex 的层次。
+- 用户最新要求左上角恢复原始图标 + Khor；kapestack 公司链接保留在页脚。此前采用 OpenAI / Codex 层次的顶栏方案被本条替代。
 - 全程静态网站、本地演示数据，不接真实服务；保留 Khor 内置 GUI、设备自适应下载和浏览器明暗跟随。
 - 不可点击项保持正常颜色；此前确定的有限交互范围保留。
 - 动态背景使用下列 Vanta Fog 参数，不能自行改色、速度、缩放或开启交互。
@@ -33,6 +33,8 @@ VANTA.FOG({
 来源：https://www.vantajs.com/?effect=fog#(backgroundAlpha:1,baseColor:6916440,blurFactor:0.5,gyroControls:!f,highlightColor:8232555,lowlightColor:16742489,midtoneColor:16775656,minHeight:200,minWidth:200,mouseControls:!f,scale:2,scaleMobile:4,speed:1,touchControls:!f,zoom:1)
 
 ## 最终实现
+
+后续用户定稿优先：顶栏改回原始应用图标 + Khor；首屏左侧第一层为大字 Khor，第二层为两段小字英文，第三层为下载 / 文档，无箭头；正文不再重复应用图标，GUI 保持右侧。下方为 macOS、Windows、Linux、iOS、Android 的原生系统标记按钮，可用性来自 release 资产；未发布平台灰显，悬停 / 聚焦 Coming soon。kapestack 公司链接保留在页脚。文案为 “Work across your devices and agents. Edit files, track changes, and use your web apps.” / “From any device, peer to peer. Efficient, secure, and delightful.”。以下大号标语、kapestack 顶栏等为历史阶段记录。
 
 2026-11-12 全页收整补充：品牌故事固定黑场，GUI、下载页和文档继续随浏览器主题。文字与图形并行起动，不再为每句文字单独占用等待区间；原始首幕停留和正常总行程不变。最新用户要求取消放大，完整 Desktop GUI 只在原位置缩放展示与操作，手机也不再有覆盖按钮。减少动态效果使用紧凑静态故事。共享导航接通自适应下载，下载页按 App / CLI 分组，GUI 安装和设备连接路径已补齐。完整记录与证据见 [整页收整](site-refinement-20261112.md)。
 

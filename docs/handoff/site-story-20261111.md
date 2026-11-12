@@ -9,7 +9,7 @@
 
 ## 当前叙事定稿（Codex 参考改版，替代下方历史顺序）
 
-0. **Work across your devices and agents.** 左上是 kapestack（链接 `https://www.kapestack.top`），首屏左介绍 / 右 GUI，共同落在原参数 Vanta Fog 上；GUI 为 40% 背景毛玻璃，窄屏上下排列。首屏下滑直接接下列图标故事，不显示系统 / harness 标识、图文介绍及 GUI 旁注。真实 GUI 和有限合成数据不变，发送仍固定回复下载链接；下载继续按平台与可靠架构推荐。全程不接真实 Lab、模型或设备。
+0. **Khor.** 左上是原始图标 + Khor，首屏左侧大字产品名、小字标语与下载 / 文档，右侧完整 GUI，共同落在原参数 Vanta Fog 上；GUI 为 40% 背景毛玻璃，窄屏上下排列。下方五个平台按钮中 macOS / Linux 可进入安装，Windows / iOS / Android 灰显且提示 Coming soon；公司 kapestack 链接保留在页脚。继续下滑直接接下列图标故事，不显示额外图文介绍及 GUI 旁注。真实 GUI 和有限合成数据不变，发送仍固定回复下载链接；主下载按平台与可靠架构推荐。全程不接真实 Lab、模型或设备。
 
 1. **You have many devices.** 四个普通灰色圆节点松散分布，大小与明暗各异，分别戴 Linux、macOS（Finder）、Windows、iOS（Apple）机器标记。前两幕不预先排成图标的四个固定位置。Meet 之前不出现珠光高亮、渐变、边缘反光或珠子的投影。
 2. **With many harnesses.** 节点沿各自的短弧线移动，错开将标记切换为 Claude、Codex、Cursor、Shell，继续保持灰色；每个节点的移动起止与缩放不同。
@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 首屏布局与文案：用户要求左上恢复原 icon + Khor，正文只用大字 Khor、小字介绍、下载 / 文档；右侧 GUI，下方五个平台图标入口。当前文案采用 “Work across your devices and agents. Edit files, track changes, and use your web apps.” 与 “From any device, peer to peer. Efficient, secure, and delightful.”。下载箭头移除，首屏按钮固定短标签而目标继续自适应。macOS / Linux 已有资产可进入安装选项，Windows / iOS / Android 灰显并显示 Coming soon；图标来自实际 App。公司 kapestack 链接保留在页脚。40% 玻璃、Fog 参数和下方故事未改。证据 `hero-platforms`；此条覆盖早先 kapestack 顶栏和大号标语布局。
 - 2026-11-12 最新首屏修订：标题 “Work across your devices and agents.”；去掉按钮下方推荐版本提示；窗口底色从 50% 降到 40%，深浅首图同步。用户取消 GUI 放大，桌面与手机都只保留原位交互。固定下载回复曾被 `[data-khor-agent-turn] button` 误禁用，已单独放行；其余复杂操作照旧受限。iframe 共享同一 Fog 画面，原玻璃控件不再重复叠黑。Chrome 定向验收与实现说明见 [材质与下载修订](site-material-20261112.md)。此条替代后续旧放大和 50% 描述。
 - 2026-11-12 用户要求文字渐变切换：将字幕裁切位移替换为固定位置的 opacity 互补渐隐渐现。前 8% 交接、图形同步起动、总行程与首幕停留均不变。减少动态效果仍完整显示静态文案。额外的 Git 中文说明按用户要求删除。此条替代下述裁切带方式与补充文案。
 - 2026-11-12 全页收整：文字与图形从段首并行起动，字幕前 8% 以裁切带交接，图形前 86% 演化，末 14% 留完整姿态；替代下一条「先换字再起动」方案。保留首幕 .5 / .7 屏阅读与正常总行程。首页品牌黑场独立于 GUI 的浏览器主题；手机先用真实首图，点查看后载入同一个可操作 iframe，以原生字号展开，底部横条查看完整桌面，关闭 / Escape / 切换主题不丢草稿。减少动态效果改为紧凑静态故事。统一三页导航和自适应下载，App / CLI 分组并补齐经实际 GUI 标签核对的上手文档。Chrome 与静态构建记录见 [整页收整](site-refinement-20261112.md)。以下记录按时间保留，冲突以本条为准。
