@@ -36,7 +36,7 @@ VANTA.FOG({
 
 Codex 当前页面先给居中的产品图标、短标题、一句补充和双按钮，随后用大 GUI 建立产品印象；能力段落交替排布，最后再给入口。我们可借用这个节奏。
 
-用户随后要求恢复「左侧介绍、右侧 GUI」，启用毛玻璃，并去掉下方介绍段落与 GUI 旁注。当前顺序为 kapestack 导航 → Fog 上的左介绍 / 右毛玻璃 GUI → “You have many devices” 图标演化 → 下载收尾。窄屏按介绍 / GUI 上下排列。不显示系统标识、harness 标识、三组图文或 “Khor Desktop / 试着发条消息”。图标故事保留全部原始姿态和图层，行程为 2.6 屏（章节地标 `0 / .55 / 1.15 / 1.8 / 2.6`，含 sticky 视口总高 3.6 屏）。
+用户随后要求恢复「左侧介绍、右侧 GUI」，启用毛玻璃，并去掉下方介绍段落与 GUI 旁注。当前顺序为 kapestack 导航 → Fog 上的左介绍 / 右毛玻璃 GUI → “You have many devices” 图标演化 → 下载收尾。窄屏按介绍 / GUI 上下排列。不显示系统标识、harness 标识、三组图文或 “Khor Desktop / 试着发条消息”。图标故事保留全部原始姿态和最终图稿，最新行程为桌面 4.8 屏、手机 6.2 屏；原生 ScrollTimeline 共享规范化章节地标 `0 / .22 / .47 / .73 / 1`，含 sticky 视口总高分别 5.8 / 7.2 屏。详见 [滚动实现](site-scroll-research-20261112.md)。
 
 首屏标题为 “Work across your devices.”，副文案为 “Your agents, files, and web apps. From any device.”。Fog 只用于首屏，末端以至少 40svh 的渐变接到后续故事的底色。参数集中于 `apps/site/src/scripts/fog-options.ts`；本地固定分发 three.js r134 与 Vanta 0.5.24，许可证随附。减少动态效果与加载失败时使用本页同参数画布的干净截图，不改速度或颜色。
 

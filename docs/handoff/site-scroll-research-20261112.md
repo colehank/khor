@@ -1,12 +1,12 @@
 # 图标故事滚动与手机性能调研（2026-11-12）
 
-用户要求：首屏 Fog 到页面底色的渐变拉长；对 You have… 后续不顺、手机卡顿、一次划过多段的问题先调研实现方式。本轮只修改渐变，以下动画方案尚未实施。前一轮的 GUI 桌面视口修复和删除介绍段落已完成。
+用户要求：首屏 Fog 到页面底色的渐变拉长；对 You have… 后续不顺、手机卡顿、一次划过多段的问题先调研实现方式。调研后用户确认「做」，已按下述方案实现。前一轮的 GUI 桌面视口修复和删除介绍段落已完成。
 
 ## 已修改
 
 `story.css` 中首屏渐变由 5 × gap-pane（120px）延长到 `max(10 × gap-pane, 40svh)`。390×844 采样为约 338px。Fog 参数完全不变。
 
-## 当前实现与证据
+## 改动前的实现与观察
 
 - `icon-story.ts` 地标 `[0, .55, 1.15, 1.8, 2.6]`，四次演化共 2.6 屏。390×844 时有效行程约 2194px，各段约 464 / 506 / 549 / 675px；一次长惯性滚动可以经过多段。当前没有 wheel / touch 拦截、滚动吸附或自动翻页，跨段来自滚动距离映射。
 - 图形按整段 move 演化，文字却使用 `from + ease(move, 0, .55)`，在该段前 55% 就到下一句；文字与图形不在同一语义节奏上。不能只增加动画时长来修这个错位。
@@ -15,9 +15,9 @@
 - `story.ts` 通过 `offsetHeight - innerHeight` 计算行程，而 sticky 的高度是 `100svh`。手机动态地址栏造成 innerHeight 变化时可能重映射进度；这是代码中的潜在跳动点，本轮没有真机证实其占比。下一版应从同一份稳定的 sticky 几何计算行程，避免混用。
 - Fog 已由 Vanta 的 `isOnScreen()` 跳过离屏绘制，但仍有 RAF 循环与布局读取；不能据此认定它一直在图标故事后面绘制 WebGL。示例 GUI 的离屏活动也应单独检查。
 
-诊断脚本 `/private/tmp/playwright-khor-scroll-research.js`，输出 `/Volumes/disk0/Khor/evidence/site-story-20261112/scroll-research`：`report.json`、两份 Chrome trace、`long-fade-mobile.png`。环境为桌面 Chrome、390×844、DPR3、CPU 4 倍限速，不能作为 iPhone 帧率结论。当前和临时禁用 SVG filter 的两组 RAF 间隔中位数均约 10ms，未在桌面模拟中复现明显掉帧；禁用 filter 没有证明它是单一瓶颈。临时隔离只作用于浏览器页面，没有改源文件或提交视觉降级。
+早期诊断数值保留在本节，脚本为 `/private/tmp/playwright-khor-scroll-research.js`。环境为桌面 Chrome、390×844、DPR3、CPU 4 倍限速，不能作为 iPhone 帧率结论。旧版和临时禁用 SVG filter 的两组 RAF 间隔中位数均约 10ms，未在桌面模拟中复现明显掉帧；禁用 filter 没有证明它是单一瓶颈。临时隔离只作用于浏览器页面，没有改源文件或提交视觉降级。新版的原始 trace 与诊断报告保存为下一节列出的 `after-*`。
 
-## 建议的下一版
+## 实现方向
 
 1. 保留原生页面滚动和 sticky 舞台，一条连续时间轴统管文字、位置、线条、颜色。不锁住触摸，不做强制逐页翻页。原生快速甩动仍允许跨段；目标是普通手势容易控制、跨段过程连续。
 2. 先以桌面约 4.8 屏、手机约 6.2 屏作为可调起点，再实际手感验收。各段从开始滚动就有可见变化，把阅读时间安排在减速收尾，避免重新出现开头长死区。文字切换节点与图形阶段共同编排，取消目前提前半段切完的映射。
@@ -25,7 +25,16 @@
 4. 支持时使用原生 CSS / WAAPI ScrollTimeline；只做一次关键帧和范围初始化。范围基于统一稳定的 section / sticky 几何。旧浏览器保留仅在可见、进度变化时工作的 RAF 后备，并缓存属性值，避免反复写同值。只把可合成的 transform / opacity 视作合成线程候选；描边与 SVG 滤镜仍须采样确认。
 5. 减少动态效果仍给清楚的静态姿态。先用 Chrome 检查轨迹、倒滚和普通滚动，再用用户手机验收实际流畅度；不扩大为原生构建或浏览器矩阵。
 
-这些是工程建议，不是对 Apple 营销站内部实现的断言，也不是已完成的性能修复。
+这些是工程选择，不是对 Apple 营销站内部实现的断言。
+
+## 已实施与 Chrome 验收
+
+- `icon-story.ts` 提供纯 `iconState()` 和规范化地标 `[0, .22, .47, .73, 1]`。同一组采样生成原生关键帧，旧浏览器用同一个姿态函数；没有自动播放时钟、触摸拦截或滚动吸附。CSS 指定桌面 4.8 屏、手机 6.2 屏行程。
+- 原始 SVG 的平面节点、Mind 与内圆、三条轮廓、完整材质分别呈现于 HTML 层。片段只包含其引用的 defs，ID 唯一，光学偏移 / 比例按原图读取。灰节点有不透明底面，背后的轮廓不会透出。完整原图的滤镜与路径保持静态；Meet 的左上揭示由旋转的 HTML 裁切与相反位移完成，羽化形状不变。不再逐帧改 SVG 饱和度、亮度、遮罩或渐变位置。
+- `story.ts` 建立一条根滚动 ScrollTimeline，用像素范围连接 section / sticky 的稳定尺寸；不以 innerHeight 或动态地址栏尺寸作为行程减数。文字、提示、背景与图形共用时间轴；章节点仅在跨界时更新 aria-current。无原生能力时 RAF 只在故事可见、进度变化时工作，属性缓存避免写相同值；减少动态效果显示静态章节。
+- 临时 Chrome 脚本 `/private/tmp/playwright-khor-scroll-timeline.js` 已核对桌面 / 手机尺寸、强制移除 ScrollTimeline 的后备、减少动态效果，共四种条件的五个姿态；检查了倒滚可逆、无页面错误、How about 灰节点 / 简单轮廓、Meet 原图完整。完整图稿对照截图的平均 RGB 通道差均低于 1/255（旋转合成抗锯齿略有差异）。
+- 121 帧普通采样为 15 次属性变化；相同 CPU4 诊断为 12 次，旧版为 5260 次。后一次诊断总 Paint 约 25.9ms、FireAnimationFrame 约 14.1ms；旧观察分别为约 97.0ms / 115.2ms。该采样是桌面模拟中的工作量对照，不是 iPhone FPS 或所有浏览器性能保证。
+- 仅运行本地网站脚本类型检查和 Astro 静态构建，没有 GUI / Rust / 原生构建或远端操作。证据目录 `/Volumes/disk0/Khor/evidence/site-story-20261112/scroll-timeline`：`checks.json`、`after-report.json`、`after-current-trace.json`、各姿态截图、`final-actual.png` 与 `final-canonical.png`、`static-build.log`。Fog 参数、GUI、下载和页面顺序沿用上一轮结果。
 
 ## 一手资料
 
