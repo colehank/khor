@@ -1,6 +1,6 @@
 # 官网本地迭代 · 2026-11-11
 
-用户授权：先实现讨论的官网，随后明确改为本地快速迭代 Web，可在本机运行网页构建、预览与浏览器验证。该授权只作用于本任务；没有合并、发布或生产部署授权。
+用户授权：先本地快速迭代 Web，可在本机运行网页构建、预览与浏览器验证；后续已明确授权网站静态产物发布 GitHub Pages，并配置 Cloudflare 的 khor.cloud 域名。该授权只作用于网站任务，不包含合并 main 或原生发布。
 
 - Worktree：`/Volumes/disk0/Khor/worktrees/current/khor-site-story`
 - Branch：`feat/site-story`；基线 `97bbf2a4e036f1a334c9921961d3d0b283f46c59`
