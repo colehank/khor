@@ -1,10 +1,15 @@
 export const iconStops = [0, .22, .47, .73, 1];
+// Introduce each idea before its shape changes, then keep the copy in place.
+export const iconSegments=iconStops.slice(0,-1).map((start,index)=>{
+  const end=iconStops[index+1],span=end-start;
+  return {start,copyEnd:start+span*.12,motionStart:start+span*.14,end};
+});
 export const clamp = (x:number) => Math.max(0, Math.min(1, x));
 export const ease = (x:number, a:number, b:number) => {
   const t=clamp((x-a)/(b-a));
   return t*t*(3-2*t);
 };
-export type IconState = {phase:number; harness:number; focus:number; mind:number; connection:number; light:number};
+export type IconState = {phase:number; copyPhase:number; harness:number; focus:number; mind:number; connection:number; light:number};
 export type MotionValues = Record<string,string|number>;
 export type MotionTrack = {target:HTMLElement|SVGElement; sample:(state:IconState, progress:number)=>MotionValues};
 
@@ -12,9 +17,11 @@ export type MotionTrack = {target:HTMLElement|SVGElement; sample:(state:IconStat
 export function iconState(progress:number):IconState {
   const p=clamp(progress);
   const from=Math.min(3,iconStops.findLastIndex(stop=>p>=stop));
-  const move=clamp((p-iconStops[from])/(iconStops[from+1]-iconStops[from]));
+  const segment=iconSegments[from];
+  const move=clamp((p-segment.motionStart)/(segment.end-segment.motionStart));
   return {
     phase:from+move,
+    copyPhase:from+ease(p,segment.start,segment.copyEnd),
     harness:from===0?move:1,
     focus:from<1?0:from===1?1-Math.pow(1-move,3):1,
     mind:from<1?0:from===1?ease(move,.25,.88):1,

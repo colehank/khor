@@ -1,4 +1,4 @@
-import {createIconMotion,iconState,iconStops,clamp,ease,type MotionTrack} from './icon-story';
+import {createIconMotion,iconState,iconStops,iconSegments,clamp,ease,type MotionTrack} from './icon-story';
 
 type ScrollTimelineConstructor=new(options:{source:Element;axis:string})=>AnimationTimeline;
 type ScrollOptions=KeyframeAnimationOptions&{rangeStart:string;rangeEnd:string};
@@ -24,13 +24,15 @@ export function mountStory() {
   let previous=new WeakMap<MotionTrack['target'],Record<string,string>>();
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
   lines.forEach((line,index)=>track(line,state=>{
-    const delta=state.phase-index;
-    return {opacity:1-ease(Math.abs(delta),.12,.5),transform:`translateY(calc(${-Math.max(-1,Math.min(1,delta))} * var(--gap-pane)))`};
+    const delta=state.copyPhase-index;
+    // Complementary fades avoid an empty interval during the handoff.
+    return {opacity:1-clamp(Math.abs(delta)),transform:`translateY(calc(${-Math.max(-1,Math.min(1,delta))} * var(--gap-row)))`};
   }));
-  track(cue,state=>({opacity:1-ease(state.phase,0,.5)}));
+  track(cue,state=>({opacity:1-ease(state.copyPhase,0,.5)}));
   track(cueProgress,(_,progress)=>({transform:`scaleY(${introProgress?clamp(1+progress/introProgress):1})`}));
   track(controls,(_,progress)=>({opacity:1-ease(progress,.92,1)}));
-  track(environment,(state,progress)=>({opacity:(.35*clamp(state.light/.55)+.65*ease(state.light,0,.55))*(1-ease(progress,1,1+exitProgress))}));
+  // Meet's dark scene arrives with its white headline, before the light sweep.
+  track(environment,(state,progress)=>({opacity:ease(state.copyPhase,3,3.6)*(1-ease(progress,1,1+exitProgress))}));
 
   function paint(progress:number) {
     const state=iconState(progress);
@@ -50,7 +52,7 @@ export function mountStory() {
     if(disposed||!inView)return;
     const distance=scrollY-topOpening-openingTravel*introProgress;
     const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
-    const next=Math.round(iconState(progress).phase);
+    const next=Math.round(iconState(progress).copyPhase);
     if(next!==active){
       active=next;
       assembly!.dataset.iconScene=['devices','harnesses','mind','together','meet'][active];
@@ -78,7 +80,8 @@ export function mountStory() {
       try{
         const timeline=new Timeline({source:document.documentElement,axis:'block'});
         const end=1+exitProgress;
-        const positions=[...new Set([-introProgress,...Array.from({length:129},(_,i)=>i/128),...iconStops,...Array.from({length:17},(_,i)=>1+exitProgress*i/16)])].sort((a,b)=>a-b);
+        const cues=iconSegments.flatMap(segment=>[segment.start,segment.copyEnd,segment.motionStart,segment.end]);
+        const positions=[...new Set([-introProgress,...Array.from({length:129},(_,i)=>i/128),...cues,...Array.from({length:17},(_,i)=>1+exitProgress*i/16)])].sort((a,b)=>a-b);
         const samples=positions.map(progress=>({progress,state:iconState(progress)}));
         for(const {target,sample} of tracks){
           const frames=samples.map(({progress,state})=>({...sample(state,progress),offset:(progress+introProgress)/(end+introProgress)}));
