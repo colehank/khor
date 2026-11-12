@@ -1,10 +1,17 @@
 """Installer cleanup must handle the App's asynchronous resident startup."""
 import importlib.util
+import os
 from pathlib import Path
+import re
+import subprocess
 import sys
+import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from release_manifest import files
+
 spec = importlib.util.spec_from_file_location(
     "desktop_installer", Path(__file__).resolve().parents[1] / "check-desktop-installer.py")
 installer = importlib.util.module_from_spec(spec)
@@ -54,6 +61,47 @@ class ProcessRetirementTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "must retire its own processes"):
             self.retire(lambda: [process], lambda _: None)
         self.assertLess(self.now, 3.2)
+
+
+class InstallerLogIsolationTests(unittest.TestCase):
+    def check_logs(self, action, use_runner_temp):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            product = root / "release-product"
+            product.mkdir()
+            package = product / "khor-windows-x86_64.msi"
+            package.write_bytes(b"immutable MSI fixture")
+            expected = files(product)
+            diagnostics = root / "runner temp"
+            diagnostics.mkdir()
+            environment = {**os.environ, "SystemRoot": "C:/Windows"}
+            environment.pop("RUNNER_TEMP", None)
+            if use_runner_temp:
+                environment["RUNNER_TEMP"] = str(diagnostics)
+
+            def msiexec(command, **kwargs):
+                self.assertEqual(kwargs["timeout"], 600)
+                match = re.search(r'/L\*V "([^"]+)"', command)
+                self.assertIsNotNone(match)
+                log = Path(match[1])
+                self.assertTrue(log.parent.is_dir())
+                log.write_text("MSI diagnostic output\n")
+                self.assertEqual(log.parent, diagnostics / "khor-installer-logs")
+                self.assertIn(f'{action} "{package}" /qn /norestart', command)
+                return subprocess.CompletedProcess(command, 0)
+
+            with patch.dict(os.environ, environment, clear=True), \
+                    patch.object(installer.tempfile, "gettempdir", return_value=str(diagnostics)), \
+                    patch.object(installer.subprocess, "run", side_effect=msiexec):
+                result = installer.invoke_msi(action, package, root / "Installed Khor" if action == "/i" else None)
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(files(product), expected, "Installation must preserve the complete artifact receipt")
+
+    def test_install_logs_never_change_the_release_directory(self):
+        self.check_logs("/i", use_runner_temp=True)
+
+    def test_uninstall_logs_use_the_temp_directory_outside_actions(self):
+        self.check_logs("/x", use_runner_temp=False)
 
 
 if __name__ == "__main__":
