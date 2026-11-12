@@ -299,7 +299,7 @@ jobs:
       - name: Verify attachments with a real App, PTY and file transport
         if: ${{ !cancelled() && steps.attachment-binaries.outcome == 'success' }}
         working-directory: apps/gui
-        run: npm run attachment-ui
+        run: KHOR_TEST_FRONTEND=dist npm run attachment-ui
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
