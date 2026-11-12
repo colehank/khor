@@ -1,5 +1,6 @@
 import {mountPreviewBackground} from './product-background';
 import {sitePath} from '../paths';
+import {renderProbe,disablePreviewGlass} from './render-probe';
 
 export function mountDesktopPreview() {
   const preview=document.querySelector<HTMLElement>('[data-desktop-preview]');
@@ -8,6 +9,8 @@ export function mountDesktopPreview() {
   const shell=preview?.closest<HTMLElement>('.macos-window');
   const hero=preview?.closest<HTMLElement>('[data-product-hero]');
   if(!preview||!stage||!frame||!shell||!hero)return;
+  const probe=renderProbe();
+  if(probe==='no-glass')disablePreviewGlass(document);
   const controller=new AbortController(),on={signal:controller.signal};
   let started=false,visible=false,idle=0,timer=0;
   let background:ReturnType<typeof mountPreviewBackground>|undefined;
@@ -19,14 +22,17 @@ export function mountDesktopPreview() {
     started=true;frame.src=new URL(frame.dataset.src!,location.origin).href;
   };
   const schedule=()=>{
-    if(started||idle||timer||!visible)return;
+    if(probe==='poster'||started||idle||timer||!visible)return;
     // Paint the real poster first, then activate the inline GUI on any device.
     if('requestIdleCallback' in window)idle=window.requestIdleCallback(start,{timeout:1600});
     else timer=setTimeout(start,240);
   };
   const show=async()=>{
-    background??=mountPreviewBackground(frame,hero);
-    await background.ready;
+    if(probe==='no-glass')disablePreviewGlass(frame.contentDocument!);
+    if(probe!=='no-backdrop'){
+      background??=mountPreviewBackground(frame,hero);
+      await background.ready;
+    }
     requestAnimationFrame(()=>requestAnimationFrame(()=>preview.setAttribute('data-ready','')));
   };
   window.addEventListener('message',event=>{
