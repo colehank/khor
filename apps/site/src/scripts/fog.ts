@@ -14,7 +14,11 @@ export function mountFog(){
   if(!hero||!ground)return;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   let effect:FogEffect|undefined,disposed=false,generation=0,libraries:Promise<void>|undefined;
-  const nav=()=>header?.toggleAttribute('data-over-hero',hero.getBoundingClientRect().bottom>Math.max(header.offsetHeight,innerHeight*.25));
+  const nav=()=>{
+    if(!header)return;
+    header.toggleAttribute('data-scrolled',window.scrollY>0);
+    header.toggleAttribute('data-over-hero',hero.getBoundingClientRect().bottom>Math.max(header.offsetHeight,innerHeight*.25));
+  };
   window.addEventListener('scroll',nav,{passive:true});nav();
   const start=async()=>{
     const current=++generation;

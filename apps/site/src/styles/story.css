@@ -1,6 +1,6 @@
 /* Marketing composition uses the shared palette and type; app surfaces keep their own shell. */
 :root {
-  --site-header-height:calc(var(--pane-head) + var(--gap-row));
+  --site-header-height:calc(var(--pane-head) + var(--gap-row) + env(safe-area-inset-top,0px));
   --story-max: calc(var(--list-w) * 4);
   --story-gutter: clamp(var(--gap-base), 5vw, calc(var(--gap-pane) * 3));
   --story-title: clamp(calc(var(--text-title-lg) * 1.8), 4.3vw, calc(var(--text-title-lg) * 3));
@@ -16,16 +16,16 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--site-header-heigh
 .sr-only { position:absolute; width:var(--hair); height:var(--hair); padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .skip-story { position:fixed; top:var(--gap-in); left:var(--gap-base); z-index:100; transform:translateY(-200%); padding:var(--gap-row); border-radius:var(--radius-md); background:var(--canvas); }
 .skip-story:focus { transform:none; }
-.story-nav { position:fixed; z-index:30; inset:0 0 auto; height:var(--site-header-height); padding:0 var(--story-gutter); display:flex; align-items:center; justify-content:space-between; color:var(--ink); background:color-mix(in srgb,var(--canvas) 90%,transparent); backdrop-filter:blur(var(--gap-pane)); transition:background var(--dur-180),color var(--dur-180); }
+.story-nav { position:fixed; z-index:30; inset:0 0 auto; height:var(--site-header-height); padding:env(safe-area-inset-top,0px) var(--story-gutter) 0; display:flex; align-items:center; justify-content:space-between; color:var(--mark-ink-light); background:color-mix(in srgb,var(--mark-veil-dark) 72%,transparent); -webkit-backdrop-filter:blur(var(--gap-pane)); backdrop-filter:blur(var(--gap-pane)); transition:background var(--dur-180),color var(--dur-180); }
 .parent-brand { font-size:var(--text-title-lg); font-weight:650; line-height:1; }
 .site-brand { display:inline-flex; align-items:center; gap:var(--gap-in); min-height:var(--touch); font-size:var(--text-title-md); font-weight:600; letter-spacing:-.025em; }
-.site-brand img { width:var(--gap-pane); height:var(--gap-pane); border-radius:22%; }
-.story-nav[data-over-hero] { color:var(--mark-ink-dark); background:transparent; backdrop-filter:none; }
+.site-brand img { width:var(--touch); height:var(--touch); border-radius:22%; }
+.story-nav[data-over-hero]:not([data-scrolled]) { color:var(--mark-ink-dark); background:transparent; -webkit-backdrop-filter:none; backdrop-filter:none; }
 .story-nav nav { display:flex; align-items:center; gap:var(--gap-pane); font-size:var(--text-body); }
 .story-nav nav a { min-height:var(--touch); display:inline-flex; align-items:center; padding-block:var(--gap-in); }
 .story-nav nav a:hover { opacity:.65; }
-.story-nav .nav-download { background:var(--ink); color:var(--canvas); padding:var(--gap-in) var(--gap-base); border-radius:var(--radius-full); }
-.story-nav[data-over-hero] .nav-download { background:var(--mark-ink-dark); color:var(--mark-ink-light); }
+.story-nav .nav-download { background:var(--mark-ink-light); color:var(--mark-ink-dark); padding:var(--gap-in) var(--gap-base); border-radius:var(--radius-full); }
+.story-nav[data-over-hero]:not([data-scrolled]) .nav-download { background:var(--mark-ink-dark); color:var(--mark-ink-light); }
 .product-hero { position:relative; isolation:isolate; min-height:100svh; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:calc(var(--gap-pane)*1.5); text-align:left; padding:calc(var(--site-header-height) + var(--gap-pane)*2) var(--story-gutter) calc(var(--gap-pane)*3); color:var(--mark-ink-dark); }
 .product-main { width:100%; max-width:calc(var(--list-w)*4.5); display:grid; grid-template-columns:minmax(0,.85fr) minmax(0,1.7fr); align-items:center; gap:calc(var(--gap-pane)*2); }
 .hero-ground { position:absolute; inset:0; z-index:-2; overflow:hidden; background:var(--fog-base); }
@@ -143,7 +143,7 @@ a.platform-option:hover { background:color-mix(in srgb,var(--mark-ink-light) 10%
 .docs .r0 { top:var(--site-header-height); }
 .docs .prose :is(h2,h3,h4) { scroll-margin-top:var(--pane-head); }
 @media (max-width:760px) {
-  :root { --site-header-height:var(--touch); }
+  :root { --site-header-height:calc(var(--touch) + var(--gap-row)*2 + env(safe-area-inset-top,0px)); }
   .opening { --opening-screens:7.2; --story-intro-hold:.7; }
   .product-hero { justify-content:flex-start; gap:var(--gap-pane); }
   .product-main { grid-template-columns:minmax(0,1fr); gap:calc(var(--gap-pane)*1.5); }
