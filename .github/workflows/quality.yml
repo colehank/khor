@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, runtime-cold]
         default: sync
       frontend_run:
         type: string
@@ -30,6 +30,72 @@ permissions:
   contents: read
   actions: read
 jobs:
+  runtime-cold:
+    if: inputs.slice == 'runtime-cold'
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: session-review-cold-mac
+          cache-targets: true
+          save-if: 'true'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: frontend
+          run-id: '43157617769'
+          github-token: ${{ github.token }}
+      - name: Reuse only verified unchanged frontend inputs
+        run: |
+          python3 scripts/release_manifest.py verify --root frontend --sha e23dfce529fd0b6aa18e6801746059128d5bb10a --run-id 43157617769 --kind frontend
+          git diff --exit-code e23dfce529fd0b6aa18e6801746059128d5bb10a HEAD -- apps/gui crates/catalog Cargo.toml Cargo.lock
+          mkdir -p apps/gui/src
+          cp -R frontend/dist apps/gui/dist
+          cp -R frontend/gen apps/gui/src/gen
+      - name: Reproduce the rejected cold image against the previous implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p cold-mac-proof
+          git show e23dfce529fd0b6aa18e6801746059128d5bb10a:crates/node/src/runtime_image.rs > crates/node/src/runtime_image.rs
+          set +e
+          cargo test --locked -p khor-cli --test runtime_image runtime_inspection_allows_a_cold_mac_image_before_opening_user_data -- --exact --nocapture --test-threads=1 > cold-mac-proof/red.log 2>&1
+          result=$?
+          set -e
+          cat cold-mac-proof/red.log
+          test "$result" -ne 0
+          grep -q 'runtime inspection timed out' cold-mac-proof/red.log
+          grep -q 'test result: FAILED' cold-mac-proof/red.log
+          git checkout HEAD -- crates/node/src/runtime_image.rs
+      - name: Verify all real runtime activation boundaries and owned process retirement
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked -p khor-cli --test runtime_image -- --nocapture --test-threads=1 2>&1 | tee cold-mac-proof/green.log
+          python3 -m unittest discover -s scripts/tests -p 'test_desktop_installer_processes.py' 2>&1 | tee cold-mac-proof/processes.log
+      - name: Preserve formatter output for the source-only checkout
+        if: always()
+        run: cargo fmt --all && git diff --binary > cold-mac-proof/format.patch
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: cold-mac-proof
+          path: cold-mac-proof
+          if-no-files-found: error
   mac-installed-debug:
     if: inputs.slice == 'mac-installed-debug'
     runs-on: macos-26
