@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug]
         default: sync
       frontend_run:
         type: string
@@ -30,6 +30,58 @@ permissions:
   contents: read
   actions: read
 jobs:
+  mac-installed-debug:
+    if: inputs.slice == 'mac-installed-debug'
+    runs-on: macos-26
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - run: sudo softwareupdate --install-rosetta --agree-to-license
+      - name: Restore the exact signed Intel installer and retain startup diagnostics
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, subprocess, zipfile
+          out=Path('intel-installed-debug');out.mkdir()
+          archive=out/'signed-build.zip'
+          with archive.open('wb') as stream:
+              subprocess.run(['gh','api','repos/colehank/khor/actions/artifacts/13921791620/zip'],stdout=stream,check=True,timeout=180)
+          assert hashlib.sha256(archive.read_bytes()).hexdigest()=='52c8d8e97e1224f2fc622931fe97c3b25286c702e9418e199ac7b11044ea2df9'
+          with zipfile.ZipFile(archive) as source:
+              entries=[v for v in source.infolist() if v.filename.endswith('.pkg')]
+              assert len(entries)==1
+              (out/'Khor.pkg').write_bytes(source.read(entries[0]))
+          checker=Path('scripts/check-desktop-installer.py')
+          text=checker.read_text()
+          text=text.replace('raise AssertionError("Packaged serve exited before publishing its endpoint")', 'raise AssertionError("Packaged serve exited before publishing its endpoint: rc="+str(service.returncode)+"\\n"+(Path(temporary)/"serve.log").read_text(errors="replace")[-16000:])')
+          old="            if log is not None:\n                log.close()"
+          # Keep evidence before TemporaryDirectory removes the private home.
+          replacement="\n".join([
+              "            if log is not None:",
+              "                log.close()",
+              "            debug=Path('intel-installed-debug/logs');debug.mkdir(exist_ok=True)",
+              "            for n, file in enumerate(Path(temporary).rglob('*')):",
+              "                if file.is_file() and (file.suffix in ('.log', '.stderr', '.out') or file.name.endswith('.log.1')):",
+              "                    (debug/(str(n)+'-'+file.name)).write_text(file.read_text(errors='replace')[-16000:])",
+          ])
+          assert old in text
+          checker.write_text(text.replace(old,replacement))
+          PY
+      - name: Install and start the preserved package without recompiling it
+        run: python3 scripts/check-desktop-installer.py --package intel-installed-debug/Khor.pkg --expected-source e23dfce529fd0b6aa18e6801746059128d5bb10a --output intel-installed-debug/proof.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: mac-intel-installed-debug
+          path: |
+            intel-installed-debug/logs
+            intel-installed-debug/proof.json
+          if-no-files-found: warn
   published-rollback:
     if: inputs.slice == 'published-rollback'
     runs-on: ubuntu-24.04
