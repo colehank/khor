@@ -24,11 +24,6 @@ export function mountStory() {
   let geometry='',inView=true;
   let previous=new WeakMap<MotionTrack['target'],Record<string,string>>();
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
-  lines.forEach((line,index)=>track(line.querySelector<HTMLElement>('.opening-line-content')!,state=>{
-    const delta=state.copyPhase-index;
-    // Keep the copy stationary; adjacent sentences crossfade in the same interval.
-    return {opacity:1-clamp(Math.abs(delta))};
-  }));
   track(cue,state=>({opacity:1-ease(state.copyPhase,0,.5)}));
   track(cueProgress,(_,progress)=>({transform:`scaleY(${introProgress?clamp(1+progress/introProgress):1})`}));
   track(controls,(_,progress)=>({opacity:1-ease(progress,.92,1)}));
@@ -57,9 +52,16 @@ export function mountStory() {
     }
     const distance=scrollY-topOpening-openingTravel*introProgress;
     const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
-    const next=Math.round(iconState(progress).copyPhase);
+    // Introduce the next sentence as its geometry starts. Its short fade is
+    // time-based, so pausing a scroll never leaves two half-visible headlines.
+    // Bookmarks round to the next CSS pixel; that must not select another chapter.
+    const copyPosition=progress-1/openingTravel;
+    const next=copyPosition<=0?0:Math.min(lines.length-1,iconStops.findLastIndex(stop=>copyPosition>stop)+1);
     if(next!==active){
+      const first=active<0;
       active=next;
+      lines.forEach((line,index)=>line.classList.toggle('is-current',index===active));
+      if(first)requestAnimationFrame(()=>opening!.setAttribute('data-caption-ready',''));
       assembly!.dataset.iconScene=['devices','harnesses','mind','together','meet'][active];
       steps.forEach((step,index)=>{
         if(index===active)step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');

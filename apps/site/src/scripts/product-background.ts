@@ -1,10 +1,7 @@
 // A transparent iframe cannot sample its parent's backdrop. Give the real
 // glass controls the same Fog underneath them, before the window's tint.
 // Reuse the existing canvas; never create a second renderer or read pixels.
-import {renderProbe} from './render-probe';
-
 export function mountPreviewBackground(frame:HTMLIFrameElement,hero:HTMLElement) {
-  const probe=renderProbe();
   const doc=frame.contentDocument!,ground=hero.querySelector<HTMLElement>('[data-fog]')!;
   const poster=ground.querySelector<HTMLImageElement>('.fog-fallback')!;
   const layer=doc.createElement('div'),surface=doc.createElement('div');
@@ -23,7 +20,7 @@ export function mountPreviewBackground(frame:HTMLIFrameElement,hero:HTMLElement)
   };
   const sync=()=>{
     const canvas=ground.querySelector('canvas');
-    if(probe==='no-stream'||!visible||document.hidden||reduced.matches||!canvas?.captureStream){stop();return;}
+    if(!visible||document.hidden||reduced.matches||!canvas?.captureStream){stop();return;}
     if(source===canvas)return;
     stop();source=canvas;
     try{

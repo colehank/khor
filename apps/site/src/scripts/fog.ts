@@ -1,6 +1,5 @@
 import {sitePath} from '../paths';
 import {fogOptions} from './fog-options';
-import {renderProbe} from './render-probe';
 type FogEffect={destroy:()=>void};
 type FogWindow=Window&{VANTA?:{FOG:(options:typeof fogOptions&{el:HTMLElement})=>FogEffect}};
 const load=(src:string)=>new Promise<void>((resolve,reject)=>{
@@ -13,7 +12,6 @@ export function mountFog(){
   const ground=document.querySelector<HTMLElement>('[data-fog]');
   const header=document.querySelector<HTMLElement>('.story-nav');
   if(!hero||!ground)return;
-  const probe=renderProbe();
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   let effect:FogEffect|undefined,disposed=false,generation=0,libraries:Promise<void>|undefined;
   const nav=()=>{
@@ -24,7 +22,7 @@ export function mountFog(){
   window.addEventListener('scroll',nav,{passive:true});nav();
   const start=async()=>{
     const current=++generation;
-    if(probe==='no-fog'||reduced.matches||disposed)return;
+    if(reduced.matches||disposed)return;
     try{
       libraries??=load(sitePath('/vendor/three-r134.min.js')).then(()=>load(sitePath('/vendor/vanta-fog-0.5.24.min.js')));
       await libraries;

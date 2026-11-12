@@ -19,7 +19,7 @@ const platforms=supportedDevices.map(platform=>{
   <div class="product-main">
   <div class="product-copy">
     <h1 id="product-title">Khor</h1>
-    <p class="product-description" lang="en">Work across your devices and agents.<br />Access agents, edit files, track changes, and connect to web apps from any device, peer to peer.</p>
+    <p class="product-description" lang="en"><span class="product-promise">Work across your devices and agents.</span> <span class="product-detail">Access agents, edit files, track changes, and connect to web apps from any device, <span class="keep-together">peer to peer.</span></span></p>
     <div class="product-actions">
       <a class="product-download" href={sitePath("/download/")} data-device-download>下载</a>
       <a class="product-docs" href={sitePath("/docs/")}>文档</a>
@@ -38,8 +38,8 @@ const platforms=supportedDevices.map(platform=>{
     <h2 class="platforms-title" id="platforms-title" lang="en">Other ways to get Khor</h2>
   <nav class="product-platforms" aria-labelledby="platforms-title">
     {platforms.map(platform=>platform.available?
-      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'安装 Linux CLI':'安装 macOS App 或 CLI'}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span></a>:
-      <button class="platform-option" type="button" aria-disabled="true" aria-label={platform.name} aria-describedby={`platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-tooltip" role="tooltip" lang="en" id={`platform-${platform.id}-soon`}>Coming soon</span></button>
+      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'安装 Linux CLI':'安装 macOS App 或 CLI'}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
+      <button class="platform-option" type="button" data-unavailable aria-label={`${platform.name} 安装状态`} aria-describedby={`platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" lang="en" id={`platform-${platform.id}-soon`}>Coming soon</span></button>
     )}
   </nav>
   <div class="product-cli">
@@ -51,5 +51,6 @@ const platforms=supportedDevices.map(platform=>{
 <script>
   import {mountDesktopPreview} from "../scripts/product";
   import {mountFog} from "../scripts/fog";
-  mountDesktopPreview();mountFog();
+  import {mountPlatformHints} from "../scripts/platform-hints";
+  mountDesktopPreview();mountFog();mountPlatformHints();
 </script>

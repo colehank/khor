@@ -1,6 +1,5 @@
 import {mountPreviewBackground} from './product-background';
 import {sitePath} from '../paths';
-import {renderProbe,disablePreviewGlass} from './render-probe';
 
 export function mountDesktopPreview() {
   const preview=document.querySelector<HTMLElement>('[data-desktop-preview]');
@@ -9,30 +8,34 @@ export function mountDesktopPreview() {
   const shell=preview?.closest<HTMLElement>('.macos-window');
   const hero=preview?.closest<HTMLElement>('[data-product-hero]');
   if(!preview||!stage||!frame||!shell||!hero)return;
-  const probe=renderProbe();
-  if(probe==='no-glass')disablePreviewGlass(document);
   const controller=new AbortController(),on={signal:controller.signal};
   let started=false,visible=false,idle=0,timer=0;
   let background:ReturnType<typeof mountPreviewBackground>|undefined;
   const measure=()=>{shell.style.setProperty('--desktop-scale',String(preview.clientWidth/stage.offsetWidth));background?.measure();};
   const resize=new ResizeObserver(measure);resize.observe(preview);resize.observe(hero);measure();
+  // A full desktop iframe is not a stable pinch-zoom surface on mobile Safari.
+  // Keep the same real, theme-aware window image without starting the App.
+  if(matchMedia('(any-pointer:coarse)').matches){
+    preview.dataset.previewMode='image';
+    frame.remove();
+    window.addEventListener('pagehide',event=>{if(!event.persisted)resize.disconnect();},{once:true});
+    return;
+  }
+  preview.dataset.previewMode='interactive';
   const start=()=>{
     idle=0;timer=0;
     if(started||!visible)return;
     started=true;frame.src=new URL(frame.dataset.src!,location.origin).href;
   };
   const schedule=()=>{
-    if(probe==='poster'||started||idle||timer||!visible)return;
-    // Paint the real poster first, then activate the inline GUI on any device.
+    if(started||idle||timer||!visible)return;
+    // Paint the real poster first, then activate the desktop GUI.
     if('requestIdleCallback' in window)idle=window.requestIdleCallback(start,{timeout:1600});
     else timer=setTimeout(start,240);
   };
   const show=async()=>{
-    if(probe==='no-glass')disablePreviewGlass(frame.contentDocument!);
-    if(probe!=='no-backdrop'){
-      background??=mountPreviewBackground(frame,hero);
-      await background.ready;
-    }
+    background??=mountPreviewBackground(frame,hero);
+    await background.ready;
     requestAnimationFrame(()=>requestAnimationFrame(()=>preview.setAttribute('data-ready','')));
   };
   window.addEventListener('message',event=>{
