@@ -39,7 +39,7 @@ git push origin v0.1.15
 
 前端只生成一次，Quality与原生平台消费相同dist与生成类型。四个CLI（Linux x86_64/arm64、Mac Intel/Apple Silicon）、两个Mac App、两个Linux桌面App、一个Windows桌面App和一个iOS archive分别产出收据，再聚合manifest。收据包含源SHA、前端标识、run/attempt、大小与SHA256；实际原生程序检查嵌入前端，CLI/Mac App还检查嵌入Pi及Linux glibc 2.31下限。
 
-`agent-runtime` 为每个目标平台制作一次 Pi，CLI 的 `native` 与 `mac-app` 校验源码、目标平台、run 和文件摘要后复用相同字节。两类原生构建独立调度，各有90分钟预算；Mac App不再接在CLI编译之后共用一个任务时限。中间的 `agent-runtime-*` 工件不进入最终十平台发布集合。
+`agent-runtime` 为每个目标平台制作一次 Pi，CLI 的 `native` 与 `mac-app` 校验源码、目标平台、run 和文件摘要后复用相同字节。两类原生构建独立调度：独立 CLI 有90分钟预算，Mac App 有150分钟，覆盖随包 CLI、App 优化编译、签名和真实安装验证。Mac App不再接在独立CLI编译之后共用一个任务时限。中间的 `agent-runtime-*` 工件不进入最终十平台发布集合。
 
 工具链使用Rust1.95、Node22.19、Bun1.3.14、Xcode26.5及锁文件。Rust目标目录不跨运行缓存。Actions前端保留7天，候选14天；成功rc会将十平台产物、iOS归档/构建号、manifest、原始安装器及TestFlight记录保存在GitHub不可变预发布资产。正式晋升从该预发布读取，Actions文件过期不会导致重编。
 
@@ -59,7 +59,7 @@ Linux 包不会覆盖独立放置于 /usr/bin/khor 的文件；已有 Khor Debia
 
 已有的独立安装优先保留：安装器不会覆盖 `/usr/local/bin/khor` 上的其他文件，也不会动用户目录。可用 `type -a khor` 查看实际命令来源，决定是否调整 PATH 或按原安装方式卸载；只有确认旧 `khor-gui` 是指向 App 内部程序的外部软链接时，才用 `unlink` 移除它。用户可用 `/Applications/Khor.app/Contents/MacOS/khor --version` 核对随 App 的版本。
 
-公证查询每次最多等待30分钟，任务上限40分钟，为下载、打包和状态保存留出时间；编译仍有独立的90分钟预算。等待超时不取消 Apple 上的处理。在原 Actions run 选择 **Re-run failed jobs**，继续查询同一请求，复用原始签名包，不重新编译、签名或提交。已有最终包也会校验后复用。不要使用 Re-run all jobs 恢复公证。
+公证查询每次最多等待30分钟，任务上限40分钟，为下载、打包和状态保存留出时间；Mac App 编译、签名与安装验证另有150分钟预算。等待超时不取消 Apple 上的处理。在原 Actions run 选择 **Re-run failed jobs**，继续查询同一请求，复用原始签名包，不重新编译、签名或提交。已有最终包也会校验后复用。不要使用 Re-run all jobs 恢复公证。
 
 Mac 签名明确返回 `A timestamp was expected but was not found` 时，构建适配器在同一作业内最多尝试三次，间隔5秒和15秒；复用当前 Cargo 输出和图标目录，保留实时日志。安全时间戳、公证与最终签名验证保持必需。其他编译、证书或签名错误直接失败；超出重试上限也明确失败。
 

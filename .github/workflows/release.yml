@@ -160,7 +160,7 @@ jobs:
           retention-days: 14
   mac-app:
     needs: [prepare, frontend, agent-runtime]
-    timeout-minutes: 90
+    timeout-minutes: 150
     environment: ${{ (inputs.signed || needs.prepare.outputs.rc == 'true') && 'apple-signing' || 'candidate' }}
     strategy:
       fail-fast: false
