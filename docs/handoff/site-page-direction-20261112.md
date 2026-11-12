@@ -34,7 +34,7 @@ VANTA.FOG({
 
 ## 最终实现
 
-文案最新修订：用户删除 “Edit…” 及其后文案，首屏小字仅保留 “Work across your devices and agents.”。下述两段文案为上一轮记录。
+文案最新修订：用户恢复完整英文文案，合为一个小字段落，不手动换行；“Work across your devices and agents. Edit files, track changes, and use your web apps. From any device, peer to peer. Efficient, secure, and delightful.”。下述两段排法为上一轮记录。
 
 后续用户定稿优先：顶栏改回原始应用图标 + Khor；首屏左侧第一层为大字 Khor，第二层为两段小字英文，第三层为下载 / 文档，无箭头；正文不再重复应用图标，GUI 保持右侧。下方为 macOS、Windows、Linux、iOS、Android 的原生系统标记按钮，可用性来自 release 资产；未发布平台灰显，悬停 / 聚焦 Coming soon。kapestack 公司链接保留在页脚。文案为 “Work across your devices and agents. Edit files, track changes, and use your web apps.” / “From any device, peer to peer. Efficient, secure, and delightful.”。以下大号标语、kapestack 顶栏等为历史阶段记录。
 
