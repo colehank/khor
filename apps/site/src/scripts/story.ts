@@ -26,8 +26,8 @@ export function mountStory() {
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
   lines.forEach((line,index)=>track(line.querySelector<HTMLElement>('.opening-line-content')!,state=>{
     const delta=state.copyPhase-index;
-    // Each sentence occupies a separate clipped band, never a ghosted overlay.
-    return {transform:`translateY(${-Math.max(-1,Math.min(1,delta))*100}%)`};
+    // Keep the copy stationary; adjacent sentences crossfade in the same interval.
+    return {opacity:1-clamp(Math.abs(delta))};
   }));
   track(cue,state=>({opacity:1-ease(state.copyPhase,0,.5)}));
   track(cueProgress,(_,progress)=>({transform:`scaleY(${introProgress?clamp(1+progress/introProgress):1})`}));
