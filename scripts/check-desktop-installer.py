@@ -134,9 +134,11 @@ def launch_installed(directory):
                 terminate(process)
             # Closing the App intentionally leaves its node running. Stop the
             # node in this private home as well, before retiring late workers.
-            subprocess.run([str(directory / ("khor" + suffix)), "quit"], env=environment,
-                           capture_output=True, timeout=30)
-            retire_processes(processes, terminate)
+            try:
+                subprocess.run([str(directory / ("khor" + suffix)), "quit"], env=environment,
+                               capture_output=True, timeout=30)
+            finally:
+                retire_processes(processes, terminate)
 
 
 def linux(package, expected_source):
