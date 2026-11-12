@@ -1,4 +1,5 @@
 import {roots} from './world';
+import {downloadUrl} from './urls';
 
 // Only the finite, complete parts of the website demo are interactive.
 // The production App and its controls stay unchanged.
@@ -31,7 +32,7 @@ export function constrainDemoInteractions() {
     };
     for(const element of document.querySelectorAll<HTMLElement>(unavailable)){
       // The fixed reply's download is a real website action, even inside a turn.
-      if(element.dataset.mdLink===location.origin+'/download/')continue;
+      if(element.dataset.mdLink===downloadUrl)continue;
       disable(element);
     }
     for(const selector of ['[data-row] [data-row-open]','[data-quota-row]','[data-ws-row]']){

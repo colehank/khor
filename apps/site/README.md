@@ -40,9 +40,23 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 - 站点 token 从 `docs/design-system/tokens.json` 生成；不另存调色板与字体。
 - 演示产物在 `public/experience/app`，由构建生成并忽略；没有重新实现一套 App 页面。
 
+## GitHub Pages
+
+可发布到 `https://colehank.github.io/khor/`：
+
+```sh
+KHOR_SITE_URL=https://colehank.github.io KHOR_SITE_BASE=/khor/ npm run build --prefix apps/site -- --force
+```
+
+输出仍是 `apps/site/dist`，将其内容作为 `gh-pages` 分支根目录发布。产物含 `.nojekyll` 和 `install.sh`，GitHub 托管静态产物；构建在本机完成。主域名部署使用 `KHOR_SITE_URL=https://khor.cloud KHOR_SITE_BASE=/`。基路径同时作用于页面、Markdown、资源、下载推荐及演示 GUI 的下载回复。
+
+官网安装脚本使用仓库原始安装器，并将默认版本固定到 `src/releases.ts` 的已发布预览版；保留 `KHOR_VERSION` 覆盖能力。当前只有预发布版，不能通过 GitHub 的 `/latest` 入口选择它。安装脚本只作为静态文件输出，不在构建或发布时执行。
+
+本次发布与 Cloudflare DNS 状态见 [Pages 发布记录](../../docs/handoff/site-pages-20261112.md)。
+
 ## 部署
 
-本轮只作本地预览，没有合并或线上部署。
+用户本轮新增 GitHub Pages 发布授权；feature 分支不合并 main，网站静态产物发布到独立 gh-pages 分支。
 2026-11-12 整页收整与定向 Chrome 验证见 [本轮记录](../../docs/handoff/site-refinement-20261112.md)。
 现有 `deploy/push.sh` 继续负责静态站与下载镜像的分阶段同步；页面同步保护 `/dl`，
 版本校验完成后才推进下载指针。详细约定见 [镜像维护](../../scripts/release-mirror.md)。

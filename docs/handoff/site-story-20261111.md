@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 用户新增 GitHub Pages 发布授权，并询问通过现有 Cloudflare / cloudflared 解析 khor.cloud。已新增静态基路径支持和官网安装器输出，具体发布状态以 [Pages 发布记录](site-pages-20261112.md) 为准；先前“仅本地、无发布授权”的限制在此网站发布范围内被最新指令替代。
 - 2026-11-12 用户要求宽屏安装组为一行：1200px 起依次横排 Other ways to get Khor、平台图标、or Khor CLI、安装命令；窄屏分行。命令、复制反馈和平台可用性不变。
 - 2026-11-12 CLI 入口验收：Chrome 检查复制值为完整 INSTALL、命令不被图标反馈覆盖、勾显示后自动复原、成功文字仅在读屏状态中、Copy SVG ID 无冲突；下载页共用控件正常，手机图标常显，390 / 320 宽无页面横向溢出。网站复制脚本类型检查与 Astro 静态构建通过，未重跑 GUI / 原生构建。
 - 2026-11-12 最新首屏文案：“Work across your devices and agents.” 后手动换一行，接 “Access agents, edit files, track changes, and connect to web apps from any device, peer to peer.”。平台组增加 Other ways to get Khor；用户后续决定 Coming soon 仍悬停 / 聚焦显示，不常驻。图标下方增加 or Khor CLI 与 INSTALL 命令，复制图标桌面悬停显示、触屏常显，点击后短暂换成勾。首屏、页尾和下载页共用 CopyButton，成功无可见文字反馈，命令不被覆盖；证据 `evidence/site-story-20261112/cli-install`（绝对前缀 `/Volumes/disk0/Khor`）。

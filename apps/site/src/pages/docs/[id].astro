@@ -1,4 +1,5 @@
 ---
+import {sitePath} from "../../paths";
 import { render } from "astro:content";
 import Docs from "../../layouts/Docs.astro";
 import { docs } from "../../site";
@@ -19,7 +20,7 @@ const { Content } = await render(page);
     <Content />
   </article>
   <nav class="turn" aria-label="上一篇与下一篇">
-    {prev ? <a href={`/docs/${prev.id}/`}><span>上一篇</span>{prev.data.title}</a> : <span />}
-    {next && <a class="turn-next" href={`/docs/${next.id}/`}><span>下一篇</span>{next.data.title}</a>}
+    {prev ? <a href={sitePath(`/docs/${prev.id}/`)}><span>上一篇</span>{prev.data.title}</a> : <span />}
+    {next && <a class="turn-next" href={sitePath(`/docs/${next.id}/`)}><span>下一篇</span>{next.data.title}</a>}
   </nav>
 </Docs>

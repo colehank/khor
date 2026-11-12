@@ -1,4 +1,5 @@
 import {mountPreviewBackground} from './product-background';
+import {sitePath} from '../paths';
 
 export function mountDesktopPreview() {
   const preview=document.querySelector<HTMLElement>('[data-desktop-preview]');
@@ -31,7 +32,7 @@ export function mountDesktopPreview() {
   window.addEventListener('message',event=>{
     if(event.origin!==location.origin||event.source!==frame.contentWindow)return;
     if(event.data?.type==='khor-demo-ready')show();
-    if(event.data?.type==='khor-demo-download')location.assign(document.querySelector<HTMLAnchorElement>('[data-device-download]')?.href??'/download/');
+    if(event.data?.type==='khor-demo-download')location.assign(document.querySelector<HTMLAnchorElement>('[data-device-download]')?.href??sitePath('/download/'));
   },on);
   frame.addEventListener('load',()=>{
     if(frame.contentDocument?.getElementById('root')?.childElementCount)show();

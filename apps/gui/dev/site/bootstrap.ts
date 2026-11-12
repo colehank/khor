@@ -3,6 +3,7 @@ import {configureLabBackend} from '../lab/backend-context';
 import {scenes,type Scene} from '../lab/scenes';
 import {projects,tasks} from './world';
 import {constrainDemoInteractions} from './interaction';
+import {siteRoot,downloadUrl} from './urls';
 import {setSessionSide,setSideWidth} from '../../src/hooks/use-session-side';
 import controls from './macos-controls.svg?url';
 import './desktop.css';
@@ -28,7 +29,7 @@ if(localStorage.getItem('khor.site.identity')!==identity){
 const theme=query.get('theme')==='dark'?'dark':query.get('theme')==='light'?'light':'auto';
 localStorage.setItem('khor.theme',theme);
 localStorage.setItem('khor.preview-ground','auto');
-const fixture=createSiteFixture(location.origin);
+const fixture=createSiteFixture(siteRoot);
 const workspacePaths=['README.md','src/export.ts','src/export.test.ts'].map(path=>({kind:'file' as const,path:projects[0].root+'/'+path}));
 new WorkspaceNavigationStore(()=>localStorage,'MacBook Pro',projects[0].root,path=>({kind:'file',path})).save({at:projects[0].root,historyOpen:false,content:{items:workspacePaths,active:workspaceTabId(workspacePaths[0]),preview:null}});
 // Discard a previous demo's pinned theme; the production theme listener
@@ -64,10 +65,10 @@ if(hero||requested==='content'){
 constrainDemoInteractions();
 document.addEventListener('click',event=>{
   const link=(event.target as Element).closest<HTMLElement>('[data-md-link]');
-  if(link?.dataset.mdLink!==location.origin+'/download/')return;
+  if(link?.dataset.mdLink!==downloadUrl)return;
   event.preventDefault();event.stopImmediatePropagation();
   if(parent!==window)parent.postMessage({type:'khor-demo-download'},location.origin);
-  else location.assign('/download/');
+  else location.assign(downloadUrl);
 },true);
 const original=window.fetch.bind(window);
 window.fetch=async(input,init)=>{

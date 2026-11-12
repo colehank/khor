@@ -1,3 +1,4 @@
+import {sitePath} from '../paths';
 import {fogOptions} from './fog-options';
 type FogEffect={destroy:()=>void};
 type FogWindow=Window&{VANTA?:{FOG:(options:typeof fogOptions&{el:HTMLElement})=>FogEffect}};
@@ -19,7 +20,7 @@ export function mountFog(){
     const current=++generation;
     if(reduced.matches||disposed)return;
     try{
-      libraries??=load('/vendor/three-r134.min.js').then(()=>load('/vendor/vanta-fog-0.5.24.min.js'));
+      libraries??=load(sitePath('/vendor/three-r134.min.js')).then(()=>load(sitePath('/vendor/vanta-fog-0.5.24.min.js')));
       await libraries;
       if(disposed||reduced.matches||current!==generation)return;
       effect=(window as FogWindow).VANTA!.FOG({...fogOptions,el:ground});

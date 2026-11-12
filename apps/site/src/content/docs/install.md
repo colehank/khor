@@ -62,7 +62,7 @@ curl -fsSL https://khor.cloud/install.sh | KHOR_NO_SERVE=1 sh
 | 变量 | 作用 |
 |---|---|
 | `KHOR_NO_SERVE` | 只装，不启动常驻进程 |
-| `KHOR_MIRROR` | 换一个镜像地址，默认是 `https://khor.cloud/dl` |
+| `KHOR_MIRROR` | 指定安装镜像；未设置时从 GitHub Releases 下载 |
 
 ## 从 GitHub 装
 

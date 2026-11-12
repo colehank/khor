@@ -1,4 +1,5 @@
 ---
+import {sitePath} from "../paths";
 import Base from '../layouts/Base.astro';
 import SiteNav from '../components/SiteNav.astro';
 import CopyButton from '../components/CopyButton.astro';
@@ -19,14 +20,14 @@ const cli=release.downloads.filter(item=>item.platform!=='macOS App');
       <h2 id="download-app-title">macOS App</h2>
       <p>会话、设备和项目，都在同一个窗口。</p>
       <div class="downloads-table">{app.map(item=><a href={item.url} data-download-platform="macos" data-download-file={item.file}><span>{item.arch}<small data-recommend-label hidden>推荐</small></span><span>桌面 App</span><span aria-label="下载">↓</span></a>)}</div>
-      <p class="download-note">解压后，将 Khor.app 放入「应用程序」。<a href="/docs/install/#desktop">打开并连接第一台设备</a></p>
+      <p class="download-note">解压后，将 Khor.app 放入「应用程序」。<a href={sitePath("/docs/install/#desktop")}>打开并连接第一台设备</a></p>
     </section>
     <section class="downloads-group downloads-cli" aria-labelledby="download-cli-title">
       <h2 id="download-cli-title">命令行</h2>
       <p>在终端中连接设备、管理会话。也适合没有桌面的主机。</p>
       <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div>
       <details class="manual-downloads"><summary>手动下载命令行客户端</summary><div class="downloads-table">{cli.map(item=><a href={item.url} data-download-platform={item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden>推荐</small></span><span>{item.arch}</span><span aria-label="下载">↓</span></a>)}</div></details>
-      <p class="download-note"><a href="/docs/install/#cli">命令行安装与升级</a></p>
+      <p class="download-note"><a href={sitePath("/docs/install/#cli")}>命令行安装与升级</a></p>
     </section>
     </div>
     <p class="download-note availability-note">当前提供 macOS App 与 Linux / macOS CLI。此页暂不提供 Windows、iOS 或 Android 安装包。</p>

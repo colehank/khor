@@ -1,4 +1,5 @@
 ---
+import {sitePath} from "../paths";
 import Base from "../layouts/Base.astro";
 import Mark from "../components/Mark.astro";
 ---
@@ -7,6 +8,6 @@ import Mark from "../components/Mark.astro";
   <header class="bar"><Mark /></header>
   <main class="empty">
     <h1>没有这一页</h1>
-    <p><a href="/">回首页</a>，或者去<a href="/docs/">文档</a>找</p>
+    <p><a href={sitePath("/")}>回首页</a>，或者去<a href={sitePath("/docs/")}>文档</a>找</p>
   </main>
 </Base>

@@ -1,4 +1,5 @@
 import {release} from '../releases';
+import {sitePath} from '../paths';
 
 type Platform='macos'|'linux'|'windows'|'mobile'|'unknown';
 export type DownloadDevice={platform:Platform;arch?:'arm64'|'x86_64'};
@@ -9,7 +10,7 @@ export function recommendDownload(device:DownloadDevice) {
   const platform=device.platform==='macos'?'macOS App':device.platform==='linux'?'Linux CLI':null;
   const arch=device.arch==='arm64'?(device.platform==='macos'?'Apple silicon':'ARM64'):device.arch==='x86_64'?'x86_64':null;
   const exact=platform&&arch?release.downloads.find(item=>item.platform===platform&&(item.arch===arch||(arch==='x86_64'&&item.arch==='Intel'))):undefined;
-  return {label,url:exact?.url??(platform?`/download/?platform=${device.platform}`:'/download/'),file:exact?.file,
+  return {label,url:exact?.url??sitePath(platform?`/download/?platform=${device.platform}`:'/download/'),file:exact?.file,
     note:exact?`${exact.platform} · ${exact.arch} · ${release.version}`:platform?`${platform} · 选择适合你的芯片版本`:'当前提供 macOS App 与 Linux / macOS CLI'};
 }
 

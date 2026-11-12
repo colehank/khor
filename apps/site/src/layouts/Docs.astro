@@ -1,4 +1,5 @@
 ---
+import {sitePath} from "../paths";
 import Base from "./Base.astro";
 import Mark from "../components/Mark.astro";
 import SiteNav from "../components/SiteNav.astro";
@@ -21,10 +22,10 @@ const pages = await docs();
     <nav class="side" aria-label="文档">
       <div class="side-in">
         <div class="side-head"><Mark /></div>
-      <a class="nav-row" href="/docs/" aria-current={current ? undefined : "page"}>总览</a>
+      <a class="nav-row" href={sitePath("/docs/")} aria-current={current ? undefined : "page"}>总览</a>
       {
         pages.map((p) => (
-          <a class="nav-row" href={`/docs/${p.id}/`} aria-current={p.id === current ? "page" : undefined}>
+          <a class="nav-row" href={sitePath(`/docs/${p.id}/`)} aria-current={p.id === current ? "page" : undefined}>
             {p.data.title}
           </a>
         ))
@@ -35,7 +36,7 @@ const pages = await docs();
       <header class="r0">
         <div class="r0-title">
           {/* The way back exists only where the list is off screen. */}
-          <a class="back" href={current ? "/docs/" : "/"}>{current ? "文档" : "khor"}</a>
+          <a class="back" href={sitePath(current ? "/docs/" : "/")}>{current ? "文档" : "khor"}</a>
           <h1>{title}</h1>
         </div>
         <a class="bar-link" href={REPO}>GitHub</a>

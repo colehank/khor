@@ -1,4 +1,5 @@
 ---
+import {sitePath} from "../../paths";
 import Docs from "../../layouts/Docs.astro";
 import { docs } from "../../site";
 
@@ -9,7 +10,7 @@ const pages = await docs();
   <div class="overview">
     {
       pages.map((p) => (
-        <a class="overview-row" href={`/docs/${p.id}/`}>
+        <a class="overview-row" href={sitePath(`/docs/${p.id}/`)}>
           <strong>{p.data.title}</strong>
           <span>{p.data.summary}</span>
         </a>

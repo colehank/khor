@@ -1,4 +1,5 @@
 ---
+import {sitePath} from "../paths";
 import Base from "../layouts/Base.astro";
 import Mandala from "../components/Mandala.astro";
 import ProductHero from "../components/ProductHero.astro";
@@ -27,13 +28,13 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
     </section>
     <section class="download-section" id="download" aria-labelledby="download-title">
       <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor.</h2><p class="download-description">从你手边的设备开始。</p>
-      <a class="download-main" href="/download/" data-device-download><span data-download-label>下载 Khor</span></a><a class="other-downloads" href="/download/">所有下载与安装方式</a>
+      <a class="download-main" href={sitePath("/download/")} data-device-download><span data-download-label>下载 Khor</span></a><a class="other-downloads" href={sitePath("/download/")}>所有下载与安装方式</a>
       <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div><p class="download-note">当前预览版 {release.version} · macOS App · Linux / macOS CLI</p>
     </section>
   </main>
-  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents.</span><nav><a href="/docs/">文档</a><a href={REPO}>GitHub</a></nav></footer>
+  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents.</span><nav><a href={sitePath("/docs/")}>文档</a><a href={REPO}>GitHub</a></nav></footer>
 
-  <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">开启 JavaScript 可观看动效。<a href="/download/">下载 khor</a></p></noscript>
+  <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">开启 JavaScript 可观看动效。<a href={sitePath("/download/")}>下载 khor</a></p></noscript>
 </Base>
 <script>
   import { mountStory } from "../scripts/story";

@@ -1,9 +1,10 @@
 ---
+import {sitePath} from "../paths";
 // The installed app artwork is also the website identity.
 import mark from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 ---
 
-<a class="mark" href="/">
+<a class="mark" href={sitePath("/")}>
   <img src={mark.src} alt="" width="20" height="20" />
   <span>khor</span>
 </a>
