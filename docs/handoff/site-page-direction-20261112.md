@@ -34,6 +34,8 @@ VANTA.FOG({
 
 ## 最终实现
 
+最新文案定稿：“Work across your devices and agents.” 后另起一行，接 “Access agents, edit files, track changes, and connect to web apps from any device, peer to peer.”。平台组标题为 Other ways to get Khor；用户最新决定灰显项继续悬停显示 Coming soon，不常驻。增加 or Khor CLI 及安装命令，1200px 起和组标题、平台图标横排一行，窄屏分行；悬停显示复制图标（触屏常显），复制后短暂换勾，无可见成功文字。以下此前文案与提示方式为历史记录。
+
 文案最新修订：用户恢复完整英文文案，合为一个小字段落，不手动换行；“Work across your devices and agents. Edit files, track changes, and use your web apps. From any device, peer to peer. Efficient, secure, and delightful.”。下述两段排法为上一轮记录。
 
 后续用户定稿优先：顶栏改回原始应用图标 + Khor；首屏左侧第一层为大字 Khor，第二层为两段小字英文，第三层为下载 / 文档，无箭头；正文不再重复应用图标，GUI 保持右侧。下方为 macOS、Windows、Linux、iOS、Android 的原生系统标记按钮，可用性来自 release 资产；未发布平台灰显，悬停 / 聚焦 Coming soon。kapestack 公司链接保留在页脚。文案为 “Work across your devices and agents. Edit files, track changes, and use your web apps.” / “From any device, peer to peer. Efficient, secure, and delightful.”。以下大号标语、kapestack 顶栏等为历史阶段记录。

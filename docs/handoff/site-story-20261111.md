@@ -20,6 +20,9 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 用户要求宽屏安装组为一行：1200px 起依次横排 Other ways to get Khor、平台图标、or Khor CLI、安装命令；窄屏分行。命令、复制反馈和平台可用性不变。
+- 2026-11-12 CLI 入口验收：Chrome 检查复制值为完整 INSTALL、命令不被图标反馈覆盖、勾显示后自动复原、成功文字仅在读屏状态中、Copy SVG ID 无冲突；下载页共用控件正常，手机图标常显，390 / 320 宽无页面横向溢出。网站复制脚本类型检查与 Astro 静态构建通过，未重跑 GUI / 原生构建。
+- 2026-11-12 最新首屏文案：“Work across your devices and agents.” 后手动换一行，接 “Access agents, edit files, track changes, and connect to web apps from any device, peer to peer.”。平台组增加 Other ways to get Khor；用户后续决定 Coming soon 仍悬停 / 聚焦显示，不常驻。图标下方增加 or Khor CLI 与 INSTALL 命令，复制图标桌面悬停显示、触屏常显，点击后短暂换成勾。首屏、页尾和下载页共用 CopyButton，成功无可见文字反馈，命令不被覆盖；证据 `evidence/site-story-20261112/cli-install`（绝对前缀 `/Volumes/disk0/Khor`）。
 - 2026-11-12 Coming soon 遮挡修复：手机 Chrome 同尺寸复现提示上半部落入 GUI，命中探针返回 iframe；平台行现建立 z-index:3 的独立层，高于 z-index:2 的 GUI。提示位置和交互保持原样，手机同一重叠点验证提示完整位于上方。证据 `evidence/site-story-20261112/platform-tooltip`（绝对前缀 `/Volumes/disk0/Khor`）。
 - 2026-11-12 用户随后要求放回完整文案，但不必换行：现将 “Work across your devices and agents. Edit files, track changes, and use your web apps. From any device, peer to peer. Efficient, secure, and delightful.” 合为一段小字，无 br 或分段，仅按可用宽度自然折行。此条替代下一条删减。
 - 2026-11-12 用户进一步要求删除 “Edit…” 及其后的文案。首屏小字仅保留 “Work across your devices and agents.”，大字 Khor、按钮、GUI 和平台入口保持现有布局。此条替代下方两段英文文案记录。

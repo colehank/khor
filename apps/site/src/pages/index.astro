@@ -3,6 +3,7 @@ import Base from "../layouts/Base.astro";
 import Mandala from "../components/Mandala.astro";
 import ProductHero from "../components/ProductHero.astro";
 import SiteNav from "../components/SiteNav.astro";
+import CopyButton from "../components/CopyButton.astro";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import { release } from "../releases";
@@ -27,7 +28,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
     <section class="download-section" id="download" aria-labelledby="download-title">
       <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor.</h2><p class="download-description">从你手边的设备开始。</p>
       <a class="download-main" href="/download/" data-device-download><span data-download-label>下载 Khor</span></a><a class="other-downloads" href="/download/">所有下载与安装方式</a>
-      <div class="install-line"><code id="install">{INSTALL}</code><button type="button" data-copy="install">复制</button></div><p class="download-note">当前预览版 {release.version} · macOS App · Linux / macOS CLI</p>
+      <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div><p class="download-note">当前预览版 {release.version} · macOS App · Linux / macOS CLI</p>
     </section>
   </main>
   <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents.</span><nav><a href="/docs/">文档</a><a href={REPO}>GitHub</a></nav></footer>

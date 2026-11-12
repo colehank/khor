@@ -1,6 +1,7 @@
 ---
 import Base from '../layouts/Base.astro';
 import SiteNav from '../components/SiteNav.astro';
+import CopyButton from '../components/CopyButton.astro';
 import {release} from '../releases';
 import {INSTALL} from '../site';
 import '../styles/story.css';
@@ -23,7 +24,7 @@ const cli=release.downloads.filter(item=>item.platform!=='macOS App');
     <section class="downloads-group downloads-cli" aria-labelledby="download-cli-title">
       <h2 id="download-cli-title">命令行</h2>
       <p>在终端中连接设备、管理会话。也适合没有桌面的主机。</p>
-      <div class="install-line"><code id="install">{INSTALL}</code><button type="button" data-copy="install">复制</button></div>
+      <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div>
       <details class="manual-downloads"><summary>手动下载命令行客户端</summary><div class="downloads-table">{cli.map(item=><a href={item.url} data-download-platform={item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden>推荐</small></span><span>{item.arch}</span><span aria-label="下载">↓</span></a>)}</div></details>
       <p class="download-note"><a href="/docs/install/#cli">命令行安装与升级</a></p>
     </section>

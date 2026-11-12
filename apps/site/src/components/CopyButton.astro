@@ -1,0 +1,11 @@
+---
+import {copyControlMarks} from '../../../gui/dev/site/identity-marks';
+interface Props { target:string; label?:string; class?:string; }
+const {target,label='复制安装命令',class:className}=Astro.props;
+const marks=copyControlMarks(target);
+---
+<button type="button" class:list={['copy-button',className]} data-copy={target} aria-label={label} title={label}>
+  <slot />
+  <span class="copy-symbol" aria-hidden="true"><span data-copy-idle set:html={marks.copy}/><span data-copy-done set:html={marks.check}/></span>
+  <span class="sr-only" data-copy-label role="status" aria-live="polite"></span>
+</button>

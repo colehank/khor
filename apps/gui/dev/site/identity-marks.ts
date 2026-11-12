@@ -1,6 +1,12 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {machineMark,sessionMark} from '../../src/components/BrandIcons';
+import {IconCopy,IconCheck} from '../../src/components/icons';
+
+export const copyControlMarks=(prefix:string)=>({
+  copy:renderToStaticMarkup(createElement(IconCopy),{identifierPrefix:`site-${prefix}-copy-`}),
+  check:renderToStaticMarkup(createElement(IconCheck),{identifierPrefix:`site-${prefix}-check-`}),
+});
 
 // Build-time only: the story wears the same marks as the actual app.
 export const deviceMarks=(['linux','macos','windows','ios'] as const).map(name=>({
