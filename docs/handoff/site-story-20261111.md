@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 用户进一步要求删除 “Edit…” 及其后的文案。首屏小字仅保留 “Work across your devices and agents.”，大字 Khor、按钮、GUI 和平台入口保持现有布局。此条替代下方两段英文文案记录。
 - 2026-11-12 首屏布局与文案：用户要求左上恢复原 icon + Khor，正文只用大字 Khor、小字介绍、下载 / 文档；右侧 GUI，下方五个平台图标入口。当前文案采用 “Work across your devices and agents. Edit files, track changes, and use your web apps.” 与 “From any device, peer to peer. Efficient, secure, and delightful.”。下载箭头移除，首屏按钮固定短标签而目标继续自适应。macOS / Linux 已有资产可进入安装选项，Windows / iOS / Android 灰显并显示 Coming soon；图标来自实际 App。公司 kapestack 链接保留在页脚。40% 玻璃、Fog 参数和下方故事未改。证据 `hero-platforms`；此条覆盖早先 kapestack 顶栏和大号标语布局。
 - 2026-11-12 最新首屏修订：标题 “Work across your devices and agents.”；去掉按钮下方推荐版本提示；窗口底色从 50% 降到 40%，深浅首图同步。用户取消 GUI 放大，桌面与手机都只保留原位交互。固定下载回复曾被 `[data-khor-agent-turn] button` 误禁用，已单独放行；其余复杂操作照旧受限。iframe 共享同一 Fog 画面，原玻璃控件不再重复叠黑。Chrome 定向验收与实现说明见 [材质与下载修订](site-material-20261112.md)。此条替代后续旧放大和 50% 描述。
 - 2026-11-12 用户要求文字渐变切换：将字幕裁切位移替换为固定位置的 opacity 互补渐隐渐现。前 8% 交接、图形同步起动、总行程与首幕停留均不变。减少动态效果仍完整显示静态文案。额外的 Git 中文说明按用户要求删除。此条替代下述裁切带方式与补充文案。
