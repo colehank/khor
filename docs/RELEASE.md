@@ -55,6 +55,8 @@ Linux 桌面提供 x86_64、arm64 的 Debian 安装包，面向 Ubuntu 24.04 及
 
 Linux 包不会覆盖独立放置于 /usr/bin/khor 的文件；已有 Khor Debian 包可以原位升级。Windows 卸载移除本次安装器加入的 PATH 项。发行构建会在隔离 runner 上实际安装、检查 App/CLI 的源码与运行契约、通过 khor gui 启动应用，再卸载并核对独立 CLI 的保留。
 
+安装测试完成后，上传前必须再次完整校验发行目录与原始收据一致。安装和卸载诊断写入 runner 的 `khor-installer-logs` 临时目录，独立保存为证据工件；发行目录只包含收据声明的文件。不得通过忽略额外文件或重写收据来掩盖安装测试对目录的污染。
+
 新增候选清单使用 schema 2，要求完整十平台收据。历史 schema 1 七平台候选继续按原集合校验和下载，晋升历史候选时保持原有产物。
 
 已有的独立安装优先保留：安装器不会覆盖 `/usr/local/bin/khor` 上的其他文件，也不会动用户目录。可用 `type -a khor` 查看实际命令来源，决定是否调整 PATH 或按原安装方式卸载；只有确认旧 `khor-gui` 是指向 App 内部程序的外部软链接时，才用 `unlink` 移除它。用户可用 `/Applications/Khor.app/Contents/MacOS/khor --version` 核对随 App 的版本。
