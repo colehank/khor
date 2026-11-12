@@ -202,7 +202,9 @@ def macos(package, expected_source):
 
 def invoke_msi(action, package, destination=None):
     executable = Path(os.environ["SystemRoot"]) / "System32/msiexec.exe"
-    log = package.with_suffix(".install.log" if action == "/i" else ".uninstall.log")
+    diagnostics = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir()) / "khor-installer-logs"
+    diagnostics.mkdir(parents=True, exist_ok=True)
+    log = diagnostics / (package.stem + (".install.log" if action == "/i" else ".uninstall.log"))
     # MSI has its own parser: quote the property value, not PROPERTY=value
     # as one CRT argv element. The latter opens an invisible usage dialog.
     command = f'"{executable}" {action} "{package}" /qn /norestart /L*V "{log}"'

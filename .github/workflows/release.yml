@@ -411,6 +411,9 @@ jobs:
       - if: runner.os == 'Windows'
         name: Verify the installed application and command entry
         run: python scripts/check-desktop-installer.py --package desktop-product/${{ matrix.asset }}.msi --output "${{ runner.temp }}/installation.json"
+      - name: Verify the complete artifact is unchanged after installation tests
+        shell: bash
+        run: python3 scripts/release_manifest.py verify --root desktop-product
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: ${{ matrix.asset }}-app
@@ -422,6 +425,13 @@ jobs:
           name: desktop-installation-${{ matrix.target }}
           path: ${{ runner.temp }}/installation.json
           if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && runner.os == 'Windows'
+        with:
+          name: desktop-installer-logs-${{ matrix.target }}
+          path: ${{ runner.temp }}/khor-installer-logs/*.log
+          if-no-files-found: warn
+          retention-days: 14
   candidate:
     needs: [quality, native, ios, mac-notarize, desktop]
     runs-on: ubuntu-24.04
