@@ -11,15 +11,16 @@ import {fakeHome,fakeUsage} from './fake-home.mjs';
 const gui=process.env.CONTENT_UI_ROOT||fileURLToPath(new URL('..',import.meta.url));
 const repo=resolve(gui,'../..');
 const scratch=process.env.CONTENT_CHECK_DIR||join(tmpdir(),'khor-attachment-ui-check');
+const out=process.env.CONTENT_UI_OUTPUT||join(scratch,'ui');
 const target=process.env.CARGO_TARGET_DIR||join(repo,'target');
 const port=Number(process.env.CONTENT_VITE_PORT||1482), bridgePort=Number(process.env.CONTENT_BRIDGE_PORT||1483);
 const children=[],sessions=[];
 let browser,usage,page;
 const until=async(fn,ms=20000)=>{const end=Date.now()+ms;let last;do{const failed=children.find(c=>c.exitCode!==null&&c.exitCode!==0);if(failed)throw Error('Private test service exited: '+failed.exitCode);try{last=await fn();if(last)return last;}catch(e){last=e;}await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);throw Error('Timed out: '+last);};
-const run=(cmd,args,env,cwd=gui)=>{const c=spawn(cmd,args,{env,cwd,detached:true,stdio:['ignore','pipe','pipe']});children.push(c);c.stderr.on('data',d=>process.stderr.write(d));return c;};
+const run=(cmd,args,env,cwd=gui)=>{const c=spawn(cmd,args,{env,cwd,detached:true,stdio:['ignore','pipe','pipe']});children.push(c);c.stdout.resume();c.stderr.on('data',d=>process.stderr.write(d));return c;};
 const api=async(cmd,args={})=>{const r=await fetch(`http://127.0.0.1:${bridgePort}/${cmd}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(args)});const value=await r.json();if(!r.ok)throw Error(JSON.stringify(value));return value;};
 try{
-  rmSync(scratch,{recursive:true,force:true});mkdirSync(scratch,{recursive:true});
+  rmSync(scratch,{recursive:true,force:true});mkdirSync(out,{recursive:true});
   usage=await fakeUsage();
   const env={...process.env,...fakeHome(join(scratch,'home'),usage.url),KHOR_HOME:join(scratch,'node'),KHOR_NAME:'content-check',KHOR_NO_MDNS:'1',BRIDGE_PORT:String(bridgePort)};delete env.KHOR_SESSION;
   for(const name of ['bridge','khor'])copyFileSync(join(target,'debug',name),join(scratch,name));
@@ -31,8 +32,13 @@ try{
     mkdirSync(dir,{recursive:true});for(let j=0;j<24;j++)writeFileSync(join(dir,'extra-'+String(j).padStart(2,'0')+'.txt'),'Neighbor '+j+'\n'+(j===15?Array.from({length:80},(_,k)=>'Line '+k).join('\n'):''));writeFileSync(join(dir,'notes.md'),`# ${i===0?'Alpha':'Beta'}\n\nSession contents.\n`);writeFileSync(join(dir,'only-'+i+'.txt'),'This file belongs to '+i+'\n');
     const id=await api('open_on',{machine:'',title:'Content '+(i===0?'Alpha':'Beta'),cwd:dir,cols:100,rows:35});sessions.push(id);
   }
-  run(join(gui,'node_modules/.bin/vite'),['--port',String(port),'--strictPort'],{...process.env,KHOR_FACE_GATE:'1'});
-  await until(()=>fetch(`http://localhost:${port}/`).then(r=>r.ok));
+  // CI already verified this dist. Exercise those exact production bytes,
+  // rather than starting a second dev optimizer after the other UI gates.
+  const mode=process.env.KHOR_TEST_FRONTEND==='dist'?['preview']:[];
+  if(mode.length)assert(existsSync(join(gui,'dist/index.html')),'The verified production frontend is missing');
+  console.log('attachment frontend:',mode.length?'production dist':'development');
+  run(join(gui,'node_modules/.bin/vite'),[...mode,'--host','127.0.0.1','--port',String(port),'--strictPort'],{...process.env,KHOR_FACE_GATE:'1'});
+  await until(()=>fetch(`http://127.0.0.1:${port}/`,{signal:AbortSignal.timeout(1000)}).then(r=>r.ok));
   browser=await chromium.launch({channel:'chrome',headless:process.env.CONTENT_HEADED!=='1',args:['--no-proxy-server']});
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'});
   // The LAN HTTP face has no secure-context randomUUID API.
@@ -41,11 +47,13 @@ try{
     localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:ids,active:ids[0]}));localStorage.setItem('khor.place',JSON.stringify({landing:'sessions',screen:'detail'}));localStorage.setItem('khor.lang','zh');
   },sessions);
   page=await context.newPage();page.setDefaultTimeout(12000);const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('PAGEERROR',e.message);});
-  const url=`http://localhost:${port}/?bridge=${bridgePort}`;
-  await page.goto(url);
+  const url=`http://127.0.0.1:${port}/?bridge=${bridgePort}`;
+  // Initial browser bootstrap has a separate cold-start budget. Every
+  // attachment interaction and its real transport assertions retain 12s.
+  await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
   assert(await page.evaluate(()=>typeof globalThis.crypto.randomUUID==='undefined'),'LAN compatibility probe did not run');
   const shown=()=>page.locator('[data-session-content][data-content-visible=true]');
-  const out=process.env.CONTENT_UI_OUTPUT||join(scratch,'ui');mkdirSync(out,{recursive:true});const results=[],failures=[];
+  const results=[],failures=[];
   const note=(name,data)=>{results.push({name,...data});console.log(name,JSON.stringify(data));if(data.error)failures.push(name+': '+data.error);};
   const step=async(name,fn)=>{try{await fn();}catch(e){note(name,{error:String(e)});await page.screenshot({path:join(out,'attachment-error-'+name+'.png')}).catch(()=>{});}};
   const folder=join(projects[0],'folder');mkdirSync(folder,{recursive:true});writeFileSync(join(folder,'child.md'),'# Child\n');
@@ -157,7 +165,12 @@ try{
     note('empty-system-change',{sources:await panel().locator('[data-files-machine]').count()});
   });
   writeFileSync(join(out,'attachment-results.json'),JSON.stringify({results,errors},null,2));assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('attachment UI gate: clean');
-}catch(e){await page?.screenshot({path:join(scratch,'failed.png')}).catch(()=>{});console.error(e);throw e;}
+}catch(e){
+  await page?.screenshot({path:join(out,'failed.png')}).catch(()=>{});
+  const state=await page?.evaluate(()=>({ready:document.readyState,body:document.body?.innerText.slice(0,2048)})).catch(()=>null);
+  writeFileSync(join(out,'failure.json'),JSON.stringify({error:String(e),state},null,2));
+  console.error(e);throw e;
+}
 finally{
   for(const id of sessions)await api('close_session',{id}).catch(()=>{});
   await browser?.close().catch(()=>{});
