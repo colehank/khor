@@ -1,8 +1,8 @@
 export const iconStops = [0, .22, .47, .73, 1];
-// Introduce each idea before its shape changes, then keep the copy in place.
+// Copy and geometry start together; the resolved pose gets a short landing.
 export const iconSegments=iconStops.slice(0,-1).map((start,index)=>{
   const end=iconStops[index+1],span=end-start;
-  return {start,copyEnd:start+span*.12,motionStart:start+span*.14,end};
+  return {start,copyEnd:start+span*.08,motionStart:start,motionEnd:start+span*.86,end};
 });
 export const clamp = (x:number) => Math.max(0, Math.min(1, x));
 export const ease = (x:number, a:number, b:number) => {
@@ -18,7 +18,7 @@ export function iconState(progress:number):IconState {
   const p=clamp(progress);
   const from=Math.min(3,iconStops.findLastIndex(stop=>p>=stop));
   const segment=iconSegments[from];
-  const move=clamp((p-segment.motionStart)/(segment.end-segment.motionStart));
+  const move=clamp((p-segment.motionStart)/(segment.motionEnd-segment.motionStart));
   return {
     phase:from+move,
     copyPhase:from+ease(p,segment.start,segment.copyEnd),

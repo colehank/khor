@@ -1,4 +1,5 @@
 import {createIconMotion,iconState,iconStops,iconSegments,clamp,ease,type MotionTrack} from './icon-story';
+import {mountCopyButtons} from './copy';
 
 type ScrollTimelineConstructor=new(options:{source:Element;axis:string})=>AnimationTimeline;
 type ScrollOptions=KeyframeAnimationOptions&{rangeStart:string;rangeEnd:string};
@@ -23,10 +24,10 @@ export function mountStory() {
   let geometry='',inView=true;
   let previous=new WeakMap<MotionTrack['target'],Record<string,string>>();
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
-  lines.forEach((line,index)=>track(line,state=>{
+  lines.forEach((line,index)=>track(line.querySelector<HTMLElement>('.opening-line-content')!,state=>{
     const delta=state.copyPhase-index;
-    // Complementary fades avoid an empty interval during the handoff.
-    return {opacity:1-clamp(Math.abs(delta)),transform:`translateY(calc(${-Math.max(-1,Math.min(1,delta))} * var(--gap-row)))`};
+    // Each sentence occupies a separate clipped band, never a ghosted overlay.
+    return {transform:`translateY(${-Math.max(-1,Math.min(1,delta))*100}%)`};
   }));
   track(cue,state=>({opacity:1-ease(state.copyPhase,0,.5)}));
   track(cueProgress,(_,progress)=>({transform:`scaleY(${introProgress?clamp(1+progress/introProgress):1})`}));
@@ -50,6 +51,10 @@ export function mountStory() {
   function render() {
     scheduled=false;
     if(disposed||!inView)return;
+    if(reduced.matches){
+      if(lastProgress!==1){paint(1);assembly!.dataset.iconScene='meet';lastProgress=1;}
+      return;
+    }
     const distance=scrollY-topOpening-openingTravel*introProgress;
     const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
     const next=Math.round(iconState(progress).copyPhase);
@@ -61,11 +66,7 @@ export function mountStory() {
       });
     }
     if(!native&&progress!==lastProgress){
-      if(reduced.matches){
-        paint(iconStops[active]);
-        // Reduced motion is a static chapter, including static text.
-        lines.forEach((line,index)=>{line.style.opacity=String(index===active?1:0);line.style.transform='none';});
-      }else paint(progress);
+      paint(progress);
       lastProgress=progress;
     }
   }
@@ -80,7 +81,7 @@ export function mountStory() {
       try{
         const timeline=new Timeline({source:document.documentElement,axis:'block'});
         const end=1+exitProgress;
-        const cues=iconSegments.flatMap(segment=>[segment.start,segment.copyEnd,segment.motionStart,segment.end]);
+        const cues=iconSegments.flatMap(segment=>[segment.start,segment.copyEnd,segment.motionStart,segment.motionEnd,segment.end]);
         const positions=[...new Set([-introProgress,...Array.from({length:129},(_,i)=>i/128),...cues,...Array.from({length:17},(_,i)=>1+exitProgress*i/16)])].sort((a,b)=>a-b);
         const samples=positions.map(progress=>({progress,state:iconState(progress)}));
         for(const {target,sample} of tracks){
@@ -99,7 +100,7 @@ export function mountStory() {
     // CSS and JS share the stable sticky height. Mobile toolbar/keyboard
     // changes must not remap a stationary scroll position via innerHeight.
     const top=opening!.getBoundingClientRect().top+scrollY;
-    const intro=Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
+    const intro=reduced.matches?0:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
     const travel=Math.max(1,opening!.offsetHeight-sticky!.offsetHeight-intro);
     const exit=sticky!.offsetHeight*.7/travel;
     const key=[top,travel,intro,exit,reduced.matches].join(':');
@@ -111,12 +112,7 @@ export function mountStory() {
     const distance=index===0?0:openingTravel*(introProgress+iconStops[index]);
     scrollTo({top:Math.ceil(topOpening+distance),behavior:reduced.matches?'instant':'smooth'});
   },on));
-  document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(button=>button.addEventListener('click',async()=>{
-    const value=document.getElementById(button.dataset.copy!)?.textContent??'';
-    try{await navigator.clipboard.writeText(value);button.textContent='已复制';}
-    catch{button.textContent='复制未成功';}
-    setTimeout(()=>{if(button.isConnected)button.textContent='复制';},1800);
-  },on));
+  mountCopyButtons();
   const visibility=new IntersectionObserver(entries=>{
     inView=entries[0].isIntersecting;if(inView)requestRender();
   });

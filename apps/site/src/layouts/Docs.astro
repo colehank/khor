@@ -1,7 +1,9 @@
 ---
 import Base from "./Base.astro";
 import Mark from "../components/Mark.astro";
+import SiteNav from "../components/SiteNav.astro";
 import { REPO, docs } from "../site";
+import '../styles/story.css';
 
 interface Props {
   title: string;
@@ -14,6 +16,7 @@ const pages = await docs();
 ---
 
 <Base title={title} description={description}>
+  <SiteNav current="docs" />
   <div class="docs">
     <nav class="side" aria-label="文档">
       <div class="side-in">

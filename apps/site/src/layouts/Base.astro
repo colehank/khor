@@ -6,8 +6,9 @@ import { TAGLINE } from "../site";
 interface Props {
   title?: string;
   description?: string;
+  productWorld?: boolean;
 }
-const { title, description = TAGLINE } = Astro.props;
+const { title, description = TAGLINE, productWorld=false } = Astro.props;
 ---
 
 <!doctype html>
@@ -20,7 +21,7 @@ const { title, description = TAGLINE } = Astro.props;
     <link rel="icon" type="image/svg+xml" href={mark.src} />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
   </head>
-  <body>
+  <body data-product-world={productWorld?true:undefined}>
     <slot />
     <script>
       import {mountDeviceDownloads} from "../scripts/download";

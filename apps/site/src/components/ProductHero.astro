@@ -9,21 +9,26 @@ import {fogOptions} from "../scripts/fog-options";
   <div class="hero-ground" data-fog aria-hidden="true"><img class="fog-fallback" src={fog.src} alt="" width={fog.width} height={fog.height} loading="eager" /></div>
   <div class="product-copy">
     <a class="product-identity" href="#khor-hero" aria-label="Khor 首页"><img src={icon.src} alt="" width="80" height="80" /><span>Khor</span></a>
-    <h1 id="product-title">Work across your devices.</h1>
-    <p class="product-description">Your agents, files, and web apps.<br class="mobile-break" /> From any device.</p>
+    <h1 id="product-title" lang="en">Work across your devices.</h1>
+    <p class="product-description" lang="en">Your agents, files, and web apps.<br class="mobile-break" /> From any device, peer to peer.</p>
+    <p class="product-detail">编辑原来的项目，用 Git 查看文件变化。</p>
     <div class="product-actions">
       <a class="product-download" href="/download/" data-device-download><span data-download-label>下载 Khor</span><span aria-hidden="true">↓</span></a>
       <a class="product-docs" href="/docs/">阅读文档 <span aria-hidden="true">↗</span></a>
     </div>
     <p class="product-availability" data-download-note>macOS App · Linux / macOS CLI</p>
   </div>
-<section class="product-showcase" id="product" aria-label="Khor 桌面界面">
+<section class="product-showcase" id="product" aria-label="Khor 桌面界面" data-product-showcase>
+    <div class="preview-viewer-backdrop" data-viewer-backdrop hidden></div>
+    <div class="preview-viewer-head" data-viewer-controls hidden><span id="preview-viewer-title">Khor</span><span class="preview-viewer-hint">拖动底部横条，查看完整界面</span><button type="button" data-preview-close>关闭</button></div>
     <div class="macos-window">
       <div class="desktop-preview" data-desktop-preview>
         <picture class="desktop-poster"><source media="(prefers-color-scheme: dark)" srcset={desktopDark.src} /><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor 完整桌面界面：Khor 内置对话、远程资源窗格，以及 Cursor、Codex、Claude 和 Shell 会话" loading="eager" fetchpriority="high" /></picture>
         <div class="desktop-stage" data-desktop-stage><iframe title="试用 Khor 桌面界面" data-desktop-demo data-src="/experience/app/index.html?scene=content&amp;hero=1" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
       </div>
+      <button type="button" class="preview-inspect" data-preview-open aria-haspopup="dialog" aria-label="放大查看 Khor 桌面界面"><span>放大查看</span></button>
     </div>
+    <div class="preview-viewer-pan" data-viewer-controls hidden><label for="preview-pan">查看位置</label><input id="preview-pan" type="range" min="0" max="100" value="50" aria-label="横向查看完整桌面界面" data-preview-pan /></div>
 </section>
 </section>
 <script>

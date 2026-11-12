@@ -1,25 +1,61 @@
 ---
 import Base from '../layouts/Base.astro';
-import Mark from '../components/Mark.astro';
+import SiteNav from '../components/SiteNav.astro';
 import {release} from '../releases';
 import {INSTALL} from '../site';
 import '../styles/story.css';
+const app=release.downloads.filter(item=>item.platform==='macOS App');
+const cli=release.downloads.filter(item=>item.platform!=='macOS App');
 ---
-<Base title="下载" description="下载 khor，连接你的设备与智能体">
-  <header class="story-nav"><Mark /><nav aria-label="主导航"><a href="/#features">功能</a><a href="/docs/install/">安装文档</a></nav></header>
+<Base title="下载 Khor" description="下载 Khor 桌面 App 或命令行客户端">
+  <SiteNav current="download" />
   <main class="downloads-page">
-    <p class="eyebrow">{release.version} · 预览版</p><h1>下载 khor。</h1><p class="downloads-description">从一台设备开始，再把其他设备连进来。</p>
+    <h1>下载 Khor。</h1>
+    <p class="downloads-description">从一台设备开始，再把其他设备连起来。</p>
     <p class="download-detected" data-download-note>macOS App · Linux / macOS CLI</p>
-    <div class="downloads-table">{release.downloads.map(item => <a href={item.url} data-download-platform={item.platform==='macOS App'?'macos':item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden>推荐</small></span><span>{item.arch}</span><span aria-label="下载">↓</span></a>)}</div>
-    <p class="download-note">macOS App 下载后解压，将 Khor.app 放入「应用程序」</p>
-    <h2>命令行安装</h2><div class="install-line"><code>{INSTALL}</code></div><p class="download-note">安装与配对步骤见 <a href="/docs/install/">安装文档</a></p>
-    <a class="release-notes" href={release.url}>更新说明与完整发布文件 ↗</a>
+    <div class="downloads-options" data-download-options>
+    <section class="downloads-group downloads-app" aria-labelledby="download-app-title">
+      <h2 id="download-app-title">macOS App</h2>
+      <p>会话、设备和项目，都在同一个窗口。</p>
+      <div class="downloads-table">{app.map(item=><a href={item.url} data-download-platform="macos" data-download-file={item.file}><span>{item.arch}<small data-recommend-label hidden>推荐</small></span><span>桌面 App</span><span aria-label="下载">↓</span></a>)}</div>
+      <p class="download-note">解压后，将 Khor.app 放入「应用程序」。<a href="/docs/install/#desktop">打开并连接第一台设备</a></p>
+    </section>
+    <section class="downloads-group downloads-cli" aria-labelledby="download-cli-title">
+      <h2 id="download-cli-title">命令行</h2>
+      <p>在终端中连接设备、管理会话。也适合没有桌面的主机。</p>
+      <div class="install-line"><code id="install">{INSTALL}</code><button type="button" data-copy="install">复制</button></div>
+      <details class="manual-downloads"><summary>手动下载命令行客户端</summary><div class="downloads-table">{cli.map(item=><a href={item.url} data-download-platform={item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden>推荐</small></span><span>{item.arch}</span><span aria-label="下载">↓</span></a>)}</div></details>
+      <p class="download-note"><a href="/docs/install/#cli">命令行安装与升级</a></p>
+    </section>
+    </div>
+    <p class="download-note availability-note">当前提供 macOS App 与 Linux / macOS CLI。此页暂不提供 Windows、iOS 或 Android 安装包。</p>
+    <a class="release-notes" href={release.url}>{release.version} · 预览版 · 更新说明 ↗</a>
   </main>
 </Base>
+<script>
+  import {mountCopyButtons} from '../scripts/copy';
+  mountCopyButtons();
+</script>
 <style>
-.downloads-page { max-width:calc(var(--list-w)*2.5); margin:0 auto; padding:calc(var(--pane-head) + var(--gap-pane)*3) var(--story-gutter) calc(var(--gap-pane)*3); }
-h1 {font-size:var(--story-heading);font-weight:600;line-height:1.15} .downloads-description{font-size:var(--text-read);color:var(--secondary);margin-top:var(--gap-pane)}
-.downloads-table{margin:calc(var(--gap-pane)*2) 0 var(--gap-pane)} .downloads-table a{display:grid;grid-template-columns:1fr 1fr auto;gap:var(--gap-base);padding:var(--gap-group) 0;border-bottom:var(--hair) solid var(--hairline);font-size:var(--text-read)} .downloads-table a:hover{color:var(--secondary)} .downloads-table a span:nth-child(2){color:var(--secondary)}
-h2{font-size:var(--text-title-lg);margin-top:calc(var(--gap-pane)*2)} .release-notes{display:block;margin-top:calc(var(--gap-pane)*2);font-size:var(--text-read)} .download-note a{text-decoration:underline}
-.download-detected{margin-top:var(--gap-base);color:var(--secondary)} .downloads-table [data-recommended]{background:var(--fill);padding-inline:var(--gap-base);border-radius:var(--radius-md)} [data-recommend-label]{margin-left:var(--gap-base);font-size:var(--text-caption);color:var(--secondary)}
+.downloads-page { max-width:calc(var(--list-w)*2.5); margin:0 auto; padding:calc(var(--site-header-height) + var(--gap-pane)*2) var(--story-gutter) calc(var(--gap-pane)*3); }
+h1 {font-size:var(--story-heading);font-weight:600;line-height:1.15}
+.downloads-description{font-size:var(--text-read);color:var(--secondary);margin-top:var(--gap-base)}
+.download-detected{margin-top:var(--gap-base);color:var(--secondary);font-size:var(--text-callout)}
+.downloads-group { margin-top:calc(var(--gap-pane)*2.5); }
+.downloads-options { display:flex; flex-direction:column; }
+.downloads-options[data-preferred="cli"] .downloads-cli { order:-1; }
+h2 { font-size:var(--text-title-lg); line-height:1.2; }
+.downloads-group > p:first-of-type { margin-top:var(--gap-in); font-size:var(--text-read); color:var(--secondary); }
+.downloads-table{margin:var(--gap-base) 0}
+.downloads-table a{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;align-items:center;gap:var(--gap-base);min-height:var(--touch);padding:var(--gap-group) 0;border-bottom:var(--hair) solid var(--hairline);font-size:var(--text-read)}
+.downloads-table a:hover{background:var(--fill)}
+.downloads-table a span:nth-child(2){color:var(--secondary)}
+.downloads-table [data-recommended]{background:var(--fill);padding-inline:var(--gap-base);border-radius:var(--radius-md)}
+[data-recommend-label]{margin-left:var(--gap-in);font-size:var(--text-caption);color:var(--secondary)}
+.download-note a{text-decoration:underline;text-underline-offset:.2em}
+.install-line{margin-block:var(--gap-base)}
+.manual-downloads { margin-block:var(--gap-group); }
+summary { min-height:var(--touch); display:list-item; align-content:center; cursor:pointer; font-size:var(--text-body); }
+.availability-note { margin-top:calc(var(--gap-pane)*2); }
+.release-notes{display:block;margin-top:var(--gap-base);font-size:var(--text-body)}
 </style>

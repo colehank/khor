@@ -43,6 +43,12 @@ export async function mountDeviceDownloads() {
     if(label)label.textContent=choice.label;
   });
   document.querySelectorAll('[data-download-note]').forEach(note=>note.textContent=choice.note);
+  const options=document.querySelector<HTMLElement>('[data-download-options]');
+  if(options){
+    options.dataset.preferred=selected==='linux'?'cli':'app';
+    const manual=options.querySelector<HTMLDetailsElement>('.manual-downloads');
+    if(manual&&selected==='linux')manual.open=true;
+  }
   document.querySelectorAll<HTMLElement>('[data-download-platform]').forEach(row=>{
     const recommended=choice.file?row.dataset.downloadFile===choice.file:row.dataset.downloadPlatform===selected;
     row.toggleAttribute('data-recommended',recommended);
