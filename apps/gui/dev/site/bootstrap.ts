@@ -41,7 +41,7 @@ if(hero){
   // the fixture remains HTTP-only and never enables a native backend.
   document.documentElement.dataset.windowTransparent='';
   document.documentElement.dataset.siteMaterial='frost';
-  document.documentElement.style.setProperty('--window-opacity','50%');
+  document.documentElement.style.setProperty('--window-opacity','40%');
   const lights=document.createElement('img');
   lights.src=controls;lights.alt='';lights.className='site-macos-controls';lights.setAttribute('aria-hidden','true');
   document.body.append(lights);

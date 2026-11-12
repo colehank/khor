@@ -4,3 +4,11 @@ html:root[data-site-macos] { --traffic:calc(var(--gap-pane)*3 + var(--gap-xxs));
 html:root[data-site-macos] :is([data-wide-top],[data-folded-lead]) { padding-inline-start:var(--wide-lead-start); }
 .site-macos-controls { position:fixed; z-index:100; left:var(--gap-in); top:calc((var(--pane-head) - var(--gap-row))/2); height:var(--gap-row); width:auto; pointer-events:none; user-select:none; }
 [data-site-unavailable] { opacity:1; cursor:default; }
+/* The website supplies the same Fog inside the iframe so real backdrop
+ * filters sample scenery, rather than compositing the black tint twice. */
+.site-fog-backdrop { position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none; }
+.site-fog-surface { position:absolute; }
+.site-fog-surface > :is(img,video) { position:absolute; inset:0; width:100%; height:100%; max-width:none; object-fit:cover; }
+.site-fog-surface > video { visibility:hidden; }
+.site-fog-backdrop[data-live] video { visibility:visible; }
+.site-fog-shade { position:absolute; inset:auto 0 0; }

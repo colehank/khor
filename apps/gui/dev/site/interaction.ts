@@ -30,6 +30,8 @@ export function constrainDemoInteractions() {
       if(row)target.dataset.siteRow='';
     };
     for(const element of document.querySelectorAll<HTMLElement>(unavailable)){
+      // The fixed reply's download is a real website action, even inside a turn.
+      if(element.dataset.mdLink===location.origin+'/download/')continue;
       disable(element);
     }
     for(const selector of ['[data-row] [data-row-open]','[data-quota-row]','[data-ws-row]']){
