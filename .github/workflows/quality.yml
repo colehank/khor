@@ -815,6 +815,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.95.0
         with:
           components: rustfmt
+      - run: python3 -m pip install -r scripts/requirements-app-icon.txt
+      - name: Validate the release workflow with the same pinned actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          "$(go env GOPATH)/bin/actionlint" .github/workflows/release.yml
       - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
       - if: always()
         run: cargo fmt --all && git diff --binary > "$RUNNER_TEMP/format.patch"
