@@ -1,0 +1,1 @@
+var e=`/khor/`.replace(/\/$/,``);function t(t){return t.startsWith(`/`)&&!t.startsWith(`//`)?e+t:t}export{t};

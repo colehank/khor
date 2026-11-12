@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>中继 · khor</title><meta name="description" content="默认不用配，也可以自己跑一台"><link rel="icon" type="image/svg+xml" href="/khor/_astro/mandala-glass.Bln4B4j9.svg"><link rel="canonical" href="https://colehank.github.io/khor/docs/relay/"><link rel="stylesheet" href="/khor/_astro/Base.DqMRD3_y.css"><link rel="stylesheet" href="/khor/_astro/story.Y20dtfzx.css"></head><body><header class="story-nav"><a class="site-brand" href="/khor/" aria-label="Khor 首页"><img src="/khor/_astro/mandala-glass.Bln4B4j9.svg" alt="" width="24" height="24"><span>Khor</span></a><nav aria-label="主导航"><a href="/khor/#story">了解</a><a href="/khor/docs/" aria-current="page">文档</a><a class="nav-download" href="/khor/download/" data-device-download>下载</a></nav></header><div class="docs"><nav class="side" aria-label="文档"><div class="side-in"><div class="side-head"><a class="mark" href="/khor/"><img src="/khor/_astro/mandala-glass.Bln4B4j9.svg" alt="" width="20" height="20"><span>khor</span></a></div><a class="nav-row" href="/khor/docs/">总览</a><a class="nav-row" href="/khor/docs/install/">安装</a><a class="nav-row" href="/khor/docs/pair/">入网</a><a class="nav-row" href="/khor/docs/sessions/">会话</a><a class="nav-row" href="/khor/docs/web/">网页脸</a><a class="nav-row" href="/khor/docs/relay/" aria-current="page">中继</a></div></nav><div class="main"><header class="r0"><div class="r0-title"><a class="back" href="/khor/docs/">文档</a><h1>中继</h1></div><a class="bar-link" href="https://github.com/colehank/khor">GitHub</a></header><main class="board"><article class="prose"><p>两台设备能直连就直连。直连之前要经中继交换地址；直连不成，流量由中继转发。中继只转发，不存内容：转发的内容端到端加密，中继看不到。</p>
+<h2 id="默认">默认</h2>
+<p>不用配置。khor 的中继排在前面，n0 的公共中继跟在后面兜底，每台设备自己挑离它最近、连得上的那台。</p>
+<h2 id="自己跑一台">自己跑一台</h2>
+<p>一台有公网地址和域名、已经入网的机器：</p>
+<pre><code class="language-sh">khor relay --acme relay.example.com --only-mine
+</code></pre>
+<p><code>--acme</code> 找 Let’s Encrypt 要证书。<code>--only-mine</code> 只放行你这张网名单上、没被撤销的设备，谁也不用填密钥。</p>
+<table>
+<thead>
+<tr>
+<th>参数</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>--acme 域名</code></td>
+<td>找 Let’s Encrypt 要证书，HTTPS 听 443</td>
+</tr>
+<tr>
+<td><code>--tls-cert 证书 --tls-key 私钥</code></td>
+<td>用现成的证书</td>
+</tr>
+<tr>
+<td><code>--dev</code></td>
+<td>明文 HTTP，默认 3340 口，只用于测试</td>
+</tr>
+<tr>
+<td><code>--only-mine</code></td>
+<td>只放行这张网信任的设备</td>
+</tr>
+<tr>
+<td><code>--token 密钥</code></td>
+<td>只放行带这把共享密钥的客户端，和 <code>--only-mine</code> 二选一</td>
+</tr>
+<tr>
+<td><code>--rate 字节每秒</code></td>
+<td>每个客户端的上行限速</td>
+</tr>
+<tr>
+<td><code>--metrics 地址</code></td>
+<td>指标页</td>
+</tr>
+<tr>
+<td><code>--stats</code></td>
+<td>打印计量，不起中继</td>
+</tr>
+</tbody>
+</table>
+<h2 id="让设备用它">让设备用它</h2>
+<p>每台设备各配各的，别的机器改不了这台用哪些中继。</p>
+<ul>
+<li>界面：设置 → 网络 →「添加中继…」</li>
+<li>环境变量：<code>KHOR_RELAY</code>，多台用逗号分隔，密钥挂在 <code>token</code> 参数上</li>
+</ul>
+<pre><code class="language-sh">KHOR_RELAY="https://relay.example.com?token=密钥,https://relay2.example.com"
+</code></pre>
+<p>密钥不出本机：经一台带密钥的中继找你的每台设备，都得自己配上这把密钥。用 <code>--only-mine</code> 就没有这件事。</p>
+<p>打开「只使用自己的中继」之后，khor 的和 n0 的都不再使用。</p>
+<h2 id="计量">计量</h2>
+<pre><code class="language-sh">khor relay --stats
+</code></pre>
+<p>只存总数：每台设备连了几次、在线多久，加中继收发的总字节。不记谁连谁。</p>
+</article><nav class="turn" aria-label="上一篇与下一篇"><a href="/khor/docs/web/"><span>上一篇</span>网页脸</a></nav></main></div></div><script type="module" src="/khor/_astro/Base.astro_astro_type_script_index_0_lang.D5jkMLya.js"></script></body></html>

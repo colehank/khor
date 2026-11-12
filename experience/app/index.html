@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      **A phone's edges and its keyboard** (2026-10-02, iOS 第三步 A).
+      `viewport-fit=cover`: the page reaches under the status bar and the
+      home indicator, and keeps itself clear of them with the edges the
+      system reports (`--safe-top` / `--safe-bottom`, tokens.css) — so the
+      terminal's paper runs to the top of the glass instead of a grey band.
+      `maximum-scale=1`: WebKit zooms the page into any focused field set
+      under 16, and the terminal's own text box is one; a zoom on every
+      tap of the terminal is not a page anybody asked to see closer (on
+      Safari a pinch still zooms — it ignores this for that). `interactive-
+      widget=resizes-content`: Chrome on Android makes the layout viewport
+      itself shorter under the keyboard; WebKit ignores it and is sized by
+      `lib/viewport` instead. A desktop window reads none of this.
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <title>Khor</title>
+    <!--
+      **No favicon to fetch.** A browser asks `/favicon.ico` of every page
+      it loads, the dev server and the web face have none, and the 404 was
+      the one error on a clean run's console. An empty icon answers the
+      question without a request; the app's own icon is the bundle's.
+    -->
+    <link rel="icon" href="data:," />
+    <!--
+      **The theme, stamped before the first pixel** (批 D2).
+
+      Everything below and every stylesheet keys off `data-theme` now,
+      because 「显式选浅色」 has to beat a dark desktop and the only
+      alternative was a second copy of the palette (tokens.css says
+      why). An unstamped root paints light — so without this line, a
+      dark-desktop machine would flash white for the quarter second
+      this frame exists, which is the very thing this frame was added
+      to prevent.
+
+      ⚠️ **This script cannot ask khor what the setting is**: the store
+      is behind an async call and this runs before the bundle. So it
+      reads the mirror the face keeps in `localStorage`
+      (`src/theme.ts`, same key, and `check-boot` asserts the two agree)
+      and falls back to the desktop. The mirror is a cache of a stored
+      preference, never the preference — `khor config` is still the one
+      place it lives, and a browser that refuses storage simply follows
+      the desktop, which is what khor did before the key existed.
+
+      The cost of being wrong here is one quarter-second flash, once,
+      on the first launch after somebody changes the setting.
+    -->
+    <script>
+      (function () {
+        var t = null;
+        try {
+          t = localStorage.getItem("khor.theme");
+        } catch (e) {
+          // Private window, blocked site data. Fall through.
+        }
+        if (t !== "light" && t !== "dark") {
+          t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+        if (window.__KHOR_WINDOW_SURFACE__) {
+          if(window.__KHOR_WINDOW_PLATFORM__)document.documentElement.setAttribute("data-window-platform",window.__KHOR_WINDOW_PLATFORM__);
+          try {
+            var surface = window.__KHOR_WINDOW_PREF__ || JSON.parse(localStorage.getItem("khor.window-surface"));
+            document.documentElement.toggleAttribute("data-window-outline", !surface || surface.outline !== false);
+            if (surface && (surface.material === "clear" || surface.material === "frost")) {
+              document.documentElement.setAttribute("data-window-transparent", "");
+              document.documentElement.style.setProperty("--window-opacity", Math.max(0, Math.min(100, Number.isFinite(Number(surface.opacity)) ? Number(surface.opacity) : 100)) + "%");
+            }
+          } catch (e) { /* An unreadable preference stays solid. */ }
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-DSYnupIH.js"></script>
+    <link rel="modulepreload" crossorigin href="./assets/backend-context-Lh_09IuC.js">
+    <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-B0Z9INg1.js">
+    <link rel="modulepreload" crossorigin href="./assets/react-CUdNIagt.js">
+    <link rel="modulepreload" crossorigin href="./assets/workspace-navigation-storage-BReWG-Lk.js">
+    <link rel="modulepreload" crossorigin href="./assets/preload-helper-uBIymjUX.js">
+    <link rel="stylesheet" crossorigin href="./assets/index-CPkX3lQy.css">
+  </head>
+  <body>
+    <!--
+      **The first frame, before a single line of the app has run.**
+
+      Measured 2026-09-11 by screenshotting a cold launch: the window is
+      on screen by ~500 ms and the list is drawn by ~765 ms, so for a
+      quarter of a second the app is **a black rectangle with a title
+      bar** — which is what 「每次打开都要加载一会儿很慢」 is looking at.
+      It is not waiting on data (the three calls behind the first list
+      total about 100 ms); it is the bundle being parsed and React
+      mounting for the first time.
+
+      So the ground and the shape of the room are painted here, in HTML
+      the webview has before it asks for anything. There is nothing to
+      wire up and nothing to tear down: `#root` is empty until React
+      mounts and full immediately after, so the sibling rule below hides
+      this the moment the real thing exists.
+
+      ⚠️ **The four colours here are the only place in this app where a
+      palette value is written twice.** They have to be: `tokens.css` is
+      a separate request and this frame is about what happens before any
+      request comes back. They are `--background` and `--border` from
+      `src/styles/tokens.css` (one ground under everything since the
+      redesign of 2026-10-02; the list column is a hairline, not a
+      material), light first and dark under the same stamp it uses. If
+      those change and these do not, the window flashes the old colour
+      for a quarter second and then settles — a flicker with no error
+      anywhere, which is why they are named here rather than left as
+      bare hex.
+    -->
+    <style>:root{--boot-ground:#f4f4ef}body{background:var(--boot-ground);margin:0}#boot{display:flex;position:fixed;inset:0}#boot i:first-child{border-right:1px solid #1a1a141f;width:340px}#root:not(:empty)~#boot{display:none}:root[data-theme=dark]{--boot-ground:#000}:root[data-window-transparent] body{background:0 0}:root[data-window-transparent] #boot{background:color-mix(in srgb, var(--boot-ground) var(--window-opacity), transparent)}:root[data-theme=dark] #boot i:first-child{border-right-color:#eeeee724}</style>
+    <div id="root"></div>
+    <div id="boot" aria-hidden="true"><i></i></div>
+  </body>
+</html>

@@ -1,0 +1,64 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>会话 · khor</title><meta name="description" content="开会话、接上去、看状态"><link rel="icon" type="image/svg+xml" href="/khor/_astro/mandala-glass.Bln4B4j9.svg"><link rel="canonical" href="https://colehank.github.io/khor/docs/sessions/"><link rel="stylesheet" href="/khor/_astro/Base.DqMRD3_y.css"><link rel="stylesheet" href="/khor/_astro/story.Y20dtfzx.css"></head><body><header class="story-nav"><a class="site-brand" href="/khor/" aria-label="Khor 首页"><img src="/khor/_astro/mandala-glass.Bln4B4j9.svg" alt="" width="24" height="24"><span>Khor</span></a><nav aria-label="主导航"><a href="/khor/#story">了解</a><a href="/khor/docs/" aria-current="page">文档</a><a class="nav-download" href="/khor/download/" data-device-download>下载</a></nav></header><div class="docs"><nav class="side" aria-label="文档"><div class="side-in"><div class="side-head"><a class="mark" href="/khor/"><img src="/khor/_astro/mandala-glass.Bln4B4j9.svg" alt="" width="20" height="20"><span>khor</span></a></div><a class="nav-row" href="/khor/docs/">总览</a><a class="nav-row" href="/khor/docs/install/">安装</a><a class="nav-row" href="/khor/docs/pair/">入网</a><a class="nav-row" href="/khor/docs/sessions/" aria-current="page">会话</a><a class="nav-row" href="/khor/docs/web/">网页脸</a><a class="nav-row" href="/khor/docs/relay/">中继</a></div></nav><div class="main"><header class="r0"><div class="r0-title"><a class="back" href="/khor/docs/">文档</a><h1>会话</h1></div><a class="bar-link" href="https://github.com/colehank/khor">GitHub</a></header><main class="board"><article class="prose"><p>shell、智能体、对话、文件传输都是会话，在同一个列表里：</p>
+<pre><code class="language-sh">khor sessions
+</code></pre>
+<h2 id="开一个">开一个</h2>
+<pre><code class="language-sh">khor open                 # 持久会话，本机的 shell
+khor open -- claude       # 跑一条命令
+khor open --on &lt;机器&gt;     # 开在另一台机器上
+khor run -- &lt;命令&gt;        # 临时会话，跟着这个终端活
+</code></pre>
+<p>持久会话在终端关掉之后还在。接上去、关掉：</p>
+<pre><code class="language-sh">khor attach &lt;session&gt;     # Ctrl-\ 断开
+khor close &lt;session&gt;
+</code></pre>
+<h2 id="六个状态词">六个状态词</h2>
+<p>全网、每一种界面，同一个状态同一个词。</p>
+<table>
+<thead>
+<tr>
+<th>词</th>
+<th>意思</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>忙碌</td>
+<td>在跑</td>
+</tr>
+<tr>
+<td>待批</td>
+<td>有动作等你准许。排在最前</td>
+</tr>
+<tr>
+<td>完成</td>
+<td>这一轮完了，还没看</td>
+</tr>
+<tr>
+<td>中断</td>
+<td>出错了，进程还在</td>
+</tr>
+<tr>
+<td>失败</td>
+<td>进程以非零状态退出</td>
+</tr>
+<tr>
+<td>空闲</td>
+<td>没在跑，或者看过了</td>
+</tr>
+</tbody>
+</table>
+<h2 id="智能体">智能体</h2>
+<p>Claude Code、Codex 的会话在 khor 装好后自己出现在列表里，不用配置。给 Claude Code 装上钩子，才有「完成」这一档：</p>
+<pre><code class="language-sh">khor hooks install
+</code></pre>
+<p>在 khor 之外开的智能体会话和 tmux 会话，可以导进列表：</p>
+<pre><code class="language-sh">khor import               # 列出可导入的
+khor import &lt;序号&gt;
+</code></pre>
+<h2 id="文件">文件</h2>
+<pre><code class="language-sh">khor send &lt;机器&gt; &lt;文件&gt;   # 摘要先到，对方许可后才传
+khor accept &lt;传输号&gt;      # 在收文件的那台上
+khor pull &lt;机器&gt; &lt;文件&gt;   # 把那台机器上的文件拉过来
+khor ls &lt;机器&gt; [路径]
+</code></pre>
+</article><nav class="turn" aria-label="上一篇与下一篇"><a href="/khor/docs/pair/"><span>上一篇</span>入网</a><a class="turn-next" href="/khor/docs/web/"><span>下一篇</span>网页脸</a></nav></main></div></div><script type="module" src="/khor/_astro/Base.astro_astro_type_script_index_0_lang.D5jkMLya.js"></script></body></html>

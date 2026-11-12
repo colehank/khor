@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>入网 · khor</title><meta name="description" content="配对任意一台，就同步全网"><link rel="icon" type="image/svg+xml" href="/khor/_astro/mandala-glass.Bln4B4j9.svg"><link rel="canonical" href="https://colehank.github.io/khor/docs/pair/"><link rel="stylesheet" href="/khor/_astro/Base.DqMRD3_y.css"><link rel="stylesheet" href="/khor/_astro/story.Y20dtfzx.css"></head><body><header class="story-nav"><a class="site-brand" href="/khor/" aria-label="Khor 首页"><img src="/khor/_astro/mandala-glass.Bln4B4j9.svg" alt="" width="24" height="24"><span>Khor</span></a><nav aria-label="主导航"><a href="/khor/#story">了解</a><a href="/khor/docs/" aria-current="page">文档</a><a class="nav-download" href="/khor/download/" data-device-download>下载</a></nav></header><div class="docs"><nav class="side" aria-label="文档"><div class="side-in"><div class="side-head"><a class="mark" href="/khor/"><img src="/khor/_astro/mandala-glass.Bln4B4j9.svg" alt="" width="20" height="20"><span>khor</span></a></div><a class="nav-row" href="/khor/docs/">总览</a><a class="nav-row" href="/khor/docs/install/">安装</a><a class="nav-row" href="/khor/docs/pair/" aria-current="page">入网</a><a class="nav-row" href="/khor/docs/sessions/">会话</a><a class="nav-row" href="/khor/docs/web/">网页脸</a><a class="nav-row" href="/khor/docs/relay/">中继</a></div></nav><div class="main"><header class="r0"><div class="r0-title"><a class="back" href="/khor/docs/">文档</a><h1>入网</h1></div><a class="bar-link" href="https://github.com/colehank/khor">GitHub</a></header><main class="board"><article class="prose"><p>第一台机器装好，就是一张只有它自己的网。之后每加一台，配对一次。</p>
+<h2 id="加一台机器">加一台机器</h2>
+<p>在已经入网的任意一台上出票：</p>
+<pre><code class="language-sh">khor invite
+</code></pre>
+<p>票 15 分钟内有效，用一次就作废。在新机器上：</p>
+<pre><code class="language-sh">khor pair &lt;票&gt;
+</code></pre>
+<p>配对完，设备信息全网自动同步：</p>
+<pre><code class="language-sh">khor devices
+</code></pre>
+<h2 id="根钥匙与恢复词">根钥匙与恢复词</h2>
+<p>第一台机器持有这张网的根钥匙。它只做一件事：签字说明哪些机器是你的。把 24 个恢复词抄下来，收在别处：</p>
+<pre><code class="language-sh">khor root words &lt;本机名&gt;
+</code></pre>
+<p>持根的机器丢了，在另一台上用恢复词把根找回来：</p>
+<pre><code class="language-sh">khor root recover &lt;24 个词&gt;
+</code></pre>
+<p><code>khor root show</code> 看本机认哪把根、持不持根。</p>
+<h2 id="待批">待批</h2>
+<p>新机器拿到持根机器签的证书才算入网。出票的那台不持根时，新机器先进待批，在持根的机器上批准：</p>
+<pre><code class="language-sh">khor pending
+khor approve &lt;机器&gt;
+</code></pre>
+<h2 id="只有-ssh-的机器">只有 ssh 的机器</h2>
+<p>装不了 khor 的机器可以领进来，操作经本机代跑。要求免密 ssh：</p>
+<pre><code class="language-sh">khor adopt &lt;ssh主机&gt; [名字]
+</code></pre>
+<h2 id="移出与离开">移出与离开</h2>
+<table>
+<thead>
+<tr>
+<th>命令</th>
+<th>做什么</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>khor forget &lt;机器&gt;</code></td>
+<td>把一台机器移出网络。全网不再认它，要回来得重新配对</td>
+</tr>
+<tr>
+<td><code>khor revoke &lt;机器&gt;</code></td>
+<td>在持根的机器上撤销一台。全网拿到新名单后不再应答它</td>
+</tr>
+<tr>
+<td><code>khor leave &lt;本机名&gt;</code></td>
+<td>本机离开网络。本机自己的会话、工作区、身份、设置不动</td>
+</tr>
+<tr>
+<td><code>khor pause</code>、<code>khor resume</code></td>
+<td>暂停、恢复接入网络</td>
+</tr>
+</tbody>
+</table>
+<p>被移出的机器上已经存下的凭据收不回来。机器真丢了，去提供商换密钥。</p>
+</article><nav class="turn" aria-label="上一篇与下一篇"><a href="/khor/docs/install/"><span>上一篇</span>安装</a><a class="turn-next" href="/khor/docs/sessions/"><span>下一篇</span>会话</a></nav></main></div></div><script type="module" src="/khor/_astro/Base.astro_astro_type_script_index_0_lang.D5jkMLya.js"></script></body></html>

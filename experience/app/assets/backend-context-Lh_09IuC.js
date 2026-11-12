@@ -1,0 +1,1 @@
+var e=null;function t(t){if(e!==null&&e!==t)throw Error(`Lab backend mode cannot change after startup`);e=t}function n(){if(e===null)throw Error(`Configure the Lab backend before entering the App`);return e===`full`&&`__TAURI_INTERNALS__`in window}export{n,t};
