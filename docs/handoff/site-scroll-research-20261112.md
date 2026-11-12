@@ -38,8 +38,18 @@
 
 ## 一手资料
 
+- [Apple AirPods Pro 产品页](https://www.apple.com/airpods-pro/)：本轮核对的 Audio Performance 段有独立 sticky 容器与视频播放区间；HTML 的播放终点为容器底部减 168vh，移动断点另外指定播放起点。对应 [CSS](https://www.apple.com/v/airpods-pro/t/built/styles/overview.built.css) 将 sticky 舞台与额外滚动高度独立安排。它支持将画面停留与播放进度分别编排，不能据此推断所有 Apple 页面都用同一个比例。
+- [GSAP ScrollTrigger FAQ](https://gsap.com/docs/v3/Plugins/ScrollTrigger/#how-does-duration-work-with-scrub-true)：scrub 时间轴里的时长代表各段占用滚动距离的比例；总滚动距离与各段比例分开控制。这里借用的是分段编排思路，未增加 GSAP 依赖。
 - [Chrome：滚动动画性能案例](https://developer.chrome.com/blog/scroll-animation-performance-case-study)：主线程 scroll 事件与滚动异步，ScrollTimeline 尽量降低主线程工作，CSS 与 WAAPI 都可用。
 - [web.dev：高性能 CSS 动画](https://web.dev/articles/animations-guide)：优先 transform / opacity；blur 等会增加绘制成本；will-change 应在采样后谨慎使用。
 - [WebKit：CSS 滚动动画指南](https://webkit.org/blog/17101/a-guide-to-scroll-driven-animations-with-just-css/)：单个滚动时间轴按滚动进度前进 / 倒退，停止滚动即停。
 - [WebKit：Safari 26.4](https://webkit.org/blog/17862/webkit-features-for-safari-26-4/)：Safari 26.4 引入 threaded scroll-driven animations；不能把这一点外推到所有旧版 WKWebView 或所有可动画属性。
 - [web.dev：small / large / dynamic viewport](https://web.dev/blog/viewport-units)：手机地址栏会改变动态视口；svh 稳定，动态尺寸更新频率与手势相关。
+
+## 首幕阅读段（后续迭代）
+
+用户要求首幕再停久一点。当前增加 `--story-intro-hold`：桌面 .5 屏、手机 .7 屏。它是额外滚动距离，演化阶段仍分别占 4.8 / 6.2 屏，所有原始形态与轨迹保留。
+
+原生时间轴起点仍是故事进入 sticky 的位置，采样进度从 `-introProgress` 开始；负进度的 `iconState()` 始终解析为设备首姿态，底部细线从 0 填到 1，然后才进入原有 0…1 的演化。后备使用同一映射，无等待计时器、自动播放或手势拦截。首章节书签返回阅读起点，其余书签计入阅读距离。
+
+临时脚本 `/private/tmp/playwright-khor-scroll-hold.js` 在 Chrome 桌面、手机尺寸、强制后备下确认：75% 阅读距离处节点位置与首帧相同、标题完整、细线已反馈；跨过阅读距离后节点开始移动；后续四个地标完整，倒滚后恢复首姿态。证据 `/Volumes/disk0/Khor/evidence/site-story-20261112/scroll-hold/checks.json` 及同目录截图 / 构建日志。类型检查与 Astro 静态构建通过，没有扩大原生或浏览器验证矩阵。

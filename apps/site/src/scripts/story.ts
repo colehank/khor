@@ -14,11 +14,12 @@ export function mountStory() {
   const tracks=createIconMotion(assembly);
   const environment=opening.querySelector<HTMLElement>('[data-meet-environment]')!;
   const cue=opening.querySelector<HTMLElement>('.scroll-cue')!;
+  const cueProgress=cue.querySelector<HTMLElement>('.scroll-stem-progress')!;
   const controls=opening.querySelector<HTMLElement>('.story-steps')!;
   const controller=new AbortController(),on={signal:controller.signal};
   const Timeline=(window as Window&{ScrollTimeline?:ScrollTimelineConstructor}).ScrollTimeline;
   let animations:Animation[]=[],native=false,scheduled=false,disposed=false;
-  let topOpening=0,openingTravel=1,exitProgress=.1,active=-1,lastProgress=NaN;
+  let topOpening=0,openingTravel=1,introProgress=0,exitProgress=.1,active=-1,lastProgress=NaN;
   let geometry='',inView=true;
   let previous=new WeakMap<MotionTrack['target'],Record<string,string>>();
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
@@ -27,6 +28,7 @@ export function mountStory() {
     return {opacity:1-ease(Math.abs(delta),.12,.5),transform:`translateY(calc(${-Math.max(-1,Math.min(1,delta))} * var(--gap-pane)))`};
   }));
   track(cue,state=>({opacity:1-ease(state.phase,0,.5)}));
+  track(cueProgress,(_,progress)=>({transform:`scaleY(${introProgress?clamp(1+progress/introProgress):1})`}));
   track(controls,(_,progress)=>({opacity:1-ease(progress,.92,1)}));
   track(environment,(state,progress)=>({opacity:(.35*clamp(state.light/.55)+.65*ease(state.light,0,.55))*(1-ease(progress,1,1+exitProgress))}));
 
@@ -46,8 +48,8 @@ export function mountStory() {
   function render() {
     scheduled=false;
     if(disposed||!inView)return;
-    const distance=scrollY-topOpening;
-    const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(0,distance/openingTravel);
+    const distance=scrollY-topOpening-openingTravel*introProgress;
+    const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
     const next=Math.round(iconState(progress).phase);
     if(next!==active){
       active=next;
@@ -76,11 +78,11 @@ export function mountStory() {
       try{
         const timeline=new Timeline({source:document.documentElement,axis:'block'});
         const end=1+exitProgress;
-        const positions=[...new Set([...Array.from({length:129},(_,i)=>i/128),...iconStops,...Array.from({length:17},(_,i)=>1+exitProgress*i/16)])].sort((a,b)=>a-b);
+        const positions=[...new Set([-introProgress,...Array.from({length:129},(_,i)=>i/128),...iconStops,...Array.from({length:17},(_,i)=>1+exitProgress*i/16)])].sort((a,b)=>a-b);
         const samples=positions.map(progress=>({progress,state:iconState(progress)}));
         for(const {target,sample} of tracks){
-          const frames=samples.map(({progress,state})=>({...sample(state,progress),offset:progress/end}));
-          const options:ScrollOptions={timeline,fill:'both',rangeStart:`${topOpening}px`,rangeEnd:`${topOpening+openingTravel*end}px`};
+          const frames=samples.map(({progress,state})=>({...sample(state,progress),offset:(progress+introProgress)/(end+introProgress)}));
+          const options:ScrollOptions={timeline,fill:'both',rangeStart:`${topOpening}px`,rangeEnd:`${topOpening+openingTravel*(end+introProgress)}px`};
           const animation=target.animate(frames,options);animations.push(animation);
           if(animation.timeline!==timeline)throw new Error('Scroll timeline is unavailable');
         }
@@ -94,15 +96,17 @@ export function mountStory() {
     // CSS and JS share the stable sticky height. Mobile toolbar/keyboard
     // changes must not remap a stationary scroll position via innerHeight.
     const top=opening!.getBoundingClientRect().top+scrollY;
-    const travel=Math.max(1,opening!.offsetHeight-sticky!.offsetHeight);
+    const intro=Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
+    const travel=Math.max(1,opening!.offsetHeight-sticky!.offsetHeight-intro);
     const exit=sticky!.offsetHeight*.7/travel;
-    const key=[top,travel,exit,reduced.matches].join(':');
+    const key=[top,travel,intro,exit,reduced.matches].join(':');
     if(key===geometry)return;
-    geometry=key;topOpening=top;openingTravel=travel;exitProgress=exit;bindTimeline();
+    geometry=key;topOpening=top;openingTravel=travel;introProgress=intro/travel;exitProgress=exit;bindTimeline();
   }
   steps.forEach((step,index)=>step.addEventListener('click',()=>{
     // Round forward so the final bookmark reaches the exact canonical pose.
-    scrollTo({top:Math.ceil(topOpening+openingTravel*iconStops[index]),behavior:reduced.matches?'instant':'smooth'});
+    const distance=index===0?0:openingTravel*(introProgress+iconStops[index]);
+    scrollTo({top:Math.ceil(topOpening+distance),behavior:reduced.matches?'instant':'smooth'});
   },on));
   document.querySelectorAll<HTMLButtonElement>('[data-copy]').forEach(button=>button.addEventListener('click',async()=>{
     const value=document.getElementById(button.dataset.copy!)?.textContent??'';
