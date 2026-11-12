@@ -70,7 +70,45 @@ jobs:
               "                    (debug/(str(n)+'-'+file.name)).write_text(file.read_text(errors='replace')[-16000:])",
           ])
           assert old in text
-          checker.write_text(text.replace(old,replacement))
+          text=text.replace(old,replacement)
+          before='            service = subprocess.Popen('
+          monitor="\n".join([
+              "            import threading",
+              "            debug=Path('intel-installed-debug/logs');debug.mkdir(exist_ok=True)",
+              "            monitor_done=threading.Event()",
+              "            def observe_startup():",
+              "                seen=set()",
+              "                with (debug/'processes.log').open('w') as observations:",
+              "                    while not monitor_done.wait(0.25):",
+              "                        listing=subprocess.run(['ps','-wwaxo','pid=,ppid=,stat=,args='],capture_output=True,text=True,timeout=5).stdout",
+              "                        for row in listing.splitlines():",
+              "                            if str(temporary) not in row and str(application) not in row and str(directory/'khor') not in row: continue",
+              "                            observations.write(str(time.monotonic())+' '+row+'\\n');observations.flush()",
+              "                            parts=row.strip().split(maxsplit=3)",
+              "                            if len(parts)!=4 or '_runtime_info' not in parts[3] or parts[0] in seen: continue",
+              "                            seen.add(parts[0])",
+              "                            subprocess.run(['/usr/bin/sample',parts[0],'1','1','-file',str(debug/('sample-'+parts[0]+'.txt'))],capture_output=True,timeout=8)",
+              "            observer=threading.Thread(target=observe_startup,daemon=True);observer.start()",
+          ])
+          assert before in text
+          text=text.replace(before,monitor+'\n'+before)
+          before='            if service is not None and service.poll() is None:'
+          probes="\n".join([
+              "            monitor_done.set();observer.join(timeout=12)",
+              "            candidates=[directory/'khor',application]+list(runtime.rglob('khor'))+list(runtime.rglob('khor-gui'))",
+              "            timings=[]",
+              "            for program in dict.fromkeys(candidates):",
+              "                if not program.is_file(): continue",
+              "                started=time.monotonic()",
+              "                try:",
+              "                    result=subprocess.run([str(program),'_runtime_info'],env={'KHOR_RUNTIME_DIR':str(runtime)},capture_output=True,text=True,timeout=30)",
+              "                    timings.append({'program':str(program),'seconds':time.monotonic()-started,'code':result.returncode,'stdout':result.stdout[-4000:],'stderr':result.stderr[-4000:]})",
+              "                except subprocess.TimeoutExpired:",
+              "                    timings.append({'program':str(program),'seconds':time.monotonic()-started,'timeout':True})",
+              "            (debug/'probe-timings.json').write_text(json.dumps(timings,indent=2))",
+          ])
+          assert before in text
+          checker.write_text(text.replace(before,probes+'\n'+before))
           PY
       - name: Install and start the preserved package without recompiling it
         run: python3 scripts/check-desktop-installer.py --package intel-installed-debug/Khor.pkg --expected-source e23dfce529fd0b6aa18e6801746059128d5bb10a --output intel-installed-debug/proof.json
