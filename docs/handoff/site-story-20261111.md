@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-12 Coming soon 遮挡修复：手机 Chrome 同尺寸复现提示上半部落入 GUI，命中探针返回 iframe；平台行现建立 z-index:3 的独立层，高于 z-index:2 的 GUI。提示位置和交互保持原样，手机同一重叠点验证提示完整位于上方。证据 `evidence/site-story-20261112/platform-tooltip`（绝对前缀 `/Volumes/disk0/Khor`）。
 - 2026-11-12 用户随后要求放回完整文案，但不必换行：现将 “Work across your devices and agents. Edit files, track changes, and use your web apps. From any device, peer to peer. Efficient, secure, and delightful.” 合为一段小字，无 br 或分段，仅按可用宽度自然折行。此条替代下一条删减。
 - 2026-11-12 用户进一步要求删除 “Edit…” 及其后的文案。首屏小字仅保留 “Work across your devices and agents.”，大字 Khor、按钮、GUI 和平台入口保持现有布局。此条替代下方两段英文文案记录。
 - 2026-11-12 首屏布局与文案：用户要求左上恢复原 icon + Khor，正文只用大字 Khor、小字介绍、下载 / 文档；右侧 GUI，下方五个平台图标入口。当前文案采用 “Work across your devices and agents. Edit files, track changes, and use your web apps.” 与 “From any device, peer to peer. Efficient, secure, and delightful.”。下载箭头移除，首屏按钮固定短标签而目标继续自适应。macOS / Linux 已有资产可进入安装选项，Windows / iOS / Android 灰显并显示 Coming soon；图标来自实际 App。公司 kapestack 链接保留在页脚。40% 玻璃、Fog 参数和下方故事未改。证据 `hero-platforms`；此条覆盖早先 kapestack 顶栏和大号标语布局。
