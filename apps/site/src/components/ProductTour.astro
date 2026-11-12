@@ -1,0 +1,66 @@
+---
+import TourImage from './TourImage.astro';
+import {tourImages,peerFaces} from '../tour-assets';
+import {supportedHarnesses} from '../../../gui/dev/site/identity-marks';
+import {machines,projects} from '../../../gui/dev/site/world';
+import '../styles/product-tour.css';
+const peers=[
+  {profile:machines[0],system:'macOS',className:'peer-mac',image:peerFaces.mac},
+  {profile:machines[1],system:'Linux',className:'peer-linux',image:peerFaces.linux},
+  {profile:machines[3],system:'Windows',className:'peer-windows',image:peerFaces.windows},
+];
+---
+<div class="product-tour" data-product-tour lang="en">
+  <section class="tour-section tour-connect" id="connect" aria-labelledby="connect-title" data-tour-scene>
+    <div class="tour-copy tour-heading-row">
+      <h2 id="connect-title"><span>Your devices.</span><span>Connected.</span></h2>
+      <p>Reach the agents, files, and web apps on your other devices, over a peer-to-peer connection.</p>
+    </div>
+    <figure class="tour-media connection-composition">
+      <div class="connection-map" role="img" aria-label="MacBook Pro, build-01 and ThinkPad connected peer to peer">
+        <svg viewBox="0 0 400 600" preserveAspectRatio="none" aria-hidden="true">
+          <path pathLength="1" d="M180 72 C180 180 80 174 80 282" />
+          <path pathLength="1" d="M80 282 C80 402 232 390 232 504" />
+          <path pathLength="1" d="M232 504 C306 382 300 162 180 72" />
+        </svg>
+        {peers.map(peer=><div class:list={['peer-node',peer.className]}><img src={peer.image.src} width={peer.image.width} height={peer.image.height} alt="" loading="lazy" decoding="async"/><span class="peer-name">{peer.profile.name}</span><span class="peer-system">{peer.system}</span></div>)}
+        <span class="peer-connection">Peer to peer</span>
+      </div>
+      <div class="tour-window connection-window"><TourImage image={tourImages.connect} alt="Khor machine view, showing six devices and the selected MacBook Pro's resource readings" /></div>
+      <figcaption class="tour-caption connection-caption"><span>Know what’s connected.</span><span>See how it’s doing.</span></figcaption>
+    </figure>
+  </section>
+
+  <section class="tour-section tour-sessions" id="sessions" aria-labelledby="sessions-title" data-tour-scene>
+    <div class="tour-copy">
+      <h2 id="sessions-title"><span>Your sessions.</span><span>In one place.</span></h2>
+      <p>Keep your agents and shell sessions together. Follow a task, then pick it up from another device.</p>
+      <ul class="harness-legend" aria-label="Session types">{supportedHarnesses.map(harness=><li><span class="harness-mark" aria-hidden="true" set:html={harness.svg}/><span>{harness.name}</span></li>)}</ul>
+    </div>
+    <figure class="tour-media">
+      <div class="tour-window session-window"><TourImage image={tourImages.sessions} alt="Khor's built-in conversation fixes an order export, with three completed steps and eight passing tests" /></div>
+      <figcaption class="tour-caption"><span>One task, from request to result.</span><span>{machines[0].name} · {projects[0].name}</span></figcaption>
+    </figure>
+  </section>
+
+  <section class="tour-section tour-workspace" id="workspace" aria-labelledby="workspace-title" data-tour-scene>
+    <div class="tour-copy tour-heading-row">
+      <h2 id="workspace-title"><span>Work where</span><span>your files are.</span></h2>
+      <p>Open and edit files on another device. Keep the project, its documentation, and its Git changes within reach.</p>
+    </div>
+    <div class="tour-media workspace-composition">
+      <figure class="tour-media">
+        <div class="tour-window workspace-window"><TourImage image={tourImages.workspace} alt="The atlas-web workspace documents the order export fix, its date and column changes, and eight passing tests" /></div>
+        <figcaption class="tour-caption workspace-caption"><span>{projects[0].name}</span><span>{machines[0].name} · {projects[0].branch}</span></figcaption>
+      </figure>
+      <figure class="changes-figure">
+        <div class="tour-window changes-window"><TourImage image={tourImages.changes} alt="The real Khor Git diff compares src/export.ts with HEAD: Asia/Shanghai replaces UTC date truncation and the CSV column is renamed" /></div>
+        <figcaption class="tour-caption"><span>Review what changed.</span><span>src/export.ts ↔ HEAD</span></figcaption>
+      </figure>
+    </div>
+  </section>
+</div>
+<script>
+  import {mountProductTour} from '../scripts/product-tour';
+  mountProductTour();
+</script>

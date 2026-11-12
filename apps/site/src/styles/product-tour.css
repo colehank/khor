@@ -1,0 +1,115 @@
+/* Product proof follows the brand story. These are real App captures,
+   composed on its black stage; they never mount additional App instances. */
+.product-tour {
+  --tour-window-ground:var(--mark-veil-light);
+  --tour-title:clamp(calc(var(--text-title-lg)*1.8),4.6vw,calc(var(--text-title-lg)*3));
+  position:relative;
+  z-index:11;
+  padding:calc(var(--gap-pane)*3) var(--story-gutter) 0;
+  background:var(--canvas);
+}
+@media (prefers-color-scheme:dark) { .product-tour { --tour-window-ground:var(--mark-veil-dark); } }
+.tour-section { max-width:var(--story-max); margin-inline:auto; padding-block:calc(var(--gap-pane)*3); }
+.tour-copy h2 { font-size:var(--tour-title); line-height:1.06; font-weight:600; letter-spacing:-.035em; text-wrap:balance; }
+.tour-copy h2 span { display:block; }
+.tour-copy h2 span + span { color:var(--secondary); }
+.tour-copy p { max-width:38ch; font-size:var(--text-read); line-height:1.65; color:var(--secondary); text-wrap:pretty; }
+.tour-heading-row { display:grid; grid-template-columns:1.1fr .8fr; align-items:end; gap:calc(var(--gap-pane)*2); margin-bottom:calc(var(--gap-pane)*2); }
+.tour-media { min-width:0; position:relative; margin:0; }
+.tour-window { position:relative; overflow:hidden; border-radius:var(--radius-xl); background:var(--tour-window-ground); box-shadow:var(--shadow-float); }
+.tour-window picture,.tour-window img { display:block; width:100%; height:auto; }
+.tour-caption { display:flex; flex-wrap:wrap; gap:var(--gap-in) var(--gap-group); margin-top:var(--gap-base); font-size:var(--text-callout); color:var(--secondary); }
+.tour-caption span:last-child { color:color-mix(in srgb,var(--ink) 46%,var(--canvas)); }
+
+/* A peer map leads into the actual machine view. Its three identities and
+   labels are the same MacBook, Linux builder and ThinkPad in the demo. */
+.connection-composition { padding-top:calc(var(--gap-pane)*2); padding-bottom:var(--gap-pane); }
+.connection-window { width:76%; margin-left:auto; }
+.connection-map { position:absolute; inset:0 auto auto 0; width:35%; height:100%; z-index:1; }
+.connection-map > svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; color:var(--secondary); }
+.connection-map path { fill:none; stroke:currentColor; stroke-width:1; vector-effect:non-scaling-stroke; opacity:.45; }
+.peer-node { position:absolute; display:flex; flex-direction:column; align-items:center; gap:var(--gap-in); width:42%; transform:translate(-50%,-50%); text-align:center; }
+.peer-node img { width:var(--avatar-lg); height:var(--avatar-lg); border-radius:50%; }
+.peer-name { font-size:var(--text-body); font-weight:500; white-space:nowrap; }
+.peer-system { color:var(--secondary); font-size:var(--text-caption); }
+.peer-mac { left:45%; top:12%; }
+.peer-linux { left:20%; top:47%; }
+.peer-windows { left:58%; top:84%; }
+.peer-connection { position:absolute; left:29%; top:36%; color:var(--secondary); font-size:var(--text-caption); white-space:nowrap; }
+.connection-caption { margin-left:24%; }
+
+/* Sessions pairs a close view with a quiet legend of the actual harness
+   marks. The legend is explanatory, so it is never styled as a control. */
+.tour-sessions { display:grid; grid-template-columns:1.15fr .85fr; gap:calc(var(--gap-pane)*2.5); align-items:center; padding-block:calc(var(--gap-pane)*4); }
+.tour-sessions .tour-copy { order:2; }
+.tour-sessions .tour-copy p { margin-top:var(--gap-group); }
+.harness-legend { display:flex; flex-wrap:wrap; gap:var(--gap-group); margin-top:calc(var(--gap-pane)*1.25); padding:0; list-style:none; }
+.harness-legend li { display:flex; flex-direction:column; align-items:center; gap:var(--gap-row); min-width:var(--touch); color:var(--secondary); font-size:var(--text-caption); }
+.harness-legend .harness-mark { width:var(--avatar); height:var(--avatar); color:var(--ink); }
+.harness-mark svg { width:100%; height:100%; display:block; }
+.session-window { width:100%; }
+
+/* A project and its changes remain connected in the composition, just as
+   the files and Git state share one source of truth in the demonstration. */
+.workspace-composition { padding-bottom:calc(var(--gap-pane)*4); }
+.workspace-window { width:88%; }
+.changes-figure { width:62%; position:absolute; right:0; bottom:0; margin:0; }
+.changes-window { aspect-ratio:3.1; box-shadow:var(--shadow-float); }
+.changes-window picture,.changes-window img { height:100%; }
+.changes-window img { object-fit:cover; object-position:top; }
+.changes-figure figcaption { justify-content:flex-end; }
+.workspace-caption { margin-top:var(--gap-group); }
+
+/* Only the media moves. Copy is readable immediately and a stopped scroll
+   always leaves a complete layout. No sticky sections or wheel handlers. */
+[data-tour-motion] .tour-window {
+  opacity:.65;
+  transform:translateY(var(--gap-group));
+  transition:opacity calc(var(--dur-240)*3) var(--ease-out),transform calc(var(--dur-240)*3) var(--ease-out);
+}
+[data-tour-motion] .connection-map path { stroke-dasharray:1; stroke-dashoffset:1; transition:stroke-dashoffset calc(var(--dur-240)*4) var(--ease-out); }
+[data-tour-motion] .peer-node { opacity:.55; transition:opacity calc(var(--dur-240)*3) var(--ease-out); }
+[data-tour-motion] .is-in-view .tour-window { opacity:1; transform:none; }
+[data-tour-motion] .is-in-view .connection-map path { stroke-dashoffset:0; }
+[data-tour-motion] .is-in-view .peer-node { opacity:1; }
+[data-tour-motion] .is-in-view .connection-window { transition-delay:var(--dur-120); }
+[data-tour-motion] .is-in-view .changes-window { transition-delay:var(--dur-180); }
+
+@media (max-width:1000px) and (min-width:761px) {
+  .tour-sessions { gap:var(--gap-pane); grid-template-columns:1fr 1fr; }
+  .harness-legend { gap:var(--gap-row); }
+}
+@media (max-width:760px) {
+  .product-tour { --tour-title:clamp(calc(var(--text-title-lg)*1.65),9vw,calc(var(--text-title-lg)*2.3)); padding-top:var(--gap-pane); }
+  .tour-section { padding-block:calc(var(--gap-pane)*2); }
+  .tour-heading-row { grid-template-columns:1fr; gap:var(--gap-group); margin-bottom:calc(var(--gap-pane)*1.5); }
+  .tour-copy p { max-width:38ch; font-size:var(--text-body); }
+  .connection-composition { padding-top:0; padding-bottom:0; }
+  .connection-map { position:relative; width:100%; height:calc(var(--gap-pane)*7); margin-bottom:var(--gap-pane); }
+  .connection-map > svg { display:none; }
+  .connection-map::before { content:''; position:absolute; top:28%; left:15%; right:15%; border-top:var(--hair) solid var(--hairline); }
+  .peer-node { width:30%; top:40%; gap:var(--gap-xxs); }
+  .peer-node img { width:calc(var(--avatar)*2); height:calc(var(--avatar)*2); margin-bottom:var(--gap-in); }
+  .peer-mac { left:16%; }
+  .peer-linux { left:50%; }
+  .peer-windows { left:84%; }
+  .peer-name { font-size:var(--text-callout); }
+  .peer-connection { top:auto; left:0; right:0; bottom:0; text-align:center; }
+  .connection-window { width:100%; }
+  .connection-caption { margin-left:0; }
+  .tour-sessions { display:flex; flex-direction:column; align-items:stretch; gap:calc(var(--gap-pane)*1.5); }
+  .tour-sessions .tour-copy { order:0; }
+  .tour-sessions .tour-copy p { margin-top:var(--gap-group); }
+  .harness-legend { flex-wrap:nowrap; justify-content:space-between; gap:var(--gap-in); margin-top:var(--gap-group); }
+  .harness-legend li { gap:var(--gap-in); }
+  .harness-legend .harness-mark { width:var(--text-title-lg); height:var(--text-title-lg); }
+  .workspace-composition { padding-bottom:0; }
+  .workspace-window { width:100%; }
+  .changes-figure { position:relative; width:100%; margin-top:var(--gap-group); }
+  .changes-window { aspect-ratio:1.25; }
+  .changes-figure figcaption { justify-content:flex-start; }
+}
+@media (prefers-reduced-motion:reduce) {
+  [data-tour-motion] .tour-window,[data-tour-motion] .peer-node { transition:none; opacity:1; transform:none; }
+  [data-tour-motion] .connection-map path { transition:none; stroke-dashoffset:0; }
+}

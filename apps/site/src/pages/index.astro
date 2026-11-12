@@ -3,6 +3,7 @@ import {sitePath} from "../paths";
 import Base from "../layouts/Base.astro";
 import Mandala from "../components/Mandala.astro";
 import ProductHero from "../components/ProductHero.astro";
+import ProductTour from "../components/ProductTour.astro";
 import SiteNav from "../components/SiteNav.astro";
 import CopyButton from "../components/CopyButton.astro";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
@@ -25,6 +26,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
         <nav class="story-steps" aria-label="开场章节">{lines.map(([, phrase], index) => <button type="button" aria-label={`跳到 ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
       </div>
     </section>
+    <ProductTour />
     <section class="download-section" id="download" aria-labelledby="download-title">
       <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor.</h2><p class="download-description">从你手边的设备开始。</p>
       <div class="download-action-group"><a class="download-main" href={sitePath("/download/")} data-device-download><span data-download-label>下载 Khor</span></a><p class="download-note">预览版 · macOS App · Linux / macOS CLI</p></div><a class="other-downloads" href={sitePath("/download/")}>所有下载与安装方式</a>
