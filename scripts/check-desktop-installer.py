@@ -33,6 +33,27 @@ def same_programs(directory, expected_source):
     return {"cli": command, "app": application}
 
 
+def retire_processes(processes, terminate, *, timeout=10, quiet=1,
+                     clock=time.monotonic, sleep=time.sleep):
+    """Retire only fixture-owned programs, including a worker starting late."""
+    deadline = clock() + timeout
+    vacant_since = None
+    while True:
+        active = processes()
+        if active:
+            vacant_since = None
+            for process in active:
+                terminate(process)
+        else:
+            if vacant_since is None:
+                vacant_since = clock()
+            if clock() - vacant_since >= quiet:
+                return
+        if clock() >= deadline:
+            raise AssertionError(f"The installation check must retire its own processes: {active}")
+        sleep(0.1)
+
+
 def launch_installed(directory):
     with tempfile.TemporaryDirectory(prefix="khor-install-home-") as temporary:
         runtime = Path(temporary) / "runtime"
@@ -71,7 +92,8 @@ def launch_installed(directory):
             deadline = time.monotonic() + 30
             while not endpoint.is_file() and time.monotonic() < deadline:
                 if service.poll() is not None:
-                    raise AssertionError("Packaged serve exited before publishing its endpoint")
+                    details = (Path(temporary) / "serve.log").read_text(errors="replace")[-16000:]
+                    raise AssertionError(f"Packaged serve exited before publishing its endpoint ({service.returncode}): {details}")
                 time.sleep(0.1)
             assert endpoint.is_file(), "The packaged CLI did not start its resident"
             subprocess.run([str(directory / ("khor" + suffix)), "quit"], env=environment,
@@ -97,7 +119,10 @@ def launch_installed(directory):
                 service.wait(timeout=10)
             if log is not None:
                 log.close()
-            for pid, _ in processes():
+            def terminate(process):
+                pid, path = process
+                if (pid, path) not in processes():
+                    return
                 if os.name == "nt":
                     subprocess.run(["taskkill.exe", "/PID", str(pid), "/T", "/F"], capture_output=True)
                 else:
@@ -105,10 +130,13 @@ def launch_installed(directory):
                         os.kill(pid, 15)
                     except ProcessLookupError:
                         pass
-            deadline = time.monotonic() + 10
-            while processes() and time.monotonic() < deadline:
-                time.sleep(0.1)
-            assert not processes(), "The installation check must retire its own processes"
+            for process in processes():
+                terminate(process)
+            # Closing the App intentionally leaves its node running. Stop the
+            # node in this private home as well, before retiring late workers.
+            subprocess.run([str(directory / ("khor" + suffix)), "quit"], env=environment,
+                           capture_output=True, timeout=30)
+            retire_processes(processes, terminate)
 
 
 def linux(package, expected_source):

@@ -268,3 +268,41 @@ fn activation_check_and_incompatible_local_runtime_never_open_user_data() {
         "checking idle images must not open user data"
     );
 }
+
+#[cfg(target_os = "macos")]
+#[test]
+fn runtime_inspection_allows_a_cold_mac_image_before_opening_user_data() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let fixture = Fixture(std::env::temp_dir().join(format!(
+        "khor-cold-runtime-{}",
+        khor_node::link::fresh_hex().unwrap()
+    )));
+    fs::create_dir(&fixture.0).unwrap();
+    let binary = PathBuf::from(env!("CARGO_BIN_EXE_khor"));
+    let delayed = fixture.0.join("cold-image");
+    let escaped = binary.to_str().unwrap().replace('\'', "'\\''");
+    // Simulate code validation/translation before the program can return its
+    // real contract. The previous five-second deadline rejected this image.
+    fs::write(
+        &delayed,
+        format!("#!/bin/sh\n/bin/sleep 6\nexec '{escaped}' _runtime_info\n"),
+    )
+    .unwrap();
+    fs::set_permissions(&delayed, fs::Permissions::from_mode(0o700)).unwrap();
+    let home = fixture.0.join("unopened-home");
+    let runtime = fixture.0.join("unopened-runtime");
+    let result = Command::new(&binary)
+        .arg("_runtime_check")
+        .arg(&delayed)
+        .env("KHOR_HOME", &home)
+        .env("KHOR_RUNTIME_DIR", &runtime)
+        .env_remove("KHOR_RUNTIME_INSTALL_SOURCE")
+        .env_remove("KHOR_INSTALL_SOURCE")
+        .output()
+        .unwrap();
+    assert!(result.status.success(), "{result:?}");
+    assert_eq!(result.stdout, b"compatible\n");
+    assert!(!home.exists());
+    assert!(!runtime.exists());
+}
