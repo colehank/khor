@@ -6,33 +6,20 @@
 .tour-network > .tour-copy p { max-width:32ch; margin:0; }
 .network-scene { display:block; width:100%; height:auto; overflow:visible; }
 .network-scene text { font-family:var(--sans); font-size:var(--text-read); fill:var(--secondary); }
-.net-regions path { fill:color-mix(in srgb,var(--ink) 4%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 28%,var(--canvas)); stroke-width:1; }
+.net-regions path { fill:var(--ink); fill-opacity:.035; stroke:color-mix(in srgb,var(--tour-accent) calc(var(--net-local,0)*100%),var(--secondary)); stroke-opacity:calc(.38 + var(--net-local,0)*.32); stroke-width:1; }
 .net-regions text { font-size:var(--text-title-md); fill:var(--secondary); }
 [data-net-area="cellular"] path { fill:none; stroke-dasharray:4 7; }
 .net-device { color:var(--ink); }
 .net-device-body { fill:color-mix(in srgb,var(--ink) 8%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; }
 .net-relay { color:var(--secondary); transition:color var(--dur-240); }
 .net-relay-body { fill:var(--canvas); stroke:var(--tour-wire); stroke-width:1.25; transition:stroke var(--dur-240); }
-.net-routes path { stroke-width:1.25; stroke-linecap:round; stroke-linejoin:round; transition:opacity var(--dur-240); }
-.net-direct-line { stroke:var(--tour-accent); }
-.net-relay-line { stroke:var(--tour-accent); opacity:0; }
-.net-packet { stroke:var(--tour-accent); stroke-width:3!important; stroke-dasharray:.035 .965; stroke-dashoffset:1; opacity:0; }
+.net-connections path { stroke:var(--tour-accent); stroke-width:1.25; stroke-linejoin:round; }
+.net-connection { fill:var(--tour-accent); fill-opacity:.045; stroke-opacity:.7; }
+.net-candidate { fill:none; stroke-dasharray:4 7; }
 [data-route="relay"] .net-relay { color:var(--tour-accent); }
 [data-route="relay"] .net-relay-body { stroke:var(--tour-accent); }
-[data-route="relay"] .net-relay-line { opacity:.85; }
-[data-route="relay"] .net-direct-line { stroke-dasharray:5 7; opacity:.45; }
-.concept-network.is-running[data-route="relay"] .net-direct-line { animation:net-seeking calc(var(--dur-240)*5) ease-in-out infinite; }
-.concept-network.is-running[data-route="relay"] .net-relay-packet,.concept-network.is-running[data-route="direct"] .net-direct-packet { animation:net-transmit calc(var(--dur-240)*8) linear infinite; }
-@keyframes net-transmit { 0% { stroke-dashoffset:1; opacity:0; } 12%,88% { opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
-@keyframes net-seeking { 0%,100% { opacity:.3; } 50% { opacity:.65; } }
-.net-caption { display:flex; align-items:center; justify-content:space-between; gap:var(--gap-pane); padding-top:var(--gap-group); }
-.net-explanation { min-height:calc(var(--text-read)*3.5); }
-.net-explanation strong { display:block; font-size:var(--text-read); line-height:1.5; font-weight:500; }
-.net-explanation > span { display:block; margin-top:var(--gap-xxs); color:var(--secondary); font-size:var(--text-body); line-height:1.5; }
-.net-controls { display:flex; align-items:center; gap:var(--gap-base); flex:none; }
-.net-locations { display:flex; align-items:center; gap:var(--gap-xxs); }
-.net-locations button { min-height:var(--touch); padding:var(--gap-in) var(--gap-row); color:var(--secondary); background:transparent; border:0; border-radius:var(--radius-sm); font-size:var(--text-body); cursor:pointer; }
-.net-locations button[aria-pressed="true"] { color:var(--ink); background:var(--fill-strong); }
+.concept-network.is-running .net-candidate { animation:net-seeking calc(var(--dur-240)*6) ease-in-out infinite; }
+@keyframes net-seeking { 0%,100% { stroke-opacity:.35; } 50% { stroke-opacity:.85; } }
 @media (max-width:1100px) {
  .tour-network > .tour-copy { align-items:flex-start; }
  .tour-network > .tour-copy h2 { max-width:12ch; }
@@ -44,9 +31,6 @@
  .tour-network > .tour-copy p { max-width:34ch; margin-top:var(--gap-group); }
  .network-scene text { font-size:var(--text-title-lg); }
  .net-regions text { font-size:var(--text-title-lg); }
- .net-caption { display:block; padding-top:var(--gap-base); }
- .net-explanation { min-height:calc(var(--text-read)*4.5); }
- .net-controls { justify-content:space-between; gap:var(--gap-in); margin-top:var(--gap-in); }
 }
 @media (prefers-reduced-motion:reduce) {
  .network-scene * { animation:none!important; transition:none!important; }

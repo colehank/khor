@@ -4,17 +4,23 @@
 
 第二、三幕未改，仍待用户方向；保留此前 critique，不标记整组问题已解决。设计权威仍为[设计系统](../design-system/README.md)与既有 token，全局设计文档及配置未改，未创建 `PRODUCT.md`。首屏 GUI／手机首图、Fog、图标故事、导航与下载保持不变。
 
-## 场景与行为
+## 场景与行为（当前）
 
-- Linux 与 macOS 固定在 Wi-Fi A，Windows 固定在 Wi-Fi B；同一个 iOS 节点带 Apple 标记，在 A／蜂窝／B 之间移动，通信目标始终是 macOS。
-- 19 秒循环依次展示 A 内直连、移至蜂窝后中继承载流量并同时尝试直连、成功后直连接管、进入 B 后仍访问 macOS，再经蜂窝回到 A。这是示意路径，不承诺蜂窝必需中继或直连必定成功。
-- 按用户最新要求，四台设备统一使用圆形节点与生产 App 平台标记，不使用硬件外形；网络以闭合超边包围成员，Wi-Fi A／Wi-Fi B 随成员进出伸缩，Cellular 显隐；设备与中继节点无外部文字标题。活动路径用绿色，候选直连用较淡虚线；常驻的两两网络连线已移除，绿色路径仅表示通信。宽屏为展开场景，窄屏切换几何布局。
-- Wi-Fi A／Cellular／Wi-Fi B 位置选择、状态说明与 Pause／Play 保留。自动循环独立于滚动进度，仅可见且前台时运行；离屏／页面隐藏停止，减少动态效果时不循环，仍可手动选择。无 JS 时保留静态首态。
-- 使用 SVG／DOM、移动阶段的有界 RAF 与 CSS 信号运动；没有新增渲染器、依赖或真实网络连接。
+- Linux 与 macOS 位于 Network A，Windows 位于 Network B；iOS 节点沿弧线在 A／蜂窝／B 之间漫游，固定节点错位排布。
+- 20.4 秒自动循环：A 内连接、蜂窝中继与候选直连并行、超边收拢到直连设备、进入 B、返回蜂窝，再回到 A。中继是示意路径，不承诺蜂窝必需中继或直连必定成功。
+- 全部网络和连接均为闭合超边。中继加入时活动超边包住 macOS／Khor／iOS；直连建立后收拢为设备集合，候选也用较淡闭合虚线表达。同网时只强调 Network A，避免重复轮廓；没有开放的点对点路径或信号流线。
+- 圆形节点仅保留平台／Khor 标记与隐藏 SVG 名称，图内仅有 Network A／Network B／Cellular 标签。移除底部状态说明、位置选择与 Pause／Play。其他两幕控件不变，共用挂载逻辑允许该幕无按钮。
+- 可见且前台时循环；离屏和页面隐藏停止，减少动态效果时静止，无 JS 时保留首态。几何变化用 1350 ms 有界 RAF，停留时没有持续 JS 绘制；无新依赖或真实网络连接。
 
 入口：<http://127.0.0.1:23820/#connect>。源码位于 `apps/site/src`：`components/concepts/NetworkDiagram.astro`、`scripts/network-scene.ts`、`scripts/network-geometry.ts`、`styles/network-scene.css`；`scripts/product-tour.ts` 接入场景，`components/ProductTour.astro` 调整首幕布局，`styles/product-tour.css` 移除旧网络样式。
 
-## 超图修订（当前版本）
+## 自循环与全超边修订（当前版本）
+
+最新证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/net-loop/`。1440／390px Chrome 的四个稳定阶段共八组检查通过：无按钮、无横向溢出、区域成员正确、所有连接路径闭合、中继进入／退出活动集合；两档均自行循环回 A、离屏停止，另一幕 Terminal 控件仍可用，`errors: []`。定向 TypeScript、diff 格式检查及十页静态 Astro 构建通过，产物为 `/Volumes/disk0/Khor/artifacts/site-story-20261113-net-loop/`。
+
+构图以 `desktop-live-viewport.png`／`mobile-live-viewport.png` 为准：正常 Chrome 播放、没有中途切换系统减少动态效果，节点与文字完整。阶段检查会切换媒体偏好以固定几何，须等偏好事件处理完成；相关分阶段截图部分有栅格缺失，不作为完整构图证明。未跑原生 GUI、WebKit、实体手机或独立设计审阅，未推送或部署。
+
+## 超图修订（上一轮）
 
 用户要求只保留节点，并以超边表示网络。图中可见文字仅保留网络名称；节点保留平台／Khor 标记与隐藏的 SVG 名称。用圆角凸包包围同网节点，A 内为三节点轮廓，漫游后收拢为双节点轮廓；B 从单节点环伸展为双节点轮廓；蜂窝网在中间显现。只保留当前直连、中继和候选路径，动画时序与手动控制不变。`network-geometry.ts` 共用于 Astro 静态首态和浏览器动画，无新增依赖、滤镜或持续 RAF。
 

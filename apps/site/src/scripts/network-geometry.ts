@@ -33,30 +33,31 @@ function envelope(points:Point[],radius:number):string {
   return `${path} Z`;
 }
 
-export function networkGeometry(compact:boolean,position:number) {
+export function networkGeometry(compact:boolean,position:number,relayAmount=0) {
   const fixed=compact?{
-    linux:{x:66,y:265},mac:{x:169,y:265},windows:{x:407,y:265},relay:{x:275,y:65},
+    linux:{x:80,y:220},mac:{x:205,y:170},windows:{x:430,y:330},relay:{x:330,y:65},
   }:{
-    linux:{x:120,y:240},mac:{x:310,y:240},windows:{x:820,y:240},relay:{x:530,y:55},
+    linux:{x:180,y:270},mac:{x:350,y:190},windows:{x:800,y:350},relay:{x:610,y:110},
   };
-  const phoneY=compact?475:380;
-  const stops=[fixed.mac.x,fixed.relay.x,fixed.windows.x];
-  const segment=Math.min(1,Math.floor(position));
-  const phone={x:stops[segment]+(stops[segment+1]-stops[segment])*(position-segment),y:phoneY};
+  const stops=compact?[{x:155,y:365},{x:260,y:505},{x:405,y:520}]:[{x:260,y:415},{x:575,y:445},{x:830,y:495}];
+  const segment=Math.min(1,Math.floor(position)),progress=position-segment;
+  const phone=mix(stops[segment],stops[segment+1],progress);
+  // An unhurried arc between networks, rather than a horizontal track.
+  phone.y+=Math.sin(progress*Math.PI)*(segment===0?32:-40);
   const a=1-smooth(position/.7),b=smooth((position-1.3)/.7);
-  const padding=compact?58:64;
-  const cellular={x:fixed.relay.x,y:phoneY};
+  const padding=compact?58:70;
   const areas={
-    a:{d:envelope([fixed.linux,fixed.mac,mix(fixed.mac,{x:fixed.mac.x,y:phoneY},a)],padding),label:{x:(fixed.linux.x+fixed.mac.x)/2,y:fixed.mac.y-padding-30},opacity:1},
-    b:{d:envelope([fixed.windows,mix(fixed.windows,{x:fixed.windows.x,y:phoneY},b)],padding),label:{x:fixed.windows.x,y:fixed.windows.y-padding-30},opacity:1},
-    cellular:{d:envelope([cellular],padding),label:{x:cellular.x,y:cellular.y+padding+32},opacity:1-a-b},
+    a:{d:envelope([fixed.linux,fixed.mac,mix(fixed.mac,stops[0],a)],padding),label:compact?{x:22,y:110,anchor:'start'}:{x:145,y:130,anchor:'start'},opacity:1,strength:a},
+    b:{d:envelope([fixed.windows,mix(fixed.windows,stops[2],b)],padding),label:compact?{x:488,y:245,anchor:'end'}:{x:820,y:250,anchor:'middle'},opacity:1,strength:0},
+    cellular:{d:envelope([stops[1]],padding),label:{x:stops[1].x,y:stops[1].y+padding+32,anchor:'middle'},opacity:1-a-b,strength:0},
   };
-  const start=fixed.mac.x+networkNodeRadius,y=fixed.mac.y,top=phoneY-networkNodeRadius;
-  const approach=Math.min(1,position),directEnd=phone.x+networkNodeRadius*(1-2*approach);
-  const routes={
-    direct:`M${start} ${y} C${start+(compact?6:30)} ${y} ${directEnd-50*approach} ${phoneY} ${directEnd} ${phoneY}`,
-    'relay-in':`M${start} ${y} C${start+64} ${y} ${fixed.relay.x-96} ${fixed.relay.y} ${fixed.relay.x-25} ${fixed.relay.y}`,
-    'relay-out':`M${fixed.relay.x} ${fixed.relay.y+25} C${fixed.relay.x} ${fixed.relay.y+130} ${phone.x} ${top-46} ${phone.x} ${top}`,
+  // Connections are closed sets too. The relay joins the active set and then
+  // retreats into the direct set when it is no longer needed.
+  const connectionPadding=compact?54:62;
+  const relayVertex=mix(mix(fixed.mac,phone,.5),fixed.relay,relayAmount);
+  const connections={
+    active:{d:envelope([fixed.mac,phone,relayVertex],connectionPadding),opacity:1-a},
+    candidate:{d:envelope([fixed.mac,phone],connectionPadding-10),opacity:relayAmount*.45},
   };
-  return {box:compact?'0 0 500 600':'0 0 1000 500',nodes:{...fixed,phone},areas,routes};
+  return {box:compact?'0 0 500 650':'0 0 1000 600',nodes:{...fixed,phone},areas,connections};
 }

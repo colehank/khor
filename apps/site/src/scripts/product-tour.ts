@@ -74,7 +74,8 @@ export function mountProductTour() {
     selectResource(button.dataset.resourceChoice as typeof resourceOrder[number]);play(resources);
   }));
   figures.forEach(figure=>{
-    const button=figure.querySelector<HTMLButtonElement>('[data-motion-toggle]')!;
+    const button=figure.querySelector<HTMLButtonElement>('[data-motion-toggle]');
+    if(!button)return;
     button.addEventListener('click',()=>{
       if(paused.has(figure)){paused.delete(figure);play(figure);}
       else{paused.add(figure);stop(figure);}
