@@ -6,6 +6,10 @@ Terminal drops/paste open this retained task. Closing preserves the draft with a
 
 Current source identity, remote verification and pinned live URL are recorded in /Volumes/disk0/Khor/evidence/attachment-draft-20261114/STATE.md. Prior dec1 full App regression43431798585 concluded SUCCESS (checked on continuation); its results apply to that exact previous source, not this new layout. New scoped checks exercise both browser engines at1280/412/390/320 with safe areas and a320×568 short viewport, long independent scroll regions, full-width rows/separate remove targets, retained close/reopen, optional preview, edits/byte-preserving rename and explicit terminal/ACP sends. No main merge/release/install/native restart authorized.
 
+Verified final split source2dfcaecae678d77c38c5dd8229ae1e0dabb64daa, treec01fa05ccb2f4df4d088546cebe69096f498f4fc: run43441015120 SUCCESS,8 Chromium/WebKit×1280/412/390/320 flows including320×568 and safe areas; shared unit/gates/mobile-static and direct/Storybook hot passed. Each long-list sample has12 rows, upper/lower independently scroll, rows fill available width and removal never overlaps preview. Native source glyph sizes match. ACP continuing selection reuses its existing composer draft. Artifact14045992089 SHA25662b70ea05a8449ccec62cedf79c328cac2731a8c3941a03d419cfa5b65c391e9 checked by source/tree/CRC; actual WebKit320/412 and Chromium1280 screenshots inspected. Live5routes/9JS assets match exact artifact bytes, and previous snapshots remain accessible. Only owned static Lab server replaced; no native runtime restarted.
+
+Current pinned Lab: http://127.0.0.1:23961/versions/2dfcaecae678d77c/assets/workbench/index.html?path=/story/khor-app--attachments . Mobile uses MacLab borrowed network. Preview remains optional; iOS system picker is invoked from one unrestricted local input, and native picker appearance is not claimed proven by browser emulation.
+
 ---
 Historical iteration records below are preserved for provenance; they do not describe the current split layout.
 
