@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-13 用户再次澄清叙事：Work across 是用户在各个机器上便携地推进具体任务，Khor Agent 是用户把任务交给 Khor。现用同一项导出日期修复作对照：Work 的 You 在 Mac／Windows／手机之间切换，亲自调用远端审阅、编辑、测试与预览；Agent 幕始终保留 You，增加明确的任务交出和结果返回路径，中间由 Khor 推进相同动作。此条替代下一条的能力目录表达。当前文档 [Work 与 Khor Agent](site-work-agent-20261113.md)，本轮仅本地。
+
 - 2026-11-13 用户明确第二幕为 Work across the net、第三幕为 Khor Agent，并授权实现。用户进一步要求也用 graph 表达，现用共享设备—能力图替换旧会话选择与资源切换：macOS 连 Files／Web／Git／Terminal，Linux 连 Codex／Claude／Cursor；第二幕由 You 接入，第三幕换成 Khor Agent 执行订单日期修复，沿路径调用并交付变更及测试结果。桌面／手机有独立固定构图，标签避开线条；两幕自动循环、离屏／后台暂停、减少动态效果静止。前一幕 Net 与首屏、Fog、图标故事、下载保留。当前继续入口为 [Work 与 Khor Agent](site-work-agent-20261113.md)，下方旧会话／资源场景为历史版本；本轮本地预览，未发布。
 
 - 2026-11-13 KhorNet 当前修订：LAN 为 macOS／Linux，Wi-Fi 为 Windows／Linux；iOS 从 Wi-Fi 到蜂窝再返回，不进 LAN。KhorNet 一次成形后包围全部设备；换网到位后中继再保留 1.3 秒再切直连。沿边曲线标题为图标 + 名称，直连显示 P2P，中继显示 relay／hole punching；仅 hole punching 闪烁。副标题独立弧线路径修复字母挤压，外层留白修复标签间重叠；图标与标题位置固定，边界为文字留完整缺口；蜂窝三格前二实后一空。桌面／手机宽度 Chrome 循环检查、定向 TypeScript 与静态构建通过，证据 `khornet-curved-labels/`。详见 [Net 漫游场景](site-net-roaming-20261113.md)，下方旧 Net 拓扑均为历史版本，本轮未发布。

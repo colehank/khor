@@ -1,4 +1,4 @@
-/* The graph stays the same; its operator changes from you to Khor Agent. */
+/* One task: you drive each step, or give it to Khor and receive the result. */
 .tour-section.tour-capabilities { display:block; max-width:min(var(--story-max),calc(var(--gap-pane)*48)); padding-block:clamp(calc(var(--gap-pane)*2.5),7svh,calc(var(--gap-pane)*3)); }
 .tour-capabilities > .tour-copy { display:flex; align-items:baseline; justify-content:space-between; gap:calc(var(--gap-pane)*2); margin-bottom:var(--gap-pane); }
 .tour-capabilities > .tour-copy h2 { max-width:none; }
@@ -11,15 +11,16 @@
 .cap-route[data-active="true"] .cap-wire-active { opacity:1; stroke-dashoffset:0; }
 .cap-vertex { color:var(--ink); }
 .cap-node-face { fill:var(--canvas); stroke:var(--tour-wire); stroke-width:1; transition:stroke var(--dur-240),fill var(--dur-240); }
-.cap-device .cap-node-face { fill:color-mix(in srgb,var(--ink) 5%,var(--canvas)); stroke:var(--secondary); }
-.cap-source .cap-node-face { stroke:var(--secondary); stroke-width:1.2; }
+
+.cap-operator .cap-node-face { stroke:var(--secondary); stroke-width:1.2; }
+.cap-node-detail { font-family:var(--sans); font-size:var(--text-body); fill:var(--secondary); }
 .cap-node-label { font-family:var(--sans); font-size:var(--text-title-md); fill:var(--secondary); transition:fill var(--dur-240); }
-.cap-source .cap-node-label { font-size:var(--text-title-lg); fill:var(--ink); }
+.cap-operator .cap-node-label { font-size:var(--text-title-lg); fill:var(--ink); }
 .cap-vertex[data-active="true"] .cap-node-face { stroke:var(--tour-accent); stroke-width:1.5; }
-.cap-tool[data-active="true"] .cap-node-label { fill:var(--tour-accent); }
+.cap-task[data-active="true"] .cap-node-label { fill:var(--tour-accent); }
 .cap-agent-source { color:var(--tour-accent); }
 .cap-agent-source .cap-node-face { stroke:var(--tour-accent); }
-.cap-task { margin-bottom:var(--gap-row); text-align:center; color:var(--secondary); font-size:var(--text-title-md); }
+.capability-scene > .cap-task { margin-bottom:var(--gap-row); text-align:center; color:var(--secondary); font-size:var(--text-title-md); }
 .cap-caption { text-align:center; margin-top:var(--gap-in); min-height:calc(var(--gap-pane)*3); }
 .cap-caption-heading { display:flex; justify-content:center; align-items:center; gap:var(--gap-in); font-size:var(--text-read); line-height:1.5; }
 .cap-caption > p { margin-top:var(--gap-in); font-size:var(--text-body); line-height:1.5; color:var(--secondary); }
@@ -38,10 +39,16 @@
  .tour-capabilities > .tour-copy { margin-bottom:var(--gap-group); }
  .capability-scene { width:min(100%,calc(var(--gap-pane)*20)); }
  .cap-node-label { font-size:var(--text-title-lg); }
- .cap-source .cap-node-label { font-size:calc(var(--text-title-lg)*1.15); }
+ .cap-node-detail { font-size:var(--text-title-md); }
+ .cap-operator .cap-node-label { font-size:calc(var(--text-title-lg)*1.15); }
  .cap-caption { min-height:calc(var(--gap-pane)*4); }
- .cap-task { margin-top:var(--gap-pane); }
+ .capability-scene > .cap-task { margin-top:var(--gap-pane); }
 }
 @media (prefers-reduced-motion:reduce) {
  .capability-scene * { transition:none!important; animation:none!important; }
 }
+
+.cap-client-mark { opacity:0; transition:opacity calc(var(--dur-240)/2); }
+.capability-scene[data-cap-client="mac"] [data-cap-client-mark="mac"],
+.capability-scene[data-cap-client="windows"] [data-cap-client-mark="windows"],
+.capability-scene[data-cap-client="phone"] [data-cap-client-mark="phone"] { opacity:1; transition-delay:calc(var(--dur-240)/2); }

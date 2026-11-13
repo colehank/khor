@@ -6,29 +6,31 @@ import {capabilityGeometry} from '../../scripts/capability-geometry';
 import '../../styles/capability-scene.css';
 interface Props {mode:'work'|'agent'}
 const {mode}=Astro.props,isAgent=mode==='agent';
-const initial=isAgent?agentPhases[agentPhases.length-1]:workPhases[0];
+const phases=isAgent?agentPhases:workPhases,initial=phases[phases.length-1];
 const graph=capabilityGeometry(false,isAgent);
 const marks=Object.fromEntries([...supportedDevices,...supportedHarnesses].map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const active=new Set<string>(initial.targets);
-for(const node of graph.nodes)if(active.has(node.id))active.add(node.host);
 ---
-<figure class:list={['concept','capability-scene',`capability-${mode}`]} data-concept={mode} data-cap-stage={initial.id} data-cap-complete={String(!!initial.complete)}>
-  {isAgent&&<p class="cap-task">“Fix the export dates”</p>}
+<figure class:list={['concept','capability-scene',`capability-${mode}`]} data-concept={mode} data-cap-stage={initial.id} data-cap-complete="true" data-cap-client={initial.client} data-cap-handoff={initial.handoff??'none'}>
+  <p class="cap-task">Fix the export dates</p>
   <svg class="cap-graph" data-cap-graph viewBox={graph.box} role="img" aria-labelledby={`${mode}-graph-title ${mode}-graph-description`}>
-    <title id={`${mode}-graph-title`}>{isAgent?'Khor Agent works across your net':'Work across your net from any device'}</title>
-    <desc id={`${mode}-graph-description`}>{isAgent?'An illustrative task: Khor Agent reads files on a Mac, delegates a review to Codex on Linux, edits the Mac workspace, runs tests and checks its web app. It returns three changed files and eight passing tests for you to review.':'You can access files, Git changes, web apps and a terminal on a Mac, and Codex, Claude or Cursor sessions on Linux. Paths highlight the currently illustrated action.'}</desc>
+    <title id={`${mode}-graph-title`}>{isAgent?'You delegate a task to Khor and receive the result':'You carry one task across your devices'}</title>
+    <desc id={`${mode}-graph-description`}>{isAgent?'You ask Khor to fix the export dates. Khor asks Codex on Linux to review the logic, edits the Mac workspace, runs tests and checks its web preview, then returns three changed files and eight passing tests to you.':'You drive one export-date fix: ask Codex on Linux from your Mac, continue editing the Mac workspace from Windows, then use your phone to run tests, check the web preview and review the changes. The working files and running processes stay on the Mac.'}</desc>
     <g aria-hidden="true">
-      {graph.routes.map(route=><g class="cap-route" data-cap-route={route.id} data-cap-host={route.host} data-active={String(active.has(route.id))}>
-        <path class="cap-wire-base" d={route.d}/><path class="cap-wire-active" d={route.d} pathLength="1"/>
+      {graph.routes.map(route=><g class="cap-route" data-cap-route={route.id} data-active={String(active.has(route.id)||route.id==='handoff')}>
+        <path class="cap-wire-base" d={route.d}/><path class="cap-wire-active" d={route.id==='handoff'?route.reverseD:route.d} pathLength="1"/>
       </g>)}
     </g>
-    {graph.nodes.map(node=><g data-cap-node={node.id} data-cap-host={node.host} class:list={['cap-vertex',`cap-${node.kind}`,{'cap-agent-source':isAgent&&node.id==='source'}]} data-active={String(active.has(node.id))}>
+    {graph.nodes.map(node=><g data-cap-node={node.id} class:list={['cap-vertex',`cap-${node.kind}`,{'cap-agent-source':isAgent&&node.id==='operator'}]} data-active={String(active.has(node.id)||node.id==='you')}>
       <g data-cap-symbol transform={`translate(${node.x} ${node.y})`}>
         <circle class="cap-node-face" r={node.radius}/>
-        <svg x={node.kind==='tool'?-14:-18} y={node.kind==='tool'?-14:-18} width={node.kind==='tool'?28:36} height={node.kind==='tool'?28:36}><ConceptMark svg={glyph(node.icon)} x={0} y={0} size={node.kind==='tool'?28:36} prefix={`${mode}-${node.id}`}/></svg>
+        {!isAgent&&node.id==='operator'?<>
+          {([['mac','macOS'],['windows','Windows'],['phone','iOS']] as const).map(([client,icon])=><g class="cap-client-mark" data-cap-client-mark={client}><svg x="-18" y="-18" width="36" height="36"><ConceptMark svg={glyph(icon)} x={0} y={0} size={36} prefix={`${mode}-client-${client}`}/></svg></g>)}
+        </>:<svg x={node.kind==='task'?-15:-18} y={node.kind==='task'?-15:-18} width={node.kind==='task'?30:36} height={node.kind==='task'?30:36}><ConceptMark svg={glyph(node.icon)} x={0} y={0} size={node.kind==='task'?30:36} prefix={`${mode}-${node.id}`}/></svg>}
       </g>
       <text class="cap-node-label" data-cap-label x={node.labelPosition.x} y={node.labelPosition.y} text-anchor={node.labelPosition.anchor}>{node.label}</text>
+      <text class="cap-node-detail" data-cap-node-detail x={node.labelPosition.x} y={node.labelPosition.y+23} text-anchor={node.labelPosition.anchor}>{node.id==='operator'&&!isAgent?'From your phone':node.id==='you'?'Your result':node.detail}</text>
     </g>)}
   </svg>
   <figcaption class="cap-caption">
