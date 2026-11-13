@@ -795,7 +795,7 @@ export function ChatView({
   const reader = useRef<object>({});
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const composer = useRef({session: id, text, documents: docs, attachments: prepared});
+  const composer = useRef({session: id, text, documents: docs, attachments: files.items});
   composer.current = {session: id, text, documents: docs, attachments: files.items};
   useUpdateBlocker("attachments", docs.length > 0 || files.items.length > 0);
   const savedDrafts = useSyncExternalStore(subscribeChatDrafts, () => recoverableChatDrafts(id));
