@@ -69,6 +69,8 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.locator('[data-attachment-save]').click();await page.locator('[data-attachment-preview]').waitFor({state:'hidden'});
   await picker.locator('[data-files-cancel]').click();await picker.waitFor({state:'hidden'});
   await page.locator('[data-term-attachment-resume]:visible').click();await picker.waitFor();await selected('edited.txt').waitFor();await selected('renamed.txt').waitFor();
+  const localGlyph=await picker.locator('[data-files-pick="device"] svg').boundingBox(),folderGlyph=await picker.locator('[data-files-pick="folder"] svg').boundingBox();
+  assert(Math.abs(localGlyph.width-folderGlyph.width)<=1&&Math.abs(localGlyph.height-folderGlyph.height)<=1,'Local file and folder source glyphs keep the same size');
   await page.screenshot({path:path.join(report,name+'-terminal.png')});
   await api('__ai_preview/upload-mode',{mode:'fail'});await picker.locator('[data-files-send]').click();await picker.getByRole('alert').waitFor();
   assert.equal(await selected('edited.txt').count(),1,'Failure retains selected rows');assert.equal((await api('__ai_preview/attachment-events')).length,0);
