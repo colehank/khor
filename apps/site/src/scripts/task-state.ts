@@ -40,5 +40,5 @@ export function taskState(phases:TaskPhase[],index:number,elapsed:number) {
       state.progress=phase.progress[0]+(phase.progress[1]-phase.progress[0])*t;
     }
   }
-  return {...state,complete:!!phases[index].complete&&state.report&&(!delegated||state.result)};
+  return {...state,complete:!!phases[index].complete&&(delegated?state.result:state.receipts.phone==='web')};
 }

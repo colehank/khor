@@ -12,11 +12,9 @@ export const workPhases:TaskPhase[]=[
   {id:'prepare',duration:3000,caption:'Prepare the project with Codex',detail:'Workstation · Atlas Web',user:'mac',focus:['mac'],codex:true,progress:[0,0]},
   {id:'transfer',duration:2800,caption:'Send the project to your server',detail:'atlas-web.tar · Workstation → Server',user:'mac',focus:['mac','linux'],route:'upload',packet:'files',arrival:{device:'linux',effect:'project'},progress:[0,0]},
   {id:'run',duration:3000,caption:'Start the build and tests',detail:'Server · npm run build && npm test',user:'mac',focus:['linux'],route:'upload',packet:'terminal',arrival:{device:'linux',effect:'start'},progress:[0,.43]},
-  {id:'handoff',duration:2400,caption:'Pick up the same task on mobile',detail:'The build keeps running on your server',user:'phone',focus:['linux'],progress:[.43,.63]},
-  {id:'monitor',duration:3000,caption:'Watch the running task',detail:'Mobile · the same terminal session on Server',user:'phone',focus:['phone','linux'],route:'watch',packet:'terminal',arrival:{device:'phone',effect:'terminal'},progress:[.63,1]},
+  {id:'handoff',duration:2400,caption:'Pick up the same task on mobile',detail:'The build keeps running on your server',user:'phone',focus:['linux'],progress:[.43,1]},
   {id:'preview',duration:2800,caption:'Open the server’s web preview',detail:'Mobile · Atlas Web is ready to check',user:'phone',focus:['phone','linux'],route:'preview',packet:'web',arrival:{device:'phone',effect:'preview'},progress:[1,1]},
-  {id:'report',duration:2600,caption:'Save the build report',detail:'8 tests passed · report → Workstation',user:'phone',focus:['mac','linux'],route:'download',packet:'files',arrival:{device:'mac',effect:'report'},progress:[1,1]},
-  {id:'done',duration:4600,caption:'One task, across your devices',detail:'Build ready · 8 tests passed',user:'phone',focus:['phone'],progress:[1,1],complete:true},
+  {id:'done',duration:4600,caption:'Your web app, on mobile',detail:'Atlas Web · from your server',user:'phone',focus:['phone'],progress:[1,1],complete:true},
 ];
 export const agentPhases:TaskPhase[]=[
   {id:'request',duration:2800,caption:'You hand Khor the task',detail:'“Build Atlas Web and check the result”',user:'phone',focus:['mac','phone'],route:'request',packet:'message',arrival:{device:'mac',effect:'request'},progress:[0,0]},

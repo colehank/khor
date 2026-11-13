@@ -6,10 +6,10 @@
 
 同一个虚构任务 **Build and check Atlas Web**，四节点为 Workstation、Server、Desktop、Mobile。任务幕沿用第一幕的稳定设备位置，但只保留包围四台设备的 KhorNet 超边，移除内部 LAN／Wi-Fi 分组；标题只写 KhorNet，不加 P2P／relay 后缀。第一幕网络基础设施仍展示原生分组与连接状态。
 
-- [Work across the net](http://127.0.0.1:23820/#work)：You 从 Workstation 开始，与 Codex 准备项目；把 `atlas-web.tar` 传到 Server，再启动 `npm run build && npm test`。用户切到 Mobile，Server 继续执行；随后查看同一终端、打开服务器的网页预览、将报告送回 Workstation，结果为构建完成与 8 项测试通过
+- [Work across the net](http://127.0.0.1:23820/#work)：You 从 Workstation 开始，与 Codex 准备项目；把 `atlas-web.tar` 传到 Server，再启动 `npm run build && npm test`。用户切到 Mobile，Server 继续执行；完成后仅把 Web 交给 Mobile，至此收尾，不向手机传终端或向台式机返回报告
 - [Khor Agent](http://127.0.0.1:23820/#khor-agent)：You 始终位于 Mobile。先向 Workstation 上的 Khor 交任务，Khor 调用 Codex 准备项目，传到 Server 执行、监控、检查网页和收集报告，最后把结果交回 Mobile。Khor 是 Workstation 上的会话徽标，不是第五台设备；用户始终在图上
 - 每步只有一条临时操作路径，一个文件／终端／网页／消息／结果符号沿路径移动。Server 上的进度环和状态独立呈现，节点上只显示当前必要的徽标。Desktop 保持可用，不虚构其参与任务
-- Work 24.2 秒、Agent 27 秒自动循环，结果均停留 4.6 秒；离屏／后台暂停并续播。减少动态效果与无 JS 均保留完成态。仅移动载荷和进度变化时使用有界 RAF
+- Work 18.6 秒、Agent 27 秒自动循环，结果均停留 4.6 秒；离屏／后台暂停并续播。减少动态效果与无 JS 均保留完成态。仅移动载荷和进度变化时使用有界 RAF
 
 ## 设备图标与开场
 
@@ -45,3 +45,7 @@
 最新证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/task-arrival/`。`checks.json` 核对两条流程每种载荷到达前后、命令在途时进度为零、到达后启动、最终结果及离屏暂停；1440px Work 与 390px Agent 的实际 DOM／截图同步核对。`static.json` 确认 320px 减少动态效果下两幕为完成态、无溢出、开场 Desktop 图稿一致。后两幕仅 KhorNet，网络基础设施仍保留原分组与 P2P／relay。定向 TypeScript 与十页静态构建通过，产物 `site-story-20261113-task-arrival/`。仅 headless Chrome，未发布。
 
 最新形态澄清：Desktop = 翻盖笔记本，Workstation／台式机 = 带底座的显示器。共享图稿已同步开场与三幕，状态逻辑未改。仅做 headless Chrome 图形查看，不重跑任务循环。
+
+第二幕收尾简化：Server → Mobile 只传 Web，移除终端流传给 Mobile 与报告回传 Workstation；完成条件为 Mobile 已收到 Web。第三幕保持原流程。减少动态效果与无 JS 的完成态不再给 Workstation 留空接收徽标。
+
+本次定向验证：`web-to-mobile/checks.json` 确认第二幕仅 Web 到 Mobile、到达前无接收标记、到达后可完成且不依赖报告；第三幕仍完成报告与结果交付。390px headless Chrome 完成态无空徽标、无溢出或页面错误，截图 `mobile.png`；脚本 TypeScript 与 diff 检查通过，未重跑整站构建。
