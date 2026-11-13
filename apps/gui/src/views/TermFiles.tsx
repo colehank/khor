@@ -13,6 +13,7 @@ import { deviceAttachments, deviceFolderEntries, includesAttachment, joinAttachm
 import { cn } from "@/lib/utils";
 import { isDown } from "@/lib/topology";
 import { hopWord } from "@/words";
+import { sizeWord } from "@/views/FilesPane";
 import { AttachmentPreview } from "@/views/AttachmentPreview";
 import { AttachmentList } from "@/views/AttachmentList";
 import { Dialog, TaskOverlay, DialogTitle, TaskActions } from "@/components/ui/dialog";
