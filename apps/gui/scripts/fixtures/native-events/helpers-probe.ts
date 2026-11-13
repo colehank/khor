@@ -45,7 +45,7 @@ window.__helperProbe = {
   close() { close?.(); },
   accept(index: number, evalFirst = true) {
     const id = nextId++;
-    wire().native.set(id, {handler: wire().messages[index].payload.handler, event: wire().messages[index].payload.event});
+    wire().native.set(id, {handler: wire().messages[index].payload.handler, event: wire().messages[index].payload.event, target: wire().messages[index].payload.target});
     if (evalFirst) register(index, id);
     reply(index, id); return id;
   },
@@ -54,6 +54,14 @@ window.__helperProbe = {
   reply,
   emit(event: string, payload: unknown) {
     const ids = [...wire().native.entries()].filter(([, listener]) => listener.event === event).map(([id]) => id);
+    window.__internal_unstable_listeners_function_id__({event, payload}, ids);
+  },
+  // Delivery predicates from the pinned manager/window.rs and webview.rs.
+  // The genuine runtime still dispatches callbacks and owns their cleanup.
+  emitNative(event: string, payload: unknown, route: string, label: string) {
+    const kinds = route === 'window' ? ['Window', 'WebviewWindow'] : ['Webview', 'WebviewWindow'];
+    const ids = [...wire().native.entries()].filter(([, listener]) => listener.event === event
+      && listener.target.label === label && (route === 'labeled' || kinds.includes(listener.target.kind))).map(([id]) => id);
     window.__internal_unstable_listeners_function_id__({event, payload}, ids);
   },
   settleUnlisten(fail = false) {

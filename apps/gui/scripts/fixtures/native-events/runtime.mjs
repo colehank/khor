@@ -7,6 +7,8 @@ const hashes = {
   'core.js': '71056442a732cca1f03572ccae96d68e16104c3a591c64de9618cd304e063070',
   'event-mod.rs': 'dfcb7cf11d7674903f71196e64ae0fa95286757ac816bfbc3139ebdedcb25dea',
   'event-init.js': '8946488895cc9879f2bf8fee98be454d0f21949b946c264b47d2a2fc84eb1df0',
+  'manager-window.rs': '882caf1fdd15f3cd93c6b419ae19748d91387ba5e8283ee2b7b89bc7187a1535',
+  'manager-webview.rs': '24d3d51920ccd56db5c44db73c0deca09cba4a0811921a2f66b78e6213789f51',
 };
 
 export function nativeEventRuntime(gui) {
@@ -32,6 +34,11 @@ export function nativeEventRuntime(gui) {
     assert.equal(createHash('sha256').update(content).digest('hex'), hash, file);
     return [file, content.toString()];
   }));
+  // Review native dispatch when upgrading: a sibling browser changes
+  // WindowContent delivery even though the App webview label is unchanged.
+  assert.match(sources['manager-window.rs'], /EventTarget::Window \{ label \} \| EventTarget::WebviewWindow \{ label \}/);
+  assert.match(sources['manager-window.rs'], /if window\.is_webview_window\(\) \{[\s\S]*?EventTarget::labeled\(window\.label\(\)\)/);
+  assert.match(sources['manager-webview.rs'], /EventTarget::Webview \{ label \} \| EventTarget::WebviewWindow \{ label \}/);
   const literal = name => {
     const body = sources['event-mod.rs'].split(`fn ${name}(`)[1]?.split('\n}\n')[0];
     const match = body?.match(/format!\(\s*"([\s\S]*?)"\s*,?\s*\)/);

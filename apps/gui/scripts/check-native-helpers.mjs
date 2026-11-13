@@ -9,14 +9,14 @@ import {chromium, webkit} from 'playwright-core';
 import {nativeEventRuntime} from './fixtures/native-events/runtime.mjs';
 
 const guiUrl = new URL('../', import.meta.url), gui = fileURLToPath(guiUrl);
-const known = ['page-late', 'page-live', 'page-ready-close', 'page-closed-before-import', 'fullscreen-late', 'fullscreen-query', 'window-focus-live', 'window-focus-late', 'window-focus-mobile', 'quit-late', 'quit-prevent', 'quit-destroy', 'quit-close-in-handler', 'quit-destroy-rejected', 'window-drop-late', 'window-drop-partial', 'drag-payloads', 'drag-close-during-admission', 'drag-partial', 'drag-unlisten-rejected', 'sdk-drag-payloads', 'callback-throws-peer'];
+const known = ['page-late', 'page-live', 'page-ready-close', 'page-closed-before-import', 'fullscreen-late', 'fullscreen-query', 'window-focus-live', 'window-focus-late', 'window-focus-mobile', 'quit-late', 'quit-prevent', 'quit-destroy', 'quit-close-in-handler', 'quit-destroy-rejected', 'window-drop-late', 'window-drop-partial', 'drag-payloads', 'drag-close-during-admission', 'drag-partial', 'drag-unlisten-rejected', 'sdk-drag-payloads', 'callback-throws-peer', 'drag-main-after-browser', 'window-drop-main-after-browser'];
 const scenarios = process.env.NATIVE_HELPERS_SCENARIOS?.split(',') ?? known;
 assert(scenarios.length && new Set(scenarios).size === scenarios.length);
 for (const name of scenarios) assert(known.includes(name), `Unknown scenario ${name}`);
 const sources = ['src/api.ts', 'src/lib/native-events.ts', 'src/lib/window-drop.ts', 'src/views/ChatView.tsx', 'package-lock.json', '../../Cargo.lock',
   ...['core', 'event', 'window', 'webview', 'dpi'].map(name => `node_modules/@tauri-apps/api/${name}.js`),
   'scripts/check-native-helpers.mjs', 'scripts/fixtures/native-events/runtime.mjs', 'scripts/fixtures/native-events/helpers-probe.ts',
-  ...['core.js', 'event-mod.rs', 'event-init.js'].map(file => `scripts/fixtures/native-events/tauri-2.11.5/${file}`)];
+  ...['core.js', 'event-mod.rs', 'event-init.js', 'manager-window.rs', 'manager-webview.rs'].map(file => `scripts/fixtures/native-events/tauri-2.11.5/${file}`)];
 const fingerprint = () => Object.fromEntries(sources.map(file => [file, existsSync(join(gui, file)) ? createHash('sha256').update(readFileSync(join(gui, file))).digest('hex') : null]));
 const sourceBefore = fingerprint(), results = [];
 const bootstrap = nativeEventRuntime(guiUrl) + '\nwindow.__TAURI_INTERNALS__.metadata = {currentWindow: {label: "window-alpha"}, currentWebview: {label: "webview-alpha"}};';
@@ -45,6 +45,21 @@ async function exercise(page, name) {
     await page.evaluate(() => { window.__helperProbe.mount('page'); window.__helperProbe.close(); });
     await turn(); await turn();
     const actual = await state(); assert.equal(actual.messages.length, 0, 'Closed owner must not allocate a listener'); return actual;
+  }
+  if (name.endsWith('-after-browser')) {
+    await page.evaluate(() => { window.__TAURI_INTERNALS__.metadata.currentWebview.label = 'window-alpha'; });
+    await act('mount', name.startsWith('window-drop') ? 'window-drop' : 'drag');
+    for (let i = 0; i < 4; i++) { const messages = await listens(i + 1); await act('accept', messages[i].index); }
+    const payload = {paths: ['/fixture/local.txt'], position: {x: 420, y: 260}};
+    await act('emitNative', 'tauri://drag-drop', payload, 'labeled', 'window-alpha');
+    assert.equal((await state()).received.length, 1, 'Single-view main window receives one drop');
+    await act('emitNative', 'tauri://drag-drop', payload, 'window', 'window-alpha');
+    assert.equal((await state()).received.length, 2, 'Opening a browser child must not stop main-window file drops');
+    await act('emitNative', 'tauri://drag-drop', payload, 'webview', 'browser-child');
+    assert.equal((await state()).received.length, 2, 'A website child must not deliver its drops to the App');
+    await act('emitNative', 'tauri://drag-drop', payload, 'webview', 'window-alpha');
+    assert.equal((await state()).received.length, 3, 'The App webview route is also admitted exactly once');
+    const actual = await finish(); assert.equal(actual.callbacks, 0); assert.deepEqual(actual.native, []); return actual;
   }
   const mode = name === 'sdk-drag-payloads' ? 'sdk-drag' : name === 'callback-throws-peer' ? 'peer' : name.startsWith('page') ? name === 'page-ready-close' ? name : 'page' : name.startsWith('fullscreen') ? 'fullscreen' : name.startsWith('window-focus') ? 'window-focus' : name.startsWith('window-drop') ? 'window-drop' : name.startsWith('drag') ? 'drag' : name === 'quit-destroy-rejected' ? 'quit-destroy' : name;
   await act('mount', mode);
