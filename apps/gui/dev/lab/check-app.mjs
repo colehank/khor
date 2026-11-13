@@ -7,7 +7,7 @@ import {checkCommandTab} from './child-command-checks.mjs';
 import {checkConversationNavigation} from './conversation-navigation-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
-import {mkdir, writeFile} from 'node:fs/promises';
+import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {checkMobileNavigation} from './navigation-checks.mjs';
@@ -20,6 +20,29 @@ const port = 23918;
 const server = spawn('python3', ['-m', 'khor_lab.preview', process.env.LAB_BUNDLE, '--port', String(port)], {
   cwd: path.resolve('../..'), env: {...process.env, PYTHONPATH: 'scripts'}, stdio: 'inherit',
 });
+let serverError;
+server.on('error', error => { serverError = error; });
+
+async function waitForPreview() {
+  const expected=JSON.parse(await readFile(path.join(process.env.LAB_BUNDLE,'lab-manifest.json'),'utf8'));
+  const deadline=Date.now()+15000;
+  while(Date.now()<deadline) {
+    if(serverError)throw serverError;
+    if(server.exitCode!==null)throw new Error(`Lab preview exited before listening: ${server.exitCode}`);
+    let status;
+    try {
+      const response=await fetch(`http://127.0.0.1:${port}/lab/status`,{signal:AbortSignal.timeout(1000)});
+      if(response.ok)status=await response.json();
+    } catch { /* The owned preview is still copying its pinned bundle. */ }
+    if(status?.available) {
+      assert.equal(status.source?.tree,expected.tree,'The listening preview must serve this exact source tree');
+      assert.equal(status.source?.snapshot_commit,expected.snapshot_commit,'Do not exercise another preview on the same port');
+      return;
+    }
+    await new Promise(resolve=>setTimeout(resolve,100));
+  }
+  throw new Error('The pinned Lab preview did not become ready within 15 seconds');
+}
 
 async function inspect(browser, scene, size, data = {}) {
   const context = await browser.newContext({viewport: size, isMobile: size.width < 500 && !data.fine, hasTouch: size.width < 500 && !data.fine});
@@ -441,6 +464,7 @@ async function inspect(browser, scene, size, data = {}) {
 let browser;
 const results = [];
 try {
+  await waitForPreview();
   if (process.env.LAB_CHECKS === 'conversation-navigation') {
     for(const engine of ['chromium',...(process.env.QUALITY_ENGINES?.includes('webkit')?['webkit']:[])]) {
       browser=await (engine==='webkit'?webkit:chromium).launch({headless:engine!=='webkit'||process.env.QUALITY_HEADLESS!=='0'});
