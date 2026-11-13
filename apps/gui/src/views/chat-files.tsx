@@ -92,7 +92,7 @@ export function usePendingFiles(upload: {
   }));
   const addFiles=(files:File[])=>addSources(deviceAttachments(files,false,'这台设备'));
   const addLocalPaths=(paths:string[])=>addSources(paths.map(path=>pathAttachment(path,null,'这台设备')));
-  const addPaths=(paths:string[])=>store.add(paths.map(path=>({key:store.key(),name:baseName(path),size:null,thumb:null,inline:null,path,error:null})));
+  const addPaths=(paths:string[])=>store.add(paths.map(path=>({key:store.key(),name:baseName(path),size:null,thumb:null,inline:null,path,error:null,source:pathAttachment(path,targetMachine,targetMachine??'会话所在机器'),reference:true})));
   const replace=(key:string,file:File)=>{
     const old=store.snapshot().find(item=>item.key===key);if(!old||lock.current)return;
     if(old.thumb)URL.revokeObjectURL(old.thumb);
@@ -149,7 +149,7 @@ export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,
           key={item.key}
           data-chat-pending-file={item.name}
           data-placed={item.path !== null || undefined}
-          aria-busy={!!item.encoding || undefined}
+          aria-busy={(!!item.encoding||(!item.source&&item.path===null&&!item.error))||undefined}
           title={item.error ?? item.path ?? undefined}
           className="flex w-64 max-w-full min-w-0 items-center rounded-lg bg-fill text-callout aria-busy:animate-pulse motion-reduce:aria-busy:animate-none"
         >

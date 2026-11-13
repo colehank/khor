@@ -20,7 +20,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await picker.locator('[data-files-selected="draft.txt"] [data-files-card-preview]').click();
   await page.locator('[data-attachment-text]').fill('edited attachment');
   await page.locator('[data-attachment-name]').fill('edited.txt');
-  await page.locator('[data-attachment-save]').click();
+  await page.locator('[data-attachment-save]').click();await page.locator('[data-attachment-preview]').waitFor({state:'hidden'});
   await picker.locator('[data-files-selected="edited.txt"]').waitFor();
   await picker.locator('[data-files-add-more]').click();
   await picker.locator('[data-files-input]').setInputFiles({name:'remove.txt',mimeType:'text/plain',buffer:Buffer.from('remove me')});
@@ -47,7 +47,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   const chip=page.locator('[data-chat-pending-file="chat.txt"]');await chip.waitFor();
   assert.equal((await api('__ai_preview/attachment-events')).length,0,'Adding to a GUI draft does not upload before Send');
   await chip.locator('[data-chat-pending-preview]').click();
-  await page.locator('[data-attachment-text]').fill('edited chat');await page.locator('[data-attachment-save]').click();
+  await page.locator('[data-attachment-text]').fill('edited chat');await page.locator('[data-attachment-save]').click();await page.locator('[data-attachment-preview]').waitFor({state:'hidden'});
   await readyGreen('[data-chat-send]:visible');
   await page.screenshot({path:path.join(report,name+'-gui.png')});
   await page.locator('[data-chat-send]:visible').click();await chip.waitFor({state:'hidden'});
