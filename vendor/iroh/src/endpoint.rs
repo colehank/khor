@@ -1776,7 +1776,7 @@ impl Endpoint {
     /// This is a hint for an outstanding application request which has received
     /// no transport acknowledgement. It uses the existing relay ping/pong check;
     /// it does not rebind sockets, declare a network change, or retire QUIC
-    /// connections. Concurrent hints are coalesced by the socket actor. Returns
+    /// connections. Concurrent hints join the relay's outstanding check. Returns
     /// false when the endpoint is closed or its bounded actor inbox is full.
     pub fn check_relay_connections(&self) -> bool {
         !self.is_closed() && self.inner.check_relay_connections()

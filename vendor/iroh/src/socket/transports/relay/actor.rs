@@ -581,6 +581,7 @@ impl ActiveRelayActor {
 
         let mut state = ConnectedRelayState {
             ping_tracker: PingTracker::default(),
+            health_ping: None,
             endpoints_present: BTreeSet::new(),
             last_packet_src: None,
             pong_pending: None,
@@ -625,7 +626,7 @@ impl ActiveRelayActor {
                 _ = state.ping_tracker.timeout() => {
                     break Err(e!(RunError::PingTimeout));
                 }
-                _ = ping_interval.tick() => {
+                _ = ping_interval.tick(), if state.health_ping.is_none() => {
                     // khor patch 15: the periodic ping waits the full pong timeout (5 s).
                     // Upstream gave it 3x the last pong time (at least 0.5 s); through a
                     // proxy's TUN to a far relay pongs swing 124-976 ms, so a healthy
@@ -656,7 +657,12 @@ impl ActiveRelayActor {
                         ActiveRelayMessage::CheckConnection { local_ips } => {
                             match client_stream.local_addr() {
                                 Some(addr) if local_ips.contains(&addr.ip()) => {
-                                    let data = state.ping_tracker.new_ping();
+                                    // Join the current check: PingTracker replaces
+                                    // its deadline on each new ping. Repeated
+                                    // demand must not postpone failure forever.
+                                    let Some(data) = state.start_health_check() else {
+                                        continue;
+                                    };
                                     let fut = client_sink.send(ClientToRelayMsg::Ping(data));
                                     self.run_sending(fut, &mut state, &mut client_stream).await?;
                                 }
@@ -780,7 +786,7 @@ impl ActiveRelayActor {
                         }
                     }
                 }
-                state.ping_tracker.pong_received(data);
+                state.receive_pong(data);
                 state.established = true;
             }
             RelayToClientMsg::Status(status) => match status {
@@ -890,6 +896,9 @@ impl ActiveRelayActor {
 struct ConnectedRelayState {
     /// Tracks pings we have sent, awaits pong replies.
     ping_tracker: PingTracker,
+    /// One explicit health check, owned by this TCP connection until its pong
+    /// or timeout. Periodic and concurrent demand cannot replace its deadline.
+    health_ping: Option<[u8; 8]>,
     /// Endpoints which are reachable via this relay server.
     endpoints_present: BTreeSet<EndpointId>,
     /// The [`EndpointId`] from whom we received the last packet.
@@ -912,6 +921,22 @@ struct ConnectedRelayState {
 }
 
 impl ConnectedRelayState {
+    fn start_health_check(&mut self) -> Option<[u8; 8]> {
+        if self.health_ping.is_some() {
+            return None;
+        }
+        let data = self.ping_tracker.new_ping();
+        self.health_ping = Some(data);
+        Some(data)
+    }
+
+    fn receive_pong(&mut self, data: [u8; 8]) {
+        self.ping_tracker.pong_received(data);
+        if self.health_ping == Some(data) {
+            self.health_ping = None;
+        }
+    }
+
     fn map_err(&self, error: RunError) -> RelayConnectionError {
         if self.established {
             e!(RelayConnectionError::Established, error)
@@ -1938,6 +1963,48 @@ mod tests {
 
         cancel_token.cancel();
         Ok(())
+    }
+
+    fn health_state() -> super::ConnectedRelayState {
+        super::ConnectedRelayState {
+            ping_tracker: PingTracker::new(Duration::from_secs(1)),
+            health_ping: None,
+            endpoints_present: Default::default(),
+            last_packet_src: None,
+            pong_pending: None,
+            established: false,
+            rate_limited: false,
+            test_pong: None,
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn repeated_health_requests_do_not_postpone_the_original_deadline() {
+        let mut state = health_state();
+        assert!(state.start_health_check().is_some());
+        for _ in 0..4 {
+            tokio::time::advance(Duration::from_millis(200)).await;
+            assert!(state.start_health_check().is_none());
+        }
+        tokio::time::advance(Duration::from_millis(200)).await;
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), state.ping_tracker.timeout())
+                .await
+                .is_ok(),
+            "concurrent demand cannot extend the first health check"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_the_matching_pong_releases_the_health_check() {
+        let mut state = health_state();
+        let ping = state.start_health_check().unwrap();
+        let mut unrelated = ping;
+        unrelated[0] ^= 1;
+        state.receive_pong(unrelated);
+        assert!(state.start_health_check().is_none());
+        state.receive_pong(ping);
+        assert!(state.start_health_check().is_some());
     }
 
     #[tokio::test]
