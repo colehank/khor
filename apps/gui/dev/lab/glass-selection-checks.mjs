@@ -4,8 +4,10 @@ import path from 'node:path';
 // The real production navigation and tab strip, not replacement glass.
 // Backdrop changes affect only the Lab's synthetic wallpaper plane.
 export async function checkGlassSelection(browser,{port,report,engine}){
- const name='glass-selection-'+engine,context=await browser.newContext({viewport:{width:1280,height:900}}),page=await context.newPage(),errors=[],measurements=[];
- page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(String(error)));
+ const name='glass-selection-'+engine,context=await browser.newContext({viewport:{width:1280,height:900}}),page=await context.newPage(),errors=[],measurements=[],moduleFailures=[];
+ let current='startup';
+ page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(`${current}: ${String(error)}`));
+ page.on('requestfailed',request=>{if(/\.m?js(?:\?|$)/.test(request.url()))moduleFailures.push({case:current,url:request.url(),failure:request.failure()});});
  const cases=[
   {theme:'light',material:'frost',opacity:0},
   {theme:'light',material:'frost',opacity:20},
@@ -17,11 +19,14 @@ export async function checkGlassSelection(browser,{port,report,engine}){
  ];
  try{
   for(const choice of cases){
-   const label=`${choice.theme}-${choice.material}-${choice.opacity}`;
+   const label=`${choice.theme}-${choice.material}-${choice.opacity}`;current=label;
    try{
     const environment={platform:'desktop',...choice,keyboard:0,safeTop:0,safeBottom:0,background:'light'};
     const url=new URL('/app/',`http://127.0.0.1:${port}`);url.searchParams.set('scene','gui');url.searchParams.set('machines','3');url.searchParams.set('environment',JSON.stringify(environment));
     await page.goto(url.href);await page.locator('[data-composer-text]').waitFor();await page.locator(`html[data-theme=${choice.theme}]`).waitFor();
+    // Let this document finish its actual lazy-module requests before
+    // another full navigation retires it. Page errors remain failures.
+    await page.waitForLoadState('networkidle');
     const selectors={navigation:'[data-landing-strip] [data-rail-item][data-on=true]',tab:'[data-tab-bar]:visible .glass-sel:visible'};
     const row={...choice,surfaces:{}};
     for(const [kind,selector] of Object.entries(selectors)){
@@ -65,5 +70,5 @@ export async function checkGlassSelection(browser,{port,report,engine}){
    }catch(error){errors.push(`${label}: ${String(error)}`);}
   }
  }finally{await context.close();}
- return {name,measurements,errors};
+ return {name,measurements,moduleFailures,errors};
 }
