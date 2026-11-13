@@ -59,7 +59,7 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
  const finish=(sent=false)=>{if(restore.current?.isConnected)raiseKeyboard(restore.current);sent?onSent():onClose();};
  useEffect(()=>{mounted.current=true;let live=true;void fetchDevices().then(rows=>{if(live)setDevices(rows);},e=>{if(live)setError(said(e));});return()=>{live=false;mounted.current=false;};},[]);
  const own=(entry:Attachment)=>road.selected.some(item=>item.key===entry.key);
- const inherited=(entry:Attachment)=>road.selected.some(item=>includesAttachment(item,entry)||!!(item.device&&entry.device&&item.dir&&entry.key.startsWith(item.key+'/')));
+ const inherited=(entry:Attachment)=>road.selected.some(item=>includesAttachment(item,entry));
  const toggle=(entry:Attachment)=>{if(road.busy||inherited(entry))return;own(entry)?road.remove(entry):road.add([entry]);};
  const addDevice=(files:File[],dirs:boolean)=>{if(!files.length||road.busy)return;try{road.add(deviceAttachments(files,dirs,gui.machine_here));setError(null);}catch(e){setError(said(e));}};
  const pickFolders=async()=>{
@@ -89,7 +89,7 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
    </section>
   </div>
   <input data-files-input ref={picker} type="file" multiple hidden onChange={e=>{addDevice([...(e.target.files??[])],false);e.target.value='';}}/>
-  <input ref={folders} type="file" multiple hidden {...{webkitdirectory:''}} onChange={e=>{addDevice([...(e.target.files??[])],true);e.target.value='';}}/>
+  <input data-files-folder-input ref={folders} type="file" multiple hidden {...{webkitdirectory:''}} onChange={e=>{addDevice([...(e.target.files??[])],true);e.target.value='';}}/>
   <AttachmentDestination machine={road.machine} into={road.into??null} onInto={road.onInto??(()=>{})} busy={road.busy}/>
   {error&&<p role="alert" className="text-caption text-destructive">{error}</p>}
   {road.busy&&<p data-files-transfer role="status" className="text-caption text-muted-foreground">正在发送 · {Math.round((road.progress??0)*100)}%</p>}
@@ -115,7 +115,7 @@ function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,fi
  const [path,setPath]=useState(place.path),[query,setQuery]=useState(place.path?place.path.replace(/\/$/,'')+'/':''),[filter,setFilter]=useState('');
  const navigate=(path:string)=>{setPath(path);setQuery(path.replace(/\/$/,'')+'/');setFilter('');};
  const entry=(full:string,dir:boolean,size:number|null=null)=>place.root?localEntry(place.root,full,dir):pathAttachment(full,place.machine.me?null:place.machine.name,place.machine.shown,dir,size);
- const listing=useMemo<DirListing|undefined>(()=>place.root?{path,entries:deviceFolderEntries(place.root,path.replace(/^\//,'')).map(row=>({name:row.name,dir:row.dir,size:row.file?.size??0})),truncated:false}:undefined,[place.root,path]);
+ const listing=useMemo<DirListing|undefined>(()=>place.root?{path,entries:deviceFolderEntries(place.root,path.replace(/^\//,'')).map(row=>({name:row.name,dir:row.dir,size:row.file?.size??0,at_ms:row.file?.lastModified??0,from:null,received_ms:null})),truncated:false}:undefined,[place.root,path]);
  return <div data-files-directory-body className="flex min-h-0 flex-1 flex-col">
   <div className="flex-none p-row"><PathField data-files-search aria-label="搜索或输入路径" placeholder="搜索或输入路径" machine={place.machine.name} value={query} keepHome={false} files onValueChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onSubmit={()=>navigate(query)}/></div>
   <FilesPane machine={place.machine.name} here={place.machine.me} path={path} onPath={navigate} onLanded={resolved=>{if(!query)navigate(resolved);}} onFile={()=>{}} open={null} sourceListing={listing} filter={filter} selection={{filesOnly,state:(full,dir)=>{const item=entry(full,dir);return {selected:selected(item)||inherited(item),disabled:busy||inherited(item)};},toggle:(full,dir,size)=>onToggle(entry(full,dir,size)),open:(full,dir)=>onOpen(entry(full,dir))}}/>

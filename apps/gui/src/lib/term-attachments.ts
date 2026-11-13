@@ -23,7 +23,8 @@ export function pathAttachment(path: string, from: string | null, shown: string,
   return { key: `${from ?? ""}\n${pathKey(path)}`, path, from, shown, name: pathName(path), dir, size, native };
 }
 export function includesAttachment(parent: Attachment, child: Attachment): boolean {
-  return !parent.device && !child.device && parent.dir && parent.from === child.from && pathKey(child.path).startsWith(pathKey(parent.path) + "/");
+  if(parent.device||child.device)return !!(parent.device&&child.device&&parent.dir&&child.key.startsWith(parent.key+"/"));
+  return parent.dir && parent.from === child.from && pathKey(child.path).startsWith(pathKey(parent.path) + "/");
 }
 export function addAttachments(old: Attachment[], entries: Attachment[]): Attachment[] {
   let now = [...old];

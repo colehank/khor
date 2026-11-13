@@ -131,7 +131,7 @@ export function usePendingFiles(upload: {
 }
 
 /** Unsent files retain their independent preview and removal controls. */
-export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,onAdd,busy=false }: {
+export function PendingChips({ items, onRemove, machine, here,onRetry,onAdd,busy=false }: {
   items: Pending[];
   onRemove: (key: string) => void;
   machine: string;
