@@ -24,6 +24,14 @@ export async function checkWorkbench(browser,{port,report,engine,name='workbench
   assert.equal(await frame.locator('html').evaluate(el=>el.style.getPropertyValue('--window-opacity')),'65%');
   assert.equal(await frame.locator('[data-composer-text]').inputValue(),'保留真实 App 草稿');
   await page.screenshot({path:path.join(report,name+'-desktop-glass.png')});
+  const customWidth=page.getByRole('row').filter({hasText:'自定义宽度'}).locator('input[type=number]');
+  await customWidth.fill('390');await customWidth.press('Tab');
+  await frame.locator('[data-lab-model-header]:visible').waitFor();
+  assert.equal(await frame.locator('html').evaluate(()=>innerWidth),390);
+  assert.equal(JSON.parse(await frame.locator('html').getAttribute('data-lab-environment')).platform,'ios','Custom narrow sizes follow the production breakpoint');
+  assert.equal(await frame.locator('html').getAttribute('data-window-transparent'),null);
+  await customWidth.fill('0');await customWidth.press('Tab');
+  await frame.locator('[data-lab-model-header]').waitFor({state:'hidden'});
   await page.getByRole('button',{name:/^Viewport size /}).click();
   await page.getByText('Mobile · 390 × 844',{exact:true}).click();
   await frame.locator('[data-lab-model-header]:visible').waitFor();

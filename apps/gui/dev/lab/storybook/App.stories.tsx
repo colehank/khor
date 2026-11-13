@@ -2,6 +2,7 @@ import {useEffect,useMemo,useRef} from 'react';
 import type {Meta,StoryObj} from '@storybook/react-vite';
 import {scenes,type Scene} from '../scenes';
 import {type PreviewState} from '../preview-state';
+import {NARROW_QUERY} from '../../../src/hooks/use-narrow';
 
 type Args={scene:Scene;machines:number;items:number;opacity:number;keyboard:number;safeArea:boolean;platform:'auto'|'desktop'|'ios'|'android';history:boolean;width:number;height:number};
 type Props=Args&{environment:PreviewState};
@@ -51,7 +52,10 @@ const meta={
   },
   render:(args,context)=>{
     const viewport=String(context.globals.viewport?.value??'desktop');
-    const platform=args.platform==='auto'?(viewport==='android'?'android':viewport.startsWith('phone')||viewport==='tablet'?'ios':'desktop'):args.platform;
+    const dimensions=viewport.match(/^(\d+)(?:px)?-(\d+)(?:px)?$/);
+    const customWidth=args.width||Number(dimensions?.[context.globals.viewport?.isRotated?2:1]);
+    const narrowLimit=Number(NARROW_QUERY.match(/\d+/)?.[0]);
+    const platform=args.platform==='auto'?(customWidth?customWidth<=narrowLimit?'ios':'desktop':viewport==='android'?'android':viewport.startsWith('phone')||viewport==='tablet'?'ios':'desktop'):args.platform;
     const mobile=platform!=='desktop';
     const environment:PreviewState={platform,theme:context.globals.theme??'dark',material:context.globals.material??'frost',background:context.globals.background??'wallpaper',opacity:args.opacity,
       keyboard:mobile?args.keyboard:0,safeTop:mobile&&args.safeArea?(platform==='ios'?47:24):0,safeBottom:mobile&&args.safeArea?(platform==='ios'?34:24):0};
