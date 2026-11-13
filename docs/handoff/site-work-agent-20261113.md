@@ -1,33 +1,38 @@
 # Work across the net → Khor Agent · 2026-11-13
 
-当前方向以用户最新纠正为准：**Work across 是用户在各台设备便携地执行具体任务；Khor Agent 是用户把任务交给 Khor**。保留 graph 表达，但不再把第二幕画成能力目录，也不再通过删除 You、替换成 Khor 图标来表达第三幕。
+用户否定能力树与任务星形图，要求**继续使用第一幕 Net 的节点、超边和布局**，展示沿路径传文件、监控任务的完整过程。以下替代旧 `task-ownership/` 与 `work-agent-graph/` 版本；旧审阅不代表当前审美验收。
 
-## 两幕讲同一件事
+## 当前内容
 
-固定任务为 **Fix the export dates**，虚构项目 Atlas Web。工作文件、终端进程、预览与 Git 均在 Mac；Linux 上的 Codex 接收代码审阅请求，不暗示代码自动同步到 Linux。
+同一个虚构任务 **Build and check Atlas Web**，四节点为 Workstation、Server、Desktop、Mobile。LAN 包围 Workstation 与 Server；Wi-Fi 包围 Desktop、Server 与当前停留其中的 Mobile。任务幕使用第一幕的稳定 Wi-Fi 姿态，节点和网络标题不随任务移动。
 
-- [Work across the net](http://127.0.0.1:23820/#work)：You 直接连接每一步任务。先从 Mac 找 Linux 的 Codex 检查日期逻辑，再从 Windows 编辑同一个 Mac 工作区，随后用手机运行 Mac 上的测试、访问其网页预览、检查 Git 变更。访问端图标与来源说明切换，远端动作和文件归属不变。图下文案使用用户动作，最终交付 3 个变更文件、8 项通过的测试
-- [Khor Agent](http://127.0.0.1:23820/#khor-agent)：You 和 Khor Agent 始终是两个节点。起步只有 **You → Khor** 的路径亮起，表示交出任务；随后 Khor 依次调用相同五个动作节点；最后把路径方向反转为 **Khor → You**，You 标记为 Your result。用户没有从图里消失
-- 五个动作节点为 Review logic、Edit files、Run tests、Check preview、Review changes，标明 Linux／Codex 或 macOS 来源。节点复用生产图标，文字与连接线分开，任务标题在两幕保持一致
-- 手机的 Agent 幕把 You 放在图的上方，先看到交付起点。桌面保持分支构图；节点和标签不随阶段移动。Work 22 秒循环，Agent 20.6 秒循环，结果分别停留 4.5／5.2 秒；离屏／后台暂停并续播，减少动态效果显示两幕完成态
+- [Work across the net](http://127.0.0.1:23820/#work)：You 从 Workstation 开始，与 Codex 准备项目；把 `atlas-web.tar` 传到 Server，再启动 `npm run build && npm test`。用户切到 Mobile，Server 继续执行；随后查看同一终端、打开服务器的网页预览、将报告送回 Workstation，结果为构建完成与 8 项测试通过
+- [Khor Agent](http://127.0.0.1:23820/#khor-agent)：You 始终位于 Mobile。先向 Workstation 上的 Khor 交任务，Khor 调用 Codex 准备项目，传到 Server 执行、监控、检查网页和收集报告，最后把结果交回 Mobile。Khor 是 Workstation 上的会话徽标，不是第五台设备；用户始终在图上
+- 每步只有一条临时操作路径，一个文件／终端／网页／消息／结果符号沿路径移动。Server 上的进度环和状态独立呈现，节点上只显示当前必要的徽标。Desktop 保持可用，不虚构其参与任务
+- Work 24.2 秒、Agent 27 秒自动循环，结果均停留 4.6 秒；离屏／后台暂停并续播。减少动态效果与无 JS 均保留完成态。仅移动载荷和进度变化时使用有界 RAF
+
+## 设备图标与开场
+
+新增 `IconServer`、`IconWorkstation`、`IconDesktop`、`IconMobile`，沿用 `icons.tsx` 的 RailGlyph、光学校准、线宽与 currentColor。双层机架、紧凑主机、显示器底座、圆角手机通过轮廓区分，细节只保留接口和状态灯。
+
+`identity-marks.ts` 在构建时导出同一套图稿。**You have many devices** 的四颗灰节点也使用它们，随后仍切成 Claude／Codex／Cursor／Shell。开场的几何演化和最终 Khor 图标未改；安装平台与真实 GUI 仍使用各自系统标记。
 
 ## 实现入口
 
-- `apps/site/src/components/ProductTour.astro`：副标题分别为 Keep your task moving, from any device／Give Khor the task, get the result
-- `components/concepts/capability-data.ts`：任务步骤、访问端变化、用户直接操作与 Agent 受托执行两套阶段数据
-- `components/concepts/CapabilityScene.astro`：始终保留用户身份的 graph 与任务说明；SVG 描述完整说明两种方式
-- `scripts/capability-geometry.ts`：桌面／手机固定布局、圆外端点、交付路径正反向
-- `scripts/capability-scene.ts`：操作者／访问端、活动任务路径、任务交出／结果返回及循环生命周期
-- `styles/capability-scene.css`：任务节点、主机附注、访问端标记短时渐隐渐现
+- `NetworkGraph.astro` 与 `network-map.ts`：提取第一幕现有图形和渲染，三幕共用；每个实例的 SVG ID 有独立前缀，沿边标题保留真实字宽与两端 8 单位缺口
+- `capability-data.ts`：同一任务的手动操作／Khor 受托执行阶段、操作者、进度、载荷
+- `CapabilityScene.astro`：任务标题、共用网络、Server 进度、会话徽标、You 与阶段说明
+- `capability-geometry.ts`：调用原 `networkGeometry`，只额外计算当前临时操作曲线与圆外端点
+- `capability-scene.ts`：阶段循环、有界载荷与进度动画、暂停续播；`product-tour.ts` 保留统一可见性与浏览器偏好生命周期
 
-Net、首屏 GUI／手机首图、Fog、图标故事、下载不变。纯静态前端、无真实设备或模型请求。本轮只在 `feat/site-story` 本地实现，未发布、推送或合并。
+首屏 GUI／手机首图、Fog 参数、导航、下载保持既有行为。全程静态前端，不接真实设备、Lab 或模型。本轮仅本地，未推送、部署或合并。
 
-## 验证与证据
+## 定向验证
 
-当前证据目录 `/Volumes/disk0/Khor/evidence/site-story-20261113/task-ownership/`；先前 `work-agent/` 与 `work-agent-graph/` 属于已被用户纠正的版本，不代表当前内容。
+证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/network-task/`。
 
-`checks.json` 记录 320／768／1440px 无横向溢出、文字无重叠或裁切、路径避开标签；桌面 Work／手机 Agent 完整循环。检查区分直接操作与受托执行：Work 访问端 Mac → Windows → 手机；Agent 始终保留 You，交任务时仅 handoff 路径活动，执行时每步只有相应任务路径活动，结束时返回结果。阶段高度与节点几何保持不变，离屏暂停，无页面错误。
-
-`work-edit-live.png`／`work-test-live.png` 为 Windows／手机直接操作阶段，`khor-agent-request-live.png`／`khor-agent-done-live.png` 为用户交付与收到结果。四张 `desktop-*`／`mobile-*` 是减少动态效果下的完成态截图；正常播放截图优先用于判断实际呈现。
-
-定向 TypeScript、diff 格式检查及十页 Astro 静态构建通过。构建产物 `/Volumes/disk0/Khor/artifacts/site-story-20261113-task-ownership/`，日志 `build.log`。仅使用 headless Chrome，没有打开桌面测试窗口，未扩大到原生 GUI、WebKit 或实体手机验证。无独立设计审阅，当前版本交用户本地查看。
+- `checks.json`：320／768／1440px 无横向溢出、重复 ID 或断裂 textPath；三幕节点、viewBox 与稳定外轮廓一致。Work／Agent 在 390 与 1440px 各完成全部阶段并循环，节点与幕高不跳动，移动载荷持续推进，离屏后停止。当前任务路径不穿文字字形（外扩 4 CSS px 检查），无页面错误
+- `opening-checks.json`：390／1440px 的四枚开场图稿与 Net 图稿一致、完整显示；切换到 harness 阶段正常。`device-icons.png` 对照 64／36／24px，`desktop-opening-devices.png` 与 `mobile-opening-devices.png` 为开场截图
+- `390-work-monitor.png`、`390-khor-agent-transfer.png`、`1440-khor-agent-deliver.png` 为正常播放、内容完整的当前构图。初次预览的 `mobile-khor-agent.png` 有 headless 连续截图的静态栅格缺失，不作为完整视觉证据
+- 定向 TypeScript、diff 格式检查、十页 Astro 静态构建通过。产物 `/Volumes/disk0/Khor/artifacts/site-story-20261113-network-task/`，日志 `build.log`
+- 图谱先查，变更审阅图谱仍落后于 HEAD，因此以实际源码与浏览器证据为准。仅 headless Chrome，没有桌面测试窗口、原生 GUI 构建、WebKit 或实体手机验证，没有独立设计审阅

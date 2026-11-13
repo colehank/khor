@@ -1,11 +1,11 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {machineMark,sessionMark} from '../../src/components/BrandIcons';
-import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch} from '../../src/components/icons';
+import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch,IconChat,IconServer,IconWorkstation,IconDesktop,IconMobile} from '../../src/components/icons';
 
 export const capabilityMarks=Object.fromEntries(([
   ['web',IconBrowser],['files',IconFile],['git',IconBranch],['check',IconCheck],
-  ['terminal',sessionMark('shell')],
+  ['terminal',sessionMark('shell')],['message',IconChat],
 ] as const).map(([name,Icon])=>[name,renderToStaticMarkup(createElement(Icon),{identifierPrefix:`site-capability-${name}-`})]));
 
 export const networkTypeMarks=Object.fromEntries([
@@ -18,9 +18,13 @@ export const copyControlMarks=(prefix:string)=>({
 });
 
 // Build-time only: the story wears the same marks as the actual app.
-export const deviceMarks=(['linux','macos','windows','ios'] as const).map(name=>({
-  name,svg:renderToStaticMarkup(createElement(machineMark(name)),{identifierPrefix:`story-device-${name}-`}),
-}));
+export const networkDeviceMarks=Object.fromEntries(([
+  ['linux',IconServer],['mac',IconWorkstation],['windows',IconDesktop],['phone',IconMobile],
+] as const).map(([id,Icon])=>[id,renderToStaticMarkup(createElement(Icon),{identifierPrefix:`site-device-${id}-`})]));
+export const deviceMarks=[
+  {name:'linux',svg:networkDeviceMarks.linux},{name:'macos',svg:networkDeviceMarks.mac},
+  {name:'windows',svg:networkDeviceMarks.windows},{name:'ios',svg:networkDeviceMarks.phone},
+];
 export const harnessMarks=['claude','codex','cursor','shell'].map(name=>({
   name,svg:renderToStaticMarkup(createElement(sessionMark(name==='shell'?'shell':'gui',name)),{identifierPrefix:`story-harness-${name}-`}),
 }));

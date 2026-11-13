@@ -117,3 +117,9 @@
 检查入口仍是 `npm run khor-conversations-ui`：新建入口与真实 `SessionFace` 的行/标签
 尺寸共用相同图稿，桌面/手机、浅/深色验证 khor 的 65% 占比；Claude、Codex、Cursor、
 未知 Agent、广播和其他专属类型的图稿及尺寸不被替换。
+
+## 设备角色标记（2026-11-13，官网）
+
+`IconServer`、`IconWorkstation`、`IconDesktop`、`IconMobile` 沿用现有 `RailGlyph` 的画布、描边和光学校准。分别以双层机架、紧凑主机、显示器底座、圆角手机表示设备角色；接口、灯和底座使用家族的实心细节。单一 currentColor，不加底板、渐变或新图标依赖。
+
+当前用于官网开场灰色设备节点及 Net／Work／Khor Agent 三幕，四处从同一个 `identity-marks.ts` 导出，不在网站复制路径。它们表示硬件角色，不替换机器列表或安装选项的 macOS／Windows／Linux 等系统标记。24／36／64px 对照与实际开场查看记录在 `site-work-agent-20261113.md`。

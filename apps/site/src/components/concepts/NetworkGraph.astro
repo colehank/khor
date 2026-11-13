@@ -1,0 +1,87 @@
+---
+import ConceptMark from './ConceptMark.astro';
+import {networkDeviceMarks,supportedHarnesses,networkTypeMarks} from '../../../../gui/dev/site/identity-marks';
+import {networkGeometry,networkNodeRadius} from '../../scripts/network-geometry';
+import '../../styles/network-scene.css';
+const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
+interface Props { prefix:string; title?:string; description?:string }
+const {prefix,title='Your devices, your net',description='LAN contains a workstation and server. Wi-Fi contains the same server and a desktop. Mobile moves between Wi-Fi and cellular while KhorNet keeps all four devices connected.'}=Astro.props;
+const initial=networkGeometry(false,1);
+const ref=(id:string)=>`${prefix}-${id}`;
+const devices=[{id:'mac',name:'Workstation'},{id:'linux',name:'Server'},{id:'windows',name:'Desktop'},{id:'phone',name:'Mobile'}] as const;
+const areaNames={a:'NetA · Local network',b:'NetB · Wi-Fi',c:'NetC · Cellular'};
+const areaLabels={a:'LAN',b:'Wi-Fi',c:'Cellular'};
+const labelWidths={a:50,b:65,c:90};
+---
+  <svg class="network-scene" data-net-scene viewBox={initial.box} role="img" aria-labelledby={`${ref("network-scene-title")} ${ref("network-scene-desc")}`}>
+    <title id={ref('network-scene-title')}>{title}</title>
+    <desc id={ref('network-scene-desc')}>{description}</desc>
+    <defs>
+      {Object.entries(initial.areas).map(([id,area])=>(
+        <path id={ref(`network-label-${id}`)} data-net-label-path={id} d={area.labelPath}/>
+      ))}
+      <path id={ref("network-label-khor")} data-net-label-path="khor" d={initial.khorNet.labelPath}/>
+      <path id={ref("network-label-khor-subtitle")} data-net-label-path="khor-subtitle" d={initial.khorNet.subtitlePath}/>
+      <mask id={ref("network-edge-clearance")} maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="690" style="mask-type:luminance">
+        <rect width="1000" height="690" fill="white"/>
+        {Object.entries(initial.areas).map(([id,area])=>(
+          <g data-net-gap-group={id} style={`opacity:${area.opacity}`}>
+            <circle data-net-gap-icon={id} cx={area.mark.x} cy={area.mark.y} r="23" fill="black"/>
+            <path data-net-gap={id} d={area.labelPath} fill="none" stroke="black" stroke-width="30" stroke-dasharray={`0 16 ${labelWidths[id as keyof typeof labelWidths]} 10000`}/>
+          </g>
+        ))}
+        <g class="net-khor-gap">
+          <circle data-net-gap-icon="khor" cx={initial.khorNet.mark.x} cy={initial.khorNet.mark.y} r="25" fill="black"/>
+          <path data-net-gap="khor" d={initial.khorNet.labelPath} fill="none" stroke="black" stroke-width="30" stroke-dasharray="0 18 135 10000"/>
+          <path class="net-hole-clearance" data-net-gap="khor-subtitle" d={initial.khorNet.subtitlePath} fill="none" stroke="black" stroke-width="30" stroke-dasharray="0 18 125 10000"/>
+        </g>
+        <slot name="clearances" />
+      </mask>
+    </defs>
+    <g class="net-surfaces">
+      <path class="net-khor-surface" data-net-global-fill d={initial.khorNet.d}/>
+      {Object.entries(initial.areas).map(([id,area])=>(
+        <path class="net-native-surface" data-net-area-fill={id} d={area.d} style={`opacity:${area.opacity}`}/>
+      ))}
+    </g>
+    <g mask={`url(#${ref("network-edge-clearance")})`}>
+      <path class="net-khor-shape" data-net-global d={initial.khorNet.d} pathLength="1"/>
+      <g class="net-native">
+        {Object.entries(initial.areas).map(([id,area])=>(
+          <g data-net-area={id} style={`opacity:${area.opacity}`} aria-hidden={area.opacity===0?'true':'false'}>
+            <path d={area.d}/>
+          </g>
+        ))}
+      </g>
+    </g>
+    <slot name="routes" />
+    {devices.map(({id,name})=>(
+      <g class="net-device" data-net-device={id} transform={`translate(${initial.nodes[id].x} ${initial.nodes[id].y})`}>
+        <title>{name}</title>
+        <circle class="net-device-body" r={networkNodeRadius}/>
+        <svg x="-18" y="-18" width="36" height="36"><ConceptMark svg={networkDeviceMarks[id]} x={0} y={0} size={36} prefix={`${prefix}-device-${id}`}/></svg>
+      </g>
+    ))}
+    <g class="net-boundary-marks">
+      {Object.entries(initial.areas).map(([id,area])=>(
+        <g data-net-mark={id} style={`opacity:${area.opacity}`}>
+          <title>{areaNames[id as keyof typeof areaNames]}</title>
+          <g data-net-icon transform={`translate(${area.mark.x} ${area.mark.y})`}>
+            <circle class="net-mark-ground" r="19"/>
+            <svg x="-14" y="-14" width="28" height="28"><ConceptMark svg={networkTypeMarks[id]} x={0} y={0} size={28} prefix={`${prefix}-type-${id}`}/></svg>
+          </g>
+          <text class="net-boundary-name"><textPath href={`#${ref(`network-label-${id}`)}`} startOffset="24">{areaLabels[id as keyof typeof areaLabels]}</textPath></text>
+        </g>
+      ))}
+    </g>
+    <g class="net-khor-mark">
+      <title>KhorNet · All your devices</title>
+      <g data-net-brand transform={`translate(${initial.khorNet.mark.x} ${initial.khorNet.mark.y})`}>
+        <circle class="net-mark-ground" r="21"/>
+        <svg x="-16" y="-16" width="32" height="32"><ConceptMark svg={marks.Khor} x={0} y={0} size={32} prefix={`${prefix}-khor`}/></svg>
+      </g>
+      <text class="net-boundary-name"><textPath href={`#${ref("network-label-khor")}`} startOffset="26">KhorNet <tspan data-net-connection-label>P2P</tspan></textPath></text>
+      <text class="net-handoff-status" aria-hidden="true"><textPath class="net-status-pulse" href={`#${ref("network-label-khor-subtitle")}`} startOffset="26">hole punching</textPath></text>
+    </g>
+    <slot name="activity" />
+  </svg>

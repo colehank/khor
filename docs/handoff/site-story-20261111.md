@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-13 用户要求后两幕回到原 Net 布局：当前以同一个 Atlas Web 构建任务，演示 Workstation → Server 传输／执行、Mobile 接续与监控；Agent 幕由 Mobile 的 You 交任务给 Workstation 上的 Khor，再执行并交回结果。三幕共用网络组件与几何，节点不再组成能力树。Server／Workstation／Desktop／Mobile 图标统一到开场 You have many devices，harness 与最终图标演化保留。手机／宽屏完整循环、路径文字间距、暂停、开场换脸、定向 TypeScript 与十页构建通过；仅 headless Chrome，本地未发布。最新实现与证据见 [Work 与 Khor Agent](site-work-agent-20261113.md)，替代下方任务星形图。
+
 - 2026-11-13 用户再次澄清叙事：Work across 是用户在各个机器上便携地推进具体任务，Khor Agent 是用户把任务交给 Khor。现用同一项导出日期修复作对照：Work 的 You 在 Mac／Windows／手机之间切换，亲自调用远端审阅、编辑、测试与预览；Agent 幕始终保留 You，增加明确的任务交出和结果返回路径，中间由 Khor 推进相同动作。此条替代下一条的能力目录表达。当前文档 [Work 与 Khor Agent](site-work-agent-20261113.md)，本轮仅本地。
 
 - 2026-11-13 用户明确第二幕为 Work across the net、第三幕为 Khor Agent，并授权实现。用户进一步要求也用 graph 表达，现用共享设备—能力图替换旧会话选择与资源切换：macOS 连 Files／Web／Git／Terminal，Linux 连 Codex／Claude／Cursor；第二幕由 You 接入，第三幕换成 Khor Agent 执行订单日期修复，沿路径调用并交付变更及测试结果。桌面／手机有独立固定构图，标签避开线条；两幕自动循环、离屏／后台暂停、减少动态效果静止。前一幕 Net 与首屏、Fog、图标故事、下载保留。当前继续入口为 [Work 与 Khor Agent](site-work-agent-20261113.md)，下方旧会话／资源场景为历史版本；本轮本地预览，未发布。

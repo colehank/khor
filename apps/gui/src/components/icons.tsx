@@ -93,6 +93,7 @@ const reshare = (f: Fit, from: number, to: number): Fit => {
 const LIVE = {
   sessions: fit(1.7, 1.81, 20.6),
   devices: fit(1.45, 1.45, 21.11), // square
+  hardware: fit(1.45, 1.45, 21.11), // square: shared optical box for device roles
   sshHost: fit(1.45, 1.45, 21.11), // square: devices' own outline
   files: fit(1.45, 1.49, 21.11), // square
   browser: fit(2.93, 2.93, 18.15), // round
@@ -288,6 +289,43 @@ export function IconDevices({ className }: IconProps) {
       )}
     </RailGlyph>
   );
+}
+
+/** Hardware roles share one optical box, with quiet ports and solid lamps. */
+export function IconServer({ className }: IconProps) {
+  return <RailGlyph className={className} live={LIVE.hardware}>
+    <rect x="3.5" y="4.5" width="17" height="6.4" rx="2" />
+    <rect x="3.5" y="13.1" width="17" height="6.4" rx="2" />
+    <path data-body d="M6.8 7.7h5.4M6.8 16.3h5.4" />
+    <circle data-body cx="17.1" cy="7.7" r=".75" stroke="none" />
+    <circle data-body cx="17.1" cy="16.3" r=".75" stroke="none" />
+  </RailGlyph>;
+}
+
+/** A compact workstation: a shallow top plane, front port and power lamp. */
+export function IconWorkstation({ className }: IconProps) {
+  return <RailGlyph className={className} live={LIVE.hardware}>
+    <path d="M3.8 8.8 7.1 5.3a2.4 2.4 0 0 1 1.7-.7h6.4a2.4 2.4 0 0 1 1.7.7l3.3 3.5Z" />
+    <path d="M3.8 8.8v8.1a2.5 2.5 0 0 0 2.5 2.5h11.4a2.5 2.5 0 0 0 2.5-2.5V8.8" />
+    <path d="M6.8 12.8h5" />
+    <circle data-body cx="17" cy="15.8" r=".75" stroke="none" />
+  </RailGlyph>;
+}
+
+export function IconDesktop({ className }: IconProps) {
+  return <RailGlyph className={className} live={LIVE.hardware}>
+    <rect x="3.5" y="4.5" width="17" height="11.5" rx="2.1" />
+    <path data-body d="M10.5 16h3l.6 3.5H9.9Z" />
+    <path d="M7.8 19.5h8.4" />
+  </RailGlyph>;
+}
+
+export function IconMobile({ className }: IconProps) {
+  return <RailGlyph className={className} live={LIVE.hardware}>
+    <rect x="7.2" y="3.4" width="9.6" height="17.2" rx="2.6" />
+    <rect data-body x="10.3" y="5.3" width="3.4" height=".9" rx=".45" stroke="none" />
+    <path d="M10.4 18.2h3.2" />
+  </RailGlyph>;
 }
 
 /**

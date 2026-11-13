@@ -1,30 +1,30 @@
-// One task, two ways to drive it. The Mac owns the workspace, tests and preview;
-// Codex on Linux receives a review request. Changing the client never moves files.
-export type CapabilityTarget='review'|'edit'|'test'|'preview'|'changes';
-export type CapabilityClient='mac'|'windows'|'phone';
-export type CapabilityPhase={id:string;duration:number;caption:string;detail:string;targets:CapabilityTarget[];client:CapabilityClient;handoff?:'request'|'return';complete?:boolean};
-export const taskSteps=[
-  {id:'review',icon:'Codex',label:'Review logic',host:'Linux · Codex'},
-  {id:'edit',icon:'files',label:'Edit files',host:'macOS'},
-  {id:'test',icon:'terminal',label:'Run tests',host:'macOS'},
-  {id:'preview',icon:'web',label:'Check preview',host:'macOS'},
-  {id:'changes',icon:'git',label:'Review changes',host:'macOS'},
-] as const;
-const all=taskSteps.map(step=>step.id);
-export const workPhases:CapabilityPhase[]=[
-  {id:'review',duration:3500,caption:'Ask Codex to check the date logic',detail:'From your Mac → Codex on Linux',targets:['review'],client:'mac'},
-  {id:'edit',duration:3500,caption:'Continue the fix from Windows',detail:'Edit src/export.ts in the same Mac workspace',targets:['edit'],client:'windows'},
-  {id:'test',duration:3500,caption:'Run the tests from your phone',detail:'npm test runs on your Mac',targets:['test'],client:'phone'},
-  {id:'preview',duration:3500,caption:'Check the fix on your phone',detail:'Open the Mac’s web app · localhost:5173',targets:['preview'],client:'phone'},
-  {id:'changes',duration:3500,caption:'Review your changes',detail:'The same workspace · 3 files changed',targets:['changes'],client:'phone'},
-  {id:'done',duration:4500,caption:'Different devices, one task finished',detail:'3 files changed · 8 tests passed',targets:all,client:'phone',complete:true},
+// The same build travels through the same four-device network in both scenes.
+// Only the operator changes. The desktop is available but not used in this run.
+export type TaskDevice='mac'|'linux'|'windows'|'phone';
+export type TaskPacket='files'|'terminal'|'web'|'message'|'check';
+export type TaskPhase={
+  id:string;duration:number;caption:string;detail:string;user:TaskDevice;
+  route?:'upload'|'download'|'watch'|'preview'|'request'|'deliver';packet?:TaskPacket;
+  focus:TaskDevice[];codex?:boolean;progress:[number,number];complete?:boolean;
+};
+export const workPhases:TaskPhase[]=[
+  {id:'prepare',duration:3000,caption:'Prepare the project with Codex',detail:'Workstation · Atlas Web',user:'mac',focus:['mac'],codex:true,progress:[0,0]},
+  {id:'transfer',duration:2800,caption:'Send the project to your server',detail:'atlas-web.tar · Workstation → Server',user:'mac',focus:['mac','linux'],route:'upload',packet:'files',progress:[0,0]},
+  {id:'run',duration:3000,caption:'Start the build and tests',detail:'Server · npm run build && npm test',user:'mac',focus:['linux'],route:'upload',packet:'terminal',progress:[.04,.43]},
+  {id:'handoff',duration:2400,caption:'Pick up the same task on mobile',detail:'The build keeps running on your server',user:'phone',focus:['linux'],progress:[.43,.63]},
+  {id:'monitor',duration:3000,caption:'Watch the running task',detail:'Mobile · the same terminal session on Server',user:'phone',focus:['phone','linux'],route:'watch',packet:'terminal',progress:[.63,1]},
+  {id:'preview',duration:2800,caption:'Open the server’s web preview',detail:'Mobile · Atlas Web is ready to check',user:'phone',focus:['phone','linux'],route:'preview',packet:'web',progress:[1,1]},
+  {id:'report',duration:2600,caption:'Save the build report',detail:'8 tests passed · report sent to Workstation',user:'phone',focus:['mac','linux'],route:'download',packet:'files',progress:[1,1]},
+  {id:'done',duration:4600,caption:'One task, across your devices',detail:'Build ready · 8 tests passed',user:'phone',focus:['phone'],progress:[1,1],complete:true},
 ];
-export const agentPhases:CapabilityPhase[]=[
-  {id:'request',duration:2400,caption:'You give Khor the task',detail:'“Fix the export dates”',targets:[],client:'phone',handoff:'request'},
-  {id:'review',duration:2600,caption:'Khor asks Codex to review the logic',detail:'Linux · use the order’s local date',targets:['review'],client:'phone'},
-  {id:'edit',duration:2600,caption:'Khor applies the fix',detail:'macOS · src/export.ts',targets:['edit'],client:'phone'},
-  {id:'test',duration:2600,caption:'Khor runs the tests',detail:'macOS · npm test',targets:['test'],client:'phone'},
-  {id:'preview',duration:2600,caption:'Khor checks the web preview',detail:'macOS · localhost:5173',targets:['preview'],client:'phone'},
-  {id:'changes',duration:2600,caption:'Khor gathers the changes',detail:'macOS · 3 changed files',targets:['changes'],client:'phone'},
-  {id:'done',duration:5200,caption:'Back to you, ready for review',detail:'3 files changed · 8 tests passed',targets:all,client:'phone',handoff:'return',complete:true},
+export const agentPhases:TaskPhase[]=[
+  {id:'request',duration:2800,caption:'You hand Khor the task',detail:'“Build Atlas Web and check the result”',user:'phone',focus:['mac','phone'],route:'request',packet:'message',progress:[0,0]},
+  {id:'prepare',duration:2800,caption:'Khor works with Codex',detail:'Workstation · prepare the project',user:'phone',focus:['mac'],codex:true,progress:[0,0]},
+  {id:'transfer',duration:2800,caption:'Khor sends the project to Server',detail:'atlas-web.tar · Workstation → Server',user:'phone',focus:['mac','linux'],route:'upload',packet:'files',progress:[0,0]},
+  {id:'run',duration:3000,caption:'Khor starts the build and tests',detail:'Server · npm run build && npm test',user:'phone',focus:['mac','linux'],route:'upload',packet:'terminal',progress:[.04,.45]},
+  {id:'monitor',duration:3000,caption:'Khor follows the running task',detail:'The terminal keeps running on Server',user:'phone',focus:['mac','linux'],route:'download',packet:'terminal',progress:[.45,1]},
+  {id:'preview',duration:2600,caption:'Khor checks the web preview',detail:'Atlas Web · build ready, 8 tests passed',user:'phone',focus:['mac','linux'],route:'download',packet:'web',progress:[1,1]},
+  {id:'report',duration:2600,caption:'Khor collects the build report',detail:'Server → Workstation',user:'phone',focus:['mac','linux'],route:'download',packet:'files',progress:[1,1]},
+  {id:'deliver',duration:2800,caption:'Khor sends the result back to you',detail:'Mobile · preview and build report',user:'phone',focus:['mac','phone'],route:'deliver',packet:'check',progress:[1,1]},
+  {id:'done',duration:4600,caption:'Your task, ready for review',detail:'Build ready · 8 tests passed',user:'phone',focus:['phone'],progress:[1,1],complete:true},
 ];

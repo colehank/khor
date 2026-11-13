@@ -1,48 +1,62 @@
 import {agentPhases,workPhases} from '../components/concepts/capability-data';
 import {capabilityGeometry} from './capability-geometry';
+import {mountNetworkMap} from './network-map';
 
 export function mountCapabilityScene(figure:HTMLElement) {
   const isAgent=figure.dataset.concept==='agent',phases=isAgent?agentPhases:workPhases;
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)'),compact=matchMedia('(max-width: 760px)');
-  const svg=figure.querySelector<SVGSVGElement>('[data-cap-graph]')!;
-  const caption=figure.querySelector<HTMLElement>('[data-cap-caption]')!,detail=figure.querySelector<HTMLElement>('[data-cap-detail]')!;
-  let index=reduced.matches?phases.length-1:0;
-  let active=false,remaining=phases[index].duration,started=0;
+  const map=mountNetworkMap(figure),compact=matchMedia('(max-width: 760px)'),reduced=matchMedia('(prefers-reduced-motion: reduce)');
+  const find=<T extends Element=SVGElement>(selector:string)=>figure.querySelector<T>(selector)!;
+  const path=find<SVGPathElement>('[data-task-route]'),packet=find('[data-task-packet]');
+  const progress=find('[data-task-progress]'),server=find('[data-task-server]'),runtime=find('[data-task-runtime]');
+  const user=find('[data-task-user]'),userCut=find('[data-task-user-cut]'),runtimeCut=find('[data-task-runtime-cut]');
+  const caption=find<HTMLElement>('[data-task-caption]'),detail=find<HTMLElement>('[data-task-detail]');
+  let index=reduced.matches?phases.length-1:0,active=false,remaining=phases[index].duration,started=0,frame=0,length=0;
   let timer:ReturnType<typeof setTimeout>|undefined;
-  const render=()=>{
-    const phase=phases[index],selected=new Set<string>(phase.targets);
-    if(phase.handoff)selected.add('handoff');
-    if(phase.handoff==='return')selected.add('you');
-    figure.dataset.capStage=phase.id;figure.dataset.capComplete=String(!!phase.complete);
-    figure.dataset.capClient=phase.client;figure.dataset.capHandoff=phase.handoff??'none';
-    caption.textContent=phase.caption;detail.textContent=phase.detail;
-    for(const element of figure.querySelectorAll<SVGGElement>('[data-cap-node],[data-cap-route]'))element.dataset.active=String(selected.has(element.dataset.capNode??element.dataset.capRoute!));
-    const operatorDetail=figure.querySelector('[data-cap-node="operator"] [data-cap-node-detail]')!;
-    operatorDetail.textContent=isAgent?'':({mac:'From your Mac',windows:'From Windows',phone:'From your phone'}[phase.client]);
-    const youDetail=figure.querySelector('[data-cap-node="you"] [data-cap-node-detail]');
-    if(youDetail)youDetail.textContent=phase.complete?'Your result':'Your task';
-    const handoff=capabilityGeometry(compact.matches,isAgent).routes.find(route=>route.id==='handoff');
-    if(handoff)figure.querySelector('[data-cap-route="handoff"] .cap-wire-active')!.setAttribute('d',phase.handoff==='return'?handoff.reverseD:handoff.d);
+  const translate=(element:Element,x:number,y:number)=>element.setAttribute('transform',`translate(${x} ${y})`);
+  const showProgress=(value:number)=>{
+    server.style.opacity=value>0?'1':'0';runtimeCut.style.opacity=value>0?'1':'0';
+    progress.setAttribute('stroke-dashoffset',String(1-value));
+    figure.dataset.taskReady=String(value>=.999);
+    const label=value>=.999?'8 passed':value<.5?'Building':'Testing';
+    if(runtime.textContent!==label)runtime.textContent=label;
   };
   const layout=()=>{
-    const graph=capabilityGeometry(compact.matches,isAgent);svg.setAttribute('viewBox',graph.box);
-    for(const node of graph.nodes){
-      const group=figure.querySelector(`[data-cap-node="${node.id}"]`)!;
-      group.querySelector('[data-cap-symbol]')!.setAttribute('transform',`translate(${node.x} ${node.y})`);
-      const label=group.querySelector('[data-cap-label]')!;
-      label.setAttribute('x',String(node.labelPosition.x));label.setAttribute('y',String(node.labelPosition.y));label.setAttribute('text-anchor',node.labelPosition.anchor);
-      const detail=group.querySelector('[data-cap-node-detail]')!;
-      detail.setAttribute('x',String(node.labelPosition.x));detail.setAttribute('y',String(node.labelPosition.y+23));detail.setAttribute('text-anchor',node.labelPosition.anchor);
+    const phase=phases[index],g=capabilityGeometry(compact.matches,phase.route),p=g.nodes[phase.user];
+    translate(server,g.nodes.linux.x,g.nodes.linux.y);translate(find('[data-task-workstation]'),g.nodes.mac.x,g.nodes.mac.y);translate(find('[data-task-mobile]'),g.nodes.phone.x,g.nodes.phone.y);
+    translate(user,p.x,p.y+70);userCut.setAttribute('x',String(p.x-36));userCut.setAttribute('y',String(p.y+49));
+    runtimeCut.setAttribute('x',String(g.nodes.linux.x-70));runtimeCut.setAttribute('y',String(g.nodes.linux.y+49));
+    path.setAttribute('d',g.path||'M0 0');length=g.path?path.getTotalLength():0;
+    packet.setAttribute('opacity','0');
+  };
+  const render=()=>{
+    const phase=phases[index];
+    Object.assign(figure.dataset,{taskStage:phase.id,taskComplete:String(!!phase.complete),taskCodex:String(!!phase.codex),taskRoute:String(!!phase.route),taskUser:phase.user,taskPreview:String(phase.complete||(!isAgent&&['preview','report'].includes(phase.id))||(isAgent&&phase.id==='deliver'))});
+    caption.textContent=phase.caption;detail.textContent=phase.detail;
+    for(const node of figure.querySelectorAll<SVGElement>('[data-net-device]'))node.dataset.taskFocus=String(phase.focus.includes(node.dataset.netDevice as typeof phase.user));
+    for(const mark of figure.querySelectorAll<SVGElement>('[data-task-payload]'))mark.dataset.visible=String(mark.dataset.taskPayload===phase.packet);
+    layout();showProgress(phase.progress[0]);
+  };
+  const tick=()=>{
+    frame=0;if(!active)return;
+    const phase=phases[index],elapsed=Math.min(phase.duration,phase.duration-remaining+performance.now()-started);
+    const t=elapsed/phase.duration;
+    showProgress(phase.progress[0]+(phase.progress[1]-phase.progress[0])*t);
+    if(phase.packet&&length){
+      // One bounded, lightweight moving symbol. Only its transform changes.
+      const travel=Math.max(0,Math.min(1,(elapsed-350)/(phase.duration-900)));
+      const position=path.getPointAtLength(length*(travel*travel*(3-2*travel)));
+      translate(packet,position.x,position.y);
+      packet.setAttribute('opacity',String(Math.min(1,Math.max(0,elapsed/250),Math.max(0,(phase.duration-elapsed)/300))));
     }
-    for(const route of graph.routes)figure.querySelectorAll(`[data-cap-route="${route.id}"] path`).forEach(path=>path.setAttribute('d',route.id==='handoff'&&path.classList.contains('cap-wire-active')&&phases[index].handoff==='return'?route.reverseD:route.d));
+    if(phase.packet||phase.progress[0]!==phase.progress[1])frame=requestAnimationFrame(tick);
   };
   const schedule=()=>{
     started=performance.now();
-    timer=setTimeout(()=>{index=(index+1)%phases.length;remaining=phases[index].duration;render();if(active)schedule();},remaining);
+    timer=setTimeout(()=>{cancelAnimationFrame(frame);index=(index+1)%phases.length;remaining=phases[index].duration;render();if(active){schedule();tick();}},remaining);
   };
-  const play=()=>{if(active||reduced.matches)return;active=true;schedule();};
-  const pause=()=>{if(!active)return;active=false;clearTimeout(timer);remaining=Math.max(0,remaining-(performance.now()-started));};
+  const play=()=>{if(active||reduced.matches)return;active=true;schedule();tick();};
+  const pause=()=>{if(!active)return;remaining=Math.max(0,remaining-(performance.now()-started));active=false;clearTimeout(timer);cancelAnimationFrame(frame);frame=0;};
   const settle=()=>{if(!reduced.matches)return;pause();index=phases.length-1;remaining=phases[index].duration;render();};
-  compact.addEventListener('change',layout);reduced.addEventListener('change',settle);render();layout();
-  return {play,pause,destroy(){pause();compact.removeEventListener('change',layout);reduced.removeEventListener('change',settle);}};
+  compact.addEventListener('change',layout);reduced.addEventListener('change',settle);render();
+  return {play,pause,destroy(){pause();map.destroy();compact.removeEventListener('change',layout);reduced.removeEventListener('change',settle);}};
 }
