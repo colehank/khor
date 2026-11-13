@@ -16,6 +16,7 @@ import {keyboardCover,keyboardHeight,holdFoot,footHeld} from '@/lib/viewport';
 import {lowerKeyboard,raiseKeyboard} from '@/lib/soft-keyboard';
 import {isDown} from '@/lib/topology';
 import {hopWord} from '@/words';
+import {useNarrow} from '@/hooks/use-narrow';
 import {FilesPane,FileChoiceRow} from '@/views/FilesPane';
 import {AttachmentFile} from '@/views/AttachmentFile';
 import {SendInto} from '@/views/chat-files';
@@ -43,6 +44,7 @@ export function AttachmentPicker({open,onClose,road,onSent}:{open:boolean;onClos
  return open?<TermFiles road={road} onClose={onClose} onSent={onSent}/>:null;
 }
 export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void;onSent:()=>void}){
+ const narrow=useNarrow();
  const picker=useRef<HTMLInputElement>(null),folders=useRef<HTMLInputElement>(null),panel=useRef<HTMLDivElement>(null);
  const [devices,setDevices]=useState<DeviceRow[]>([]),[error,setError]=useState<string|null>(null),[picking,setPicking]=useState(false);
  const [at,setAt]=useState<Place|null>(null),[look,setLook]=useState<Attachment|null>(null);
@@ -54,7 +56,7 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
   // Move chrome to the keyboard's edge while the terminal retains its grid.
   // The terminal's fit guard covers this hold and every nested content page.
   const covered=keyboardCover()>0;
-  holdFoot(height);
+  if(narrow||matchMedia('(pointer: coarse)').matches)holdFoot(height);
   if(covered&&field instanceof HTMLElement){restore.current=field;lowerKeyboard(field);}
   else if(field instanceof HTMLElement&&field.matches('input,textarea'))field.blur();
   return()=>{holdFoot(oldHold.current);};
