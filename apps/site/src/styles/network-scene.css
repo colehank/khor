@@ -1,36 +1,48 @@
-/* Nodes are devices; closed hyperedges represent network membership. */
-.tour-section.tour-network { display:block; }
-.tour-network > .tour-copy { display:flex; align-items:center; justify-content:space-between; gap:calc(var(--gap-pane)*2); margin-bottom:calc(var(--gap-pane)*1.5); }
+/* Native networks change; the outer KhorNet keeps every device together. */
+.tour-section.tour-network { display:block; max-width:min(var(--story-max),calc(var(--gap-pane)*48)); padding-block:clamp(calc(var(--gap-pane)*2),6svh,calc(var(--gap-pane)*3)); }
+.tour-network > .tour-copy { display:flex; align-items:center; justify-content:space-between; gap:calc(var(--gap-pane)*2); margin-bottom:var(--gap-pane); }
 .tour-network > .tour-copy h2 { max-width:none; }
 .tour-network > .tour-copy h2 span { display:inline; color:var(--ink); }
 .tour-network > .tour-copy p { max-width:32ch; margin:0; }
+.tour-network > .concept-network { width:min(100%,calc(var(--gap-pane)*44),max(98svh,calc(var(--gap-pane)*30))); margin-inline:auto; }
 .network-scene { display:block; width:100%; height:auto; overflow:visible; }
-.network-scene text { font-family:var(--sans); font-size:var(--text-read); fill:var(--secondary); }
-.net-regions path { fill:var(--ink); fill-opacity:.035; stroke:color-mix(in srgb,var(--tour-accent) calc(var(--net-local,0)*100%),var(--secondary)); stroke-opacity:calc(.38 + var(--net-local,0)*.32); stroke-width:1; }
-.net-labels text { font-size:var(--text-title-md); fill:var(--secondary); stroke:var(--canvas); stroke-width:5; stroke-linejoin:round; paint-order:stroke; }
+.net-native-surface { fill:var(--ink); fill-opacity:calc(.035 - var(--net-build)*.018); }
+.net-khor-surface { fill:var(--tour-accent); fill-opacity:calc(var(--net-build)*.025); opacity:var(--net-build); }
+.net-native path { fill:none; stroke:var(--secondary); stroke-opacity:calc(.5 - var(--net-build)*.18); stroke-width:1; }
+.net-khor-shape { fill:none; stroke:var(--tour-accent); stroke-opacity:.85; stroke-width:1.5; stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:calc(1 - var(--net-build)); opacity:var(--net-build); }
 .net-device { color:var(--ink); }
 .net-device-body { fill:color-mix(in srgb,var(--ink) 8%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; }
-.net-relay { color:var(--secondary); transition:color var(--dur-240); }
-.net-relay-body { fill:var(--canvas); stroke:var(--tour-wire); stroke-width:1.25; transition:stroke var(--dur-240); }
-.net-connections path { stroke:var(--tour-accent); stroke-width:1.25; stroke-linejoin:round; }
-.net-connection { fill:var(--tour-accent); fill-opacity:.045; stroke-opacity:.7; }
-.net-candidate { fill:none; stroke-dasharray:4 7; }
-[data-route="relay"] .net-relay { color:var(--tour-accent); }
-[data-route="relay"] .net-relay-body { stroke:var(--tour-accent); }
-.concept-network.is-running .net-candidate { animation:net-seeking calc(var(--dur-240)*6) ease-in-out infinite; }
-@keyframes net-seeking { 0%,100% { stroke-opacity:.35; } 50% { stroke-opacity:.85; } }
-@media (max-width:1100px) {
- .tour-network > .tour-copy { align-items:flex-start; }
- .tour-network > .tour-copy h2 { max-width:12ch; }
- .tour-network > .tour-copy p { max-width:28ch; }
+.net-boundary-marks { color:var(--secondary); }
+.net-boundary-marks [data-body] { fill:currentColor; fill-opacity:.8; }
+.net-mark-ground { fill:var(--canvas); }
+.net-boundary-name,.net-handoff-status { font-family:var(--sans); fill:currentColor; }
+.net-boundary-name { font-size:var(--text-title-md); }
+.net-handoff-status { font-size:var(--text-read); fill:var(--secondary); opacity:0; }
+.net-khor-mark { color:var(--tour-accent); opacity:clamp(0,calc(var(--net-build)*4),1); }
+.net-khor-gap { opacity:clamp(0,calc(var(--net-build)*4),1); }
+.net-hole-clearance { opacity:0; }
+.net-status-pulse { animation:net-handoff calc(var(--dur-240)*4) ease-in-out infinite; animation-play-state:paused; }
+.concept-network.is-running .net-status-pulse { animation-play-state:running; }
+.concept-network[data-net-connection="relay"] .net-handoff-status { opacity:1; }
+.concept-network[data-net-connection="relay"] .net-hole-clearance { opacity:1; }
+@keyframes net-handoff { 0%,100% { opacity:.6; } 50% { opacity:1; } }
+@media (min-width:761px) and (max-width:1000px), (min-width:761px) and (max-height:800px) {
+ .net-boundary-name { font-size:calc(var(--text-title-md)*1.2); }
+ .net-handoff-status { font-size:calc(var(--text-read)*1.15); }
+}
+@media (max-width:1000px) {
+ .tour-network > .tour-copy { display:block; }
+ .tour-network > .tour-copy p { max-width:48ch; margin-top:var(--gap-group); }
 }
 @media (max-width:760px) {
- .tour-network > .tour-copy { display:block; margin-bottom:var(--gap-pane); }
- .tour-network > .tour-copy h2 { max-width:16ch; }
+ .tour-section.tour-network { padding-block:calc(var(--gap-pane)*2); }
+ .tour-network > .concept-network { width:min(100%,calc(var(--gap-pane)*20)); }
+ .tour-network > .tour-copy { margin-bottom:var(--gap-group); }
+ .tour-network > .tour-copy h2 { max-width:none; }
  .tour-network > .tour-copy p { max-width:34ch; margin-top:var(--gap-group); }
- .network-scene text { font-size:var(--text-title-lg); }
- .net-labels text { font-size:var(--text-title-lg); }
+ .net-boundary-name { font-size:var(--text-title-lg); }
+ .net-handoff-status { font-size:calc(var(--text-read)*1.25); }
 }
 @media (prefers-reduced-motion:reduce) {
- .network-scene * { animation:none!important; transition:none!important; }
+ .network-scene * { animation:none!important; }
 }

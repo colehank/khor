@@ -1,20 +1,33 @@
 # Net 漫游场景 · 2026-11-13
 
-仅替代[网络、会话与资源三幕](site-net-sessions-resources-20261113.md)中的第一幕 Net，位于 `feat/site-story` 本地工作区。用户明确指定设备分布、iPhone 漫游，以及中继通信与尝试直连并行后由直连接管；局部最终审阅为 **ship for local user preview**，无实质修正。这不是用户审美验收、整页通过或部署授权。
+仅替代[网络、会话与资源三幕](site-net-sessions-resources-20261113.md)中的第一幕 Net，位于 `feat/site-story` 本地工作区。用户持续调整设备分布、超边、漫游范围和边界标题；以下当前行为覆盖下方历史记录。旧独立审阅只覆盖其当时版本，不视为本次修改的审阅或用户审美验收。
 
 第二、三幕未改，仍待用户方向；保留此前 critique，不标记整组问题已解决。设计权威仍为[设计系统](../design-system/README.md)与既有 token，全局设计文档及配置未改，未创建 `PRODUCT.md`。首屏 GUI／手机首图、Fog、图标故事、导航与下载保持不变。
 
 ## 场景与行为（当前）
 
-- Network A 包含 Linux 与 Windows，Network B 包含同一个 Windows 与 Android；Windows 是两条超边共享的节点。iOS 在 A／蜂窝／B 之间漫游，不绘制其独立虚线圈或 Cellular 区域，固定节点错位排布。
-- 20.4 秒自动循环：A 内连接、蜂窝中继与候选直连并行、超边收拢到直连设备、进入 B、返回蜂窝，再回到 A。中继是示意路径，不承诺蜂窝必需中继或直连必定成功。
-- 全部网络和连接均为闭合超边。中继加入时活动超边包住 Windows／Khor／iOS；直连建立后收拢为设备集合，候选也用较淡闭合虚线表达。同网时只强调所属 Network A 或 B，避免重复轮廓；没有开放的点对点路径或信号流线。
-- 圆形节点仅保留平台／Khor 标记与隐藏 SVG 名称，图内仅有 Network A／Network B 标签，通过 textPath 排在对应超边上。移除底部状态说明、位置选择与 Pause／Play。其他两幕控件不变，共用挂载逻辑允许该幕无按钮。
-- 可见且前台时循环；离屏和页面隐藏停止，减少动态效果时静止，无 JS 时保留首态。几何变化用 1350 ms 有界 RAF，停留时没有持续 JS 绘制；无新依赖或真实网络连接。
+- NetA / LAN = {macOS, Linux}，NetB / Wi-Fi = {Windows, Linux}，NetC / Cellular = {iOS}。Linux 为共享节点，Windows 在左、macOS 在右；iOS 从 Wi-Fi 开始，移动到 Cellular 再回到 Wi-Fi，不进入 LAN。
+- 原生网络先出现，KhorNet 在 2 秒内一次成形，始终包围四台设备。初次建立后以 10 秒周期 Wi-Fi／Cellular 往返，每次移动 1.7 秒，到位后保持中继 1.3 秒再切直连，并停留 2 秒；不重复播放初次建网，也不拆掉 KhorNet。蜂窝超边淡出时 iOS 加入 Wi-Fi。
+- 大弧度闭合超边来自平滑支撑函数，保持凸曲率，没有节点鼓包或反折；外层与原生网络留出两行弧形标题的间距。没有点对点路径、额外 Khor 设备节点或底部控件。
+- LAN、Wi-Fi、Cellular、KhorNet 使用图标 + 名称，文字以 `textPath` 沿参考边界弧线排字；每档宽度的图标位置、标题位置与曲率固定，漫游时只改变超边。副标题使用独立内侧路径按真实弧长排字，不用 `dy` 压入内侧。统一 SVG mask 只裁线条、保留淡底，在图标和标题处留完整线条缺口；所有标题按当前字宽前后各留 8 个 SVG 单位，P2P／relay 切换时只更新缺口长度，文字不再靠黑色粗描边盖住超边；生产图标保持正向。蜂窝图标为三格、前两格实心而最后一格空心。Wi-Fi／蜂窝字形补入现有 `icons.tsx` 并由网站静态渲染，品牌与系统标记继续共用真实 App 来源。
+- 直连示意显示 `KhorNet P2P`；建立及换网时显示 `KhorNet relay`，副标题 `hole punching`。仅 `hole punching` 轻闪，Khor 图标、名称、`P2P` 与 `relay` 均不闪；恢复直连即隐藏副标题。中继承载与打洞尝试并行的语义依据 [iroh 网络迁移说明](https://www.iroh.computer/blog/healing-connections)，只是示例，不承诺每次换网都用中继或一定打洞成功。
+- 可见且前台时运行；离屏和页面隐藏暂停，减少动态效果时显示完整静态 KhorNet，无 JS 时也保留完整关系。仅几何变化期间使用有界 RAF；无新依赖、渲染器或真实网络连接。
 
 入口：<http://127.0.0.1:23820/#connect>。源码位于 `apps/site/src`：`components/concepts/NetworkDiagram.astro`、`scripts/network-scene.ts`、`scripts/network-geometry.ts`、`styles/network-scene.css`；`scripts/product-tour.ts` 接入场景，`components/ProductTour.astro` 调整首幕布局，`styles/product-tour.css` 移除旧网络样式。
 
-## 共享节点、沿边标题与曲率修订（当前版本）
+## 响应式与浏览器偏好
+
+- 宽屏限制图形宽度并参考视口高度，避免网络图撑满长屏；短横屏保留最小阅读尺寸，不把图硬压进一屏。
+- 平板将标题和说明上下排；手机保留竖向网络构图、裁掉 SVG 顶底冗余空白，并放大网络标签。窄屏 KhorNet 标签位于上侧，与 Wi-Fi 标签错开；图形漫游时仍保持位置不变。
+- 用户明确要求后续使用 **headless Chrome**，不再在桌面打开测试窗口。只做网页定向验证，不扩大原生／WebKit 测试范围。
+
+## 当前定向验证
+
+证据目录：`/Volumes/disk0/Khor/evidence/site-story-20261113/khornet-curved-labels/`。1440／390／320px Chrome 完整漫游采样确认：KhorNet 成形后不重复消失且包围四台设备；标题和图标位置在漫游中不变，文字路径足够长、无标签间字形包围盒重叠、无横向溢出；图标／P2P／relay 常亮，仅 hole punching 闪烁；到位后仍为 relay，随后切为 P2P。`desktop-checks.json`、`mobile-checks.json` 与 `small-checks.json` 为数值记录，`desktop-viewport.png`／`mobile-viewport.png` 为正常播放截图。蜂窝图标为当前三格版本。`responsive.json` 记录 320／390／768／844 横屏／1024／1440／1920 七档的尺寸、无横向溢出、标题字号与等距缺口；`responsive-*.png` 为各档完整视口。最后响应式与循环验证均为 headless Chrome。
+
+定向 TypeScript、diff 格式检查及十页 Astro 静态构建通过，最终产物：`/Volumes/disk0/Khor/artifacts/site-story-20261113-khornet-curved-labels/`。图谱先查，但其记录陈旧，源文件与本轮定向验证优先。没有扩大到 GUI 原生构建、WebKit 或实体手机验证；本轮仅本地，未发布。
+
+## 共享节点、沿边标题与曲率修订（历史版本）
 
 按用户新拓扑，移除 macOS 标记，Windows 为两网共享节点，Android 位于 B。iOS 在外游走时没有单独区域。Network A／B 标题引用各自边界路径，绘制在所有网络轮廓上方，文字描边让边界从字下退让。曲线收敛为每段一条很轻的 Bézier 弧，节点处保留圆弧；移除额外鼓包与反弯。
 

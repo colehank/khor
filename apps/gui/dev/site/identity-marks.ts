@@ -1,7 +1,11 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {machineMark,sessionMark} from '../../src/components/BrandIcons';
-import {IconCopy,IconCheck} from '../../src/components/icons';
+import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular} from '../../src/components/icons';
+
+export const networkTypeMarks=Object.fromEntries([
+  ['a',IconNetwork],['b',IconWifi],['c',IconCellular],
+].map(([name,Icon])=>[name,renderToStaticMarkup(createElement(Icon as typeof IconNetwork),{identifierPrefix:`site-network-${name}-`})]));
 
 export const copyControlMarks=(prefix:string)=>({
   copy:renderToStaticMarkup(createElement(IconCopy),{identifierPrefix:`site-${prefix}-copy-`}),

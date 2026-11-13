@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-13 KhorNet 当前修订：LAN 为 macOS／Linux，Wi-Fi 为 Windows／Linux；iOS 从 Wi-Fi 到蜂窝再返回，不进 LAN。KhorNet 一次成形后包围全部设备；换网到位后中继再保留 1.3 秒再切直连。沿边曲线标题为图标 + 名称，直连显示 P2P，中继显示 relay／hole punching；仅 hole punching 闪烁。副标题独立弧线路径修复字母挤压，外层留白修复标签间重叠；图标与标题位置固定，边界为文字留完整缺口；蜂窝三格前二实后一空。桌面／手机宽度 Chrome 循环检查、定向 TypeScript 与静态构建通过，证据 `khornet-curved-labels/`。详见 [Net 漫游场景](site-net-roaming-20261113.md)，下方旧 Net 拓扑均为历史版本，本轮未发布。
+
 - 2026-11-13 Net 成员与曲率补充：A 为 Linux／Windows，B 为共享 Windows／Android；iOS 取消独立圈。标题沿超边排，曲率收敛为轻微单段弧，去掉额外鼓包。Chrome 两档八组归属检查、TypeScript 与静态构建通过，证据 `net-shared/`；详见 [Net 漫游场景](site-net-roaming-20261113.md)。
 - 2026-11-13 Net 自循环补充：移除底部四个控件与说明，Wi-Fi 改为 Network，错位布局与弧线漫游；中继／直连统一为闭合超边，20.4 秒自动循环。桌面／窄屏检查、正常播放构图、定向 TypeScript 与静态构建通过；证据 `net-loop/`，详见 [Net 漫游场景](site-net-roaming-20261113.md)。
 - 2026-11-13 Net 超图补充：移除节点外部标题，闭合超边表示网络成员并随漫游伸缩；移除常驻两两连线。桌面／窄屏六种成员组合、直连接管和暂停检查、定向 TypeScript 与静态构建通过，证据见 `net-hypergraph/`；详见 [Net 漫游场景](site-net-roaming-20261113.md)。

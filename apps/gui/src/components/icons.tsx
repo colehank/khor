@@ -101,6 +101,8 @@ const LIVE = {
   appearance: fit(2.92, 2.92, 18.17), // round
   shield: fit(1.19, 1.33, 21.62),
   network: fit(1.44, 0.74, 21.12), // round
+  wifi: fit(1.4, 2.2, 21.2),
+  cellular: fit(1.3, 1.8, 21.4),
   pulse: fit(1.34, 1.34, 21.32), // square
   branch: fit(0.55, 0.55, 14.89),
   back: reshare(fit(1.93, 2.33, 11.33), ROUND, BARE),
@@ -542,6 +544,26 @@ export function IconNetwork({ className }: IconProps) {
           <circle cx="18.5" cy="17.2" r="2.45" />
         </>
       )}
+    </RailGlyph>
+  );
+}
+
+/** Native network types, sharing the same rail glyph stroke and solid detail. */
+export function IconWifi({ className }: IconProps) {
+  return (
+    <RailGlyph className={className} live={LIVE.wifi}>
+      <path d="M3 8.6a14 14 0 0 1 18 0M6.3 12.3a8.8 8.8 0 0 1 11.4 0M9.4 16a4 4 0 0 1 5.2 0" />
+      <circle data-body cx="12" cy="19.5" r="1.35" />
+    </RailGlyph>
+  );
+}
+
+export function IconCellular({ className }: IconProps) {
+  return (
+    <RailGlyph className={className} live={LIVE.cellular}>
+      <rect data-body x="3" y="15" width="4" height="6" rx=".65" />
+      <rect data-body x="10" y="10" width="4" height="11" rx=".65" />
+      <rect x="17" y="4" width="4" height="17" rx=".65" />
     </RailGlyph>
   );
 }
