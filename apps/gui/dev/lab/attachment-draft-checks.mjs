@@ -42,6 +42,8 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   assert.equal(await directory.locator('[data-files-search] input').evaluate(node=>node===document.activeElement),false,'No automatic path/search keyboard');
   if(await directory.locator('[data-files-entry="file"]').count()===0)await directory.locator('[data-files-name="project"] button').first().click();
   await directory.locator('[data-files-entry="file"]').first().waitFor();
+  const kindBoxes=await directory.locator('[data-files-kind]').evaluateAll(nodes=>nodes.map(node=>{const icon=node.querySelector('svg'),a=node.getBoundingClientRect(),b=icon.getBoundingClientRect();return {slot:a.width,width:b.width,height:b.height};}));for(const box of kindBoxes){assert(box.width<=box.slot+1&&box.height<=box.slot+1,'File and folder marks stay inside their common icon slot');}
+
   const row=directory.locator('[data-files-entry="file"]').first(),remoteName=await row.getAttribute('data-files-name');
   await row.locator('button').first().click();assert.equal(await row.locator('[data-files-select]').getAttribute('aria-pressed'),'true');assert.equal(await preview.count(),0,'File row selects without opening');
   await row.locator('[data-files-open]').click();await preview.locator('[data-file-page]').waitFor();await preview.locator('[data-file-back]').click();await preview.waitFor({state:'hidden'});await directory.waitFor();
