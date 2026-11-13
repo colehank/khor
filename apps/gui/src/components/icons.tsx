@@ -314,9 +314,12 @@ export function IconWorkstation({ className }: IconProps) {
 
 export function IconDesktop({ className }: IconProps) {
   return <RailGlyph className={className} live={LIVE.hardware}>
-    <rect x="3.5" y="4.5" width="17" height="11.5" rx="2.1" />
-    <path data-body d="M10.5 16h3l.6 3.5H9.9Z" />
-    <path d="M7.8 19.5h8.4" />
+    <rect x="3.5" y="6" width="10.7" height="9.4" rx="1.5" />
+    <path data-body d="M7.8 15.4h2.1l.5 3.3H7.3Z" />
+    <path d="M5.9 18.7h5.9" />
+    <rect x="17.1" y="4.8" width="4.4" height="13.9" rx="1.3" />
+    <path d="M18.8 8.3h1" />
+    <circle data-body cx="19.3" cy="15.9" r=".65" stroke="none" />
   </RailGlyph>;
 }
 

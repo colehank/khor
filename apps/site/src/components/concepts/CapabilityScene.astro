@@ -4,18 +4,20 @@ import ConceptMark from './ConceptMark.astro';
 import {supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
 import {workPhases,agentPhases} from './capability-data';
 import {capabilityGeometry} from '../../scripts/capability-geometry';
+import {taskState} from '../../scripts/task-state';
 import '../../styles/capability-scene.css';
 interface Props {mode:'work'|'agent'}
 const {mode}=Astro.props,isAgent=mode==='agent';
 const phases=isAgent?agentPhases:workPhases,initial=phases[phases.length-1];
+const initialState=taskState(phases,phases.length-1,initial.duration);
 const {nodes}=capabilityGeometry(false);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const description=isAgent?'You give Khor Agent on your workstation a build task from mobile. Khor works with Codex, transfers the project to Server, runs and monitors its build and tests, checks the web preview, collects the report and sends the result back to you. The four devices stay in the same network.':'You work with Codex on your workstation, transfer the project to Server and start the build and tests. You then continue from Mobile, watch the same terminal, open the server web preview and save the build report to your workstation. Desktop remains available in the network.';
 ---
-<figure class:list={['concept','concept-network','task-scene',`task-${mode}`]} data-concept={mode} data-task-stage="done" data-task-complete="true" data-task-codex="false" data-task-ready="true" data-task-preview="true" data-net-connection="p2p" style="--net-build:1">
+<figure class:list={['concept','concept-network','task-scene',`task-${mode}`]} data-concept={mode} data-task-stage="done" data-task-complete="true" data-task-codex="false" data-task-ready="true" data-task-accepted="true" data-net-connection="p2p" style="--net-build:1">
   <p class="task-goal">Build and check Atlas Web</p>
-  <NetworkGraph prefix={mode} title={isAgent?'You give Khor a task, and receive the result':'One task, across your devices'} {description}>
+  <NetworkGraph prefix={mode} infrastructure={false} title={isAgent?'You give Khor a task, and receive the result':'One task, across your devices'} {description}>
     <Fragment slot="clearances">
       <rect data-task-user-cut x={nodes.phone.x-36} y={nodes.phone.y+49} width="72" height="33" fill="black"/>
       <rect data-task-runtime-cut x={nodes.linux.x-70} y={nodes.linux.y+49} width="140" height="33" fill="black"/>
@@ -29,22 +31,22 @@ const description=isAgent?'You give Khor Agent on your workstation a build task 
     </g>
     <g slot="activity" class="task-activity">
       <g data-task-server transform={`translate(${nodes.linux.x} ${nodes.linux.y})`}>
-        <circle class="task-progress-track" r="43"/>
-        <circle class="task-progress" data-task-progress r="43" pathLength="1" transform="rotate(-90)"/>
-        <g class="task-badge task-server-badge" transform="translate(28 28)">
-          <circle r="15"/>
-          <g class="task-running-mark"><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph('terminal')} x={0} y={0} size={20} prefix={`${mode}-running`}/></svg></g>
-          <g class="task-ready-mark"><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph('check')} x={0} y={0} size={20} prefix={`${mode}-ready`}/></svg></g>
+        <g data-task-server-runtime>
+          <circle class="task-progress-track" r="43"/>
+          <circle class="task-progress" data-task-progress r="43" pathLength="1" transform="rotate(-90)"/>
+          <text class="task-runtime-label" data-task-runtime x="0" y="72" text-anchor="middle">8 passed</text>
         </g>
-        <text class="task-runtime-label" data-task-runtime x="0" y="72" text-anchor="middle">8 passed</text>
       </g>
       <g data-task-workstation transform={`translate(${nodes.mac.x} ${nodes.mac.y})`}>
         {isAgent&&<g class="task-badge task-khor-badge" transform="translate(-28 28)"><circle r="16"/><svg x="-11" y="-11" width="22" height="22"><ConceptMark svg={glyph('Khor')} x={0} y={0} size={22} prefix={`${mode}-operator`}/></svg></g>}
         <g class="task-badge task-codex-badge" transform="translate(28 28)"><circle r="15"/><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph('Codex')} x={0} y={0} size={20} prefix={`${mode}-codex`}/></svg></g>
       </g>
-      <g data-task-mobile transform={`translate(${nodes.phone.x} ${nodes.phone.y})`}>
-        <g class="task-badge task-preview-badge" transform="translate(28 -28)"><circle r="15"/><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph('web')} x={0} y={0} size={20} prefix={`${mode}-preview`}/></svg></g>
-      </g>
+      {(['linux','mac','phone'] as const).map(device=><g data-task-receipt-at={device} transform={`translate(${nodes[device].x} ${nodes[device].y})`}>
+        <g class="task-badge task-receipt" data-task-receipt={device} data-has-receipt="true" transform={device==='phone'?'translate(28 -28)':'translate(28 28)'}>
+          <circle r="15"/>
+          {['files','terminal','web','check'].map(name=><g data-receipt-payload={name} data-visible={name===(device==='linux'?'check':initialState.receipts[device])?'true':'false'}><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(name)} x={0} y={0} size={20} prefix={`${mode}-${device}-received-${name}`}/></svg></g>)}
+        </g>
+      </g>)}
       <g class="task-user" data-task-user transform={`translate(${nodes.phone.x} ${nodes.phone.y+70})`}><circle cx="-22" cy="-5" r="3"/><text x="-12" y="0">You</text></g>
     </g>
   </NetworkGraph>

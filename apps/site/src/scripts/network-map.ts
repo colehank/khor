@@ -34,7 +34,7 @@ export function mountNetworkMap(figure:HTMLElement) {
   };
   const setConnection=(connection:'p2p'|'relay')=>{
     figure.dataset.netConnection=connection;
-    connectionLabel.textContent=connection==='p2p'?'P2P':'relay';
+    connectionLabel.textContent=svg.dataset.netInfrastructure==='false'?'':connection==='p2p'?'P2P':'relay';
     fitKhorGaps();
   };
   const layoutLabels=()=>{

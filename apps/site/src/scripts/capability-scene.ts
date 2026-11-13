@@ -1,6 +1,7 @@
 import {agentPhases,workPhases} from '../components/concepts/capability-data';
 import {capabilityGeometry} from './capability-geometry';
 import {mountNetworkMap} from './network-map';
+import {taskState,taskTransport} from './task-state';
 
 export function mountCapabilityScene(figure:HTMLElement) {
   const isAgent=figure.dataset.concept==='agent',phases=isAgent?agentPhases:workPhases;
@@ -8,21 +9,36 @@ export function mountCapabilityScene(figure:HTMLElement) {
   const find=<T extends Element=SVGElement>(selector:string)=>figure.querySelector<T>(selector)!;
   const path=find<SVGPathElement>('[data-task-route]'),packet=find('[data-task-packet]');
   const progress=find('[data-task-progress]'),server=find('[data-task-server]'),runtime=find('[data-task-runtime]');
+  const serverRuntime=find('[data-task-server-runtime]');
+  const receipts=[...figure.querySelectorAll<SVGElement>('[data-task-receipt]')];
   const user=find('[data-task-user]'),userCut=find('[data-task-user-cut]'),runtimeCut=find('[data-task-runtime-cut]');
   const caption=find<HTMLElement>('[data-task-caption]'),detail=find<HTMLElement>('[data-task-detail]');
   let index=reduced.matches?phases.length-1:0,active=false,remaining=phases[index].duration,started=0,frame=0,length=0;
-  let timer:ReturnType<typeof setTimeout>|undefined;
+  let timer:ReturnType<typeof setTimeout>|undefined,lastReceipts='';
   const translate=(element:Element,x:number,y:number)=>element.setAttribute('transform',`translate(${x} ${y})`);
-  const showProgress=(value:number)=>{
-    server.style.opacity=value>0?'1':'0';runtimeCut.style.opacity=value>0?'1':'0';
-    progress.setAttribute('stroke-dashoffset',String(1-value));
-    figure.dataset.taskReady=String(value>=.999);
-    const label=value>=.999?'8 passed':value<.5?'Building':'Testing';
+  const showState=(elapsed:number)=>{
+    const state=taskState(phases,index,elapsed),ready=state.progress===1;
+    serverRuntime.style.opacity=state.started?'1':'0';runtimeCut.style.opacity=state.started?'1':'0';
+    progress.setAttribute('stroke-dashoffset',String(1-state.progress));
+    const attributes={taskReady:String(ready),taskAccepted:String(state.accepted),taskComplete:String(state.complete),taskStarted:String(state.started),taskCodex:String(!!phases[index].codex&&state.accepted)};
+    for(const [key,value] of Object.entries(attributes))if(figure.dataset[key]!==value)figure.dataset[key]=value;
+    const receiptState=JSON.stringify([state.receipts,ready]);
+    if(receiptState!==lastReceipts){
+      lastReceipts=receiptState;
+      for(const badge of receipts){
+        const device=badge.dataset.taskReceipt as keyof typeof state.receipts;
+        const payload=device==='linux'&&ready?'check':state.receipts[device];
+        badge.dataset.hasReceipt=String(!!payload);
+        for(const mark of badge.querySelectorAll<SVGElement>('[data-receipt-payload]'))mark.dataset.visible=String(mark.dataset.receiptPayload===payload);
+      }
+    }
+    const label=ready?'8 passed':state.progress<.5?'Building':'Testing';
     if(runtime.textContent!==label)runtime.textContent=label;
   };
   const layout=()=>{
     const phase=phases[index],g=capabilityGeometry(compact.matches,phase.route),p=g.nodes[phase.user];
-    translate(server,g.nodes.linux.x,g.nodes.linux.y);translate(find('[data-task-workstation]'),g.nodes.mac.x,g.nodes.mac.y);translate(find('[data-task-mobile]'),g.nodes.phone.x,g.nodes.phone.y);
+    translate(server,g.nodes.linux.x,g.nodes.linux.y);translate(find('[data-task-workstation]'),g.nodes.mac.x,g.nodes.mac.y);
+    for(const device of ['linux','mac','phone'] as const)translate(find(`[data-task-receipt-at="${device}"]`),g.nodes[device].x,g.nodes[device].y);
     translate(user,p.x,p.y+70);userCut.setAttribute('x',String(p.x-36));userCut.setAttribute('y',String(p.y+49));
     runtimeCut.setAttribute('x',String(g.nodes.linux.x-70));runtimeCut.setAttribute('y',String(g.nodes.linux.y+49));
     path.setAttribute('d',g.path||'M0 0');length=g.path?path.getTotalLength():0;
@@ -30,23 +46,21 @@ export function mountCapabilityScene(figure:HTMLElement) {
   };
   const render=()=>{
     const phase=phases[index];
-    Object.assign(figure.dataset,{taskStage:phase.id,taskComplete:String(!!phase.complete),taskCodex:String(!!phase.codex),taskRoute:String(!!phase.route),taskUser:phase.user,taskPreview:String(phase.complete||(!isAgent&&['preview','report'].includes(phase.id))||(isAgent&&phase.id==='deliver'))});
+    Object.assign(figure.dataset,{taskStage:phase.id,taskRoute:String(!!phase.route),taskUser:phase.user});
     caption.textContent=phase.caption;detail.textContent=phase.detail;
     for(const node of figure.querySelectorAll<SVGElement>('[data-net-device]'))node.dataset.taskFocus=String(phase.focus.includes(node.dataset.netDevice as typeof phase.user));
     for(const mark of figure.querySelectorAll<SVGElement>('[data-task-payload]'))mark.dataset.visible=String(mark.dataset.taskPayload===phase.packet);
-    layout();showProgress(phase.progress[0]);
+    layout();showState(0);
   };
   const tick=()=>{
     frame=0;if(!active)return;
     const phase=phases[index],elapsed=Math.min(phase.duration,phase.duration-remaining+performance.now()-started);
-    const t=elapsed/phase.duration;
-    showProgress(phase.progress[0]+(phase.progress[1]-phase.progress[0])*t);
+    showState(elapsed);
     if(phase.packet&&length){
-      // One bounded, lightweight moving symbol. Only its transform changes.
-      const travel=Math.max(0,Math.min(1,(elapsed-350)/(phase.duration-900)));
-      const position=path.getPointAtLength(length*(travel*travel*(3-2*travel)));
+      const transport=taskTransport(phase,elapsed);
+      const position=path.getPointAtLength(length*transport.position);
       translate(packet,position.x,position.y);
-      packet.setAttribute('opacity',String(Math.min(1,Math.max(0,elapsed/250),Math.max(0,(phase.duration-elapsed)/300))));
+      packet.setAttribute('opacity',String(transport.opacity));
     }
     if(phase.packet||phase.progress[0]!==phase.progress[1])frame=requestAnimationFrame(tick);
   };

@@ -4,8 +4,8 @@ import {networkDeviceMarks,supportedHarnesses,networkTypeMarks} from '../../../.
 import {networkGeometry,networkNodeRadius} from '../../scripts/network-geometry';
 import '../../styles/network-scene.css';
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
-interface Props { prefix:string; title?:string; description?:string }
-const {prefix,title='Your devices, your net',description='LAN contains a workstation and server. Wi-Fi contains the same server and a desktop. Mobile moves between Wi-Fi and cellular while KhorNet keeps all four devices connected.'}=Astro.props;
+interface Props { prefix:string; title?:string; description?:string; infrastructure?:boolean }
+const {prefix,infrastructure=true,title='Your devices, your net',description='LAN contains a workstation and server. Wi-Fi contains the same server and a desktop. Mobile moves between Wi-Fi and cellular while KhorNet keeps all four devices connected.'}=Astro.props;
 const initial=networkGeometry(false,1);
 const ref=(id:string)=>`${prefix}-${id}`;
 const devices=[{id:'mac',name:'Workstation'},{id:'linux',name:'Server'},{id:'windows',name:'Desktop'},{id:'phone',name:'Mobile'}] as const;
@@ -13,7 +13,7 @@ const areaNames={a:'NetA · Local network',b:'NetB · Wi-Fi',c:'NetC · Cellular
 const areaLabels={a:'LAN',b:'Wi-Fi',c:'Cellular'};
 const labelWidths={a:50,b:65,c:90};
 ---
-  <svg class="network-scene" data-net-scene viewBox={initial.box} role="img" aria-labelledby={`${ref("network-scene-title")} ${ref("network-scene-desc")}`}>
+  <svg class="network-scene" data-net-scene data-net-infrastructure={String(infrastructure)} viewBox={initial.box} role="img" aria-labelledby={`${ref("network-scene-title")} ${ref("network-scene-desc")}`}>
     <title id={ref('network-scene-title')}>{title}</title>
     <desc id={ref('network-scene-desc')}>{description}</desc>
     <defs>
@@ -80,7 +80,7 @@ const labelWidths={a:50,b:65,c:90};
         <circle class="net-mark-ground" r="21"/>
         <svg x="-16" y="-16" width="32" height="32"><ConceptMark svg={marks.Khor} x={0} y={0} size={32} prefix={`${prefix}-khor`}/></svg>
       </g>
-      <text class="net-boundary-name"><textPath href={`#${ref("network-label-khor")}`} startOffset="26">KhorNet <tspan data-net-connection-label>P2P</tspan></textPath></text>
+      <text class="net-boundary-name"><textPath href={`#${ref("network-label-khor")}`} startOffset="26">KhorNet{infrastructure?' ':''}<tspan data-net-connection-label>{infrastructure?'P2P':''}</tspan></textPath></text>
       <text class="net-handoff-status" aria-hidden="true"><textPath class="net-status-pulse" href={`#${ref("network-label-khor-subtitle")}`} startOffset="26">hole punching</textPath></text>
     </g>
     <slot name="activity" />

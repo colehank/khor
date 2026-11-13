@@ -6,6 +6,7 @@
 .tour-network > .tour-copy p { max-width:32ch; margin:0; }
 .tour-network > .concept-network { width:min(100%,calc(var(--gap-pane)*44),max(98svh,calc(var(--gap-pane)*30))); margin-inline:auto; }
 .network-scene { display:block; width:100%; height:auto; overflow:visible; }
+.network-scene[data-net-infrastructure="false"] :is(.net-native,.net-native-surface,.net-boundary-marks,[data-net-gap-group]) { display:none; }
 .net-native-surface { fill:var(--ink); fill-opacity:calc(.035 - var(--net-build)*.018); }
 .net-khor-surface { fill:var(--tour-accent); fill-opacity:calc(var(--net-build)*.025); opacity:var(--net-build); }
 .net-native path { fill:none; stroke:var(--secondary); stroke-opacity:calc(.5 - var(--net-build)*.18); stroke-width:1; }
