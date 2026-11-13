@@ -5,18 +5,17 @@ import {networkGeometry,networkNodeRadius} from '../../scripts/network-geometry'
 import '../../styles/network-scene.css';
 const marks=Object.fromEntries([...supportedDevices,...supportedHarnesses].map(mark=>[mark.name,mark.svg]));
 const initial=networkGeometry(false,0);
-const devices=[{id:'linux',name:'Linux'},{id:'mac',name:'macOS'},{id:'windows',name:'Windows'},{id:'phone',name:'iOS'}] as const;
-const areaNames={a:'Network A',b:'Network B',cellular:'Cellular'};
+const devices=[{id:'linux',name:'Linux'},{id:'windows',name:'Windows'},{id:'android',name:'Android'},{id:'phone',name:'iOS'}] as const;
+const areaNames={a:'Network A',b:'Network B'};
 ---
 <figure class="concept concept-network" data-concept="network" data-route="direct" data-location="a" data-net-phase="local" aria-label="Devices roam between private networks and cellular while Khor keeps them connected">
   <svg class="network-scene" data-net-scene viewBox={initial.box} role="img" aria-labelledby="network-scene-title network-scene-desc">
     <title id="network-scene-title">Your devices, across networks</title>
-    <desc id="network-scene-desc">Closed regions show networks. Linux and macOS share Network A; Windows is in Network B. The iOS node roams between them and cellular. The green connection region includes Khor while relaying, then contracts around the devices when a direct connection is ready.</desc>
+    <desc id="network-scene-desc">Closed regions show networks. Network A contains Linux and Windows. Network B contains the same Windows device and Android. The iOS node roams between them and cellular without a separate enclosure. The green connection region includes Khor while relaying, then contracts around the devices when a direct connection is ready.</desc>
     <g class="net-regions">
       {Object.entries(initial.areas).map(([id,area])=>(
-        <g data-net-area={id} style={`opacity:${area.opacity};--net-local:${area.strength}`} aria-hidden={area.opacity===0?'true':'false'}>
-          <path d={area.d}/>
-          <text text-anchor={area.label.anchor} x={area.label.x} y={area.label.y}>{areaNames[id as keyof typeof areaNames]}</text>
+        <g data-net-area={id} style={`--net-local:${area.strength}`}>
+          <path id={`network-area-${id}`} d={area.d}/>
         </g>
       ))}
     </g>
@@ -35,6 +34,13 @@ const areaNames={a:'Network A',b:'Network B',cellular:'Cellular'};
       <title>Khor relay</title>
       <circle class="net-relay-body" r="25"/>
       <svg x="-17" y="-17" width="34" height="34"><ConceptMark svg={marks.Khor} x={0} y={0} size={34} prefix="roam-relay"/></svg>
+    </g>
+    <g class="net-labels">
+      {Object.entries(initial.areas).map(([id,area])=>(
+        <text data-net-label={id} text-anchor="middle" dy=".3em">
+          <textPath href={`#network-area-${id}`} startOffset={area.labelOffset}>{areaNames[id as keyof typeof areaNames]}</textPath>
+        </text>
+      ))}
     </g>
   </svg>
 </figure>

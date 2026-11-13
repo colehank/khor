@@ -13,9 +13,9 @@ export function mountNetworkScene(figure:HTMLElement) {
   const compact=matchMedia('(max-width: 760px)');
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const device=(id:string)=>svg.querySelector<SVGGElement>(`[data-net-device="${id}"]`)!;
-  const nodes={linux:device('linux'),mac:device('mac'),windows:device('windows'),relay:device('relay'),phone:device('phone')};
+  const nodes={linux:device('linux'),windows:device('windows'),android:device('android'),relay:device('relay'),phone:device('phone')};
   const connections=new Map([...svg.querySelectorAll<SVGPathElement>('[data-net-connection]')].map(path=>[path.dataset.netConnection!,path]));
-  const areas=new Map([...svg.querySelectorAll<SVGGElement>('[data-net-area]')].map(area=>[area.dataset.netArea!,{group:area,path:area.querySelector('path')!,label:area.querySelector('text')!}]));
+  const areas=new Map([...svg.querySelectorAll<SVGGElement>('[data-net-area]')].map(area=>[area.dataset.netArea!,{group:area,path:area.querySelector('path')!,label:svg.querySelector(`[data-net-label="${area.dataset.netArea}"] textPath`)!}]));
   let phaseIndex=0, position=0, relayAmount=0, active=false, timer:ReturnType<typeof setTimeout>|undefined;
   let remaining:number=phases[0].duration, started=0, frame=0;
   let movement:{from:number;to:number;fromRelay:number;toRelay:number;elapsed:number;started:number}|null=null;
@@ -23,16 +23,14 @@ export function mountNetworkScene(figure:HTMLElement) {
   const draw=()=>{
     const geometry=networkGeometry(compact.matches,position,relayAmount);
     svg.setAttribute('viewBox',geometry.box);
-    for(const id of ['linux','mac','windows','relay','phone'] as const){
+    for(const id of ['linux','windows','android','relay','phone'] as const){
       const p=geometry.nodes[id];nodes[id].setAttribute('transform',`translate(${p.x} ${p.y})`);
     }
     for(const [id,shape] of Object.entries(geometry.areas)){
       const area=areas.get(id)!;
-      area.path.setAttribute('d',shape.d);area.group.style.opacity=String(shape.opacity);
+      area.path.setAttribute('d',shape.d);
       area.group.style.setProperty('--net-local',String(shape.strength));
-      area.group.setAttribute('aria-hidden',String(shape.opacity<.01));
-      area.label.setAttribute('x',String(shape.label.x));area.label.setAttribute('y',String(shape.label.y));
-      area.label.setAttribute('text-anchor',shape.label.anchor);
+      area.label.setAttribute('startOffset',String(shape.labelOffset));
     }
     for(const [id,shape] of Object.entries(geometry.connections)){
       const path=connections.get(id)!;path.setAttribute('d',shape.d);path.style.opacity=String(shape.opacity);

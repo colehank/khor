@@ -20,6 +20,7 @@
 
 ## 本轮实现与验证
 
+- 2026-11-13 Net 成员与曲率补充：A 为 Linux／Windows，B 为共享 Windows／Android；iOS 取消独立圈。标题沿超边排，曲率收敛为轻微单段弧，去掉额外鼓包。Chrome 两档八组归属检查、TypeScript 与静态构建通过，证据 `net-shared/`；详见 [Net 漫游场景](site-net-roaming-20261113.md)。
 - 2026-11-13 Net 自循环补充：移除底部四个控件与说明，Wi-Fi 改为 Network，错位布局与弧线漫游；中继／直连统一为闭合超边，20.4 秒自动循环。桌面／窄屏检查、正常播放构图、定向 TypeScript 与静态构建通过；证据 `net-loop/`，详见 [Net 漫游场景](site-net-roaming-20261113.md)。
 - 2026-11-13 Net 超图补充：移除节点外部标题，闭合超边表示网络成员并随漫游伸缩；移除常驻两两连线。桌面／窄屏六种成员组合、直连接管和暂停检查、定向 TypeScript 与静态构建通过，证据见 `net-hypergraph/`；详见 [Net 漫游场景](site-net-roaming-20261113.md)。
 - 2026-11-13 Net 外形补充：按用户要求改为等大的系统标记圆形节点，重新对齐连线路径；桌面／窄屏 Chrome 查看与定向 TypeScript 通过，证据见 `net-nodes/`，详见 [Net 漫游场景](site-net-roaming-20261113.md)。

@@ -7,8 +7,7 @@
 .network-scene { display:block; width:100%; height:auto; overflow:visible; }
 .network-scene text { font-family:var(--sans); font-size:var(--text-read); fill:var(--secondary); }
 .net-regions path { fill:var(--ink); fill-opacity:.035; stroke:color-mix(in srgb,var(--tour-accent) calc(var(--net-local,0)*100%),var(--secondary)); stroke-opacity:calc(.38 + var(--net-local,0)*.32); stroke-width:1; }
-.net-regions text { font-size:var(--text-title-md); fill:var(--secondary); }
-[data-net-area="cellular"] path { fill:none; stroke-dasharray:4 7; }
+.net-labels text { font-size:var(--text-title-md); fill:var(--secondary); stroke:var(--canvas); stroke-width:5; stroke-linejoin:round; paint-order:stroke; }
 .net-device { color:var(--ink); }
 .net-device-body { fill:color-mix(in srgb,var(--ink) 8%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; }
 .net-relay { color:var(--secondary); transition:color var(--dur-240); }
@@ -30,7 +29,7 @@
  .tour-network > .tour-copy h2 { max-width:16ch; }
  .tour-network > .tour-copy p { max-width:34ch; margin-top:var(--gap-group); }
  .network-scene text { font-size:var(--text-title-lg); }
- .net-regions text { font-size:var(--text-title-lg); }
+ .net-labels text { font-size:var(--text-title-lg); }
 }
 @media (prefers-reduced-motion:reduce) {
  .network-scene * { animation:none!important; transition:none!important; }

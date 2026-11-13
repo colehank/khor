@@ -6,15 +6,21 @@
 
 ## 场景与行为（当前）
 
-- Linux 与 macOS 位于 Network A，Windows 位于 Network B；iOS 节点沿弧线在 A／蜂窝／B 之间漫游，固定节点错位排布。
+- Network A 包含 Linux 与 Windows，Network B 包含同一个 Windows 与 Android；Windows 是两条超边共享的节点。iOS 在 A／蜂窝／B 之间漫游，不绘制其独立虚线圈或 Cellular 区域，固定节点错位排布。
 - 20.4 秒自动循环：A 内连接、蜂窝中继与候选直连并行、超边收拢到直连设备、进入 B、返回蜂窝，再回到 A。中继是示意路径，不承诺蜂窝必需中继或直连必定成功。
-- 全部网络和连接均为闭合超边。中继加入时活动超边包住 macOS／Khor／iOS；直连建立后收拢为设备集合，候选也用较淡闭合虚线表达。同网时只强调 Network A，避免重复轮廓；没有开放的点对点路径或信号流线。
-- 圆形节点仅保留平台／Khor 标记与隐藏 SVG 名称，图内仅有 Network A／Network B／Cellular 标签。移除底部状态说明、位置选择与 Pause／Play。其他两幕控件不变，共用挂载逻辑允许该幕无按钮。
+- 全部网络和连接均为闭合超边。中继加入时活动超边包住 Windows／Khor／iOS；直连建立后收拢为设备集合，候选也用较淡闭合虚线表达。同网时只强调所属 Network A 或 B，避免重复轮廓；没有开放的点对点路径或信号流线。
+- 圆形节点仅保留平台／Khor 标记与隐藏 SVG 名称，图内仅有 Network A／Network B 标签，通过 textPath 排在对应超边上。移除底部状态说明、位置选择与 Pause／Play。其他两幕控件不变，共用挂载逻辑允许该幕无按钮。
 - 可见且前台时循环；离屏和页面隐藏停止，减少动态效果时静止，无 JS 时保留首态。几何变化用 1350 ms 有界 RAF，停留时没有持续 JS 绘制；无新依赖或真实网络连接。
 
 入口：<http://127.0.0.1:23820/#connect>。源码位于 `apps/site/src`：`components/concepts/NetworkDiagram.astro`、`scripts/network-scene.ts`、`scripts/network-geometry.ts`、`styles/network-scene.css`；`scripts/product-tour.ts` 接入场景，`components/ProductTour.astro` 调整首幕布局，`styles/product-tour.css` 移除旧网络样式。
 
-## 自循环与全超边修订（当前版本）
+## 共享节点、沿边标题与曲率修订（当前版本）
+
+按用户新拓扑，移除 macOS 标记，Windows 为两网共享节点，Android 位于 B。iOS 在外游走时没有单独区域。Network A／B 标题引用各自边界路径，绘制在所有网络轮廓上方，文字描边让边界从字下退让。曲线收敛为每段一条很轻的 Bézier 弧，节点处保留圆弧；移除额外鼓包与反弯。
+
+证据 `/Volumes/disk0/Khor/evidence/site-story-20261113/net-shared/`：1440／390px Chrome 四阶段共八组成员检查通过，Windows 始终属于 A 和 B，iOS 仅在到达时加入对应集合；无独立 Cellular 区域、无无效路径或横向溢出，两个标题均绑定对应边界，`errors: []`。TypeScript 与静态 Astro 十页构建通过。构图以 `desktop-local.png`／`mobile-local.png` 为准，连续抓帧的后续图片有静态内容栅格缺失，仅用于变动几何核对。未跑原生、实体手机或 WebKit，未发布；其他两幕不变。
+
+## 自循环与全超边修订（上一轮）
 
 最新证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/net-loop/`。1440／390px Chrome 的四个稳定阶段共八组检查通过：无按钮、无横向溢出、区域成员正确、所有连接路径闭合、中继进入／退出活动集合；两档均自行循环回 A、离屏停止，另一幕 Terminal 控件仍可用，`errors: []`。定向 TypeScript、diff 格式检查及十页静态 Astro 构建通过，产物为 `/Volumes/disk0/Khor/artifacts/site-story-20261113-net-loop/`。
 
