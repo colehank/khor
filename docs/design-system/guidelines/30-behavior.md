@@ -1233,4 +1233,4 @@ Codex/Claude 的终端与对话是同一智能体的呈现方式；内置对话�
 
 浅色导航／标签选中的玻璃也必须透出背景，不能在透明窗口中盖一块不透明白色。选中白色填充以至少 80% 承托原有文字与橄榄色图标，并随窗口不透明度增厚；选中轮廓、阴影、文字／图标 opacity 保持原值。实色窗口、手机、深色模式沿用原样；菜单／弹窗仍由自己的厚底承托。
 
-`LAB_CHECKS=glass-selection node apps/gui/dev/lab/check-app.mjs`（工作目录 apps/gui 时去掉前缀）在完整正式 App 的真实 LandingStrip／TabStrip 上覆盖浅色 frost 0/20/65/100、clear20、实色及深色控制组，Chromium/WebKit 对比两种合成背景下实际药丸内部像素。旧版两个引擎在四个浅色透明档位均先红（白色 alpha1），另保留 SB 刷新主题竞争的失败证据。Lab 在导入正式 App 前把目标主题写入自己的数据夹具，避免旧设置覆盖当前场景；不更改生产主题读取逻辑。原生 AppKit 材质仍列入下一安装版本验收。
+`cd apps/gui && LAB_CHECKS=glass-selection node dev/lab/check-app.mjs`（沿用已有 LAB_BUNDLE／LAB_REPORT）在完整正式 App 的真实 LandingStrip／TabStrip 上覆盖浅色 frost 0/20/65/100、clear20、实色及深色控制组，Chromium/WebKit 对比两种合成背景下实际药丸内部像素。旧版两个引擎在四个浅色透明档位均先红（白色 alpha1），另保留 SB 刷新主题竞争的失败证据。Lab 在导入正式 App 前把目标主题写入自己的数据夹具，避免旧设置覆盖当前场景；不更改生产主题读取逻辑。原生 AppKit 材质仍列入下一安装版本验收。
