@@ -20,7 +20,7 @@ on:
         default: ''
       lab_checks:
         type: choice
-        options: [all, child-tree, child-tree-chromium, conversation-navigation, workbench, glass-selection]
+        options: [all, child-tree, child-tree-chromium, conversation-navigation, workbench, glass-selection, selection-ink]
         default: all
       desktop_probe:
         type: choice
