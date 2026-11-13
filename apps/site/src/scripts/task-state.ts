@@ -1,41 +1,47 @@
-import type {TaskEndpoint,TaskMark,TaskPhase} from '../components/concepts/capability-data';
+import type {TaskEndpoint,TaskPacket,TaskPhase} from '../components/concepts/capability-data';
 const clamp=(value:number)=>Math.max(0,Math.min(1,value));
 
-// Transport stays legible at the shorter cadence. The remaining time shows the
-// destination working; final delivery includes a longer hold for the result.
 export function taskTransport(phase:TaskPhase,elapsed:number) {
-  const departure=80,arrival=Math.min(900,phase.duration*.52);
+  if(!phase.flow)return {arrival:0,delivered:false,position:0,opacity:0};
+  const departure=80,arrival=Math.min(700,phase.duration*.7);
   const t=clamp((elapsed-departure)/(arrival-departure));
   return {arrival,delivered:elapsed>=arrival,position:t*t*(3-2*t),
     opacity:Math.min(clamp((elapsed-departure)/80),clamp((arrival+120-elapsed)/120))};
 }
 
 export function taskState(phases:TaskPhase[],index:number,elapsed:number) {
-  const delegated=phases[0].id==='request';
-  const state={accepted:!delegated,prepared:!delegated,reviewing:false,revised:false,preview:false,collected:false,result:false,
-    run:0,progress:0,receipts:{} as Partial<Record<TaskEndpoint,TaskMark>>};
-  if(!delegated)state.receipts.mac='agent';
-  // Keep delivery dependencies even when several implementation steps are
-  // condensed into one visual beat. In-flight work never activates its target.
+  const state={accepted:phases[0].id!=='delegate',fileReady:false,fileNotified:false,serverRequested:false,fileOnServer:false,
+    webReady:false,webNotified:false,webRequested:false,result:false,
+    sessions:{mac:{started:false,progress:0},linux:{started:false,progress:0}},
+    receipts:{} as Partial<Record<TaskEndpoint,TaskPacket>>};
+  // A request starts a session on its host. Sessions never travel; neither the
+  // laptop nor the phone becomes an execution host. File and Web keep theirs.
   for(let i=0;i<=index;i++){
     const phase=phases[i],time=i<index?phase.duration:Math.max(0,Math.min(elapsed,phase.duration));
     const transport=taskTransport(phase,time);
-    if(transport.delivered){
-      let receipt:TaskMark|undefined;
+    if(transport.delivered&&phase.flow){
+      let receipt:TaskPacket|undefined;
       switch(phase.arrival){
-        case 'request':state.accepted=true;break;
-        case 'plan':if(state.accepted){state.prepared=true;receipt='agent';}break;
-        case 'train':if(state.prepared){state.run=1;state.progress=0;receipt='terminal';}break;
-        case 'refine':if(state.run===1&&state.progress===1){state.reviewing=true;receipt=delegated?'agent':'edit';}break;
-        case 'update':if(state.revised){state.run=2;state.progress=0;receipt='terminal';}break;
-        case 'preview':if(state.run===2&&state.progress===1){state.preview=true;receipt='web';}break;
-        case 'collect':if(state.preview){state.collected=true;receipt='files';}break;
-        case 'result':if(state.collected){state.result=true;receipt='web';}break;
+        case 'accept':state.accepted=true;break;
+        case 'claude':if(state.accepted)state.sessions.mac.started=true;break;
+        case 'file-notice':if(state.fileReady){state.fileNotified=true;receipt='check';}break;
+        case 'server-request':if(state.fileNotified)state.serverRequested=true;break;
+        case 'file':if(state.serverRequested&&state.fileReady){state.fileOnServer=true;state.sessions.linux.started=true;receipt='files';}break;
+        case 'web-notice':if(state.webReady){state.webNotified=true;receipt='link';}break;
+        case 'web-request':if(state.webNotified)state.webRequested=true;break;
+        case 'page':if(state.webRequested&&state.webReady){state.result=true;receipt='web';}break;
+        case 'deliver':if(state.webNotified){state.result=true;receipt='link';}break;
       }
       if(receipt)state.receipts[phase.flow.to]=receipt;
     }
-    if(phase.arrival==='refine'&&state.reviewing&&time===phase.duration){state.revised=true;state.receipts.windows='files';}
-    if(phase.run===state.run)state.progress=clamp((time-transport.arrival)/(phase.duration-transport.arrival));
+    if(phase.session&&state.sessions[phase.session].started){
+      const session=state.sessions[phase.session];
+      session.progress=clamp((time-transport.arrival)/(phase.duration-250-transport.arrival));
+      if(session.progress===1){
+        if(phase.session==='mac'){state.fileReady=true;state.receipts.mac='files';}
+        else{state.webReady=true;state.receipts.linux='web';}
+      }
+    }
   }
-  return {...state,complete:!!phases[index].complete&&(delegated?state.result:state.preview)};
+  return {...state,complete:!!phases[index].complete&&state.result};
 }

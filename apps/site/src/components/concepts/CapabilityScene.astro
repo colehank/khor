@@ -2,7 +2,7 @@
 import NetworkGraph from './NetworkGraph.astro';
 import ConceptMark from './ConceptMark.astro';
 import {supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
-import {workPhases,agentPhases,taskPackets,taskMarks} from './capability-data';
+import {workPhases,agentPhases,taskPackets,taskSessions} from './capability-data';
 import {capabilityGeometry} from '../../scripts/capability-geometry';
 import {taskState} from '../../scripts/task-state';
 import '../../styles/capability-scene.css';
@@ -12,16 +12,16 @@ const phases=isAgent?agentPhases:workPhases,initial=phases[phases.length-1];
 const initialState=taskState(phases,phases.length-1,initial.duration);
 const {nodes,userPath}=capabilityGeometry(false);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
-const glyph=(name:string)=>name==='agent'?marks.Codex:marks[name]??capabilityMarks[name];
-const recipients=isAgent?['linux','mac','windows','phone','khor','you'] as const:['linux','mac','windows','phone'] as const;
-const description=isAgent?'You stay outside KhorNet and give its boundary Khor Agent a vision-model training goal. Khor routes planning to the workstation agent, GPU training to the server terminal, evaluation and configuration revision to the laptop, and retraining to the server. A Web preview becomes available on Mobile. Khor collects the model and returns it with the preview to you for review.':'You plan a vision-model training job with the workstation agent and send it to the server terminal. You move to the laptop while GPU training continues, inspect validation results, revise the configuration and send it back for retraining. You then try the Web preview on Mobile; inference stays on Server.';
+const glyph=(name:string)=>marks[name]??capabilityMarks[name];
+const recipients=isAgent?['mac','linux','khor','you'] as const:['mac','linux','windows','phone'] as const;
+const description=isAgent?'You stay outside KhorNet and delegate a task to its boundary Khor Agent. Khor sends a dialogue request to Claude Code on the workstation. Claude produces a local file. Khor instructs Codex on Server and transfers the file directly from the workstation to Server. Once both inputs arrive, Codex runs and starts a local Web service. Khor returns the result and Web link to you. Sessions stay on their execution hosts.':'From a laptop, you send a dialogue request to Claude Code on a remote workstation. Claude runs there and produces a local file. You send the next request to Codex on Server; the file transfers directly from the workstation to Server. Codex runs only after both inputs arrive and starts a Web service on Server. You switch to Mobile, continue the same task and view the page served by Server. The laptop and Mobile are access devices; sessions stay on their execution hosts.';
 ---
-<figure class:list={['concept','concept-network','task-scene',`task-${mode}`]} data-concept={mode} data-task-stage="done" data-task-complete="true" data-task-ready="true" data-task-accepted="true" data-task-run="2" data-net-connection="p2p" style="--net-build:1">
-  <p class="task-goal">Train a vision model</p>
-  <NetworkGraph prefix={mode} infrastructure={false} externalUser={isAgent} title={isAgent?'Khor routes the training task and brings the result back to you':'Train, review and try a model across your devices'} {description}>
+<figure class:list={['concept','concept-network','task-scene',`task-${mode}`]} data-concept={mode} data-task-stage="done" data-task-complete="true" data-task-ready="true" data-task-accepted="true" data-task-result="true" data-net-connection="p2p" style="--net-build:1">
+  <p class="task-goal">Task</p>
+  <NetworkGraph prefix={mode} infrastructure={false} externalUser={isAgent} title={isAgent?'Khor coordinates sessions across devices and returns the result':'Continue the same task through remote sessions, files and Web'} {description}>
     <Fragment slot="clearances">
       <rect data-task-user-cut x={isAgent?nodes.you.x-36:nodes.phone.x-36} y={isAgent?nodes.you.y-16:nodes.phone.y+49} width="72" height="33" fill="black"/>
-      <rect data-task-runtime-cut x={nodes.linux.x-70} y={nodes.linux.y+49} width="140" height="33" fill="black"/>
+      {taskSessions.map(({device})=><rect data-task-session-cut={device} x={nodes[device].x-70} y={nodes[device].y+49} width="140" height="33" fill="black"/>)}
     </Fragment>
     <g slot="routes" class="task-operation" aria-hidden="true">
       {isAgent&&<path class="task-user-link" data-task-user-link d={userPath}/>}
@@ -32,22 +32,27 @@ const description=isAgent?'You stay outside KhorNet and give its boundary Khor A
       </g>
     </g>
     <g slot="activity" class="task-activity">
-      <g data-task-server transform={`translate(${nodes.linux.x} ${nodes.linux.y})`}>
-        <g data-task-server-runtime>
+      {taskSessions.map(({device,name,mark})=><g data-task-session-at={device} transform={`translate(${nodes[device].x} ${nodes[device].y})`}>
+        <g class="task-session" data-task-session={device} data-session-state="done">
           <circle class="task-progress-track" r="43"/>
           <circle class="task-progress" data-task-progress r="43" pathLength="1" transform="rotate(-90)"/>
-          <text class="task-runtime-label" data-task-runtime x="0" y="72" text-anchor="middle">Ready</text>
+          <g class="task-badge task-session-mark" transform="translate(28 -28)">
+            <circle r="15"/>
+            <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${device}-session`}/></svg>
+          </g>
+          <text class="task-runtime-label" x="0" y="72" text-anchor="middle">{name}</text>
         </g>
-      </g>
+      </g>)}
       {isAgent&&<circle class="task-router-ring" data-task-router-ring cx={nodes.khor.x} cy={nodes.khor.y} r="27"/>}
       {isAgent?
         <g class="task-outsider" data-task-user transform={`translate(${nodes.you.x} ${nodes.you.y})`}><circle r="28"/><text x="0" y="6" text-anchor="middle">You</text></g>:
         <g class="task-user" data-task-user transform={`translate(${nodes.phone.x} ${nodes.phone.y+70})`}><circle cx="-22" cy="-5" r="3"/><text x="-12" y="0">You</text></g>
       }
       {recipients.map(device=><g data-task-receipt-at={device} transform={`translate(${nodes[device].x} ${nodes[device].y})`}>
-        <g class="task-badge task-receipt" data-task-receipt={device} data-has-receipt={String(!!initialState.receipts[device])} transform={device==='phone'?'translate(28 -28)':device==='you'?'translate(23 23)':device==='khor'?'translate(-22 22)':'translate(28 28)'}>
+        <g class="task-badge task-receipt" data-task-receipt={device} data-has-receipt={String(!!initialState.receipts[device])} transform={device==='phone'?'translate(28 -28)':device==='you'?'translate(23 23)':device==='khor'?'translate(-22 22)':device==='linux'?'translate(-28 28)':'translate(28 28)'}>
           <circle r="15"/>
-          {taskMarks.map(name=><g data-receipt-payload={name} data-visible={name===(device==='linux'?'check':initialState.receipts[device])?'true':'false'}><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(name)} x={0} y={0} size={20} prefix={`${mode}-${device}-received-${name}`}/></svg></g>)}
+          {taskPackets.map(name=><g data-receipt-payload={name} data-visible={String(name===initialState.receipts[device])}><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(name)} x={0} y={0} size={20} prefix={`${mode}-${device}-received-${name}`}/></svg></g>)}
+          {(device==='mac'||device==='linux')&&<text class="task-resource-label" data-task-resource-label x={device==='linux'?-22:22} y="6" text-anchor={device==='linux'?'end':'start'}>{device==='mac'?'File':'Web'}</text>}
         </g>
       </g>)}
     </g>

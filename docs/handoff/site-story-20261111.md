@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-14 本地两幕改为通用 Task：笔记本发对话、台式机运行 Claude 并产出 File、File 直传 Server、Codex 运行并提供 Web、手机接续访问；Khor 幕替用户发起同一流程。session 固定在执行设备，输入到达后才运行，文件／服务来源持续保留。标题及副文案同步用户确认版本，两幕各 10 秒。当前继续入口见 [Task 与远端 session](site-task-sessions-20261114.md)，证据 `site-story-20261114/task-sessions/`，本轮未发布。
+
 - 2026-11-13 用户明确要求部署：源码 `f5c457d7` 的完整静态产物已发布为 `gh-pages` 提交 `cebdd1d`，Pages run `43444719571` 成功，<https://khor.cloud/> 版本与两档 headless Chrome 检查通过。详情见 [Pages 发布记录](site-pages-20261112.md)。下方各次「仅本地」为对应迭代时的历史状态。
 
 - 2026-11-13 最新任务改为 **Train a vision model**，精简为四句提示：Work 中用户从 Workstation 发起 Server 训练，到笔记本修订、手机试用 Web，10.4 秒；Agent 中用户留在 KhorNet 外，超边上的 Khor 图标路由同一任务并返回模型与 Web，11 秒。保留到达依赖，去掉脚本、文件名及训练轮次的额外解释。两档完整循环、三档减少动态效果、定向 TypeScript、十页静态构建通过；证据 `model-training/`。详见 [Work 与 Khor Agent](site-work-agent-20261113.md)。以下 Atlas Web 及 Workstation 上的 Khor 等描述均为历史版本，本轮仅本地。

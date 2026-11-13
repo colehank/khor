@@ -1,5 +1,7 @@
 # Work across the net → Khor Agent · 2026-11-13
 
+> 2026-11-14 当前实现已改为通用 Task、台式机 Claude → 文件 → Server Codex／Web → 手机访问，见 [最新接续入口](site-task-sessions-20261114.md)。下文为 2026-11-13 已发布的模型训练版本。
+
 当前使用同一个 **Train a vision model** 任务，替代早期 Atlas Web 构建故事。用户要求快速、直觉地看懂任务，因此两幕只保留四句提示，不展示脚本准备、文件名、训练轮次或逐步技术解释。继续复用第一幕 Net 的四节点与超边布局。
 
 ## 当前叙事

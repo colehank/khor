@@ -1,11 +1,11 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {machineMark,sessionMark} from '../../src/components/BrandIcons';
-import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch,IconChat,IconServer,IconWorkstation,IconDesktop,IconMobile,IconPulse} from '../../src/components/icons';
+import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch,IconChat,IconServer,IconWorkstation,IconDesktop,IconMobile,IconLink} from '../../src/components/icons';
 
 export const capabilityMarks=Object.fromEntries(([
   ['web',IconBrowser],['files',IconFile],['git',IconBranch],['check',IconCheck],
-  ['terminal',sessionMark('shell')],['message',IconChat],['metrics',IconPulse],['edit',IconBranch],
+  ['terminal',sessionMark('shell')],['message',IconChat],['link',IconLink],
 ] as const).map(([name,Icon])=>[name,renderToStaticMarkup(createElement(Icon),{identifierPrefix:`site-capability-${name}-`})]));
 
 export const networkTypeMarks=Object.fromEntries([

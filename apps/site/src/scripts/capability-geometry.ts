@@ -35,6 +35,7 @@ export function capabilityGeometry(compact:boolean,flow?:TaskFlow) {
       return from==='linux'?`M ${pair(start)} C ${pair(c1)} ${pair(c2)} ${pair(end)}`:`M ${pair(end)} C ${pair(c2)} ${pair(c1)} ${pair(start)}`;
     }
     const controls:Record<string,Point>={
+      'mac-windows':compact?{x:220,y:330}:{x:500,y:335},
       'linux-mac':compact?{x:320,y:215}:{x:680,y:190},
       'linux-windows':compact?{x:125,y:170}:{x:235,y:130},
       'linux-phone':compact?{x:392,y:300}:{x:570,y:330},
