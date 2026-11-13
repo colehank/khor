@@ -1,4 +1,6 @@
+export const independentKhorSession = 'wide/agent-' + 'a'.repeat(64);
 export const scenes = {
+  khor: {title: 'Khor 会话', session: independentKhorSession, row: 'khor · 网络任务'},
   gui: {title: 'GUI 会话', session: 'gui/ai-elements-review', row: 'AI Elements · 组件总览'},
   codex: {title: 'Codex 会话', session: 'gui/codex-review', row: 'Codex · 工具与补丁'},
   terminal: {title: '终端会话', session: 'shell/layout-lab', row: '终端 · 布局试验'},

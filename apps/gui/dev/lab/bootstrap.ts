@@ -1,6 +1,6 @@
 import {handOff} from '../../src/lib/composer-handoff';
 import {createLabFixture} from './fixture';
-import {scenes, sessionIds, type Scene} from './scenes';
+import {scenes, sessionIds, independentKhorSession, type Scene} from './scenes';
 import {configureLabBackend} from './backend-context';
 import {FixtureRefusal} from './navigation';
 
@@ -34,23 +34,25 @@ if (runtime.mode === 'full') {
 }
 if (query.has('bridge')) throw new Error('Lab does not connect to external API bridges');
 const scene = scenes[runtime.scene];
+const khorSession = runtime.scene==='khor'||query.get('khor')==='independent' ? independentKhorSession : undefined;
 const items = Number(query.get('items') ?? 5), machines = Number(query.get('machines') ?? 3);
 if (![2,3,5].includes(items) || ![0,1,3,6].includes(machines)) throw new Error('Lab data supports items=2/3/5 and machines=0/1/3/6');
 const pageSize=query.has('short-pages')?4:128;
 let noticeDriver:{ready:()=>boolean;trigger:(burst:boolean)=>string[]}|undefined;
-const identity = `${query.get('history')??'default'}/${pageSize}/${query.has('handoff')}/${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}/${query.get('file')??''}`;
+const identity = `${query.get('history')??'default'}/${pageSize}/${query.has('handoff')}/${runtime.tree}/${runtime.scene}/${runtime.revision}/${items}/${machines}/${query.get('file')??''}/${khorSession??''}`;
 if (runtime.mode === 'frontend') {
   if (localStorage.getItem('khor.lab.identity') !== identity) {
     for (const key of Object.keys(localStorage)) if (key.startsWith('khor.')) localStorage.removeItem(key);
     localStorage.setItem('khor.lab.identity', identity);
     localStorage.setItem('khor.lang', 'zh');
     const active = scene.session ?? sessionIds[0];
-    const tabs = [active,...sessionIds.filter(id => id !== active)].slice(0,items);
+    const available = sessionIds.map(id=>id==='wide/all'&&khorSession?khorSession:id);
+    const tabs = [active,...available.filter(id => id !== active)].slice(0,items);
     localStorage.setItem('khor.sessions.tabs', JSON.stringify({tabs,active}));
     const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : runtime.scene === 'devices' ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
     localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
-  const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, longHistory:query.get('history')==='long', notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page'});
+  const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, longHistory:query.get('history')==='long', notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page',khorSession});
   if(query.get('notices')==='1'||query.get('notices')==='burst')noticeDriver={
     ready:()=>fixture.request('__ai_preview/notification-ready')===true,
     trigger:burst=>fixture.request('__ai_preview/notification',{burst}) as string[],

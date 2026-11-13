@@ -17,7 +17,7 @@ const update = (sessionUpdate: string, rest: Record<string, unknown>): Frame => 
   kind: "note", update: { update: { sessionUpdate, ...rest } },
 });
 const text = (value: string) => ({ content: { type: "text", text: value } });
-const ids = ["gui/ai-elements-review", "gui/ai-elements-plan", "gui/ai-elements-stream", "gui/codex-review", "wide/all"];
+const defaultIds = ["gui/ai-elements-review", "gui/ai-elements-plan", "gui/ai-elements-stream", "gui/codex-review", "wide/all"];
 const titles = ["AI Elements · 组件总览", "AI Elements · 计划与确认", "AI Elements · 流式响应", "Codex · 工具与补丁", "khor · 网络任务"];
 const device: DeviceRow = {
   id: "e".repeat(64), name: "验收环境", shown: "验收环境", label: null,
@@ -64,7 +64,8 @@ function sample(index: number): Frame[] {
   ];
 }
 
-export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean} = {}) {
+export function createLabFixture(terminal = true, options: {origin?: string; content?: boolean; items?:number; machines?:number; page?:boolean;pageSize?:number;settings?:boolean;notices?:boolean;noticeBurst?:boolean;longHistory?:boolean;khorSession?:string} = {}) {
+  const ids = defaultIds.map((id,index)=>index===4 ? options.khorSession??id : id);
   const devices = labDevices(device,options.machines ?? 3);
   const pairing = pairingFixture(devices, labDevices(device, 6));
   const navigation = navigationFixture(devices, options.origin ?? 'http://127.0.0.1:23776', options.content ?? false, options.items ?? 3, options.page ?? false);

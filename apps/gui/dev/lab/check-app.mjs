@@ -4,6 +4,7 @@ import {checkWorkspaceBack} from './workspace-back-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {checkCommandTab} from './child-command-checks.mjs';
+import {checkConversationNavigation} from './conversation-navigation-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
 import {mkdir, writeFile} from 'node:fs/promises';
@@ -440,7 +441,16 @@ async function inspect(browser, scene, size, data = {}) {
 let browser;
 const results = [];
 try {
-  if (process.env.LAB_CHECKS === 'child-tree') {
+  if (process.env.LAB_CHECKS === 'conversation-navigation') {
+    for(const engine of ['chromium',...(process.env.QUALITY_ENGINES?.includes('webkit')?['webkit']:[])]) {
+      browser=await (engine==='webkit'?webkit:chromium).launch({headless:engine!=='webkit'||process.env.QUALITY_HEADLESS!=='0'});
+      for(const width of [320,390])for(const workspace of [false,true])for(const khor of [true,false]) {
+        results.push(await checkConversationNavigation(browser,{port,report,engine,workspace,khor,width}));
+        await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      }
+      await browser.close();browser=undefined;
+    }
+  } else if (process.env.LAB_CHECKS === 'child-tree') {
     for (const engine of ['chromium', ...(process.env.QUALITY_ENGINES?.includes('webkit') ? ['webkit'] : [])]) {
       browser = await (engine === 'webkit' ? webkit : chromium).launch({headless:engine !== 'webkit' || process.env.QUALITY_HEADLESS !== '0'});
       for (const size of [{width:1280,height:900},{width:390,height:844}]) {
@@ -458,6 +468,7 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'chromium',workspace,khor}));
   results.push(await checkWorkspaceBack(browser,{port,report}));
   for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
@@ -469,7 +480,7 @@ try {
   results.push(await inspect(browser,'workspaces',{width:1280,height:900},{machines:3,nativeMarker:true}));
   await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
   for (const size of [{width: 1280, height: 900}, {width: 390, height: 844}, {width: 320, height: 568}]) {
-    for (const scene of ['gui', 'codex', 'terminal', 'content', 'workspace', ...(size.width < 500 ? ['page'] : []), 'list', 'devices']) {
+    for (const scene of ['gui', 'khor', 'codex', 'terminal', 'content', 'workspace', ...(size.width < 500 ? ['page'] : []), 'list', 'devices']) {
       results.push(await inspect(browser, scene, size));
       await writeFile(path.join(report, 'results.json'), JSON.stringify(results, null, 2));
     }
@@ -505,6 +516,7 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:process.env.QUALITY_HEADLESS!=='0'});
+    for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'webkit',workspace,khor}));
     for(const mobile of [false,true]){results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit',mobile:true}));
