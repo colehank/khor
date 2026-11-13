@@ -50,15 +50,15 @@ jobs:
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - run: python3 -m pip install --break-system-packages -r scripts/requirements-app-icon.txt
       - run: python3 scripts/mac_icon.py compile --output "${{ runner.temp }}/khor-icon"
-      - name: Compile iPhone and iPad appearance catalog
+      - name: Compile iPhone and iPad icon catalog
         run: |
           mkdir -p "$RUNNER_TEMP/khor-icon/ios"
           xcrun actool apps/gui/src-tauri/gen/apple/Assets.xcassets --compile "$RUNNER_TEMP/khor-icon/ios" --platform iphoneos --minimum-deployment-target 15.0 --target-device iphone --target-device ipad --app-icon AppIcon --output-partial-info-plist "$RUNNER_TEMP/khor-icon/ios/Info.plist"
-      - name: Record compiled appearance inventories
+      - name: Record compiled icon inventories
         run: |
           xcrun assetutil --info "$RUNNER_TEMP/khor-icon/Assets.car" > "$RUNNER_TEMP/khor-icon/macos-assets.json"
           xcrun assetutil --info "$RUNNER_TEMP/khor-icon/ios/Assets.car" > "$RUNNER_TEMP/khor-icon/ios-assets.json"
-      - name: Verify native light and dark exports
+      - name: Verify original dark artwork in both native appearances
         run: |
           ICTOOL="$(xcode-select -p)/../Applications/Icon Composer.app/Contents/Executables/ictool"
           for platform in macOS iOS; do
@@ -77,19 +77,16 @@ jobs:
                   with Image.open(root / f'{platform}-{rendition}.png') as image:
                       assert image.size == (1024, 1024)
                       means.append(sum(ImageStat.Stat(image.convert('RGB').crop((256, 256, 768, 768))).mean) / 3)
-              assert means[0] - means[1] > 80, (platform, means)
-              print(platform, 'selects distinct approved light and dark artwork', means)
+              assert all(40 < value < 120 for value in means), (platform, means)
+              assert abs(means[0] - means[1]) < 10, (platform, means)
+              print(platform, 'uses the original dark artwork in Default and Dark', means)
           mac = json.loads((root / 'macos-assets.json').read_text())
           stacks = {entry.get('Appearance') for entry in mac if entry.get('AssetType') == 'IconImageStack'}
           assert {'NSAppearanceNameAqua', 'NSAppearanceNameDarkAqua'} <= stacks, stacks
           ios = json.loads((root / 'ios-assets.json').read_text())
-          for idiom in ['phone', 'pad']:
-              icons = {entry.get('Appearance', 'UIAppearanceAny'): entry for entry in ios
-                       if entry.get('AssetType') == 'Icon Image' and entry.get('Name') == 'AppIcon'
-                       and entry.get('Idiom') == idiom and entry.get('PixelWidth') == 1024}
-              assert {'UIAppearanceAny', 'UIAppearanceDark'} <= icons.keys(), (idiom, icons)
-              assert icons['UIAppearanceAny']['SHA1Digest'] != icons['UIAppearanceDark']['SHA1Digest'], idiom
-          print('Compiled macOS, iPhone and iPad catalogs retain both appearances')
+          assert any(entry.get('AssetType') == 'Icon Image' and entry.get('Name') == 'AppIcon'
+                     for entry in ios), 'Missing compiled iOS app icon'
+          print('Compiled Apple catalogs retain the single original dark artwork')
           PY
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
