@@ -14,6 +14,7 @@ export function mountNetworkScene(figure:HTMLElement) {
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const device=(id:string)=>svg.querySelector<SVGGElement>(`[data-net-device="${id}"]`)!;
   const nodes={linux:device('linux'),mac:device('mac'),windows:device('windows'),relay:device('relay'),phone:device('phone')};
+  const nodeRadius=nodes.mac.querySelector<SVGCircleElement>('.net-device-body')!.r.baseVal.value;
   const wires=new Map([...svg.querySelectorAll<SVGPathElement>('[data-net-wire]')].map(path=>[path.dataset.netWire!,path]));
   const copies=[...svg.querySelectorAll<SVGPathElement>('[data-net-copy]')];
   let phaseIndex=0, position=0, active=false, timer:ReturnType<typeof setTimeout>|undefined;
@@ -22,7 +23,7 @@ export function mountNetworkScene(figure:HTMLElement) {
   const moveDuration=950;
   const layout=()=>compact.matches?{
     box:'0 0 500 600',a:[8,155,222,420],b:[322,155,170,420],
-    linux:{x:66,y:265,scale:.85},mac:{x:169,y:265,scale:.72},windows:{x:407,y:265,scale:.9},relay:{x:275,y:65,scale:1},phoneY:475,stops:[169,275,407],
+    linux:{x:66,y:265,scale:1},mac:{x:169,y:265,scale:1},windows:{x:407,y:265,scale:1},relay:{x:275,y:65,scale:1},phoneY:475,stops:[169,275,407],
   }:{
     box:'0 0 1000 500',a:[20,140,400,330],b:[650,140,330,330],
     linux:{x:120,y:240,scale:1},mac:{x:310,y:240,scale:1},windows:{x:820,y:240,scale:1},relay:{x:530,y:55,scale:1},phoneY:380,stops:[310,530,820],
@@ -44,17 +45,16 @@ export function mountNetworkScene(figure:HTMLElement) {
     const segment=Math.min(1,Math.floor(position));
     const x=l.stops[segment]+(l.stops[segment+1]-l.stops[segment])*(position-segment);
     transform(nodes.phone,{x,y:l.phoneY,scale:1});
-    const start=l.mac.x+65*l.mac.scale, y=l.mac.y, top=l.phoneY-59;
+    const start=l.mac.x+nodeRadius, y=l.mac.y, top=l.phoneY-nodeRadius;
     const approach=Math.min(1,position);
-    const directEnd=x+34-68*approach;
+    const directEnd=x+nodeRadius*(1-2*approach);
     const outer=Math.min(l.b[0]+l.b[2]-12,l.windows.x+112*l.windows.scale);
-    for(const id of ['linux','mac','windows'] as const)nodes[id].querySelector('text')!.setAttribute('y',String(78/l[id].scale));
     const paths:Record<string,string>={
-      lan:`M${l.linux.x+32*l.linux.scale} ${y} H${l.mac.x-65*l.mac.scale}`,
-      backbone:`M${start} ${y} H${l.windows.x-76*l.windows.scale}`,
-      nearby:`M${l.windows.x+76*l.windows.scale} ${y} C${outer} ${y} ${outer} ${l.phoneY} ${x+34} ${l.phoneY}`,
+      lan:`M${l.linux.x+nodeRadius} ${y} H${l.mac.x-nodeRadius}`,
+      backbone:`M${start} ${y} H${l.windows.x-nodeRadius}`,
+      nearby:`M${l.windows.x+nodeRadius} ${y} C${outer} ${y} ${outer} ${l.phoneY} ${x+nodeRadius} ${l.phoneY}`,
       direct:`M${start} ${y} C${start+(compact.matches?6:30)} ${y} ${directEnd-50*approach} ${l.phoneY} ${directEnd} ${l.phoneY}`,
-      'relay-in':`M${start} ${y} C${start+64} ${y} ${l.relay.x-96} ${l.relay.y} ${l.relay.x-24} ${l.relay.y}`,
+      'relay-in':`M${start} ${y} C${start+64} ${y} ${l.relay.x-96} ${l.relay.y} ${l.relay.x-25} ${l.relay.y}`,
       'relay-out':`M${l.relay.x} ${l.relay.y+25} C${l.relay.x} ${l.relay.y+130} ${x} ${top-46} ${x} ${top}`,
     };
     for(const [id,d] of Object.entries(paths))wires.get(id)!.setAttribute('d',d);

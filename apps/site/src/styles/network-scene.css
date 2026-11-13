@@ -9,16 +9,8 @@
 .network-scene .net-device-name { fill:var(--ink); font-size:calc(var(--text-read)/var(--net-device-scale,1)); }
 .net-regions rect { fill:color-mix(in srgb,var(--ink) 3%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 15%,var(--canvas)); stroke-width:1; }
 .net-regions text { font-size:var(--text-title-lg); fill:var(--secondary); }
-.net-machine { color:var(--ink); }
-.net-hardware { fill:color-mix(in srgb,var(--ink) 8%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; stroke-linejoin:round; }
-.net-screen { fill:var(--canvas); stroke:none; }
-.net-hardware-detail { fill:none; stroke:color-mix(in srgb,var(--ink) 45%,var(--canvas)); stroke-width:1.25; stroke-linecap:round; }
-.net-machine-led { fill:var(--tour-accent); }
-.net-phone { color:var(--ink); }
-.net-phone-body { fill:color-mix(in srgb,var(--ink) 15%,var(--canvas)); stroke:var(--ink); stroke-width:1.5; }
-.net-phone-screen { fill:var(--canvas); }
-.net-phone-detail { fill:var(--secondary); }
-.net-home-indicator { fill:none; stroke:var(--secondary); stroke-width:2; stroke-linecap:round; }
+.net-device { color:var(--ink); }
+.net-device-body { fill:color-mix(in srgb,var(--ink) 8%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; }
 .net-relay { color:var(--secondary); transition:color var(--dur-240); }
 .net-relay-body { fill:var(--canvas); stroke:var(--tour-wire); stroke-width:1.25; transition:stroke var(--dur-240); }
 .net-relay text { fill:currentColor; }
