@@ -1,7 +1,7 @@
 /** Attachment browser in the existing key-panel band. Browsing never
  * sends: files open read-only; selection is sent through the pane. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDevices, fetchLs, nativeFolders, said, termPickFolders, type DeviceRow } from "@/api";
+import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termPickFolders, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu } from "@/components/RowMenu";
 import { IconBack, IconCheck, IconClose, IconFile, IconFiles } from "@/components/icons";
@@ -71,6 +71,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   }, []);
   useEffect(() => {
     mounted.current = true;
+    refreshDevices();
     const visible = () => { if (document.visibilityState === "visible") refreshDevices(); };
     window.addEventListener("focus", visible);
     document.addEventListener("visibilitychange", visible);

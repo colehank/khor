@@ -169,7 +169,7 @@ export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,
                   {item.error ? gui.chat_put_failed : item.encoding?'正在上传':sizeWord(item.size ?? 0)}
                 </span>
               )}
-              {item.source&&<span className="truncate text-caption text-muted-foreground">{item.source.shown}</span>}
+              {item.source&&<span className="truncate text-caption text-muted-foreground">{item.source.shown}{item.reference?" · 引用原文件":""}</span>}
             </span>
           </button>
           {item.error&&onRetry&&<Button size="sm" disabled={busy} onClick={()=>onRetry(item.key)}>重试</Button>}
