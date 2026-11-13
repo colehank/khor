@@ -1,0 +1,7 @@
+<style>
+/* Storybook 10.6.7's Viewport FrameWrapper is a flex child without
+   flex-shrink:0. Its requested height otherwise shrinks to the manager
+   panel minus toolbar/padding. Keep the standard viewport/resize tools,
+   but preserve their exact requested dimensions when panels are open. */
+[data-dragging][data-scale] { flex-shrink: 0; }
+</style>

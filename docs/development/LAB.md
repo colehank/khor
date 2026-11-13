@@ -17,6 +17,8 @@ The first full host supports macOS arm64. Frontend Lab is portable. Full Lab use
 
 Frontend bundles include Storybook 10.6. The manager root `/` or `/workbench/` opens its standard scene list, viewport toolbar and Controls panel. `/app/` remains the direct complete App entry. The workbench embeds this same production entry, pinned to the bundle's source version; it never copies App layouts. The manager is a development tool and is excluded from the release build.
 
+The pinned Storybook 10.6.7 manager has a scoped `flex-shrink: 0` correction on its viewport frame so opening Controls cannot shrink the requested device height; browser checks measure the actual nested App viewport.
+
 Choose Mobile 320/390/430, Android 412, Tablet 768, Desktop 1280/1440 or custom dimensions. The theme/material/background toolbar and Controls adjust desktop opacity, simulated safe areas and mobile keyboard space. Environment changes preserve the current document and draft; changing scene/data deliberately starts that fixture again. Desktop material is a CSS composition over a synthetic wallpaper/grid, using the production ground painter and terminal cutouts. Mobile retains its actual solid ground. This preview cannot reproduce native AppKit blur or diagnose differences between real Macs by itself.
 
 Storybook viewport changes dimensions, not user-agent or input hardware. Mouse input stays mouse input; Playwright device contexts cover real browser touch/UA emulation. The keyboard control reserves space through the production viewport path and labels it as a placeholder; it does not summon an OS keyboard. Use full native Lab for real IME, touch inertia, OS file drops and WebView layering.

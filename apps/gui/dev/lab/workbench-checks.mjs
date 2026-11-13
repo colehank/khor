@@ -28,6 +28,7 @@ export async function checkWorkbench(browser,{port,report,engine}){
   await frame.locator('[data-lab-model-header]:visible').waitFor();
   await frame.locator('html').evaluate(()=>new Promise(resolve=>setTimeout(resolve,100)));
   assert.equal(await frame.locator('html').evaluate(()=>innerWidth),390,'Use an actual iframe viewport, not a scaled desktop screenshot');
+  assert.equal(await frame.locator('html').evaluate(()=>innerHeight),844,'Storybook panels must not shrink the requested device height');
   assert.equal(await frame.locator('html').evaluate(()=>window.__workbenchDocument),'same-App','Resize does not remount the production App');
   assert.equal(await frame.locator('[data-composer-text]').inputValue(),'保留真实 App 草稿');
   assert.equal(await frame.locator('html').getAttribute('data-window-transparent'),null,'Mobile keeps the actual opaque app ground');
