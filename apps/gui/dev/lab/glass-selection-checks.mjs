@@ -53,13 +53,13 @@ export async function checkGlassSelection(browser,{port,report,engine}){
     measurements.push(row);
     for(const [kind,surface] of Object.entries(row.surfaces)){
      assert.equal(surface.opacity,'1',`${kind}: only the fill becomes translucent, not text/icons`);
-     const translucent=choice.theme==='light'&&choice.material!=='solid'&&choice.opacity<100;
-     if(translucent)assert(surface.alpha>0&&surface.alpha<0.99,`${label} ${kind}: selected glass is opaque (${surface.fill})`);
+     const translucent=choice.theme==='light'&&choice.material!=='solid';
+     if(translucent)assert.equal(surface.alpha,0,`${label} ${kind}: use the same transparent-ground mechanism as dark; a thick white tint is not sufficient (${surface.fill})`);
      else if(choice.theme==='light')assert.equal(surface.alpha,1,`${label} ${kind}: keep the original solid selection`);
      else assert.equal(surface.alpha,0,`${label} ${kind}: preserve the dark transparent selection`);
      if(surface.light){
       surface.backdropDelta=Math.max(...surface.light.map((v,k)=>Math.abs(v-surface.dark[k])));
-      assert(surface.backdropDelta>8,`${label} ${kind}: actual selected pixels ignore the backdrop (${surface.backdropDelta})`);
+      assert(surface.backdropDelta>40,`${label} ${kind}: actual selected pixels ignore the backdrop (${surface.backdropDelta})`);
      }
     }
    }catch(error){errors.push(`${label}: ${String(error)}`);}
