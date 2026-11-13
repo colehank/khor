@@ -1,7 +1,0 @@
-# 当前网络候选的独立产品集成
-
-本树integrate/net-product-v3用于完整源码检查与原生Lab，不合main、发布或替换现装App。它保留已通过窄Relay六场合同的F3 7a794274 runtime，合入当时main9a4219ff已有的图标等成果，并应用独立验证的附件检查浏览器选择修正87ff588a。产品界面与main一致，附件脚本的断言/12秒期限不改。
-
-F3十原生合同及原silent3/healthy3共168读通过的适用范围见RELAY-DEMAND。完整Quality和Mac Lab必须在本树冻结的准确commit/tree上重新执行；旧I2 Quality两轮附件失败与独立GUI修正27组通过均保留，不能拿来替代本树接受。完整N0–N5、手机、能耗和高负载尾延迟仍未齐。
-
-权威继续入口为原feat/net工作树的STATE与PLAN；源码冻结、Git审计、调度收据与结果在外部evidence/net按product-v3保存。后续文档更新不伪称该已冻结运行源码变化。
