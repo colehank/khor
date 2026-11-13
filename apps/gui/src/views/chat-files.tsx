@@ -80,7 +80,7 @@ async function base64Of(f: File): Promise<string> {
 export function usePendingFiles(upload: {
   put: (file: File, into: string | null) => Promise<string>;
   putPaths: (paths: string[], into: string | null) => Promise<string[]>;
-}, into: string | null = null, session = 'composer') {
+}, into: string | null = null, session = 'composer',targetMachine:string|null=null) {
   const store=composerFiles(session);
   const items=useSyncExternalStore(store.subscribe,store.snapshot);
   const [preparing,setPreparing]=useState(false);
@@ -88,7 +88,7 @@ export function usePendingFiles(upload: {
   const addSources=(entries:Attachment[])=>store.add(entries.map(source=>{
     const file=source.device?.files[0]?.file;
     return {key:store.key(),name:source.name,size:source.size,thumb:file?.type.startsWith('image/')?URL.createObjectURL(file):null,
-      inline:null,path:null,error:null,source};
+      inline:null,path:!source.device&&source.from===targetMachine?source.path:null,error:null,source,reference:!source.device&&source.from===targetMachine};
   }));
   const addFiles=(files:File[])=>addSources(deviceAttachments(files,false,'这台设备'));
   const addLocalPaths=(paths:string[])=>addSources(paths.map(path=>pathAttachment(path,null,'这台设备')));
@@ -106,7 +106,7 @@ export function usePendingFiles(upload: {
     const entries=store.snapshot();
     try{
       for(const item of entries){
-        if(item.path!==null&&(!item.source||item.landedInto===into))continue;
+        if(item.path!==null&&(item.reference||!item.source||item.landedInto===into))continue;
         if(!store.snapshot().some(current=>current.key===item.key))continue;
         store.patch(item.key,{encoding:true,error:null});
         try{
@@ -189,7 +189,7 @@ export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,
         </div>
       ))}
       <AttachmentPreview file={local} onClose={()=>setLooking(null)} onSave={onReplace&&chosen?file=>onReplace(chosen.key,file):undefined}/>
-      {path !== null && <FilePreview machine={chosen?.source?.from??machine} shown={chosen?.source?.shown??machine} here={chosen?.source?chosen.source.from===null:here} path={path} onClose={() => setLooking(null)} />}
+      {path !== null && <FilePreview machine={chosen?.source?chosen.source.from??'':machine} shown={chosen?.source?.shown??machine} here={chosen?.source?chosen.source.from===null:here} path={path} onClose={() => setLooking(null)} />}
     </div>
   );
 }

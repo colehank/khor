@@ -710,7 +710,7 @@ export function ChatView({
   const files = usePendingFiles({
     put: (file, target) => withChat(view => view.put(file, target)),
     putPaths: (paths, target) => withChat(view => view.putPaths(paths, target)),
-  }, into, id);
+  }, into, id,machine);
   const [pickOpen, setPickOpen] = useState(false);
   const [attachmentSources,setAttachmentSources]=useState<Attachment[]>([]);
   const [attachmentsOpen,setAttachmentsOpen]=useState(false);

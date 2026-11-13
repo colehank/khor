@@ -1,7 +1,7 @@
 /** Attachment browser in the existing key-panel band. Browsing never
  * sends: files open read-only; selection is sent through the pane. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termDropStage, termPickFolders, type DeviceRow } from "@/api";
+import { fetchDevices, fetchLs, nativeFolders, said, termPickFolders, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu } from "@/components/RowMenu";
 import { IconBack, IconCheck, IconClose, IconFile, IconFiles } from "@/components/icons";
@@ -57,15 +57,9 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const [localLook,setLocalLook]=useState<Attachment|null>(null);
   const [look, setLook] = useState<Look | null>(null);
   const [folder, setFolder] = useState<{root: Attachment; prefix: string} | null>(null);
-  const preview = useRef<{turn:number;path:string|null}>({turn:0,path:null});
-  const [previewing,setPreviewing]=useState<string|null>(null);
-  const closePreview=()=>{
-    preview.current.turn++;
-    const path=preview.current.path;preview.current.path=null;
-    if(path)void termDropForget([path]).catch(()=>{});
-    setLook(null);setPreviewing(null);
-  };
-  const [error, setError] = useState<string | null>(null), [result, setResult] = useState<string | null>(null);
+  const previewing:string|null=null;
+  const closePreview=()=>setLook(null);
+  const [error,setError]=useState<string|null>(null);
   const [picking, setPicking] = useState(false);
   const generation = useRef(0), mounted = useRef(false), sending=useRef(false);
   const trail = useRef<{ at: Place | null; query: string }[]>([]);
@@ -82,8 +76,6 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
     document.addEventListener("visibilitychange", visible);
     return () => {
       mounted.current = false; generation.current++; deviceGeneration.current++;
-      preview.current.turn++;
-      if(preview.current.path)void termDropForget([preview.current.path]).catch(()=>{});
       window.removeEventListener("focus", visible);
       document.removeEventListener("visibilitychange", visible);
     };
@@ -109,24 +101,16 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
     if(!machine){setError(gui.content_machine_gone);return;}
     if(entry.dir&&!entry.device){setQueue(false);open(machine,entry.path);return;}
     if(!entry.device){setLook({entry,machine});return;}
-    const turn=preview.current.turn;
-    setPreviewing(entry.key);
-    try{
-      const path=await termDropStage(entry.device.files[0].file);
-      if(!mounted.current||preview.current.turn!==turn){void termDropForget([path]).catch(()=>{});return;}
-      preview.current.path=path;setLook({entry,machine,path});
-    }catch(error){if(mounted.current&&preview.current.turn===turn)setError(said(error));}
-    finally{if(mounted.current&&preview.current.turn===turn)setPreviewing(null);}
+
   };
   const included = (e: Attachment) => road.selected.some((x) => includesAttachment(x, e));
   const toggle = (e: Attachment) => {
     if (road.busy || included(e)) return;
     if (selected(e)) road.remove(e); else road.add([e]);
-    setResult(null);
   };
   const addDevice = (files: File[], dirs: boolean) => {
     if (!files.length || road.busy) return;
-    try { road.add(deviceAttachments(files, dirs, gui.machine_here)); setQueue(true); setError(null); setResult(null); }
+    try { road.add(deviceAttachments(files, dirs, gui.machine_here)); setQueue(true); setError(null); }
     catch (e) { setError(said(e)); }
   };
   const pickFolders = async () => {
@@ -141,7 +125,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
       const paths = await termPickFolders();
       if (!mounted.current) { void termDropForget(paths).catch(() => {}); return; }
       road.add(paths.map((p) => pathAttachment(p, null, gui.machine_here, true, null, true)));
-      if (paths.length) { setQueue(true); setResult(null); }
+      if (paths.length) { setQueue(true); }
     } catch (e) { if (mounted.current) setError(said(e)); }
     finally { if (mounted.current) setPicking(false); }
   };
@@ -154,7 +138,6 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
       const ok = await road.send(entries, destination);
       if(!ok&&mounted.current)setError("附件未能发送，已保留所选文件，可重试");
       if (!mounted.current) return;
-      setResult(ok ? gui.files_sent(entries.length) : gui.files_retry_ready);
       if (ok) {setQueue(false);onSent();}
     }catch(error){if(mounted.current)setError(said(error));}
     finally{sending.current=false;}
@@ -203,7 +186,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
         <h3 className="pb-in pt-in text-body font-label">从哪添加</h3>
         <div className="flex gap-in pb-row"><Button data-files-pick="device" disabled={road.busy} className="min-h-touch flex-1" onClick={() => picker.current?.click()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFile /></span>{gui.files_local_file}</Button>{!road.filesOnly&&<Button data-files-pick="folder" disabled={road.busy || picking} className="min-h-touch flex-1" onClick={() => void pickFolders()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFiles /></span>{picking ? gui.files_reading_folder : gui.ws_kind_folder}</Button>}</div>
         <section data-files-mesh><h3 className="pb-in text-group text-muted-foreground">{gui.devices_tab}</h3>
-          {machinesFor(devices, road.machine).map((d) => <button key={d.id} type="button" data-files-machine={d.name} data-files-session={(road.machine === null ? d.me : d.name === road.machine) || undefined} onClick={() => open(d, "")} className="flex min-h-touch w-full items-center gap-row border-t text-left text-body"><MachineAvatar face={d.face} className="size-kind-mark flex-none" /><span className="min-w-0 flex-1 truncate">{d.shown}</span>{!d.me && d.hop === "quiet" && isDown(d.down_ms) && <span data-files-unreachable className="flex-none text-caption text-muted-foreground">{hopWord("down")}</span>}{(road.machine === null ? d.me : d.name === road.machine) && <span className="text-caption text-muted-foreground">{gui.files_session}</span>}</button>)}
+          {machinesFor(devices, road.machine).filter(d=>!road.filesOnly||d.me||d.name===road.machine).map((d) => <button key={d.id} type="button" data-files-machine={d.name} data-files-session={(road.machine === null ? d.me : d.name === road.machine) || undefined} onClick={() => open(d, "")} className="flex min-h-touch w-full items-center gap-row border-t text-left text-body"><MachineAvatar face={d.face} className="size-kind-mark flex-none" /><span className="min-w-0 flex-1 truncate">{d.shown}</span>{!d.me && d.hop === "quiet" && isDown(d.down_ms) && <span data-files-unreachable className="flex-none text-caption text-muted-foreground">{hopWord("down")}</span>}{(road.machine === null ? d.me : d.name === road.machine) && <span className="text-caption text-muted-foreground">{gui.files_session}</span>}</button>)}
           {sourceError && <div className="py-in text-callout"><p role="alert">{sourceError}</p><Button onClick={refreshDevices}>{gui.region_retry}</Button></div>}
         </section>
       </> : at.error ? <div className="py-row text-callout"><p role="alert">{gui.files_failed_list(at.error)}</p><Button onClick={() => open(at.machine, at.path, false)}>{gui.region_retry}</Button></div> : !at.listing ? <p role="status" className="py-pane text-center text-callout text-muted-foreground">{gui.files_reading_folder}</p> : <>

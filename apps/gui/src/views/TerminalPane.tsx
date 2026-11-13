@@ -84,7 +84,6 @@ import { TermPeek } from "@/views/TermPeek";
 import { IconAttach, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui, menu, msg } from "@/gen/catalog";
-import { baseName } from "@/lib/paths";
 import { levelOf, treeChanged } from "@/lib/tree-changed";
 import { cn } from "@/lib/utils";
 import { HIDDEN_MS, useHidden } from "@/hooks/use-hidden";
