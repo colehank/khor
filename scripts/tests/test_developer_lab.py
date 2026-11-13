@@ -104,6 +104,22 @@ class LabTests(unittest.TestCase):
             self.assertIn(b'/versions/current/assets/app.js', response.read())
         with urlopen(origin + '/lab/status') as response:
             self.assertNotIn('token', json.load(response))
+        workbench = version / 'assets/workbench'
+        workbench.mkdir()
+        (workbench / 'index.html').write_text('Storybook manager')
+        (workbench / 'iframe.html').write_text('Storybook canvas')
+        with urlopen(origin + '/workbench/?path=/story/khor-app--gui') as response:
+            self.assertEqual(response.geturl(), origin + '/versions/current/assets/workbench/index.html?path=/story/khor-app--gui')
+            self.assertEqual(response.read(), b'Storybook manager')
+        with urlopen(origin + '/') as response:
+            self.assertEqual(response.read(), b'Storybook manager')
+        with urlopen(origin + '/versions/current/assets/workbench/iframe.html') as response:
+            self.assertEqual(response.read(), b'Storybook canvas')
+        lab.value['mode'] = 'full'
+        with urlopen(origin + '/workbench/') as response:
+            self.assertEqual(response.geturl(), origin + '/workbench/')
+            self.assertNotEqual(response.read(), b'Storybook manager')
+        lab.value['mode'] = 'frontend'
         for path in ('/store/secret', '/versions/current/../../manager.json', '/versions/current/assets/../native/private.json'):
             try:
                 urlopen(origin + path)
