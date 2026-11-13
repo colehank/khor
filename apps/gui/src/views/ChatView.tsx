@@ -1,4 +1,4 @@
-import {addAttachments,deviceAttachments,type Attachment} from "@/lib/term-attachments";
+import {pathAttachment,type Attachment} from "@/lib/term-attachments";
 import {AttachmentPicker,AttachmentDestination} from "@/views/TermFiles";
 import { raiseKeyboard } from "@/lib/soft-keyboard";
 import {ScrollToBottom} from '@/components/ScrollToBottom';
@@ -711,7 +711,10 @@ export function ChatView({
     put: (file, target) => withChat(view => view.put(file, target)),
     putPaths: (paths, target) => withChat(view => view.putPaths(paths, target)),
   }, into, id,machine);
-  const [attachmentSources,setAttachmentSources]=useState<Attachment[]>([]);
+  // The picker edits the same retained draft as the composer. Reopening
+  // it must show every already-selected file, not a second empty queue.
+  const attachmentSources=files.items.flatMap(item=>item.source?[item.source]:item.path?[pathAttachment(item.path,machine,home??machine??'会话所在机器')]:[]);
+  const pendingKeyFor=(entry:Attachment)=>files.items.find(item=>item.source?.key===entry.key||(!item.source&&item.path===entry.path))?.key;
   const [attachmentsOpen,setAttachmentsOpen]=useState(false);
   const sendingDraft=useRef(false);
   /** A terminal block handed to the next conversation (roadmap 2.3), as
@@ -1931,11 +1934,11 @@ export function ChatView({
             </div>
           )}
           <AttachmentPicker open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
-            machine:machine??null,cwd:null,into,onInto:setInto,filesOnly:true,action:'添加',selected:attachmentSources,
-            add:items=>setAttachmentSources(old=>addAttachments(old,items)),
-            remove:item=>setAttachmentSources(old=>old.filter(existing=>existing.key!==item.key)),
-            replace:(item,file)=>setAttachmentSources(old=>old.flatMap(existing=>existing.key===item.key?deviceAttachments([file],false,'这台设备'):[existing])),
-            send:async items=>{files.addSources(items);setAttachmentSources([]);return true;},dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
+            machine:machine??null,cwd:null,into,onInto:setInto,filesOnly:true,action:'完成',selected:attachmentSources,
+            add:files.addSources,
+            remove:item=>{const key=pendingKeyFor(item);if(key)files.remove(key);},
+            replace:(item,file)=>{const key=pendingKeyFor(item);if(key)files.replace(key,file);},
+            send:async()=>true,dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
           <PendingChips key={id} items={files.items} onAdd={()=>setAttachmentsOpen(true)} onRemove={key=>{files.remove(key);if(files.items.find(item=>item.key===key)?.error)setControlError(null);}} onReplace={files.replace} onRetry={key=>{files.retry(key);setControlError(null);}} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
