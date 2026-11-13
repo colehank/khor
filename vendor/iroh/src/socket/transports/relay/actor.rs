@@ -581,7 +581,7 @@ impl ActiveRelayActor {
 
         let mut state = ConnectedRelayState {
             ping_tracker: PingTracker::default(),
-            health_ping: None,
+            health_check: None,
             endpoints_present: BTreeSet::new(),
             last_packet_src: None,
             pong_pending: None,
@@ -605,6 +605,7 @@ impl ActiveRelayActor {
                 self.run_sending(fut, &mut state, &mut client_stream)
                     .await?;
             }
+            let early_deadline = state.health_deadline();
             tokio::select! {
                 biased;
                 _ = self.stop_token.cancelled() => {
@@ -626,7 +627,7 @@ impl ActiveRelayActor {
                 _ = state.ping_tracker.timeout() => {
                     break Err(e!(RunError::PingTimeout));
                 }
-                _ = ping_interval.tick(), if state.health_ping.is_none() => {
+                _ = ping_interval.tick(), if state.health_check.is_none() => {
                     // khor patch 15: the periodic ping waits the full pong timeout (5 s).
                     // Upstream gave it 3x the last pong time (at least 0.5 s); through a
                     // proxy's TUN to a far relay pongs swing 124-976 ms, so a healthy
@@ -719,6 +720,14 @@ impl ActiveRelayActor {
                         Err(err) => break Err(e!(RunError::ClientStreamRead, err)),
                     }
                 }
+                // Give ready receive work precedence over the early inference.
+                // Progress defers only this quick check. The original full
+                // pong deadline remains anchored at the first ping.
+                _ = wait_health_deadline(early_deadline) => {
+                    if state.early_health_failed() {
+                        break Err(e!(RunError::PingTimeout));
+                    }
+                }
                 _ = &mut self.inactive_timeout, if !self.is_home_relay => {
                     debug!("Inactive for {RELAY_INACTIVE_CLEANUP_TIME:?}, exiting (running).");
                     break Ok(());
@@ -742,6 +751,7 @@ impl ActiveRelayActor {
     }
 
     fn handle_relay_msg(&mut self, msg: RelayToClientMsg, state: &mut ConnectedRelayState) {
+        state.receive_progress();
         match msg {
             RelayToClientMsg::Datagrams {
                 remote_endpoint_id,
@@ -839,6 +849,7 @@ impl ActiveRelayActor {
         let mut timeout = pin!(time::sleep(send_timeout));
         let mut sending_fut = pin!(sending_fut);
         let res = loop {
+            let early_deadline = state.health_deadline();
             tokio::select! {
                 biased;
                 _ = self.stop_token.cancelled() => {
@@ -878,6 +889,14 @@ impl ActiveRelayActor {
                         Err(err) => break Err(e!(RunError::ClientStreamRead, err)),
                     }
                 }
+                // Give ready receive work precedence over the early inference.
+                // Progress defers only this quick check. The original full
+                // pong deadline remains anchored at the first ping.
+                _ = wait_health_deadline(early_deadline) => {
+                    if state.early_health_failed() {
+                        break Err(e!(RunError::PingTimeout));
+                    }
+                }
                 _ = &mut self.inactive_timeout, if !self.is_home_relay => {
                     debug!("Inactive for {RELAY_INACTIVE_CLEANUP_TIME:?}, exiting (sending).");
                     break Ok(());
@@ -898,7 +917,7 @@ struct ConnectedRelayState {
     ping_tracker: PingTracker,
     /// One explicit health check, owned by this TCP connection until its pong
     /// or timeout. Periodic and concurrent demand cannot replace its deadline.
-    health_ping: Option<[u8; 8]>,
+    health_check: Option<HealthCheck>,
     /// Endpoints which are reachable via this relay server.
     endpoints_present: BTreeSet<EndpointId>,
     /// The [`EndpointId`] from whom we received the last packet.
@@ -920,20 +939,65 @@ struct ConnectedRelayState {
     test_pong: Option<([u8; 8], oneshot::Sender<()>)>,
 }
 
+#[derive(Debug)]
+struct HealthCheck {
+    data: [u8; 8],
+    early_deadline: Option<Instant>,
+    saw_message: bool,
+}
+
+async fn wait_health_deadline(deadline: Option<Instant>) {
+    match deadline {
+        Some(at) => time::sleep_until(at).await,
+        None => std::future::pending().await,
+    }
+}
+
 impl ConnectedRelayState {
     fn start_health_check(&mut self) -> Option<[u8; 8]> {
-        if self.health_ping.is_some() {
+        if self.health_check.is_some() {
             return None;
         }
-        let data = self.ping_tracker.new_ping();
-        self.health_ping = Some(data);
+        let early_deadline = Instant::now() + self.ping_tracker.ping_timeout();
+        let data = self
+            .ping_tracker
+            .new_ping_with_timeout(self.ping_tracker.max_timeout());
+        self.health_check = Some(HealthCheck {
+            data,
+            early_deadline: Some(early_deadline),
+            saw_message: false,
+        });
         Some(data)
+    }
+
+    fn health_deadline(&self) -> Option<Instant> {
+        self.health_check
+            .as_ref()
+            .and_then(|check| check.early_deadline)
+    }
+
+    fn receive_progress(&mut self) {
+        if let Some(check) = &mut self.health_check {
+            check.saw_message = true;
+        }
+    }
+
+    fn early_health_failed(&mut self) -> bool {
+        let Some(check) = &mut self.health_check else {
+            return false;
+        };
+        check.early_deadline = None;
+        !check.saw_message
     }
 
     fn receive_pong(&mut self, data: [u8; 8]) {
         self.ping_tracker.pong_received(data);
-        if self.health_ping == Some(data) {
-            self.health_ping = None;
+        if self
+            .health_check
+            .as_ref()
+            .is_some_and(|check| check.data == data)
+        {
+            self.health_check = None;
         }
     }
 
@@ -1968,7 +2032,7 @@ mod tests {
     fn health_state() -> super::ConnectedRelayState {
         super::ConnectedRelayState {
             ping_tracker: PingTracker::new(Duration::from_secs(1)),
-            health_ping: None,
+            health_check: None,
             endpoints_present: Default::default(),
             last_packet_src: None,
             pong_pending: None,
@@ -2005,6 +2069,68 @@ mod tests {
         assert!(state.start_health_check().is_none());
         state.receive_pong(ping);
         assert!(state.start_health_check().is_some());
+    }
+
+    async fn measured_health_state() -> super::ConnectedRelayState {
+        let mut state = health_state();
+        let warmup = state.ping_tracker.new_ping();
+        tokio::time::advance(Duration::from_millis(100)).await;
+        state.ping_tracker.pong_received(warmup);
+        state
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_health_check_fails_at_the_early_deadline() {
+        let mut state = measured_health_state().await;
+        state.start_health_check().unwrap();
+        tokio::time::advance(Duration::from_millis(500)).await;
+        assert!(state.health_deadline().unwrap() <= tokio::time::Instant::now());
+        assert!(state.early_health_failed());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), state.ping_tracker.timeout())
+                .await
+                .is_err(),
+            "the early failure precedes the full pong deadline"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn received_progress_defers_only_the_early_health_judgment() {
+        let mut state = measured_health_state().await;
+        let ping = state.start_health_check().unwrap();
+        tokio::time::advance(Duration::from_millis(400)).await;
+        state.receive_progress();
+        tokio::time::advance(Duration::from_millis(100)).await;
+        assert!(!state.early_health_failed());
+        assert!(state.health_deadline().is_none());
+        assert!(state.start_health_check().is_none());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), state.ping_tracker.timeout())
+                .await
+                .is_err()
+        );
+        state.receive_pong(ping);
+        assert!(state.start_health_check().is_some());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn continued_progress_cannot_extend_the_full_pong_deadline() {
+        let mut state = measured_health_state().await;
+        state.start_health_check().unwrap();
+        for tick in 1..=10 {
+            tokio::time::advance(Duration::from_millis(100)).await;
+            state.receive_progress();
+            assert!(state.start_health_check().is_none());
+            if tick == 5 {
+                assert!(!state.early_health_failed());
+            }
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(1), state.ping_tracker.timeout())
+                .await
+                .is_ok(),
+            "traffic cannot move the original full pong deadline"
+        );
     }
 
     #[tokio::test]
