@@ -4,8 +4,7 @@ import {createPortal} from 'react-dom';
 import {fetchDevices,nativeFolders,said,termDropForget,termPickFolders,type DeviceRow} from '@/api';
 import {MachineAvatar} from '@/components/Avatar';
 import {IconBack,IconFile,IconFiles,IconChevronDown} from '@/components/icons';
-import {Input} from '@/components/ui/input';
-import {PathField} from '@/components/PathField';
+import {SideFind} from '@/components/SideFind';
 import {Button} from '@/components/ui/button';
 import {Dialog,TaskOverlay,DialogTitle} from '@/components/ui/dialog';
 import {GlassCircle} from '@/components/Glass';
@@ -122,7 +121,7 @@ function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,fi
  const entry=(full:string,dir:boolean,size:number|null=null)=>place.root?localEntry(place.root,full,dir):pathAttachment(full,place.machine.me?null:place.machine.name,place.machine.shown,dir,size);
  const listing=useMemo<DirListing|undefined>(()=>place.root?{path,entries:deviceFolderEntries(place.root,path.replace(/^\//,'')).map(row=>({name:row.name,dir:row.dir,size:row.file?.size??0,at_ms:row.file?.lastModified??0,from:null,received_ms:null})),truncated:false}:undefined,[place.root,path]);
  return <div data-files-directory-body className="flex min-h-0 flex-1 flex-col">
-  <div className="flex-none p-row">{place.root?<Input data-files-search aria-label="搜索或输入路径" placeholder="搜索或输入路径" value={query} onChange={event=>{const value=event.target.value;setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onKeyDown={event=>{if(event.key==='Enter')navigate(query);}}/>:<PathField data-files-search aria-label="搜索或输入路径" placeholder="搜索或输入路径" machine={place.machine.name} value={query} keepHome={false} files onValueChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onSubmit={()=>navigate(query)}/>}</div>
+  <div data-files-search className="flex-none py-in"><SideFind label="搜索或输入路径" query={query} onQuery={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);}}/></div>
   <FilesPane machine={place.machine.name} here={place.machine.me} path={path} onPath={navigate} onLanded={resolved=>{if(!query)navigate(resolved);}} onFile={()=>{}} open={null} sourceListing={listing} filter={filter} selection={{filesOnly,state:(full,dir)=>{const item=entry(full,dir);return {selected:selected(item)||inherited(item),disabled:busy||inherited(item)};},toggle:(full,dir,size)=>onToggle(entry(full,dir,size)),open:(full,dir)=>onOpen(entry(full,dir))}}/>
   <div className="flex flex-none items-center gap-in p-row pb-safe-bottom"><GlassCircle aria-label="返回附件" data-files-directory-back onClick={onClose}><IconBack/></GlassCircle><span className="min-w-0 flex-1 truncate text-callout text-muted-foreground">{place.machine.shown}</span></div>
  </div>;
