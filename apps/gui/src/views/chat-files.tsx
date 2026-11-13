@@ -87,7 +87,7 @@ export function usePendingFiles(upload: {
   const lock=useRef(false);
   const addSources=(entries:Attachment[])=>store.add(entries.map(source=>{
     const file=source.device?.files[0]?.file;
-    return {key:store.key(),name:source.name,size:source.size,thumb:file?.type.startsWith('image/')?URL.createObjectURL(file):null,
+    return {key:store.key(),name:source.name,size:source.size,thumb:file?.type.startsWith('image/')&&file.size<=THUMB_MAX?URL.createObjectURL(file):null,
       inline:null,path:!source.device&&source.from===targetMachine?source.path:null,error:null,source,reference:!source.device&&source.from===targetMachine};
   }));
   const addFiles=(files:File[])=>addSources(deviceAttachments(files,false,'这台设备'));
@@ -98,7 +98,7 @@ export function usePendingFiles(upload: {
     if(old.thumb)URL.revokeObjectURL(old.thumb);
     const source=deviceAttachments([file],false,'这台设备')[0];
     store.patch(key,{name:file.name,size:file.size,source,path:null,error:null,inline:null,landedInto:undefined,
-      thumb:file.type.startsWith('image/')?URL.createObjectURL(file):null});
+      thumb:file.type.startsWith('image/')&&file.size<=THUMB_MAX?URL.createObjectURL(file):null});
   };
   const prepare=async():Promise<Pending[]>=>{
     if(lock.current)throw new Error('附件正在准备');
