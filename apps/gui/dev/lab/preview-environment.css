@@ -1,0 +1,7 @@
+/* Synthetic scene backgrounds, never part of a packaged application. */
+[data-lab-environment-background]{position:fixed;inset:-24px;z-index:-2;pointer-events:none;background:#263746}
+[data-lab-environment-background][data-background=wallpaper]{background:radial-gradient(ellipse at 20% 30%,#7289c5 0%,transparent 55%),radial-gradient(ellipse at 85% 65%,#aa7793 0%,transparent 55%),linear-gradient(125deg,#264e55,#354257)}
+[data-lab-environment-background][data-background=grid]{background:repeating-linear-gradient(0deg,transparent 0 39px,#e0e5e6 39px 40px),repeating-linear-gradient(90deg,#799694 0 39px,#e0e5e6 39px 40px)}
+[data-lab-environment-background][data-background=light]{background:#e7e9e4}
+[data-lab-environment-background][data-background=dark]{background:#17212a}
+[data-lab-environment-background][data-frost=true]{filter:blur(24px)}

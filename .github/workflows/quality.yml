@@ -72,6 +72,7 @@ jobs:
         run: |
           npx tsc --project dev/lab/tsconfig.json
           npx vite build --config dev/lab/vite.config.ts --outDir "$LAB_BUNDLE"
+          npm run lab:workbench:build -- --output-dir "$LAB_BUNDLE/assets/workbench"
           python3 - <<'PY'
           import json, os, pathlib, subprocess, sys
           def git(*args): return subprocess.check_output(['git', *args], text=True).strip()

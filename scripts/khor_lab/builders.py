@@ -102,6 +102,7 @@ def local(config, destination, publish, cancelled):
         run(sys.executable, str(materialized / 'scripts/khor_lab/fixture_data.py'), str(materialized), env=build_env, timeout=1800)
     run('npx', 'tsc', '--project', 'dev/lab/tsconfig.json', cwd=gui)
     run('npx', 'vite', 'build', '--config', 'dev/lab/vite.config.ts', '--outDir', str(destination), cwd=gui, timeout=900)
+    run('npm', 'run', 'lab:workbench:build', '--', '--output-dir', str(destination / 'assets/workbench'), cwd=gui, timeout=900)
     receipt = destination / 'source.json'
     write_json(receipt, info)
     run(sys.executable, str(materialized / 'scripts/khor_lab/package.py'), str(materialized), str(destination), str(receipt))

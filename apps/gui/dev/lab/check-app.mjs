@@ -5,6 +5,7 @@ import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {checkCommandTab} from './child-command-checks.mjs';
 import {checkConversationNavigation} from './conversation-navigation-checks.mjs';
+import {checkWorkbench} from './workbench-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
@@ -465,7 +466,14 @@ let browser;
 const results = [];
 try {
   await waitForPreview();
-  if (process.env.LAB_CHECKS === 'conversation-navigation') {
+  if (process.env.LAB_CHECKS === 'workbench') {
+    for(const engine of ['chromium','webkit']){
+      browser=await(engine==='webkit'?webkit:chromium).launch({headless:true});
+      results.push(await checkWorkbench(browser,{port,report,engine}));
+      await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      await browser.close();browser=undefined;
+    }
+  } else if (process.env.LAB_CHECKS === 'conversation-navigation') {
     for(const engine of ['chromium',...(process.env.QUALITY_ENGINES?.includes('webkit')?['webkit']:[])]) {
       browser=await (engine==='webkit'?webkit:chromium).launch({headless:engine!=='webkit'||process.env.QUALITY_HEADLESS!=='0'});
       for(const width of [320,390])for(const workspace of [false,true])for(const khor of [true,false]) {

@@ -251,7 +251,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.respond(404, 'Lab snapshot does not exist')
             source = json.loads(manifest.read_text())
             return self.respond(200, {k: status.get(k) for k in ('mode', 'scene', 'revision')} | {'tree': source['tree']})
-        if path == '/':
+        if path in ('/', '/workbench', '/workbench/'):
+            status = self.lab.status()
+            version = status.get('version', '')
+            workbench = self.lab.home / 'versions' / version / 'assets/workbench/index.html'
+            if status.get('mode') == 'frontend' and status.get('available') and workbench.is_file():
+                query = urlsplit(self.path).query
+                return self.respond(302, b'', headers={'Location': f'/versions/{version}/assets/workbench/index.html' + ('?' + query if query else '')})
             # This launch page is deliberately outside the App; the App receives no substitute shell.
             html = b'<!doctype html><meta charset="utf-8"><title>Khor developer Lab</title><h1>Khor developer Lab</h1><p><a href="/app/">Open the complete App</a> | <a href="/lab/status">Build/source status</a></p><p>Refresh the App after an update. Native verification and user acceptance are recorded separately.</p>'
             return self.respond(200, html, 'text/html; charset=utf-8')

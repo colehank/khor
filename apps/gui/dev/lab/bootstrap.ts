@@ -143,5 +143,9 @@ if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
 if(runtime.mode==='frontend'&&query.has('handoff'))handOff('terminal.txt','$ example\nSynthetic terminal output');
 Object.defineProperty(window, '__KHOR_LAB__', {value: Object.freeze(runtime)});
 await import('../../src/main');
+if(query.has('environment')) {
+  const {installPreviewEnvironment}=await import('./preview-environment');
+  installPreviewEnvironment(JSON.parse(query.get('environment')!),runtime);
+}
 
 if(noticeDriver){const {mountNoticeTools}=await import('./notice-tools');mountNoticeTools(noticeDriver);}

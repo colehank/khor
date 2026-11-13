@@ -14,6 +14,7 @@ export function normalizeWindowOpacity(value: unknown): number {
   return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : 100;
 }
 let choice: WindowChoice = { material: "solid", opacity: 100 };
+let painted = false;
 let nativeMaterial: WindowMaterial | null = null;
 const main = () => inApp && window.__KHOR_WINDOW_SURFACE__ === true && !isMenuFace;
 export function windowChoice(rows: ConfigRow[] | null): WindowChoice | null {
@@ -21,22 +22,29 @@ export function windowChoice(rows: ConfigRow[] | null): WindowChoice | null {
   const o = rows?.find(r => r.name === "window-opacity")?.value;
   return m === "solid" || m === "clear" || m === "frost" ? { material: m, opacity: normalizeWindowOpacity(o), outline: rows?.find(r => r.name === "window-outline")?.value !== "off" } : null;
 }
-export function windowOpacity(): number { return main() && choice.material !== "solid" ? choice.opacity / 100 : 1; }
-export function wearWindowChoice(next: WindowChoice, native = true): void {
+export function windowOpacity(): number { return painted && choice.material !== "solid" ? choice.opacity / 100 : 1; }
+/** Paint independently of the native window effect. Isolated browser hosts
+ * can exercise the same background, terminal cutouts and renderer alpha. */
+export function paintWindowChoice(next: WindowChoice, platform = window.__KHOR_WINDOW_PLATFORM__): void {
   choice = next;
-  if (!main()) return;
+  painted = true;
   const root = document.documentElement;
   root.toggleAttribute("data-window-transparent", next.material !== "solid");
   root.toggleAttribute("data-window-outline", next.outline !== false);
-  if(window.__KHOR_WINDOW_PLATFORM__)root.dataset.windowPlatform=window.__KHOR_WINDOW_PLATFORM__;
+  if(platform)root.dataset.windowPlatform=platform;
   root.style.setProperty("--window-opacity", `${windowOpacity() * 100}%`);
+  followWindowGround();
+  queueGround();
+  window.dispatchEvent(new Event("khor:window-surface"));
+}
+export function wearWindowChoice(next: WindowChoice, native = true): void {
+  if (!main()) return;
   try { window.localStorage.setItem(WINDOW_MIRROR, JSON.stringify(next)); } catch { /* Only the next launch's mirror is lost. */ }
   if (native && nativeMaterial !== next.material) {
     nativeMaterial = next.material;
     void setWindowAppearance(next.material).catch(() => { nativeMaterial = null; });
   }
-  queueGround();
-  window.dispatchEvent(new Event("khor:window-surface"));
+  paintWindowChoice(next);
 }
 export function onWindowSurface(run: () => void): () => void {
   window.addEventListener("khor:window-surface", run);
@@ -55,7 +63,7 @@ let frame = 0;
 let armed = false;
 const surfaceSelector = "[data-terminal], [data-term-ended-screen]";
 function queueGround() {
-  if (!main() || frame) return;
+  if (!painted || frame) return;
   frame = requestAnimationFrame(() => { frame = 0; measureGround(); });
 }
 let resize: ResizeObserver | null = null;
@@ -84,16 +92,21 @@ function measureGround() {
 }
 export function followWindowSurface(): void {
   if (!main() || armed) return;
-  armed = true;
   try {
     const v = window.__KHOR_WINDOW_PREF__ ?? JSON.parse(window.localStorage.getItem(WINDOW_MIRROR) ?? "null") as WindowChoice | null;
     if (v && ["solid", "clear", "frost"].includes(v.material)) wearWindowChoice({ material: v.material, opacity: normalizeWindowOpacity(v.opacity), outline: v.outline !== false }, false);
   } catch { /* A missing mirror remains solid. */ }
+  followWindowGround();
+}
+/** Observe the renderer's ground without starting a native host. */
+export function followWindowGround(): void {
+  if (armed) return;
   // Terminal padding resizes before paint; its cutout must follow in that
   // same phase, or shrinking exposes the previous frame's hole in the list.
   resize = new ResizeObserver(measureGround);
   const root = document.getElementById("root");
   if (!root) return;
+  armed = true;
   resize.observe(root);
   // Ignore xterm's cell output. A retained tab can become visible without
   // inserting/removing a node or changing size, so watch its ancestors too.

@@ -13,6 +13,23 @@ Choose the runtime and builder independently:
 
 The first full host supports macOS arm64. Frontend Lab is portable. Full Lab uses `live` data: create disposable workspaces and sessions in its isolated store. Browser fixtures do not claim to verify native keyboard, file sharing, WebView layering, process persistence or backend behavior.
 
+## Web workbench
+
+Frontend bundles include Storybook 10.6. The manager root `/` or `/workbench/` opens its standard scene list, viewport toolbar and Controls panel. `/app/` remains the direct complete App entry. The workbench embeds this same production entry, pinned to the bundle's source version; it never copies App layouts. The manager is a development tool and is excluded from the release build.
+
+Choose Mobile 320/390/430, Android 412, Tablet 768, Desktop 1280/1440 or custom dimensions. The theme/material/background toolbar and Controls adjust desktop opacity, simulated safe areas and mobile keyboard space. Environment changes preserve the current document and draft; changing scene/data deliberately starts that fixture again. Desktop material is a CSS composition over a synthetic wallpaper/grid, using the production ground painter and terminal cutouts. Mobile retains its actual solid ground. This preview cannot reproduce native AppKit blur or diagnose differences between real Macs by itself.
+
+Storybook viewport changes dimensions, not user-agent or input hardware. Mouse input stays mouse input; Playwright device contexts cover real browser touch/UA emulation. The keyboard control reserves space through the production viewport path and labels it as a placeholder; it does not summon an OS keyboard. Use full native Lab for real IME, touch inertia, OS file drops and WebView layering.
+
+Developers running local hot frontend Lab can open the manager in a second process:
+
+```sh
+cd apps/gui
+KHOR_LAB_ORIGIN=http://127.0.0.1:23910 npm run lab:workbench
+```
+
+The manager proxies the existing Lab entry; App changes still use that Lab's normal hot update path. Source-only developers use remotely built immutable workbench assets. Share `/workbench/?path=/story/khor-app--gui` or a pinned `/versions/<version>/assets/workbench/index.html?path=/story/khor-app--gui` for review.
+
 ## Edit source with hot updates
 
 `lab dev` runs the actual App through Vite. It is a foreground development process: Ctrl+C stops its own server and native launcher. Its runtime declares `mutable: true`; use `lab start/update` for a fixed source version to review. The two entries use the same production App and fixture modules.
