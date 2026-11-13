@@ -1,29 +1,18 @@
-import connectLight from './assets/tour/connect-light.webp';
-import connectDark from './assets/tour/connect-dark.webp';
-import connectMobileLight from './assets/tour/connect-mobile-light.webp';
-import connectMobileDark from './assets/tour/connect-mobile-dark.webp';
-import sessionsLight from './assets/tour/sessions-light.webp';
-import sessionsDark from './assets/tour/sessions-dark.webp';
-import sessionsMobileLight from './assets/tour/sessions-mobile-light.webp';
-import sessionsMobileDark from './assets/tour/sessions-mobile-dark.webp';
-import workspaceLight from './assets/tour/workspace-light.webp';
-import workspaceDark from './assets/tour/workspace-dark.webp';
-import workspaceMobileLight from './assets/tour/workspace-mobile-light.webp';
-import workspaceMobileDark from './assets/tour/workspace-mobile-dark.webp';
-import changesLight from './assets/tour/changes-light.webp';
-import changesDark from './assets/tour/changes-dark.webp';
-import changesMobileLight from './assets/tour/changes-mobile-light.webp';
-import changesMobileDark from './assets/tour/changes-mobile-dark.webp';
-import mac from './assets/tour/face-mac.webp';
-import linux from './assets/tour/face-linux.webp';
-import windows from './assets/tour/face-windows.webp';
+import p2pLight from './assets/pillars/p2p-light.webp';
+import p2pDark from './assets/pillars/p2p-dark.webp';
+import p2pMobileLight from './assets/pillars/p2p-mobile-light.webp';
+import p2pMobileDark from './assets/pillars/p2p-mobile-dark.webp';
+import agentLight from './assets/pillars/agent-light.webp';
+import agentDark from './assets/pillars/agent-dark.webp';
+import agentMobileLight from './assets/pillars/agent-mobile-light.webp';
+import agentMobileDark from './assets/pillars/agent-mobile-dark.webp';
+import terminalLight from './assets/pillars/terminal-light.webp';
+import terminalDark from './assets/pillars/terminal-dark.webp';
+import terminalMobileLight from './assets/pillars/terminal-mobile-light.webp';
+import terminalMobileDark from './assets/pillars/terminal-mobile-dark.webp';
 
-// These are art-directed crops of the same real App, not separate demos.
-// A picture downloads only the crop and theme needed by this viewport.
 export const tourImages={
-  connect:{light:connectLight,dark:connectDark,mobileLight:connectMobileLight,mobileDark:connectMobileDark},
-  sessions:{light:sessionsLight,dark:sessionsDark,mobileLight:sessionsMobileLight,mobileDark:sessionsMobileDark},
-  workspace:{light:workspaceLight,dark:workspaceDark,mobileLight:workspaceMobileLight,mobileDark:workspaceMobileDark},
-  changes:{light:changesLight,dark:changesDark,mobileLight:changesMobileLight,mobileDark:changesMobileDark},
+  p2p:{light:p2pLight,dark:p2pDark,mobileLight:p2pMobileLight,mobileDark:p2pMobileDark},
+  agent:{light:agentLight,dark:agentDark,mobileLight:agentMobileLight,mobileDark:agentMobileDark},
+  terminal:{light:terminalLight,dark:terminalDark,mobileLight:terminalMobileLight,mobileDark:terminalMobileDark},
 };
-export const peerFaces={mac,linux,windows};

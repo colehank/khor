@@ -1,115 +1,88 @@
-/* Product proof follows the brand story. These are real App captures,
-   composed on its black stage; they never mount additional App instances. */
-.product-tour {
-  --tour-window-ground:var(--mark-veil-light);
-  --tour-title:clamp(calc(var(--text-title-lg)*1.8),4.6vw,calc(var(--text-title-lg)*3));
-  position:relative;
-  z-index:11;
-  padding:calc(var(--gap-pane)*3) var(--story-gutter) 0;
-  background:var(--canvas);
-}
+/* Three actions, shown by the real Khor UI. Only image previews run here;
+   every App and native-webview substitute lives in the capture fixture. */
+.product-tour { --tour-window-ground:var(--mark-veil-light); --tour-title:clamp(calc(var(--text-title-lg)*1.8),4.6vw,calc(var(--text-title-lg)*3)); position:relative; z-index:11; padding:calc(var(--gap-pane)*3) var(--story-gutter) 0; background:var(--canvas); }
 @media (prefers-color-scheme:dark) { .product-tour { --tour-window-ground:var(--mark-veil-dark); } }
 .tour-section { max-width:var(--story-max); margin-inline:auto; padding-block:calc(var(--gap-pane)*3); }
 .tour-copy h2 { font-size:var(--tour-title); line-height:1.06; font-weight:600; letter-spacing:-.035em; text-wrap:balance; }
 .tour-copy h2 span { display:block; }
 .tour-copy h2 span + span { color:var(--secondary); }
-.tour-copy p { max-width:38ch; font-size:var(--text-read); line-height:1.65; color:var(--secondary); text-wrap:pretty; }
+.tour-copy p { max-width:43ch; font-size:var(--text-read); line-height:1.65; color:var(--secondary); text-wrap:pretty; }
 .tour-heading-row { display:grid; grid-template-columns:1.1fr .8fr; align-items:end; gap:calc(var(--gap-pane)*2); margin-bottom:calc(var(--gap-pane)*2); }
-.tour-media { min-width:0; position:relative; margin:0; }
-.tour-window { position:relative; overflow:hidden; border-radius:var(--radius-xl); background:var(--tour-window-ground); box-shadow:var(--shadow-float); }
-.tour-window picture,.tour-window img { display:block; width:100%; height:auto; }
-.tour-caption { display:flex; flex-wrap:wrap; gap:var(--gap-in) var(--gap-group); margin-top:var(--gap-base); font-size:var(--text-callout); color:var(--secondary); }
-.tour-caption span:last-child { color:color-mix(in srgb,var(--ink) 46%,var(--canvas)); }
+.pillar-window { position:relative; overflow:hidden; border-radius:var(--radius-xl); background:var(--tour-window-ground); box-shadow:var(--shadow-float); }
+.pillar-window picture,.pillar-window img { display:block; width:100%; height:auto; }
+.tour-caption { display:flex; flex-direction:column; gap:var(--gap-in); margin-top:var(--gap-base); font-size:var(--text-callout); color:var(--secondary); }
+.tour-caption strong { font-size:var(--text-body); color:var(--ink); font-weight:500; }
 
-/* A peer map leads into the actual machine view. Its three identities and
-   labels are the same MacBook, Linux builder and ThinkPad in the demo. */
-.connection-composition { padding-top:calc(var(--gap-pane)*2); padding-bottom:var(--gap-pane); }
-.connection-window { width:76%; margin-left:auto; }
-.connection-map { position:absolute; inset:0 auto auto 0; width:35%; height:100%; z-index:1; }
-.connection-map > svg { position:absolute; inset:0; width:100%; height:100%; overflow:visible; color:var(--secondary); }
-.connection-map path { fill:none; stroke:currentColor; stroke-width:1; vector-effect:non-scaling-stroke; opacity:.45; }
-.peer-node { position:absolute; display:flex; flex-direction:column; align-items:center; gap:var(--gap-in); width:42%; transform:translate(-50%,-50%); text-align:center; }
-.peer-node img { width:var(--avatar-lg); height:var(--avatar-lg); border-radius:50%; }
-.peer-name { font-size:var(--text-body); font-weight:500; white-space:nowrap; }
-.peer-system { color:var(--secondary); font-size:var(--text-caption); }
-.peer-mac { left:45%; top:12%; }
-.peer-linux { left:20%; top:47%; }
-.peer-windows { left:58%; top:84%; }
-.peer-connection { position:absolute; left:29%; top:36%; color:var(--secondary); font-size:var(--text-caption); white-space:nowrap; }
-.connection-caption { margin-left:24%; }
+/* The origin and destination share a localhost address and order rows.
+   No invented device hardware surrounds the actual App images. */
+.p2p-composition { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,.34fr); gap:var(--gap-group); align-items:center; }
+.p2p-composition figure { min-width:0; margin:0; }
+.p2p-origin { padding-block:var(--gap-pane); }
+.p2p-origin .pillar-window { width:112%; }
+.p2p-receiver { position:relative; z-index:1; }
+.resource-route { display:flex; align-items:center; justify-content:center; flex-wrap:wrap; gap:var(--gap-group); margin-top:var(--gap-pane); font-size:var(--text-callout); color:var(--secondary); }
+.resource-link { display:flex; align-items:center; gap:var(--gap-in); }
+.resource-link i { width:calc(var(--gap-pane)*2); height:var(--hair); background:var(--hairline); transform-origin:left; }
 
-/* Sessions pairs a close view with a quiet legend of the actual harness
-   marks. The legend is explanatory, so it is never styled as a control. */
-.tour-sessions { display:grid; grid-template-columns:1.15fr .85fr; gap:calc(var(--gap-pane)*2.5); align-items:center; padding-block:calc(var(--gap-pane)*4); }
-.tour-sessions .tour-copy { order:2; }
-.tour-sessions .tour-copy p { margin-top:var(--gap-group); }
-.harness-legend { display:flex; flex-wrap:wrap; gap:var(--gap-group); margin-top:calc(var(--gap-pane)*1.25); padding:0; list-style:none; }
-.harness-legend li { display:flex; flex-direction:column; align-items:center; gap:var(--gap-row); min-width:var(--touch); color:var(--secondary); font-size:var(--text-caption); }
-.harness-legend .harness-mark { width:var(--avatar); height:var(--avatar); color:var(--ink); }
-.harness-mark svg { width:100%; height:100%; display:block; }
-.session-window { width:100%; }
+/* One request and the returned work form one composition. */
+.pillar-agent { padding-block:calc(var(--gap-pane)*4); }
+.tour-centered { text-align:center; margin-bottom:calc(var(--gap-pane)*2); }
+.tour-centered p { max-width:55ch; margin:var(--gap-group) auto 0; }
+.agent-composition { margin:0 auto; max-width:calc(var(--list-w)*3.5); }
+.delegation-results { display:grid; grid-template-columns:1fr 1fr; gap:var(--gap-pane); margin-top:var(--gap-pane); padding-top:var(--gap-pane); border-top:var(--hair) solid var(--hairline); }
+.delegation-result { display:flex; align-items:flex-start; gap:var(--gap-base); }
+.delegate-mark { display:block; flex:none; width:var(--avatar); height:var(--avatar); color:var(--ink); }
+.delegate-mark svg { display:block; width:100%; height:100%; }
+.delegation-result strong { display:block; font-size:var(--text-body); font-weight:550; }
+.delegation-result strong span { color:var(--secondary); font-weight:400; }
+.delegate-task,.delegate-result { display:block; font-size:var(--text-callout); }
+.delegate-task { margin-top:var(--gap-in); color:var(--secondary); }
+.delegate-result { margin-top:var(--gap-xxs); }
 
-/* A project and its changes remain connected in the composition, just as
-   the files and Git state share one source of truth in the demonstration. */
-.workspace-composition { padding-bottom:calc(var(--gap-pane)*4); }
-.workspace-window { width:88%; }
-.changes-figure { width:62%; position:absolute; right:0; bottom:0; margin:0; }
-.changes-window { aspect-ratio:3.1; box-shadow:var(--shadow-float); }
-.changes-window picture,.changes-window img { height:100%; }
-.changes-window img { object-fit:cover; object-position:top; }
-.changes-figure figcaption { justify-content:flex-end; }
-.workspace-caption { margin-top:var(--gap-group); }
+/* The viewer changes; the host and output do not. Tabs select static
+   captures of the same fixture, never another interactive App instance. */
+.terminal-preview { --terminal-height:calc(var(--gap-pane)*27); }
+.terminal-tabs { display:flex; justify-content:center; gap:var(--gap-pane); margin-bottom:var(--gap-pane); }
+.terminal-tabs button { min-width:calc(var(--touch)*1.5); min-height:var(--touch); padding:var(--gap-in) var(--gap-row); border:0; border-bottom:calc(var(--hair)*2) solid transparent; background:none; color:var(--secondary); cursor:pointer; }
+.terminal-tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--ink); }
+.terminal-tabs button:hover { color:var(--ink); }
+.terminal-gallery { height:var(--terminal-height); }
+.terminal-panel { display:grid; place-items:center; height:100%; }
+.terminal-wide { width:min(100%,calc(var(--terminal-height)*1.7)); }
+.terminal-phone { width:min(100%,calc(var(--terminal-height)*.4875)); }
+.terminal-caption { display:flex; flex-wrap:wrap; justify-content:center; gap:var(--gap-in) var(--gap-group); margin-top:var(--gap-pane); font-size:var(--text-callout); color:var(--secondary); }
+.terminal-caption strong { font-weight:500; color:var(--ink); }
 
-/* Only the media moves. Copy is readable immediately and a stopped scroll
-   always leaves a complete layout. No sticky sections or wheel handlers. */
-[data-tour-motion] .tour-window {
-  opacity:.65;
-  transform:translateY(var(--gap-group));
-  transition:opacity calc(var(--dur-240)*3) var(--ease-out),transform calc(var(--dur-240)*3) var(--ease-out);
-}
-[data-tour-motion] .connection-map path { stroke-dasharray:1; stroke-dashoffset:1; transition:stroke-dashoffset calc(var(--dur-240)*4) var(--ease-out); }
-[data-tour-motion] .peer-node { opacity:.55; transition:opacity calc(var(--dur-240)*3) var(--ease-out); }
-[data-tour-motion] .is-in-view .tour-window { opacity:1; transform:none; }
-[data-tour-motion] .is-in-view .connection-map path { stroke-dashoffset:0; }
-[data-tour-motion] .is-in-view .peer-node { opacity:1; }
-[data-tour-motion] .is-in-view .connection-window { transition-delay:var(--dur-120); }
-[data-tour-motion] .is-in-view .changes-window { transition-delay:var(--dur-180); }
+/* Media enters once. Copy is readable at every scroll position. */
+[data-tour-motion] .pillar-window { opacity:.72; transform:translateY(var(--gap-group)); transition:opacity calc(var(--dur-240)*3) var(--ease-out),transform calc(var(--dur-240)*3) var(--ease-out); }
+[data-tour-motion] .is-in-view .pillar-window { opacity:1; transform:none; }
+[data-tour-motion] .p2p-receiver .pillar-window { transition-delay:var(--dur-180); }
+[data-tour-motion] .resource-link i { transform:scaleX(.25); transition:transform calc(var(--dur-240)*3) var(--ease-out); }
+[data-tour-motion] .is-in-view .resource-link i { transform:scaleX(1); }
 
 @media (max-width:1000px) and (min-width:761px) {
-  .tour-sessions { gap:var(--gap-pane); grid-template-columns:1fr 1fr; }
-  .harness-legend { gap:var(--gap-row); }
+  .p2p-composition { grid-template-columns:minmax(0,1fr) minmax(0,.4fr); }
+  .terminal-preview { --terminal-height:calc(var(--gap-pane)*24); }
 }
 @media (max-width:760px) {
   .product-tour { --tour-title:clamp(calc(var(--text-title-lg)*1.65),9vw,calc(var(--text-title-lg)*2.3)); padding-top:var(--gap-pane); }
   .tour-section { padding-block:calc(var(--gap-pane)*2); }
   .tour-heading-row { grid-template-columns:1fr; gap:var(--gap-group); margin-bottom:calc(var(--gap-pane)*1.5); }
-  .tour-copy p { max-width:38ch; font-size:var(--text-body); }
-  .connection-composition { padding-top:0; padding-bottom:0; }
-  .connection-map { position:relative; width:100%; height:calc(var(--gap-pane)*7); margin-bottom:var(--gap-pane); }
-  .connection-map > svg { display:none; }
-  .connection-map::before { content:''; position:absolute; top:28%; left:15%; right:15%; border-top:var(--hair) solid var(--hairline); }
-  .peer-node { width:30%; top:40%; gap:var(--gap-xxs); }
-  .peer-node img { width:calc(var(--avatar)*2); height:calc(var(--avatar)*2); margin-bottom:var(--gap-in); }
-  .peer-mac { left:16%; }
-  .peer-linux { left:50%; }
-  .peer-windows { left:84%; }
-  .peer-name { font-size:var(--text-callout); }
-  .peer-connection { top:auto; left:0; right:0; bottom:0; text-align:center; }
-  .connection-window { width:100%; }
-  .connection-caption { margin-left:0; }
-  .tour-sessions { display:flex; flex-direction:column; align-items:stretch; gap:calc(var(--gap-pane)*1.5); }
-  .tour-sessions .tour-copy { order:0; }
-  .tour-sessions .tour-copy p { margin-top:var(--gap-group); }
-  .harness-legend { flex-wrap:nowrap; justify-content:space-between; gap:var(--gap-in); margin-top:var(--gap-group); }
-  .harness-legend li { gap:var(--gap-in); }
-  .harness-legend .harness-mark { width:var(--text-title-lg); height:var(--text-title-lg); }
-  .workspace-composition { padding-bottom:0; }
-  .workspace-window { width:100%; }
-  .changes-figure { position:relative; width:100%; margin-top:var(--gap-group); }
-  .changes-window { aspect-ratio:1.25; }
-  .changes-figure figcaption { justify-content:flex-start; }
+  .tour-copy p { max-width:43ch; font-size:var(--text-body); }
+  .p2p-composition { display:block; }
+  .p2p-origin { display:none; }
+  .p2p-receiver { max-width:calc(var(--list-w)*1.05); margin-inline:auto!important; }
+  .tour-caption { align-items:center; text-align:center; }
+  .resource-route { gap:var(--gap-in) var(--gap-row); font-size:var(--text-caption); }
+  .resource-link i { width:var(--gap-row); }
+  .tour-centered { text-align:left; margin-bottom:calc(var(--gap-pane)*1.5); }
+  .tour-centered p { margin-top:var(--gap-group); }
+  .delegation-results { gap:var(--gap-group); grid-template-columns:1fr; }
+  .delegation-result { gap:var(--gap-row); }
+  .terminal-preview { --terminal-height:calc(var(--gap-pane)*30); }
+  .terminal-caption { flex-direction:column; align-items:center; text-align:center; }
 }
 @media (prefers-reduced-motion:reduce) {
-  [data-tour-motion] .tour-window,[data-tour-motion] .peer-node { transition:none; opacity:1; transform:none; }
-  [data-tour-motion] .connection-map path { transition:none; stroke-dashoffset:0; }
+  [data-tour-motion] .pillar-window { transition:none; opacity:1; transform:none; }
+  [data-tour-motion] .resource-link i { transition:none; transform:none; }
 }

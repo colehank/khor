@@ -18,7 +18,7 @@ const unavailable=[
   '[data-khor-agent-turn] button','[data-khor-agent-settings]',
 ].join(',');
 
-export function constrainDemoInteractions() {
+export function constrainDemoInteractions(session?:string) {
   let pending=false;
   const apply=()=>{
     pending=false;
@@ -41,7 +41,7 @@ export function constrainDemoInteractions() {
         const list=selector==='[data-row] [data-row-open]'?(element.closest('[data-list]')??document.documentElement):document.documentElement;
         groups.set(list,[...(groups.get(list)??[]),element]);
       });
-      for(const rows of groups.values())rows.forEach((element,index)=>{if(index>0)disable(element,true);});
+      for(const rows of groups.values())rows.forEach((element,index)=>{if(index>0&&!(session&&element.closest('[data-row]')?.getAttribute('data-row')===session))disable(element,true);});
     }
     document.querySelectorAll<HTMLElement>('[data-tab-open]').forEach(button=>{if(button.closest('[data-tab]')?.getAttribute('data-on')!=='true')disable(button,true);});
     document.querySelectorAll<HTMLElement>('[data-file-path]').forEach(file=>{if(file.dataset.filePath!==roots.web+'/README.md')disable(file,true);});
