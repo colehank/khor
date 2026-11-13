@@ -282,7 +282,7 @@ export function defaultFaceOf(path: string): "source" | "preview" {
 }
 
 export function FileView(props: Omit<Parameters<typeof FileBody>[0],"handoff"> & {handoff?:FileHandoffControl}) {
-  const own=useFileHandoff(props.machine,props.path,!props.handoff);
+  const own=useFileHandoff(props.machine,props.path,!props.handoff&&!props.localFile);
   const handoff=props.handoff??own;
   return <div ref={own.owner} data-file-body className="relative flex min-h-0 flex-1 flex-col">
     <FileBody key={JSON.stringify([props.machine,props.path])} {...props} handoff={handoff}/>
@@ -306,7 +306,9 @@ function FileBody({
   reading = false,
   onCanEdit,
   editorHistory,
+  localFile,
 }: {
+  localFile?: File;
   handoff: FileHandoffControl;
   /** An open-tab owner may retain this across the file view's remount. */
   editorHistory?: EditorHistorySlot;
@@ -404,7 +406,17 @@ function FileBody({
   const history = editorHistory ?? localHistory.current;
   const previewScroll = useKeptScrollRef(JSON.stringify([machine, path]), history.preview ??= {});
   const kind=kindOf(path);
-  const nativePreview = (kind === "doc" || kind === "pdf") && handoff.previewSupported;
+  const nativePreview = !localFile && (kind === "doc" || kind === "pdf") && handoff.previewSupported;
+  const [localUrl,setLocalUrl]=useState<string>();
+  useEffect(()=>{if(!localFile)return;const url=URL.createObjectURL(localFile);setLocalUrl(url);return()=>URL.revokeObjectURL(url);},[localFile]);
+  const readText=async(m:string,p:string):Promise<FileText>=>localFile?{text:await localFile.slice(0,256*1024).text(),total:localFile.size,at_ms:localFile.lastModified,cut:localFile.size>256*1024,binary:false,digest:""}:fetchFileText(m,p);
+  const readStat=async(m:string,p:string):Promise<FileStat>=>localFile?{total:localFile.size,at_ms:localFile.lastModified,digest:""}:fetchFileStat(m,p);
+  const readPreview=async(m:string,p:string):Promise<Preview>=>{
+    if(!localFile)return fetchPreview(m,p);
+    const cut=localFile.size>16*1024*1024;
+    const data=cut?"":await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]??"");reader.onerror=()=>reject(reader.error);reader.readAsDataURL(localFile);});
+    return {kind:kindOf(p),total:localFile.size,data,media:localFile.type||(kindOf(p)==="pdf"?"application/pdf":kindOf(p)==="svg"?"image/svg+xml":kindOf(p)==="image"?"image/png":"application/octet-stream"),html:"",cut,empty:localFile.size===0};
+  };
   const openedNativePdf=useRef(false);
   useEffect(() => {
     if (kind!=="pdf" || !nativePreview || openedNativePdf.current || document.hidden) return;
@@ -536,7 +548,7 @@ function FileBody({
     return () => URL.revokeObjectURL(pdfAt);
   }, [pdfAt]);
 
-  const previewMode = kind === "text" || kind === "video" || kind === "audio" || (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
+  const previewMode = kind === "text" || kind === "video" || kind === "audio" || !localFile && (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
     ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
@@ -548,10 +560,10 @@ function FileBody({
     setLookFailure(null);
     previewReader.current.ask(async () => {
       if (previewMode === "stat") {
-        const stat = await fetchFileStat(machine, path);
+        const stat = await readStat(machine, path);
         return { preview: null, total: stat.total };
       }
-      const preview = await fetchPreview(machine, path);
+      const preview = await readPreview(machine, path);
       return { preview, total: preview.total };
     }, value => setLookValue({ key: previewKey, ...value }),
     error => setLookFailure({ key: previewKey, error: said(error) }));
@@ -571,13 +583,13 @@ function FileBody({
     setTook(null);
     const take = (f: FileText) => {
       if (!live) return;
-      remember(machine, path, f);
+      if(!localFile)remember(machine, path, f);
       acceptBuffer(was => ({...was, file: f,
         edit: draft === undefined ? {text: f.text, was: f.digest, by: newLine()} : was.edit,
       }));
     };
     const read = () =>
-      fetchFileText(machine, path)
+      readText(machine, path)
         .then(take)
         .catch((e: unknown) => live && setError(said(e)));
     // Read lately: asked what it is now, and shown from memory when
@@ -585,7 +597,7 @@ function FileBody({
     // failed (an older khor over there answers the read as before).
     const had = held.get(heldKey(machine, path));
     if (had) {
-      fetchFileStat(machine, path)
+      readStat(machine, path)
         .then((now) => (unchanged(had, now) ? take(had) : read()))
         .catch(() => read());
     } else {
@@ -719,7 +731,7 @@ function FileBody({
   /** Refresh a clean file without replacing intervening edits or marked text.
       The original disk version must also remain the draft's merge base. */
   const readNeeded = useCallback(function checkRead(): void {
-    if (!bufferLive.current || refreshReading.current || !refresh.current.needsRead()) return;
+    if (localFile || !bufferLive.current || refreshReading.current || !refresh.current.needsRead()) return;
     const {file,edit} = accepted.current;
     if (kindOf(path) !== "text" || file === null || (edit !== null && edit.text !== file.text)) return;
     if (refresh.current.checkpoint() === null) return;
@@ -727,9 +739,9 @@ function FileBody({
     refreshReading.current = true;
     let failed = false;
     void refresh.current.read(
-      () => fetchFileStat(machine, path)
-        .then((now) => (unchanged(file, now) ? null : fetchFileText(machine, path)))
-        .catch(() => fetchFileText(machine, path)),
+      () => readStat(machine, path)
+        .then((now) => (unchanged(file, now) ? null : readText(machine, path)))
+        .catch(() => readText(machine, path)),
       (f) => {
         if (f.digest === file.digest) return;
         remember(machine, path, f);
@@ -879,7 +891,7 @@ function FileBody({
     setOops(null);
     const base = file.text;
     const mine_ = edit.text;
-    fetchFileText(machine, path)
+    readText(machine, path)
       .then((now) => {
         if (!accepts()) return;
         return mergeFileText(base, mine_, now.text).then((m) => {
@@ -955,7 +967,7 @@ function FileBody({
       </div>
     </div>}
   </div>;
-  if (kind === "video" || kind === "audio") return previewSurface(<ResourcePreview machine={machine} path={path} media={kind}/>);
+  if (kind === "video" || kind === "audio") return localFile&&!localUrl?<div/>:previewSurface(<ResourcePreview machine={machine} path={path} media={kind} sourceUrl={localUrl}/>);
   if (nativePreview) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
   if (kindOf(path) !== "text") {
     if (look === null) return previewSurface(lookError === null ? <div className="flex-1" /> :
@@ -1161,7 +1173,7 @@ function FileBody({
           {renders === "md" ? (
             <Markdown text={body} className="prose-khor px-6 py-4" lines machine={machine} path={path} />
           ) : renders === "html" ? (
-            <HtmlView machine={machine} path={path} text={body} ground={ground.ground} />
+            localFile ? <ResourcePreview machine={machine} path={path} sourceUrl={localUrl}/> : <HtmlView machine={machine} path={path} text={body} ground={ground.ground} />
           ) : renders === "ipynb" ? (
             // A file cut by the cap is half a JSON document: the cut row
             // above already says so, and nothing is drawn under it.

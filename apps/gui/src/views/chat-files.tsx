@@ -35,7 +35,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 
 import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
 import {AttachmentList} from "@/views/AttachmentList";
-import {AttachmentPreview} from '@/views/AttachmentPreview';
+import {AttachmentFile} from '@/views/AttachmentFile';
 import {deviceAttachments,pathAttachment,type Attachment} from '@/lib/term-attachments';
 import { DirPicker } from "@/components/DirPicker";
 import { FileKindIcon } from "@/components/FileKindIcon";
@@ -141,13 +141,11 @@ export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,
   const [looking, setLooking] = useState<string | null>(null);
   if (items.length === 0) return null;
   const chosen=items.find(item=>item.key===looking);
-  const local=chosen?.source?.device?.files[0]?.file??null;
-  const path = local?null:chosen?.path??(chosen?.source&&!chosen.source.device?chosen.source.path:null)??null;
+  const chosenEntry=chosen?(chosen.source??(chosen.path?pathAttachment(chosen.path,here?null:machine,machine):null)):null;
   return (
     <div data-chat-pending className="max-h-48 min-w-0 overflow-y-auto overscroll-contain px-2 pb-in">
       <AttachmentList items={items.map(item=>({...item,detail:item.reference?"引用原文件":item.source?.shown,busy:!!item.encoding||(!item.source&&item.path===null&&!item.error)}))} onOpen={setLooking} onRemove={key=>{if(looking===key)setLooking(null);onRemove(key);}} onAdd={onAdd} onRetry={onRetry} busy={busy}/>
-      <AttachmentPreview file={local} onClose={()=>setLooking(null)} onSave={onReplace&&chosen?file=>onReplace(chosen.key,file):undefined}/>
-      {path !== null && <FilePreview machine={chosen?.source?chosen.source.from??'':machine} shown={chosen?.source?.shown??machine} here={chosen?.source?chosen.source.from===null:here} path={path} onClose={() => setLooking(null)} />}
+      <AttachmentFile entry={chosenEntry} devices={[]} onClose={()=>setLooking(null)}/>
     </div>
   );
 }

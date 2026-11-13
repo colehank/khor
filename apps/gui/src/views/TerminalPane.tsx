@@ -1485,6 +1485,10 @@ export function TerminalPane({
       macOptionIsMeta: termOptionMeta(),
     });
     const fit = new FitAddon();
+    const fitGrid=fit.fit.bind(fit);
+    // Attachment panels and their nested file pages cover the existing grid.
+    // Search focus, sheet detents and keyboard swaps must never resize its PTY.
+    fit.fit=()=>{if(!document.querySelector('[data-attachment-picker]'))fitGrid();};
     term.loadAddon(fit);
     // Real east-asian widths — the measured `wideFit` scale hack this
     // replaces existed because the DOM painter had to guess what a
@@ -2193,11 +2197,11 @@ export function TerminalPane({
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
           resizing ??= term.onResize(({ cols, rows }) => {
-            attachment.resize(cols, rows).catch(() => {});
+            if(!document.querySelector('[data-attachment-picker]'))attachment.resize(cols, rows).catch(() => {});
           });
           if (again) {
             fit.fit();
-            joining.resize(term.cols, term.rows).catch(() => {});
+            if(!document.querySelector('[data-attachment-picker]'))joining.resize(term.cols, term.rows).catch(() => {});
             term.scrollToBottom();
             // A reload keeps the terminal the focus, and the keyboard as
             // it was.
@@ -2371,6 +2375,7 @@ export function TerminalPane({
     // costs nothing; the kernel signals the program only on a change.
     let sizedAt = performance.now();
     const ownSize = () => {
+      if(document.querySelector('[data-attachment-picker]'))return;
       if (performance.now() - sizedAt < SIZE_AGAIN_MS) {
         sizedAt = performance.now();
         return;
@@ -3610,7 +3615,7 @@ export function TerminalPane({
         </div>
       )}
     </div>
-    {active&&!attachmentOpen&&attachments.length>0&&<div className="flex-none px-row py-in"><Button data-term-attachment-resume className="min-h-touch" onClick={()=>setAttachmentOpen(true)}>待发送 · {attachments.length} 项</Button></div>}
+    {active&&!attachmentOpen&&attachments.length>0&&<div className="pointer-events-none absolute bottom-0 right-0 z-10 p-row"><Button data-term-attachment-resume className="pointer-events-auto min-h-touch" onClick={()=>setAttachmentOpen(true)}>待发送 · {attachments.length} 项</Button></div>}
     {/* **Under a finger, the keys a soft keyboard lacks and the switch
         for the keyboard** (`TermKeys`, 2026-10-02). On the narrow face
         they go to the session bar (row 2, and row 1's right end); where

@@ -1505,21 +1505,21 @@ export function ChatView({
   const canSend=hasComposerContent&&!inTurn&&!gone&&files.ready&&facts!==null&&!facts.needsLogin;
   const say = async () => {
     const line = text.trim();
-    if (!canSend||sendingDraft.current) return;
+    if (!canSend||sendingDraft.current) return false;
     sendingDraft.current=true;setControlError(null);
     const reading=reader.current;
     let prepared:typeof files.items;
     try{prepared=await files.prepare();}
-    catch(error){setControlError(String(error));sendingDraft.current=false;return;}
+    catch(error){setControlError(String(error));sendingDraft.current=false;return false;}
     sendingDraft.current=false;
-    if(!mounted.current||currentSession.current!==id||reader.current!==reading)return;
+    if(!mounted.current||currentSession.current!==id||reader.current!==reading)return false;
     const owner = chatDraftOwner(id);
-    if (!owner) return;
+    if (!owner) return false;
     const placed = prepared.filter(file => file.path !== null);
     const full = withAttachments(line, placed.map(file => file.path as string));
     const images = facts?.images ? placed.flatMap(file => file.inline ? [file.inline] : []) : [];
     const draft = rememberChatDraft({owner, reader: reader.current, session: id, token: crypto.randomUUID(), text, full, images, documents: docs, attachments: prepared});
-    if (!draft) return;
+    if (!draft) return false;
     if (placed.length > 0 && box.current) raiseKeyboard(box.current);
     composer.current = {session: id, text: "", documents: [], attachments: []};
     setText("");
@@ -1531,6 +1531,7 @@ export function ChatView({
     lastSay.current = draft;
     setUnsent(null);
     issueDraft(draft);
+    return true;
   };
   retryDraft.current = previous => {
     if (!mounted.current || currentSession.current !== id || previous.session !== id || inTurn || gone) return;
@@ -1938,7 +1939,7 @@ export function ChatView({
             add:files.addSources,
             remove:item=>{const key=pendingKeyFor(item);if(key)files.remove(key);},
             replace:(item,file)=>{const key=pendingKeyFor(item);if(key)files.replace(key,file);},
-            send:async()=>true,dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
+            send:async()=>{if(!canSend)return false;return await say()===true;},dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
           <PendingChips key={id} items={files.items} onAdd={()=>setAttachmentsOpen(true)} onRemove={key=>{files.remove(key);if(files.items.find(item=>item.key===key)?.error)setControlError(null);}} onReplace={files.replace} onRetry={key=>{files.retry(key);setControlError(null);}} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">

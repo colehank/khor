@@ -141,7 +141,9 @@ function useFileVerbs({
   faceToggle,
   handoff,
   additionalActions = [],
+  more = true,
 }: {
+  more?: boolean;
   handoff?: FileHandoffControl;
   additionalActions?: readonly FileMenuAction[];
   /** The file page's face (UX-14): 字号 and 预览背景 are offered only
@@ -286,9 +288,9 @@ function useFileVerbs({
   const moreCircle = faceToggle ? (
     <GlassCapsule data-file-actions role="group" aria-label={gui.file_actions}>
       <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>
-      {moreMenu}
+      {more && moreMenu}
     </GlassCapsule>
-  ) : moreMenu;
+  ) : more ? moreMenu : null;
   return { moreCircle, dialogs, said, size, ground: ground.ground };
 }
 
@@ -338,7 +340,11 @@ export function FilePage({
   embeddedToolbar,
   contentDeck,
   editorHistory,
+  more = true,
+  localFile,
 }: {
+  more?: boolean;
+  localFile?: File;
   /** Owned by the open file/tab, not by its temporary source view. */
   editorHistory?: EditorHistorySlot;
   /** A retained host owns both the current face and changes to it. */
@@ -425,8 +431,9 @@ export function FilePage({
   const face = faceControl?.value ?? localFace;
   const setFace = faceControl?.set ?? setLocalFace;
   const controlledFace = faceControl !== undefined;
-  const handoff = useFileHandoff(machine,path);
+  const handoff = useFileHandoff(machine,path,!localFile);
   const verbs = useFileVerbs({
+    more,
     machine,
     path,
     here,
@@ -601,6 +608,7 @@ export function FilePage({
         ) : (
         <FileView
           handoff={handoff}
+          localFile={localFile}
           editorHistory={editorHistory ?? localHistory.current}
           key={`${machine} ${path}`}
           machine={machine}

@@ -26,7 +26,7 @@ import { EmptyState } from "@/components/RegionState";
 import { fetchLs, renamePath, type DirListing } from "@/api";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconBack, IconFiles } from "@/components/icons";
+import { IconBack, IconFiles, IconCheck, IconShare } from "@/components/icons";
 import { RowMenu } from "@/components/RowMenu";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -67,7 +67,13 @@ export function FilesPane({
   onDiff,
   onMoved,
   onGone,
+  selection,
+  sourceListing,
+  filter = "",
 }: {
+  sourceListing?: DirListing;
+  filter?: string;
+  selection?: { state:(path:string,dir:boolean)=>{selected:boolean;disabled:boolean}; toggle:(path:string,dir:boolean,size:number)=>void; open:(path:string,dir:boolean)=>void; filesOnly?:boolean };
   /** The machine's name — what the node resolves. */
   machine: string;
   /** Where to open; "" is that machine's home. */
@@ -140,6 +146,7 @@ export function FilesPane({
   // resolved path arrives as a new `path`, and this sees it is the one
   // already on screen.
   useEffect(() => {
+    if(sourceListing){setListing(sourceListing);setError(null);return;}
     let stopped = false;
     // Already here. Clearing the refusal is part of that: coming back
     // to a directory that is on screen must not leave the sentence
@@ -173,7 +180,7 @@ export function FilesPane({
       stopped = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machine, path, again]);
+  }, [machine, path, again, sourceListing]);
 
   // Returning from a file can reveal this retained list without remounting.
   // Only the visible list with the requested row may consume the location.
@@ -297,8 +304,9 @@ export function FilesPane({
             {listing.entries.length === 0 && (
               <EmptyState data-empty>{gui.empty_dir}</EmptyState>
             )}
-            {listing.entries.map((e) => {
+            {listing.entries.filter(e=>!filter||e.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map((e) => {
               const full = `${listing.path === "/" ? "" : listing.path}/${e.name}`;
+              if(selection){const state=selection.state(full,e.dir);return <FileChoiceRow key={e.name} name={e.name} dir={e.dir} size={e.size} selected={state.selected} disabled={state.disabled||!!(selection.filesOnly&&e.dir)} onChoose={()=>selection.toggle(full,e.dir,e.size)} onEnter={()=>e.dir?onPath(full):selection.toggle(full,false,e.size)} onOpen={!e.dir?()=>selection.open(full,false):undefined}/>;}
               const faded = e.name.startsWith(".");
               return e.dir ? (
                 <div
@@ -543,3 +551,15 @@ export function FilesPane({
   );
 }
 
+
+/** Machine browsing and attachment drafts share one file row geometry. */
+export function FileChoiceRow({name,dir,size,detail,selected,disabled,onChoose,onEnter,onOpen}:{name:string;dir:boolean;size:number|null;detail?:string;selected:boolean;disabled?:boolean;onChoose:()=>void;onEnter:()=>void;onOpen?:()=>void}){
+ return <div data-files-entry={dir?"dir":"file"} data-files-name={name} className={cn("flex min-h-touch min-w-0 items-center gap-in border-b px-row text-callout",selected&&"bg-fill-strong")}>
+  <button type="button" disabled={disabled&&!dir} onClick={onEnter} className="flex min-h-touch min-w-0 flex-1 items-center gap-in text-left">
+   <span className="grid size-5 flex-none place-items-center">{dir?<IconFiles/>:<FileKindIcon name={name}/>}</span>
+   <span className="min-w-0 flex-1"><span className="block truncate text-body">{name}</span>{(detail||size!==null)&&<span className="block truncate text-caption text-muted-foreground">{[size===null?null:sizeWord(size),detail].filter(Boolean).join(" · ")}</span>}</span>
+  </button>
+  {onOpen&&<button type="button" data-files-open aria-label={`打开 ${name}`} onClick={onOpen} className="grid min-h-touch min-w-touch flex-none place-items-center"><IconShare className="size-affordance"/></button>}
+  <button type="button" data-files-select={name} aria-label={`${selected?gui.files_deselect:gui.files_select} ${name}`} aria-pressed={selected} disabled={disabled} onClick={onChoose} className="grid min-h-touch min-w-touch flex-none place-items-center disabled:opacity-40"><span className="grid size-5 place-items-center rounded-full border">{selected&&<IconCheck className="size-3.5"/>}</span></button>
+ </div>;
+}

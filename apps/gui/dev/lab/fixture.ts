@@ -258,6 +258,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
   const resourcePreviews=new Map<string,string>();let resourceSequence=0;
   let updateMode='current';
   const attachmentEvents:Record<string,unknown>[]=[];
+  const terminalSizes:Record<string,unknown>[]=[];
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];
   const applySetting=(apply:()=>void)=>{if(holdSettings)pendingSettings.push(apply);else apply();};
@@ -289,6 +290,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       if(path==='__ai_preview/settings-pending')return pendingSettings.length;
       if(path==='__ai_preview/settings-refuse'){refuseSetting=body.refuse===true;return true;}
       if(path==='__ai_preview/attachment-events')return structuredClone(attachmentEvents);
+      if(path==='__ai_preview/terminal-sizes')return structuredClone(terminalSizes);
       if(['chat_put','upload','term_drop_stage','term_drop_stage_into'].includes(path)){
         attachmentEvents.push({operation:path,...body});
         const base=path.startsWith('term_drop_')?'/preview/staging/':String(body.into??'/preview/khor-drop')+'/';
@@ -340,6 +342,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           return {landed:paths.map((path:string)=>String(body.into??'/preview/khor-drop')+'/'+path.split('/').pop()),miss:null};
         }
         if(path==='term_drop_progress')return 1;
+        if(path==='term_resize')terminalSizes.push({...body});
         const screen = '\x1b[2J\x1b[Hkhor / layout-lab\r\n\r\n$ git status --short\r\n  clean working tree\r\n\r\nIsolated terminal: input is not executed.\r\npreview % ';
         return path === 'term_attach' ? {bytes: btoa(screen), seq: 1}
           : ['term_stream', 'term_wait'].includes(path) ? {bytes: '', seq: 1, gone: false, reset: false, stall: null} : null;

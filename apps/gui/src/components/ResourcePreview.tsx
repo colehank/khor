@@ -7,13 +7,14 @@ import {releasePages} from '@/views/held';
 import {Button} from '@/components/ui/button';
 
 const ignore=()=>{};
-export function ResourcePreview({machine,path,html,media}:{machine:string;path:string;html?:string;media?:'video'|'audio'}) {
-  const state=useResourcePreview(machine,path,html);
+export function ResourcePreview({machine,path,html,media,sourceUrl}:{machine:string;path:string;html?:string;sourceUrl?:string;media?:'video'|'audio'}) {
+  const remote=useResourcePreview(machine,path,html,sourceUrl===undefined);
+  const state=sourceUrl?{preview:{id:sourceUrl,url:sourceUrl},error:undefined,retry:()=>{setFailed(false);element.current?.load();}}:remote;
   const [failed,setFailed]=useState(false);
   const element=useRef<HTMLMediaElement|null>(null);
   const id=state.preview?.id;
   // Android currently has no native child-page adapter; retain its browser iframe.
-  const native=media===undefined&&inApp&&!/\bAndroid\b/i.test(navigator.userAgent)&&id!==undefined;
+  const native=sourceUrl===undefined&&media===undefined&&inApp&&!/\bAndroid\b/i.test(navigator.userAgent)&&id!==undefined;
   useEffect(()=>{
     setFailed(false);
     if(!id)return;
