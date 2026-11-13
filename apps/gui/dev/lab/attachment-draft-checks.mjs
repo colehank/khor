@@ -43,6 +43,17 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.screenshot({path:path.join(report,name+'-chooser.png')});
   await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
   await draft.getByRole('button',{name:`移除 ${remoteName}`,exact:true}).click();
+  await openPicker();await picker.locator('[data-files-machine][data-files-session]').click();
+  await picker.locator('[data-files-select="project"]').click();
+  await picker.locator('[data-files-review]').click();
+  assert.equal(await picker.locator('[data-files-selected="project"]').count(),1,'Review is an explicit selection step');
+  await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
+  await draft.locator('[data-files-selected="project"] [data-files-card-preview]').click();
+  const folder=page.locator('[data-attachment-folder]:visible');await folder.waitFor();
+  await folder.locator('[data-attachment-folder-entry="file"]').first().click();
+  await page.locator('[data-file-preview]:visible').waitFor();await page.locator('[data-file-preview-close]:visible').click();
+  await folder.waitFor();await folder.locator('[data-task-action="leading"] button').click();await folder.waitFor({state:'hidden'});
+  await draft.getByRole('button',{name:'移除 project',exact:true}).click();
   await openPicker();await choose({name:'remove.txt',mimeType:'text/plain',buffer:Buffer.from('remove me')});
   await draft.getByRole('button',{name:'移除 remove.txt',exact:true}).click();
   const unchanged=Buffer.from('\ufeffpreserve original bytes');

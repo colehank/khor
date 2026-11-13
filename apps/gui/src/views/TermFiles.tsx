@@ -264,7 +264,7 @@ export function TerminalAttachmentDraft({road,onSent}:{road:FilesRoad;onSent:()=
   const urls:Record<string,string>={};for(const item of road.selected){const file=item.device?.files[0]?.file;if(!item.dir&&file?.type.startsWith('image/')&&file.size<=1024*1024)urls[item.key]=URL.createObjectURL(file);}
   setThumbs(urls);return()=>Object.values(urls).forEach(url=>URL.revokeObjectURL(url));
  },[road.selected]);
- const inspect=(item:Attachment)=>{setLocal(null);setFolder(null);setLook(item);if(item.dir&&item.device)setFolder({entry:item,prefix:''});else if(item.device)setLocal(item.device.files[0]?.file??null);};
+ const inspect=(item:Attachment)=>{setLocal(null);setFolder(null);setLook(item);if(item.dir)setFolder({entry:item,prefix:''});else if(item.device)setLocal(item.device.files[0]?.file??null);};
  const send=async()=>{
   if(road.busy||sending.current||!road.selected.length)return;
   sending.current=true;setError(null);
@@ -282,11 +282,27 @@ export function TerminalAttachmentDraft({road,onSent}:{road:FilesRoad;onSent:()=
   </div>
   {road.busy&&<p data-files-transfer role="status" className="text-caption tabular-nums text-muted-foreground">正在发送 · {Math.round((road.progress??0)*100)}%</p>}
   {error&&<p role="alert" className="text-callout text-destructive">{error}</p>}
-  <AttachmentPreview file={local} onClose={()=>{setLocal(null);if(!folder)setLook(null);}} onSave={look&&!folder&&road.replace?file=>road.replace!(look,file):undefined}/>
-  <FilePreview machine={look?.from??''} shown={look?.shown??''} here={look?.from===null} path={look&&!look.device?look.path:null} onClose={()=>setLook(null)}/>
-  <Dialog open={folder!==null&&!local} onOpenChange={value=>{if(!value){setFolder(null);setLook(null);}}}><TaskOverlay purpose="preview" initialHeight="large" maxHeight="large" scrollable>
+  <AttachmentPreview file={local} onClose={()=>{setLocal(null);setLook(folder?.entry??null);}} onSave={look&&!folder&&road.replace?file=>road.replace!(look,file):undefined}/>
+  <FilePreview machine={look?.from??''} shown={look?.shown??''} here={look?.from===null} path={look&&!look.dir&&!look.device?look.path:null} onClose={()=>setLook(folder?.entry??null)}/>
+  <Dialog open={folder!==null&&!local&&!!look?.dir} onOpenChange={value=>{if(!value){setFolder(null);setLook(null);}}}><TaskOverlay data-attachment-folder purpose="preview" initialHeight="large" maxHeight="large" scrollable>
    <DialogTitle>{folder?.entry.name??'文件夹'}</DialogTitle><TaskActions close={<Button onClick={()=>{setFolder(null);setLook(null);}}>关闭</Button>}/>
-   {folder&&<>{folder.prefix&&<Button onClick={()=>setFolder({...folder,prefix:folder.prefix.split('/').slice(0,-1).join('/')})}>上一级</Button>}{deviceFolderEntries(folder.entry,folder.prefix).map(row=><button type="button" key={row.relative} onClick={()=>row.dir?setFolder({...folder,prefix:row.relative}):setLocal(row.file??null)} className="flex min-h-touch w-full items-center gap-in border-b text-left text-body">{row.dir?<IconFiles className="size-kind-mark"/>:<FileKindIcon name={row.name} className="size-kind-mark"/>}<span className="min-w-0 truncate">{row.name}</span></button>)}</>}
+   {folder&&<AttachmentFolder entry={folder.entry} prefix={folder.prefix} onPrefix={prefix=>setFolder({...folder,prefix})} onFile={item=>{setLook(item);if(item.device)setLocal(item.device.files[0]?.file??null);}}/>}
+
   </TaskOverlay></Dialog>
  </div>;
+}
+
+function AttachmentFolder({entry,prefix,onPrefix,onFile}:{entry:Attachment;prefix:string;onPrefix:(prefix:string)=>void;onFile:(entry:Attachment)=>void}){
+ const [listing,setListing]=useState<DirListing|null>(null),[error,setError]=useState<string|null>(null);
+ const path=prefix?joinAttachmentPath(entry.path,prefix):entry.path;
+ useEffect(()=>{if(entry.device)return;let live=true;setListing(null);setError(null);void fetchLs(entry.from??'',path).then(value=>{if(live)setListing(value);},error=>{if(live)setError(said(error));});return()=>{live=false;};},[entry,path]);
+ const rows=entry.device?deviceFolderEntries(entry,prefix):listing?.entries.map(row=>({name:row.name,relative:prefix?prefix+'/'+row.name:row.name,dir:row.dir,file:undefined}));
+ return <>
+  {prefix&&<Button className="self-start" onClick={()=>onPrefix(prefix.split('/').slice(0,-1).join('/'))}>上一级</Button>}
+  {error?<p role="alert" className="text-callout text-destructive">{error}</p>:!rows?<p role="status">{gui.files_reading_folder}</p>:rows.length===0?<p className="text-callout text-muted-foreground">{gui.empty_dir}</p>:rows.map(row=><button type="button" data-attachment-folder-entry={row.dir?"dir":"file"} key={row.relative} onClick={()=>{
+   if(row.dir){onPrefix(row.relative);return;}
+   if(row.file){const item=deviceAttachments([row.file],false,entry.shown)[0];onFile(item);}
+   else onFile(pathAttachment(joinAttachmentPath(entry.path,row.relative),entry.from,entry.shown));
+  }} className="flex min-h-touch w-full items-center gap-in border-b text-left text-body">{row.dir?<IconFiles className="size-kind-mark"/>:<FileKindIcon name={row.name} className="size-kind-mark"/>}<span className="min-w-0 truncate">{row.name}</span></button>)}
+ </>;
 }
