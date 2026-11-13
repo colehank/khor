@@ -13,7 +13,7 @@
 
 ## 设备图标与开场
 
-新增 `IconServer`、`IconWorkstation`、`IconDesktop`、`IconMobile`，沿用 `icons.tsx` 的 RailGlyph、光学校准、线宽与 currentColor。双层机架、紧凑主机、显示器与独立塔式主机、圆角手机通过轮廓区分，细节只保留接口和状态灯。
+新增 `IconServer`、`IconWorkstation`、`IconDesktop`、`IconMobile`，沿用 `icons.tsx` 的 RailGlyph、光学校准、线宽与 currentColor。按用户最新澄清，四种轮廓分别为双层机架、带底座的台式显示器、翻盖笔记本、圆角手机。Desktop 节点使用笔记本，Workstation 使用台式显示器；不再显示主机盒或独立塔式机。
 
 `identity-marks.ts` 在构建时导出同一套图稿。**You have many devices** 的四颗灰节点也使用它们，随后仍切成 Claude／Codex／Cursor／Shell。开场的几何演化和最终 Khor 图标未改；安装平台与真实 GUI 仍使用各自系统标记。
 
@@ -43,3 +43,5 @@
 用户指出终端尚在传输、Server 已经显示终端并执行。修改前 headless Chrome 的 `before.json` 记录进入 run 时目标进度已为 4.36%，回归断言先失败。现在载荷与接收状态共用到达时刻（阶段的 62%），剩余时间用于执行与阅读，指令在途时 Server 只保留已收到的文件标记；到达后才切为终端并开始进度。Mobile 的终端／网页、Workstation 的报告、Agent 的接单和返还结果同样遵守到达依赖。Desktop 改为显示器＋独立主机，并通过共享图稿同步开场与三幕。
 
 最新证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/task-arrival/`。`checks.json` 核对两条流程每种载荷到达前后、命令在途时进度为零、到达后启动、最终结果及离屏暂停；1440px Work 与 390px Agent 的实际 DOM／截图同步核对。`static.json` 确认 320px 减少动态效果下两幕为完成态、无溢出、开场 Desktop 图稿一致。后两幕仅 KhorNet，网络基础设施仍保留原分组与 P2P／relay。定向 TypeScript 与十页静态构建通过，产物 `site-story-20261113-task-arrival/`。仅 headless Chrome，未发布。
+
+最新形态澄清：Desktop = 翻盖笔记本，Workstation／台式机 = 带底座的显示器。共享图稿已同步开场与三幕，状态逻辑未改。仅做 headless Chrome 图形查看，不重跑任务循环。

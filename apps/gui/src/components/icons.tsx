@@ -302,24 +302,21 @@ export function IconServer({ className }: IconProps) {
   </RailGlyph>;
 }
 
-/** A compact workstation: a shallow top plane, front port and power lamp. */
+/** The workstation is represented by a desktop display and its stand. */
 export function IconWorkstation({ className }: IconProps) {
   return <RailGlyph className={className} live={LIVE.hardware}>
-    <path d="M3.8 8.8 7.1 5.3a2.4 2.4 0 0 1 1.7-.7h6.4a2.4 2.4 0 0 1 1.7.7l3.3 3.5Z" />
-    <path d="M3.8 8.8v8.1a2.5 2.5 0 0 0 2.5 2.5h11.4a2.5 2.5 0 0 0 2.5-2.5V8.8" />
-    <path d="M6.8 12.8h5" />
-    <circle data-body cx="17" cy="15.8" r=".75" stroke="none" />
+    <rect x="3.5" y="4.5" width="17" height="11.5" rx="2.1" />
+    <path data-body d="M10.5 16h3l.6 3.5H9.9Z" />
+    <path d="M7.8 19.5h8.4" />
   </RailGlyph>;
 }
 
+/** The site's Desktop node is an open clamshell laptop. */
 export function IconDesktop({ className }: IconProps) {
   return <RailGlyph className={className} live={LIVE.hardware}>
-    <rect x="3.5" y="6" width="10.7" height="9.4" rx="1.5" />
-    <path data-body d="M7.8 15.4h2.1l.5 3.3H7.3Z" />
-    <path d="M5.9 18.7h5.9" />
-    <rect x="17.1" y="4.8" width="4.4" height="13.9" rx="1.3" />
-    <path d="M18.8 8.3h1" />
-    <circle data-body cx="19.3" cy="15.9" r=".65" stroke="none" />
+    <path d="M5 15.2V6.1a1.7 1.7 0 0 1 1.7-1.7h10.6A1.7 1.7 0 0 1 19 6.1v9.1l1.5 3a.8.8 0 0 1-.7 1.2H4.2a.8.8 0 0 1-.7-1.2Z" />
+    <path d="M5 15.2h14" />
+    <rect data-body x="10.3" y="16.9" width="3.4" height=".8" rx=".4" stroke="none" />
   </RailGlyph>;
 }
 
