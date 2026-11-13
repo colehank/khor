@@ -13,3 +13,11 @@ Checks and exact evidence are recorded under /Volumes/disk0/Khor/evidence/attach
 Scope: this Lab iteration changes terminal and ACP attachment flows. MachineChat/Khor's separate broadcast/agent attachment adapter retains its existing backend behavior; do not describe that path as migrated by these commits. Image crop/markup and arbitrary binary editing are not implemented.
 
 Live review: http://127.0.0.1:23961/workbench/?path=/story/khor-app--attachments . Direct App: http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Phone/Air use MacLab borrowed network. The live artifact is pinned to b4f7dbab. Desktop uses the header attachment button or drop; mobile uses the attachment key. Original-green workbench snapshots remain accessible. The original static server was replaced only after confirming its PID, argv and served source; no user App/host was restarted.
+
+## IMG_5636 selected-row correction
+
+The selected wrapper was fixed at256px; at the user's412 viewport the list was364px wide, leaving108px unused. The remote FileCard also painted a second bg-fill within the selected wrapper, making the close slot appear a different shade. Selected rows now fill their containing list in one column; embedded FileCard relinquishes its width/background to that row. Ordinary message FileCards retain their default variant.
+
+Verified43416042656@d1a5aee9:8 complete flows (Chromium/WebKit ×1280/412/390/320),16 local/remote selected-row samples, single transparent preview surface and separate right-aligned remove targets.412 is dark Android; other widths light. Shared unit/gates/mobile-static and hot updates pass. Exact artifact14031782366 SHA256d11b63d7ea6aae1abbedc08fdb4b0a37b358e220f01259fb74320e9d9d1d627d, source/tree/CRC checked,412dark + desktop screenshots inspected. First browser attempt hit a fixture-home navigation error after measuring local widths; those recorded real dimensions independently failed the full-width assertion in8cases. The navigation timeout itself is not presented as a product regression.
+
+Current pinned review: http://127.0.0.1:23961/versions/d1a5aee9e5ae9c6e/assets/workbench/index.html?path=/story/khor-app--attachments . Older links retain their old source; reopen the new link. No main merge/release or installed App restart.
