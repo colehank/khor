@@ -31,7 +31,7 @@ fn command(dev: &Device, program: &str, args: &[&str]) -> String {
 fn readback(dev: &Device, interface: &str) -> Value {
     json!({
         "qdisc":serde_json::from_str::<Value>(&command(dev,"tc",&["-s","-j","qdisc","show","dev",interface])).unwrap(),
-        "filter":serde_json::from_str::<Value>(&command(dev,"tc",&["-s","-j","filter","show","dev",interface,"parent","1:"])).unwrap(),
+        "filter_text":command(dev,"tc",&["-s","filter","show","dev",interface,"parent","1:"]),
     })
 }
 
