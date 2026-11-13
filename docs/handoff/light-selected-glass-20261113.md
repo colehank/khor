@@ -1,14 +1,15 @@
-# Light selected glass — 2026-11-13
+# Selected glass ground parity — 2026-11-13
 
-In translucent light desktop windows, navigation and active tabs inherited the solid theme's opaque white `glass-sel`. The scoped tint now transmits the backdrop, keeping at least80% white behind the existing olive glyphs and increasing with window opacity. Solid windows, mobile and dark selection retain their original values. Shadows, rims and foreground opacity are unchanged.
+The user rejected the first80%-white light selection as visually unchanged and requested following the dark implementation. The previous small pixel-response threshold was insufficient to establish the requested appearance.
 
-The App Lab also seeds its requested theme into its isolated fixture before App's first settings read. Previously, persisted light settings could race a fresh dark preview. Production settings behavior is unchanged.
+Transparent desktop windows now share the existing dark mechanism: `glass-sel:var(--background)`, with `background:transparent` on the same root. The single window ground remains responsible for overall opacity; active pills add no extra white plate. Light and dark keep their own rims/shadows. Foreground opacity, solid windows and mobile are unchanged. The moving selection ghost uses the same utility.
 
 Validation:
 
-- Red83e917ab, run43372318296: both engines confirmed opaque navigation/tab fill in four transparent light configurations; retained WebKit theme-reload race evidence.
-- Green68f2ceff, run43373078985:14 Chromium/WebKit configurations,28 actual production pill samples,8 pixel pairs; backdrop channel response14.93–24.31. Solid/dark controls pass.
-- Unit/gates/mobile static, original appearance renderer gate, direct App and live Storybook/Vite hot updates pass. This is browser/renderer evidence, not AppKit compositor acceptance.
-- Verified artifact14013985370, SHA256 `60699cc60f7077383935e5211278b684e3dd7e7cd5a03e6310846332b890c438`; evidence `/Volumes/disk0/Khor/evidence/lab-workbench-20261113/glass-fixed-68f2`.
+- Strict red760337d5, run43382886041: five light transparent configurations fail in each engine (alpha.8 or1, expected0). Solid/dark controls pass.
+- Implementation1329eeef: all14 configuration/28 pill/8 pixel checks pass; original appearance, unit/gates/mobile static pass. An unhandled WebKit module-import rejection was retained, so this run was not accepted as clean.
+- Checker-only eeec07bb waits for actual lazy-module completion before full-document scenario navigation and records failed module URLs; no page-error filtering. Clean run43384535546 passes both engines, with no module failures, plus direct/workbench Vite hot checks. Production bytes are identical to1329eeef.
+- Final artifact14017784394, SHA256 `ba85f53c17f5a35ee293d388d2d7f930f9443a16e1a051b6fce22acf6e716bc2`; evidence `/Volumes/disk0/Khor/evidence/lab-workbench-20261113/parity-final-eeec`.
 
-Review entrance: http://127.0.0.1:23961/workbench/?path=/story/khor-app--gui (open this entrance again to acquire the newest pinned version). Choose light theme and frost. The user defers the Air's native opaque-bar check to the next installed version. No release or main merge in this follow-up.
+Pinned review: http://127.0.0.1:23961/versions/eeec07bb6e041ac5/assets/workbench/index.html?path=/story/khor-app--gui
+Choose light theme and frost. Native Air material acceptance remains deferred to the next installed App. No main merge or release in this correction.
