@@ -65,4 +65,4 @@ KHOR_SITE_URL=https://colehank.github.io KHOR_SITE_BASE=/khor/ npm run build --p
 版本校验完成后才推进下载指针。详细约定见 [镜像维护](../../scripts/release-mirror.md)。
 中继、寻址和官网分别部署。
 
-2026-11-13 本地全页精修与 Safari 缩放验收见 [本轮记录](../../docs/handoff/site-zoom-20261113.md)。手机完整首图、桌面可操作 GUI，普通首页已获用户 Safari 真机放大／滚动通过反馈；本轮尚未发布。
+2026-11-13 本地全页精修与 Safari 缩放验收见 [本轮记录](../../docs/handoff/site-zoom-20261113.md)。手机完整首图、桌面可操作 GUI，普通首页已获用户 Safari 真机放大／滚动通过反馈；已随 2026-11-13 网站更新发布，版本与公开验收见 [Pages 发布记录](../../docs/handoff/site-pages-20261112.md)。

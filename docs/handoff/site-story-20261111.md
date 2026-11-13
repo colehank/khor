@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-13 用户明确要求部署：源码 `f5c457d7` 的完整静态产物已发布为 `gh-pages` 提交 `cebdd1d`，Pages run `43444719571` 成功，<https://khor.cloud/> 版本与两档 headless Chrome 检查通过。详情见 [Pages 发布记录](site-pages-20261112.md)。下方各次「仅本地」为对应迭代时的历史状态。
+
 - 2026-11-13 最新任务改为 **Train a vision model**，精简为四句提示：Work 中用户从 Workstation 发起 Server 训练，到笔记本修订、手机试用 Web，10.4 秒；Agent 中用户留在 KhorNet 外，超边上的 Khor 图标路由同一任务并返回模型与 Web，11 秒。保留到达依赖，去掉脚本、文件名及训练轮次的额外解释。两档完整循环、三档减少动态效果、定向 TypeScript、十页静态构建通过；证据 `model-training/`。详见 [Work 与 Khor Agent](site-work-agent-20261113.md)。以下 Atlas Web 及 Workstation 上的 Khor 等描述均为历史版本，本轮仅本地。
 
 - 2026-11-13 到达顺序修复：终端指令在途时 Server 保留文件状态，到达后再出现终端和进度；接单、网页、报告与结果也依赖到达。后两幕只显示 KhorNet 超边与名称，去掉内部网络及后缀；Desktop 改成显示器＋主机并同步开场。定向 headless Chrome 回归先红后绿，证据 `task-arrival/`，仅本地。

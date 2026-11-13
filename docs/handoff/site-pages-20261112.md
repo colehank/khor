@@ -2,12 +2,23 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
-## 目标与当前状态
+## 2026-11-13 更新已发布
+
+用户明确要求「部署出去」，已将当前网站发布到既有 `gh-pages` 分支，源码分支未合并 main。
+
+- 网站：<https://khor.cloud/>；源码 `f5c457d796b9ddff0b63c27f6182f2aeb1b710cf`，静态发布提交 `cebdd1d120ec98f825be579426483c9b9df94ce8`
+- [Pages run 43444719571](https://github.com/colehank/khor/actions/runs/43444719571) 成功；线上 `build.json` 已返回上述源码版本
+- 内容包含手机完整 GUI 首图与缩放策略、导航精修、网络超图及约 10 秒的 Work／Khor Agent 模型训练故事。交互与示例仍为静态前端；App／CLI 安装版本仍为 `v0.2.0-rc.12`
+- 按根域参数运行完整网站构建（包括 GUI 演示），171 个本地 HTML 资源链接无缺失；线上 390／1440px headless Chrome 检查两幕完成态、网外用户、无溢出／页面错误／资源 HTTP 错误。线上 GUI HTML 与 install.sh 和发布产物逐字节一致，未执行安装器
+- 域名、CNAME、DNS 与 HTTPS 配置沿用；普通快进推送，无强推。此次仍为本地构建静态快照，再由 Pages 自动发布，没有新增远端源码构建流程
+- 产物：`/Volumes/disk0/Khor/artifacts/site-pages-20261113/dist`；独立发布 checkout 仍为 `site-pages-20261112/publish`。证据：`/Volumes/disk0/Khor/evidence/site-pages-20261113/`，含构建、链接检查、Pages 日志、公开版本／资源检查和截图
+
+## 首次发布与域名配置（2026-11-12 至 13）
 
 - 源码 worktree：`/Volumes/disk0/Khor/worktrees/current/khor-site-story`，branch `feat/site-story`。
 - 目标仓库：公开仓库 `colehank/khor`；仅发布静态快照到独立 `gh-pages` 分支，Pages source 为该分支根目录。
 - 自定义域名：`khor.cloud`；`www.khor.cloud` 作为同站备用入口。原始项目地址 `https://colehank.github.io/khor/` 将跟随 Pages 配置跳转。
-- 当前发布：根路径快照为 `gh-pages` commit `233cfe2`，最终发布 HEAD `5afd72e`（GitHub 重存 CNAME 后自动提交），源码 commit `f196459e1ba84acb33bd1ffb24becf46e48dde95`。已按 `KHOR_SITE_URL=https://khor.cloud KHOR_SITE_BASE=/` 构建并发布根路径产物，含 `CNAME=khor.cloud`。Pages 状态 built，source 为 gh-pages /，custom domain 为 khor.cloud。
+- 首次发布：根路径快照为 `gh-pages` commit `233cfe2`，最终发布 HEAD `5afd72e`（GitHub 重存 CNAME 后自动提交），源码 commit `f196459e1ba84acb33bd1ffb24becf46e48dde95`。已按 `KHOR_SITE_URL=https://khor.cloud KHOR_SITE_BASE=/` 构建并发布根路径产物，含 `CNAME=khor.cloud`。Pages 状态 built，source 为 gh-pages /，custom domain 为 khor.cloud。
 - 2026-11-13 DNS 与 HTTPS 均完成。GitHub Pages health 对根域和 www 均确认 DNS 有效、由 Pages 提供服务、可签发 HTTPS，CAA 无错误。证书状态 approved，覆盖 khor.cloud 和 www.khor.cloud，到期 2027-02-11；https_enforced=true。
 - 实际验证：`https://khor.cloud/` 返回 HTTP 200 且正常通过 TLS 验证，`https://www.khor.cloud/` 与 `http://khor.cloud/` 均 301 到主域 HTTPS。使用公共 DoH 的正常域名请求取得正确 build.json；没有跳过证书验证。当前 Mac 曾缓存根域不存在的旧 DNS 结果，因此另用公共 DoH 与定向 GitHub Pages IP 的保留 SNI / TLS 校验请求交叉确认。
 - 起初证书排队未完成，按 GitHub 官方 HTTPS 排障说明在 DNS 有效后移除再保存一次自定义域名，随即获批并成功开启 HTTPS。没有反复重新绑定或改动 Cloudflare SSL 级别。
