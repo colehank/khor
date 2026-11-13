@@ -16,7 +16,8 @@ export async function checkConversationNavigation(browser,{port,report,engine,wo
       const back=page.locator('[data-ws-mid] [data-session-bar] [data-back]:visible');
       await back.waitFor();await back.click();
       await page.locator('[data-workspace-navigation][data-seat="workspace"] [data-workspace-view="sessions"]').click();
-      await page.locator(`[data-ws-sessions-list] [data-row="${khor?independentKhorSession:'gui/ai-elements-review'}"] [data-row-open]`).click();
+      await page.locator(`[data-ws-sessions-list] [data-row="${khor?independentKhorSession:'gui/ai-elements-review'}"] [data-row-open]`)
+        .getByText(khor?'khor · 网络任务':'AI Elements · 组件总览',{exact:true}).click();
     }
     const frame=page.locator(workspace?'[data-ws-sessions] [data-session-screen]:visible':'[data-session-screen][data-session-navigation-root]:visible');
     await frame.locator(khor?'[data-machine-chat-scroll]':'[data-chat-scroll]').waitFor();
