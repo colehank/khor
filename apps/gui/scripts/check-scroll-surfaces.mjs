@@ -1,6 +1,6 @@
 // Browser regression for the same interactive fixture used by CUA.
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
+import {createServer} from 'vite';
 import {fileURLToPath} from 'node:url';
 import {lstatSync,writeFileSync,mkdirSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
@@ -108,9 +108,10 @@ async function processHeadingPaint(page){
 let vite,browser;
 try{
  if(!existing){
-  vite=spawn('node_modules/.bin/vite',['--port',String(port),'--strictPort'],{cwd:gui,stdio:['ignore','pipe','pipe']});
-  let ready=false,log='';vite.stdout.on('data',b=>{ready||=String(b).includes(`:${port}`);});vite.stderr.on('data',b=>{log+=String(b);});
-  for(let n=0;n<100&&!ready;n++)await new Promise(r=>setTimeout(r,100));assert(ready,log||'Vite failed to start');
+  vite=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,
+   optimizeDeps:{entries:['lab/scroll-surfaces.html']},
+   server:{host:'127.0.0.1',port,strictPort:true,hmr:false}});
+  await vite.listen();
  }
  const url=new URL(existing??`http://localhost:${port}/lab/scroll-surfaces.html`);if(processes)url.searchParams.set('surface','processes');
  if(material){
@@ -138,4 +139,4 @@ try{
  console.log(`scroll surfaces: ${report.results.length} header/theme/material/opacity cases passed`);
  }
  }
-}finally{await browser?.close();vite?.kill();}
+}finally{await browser?.close();await vite?.close();}
