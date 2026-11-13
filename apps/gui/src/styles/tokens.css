@@ -927,12 +927,7 @@
    * against a resting grey of C 0.010. check-rail now holds the hue
    * (`OPEN_CHROMA`) and the graphic floor, not a weight margin. Dark is
    * unchanged. */
-  /* 2026-11-13 preview: the user finds light selection less distinct
-   * than dark's lime. A more chromatic green (L .518 / C .165 / H139.4)
-   * separates it from resting grey while preserving readable depth.
-   * This is selected ink only; identity and primary-action greens stay
-   * on their own tokens. Dark remains #c6f560. */
-  --rail-on-ink: #287d00;
+  --rail-on-ink: #5d7b06;
   --icon-body: 0.7;
 
   /* **Tombstone: `--rail-on` was the block behind whichever rail item

@@ -6,7 +6,6 @@
 |---|---|---|---|---|
 | — | 固定标题的背景模糊 | `band-blur: blur(20px) saturate(1.6)` | **`blur(20px)`，已落地** | 2026-11-13 毛玻璃窗口滚动时标题额外增色；纯色对照实测 RGB 通道偏移约 16–19 级。窗口继续只画一层底色，标题保留模糊和渐变，不额外增强饱和度；`scroll-surfaces --material` 对照实际像素，`check-boot` 同时比对 filter token。 |
 | — | 透明窗口选中玻璃 | 浅色 `#ffffff`，中间80%白色尝试仍被负责人拒绝 | **浅深透明窗口共用 `var(--background)`，已落地** | 沿用深色原机制，去掉浅色额外白板；保留主题边缘／阴影／前景、实色及手机。80%版在加强后的 alpha0／像素响应检查下先红；不把网页模拟称为原生材质验收。 |
-| — | 浅色选中墨 | `rail-on-ink:#5d7b06` 与主按钮同值 | **候选 `#287d00`，等待Lab视觉验收** | 负责人指出绿色高亮不如深色显眼；提高彩度并略向草绿调整，保留足够深度（标准底4.73:1）。只改选中墨，不改材质、未选中灰、深色、主按钮或身份头像。 |
 | D1 | `body` 字号 | `--text-base: 14px` | **13px** | 跟 macOS 对齐。`read` 保持 16，长读的地方不跟着降。 **已落地（第十五轮）**：八个界面档 + read/doc-h/mono/term 共 14 个 type style 进了 `tokens.css`，旧的 `xs/sm/base/lg`、`title/fact/aux`、`hero`、`code` 撤掉，`check-type` 按名拒收；`read` 的行高 1.5（16 上 24px），主人 2026-09-27 定，不再动；`tokens.json` 已跟上，`check-boot` 里原来那条具名例外撤了，两边不一致就红。 |
 | D6 | 选中行 | `--accent`（16% 的淡底）+ `ink` | **`fill-strong` 灰块 + 全行 `ink`**，前台标题 600 | 第十五轮先落成 `brand-strong` 实心 + `on-brand`；2026-09-27 负责人嫌「太亮」，额度的环在实心绿上看不清，改成 Finder 侧边栏那种中性灰块。`app.css` 按 `data-selected` 画；`check-palette` 两主题 × 前台/失焦量，并且选中行任何时候是 `brand-strong` 就红。 |
 | — | 主操作 | `--primary: #1a1a14`（墨） | **`brand-strong`** | 当初把主操作改成墨，是因为 `#93b04d` 对白只有 2.45。`brand-strong` 对白 4.88，岗位可以回到橄榄绿。 **已落地（第十五轮）**：`--primary: var(--brand-strong)`。 |
