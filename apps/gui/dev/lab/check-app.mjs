@@ -7,6 +7,7 @@ import {checkCommandTab} from './child-command-checks.mjs';
 import {checkConversationNavigation} from './conversation-navigation-checks.mjs';
 import {checkWorkbench} from './workbench-checks.mjs';
 import {checkGlassSelection} from './glass-selection-checks.mjs';
+import {checkSelectionInk} from './selection-ink-checks.mjs';
 import {chromium, webkit} from 'playwright-core';
 import {spawn} from 'node:child_process';
 import {mkdir, readFile, writeFile} from 'node:fs/promises';
@@ -467,7 +468,14 @@ let browser;
 const results = [];
 try {
   await waitForPreview();
-  if (process.env.LAB_CHECKS === 'glass-selection') {
+  if (process.env.LAB_CHECKS === 'selection-ink') {
+    for(const engine of ['chromium','webkit']){
+      browser=await(engine==='webkit'?webkit:chromium).launch({headless:true});
+      results.push(await checkSelectionInk(browser,{port,report,engine}));
+      await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      await browser.close();browser=undefined;
+    }
+  } else if (process.env.LAB_CHECKS === 'glass-selection') {
     for(const engine of ['chromium','webkit']){
       browser=await(engine==='webkit'?webkit:chromium).launch({headless:true});
       results.push(await checkGlassSelection(browser,{port,report,engine}));
@@ -510,6 +518,7 @@ try {
   browser = await chromium.launch({headless: true});
   results.push(await checkWorkbench(browser,{port,report,engine:'chromium'}));
   results.push(await checkGlassSelection(browser,{port,report,engine:'chromium'}));
+  results.push(await checkSelectionInk(browser,{port,report,engine:'chromium'}));
   for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'chromium',workspace,khor}));
   results.push(await checkWorkspaceBack(browser,{port,report}));
   for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
@@ -560,6 +569,7 @@ try {
     browser = await webkit.launch({headless:process.env.QUALITY_HEADLESS!=='0'});
     results.push(await checkWorkbench(browser,{port,report,engine:'webkit'}));
     results.push(await checkGlassSelection(browser,{port,report,engine:'webkit'}));
+    results.push(await checkSelectionInk(browser,{port,report,engine:'webkit'}));
     for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'webkit',workspace,khor}));
     for(const mobile of [false,true]){results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
