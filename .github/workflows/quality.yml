@@ -20,11 +20,11 @@ on:
         default: ''
       lab_checks:
         type: choice
-        options: [all, child-tree, child-tree-chromium, conversation-navigation]
+        options: [all, child-tree, child-tree-chromium, conversation-navigation, workbench]
         default: all
       desktop_probe:
         type: choice
-        options: [none, drag-routing, drag-all, material-neutral]
+        options: [none, drag-routing, drag-all, material-neutral, appearance]
         default: none
       desktop_target:
         type: choice
@@ -1158,6 +1158,7 @@ jobs:
           npx vite build
           npx tsc --project dev/lab/tsconfig.json
           npx vite build --config dev/lab/vite.config.ts --outDir "$RUNNER_TEMP/developer-lab"
+          if [ -f dev/lab/storybook/main.ts ]; then npm run lab:workbench:build -- --output-dir "$RUNNER_TEMP/developer-lab/assets/workbench"; fi
           python3 - <<'PYCODE'
           import json, os, pathlib, subprocess
           git=lambda *args:subprocess.check_output(['git',*args],text=True).strip()
@@ -1200,6 +1201,13 @@ jobs:
             unset NATIVE_HELPERS_SCENARIOS
           fi
           xvfb-run -a npm run native-helpers
+      - name: Verify native appearance after shared renderer extraction
+        if: inputs.desktop_probe == 'appearance'
+        working-directory: apps/gui
+        env:
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          APPEARANCE_HEADLESS: '1'
+        run: xvfb-run -a npm run appearance
       - name: Measure fixed header colors over transparent backgrounds
         if: inputs.desktop_probe == 'material-neutral'
         working-directory: apps/gui
