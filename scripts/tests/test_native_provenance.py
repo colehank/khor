@@ -32,8 +32,10 @@ class ProvenanceTests(unittest.TestCase):
         self.put("Cargo.lock", "version=4\n")
         self.metadata = {"version": 1, "workspace_root": str(self.root),
                          "workspace_members": ["dep", "app"], "packages": [],
-                         "resolve": {"nodes": [{"id": "dep", "dependencies": []},
-                                               {"id": "app", "dependencies": ["dep"]}]}}
+                         "resolve": {"nodes": [{"id": "dep", "dependencies": [], "deps": []},
+                                               {"id": "app", "dependencies": ["dep"], "deps": [
+                                                   {"name": "dep", "pkg": "dep", "dep_kinds": [
+                                                       {"kind": None, "target": None}]}]}]}}
         for name in ("dep", "app"):
             self.put(f"{name}/Cargo.toml", f"[package]\nname='{name}'\nversion='0.1.0'\n")
             self.put(f"{name}/src/lib.rs", f"pub fn {name}() {{}}\n")
@@ -110,6 +112,75 @@ class ProvenanceTests(unittest.TestCase):
         rows = self.rows()
         return p.verify_build(prepared, rows), rows
 
+    def add_scoped_dependency(self, source, kinds):
+        self.add_web()
+        self.metadata["packages"][-1]["name"] = "test-only"
+        self.put("web/Cargo.toml", "[package]\nname='test-only'\nversion='0.1.0'\n")
+        node = next(n for n in self.metadata["resolve"]["nodes"] if n["id"] == source)
+        node["dependencies"].append("web")
+        node["deps"].append({"name": "test_only", "pkg": "web", "dep_kinds": [
+            {"kind": kind, "target": None} for kind in kinds]})
+
+    def test_transitive_dev_only_package_is_not_required_by_the_build(self):
+        self.add_scoped_dependency("dep", ["dev"])
+        prepared = self.prepare()
+        rows = [r for r in self.rows() if r.get("package_id") != "web"]
+        receipt = p.verify_build(prepared, rows)
+        self.assertEqual({u["row"]["package_id"] for u in receipt["units"]}, {"app", "dep"})
+        self.put("web/src/lib.rs", "pub fn unrelated_test_change() {}\n")
+        refreshed = self.prepare([receipt])
+        self.assertEqual(refreshed["refresh_plan"], [])
+
+    def test_requested_test_dev_dependency_remains_mandatory(self):
+        self.add_scoped_dependency("app", ["dev"])
+        prepared = self.prepare()
+        rows = [r for r in self.rows() if r.get("package_id") != "web"]
+        with self.assertRaisesRegex(ValueError, "Actual first-party rows"):
+            p.verify_build(prepared, rows)
+
+    def test_normal_library_does_not_pull_its_own_dev_dependency(self):
+        self.add_scoped_dependency("app", ["dev"])
+        self.request["test"] = False
+        prepared = self.prepare()
+        rows = [r for r in self.rows() if r.get("package_id") != "web"]
+        receipt = p.verify_build(prepared, rows)
+        self.assertEqual({u["row"]["package_id"] for u in receipt["units"]}, {"app", "dep"})
+
+    def test_transitive_normal_edge_remains_mandatory_alongside_dev_edge(self):
+        self.add_scoped_dependency("dep", ["dev", None])
+        prepared = self.prepare()
+        rows = [r for r in self.rows() if r.get("package_id") != "web"]
+        with self.assertRaisesRegex(ValueError, "Actual first-party rows"):
+            p.verify_build(prepared, rows)
+
+    def test_transitive_build_dependency_remains_mandatory(self):
+        self.add_scoped_dependency("dep", ["build"])
+        prepared = self.prepare()
+        rows = [r for r in self.rows() if r.get("package_id") != "web"]
+        with self.assertRaisesRegex(ValueError, "Actual first-party rows"):
+            p.verify_build(prepared, rows)
+
+    def test_example_includes_its_own_dev_dependency(self):
+        self.add_scoped_dependency("app", ["dev"])
+        self.request.update(kind=["example"], test=False)
+        prepared = self.prepare()
+        self.assertIn("web", prepared["selected"])
+
+    def test_missing_typed_dependency_metadata_is_rejected(self):
+        del self.metadata["resolve"]["nodes"][1]["deps"]
+        with self.assertRaisesRegex(ValueError, "typed Cargo dependency"):
+            self.prepare()
+
+    def test_unknown_dependency_kind_is_rejected(self):
+        self.metadata["resolve"]["nodes"][1]["deps"][0]["dep_kinds"][0]["kind"] = "unknown"
+        with self.assertRaisesRegex(ValueError, "Unsupported Cargo dependency kind"):
+            self.prepare()
+
+    def test_legacy_and_typed_dependency_ids_must_agree(self):
+        self.metadata["resolve"]["nodes"][1]["deps"] = []
+        with self.assertRaisesRegex(ValueError, "IDs disagree"):
+            self.prepare()
+
     def test_new_build_then_same_source_reuse_without_refresh(self):
         receipt, rows = self.initial()
         self.put("README.md", "unrelated documentation must not rebuild every package\n")
@@ -129,7 +200,9 @@ class ProvenanceTests(unittest.TestCase):
             {"id": "web", "name": "khor-web", "manifest_path": str(self.root / "web/Cargo.toml"),
              "targets": [{"name": "web", "kind": ["lib"], "edition": "2024",
                           "src_path": str(source)}]})
-        self.metadata["resolve"]["nodes"].append({"id": "web", "dependencies": ["dep"]})
+        self.metadata["resolve"]["nodes"].append(
+            {"id": "web", "dependencies": ["dep"], "deps": [
+                {"name": "dep", "pkg": "dep", "dep_kinds": [{"kind": None, "target": None}]}]})
 
     def test_unselected_web_missing_dist_allows_app_and_node_closure_and_reuse(self):
         self.add_web()

@@ -88,7 +88,7 @@ def context(root, tools):
                        for p in sorted(configs)}}
 
 
-def packages(root, metadata):
+def packages(root, metadata, request):
     if metadata.get("version") != 1 or Path(metadata["workspace_root"]).resolve() != root:
         raise ValueError("Cargo metadata belongs to another workspace")
     members = set(metadata["workspace_members"])
@@ -102,8 +102,29 @@ def packages(root, metadata):
         result[p["id"]] = p
     if set(result) != members or not metadata.get("resolve"):
         raise ValueError("Expected complete workspace packages and Cargo resolve graph")
-    graph = {n["id"]: set(n["dependencies"]) & members
-             for n in metadata["resolve"]["nodes"]}
+    requested = [ident for ident, package in result.items()
+                 if package["name"] == request["package"]]
+    if len(requested) != 1:
+        raise ValueError("Expected one requested workspace package")
+    development = (request["test"] or bool(set(request["kind"]) & {"test", "bench", "example"}))
+    graph = {}
+    for node in metadata["resolve"]["nodes"]:
+        # Cargo does not propagate a dependency's dev-dependencies to its users.
+        # Keep the requested test/example/bench's own dev edges, and every
+        # normal/build edge. The unmodified typed metadata remains in the receipt.
+        if not isinstance(node.get("deps"), list):
+            raise ValueError("Expected typed Cargo dependency metadata")
+        if set(node["dependencies"]) != {dep["pkg"] for dep in node["deps"]}:
+            raise ValueError("Cargo dependency IDs disagree with typed metadata")
+        selected = set()
+        for dep in node["deps"]:
+            kinds = dep.get("dep_kinds")
+            if not kinds or any(kind.get("kind") not in (None, "build", "dev") for kind in kinds):
+                raise ValueError("Unsupported Cargo dependency kind")
+            if any(kind["kind"] != "dev" or (node["id"] == requested[0] and development)
+                   for kind in kinds):
+                selected.add(dep["pkg"])
+        graph[node["id"]] = selected & members
     if not members <= graph.keys():
         raise ValueError("Incomplete workspace dependency graph")
     return result, graph
@@ -120,7 +141,7 @@ def closure(graph, start):
 
 def build_state(root, metadata, tools, request):
     source = source_frame(root)
-    pkgs, graph = packages(root, metadata)
+    pkgs, graph = packages(root, metadata, request)
     requested = [p for p, v in pkgs.items() if v["name"] == request["package"]]
     if len(requested) != 1:
         raise ValueError("Expected one requested workspace package")
