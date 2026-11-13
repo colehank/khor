@@ -1166,6 +1166,9 @@ jobs:
           source.write_text(json.dumps(dict(schema=1,base_commit=git('rev-parse','HEAD'),tree=git('rev-parse','HEAD^{tree}'),snapshot_commit=git('rev-parse','HEAD'),dirty=False)))
           subprocess.run(['python3','../../scripts/khor_lab/package.py','../..',os.environ['RUNNER_TEMP']+'/developer-lab',str(source)],check=True)
           PYCODE
+      - name: Verify the workbench server and native isolation boundary
+        if: inputs.lab_checks == 'workbench'
+        run: python3 -m unittest discover -s scripts/tests -p test_developer_lab.py
       - name: Prepare Chromium and WebKit media engines
         if: inputs.lab_checks != 'child-tree-chromium'
         working-directory: apps/gui
@@ -1215,7 +1218,7 @@ jobs:
           SCROLL_SURFACES_MATERIAL_DIR: ${{ runner.temp }}/native-helper-probe
         run: xvfb-run -a node scripts/check-scroll-surfaces.mjs --material
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always() && inputs.desktop_probe != 'none'
+        if: always() && inputs.desktop_probe != 'none' && inputs.desktop_probe != 'appearance'
         with:
           name: desktop-ui-probe
           path: ${{ runner.temp }}/native-helper-probe
