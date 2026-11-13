@@ -131,7 +131,11 @@ export function listenNativeDragDrop(receive: (event: Event<DragDropEvent>) => v
         import("@tauri-apps/api/webview"), import("@tauri-apps/api/dpi"), import("@tauri-apps/api/event"),
       ]);
       if (!active) return;
-      const target: EventTarget = { kind: "Webview", label: getCurrentWebview().label };
+      // A main WebviewWindow initially emits to its label, but after a
+      // browser child is added Tauri emits WindowContent drops only to
+      // Window/WebviewWindow recipients. This combined target also hears
+      // ordinary Webview delivery without admitting a website's own label.
+      const target: EventTarget = { kind: "WebviewWindow", label: getCurrentWebview().label };
       for (const [event, type] of [
         [TauriEvent.DRAG_ENTER, "enter"], [TauriEvent.DRAG_OVER, "over"],
         [TauriEvent.DRAG_DROP, "drop"], [TauriEvent.DRAG_LEAVE, "leave"],

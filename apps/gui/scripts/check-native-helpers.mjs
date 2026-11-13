@@ -64,8 +64,8 @@ async function exercise(page, name) {
   const mode = name === 'sdk-drag-payloads' ? 'sdk-drag' : name === 'callback-throws-peer' ? 'peer' : name.startsWith('page') ? name === 'page-ready-close' ? name : 'page' : name.startsWith('fullscreen') ? 'fullscreen' : name.startsWith('window-focus') ? 'window-focus' : name.startsWith('window-drop') ? 'window-drop' : name.startsWith('drag') ? 'drag' : name === 'quit-destroy-rejected' ? 'quit-destroy' : name;
   await act('mount', mode);
   let messages = await listens(1);
-  const expectedTarget = mode === 'page' || mode === 'page-ready-close' || mode === 'peer' ? {kind: 'Any'} : mode === 'window-drop' || mode === 'drag' || mode === 'sdk-drag' ? {kind: 'Webview', label: 'webview-alpha'} : {kind: 'Window', label: 'window-alpha'};
-  assert.deepEqual(messages[0].target, expectedTarget, 'Preserve the SDK event target exactly');
+  const expectedTarget = mode === 'page' || mode === 'page-ready-close' || mode === 'peer' ? {kind: 'Any'} : mode === 'sdk-drag' ? {kind: 'Webview', label: 'webview-alpha'} : mode === 'window-drop' || mode === 'drag' ? {kind: 'WebviewWindow', label: 'webview-alpha'} : {kind: 'Window', label: 'window-alpha'};
+  assert.deepEqual(messages[0].target, expectedTarget, 'Preserve event ownership across each native delivery route');
   if (name.startsWith('window-focus')) {
     messages = await listens(2);
     for (const message of messages) { assert.deepEqual(message.target, expectedTarget); await act('accept', message.index); }

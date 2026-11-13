@@ -42,3 +42,15 @@ selection/cache use the same environment settings as the hear runner. All helper
 production files, test sources, Cargo/package locks and SDK modules are
 fingerprinted before/after each run. Invalid selectors and contract failures are
 rejected before allocating a fixture or output directory.
+
+The drag regression also pins Tauri 2.11.5's native delivery predicates:
+`manager-window.rs` (upstream `src/manager/window.rs`, SHA256
+`882caf1fdd15f3cd93c6b419ae19748d91387ba5e8283ee2b7b89bc7187a1535`) and
+`manager-webview.rs` (`src/manager/webview.rs`, SHA256
+`24d3d51920ccd56db5c44db73c0deca09cba4a0811921a2f66b78e6213789f51`).
+These files come from the same release tag as the existing snapshot and retain
+the same third-party licenses. `emitNative` applies their labeled/window/webview
+recipient predicates, then uses the genuine JS dispatcher. Opening a browser
+child changes main-window delivery from a broad label to Window/WebviewWindow;
+the App must receive one drop on either route and none for a website's label.
+This is a native-protocol regression, not a claim of physical Finder interaction.
