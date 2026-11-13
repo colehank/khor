@@ -3610,7 +3610,7 @@ export function TerminalPane({
         </div>
       )}
     </div>
-    {active&&!attachmentOpen&&attachments.length>0&&<div className="flex-none px-row py-in"><Button data-term-attachment-resume onClick={()=>setAttachmentOpen(true)}>待发送 · {attachments.length} 项</Button></div>}
+    {active&&!attachmentOpen&&attachments.length>0&&<div className="flex-none px-row py-in"><Button data-term-attachment-resume className="min-h-touch" onClick={()=>setAttachmentOpen(true)}>待发送 · {attachments.length} 项</Button></div>}
     {/* **Under a finger, the keys a soft keyboard lacks and the switch
         for the keyboard** (`TermKeys`, 2026-10-02). On the narrow face
         they go to the session bar (row 2, and row 1's right end); where
