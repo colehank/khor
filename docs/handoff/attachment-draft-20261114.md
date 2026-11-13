@@ -10,6 +10,14 @@ Verified final split source2dfcaecae678d77c38c5dd8229ae1e0dabb64daa, treec01fa05
 
 Current pinned Lab: http://127.0.0.1:23961/versions/2dfcaecae678d77c/assets/workbench/index.html?path=/story/khor-app--attachments . Mobile uses MacLab borrowed network. Preview remains optional; iOS system picker is invoked from one unrestricted local input, and native picker appearance is not claimed proven by browser emulation.
 
+## Image preview focus and canonical preview glyph (2026-11-14)
+
+The image preview inherited edit-form autofocus because an editable filename is the first field. The selected-list preview action also lacked the app's eye glyph; user explicitly confirmed this target. AttachmentPreview now cancels opening-field autofocus and focuses its noneditable title with preventScroll. Clicking filename or text still edits normally. AttachmentList uses the existing canonical IconEye inside the full-row preview action; file-type icons and global dialog policy are unchanged.
+
+RED43462163478@01194fd4 used unchanged production source:8 Chromium/WebKit×four-width cases decoded the PNG and all focused INPUT/文件名 with0eye glyphs. Artifact14055419808 SHA3cb7e1d72c66d53fada0fa7b2345b21e244e8a1777107ccaf2f51d703924ffb4 verified by source/tree/CRC and recorded focus assertions. Green43463086555@7d5337b98fc729a109dfefa9972c8f61d817aa04 passed all8 complete flows plus shared checks and hot updates.16 terminal/ACP image opens all focus H2 inside preview, never an editable field; each renders1preview-eye glyph, explicit filename press can edit, and closing does not focus a picker input. Artifact14056963793 SHAe150a2d3a68b68a0fca99ce55ddd48f3ad0c96ea0bfbb839fbeb4752d8898272 checked by source/tree/CRC. Actual WebKit390 image/list and Chromium1280 image screenshots inspected. Browser focus behavior is verified; no claim of physical iOS keyboard testing.
+
+Current pinned Lab: http://127.0.0.1:23961/versions/7d5337b98fc729a1/assets/workbench/index.html?path=/story/khor-app--attachments .5routes and9JS assets byte-verified, previous2df retained. Only the owned static Lab server was replaced; no main/ship/native App or host restart.
+
 ---
 Historical iteration records below are preserved for provenance; they do not describe the current split layout.
 
