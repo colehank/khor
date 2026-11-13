@@ -1,3 +1,4 @@
+import {mountNetworkScene} from './network-scene';
 import {devices,sessions,type SessionId} from '../components/concepts/tour-data';
 
 export function mountProductTour() {
@@ -8,6 +9,7 @@ export function mountProductTour() {
   const network=tour.querySelector<HTMLElement>('[data-concept="network"]')!;
   const sessionFigure=tour.querySelector<HTMLElement>('[data-concept="sessions"]')!;
   const resources=tour.querySelector<HTMLElement>('[data-concept="resources"]')!;
+  const networkScene=mountNetworkScene(network);
   const visible=new Set<HTMLElement>();
   const paused=new Set<HTMLElement>();
   const timers=new Map<HTMLElement,ReturnType<typeof setTimeout>>();
@@ -16,11 +18,7 @@ export function mountProductTour() {
   const stop=(figure:HTMLElement)=>{
     clearTimeout(timers.get(figure));timers.delete(figure);
     figure.classList.remove('is-running');
-  };
-  const selectPath=(path:'direct'|'relay')=>{
-    network.dataset.path=path;
-    network.querySelector('[data-path-status]')!.textContent=path==='direct'?'Direct connection':'Connected via relay';
-    network.querySelectorAll<HTMLButtonElement>('[data-path-choice]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.pathChoice===path)));
+    if(figure===network)networkScene.pause();
   };
   const selectSession=(id:SessionId)=>{
     const session=sessions.find(item=>item.id===id)!;
@@ -49,10 +47,10 @@ export function mountProductTour() {
     stop(figure);
     if(!canPlay(figure))return;
     figure.classList.add('is-running');
+    if(figure===network){networkScene.play();return;}
     timers.set(figure,setTimeout(()=>{
       if(!canPlay(figure))return;
-      if(figure===network)selectPath(network.dataset.path==='direct'?'relay':'direct');
-      else if(figure===sessionFigure){
+      if(figure===sessionFigure){
         if(handoffNext)selectView(sessionFigure.dataset.view==='mac'?'phone':'mac');
         else{
           const index=sessions.findIndex(item=>item.id===sessionFigure.dataset.session);
@@ -64,11 +62,8 @@ export function mountProductTour() {
         selectResource(resourceOrder[(index+1)%resourceOrder.length]);
       }
       play(figure);
-    },figure===network?5200:figure===sessionFigure?3600:4800));
+    },figure===sessionFigure?3600:4800));
   };
-  network.querySelectorAll<HTMLButtonElement>('[data-path-choice]').forEach(button=>button.addEventListener('click',()=>{
-    selectPath(button.dataset.pathChoice as 'direct'|'relay');play(network);
-  }));
   sessionFigure.querySelectorAll<HTMLButtonElement>('[data-session-choice]').forEach(button=>button.addEventListener('click',()=>{
     selectSession(button.dataset.sessionChoice as SessionId);handoffNext=true;play(sessionFigure);
   }));
@@ -102,6 +97,6 @@ export function mountProductTour() {
   window.addEventListener('pageshow',event=>{if(event.persisted)syncPlayback();});
   window.addEventListener('pagehide',event=>{
     figures.forEach(stop);
-    if(!event.persisted)observer?.disconnect();
+    if(!event.persisted){observer?.disconnect();networkScene.destroy();}
   });
 }

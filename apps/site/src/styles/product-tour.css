@@ -29,32 +29,6 @@
 .concept button:hover { color:var(--ink); background:var(--fill); }
 .concept :focus-visible { outline:calc(var(--hair)*2) solid var(--tour-accent); outline-offset:var(--gap-xxs); }
 
-/* The mesh stays put while one link takes a direct or relayed path. */
-.network-stage { position:relative; width:100%; aspect-ratio:1.6; min-height:calc(var(--touch)*8); }
-.network-routes { position:absolute; inset:0; width:100%; height:100%; overflow:visible; }
-.network-routes path { vector-effect:non-scaling-stroke; stroke:var(--tour-wire); stroke-width:1.25; }
-.network-routes .net-path { opacity:.25; transition:opacity var(--dur-240),stroke var(--dur-240); }
-[data-path="direct"] .net-path.direct-path,[data-path="relay"] .net-path.relay-path { stroke:var(--tour-accent); opacity:1; }
-.network-routes .travel-route { stroke:var(--tour-accent); stroke-width:3; stroke-dasharray:.06 .94; stroke-dashoffset:1; stroke-linecap:round; opacity:0; }
-.network-device { position:absolute; transform:translate(-50%,-50%); }
-.net-mac { left:18.75%; top:35%; }
-.net-linux { left:81.25%; top:35%; }
-.net-phone { left:50%; top:75%; }
-.net-disc { display:block; width:calc(var(--touch)*1.5); height:calc(var(--touch)*1.5); padding:var(--gap-base); border:var(--hair) solid var(--tour-wire); border-radius:var(--radius-full); background:var(--canvas); color:var(--ink); }
-.network-name { position:absolute; bottom:calc(100% + var(--gap-row)); left:50%; transform:translateX(-50%); text-align:center; white-space:nowrap; }
-.network-name strong { display:block; font-size:var(--text-body); font-weight:500; }
-.network-name span { display:block; margin-top:var(--gap-xxs); color:var(--secondary); font-size:var(--text-callout); }
-.net-phone .network-name { bottom:auto; top:calc(100% + var(--gap-row)); }
-.network-relay { position:absolute; left:50%; top:9%; transform:translate(-50%,-50%); color:var(--secondary); }
-.network-relay > span:first-child { display:block; width:var(--gap-pane); height:var(--gap-pane); border:var(--hair) solid currentColor; border-radius:var(--radius-full); background:var(--canvas); }
-.network-relay > span:last-child { position:absolute; top:calc(100% + var(--gap-in)); left:50%; transform:translateX(-50%); font-size:var(--text-callout); }
-[data-path="relay"] .network-relay { color:var(--tour-accent); }
-.network-caption { position:absolute; left:50%; top:49%; width:42%; transform:translateX(-50%); text-align:center; }
-.network-caption span { display:block; font-size:var(--text-body); color:var(--tour-accent); }
-.network-caption span + span { margin-top:var(--gap-in); font-size:var(--text-callout); color:var(--secondary); }
-.concept-network.is-running[data-path="direct"] .travel-route.direct-path,.concept-network.is-running[data-path="relay"] .travel-route.relay-path { animation:net-flow calc(var(--dur-240)*9) linear infinite; }
-@keyframes net-flow { 0% { stroke-dashoffset:1; opacity:0; } 10%,85% { opacity:1; } 100% { stroke-dashoffset:0; opacity:0; } }
-
 /* Sessions keep their own type and host, inside one project and access model. */
 .session-project { display:flex; align-items:baseline; justify-content:space-between; gap:var(--gap-base); margin-bottom:var(--gap-pane); }
 .session-project h3 { font-size:var(--text-title-lg); font-weight:500; letter-spacing:-.02em; }
@@ -135,12 +109,6 @@
  .tour-section { grid-template-columns:minmax(0,1fr); gap:calc(var(--gap-pane)*1.5); padding-block:calc(var(--gap-pane)*2.5); }
  .tour-copy h2 { max-width:19ch; }
  .tour-copy p { max-width:38ch; margin-top:var(--gap-group); }
- .net-disc { width:calc(var(--touch)*1.2); height:calc(var(--touch)*1.2); padding:var(--gap-row); }
- .network-stage { min-height:calc(var(--touch)*8); }
- .network-name { bottom:calc(100% + var(--gap-in)); }
- .network-caption span { font-size:var(--text-callout); }
- .network-caption span + span { margin-top:var(--gap-xxs); }
- .concept-network .concept-controls { width:100%; justify-content:space-between; }
  .session-choices button { padding:var(--gap-row) var(--gap-in); min-height:calc(var(--touch)*2.5); }
  .session-project { margin-bottom:var(--gap-group); }
  .session-panel { padding:var(--gap-group); }
@@ -153,9 +121,6 @@
  .resource-surface { min-height:calc(var(--touch)*9.2); }
 }
 @media (max-width:360px) {
- .network-name strong { font-size:var(--text-callout); }
- .net-disc { width:var(--touch); height:var(--touch); padding:var(--gap-in); }
- .network-caption { width:46%; }
  .session-owner { flex-wrap:wrap; gap:var(--gap-xxs) var(--gap-base); }
  .session-panels { min-height:calc(var(--touch)*8); }
  .session-access { flex-direction:column; }

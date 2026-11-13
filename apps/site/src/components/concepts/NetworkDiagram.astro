@@ -1,40 +1,73 @@
 ---
 import ConceptMark from './ConceptMark.astro';
-import {supportedDevices} from '../../../../gui/dev/site/identity-marks';
-import {devices} from './tour-data';
-const marks=Object.fromEntries(supportedDevices.map(mark=>[mark.name,mark.svg]));
+import {supportedDevices,supportedHarnesses} from '../../../../gui/dev/site/identity-marks';
+import '../../styles/network-scene.css';
+const marks=Object.fromEntries([...supportedDevices,...supportedHarnesses].map(mark=>[mark.name,mark.svg]));
 ---
-<figure class="concept concept-network" data-concept="network" data-path="direct" aria-label="A private network of MacBook Pro, build-01 and iPhone, connected directly or through a relay">
-  <div class="network-stage">
-    <svg class="network-routes" viewBox="0 0 640 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
-      <path class="net-side" d="M120 140 C120 230 245 300 320 300"/>
-      <path class="net-side" d="M520 140 C520 230 395 300 320 300"/>
-      <path class="net-path direct-path" d="M120 140 H520"/>
-      <path class="net-path relay-path" d="M120 140 C220 140 220 36 320 36 S420 140 520 140"/>
-      <path class="travel-route direct-path" pathLength="1" d="M120 140 H520"/>
-      <path class="travel-route relay-path" pathLength="1" d="M120 140 C220 140 220 36 320 36 S420 140 520 140"/>
-    </svg>
-    <div class="network-device net-mac">
-      <span class="net-disc"><ConceptMark svg={marks.macOS} x={0} y={0} size={40} prefix="network-mac"/></span>
-      <div class="network-name"><strong>{devices.mac.name}</strong><span>macOS</span></div>
-    </div>
-    <div class="network-device net-linux">
-      <span class="net-disc"><ConceptMark svg={marks.Linux} x={0} y={0} size={40} prefix="network-linux"/></span>
-      <div class="network-name"><strong>{devices.linux.name}</strong><span>Linux</span></div>
-    </div>
-    <div class="network-device net-phone">
-      <span class="net-disc"><ConceptMark svg={marks.iOS} x={0} y={0} size={36} prefix="network-phone"/></span>
-      <div class="network-name"><strong>{devices.phone.name}</strong><span>With you</span></div>
-    </div>
-    <div class="network-relay"><span></span><span>Relay</span></div>
-    <div class="network-caption"><span data-path-status>Direct connection</span><span>The same private net</span></div>
-  </div>
-  <figcaption class="concept-caption">
-    <span class="example-label">Example network</span>
-    <div class="concept-controls">
-      <div class="concept-options" role="group" aria-label="Connection path">
-        <button type="button" data-path-choice="direct" aria-pressed="true">Direct</button>
-        <button type="button" data-path-choice="relay" aria-pressed="false">Via relay</button>
+<figure class="concept concept-network" data-concept="network" data-route="direct" data-location="a" data-net-phase="local" aria-label="Connection example: an iPhone moves between two Wi-Fi networks and cellular, using a relay while a direct path is established">
+  <svg class="network-scene" data-net-scene viewBox="0 0 1000 500" role="img" aria-labelledby="network-scene-title network-scene-desc">
+    <title id="network-scene-title">Your devices, across networks</title>
+    <desc id="network-scene-desc">Linux and macOS share Wi-Fi A. Windows is on Wi-Fi B. The iPhone moves between them and cellular. Relay traffic and direct connection attempts happen together.</desc>
+    <g class="net-regions">
+      <rect data-net-area="a" x="20" y="140" width="400" height="330" rx="24"/>
+      <rect data-net-area="b" x="650" y="140" width="330" height="330" rx="24"/>
+      <text data-net-area-label="a" x="48" y="177">Wi-Fi A</text>
+      <text data-net-area-label="b" x="678" y="177">Wi-Fi B</text>
+    </g>
+    <g class="net-routes" fill="none" aria-hidden="true">
+      <path class="net-local-wire" data-net-wire="lan" d="M152 240 H245"/>
+      <path class="net-backbone" data-net-wire="backbone" d="M375 240 H744"/>
+      <path class="net-nearby-wire" data-net-wire="nearby" d="M896 240 C932 240 932 380 854 380"/>
+      <path class="net-relay-line" data-net-wire="relay-in" d="M375 240 C439 240 434 55 506 55"/>
+      <path class="net-relay-line" data-net-wire="relay-out" d="M530 79 C530 185 310 275 310 321"/>
+      <path class="net-direct-line" data-net-wire="direct" d="M375 240 C405 240 344 380 344 380"/>
+      <path class="net-packet net-relay-packet" data-net-copy="relay-in" pathLength="1"/>
+      <path class="net-packet net-relay-packet" data-net-copy="relay-out" pathLength="1"/>
+      <path class="net-packet net-direct-packet" data-net-copy="direct" pathLength="1"/>
+    </g>
+    <g class="net-machine" data-net-device="linux" transform="translate(120 240)">
+      <rect class="net-hardware" x="-32" y="-48" width="64" height="96" rx="7"/>
+      <path class="net-hardware-detail" d="M-19-34 H19 M-19 34 H7"/>
+      <circle class="net-machine-led" cx="19" cy="34" r="2"/>
+      <svg x="-18" y="-22" width="36" height="36"><ConceptMark svg={marks.Linux} x={0} y={0} size={36} prefix="roam-linux"/></svg>
+      <text class="net-device-name" text-anchor="middle" y="75">Linux</text>
+    </g>
+    <g class="net-machine" data-net-device="mac" transform="translate(310 240)">
+      <rect class="net-hardware" x="-65" y="-44" width="130" height="83" rx="7"/>
+      <rect class="net-screen" x="-58" y="-37" width="116" height="68" rx="2"/>
+      <path class="net-hardware" d="M-76 40 H76 L69 47 H-69 Z"/>
+      <path class="net-hardware-detail" d="M-16 40 V42 H16 V40"/>
+      <svg x="-20" y="-24" width="40" height="40"><ConceptMark svg={marks.macOS} x={0} y={0} size={40} prefix="roam-mac"/></svg>
+      <text class="net-device-name" text-anchor="middle" y="75">macOS</text>
+    </g>
+    <g class="net-machine" data-net-device="windows" transform="translate(820 240)">
+      <rect class="net-hardware" x="-76" y="-46" width="152" height="88" rx="6"/>
+      <rect class="net-screen" x="-69" y="-39" width="138" height="74" rx="2"/>
+      <path class="net-hardware-detail" d="M-9 42 V54 H9 V42 M-28 55 H28"/>
+      <svg x="-18" y="-22" width="36" height="36"><ConceptMark svg={marks.Windows} x={0} y={0} size={36} prefix="roam-windows"/></svg>
+      <text class="net-device-name" text-anchor="middle" y="82">Windows</text>
+    </g>
+    <g class="net-relay" data-net-device="relay" transform="translate(530 55)">
+      <circle class="net-relay-body" r="25"/>
+      <svg x="-17" y="-17" width="34" height="34"><ConceptMark svg={marks.Khor} x={0} y={0} size={34} prefix="roam-relay"/></svg>
+      <text text-anchor="start" x="40" y="7">Khor relay</text>
+    </g>
+    <g class="net-phone" data-net-device="phone" transform="translate(310 380)">
+      <rect class="net-phone-body" x="-34" y="-59" width="68" height="118" rx="13"/>
+      <rect class="net-phone-screen" x="-29" y="-54" width="58" height="108" rx="9"/>
+      <rect class="net-phone-detail" x="-10" y="-49" width="20" height="5" rx="2.5"/>
+      <svg x="-15" y="-17" width="30" height="30"><ConceptMark svg={marks.iOS} x={0} y={0} size={30} prefix="roam-ios"/></svg>
+      <path class="net-phone-detail net-home-indicator" d="M-10 47 H10"/>
+      <text class="net-device-name" text-anchor="middle" y="83">iOS</text>
+    </g>
+  </svg>
+  <figcaption class="net-caption">
+    <div class="net-explanation"><strong data-net-status>Same network, direct connection</strong><span data-net-detail>iPhone reaches macOS over Wi-Fi A</span></div>
+    <div class="net-controls">
+      <div class="net-locations" role="group" aria-label="iPhone network">
+        <button type="button" data-net-location="a" aria-pressed="true">Wi-Fi A</button>
+        <button type="button" data-net-location="cellular" aria-pressed="false">Cellular</button>
+        <button type="button" data-net-location="b" aria-pressed="false">Wi-Fi B</button>
       </div>
       <button class="concept-motion" type="button" data-motion-toggle="network" aria-label="Pause network animation">Pause</button>
     </div>
