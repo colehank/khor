@@ -173,7 +173,9 @@
     "workspace-move-lab": "node scripts/check-workspace-move-lab.mjs",
     "workspace-move-ui": "node scripts/check-workspace-move-ui.mjs",
     "notification-banners": "node scripts/check-notification-banners.mjs",
-    "type-size": "node scripts/check-type-size.mjs"
+    "type-size": "node scripts/check-type-size.mjs",
+    "lab:workbench": "storybook dev --config-dir dev/lab/storybook --port 23912 --no-open",
+    "lab:workbench:build": "storybook build --config-dir dev/lab/storybook"
   },
   "dependencies": {
     "@codemirror/commands": "^6.11.1",
@@ -232,12 +234,14 @@
     "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
+    "@storybook/react-vite": "10.6.7",
     "@tailwindcss/vite": "^4",
     "@tauri-apps/cli": "^2.12.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^5",
     "playwright-core": "^1.54",
+    "storybook": "10.6.7",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vite": "^7"
