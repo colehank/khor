@@ -33,6 +33,13 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await picker.locator('[data-files-input]').setInputFiles({name:'remove.txt',mimeType:'text/plain',buffer:Buffer.from('remove me')});
   await picker.getByRole('button',{name:'移除 remove.txt',exact:true}).click();
   assert.equal(await picker.locator('[data-files-selected]').count(),1);
+  await picker.locator('[data-files-add-more]').click();
+  const unchanged=Buffer.from('\ufeffpreserve original bytes');
+  await picker.locator('[data-files-input]').setInputFiles({name:'keep.txt',mimeType:'text/plain',buffer:unchanged});
+  await picker.locator('[data-files-selected="keep.txt"] [data-files-card-preview]').click();
+  await page.locator('[data-attachment-text]').waitFor();
+  await page.locator('[data-attachment-name]').fill('renamed.txt');
+  await page.locator('[data-attachment-save]').click();await page.locator('[data-attachment-preview]').waitFor({state:'hidden'});
   await page.screenshot({path:path.join(report,name+'-terminal.png')});
   const box=await picker.boundingBox();assert(box.x>=0&&box.y>=0&&box.x+box.width<=width+1&&box.y+box.height<=845,'Attachment task fits the viewport');
   await api('__ai_preview/upload-mode',{mode:'fail'});
@@ -44,6 +51,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
   const terminal=await api('__ai_preview/attachment-events');
   assert(terminal.some(event=>event.operation==='term_drop_stage'&&event.name==='edited.txt'&&event.content==='edited attachment'));
+  assert(terminal.some(event=>event.operation==='term_drop_stage'&&event.name==='renamed.txt'&&event.bytes===unchanged.length),'Renaming preserves the original bytes, including a UTF-8 BOM');
   assert(terminal.some(event=>event.operation.startsWith('term_drop')&&event.into==='/preview/khor-drop'),'The terminal lands in its target receive directory');
   await page.goto(`http://127.0.0.1:${port}/app/?scene=gui&machines=3`);
   await page.locator('[data-chat-input]:visible').waitFor();

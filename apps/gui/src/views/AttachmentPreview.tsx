@@ -20,7 +20,7 @@ export function AttachmentPreview({file,onClose,onSave}:{file:File|null;onClose:
  },[current]);
  const dirty=file!==null&&(name!==file.name||text!==original);
  const valid=!!name.trim()&&!/[\\/\0]/.test(name)&&name!=='.'&&name!=='..';
- const save=()=>{if(file&&valid&&onSave){onSave(new File([text===null?file:text],name.trim(),{type:file.type,lastModified:Date.now()}));onClose();}};
+ const save=()=>{if(file&&valid&&onSave){onSave(new File([text===null||text===original?file:text],name.trim(),{type:file.type,lastModified:Date.now()}));onClose();}};
  return <Dialog open={file!==null} onOpenChange={open=>{if(!open)onClose();}}><TaskOverlay purpose={onSave?'edit':'preview'} initialHeight="large" maxHeight="large" scrollable data-attachment-preview onCloseAutoFocus={()=>{retained.current=null;repaint(value=>value+1);}}>
   <DialogTitle>附件预览</DialogTitle>
   <TaskActions dirty={dirty} cancel={onSave?<Button onClick={onClose}>取消</Button>:undefined} close={!onSave?<Button onClick={onClose}>关闭</Button>:undefined}
