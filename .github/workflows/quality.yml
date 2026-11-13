@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, runtime-cold, recovery-debug, installer-receipt]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt]
         default: sync
       frontend_run:
         type: string
@@ -34,6 +34,26 @@ permissions:
   contents: read
   actions: read
 jobs:
+  lab-lock:
+    if: inputs.slice == 'lab-lock'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - name: Resolve the pinned development-only Storybook packages without lifecycle scripts
+        working-directory: apps/gui
+        run: npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lab-workbench-lock
+          path: apps/gui/package-lock.json
+          if-no-files-found: error
   receipt-regression:
     if: inputs.slice == 'installer-receipt'
     runs-on: ubuntu-24.04
