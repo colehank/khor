@@ -20,7 +20,7 @@ on:
         default: ''
       lab_checks:
         type: choice
-        options: [all, child-tree, child-tree-chromium]
+        options: [all, child-tree, child-tree-chromium, conversation-navigation]
         default: all
       desktop_target:
         type: choice
