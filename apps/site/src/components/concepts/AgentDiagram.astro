@@ -4,37 +4,36 @@ import {supportedHarnesses,copyControlMarks} from '../../../../gui/dev/site/iden
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const {check}=copyControlMarks('agent-result');
 ---
-<figure class="concept concept-agent" data-concept="agent" data-phase="ready" aria-label="Khor delegates one request to Codex and Claude on different devices and gathers their results">
-  <div class="concept-stage agent-stage">
-    <svg class="diagram-routes" viewBox="0 0 600 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
-      <path class="dispatch-route" d="M120 200 C210 200 210 96 300 96"/>
-      <path class="dispatch-route" d="M120 200 C210 200 210 304 300 304"/>
-      <path class="return-route" d="M300 96 C390 96 390 200 480 200"/>
-      <path class="return-route" d="M300 304 C390 304 390 200 480 200"/>
-      <path class="travel-route dispatch-travel" pathLength="1" d="M120 200 C210 200 210 96 300 96"/>
-      <path class="travel-route dispatch-travel" pathLength="1" d="M120 200 C210 200 210 304 300 304"/>
-      <path class="travel-route return-travel" pathLength="1" d="M300 96 C390 96 390 200 480 200"/>
-      <path class="travel-route return-travel" pathLength="1" d="M300 304 C390 304 390 200 480 200"/>
-    </svg>
-    <div class="diagram-node agent-khor">
-      <span class="node-disc mind-disc"><ConceptMark svg={marks.Khor} x={0} y={0} size={44} prefix="agent-khor"/></span>
-      <span class="node-name">Khor</span><span class="node-detail">Your task</span>
+<figure class="concept concept-agent" data-concept="agent" data-phase="ready" aria-label="Khor gives Codex and Claude parts of an Atlas Web review and brings their findings together">
+  <div class="agent-request">
+    <span class="request-mark"><ConceptMark svg={marks.Khor} x={0} y={0} size={56} prefix="agent-khor"/></span>
+    <div><span class="request-recipient">You, to Khor</span><p>Review Atlas Web and summarize the changes</p></div>
+  </div>
+  <svg class="flow-connector agent-dispatch" viewBox="0 0 600 64" preserveAspectRatio="none" fill="none" aria-hidden="true">
+    <path d="M300 0 V12 C300 42 150 22 150 64"/><path d="M300 12 C300 42 450 22 450 64"/>
+    <path class="travel-route" pathLength="1" d="M300 0 V12 C300 42 150 22 150 64"/><path class="travel-route" pathLength="1" d="M300 0 V12 C300 42 450 22 450 64"/>
+  </svg>
+  <div class="agent-work">
+    <div class="agent-worker">
+      <div class="worker-identity"><span class="worker-mark"><ConceptMark svg={marks.Codex} x={0} y={0} size={28} prefix="agent-codex"/></span><div><strong>Codex</strong><span>build-01</span></div><span class="worker-state" data-worker-state>Done</span></div>
+      <h3>Review code</h3><p>Check date handling and export tests</p>
     </div>
-    <div class="diagram-node agent-codex">
-      <span class="node-disc"><ConceptMark svg={marks.Codex} x={0} y={0} size={24} prefix="agent-codex"/></span>
-      <span class="node-name">Codex</span><span class="node-detail"><span class="worker-task">Code review · </span>build-01</span>
-    </div>
-    <div class="diagram-node agent-claude">
-      <span class="node-disc"><ConceptMark svg={marks.Claude} x={0} y={0} size={24} prefix="agent-claude"/></span>
-      <span class="node-name">Claude</span><span class="node-detail"><span class="worker-task">Project notes · </span>Mac mini</span>
-    </div>
-    <div class="diagram-node agent-collected">
-      <span class="node-disc result-disc"><span class="result-check"><ConceptMark svg={check} x={0} y={0} size={24} prefix="agent-result"/></span></span>
-      <span class="node-name" data-agent-result>Ready</span><span class="node-detail">Back to you</span>
+    <div class="agent-worker">
+      <div class="worker-identity"><span class="worker-mark"><ConceptMark svg={marks.Claude} x={0} y={0} size={28} prefix="agent-claude"/></span><div><strong>Claude</strong><span>Mac mini</span></div><span class="worker-state" data-worker-state>Done</span></div>
+      <h3>Summarize changes</h3><p>Read the updates and write project notes</p>
     </div>
   </div>
-  <figcaption class="concept-footer">
-    <div><strong data-agent-status>Two results, together</strong><span>Example task</span></div>
-    <button class="concept-replay" type="button" data-replay-agent>Replay</button>
+  <svg class="flow-connector agent-collect" viewBox="0 0 600 64" preserveAspectRatio="none" fill="none" aria-hidden="true">
+    <path d="M150 0 C150 42 300 22 300 52 V64"/><path d="M450 0 C450 42 300 22 300 52"/>
+    <path class="travel-route" pathLength="1" d="M150 0 C150 42 300 22 300 52 V64"/><path class="travel-route" pathLength="1" d="M450 0 C450 42 300 22 300 52 V64"/>
+  </svg>
+  <div class="agent-result paper-surface">
+    <div class="result-heading"><h3>Atlas Web review</h3><span class="result-state"><span class="result-check"><ConceptMark svg={check} x={0} y={0} size={20} prefix="agent-result"/></span><span data-agent-result>Ready</span></span></div>
+    <div class="result-row"><strong>Code review</strong><p data-code-result>Local dates are preserved in CSV exports</p></div>
+    <div class="result-row"><strong>Project notes</strong><p data-notes-result>README explains the date column and CSV format</p></div>
+  </div>
+  <figcaption class="concept-caption">
+    <div><span class="caption-primary" data-agent-status>Two results, back to you</span><span class="example-label">Example task</span></div>
+    <button class="concept-motion" type="button" data-motion-toggle="agent" aria-label="Pause agent animation">Pause</button>
   </figcaption>
 </figure>

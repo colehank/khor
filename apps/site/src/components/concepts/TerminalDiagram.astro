@@ -3,32 +3,30 @@ import ConceptMark from './ConceptMark.astro';
 import {supportedDevices} from '../../../../gui/dev/site/identity-marks';
 const marks=Object.fromEntries(supportedDevices.map(mark=>[mark.name,mark.svg]));
 ---
-<figure class="concept concept-terminal" data-concept="terminal" data-view="desktop" aria-label="The same terminal keeps running on MacBook Pro while you switch the viewing device">
-  <div class="concept-stage terminal-stage">
-    <svg class="diagram-routes" viewBox="0 0 600 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
-      <path class="session-spine" d="M300 140 V224"/>
-      <path class="viewer-route desktop-route" d="M300 224 C300 272 144 260 144 312"/>
-      <path class="viewer-route phone-route" d="M300 224 C300 272 456 260 456 312"/>
-      <path class="travel-route desktop-route" pathLength="1" d="M300 140 V224 C300 272 144 260 144 312"/>
-      <path class="travel-route phone-route" pathLength="1" d="M300 140 V224 C300 272 456 260 456 312"/>
-    </svg>
-    <div class="process-note">
-      <div class="process-owner"><span class="process-dot"></span><span>MacBook Pro</span><span class="process-state">Running</span></div>
-      <strong>atlas-web</strong>
-      <code><span>$</span> npm run dev</code>
+<figure class="concept concept-terminal" data-concept="terminal" data-view="desktop" aria-label="Atlas Web keeps running on MacBook Pro while you view the same terminal from Desktop or Phone">
+  <div class="terminal-process">
+    <div class="process-owner"><span>MacBook Pro</span><span class="process-state"><span></span>Running</span></div>
+    <div class="terminal-buffer" data-session-buffer>
+      <div class="shell-directory">~/atlas-web</div>
+      <div class="shell-command"><span>$</span> npm run dev</div>
+      <div class="shell-output"><p>Atlas Web</p><p>Server ready</p><p><span>Local</span> http://localhost:5173/</p></div>
+      <div class="shell-requests"><p><span>12:41:08</span> GET /orders <b>200</b></p><p><span>12:41:12</span> GET /orders.csv <b>200</b></p></div>
+      <span class="shell-cursor" aria-hidden="true"></span>
     </div>
-    <span class="route-label process-anchor">Keeps running here</span>
-    <button class="diagram-node terminal-desktop" type="button" data-view-choice="desktop" aria-pressed="true" aria-label="View the same terminal from Desktop">
-      <span class="node-disc"><ConceptMark svg={marks.macOS} x={0} y={0} size={24} prefix="terminal-mac"/></span>
-      <span class="node-name">Desktop</span><span class="node-detail">Your view</span>
+    <div class="terminal-view-label"><span data-view-status>Viewing from Desktop</span><span>Same session</span></div>
+  </div>
+  <svg class="flow-connector terminal-connector" viewBox="0 0 600 64" preserveAspectRatio="none" fill="none" aria-hidden="true">
+    <path class="session-spine" d="M300 0 V20"/>
+    <path class="desktop-route" d="M300 20 C300 44 180 30 180 64"/><path class="phone-route" d="M300 20 C300 44 420 30 420 64"/>
+    <path class="travel-route desktop-route" pathLength="1" d="M300 0 V20 C300 44 180 30 180 64"/><path class="travel-route phone-route" pathLength="1" d="M300 0 V20 C300 44 420 30 420 64"/>
+  </svg>
+  <div class="terminal-viewers" role="group" aria-label="Choose where to view the same terminal">
+    <button type="button" data-view-choice="desktop" aria-pressed="true">
+      <span class="viewer-mark"><ConceptMark svg={marks.macOS} x={0} y={0} size={28} prefix="terminal-mac"/></span><span>Desktop</span>
     </button>
-    <button class="diagram-node terminal-phone" type="button" data-view-choice="phone" aria-pressed="false" aria-label="View the same terminal from Phone">
-      <span class="node-disc"><ConceptMark svg={marks.iOS} x={0} y={0} size={24} prefix="terminal-phone"/></span>
-      <span class="node-name">Phone</span><span class="node-detail">Your view</span>
+    <button type="button" data-view-choice="phone" aria-pressed="false">
+      <span class="viewer-mark"><ConceptMark svg={marks.iOS} x={0} y={0} size={28} prefix="terminal-phone"/></span><span>Phone</span>
     </button>
   </div>
-  <figcaption class="concept-footer">
-    <div><strong data-view-status>Viewing from Desktop</strong><span>Example session</span></div>
-    <span class="session-label">Same session</span>
-  </figcaption>
+  <figcaption class="concept-caption terminal-caption"><span>Keeps running on your Mac</span><span class="example-label">Example session</span><button class="concept-motion" type="button" data-motion-toggle="terminal" aria-label="Pause terminal animation">Pause</button></figcaption>
 </figure>
