@@ -394,7 +394,9 @@
      Only while something is under it; at rest the head is the plain
      ground. */
   --band: rgba(244, 244, 239, 0.78);
-  --band-blur: blur(20px) saturate(1.6);
+  /* Fixed titles soften the backdrop without amplifying its colors.
+     Window tint already belongs to the single background plane. */
+  --band-blur: blur(20px);
   /* A band's height, written by `lib/scroll-edge` on the band's parent,
      and a scroller's own top padding, written on it there: nothing until
      then. */

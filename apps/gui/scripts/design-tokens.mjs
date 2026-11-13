@@ -203,6 +203,7 @@ export function compare(json, css) {
     ["opacity", (n) => n],
     ["duration", (n) => n],
     ["easing", (n) => n],
+    ["filter", (n) => n],
   ];
   for (const [family, cssName] of plain) {
     for (const t of json[family].tokens) {

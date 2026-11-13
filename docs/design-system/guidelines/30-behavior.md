@@ -1221,3 +1221,9 @@ Codex/Claude 的终端与对话是同一智能体的呈现方式；内置对话�
 ### 会话标题只在导航出现（2026-11-10）
 
 智能体返回的 `session_info_update.title` 用于会话列表与标签页，不在对话正文重复显示大标题。首条用户消息仍是普通消息。门：`npm run ai-elements`、`npm run acp`；前者已在旧实现上复现重复标题，再验证移除后正文保持原消息顺序。
+
+### 固定标题的透明背景原色（2026-11-13）
+
+固定列表标题只模糊背景，不增加饱和度；窗口不透明度仍只由统一底层提供。`node apps/gui/scripts/check-scroll-surfaces.mjs --material` 使用正式 PaneBar／scroll-edge／CSS 的既有夹具，在 20% 窗口不透明度下对照纯色背景经过标题滤镜前后的实际像素，覆盖浅深主题、三种颜色和 Chromium/WebKit。旧版在 Chromium 六项对照中产生约 16–19 级 RGB 偏移，先红；这不代表原生 MacBook Air 的合成问题已经复现。原生窗口及真实滚动手感继续单独验收。
+
+原生文件拖放必须在创建浏览器子视图前后均能进入主 App，网站自己的标签不能把拖放交给 App。`native-helpers` 固定 Tauri 2.11.5 的 Window／Webview 投递谓词，旧 Webview-only 监听在 Chromium/WebKit 四项新增检查全部先红；WebviewWindow 目标保留同标签的两条通道。协议测试不代替 Finder 真机验收。

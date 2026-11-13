@@ -3,6 +3,8 @@
 > 2026-09-25 从旧 `docs/DESIGN.md` 第一至三节原样搬来(设计系统换成 `docs/design-system/` 时,这几节没有别处可去)。
 > 文中「这份文档」「第二节」指的就是这一份。`npm run gates` 读这份文件:**每个 `npm run` 入口都必须在这里被点名**。
 
+补充：`npm run scroll-surfaces -- --material` 对照固定列表标题的实际背景色像素，覆盖浅深主题与 Chromium/WebKit；`SCROLL_SURFACES_MATERIAL_DIR` 可保留颜色测量与截图。它使用既有正式共享组件夹具，不模拟原生窗口材质。
+
 ## 一、什么必须走 token
 
 字号、行高、字重、圆角、间距、像素尺寸、动效时长——组件里出现这几类的
