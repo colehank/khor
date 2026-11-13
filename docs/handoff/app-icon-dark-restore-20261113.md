@@ -14,4 +14,14 @@ branch `fix/restore-dark-app-icon-20261113`。本次仅处理图标资源、生�
 并核对 Icon Composer 的 Default / Dark 两种系统导出均为原深色图稿。
 本地仅静态核对和源码操作；测试、Node/TS、原生 catalog 编译和全量 Quality 均交由可信 GitHub。
 
-实现提交后运行 App icon 与全量 Quality，通过后再合入 main；不发布或替换已安装 App。
+恢复提交 `7a32ea78c4ef9dad262a1a185bff0de8ff70e372` 已快进合入并推送 main。
+用户明确“只合并到main, 不ship”；没有 tag、发版、商店提交或替换已安装 App。
+
+## 验证与合入
+
+- [App icon 43352928004](https://github.com/colehank/khor/actions/runs/43352928004)：两项 job SUCCESS。strict TS、4 个 Node 测试、工作流检查、231 个 Python 测试（1 个既有平台 skip）、完整 `app_icon.py check` 全部通过；检查 25 个生成资源、参数/SVG 和两端母图字节一致。
+- macOS / iOS 实际 catalog 编译通过。Icon Composer 两端的 Default / Dark 导出中心区域均值均为 67.8711，确认均选中原深色图稿。
+- [完整 Quality 43352960198](https://github.com/colehank/khor/actions/runs/43352960198)：精确候选 `7a32ea78` 上 13 项 job 首轮全部 SUCCESS，含实际 GUI、Lab、iOS、Mac 与 Node/SSH 回归。没有跳过或减少检查。
+- main 从 `c3b098bd` 快进到候选 `7a32ea78`，保留 RC16 后续功能，不引入其他 worktree 的未合入修改。
+- 本地 main 的旧交接文档内容与目标 main 完全相同；备份并核对后，将这份已发布内容同步到索引再快进，未改写文件内容。合入前后 60 个既有用户文件 SHA-256 均保持一致；`lab-preview/`、`output/` 保留。
+- 本次补充仅为交付记录；图稿、资源和产品代码与绿色候选一致。已安装 App 不因源码合入改变，留待后续用户授权的构建与发布。
