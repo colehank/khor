@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import {readFile} from 'node:fs/promises';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const height=width===320?568:844;
  const context=await browser.newContext({viewport:{width,height},hasTouch:width<500,isMobile:width<500});
  const page=await context.newPage(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(String(error)));
- const theme=width===412?'dark':'light',name=`attachment-draft-${engine}-${width}`;let splitLayout=null;
+ const theme=width===412?'dark':'light',name=`attachment-draft-${engine}-${width}`;let splitLayout=null;const imagePreviews=[];
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const green=async selector=>assert.equal(await page.locator(selector).evaluate(button=>{const probe=document.createElement('i');probe.style.backgroundColor='var(--brand-strong)';document.body.append(probe);const expected=getComputedStyle(probe).backgroundColor;probe.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===expected;}),true);
  const picker=page.locator('[data-attachment-picker]:visible');
@@ -12,6 +13,25 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  const choose=async file=>{await picker.locator('[data-files-input]').setInputFiles(file);};
  const selected=name=>picker.locator(`[data-files-selected="${name}"]`);
  const remove=async name=>{await selected(name).getByRole('button',{name:`移除 ${name}`,exact:true}).click();};
+ const checkImagePreview=async contextName=>{
+  const media=JSON.parse(await readFile(new URL('./data/media.generated.json',import.meta.url),'utf8'));
+  await choose({name:'preview-photo.png',mimeType:'image/png',buffer:Buffer.from(media.image,'base64')});
+  const item=selected('preview-photo.png'),glyphs=await item.locator('[data-attachment-preview-glyph] svg').count();
+  await item.locator('[data-files-card-preview]').click();
+  const preview=page.locator('[data-attachment-preview]:visible');await preview.waitFor();
+  await preview.locator('img').evaluate(image=>image.decode());
+  const focus=await preview.evaluate(root=>{const field=document.activeElement;return {editable:!!field?.matches('input,textarea,[contenteditable="true"]'),tag:field?.tagName,name:field?.getAttribute('aria-label'),inside:root.contains(field)};});
+  imagePreviews.push({context:contextName,glyphs,focus});
+  await page.screenshot({path:path.join(report,name+'-'+contextName+'-image-preview.png')});
+  const issues=[];if(focus.editable)issues.push('Opening an image focused an editable field: '+JSON.stringify(focus));if(glyphs!==1)issues.push('The row is missing the Khor preview glyph');
+  assert.deepEqual(issues,[],'Image preview should be a view action without keyboard activation');
+  await preview.locator('[data-attachment-name]').click();
+  assert.equal(await preview.locator('[data-attachment-name]').evaluate(field=>document.activeElement===field),true,'An explicit filename press still permits editing');
+  await preview.locator('[data-task-action="leading"] button').click();await preview.waitFor({state:'hidden'});
+  assert.equal(await picker.evaluate(root=>root.contains(document.activeElement)&&!!document.activeElement?.matches('input,textarea,[contenteditable="true"]')),false,'Closing preview must not focus a picker input');
+  await remove('preview-photo.png');
+ };
+
  try{
   const mobile=width<500,environment={platform:mobile?width===412?'android':'ios':'desktop',theme,material:'solid',background:'dark',opacity:100,keyboard:0,safeTop:mobile?width===412?24:47:0,safeBottom:mobile?width===412?24:34:0};
   await page.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);
@@ -28,6 +48,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await picker.waitFor();await selected('draft.txt').waitFor();
   assert.equal((await api('__ai_preview/attachment-events')).length,0,'Selection never uploads');
   assert.match(await picker.locator('[data-send-into-path]').innerText(),/khor-drop/);await green('[data-files-send]:visible');
+  await checkImagePreview('terminal');
   await selected('draft.txt').locator('[data-files-card-preview]').click();
   await page.locator('[data-attachment-text]').fill('edited attachment');await page.locator('[data-attachment-name]').fill('edited.txt');
   await page.locator('[data-attachment-save]').click();await page.locator('[data-attachment-preview]').waitFor({state:'hidden'});await selected('edited.txt').waitFor();
@@ -82,6 +103,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.goto(`http://127.0.0.1:${port}/app/?scene=gui&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);
   await page.locator('[data-chat-input]:visible').waitFor();await page.locator('[data-lab-add]:visible').click();await page.locator('[data-lab-attach-device]').click();await picker.waitFor();
   await choose({name:'chat.txt',mimeType:'text/plain',buffer:Buffer.from('chat attachment')});await selected('chat.txt').waitFor();
+  await checkImagePreview('gui');
   await selected('chat.txt').locator('[data-files-card-preview]').click();await page.locator('[data-attachment-text]').fill('edited chat');
   await page.locator('[data-attachment-save]').click();await page.locator('[data-attachment-preview]').waitFor({state:'hidden'});
   await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
@@ -95,5 +117,5 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));
  }catch(error){errors.push(String(error.stack??error));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}
  finally{await context.close();}
- return {name,theme,splitLayout,errors};
+ return {name,theme,splitLayout,imagePreviews,errors};
 }
