@@ -52,6 +52,7 @@ use patchbay::{Device, IpSupport, Lab, LinkCondition, LinkDirection, Nat, Router
 use crate::lab::{LabNode, mesh, node, qad_relays_dual, relay, result, sample_diagnostics};
 #[path = "paths/attempts.rs"]
 mod attempts;
+#[path = "paths/both.rs"]
 mod both;
 #[path = "paths/cpu.rs"]
 mod cpu;
