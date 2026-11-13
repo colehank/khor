@@ -34,6 +34,7 @@ import { fileManagerLabel } from "@/lib/file-actions";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
+import {AttachmentStrip} from "@/views/AttachmentStrip";
 import {AttachmentPreview} from '@/views/AttachmentPreview';
 import {deviceAttachments,pathAttachment,type Attachment} from '@/lib/term-attachments';
 import { DirPicker } from "@/components/DirPicker";
@@ -130,12 +131,12 @@ export function usePendingFiles(upload: {
 }
 
 /** Unsent files retain their independent preview and removal controls. */
-export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,busy=false }: {
+export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,onAdd,busy=false }: {
   items: Pending[];
   onRemove: (key: string) => void;
   machine: string;
   here: boolean;
-  onReplace?:(key:string,file:File)=>void;onRetry?:(key:string)=>void;busy?:boolean;
+  onReplace?:(key:string,file:File)=>void;onRetry?:(key:string)=>void;onAdd?:()=>void;busy?:boolean;
 }) {
   const [looking, setLooking] = useState<string | null>(null);
   if (items.length === 0) return null;
@@ -143,51 +144,8 @@ export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,
   const local=chosen?.source?.device?.files[0]?.file??null;
   const path = local?null:chosen?.path??(chosen?.source&&!chosen.source.device?chosen.source.path:null)??null;
   return (
-    <div data-chat-pending className="flex flex-wrap items-center gap-in px-2 pb-in">
-      {items.map(item => (
-        <div
-          key={item.key}
-          data-chat-pending-file={item.name}
-          data-placed={item.path !== null || undefined}
-          aria-busy={(!!item.encoding||(!item.source&&item.path===null&&!item.error))||undefined}
-          title={item.error ?? item.path ?? undefined}
-          className="flex w-64 max-w-full min-w-0 items-center rounded-lg bg-fill text-callout aria-busy:animate-pulse motion-reduce:aria-busy:animate-none"
-        >
-          <button
-            type="button"
-            data-chat-pending-preview
-            disabled={busy}
-            onClick={() => setLooking(item.key)}
-            className="flex min-h-touch min-w-0 flex-1 items-center gap-in p-in text-left"
-          >
-            {item.thumb ? <img src={item.thumb} alt="" className="size-7 flex-none rounded-md object-cover" />
-              : <FileKindIcon name={item.name} className="size-7 flex-none" />}
-            <span className="flex min-w-0 flex-col">
-              <span className="max-w-48 truncate">{item.name}</span>
-              {(item.error || item.size !== null) && (
-                <span className={cn("text-caption tabular-nums", item.error ? "text-state-failed" : "text-muted-foreground")}>
-                  {item.error ? gui.chat_put_failed : item.encoding?'正在上传':sizeWord(item.size ?? 0)}
-                </span>
-              )}
-              {item.source&&<span className="truncate text-caption text-muted-foreground">{item.source.shown}{item.reference?" · 引用原文件":""}</span>}
-            </span>
-          </button>
-          {item.error&&onRetry&&<Button size="sm" disabled={busy} onClick={()=>onRetry(item.key)}>重试</Button>}
-          <button
-            type="button"
-            data-chat-pending-drop
-            disabled={busy}
-            aria-label={`${gui.remove} ${item.name}`}
-            onClick={() => {
-              if (looking === item.key) setLooking(null);
-              onRemove(item.key);
-            }}
-            className="grid min-h-touch min-w-touch flex-none place-items-center text-muted-foreground pointer-fine:min-h-ctl-md pointer-fine:min-w-ctl-md"
-          >
-            ×
-          </button>
-        </div>
-      ))}
+    <div data-chat-pending className="min-w-0 px-2 pb-in">
+      <AttachmentStrip items={items.map(item=>({...item,busy:!!item.encoding||(!item.source&&item.path===null&&!item.error)}))} onOpen={setLooking} onRemove={key=>{if(looking===key)setLooking(null);onRemove(key);}} onAdd={onAdd} onRetry={onRetry} busy={busy}/>
       <AttachmentPreview file={local} onClose={()=>setLooking(null)} onSave={onReplace&&chosen?file=>onReplace(chosen.key,file):undefined}/>
       {path !== null && <FilePreview machine={chosen?.source?chosen.source.from??'':machine} shown={chosen?.source?.shown??machine} here={chosen?.source?chosen.source.from===null:here} path={path} onClose={() => setLooking(null)} />}
     </div>

@@ -1,5 +1,4 @@
-import {AttachmentPicker} from "@/views/TermFiles";
-import {deviceAttachments,type Attachment} from "@/lib/term-attachments";
+import {AttachmentPicker,AttachmentDestination} from "@/views/TermFiles";
 import { raiseKeyboard } from "@/lib/soft-keyboard";
 import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {useReadableHistoryExport} from '@/hooks/use-readable-history-export';
@@ -42,7 +41,7 @@ import { useCoarse } from "@/hooks/use-coarse";
 import { useChatScroll } from "@/hooks/use-chat-scroll";
 import { BarSeat } from "@/components/SessionBar";
 import { sessionMark } from "@/components/BrandIcons";
-import { FileCard, MachineFilePick, PendingChips, SendInto, usePendingFiles } from "@/views/chat-files";
+import { FileCard, PendingChips, usePendingFiles } from "@/views/chat-files";
 import { LinkHomeProvider, useKnownFiles, useLinkHome, type LinkHome } from "@/views/linkHome";
 import { filesFolderIn, splitAttachments, withAttachments } from "@/lib/paths";
 import { Composer, COMPOSER_TEXT, ModeSeat, SendSeat, StopSeat, WhoSeat, useGrowingText, type AddOption, type Who } from "@/views/Composer";
@@ -711,8 +710,6 @@ export function ChatView({
     put: (file, target) => withChat(view => view.put(file, target)),
     putPaths: (paths, target) => withChat(view => view.putPaths(paths, target)),
   }, into, id,machine);
-  const [pickOpen, setPickOpen] = useState(false);
-  const [attachmentSources,setAttachmentSources]=useState<Attachment[]>([]);
   const [attachmentsOpen,setAttachmentsOpen]=useState(false);
   const sendingDraft=useRef(false);
   /** A terminal block handed to the next conversation (roadmap 2.3), as
@@ -1632,15 +1629,6 @@ export function ChatView({
       }}
     >
       <span className="sr-only" role="status">{turnStatus}</span>
-      {home !== null && (
-        <MachineFilePick
-          open={pickOpen}
-          onOpenChange={setPickOpen}
-          machine={home}
-          shown={home}
-          onPick={(p) => files.addPaths([p])}
-        />
-      )}
       <div className="relative flex min-h-0 flex-1 flex-col">
       {readableExport.notice&&<div role="status" className="flex items-center gap-in px-row text-caption">{readableExport.notice}{readableExport.busy&&<Button size="sm" variant="ghost" onClick={readableExport.cancel}>取消</Button>}</div>}
       {!findingHistory && historyExport.notice && <p role="status" className="px-row text-caption">{historyExport.notice}</p>}
@@ -1933,20 +1921,15 @@ export function ChatView({
               machine, and the way to choose another directory there
               (STORE-BRIEF phase 2) — the 留言's line, the same component. */}
           {home !== null && files.items.length > 0 && (
-            <SendInto machine={machine ?? ""} name={home} into={into} onInto={setInto} className="pb-xxs" />
+            <AttachmentDestination machine={machine??null} into={into} onInto={setInto} busy={files.busy}/>
           )}
           {sending && (
             <div data-chat-sending className="px-2 pb-1 text-caption tabular-nums text-muted-foreground">
               {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}
             </div>
           )}
-          <AttachmentPicker open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
-            machine:machine??null,cwd:null,into,onInto:setInto,filesOnly:true,action:'添加',selected:attachmentSources,
-            add:items=>setAttachmentSources(old=>[...old,...items.filter(item=>!old.some(existing=>existing.key===item.key))]),
-            remove:item=>setAttachmentSources(old=>old.filter(existing=>existing.key!==item.key)),
-            replace:(item,file)=>setAttachmentSources(old=>old.flatMap(existing=>existing.key===item.key?deviceAttachments([file],false,'这台设备'):[existing])),
-            send:async items=>{files.addSources(items);setAttachmentSources([]);return true;},dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
-          <PendingChips key={id} items={files.items} onRemove={key=>{files.remove(key);if(files.items.find(item=>item.key===key)?.error)setControlError(null);}} onReplace={files.replace} onRetry={key=>{files.retry(key);setControlError(null);}} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
+          <AttachmentPicker open={attachmentsOpen} machine={machine??null} filesOnly onClose={()=>setAttachmentsOpen(false)} onAdd={files.addSources}/>
+          <PendingChips key={id} items={files.items} onAdd={()=>setAttachmentsOpen(true)} onRemove={key=>{files.remove(key);if(files.items.find(item=>item.key===key)?.error)setControlError(null);}} onReplace={files.replace} onRetry={key=>{files.retry(key);setControlError(null);}} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
               {docs.map(([name], i) => (
@@ -1992,11 +1975,8 @@ export function ChatView({
             <Composer
               lead={
                 <SessionAdd
-                  destination={home !== null ? <SendInto machine={machine ?? ""} name={home} into={into} onInto={setInto} /> : null}
+                  destination={undefined}
                   onAttach={canAttach&&!files.busy ? () => setAttachmentsOpen(true) : undefined}
-                  onAttachMachine={
-                    canAttach && !files.busy && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
-                  }
                   options={addOptions}
                   onFind={sourceBinding?()=>setFindingHistory(true):undefined}
                   onExport={readableExport.available?readableExport.run:undefined} exportBusy={readableExport.busy}

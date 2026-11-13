@@ -4,19 +4,20 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termPickFolders, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { RowMenu } from "@/components/RowMenu";
-import { IconBack, IconCheck, IconClose, IconFile, IconFiles } from "@/components/icons";
+import { IconBack, IconCheck, IconClose, IconFile, IconFiles, IconChevronDown } from "@/components/icons";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { gui, cli } from "@/gen/catalog";
 import type { DirListing } from "@/gen/bindings/DirListing";
-import { deviceAttachments, deviceFolderEntries, includesAttachment, joinAttachmentPath, parentAttachmentPath, pathAttachment, type Attachment } from "@/lib/term-attachments";
+import { addAttachments, deviceAttachments, deviceFolderEntries, includesAttachment, joinAttachmentPath, parentAttachmentPath, pathAttachment, type Attachment } from "@/lib/term-attachments";
 import { cn } from "@/lib/utils";
 import { isDown } from "@/lib/topology";
 import { hopWord } from "@/words";
 import { sizeWord } from "@/views/FilesPane";
 import { AttachmentPreview } from "@/views/AttachmentPreview";
+import { AttachmentStrip } from "@/views/AttachmentStrip";
 import { Dialog, TaskOverlay, DialogTitle, TaskActions } from "@/components/ui/dialog";
-import { FileCard, FilePreview, SendInto } from "@/views/chat-files";
+import { FilePreview, SendInto } from "@/views/chat-files";
 
 export type FilesRoad = {
   machine: string | null; cwd: string | null;
@@ -39,22 +40,33 @@ export function machinesFor(devices: DeviceRow[], machine: string | null): Devic
 type Place = { machine: DeviceRow; path: string; listing: DirListing | null; error?: string };
 /** `face` left out: the file's own default (`defaultFaceOf`). */
 type Look = { entry: Attachment; machine: DeviceRow; path?: string; face?: "source" | "preview" };
-export function AttachmentPicker({open,onClose,road,onSent}:{open:boolean;onClose:()=>void;road:FilesRoad;onSent:()=>void}){
- return <Dialog open={open} onOpenChange={value=>{if(!value&&!road.busy)onClose();}}><TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" data-attachment-picker onOpenAutoFocus={event=>event.preventDefault()}>
-  <TermFiles road={road} onClose={onClose} onSent={onSent}/>
+/** The chooser owns only this selection. Cancel never mutates the
+ * conversation's draft, and native staging has a single owner. */
+export function AttachmentPicker({open,onClose,onAdd,machine,filesOnly=false}:{open:boolean;onClose:()=>void;onAdd:(items:Attachment[])=>void;machine:string|null;filesOnly?:boolean}){
+ return <Dialog open={open} onOpenChange={value=>{if(!value)onClose();}}><TaskOverlay purpose="edit" initialHeight="large" maxHeight="large" data-attachment-picker onOpenAutoFocus={event=>event.preventDefault()}>
+  <AttachmentSelection machine={machine} filesOnly={filesOnly} onAdd={onAdd} onClose={onClose}/>
  </TaskOverlay></Dialog>;
 }
+function AttachmentSelection({machine,filesOnly,onAdd,onClose}:{machine:string|null;filesOnly:boolean;onAdd:(items:Attachment[])=>void;onClose:()=>void}){
+ const [selected,setSelected]=useState<Attachment[]>([]),owned=useRef<Attachment[]>([]);
+ const change=(next:Attachment[])=>{
+  const removed=owned.current.filter(item=>item.native&&!next.some(other=>item.key===other.key));
+  owned.current=next;setSelected(next);
+  if(removed.length)void termDropForget(removed.map(item=>item.path)).catch(()=>{});
+ };
+ useEffect(()=>()=>{const paths=owned.current.filter(item=>item.native).map(item=>item.path);if(paths.length)void termDropForget(paths).catch(()=>{});},[]);
+ return <TermFiles onClose={onClose} onSent={onClose} road={{machine,cwd:null,filesOnly,selected,action:'添加',
+  add:items=>change(addAttachments(owned.current,items)),remove:item=>change(owned.current.filter(other=>other.key!==item.key)),
+  send:async items=>{onAdd(items);owned.current=[];return true;},dropFiles:()=>{},busy:false,progress:null,cancel:()=>{}}}/>;
+}
 export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose: () => void; onSent: () => void }) {
-  const picker = useRef<HTMLInputElement>(null), folders = useRef<HTMLInputElement>(null);
+  const photos = useRef<HTMLInputElement>(null), picker = useRef<HTMLInputElement>(null), folders = useRef<HTMLInputElement>(null);
   const [devices, setDevices] = useState<DeviceRow[]>([]);
   const [sourceError, setSourceError] = useState<string | null>(null);
   const deviceGeneration = useRef(0);
   const [at, setAt] = useState<Place | null>(null);
-  const [queue, setQueue] = useState(road.selected.length>0), [query, setQuery] = useState("");
+  const [queue, setQueue] = useState(false), [query, setQuery] = useState("");
   useEffect(()=>{if(!road.selected.length)setQueue(false);},[road.selected.length]);
-  const [localInto,setLocalInto]=useState<string|null>(null);
-  const into=road.into===undefined?localInto:road.into;
-  const setInto=road.onInto??setLocalInto;
   const [localLook,setLocalLook]=useState<Attachment|null>(null);
   const [look, setLook] = useState<Look | null>(null);
   const [folder, setFolder] = useState<{root: Attachment; prefix: string} | null>(null);
@@ -112,7 +124,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   };
   const addDevice = (files: File[], dirs: boolean) => {
     if (!files.length || road.busy) return;
-    try { road.add(deviceAttachments(files, dirs, gui.machine_here)); setQueue(true); setError(null); }
+    try { road.add(deviceAttachments(files, dirs, gui.machine_here)); setError(null); }
     catch (e) { setError(said(e)); }
   };
   const pickFolders = async () => {
@@ -127,17 +139,14 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
       const paths = await termPickFolders();
       if (!mounted.current) { void termDropForget(paths).catch(() => {}); return; }
       road.add(paths.map((p) => pathAttachment(p, null, gui.machine_here, true, null, true)));
-      if (paths.length) { setQueue(true); }
     } catch (e) { if (mounted.current) setError(said(e)); }
     finally { if (mounted.current) setPicking(false); }
   };
-  const target=devices.find(device=>road.machine?device.name===road.machine:device.me);
-  const destination = into ?? target?.receive_at ?? null;
   const send = async (entries: Attachment[]) => {
     if (road.busy || sending.current || !entries.length) return;
     sending.current=true;setError(null);closePreview();
     try{
-      const ok = await road.send(entries, destination);
+      const ok = await road.send(entries);
       if(!ok&&mounted.current)setError("附件未能发送，已保留所选文件，可重试");
       if (!mounted.current) return;
       if (ok) {setQueue(false);onSent();}
@@ -159,20 +168,14 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const entries = at?.listing?.entries.filter((e) => e.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())) ?? [];
   const localEntries = folder ? deviceFolderEntries(folder.root,folder.prefix) : [];
   return <div data-files-panel className="flex min-h-0 flex-1 flex-col">
-    <DialogTitle>{road.action==='添加'?'添加附件':'发送附件'}</DialogTitle>
-    <TaskActions close={!road.busy?<Button data-files-cancel onClick={onClose}>关闭</Button>:undefined}
-      cancel={road.busy?<Button data-files-cancel disabled={road.stopping} onClick={road.cancel}>{road.stopping?'正在取消':'取消传输'}</Button>:undefined}
+    <DialogTitle>选择附件</DialogTitle>
+    <TaskActions dirty={road.selected.length>0} cancel={<Button data-files-cancel onClick={onClose}>取消</Button>}
       primary={<Button data-files-send disabled={road.busy||!road.selected.length||picking} variant="primary" className={!road.selected.length||road.busy?"bg-fill text-muted-foreground":undefined} onClick={()=>void send(road.selected)}>{road.busy?'正在发送':`${road.action??'发送'}${road.selected.length?' ('+road.selected.length+')':''}`}</Button>}/>
-    <div data-files-target inert={road.busy||undefined} className="flex flex-none flex-col gap-in border-b pb-in text-body">
-      <div className="flex min-w-0 items-center gap-in"><span className="text-muted-foreground">发到</span>{target&&<MachineAvatar face={target.face} className="size-kind-mark flex-none"/>}<span className="min-w-0 truncate">{target?.shown??road.machine??'会话所在机器'}</span></div>
-      <SendInto machine={road.machine??''} name={target?.name??road.machine??''} into={into} onInto={setInto}/>
-      {road.cwd&&road.onInto&&<Button size="sm" variant="ghost" disabled={road.busy} className="self-start" onClick={()=>setInto(road.cwd)}>使用会话目录</Button>}
-    </div>
     <div data-key-panel-scroll inert={road.busy||undefined} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
-      {road.selected.length>0&&<section data-files-cards className="flex flex-col gap-in py-row">
-        <div className="flex items-center justify-between gap-in"><h3 className="text-body font-label">待发送 · {road.selected.length}</h3><Button data-files-add-more size="sm" onClick={()=>{setQueue(false);setAt(null);setFolder(null);}}>继续添加</Button></div>
+      {queue&&road.selected.length>0&&<section data-files-cards className="flex flex-col gap-in py-row">
+        <div className="flex items-center justify-between gap-in"><h3 className="text-body font-label">已选 · {road.selected.length}</h3><Button data-files-add-more size="sm" onClick={()=>{setQueue(false);setAt(null);setFolder(null);}}>继续添加</Button></div>
         <div className="flex flex-col gap-in">{road.selected.map(entry=><div data-files-selected={entry.name} key={entry.key} className="relative w-full min-w-0 flex-none rounded-lg bg-fill pe-touch">
-          {entry.device||entry.dir?<AttachmentCard entry={entry} pending={previewing===entry.key} onOpen={()=>void inspect(entry)}/>:<FileCard embedded machine={entry.from??''} shown={entry.shown} path={entry.path} onOpen={()=>void inspect(entry)}/>}
+          <AttachmentCard entry={entry} pending={previewing===entry.key} onOpen={()=>void inspect(entry)}/>
           <button type="button" disabled={road.busy} aria-label={`移除 ${entry.name}`} onClick={()=>{if(look?.entry.key===entry.key||previewing===entry.key||folder?.root.key===entry.key)closePreview();if(folder?.root.key===entry.key){setFolder(null);setQueue(true);}road.remove(entry);}} className="absolute right-0 top-0 grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4"/></button>
         </div>)}</div>
       </section>}
@@ -187,7 +190,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
         {!localEntries.length&&<p className="py-pane text-center text-callout text-muted-foreground">{gui.empty_dir}</p>}
       </div> : queue ? !road.selected.length&&<p className="py-pane text-center text-callout text-muted-foreground">选择文件，发送前可预览或移除</p> : !at ? <>
         <h3 className="pb-in pt-in text-body font-label">从哪添加</h3>
-        <div className="flex gap-in pb-row"><Button data-files-pick="device" disabled={road.busy} className="min-h-touch flex-1" onClick={() => picker.current?.click()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFile /></span>{gui.files_local_file}</Button>{!road.filesOnly&&<Button data-files-pick="folder" disabled={road.busy || picking} className="min-h-touch flex-1" onClick={() => void pickFolders()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFiles /></span>{picking ? gui.files_reading_folder : gui.ws_kind_folder}</Button>}</div>
+        <div className="flex flex-wrap gap-in pb-row"><Button data-files-pick="photos" className="min-h-touch flex-1" onClick={()=>photos.current?.click()}><FileKindIcon name="photo.png" className="size-affordance"/>照片</Button><Button data-files-pick="device" disabled={road.busy} className="min-h-touch flex-1" onClick={() => picker.current?.click()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFile /></span>{gui.files_local_file}</Button>{!road.filesOnly&&<Button data-files-pick="folder" disabled={road.busy || picking} className="min-h-touch flex-1" onClick={() => void pickFolders()}><span data-files-pick-glyph className="grid size-affordance place-items-center [&>svg]:size-affordance"><IconFiles /></span>{picking ? gui.files_reading_folder : gui.ws_kind_folder}</Button>}</div>
         <section data-files-mesh><h3 className="pb-in text-group text-muted-foreground">{gui.devices_tab}</h3>
           {machinesFor(devices, road.machine).filter(d=>!road.filesOnly||d.me||d.name===road.machine).map((d) => <button key={d.id} type="button" data-files-machine={d.name} data-files-session={(road.machine === null ? d.me : d.name === road.machine) || undefined} onClick={() => open(d, "")} className="flex min-h-touch w-full items-center gap-row border-t text-left text-body"><MachineAvatar face={d.face} className="size-kind-mark flex-none" /><span className="min-w-0 flex-1 truncate">{d.shown}</span>{!d.me && d.hop === "quiet" && isDown(d.down_ms) && <span data-files-unreachable className="flex-none text-caption text-muted-foreground">{hopWord("down")}</span>}{(road.machine === null ? d.me : d.name === road.machine) && <span className="text-caption text-muted-foreground">{gui.files_session}</span>}</button>)}
           {sourceError && <div className="py-in text-callout"><p role="alert">{sourceError}</p><Button onClick={refreshDevices}>{gui.region_retry}</Button></div>}
@@ -216,13 +219,14 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
         {at.listing.truncated && <p role="status" className="py-in text-callout text-muted-foreground">{cli.dir_truncated(at.listing.entries.length)}</p>}
       </>}
     </div>
+    <input ref={photos} type="file" accept="image/*,video/*" multiple hidden onChange={event=>{addDevice([...(event.target.files??[])],false);event.target.value="";}}/>
     <input data-files-input ref={picker} type="file" multiple hidden onChange={(e) => { addDevice([...(e.target.files ?? [])], false); e.target.value = ""; }} />
     <input ref={folders} type="file" multiple hidden {...{ webkitdirectory: "" }} onChange={(e) => { addDevice([...(e.target.files ?? [])], true); e.target.value = ""; }} />
-    <div className="flex flex-none flex-col gap-in border-t py-in text-callout">
-      {error&&<p role="alert" className="text-destructive">{error}</p>}
-      {road.busy?<div data-files-transfer role="status">{road.stopping?'正在取消':`正在发送 · ${Math.round((road.progress??0)*100)}%`}</div>:<span className="text-muted-foreground">{road.action==='添加'?'添加后可在输入区补充说明，再一起发送':'发送后将文件路径放入终端，回车由你确认'}</span>}
+    <div className="flex flex-none items-center justify-between gap-in border-t py-in text-callout">
+      <button type="button" data-files-review disabled={!road.selected.length} onClick={()=>setQueue(value=>!value)} className="min-h-touch text-body disabled:text-muted-foreground">{queue?'返回选择':`已选 ${road.selected.length} 项`}</button>
+      {error&&<p role="alert" className="min-w-0 text-destructive">{error}</p>}
     </div>
-    <AttachmentPreview file={localLook?.device?.files[0]?.file??null} onClose={()=>setLocalLook(null)} onSave={road.replace&&localLook&&road.selected.some(item=>item.key===localLook.key)?file=>road.replace!(localLook,file):undefined}/>
+    <AttachmentPreview file={localLook?.device?.files[0]?.file??null} onClose={()=>setLocalLook(null)} onSave={undefined}/>
     <FilePreview machine={look?.machine.name ?? ""} shown={look?.machine.shown ?? ""} here={look?.machine.me ?? false} path={look?.path??look?.entry.path ?? null} initialFace={look?.face} onClose={closePreview} footer={look && !folder && <><Button disabled={road.busy || included(look.entry)} onClick={() => toggle(look.entry)}>{selected(look.entry) ? gui.files_deselect : gui.files_select}</Button></>} />
   </div>;
 }
@@ -237,4 +241,52 @@ function AttachmentCard({entry,pending,onOpen}:{entry:Attachment;pending:boolean
 }
 function Mark({ entry }: { entry: Attachment }) {
   return entry.dir ? <IconFiles className="size-kind-mark flex-none text-muted-foreground" /> : <FileKindIcon name={entry.name} className="size-kind-mark flex-none" />;
+}
+
+/** Destination is contextual to the open conversation, not another form. */
+export function AttachmentDestination({machine,into,onInto,busy=false}:{machine:string|null;into:string|null;onInto:(path:string|null)=>void;busy?:boolean}){
+ const [target,setTarget]=useState<DeviceRow|null>(null);
+ useEffect(()=>{let live=true;void fetchDevices().then(rows=>{if(live)setTarget(rows.find(row=>machine?row.name===machine:row.me)??null);},()=>{});return()=>{live=false;};},[machine]);
+ return <SendInto machine={machine??''} name={target?.name??machine??''} into={into} onInto={onInto} render={({path,pick,reset})=><div data-attachment-destination className="flex min-w-0 flex-1 items-center gap-in">
+  <button type="button" data-send-into-change aria-label="更改附件保存位置" disabled={busy} onClick={pick} className="flex min-h-touch min-w-0 flex-1 items-center gap-in text-left text-callout text-muted-foreground">
+   {target&&<MachineAvatar face={target.face} className="size-kind-mark flex-none"/>}<span className="min-w-0 truncate"><span>{target?.shown??machine??'会话所在机器'}</span><span aria-hidden> · </span><span data-send-into-path>{path}</span></span><IconChevronDown className="size-3.5 flex-none"/>
+  </button>
+  {reset&&<Button size="sm" data-send-into-reset disabled={busy} onClick={reset}>恢复默认</Button>}
+ </div>}/>;
+}
+/** A retained terminal draft lives below its terminal, never in the chooser. */
+export function TerminalAttachmentDraft({road,onSent}:{road:FilesRoad;onSent:()=>void}){
+ const [look,setLook]=useState<Attachment|null>(null),[local,setLocal]=useState<File|null>(null),[folder,setFolder]=useState<{entry:Attachment;prefix:string}|null>(null);
+ const [error,setError]=useState<string|null>(null),[thumbs,setThumbs]=useState<Record<string,string>>({});
+ const sending=useRef(false),live=useRef(true);
+ useEffect(()=>{live.current=true;return()=>{live.current=false;};},[]);
+ useEffect(()=>{
+  const urls:Record<string,string>={};for(const item of road.selected){const file=item.device?.files[0]?.file;if(!item.dir&&file?.type.startsWith('image/')&&file.size<=1024*1024)urls[item.key]=URL.createObjectURL(file);}
+  setThumbs(urls);return()=>Object.values(urls).forEach(url=>URL.revokeObjectURL(url));
+ },[road.selected]);
+ const inspect=(item:Attachment)=>{setLocal(null);setFolder(null);setLook(item);if(item.dir&&item.device)setFolder({entry:item,prefix:''});else if(item.device)setLocal(item.device.files[0]?.file??null);};
+ const send=async()=>{
+  if(road.busy||sending.current||!road.selected.length)return;
+  sending.current=true;setError(null);
+  try{const ok=await road.send(road.selected,road.into);if(live.current){if(ok)onSent();else setError('附件未能发送，文件已保留，可重试');}}
+  catch(error){if(live.current)setError(said(error));}finally{sending.current=false;}
+ };
+ const remove=(key:string)=>{const item=road.selected.find(item=>item.key===key);if(item){road.remove(item);if(look?.key===key){setLook(null);setLocal(null);setFolder(null);}}setError(null);};
+ if(!road.selected.length)return null;
+ return <div data-term-attachment-draft className="min-w-0 flex-none border-t px-row py-in">
+  <AttachmentStrip items={road.selected.map(item=>({...item,thumb:thumbs[item.key],busy:road.busy}))} onOpen={key=>{const item=road.selected.find(item=>item.key===key);if(item)inspect(item);}} onRemove={remove} onAdd={road.open} busy={road.busy}/>
+  <div className="flex min-w-0 items-center gap-in">
+   <AttachmentDestination machine={road.machine} into={road.into??null} onInto={road.onInto??(()=>{})} busy={road.busy}/>
+   {road.busy?<Button data-term-attachment-cancel disabled={road.stopping} onClick={road.cancel}>{road.stopping?'正在取消':'取消传输'}</Button>:
+    <button type="button" data-term-attachment-send onMouseDown={event=>event.preventDefault()} onClick={()=>void send()} className="min-h-touch flex-none rounded-full bg-brand-strong px-row text-body text-on-brand">发送 ({road.selected.length})</button>}
+  </div>
+  {road.busy&&<p data-files-transfer role="status" className="text-caption tabular-nums text-muted-foreground">正在发送 · {Math.round((road.progress??0)*100)}%</p>}
+  {error&&<p role="alert" className="text-callout text-destructive">{error}</p>}
+  <AttachmentPreview file={local} onClose={()=>{setLocal(null);if(!folder)setLook(null);}} onSave={look&&!folder&&road.replace?file=>road.replace!(look,file):undefined}/>
+  <FilePreview machine={look?.from??''} shown={look?.shown??''} here={look?.from===null} path={look&&!look.device?look.path:null} onClose={()=>setLook(null)}/>
+  <Dialog open={folder!==null&&!local} onOpenChange={value=>{if(!value){setFolder(null);setLook(null);}}}><TaskOverlay purpose="preview" initialHeight="large" maxHeight="large" scrollable>
+   <DialogTitle>{folder?.entry.name??'文件夹'}</DialogTitle><TaskActions close={<Button onClick={()=>{setFolder(null);setLook(null);}}>关闭</Button>}/>
+   {folder&&<>{folder.prefix&&<Button onClick={()=>setFolder({...folder,prefix:folder.prefix.split('/').slice(0,-1).join('/')})}>上一级</Button>}{deviceFolderEntries(folder.entry,folder.prefix).map(row=><button type="button" key={row.relative} onClick={()=>row.dir?setFolder({...folder,prefix:row.relative}):setLocal(row.file??null)} className="flex min-h-touch w-full items-center gap-in border-b text-left text-body">{row.dir?<IconFiles className="size-kind-mark"/>:<FileKindIcon name={row.name} className="size-kind-mark"/>}<span className="min-w-0 truncate">{row.name}</span></button>)}</>}
+  </TaskOverlay></Dialog>
+ </div>;
 }

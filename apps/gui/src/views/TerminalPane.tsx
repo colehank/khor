@@ -117,7 +117,7 @@ import { tapAsks, termWake, useTermWake, watchesCursor } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { dropsComposition } from "@/lib/term-compose-drop";
 import {HeaderSeat} from "@/views/SessionPreferences";
-import {AttachmentPicker} from "@/views/TermFiles";
+import {AttachmentPicker,TerminalAttachmentDraft} from "@/views/TermFiles";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
 import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
@@ -3157,7 +3157,7 @@ export function TerminalPane({
   dropFromRef.current = dropFrom;
   const queueAttachments=useCallback((items:Attachment[])=>{
     if(dropping.current)return;
-    changeAttachments(addAttachments(attachmentsRef.current,items));setAttachmentOpen(true);
+    changeAttachments(addAttachments(attachmentsRef.current,items));
   },[changeAttachments]);
   const drop = useCallback((paths:string[],from:string|null)=>{
     queueAttachments(paths.map(path=>pathAttachment(path,from,from??gui.machine_here,false,null,from===null)));
@@ -3609,6 +3609,12 @@ export function TerminalPane({
         </div>
       )}
     </div>
+    {active&&<TerminalAttachmentDraft onSent={()=>{const field=termRef.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}}
+      road={{machine:machine??null,cwd:doing?.cwd??null,selected:attachments,into:attachmentInto,onInto:setAttachmentInto,
+       open:()=>setAttachmentOpen(true),add:items=>changeAttachments(addAttachments(attachmentsRef.current,items)),
+       replace:(entry,file)=>changeAttachments(attachmentsRef.current.flatMap(item=>item.key===entry.key?deviceAttachments([file],false,gui.machine_here):[item])),
+       remove:entry=>changeAttachments(attachmentsRef.current.filter(item=>item.key!==entry.key)),
+       send:sendAttachments,dropFiles,busy:dropShare!==null,stopping:dropStopping,progress:dropShare,cancel:()=>dropCancel.current()}}/>}
     {/* **Under a finger, the keys a soft keyboard lacks and the switch
         for the keyboard** (`TermKeys`, 2026-10-02). On the narrow face
         they go to the session bar (row 2, and row 1's right end); where
@@ -3679,12 +3685,8 @@ export function TerminalPane({
       </>
     )}
     {active&&!coarse&&<HeaderSeat><GlassCircle data-term-attachments aria-label="添加附件" onClick={()=>setAttachmentOpen(true)}><IconAttach className="size-affordance"/></GlassCircle></HeaderSeat>}
-    {active&&<AttachmentPicker open={attachmentOpen} onClose={()=>setAttachmentOpen(false)} onSent={()=>{setAttachmentOpen(false);const field=termRef.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}}
-      road={{machine:machine??null,cwd:doing?.cwd??null,selected:attachments,into:attachmentInto,onInto:setAttachmentInto,
-       add:items=>changeAttachments(addAttachments(attachmentsRef.current,items)),
-       replace:(entry,file)=>changeAttachments(attachmentsRef.current.flatMap(item=>item.key===entry.key?deviceAttachments([file],false,gui.machine_here):[item])),
-       remove:entry=>changeAttachments(attachmentsRef.current.filter(item=>item.key!==entry.key)),
-       send:sendAttachments,dropFiles,busy:dropShare!==null,stopping:dropStopping,progress:dropShare,cancel:()=>dropCancel.current()}}/>}
+    {active&&<AttachmentPicker open={attachmentOpen} machine={machine??null} onClose={()=>setAttachmentOpen(false)} onAdd={items=>changeAttachments(addAttachments(attachmentsRef.current,items))}/>}
+
 
     </>
   );
