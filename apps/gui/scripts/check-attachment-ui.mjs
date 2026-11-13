@@ -39,7 +39,9 @@ try{
   console.log('attachment frontend:',mode.length?'production dist':'development');
   run(join(gui,'node_modules/.bin/vite'),[...mode,'--host','127.0.0.1','--port',String(port),'--strictPort'],{...process.env,KHOR_FACE_GATE:'1'});
   await until(()=>fetch(`http://127.0.0.1:${port}/`,{signal:AbortSignal.timeout(1000)}).then(r=>r.ok));
-  browser=await chromium.launch({channel:'chrome',headless:process.env.CONTENT_HEADED!=='1',args:['--no-proxy-server']});
+  const channel=(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined;
+  browser=await chromium.launch({channel,headless:process.env.CONTENT_HEADED!=='1',args:['--no-proxy-server']});
+  console.log('attachment browser:',channel||'bundled Chromium',browser.version());
   const context=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,reducedMotion:'reduce'});
   // The LAN HTTP face has no secure-context randomUUID API.
   await context.addInitScript(()=>Object.defineProperty(globalThis.crypto,'randomUUID',{configurable:true,value:undefined}));
