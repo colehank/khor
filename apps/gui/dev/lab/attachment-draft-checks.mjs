@@ -72,7 +72,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   const terminal=await api('__ai_preview/attachment-events');
   assert(terminal.some(event=>event.operation==='term_drop_stage'&&event.name==='edited.txt'&&event.content==='edited attachment'));
   assert(terminal.some(event=>event.operation==='term_drop_stage'&&event.name==='renamed.txt'&&event.bytes===unchanged.length),'Rename preserves BOM bytes');
-  assert(terminal.some(event=>event.operation.startsWith('term_drop')&&event.into==='/preview/khor-drop'));
+  assert(terminal.some(event=>(event.operation==='term_drop'||event.operation==='term_drop_items')&&event.into===null),'An unchanged destination delegates to the receiver default shown above the draft');
   await page.goto(`http://127.0.0.1:${port}/app/?scene=gui&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);
   await page.locator('[data-chat-input]:visible').waitFor();
   await page.locator('[data-lab-add]:visible').click();await page.locator('[data-lab-attach-device]').click();await picker.waitFor();
