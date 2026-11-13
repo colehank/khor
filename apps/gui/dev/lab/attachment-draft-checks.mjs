@@ -16,9 +16,10 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  const checkImagePreview=async contextName=>{
   const media=JSON.parse(await readFile(new URL('./data/media.generated.json',import.meta.url),'utf8'));
   await choose({name:'preview-photo.png',mimeType:'image/png',buffer:Buffer.from(media.image,'base64')});
-  const item=selected('preview-photo.png'),glyphs=await item.locator('[data-attachment-preview-glyph] svg').count();
+  const item=selected('preview-photo.png');await item.waitFor();const glyphs=await item.locator('[data-attachment-preview-glyph] svg').count();
   await item.locator('[data-files-card-preview]').click();
   const preview=page.locator('[data-attachment-preview]:visible');await preview.waitFor();
+  await page.waitForFunction(()=>{const image=document.querySelector('[data-attachment-preview]:not([data-state="closed"]) img');return image?.complete&&image.naturalWidth>0;});
   await preview.locator('img').evaluate(image=>image.decode());
   const focus=await preview.evaluate(root=>{const field=document.activeElement;return {editable:!!field?.matches('input,textarea,[contenteditable="true"]'),tag:field?.tagName,name:field?.getAttribute('aria-label'),inside:root.contains(field)};});
   imagePreviews.push({context:contextName,glyphs,focus});

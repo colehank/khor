@@ -7,6 +7,7 @@ import {sizeWord} from '@/views/FilesPane';
 /** Browser-owned drafts are previewed locally. Saving creates a new File;
  * the chosen source is never overwritten and no target upload is started. */
 export function AttachmentPreview({file,onClose,onSave}:{file:File|null;onClose:()=>void;onSave?:(file:File)=>void}){
+ const title=useRef<HTMLHeadingElement>(null);
  const retained=useRef<File|null>(file);if(file)retained.current=file;
  const current=file??retained.current;const [,repaint]=useState(0);
  const [url,setUrl]=useState(''),[name,setName]=useState(''),[text,setText]=useState<string|null>(null),[original,setOriginal]=useState<string|null>(null),[error,setError]=useState('');
@@ -21,8 +22,8 @@ export function AttachmentPreview({file,onClose,onSave}:{file:File|null;onClose:
  const dirty=file!==null&&(name!==file.name||text!==original);
  const valid=!!name.trim()&&!/[\\/\0]/.test(name)&&name!=='.'&&name!=='..';
  const save=()=>{if(file&&valid&&onSave){onSave(new File([text===null||text===original?file:text],name.trim(),{type:file.type,lastModified:Date.now()}));onClose();}};
- return <Dialog open={file!==null} onOpenChange={open=>{if(!open)onClose();}}><TaskOverlay purpose={onSave?'edit':'preview'} initialHeight="large" maxHeight="large" scrollable data-attachment-preview onCloseAutoFocus={()=>{retained.current=null;repaint(value=>value+1);}}>
-  <DialogTitle>附件预览</DialogTitle>
+ return <Dialog open={file!==null} onOpenChange={open=>{if(!open)onClose();}}><TaskOverlay purpose={onSave?'edit':'preview'} initialHeight="large" maxHeight="large" scrollable data-attachment-preview onOpenAutoFocus={event=>{event.preventDefault();title.current?.focus({preventScroll:true});}} onCloseAutoFocus={()=>{retained.current=null;repaint(value=>value+1);}}>
+  <DialogTitle ref={title} tabIndex={-1}>附件预览</DialogTitle>
   <TaskActions dirty={dirty} cancel={onSave?<Button onClick={onClose}>取消</Button>:undefined} close={!onSave?<Button onClick={onClose}>关闭</Button>:undefined}
    primary={onSave?<Button data-attachment-save variant="primary" disabled={!valid} onClick={save}>{dirty?'保存修改':'完成'}</Button>:undefined}/>
   <label className="flex min-w-0 items-center gap-row text-body"><span className="flex-none">文件名</span><input data-attachment-name aria-label="文件名" value={name} readOnly={!onSave} onChange={event=>setName(event.target.value)} className="min-w-0 flex-1 rounded-md bg-fill px-in py-in"/></label>
