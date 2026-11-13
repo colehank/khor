@@ -1,7 +1,7 @@
 # 图标调校台
 
-独立的深色图标调校工具，不打包进产品。浅色定稿与安装图标的明暗策略见
-[App 图标规范](../../src-tauri/icons/src/README.md)；这里的绘制参数只控制原 07 深色稿。浏览器与资源生成器共用 `renderer.ts`，默认读取
+独立开发工具，不打包进产品。当前安装图标在所有系统主题下统一使用原 07 深色稿，见
+[App 图标规范](../../src-tauri/icons/src/README.md)。浏览器与资源生成器共用 `renderer.ts`，默认读取
 `../../src-tauri/icons/src/app-icon.json`。新浏览器从当前生产参数开始，已有的浏览器调整
 继续保存在 `khor.icon-lab.v1`；“恢复当前图标”可回到生产参数。
 

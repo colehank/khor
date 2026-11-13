@@ -1,11 +1,11 @@
 # 行为与门
 
-### 安装图标的外观（2026-11-12）
+### 安装图标的外观（2026-11-13）
 
-定稿与平台选择规则只在 [App 图标规范](../../../apps/gui/src-tauri/icons/src/README.md) 维护。
-门：`python3 scripts/app_icon.py check` 与 `scripts/tests/test_app_icon.py`；CI `App icon` 另编译 macOS / iOS catalog 并验证原生浅深导出。
-回归夹具覆盖移除原生深色映射、iOS 深色母图漂移和浅色定稿指纹变更，重算生成清单也应失败。
-安装后的系统自动/固定外观、Finder / Dock / 主屏幕、旧系统降级列真机验收，预览不替代安装验收。
+当前定稿和平台资源规则只在 [App 图标规范](../../../apps/gui/src-tauri/icons/src/README.md) 维护。
+用户取消米白版，全部系统主题统一使用原 07 深色母图；不再维护浅色切换规则。
+门：`python3 scripts/app_icon.py check` 与 `scripts/tests/test_app_icon.py`；CI `App icon` 编译 macOS / iOS catalog，并核对原生 Default / Dark 导出均为深色稿。
+安装后的 Finder / Dock / 主屏幕、系统外观和旧系统降级列真机验收，预览不替代安装验收。
 
 ### 会话关系只由药丸表达（2026-11-01）
 

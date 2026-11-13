@@ -934,11 +934,11 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 ### 附件中的浏览器本地文件夹（2026-11-12）
 
 `npm run attachments` 验证实际选中File对象的层级、空目录、与node/files.rs一致的排序及不触发暂存/发送；`npm run attachment-ui` 使用正式TermFiles、真实私有节点和字节暂存，覆盖逐层返回、预览原文件字节、临时副本回收、保持文件夹整项选择与移除。完整Quality显式运行模型检查，构建CLI/bridge后将attachment-ui加入实际交互组；它不替代物理手机目录选择器/键盘验收。
-### App 安装图标（2026-11-12）
+### App 安装图标（2026-11-13）
 
 已有 `App icon` workflow 的入口是 `python3 scripts/app_icon.py check`、
 `python3 -m unittest discover -s scripts/tests -p 'test_app_icon.py'`。
-它验证同一外观策略、已定稿浅色、深色参数/SVG、生成清单及两端母图字节一致；
-macOS job 编译 macOS / iOS catalog、保留资源清单，并导出 Default / Dark 核验两种图稿都被选中。
-只需图标生成工具依赖，不触发完整 App 构建；实际安装验收另记。
+它验证原 07 参数/SVG、生成清单、尺寸/模式及两端母图字节一致；
+macOS job 编译 macOS / iOS catalog、保留资源清单，并导出 Default / Dark 核验均使用深色图稿。
+浅色版和按主题更换图稿已由用户取消。只需图标生成工具依赖，不触发完整 App 构建；安装验收另记。
 规范唯一入口为 [App 图标规范](../../../apps/gui/src-tauri/icons/src/README.md)。

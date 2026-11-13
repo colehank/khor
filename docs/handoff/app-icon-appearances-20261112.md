@@ -1,5 +1,7 @@
 # 安装图标的浅深外观 — 2026-11-12
 
+> 2026-11-13：用户取消本浅色方案，安装图标统一恢复原 07 深色版。以下是历史实现和验证记录，不再代表当前外观策略。当前规则以 `apps/gui/src-tauri/icons/src/README.md` 为准。
+
 实现位于独立 worktree `/Volumes/disk0/Khor/worktrees/current/khor-app-icon-appearances-20261112`，
 branch `feat/app-icon-appearances-20261112`，main 基线 `97bbf2a4`。
 初次交付时尚未合并 main；用户随后要求推 main，并明确选择等待、重试全量 Quality。

@@ -118,9 +118,9 @@ khor 的诊断图标。导航、甲板、文件树和其他页面继续使用 kh
 
 三个不是自己画的：`IconQuota`、`IconCode`（VS Code 的标记）、`IconEye`——它们是用户交过来的文件，原样收着，不重画成描边风格。别人的标记不是我们能改的东西。
 
-**安装后的 App 图标（2026-11-12）**：外观策略、浅深定稿、系统选择和旧系统降级统一维护在
-[App 图标规范](../../apps/gui/src-tauri/icons/src/README.md)，机器映射为同目录的 `app-icon-appearances.json`。
-浅色使用已定稿的米白版，深色保留原 07；macOS / iOS 同一外观共享母图。系统图标外观独立于 App 内主题。
+**安装后的 App 图标（2026-11-13）**：用户取消米白浅色版，所有平台和系统主题统一使用原 07 深色稿。
+资源、生成和系统外观规则统一维护在 [App 图标规范](../../apps/gui/src-tauri/icons/src/README.md)，生产参数为同目录的 `app-icon.json`。
+Mobile / Desktop 共用一份母图，App 内部主题不切换安装图标。
 
 **khor 会话的品牌标记（2026-11-10）**：用当前应用图标的坛城提炼单色版，保留外圆、菱形、内圆和五颗珠。唯一图稿是 `apps/gui/src-tauri/icons/src/mandala-glyph.svg`，由 `BrandIcons.IconKhor` 读取；新建入口、会话列表、桌面标签和手机药丸通过 `sessionKind` / `sessionMark` 共用，不再让 khor 会话落到通用 Agent 标记。它是品牌身份符号，沿用品牌标记的 `currentColor` 和圆形 92% 活区；小尺寸加宽线条和四颗外珠，不带应用图标的底板、玻璃、光晕或固定颜色。文件传输、借网、终端仍按专属类型判断。
 
