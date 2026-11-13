@@ -500,6 +500,7 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  results.push(await checkWorkbench(browser,{port,report,engine:'chromium'}));
   for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'chromium',workspace,khor}));
   results.push(await checkWorkspaceBack(browser,{port,report}));
   for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
@@ -548,6 +549,7 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:process.env.QUALITY_HEADLESS!=='0'});
+    results.push(await checkWorkbench(browser,{port,report,engine:'webkit'}));
     for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'webkit',workspace,khor}));
     for(const mobile of [false,true]){results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));

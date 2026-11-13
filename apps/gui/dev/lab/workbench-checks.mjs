@@ -23,7 +23,7 @@ export async function checkWorkbench(browser,{port,report,engine}){
   assert.equal(await frame.locator('html').evaluate(el=>el.style.getPropertyValue('--window-opacity')),'65%');
   assert.equal(await frame.locator('[data-composer-text]').inputValue(),'保留真实 App 草稿');
   await page.screenshot({path:path.join(report,name+'-desktop-glass.png')});
-  await page.getByRole('button',{name:/Change the size of the preview|viewport/i}).click();
+  await page.getByRole('button',{name:/^Viewport size /}).click();
   await page.getByText('Mobile · 390 × 844',{exact:true}).click();
   await frame.locator('[data-lab-model-header]:visible').waitFor();
   await frame.locator('html').evaluate(()=>new Promise(resolve=>setTimeout(resolve,100)));
