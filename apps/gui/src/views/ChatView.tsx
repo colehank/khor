@@ -1504,7 +1504,7 @@ export function ChatView({
   const say = async () => {
     const line = text.trim();
     if (!canSend||sendingDraft.current) return;
-    sendingDraft.current=true;
+    sendingDraft.current=true;setControlError(null);
     const reading=reader.current;
     let prepared:typeof files.items;
     try{prepared=await files.prepare();}
@@ -1946,7 +1946,7 @@ export function ChatView({
             remove:item=>setAttachmentSources(old=>old.filter(existing=>existing.key!==item.key)),
             replace:(item,file)=>setAttachmentSources(old=>old.flatMap(existing=>existing.key===item.key?deviceAttachments([file],false,'这台设备'):[existing])),
             send:async items=>{files.addSources(items);setAttachmentSources([]);return true;},dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
-          <PendingChips key={id} items={files.items} onRemove={files.remove} onReplace={files.replace} onRetry={files.retry} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
+          <PendingChips key={id} items={files.items} onRemove={key=>{files.remove(key);if(files.items.find(item=>item.key===key)?.error)setControlError(null);}} onReplace={files.replace} onRetry={key=>{files.retry(key);setControlError(null);}} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
               {docs.map(([name], i) => (
