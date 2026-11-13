@@ -1,3 +1,4 @@
+import {checkAttachmentDraft} from './attachment-draft-checks.mjs';
 import {checkResourceFiles} from './resource-checks.mjs';
 import {checkLongHistory} from './history-checks.mjs';
 import {checkWorkspaceBack} from './workspace-back-checks.mjs';
@@ -467,7 +468,13 @@ let browser;
 const results = [];
 try {
   await waitForPreview();
-  if (process.env.LAB_CHECKS === 'glass-selection') {
+  if (process.env.LAB_CHECKS === 'attachment-draft') {
+    for(const engine of ['chromium','webkit']){
+      browser=await (engine==='webkit'?webkit:chromium).launch({headless:engine!=='webkit'||process.env.QUALITY_HEADLESS!=='0'});
+      for(const width of [1280,390,320]){results.push(await checkAttachmentDraft(browser,{port,report,engine,width}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
+      await browser.close();browser=undefined;
+    }
+  } else if (process.env.LAB_CHECKS === 'glass-selection') {
     for(const engine of ['chromium','webkit']){
       browser=await(engine==='webkit'?webkit:chromium).launch({headless:true});
       results.push(await checkGlassSelection(browser,{port,report,engine}));
@@ -508,6 +515,7 @@ try {
     await new Promise(r => setTimeout(r, 100));
   }
   browser = await chromium.launch({headless: true});
+  for(const width of [1280,390,320])results.push(await checkAttachmentDraft(browser,{port,report,engine:'chromium',width}));
   results.push(await checkWorkbench(browser,{port,report,engine:'chromium'}));
   results.push(await checkGlassSelection(browser,{port,report,engine:'chromium'}));
   for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'chromium',workspace,khor}));
@@ -558,6 +566,7 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:process.env.QUALITY_HEADLESS!=='0'});
+    for(const width of [1280,390,320])results.push(await checkAttachmentDraft(browser,{port,report,engine:'webkit',width}));
     results.push(await checkWorkbench(browser,{port,report,engine:'webkit'}));
     results.push(await checkGlassSelection(browser,{port,report,engine:'webkit'}));
     for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'webkit',workspace,khor}));

@@ -197,8 +197,8 @@ export function SendSeat({
       disabled={disabled}
       onMouseDown={keepFocus ? (e) => e.preventDefault() : undefined}
       onClick={onSend}
-      aria-busy={(busy??disabled)||undefined}
-      className={cn(SEAT, "bg-brand-strong text-on-brand aria-busy:animate-pulse motion-reduce:aria-busy:animate-none")}
+      aria-busy={busy||undefined}
+      className={cn(SEAT, disabled?"bg-fill text-muted-foreground":"bg-brand-strong text-on-brand", "aria-busy:animate-pulse motion-reduce:aria-busy:animate-none")}
     >
       <IconChevronUp />
     </button>

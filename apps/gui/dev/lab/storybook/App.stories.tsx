@@ -74,3 +74,5 @@ export const Files:Story={name:'工作区文件',args:{scene:'workspace'}};
 export const Quota:Story={name:'额度',args:{scene:'quota'}};
 export const Browser:Story={name:'浏览器',args:{scene:'browser'}};
 export const History:Story={name:'长对话历史',args:{scene:'gui',history:true}};
+
+export const Attachments:Story={name:'附件发送',args:{scene:'terminal'}};

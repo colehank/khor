@@ -73,12 +73,14 @@ if (runtime.mode === 'frontend') {
     try {
       const command = url.pathname.slice('/api/'.length);
       let body:Record<string,unknown>;
-      if(command==='chat_put'){
+      if(['chat_put','upload','term_drop_stage','term_drop_stage_into'].includes(command)){
         body=Object.fromEntries(url.searchParams);
         const bytes=await request.arrayBuffer();
         const mode=fixture.request('__ai_preview/upload-state');
         if(mode==='fail')return Response.json('上传失败，请移除附件后重新添加',{status:503});
         if(mode==='delay')await new Promise(resolve=>setTimeout(resolve,1200));
+        body.bytes=bytes.byteLength;
+        if(String(body.name??body.path??'').match(/\.(txt|md|json)$/i))body.content=new TextDecoder().decode(bytes);
         const path=fixture.request(command,body);
         if(typeof path==='string' && path.endsWith('.txt')){
           uploadedText.set(path,{text:new TextDecoder().decode(bytes),total:bytes.byteLength,at_ms:Date.now(),digest:crypto.randomUUID(),cut:false,binary:false});

@@ -25,7 +25,7 @@ const device: DeviceRow = {
   hop: null, heard_ms: null, rtt_ms: null, down_ms: null, last_rtt_ms: null,
   since_ms: null, last_hop: null, relay: null, via: null, sponsor: null, ssh_jump: null,
   roads: [], watch: [], watched: null, seat: {left: 50, top: 50}, hosts: true,
-  receive_dir: null, receive_at: "/preview/files", receive_for: null, receive_why: null,
+  receive_dir: null, receive_at: "/preview/khor-drop", receive_for: null, receive_why: null,
 };
 const boot = (): Frame => ({ kind: "agent", name: "Claude", replays: true, needs_login: false, images: false, embeds: false, lists: false });
 const editorSource = (updated: boolean) => [
@@ -257,6 +257,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     preferences:{channel:'beta',automatic_check:true,automatic_download:true,install_on_start:false}};
   const resourcePreviews=new Map<string,string>();let resourceSequence=0;
   let updateMode='current';
+  const attachmentEvents:Record<string,unknown>[]=[];
   let pollMode='ok';let uploadMode='ok';const sentPrompts:unknown[]=[];
   let holdSettings=false,refuseSetting=false;const pendingSettings:(()=>void)[]=[];
   const applySetting=(apply:()=>void)=>{if(holdSettings)pendingSettings.push(apply);else apply();};
@@ -287,8 +288,18 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       }
       if(path==='__ai_preview/settings-pending')return pendingSettings.length;
       if(path==='__ai_preview/settings-refuse'){refuseSetting=body.refuse===true;return true;}
-      if(path==='chat_put')return '/preview/uploads/'+String(body.name??'attachment');
-      if(path==='chat_put_paths')return body.paths;
+      if(path==='__ai_preview/attachment-events')return structuredClone(attachmentEvents);
+      if(['chat_put','upload','term_drop_stage','term_drop_stage_into'].includes(path)){
+        attachmentEvents.push({operation:path,...body});
+        const base=path.startsWith('term_drop_')?'/preview/staging/':String(body.into??'/preview/khor-drop')+'/';
+        return base+String(body.name??body.path??'attachment');
+      }
+      if(path==='term_drop_folder')return '/preview/staging/'+String(body.name);
+      if(path==='term_drop_forget')return null;
+      if(path==='chat_put_paths'){
+        attachmentEvents.push({operation:path,...body});
+        return body.paths.map((path:string)=>String(body.into??'/preview/khor-drop')+'/'+path.split('/').pop());
+      }
       if (path === '__ai_preview/acp-setup') {failAcpSetup=body.fail===true;return true;}
       if (path === '__ai_preview/acp-setup-calls') return structuredClone(acpSetupCalls);
       if (pairing.handles(path)) return structuredClone(pairing.request(path, body));
@@ -323,6 +334,12 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
         if (path === 'term_ended') return null;
         if (!terminalLeases.has(body.lease)) throw new Error('Unknown fixture terminal attachment');
         if (path === 'term_leave') terminalLeases.delete(body.lease);
+        if(path==='term_drop'||path==='term_drop_items'){
+          attachmentEvents.push({operation:path,...body});
+          const paths=body.paths??body.items.map((item:{path:string})=>item.path);
+          return {landed:paths.map((path:string)=>String(body.into??'/preview/khor-drop')+'/'+path.split('/').pop()),miss:null};
+        }
+        if(path==='term_drop_progress')return 1;
         const screen = '\x1b[2J\x1b[Hkhor / layout-lab\r\n\r\n$ git status --short\r\n  clean working tree\r\n\r\nIsolated terminal: input is not executed.\r\npreview % ';
         return path === 'term_attach' ? {bytes: btoa(screen), seq: 1}
           : ['term_stream', 'term_wait'].includes(path) ? {bytes: '', seq: 1, gone: false, reset: false, stall: null} : null;

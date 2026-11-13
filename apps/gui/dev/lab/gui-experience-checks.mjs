@@ -16,6 +16,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await input.fill('Draft belongs to the original session');
   await api('__ai_preview/upload-mode',{mode:'fail'});
   await page.locator('input[type=file]').last().setInputFiles({name:'failed.txt',mimeType:'text/plain',buffer:Buffer.from('synthetic attachment')});
+  await page.locator('[data-chat-send]').click();
   const failed=page.locator('[data-chat-pending-file="failed.txt"]');await page.waitForFunction(()=>document.querySelector('[data-chat-pending-file="failed.txt"]')?.title.includes('上传失败'));
   assert.equal(await page.locator('[data-chat-send]').isDisabled(),true,'An upload failure blocks the entire send, including keyboard Enter');
   await input.press('Enter');assert.equal((await api('__ai_preview/says')).length,0);

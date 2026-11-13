@@ -180,7 +180,7 @@ export function TermKeys({
       // 尾」): 「…」 was pinned at the right end beside the pad.
       className="flex h-key-row flex-none items-center gap-1.5 px-row"
     >
-      <AttachKey term={term} />
+      <AttachKey term={term} onOpen={files.open} />
       <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto">
         {shown.map((k) => (
           <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
@@ -208,7 +208,7 @@ function panelKey(term: RefObject<Terminal | null>, want: PanelKind) {
  * pressed again it puts the panel away. ⚠️ 墓碑: a key of the editable
  * row, scrolled with the rest and never lit.
  */
-function AttachKey({ term }: { term: RefObject<Terminal | null> }) {
+function AttachKey({ term,onOpen }: { term: RefObject<Terminal | null>;onOpen?:()=>void }) {
   const raised = useKeyPanel();
   const kind = useKeyPanelKind();
   const on = raised && kind === "files";
@@ -220,7 +220,7 @@ function AttachKey({ term }: { term: RefObject<Terminal | null> }) {
       aria-label={gui.key_attach_name}
       aria-expanded={on}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={() => panelKey(term, "files")}
+      onClick={() => onOpen?onOpen():panelKey(term, "files")}
       className={CAP_BOX}
     >
       <span className={capFace(on, on)}>

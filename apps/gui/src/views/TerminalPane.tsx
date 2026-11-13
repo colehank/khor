@@ -68,7 +68,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 
 import { TerminalUnavailable, terminalAttachment, bellHaptic, faceNote, inApp, said, termDropForget, termEnded, type Miss } from "@/api";
-import { addAttachments, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
+import { addAttachments, pathAttachment, deviceAttachments, droppedAttachments, prepareAttachments, type Attachment, type PreparedDrop } from "@/lib/term-attachments";
 import { GlassCircle, GlassItem } from "@/components/Glass";
 import { usePinch } from "@/hooks/use-pinch";
 import { offerTabAct } from "@/lib/tab-acts";
@@ -81,7 +81,7 @@ import { termPredict } from "@/lib/term-predict-setting";
 import { rememberTermSize } from "@/lib/term-size-hint";
 import { TermHistory } from "@/views/TermHistory";
 import { TermPeek } from "@/views/TermPeek";
-import { IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
+import { IconAttach, IconChevronDown, IconChevronUp, IconClose, IconReload } from "@/components/icons";
 import { RegionState, Waiting } from "@/components/RegionState";
 import { gui, menu, msg } from "@/gen/catalog";
 import { baseName } from "@/lib/paths";
@@ -117,6 +117,7 @@ import type { Doing } from "@/gen/bindings/Doing";
 import { tapAsks, termWake, useTermWake, watchesCursor } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { dropsComposition } from "@/lib/term-compose-drop";
+import {AttachmentPicker} from "@/views/TermFiles";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
 import { useKeyRowOpen } from "@/lib/key-row-open";
 import { iipSizes } from "@/lib/term-iip";
@@ -3014,6 +3015,8 @@ export function TerminalPane({
   }, []);
   useEffect(() => { notifyRecovery(); }, [joining, opening, dropShare, dropNames]);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [attachmentOpen,setAttachmentOpen]=useState(false);
+  const [attachmentInto,setAttachmentInto]=useState<string|null>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const changeAttachments = useCallback((next: Attachment[]) => {
@@ -3152,18 +3155,22 @@ export function TerminalPane({
   );
   const dropFromRef = useRef(dropFrom);
   dropFromRef.current = dropFrom;
-  const drop = useCallback(
-    (paths: string[], from: string | null, into?: string | null) => { void dropFrom(paths, paths.map(baseName), from, into ?? null); }, [dropFrom],
-  );
+  const queueAttachments=useCallback((items:Attachment[])=>{
+    if(dropping.current)return;
+    changeAttachments(addAttachments(attachmentsRef.current,items));setAttachmentOpen(true);
+  },[changeAttachments]);
+  const drop = useCallback((paths:string[],from:string|null)=>{
+    queueAttachments(paths.map(path=>pathAttachment(path,from,from??gui.machine_here,false,null,from===null)));
+  },[queueAttachments]);
   const sendAttachments = useCallback((entries: Attachment[], into: string | null = null) =>
     dropFrom((gone) => prepareAttachments(entries, gone), entries.map((x) => x.name), null, into, () => {
       changeAttachments(attachmentsRef.current.filter((x) => !entries.some((e) => e.key === x.key)));
     }), [dropFrom, changeAttachments]);
   const dropFiles = useCallback((files: File[]) => {
     if (!files.length || dropping.current) return;
-    try { void sendAttachments(deviceAttachments(files, false, gui.machine_here)); }
+    try { queueAttachments(deviceAttachments(files, false, gui.machine_here)); }
     catch (e) { fail({ kind: "other", machine: null, raw: said(e) }, files.map((x) => x.name), () => {}, () => {}); }
-  }, [sendAttachments, fail]);
+  }, [queueAttachments, fail]);
   const dropRef = useRef(drop);
   dropRef.current = drop;
   // A pasted picture (item 60 part 4), from the pane's own handlers.
@@ -3338,7 +3345,7 @@ export function TerminalPane({
         if (!dragged && (inApp || !e.dataTransfer.types.includes("Files"))) return;
         e.preventDefault();
         if (dragged) drop([dragged.path], dragged.machine);
-        else void droppedAttachments(e.dataTransfer, gui.machine_here).then((items) => sendAttachments(items)).catch((err: unknown) => {
+        else void droppedAttachments(e.dataTransfer, gui.machine_here).then(queueAttachments).catch((err: unknown) => {
           fail({ kind: "other", machine: null, raw: said(err) }, [], () => {}, () => {});
         });
       }}
@@ -3665,12 +3672,20 @@ export function TerminalPane({
             `lib/term-tap`'s (`useTermWake`). */}
         <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
           <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, cwd: doing?.cwd ?? null, selected: attachments,
-            add: (items) => changeAttachments(addAttachments(attachmentsRef.current, items)),
-            remove: (item) => changeAttachments(attachmentsRef.current.filter((x) => x.key !== item.key)),
-            send: sendAttachments, dropFiles, busy: dropShare !== null, stopping: dropStopping, progress: dropShare, cancel: () => dropCancel.current() }} />
+            open:()=>setAttachmentOpen(true),add:queueAttachments,
+            remove:item=>changeAttachments(attachmentsRef.current.filter(x=>x.key!==item.key)),
+            send:sendAttachments,dropFiles,busy:dropShare!==null,progress:dropShare,cancel:()=>dropCancel.current() }} />
         </KeyRowSeats>
       </>
     )}
+    {active&&!coarse&&<BarSeat at="trail"><GlassCircle data-term-attachments aria-label="添加附件" onClick={()=>setAttachmentOpen(true)}><IconAttach className="size-affordance"/></GlassCircle></BarSeat>}
+    {active&&<AttachmentPicker open={attachmentOpen} onClose={()=>setAttachmentOpen(false)} onSent={()=>{setAttachmentOpen(false);const field=termRef.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}}
+      road={{machine:machine??null,cwd:doing?.cwd??null,selected:attachments,into:attachmentInto,onInto:setAttachmentInto,
+       add:items=>changeAttachments(addAttachments(attachmentsRef.current,items)),
+       replace:(entry,file)=>changeAttachments(attachmentsRef.current.flatMap(item=>item.key===entry.key?deviceAttachments([file],false,gui.machine_here):[item])),
+       remove:entry=>changeAttachments(attachmentsRef.current.filter(item=>item.key!==entry.key)),
+       send:sendAttachments,dropFiles,busy:dropShare!==null,stopping:dropStopping,progress:dropShare,cancel:()=>dropCancel.current()}}/>}
+
     </>
   );
 }

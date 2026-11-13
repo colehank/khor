@@ -1,6 +1,7 @@
 /** A session owns its unsent files, including work still in flight.
  * Views subscribe; leaving a view does not cancel or reassign its uploads. */
-export type PendingFile={key:string;name:string;size:number|null;thumb:string|null;inline:[string,string]|null;path:string|null;error:string|null;encoding?:boolean};
+import type {Attachment} from '@/lib/term-attachments';
+export type PendingFile={key:string;name:string;size:number|null;thumb:string|null;inline:[string,string]|null;path:string|null;error:string|null;encoding?:boolean;source?:Attachment;landedInto?:string|null};
 export class ComposerFiles {
   private items:PendingFile[]=[];
   private listeners=new Set<()=>void>();
@@ -24,7 +25,7 @@ export class ComposerFiles {
 const owners=new Map<string,ComposerFiles>();
 export function composerFiles(session:string){let files=owners.get(session);if(!files){files=new ComposerFiles();owners.set(session,files);}return files;}
 export function discardComposerFiles(session:string){owners.get(session)?.retire();owners.delete(session);}
-export function composerReady(items:readonly PendingFile[]){return items.every(item=>item.path!==null&&!item.encoding&&!item.error);}
+export function composerReady(items:readonly PendingFile[]){return items.every(item=>(item.path!==null||!!item.source)&&!item.encoding&&!item.error);}
 
 export function composerFilesAtRisk(){return [...owners.values()].some(files=>files.snapshot().length>0);}
 

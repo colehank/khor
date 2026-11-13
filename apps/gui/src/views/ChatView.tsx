@@ -1,3 +1,5 @@
+import {AttachmentPicker} from "@/views/TermFiles";
+import {deviceAttachments,type Attachment} from "@/lib/term-attachments";
 import { raiseKeyboard } from "@/lib/soft-keyboard";
 import {ScrollToBottom} from '@/components/ScrollToBottom';
 import {useReadableHistoryExport} from '@/hooks/use-readable-history-export';
@@ -710,6 +712,9 @@ export function ChatView({
     putPaths: (paths, target) => withChat(view => view.putPaths(paths, target)),
   }, into, id);
   const [pickOpen, setPickOpen] = useState(false);
+  const [attachmentSources,setAttachmentSources]=useState<Attachment[]>([]);
+  const [attachmentsOpen,setAttachmentsOpen]=useState(false);
+  const sendingDraft=useRef(false);
   /** A terminal block handed to the next conversation (roadmap 2.3), as
       `[name, text]`: it rides as the prompt's own text, there being no
       file on any machine to point at. Cleared by sending. */
@@ -790,7 +795,7 @@ export function ChatView({
   const reader = useRef<object>({});
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
-  const composer = useRef({session: id, text, documents: docs, attachments: files.items});
+  const composer = useRef({session: id, text, documents: docs, attachments: prepared});
   composer.current = {session: id, text, documents: docs, attachments: files.items};
   useUpdateBlocker("attachments", docs.length > 0 || files.items.length > 0);
   const savedDrafts = useSyncExternalStore(subscribeChatDrafts, () => recoverableChatDrafts(id));
@@ -1496,21 +1501,28 @@ export function ChatView({
   };
   const hasComposerContent=!!text.trim()||files.items.length>0||docs.length>0;
   const canSend=hasComposerContent&&!inTurn&&!gone&&files.ready&&facts!==null&&!facts.needsLogin;
-  const say = () => {
+  const say = async () => {
     const line = text.trim();
-    if (!canSend) return;
+    if (!canSend||sendingDraft.current) return;
+    sendingDraft.current=true;
+    const reading=reader.current;
+    let prepared:typeof files.items;
+    try{prepared=await files.prepare();}
+    catch(error){setControlError(String(error));sendingDraft.current=false;return;}
+    sendingDraft.current=false;
+    if(!mounted.current||currentSession.current!==id||reader.current!==reading)return;
     const owner = chatDraftOwner(id);
     if (!owner) return;
-    const placed = files.items.filter(file => file.path !== null);
+    const placed = prepared.filter(file => file.path !== null);
     const full = withAttachments(line, placed.map(file => file.path as string));
     const images = facts?.images ? placed.flatMap(file => file.inline ? [file.inline] : []) : [];
-    const draft = rememberChatDraft({owner, reader: reader.current, session: id, token: crypto.randomUUID(), text, full, images, documents: docs, attachments: files.items});
+    const draft = rememberChatDraft({owner, reader: reader.current, session: id, token: crypto.randomUUID(), text, full, images, documents: docs, attachments: prepared});
     if (!draft) return;
     if (placed.length > 0 && box.current) raiseKeyboard(box.current);
     composer.current = {session: id, text: "", documents: [], attachments: []};
     setText("");
     setInTurn(true);
-    files.clear();
+    for(const item of prepared)files.remove(item.key);
     setDocs([]);
     setPaint(previous => ({...previous, live: boundedLive([...previous.live, {who: "user", text: full, token: draft.token}])}));
     sent.current = line;
@@ -1928,7 +1940,13 @@ export function ChatView({
               {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}
             </div>
           )}
-          <PendingChips key={id} items={files.items} onRemove={files.remove} machine={home ?? machine ?? ""} here={machine === null} />
+          <AttachmentPicker open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
+            machine:machine??null,cwd:null,into,onInto:setInto,filesOnly:true,action:'添加',selected:attachmentSources,
+            add:items=>setAttachmentSources(old=>[...old,...items.filter(item=>!old.some(existing=>existing.key===item.key))]),
+            remove:item=>setAttachmentSources(old=>old.filter(existing=>existing.key!==item.key)),
+            replace:(item,file)=>setAttachmentSources(old=>old.flatMap(existing=>existing.key===item.key?deviceAttachments([file],false,'这台设备'):[existing])),
+            send:async items=>{files.addSources(items);setAttachmentSources([]);return true;},dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
+          <PendingChips key={id} items={files.items} onRemove={files.remove} onReplace={files.replace} onRetry={files.retry} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">
               {docs.map(([name], i) => (
@@ -1975,9 +1993,9 @@ export function ChatView({
               lead={
                 <SessionAdd
                   destination={home !== null ? <SendInto machine={machine ?? ""} name={home} into={into} onInto={setInto} /> : null}
-                  onAttach={canAttach ? () => picker.current?.click() : undefined}
+                  onAttach={canAttach&&!files.busy ? () => setAttachmentsOpen(true) : undefined}
                   onAttachMachine={
-                    canAttach && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
+                    canAttach && !files.busy && home ? { label: gui.chat_attach_machine_title(home), pick: () => setPickOpen(true) } : undefined
                   }
                   options={addOptions}
                   onFind={sourceBinding?()=>setFindingHistory(true):undefined}
@@ -2030,6 +2048,7 @@ export function ChatView({
             <Textarea
               ref={box}
               data-chat-input
+                readOnly={files.busy}
               aria-label="消息"
               aria-controls={menu.length?commandMenuId:undefined}
               aria-expanded={menu.length>0}

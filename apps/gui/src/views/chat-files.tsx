@@ -21,9 +21,8 @@ import { fileManagerLabel } from "@/lib/file-actions";
 //
 // # Composing
 //
-// Each file is put on the machine as soon as it is chosen, so sending
-// waits on nothing that could have happened earlier; its chip says so
-// while it travels (busy), and says why when it could not.
+// Selection owns a local draft. Only explicit Send prepares/uploads its
+// snapshot to the chosen destination; errors keep the draft for retry.
 //
 // # Looking at one
 //
@@ -32,9 +31,11 @@ import { fileManagerLabel } from "@/lib/file-actions";
 // sentences for what it will not draw — read only, with the three things
 // a person does next: open it where it lives, copy its path, and hand it
 // on (Finder on the Mac, the system's share sheet on a phone).
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
+import {AttachmentPreview} from '@/views/AttachmentPreview';
+import {deviceAttachments,pathAttachment,type Attachment} from '@/lib/term-attachments';
 import { DirPicker } from "@/components/DirPicker";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { PathCut } from "@/components/PathCut";
@@ -82,39 +83,65 @@ export function usePendingFiles(upload: {
 }, into: string | null = null, session = 'composer') {
   const store=composerFiles(session);
   const items=useSyncExternalStore(store.subscribe,store.snapshot);
-  const addFiles=(files:File[])=>{
-    for(const file of files){
-      const key=store.key(),picture=file.type.startsWith('image/'),encoding=picture&&file.size<=INLINE_MAX;
-      store.add([{key,name:file.name||gui.chat_image(key),size:file.size,
-        thumb:picture&&file.size<=THUMB_MAX?URL.createObjectURL(file):null,
-        inline:null,path:null,error:null,encoding}]);
-      if(encoding)void base64Of(file).then(data=>store.patch(key,{inline:[file.type,data],encoding:false}),
-        error=>store.patch(key,{encoding:false,error:why(error)}));
-      void upload.put(file,into).then(path=>store.patch(key,{path}),error=>store.patch(key,{error:why(error)}));
-    }
-  };
-  const addLocalPaths=(paths:string[])=>{
-    const keys=paths.map(()=>store.key());
-    store.add(paths.map((path,index)=>({key:keys[index],name:baseName(path),size:null,thumb:null,inline:null,path:null,error:null})));
-    void upload.putPaths(paths,into).then(landed=>keys.forEach((key,index)=>store.patch(key,landed[index]
-      ?{path:landed[index]}:{error:gui.history_read_failed})),error=>keys.forEach(key=>store.patch(key,{error:why(error)})));
-  };
+  const [preparing,setPreparing]=useState(false);
+  const lock=useRef(false);
+  const addSources=(entries:Attachment[])=>store.add(entries.map(source=>{
+    const file=source.device?.files[0]?.file;
+    return {key:store.key(),name:source.name,size:source.size,thumb:file?.type.startsWith('image/')?URL.createObjectURL(file):null,
+      inline:null,path:null,error:null,source};
+  }));
+  const addFiles=(files:File[])=>addSources(deviceAttachments(files,false,'这台设备'));
+  const addLocalPaths=(paths:string[])=>addSources(paths.map(path=>pathAttachment(path,null,'这台设备')));
   const addPaths=(paths:string[])=>store.add(paths.map(path=>({key:store.key(),name:baseName(path),size:null,thumb:null,inline:null,path,error:null})));
+  const replace=(key:string,file:File)=>{
+    const old=store.snapshot().find(item=>item.key===key);if(!old||lock.current)return;
+    if(old.thumb)URL.revokeObjectURL(old.thumb);
+    const source=deviceAttachments([file],false,'这台设备')[0];
+    store.patch(key,{name:file.name,size:file.size,source,path:null,error:null,inline:null,landedInto:undefined,
+      thumb:file.type.startsWith('image/')?URL.createObjectURL(file):null});
+  };
+  const prepare=async():Promise<Pending[]>=>{
+    if(lock.current)throw new Error('附件正在准备');
+    lock.current=true;setPreparing(true);
+    const entries=store.snapshot();
+    try{
+      for(const item of entries){
+        if(item.path!==null&&(!item.source||item.landedInto===into))continue;
+        if(!store.snapshot().some(current=>current.key===item.key))continue;
+        store.patch(item.key,{encoding:true,error:null});
+        try{
+          const source=item.source;
+          if(!source)throw new Error('请重新添加此附件');
+          const file=source.device?.files[0]?.file;
+          const path=file?await upload.put(file,into):(await upload.putPaths([source.from?await pullFile(source.from,source.path):source.path],into))[0];
+          if(!path)throw new Error('附件未能送达');
+          const inline:[string,string]|null=file?.type.startsWith('image/')&&file.size<=INLINE_MAX?[file.type,await base64Of(file)]:null;
+          store.patch(item.key,{path,inline,encoding:false,landedInto:into});
+        }catch(error){store.patch(item.key,{encoding:false,error:why(error)});throw error;}
+      }
+      const keys=new Set(entries.map(item=>item.key));
+      return store.snapshot().filter(item=>keys.has(item.key));
+    }finally{lock.current=false;setPreparing(false);}
+  };
   const restore=(remembered:readonly Pending[])=>store.add(remembered.map(item=>({...item,key:store.key(),thumb:null})));
-  return {items,addFiles,addLocalPaths,addPaths,remove:(key:string)=>store.remove(key),clear:()=>store.clear(),restore,
-    busy:items.some(item=>!item.error&&(item.path===null||item.encoding)),ready:composerReady(items)};
+  return {items,addFiles,addLocalPaths,addPaths,addSources,replace,prepare,preparing,
+    retry:(key:string)=>store.patch(key,{error:null}),remove:(key:string)=>{if(!lock.current)store.remove(key);},clear:()=>store.clear(),restore,
+    busy:preparing,ready:!preparing&&composerReady(items)};
 }
 
 /** Unsent files retain their independent preview and removal controls. */
-export function PendingChips({ items, onRemove, machine, here }: {
+export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,busy=false }: {
   items: Pending[];
   onRemove: (key: string) => void;
   machine: string;
   here: boolean;
+  onReplace?:(key:string,file:File)=>void;onRetry?:(key:string)=>void;busy?:boolean;
 }) {
   const [looking, setLooking] = useState<string | null>(null);
   if (items.length === 0) return null;
-  const path = items.find(item => item.key === looking)?.path ?? null;
+  const chosen=items.find(item=>item.key===looking);
+  const local=chosen?.source?.device?.files[0]?.file??null;
+  const path = local?null:chosen?.path??(chosen?.source&&!chosen.source.device?chosen.source.path:null)??null;
   return (
     <div data-chat-pending className="flex flex-wrap items-center gap-in px-2 pb-in">
       {items.map(item => (
@@ -122,16 +149,16 @@ export function PendingChips({ items, onRemove, machine, here }: {
           key={item.key}
           data-chat-pending-file={item.name}
           data-placed={item.path !== null || undefined}
-          aria-busy={(!item.error && (item.path === null || item.encoding)) || undefined}
+          aria-busy={!!item.encoding || undefined}
           title={item.error ?? item.path ?? undefined}
-          className="flex max-w-full min-w-0 items-center rounded-lg bg-fill text-callout aria-busy:animate-pulse motion-reduce:aria-busy:animate-none"
+          className="flex w-64 max-w-full min-w-0 items-center rounded-lg bg-fill text-callout aria-busy:animate-pulse motion-reduce:aria-busy:animate-none"
         >
           <button
             type="button"
             data-chat-pending-preview
-            disabled={item.path === null}
+            disabled={busy}
             onClick={() => setLooking(item.key)}
-            className="flex min-h-touch min-w-0 items-center gap-in px-in text-left"
+            className="flex min-h-touch min-w-0 flex-1 items-center gap-in p-in text-left"
           >
             {item.thumb ? <img src={item.thumb} alt="" className="size-7 flex-none rounded-md object-cover" />
               : <FileKindIcon name={item.name} className="size-7 flex-none" />}
@@ -139,14 +166,17 @@ export function PendingChips({ items, onRemove, machine, here }: {
               <span className="max-w-48 truncate">{item.name}</span>
               {(item.error || item.size !== null) && (
                 <span className={cn("text-caption tabular-nums", item.error ? "text-state-failed" : "text-muted-foreground")}>
-                  {item.error ? gui.chat_put_failed : sizeWord(item.size ?? 0)}
+                  {item.error ? gui.chat_put_failed : item.encoding?'正在上传':sizeWord(item.size ?? 0)}
                 </span>
               )}
+              {item.source&&<span className="truncate text-caption text-muted-foreground">{item.source.shown}</span>}
             </span>
           </button>
+          {item.error&&onRetry&&<Button size="sm" disabled={busy} onClick={()=>onRetry(item.key)}>重试</Button>}
           <button
             type="button"
             data-chat-pending-drop
+            disabled={busy}
             aria-label={`${gui.remove} ${item.name}`}
             onClick={() => {
               if (looking === item.key) setLooking(null);
@@ -158,7 +188,8 @@ export function PendingChips({ items, onRemove, machine, here }: {
           </button>
         </div>
       ))}
-      {path !== null && <FilePreview machine={machine} shown={machine} here={here} path={path} onClose={() => setLooking(null)} />}
+      <AttachmentPreview file={local} onClose={()=>setLooking(null)} onSave={onReplace&&chosen?file=>onReplace(chosen.key,file):undefined}/>
+      {path !== null && <FilePreview machine={chosen?.source?.from??machine} shown={chosen?.source?.shown??machine} here={chosen?.source?chosen.source.from===null:here} path={path} onClose={() => setLooking(null)} />}
     </div>
   );
 }
