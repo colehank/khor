@@ -1,4 +1,4 @@
-import {useEffect,useMemo,useRef} from 'react';
+import {useEffect,useMemo,useRef,useState} from 'react';
 import type {Meta,StoryObj} from '@storybook/react-vite';
 import {scenes,type Scene} from '../scenes';
 import {type PreviewState} from '../preview-state';
@@ -7,6 +7,7 @@ import {NARROW_QUERY} from '../../../src/hooks/use-narrow';
 type Args={scene:Scene;machines:number;items:number;opacity:number;keyboard:number;safeArea:boolean;platform:'auto'|'desktop'|'ios'|'android';history:boolean;width:number;height:number};
 type Props=Args&{environment:PreviewState};
 function AppPreview({scene,machines,items,history,width,height,environment}:Props){
+  const [keyboardPanel,setKeyboardPanel]=useState(false);
   const frame=useRef<HTMLIFrameElement>(null),current=useRef(environment);current.current=environment;
   const src=useMemo(()=>{
     const version=location.pathname.match(/\/versions\/([a-zA-Z0-9]+)\/assets\/workbench\//)?.[1];
@@ -22,7 +23,9 @@ function AppPreview({scene,machines,items,history,width,height,environment}:Prop
   useEffect(()=>{send();},[environment]);
   useEffect(()=>{
     const receive=(event:MessageEvent)=>{
-      if(event.source!==frame.current?.contentWindow||event.origin!==appOrigin||event.data?.type!=='khor.lab.ready')return;
+      if(event.source!==frame.current?.contentWindow||event.origin!==appOrigin)return;
+      if(event.data?.type==='khor.lab.keyboard-panel'){setKeyboardPanel(!!event.data.active);return;}
+      if(event.data?.type!=='khor.lab.ready')return;
       frame.current!.dataset.labAppReady=String(event.data.tree);
       frame.current!.dataset.labInput=String(event.data.pointer);
       send();
@@ -31,7 +34,7 @@ function AppPreview({scene,machines,items,history,width,height,environment}:Prop
   },[appOrigin]);
   return <div data-lab-workbench-preview style={{position:'relative',width:width||'100%',height:height||'100vh',overflow:'hidden',margin:'auto'}}>
     <iframe ref={frame} data-lab-app-frame title="Khor 正式 App Lab" src={src} onLoad={send} style={{display:'block',width:'100%',height:'100%',border:0}}/>
-    {environment.platform!=='desktop'&&environment.keyboard>0&&<div data-lab-keyboard-placeholder aria-label="模拟键盘占位" style={{position:'absolute',insetInline:0,bottom:0,height:environment.keyboard,display:'grid',placeItems:'center',background:'Canvas',color:'CanvasText',borderBlockStart:'1px solid GrayText',pointerEvents:'none'}}>
+    {environment.platform!=='desktop'&&environment.keyboard>0&&!keyboardPanel&&<div data-lab-keyboard-placeholder aria-label="模拟键盘占位" style={{position:'absolute',insetInline:0,bottom:0,height:environment.keyboard,display:'grid',placeItems:'center',background:'Canvas',color:'CanvasText',borderBlockStart:'1px solid GrayText',pointerEvents:'none'}}>
       <span>键盘占位 · {environment.keyboard}px</span>
     </div>}
   </div>;

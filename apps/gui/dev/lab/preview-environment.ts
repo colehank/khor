@@ -39,6 +39,9 @@ export function installPreviewEnvironment(initial: unknown, runtime: {tree:strin
     try{apply(readPreview(event.data.value));}catch(error){console.error('Lab environment rejected',String(error));}
   };
   addEventListener('message',receive);
+  let panel=false;
+  const panels=new MutationObserver(()=>{const next=!!document.querySelector('[data-attachment-picker]');if(next===panel)return;panel=next;parent.postMessage({type:'khor.lab.keyboard-panel',active:panel},controllerOrigin);});
+  panels.observe(document.body,{childList:true,subtree:true});
   parent.postMessage({type:'khor.lab.ready',tree:runtime.tree,revision:runtime.revision,pointer:matchMedia('(pointer: coarse)').matches?'touch':'mouse'},controllerOrigin);
-  addEventListener('pagehide',()=>{removeEventListener('message',receive);background.remove();},{once:true});
+  addEventListener('pagehide',()=>{removeEventListener('message',receive);background.remove();panels.disconnect();},{once:true});
 }

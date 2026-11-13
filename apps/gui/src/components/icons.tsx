@@ -1185,6 +1185,14 @@ export function IconShare({ className }: IconProps) {
   );
 }
 
+/** Open a file in a content page, separate from choosing it for sending. */
+export function IconOpen({className}:IconProps){
+  return <Mark className={className} live={LIVE.share} icon="open">
+    <path d="M7 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9"/>
+    <path d="M9 2h5v5M14 2l-8 8"/>
+  </Mark>;
+}
+
 /**
  * 上传 — a file going into a session (item 71, the owner 2026-10-07):
  * the mark the tab's face seat wears while a drop runs, SF's
