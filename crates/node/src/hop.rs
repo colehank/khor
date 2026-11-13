@@ -150,6 +150,15 @@ impl HopWire {
     }
 }
 
+/// A demand with no target road may recheck a live middle. Background
+/// discovery and periodic quality comparisons keep their failure backoff.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HopUse {
+    Dial,
+    Recovery,
+    Comparison,
+}
+
 struct HopCandidate {
     id: String,
     live: bool,
@@ -163,6 +172,34 @@ impl HopCandidate {
     fn cooling(&self) -> bool {
         self.missed
             .is_some_and(|(count, at)| at.elapsed() < missed_wait(count))
+    }
+
+    fn wait_for(&self, purpose: HopUse) -> Duration {
+        let backoff = self.missed.map_or(Duration::ZERO, |(count, at)| {
+            missed_wait(count).saturating_sub(at.elapsed())
+        });
+        if purpose == HopUse::Recovery
+            && !backoff.is_zero()
+            && self.live
+            && self.wires.iter().any(|wire| {
+                wire.weak
+                    .upgrade()
+                    .is_some_and(|conn| conn.close_reason().is_none())
+            })
+        {
+            // Reuse the existing hop budget as a minimum interval between
+            // actual asks. Concurrent/UI requests cannot turn one reachable
+            // first leg into unbounded probes of an unavailable second leg.
+            return self
+                .attempted_at
+                .map_or(Duration::ZERO, |at| HOP_WITHIN.saturating_sub(at.elapsed()));
+        }
+        if purpose == HopUse::Comparison {
+            return backoff.max(self.attempted_at.map_or(Duration::ZERO, |at| {
+                COMPARE_EVERY.saturating_sub(at.elapsed())
+            }));
+        }
+        backoff
     }
 }
 
@@ -306,7 +343,7 @@ fn begin_middle(
     to: &str,
     epoch: &MissEpoch,
     id: &str,
-    comparison: bool,
+    purpose: HopUse,
     by: tokio::time::Instant,
 ) -> bool {
     let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
@@ -322,12 +359,7 @@ fn begin_middle(
     let Some(middle) = miss.candidates.iter_mut().find(|middle| middle.id == id) else {
         return false;
     };
-    if middle.cooling()
-        || (comparison
-            && middle
-                .attempted_at
-                .is_some_and(|at| at.elapsed() < COMPARE_EVERY))
-    {
+    if !middle.wait_for(purpose).is_zero() {
         return false;
     }
     middle.attempted_at = Some(std::time::Instant::now());
@@ -958,12 +990,22 @@ impl Node {
             let Some(epoch) = self.hop_miss_epoch_for(y, &all, &picked, observation) else {
                 return;
             };
-            if missed_lately_in_epoch(&me, &y.id, Some(&epoch)) {
+            let purpose = if legs == Legs::Recovery
+                && crate::deadline::current().is_some()
+                && matches!(
+                    crate::journal::by_now(),
+                    crate::journal::By::Ask | crate::journal::By::Forced
+                ) {
+                HopUse::Recovery
+            } else {
+                HopUse::Dial
+            };
+            if purpose != HopUse::Recovery && missed_lately_in_epoch(&me, &y.id, Some(&epoch)) {
                 return;
             }
             // Keep the cold preparation state out of every enclosing dial and
             // resident request's future, including requests that need no hop.
-            Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, false)).await;
+            Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, purpose)).await;
         })
     }
 
@@ -1038,7 +1080,7 @@ impl Node {
         let Some(epoch) = self.hop_miss_epoch_for(y, all, picked, observation) else {
             return false;
         };
-        self.open_hop_in_epoch(ep, y, all, picked, epoch, false)
+        self.open_hop_in_epoch(ep, y, all, picked, epoch, HopUse::Dial)
             .await
     }
 
@@ -1055,7 +1097,7 @@ impl Node {
         all: &[crate::DeviceInfo],
         picked: &[String],
         epoch: MissEpoch,
-        comparison: bool,
+        purpose: HopUse,
     ) -> bool {
         let caller = crate::deadline::current();
         let hop_by = tokio::time::Instant::now() + HOP_WITHIN;
@@ -1067,34 +1109,50 @@ impl Node {
             return false;
         };
         let me = self.device_str().to_owned();
-        let eligible = {
-            let all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
-            let Some(miss) = all.get(&(me.clone(), y.id.clone())) else {
-                return false;
+        let eligible = loop {
+            let (eligible, retry_in) = {
+                let all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+                let Some(miss) = all.get(&(me.clone(), y.id.clone())) else {
+                    return false;
+                };
+                if !current_miss_epoch(Some(&epoch))
+                    || !same_miss_epoch(miss.epoch.as_ref(), Some(&epoch))
+                {
+                    return false;
+                }
+                let mut ready = Vec::with_capacity(TRIES);
+                let mut retry_in: Option<Duration> = None;
+                for id in picked {
+                    let Some(middle) = miss.candidates.iter().find(|middle| &middle.id == id)
+                    else {
+                        continue;
+                    };
+                    let wait = middle.wait_for(purpose);
+                    if wait.is_zero() {
+                        ready.push(id);
+                        if ready.len() == TRIES {
+                            break;
+                        }
+                    } else if purpose == HopUse::Recovery && middle.live && wait < HOP_WITHIN {
+                        retry_in = Some(retry_in.map_or(wait, |previous| previous.min(wait)));
+                    }
+                }
+                (ready, retry_in)
             };
-            if !current_miss_epoch(Some(&epoch))
-                || !same_miss_epoch(miss.epoch.as_ref(), Some(&epoch))
+            if !eligible.is_empty() {
+                break eligible;
+            }
+            let Some(wait) = retry_in else { return false };
+            // This is a caller-owned wait, inside the SAME hop/caller deadline.
+            // Cancellation drops it. Recheck the epoch and atomically claim
+            // each actual attempt below after any other demand woke first.
+            if crate::deadline::wait(Some(by), tokio::time::sleep(wait))
+                .await
+                .is_err()
             {
                 return false;
             }
-            picked
-                .iter()
-                .filter(|id| {
-                    miss.candidates.iter().any(|middle| {
-                        &middle.id == *id
-                            && !middle.cooling()
-                            && (!comparison
-                                || middle
-                                    .attempted_at
-                                    .is_none_or(|at| at.elapsed() >= COMPARE_EVERY))
-                    })
-                })
-                .take(TRIES)
-                .collect::<Vec<_>>()
         };
-        if eligible.is_empty() {
-            return false;
-        }
         let asked = Asking::new(&me, &y.id);
         let mut attempted = Vec::with_capacity(TRIES);
         let tries = async {
@@ -1116,7 +1174,7 @@ impl Node {
                         if middle.id.parse::<EndpointId>().is_err() {
                             continue;
                         }
-                        if !begin_middle(&me, &y.id, &epoch, b, comparison, prepared_by) {
+                        if !begin_middle(&me, &y.id, &epoch, b, purpose, prepared_by) {
                             continue;
                         }
                         attempted.push(b.as_str());
@@ -1149,7 +1207,7 @@ impl Node {
                     continue;
                 }
                 if !attempted.contains(&b.as_str()) {
-                    if !begin_middle(&me, &y.id, &epoch, b, comparison, by) {
+                    if !begin_middle(&me, &y.id, &epoch, b, purpose, by) {
                         continue;
                     }
                     attempted.push(b.as_str());
@@ -1447,7 +1505,8 @@ impl Node {
                 let Some(epoch) = self.hop_miss_epoch_for(y, &all, &picked, observation) else {
                     continue;
                 };
-                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, true)).await;
+                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, HopUse::Comparison))
+                    .await;
             }
         }
     }

@@ -17,7 +17,11 @@ fn claim(f: &Publication, target: &str, epoch: &MissEpoch, middle: &str, compari
         target,
         epoch,
         middle,
-        comparison,
+        if comparison {
+            HopUse::Comparison
+        } else {
+            HopUse::Dial
+        },
         tokio::time::Instant::now() + HOP_WITHIN,
     )
 }
@@ -39,7 +43,7 @@ async fn new_actual_middle_facts_do_not_wait_for_unchanged_comparison_work() {
         &f.target.id,
         &fresh,
         &second_id,
-        true,
+        HopUse::Comparison,
         tokio::time::Instant::now() - Duration::from_millis(1),
     ));
     assert!(claim(&f, &f.target.id, &fresh, &second_id, true));
@@ -113,4 +117,60 @@ async fn actual_carried_success_preserves_the_unchanged_comparison_allowance() {
         .await
         .unwrap();
     assert!(success_kept_allowance && old_cannot_mark);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_demands_share_the_live_middle_retry_allowance() {
+    let mut f = Publication::new().await;
+    let epoch = comparison_epoch(&f, &f.target.id, &[f.middle.id.clone()]);
+    assert!(claim(&f, &f.target.id, &epoch, &f.middle.id, false));
+    missed_in_epoch(
+        f.node.device_str(),
+        &f.target.id,
+        Some(epoch.clone()),
+        &[&f.middle.id],
+    );
+    // Only time passes; the network, wire, hints and failed second leg stay
+    // unchanged. Use the actual connection in the production cache entry.
+    {
+        let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+        let entry = all
+            .get_mut(&(f.node.device_str().to_owned(), f.target.id.clone()))
+            .unwrap();
+        entry.candidates[0].attempted_at = Some(std::time::Instant::now() - HOP_WITHIN);
+    }
+    let mut claims = Vec::new();
+    for _ in 0..32 {
+        let (node, target, middle, epoch) = (
+            f.node.clone(),
+            f.target.id.clone(),
+            f.middle.id.clone(),
+            epoch.clone(),
+        );
+        claims.push(tokio::spawn(async move {
+            begin_middle(
+                node.device_str(),
+                &target,
+                &epoch,
+                &middle,
+                HopUse::Recovery,
+                tokio::time::Instant::now() + HOP_WITHIN,
+            )
+        }));
+    }
+    let mut admitted = 0;
+    for task in claims {
+        admitted += usize::from(task.await.unwrap());
+    }
+    assert_eq!(
+        admitted, 1,
+        "concurrent callers cannot each spend the recovery retry allowance"
+    );
+    assert!(!claim(&f, &f.target.id, &epoch, &f.middle.id, false));
+    assert!(!claim(&f, &f.target.id, &epoch, &f.middle.id, true));
+    assert!(f.outer_local.close_reason().is_none());
+    for task in [&mut f.middle_task, &mut f.echo_task] {
+        stop(task).await;
+    }
+    tokio::join!(f.ep.close(), f.target_ep.close(), f.middle_ep.close());
 }

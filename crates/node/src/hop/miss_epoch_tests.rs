@@ -7,6 +7,7 @@ enum Change {
     None,
     AfterRefusal,
     WhilePending,
+    DemandAfterRefusal,
 }
 
 fn preparing(f: &Publication) -> Owned<()> {
@@ -90,8 +91,44 @@ async fn observe_epoch(change: Change) {
         // wires. The original tunnel remains the same throughout.
         f.node.wires.forgive_all();
     }
+    if change == Change::DemandAfterRefusal {
+        // A finite background budget must not masquerade as active recovery.
+        crate::journal::BY
+            .scope(
+                crate::journal::By::Pump,
+                crate::deadline::scope(
+                    tokio::time::Instant::now() + Duration::from_secs(5),
+                    f.node.hop_ahead(&f.ep, &f.target),
+                ),
+            )
+            .await;
+        assert_eq!(asks.load(std::sync::atomic::Ordering::SeqCst), 1);
+        // A demand shorter than the minimum retry interval expires without
+        // another admission and without retiring the still-useful first leg.
+        let by = tokio::time::Instant::now() + Duration::from_millis(25);
+        crate::deadline::scope(by, f.node.hop_ahead(&f.ep, &f.target)).await;
+        assert!(crate::deadline::expired(Some(by)));
+        assert_eq!(asks.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert!(f.outer_local.close_reason().is_none());
+        // Leave enough of the unchanged hop budget for real admission/TLS,
+        // while still requiring the next demand to wait for its retry slot.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
     let (offered, release) = f.node.wires.gate_hop_offered_for_test();
-    let mut next = preparing(&f);
+    let mut next = if change == Change::DemandAfterRefusal {
+        Owned(Some(tokio::spawn({
+            let (node, ep, target) = (f.node.clone(), f.ep.clone(), f.target.clone());
+            async move {
+                crate::deadline::scope(
+                    tokio::time::Instant::now() + Duration::from_secs(5),
+                    node.hop_ahead(&ep, &target),
+                )
+                .await;
+            }
+        })))
+    } else {
+        preparing(&f)
+    };
     let serial = tokio::time::timeout(Duration::from_secs(2), offered)
         .await
         .ok()
@@ -177,7 +214,7 @@ async fn observe_epoch(change: Change) {
     assert_eq!(
         serial.is_some() && answered,
         changed,
-        "only the current network may impose its tunnel miss cooldown"
+        "a new network or bounded active demand may recheck the live middle"
     );
     assert_eq!(actual_asks, if changed { 2 } else { 1 });
 }
@@ -199,3 +236,8 @@ async fn without_a_network_change_the_real_hop_miss_still_waits() {
 
 #[path = "candidate_change_tests.rs"]
 mod candidate_change;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_bounded_demand_rechecks_a_live_middle_without_releasing_background_backoff() {
+    observe_epoch(Change::DemandAfterRefusal).await;
+}
