@@ -44,6 +44,16 @@ if [ "$(uname -s)" != Linux ]; then
     exec ssh "$HOST" "$remote"
 fi
 
+THREADS=${NETLAB_TEST_THREADS:-8}
+case "$THREADS" in
+    ''|0|*[!0-9]*) echo 'netlab: NETLAB_TEST_THREADS must be positive' >&2; exit 2 ;;
+esac
+DIAGNOSTIC_FEATURE=
+case ${NETLAB_DIAGNOSTICS:-0} in
+    0) ;;
+    1|lifecycle) DIAGNOSTIC_FEATURE=--features=net-diagnostics ;;
+    *) echo 'netlab: NETLAB_DIAGNOSTICS must be 0, 1 or lifecycle' >&2; exit 2 ;;
+esac
 SRC=$(cd "$(dirname "$0")/.." && pwd)
 TOOLS=${NETLAB_TOOLS:-$HOME/khor-netlab/tools}
 export PATH="$TOOLS/bin:$HOME/.cargo/bin:$PATH"
@@ -73,6 +83,9 @@ mkdir -p "$RUN"
 RUN=$(mktemp -d "$RUN/$(date +%Y%m%d-%H%M%S).XXXXXX")
 BUILD_LOG="$RUN/build.log"
 LOG="$RUN/scenarios.log"
+if [ -n "$DIAGNOSTIC_FEATURE" ]; then
+    export NETLAB_DIAGNOSTICS_DIR="$RUN/diagnostics"
+fi
 cd "$SRC"
 # khor-web's build wants the face's index.html; the lab never serves the
 # face, so a scratch copy without one gets a placeholder (the rsync
@@ -84,7 +97,13 @@ if [ ! -f apps/gui/dist/index.html ] || ! grep -q '/assets/index-' apps/gui/dist
     echo '<!doctype html><title>netlab: no face</title><script type="module" src="/assets/index-netlab.js"></script>' >apps/gui/dist/index.html
 fi
 echo "netlab: building on $(hostname) (target $CARGO_TARGET_DIR)"
-if nice -n 10 cargo test --locked -p khor-cli --test netlab --no-run >"$BUILD_LOG" 2>&1; then
+cargo_netlab() {
+    if [ -n "$DIAGNOSTIC_FEATURE" ]; then
+        set -- "$DIAGNOSTIC_FEATURE" "$@"
+    fi
+    nice -n 10 cargo test --locked -p khor-cli --test netlab "$@"
+}
+if cargo_netlab --no-run >"$BUILD_LOG" 2>&1; then
     grep -E '^(error|warning: unused)|Finished' "$BUILD_LOG" || true
 else
     status=$?
@@ -96,7 +115,7 @@ echo "netlab: running (log $LOG)"
 # Scenarios run side by side: each lab is namespaces of its own.
 # --nocapture: a green scenario's numbers are the point too.
 status=0
-nice -n 10 cargo test --locked -p khor-cli --test netlab -- --test-threads 8 --nocapture "$@" >"$LOG" 2>&1 || status=$?
+cargo_netlab -- --test-threads "$THREADS" --nocapture "$@" >"$LOG" 2>&1 || status=$?
 
 echo
 echo "| scenario | today | measured |"

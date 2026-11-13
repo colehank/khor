@@ -1102,12 +1102,14 @@ pub(crate) async fn relay_round_trip(url: &str) -> Option<u64> {
 /// answering puts the silence on the machine that issued the ticket.
 /// Asked of every relay at once, each within [`relay_rtt`]'s budget.
 pub(crate) async fn any_relay_answers(urls: Vec<String>) -> bool {
-    let asks: Vec<_> = urls
-        .into_iter()
-        .map(|url| tokio::spawn(async move { relay_rtt(&url).await.is_some() }))
-        .collect();
-    for ask in asks {
-        if ask.await.unwrap_or(false) {
+    // Join by completion, and keep ownership of every in-flight request.
+    // A first success or a cancelled caller drops the remaining probes.
+    let mut asks = tokio::task::JoinSet::new();
+    for url in urls {
+        asks.spawn(async move { relay_rtt(&url).await.is_some() });
+    }
+    while let Some(ask) = asks.join_next().await {
+        if ask.unwrap_or(false) {
             return true;
         }
     }

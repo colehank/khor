@@ -79,7 +79,8 @@ exit 99
             timeout=10,
         )
         self.output = result.stdout + result.stderr
-        self.calls = (self.root / "calls").read_text().splitlines()
+        calls = self.root / "calls"
+        self.calls = calls.read_text().splitlines() if calls.exists() else []
         return result.returncode
 
     def test_compile_failure_stops_before_scenarios(self):
@@ -106,6 +107,16 @@ exit 99
         self.assertEqual(len(logs), 2, self.output)
         self.assertTrue(any("Finished test profile" in p.read_text() for p in logs))
         self.assertTrue(any("[netlab-result] fixture" in p.read_text() for p in logs))
+
+    def test_thread_budget_is_explicit_and_invalid_budget_runs_no_cargo(self):
+        from unittest.mock import patch
+        with patch.dict(os.environ, {"NETLAB_TEST_THREADS": "1"}):
+            self.assertEqual(self.run_fixture("pass"), 0, self.output)
+        self.assertIn("--test-threads 1", self.calls[1])
+        (self.root / "calls").unlink()
+        with patch.dict(os.environ, {"NETLAB_TEST_THREADS": "zero"}):
+            self.assertEqual(self.run_fixture("pass"), 2, self.output)
+        self.assertEqual(self.calls, [])
 
     def test_remote_filters_are_literal_and_ssh_failure_propagates(self):
         (self.bin / "uname").write_text("#!/bin/sh\necho Darwin\n")

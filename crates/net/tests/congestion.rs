@@ -42,6 +42,8 @@ use noq::{ClientConfig, Endpoint, ServerConfig, TransportConfig, congestion};
 use tokio::net::UdpSocket;
 use tokio::sync::mpsc;
 
+const ROAD_MODEL: &str = "independent_fifo_v2";
+
 fn env_u64(key: &str, default: u64) -> u64 {
     std::env::var(key)
         .ok()
@@ -90,8 +92,10 @@ impl Lane {
 async fn road(server: SocketAddr, road: Road) -> SocketAddr {
     let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
     let at = sock.local_addr().unwrap();
-    let (tx, mut rx) = mpsc::unbounded_channel::<(Instant, Vec<u8>, SocketAddr)>();
-    {
+    // A lane's due times are ordered, but the two directions' combined
+    // enqueue order is not. Each direction must wait on its own clock.
+    let [out_tx, back_tx] = std::array::from_fn(|_| {
+        let (tx, mut rx) = mpsc::unbounded_channel::<(Instant, Vec<u8>, SocketAddr)>();
         let sock = sock.clone();
         tokio::spawn(async move {
             while let Some((due, bytes, to)) = rx.recv().await {
@@ -99,7 +103,8 @@ async fn road(server: SocketAddr, road: Road) -> SocketAddr {
                 let _ = sock.send_to(&bytes, to).await;
             }
         });
-    }
+        tx
+    });
     tokio::spawn(async move {
         let now = Instant::now();
         let mut out = Lane {
@@ -119,12 +124,12 @@ async fn road(server: SocketAddr, road: Road) -> SocketAddr {
                 return;
             };
             let now = Instant::now();
-            let (lane, to) = if from == server {
+            let (lane, to, tx) = if from == server {
                 let Some(c) = client else { continue };
-                (&mut back, c)
+                (&mut back, c, &back_tx)
             } else {
                 client = Some(from);
-                (&mut out, server)
+                (&mut out, server, &out_tx)
             };
             if let Some(due) = lane.admit(n, now) {
                 let _ = tx.send((due, buf[..n].to_vec(), to));
@@ -151,7 +156,19 @@ struct Run {
     prioritised: bool,
     bytes: u64,
     secs: f64,
-    answers: Vec<Duration>,
+    bulk_secs: f64,
+    bulk_end: &'static str,
+    samples: Vec<Sample>,
+}
+
+struct Sample {
+    elapsed: Duration,
+    outcome: &'static str,
+}
+
+struct ScreenRound {
+    typing: Vec<Sample>,
+    screen: Sample,
 }
 
 /// A far side and a near side on the road, the far one answering three
@@ -214,18 +231,33 @@ async fn pair(cc: &'static str, prioritised: bool, road_is: Road) -> (Endpoint, 
     (client, conn)
 }
 
-/// One `E` question, timed to its answer.
-async fn ask(conn: &noq::Connection) -> Option<Duration> {
+/// One echo or screen request, including failures and the time spent waiting for them.
+async fn ask(conn: &noq::Connection, kind: u8) -> Sample {
     let asked = Instant::now();
     let answered = tokio::time::timeout(Duration::from_secs(10), async {
-        let (mut tx, mut rx) = conn.open_bi().await.map_err(|_| ())?;
-        tx.write_all(b"E").await.map_err(|_| ())?;
-        tx.finish().map_err(|_| ())?;
-        let mut one = [0u8; 1];
-        rx.read_exact(&mut one).await.map_err(|_| ())
+        let (mut tx, mut rx) = conn.open_bi().await.map_err(|_| "open")?;
+        tx.write_all(&[kind]).await.map_err(|_| "write")?;
+        tx.finish().map_err(|_| "finish")?;
+        if kind == b'U' {
+            let screen = rx.read_to_end(1 << 20).await.map_err(|_| "read")?;
+            if screen.len() != 80 * 80 {
+                return Err("size");
+            }
+        } else {
+            let mut one = [0u8; 1];
+            rx.read_exact(&mut one).await.map_err(|_| "read")?;
+        }
+        Ok(())
     })
     .await;
-    matches!(answered, Ok(Ok(()))).then(|| asked.elapsed())
+    Sample {
+        elapsed: asked.elapsed(),
+        outcome: match answered {
+            Ok(Ok(())) => "ok",
+            Ok(Err(stage)) => stage,
+            Err(_) => "timeout",
+        },
+    }
 }
 
 async fn run(cc: &'static str, prioritised: bool, road_is: Road, secs: u64) -> Run {
@@ -236,27 +268,33 @@ async fn run(cc: &'static str, prioritised: bool, road_is: Road, secs: u64) -> R
     let until = began + Duration::from_secs(secs);
     let reader = tokio::spawn(async move {
         let mut got = 0u64;
+        let mut outcome = "duration";
         let mut buf = vec![0u8; 64 * 1024];
         while Instant::now() < until {
             match tokio::time::timeout(Duration::from_millis(500), bulk_rx.read(&mut buf)).await {
                 Ok(Ok(Some(n))) => got += n as u64,
-                Ok(_) => break,
+                Ok(Ok(None)) => {
+                    outcome = "eof";
+                    break;
+                }
+                Ok(Err(_)) => {
+                    outcome = "read";
+                    break;
+                }
                 Err(_) => {}
             }
         }
-        got
+        (got, began.elapsed().as_secs_f64(), outcome)
     });
-    let mut answers = Vec::new();
+    let mut samples = Vec::new();
     // The first seconds are the controller's start-up; questions are
     // timed once the pour has filled the road.
     tokio::time::sleep(Duration::from_secs(3)).await;
     while Instant::now() + Duration::from_secs(2) < until {
-        if let Some(took) = ask(&conn).await {
-            answers.push(took);
-        }
+        samples.push(ask(&conn, b'E').await);
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    let bytes = reader.await.unwrap();
+    let (bytes, bulk_secs, bulk_end) = reader.await.unwrap();
     let secs_ran = began.elapsed().as_secs_f64();
     conn.close(0u32.into(), b"done");
     client.close(0u32.into(), b"done");
@@ -265,17 +303,97 @@ async fn run(cc: &'static str, prioritised: bool, road_is: Road, secs: u64) -> R
         prioritised,
         bytes,
         secs: secs_ran,
-        answers,
+        bulk_secs,
+        bulk_end,
+        samples,
     }
 }
 
-fn pct(v: &[Duration], p: f64) -> Duration {
+fn pct(v: &[Duration], p: f64) -> Option<Duration> {
     if v.is_empty() {
-        return Duration::ZERO;
+        return None;
     }
     let mut v = v.to_vec();
     v.sort();
-    v[((v.len() - 1) as f64 * p).round() as usize]
+    Some(v[((v.len() - 1) as f64 * p).round() as usize])
+}
+
+/// Called after the timed phase. Success latency and completion time are different distributions;
+/// an empty success distribution is null, never an apparently perfect zero milliseconds.
+fn report_samples(
+    phase: &str,
+    cc: &str,
+    prioritised: bool,
+    round: Option<usize>,
+    samples: &[Sample],
+) -> bool {
+    let completed: Vec<_> = samples.iter().map(|s| s.elapsed).collect();
+    let answered: Vec<_> = samples
+        .iter()
+        .filter(|s| s.outcome == "ok")
+        .map(|s| s.elapsed)
+        .collect();
+    let timed_out = samples.iter().filter(|s| s.outcome == "timeout").count();
+    eprintln!(
+        "[cc-summary-v2] {}",
+        serde_json::json!({
+            "road_model": ROAD_MODEL, "phase": phase, "cc": cc,
+            "priority": prioritised, "round": round,
+            "attempted": samples.len(), "answered": answered.len(),
+            "failed": samples.len() - answered.len() - timed_out, "timed_out": timed_out,
+            "answer_p50_ns": pct(&answered, 0.5).map(|d| d.as_nanos()),
+            "answer_p95_ns": pct(&answered, 0.95).map(|d| d.as_nanos()),
+            "answer_max_ns": pct(&answered, 1.0).map(|d| d.as_nanos()),
+            "completion_p50_ns": pct(&completed, 0.5).map(|d| d.as_nanos()),
+            "completion_p95_ns": pct(&completed, 0.95).map(|d| d.as_nanos()),
+            "completion_max_ns": pct(&completed, 1.0).map(|d| d.as_nanos()),
+        })
+    );
+    for (index, sample) in samples.iter().enumerate() {
+        eprintln!(
+            "[cc-sample-v2] {}",
+            serde_json::json!({
+                "road_model": ROAD_MODEL, "phase": phase, "cc": cc,
+                "priority": prioritised, "round": round,
+                "index": index, "elapsed_ns": sample.elapsed.as_nanos(),
+                "outcome": sample.outcome,
+            })
+        );
+    }
+    !samples.is_empty() && answered.len() == samples.len()
+}
+
+#[tokio::test]
+async fn road_directions_do_not_wait_for_each_others_future_packets() {
+    let server = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let at = road(
+        server.local_addr().unwrap(),
+        Road {
+            rtt: Duration::from_millis(20),
+            loss_pct: 0,
+            bytes_per_sec: 1000,
+            queue: Duration::from_secs(1),
+        },
+    )
+    .await;
+    client.send_to(&[b'a'; 500], at).await.unwrap();
+    client.send_to(&[b'b'; 500], at).await.unwrap();
+    let mut bytes = [0u8; 512];
+    let (n, reply_to) = tokio::time::timeout(Duration::from_secs(2), server.recv_from(&mut bytes))
+        .await
+        .expect("the first serialized packet arrives")
+        .unwrap();
+    assert_eq!(n, 500);
+    server.send_to(b"e", reply_to).await.unwrap();
+    // The reverse lane needs 11ms, while the second forward packet has
+    // about 500ms left. This calibrates independent directions, not a SLO.
+    let echoed = tokio::time::timeout(Duration::from_millis(250), client.recv_from(&mut bytes))
+        .await
+        .expect("a reverse packet must not wait behind a future forward packet")
+        .unwrap();
+    assert_eq!(echoed.0, 1);
+    assert_eq!(bytes[0], b'e');
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -289,6 +407,7 @@ async fn controllers_and_priorities_on_a_slow_lossy_road() {
     };
     let secs = env_u64("CC_SECS", 20);
     let mut runs = Vec::new();
+    let mut all_completed = true;
     for (cc, prioritised) in [
         ("cubic", false),
         ("newreno", false),
@@ -305,43 +424,56 @@ async fn controllers_and_priorities_on_a_slow_lossy_road() {
         }
         let r = run(cc, prioritised, road_is, secs).await;
         eprintln!(
+            "[cc-case-v2] {}",
+            serde_json::json!({
+                "road_model": ROAD_MODEL, "cc": r.cc, "priority": r.prioritised,
+                "rtt_ms": road_is.rtt.as_millis(), "loss_pct_per_direction": road_is.loss_pct,
+                "bytes_per_sec": road_is.bytes_per_sec, "queue_ms": road_is.queue.as_millis(),
+                "planned_bulk_seconds": secs, "bytes": r.bytes,
+                "case_seconds": r.secs, "bulk_seconds": r.bulk_secs, "bulk_end": r.bulk_end,
+                "seeds": ["9e3779b97f4a7c15", "2545f4914f6cdd1d"],
+            })
+        );
+        eprintln!(
             "[cc] road rtt {} ms, loss {}%, {} Mbit/s: {:<7} priority {:<3} -> {:.2} Mbit/s; \
-             answers under the pour: median {:?}, p90 {:?}, worst {:?} ({} asked)",
+             {} requests attempted (all outcomes below)",
             road_is.rtt.as_millis(),
             road_is.loss_pct,
             road_is.bytes_per_sec * 8 / 1_000_000,
             r.cc,
             if r.prioritised { "on" } else { "off" },
             r.bytes as f64 * 8.0 / r.secs / 1e6,
-            pct(&r.answers, 0.5),
-            pct(&r.answers, 0.9),
-            pct(&r.answers, 1.0),
-            r.answers.len(),
+            r.samples.len(),
         );
+        all_completed &= report_samples("bulk-echo", r.cc, r.prioritised, None, &r.samples);
+        all_completed &= r.bulk_end == "duration" && r.bytes > 0;
         runs.push(r);
     }
+    assert!(!runs.is_empty(), "CC_ONLY selected no controller");
+    assert!(
+        all_completed,
+        "request or bulk failures retained in the v2 records"
+    );
 }
 
 /// **A screenful after typing**: the near side types for ten seconds (a
 /// question every 250 ms), then the far side writes a screenful (`U`),
 /// timed to its last byte; three times. The terminal's own pattern: an
 /// idle connection, then a burst.
-async fn screen_after_typing(cc: &'static str, road_is: Road) -> Vec<Duration> {
+async fn screen_after_typing(cc: &'static str, road_is: Road) -> Vec<ScreenRound> {
     let (client, conn) = pair(cc, false, road_is).await;
     let mut took = Vec::new();
     for _ in 0..3 {
+        let mut samples = Vec::new();
         let typing = Instant::now();
         while typing.elapsed() < Duration::from_secs(10) {
-            let _ = ask(&conn).await;
+            samples.push(ask(&conn, b'E').await);
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
-        let asked = Instant::now();
-        let (mut tx, mut rx) = conn.open_bi().await.unwrap();
-        tx.write_all(b"U").await.unwrap();
-        tx.finish().unwrap();
-        let screen = rx.read_to_end(1 << 20).await.unwrap();
-        assert_eq!(screen.len(), 80 * 80);
-        took.push(asked.elapsed());
+        took.push(ScreenRound {
+            typing: samples,
+            screen: ask(&conn, b'U').await,
+        });
     }
     conn.close(0u32.into(), b"done");
     client.close(0u32.into(), b"done");
@@ -357,14 +489,26 @@ async fn a_screenful_after_typing_under_each_controller() {
         bytes_per_sec: env_u64("CC_MBIT", 20) * 1_000_000 / 8,
         queue: Duration::from_millis(200),
     };
+    let mut all_completed = true;
     for cc in ["cubic", "bbr3"] {
         let took = screen_after_typing(cc, road_is).await;
         eprintln!(
-            "[screen] rtt {} ms, loss {}%: {:<5} a 6.4 KB screenful after 10 s of typing: {:?}",
+            "[screen] rtt {} ms, loss {}%: {:<5} {} rounds (all outcomes below)",
             road_is.rtt.as_millis(),
             road_is.loss_pct,
             cc,
-            took
+            took.len()
         );
+        for (round, samples) in took.iter().enumerate() {
+            all_completed &= report_samples("typing", cc, false, Some(round), &samples.typing);
+            all_completed &= report_samples(
+                "screen",
+                cc,
+                false,
+                Some(round),
+                std::slice::from_ref(&samples.screen),
+            );
+        }
     }
+    assert!(all_completed, "request failures retained in the v2 samples");
 }

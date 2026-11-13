@@ -23,8 +23,8 @@ use crate::scratch::{Reaped, Scratch, khor, scratch, serve_pid, signal};
 pub struct Relay {
     pub url: String,
     pub dev: Device,
-    pub _home: Scratch,
     pub _child: Reaped,
+    pub _home: Scratch,
 }
 
 /// A plain relay (the Beijing shape: HTTP, no QUIC address discovery) on
@@ -48,8 +48,8 @@ pub async fn relay(lab: &Lab, tag: &str, name: &str, rtt: Option<Duration>) -> R
         .arg(home.0.join("state"))
         .stdout(Stdio::piped())
         .stderr(std::fs::File::create(home.0.join("relay.log")).unwrap());
-    let mut child = dev.spawn_command_sync(cmd).unwrap();
-    let mut lines = std::io::BufReader::new(child.stdout.take().unwrap()).lines();
+    let mut child = Reaped(dev.spawn_command_sync(cmd).unwrap());
+    let mut lines = std::io::BufReader::new(child.0.stdout.take().unwrap()).lines();
     let first = lines.next().expect("a banner line").unwrap();
     let at = first.find("http://").expect("a url on the first line");
     let url = first[at..].split_whitespace().next().unwrap().to_string();
@@ -61,7 +61,7 @@ pub async fn relay(lab: &Lab, tag: &str, name: &str, rtt: Option<Duration>) -> R
         url,
         dev,
         _home: home,
-        _child: Reaped(child),
+        _child: child,
     }
 }
 
@@ -223,11 +223,15 @@ pub async fn slow(dev: &Device, rtt: Duration) {
 
 /// A khor resident on a device, with a scratch home of its own.
 pub struct LabNode {
+    pub scenario: String,
     pub name: String,
     pub id: String,
+    // Stop the keeper before removing its home or dropping the device. Own it
+    // from spawn, so startup timeout/cancellation also reaps the child.
+    pub serve: Option<Reaped>,
+    client: std::sync::Arc<Node>,
     pub dev: Device,
     pub home: Scratch,
-    pub serve: Option<Reaped>,
 }
 
 /// Starts `khor serve` as `name` on `dev`, homed on `relays` only.
@@ -268,26 +272,80 @@ pub async fn node_on(
         .envs(env.iter().copied())
         .stdout(Stdio::null())
         .stderr(std::fs::File::create(home.0.join("serve.log")).unwrap());
-    let child = dev.spawn_command_sync(cmd).unwrap();
+    if let Ok(mode) = std::env::var("NETLAB_DIAGNOSTICS") {
+        if matches!(mode.as_str(), "1" | "lifecycle") {
+            cmd.env("KHOR_NET_DIAGNOSTICS", mode);
+        }
+    }
+    let child = Reaped(dev.spawn_command_sync(cmd).unwrap());
+    let child = resident_ready(child, &home.0, name).await;
+    // One observer client per resident, as in the app. Reopening for every
+    // sample can contend with an earlier local metadata operation.
+    let (client_home, client_name) = (home.0.clone(), name.to_owned());
+    let client = dev
+        .spawn(move |_| async move {
+            std::sync::Arc::new(Node::open_as(client_home, &client_name).unwrap())
+        })
+        .unwrap()
+        .await
+        .unwrap();
+    let id = client.device_str().to_owned();
+    eprintln!("[netlab] observer client v1: {name} reused");
+    eprintln!("[netlab] {name} up: v4 {:?} v6 {:?}", dev.ip(), dev.ip6());
+    LabNode {
+        scenario: tag.to_owned(),
+        name: name.to_owned(),
+        id,
+        client,
+        dev,
+        home,
+        serve: Some(child),
+    }
+}
+
+/// Own the child even if this readiness future is dropped before its first poll.
+pub(crate) async fn resident_ready(child: Reaped, home: &Path, name: &str) -> Reaped {
     let began = Instant::now();
-    while !home.0.join(".khor/endpoint.json").exists() {
+    while !home.join(".khor/endpoint.json").exists() {
         assert!(
             began.elapsed() < Duration::from_secs(60),
             "{name} stands up"
         );
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    let id = Node::open_as(home.0.clone(), name)
-        .unwrap()
-        .device_str()
-        .to_owned();
-    eprintln!("[netlab] {name} up: v4 {:?} v6 {:?}", dev.ip(), dev.ip6());
-    LabNode {
-        name: name.to_owned(),
-        id,
-        dev,
-        home,
-        serve: Some(Reaped(child)),
+    child
+}
+
+/// Preserve optional decision/ACK logs after measurement, before scratch cleanup.
+/// These runs include logging overhead and are not ordinary SLO measurements.
+pub fn sample_diagnostics(scenario: &str, n: &LabNode) {
+    let mode = std::env::var("NETLAB_DIAGNOSTICS").unwrap_or_default();
+    if !matches!(mode.as_str(), "1" | "lifecycle") {
+        return;
+    }
+    let text = std::fs::read_to_string(n.home.0.join("serve.log")).unwrap();
+    // A splice-only middle need not own a carried endpoint. Require its
+    // initialized mode, and retain even an empty lifecycle event stream.
+    let initialized = if mode == "lifecycle" {
+        text.contains("[khor-net-diagnostics] mode=lifecycle samples=off")
+    } else {
+        text.contains("khor_net_samples")
+    };
+    let dir = std::env::var_os("NETLAB_DIAGNOSTICS_DIR").expect("diagnostic artifact directory");
+    let dir = Path::new(&dir);
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join(format!("{scenario}-{}.log", n.name));
+    std::fs::write(&path, text).unwrap();
+    eprintln!("[netlab-diagnostic] {}: {}", n.name, path.display());
+    assert!(initialized, "{} has no requested diagnostics", n.name);
+}
+
+/// Keep device work owned by the caller even when its future is cancelled.
+struct DeviceTask(tokio::task::AbortHandle);
+
+impl Drop for DeviceTask {
+    fn drop(&mut self) {
+        self.0.abort();
     }
 }
 
@@ -296,15 +354,16 @@ impl LabNode {
     pub async fn with<T, F, Fut>(&self, f: F) -> T
     where
         T: Send + 'static,
-        F: FnOnce(Node) -> Fut + Send + 'static,
+        F: FnOnce(std::sync::Arc<Node>) -> Fut + Send + 'static,
         Fut: Future<Output = T> + Send + 'static,
     {
-        let (home, name) = (self.home.0.clone(), self.name.clone());
-        self.dev
-            .spawn(move |_| async move { f(Node::open_as(home, &name).unwrap()).await })
-            .unwrap()
-            .await
-            .unwrap()
+        let client = self.client.clone();
+        let task = self
+            .dev
+            .spawn(move |_| async move { f(client).await })
+            .unwrap();
+        let _owned = DeviceTask(task.abort_handle());
+        task.await.unwrap()
     }
 
     /// What this machine reads for `peer` now.

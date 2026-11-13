@@ -19,6 +19,29 @@ use tokio::time::timeout;
 #[path = "../../tests/util/mod.rs"]
 mod util;
 
+#[cfg(unix)]
+#[path = "ipc_process_tests.rs"]
+mod process_contracts;
+
+#[path = "quic_cancel_tests.rs"]
+mod quic_cancel_contracts;
+
+#[path = "quic_stop_tests.rs"]
+mod quic_stop_contracts;
+
+#[path = "resume_admission_tests.rs"]
+mod resume_admission_contracts;
+
+pub(crate) fn note_quic_reply_event(
+    root: &Path,
+    wire: usize,
+    stream: String,
+    kind: &'static str,
+    explicit_stop: Option<bool>,
+) {
+    quic_stop_contracts::note(root, wire, stream, kind, explicit_stop);
+}
+
 #[derive(Default)]
 struct Gate {
     count: AtomicUsize,
@@ -31,6 +54,7 @@ struct Gate {
 enum Stage {
     Io,
     Response,
+    PausePoll,
 }
 fn gates() -> &'static Mutex<HashMap<(PathBuf, Stage), Arc<Gate>>> {
     static GATES: OnceLock<Mutex<HashMap<(PathBuf, Stage), Arc<Gate>>>> = OnceLock::new();
@@ -56,6 +80,24 @@ pub(crate) async fn pause_response(root: &Path) {
         .lock()
         .unwrap()
         .get(&(root.into(), Stage::Response))
+        .cloned();
+    if let Some(gate) = gate {
+        gate.count.fetch_add(1, Ordering::Release);
+        gate.entered.notify_one();
+        loop {
+            if *gate.released.lock().unwrap() {
+                gate.resume.notify_one();
+                break;
+            }
+            gate.resume.notified().await;
+        }
+    }
+}
+pub(crate) async fn pause_poll(root: &Path) {
+    let gate = gates()
+        .lock()
+        .unwrap()
+        .get(&(root.into(), Stage::PausePoll))
         .cloned();
     if let Some(gate) = gate {
         gate.count.fetch_add(1, Ordering::Release);
@@ -334,6 +376,106 @@ async fn cancel_held_responses(
     settled_responses(&[serve_a, serve_b]).await;
     assert_eq!(page(a, binding, None, false).await.events.len(), 128);
     settled_responses(&[serve_a, serve_b]).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn leased_ipc_callers_release_all_held_response_permits_when_dropped() {
+    let root = crate::testdir::TempTree::fresh("content-ipc-caller-lease");
+    util::hermetic(&root);
+    let mut server = Server::start(&root, "lease-home").await;
+    let node = Arc::new(Node::open_as(root.path(), "lease-home").unwrap());
+    let id = "01a17c1a-a542-7822-b01d-82a832a158e6";
+    let history: Vec<_> = (0..500)
+        .flat_map(|n| message(&format!("lease-{n}")))
+        .collect();
+    std::fs::write(source(&root, id), history).unwrap();
+    let observation = ObservationRef {
+        owner: node.device(),
+        home: node.device(),
+        namespace: ObservationNamespace::Native,
+        agent: "codex".into(),
+        native_id: id.into(),
+        imported_at: Millis(1),
+        updated_at: None,
+    };
+    let locator =
+        ContentLocator::observed(SessionId("observe/ipc-lease".into()), &observation).unwrap();
+    let Reply::Resolved(Resolution::Available { binding, .. }) = node
+        .content_read(Action::Resolve { locator })
+        .await
+        .unwrap()
+    else {
+        panic!("private source must resolve");
+    };
+    let held = HoldWork::install(&root, Stage::Response);
+    let mut reads = Vec::new();
+    let mut tasks = Vec::new();
+    for _ in 0..crate::link::CONTENT_RESPONSES {
+        let key = node.content_begin(&binding).await.unwrap();
+        let read = ClientRead::claim(&root, binding.clone(), &key).unwrap();
+        let caller_root = root.path().to_path_buf();
+        let action = Action::Window {
+            binding: binding.clone(),
+            request: key,
+            cursor: None,
+            newer: false,
+        };
+        tasks.push(tokio::spawn(async move {
+            crate::link::content_on_resident(&caller_root, action).await
+        }));
+        reads.push(read);
+    }
+    held.entered(crate::link::CONTENT_RESPONSES).await;
+    assert_eq!(
+        server.responses.available_permits(),
+        0,
+        "all real encoded replies retain their owner"
+    );
+    for task in tasks {
+        task.abort();
+        let _ = task.await;
+    }
+    settled_responses(&[&server]).await;
+    assert!(
+        !*held.1.released.lock().unwrap(),
+        "caller loss must release owners without unblocking replies"
+    );
+    assert_eq!(
+        held.1.count.load(Ordering::Acquire),
+        crate::link::CONTENT_RESPONSES
+    );
+    let endpoint: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root.join(".khor/endpoint.json")).unwrap()).unwrap();
+    let reply = crate::ipc::call(
+        endpoint["ipc_port"].as_u64().unwrap() as u16,
+        endpoint["ipc_cookie"].as_str().unwrap(),
+        crate::ipc::Op::Hops,
+    )
+    .await
+    .unwrap();
+    assert!(
+        matches!(reply, crate::ipc::Reply::Hops { .. }),
+        "legacy half-close still works after caller cancellations"
+    );
+    held.release();
+    let key = node.content_begin(&binding).await.unwrap();
+    let read = ClientRead::claim(&root, binding.clone(), &key).unwrap();
+    let action = Action::Window {
+        binding: binding.clone(),
+        request: key,
+        cursor: None,
+        newer: false,
+    };
+    let reply = crate::link::content_on_resident(&root, action.clone())
+        .await
+        .unwrap();
+    reply.validate_for(&action).unwrap();
+    assert!(matches!(reply, Reply::Window { .. }));
+    drop(read);
+    assert_eq!(page(&node, &binding, None, false).await.events.len(), 128);
+    drop(reads);
+    drop(held);
+    server.stop().await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -18,9 +18,9 @@ iroh = { workspace = true, features = ["unstable-custom-transports"] }
 # n0-watcher for the local address watch, noq-udp for `RecvMeta`, bytes
 # for the frames. All four are iroh's own, at the versions it pins — no
 # new package. Licences: MIT OR Apache-2.0 (each checked).
-iroh-base = "1.2"
+iroh-base = "1.4.1"
 n0-watcher = "1.0"
-noq-udp = { version = "1.3", default-features = false }
+noq-udp = { version = "1.4.0", default-features = false }
 bytes = "1"
 iroh-mdns-address-lookup.workspace = true
 # Reading the mdns service's event stream, which is a `Stream` and needs
@@ -48,7 +48,7 @@ bip39 = "2"
 # named from noq-proto itself, the version iroh pins (one copy in the
 # tree — the vendored one, vendor/noq-proto/KHOR.md — not a new package).
 # License: MIT OR Apache-2.0.
-noq-proto = { version = "1.3.0", default-features = false }
+noq-proto = { version = "1.4.0", default-features = false }
 
 [dev-dependencies]
 serde_json.workspace = true
@@ -57,17 +57,17 @@ serde_json.workspace = true
 # that reboots it saws the branch the whole fleet dials on (2026-08-20,
 # three reboots = 40 minutes of "unreachable" that was really the
 # bridge). Version-locked to the workspace iroh.
-iroh-relay = { version = "1.2.0", features = ["server"] }
+iroh-relay = { version = "1.4.1", features = ["server"] }
 # The congestion and priority measurement (`tests/congestion.rs`) drives
 # the QUIC under iroh directly, through a road it simulates: noq at the
 # version iroh pins, and rcgen for the throwaway certificate. Both are
 # already in the tree (iroh, iroh-relay); no new package.
 # License: MIT OR Apache-2.0 (both; checked before use).
-noq = { version = "1.3.0", default-features = false, features = ["rustls", "ring", "runtime-tokio"] }
+noq = { version = "1.4.0", default-features = false, features = ["rustls", "ring", "runtime-tokio"] }
 rcgen = "0.14"
 # The pkarr registry khor's servers run (NET-DIRECT, `tests/pkarr.rs`):
 # iroh's own server, embedded on loopback. Tests only; on the Beijing box
 # it runs as its own binary, not inside khor. Its tree (297 crates) was
 # checked: MIT / Apache-2.0 / BSD / ISC / Zlib / Unicode-3.0, webpki-roots
 # CDLA-Permissive-2.0; no copyleft. License: MIT OR Apache-2.0.
-iroh-dns-server = { version = "=1.3.0", default-features = false, features = ["ring"] }
+iroh-dns-server = { version = "=1.4.1", default-features = false, features = ["ring"] }

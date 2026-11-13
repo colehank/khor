@@ -58,6 +58,17 @@ use std::time::{Duration, Instant};
 use iroh::endpoint::Connection;
 use khor_net::path::PathKind;
 
+/// Why all live connections can, or cannot, release their shared carrier.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CarrierComparison {
+    /// A live consumer still needs it, or its path facts are unknown.
+    Needed,
+    /// No live connection has a carried path to compare.
+    Unused,
+    /// Live carried paths were compared against their selected alternatives.
+    Outperformed,
+}
+
 /// **How long to wait for a wire, measured from its own round trip.**
 ///
 /// ⚠️ 墓碑 (round NET-2): these were constants — 4 s for a request's
@@ -190,12 +201,13 @@ pub(crate) fn ask_every_path(conn: &Connection) -> Duration {
         .min(Duration::from_secs(30))
 }
 
+/// Maximum road allowance added to a request's own work budget.
+pub(crate) const RTT_BUDGET_MOST: Duration = Duration::from_secs(120);
+
 /// How long a far session's open is given on top of the request's own
 /// budget for the road it travels: the same nine RTTs.
 pub(crate) fn budget_for(base: Duration, conn: &Connection) -> Duration {
-    base + rtt_of(conn)
-        .saturating_mul(RTTS)
-        .min(Duration::from_secs(120))
+    base + rtt_of(conn).saturating_mul(RTTS).min(RTT_BUDGET_MOST)
 }
 
 /// The longest any wire waits after a change before its verdict.
@@ -311,6 +323,9 @@ pub(crate) fn resting_close(e: &iroh::endpoint::ConnectionError) -> bool {
 #[derive(Default)]
 struct Slot {
     conn: Option<Connection>,
+    /// One all-path confirmation for this wire, shared by active requests
+    /// and callers that stopped waiting. Dropping the slot cancels it.
+    probe: Option<QuietProbe>,
     /// Datagrams received on `conn` as last counted.
     rx: u64,
     /// When the far side was last heard on any wire this slot held.
@@ -350,6 +365,20 @@ struct Slot {
     since: Option<Instant>,
 }
 
+/// The slot owns the task; the task holds only weak wire/owner handles.
+/// No caller deadline can skip its probe grace or leave an unowned task.
+struct QuietProbe {
+    count: u64,
+    by: tokio::time::Instant,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for QuietProbe {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 /// UDP bytes a wire has sent and received, as QUIC counts them —
 /// handshake, acks and keepalives included, so what the road carried.
 fn bytes_of(conn: &Connection) -> (u64, u64) {
@@ -363,15 +392,18 @@ fn bytes_of(conn: &Connection) -> (u64, u64) {
 pub(crate) struct Wires {
     slots: Mutex<HashMap<(String, Proto), Slot>>,
     dialing: Mutex<HashMap<(String, Proto), DialLock>>,
+    pending_dials: Mutex<HashMap<String, std::sync::Weak<PendingDialState>>>,
+    /// Replaced when all old-network dial waits are forgiven.
+    hop_generation: Mutex<Arc<()>>,
     /// A network change not yet judged: wires not heard since it are
     /// retired once their [`Patience::after_change`] has passed.
     changed: Mutex<Option<Instant>>,
     /// The connections other machines opened to this one, weakly, and
     /// when each was last heard ([`Self::serving`]).
     served: Mutex<Vec<Served>>,
-    /// Machines a relay said left it, and when (`Wires::departed`):
-    /// until one is heard from again, a dial to it is given a short time.
-    gone: Mutex<HashMap<String, Instant>>,
+    /// Positive contact versions and the last word that a machine left
+    /// or rested. They share a lock so an old dial cannot undo new contact.
+    presence: Mutex<HashMap<String, PeerPresence>>,
     /// **Machines unreachable now, and when the attempt that said so
     /// failed** (round NET-13): set by a dial that failed
     /// ([`Self::failed`]) and by a request unanswered on its wire
@@ -389,6 +421,67 @@ pub(crate) struct Wires {
     /// The connection journal, set by the resident only
     /// (`crate::journal`: one writer per home).
     pub(crate) journal: std::sync::OnceLock<Arc<crate::journal::Journal>>,
+    #[cfg(test)]
+    retirement_test_gate: Mutex<Option<RetirementTestGate>>,
+    #[cfg(test)]
+    asleep_dial_test_gate: Mutex<Option<AsleepDialTestGate>>,
+    #[cfg(test)]
+    hop_offer_test_gate: Mutex<Option<HopOfferTestGate>>,
+    #[cfg(test)]
+    hop_offered_test_gate: Mutex<Option<HopOfferTestGate>>,
+    #[cfg(test)]
+    hop_selection_test_gate: Mutex<Option<HopOfferTestGate>>,
+    #[cfg(test)]
+    carried_close_test_gate: Mutex<Option<HopOfferTestGate>>,
+    #[cfg(test)]
+    pending_carrier_test_gate: Mutex<Option<PendingCarrierTestGate>>,
+    #[cfg(test)]
+    pending_drop_test_gate: Mutex<Option<PendingDropTestGate>>,
+    #[cfg(test)]
+    normal_release_test_gate: Mutex<Option<PendingCarrierTestGate>>,
+    #[cfg(test)]
+    hop_look_observer: Mutex<Option<tokio::sync::mpsc::UnboundedSender<u64>>>,
+    #[cfg(test)]
+    early_dial_observer: Mutex<Option<tokio::sync::oneshot::Sender<bool>>>,
+    #[cfg(test)]
+    early_failure_observer: Mutex<Option<tokio::sync::oneshot::Sender<String>>>,
+}
+
+#[cfg(test)]
+struct PendingDropTestGate {
+    entered: tokio::sync::oneshot::Sender<u64>,
+    release: std::sync::mpsc::Receiver<()>,
+}
+
+#[cfg(test)]
+struct PendingCarrierTestGate {
+    entered: tokio::sync::oneshot::Sender<u64>,
+    release: tokio::sync::oneshot::Receiver<()>,
+    reviewed: tokio::sync::oneshot::Sender<()>,
+}
+
+#[cfg(test)]
+struct HopOfferTestGate {
+    entered: tokio::sync::oneshot::Sender<u64>,
+    release: tokio::sync::oneshot::Receiver<()>,
+}
+
+#[derive(Default)]
+struct PeerPresence {
+    contact: u64,
+    gone: Option<Instant>,
+}
+
+#[cfg(test)]
+struct AsleepDialTestGate {
+    entered: tokio::sync::oneshot::Sender<()>,
+    release: tokio::sync::oneshot::Receiver<()>,
+}
+
+#[cfg(test)]
+struct RetirementTestGate {
+    entered: tokio::sync::oneshot::Sender<()>,
+    release: std::sync::mpsc::Receiver<()>,
 }
 
 /// How long a relay's word that a machine left counts, unheard since.
@@ -405,9 +498,10 @@ const GONE_FOR: Duration = Duration::from_secs(120);
 const LEFT_ALONE_FOR: Duration = Duration::from_secs(600);
 
 /// The lock that makes one key's dials one at a time, holding how the
-/// last dial under it failed and when — what an asker who waited for that
-/// dial takes as its own answer (`Node::line_to_inner`).
-pub(crate) type DialLock = Arc<tokio::sync::Mutex<Option<(Instant, crate::link::DialFailure)>>>;
+/// last dial under it failed, when, and the peer contact version it began
+/// with — what an asker who waited for that dial may share.
+pub(crate) type DialLock =
+    Arc<tokio::sync::Mutex<Option<(Instant, crate::link::DialFailure, u64)>>>;
 
 /// A connection another machine opened to this one.
 struct Served {
@@ -416,6 +510,17 @@ struct Served {
     rx: u64,
     heard: Instant,
     rtt: Duration,
+}
+
+/// The owner of a finite dial, through registration of its winning wire.
+/// The existing hop watcher can wait for all such owners without keeping
+/// them alive or creating a cleanup task or timer.
+pub(crate) struct PendingDial {
+    _state: Arc<PendingDialState>,
+}
+
+struct PendingDialState {
+    done: tokio::sync::watch::Sender<()>,
 }
 
 /// A hop riding a machine's wire ([`Wires::hop_held`]); dropping it
@@ -574,6 +679,50 @@ pub(crate) struct Reading {
 }
 
 impl Wires {
+    pub(crate) fn pending_dial(&self, id: &str) -> PendingDial {
+        let mut pending = self.pending_dials.lock().unwrap_or_else(|p| p.into_inner());
+        pending.retain(|_, state| state.strong_count() != 0);
+        let state = pending
+            .get(id)
+            .and_then(std::sync::Weak::upgrade)
+            .unwrap_or_else(|| {
+                let (done, _) = tokio::sync::watch::channel(());
+                let state = Arc::new(PendingDialState { done });
+                pending.insert(id.to_owned(), Arc::downgrade(&state));
+                state
+            });
+        PendingDial { _state: state }
+    }
+
+    pub(crate) fn pending_dial_done(&self, id: &str) -> Option<tokio::sync::watch::Receiver<()>> {
+        self.pending_dials
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(id)
+            .and_then(std::sync::Weak::upgrade)
+            .map(|state| state.done.subscribe())
+    }
+
+    /// Hold pending-dial admission through this exact withdrawal decision.
+    /// A successor either already owns a lease and is waited for, or starts
+    /// after withdrawal and sees no carrier to borrow. Lock order is pending
+    /// admission, then the live-wire registry; the callback must not await.
+    pub(crate) fn withdraw_carrier_if_idle(
+        &self,
+        id: &str,
+        withdraw: impl FnOnce(),
+    ) -> Result<bool, tokio::sync::watch::Receiver<()>> {
+        let pending = self.pending_dials.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(state) = pending.get(id).and_then(std::sync::Weak::upgrade) {
+            return Err(state.done.subscribe());
+        }
+        if self.carrier_in_use(id) {
+            return Ok(false);
+        }
+        withdraw();
+        Ok(true)
+    }
+
     /// One line in the connection journal, when this node keeps one.
     pub(crate) fn note(&self, peer: Option<&str>, what: crate::journal::What) {
         if let Some(j) = self.journal.get() {
@@ -587,9 +736,10 @@ impl Wires {
     pub(crate) fn pulse(&self) {
         drop(self.slots.lock().unwrap_or_else(|p| p.into_inner()));
         drop(self.dialing.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.pending_dials.lock().unwrap_or_else(|p| p.into_inner()));
         drop(self.changed.lock().unwrap_or_else(|p| p.into_inner()));
         drop(self.served.lock().unwrap_or_else(|p| p.into_inner()));
-        drop(self.gone.lock().unwrap_or_else(|p| p.into_inner()));
+        drop(self.presence.lock().unwrap_or_else(|p| p.into_inner()));
         drop(self.down.lock().unwrap_or_else(|p| p.into_inner()));
         drop(self.hops.lock().unwrap_or_else(|p| p.into_inner()));
     }
@@ -615,10 +765,11 @@ impl Wires {
     /// ran out redialled a sleeping phone six times in its first minute.
     fn wait_after(&self, id: &str, n: u32) -> Duration {
         if self
-            .gone
+            .presence
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .contains_key(id)
+            .get(id)
+            .is_some_and(|p| p.gone.is_some())
         {
             return BACKOFF_MAX;
         }
@@ -628,7 +779,7 @@ impl Wires {
     /// [`drop_wire`], written in the journal: why, how long the wire had
     /// been quiet, how long it lived.
     fn drop_noted(&self, id: &str, proto: Proto, slot: &mut Slot, why: Retired) {
-        if slot.conn.is_some() {
+        if let Some(conn) = &slot.conn {
             let now = Instant::now();
             let since = |t: Option<Instant>| {
                 t.map_or(0, |t| crate::journal::ms(now.saturating_duration_since(t)))
@@ -636,6 +787,7 @@ impl Wires {
             self.note(
                 Some(id),
                 crate::journal::What::Retired {
+                    wire: u64::try_from(conn.stable_id()).ok(),
                     why: why.key().to_owned(),
                     tunnel: proto == Proto::Tunnel,
                     quiet_ms: since(slot.heard),
@@ -655,17 +807,107 @@ impl Wires {
             .filter(|c| c.close_reason().is_none())
     }
 
-    /// **Whether the relay keeps `id` off its carried road on measurement**
-    /// ([`khor_net::path::relay_beats_carried`]), on the live wire
-    /// [`Self::link`] reads (requests first). No live wire: true, the relay
-    /// as good as kept it.
-    pub(crate) fn relay_beats_carried(&self, id: &str) -> bool {
-        let margin = khor_net::carry::SWITCH_MARGIN.as_millis();
-        self.live(id, Proto::Main)
-            .or_else(|| self.live(id, Proto::Tunnel))
-            .is_none_or(|c| {
-                khor_net::path::relay_beats_carried(&khor_net::path::path_facts(&c), margin)
+    /// Incoming traffic can prove a first leg even without an outgoing
+    /// slot. This is reachability evidence, not protocol-stream reuse.
+    pub(crate) fn incoming_for_hop(&self, id: &str) -> Vec<Connection> {
+        self.incoming_for_hop_at(id, Instant::now())
+    }
+
+    fn incoming_for_hop_at(&self, id: &str, now: Instant) -> Vec<Connection> {
+        let mut conns: Vec<_> = self
+            .served
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .filter(|w| w.id == id)
+            .filter_map(|w| {
+                let conn = w.conn.upgrade()?;
+                let patience = Patience::for_rtt(w.rtt).keepalive_missed;
+                let recent = conn.paths().iter().any(|path| {
+                    path.is_selected()
+                        && (path.is_ip() || path.is_relay())
+                        && path
+                            .stats()
+                            .last_received
+                            .is_some_and(|at| now.saturating_duration_since(at) < patience)
+                });
+                (conn.close_reason().is_none() && recent).then_some(conn)
             })
+            .collect();
+        conns.sort_unstable_by_key(Connection::stable_id);
+        conns.dedup_by_key(|conn| conn.stable_id());
+        conns.sort_by_cached_key(rtt_of);
+        conns
+    }
+
+    fn live_connections(&self, id: &str) -> Vec<Connection> {
+        let mut conns: Vec<_> = [Proto::Main, Proto::Tunnel]
+            .into_iter()
+            .filter_map(|proto| self.live(id, proto))
+            .collect();
+        {
+            let served = self.served.lock().unwrap_or_else(|p| p.into_inner());
+            conns.extend(
+                served
+                    .iter()
+                    .filter(|w| w.id == id)
+                    .filter_map(|w| w.conn.upgrade())
+                    .filter(|c| c.close_reason().is_none()),
+            );
+        }
+        conns.sort_unstable_by_key(Connection::stable_id);
+        conns.dedup_by_key(|c| c.stable_id());
+        conns
+    }
+
+    /// A registered live wire rides the carrier or has no other open path.
+    /// An incoming carried-only wire can lack a selected marker when the
+    /// peer's common selected tuple belongs to another connection.
+    pub(crate) fn carrier_in_use(&self, id: &str) -> bool {
+        self.live_connections(id).iter().any(|conn| {
+            let paths = khor_net::path::path_facts(conn);
+            paths.iter().any(|path| path.selected && path.carried)
+                || (!paths.is_empty() && paths.iter().all(|path| path.carried))
+        })
+    }
+
+    /// Whether every live connection to `id` can let the peer's carrier go.
+    /// Main, tunnel and incoming wires share the stream, but can have
+    /// different open paths. One wire's faster road cannot withdraw a
+    /// carried-only road another still uses. Connections without a custom
+    /// path need no carrier; unknown snapshots keep it. Where both roads
+    /// exist, use the selector's measured gain. No live wires: unused.
+    pub(crate) fn compare_carrier(&self, id: &str) -> CarrierComparison {
+        let conns = self.live_connections(id);
+        let facts: Vec<_> = conns
+            .iter()
+            .map(|c| (c.stable_id(), khor_net::path::path_facts(c)))
+            .collect();
+        let losing = facts.iter().all(|(_, paths)| {
+            !paths.is_empty()
+                && (paths.iter().all(|p| !p.carried)
+                    || khor_net::path::selected_beats_carried(paths))
+        });
+        let comparison = if !losing {
+            CarrierComparison::Needed
+        } else if facts
+            .iter()
+            .any(|(_, paths)| paths.iter().any(|p| p.carried))
+        {
+            CarrierComparison::Outperformed
+        } else {
+            CarrierComparison::Unused
+        };
+        khor_net::carry::observe_lifecycle(id, "shared_comparison", || {
+            serde_json::json!({
+                "scope": "all_live_connections_v1", "release": losing,
+                "comparison": format!("{comparison:?}"),
+                "connections": facts.iter().map(|(wire, paths)| serde_json::json!({
+                    "wire": wire, "measurements": paths,
+                })).collect::<Vec<_>>(),
+            })
+        });
+        comparison
     }
 
     /// The lock that makes a key's dials one at a time.
@@ -678,12 +920,354 @@ impl Wires {
             .clone()
     }
 
+    #[cfg(test)]
+    pub(crate) fn gate_asleep_dial_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<()>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        *self
+            .asleep_dial_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(AsleepDialTestGate {
+            entered,
+            release: released,
+        });
+        (ready, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_asleep_dial_for_test(&self) {
+        let gate = self
+            .asleep_dial_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(());
+            let _ = gate.release.await;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_hop_offer_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        *self
+            .hop_offer_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(HopOfferTestGate {
+            entered,
+            release: released,
+        });
+        (ready, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_hop_offer_for_test(&self, attachment: u64) {
+        let gate = self
+            .hop_offer_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(attachment);
+            let _ = gate.release.await;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_hop_offered_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        *self
+            .hop_offered_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(HopOfferTestGate {
+            entered,
+            release: released,
+        });
+        (ready, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_hop_offered_for_test(&self, attachment: u64) {
+        let gate = self
+            .hop_offered_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(attachment);
+            let _ = gate.release.await;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_hop_selection_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        *self
+            .hop_selection_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(HopOfferTestGate {
+            entered,
+            release: released,
+        });
+        (ready, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_hop_selection_for_test(&self) {
+        let gate = self
+            .hop_selection_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(0);
+            let _ = gate.release.await;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_carried_close_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        tokio::sync::oneshot::Sender<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        *self
+            .carried_close_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(HopOfferTestGate {
+            entered,
+            release: released,
+        });
+        (ready, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_carried_close_for_test(&self) {
+        let gate = self
+            .carried_close_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(0);
+            let _ = gate.release.await;
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn observe_hop_looks_for_test(&self) -> tokio::sync::mpsc::UnboundedReceiver<u64> {
+        let (observed, ready) = tokio::sync::mpsc::unbounded_channel();
+        *self
+            .hop_look_observer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(observed);
+        ready
+    }
+
+    #[cfg(test)]
+    pub(crate) fn note_hop_look_for_test(&self, attachment: u64) {
+        if let Some(observed) = self
+            .hop_look_observer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+        {
+            let _ = observed.send(attachment);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_normal_release_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let (reviewed, completed) = tokio::sync::oneshot::channel();
+        *self
+            .normal_release_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(PendingCarrierTestGate {
+            entered,
+            release: released,
+            reviewed,
+        });
+        (ready, release, completed)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_normal_release_for_test(
+        &self,
+        attachment: u64,
+    ) -> Option<tokio::sync::oneshot::Sender<()>> {
+        let gate = self
+            .normal_release_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(attachment);
+            let _ = gate.release.await;
+            Some(gate.reviewed)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_pending_drop_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        std::sync::mpsc::Sender<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *self
+            .pending_drop_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(PendingDropTestGate {
+            entered,
+            release: released,
+        });
+        (ready, release)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn hold_pending_drop_for_test(&self, attachment: u64) {
+        let gate = self
+            .pending_drop_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(attachment);
+            // Drop cannot await. The test owns this sender, so an unwind
+            // disconnects it and releases this one worker too.
+            let _ = gate.release.recv();
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn gate_pending_carrier_for_test(
+        &self,
+    ) -> (
+        tokio::sync::oneshot::Receiver<u64>,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let (reviewed, completed) = tokio::sync::oneshot::channel();
+        *self
+            .pending_carrier_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(PendingCarrierTestGate {
+            entered,
+            release: released,
+            reviewed,
+        });
+        (ready, release, completed)
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn hold_pending_carrier_for_test(
+        &self,
+        attachment: u64,
+    ) -> Option<tokio::sync::oneshot::Sender<()>> {
+        let gate = self
+            .pending_carrier_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(attachment);
+            let _ = gate.release.await;
+            Some(gate.reviewed)
+        } else {
+            None
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn observe_early_dial_for_test(&self) -> tokio::sync::oneshot::Receiver<bool> {
+        let (observed, ready) = tokio::sync::oneshot::channel();
+        *self
+            .early_dial_observer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(observed);
+        ready
+    }
+
+    #[cfg(test)]
+    pub(crate) fn note_early_dial_for_test(&self, accepted: bool) {
+        let observed = self
+            .early_dial_observer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(observed) = observed {
+            let _ = observed.send(accepted);
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn observe_early_failure_for_test(&self) -> tokio::sync::oneshot::Receiver<String> {
+        let (observed, ready) = tokio::sync::oneshot::channel();
+        *self
+            .early_failure_observer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(observed);
+        ready
+    }
+
+    #[cfg(test)]
+    pub(crate) fn note_early_failure_for_test(&self, why: String) {
+        let observed = self
+            .early_failure_observer
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(observed) = observed {
+            let _ = observed.send(why);
+        }
+    }
+
     /// A freshly dialled wire becomes the one this key holds.
     pub(crate) fn adopt(&self, id: &str, proto: Proto, conn: Connection) {
-        self.back(id);
         let now = Instant::now();
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let slot = slots.entry((id.to_owned(), proto)).or_default();
+        slot.probe = None;
         if let Some(old) = slot.conn.take()
             && old.stable_id() != conn.stable_id()
         {
@@ -703,6 +1287,8 @@ impl Wires {
         slot.since = Some(now);
         slot.conn = Some(conn);
         self.counts.dialed.fetch_add(1, Relaxed);
+        drop(slots);
+        self.back(id);
     }
 
     /// A dial for this key failed: the pump waits before the next one.
@@ -781,11 +1367,142 @@ impl Wires {
                 .as_ref()
                 .is_some_and(|c| c.stable_id() == conn.stable_id())
         {
+            slot.probe = None;
             slot.rx = heard_count(conn);
             slot.heard = Some(Instant::now());
         }
         drop(slots);
         self.back(id);
+    }
+
+    /// Start or join one confirmation of a quiet held wire. Only its own
+    /// datagrams and this probe's grace decide retirement, never a caller's
+    /// deadline. Returns false for a connection this table does not hold.
+    pub(crate) fn probe_unheard(
+        self: &Arc<Self>,
+        id: &str,
+        proto: Proto,
+        conn: &Connection,
+        runtime: &tokio::runtime::Handle,
+    ) -> bool {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(slot) = slots.get_mut(&(id.to_owned(), proto)) else {
+            return false;
+        };
+        if slot
+            .conn
+            .as_ref()
+            .is_none_or(|held| held.stable_id() != conn.stable_id())
+            || conn.close_reason().is_some()
+        {
+            return false;
+        }
+        let count = heard_count(conn);
+        if slot
+            .probe
+            .as_ref()
+            .is_some_and(|probe| probe.count == count && !probe.task.is_finished())
+        {
+            return true;
+        }
+        slot.probe = None;
+        // The confirmation starts at this receive count. A later tick must
+        // not mistake an older, previously unsampled ACK for its answer.
+        slot.rx = count;
+        let by = tokio::time::Instant::now() + ask_every_path(conn);
+        let owner = Arc::downgrade(self);
+        let connection = conn.weak_handle();
+        let id = id.to_owned();
+        let task = runtime.spawn(async move {
+            tokio::time::sleep_until(by).await;
+            // Let already-ready transport work run before judging its count.
+            tokio::task::yield_now().await;
+            if let (Some(owner), Some(conn)) = (owner.upgrade(), connection.upgrade()) {
+                owner.finish_probe(&id, proto, &conn, count, by);
+            }
+        });
+        slot.probe = Some(QuietProbe { count, by, task });
+        true
+    }
+
+    fn finish_probe(
+        &self,
+        id: &str,
+        proto: Proto,
+        conn: &Connection,
+        count: u64,
+        by: tokio::time::Instant,
+    ) {
+        let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
+        let Some(slot) = slots.get_mut(&(id.to_owned(), proto)) else {
+            return;
+        };
+        if slot
+            .conn
+            .as_ref()
+            .is_none_or(|held| held.stable_id() != conn.stable_id())
+            || !slot
+                .probe
+                .as_ref()
+                .is_some_and(|probe| probe.count == count && probe.by == by)
+        {
+            return;
+        }
+        if conn.close_reason().is_some() {
+            slot.probe = None;
+            return;
+        }
+        let seen = heard_count(conn);
+        if seen != count {
+            slot.probe = None;
+            slot.rx = seen;
+            slot.heard = Some(Instant::now());
+            drop(slots);
+            self.back(id);
+            return;
+        }
+        self.retire_slot(id, proto, slot, Retired::Unanswered);
+        drop(slots);
+        self.after_retirement(id, Retired::Unanswered);
+    }
+
+    fn retire_slot(&self, id: &str, proto: Proto, slot: &mut Slot, why: Retired) {
+        self.drop_noted(id, proto, slot, why);
+        if why == Retired::Unanswered {
+            slot.unanswered_total += 1;
+            slot.last_failure = Some((
+                khor_catalog::msg::wire_unanswered().to_owned(),
+                Instant::now(),
+            ));
+            // Commit failure before releasing the slot. A replacement
+            // adopted next clears it after publishing its own connection.
+            self.went_down(id);
+        }
+        if why == Retired::Asleep {
+            // Commit under the old slot's ownership. A later adoption
+            // publishes its replacement before clearing this old state.
+            self.asleep(id);
+        }
+        self.counts.retired(why);
+    }
+
+    fn after_retirement(&self, id: &str, why: Retired) {
+        if matches!(why, Retired::Unanswered | Retired::Silent) {
+            self.let_go_served_by(id, why);
+        }
+    }
+
+    #[cfg(test)]
+    fn hold_retirement_for_test(&self) {
+        let gate = self
+            .retirement_test_gate
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .take();
+        if let Some(gate) = gate {
+            let _ = gate.entered.send(());
+            let _ = gate.release.recv();
+        }
     }
 
     /// Retires `conn` if it is still the wire this key holds: closed,
@@ -802,25 +1519,11 @@ impl Wires {
         {
             return false;
         }
-        self.drop_noted(id, proto, slot, why);
-        if why == Retired::Unanswered {
-            slot.unanswered_total += 1;
-            slot.last_failure = Some((
-                khor_catalog::msg::wire_unanswered().to_owned(),
-                Instant::now(),
-            ));
-        }
-        self.counts.retired(why);
+        self.retire_slot(id, proto, slot, why);
         drop(slots);
-        if why == Retired::Unanswered {
-            self.went_down(id);
-        }
-        if why == Retired::Asleep {
-            self.asleep(id);
-        }
-        if matches!(why, Retired::Unanswered | Retired::Silent) {
-            self.let_go_served_by(id, why);
-        }
+        #[cfg(test)]
+        self.hold_retirement_for_test();
+        self.after_retirement(id, why);
         true
     }
 
@@ -992,10 +1695,12 @@ impl Wires {
             }
         }
         if !kept {
-            self.gone
+            self.presence
                 .lock()
                 .unwrap_or_else(|p| p.into_inner())
-                .insert(id.to_owned(), now);
+                .entry(id.to_owned())
+                .or_default()
+                .gone = Some(now);
         }
         if any {
             self.let_go_served_by(id, Retired::Departed);
@@ -1009,10 +1714,11 @@ impl Wires {
     /// forgotten when [`LEFT_ALONE_FOR`] runs out: the pump's next failure
     /// to it waits the longest ([`Self::wait_after`]).
     pub(crate) fn gone_lately(&self, id: &str) -> bool {
-        self.gone
+        self.presence
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .get(id)
+            .and_then(|p| p.gone)
             .is_some_and(|at| at.elapsed() < GONE_FOR)
     }
 
@@ -1023,30 +1729,55 @@ impl Wires {
     /// connection clears the word ([`Self::serving`]) and is answered with
     /// a round at once.
     pub(crate) fn asleep(&self, id: &str) {
-        self.gone
+        self.presence
             .lock()
             .unwrap_or_else(|p| p.into_inner())
-            .insert(id.to_owned(), Instant::now());
+            .entry(id.to_owned())
+            .or_default()
+            .gone = Some(Instant::now());
+    }
+
+    /// The positive contact known when a dial starts. This is not a
+    /// network/address epoch and does not change a caller's deadline.
+    pub(crate) fn contact_version(&self, id: &str) -> u64 {
+        self.presence
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(id)
+            .map_or(0, |p| p.contact)
+    }
+
+    /// A dial's resting answer applies only if this peer has not been
+    /// heard since it began. Check and publish under the same lock as back.
+    pub(crate) fn asleep_if_unchanged(&self, id: &str, contact: u64) {
+        let mut presence = self.presence.lock().unwrap_or_else(|p| p.into_inner());
+        let peer = presence.entry(id.to_owned()).or_default();
+        if peer.contact == contact {
+            peer.gone = Some(Instant::now());
+        }
     }
 
     /// Whether the pump should leave this machine alone because its relay
     /// said it left and nothing has been heard from it since
     /// ([`LEFT_ALONE_FOR`]).
     pub(crate) fn left_alone(&self, id: &str) -> bool {
-        self.gone
+        self.presence
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .get(id)
+            .and_then(|p| p.gone)
             .is_some_and(|at| at.elapsed() < LEFT_ALONE_FOR)
     }
 
     /// Heard from: whatever a relay said about it is old news, and so is
     /// an attempt that failed to reach it.
     fn back(&self, id: &str) {
-        self.gone
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .remove(id);
+        {
+            let mut presence = self.presence.lock().unwrap_or_else(|p| p.into_inner());
+            let peer = presence.entry(id.to_owned()).or_default();
+            peer.gone = None;
+            peer.contact = peer.contact.wrapping_add(1);
+        }
         self.down
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -1124,9 +1855,42 @@ impl Wires {
         n
     }
 
+    /// A weak token dies when this network's routing waits are forgiven;
+    /// it neither holds this Wires alive nor creates a timer or task.
+    pub(crate) fn hop_epoch(&self) -> std::sync::Weak<()> {
+        Arc::downgrade(
+            &self
+                .hop_generation
+                .lock()
+                .unwrap_or_else(|p| p.into_inner()),
+        )
+    }
+
+    /// A synchronous publication either belongs to this network or does
+    /// not happen. Network forgiveness cannot split its check and commit.
+    /// The callback must not reenter the network-generation methods.
+    pub(crate) fn with_hop_epoch<T>(
+        &self,
+        epoch: &std::sync::Weak<()>,
+        commit: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let current = self
+            .hop_generation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        if !epoch.ptr_eq(&Arc::downgrade(&current)) {
+            return None;
+        }
+        Some(commit())
+    }
+
     /// Every wait the pump was keeping is forgiven: the dials that failed
     /// may have failed on the old network.
     pub(crate) fn forgive_all(&self) {
+        *self
+            .hop_generation
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Arc::new(());
         for slot in self
             .slots
             .lock()
@@ -1254,11 +2018,23 @@ impl Wires {
             }
             let rx = heard_count(&conn);
             if rx != slot.rx {
+                slot.probe = None;
                 slot.rx = rx;
                 slot.heard = Some(now);
                 heard.push(id.clone());
             }
             slot.measured(rtt_of(&conn));
+            // An in-progress confirmation owns the current quiet epoch.
+            // Fresh reception above cancels it; otherwise its own grace,
+            // rather than a concurrent silence/change deadline, decides.
+            if slot
+                .probe
+                .as_ref()
+                .is_some_and(|probe| !probe.task.is_finished())
+            {
+                settle(slot, road_now(&conn));
+                continue;
+            }
             let quiet = slot
                 .heard
                 .map_or(Duration::MAX, |h| now.saturating_duration_since(h));
@@ -1294,11 +2070,13 @@ impl Wires {
             settle(slot, road_now(&conn));
         }
         drop(slots);
-        for id in heard {
-            self.back(&id);
-        }
         for id in resting {
             self.asleep(&id);
+        }
+        // A live connection's fresh reception outranks a different
+        // connection's delayed resting close observed in the same tick.
+        for id in heard {
+            self.back(&id);
         }
         for id in dead {
             self.let_go_served_by(&id, Retired::Silent);
@@ -1462,6 +2240,7 @@ fn heard_lately(heard: Option<Instant>, rtt: Duration, now: Instant) -> bool {
 }
 
 fn drop_wire(slot: &mut Slot, why: Retired) {
+    slot.probe = None;
     if let Some(conn) = slot.conn.take() {
         let (tx, rx) = bytes_of(&conn);
         slot.bytes_past.0 += tx;
@@ -1490,7 +2269,187 @@ impl Slot {
 }
 
 #[cfg(test)]
+#[path = "wires/wake_epoch_tests.rs"]
+mod tests_wake_epoch;
+
+#[cfg(test)]
+#[path = "wires/retirement_epoch_tests.rs"]
+mod tests_retirement_epoch;
+
+#[cfg(test)]
 mod tests {
+    /// A carrier belongs to the peer, while measurements belong to each
+    /// connection. A direct outgoing wire cannot release the stream under
+    /// an incoming wire that still uses it. Two endpoints with the same
+    /// remote key, one loopback-only and one carried-only, make those two
+    /// live routes deterministic without fabricated path measurements.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_shared_carrier_is_kept_for_a_live_incoming_connection() {
+        use iroh::endpoint::presets;
+        use iroh::{Endpoint, EndpointAddr, RelayMode, SecretKey};
+        use khor_net::carry::{Carrier, Links, RoadOrder, transport_addr};
+
+        const ALPN: &[u8] = b"khor/shared-carrier-test";
+        let (ka, kb) = (SecretKey::generate(), SecretKey::generate());
+        let (aid, bid) = (ka.public(), kb.public());
+        let (la, lb) = (Links::new(aid), Links::new(bid));
+        let a = Endpoint::builder(presets::Minimal)
+            .secret_key(ka)
+            .relay_mode(RelayMode::Disabled)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+            .add_custom_transport(la.transport())
+            .path_selector(Arc::new(RoadOrder::default()))
+            .alpns(vec![ALPN.to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let direct = Endpoint::builder(presets::Minimal)
+            .secret_key(kb.clone())
+            .relay_mode(RelayMode::Disabled)
+            .clear_ip_transports()
+            .bind_addr("127.0.0.1:0")
+            .unwrap()
+            .alpns(vec![ALPN.to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let (outgoing, direct_incoming) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(
+                async { a.connect(direct.addr(), ALPN).await.unwrap() },
+                async { direct.accept().await.unwrap().await.unwrap() },
+            )
+        })
+        .await
+        .expect("the first wire is a real loopback connection");
+
+        let carried = Endpoint::builder(presets::Minimal)
+            .secret_key(kb)
+            .relay_mode(RelayMode::Disabled)
+            .clear_ip_transports()
+            .add_custom_transport(lb.transport())
+            .path_selector(Arc::new(RoadOrder::default()))
+            .alpns(vec![ALPN.to_vec()])
+            .bind()
+            .await
+            .unwrap();
+        let (near, far) = tokio::io::duplex(1 << 20);
+        let (nr, nw) = tokio::io::split(near);
+        let (fr, fw) = tokio::io::split(far);
+        let _near = la.attach(bid, Carrier::Ssh, nr, nw);
+        let _far = lb.attach(aid, Carrier::Ssh, fr, fw);
+        let (carried_outgoing, incoming) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(
+                async {
+                    carried
+                        .connect(EndpointAddr::from_parts(aid, [transport_addr(&aid)]), ALPN)
+                        .await
+                        .unwrap()
+                },
+                async { a.accept().await.unwrap().await.unwrap() },
+            )
+        })
+        .await
+        .expect("the second wire really crosses the shared carrier");
+
+        async fn echo(client: &Connection, server: &Connection) {
+            tokio::time::timeout(Duration::from_secs(5), async {
+                tokio::join!(
+                    async {
+                        let (mut tx, mut rx) = client.open_bi().await.unwrap();
+                        tx.write_all(b"ping").await.unwrap();
+                        tx.finish().unwrap();
+                        assert_eq!(rx.read_to_end(4).await.unwrap(), b"ping");
+                    },
+                    async {
+                        let (mut tx, mut rx) = server.accept_bi().await.unwrap();
+                        let bytes = rx.read_to_end(4).await.unwrap();
+                        tx.write_all(&bytes).await.unwrap();
+                        tx.finish().unwrap();
+                    },
+                )
+            })
+            .await
+            .expect("both independent connections answer real bytes");
+        }
+        echo(&outgoing, &direct_incoming).await;
+        echo(&carried_outgoing, &incoming).await;
+        // The peer has a common selected tuple, but each connection has
+        // its own open paths. record_selected leaves no selected marker
+        // on an incoming connection that lacks the common tuple. Prove
+        // the actual carried-only road at both ends, including the
+        // client's selection, rather than requiring that server marker.
+        let facts = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let direct = khor_net::path::path_facts(&outgoing);
+                let server = khor_net::path::path_facts(&incoming);
+                let client = khor_net::path::path_facts(&carried_outgoing);
+                if direct.iter().any(|p| p.selected && !p.carried)
+                    && !server.is_empty()
+                    && server.iter().all(|p| p.carried)
+                    && client.iter().any(|p| p.selected && p.carried)
+                    && client.iter().all(|p| p.carried)
+                {
+                    return (direct, server, client);
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap_or_else(|_| {
+            panic!(
+                "real path prerequisites: outgoing={:?}, incoming={:?}, carried client={:?}",
+                khor_net::path::path_facts(&outgoing),
+                khor_net::path::path_facts(&incoming),
+                khor_net::path::path_facts(&carried_outgoing),
+            )
+        });
+        let (direct_facts, carried_facts, client_facts) = facts;
+        eprintln!(
+            "[shared-carrier-fixture] {}",
+            serde_json::json!({
+                "revision": "real_connections_v2", "wire": outgoing.stable_id(),
+                "incoming_wire": incoming.stable_id(), "direct": &direct_facts,
+                "incoming": &carried_facts, "carried_client": &client_facts,
+            })
+        );
+        assert!(outgoing.close_reason().is_none() && incoming.close_reason().is_none());
+        assert_eq!(outgoing.remote_id(), incoming.remote_id());
+        assert_ne!(outgoing.stable_id(), incoming.stable_id());
+
+        let wires = Wires::default();
+        let id = bid.to_string();
+        wires.adopt(&id, Proto::Main, outgoing.clone());
+        assert_eq!(
+            wires.compare_carrier(&id),
+            CarrierComparison::Unused,
+            "the sole direct wire needs no carrier"
+        );
+        wires.serving(&incoming);
+        let release_live = wires.compare_carrier(&id);
+        incoming.close(0u32.into(), b"test done");
+        assert!(incoming.close_reason().is_some());
+        let release_closed = wires.compare_carrier(&id);
+        outgoing.close(0u32.into(), b"test done");
+        carried_outgoing.close(0u32.into(), b"test done");
+        direct_incoming.close(0u32.into(), b"test done");
+        a.close().await;
+        direct.close().await;
+        carried.close().await;
+
+        assert_eq!(
+            release_closed,
+            CarrierComparison::Unused,
+            "a closed incoming wire holds no carrier"
+        );
+        assert_eq!(
+            release_live,
+            CarrierComparison::Needed,
+            "a live incoming wire still uses the peer's carrier: outgoing={direct_facts:?}, incoming={carried_facts:?}"
+        );
+    }
+
     /// flap: a wire's first seconds show no round trip — its handshake's,
     /// over a relay that was reconnecting, read 14632 ms on a 50 ms road.
     #[test]
@@ -1763,3 +2722,7 @@ mod tests {
         assert!(!w.out_of_reach("y"), "heard from since");
     }
 }
+
+#[cfg(test)]
+#[path = "wires/incoming_freshness_tests.rs"]
+mod tests_freshness;

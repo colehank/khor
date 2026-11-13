@@ -7,11 +7,16 @@ edition.workspace = true
 name = "khor"
 path = "src/main.rs"
 
+[features]
+# Opt-in lab logging; normal hosts do not install a tracing subscriber.
+net-diagnostics = ["dep:tracing-subscriber"]
+
 [dependencies]
 khor-commands = { path = "../commands" }
 khor-catalog.workspace = true
 # Native hosts supply the web listener to the shared command engine.
 khor-web = { path = "../web" }
+tracing-subscriber = { version = "=0.3.23", features = ["env-filter"], optional = true }
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true

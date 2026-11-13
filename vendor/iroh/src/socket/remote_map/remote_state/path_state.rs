@@ -178,6 +178,21 @@ impl RemotePathState {
         self.emit_pending_resolve_requests(result.err());
     }
 
+    /// Discard old IP hints before a cold retry, preserving newer sources.
+    pub(super) fn discard_ip_hints_before(&mut self, before: Instant) -> usize {
+        let count = self.paths.len();
+        let metrics = self.metrics.clone();
+        self.paths.retain(|addr, state| {
+            let stale = matches!(addr, transports::Addr::Ip(_))
+                && state.sources.values().all(|at| *at <= before);
+            if stale && matches!(state.status, PathStatus::Open) {
+                metrics.transport_ip_paths_removed.inc();
+            }
+            !stale
+        });
+        count - self.paths.len()
+    }
+
     /// Returns an iterator over the addresses of all paths.
     pub(super) fn addrs(&self) -> impl Iterator<Item = &transports::Addr> {
         self.paths.keys()
@@ -689,3 +704,7 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "cold_hint_tests.rs"]
+mod cold_hint_tests;

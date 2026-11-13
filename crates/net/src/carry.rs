@@ -17,11 +17,10 @@
 //! so a frame carries no address. Everything is a datagram network to
 //! QUIC: a full queue drops, never blocks (`spike: no frame dropped`).
 //!
-//! **The selector** ([`RoadOrder`]): direct whenever it is open, else the
-//! faster of a carried road and the relay by at least
-//! [`SWITCH_MARGIN`] (NET-DIRECT step 4). iroh's own selector puts a
-//! custom path level with direct and moves on a few milliseconds
-//! (audit/road-spike.md, "mixed endpoint").
+//! **The selector** ([`RoadOrder`]): the measured fastest answering road,
+//! regardless of transport. A move must beat [`switch_margin`], and iroh
+//! confirms it with fresh samples. Transport kind describes a road; it
+//! does not rank it above a faster road (feat/net, 2026-11-09).
 //!
 //! ⚠️ The API is iroh's `unstable-custom-transports`. We vendor iroh, so it
 //! changes only when we re-vendor; re-vendoring must re-run the spike.
@@ -85,6 +84,8 @@ struct Link {
     out: mpsc::Sender<Bytes>,
     carrier: Carrier,
     serial: u64,
+    /// Dropping this attachment stops its I/O, including a blocked flush.
+    _stop: oneshot::Sender<()>,
 }
 
 #[derive(Debug)]
@@ -110,12 +111,43 @@ pub struct Links(Arc<Inner>);
 /// Ends when its link does: the far end hung up, the stream broke, or a
 /// newer link to the same machine took its place.
 #[derive(Debug)]
-pub struct Attached(oneshot::Receiver<()>);
+pub struct Attached {
+    serial: u64,
+    ended: oneshot::Receiver<()>,
+}
 
 impl Attached {
-    pub async fn ended(self) {
-        let _ = self.0.await;
+    /// Attachment identity within the Links table that created it.
+    pub fn serial(&self) -> u64 {
+        self.serial
     }
+
+    pub async fn ended(self) {
+        let _ = self.ended.await;
+    }
+}
+
+/// Opt-in lifecycle facts for isolated network diagnosis. Values are built
+/// only when the same diagnostic switch as the native entry point is set.
+/// This does not change the connection journal or its human-facing words.
+pub fn observe_lifecycle(
+    peer: impl std::fmt::Display,
+    phase: &str,
+    details: impl FnOnce() -> serde_json::Value,
+) {
+    if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_none() {
+        return;
+    }
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    eprintln!(
+        "[khor-carried-lifecycle] {}",
+        serde_json::json!({
+            "schema": 1, "at": at, "pid": std::process::id(),
+            "peer": peer.to_string(), "phase": phase, "details": details(),
+        })
+    );
 }
 
 impl Links {
@@ -174,10 +206,30 @@ impl Links {
     /// queue closes, so its writer and then its task end. A newer link of
     /// another kind is left alone.
     pub fn detach(&self, peer: &EndpointId, carrier: Carrier) {
+        self.detach_matching(peer, carrier, None);
+    }
+
+    /// Ends only the attachment this owner created. A later stream of the
+    /// same kind, even through the same middle, belongs to its new owner.
+    /// Returns whether the current link was removed.
+    pub fn detach_attached(&self, peer: &EndpointId, carrier: Carrier, serial: u64) -> bool {
+        self.detach_matching(peer, carrier, Some(serial))
+    }
+
+    fn detach_matching(&self, peer: &EndpointId, carrier: Carrier, serial: Option<u64>) -> bool {
         let mut map = self.lock();
-        if map.get(peer).is_some_and(|l| l.carrier == carrier) {
-            map.remove(peer);
+        if !map.get(peer).is_some_and(|l| {
+            l.carrier == carrier && serial.is_none_or(|expected| l.serial == expected)
+        }) {
+            return false;
         }
+        observe_lifecycle(peer, "link_detached", || {
+            serde_json::json!({
+                "serial": map.get(peer).map(|l| l.serial), "carrier": format!("{carrier:?}"),
+            })
+        });
+        map.remove(peer);
+        true
     }
 
     /// Frames dropped on a full queue since this table was made.
@@ -190,42 +242,92 @@ impl Links {
     }
 
     /// **Makes `r`/`w` the link to `peer`**, replacing any link to it. Runs
-    /// on its own task until either half ends.
+    /// on its own task until either half ends or this attachment is removed.
     pub fn attach<R, W>(&self, peer: EndpointId, carrier: Carrier, r: R, w: W) -> Attached
     where
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
-        let (out, out_rx) = mpsc::channel::<Bytes>(QUEUE);
-        let serial = self.0.serial.fetch_add(1, Relaxed);
-        self.lock().insert(
-            peer,
-            Link {
-                out,
-                carrier,
-                serial,
-            },
-        );
-        self.0
-            .last
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
-            .insert(peer, carrier);
+        self.attach_if(peer, carrier, r, w, |_| true)
+            .expect("unconditional attachment")
+    }
+
+    /// Checks the current carrier and replaces it under the same registry
+    /// lock. A rejected stream is dropped without changing the live owner.
+    /// `allow` must not reenter this Links table.
+    pub fn attach_if<R, W>(
+        &self,
+        peer: EndpointId,
+        carrier: Carrier,
+        r: R,
+        w: W,
+        allow: impl FnOnce(Option<Carrier>) -> bool,
+    ) -> Option<Attached>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
+        let (out_rx, stopped, serial) = {
+            let mut map = self.lock();
+            if !allow(map.get(&peer).map(|link| link.carrier)) {
+                return None;
+            }
+            let (out, out_rx) = mpsc::channel::<Bytes>(QUEUE);
+            let (stop, stopped) = oneshot::channel();
+            let serial = self.0.serial.fetch_add(1, Relaxed);
+            observe_lifecycle(peer, "link_attached", || {
+                serde_json::json!({
+                    "serial": serial, "carrier": format!("{carrier:?}"),
+                })
+            });
+            let previous_serial = map.get(&peer).map(|l| l.serial);
+            map.insert(
+                peer,
+                Link {
+                    out,
+                    carrier,
+                    serial,
+                    _stop: stop,
+                },
+            );
+            observe_lifecycle(peer, "link_attachment_committed", || {
+                serde_json::json!({
+                    "serial": serial, "previous_serial": previous_serial,
+                    "carrier": format!("{carrier:?}"),
+                })
+            });
+            self.0
+                .last
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(peer, carrier);
+            (out_rx, stopped, serial)
+        };
         let (done, gone) = oneshot::channel();
         let links = self.clone();
         tokio::spawn(async move {
-            tokio::select! {
-                () = write_frames(out_rx, w) => {}
-                () = links.read_frames(peer, r) => {}
-            }
+            let ended = tokio::select! {
+                () = write_frames(out_rx, w) => "writer_ended",
+                () = links.read_frames(peer, r) => "reader_ended",
+                _ = stopped => "attachment_removed",
+            };
             let mut map = links.lock();
+            observe_lifecycle(peer, "link_io_ended", || {
+                serde_json::json!({
+                    "serial": serial, "current_serial": map.get(&peer).map(|l| l.serial),
+                    "carrier": format!("{carrier:?}"), "side": ended,
+                })
+            });
             if map.get(&peer).is_some_and(|l| l.serial == serial) {
                 map.remove(&peer);
             }
             drop(map);
             let _ = done.send(());
         });
-        Attached(gone)
+        Some(Attached {
+            serial,
+            ended: gone,
+        })
     }
 
     async fn read_frames<R: AsyncRead + Unpin>(&self, peer: EndpointId, mut r: R) {
@@ -372,7 +474,8 @@ impl CustomSender for Links {
     }
 }
 
-/// A path's place in the owner's order. Lower is preferred.
+/// A path's transport, used for reporting and spare-path management.
+/// Selection compares measurements, not this enum's declaration order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tier {
     Direct,
@@ -390,40 +493,24 @@ impl Tier {
     }
 }
 
-/// Within the direct tier, the margin a path must beat the one in use by
-/// before the selection moves (iroh's own `RTT_SWITCHING_MIN`), or a
-/// quarter of the one in use's round trip if that is more ([`direct_margin`]).
-const DIRECT_MARGIN: Duration = Duration::from_millis(5);
+/// The absolute eligibility floor. Moving between live paths additionally
+/// requires iroh's independent fresh-sample confirmation.
+const PATH_MARGIN: Duration = Duration::from_millis(5);
 
-/// **How long a move between direct paths holds** (2026-10-21, net-flap):
-/// for this long after the selection moved, while the path in use answers,
-/// the other must beat it by twice the margin, or half its round trip
-/// ([`direct_margin`]). The machines' two LAN roads (0–1 ms) traded places
-/// 230–330 times a day, one every 22–60 s, most of them within 5 s of the
-/// 30 s sync: the sync's burst lifts the road in use to 5–8 ms while the
-/// other, idle, reads 1, the burst moves with the connection, and 30 s
-/// later the same again. A road that really slowed (netlab p2: 1 → 21 ms)
-/// still moves at once.
-pub const DIRECT_DWELL: Duration = Duration::from_secs(60);
+/// For one minute after a move, require at least 10 ms of gain. This
+/// suppresses the 1 -> 8 ms LAN burst oscillation without making a large
+/// improvement on a high-RTT road wait for the dwell to expire.
+pub const PATH_DWELL: Duration = Duration::from_secs(60);
 
-/// **The margin a direct path must beat the direct one in use by**, whose
-/// round trip is `rtt`: [`DIRECT_MARGIN`] or a quarter of `rtt`, whichever
-/// is more; within [`DIRECT_DWELL`] of the last move (`settling`), twice
-/// that margin or half of `rtt`.
-pub fn direct_margin(rtt: Duration, settling: bool) -> Duration {
+/// The same absolute eligibility floor for every transport. During
+/// settling it doubles; confidence belongs to fresh-sample confirmation.
+pub fn switch_margin(_rtt: Duration, settling: bool) -> Duration {
     if settling {
-        (DIRECT_MARGIN * 2).max(rtt / 2)
+        PATH_MARGIN * 2
     } else {
-        DIRECT_MARGIN.max(rtt / 4)
+        PATH_MARGIN
     }
 }
-
-/// **Between a carried road and the relay, the margin the faster must
-/// beat the one in use by** (NET-DIRECT step 4, the owner 2026-10-09:
-/// 「可以，一定要把iroh用好呀」 on Tailscale's peer-relay rule): the
-/// lowest round trip carries the connection, and noise of a few ms moves
-/// nothing.
-pub const SWITCH_MARGIN: Duration = Duration::from_millis(10);
 
 /// **Whether a second direct path is kept open beside the one in use**
 /// (vendor/iroh/KHOR.md patch 18), as a spare to move to the moment the
@@ -469,18 +556,16 @@ impl Spare {
     }
 }
 
-/// **khor's path selector** (round ROAD-2, rule of NET-DIRECT step 4):
-/// direct whenever a direct path is open (iroh's hole punch keeps going
-/// under every other road); otherwise the carried road or the relay,
-/// whichever has the lower measured round trip, moving only when the
-/// other beats the one in use by [`SWITCH_MARGIN`]. A carried road through
-/// a middle machine is measured end to end — its two legs and the middle.
+/// **khor's path selector**: the answering path with the lowest measured
+/// RTT, changing only past [`switch_margin`]. The measurement of a
+/// carried road includes both legs and the middle. Initial connection
+/// and later upgrades use the same transport-independent ordering.
 ///
 /// **A path that stopped answering is no candidate** (vendor/iroh patch
 /// 17, `PathSelectionData::answering`): two probe timeouts in a row with
 /// nothing acknowledged, on any connection it carries, its oldest packet
 /// unanswered for 300 ms or three probe timeouts. **Unless it is the
-/// direct path in use, and it stalled for less than the fastest other
+/// path in use, and it stalled for less than the fastest other
 /// road's round trip** (2026-10-21, net-flap): a packet sent on that road
 /// now would arrive no sooner than the answer the stalled one still owes.
 /// A 2 ms road whose ACK came 100 ms late went to the 500 ms relay and came
@@ -525,8 +610,8 @@ impl PathSelector for RoadOrder {
             let tier = Tier::of(p.network_path());
             let in_use = Some(p.network_path()) == ctx.current();
             if let Some(stall) = p.unanswered_for() {
-                if in_use && tier == Tier::Direct {
-                    stalled.push((p, stall, rtt));
+                if in_use {
+                    stalled.push((p, tier, stall, rtt));
                 }
                 continue;
             }
@@ -538,23 +623,23 @@ impl PathSelector for RoadOrder {
             }
             candidates.push((p, tier, rtt));
         }
-        // The direct path in use, stalled: held while the stall is shorter
+        // The path in use, stalled: held while the stall is shorter
         // than any other road's round trip.
         let fastest = candidates.iter().map(|(_, _, r)| *r).min();
-        if let Some(stall) = stalled.iter().map(|(_, s, _)| *s).max()
+        if let Some(stall) = stalled.iter().map(|(_, _, s, _)| *s).max()
             && rides_out(stall, fastest)
         {
-            for (p, _, rtt) in stalled {
+            for (p, tier, _, rtt) in stalled {
                 current = Some(match current {
                     Some((t, r)) if r <= rtt => (t, r),
-                    _ => (Tier::Direct, rtt),
+                    _ => (tier, rtt),
                 });
-                candidates.push((p, Tier::Direct, rtt));
+                candidates.push((p, tier, rtt));
             }
         }
         let ranked: Vec<(Tier, Duration)> = candidates.iter().map(|(_, t, r)| (*t, *r)).collect();
         let mut selection = PathSelection::none();
-        let settling = ctx.held_for().is_some_and(|held| held < DIRECT_DWELL);
+        let settling = ctx.held_for().is_some_and(|held| held < PATH_DWELL);
         let chosen = choose_settling(current, &ranked, settling);
         if let Some(i) = chosen {
             selection.set(&candidates[i].0);
@@ -587,7 +672,7 @@ impl PathSelector for RoadOrder {
     }
 }
 
-/// **Whether the direct path in use rides out a stall** of `stall` (how
+/// **Whether the path in use rides out a stall** of `stall` (how
 /// long its oldest unanswered packet has waited) rather than leave for the
 /// fastest other road, of round trip `fastest`: while the stall is shorter.
 pub fn rides_out(stall: Duration, fastest: Option<Duration>) -> bool {
@@ -598,7 +683,7 @@ pub fn rides_out(stall: Duration, fastest: Option<Duration>) -> bool {
 /// `rtt` in use: `others` are the candidates, each whether it is another
 /// direct path and its round trip; `held` the spare kept now, if it is
 /// among them. The one held stays while it qualifies and is no more than
-/// [`DIRECT_MARGIN`] behind the fastest that does (no trading places on
+/// [`PATH_MARGIN`] behind the fastest that does (no trading places on
 /// noise); otherwise the fastest that qualifies.
 pub fn spare(
     policy: Spare,
@@ -619,12 +704,20 @@ pub fn spare(
         .map(|(i, _)| i)?;
     match held {
         Some(h)
-            if others[h].0 && ok(others[h].1) && others[h].1 <= others[best].1 + DIRECT_MARGIN =>
+            if others[h].0 && ok(others[h].1) && others[h].1 <= others[best].1 + PATH_MARGIN =>
         {
             Some(h)
         }
         _ => Some(best),
     }
+}
+
+/// Whether a candidate improves on the current path enough to switch.
+/// Selection and carried-road cleanup share this rule so a watcher cannot
+/// remove a path the selector would use. Preparing a new middle pays its
+/// separate, existing cost hurdle.
+pub fn improves(candidate: Duration, current: Duration, settling: bool) -> bool {
+    candidate.saturating_add(switch_margin(current, settling)) <= current
 }
 
 /// The rule, apart from iroh's types: which candidate to move to, or
@@ -635,8 +728,8 @@ pub fn choose(current: Option<(Tier, Duration)>, candidates: &[(Tier, Duration)]
     choose_settling(current, candidates, false)
 }
 
-/// [`choose`], `settling` within [`DIRECT_DWELL`] of the last move: a move
-/// between direct paths then needs the larger margin ([`direct_margin`]).
+/// [`choose`], `settling` within [`PATH_DWELL`] of the last move: a move
+/// requires the settling noise floor ([`switch_margin`]).
 pub fn choose_settling(
     current: Option<(Tier, Duration)>,
     candidates: &[(Tier, Duration)],
@@ -645,23 +738,13 @@ pub fn choose_settling(
     let best = candidates
         .iter()
         .enumerate()
-        .min_by_key(|(_, (tier, rtt))| (*tier != Tier::Direct, *rtt))
+        .min_by_key(|(_, (_, rtt))| *rtt)
         .map(|(i, _)| i)?;
-    let (best_tier, best_rtt) = candidates[best];
-    let Some((tier, rtt)) = current else {
+    let (_, best_rtt) = candidates[best];
+    let Some((_, rtt)) = current else {
         return Some(best);
     };
-    match (tier, best_tier) {
-        // Up to direct at any time; within direct, only past the margin.
-        (Tier::Direct, Tier::Direct) => {
-            (best_rtt + direct_margin(rtt, settling) <= rtt).then_some(best)
-        }
-        (_, Tier::Direct) => Some(best),
-        // Off direct only when it broke, and then `current` is `None`.
-        (Tier::Direct, _) => None,
-        // A carried road and the relay: the faster, past the margin.
-        _ => (best_rtt + SWITCH_MARGIN <= rtt).then_some(best),
-    }
+    improves(best_rtt, rtt, settling).then_some(best)
 }
 
 #[cfg(test)]
@@ -670,14 +753,72 @@ mod tests {
 
     const MS: fn(u64) -> Duration = Duration::from_millis;
 
+    /// Product rule: a road's transport cannot overrule a large measured
+    /// improvement. Cover starting, leaving a live road and settling in
+    /// both directions for every transport pairing.
     #[test]
-    fn direct_first_then_the_faster_of_carried_and_relay() {
+    fn measured_speed_wins_for_every_transport_pair() {
+        let kinds = [Tier::Direct, Tier::Carried, Tier::Relay];
+        for slow in kinds {
+            for fast in kinds {
+                let roads = [(slow, MS(90)), (fast, MS(5))];
+                assert_eq!(choose(None, &roads), Some(1), "start: {roads:?}");
+                for settling in [false, true] {
+                    assert_eq!(
+                        choose_settling(Some(roads[0]), &roads, settling),
+                        Some(1),
+                        "leave slow: {roads:?}, settling {settling}"
+                    );
+                    assert_eq!(
+                        choose_settling(Some(roads[1]), &roads, settling),
+                        None,
+                        "hold fast: {roads:?}, settling {settling}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn settling_filters_noise_without_trapping_a_materially_slower_road() {
+        for kind in [Tier::Direct, Tier::Carried, Tier::Relay] {
+            let improved = [(kind, MS(500)), (Tier::Relay, MS(300))];
+            assert_eq!(
+                choose_settling(Some(improved[0]), &improved, true),
+                Some(1),
+                "40 percent faster is useful even just after a move"
+            );
+            let noise = [(kind, MS(8)), (Tier::Relay, MS(1))];
+            assert_eq!(
+                choose_settling(Some(noise[0]), &noise, true),
+                None,
+                "a 7 ms fluctuation does not restart settling"
+            );
+        }
+    }
+
+    #[test]
+    fn a_measured_twenty_percent_gain_can_enter_fresh_confirmation() {
+        for kind in [Tier::Direct, Tier::Carried, Tier::Relay] {
+            let roads = [(Tier::Relay, MS(131)), (kind, MS(104))];
+            for settling in [false, true] {
+                assert_eq!(
+                    choose_settling(Some(roads[0]), &roads, settling),
+                    Some(1),
+                    "a real 27 ms gain must reach the existing fresh-sample confirmation"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_fastest_measured_road_starts_the_connection() {
         let all = [
             (Tier::Relay, MS(5)),
             (Tier::Carried, MS(40)),
             (Tier::Direct, MS(90)),
         ];
-        assert_eq!(choose(None, &all), Some(2), "direct, however slow");
+        assert_eq!(choose(None, &all), Some(0), "the relay is fastest");
         assert_eq!(
             choose(None, &all[..2]),
             Some(0),
@@ -693,10 +834,10 @@ mod tests {
         assert_eq!(choose(None, &[]), None);
     }
 
-    /// NET-DIRECT step 4: the faster of a carried road and the relay, by
-    /// at least [`SWITCH_MARGIN`] — never on a few ms of noise.
+    /// Relative and absolute gain have the same meaning for relay and
+    /// carried roads as for direct roads.
     #[test]
-    fn a_carried_road_and_the_relay_trade_places_by_ten_ms() {
+    fn a_carried_road_and_the_relay_use_the_same_gain_margin() {
         let iphone_maclab = [(Tier::Relay, MS(58)), (Tier::Carried, MS(29))];
         assert_eq!(
             choose(Some((Tier::Relay, MS(58))), &iphone_maclab),
@@ -711,8 +852,8 @@ mod tests {
         let close = [(Tier::Relay, MS(30)), (Tier::Carried, MS(22))];
         assert_eq!(
             choose(Some((Tier::Relay, MS(30))), &close),
-            None,
-            "8 ms is not enough"
+            Some(1),
+            "8 ms on 30 ms exceeds the quarter-RTT margin"
         );
         assert_eq!(choose(Some((Tier::Carried, MS(22))), &close), None);
         let degraded = [(Tier::Relay, MS(30)), (Tier::Carried, MS(90))];
@@ -730,17 +871,17 @@ mod tests {
     }
 
     #[test]
-    fn direct_takes_over_at_any_time_and_is_left_only_when_it_breaks() {
+    fn a_live_direct_road_competes_by_measurement_in_both_directions() {
         let open = [(Tier::Carried, MS(40)), (Tier::Direct, MS(60))];
-        assert_eq!(choose(Some((Tier::Carried, MS(40))), &open), Some(1));
+        assert_eq!(choose(Some((Tier::Carried, MS(40))), &open), None);
         assert_eq!(
             choose(
                 Some((Tier::Relay, MS(40))),
                 &[(Tier::Relay, MS(40)), (Tier::Direct, MS(60))]
             ),
-            Some(1)
+            None
         );
-        assert_eq!(choose(Some((Tier::Direct, MS(60))), &open), None);
+        assert_eq!(choose(Some((Tier::Direct, MS(60))), &open), Some(0));
         let two = [(Tier::Direct, MS(60)), (Tier::Direct, MS(57))];
         assert_eq!(
             choose(Some((Tier::Direct, MS(60))), &two),
@@ -791,18 +932,18 @@ mod tests {
             Some(1),
             "p2: at once"
         );
-        assert_eq!(direct_margin(MS(1), false), MS(5));
+        assert_eq!(switch_margin(MS(1), false), MS(5));
         assert_eq!(
-            direct_margin(MS(60), false),
-            MS(15),
-            "a quarter of a slow road"
+            switch_margin(MS(60), false),
+            MS(5),
+            "eligibility does not repeat the live path confirmation barrier"
         );
-        assert_eq!(direct_margin(MS(60), true), MS(30));
+        assert_eq!(switch_margin(MS(60), true), MS(10));
         let far = [(Tier::Direct, MS(60)), (Tier::Direct, MS(48))];
         assert_eq!(
             choose(Some((Tier::Direct, MS(60))), &far),
-            None,
-            "12 ms on 60 is noise"
+            Some(1),
+            "a measured 12 ms gain can enter fresh confirmation"
         );
     }
 
@@ -860,6 +1001,134 @@ mod tests {
             "another transport's"
         );
         assert_eq!(id_of(&CustomAddr::from((CARRY, &[1u8, 2][..]))), None);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_rejected_carrier_keeps_the_protected_stream_and_its_owner() {
+        let links = Links::new(iroh::SecretKey::generate().public());
+        let peer = iroh::SecretKey::generate().public();
+        let via = iroh::SecretKey::generate().public();
+        let (here, mut remote) = tokio::io::duplex(64);
+        let (r, w) = tokio::io::split(here);
+        let original = links.attach(peer, Carrier::Ssh, r, w);
+        let (loser, mut rejected) = tokio::io::duplex(64);
+        let (r, w) = tokio::io::split(loser);
+        assert!(
+            links
+                .attach_if(peer, Carrier::Hop { via }, r, w, |current| {
+                    current != Some(Carrier::Ssh)
+                })
+                .is_none()
+        );
+        assert_eq!(links.lock().get(&peer).unwrap().serial, original.serial());
+        assert_eq!(links.last_carrier(&peer), Some(Carrier::Ssh));
+        let mut byte = [0; 1];
+        assert_eq!(rejected.read(&mut byte).await.unwrap(), 0);
+        links
+            .lock()
+            .get(&peer)
+            .unwrap()
+            .out
+            .try_send(Bytes::from_static(b"protected stream"))
+            .unwrap();
+        let mut bytes = [0; 16];
+        tokio::time::timeout(Duration::from_secs(1), remote.read_exact(&mut bytes))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(&bytes, b"protected stream");
+        assert!(links.detach_attached(&peer, Carrier::Ssh, original.serial()));
+        tokio::time::timeout(Duration::from_secs(1), original.ended())
+            .await
+            .unwrap();
+        let (next, next_remote) = tokio::io::duplex(64);
+        let (r, w) = tokio::io::split(next);
+        let accepted = links
+            .attach_if(peer, Carrier::Hop { via }, r, w, |current| {
+                current.is_none()
+            })
+            .unwrap();
+        assert_eq!(links.carrier(&peer), Some(Carrier::Hop { via }));
+        drop(next_remote);
+        tokio::time::timeout(Duration::from_secs(1), accepted.ended())
+            .await
+            .unwrap();
+    }
+
+    /// Detaching or replacing a link must stop its owned I/O even when
+    /// the peer does not drain an already-blocked write. The replacement
+    /// remains usable when the old task completes.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_blocked_carrier_stops_on_detach_or_replacement() {
+        let mut stopped_before_remote_closed = Vec::new();
+        for replace in [false, true] {
+            let links = Links::new(iroh::SecretKey::generate().public());
+            let peer = iroh::SecretKey::generate().public();
+            let via = iroh::SecretKey::generate().public();
+            let carrier = Carrier::Hop { via };
+            let (here, mut remote) = tokio::io::duplex(1);
+            let (r, w) = tokio::io::split(here);
+            let old = links.attach(peer, carrier, r, w);
+            let serial = old.serial();
+            links
+                .lock()
+                .get(&peer)
+                .unwrap()
+                .out
+                .try_send(Bytes::from_static(b"blocked carrier frame"))
+                .unwrap();
+            let mut byte = [0u8; 1];
+            tokio::time::timeout(Duration::from_secs(1), remote.read_exact(&mut byte))
+                .await
+                .expect("the real writer reached the one-byte pipe")
+                .unwrap();
+            assert_eq!(byte, [b'b']);
+            let replacement = if replace {
+                let (next, next_remote) = tokio::io::duplex(64);
+                let (r, w) = tokio::io::split(next);
+                let attached = links.attach(peer, carrier, r, w);
+                assert_ne!(serial, attached.serial());
+                Some((attached, next_remote))
+            } else {
+                assert!(links.detach_attached(&peer, carrier, serial));
+                None
+            };
+            let ended = old.ended();
+            tokio::pin!(ended);
+            let stopped = tokio::time::timeout(Duration::from_secs(1), &mut ended)
+                .await
+                .is_ok();
+            // Clean up the baseline's blocked task before asserting the
+            // failure; closing this peer must not be what makes it pass.
+            drop(remote);
+            if !stopped {
+                tokio::time::timeout(Duration::from_secs(1), &mut ended)
+                    .await
+                    .expect("baseline I/O ends after its blocked peer closes");
+            }
+            if let Some((attached, next_remote)) = replacement {
+                assert_eq!(links.carrier(&peer), Some(carrier));
+                assert!(
+                    links.has(&peer),
+                    "old completion cannot remove the replacement"
+                );
+                drop(next_remote);
+                tokio::time::timeout(Duration::from_secs(1), attached.ended())
+                    .await
+                    .expect("the healthy replacement has its own lifetime");
+            } else {
+                assert!(!links.has(&peer));
+            }
+            eprintln!(
+                "[carrier-blocked-owner-contract] replace={replace} old_serial={serial} blocked_write_seen=true stopped_before_remote_closed={stopped}"
+            );
+            stopped_before_remote_closed.push(stopped);
+        }
+        assert_eq!(
+            stopped_before_remote_closed,
+            vec![true, true],
+            "both detach and replacement stop the blocked old owner without the peer's help"
+        );
     }
 
     /// A hop whose link ended still reads as the hop until iroh leaves the

@@ -497,6 +497,7 @@ mod tests {
             label: label.map(str::to_owned),
             hosts: true,
             no_relay: false,
+            hop_staged: false,
             roads: Vec::new(),
             receive_dir: None,
             receive_at: None,

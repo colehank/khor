@@ -15,7 +15,7 @@ use std::{collections::BTreeSet, net::SocketAddr, pin::Pin, sync::Arc};
 
 #[cfg(not(wasm_browser))]
 use ipnet::{Ipv4Net, Ipv6Net};
-use iroh_base::{EndpointAddr, EndpointId, RelayUrl, SecretKey, TransportAddr};
+use iroh_base::{CustomAddr, EndpointAddr, EndpointId, RelayUrl, SecretKey, TransportAddr};
 use iroh_relay::{RelayConfig, RelayMap, tls::CaTlsConfig};
 #[cfg(not(wasm_browser))]
 use n0_error::bail;
@@ -23,7 +23,7 @@ use n0_error::{AnyError, e, ensure, stack_error};
 use n0_watcher::Watcher;
 use pin_project::pin_project;
 use tokio_util::sync::WaitForCancellationFutureOwned;
-use tracing::{Instrument, Span, debug, event, info_span, instrument, warn};
+use tracing::{Instrument, Span, debug, event, instrument, warn};
 use url::Url;
 
 #[cfg(feature = "unstable-custom-transports")]
@@ -51,8 +51,8 @@ use self::hooks::EndpointHooksList;
 pub use super::socket::{
     BindError, DirectAddr, DirectAddrType,
     remote_map::{
-        HolepunchRound, Path, PathEvent, PathEventStream, PathList, PathListIter,
-        PathListStream, RemoteInfo, TransportAddrInfo, TransportAddrUsage,
+        HolepunchRound, Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream,
+        PathMeasurement, RemoteInfo, TransportAddrInfo, TransportAddrUsage,
     },
     transports::LocalTransportAddr,
 };
@@ -109,11 +109,11 @@ pub use self::{
         FrameStats, FrameType, HandshakeTokenKey, HeaderKey, IdleTimeout, IncomingAlpns, Keys,
         MtuDiscoveryConfig, OpenBi, OpenUni, PacketKey, PathId, PathStats, QuicConnectError,
         QuicTransportConfig, QuicTransportConfigBuilder, ReadDatagram, ReadError, ReadExactError,
-        ReadToEndError, RecvStream, ResetError, RttEstimator, SendDatagram, SendDatagramError,
-        SendStream, ServerConfig, ServerConfigBuilder, Side, StoppedError, StreamId, TimeSource,
-        TokenLog, TokenReuseError, TransportError, TransportErrorCode, TransportParameters,
-        UdpStats, UnorderedRecvStream, UnsupportedVersion, ValidationTokenConfig, VarInt,
-        VarIntBoundsExceeded, WriteError,
+        ReadManyDatagrams, ReadToEndError, RecvStream, ResetError, RttEstimator, SendDatagram,
+        SendDatagramError, SendStream, ServerConfig, ServerConfigBuilder, Side, StoppedError,
+        StreamId, TimeSource, TokenLog, TokenReuseError, TransportError, TransportErrorCode,
+        TransportParameters, UdpStats, UnorderedRecvStream, UnsupportedVersion,
+        ValidationTokenConfig, VarInt, VarIntBoundsExceeded, WriteError,
     },
 };
 #[cfg(not(wasm_browser))]
@@ -224,21 +224,21 @@ impl Builder {
     // # The final constructor that everyone needs.
 
     /// Binds the endpoint.
+    #[instrument(name = "endpoint", skip_all, fields(id))]
     pub async fn bind(self) -> Result<Endpoint, BindError> {
         let secret_key = self.secret_key.unwrap_or_else(SecretKey::generate);
+        tracing::Span::current().record(
+            "id",
+            tracing::field::display(secret_key.public().fmt_short()),
+        );
 
         let crypto_provider = self
             .crypto_provider
             .ok_or_else(|| e!(BindError::InvalidCryptoProvider))?;
-
         let token_key = Arc::new(
             RustlsTokenKey::new(&mut rand::rng(), &crypto_provider)
                 .ok_or_else(|| e!(BindError::InvalidCryptoProvider))?,
         );
-
-        let span = info_span!("endpoint", id = %secret_key.public().fmt_short());
-        let _guard = span.enter();
-
         let tls_config = tls::TlsConfig::new(
             secret_key.clone(),
             self.max_tls_tickets,
@@ -253,9 +253,7 @@ impl Builder {
             token_store: Arc::new(noq::TokenMemoryCache::default()),
         };
         let server_config = static_config.create_server_config(self.alpn_protocols);
-
         let metrics = EndpointMetrics::default();
-
         let tls_config = self
             .ca_tls_config
             .unwrap_or_default()
@@ -537,6 +535,10 @@ impl Builder {
     ///
     /// Not setting this will still allow creating connections, but to accept incoming
     /// connections at least one [ALPN] must be set.
+    ///
+    /// Ordering matters for protocol negotiation. When an incoming connection offers multiple ALPNs,
+    /// the first matching ALPN will be chosen. This means that `alpns` should be ordered such
+    /// that the preferred protocols come first.
     ///
     /// [ALPN]: https://en.wikipedia.org/wiki/Application-Layer_Protocol_Negotiation
     pub fn alpns(mut self, alpn_protocols: Vec<Vec<u8>>) -> Self {
@@ -932,6 +934,8 @@ pub enum ConnectWithOptsError {
     EndpointClosed,
     #[error("Invalid ALPN")]
     InvalidAlpn,
+    #[error("Initial custom address must be supplied in EndpointAddr")]
+    InvalidInitialCustomAddr,
 }
 
 #[allow(missing_docs)]
@@ -967,6 +971,10 @@ impl Endpoint {
     }
 
     /// Sets the list of accepted ALPN protocols.
+    ///
+    /// Ordering matters for protocol negotiation. When an incoming connection offers multiple ALPNs,
+    /// the first matching ALPN will be chosen. This means that `alpns` should be ordered such
+    /// that the preferred protocols come first.
     ///
     /// This will only affect new incoming connections.
     /// Note that this *overrides* the current list of ALPNs.
@@ -1121,6 +1129,14 @@ impl Endpoint {
         // Connecting to ourselves is not supported.
         ensure!(endpoint_id != self.id(), ConnectWithOptsError::SelfConnect);
         ensure!(!alpn.is_empty(), ConnectWithOptsError::InvalidAlpn);
+        if let Some(initial) = &options.initial_custom_addr {
+            ensure!(
+                endpoint_addr
+                    .addrs
+                    .contains(&TransportAddr::Custom(initial.clone())),
+                ConnectWithOptsError::InvalidInitialCustomAddr
+            );
+        }
 
         event!(
             target: "iroh::_events::conn::connecting",
@@ -1152,7 +1168,10 @@ impl Endpoint {
             .static_config
             .create_client_config(alpn_protocols, transport_config.clone());
 
-        let dest_addr = mapped_addr.private_socket_addr();
+        let dest_addr = options.initial_custom_addr.as_ref().map_or_else(
+            || mapped_addr.private_socket_addr(),
+            |custom| self.inner.custom_socket_addr(custom),
+        );
         let server_name = &tls::name::encode(endpoint_id);
         let connect =
             self.inner
@@ -1444,6 +1463,21 @@ impl Endpoint {
         let _ = self.inner.resolve_remote(addr).await;
     }
 
+    /// Discard IP hints older than `before` only while the peer has no live connection.
+    ///
+    /// This does not close paths, alter authentication or remove relay/custom addresses.
+    /// The remote actor rechecks live ownership and each source's timestamp when it runs.
+    /// New addresses can be supplied normally after a cold carrier retry.
+    pub async fn discard_ip_hints_if_idle(
+        &self,
+        endpoint_id: EndpointId,
+        before: n0_future::time::Instant,
+    ) -> usize {
+        self.inner
+            .discard_ip_hints_if_idle(endpoint_id, before)
+            .await
+    }
+
     /// khor patch 13: **closes every custom (carried) path to a remote**,
     /// on every live connection to it, because the road under them ended.
     /// The path selector then chooses again among the rest at once, rather
@@ -1451,6 +1485,21 @@ impl Endpoint {
     /// idle timeout. The last open path of a connection is left.
     pub async fn close_carried(&self, endpoint_id: EndpointId) {
         self.inner.close_custom_paths(endpoint_id).await;
+    }
+
+    /// Close carried paths only if their owner still considers the carrier gone.
+    ///
+    /// The predicate runs in the remote actor immediately before closing paths,
+    /// rather than when this request is enqueued. It must only inspect shared
+    /// state synchronously and must not block on I/O or acquire asynchronous locks.
+    pub async fn close_carried_if(
+        &self,
+        endpoint_id: EndpointId,
+        still_gone: impl Fn() -> bool + Send + Sync + 'static,
+    ) {
+        self.inner
+            .close_custom_paths_if(endpoint_id, Box::new(still_gone))
+            .await;
     }
 
     /// Returns a [`Watcher`] for any net report runs from this [`Endpoint`].
@@ -1546,6 +1595,14 @@ impl Endpoint {
     /// The config is based on the trust anchors set via [`Builder::ca_tls_config`].
     pub fn tls_config(&self) -> &rustls::ClientConfig {
         &self.inner.tls_config
+    }
+
+    /// Returns the proxy that HTTP(S) traffic is sent through, if any.
+    ///
+    /// The pkarr publisher and resolver send their HTTP requests through it.
+    #[cfg(not(wasm_browser))]
+    pub(crate) fn proxy_url(&self) -> Option<&Url> {
+        self.inner.proxy_url.as_ref()
     }
 
     /// Returns the Address Lookup service, if configured.
@@ -1855,9 +1912,18 @@ impl Endpoint {
 pub struct ConnectOptions {
     transport_config: Option<QuicTransportConfig>,
     additional_alpns: Vec<Vec<u8>>,
+    initial_custom_addr: Option<CustomAddr>,
 }
 
 impl ConnectOptions {
+    /// Starts this handshake on an explicitly supplied custom address.
+    /// The address must also occur in its EndpointAddr. Other connections,
+    /// cached candidates and post-handshake path selection are unchanged.
+    pub fn with_initial_custom_addr(mut self, addr: CustomAddr) -> Self {
+        self.initial_custom_addr = Some(addr);
+        self
+    }
+
     /// Initializes new connection options.
     ///
     /// By default, the connection will use the same options
@@ -3873,7 +3939,8 @@ mod tests {
         Ok(())
     }
 
-    /// Tests that correct logs are emitted when connecting two endpoints with same secret keys to a relay.
+    /// Tests that correct logs are emitted when connecting two endpoints with same secret
+    /// keys to a relay.
     #[tokio::test]
     #[traced_test]
     async fn same_endpoint_id_relay() -> Result {
@@ -3939,10 +4006,14 @@ mod tests {
         // will be routed to the new endpoint and not to the old endpoint anymore.
         // We don't expose being connected to the home relay on the endpoint currently,
         // so we resort to log assertions.
+        // If you think this all wasn't sad enough already,
+        // https://github.com/tokio-rs/tracing/issues/1372 means we need to look for the
+        // repeated `id` field.
         // TODO(Frando): Replace once we add a proper API for this.
         let expected_log_line = format!(
-            "ep2:endpoint{{id={}}}:relay-actor:active-relay{{url={relay_url}}}:connected: iroh::_events::relay::connected",
-            ep2.id().fmt_short()
+            "ep2:endpoint{{id={} id={}}}:relay-actor:active-relay{{url={relay_url}}}:connected: iroh::_events::relay::connected",
+            ep2.id().fmt_short(),
+            ep2.id().fmt_short(),
         );
         tokio::time::timeout(Duration::from_secs(5), async {
             while !logs_contain(&expected_log_line) {

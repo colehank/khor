@@ -23,8 +23,20 @@ use std::time::Duration;
 use khor_core::Hop;
 use patchbay::Lab;
 
-use crate::lab::{mesh, node, relay, result, slow, word};
+use crate::lab::{mesh, node, relay, result, sample_diagnostics, slow, word};
 use crate::nat::{Net, router};
+
+#[path = "hop/mobility.rs"]
+mod mobility;
+#[path = "hop/prepared_physical.rs"]
+mod prepared_physical;
+#[path = "hop/reference.rs"]
+mod reference;
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 6)]
+async fn f4_a_prepared_second_middle_serves_before_the_first_middle_resumes() {
+    prepared_physical::run().await;
+}
 
 /// Each machine's own link: 10 ms each way, so the legs are measurable.
 const LEG: Duration = Duration::from_millis(20);
@@ -262,15 +274,40 @@ fn path_lines(
         .collect()
 }
 
+/// On a failed hop scenario, keep the last routing/discovery facts in
+/// the artifact before its scratch residents are reaped.
+pub(super) fn path_diagnostics(n: &crate::lab::LabNode, peer: &crate::lab::LabNode) {
+    let rows: Vec<_> = n
+        .journal(Some(peer))
+        .into_iter()
+        .filter(|e| {
+            matches!(
+                e["e"].as_str(),
+                Some("hop" | "dial" | "settled" | "path" | "retired")
+            )
+        })
+        .rev()
+        .take(50)
+        .collect();
+    for row in rows.into_iter().rev() {
+        eprintln!("[netlab-path-diagnostic] {} -> {} {row}", n.name, peer.name);
+    }
+}
+
+fn hop_diagnostics(x: &crate::lab::LabNode, y: &crate::lab::LabNode, m: &crate::lab::LabNode) {
+    for (n, peer) in [(x, y), (y, x), (x, m), (m, x), (y, m), (m, y)] {
+        path_diagnostics(n, peer);
+    }
+}
+
 /// The relay's one way, as f4 measures it: 22 ms (hinton to turing's
 /// relay; the phone's carried road through turing is about 20 ms).
 const F4_RELAY_ONE_WAY: u32 = 22;
 
-/// Three machines for f4: X (the phone) and Y (MacLab) behind strict NATs,
-/// M (turing) public; the relay 22 ms each way. Returns once Y rides the
-/// carried road through M to X and held it for 10 s.
-async fn f4_lab(
+/// Shared geometry for f4 and its isolated steady-state references.
+async fn f4_topology(
     s: &str,
+    relay_only: bool,
 ) -> (
     Lab,
     crate::lab::Relay,
@@ -301,12 +338,40 @@ async fn f4_lab(
     let x = node(s, dx, "x", &[&r], &[]).await;
     let y = node(s, dy, "y", &[&r], &[]).await;
     let m = node(s, dm, "m", &[&r], &[]).await;
+    if relay_only {
+        // Before pairing, neither endpoint can ask for or accept a hop.
+        // The public middle stays alive, with the same synchronization work.
+        for n in [&x, &y] {
+            khor_node::config::set(&n.home.0, "peer-hop", "off").unwrap();
+            assert!(!khor_node::config::on(&n.home.0, "peer-hop"));
+            eprintln!("[netlab-isolation] {} peer-hop=off before mesh", n.name);
+        }
+    }
     tokio::time::sleep(Duration::from_secs(5)).await;
     mesh(&[&m, &x, &y]).await;
+    (lab, r, rx, x, y, m)
+}
+
+/// Returns once both reported carried roads have held continuously for 10 s.
+async fn f4_lab(
+    s: &str,
+) -> (
+    Lab,
+    crate::lab::Relay,
+    patchbay::Router,
+    crate::lab::LabNode,
+    crate::lab::LabNode,
+    crate::lab::LabNode,
+) {
+    let (lab, r, rx, x, y, m) = f4_topology(s, false).await;
     let hopped = y
         .until(&x, Duration::from_secs(180), |l| l.hop == Hop::Forwarded)
         .await;
     if hopped.is_none() {
+        hop_diagnostics(&x, &y, &m);
+        for n in [&x, &y, &m] {
+            sample_diagnostics(s, n);
+        }
         result(
             s,
             false,
@@ -317,18 +382,44 @@ async fn f4_lab(
         );
         panic!("{s}: y reaches x through m");
     }
-    // Held: 10 s on the hop, both ways.
-    let began = std::time::Instant::now();
-    while began.elapsed() < Duration::from_secs(10) {
-        tokio::time::sleep(Duration::from_millis(500)).await;
-        let held = y.link(&x).await.is_some_and(|l| l.hop == Hop::Forwarded)
-            && x.link(&y).await.is_some_and(|l| l.hop == Hop::Forwarded);
-        if !held {
-            y.until(&x, Duration::from_secs(60), |l| l.hop == Hop::Forwarded)
-                .await;
-            x.until(&y, Duration::from_secs(60), |l| l.hop == Hop::Forwarded)
-                .await;
+    // Fixture revision held_precondition_v2: the old two 60 s waits could
+    // both expire and still return a Relay start. Require a continuous
+    // 10 s reported hold, within their combined 120 s preparation budget.
+    crate::attempts::phase(s, "held_precondition_v2_started", now_ms());
+    let held = tokio::time::timeout(Duration::from_secs(120), async {
+        let mut since: Option<std::time::Instant> = None;
+        loop {
+            let both = y.link(&x).await.is_some_and(|l| l.hop == Hop::Forwarded)
+                && x.link(&y).await.is_some_and(|l| l.hop == Hop::Forwarded);
+            let now = std::time::Instant::now();
+            if both {
+                let began = since.get_or_insert_with(|| {
+                    crate::attempts::phase(s, "carried_hold_started", now_ms());
+                    now
+                });
+                if now.duration_since(*began) >= Duration::from_secs(10) {
+                    crate::attempts::phase(s, "carried_hold_confirmed", now_ms());
+                    break;
+                }
+            } else if since.take().is_some() {
+                crate::attempts::phase(s, "carried_hold_lost", now_ms());
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
         }
+    })
+    .await;
+    if held.is_err() {
+        crate::attempts::phase(s, "carried_hold_failed", now_ms());
+        hop_diagnostics(&x, &y, &m);
+        for n in [&x, &y, &m] {
+            sample_diagnostics(s, n);
+        }
+        result(
+            s,
+            false,
+            "both reported carried roads were not held continuously for 10 s within 120 s",
+        );
+        panic!("{s}: carried hold precondition failed before fault injection");
     }
     (lab, r, rx, x, y, m)
 }
@@ -365,6 +456,114 @@ async fn f4_a_stalled_carried_road_is_taken_again_at_once_off_a_slow_relay() {
     )
     .await;
 }
+
+// TIMELINE_AUDIT_BEGIN
+#[derive(Debug)]
+struct Recovery {
+    on_relay: Option<u64>,
+    back: Option<u64>,
+    longest: u64,
+    after_answer: Option<u64>,
+    fell: Option<u64>,
+    stayed: bool,
+}
+
+/// A new wire establishes occupancy; it is not counted as a selection move.
+fn recovery(events: &[(u64, String, String)], answers: u64, end: u64) -> Recovery {
+    let lines: Vec<_> = events
+        .iter()
+        .filter(|(_, change, _)| matches!(change.as_str(), "selected" | "started"))
+        .collect();
+    let on_relay = lines.iter().find(|row| row.2 == "relay").map(|row| row.0);
+    let back = on_relay.and_then(|left| {
+        lines
+            .iter()
+            .find(|row| row.0 >= left && row.2 == "carried")
+            .map(|row| row.0)
+    });
+    let mut longest = 0;
+    let mut since = None;
+    for row in &lines {
+        match (row.2.as_str(), since) {
+            ("relay", None) => since = Some(row.0),
+            ("relay", Some(_)) => {}
+            (_, Some(began)) => {
+                longest = longest.max(row.0 - began);
+                since = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(began) = since {
+        longest = longest.max(end - began);
+    }
+    let after_answer = back.map(|at| at.saturating_sub(answers));
+    let fell = back.and_then(|back| {
+        lines
+            .iter()
+            .find(|row| row.0 > back && row.2 == "relay")
+            .map(|row| row.0 - back)
+    });
+    let stayed =
+        back.is_none_or(|at| fell.is_none_or(|after| after >= 30_000) && end >= at + 30_000);
+    Recovery {
+        on_relay,
+        back,
+        longest,
+        after_answer,
+        fell,
+        stayed,
+    }
+}
+
+#[test]
+fn timeline_replacement_returns_without_a_selection_move() {
+    let events = vec![
+        (4_800, "selected".into(), "relay".into()),
+        (8_900, "started".into(), "carried".into()),
+    ];
+    let found = recovery(&events, 8_400, 50_000);
+    assert_eq!(found.back, Some(8_900));
+    assert_eq!(found.after_answer, Some(500));
+    assert_eq!(found.longest, 4_100);
+    assert!(found.stayed);
+}
+
+#[test]
+fn timeline_an_opened_candidate_does_not_end_relay_occupancy() {
+    let events = vec![
+        (4_800, "selected".into(), "relay".into()),
+        (8_900, "opened".into(), "carried".into()),
+    ];
+    let found = recovery(&events, 8_400, 50_000);
+    assert_eq!(found.back, None);
+    assert_eq!(found.longest, 45_200);
+}
+
+#[test]
+fn timeline_a_real_later_fallback_still_fails_stability() {
+    let events = vec![
+        (4_800, "selected".into(), "relay".into()),
+        (5_500, "selected".into(), "carried".into()),
+        (16_400, "selected".into(), "relay".into()),
+        (34_300, "selected".into(), "carried".into()),
+    ];
+    let found = recovery(&events, 5_000, 50_000);
+    assert_eq!(found.fell, Some(10_900));
+    assert!(!found.stayed);
+}
+
+#[test]
+fn timeline_a_new_wire_on_relay_still_counts_toward_the_twenty_second_gate() {
+    let events = vec![
+        (1_000, "started".into(), "relay".into()),
+        (30_000, "started".into(), "carried".into()),
+    ];
+    let found = recovery(&events, 29_000, 70_000);
+    assert_eq!(found.on_relay, Some(1_000));
+    assert_eq!(found.longest, 29_000);
+}
+// TIMELINE_AUDIT_END
 
 /// f4s (carry, 2026-10-23): **f4 on a relay whose round trip is over the
 /// confirmation's 4 s**, the phone's journal reading 4994 ms: the relay's
@@ -419,12 +618,14 @@ async fn f4_stall(s: &str, st: Stall) {
     let x_base = (LEG.as_millis() / 2) as u32;
 
     let t = now_ms();
+    crate::attempts::phase(s, "observation_started", t);
     // Y types on X's terminal throughout (an echo every 200 ms): an idle
     // connection has nothing in flight for 3 s of black to show, and the
     // phone's own network change pings every path.
     let typing_until = std::time::Instant::now() + Duration::from_secs(typing_s);
     let stall = async {
         cut_as(&x.dev, m_ip, "flap_m");
+        crate::attempts::phase(s, "middle_blocked", now_ms());
         if relay_black > 0 {
             cut_as(&x.dev, relay_ip, "flap_relay");
         }
@@ -432,6 +633,7 @@ async fn f4_stall(s: &str, st: Stall) {
         if both {
             delay_to(&x.dev, relay_ip, x_base, Some(late)).await;
         }
+        crate::attempts::phase(s, "relay_delayed", now_ms());
         if relay_black > 0 {
             tokio::time::sleep(Duration::from_millis(relay_black)).await;
             uncut(&x.dev, "flap_relay");
@@ -439,11 +641,13 @@ async fn f4_stall(s: &str, st: Stall) {
         tokio::time::sleep(Duration::from_millis(black - relay_black)).await;
         uncut(&x.dev, "flap_m");
         let uncut_at = now_ms();
+        crate::attempts::phase(s, "middle_unblocked", uncut_at);
         tokio::time::sleep(Duration::from_millis(1500)).await;
         delay_to(&r.dev, x_out, F4_RELAY_ONE_WAY, None).await;
         if both {
             delay_to(&x.dev, relay_ip, x_base, None).await;
         }
+        crate::attempts::phase(s, "relay_restored", now_ms());
         uncut_at
     };
     // When the carried road answers again: its leg, m's wire to x, heard
@@ -482,49 +686,23 @@ async fn f4_stall(s: &str, st: Stall) {
     };
     let (uncut_at, slowest, (), leg) =
         tokio::join!(stall, typing(&y, &x, typing_until), watch, leg_back);
+    crate::attempts::phase(s, "observation_finished", now_ms());
     let answers = leg.unwrap_or(uncut_at);
 
-    let lines: Vec<(u64, String, String)> = path_lines(&y, &x, t)
-        .into_iter()
-        .filter(|(_, c, _)| c == "selected")
-        .collect();
-    let on_relay = lines
-        .iter()
-        .find(|(_, _, r)| r == "relay")
-        .map(|(at, _, _)| *at);
-    let back = on_relay.and_then(|left| {
-        lines
-            .iter()
-            .find(|(at, _, r)| *at >= left && r == "carried")
-            .map(|(at, _, _)| *at)
-    });
-    // The longest stretch on the relay, to the end of the watch if it never left.
+    let events = path_lines(&y, &x, t);
     let end = now_ms();
-    let mut longest = 0u64;
-    let mut since: Option<u64> = None;
-    for (at, _, road) in &lines {
-        match (road.as_str(), since) {
-            ("relay", None) => since = Some(*at),
-            ("relay", Some(_)) => {}
-            (_, Some(s0)) => {
-                longest = longest.max(at - s0);
-                since = None;
-            }
-            _ => {}
-        }
-    }
-    if let Some(s0) = since {
-        longest = longest.max(end - s0);
-    }
-    let after_answer = back.map(|b| b.saturating_sub(answers));
-    // Back on the carried road, it stays: no move to the relay within 30 s.
-    let fell = back.and_then(|b| {
-        lines
-            .iter()
-            .find(|(at, _, r)| *at > b && r == "relay")
-            .map(|(at, _, _)| *at - b)
-    });
-    let stayed = back.is_none_or(|b| fell.is_none_or(|f| f >= 30_000) && now_ms() >= b + 30_000);
+    let Recovery {
+        on_relay,
+        back,
+        longest,
+        after_answer,
+        fell,
+        stayed,
+    } = recovery(&events, answers, end);
+    let lines: Vec<_> = events
+        .iter()
+        .filter(|(_, change, _)| change == "selected")
+        .collect();
     let now = y.link(&x).await;
     let x_lines: Vec<String> = path_lines(&x, &y, t)
         .into_iter()
@@ -536,11 +714,14 @@ async fn f4_stall(s: &str, st: Stall) {
         && stayed
         && (on_relay.is_none() || after_answer.is_some_and(|ms| ms <= 1500));
     let secs = |at: u64| format!("{:.1}s", at.saturating_sub(t) as f64 / 1000.0);
+    if !ok || std::env::var("NETLAB_DIAGNOSTICS").as_deref() == Ok("lifecycle") {
+        hop_diagnostics(&x, &y, &m);
+    }
     result(
         s,
         ok,
         format!(
-            "relay late {late} ms{}; y→x: relay at {}, back on the carried road at {} ({} after the leg x–m is heard again, at {}), fell back {}, longest on the relay {:.1}s; selections {:?}; links {seen:?}; slowest keystroke {slowest:.1?}; now {}; x's selections {x_lines:?}",
+            "relay late {late} ms{}; y→x: relay at {}, back on the carried road at {} ({} after the leg x–m is heard again, at {}), fell back {}, longest on the relay {:.1}s; selections {:?}; wire starts {:?}; links {seen:?}; slowest keystroke {slowest:.1?}; now {}; x's selections {x_lines:?}",
             if both { " both ways" } else { " to x" },
             on_relay.map_or("never".into(), secs),
             back.map_or("never".into(), secs),
@@ -555,9 +736,17 @@ async fn f4_stall(s: &str, st: Stall) {
                 .iter()
                 .map(|(at, _, r)| format!("{r}@{}", secs(*at)))
                 .collect::<Vec<_>>(),
+            events
+                .iter()
+                .filter(|(_, change, _)| change == "started")
+                .map(|(at, _, road)| format!("{road}@{}", secs(*at)))
+                .collect::<Vec<_>>(),
             now.as_ref().map_or("nothing".into(), word),
         ),
     );
+    sample_diagnostics(s, &x);
+    sample_diagnostics(s, &y);
+    sample_diagnostics(s, &m);
     assert!(
         longest < 20_000,
         "no rest on the relay: {:.1}s",
@@ -589,14 +778,16 @@ async fn typing(
 ) -> Duration {
     let mut slowest = Duration::ZERO;
     while std::time::Instant::now() < until {
-        let began = std::time::Instant::now();
         let to = peer.name.clone();
-        let _ = tokio::time::timeout(
+        let (took, _) = crate::attempts::measure(
+            &n.scenario,
+            &n.id,
+            &peer.name,
             Duration::from_secs(30),
             n.with(move |node| async move { node.ls_of(&to, "/tmp").await.map(|_| ()) }),
         )
         .await;
-        slowest = slowest.max(began.elapsed());
+        slowest = slowest.max(took);
         tokio::time::sleep(Duration::from_millis(200)).await;
     }
     slowest
@@ -701,6 +892,9 @@ async fn f4i_a_new_connection_does_not_write_its_first_road_as_a_move() {
         .count();
     let ok =
         back.is_some() && first.as_ref().is_some_and(|(_, c, _)| c == "started") && to_relay == 0;
+    if !ok {
+        hop_diagnostics(&x, &y, &m);
+    }
     result(
         s,
         ok,
@@ -719,6 +913,9 @@ async fn f4i_a_new_connection_does_not_write_its_first_road_as_a_move() {
             fmt(&yl),
         ),
     );
+    for n in [&x, &y, &m] {
+        sample_diagnostics(s, n);
+    }
     assert!(back.is_some(), "x is back through m");
     let (_, change, _) = first.expect("a road line for the new connection");
     assert_eq!(

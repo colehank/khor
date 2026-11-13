@@ -43,17 +43,23 @@ use khor_core::{Road, RoadKind};
 use khor_net::carry::Carrier;
 
 use crate::Node;
+
+#[path = "hop/stream_trace.rs"]
+mod stream_trace;
 use crate::tunnel::{NO_ROUTE, OK, REFUSED};
-use crate::wires::Proto;
+use crate::wires::{CarrierComparison, Proto};
 
 /// X to B: splice me to this machine.
 const ASK: &str = "hop ";
 /// B to Y: this stream is a hop from this machine.
 const HAND: &str = "hop-in ";
+/// Explicitly understood at both forwarding endpoints before parallel commit.
+const PREPARE: &str = "hop-ready ";
+const PREPARE_HAND: &str = "hop-ready-in ";
 
 /// What X gives the hop before dialling without it: a middle's wire
 /// that has to be dialled first, plus its own stream to Y.
-const HOP_WITHIN: Duration = Duration::from_secs(3);
+pub(crate) const HOP_WITHIN: Duration = Duration::from_secs(3);
 
 /// How long B gives its own wire to Y: inside X's [`HOP_WITHIN`], so B
 /// stops dialling for X before X stops waiting (net-dial B3: it was 5 s,
@@ -76,8 +82,6 @@ const COMPARE_EVERY: std::time::Duration = Duration::from_secs(30);
 /// measurement end to end said not, so asking again at once would flap.
 const LOST_FOR: Duration = Duration::from_secs(10 * 60);
 
-static LAST_COMPARE: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
-
 /// How long a hop to a machine that no middle could reach is not asked
 /// for again, after the first such miss: doubling with each miss in a
 /// row up to [`LOST_FOR`], and forgotten when a hop to it opens.
@@ -91,8 +95,116 @@ const MISSED_FIRST: Duration = Duration::from_secs(30);
 
 /// Per (this machine, far machine): hops that found no middle in a row,
 /// and when the last did.
+#[derive(Clone)]
+struct MissEpoch {
+    network: std::sync::Weak<()>,
+    candidates: std::sync::Weak<()>,
+}
+
+struct MissObservation {
+    network: std::sync::Weak<()>,
+    order: u64,
+}
+
+impl MissObservation {
+    fn new(network: std::sync::Weak<()>) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        Self {
+            network,
+            order: NEXT.fetch_add(1, Ordering::Relaxed),
+        }
+    }
+}
+
+struct HopWire {
+    id: usize,
+    addrs: Vec<String>,
+    weak: iroh::endpoint::WeakConnectionHandle,
+}
+
+impl HopWire {
+    fn observed(conn: &iroh::endpoint::Connection) -> Option<Self> {
+        let mut addrs: Vec<_> = conn
+            .paths()
+            .iter()
+            .filter(|path| path.is_ip() || path.is_relay())
+            .map(|path| format!("{:?}", path.remote_addr()))
+            .collect();
+        addrs.sort_unstable();
+        addrs.dedup();
+        (!addrs.is_empty() && conn.close_reason().is_none()).then(|| Self {
+            id: conn.stable_id(),
+            addrs,
+            weak: conn.weak_handle(),
+        })
+    }
+
+    fn matches(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.addrs == other.addrs
+            && self
+                .weak
+                .upgrade()
+                .is_some_and(|conn| conn.close_reason().is_none())
+    }
+}
+
+struct HopCandidate {
+    id: String,
+    live: bool,
+    wires: Vec<HopWire>,
+    hints: Vec<String>,
+    missed: Option<(u32, std::time::Instant)>,
+    attempted_at: Option<std::time::Instant>,
+}
+
+impl HopCandidate {
+    fn cooling(&self) -> bool {
+        self.missed
+            .is_some_and(|(count, at)| at.elapsed() < missed_wait(count))
+    }
+}
+
+fn same_candidates(a: &[HopCandidate], b: &[HopCandidate]) -> bool {
+    a.len() == b.len()
+        && a.iter().zip(b).all(|(a, b)| {
+            a.id == b.id
+                && a.live == b.live
+                && a.hints == b.hints
+                && a.wires.len() == b.wires.len()
+                && a.wires.iter().zip(&b.wires).all(|(a, b)| a.matches(b))
+        })
+}
+
+struct HopMiss {
+    count: u32,
+    at: std::time::Instant,
+    epoch: Option<MissEpoch>,
+    candidates: Vec<HopCandidate>,
+    target_hints: Vec<String>,
+    observed: u64,
+    // Only this cache entry owns the candidate token. In-flight asks hold
+    // weak tokens, so retiring a context also retires its late answers.
+    _current: Option<Arc<()>>,
+}
+
+impl HopMiss {
+    fn new(epoch: Option<MissEpoch>) -> Self {
+        Self {
+            count: 0,
+            at: std::time::Instant::now(),
+            epoch,
+            candidates: Vec::new(),
+            target_hints: Vec::new(),
+            observed: 0,
+            _current: None,
+        }
+    }
+}
+
 static MISSED: std::sync::LazyLock<
-    std::sync::Mutex<std::collections::HashMap<(String, String), (u32, std::time::Instant)>>,
+    std::sync::Mutex<std::collections::HashMap<(String, String), HopMiss>>,
 > = std::sync::LazyLock::new(Default::default);
 
 /// How long after `n` misses in a row a hop is not asked for again.
@@ -102,29 +214,243 @@ fn missed_wait(n: u32) -> Duration {
         .min(LOST_FOR)
 }
 
-fn missed(me: &str, to: &str) {
+fn same_miss_epoch(a: Option<&MissEpoch>, b: Option<&MissEpoch>) -> bool {
+    match (a, b) {
+        (Some(a), Some(b)) => a.network.ptr_eq(&b.network) && a.candidates.ptr_eq(&b.candidates),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+fn current_miss_epoch(epoch: Option<&MissEpoch>) -> bool {
+    epoch.is_none_or(|epoch| {
+        epoch.network.strong_count() != 0 && epoch.candidates.strong_count() != 0
+    })
+}
+
+/// Candidate membership and actual first-leg availability define a miss's
+/// context. Cost and ordering deliberately do not: noisy RTT is no new route.
+fn miss_context(
+    me: &str,
+    to: &str,
+    observation: MissObservation,
+    facts: impl FnOnce() -> (Vec<String>, Vec<HopCandidate>),
+) -> Option<MissEpoch> {
     let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
-    let e = all
+    if observation.network.strong_count() == 0 {
+        return None;
+    }
+    all.retain(|_, miss| current_miss_epoch(miss.epoch.as_ref()));
+    let miss = all
         .entry((me.to_owned(), to.to_owned()))
-        .or_insert((0, std::time::Instant::now()));
-    *e = (e.0.saturating_add(1), std::time::Instant::now());
+        .or_insert_with(|| HopMiss::new(None));
+    // A delayed selection is not evidence that a newer route disappeared.
+    // The sequence is captured before reading the roster and roadbook.
+    if observation.order < miss.observed {
+        return None;
+    }
+    // Snapshot live wires under the same routing lock as registration.
+    // A CPU-delayed registry snapshot cannot replace fresher evidence.
+    // Wires never takes MISSED while holding its registries; no await here.
+    let (target_hints, mut candidates) = facts();
+    candidates.sort_unstable_by(|a, b| a.id.cmp(&b.id));
+    candidates.dedup_by(|a, b| a.id == b.id);
+    miss.observed = observation.order;
+    if miss.target_hints == target_hints
+        && same_candidates(&miss.candidates, &candidates)
+        && let Some(epoch) = &miss.epoch
+        && epoch.network.ptr_eq(&observation.network)
+    {
+        return Some(epoch.clone());
+    }
+    // A new candidate may get admission without retrying unchanged
+    // middles that already refused. Only the same live wire in the same
+    // network can carry its own failure forward into the new context.
+    if miss.target_hints == target_hints
+        && miss
+            .epoch
+            .as_ref()
+            .is_some_and(|epoch| epoch.network.ptr_eq(&observation.network))
+    {
+        for candidate in &mut candidates {
+            if let Some(previous) = miss.candidates.iter().find(|previous| {
+                same_candidates(
+                    std::slice::from_ref(previous),
+                    std::slice::from_ref(candidate),
+                )
+            }) {
+                candidate.missed = previous.missed;
+                candidate.attempted_at = previous.attempted_at;
+            }
+        }
+    }
+    let current = Arc::new(());
+    let epoch = MissEpoch {
+        network: observation.network,
+        candidates: Arc::downgrade(&current),
+    };
+    *miss = HopMiss {
+        candidates,
+        target_hints,
+        observed: observation.order,
+        _current: Some(current),
+        ..HopMiss::new(Some(epoch.clone()))
+    };
+    Some(epoch)
 }
 
+/// Atomically claim actual work under the existing route owner. Recovery
+/// shares its evidence with comparisons but is not delayed by their period.
+fn begin_middle(
+    me: &str,
+    to: &str,
+    epoch: &MissEpoch,
+    id: &str,
+    comparison: bool,
+    by: tokio::time::Instant,
+) -> bool {
+    let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(miss) = all.get_mut(&(me.to_owned(), to.to_owned())) else {
+        return false;
+    };
+    if crate::deadline::expired(Some(by))
+        || !current_miss_epoch(Some(epoch))
+        || !same_miss_epoch(miss.epoch.as_ref(), Some(epoch))
+    {
+        return false;
+    }
+    let Some(middle) = miss.candidates.iter_mut().find(|middle| middle.id == id) else {
+        return false;
+    };
+    if middle.cooling()
+        || (comparison
+            && middle
+                .attempted_at
+                .is_some_and(|at| at.elapsed() < COMPARE_EVERY))
+    {
+        return false;
+    }
+    middle.attempted_at = Some(std::time::Instant::now());
+    true
+}
+
+fn used_middle(me: &str, to: &str, epoch: &MissEpoch, id: &str, wire: HopWire) {
+    let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+    let Some(miss) = all.get_mut(&(me.to_owned(), to.to_owned())) else {
+        return;
+    };
+    if current_miss_epoch(Some(epoch))
+        && same_miss_epoch(miss.epoch.as_ref(), Some(epoch))
+        && let Some(middle) = miss.candidates.iter_mut().find(|middle| middle.id == id)
+    {
+        // Record the wire this attempt actually established, before asking.
+        // Its own successful dial is not an external candidate change that
+        // should forgive a NO_ROUTE returned on that very same wire.
+        middle.live = true;
+        middle.wires = vec![wire];
+    }
+}
+
+fn missed_in_epoch(me: &str, to: &str, epoch: Option<MissEpoch>, attempted: &[&str]) {
+    let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+    // Check under the same lock as the write. Neither a network change nor
+    // a new candidate context can be overwritten by an old completion.
+    if !current_miss_epoch(epoch.as_ref()) {
+        return;
+    }
+    let key = (me.to_owned(), to.to_owned());
+    if epoch.is_some()
+        && !all
+            .get(&key)
+            .is_some_and(|e| same_miss_epoch(e.epoch.as_ref(), epoch.as_ref()))
+    {
+        return;
+    }
+    let e = all
+        .entry(key)
+        .or_insert_with(|| HopMiss::new(epoch.clone()));
+    if !same_miss_epoch(e.epoch.as_ref(), epoch.as_ref()) {
+        *e = HopMiss::new(epoch);
+    }
+    e.count = e.count.saturating_add(1);
+    e.at = std::time::Instant::now();
+    for middle in &mut e.candidates {
+        if attempted.contains(&middle.id.as_str()) {
+            let count = middle
+                .missed
+                .map_or(1, |(count, _)| count.saturating_add(1));
+            middle.missed = Some((count, e.at));
+        }
+    }
+}
+
+/// Commit while the existing routing owner still owns this answer. A
+/// rejected publication does not clear waits or retire a newer context.
+fn commit_in_epoch<T>(
+    me: &str,
+    to: &str,
+    epoch: Option<&MissEpoch>,
+    by: Option<tokio::time::Instant>,
+    commit: impl FnOnce() -> Option<T>,
+) -> Option<T> {
+    let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+    let key = (me.to_owned(), to.to_owned());
+    if crate::deadline::expired(by) || !current_miss_epoch(epoch) {
+        return None;
+    }
+    let miss = all.get_mut(&key)?;
+    if !same_miss_epoch(miss.epoch.as_ref(), epoch) {
+        return None;
+    }
+    let committed = commit()?;
+    if let Some(epoch) = epoch {
+        // Success clears the wait, not the newest observation. Replacing
+        // its token also retires every answer still using the old one.
+        let current = Arc::new(());
+        miss.count = 0;
+        for middle in &mut miss.candidates {
+            middle.missed = None;
+        }
+        miss.epoch = Some(MissEpoch {
+            network: epoch.network.clone(),
+            candidates: Arc::downgrade(&current),
+        });
+        miss._current = Some(current);
+    } else {
+        all.remove(&key);
+    }
+    Some(committed)
+}
+
+/// The unchanged backoff applies only to the context that observed it.
+fn missed_lately_in_epoch(me: &str, to: &str, epoch: Option<&MissEpoch>) -> bool {
+    let all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+    current_miss_epoch(epoch)
+        && all.get(&(me.to_owned(), to.to_owned())).is_some_and(|e| {
+            same_miss_epoch(e.epoch.as_ref(), epoch)
+                && if epoch.is_some() {
+                    !e.candidates.is_empty() && e.candidates.iter().all(HopCandidate::cooling)
+                } else {
+                    e.count > 0 && e.at.elapsed() < missed_wait(e.count)
+                }
+        })
+}
+
+// The original pure backoff contract exercises the same production core
+// without a Wires owner. Actual Node tests exercise owned network epochs.
+#[cfg(test)]
+fn missed(me: &str, to: &str) {
+    missed_in_epoch(me, to, None, &[]);
+}
+
+#[cfg(test)]
 fn made(me: &str, to: &str) {
-    MISSED
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .remove(&(me.to_owned(), to.to_owned()));
+    let _ = commit_in_epoch(me, to, None, None, || Some(()));
 }
 
-/// Whether a hop from `me` to `to` missed lately enough not to be asked
-/// for before this dial.
+#[cfg(test)]
 fn missed_lately(me: &str, to: &str) -> bool {
-    MISSED
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .get(&(me.to_owned(), to.to_owned()))
-        .is_some_and(|(n, at)| at.elapsed() < missed_wait(*n))
+    missed_lately_in_epoch(me, to, None)
 }
 
 /// Per (machine, middle): when a hop through it lost to the relay.
@@ -145,6 +471,42 @@ fn was_lost(to: &str, via: &str) -> bool {
         .is_some_and(|t| t.elapsed() < LOST_FOR)
 }
 
+/// Reclaims a carrier after two looks. Only an actual comparison loss
+/// suppresses its middle; disappearing paths merely make it unused.
+fn release_hop(
+    links: &khor_net::carry::Links,
+    id: &str,
+    peer: EndpointId,
+    via: EndpointId,
+    attachment: u64,
+    road: Option<khor_net::path::PathKind>,
+    looks: u8,
+    comparison: CarrierComparison,
+) {
+    if !links.detach_attached(&peer, Carrier::Hop { via }, attachment) {
+        khor_net::carry::observe_lifecycle(
+            id,
+            "hop_release_not_current",
+            || serde_json::json!({ "attachment": attachment, "via": via.to_string() }),
+        );
+        return;
+    }
+    let phase = match comparison {
+        CarrierComparison::Unused => "hop_unused_release",
+        _ => "hop_measured_release",
+    };
+    khor_net::carry::observe_lifecycle(id, phase, || {
+        serde_json::json!({
+            "attachment": attachment, "via": via.to_string(), "road": format!("{road:?}"), "looks": looks,
+        })
+    });
+    if comparison == CarrierComparison::Outperformed
+        && road == Some(khor_net::path::PathKind::Relay)
+    {
+        lost(id, &via.to_string());
+    }
+}
+
 /// Per (this machine, far machine): hops this machine asked for, opening
 /// or up ([`Asking`]).
 static ASKING: std::sync::LazyLock<
@@ -157,7 +519,7 @@ static ASKING: std::sync::LazyLock<
 /// in place of its own and end both. Of two hops between the same two
 /// machines, the one the lower id asked for stands, at both ends: the
 /// lower refuses the other's while it asks ([`Node::serve_hop`]), the
-/// higher keeps the other's that came in meanwhile ([`Node::open_hop`]).
+/// higher keeps the other's that came in meanwhile ([`Node::open_hop_in_epoch`]).
 struct Asking((String, String));
 
 impl Asking {
@@ -184,6 +546,61 @@ impl Drop for Asking {
     }
 }
 
+/// A prepared stream belongs to its opening future until the watcher
+/// accepts it. A live wire using the offer also transfers that ownership.
+struct PendingHop {
+    links: khor_net::carry::Links,
+    wires: std::sync::Arc<crate::wires::Wires>,
+    id: String,
+    peer: EndpointId,
+    via: EndpointId,
+    attachment: u64,
+    asked: Option<Asking>,
+    handoff: Option<tokio::sync::oneshot::Sender<HopHandoff>>,
+    committed: bool,
+}
+
+struct HopHandoff {
+    asked: Asking,
+    pending: Option<tokio::sync::watch::Receiver<()>>,
+    cancelled: bool,
+}
+
+impl PendingHop {
+    fn hand_off(&mut self, cancelled: bool) -> bool {
+        let (Some(handoff), Some(asked)) = (self.handoff.take(), self.asked.take()) else {
+            return false;
+        };
+        self.committed = handoff
+            .send(HopHandoff {
+                asked,
+                pending: self.wires.pending_dial_done(&self.id),
+                cancelled,
+            })
+            .is_ok();
+        self.committed
+    }
+}
+
+impl Drop for PendingHop {
+    fn drop(&mut self) {
+        if !self.committed {
+            #[cfg(test)]
+            self.wires.hold_pending_drop_for_test(self.attachment);
+            let withdrawn = self.wires.withdraw_carrier_if_idle(&self.id, || {
+                self.links.detach_attached(
+                    &self.peer,
+                    Carrier::Hop { via: self.via },
+                    self.attachment,
+                );
+            });
+            if !matches!(withdrawn, Ok(true)) {
+                self.hand_off(true);
+            }
+        }
+    }
+}
+
 fn asking(me: &str, to: &str) -> bool {
     ASKING
         .lock()
@@ -191,11 +608,13 @@ fn asking(me: &str, to: &str) -> bool {
         .contains_key(&(me.to_owned(), to.to_owned()))
 }
 
-/// Whether a hop of `hop_ms` (its legs added) is worth opening against a
-/// relay measured at `relay_ms`: faster by [`khor_net::carry::SWITCH_MARGIN`].
+/// Whether a prospective hop's two-leg estimate pays the original preparation
+/// cost hurdle. Already open paths use measured eligibility and confirmation.
 pub(crate) fn beats(hop_ms: u32, relay_ms: u32) -> bool {
-    let margin = u32::try_from(khor_net::carry::SWITCH_MARGIN.as_millis()).unwrap_or(10);
-    hop_ms.saturating_add(margin) <= relay_ms
+    let current = Duration::from_millis(u64::from(relay_ms));
+    let candidate = Duration::from_millis(u64::from(hop_ms));
+    let cost = khor_net::carry::switch_margin(current, false).max(current / 4);
+    candidate.saturating_add(cost) <= current
 }
 
 /// A tunnel stream's first words, when they ask for a hop.
@@ -205,10 +624,19 @@ pub(crate) enum Ask {
     To(EndpointId),
     /// From a middle: this stream comes from this machine.
     From(EndpointId),
+    /// Same encrypted transport, with receiver publication delayed until payload.
+    PrepareTo(EndpointId),
+    PrepareFrom(EndpointId),
 }
 
 impl Ask {
     pub(crate) fn of(target: &str) -> Option<Ask> {
+        if let Some(id) = target.strip_prefix(PREPARE_HAND) {
+            return id.parse().ok().map(Ask::PrepareFrom);
+        }
+        if let Some(id) = target.strip_prefix(PREPARE) {
+            return id.parse().ok().map(Ask::PrepareTo);
+        }
         if let Some(id) = target.strip_prefix(HAND) {
             return id.parse().ok().map(Ask::From);
         }
@@ -219,6 +647,8 @@ impl Ask {
         match self {
             Ask::To(id) => format!("{ASK}{id}"),
             Ask::From(id) => format!("{HAND}{id}"),
+            Ask::PrepareTo(id) => format!("{PREPARE}{id}"),
+            Ask::PrepareFrom(id) => format!("{PREPARE_HAND}{id}"),
         }
     }
 }
@@ -232,11 +662,15 @@ pub(crate) enum Legs {
     /// presumed no better than the relay to `to`: one more try before
     /// every dial for a guess.
     Dial,
+    /// No live road to the target: a configured relay is no evidence it
+    /// answers here. Any non-recursive two-leg road may restore access,
+    /// and a missing second-leg hint may be checked by bounded admission.
+    Recovery,
     /// **Against the relay in use** ([`Node::compare_roads`]): either leg
     /// may be the relay — `to`'s home may be a far relay where the
     /// middle's is near (hinton on aps1, 10-20). The legs' sum is held
     /// against the relay's measured round trip, and iroh's end to end
-    /// measurement has the last word ([`Node::open_hop`]).
+    /// measurement has the last word ([`Node::open_hop_in_epoch`]).
     Measured,
     /// **This machine has no relay** (C7, `egress`): the first leg must be
     /// one it has without one — direct — and the second may be the
@@ -250,8 +684,9 @@ pub(crate) enum Legs {
 
 /// Eligible intermediates and their total two-leg round trips, in milliseconds.
 /// Neither endpoint, satellites, paused machines, nor recursive hops qualify.
-/// The leg policy controls relay eligibility; measured routes sort by cost,
-/// while other policies prefer a direct first leg. An unmeasured leg costs
+/// The leg policy controls relay eligibility; every policy sorts by cost.
+/// A direct first leg only breaks equal-cost ties outside measured comparisons.
+/// An unmeasured leg costs
 /// `u16::MAX` for comparison by [`worth_a_hop`].
 pub(crate) fn middles_with_cost(
     me: &str,
@@ -261,19 +696,26 @@ pub(crate) fn middles_with_cost(
     theirs: impl Fn(&str) -> Option<Road>,
     legs: Legs,
 ) -> Vec<(String, u32)> {
-    let mut found: Vec<(bool, u32, String)> = rows
+    let mut found: Vec<(u32, bool, String)> = rows
         .iter()
         .filter(|(id, sat, paused)| id != me && id != to && !sat && !paused)
         .filter_map(|(b, _, _)| {
-            let second = theirs(b).filter(|r| r.via.is_none())?;
             let first = mine(b).filter(|r| r.via.is_none())?;
+            let second = match theirs(b) {
+                Some(second) if second.via.is_none() => second,
+                None if legs == Legs::Recovery => Road::own(to, RoadKind::None, None, None),
+                _ => return None,
+            };
             let usable = match (first.road, second.road) {
                 (RoadKind::Direct, RoadKind::Direct | RoadKind::Ssh)
                 | (RoadKind::Relay, RoadKind::Ssh) => true,
                 (RoadKind::Direct, RoadKind::Relay) if legs == Legs::NoRelay => true,
                 (RoadKind::Relay, RoadKind::Direct) if legs == Legs::ToNoRelay => true,
+                (RoadKind::Direct | RoadKind::Relay, RoadKind::None) if legs == Legs::Recovery => {
+                    true
+                }
                 (RoadKind::Direct | RoadKind::Relay, RoadKind::Direct | RoadKind::Relay) => {
-                    legs == Legs::Measured
+                    matches!(legs, Legs::Measured | Legs::Recovery)
                 }
                 _ => false,
             };
@@ -281,15 +723,15 @@ pub(crate) fn middles_with_cost(
                 u32::from(first.ms.unwrap_or(u16::MAX)) + u32::from(second.ms.unwrap_or(u16::MAX));
             usable.then(|| {
                 (
-                    legs != Legs::Measured && first.road != RoadKind::Direct,
                     ms,
+                    legs != Legs::Measured && first.road != RoadKind::Direct,
                     b.clone(),
                 )
             })
         })
         .collect();
     found.sort();
-    found.into_iter().map(|(_, ms, b)| (b, ms)).collect()
+    found.into_iter().map(|(ms, _, b)| (b, ms)).collect()
 }
 
 /// **The middles worth a hop to `to` against its relay, measured at
@@ -313,7 +755,61 @@ pub(crate) fn worth_a_hop(
         .collect()
 }
 
+/// The same effective IP/Relay/nearby candidates as the dialer. Invalid
+/// input, list order, duplicates and source provenance are not new roads.
+fn effective_hop_hints(device: &crate::DeviceInfo) -> Vec<String> {
+    let Ok(addr) = khor_net::endpoint::dial_addr(&device.id, &device.addrs, &[]) else {
+        return Vec::new();
+    };
+    let mut hints: Vec<_> = addr.addrs.iter().map(|addr| format!("{addr:?}")).collect();
+    hints.sort_unstable();
+    hints.dedup();
+    hints
+}
+
+type PreparedHop = (
+    EndpointId,
+    usize,
+    iroh::endpoint::WeakConnectionHandle,
+    SendStream,
+    RecvStream,
+);
+
 impl Node {
+    async fn prepare_hop_middle(
+        &self,
+        ep: &iroh::Endpoint,
+        target: &crate::DeviceInfo,
+        middle: &crate::DeviceInfo,
+        epoch: &MissEpoch,
+        prepared: bool,
+    ) -> Option<PreparedHop> {
+        let via = middle.id.parse::<EndpointId>().ok()?;
+        let peer = target.id.parse::<EndpointId>().ok()?;
+        let line = Box::pin(crate::journal::BY.scope(
+            crate::journal::By::Hop,
+            self.line_to_inner(ep, middle, Proto::Tunnel, None, false),
+        ))
+        .await
+        .ok()?;
+        if let Some(wire) = HopWire::observed(&line.conn) {
+            used_middle(self.device_str(), &target.id, epoch, &middle.id, wire);
+        }
+        let ask = if prepared {
+            Ask::PrepareTo(peer)
+        } else {
+            Ask::To(peer)
+        };
+        let (send, recv) = crate::tunnel::dial(&line.conn, &ask.words()).await.ok()?;
+        Some((
+            via,
+            line.conn.stable_id(),
+            line.conn.weak_handle(),
+            send,
+            recv,
+        ))
+    }
+
     /// This machine's road to `b` for picking a middle: its live wire
     /// when one is up (a carried one is no first leg), else what it last
     /// wrote in its own row.
@@ -332,7 +828,26 @@ impl Node {
             Some(khor_net::path::PathKind::Carried) => return None,
             _ => {}
         }
-        if r.down.is_some() || self.carry.carrier(&b.parse().ok()?).is_some() {
+        if self.carry.carrier(&b.parse().ok()?).is_some() {
+            return None;
+        }
+        for conn in self.wires.incoming_for_hop(b) {
+            let kind = match khor_net::path::classify(&conn) {
+                khor_net::path::PathKind::Direct => RoadKind::Direct,
+                khor_net::path::PathKind::Relay => RoadKind::Relay,
+                _ => continue,
+            };
+            let ms = crate::wires::rtt_of(&conn)
+                .as_millis()
+                .min(u128::from(u16::MAX)) as u16;
+            return Some(Road::own(
+                b,
+                kind,
+                khor_net::path::relay_name(&conn),
+                Some(ms),
+            ));
+        }
+        if r.down.is_some() {
             return None;
         }
         mine.iter().find(|w| w.to == b).cloned()
@@ -355,7 +870,7 @@ impl Node {
         let r = self.wires.link(&y.id);
         // No relay here, or none there (C7): every road but a direct
         // one is a hop's.
-        if r.down.is_some() || self.no_relay() || y.no_relay {
+        if r.road.is_none() || r.down.is_some() || self.no_relay() || y.no_relay {
             return true;
         }
         let direct = |k: Option<RoadKind>| k == Some(RoadKind::Direct);
@@ -375,52 +890,156 @@ impl Node {
     /// middle when the roadbook names one. Quietly nothing when no hop is
     /// wanted, none can be had, or it takes past [`HOP_WITHIN`]: the dial
     /// goes on without it.
-    pub(crate) async fn hop_ahead(&self, ep: &iroh::Endpoint, y: &crate::DeviceInfo) {
-        // The cheap answers first: this runs before every dial.
-        if !self.hop_on() || y.id.parse().is_ok_and(|p| self.carry.has(&p)) {
-            return;
-        }
-        let Ok(all) = self.devices() else { return };
-        let me = self.device_str().to_owned();
-        let mine = all
-            .iter()
-            .find(|d| d.id == me)
-            .map(|d| self.roads_of(d))
-            .unwrap_or_default();
-        if !self.wants_hop(y, &mine) || missed_lately(&me, &y.id) {
-            return;
-        }
-        let rows: Vec<(String, bool, bool)> = all
-            .iter()
-            .map(|d| {
-                (
-                    d.id.clone(),
-                    d.sponsor.is_some(),
-                    crate::pause::peer_on(self.root(), &d.id),
-                )
-            })
+    pub(crate) fn hop_ahead<'a>(
+        &'a self,
+        ep: &'a iroh::Endpoint,
+        y: &'a crate::DeviceInfo,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>> {
+        // This explicit cold-path boundary also breaks Send inference through
+        // hop -> middle dial -> hop, while held-wire requests stay unboxed.
+        Box::pin(async move {
+            // The cheap answers first: this runs before every dial.
+            if !self.hop_on() || y.id.parse().is_ok_and(|p| self.carry.has(&p)) {
+                return;
+            }
+            let observation = MissObservation::new(self.wires.hop_epoch());
+            let Ok(all) = self.devices() else { return };
+            let me = self.device_str().to_owned();
+            let mine = all
+                .iter()
+                .find(|d| d.id == me)
+                .map(|d| self.roads_of(d))
+                .unwrap_or_default();
+            if !self.wants_hop(y, &mine) {
+                return;
+            }
+            let rows: Vec<(String, bool, bool)> = all
+                .iter()
+                .map(|d| {
+                    (
+                        d.id.clone(),
+                        d.sponsor.is_some(),
+                        crate::pause::peer_on(self.root(), &d.id),
+                    )
+                })
+                .collect();
+            // Relay availability reports cannot exclude bounded recovery when
+            // there is no usable target wire. The middle checks its second leg.
+            let legs = match (self.no_relay(), y.no_relay) {
+                _ if self.wires.link(&y.id).road.is_none() => Legs::Recovery,
+                (true, _) => Legs::NoRelay,
+                (false, true) => Legs::ToNoRelay,
+                (false, false) => Legs::Dial,
+            };
+            let mut picked: Vec<String> = middles_with_cost(
+                &me,
+                &y.id,
+                &rows,
+                |b| self.road_for_hop(b, &mine),
+                |b| {
+                    all.iter()
+                        .find(|d| d.id == b)
+                        .and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id))
+                },
+                legs,
+            )
+            .into_iter()
+            .map(|(b, _)| b)
             .collect();
-        let legs = match (self.no_relay(), y.no_relay) {
-            (true, _) => Legs::NoRelay,
-            (false, true) => Legs::ToNoRelay,
-            (false, false) => Legs::Dial,
+            if legs == Legs::Recovery {
+                // Recovery uses a road we hold before spending its finite
+                // attempts on cached reachability. Stable sorting keeps the
+                // existing latency order inside each group; a live relay
+                // gets the same admission preference as a live IP wire.
+                picked.sort_by_key(|b| self.road_for_hop(b, &[]).is_none());
+            }
+            #[cfg(test)]
+            self.wires.hold_hop_selection_for_test().await;
+            let Some(epoch) = self.hop_miss_epoch_for(y, &all, &picked, observation) else {
+                return;
+            };
+            if missed_lately_in_epoch(&me, &y.id, Some(&epoch)) {
+                return;
+            }
+            // Keep the cold preparation state out of every enclosing dial and
+            // resident request's future, including requests that need no hop.
+            Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, false)).await;
+        })
+    }
+
+    #[cfg(test)]
+    fn hop_miss_epoch(
+        &self,
+        to: &str,
+        picked: &[String],
+        observation: MissObservation,
+    ) -> Option<MissEpoch> {
+        let all = self.devices().ok()?;
+        let target = all.iter().find(|device| device.id == to)?;
+        self.hop_miss_epoch_for(target, &all, picked, observation)
+    }
+
+    fn hop_miss_epoch_for(
+        &self,
+        target: &crate::DeviceInfo,
+        all: &[crate::DeviceInfo],
+        picked: &[String],
+        observation: MissObservation,
+    ) -> Option<MissEpoch> {
+        miss_context(self.device_str(), &target.id, observation, || {
+            // Use the roster read after this observation began, not a
+            // caller's older DeviceInfo. No document I/O under MISSED.
+            let target = all
+                .iter()
+                .find(|device| device.id == target.id)
+                .unwrap_or(target);
+            let candidates = picked
+                .iter()
+                .map(|id| {
+                    let mut conns: Vec<_> = self
+                        .wires
+                        .live(id, Proto::Tunnel)
+                        .or_else(|| self.wires.live(id, Proto::Main))
+                        .into_iter()
+                        .collect();
+                    if conns.is_empty() {
+                        conns = self.wires.incoming_for_hop(id);
+                    }
+                    let mut wires: Vec<_> = conns.iter().filter_map(HopWire::observed).collect();
+                    wires.sort_unstable_by_key(|wire| wire.id);
+                    wires.dedup_by_key(|wire| wire.id);
+                    HopCandidate {
+                        id: id.clone(),
+                        live: self.road_for_hop(id, &[]).is_some(),
+                        wires,
+                        hints: all
+                            .iter()
+                            .find(|device| &device.id == id)
+                            .map(effective_hop_hints)
+                            .unwrap_or_default(),
+                        missed: None,
+                        attempted_at: None,
+                    }
+                })
+                .collect();
+            (effective_hop_hints(target), candidates)
+        })
+    }
+
+    #[cfg(test)]
+    async fn open_hop(
+        &self,
+        ep: &iroh::Endpoint,
+        y: &crate::DeviceInfo,
+        all: &[crate::DeviceInfo],
+        picked: &[String],
+    ) -> bool {
+        let observation = MissObservation::new(self.wires.hop_epoch());
+        let Some(epoch) = self.hop_miss_epoch_for(y, all, picked, observation) else {
+            return false;
         };
-        let picked: Vec<String> = middles_with_cost(
-            &me,
-            &y.id,
-            &rows,
-            |b| self.road_for_hop(b, &mine),
-            |b| {
-                all.iter()
-                    .find(|d| d.id == b)
-                    .and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id))
-            },
-            legs,
-        )
-        .into_iter()
-        .map(|(b, _)| b)
-        .collect();
-        self.open_hop(ep, y, &all, &picked).await;
+        self.open_hop_in_epoch(ep, y, all, picked, epoch, false)
+            .await
     }
 
     /// **Opens a hop to `y` through the first of `picked` that answers**
@@ -429,60 +1048,169 @@ impl Node {
     /// and watches it: the hop is let go once direct, or the relay, has
     /// carried the connection for two looks — the selector
     /// (`carry::RoadOrder`) found it no faster. `true` when a hop is up.
-    async fn open_hop(
+    async fn open_hop_in_epoch(
         &self,
         ep: &iroh::Endpoint,
         y: &crate::DeviceInfo,
         all: &[crate::DeviceInfo],
         picked: &[String],
+        epoch: MissEpoch,
+        comparison: bool,
     ) -> bool {
+        let caller = crate::deadline::current();
+        let hop_by = tokio::time::Instant::now() + HOP_WITHIN;
+        let by = caller.map_or(hop_by, |caller| caller.min(hop_by));
+        if crate::deadline::expired(Some(by)) {
+            return false;
+        }
         let Ok(peer) = y.id.parse::<EndpointId>() else {
             return false;
         };
         let me = self.device_str().to_owned();
+        let eligible = {
+            let all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+            let Some(miss) = all.get(&(me.clone(), y.id.clone())) else {
+                return false;
+            };
+            if !current_miss_epoch(Some(&epoch))
+                || !same_miss_epoch(miss.epoch.as_ref(), Some(&epoch))
+            {
+                return false;
+            }
+            picked
+                .iter()
+                .filter(|id| {
+                    miss.candidates.iter().any(|middle| {
+                        &middle.id == *id
+                            && !middle.cooling()
+                            && (!comparison
+                                || middle
+                                    .attempted_at
+                                    .is_none_or(|at| at.elapsed() >= COMPARE_EVERY))
+                    })
+                })
+                .take(TRIES)
+                .collect::<Vec<_>>()
+        };
+        if eligible.is_empty() {
+            return false;
+        }
         let asked = Asking::new(&me, &y.id);
+        let mut attempted = Vec::with_capacity(TRIES);
         let tries = async {
-            for b in picked.iter().take(TRIES) {
+            if y.hop_staged && eligible.len() > 1 {
+                // The row is only a hint. Every positive preparation must
+                // use words understood by both B and Y; an old endpoint
+                // cannot accidentally grant a concurrent legacy admission.
+                // Reserve half of the SAME deadline for an unknown or
+                // downgraded peer's bounded legacy fallback.
+                let now = tokio::time::Instant::now();
+                let prepared_by = now + by.saturating_duration_since(now) / 2;
+                let preparing = async {
+                    use futures::StreamExt;
+                    let mut pending = futures::stream::FuturesUnordered::new();
+                    for b in &eligible {
+                        let Some(middle) = all.iter().find(|d| &d.id == *b) else {
+                            continue;
+                        };
+                        if middle.id.parse::<EndpointId>().is_err() {
+                            continue;
+                        }
+                        if !begin_middle(&me, &y.id, &epoch, b, comparison, prepared_by) {
+                            continue;
+                        }
+                        attempted.push(b.as_str());
+                        pending.push(self.prepare_hop_middle(ep, y, middle, &epoch, true));
+                    }
+                    while let Some(result) = pending.next().await {
+                        if result.is_some() {
+                            // Dropping the remaining futures cancels their
+                            // request streams before any carried publication.
+                            return result;
+                        }
+                    }
+                    None
+                };
+                if let Ok(Some(prepared)) = crate::deadline::wait(
+                    Some(prepared_by),
+                    crate::deadline::scope(prepared_by, preparing),
+                )
+                .await
+                {
+                    return Some(prepared);
+                }
+            }
+            let slots = eligible.len();
+            for (index, b) in eligible.into_iter().enumerate() {
                 let Some(middle) = all.iter().find(|d| &d.id == b) else {
                     continue;
                 };
-                let Ok(via) = b.parse::<EndpointId>() else {
+                if middle.id.parse::<EndpointId>().is_err() {
                     continue;
-                };
-                // Boxed: the middle's wire is a dial, and a dial may hop.
-                let line = Box::pin(crate::journal::BY.scope(
-                    crate::journal::By::Hop,
-                    self.line_to_inner(ep, middle, Proto::Tunnel, None, false),
-                ));
-                let Ok(line) = line.await else {
-                    continue;
-                };
-                if let Ok((send, recv)) =
-                    crate::tunnel::dial(&line.conn, &Ask::To(peer).words()).await
+                }
+                if !attempted.contains(&b.as_str()) {
+                    if !begin_middle(&me, &y.id, &epoch, b, comparison, by) {
+                        continue;
+                    }
+                    attempted.push(b.as_str());
+                }
+                // Share the existing deadline. A silent first admission
+                // cannot consume the opportunity of every other middle.
+                // Expiring this preparation does not retire its outer wire.
+                let now = tokio::time::Instant::now();
+                let left = by.saturating_duration_since(now);
+                let slice = left / u32::try_from(slots - index).unwrap_or(u32::MAX);
+                let attempt_by = now + slice;
+                if let Ok(Some(prepared)) = crate::deadline::wait(
+                    Some(attempt_by),
+                    crate::deadline::scope(
+                        attempt_by,
+                        self.prepare_hop_middle(ep, y, middle, &epoch, false),
+                    ),
+                )
+                .await
                 {
-                    return Some((via, send, recv));
+                    return Some(prepared);
                 }
             }
             None
         };
-        let tried = u32::try_from(picked.len().min(TRIES)).unwrap_or(u32::MAX);
-        let Ok(Some((via, send, recv))) = tokio::time::timeout(HOP_WITHIN, tries).await else {
-            if tried > 0 {
+        let result = crate::deadline::wait(Some(by), crate::deadline::scope(by, tries)).await;
+        let tried = u32::try_from(attempted.len()).unwrap_or(u32::MAX);
+        let Ok(Some((via, outer_wire, outer, send, recv))) = result else {
+            if tried > 0 && !crate::deadline::expired(caller) {
                 self.wires
                     .note(Some(&y.id), crate::journal::What::Hop { via: None, tried });
-                missed(&me, &y.id);
+                missed_in_epoch(&me, &y.id, Some(epoch), &attempted);
             }
             return false;
         };
-        made(&me, &y.id);
-        // A link came in while this one opened: ssh, which a hop never
-        // replaces, or the far end's own hop, which stands when the far
-        // end's id is the lower ([`Asking`]).
-        match self.carry.carrier(&peer) {
-            Some(Carrier::Ssh) => return false,
-            Some(Carrier::Hop { .. }) if y.id < me => return false,
-            _ => {}
-        }
+        // Lock order is network generation -> routing owner -> Links.
+        // No await or document I/O: forgiveness, a new candidate context,
+        // or a protected carrier cannot split validation from publication.
+        let attached = self.wires.with_hop_epoch(&epoch.network, || {
+            commit_in_epoch(&me, &y.id, Some(&epoch), Some(by), || {
+                stream_trace::attach_if(
+                    &self.carry,
+                    peer,
+                    Carrier::Hop { via },
+                    Some(outer_wire),
+                    "initiator",
+                    (send, recv),
+                    |current| {
+                        !crate::deadline::expired(Some(by))
+                            && match current {
+                                Some(Carrier::Ssh) => false,
+                                Some(Carrier::Hop { .. }) if y.id < me => false,
+                                _ => true,
+                            }
+                    },
+                )
+            })
+        });
+        let Some(attached) = attached.flatten() else {
+            return false;
+        };
         self.wires.note(
             Some(&y.id),
             crate::journal::What::Hop {
@@ -490,11 +1218,25 @@ impl Node {
                 tried,
             },
         );
-        let attached = self.carry.attach(peer, Carrier::Hop { via }, recv, send);
-        if let Some(addr) = self.carried_addr(&y.id) {
-            ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [addr]))
-                .await;
-        }
+        let attachment = attached.serial();
+        let (handoff, handed) = tokio::sync::oneshot::channel::<HopHandoff>();
+        let mut pending = PendingHop {
+            links: self.carry.clone(),
+            wires: self.wires.clone(),
+            id: y.id.clone(),
+            peer,
+            via,
+            attachment,
+            asked: Some(asked),
+            handoff: Some(handoff),
+            committed: false,
+        };
+        khor_net::carry::observe_lifecycle(&y.id, "hop_outer_bound", || {
+            serde_json::json!({
+                "role": "initiator", "attachment": attachment,
+                "via": via.to_string(), "outer_wire": outer_wire,
+            })
+        });
         let (links, wires, id, node) = (
             self.carry.clone(),
             self.wires.clone(),
@@ -505,13 +1247,65 @@ impl Node {
         // hop lives (`wires::HOP_SILENT`): a frozen middle hands back sooner.
         let riding = wires.hop_held(&via.to_string());
         tokio::spawn(async move {
-            let _riding = (riding, asked);
+            let _riding = riding;
             let ended = attached.ended();
             tokio::pin!(ended);
+            // Register the existing watcher before the first cancellable
+            // await. It owns path cleanup even if the opening future stops
+            // during offer_addrs; Asking transfers only after that offer.
+            let handed = tokio::select! {
+                () = &mut ended => {
+                    crate::carry::let_path_go(&node, &links, peer).await;
+                    return;
+                }
+                received = handed => received.ok(),
+            };
+            let Some(handoff) = handed else {
+                ended.await;
+                crate::carry::let_path_go(&node, &links, peer).await;
+                return;
+            };
+            let _asked = handoff.asked;
+            let mut pending = handoff.pending;
+            loop {
+                if let Some(mut waiting) = pending.take() {
+                    tokio::select! {
+                        () = &mut ended => {
+                            crate::carry::let_path_go(&node, &links, peer).await;
+                            return;
+                        }
+                        _ = waiting.changed() => {}
+                    }
+                }
+                #[cfg(test)]
+                let reviewed = wires.hold_pending_carrier_for_test(attachment).await;
+                let withdrawn = if handoff.cancelled {
+                    wires.withdraw_carrier_if_idle(&id, || {
+                        links.detach_attached(&peer, Carrier::Hop { via }, attachment);
+                    })
+                } else {
+                    Ok(false)
+                };
+                #[cfg(test)]
+                if let Some(reviewed) = reviewed {
+                    let _ = reviewed.send(());
+                }
+                match withdrawn {
+                    Err(successor) => pending = Some(successor),
+                    Ok(true) => {
+                        crate::carry::let_path_go(&node, &links, peer).await;
+                        return;
+                    }
+                    Ok(false) => break,
+                }
+            }
             let mut held = 0u8;
             loop {
                 tokio::select! {
                     () = &mut ended => {
+                        khor_net::carry::observe_lifecycle(&id, "hop_attachment_ended", || serde_json::json!({
+                            "attachment": attachment, "via": via.to_string(),
+                        }));
                         // The road under the carried path is gone: iroh
                         // chooses again now, not when the path idles out.
                         crate::carry::let_path_go(&node, &links, peer).await;
@@ -519,8 +1313,8 @@ impl Node {
                     }
                     () = tokio::time::sleep(LOOK_EVERY) => {}
                 }
-                // Direct took over, or the relay kept it (the hop is no
-                // faster), for two looks: the middle is let go, so it
+                // The selected direct or relay road beats the hop on
+                // measurement for two looks: the middle is let go, so it
                 // carries nothing it need not. **The relay keeps it only on
                 // measurement** (carry, 2026-10-23): one taken while the
                 // carried road stalls is not the hop losing. The phone's leg
@@ -528,46 +1322,77 @@ impl Node {
                 // middle was let go as lost for ten minutes, its path closed,
                 // and the connection, back on the hop, fell to the relay for
                 // good (netlab f4).
+                khor_net::carry::observe_lifecycle(
+                    &id,
+                    "hop_outer_look",
+                    || serde_json::json!({"role": "initiator", "attachment": attachment, "outer": outer_facts(&outer)}),
+                );
                 let road = wires.link(&id).road;
-                let losing = match road {
-                    Some(khor_net::path::PathKind::Direct) => true,
-                    Some(khor_net::path::PathKind::Relay) => wires.relay_beats_carried(&id),
-                    _ => false,
+                // No outgoing selected road can also mean the last
+                // consumer closed. Incoming wires and unknown path facts
+                // still participate in this same conservative comparison.
+                let comparison = wires.compare_carrier(&id);
+                held = if comparison != CarrierComparison::Needed {
+                    held + 1
+                } else {
+                    0
                 };
-                held = if losing { held + 1 } else { 0 };
                 if held >= 2 {
-                    if road == Some(khor_net::path::PathKind::Relay) {
-                        lost(&id, &via.to_string());
+                    #[cfg(test)]
+                    let reviewed = wires.hold_normal_release_for_test(attachment).await;
+                    let _ = wires.withdraw_carrier_if_idle(&id, || {
+                        let current_road = wires.link(&id).road;
+                        let current_comparison = wires.compare_carrier(&id);
+                        if current_road == road && current_comparison == comparison {
+                            release_hop(&links, &id, peer, via, attachment, road, held, comparison);
+                        }
+                    });
+                    // A pending consumer or a changed measurement starts
+                    // the existing two-look comparison again after it ends.
+                    held = 0;
+                    #[cfg(test)]
+                    if let Some(reviewed) = reviewed {
+                        let _ = reviewed.send(());
                     }
-                    links.detach(&peer, Carrier::Hop { via });
                 }
+                #[cfg(test)]
+                wires.note_hop_look_for_test(attachment);
             }
         });
-        true
+        let offer = async {
+            #[cfg(test)]
+            self.wires.hold_hop_offer_for_test(attachment).await;
+            if let Some(addr) = self.carried_addr(&y.id) {
+                ep.offer_addrs(iroh::EndpointAddr::from_parts(peer, [addr]))
+                    .await;
+            }
+            #[cfg(test)]
+            self.wires.hold_hop_offered_for_test(attachment).await;
+        };
+        if crate::deadline::wait(Some(by), offer).await.is_err() {
+            return false;
+        }
+        pending.hand_off(false)
     }
 
     /// **The road choice by measured legs** (NET-DIRECT step 4), every
-    /// [`COMPARE_EVERY`] from the resident's beat: for each machine whose
-    /// live wire is on the relay, the best middle's two legs added
+    /// resident beat, with [`COMPARE_EVERY`] per unchanged middle context:
+    /// a real network/candidate/first-leg change can be compared at once.
+    /// For each machine whose
+    /// live wire uses a direct or relay path, the best middle's two legs added
     /// ([`middles_with_cost`]: this machine's live round trip to the
     /// middle, the middle's written one onward) against the relay's
-    /// measured round trip. A hop at least [`khor_net::carry::SWITCH_MARGIN`]
-    /// faster is opened; iroh then measures it end to end and the selector
+    /// measured round trip. A hop that meets the selector's gain margin
+    /// is opened; iroh then measures it end to end and the selector
     /// keeps whichever is faster, and a hop that loses is let go
-    /// ([`Node::open_hop`]) and not tried through that middle again for
+    /// ([`Node::open_hop_in_epoch`]) and not tried through that middle again for
     /// [`LOST_FOR`]. Direct needs nothing here: iroh's punching runs under
     /// every road and takes over when it opens.
     pub(crate) async fn compare_roads(&self, ep: &iroh::Endpoint) {
-        {
-            let mut last = LAST_COMPARE.lock().unwrap_or_else(|p| p.into_inner());
-            if last.is_some_and(|t| t.elapsed() < COMPARE_EVERY) {
-                return;
-            }
-            *last = Some(std::time::Instant::now());
-        }
         if !self.hop_on() || self.carrying().is_none() {
             return;
         }
+        let observation = MissObservation::new(self.wires.hop_epoch());
         let Ok(all) = self.devices() else { return };
         let me = self.device_str().to_owned();
         let mine = all
@@ -593,7 +1418,11 @@ impl Node {
                 continue;
             }
             let r = self.wires.link(&y.id);
-            let (Some(khor_net::path::PathKind::Relay), Some(rtt)) = (r.road, r.rtt) else {
+            let (
+                Some(khor_net::path::PathKind::Direct | khor_net::path::PathKind::Relay),
+                Some(rtt),
+            ) = (r.road, r.rtt)
+            else {
                 continue;
             };
             let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
@@ -611,7 +1440,14 @@ impl Node {
                 |b| was_lost(&y.id, b),
             );
             if !picked.is_empty() {
-                self.open_hop(ep, y, &all, &picked).await;
+                let observation = MissObservation {
+                    network: observation.network.clone(),
+                    order: observation.order,
+                };
+                let Some(epoch) = self.hop_miss_epoch_for(y, &all, &picked, observation) else {
+                    continue;
+                };
+                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, true)).await;
             }
         }
     }
@@ -623,11 +1459,13 @@ impl Node {
         self: Arc<Self>,
         ep: Arc<iroh::Endpoint>,
         from: &str,
+        incoming: iroh::endpoint::WeakConnectionHandle,
         ask: Ask,
         mut send: SendStream,
         recv: RecvStream,
         paired: bool,
     ) {
+        let incoming_wire = incoming.upgrade().map(|c| c.stable_id());
         let refuse = |mut send: SendStream, byte: u8| async move {
             let _ = send.write_all(&[byte]).await;
             let _ = send.finish();
@@ -648,9 +1486,10 @@ impl Node {
                     .devices()
                     .is_ok_and(|all| all.iter().any(|d| d.id == id && d.sponsor.is_none()))
         };
+        let prepared = matches!(ask, Ask::PrepareTo(_) | Ask::PrepareFrom(_));
         match ask {
             // B: splice `from` (X) to `to` (Y).
-            Ask::To(to) => {
+            Ask::To(to) | Ask::PrepareTo(to) => {
                 let y = to.to_string();
                 if !member(&y) || matches!(self.carry.carrier(&to), Some(Carrier::Hop { .. })) {
                     return refuse(send, REFUSED).await;
@@ -678,21 +1517,62 @@ impl Node {
                         Box::pin(self.line_to_inner(&ep, &d, Proto::Tunnel, Some(by), false))
                             .await
                             .ok()?;
-                    crate::tunnel::dial(&line.conn, &Ask::From(from_id).words())
+                    let wire = line.conn.stable_id();
+                    let hand = if prepared {
+                        Ask::PrepareFrom(from_id)
+                    } else {
+                        Ask::From(from_id)
+                    };
+                    crate::tunnel::dial(&line.conn, &hand.words())
                         .await
                         .ok()
+                        .map(|(send, recv)| (wire, line.conn.weak_handle(), send, recv))
                 });
-                let Ok(Some((ys, yr))) = tokio::time::timeout(MIDDLE_WITHIN, onward).await else {
+                let Ok(Some((onward_wire, onward, ys, yr))) =
+                    tokio::time::timeout(MIDDLE_WITHIN, onward).await
+                else {
                     return refuse(send, NO_ROUTE).await;
                 };
                 if send.write_all(&[OK]).await.is_err() {
                     return;
                 }
+                khor_net::carry::observe_lifecycle(from, "hop_splice_bound", || {
+                    serde_json::json!({
+                        "to": y, "incoming_wire": incoming_wire, "onward_wire": onward_wire,
+                    })
+                });
                 let _riding = (self.wires.hop_held(from), self.wires.hop_held(&y));
-                splice((send, recv), (ys, yr)).await;
+                let copying = stream_trace::splice(
+                    (send, recv),
+                    (ys, yr),
+                    from_id,
+                    (incoming_wire, onward_wire),
+                );
+                if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some() {
+                    tokio::pin!(copying);
+                    let mut look = tokio::time::interval(LOOK_EVERY);
+                    loop {
+                        tokio::select! {
+                            () = &mut copying => break,
+                            _ = look.tick() => {
+                                khor_net::carry::observe_lifecycle(from, "hop_outer_look", || {
+                                    serde_json::json!({"role": "middle", "to": y,
+                                        "incoming": outer_facts(&incoming), "onward": outer_facts(&onward)})
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    copying.await;
+                }
+                khor_net::carry::observe_lifecycle(from, "hop_splice_ended", || {
+                    serde_json::json!({
+                        "to": y, "incoming_wire": incoming_wire, "onward_wire": onward_wire,
+                    })
+                });
             }
             // Y: this stream is the link to `from`'s asker (X), via B.
-            Ask::From(x) => {
+            Ask::From(x) | Ask::PrepareFrom(x) => {
                 let asker = x.to_string();
                 if !member(&asker) || matches!(self.carry.carrier(&x), Some(Carrier::Ssh)) {
                     return refuse(send, REFUSED).await;
@@ -705,19 +1585,82 @@ impl Node {
                 if send.write_all(&[OK]).await.is_err() {
                     return;
                 }
-                let attached = self
-                    .carry
-                    .attach(x, Carrier::Hop { via: from_id }, recv, send);
+                // OK admits a preparation, not a replacement carrier.
+                // Only the chosen initiator publishes its transport and
+                // writes a complete framed datagram. A status-only loser
+                // can therefore finish late without replacing live traffic.
+                let mut recv = recv;
+                let Ok(Some(prefix)) =
+                    tokio::time::timeout(HOP_WITHIN, stream_trace::first_frame(&mut recv)).await
+                else {
+                    return;
+                };
+                if !self.hop_on()
+                    || self.carrying().is_none()
+                    || !member(&asker)
+                    || matches!(self.carry.carrier(&x), Some(Carrier::Ssh))
+                    || (me < asker && asking(&me, &asker))
+                {
+                    return;
+                }
+                let attached = stream_trace::attach_prefixed(
+                    &self.carry,
+                    x,
+                    Carrier::Hop { via: from_id },
+                    incoming_wire,
+                    "receiver",
+                    (send, recv),
+                    prefix,
+                );
+                khor_net::carry::observe_lifecycle(&asker, "hop_outer_bound", || {
+                    serde_json::json!({
+                        "role": "receiver", "attachment": attached.serial(),
+                        "via": from, "outer_wire": incoming_wire,
+                    })
+                });
                 if let Some(addr) = self.carried_addr(&asker) {
                     ep.offer_addrs(iroh::EndpointAddr::from_parts(x, [addr]))
                         .await;
                 }
                 self.wires.forgive(&asker);
                 let _riding = self.wires.hop_held(from);
-                attached.ended().await;
+                let ended = attached.ended();
+                if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some() {
+                    tokio::pin!(ended);
+                    let mut look = tokio::time::interval(LOOK_EVERY);
+                    loop {
+                        tokio::select! {
+                            () = &mut ended => break,
+                            _ = look.tick() => {
+                                khor_net::carry::observe_lifecycle(&asker, "hop_outer_look", || {
+                                    serde_json::json!({"role": "receiver", "outer": outer_facts(&incoming)})
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    ended.await;
+                }
                 crate::carry::let_path_go(&self.weak(), &self.carry, x).await;
             }
         }
+    }
+}
+
+/// Read an actual carrier connection only inside an enabled diagnostic closure.
+/// A weak handle cannot keep an otherwise finished outer connection alive.
+fn outer_facts(outer: &iroh::endpoint::WeakConnectionHandle) -> serde_json::Value {
+    match outer.upgrade() {
+        Some(conn) => serde_json::json!({
+            "wire": conn.stable_id(), "closed": conn.close_reason().is_some(),
+            "measurements": khor_net::path::path_facts(&conn),
+            "transport": format!("{:?}", conn.stats()),
+            "transport_paths": conn.paths().iter().map(|p| serde_json::json!({
+                "addr": format!("{:?}", p.remote_addr()), "selected": p.is_selected(),
+                "stats": format!("{:?}", p.stats()),
+            })).collect::<Vec<_>>(),
+        }),
+        None => serde_json::json!({"dropped": true}),
     }
 }
 
@@ -742,8 +1685,142 @@ async fn splice(a: (SendStream, RecvStream), b: (SendStream, RecvStream)) {
 }
 
 #[cfg(test)]
+#[path = "hop/offer_tests.rs"]
+mod tests_offer;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn measured_path_eligibility_does_not_lower_new_middle_preparation_cost() {
+        let current = Duration::from_millis(131);
+        let candidate = Duration::from_millis(104);
+        assert!(khor_net::carry::improves(candidate, current, false));
+        assert!(!beats(104, 131));
+    }
+
+    /// An old watcher can finish a measured look after replacement. Its
+    /// completed attachment never owns a later stream through the same middle.
+    #[tokio::test]
+    async fn a_finished_hop_watcher_cannot_release_its_live_replacement() {
+        use khor_net::carry::Links;
+        use khor_net::path::PathKind;
+
+        let me = iroh::SecretKey::generate().public();
+        let via = iroh::SecretKey::generate().public();
+        // Positive controls: the current owner still releases a losing hop;
+        // only an actual loss to the relay suppresses that middle afterward.
+        for road in [PathKind::Relay, PathKind::Direct] {
+            let peer = iroh::SecretKey::generate().public();
+            let links = Links::new(me);
+            let (here, _remote) = tokio::io::duplex(64);
+            let (r, w) = tokio::io::split(here);
+            let current = links.attach(peer, Carrier::Hop { via }, r, w);
+            let serial = current.serial();
+            assert!(links.has(&peer));
+            release_hop(
+                &links,
+                &peer.to_string(),
+                peer,
+                via,
+                serial,
+                Some(road),
+                2,
+                CarrierComparison::Outperformed,
+            );
+            assert!(!links.has(&peer), "the current owner releases its own link");
+            assert_eq!(
+                was_lost(&peer.to_string(), &via.to_string()),
+                road == PathKind::Relay
+            );
+            tokio::time::timeout(Duration::from_secs(1), current.ended())
+                .await
+                .expect("released current link ends");
+        }
+
+        let peer = iroh::SecretKey::generate().public();
+        let links = Links::new(me);
+        let (old_here, _old_remote) = tokio::io::duplex(64);
+        let (old_r, old_w) = tokio::io::split(old_here);
+        let old = links.attach(peer, Carrier::Hop { via }, old_r, old_w);
+        let stale = old.serial();
+        let (new_here, _new_remote) = tokio::io::duplex(64);
+        let (new_r, new_w) = tokio::io::split(new_here);
+        let replacement = links.attach(peer, Carrier::Hop { via }, new_r, new_w);
+        let current = replacement.serial();
+        assert_ne!(stale, current, "distinct attachment generations");
+        tokio::time::timeout(Duration::from_secs(1), old.ended())
+            .await
+            .expect("the replaced stream has actually ended");
+        let ended = replacement.ended();
+        tokio::pin!(ended);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), &mut ended)
+                .await
+                .is_err()
+        );
+        assert_eq!(links.carrier(&peer), Some(Carrier::Hop { via }));
+        assert!(!was_lost(&peer.to_string(), &via.to_string()));
+
+        release_hop(
+            &links,
+            &peer.to_string(),
+            peer,
+            via,
+            stale,
+            Some(PathKind::Relay),
+            2,
+            CarrierComparison::Outperformed,
+        );
+        let still_live = links.has(&peer);
+        let wrongly_lost = was_lost(&peer.to_string(), &via.to_string());
+        eprintln!(
+            "[hop-owner-contract] old={stale} current={current} old_ended=true replacement_alive_before=true alive_after={still_live} lost_after={wrongly_lost}"
+        );
+        assert!(
+            still_live && !wrongly_lost,
+            "a stale watcher cannot release or suppress its replacement"
+        );
+    }
+
+    /// A carrier can be unused after its paths disappear during a network
+    /// move. Reclaim the owned stream, without calling that a measured loss.
+    #[tokio::test]
+    async fn an_unused_hop_is_released_without_suppressing_its_middle() {
+        use khor_net::carry::Links;
+        use khor_net::path::PathKind;
+
+        let me = iroh::SecretKey::generate().public();
+        let peer = iroh::SecretKey::generate().public();
+        let via = iroh::SecretKey::generate().public();
+        let links = Links::new(me);
+        let (stream, _remote) = tokio::io::duplex(64);
+        let (r, w) = tokio::io::split(stream);
+        let current = links.attach(peer, Carrier::Hop { via }, r, w);
+        let serial = current.serial();
+        assert!(links.has(&peer));
+        release_hop(
+            &links,
+            &peer.to_string(),
+            peer,
+            via,
+            serial,
+            Some(PathKind::Relay),
+            2,
+            CarrierComparison::Unused,
+        );
+        let suppressed = was_lost(&peer.to_string(), &via.to_string());
+        assert!(!links.has(&peer), "an unused carrier is actually reclaimed");
+        tokio::time::timeout(Duration::from_secs(1), current.ended())
+            .await
+            .expect("the reclaimed owned stream ends");
+        eprintln!("[hop-unused-contract] serial={serial} released=true suppressed={suppressed}");
+        assert!(
+            !suppressed,
+            "no carried path comparison is no evidence that its middle lost"
+        );
+    }
 
     fn middles(
         me: &str,
@@ -760,6 +1837,39 @@ mod tests {
 
     fn road(to: &str, k: RoadKind, ms: u16) -> Road {
         Road::own(to, k, None, Some(ms))
+    }
+
+    /// Both candidates are already eligible before a dial. A direct
+    /// first leg must not put a 120 ms hop ahead of a 5 ms relay/SSH hop.
+    #[test]
+    fn cold_hop_candidates_rank_by_the_measured_two_leg_cost() {
+        let rows: Vec<_> = ["unknown", "slow-direct", "fast-relay"]
+            .into_iter()
+            .map(|id| (id.to_owned(), false, false))
+            .collect();
+        let mine = |id: &str| match id {
+            "unknown" => Some(Road::own(id, RoadKind::Direct, None, None)),
+            "slow-direct" => Some(road(id, RoadKind::Direct, 100)),
+            "fast-relay" => Some(road(id, RoadKind::Relay, 2)),
+            _ => None,
+        };
+        let theirs = |id: &str| match id {
+            "unknown" => Some(road("to", RoadKind::Ssh, 1)),
+            "slow-direct" => Some(road("to", RoadKind::Ssh, 20)),
+            "fast-relay" => Some(road("to", RoadKind::Ssh, 3)),
+            _ => None,
+        };
+        for policy in [Legs::Measured, Legs::Dial] {
+            assert_eq!(
+                middles_with_cost("me", "to", &rows, mine, theirs, policy),
+                vec![
+                    ("fast-relay".to_owned(), 5),
+                    ("slow-direct".to_owned(), 120),
+                    ("unknown".to_owned(), u32::from(u16::MAX) + 1),
+                ],
+                "known two-leg cost is primary under {policy:?}"
+            );
+        }
     }
 
     /// **A hop that found no middle is not asked for before every dial**
@@ -801,15 +1911,15 @@ mod tests {
         assert_eq!(Ask::of("hop nonsense"), None);
     }
 
-    /// The roadbook rules: both legs known, neither a hop; direct first
-    /// leg first; the relay as a first leg only to a middle that carries
+    /// The roadbook rules: both legs known, neither a hop; lower total
+    /// measured cost first; the relay as a first leg only to a middle that carries
     /// the far end over ssh.
     /// NET-DIRECT step 4, MacLab's night of 10-09: the iPhone on the relay
     /// at 58 ms, turing reached directly at 3 ms and writing a direct road
     /// to the iPhone at 26 ms — the hop costs 29 ms and is opened; at a
     /// relay of 35 ms it would save under 10 ms and is not.
     #[test]
-    fn a_hop_is_worth_opening_when_its_legs_beat_the_relay_by_ten_ms() {
+    fn a_hop_is_worth_opening_when_the_selector_would_use_it() {
         let rows: Vec<(String, bool, bool)> = ["maclab", "iphone", "turing", "hinton"]
             .iter()
             .map(|s| (s.to_string(), false, false))
@@ -845,6 +1955,8 @@ mod tests {
         assert!(beats(29, 58));
         assert!(!beats(29, 35), "6 ms is not worth a middle");
         assert!(beats(29, 39));
+        assert!(beats(22, 30), "8 ms on 30 ms wins selection");
+        assert!(!beats(450, 500), "50 ms does not pay new-middle cost");
     }
 
     /// **lecun's day of 10-20** (C7): its relays never answered; it

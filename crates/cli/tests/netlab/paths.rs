@@ -49,8 +49,23 @@ use std::time::{Duration, Instant, SystemTime};
 use khor_core::Hop;
 use patchbay::{Device, IpSupport, Lab, LinkCondition, LinkDirection, Nat, Router, RouterPreset};
 
-use crate::lab::{LabNode, mesh, node, qad_relays_dual, relay, result};
-use crate::scratch::Reaped;
+use crate::lab::{LabNode, mesh, node, qad_relays_dual, relay, result, sample_diagnostics};
+#[path = "paths/attempts.rs"]
+mod attempts;
+#[path = "paths/cpu.rs"]
+mod cpu;
+#[path = "paths/first_action.rs"]
+mod first_action;
+#[path = "paths/idle_action.rs"]
+mod idle_action;
+#[path = "paths/mobile.rs"]
+pub(crate) mod mobile;
+#[path = "paths/mobility.rs"]
+mod mobility;
+#[path = "paths/rebind.rs"]
+mod rebind;
+#[path = "paths/roam.rs"]
+mod roam;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -232,14 +247,22 @@ async fn punch_rounds(n: &LabNode) -> u64 {
 /// paired, and direct to each other on both sides.
 struct Pair {
     _lab: Lab,
-    _relay: crate::lab::Relay,
+    relay: crate::lab::Relay,
     a: LabNode,
     b: LabNode,
 }
 
 async fn pair(s: &str, before: impl AsyncFnOnce(&Device, &Device)) -> Pair {
+    pair_with_relay(s, before, None).await
+}
+
+async fn pair_with_relay(
+    s: &str,
+    before: impl AsyncFnOnce(&Device, &Device),
+    relay_rtt: Option<Duration>,
+) -> Pair {
     let lab = Lab::new().await.unwrap();
-    let r = relay(&lab, s, "relay", None).await;
+    let r = relay(&lab, s, "relay", relay_rtt).await;
     let lan = network(&lab, "lan").await;
     let second = network(&lab, "second").await;
     let da = two_legs(&lab, "a", &lan, &second).await;
@@ -252,11 +275,15 @@ async fn pair(s: &str, before: impl AsyncFnOnce(&Device, &Device)) -> Pair {
     for (x, y) in [(&a, &b), (&b, &a)] {
         x.until(y, Duration::from_secs(90), |l| l.hop == Hop::Direct)
             .await
-            .unwrap_or_else(|| panic!("{} goes direct to {}", x.name, y.name));
+            .unwrap_or_else(|| {
+                crate::hop::path_diagnostics(x, y);
+                crate::hop::path_diagnostics(y, x);
+                panic!("{} goes direct to {}", x.name, y.name)
+            });
     }
     Pair {
         _lab: lab,
-        _relay: r,
+        relay: r,
         a,
         b,
     }
@@ -282,29 +309,51 @@ async fn one_speed(s: &str, one_way: u32, jitter: u32) {
 /// of alpha's legs with a keystroke in it, both residents on one CPU with
 /// two busy loops (p1s).
 async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
-    let p = pair(s, async |da, db| {
-        for d in [da, db] {
-            for i in ["eth0", "eth1"] {
-                let cond = LinkCondition::new().latency_ms(one_way).jitter_ms(jitter);
-                d.iface(i)
-                    .unwrap()
-                    .set_condition(cond, LinkDirection::Egress)
-                    .await
-                    .unwrap();
+    let p = pair_with_relay(
+        s,
+        async |da, db| {
+            for d in [da, db] {
+                for i in ["eth0", "eth1"] {
+                    let cond = LinkCondition::new().latency_ms(one_way).jitter_ms(jitter);
+                    d.iface(i)
+                        .unwrap()
+                        .set_condition(cond, LinkDirection::Egress)
+                        .await
+                        .unwrap();
+                }
             }
-        }
-    })
+        },
+        Some(Duration::from_millis(100)),
+    )
     .await;
+    let iface = p.relay.dev.default_iface().unwrap();
+    iface.clear_condition(LinkDirection::Both).await.unwrap();
+    eprintln!("[netlab] stability bootstrap v2: relay edge 100ms cleared before settling");
     // Settled: the first minute is the dial's.
     tokio::time::sleep(Duration::from_secs(30)).await;
+    let mut busy = if stalls {
+        Some(
+            cpu::BusyCpu::start(&[
+                u32::try_from(p.a.pid()).expect("positive resident pid"),
+                u32::try_from(p.b.pid()).expect("positive resident pid"),
+            ])
+            .await
+            .expect("valid one-CPU contention before measurement"),
+        )
+    } else {
+        None
+    };
     let since = now_ms();
     let (rounds0, traffic0) = (punch_rounds(&p.a).await, wire_traffic(&p.a.dev));
     let (mut spikes, mut slowest) = (0, Duration::ZERO);
     if stalls {
-        let _busy = busy_beside(&[&p.a, &p.b]);
         let began = Instant::now();
         while began.elapsed() < long() {
             tokio::time::sleep(Duration::from_secs(30)).await;
+            busy.as_mut()
+                .unwrap()
+                .verify("spike")
+                .expect("CPU contention remains valid");
             let cond = LinkCondition::new()
                 .latency_ms(one_way + 300)
                 .jitter_ms(jitter);
@@ -336,6 +385,11 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
     } else {
         tokio::time::sleep(long()).await;
     }
+    if let Some(busy) = &mut busy {
+        busy.verify("end")
+            .expect("CPU contention covered the complete window");
+    }
+    drop(busy);
     let (ma, mb) = (moves(&p.a, &p.b, since), moves(&p.b, &p.a, since));
     let rounds = punch_rounds(&p.a).await - rounds0;
     let traffic = wire_traffic(&p.a.dev);
@@ -344,6 +398,10 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
     let changes = lines(&p.a, None, "network", since).len();
     let worst = ma.len().max(mb.len());
     let ok = worst <= 1 && retired == 0;
+    if !ok {
+        crate::hop::path_diagnostics(&p.a, &p.b);
+        crate::hop::path_diagnostics(&p.b, &p.a);
+    }
     result(
         s,
         ok,
@@ -365,6 +423,8 @@ async fn one_speed_stalling(s: &str, one_way: u32, jitter: u32, stalls: bool) {
             traffic.1 - traffic0.1,
         ),
     );
+    sample_diagnostics(s, &p.a);
+    sample_diagnostics(s, &p.b);
     assert!(
         worst <= 1,
         "at most one move in ten minutes: alpha {ma:?}, beta {mb:?}"
@@ -394,29 +454,6 @@ async fn p1j_two_jittery_roads_of_one_speed_hold_still() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn p1s_two_roads_of_one_speed_hold_still_through_stalls() {
     one_speed_stalling("p1s", 1, 0, true).await;
-}
-
-/// Pins `nodes`' residents to one CPU and runs two busy loops on it, until
-/// dropped: a machine short of CPU (p1s). The CPU is picked by this
-/// process's pid, so scenarios side by side pick different ones.
-fn busy_beside(nodes: &[&LabNode]) -> Vec<Reaped> {
-    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
-    let cpu = (std::process::id() as usize % cpus).to_string();
-    for n in nodes {
-        let _ = Command::new("taskset")
-            .args(["-a", "-p", "-c", &cpu, &n.pid().to_string()])
-            .stdout(Stdio::null())
-            .status();
-    }
-    (0..2)
-        .filter_map(|_| {
-            Command::new("taskset")
-                .args(["-c", &cpu, "sh", "-c", "while :; do :; done"])
-                .spawn()
-                .ok()
-                .map(Reaped)
-        })
-        .collect()
 }
 
 /// p5 (net-flap, 2026-10-21): one direct road and a relay 500 ms away;
@@ -521,22 +558,217 @@ fn drop_between(dev: &Device, ip: &str, on: bool) {
 /// A listing of beta's /tmp from alpha: one request and its answer on
 /// the wire, a keystroke's worth. How long it took, or why it failed.
 async fn echo(a: &LabNode) -> (Duration, Option<String>) {
-    let t = Instant::now();
-    let got = tokio::time::timeout(
+    crate::attempts::measure(
+        &a.scenario,
+        &a.id,
+        "beta",
         Duration::from_secs(30),
         a.with(|n| async move { n.ls_of("beta", "/tmp").await.map(|_| ()) }),
     )
-    .await;
-    let error = match got {
-        Ok(Ok(())) => None,
-        Ok(Err(e)) => Some(e),
-        Err(_) => Some("no answer in 30 s".to_owned()),
-    };
-    (t.elapsed(), error)
+    .await
+}
+
+/// NET-01: the same endpoint pair has a slow direct road and a fast
+/// relay, or the reverse. NAT on each default uplink keeps the shared
+/// second network as the only usable direct road; relay traffic avoids
+/// that interface entirely.
+struct SpeedPair {
+    _lab: Lab,
+    relay: crate::lab::Relay,
+    a: LabNode,
+    b: LabNode,
+    second: Router,
+}
+
+async fn speed_pair(s: &str, direct_ms: u32) -> SpeedPair {
+    let lab = Lab::new().await.unwrap();
+    let r = relay(&lab, s, "relay", Some(Duration::from_millis(40))).await;
+    let left = crate::nat::router(&lab, "left", crate::nat::Net::Strict).await;
+    let right = crate::nat::router(&lab, "right", crate::nat::Net::Strict).await;
+    let second = network(&lab, "second").await;
+    let da = two_legs(&lab, "a", &left, &second).await;
+    let db = two_legs(&lab, "b", &right, &second).await;
+    delay(&da, "eth1", direct_ms / 2, LinkDirection::Both).await;
+    let a = node(s, da, "alpha", &[&r], &[]).await;
+    let b = node(s, db, "beta", &[&r], &[]).await;
+    mesh(&[&a, &b]).await;
+    // Pairing does not require the answering resident to dial back.
+    // Establish both outgoing wires before measuring both residents;
+    // the quiet background pump may otherwise wait thirty seconds.
+    b.with(|n| async move { n.ls_of("alpha", "/tmp").await.map(|_| ()) })
+        .await
+        .expect("beta can query alpha before measurement");
+    SpeedPair {
+        _lab: lab,
+        relay: r,
+        a,
+        b,
+        second,
+    }
+}
+
+async fn speed_first(s: &str, direct_ms: u32, want: Hop, only: bool) {
+    let pair = speed_pair(s, direct_ms).await;
+    let (a, b) = (&pair.a, &pair.b);
+    if only {
+        // Same topology and workload, with the competing data path
+        // blocked after setup. This is a reachable steady-state
+        // reference, not a different machine's ping result.
+        let other = if want == Hop::Relay {
+            b.dev.iface("eth1").unwrap().ip().unwrap()
+        } else {
+            pair.relay.dev.ip().unwrap()
+        };
+        drop_between(&a.dev, &other.to_string(), true);
+    }
+    tokio::time::sleep(Duration::from_secs(10)).await;
+    let reached = a
+        .until(&b, Duration::from_secs(15), |l| l.hop == want)
+        .await
+        .is_some();
+    let mut samples = Vec::new();
+    let mut errors = Vec::new();
+    for _ in 0..30 {
+        let (took, error) = echo(&a).await;
+        samples.push(took);
+        if let Some(error) = error {
+            errors.push(error);
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    samples.sort();
+    let p95 = samples[28];
+    let roads = (a.link(&b).await, b.link(&a).await);
+    let held = roads.0.as_ref().is_some_and(|l| l.hop == want)
+        && roads.1.as_ref().is_some_and(|l| l.hop == want);
+    let ok = reached && held && errors.is_empty() && p95 < Duration::from_millis(200);
+    result(
+        s,
+        ok,
+        format!(
+            "direct {direct_ms}ms, relay edge 40ms (~80ms end-to-end), want {want:?}, only {only}; reached {reached}, held {held}; n=30 p50 {:?} p95 {p95:?} max {:?}; errors {errors:?}; roads {roads:?}",
+            samples[14], samples[29]
+        ),
+    );
+    assert!(ok, "the measured faster road carries responsive requests");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn p2_the_road_in_use_slows_and_the_lan_takes_over() {
+async fn p6_a_fast_relay_beats_a_live_slow_direct_road() {
+    speed_first("p6r", 300, Hop::Relay, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p6_a_fast_direct_road_beats_a_slow_relay() {
+    speed_first("p6d", 0, Hop::Direct, false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p6_reference_with_only_the_fast_relay_usable() {
+    speed_first("p6ref-r", 300, Hop::Relay, true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p6_reference_with_only_the_fast_direct_road_usable() {
+    speed_first("p6ref-d", 0, Hop::Direct, true).await;
+}
+
+/// A slow direct candidate becomes fast while the relay is carrying.
+/// Its old smoothed RTT must not keep the connection on the relay for
+/// minutes. Activity permits a bounded, faster refresh; idle recovery
+/// uses the existing spare keepalive budget.
+async fn recovers(s: &str, active: bool, phase_s: u64) {
+    let pair = speed_pair(s, 300).await;
+    for (a, b) in [(&pair.a, &pair.b), (&pair.b, &pair.a)] {
+        assert!(
+            a.until(b, Duration::from_secs(25), |l| l.hop == Hop::Relay)
+                .await
+                .is_some(),
+            "the faster relay carries before the direct road recovers"
+        );
+    }
+    tokio::time::sleep(Duration::from_secs(10 + phase_s)).await;
+    for (a, b) in [(&pair.a, &pair.b), (&pair.b, &pair.a)] {
+        assert!(
+            a.link(b).await.is_some_and(|l| l.hop == Hop::Relay),
+            "preparation: both ends still use the relay before recovery at phase {phase_s}"
+        );
+    }
+    let since = now_ms();
+    delay(&pair.a.dev, "eth1", 0, LinkDirection::Both).await;
+    let began = Instant::now();
+    let mut back = None;
+    let mut errors = Vec::new();
+    while began.elapsed() < Duration::from_secs(45) {
+        let roads = (pair.a.link(&pair.b).await, pair.b.link(&pair.a).await);
+        if roads.0.is_some_and(|l| l.hop == Hop::Direct)
+            && roads.1.is_some_and(|l| l.hop == Hop::Direct)
+        {
+            back = Some(began.elapsed());
+            break;
+        }
+        if active {
+            let (_, error) = echo(&pair.a).await;
+            if let Some(error) = error {
+                errors.push(error);
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let limit = Duration::from_secs(if active { 10 } else { 20 });
+    let ok = back.is_some_and(|t| t <= limit) && errors.is_empty();
+    result(
+        s,
+        ok,
+        format!(
+            "active {active}, phase {phase_s}s; direct 300 -> 0ms, relay edge 40ms (~80ms end-to-end); back {back:?}, limit {limit:?}; errors {errors:?}; a {:?}, b {:?}",
+            moves(&pair.a, &pair.b, since),
+            moves(&pair.b, &pair.a, since)
+        ),
+    );
+    assert!(
+        ok,
+        "a recovered fast road is rediscovered within its budget"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_is_taken_while_typing() {
+    recovers("p7a", true, 0).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_is_taken_while_idle() {
+    recovers("p7i", false, 0).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_while_typing_at_phase_2() {
+    recovers("p7a-phase2", true, 2).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_while_typing_at_phase_4() {
+    recovers("p7a-phase4", true, 4).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_while_idle_at_phase_5() {
+    recovers("p7i-phase5", false, 5).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_while_idle_at_phase_10() {
+    recovers("p7i-phase10", false, 10).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p7_a_recovered_direct_road_while_idle_at_phase_14() {
+    recovers("p7i-phase14", false, 14).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn p2_the_road_in_use_slows_and_a_fast_road_takes_over() {
     slows("p2", true).await;
 }
 
@@ -545,7 +777,18 @@ async fn p2i_the_road_in_use_slows_while_idle() {
     slows("p2i", false).await;
 }
 
-/// p2 (`typing`: an echo every 200 ms from alpha) and p2i (nothing).
+/// The known unshaped roads in p2. A connection's old smoothed RTT
+/// cannot prove its current quality; echo samples verify responsiveness.
+async fn on_a_fast_road(n: &LabNode, peer: &LabNode) -> bool {
+    let Some(link) = n.link(peer).await else {
+        return false;
+    };
+    link.hop == Hop::Relay
+        || (link.hop == Hop::Direct && current(n, peer).as_deref() == Some("lan"))
+}
+
+/// The unshaped relay is also a valid fast road. Preserve the topology
+/// and require measured recovery, rather than forcing a direct path.
 async fn slows(s: &str, typing: bool) {
     // The LAN slow at first (30 ms), so the connection lands on the
     // second road.
@@ -570,43 +813,72 @@ async fn slows(s: &str, typing: bool) {
     delay(&p.a.dev, "eth0", 0, LinkDirection::Both).await;
     tokio::time::sleep(Duration::from_secs(20)).await;
     let held = [current(&p.a, &p.b), current(&p.b, &p.a)];
+    assert!(
+        held.iter().any(|r| r.as_deref() == Some("second")),
+        "preparation: at least one end uses the road about to slow: {held:?}"
+    );
     // Now the road in use slows to about 21 ms.
     let since = now_ms();
     let slowed = Instant::now();
     delay(&p.a.dev, "eth1", 10, LinkDirection::Both).await;
     delay(&p.b.dev, "eth1", 1, LinkDirection::Egress).await;
-    let (mut back, mut echoes) = (None, 0);
+    let (mut back, mut post) = (None, 0);
+    let mut samples = Vec::new();
+    let mut errors = Vec::new();
     while slowed.elapsed() < Duration::from_secs(90) {
-        if [current(&p.a, &p.b), current(&p.b, &p.a)]
-            .iter()
-            .all(|c| c.as_deref() == Some("lan"))
-        {
+        if back.is_none() && on_a_fast_road(&p.a, &p.b).await && on_a_fast_road(&p.b, &p.a).await {
             back = Some(slowed.elapsed());
-            break;
         }
         if typing {
-            let (_, error) = echo(&p.a).await;
-            assert_eq!(error, None, "every echo answers");
-            echoes += 1;
+            let (took, error) = echo(&p.a).await;
+            samples.push(took);
+            if let Some(error) = error {
+                errors.push(error);
+            }
+            if back.is_some() {
+                post += 1;
+                if post >= 30 {
+                    break;
+                }
+            }
             tokio::time::sleep(Duration::from_millis(200)).await;
         } else {
+            if back.is_some() {
+                break;
+            }
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
     }
     let retired = lines(&p.a, Some(&p.b), "retired", since).len()
         + lines(&p.b, Some(&p.a), "retired", since).len();
-    let ok = back.is_some_and(|b| b <= Duration::from_secs(10)) && retired == 0;
+    let held_fast = on_a_fast_road(&p.a, &p.b).await && on_a_fast_road(&p.b, &p.a).await;
+    samples.sort();
+    let p95 = samples
+        .get((samples.len() * 95).div_ceil(100).saturating_sub(1))
+        .copied();
+    let worst = samples.last().copied();
+    let responsive = !typing
+        || (post >= 30
+            && errors.is_empty()
+            && p95.is_some_and(|t| t < Duration::from_millis(200))
+            && worst.is_some_and(|t| t < Duration::from_secs(1)));
+    let ok = back.is_some_and(|b| b <= Duration::from_secs(10))
+        && held_fast
+        && retired == 0
+        && responsive;
+    let roads = (p.a.link(&p.b).await, p.b.link(&p.a).await);
+    if typing {
+        crate::hop::path_diagnostics(&p.a, &p.b);
+        crate::hop::path_diagnostics(&p.b, &p.a);
+    }
     result(
         s,
         ok,
         format!(
-            "held {held:?} at equal speed; {} after the slowdown both on the LAN {}; alpha {:?}, beta {:?}; retired {retired}",
-            if typing {
-                format!("typing ({echoes} echoes),")
-            } else {
-                "idle,".to_owned()
-            },
+            "held {held:?} at equal speed; typing {typing}; after the slowdown both on an unshaped road {}, held {held_fast}; n={} post={post} p50 {:?} p95 {p95:?} max {worst:?}, errors {errors:?}; alpha {:?}, beta {:?}; retired {retired}; roads {roads:?}",
             back.map_or("not within 90 s".into(), |b| format!("after {b:.1?}")),
+            samples.len(),
+            samples.get(samples.len().saturating_sub(1) / 2),
             moves(&p.a, &p.b, since),
             moves(&p.b, &p.a, since),
         ),
@@ -614,8 +886,8 @@ async fn slows(s: &str, typing: bool) {
     assert_eq!(retired, 0, "no wire retired");
     if typing {
         assert!(
-            back.is_some_and(|b| b <= Duration::from_secs(10)),
-            "back on the LAN within 10 s, took {back:?}"
+            ok,
+            "fast recovery and responsive echoes within their budgets"
         );
     }
 }
@@ -696,6 +968,10 @@ async fn p3_the_road_in_use_goes_black_and_nothing_waits() {
         )
         .collect();
     let ok = worst <= Duration::from_secs(1) && failed == 0 && retired.is_empty();
+    if !ok {
+        crate::hop::path_diagnostics(&p.a, &p.b);
+        crate::hop::path_diagnostics(&p.b, &p.a);
+    }
     result(
         s,
         ok,

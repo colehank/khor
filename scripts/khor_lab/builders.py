@@ -117,8 +117,7 @@ def local(config, destination, publish, cancelled):
 def remote(config, destination, publish, cancelled):
     import dev
     repository = config['builder_repo']
-    if not json.loads(run('gh', 'api', f'repos/{repository}'))['private']:
-        raise ValueError('Source snapshots require a private build-control repository')
+    dev.require_source_builder(repository, json.loads(run('gh', 'api', f'repos/{repository}')))
     resume = config.pop('resume_request', None)
     if resume:
         info, active = resume['source'], resume['run']

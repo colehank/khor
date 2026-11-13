@@ -9,9 +9,9 @@ use std::{
 use iroh_base::{EndpointId, TransportAddr};
 use n0_error::StackResultExt;
 use n0_future::{
-    FuturesUnordered, MaybeFuture, MergeUnbounded, Stream, StreamExt,
+    FuturesUnordered, FuturesUnorderedBounded, MaybeFuture, MergeUnbounded, Stream, StreamExt,
     boxed::BoxStream,
-    future::now_or_never,
+    future::{Boxed, now_or_never},
     task::JoinSet,
     time::{self, Duration, Instant},
 };
@@ -19,6 +19,7 @@ use n0_watcher::Watcher;
 use noq::{Closed, PathStats, PathStatus, WeakConnectionHandle};
 use noq_proto::{PathError, PathEvent as NoqPathEvent, PathId, n0_nat_traversal};
 use rustc_hash::FxHashMap;
+use smallvec::{SmallVec, smallvec};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
 use tracing::{Instrument, Level, Span, debug, error, event, info_span, instrument, trace, warn};
@@ -26,7 +27,9 @@ use tracing::{Instrument, Level, Span, debug, error, event, info_span, instrumen
 use self::path_state::RemotePathState;
 pub(crate) use self::path_watcher::PathStateReceiver;
 pub use self::{
-    path_watcher::{Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream},
+    path_watcher::{
+        Path, PathEvent, PathEventStream, PathList, PathListIter, PathListStream, PathMeasurement,
+    },
     remote_info::{RemoteInfo, TransportAddrInfo, TransportAddrUsage},
 };
 use super::{MappedAddrs, Source};
@@ -80,36 +83,12 @@ const ACTOR_MAX_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 /// tick sends nothing: it reads each path's stats and moves the selection when they say so.
 const RESELECT_INTERVAL: Duration = Duration::from_millis(250);
 
-/// khor patch 17: probe timeouts in a row, with nothing acknowledged since, after which a path
-/// counts as not answering ([`unanswered`]).  Two is RFC 9002's tail-loss probe and its
-/// retry: about three probe timeouts since the packet went out, ~75 ms on a 1 ms path.
-pub(crate) const UNANSWERED_PTOS: u32 = 2;
-
-/// khor patch 17: and nothing at all heard on the path for this long, and the oldest packet
-/// it leaves unacknowledged out this long or three probe timeouts, whichever is longer
-/// ([`unanswered_for`]).  Three probe timeouts on a fast path are shorter than the machine
-/// stalling: under load (netlab, 20 scenarios side by side) both ends of a 1 ms path miss two
-/// probe timeouts while every path still works.
-pub(crate) const UNANSWERED_FOR: Duration = Duration::from_millis(300);
-
-/// khor patch 17: how long a path has kept a packet waiting, when it is not answering:
-/// [`UNANSWERED_PTOS`] probe timeouts in a row, nothing heard on it for [`UNANSWERED_FOR`],
-/// and the oldest ack-eliciting packet still in flight on it out for `UNANSWERED_FOR` or three
-/// of its probe timeouts, whichever is longer (vendor/noq-proto patch 3).  `None`: it answers.
-///
-/// The wait counts from that packet, not from the last packet heard (2026-10-21, net-flap):
-/// an idle path hears its keepalive's ACK every 5 s, so the last packet heard was seconds ago
-/// whenever the next keepalive's ACK came a little late, and a 2 ms road whose ACK was 100 ms
-/// late (Wi-Fi power save, a machine stalling) read as dead: MacLab↔hinton left for the relay
-/// and came back within a second 212 times in a day, and the machines' two LAN roads traded
-/// places 230–330 times.
+/// khor patch 17/30: the shared path-liveness observation. The transport's
+/// in-flight retransmission and the selector must agree about a failed
+/// path even while its last measured RTT is still fast. This retains the
+/// previous two-PTO / max(300 ms, 3 PTO) / recent-packet guards.
 pub(crate) fn unanswered_for(stats: &PathStats, now: std::time::Instant) -> Option<Duration> {
-    let waited = now.saturating_duration_since(stats.unacked_since?);
-    let heard = stats.last_received.map(|at| now.saturating_duration_since(at));
-    (stats.pto_count >= UNANSWERED_PTOS
-        && waited >= UNANSWERED_FOR.max(stats.pto * 3)
-        && heard.is_none_or(|heard| heard >= UNANSWERED_FOR))
-    .then_some(waited)
+    stats.unanswered_for(now)
 }
 
 /// khor patch 17: how long a road that stopped answering has to answer again before it is a
@@ -145,7 +124,7 @@ const PROBE_SPACING: Duration = Duration::from_secs(30);
 const CONFIRM_FOR: Duration = Duration::from_secs(2);
 
 /// khor patch 17 (10-21): how long the selected road keeps a packet waiting before the other
-/// roads are pinged ([`RemoteStateActor::probe_others`]): half of [`UNANSWERED_FOR`].
+/// roads are pinged ([`RemoteStateActor::probe_others`]): half of the 300 ms unanswered floor.
 const PROBE_OTHERS_AFTER: Duration = Duration::from_millis(150);
 
 /// khor patch 17 (10-21): a move whose two paths did not both take a sample in this long is
@@ -157,10 +136,8 @@ const CONFIRM_MAX: Duration = Duration::from_secs(4);
 const CONFIRM_REST: Duration = Duration::from_secs(30);
 
 /// khor patch 17 (flap, 10-23): the slack in [`far_faster`], so that two fast roads a few
-/// milliseconds apart are not far apart.  Only moves off the relay or a carried road are
-/// weighed so ([`RemoteStateActor::confirm_move`]); between direct roads the confirmation
-/// stays as it was, where one stall's sample lifted a 1 ms road to 17 ms against the other's
-/// 3.4 ms (netlab p1 under load).
+/// milliseconds apart are not far apart. All transports use this comparison; a slow sample
+/// alone must not bypass fresh confirmation on an otherwise fast road (netlab p1s).
 const FAR_FASTER_BY: Duration = Duration::from_millis(10);
 
 /// khor patch 17 (flap, 10-23): whether a path of round trip `to` is far faster than one of
@@ -241,6 +218,9 @@ pub(crate) const PEER_OBSERVED_FOR: Duration = Duration::from_secs(10 * 60);
 
 /// khor patch 10: the most observed addresses kept.
 pub(crate) const PEER_OBSERVED_MAX: usize = 8;
+// QUIC retransmits dropped Initials; a blocked transport must not retain them indefinitely.
+const DATAGRAM_SEND_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_DATAGRAM_SEND_TASKS: usize = 16;
 
 /// A stream of events from all paths for all connections.
 ///
@@ -268,6 +248,8 @@ type AddrEvents = MergeUnbounded<
 pub(super) struct RemoteStateActor {
     /// All connections we have to this remote endpoint.
     connections: FxHashMap<ConnId, ConnectionState>,
+    diagnostic_actor_serial: u64,
+    diagnostic_registry_epoch: u64,
     /// State of the actor and hooks into the rest of the remote endpoint.
     ///
     /// This is on a separate struct so that we can have parallel mutable borrows to
@@ -327,12 +309,14 @@ struct State {
     backup_path: Option<transports::FourTuple>,
     /// khor patch 17: when the selected path was selected.
     selected_at: Option<Instant>,
-    /// khor patch 19: the selected direct path, watched for slowing down or going silent.
+    /// khor patch 19/29: the selected path, watched for slowing down or going silent.
     watch: Watch,
     /// khor patch 17: the move being confirmed ([`RemoteStateActor::confirm_move`]).
     moving: Moving,
     /// khor patch 17: what the measurement ticks read.
     measured: Measured,
+    /// A bounded refresh of existing alternatives while STREAM traffic is active.
+    refresh: ActiveRefresh,
     /// khor patch 20: the candidates last given to the connections.  A change of the direct
     /// addresses' sources alone (an address both on an interface and learnt by QAD) is no new
     /// candidate and starts no round.
@@ -375,8 +359,17 @@ impl RemoteStateActor {
         rounds: tokio::sync::broadcast::Sender<HolepunchRound>,
         peer_observed: PeerObserved,
     ) -> Self {
+        let diagnostic_actor_serial = if tracing::enabled!(target: "khor_net_samples", tracing::Level::DEBUG)
+        {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        } else {
+            0
+        };
         Self {
             connections: FxHashMap::default(),
+            diagnostic_actor_serial,
+            diagnostic_registry_epoch: 0,
             state: State {
                 endpoint_id,
                 metrics: metrics.clone(),
@@ -394,6 +387,7 @@ impl RemoteStateActor {
                 watch: Watch::default(),
                 moving: Moving::default(),
                 measured: Default::default(),
+                refresh: Default::default(),
                 last_local_candidates: None,
                 scheduled_holepunch: None,
                 scheduled_open_path: None,
@@ -433,10 +427,6 @@ impl RemoteStateActor {
     }
 
     /// Runs the main loop of the actor.
-    ///
-    /// Note that the actor uses async handlers for tasks from the main loop.  The actor is
-    /// not processing items from the inbox while waiting on any async calls.  So some
-    /// discipline is needed to not turn pending for a long time.
     async fn run(
         mut self,
         initial_msgs: Vec<RemoteStateMessage>,
@@ -444,8 +434,9 @@ impl RemoteStateActor {
         shutdown_token: CancellationToken,
     ) -> (EndpointId, Vec<RemoteStateMessage>) {
         trace!("actor started");
+        let mut send_tasks = FuturesUnorderedBounded::new(MAX_DATAGRAM_SEND_TASKS);
         for msg in initial_msgs {
-            self.handle_message(msg).await;
+            self.handle_message(msg, &mut send_tasks);
         }
         let idle_timeout = time::sleep(ACTOR_MAX_IDLE_TIMEOUT);
         n0_future::pin!(idle_timeout);
@@ -468,6 +459,20 @@ impl RemoteStateActor {
                 None => MaybeFuture::None,
             };
             n0_future::pin!(scheduled_hp);
+            // khor patch 40: only pending decisions own a timer. A tick just
+            // before an exact boundary must not defer it another full tick.
+            let next_selection = [
+                self.state.moving.deadline(Instant::now()),
+                self.state.measured.recovery_deadline(),
+            ]
+            .into_iter()
+            .flatten()
+            .min();
+            let scheduled_selection = match next_selection {
+                Some(when) => MaybeFuture::Some(time::sleep_until(when)),
+                None => MaybeFuture::None,
+            };
+            n0_future::pin!(scheduled_selection);
             if !self.is_idle(&inbox) {
                 idle_timeout
                     .as_mut()
@@ -481,9 +486,13 @@ impl RemoteStateActor {
                     trace!("actor cancelled");
                     break;
                 }
+                _ = &mut scheduled_selection, if !self.connections.is_empty() => {
+                    self.reselect();
+                }
+                Some(()) = send_tasks.next(), if !send_tasks.is_empty() => {}
                 msg = inbox.recv() => {
                     match msg {
-                        Some(msg) => self.handle_message(msg).await,
+                        Some(msg) => self.handle_message(msg, &mut send_tasks),
                         None => break,
                     }
                 }
@@ -561,14 +570,16 @@ impl RemoteStateActor {
     }
 
     /// Handles an actor message.
-    ///
-    /// Error returns are fatal and kill the actor.
     #[instrument(skip(self))]
-    async fn handle_message(&mut self, msg: RemoteStateMessage) {
-        // trace!("handling message");
+    fn handle_message(
+        &mut self,
+        msg: RemoteStateMessage,
+        send_tasks: &mut FuturesUnorderedBounded<Boxed<()>>,
+    ) {
         match msg {
             RemoteStateMessage::SendDatagram(sender, transmit) => {
-                self.state.handle_msg_send_datagram(sender, transmit).await;
+                self.state
+                    .handle_msg_send_datagram(sender, transmit, send_tasks);
             }
             RemoteStateMessage::AddConnection(handle, tx) => {
                 self.handle_msg_add_connection(handle, tx);
@@ -585,6 +596,23 @@ impl RemoteStateActor {
                         .map(transports::FourTuple::from_remote)
                         .collect();
                 self.state.handle_msg_resolve_remote(addrs, tx);
+                if !custom.is_empty() {
+                    if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some() {
+                        let live = self.connections.values().any(|state| {
+                            state
+                                .handle
+                                .upgrade()
+                                .is_some_and(|conn| conn.close_reason().is_none())
+                        });
+                        let selected = self.state.selected_path.clone();
+                        eprintln!(
+                            "[khor-pending-carrier] remote={} live={} registered={} previous={selected:?}",
+                            self.state.endpoint_id,
+                            live,
+                            self.connections.len(),
+                        );
+                    }
+                }
                 for open_addr in &custom {
                     self.open_path_on_all_conns(open_addr);
                 }
@@ -600,7 +628,35 @@ impl RemoteStateActor {
             RemoteStateMessage::NetworkChange { is_major } => {
                 self.handle_msg_network_change(is_major);
             }
-            RemoteStateMessage::CloseCustom => {
+            RemoteStateMessage::DiscardIpHints { before, tx } => {
+                // Recheck at execution, not enqueue: a newly established or
+                // still-pending connection must keep its current addresses.
+                let live = self.connections.values().any(|state| {
+                    state
+                        .handle
+                        .upgrade()
+                        .is_some_and(|conn| conn.close_reason().is_none())
+                });
+                let removed = if live {
+                    0
+                } else {
+                    self.state.paths.discard_ip_hints_before(before)
+                };
+                if !live
+                    && removed > 0
+                    && self.state.selected_path.as_ref().is_some_and(|path| {
+                        matches!(path.remote(), transports::Addr::Ip(_))
+                            && !self.state.paths.addrs().any(|addr| addr == &path.remote())
+                    })
+                {
+                    self.state.selected_path = None;
+                }
+                let _ = tx.send(removed);
+            }
+            RemoteStateMessage::CloseCustom(still_gone) => {
+                if still_gone.is_some_and(|check| !check()) {
+                    return;
+                }
                 // khor patch 13: the road under every custom (carried)
                 // path to this remote is gone, so close them now. Upstream
                 // leaves a path until its idle timeout (15 s) and the
@@ -637,6 +693,9 @@ impl RemoteStateActor {
         self.state.metrics.num_conns_opened.inc();
         // Remove any conflicting stable_ids from the local state.
         let conn_id = ConnId(conn.stable_id());
+        if tracing::enabled!(target: "khor_net_samples", tracing::Level::DEBUG) {
+            self.diagnostic_registry_epoch = self.diagnostic_registry_epoch.saturating_add(1);
+        }
         self.connections.remove(&conn_id);
 
         // Hook up paths, NAT addresses and connection closed event streams.
@@ -688,7 +747,8 @@ impl RemoteStateActor {
                     .paths
                     .addrs()
                     .filter(|addr| {
-                        (addr.is_relay() && !path0_relay) || matches!(addr, transports::Addr::Custom(_))
+                        (addr.is_relay() && !path0_relay)
+                            || matches!(addr, transports::Addr::Custom(_))
                     })
                     .map(|addr| transports::FourTuple::from_remote(addr.clone()))
                     .collect::<Vec<_>>();
@@ -738,6 +798,9 @@ impl RemoteStateActor {
         );
 
         if let Some(conn_state) = self.connections.remove(&conn_id) {
+            if tracing::enabled!(target: "khor_net_samples", tracing::Level::DEBUG) {
+                self.diagnostic_registry_epoch = self.diagnostic_registry_epoch.saturating_add(1);
+            }
             self.state.metrics.num_conns_closed.inc();
             conn_state.path_state.close(closed);
         }
@@ -949,7 +1012,10 @@ impl RemoteStateActor {
     fn select_path_on(&mut self, tick: bool) {
         let now = Instant::now();
         let (selected_addr, backup) = {
-            let held_for = self.state.selected_at.map(|at| now.saturating_duration_since(at));
+            let held_for = self
+                .state
+                .selected_at
+                .map(|at| now.saturating_duration_since(at));
             let ctx = PathSelectionContext::new(
                 self.state.selected_path.as_ref(),
                 self.state.backup_path.as_ref(),
@@ -979,9 +1045,10 @@ impl RemoteStateActor {
             // left because it went silent for one that is not direct has the other direct roads
             // looked for at once: without a backup the client closed them.
             self.state.watch.reset();
-            if prev_remote.as_ref().is_some_and(|p| {
-                p.is_ip() && self.state.measured.silent.contains_key(p)
-            }) && !addr.is_ip()
+            if prev_remote
+                .as_ref()
+                .is_some_and(|p| p.is_ip() && self.state.measured.silent.contains_key(p))
+                && !addr.is_ip()
                 && self.state.watch.may_punch(now)
             {
                 debug!("left a silent direct path, triggering holepunching");
@@ -1026,10 +1093,9 @@ impl RemoteStateActor {
     /// The moves an event asks for are held the same way (10-17, fourth leg): a hole-punching
     /// round opens paths on every connection, each opening ran the selector at once on its
     /// handshake's RTT against the road in use, and under load p1 moved 20 times in ten
-    /// minutes, three in one second.  Only a move onto a direct path from the relay or a
-    /// carried road is made at once: no selector weighs RTT across that line (khor's
-    /// `RoadOrder` and upstream's `BiasedRttPathSelector` both take direct whenever it is open),
-    /// so there is nothing to confirm.
+    /// minutes, three in one second. Every move from an open path now goes through
+    /// confirmation (feat/net): khor compares RTT across transport kinds, so moving onto
+    /// direct is no longer an unconditional upgrade.
     ///
     /// A move whose two paths do not both take a sample within [`CONFIRM_MAX`] is given up,
     /// and not tried again for [`CONFIRM_REST`] ([`Moving`]).
@@ -1040,16 +1106,17 @@ impl RemoteStateActor {
     /// other road, idle, has nothing in flight to show it: netlab p1s (300 ms spikes on both of
     /// alpha's roads) left the road in use for the other on the spike and came back.
     ///
-    /// 10-23 (flap): off the relay or a carried road, the two paths' readings go into the
-    /// confirmation ([`Moving::step`]): a path far faster than the one in use is taken once it
-    /// answered since the move began, and a path in use slower than the confirmation itself is
-    /// not waited on for a sample.  Between direct roads nothing changed.
+    /// feat/net: all transports use the two paths' readings in [`Moving::step`]. A much
+    /// faster candidate can leave early with samples sent after the move began; meanwhile
+    /// the current road is also probed so one scheduling spike can be corrected. A current
+    /// road slower than the confirmation itself is not waited on for a sample.
     fn confirm_move(&mut self, to: Option<&transports::FourTuple>) -> bool {
         let Some(to) = to.filter(|to| self.state.selected_path.as_ref() != Some(*to)) else {
             self.state.moving.clear();
             return true;
         };
         let Some(from) = self.state.selected_path.clone() else {
+            debug!(target: "khor_net_samples", ?to, "select without a current road");
             self.state.moving.clear();
             return true;
         };
@@ -1057,7 +1124,8 @@ impl RemoteStateActor {
             .connections
             .values()
             .any(|c| c.paths.values().any(|t| *t == from));
-        if !open || (!from.is_ip() && to.is_ip()) {
+        if !open {
+            debug!(target: "khor_net_samples", ?from, ?to, "select after current road closed");
             self.state.moving.clear();
             return true;
         }
@@ -1069,53 +1137,299 @@ impl RemoteStateActor {
             .filter(|s| s.answered.is_none())
             .copied();
         let now = Instant::now();
+        let starting = self.state.moving.to() != Some(to);
+        let since = self
+            .state
+            .moving
+            .to
+            .as_ref()
+            .filter(|(road, _)| road == to)
+            .map_or(now, |(_, since)| *since);
         let measured = &self.state.measured;
-        let sampled = |road: &transports::FourTuple, after: Instant| {
-            measured.road(road).is_some_and(|(_, at)| at > after)
-        };
+        let sampled =
+            |road: &transports::FourTuple, after: Instant| measured.samples_after(road, after) >= 2;
+        let mut current_copy_hint = None;
         let step = match silence {
-            Some(silence) => self
-                .state
-                .moving
-                .leave(to, now, silence.began, |after| sampled(to, after)),
-            // Between direct roads the readings are not weighed: a zero for the road moved
-            // from is neither far slower nor slower than the confirmation.
+            Some(silence) => {
+                let check_current = self.connections.values().any(|c| {
+                    let Some(conn) = c.handle.upgrade() else {
+                        return false;
+                    };
+                    c.paths.iter().any(|(path_id, road)| {
+                        road == &from
+                            && conn
+                                .path_stats(*path_id)
+                                .and_then(|stats| stats.last_received)
+                                .is_some_and(|at| {
+                                    at > silence.began.into_std()
+                                        && now.into_std().saturating_duration_since(at)
+                                            < RESELECT_INTERVAL
+                                })
+                    })
+                });
+                current_copy_hint = Some(check_current);
+                self.state
+                    .moving
+                    .leave(to, now, silence.began, check_current, |after| {
+                        measured.samples_after(to, after) >= 1
+                    })
+            }
+            // feat/net: every transport compares fresh measured readings. A direct
+            // candidate gets neither an unconditional upgrade nor a different gain rule.
             None => self.state.moving.step(
                 to,
                 now,
-                measured
-                    .road(&from)
-                    .filter(|_| !from.is_ip())
-                    .map_or(Duration::ZERO, |(rtt, _)| rtt),
+                measured.road(&from).map_or(Duration::ZERO, |(rtt, _)| rtt),
                 measured.road(to).map_or(Duration::MAX, |(rtt, _)| rtt),
                 |after| sampled(&from, after),
                 |after| sampled(to, after),
             ),
         };
+        if step == Step::Go || starting && matches!(step, Step::Hold { .. }) {
+            debug!(
+                target: "khor_net_samples",
+                ?from,
+                ?to,
+                ?now,
+                ?since,
+                failed = silence.is_some(),
+                check_current = ?current_copy_hint,
+                ?step,
+                readings = ?measured.rtts,
+                silent = ?measured.silent,
+                "move decision"
+            );
+        }
         let ping = match step {
             Step::Go => return true,
             Step::Rest => return false,
-            Step::Hold { from: f, to: t } => [(f, from), (t, to.clone())],
+            Step::Hold { from: f, to: t } => [(f, true, from), (t, false, to.clone())],
         };
-        for (_, road) in ping.into_iter().filter(|(p, _)| *p) {
-            let copy = self.connections.values().find_map(|c| {
-                let path_id = c.paths.iter().find(|(_, t)| **t == road)?.0;
-                c.handle.upgrade()?.path(*path_id)
-            });
-            if let Some(path) = copy {
-                let _ = path.ping();
+        for (_, current, road) in ping.into_iter().filter(|(p, _, _)| *p) {
+            // An idle copy can be the only one in PTO while another copy of
+            // the same road answers. Probe the suspect copy, not an arbitrary
+            // healthy one; the candidate instead uses its least-backed-off copy.
+            let road = &road;
+            let copy = self
+                .connections
+                .iter()
+                .flat_map(|(conn_id, c)| {
+                    c.paths.iter().filter_map(move |(path_id, tuple)| {
+                        if tuple != road {
+                            return None;
+                        }
+                        let conn = c.handle.upgrade()?;
+                        let pto_count = conn.path_stats(*path_id)?.pto_count;
+                        let priority = if current {
+                            pto_count
+                        } else {
+                            u32::MAX - pto_count
+                        };
+                        Some((
+                            priority,
+                            *conn_id,
+                            *path_id,
+                            pto_count,
+                            conn.path(*path_id)?,
+                        ))
+                    })
+                })
+                .max_by_key(|(priority, ..)| *priority);
+            if let Some((_, conn_id, path_id, pto_count, path)) = copy {
+                let result = path.ping();
+                debug!(target: "khor_net_samples", ?conn_id, ?path_id, current, pto_count, ?result, "confirmation probe");
             }
         }
         false
     }
 
-    /// khor patch 17: one measurement tick.  Watches the selected direct path for going
+    /// khor patch 17: one measurement tick. Watches the selected path for going
     /// silent or slowing down, then runs the selector on the paths' stats as they are now.
     fn reselect(&mut self) {
-        let (sample, waiting) = self.read_paths();
+        let tuples_changed = self.refresh_path_tuples();
+        let (sample, waiting, recovery) = self.read_paths();
         self.watch_selected(sample);
         self.probe_others(waiting);
-        self.select_path_on(true);
+        self.refresh_candidates();
+        self.select_path_on(!tuples_changed);
+        self.probe_recovering(recovery);
+    }
+
+    /// khor patch 39: a receipt can reset PTO without sampling a packet sent
+    /// after the silence judgment. Confirm that known road within a bounded
+    /// episode instead of waiting for its next idle keepalive.
+    fn probe_recovering(&mut self, probes: Vec<RecoveryProbe>) {
+        for probe in probes {
+            let road = &probe.road;
+            let selected = self.state.selected_path.as_ref() == Some(road);
+            let confirming = self
+                .state
+                .moving
+                .to()
+                .is_some_and(|to| to == road || selected);
+            let available = !self.state.measured.silent.contains_key(road);
+            if confirming || selected && available {
+                debug!(target: "khor_net_samples", road = ?probe.road, epoch = ?probe.epoch,
+                    reserved = ?probe.at, attempt = probe.attempt, "recovery probe merged with selection");
+                continue;
+            }
+            let preferred = self
+                .state
+                .measured
+                .recovery
+                .get(road)
+                .and_then(|check| check.copy);
+            let copy = self
+                .connections
+                .iter()
+                .flat_map(|(conn_id, c)| {
+                    c.paths.iter().filter_map(move |(path_id, tuple)| {
+                        if tuple != road {
+                            return None;
+                        }
+                        let conn = c.handle.upgrade()?;
+                        let stats = conn.path_stats(*path_id)?;
+                        Some((
+                            stats.pto_count,
+                            stats.last_received,
+                            *conn_id,
+                            *path_id,
+                            conn.path(*path_id)?,
+                        ))
+                    })
+                })
+                .min_by(|a, b| {
+                    recovery_copy_rank(preferred, (a.2, a.3), a.0)
+                        .cmp(&recovery_copy_rank(preferred, (b.2, b.3), b.0))
+                        .then_with(|| b.1.cmp(&a.1))
+                        .then_with(|| a.2.0.cmp(&b.2.0))
+                });
+            if let Some((pto_count, _, conn_id, path_id, path)) = copy {
+                if let Some(check) = self.state.measured.recovery.get_mut(road) {
+                    check.copy = Some((conn_id, path_id));
+                }
+                let result = path.ping();
+                debug!(target: "khor_net_samples", road = ?probe.road, epoch = ?probe.epoch,
+                    reserved = ?probe.at, attempt = probe.attempt, ?conn_id, ?path_id, pto_count, ?result,
+                    "recovery confirmation probe");
+            } else {
+                debug!(target: "khor_net_samples", road = ?probe.road, epoch = ?probe.epoch,
+                    reserved = ?probe.at, attempt = probe.attempt, "recovery probe unavailable");
+            }
+        }
+    }
+
+    /// A passive QUIC migration can change a path's tuple without opening a
+    /// new path ID. Reconcile the cached identity before attributing samples
+    /// or applying the peer's selection to its individual connections.
+    fn refresh_path_tuples(&mut self) -> bool {
+        let mut retired = Vec::new();
+        for (conn_id, conn_state) in self.connections.iter_mut() {
+            let Some(conn) = conn_state.handle.upgrade() else {
+                continue;
+            };
+            let changes: Vec<_> = conn_state
+                .paths
+                .iter()
+                .filter_map(|(id, cached)| {
+                    let path = conn.path(*id)?;
+                    let actual = self
+                        .state
+                        .mapped_addrs
+                        .to_transport_tuple(&path.network_path().ok()?)?;
+                    (actual != *cached).then_some((cached.clone(), actual, path))
+                })
+                .collect();
+            for (cached, actual, path) in changes {
+                // Old samples name the old road, even when QUIC preserves its
+                // RTT estimate for a port-only rebind. Other copies stay intact.
+                self.state.measured.rtts.remove(&(*conn_id, path.id()));
+                self.state
+                    .register_and_configure_path(*conn_id, conn_state, &path);
+                retired.push(cached.remote());
+                if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some() {
+                    eprintln!(
+                        "[khor-path-tuple-refreshed] peer={} conn={} path={} cached={:?} actual={:?}",
+                        self.state.endpoint_id,
+                        conn_id,
+                        path.id(),
+                        cached,
+                        actual,
+                    );
+                }
+            }
+        }
+        let changed = !retired.is_empty();
+        for remote in retired {
+            if !self
+                .connections
+                .values()
+                .any(|c| c.paths.values().any(|p| p.remote() == remote))
+            {
+                self.state.paths.abandoned_path(&remote);
+            }
+        }
+        changed
+    }
+
+    /// STREAM traffic makes discovery responsive. At most one existing
+    /// alternative is pinged per five seconds per remote, across all
+    /// connections; the probes' ACKs cannot extend the activity window.
+    fn refresh_candidates(&mut self) {
+        let now = Instant::now();
+        let diagnose = tracing::enabled!(target: "khor_net_samples", tracing::Level::DEBUG);
+        let mut stream_counters = Vec::new();
+        let frames = self
+            .connections
+            .iter()
+            .filter_map(|(id, c)| c.handle.upgrade().map(|c| (id, c)))
+            .map(|(id, c)| {
+                let s = c.stats();
+                if diagnose {
+                    stream_counters.push((id.0, s.frame_tx.stream, s.frame_rx.stream));
+                }
+                s.frame_tx.stream.saturating_add(s.frame_rx.stream)
+            })
+            .fold(0u64, |n, frames| n.saturating_add(frames));
+        if diagnose {
+            static BEGAN: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+            let monotonic_us = BEGAN
+                .get_or_init(std::time::Instant::now)
+                .elapsed()
+                .as_micros() as u64;
+            let unix_us = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_micros() as u64;
+            stream_counters.sort_unstable_by_key(|row| row.0);
+            debug!(target: "khor_net_samples", peer = %self.state.endpoint_id,
+                monotonic_us, unix_us, actor_serial = self.diagnostic_actor_serial,
+                registry_epoch = self.diagnostic_registry_epoch,
+                counters = ?stream_counters, "khor_stream_snapshot_v1");
+        }
+        self.state.refresh.observe(frames, now);
+        if !self.state.refresh.ready(now) {
+            return;
+        }
+        let mut alternatives: Vec<(transports::FourTuple, noq::Path)> = Vec::new();
+        for c in self.connections.values() {
+            let Some(conn) = c.handle.upgrade() else {
+                continue;
+            };
+            for (id, tuple) in &c.paths {
+                if Some(tuple) == self.state.selected_path.as_ref()
+                    || alternatives.iter().any(|(seen, _)| seen == tuple)
+                {
+                    continue;
+                }
+                if let Some(path) = conn.path(*id) {
+                    alternatives.push((tuple.clone(), path));
+                }
+            }
+        }
+        if let Some(index) = self.state.refresh.take(alternatives.len(), now) {
+            let _ = alternatives[index].1.ping();
+        }
     }
 
     /// khor patch 17 (10-21): the selected road has kept a packet waiting `waiting` (after a
@@ -1140,7 +1454,11 @@ impl RemoteStateActor {
             for (path_id, road) in conn_state.paths.iter() {
                 if road == selected
                     || pinged.contains(&road)
-                    || self.state.measured.road(road).is_some_and(|(_, at)| at > since)
+                    || self
+                        .state
+                        .measured
+                        .road(road)
+                        .is_some_and(|(_, at)| at > since)
                 {
                     continue;
                 }
@@ -1156,14 +1474,14 @@ impl RemoteStateActor {
     /// two connections, and a road is a path on each; the copy that last took an RTT sample
     /// is the one that says how fast the road is now (a copy that carries nothing keeps the
     /// RTT of its last keepalive), and any copy that stopped answering makes the road silent
-    /// until a copy of it takes a new sample after that.  Returns the largest RTT sample the
-    /// selected road's copies took since the last read (khor patch 19): the step of the
-    /// smoothed RTT is an eighth of the sample's distance from it (RFC 6298).
+    /// until a copy of it takes a new sample after that. Returns the largest new ACK-delay-corrected
+    /// sample observed on the selected road (khor patch 19/29), independently of smoothing.
     ///
     /// Also returns how long the selected road has kept a packet waiting, if it has after a
     /// probe timeout ([`Self::probe_others`]).
-    fn read_paths(&mut self) -> (Duration, Option<Duration>) {
+    fn read_paths(&mut self) -> (Duration, Option<Duration>, Vec<RecoveryProbe>) {
         let now = Instant::now();
+        let diagnose_tuples = std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some();
         let selected = self.state.selected_path.as_ref();
         let measured = &mut self.state.measured;
         let mut sample = Duration::ZERO;
@@ -1172,7 +1490,8 @@ impl RemoteStateActor {
         let mut waiting = None;
         // carry (10-23): the copies in a probe timeout's backoff, with the packet they wait on,
         // and when each road last heard anything on any copy ([`Self::wake`]).
-        let mut backed_off: Vec<(ConnId, PathId, transports::FourTuple, std::time::Instant)> = Vec::new();
+        let mut backed_off: Vec<(ConnId, PathId, transports::FourTuple, std::time::Instant)> =
+            Vec::new();
         let mut heard: Vec<(transports::FourTuple, std::time::Instant)> = Vec::new();
         for (conn_id, conn_state) in self.connections.iter() {
             let Some(conn) = conn_state.handle.upgrade() else {
@@ -1182,9 +1501,40 @@ impl RemoteStateActor {
                 let Some(stats) = conn.path_stats(*path_id) else {
                     continue;
                 };
+                if diagnose_tuples
+                    && let Some(actual) = conn
+                        .path(*path_id)
+                        .and_then(|path| path.network_path().ok())
+                        .and_then(|path| self.state.mapped_addrs.to_transport_tuple(&path))
+                    && actual != *tuple
+                {
+                    eprintln!(
+                        "[khor-path-tuple-mismatch] peer={} conn={} path={} cached={:?} actual={:?}",
+                        self.state.endpoint_id, conn_id, path_id, tuple, actual,
+                    );
+                }
+                if diagnose_tuples
+                    && let Some(silence) = measured.silent.get(tuple)
+                    && stats
+                        .last_received
+                        .is_some_and(|at| at > silence.judged.into_std())
+                    && stats
+                        .latest_rtt_sent
+                        .is_none_or(|sent| sent <= silence.judged.into_std())
+                {
+                    debug!(target: "khor_net_samples", ?conn_id, ?path_id, ?tuple, ?now,
+                        ?silence, pto_count = stats.pto_count, last_received = ?stats.last_received,
+                        unacked_since = ?stats.unacked_since, latest_rtt_sent = ?stats.latest_rtt_sent,
+                        latest_rtt_received = ?stats.latest_rtt_received,
+                        "recovery lacks a post-judgment round trip");
+                }
                 let key = (*conn_id, *path_id);
                 present.push(key);
                 if let Some(waited) = unanswered_for(&stats, now.into_std()) {
+                    debug!(target: "khor_net_samples", ?conn_id, ?path_id, ?tuple, ?now,
+                        pto_count = stats.pto_count, last_received = ?stats.last_received,
+                        unacked_since = ?stats.unacked_since, pto = ?stats.pto,
+                        "silent path copy");
                     silent_now.push((tuple.clone(), now.checked_sub(waited).unwrap_or(now)));
                 }
                 if stats.pto_count > 0
@@ -1205,63 +1555,84 @@ impl RemoteStateActor {
                     let waited = now.into_std().saturating_duration_since(sent);
                     waiting = Some(waiting.map_or(waited, |w: Duration| w.max(waited)));
                 }
-                match measured.rtts.get_mut(&key) {
-                    Some(r) if r.rtt == stats.rtt => {}
+                let previous_quality = measured
+                    .recovery
+                    .contains_key(tuple)
+                    .then(|| measured.road(tuple).map(|(rtt, _)| rtt))
+                    .flatten();
+                let observed = match measured.rtts.get_mut(&key) {
                     Some(r) => {
-                        if Some(tuple) == selected && stats.rtt > r.rtt {
-                            sample = sample.max(r.rtt + (stats.rtt - r.rtt) * 8);
+                        let observed = r.observe(&stats, now);
+                        if observed && Some(tuple) == selected {
+                            sample = sample.max(stats.latest_rtt);
                         }
-                        r.rtt = stats.rtt;
-                        r.at = now;
-                        r.changed.push_back(now);
+                        observed
                     }
                     None => {
-                        measured.rtts.insert(
-                            key,
-                            Reading {
-                                road: tuple.clone(),
-                                rtt: stats.rtt,
-                                changed: VecDeque::from([now]),
-                                at: now,
-                            },
-                        );
+                        let since = measured
+                            .rtts
+                            .values()
+                            .filter(|r| r.road == *tuple)
+                            .filter_map(|r| r.quality_since)
+                            .max();
+                        let reading = match since {
+                            Some(since) => {
+                                Reading::with_epoch(tuple.clone(), &stats, now, Some(since))
+                            }
+                            None => Reading::new(tuple.clone(), &stats, now),
+                        };
+                        measured.rtts.insert(key, reading);
+                        false
                     }
+                };
+                if observed && let Some(previous) = previous_quality {
+                    measured.recovery_quality_step(key, stats.latest_rtt, previous, now);
+                }
+                // Opt-in diagnosis: a successful PING request does not show
+                // which copy supplied the road's subsequent quality sample.
+                if tracing::enabled!(target: "khor_net_samples", tracing::Level::DEBUG)
+                    && !tuple.is_ip()
+                    && !tuple.is_relay()
+                {
+                    debug!(target: "khor_net_samples", ?conn_id, ?path_id, ?tuple, ?now,
+                        ?stats, observed, reading = ?measured.rtts.get(&key),
+                        recovery = ?measured.recovery.get(tuple),
+                        moving = ?self.state.moving,
+                        "carried recovery copy measurement");
                 }
             }
         }
         measured.rtts.retain(|key, r| {
-            while r.changed.front().is_some_and(|at| now >= *at + CONFIRM_FOR) {
-                r.changed.pop_front();
-            }
+            r.expire(now);
             present.contains(key) || !r.changed.is_empty()
         });
-        // carry (10-23): a road far faster than the one in use comes back at its first round
-        // trip, and so does the one in use ([`SILENT_HOLD`]).  Only while the one in use is the
-        // relay or a carried road, as in [`Moving::step`]: between direct roads the hold, and
-        // the waking, stay as they were.
+        for conn in self.connections.values() {
+            conn.path_state
+                .record_measurements(conn.paths.iter().filter_map(|(id, road)| {
+                    measured
+                        .observation(road)
+                        .map(|observation| (*id, observation))
+                }));
+        }
+        // Reachability is independent of quality and transport type. A first
+        // post-judgment round trip restores it; repeated faults retain the hold.
+        // The historical copy-waking policy is separate and unchanged here.
         let off_direct = selected.is_some_and(|s| !s.is_ip());
-        let in_use = selected
-            .filter(|_| off_direct)
-            .and_then(|s| measured.road(s))
-            .map(|(rtt, _)| rtt);
-        let quick = |tuple: &transports::FourTuple, measured: &Measured| {
-            off_direct
-                && (Some(tuple) == selected
-                    || in_use.is_some_and(|from| {
-                        measured.road(tuple).is_some_and(|(to, _)| far_faster(to, from))
-                    }))
-        };
+        if !silent_now.is_empty() {
+            debug!(target: "khor_net_samples", ?now, ?selected, ?backed_off, ?heard,
+                wake_allowed = off_direct, "road recovery inputs");
+        }
         let connections = &self.connections;
-        measured.mark_silent(
-            now,
-            &silent_now,
-            |tuple| connections.values().any(|c| c.paths.values().any(|t| t == tuple)),
-            quick,
-        );
+        let open = |tuple: &transports::FourTuple| {
+            connections
+                .values()
+                .any(|c| c.paths.values().any(|t| t == tuple))
+        };
+        let recovery = measured.complete_read(now, &silent_now, &heard, open);
         if off_direct {
             self.wake(&backed_off, &heard);
         }
-        (sample, waiting)
+        (sample, waiting, recovery)
     }
 
     /// carry (10-23): pings every copy of a road that is in a probe timeout's backoff while the
@@ -1300,18 +1671,20 @@ impl RemoteStateActor {
         }
     }
 
-    /// khor patch 19: a selected direct path that stopped answering, or whose round trip
-    /// rose well past the lowest it read since it was selected, starts a hole-punching round
-    /// now: the other direct roads may have been closed (only one direct path is kept per
+    /// khor patch 19/34: a selected path that stopped answering, or whose round trip
+    /// stays well past its floor with fresh evidence, starts a hole-punching round:
+    /// the other direct roads may have been closed (only one direct path is kept per
     /// connection without a backup) and only a round opens them again.  Upstream checks every
     /// [`UPGRADE_INTERVAL`] (60 s), and only whether some direct path is under 10 ms.  One
     /// round per episode; the round's own spacing ([`HOLEPUNCH_ATTEMPTS_INTERVAL`]) holds.
     ///
     /// A path that is idle but for its keepalive has one RTT sample every 5 s, and the
-    /// smoothed RTT moves an eighth of the way per sample.  So one sample well over the floor
-    /// (read off the smoothed RTT's step: RFC 6298 moved it by an eighth of the sample's
-    /// distance) has the path pinged every tick for [`PROBE_FOR`], once per episode: the
-    /// smoothed RTT then says within two seconds whether the path slowed or that was noise.
+    /// transport estimator moves an eighth of the way per sample. One ACK-delay-corrected sample well
+    /// over the floor has the path pinged every tick for [`PROBE_FOR`], once per episode:
+    /// the recent sample median then distinguishes sustained slowing from a single spike.
+    /// Normal quality must stay high for that window and have two post-decision samples;
+    /// quality above the entire window retains immediate exploration rather than waiting
+    /// for round trips that cannot fit. The existing probe spacing and budget do not change.
     ///
     /// A road that stopped answering starts a round only once it kept the connection waiting
     /// [`PUNCH_SILENT_AFTER`] (a shorter stall the selector rides out on the road, or leaves
@@ -1323,9 +1696,6 @@ impl RemoteStateActor {
         let Some(selected) = self.state.selected_path.clone() else {
             return;
         };
-        if !selected.is_ip() {
-            return;
-        }
         let Some((rtt, _)) = self.state.measured.road(&selected) else {
             return;
         };
@@ -1337,7 +1707,10 @@ impl RemoteStateActor {
             .get(&selected)
             .filter(|s| s.answered.is_none())
             .map(|s| s.stall(now));
-        let watched = self.state.watch.tick(rtt, sample, stall, now);
+        let measured = &self.state.measured;
+        let watched = self.state.watch.tick(rtt, sample, stall, now, |since| {
+            measured.samples_after(&selected, since) >= 2
+        });
         if watched.probe {
             // One copy is enough: the road's RTT is the copy's that takes the samples.
             let copy = self.connections.values().find_map(|c| {
@@ -1349,7 +1722,11 @@ impl RemoteStateActor {
             }
         }
         if watched.punch {
-            debug!(?rtt, ?stall, "selected path degraded, triggering holepunching");
+            debug!(
+                ?rtt,
+                ?stall,
+                "selected path degraded, triggering holepunching"
+            );
             self.trigger_holepunching();
         }
     }
@@ -1493,10 +1870,11 @@ fn good_enough(direct: impl IntoIterator<Item = Duration>) -> bool {
 
 impl State {
     /// Handles [`RemoteStateMessage::SendDatagram`].
-    async fn handle_msg_send_datagram(
+    fn handle_msg_send_datagram(
         &mut self,
-        mut sender: Box<TransportsSender>,
+        sender: Box<TransportsSender>,
         transmit: OwnedTransmit,
+        send_tasks: &mut FuturesUnorderedBounded<Boxed<()>>,
     ) {
         // Sending datagrams might fail, e.g. because we don't have the right transports set
         // up to handle sending this owned transmit to.
@@ -1504,16 +1882,13 @@ impl State {
         // though we might not have a relay transport or ip-capable transport set up.
         // So these errors must not be fatal for this actor (or even this operation).
 
-        if let Some(addr) = self.selected_path.as_ref() {
+        let targets = if let Some(addr) = self.selected_path.as_ref() {
             trace!(?addr, "sending datagram to selected path");
 
             // TODO(Frando): We might want to include a local IP here in the future, if we confidently
             // know that it is the correct one.
             // See https://github.com/n0-computer/iroh/issues/4280.
-            let four_tuple = transports::FourTuple::from_remote(addr.remote());
-            if let Err(err) = send_datagram(&mut sender, four_tuple, transmit).await {
-                debug!(?addr, "failed to send datagram on selected_path: {err:#}");
-            }
+            smallvec![transports::FourTuple::from_remote(addr.remote())]
         } else {
             trace!(
                 paths = ?self.paths.addrs().collect::<Vec<_>>(),
@@ -1523,6 +1898,7 @@ impl State {
                 warn!("Cannot send datagrams: No paths to remote endpoint known");
             }
 
+            let mut targets = SmallVec::new();
             for addr in self.paths.addrs() {
                 // We never want to send to our local addresses.
                 // The local address set is updated in the main loop so we can use `peek` here.
@@ -1538,19 +1914,35 @@ impl State {
                 // TODO(Frando): We might want to include a local IP here in the future, if we confidently
                 // know that it is the correct one.
                 // See https://github.com/n0-computer/iroh/issues/4280.
-                } else if let Err(err) = send_datagram(
-                    &mut sender,
-                    transports::FourTuple::from_remote(addr.clone()),
-                    transmit.clone(),
-                )
-                .await
-                {
-                    debug!(?addr, "failed to send datagram: {err:#}");
+                } else {
+                    targets.push(transports::FourTuple::from_remote(addr.clone()));
                 }
             }
             // This message is received *before* a connection is added.  So we do
             // not yet have a connection to holepunch.  Instead we trigger
             // holepunching when AddConnection is received.
+            targets
+        };
+
+        if targets.is_empty() {
+            return;
+        }
+        let send = Box::pin(
+            async move {
+                if time::timeout(
+                    DATAGRAM_SEND_TIMEOUT,
+                    send_datagram_to_targets(sender, transmit, targets),
+                )
+                .await
+                .is_err()
+                {
+                    debug!("Datagram send timed out");
+                }
+            }
+            .instrument(Span::current()),
+        );
+        if send_tasks.try_push(send).is_err() {
+            debug!("dropping datagram: send task limit reached");
         }
     }
 
@@ -1707,7 +2099,11 @@ impl State {
         conn_state.add_open_path(network_path.clone(), path.id(), &self.metrics);
         // khor patch 18: a direct path opened as a backup gets the spare's pulse; one whose
         // status then changes is set again in `set_path_status`.
-        pulse(path, &network_path, self.path_status_for_addr(&network_path));
+        pulse(
+            path,
+            &network_path,
+            self.path_status_for_addr(&network_path),
+        );
         if network_path.is_relay()
             && let Err(e) = path.set_max_idle_timeout(Some(RELAY_PATH_MAX_IDLE_TIMEOUT))
         {
@@ -1961,6 +2357,26 @@ fn send_datagram<'a>(
     })
 }
 
+async fn send_datagram_to_targets(
+    sender: Box<TransportsSender>,
+    transmit: OwnedTransmit,
+    targets: SmallVec<[transports::FourTuple; 8]>,
+) {
+    let mut sends = targets
+        .into_iter()
+        .map(|target| {
+            let mut sender = sender.clone();
+            let transmit = transmit.clone();
+            async move {
+                if let Err(err) = send_datagram(&mut sender, target.clone(), transmit).await {
+                    debug!(?target, "failed to send datagram: {err:#}");
+                }
+            }
+        })
+        .collect::<FuturesUnordered<_>>();
+    while sends.next().await.is_some() {}
+}
+
 /// Messages to send to the [`RemoteStateActor`].
 #[derive(derive_more::Debug)]
 pub(crate) enum RemoteStateMessage {
@@ -2002,9 +2418,15 @@ pub(crate) enum RemoteStateMessage {
     RemoteInfo(oneshot::Sender<RemoteInfo>),
     /// The network status has changed in some way
     NetworkChange { is_major: bool },
+    /// Retire only old, unconnected IP hints for a cold carrier retry.
+    DiscardIpHints {
+        before: Instant,
+        tx: oneshot::Sender<usize>,
+    },
     /// khor patch 13: closes every custom path to this remote on every
     /// connection; the road under them is gone.
-    CloseCustom,
+    #[debug("CloseCustom(..)")]
+    CloseCustom(Option<Box<dyn Fn() -> bool + Send + Sync>>),
 }
 
 /// Information about a holepunch attempt.
@@ -2179,7 +2601,7 @@ pub struct PathSelectionContext<'a> {
     source: PathsSource<'a>,
 }
 
-/// khor patch 19: the selected direct path as the measurement ticks watch it
+/// khor patch 19: the selected path as the measurement ticks watch it
 /// ([`RemoteStateActor::watch_selected`]).
 #[derive(Debug, Default)]
 struct Watch {
@@ -2187,6 +2609,8 @@ struct Watch {
     floor: Option<Duration>,
     /// Whether a round was already started for its rising past the floor, or its going silent.
     degraded: bool,
+    /// When the selected road's quality most recently rose above its floor margin.
+    slowing_since: Option<Instant>,
     /// When it was last probed ([`PROBE_FOR`], [`PROBE_SPACING`]), and whether it was already
     /// for this rise (once per episode, like `degraded`).
     probed_at: Option<Instant>,
@@ -2209,6 +2633,7 @@ impl Watch {
     fn reset(&mut self) {
         self.floor = None;
         self.degraded = false;
+        self.slowing_since = None;
         self.probed = false;
     }
 
@@ -2223,7 +2648,15 @@ impl Watch {
 
     /// One tick: the selected road's round trip `rtt`, the largest RTT sample it took since the
     /// last tick, and how long it has kept the connection waiting if it is silent.
-    fn tick(&mut self, rtt: Duration, sample: Duration, stall: Option<Duration>, now: Instant) -> Watched {
+    /// `sampled_after` requires two independent observations of packets sent after its marker.
+    fn tick(
+        &mut self,
+        rtt: Duration,
+        sample: Duration,
+        stall: Option<Duration>,
+        now: Instant,
+        sampled_after: impl FnOnce(Instant) -> bool,
+    ) -> Watched {
         let floor = self.floor.map_or(rtt, |f| f.min(rtt));
         self.floor = Some(floor);
         let by = DEGRADED_BY.max(floor / 2);
@@ -2238,8 +2671,20 @@ impl Watch {
             self.probed_at = Some(now);
         }
         let probe = self.probed_at.is_some_and(|at| now < at + PROBE_FOR);
+        let slowing = rtt > GOOD_ENOUGH_LATENCY && rtt >= floor + by;
+        if slowing {
+            self.slowing_since.get_or_insert(now);
+        } else {
+            self.slowing_since = None;
+        }
+        let confirmed = self
+            .slowing_since
+            .is_some_and(|since| now >= since + PROBE_FOR && sampled_after(since));
+        // Normal quality needs post-decision round trips, not a single spike or a stale
+        // reading after the actor resumes. A road slower than the probe window cannot
+        // supply those in time, so keep its existing fast exploration, like a true silence.
         let worse = stall.is_some_and(|s| s >= PUNCH_SILENT_AFTER)
-            || (rtt > GOOD_ENOUGH_LATENCY && rtt >= floor + by);
+            || (slowing && (rtt > PROBE_FOR || confirmed));
         let mut punch = false;
         if worse && !self.degraded {
             // Within the spacing the episode waits for it, still degraded.
@@ -2278,14 +2723,26 @@ enum Step {
 }
 
 impl Moving {
+    /// Wake at a finite confirmation boundary, without a timer at rest. A wake
+    /// only re-reads evidence; elapsed time alone never supplies a sample.
+    fn deadline(&self, now: Instant) -> Option<Instant> {
+        let (_, since) = self.to.as_ref()?;
+        [*since + CONFIRM_FOR, *since + CONFIRM_MAX]
+            .into_iter()
+            .find(|at| now < *at)
+    }
+
     /// One tick of the selection wanting to leave a path that stopped answering at `began` for
-    /// `to`: [`Step::Go`] once `to` took a sample after `began` (`to_sampled`), or after
-    /// [`CONFIRM_MAX`] of wanting it whatever; until then `to` is pinged.
+    /// `to`: a sample after `began` proves a backup answered during the fault. If another
+    /// current copy is still receiving, first probe the suspect copy and obtain a backup
+    /// sample after this decision, so an idle copy's PTO cannot immediately move a healthy
+    /// road. Either case retains [`CONFIRM_MAX`] as its upper bound.
     fn leave(
         &mut self,
         to: &transports::FourTuple,
         now: Instant,
         began: Instant,
+        check_current: bool,
         to_sampled: impl Fn(Instant) -> bool,
     ) -> Step {
         let since = match &self.to {
@@ -2295,13 +2752,19 @@ impl Moving {
                 now
             }
         };
-        if to_sampled(began) || now >= since + CONFIRM_MAX {
+        let proof_after = if check_current {
+            since.max(began)
+        } else {
+            began
+        };
+        if to_sampled(proof_after) || now >= since + CONFIRM_MAX {
             self.to = None;
             return Step::Go;
         }
-        let tick = now.checked_sub(RESELECT_INTERVAL).unwrap_or(now);
+        let tick = now.checked_sub(RESELECT_INTERVAL).unwrap_or(now).max(began);
+        let tick = if check_current { tick.max(since) } else { tick };
         Step::Hold {
-            from: false,
+            from: check_current,
             to: !to_sampled(tick),
         }
     }
@@ -2325,6 +2788,10 @@ impl Moving {
     /// that read 1743 ms.  And a path moved from whose round trip is longer than [`CONFIRM_FOR`]
     /// is not asked for a sample, nor pinged for one: it cannot take one in the confirmation,
     /// and a relay that read 4994 ms had the move off it given up and rest 30 s.
+    ///
+    /// feat/net: candidate packets must have been sent after this decision began, including
+    /// on the fast branch. While waiting, also probe the current road within the existing
+    /// confirmation budget; a single scheduling spike must be allowed to correct itself.
     fn step(
         &mut self,
         to: &transports::FourTuple,
@@ -2353,16 +2820,13 @@ impl Moving {
         };
         let far = far_faster(to_rtt, from_rtt);
         let from_slow = from_rtt > CONFIRM_FOR;
-        let from_needed = !far && !from_slow;
-        // carry (10-23): a sample in the tick the move began is fresh too: a road back from a
-        // silence at its first round trip ([`Measured::mark_silent`]) is wanted on the tick
-        // that read it, and waited a tick and a ping more for another.
-        let fresh = since.checked_sub(RESELECT_INTERVAL).unwrap_or(since);
-        if far && to_sampled(fresh) {
+        let from_needed = !from_slow;
+        if far && to_sampled(since) {
             self.to = None;
             return Step::Go;
         }
-        if now >= since + CONFIRM_FOR && (!from_needed || from_sampled(since)) && to_sampled(since) {
+        if now >= since + CONFIRM_FOR && (!from_needed || from_sampled(since)) && to_sampled(since)
+        {
             self.to = None;
             return Step::Go;
         }
@@ -2371,11 +2835,45 @@ impl Moving {
             self.rest = Some((to.clone(), now + CONFIRM_REST));
             return Step::Rest;
         }
-        let tick = now.checked_sub(RESELECT_INTERVAL).unwrap_or(now);
+        let tick = now.checked_sub(RESELECT_INTERVAL).unwrap_or(now).max(since);
         Step::Hold {
             from: from_needed && !from_sampled(tick),
             to: !to_sampled(tick),
         }
+    }
+}
+
+/// Activity is evidence of STREAM frames, not PING/ACK traffic. This
+/// budget controls exploration only; failure recovery retains its own
+/// bounded probes. No new timer is installed on an idle connection.
+#[derive(Debug, Default)]
+struct ActiveRefresh {
+    frames: u64,
+    active_until: Option<Instant>,
+    next: Option<Instant>,
+    cursor: usize,
+}
+
+impl ActiveRefresh {
+    fn observe(&mut self, frames: u64, now: Instant) {
+        if frames > self.frames {
+            self.active_until = Some(now + Duration::from_secs(5));
+        }
+        self.frames = frames;
+    }
+
+    fn ready(&self, now: Instant) -> bool {
+        self.active_until.is_some_and(|until| now < until) && self.next.is_none_or(|at| now >= at)
+    }
+
+    fn take(&mut self, alternatives: usize, now: Instant) -> Option<usize> {
+        if alternatives == 0 || !self.ready(now) {
+            return None;
+        }
+        let index = self.cursor % alternatives;
+        self.cursor = index + 1;
+        self.next = Some(now + Duration::from_secs(5));
+        Some(index)
     }
 }
 
@@ -2388,10 +2886,46 @@ struct Measured {
     silent: FxHashMap<transports::FourTuple, Silence>,
     /// carry (10-23): when each road last answered again after a silence, for [`REHOLD`].
     back: FxHashMap<transports::FourTuple, Instant>,
+    /// khor patch 39: bounded recovery episodes; spent entries prevent a new
+    /// receipt from minting another budget for the same unresolved silence.
+    recovery: FxHashMap<transports::FourTuple, RecoveryCheck>,
 }
 
-/// khor patch 17: a road that stopped answering ([`unanswered_for`]), until it answered again
-/// for [`SILENT_HOLD`].
+#[derive(Debug)]
+struct RecoveryCheck {
+    epoch: Instant,
+    began: Instant,
+    attempts: u8,
+    last: Option<Instant>,
+    next: Option<Instant>,
+    copy: Option<(ConnId, PathId)>,
+    quality_steps: u8,
+    quality_best: Option<Duration>,
+    /// Last observed quality before this fault, never an initial RTT estimate.
+    prior_quality: Option<Duration>,
+}
+
+#[derive(Debug)]
+struct RecoveryProbe {
+    road: transports::FourTuple,
+    epoch: Instant,
+    attempt: u8,
+    at: Instant,
+}
+
+const RECOVERY_PROBES: u8 = 3;
+
+/// Rebuild one copy's median; switch copies if the old one closes or backs off.
+fn recovery_copy_rank(
+    preferred: Option<(ConnId, PathId)>,
+    copy: (ConnId, PathId),
+    pto_count: u32,
+) -> (u32, bool) {
+    (pto_count, preferred != Some(copy))
+}
+
+/// khor patch 17/35: a road that stopped answering ([`unanswered_for`]), until a new round
+/// trip; a repeated fault additionally waits [`SILENT_HOLD`].
 #[derive(Debug, Clone, Copy)]
 struct Silence {
     /// When the packet it left unanswered went out: the stall began then.
@@ -2404,12 +2938,16 @@ struct Silence {
     /// carry (10-23): it went silent within [`REHOLD`] of last being back, so it waits out
     /// [`SILENT_HOLD`] however fast it reads.
     rehold: bool,
+    /// A pre-fault observation, held only by this existing silence episode.
+    prior_quality: Option<Duration>,
 }
 
 impl Silence {
     /// How long the road kept the connection waiting: to now, or to when it answered again.
     fn stall(&self, now: Instant) -> Duration {
-        self.answered.unwrap_or(now).saturating_duration_since(self.began)
+        self.answered
+            .unwrap_or(now)
+            .saturating_duration_since(self.began)
     }
 }
 
@@ -2418,64 +2956,331 @@ impl Silence {
 struct Reading {
     road: transports::FourTuple,
     rtt: Duration,
-    /// The ticks within the last [`CONFIRM_FOR`] on which its RTT changed, the last one last:
-    /// about how many samples it took.
-    changed: VecDeque<Instant>,
-    /// When its RTT last changed.
+    samples: u64,
+    quality: Duration,
+    recent: VecDeque<(Instant, Duration)>,
+    /// Sampled packet send and ACK processing instants for fresh observation ticks.
+    /// This counts ticks rather than every ACK received between ticks.
+    changed: VecDeque<(Instant, Instant)>,
+    /// khor patch 41: packets from before a verified recovery quality step
+    /// cannot refresh the new quality window, including on another copy.
+    quality_since: Option<Instant>,
+    /// Send time of the latest sampled packet; absent for an initial estimate.
+    sent: Option<Instant>,
+    /// When the latest sample's ACK was processed, not when stats were read.
     at: Instant,
 }
 
+impl Reading {
+    fn new(road: transports::FourTuple, stats: &PathStats, now: Instant) -> Self {
+        Self::with_epoch(road, stats, now, None)
+    }
+
+    fn with_epoch(
+        road: transports::FourTuple,
+        stats: &PathStats,
+        now: Instant,
+        quality_since: Option<Instant>,
+    ) -> Self {
+        let mut reading = Self {
+            road,
+            rtt: stats.rtt,
+            samples: 0,
+            quality: stats.rtt,
+            recent: VecDeque::new(),
+            changed: VecDeque::new(),
+            quality_since,
+            sent: None,
+            at: now,
+        };
+        reading.observe(stats, now);
+        reading
+    }
+
+    fn restart_quality(&mut self, since: Instant, now: Instant) {
+        let since = self.quality_since.map_or(since, |old| old.max(since));
+        let latest = self
+            .recent
+            .back()
+            .copied()
+            .filter(|(at, _)| *at == self.at && self.sent.is_some_and(|sent| sent >= since));
+        self.quality_since = Some(since);
+        self.recent.clear();
+        if let Some((at, sample)) = latest {
+            self.record(sample, at, now);
+        }
+    }
+
+    fn record(&mut self, sample: Duration, received: Instant, now: Instant) {
+        self.recent
+            .retain(|(at, _)| now.saturating_duration_since(*at) < CONFIRM_FOR);
+        if now.saturating_duration_since(received) < CONFIRM_FOR {
+            self.recent.push_back((received, sample));
+        }
+        while self.recent.len() > 8 {
+            self.recent.pop_front();
+        }
+        self.quality = sample;
+        self.recalculate();
+    }
+
+    fn recalculate(&mut self) {
+        if self.recent.is_empty() {
+            return;
+        }
+        let mut samples: Vec<_> = self.recent.iter().map(|(_, rtt)| *rtt).collect();
+        samples.sort_unstable();
+        self.quality = samples[samples.len() / 2];
+    }
+
+    fn expire(&mut self, now: Instant) {
+        while self
+            .changed
+            .front()
+            .is_some_and(|(_, at)| now >= *at + CONFIRM_FOR)
+        {
+            self.changed.pop_front();
+        }
+        let before = self.recent.len();
+        self.recent
+            .retain(|(at, _)| now.saturating_duration_since(*at) < CONFIRM_FOR);
+        if self.recent.len() != before {
+            self.recalculate();
+        }
+    }
+
+    fn observe(&mut self, stats: &PathStats, now: Instant) -> bool {
+        let new_sample = self.samples != stats.rtt_samples;
+        self.rtt = stats.rtt;
+        self.samples = stats.rtt_samples;
+        if stats.rtt_samples == 0 {
+            self.quality = stats.rtt;
+            return false;
+        }
+        if !new_sample {
+            return false;
+        }
+        let Some((sent, received)) = stats
+            .latest_rtt_sent
+            .zip(stats.latest_rtt_received)
+            .filter(|(sent, received)| sent <= received)
+            .map(|(sent, received)| (Instant::from_std(sent), Instant::from_std(received)))
+            .filter(|(_, received)| *received <= now)
+        else {
+            return false;
+        };
+        if self.quality_since.is_some_and(|since| sent < since) {
+            return false;
+        }
+        self.sent = Some(sent);
+        self.at = received;
+        self.record(stats.latest_rtt, received, now);
+        let fresh = now.saturating_duration_since(received) < CONFIRM_FOR;
+        if fresh {
+            self.changed.push_back((sent, received));
+        }
+        fresh
+    }
+}
+
 impl Measured {
+    /// Complete one observation tick using the existing reachability and probe rules.
+    fn complete_read(
+        &mut self,
+        now: Instant,
+        silent_now: &[(transports::FourTuple, Instant)],
+        heard: &[(transports::FourTuple, std::time::Instant)],
+        open: impl Fn(&transports::FourTuple) -> bool,
+    ) -> Vec<RecoveryProbe> {
+        let probes = self.recovery_probes(now, silent_now, heard, &open);
+        self.mark_silent(now, silent_now, open);
+        probes
+    }
+
+    /// A recovered road can improve in steps as its substrate leaves a slow
+    /// fallback. Restart only on a fresh, substantial, monotonically lower step;
+    /// ordinary healthy medians and the subsequent Moving confirmation stay intact.
+    fn recovery_quality_step(
+        &mut self,
+        key: (ConnId, PathId),
+        sample: Duration,
+        previous: Duration,
+        now: Instant,
+    ) {
+        let Some(reading) = self.rtts.get(&key) else {
+            return;
+        };
+        let Some(sent) = reading.sent else { return };
+        let road = reading.road.clone();
+        let Some(check) = self.recovery.get_mut(&road) else {
+            return;
+        };
+        // khor patch 46: returning to an actually observed pre-fault regime
+        // starts one fresh window even if the transient median is less than
+        // 25% slower. This supplies no time or samples to Moving confirmation.
+        let returned = check.quality_steps == 0
+            && sample < previous
+            && check.prior_quality.is_some_and(|prior| sample <= prior);
+        if now >= check.began + CONFIRM_FOR
+            || sent <= check.began
+            || check.quality_steps >= RECOVERY_PROBES
+            || !returned && sample.saturating_mul(4) > previous.saturating_mul(3)
+            || check
+                .quality_best
+                .is_some_and(|best| sample.saturating_mul(4) > best.saturating_mul(3))
+        {
+            return;
+        }
+        check.quality_steps += 1;
+        check.quality_best = Some(sample);
+        debug!(target: "khor_net_samples", ?road, ?sent, ?previous, ?sample,
+            step = check.quality_steps, "recovery quality window restarted");
+        for reading in self.rtts.values_mut().filter(|r| r.road == road) {
+            reading.restart_quality(sent, now);
+        }
+    }
+
+    fn recovery_deadline(&self) -> Option<Instant> {
+        self.recovery.values().filter_map(|check| check.next).min()
+    }
+    /// Requests, including failures or merging with an existing confirmation,
+    /// consume the episode's budget. No extra timer or connection owner is kept.
+    fn recovery_probes(
+        &mut self,
+        now: Instant,
+        silent_now: &[(transports::FourTuple, Instant)],
+        heard: &[(transports::FourTuple, std::time::Instant)],
+        open: impl Fn(&transports::FourTuple) -> bool,
+    ) -> Vec<RecoveryProbe> {
+        let silent = &self.silent;
+        self.recovery.retain(|road, check| {
+            open(road)
+                && match silent.get(road) {
+                    Some(silence) => silence.began == check.epoch,
+                    None => now < check.began + CONFIRM_FOR,
+                }
+        });
+        for (road, silence) in &self.silent {
+            if silence.answered.is_some()
+                || silent_now.iter().any(|(t, _)| t == road)
+                || !heard
+                    .iter()
+                    .any(|(t, at)| t == road && *at > silence.judged.into_std())
+                || !self
+                    .rtts
+                    .values()
+                    .any(|r| r.road == *road && r.samples > 0 && r.sent.is_some())
+                || !open(road)
+            {
+                continue;
+            }
+            self.recovery.entry(road.clone()).or_insert(RecoveryCheck {
+                epoch: silence.began,
+                began: now,
+                attempts: 0,
+                last: None,
+                next: None,
+                copy: None,
+                quality_steps: 0,
+                quality_best: None,
+                prior_quality: silence.prior_quality,
+            });
+        }
+        let roads: Vec<_> = self.recovery.keys().cloned().collect();
+        let mut probes = Vec::new();
+        for road in roads {
+            let began = self.recovery[&road].began;
+            let sampled = self.samples_after(&road, began) >= usize::from(RECOVERY_PROBES);
+            debug!(target: "khor_net_samples", ?road, ?now, ?began, sampled,
+                representative = ?self.representative(&road),
+                check = ?self.recovery.get(&road), "recovery road measurement");
+            let check = self
+                .recovery
+                .get_mut(&road)
+                .expect("known recovery episode");
+            check.next = None;
+            if sampled {
+                check.attempts = RECOVERY_PROBES;
+            }
+            if check.attempts >= RECOVERY_PROBES
+                || now >= check.began + CONFIRM_FOR
+                || silent_now.iter().any(|(t, _)| t == &road)
+            {
+                continue;
+            }
+            if let Some(next) = check
+                .last
+                .map(|last| last + RESELECT_INTERVAL)
+                .filter(|next| now < *next)
+            {
+                check.next = (next < check.began + CONFIRM_FOR).then_some(next);
+                continue;
+            }
+            check.attempts += 1;
+            check.last = Some(now);
+            if check.attempts < RECOVERY_PROBES
+                && now + RESELECT_INTERVAL < check.began + CONFIRM_FOR
+            {
+                check.next = Some(now + RESELECT_INTERVAL);
+            }
+            probes.push(RecoveryProbe {
+                road,
+                epoch: check.epoch,
+                attempt: check.attempts,
+                at: now,
+            });
+        }
+        probes
+    }
+
     /// khor patch 17: one tick's silences: `silent_now` the roads a copy of which does not
     /// answer, each with when the packet it left waiting went out; `open` whether a road is
     /// still a path on some connection.  A road no connection has any more is forgotten; one
-    /// a copy of which took a round trip since it went silent, and none of which is silent
-    /// now, answers again once it kept answering for [`SILENT_HOLD`].
-    ///
-    /// carry (10-23): or at once, when `quick` says so of it (the road in use, or one far
-    /// faster than it) and it was not back within [`REHOLD`] before this silence began.  The
-    /// hold is there for a road that answers off and on, and one that does goes silent again
-    /// soon after it is back; a road back from one stall waited out the hold on a relay 1.7 s
-    /// late (netlab f4), and the phone left its carried road for that relay a second after it
-    /// had answered again.
+    /// a copy of which took a round trip after the latest silence judgment, and none of
+    /// which is silent now, is available again. Quality is evaluated by selection/Moving,
+    /// not by this reachability gate. A fault within [`REHOLD`] of a previous recovery
+    /// still requires [`SILENT_HOLD`] of answering so an intermittent road cannot flap.
     fn mark_silent(
         &mut self,
         now: Instant,
         silent_now: &[(transports::FourTuple, Instant)],
         open: impl Fn(&transports::FourTuple) -> bool,
-        quick: impl Fn(&transports::FourTuple, &Measured) -> bool,
     ) {
         self.back.retain(|_, at| now < *at + REHOLD);
         for (tuple, began) in silent_now {
             let rehold = self.back.contains_key(tuple);
+            // Do not save a transient post-fault sample as the old regime.
+            // Use the same active-copy priority as ordinary road measurements.
+            let prior_quality = self
+                .rtts
+                .values()
+                .filter(|r| r.road == *tuple && r.samples > 0 && r.sent.is_some() && r.at <= *began)
+                .max_by_key(|r| (r.recent.len(), r.at))
+                .map(|r| r.quality);
             let silence = self.silent.entry(tuple.clone()).or_insert(Silence {
                 began: *began,
                 judged: now,
                 answered: None,
                 rehold,
+                prior_quality,
             });
             silence.judged = now;
             silence.answered = None;
         }
-        let mut answered = Vec::new();
         for (tuple, silence) in self.silent.iter_mut() {
             if silent_now.iter().any(|(t, _)| t == tuple) || !open(tuple) {
                 continue;
             }
             if silence.answered.is_none()
-                && self.rtts.values().any(|r| r.road == *tuple && r.at > silence.judged)
+                && self
+                    .rtts
+                    .values()
+                    .any(|r| r.road == *tuple && r.sent.is_some_and(|sent| sent > silence.judged))
             {
                 silence.answered = Some(now);
-            }
-            if silence.answered.is_some() {
-                answered.push((tuple.clone(), silence.rehold));
+                debug!(target: "khor_net_samples", ?tuple, ?now, ?silence, "road answered after judgment");
             }
         }
-        let quick: Vec<transports::FourTuple> = answered
-            .into_iter()
-            .filter(|(tuple, rehold)| !rehold && quick(tuple, self))
-            .map(|(tuple, _)| tuple)
-            .collect();
         let back = &mut self.back;
         self.silent.retain(|tuple, silence| {
             if silent_now.iter().any(|(t, _)| t == tuple) {
@@ -2486,15 +3291,16 @@ impl Measured {
             }
             let held = silence
                 .answered
-                .is_none_or(|at| now < at + SILENT_HOLD && !quick.contains(tuple));
+                .is_none_or(|at| silence.rehold && now < at + SILENT_HOLD);
             if !held {
+                debug!(target: "khor_net_samples", ?tuple, ?now, ?silence, immediate = !silence.rehold, "road recovery hold ended");
                 back.insert(tuple.clone(), now);
             }
             held
         });
     }
 
-    /// khor patch 17: a road's round trip and when any copy of it last took a sample.  The
+    /// khor patch 17/29: a road's quality and its representative copy's sample time. The
     /// copy that took the most samples within [`CONFIRM_FOR`] speaks for the road, the freshest
     /// of those on a tie, and a copy whose path closed still does until that time is up.  A
     /// copy that carries nothing has a sample per keepalive, which moves its smoothed RTT an
@@ -2503,10 +3309,32 @@ impl Measured {
     /// for a tick and the confirmation began again, three times; and when the copy that
     /// carried the road closed, the idle one left read 4 ms.
     fn road(&self, road: &transports::FourTuple) -> Option<(Duration, Instant)> {
-        let copies = self.rtts.values().filter(|r| r.road == *road);
-        let latest = copies.clone().map(|r| r.at).max()?;
-        let speaks = copies.max_by_key(|r| (r.changed.len(), r.at))?;
-        Some((speaks.rtt, latest))
+        let speaks = self.representative(road)?;
+        Some((speaks.quality, speaks.at))
+    }
+
+    fn representative(&self, road: &transports::FourTuple) -> Option<&Reading> {
+        self.rtts
+            .values()
+            .filter(|r| r.road == *road)
+            .max_by_key(|r| (r.recent.len(), r.at))
+    }
+
+    fn observation(&self, road: &transports::FourTuple) -> Option<PathMeasurement> {
+        let speaks = self.representative(road)?;
+        (speaks.samples > 0 && speaks.sent.is_some())
+            .then(|| PathMeasurement::new(speaks.quality, speaks.at, speaks.recent.len()))
+    }
+
+    /// A numerical EWMA change is not a sample counter. Require two
+    /// separate observation ticks of packets sent after the move began;
+    /// a backlogged ACK must not confirm a post-stall round trip.
+    fn samples_after(&self, road: &transports::FourTuple, after: Instant) -> usize {
+        // khor patch 47: confirmation belongs to the same copy as road quality.
+        // A different copy's ACKs cannot make the representative's old quality fresh.
+        self.representative(road).map_or(0, |r| {
+            r.changed.iter().filter(|(sent, _)| *sent > after).count()
+        })
     }
 }
 
@@ -2709,8 +3537,8 @@ impl<'a> PathSelectionData<'a> {
         }
     }
 
-    /// khor patch 17: whether the path answers: on no connection [`UNANSWERED_PTOS`] probe
-    /// timeouts in a row with nothing heard for [`UNANSWERED_FOR`].  A path that sent and
+    /// khor patch 17: whether the path answers: on no connection two probe
+    /// timeouts in a row with nothing heard for 300 ms.  A path that sent and
     /// heard nothing back keeps the round trip it last measured, so its RTT alone never says
     /// it is gone; noq abandons it only at its idle timeout.  Each path's ACKs come back on
     /// that path (vendor/noq-proto patch 4), so its probe timeouts are its own round trip's,
@@ -2733,11 +3561,10 @@ impl<'a> PathSelectionData<'a> {
         }
     }
 
-    /// khor patch 17: the road's round trip: the smoothed RTT of whichever connection's copy
-    /// of this path took the most samples lately (`Measured::road`), else this copy's.  `None`
-    /// when its stats can't be read.  The same road is a path on each connection to the
-    /// remote, and a copy that carries nothing keeps the RTT of its last keepalive, up to 5 s
-    /// old.
+    /// khor patch 17/29: the road's recent ACK-sample median from the copy taking the most
+    /// samples lately (`Measured::road`), else this copy's transport estimate. `None` when
+    /// its stats can't be read. Migration separately requires new evidence on both paths;
+    /// repeatedly reading the same estimate does not make it fresh.
     pub fn rtt(&self) -> Option<Duration> {
         let stats = self.stats()?;
         Some(self.fresh_rtt.unwrap_or(stats.rtt))
@@ -2877,6 +3704,14 @@ async fn maybe_next<S: Stream + Unpin>(maybe_stream: Option<&mut S>) -> Option<O
 }
 
 #[cfg(test)]
+#[path = "remote_state/confirmation_identity_tests.rs"]
+mod tests_confirmation_identity;
+
+#[cfg(test)]
+#[path = "remote_state/recovery_baseline_tests.rs"]
+mod tests_recovery_baseline;
+
+#[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
 
@@ -2910,6 +3745,7 @@ mod tests {
             watch: Watch::default(),
             moving: Moving::default(),
             measured: Default::default(),
+            refresh: Default::default(),
             last_local_candidates: None,
             scheduled_holepunch: None,
             scheduled_open_path: None,
@@ -3021,10 +3857,32 @@ mod tests {
     #[test]
     fn an_idle_road_whose_ack_is_late_still_answers() {
         let now = std::time::Instant::now();
-        let late = stats(now, MS(2), MS(30), 2, Some(Duration::from_secs(4)), Some(MS(100)));
-        assert_eq!(unanswered_for(&late, now), None, "a 100 ms wait is no silence");
-        let gone = stats(now, MS(2), MS(30), 2, Some(Duration::from_secs(4)), Some(MS(350)));
-        assert_eq!(unanswered_for(&gone, now), Some(MS(350)), "a 350 ms wait is");
+        let late = stats(
+            now,
+            MS(2),
+            MS(30),
+            2,
+            Some(Duration::from_secs(4)),
+            Some(MS(100)),
+        );
+        assert_eq!(
+            unanswered_for(&late, now),
+            None,
+            "a 100 ms wait is no silence"
+        );
+        let gone = stats(
+            now,
+            MS(2),
+            MS(30),
+            2,
+            Some(Duration::from_secs(4)),
+            Some(MS(350)),
+        );
+        assert_eq!(
+            unanswered_for(&gone, now),
+            Some(MS(350)),
+            "a 350 ms wait is"
+        );
     }
 
     /// The wait is at least three probe timeouts: a 400 ms road's PTO is past 1 s.
@@ -3050,88 +3908,824 @@ mod tests {
         assert_eq!(unanswered_for(&never_heard, now), Some(MS(400)));
     }
 
+    #[test]
+    fn an_initial_estimate_change_is_not_a_fresh_ack() {
+        let t = Instant::now();
+        let mut stats = PathStats::default();
+        stats.rtt = MS(300);
+        let mut reading = Reading::new(addr(1), &stats, t);
+        stats.rtt = MS(1);
+        assert!(!reading.observe(&stats, t + MS(250)));
+        assert_eq!(
+            reading.quality,
+            MS(1),
+            "an initial estimate may still guide exploration"
+        );
+        assert!(
+            reading.changed.is_empty(),
+            "PATH_RESPONSE is not new ACK evidence"
+        );
+    }
+
+    #[test]
+    fn a_delayed_stats_read_does_not_make_an_old_ack_new() {
+        let t = Instant::now();
+        let mut stats = PathStats::default();
+        stats.rtt = MS(5);
+        stats.latest_rtt = MS(5);
+        stats.rtt_samples = 1;
+        stats.latest_rtt_sent = Some(t.into_std());
+        stats.latest_rtt_received = Some((t + MS(5)).into_std());
+        let road = addr(1);
+        let reading = Reading::new(road.clone(), &stats, t + MS(3000));
+        assert_eq!(
+            reading.at,
+            t + MS(5),
+            "age begins when the ACK was processed"
+        );
+        let mut measured = Measured::default();
+        measured.rtts.insert((ConnId(0), PathId::ZERO), reading);
+        assert_eq!(measured.samples_after(&road, t + MS(2000)), 0);
+        assert_eq!(measured.observation(&road).unwrap().samples(), 0);
+    }
+
+    #[test]
+    fn a_backlogged_ack_cannot_confirm_a_post_stall_round_trip() {
+        let t = Instant::now();
+        let after = t + MS(1000);
+        let road = addr(1);
+        let mut stats = PathStats::default();
+        stats.rtt = MS(5);
+        stats.latest_rtt = MS(5);
+        stats.rtt_samples = 1;
+        stats.latest_rtt_sent = Some(t.into_std());
+        stats.latest_rtt_received = Some((after + MS(100)).into_std());
+        let mut reading = Reading::new(road.clone(), &stats, after + MS(100));
+        stats.rtt_samples = 2;
+        stats.latest_rtt_sent = Some((t + MS(500)).into_std());
+        stats.latest_rtt_received = Some((after + MS(350)).into_std());
+        reading.observe(&stats, after + MS(350));
+        let mut measured = Measured::default();
+        measured.rtts.insert((ConnId(0), PathId::ZERO), reading);
+        assert_eq!(
+            measured.samples_after(&road, after),
+            0,
+            "both packets were sent before the stall"
+        );
+        for (count, sent) in [(3, 600), (4, 850)] {
+            stats.rtt_samples = count;
+            stats.latest_rtt_sent = Some((after + MS(sent)).into_std());
+            stats.latest_rtt_received = Some((after + MS(sent + 5)).into_std());
+            measured
+                .rtts
+                .get_mut(&(ConnId(0), PathId::ZERO))
+                .unwrap()
+                .observe(&stats, after + MS(sent + 50));
+            assert_eq!(measured.samples_after(&road, after), (count - 2) as usize);
+        }
+    }
+
+    #[test]
+    fn equal_rtt_samples_are_fresh_and_recovery_does_not_use_the_old_average() {
+        let now = Instant::now();
+        let mut stats = PathStats::default();
+        stats.rtt = MS(300);
+        stats.latest_rtt = MS(300);
+        stats.rtt_samples = 1;
+        sample_time(&mut stats, now);
+        let mut r = Reading::new(addr(1), &stats, now);
+        let recovered = now + Duration::from_secs(3);
+        stats.rtt = MS(260);
+        stats.latest_rtt = MS(1);
+        stats.rtt_samples = 2;
+        sample_time(&mut stats, recovered);
+        assert!(r.observe(&stats, recovered));
+        assert_eq!(r.quality, MS(1));
+        assert_eq!(r.rtt, MS(260), "transport smoothing remains separate");
+        stats.rtt_samples = 3;
+        sample_time(&mut stats, recovered + MS(250));
+        assert!(
+            r.observe(&stats, recovered + MS(250)),
+            "equal values still give fresh evidence"
+        );
+        assert_eq!(r.at, recovered + MS(250));
+        assert!(
+            !r.observe(&stats, recovered + MS(500)),
+            "a repeated read is not a new sample"
+        );
+        assert_eq!(r.quality, MS(1));
+        assert!(r.recent.len() <= 8);
+    }
+
+    #[test]
+    fn expiring_an_old_sample_updates_quality_without_creating_an_ack() {
+        let t = Instant::now();
+        let road = addr(1);
+        let mut stats = PathStats::default();
+        stats.rtt = MS(300);
+        stats.latest_rtt = MS(300);
+        stats.rtt_samples = 1;
+        sample_time(&mut stats, t);
+        let mut reading = Reading::new(road.clone(), &stats, t);
+        stats.latest_rtt = MS(1);
+        stats.rtt_samples = 2;
+        sample_time(&mut stats, t + MS(1500));
+        reading.observe(&stats, t + MS(1500));
+        assert_eq!(
+            reading.quality,
+            MS(300),
+            "the upper median still includes the slow sample"
+        );
+        reading.expire(t + MS(2250));
+        let mut measured = Measured::default();
+        measured.rtts.insert((ConnId(0), PathId::ZERO), reading);
+        let observation = measured.observation(&road).unwrap();
+        assert_eq!(observation.samples(), 1);
+        assert_eq!(
+            observation.rtt(),
+            MS(1),
+            "only the fast sample remains in this same window"
+        );
+        assert_eq!(measured.road(&road), Some((MS(1), t + MS(1500))));
+        assert_eq!(
+            measured.samples_after(&road, t + MS(2000)),
+            0,
+            "expiry is not a new ACK"
+        );
+    }
+
+    #[test]
+    fn active_refresh_is_bounded_rotates_and_does_not_sustain_itself() {
+        let t = Instant::now();
+        let mut refresh = ActiveRefresh::default();
+        assert_eq!(refresh.take(2, t), None);
+        refresh.observe(1, t);
+        assert_eq!(refresh.take(2, t), Some(0));
+        refresh.observe(2, t + MS(4000));
+        assert_eq!(refresh.take(2, t + MS(4000)), None);
+        assert_eq!(refresh.take(2, t + MS(5000)), Some(1));
+        refresh.observe(2, t + MS(8000));
+        assert_eq!(
+            refresh.take(2, t + MS(10000)),
+            None,
+            "PINGs are not STREAM activity"
+        );
+        refresh.observe(3, t + MS(20000));
+        assert_eq!(refresh.take(0, t + MS(20000)), None);
+        assert_eq!(refresh.take(2, t + MS(20000)), Some(0));
+    }
+
+    #[test]
+    fn shared_quality_and_age_come_from_the_same_representative_copy() {
+        let now = Instant::now();
+        let road = addr(1);
+        let mut stats = PathStats::default();
+        stats.rtt = MS(50);
+        stats.latest_rtt = MS(5);
+        stats.rtt_samples = 1;
+        sample_time(&mut stats, now - MS(1000));
+        let mut busy = Reading::new(road.clone(), &stats, now - MS(1000));
+        stats.rtt_samples = 2;
+        sample_time(&mut stats, now - MS(750));
+        busy.observe(&stats, now - MS(750));
+        stats.rtt_samples = 3;
+        sample_time(&mut stats, now - MS(500));
+        busy.observe(&stats, now - MS(500));
+        stats.rtt = MS(20);
+        stats.latest_rtt = MS(20);
+        stats.rtt_samples = 1;
+        sample_time(&mut stats, now);
+        let quiet = Reading::new(road.clone(), &stats, now);
+        let mut measured = Measured::default();
+        measured.rtts.insert((ConnId(0), PathId::ZERO), busy);
+        measured.rtts.insert((ConnId(1), PathId::ZERO), quiet);
+        let observation = measured.observation(&road).unwrap();
+        assert_eq!(observation.rtt(), MS(5));
+        assert_eq!(observation.samples(), 3);
+        assert!(observation.age() >= MS(500));
+        assert_eq!(measured.road(&road), Some((MS(5), now - MS(500))));
+        let other = addr(2);
+        measured.rtts.insert(
+            (ConnId(2), PathId::ZERO),
+            Reading::new(other.clone(), &PathStats::default(), now),
+        );
+        assert!(
+            measured.observation(&other).is_none(),
+            "an initial estimate is not observed quality"
+        );
+    }
+
+    fn sample_time(stats: &mut PathStats, received: Instant) {
+        stats.latest_rtt_sent = Some((received - stats.latest_rtt).into_std());
+        stats.latest_rtt_received = Some(received.into_std());
+    }
+
     fn reading(road: &transports::FourTuple, at: Instant) -> Reading {
         Reading {
             road: road.clone(),
             rtt: MS(1),
-            changed: VecDeque::from([at]),
+            samples: 0,
+            quality: MS(1),
+            recent: VecDeque::new(),
+            changed: VecDeque::from([(at, at)]),
+            quality_since: None,
+            sent: Some(at),
             at,
         }
+    }
+
+    fn recovery_case(t: Instant) -> (Measured, transports::FourTuple) {
+        let road = addr(1);
+        let mut m = Measured::default();
+        let mut old = reading(&road, t - MS(500));
+        old.samples = 1;
+        m.rtts.insert((ConnId(0), PathId::ZERO), old);
+        m.mark_silent(t, &[(road.clone(), t - MS(300))], |_| true);
+        (m, road)
+    }
+
+    fn recovery_sample(m: &mut Measured, key: (ConnId, PathId), sample: Duration, at: Instant) {
+        let road = m.rtts[&key].road.clone();
+        let previous = m.road(&road).unwrap().0;
+        let mut stats = PathStats::default();
+        stats.rtt_samples = m.rtts[&key].samples + 1;
+        stats.rtt = sample;
+        stats.latest_rtt = sample;
+        sample_time(&mut stats, at);
+        if m.rtts.get_mut(&key).unwrap().observe(&stats, at) {
+            m.recovery_quality_step(key, sample, previous, at);
+        }
+    }
+
+    fn recovered_quality_case(t: Instant) -> (Measured, transports::FourTuple) {
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert_eq!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+            1
+        );
+        let key = (ConnId(0), PathId::ZERO);
+        recovery_sample(&mut m, key, MS(250), t + MS(600));
+        recovery_sample(&mut m, key, MS(131), t + MS(900));
+        recovery_sample(&mut m, key, MS(85), t + MS(1150));
+        (m, road)
+    }
+
+    #[test]
+    fn a_first_recovery_ack_keeps_the_bounded_quality_episode() {
+        let t = Instant::now();
+        let key = (ConnId(0), PathId::ZERO);
+        let (mut measured, road) = recovery_case(t);
+        let mut probes = Vec::new();
+        // The first receive hint is already a fresh RTT. It can establish
+        // reachability before the actor has created a recovery episode.
+        for (rtt, after) in [(250, 600), (131, 900), (85, 1150)] {
+            let now = t + MS(after);
+            recovery_sample(&mut measured, key, MS(rtt), now);
+            probes.extend(measured.complete_read(
+                now,
+                &[],
+                &[(road.clone(), now.into_std())],
+                |_| true,
+            ));
+        }
+        assert_eq!(
+            measured.road(&road).unwrap().0,
+            MS(85),
+            "a transient first ACK must not outlive the bounded recovery episode"
+        );
+        assert!(!measured.silent.contains_key(&road));
+        let check = &measured.recovery[&road];
+        assert_eq!(check.began, t + MS(600));
+        assert_eq!(check.epoch, t - MS(300));
+        assert_eq!(check.attempts, RECOVERY_PROBES);
+        assert_eq!(probes.len(), usize::from(RECOVERY_PROBES));
+        assert!(
+            measured
+                .complete_read(
+                    t + MS(1400),
+                    &[],
+                    &[(road, (t + MS(1400)).into_std())],
+                    |_| true,
+                )
+                .is_empty(),
+            "the same recovery cannot refill its probe budget"
+        );
+    }
+
+    #[test]
+    fn a_known_recovery_can_start_a_new_quality_window_without_changing_healthy_medians() {
+        let t = Instant::now();
+        let key = (ConnId(0), PathId::ZERO);
+        let (mut healthy, road) = recovery_case(t);
+        healthy.silent.clear();
+        for (rtt, at) in [(250, 600), (131, 900), (85, 1150)] {
+            recovery_sample(&mut healthy, key, MS(rtt), t + MS(at));
+        }
+        assert_eq!(healthy.road(&road).unwrap().0, MS(131));
+        let (m, road) = recovered_quality_case(t);
+        assert_eq!(m.road(&road).unwrap().0, MS(85));
+        assert_eq!(m.recovery[&road].quality_steps, 2);
+        assert_eq!(
+            m.recovery[&road].attempts, 1,
+            "new quality windows do not mint probe budgets"
+        );
+        let reading = &m.rtts[&key];
+        assert_eq!(reading.samples, 4);
+        assert_eq!(
+            reading.changed.len(),
+            4,
+            "one real observation per ACK update"
+        );
+        assert_eq!(reading.at, t + MS(1150));
+        assert_eq!(reading.sent, Some(t + MS(1065)));
+    }
+
+    #[test]
+    fn late_pre_epoch_packets_cannot_refresh_quality_age_or_confirm_a_new_epoch() {
+        let t = Instant::now();
+        let key = (ConnId(0), PathId::ZERO);
+        let (mut m, road) = recovered_quality_case(t);
+        let count = m.rtts[&key].samples;
+        let changed = m.rtts[&key].changed.len();
+        recovery_sample(&mut m, key, MS(500), t + MS(1400));
+        let r = &m.rtts[&key];
+        assert_eq!(
+            r.samples,
+            count + 1,
+            "transport counter remains the real counter"
+        );
+        assert_eq!(r.rtt, MS(500), "transport SRTT is still read unchanged");
+        assert_eq!(r.quality, MS(85));
+        assert_eq!(r.at, t + MS(1150));
+        assert_eq!(r.sent, Some(t + MS(1065)));
+        assert_eq!(r.changed.len(), changed);
+        assert_eq!(m.recovery[&road].quality_steps, 2);
+    }
+
+    #[test]
+    fn another_copy_inherits_the_recovery_window_before_reading_an_old_ack() {
+        let t = Instant::now();
+        let (mut m, road) = recovered_quality_case(t);
+        let epoch = m.rtts.values().filter_map(|r| r.quality_since).max();
+        let mut stats = PathStats::default();
+        stats.rtt_samples = 1;
+        stats.latest_rtt = MS(300);
+        sample_time(&mut stats, t + MS(1300));
+        let copy = Reading::with_epoch(road.clone(), &stats, t + MS(1300), epoch);
+        assert!(copy.sent.is_none());
+        assert!(copy.recent.is_empty());
+        let key = (ConnId(1), PathId::ZERO);
+        m.rtts.insert(key, copy);
+        assert_eq!(m.road(&road).unwrap().0, MS(85));
+        recovery_sample(&mut m, key, MS(89), t + MS(1500));
+        assert_eq!(m.road(&road).unwrap().0, MS(89));
+        assert_eq!(m.rtts[&key].quality_since, epoch);
+    }
+
+    #[test]
+    fn recovery_noise_cannot_repeatedly_restart_a_window_or_exceed_the_step_budget() {
+        let t = Instant::now();
+        let key = (ConnId(0), PathId::ZERO);
+        let (mut m, road) = recovered_quality_case(t);
+        recovery_sample(&mut m, key, MS(131), t + MS(1500));
+        assert_eq!(
+            m.road(&road).unwrap().0,
+            MS(131),
+            "a slow follow-up remains evidence"
+        );
+        recovery_sample(&mut m, key, MS(85), t + MS(1750));
+        assert_eq!(m.recovery[&road].quality_steps, 2);
+        assert!(m.rtts[&key].recent.iter().any(|(_, rtt)| *rtt == MS(131)));
+        recovery_sample(&mut m, key, MS(50), t + MS(1900));
+        assert_eq!(m.recovery[&road].quality_steps, 3);
+        let epoch = m.rtts[&key].quality_since;
+        recovery_sample(&mut m, key, MS(25), t + MS(2100));
+        assert_eq!(m.recovery[&road].quality_steps, 3);
+        assert_eq!(m.rtts[&key].quality_since, epoch);
+    }
+
+    #[test]
+    fn an_early_measurement_tick_preserves_the_exact_pending_recovery_deadline() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert!(m.recovery_deadline().is_none());
+        assert_eq!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+            1
+        );
+        assert_eq!(m.recovery_deadline(), Some(t + MS(500)));
+        let early = t + MS(500) - Duration::from_nanos(1);
+        assert!(m.recovery_probes(early, &[], &heard, |_| true).is_empty());
+        assert_eq!(
+            m.recovery_deadline(),
+            Some(t + MS(500)),
+            "do not wait a further interval"
+        );
+        assert_eq!(
+            m.recovery_probes(t + MS(500), &[], &heard, |_| true).len(),
+            1
+        );
+        assert_eq!(m.recovery_deadline(), Some(t + MS(750)));
+        assert_eq!(
+            m.recovery_probes(t + MS(750), &[], &heard, |_| true).len(),
+            1
+        );
+        assert!(
+            m.recovery_deadline().is_none(),
+            "a spent episode has no timer"
+        );
+    }
+
+    #[test]
+    fn silent_closed_and_expired_recovery_episodes_disarm_their_due_wake() {
+        let t = Instant::now();
+        for condition in 0..3 {
+            let (mut m, road) = recovery_case(t);
+            let heard = [(road.clone(), (t + MS(1)).into_std())];
+            assert_eq!(
+                m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+                1
+            );
+            let (now, silent_now) = if condition == 0 {
+                (t + MS(500), vec![(road, t)])
+            } else if condition == 1 {
+                (t + MS(500), Vec::new())
+            } else {
+                (t + MS(250) + CONFIRM_FOR, Vec::new())
+            };
+            assert!(
+                m.recovery_probes(now, &silent_now, &heard, |_| condition != 1)
+                    .is_empty()
+            );
+            assert!(
+                m.recovery_deadline().is_none(),
+                "past-due wakes cannot spin while ineligible"
+            );
+        }
+    }
+
+    #[test]
+    fn recovery_samples_stay_on_one_live_copy_unless_another_has_less_backoff() {
+        let a = (ConnId(0), PathId::ZERO);
+        let b = (ConnId(1), PathId::ZERO);
+        assert!(recovery_copy_rank(Some(a), a, 0) < recovery_copy_rank(Some(a), b, 0));
+        assert!(recovery_copy_rank(Some(a), b, 0) < recovery_copy_rank(Some(a), a, 1));
+        assert_eq!(
+            recovery_copy_rank(None, a, 0),
+            recovery_copy_rank(None, b, 0)
+        );
+    }
+
+    #[test]
+    fn confirmation_deadlines_keep_the_window_and_fresh_sample_requirements() {
+        let t = Instant::now();
+        let road = addr(2);
+        let mut moving = Moving::default();
+        assert!(moving.deadline(t).is_none());
+        assert!(matches!(
+            moving.step(&road, t, MS(100), MS(60), |_| true, |_| true),
+            Step::Hold { .. }
+        ));
+        let early = t + CONFIRM_FOR - Duration::from_nanos(1);
+        assert_eq!(moving.deadline(early), Some(t + CONFIRM_FOR));
+        assert!(matches!(
+            moving.step(&road, early, MS(100), MS(60), |_| true, |_| true),
+            Step::Hold { .. }
+        ));
+        assert!(matches!(
+            moving.step(
+                &road,
+                t + CONFIRM_FOR,
+                MS(100),
+                MS(60),
+                |_| false,
+                |_| false
+            ),
+            Step::Hold { .. }
+        ));
+        assert_eq!(moving.deadline(t + CONFIRM_FOR), Some(t + CONFIRM_MAX));
+        assert_eq!(
+            moving.step(&road, t + CONFIRM_FOR, MS(100), MS(60), |_| true, |_| true),
+            Step::Go
+        );
+        assert!(moving.deadline(t + CONFIRM_FOR).is_none());
+        moving.to = Some((road, t));
+        assert!(
+            moving.deadline(t + CONFIRM_MAX).is_none(),
+            "no immediate past-due wake loop"
+        );
+    }
+
+    #[test]
+    fn recovery_probes_need_a_known_road_and_a_hint_after_judgment() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        assert!(m.recovery_probes(t, &[], &[], |_| true).is_empty());
+        assert!(
+            m.recovery_probes(t, &[], &[(road.clone(), t.into_std())], |_| true)
+                .is_empty()
+        );
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert!(
+            m.recovery_probes(t + MS(250), &[(road.clone(), t)], &heard, |_| true)
+                .is_empty()
+        );
+        m.rtts.get_mut(&(ConnId(0), PathId::ZERO)).unwrap().samples = 0;
+        assert!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true)
+                .is_empty()
+        );
+        m.rtts.get_mut(&(ConnId(0), PathId::ZERO)).unwrap().samples = 1;
+        let probes = m.recovery_probes(t + MS(250), &[], &heard, |_| true);
+        assert_eq!(probes.len(), 1);
+        assert_eq!(probes[0].road, road);
+        assert_eq!(probes[0].epoch, t - MS(300));
+        assert_eq!(probes[0].attempt, 1);
+        assert!(
+            m.silent.contains_key(&road),
+            "the hint itself never establishes reachability"
+        );
+        let mut healthy = Measured::default();
+        healthy.rtts = m.rtts;
+        assert!(
+            healthy
+                .recovery_probes(t + MS(250), &[], &heard, |_| true)
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn recovery_probe_requests_are_paced_and_cannot_refill_the_same_epoch() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        for attempt in 1..=RECOVERY_PROBES {
+            let now = t + MS(250 * u64::from(attempt));
+            let probes = m.recovery_probes(now, &[], &heard, |_| true);
+            assert_eq!(probes.len(), 1);
+            assert_eq!(probes[0].attempt, attempt);
+            // No send result is reported: failures and merging consume the same budget.
+            assert!(
+                m.recovery_probes(now + MS(1), &[], &heard, |_| true)
+                    .is_empty()
+            );
+        }
+        let later_hint = [(road.clone(), (t + MS(5000)).into_std())];
+        assert!(
+            m.recovery_probes(t + MS(5000), &[], &later_hint, |_| true)
+                .is_empty()
+        );
+        assert_eq!(m.recovery[&road].attempts, RECOVERY_PROBES);
+        assert!(
+            m.silent.contains_key(&road),
+            "unanswered probes cannot clear the fault"
+        );
+    }
+
+    #[test]
+    fn recovery_probing_has_a_finite_window_even_with_budget_remaining() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert_eq!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+            1
+        );
+        assert!(
+            m.recovery_probes(t + MS(250) + CONFIRM_FOR, &[], &heard, |_| true)
+                .is_empty()
+        );
+        assert!(
+            m.recovery_probes(t + MS(4000), &[], &heard, |_| true)
+                .is_empty()
+        );
+        assert_eq!(
+            m.recovery[&road].attempts, 1,
+            "an expired silence retains a spent tombstone"
+        );
+    }
+
+    #[test]
+    fn a_new_round_trip_can_end_silence_without_discarding_the_probe_budget() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert_eq!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+            1
+        );
+        let mut fresh = reading(&road, t + MS(300));
+        fresh.samples = 2;
+        m.rtts.insert((ConnId(0), PathId::ZERO), fresh);
+        m.mark_silent(t + MS(500), &[], |_| true);
+        assert!(!m.silent.contains_key(&road));
+        assert_eq!(
+            m.recovery_probes(t + MS(500), &[], &heard, |_| true).len(),
+            1
+        );
+        assert_eq!(
+            m.recovery_probes(t + MS(750), &[], &heard, |_| true).len(),
+            1
+        );
+        assert!(
+            m.recovery_probes(t + MS(1000), &[], &heard, |_| true)
+                .is_empty()
+        );
+        assert!(
+            m.recovery_probes(t + MS(2500), &[], &heard, |_| true)
+                .is_empty()
+        );
+        assert!(
+            m.recovery.is_empty(),
+            "recovered episodes release their state after the window"
+        );
+    }
+
+    #[test]
+    fn natural_fresh_samples_cancel_remaining_recovery_probes() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert_eq!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+            1
+        );
+        let r = m.rtts.get_mut(&(ConnId(0), PathId::ZERO)).unwrap();
+        for ms in [300, 350, 400] {
+            r.changed.push_back((t + MS(ms), t + MS(ms)));
+        }
+        assert!(
+            m.recovery_probes(t + MS(500), &[], &heard, |_| true)
+                .is_empty()
+        );
+        assert_eq!(m.recovery[&road].attempts, RECOVERY_PROBES);
+    }
+
+    #[test]
+    fn closed_roads_drop_recovery_state_and_an_independent_fault_gets_a_new_epoch() {
+        let t = Instant::now();
+        let (mut m, road) = recovery_case(t);
+        let heard = [(road.clone(), (t + MS(1)).into_std())];
+        assert_eq!(
+            m.recovery_probes(t + MS(250), &[], &heard, |_| true).len(),
+            1
+        );
+        assert!(
+            m.recovery_probes(t + MS(500), &[], &heard, |_| false)
+                .is_empty()
+        );
+        assert!(m.recovery.is_empty());
+        m.mark_silent(t + MS(500), &[], |_| false);
+        m.mark_silent(t + MS(1000), &[(road.clone(), t + MS(600))], |_| true);
+        let heard = [(road.clone(), (t + MS(1001)).into_std())];
+        let probes = m.recovery_probes(t + MS(1250), &[], &heard, |_| true);
+        assert_eq!(probes.len(), 1);
+        assert_eq!(probes[0].epoch, t + MS(600));
+        assert_eq!(probes[0].attempt, 1);
+    }
+
+    #[test]
+    fn an_old_packet_acked_after_a_stall_does_not_end_the_silence() {
+        let road = addr(1);
+        let t = Instant::now();
+        let open = |_: &transports::FourTuple| true;
+        let mut m = Measured::default();
+        m.mark_silent(t, &[(road.clone(), t - MS(300))], open);
+        let mut old = reading(&road, t + MS(250));
+        old.sent = Some(t - MS(500));
+        m.rtts.insert((ConnId(0), PathId::ZERO), old);
+        m.mark_silent(t + MS(250), &[], open);
+        assert!(
+            m.silent.contains_key(&road),
+            "the ACK's packet predates the last silence judgment"
+        );
+        m.rtts
+            .insert((ConnId(0), PathId::ZERO), reading(&road, t + MS(500)));
+        m.mark_silent(t + MS(500), &[], open);
+        assert!(
+            !m.silent.contains_key(&road),
+            "a new round trip can end the silence"
+        );
     }
 
     /// A silent road answers again only after a round trip and [`SILENT_HOLD`] of answering;
     /// going silent in between starts the hold again.
     #[test]
-    fn a_silent_road_answers_again_after_the_hold() {
+    fn a_repeatedly_silent_road_answers_again_after_the_hold() {
         let road = addr(1);
         let open = |_: &transports::FourTuple| true;
-        let slow = |_: &transports::FourTuple, _: &Measured| false;
         let mut m = Measured::default();
         let t0 = Instant::now();
-        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open, slow);
-        assert_eq!(m.silent[&road].stall(t0 + MS(100)), MS(400), "the stall counts from the packet");
-        m.mark_silent(t0 + MS(250), &[], open, slow);
+        m.back.insert(road.clone(), t0 - MS(100));
+        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open);
+        assert_eq!(
+            m.silent[&road].stall(t0 + MS(100)),
+            MS(400),
+            "the stall counts from the packet"
+        );
+        m.mark_silent(t0 + MS(250), &[], open);
         assert!(m.silent[&road].answered.is_none(), "no round trip yet");
-        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(400)));
-        m.mark_silent(t0 + MS(500), &[], open, slow);
+        m.rtts
+            .insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(400)));
+        m.mark_silent(t0 + MS(500), &[], open);
         assert_eq!(m.silent[&road].answered, Some(t0 + MS(500)));
-        assert_eq!(m.silent[&road].stall(t0 + MS(900)), MS(800), "the stall ends when it answered");
-        m.mark_silent(t0 + MS(1200), &[], open, slow);
+        assert_eq!(
+            m.silent[&road].stall(t0 + MS(900)),
+            MS(800),
+            "the stall ends when it answered"
+        );
+        m.mark_silent(t0 + MS(1200), &[], open);
         assert!(m.silent.contains_key(&road), "held for a second");
-        m.mark_silent(t0 + MS(1300), &[(road.clone(), t0 + MS(1000))], open, slow);
-        assert!(m.silent[&road].answered.is_none(), "silent again: the hold starts over");
-        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(1400)));
-        m.mark_silent(t0 + MS(1500), &[], open, slow);
-        m.mark_silent(t0 + MS(2400), &[], open, slow);
+        m.mark_silent(t0 + MS(1300), &[(road.clone(), t0 + MS(1000))], open);
+        assert!(
+            m.silent[&road].answered.is_none(),
+            "silent again: the hold starts over"
+        );
+        m.rtts
+            .insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(1400)));
+        m.mark_silent(t0 + MS(1500), &[], open);
+        m.mark_silent(t0 + MS(2400), &[], open);
         assert!(m.silent.contains_key(&road));
-        m.mark_silent(t0 + MS(2500), &[], open, slow);
+        m.mark_silent(t0 + MS(2500), &[], open);
         assert!(!m.silent.contains_key(&road), "a second of answering");
-        m.mark_silent(t0 + MS(2600), &[(road.clone(), t0 + MS(2300))], open, slow);
-        m.mark_silent(t0 + MS(2700), &[], |_| false, slow);
+        m.mark_silent(t0 + MS(2600), &[(road.clone(), t0 + MS(2300))], open);
+        m.mark_silent(t0 + MS(2700), &[], |_| false);
         assert!(m.silent.is_empty(), "a road no connection has is forgotten");
     }
 
-    /// carry (10-23): a road back from a stall that is the one in use, or far faster than it,
-    /// is a candidate at its first round trip; one that goes silent again within [`REHOLD`] of
-    /// being back waits out [`SILENT_HOLD`] however fast it reads, and after `REHOLD` it is
-    /// quick again.  netlab f4: the carried road through m answered 174 ms against a relay of
-    /// 856 ms, and waited out the hold on the relay.
     #[test]
-    fn a_road_far_faster_than_the_one_in_use_is_back_at_its_first_round_trip() {
+    fn a_first_post_judgment_round_trip_restores_availability_without_a_quality_gate() {
+        let road = addr(1);
+        let t0 = Instant::now();
+        let open = |_: &transports::FourTuple| true;
+        let mut measured = Measured::default();
+        measured.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open);
+        let mut recovered = reading(&road, t0 + MS(400));
+        // The old outage may still dominate quality. A new round trip
+        // restores reachability; Moving separately decides whether to use it.
+        recovered.quality = MS(5000);
+        measured.rtts.insert((ConnId(0), PathId::ZERO), recovered);
+        measured.mark_silent(t0 + MS(500), &[], open);
+        assert!(
+            !measured.silent.contains_key(&road),
+            "one first fault cannot impose a second quality-dependent recovery hold"
+        );
+    }
+
+    /// A first recovery is independent of quality. Repeated faults within [`REHOLD`]
+    /// wait out [`SILENT_HOLD`]; once that history expires, one new round trip suffices.
+    #[test]
+    fn a_one_off_fault_returns_at_its_first_round_trip_and_repeated_faults_hold() {
         let road = addr(1);
         let open = |_: &transports::FourTuple| true;
-        let fast = |_: &transports::FourTuple, _: &Measured| true;
         let mut m = Measured::default();
         let t0 = Instant::now();
-        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open, fast);
-        m.mark_silent(t0 + MS(250), &[], open, fast);
-        assert!(m.silent.contains_key(&road), "no round trip yet: still silent");
-        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(400)));
-        m.mark_silent(t0 + MS(500), &[], open, fast);
-        assert!(!m.silent.contains_key(&road), "back at its first round trip");
+        m.mark_silent(t0, &[(road.clone(), t0 - MS(300))], open);
+        m.mark_silent(t0 + MS(250), &[], open);
+        assert!(
+            m.silent.contains_key(&road),
+            "no round trip yet: still silent"
+        );
+        m.rtts
+            .insert((ConnId(0), PathId::ZERO), reading(&road, t0 + MS(400)));
+        m.mark_silent(t0 + MS(500), &[], open);
+        assert!(
+            !m.silent.contains_key(&road),
+            "back at its first round trip"
+        );
         // Silent again five seconds on: off and on, so held.
         let t1 = t0 + MS(5500);
-        m.mark_silent(t1, &[(road.clone(), t1 - MS(300))], open, fast);
-        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t1 + MS(400)));
-        m.mark_silent(t1 + MS(500), &[], open, fast);
-        assert!(m.silent.contains_key(&road), "silent again within REHOLD: held");
-        m.mark_silent(t1 + MS(1400), &[], open, fast);
+        m.mark_silent(t1, &[(road.clone(), t1 - MS(300))], open);
+        m.rtts
+            .insert((ConnId(0), PathId::ZERO), reading(&road, t1 + MS(400)));
+        m.mark_silent(t1 + MS(500), &[], open);
+        assert!(
+            m.silent.contains_key(&road),
+            "silent again within REHOLD: held"
+        );
+        m.mark_silent(t1 + MS(1400), &[], open);
         assert!(m.silent.contains_key(&road), "held for a second");
-        m.mark_silent(t1 + MS(1500), &[], open, fast);
+        m.mark_silent(t1 + MS(1500), &[], open);
         assert!(!m.silent.contains_key(&road), "a second of answering");
         // Long after it was last back, a stall is one stall again.
         let t2 = t1 + MS(1500) + REHOLD;
-        m.mark_silent(t2, &[(road.clone(), t2 - MS(300))], open, fast);
-        m.rtts.insert((ConnId(0), PathId::ZERO), reading(&road, t2 + MS(400)));
-        m.mark_silent(t2 + MS(500), &[], open, fast);
+        m.mark_silent(t2, &[(road.clone(), t2 - MS(300))], open);
+        m.rtts
+            .insert((ConnId(0), PathId::ZERO), reading(&road, t2 + MS(400)));
+        m.mark_silent(t2 + MS(500), &[], open);
         assert!(!m.silent.contains_key(&road), "quick again after REHOLD");
-        // And a road that is neither in use nor far faster keeps the hold.
+        // Quality does not gate availability for a different first-time fault either.
         let other = addr(2);
-        let slow = |_: &transports::FourTuple, _: &Measured| false;
-        m.mark_silent(t2 + MS(600), &[(other.clone(), t2 + MS(300))], open, slow);
-        m.rtts.insert((ConnId(1), PathId::ZERO), reading(&other, t2 + MS(700)));
-        m.mark_silent(t2 + MS(800), &[], open, slow);
-        assert!(m.silent.contains_key(&other), "not quick: held");
+        m.mark_silent(t2 + MS(600), &[(other.clone(), t2 + MS(300))], open);
+        m.rtts
+            .insert((ConnId(1), PathId::ZERO), reading(&other, t2 + MS(700)));
+        m.mark_silent(t2 + MS(800), &[], open);
+        assert!(
+            !m.silent.contains_key(&other),
+            "a first-time response restores availability"
+        );
     }
 
     /// carry (10-23): a copy in a probe timeout's backoff is woken when its road heard anything
@@ -3152,10 +4746,21 @@ mod tests {
         ];
         let heard = vec![(a.clone(), ms(3100)), (b.clone(), ms(50))];
         let woken: Vec<_> = to_wake(&backed_off, &heard).collect();
-        assert_eq!(woken, vec![(ConnId(0), PathId::ZERO), (ConnId(1), PathId::ZERO)]);
+        assert_eq!(
+            woken,
+            vec![(ConnId(0), PathId::ZERO), (ConnId(1), PathId::ZERO)]
+        );
         let before: Vec<_> = to_wake(&backed_off, &[(a.clone(), ms(2000))]).collect();
-        assert_eq!(before, vec![(ConnId(0), PathId::ZERO)], "heard before the busy copy's probe: only the idle one");
-        assert_eq!(to_wake(&backed_off, &[]).count(), 0, "nothing heard: nothing woken");
+        assert_eq!(
+            before,
+            vec![(ConnId(0), PathId::ZERO)],
+            "heard before the busy copy's probe: only the idle one"
+        );
+        assert_eq!(
+            to_wake(&backed_off, &[]).count(),
+            0,
+            "nothing heard: nothing woken"
+        );
     }
 
     /// A short stall of the selected road starts no round; a long one does, once; and the
@@ -3164,19 +4769,136 @@ mod tests {
     fn the_watch_punches_on_a_long_stall_once_per_spacing() {
         let t0 = Instant::now();
         let mut w = Watch::default();
-        assert_eq!(w.tick(MS(2), MS(0), None, t0), Watched::default());
-        assert!(!w.tick(MS(2), MS(0), Some(MS(400)), t0 + MS(250)).punch, "a 400 ms stall: no round");
-        assert!(w.tick(MS(2), MS(0), Some(MS(1000)), t0 + MS(500)).punch, "a second: a round");
-        assert!(!w.tick(MS(2), MS(0), Some(MS(1250)), t0 + MS(750)).punch, "once per episode");
+        assert_eq!(
+            w.tick(MS(2), MS(0), None, t0, |_| false),
+            Watched::default()
+        );
+        assert!(
+            !w.tick(MS(2), MS(0), Some(MS(400)), t0 + MS(250), |_| false)
+                .punch,
+            "a 400 ms stall: no round"
+        );
+        assert!(
+            w.tick(MS(2), MS(0), Some(MS(1000)), t0 + MS(500), |_| false)
+                .punch,
+            "a second: a round"
+        );
+        assert!(
+            !w.tick(MS(2), MS(0), Some(MS(1250)), t0 + MS(750), |_| false)
+                .punch,
+            "once per episode"
+        );
         // The selection moves away and back, the road stalls again: within the spacing, no round.
         w.reset();
-        assert!(!w.tick(MS(2), MS(0), None, t0 + MS(2000)).punch);
-        assert!(!w.tick(MS(2), MS(0), Some(MS(1500)), t0 + MS(3000)).punch, "within 30 s");
+        assert!(!w.tick(MS(2), MS(0), None, t0 + MS(2000), |_| false).punch);
         assert!(
-            w.tick(MS(2), MS(0), Some(MS(1500)), t0 + PUNCH_SPACING + MS(500)).punch,
+            !w.tick(MS(2), MS(0), Some(MS(1500)), t0 + MS(3000), |_| false)
+                .punch,
+            "within 30 s"
+        );
+        assert!(
+            w.tick(
+                MS(2),
+                MS(0),
+                Some(MS(1500)),
+                t0 + PUNCH_SPACING + MS(500),
+                |_| false
+            )
+            .punch,
             "the episode still degraded once the spacing is up"
         );
-        assert!(!w.may_punch(t0 + PUNCH_SPACING + MS(600)), "and the spacing counts from it");
+        assert!(
+            !w.may_punch(t0 + PUNCH_SPACING + MS(600)),
+            "and the spacing counts from it"
+        );
+    }
+
+    #[test]
+    fn a_single_slow_quality_sample_is_probed_before_holepunching() {
+        let t0 = Instant::now();
+        let mut watch = Watch::default();
+        watch.tick(MS(1), MS(1), None, t0, |_| false);
+        let spike = watch.tick(MS(150), MS(150), None, t0 + MS(250), |_| false);
+        assert_eq!(
+            spike,
+            Watched {
+                probe: true,
+                punch: false
+            }
+        );
+        let recovered = watch.tick(MS(2), MS(2), None, t0 + MS(500), |_| true);
+        assert!(
+            !recovered.punch,
+            "the probe corrected the isolated slow reading"
+        );
+    }
+
+    #[test]
+    fn slow_quality_without_post_decision_samples_cannot_punch_after_a_pause() {
+        let t0 = Instant::now();
+        let mut watch = Watch::default();
+        watch.tick(MS(1), MS(1), None, t0, |_| false);
+        let began = t0 + MS(250);
+        watch.tick(MS(150), MS(150), None, began, |_| false);
+        let late = began + PROBE_FOR + MS(100);
+        let old = watch.tick(MS(150), MS(0), None, late, |since| {
+            assert_eq!(since, began);
+            false
+        });
+        assert!(
+            !old.punch,
+            "elapsed time and a cached reading are not new evidence"
+        );
+        let fresh = watch.tick(MS(150), MS(150), None, late + MS(500), |since| {
+            assert_eq!(since, began);
+            true
+        });
+        assert!(
+            fresh.punch,
+            "fresh sustained slowing can still discover other roads"
+        );
+    }
+
+    #[test]
+    fn a_recovered_quality_restarts_confirmation_without_resetting_probe_spacing() {
+        let t0 = Instant::now();
+        let mut watch = Watch::default();
+        watch.tick(MS(1), MS(1), None, t0, |_| false);
+        watch.tick(MS(150), MS(150), None, t0 + MS(250), |_| false);
+        watch.tick(MS(1), MS(1), None, t0 + MS(500), |_| false);
+        let again = t0 + MS(750);
+        watch.tick(MS(150), MS(150), None, again, |_| false);
+        assert!(
+            !watch
+                .tick(MS(150), MS(150), None, t0 + MS(2250), |_| true)
+                .punch
+        );
+        let sustained = watch.tick(MS(150), MS(150), None, again + PROBE_FOR, |since| {
+            assert_eq!(since, again);
+            true
+        });
+        assert!(sustained.punch);
+        assert!(
+            !sustained.probe,
+            "foreground samples do not start another probe burst"
+        );
+    }
+
+    #[test]
+    fn quality_slower_than_the_probe_window_does_not_wait_for_new_round_trips() {
+        let t0 = Instant::now();
+        let mut watch = Watch::default();
+        watch.tick(MS(1), MS(1), None, t0, |_| false);
+        assert!(
+            watch
+                .tick(MS(2500), MS(2500), None, t0 + MS(250), |_| false)
+                .punch
+        );
+        assert!(
+            !watch
+                .tick(MS(2500), MS(0), None, t0 + MS(500), |_| false)
+                .punch
+        );
     }
 
     /// A road slowing past its floor still starts a round, and one sample well over it has the
@@ -3185,11 +4907,25 @@ mod tests {
     fn the_watch_punches_on_a_slowed_road_and_probes_a_slow_sample() {
         let t0 = Instant::now();
         let mut w = Watch::default();
-        w.tick(MS(1), MS(0), None, t0);
-        let probed = w.tick(MS(3), MS(17), None, t0 + MS(250));
-        assert_eq!(probed, Watched { probe: true, punch: false });
-        assert!(w.tick(MS(21), MS(21), None, t0 + MS(2500)).punch, "21 ms over a 1 ms floor");
-        assert!(!w.tick(MS(1), MS(0), None, t0 + MS(3000)).punch);
+        w.tick(MS(1), MS(0), None, t0, |_| false);
+        let probed = w.tick(MS(3), MS(17), None, t0 + MS(250), |_| false);
+        assert_eq!(
+            probed,
+            Watched {
+                probe: true,
+                punch: false
+            }
+        );
+        assert!(!w.tick(MS(21), MS(21), None, t0 + MS(2500), |_| false).punch);
+        assert!(
+            w.tick(MS(21), MS(21), None, t0 + MS(4500), |since| {
+                assert_eq!(since, t0 + MS(2500));
+                true
+            })
+            .punch,
+            "sustained quality with two post-decision observations"
+        );
+        assert!(!w.tick(MS(1), MS(0), None, t0 + MS(5000), |_| false).punch);
         assert!(!w.degraded, "back under the floor's half margin");
     }
 
@@ -3202,10 +4938,25 @@ mod tests {
         let mut m = Moving::default();
         let yes = |_| true;
         let no = |_| false;
-        assert_eq!(m.step(&to, t0, MS(8), MS(3), no, yes), Step::Hold { from: true, to: false });
+        assert_eq!(
+            m.step(&to, t0, MS(8), MS(3), no, yes),
+            Step::Hold {
+                from: true,
+                to: false
+            }
+        );
         assert_eq!(m.to(), Some(&to));
-        assert_eq!(m.step(&to, t0 + MS(1000), MS(8), MS(3), yes, yes), Step::Hold { from: false, to: false });
-        assert_eq!(m.step(&to, t0 + CONFIRM_FOR, MS(8), MS(3), yes, yes), Step::Go);
+        assert_eq!(
+            m.step(&to, t0 + MS(1000), MS(8), MS(3), yes, yes),
+            Step::Hold {
+                from: false,
+                to: false
+            }
+        );
+        assert_eq!(
+            m.step(&to, t0 + CONFIRM_FOR, MS(8), MS(3), yes, yes),
+            Step::Go
+        );
         assert_eq!(m.to(), None);
     }
 
@@ -3230,30 +4981,160 @@ mod tests {
         }
         assert_eq!(t - t0, CONFIRM_MAX, "given up after four seconds");
         assert_eq!(pinged, 16, "a ping a tick until then");
-        assert_eq!(m.step(&to, t + MS(10_000), MS(8), MS(3), yes, yes), Step::Rest, "resting");
-        assert!(matches!(m.step(&other, t + MS(10_000), MS(8), MS(3), yes, no), Step::Hold { .. }), "another move is not");
-        assert!(matches!(m.step(&to, t + CONFIRM_REST, MS(8), MS(3), yes, yes), Step::Hold { .. }), "tried again after the rest");
+        assert_eq!(
+            m.step(&to, t + MS(10_000), MS(8), MS(3), yes, yes),
+            Step::Rest,
+            "resting"
+        );
+        assert!(
+            matches!(
+                m.step(&other, t + MS(10_000), MS(8), MS(3), yes, no),
+                Step::Hold { .. }
+            ),
+            "another move is not"
+        );
+        assert!(
+            matches!(
+                m.step(&to, t + CONFIRM_REST, MS(8), MS(3), yes, yes),
+                Step::Hold { .. }
+            ),
+            "tried again after the rest"
+        );
     }
 
     /// 10-21: a road that stopped answering is left for one that answered since, at once if it
     /// did; one that has not is pinged until it does, or for [`CONFIRM_MAX`].
     #[test]
-    fn a_silent_road_is_left_for_one_that_answered_since() {
+    fn a_silent_road_uses_a_new_backup_round_trip_before_leaving() {
         let t0 = Instant::now();
         let began = t0 - MS(300);
         let to = addr(2);
         let mut m = Moving::default();
-        assert_eq!(m.leave(&to, t0, began, |after| after < t0), Step::Go, "the spare answered after the stall began");
-        assert_eq!(m.leave(&to, t0, began, |_| false), Step::Hold { from: false, to: true }, "it has not: ping it");
-        assert_eq!(m.leave(&to, t0 + MS(250), began, |after| after < t0 + MS(100)), Step::Go, "now it did");
+        assert_eq!(
+            m.leave(&to, t0, began, true, |after| after < t0),
+            Step::Hold {
+                from: true,
+                to: true
+            },
+            "the spare's old answer predates the decision"
+        );
+        assert_eq!(
+            m.leave(&to, t0, began, true, |_| false),
+            Step::Hold {
+                from: true,
+                to: true
+            },
+            "probe both roads while waiting"
+        );
+        assert_eq!(
+            m.leave(&to, t0 + MS(250), began, true, |after| after < t0 + MS(100)),
+            Step::Go,
+            "now it did"
+        );
         let mut m = Moving::default();
-        assert!(matches!(m.leave(&to, t0, began, |_| false), Step::Hold { .. }));
-        assert_eq!(m.leave(&to, t0 + CONFIRM_MAX, began, |_| false), Step::Go, "nothing answers: go all the same");
+        assert!(matches!(
+            m.leave(&to, t0, began, true, |_| false),
+            Step::Hold { .. }
+        ));
+        assert_eq!(
+            m.leave(&to, t0 + CONFIRM_MAX, began, true, |_| false),
+            Step::Go,
+            "nothing answers: go all the same"
+        );
+    }
+
+    #[test]
+    fn a_far_faster_move_cannot_be_confirmed_by_packets_sent_before_it_began() {
+        let t0 = Instant::now();
+        let to = addr(2);
+        let mut moving = Moving::default();
+        let sent = [t0 - MS(200), t0 - MS(100)];
+        let sampled = |after: Instant| sent.iter().filter(|sent| **sent > after).count() >= 2;
+        let step = moving.step(&to, t0, MS(300), MS(2), |_| false, sampled);
+        assert_ne!(
+            step,
+            Step::Go,
+            "both candidate packets predate the decision"
+        );
+    }
+
+    #[test]
+    fn a_fault_move_probes_the_current_road_and_requires_a_post_decision_backup_sample() {
+        let now = Instant::now();
+        let to = addr(2);
+        let mut moving = Moving::default();
+        let old_backup_packet = now - MS(100);
+        let step = moving.leave(&to, now, now - MS(500), true, |after| {
+            old_backup_packet > after
+        });
+        assert_eq!(
+            step,
+            Step::Hold {
+                from: true,
+                to: true
+            },
+            "probe the suspected current copy as well; a pre-decision backup ACK cannot end confirmation"
+        );
+        let mut older_move = Moving::default();
+        let _ = older_move.step(&to, now - MS(1000), MS(30), MS(20), |_| false, |_| false);
+        let before_fault = now - MS(600);
+        assert_eq!(
+            older_move.leave(&to, now, now - MS(500), true, |after| before_fault > after),
+            Step::Hold {
+                from: true,
+                to: true
+            },
+            "an older move cannot reuse a pre-fault sample"
+        );
+    }
+
+    #[test]
+    fn a_fault_with_no_receiving_copy_can_use_a_backup_that_answered_after_the_fault() {
+        let now = Instant::now();
+        let to = addr(2);
+        let mut moving = Moving::default();
+        let backup_packet = now - MS(100);
+        assert_eq!(
+            moving.leave(&to, now, now - MS(500), false, |after| backup_packet
+                > after),
+            Step::Go,
+            "without any current-copy receipt, retain fast failover to a post-fault backup"
+        );
+        let mut stale = Moving::default();
+        let before_fault = now - MS(600);
+        assert_eq!(
+            stale.leave(&to, now, now - MS(500), false, |after| before_fault > after),
+            Step::Hold {
+                from: false,
+                to: true
+            },
+            "a pre-fault sample still cannot prove the backup"
+        );
+        assert_eq!(
+            stale.leave(&to, now + CONFIRM_MAX, now - MS(500), false, |_| false),
+            Step::Go,
+            "the original upper bound still applies when no road answers"
+        );
+    }
+
+    #[test]
+    fn a_far_faster_move_probes_the_current_road_after_a_slow_sample() {
+        let t0 = Instant::now();
+        let to = addr(2);
+        let mut moving = Moving::default();
+        let step = moving.step(&to, t0, MS(300), MS(2), |_| false, |_| false);
+        assert_eq!(
+            step,
+            Step::Hold {
+                from: true,
+                to: true
+            }
+        );
     }
 
     /// flap (10-23): a move to a road far faster than the one in use (the carried road through
     /// turing at 20 ms, off a relay that read 1743 ms) is made once the road moved to took a
-    /// sample since the move began: no [`CONFIRM_FOR`], and no sample asked of the slow one.
+    /// sample since the move began: no [`CONFIRM_FOR`], and no sample required of the slow one.
     /// A move between roads of about one speed is confirmed as before.
     #[test]
     fn a_far_faster_road_is_taken_without_the_two_second_confirm() {
@@ -3261,22 +5142,69 @@ mod tests {
         let to = addr(2);
         let mut m = Moving::default();
         let no = |_| false;
-        assert!(matches!(m.step(&to, t0, MS(1743), MS(20), no, no), Step::Hold { to: true, .. }), "ping the fast one");
+        assert!(
+            matches!(
+                m.step(&to, t0, MS(1743), MS(20), no, no),
+                Step::Hold { to: true, .. }
+            ),
+            "ping the fast one"
+        );
         let tick = t0 + RESELECT_INTERVAL;
-        assert_eq!(m.step(&to, tick, MS(1743), MS(20), no, |after| after < tick), Step::Go, "it answered: go");
+        assert_eq!(
+            m.step(&to, tick, MS(1743), MS(20), no, |after| after < tick),
+            Step::Go,
+            "it answered: go"
+        );
         let mut m = Moving::default();
         let yes = |_| true;
-        assert!(matches!(m.step(&to, t0, MS(30), MS(20), yes, yes), Step::Hold { .. }));
-        assert!(matches!(m.step(&to, tick, MS(30), MS(20), yes, yes), Step::Hold { .. }), "one speed: the two seconds");
-        assert!(matches!(m.step(&to, tick, MS(300), MS(150), yes, yes), Step::Hold { .. }), "twice and 10 ms is not");
-        assert_eq!(m.step(&to, tick, MS(309), MS(116), yes, yes), Step::Go, "the relay at 309 ms, the hop at 116 ms");
-        // carry (10-23): sampled in the tick before the move began is sampled.
+        assert!(matches!(
+            m.step(&to, t0, MS(30), MS(20), yes, yes),
+            Step::Hold { .. }
+        ));
+        assert!(
+            matches!(
+                m.step(&to, tick, MS(30), MS(20), yes, yes),
+                Step::Hold { .. }
+            ),
+            "one speed: the two seconds"
+        );
+        assert!(
+            matches!(
+                m.step(&to, tick, MS(300), MS(150), yes, yes),
+                Step::Hold { .. }
+            ),
+            "twice and 10 ms is not"
+        );
+        assert_eq!(
+            m.step(&to, tick, MS(309), MS(116), yes, yes),
+            Step::Go,
+            "the relay at 309 ms, the hop at 116 ms"
+        );
+        // feat/net: packets from before the decision cannot confirm the fast branch.
         let mut m = Moving::default();
         let last_tick = |after: Instant| after < t0 - MS(100);
-        assert_eq!(m.step(&to, t0, MS(856), MS(174), no, last_tick), Step::Go, "its sample of the last tick");
+        assert_eq!(
+            m.step(&to, t0, MS(856), MS(174), no, last_tick),
+            Step::Hold {
+                from: true,
+                to: true
+            }
+        );
+        let answered = t0 + MS(500);
+        assert_eq!(
+            m.step(&to, answered, MS(856), MS(174), no, |after| after
+                < answered),
+            Step::Go
+        );
         let mut m = Moving::default();
         let older = |after: Instant| after < t0 - MS(400);
-        assert!(matches!(m.step(&to, t0, MS(856), MS(174), no, older), Step::Hold { to: true, .. }), "an older one is not");
+        assert!(
+            matches!(
+                m.step(&to, t0, MS(856), MS(174), no, older),
+                Step::Hold { to: true, .. }
+            ),
+            "an older one is not"
+        );
     }
 
     /// flap (10-23): a move off a road whose round trip is longer than [`CONFIRM_FOR`] (a relay
@@ -3291,23 +5219,43 @@ mod tests {
         let mut m = Moving::default();
         let _ = m.step(&to, t0, MS(4994), MS(54), no, no);
         let late = t0 + CONFIRM_MAX;
-        assert_ne!(m.step(&to, late, MS(4994), MS(54), no, sampled_at(late)), Step::Rest, "far faster");
+        assert_ne!(
+            m.step(&to, late, MS(4994), MS(54), no, sampled_at(late)),
+            Step::Rest,
+            "far faster"
+        );
         // Not far faster, both slow: the slow one's sample is not asked for.
         let mut m = Moving::default();
         let _ = m.step(&to, t0, MS(2500), MS(1400), no, no);
         let first = t0 + MS(500);
-        assert!(matches!(m.step(&to, first, MS(2500), MS(1400), no, sampled_at(first)), Step::Hold { .. }));
+        assert!(matches!(
+            m.step(&to, first, MS(2500), MS(1400), no, sampled_at(first)),
+            Step::Hold { .. }
+        ));
         let done = t0 + CONFIRM_FOR;
-        assert_eq!(m.step(&to, done, MS(2500), MS(1400), no, sampled_at(first)), Step::Go, "after the two seconds");
+        assert_eq!(
+            m.step(&to, done, MS(2500), MS(1400), no, sampled_at(first)),
+            Step::Go,
+            "after the two seconds"
+        );
         // And the slow one is not pinged for it.
         let mut m = Moving::default();
-        assert_eq!(m.step(&to, t0, MS(2500), MS(1400), no, no), Step::Hold { from: false, to: true });
+        assert_eq!(
+            m.step(&to, t0, MS(2500), MS(1400), no, no),
+            Step::Hold {
+                from: false,
+                to: true
+            }
+        );
     }
 
     /// One direct road under 10 ms on any connection is good enough.
     #[test]
     fn one_good_direct_road_is_good_enough() {
-        assert!(good_enough([MS(95), MS(2)]), "the idle copy's stale 95 ms does not count");
+        assert!(
+            good_enough([MS(95), MS(2)]),
+            "the idle copy's stale 95 ms does not count"
+        );
         assert!(!good_enough([MS(95), MS(30)]));
         assert!(!good_enough([]), "no direct road");
     }
@@ -3322,7 +5270,11 @@ mod tests {
         assert_eq!(state.scheduled_holepunch, Some(t0 + MS(100)));
         state.scheduled_holepunch = Some(t0 + Duration::from_secs(5));
         state.punch_soon(t0 + MS(100));
-        assert_eq!(state.scheduled_holepunch, Some(t0 + MS(100)), "sooner than the spacing's");
+        assert_eq!(
+            state.scheduled_holepunch,
+            Some(t0 + MS(100)),
+            "sooner than the spacing's"
+        );
     }
 
     /// patch 1 (10-21): a connection out of path ids keeps what waits, and tries it again when
@@ -3342,5 +5294,56 @@ mod tests {
             ids.wait(&addr(port));
         }
         assert_eq!(ids.freed().len(), MAX_PENDING_OPEN_PATHS, "bounded");
+    }
+}
+
+#[cfg(all(test, not(wasm_browser)))]
+mod tests_upstream_datagram_send {
+    use super::*;
+
+    #[tokio::test]
+    async fn blocked_relay_does_not_delay_direct_initial() {
+        let receiver = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let (mut sender, _relay_receiver) = TransportsSender::with_bounded_relay(
+            1,
+            [transports::IpConfig::V4 {
+                ip_net: "127.0.0.1/8".parse().unwrap(),
+                port: 0,
+                is_required: true,
+                is_default: true,
+            }]
+            .into_iter(),
+        );
+        let relay = transports::FourTuple::Relay {
+            url: "https://relay.example.invalid".parse().unwrap(),
+            endpoint_id: iroh_base::SecretKey::from_bytes(&[1; 32]).public(),
+        };
+        let transmit = OwnedTransmit {
+            ecn: None,
+            contents: bytes::Bytes::from_static(b"initial"),
+            segment_size: None,
+        };
+        send_datagram(&mut sender, relay.clone(), transmit.clone())
+            .await
+            .unwrap();
+        let sends = send_datagram_to_targets(
+            Box::new(sender),
+            transmit,
+            smallvec![
+                relay,
+                transports::FourTuple::from_remote(transports::Addr::Ip(
+                    receiver.local_addr().unwrap(),
+                )),
+            ],
+        );
+        let mut buf = [0; 64];
+        // The Relay queue stays full while the later Direct target receives its Initial.
+        tokio::select! {
+            _ = sends => panic!("blocked Relay send unexpectedly completed"),
+            received = time::timeout(Duration::from_secs(1), receiver.recv(&mut buf)) => {
+                let len = received.expect("Direct send blocked behind Relay").unwrap();
+                assert_eq!(&buf[..len], b"initial");
+            }
+        }
     }
 }

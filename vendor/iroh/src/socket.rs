@@ -381,6 +381,8 @@ pub(crate) struct Socket {
     configured_addrs: RwLock<BTreeSet<SocketAddr>>,
 
     pub(crate) tls_config: rustls::ClientConfig,
+    /// The proxy for HTTP(S) traffic, if any.
+    pub(crate) proxy_url: Option<Url>,
 
     /// Metrics
     pub(crate) metrics: EndpointMetrics,
@@ -548,6 +550,14 @@ impl Socket {
     /// a reverse lookup.
     pub(crate) fn to_transport_addr(&self, addr: SocketAddr) -> Option<transports::Addr> {
         self.mapped_addrs.to_transport_addr(addr)
+    }
+
+    /// A per-dial custom destination, independent of the endpoint-id path cache.
+    pub(crate) fn custom_socket_addr(&self, remote: &iroh_base::CustomAddr) -> SocketAddr {
+        self.mapped_addrs
+            .custom_addrs
+            .get(remote)
+            .private_socket_addr()
     }
 
     pub(crate) fn to_local_transport_addr(
@@ -910,7 +920,8 @@ impl EndpointInner {
             configured_addrs,
         } = opts;
 
-        let address_lookup = address_lookup::AddressLookupServices::default();
+        let address_lookup =
+            address_lookup::AddressLookupServices::with_metrics(metrics.address_lookup.clone());
         let port_mapper = portmapper::create_client(&portmapper_config);
 
         let relay_transport_configs: Vec<_> = transport_configs
@@ -1033,6 +1044,7 @@ impl EndpointInner {
             #[cfg(not(wasm_browser))]
             ip_bind_addrs: transports.ip_bind_addrs(),
             tls_config: tls_config.clone(),
+            proxy_url: proxy_url.clone(),
             hooks,
             span: span.clone(),
         });
@@ -1382,11 +1394,43 @@ impl EndpointInner {
         rx.await.ok()
     }
 
+    pub(crate) async fn discard_ip_hints_if_idle(
+        &self,
+        id: EndpointId,
+        before: n0_future::time::Instant,
+    ) -> usize {
+        let Some(actor) = self.remote_actors.get(&id) else {
+            return 0;
+        };
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        if actor
+            .send(RemoteStateMessage::DiscardIpHints { before, tx })
+            .await
+            .is_err()
+        {
+            return 0;
+        }
+        rx.await.unwrap_or(0)
+    }
+
     /// khor patch 13: closes every custom path to `id`
     /// ([`RemoteStateMessage::CloseCustom`]). Nothing when no actor runs.
     pub(crate) async fn close_custom_paths(&self, id: EndpointId) {
         if let Some(actor) = self.remote_actors.get(&id) {
-            actor.send(RemoteStateMessage::CloseCustom).await.ok();
+            actor.send(RemoteStateMessage::CloseCustom(None)).await.ok();
+        }
+    }
+
+    pub(crate) async fn close_custom_paths_if(
+        &self,
+        id: EndpointId,
+        still_gone: Box<dyn Fn() -> bool + Send + Sync>,
+    ) {
+        if let Some(actor) = self.remote_actors.get(&id) {
+            actor
+                .send(RemoteStateMessage::CloseCustom(Some(still_gone)))
+                .await
+                .ok();
         }
     }
 
@@ -1807,6 +1851,20 @@ impl Actor {
 
     fn re_stun(&mut self, why: UpdateReason) {
         let state = self.local_interfaces_watcher.get();
+
+        // This block is a band-aid for https://github.com/n0-computer/iroh/issues/4588
+        // See patchbay test `lan_switch_advertises_new_addr_without_relay`
+        #[cfg(not(wasm_browser))]
+        {
+            if self.sock.relay_map.is_empty() {
+                // When there are no relays, update direct addresses immediately from local interfaces
+                // without waiting for net_report. Also reset the periodic timer.
+                self.update_direct_addresses(None);
+                self.periodic_re_stun_timer = new_re_stun_timer(true);
+                return; // Skip schedule_run since we handled it directly
+            }
+        }
+
         self.direct_addr_update_state
             .schedule_run(why, state.into());
     }

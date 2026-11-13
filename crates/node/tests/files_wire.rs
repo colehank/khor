@@ -139,7 +139,7 @@ async fn a_paired_machine_lists_and_pulls_the_far_disk_and_an_unpaired_key_is_re
 
     // The pull: a file bigger than one slice, taken whole and byte-
     // identical — the loop is what a single-slice file cannot prove.
-    let big: Vec<u8> = (0..(2 * khor_node::proto::SLICE + 1234) as u32)
+    let big: Vec<u8> = (0..(12 * khor_node::proto::SLICE + 1234) as u32)
         .map(|i| (i % 251) as u8)
         .collect();
     fs::write(browse.join("dataset.bin"), &big).unwrap();

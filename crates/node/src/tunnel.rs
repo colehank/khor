@@ -159,7 +159,13 @@ pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvSt
         .await
         .map_err(msg::tunnel_bad_handshake)?;
     match status[0] {
-        OK => Ok((send, recv)),
+        OK => {
+            khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_stream_ready", || {
+                serde_json::json!({"wire": conn.stable_id(), "stream": send.id().to_string(),
+                    "alpn": String::from_utf8_lossy(conn.alpn())})
+            });
+            Ok((send, recv))
+        }
         REFUSED => Err(msg::not_paired().into()),
         NO_ROUTE => Err(msg::tunnel_no_route(target)),
         other => Err(msg::tunnel_bad_status(other)),

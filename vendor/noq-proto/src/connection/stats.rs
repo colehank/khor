@@ -1,9 +1,8 @@
 //! Connection statistics
 
-use rustc_hash::FxHashMap;
-
-use crate::{Duration, Instant};
 use crate::FrameType;
+use crate::FxHashMap;
+use crate::{Duration, Instant};
 
 use super::PathId;
 
@@ -129,8 +128,8 @@ impl FrameStats {
     }
 }
 
-impl std::fmt::Debug for FrameStats {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for FrameStats {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let Self {
             acks,
             path_acks,
@@ -218,6 +217,14 @@ impl std::fmt::Debug for FrameStats {
 pub struct PathStats {
     /// Current best estimate of this connection's latency (round-trip-time).
     pub rtt: Duration,
+    /// khor: latest ACK-based RTT with the same ACK-delay correction as
+    /// smoothing, and its monotonic sample count. Congestion is unchanged.
+    pub latest_rtt: Duration,
+    pub rtt_samples: u64,
+    /// khor: when the sampled packet was sent and its ACK was processed.
+    /// Both are absent before an ACK-based sample; querying stats never refreshes them.
+    pub latest_rtt_sent: Option<Instant>,
+    pub latest_rtt_received: Option<Instant>,
     /// Statistics about datagrams and bytes sent on this path.
     pub udp_tx: UdpStats,
     /// Statistics about datagrams and bytes received on this path.
@@ -228,21 +235,54 @@ pub struct PathStats {
     pub frame_rx: FrameStats,
     /// Current congestion window of the connection.
     pub cwnd: u64,
+    /// Congestion controller's estimate of sustainable path bandwidth, in bits per second.
+    ///
+    /// `None` when the congestion controller does not provide an estimate.
+    pub bandwidth_estimate: Option<u64>,
     /// Congestion events on the connection.
     pub congestion_events: u64,
     /// Spurious congestion events on the connection.
     pub spurious_congestion_events: u64,
+    /// The number of QUIC packets sent on this path.
+    ///
+    /// This counts all packets that are tracked for acknowledgement, including MTUD probes
+    /// and other probes. It does *not* count off-path packets (e.g. off-path path challenges,
+    /// off-path path responses, or NAT traversal probes) which are sent via a different code
+    /// path and are not tracked for acknowledgement.
+    ///
+    /// More specific counters such as [`Self::sent_plpmtud_probes`] allow breaking this number
+    /// down further. To get the number of non-probe packets sent, subtract
+    /// [`Self::sent_plpmtud_probes`] from this value.
+    ///
+    /// This counts individual QUIC packets, which may differ from [`UdpStats::datagrams`] when
+    /// packets are coalesced into a single UDP datagram.
+    pub sent_packets: u64,
+    /// The total number of QUIC bytes sent on this path (sum of all sent packet sizes).
+    ///
+    /// This counts only the QUIC packet payload bytes, not UDP/IP header bytes.
+    /// It does not count bytes for ACK-only (non-ack-eliciting, non-padded) packets, in an
+    /// effort to stay consistent with [`Self::lost_bytes`].
+    ///
+    /// If you're interested in the full amount of bytes transmitted, consider looking
+    /// at [`ConnectionStats::udp_tx`].
+    pub sent_bytes: u64,
     /// The number of packets lost on this path.
+    ///
+    /// This counts all packets declared lost, including MTUD probes. More specific counters
+    /// such as [`Self::lost_plpmtud_probes`] allow breaking this number down further.
     pub lost_packets: u64,
     /// The number of bytes lost on this path.
+    ///
+    /// This does not count bytes for ACK-only (non-ack-eliciting, non-padded) packets.
     pub lost_bytes: u64,
     /// The number of PLPMTUD probe packets sent on this path.
     ///
-    /// These are also counted by [`UdpStats::datagrams`].
+    /// These are also counted by [`Self::sent_packets`] and [`Self::sent_bytes`].
+    /// They are also counted by [`UdpStats::datagrams`].
     pub sent_plpmtud_probes: u64,
     /// The number of PLPMTUD probe packets lost on this path.
     ///
-    /// These are not included in [`Self::lost_packets`] and [`Self::lost_bytes`].
+    /// These are also counted by [`Self::lost_packets`] and [`Self::lost_bytes`].
     pub lost_plpmtud_probes: u64,
     /// The number of times a black hole was detected in the path.
     pub black_holes_detected: u64,
@@ -266,6 +306,26 @@ pub struct PathStats {
     pub pto: Duration,
 }
 
+impl PathStats {
+    /// khor: how long an ACK-eliciting packet has waited on a path that
+    /// is no longer answering. A short scheduling stall or an idle path
+    /// is not a failure: require two probe timeouts, at least three
+    /// unbacked-off PTOs (with a 300 ms floor), and no recent packet.
+    /// Selection and retransmission use this same observation rule.
+    pub fn unanswered_for(&self, now: Instant) -> Option<Duration> {
+        const MIN_PROBES: u32 = 2;
+        const MIN_SILENCE: Duration = Duration::from_millis(300);
+        let waited = now.saturating_duration_since(self.unacked_since?);
+        let heard = self
+            .last_received
+            .map(|at| now.saturating_duration_since(at));
+        (self.pto_count >= MIN_PROBES
+            && waited >= MIN_SILENCE.max(self.pto * 3)
+            && heard.is_none_or(|heard| heard >= MIN_SILENCE))
+        .then_some(waited)
+    }
+}
+
 /// Connection statistics.
 ///
 /// The fields here are a sum of the respective fields in the [`PathStats`] for all the
@@ -281,9 +341,21 @@ pub struct ConnectionStats {
     pub frame_tx: FrameStats,
     /// Statistics about frames received on the connection.
     pub frame_rx: FrameStats,
+    /// The number of QUIC packets sent on the connection (sum across all paths).
+    ///
+    /// See also [`PathStats::sent_packets`].
+    pub sent_packets: u64,
+    /// The total number of QUIC bytes sent on the connection (sum across all paths).
+    ///
+    /// See also [`PathStats::sent_bytes`].
+    pub sent_bytes: u64,
     /// The number of packets lost on the connection.
+    ///
+    /// See also [`PathStats::lost_packets`].
     pub lost_packets: u64,
     /// The number of bytes lost on the connection.
+    ///
+    /// See also [`PathStats::lost_bytes`].
     pub lost_bytes: u64,
 
     /// Number of [`super::Transmit`] produced by this connection.
@@ -291,7 +363,7 @@ pub struct ConnectionStats {
     pub(crate) transmits_tx: u64,
 }
 
-impl std::ops::Add<PathStats> for ConnectionStats {
+impl core::ops::Add<PathStats> for ConnectionStats {
     type Output = Self;
 
     fn add(self, rhs: PathStats) -> Self::Output {
@@ -299,13 +371,20 @@ impl std::ops::Add<PathStats> for ConnectionStats {
         // rtt, cwnd and current_mtu fields.
         let PathStats {
             rtt: _,
+            latest_rtt: _,
+            rtt_samples: _,
+            latest_rtt_sent: _,
+            latest_rtt_received: _,
             udp_tx,
             udp_rx,
             frame_tx,
             frame_rx,
             cwnd: _,
+            bandwidth_estimate: _,
             congestion_events: _,
             spurious_congestion_events: _,
+            sent_packets,
+            sent_bytes,
             lost_packets,
             lost_bytes,
             sent_plpmtud_probes: _,
@@ -322,6 +401,8 @@ impl std::ops::Add<PathStats> for ConnectionStats {
             udp_rx: self.udp_rx + udp_rx,
             frame_tx: self.frame_tx + frame_tx,
             frame_rx: self.frame_rx + frame_rx,
+            sent_packets: self.sent_packets + sent_packets,
+            sent_bytes: self.sent_bytes + sent_bytes,
             lost_packets: self.lost_packets + lost_packets,
             lost_bytes: self.lost_bytes + lost_bytes,
             #[cfg(test)]
@@ -330,19 +411,26 @@ impl std::ops::Add<PathStats> for ConnectionStats {
     }
 }
 
-impl std::ops::AddAssign<PathStats> for ConnectionStats {
+impl core::ops::AddAssign<PathStats> for ConnectionStats {
     fn add_assign(&mut self, rhs: PathStats) {
         // Be aware that Connection::stats() relies on the fact this function ignores the
         // rtt, cwnd and current_mtu fields.
         let PathStats {
             rtt: _,
+            latest_rtt: _,
+            rtt_samples: _,
+            latest_rtt_sent: _,
+            latest_rtt_received: _,
             udp_tx: path_udp_tx,
             udp_rx: path_udp_rx,
             frame_tx: path_frame_tx,
             frame_rx: path_frame_rx,
             cwnd: _,
+            bandwidth_estimate: _,
             congestion_events: _,
             spurious_congestion_events: _,
+            sent_packets: path_sent_packets,
+            sent_bytes: path_sent_bytes,
             lost_packets: path_lost_packets,
             lost_bytes: path_lost_bytes,
             sent_plpmtud_probes: _,
@@ -359,6 +447,8 @@ impl std::ops::AddAssign<PathStats> for ConnectionStats {
             udp_rx,
             frame_tx,
             frame_rx,
+            sent_packets,
+            sent_bytes,
             lost_packets,
             lost_bytes,
             #[cfg(test)]
@@ -368,6 +458,8 @@ impl std::ops::AddAssign<PathStats> for ConnectionStats {
         *udp_rx += path_udp_rx;
         *frame_tx += path_frame_tx;
         *frame_rx += path_frame_rx;
+        *sent_packets += path_sent_packets;
+        *sent_bytes += path_sent_bytes;
         *lost_packets += path_lost_packets;
         *lost_bytes += path_lost_bytes;
     }

@@ -140,6 +140,7 @@ objc2-ui-kit = { version = "0.3", default-features = false, features = ["std", "
 dispatch2 = "0.3"
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["test-util"] }
 tiny_http = "0.12"
 # Independent official HTTP server for native-agent interoperability tests.
 # Apache-2.0; axum is MIT.
@@ -149,7 +150,7 @@ axum = "0.8"
 # in plain HTTP on loopback, the one `khor relay --dev` embeds — already
 # in the tree under the CLI, so no new package. Every scratch home binds
 # with it and nothing else, so a test touches no real relay.
-iroh-relay = { version = "1.2.0", features = ["server"] }
+iroh-relay = { version = "1.4.1", features = ["server"] }
 
 # Opt-in real native GUI/TUI round trip, re-executing this test as its hosts.
 [[test]]

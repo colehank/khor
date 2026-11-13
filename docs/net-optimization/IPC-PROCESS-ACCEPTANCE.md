@@ -1,0 +1,11 @@
+# 独立进程IPC期限与所有者验收
+
+2026-11-10，a2bbf866已实现、e15651b7应用远端formatter并移除HOME覆盖。Mac42752637727只有格式失败，未编译/行为；Mac42753148983准确e15651b7/treea9ab1ab6/snapshot6b1503e3/control5f310f43实际通过，预算回收1006ms、resident正常join/child reap，IPC18/原32/便携全绿，source/11blobs/hash已核。ipc-independent-process-proof.json保留完整证据。已有42739923461只证明真实单resident/独立任务的32回复回收；不能冒称跨process时钟。
+
+使用同一个已构建Rust test binary启动一个仅此case的child helper，fresh 0700 TempTree和owner marker，空环境只保留PATH/动态加载器路径；不传个人凭据。安全OwnedFd→Stdio把UnixStream端点作为child stdin，child用Tokio UnixStream异步读控制EOF/stop并受一次60秒绝对lease约束，无不可取消stdin线程。parent Drop关闭控制端并回收该original Child，正常通过必须真实stop_serving及serve task join、child成功退出，无forced kill。
+
+child公开正常endpoint.json，parent核pid等于original Child，正常Node/Content API在child Resolve和Begin后，parent通过真实TCP发送v2原MessagePack Handoff和1秒remaining header，保持TCP发送方向开放。child的已有Response barrier持有一份真实编码回复，先核entered=1/permits=31/barrier未release；2秒观察内必须自动回32且barrier仍未放行，parent未EOF，且未提前到800ms前回收。证明server按接收预算结束阻塞回复，跨process不能继承task-local值。
+
+随后放行barrier，核错误cookie的Begin被Refused，正确cookie的相同request Window仍Refused（没有注册副作用）；已完整buffered的v2请求后追加输入也不得执行Begin；公开legacy ipc::call(Hops)正常答复。所有数据来自fresh source fixture，不用用户session。原32回归函数不改；新module是新版本测试层，原整文件945c22aa红→绿证据仍锚在旧准确source，不能混称新整文件相同。
+
+此层只验本机resident process。远端QUIC SendStream::stopped/已接受写与持续job、32远端buffer回收、手机能耗仍单独待验。Unix实现只声称Mac/Linux，不扩称Windows或iOS child execution。

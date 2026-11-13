@@ -134,6 +134,10 @@ async fn two_on(scenario: &str, near: Near, left: Net, right: Net, want: Want) {
         Want::Direct => direct.is_some(),
         Want::Carried => last.rtt_ms.is_some() && last.down_ms.is_none(),
     } && slowest.max(slowest_b) <= STUCK;
+    if !ok {
+        crate::hop::path_diagnostics(&a, &b);
+        crate::hop::path_diagnostics(&b, &a);
+    }
     result(
         scenario,
         ok,

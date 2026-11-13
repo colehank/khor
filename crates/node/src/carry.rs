@@ -363,8 +363,16 @@ pub(crate) async fn let_path_go(
     if links.has(&peer) {
         return;
     }
+    #[cfg(test)]
+    if let Some(node) = node.upgrade() {
+        node.wires.hold_carried_close_for_test().await;
+    }
     if let Some(ep) = node.upgrade().and_then(|n| n.current_ears()) {
-        ep.close_carried(peer).await;
+        khor_net::carry::observe_lifecycle(peer, "carried_close_requested", || {
+            serde_json::json!({})
+        });
+        let links = links.clone();
+        ep.close_carried_if(peer, move || !links.has(&peer)).await;
     }
 }
 

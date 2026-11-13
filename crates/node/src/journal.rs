@@ -162,6 +162,10 @@ pub enum What {
     /// had been heard on it — for a dead wire, how long its death took
     /// to notice.
     Retired {
+        /// Process-local connection identity, shared by path and retirement
+        /// facts. Older entries predate it; it is not a peer identity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wire: Option<u64>,
         why: String,
         tunnel: bool,
         quiet_ms: u64,
@@ -246,11 +250,19 @@ pub enum What {
     /// `started`, the path a new connection began on; `selected`, the
     /// path now carrying it.
     Path {
+        /// Process-local connection identity, shared by path and retirement
+        /// facts. Older entries predate it; it is not a peer identity.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        wire: Option<u64>,
         change: String,
         road: String,
         addr: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         rtt_ms: Option<u64>,
+        /// The selector's cached facts at this event, including quality,
+        /// sample age and count. Diagnostic only; no additional polling.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        measurements: Vec<khor_net::path::PathFact>,
     },
     /// Path changes of a connection to the peer that iroh's event buffer
     /// dropped before they were read (vendor/iroh patch 21). The next
@@ -724,6 +736,7 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             road,
             addr,
             rtt_ms,
+            ..
         } => {
             let mut s = if change == "opened" {
                 msg::journal_path_opened(addr)
@@ -1201,6 +1214,10 @@ impl Interfaces {
     /// iroh's set, at `at`: each new set starts the wait again, and one
     /// back to what was told ends it.
     fn saw(&mut self, set: Vec<std::net::SocketAddr>, at: std::time::Instant) {
+        // Other candidates can change while the filtered interfaces stay put.
+        if set == self.seen {
+            return;
+        }
         self.due = (set != self.told).then_some(at + ADDRS_SETTLE);
         self.seen = set;
     }
@@ -1616,10 +1633,12 @@ mod tests {
                 7,
                 Some("turing"),
                 What::Path {
+                    wire: None,
                     change: "selected".into(),
                     road: "direct".into(),
                     addr: "172.16.185.103:35156".into(),
                     rtt_ms: Some(2),
+                    measurements: vec![],
                 },
             ),
             at(
@@ -1818,6 +1837,41 @@ mod tests {
     }
 
     #[test]
+    fn unrelated_candidates_do_not_postpone_a_stable_ipv4_or_ipv6_change() {
+        use iroh::endpoint::{DirectAddr, DirectAddrType};
+        let v4: std::net::SocketAddr = "192.168.1.5:7000".parse().unwrap();
+        let v6: std::net::SocketAddr = "[2001:db8::5]:7000".parse().unwrap();
+        let next_v4: std::net::SocketAddr = "10.0.0.7:7000".parse().unwrap();
+        let next_v6: std::net::SocketAddr = "[2001:db8:1::7]:7000".parse().unwrap();
+        let t = std::time::Instant::now();
+        for changed in [[v4, next_v6], [next_v4, v6]] {
+            let mut interfaces = Interfaces::new(vec![v4, v6]);
+            for (ms, port) in [(0, 8000), (400, 8001), (800, 8002)] {
+                let mut candidates = std::collections::BTreeSet::new();
+                for addr in changed {
+                    candidates.insert(DirectAddr {
+                        addr,
+                        typ: DirectAddrType::Local,
+                    });
+                }
+                candidates.insert(DirectAddr {
+                    addr: std::net::SocketAddr::from(([203, 0, 113, 7], port)),
+                    typ: DirectAddrType::Qad,
+                });
+                let set = interface_addrs(&candidates, &interfaces.told);
+                interfaces.saw(set, t + Duration::from_millis(ms));
+            }
+            assert!(
+                interfaces.due.is_some_and(|due| due <= t + ADDRS_SETTLE),
+                "the unchanged interface set must be deliverable at the original settle deadline"
+            );
+            assert!(interfaces.settled());
+            interfaces.saw(interfaces.told.clone(), t + Duration::from_secs(2));
+            assert_eq!(interfaces.due, None, "the same interface is not told twice");
+        }
+    }
+
+    #[test]
     fn a_file_is_cut_back_to_its_last_lines_and_reads_in_order() {
         let root = crate::testdir::TempTree::fresh("journal-ring");
         let j = Journal::open(&root.path());
@@ -1907,6 +1961,79 @@ mod tests {
     }
 
     /// net-e: a carried path names what carries it — 「改为通过 turing」,
+    #[test]
+    fn path_measurements_keep_old_journals_readable_and_preserve_the_evidence() {
+        let old =
+            r#"{"e":"path","change":"selected","road":"relay","addr":"r.example","rtt_ms":300}"#;
+        let mut event: What = serde_json::from_str(old).unwrap();
+        let What::Path {
+            wire, measurements, ..
+        } = &mut event
+        else {
+            panic!("path event")
+        };
+        assert_eq!(*wire, None);
+        *wire = Some(17);
+        assert!(measurements.is_empty());
+        measurements.push(khor_net::path::PathFact {
+            relay: true,
+            carried: false,
+            selected: true,
+            rtt_ms: 300,
+            quality: Some(khor_net::path::PathQuality {
+                rtt: Duration::from_millis(5),
+                age: Duration::from_millis(750),
+                samples: 2,
+            }),
+            addr: "r.example".into(),
+        });
+        let encoded = serde_json::to_string(&event).unwrap();
+        assert_eq!(serde_json::from_str::<What>(&encoded).unwrap(), event);
+        let entry = |what| Entry {
+            at: 0,
+            peer: Some("y".into()),
+            what,
+        };
+        let current = entry(event);
+        let line = serde_json::to_string(&current).unwrap();
+        let decoded: Entry = serde_json::from_str(&line).unwrap();
+        assert_eq!(
+            decoded.what, current.what,
+            "the persisted journal entry is readable"
+        );
+        let name_of = str::to_owned;
+        assert_eq!(
+            words(&current, &name_of),
+            words(&entry(serde_json::from_str(old).unwrap()), &name_of),
+            "diagnostic quality does not change the displayed path sentence"
+        );
+    }
+
+    #[test]
+    fn retired_wire_identity_keeps_old_entries_readable() {
+        let old =
+            r#"{"e":"retired","why":"unanswered","tunnel":false,"quiet_ms":5000,"age_ms":10000}"#;
+        let previous: What = serde_json::from_str(old).unwrap();
+        let mut current = previous.clone();
+        let What::Retired { wire, .. } = &mut current else {
+            panic!("retirement event")
+        };
+        assert_eq!(*wire, None);
+        *wire = Some(17);
+        let encoded = serde_json::to_string(&current).unwrap();
+        assert_eq!(serde_json::from_str::<What>(&encoded).unwrap(), current);
+        let entry = |what| Entry {
+            at: 0,
+            peer: Some("y".into()),
+            what,
+        };
+        assert_eq!(
+            words(&entry(current), &str::to_owned),
+            words(&entry(previous), &str::to_owned),
+            "connection identity does not change the displayed retirement sentence"
+        );
+    }
+
     /// 「改为经 SSH 转连」 — where it said 「改走转连：，往返 0 ms」.
     #[test]
     fn a_carried_path_says_what_carries_it() {
@@ -1921,10 +2048,12 @@ mod tests {
             at: 0,
             peer: Some("y".into()),
             what: What::Path {
+                wire: None,
                 change: "selected".into(),
                 road: "carried".into(),
                 addr: addr.into(),
                 rtt_ms,
+                measurements: vec![],
             },
         };
         assert_eq!(
@@ -1957,10 +2086,12 @@ mod tests {
             at: 0,
             peer: Some("y".into()),
             what: What::Path {
+                wire: None,
                 change: "started".into(),
                 road: road.into(),
                 addr: addr.into(),
                 rtt_ms: None,
+                measurements: vec![],
             },
         };
         assert_eq!(

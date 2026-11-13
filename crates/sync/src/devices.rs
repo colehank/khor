@@ -267,6 +267,10 @@ const F_HOSTS: &str = "hosts";
 /// reads it, and a row that never said reads `false`.
 const F_NO_RELAY: &str = "no_relay";
 
+/// A hint that this build understands prepared hop admission. A positive
+/// wire reply is still required: a replicated hint can outlive a downgrade.
+const F_HOP_STAGED: &str = "hop_staged";
+
 /// **The roads a machine reports about itself** (round NET-12, the 我的
 /// khor dial): one register per peer, `<id>/road/<to>`, holding a small
 /// JSON object (`khor_core::Road`, minus `to`). Only the machine itself
@@ -376,6 +380,8 @@ pub struct DeviceInfo {
     pub hosts: bool,
     /// The machine says it reaches no relay (`F_NO_RELAY`).
     pub no_relay: bool,
+    /// Prepared-hop support hint; never sufficient on its own to commit a race.
+    pub hop_staged: bool,
     /// The roads this machine reports to the others (`F_ROAD`), as
     /// `(to, the register's JSON)`: opaque here, read by `khor_node`.
     pub roads: Vec<(String, String)>,
@@ -880,6 +886,7 @@ impl DeviceDoc {
                     .filter(|l| !l.trim().is_empty()),
                 hosts: !matches!(self.flat(&id, F_HOSTS), Some(LoroValue::Bool(false))),
                 no_relay: matches!(self.flat(&id, F_NO_RELAY), Some(LoroValue::Bool(true))),
+                hop_staged: matches!(self.flat(&id, F_HOP_STAGED), Some(LoroValue::Bool(true))),
                 roads: self.roads_raw(&id),
                 receive_dir: self
                     .str_field(&id, F_RECEIVE_DIR)
@@ -966,6 +973,18 @@ impl DeviceDoc {
         }
         self.map()
             .insert(&fkey(id, F_NO_RELAY), no_relay)
+            .map_err(|e| e.to_string())?;
+        self.inner.commit();
+        Ok(())
+    }
+
+    /// Publishes support without treating replicated metadata as negotiation.
+    pub fn set_hop_staged(&self, id: &str, supported: bool) -> Result<(), String> {
+        if self.flat(id, F_HOP_STAGED) == Some(LoroValue::Bool(supported)) {
+            return Ok(());
+        }
+        self.map()
+            .insert(&fkey(id, F_HOP_STAGED), supported)
             .map_err(|e| e.to_string())?;
         self.inner.commit();
         Ok(())

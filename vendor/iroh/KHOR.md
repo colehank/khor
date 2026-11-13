@@ -1,5 +1,11 @@
 # vendor/iroh —— 为什么这里有一份 iroh
 
+## 1.4 升级候选（2026-11-12，尚未验收）
+
+本隔离树已将发布源码从1.2.0三方迁移至1.4.1；下文为原补丁历史，不代表仍基于旧版或全部必须保留。当前迁移与退出账目见[IROH-UPGRADE](../../docs/net-optimization/IROH-UPGRADE.md)。所有旧专属回归保留；新源编译和行为证据尚待，原绿不能沿用。
+
+原补丁22的手工IPv6方括号处理已改用上游`relay_tls_server_name`，同时保留上游域名/IPv4/IPv6和真实QAD测试；行为退出待新源测试确认。原补丁1的有限队列与path-ID释放后重试语义保留，不能仅因上游含dedup删除。
+
 ## 来源
 
 - crates.io 上的 `iroh 1.2.0`，逐字拷自 cargo registry 解开的那份
@@ -12,7 +18,251 @@
 
 ## 补丁
 
-二十七处。
+### 50. 隔离诊断的STREAM计数与连接集合见证（2026-11-12，默认库/诊断准入过，完整N1未接受）
+
+N1首次前台操作已有有效配置/成本数据，但十秒没有前台调用并不证明传输层STREAM静默。
+复用原250ms reselect中的refresh_candidates与其原有每连接stats读取，仅在khor_net_samples DEBUG开启时，
+记录对端所有受跟踪连接的stable id、STREAM tx/rx累计计数、actor序号、连接增删代数、单调/墙钟时间。
+连接集合代数覆盖采样间新建又关闭；actor序号防止重建与计数复位假装稳定。
+原STREAM合计、ActiveRefresh、探测/选路、队列及全部生产计时器保持；无新增任务或计时器。
+普通不开日志时不分配快照Vec、不读取观测时钟、不累加诊断序号；两个诊断字段保持零值。
+不记录密钥或包载荷。日志有成本，真实静默见证必须与普通计时/CPU/能耗数据分开。
+
+新固定诊断六fresh保持原方向/phase/30秒caller，静默候选窗12秒，在两端日志内核十秒完整内窗、
+稳定actor/registry/连接集合/STREAM计数及真实请求后的计数增长。缺失、时钟跳变或STREAM活动保留为失败。
+纯Python见证校验合成红绿已过。Linux真实v1十二阳性对照过、十二静默见证均红（准备流量尚未排空）；原失败保留，新增有界准备层已以独立v2复验：turing-20261112T033334Z-a09450d0原0，十二准备/十二静默（≥10秒）/十二真实请求阳性见证全过；原v1保持失败。
+准确源09374004已Mac43146243502默认库回归：Noq447/Iroh184通过、原1忽略保持；58路径/11home专项与184重叠，不相加。
+只证明默认库与观测器实际运行；不是静默/N1/N5接受。
+目前主候选增至60项（Iroh1–41/45–50与Noq1–13；42–44仍隔离），本项是观测补丁。
+未核上游同语义替代；诊断结束可删除本观测器，或在验证等价的全连接计数/生命周期代数后替换。
+删除不改变选路参数，但须保留原始记录与普通/诊断分层，重新验证依赖该观测器的验收工具。
+
+### 49. 单一实际路径不被另一连接的首选路径遮住（2026-11-11，候选未验收）
+
+PathStateSender.record_selected原本把peer共享的preferred四元组在每条conn的open path表匹配；另一活IP连接保持首选而新conn只有Custom时，后者实际已完成端到端业务，观察却selected=None，Node路型Unknown。真实Node四合同中源166的两端普通/early均answered=true、requests=1但routeUnknown，旧573则answered=false/requests=0；原断言和旧原红保留。
+
+修正仅在共享preferred不属于本conn且它只有一条established/open路径时报告该路径为有效数据路。Noq PathStatus::Backup文档（vendor/noq-proto/src/connection/paths.rs）明确无Available路径时Backup承担数据；该单路径即当前实际可用的唯一调度选择。不改变peer共享选路、Noq path status、数据发送、质量算法或其余连接。零路/多个路径未匹配时仍Unknown，不能把候选地址当已选。无新常驻状态、任务或计时器。
+
+保持Node四个完整TLS/业务/快Direct负控与原1秒gate逐字不变复验；随后同冻结四peer1.5秒/30请求/双端wire和outer连续性、vendor筛选及其他N1恢复。rtt_of会读到这条实际路的RTT，须核原预算/恢复与quiet成本，不称纯显示无影响。上游等价实现未核，退出需保留上述实际多连接数据/零多路边界并验证等价effective route语义。主候选现59项（Iroh1–41/45–49+Noq1–13），42–44仍隔离；尚未验收。
+
+### 48. 新承载握手有独立的初始路径（2026-11-11，候选未验收）
+
+四真实resident双middle场景874eb4c4三轮均实测：N在约300ms准备成功、实际Hop为viaN/tried2，但1.5秒目录请求超时；middle未收到承载字节，目标3秒首帧lease结束。只解除“无活连接”的selected_path候选d521在9d655e7f仍红；诊断live=true/registered=1、旧选路为Relay、reset=false，另一条活连接的共享初始选路不能被全局清除。该行为候选已从后继源码撤回，原失败/同源vendor绿保留，不当作修复。
+
+ConnectOptions新增with_initial_custom_addr：地址必须同时显式出现在EndpointAddr中，当前这次握手的初始Noq目的地址直接映射该Custom transport；其他连接、共享候选/选择和握手后质量选择均保留。TLS仍认证EndpointAddr.id，指定载体不改变身份。默认连接行为不变，不丢旧IP/Relay提示、不加全局模式/常驻状态/任务/计时器。可选旧路诊断保留且普通路径不计算诊断内容。
+
+Node在新carrier准备完成后最多给一个初始载体握手机会。普通拨号最多两个活动future，原Relay任务取消并join后才复用其名额，保留原Direct竞争；早发只读路径保留原0-RTT竞争者，替代握手不发送early业务，赢后取消原早发任务并沿已有只读正常请求门继续。原握手先赢不重复业务；新增替代失败不提前决定原路。全部使用同一原总期限，不在替代失败后领取第二次carrier重试，不扩大rides_early/写请求门。已有早发读取允许的普通回退仍有原读取重试边界；非幂等写仍只在胜出的认证连接上执行。
+
+新增Node真实合同：保持一个活IP连接，同时确认新连接PathId0实际为Custom并完成TLS/echo；错误目标身份仍拒绝，旧IP连接仍活；未显式提供Custom地址时API拒绝。尚待同源双OS Node/vendor、原四peer1.5秒合同与连续性/取消/成本验证，不称N2/N4完成。上游未提供同语义证据；具备等价的每次初始载体和有活连接控制、TLS/写边界/预算及真实移动矩阵后再退出。主vendor为58项（Iroh1–41/45–48、Noq1–13），42–44继续隔离。
+
+### 47. 质量和确认次数来自同一个连接副本（2026-11-11，feat/net候选）
+
+`road`和`observation`选同一个代表副本，旧`samples_after`却取任意副本的新样本最大数。
+真实Reading状态合同b0146293：原55/代表改变控制绿，两个旧质量只能证0/1个决定后样本的case却借另一副本报2，
+56pass/2fail；Noq443绿，home未执行。此缺陷不等于f8 7.307秒或6aa单向停顿已定因。
+
+`samples_after`仅用同一代表的实际发送时刻与changed记录；代表算法、质量窗口、真实post-decision条件、
+25%收益、原Moving时限、全部探测配额及生命周期保持。现有Moving、第一恢复判断、慢路验证、
+有限恢复episode的自然样本停止逻辑复用一致证据。其他副本的样本不再提前耗尽代表采样资格，
+因此实际可用掉原预算中的更多预约，仍最多3次、至少250ms、2秒内，需实际成本/稳定性对照。
+无新增map、task、计时器或强连接；原fixture及三新合同whole冻结。尚待验证，不作N1/phone接受。
+
+未提上游；上游具有同源质量/时刻/确认计数且通过健康、代表变更、恢复及原预算/移动矩阵后再退出，
+不据方法同名或单元绿删除。
+
+
+### 46. 已知路回到故障前实测水平时，只刷新首次恢复质量窗口（2026-11-11，候选未验收）
+
+主923固定三轮2绿1红，慢方向5514.252ms/4个四秒请求失败；恢复后双样本101/85ms的上中位数被保留到旧样本过期，未触发41的25%向下重置。de03诊断另一次3432.844/3391.236ms绿且发生较大下降刷新；该诊断不是第四次验收或配对因果证明。新独立whole合同在c775/eec09ec1实际Noq439绿、路径53绿2红，原50及3个负控过，home未执行；返回85仍报告100、其后新110仍报告101。
+
+已有Silence episode首次判坏时保存实际ACK处理早于故障待包时刻的Reading质量，排除初始估计，以原active-copy优先级取值；转交有限RecoveryCheck。只有原hint/已知历史/非当前silent/2秒窗口内，真实packet sent在episode开始后、相较当前质量确有下降且不慢于该故障前实测水平，才允许首次质量刷新。之后仍按41的25%单调改善/最多3阶；新packet epoch规则不变。历史值只是触发重测窗口，不作为新样本、可达性或切换收益证据。
+
+原3次probe（失败/合并也消耗）、250ms、两秒采样窗口、Moving两秒连续确认/两次决定后实测/25%收益、重hold及所有transport同规则均保持。单个快脉冲后的新慢包照常进入质量；健康/初始/过期及仍未回到旧水平不得用此分支刷新。没有新增map/task/timer/强连接owner，两个Option随原episode回收。42–44仍隔离；主vendor暂为55项候选（Iroh1–41/45/46、Noq1–12），不能记已验收。
+
+待同whole合同vendor绿、双OS Node和原物理四秒固定重复、quiet/dynamic/stability/探测实际成本与真机。上游等价的有限恢复质量epoch/已知历史确认尚未核；同一行为/调用者/成本覆盖齐全才退出，不据单元绿宣称N1或手机问题已修。
+
+### 45. 无live连接时按失败边界撤回旧IP提示（2026-11-11，分项已验证）
+
+42–44在隔离worktree试验，编号预留且未合主。本条是主分支第54项（Iroh1–41/45、Noq1–12），只接受下述实测窄范围。初始discard函数返回0，cf2352f7实际Noq439/path50绿、home10/1红；新来源控制过，旧IP应撤1实际0。当前实现按source时间过滤，原whole fixture保持；Node只在cold未发early数据且新carrier已就绪时调用，仍在同一绝对dial_by内。
+
+3a7424b7的真实stale-IP不同身份场景：可信middle准备完还剩1985ms，新carried握手仍收UnknownIssuer。Socket将地址加入共同RemotePathState，传carried-only不等于撤回旧IP。只在actor执行时没有任何live连接的条件下，移除所有来源时间均不晚于首次失败边界的IP提示；之后新提示及Relay/Custom保留，当前连接不被关闭。无安全校验放宽、探针/任务/永久timer；重新输入地址可再学习，不是永久blacklist。
+
+153263c2/treeee002acd/snapshotf4c5f390：Linux1e1264ef Noq439/path50/home11，Node Linux8adb26d3与Mac42869844599同canonical全12组/hop44，exact13790105312/20files/11control blobs核。旧stale-IP/旧hint状态红均保留，真实live wire负控与较新来源保留通过。仅该scope，不是全部iroh测试或N5最终矩阵；未覆盖网络/地址的完整逻辑epoch，fresh来源时间只是本次边界。上游若提供等价的候选失效/受限握手来源及安全并发保护，按同一真实合同退出。不得把该分项验证写成整包/手机恢复成功或缩减原N0–N5。
+
+### 41. 恢复中的显著向下变化开启新质量窗口，旧packet不得刷新新窗口（2026-11-10，feat/net候选）
+
+2026-11-11诊断扩展：主923固定三轮2绿1红，慢方向5514.252ms且quality_since=None，旧isolated重启假设不适用。仅在显式khor_net_samples DEBUG下记录Custom真实stats/Reading/recovery/Moving及恢复期代表copy，核对探测结果归属和近期中位数/过期；不改变探测、排序、计时、预算或确认。该诊断不是新行为补丁或四秒已修证明，原失败保留。
+
+40的fc435ccd预约已满足3次/250ms/2秒，但两次探测早于外层Direct恢复，近期中位数把早期慢结果保留2秒，再等正常2秒确认，实际Go5392/5630ms，原采样门48/51。原物理、两个四秒checker及失败保留。
+
+只在已有hint且有历史的有限recovery episode里，新sample的packet sent必须在本轮采样开始之后；新RTT较当前road质量至少低25%才重启质量窗口，后续重启还必须较上次重启值再低25%，最多3次且限原2秒采样窗口。把新窗口的packet-send epoch带给该road各copy及新copy，epoch之前晚ACK不改质量/年龄或fresh计数；真实Noq ACK总计数与transport SRTT照读，不改Noq运输数学。单个快脉冲后慢数据仍进入中位数；新旧包不能重复制造fresh observation。
+
+健康/初始/无hint路中位数保持；不增加PING、timer或连接所有者。Moving仍从实际开始考虑竞争的时刻等待原2秒、决定后的两fresh和收益门，不借历史marker回填确认时间。新增4个状态合同（健康对照、阶段恢复、迟到ACK、跨copy epoch、噪声/重启预算），尚待远端与原物理两门同源至少3轮、quiet stalls/黑洞/成本。上游等价窗口/时间保护未核，不能据本条删除vendor；同一协议与行为覆盖齐全后退出。
+
+### 40. 恢复采样保留同一live副本，有限决策到期精确唤醒（2026-11-10，feat/net候选）
+
+Iroh39的fa99首轮124/124和原采样四秒门51/51，但两端实际恢复Go约4060/5799ms。y的3次探测相隔约500ms且copy A→B→A；Reading质量按copy取中位数，混用延迟健康样本积累。严格250ms预约遇到略早的普通tick会再等250ms；2秒确认也可能跨下一tick。新独立双端决策门在下一代码修改前取得c397/ba7真实红，原物理/采样checker字节不变。
+
+同PTO优先已用的live copy，关闭或更低PTO可换，只存conn/path ID。既有actor用MaybeFuture为待发恢复预约及Moving的2/4秒边界持有限sleep；无pending为None，无永久新timer/task/强连接。仍silent/用尽/自然样本足够/过期时disarm防past-due spin。醒来重新读真实stats，保留3次/2秒/至少250ms、sent>judged、2秒两fresh与原gain；timer不充当样本或Go证据。日志追加预约Instant/attempt/epoch以核真实节奏与合并/无copy消耗，不记正文或票据。
+
+新增4个纯状态合同，尚未远端验证；必须两四秒门同源至少3轮、实际probe预算、原stalls/黑洞及成本合验。上游等价到期调度与副本采样策略尚未核；同协议/行为/成本及所有者覆盖齐全后再退出。本条不是已验收或新增永久轮询的许可。
+
+### 39. 已知路收到恢复提示但PTO已清时，有界确认新的往返（2026-11-10，feat/net）
+
+002954真实peer relay移动的70条conn/path快照显示last_received>judged，但latest_rtt_sent<=judged、PTO0/unacked None；旧copy wake不会发送新包，内层直到约5.3秒才取得新往返。原267/272在冻结四秒业务选路合同为红，原可达/最终hold绿不替代此门。最早hint还在外层恢复前，故不能用一次旧ACK或一次过早慢样本确认新网。
+
+Measured按peer/road/实际silence.began持有有限episode，需真实历史样本、判定后回包hint、当前无silent copy才申请。两秒内最多3次、至少250ms间隔，失败/合并也消耗预算；重复hint/同一未解故障不续费，无hint黑洞/健康闲置/首次未建立不触发。自然3次新观测可停止；与现有Moving或已选可用路合并。选择低PTO、较新收包的已有弱连接copy发PING，无新timer/task/强Connection owner；关闭路或已恢复窗口结束回收。
+
+保留sent>judged、原2秒/两fresh ticks、收益门、PTO/重hold/现有copy-waking规则；所有transport同规则，无Direct优先。新单元只是预算/生命周期合同，原四秒物理至少3次、CPU短停顿/黑洞/探测包成本、准确源vendor/portable均待远端。当前不是已通过/性能完成；上游等价恢复提示与有界确认及同一行为/成本证据齐全后退出，本条尚未向上游提交。
+
+### 38. 被动地址迁移后按真实FourTuple更新缓存与测量归属（2026-11-09，feat/net）
+
+247在真实NAT端口重绑中124/124请求可达，但慢方向约123ms（另一方向约21ms）；同一Noq conn/path1实际remote已从:50001迁到:50002，iroh缓存仍指旧:50001，69次不一致。独立数据合同warm_remote_requests_select_the_rebound_tuple_v1在原整fixture上30次warm remote请求0次选中新tuple，journal也没有新selected；输入/原文/身份与合同哈希见net优化证据账本。
+
+在既有250ms reselect前核Noq真实网络tuple，只重登记确实改变的path、清该path旧Reading（其他copy不动），旧remote没有其他live copy才撤其open事实。tuple变化时强制把现行选择应用到各conn，避免全局选择未变时个别conn仍全Backup；正常收益/新鲜确认/安全验证/重试/并发/定时与probe节奏不改。不把前地址的历史质量无条件挪给新地址。Noq自身验证/放大限制保持。
+
+候选尚待同整NAT fixture/data合同、完整vendor与便携回归，以及IPv6/中继移动/原矩阵与成本验证。没有改Rust fixture去放宽门；上游若已提供等价被动迁移事件或持续tuple同步，须相同真实合同与调用者覆盖后再退出。本地诊断默认关闭，tuple已及时同步且验收留证后可单独移除诊断输出；不得凭去掉日志认定根因解决。
+
+### 37. 无当前副本接收提示时保留故障后的快速备用证据（2026-11-09，feat/net）
+
+36的双路确认修复了CPU短停顿误切，但普通p3在42542984111两轮1.1/1.2秒超过原1秒。
+42551075037在相同待红源码上已实际得到437Noq绿/路径35pass1fail：所有当前copy没有接收提示时，故障后已有备用应答仍返回Hold，而非Go。
+
+候选让Moving.leave按当前路live copy的接收提示区分：提示只触发当前故障副本探测与决定后备用样本要求；
+无提示时使用began之后的已有备用往返。提示本身不证明正向路健康；旧包不能确认，正常迁移两新样本/收益、4秒兜底和原探测节奏保持。
+新回归及额外false旧包/兜底覆盖待候选绿；实际p3/CPU/转发仍须原门复验，不能据单元宣布恢复达标。
+本地新增，未提上游；上游若提供等价可达性/副本判据，以这些协议和同源真实恢复/成本复验后再退出。
+
+### 36. 故障确认也取决定后的备用应答，并探测当前故障副本（2026-11-09，feat/net）
+
+observer v1诊断42538759858的4次故障Go，同一路另一连接已收包，旧PTO副本仍使整路静默。
+一次Hold只探测候选，另三次用决定前备用ACK立即Go；有一次本来已允许wake，也来不及在同tick Go前验证当前副本。
+42541459177已436Noq绿/iroh34pass1fail，新回归期望Hold双向探测，实际Go。
+
+Moving.leave要求备用样本包在max(本次since, 故障began)后发出；候选探测tick也不早于此界。
+等待期间探测当前路；选当前最高PTO的live copy，避免只PING已经健康的另一连接。
+候选则优先最低PTO copy；所有实际选择/结果可用可选confirmation probe日志核对。
+原4秒兜底不延长，无新timer、应用请求重放或类型优先；正常质量确认/收益与routine wake旧规则不变。
+可能比旧故障分支多当前路PING，需同时验证p3<1秒、p1s/p5防抖及包数成本，不能只拿单元绿收口。
+
+42542123882已SUCCESS 436Noq/35路径/9选家与根格式；普通动态/转发/防抖及诊断证据仍需验证，不能单元收口。
+上游等价故障确认/副本探测与这些回归齐全后逐条退出。
+
+### 35. 首次恢复的可用性不依赖质量与承载类型（2026-11-09，feat/net）
+
+诊断42538717126中，Custom在决定后应答，X因旧quality不能通过quick又等1秒；Y通过quick则当场恢复。
+新回归42539860644取得436Noq绿/iroh33pass1fail，首次新往返在quality仍5秒时仍被可用性hold门住。
+这证明可用性/质量职责混在一起，不证明全部f4/p1s失败都只有此原因。
+
+Measured首次故障在最后一次静默判断后有新包往返、且所有副本当前均未判静默时恢复可用性，
+不再比较当前路类型或快慢。Moving/RoadOrder仍负责质量/收益/新鲜确认。
+REHOLD内重复故障保留原SILENT_HOLD一秒，旧包ACK不算恢复、已关路径仍忘记。
+去掉quick回调及两份临时向量，无新增timer/探测；copy-waking旧off_direct限制本条未改。
+原hold回归明确模拟近期已有恢复；首次恢复/重复故障/旧包及闭路覆盖继续保留。
+
+42540515220已SUCCESS 436Noq/34路径/9选家与根格式；普通p1s/p5的42540582927在途，f4/动态仍待准确源复验。
+不能以诊断或单元绿收口；上游等价可达性/迟滞与调用者覆盖后逐条退出。
+
+### 诊断说明：迁移与恢复的实际输入（2026-11-09，feat/net）
+
+`khor_net_samples` tracing target在迁移第一次Hold/Go与当前路已关闭的直接选择处记录实际
+Reading/Silence及确认起点；静默恢复记录决定后应答与hold解除。未改变策略/探测/计时，
+默认CLI不安装subscriber。仅`net-diagnostics`可选构建且显式环境开关启用；
+netlab-diagnostic保留原p1s/f4s完整负载并将serve.log作为artifact保存。
+日志开销不可算普通SLO；根因确认并有更持久的低开销事实记录后可移除这些诊断调用。
+
+### 34. 普通慢质量先验证，再触发打洞（2026-11-09，feat/net）
+
+近期中位数可能暂时只有一次慢ACK。Watch原来读到慢quality即打洞，与同时开启的2秒探测并行，
+未等探测区分持续退化和短暂停顿。42531529275取得435Noq绿/iroh29pass1fail，
+150ms单次慢质量同时返回probe与punch；实际p5也有150/300ms组额外打洞，但本回归不是全部定因。
+
+普通质量必须连续高于原floor门2秒，并有两个采样包在这次确认开始后发出，才可打洞；
+复用Measured.samples_after的真实发送时刻，不用actor恢复后的旧值或积压ACK补证据。
+质量恢复取消该次确认，不重置原打洞/探测节流；原每30秒至多一个2秒探测段不变，没有新增timer。
+近期探测预算用过时，前台STREAM样本仍可确认；不为普通闲置短波动额外发探测。
+真实无应答满原1秒的独立通道保留，RTT已超过整个2秒探测窗也保留立即探索，
+避免为极慢路径等待放不进预算的新往返；这些都不直接强制选择另一条路。
+
+回归包含先探测、无新证据的暂停、恢复后重新确认、极慢路径与原真实故障/30秒节流；
+42532303734单元435Noq/33iroh全绿；p5/p1s/p2/p3/p7/f4实际行为仍需新源证据。未提上游；上游具备等价探测后确认行为，
+以这些回归、动态恢复、后台流量与CPU覆盖复验退出。
+
+### 33. 快速迁移也使用决定后的往返，并同时复测当前路（2026-11-09，feat/net）
+
+补丁28将快分支用于全部承载后，Moving仍接受决定前250ms内的两个观测，而且只探测候选路。
+42528150054已确定性红：Noq434绿、iroh27pass/2fail；决定前的两个包直接得到Go，
+候选未答时Hold不要求复测当前路。单场景p1s的14/2次切换是实际待解问题，不等于已证明这两处就是全部原因。
+
+快速分支改为要求包在since之后发出；确认期间两路缺少决定后/本tick证据时沿原250ms tick探测，
+当前路原RTT超过2秒时仍不要求其答复。快候选有原两个新观测即可提前切换，不加固定2秒等待；
+黑洞leave通道、收益/静默/冷却阈值和闲置探索节奏不改。新增两条回归，旧“决定前一tick即可切换”
+断言改为等待再用决定后证据通过；原慢路不阻挡快速迁移的覆盖保留。42528714010单元434Noq/29iroh全绿；p1s/p2/p3/p7/f4实际恢复尚待新源验证。
+没有新增独立timer；确认期间当前路可能比旧快分支多PING，仍受既有4秒确认/30秒冷却边界约束，开销须实测。
+尚未提上游；上游具备等价决定后证据/共同停顿确认后，用这些回归与实际网络目标复验退出。
+
+### 32. 窗口样本过期时重算同一份质量（2026-11-09，feat/net）
+
+补丁29的record在新ACK时算中位数，但read_paths只删除过期点而不重算。窗口先含300ms/1ms，
+300ms过期后，公开样本数已为1，质量却仍300ms；直到下个ACK才更新。42525350514已确定性红：
+Noq434绿、iroh26pass/1fail，期望1ms实际300ms。它可能影响稀疏备用恢复，但不是p2/p7实际卡顿的已证实定因。
+
+Reading::expire保留原清理与闭路保留规则，窗口缩小时复用record的中位数计算；仅清空时保留最后已知质量。
+不改样本时间、ACK计数或确认历史，不新增timer、探测或paths_stream通知。只在窗口变化时重算最多8点，
+不为每次闲置tick分配排序数组。回归同时验证过期不是新ACK；42526508917独立vendor已SUCCESS，实际网络另需对应源码证据。
+未提上游，本轮未查最新上游实现；上游提供一致的窗口质量/计数/时刻后，以此回归及p2/p7/防抖场景复验退出。
+
+### 31. 新鲜性使用采样包的真实时间窗（2026-11-09，feat/net）
+
+补丁29仍以actor读取时刻记录样本，且初始RTT改变会入fresh。42518379039取得确定性产品红：
+Noq434通过，iroh22pass/3fail，分别复现初始估计变化、延迟读stats和故障前包的积压ACK被算作新鲜往返。
+
+Reading改用noq补丁10的发送/ACK处理时刻；只有ACK计数变化且时间有效才入观测。旧于2秒的ACK不能进入当前窗口或确认，
+quality仍可保留最后已知值用于探索，age不因读取刷新。初始估计可更新探索值，但不是已测质量。
+迁移确认要求采样包在确认起点后发出，故障离开仍1个观测、正常迁移仍2个独立tick；静默恢复要求包在最后一次静默判定后发出。
+原选路收益/确认/冷却/探测频率不改，原传输数学不改。另加旧包ACK不能结束静默的覆盖，原测试改为提供明确的样本时间。
+
+修复版42519038936为434Noq/26iroh全绿（含额外静默覆盖）；真实网络尚待验证，不由单元绿推断恢复或稳定性通过。ACK处理不是内核收包时间，CPU长尾仍需实测。
+未提上游，本轮未检查最新上游状态；上游具备同等时刻/确认语义后，以本组、p1/p1j/p1s、p2/p3/p7与f4复验退出。
+
+### 30. 不应答判据与在飞重排共用（2026-11-09，feat/net）
+
+`unanswered_for`委托noq-proto补丁9的同名PathStats方法，保留原两次PTO、max(300ms,3PTO)
+等待与最近收包保护。选路和切换后在飞数据重排按同一事实判断，不能因为旧RTT仍快把黑洞路上的流字节留下。
+既有iroh不应答/静默/恢复单元与noq同速黑洞、健康同速、慢Backup测试共同覆盖；实际网络结果另见STATE。
+本地新增，尚未提上游；上游若提供等价路径活性/重排API，复验后可退出此委托。
+
+### 29. ACK样本新鲜度、近期质量与有界备用刷新（2026-11-09，feat/net）
+
+`RemoteStateActor::Measured` 使用noq-proto补丁8的最新RTT/样本计数，而非从平滑值变化推断新样本。
+选路质量为近2秒、最多8个观测tick的中位数；同值新样本仍更新时间，反复读同一份stats不会。
+正常迁移确认需要两次新观测，故障离开只需一次新应答；原传输RTT估计、拥塞控制和线上协议不变。
+STREAM活跃期跨连接去重、轮转刷新已有备用，每对端最多5秒一个PING；PING/ACK不延长活跃期，闲置无新增timer。
+选中Relay/Custom也监测退化，沿用现有探测/打洞节流。
+
+后续同轮补充：通过既有PathState共享只读 `Path::measurement()`（质量、样本年龄、窗口内观测tick数），
+诊断和hop看守读取与选择器相同的代表副本。质量与时间戳不再分别取不同连接的值。
+没有ACK样本时返回None；`Path::rtt()`仍是传输平滑估计。发布缓存不通知paths_stream，读取不发包。
+补充回归 `shared_quality_and_age_come_from_the_same_representative_copy` 与khor-net两个相反历史RTT的清理回归。
+首次p7与431/21单元已通过的是补充API前版本；新API/看守接线的结果需单独对应source tree。
+
+回归：noq最新样本计数测试、iroh `equal_rtt_samples_are_fresh_and_recovery_does_not_use_the_old_average`、
+`active_refresh_is_bounded_rotates_and_does_not_sustain_itself`，动态netlab `paths::p7_`；完整p1/p1j/p1s/p2/p3/f4检查噪声/恢复。
+旧版p7两场景45秒未回快Direct；新候选尚待验证，不以本条记录宣告通过。上游未提交；上游提供可区分真实新样本的路径测量与
+有界探测后，按上述场景复验并退出补丁。独立iroh单元使用本包lock和本地noq-proto patch（lock只改来源、版本不变），不能误测registry副本。
+
+### 28. 速度优先时所有路径都确认新鲜测量（2026-11-09，feat/net）
+
+`RemoteStateActor::confirm_move` 不再无条件放行“从中继/转连到直连”。Khor 的
+`RoadOrder` 已按有效 RTT 比较所有承载，直连也可能较慢；绕过确认会让一个新路径的
+初始样本压过旧路径的新鲜数据。所有仍开放的路径都经过同一个 `Moving` 确认，
+`from_rtt` 对所有承载取实际测量，明显快得多时在新样本答上后快速迁移。
+
+回归入口：`khor-net` 的 `measured_speed_wins_for_every_transport_pair` 与
+netlab `paths::p6_`；既有 p1/p1j/p1s/p2/p3/p5 与转连场景检查防抖和恢复。
+本条是实现记录，通过状态与对照证据见 `docs/net-optimization/STATE.md`，不能仅凭此处宣告验证完成。
+
+以下保留既有补丁的原因与证据。
 
 ### 27. `src/socket.rs`：容器和虚拟机的网桥地址不进直接地址（2026-10-21，net-home）
 
@@ -401,6 +651,8 @@ iroh 随即重新选路。连接只剩这一条路径时 noq 拒绝关，照旧�
 路径关了以后，ssh 重连上来的链路由 `carry::offer_path`（补丁 12）当场在活着的连接上再开。
 改动约 35 行。上游没有对应 PR，升级 iroh 时要重新打。
 
+2026-11-10 feat/net 扩展候选：`Endpoint::close_carried_if` 将一个只读共享状态的同步predicate带到同一RemoteStateActor，在实际关闭之前判断；Node的`let_path_go`用最新Links.has保护已经出现的替代载体，既有无条件`close_carried`保持原语义。该predicate不得做IO/阻塞等待，只活到有界消息处理完，不新增task/timer/probe。真实Node旧行为761c4291为24/1红（实际replacement offer后仍Closed），候选需原fixture/完整net-node双OS与net-vendor验证；排队期间出现新carrier、pending Noq开关及ears epoch仍待单独合同，不声称整个代际问题已解决。
+
 ### 12. `src/socket/remote_map/remote_state.rs`、`src/endpoint.rs`：连接活着时交来的转连地址当场打开（2026-10-09，NET-DIRECT 第四步）
 
 上游收到新地址（`ResolveRemote`，`connect` 时发）只记下，不在已有连接上开路；补丁 6 只在连接加入时补开自定义
@@ -534,6 +786,10 @@ cargo 的 feature 合并后这些探测也读 macOS 系统设置里的代理，�
 
 ### 1. `src/socket/remote_map/remote_state.rs`
 
+2026-11-09复核：#4522已于9月29日关闭、未合并；1.4.1已有简化contains去重。
+下面OPEN为原始历史，不能当作当前状态。固定来源与逐块退出边界见
+[UPSTREAM.md](../../docs/net-optimization/UPSTREAM.md)；本轮尚未升级依赖或证明全部补丁可退出。
+
 - 用的是上游 PR **#4522**「fix(iroh): bound and deduplicate pending_open_paths」的改法
   （PR 头提交 `eaca51d4c003f8a9f3764bd7ff7eca1a8dbdc309`，基于 main；截至 2026-09-21 仍是 OPEN，未合并）。
   它修的是 issue **#4390** 和 **#4509**（两条都还 OPEN）。
@@ -569,7 +825,7 @@ UDP 到不了，连系统自带的 `/usr/bin/nc` 也一样），开往其余候�
 308/310 个样本都在 `open_path_on_all_conns` 里；bridge 的 `devices` 请求（→ serve 的 `Op::Hops` →
 `remote_info`）从几十毫秒涨到 52950ms，然后再也不回来。
 
-上游没有带修复的版本可升，所以只能在本地打补丁。
+最初vendor时尚无可用上游修复，因而本地打补丁。2026-11-09已有1.4.1简化去重；整组补丁是否可退出仍需逐项验证，不能沿用旧结论。
 
 ## 怎么验
 
@@ -592,10 +848,8 @@ queue grew to 256 entries after 4 ticks
 
 ## 什么时候删
 
-上游发出包含 #4522（或等价修复）的 iroh 版本后：
-
-1. 把依赖升到那个版本；
-2. 删掉整个 `vendor/` 目录、根 `Cargo.toml` 的 `[patch.crates-io]` 段和 `exclude = ["vendor"]`；
-3. 跑全套门，再跑 smoke。
-
-在那之前升级 iroh，要把新版本重新拷进来、重新打这个补丁，并更新本文件的「来源」。
+这份目录已包含多项独立补丁，补丁1出现上游等价实现不再构成删除整树的条件。
+按[上游核查](../../docs/net-optimization/UPSTREAM.md)逐条验证目标行为、接口与覆盖后，
+可在隔离升级候选中删除对应实现，并跑相同协议的恢复/稳定性/转发与原生回归。
+只有全部剩余本地行为都有已验证替代时，才删除vendor子树和相应Cargo patch/exclude配置；
+任何未退出补丁都保留原因、覆盖、上游状态和退出条件。原始来源与失败记录不能随升级丢失。

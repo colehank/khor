@@ -114,6 +114,8 @@ pub struct Job {
     /// Set by [`stop`]: the pull ends before its next slice. Shared, so
     /// a pull on a blocking thread can read it.
     pub stopped: Arc<AtomicBool>,
+    /// Wake async pulls as well as the blocking workers reading the flag.
+    stop_changed: tokio::sync::Notify,
     /// The landed path, or why it did not land; `None` while it runs.
     end: Mutex<Option<(Instant, Result<String, String>)>>,
     /// Why the pull was cut short by its sender rather than cancelled
@@ -123,7 +125,26 @@ pub struct Job {
 
 impl Job {
     pub fn is_stopped(&self) -> bool {
-        self.stopped.load(Ordering::Relaxed)
+        self.stopped.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn request_stop(&self) {
+        self.stopped.store(true, Ordering::Release);
+        self.stop_changed.notify_waiters();
+    }
+
+    pub(crate) async fn wait_stopped(&self) {
+        loop {
+            let changed = self.stop_changed.notified();
+            tokio::pin!(changed);
+            // Register before checking the flag, including a stop between
+            // this check and the first await. Late subscribers read the flag.
+            changed.as_mut().enable();
+            if self.is_stopped() {
+                return;
+            }
+            changed.await;
+        }
     }
 
     /// **Ended by its sender, not cancelled** (`crate::post`, the phone's
@@ -133,7 +154,7 @@ impl Job {
         if let Ok(mut c) = self.cut.lock() {
             *c = Some(why.to_owned());
         }
-        self.stopped.store(true, Ordering::Relaxed);
+        self.request_stop();
     }
 
     /// The sentence [`Job::cut`] left; `None` for a cancel or a pull
@@ -230,7 +251,7 @@ pub fn sent_key(msg_id: &str, receiver: &str) -> String {
 /// starts nothing — and costs nothing else.
 pub fn stop(key: &str) {
     let (j, fresh) = job(key);
-    j.stopped.store(true, Ordering::Relaxed);
+    j.request_stop();
     if fresh {
         j.finish(Err(cancelled()));
     }
@@ -712,6 +733,72 @@ fn move_one(root: &Path, dir: &Path, old: &Path, leaf: &str) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn stopped_jobs_do_not_wait_for_a_new_notification() {
+        for cut in [false, true] {
+            let job = Job::default();
+            if cut {
+                job.cut("sender ended");
+            } else {
+                job.request_stop();
+            }
+            tokio::time::timeout(Duration::from_secs(1), job.wait_stopped())
+                .await
+                .unwrap();
+            assert!(job.is_stopped());
+            assert_eq!(job.cut_why(), cut.then(|| "sender ended".to_owned()));
+        }
+    }
+
+    #[tokio::test]
+    async fn stop_and_cut_wake_every_registered_async_waiter() {
+        use std::{future::Future, task::Poll};
+        for cut in [false, true] {
+            let job = Arc::new(Job::default());
+            let barrier = Arc::new(tokio::sync::Barrier::new(9));
+            let (ready, mut entered) = tokio::sync::mpsc::unbounded_channel();
+            let mut workers = tokio::task::JoinSet::new();
+            for _ in 0..8 {
+                let (job, barrier, ready) = (job.clone(), barrier.clone(), ready.clone());
+                workers.spawn(async move {
+                    let stopped = job.wait_stopped();
+                    tokio::pin!(stopped);
+                    std::future::poll_fn(|cx| {
+                        assert!(stopped.as_mut().poll(cx).is_pending());
+                        Poll::Ready(())
+                    })
+                    .await;
+                    ready.send(()).unwrap();
+                    barrier.wait().await;
+                    stopped.await;
+                });
+            }
+            drop(ready);
+            tokio::time::timeout(Duration::from_secs(1), async {
+                for _ in 0..8 {
+                    entered.recv().await.unwrap();
+                }
+            })
+            .await
+            .unwrap();
+            // Notify while all eight registered futures are deliberately
+            // prevented from being polled again, then let them resume.
+            if cut {
+                job.cut("sender ended");
+            } else {
+                job.request_stop();
+            }
+            tokio::time::timeout(Duration::from_secs(1), async {
+                barrier.wait().await;
+                while let Some(worker) = workers.join_next().await {
+                    worker.unwrap();
+                }
+            })
+            .await
+            .unwrap();
+        }
+    }
 
     fn file_ref(name: &str, bytes: &[u8]) -> FileRef {
         FileRef {

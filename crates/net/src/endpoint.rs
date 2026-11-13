@@ -579,9 +579,9 @@ pub async fn bind_preferring(
 /// WireGuard a fixed `ListenPort`, Syncthing 22000.
 ///
 /// **`carry`: the roads khor carries itself** (round ROAD-2,
-/// [`crate::carry`]): registered with khor's [`crate::carry::RoadOrder`]
-/// selector when given; `None` is the transport not registered at all —
-/// both switches off.
+/// [`crate::carry`]): the custom transport is registered when given.
+/// Every bind uses khor's speed-first selector, including one-shot
+/// clients and endpoints with no carried roads.
 pub async fn bind_pinned(
     secret: iroh::SecretKey,
     relays: &[Relay],
@@ -592,9 +592,7 @@ pub async fn bind_pinned(
 ) -> Result<iroh::Endpoint> {
     let mut b = builder(secret, relays, n0, on_the_segment())?;
     if let Some(links) = carry {
-        b = b
-            .add_custom_transport(links.transport())
-            .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()));
+        b = b.add_custom_transport(links.transport());
     }
     if let Some(ip) = bind_ip().filter(|_| std::env::var_os(RELAY_ONLY_ENV).is_none()) {
         let port = if ip.is_ipv4() { v4 } else { v6 };
@@ -685,6 +683,7 @@ fn builder(
     )
     .proxy_from_env()
     .transport_config(transport())
+    .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()))
     .alpns(vec![
         ALPN.to_vec(),
         TUNNEL_ALPN.to_vec(),

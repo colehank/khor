@@ -1,6 +1,6 @@
-use std::{cmp, net::SocketAddr};
+use alloc::{boxed::Box, vec::Vec};
+use core::{cmp, net::SocketAddr};
 
-use identity_hash::IntMap;
 use thiserror::Error;
 use tracing::{debug, trace};
 
@@ -11,7 +11,7 @@ use super::{
     spaces::{PacketNumberSpace, SentPacket},
 };
 use crate::{
-    ConnectionId, Duration, FourTuple, Instant, TIMER_GRANULARITY, TransportConfig,
+    ConnectionId, Duration, FourTuple, Instant, IntMap, TIMER_GRANULARITY, TransportConfig,
     TransportErrorCode, VarInt,
     coding::{self, Decodable, Encodable},
     congestion,
@@ -27,8 +27,8 @@ use qlog::events::quic::RecoveryMetricsUpdated;
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Default)]
 pub struct PathId(pub(crate) u32);
 
-impl std::hash::Hash for PathId {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl core::hash::Hash for PathId {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         state.write_u32(self.0);
     }
 }
@@ -86,8 +86,8 @@ impl PathId {
     }
 }
 
-impl std::fmt::Display for PathId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for PathId {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         self.0.fmt(f)
     }
 }
@@ -535,7 +535,7 @@ impl PathData {
                 // the path as validated though, because for a change in local_ip only we do
                 // not need to re-validate the path.
                 let sent_instant = info.sent_instant;
-                if !std::mem::replace(&mut self.validated, true) {
+                if !core::mem::replace(&mut self.validated, true) {
                     trace!("new path validated");
                 }
                 // Clear any other on-path sent challenges and stop sending new ones.
@@ -763,8 +763,14 @@ impl RecoveryMetrics {
 /// RTT estimation for a particular network path
 #[derive(Copy, Clone, Debug)]
 pub struct RttEstimator {
+    /// khor: ACK-based samples, including samples equal to the previous one.
+    samples: u64,
     /// The most recent RTT measurement made when receiving an ack for a previously unacked packet
     latest: Duration,
+    /// khor: the same sample after the ACK-delay correction used by smoothing.
+    latest_sample: Duration,
+    /// khor: send/ACK processing instants for that sample, never the stats read time.
+    sample_times: Option<(Instant, Instant)>,
     /// The smoothed RTT of the connection, computed as described in RFC6298
     smoothed: Option<Duration>,
     /// The RTT variance, computed as described in RFC6298
@@ -776,7 +782,10 @@ pub struct RttEstimator {
 impl RttEstimator {
     pub(crate) fn new(initial_rtt: Duration) -> Self {
         Self {
+            samples: 0,
             latest: initial_rtt,
+            latest_sample: initial_rtt,
+            sample_times: None,
             smoothed: None,
             var: initial_rtt / 2,
             min: initial_rtt,
@@ -798,6 +807,7 @@ impl RttEstimator {
     pub(crate) fn reset_initial_rtt(&mut self, initial_rtt: Duration) {
         if self.smoothed.is_none() {
             self.latest = initial_rtt;
+            self.latest_sample = initial_rtt;
             self.var = initial_rtt / 2;
             self.min = initial_rtt;
         }
@@ -806,6 +816,34 @@ impl RttEstimator {
     /// The current best RTT estimation.
     pub fn get(&self) -> Duration {
         self.smoothed.unwrap_or(self.latest)
+    }
+
+    pub(crate) fn latest_sample(&self) -> Duration {
+        self.latest_sample
+    }
+
+    pub(crate) fn sample_count(&self) -> u64 {
+        self.samples
+    }
+
+    pub(crate) fn sample_times(&self) -> Option<(Instant, Instant)> {
+        self.sample_times
+    }
+
+    pub(crate) fn update_at(&mut self, ack_delay: Duration, sent: Instant, received: Instant) {
+        self.update(ack_delay, received.saturating_duration_since(sent));
+        self.sample_times = Some((sent, received));
+        debug!(
+            target: "khor_net_samples",
+            ?sent,
+            ?received,
+            raw = ?self.latest,
+            delay = ?ack_delay,
+            minimum = ?self.min,
+            sample = ?self.latest_sample,
+            counter = self.samples,
+            "ACK sample"
+        );
     }
 
     /// Conservative estimate of RTT
@@ -828,7 +866,10 @@ impl RttEstimator {
 
     /// Records an RTT sample.
     pub(crate) fn update(&mut self, ack_delay: Duration, rtt: Duration) {
+        self.samples = self.samples.saturating_add(1);
+        self.sample_times = None;
         self.latest = rtt;
+        self.latest_sample = rtt;
         // https://www.rfc-editor.org/rfc/rfc9002.html#section-5.2-3:
         // min_rtt does not adjust for ack_delay to avoid underestimating.
         self.min = cmp::min(self.min, self.latest);
@@ -836,6 +877,15 @@ impl RttEstimator {
         if let Some(smoothed) = self.smoothed {
             let adjusted_rtt = if self.min + ack_delay <= self.latest {
                 self.latest - ack_delay
+            } else {
+                self.latest
+            };
+            // khor patch 12: path quality excludes valid peer ACK delay even
+            // when small network jitter would put the result below min RTT.
+            // Clamp selection to that observed floor; retain the RFC sample
+            // below for transport smoothing, variance and congestion/recovery.
+            self.latest_sample = if ack_delay < self.latest {
+                self.latest.saturating_sub(ack_delay).max(self.min)
             } else {
                 self.latest
             };
@@ -1017,7 +1067,7 @@ impl PathStatusState {
         }
 
         self.local_seq = self.local_seq.saturating_add(1u8);
-        Some(std::mem::replace(&mut self.local_status, status))
+        Some(core::mem::replace(&mut self.local_status, status))
     }
 
     pub(crate) fn seq(&self) -> VarInt {
@@ -1185,7 +1235,7 @@ impl PathRetransmits {
     }
 }
 
-impl std::ops::BitOrAssign for PathRetransmits {
+impl core::ops::BitOrAssign for PathRetransmits {
     fn bitor_assign(&mut self, rhs: Self) {
         let Self { observed_address } = rhs;
         self.observed_address |= observed_address;
@@ -1195,6 +1245,85 @@ impl std::ops::BitOrAssign for PathRetransmits {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn khor_equal_rtt_samples_are_fresh_and_latest_is_not_the_smoothed_value() {
+        let mut rtt = RttEstimator::new(Duration::from_millis(20));
+        assert_eq!(rtt.sample_count(), 0);
+        rtt.reset_initial_rtt(Duration::from_millis(10));
+        assert_eq!(
+            rtt.sample_count(),
+            0,
+            "an initial estimate is not an ACK sample"
+        );
+        rtt.update(Duration::ZERO, Duration::from_millis(10));
+        rtt.update(Duration::ZERO, Duration::from_millis(10));
+        assert_eq!(rtt.sample_count(), 2);
+        assert_eq!(rtt.get(), Duration::from_millis(10));
+        rtt.update(Duration::ZERO, Duration::from_millis(1));
+        assert_eq!(rtt.sample_count(), 3);
+        assert_eq!(rtt.latest_sample(), Duration::from_millis(1));
+        assert!(
+            rtt.get() > rtt.latest_sample(),
+            "congestion keeps its smoothed estimator"
+        );
+    }
+
+    #[test]
+    fn khor_selection_samples_do_not_count_peer_ack_delay_as_network_latency() {
+        let ms = Duration::from_millis;
+        let mut rtt = RttEstimator::new(ms(1));
+        rtt.update(Duration::ZERO, ms(1));
+        rtt.update(ms(20), ms(21));
+        assert_eq!(rtt.latest_sample(), ms(1));
+        assert_eq!(rtt.get(), ms(1));
+        assert_eq!(
+            rtt.conservative(),
+            ms(21),
+            "recovery retains its raw latest RTT"
+        );
+        rtt.update(ms(50), ms(30));
+        assert_eq!(
+            rtt.latest_sample(),
+            ms(30),
+            "ACK delay cannot push a sample below min RTT"
+        );
+    }
+
+    #[test]
+    fn khor_selection_near_the_rtt_floor_does_not_charge_peer_ack_delay() {
+        let ms = Duration::from_millis;
+        let mut rtt = RttEstimator::new(ms(85));
+        rtt.update(Duration::ZERO, ms(85));
+        rtt.update(ms(25), ms(109));
+        // A one millisecond variation must not add all 25 ms of ACK delay
+        // to path quality. Selection may clamp to the observed raw floor;
+        // congestion/recovery retain their existing estimator and raw RTT.
+        assert_eq!(rtt.latest_sample(), ms(85));
+        assert_eq!(rtt.get(), ms(88));
+        assert_eq!(rtt.conservative(), ms(109));
+        assert_eq!(rtt.min(), ms(85));
+        assert_eq!(rtt.sample_count(), 2);
+    }
+
+    #[test]
+    fn khor_sample_times_belong_to_the_ack_not_a_later_stats_read() {
+        let ms = Duration::from_millis;
+        let sent = Instant::now();
+        let mut timed = RttEstimator::new(ms(100));
+        let mut reference = timed.clone();
+        assert_eq!(timed.sample_times(), None);
+        for (delay, rtt) in [(0, 1), (20, 21), (0, 10)] {
+            timed.update_at(ms(delay), sent, sent + ms(rtt));
+            reference.update(ms(delay), ms(rtt));
+            assert_eq!(timed.sample_times(), Some((sent, sent + ms(rtt))));
+            assert_eq!(timed.get(), reference.get());
+            assert_eq!(timed.conservative(), reference.conservative());
+            assert_eq!(timed.pto_base(), reference.pto_base());
+            assert_eq!(timed.latest_sample(), reference.latest_sample());
+            assert_eq!(timed.sample_count(), reference.sample_count());
+        }
+    }
 
     #[test]
     fn test_path_id_saturating_add() {

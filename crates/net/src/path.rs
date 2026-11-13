@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -24,8 +24,16 @@ pub enum PathKind {
     Unknown,
 }
 
-/// One path's current facts, copied verbatim from iroh's observations.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+/// The selector's quality and the evidence behind it, copied from iroh.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PathQuality {
+    pub rtt: Duration,
+    pub age: Duration,
+    pub samples: usize,
+}
+
+/// Transport statistics and the independent quality used by selection.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PathFact {
     pub relay: bool,
     /// A carried road ([`PathKind::Carried`]).
@@ -33,9 +41,22 @@ pub struct PathFact {
     /// Whether application data rides this path right now. With several
     /// open, exactly one is.
     pub selected: bool,
+    /// QUIC's smoothed estimate, retained for transport diagnostics.
+    #[serde(deserialize_with = "deserialize_rtt_millis")]
     pub rtt_ms: u128,
+    pub quality: Option<PathQuality>,
     /// Diagnostic data only — never drawn on screen.
     pub addr: String,
+}
+
+// Journal events are internally tagged, so serde buffers their fields.
+// That buffer supports the u64 JSON numbers used for measured milliseconds,
+// but cannot deserialize u128 directly. Preserve PathFact's arithmetic type.
+fn deserialize_rtt_millis<'de, D>(deserializer: D) -> Result<u128, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    u64::deserialize(deserializer).map(u128::from)
 }
 
 /// The rule: the **selected** path decides; none selected = Unknown, not
@@ -88,6 +109,11 @@ pub fn path_facts(conn: &iroh::endpoint::Connection) -> Vec<PathFact> {
             carried: matches!(p.remote_addr(), iroh::TransportAddr::Custom(_)),
             selected: p.is_selected(),
             rtt_ms: p.rtt().as_millis(),
+            quality: p.measurement().map(|m| PathQuality {
+                rtt: m.rtt(),
+                age: m.age(),
+                samples: m.samples(),
+            }),
             addr: format!("{:?}", p.remote_addr()),
         })
         .collect();
@@ -95,22 +121,26 @@ pub fn path_facts(conn: &iroh::endpoint::Connection) -> Vec<PathFact> {
     facts
 }
 
-/// **Whether the relay keeps a connection off its carried road on
-/// measurement** (carry, 2026-10-23): the relay is the selected path, and
-/// no carried path reads faster than it by `margin_ms`. A carried road that
-/// stopped answering keeps the round trip it read before (only an answer
-/// moves it), so a relay taken while the carried road stalls is not this:
-/// the hop's own watch let the middle go when the phone's leg to it was
-/// black for 3 s (netlab f4), and the connection fell back to the relay
-/// for good ten seconds after it was back on the hop. A carried path with
-/// no reading yet does not count as faster.
-pub fn relay_beats_carried(facts: &[PathFact], margin_ms: u128) -> bool {
-    let Some(relay) = facts.iter().find(|f| f.selected && f.relay) else {
+/// Whether the selected road keeps a carried road out on measurement.
+/// Uses the same steady-state gain as selection, including for a direct
+/// road. A temporary fallback must not tear down a faster hop while its
+/// recovery/confirmation is still running. Unknown carried RTTs do not
+/// claim that the carried road is faster.
+pub fn selected_beats_carried(facts: &[PathFact]) -> bool {
+    let Some(selected) = facts.iter().find(|f| f.selected && !f.carried) else {
         return false;
     };
-    !facts
-        .iter()
-        .any(|f| f.carried && f.rtt_ms > 0 && f.rtt_ms + margin_ms <= relay.rtt_ms)
+    let rtt = |f: &PathFact| {
+        f.quality.as_ref().map_or_else(
+            || Duration::from_millis(f.rtt_ms.min(u128::from(u64::MAX)) as u64),
+            |q| q.rtt,
+        )
+    };
+    !facts.iter().any(|f| {
+        f.carried
+            && (f.quality.is_some() || f.rtt_ms > 0)
+            && crate::carry::improves(rtt(f), rtt(selected), false)
+    })
 }
 
 /// Watches a connection settle into direct or relay. Hole-punching is
@@ -150,8 +180,66 @@ mod tests {
             carried: true,
             selected,
             rtt_ms,
+            quality: (rtt_ms > 0).then(|| quality(rtt_ms)),
             addr: "Custom(khor)".into(),
         }
+    }
+
+    fn quality(rtt_ms: u128) -> PathQuality {
+        PathQuality {
+            rtt: Duration::from_millis(rtt_ms as u64),
+            age: Duration::ZERO,
+            samples: 2,
+        }
+    }
+
+    #[test]
+    fn cleanup_does_not_remove_a_hop_that_current_quality_would_select() {
+        let mut selected = path(true, true, 20);
+        selected.quality = Some(quality(300));
+        let mut hop = carried(false, 100);
+        hop.quality = Some(quality(5));
+        assert!(!selected_beats_carried(&[selected, hop]));
+    }
+
+    #[test]
+    fn cleanup_keeps_the_measured_twenty_percent_faster_hop_for_confirmation() {
+        assert!(!selected_beats_carried(&[
+            path(true, true, 131),
+            carried(false, 104)
+        ]));
+    }
+
+    #[test]
+    fn cleanup_does_not_keep_a_hop_because_of_old_transport_history() {
+        let mut selected = path(false, true, 500);
+        selected.quality = Some(quality(5));
+        let mut hop = carried(false, 5);
+        hop.quality = Some(quality(300));
+        assert!(selected_beats_carried(&[selected, hop]));
+    }
+
+    #[test]
+    fn a_measured_submillisecond_hop_is_not_an_unknown_zero() {
+        let mut hop = carried(false, 0);
+        hop.quality = Some(PathQuality {
+            rtt: Duration::from_micros(500),
+            age: Duration::ZERO,
+            samples: 2,
+        });
+        assert!(!selected_beats_carried(&[path(true, true, 10), hop]));
+    }
+
+    #[test]
+    fn hop_cleanup_uses_the_same_gain_as_selection() {
+        assert!(
+            !selected_beats_carried(&[path(true, true, 30), carried(false, 22)]),
+            "a hop 8 ms faster on a 30 ms relay can win selection; keep it"
+        );
+        assert!(
+            !selected_beats_carried(&[path(true, true, 500), carried(false, 450)]),
+            "a measured 50 ms gain can enter fresh confirmation; keep it"
+        );
     }
 
     /// The relay keeps a connection off its hop only when the hop, measured
@@ -161,33 +249,41 @@ mod tests {
     #[test]
     fn the_relay_beats_the_hop_only_on_measurement() {
         assert!(
-            !relay_beats_carried(&[path(true, true, 856), carried(false, 100)], 10),
+            !selected_beats_carried(&[path(true, true, 856), carried(false, 100)]),
             "a stalled hop"
         );
         assert!(
-            relay_beats_carried(&[path(true, true, 200), carried(false, 300)], 10),
+            selected_beats_carried(&[path(true, true, 200), carried(false, 300)]),
             "a slower hop"
         );
         assert!(
-            relay_beats_carried(&[path(true, true, 200), carried(false, 195)], 10),
-            "within the margin"
+            !selected_beats_carried(&[path(true, true, 200), carried(false, 195)]),
+            "5 ms reaches the steady eligibility floor"
         );
         assert!(
-            relay_beats_carried(&[path(true, true, 200)], 10),
+            selected_beats_carried(&[path(true, true, 200), carried(false, 196)]),
+            "4 ms remains below the steady eligibility floor"
+        );
+        assert!(
+            selected_beats_carried(&[path(true, true, 200)]),
             "no carried path"
         );
         assert!(
-            relay_beats_carried(&[path(true, true, 200), carried(false, 0)], 10),
+            selected_beats_carried(&[path(true, true, 200), carried(false, 0)]),
             "a carried path never measured"
         );
         assert!(
-            !relay_beats_carried(&[path(true, false, 200), carried(true, 300)], 10),
+            !selected_beats_carried(&[path(true, false, 200), carried(true, 300)]),
             "on the hop now"
         );
         assert!(
-            !relay_beats_carried(&[path(false, true, 2), path(true, false, 200)], 10),
-            "direct"
+            !selected_beats_carried(&[path(false, true, 90), carried(false, 5)]),
+            "a direct fallback must keep a faster recovering hop"
         );
+        assert!(selected_beats_carried(&[
+            path(false, true, 5),
+            carried(false, 90),
+        ]));
     }
 
     fn path(relay: bool, selected: bool, rtt_ms: u128) -> PathFact {
@@ -196,6 +292,7 @@ mod tests {
             carried: false,
             selected,
             rtt_ms,
+            quality: Some(quality(rtt_ms)),
             addr: if relay {
                 "http://relay:3340".into()
             } else {

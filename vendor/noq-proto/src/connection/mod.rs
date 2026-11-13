@@ -1,26 +1,32 @@
-use std::{
-    cmp,
+use alloc::{
+    borrow::ToOwned,
+    boxed::Box,
     collections::{BTreeMap, VecDeque, btree_map},
+    format,
+    string::String,
+    sync::Arc,
+    vec::Vec,
+};
+use core::{
+    cmp,
     convert::TryFrom,
-    fmt, io, mem,
+    fmt, mem,
     net::SocketAddr,
     num::{NonZeroU32, NonZeroUsize},
-    sync::Arc,
 };
+use std::io;
 
 use bytes::{Bytes, BytesMut};
 use frame::StreamMetaVec;
 
 use rand::{RngExt, SeedableRng, rngs::StdRng};
-use rustc_hash::FxHashMap;
 use thiserror::Error;
 use tracing::{debug, error, trace, trace_span, warn};
 
 use crate::{
-    Dir, Duration, EndpointConfig, FourTuple, Frame, INITIAL_MTU, Instant, MAX_CID_SIZE,
+    Dir, Duration, EndpointConfig, FourTuple, Frame, FxHashMap, INITIAL_MTU, Instant, MAX_CID_SIZE,
     MAX_STREAM_COUNT, MIN_INITIAL_SIZE, Side, StreamId, TIMER_GRANULARITY, TokenStore, Transmit,
     TransportError, TransportErrorCode, VarInt,
-    cid_generator::ConnectionIdGenerator,
     cid_queue::CidQueue,
     config::{ServerConfig, TransportConfig},
     congestion::Controller,
@@ -103,7 +109,7 @@ pub use streams::{
     ShouldTransmit, StreamEvent, Streams, WriteError,
 };
 
-mod timer;
+pub(crate) mod timer;
 use timer::{Timer, TimerTable};
 
 mod transmit_buf;
@@ -301,10 +307,9 @@ pub struct Connection {
     /// [`Connection::local_cid_state`] since some of this has to be kept around for some
     /// time after a path is abandoned.
     abandoned_paths: AbandonedPaths,
-    /// khor patch 7 (vendor/noq-proto/KHOR.md): a path's local status changed since the last
-    /// [`Self::poll_transmit`], which resends what is in flight on far slower backup paths
-    /// ([`Self::resend_off_slow_backups`]).
-    khor_status_changed: bool,
+    /// khor: a path status or backup recovery timeout requires the next
+    /// [`Self::poll_transmit`] to check outstanding backup data ([`Self::resend_off_backups`]).
+    khor_recheck_backups: bool,
 
     /// State for n0's (<https://n0.computer>) nat traversal protocol.
     n0_nat_traversal: n0_nat_traversal::State,
@@ -320,7 +325,8 @@ impl Connection {
         remote_cid: ConnectionId,
         network_path: FourTuple,
         crypto: Box<dyn crypto::Session>,
-        cid_gen: &dyn ConnectionIdGenerator,
+        local_cid_len: usize,
+        local_cid_lifetime: Option<Duration>,
         now: Instant,
         version: u32,
         allow_mtud: bool,
@@ -357,16 +363,20 @@ impl Connection {
         let local_cid_state = FxHashMap::from_iter([(
             PathId::ZERO,
             CidState::new(
-                cid_gen.cid_len(),
-                cid_gen.cid_lifetime(),
+                local_cid_len,
+                local_cid_lifetime,
                 now,
                 if pref_addr_cid.is_some() { 2 } else { 1 },
             ),
         )]);
 
+        let crypto_state = CryptoState::new(crypto, init_cid, side, &mut rng);
+        #[cfg(test)]
+        let crypto_state = crypto_state.with_key_phase_size(config.initial_key_phase_size);
+
         let mut this = Self {
             endpoint_config,
-            crypto_state: CryptoState::new(crypto, init_cid, side, &mut rng),
+            crypto_state,
             handshake_cid: local_cid,
             remote_handshake_cid: remote_cid,
             local_cid_state,
@@ -430,7 +440,7 @@ impl Connection {
             remote_max_path_id: PathId::ZERO,
             max_path_id_with_cids: PathId::ZERO,
             abandoned_paths: Default::default(),
-            khor_status_changed: false,
+            khor_recheck_backups: false,
 
             n0_nat_traversal: Default::default(),
             qlog,
@@ -458,6 +468,15 @@ impl Connection {
     #[must_use]
     pub fn poll_timeout(&self) -> Option<Instant> {
         self.timers.peek()
+    }
+
+    /// Returns the instant at which `timer` is armed to fire, or `None` if it is not.
+    ///
+    /// `None` covers the timer never having been armed, having fired, and having been
+    /// cancelled.
+    #[cfg(test)]
+    pub(crate) fn timer_pending(&self, timer: Timer) -> Option<Instant> {
+        self.timers.get(timer)
     }
 
     /// Returns application-facing events
@@ -831,7 +850,7 @@ impl Connection {
                     .pending
                     .path_status
                     .insert(path_id);
-                self.khor_status_changed = true;
+                self.khor_recheck_backups = true;
                 prev
             }
             None => path.local_status(),
@@ -1036,8 +1055,8 @@ impl Connection {
             false => NonZeroUsize::MIN,
             true => max_datagrams,
         };
-        if mem::take(&mut self.khor_status_changed) {
-            self.resend_off_slow_backups(now);
+        if mem::take(&mut self.khor_recheck_backups) {
+            self.resend_off_backups(now);
         }
 
         // Each call to poll_transmit can only send datagrams to one destination, because
@@ -1488,7 +1507,7 @@ impl Connection {
         // - If coalescing, finish packet without padding to leave space in the datagram.
         // - If not coalescing, complete the datagram:
         //   - Finish packet with padding.
-        //   - Set the transmit segment size if this is the first datagram.
+        //   - Finish the datagram, which sets the segment size if this is the first datagram.
         // - Loop: next iteration will exit the loop if nothing more to send in this space. The
         //   TransmitBuf will contain a started datagram with space if coalescing, or completely
         //   filled datagram if not coalescing.
@@ -1735,15 +1754,18 @@ impl Connection {
                 // Send a close frame in every possible space for robustness, per
                 // RFC9000 "Immediate Close during the Handshake". Don't bother trying
                 // to send anything else.
-                // TODO(flub): This breaks during the handshake if we can not coalesce
-                //    packets due to space reasons: the next space would either fail a
-                //    debug_assert checking for enough packet space or produce an invalid
-                //    packet. We need to keep track of per-space pending CONNECTION_CLOSE to
-                //    be able to send these across multiple calls to poll_transmit. Then
-                //    check for coalescing space here because initial packets need to be in
-                //    padded datagrams. And also add space checks for CONNECTION_CLOSE in
-                //    space_can_send so it would stop a GSO batch if the datagram is too
-                //    small for another CONNECTION_CLOSE packet.
+                // TODO(flub): We need to keep track of per-space pending CONNECTION_CLOSE to
+                //    be able to send these across multiple calls to poll_transmit. And also
+                //    add space checks for CONNECTION_CLOSE in space_can_send so it would
+                //    stop a GSO batch if the datagram is too small for another
+                //    CONNECTION_CLOSE packet.
+
+                // If what is left of this datagram is too small for another packet, finish
+                // it so the next space starts a fresh datagram rather than a packet being
+                // coalesced past its end.
+                if transmit.datagram_remaining_mut() < MIN_PACKET_SPACE {
+                    transmit.finish_datagram();
+                }
                 return PollPathSpaceStatus::WrotePacket {
                     last_packet_number: last_pn,
                     pad_datagram,
@@ -1849,11 +1871,7 @@ impl Connection {
                     builder.finish_and_track(now, self, path_id, pad_datagram);
                 }
 
-                // If this is the first datagram we set the segment size to the size of the
-                // first datagram.
-                if transmit.num_datagrams() == 1 {
-                    transmit.clip_segment_size();
-                }
+                transmit.finish_datagram();
             }
         }
     }
@@ -1886,8 +1904,6 @@ impl Connection {
         }
 
         builder.finish_and_track(now, self, path_id, PadDatagram::ToSize(probe_size));
-
-        self.path_stats.get_mut(path_id).sent_plpmtud_probes += 1;
 
         Some(self.build_transmit(path_id, transmit))
     }
@@ -1990,7 +2006,7 @@ impl Connection {
 
         if can_send.other && !need_loss_probe && !can_send.close {
             let path = self.path_data(path_id);
-            if path.in_flight.bytes + bytes_to_send >= path.congestion.window() {
+            if path.in_flight.bytes + bytes_to_send > path.congestion.window() {
                 trace!(
                     ?space_id,
                     %path_id,
@@ -2508,7 +2524,10 @@ impl Connection {
                         for (path_id, pns) in
                             self.spaces[self.highest_space].number_spaces.iter_mut()
                         {
-                            if paths.get(path_id).is_none_or(|p| p.data.keep_alive.is_none()) {
+                            if paths
+                                .get(path_id)
+                                .is_none_or(|p| p.data.keep_alive.is_none())
+                            {
                                 pns.pending_ping = true;
                             }
                         }
@@ -2595,6 +2614,9 @@ impl Connection {
                         PathTimer::LossDetection => {
                             self.on_loss_detection_timeout(now, path_id);
                             if let Some(path) = self.paths.get_mut(&path_id) {
+                                if path.data.local_status() == PathStatus::Backup {
+                                    self.khor_recheck_backups = true;
+                                }
                                 self.qlog
                                     .emit_recovery_metrics(path_id, &mut path.data, now);
                             } else {
@@ -2728,7 +2750,13 @@ impl Connection {
         let path = self.paths.get(&path_id)?;
         let mut stats = self.path_stats.get(path_id).unwrap_or_default();
         stats.rtt = path.data.rtt.get();
+        stats.latest_rtt = path.data.rtt.latest_sample();
+        stats.rtt_samples = path.data.rtt.sample_count();
+        let times = path.data.rtt.sample_times();
+        stats.latest_rtt_sent = times.map(|(sent, _)| sent);
+        stats.latest_rtt_received = times.map(|(_, received)| received);
         stats.cwnd = path.data.congestion.window();
+        stats.bandwidth_estimate = path.data.congestion.metrics().bandwidth_estimate;
         stats.current_mtu = path.data.mtud.current_mtu();
         // khor patch 3: the path's run of probe timeouts.
         stats.pto_count = path.data.pto_count;
@@ -2764,11 +2792,18 @@ impl Connection {
     ///
     /// Causes an ACK-eliciting packet to be transmitted on the path.
     pub fn ping_path(&mut self, path: PathId) -> Result<(), ClosedPath> {
+        // khor patch 13: explicit probes need prompt ACK evidence, not the peer's
+        // delayed-ACK timer. Ordinary ping/keepalive policy remains unchanged.
+        // Cached parameters must never enable this 1-RTT-only frame in 0-RTT.
+        let request_immediate_ack = self.state.is_established()
+            && self.highest_space == SpaceKind::Data
+            && self.peer_supports_ack_frequency();
         let path_data = self.spaces[self.highest_space]
             .number_spaces
             .get_mut(&path)
             .ok_or(ClosedPath { _private: () })?;
         path_data.pending_ping = true;
+        path_data.pending_immediate_ack |= request_immediate_ack;
         Ok(())
     }
 
@@ -3110,16 +3145,14 @@ impl Connection {
                     Duration::from_micros(ack.delay << self.peer_params.ack_delay_exponent.0),
                 )
             };
-            let rtt = now.saturating_duration_since(
-                self.spaces[space]
-                    .for_path(path)
-                    .largest_acked_packet_send_time,
-            );
+            let sent = self.spaces[space]
+                .for_path(path)
+                .largest_acked_packet_send_time;
 
             let next_pn = self.spaces[space].for_path(path).next_packet_number;
             let path_data = self.path_data_mut(path);
             // TODO(@divma): should be a method of path, should be contained in a single place
-            path_data.rtt.update(ack_delay, rtt);
+            path_data.rtt.update_at(ack_delay, sent, now);
             if path_data.first_packet_after_rtt_sample.is_none() {
                 path_data.first_packet_after_rtt_sample = Some((space.kind(), next_pn));
             }
@@ -3413,8 +3446,10 @@ impl Connection {
             if packet_too_old || largest_acked_packet_pn >= packet + packet_threshold {
                 // The packet should be declared lost.
                 if Some(packet) == in_flight_mtu_probe {
-                    // Lost MTU probes are not included in `lost_packets`, because they
-                    // should not trigger a congestion control response
+                    // MTU probes are handled separately: they should not trigger
+                    // retransmission or a congestion control response. They are still
+                    // counted in the `lost_packets`/`lost_bytes` stats (in
+                    // `handle_lost_packets`), consistent with `sent_packets`.
                     lost_mtu_probe = in_flight_mtu_probe;
                 } else {
                     lost_packets.push(packet);
@@ -3461,19 +3496,19 @@ impl Connection {
         );
     }
 
-    /// khor patch 7 (vendor/noq-proto/KHOR.md): **resends what is in flight on a backup path far
-    /// slower than the path data goes on now** (twice its round trip and [`KHOR_FAR_BY`] are
-    /// still no more), as if lost: stream data and whatever else is retransmittable goes out
-    /// again on the available path at once.
+    /// khor patch 7/9: resends outstanding data on a backup that stopped answering or is far
+    /// slower than the path data goes on now. A blackholed path retains its last good RTT;
+    /// the same unanswered predicate used by selection must also release its in-flight data.
     ///
     /// A stream is delivered in order, so what went out on a slow path holds up all that came
     /// after it on the fast one: netlab f4, turing's connection to the phone took the relay
     /// (1.7 s late) for a second while the phone's direct leg was black, came back to direct
     /// one tick after the leg answered, and the hop's stream on it delivered nothing new for
-    /// 1.5 s more, until the last bytes sent by relay arrived.  Run when a path's local status
-    /// changed ([`Self::set_path_status`]); the copies that do arrive late are duplicates the
-    /// receiver drops.  Between paths of about one speed nothing is resent.
-    fn resend_off_slow_backups(&mut self, now: Instant) {
+    /// 1.5 s more, until the last bytes sent by relay arrived. Run after a path's local status
+    /// changed ([`Self::set_path_status`]) or a backup's loss detection timeout: it can become
+    /// unanswered after the status change. Late copies are duplicates the receiver drops.
+    /// Between live paths of about one speed nothing is resent.
+    fn resend_off_backups(&mut self, now: Instant) {
         let fastest = self
             .paths
             .iter()
@@ -3487,17 +3522,23 @@ impl Connection {
         let Some(fastest) = fastest else {
             return;
         };
-        let slow: Vec<PathId> = self
+        let backups: Vec<PathId> = self
             .paths
             .iter()
             .filter(|(id, p)| {
-                !self.abandoned_paths.contains(id)
-                    && p.data.local_status() == PathStatus::Backup
-                    && fastest * 2 + KHOR_FAR_BY <= p.data.rtt.get()
+                !self.abandoned_paths.contains(id) && p.data.local_status() == PathStatus::Backup
             })
             .map(|(id, _)| *id)
             .collect();
-        for path_id in slow {
+        for path_id in backups {
+            let far_slower = fastest * 2 + KHOR_FAR_BY <= self.path_data(path_id).rtt.get();
+            if !far_slower
+                && self
+                    .path_stats(path_id)
+                    .is_none_or(|stats| stats.unanswered_for(now).is_none())
+            {
+                continue;
+            }
             let Some(space) = self.spaces[SpaceId::Data].number_spaces.get(&path_id) else {
                 continue;
             };
@@ -3515,7 +3556,7 @@ impl Connection {
             if pns.is_empty() {
                 continue;
             }
-            trace!(%path_id, count = pns.len(), "resending what is in flight on a slow backup path");
+            trace!(%path_id, count = pns.len(), "resending what is in flight on a slow or unanswered backup path");
             self.handle_lost_packets(
                 SpaceId::Data,
                 path_id,
@@ -3686,7 +3727,12 @@ impl Connection {
                 .unwrap()
                 .remove_in_flight(&info);
             self.path_data_mut(path_id).mtud.on_probe_lost();
-            self.path_stats.get_mut(path_id).lost_plpmtud_probes += 1;
+            let path_stats = self.path_stats.get_mut(path_id);
+            path_stats.lost_plpmtud_probes += 1;
+            // MTUD probes are also counted in the general lost_packets/lost_bytes
+            // counters, consistent with sent_packets/sent_bytes counting all packets.
+            path_stats.lost_packets += 1;
+            path_stats.lost_bytes += info.size as u64;
         }
     }
 
@@ -4208,7 +4254,8 @@ impl Connection {
 
         crypto_space
             .crypto_stream
-            .insert(crypto.offset, crypto.data.clone(), payload_len);
+            .insert(crypto.offset, crypto.data.clone(), payload_len)
+            .map_err(|_| TransportError::INTERNAL_ERROR("too many gaps in crypto stream buffer"))?;
         while let Some(chunk) = crypto_space.crypto_stream.read(usize::MAX, true) {
             trace!("consumed {} CRYPTO bytes", chunk.bytes.len());
             if self.crypto_state.session.read_handshake(&chunk.bytes)? {
@@ -4624,7 +4671,9 @@ impl Connection {
             if self
                 .paths
                 .get(&path_id)
-                .map(|p| p.data.validated && p.data.network_path == network_path)
+                .map(|p| {
+                    p.data.validated && p.data.network_path.is_probably_same_path(&network_path)
+                })
                 .unwrap_or(false)
             {
                 self.connection_close_pending = true;
@@ -5012,7 +5061,10 @@ impl Connection {
                         .map(|span| span.record("path", tracing::field::display(&ack.path_id)));
                     self.on_path_ack_received(now, packet.header.space().into(), ack)?;
                 }
-                Frame::Close(reason) => {
+                // Per RFC 9000 §12.4 Table 3, only a CONNECTION_CLOSE frame of type 0x1c may appear
+                // in Initial or Handshake packets. An application close (0x1d) falls through to the
+                // catch-all arm below.
+                Frame::Close(reason @ Close::Connection(_)) => {
                     self.state
                         .move_to_draining(Some(reason.into()), &mut self.endpoint_events);
                     return Ok(());
@@ -5083,9 +5135,12 @@ impl Connection {
             }
 
             let _guard = span.enter();
+            // RFC 9000 §12.5: CRYPTO frames cannot be sent in 0-RTT packets. Both CONNECTION_CLOSE
+            // types are permitted there, as 0-RTT belongs to the application data packet number
+            // space; see §12.4 Table 3.
             if packet.header.is_0rtt() {
                 match frame {
-                    Frame::Crypto(_) | Frame::Close(Close::Application(_)) => {
+                    Frame::Crypto(_) => {
                         return Err(TransportError::PROTOCOL_VIOLATION(
                             "illegal frame type in 0-RTT",
                         ));
@@ -5306,22 +5361,9 @@ impl Connection {
                             self.open_nat_traversed_paths(now);
                         }
                         Ok(Some((retired, reset_token))) => {
-                            let pending_retired =
-                                &mut self.spaces[SpaceId::Data].pending.retire_cids;
-                            /// Ensure `pending_retired` cannot grow without bound. Limit is
-                            /// somewhat arbitrary but very permissive.
-                            const MAX_PENDING_RETIRED_CIDS: u64 = CidQueue::LEN as u64 * 10;
-                            // We don't bother counting in-flight frames because those are bounded
-                            // by congestion control.
-                            if (pending_retired.len() as u64)
-                                .saturating_add(retired.end.saturating_sub(retired.start))
-                                > MAX_PENDING_RETIRED_CIDS
-                            {
-                                return Err(TransportError::CONNECTION_ID_LIMIT_ERROR(
-                                    "queued too many retired CIDs",
-                                ));
-                            }
-                            pending_retired.extend(retired.map(|seq| (path_id, seq)));
+                            self.spaces[SpaceId::Data]
+                                .pending
+                                .retire_cids(path_id, retired)?;
                             self.set_reset_token(path_id, network_path.remote, reset_token);
                             self.open_nat_traversed_paths(now);
                         }
@@ -5333,10 +5375,10 @@ impl Connection {
                             // RETIRE_CONNECTION_ID might not have been previously sent if e.g. a
                             // range of connection IDs larger than the active connection ID limit
                             // was retired all at once via retire_prior_to.
-                            self.spaces[SpaceId::Data]
-                                .pending
-                                .retire_cids
-                                .push((path_id, frame.sequence));
+                            self.spaces[SpaceId::Data].pending.retire_cids(
+                                path_id,
+                                frame.sequence..frame.sequence.saturating_add(1),
+                            )?;
                             continue;
                         }
                     };
@@ -6978,6 +7020,12 @@ impl Connection {
         Some(packet.payload.to_vec())
     }
 
+    /// How many 1-RTT packets may still be sent before the keys are updated
+    #[cfg(test)]
+    pub(crate) fn key_phase_size(&self) -> u64 {
+        self.crypto_state.key_phase_size
+    }
+
     /// The number of bytes of packets containing retransmittable frames that have not been
     /// acknowledged or declared lost.
     #[cfg(test)]
@@ -7108,22 +7156,16 @@ impl Connection {
     /// may need to be sent.
     fn can_send_1rtt(&self, path_id: PathId, max_size: usize, zero_rtt: bool) -> SendableFrames {
         let network_path = self.path_data(path_id).network_path;
-        let space_specific = self
-            .paths
+        let space_specific = self.paths.get(&path_id).is_some_and(|path| {
+            path.data.pending_challenge || (!zero_rtt && !path.data.pending.is_empty())
+        }) || self.spaces[SpaceKind::Data]
+            .number_spaces
             .get(&path_id)
-            .is_some_and(|path| path.data.pending_challenge || (!zero_rtt && !path.data.pending.is_empty()))
-            || self.spaces[SpaceKind::Data]
-                .number_spaces
-                .get(&path_id)
-                .is_some_and(|pns| pns.pending_path_responses.has_pending_on_path(network_path));
+            .is_some_and(|pns| pns.pending_path_responses.has_pending_on_path(network_path));
 
         // Stream control frames are checked in PacketSpace::can_send, only check data here.
-        let other = self.streams.can_send_stream_data()
-            || self
-                .datagrams
-                .outgoing
-                .front()
-                .is_some_and(|x| x.size(true) <= max_size);
+        let other =
+            self.streams.can_send_stream_data() || self.datagrams.outgoing.can_send_1rtt(max_size);
 
         // All `false` fields are set in PacketSpace::can_send.
         SendableFrames {
@@ -7767,7 +7809,7 @@ fn get_max_ack_delay(params: &TransportParameters) -> Duration {
 /// Prevents overflow and improves behavior in extreme circumstances.
 const MAX_BACKOFF_EXPONENT: u32 = 16;
 
-/// khor patch 7: the slack in "far slower" ([`Connection::resend_off_slow_backups`]), so that
+/// khor patch 7: the slack in "far slower" ([`Connection::resend_off_backups`]), so that
 /// two fast paths a few milliseconds apart are not far apart.
 const KHOR_FAR_BY: Duration = Duration::from_millis(10);
 
@@ -7934,6 +7976,9 @@ fn negotiate_max_idle_timeout(x: Option<VarInt>, y: Option<VarInt>) -> Option<Du
         (Some(x), Some(y)) => Some(Duration::from_millis(cmp::min(x, y).0)),
     }
 }
+
+#[cfg(test)]
+pub(crate) mod ack_sampling_contract;
 
 #[cfg(test)]
 mod tests {
