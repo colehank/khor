@@ -1187,7 +1187,6 @@ jobs:
           fc-match 'Noto Sans CJK SC'
           npx playwright-core install chromium
       - name: Check shared frontend rules for the final tree controls
-        if: inputs.lab_checks != 'all'
         working-directory: apps/gui
         run: npm run test:unit && npm run gates && npm run mobile:static
       - name: Verify native drag routes with pinned Tauri delivery
