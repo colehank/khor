@@ -1,167 +1,81 @@
 # feat/net 当前状态与接续入口
 
-更新于 2026-11-13 01:57 UTC（下列实际收据时间优先）。用户“定好目标，开始”已恢复执行；完整目标 [GOAL](GOAL.md) 与 [PLAN](PLAN.md) N0–N5 **未完成**。
-用户ToDesk级体验、iroh/Rust极致优化及原约束均已记入GOAL/PLAN v3。root串行，不派发子智能体。目标服务旧paused状态不覆盖本次明确恢复授权。
+更新于 2026-11-13T20:55:26.503130+00:00。完整[GOAL](GOAL.md)/[PLAN](PLAN.md) N0–N5 **未完成**；逐项缺口见[REQUIREMENTS](REQUIREMENTS.md)。用户已授权持续实施/远端验证，root串行、不派子智能体；不因局部通过停止。无main合并、正式发布、生产Relay采购部署或现装App替换授权。
 
-此前STATE逐字保存在 [上轮完整状态](HISTORY-20261113-iroh-recovery-and-stability-preparation.md)，其中继续链接所有更早历史、原失败、收据及冻结输入。
-历史SHA256 `3e1fe2e38c7f7d90fa34166977390a8e2918564a7ab2370d01cf5c906f970753`。本页只描述当前事实和下一步；历史中“当前在途”按其时点理解，不能再次启动已关闭批次。
+E=`/Volumes/disk0/Khor/evidence/net`；全部worktree在`/Volumes/disk0/Khor/worktrees/current/`。此前STATE逐字归档[HISTORY-through-relay-health-v2](HISTORY-20261113-through-relay-health-v2.md)，SHA256 `04c4a8d83d8f48a963f0762581843009788d3f24cdadeebd89f29dc55ce744c5`；其中保留更早全部历史/失败/来源链接。历史pending/PID不用于重派。
 
-## 当前执行：产品集成与完整验证
+## 当前唯一执行与接着工作
 
-旧新真实混版观察协议v2已完成并闭批：`turing-20261113T011900Z-19b49119`，control **de74a134bb5a1d2416fbf1736bd05c50ab696731**，source仍准确3b734073。**0/160.457763s、原Rust1过/0失败/0忽略**；原双向row/pin、old/new两常驻host及其sleep子进程均实见，原身份/hash/group空及23原reportfiles核验。controller仅用私有subreaper补齐快速分离子进程见证，并按inode缓存ELF hash；独立零产品运行校准通过。原产品fixture与最终行为断言未改、编译执行零、实际混版runtime一次、替代零。proof E/该run/mixed-observer-v2-verification.json；ledger pending=false/behavior_verified=true。只接受此窄互通合同，不是完整N5、旧pre-Versions回退、手机、WAN或能耗接受。旧两次失败原样保留，见[IROH-MIXED](IROH-MIXED.md)。当前本任务无Turing在途。
+**F3十组件203529Z-34d82f2e已0/72.022379秒闭证**，25files/identity/owned完整，冷编译33.83秒、413artifact全部fresh=false；新增3与原7全部通过。run/relay-health-progress-component-verification-v1.json；不代Release或真机结论。
 
-已建立独立集成树 **khor-net-product-integration-v1**、分支 **integrate/net-product-v1**。最初基于本地main57a69；随后核实其是公开main **c3b098bdbf52a9b3b38e887ae74b90155292b544** 的祖先，已将实际公开main合入本任务集成树，绝不将旧GUI候选当最终产品。集成merge **a3e07d34133b3a1b4d4ee66d82fd8d0cab37436e**、tree **da403915d443fe2e52f5f0a2a4d32030dd12244b**，自动合并无冲突，apps/逐字保留公开main；三份锁的iroh1.4.1/Noq1.4.0一致。原feat/net运行时不变，用户main、已安装App、其他任务Lab23961均未动。集成源码尚未经过完整Quality，不晋升或发布。
+**F3普通Release producer203855Z-f070edef已0/592.435102秒闭证**，22files/identity/strict native完整，Rust9分01秒、实际CLI fresh=false。source7a79427414b40d96d18db6a867236560ac6d01bb/tree173ce959113a03b42b2c556a69140d8c63e9a5e9/snapshoteef032c13f37f66d049f58c12be0cc93ea1afd4b；CLI a2a655f73f168dc10ed580e1a578c5db5c3056a6d5207aacceebc82aebba450d，fulltest788230d99aec5e32ae4db895f55dcaf5b1caad9b08b295bfbede80a600e6f181。run/relay-health-progress-native-compile-verification-v1.json。普通Release/原features[]/无qlog与net-diagnostics保持，不代业务接受。
 
-下一步：同步本轮文档后，冻结同树验证提交，以公开main为唯一parent，在独立 `verify/net-product-v1` 分支运行仓库原生完整Quality（suite=all/interaction_scope=all），不推main/tag、不触发release；保存实际source/tree/run。该tree已公开的3b网络源码与当前公开main合成，不发布私有实验祖先DAG。继续Release真实业务基线、唯一middle冷启动接管、地址变化和custom退出核查。完整N0–N5未完成；最终性能协议必须在执行前绑定最终arm与原门，不沿用旧候选的测试身份冒充新集成验证。
+**F3两组原业务合同已全部闭证，共固定6场168/168真实读成功、0超时。** silent205454Z-a05d8a1c 0/166.430165秒、15files/identity/native/CPU/owned完整，三场首有效响应953959/872597/934411μs，原2秒caller/250ms计划不改。healthy205820Z-118a2b49 0/102.174631秒，同15files与来源/资源/清理闭，42/42读成功、三场原TCP均不变、changed=0，124→976ms原delay/filter/no-drop/5秒caller保持。两原fixture逐字不改，无运行编译/替代；E/relay-health-progress-combined-runtime-verification-v1.json及两run/relay-progress-*-runtime-verification-v1.json。仅窄修复合同接受，不代全N4/N5或总体可靠率。
 
-## 已保留的混版v1失败
+**当前Turing无pending。独立I3已保留F3并无冲突集成main与harness，接着冻结准确源检查**：E/relay-health-progress-integration-intent-v1.json前置两组已满足。新khor-net-product-integration-v3 / integrate/net-product-v3从F3保留全部runtime，合入已观察main9a4219ff并应用独立harness87ff588a；main/现装App/旧Lab23961保持。补齐patch15扩展说明，冻结准确clean源后发可信完整Quality和Mac Lab，继续旧N3/N4/custom缺口；不得把这6绿写成完整目标完成。
 
-首个真实runtime `turing-20261112T192613Z-c2c8ebe2`，control **ce4998f58fe1cc70d8b84e1854582d8828d27223**、source3b，controller1/187.838121s；原Rust1过、138.35s，四项row/pin均同步。原observer见65个owner干净退出，但只见old host，198行原后置断言失败，accepted=false。21原files/hash/identity/group空，proof mixed-runtime-screen-v1.json及ledger保留。原祖先采样可能漏掉快速分离进程，重复哈希约264MB ELF也会延长采样；这是框架可见缺口，不独立证明旧失败唯一根因。v2独立声明修正观察协议后才执行，未放宽原host/child门。
+**健康jitter真实3场已完整重现F2误断，F2不晋升。** runtime201418Z-2b427674 **1/112.210432秒**、15files/identity/native/CPU/owned闭：42/42实际读成功、无队列drop，但三场原TCP都在约1.11秒消失后被新tuple替换。100ms内核采样、原124→976ms delay/filter/无drop和原5秒caller均独立核验，protocol_verified=true；每场158/159/161次改变观测。run/relay-health-jitter-runtime-verification-v1.json。原silent3场改善依然保留，但不足以全面采用F2。
 
-混版第一次准备 `turing-20261112T190345Z-5b6f85b7`，control054/source3b，1/459.251317s，26files/hash/identity/group空已核；**没有mixed-runtime.log或contract，零互通runtime**。错误是控制脚本139行假定cargo test不会重建CLI，普通build ELF dcd289与实际test producer的418df3不同；原old/new只读copy均保持原hash。失败原样保存，E/该run/mixed-preflight-failure-v1.json，ledger闭controller_preflight_failure，不是产品互通红。E/iroh14-mixed-resume-plan-v1.json SHA7d388c89dba9d0067283e70def0a2188fae81eb166d577a248989b871a9d3601声明只复用已准入old只读ELF、从原verified test producer选择实际CLI，用原require_provenance再次核文件/源码/context；不改verifier，不再编译，原runtime/host/child/断言body逐字相同（SHA11f48a3e67608f0f543bd07d707a2a91db4e1b1912a91bdb9e279b61abc6603a），允许实际runtime一次/替代零。ctrl/proof在E/iroh14-mixed-resume-control-v1.json。
+**下一候选F3已在独立khor-net-relay-health-progress-v1提交7a794274，十组件与Release已核，仅窄6场业务接受，完整目标未齐。** 从J2 a199ff48起仅改vendor/iroh/src/socket/transports/relay/actor.rs，原silent与healthy夹具全部字节保持。E/relay-health-progress-design-v1.json提前冻结：同一ping的full max_timeout仍从首次发送固定不延长；RTT早期检查仅在没有收到Relay消息时判坏，收到实际消息只让过早期判断，匹配pong才结束整次检查。connected/pending-send两循环共用状态，无新周期timer/额外ping/应用重放。新增3原生合同（无回包早期失败、有进展等pong、持续进展不延长硬期限），保留原7，先跑固定10组件再普通Release原6场。
 
-## 已收齐的长稳对照
+健康夹具J2原生producer200542Z-1bf520ed **0/238.758950秒**、24files/identity/strict native闭，Rust3分08秒。source a199ff480e7c817c6a4bcbb94e3f349e85a4e23f/tree3b4a982616787852a5a9561b799f5656dd74fd3a，CLI逐字F2 ef9a、fulltest3813e1a72e0295fb8eaf3865702053bb5ed757e9fa0a73bfa30e367d27ea65b7。run/relay-health-jitter-native-compile-verification-v2.json；该源只是测试桥，产品仍F2。
 
-暂停现场已核：coordinator61277不存在，原candidate用户取消已完成收件/identity/group空，ledger无pending，Turing原独占锁可取。保留baseline完整5/0、28journal、22CPU与32目录请求原证据；按E/iroh14-policy-stability-resume-plan-v1.json（SHA a67d29b161db39ea368f55b916d2ca2c0f1251ef55c5aa917de9810705bb1a9e）只补一轮完整candidate。源码/控制/五原case/600秒/原门/资源均不改，原用户取消部分保留；不重跑baseline，不追加失败替代。随后执行mixed，再建立Release性能基线。准确补齐run **turing-20261112T180542Z-c09f6a3c**，PID2328430，18:06:03 UTC启动，revision iroh14_policy_stability_candidate_resume_v1，control f862/source adf39a4c。启动exec已终态，root恢复为唯一串行ledger writer，旧coordinator不再启动；计时期间不插入自己的其他Turing重型任务。
+首个健康夹具预校准195501Z-d304e9a5 **1/25.804405秒**保留，14files/identity闭，tc filter JSON格式导致解析失败，Cargo/产品/场景0；run/relay-health-jitter-preflight-failure-v1.json。随后改为filter原文与qdisc JSON、实际u32/统计核验，先恢复旧准入F2 source并验selected5，再切J2，完整来源/恢复记录保留；不弱化SLO或记产品失败。
 
-该candidate现已 **0/3138.550709s、5过/0失败/0忽略**，11原reportfiles收件/hash/identity/group空、原resume专属审计及ledger闭；28journal覆盖与CPU64上22记录过。两arm原p1/p1h/p1j/p1s零move/retired/network changes，p5每档四次150/300/600ms零Relay/零punch。原取消candidate已52.58秒重编，恢复直接复用同树adf已有构建，build0.54s；不是跳过不同源码的编译验证。
+root唯一ledger writer，无后台协调器。恢复先查source-refs和实际worktree/source，不按历史PID/旧pending重派。下一组件入口和准确源码见下次实际receipt；旧F2控制器不能拿来冒充新F3。
 
-E/iroh14-policy-stability-resume-results-v1.json为完整描述性对照：两边各64原始attempt记录/32逻辑目录请求全ok；p1s最大4690364→868648us，p5最大828673→920018us；p1h alpha包4242→5683（+33.970%）、字节745939→1028707（+37.908%）。这些含本地IPC/目录处理、单端计数与中断后时序差异；不能宣称全局延迟改善、成本最优、p99、能耗或单补丁因果。批次完整关闭，accepted/promotion均false，不追加同源挑绿。
+## 已确认的本轮改进
 
-## Actions已通过公开khor-build恢复
+**真实前台Relay TCP静默：固定3红→固定3绿。** 详[RELAY-DEMAND](RELAY-DEMAND.md)及[DESIGN](DESIGN.md)。原双strict NAT/单Relay只drop旧alpha TCP tuple、新flow可通。原idle c的30秒观察门曾通过，但没有前台业务；不能拿它代最佳体验。
 
-用户问能否通过公开仓库恢复Actions。只读查明私库colehank/khor-build的43205919189被付款/额度拦截、prepare零step；macserver最新SSH仍banner timeout255。colehank/khor已经public，私库失败后其公开release43227326496仍成功。其现有Developer Lab（410114960，workflow blob404aed5fddbe4c8ecd9b8569ec9d4afcb4d25d9f）含ubuntu前端/检查与macos-26标准托管原生构建，可作为待确认的替代路线；不触发release。
+- 旧源D `62b28e084a8cf72593a9ed1ba270327d281f9d49`仅加测试、runtime逐字I2/R。普通Release runtime `184914Z-5cfe53b4` **1/198.559489秒**，15files/identity/native/CPU/owned闭：126实际读**96ok/30timeout**；每场40故障后读10timeout/30ok，首有效响应20042371/20040904/20049739μs。真实nft/tuple/新marker及所有起止记录独立核验，原件保留。
+- 修复F2 `81ae5c9812b06298a06549f1c16a3728baac2c8d` / tree`ba3da3451c027904b657183bc26d990191d75c30`，worktree khor-net-relay-demand-repair-v1。resident有活请求、开始后未收到任何对端datagram、选中Relay且达到max(250ms,3×路RTT)时，提示现有Relay健康检查；同TCP actor仅持一个未完成health ping，匹配pong/原timeout结束它，周期ping不能替换deadline。原wire退役/读写重试/总预算不改，无全endpoint rebind或新增周期timer。入口也供后台同步使用，不能宣称idle流量/能耗不变。
+- F2普通Release producer `191019Z-979f0ccd` **0/594.656134秒**、22files/identity/strict native闭，Rust9分02秒，CLI **ef9a3dd1061ab557c4aa1709b9a14901813efff2e91251bbdef5e415f8c49519**，fulltest **2296f0f2b87910dee724f65b9b52957e7e255bf9e0d9a29ea24fbb63f1816f4b**，实际fresh=false。run/relay-silent-demand-repair-native-compile-verification-v2.json。
+- 原fixture逐字不变的F2 runtime `192107Z-941d6b67` **0/166.445581秒**、15files/identity/native/CPU/owned闭：**126/126成功、0超时**，首有效响应**960623/958965/906570μs**，原2秒caller/250ms计划间隔未改，无替代/运行编译。control5ee17e95bb98278e1fd6f65e846b8896a788e96a，协议2f07687a98b22247826a0ffd37f0632d6bf5de41dfb5e2655346821935c7ecdc；run/relay-silent-demand-repair-runtime-verification-v2.json。
+- 这不是同期交错A/B、总体可靠率/p99或手机现场。健康抖动、发送队列已堵、one-shot、长请求后半程、其他协议/peer relay以及成本仍待验，F2未晋升canonical。
 
-用户“开放吧”并澄清“为什么让khor-build开放不行？”，已按原意将 **colehank/khor-build改为public**，GitHub API复核public/admin；全部既有分支和历史保留。原复用公开产品库khor的提议已被此决定取代，没有向产品库khor推送快照或dispatch。E/khor-build-visibility-transition-v1.json绑定授权与结果。 控制库README已同步公开约定，docs-only commit9b671817e34846df9e14c213a562ab88309cb45a；未改任何workflow或产品main，原Lab run仍绑定6ed3ce控制版本。此前付款失败和SSH超时保留，不把建议私有误作永久技术限制。
+F1 `33718341...`普通Release producer185850Z-ad21afa7已0/602.427023秒闭、**runtime0**。静态审查发现上游PingTracker每次new_ping替换deadline，仅500ms节流可能被并发提示推迟，故保留编译、不晋升；F2用实际TCP内未完成ping合并，原F1源/收据不改。
 
-公开前核466个远端branch、8819个可达对象、4606个普通blob及212个bundle头，后者均指向已可达源码图，无额外prerequisite；唯一密钥格式命中是与公开main逐字相同的vendor/tiny_http示例TLS key。无tag，历史工作流无外部PR/评论等代码触发器，默认token只读；自托管runner存在，现有任务均手动dispatch。E/khor-build-publication-source-audit-v1.json及actions/branches-before保留；这只是已知格式源码检查，不宣称全日志/历史artifact凭据排除。
+## 当前F2的实际回归与控制器失败
 
-已在该公开构建库上传准确3b候选snapshot4a688a33，request **e6c996efe74043858e4b0d2c000c2c7b**，完整Lab **43282299770**，control main **6ed3ce0429f767525319b6ace6c374919a48ce16** / workflow blob **9c9a39eaa9c01f00b0e0f00c9b9cd4fda2651555**；port23962。**FIRSTATTEMPT四job全部成功**（frontend/native/checks/retire），计费拦截已解除。E/public-native-lab-3b-v1/verification.json核准确源码/native_contract、GH原archive hash及内层native-host.zip hash；native manifest Darwin arm64/独立Lab identifier/managed_frontend+real_backend_verified，GH原生probe source/tree一致。前端原validator通过，浏览器results48及hot通过；完整Quality/手机/本地原生接受仍未完成，**本机原生执行零；尚需配置managed Lab供用户验收**。三原ZIP/原manifest/probe均留E/public-native-lab-3b-v1，已有其他任务Lab23961保持。E/khor-build-public-lab-request-v1.json为准，零替代重复提交。
+- `192504Z-47660213`原想跑组件但root误选net-node，实际标准Node回归 **0/383.521577秒**、21files/identity闭；12组 **278passed/0failed/原ignored1**：net70、whole hop92、wires16、journal30、dial-budget46、IPC18及6租约/取消/恢复合同。run/relay-repair-standard-node-misdispatch-verification-v1.json记录真实suite、原ignored名称和误调度，不代组件/Release性能或冷target来源。
+- 首次正确net-vendor `193344Z-033021a3` **1/57.967688秒**、12files/identity闭：Cargo冷编译33.17秒、413artifact全部fresh=false，但控制器误用Noq kind=['lib']，iroh声明lib+cdylib，选择器失败；**组件0/7执行、未准入native**。run/relay-health-component-preparation-failure-v1.json，原件保留。
+- 修正选择器后的net-vendor `193936Z-3817ecbf` **0/67.994809秒**、22files/identity/owned闭；冷编译33.52秒、413artifact全部fresh=false，**固定7项原生全过**。新增重复提示不延后deadline/匹配pong才解锁；原PingTracker、cancelled task关闭、reconnect、inactive、backoff优先inbox共5项。control4bc91f797c32fe7da3a98a21c55f430f14e5723c；run/relay-health-component-verification-v1.json，来源为standalone iroh锁域＋同源noq-proto，不代Release业务/手机/全目标。
 
-提交工具已在 **45044a84f1dfac9339bfc934a8c4c3341b1864b3** 修复：CLI和Lab共享require_source_builder，仅显式授权的colehank/khor-build同时匹配请求名与GitHub实际full_name时允许public；其他公开库仍在snapshot/upload前拒绝，原私库流程保留。真实CLI已成功提交工具验证run **43283055508**；control验证分支commit **adc701423672e2ea2136e781fbdac6a3e6461897**，未改control main。GH托管Linux三suite **3+14+15=32通过**，artifact13972678652 SHA **7cce5b4a6198ae81994c614e5789763f42551e2d62243b68713c9ac4cdc03282**、source45044/tree624dce/snapshot8410dbe逐项核验，proof E/khor-build-public-tooling-v1/verification.json。本机只做AST/diff结构检查；此结果不是完整Quality或3b原生Lab接受。
+## Quality、独立GUI修正与Mac Lab
 
-该3b候选不是最新GUI发行源；只能作为首个网络候选Lab。最初本地main57a69预览已被本页当前产品集成进展取代；公开main c3b098才是现产品基线。最终同源Quality/真机验收仍待，不把3b原Lab测试挪作新集成源码验证。现有其他任务Lab23961保持。
+**I2完整Quality43474829073原两轮都12/13**，准确3093f86662b9b9ff139f29f85692e84ec2e47358。仅attachment-ui/local-folder-preview目录setInputFiles12秒超时；原12jobs及其他交互均通过，原log/ZIP/attempt1、固定唯一同源attempt2全留。禁止再原样自动重跑；I2未获完整Quality接受。
 
-## 历史暂停（2026-11-13 00:57，本地）
+隔离harness修正 `87ff588a63fa5c1b5b2eec2aee1c3527c9c77e28` / tree99b8b8ba54e687e66749589d185ee683e5901fdf，在khor-net-attachment-harness-v1、基于最新观察main9a4219ffe5e3ceba1f09cd3288cb0e27f91613d7。仅脚本遵循CI已有PLAYWRIGHT_CHROMIUM_CHANNEL空值选bundled Chromium、本地默认Chrome，并记录实际版本；产品UI/断言/12000ms不改。
 
-以下描述历史暂停；本次18:05 UTC明确恢复已覆盖停止授权。coordinator61277已按准确命令身份停止；candidate长稳 turing-20261112T164807Z-a0e7a1d2 由其owned runner SIGTERM正常清理，原返回1/KeyboardInterrupt，原files收件、identity及group空已核验，ledger终态user_cancelled_partial_run，**不是产品回归或长稳接受**。baseline完整5/0与28journal/22CPU/32目录请求原证据保留；candidate部分观察不构成完整配对结果，未启动混版。当前没有本任务自动推进；恢复必须先核该取消收据并显式修订中断后的协议，不能盲目重启已消耗的fixed arm。
+- 独立Quality **43490751091首轮success**，verify/net-attachment-channel-v1，suite=gui/interaction_scope=all：frontend/gui/developer-lab三所选jobs成功，**27/27原GUI交互组全过**、**9/9附件case全过**；actual bundled Chromium151.0.7922.34，目录真实字节/选择保留/临时资源退役通过。
+- E/attachment-channel-quality-completed-v1.json、attachment-channel-artifact-verification-v1.json及精确ZIP/log；ZIP SHA7d694b2c55e78de4111373400e662098568a062a9d124cde49421ddb1fc2230c/CRC已核。
+- 该独立harness树并非F2网络准确源、suite也非all；不覆盖原I2失败或算最终N5。最终集成需带上这份修正，并保留当时main已有成果；当前main含独立暗色图标恢复，不能覆盖别的任务。
 
-## 暂停前执行时点：两组长稳对照
+**I2原生Mac Lab43475243450全部完成并验源**：可信GH macos-26，request56f540fd11ca4a978c52b7ff474487c4、port23965，I2 treebf4d38d7/snapshot385078c7b1c42444cfbdb44d5e2dda927a03ee23。4jobs首轮成功，77浏览器case/热更5项通过、116源码＋10生成绑定核验，362145952B arm64 host SHAe948c3173555ff15392c6020d8ec923c602e67bfc3b648b857d5ed783987b16b，远端probe real_backend=true。E/public-native-lab-net-product-v2/lab-acquisition-verification-v2.json及outer/inner ZIP保留。本机只收集，不执行产品；E/Open-Network-Lab.command未运行，仍要求最终Quality通过，Lab23961不动。这份包不是后续F2/J2或最终候选；SSH macserver最近仍banner timeout。
 
-- run **turing-20261112T155449Z-56a8ac18**，PID **2128254**，15:55:10 UTC启动。
-- task `netlab-stability`，revision `iroh14_policy_stability_baseline_v1`。
-- control **f862ab2defb48d21236c2bdcca736c9a3d108773**，baseline source **515e99f0d886de8035801801a10e7587167cf78b**。
-- receipt及E/source-refs.json已存，启动exec已终态。最近只读仍running，p1已原600秒绿（两端0move/0retired/0punch、四journal完整），p1h/p1j/p1s也已各原600秒绿，p5在途（4/5原结果，未最终收件）；p1s含20次300ms spike，模拟交互最长4.7s。原门只验切换/退役，不能据green接受交互尾部，该4.7s须与候选同场景对照并继续定位；不要重复提交。
-- 先baseline完整终态、收件、identity和行为核验，再candidate **一次**。两组各约50–60分钟，原90分钟守护不变；失败全留、零替代重试。
-- 计时期间不插入自己的其他Turing编译、产品测试或共享source-cache写入。本地源码/文档/证据审计可继续。
+## 其他仍适用的有限证据
 
-**串行自动衔接已运行**：本机coordinator PID **61277**，exec session **48333**，脚本E/ops/run-policy-stability-pair-v1.py。**接续先读 E/iroh14-policy-stability-progress-v1.json，实际phase/run优先于本页静态时点**；完整结果固定写E/iroh14-policy-stability-results-v1.json。local flock防第二个coordinator。该进程活着时，它是root唯一ledger writer，模型只读，不能另行stage/launch/collect/specialized verify或启动其他Turing重型任务。
-它等待现有baseline，顺序收件/identity/原stability审计、在准确原receipt/group空后只stage/launch一次candidate，再顺序收件/核验/输出描述性成本对照。任一控制/元数据错误停止并保存原receipt，不重复提交；原产品红可按冻结协议保留后测另一arm。十次只读SSH连续失败或超过100分钟未观察终态会停协调而不替代原run，远端90分钟守护不变。协调器只执行本批，不晋升、不改源码、不自动派发混版。源码/语法/合成比较准备记录E/iroh14-policy-stability-coordinator-preparation-v1.json；两份原proof始终为行为依据，不凭自动化宣称接受。
+- I2/R当前混合负载171546Z-dfd9502c **0/713.189051秒**，4320/4320实际请求、6完整文件，原low/high/high/low/low/high与2秒门保持；**high仍有超过1秒scheduled尾延迟**，旧超时未定因/豁免。详[CURRENT-MIXED-RELEASE](CURRENT-MIXED-RELEASE.md)。不是F2最新完整N3接受。
+- 当前I2/R IPv6三项163223Z-b6d7f5c7 0/108.146424秒、248实际读成功，含7正1负包校准、同prefix换址/IPv4不变/Node真实阻断IPv4、Both与Remote-first；首有效1.22/1.73秒。四原换网170134Z-6a92a593 0/268.968832秒、496/496读成功，实际IPv4/NAT、双栈prefix、v4→v6-only和middle自身换址/再次carried10秒均核。详[MOBILITY-RELEASE](MOBILITY-RELEASE.md)，不代双端同时变化/手机/包级最优性。
+- 核心9原合同分6+3覆盖。174412Z-b676ad99前6原通过、423实际读成功；p4因root外层owned不足取消、后2未执行，原非零/僵尸记录保留，controller退出后87 observed PID全不存在。175639Z-b739a547剩余3原合同0/813.552456秒补齐，p4原600秒＋30秒settle保持；原idle Relay fresh TCP20s/heard22.9s、uplink919ms。详[CORE-PATHS-RELEASE](CORE-PATHS-RELEASE.md)，不能写原9批全绿。
+- 窄live-middle R9081b94d原sp7 I1三红→R三绿0.78–1.01秒，Linux/Mac whole hop各92/92；Mac43432815139精确同源/guard证据保留。详[LIVE-MIDDLE-RETRY](LIVE-MIDDLE-RETRY.md)。F2标准Node已再过92，Release物理/真机仍需最终源对齐。
+- 旧I1/A Relay可用性132935Z-b055e94a可用1/3、2095ok/2timeout/63blocked；不可用3/3、2160ok，原2秒TTY失败保持。选择器隔离、终端方向6场与持续PTY两场均未重现，不能称根因/修复。local tick正常只排除那两秒全本地计时器停止，不证明远端PTY健康。完整历史与[RELAY-AVAILABILITY](RELAY-AVAILABILITY.md)、[TERMINAL-DIRECTION](TERMINAL-DIRECTION.md)保留。
+- W/CUBIC消融不晋升：W固定18场中2timeout/118blocked，C虽功能绿尾延迟不达；Noq CC矩阵19场/1101请求全成功但2%丢包CUBIC/BBR中位0.326/10.067Mbit/s，否决全局CUBIC。Noq backup-burst四组件181344Z-1de568b8冷编译19.06秒、全4过，只组件，不解旧Node超时或补丁1退出。
+- tuple patch38退出R/M固定6块12场/744读均ok，但强oracle R3/3、移除0/3并mismatch215，保留于已测NAT合同。详[TUPLE-REFRESH-EXIT](TUPLE-REFRESH-EXIT.md)。验证工具typed/root-dev scope修正旧37＋新9共46绿；原失败保留，native_provenance.py SHA7dbd2c0f4048f8cc96a3c9303565b6298c4999daccdd4fe360825d21d225ac7b，不弱化来源或拷fingerprint。
 
-执行前冻结输入：E/iroh14-policy-stability-execution-v1.json绑定双方源码、control、readiness与四份协议/审计/物理结果SHA。
-协议v1 SHA **e89aaa0c657e0bb26e7dfd3f01312a417c9de0f87bd1bff41cc61407b0aa86c6**；v2 SHA **08c27588260363d228c415769d4e96fa01ec71217379e7292eeeae51ccc63b0c**。
-两arm都用iroh1.4.1/Noq1.4.0。baseline为028原25%收益门与旧恢复完成顺序；candidate为3b绝对5/10ms收益门和ACK顺序修复的整体策略对照，不作单一因果归因。
+## 源边界与完整剩余
 
-| arm | overlay source / tree / snapshot | compile-only准入 |
-| --- | --- | --- |
-| baseline | 515e99f0d886de8035801801a10e7587167cf78b / f0005b7544d4e5d93eed5e3dfe19ac021960980b / 10bb1bd227abb145b3591d94dbb413f8b7d66f49 | 154359Z-45ffa1ec，0/77.939305s |
-| candidate | adf39a4c1adbae1a7b35bf98e1a6e9815f7db1b7 / 716caddfe8c009c8055d5d3b839b654474130f5b / ac1b99c3fe292f00b449e233c372aa21c2ac7644 | 154632Z-eb0a7d58，0/77.974962s |
+canonical khor-net/feat/net runtime仍5064fe2a、iroh1.2/Noq1.3，后续文档提交不代表集成。I1=117c39e5，R=9081b94d，I2=3093f866/treebf4d38d7（runtime逐字R、两来源工具修正、apps/.github逐字旧mainc3b098bd）。F2=81ae5c98；J2=a199ff48仅加fixture，产品逐字F2。builder khor-build-net HEAD5d3691f252f9dee0297fa3c494374be6119bca29保持，只新增控制对象/refs。旧A/S/终端/IPv6桥树与完整hash见历史和各证据，不按摘要覆盖原未提交内容。
 
-描述符E/iroh14-stability-{baseline,candidate}-source-v1.json；工作树khor-net-iroh-stability-{baseline,candidate}-v1，分支experiment/net-iroh-stability-{baseline,candidate}-v1。
-两个compile-only均15原files、control e532f19a4bb8939a14a921eaf3d954ccdd77cf5e，format/locked netlab artifact/三锁1.4组/source diff空/hash/identity/group空，readiness proof与ledger已闭；runtime0。
+完整N1路径质量/置信/成本；N2全期限、取消/资源、全部写和0-RTT/NET16；N3真实同步/预览/SSH/hop公平、共享/分连接、背压、1/3/5设备CPU/线程/字节/实际唤醒/手机能耗；N4双端独立与同时IPv4/NAT/IPv6 IID/prefix、锁屏/休眠/Wi-Fi蜂窝、发布/发现/新连接、中继故障域/容量/布局；N5逐项custom、最终同源Quality/Mac/手机/设计报告都未齐。旧idle包+33.970%/字节+37.908%保留。ledger v5的60项=1上游替代已验＋2Noq退出红保留＋1iroh38退出红保留＋**56待审**，不是56均必要。
 
-两边相同fixture只新增p1h高RTT抖动wrapper和测量结束后peer/here原journal导出；去掉25插入行可逐字还原两父源。两树仅差三app策略文件与iroh恢复完成顺序文件，锁/scripts/其他源码相同；source audit SHA **8e8311b241ccc790c6cbd3f9a6dd20cf8b5600f2a79d3fae29db95a08e17d3c6**。
-原p1/p1j/p1s/p5及新增p1h保持600秒窗口、p5每档四次150/300/600ms stall、CPU contention验证、单线程/单repeat/diagnostics0。p1h调用one_speed(65,5)，约130ms RTT。
-原gate：两端各最多一次选择、零retired；p5短于500ms档零Relay切换/零punch。不缩观察窗口或改生产预算。
-原journal KEEP300，约600行轮转；要求每份非空bootstrap journal最早保留事件不晚于窗口开始。28份raw导出核保留范围，不宣称上游事件从未丢失。
-E/ops/verify-policy-stability-v1.py已备，准备记录E/iroh14-policy-stability-auditor-preparation-v1.json：旧真实四case/22 CPU记录及六种错误副本检查，零新增产品执行。核验器会保留原红，不用数据完整性检查替代Rust结果。
-p1s/p5原helper忽略echo错误；单端接口包/字节不是全网成本或能耗；该批不接受普通延迟/p99/完整N1或手机。
+最新官方registry再次核验2026-11-13T20:47:08Z仍为iroh1.4.1/Noq+proto1.4.0；E/upstream-registry-recheck-20261113T2046Z/verification.json及三个完整原API JSON/SHA保留，最终交付若跨时再核。F2/J2基于这些版本。iPhone仍旧0.2，旧ready窗口不沿用；有可用准确候选后再约真机/能耗。MacLab/Turing同LAN、macserver另机。不能把新Relay两节点case当作现场peer relay/手机修复接受。
 
-## 最近修复：首个恢复ACK不再提前撤回有界质量确认
+## 必须保持的开发约束
 
-[IROH-RECOVERY-ORDER](IROH-RECOVERY-ORDER.md)为完整设计、红绿及物理协议。冻结生产候选：
-source **3b734073b410ec4130b4b57def3bf096b10c3e7a**，tree **473ee06d1a836d56d9e39bd10a7a4016fdacf530**，snapshot **4a688a33bd3da7f095cd8880ed1fd9519fb5ce09**；树khor-net-iroh-recovery-ack-order-v1。
-只把complete_read内三行改为先recovery_probes、再mark_silent。反转即恢复红源，测试段及其他文件逐字相同，source audit SHA **a814baae82dab7b97cc92c24b620c8ee08647104f5d6a155d7c20c75bc2d2f5d**。
-没有新状态、timer、quota或新鲜性豁免，原三次/250ms/2秒质量确认与四秒物理门保持。实际被补上的episode可能增加探测，不能由预算不变宣称成本相同。
-旧read_paths已经传latest_rtt；真实问题是首个post-judgment ACK可让mark_silent在RecoveryCheck建立前撤掉Silence。不是median参数错误，也不是全部首连/NAT/手机失败唯一根因。
+本机source-only：Git、stdlib Python源/数据/metadata/ZIP/hash与SSH/GH编排；无本机Cargo/Rust/rustfmt/Node/Bun/Xcode/native产品执行。重型只Turing/macserver/可信GH，khor-build用户已明确授权public；无main合并/发行/安装替换授权。
 
-| 准入/固定批次 | 原结果 |
-| --- | --- |
-| 红150712Z-549ba3dd，source70a6f7d9 | 101/200.479139s；Noq467过，iroh原197过/原ignored1；只有新增first recovery ACK测试红，实际131ms/应85ms；node test compile绿 |
-| 绿151200Z-d504e81e | 0/180.387027s；Noq467、iroh198含新回归过/原ignored1，node test compile/锁/源码diff保持 |
-| 同源12app 151523Z-db3999ab | 0/379.316808s；276过/原ignored1，原七取消合同保持；不是完整Node/Quality |
-| 物理R1 152244Z-802bb00c | 0/200.580265s；124全ok/final carried true/原warm及decision过；X/Y Go3649477/3640302us |
-| 物理R2 152638Z-8914d68c | 0/214.366541s；同124全ok及两门过；Go3532073/3798379us |
-| 物理R3 153157Z-8dea5447 | 0/152.258487s；同124全ok及两门过；Go3766136/3757942us |
+Turing UID1110、排他flock、jobs16/nice10/Rust1.95、50GiB准入/40GiB停止/90min outer、私有user/net namespace，无sudo/宿主网络修改；计时与编译分离。Mac持久worker保留50/40GiB、target100GiB、jobs2 guard（SHA998f5723eb447a1634411397c18a524e5ed0d50bd6dbd81001a16626219f64eb），不得降门。可信GH托管原生Lab/Quality独立允许。
 
-以上原文件SHA/source/control/identity/group空、对应proof与ledger均终态。**物理三轮批次已关闭，不追加同源试验。**
-结果E/iroh14-recovery-ack-order-physical-results-v1.json SHA **f1a4c7ef3eb61470fb5f5c377265c224ecdebde91b460d1a80eb41296136e5d8**，fixed3/additional0/screen_passed=true/**accepted=false/promotion=false**。
-372逻辑请求全ok，六个Go3.532–3.798s；不是首连失败率、p99或任意移动场景接受。
-E/ops/audit-recovery-episode-cost-v1.py仅复算已留日志；每episode最多三reservation。R2全启动20episode/56reservation是10PING请求+46merge，换网后两Custom episode各2PING+1merge；不要把reservation全算额外发包。
-
-## 最新稳定升级及custom退出
-
-官网latest在本轮16:00 UTC再次核验仍为 [iroh1.4.1](https://github.com/n0-computer/iroh/releases/tag/v1.4.1)。官网BLE/Tor为experimental custom transport，不替代khor的两腿选择/信任/自动接管，不新增本轮承载范围。
-独立升级基线02807c79e04a92c46fb2e6c14d2ecf107b98336c（khor-net-iroh-upgrade-v1）为iroh1.4.1/Noq1.4.0；C3b在其上修策略。
-Canonical feat/net仍原运行时 **5064fe2a**、iroh1.2/Noq1.3；后续docs提交不冒充测试源码，没有集成/发布升级。
-E/iroh-upgrade-patch-ledger-v4.json：60历史项=1上游替代库验证、2移除对照红而保留、57待退出核查；57不表示全都必要。42–44原隔离编号未合主。
-
-- iroh22手工IPv6 trim已用上游relay_tls_server_name替代，库合同过；原IPv6环境可提前返回，非WAN/手机接受。
-- Noq5移除091835Z-cb319e57：四原合同三过一红，合法ACK-only最大号已回收时误增RTT计数5→6；基线同合同绿，保留。
-- Noq2移除093340Z-deb1f7de：始终reporting both时，握手响应前早数据错误发送ObservedAddr TX1/应0；基线绿，保留。
-- E/iroh14-custom-native-comparison-20261113-v1.json新增静态核对4/6/15/16/27：1.4.0仍按may_send_data归集ACK/连接timer ping所有路径；1.4.1仍有Relay close/queue/route无界等待、forced major通知不公开。没有新删除或行为测试；不能由该静态检查宣称这些补丁对所有部署都必要。
-- iroh21容量64覆盖可评估上游Lagged+paths快照，当前roads::follow的mine/Openings未在Lagged对账；需真实burst消费滞后合同。Path::ping是该历史条目另一行为，分开退出。E/iroh14-event-buffer-exit-audit-v1.json。
-- iOS callback链存在，同interface地址-only变化不独立穿过status+接口类型去重；iroh另有监控，不能静态归因现场故障。E/iroh14-ios-notification-static-audit-v1.json；真机仍待。
-
-028已闭证据：Linux084724全vendor467/197及Mac43186999295同人口、085339固定12app273、090144真实流36/独立74Fetch RPC、095017实际CLI取消两合同、100747诊断12静默/12准备/12STREAM阳性、102059三实际接口场景372逻辑请求、111507 IPv6重叠248、111859实际QUIC NAT端口124（30/30远端warm stream新tuple）。准确范围/收据见[IROH-UPGRADE](IROH-UPGRADE.md)与历史，不相加重叠人口，不挪用于3b最终验收。
-完整Node旧dc738与新028：同1387人口、1274过/同38失败/75原ignored，无new-only；均非完整Quality接受。Git2.25.1/tmux3.0a前置只是部分原因，账户runtime等未闭，不能一概豁免。
-
-## 已关闭的诊断和普通性能批次
-
-所有旧红、非唯一根因和不可晋升结论仍保留；以下均不得原样追加挑绿，完整ID/proof在历史与对应设计文档。
-
-- 028 peer首连105138红、110840可达但四秒门约9.3秒红；旧dc738110236约3.47秒绿。首连错误不是注入换网后失败，未定位。
-- 被动pending诊断08ecab50固定三轮闭；确认copy候选80固定三轮为首连红/恢复红/一绿；均不晋升。[IROH-CONFIRM-COPY](IROH-CONFIRM-COPY.md)。
-- hop准备诊断794固定三轮均可达但decision红；只采日志，无唯一首连根因。
-- 绝对收益门源67固定三轮：一绿/两final carried false；保留失败，不接受单改收益门。[IROH-HYSTERESIS](IROH-HYSTERESIS.md)。
-- 同app/旧依赖源16e943d8固定三轮均过；小样本及非匹配顺序不证明新版唯一回归。两次旧compile准备含错用1.4 metadata红，均留证。
-- 原生TRACE源bc3064af固定两轮：一绿/一恢复5.41、7.40秒红；捕获迟恢复，未捕获持续无carried。日志缺唯一Noq drive id，不能合并相同stream号猜连接。Noq issue889大型并发wake报告非本3节点根因证据。
-- 028 vs旧dc738普通固定六block全部闭：8640交互/12file完整，有文件收益也有交互代价和新681ms p95/1.10s最大、scheduled1.89s尾巴；[IROH-WORKLOAD-RESULTS](IROH-WORKLOAD-RESULTS.md)，不代表3b性能。
-- 原prefetch18场景、rolling24场景与所有原240秒文件超时均保留；rolling12block/17280交互全ok、21文件完成/3超时，不接受全局最优或完整N3。四源码/四真实RPC/Job stop控制合同已闭，生产server/worker/host-child仍待。[PIPELINE-COMPARISON](PIPELINE-COMPARISON.md)。
-- 历史严重6aa及block9终端1.2–1.56秒/scheduled8–12秒未闭；后来三轮未重现不抹掉原失败。旧idle16–17秒不满足极致体验。原quiet v1准备后仍有STREAM的十二红和v2诊断准备修复均保留，[IDLE-ACTION](IDLE-ACTION.md)。
-
-## 环境、所有权和下一项准备
-
-- PRODUCT `/Volumes/disk0/Khor/worktrees/current/khor-net`，branch feat/net，创建基线6485cb83。
-- CONTROL `/Volumes/disk0/Khor/worktrees/current/khor-build-net`，HEAD **5d3691f252f9dee0297fa3c494374be6119bca29**；新controls只建Git对象/ref，不移动HEAD，既有__pycache__不覆盖。
-- EVIDENCE **E=/Volumes/disk0/Khor/evidence/net**。root是source-refs.json唯一串行原子writer。stage/launch/collect/verify须等真实exec会话终态；unknown handle先读receipt，不再提交。
-- 本机source-only：不跑Rust/Cargo/rustfmt/Node/Bun/Xcode或产品。重型Turing/macserver+用户明确公开的colehank/khor-build；本地Git、stdlib Python源码/元数据和bash -n可用。
-- Turing原UID1110/flock/private user-netns/Rust1.95/jobs16/nice10、50GiB启动/40停止/90分钟守护保持；不sudo/改宿主网络。
-- Mac50GiB准入保持；43189070840空间门红后43205919189在付款/额度阶段失败、零Mac操作。最新GitHub只读仍该run，无盲目dispatch；16:00后SSH再试仍banner timeout255。异步额度/常规SSH问题未获答复，不降门/清未知缓存。
-- MacLab与Turing同LAN，macserver独立；localhost旧0.2.0 iPhone以前反复关开恢复不算候选自动接管。没有新Lab/手机窗口或候选安装接受。
-- 无本任务main合并、发布、生产Relay采购/部署、已装App替换授权。中央GUI授权不套用。
-- 图谱缺失/partial/stale或不覆盖vendor时，0节点不是安全证明；先用已有图谱，再定向源读，不自建CodeGraph索引。
-
-混版协议和control已在本地准备：[IROH-MIXED](IROH-MIXED.md)。E/iroh14-mixed-version-plan-v1.json / mixed-control-v1.json，control **05419f73cadb7787ee5c4356004b79f672a2c1c7**（仅原d07eec56 net-node分支）。旧dc738/new3b准确CLI native来源→不可写副本→真实sync_mixed唯一正标记/两方向row+pin、独立两host/child观测与退出。原fixture/helper/native工具两源逐字相同，Python AST/bash syntax已查；**零新远端编译/产品执行/互通接受**。两长稳全部终态收件核验后再执行一次，不抢Turing计时。旧owned run110236的bundle/package须核SHA；缺OLD_KHOR直接绿不接受，短唯一TMPDIR/只碰私有tmux，保留homes以免兜底reap隐藏close失败。
-E/turing-build-tools-inventory-20261112-v1.json确认Git2.25.1/tmux3.0a/libevent.pc缺失，只有只读库存；未安装/编译新工具，长测中不可用准备名义插入重型执行。
-Mac Finder trash原AppleEvent−1712（32/33）重复确认已用尽，保留失败；权限/响应根因未证，不盲目同源重跑。
-
-Release性能仍为准备，**零Release产品执行/尚无控制任务**。E/release-workload-plan-v1.json在任何测量前补齐：原低/高负载与ABBAAB六block保持，两arm独立target以避免CARGO_BIN_EXE_khor互相覆盖；每arm只构建一次、计时期间零编译，共享下载缓存。每case新声明600秒harness守护（不是原netlab.sh已有门），原120/240秒文件/业务预算及90分钟campaign守护保持。当前old dc738对3b为interim比较，不冒充最终main集成前后性能或N3接受。
-
-## 完整剩余范围与完成定义
-
-- **N0**：最终分场景UX门、充分尾部样本/p99、同条件完整前后对照、观测成本及成本前沿。
-- **N1**：当前长稳两arm；严重/quiet/recovery尾部、固定好路径参考、跨连接质量/旧样本、启动/配对失败、动态延迟突变、后台流量/唤醒。
-- **N2**：同一实际连接的独立/同时IPv4/IPv6地址/前缀/NAT变化，换网/休眠/黑洞/LOST；owner/cancel/late/revoke/carrier失效；身份/总期限/写入和0RTT不重放。
-- **N3**：完整前台文件/预览与TTY尾部，公平/饥饿/背压、共享与分连接实测、真实server/worker/host-child取消、1/3/5设备CPU/字节/唤醒/能耗。
-- **N4**：Direct/公共Relay/peer relay/SSH双腿，唯一middle自动救通（第二腿可Relay/旧信息），多个/移动middle、独立双栈变化，北京/香港整机/出口/寻址故障域、自家Relay约束、双家/地域/容量/运维设计。采购部署另授权。
-- **N5**：60历史补丁逐项上游等价/保留退出，Noq1及各物理成本缺口、feature/integration、最终准确源码Quality/完整Node/native/proxy、Finder、混版与真实手机自动换网/peer relay/能耗。
-
-完成须设计理由、状态/职责边界、持续验收矩阵和同条件报告均绑定准确版本。单次绿、三物理screen绿或库升级不等于完成。
-此前2–4天、4–8小时为低置信估计且偏乐观，不因compact重置；目前没有可信整体完成日期。当前两组长稳约两小时只覆盖一项，不承诺整计划两小时完成。
-
-
-## 最新排期估计（2026-11-13 00:47，本地时间）
-
-用户再次问完整完成还需多久。按当前六块未闭工作，最新用于排期的低置信估计为：**完整计划还需5–10天持续开发与验证**；具备Lab试用条件的候选目标2–3天；当前固定两arm长稳剩约1–1.5小时。不是确认交付日期，不把当前测试批次结束当完整计划完成，也不从compact重新起算此前消耗。
-估计以前提Mac构建通道尽快恢复、真机验收可配合为准；最不确定的是首连/唯一middle自动接管、CPU忙及传文件时长尾、新旧互通/最终整合，以及57项剩余custom的退出核查。此前估计偏乐观，后续根据明确门的结果修订，不用单次green代替完成。
+保护其他任务Lab23961，不能依据历史PID杀进程；先看中央治理STATE再碰共享资源。Code-review-graph先行，未覆盖才定向rg/read；没有.codegraph不自行建。runtime/writes/trust/只用自家Relay/暂停/单跳与原预算不放宽。恢复先核实际worktree/branch/diff和pending，不重复调度；root唯一ledger writer。

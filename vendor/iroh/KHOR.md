@@ -624,6 +624,12 @@ MacLab 10-09 约 11:36 起，经中继什么也发不出去：iPhone 的 Initial
 上游 1.3.0 三处相同，升级时要重新打；中继服务器那一侧（iroh-relay 的 `server/client.rs`）对客户端也用 3 倍 RTT，
 khor 自己的中继要改得 vendor iroh-relay，没做。
 
+2026-11-14 feat/net扩展：有实际resident请求、尚未收到对端datagram且当前选Relay时，Node在按路RTT缩放的短等待后，通过`Endpoint::check_relay_connections`提示既有Relay actor检查；不做全endpoint rebind、不重放应用写入。socket仍按本地地址有效性处理，实际TCP actor合并同时到达的检查；未完成的ping只由匹配pong或期限结束，周期ping及并发提示不能替换期限。该入口也可能被后台同步使用，不能由“无新增周期任务”推断能耗不变。
+
+显式检查有两个期限：完全没有Relay消息时，按已有RTT早期判断；有实际接收进展时只放过早期判断，仍必须在首次ping固定的原max_timeout内收到匹配pong。接收进展不能证明双向健康，也不能延长硬期限。connected与pending-send循环共享同一个检查状态，早期判断排在已就绪接收之后；无额外ping/周期timer。正常inbox已经被发送阻塞时的处理、单向故障及长请求后半程仍待专项接受。
+
+准确F3 `7a794274`普通Release原双strict NAT/单Relay夹具：固定3次旧TCP双向静默drop的126读全成功，首有效响应0.873–0.954秒（原产品3次约20.04秒、30读超时）；另固定3次健康124→976ms、无drop的42读全成功且原TCP保持。原2秒/5秒caller、两fixture逐字不变。原F2在健康组3次误断的失败保留。十原生actor合同通过。证据及限制见`docs/net-optimization/RELAY-DEMAND.md`与外部`relay-health-progress-combined-runtime-verification-v1.json`。这不是所有Relay、真机、能耗或完整N4/N5接受；若上游提供同等的有界请求触发健康检查与防误断/期限合同，应以原夹具及成本实测评估退出这份扩展。
+
 ### 14. `src/net_report.rs`：完整报告要等不答 QAD 的中继量完（2026-10-09，NET-DIRECT，net-f）
 
 上游的完整报告一拿到两个 IPv4 QAD 回答就停掉其余探测（`have_enough_reports`），不答 QAD 的中继（khor 自己的
