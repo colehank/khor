@@ -3208,6 +3208,13 @@
 /* Desktop surface preferences change the background plane, never foreground opacity. */
 :root { --window-opacity: 100%; --term-bg: var(--term-palette-bg, var(--canvas-solid)); --term-fg: var(--term-palette-fg, var(--card-foreground)); --theme-editor-w: 44rem; --theme-well: 24px; --theme-hex-w: 11ch; --theme-preview-h: 7rem; }
 :root[data-window-transparent] { --background: transparent; }
+/* A chosen light lens must transmit the window backdrop too. Retain a
+   readable white tint for the existing olive glyphs, then thicken it with
+   the window preference. Solid windows/mobile keep the original white;
+   dark selection still uses its existing transparent ground. */
+:root[data-window-transparent]:not([data-theme="dark"]) {
+  --glass-sel: color-mix(in srgb, var(--knob) max(80%, var(--window-opacity)), transparent);
+}
 
 /* Session heads below the active face+close floor shed their labels.
  * The selected session keeps that floor and its close; others may shrink

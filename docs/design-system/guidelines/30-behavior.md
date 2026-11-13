@@ -1227,3 +1227,10 @@ Codex/Claude 的终端与对话是同一智能体的呈现方式；内置对话�
 固定列表标题只模糊背景，不增加饱和度；窗口不透明度仍只由统一底层提供。`node apps/gui/scripts/check-scroll-surfaces.mjs --material` 使用正式 PaneBar／scroll-edge／CSS 的既有夹具，在 20% 窗口不透明度下对照纯色背景经过标题滤镜前后的实际像素，覆盖浅深主题、三种颜色和 Chromium/WebKit。旧版在 Chromium 六项对照中产生约 16–19 级 RGB 偏移，先红；这不代表原生 MacBook Air 的合成问题已经复现。原生窗口及真实滚动手感继续单独验收。
 
 原生文件拖放必须在创建浏览器子视图前后均能进入主 App，网站自己的标签不能把拖放交给 App。`native-helpers` 固定 Tauri 2.11.5 的 Window／Webview 投递谓词，旧 Webview-only 监听在 Chromium/WebKit 四项新增检查全部先红；WebviewWindow 目标保留同标签的两条通道。协议测试不代替 Finder 真机验收。
+
+
+### 浅色透明窗口的玻璃选中态（2026-11-13）
+
+浅色导航／标签选中的玻璃也必须透出背景，不能在透明窗口中盖一块不透明白色。选中白色填充以至少 80% 承托原有文字与橄榄色图标，并随窗口不透明度增厚；选中轮廓、阴影、文字／图标 opacity 保持原值。实色窗口、手机、深色模式沿用原样；菜单／弹窗仍由自己的厚底承托。
+
+`LAB_CHECKS=glass-selection node apps/gui/dev/lab/check-app.mjs`（工作目录 apps/gui 时去掉前缀）在完整正式 App 的真实 LandingStrip／TabStrip 上覆盖浅色 frost 0/20/65/100、clear20、实色及深色控制组，Chromium/WebKit 对比两种合成背景下实际药丸内部像素。旧版两个引擎在四个浅色透明档位均先红（白色 alpha1），另保留 SB 刷新主题竞争的失败证据。Lab 在导入正式 App 前把目标主题写入自己的数据夹具，避免旧设置覆盖当前场景；不更改生产主题读取逻辑。原生 AppKit 材质仍列入下一安装版本验收。

@@ -946,3 +946,8 @@ Developer Lab 的 `check-app.mjs` 运行 `dev/lab/pairing-checks.mjs`，从真�
 macOS job 编译 macOS / iOS catalog、保留资源清单，并导出 Default / Dark 核验两种图稿都被选中。
 只需图标生成工具依赖，不触发完整 App 构建；实际安装验收另记。
 规范唯一入口为 [App 图标规范](../../../apps/gui/src-tauri/icons/src/README.md)。
+
+
+### 透明窗口中的浅色选中玻璃（2026-11-13）
+
+完整 App Lab 的 `glass-selection-checks.mjs` 随既有 `dev/lab/check-app.mjs` 运行；`LAB_CHECKS=glass-selection` 可单独检查两引擎的导航和标签底色、前景 opacity、明暗背景实际像素响应，以及实色／深色控制组。默认完整 Quality 同样包含它。需要既有 LAB_BUNDLE/LAB_REPORT，远端流程准备依赖与精确源码构建；不在 source-only 本机编译。SB 初始主题在 App 设置读取之前种入隔离夹具，重载中的浅深切换也纳入控制组。

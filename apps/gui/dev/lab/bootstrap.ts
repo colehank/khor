@@ -3,6 +3,7 @@ import {createLabFixture} from './fixture';
 import {scenes, sessionIds, independentKhorSession, type Scene} from './scenes';
 import {configureLabBackend} from './backend-context';
 import {FixtureRefusal} from './navigation';
+import {readPreview} from './preview-state';
 
 type Runtime = {mode: 'frontend'|'full'; scene: Scene; tree: string; revision: string};
 const version = document.querySelector<HTMLMetaElement>('meta[name="khor-lab-version"]')?.content;
@@ -33,6 +34,8 @@ if (runtime.mode === 'full') {
   }, true);
 }
 if (query.has('bridge')) throw new Error('Lab does not connect to external API bridges');
+if(query.has('environment')&&runtime.mode!=='frontend')throw new Error('Browser environments require frontend Lab');
+const preview=query.has('environment')?readPreview(JSON.parse(query.get('environment')!)):null;
 const scene = scenes[runtime.scene];
 const khorSession = runtime.scene==='khor'||query.get('khor')==='independent' ? independentKhorSession : undefined;
 const items = Number(query.get('items') ?? 5), machines = Number(query.get('machines') ?? 3);
@@ -53,6 +56,9 @@ if (runtime.mode === 'frontend') {
     localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
   const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, longHistory:query.get('history')==='long', notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page',khorSession});
+  // Seed the data boundary before App's first settings read. A later
+  // theme write can otherwise lose to the previous page's saved answer.
+  if(preview)fixture.request('set_config',{name:'theme',value:preview.theme});
   if(query.get('notices')==='1'||query.get('notices')==='burst')noticeDriver={
     ready:()=>fixture.request('__ai_preview/notification-ready')===true,
     trigger:burst=>fixture.request('__ai_preview/notification',{burst}) as string[],
@@ -143,9 +149,9 @@ if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
 if(runtime.mode==='frontend'&&query.has('handoff'))handOff('terminal.txt','$ example\nSynthetic terminal output');
 Object.defineProperty(window, '__KHOR_LAB__', {value: Object.freeze(runtime)});
 await import('../../src/main');
-if(query.has('environment')) {
+if(preview) {
   const {installPreviewEnvironment}=await import('./preview-environment');
-  installPreviewEnvironment(JSON.parse(query.get('environment')!),runtime);
+  installPreviewEnvironment(preview,runtime);
 }
 
 if(noticeDriver){const {mountNoticeTools}=await import('./notice-tools');mountNoticeTools(noticeDriver);}
