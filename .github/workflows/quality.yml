@@ -24,7 +24,7 @@ on:
         default: all
       desktop_probe:
         type: choice
-        options: [none, drag-routing, drag-all]
+        options: [none, drag-routing, drag-all, material-neutral]
         default: none
       desktop_target:
         type: choice
@@ -1167,7 +1167,7 @@ jobs:
         working-directory: apps/gui
         run: npm run test:unit && npm run gates && npm run mobile:static
       - name: Verify native drag routes with pinned Tauri delivery
-        if: inputs.desktop_probe != 'none'
+        if: startsWith(inputs.desktop_probe, 'drag-')
         working-directory: apps/gui
         env:
           NATIVE_HELPERS_CHECK_DIR: ${{ runner.temp }}/native-helper-probe
@@ -1180,6 +1180,12 @@ jobs:
             unset NATIVE_HELPERS_SCENARIOS
           fi
           xvfb-run -a npm run native-helpers
+      - name: Measure fixed header colors over transparent backgrounds
+        if: inputs.desktop_probe == 'material-neutral'
+        working-directory: apps/gui
+        env:
+          SCROLL_SURFACES_MATERIAL_DIR: ${{ runner.temp }}/native-helper-probe
+        run: xvfb-run -a node scripts/check-scroll-surfaces.mjs --material
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always() && inputs.desktop_probe != 'none'
         with:
