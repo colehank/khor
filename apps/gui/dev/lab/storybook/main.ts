@@ -7,7 +7,7 @@ const config: StorybookConfig = {
     config.base='./';
     config.optimizeDeps={...config.optimizeDeps,entries:['dev/lab/storybook/App.stories.tsx']};
     const target=process.env.KHOR_LAB_ORIGIN??'http://127.0.0.1:23910';
-    config.server={...config.server,proxy:Object.fromEntries(['/app','/lab','/snapshots','/versions'].map(route=>[route,{target,changeOrigin:false}]))};
+    config.define={...config.define,'import.meta.env.KHOR_LAB_ORIGIN':JSON.stringify(target)};
     return config;
   },
 };

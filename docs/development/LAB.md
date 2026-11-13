@@ -30,7 +30,7 @@ cd apps/gui
 KHOR_LAB_ORIGIN=http://127.0.0.1:23910 npm run lab:workbench
 ```
 
-The manager proxies the existing Lab entry; App changes still use that Lab's normal hot update path. Source-only developers use remotely built immutable workbench assets. Share `/workbench/?path=/story/khor-app--gui` or a pinned `/versions/<version>/assets/workbench/index.html?path=/story/khor-app--gui` for review.
+The manager embeds the existing loopback Lab origin directly, preserving that Lab's actual Vite aliases and hot update path. Its mutable frontend accepts environment messages only from the actual loopback parent; immutable review remains same-origin. Source-only developers use remotely built immutable workbench assets. Share `/workbench/?path=/story/khor-app--gui` or a pinned `/versions/<version>/assets/workbench/index.html?path=/story/khor-app--gui` for review.
 
 ## Edit source with hot updates
 

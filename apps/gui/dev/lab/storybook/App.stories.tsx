@@ -9,23 +9,25 @@ function AppPreview({scene,machines,items,history,width,height,environment}:Prop
   const frame=useRef<HTMLIFrameElement>(null),current=useRef(environment);current.current=environment;
   const src=useMemo(()=>{
     const version=location.pathname.match(/\/versions\/([a-zA-Z0-9]+)\/assets\/workbench\//)?.[1];
-    const url=new URL(version?`/snapshots/${version}/app`:'/app/',location.origin);
+    const origin=import.meta.env.DEV?import.meta.env.KHOR_LAB_ORIGIN:location.origin;
+    const url=new URL(version?`/snapshots/${version}/app`:'/app/',origin);
     url.searchParams.set('scene',scene);url.searchParams.set('machines',String(machines));url.searchParams.set('items',String(items));
     if(history)url.searchParams.set('history','long');
     url.searchParams.set('environment',JSON.stringify(current.current));
     return url.href;
   },[scene,machines,items,history]);
-  const send=()=>frame.current?.contentWindow?.postMessage({type:'khor.lab.environment',value:current.current},location.origin);
+  const appOrigin=new URL(src).origin;
+  const send=()=>frame.current?.contentWindow?.postMessage({type:'khor.lab.environment',value:current.current},appOrigin);
   useEffect(()=>{send();},[environment]);
   useEffect(()=>{
     const receive=(event:MessageEvent)=>{
-      if(event.source!==frame.current?.contentWindow||event.origin!==location.origin||event.data?.type!=='khor.lab.ready')return;
+      if(event.source!==frame.current?.contentWindow||event.origin!==appOrigin||event.data?.type!=='khor.lab.ready')return;
       frame.current!.dataset.labAppReady=String(event.data.tree);
       frame.current!.dataset.labInput=String(event.data.pointer);
       send();
     };
     addEventListener('message',receive);return()=>removeEventListener('message',receive);
-  },[]);
+  },[appOrigin]);
   return <div data-lab-workbench-preview style={{position:'relative',width:width||'100%',height:height||'100vh',overflow:'hidden',margin:'auto'}}>
     <iframe ref={frame} data-lab-app-frame title="Khor 正式 App Lab" src={src} onLoad={send} style={{display:'block',width:'100%',height:'100%',border:0}}/>
     {environment.platform!=='desktop'&&environment.keyboard>0&&<div data-lab-keyboard-placeholder aria-label="模拟键盘占位" style={{position:'absolute',insetInline:0,bottom:0,height:environment.keyboard,display:'grid',placeItems:'center',background:'Canvas',color:'CanvasText',borderBlockStart:'1px solid GrayText',pointerEvents:'none'}}>

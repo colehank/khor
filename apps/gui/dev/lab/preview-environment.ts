@@ -5,9 +5,19 @@ import {setConfig} from '../../src/api';
 import {readPreview,type PreviewState} from './preview-state';
 import './preview-environment.css';
 
-export function installPreviewEnvironment(initial: unknown, runtime: {tree:string;revision:string;mode:string}) {
+export function installPreviewEnvironment(initial: unknown, runtime: {tree:string;revision:string;mode:string;mutable?:boolean}) {
   if(runtime.mode!=='frontend')throw new Error('Browser environments require frontend Lab');
   const root=document.documentElement;
+  // Local hot development embeds the real Lab Vite origin rather than
+  // re-compiling its modules through Storybook's different Vite config.
+  // Immutable review stays same-origin. Only a mutable loopback Lab may
+  // accept its actual loopback parent as a controller.
+  let controllerOrigin=location.origin;
+  if(runtime.mutable&&parent!==window&&document.referrer){
+    const controller=new URL(document.referrer);
+    const loopback=(url:URL)=>['127.0.0.1','localhost','[::1]'].includes(url.hostname)&&url.protocol==='http:';
+    if(loopback(controller)&&loopback(new URL(location.href)))controllerOrigin=controller.origin;
+  }
   const background=document.createElement('div');background.dataset.labEnvironmentBackground='';background.setAttribute('aria-hidden','true');document.body.prepend(background);
   let theme: PreviewState['theme']|undefined;
   const apply=(state:PreviewState)=>{
@@ -25,10 +35,10 @@ export function installPreviewEnvironment(initial: unknown, runtime: {tree:strin
   };
   apply(readPreview(initial));
   const receive=(event:MessageEvent)=>{
-    if(event.origin!==location.origin||event.source!==parent||parent===window||event.data?.type!=='khor.lab.environment')return;
+    if(event.origin!==controllerOrigin||event.source!==parent||parent===window||event.data?.type!=='khor.lab.environment')return;
     try{apply(readPreview(event.data.value));}catch(error){console.error('Lab environment rejected',String(error));}
   };
   addEventListener('message',receive);
-  parent.postMessage({type:'khor.lab.ready',tree:runtime.tree,revision:runtime.revision,pointer:matchMedia('(pointer: coarse)').matches?'touch':'mouse'},location.origin);
+  parent.postMessage({type:'khor.lab.ready',tree:runtime.tree,revision:runtime.revision,pointer:matchMedia('(pointer: coarse)').matches?'touch':'mouse'},controllerOrigin);
   addEventListener('pagehide',()=>{removeEventListener('message',receive);background.remove();},{once:true});
 }

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 
-export async function checkWorkbench(browser,{port,report,engine}){
- const name='workbench-'+engine,context=await browser.newContext({viewport:{width:1600,height:1200}}),page=await context.newPage(),errors=[];
+export async function checkWorkbench(browser,{port,report,engine,name='workbench-'+engine,entry='/workbench/?path=/story/khor-app--gui',onDraft}){
+ const context=await browser.newContext({viewport:{width:1600,height:1200}}),page=await context.newPage(),errors=[];
  page.setDefaultTimeout(20000);page.on('pageerror',error=>errors.push(String(error)));
  try{
   const origin=`http://127.0.0.1:${port}`;
-  await page.goto(origin+'/workbench/?path=/story/khor-app--gui');
+  await page.goto(origin+entry);
   const canvas=page.frameLocator('#storybook-preview-iframe'),frame=canvas.frameLocator('[data-lab-app-frame]');
   await canvas.locator('[data-lab-app-frame][data-lab-app-ready]').waitFor();
   await frame.locator('[data-composer-text]').fill('保留真实 App 草稿');
@@ -16,6 +16,7 @@ export async function checkWorkbench(browser,{port,report,engine}){
   assert.equal(await frame.locator('html').evaluate(el=>el.style.getPropertyValue('--window-opacity')),'20%');
   assert.equal(await frame.locator('html').evaluate(()=>!!window.__TAURI_INTERNALS__),false,'Browser preview must not impersonate a native host');
   await frame.locator('html').evaluate(()=>{window.__workbenchDocument='same-App';});
+  if(onDraft){await onDraft(frame);assert.equal(await frame.locator('html').evaluate(()=>window.__workbenchDocument),'same-App');assert.equal(await frame.locator('[data-composer-text]').inputValue(),'保留真实 App 草稿');}
   await page.getByRole('tab',{name:/Controls/}).click();
   const opacity=page.getByRole('row').filter({hasText:'Desktop 不透明度'}).locator('input[type=range]');
   await opacity.focus();await opacity.press('End');for(let i=0;i<7;i++)await opacity.press('ArrowLeft');
