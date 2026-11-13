@@ -127,7 +127,7 @@ function Fixture(){
       return readings;
     };
   });
-  return <SessionScreen deckAt="top" navigation faces={[]} active="q010-compose" onFocus={()=>{}} onClose={()=>{}} onBack={()=>{}}
+  return <SessionScreen navigation faces={[]} active="q010-compose" onFocus={()=>{}} onClose={()=>{}} onBack={()=>{}}
     renderHeader={({children})=><div style={{height:60,flex:'none'}}>{children}</div>}>
     <Conversation revision={revision} epoch={epoch}/>
   </SessionScreen>;

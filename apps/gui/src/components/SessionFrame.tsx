@@ -18,7 +18,7 @@ export function SessionFrame({aside,children,tail,mobile=false,contentMode=false
     const chat=isConversationKind(kind);
     return <SettingsSeat.Provider value={settings}><SessionScreen faces={tabs.faces} active={tabs.active}
       onFocus={tabs.onFocus} onClose={tabs.onClose} onNew={tabs.onNew} onBack={onBack??(()=>tabs.onClose(tabs.active))}
-      onTitle={onTitle} contentMode={contentMode} renderHeader={chat?props=><SessionHeader {...props}/>:undefined} deckAt={chat?'top':'bottom'}>
+      onTitle={onTitle} contentMode={contentMode} renderHeader={chat?props=><SessionHeader {...props}/>:undefined}>
       {children}
     </SessionScreen></SettingsSeat.Provider>;
   }

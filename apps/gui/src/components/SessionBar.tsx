@@ -163,18 +163,13 @@ export function SessionScreen({
   away = false,
   contentMode = false,
   onTabs,
-  deckAt = "bottom",
-  combinedDock = false,
   renderHeader,
   navigation = false,
   children,
 }: {
-  /** Conversations keep model controls above their thread. */
-  deckAt?: "top" | "bottom";
   navigation?: boolean;
-  /** Retained for isolated historical layout comparisons. */
-  combinedDock?: boolean;
-  /** A conversation header, with configuration supplied by its own seat. */
+  /** Conversation navigation always sits above the thread; its composer
+      keeps a separate seat at the bottom. */
   renderHeader?: (props: SessionHeaderProps) => ReactNode;
   /** **The deck steps away while the 附栏's sheet is up** (UX-37 §4,
       UX-39 §1): the sheet stands on the screen's foot where the deck
@@ -278,8 +273,7 @@ export function SessionScreen({
   const [keys, setKeys] = useState(footCovered);
   const asked = foldedAsked !== undefined;
   // Nothing folds with the keyboard up, the browser's page included.
-  const topDeck = deckAt === "top";
-  const folded = !topDeck && !combinedDock && !contentMode && !keys && (foldedAsked ?? own);
+  const folded = !conversation && !contentMode && !keys && (foldedAsked ?? own);
   const content = useRef<HTMLDivElement>(null);
   const bar = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -325,7 +319,7 @@ export function SessionScreen({
       tab starts unfolded. */
   useEffect(() => {
     setOwn(false);
-    if (asked || topDeck) return;
+    if (asked || conversation) return;
     const el = content.current;
     if (!el) return;
     const memo: FoldMemo = { turned: null };
@@ -381,7 +375,7 @@ export function SessionScreen({
       el.removeEventListener("scroll", on, { capture: true });
       el.removeEventListener(DECK_FOLD, told);
     };
-  }, [active, asked, topDeck]);
+  }, [active, asked, conversation]);
   useEffect(
     () =>
       onKeyboardChange(() => {
@@ -421,9 +415,9 @@ export function SessionScreen({
         // The deck steps away while the sheet is up (UX-37 §4; the owner
         // 2026-10-06 21:05 again: 「展开了不要有下面的药丸这一行」). Over
         // the scrim while the pill is grown.
-        className={cn("flex flex-none flex-col", !topDeck && "pb-dock-safe-bottom", away && "invisible", island && "relative z-50")}
+        className={cn("flex flex-none flex-col pb-dock-safe-bottom", away && "invisible", island && "relative z-50")}
       >
-        {!topDeck && <div ref={setAbove} data-session-bar-above className="flex flex-none flex-col empty:hidden" />}
+        <div ref={setAbove} data-session-bar-above className="flex flex-none flex-col empty:hidden" />
         {folded && (
           // **Safari's capsule** (UX-29, the owner 2026-10-06): one small
           // glass capsule centred at the foot with the title alone, its
@@ -514,7 +508,7 @@ export function SessionScreen({
             >
               <div data-deck-pill-row className="flex h-glass-btn min-w-0 items-center gap-in ps-1 pe-1">
                 <span ref={setPill} data-deck-pill-lead className="flex flex-none items-center empty:hidden" />
-                <DeckBand placement={deckAt} faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} onNew={onNew} onOverview={() => onTabs ? onTabs() : setSheet(true)} />
+                <DeckBand placement="bottom" faces={faces} active={active} onFocus={onFocus} onTitle={stops.length ? grown.grow : onTitle} onNew={onNew} onOverview={() => onTabs ? onTabs() : setSheet(true)} />
                 {caption && (
                   // Gives way before the pill's own seats do (UX-22: a page's
                   // failure and its 重试 pushed reload out of the pill).
@@ -541,22 +535,22 @@ export function SessionScreen({
               <span ref={setTrail} data-session-bar-trail className="flex flex-none items-center gap-in empty:hidden" />
             </>
           )}
-          {island && !editor && <NoticeIsland placement={deckAt} list={stops} pill={deckPill} growth={grown.growth} seat="size-glass-item-h" />}
+          {island && !editor && <NoticeIsland placement="bottom" list={stops} pill={deckPill} growth={grown.growth} seat="size-glass-item-h" />}
         </div>
         <div ref={setUnder} data-session-bar-under className="flex flex-none flex-col empty:hidden" />
       </div>
   );
   return (
-    <div data-session-screen data-session-navigation-root={navigation||undefined} data-deck-at={deckAt} data-content-mode={contentMode || undefined} data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
+    <div data-session-screen data-session-navigation-root={navigation||undefined} data-deck-at={conversation ? "top" : "bottom"} data-content-mode={contentMode || undefined} data-deck-folded={folded || undefined} className="relative flex h-full min-h-0 flex-col bg-card">
       <div data-session-top {...WINDOW_DRAG} className="h-safe-top flex-none" />
-      {topDeck && deck}
+      {conversation && deck}
       <SeatsContext.Provider value={seats}>
         <div ref={content} data-session-content className="flex min-h-0 flex-1 flex-col">
           {children}
         </div>
       </SeatsContext.Provider>
-      {!topDeck && (combinedDock ? <div data-session-dock className={cn("glass flex flex-none flex-col", (away || contentMode) && "invisible")}>{deck}</div> : deck)}
-      {topDeck && <div ref={setAbove} data-session-composer className={cn("flex flex-none flex-col pb-dock-safe-bottom empty:hidden", (away || contentMode) && "invisible")} />}
+      {!conversation && deck}
+      {conversation && <div ref={setAbove} data-session-composer className={cn("flex flex-none flex-col pb-dock-safe-bottom empty:hidden", (away || contentMode) && "invisible")} />}
       {island && <NoticeScrim on={grown.growth.big} openedAt={grown.openedAt} onFold={grown.fold} />}
       <TabSheet
         open={sheet}

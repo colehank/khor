@@ -3010,7 +3010,6 @@ export default function App() {
     <SessionScreen
       navigation
       renderHeader={conversationNavigation ? props=><SessionHeader {...props}/> : undefined}
-      deckAt={conversationNavigation ? 'top' : 'bottom'}
       faces={tabFaces}
       active={selected ?? ""}
       contentMode={narrow && side.open && selectedRow !== null}
