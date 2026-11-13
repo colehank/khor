@@ -1,66 +1,32 @@
 ---
-import TourImage from './TourImage.astro';
-import {tourImages} from '../tour-assets';
-import {supportedHarnesses} from '../../../gui/dev/site/identity-marks';
-import {agentTour,terminalTour} from '../../../gui/dev/site/tour-scenario';
+import PeerDiagram from './concepts/PeerDiagram.astro';
+import AgentDiagram from './concepts/AgentDiagram.astro';
+import TerminalDiagram from './concepts/TerminalDiagram.astro';
 import '../styles/product-tour.css';
-const delegates=agentTour.tasks.map(task=>({...task,mark:supportedHarnesses.find(mark=>mark.name===task.agent)!.svg}));
 ---
 <div class="product-tour" data-product-tour lang="en">
   <section class="tour-section pillar-p2p" id="connect" aria-labelledby="connect-title" data-tour-scene>
     <div class="tour-copy tour-heading-row">
-      <h2 id="connect-title"><span>Your computer.</span><span>From your phone.</span></h2>
-      <p>Open a file or a localhost web app on another device. Your work stays where it is. You connect peer to peer.</p>
+      <h2 id="connect-title"><span>Your computer</span><span>From your phone</span></h2>
+      <p>Reach files and localhost web apps on another device through a direct peer-to-peer connection</p>
     </div>
-    <div class="p2p-composition">
-      <figure class="p2p-origin">
-        <div class="pillar-window"><TourImage image={tourImages.p2p} mode="desktop" alt="Khor on MacBook Pro opens the Atlas Web project and its localhost web app, showing order A1048 dated March 1" /></div>
-        <figcaption class="tour-caption"><strong>On your MacBook Pro</strong><span>Your project. Your localhost.</span></figcaption>
-      </figure>
-      <figure class="p2p-receiver">
-        <div class="pillar-window"><TourImage image={tourImages.p2p} mode="phone" alt="The same Atlas Web localhost app opened in Khor's phone interface, with the same orders and dates" /></div>
-        <figcaption class="tour-caption"><strong>On your phone</strong><span>Connected to your Mac.</span></figcaption>
-      </figure>
-    </div>
-    <div class="resource-route"><span>MacBook Pro</span><span class="resource-link"><i></i><span>Peer to peer</span><i></i></span><span>{terminalTour.url.replace('http://','').replace(/\/$/,'')}</span></div>
+    <PeerDiagram />
   </section>
-
   <section class="tour-section pillar-agent" id="khor-agent" aria-labelledby="agent-title" data-tour-scene>
     <div class="tour-copy tour-centered">
-      <h2 id="agent-title"><span>Khor Agent.</span><span>Put your agents to work.</span></h2>
-      <p>Give Khor a task. It finds your agents, delegates across devices, follows the work, and brings the results back to you.</p>
+      <h2 id="agent-title"><span>Khor Agent</span><span>Put your agents to work</span></h2>
+      <p>Give Khor a task and let it find your agents, delegate the work, and bring the results back to you</p>
     </div>
-    <figure class="agent-composition">
-      <div class="pillar-window agent-window"><TourImage image={tourImages.agent} alt="Khor Agent discovers agents, delegates payment checks to Codex on build-01 and project follow-ups to Claude on Mac mini, then collects both results" /></div>
-      <figcaption class="delegation-results" aria-label="Results returned to Khor Agent">
-        {delegates.map(task=><div class="delegation-result"><span class="delegate-mark" aria-hidden="true" set:html={task.mark}/><div><strong>{task.agent} <span>on {task.machine}</span></strong><span class="delegate-task">{task.task}</span><span class="delegate-result">{task.result}</span></div></div>)}
-      </figcaption>
-    </figure>
+    <AgentDiagram />
   </section>
-
   <section class="tour-section pillar-terminal" id="terminal" aria-labelledby="terminal-title" data-tour-scene>
     <div class="tour-copy tour-heading-row">
-      <h2 id="terminal-title"><span>Same terminal.</span><span>Any device.</span></h2>
-      <p>Your shell and tools keep running on their host. Connect from your desktop or phone and pick up the same session.</p>
+      <h2 id="terminal-title"><span>Same terminal</span><span>Any device</span></h2>
+      <p>Your shell keeps running on its host, while you pick up the same session from your desktop or phone</p>
     </div>
-    <div class="terminal-preview" data-terminal-preview data-terminal-view="desktop">
-      <div class="terminal-tabs" role="tablist" aria-label="View the same terminal from another device">
-        <button type="button" role="tab" id="terminal-desktop-tab" aria-controls="terminal-desktop-panel" aria-selected="true" tabindex="0" data-terminal-device="desktop">Desktop</button>
-        <button type="button" role="tab" id="terminal-phone-tab" aria-controls="terminal-phone-panel" aria-selected="false" tabindex="-1" data-terminal-device="phone">Phone</button>
-      </div>
-      <div class="terminal-gallery">
-        <div class="terminal-panel" id="terminal-desktop-panel" role="tabpanel" aria-labelledby="terminal-desktop-tab" tabindex="0" data-terminal-panel="desktop">
-          <div class="pillar-window terminal-wide"><TourImage image={tourImages.terminal} mode="desktop" alt="Khor's real desktop terminal: eight passing export tests and the Atlas Web dev server running at localhost:5173 on MacBook Pro" /></div>
-        </div>
-        <div class="terminal-panel" id="terminal-phone-panel" role="tabpanel" aria-labelledby="terminal-phone-tab" tabindex="0" data-terminal-panel="phone" hidden>
-          <div class="pillar-window terminal-phone"><TourImage image={tourImages.terminal} mode="phone" alt="The same terminal output in Khor's phone interface: the dev server is still running on MacBook Pro at localhost:5173" /></div>
-        </div>
-      </div>
-      <p class="terminal-caption"><strong>{terminalTour.title}</strong><span>Running on {terminalTour.machine}</span><span>Same session. Same output.</span></p>
-    </div>
+    <TerminalDiagram />
   </section>
 </div>
-<noscript><style>.terminal-tabs{display:none}</style></noscript>
 <script>
   import {mountProductTour} from '../scripts/product-tour';
   mountProductTour();

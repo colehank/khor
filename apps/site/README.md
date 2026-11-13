@@ -24,8 +24,8 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 - Hero 复用生产 App 的 `data-window-transparent` 与 `--window-opacity:40%` 单层背景，不改变前景 opacity，不启用原生后端。首图由父窗口取样 Fog；交互界面将同一 Fog 放入 iframe 的背景，原有玻璃控件在窗口 40% 底面上正常取样，不重复叠加暗底。深浅首图保留 alpha（背景 102/255，文字可达 255/255），加载前后材质一致。窗口圆角和 GUI 共用缩放系数，避免窄屏时裁掉红黄绿按钮；外层没有白色描边。
 - 首屏 `fog-options.ts` 完整保留用户指定的 Vanta Fog 参数。three.js r134 和 Vanta Fog 0.5.24 固定存于 `public/vendor`，许可证同目录，运行时不访问 CDN。效果离开视口后由 Vanta 跳过绘制。减少动态效果或无法加载时，显示从本页同参数画布截取的干净帧。首页品牌故事保持黑场，下载页、文档和 iframe 内的 GUI 继续跟随浏览器明暗；首页不强制 `color-scheme`，避免改变 iframe 的主题偏好。
 - 首页依次为首屏、图标故事、P2P／Khor Agent／Terminal 三项亮点、下载收尾；用户已否定按机器／Sessions／工作区拆分的旧三段。图标故事先留桌面 .5 屏、手机 .7 屏阅读首幕，再进入 4.8 屏的演化（段总高桌面 6.3 屏、手机 6.5 屏）；姿态地标为 `0 / .22 / .47 / .73 / 1`。首幕停留时只有底部细线反馈滚动，不提前换脸或淡出文字。首屏末端的渐变至少为 40svh。
-- `ProductTour.astro` 展示同一 localhost 网页的跨设备访问、Khor 的发现／委派／结果回收、同一终端的 Desktop／Phone 静态视角切换。`TourImage.astro` 按主题与设备选图，也支持明确的展示视角。12 张媒体图来自网站专用真实 App 场景；媒体懒加载，介绍段不挂 App iframe 或 WebGL。自然滚动与一次性媒体显现，减少动态效果下仍完整显示并可切换 Terminal。捕获边界与验证见 [三项亮点记录](../../docs/handoff/site-pillars-20261113.md)。
-- `dev/site/tour-scenario.ts` 保存有限虚拟任务与共享终端输出，截图通过 `tour=p2p|agent|terminal` 选择；默认首屏场景不变。网站专用 `browser-pane.tsx` 在生产页面外壳内以静态 `/lab/atlas/` 代替原生独立 webview，未修改生产 BrowserPane 或连接真实网络。运行首页只使用截图，保留桌面首屏原位交互与手机首图策略。
+- `ProductTour.astro` 的三项亮点以原创矢量概念图展示，替代 GUI 截图：P2P 是设备间的文件／localhost 直连，Khor Agent 是一项请求的委派与结果汇集，Terminal 是同一主机进程与变化的访问端。`components/concepts/` 复用生产系统／harness 标记，宽窄屏分别构图；没有介绍段截图、切换按钮或交互 App。三种动效均一次性完成，文字始终可读，减少动态效果下展示完整静态关系。营销短句不加结尾句号，代码文件名与 URL 不受影响。见 [概念图记录](../../docs/handoff/site-concepts-20261113.md)。
+- 已删除被替代的 12 张介绍截图、图片选择组件与专门截图场景；默认首屏 GUI 场景、虚拟世界和下载回复保持不变。首页的完整 App 仍只在桌面首屏加载，手机保留静态首图策略。
 - 文字在每段图形起动时交接：旧句用 120ms 渐隐，新句随后用 120ms 渐现；这是可完成的短时过渡，停止滚动不会把两句固定在重叠状态。图形在前 86% 演化，段末 14% 保留完整姿态，`iconSegments` 的几何采样仍随滚动位置连续推进；分页跟随当前文案。首幕阅读时间不变。
 - 示例数据包含 macOS、Windows、Linux、iOS、Android 五种系统的六台设备，Claude、Cursor、Codex、Khor、Shell 五种会话类型；全部是浏览器内的合成连接状态。会话字形沿用生产 App 的类型标记。
 - 演示范围固定：机器、会话、额度、工作区列表仅第一项可点；会话、侧栏与工作区各显示三个标签，只保留当前标签可用。「…」和新增、编辑等复杂操作不开放。不可点击项保留正常颜色与不透明度，不做灰化。主会话是 `wide/all`，使用真实 `MachineChat` / `KhorAgentResult` 组件及本地生成的命令回执，展示 Khor 内置对话；Claude、Cursor、Codex、Shell 仅作其他会话列表项。

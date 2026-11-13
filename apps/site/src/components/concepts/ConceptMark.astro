@@ -1,0 +1,12 @@
+---
+interface Props { svg:string; x:number; y:number; size:number; prefix:string }
+const {svg,x,y,size,prefix}=Astro.props;
+const viewBox=svg.match(/viewBox="([^"]+)"/)?.[1]??'0 0 24 24';
+// Preserve the production mark's fill/stroke contract as well as its paths.
+const opening=svg.match(/^<svg\b([^>]*)>/)?.[1]??'';
+const attributes=Object.fromEntries([...opening.matchAll(/([\w:-]+)="([^"]*)"/g)].filter(([,name])=>!['class','x','y','width','height','viewBox','aria-hidden'].includes(name)).map(([,name,value])=>[name,value]));
+let body=svg.replace(/^<svg[^>]*>/,'').replace(/<\/svg>$/,'');
+const ids=[...body.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
+for(const id of ids)body=body.replaceAll(`id="${id}"`,`id="${prefix}-${id}"`).replaceAll(`url(#${id})`,`url(#${prefix}-${id})`).replaceAll(`href="#${id}"`,`href="#${prefix}-${id}"`);
+---
+<svg {...attributes} class="concept-mark" {x} {y} width={size} height={size} {viewBox} aria-hidden="true" set:html={body}/>

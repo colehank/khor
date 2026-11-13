@@ -1,0 +1,91 @@
+---
+import ConceptMark from './ConceptMark.astro';
+import {supportedDevices} from '../../../../gui/dev/site/identity-marks';
+const mac=supportedDevices.find(mark=>mark.name==='macOS')!.svg;
+const phone=supportedDevices.find(mark=>mark.name==='iOS')!.svg;
+---
+<figure class="concept concept-peer" aria-label="Peer-to-peer concept: files and a localhost web app stay on a MacBook Pro and are reached directly from a phone">
+  <svg class="concept-wide" viewBox="0 0 1120 480" aria-hidden="true">
+    <g class="peer-routes" fill="none">
+      <path class="concept-wire" d="M442 187 C610 187 634 151 865 151"/>
+      <path class="concept-wire" d="M442 291 C620 291 650 297 865 297"/>
+      <path class="peer-packet" pathLength="1" d="M442 187 C610 187 634 151 865 151"/>
+      <path class="peer-packet packet-return" pathLength="1" d="M865 297 C650 297 620 291 442 291"/>
+      <path class="peer-bridge" d="M515 187 C572 187 590 213 647 213 S723 187 780 187"/>
+      <path class="peer-bridge" d="M515 291 C572 291 590 265 647 265 S723 291 780 291"/>
+    </g>
+    <text x="647" y="100" text-anchor="middle" class="concept-label">Peer to peer</text>
+    <g class="peer-source">
+      <rect class="concept-device" x="52" y="82" width="425" height="286" rx="20"/>
+      <path class="concept-device-base" d="M28 368 H501 L486 381 H43 Z"/>
+      <path class="concept-seam" d="M239 369 H291"/>
+      <ConceptMark svg={mac} x={72} y={38} size={22} prefix="peer-mac"/>
+      <text x="106" y="55" class="concept-label">MacBook Pro</text>
+      <text x="85" y="124" class="concept-mono concept-muted">/atlas-web</text>
+      <g class="resource-file">
+        <path class="resource-symbol" d="M92 161 H108 L118 171 V200 H92 Z M108 161 V172 H118 M99 184 H111 M99 190 H109"/>
+        <text x="138" y="185" class="concept-code">src/export.ts</text>
+        <path class="resource-sample" d="M139 202 H312 M139 212 H263"/>
+      </g>
+      <path class="concept-seam" d="M85 239 H443"/>
+      <g class="resource-web">
+        <circle class="resource-symbol" cx="105" cy="279" r="15"/>
+        <path class="resource-symbol" d="M90 279 H120 M105 264 C93 274 93 284 105 294 M105 264 C117 274 117 284 105 294"/>
+        <text x="138" y="282" class="concept-code">localhost:5173</text>
+        <path class="resource-sample" d="M139 301 H325 M139 311 H276"/>
+      </g>
+      <circle class="route-port" cx="477" cy="187" r="4"/>
+      <circle class="route-port" cx="477" cy="291" r="4"/>
+    </g>
+    <g class="peer-destination">
+      <rect class="concept-device" x="865" y="62" width="173" height="326" rx="27"/>
+      <path class="concept-seam" d="M933 78 H970 M931 373 H973"/>
+      <rect class="concept-file-page" x="890" y="115" width="123" height="95" rx="8"/>
+      <path class="resource-symbol" d="M906 131 H916 L923 138 V156 H906 Z M916 131 V139 H923"/>
+      <path class="resource-sample" d="M907 172 H995 M907 184 H974"/>
+      <rect class="concept-file-page" x="890" y="238" width="123" height="95" rx="8"/>
+      <circle class="resource-symbol" cx="915" cy="259" r="9"/>
+      <path class="resource-symbol" d="M906 259 H924 M915 250 C908 256 908 262 915 268 M915 250 C922 256 922 262 915 268"/>
+      <path class="resource-sample" d="M907 285 H995 M907 297 H974 M907 309 H985"/>
+      <circle class="route-port" cx="865" cy="151" r="4"/>
+      <circle class="route-port" cx="865" cy="297" r="4"/>
+      <ConceptMark svg={phone} x={903} y={419} size={21} prefix="peer-ios"/>
+      <text x="935" y="436" class="concept-label">Your phone</text>
+    </g>
+    <text x="265" y="435" text-anchor="middle" class="concept-label concept-muted">Your work stays here</text>
+  </svg>
+  <svg class="concept-narrow" viewBox="0 0 360 425" aria-hidden="true">
+    <text x="9" y="29" class="concept-label">MacBook Pro</text>
+    <g class="peer-source">
+      <rect class="concept-device" x="7" y="52" width="226" height="199" rx="12"/>
+      <path class="concept-device-base" d="M0 251 H240 L230 260 H10 Z"/>
+      <text x="25" y="84" class="concept-mono concept-muted">/atlas-web</text>
+      <path class="resource-symbol" d="M27 108 H39 L47 116 V139 H27 Z M39 108 V117 H47"/>
+      <text x="62" y="127" class="concept-code">src/export.ts</text>
+      <path class="concept-seam" d="M25 157 H214"/>
+      <circle class="resource-symbol" cx="37" cy="186" r="11"/>
+      <path class="resource-symbol" d="M26 186 H48 M37 175 C28 183 28 189 37 197 M37 175 C46 183 46 189 37 197"/>
+      <text x="62" y="191" class="concept-code">localhost:5173</text>
+      <path class="resource-sample" d="M62 208 H194 M62 219 H166"/>
+    </g>
+    <path class="concept-wire" d="M233 127 C285 127 223 226 262 226" fill="none"/>
+    <path class="concept-wire" d="M214 208 C258 208 225 307 262 307" fill="none"/>
+    <path class="peer-packet" pathLength="1" d="M233 127 C285 127 223 226 262 226" fill="none"/>
+    <path class="peer-packet packet-return" pathLength="1" d="M262 307 C225 307 258 208 214 208" fill="none"/>
+    <g class="peer-destination">
+      <rect class="concept-device" x="262" y="162" width="91" height="196" rx="17"/>
+      <path class="concept-seam" d="M298 172 H318 M297 347 H319"/>
+      <rect class="concept-file-page" x="275" y="192" width="65" height="51" rx="5"/>
+      <path class="resource-symbol" d="M285 202 H293 L299 208 V223 H285 Z M293 202 V209 H299"/>
+      <rect class="concept-file-page" x="275" y="263" width="65" height="65" rx="5"/>
+      <circle class="resource-symbol" cx="292" cy="280" r="7"/>
+      <path class="resource-symbol" d="M285 280 H299 M292 273 C286 278 286 282 292 287 M292 273 C298 278 298 282 292 287"/>
+      <path class="resource-sample" d="M285 300 H330 M285 311 H320"/>
+      <circle class="route-port" cx="262" cy="226" r="3"/>
+      <circle class="route-port" cx="262" cy="307" r="3"/>
+    </g>
+    <text x="308" y="389" text-anchor="middle" class="concept-label">Your phone</text>
+    <text x="25" y="383" class="concept-label concept-muted">Peer to peer</text>
+  </svg>
+  <figcaption class="concept-caption"><span>Files stay on your device</span><span>Web apps stay on localhost</span><strong>Both stay within reach</strong></figcaption>
+</figure>

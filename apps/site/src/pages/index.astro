@@ -9,9 +9,9 @@ import CopyButton from "../components/CopyButton.astro";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { INSTALL, REPO } from "../site";
 import "../styles/story.css";
-const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But", "one mind."], ["How about", "letting them\nwork together?"], ["Meet", "Khor."]];
+const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But", "one mind"], ["How about", "letting them\nwork together?"], ["Meet", "Khor"]];
 ---
-<Base title="Work across your devices and agents." description="Your agents, files, and web apps. Connected peer to peer. Khor by kapestack." productWorld>
+<Base title="Work across your devices and agents" description="Your agents, files, and web apps. Connected peer to peer. Khor by kapestack." productWorld>
   <a class="skip-story" href="#product">跳到产品界面</a>
   <SiteNav home />
   <main class="story-home">
@@ -20,7 +20,7 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
       <div class="opening-sticky">
         <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
         <div class="opening-copy" aria-hidden="true" lang="en">{lines.map(([lead, phrase], index) => <div class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><p class="opening-line-content"><span class="line-lead">{lead}</span>{phrase.split("\n").map(text => <span class="line-phrase">{text}</span>)}</p></div>)}</div>
-        <h2 class="sr-only" lang="en">You have many devices. With many harnesses. But one mind. How about letting them work together? Meet Khor.</h2>
+        <h2 class="sr-only" lang="en">You have many devices With many harnesses But one mind How about letting them work together? Meet Khor</h2>
         <div class="assembly" data-assembly><Mandala /></div>
         <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"><span class="scroll-stem-progress"></span></span></div>
         <nav class="story-steps" aria-label="开场章节">{lines.map(([, phrase], index) => <button type="button" aria-label={`跳到 ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
@@ -28,12 +28,12 @@ const lines = [["You have", "many devices."], ["With", "many harnesses."], ["But
     </section>
     <ProductTour />
     <section class="download-section" id="download" aria-labelledby="download-title">
-      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor.</h2><p class="download-description">从你手边的设备开始。</p>
+      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor</h2><p class="download-description">从你手边的设备开始</p>
       <div class="download-action-group"><a class="download-main" href={sitePath("/download/")} data-device-download><span data-download-label>下载 Khor</span></a><p class="download-note">预览版 · macOS App · Linux / macOS CLI</p></div><a class="other-downloads" href={sitePath("/download/")}>所有下载与安装方式</a>
       <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div>
     </section>
   </main>
-  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents.</span><nav><a href={sitePath("/docs/")}>文档</a><a href={REPO}>GitHub</a></nav></footer>
+  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents</span><nav><a href={sitePath("/docs/")}>文档</a><a href={REPO}>GitHub</a></nav></footer>
 
   <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">开启 JavaScript 可观看动效。<a href={sitePath("/download/")}>下载 khor</a></p></noscript>
 </Base>

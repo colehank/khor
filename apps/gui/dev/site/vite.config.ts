@@ -6,7 +6,6 @@ export default mergeConfig(base,defineConfig({
   resolve:{alias:[
     {find:'@/lib/backend-context',replacement:fileURLToPath(new URL('../lab/backend-context.ts',import.meta.url))},
     {find:'@/views/FileView',replacement:fileURLToPath(new URL('./file-view.ts',import.meta.url))},
-    {find:'@/views/BrowserPane',replacement:fileURLToPath(new URL('./browser-pane.tsx',import.meta.url))},
   ]},
   plugins:[{name:'site-demo-entry',transformIndexHtml:{order:'pre',handler:html=>html.replace('src="/src/main.tsx"','src="/dev/site/bootstrap.ts"')}}],
 }));

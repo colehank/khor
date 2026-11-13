@@ -4,7 +4,6 @@ import {GiB,machines,projects,tasks} from './world';
 import {release} from '../../../site/src/releases';
 import avatars from './data/avatars.json';
 import {siteLoad,siteUsage} from './telemetry';
-import {agentTour,agentTourFrames,terminalTour,type TourScene} from './tour-scenario';
 import type {Avatar} from '../../src/gen/bindings/Avatar';
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import type {SystemKind} from '../../src/gen/bindings/SystemKind';
@@ -17,9 +16,8 @@ import type {AccountRing} from '../../src/gen/bindings/AccountRing';
 import type {ChatMsgRow} from '../../src/gen/bindings/ChatMsgRow';
 import type {KhorAgentView} from '../../src/gen/bindings/KhorAgentView';
 
-export function createSiteFixture(origin:string,tour:TourScene=null) {
-  const sample=tour==='agent'?{...scenario,samples:[agentTourFrames,...scenario.samples.slice(1)]}:tour==='terminal'?{...scenario,terminalScreen:terminalTour.screen}:scenario;
-  const base=createLabFixture(true,{...sample,reply:`Let's try Khor, [download it here.](${origin}/download/)`,origin,settings:true,items:3,machines:machines.length});
+export function createSiteFixture(origin:string) {
+  const base=createLabFixture(true,{...scenario,reply:`Let's try Khor, [download it here.](${origin}/download/)`,origin,settings:true,items:3,machines:machines.length});
   const at=Date.now(),version=release.version.replace(/^v/,'');
   const original=base.request('devices') as DeviceRow[];
   const devices:DeviceRow[]=machines.map((profile,index)=>{
@@ -55,7 +53,7 @@ export function createSiteFixture(origin:string,tour:TourScene=null) {
       command:{id,line,owner:devices[0].id,owner_name:devices[0].name,status:'done',started_at_ms:time,ended_at_ms:time+1200,
         stdout:'',stderr:'',data_json:null,session:null,error:null,agent:{model,approval:null,updated_at_ms:time+1200,updates:[],updates_truncated:false}}};
   };
-  for(const frame of sample.samples[0]){
+  for(const frame of scenario.samples[0]){
     const update=(frame as {update?:{update?:{sessionUpdate:string;content?:{text?:string}}}}).update?.update;
     if(!update)continue;
     if(update.sessionUpdate==='user_message_chunk')messages.push(receipt(update.content?.text??'',at-360000+messages.length*180000));
@@ -111,9 +109,8 @@ export function createSiteFixture(origin:string,tour:TourScene=null) {
         const rows=base.request(command,body) as SessionRow[];
         return tasks.map((task,index)=>{
           const row=rows.find(row=>row.id===task.id)!,home=devices[task.machine];
-          const story=tour==='agent'&&index===0?agentTour:tour==='terminal'&&index===4?terminalTour:task;
-          return {...row,title:story.title,category:task.category,pinned:index===0,last:task.id===tasks[0].id&&messages.length>initialMessages?"Let's try Khor, download it here.":story.preview,home:home.name,execution_home:home.id,observation_owner:home.id,face:home.face,place:task.root,
-            at_ms:at-task.minutes*60000,unread:0,source:null,stale:false,group:'',can_control:task.category!=='shell'||tour==='terminal',word:tour==='terminal'&&index===4?'busy':row.word};
+          return {...row,title:task.title,category:task.category,pinned:index===0,last:task.id===tasks[0].id&&messages.length>initialMessages?"Let's try Khor, download it here.":task.preview,home:home.name,execution_home:home.id,observation_owner:home.id,face:home.face,place:task.root,
+            at_ms:at-task.minutes*60000,unread:0,source:null,stale:false,group:'',can_control:task.category!=='shell'};
         });
       }
       case 'machine_log':return {messages:structuredClone(messages),broken:0};
