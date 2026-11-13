@@ -51,9 +51,11 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
  const [height]=useState(()=>Math.min(keyboardCover()||footHeld()||keyboardHeight(),window.innerHeight*0.6));
  useLayoutEffect(()=>{
   const field=document.activeElement;oldHold.current=footHeld();
-  // A panel overlays the terminal when no keyboard is up. With a keyboard,
-  // retain exactly its existing cover while its replacement is visible.
-  if(keyboardCover()>0){holdFoot(keyboardCover());if(field instanceof HTMLElement){restore.current=field;lowerKeyboard(field);}}
+  // Move chrome to the keyboard's edge while the terminal retains its grid.
+  // The terminal's fit guard covers this hold and every nested content page.
+  const covered=keyboardCover()>0;
+  holdFoot(height);
+  if(covered&&field instanceof HTMLElement){restore.current=field;lowerKeyboard(field);}
   else if(field instanceof HTMLElement&&field.matches('input,textarea'))field.blur();
   return()=>{holdFoot(oldHold.current);};
  },[]);
@@ -73,8 +75,8 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
  return <>
  {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height}} className="fixed inset-x-0 bottom-0 z-40 flex min-h-0 flex-col border-t bg-background px-row pb-safe-bottom shadow-(--shadow-float) sm:left-auto sm:right-row sm:w-dialog" onKeyDown={e=>{if(e.key==='Escape'&&!road.busy){e.preventDefault();finish();}}}>
   <div data-files-actions className="flex min-h-touch flex-none items-center justify-between py-in">
-   <Button data-files-cancel disabled={road.stopping} onClick={()=>road.busy?road.cancel():finish()}>{road.busy?'取消传输':'取消'}</Button>
-   <Button data-files-send variant="primary" disabled={road.busy||picking||!road.selected.length} onClick={()=>void send()}>{road.busy?'正在发送':`发送${road.selected.length?' ('+road.selected.length+')':''}`}</Button>
+   <Button data-files-cancel variant="ghost" className="min-h-touch" disabled={road.stopping} onClick={()=>road.busy?road.cancel():finish()}>{road.busy?'取消传输':'取消'}</Button>
+   <Button data-files-send variant="primary" className={road.selected.length?"min-h-touch":"min-h-touch bg-fill text-muted-foreground"} disabled={road.busy||picking||!road.selected.length} onClick={()=>void send()}>{road.busy?'正在发送':`发送${road.selected.length?' ('+road.selected.length+')':''}`}</Button>
   </div>
   <div data-attachment-split className="flex min-h-0 flex-1 flex-col">
    <section data-files-source className="min-h-0 flex-1 overflow-y-auto overscroll-contain" aria-label="选择文件">

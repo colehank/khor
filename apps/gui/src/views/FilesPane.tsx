@@ -306,7 +306,7 @@ export function FilesPane({
             )}
             {listing.entries.filter(e=>!filter||e.name.toLocaleLowerCase().includes(filter.toLocaleLowerCase())).map((e) => {
               const full = `${listing.path === "/" ? "" : listing.path}/${e.name}`;
-              if(selection){const state=selection.state(full,e.dir);return <FileChoiceRow key={e.name} name={e.name} dir={e.dir} size={e.size} selected={state.selected} disabled={state.disabled||!!(selection.filesOnly&&e.dir)} onChoose={()=>selection.toggle(full,e.dir,e.size)} onEnter={()=>e.dir?onPath(full):selection.toggle(full,false,e.size)} onOpen={!e.dir?()=>selection.open(full,false):undefined}/>;}
+              if(selection){const state=selection.state(full,e.dir);return <FileChoiceRow key={e.name} name={e.name} dir={e.dir} size={e.dir?null:e.size} selected={state.selected} disabled={state.disabled||!!(selection.filesOnly&&e.dir)} onChoose={()=>selection.toggle(full,e.dir,e.size)} onEnter={()=>e.dir?onPath(full):selection.toggle(full,false,e.size)} onOpen={!e.dir?()=>selection.open(full,false):undefined}/>;}
               const faded = e.name.startsWith(".");
               return e.dir ? (
                 <div
@@ -556,7 +556,7 @@ export function FilesPane({
 export function FileChoiceRow({name,dir,size,detail,selected,disabled,onChoose,onEnter,onOpen}:{name:string;dir:boolean;size:number|null;detail?:string;selected:boolean;disabled?:boolean;onChoose:()=>void;onEnter:()=>void;onOpen?:()=>void}){
  return <div data-files-entry={dir?"dir":"file"} data-files-name={name} className={cn("flex min-h-touch min-w-0 items-center gap-in border-b px-row text-callout",selected&&"bg-fill-strong")}>
   <button type="button" disabled={disabled&&!dir} onClick={onEnter} className="flex min-h-touch min-w-0 flex-1 items-center gap-in text-left">
-   <span className="grid size-5 flex-none place-items-center">{dir?<IconFiles/>:<FileKindIcon name={name}/>}</span>
+   <span className="grid size-5 flex-none place-items-center">{dir?<IconFiles className="size-5"/>:<FileKindIcon name={name} className="size-5"/>}</span>
    <span className="min-w-0 flex-1"><span className="block truncate text-body">{name}</span>{(detail||size!==null)&&<span className="block truncate text-caption text-muted-foreground">{[size===null?null:sizeWord(size),detail].filter(Boolean).join(" · ")}</span>}</span>
   </button>
   {onOpen&&<button type="button" data-files-open aria-label={`打开 ${name}`} onClick={onOpen} className="grid min-h-touch min-w-touch flex-none place-items-center"><IconOpen className="size-affordance"/></button>}

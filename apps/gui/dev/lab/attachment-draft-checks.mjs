@@ -16,7 +16,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  const unchanged=async label=>{assert.deepEqual(await grid(),originalGrid,`${label}: terminal cell grid unchanged`);const current=await api('__ai_preview/terminal-sizes');sizes.push({label,count:current.length});assert.equal(current.length,originalSizes,`${label}: no PTY resize`);};
  const image=async label=>{
   const media=JSON.parse(await readFile(new URL('./data/media.generated.json',import.meta.url),'utf8'));
-  await choose({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(media.image,'base64')});await selected('photo.png').locator('[data-files-open]').click();await preview.waitFor();
+  await choose({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(media.image,'base64')});assert.equal(await selected('photo.png').locator('[data-files-open] [data-icon="open"]').count(),1);await selected('photo.png').locator('[data-files-open]').click();await preview.waitFor();
   await page.waitForFunction(()=>{const img=document.querySelector('[data-attachment-file] [data-file-page] img');return img?.complete&&img.naturalWidth>0;});
   assert.equal(await preview.locator('[data-file-more]').count(),0,'Workspace file page has no More action in attachments');
   const focus=await preview.evaluate(root=>({editable:!!document.activeElement?.matches('input,textarea,[contenteditable="true"]'),inside:root.contains(document.activeElement)}));assert.equal(focus.editable,false);imagePreviews.push({label,focus});
@@ -28,7 +28,9 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   originalGrid=await grid();originalSizes=(await api('__ai_preview/terminal-sizes')).length;
   await page.locator('[data-terminal]').evaluate(node=>{const data=new DataTransfer();data.items.add(new File(['original attachment'],'draft.txt',{type:'text/plain'}));node.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));});
   await picker.waitFor();await selected('draft.txt').waitFor();await unchanged('open fixed panel');
-  assert.equal(await picker.evaluate(node=>getComputedStyle(node).position),'fixed');assert.equal(await picker.locator('[data-files-actions]').innerText(),'取消\n发送 (1)');
+  assert.equal(await picker.evaluate(node=>getComputedStyle(node).position),'fixed');
+  await page.waitForFunction(()=>document.querySelector('#root').getBoundingClientRect().bottom<=document.querySelector('[data-attachment-picker]').getBoundingClientRect().top+1);
+  await unchanged('chrome above the keyboard panel');assert.equal(await picker.locator('[data-files-actions]').innerText(),'取消\n发送 (1)');
   assert.equal(await picker.locator('[data-files-input]').getAttribute('accept'),null);assert.match(await picker.locator('[data-send-into-path]').innerText(),/khor-drop/);await green();assert.equal((await api('__ai_preview/attachment-events')).length,0);
   await image('terminal');await unchanged('local file page and return');
   await picker.locator('[data-files-folder-input]').evaluate(input=>{const file=new File(['nested original bytes'],'inside.txt',{type:'text/plain'});Object.defineProperty(file,'webkitRelativePath',{value:'local-folder/nested/inside.txt'});const data=new DataTransfer();data.items.add(file);input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
