@@ -3,62 +3,36 @@ import ConceptMark from './ConceptMark.astro';
 import {supportedHarnesses} from '../../../../gui/dev/site/identity-marks';
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 ---
-<figure class="concept concept-agent" aria-label="Khor Agent concept: one request branches to Codex, Claude and Cursor across devices, and their work comes back together">
-  <svg class="concept-wide" viewBox="0 0 1120 530" aria-hidden="true">
-    <g fill="none" class="agent-branches">
-      <path class="concept-wire" d="M350 255 C488 255 480 95 699 95"/>
-      <path class="concept-wire" d="M350 255 H854"/>
-      <path class="concept-wire" d="M350 255 C488 255 480 415 699 415"/>
-      <path class="agent-dispatch branch-one" pathLength="1" d="M350 255 C488 255 480 95 699 95"/>
-      <path class="agent-dispatch branch-two" pathLength="1" d="M350 255 H854"/>
-      <path class="agent-dispatch branch-three" pathLength="1" d="M350 255 C488 255 480 415 699 415"/>
-      <path class="agent-collection" d="M733 130 V457 Q733 485 705 485 H178 Q150 485 150 457 V255 H160 M888 289 V457 Q888 485 860 485 H705"/>
-      <path class="agent-return" pathLength="1" d="M733 130 V457 Q733 485 705 485 H178 Q150 485 150 457 V255 H160 M888 289 V457 Q888 485 860 485 H705"/>
-    </g>
-    <text x="255" y="70" text-anchor="middle" class="concept-label">One task</text>
-    <path class="concept-wire" d="M255 89 V149"/>
-    <circle class="route-port" cx="255" cy="150" r="4"/>
-    <g class="agent-mind">
-      <circle class="agent-shell" cx="255" cy="255" r="95"/>
-      <circle class="mind-ring" cx="255" cy="255" r="49"/>
-      <circle class="mind-core" cx="255" cy="255" r="16"/>
-    </g>
-    <text x="255" y="393" text-anchor="middle" class="concept-label">Khor Agent</text>
-    <g class="agent-worker worker-one">
-      <circle class="agent-shell" cx="733" cy="95" r="34"/>
-      <ConceptMark svg={marks.Codex} x={715} y={77} size={36} prefix="agent-wide-codex"/>
-      <text x="790" y="92" class="worker-name">Codex</text><text x="790" y="119" class="concept-label concept-muted">Code review · build-01</text>
-    </g>
-    <g class="agent-worker worker-two">
-      <circle class="agent-shell" cx="888" cy="255" r="34"/>
-      <ConceptMark svg={marks.Claude} x={870} y={237} size={36} prefix="agent-wide-claude"/>
-      <text x="945" y="252" class="worker-name">Claude</text><text x="945" y="279" class="concept-label concept-muted">Notes · Mac mini</text>
-    </g>
-    <g class="agent-worker worker-three">
-      <circle class="agent-shell" cx="733" cy="415" r="34"/>
-      <ConceptMark svg={marks.Cursor} x={715} y={397} size={36} prefix="agent-wide-cursor"/>
-      <text x="790" y="412" class="worker-name">Cursor</text><text x="790" y="439" class="concept-label concept-muted">UI changes · ThinkPad</text>
-    </g>
-    <text x="489" y="515" text-anchor="middle" class="concept-label concept-muted">The work comes back together</text>
-  </svg>
-  <svg class="concept-narrow" viewBox="0 0 360 460" aria-hidden="true">
-    <text x="180" y="22" text-anchor="middle" class="concept-label">One task</text>
-    <path class="concept-wire" d="M180 37 V62"/>
-    <g fill="none">
-      <path class="concept-wire" d="M180 156 C180 205 46 174 46 238"/>
-      <path class="concept-wire" d="M180 156 V270"/>
-      <path class="concept-wire" d="M180 156 C180 205 314 174 314 238"/>
-      <path class="agent-dispatch branch-one" pathLength="1" d="M180 156 C180 205 46 174 46 238"/>
-      <path class="agent-dispatch branch-two" pathLength="1" d="M180 156 V270"/>
-      <path class="agent-dispatch branch-three" pathLength="1" d="M180 156 C180 205 314 174 314 238"/>
-      <path class="agent-collection" d="M46 349 V366 Q46 389 69 389 H291 Q314 389 314 366 V349 M180 376 V414"/>
-      <path class="agent-return" pathLength="1" d="M46 349 V366 Q46 389 69 389 H180 V414"/>
-    </g>
-    <g class="agent-mind"><circle class="agent-shell" cx="180" cy="109" r="47"/><circle class="mind-ring" cx="180" cy="109" r="25"/><circle class="mind-core" cx="180" cy="109" r="8"/></g>
-    <g class="agent-worker worker-one"><circle class="agent-shell" cx="46" cy="264" r="26"/><ConceptMark svg={marks.Codex} x={32} y={250} size={28} prefix="agent-phone-codex"/><text x="46" y="315" text-anchor="middle" class="worker-name">Codex</text><text x="46" y="336" text-anchor="middle" class="concept-label concept-muted">build-01</text></g>
-    <g class="agent-worker worker-two"><circle class="agent-shell" cx="180" cy="296" r="26"/><ConceptMark svg={marks.Claude} x={166} y={282} size={28} prefix="agent-phone-claude"/><text x="180" y="347" text-anchor="middle" class="worker-name">Claude</text><text x="180" y="368" text-anchor="middle" class="concept-label concept-muted">Mac mini</text></g>
-    <g class="agent-worker worker-three"><circle class="agent-shell" cx="314" cy="264" r="26"/><ConceptMark svg={marks.Cursor} x={300} y={250} size={28} prefix="agent-phone-cursor"/><text x="314" y="315" text-anchor="middle" class="worker-name">Cursor</text><text x="314" y="336" text-anchor="middle" class="concept-label concept-muted">ThinkPad</text></g>
-    <circle class="route-port" cx="180" cy="418" r="4"/><text x="180" y="450" text-anchor="middle" class="concept-label">Back to you</text>
-  </svg>
-  <figcaption class="concept-caption"><span>Discover</span><span>Delegate</span><span>Follow through</span><strong>Back to you</strong></figcaption>
+<figure class="concept concept-agent" data-concept="agent" data-phase="ready" aria-label="Khor delegates one request to Codex and Claude on different devices and gathers their results">
+  <div class="concept-stage agent-stage">
+    <div class="agent-request"><span>Your task</span><strong>Review the code<br/>and project notes</strong></div>
+    <svg class="diagram-routes" viewBox="0 0 600 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
+      <path class="request-route" d="M112 112 Q112 164 170 180"/>
+      <path class="dispatch-route" d="M224 192 C310 192 325 112 435 112"/>
+      <path class="dispatch-route" d="M224 192 C310 192 325 264 435 264"/>
+      <path class="return-route" d="M477 112 C570 112 570 174 570 210 V326 Q570 366 530 366 H330"/>
+      <path class="return-route" d="M477 264 C570 264 570 290 570 326 Q570 366 530 366 H330"/>
+      <path class="travel-route dispatch-travel" pathLength="1" d="M224 192 C310 192 325 112 435 112"/>
+      <path class="travel-route dispatch-travel" pathLength="1" d="M224 192 C310 192 325 264 435 264"/>
+      <path class="travel-route return-travel" pathLength="1" d="M477 112 C570 112 570 174 570 210 V326 Q570 366 530 366 H330"/>
+      <path class="travel-route return-travel" pathLength="1" d="M477 264 C570 264 570 290 570 326 Q570 366 530 366 H330"/>
+    </svg>
+    <div class="diagram-node agent-khor">
+      <span class="node-disc mind-disc"><ConceptMark svg={marks.Khor} x={0} y={0} size={44} prefix="agent-khor"/></span>
+      <span class="node-name">Khor</span><span class="node-detail">Find · delegate · follow</span>
+    </div>
+    <div class="diagram-node agent-codex">
+      <span class="node-disc"><ConceptMark svg={marks.Codex} x={0} y={0} size={24} prefix="agent-codex"/></span>
+      <span class="node-name">Codex</span><span class="node-detail"><span class="worker-task">Code review · </span>build-01</span>
+    </div>
+    <div class="diagram-node agent-claude">
+      <span class="node-disc"><ConceptMark svg={marks.Claude} x={0} y={0} size={24} prefix="agent-claude"/></span>
+      <span class="node-name">Claude</span><span class="node-detail"><span class="worker-task">Project notes · </span>Mac mini</span>
+    </div>
+    <div class="agent-collected"><span class="result-port"></span><span data-agent-result>Together, back to you</span></div>
+  </div>
+  <figcaption class="concept-footer">
+    <div><strong data-agent-status>Two results, together</strong><span>Example task</span></div>
+    <button class="concept-replay" type="button" data-replay-agent>Replay</button>
+  </figcaption>
 </figure>

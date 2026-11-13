@@ -1,52 +1,33 @@
 ---
+import ConceptMark from './ConceptMark.astro';
+import {supportedDevices} from '../../../../gui/dev/site/identity-marks';
+const marks=Object.fromEntries(supportedDevices.map(mark=>[mark.name,mark.svg]));
 ---
-<figure class="concept concept-terminal" aria-label="Terminal continuity concept: a dev server stays running on MacBook Pro while its viewer moves from desktop to phone">
-  <svg class="concept-wide" viewBox="0 0 1120 490" aria-hidden="true">
-    <path class="terminal-link concept-wire" d="M101 237 H230 M890 237 H1020"/>
-    <path class="terminal-handoff" pathLength="1" d="M101 237 H1020"/>
-    <g class="terminal-viewer viewer-desktop">
-      <circle class="viewer-disc" cx="91" cy="237" r="39"/>
-      <rect class="viewer-symbol" x="73" y="222" width="36" height="25" rx="3"/>
-      <path class="viewer-symbol" d="M91 247 V254 M79 254 H103"/>
-      <text x="91" y="313" text-anchor="middle" class="concept-label">Desktop</text>
-    </g>
-    <g class="terminal-process">
-      <rect class="terminal-plane" x="230" y="80" width="660" height="312" rx="16"/>
-      <path class="concept-seam" d="M230 135 H890"/>
-      <circle class="route-port" cx="258" cy="108" r="4"/>
-      <text x="274" y="114" class="concept-label">atlas-web</text>
-      <text x="860" y="114" text-anchor="end" class="concept-label concept-muted">MacBook Pro</text>
-      <text x="270" y="201" class="terminal-command"><tspan class="terminal-prompt">$ </tspan>npm run dev</text>
-      <text x="270" y="253" class="terminal-output">Local</text><text x="383" y="253" class="terminal-output terminal-url">http://localhost:5173/</text>
-      <text x="270" y="288" class="terminal-output concept-muted">Ready for changes</text>
-      <rect class="terminal-cursor" x="271" y="326" width="11" height="21"/>
-    </g>
-    <g class="terminal-viewer viewer-phone">
-      <circle class="viewer-disc" cx="1029" cy="237" r="39"/>
-      <rect class="viewer-symbol" x="1017" y="216" width="24" height="42" rx="5"/>
-      <path class="viewer-symbol" d="M1026 251 H1032"/>
-      <text x="1029" y="313" text-anchor="middle" class="concept-label">Phone</text>
-    </g>
-    <path class="concept-wire" d="M560 392 V431"/>
-    <circle class="route-port" cx="560" cy="434" r="4"/>
-    <text x="560" y="474" text-anchor="middle" class="concept-label concept-muted">Still running on your Mac</text>
-  </svg>
-  <svg class="concept-narrow" viewBox="0 0 360 438" aria-hidden="true">
-    <g class="terminal-process">
-      <rect class="terminal-plane" x="2" y="18" width="356" height="245" rx="12"/>
-      <path class="concept-seam" d="M2 64 H358"/>
-      <circle class="route-port" cx="21" cy="41" r="3"/>
-      <text x="33" y="46" class="concept-label">atlas-web</text>
-      <text x="339" y="46" text-anchor="end" class="concept-label concept-muted">MacBook Pro</text>
-      <text x="23" y="114" class="terminal-command"><tspan class="terminal-prompt">$ </tspan>npm run dev</text>
-      <text x="23" y="159" class="terminal-output terminal-url">http://localhost:5173/</text>
-      <text x="23" y="188" class="terminal-output concept-muted">Ready for changes</text>
-      <rect class="terminal-cursor" x="24" y="214" width="8" height="17"/>
-    </g>
-    <g fill="none"><path class="concept-wire" d="M180 263 V299 M83 338 H277"/><path class="terminal-handoff" pathLength="1" d="M83 338 H277"/></g>
-    <circle class="route-port" cx="180" cy="301" r="3"/>
-    <g class="terminal-viewer viewer-desktop"><circle class="viewer-disc" cx="58" cy="338" r="26"/><rect class="viewer-symbol" x="44" y="327" width="28" height="19" rx="2"/><path class="viewer-symbol" d="M58 346 V352 M49 352 H67"/><text x="58" y="390" text-anchor="middle" class="concept-label">Desktop</text></g>
-    <g class="terminal-viewer viewer-phone"><circle class="viewer-disc" cx="302" cy="338" r="26"/><rect class="viewer-symbol" x="293" y="323" width="18" height="31" rx="4"/><path class="viewer-symbol" d="M300 349 H304"/><text x="302" y="390" text-anchor="middle" class="concept-label">Phone</text></g>
-  </svg>
-  <figcaption class="concept-caption"><span>The view changes</span><strong>The process stays</strong></figcaption>
+<figure class="concept concept-terminal" data-concept="terminal" data-view="desktop" aria-label="The same terminal keeps running on MacBook Pro while you switch the viewing device">
+  <div class="concept-stage terminal-stage">
+    <svg class="diagram-routes" viewBox="0 0 600 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
+      <path class="viewer-route desktop-route" d="M300 140 C300 228 114 214 114 312"/>
+      <path class="viewer-route phone-route" d="M300 140 C300 228 486 214 486 312"/>
+      <path class="travel-route desktop-route" pathLength="1" d="M300 140 C300 228 114 214 114 312"/>
+      <path class="travel-route phone-route" pathLength="1" d="M300 140 C300 228 486 214 486 312"/>
+    </svg>
+    <div class="process-note">
+      <div class="process-owner"><span class="process-dot"></span><span>MacBook Pro</span><span class="process-state">Running</span></div>
+      <strong>atlas-web</strong>
+      <code><span>$</span> npm run dev</code>
+    </div>
+    <span class="route-label process-anchor">Keeps running here</span>
+    <button class="diagram-node terminal-desktop" type="button" data-view-choice="desktop" aria-pressed="true" aria-label="View the same terminal from Desktop">
+      <span class="node-disc"><ConceptMark svg={marks.macOS} x={0} y={0} size={24} prefix="terminal-mac"/></span>
+      <span class="node-name">Desktop</span><span class="node-detail">Your view</span>
+    </button>
+    <button class="diagram-node terminal-phone" type="button" data-view-choice="phone" aria-pressed="false" aria-label="View the same terminal from Phone">
+      <span class="node-disc"><ConceptMark svg={marks.iOS} x={0} y={0} size={24} prefix="terminal-phone"/></span>
+      <span class="node-name">Phone</span><span class="node-detail">Your view</span>
+    </button>
+  </div>
+  <figcaption class="concept-footer">
+    <div><strong data-view-status>Viewing from Desktop</strong><span>Example session</span></div>
+    <span class="session-label">Same session</span>
+  </figcaption>
 </figure>
