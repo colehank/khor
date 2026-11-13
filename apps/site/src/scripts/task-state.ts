@@ -1,12 +1,13 @@
 import type {TaskEndpoint,TaskPacket,TaskPhase} from '../components/concepts/capability-data';
+import {taskTiming} from '../components/concepts/capability-data';
 const clamp=(value:number)=>Math.max(0,Math.min(1,value));
 
 export function taskTransport(phase:TaskPhase,elapsed:number) {
   if(!phase.flow)return {arrival:0,delivered:false,position:0,opacity:0};
-  const departure=80,arrival=Math.min(700,phase.duration*.7);
+  const {departure,transfer,fade}=taskTiming,arrival=Math.min(departure+transfer,phase.duration-fade);
   const t=clamp((elapsed-departure)/(arrival-departure));
   return {arrival,delivered:elapsed>=arrival,position:t*t*(3-2*t),
-    opacity:Math.min(clamp((elapsed-departure)/80),clamp((arrival+120-elapsed)/120))};
+    opacity:Math.min(clamp((elapsed-departure)/fade),clamp((arrival+fade-elapsed)/fade))};
 }
 
 export function taskState(phases:TaskPhase[],index:number,elapsed:number) {
@@ -36,7 +37,7 @@ export function taskState(phases:TaskPhase[],index:number,elapsed:number) {
     }
     if(phase.session&&state.sessions[phase.session].started){
       const session=state.sessions[phase.session];
-      session.progress=clamp((time-transport.arrival)/(phase.duration-250-transport.arrival));
+      session.progress=clamp((time-transport.arrival)/(phase.duration-taskTiming.outputHold-transport.arrival));
       if(session.progress===1){
         if(phase.session==='mac'){state.fileReady=true;state.receipts.mac='files';}
         else{state.webReady=true;state.receipts.linux='web';}

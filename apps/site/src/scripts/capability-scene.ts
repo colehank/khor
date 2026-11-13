@@ -1,4 +1,4 @@
-import {agentPhases,workPhases} from '../components/concepts/capability-data';
+import {agentPhases,workPhases,taskTiming} from '../components/concepts/capability-data';
 import {capabilityGeometry} from './capability-geometry';
 import {mountNetworkMap} from './network-map';
 import {taskState,taskTransport} from './task-state';
@@ -46,7 +46,7 @@ export function mountCapabilityScene(figure:HTMLElement) {
     const phase=phases[index],{nodes}=geometry,p=nodes[phase.user==='outside'?'you':phase.user];
     let x=p.x,y=p.y+(isAgent?0:70);
     if(phase.id==='handoff'&&!reduced.matches){
-      const t=Math.min(1,elapsed/500),u=t*t*(3-2*t),from=nodes.windows,to=nodes.phone;
+      const t=Math.max(0,Math.min(1,(elapsed-taskTiming.departure)/taskTiming.handoff)),u=t*t*(3-2*t),from=nodes.windows,to=nodes.phone;
       // Move the access marker around the phone, not through its device glyph.
       x=(1-u)*(1-u)*from.x+2*(1-u)*u*(Math.min(from.x,to.x)-100)+u*u*to.x;
       y=from.y+70+(to.y-from.y)*u;
@@ -84,7 +84,7 @@ export function mountCapabilityScene(figure:HTMLElement) {
   const tick=()=>{
     frame=0;if(!active)return;
     const phase=phases[index],elapsed=elapsedNow();draw(elapsed);
-    const movingUntil=Math.max(taskTransport(phase,0).arrival+120,phase.session?phase.duration-250:0,phase.id==='handoff'?500:0);
+    const movingUntil=Math.max(taskTransport(phase,0).arrival+taskTiming.fade,phase.session?phase.duration-taskTiming.outputHold:0,phase.id==='handoff'?taskTiming.departure+taskTiming.handoff:0);
     if(elapsed<movingUntil)frame=requestAnimationFrame(tick);
   };
   const schedule=()=>{

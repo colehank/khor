@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-14 用户反馈两幕太快：当前改为各 20 秒，载荷移动 1.2 秒，文件／Web 生成后停 1 秒，四句提示均至少 2.4 秒；到达后执行的依赖与图形保持。手机 Work／宽屏 Agent 完整循环及静态构建通过，证据 `site-story-20261114/task-pacing/`，本轮仅本地。
+
 - 2026-11-14 本地两幕改为通用 Task：笔记本发对话、台式机运行 Claude 并产出 File、File 直传 Server、Codex 运行并提供 Web、手机接续访问；Khor 幕替用户发起同一流程。session 固定在执行设备，输入到达后才运行，文件／服务来源持续保留。标题及副文案同步用户确认版本，两幕各 10 秒。当前继续入口见 [Task 与远端 session](site-task-sessions-20261114.md)，证据 `site-story-20261114/task-sessions/`，本轮未发布。
 
 - 2026-11-13 用户明确要求部署：源码 `f5c457d7` 的完整静态产物已发布为 `gh-pages` 提交 `cebdd1d`，Pages run `43444719571` 成功，<https://khor.cloud/> 版本与两档 headless Chrome 检查通过。详情见 [Pages 发布记录](site-pages-20261112.md)。下方各次「仅本地」为对应迭代时的历史状态。
