@@ -15,7 +15,7 @@ export function mountProductTour() {
     if(figure.dataset.concept==='agent'){
       figure.dataset.phase='ready';
       figure.querySelector('[data-agent-status]')!.textContent='Two results, together';
-      figure.querySelector('[data-agent-result]')!.textContent='Together, back to you';
+      figure.querySelector('[data-agent-result]')!.textContent='Ready';
     }
   };
   const play=(figure:HTMLElement)=>{
@@ -28,7 +28,7 @@ export function mountProductTour() {
       const phase=(name:string,text:string)=>{
         figure.dataset.phase=name;
         figure.querySelector('[data-agent-status]')!.textContent=text;
-        figure.querySelector('[data-agent-result]')!.textContent=name==='collecting'?'Collecting results':'Results return here';
+        figure.querySelector('[data-agent-result]')!.textContent=name==='collecting'?'Collecting':'Results';
       };
       phase('delegating','Khor delegates the work');
       later(figure,()=>phase('working','Two agents, working in parallel'),1000);

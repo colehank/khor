@@ -6,10 +6,11 @@ const marks=Object.fromEntries(supportedDevices.map(mark=>[mark.name,mark.svg]))
 <figure class="concept concept-terminal" data-concept="terminal" data-view="desktop" aria-label="The same terminal keeps running on MacBook Pro while you switch the viewing device">
   <div class="concept-stage terminal-stage">
     <svg class="diagram-routes" viewBox="0 0 600 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
-      <path class="viewer-route desktop-route" d="M300 140 C300 228 114 214 114 312"/>
-      <path class="viewer-route phone-route" d="M300 140 C300 228 486 214 486 312"/>
-      <path class="travel-route desktop-route" pathLength="1" d="M300 140 C300 228 114 214 114 312"/>
-      <path class="travel-route phone-route" pathLength="1" d="M300 140 C300 228 486 214 486 312"/>
+      <path class="session-spine" d="M300 140 V224"/>
+      <path class="viewer-route desktop-route" d="M300 224 C300 272 144 260 144 312"/>
+      <path class="viewer-route phone-route" d="M300 224 C300 272 456 260 456 312"/>
+      <path class="travel-route desktop-route" pathLength="1" d="M300 140 V224 C300 272 144 260 144 312"/>
+      <path class="travel-route phone-route" pathLength="1" d="M300 140 V224 C300 272 456 260 456 312"/>
     </svg>
     <div class="process-note">
       <div class="process-owner"><span class="process-dot"></span><span>MacBook Pro</span><span class="process-state">Running</span></div>

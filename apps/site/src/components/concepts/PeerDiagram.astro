@@ -5,27 +5,19 @@ const marks=Object.fromEntries(supportedDevices.map(mark=>[mark.name,mark.svg]))
 ---
 <figure class="concept concept-peer" data-concept="peer" data-resource="file" aria-label="Files and web apps stay on your Mac and connect to your phone through Khor">
   <div class="concept-stage peer-stage">
-    <div class="network-place place-desk"><span>At your desk</span></div>
-    <div class="network-place place-away"><span>With you</span></div>
+    <span class="peer-place place-desk">At your desk</span>
+    <span class="peer-place place-away">With you</span>
     <svg class="diagram-routes" viewBox="0 0 600 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
-      <path class="context-route" d="M132 144 Q132 240 240 272"/>
-      <path class="context-route" d="M240 272 Q365 192 492 256"/>
-      <path class="resource-route file-route" d="M132 144 C208 -4 425 2 492 256"/>
-      <path class="resource-route web-route" d="M132 144 C210 369 425 385 492 256"/>
-      <path class="travel-route file-route" pathLength="1" d="M132 144 C208 -4 425 2 492 256"/>
-      <path class="travel-route web-route" pathLength="1" d="M132 144 C210 369 425 385 492 256"/>
+      <path class="resource-route" d="M138 240 C230 112 370 112 462 240"/>
+      <path class="travel-route" pathLength="1" d="M138 240 C230 112 370 112 462 240"/>
     </svg>
     <div class="diagram-node peer-mac">
       <span class="node-disc"><ConceptMark svg={marks.macOS} x={0} y={0} size={24} prefix="peer-mac"/></span>
-      <span class="node-name">MacBook Pro</span><span class="node-detail">Your files &amp; web apps</span>
-    </div>
-    <div class="diagram-node peer-linux">
-      <span class="node-disc"><ConceptMark svg={marks.Linux} x={0} y={0} size={24} prefix="peer-linux"/></span>
-      <span class="node-name">build-01</span><span class="node-detail">Linux</span>
+      <span class="node-name">MacBook Pro</span>
     </div>
     <div class="diagram-node peer-phone">
       <span class="node-disc"><ConceptMark svg={marks.iOS} x={0} y={0} size={24} prefix="peer-phone"/></span>
-      <span class="node-name">iPhone</span><span class="node-detail">In your hand</span>
+      <span class="node-name">iPhone</span>
     </div>
     <span class="route-label resource-label file-label"><code>src/export.ts</code></span>
     <span class="route-label resource-label web-label"><code>localhost:5173</code></span>
