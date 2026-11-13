@@ -8,7 +8,7 @@ Current source identity, remote verification and pinned live URL are recorded in
 
 Verified final split source2dfcaecae678d77c38c5dd8229ae1e0dabb64daa, treec01fa05ccb2f4df4d088546cebe69096f498f4fc: run43441015120 SUCCESS,8 Chromium/WebKit×1280/412/390/320 flows including320×568 and safe areas; shared unit/gates/mobile-static and direct/Storybook hot passed. Each long-list sample has12 rows, upper/lower independently scroll, rows fill available width and removal never overlaps preview. Native source glyph sizes match. ACP continuing selection reuses its existing composer draft. Artifact14045992089 SHA25662b70ea05a8449ccec62cedf79c328cac2731a8c3941a03d419cfa5b65c391e9 checked by source/tree/CRC; actual WebKit320/412 and Chromium1280 screenshots inspected. Live5routes/9JS assets match exact artifact bytes, and previous snapshots remain accessible. Only owned static Lab server replaced; no native runtime restarted.
 
-Current pinned Lab: http://127.0.0.1:23961/versions/2dfcaecae678d77c/assets/workbench/index.html?path=/story/khor-app--attachments . Mobile uses MacLab borrowed network. Preview remains optional; iOS system picker is invoked from one unrestricted local input, and native picker appearance is not claimed proven by browser emulation.
+Previous split-only Lab: http://127.0.0.1:23961/versions/2dfcaecae678d77c/assets/workbench/index.html?path=/story/khor-app--attachments . Mobile uses MacLab borrowed network. Preview remains optional; iOS system picker is invoked from one unrestricted local input, and native picker appearance is not claimed proven by browser emulation.
 
 ## Image preview focus and canonical preview glyph (2026-11-14)
 
