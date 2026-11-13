@@ -3,7 +3,7 @@ import path from 'node:path';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const context=await browser.newContext({viewport:{width,height:844},hasTouch:width<500,isMobile:width<500});
  const page=await context.newPage(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(String(error)));
- const name=`attachment-draft-${engine}-${width}`;
+ const name=`attachment-draft-${engine}-${width}`;let dropCapabilities=null;
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const readyGreen=async selector=>{
   assert.equal(await page.locator(selector).evaluate(button=>{const probe=document.createElement('i');probe.style.backgroundColor='var(--brand-strong)';document.body.append(probe);const green=getComputedStyle(probe).backgroundColor;probe.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===green;}),true,'A ready send uses the shared green');
@@ -11,7 +11,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  try{
   await page.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3`);
   await page.locator('[data-terminal] .xterm').waitFor();
-  await page.locator('[data-terminal]').evaluate(element=>{const data=new DataTransfer();data.items.add(new File(['original attachment'],'draft.txt',{type:'text/plain'}));element.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));});
+  dropCapabilities=await page.locator('[data-terminal]').evaluate(element=>{const data=new DataTransfer();data.items.add(new File(['original attachment'],'draft.txt',{type:'text/plain'}));const capabilities={types:[...data.types],files:data.files.length,entryMethods:[...data.items].map(item=>typeof item.webkitGetAsEntry)};element.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));return capabilities;});
   const picker=page.locator('[data-attachment-picker]:visible');await picker.waitFor();
   await picker.locator('[data-files-selected="draft.txt"]').waitFor();
   assert.equal((await api('__ai_preview/attachment-events')).length,0,'Drop enters a draft without uploading or pasting');
@@ -56,5 +56,5 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));
  }catch(error){errors.push(String(error.stack??error));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}
  finally{await context.close();}
- return {name,errors};
+ return {name,dropCapabilities,errors};
 }

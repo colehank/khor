@@ -51,6 +51,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const deviceGeneration = useRef(0);
   const [at, setAt] = useState<Place | null>(null);
   const [queue, setQueue] = useState(road.selected.length>0), [query, setQuery] = useState("");
+  useEffect(()=>{if(!road.selected.length)setQueue(false);},[road.selected.length]);
   const [localInto,setLocalInto]=useState<string|null>(null);
   const into=road.into===undefined?localInto:road.into;
   const setInto=road.onInto??setLocalInto;
@@ -159,14 +160,15 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
   const localEntries = folder ? deviceFolderEntries(folder.root,folder.prefix) : [];
   return <div data-files-panel className="flex min-h-0 flex-1 flex-col">
     <DialogTitle>{road.action==='添加'?'添加附件':'发送附件'}</DialogTitle>
-    <TaskActions busy={road.busy} close={<Button data-files-cancel disabled={road.stopping} onClick={road.busy?road.cancel:onClose}>{road.busy?'取消传输':'关闭'}</Button>}
-      primary={<Button data-files-send disabled={road.busy||!road.selected.length||picking} variant={road.selected.length&&!road.busy?'primary':'default'} onClick={()=>void send(road.selected)}>{road.busy?'正在发送':`${road.action??'发送'}${road.selected.length?' ('+road.selected.length+')':''}`}</Button>}/>
-    <div data-files-target className="flex flex-none flex-col gap-in border-b pb-in text-body">
+    <TaskActions close={!road.busy?<Button data-files-cancel onClick={onClose}>关闭</Button>:undefined}
+      cancel={road.busy?<Button data-files-cancel disabled={road.stopping} onClick={road.cancel}>{road.stopping?'正在取消':'取消传输'}</Button>:undefined}
+      primary={<Button data-files-send disabled={road.busy||!road.selected.length||picking} variant="primary" className={!road.selected.length||road.busy?"bg-fill text-muted-foreground":undefined} onClick={()=>void send(road.selected)}>{road.busy?'正在发送':`${road.action??'发送'}${road.selected.length?' ('+road.selected.length+')':''}`}</Button>}/>
+    <div data-files-target inert={road.busy||undefined} className="flex flex-none flex-col gap-in border-b pb-in text-body">
       <div className="flex min-w-0 items-center gap-in"><span className="text-muted-foreground">发到</span>{target&&<MachineAvatar face={target.face} className="size-kind-mark flex-none"/>}<span className="min-w-0 truncate">{target?.shown??road.machine??'会话所在机器'}</span></div>
       <SendInto machine={road.machine??''} name={target?.name??road.machine??''} into={into} onInto={setInto}/>
       {road.cwd&&road.onInto&&<Button size="sm" variant="ghost" disabled={road.busy} className="self-start" onClick={()=>setInto(road.cwd)}>使用会话目录</Button>}
     </div>
-    <div data-key-panel-scroll className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
+    <div data-key-panel-scroll inert={road.busy||undefined} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
       {road.selected.length>0&&<section data-files-cards className="flex flex-col gap-in py-row">
         <div className="flex items-center justify-between gap-in"><h3 className="text-body font-label">待发送 · {road.selected.length}</h3><Button data-files-add-more size="sm" onClick={()=>{setQueue(false);setAt(null);setFolder(null);}}>继续添加</Button></div>
         <div className="flex flex-wrap gap-in">{road.selected.map(entry=><div data-files-selected={entry.name} key={entry.key} className="relative w-64 max-w-full flex-none rounded-lg bg-fill pe-touch">
@@ -220,7 +222,7 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
       {error&&<p role="alert" className="text-destructive">{error}</p>}
       {road.busy?<div data-files-transfer role="status">{road.stopping?'正在取消':`正在发送 · ${Math.round((road.progress??0)*100)}%`}</div>:<span className="text-muted-foreground">{road.action==='添加'?'添加后可在输入区补充说明，再一起发送':'发送后将文件路径放入终端，回车由你确认'}</span>}
     </div>
-    <AttachmentPreview file={localLook?.device?.files[0]?.file??null} onClose={()=>setLocalLook(null)} onSave={road.replace&&localLook?file=>road.replace!(localLook,file):undefined}/>
+    <AttachmentPreview file={localLook?.device?.files[0]?.file??null} onClose={()=>setLocalLook(null)} onSave={road.replace&&localLook&&road.selected.some(item=>item.key===localLook.key)?file=>road.replace!(localLook,file):undefined}/>
     <FilePreview machine={look?.machine.name ?? ""} shown={look?.machine.shown ?? ""} here={look?.machine.me ?? false} path={look?.path??look?.entry.path ?? null} initialFace={look?.face} onClose={closePreview} footer={look && !folder && <><Button disabled={road.busy || included(look.entry)} onClick={() => toggle(look.entry)}>{selected(look.entry) ? gui.files_deselect : gui.files_select}</Button></>} />
   </div>;
 }

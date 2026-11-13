@@ -252,7 +252,7 @@ export function SendInto({
           </Button>
         )}
       </div>}
-      <DirPicker open={picking} onOpenChange={setPicking} machine={machine} fixed onPick={(p) => onInto(p.path)} />
+      <DirPicker open={picking} onOpenChange={setPicking} machine={machine} fixed onPick={async p=>onInto((await fetchLs(machine,p.path)).path)} />
     </>
   );
 }

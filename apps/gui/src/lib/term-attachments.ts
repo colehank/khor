@@ -89,9 +89,9 @@ export function deviceFolderEntries(root: Attachment, prefix = ""): DeviceFolder
 }
 /** Capture handles during drop; enumerate asynchronously after the DOM event. */
 export async function droppedAttachments(data: DataTransfer, shown: string): Promise<Attachment[]> {
-  const roots = [...data.items].filter((i) => i.kind === "file").map((i) => i.webkitGetAsEntry());
+  const roots = [...data.items].filter((i) => i.kind === "file").map((i) => i.webkitGetAsEntry?.() ?? null);
   const files = [...data.files];
-  if (!roots.length || roots.some((e) => !e)) return deviceAttachments(files, false, shown);
+  if (!roots.length || roots.some((e) => !e) || (files.length === roots.length && roots.every(entry=>entry?.isFile))) return deviceAttachments(files, false, shown);
   const out: Attachment[] = [];
   for (const root of roots) {
     const tree: DeviceTree = { files: [], dirs: [] };
