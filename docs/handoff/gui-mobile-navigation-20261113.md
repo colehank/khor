@@ -10,7 +10,7 @@
 
 dcaf72f4的专项43349243986：共享unit/gates/mobile static、16项导航交互和热更新全通过。覆盖主会话/工作区、Khor/ACP、320/390、Chromium/WebKit，以及顶部模型/返回/新建、输入框独立头像、设置菜单和缩短视口。ZIP artifact14003201778 SHA256 `85969b80fb4064ba6abe12c3491f9290c822820659ba718ef9dc813fa11c0f98`已核验，主Khor手机和工作区320截图已实际查看。缩短视口不冒充物理手机系统键盘。
 
-当前验收地址：http://127.0.0.1:23961/app/?scene=khor&machines=3 ，手机通过MacLab借网。静态源db3229cf/tree1abc52e6，Python PID42122 / exec81619。保留16个版本，48个JS的HTTP及字节摘要通过；只在核验argv和旧HTTP来源后替换原静态Lab，没有重启用户App或宿主。
+旧底栏清理阶段的验收地址：http://127.0.0.1:23961/app/?scene=khor&machines=3 ，手机通过MacLab借网。当时静态源db3229cf/tree1abc52e6，Python PID42122 / exec81619，16个版本、48个JS的HTTP及字节摘要通过。该地址现已继续更新，最新现场见 [桌面拖放与固定标题材质](desktop-glass-drop-20261113.md)；没有重启用户App或宿主。
 
 修复在 `fix/gui-mobile-navigation-20261113`，RC.16保持不可变，安装包尚不包含此项改动。重型验证全在远端，本机仅源码与Python静态服务。完整证据在 `/Volumes/disk0/Khor/evidence/gui-mobile-navigation-20261113/`。临时验证workflow f79123ec仅补选择专项及刷新apt索引，不合入产品；此前两次检查因Ubuntu旧包索引404中止，均保留失败记录。
 
