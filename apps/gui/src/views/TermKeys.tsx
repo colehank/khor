@@ -70,7 +70,7 @@ import { setTermKeysHw, useTermKeysHw } from "@/lib/term-keys-hw";
 import { setTermJoyHaptic, useTermJoyHaptic } from "@/lib/term-joy-haptic";
 import { cn } from "@/lib/utils";
 import { CursorKey } from "@/views/CursorPad";
-import { TermFiles, type FilesRoad } from "@/views/TermFiles";
+import type { FilesRoad } from "@/views/TermFiles";
 import { KeyRowEntryEditor } from "@/views/KeyRowEntryEditor";
 
 /** A cap's two looks: its box is the finger's floor, the cap drawn inside
@@ -180,7 +180,7 @@ export function TermKeys({
       // 尾」): 「…」 was pinned at the right end beside the pad.
       className="flex h-key-row flex-none items-center gap-1.5 px-row"
     >
-      <AttachKey term={term} onOpen={files.open} />
+      <AttachKey onOpen={files.open} on={files.opened} />
       <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto">
         {shown.map((k) => (
           <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
@@ -204,14 +204,11 @@ function panelKey(term: RefObject<Terminal | null>, want: PanelKind) {
 /**
  * **📎, pinned at the row's left end** (the owner 2026-10-07 12:30: 「回形
  * 针常驻最左边」). The files panel (`TermFiles`, UX-41) in the keyboard's
- * band, the band 「…」 uses; on while it is up, the way 「…」 is, and
- * pressed again it puts the panel away. ⚠️ 墓碑: a key of the editable
+ * shared attachment task; the key stays at the left of the row and
+ * reflects whether that task is open. ⚠️ 墓碑: a key of the editable
  * row, scrolled with the rest and never lit.
  */
-function AttachKey({ term,onOpen }: { term: RefObject<Terminal | null>;onOpen?:()=>void }) {
-  const raised = useKeyPanel();
-  const kind = useKeyPanelKind();
-  const on = raised && kind === "files";
+function AttachKey({onOpen,on=false}:{onOpen?:()=>void;on?:boolean}) {
   return (
     <button
       type="button"
@@ -220,7 +217,8 @@ function AttachKey({ term,onOpen }: { term: RefObject<Terminal | null>;onOpen?:(
       aria-label={gui.key_attach_name}
       aria-expanded={on}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={() => onOpen?onOpen():panelKey(term, "files")}
+      disabled={!onOpen}
+      onClick={onOpen}
       className={CAP_BOX}
     >
       <span className={capFace(on, on)}>
@@ -302,9 +300,6 @@ function KeyPanel({
             // home indicator's room is its own, as a keyboard's is.
             className="fixed inset-x-0 bottom-0 z-40 flex h-[var(--kb)] flex-col border-t bg-background pb-safe-bottom font-sans text-foreground"
           >
-            {kind === "files" ? (
-              <TermFiles road={files} onClose={()=>{keyPanelGone();const field=term.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}} onSent={()=>{keyPanelGone();const field=term.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}} />
-            ) : (
               <div data-key-panel-scroll className="flex min-h-0 flex-1 touch-pan-y flex-col gap-base overflow-y-auto overscroll-contain px-row pt-in">
                 {GROUPS.map(({ group, label }) => (
                   <section key={group} data-term-key-group={group} className="flex flex-col gap-in">
@@ -360,7 +355,6 @@ function KeyPanel({
                 </section>
                 <KeyboardMatters onEdit={() => { keyPanelGone(); setEditing(true); }} />
               </div>
-            )}
           </div>,
           document.body,
         )}

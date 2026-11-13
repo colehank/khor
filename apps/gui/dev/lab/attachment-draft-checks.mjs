@@ -11,6 +11,13 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  try{
   await page.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3`);
   await page.locator('[data-terminal] .xterm').waitFor();
+  if(width>=500){
+    await page.locator('[data-term-attachments]:visible').click();
+    await page.locator('[data-attachment-picker]:visible').waitFor();
+    assert.equal(await page.locator('[data-files-send]:visible').isDisabled(),true,'An empty draft cannot send');
+    assert.equal(await page.locator('[data-files-send]:visible').evaluate(button=>{const probe=document.createElement('i');probe.style.backgroundColor='var(--brand-strong)';document.body.append(probe);const green=getComputedStyle(probe).backgroundColor;probe.remove();return getComputedStyle(button).backgroundColor===green;}),false,'An empty draft is neutral');
+    await page.locator('[data-files-cancel]:visible').click();await page.locator('[data-attachment-picker]').waitFor({state:'hidden'});
+  }
   dropCapabilities=await page.locator('[data-terminal]').evaluate(element=>{const data=new DataTransfer();data.items.add(new File(['original attachment'],'draft.txt',{type:'text/plain'}));const capabilities={types:[...data.types],files:data.files.length,entryMethods:[...data.items].map(item=>typeof item.webkitGetAsEntry)};element.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));return capabilities;});
   const picker=page.locator('[data-attachment-picker]:visible');await picker.waitFor();
   await picker.locator('[data-files-selected="draft.txt"]').waitFor();

@@ -116,6 +116,7 @@ import type { Doing } from "@/gen/bindings/Doing";
 import { tapAsks, termWake, useTermWake, watchesCursor } from "@/lib/term-tap";
 import { holdFocus, keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard, terminalShown } from "@/lib/soft-keyboard";
 import { dropsComposition } from "@/lib/term-compose-drop";
+import {HeaderSeat} from "@/views/SessionPreferences";
 import {AttachmentPicker} from "@/views/TermFiles";
 import { KeyboardSwitch, KeyRowSwitch, TermKeys } from "@/views/TermKeys";
 import { useKeyRowOpen } from "@/lib/key-row-open";
@@ -3671,13 +3672,13 @@ export function TerminalPane({
             `lib/term-tap`'s (`useTermWake`). */}
         <KeyRowSeats field={keysRef} keyboard={wake === "button" && <KeyboardSwitch field={keysRef} />}>
           <TermKeys term={termRef} mods={mods} onMods={latch} files={{ machine: machine ?? null, cwd: doing?.cwd ?? null, selected: attachments,
-            open:()=>setAttachmentOpen(true),add:queueAttachments,
+            open:()=>setAttachmentOpen(true),opened:attachmentOpen,add:queueAttachments,
             remove:item=>changeAttachments(attachmentsRef.current.filter(x=>x.key!==item.key)),
             send:sendAttachments,dropFiles,busy:dropShare!==null,progress:dropShare,cancel:()=>dropCancel.current() }} />
         </KeyRowSeats>
       </>
     )}
-    {active&&!coarse&&<BarSeat at="trail"><GlassCircle data-term-attachments aria-label="添加附件" onClick={()=>setAttachmentOpen(true)}><IconAttach className="size-affordance"/></GlassCircle></BarSeat>}
+    {active&&!coarse&&<HeaderSeat><GlassCircle data-term-attachments aria-label="添加附件" onClick={()=>setAttachmentOpen(true)}><IconAttach className="size-affordance"/></GlassCircle></HeaderSeat>}
     {active&&<AttachmentPicker open={attachmentOpen} onClose={()=>setAttachmentOpen(false)} onSent={()=>{setAttachmentOpen(false);const field=termRef.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}}
       road={{machine:machine??null,cwd:doing?.cwd??null,selected:attachments,into:attachmentInto,onInto:setAttachmentInto,
        add:items=>changeAttachments(addAttachments(attachmentsRef.current,items)),

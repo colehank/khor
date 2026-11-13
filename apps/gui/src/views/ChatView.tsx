@@ -699,11 +699,11 @@ export function ChatView({
   const control=(operation:string,payload:Record<string,unknown>={})=>withChat(view => view.control(crypto.randomUUID(),operation,payload)).catch(e=>setControlError(String(e)));
   /** The directory on the conversation's machine its files go to, picked
       above the box (「存到」, `SendInto`); `null` is its receive location.
-      Read as each file is added: a file is put there when it is chosen. */
+      Read when the draft is sent; selection does not write to the target. */
   const [into, setInto] = useState<string | null>(null);
   /** The files going along with the line being written (round CHAT,
-      `chat-files`): each put on the conversation's machine as it is
-      chosen, cleared by sending like the text beside them. ⚠️ 墓碑:
+      `chat-files`): sources stay in the draft until explicit sending,
+      and confirmed sends clear only their captured selection. ⚠️ 墓碑:
       `shots` carried pictures as base64 inside the prompt, gated on the
       agent's capabilities; every file is now a path on the machine, and
       a picture also rides inline where the agent takes pictures. */

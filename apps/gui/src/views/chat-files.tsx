@@ -75,8 +75,8 @@ async function base64Of(f: File): Promise<string> {
   return btoa(bin);
 }
 
-/** `into`: the directory on the conversation's machine the files go
-    to, as chosen when each is added; `null` is its receive location. */
+/** `into` is resolved by the explicit send, not by selection. Null
+ * uses the target receive directory; source references stay references. */
 export function usePendingFiles(upload: {
   put: (file: File, into: string | null) => Promise<string>;
   putPaths: (paths: string[], into: string | null) => Promise<string[]>;

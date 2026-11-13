@@ -1,5 +1,5 @@
-/** Attachment browser in the existing key-panel band. Browsing never
- * sends: files open read-only; selection is sent through the pane. */
+/** Shared source browser and attachment draft. Only the task submit
+ * sends its complete selection; previews cannot bypass that draft. */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchDevices, fetchLs, nativeFolders, said, termDropForget, termPickFolders, type DeviceRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -24,7 +24,7 @@ export type FilesRoad = {
   add: (entries: Attachment[]) => void;
   remove: (entry: Attachment) => void;
   replace?: (entry: Attachment, file: File) => void;
-  open?: () => void;
+  open?: () => void; opened?: boolean;
   into?: string | null; onInto?: (path: string | null) => void;
   filesOnly?: boolean; action?: string;
   send: (entries: Attachment[], into?: string | null) => Promise<boolean>;
