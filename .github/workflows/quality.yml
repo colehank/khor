@@ -22,6 +22,10 @@ on:
         type: choice
         options: [all, child-tree, child-tree-chromium, conversation-navigation]
         default: all
+      desktop_probe:
+        type: choice
+        options: [none, drag-routing, drag-all]
+        default: none
       desktop_target:
         type: choice
         options: [all, windows, linux-arm, linux-x86]
@@ -1162,6 +1166,26 @@ jobs:
         if: inputs.lab_checks != 'all'
         working-directory: apps/gui
         run: npm run test:unit && npm run gates && npm run mobile:static
+      - name: Verify native drag routes with pinned Tauri delivery
+        if: inputs.desktop_probe != 'none'
+        working-directory: apps/gui
+        env:
+          NATIVE_HELPERS_CHECK_DIR: ${{ runner.temp }}/native-helper-probe
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          DESKTOP_PROBE: ${{ inputs.desktop_probe }}
+        run: |
+          if [ "$DESKTOP_PROBE" = drag-routing ]; then
+            export NATIVE_HELPERS_SCENARIOS=drag-main-after-browser,window-drop-main-after-browser
+          else
+            unset NATIVE_HELPERS_SCENARIOS
+          fi
+          xvfb-run -a npm run native-helpers
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && inputs.desktop_probe != 'none'
+        with:
+          name: desktop-ui-probe
+          path: ${{ runner.temp }}/native-helper-probe
+          if-no-files-found: error
       - name: Apply new regression checks to an unchanged old UI for a red baseline
         if: inputs.checker_sha != ''
         env:
