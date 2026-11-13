@@ -3666,9 +3666,18 @@ impl Node {
     ) -> Result<Response, Miss> {
         let mut guard = RetireUnheard::new(&self.wires, line);
         let budget = wires::budget_for(req.budget(), &line.conn);
+        let endpoint = self.ears.lock().unwrap_or_else(|p| p.into_inner()).clone();
         let out = crate::deadline::wait(
             by,
-            exchange_inner(&line.conn, &line.name, req, budget, attempt, Some(&guard)),
+            exchange_inner(
+                &line.conn,
+                &line.name,
+                req,
+                budget,
+                attempt,
+                Some(&guard),
+                endpoint.as_deref(),
+            ),
         )
         .await
         .map_err(|_| Miss::CallerExpired)?;
@@ -13364,7 +13373,7 @@ async fn exchange(
 ) -> Result<Response, Miss> {
     crate::deadline::wait(
         crate::deadline::current(),
-        exchange_inner(conn, who, req, budget, None, None),
+        exchange_inner(conn, who, req, budget, None, None, None),
     )
     .await
     .map_err(|_| Miss::CallerExpired)?
@@ -13412,6 +13421,7 @@ async fn exchange_inner(
     budget: Duration,
     mut attempt: Option<&mut DocAttempt>,
     owner: Option<&RetireUnheard<'_>>,
+    endpoint: Option<&iroh::Endpoint>,
 ) -> Result<Response, Miss> {
     let frame = proto::encode_request(req).map_err(Miss::Garbled)?;
     if let Some(attempt) = attempt.as_deref_mut() {
@@ -13420,6 +13430,7 @@ async fn exchange_inner(
     let sent = tokio::time::Instant::now();
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
+    let mut relay_checked = false;
     // When every path was asked whether it is there, and how long the
     // answers get (`wires::ask_every_path`).
     let mut asked: Option<(tokio::time::Instant, Duration)> = None;
@@ -13483,6 +13494,21 @@ async fn exchange_inner(
                 // The road's own patience, read each beat: QUIC refines its
                 // round trip as the answers come (`wires::Patience`).
                 let patience = wires::Patience::of(conn);
+                // A live application request can expose a silently wedged
+                // relay TCP flow before the idle 15s heartbeat. Ask the
+                // transport's existing health checker; the pending work and
+                // QUIC connection stay intact, with no application replay.
+                // Any received datagram suppresses this early check: a slow
+                // answer after an ACK is not a transport failure.
+                let relay_check_after = wires::rtt_of(conn).saturating_mul(3).max(LIVENESS_BEAT);
+                if !relay_checked
+                    && heard.is_none()
+                    && now.duration_since(sent) >= relay_check_after
+                    && conn.paths().iter().any(|path| path.is_selected() && path.is_relay())
+                    && let Some(endpoint) = endpoint
+                {
+                    relay_checked = endpoint.check_relay_connections();
+                }
                 let quiet = match heard {
                     None => now.duration_since(sent) >= patience.ack,
                     Some(at) => now.duration_since(at) >= patience.silent,

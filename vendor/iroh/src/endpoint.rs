@@ -1771,6 +1771,17 @@ impl Endpoint {
         self.inner.network_change().await;
     }
 
+    /// Requests a bounded health check of the currently active relay connections.
+    ///
+    /// This is a hint for an outstanding application request which has received
+    /// no transport acknowledgement. It uses the existing relay ping/pong check;
+    /// it does not rebind sockets, declare a network change, or retire QUIC
+    /// connections. Concurrent hints are coalesced by the socket actor. Returns
+    /// false when the endpoint is closed or its bounded actor inbox is full.
+    pub fn check_relay_connections(&self) -> bool {
+        !self.is_closed() && self.inner.check_relay_connections()
+    }
+
     /// **A major network change, taken as told** (khor patch 16): the UDP
     /// sockets rebound on their own ports, the relay connection checked,
     /// a fresh net report, and every path of every connection pinged, so

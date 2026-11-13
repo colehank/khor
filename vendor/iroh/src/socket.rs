@@ -1135,6 +1135,7 @@ impl EndpointInner {
             transports_network_change,
             direct_addr_done_rx,
             call_notify_quic_network_change: None,
+            last_demand_relay_check: None,
         };
         // Initialize addresses
         #[cfg(not(wasm_browser))]
@@ -1347,6 +1348,12 @@ impl EndpointInner {
             .ok();
     }
 
+    pub(crate) fn check_relay_connections(&self) -> bool {
+        self.actor_sender
+            .try_send(ActorMessage::CheckRelayConnections)
+            .is_ok()
+    }
+
     /// Resolves an [`EndpointAddr`] to an [`EndpointIdMappedAddr`] to connect to via [`EndpointInner::endpoint`].
     ///
     /// This starts a `RemoteStateActor` for the remote if not running already, and then checks
@@ -1479,6 +1486,7 @@ enum ActorMessage {
     /// Re-evaluate direct addresses, e.g. after configured external addresses changed.
     DirectAddrRefresh,
     ForceNetworkChange(bool),
+    CheckRelayConnections,
 }
 
 /// State for polling until a default route is available after a network change.
@@ -1564,6 +1572,8 @@ struct Actor {
     /// until the gateway appears. Once it does, we notify immediately.
     /// After 5s total we notify anyway even without a gateway.
     call_notify_quic_network_change: Option<PendingNetworkChangeNotify>,
+    /// Coalesces application demand without adding an idle timer or task.
+    last_demand_relay_check: Option<Instant>,
 }
 
 impl Actor {
@@ -1895,6 +1905,16 @@ impl Actor {
             }
             ActorMessage::ForceNetworkChange(is_major) => {
                 self.handle_network_change(is_major);
+            }
+            ActorMessage::CheckRelayConnections => {
+                let now = Instant::now();
+                if self
+                    .last_demand_relay_check
+                    .is_none_or(|at| now.duration_since(at) >= Duration::from_millis(500))
+                {
+                    self.last_demand_relay_check = Some(now);
+                    self.transports_network_change.check_relay_connection();
+                }
             }
         }
     }
