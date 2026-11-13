@@ -3,7 +3,7 @@ import path from 'node:path';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const context=await browser.newContext({viewport:{width,height:844},hasTouch:width<500,isMobile:width<500});
  const page=await context.newPage(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(String(error)));
- const name=`attachment-draft-${engine}-${width}`;let dropCapabilities=null;
+ const name=`attachment-draft-${engine}-${width}`;let dropCapabilities=null;const selectedLayouts=[];
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const readyGreen=async selector=>{
   assert.equal(await page.locator(selector).evaluate(button=>{const probe=document.createElement('i');probe.style.backgroundColor='var(--brand-strong)';document.body.append(probe);const green=getComputedStyle(probe).backgroundColor;probe.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===green;}),true,'A ready send uses the shared green');
@@ -24,6 +24,24 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   assert.equal((await api('__ai_preview/attachment-events')).length,0,'Drop enters a draft without uploading or pasting');
   assert.match(await picker.locator('[data-send-into-path]').innerText(),/khor-drop/);
   await readyGreen('[data-files-send]:visible');
+  const measureCard=card=>card.evaluate(row=>{
+    const list=row.parentElement,preview=row.querySelector('button'),remove=row.querySelector('button[aria-label^="移除 "]');
+    const box=element=>{const r=element.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};
+    return {row:box(row),list:box(list),preview:box(preview),remove:box(remove),previewBackground:getComputedStyle(preview).backgroundColor,remote:preview.hasAttribute('data-chat-file')};
+  });
+  selectedLayouts.push(await measureCard(picker.locator('[data-files-selected="draft.txt"]')));
+  await picker.locator('[data-files-add-more]').click();
+  await picker.locator('[data-files-machine][data-files-session]').click();
+  await picker.locator('[data-files-entry="file"] [data-files-select]').first().click();
+  const remoteCard=picker.locator('[data-files-selected]').filter({has:page.locator('[data-chat-file]')});
+  await remoteCard.waitFor();selectedLayouts.push(await measureCard(remoteCard));
+  await page.screenshot({path:path.join(report,name+'-selected-rows.png')});
+  for(const layout of selectedLayouts){
+    assert(Math.abs(layout.row.right-layout.list.right)<=1&&Math.abs(layout.row.left-layout.list.left)<=1,'Selected attachments fill the list width: '+JSON.stringify(layout));
+    assert(['transparent','rgba(0, 0, 0, 0)'].includes(layout.previewBackground),'The selected row owns one surface; its preview must not paint a second background: '+JSON.stringify(layout));
+    assert(Math.abs(layout.remove.right-layout.row.right)<=1&&layout.preview.right<=layout.remove.left+1,'Remove keeps a separate target at the right edge without overlapping preview');
+  }
+  await remoteCard.locator('button[aria-label^="移除 "]').click();
   await picker.locator('[data-files-selected="draft.txt"] [data-files-card-preview]').click();
   await page.locator('[data-attachment-text]').fill('edited attachment');
   await page.locator('[data-attachment-name]').fill('edited.txt');
@@ -71,5 +89,5 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));
  }catch(error){errors.push(String(error.stack??error));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}
  finally{await context.close();}
- return {name,dropCapabilities,errors};
+ return {name,dropCapabilities,selectedLayouts,errors};
 }
