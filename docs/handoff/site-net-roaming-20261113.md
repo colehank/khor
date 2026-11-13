@@ -6,7 +6,7 @@
 
 ## 场景与行为（当前）
 
-- NetA / LAN = {Workstation, Server}，NetB / Wi-Fi = {Desktop, Server}，NetC / Cellular = {Mobile}。Server 为共享节点，Desktop 在左、Workstation 在右；Mobile 从 Wi-Fi 开始，移动到 Cellular 再回到 Wi-Fi，不进入 LAN。内部几何键保留原名，图形换成机架／紧凑主机／屏幕／手机四枚角色标记；开场 You have many devices 同步复用。
+- NetA / LAN = {Workstation, Server}，NetB / Wi-Fi = {Desktop, Server}，NetC / Cellular = {Mobile}。Server 为共享节点，Desktop 在左、Workstation 在右；Mobile 从 Wi-Fi 开始，移动到 Cellular 再回到 Wi-Fi，不进入 LAN。内部几何键保留原名，图形换成机架／台式显示器／翻盖笔记本／手机四枚角色标记；开场 You have many devices 同步复用。
 - 原生网络先出现，KhorNet 在 2 秒内一次成形，始终包围四台设备。初次建立后以 10 秒周期 Wi-Fi／Cellular 往返，每次移动 1.7 秒，到位后保持中继 1.3 秒再切直连，并停留 2 秒；不重复播放初次建网，也不拆掉 KhorNet。蜂窝超边淡出时 Mobile 加入 Wi-Fi。
 - 大弧度闭合超边来自平滑支撑函数，保持凸曲率，没有节点鼓包或反折；外层与原生网络留出两行弧形标题的间距。没有点对点路径、额外 Khor 设备节点或底部控件。
 - LAN、Wi-Fi、Cellular、KhorNet 使用图标 + 名称，文字以 `textPath` 沿参考边界弧线排字；每档宽度的图标位置、标题位置与曲率固定，漫游时只改变超边。副标题使用独立内侧路径按真实弧长排字，不用 `dy` 压入内侧。统一 SVG mask 只裁线条、保留淡底，在图标和标题处留完整线条缺口；所有标题按当前字宽前后各留 8 个 SVG 单位，P2P／relay 切换时只更新缺口长度，文字不再靠黑色粗描边盖住超边；生产图标保持正向。蜂窝图标为三格、前两格实心而最后一格空心。Wi-Fi／蜂窝字形补入现有 `icons.tsx` 并由网站静态渲染，品牌与系统标记继续共用真实 App 来源。
@@ -23,7 +23,7 @@
 
 ## 角色图标与共用图形（最新）
 
-后两幕现直接复用同一网络图形，仅叠加任务载荷、进度与操作者。Net 原有拓扑、布局、漫游与连接切换时序保留。当前构图及新增图标的开场／三幕验证见 [Work 与 Khor Agent](site-work-agent-20261113.md)，证据位于 `network-task/`；下方保留先前网络几何与响应式验证。
+后两幕复用同一网络图形，现展示约 10 秒的模型训练任务。Agent 用户位于网外，沿边既有 Khor 图标负责路由；只扩展 Agent 视框与图标标题间距，设备坐标不变。Net 原有拓扑、布局、漫游与连接切换时序保留。当前构图与验证见 [Work 与 Khor Agent](site-work-agent-20261113.md)，最新证据位于 `model-training/`；开场共享图标证据在 `network-task/`。下方保留先前网络几何与响应式验证。
 
 ## 网络几何定向验证
 

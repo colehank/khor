@@ -1,4 +1,4 @@
-import {networkGeometry} from './network-geometry';
+import {networkGeometry,networkViewBox} from './network-geometry';
 
 // Shared rendering only; each scene owns its playback and task state.
 export function mountNetworkMap(figure:HTMLElement) {
@@ -29,7 +29,7 @@ export function mountNetworkMap(figure:HTMLElement) {
     attr(gap(id),'stroke-dasharray',`0 ${start-inset} ${text.getComputedTextLength()+inset*2} 10000`);
   };
   const fitKhorGaps=()=>{
-    fitGap('khor',connectionLabel.closest('text')!,26);
+    fitGap('khor',connectionLabel.closest('text')!,Number(connectionLabel.parentElement!.getAttribute('startOffset')));
     fitGap('khor-subtitle',svg.querySelector<SVGTextElement>('.net-handoff-status')!,26);
   };
   const setConnection=(connection:'p2p'|'relay')=>{
@@ -61,7 +61,7 @@ export function mountNetworkMap(figure:HTMLElement) {
     figure.style.setProperty('--net-build',String(build));
     if(position===lastPosition&&compact.matches===lastCompact)return;
     const geometry=networkGeometry(compact.matches,position);
-    attr(svg,'viewBox',geometry.box);
+    attr(svg,'viewBox',networkViewBox(compact.matches,svg.dataset.netExternalUser==='true'));
     if(compact.matches!==lastCompact)layoutLabels();
     lastPosition=position;lastCompact=compact.matches;
     for(const id of ['mac','linux','windows','phone'] as const)translate(nodes[id],geometry.nodes[id]);

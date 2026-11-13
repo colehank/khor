@@ -1,29 +1,32 @@
-// The same build travels through the same four-device network in both scenes.
-// Only the operator changes. The desktop is available but not used in this run.
+// Four readable beats. Routing handoffs share their caption instead of adding
+// a new explanatory step for every file or command.
 export type TaskDevice='mac'|'linux'|'windows'|'phone';
-export type TaskPacket='files'|'terminal'|'web'|'message'|'check';
-export type TaskArrival={device:TaskDevice;effect:'request'|'project'|'start'|'terminal'|'preview'|'report'|'result'};
+export type TaskEndpoint=TaskDevice|'khor'|'you';
+export type TaskPacket='files'|'terminal'|'web'|'message'|'check'|'metrics';
+export type TaskMark=TaskPacket|'agent'|'edit';
+export type TaskEffect='request'|'plan'|'train'|'refine'|'update'|'preview'|'collect'|'result';
+export type TaskFlow={from:TaskEndpoint;to:TaskEndpoint};
 export type TaskPhase={
-  id:string;duration:number;caption:string;detail:string;user:TaskDevice;
-  route?:'upload'|'download'|'watch'|'preview'|'request'|'deliver';packet?:TaskPacket;
-  focus:TaskDevice[];codex?:boolean;progress:[number,number];complete?:boolean;arrival?:TaskArrival;
+  id:string;duration:number;caption:string;user:TaskDevice|'outside';
+  flow:TaskFlow;packet:TaskPacket;arrival:TaskEffect;
+  focus:TaskEndpoint[];run?:1|2;complete?:boolean;
 };
+export const taskPackets:TaskPacket[]=['files','terminal','web','message','check','metrics'];
+export const taskMarks:TaskMark[]=[...taskPackets,'agent','edit'];
+
 export const workPhases:TaskPhase[]=[
-  {id:'prepare',duration:3000,caption:'Prepare the project with Codex',detail:'Workstation · Atlas Web',user:'mac',focus:['mac'],codex:true,progress:[0,0]},
-  {id:'transfer',duration:2800,caption:'Send the project to your server',detail:'atlas-web.tar · Workstation → Server',user:'mac',focus:['mac','linux'],route:'upload',packet:'files',arrival:{device:'linux',effect:'project'},progress:[0,0]},
-  {id:'run',duration:3000,caption:'Start the build and tests',detail:'Server · npm run build && npm test',user:'mac',focus:['linux'],route:'upload',packet:'terminal',arrival:{device:'linux',effect:'start'},progress:[0,.43]},
-  {id:'handoff',duration:2400,caption:'Pick up the same task on mobile',detail:'The build keeps running on your server',user:'phone',focus:['linux'],progress:[.43,1]},
-  {id:'preview',duration:2800,caption:'Open the server’s web preview',detail:'Mobile · Atlas Web is ready to check',user:'phone',focus:['phone','linux'],route:'preview',packet:'web',arrival:{device:'phone',effect:'preview'},progress:[1,1]},
-  {id:'done',duration:4600,caption:'Your web app, on mobile',detail:'Atlas Web · from your server',user:'phone',focus:['phone'],progress:[1,1],complete:true},
+  {id:'train',duration:3000,caption:'Train on Server',user:'mac',focus:['mac','linux'],flow:{from:'mac',to:'linux'},packet:'terminal',arrival:'train',run:1},
+  {id:'refine',duration:2300,caption:'Refine on your laptop',user:'windows',focus:['linux','windows'],flow:{from:'linux',to:'windows'},packet:'metrics',arrival:'refine'},
+  {id:'update',duration:2100,caption:'Let Server run it again',user:'windows',focus:['windows','linux'],flow:{from:'windows',to:'linux'},packet:'files',arrival:'update',run:2},
+  {id:'preview',duration:3000,caption:'Try it on your phone',user:'phone',focus:['linux','phone'],flow:{from:'linux',to:'phone'},packet:'web',arrival:'preview',complete:true},
 ];
 export const agentPhases:TaskPhase[]=[
-  {id:'request',duration:2800,caption:'You hand Khor the task',detail:'“Build Atlas Web and check the result”',user:'phone',focus:['mac','phone'],route:'request',packet:'message',arrival:{device:'mac',effect:'request'},progress:[0,0]},
-  {id:'prepare',duration:2800,caption:'Khor works with Codex',detail:'Workstation · prepare the project',user:'phone',focus:['mac'],codex:true,progress:[0,0]},
-  {id:'transfer',duration:2800,caption:'Khor sends the project to Server',detail:'atlas-web.tar · Workstation → Server',user:'phone',focus:['mac','linux'],route:'upload',packet:'files',arrival:{device:'linux',effect:'project'},progress:[0,0]},
-  {id:'run',duration:3000,caption:'Khor starts the build and tests',detail:'Server · npm run build && npm test',user:'phone',focus:['mac','linux'],route:'upload',packet:'terminal',arrival:{device:'linux',effect:'start'},progress:[0,.45]},
-  {id:'monitor',duration:3000,caption:'Khor follows the running task',detail:'The terminal keeps running on Server',user:'phone',focus:['mac','linux'],route:'download',packet:'terminal',arrival:{device:'mac',effect:'terminal'},progress:[.45,1]},
-  {id:'preview',duration:2600,caption:'Khor checks the web preview',detail:'Atlas Web · build ready, 8 tests passed',user:'phone',focus:['mac','linux'],route:'download',packet:'web',arrival:{device:'mac',effect:'preview'},progress:[1,1]},
-  {id:'report',duration:2600,caption:'Khor collects the build report',detail:'Server → Workstation',user:'phone',focus:['mac','linux'],route:'download',packet:'files',arrival:{device:'mac',effect:'report'},progress:[1,1]},
-  {id:'deliver',duration:2800,caption:'Khor sends the result back to you',detail:'Mobile · preview and build report',user:'phone',focus:['mac','phone'],route:'deliver',packet:'check',arrival:{device:'phone',effect:'result'},progress:[1,1]},
-  {id:'done',duration:4600,caption:'Your task, ready for review',detail:'Build ready · 8 tests passed',user:'phone',focus:['phone'],progress:[1,1],complete:true},
+  {id:'request',duration:800,caption:'Give Khor a goal',user:'outside',focus:['you','khor'],flow:{from:'you',to:'khor'},packet:'message',arrival:'request'},
+  {id:'plan',duration:800,caption:'Give Khor a goal',user:'outside',focus:['khor','mac'],flow:{from:'khor',to:'mac'},packet:'message',arrival:'plan'},
+  {id:'train',duration:2200,caption:'Khor starts the training',user:'outside',focus:['khor','linux'],flow:{from:'khor',to:'linux'},packet:'terminal',arrival:'train',run:1},
+  {id:'refine',duration:1800,caption:'Khor coordinates the revision',user:'outside',focus:['khor','windows'],flow:{from:'khor',to:'windows'},packet:'metrics',arrival:'refine'},
+  {id:'update',duration:1800,caption:'Khor coordinates the revision',user:'outside',focus:['windows','linux'],flow:{from:'windows',to:'linux'},packet:'files',arrival:'update',run:2},
+  {id:'preview',duration:800,caption:'Khor brings it back to you',user:'outside',focus:['linux','phone'],flow:{from:'linux',to:'phone'},packet:'web',arrival:'preview'},
+  {id:'collect',duration:600,caption:'Khor brings it back to you',user:'outside',focus:['linux','khor'],flow:{from:'linux',to:'khor'},packet:'files',arrival:'collect'},
+  {id:'deliver',duration:2200,caption:'Khor brings it back to you',user:'outside',focus:['khor','you'],flow:{from:'khor',to:'you'},packet:'web',arrival:'result',complete:true},
 ];

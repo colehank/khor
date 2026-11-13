@@ -1,51 +1,35 @@
 # Work across the net → Khor Agent · 2026-11-13
 
-用户否定能力树与任务星形图，要求**继续使用第一幕 Net 的节点、超边和布局**，展示沿路径传文件、监控任务的完整过程。以下替代旧 `task-ownership/` 与 `work-agent-graph/` 版本；旧审阅不代表当前审美验收。
+当前使用同一个 **Train a vision model** 任务，替代早期 Atlas Web 构建故事。用户要求快速、直觉地看懂任务，因此两幕只保留四句提示，不展示脚本准备、文件名、训练轮次或逐步技术解释。继续复用第一幕 Net 的四节点与超边布局。
 
-## 当前内容
+## 当前叙事
 
-同一个虚构任务 **Build and check Atlas Web**，四节点为 Workstation、Server、Desktop、Mobile。任务幕沿用第一幕的稳定设备位置，但只保留包围四台设备的 KhorNet 超边，移除内部 LAN／Wi-Fi 分组；标题只写 KhorNet，不加 P2P／relay 后缀。第一幕网络基础设施仍展示原生分组与连接状态。
+- [Work across the net](http://127.0.0.1:23820/#work)：You 在 Workstation 与 agent 发起任务 → Server 终端训练 → You 到翻盖笔记本查看结果、修订并交回 Server → You 在 Mobile 试用 Web。共 10.4 秒；末段传输到达后保留约 2.1 秒的完成态
+- [Khor Agent](http://127.0.0.1:23820/#khor-agent)：You 始终在 KhorNet **外**，交出目标；**超边上的既有 Khor 图标**接单并路由 Workstation agent、Server 训练与笔记本修订，再收集模型并把结果与 Web 交回 You。共 11 秒、四句提示；相邻路由步骤共用同一句，最后约 1.3 秒保留交付态
+- 两幕只显示 KhorNet 外层超边及名称，不显示内部 LAN／Wi-Fi 或 P2P／relay 后缀。一次只显示一条当前任务路径和一个载荷，进度环显示 Server 工作。没有额外 Khor 机器节点，也不把 Khor 放在 Workstation 上
+- 设备位置、外层超边来自第一幕的稳定几何；Agent 视框向上扩展容纳网外 You，设备本身不移动。标题缺口按真实字宽计算，Agent 的 Khor 图标环与文字间距单独留足
+- 所有状态遵守到达依赖：训练命令到达后才出现终端与进度；训练完成才可审阅，修订结束后才可开始第二次训练；Web、模型收集与结果返还依次到达后生效
+- 自动循环，可见且前台时运行，离屏／后台暂停并续播。减少动态效果和无 JS 显示完整完成态；RAF 只用于正在传输或推进的任务，不在结果停留期间空转
 
-- [Work across the net](http://127.0.0.1:23820/#work)：You 从 Workstation 开始，与 Codex 准备项目；把 `atlas-web.tar` 传到 Server，再启动 `npm run build && npm test`。用户切到 Mobile，Server 继续执行；完成后仅把 Web 交给 Mobile，至此收尾，不向手机传终端或向台式机返回报告
-- [Khor Agent](http://127.0.0.1:23820/#khor-agent)：You 始终位于 Mobile。先向 Workstation 上的 Khor 交任务，Khor 调用 Codex 准备项目，传到 Server 执行、监控、检查网页和收集报告，最后把结果交回 Mobile。Khor 是 Workstation 上的会话徽标，不是第五台设备；用户始终在图上
-- 每步只有一条临时操作路径，一个文件／终端／网页／消息／结果符号沿路径移动。Server 上的进度环和状态独立呈现，节点上只显示当前必要的徽标。Desktop 保持可用，不虚构其参与任务
-- Work 18.6 秒、Agent 27 秒自动循环，结果均停留 4.6 秒；离屏／后台暂停并续播。减少动态效果与无 JS 均保留完成态。仅移动载荷和进度变化时使用有界 RAF
+## 图标与实现
 
-## 设备图标与开场
+四设备沿用真实 App 图标体系：Workstation = 带底座的台式显示器，Server = 机架，Desktop = 翻盖笔记本，Mobile = 手机。开场 You have many devices 已复用同一套图稿；随后仍换成 Claude／Codex／Cursor／Shell。安装平台和真实 GUI 各自系统标记不改。
 
-新增 `IconServer`、`IconWorkstation`、`IconDesktop`、`IconMobile`，沿用 `icons.tsx` 的 RailGlyph、光学校准、线宽与 currentColor。按用户最新澄清，四种轮廓分别为双层机架、带底座的台式显示器、翻盖笔记本、圆角手机。Desktop 节点使用笔记本，Workstation 使用台式显示器；不再显示主机盒或独立塔式机。
+- `NetworkGraph.astro`／`network-map.ts`：三幕共用图形与标签缺口，每个 SVG 实例独立 ID；可选外部用户视框不改变 Net 场景
+- `capability-data.ts`：精简阶段、四句提示、操作者、路由与到达效果
+- `task-state.ts`：载荷位移和目标状态共用到达时刻；依次重放已完成阶段，保证缩短时序后仍满足依赖。到达为阶段的 52%，上限 900ms，剩余时间用于执行和查看
+- `capability-geometry.ts`：调用原设备几何，只计算任务曲线、Khor 端点和网外用户；手机 Web 路径绕开 Server 状态文字
+- `CapabilityScene.astro`／`capability-scene.ts`：静态完成态、任务徽标、进度、用户和播放生命周期；Agent 最后一步同时包含结果交付，减少动态效果必须取该步末尾状态
 
-`identity-marks.ts` 在构建时导出同一套图稿。**You have many devices** 的四颗灰节点也使用它们，随后仍切成 Claude／Codex／Cursor／Shell。开场的几何演化和最终 Khor 图标未改；安装平台与真实 GUI 仍使用各自系统标记。
-
-## 实现入口
-
-- `NetworkGraph.astro` 与 `network-map.ts`：提取第一幕现有图形和渲染，三幕共用；每个实例的 SVG ID 有独立前缀，沿边标题保留真实字宽与两端 8 单位缺口
-- `capability-data.ts`：同一任务的手动操作／Khor 受托执行阶段、操作者、进度、载荷
-- `CapabilityScene.astro`：任务标题、共用网络、Server 进度、会话徽标、You 与阶段说明
-- `capability-geometry.ts`：调用原 `networkGeometry`，只额外计算当前临时操作曲线与圆外端点
-- `task-state.ts`：传输到达时刻与依赖状态，共用于载荷位置和目标机器状态。先收到项目才能启动终端，终端指令到达才推进构建，收到网页／报告／结果才显示对应标记；每个阶段继承已经完成的动作，不在切阶段时提前显示目标状态
-- `capability-scene.ts`：阶段循环、有界载荷与进度动画、暂停续播；`product-tour.ts` 保留统一可见性与浏览器偏好生命周期
-
-首屏 GUI／手机首图、Fog 参数、导航、下载保持既有行为。全程静态前端，不接真实设备、Lab 或模型。本轮仅本地，未推送、部署或合并。
+首屏 GUI／手机首图、Fog、导航、下载和开场图标演化保留。全程静态合成示意，不连接真实设备、Lab 或模型。本轮仅本地，未推送、部署或合并。
 
 ## 定向验证
 
-证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/network-task/`。
+证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/model-training/`。
 
-- `checks.json`：320／768／1440px 无横向溢出、重复 ID 或断裂 textPath；三幕节点、viewBox 与稳定外轮廓一致。Work／Agent 在 390 与 1440px 各完成全部阶段并循环，节点与幕高不跳动，移动载荷持续推进，离屏后停止。当前任务路径不穿文字字形（外扩 4 CSS px 检查），无页面错误
-- `opening-checks.json`：390／1440px 的四枚开场图稿与 Net 图稿一致、完整显示；切换到 harness 阶段正常。`device-icons.png` 对照 64／36／24px，`desktop-opening-devices.png` 与 `mobile-opening-devices.png` 为开场截图
-- `390-work-monitor.png`、`390-khor-agent-transfer.png`、`1440-khor-agent-deliver.png` 为正常播放、内容完整的当前构图。初次预览的 `mobile-khor-agent.png` 有 headless 连续截图的静态栅格缺失，不作为完整视觉证据
-- 定向 TypeScript、diff 格式检查、十页 Astro 静态构建通过。产物 `/Volumes/disk0/Khor/artifacts/site-story-20261113-network-task/`，日志 `build.log`
-- 图谱先查，变更审阅图谱仍落后于 HEAD，因此以实际源码与浏览器证据为准。仅 headless Chrome，没有桌面测试窗口、原生 GUI 构建、WebKit 或实体手机验证，没有独立设计审阅
+- `checks.json`：390／1440px 两幕各跑完一轮并回到起点；到达前后状态、两次训练、修订、预览、结果返还依赖通过。每幕恰好四句提示，总时长不超过 11 秒。节点与幕高稳定、路径不穿文字或其他节点、You 在超边外、无重复 ID／横向溢出／页面错误；离屏后停止
+- `layout.json`：320／390／1440px 减少动态效果均显示完成态，无横向溢出。`390-agent-refine.png`、`1440-work-preview.png` 为正常播放截图；`*-final.png` 为静态完成态
+- 定向 TypeScript、diff 检查和十页 Astro 静态构建通过；构建日志 `build.log`，产物 `/Volumes/disk0/Khor/artifacts/site-story-20261113-model-training/`
+- 只用 headless Chrome，没有桌面测试窗口、WebKit、实体手机或原生构建。截图不证明实体手机帧率。图谱记录落后于 HEAD，以实际源码与本轮浏览器证据为准
 
-## 到达顺序与 KhorNet 精简（本轮修订）
-
-用户指出终端尚在传输、Server 已经显示终端并执行。修改前 headless Chrome 的 `before.json` 记录进入 run 时目标进度已为 4.36%，回归断言先失败。现在载荷与接收状态共用到达时刻（阶段的 62%），剩余时间用于执行与阅读，指令在途时 Server 只保留已收到的文件标记；到达后才切为终端并开始进度。Mobile 的终端／网页、Workstation 的报告、Agent 的接单和返还结果同样遵守到达依赖。Desktop 改为显示器＋独立主机，并通过共享图稿同步开场与三幕。
-
-最新证据：`/Volumes/disk0/Khor/evidence/site-story-20261113/task-arrival/`。`checks.json` 核对两条流程每种载荷到达前后、命令在途时进度为零、到达后启动、最终结果及离屏暂停；1440px Work 与 390px Agent 的实际 DOM／截图同步核对。`static.json` 确认 320px 减少动态效果下两幕为完成态、无溢出、开场 Desktop 图稿一致。后两幕仅 KhorNet，网络基础设施仍保留原分组与 P2P／relay。定向 TypeScript 与十页静态构建通过，产物 `site-story-20261113-task-arrival/`。仅 headless Chrome，未发布。
-
-最新形态澄清：Desktop = 翻盖笔记本，Workstation／台式机 = 带底座的显示器。共享图稿已同步开场与三幕，状态逻辑未改。仅做 headless Chrome 图形查看，不重跑任务循环。
-
-第二幕收尾简化：Server → Mobile 只传 Web，移除终端流传给 Mobile 与报告回传 Workstation；完成条件为 Mobile 已收到 Web。第三幕保持原流程。减少动态效果与无 JS 的完成态不再给 Workstation 留空接收徽标。
-
-本次定向验证：`web-to-mobile/checks.json` 确认第二幕仅 Web 到 Mobile、到达前无接收标记、到达后可完成且不依赖报告；第三幕仍完成报告与结果交付。390px headless Chrome 完成态无空徽标、无溢出或页面错误，截图 `mobile.png`；脚本 TypeScript 与 diff 检查通过，未重跑整站构建。
+早期 Atlas Web／到达修复的历史证据保存在同日 `network-task/`、`task-arrival/`、`web-to-mobile/`。它们不代表当前叙事与时长。

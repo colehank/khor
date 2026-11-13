@@ -1,5 +1,6 @@
 type Point = {x:number;y:number};
 export const networkNodeRadius=34;
+export const networkViewBox=(compact:boolean,externalUser=false)=>externalUser?(compact?'0 -100 500 690':'0 -100 1000 750'):(compact?'0 35 500 625':'0 0 1000 650');
 const mix=(a:Point,b:Point,t:number):Point=>({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t});
 const smooth=(t:number)=>{const x=Math.max(0,Math.min(1,t));return x*x*(3-2*x);};
 const pair=(p:Point)=>`${p.x.toFixed(3)} ${p.y.toFixed(3)}`;
@@ -58,5 +59,5 @@ export function networkGeometry(compact:boolean,position:number) {
   };
   // Leave room for both curved label lines between KhorNet and native networks.
   const khorNet=envelope([...Object.values(fixed),phone],116,compact?30:44,compact?-Math.PI*5/9:-Math.PI*.55);
-  return {box:compact?'0 35 500 625':'0 0 1000 650',nodes:{...fixed,phone},areas,khorNet};
+  return {box:networkViewBox(compact),nodes:{...fixed,phone},areas,khorNet};
 }
