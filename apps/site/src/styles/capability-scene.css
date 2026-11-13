@@ -1,0 +1,47 @@
+/* The graph stays the same; its operator changes from you to Khor Agent. */
+.tour-section.tour-capabilities { display:block; max-width:min(var(--story-max),calc(var(--gap-pane)*48)); padding-block:clamp(calc(var(--gap-pane)*2.5),7svh,calc(var(--gap-pane)*3)); }
+.tour-capabilities > .tour-copy { display:flex; align-items:baseline; justify-content:space-between; gap:calc(var(--gap-pane)*2); margin-bottom:var(--gap-pane); }
+.tour-capabilities > .tour-copy h2 { max-width:none; }
+.tour-capabilities > .tour-copy p { max-width:34ch; margin:0; }
+.capability-scene { width:min(100%,calc(var(--gap-pane)*44),max(92svh,calc(var(--gap-pane)*28))); margin-inline:auto; }
+.cap-graph { display:block; width:100%; height:auto; overflow:visible; }
+.cap-route path { fill:none; stroke-width:1; vector-effect:non-scaling-stroke; }
+.cap-wire-base { stroke:var(--tour-wire); }
+.cap-route .cap-wire-active { stroke:var(--tour-accent); stroke-width:1.4; stroke-dasharray:1; stroke-dashoffset:1; opacity:0; transition:stroke-dashoffset calc(var(--dur-240)*3) var(--ease-out),opacity var(--dur-240); }
+.cap-route[data-active="true"] .cap-wire-active { opacity:1; stroke-dashoffset:0; }
+.cap-vertex { color:var(--ink); }
+.cap-node-face { fill:var(--canvas); stroke:var(--tour-wire); stroke-width:1; transition:stroke var(--dur-240),fill var(--dur-240); }
+.cap-device .cap-node-face { fill:color-mix(in srgb,var(--ink) 5%,var(--canvas)); stroke:var(--secondary); }
+.cap-source .cap-node-face { stroke:var(--secondary); stroke-width:1.2; }
+.cap-node-label { font-family:var(--sans); font-size:var(--text-title-md); fill:var(--secondary); transition:fill var(--dur-240); }
+.cap-source .cap-node-label { font-size:var(--text-title-lg); fill:var(--ink); }
+.cap-vertex[data-active="true"] .cap-node-face { stroke:var(--tour-accent); stroke-width:1.5; }
+.cap-tool[data-active="true"] .cap-node-label { fill:var(--tour-accent); }
+.cap-agent-source { color:var(--tour-accent); }
+.cap-agent-source .cap-node-face { stroke:var(--tour-accent); }
+.cap-task { margin-bottom:var(--gap-row); text-align:center; color:var(--secondary); font-size:var(--text-title-md); }
+.cap-caption { text-align:center; margin-top:var(--gap-in); min-height:calc(var(--gap-pane)*3); }
+.cap-caption-heading { display:flex; justify-content:center; align-items:center; gap:var(--gap-in); font-size:var(--text-read); line-height:1.5; }
+.cap-caption > p { margin-top:var(--gap-in); font-size:var(--text-body); line-height:1.5; color:var(--secondary); }
+.cap-state-mark { display:grid; place-items:center; width:var(--gap-group); height:var(--gap-group); flex:none; color:var(--tour-accent); }
+.cap-state-mark > span { grid-area:1/1; }
+.cap-status-dot { width:calc(var(--hair)*4); height:calc(var(--hair)*4); border-radius:50%; background:var(--tour-accent); }
+.cap-result-check { display:none; width:var(--gap-group); height:var(--gap-group); }
+.capability-scene[data-cap-complete="true"] .cap-status-dot { display:none; }
+.capability-scene[data-cap-complete="true"] .cap-result-check { display:block; }
+@media (max-width:1000px) {
+ .tour-capabilities > .tour-copy { display:block; }
+ .tour-capabilities > .tour-copy p { max-width:48ch; margin-top:var(--gap-group); }
+}
+@media (max-width:760px) {
+ .tour-section.tour-capabilities { padding-block:calc(var(--gap-pane)*2); }
+ .tour-capabilities > .tour-copy { margin-bottom:var(--gap-group); }
+ .capability-scene { width:min(100%,calc(var(--gap-pane)*20)); }
+ .cap-node-label { font-size:var(--text-title-lg); }
+ .cap-source .cap-node-label { font-size:calc(var(--text-title-lg)*1.15); }
+ .cap-caption { min-height:calc(var(--gap-pane)*4); }
+ .cap-task { margin-top:var(--gap-pane); }
+}
+@media (prefers-reduced-motion:reduce) {
+ .capability-scene * { transition:none!important; animation:none!important; }
+}

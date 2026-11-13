@@ -1,7 +1,12 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {machineMark,sessionMark} from '../../src/components/BrandIcons';
-import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular} from '../../src/components/icons';
+import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch} from '../../src/components/icons';
+
+export const capabilityMarks=Object.fromEntries(([
+  ['web',IconBrowser],['files',IconFile],['git',IconBranch],['check',IconCheck],
+  ['terminal',sessionMark('shell')],
+] as const).map(([name,Icon])=>[name,renderToStaticMarkup(createElement(Icon),{identifierPrefix:`site-capability-${name}-`})]));
 
 export const networkTypeMarks=Object.fromEntries([
   ['a',IconNetwork],['b',IconWifi],['c',IconCellular],

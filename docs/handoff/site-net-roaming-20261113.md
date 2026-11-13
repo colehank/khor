@@ -2,7 +2,7 @@
 
 仅替代[网络、会话与资源三幕](site-net-sessions-resources-20261113.md)中的第一幕 Net，位于 `feat/site-story` 本地工作区。用户持续调整设备分布、超边、漫游范围和边界标题；以下当前行为覆盖下方历史记录。旧独立审阅只覆盖其当时版本，不视为本次修改的审阅或用户审美验收。
 
-第二、三幕未改，仍待用户方向；保留此前 critique，不标记整组问题已解决。设计权威仍为[设计系统](../design-system/README.md)与既有 token，全局设计文档及配置未改，未创建 `PRODUCT.md`。首屏 GUI／手机首图、Fog、图标故事、导航与下载保持不变。
+本篇只记录 Net。用户随后确认第二幕 Work across the net、第三幕 Khor Agent，其实现与验证见 [Work 与 Khor Agent](site-work-agent-20261113.md)；此前 critique 与旧审阅结论不视为新两幕的验收。设计权威仍为[设计系统](../design-system/README.md)与既有 token，全局设计文档及配置未改，未创建 `PRODUCT.md`。首屏 GUI／手机首图、Fog、图标故事、导航与下载保持不变。
 
 ## 场景与行为（当前）
 

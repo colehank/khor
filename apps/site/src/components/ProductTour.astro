@@ -1,7 +1,6 @@
 ---
 import NetworkDiagram from './concepts/NetworkDiagram.astro';
-import SessionDiagram from './concepts/SessionDiagram.astro';
-import ResourceDiagram from './concepts/ResourceDiagram.astro';
+import CapabilityScene from './concepts/CapabilityScene.astro';
 import '../styles/product-tour.css';
 ---
 <div class="product-tour" data-product-tour lang="en">
@@ -9,14 +8,15 @@ import '../styles/product-tour.css';
     <div class="tour-copy"><h2 id="connect-title">Your devices, <span>your net</span></h2><p>A private peer-to-peer network, built around your devices</p></div>
     <NetworkDiagram />
   </section>
-  <section class="tour-section" id="sessions" aria-labelledby="sessions-title">
-    <span class="tour-anchor" id="khor-agent" aria-hidden="true"></span><span class="tour-anchor" id="terminal" aria-hidden="true"></span>
-    <div class="tour-copy"><h2 id="sessions-title">Your tasks,<br/><span>across your net</span></h2><p>Terminals and agents, together in Khor</p></div>
-    <SessionDiagram />
+  <section class="tour-section tour-capabilities" id="work" aria-labelledby="work-title">
+    <span class="tour-anchor" id="sessions" aria-hidden="true"></span><span class="tour-anchor" id="terminal" aria-hidden="true"></span>
+    <div class="tour-copy"><h2 id="work-title">Work across the net</h2><p>Resources, terminals, and agents, from any device</p></div>
+    <CapabilityScene mode="work" />
   </section>
-  <section class="tour-section" id="resources" aria-labelledby="resources-title">
-    <div class="tour-copy"><h2 id="resources-title">Your resources,<br/><span>in every session</span></h2><p>Web apps, files, and workspaces, right where you work</p></div>
-    <ResourceDiagram />
+  <section class="tour-section tour-capabilities" id="khor-agent" aria-labelledby="agent-title">
+    <span class="tour-anchor" id="resources" aria-hidden="true"></span>
+    <div class="tour-copy"><h2 id="agent-title">Khor Agent</h2><p>One task, across your devices and tools</p></div>
+    <CapabilityScene mode="agent" />
   </section>
 </div>
 <script>

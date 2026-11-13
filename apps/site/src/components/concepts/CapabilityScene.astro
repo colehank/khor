@@ -1,0 +1,38 @@
+---
+import ConceptMark from './ConceptMark.astro';
+import {supportedDevices,supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
+import {workPhases,agentPhases} from './capability-data';
+import {capabilityGeometry} from '../../scripts/capability-geometry';
+import '../../styles/capability-scene.css';
+interface Props {mode:'work'|'agent'}
+const {mode}=Astro.props,isAgent=mode==='agent';
+const initial=isAgent?agentPhases[agentPhases.length-1]:workPhases[0];
+const graph=capabilityGeometry(false,isAgent);
+const marks=Object.fromEntries([...supportedDevices,...supportedHarnesses].map(mark=>[mark.name,mark.svg]));
+const glyph=(name:string)=>marks[name]??capabilityMarks[name];
+const active=new Set<string>(initial.targets);
+for(const node of graph.nodes)if(active.has(node.id))active.add(node.host);
+---
+<figure class:list={['concept','capability-scene',`capability-${mode}`]} data-concept={mode} data-cap-stage={initial.id} data-cap-complete={String(!!initial.complete)}>
+  {isAgent&&<p class="cap-task">“Fix the export dates”</p>}
+  <svg class="cap-graph" data-cap-graph viewBox={graph.box} role="img" aria-labelledby={`${mode}-graph-title ${mode}-graph-description`}>
+    <title id={`${mode}-graph-title`}>{isAgent?'Khor Agent works across your net':'Work across your net from any device'}</title>
+    <desc id={`${mode}-graph-description`}>{isAgent?'An illustrative task: Khor Agent reads files on a Mac, delegates a review to Codex on Linux, edits the Mac workspace, runs tests and checks its web app. It returns three changed files and eight passing tests for you to review.':'You can access files, Git changes, web apps and a terminal on a Mac, and Codex, Claude or Cursor sessions on Linux. Paths highlight the currently illustrated action.'}</desc>
+    <g aria-hidden="true">
+      {graph.routes.map(route=><g class="cap-route" data-cap-route={route.id} data-cap-host={route.host} data-active={String(active.has(route.id))}>
+        <path class="cap-wire-base" d={route.d}/><path class="cap-wire-active" d={route.d} pathLength="1"/>
+      </g>)}
+    </g>
+    {graph.nodes.map(node=><g data-cap-node={node.id} data-cap-host={node.host} class:list={['cap-vertex',`cap-${node.kind}`,{'cap-agent-source':isAgent&&node.id==='source'}]} data-active={String(active.has(node.id))}>
+      <g data-cap-symbol transform={`translate(${node.x} ${node.y})`}>
+        <circle class="cap-node-face" r={node.radius}/>
+        <svg x={node.kind==='tool'?-14:-18} y={node.kind==='tool'?-14:-18} width={node.kind==='tool'?28:36} height={node.kind==='tool'?28:36}><ConceptMark svg={glyph(node.icon)} x={0} y={0} size={node.kind==='tool'?28:36} prefix={`${mode}-${node.id}`}/></svg>
+      </g>
+      <text class="cap-node-label" data-cap-label x={node.labelPosition.x} y={node.labelPosition.y} text-anchor={node.labelPosition.anchor}>{node.label}</text>
+    </g>)}
+  </svg>
+  <figcaption class="cap-caption">
+    <div class="cap-caption-heading"><span class="cap-state-mark" aria-hidden="true"><span class="cap-status-dot"></span><span class="cap-result-check"><ConceptMark svg={glyph('check')} x={0} y={0} size={18} prefix={`${mode}-result`}/></span></span><span data-cap-caption>{initial.caption}</span></div>
+    <p data-cap-detail>{initial.detail}</p>
+  </figcaption>
+</figure>
