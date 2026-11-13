@@ -34,7 +34,7 @@ import { fileManagerLabel } from "@/lib/file-actions";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { fetchDevices, fetchFileText, fetchLs, fetchPreview, fetchRevealHere, pullFile, reveal } from "@/api";
-import {AttachmentStrip} from "@/views/AttachmentStrip";
+import {AttachmentList} from "@/views/AttachmentList";
 import {AttachmentPreview} from '@/views/AttachmentPreview';
 import {deviceAttachments,pathAttachment,type Attachment} from '@/lib/term-attachments';
 import { DirPicker } from "@/components/DirPicker";
@@ -144,8 +144,8 @@ export function PendingChips({ items, onRemove, machine, here,onReplace,onRetry,
   const local=chosen?.source?.device?.files[0]?.file??null;
   const path = local?null:chosen?.path??(chosen?.source&&!chosen.source.device?chosen.source.path:null)??null;
   return (
-    <div data-chat-pending className="min-w-0 px-2 pb-in">
-      <AttachmentStrip items={items.map(item=>({...item,busy:!!item.encoding||(!item.source&&item.path===null&&!item.error)}))} onOpen={setLooking} onRemove={key=>{if(looking===key)setLooking(null);onRemove(key);}} onAdd={onAdd} onRetry={onRetry} busy={busy}/>
+    <div data-chat-pending className="max-h-48 min-w-0 overflow-y-auto overscroll-contain px-2 pb-in">
+      <AttachmentList items={items.map(item=>({...item,detail:item.reference?"引用原文件":item.source?.shown,busy:!!item.encoding||(!item.source&&item.path===null&&!item.error)}))} onOpen={setLooking} onRemove={key=>{if(looking===key)setLooking(null);onRemove(key);}} onAdd={onAdd} onRetry={onRetry} busy={busy}/>
       <AttachmentPreview file={local} onClose={()=>setLooking(null)} onSave={onReplace&&chosen?file=>onReplace(chosen.key,file):undefined}/>
       {path !== null && <FilePreview machine={chosen?.source?chosen.source.from??'':machine} shown={chosen?.source?.shown??machine} here={chosen?.source?chosen.source.from===null:here} path={path} onClose={() => setLooking(null)} />}
     </div>
