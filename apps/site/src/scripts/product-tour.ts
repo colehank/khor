@@ -1,86 +1,88 @@
+import {devices,sessions,type SessionId} from '../components/concepts/tour-data';
+
 export function mountProductTour() {
   const tour=document.querySelector<HTMLElement>('[data-product-tour]');
   if(!tour)return;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const figures=[...tour.querySelectorAll<HTMLElement>('[data-concept]')];
+  const network=tour.querySelector<HTMLElement>('[data-concept="network"]')!;
+  const sessionFigure=tour.querySelector<HTMLElement>('[data-concept="sessions"]')!;
+  const resources=tour.querySelector<HTMLElement>('[data-concept="resources"]')!;
   const visible=new Set<HTMLElement>();
   const paused=new Set<HTMLElement>();
-  const timers=new Map<HTMLElement,ReturnType<typeof setTimeout>[]>();
+  const timers=new Map<HTMLElement,ReturnType<typeof setTimeout>>();
+  let handoffNext=true;
   const canPlay=(figure:HTMLElement)=>visible.has(figure)&&!paused.has(figure)&&!reduced.matches&&!document.hidden;
-  const clear=(figure:HTMLElement)=>{
-    for(const timer of timers.get(figure)??[])clearTimeout(timer);
-    timers.delete(figure);
+  const stop=(figure:HTMLElement)=>{
+    clearTimeout(timers.get(figure));timers.delete(figure);
     figure.classList.remove('is-running');
   };
-  const later=(figure:HTMLElement,callback:()=>void,delay:number)=>{
-    timers.set(figure,[...(timers.get(figure)??[]),setTimeout(callback,delay)]);
+  const selectPath=(path:'direct'|'relay')=>{
+    network.dataset.path=path;
+    network.querySelector('[data-path-status]')!.textContent=path==='direct'?'Direct connection':'Connected via relay';
+    network.querySelectorAll<HTMLButtonElement>('[data-path-choice]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.pathChoice===path)));
   };
-  const ready=(figure:HTMLElement)=>{
-    clear(figure);
-    if(figure.dataset.concept==='agent'){
-      figure.dataset.phase='ready';
-      figure.querySelector('[data-agent-status]')!.textContent='Two results, back to you';
-      figure.querySelector('[data-agent-result]')!.textContent='Ready';
-      figure.querySelectorAll('[data-worker-state]').forEach(item=>item.textContent='Done');
-      figure.querySelector('[data-code-result]')!.textContent='Local dates are preserved in CSV exports';
-      figure.querySelector('[data-notes-result]')!.textContent='README explains the date column and CSV format';
-    }
+  const selectSession=(id:SessionId)=>{
+    const session=sessions.find(item=>item.id===id)!;
+    sessionFigure.dataset.session=id;
+    sessionFigure.querySelector('[data-session-title]')!.textContent=session.name;
+    sessionFigure.querySelector('[data-session-host]')!.textContent=devices[session.host].name;
+    sessionFigure.querySelectorAll<HTMLElement>('[data-session-panel]').forEach(panel=>panel.hidden=panel.dataset.sessionPanel!==id);
+    sessionFigure.querySelectorAll<HTMLButtonElement>('[data-session-choice]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.sessionChoice===id)));
+    // The next act continues the actual selected session, not a second example.
+    resources.dataset.session=id;
+    resources.querySelector('[data-resource-session-title]')!.textContent=session.name;
+    resources.querySelector('[data-resource-session-owner]')!.textContent=`${session.type} · ${devices[session.host].name}`;
+    resources.querySelectorAll<HTMLElement>('[data-session-mark]').forEach(mark=>mark.hidden=mark.dataset.sessionMark!==id);
   };
-  const terminal=tour.querySelector<HTMLElement>('[data-concept="terminal"]')!;
-  const selectView=(view:string)=>{
-    terminal.dataset.view=view;
-    terminal.querySelector('[data-view-status]')!.textContent='Viewing from '+(view==='phone'?'Phone':'Desktop');
-    terminal.querySelectorAll<HTMLButtonElement>('[data-view-choice]').forEach(item=>item.setAttribute('aria-pressed',String(item.dataset.viewChoice===view)));
+  const selectView=(view:'mac'|'phone')=>{
+    sessionFigure.dataset.view=view;
+    sessionFigure.querySelectorAll<HTMLButtonElement>('[data-view-choice]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.viewChoice===view)));
+  };
+  const resourceOrder=['web','file','workspace'] as const;
+  const selectResource=(resource:typeof resourceOrder[number])=>{
+    resources.dataset.resource=resource;
+    resources.querySelectorAll<HTMLElement>('[data-resource-panel]').forEach(panel=>panel.hidden=panel.dataset.resourcePanel!==resource);
+    resources.querySelectorAll<HTMLButtonElement>('[data-resource-choice]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.resourceChoice===resource)));
   };
   const play=(figure:HTMLElement)=>{
-    ready(figure);
+    stop(figure);
     if(!canPlay(figure))return;
-    // Only this visible illustration restarts; there is no continuous JS renderer.
-    void figure.offsetWidth;
     figure.classList.add('is-running');
-    if(figure.dataset.concept==='agent'){
-      const phase=(name:string,text:string)=>{
-        figure.dataset.phase=name;
-        figure.querySelector('[data-agent-status]')!.textContent=text;
-        figure.querySelector('[data-agent-result]')!.textContent=name==='collecting'?'Collecting':'In progress';
-        figure.querySelectorAll('[data-worker-state]').forEach(item=>item.textContent=name==='delegating'?'Queued':name==='working'?'Working':'Done');
-      };
-      figure.querySelector('[data-code-result]')!.textContent='Checking date handling and export tests';
-      figure.querySelector('[data-notes-result]')!.textContent='Reading changes and preparing project notes';
-      phase('delegating','Khor delegates the work');
-      later(figure,()=>phase('working','Agents working in parallel'),1100);
-      later(figure,()=>phase('collecting','Bringing results together'),2700);
-      later(figure,()=>{
-        ready(figure);
-        // Keep the actual result readable before the next request begins.
-        if(canPlay(figure))later(figure,()=>play(figure),3600);
-      },3800);
-    }else if(figure===terminal){
-      later(figure,()=>{
-        if(!canPlay(figure))return;
-        selectView(figure.dataset.view==='desktop'?'phone':'desktop');
-        play(figure);
-      },4600);
-    }
+    timers.set(figure,setTimeout(()=>{
+      if(!canPlay(figure))return;
+      if(figure===network)selectPath(network.dataset.path==='direct'?'relay':'direct');
+      else if(figure===sessionFigure){
+        if(handoffNext)selectView(sessionFigure.dataset.view==='mac'?'phone':'mac');
+        else{
+          const index=sessions.findIndex(item=>item.id===sessionFigure.dataset.session);
+          selectSession(sessions[(index+1)%sessions.length].id);
+        }
+        handoffNext=!handoffNext;
+      }else{
+        const index=resourceOrder.indexOf(resources.dataset.resource as typeof resourceOrder[number]);
+        selectResource(resourceOrder[(index+1)%resourceOrder.length]);
+      }
+      play(figure);
+    },figure===network?5200:figure===sessionFigure?3600:4800));
   };
-  const peer=tour.querySelector<HTMLElement>('[data-concept="peer"]')!;
-  peer.querySelectorAll<HTMLButtonElement>('[data-resource-choice]').forEach(button=>button.addEventListener('click',()=>{
-    const resource=button.dataset.resourceChoice!;
-    peer.dataset.resource=resource;
-    peer.querySelectorAll<HTMLElement>('[data-resource-panel]').forEach(panel=>panel.hidden=panel.dataset.resourcePanel!==resource);
-    peer.querySelectorAll<HTMLButtonElement>('[data-resource-choice]').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
-    play(peer);
+  network.querySelectorAll<HTMLButtonElement>('[data-path-choice]').forEach(button=>button.addEventListener('click',()=>{
+    selectPath(button.dataset.pathChoice as 'direct'|'relay');play(network);
   }));
-  selectView(matchMedia('(any-pointer:coarse)').matches?'phone':'desktop');
-  terminal.querySelectorAll<HTMLButtonElement>('[data-view-choice]').forEach(button=>button.addEventListener('click',()=>{
-    selectView(button.dataset.viewChoice!);
-    play(terminal);
+  sessionFigure.querySelectorAll<HTMLButtonElement>('[data-session-choice]').forEach(button=>button.addEventListener('click',()=>{
+    selectSession(button.dataset.sessionChoice as SessionId);handoffNext=true;play(sessionFigure);
+  }));
+  sessionFigure.querySelectorAll<HTMLButtonElement>('[data-view-choice]').forEach(button=>button.addEventListener('click',()=>{
+    selectView(button.dataset.viewChoice as 'mac'|'phone');handoffNext=false;play(sessionFigure);
+  }));
+  resources.querySelectorAll<HTMLButtonElement>('[data-resource-choice]').forEach(button=>button.addEventListener('click',()=>{
+    selectResource(button.dataset.resourceChoice as typeof resourceOrder[number]);play(resources);
   }));
   figures.forEach(figure=>{
     const button=figure.querySelector<HTMLButtonElement>('[data-motion-toggle]')!;
     button.addEventListener('click',()=>{
       if(paused.has(figure)){paused.delete(figure);play(figure);}
-      else{paused.add(figure);ready(figure);}
+      else{paused.add(figure);stop(figure);}
       button.textContent=paused.has(figure)?'Play':'Pause';
       button.setAttribute('aria-label',`${paused.has(figure)?'Play':'Pause'} ${button.dataset.motionToggle} animation`);
     });
@@ -90,16 +92,16 @@ export function mountProductTour() {
       const figure=entry.target as HTMLElement;
       const isVisible=entry.isIntersecting&&entry.intersectionRatio>=.35;
       if(isVisible&&!visible.has(figure)){visible.add(figure);play(figure);}
-      else if(!isVisible){visible.delete(figure);ready(figure);}
+      else if(!isVisible){visible.delete(figure);stop(figure);}
     }
   },{threshold:[0,.35]}):null;
   figures.forEach(figure=>observer?.observe(figure));
-  const syncPlayback=()=>figures.forEach(figure=>canPlay(figure)?play(figure):ready(figure));
+  const syncPlayback=()=>figures.forEach(figure=>canPlay(figure)?play(figure):stop(figure));
   reduced.addEventListener('change',syncPlayback);
   document.addEventListener('visibilitychange',syncPlayback);
   window.addEventListener('pageshow',event=>{if(event.persisted)syncPlayback();});
   window.addEventListener('pagehide',event=>{
-    figures.forEach(ready);
+    figures.forEach(stop);
     if(!event.persisted)observer?.disconnect();
   });
 }

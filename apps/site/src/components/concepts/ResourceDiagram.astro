@@ -1,0 +1,43 @@
+---
+import ConceptMark from './ConceptMark.astro';
+import {supportedHarnesses} from '../../../../gui/dev/site/identity-marks';
+import {devices,sessions} from './tour-data';
+const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
+---
+<figure class="concept concept-resources" data-concept="resources" data-resource="web" data-session="codex" aria-label="Web apps, files and workspaces on MacBook Pro, available inside the selected session">
+  <div class="resource-session">
+    <span class="resource-session-mark">{sessions.map(session=><span data-session-mark={session.id} hidden={session.id!=='codex'}><ConceptMark svg={marks[session.mark]} x={0} y={0} size={36} prefix={`resource-${session.id}`}/></span>)}</span>
+    <div><h3 data-resource-session-title>Export review</h3><span data-resource-session-owner>Codex · {devices.linux.name}</span></div>
+    <span class="resource-session-context">In this session</span>
+  </div>
+  <div class="resource-bridge" aria-hidden="true"></div>
+  <div class="resource-choices" role="group" aria-label="Choose a session resource">
+    <button type="button" data-resource-choice="web" aria-pressed="true">Web apps</button>
+    <button type="button" data-resource-choice="file" aria-pressed="false">Files</button>
+    <button type="button" data-resource-choice="workspace" aria-pressed="false">Workspace</button>
+  </div>
+  <div class="resource-surface paper-surface">
+    <div class="resource-panel" data-resource-panel="web">
+      <div class="resource-location"><code>localhost:5173</code><span>Web app</span></div>
+      <div class="resource-body"><h3>Atlas Web</h3><p>Your orders, ready to export</p>
+        <table class="orders-example"><caption class="sr-only">Example orders from Atlas Web</caption><thead><tr><th>Order</th><th>Local date</th><th>Total</th></tr></thead><tbody><tr><td>A1048</td><td>Mar 1, 2026</td><td>$129.00</td></tr><tr><td>A1047</td><td>Feb 28, 2026</td><td>$84.00</td></tr></tbody></table>
+        <div class="resource-note">CSV export · local dates preserved</div>
+      </div>
+    </div>
+    <div class="resource-panel" data-resource-panel="file" hidden>
+      <div class="resource-location"><code>src/export.ts</code><span>Modified</span></div>
+      <div class="resource-body"><h3>Keep the local date</h3><p>A change in the same project</p>
+        <div class="file-diff" aria-label="Code diff replacing the UTC date with the local date"><code><span>const date =</span><del>- formatUTC(order.createdAt)</del><ins>+ formatLocal(order.createdAt)</ins><span>exportRow(order.id, date)</span></code></div>
+        <div class="resource-note">Change tracked in Git</div>
+      </div>
+    </div>
+    <div class="resource-panel" data-resource-panel="workspace" hidden>
+      <div class="resource-location"><code>atlas-web</code><span>main</span></div>
+      <div class="resource-body"><h3>Everything in place</h3><p>The workspace behind the session</p>
+        <ul class="workspace-files" aria-label="Changed files"><li><code>src/export.ts</code><span>Modified</span></li><li><code>src/export.test.ts</code><span>Modified</span></li><li><code>README.md</code><span>Modified</span></li></ul>
+        <div class="resource-note">3 changed files · one workspace</div>
+      </div>
+    </div>
+  </div>
+  <figcaption class="concept-caption"><div><span>From {devices.mac.name}</span><span class="example-label">Example session resources</span></div><button class="concept-motion" type="button" data-motion-toggle="resources" aria-label="Pause resources animation">Pause</button></figcaption>
+</figure>

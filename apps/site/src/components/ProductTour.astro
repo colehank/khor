@@ -1,30 +1,22 @@
 ---
-import PeerDiagram from './concepts/PeerDiagram.astro';
-import AgentDiagram from './concepts/AgentDiagram.astro';
-import TerminalDiagram from './concepts/TerminalDiagram.astro';
+import NetworkDiagram from './concepts/NetworkDiagram.astro';
+import SessionDiagram from './concepts/SessionDiagram.astro';
+import ResourceDiagram from './concepts/ResourceDiagram.astro';
 import '../styles/product-tour.css';
 ---
 <div class="product-tour" data-product-tour lang="en">
   <section class="tour-section" id="connect" aria-labelledby="connect-title">
-    <div class="tour-copy">
-      <h2 id="connect-title">Your computer<br/><span>From your phone</span></h2>
-      <p>Reach files and localhost web apps on another device through a peer-to-peer connection</p>
-    </div>
-    <PeerDiagram />
+    <div class="tour-copy"><h2 id="connect-title">Your devices,<br/><span>your net</span></h2><p>A private peer-to-peer network, built around your devices</p></div>
+    <NetworkDiagram />
   </section>
-  <section class="tour-section" id="khor-agent" aria-labelledby="agent-title">
-    <div class="tour-copy">
-      <h2 id="agent-title">Khor Agent<br/><span>Put agents to work</span></h2>
-      <p>Give Khor a task and let it find your agents, delegate the work, and bring the results back to you</p>
-    </div>
-    <AgentDiagram />
+  <section class="tour-section" id="sessions" aria-labelledby="sessions-title">
+    <span class="tour-anchor" id="khor-agent" aria-hidden="true"></span><span class="tour-anchor" id="terminal" aria-hidden="true"></span>
+    <div class="tour-copy"><h2 id="sessions-title">Your tasks,<br/><span>across your net</span></h2><p>Terminals and agents, together in Khor</p></div>
+    <SessionDiagram />
   </section>
-  <section class="tour-section" id="terminal" aria-labelledby="terminal-title">
-    <div class="tour-copy">
-      <h2 id="terminal-title">Same terminal<br/><span>Any device</span></h2>
-      <p>Your shell keeps running on its host, while you pick up the same session from your desktop or phone</p>
-    </div>
-    <TerminalDiagram />
+  <section class="tour-section" id="resources" aria-labelledby="resources-title">
+    <div class="tour-copy"><h2 id="resources-title">Your resources,<br/><span>in every session</span></h2><p>Web apps, files, and workspaces, right where you work</p></div>
+    <ResourceDiagram />
   </section>
 </div>
 <script>

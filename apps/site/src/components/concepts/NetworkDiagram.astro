@@ -1,0 +1,42 @@
+---
+import ConceptMark from './ConceptMark.astro';
+import {supportedDevices} from '../../../../gui/dev/site/identity-marks';
+import {devices} from './tour-data';
+const marks=Object.fromEntries(supportedDevices.map(mark=>[mark.name,mark.svg]));
+---
+<figure class="concept concept-network" data-concept="network" data-path="direct" aria-label="A private network of MacBook Pro, build-01 and iPhone, connected directly or through a relay">
+  <div class="network-stage">
+    <svg class="network-routes" viewBox="0 0 640 400" preserveAspectRatio="none" fill="none" aria-hidden="true">
+      <path class="net-side" d="M120 140 C120 230 245 300 320 300"/>
+      <path class="net-side" d="M520 140 C520 230 395 300 320 300"/>
+      <path class="net-path direct-path" d="M120 140 H520"/>
+      <path class="net-path relay-path" d="M120 140 C220 140 220 36 320 36 S420 140 520 140"/>
+      <path class="travel-route direct-path" pathLength="1" d="M120 140 H520"/>
+      <path class="travel-route relay-path" pathLength="1" d="M120 140 C220 140 220 36 320 36 S420 140 520 140"/>
+    </svg>
+    <div class="network-device net-mac">
+      <span class="net-disc"><ConceptMark svg={marks.macOS} x={0} y={0} size={40} prefix="network-mac"/></span>
+      <div class="network-name"><strong>{devices.mac.name}</strong><span>macOS</span></div>
+    </div>
+    <div class="network-device net-linux">
+      <span class="net-disc"><ConceptMark svg={marks.Linux} x={0} y={0} size={40} prefix="network-linux"/></span>
+      <div class="network-name"><strong>{devices.linux.name}</strong><span>Linux</span></div>
+    </div>
+    <div class="network-device net-phone">
+      <span class="net-disc"><ConceptMark svg={marks.iOS} x={0} y={0} size={36} prefix="network-phone"/></span>
+      <div class="network-name"><strong>{devices.phone.name}</strong><span>With you</span></div>
+    </div>
+    <div class="network-relay"><span></span><span>Relay</span></div>
+    <div class="network-caption"><span data-path-status>Direct connection</span><span>The same private net</span></div>
+  </div>
+  <figcaption class="concept-caption">
+    <span class="example-label">Example network</span>
+    <div class="concept-controls">
+      <div class="concept-options" role="group" aria-label="Connection path">
+        <button type="button" data-path-choice="direct" aria-pressed="true">Direct</button>
+        <button type="button" data-path-choice="relay" aria-pressed="false">Via relay</button>
+      </div>
+      <button class="concept-motion" type="button" data-motion-toggle="network" aria-label="Pause network animation">Pause</button>
+    </div>
+  </figcaption>
+</figure>

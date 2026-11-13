@@ -1,0 +1,45 @@
+---
+import ConceptMark from './ConceptMark.astro';
+import {supportedDevices,supportedHarnesses} from '../../../../gui/dev/site/identity-marks';
+import {devices,sessions} from './tour-data';
+const marks=Object.fromEntries([...supportedDevices,...supportedHarnesses].map(mark=>[mark.name,mark.svg]));
+---
+<figure class="concept concept-sessions" data-concept="sessions" data-session="codex" data-view="mac" aria-label="Atlas Web terminal and agent sessions, accessible across your device network">
+  <div class="session-project"><h3>Atlas Web</h3><span>Sessions on your net</span></div>
+  <div class="session-choices" role="group" aria-label="Choose a session">
+    {sessions.map(session=><button type="button" data-session-choice={session.id} aria-pressed={session.id==='codex'?'true':'false'}>
+      <span class="session-mark"><ConceptMark svg={marks[session.mark]} x={0} y={0} size={28} prefix={`sessions-${session.id}`}/></span>
+      <span><strong>{session.type}</strong><span>{session.name}</span></span>
+    </button>)}
+  </div>
+  <div class="session-content">
+    <div class="session-owner"><span data-session-title>Export review</span><span>On <span data-session-host>{devices.linux.name}</span></span></div>
+    <div class="session-panels">
+      <div class="session-panel terminal-content" data-session-panel="terminal" hidden>
+        <div class="shell-directory">~/atlas-web</div>
+        <div class="shell-command"><span>$</span> npm run dev</div>
+        <div class="shell-output"><p>Atlas Web</p><p>Server ready</p><p>http://localhost:5173/</p></div>
+        <div class="shell-requests"><p>GET /orders <b>200</b></p><p>GET /orders.csv <b>200</b></p></div>
+      </div>
+      <div class="session-panel agent-content" data-session-panel="codex">
+        <p class="session-request">Check the CSV export dates</p>
+        <div class="session-response"><h4>Local dates, kept intact</h4><p>The export uses the order’s local date, including orders placed around midnight</p></div>
+        <div class="session-artifact"><code>src/export.ts</code><span>Reviewed</span></div>
+      </div>
+      <div class="session-panel agent-content" data-session-panel="claude" hidden>
+        <p class="session-request">Summarize the project changes</p>
+        <div class="session-response"><h4>Order exports, explained</h4><p>The README covers the local date column, CSV format, and examples from the updated export flow</p></div>
+        <div class="session-artifact"><code>README.md</code><span>Notes ready</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="session-access">
+    <span class="access-label">Continue from</span>
+    <div class="access-choices" role="group" aria-label="Viewing device">
+      {(['mac','phone'] as const).map(id=><button type="button" data-view-choice={id} aria-pressed={id==='mac'?'true':'false'}>
+        <span class="access-mark"><ConceptMark svg={marks[devices[id].system]} x={0} y={0} size={22} prefix={`access-${id}`}/></span>{devices[id].name}
+      </button>)}
+    </div>
+  </div>
+  <figcaption class="concept-caption"><span class="example-label">Example sessions · the same project</span><button class="concept-motion" type="button" data-motion-toggle="sessions" aria-label="Pause sessions animation">Pause</button></figcaption>
+</figure>
