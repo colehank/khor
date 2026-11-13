@@ -3,13 +3,15 @@ import path from 'node:path';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const context=await browser.newContext({viewport:{width,height:844},hasTouch:width<500,isMobile:width<500});
  const page=await context.newPage(),errors=[];page.setDefaultTimeout(15000);page.on('pageerror',error=>errors.push(String(error)));
+ const theme=width===412?'dark':'light';
  const name=`attachment-draft-${engine}-${width}`;let dropCapabilities=null;const selectedLayouts=[];
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const readyGreen=async selector=>{
   assert.equal(await page.locator(selector).evaluate(button=>{const probe=document.createElement('i');probe.style.backgroundColor='var(--brand-strong)';document.body.append(probe);const green=getComputedStyle(probe).backgroundColor;probe.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===green;}),true,'A ready send uses the shared green');
  };
  try{
-  await page.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3`);
+  const environment={platform:width<500?'android':'desktop',theme,material:'solid',background:'dark',opacity:100,keyboard:0,safeTop:0,safeBottom:0};
+  await page.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);
   await page.locator('[data-terminal] .xterm').waitFor();
   if(width>=500){
     await page.locator('[data-term-attachments]:visible').click();
@@ -32,6 +34,11 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   selectedLayouts.push(await measureCard(picker.locator('[data-files-selected="draft.txt"]')));
   await picker.locator('[data-files-add-more]').click();
   await picker.locator('[data-files-machine][data-files-session]').click();
+  await picker.locator('[data-files-entry]').first().waitFor();
+  if(await picker.locator('[data-files-entry="file"]').count()===0){
+    // A machine opens at its home; the generated sample files are in project.
+    await picker.locator('[data-files-entry="dir"][data-files-name="project"] > button').first().click();
+  }
   await picker.locator('[data-files-entry="file"] [data-files-select]').first().click();
   const remoteCard=picker.locator('[data-files-selected]').filter({has:page.locator('[data-chat-file]')});
   await remoteCard.waitFor();selectedLayouts.push(await measureCard(remoteCard));
@@ -89,5 +96,5 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));
  }catch(error){errors.push(String(error.stack??error));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}
  finally{await context.close();}
- return {name,dropCapabilities,selectedLayouts,errors};
+ return {name,theme,dropCapabilities,selectedLayouts,errors};
 }

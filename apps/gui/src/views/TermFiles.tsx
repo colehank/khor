@@ -171,8 +171,8 @@ export function TermFiles({ road, onClose, onSent }: { road: FilesRoad; onClose:
     <div data-key-panel-scroll inert={road.busy||undefined} className="min-h-0 flex-1 touch-pan-y overflow-y-auto overscroll-contain">
       {road.selected.length>0&&<section data-files-cards className="flex flex-col gap-in py-row">
         <div className="flex items-center justify-between gap-in"><h3 className="text-body font-label">待发送 · {road.selected.length}</h3><Button data-files-add-more size="sm" onClick={()=>{setQueue(false);setAt(null);setFolder(null);}}>继续添加</Button></div>
-        <div className="flex flex-wrap gap-in">{road.selected.map(entry=><div data-files-selected={entry.name} key={entry.key} className="relative w-64 max-w-full flex-none rounded-lg bg-fill pe-touch">
-          {entry.device||entry.dir?<AttachmentCard entry={entry} pending={previewing===entry.key} onOpen={()=>void inspect(entry)}/>:<FileCard machine={entry.from??''} shown={entry.shown} path={entry.path} onOpen={()=>void inspect(entry)}/>}
+        <div className="flex flex-col gap-in">{road.selected.map(entry=><div data-files-selected={entry.name} key={entry.key} className="relative w-full min-w-0 flex-none rounded-lg bg-fill pe-touch">
+          {entry.device||entry.dir?<AttachmentCard entry={entry} pending={previewing===entry.key} onOpen={()=>void inspect(entry)}/>:<FileCard embedded machine={entry.from??''} shown={entry.shown} path={entry.path} onOpen={()=>void inspect(entry)}/>}
           <button type="button" disabled={road.busy} aria-label={`移除 ${entry.name}`} onClick={()=>{if(look?.entry.key===entry.key||previewing===entry.key||folder?.root.key===entry.key)closePreview();if(folder?.root.key===entry.key){setFolder(null);setQueue(true);}road.remove(entry);}} className="absolute right-0 top-0 grid min-h-touch min-w-touch place-items-center disabled:opacity-40"><IconClose className="size-4"/></button>
         </div>)}</div>
       </section>}

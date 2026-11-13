@@ -561,6 +561,7 @@ export function FileCard({
   note = null,
   stamp = "",
   onOpen,
+  embedded = false,
 }: {
   /** The API's spelling of the machine the file is on. */
   machine: string;
@@ -573,6 +574,8 @@ export function FileCard({
   /** Changes when the file did, so its facts are asked again. */
   stamp?: string;
   onOpen: () => void;
+  /** The containing draft row owns the width and single background. */
+  embedded?: boolean;
 }) {
   const { size, thumb } = useFacts(machine, path, stamp);
   const name = shownName(path);
@@ -583,7 +586,7 @@ export function FileCard({
       data-chat-file={path}
       onClick={onOpen}
       title={path}
-      className="flex w-80 max-w-full min-w-0 items-center gap-row rounded-lg bg-fill p-2 text-left"
+      className={cn("flex max-w-full min-w-0 items-center gap-row rounded-lg p-2 text-left",embedded?"w-full bg-transparent":"w-80 bg-fill")}
     >
       {thumb ? (
         <img src={thumb} alt="" className="size-10 flex-none rounded-md object-cover" />
