@@ -1,11 +1,11 @@
 /** A keyboard-position selection panel, with the existing file browser/pages above it. */
-import {useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react';
+import {useEffect,useLayoutEffect,useMemo,useRef,useState,type RefObject} from 'react';
 import {createPortal} from 'react-dom';
 import {fetchDevices,nativeFolders,said,termDropForget,termPickFolders,type DeviceRow} from '@/api';
 import {MachineAvatar} from '@/components/Avatar';
 import {IconBack,IconFile,IconFiles,IconChevronDown,IconDevices} from '@/components/icons';
 import {ContentSearch} from '@/components/ContentSearch';
-import {MachineIdentity} from '@/components/MachineIdentity';
+import {MachineFace} from '@/components/SessionFace';
 import {Button} from '@/components/ui/button';
 import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '@/components/ui/dropdown-menu';
 import {Dialog,TaskOverlay,DialogTitle} from '@/components/ui/dialog';
@@ -17,7 +17,7 @@ import {keyboardCover,keyboardHeight,holdFoot,footHeld} from '@/lib/viewport';
 import {lowerKeyboard,raiseKeyboard} from '@/lib/soft-keyboard';
 import {isDown} from '@/lib/topology';
 import {hopWord} from '@/words';
-import {useNarrow} from '@/hooks/use-narrow';
+import {useNarrow,useWindowNarrow} from '@/hooks/use-narrow';
 import {FilesPane,FileChoiceRow} from '@/views/FilesPane';
 import {AttachmentFile} from '@/views/AttachmentFile';
 import {SendInto} from '@/views/chat-files';
@@ -41,10 +41,10 @@ export function machinesFor(devices: DeviceRow[], machine: string | null): Devic
 }
 
 type Place={machine:DeviceRow;path:string;root?:Attachment};
-export function AttachmentPicker({open,onClose,road,onSent}:{open:boolean;onClose:()=>void;road:FilesRoad;onSent:()=>void}){
- return open?<TermFiles road={road} onClose={onClose} onSent={onSent}/>:null;
+export function AttachmentPicker({open,onClose,road,onSent,viewport}:{open:boolean;onClose:()=>void;road:FilesRoad;onSent:()=>void;viewport?:RefObject<HTMLElement|null>}){
+ return open?<TermFiles road={road} onClose={onClose} onSent={onSent} viewport={viewport}/>:null;
 }
-export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void;onSent:()=>void}){
+export function TermFiles({road,onClose,onSent,viewport}:{road:FilesRoad;onClose:()=>void;onSent:()=>void;viewport?:RefObject<HTMLElement|null>}){
  const narrow=useNarrow();
  const picker=useRef<HTMLInputElement>(null),folders=useRef<HTMLInputElement>(null),panel=useRef<HTMLDivElement>(null);
  const [devices,setDevices]=useState<DeviceRow[]>([]),[error,setError]=useState<string|null>(null),[picking,setPicking]=useState(false);
@@ -52,6 +52,21 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
  const sending=useRef(false),mounted=useRef(true);
  const restore=useRef<HTMLElement|null>(null),oldHold=useRef<number|null>(null);
  const [height]=useState(()=>Math.min(keyboardCover()||footHeld()||keyboardHeight(),window.innerHeight*0.6));
+ useLayoutEffect(()=>{
+  const sheet=panel.current;if(!sheet)return;
+  let watched:HTMLElement|null=null;
+  const sync=()=>{
+   const host=viewport?.current??null;
+   if(host!==watched){if(watched)observer.unobserve(watched);if(host)observer.observe(host);watched=host;}
+   const rect=host?.getBoundingClientRect(),left=Math.max(0,rect?.left??0),right=Math.min(window.innerWidth,rect?.right??window.innerWidth);
+   const width=right-left;
+   sheet.style.left=(width>0?left:0)+'px';sheet.style.width=(width>0?width:window.innerWidth)+'px';
+  };
+  const observer=new ResizeObserver(sync);sync();
+  const frame=requestAnimationFrame(sync);
+  window.addEventListener('resize',sync);window.addEventListener('transitionend',sync,true);window.addEventListener('animationend',sync,true);window.visualViewport?.addEventListener('resize',sync);
+  return()=>{cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('resize',sync);window.removeEventListener('transitionend',sync,true);window.removeEventListener('animationend',sync,true);window.visualViewport?.removeEventListener('resize',sync);};
+ },[viewport]);
  useLayoutEffect(()=>{
   const field=document.activeElement;oldHold.current=footHeld();
   // Move chrome to the keyboard's edge while the terminal retains its grid.
@@ -61,7 +76,7 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
   if(covered&&field instanceof HTMLElement){restore.current=field;lowerKeyboard(field);}
   else if(field instanceof HTMLElement&&field.matches('input,textarea'))field.blur();
   return()=>{holdFoot(oldHold.current);};
- },[]);
+ },[height,narrow]);
  const finish=(sent=false)=>{if(restore.current?.isConnected)raiseKeyboard(restore.current);sent?onSent():onClose();};
  useEffect(()=>{mounted.current=true;let live=true;void fetchDevices().then(rows=>{if(live)setDevices(rows);},e=>{if(live)setError(said(e));});return()=>{live=false;mounted.current=false;};},[]);
  const sources=machinesFor(devices,road.machine);
@@ -77,7 +92,7 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
  const browse=(entry:Attachment)=>{const machine=machineFor(entry);if(machine)setAt({machine,path:entry.device?'/':entry.path,root:entry.device?entry:undefined});};
  const send=async()=>{if(road.busy||sending.current||!road.selected.length)return;sending.current=true;setError(null);try{if(await road.send(road.selected,road.into)){if(mounted.current)finish(true);}else if(mounted.current)setError('附件未能发送，已保留所选文件，可重试');}catch(e){if(mounted.current)setError(said(e));}finally{sending.current=false;}};
  return <>
- {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height}} className="fixed inset-x-0 bottom-0 z-40 flex min-h-0 flex-col border-t bg-background px-row pb-safe-bottom shadow-(--shadow-float) sm:left-auto sm:right-row sm:w-dialog" onKeyDown={e=>{if(e.key==='Escape'&&!road.busy){e.preventDefault();finish();}}}>
+ {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height}} className="fixed bottom-0 z-40 flex min-h-0 flex-col border-t bg-background px-row pb-safe-bottom shadow-(--shadow-float)" onKeyDown={e=>{if(e.key==='Escape'&&!road.busy){e.preventDefault();finish();}}}>
   <div data-files-actions className="flex min-h-touch flex-none items-center justify-between py-xxs">
    <Button data-files-cancel variant="ghost" className="min-h-touch" disabled={road.stopping} onClick={()=>road.busy?road.cancel():finish()}>{road.busy?'取消传输':'取消'}</Button>
    <Button data-files-send variant="primary" className={road.selected.length?"min-h-touch":"min-h-touch bg-fill text-muted-foreground"} disabled={road.busy||picking||!road.selected.length} onClick={()=>void send()}>{road.busy?'正在发送':`发送${road.selected.length?' ('+road.selected.length+')':''}`}</Button>
@@ -118,7 +133,8 @@ function localEntry(root:Attachment,path:string,dir:boolean):Attachment{
  return {key:root.key+'/'+relative,name,path,from:root.from,shown:root.shown,dir,size:file?.size??null,device:dir?{files:root.device!.files.filter(item=>item.relative.startsWith(prefix)).map(item=>({...item,relative:item.relative.slice(prefix.length)})),dirs:root.device!.dirs.filter(item=>item.startsWith(prefix)).map(item=>item.slice(prefix.length))}: {files:file?[{file,relative:name}]:[],dirs:[]}};
 }
 function AttachmentDirectory({place,onClose,selected,inherited,onToggle,onOpen,busy,filesOnly}:{place:Place|null;onClose:()=>void;selected:(a:Attachment)=>boolean;inherited:(a:Attachment)=>boolean;onToggle:(a:Attachment)=>void;onOpen:(a:Attachment)=>void;busy:boolean;filesOnly?:boolean}){
- return <Dialog open={place!==null} onOpenChange={open=>{if(!open)onClose();}}>{place&&<TaskOverlay layout="content" purpose="preview" initialHeight="large" maxHeight="large" data-attachment-directory className="flex min-h-0 flex-col gap-0 overflow-hidden p-0" onOpenAutoFocus={event=>{event.preventDefault();(event.target as HTMLElement).focus({preventScroll:true});}} onCloseAutoFocus={event=>event.preventDefault()}>
+ const windowNarrow=useWindowNarrow();
+ return <Dialog open={place!==null} onOpenChange={open=>{if(!open)onClose();}}>{place&&<TaskOverlay layout="content" purpose="preview" initialHeight="large" maxHeight="large" data-attachment-directory style={windowNarrow?{paddingInline:0,paddingBottom:0}:undefined} className="flex min-h-0 flex-col gap-0 overflow-hidden p-0" onOpenAutoFocus={event=>{event.preventDefault();(event.target as HTMLElement).focus({preventScroll:true});}} onCloseAutoFocus={event=>event.preventDefault()}>
   <DialogTitle className="sr-only">{place.machine.shown}文件</DialogTitle>
   <DirectoryBody key={place.machine.id+' '+(place.root?.key??'')} place={place} onClose={onClose} selected={selected} inherited={inherited} onToggle={onToggle} onOpen={onOpen} busy={busy} filesOnly={filesOnly}/>
  </TaskOverlay>}</Dialog>;
@@ -129,11 +145,10 @@ function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,fi
  const entry=(full:string,dir:boolean,size:number|null=null)=>place.root?localEntry(place.root,full,dir):pathAttachment(full,place.machine.me?null:place.machine.name,place.machine.shown,dir,size);
  const listing=useMemo<DirListing|undefined>(()=>place.root?{path,entries:deviceFolderEntries(place.root,path.replace(/^\//,'')).map(row=>({name:row.name,dir:row.dir,size:row.file?.size??0,at_ms:row.file?.lastModified??0,from:null,received_ms:null})),truncated:false}:undefined,[place.root,path]);
  return <div data-files-directory-body className="flex min-h-0 flex-1 flex-col">
-  <header data-files-directory-head className="flex min-h-touch flex-none items-center gap-row px-row py-in"><MachineIdentity row={place.machine}/></header>
   <div className="flex min-h-0 flex-1 flex-col"><FilesPane machine={place.machine.name} here={place.machine.me} path={path} onPath={navigate} onLanded={resolved=>{if(!query)navigate(resolved);}} onFile={()=>{}} open={null} sourceListing={listing} filter={filter} selection={{filesOnly,state:(full,dir)=>{const item=entry(full,dir);return {selected:selected(item)||inherited(item),disabled:busy||inherited(item)};},toggle:(full,dir,size)=>onToggle(entry(full,dir,size)),open:(full,dir)=>onOpen(entry(full,dir))}}/></div>
-  <div data-files-directory-deck className="flex min-w-0 flex-none items-center gap-in px-row py-in pb-safe-bottom">
+  <div data-files-directory-deck className="mobile-content-deck">
    <GlassCircle aria-label="返回附件" data-files-directory-back onClick={onClose}><IconBack/></GlassCircle>
-   <GlassCapsule data-files-search className="min-w-0 flex-1"><ContentSearch label="搜索或输入路径" value={query} autoFocus={false} onEditing={()=>{}} onChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);if(document.activeElement instanceof HTMLElement)document.activeElement.blur();}}/></GlassCapsule>
+   <GlassCapsule data-files-search className="min-w-0 flex-1"><ContentSearch leading={<span data-files-directory-avatar role="img" aria-label={place.machine.shown} title={place.machine.shown} className="flex flex-none items-center"><MachineFace face={place.machine.face} system={place.machine.vitals?.vitals.system??null} size="tab"/></span>} label="搜索或输入路径" value={query} autoFocus={false} onEditing={()=>{}} onChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);if(document.activeElement instanceof HTMLElement)document.activeElement.blur();}}/></GlassCapsule>
   </div>
  </div>;
 }

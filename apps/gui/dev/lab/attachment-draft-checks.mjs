@@ -15,9 +15,9 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  const sessionMachine=async()=>{await openMachines();await machinesMenu.locator('[data-files-machine][data-files-session]').click();};
 
  const grid=()=>page.locator('[data-terminal] .xterm-screen').evaluate(node=>({width:node.style.width,height:node.style.height}));
- const measurePanel=async(label,selector)=>{
-  await page.locator(selector).evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
-  const owner=await page.locator(selector).boundingBox(),panel=await picker.boundingBox();panelWidths.push({label,owner,panel});
+ const measurePanel=async(label,selector,view=page)=>{
+  await view.locator(selector).evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
+  const owner=await view.locator(selector).boundingBox(),panel=await view.locator('[data-attachment-picker]:visible').boundingBox();panelWidths.push({label,owner,panel});
  };
  const assertPanelWidths=()=>{const issues=panelWidths.filter(({owner,panel})=>Math.abs(owner.x-panel.x)>1||Math.abs(owner.width-panel.width)>1);assert.deepEqual(issues,[],'Attachment panel follows its session width instead of a fixed dialog width');};
  const green=async()=>assert(await picker.locator('[data-files-send]').evaluate(button=>{const p=document.createElement('i');p.style.backgroundColor='var(--brand-strong)';document.body.append(p);const expected=getComputedStyle(p).backgroundColor;p.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===expected;}));
@@ -39,8 +39,12 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await picker.waitFor();await selected('draft.txt').waitFor();await unchanged('open fixed panel');
   assert.equal(await picker.evaluate(node=>getComputedStyle(node).position),'fixed');
   await measurePanel('initial-'+width,'[data-terminal]');
-  if(!mobile){for(const next of [680,760,width]){await page.setViewportSize({width:next,height});await measurePanel('resize-'+next,'[data-terminal]');}}
   assertPanelWidths();
+  if(!mobile){
+   for(const next of [760,width]){await page.setViewportSize({width:next,height});await measurePanel('resize-'+next,'[data-terminal]');}assertPanelWidths();
+   const probe=await context.newPage();probe.on('pageerror',e=>errors.push(String(e)));
+   try{await probe.setViewportSize({width:680,height});await probe.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);await probe.locator('[data-terminal] .xterm').waitFor();await probe.waitForTimeout(500);await probe.locator('[data-terminal]').evaluate(node=>{const data=new DataTransfer();data.items.add(new File(['width probe'],'width.txt',{type:'text/plain'}));node.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));});await probe.locator('[data-attachment-picker]:visible').waitFor();await measurePanel('narrow-680','[data-terminal]',probe);assertPanelWidths();}finally{await probe.close();}
+  }
 
   if(mobile)await page.waitForFunction(()=>document.querySelector('#root').getBoundingClientRect().bottom<=document.querySelector('[data-attachment-picker]').getBoundingClientRect().top+1);
   await unchanged('chrome above the keyboard panel');assert.equal(await picker.locator('[data-files-actions]').innerText(),'取消\n发送 (1)');
@@ -49,7 +53,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
    return [...root.querySelectorAll('[data-files-pick],[data-files-machines]')].map(node=>{const r=node.getBoundingClientRect();return {label:node.textContent,top:r.top,bottom:r.bottom,left:r.left,right:r.right,visible:r.top>=source.top&&r.bottom<=source.bottom+1&&r.bottom<=selection.top+1};});
   });assert(sourcesVisible.every(control=>control.visible),'Local files, folders and the counted machine entry are visible without scrolling');
   assert.match(await picker.locator('[data-send-to-machine]').getAttribute('aria-label'),/发送到.*保存文件夹/);assert.equal(await picker.locator('[data-send-into-label]').count(),0);assert.equal((await picker.locator('[data-send-to-machine]').innerText()).replace(/\s/g,''),'：'+(await picker.locator('[data-send-into-path]').innerText()).replace(/\s/g,''),'Destination displays only avatar, colon and path');assert.equal((await picker.locator('[data-send-into-change]').innerText()).trim(),'更改');
-  await openMachines();const other=machinesMenu.locator('[data-files-machine]').last(),otherLabel=await other.innerText();const otherBounds=await other.boundingBox();assert(otherBounds.y>=0&&otherBounds.y+otherBounds.height<=height+1,'The last machine is reachable inside the viewport');await other.click();await directory.waitFor();assert(otherLabel.includes((await directory.locator('[data-machine-identity]').innerText()).trim()),'Choosing another machine opens that machine');await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});await unchanged('other machine choice');
+  await openMachines();const other=machinesMenu.locator('[data-files-machine]').last(),otherLabel=await other.innerText();const otherBounds=await other.boundingBox();assert(otherBounds.y>=0&&otherBounds.y+otherBounds.height<=height+1,'The last machine is reachable inside the viewport');await other.click();await directory.waitFor();assert(otherLabel.includes(await directory.locator('[data-files-directory-avatar]').getAttribute('aria-label')),'Choosing another machine opens that machine');await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});await unchanged('other machine choice');
   assert.equal(await picker.locator('[data-files-input]').getAttribute('accept'),null);assert.match(await picker.locator('[data-send-into-path]').innerText(),/khor-drop/);await green();assert.equal((await api('__ai_preview/attachment-events')).length,0);
   await image('terminal');await unchanged('local file page and return');
   await picker.locator('[data-files-folder-input]').evaluate(input=>{const file=new File(['nested original bytes'],'inside.txt',{type:'text/plain'});Object.defineProperty(file,'webkitRelativePath',{value:'local-folder/nested/inside.txt'});const data=new DataTransfer();data.items.add(file);input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -63,15 +67,17 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-directory][data-state="open"]');if(!root)return false;const sheet=root.getBoundingClientRect(),back=root.querySelector('[data-files-directory-back]')?.getBoundingClientRect();return back&&back.top>=sheet.top&&back.bottom<=Math.min(sheet.bottom,window.innerHeight)+1;});
   const directoryBounds=await directory.evaluate(root=>{
    const rect=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
-   const head=root.querySelector('[data-files-directory-head]'),back=root.querySelector('[data-files-directory-back]'),pill=root.querySelector('[data-files-search]');
-   return {sheet:rect(root),head:rect(head),machine:head.querySelector('[data-machine-identity]')?.textContent,back:rect(back),pill:rect(pill),list:rect(root.querySelector('[data-files-list]')),glass:pill.hasAttribute('data-glass-capsule'),viewport:window.innerHeight};
+   const back=root.querySelector('[data-files-directory-back]'),pill=root.querySelector('[data-files-search]'),avatar=root.querySelector('[data-files-directory-avatar]');
+   const session=document.querySelector('[data-terminal]')?.closest('[data-session-screen]')?.querySelector('[data-session-deck]');
+   return {sheet:rect(root),headers:root.querySelectorAll('[data-files-directory-head]').length,back:rect(back),pill:rect(pill),avatar:rect(avatar),machine:avatar.getAttribute('aria-label'),list:rect(root.querySelector('[data-files-list]')),glass:pill.hasAttribute('data-glass-capsule'),viewport:window.innerHeight,reference:session?{back:rect(session.querySelector('[data-back]')),pill:rect(session.querySelector('[data-deck-pill]'))}:null};
   });directoryLayouts.push(directoryBounds);
-  assert(directoryBounds.machine?.trim(),'Machine identity stays at the top');
-  assert(directoryBounds.head.bottom<=directoryBounds.list.top+1,'The directory list starts below machine identity');
+  assert.equal(directoryBounds.headers,0,'The directory has no redundant machine heading');assert(directoryBounds.machine?.trim(),'The machine is identified by its avatar in the path capsule');
   assert(directoryBounds.back.top>=directoryBounds.sheet.top&&directoryBounds.back.bottom<=Math.min(directoryBounds.sheet.bottom,directoryBounds.viewport)+1,'Directory return action remains in view on short screens: '+JSON.stringify(directoryBounds));
   assert(directoryBounds.list.height>=44&&directoryBounds.list.bottom<=Math.min(directoryBounds.back.top,directoryBounds.pill.top),'The file list scrolls above both fixed navigation capsules');
   assert(directoryBounds.glass&&directoryBounds.pill.left>=directoryBounds.back.right&&Math.abs(directoryBounds.pill.top-directoryBounds.back.top)<=1&&Math.abs(directoryBounds.pill.height-directoryBounds.back.height)<=1,'Back and path capsules share one bottom navigation row');
+  assert(directoryBounds.avatar.left>=directoryBounds.pill.left&&directoryBounds.avatar.right<=directoryBounds.pill.right&&Math.abs((directoryBounds.avatar.top+directoryBounds.avatar.bottom)/2-(directoryBounds.pill.top+directoryBounds.pill.bottom)/2)<=1,'Machine avatar sits inside and vertically centered in the path capsule');
   assert(directoryBounds.pill.right<=directoryBounds.sheet.right+1,'The path capsule stays inside the sheet');
+  if(mobile){assert(directoryBounds.reference,'The current session exposes its navigation alignment reference');assert(Math.abs(directoryBounds.reference.back.left-directoryBounds.back.left)<=1&&Math.abs(directoryBounds.reference.pill.left-directoryBounds.pill.left)<=1&&Math.abs(directoryBounds.reference.pill.height-directoryBounds.pill.height)<=1,'Directory navigation aligns with the session navigation');}
 
 
   if(await directory.locator('[data-files-entry="file"]').count()===0)await directory.locator('[data-files-name="project"] button').first().click();

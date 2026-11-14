@@ -3686,7 +3686,7 @@ export function TerminalPane({
       </>
     )}
     {active&&!coarse&&<HeaderSeat><GlassCircle data-term-attachments aria-label="添加附件" onClick={()=>setAttachmentOpen(true)}><IconAttach className="size-affordance"/></GlassCircle></HeaderSeat>}
-    {active&&<AttachmentPicker open={attachmentOpen} onClose={()=>setAttachmentOpen(false)} onSent={()=>{setAttachmentOpen(false);const field=termRef.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}}
+    {active&&<AttachmentPicker viewport={boxRef} open={attachmentOpen} onClose={()=>setAttachmentOpen(false)} onSent={()=>{setAttachmentOpen(false);const field=termRef.current?.textarea;if(field?.isConnected)raiseKeyboard(field);}}
       road={{machine:machine??null,cwd:doing?.cwd??null,selected:attachments,into:attachmentInto,onInto:setAttachmentInto,
        add:items=>changeAttachments(addAttachments(attachmentsRef.current,items)),
        replace:(entry,file)=>changeAttachments(attachmentsRef.current.flatMap(item=>item.key===entry.key?deviceAttachments([file],false,gui.machine_here):[item])),

@@ -1934,7 +1934,7 @@ export function ChatView({
               {gui.chat_sending((sending[0] / 1e6).toFixed(1), (sending[1] / 1e6).toFixed(1))}
             </div>
           )}
-          <AttachmentPicker open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
+          <AttachmentPicker viewport={dropBox} open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
             machine:machine??null,cwd:null,into,onInto:setInto,filesOnly:true,action:'完成',selected:attachmentSources,
             add:files.addSources,
             remove:item=>{const key=pendingKeyFor(item);if(key)files.remove(key);},
