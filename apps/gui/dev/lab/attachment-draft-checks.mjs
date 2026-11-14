@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const height=width===320?568:844,mobile=width<500,name=`attachment-draft-${engine}-${width}`;
  const context=await browser.newContext({viewport:{width,height},hasTouch:mobile,isMobile:mobile});
- const page=await context.newPage(),errors=[],imagePreviews=[],sizes=[],directoryLayouts=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(String(e)));
+ const page=await context.newPage(),errors=[],imagePreviews=[],sizes=[],directoryLayouts=[],panelWidths=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(String(e)));
  const environment={platform:mobile?width===412?'android':'ios':'desktop',theme:width===412?'dark':'light',material:'solid',background:'dark',opacity:100,keyboard:0,safeTop:mobile?width===412?24:47:0,safeBottom:mobile?width===412?24:34:0};
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const picker=page.locator('[data-attachment-picker]:visible'),directory=page.locator('[data-attachment-directory]:visible'),preview=page.locator('[data-attachment-file]:visible');
@@ -15,6 +15,11 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  const sessionMachine=async()=>{await openMachines();await machinesMenu.locator('[data-files-machine][data-files-session]').click();};
 
  const grid=()=>page.locator('[data-terminal] .xterm-screen').evaluate(node=>({width:node.style.width,height:node.style.height}));
+ const measurePanel=async(label,selector)=>{
+  await page.locator(selector).evaluate(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);});
+  const owner=await page.locator(selector).boundingBox(),panel=await picker.boundingBox();panelWidths.push({label,owner,panel});
+ };
+ const assertPanelWidths=()=>{const issues=panelWidths.filter(({owner,panel})=>Math.abs(owner.x-panel.x)>1||Math.abs(owner.width-panel.width)>1);assert.deepEqual(issues,[],'Attachment panel follows its session width instead of a fixed dialog width');};
  const green=async()=>assert(await picker.locator('[data-files-send]').evaluate(button=>{const p=document.createElement('i');p.style.backgroundColor='var(--brand-strong)';document.body.append(p);const expected=getComputedStyle(p).backgroundColor;p.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===expected;}));
  let originalGrid,originalSizes;
  const unchanged=async label=>{assert.deepEqual(await grid(),originalGrid,`${label}: terminal cell grid unchanged`);const current=await api('__ai_preview/terminal-sizes');sizes.push({label,count:current.length});assert.equal(current.length,originalSizes,`${label}: no PTY resize`);};
@@ -33,6 +38,10 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.locator('[data-terminal]').evaluate(node=>{const data=new DataTransfer();data.items.add(new File(['original attachment'],'draft.txt',{type:'text/plain'}));node.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));});
   await picker.waitFor();await selected('draft.txt').waitFor();await unchanged('open fixed panel');
   assert.equal(await picker.evaluate(node=>getComputedStyle(node).position),'fixed');
+  await measurePanel('initial-'+width,'[data-terminal]');
+  if(!mobile){for(const next of [680,760,width]){await page.setViewportSize({width:next,height});await measurePanel('resize-'+next,'[data-terminal]');}}
+  assertPanelWidths();
+
   if(mobile)await page.waitForFunction(()=>document.querySelector('#root').getBoundingClientRect().bottom<=document.querySelector('[data-attachment-picker]').getBoundingClientRect().top+1);
   await unchanged('chrome above the keyboard panel');assert.equal(await picker.locator('[data-files-actions]').innerText(),'取消\n发送 (1)');
   const sourcesVisible=await picker.evaluate(root=>{
@@ -90,10 +99,10 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
    const keyboardEnvironment={...environment,keyboard:232};await page.goto(`http://127.0.0.1:${port}/app/?scene=terminal&machines=3&environment=${encodeURIComponent(JSON.stringify(keyboardEnvironment))}`);await page.locator('[data-terminal] .xterm').waitFor();await page.waitForTimeout(500);originalGrid=await grid();originalSizes=(await api('__ai_preview/terminal-sizes')).length;
    await page.locator('[data-terminal]').evaluate(node=>{const data=new DataTransfer();data.items.add(new File(['keyboard draft'],'keyboard.txt',{type:'text/plain'}));node.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:data}));});await picker.waitFor();assert.equal(Math.round((await picker.boundingBox()).height),232);assert((await picker.locator('[data-files-selection-scroll]').boundingBox()).height>=44,'The shorter keyboard panel still exposes a full selected-file touch row');await image('keyboard');await unchanged('replacement for simulated keyboard');await picker.locator('[data-files-cancel]').click();await picker.waitFor({state:'hidden'});
   }
-  await page.goto(`http://127.0.0.1:${port}/app/?scene=gui&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);await page.locator('[data-chat-input]:visible').waitFor();await page.locator('[data-lab-add]:visible').click();await page.locator('[data-lab-attach-device]').click();await picker.waitFor();
+  await page.goto(`http://127.0.0.1:${port}/app/?scene=gui&machines=3&environment=${encodeURIComponent(JSON.stringify(environment))}`);await page.locator('[data-chat-input]:visible').waitFor();await page.locator('[data-lab-add]:visible').click();await page.locator('[data-lab-attach-device]').click();await picker.waitFor();await measurePanel('gui-'+width,'[data-chat-searchable]:visible');assertPanelWidths();
   await choose({name:'chat.txt',mimeType:'text/plain',buffer:Buffer.from('chat attachment')});await selected('chat.txt').waitFor();await image('gui');
   assert.equal((await api('__ai_preview/attachment-events')).length,0);await green();await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));assert((await api('__ai_preview/attachment-events')).some(e=>e.operation==='chat_put'&&e.name==='chat.txt'&&e.content==='chat attachment'));await page.screenshot({path:path.join(report,name+'-gui.png')});
  }catch(e){errors.push(String(e.stack??e));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}finally{await context.close();}
- return {name,imagePreviews,sizes,directoryLayouts,errors};
+ return {name,imagePreviews,sizes,directoryLayouts,panelWidths,errors};
 }
