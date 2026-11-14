@@ -7,6 +7,10 @@
 - 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新英文内容缓存后启动 PID 83220）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
 
+## 最新增量 · 透明完整品牌与团队署名（2026-11-14）
+
+用户指定完整彩色 Khor 图标去背景，保留玻璃和光泽；导航标记放大到 32px，右侧导航统一 22px。文档品牌和收尾复用透明完整图。页脚 About us 署名 NeuroAI Innovation Team / KapeStack，公司名链接原主页。手机／宽屏及透明度验证、十页构建通过，详见 `site-relations-20261114.md` 最后一节，仅本地。
+
 ## 最新增量 · 图标导航（2026-11-14）
 
 导航右侧统一 Explore / Docs / Download / GitHub 四个图标，下载没有独立底色；GitHub 只保留在导航最右侧。用户随后要求参考 Apple 重新选图：前三项现为 Phosphor Regular 的指南针／打开的书／下载托盘，22px；GitHub 品牌标记 20px，平衡视觉重量。左侧仍为 icon + Khor，悬停和键盘聚焦可看名称。首页／文档／下载的手机与宽屏验证通过，见 `site-relations-20261114.md` 最后一节，本轮仅本地。

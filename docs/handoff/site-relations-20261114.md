@@ -129,3 +129,12 @@ headless Chrome 在 320／390／1440px 的首页、文档、下载页检查：�
 原始 SVG 与 MIT 许可静态收于 `apps/site/src/assets/navigation/`，上游固定 revision `2b75f3ad12b420c9504ef05df8d2564a28f8500e`，未改路径、未增加 npm 包或运行时请求。移除 GUI identity-marks 中不再使用的导航导出；真实 GUI 和概念图的图标不变。
 
 headless Chrome 320／1440px 核对四个入口、尺寸、可访问名称、透明底与无横向溢出，并审视浅色首屏／黑色毛玻璃截图。十页静态构建和 diff 检查通过。证据 `site-story-20261114/nav-refined/`，产物 `site-story-20261114-nav-refined`。仅本地。
+
+
+## 同日透明完整品牌图与 About us（当前）
+
+用户先提出圆形品牌图与统一导航大小，随后明确要求保留完整彩色图标、只去掉背景，不使用单色版；最后认为去底后偏小，要求放大。当前 `BrandIcon.astro` 从原始 mandala-glass.svg 读取 defs 和实体图层（与图标故事同一层契约），保留 40 个直接子元素、五颗珠、玻璃环、菱形、光泽、阴影和原始光学变换；排除底板、外部环境光组与背景 wash，不改 App 原图。viewBox 64/64/896/896 收去多余画板留白，所有 SVG ID 按实例隔离。
+
+导航、文档品牌与收尾均使用透明完整图。用户最后要求将导航 Khor 标记放大，最终为 32px；右侧四个图标统一 22px（GitHub 不再单独 20px），44px 点击区保留。彩色图标的外环本身是圆形，不加圆形黑底。页脚改为 About us，正文为 “Khor is built by NeuroAI Innovation Team / KapeStack”，公司名链接 https://www.kapestack.top；没有添加未经提供的团队背景或联系方式。
+
+验证：headless Chrome 320／1440px 查看首屏、导航与页脚，确认尺寸、无重复 ID、无横向溢出，Docs 页面两个品牌实例正常。完整实体层 40 项、五颗珠、21 个渐变均在；透明 PNG 四角 alpha=0、中心 alpha=255，玻璃与珠光保留。十页静态构建及 diff 通过。证据 `site-story-20261114/brand-about/`，产物 `site-story-20261114-brand-about`。仅本地。
