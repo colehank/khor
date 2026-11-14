@@ -17,7 +17,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await api('__ai_preview/upload-mode',{mode:'fail'});
   await page.locator('input[type=file]').last().setInputFiles({name:'failed.txt',mimeType:'text/plain',buffer:Buffer.from('synthetic attachment')});
   await page.locator('[data-chat-send]').click();
-  const failed=page.locator('[data-chat-pending-file="failed.txt"]');await page.waitForFunction(()=>document.querySelector('[data-chat-pending-file="failed.txt"]')?.title.includes('上传失败'));
+  const failed=page.locator('[data-chat-pending-file="failed.txt"]');await failed.getByRole('button',{name:'重试',exact:true}).waitFor();assert.match(await failed.innerText(),/发送失败/);
   assert.equal(await page.locator('[data-chat-send]').isDisabled(),true,'An upload failure blocks the entire send, including keyboard Enter');
   await input.press('Enter');assert.equal((await api('__ai_preview/says')).length,0);
   const original='gui/ai-elements-review',other='gui/ai-elements-plan';
@@ -25,7 +25,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await page.locator(`[data-session-tabs] [data-tab-open="${original}"]`).click();
   await page.locator('[data-chat-doc]').waitFor();await failed.waitFor();
   assert.equal(await input.inputValue(),'Draft belongs to the original session');
-  await failed.locator('[data-chat-pending-drop]').click();
+  await failed.locator('[data-files-select]').click();
   await page.waitForFunction(()=>{const send=document.querySelector('[data-chat-send]');return send&&!send.disabled;});
   // Read older pages using a real reader gesture, without touching Load older.
   const scroll=page.locator('[data-chat-scroll]:visible');await scroll.hover();
@@ -88,13 +88,13 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   await api('__ai_preview/upload-mode',{mode:'ok'});
   await page.locator('input[type=file]').last().setInputFiles({name:'notes.txt',mimeType:'text/plain',buffer:Buffer.from('This selected file can be previewed.')});
   const card=page.locator('[data-chat-pending-file="notes.txt"]');
-  assert.equal(await card.getAttribute('data-placed'),null,'A picked file remains local until explicit Send');
-  await card.locator('[data-chat-pending-preview]').click();
-  const file=page.locator('[data-attachment-preview]:visible');
+  await card.waitFor();assert.equal((await api('__ai_preview/attachment-events')).filter(event=>event.operation==='chat_put'&&event.name==='notes.txt').length,0,'A picked file remains local until explicit Send');
+  await card.locator('[data-files-open]').click();
+  const file=page.locator('[data-attachment-file]:visible');
   await file.waitFor();
-  await file.locator('[data-attachment-text]').waitFor();
-  assert.equal(await file.locator('[data-attachment-text]').inputValue(),'This selected file can be previewed.');
-  await file.getByRole('button',{name:'取消',exact:true}).click();
+  await file.locator('.cm-content').waitFor();
+  assert.equal(await file.locator('.cm-content').innerText(),'This selected file can be previewed.');
+  await file.locator('[data-file-back]').click();
   await file.waitFor({state:'hidden'});
   await card.waitFor();
   await page.locator('[data-chat-send]').click();
@@ -103,7 +103,7 @@ export async function checkGuiExperience(browser,{port,report,engine}){
   assert.deepEqual(errors,[]);
   return {name:`GUI composer and reader ${engine}`,passed:true,errors};
  }catch(error){
-  errors.push(String(error));await page.screenshot({path:path.join(report,`gui-experience-${engine}-failure.png`)}).catch(()=>{});
+  errors.push(String(error.stack??error));await page.screenshot({path:path.join(report,`gui-experience-${engine}-failure.png`)}).catch(()=>{});
   const reading=await page.locator('[data-chat-scroll]').evaluate(root=>({top:root.scrollTop,height:root.scrollHeight,viewport:root.clientHeight,
    items:[...root.querySelectorAll('[data-history-key]')].map(node=>({key:node.dataset.historyKey,top:node.getBoundingClientRect().top-root.getBoundingClientRect().top,text:node.textContent.slice(0,120)}))})).catch(()=>null);
   await writeFile(path.join(report,`gui-experience-${engine}-failure.json`),JSON.stringify({readingAnchor,reading,errors},null,2));

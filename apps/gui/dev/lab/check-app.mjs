@@ -472,6 +472,7 @@ try {
     for(const engine of ['chromium','webkit']){
       browser=await (engine==='webkit'?webkit:chromium).launch({headless:engine!=='webkit'||process.env.QUALITY_HEADLESS!=='0'});
       for(const width of [1280,412,390,320]){results.push(await checkAttachmentDraft(browser,{port,report,engine,width}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
+      results.push(await checkGuiExperience(browser,{port,report,engine}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
       await browser.close();browser=undefined;
     }
   } else if (process.env.LAB_CHECKS === 'glass-selection') {
