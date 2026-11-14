@@ -28,7 +28,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await choose({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(media.image,'base64')});assert.equal(await selected('photo.png').locator('[data-files-open] [data-icon="open"]').count(),1);await selected('photo.png').locator('[data-files-open]').click();await preview.waitFor();
   await page.waitForFunction(()=>{const img=document.querySelector('[data-attachment-file] [data-file-page] img');return img?.complete&&img.naturalWidth>0;});
   assert.equal(await preview.locator('[data-file-more]').count(),0,'Workspace file page has no More action in attachments');
-  await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-file][data-state="open"]');return root&&getComputedStyle(root).animationName==='none';}).catch(()=>{});
+  await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-file][data-state="open"]');return root&&root.getAnimations().every(animation=>animation.playState==='finished');});
   const layout=await preview.evaluate(root=>{const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};return {sheet:box(root),file:box(root.querySelector('[data-file-page]')),back:box(root.querySelector('[data-file-back]'))};});previewLayouts.push({label,...layout});
   const focus=await preview.evaluate(root=>({editable:!!document.activeElement?.matches('input,textarea,[contenteditable="true"]'),inside:root.contains(document.activeElement)}));assert.equal(focus.editable,false);imagePreviews.push({label,focus});
   await page.screenshot({path:path.join(report,name+'-'+label+'-image.png')});
