@@ -1,7 +1,13 @@
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
 import {machineMark,sessionMark} from '../../src/components/BrandIcons';
-import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch,IconChat,IconServer,IconWorkstation,IconDesktop,IconMobile,IconLink} from '../../src/components/icons';
+import {IconCopy,IconCheck,IconNetwork,IconWifi,IconCellular,IconBrowser,IconFile,IconBranch,IconChat,IconServer,IconWorkstation,IconDesktop,IconMobile,IconLink,IconEye,IconArrow} from '../../src/components/icons';
+
+export const navigationMarks={
+  explore:renderToStaticMarkup(createElement(IconEye),{identifierPrefix:'site-nav-explore-'}),
+  docs:renderToStaticMarkup(createElement(IconFile),{identifierPrefix:'site-nav-docs-'}),
+  download:renderToStaticMarkup(createElement(IconArrow,{to:'down'}),{identifierPrefix:'site-nav-download-'}),
+};
 
 export const capabilityMarks=Object.fromEntries(([
   ['web',IconBrowser],['files',IconFile],['git',IconBranch],['check',IconCheck],

@@ -7,6 +7,10 @@
 - 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新英文内容缓存后启动 PID 83220）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
 
+## 最新增量 · 图标导航（2026-11-14）
+
+导航右侧统一 Explore / Docs / Download / GitHub 四个图标，下载没有独立底色；GitHub 只保留在导航最右侧。左侧仍为 icon + Khor，悬停和键盘聚焦可看名称。首页／文档／下载的手机与宽屏验证通过，见 `site-relations-20261114.md` 最后一节，本轮仅本地。
+
 ## 最新增量 · 统一收尾（2026-11-14）
 
 收尾标题改为 Build with Khor，Download / Docs、平台与 CLI 安装区直接复用首屏组件；首尾链接、复制、平台可用性保持一致，黑底适配亮色按钮。Download 显示访问设备的平台图标，Docs 显示文档图标，全部复用现有 App 字形。手机／宽屏验证与十页构建通过，详情见 `site-relations-20261114.md` 最后一节，仅本地。

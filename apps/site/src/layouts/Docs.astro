@@ -3,7 +3,7 @@ import {sitePath} from "../paths";
 import Base from "./Base.astro";
 import Mark from "../components/Mark.astro";
 import SiteNav from "../components/SiteNav.astro";
-import { REPO, docs } from "../site";
+import { docs } from "../site";
 import '../styles/story.css';
 
 interface Props {
@@ -39,7 +39,6 @@ const pages = await docs();
           <a class="back" href={sitePath(current ? "/docs/" : "/")}>{current ? "Docs" : "khor"}</a>
           <h1>{title}</h1>
         </div>
-        <a class="bar-link" href={REPO}>GitHub</a>
       </header>
       <main class="board">
         <slot />

@@ -8,7 +8,6 @@ import SiteNav from "../components/SiteNav.astro";
 import ProductActions from '../components/ProductActions.astro';
 import ProductInstallations from '../components/ProductInstallations.astro';
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
-import { REPO } from "../site";
 import "../styles/story.css";
 const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But", "one mind"], ["How about", "letting them\nwork together?"], ["Meet", "Khor"]];
 ---
@@ -34,7 +33,7 @@ const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But",
       <ProductInstallations prefix="download" />
     </section>
   </main>
-  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents</span><nav><a href={sitePath("/docs/")}>Docs</a><a href={REPO}>GitHub</a></nav></footer>
+  <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents</span><nav><a href={sitePath("/docs/")}>Docs</a></nav></footer>
 
   <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">Enable JavaScript to view the animation. <a href={sitePath("/download/")}>Download Khor</a></p></noscript>
 </Base>
