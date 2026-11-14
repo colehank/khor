@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const height=width===320?568:844,mobile=width<500,name=`attachment-draft-${engine}-${width}`;
  const context=await browser.newContext({viewport:{width,height},hasTouch:mobile,isMobile:mobile});
- const page=await context.newPage(),errors=[],imagePreviews=[],sizes=[],directoryLayouts=[],panelWidths=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(String(e)));
+ const page=await context.newPage(),errors=[],imagePreviews=[],sizes=[],directoryLayouts=[],panelWidths=[],previewLayouts=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(String(e)));
  const environment={platform:mobile?width===412?'android':'ios':'desktop',theme:width===412?'dark':'light',material:'solid',background:'dark',opacity:100,keyboard:0,safeTop:mobile?width===412?24:47:0,safeBottom:mobile?width===412?24:34:0};
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const picker=page.locator('[data-attachment-picker]:visible'),directory=page.locator('[data-attachment-directory]:visible'),preview=page.locator('[data-attachment-file]:visible');
@@ -28,6 +28,8 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await choose({name:'photo.png',mimeType:'image/png',buffer:Buffer.from(media.image,'base64')});assert.equal(await selected('photo.png').locator('[data-files-open] [data-icon="open"]').count(),1);await selected('photo.png').locator('[data-files-open]').click();await preview.waitFor();
   await page.waitForFunction(()=>{const img=document.querySelector('[data-attachment-file] [data-file-page] img');return img?.complete&&img.naturalWidth>0;});
   assert.equal(await preview.locator('[data-file-more]').count(),0,'Workspace file page has no More action in attachments');
+  await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-file][data-state="open"]');return root&&getComputedStyle(root).animationName==='none';}).catch(()=>{});
+  const layout=await preview.evaluate(root=>{const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};return {sheet:box(root),file:box(root.querySelector('[data-file-page]')),back:box(root.querySelector('[data-file-back]'))};});previewLayouts.push({label,...layout});
   const focus=await preview.evaluate(root=>({editable:!!document.activeElement?.matches('input,textarea,[contenteditable="true"]'),inside:root.contains(document.activeElement)}));assert.equal(focus.editable,false);imagePreviews.push({label,focus});
   await page.screenshot({path:path.join(report,name+'-'+label+'-image.png')});
   await preview.locator('[data-file-back]').click();await preview.waitFor({state:'hidden'});await selected('photo.png').locator('[data-files-select]').click();await selected('photo.png').waitFor({state:'hidden'});
@@ -69,7 +71,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
    const rect=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
    const back=root.querySelector('[data-files-directory-back]'),pill=root.querySelector('[data-files-search]'),avatar=root.querySelector('[data-files-directory-avatar]');
    const session=document.querySelector('[data-terminal]')?.closest('[data-session-screen]')?.querySelector('[data-session-deck]');
-   return {sheet:rect(root),headers:root.querySelectorAll('[data-files-directory-head]').length,back:rect(back),pill:rect(pill),avatar:rect(avatar),machine:avatar.getAttribute('aria-label'),list:rect(root.querySelector('[data-files-list]')),glass:pill.hasAttribute('data-glass-capsule'),viewport:window.innerHeight,reference:session?{back:rect(session.querySelector('[data-back]')),pill:rect(session.querySelector('[data-deck-pill]'))}:null};
+   return {sheet:rect(root),headers:root.querySelectorAll('[data-files-directory-head]').length,back:rect(back),pill:rect(pill),avatar:rect(avatar),machine:avatar.getAttribute('aria-label'),list:rect(root.querySelector('[data-files-list]')),glass:pill.hasAttribute('data-glass-capsule')||pill.classList.contains('glass'),seat:parseFloat(getComputedStyle(root).getPropertyValue('--glass-item-h')),viewport:window.innerHeight,reference:session?{back:rect(session.querySelector('[data-back]')),pill:rect(session.querySelector('[data-deck-pill]'))}:null};
   });directoryLayouts.push(directoryBounds);
   assert.equal(directoryBounds.headers,0,'The directory has no redundant machine heading');assert(directoryBounds.machine?.trim(),'The machine is identified by its avatar in the path capsule');
   assert(directoryBounds.back.top>=directoryBounds.sheet.top&&directoryBounds.back.bottom<=Math.min(directoryBounds.sheet.bottom,directoryBounds.viewport)+1,'Directory return action remains in view on short screens: '+JSON.stringify(directoryBounds));
@@ -109,6 +111,10 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await choose({name:'chat.txt',mimeType:'text/plain',buffer:Buffer.from('chat attachment')});await selected('chat.txt').waitFor();await image('gui');
   assert.equal((await api('__ai_preview/attachment-events')).length,0);await green();await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));assert((await api('__ai_preview/attachment-events')).some(e=>e.operation==='chat_put'&&e.name==='chat.txt'&&e.content==='chat attachment'));await page.screenshot({path:path.join(report,name+'-gui.png')});
+  const layoutIssues=[];
+  if(mobile)for(const sample of previewLayouts)if(Math.abs(sample.file.left-sample.sheet.left)>1||Math.abs(sample.file.width-sample.sheet.width)>1)layoutIssues.push({issue:'File preview must use the complete content-sheet width',...sample});
+  for(const sample of directoryLayouts)if(Math.abs(sample.avatar.width-sample.seat)>1)layoutIssues.push({issue:'Machine avatar must use the same face seat as the session pill',avatar:sample.avatar,seat:sample.seat});
+  assert.deepEqual(layoutIssues,[],'Attachment pages share workspace width and the session face seat');
  }catch(e){errors.push(String(e.stack??e));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}finally{await context.close();}
- return {name,imagePreviews,sizes,directoryLayouts,panelWidths,errors};
+ return {name,imagePreviews,sizes,directoryLayouts,panelWidths,previewLayouts,errors};
 }
