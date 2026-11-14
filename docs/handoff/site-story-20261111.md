@@ -7,6 +7,10 @@
 - 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新英文内容缓存后启动 PID 83220）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
 
+## 最新增量 · 三项导航（2026-11-14）
+
+用户最终决定移除探索入口，右侧只留 Docs / Download / GitHub。页面滚动故事保留；删除未用指南针图稿。十页构建与产物导航检查通过，仅本地，见 `site-relations-20261114.md` 最后一节。
+
 ## 最新增量 · 透明完整品牌与团队署名（2026-11-14）
 
 用户指定完整彩色 Khor 图标去背景，保留玻璃和光泽；导航标记放大到 32px，右侧导航统一 22px。文档品牌和收尾复用透明完整图。页脚现为 Presented by NeuroAI Innovation Team / KapeStack，团队名链接已核实的 GitHub org AI-innovation-team，公司名链接原主页。手机／宽屏及透明度验证、十页构建通过，详见 `site-relations-20261114.md` 最后一节，仅本地。

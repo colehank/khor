@@ -1,7 +1,6 @@
 ---
 import {sitePath} from "../paths";
 import github from '../assets/github.svg?raw';
-import explore from '../assets/navigation/explore.svg?raw';
 import docs from '../assets/navigation/docs.svg?raw';
 import download from '../assets/navigation/download.svg?raw';
 import {REPO} from '../site';
@@ -9,9 +8,8 @@ import ConceptMark from './concepts/ConceptMark.astro';
 import BrandIcon from './BrandIcon.astro';
 interface Props { home?:boolean; current?:'docs'|'download'; }
 const {home=false,current}=Astro.props;
-const navigationMarks={explore,docs,download};
+const navigationMarks={docs,download};
 const links=[
-  {id:'explore',label:'Explore',href:sitePath(home?'#story':'/#story')},
   {id:'docs',label:'Docs',href:sitePath('/docs/')},
   {id:'download',label:'Download',href:sitePath('/download/')},
 ] as const;
