@@ -1,3 +1,7 @@
+# Accepted — attachment interaction (2026-11-14)
+
+User approved the current Lab layout and interaction (「可以，定了吧」). Keep this as the chosen attachment direction. This accepts the Lab design; native integration, Khor/MachineChat adapter alignment, physical-device acceptance and main/release remain outstanding as recorded below. Do not reopen the design or infer ship authorization from this acceptance.
+
 # Current — shared content surfaces and pill face seats (2026-11-14)
 
 Full App Lab: http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Pinned full App: http://127.0.0.1:23961/snapshots/73d09a9ee853c2e3/app?scene=terminal&machines=3 . Phone/Air borrow through MacLab; no Storybook frame.
