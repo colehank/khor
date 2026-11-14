@@ -142,10 +142,9 @@ export function AttachmentDestination({machine,into,onInto,busy=false}:{machine:
  const [target,setTarget]=useState<DeviceRow|null>(null);
  useEffect(()=>{let live=true;void fetchDevices().then(rows=>{if(live)setTarget(rows.find(row=>machine?row.name===machine:row.me)??null);},()=>{});return()=>{live=false;};},[machine]);
  return <SendInto machine={machine??''} name={target?.name??machine??''} into={into} onInto={onInto} render={({path,pick,reset})=><div data-attachment-destination className="flex w-full min-w-0 flex-none items-center gap-in border-t">
-  {target&&<MachineAvatar face={target.face} className="size-kind-mark flex-none"/>}
-  <div className="min-w-0 flex-1" title={path}>
-   <p data-send-to-machine className="truncate text-callout"><span className="text-muted-foreground">发送到 </span>{target?.shown??machine??'会话所在机器'}</p>
-   <p className="truncate text-caption text-muted-foreground"><span data-send-into-label>保存文件夹：</span><span data-send-into-path>{path}</span></p>
+  <div data-send-to-machine role="group" aria-label={`发送到 ${target?.shown??machine??'会话所在机器'}，保存文件夹：${path}`} title={`${target?.shown??machine??'会话所在机器'}：${path}`} className="flex min-w-0 flex-1 items-center gap-xxs text-callout text-muted-foreground">
+   <MachineAvatar face={target?.face??null} className="size-kind-mark flex-none"/>
+   <span aria-hidden="true">：</span><span data-send-into-path className="min-w-0 flex-1 truncate">{path}</span>
   </div>
   <Button variant="ghost" className="min-h-touch flex-none" data-send-into-change aria-label="更改附件保存位置" disabled={busy} onClick={pick}>更改</Button>
   {reset&&<Button variant="ghost" className="min-h-touch flex-none" data-send-into-reset disabled={busy} onClick={reset}>恢复默认</Button>}
