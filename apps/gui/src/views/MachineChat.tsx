@@ -212,7 +212,8 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       // the viewing machine as a path on a remote agent's execution home.
       for(const item of chosen)if(!item.source&&item.path)pendingFiles.patch(item.key,{source:pathAttachment(item.path,null,landsOn),reference:false});
       const prepared=await attachments.prepare(),paths=prepared.flatMap(item=>item.path?[item.path]:[]);
-      const agentInput=paths.length===0?text:[text,`Attached files on ${JSON.stringify(home?.shown??landsOn)}:`,...paths.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
+      // Presentation labels can arrive later; retry identity uses the stable home ID.
+      const agentInput=paths.length===0?text:[text,`Attached files on ${JSON.stringify(agent?.config?.home??landsOn)}:`,...paths.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
       if(agentPrompt&&khorPendingRuns.get(id)?.line!==agentInput)khorPendingRuns.set(id,{line:agentInput,token:crypto.randomUUID()});
       const issued=khorPendingRuns.get(id);
       await (agentPrompt?khorAgent('prompt',agent!.config!.home,{text:agentInput,token:issued!.token,session:id}):compose(text,paths));

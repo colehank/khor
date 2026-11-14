@@ -53,7 +53,11 @@ try{
   await page.goto(url,{waitUntil:'domcontentloaded',timeout:60000});
   assert(await page.evaluate(()=>typeof globalThis.crypto.randomUUID==='undefined'),'LAN compatibility probe did not run');
   const shown=()=>page.locator('[data-session-content][data-content-visible=true]');
-  const results=[],failures=[];
+  const results=[],failures=[],pickerResizes=[];
+  await page.route('**/term_resize',async route=>{
+    if(await page.locator('[data-attachment-picker]').count())pickerResizes.push(route.request().postDataJSON());
+    await route.fallback();
+  });
   const note=(name,data)=>{results.push({name,...data});console.log(name,JSON.stringify(data));if(data.error)failures.push(name+': '+data.error);};
   const step=async(name,fn)=>{try{await fn();}catch(e){note(name,{error:String(e)});await page.screenshot({path:join(out,'attachment-error-'+name+'.png')}).catch(()=>{});}};
   const folder=join(projects[0],'folder');mkdirSync(folder,{recursive:true});writeFileSync(join(folder,'child.md'),'# Child\n');
@@ -170,7 +174,8 @@ try{
     assert.equal(await panel().locator('[data-files-machines]').getAttribute('data-files-machine-count'),'2','All source machines remain discoverable');
     note('empty-system-change',{sources:2});
   });
-  writeFileSync(join(out,'attachment-results.json'),JSON.stringify({results,errors},null,2));assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('attachment UI gate: clean');
+  assert.deepEqual(pickerResizes,[],'Choosing sources, opening files and changing keyboard focus never resizes the real PTY');
+  writeFileSync(join(out,'attachment-results.json'),JSON.stringify({results,errors,pickerResizes},null,2));assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('attachment UI gate: clean');
 }catch(e){
   await page?.screenshot({path:join(out,'failed.png')}).catch(()=>{});
   const state=await page?.evaluate(()=>({ready:document.readyState,body:document.body?.innerText.slice(0,2048)})).catch(()=>null);

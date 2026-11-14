@@ -120,7 +120,7 @@ export function TermFiles({road,onClose,onSent,viewport}:{road:FilesRoad;onClose
   <input data-files-folder-input ref={folders} type="file" multiple hidden {...{webkitdirectory:''}} onChange={e=>{addDevice([...(e.target.files??[])],true);e.target.value='';}}/>
   <AttachmentDestination machine={road.machine} into={road.into??null} onInto={road.onInto??(()=>{})} busy={road.busy}/>
   {error&&<p role="alert" className="text-caption text-destructive">{error}</p>}
-  {road.busy&&<p data-files-transfer role="status" className="text-caption text-muted-foreground">正在发送 · {Math.round((road.progress??0)*100)}%</p>}
+  {road.busy&&<p data-files-transfer role="status" className="text-caption text-muted-foreground">{road.progress===null?'正在发送':`正在发送 · ${Math.round(road.progress*100)}%`}</p>}
  </div>,document.body)}
  <AttachmentDirectory place={at} onClose={()=>setAt(null)} selected={own} inherited={inherited} onToggle={toggle} onOpen={setLook} busy={road.busy} filesOnly={road.filesOnly}/>
  <AttachmentFile entry={look} devices={devices} onClose={()=>setLook(null)}/>
