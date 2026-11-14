@@ -4,8 +4,12 @@
 
 - Worktree：`/Volumes/disk0/Khor/worktrees/current/khor-site-story`
 - Branch：`feat/site-story`；基线 `97bbf2a4e036f1a334c9921961d3d0b283f46c59`
-- 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新内容缓存后启动 PID 22035）
+- 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新英文内容缓存后启动 PID 83220）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
+
+## 最新增量 · 全英文与光流增强（2026-11-14）
+
+用户要求光流更明显、更好看，整个 Web 改成英文。后两幕新增三层轻量描边，保持已确认方向与交接依存；导航、下载、文档、示例任务、文件与 Git 记录全部英文。GUI 入口固定英文 catalog，手机浅／深色真实首图重新截图，40% 背景透明度与设备自适应策略不变。详情见 `site-relations-20261114.md` 的最后一节；本轮仅本地，未发布。
 
 ## 当前叙事定稿（Codex 参考改版，替代下方历史顺序）
 

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/ai/button";
 import { Item, ItemMedia, ItemContent, ItemTitle, ItemDescription, ItemActions } from "@/components/ui/ai/item";
 import { Trace, TraceCollapsible, TraceCollapsibleContent, TraceCollapsibleTrigger, TraceDescription, TraceIcon, TraceLine, TraceTitle } from "@/components/ui/ai/trace";
 import { CircleCheckIcon, CircleDotIcon, CircleIcon, FilePenLineIcon, FileTextIcon, LoaderCircleIcon, RouteIcon, SearchIcon, TerminalIcon, WrenchIcon } from "./icons";
-import { gui } from "@/gen/catalog";
+import { cli, gui } from "@/gen/catalog";
 import { word } from "@/words";
 import {AgentResource} from "./resource";
 import { toolInputText, type AcpTool } from "@/lib/acp-view";
@@ -67,7 +67,7 @@ export function AgentTool({ tool, active = true, open, onOpenChange, onOpenFile 
   return (
     <Trace data-chat-tool data-tool-id={tool.id} data-tool-status={tool.status} data-tool-kind={tool.kind} data-tool-open={more ? (open ? "yes" : "no") : undefined}>
       {more ? <TraceCollapsible open={open} onOpenChange={onOpenChange}>
-        <TraceCollapsibleTrigger data-tool-toggle title={tool.title} aria-label={`${tool.title} · ${live?"进行中":failed?"失败":tool.status==="completed"?"完成":"已停止"}`}>{line}</TraceCollapsibleTrigger>
+        <TraceCollapsibleTrigger data-tool-toggle title={tool.title} aria-label={`${tool.title} · ${live?word('busy'):failed?word('failed'):tool.status==='completed'?word('done'):cli.top_st_stopped}`}>{line}</TraceCollapsibleTrigger>
         <TraceCollapsibleContent>
           <div data-tool-body className="flex min-w-0 flex-col gap-row">
             {diffs.map((diff, i) => <Suspense key={`${diff.path}:${i}`} fallback={<div data-diff-loading className="h-16 rounded-md bg-muted" aria-hidden />}><AgentDiff diff={diff} wrote={tool.kind === "edit" && tool.status === "completed" && diff.path.startsWith("/") ? diff.path : wrote ?? null} onOpenFile={onOpenFile} /></Suspense>)}

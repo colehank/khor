@@ -21,7 +21,11 @@
 .relation-wire,.relation-signal { fill:none; stroke-linecap:round; stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-wire { stroke:var(--tour-wire); }
 .relation-signal { stroke:var(--tour-accent); opacity:.3; }
-.relation-flow { fill:none; stroke:var(--tour-accent); stroke-width:1.75; stroke-linecap:round; stroke-dasharray:.12 1.88; stroke-dashoffset:.12; opacity:0; }
+.relation-flow { fill:none; stroke:var(--tour-accent); stroke-linecap:round; stroke-dasharray:.12 1.88; stroke-dashoffset:.12; opacity:0; }
+/* Layered strokes keep the light crisp without an offscreen blur surface. */
+.relation-flow-halo { stroke-width:9; }
+.relation-flow-trail { stroke-width:3.5; }
+.relation-flow-head { stroke:color-mix(in srgb,var(--tour-accent) 22%,var(--ink)); stroke-width:2.5; stroke-dasharray:.028 1.972; }
 .relation-arrow { fill:none; stroke:var(--secondary); stroke-width:1.25; stroke-linejoin:round; }
 .relation-port { fill:var(--canvas); stroke:var(--tour-accent); stroke-opacity:.65; stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-badge > circle:first-child { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }

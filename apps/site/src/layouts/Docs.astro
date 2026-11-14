@@ -19,10 +19,10 @@ const pages = await docs();
 <Base title={title} description={description}>
   <SiteNav current="docs" />
   <div class="docs">
-    <nav class="side" aria-label="文档">
+    <nav class="side" aria-label="Docs">
       <div class="side-in">
         <div class="side-head"><Mark /></div>
-      <a class="nav-row" href={sitePath("/docs/")} aria-current={current ? undefined : "page"}>总览</a>
+      <a class="nav-row" href={sitePath("/docs/")} aria-current={current ? undefined : "page"}>Overview</a>
       {
         pages.map((p) => (
           <a class="nav-row" href={sitePath(`/docs/${p.id}/`)} aria-current={p.id === current ? "page" : undefined}>
@@ -36,7 +36,7 @@ const pages = await docs();
       <header class="r0">
         <div class="r0-title">
           {/* The way back exists only where the list is off screen. */}
-          <a class="back" href={sitePath(current ? "/docs/" : "/")}>{current ? "文档" : "khor"}</a>
+          <a class="back" href={sitePath(current ? "/docs/" : "/")}>{current ? "Docs" : "khor"}</a>
           <h1>{title}</h1>
         </div>
         <a class="bar-link" href={REPO}>GitHub</a>

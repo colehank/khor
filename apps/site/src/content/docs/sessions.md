@@ -1,64 +1,64 @@
 ---
-title: 会话
-summary: 开会话、接上去、看状态
+title: Sessions
+summary: Start sessions, reconnect, and follow their progress
 order: 3
 ---
 
-shell、智能体、对话、文件传输都是会话，在同一个列表里：
+Shells, agents, conversations, and file transfers share one session list:
 
 ```sh
 khor sessions
 ```
 
-## 开一个
+## Start a session
 
 ```sh
-khor open                 # 持久会话，本机的 shell
-khor open -- claude       # 跑一条命令
-khor open --on <机器>     # 开在另一台机器上
-khor run -- <命令>        # 临时会话，跟着这个终端活
+khor open                 # Persistent local shell
+khor open -- claude       # Run a command
+khor open --on <device>    # Start on another device
+khor run -- <command>     # Temporary session tied to this terminal
 ```
 
-持久会话在终端关掉之后还在。接上去、关掉：
+Persistent sessions keep running after you close the terminal. Reconnect or close them:
 
 ```sh
-khor attach <session>     # Ctrl-\ 断开
+khor attach <session>     # Ctrl-\ to detach
 khor close <session>
 ```
 
-## 六个状态词
+## Session states
 
-全网、每一种界面，同一个状态同一个词。
+The same states apply across your network and every Khor interface.
 
-| 词 | 意思 |
+| State | Meaning |
 |---|---|
-| 忙碌 | 在跑 |
-| 待批 | 有动作等你准许。排在最前 |
-| 完成 | 这一轮完了，还没看 |
-| 中断 | 出错了，进程还在 |
-| 失败 | 进程以非零状态退出 |
-| 空闲 | 没在跑，或者看过了 |
+| Busy | Running |
+| Blocked | Waiting for your permission; shown first |
+| Done | This turn has finished and you have not viewed it yet |
+| Errored | An error occurred, but the process is still alive |
+| Failed | The process exited with a nonzero status |
+| Idle | Not running, or the result has already been viewed |
 
-## 智能体
+## Agents
 
-Claude Code、Codex 的会话在 khor 装好后自己出现在列表里，不用配置。给 Claude Code 装上钩子，才有「完成」这一档：
+Claude Code and Codex sessions appear automatically after you install Khor. Install the Claude Code hooks to enable the completed-turn state:
 
 ```sh
 khor hooks install
 ```
 
-在 khor 之外开的智能体会话和 tmux 会话，可以导进列表：
+Import agent or tmux sessions started outside Khor:
 
 ```sh
-khor import               # 列出可导入的
-khor import <序号>
+khor import               # List available sessions
+khor import <number>
 ```
 
-## 文件
+## Files
 
 ```sh
-khor send <机器> <文件>   # 摘要先到，对方许可后才传
-khor accept <传输号>      # 在收文件的那台上
-khor pull <机器> <文件>   # 把那台机器上的文件拉过来
-khor ls <机器> [路径]
+khor send <device> <file>  # Send metadata first; transfer after approval
+khor accept <transfer-id> # Run on the receiving device
+khor pull <device> <file> # Fetch a remote file
+khor ls <device> [path]
 ```

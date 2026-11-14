@@ -19,6 +19,8 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 改官网文案、动效和 CSS 后由 Astro 自动刷新；仅修改演示数据或 App 组件时重跑
 `demo:build`。`demo:check` 检查演示与生产前端类型；`npm run build` 先打包演示再输出静态站。
 
+- 官网发布界面统一为英文：导航、按钮、下载推荐、文档、错误页、无障碍标签和演示内容均为 English。GUI 使用既有英文 catalog（演示入口固定 `khor.lang=en`，产品 App 的用户语言偏好规则不变）；英文任务、文件与 Git 记录来自同一 fixture。深浅色首图须随演示一起更新，不能保留旧中文图。
+- 后两幕光流通过 `FlowTrace.astro` 的 halo / trail / head 三层原生 SVG 描边增强，亮芯在正向与反向传输时都位于前端。没有 SVG 模糊滤镜或逐帧 JS；保留 1.7 秒传输、Continue 同步 5 秒循环、Agent 12 秒往返与到达依存、离屏暂停和减少动态效果处理。
 - `src/components/Mandala.astro` 读取完整的 `mandala-glass.svg` 和既有 session 字形；`icon-story.ts` 从原图提取静态节点、轮廓和完整材质，每个片段只带所需 defs，保留最终图稿的全部原始路径与几何。
 - `src/components/ProductHero.astro` 首屏为左侧大字 Khor、一段小字介绍和下载 / 文档入口，右侧完整 Desktop GUI，共同落在 Fog 上；窄屏上下排列，下滑直接接 “You have many devices” 图标故事。`SiteNav.astro` 统一首页、下载和文档的原始图标 + Khor 导航；kapestack 公司链接保留在页脚。Desktop 红黄绿按钮与原有导航同一行；桌面首图在可见范围的空闲时段由真实 App 接管，在原位置操作同源 iframe；手机／粗指针设备只显示完整真实首图，不启动桌面 App，保留浏览器本身的两指缩放。没有放大入口或查看层。不连接 Lab 或真实设备，没有界面旁注或单独的体验页面。正文不重复绘制应用图标，两个按钮都不带箭头。首屏下方的平台图标复用 App 既有系统标记；macOS / Linux 前往各自安装选项，平台组标题为 Other ways to get Khor，Windows / iOS / Android 置灰，悬停、键盘聚焦或触屏点按时显示 Coming soon，支持 Escape 和点外侧退出，提示层位于 GUI 上方。macOS 标明 App · CLI，Linux 标明 CLI。可用性从既有 release 资产推导，不虚构平台安装包。安装组在宽屏横排为一行，窄屏分行；另有 or Khor CLI 与同一个 INSTALL 命令；悬停 / 聚焦显示复制图标，触屏直接显示。CopyButton 复用实际 App 的 Copy / Check 字形，复制后以勾短暂替换，不显示成功文字，保留屏幕阅读器状态；命令与图标不因反馈重建。
 - Hero 复用生产 App 的 `data-window-transparent` 与 `--window-opacity:40%` 单层背景，不改变前景 opacity，不启用原生后端。首图由父窗口取样 Fog；交互界面将同一 Fog 放入 iframe 的背景，原有玻璃控件在窗口 40% 底面上正常取样，不重复叠加暗底。深浅首图保留 alpha（背景 102/255，文字可达 255/255），加载前后材质一致。窗口圆角和 GUI 共用缩放系数，避免窄屏时裁掉红黄绿按钮；外层没有白色描边。

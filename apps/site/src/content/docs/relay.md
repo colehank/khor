@@ -1,55 +1,55 @@
 ---
-title: 中继
-summary: 默认不用配，也可以自己跑一台
+title: Relays
+summary: Connect automatically, or run a relay of your own
 order: 5
 ---
 
-两台设备能直连就直连。直连之前要经中继交换地址；直连不成，流量由中继转发。中继只转发，不存内容：转发的内容端到端加密，中继看不到。
+Devices connect directly whenever possible. Relays help them exchange addresses and carry traffic when a direct connection is unavailable. Relayed content is end-to-end encrypted: the relay forwards it without storing or reading it.
 
-## 默认
+## Defaults
 
-不用配置。khor 的中继排在前面，n0 的公共中继跟在后面兜底，每台设备自己挑离它最近、连得上的那台。
+No configuration is needed. Khor’s relays are preferred, with n0’s public relays as fallbacks. Each device selects a nearby relay it can reach.
 
-## 自己跑一台
+## Run your own
 
-一台有公网地址和域名、已经入网的机器：
+Use a device already in your network with a public address and a domain:
 
 ```sh
 khor relay --acme relay.example.com --only-mine
 ```
 
-`--acme` 找 Let's Encrypt 要证书。`--only-mine` 只放行你这张网名单上、没被撤销的设备，谁也不用填密钥。
+`--acme` obtains a certificate from Let’s Encrypt. `--only-mine` admits only trusted, non-revoked devices in your network, without a shared token.
 
-| 参数 | 做什么 |
+| Option | Effect |
 |---|---|
-| `--acme 域名` | 找 Let's Encrypt 要证书，HTTPS 听 443 |
-| `--tls-cert 证书 --tls-key 私钥` | 用现成的证书 |
-| `--dev` | 明文 HTTP，默认 3340 口，只用于测试 |
-| `--only-mine` | 只放行这张网信任的设备 |
-| `--token 密钥` | 只放行带这把共享密钥的客户端，和 `--only-mine` 二选一 |
-| `--rate 字节每秒` | 每个客户端的上行限速 |
-| `--metrics 地址` | 指标页 |
-| `--stats` | 打印计量，不起中继 |
+| `--acme <domain>` | Obtain a Let’s Encrypt certificate and serve HTTPS on port 443 |
+| `--tls-cert <cert> --tls-key <key>` | Use an existing certificate |
+| `--dev` | Serve plain HTTP on port 3340 by default; for testing only |
+| `--only-mine` | Admit only devices trusted by your network |
+| `--token <secret>` | Require a shared token; cannot be combined with `--only-mine` |
+| `--rate <bytes-per-second>` | Limit each client’s upload rate |
+| `--metrics <address>` | Expose metrics |
+| `--stats` | Print usage totals without starting a relay |
 
-## 让设备用它
+## Connect through it
 
-每台设备各配各的，别的机器改不了这台用哪些中继。
+Relay settings are local to each device. One device cannot change which relays another uses.
 
-- 界面：设置 → 网络 →「添加中继…」
-- 环境变量：`KHOR_RELAY`，多台用逗号分隔，密钥挂在 `token` 参数上
+- In the app: **Settings → Network → Add relay…**
+- With `KHOR_RELAY`: separate relay URLs with commas and add a `token` parameter when needed
 
 ```sh
-KHOR_RELAY="https://relay.example.com?token=密钥,https://relay2.example.com"
+KHOR_RELAY="https://relay.example.com?token=secret,https://relay2.example.com"
 ```
 
-密钥不出本机：经一台带密钥的中继找你的每台设备，都得自己配上这把密钥。用 `--only-mine` 就没有这件事。
+Tokens stay on the local device. Every device reaching you through a token-protected relay needs that token configured locally. `--only-mine` avoids this requirement.
 
-打开「只使用自己的中继」之后，khor 的和 n0 的都不再使用。
+Enable **Only use mine** to stop using the default Khor and n0 relays.
 
-## 计量
+## Usage totals
 
 ```sh
 khor relay --stats
 ```
 
-只存总数：每台设备连了几次、在线多久，加中继收发的总字节。不记谁连谁。
+Only totals are stored: connection counts and online time per device, plus bytes sent and received by the relay. It does not record which devices connect to each other.

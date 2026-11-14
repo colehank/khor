@@ -18,14 +18,14 @@ const hero=query.get('hero')==='1';
 if (!(requested in scenes)) throw new Error('Unknown demo scene');
 const scene = scenes[requested as Scene];
 const active = hero||requested==='gui'||requested==='content'?tasks[0].id:scene.session??tasks[0].id;
-const identity = `site-v6/${hero?'hero':requested}`;
+const identity = `site-v7-en/${hero?'hero':requested}`;
 if(localStorage.getItem('khor.site.identity')!==identity){
   localStorage.setItem('khor.site.identity',identity);
-  localStorage.setItem('khor.lang','zh');
   localStorage.setItem('khor.sessions.tabs',JSON.stringify({tabs:[active,...tasks.map(task=>task.id).filter(id=>id!==active)].slice(0,3),active}));
   const landing=['workspace','workspaces'].includes(requested)?'workspaces':requested==='devices'?'devices':'sessions';
   localStorage.setItem('khor.place',JSON.stringify({landing,screen:'list'}));
 }
+localStorage.setItem('khor.lang','en');
 const theme=query.get('theme')==='dark'?'dark':query.get('theme')==='light'?'light':'auto';
 localStorage.setItem('khor.theme',theme);
 localStorage.setItem('khor.preview-ground','auto');

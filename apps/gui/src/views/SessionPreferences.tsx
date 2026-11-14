@@ -49,7 +49,7 @@ function Preferences({model,agent,mode,options,disabled=false,children,danger,op
     return()=>cancelAnimationFrame(frame);
   },[page,open]);
   return <HeaderSeat><DropdownMenu open={open} onOpenChange={value=>{if(value)setPage(null);onOpen(value);}}>
-    <DropdownMenuTrigger asChild><button type="button" data-lab-session-settings data-lab-dock-settings={docked||undefined} data-lab-config-trigger={light||undefined} data-lab-model-trigger={modelBar||undefined} title={light?'会话配置':undefined} aria-label={`会话配置：${shortModel(model)}${modelBar&&effort?' · '+effort:''}`} className={`${light||modelBar?'':'glass '}composer-lab-trigger data-[state=open]:glass-sel`}>
+    <DropdownMenuTrigger asChild><button type="button" data-lab-session-settings data-lab-dock-settings={docked||undefined} data-lab-config-trigger={light||undefined} data-lab-model-trigger={modelBar||undefined} title={light?gui.chat_who:undefined} aria-label={`${gui.chat_who}: ${shortModel(model)}${modelBar&&effort?' · '+effort:''}`} className={`${light||modelBar?'':'glass '}composer-lab-trigger data-[state=open]:glass-sel`}>
       {modelBar?<><span className="lab-model-summary"><span>{shortModel(model)}</span>{effort&&<><span aria-hidden>·</span><span data-lab-effort>{effort}</span></>}</span><IconChevronDown/></>:light?<IconFilter/>:docked?<IconMore/>:<><span className="composer-lab-trigger-words"><span>{shortModel(model)}</span>{mode&&<small data-lab-execution-badge>{mode}</small>}</span><IconChevronDown/></>}
     </button></DropdownMenuTrigger>
     <DropdownMenuContent ref={panel} side={docked?'top':'bottom'} align="end" sideOffset={8} data-lab-preferences className="min-w-nav-menu composer-lab-menu" onKeyDown={e=>{if(e.key==='ArrowLeft'&&page){e.preventDefault();back();}}}>
@@ -134,7 +134,7 @@ export function SessionAdd({destination,onFind,onExport,exportBusy,...props}:Com
 
   if(!props.onAttach&&!props.onAttachMachine&&!onFind&&!onExport)return null;
   const menu=(target?:SendIntoControl)=><DropdownMenu>
-    <DropdownMenuTrigger asChild><PlusSeat data-lab-add aria-label="添加附件"/></DropdownMenuTrigger>
+    <DropdownMenuTrigger asChild><PlusSeat data-lab-add aria-label={gui.chat_attach}/></DropdownMenuTrigger>
     <DropdownMenuContent side="top" align="start" sideOffset={16} alignOffset={-6} data-lab-attachments className="min-w-nav-menu composer-lab-menu" onCloseAutoFocus={e=>e.preventDefault()}>
       {onFind&&<DropdownMenuItem data-history-find-open onSelect={onFind}>查找对话</DropdownMenuItem>}
       {onExport&&<DropdownMenuItem data-history-readable-export disabled={exportBusy} onSelect={onExport}>导出对话</DropdownMenuItem>}

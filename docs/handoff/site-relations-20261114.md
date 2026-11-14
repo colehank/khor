@@ -83,3 +83,17 @@
 用户确认第三幕沿用第二幕的 You＋笔记本＋Mobile 访问组，移除网外独立 You。两幕设备坐标、访问组轮廓、You / Same task 位置及 SVG 画幅／图高相同。Task／Result 从访问组上缘接入 Khor，结果回到同一组边缘后接收环响应；完整往返依存与 Khor 持续忙碌至交付的时序不变。第三幕 Server 的 Web 角标移到右下，给交接曲线留出空间；字形与资源归属不变。
 
 Task／Result 标签采用按实际字宽留缺口的路径遮罩，窗口变化时更新，避免线条穿字；活动 Khor 标记的避让与外部用户画幅解耦。320／390／768／1440px headless Chrome 核对两幕几何一致、无独立用户、文字连线无碰撞、请求和结果确实落在访问组边缘、最终接收反馈通过。TypeScript、diff 和十页静态构建通过，证据 `site-story-20261114/access-group/`，产物 `site-story-20261114-access-group`。仅本地，未部署。
+
+## 同日全英文与光流增强（当前）
+
+用户要求光流更明显、更好看，整个 Web 改为英文。
+
+- `FlowTrace.astro` 统一输出 halo / trail / head 三层 SVG 描边，绿色尾迹外增加低透明宽边，前端为较短的亮芯；反向传输时亮芯仍在前端。复用同一浏览器动画时钟、1.7 秒传输与既定依存，不使用 SVG blur、不增加逐帧 JS。两幕布局、5 秒同步访问、12 秒委派往返和交付后停止脉动均保留
+- 首页导航与按钮、下载与设备推荐、五篇文档、404、示例网页、屏幕阅读器标签全部英文，`html lang=en`。320px 导航减小横向内距，为英文标签保留间隔。复制安装命令仍只短暂变勾，英文反馈仅供读屏
+- 演示入口 `site-v7-en` 固定英文 catalog；任务、对话、README、文件路径、测试与 Git 提交保持一致地翻译。生产 GUI 原有硬编码的输入提示、复制按钮、完整内容、工具状态与会话配置无障碍标签改接既有 catalog，中文 App 仍按自身语言偏好显示，无新词库和运行时替换
+- 用真实 GUI 在 Chrome 1360×850、2×、quality 92 重新生成浅／深 WebP 首图，背景 40% alpha 不变；中文浏览器环境下也保持英文，主题仍跟随浏览器。修正 site identity-marks 原有 `sessionMark('shell')` 缺少 category 参数的类型错误
+- 本地文档缓存已刷新，预览 daemon PID 83220，地址仍为 127.0.0.1:23820。未发布远端
+
+验证：demo 类型检查与构建通过，定向 motion/download TypeScript 通过；10 页静态构建通过。headless Chrome 检查 10 个站点路由、机器／额度／工作区／会话的可达页面，正文和 title/aria-label/placeholder 均无中文残留；390px 与 1440px 两幕增强光流以及调用抵达前不点亮通过。320／390／1440 首屏无横向溢出，320px 品牌与导航间有约 14.5px 空隙。手机仅使用透明首图策略不变；未声称本轮做过真 iPhone 性能验证。
+
+证据：`/Volumes/disk0/Khor/evidence/site-story-20261114/english-flow/`；产物：`/Volumes/disk0/Khor/artifacts/site-story-20261114-english-flow`。

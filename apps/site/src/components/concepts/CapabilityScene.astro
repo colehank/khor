@@ -1,6 +1,7 @@
 ---
 import NetworkGraph from './NetworkGraph.astro';
 import ConceptMark from './ConceptMark.astro';
+import FlowTrace from './FlowTrace.astro';
 import {supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
 import {capabilityGeometry} from '../../scripts/capability-geometry';
 import '../../styles/capability-scene.css';
@@ -33,8 +34,8 @@ const description=agent?'You use the same laptop and Mobile access group to send
       {g.routes.map(({id,d,end})=><g>
         <path class="relation-wire" data-relation-route={id} d={d}/>
         <path class="relation-signal" data-relation-route={id} d={d}/>
-        <path class:list={['relation-flow',`relation-${id}`]} data-relation-flow={agent?'call':'access'} data-relation-route={id} d={d} pathLength="1"/>
-        {agent&&<path class="relation-flow" data-relation-flow="reply" data-relation-route={id} d={d} pathLength="1"/>}
+        <FlowTrace d={d} route={id} flow={agent?'call':'access'}/>
+        {agent&&<FlowTrace d={d} route={id} flow="reply"/>}
         <circle class="relation-port" data-relation-port={id} cx={end.x} cy={end.y} r="2.5"/>
       </g>)}
       <g data-relation-origin transform={`translate(${g.origin.x} ${g.origin.y})`}>
@@ -45,12 +46,12 @@ const description=agent?'You use the same laptop and Mobile access group to send
         <g mask={`url(#${mode}-handoff-task)`}>
           <path class="relation-wire" data-relation-request d={g.request} marker-end={`url(#${mode}-relation-arrow)`}/>
           <path class="relation-signal" data-relation-request d={g.request}/>
-          <path class="relation-flow" data-relation-flow="request" data-relation-request d={g.request} pathLength="1"/>
+          <FlowTrace d={g.request} flow="request"/>
         </g>
         <g mask={`url(#${mode}-handoff-result)`}>
           <path class="relation-wire" data-relation-result d={g.result} marker-end={`url(#${mode}-relation-arrow)`}/>
           <path class="relation-signal" data-relation-result d={g.result}/>
-          <path class="relation-flow" data-relation-flow="delivery" data-relation-result d={g.result} pathLength="1"/>
+          <FlowTrace d={g.result} flow="delivery"/>
         </g>
       </>}
     </g>

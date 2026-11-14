@@ -2035,7 +2035,7 @@ export function ChatView({
               onPaste={takePaste}
               rows={1}
               value={text}
-              placeholder="发消息…"
+              placeholder={gui.chat_input}
               // The soft keyboard's return key says what Enter does here:
               // it sends (Shift+Enter, on a keyboard that has one, breaks
               // the line).

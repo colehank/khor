@@ -1,4 +1,5 @@
 import {AgentResource} from './resource';
+import {gui} from '@/gen/catalog';
 import {MessageActions} from '@/components/MessageActions';
 import { useMemo, useState } from "react";
 import { Message, MessageContent } from "@/components/ui/ai/message";
@@ -16,7 +17,7 @@ export function AgentContent({ item, streaming, active = true, open, onOpenChang
   if(item.who==='resource')return <AgentResource item={item} onOpenFile={onOpenFile}/>;
   if (item.who === "thought") return <AgentReasoning text={item.text} isStreaming={streaming} />;
   if (item.who === "tool") return <AgentTool tool={item} active={active} open={open} onOpenChange={onOpenChange} onOpenFile={onOpenFile} />;
-  return <Message role="article" aria-label="智能体" data-chat-message className="text-read py-row"><MessageContent>{item.who==='agent'&&!streaming?<MessageActions text={item.text}><Markdown text={item.text} className="text-read-ink"/></MessageActions>:<Markdown text={item.text} className="text-read-ink"/>}</MessageContent></Message>;
+  return <Message role="article" aria-label={gui.new_session_agent} data-chat-message className="text-read py-row"><MessageContent>{item.who==='agent'&&!streaming?<MessageActions text={item.text}><Markdown text={item.text} className="text-read-ink"/></MessageActions>:<Markdown text={item.text} className="text-read-ink"/>}</MessageContent></Message>;
 }
 
 export function AgentTranscript({ updates, busy, fallback, onOpenFile }: {

@@ -77,24 +77,24 @@ export function createSiteFixture(origin:string) {
   }
   const fileAt=(body:Record<string,any>)=>{
     const file=files.get(pathOf(body));
-    if(!file)throw new Error('此示例中没有这个文件');
+    if(!file)throw new Error('This file is not included in the demo');
     return file;
   };
   const changed=(root:string)=>[...files].filter(([path,file])=>path.startsWith(root+'/')&&file.text!==originals.get(path));
   const commits=(project:typeof projects[number])=>[
-    {id:'a'.repeat(39)+'1',subject:project.name==='atlas-web'?'增加订单导出入口':project.name==='atlas-api'?'添加支付回调处理':'增加报销表单基础校验',author:'Lin',when_ms:at-86400000,cut:false},
-    {id:'b'.repeat(39)+'2',subject:'补充项目说明',author:'Zhou',when_ms:at-172800000,cut:false},
-    {id:'c'.repeat(39)+'3',subject:'初始化项目结构',author:'Lin',when_ms:at-604800000,cut:false},
+    {id:'a'.repeat(39)+'1',subject:project.name==='atlas-web'?'Add order exports':project.name==='atlas-api'?'Handle payment callbacks':'Validate expense submissions',author:'Lin',when_ms:at-86400000,cut:false},
+    {id:'b'.repeat(39)+'2',subject:'Document the project',author:'Zhou',when_ms:at-172800000,cut:false},
+    {id:'c'.repeat(39)+'3',subject:'Initialize the project',author:'Lin',when_ms:at-604800000,cut:false},
   ];
   const workspaces=():WorkspaceRow[]=>projects.map(project=>{
     const rows=changed(project.root),head=commits(project)[0];
     return {device:devices[project.machine].id,machine:devices[project.machine].name,path:project.root,name:project.name,
       pinned:project.machine===0,branch:project.branch,changed:rows.length,changed_capped:false,changed_ms:at-180000,
       git:project.branch?{branch:project.branch,head:head.id,subject:head.subject,ahead:0,behind:0,stashes:0,conflicted:0,staged:0,unstaged:rows.length,untracked:0,capped:false,since_ms:at-7200000,operation:null}:null,
-      newest:project.branch?null:{path:'远航项目周会.md',at_ms:at-2760000,added:false}};
+      newest:project.branch?null:{path:'Voyager-weekly.md',at_ms:at-2760000,added:false}};
   });
   const quota=(base.request('quota_board') as AccountRing[]).map((account,index)=>{
-    const home=devices[[0,1,0,2,3,0][index]],names=['Claude Max','ChatGPT Pro','DeepSeek','OpenRouter','团队 API','OpenAI API'];
+    const home=devices[[0,1,0,2,3,0][index]],names=['Claude Max','ChatGPT Pro','DeepSeek','OpenRouter','Team API','OpenAI API'];
     const short=index===0?36:48,long=index===0?28:54,remaining=[0,0,128.64,56.78,72.5,35.4][index];
     const limit=index===3?200:index===4?300:null,spent=limit===null?null:limit-remaining;
     return {...account,home_name:home.name,mine:home.me,age_ms:0,strain:null,pinned:index===0,budget:limit,
@@ -122,15 +122,15 @@ export function createSiteFixture(origin:string) {
         }
         if(body.action==='manage'){
           if(body.payload?.operation==='session_settings')return agentView({job:'site-settings',status:'running'});
-          if(body.payload?.operation==='poll')return agentView({status:'done',result:{model,configOptions:[{id:'model',name:'模型',category:'model',type:'select',currentValue:model,options:[{value:model,name:'GPT-5.4'}]}]}});
+          if(body.payload?.operation==='poll')return agentView({status:'done',result:{model,configOptions:[{id:'model',name:'Model',category:'model',type:'select',currentValue:model,options:[{value:model,name:'GPT-5.4'}]}]}});
         }
         return agentView();
       }
       case 'visit':return null;
       case 'load':return siteLoad(devices.indexOf(owner(body.machine)),at,body.by,body.desc,body.top);
       case 'usage':return structuredClone(usage);
-      case 'journal':return [{at:at-7200000,when:new Date(at-7200000).toLocaleTimeString('zh-CN',{hour12:false}),machine:owner(body.machine).name,text:'点对点连接已建立',trouble:false}];
-      case 'about':return {version,root:'/Users/lin/.khor',paused:false,store_bytes:18*1024**2,faces:[{key:'gui',name:'桌面',up:true,said:'运行中'},{key:'web',name:'网页',up:true,said:'运行中'}]};
+      case 'journal':return [{at:at-7200000,when:new Date(at-7200000).toLocaleTimeString('en-US',{hour12:false}),machine:owner(body.machine).name,text:'Peer-to-peer connection established',trouble:false}];
+      case 'about':return {version,root:'/Users/lin/.khor',paused:false,store_bytes:18*1024**2,faces:[{key:'gui',name:'Desktop',up:true,said:'Running'},{key:'web',name:'Web',up:true,said:'Running'}]};
       case 'quota_board':return structuredClone(quota);
       case 'quota':return {quota:{windows:quota[0].reading.windows,as_of:at,plan:'Max 20x',credits:null,fill:.36,source:'claude',limit_reached:false},trouble:null};
       case 'workspaces':return workspaces();
@@ -148,7 +148,7 @@ export function createSiteFixture(origin:string) {
       case 'read_text':case 'stat_text':return {...fileAt(body)};
       case 'write_text':{
         const file=fileAt(body);
-        if(body.was!==file.digest)throw new Error('文件已更新，请重新读取');
+        if(body.was!==file.digest)throw new Error('The file has changed. Reload it to continue.');
         file.text=String(body.text);file.total=new TextEncoder().encode(file.text).length;file.digest='site-'+ ++revision;file.at_ms=Date.now();
         return {digest:file.digest,at_ms:file.at_ms};
       }

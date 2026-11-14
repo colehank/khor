@@ -3,7 +3,7 @@ import {installUrl} from '../deployment.mjs';
 
 export const REPO = "https://github.com/colehank/khor";
 export const INSTALL = `curl -fsSL ${installUrl} | sh`;
-export const TAGLINE = "一张网连起你所有设备上的智能体会话";
+export const TAGLINE = "Work across your devices and agents";
 
 /** The docs in reading order — the one list the side column, the
     overview and the previous/next pair all read. */

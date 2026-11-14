@@ -19,8 +19,8 @@ const { Content } = await render(page);
   <article class="prose">
     <Content />
   </article>
-  <nav class="turn" aria-label="上一篇与下一篇">
-    {prev ? <a href={sitePath(`/docs/${prev.id}/`)}><span>上一篇</span>{prev.data.title}</a> : <span />}
-    {next && <a class="turn-next" href={sitePath(`/docs/${next.id}/`)}><span>下一篇</span>{next.data.title}</a>}
+  <nav class="turn" aria-label="Previous and next pages">
+    {prev ? <a href={sitePath(`/docs/${prev.id}/`)}><span>Previous</span>{prev.data.title}</a> : <span />}
+    {next && <a class="turn-next" href={sitePath(`/docs/${next.id}/`)}><span>Next</span>{next.data.title}</a>}
   </nav>
 </Docs>

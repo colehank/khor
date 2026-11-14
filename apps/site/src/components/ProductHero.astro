@@ -21,15 +21,15 @@ const platforms=supportedDevices.map(platform=>{
     <h1 id="product-title">Khor</h1>
     <p class="product-description" lang="en"><span class="product-promise">Work across your devices and agents</span> <span class="product-detail">Access agents, edit files, track changes, and connect to web apps from any device, <span class="keep-together">peer to peer</span></span></p>
     <div class="product-actions">
-      <a class="product-download" href={sitePath("/download/")} data-device-download>下载</a>
-      <a class="product-docs" href={sitePath("/docs/")}>文档</a>
+      <a class="product-download" href={sitePath("/download/")} data-device-download>Download</a>
+      <a class="product-docs" href={sitePath("/docs/")}>Docs</a>
     </div>
   </div>
-<section class="product-showcase" id="product" aria-label="Khor 桌面界面" data-product-showcase>
+<section class="product-showcase" id="product" aria-label="Khor desktop interface" data-product-showcase>
     <div class="macos-window">
       <div class="desktop-preview" data-desktop-preview>
-        <picture class="desktop-poster"><source media="(prefers-color-scheme: dark)" srcset={desktopDark.src} /><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor 完整桌面界面：Khor 内置对话、远程资源窗格，以及 Cursor、Codex、Claude 和 Shell 会话" loading="eager" fetchpriority="high" /></picture>
-        <div class="desktop-stage" data-desktop-stage><iframe title="试用 Khor 桌面界面" data-desktop-demo data-src={sitePath("/experience/app/index.html?scene=content&hero=1")} sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
+        <picture class="desktop-poster"><source media="(prefers-color-scheme: dark)" srcset={desktopDark.src} /><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor desktop with built-in conversations, remote files, and Cursor, Codex, Claude and shell sessions" loading="eager" fetchpriority="high" /></picture>
+        <div class="desktop-stage" data-desktop-stage><iframe title="Try the Khor desktop interface" data-desktop-demo data-src={sitePath("/experience/app/index.html?scene=content&hero=1")} sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
       </div>
     </div>
 </section>
@@ -38,13 +38,13 @@ const platforms=supportedDevices.map(platform=>{
     <h2 class="platforms-title" id="platforms-title" lang="en">Other ways to get Khor</h2>
   <nav class="product-platforms" aria-labelledby="platforms-title">
     {platforms.map(platform=>platform.available?
-      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'安装 Linux CLI':'安装 macOS App 或 CLI'}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
-      <button class="platform-option" type="button" data-unavailable aria-label={`${platform.name} 安装状态`} aria-describedby={`platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" lang="en" id={`platform-${platform.id}-soon`}>Coming soon</span></button>
+      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'Install the Linux CLI':'Install the macOS app or CLI'}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
+      <button class="platform-option" type="button" data-unavailable aria-label={`${platform.name} availability`} aria-describedby={`platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" lang="en" id={`platform-${platform.id}-soon`}>Coming soon</span></button>
     )}
   </nav>
   <div class="product-cli">
     <p class="cli-label" lang="en">or <span>Khor CLI</span></p>
-    <CopyButton class="cli-command" target="hero-install" label="复制 Khor CLI 安装命令"><code id="hero-install">{INSTALL}</code></CopyButton>
+    <CopyButton class="cli-command" target="hero-install" label="Copy the Khor CLI install command"><code id="hero-install">{INSTALL}</code></CopyButton>
   </div>
   </div>
 </section>

@@ -4,10 +4,10 @@ import Base from "../layouts/Base.astro";
 import Mark from "../components/Mark.astro";
 ---
 
-<Base title="没有这一页">
+<Base title="Page not found">
   <header class="bar"><Mark /></header>
   <main class="empty">
-    <h1>没有这一页</h1>
-    <p><a href={sitePath("/")}>回首页</a>，或者去<a href={sitePath("/docs/")}>文档</a>找</p>
+    <h1>Page not found</h1>
+    <p><a href={sitePath("/")}>Go home</a>, or browse the <a href={sitePath("/docs/")}>Docs</a></p>
   </main>
 </Base>

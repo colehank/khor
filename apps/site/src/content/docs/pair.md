@@ -1,71 +1,71 @@
 ---
-title: 入网
-summary: 配对任意一台，就同步全网
+title: Pairing
+summary: Pair with one device to join your whole network
 order: 2
 ---
 
-第一台机器装好，就是一张只有它自己的网。之后每加一台，配对一次。
+Your first device starts a network of its own. Pair each additional device once to bring it into that network.
 
-## 加一台机器
+## Add a device
 
-在已经入网的任意一台上出票：
+Create an invitation on any device already in the network:
 
 ```sh
 khor invite
 ```
 
-票 15 分钟内有效，用一次就作废。在新机器上：
+The invitation expires after 15 minutes and can be used only once. On the new device:
 
 ```sh
-khor pair <票>
+khor pair <ticket>
 ```
 
-配对完，设备信息全网自动同步：
+Once paired, device information syncs across the network:
 
 ```sh
 khor devices
 ```
 
-## 根钥匙与恢复词
+## Root key and recovery words
 
-第一台机器持有这张网的根钥匙。它只做一件事：签字说明哪些机器是你的。把 24 个恢复词抄下来，收在别处：
-
-```sh
-khor root words <本机名>
-```
-
-持根的机器丢了，在另一台上用恢复词把根找回来：
+The first device holds your network’s root key. It signs the certificates that identify your devices. Write down the 24 recovery words and store them separately:
 
 ```sh
-khor root recover <24 个词>
+khor root words <local-device-name>
 ```
 
-`khor root show` 看本机认哪把根、持不持根。
+If you lose the device holding the root key, recover it on another device:
 
-## 待批
+```sh
+khor root recover <24-recovery-words>
+```
 
-新机器拿到持根机器签的证书才算入网。出票的那台不持根时，新机器先进待批，在持根的机器上批准：
+`khor root show` displays the root trusted by this device and whether it holds the key.
+
+## Pending approval
+
+A new device joins once it receives a certificate signed by the root holder. If the inviting device does not hold the root key, approve the request on the device that does:
 
 ```sh
 khor pending
-khor approve <机器>
+khor approve <device>
 ```
 
-## 只有 ssh 的机器
+## SSH-only hosts
 
-装不了 khor 的机器可以领进来，操作经本机代跑。要求免密 ssh：
+Bring in a host that cannot run Khor. Your local device handles operations on its behalf. Passwordless SSH is required:
 
 ```sh
-khor adopt <ssh主机> [名字]
+khor adopt <ssh-host> [name]
 ```
 
-## 移出与离开
+## Remove a device or leave
 
-| 命令 | 做什么 |
+| Command | Effect |
 |---|---|
-| `khor forget <机器>` | 把一台机器移出网络。全网不再认它，要回来得重新配对 |
-| `khor revoke <机器>` | 在持根的机器上撤销一台。全网拿到新名单后不再应答它 |
-| `khor leave <本机名>` | 本机离开网络。本机自己的会话、工作区、身份、设置不动 |
-| `khor pause`、`khor resume` | 暂停、恢复接入网络 |
+| `khor forget <device>` | Remove a device from the network; it must pair again to rejoin |
+| `khor revoke <device>` | Revoke a device from the root holder; peers stop accepting it after receiving the updated list |
+| `khor leave <local-device-name>` | Leave the network while keeping local sessions, workspaces, identity, and settings |
+| `khor pause`, `khor resume` | Pause or resume network access |
 
-被移出的机器上已经存下的凭据收不回来。机器真丢了，去提供商换密钥。
+Removing a device cannot erase credentials already stored on it. If a device is lost, rotate those credentials with the relevant providers.

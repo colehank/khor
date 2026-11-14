@@ -5,10 +5,10 @@ interface Props { home?:boolean; current?:'docs'|'download'; }
 const {home=false,current}=Astro.props;
 ---
 <header class="story-nav" data-over-hero={home?true:undefined}>
-  <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} aria-label="Khor 首页"><img src={icon.src} alt="" width="24" height="24" /><span>Khor</span></a>
-  <nav aria-label="主导航">
-    <a href={sitePath(home?'#story':'/#story')}>了解</a>
-    <a href={sitePath("/docs/")} aria-current={current==='docs'?'page':undefined}>文档</a>
-    <a class="nav-download" href={sitePath("/download/")} data-device-download aria-current={current==='download'?'page':undefined}>下载</a>
+  <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} aria-label="Khor home"><img src={icon.src} alt="" width="24" height="24" /><span>Khor</span></a>
+  <nav aria-label="Main navigation">
+    <a href={sitePath(home?'#story':'/#story')}>Explore</a>
+    <a href={sitePath("/docs/")} aria-current={current==='docs'?'page':undefined}>Docs</a>
+    <a class="nav-download" href={sitePath("/download/")} data-device-download aria-current={current==='download'?'page':undefined}>Download</a>
   </nav>
 </header>

@@ -1,77 +1,77 @@
 ---
-title: 安装
-summary: 安装桌面 App，或使用命令行客户端
+title: Installation
+summary: Get the desktop app or use Khor from your terminal
 order: 1
 ---
 
-<h2 id="desktop">桌面 App</h2>
+<h2 id="desktop">Desktop app</h2>
 
-从 [下载页](/download/) 选择适合这台 Mac 的版本：Apple silicon 或 Intel。「关于本机」可以查看芯片信息。
+Choose Apple silicon or Intel on the [download page](/download/). Check **About This Mac** if you’re unsure which chip you have.
 
-1. 解压下载的文件，将 **Khor.app** 放入「应用程序」，然后打开。
-2. 在 **机器** 页确认本机已经出现。一台设备就可以开始使用，之后再加入其他设备。
-3. 切到 **会话**，点列表旁的 **＋**。新标签页中选择 **目标机器**、**目录** 和可用的 **启动方式**，再点 **创建**。
+1. Unzip the download, move **Khor.app** to **Applications**, and open it.
+2. Open **Machines** and check that your device appears. One device is enough to get started.
+3. Open **Sessions** and select **＋** beside the list. In the new tab, choose a target machine, directory, and available launch method, then select **Create**.
 
-### 连接另一台设备
+### Connect another device
 
-另一台设备也需要运行 Khor：有桌面的 Mac 可以安装 App，没有桌面的 Linux / Mac 主机可以使用下方的命令行安装。
+Each device needs Khor. Install the app on a Mac with a desktop, or use the CLI below for a headless Linux or Mac host.
 
-在 **机器** 页点 **＋**，选择 **Khor 主机**：
+In **Machines**, select **＋**, then **Khor host**:
 
-- 在已有设备选择 **邀请机器**，复制生成的凭据。
-- 在新设备的同一入口选择 **加入网络**，填写凭据并加入。
-- 回到机器列表，确认对方已经出现，再在新会话中选择它。若界面显示待批，先按提示在持根设备上批准。
+- On an existing device, select **Invite device** and copy the invitation.
+- On the new device, select **Join network** from the same menu and enter the invitation.
+- Check that both devices appear in the machine list. You can now choose the other device when creating a session. If approval is pending, approve it on the device holding the root key.
 
-已有会话可以从列表中继续打开。连接、凭据与远端启动方式以实际设备状态为准；网页上的示例界面使用本地演示数据。
+Open an existing session from the list to continue working. Connections, credentials, and launch methods depend on your devices. The website preview uses local demo data.
 
-更多命令行配对方式见 [入网](/docs/pair/)。
+See [Pairing](/docs/pair/) for the command-line workflow.
 
-<h2 id="cli">命令行客户端</h2>
+<h2 id="cli">Command-line client</h2>
 
-在终端中使用 Khor，或为没有桌面的主机安装常驻进程：
+Use Khor in your terminal, or install the background service on a headless host:
 
 ```sh
 curl -fsSL https://khor.cloud/install.sh | sh
 ```
 
-不需要 root，不需要工具链。支持 Linux（x86_64、aarch64）和 macOS（Apple 芯片、Intel）。
+No root access or toolchain required. Supports Linux (x86_64 and aarch64) and macOS (Apple silicon and Intel).
 
-## 它做了什么
+## What the installer does
 
-- 把 `khor` 放进 `~/.local/bin`。这个目录不在 `PATH` 里的话，往 `~/.profile` 加一行
-- 生成这台机器的身份
-- 启动常驻进程 `khor serve`，并登记开机自启：macOS 用 LaunchAgent，Linux 用 systemd，没有 systemd 的机器在登录时拉起
+- Installs `khor` in `~/.local/bin` and adds it to `~/.profile` if the directory is missing from `PATH`
+- Creates an identity for this device
+- Starts `khor serve` and registers it to start automatically: a LaunchAgent on macOS, systemd on Linux, or a login hook when systemd is unavailable
 
-装完新开一个终端，检查一遍：
+Open a new terminal and check the installation:
 
 ```sh
 khor version
 khor doctor
 ```
 
-`khor doctor` 一行一项：名字、状态、一句话。「未量」不是「正常」，是没量到。
+`khor doctor` reports each check with a name, status, and explanation. An unmeasured check does not mean a healthy result; it means no reading is available.
 
-## 选项
+## Options
 
-环境变量写在 `sh` 前面：
+Place environment variables before `sh`:
 
 ```sh
 curl -fsSL https://khor.cloud/install.sh | KHOR_NO_SERVE=1 sh
 ```
 
-| 变量 | 作用 |
+| Variable | Effect |
 |---|---|
-| `KHOR_NO_SERVE` | 只装，不启动常驻进程 |
-| `KHOR_MIRROR` | 指定安装镜像；未设置时从 GitHub Releases 下载 |
+| `KHOR_NO_SERVE` | Install without starting the background service |
+| `KHOR_MIRROR` | Set a download mirror; defaults to GitHub Releases |
 
-## 从 GitHub 装
+## Install from GitHub
 
 ```sh
 curl -fsSL https://github.com/colehank/khor/releases/latest/download/install.sh | sh
 ```
 
-这条路可以用 `KHOR_VERSION` 指定版本。
+Use `KHOR_VERSION` with this command to select a specific version.
 
-## 升级
+## Update
 
-再跑一遍安装命令。它换掉二进制，重启常驻进程。
+Run the install command again. It replaces the binary and restarts the background service.

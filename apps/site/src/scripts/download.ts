@@ -6,12 +6,12 @@ export type DownloadDevice={platform:Platform;arch?:'arm64'|'x86_64'};
 type BrowserNavigator=Navigator&{userAgentData?:{platform:string;getHighEntropyValues?:(hints:string[])=>Promise<{architecture?:string;bitness?:string;platform?:string}>}};
 
 export function recommendDownload(device:DownloadDevice) {
-  const label=device.platform==='macos'?'下载 macOS 版':device.platform==='linux'?'下载 Linux CLI':device.platform==='mobile'?'获取桌面版':'查看下载选项';
+  const label=device.platform==='macos'?'Download for macOS':device.platform==='linux'?'Download the Linux CLI':device.platform==='mobile'?'Get the desktop app':'See download options';
   const platform=device.platform==='macos'?'macOS App':device.platform==='linux'?'Linux CLI':null;
   const arch=device.arch==='arm64'?(device.platform==='macos'?'Apple silicon':'ARM64'):device.arch==='x86_64'?'x86_64':null;
   const exact=platform&&arch?release.downloads.find(item=>item.platform===platform&&(item.arch===arch||(arch==='x86_64'&&item.arch==='Intel'))):undefined;
   return {label,url:exact?.url??sitePath(platform?`/download/?platform=${device.platform}`:'/download/'),file:exact?.file,
-    note:exact?`${exact.platform} · ${exact.arch} · ${release.version}`:platform?`${platform} · 选择适合你的芯片版本`:'当前提供 macOS App 与 Linux / macOS CLI'};
+    note:exact?`${exact.platform} · ${exact.arch} · ${release.version}`:platform?`${platform} · Choose your chip`:'Available for macOS, with a CLI for Linux and macOS'};
 }
 
 export async function detectDownloadDevice(nav:BrowserNavigator):Promise<DownloadDevice> {

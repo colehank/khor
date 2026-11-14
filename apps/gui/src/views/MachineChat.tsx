@@ -340,7 +340,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
           aria-expanded={pickerOpen}
           // The same word the agent conversation's capsule wears: one
           // capsule, one invitation (the closing pass, 2026-10-03).
-          placeholder="发消息…"
+          placeholder={gui.chat_input}
           // Return sends, and the soft keyboard's key says so (Shift+Enter
           // on a hardware keyboard breaks the line).
           enterKeyHint="send"

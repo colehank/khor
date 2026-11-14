@@ -8,10 +8,13 @@ const frames=(points:Point[],cycle:number):Keyframe[]=>{
   for(const [time,value] of points)merged.set(time,{...merged.get(time),...value});
   return [...merged].sort(([a],[b])=>a-b).map(([time,value])=>({offset:time/cycle,easing:tourEasing,...value}));
 };
-const flow=(start:number,cycle:number,reverse=false)=>{
-  const from=reverse?-1:.12,to=reverse?.12:-1,end=start+tourMotion.travel;
+const flow=(start:number,cycle:number,reverse=false,layer='trail')=>{
+  // The bright head leads in either direction; all layers arrive together.
+  const shift=layer==='head'&&!reverse?-.092:0;
+  const opacity=layer==='halo'?.13:layer==='trail'?.8:1;
+  const from=(reverse?-1:.12)+shift,to=(reverse?.12:-1)+shift,end=start+tourMotion.travel;
   return frames([[0,{strokeDashoffset:from,opacity:0}],[start,{strokeDashoffset:from,opacity:0}],
-    [start+150,{opacity:1}],[end-150,{opacity:1}],[end,{strokeDashoffset:to,opacity:0}],
+    [start+150,{opacity}],[end-150,{opacity}],[end,{strokeDashoffset:to,opacity:0}],
     [cycle,{strokeDashoffset:to,opacity:0}]],cycle);
 };
 const pulse=(times:number[],cycle:number,base=.22)=>frames([
@@ -39,25 +42,26 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const cycle=agent?capabilityTiming.agentCycle:tourMotion.turn;
   let animations:Animation[]=[];
-  const animate=(selector:string,keyframes:Keyframe[])=>{
+  const animate=(selector:string,keyframes:Keyframe[]|((node:SVGElement)=>Keyframe[]))=>{
     for(const node of figure.querySelectorAll<SVGElement>(selector)){
-      const animation=node.animate(keyframes,{duration:cycle,iterations:Infinity});
+      const animation=node.animate(typeof keyframes==='function'?keyframes(node):keyframes,{duration:cycle,iterations:Infinity});
       animation.pause();animation.currentTime=0;animations.push(animation);
     }
   };
+  const trace=(selector:string,start:number,reverse=false)=>animate(selector,node=>flow(start,cycle,reverse,node.dataset.flowLayer));
   const create=()=>{
     const style=getComputedStyle(figure),ink=style.getPropertyValue('--secondary').trim(),accent=style.getPropertyValue('--tour-accent').trim();
     for(const id of ['mac','linux']){
       const start=agent?capabilityTiming.call:0;
       const arrival=start+tourMotion.travel;
-      animate(`[data-relation-flow="${agent?'call':'access'}"][data-relation-route="${id}"]`,flow(start,cycle,!agent));
+      trace(`[data-relation-flow="${agent?'call':'access'}"][data-relation-route="${id}"]`,start,!agent);
       animate(`.relation-status.relation-${id}`,pulse([agent?arrival:start],cycle,0));
       animate(`[data-relation-session="${id}"]`,light(agent?arrival:start,agent?capabilityTiming.reply:start+960,cycle,ink,accent));
-      if(agent)animate(`[data-relation-flow="reply"][data-relation-route="${id}"]`,flow(capabilityTiming.reply,cycle,true));
+      if(agent)trace(`[data-relation-flow="reply"][data-relation-route="${id}"]`,capabilityTiming.reply,true);
     }
     if(agent){
-      animate('[data-relation-flow="request"]',flow(capabilityTiming.request,cycle));
-      animate('[data-relation-flow="delivery"]',flow(capabilityTiming.delivery,cycle));
+      trace('[data-relation-flow="request"]',capabilityTiming.request);
+      trace('[data-relation-flow="delivery"]',capabilityTiming.delivery);
       const received=capabilityTiming.request+tourMotion.travel,delivered=capabilityTiming.delivery+tourMotion.travel;
       animate('.relation-router',busy(received,delivered,cycle,.22,.85));
       animate('[data-net-brand] > svg',busy(received,delivered,cycle,1,.6));

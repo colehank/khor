@@ -1,0 +1,12 @@
+---
+interface Props { d:string; flow:'access'|'call'|'reply'|'request'|'delivery'; route?:string; }
+const {d,flow,route}=Astro.props;
+---
+{(['halo','trail','head'] as const).map(layer=><path
+  class={`relation-flow relation-flow-${layer}`}
+  data-relation-flow={flow} data-flow-layer={layer}
+  data-relation-route={route}
+  data-relation-request={flow==='request'?true:undefined}
+  data-relation-result={flow==='delivery'?true:undefined}
+  d={d} pathLength="1"
+/>)}
