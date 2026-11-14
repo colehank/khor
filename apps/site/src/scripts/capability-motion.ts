@@ -19,6 +19,15 @@ const pulse=(times:number[],cycle:number,base=.22)=>frames([
     [time,{opacity:base}],[time+480,{opacity:.85}],[time+960,{opacity:base}],
   ]),[cycle,{opacity:base}],
 ],cycle);
+const busy=(start:number,end:number,cycle:number,base:number,active:number)=>{
+  // Fit whole gentle pulses to the busy interval, settling exactly on delivery.
+  const count=Math.max(1,Math.round((end-start)/960)),beat=(end-start)/count;
+  const points:Point[]=[[0,{opacity:base}],[start,{opacity:base}]];
+  for(let i=0;i<count;i++)points.push(
+    [start+(i+.5)*beat,{opacity:active}],[start+(i+1)*beat,{opacity:base}],
+  );
+  points.push([cycle,{opacity:base}]);return frames(points,cycle);
+};
 const light=(start:number,end:number,cycle:number,ink:string,accent:string)=>frames([
   [0,{color:ink}],[start,{color:ink}],[start+240,{color:accent}],
   [end,{color:accent}],[end+240,{color:ink}],[cycle,{color:ink}],
@@ -28,7 +37,7 @@ const light=(start:number,end:number,cycle:number,ink:string,accent:string)=>fra
 // A reply cannot begin before the calls arrive and the agents light up.
 export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  const cycle=agent?capabilityTiming.agentCycle:tourMotion.cycle;
+  const cycle=agent?capabilityTiming.agentCycle:tourMotion.turn;
   let animations:Animation[]=[];
   const animate=(selector:string,keyframes:Keyframe[])=>{
     for(const node of figure.querySelectorAll<SVGElement>(selector)){
@@ -39,7 +48,7 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
   const create=()=>{
     const style=getComputedStyle(figure),ink=style.getPropertyValue('--secondary').trim(),accent=style.getPropertyValue('--tour-accent').trim();
     for(const id of ['mac','linux']){
-      const start=agent?capabilityTiming.call:id==='mac'?0:tourMotion.turn;
+      const start=agent?capabilityTiming.call:0;
       const arrival=start+tourMotion.travel;
       animate(`[data-relation-flow="${agent?'call':'access'}"][data-relation-route="${id}"]`,flow(start,cycle,!agent));
       animate(`.relation-status.relation-${id}`,pulse([agent?arrival:start],cycle,0));
@@ -49,9 +58,11 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
     if(agent){
       animate('[data-relation-flow="request"]',flow(capabilityTiming.request,cycle));
       animate('[data-relation-flow="delivery"]',flow(capabilityTiming.delivery,cycle));
-      animate('.relation-router',pulse([tourMotion.travel,capabilityTiming.reply+tourMotion.travel],cycle));
+      const received=capabilityTiming.request+tourMotion.travel,delivered=capabilityTiming.delivery+tourMotion.travel;
+      animate('.relation-router',busy(received,delivered,cycle,.22,.85));
+      animate('[data-net-brand] > svg',busy(received,delivered,cycle,1,.6));
       animate('.relation-user-receipt',pulse([capabilityTiming.delivery+tourMotion.travel],cycle,0));
-    }else animate('.relation-access-receipt',pulse([tourMotion.travel,tourMotion.turn+tourMotion.travel],cycle,0));
+    }else animate('.relation-access-receipt',pulse([tourMotion.travel],cycle,0));
   };
   const clear=()=>{animations.forEach(animation=>animation.cancel());animations=[];};
   const settle=()=>{if(reduced.matches)clear();};

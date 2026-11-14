@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-14 Continue 两台机器改为同步给 You、5 秒一起循环。Agent 的 Khor 从收到任务到结果送达用户持续轻闪，交付时恢复常亮，往返依存不变。headless Chrome 定向检查、TypeScript 与静态构建通过，证据 `site-story-20261114/busy-delivery/`；本轮仅本地。
+
 - 2026-11-14 修正动效流向与依存：Continue 为远端设备 → You；Agent 为 You → Khor → 机器，调用到达后才点亮智能体，再机器 → Khor → You，回传到达前不交付。Agent 12 秒完整往返，保持原有 1.7 秒缓动和 1.3 秒交接，Work 仍 10 秒。手机／宽屏 headless Chrome 方向与到达依赖、暂停恢复及静态构建通过，证据 `site-story-20261114/roundtrip/`，详见 [固定关系图](site-relations-20261114.md)。本轮仅本地。
 
 - 2026-11-14 三幕动效节奏统一：后两幕改为固定路径上的细光经过、到达后活动环轻闪，再停留；Work 交替访问、Agent 提示请求／调用／返回。设备与文字保持不动，底层连接常驻。与第一幕共用 1.7 秒缓动、10 秒周期，第一幕行为不变。手机／宽屏 headless Chrome、定向 TypeScript 与静态构建通过，证据 `site-story-20261114/shared-motion/`，详见 [固定关系图](site-relations-20261114.md)。本轮仅本地。
