@@ -1,10 +1,12 @@
 import {capabilityGeometry} from './capability-geometry';
 import {mountNetworkMap} from './network-map';
+import {mountCapabilityMotion} from './capability-motion';
 
-// Static relationships with CSS connection highlights. No task clock,
+// Static relationships with browser-owned connection highlights. No task clock,
 // moving user, progress simulation or per-frame JavaScript.
 export function mountCapabilityScene(figure:HTMLElement) {
   const agent=figure.dataset.concept==='agent',map=mountNetworkMap(figure),compact=matchMedia('(max-width: 760px)');
+  const motion=mountCapabilityMotion(figure,agent);
   const find=(selector:string)=>figure.querySelector<SVGElement>(selector)!;
   const translate=(element:Element,p:{x:number;y:number})=>element.setAttribute('transform',`translate(${p.x} ${p.y})`);
   const layout=()=>{
@@ -21,12 +23,12 @@ export function mountCapabilityScene(figure:HTMLElement) {
       const cut=find('[data-relation-result-cut]');cut.setAttribute('x',String(g.resultLabel.x-50));cut.setAttribute('y',String(g.resultLabel.y-25));
     }else{
       find('[data-relation-access]').setAttribute('d',g.accessPath);translate(find('[data-relation-access-label]'),g.access);
-      const origin=find('[data-relation-origin]');origin.setAttribute('cx',String(g.origin.x));origin.setAttribute('cy',String(g.origin.y));
+      translate(find('[data-relation-origin]'),g.origin);
     }
   };
   compact.addEventListener('change',layout);layout();
   return {
-    play(){figure.classList.add('is-running');},pause(){figure.classList.remove('is-running');},
-    destroy(){figure.classList.remove('is-running');map.destroy();compact.removeEventListener('change',layout);},
+    play(){figure.classList.add('is-running');motion.play();},pause(){figure.classList.remove('is-running');motion.pause();},
+    destroy(){figure.classList.remove('is-running');motion.destroy();map.destroy();compact.removeEventListener('change',layout);},
   };
 }
