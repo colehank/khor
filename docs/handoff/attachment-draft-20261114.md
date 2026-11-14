@@ -1,3 +1,15 @@
+# Current — machine identity and bottom location deck (2026-11-14)
+
+Live: http://127.0.0.1:23961/versions/1b365eb104c418b0/assets/workbench/index.html?path=/story/khor-app--attachments . Phone/Air borrow through MacLab. User confirmed top machine avatar+name, middle directory list, bottom Back+path capsules; this supersedes the top-search layout below.
+
+MachineIdentity is shared with the actual MachineCard header, preserving MachineFace/type mark, title typography and the machine page's model child. The attachment directory uses that identity without extra actions or subtitle. Its bottom deck uses GlassCircle Back plus GlassCapsule with the existing ContentSearch, extracted into a shared component and re-exported for original session callers. Existing autofocus default remains unchanged; attachment browsing explicitly disables it. FilesPane, Open/Select semantics, retained directory and terminal geometry stay shared.
+
+Source1b365eb104c418b000baf29a6b3fb736622007ac/tree9ffd8f46d10e361a79f2feceff9e9b171f6e18fd passed43549945566:8 Chromium/WebKit×1280/412/390/320 complete flows,8top/list/bottom geometry samples,22image opens with0editable focus,0PTY resize calls and unchanged cell grids. Header stays above list; equally high Back/path capsules are aligned in one row and in view on short sheets. Shared unit/gates/mobile-static and App/Lab/Storybook builds/hot checks passed. Artifact14096285149 SHA256a12e4404818d6f996d4563028a084ca6760bc8374219cbe539fac03135ae48fd source/tree/CRC/hot/cases verified under machine-deck-1b36/. Actual WebKit320/390 and Chromium1280directory screenshots inspected.
+
+Replaced only verified owned staticPID34635 after exact argv+HTTPsource checks; newPID90160/exec25755 serves this artifact.5routes/9JS byte identities and story entry checked; previous0ac48pin remains200. No main/ship/native App or host restart. Local source-only and physical picker/keyboard acceptance limits below still apply. Graph externally reports0mapped functions, not review coverage; shared defaults and markup were manually reviewed. This user Lab adjustment is complete, awaiting feedback.
+
+--- Previous layouts and evidence ---
+
 # Current — attachment keyboard panel and shared file pages (2026-11-14)
 
 Live Lab: http://127.0.0.1:23961/versions/0ac4830c61352abd/assets/workbench/index.html?path=/story/khor-app--attachments . Phone/Air use MacLab borrowed networking. This is the exact source0ac4830c61352abda3a6bb02f91c568bca7548b5, tree65d775447653f04f5ae9549bfdb3428039d518fa. Previous pins remain accessible.
