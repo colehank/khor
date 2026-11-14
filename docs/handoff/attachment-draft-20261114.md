@@ -1,3 +1,15 @@
+# Current — visible machine sources and explicit receiving folder (2026-11-14)
+
+Full App Lab (preferred by user; no Storybook frame): http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Fixed full-App snapshot: http://127.0.0.1:23961/snapshots/3b40cbe6ac4f9f63/app?scene=terminal&machines=3 . Phone/Air borrow through MacLab.
+
+Source controls are fixed above the selected-file scroller: 本机文件 / 本机文件夹, then always-visible 其他机器 with the actual hosting count. The shared Khor DropdownMenu exposes the complete source-machine list and enters the existing machine directory sheet. No machine choices are hidden below the selected-list split. The footer says 发送到 [machine] and 保存文件夹：[path], with an explicit 更改 action; the same SendInto picker, receiver and default khor-drop contract are retained. Header/footer spacing leaves a full selected-file touch row in the232px simulated keyboard panel. The machine identity / Back+path deck from the prior approved iteration is retained.
+
+Final source3b40cbe6ac4f9f63463ef415ea25ef6ea8a94d6e/treea71a3fe7fd52e6d195fc523003bf502318bab291 passed43556699744:8 Chromium/WebKit×1280/412/390/320 complete flows. New checks cover sources visible without scrolling, advertised machine count, every choice present, choosing the last machine, explicit receiving-machine/folder/change labels and a complete selected-file row under232px keyboard cover. Prior directory identity/deck alignment, local folder/image, failure/retry, terminal/ACP sending, no autofocus and0PTY-resize/unchanged-cell checks remain green. Shared unit/gates/mobile-static and App/Lab/Storybook build/hot checks passed. Artifact14098842630 SHA2563c07c3b333769a6f442027f66ed85f1506a2c4e6c47113a6aa0c8fa2590d116e verified source/tree/CRC/cases/hot in sources-3b40/. Actual WebKit320/390 and Chromium1280 first-panel screenshots inspected: local sources and machine count are visible, and the receiver/path/change labels fit.
+
+Only owned staticPID90160 replaced after exact argv+HTTPsource checks; currentPID34786/exec65534 serves this artifact.7routes/9JS byte identities verified, including direct full-App current/old snapshots, previous1b36pin, manager and story entry. No native App/session host restart, main merge, ship or install. Physical picker/keyboard/drag and legacy native harness acceptance remain before native release; local source-only rules still apply. Graph external WT0mapped functions is not treated as coverage. This Lab feedback is implemented and ready for user review.
+
+--- Previous layouts and evidence ---
+
 # Current — machine identity and bottom location deck (2026-11-14)
 
 Live: http://127.0.0.1:23961/versions/1b365eb104c418b0/assets/workbench/index.html?path=/story/khor-app--attachments . Phone/Air borrow through MacLab. User confirmed top machine avatar+name, middle directory list, bottom Back+path capsules; this supersedes the top-search layout below.
