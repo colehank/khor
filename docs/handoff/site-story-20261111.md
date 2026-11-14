@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-14 三幕动效节奏统一：后两幕改为固定路径上的细光经过、到达后活动环轻闪，再停留；Work 交替访问、Agent 提示请求／调用／返回。设备与文字保持不动，底层连接常驻。与第一幕共用 1.7 秒缓动、10 秒周期，第一幕行为不变。手机／宽屏 headless Chrome、定向 TypeScript 与静态构建通过，证据 `site-story-20261114/shared-motion/`，详见 [固定关系图](site-relations-20261114.md)。本轮仅本地。
+
 - 2026-11-14 两幕文字精简：Claude／Codex 只留图标，去掉重复名称及独立 Terminal 标注，保留 File／Web 与任务关系文字；原定位、遮罩、样式同步删除。手机／宽屏 headless Chrome 与定向 TypeScript 通过，证据 `site-story-20261114/clean-labels/`，本轮仅本地。
 
 - 2026-11-14 固定关系图视觉精修：后两幕设备／角标统一中性表面层次、细边与连接接点，会话名称和资源说明拉开主次，平板补充字号；Khor 路径从设备上方接入以避开角标。固定构图和局部 opacity 脉动保留。定向 headless Chrome 与十页静态构建通过，证据 `site-story-20261114/relations-polish/`，详见 [固定关系图](site-relations-20261114.md)。本轮仅本地。

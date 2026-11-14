@@ -1,4 +1,4 @@
-/* Fixed relationships: only connections and small activity rings breathe. */
+/* Fixed relationships; connection highlights share the network's cadence. */
 .tour-section.tour-capabilities { display:block; max-width:min(var(--story-max),calc(var(--gap-pane)*48)); padding-block:clamp(calc(var(--gap-pane)*2),6svh,calc(var(--gap-pane)*3)); }
 .tour-capabilities > .tour-copy { display:flex; align-items:center; justify-content:space-between; gap:calc(var(--gap-pane)*2); margin-bottom:var(--gap-pane); }
 .tour-capabilities > .tour-copy h2 { max-width:none; }
@@ -21,21 +21,35 @@
 .relation-wire,.relation-signal { fill:none; stroke-linecap:round; stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-wire { stroke:var(--tour-wire); }
 .relation-signal { stroke:var(--tour-accent); opacity:.3; }
+.relation-flow { fill:none; stroke:var(--tour-accent); stroke-width:1.75; stroke-linecap:round; stroke-dasharray:.12 1.88; stroke-dashoffset:.12; opacity:0; animation-name:relation-travel; }
 .relation-arrow { fill:none; stroke:var(--secondary); stroke-width:1.25; stroke-linejoin:round; }
 .relation-port { fill:var(--canvas); stroke:var(--tour-accent); stroke-opacity:.65; stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-badge > circle:first-child { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-badge { color:var(--ink); }
-.relation-status,.relation-router { fill:none; stroke:var(--tour-accent); stroke-width:1.25; }
+.relation-status,.relation-router { fill:none; stroke:var(--tour-accent); stroke-width:1.25; opacity:.22; animation-name:relation-arrive; }
 .relation-user > circle { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-resource,.relation-request-label,.relation-shared { font-family:var(--sans); font-size:var(--text-body); fill:var(--secondary); }
 .relation-you,.relation-user > text { font-family:var(--sans); font-size:var(--text-read); fill:var(--ink); }
 .relation-you,.relation-user > text,.relation-request-label { font-weight:500; }
 .relation-request-label { fill:var(--ink); font-size:var(--text-read); letter-spacing:-.01em; }
 .relation-agent [data-net-brand] { color:var(--tour-accent); }
-.relation-pulse { animation:relation-breathe calc(var(--dur-240)*16) ease-in-out infinite; animation-play-state:paused; }
-.relation-mac { animation-delay:calc(var(--dur-240)*-8); }
-.capability-relation.is-running .relation-pulse { animation-play-state:running; }
-@keyframes relation-breathe { 0%,100% { opacity:.25; } 50% { opacity:.65; } }
+.relation-motion { animation-duration:var(--relation-cycle); animation-timing-function:var(--relation-ease); animation-iteration-count:infinite; animation-play-state:paused; animation-delay:var(--relation-delay,0s); }
+.relation-work .relation-linux { --relation-delay:var(--relation-turn); }
+.relation-agent :is(.relation-mac,.relation-linux) { --relation-delay:var(--relation-call); }
+.relation-return { --relation-delay:var(--relation-result); }
+.capability-relation.is-running .relation-motion { animation-play-state:running; }
+/* 1.7s travel in a 10s loop, then a .96s arrival pulse like hole punching.
+   Permanent lines remain underneath, and every icon and label stays still. */
+@keyframes relation-travel {
+  0% { stroke-dashoffset:.12; opacity:0; }
+  1.5%,15.5% { opacity:1; }
+  17%,100% { stroke-dashoffset:-1; opacity:0; }
+}
+@keyframes relation-arrive {
+  0%,17%,50%,100% { opacity:.22; }
+  21.8% { opacity:.85; }
+  26.6%,30% { opacity:.35; }
+}
 @media (max-width:1000px) {
  .tour-capabilities > .tour-copy { display:block; }
  .tour-capabilities > .tour-copy p { max-width:48ch; margin-top:var(--gap-group); }
@@ -52,5 +66,6 @@
 }
 @media (prefers-reduced-motion:reduce) {
  .capability-relation * { transition:none!important; animation:none!important; }
- .relation-pulse { opacity:.5; }
+ .relation-flow { display:none; }
+ .relation-status,.relation-router { opacity:.45; }
 }

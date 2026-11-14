@@ -3,15 +3,16 @@ import NetworkGraph from './NetworkGraph.astro';
 import ConceptMark from './ConceptMark.astro';
 import {supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
 import {capabilityGeometry} from '../../scripts/capability-geometry';
+import {tourMotion,tourEasing} from '../../scripts/tour-motion';
 import '../../styles/capability-scene.css';
 interface Props {mode:'work'|'agent'}
 const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'files'},{id:'linux',name:'Codex',mark:'Codex',resource:'Web',icon:'web'}] as const;
-const description=agent?'You are outside KhorNet, with a Task sent to Khor and a Result returned. Khor connects to Claude Code and files on the workstation, and to Codex and Web on Server. The laptop and Mobile remain part of the same network. All relationships stay visible; only small activity marks and connections softly pulse.':'A laptop and Mobile form one access group labelled You and Same task. This shared task connects to Claude Code and files on the remote workstation, and to Codex and Web on Server. Sessions and resources stay on their hosts. The whole relationship is always visible; only small activity marks and connections softly pulse.';
+const description=agent?'You are outside KhorNet, with a Task sent to Khor and a Result returned. Khor connects to Claude Code and files on the workstation, and to Codex and Web on Server. The laptop and Mobile remain part of the same network. All relationships stay visible; only light traces travel along connections and small activity rings respond on arrival.':'A laptop and Mobile form one access group labelled You and Same task. This shared task connects to Claude Code and files on the remote workstation, and to Codex and Web on Server. Sessions and resources stay on their hosts. The whole relationship is always visible; only light traces travel along connections and small activity rings respond on arrival.';
 ---
-<figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group)`}>
+<figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group);--relation-cycle:${tourMotion.cycle}ms;--relation-turn:${tourMotion.turn}ms;--relation-call:${tourMotion.travel+tourMotion.settle}ms;--relation-result:${(tourMotion.travel+tourMotion.settle)*2}ms;--relation-ease:${tourEasing}`}>
   <NetworkGraph prefix={mode} infrastructure={false} externalUser={agent} title={agent?'Delegate a task to Khor and receive its result':'One task, accessible from a laptop or Mobile'} {description}>
     <Fragment slot="clearances">
       {agent&&<rect data-relation-result-cut x={g.resultLabel.x-50} y={g.resultLabel.y-25} width="100" height="32" fill="black"/>}
@@ -31,7 +32,8 @@ const description=agent?'You are outside KhorNet, with a Task sent to Khor and a
       {!agent&&<path class="relation-access" data-relation-access d={g.accessPath}/>}
       {g.routes.map(({id,d,end})=><g>
         <path class="relation-wire" data-relation-route={id} d={d}/>
-        <path class:list={['relation-signal','relation-pulse',`relation-${id}`]} data-relation-route={id} d={d}/>
+        <path class="relation-signal" data-relation-route={id} d={d}/>
+        <path class:list={['relation-flow','relation-motion',`relation-${id}`]} data-relation-route={id} d={d} pathLength="1"/>
         <circle class="relation-port" data-relation-port={id} cx={end.x} cy={end.y} r="2.5"/>
       </g>)}
       {!agent&&<circle class="relation-port relation-origin" data-relation-origin cx={g.origin.x} cy={g.origin.y} r="3"/>}
@@ -39,14 +41,16 @@ const description=agent?'You are outside KhorNet, with a Task sent to Khor and a
         <defs><marker id={`${mode}-relation-arrow`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 2 L8 5 L2 8" class="relation-arrow"/></marker></defs>
         <path class="relation-wire" data-relation-request d={g.request} marker-end={`url(#${mode}-relation-arrow)`}/>
         <path class="relation-wire" data-relation-result d={g.result} marker-end={`url(#${mode}-relation-arrow)`}/>
-        <path class="relation-signal relation-pulse" data-relation-request d={g.request}/>
-        <path class="relation-signal relation-pulse relation-mac" data-relation-result d={g.result}/>
+        <path class="relation-signal" data-relation-request d={g.request}/>
+        <path class="relation-signal" data-relation-result d={g.result}/>
+        <path class="relation-flow relation-motion" data-relation-request d={g.request} pathLength="1"/>
+        <path class="relation-flow relation-motion relation-return" data-relation-result d={g.result} pathLength="1"/>
       </>}
     </g>
     <g slot="activity" class="relation-annotations">
       {hosts.map(({id,name,mark,resource,icon})=><g data-relation-at={id} transform={`translate(${g.nodes[id].x} ${g.nodes[id].y})`}>
         <g class="relation-badge" transform="translate(28 -28)">
-          <circle r="15"/><circle class={`relation-status relation-pulse relation-${id}`} r="18"/>
+          <circle r="15"/><circle class={`relation-status relation-motion relation-${id}`} r="18"/>
           <svg x="-10" y="-10" width="20" height="20"><title>{name}</title><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
         </g>
         <g class="relation-badge" transform={id==='linux'?'translate(-28 -28)':'translate(28 28)'}>
@@ -57,7 +61,7 @@ const description=agent?'You are outside KhorNet, with a Task sent to Khor and a
       </g>)}
       {agent?<>
         <g class="relation-user" data-relation-at="you" transform={`translate(${g.nodes.you.x} ${g.nodes.you.y})`}><circle r="28"/><text x="0" y="6" text-anchor="middle">You</text></g>
-        <g data-relation-at="khor" transform={`translate(${g.nodes.khor.x} ${g.nodes.khor.y})`}><circle class="relation-router relation-pulse" r="27"/></g>
+        <g data-relation-at="khor" transform={`translate(${g.nodes.khor.x} ${g.nodes.khor.y})`}><circle class="relation-router relation-motion" r="27"/></g>
         <text class="relation-request-label" data-relation-task-label transform={`translate(${g.taskLabel.x} ${g.taskLabel.y})`} text-anchor="middle">Task</text>
         <text class="relation-request-label" data-relation-result-label transform={`translate(${g.resultLabel.x} ${g.resultLabel.y})`} text-anchor="middle">Result</text>
       </>:<g class="relation-access-label" data-relation-access-label transform={`translate(${g.access.x} ${g.access.y})`}>

@@ -1,14 +1,15 @@
 import {mountNetworkMap} from './network-map';
+import {tourMotion,tourProgress} from './tour-motion';
 
 // The introduction runs once. Mobile then roams only between Wi-Fi and cellular.
 const phases=[
   {id:'native',location:'b',position:1,build:0,connection:'p2p',duration:1600,transition:0},
   {id:'establish',location:'b',position:1,build:1,connection:'relay',duration:2600,transition:2000},
   {id:'connected',location:'b',position:1,build:1,connection:'p2p',duration:1800,transition:0},
-  {id:'cellular-arrive',location:'c',position:0,build:1,connection:'relay',duration:3000,transition:1700},
-  {id:'cellular',location:'c',position:0,build:1,connection:'p2p',duration:2000,transition:0},
-  {id:'wifi-arrive',location:'b',position:1,build:1,connection:'relay',duration:3000,transition:1700},
-  {id:'wifi',location:'b',position:1,build:1,connection:'p2p',duration:2000,transition:0},
+  {id:'cellular-arrive',location:'c',position:0,build:1,connection:'relay',duration:tourMotion.travel+tourMotion.settle,transition:tourMotion.travel},
+  {id:'cellular',location:'c',position:0,build:1,connection:'p2p',duration:tourMotion.hold,transition:0},
+  {id:'wifi-arrive',location:'b',position:1,build:1,connection:'relay',duration:tourMotion.travel+tourMotion.settle,transition:tourMotion.travel},
+  {id:'wifi',location:'b',position:1,build:1,connection:'p2p',duration:tourMotion.hold,transition:0},
 ] as const;
 
 export function mountNetworkScene(figure:HTMLElement) {
@@ -21,7 +22,7 @@ export function mountNetworkScene(figure:HTMLElement) {
   const tick=()=>{
     if(!active||!movement)return;
     const elapsed=Math.min(movement.duration,movement.elapsed+performance.now()-movement.started);
-    const t=elapsed/movement.duration,progress=t*t*(3-2*t);
+    const progress=tourProgress(elapsed/movement.duration);
     position=movement.from+(movement.to-movement.from)*progress;
     build=movement.fromBuild+(movement.toBuild-movement.fromBuild)*progress;
     draw();

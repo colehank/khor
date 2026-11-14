@@ -1,7 +1,7 @@
 import {capabilityGeometry} from './capability-geometry';
 import {mountNetworkMap} from './network-map';
 
-// Static relationships with CSS opacity pulses. No task clock, transport loop,
+// Static relationships with CSS connection highlights. No task clock,
 // moving user, progress simulation or per-frame JavaScript.
 export function mountCapabilityScene(figure:HTMLElement) {
   const agent=figure.dataset.concept==='agent',map=mountNetworkMap(figure),compact=matchMedia('(max-width: 760px)');
