@@ -1,3 +1,13 @@
+# Current — single-line destination (2026-11-14)
+
+Full App Lab: http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Pinned full App: http://127.0.0.1:23961/snapshots/6fb030e00ea42523/app?scene=terminal&machines=3 . Mobile/Air borrow via MacLab; user does not want the Storybook frame.
+
+User requested destination display as only machine avatar：path on one line. Visible receiver-name and folder-label lines removed; shared MachineAvatar, colon and truncated path now share one row, with existing 更改/reset actions. Full receiving-machine/path context remains in accessible label and tooltip. Counted source machine entry, independent selection, directory identity/deck and transport behavior are unchanged.
+
+Source6fb030e00ea425236966125a86d7356d2f3c3fa8/treef8f160cac660b51632b7f2a9f03c4c95d6a5c319 passed43557787981:all8existing Chromium/WebKit×four-width flows, shared checks/builds/hot. Updated existing label assertion verifies visible destination only contains colon+path and accessible context remains. Artifact14098991202 SHA25697340c8dbda45b3f90c82e6de8c33f2250b4071ad72884b9da389facff0676be source/tree/CRC/cases/hot verified under destination-6fb0/. Actual WebKit320panel screenshot inspected.7routes/9JS bytes+story and previous3b40pin verified. Only ownedstaticPID34786 replaced after exact argv+HTTPsource checks; newPID43766/exec80986. No native App/host restart/main/ship/install. Existing device-acceptance limits below still apply. Ready for user feedback.
+
+--- Previous layouts and evidence ---
+
 # Current — visible machine sources and explicit receiving folder (2026-11-14)
 
 Full App Lab (preferred by user; no Storybook frame): http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Fixed full-App snapshot: http://127.0.0.1:23961/snapshots/3b40cbe6ac4f9f63/app?scene=terminal&machines=3 . Phone/Air borrow through MacLab.
