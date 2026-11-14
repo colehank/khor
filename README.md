@@ -1,20 +1,83 @@
-# Khor
+<p align="center">
+  <a href="https://khor.cloud/"><img src="apps/gui/src-tauri/icons/src/mandala-glass.svg" width="80" height="80" alt="Khor" /></a>
+</p>
 
-> 坛城（Kyil-khor），意为连接。
+<h1 align="center">Khor</h1>
 
-产品与设计见 [docs/KHOR.md](docs/KHOR.md)。
+<p align="center"><strong>Work across your devices and agents</strong></p>
 
-## 安装
+<p align="center">Access agents, edit files, track changes, and connect to web apps<br />from any device, peer to peer</p>
 
-从 [Releases](https://github.com/colehank/khor/releases) 选择对应系统的安装包：
+<p align="center">
+  <a href="https://khor.cloud/">Website &amp; interactive preview</a> ·
+  <a href="https://github.com/colehank/khor/releases">Download</a> ·
+  <a href="https://khor.cloud/docs/">Documentation</a>
+</p>
 
-- **macOS**：Apple 芯片选 `khor-macos-arm64.pkg`，Intel 选 `khor-macos-x86_64.pkg`。双击安装，之后从“应用程序”打开 Khor；终端使用 `khor`。
-- **Windows**：运行 `khor-windows-x86_64.msi`，安装 App 和 CLI。安装后重新打开终端，使新增的 PATH 生效。
-- **Linux 桌面**：Ubuntu 24.04 及兼容系统使用对应架构的 `.deb`，通过 `sudo apt install ./安装包文件名.deb` 安装 App、CLI 和系统依赖。
-- **服务器或只需要 CLI**：使用发布页的 `install.sh`，独立 CLI 用 `khor upgrade` 更新。
+<p align="center">
+  <a href="https://khor.cloud/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/desktop-dark.webp" />
+      <img src="docs/assets/readme/desktop-light.webp" width="1200" alt="Khor desktop: agent sessions alongside a remote workspace, source files, and a project README" />
+    </picture>
+  </a>
+</p>
 
-`khor gui` 打开已安装的桌面 App；`khor web` 打开网页界面。随 App 安装的 CLI 与 App 一起更新，已有的独立 CLI 会被保留。更多安装、迁移和更新说明见 [发布指南](docs/RELEASE.md)。
+## Stay connected
 
-## 开发
+Pair your devices into a private P2P network. Khor connects them directly when possible and uses relays when needed, with end-to-end encryption between devices.
 
-可以选择纯前端 Lab 或完整原生 Lab，也可以把编译和检查交给构建机。本机仅保留源码时，请使用远端构建模式。见 [Lab 开发与验收](docs/development/LAB.md)、[远端开发](docs/REMOTE-DEVELOPMENT.md)及 [工程约定](docs/code-quality/ENGINEERING.md)。
+## Continue anywhere
+
+Use Claude Code, Codex, Cursor, or a terminal across your devices. Keep sessions on the machines where they run, and return to them from another device. Access files and workspaces, follow Git changes, and open remote web apps in the same interface.
+
+## Let Khor take over
+
+Delegate work across devices and agents to Khor Agent. It can use your network’s sessions, terminals, files, and web resources to carry out a task and bring the result back to you.
+
+## Get Khor
+
+Choose a package from [Releases](https://github.com/colehank/khor/releases). Khor is currently available as a preview.
+
+| Platform | Installation |
+| --- | --- |
+| macOS | Apple silicon or Intel `.pkg`; install and open Khor from Applications |
+| Windows | x86_64 `.msi`; reopen your terminal after installation to use `khor` |
+| Linux desktop | x86_64 or ARM64 `.deb` for Ubuntu 24.04 and compatible distributions; install with `sudo apt install ./<package>.deb` |
+| macOS / Linux CLI | Use the `install.sh` attached to your chosen release for a headless host or a standalone CLI |
+
+Desktop packages include the App and CLI. Run `khor gui` to open an installed desktop app. The bundled CLI updates with the App; an existing standalone CLI is preserved and can be updated with `khor upgrade`.
+
+When using `install.sh` for a preview release, set `KHOR_VERSION` to the tag of the release you selected.
+
+See [installation and release details](docs/RELEASE.md) for package selection, updates, and migration.
+
+## Start with one device
+
+Install Khor and open the App, or use the CLI. Add another device by creating an invitation on a device already in your network:
+
+```sh
+khor invite
+```
+
+On the device you want to add:
+
+```sh
+khor pair <ticket>
+```
+
+Open a session to start working. To continue from a phone or another browser on your local network, run `khor web` and open the link it prints.
+
+## Development
+
+Khor uses a Rust backend and a shared Tauri / web frontend. Start with the [product overview](docs/KHOR.md), then choose the workflow that fits your work:
+
+- [Frontend and native Labs](docs/development/LAB.md)
+- [Remote development and builds](docs/REMOTE-DEVELOPMENT.md)
+- [Engineering conventions](docs/code-quality/ENGINEERING.md)
+
+For a source-only checkout, use the remote build workflow. Architecture details live in [networking](docs/NET.md), [sessions](docs/SESSION.md), [workspaces](docs/WORKSPACE.md), and [Khor Agent](docs/AGENT.md).
+
+---
+
+Presented by [NeuroAI Innovation Team](https://github.com/AI-innovation-team) / [KapeStack](https://www.kapestack.top)
