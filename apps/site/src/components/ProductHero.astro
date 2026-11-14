@@ -1,18 +1,11 @@
 ---
-import {sitePath} from "../paths";
 import desktop from "../assets/product/desktop.webp";
 import desktopDark from "../assets/product/desktop-dark.webp";
 import fog from "../assets/product/fog.webp";
-import {supportedDevices} from "../../../gui/dev/site/identity-marks";
-import CopyButton from './CopyButton.astro';
-import {release} from '../releases';
-import {INSTALL} from '../site';
+import {sitePath} from '../paths';
+import ProductActions from './ProductActions.astro';
+import ProductInstallations from './ProductInstallations.astro';
 import {fogOptions} from "../scripts/fog-options";
-const platforms=supportedDevices.map(platform=>{
-  const id=platform.name.toLowerCase();
-  const available=release.downloads.some(item=>item.platform.toLowerCase().startsWith(id));
-  return {...platform,id,available};
-});
 ---
 <section class="product-hero" id="khor-hero" aria-labelledby="product-title" data-product-hero style={`--fog-base:#${fogOptions.baseColor.toString(16)}`}>
   <div class="hero-ground" data-fog aria-hidden="true"><img class="fog-fallback" src={fog.src} alt="" width={fog.width} height={fog.height} loading="eager" /></div>
@@ -20,10 +13,7 @@ const platforms=supportedDevices.map(platform=>{
   <div class="product-copy">
     <h1 id="product-title">Khor</h1>
     <p class="product-description" lang="en"><span class="product-promise">Work across your devices and agents</span> <span class="product-detail">Access agents, edit files, track changes, and connect to web apps from any device, <span class="keep-together">peer to peer</span></span></p>
-    <div class="product-actions">
-      <a class="product-download" href={sitePath("/download/")} data-device-download>Download</a>
-      <a class="product-docs" href={sitePath("/docs/")}>Docs</a>
-    </div>
+    <ProductActions />
   </div>
 <section class="product-showcase" id="product" aria-label="Khor desktop interface" data-product-showcase>
     <div class="macos-window">
@@ -34,23 +24,10 @@ const platforms=supportedDevices.map(platform=>{
     </div>
 </section>
   </div>
-  <div class="product-installations">
-    <h2 class="platforms-title" id="platforms-title" lang="en">Other ways to get Khor</h2>
-  <nav class="product-platforms" aria-labelledby="platforms-title">
-    {platforms.map(platform=>platform.available?
-      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'Install the Linux CLI':'Install the macOS app or CLI'}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
-      <button class="platform-option" type="button" data-unavailable aria-label={`${platform.name} availability`} aria-describedby={`platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true" set:html={platform.svg}/><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" lang="en" id={`platform-${platform.id}-soon`}>Coming soon</span></button>
-    )}
-  </nav>
-  <div class="product-cli">
-    <p class="cli-label" lang="en">or <span>Khor CLI</span></p>
-    <CopyButton class="cli-command" target="hero-install" label="Copy the Khor CLI install command"><code id="hero-install">{INSTALL}</code></CopyButton>
-  </div>
-  </div>
+  <ProductInstallations prefix="hero" />
 </section>
 <script>
   import {mountDesktopPreview} from "../scripts/product";
   import {mountFog} from "../scripts/fog";
-  import {mountPlatformHints} from "../scripts/platform-hints";
-  mountDesktopPreview();mountFog();mountPlatformHints();
+  mountDesktopPreview();mountFog();
 </script>

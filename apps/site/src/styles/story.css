@@ -40,12 +40,12 @@ html { scroll-behavior: smooth; scroll-padding-top: calc(var(--site-header-heigh
 .product-promise { display:block; font-weight:550; }
 .product-detail { display:block; margin-top:var(--gap-in); }
 .keep-together { white-space:nowrap; }
-.product-actions { display:flex; align-items:center; flex-wrap:wrap; gap:var(--gap-row); margin-top:calc(var(--gap-pane)*1.25); font-size:var(--text-read); }
+.product-actions { --action-ink:var(--mark-ink-dark); --action-on-ink:var(--mark-ink-light); display:flex; align-items:center; flex-wrap:wrap; gap:var(--gap-row); margin-top:calc(var(--gap-pane)*1.25); font-size:var(--text-read); }
 .product-download,.product-docs { display:flex; min-width:calc(var(--touch)*2.5); min-height:var(--touch); align-items:center; justify-content:center; padding:var(--gap-row) var(--gap-group); border-radius:var(--radius-full); }
-.product-download { background:var(--mark-ink-dark); color:var(--mark-ink-light); }
-.product-download:hover { background:color-mix(in srgb,var(--mark-ink-dark) 85%,transparent); }
-.product-docs { background:color-mix(in srgb,var(--mark-ink-dark) 6%,transparent); }
-.product-docs:hover { background:color-mix(in srgb,var(--mark-ink-dark) 12%,transparent); }
+.product-download { background:var(--action-ink); color:var(--action-on-ink); }
+.product-download:hover { background:color-mix(in srgb,var(--action-ink) 85%,transparent); }
+.product-docs { background:color-mix(in srgb,var(--action-ink) 6%,transparent); }
+.product-docs:hover { background:color-mix(in srgb,var(--action-ink) 12%,transparent); }
 .product-installations { width:min(100%,calc(var(--list-w)*2)); display:flex; flex-direction:column; align-items:center; gap:var(--gap-pane); }
 .product-platforms { position:relative; z-index:3; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:var(--gap-base); width:min(100%,calc(var(--list-w)*1.4)); }
 .platforms-title { grid-column:1/-1; text-align:center; font-size:var(--text-read); font-weight:500; color:color-mix(in srgb,var(--mark-ink-light) 75%,transparent); }
@@ -131,14 +131,12 @@ a.platform-option:hover { background:color-mix(in srgb,var(--mark-ink-light) 10%
 .story-steps button { display:grid; place-items:center; width:var(--touch); height:var(--touch); border:0; padding:0; background:none; cursor:pointer; }
 .story-steps button span { height:var(--gap-xxs); width:var(--gap-xxs); border-radius:var(--radius-full); background:var(--secondary); opacity:.6; transition:width var(--dur-240),opacity var(--dur-240); }
 .story-steps [aria-current] span { width:var(--gap-group); opacity:1; }
-.download-section h2 { font-size:var(--story-heading); font-weight:550; line-height:1.12; text-wrap:balance; }
-.download-section { padding:calc(var(--gap-pane)*4) var(--gap-base) calc(var(--gap-pane)*5); display:flex; align-items:center; flex-direction:column; gap:var(--gap-pane); text-align:center; }
+.download-section > h2 { font-size:var(--story-heading); font-weight:550; line-height:1.12; text-wrap:balance; }
+.download-section { padding:calc(var(--gap-pane)*4) var(--story-gutter) calc(var(--gap-pane)*5); display:flex; align-items:center; flex-direction:column; gap:var(--gap-pane); text-align:center; }
 .download-description { font-size:var(--text-read); color:var(--secondary); }
 .download-section > img { width:var(--avatar-xl); height:var(--avatar-xl); }
-.download-main { background:var(--ink); color:var(--canvas); border-radius:var(--radius-full); padding:var(--gap-row) var(--gap-pane); font-size:var(--text-read); }
-.download-action-group { display:flex; flex-direction:column; align-items:center; gap:var(--gap-row); }
-.other-downloads { color:var(--secondary); }
-.other-downloads:hover { text-decoration:underline; }
+.download-section > .product-actions { --action-ink:var(--ink); --action-on-ink:var(--canvas); margin-top:0; justify-content:center; }
+.download-section > .product-installations { margin-top:var(--gap-pane); }
 .install-line { display:flex; align-items:center; gap:var(--gap-base); max-width:100%; border-bottom:var(--hair) solid var(--hairline); padding-block:var(--gap-row); }
 .install-line code { overflow:auto; font-size:var(--text-mono); text-align:left; white-space:nowrap; }
 .install-line button { min-width:var(--touch); min-height:var(--touch); border:0; background:none; font-size:var(--text-callout); cursor:pointer; white-space:nowrap; }

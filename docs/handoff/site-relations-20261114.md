@@ -97,3 +97,12 @@ Task／Result 标签采用按实际字宽留缺口的路径遮罩，窗口变化
 验证：demo 类型检查与构建通过，定向 motion/download TypeScript 通过；10 页静态构建通过。headless Chrome 检查 10 个站点路由、机器／额度／工作区／会话的可达页面，正文和 title/aria-label/placeholder 均无中文残留；390px 与 1440px 两幕增强光流以及调用抵达前不点亮通过。320／390／1440 首屏无横向溢出，320px 品牌与导航间有约 14.5px 空隙。手机仅使用透明首图策略不变；未声称本轮做过真 iPhone 性能验证。
 
 证据：`/Volumes/disk0/Khor/evidence/site-story-20261114/english-flow/`；产物：`/Volumes/disk0/Khor/artifacts/site-story-20261114-english-flow`。
+
+
+## 同日统一收尾下载区（当前）
+
+用户要求最后一页复用首屏下载，并将标题改为 **Build with Khor**。首尾共用 `ProductActions.astro`（Download / Docs）与 `ProductInstallations.astro`（五个平台、可用性、Coming soon、CLI 安装命令及复制反馈）。移除收尾独立的下载文案、版本注释和旧安装行。收尾保留黑底和原有图标／说明，按钮只按背景反转配色。首屏 GUI 与 Fog 不重复加载。
+
+组件以 hero / download 前缀隔离 DOM 标签、tooltip 与复制目标；平台 SVG 通过既有 ConceptMark 隔离 mask ID，避免复用后互相引用。平台提示脚本由共享安装组件挂载，Astro 去重，只安装一次。
+
+验证：headless Chrome 在 320／390／768／1440px 核对首尾操作链接、按钮尺寸、平台与命令一致，无重复 ID 和横向溢出。手机两处复制均写入正确命令，提示可打开／关闭，截图已审视；十页静态构建及 diff 检查通过。证据 `site-story-20261114/shared-downloads/`，产物 `site-story-20261114-shared-downloads`。仅本地，未发布。

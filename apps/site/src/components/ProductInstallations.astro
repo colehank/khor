@@ -1,0 +1,33 @@
+---
+import {sitePath} from '../paths';
+import {supportedDevices} from '../../../gui/dev/site/identity-marks';
+import CopyButton from './CopyButton.astro';
+import ConceptMark from './concepts/ConceptMark.astro';
+import {release} from '../releases';
+import {INSTALL} from '../site';
+interface Props {prefix:string;}
+const {prefix}=Astro.props;
+const platforms=supportedDevices.map(platform=>{
+  const id=platform.name.toLowerCase();
+  const available=release.downloads.some(item=>item.platform.toLowerCase().startsWith(id));
+  return {...platform,id,available};
+});
+const titleId=`${prefix}-platforms-title`,commandId=`${prefix}-install`;
+---
+<div class="product-installations">
+  <h2 class="platforms-title" id={titleId}>Other ways to get Khor</h2>
+  <nav class="product-platforms" aria-labelledby={titleId}>
+    {platforms.map(platform=>platform.available?
+      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'Install the Linux CLI':'Install the macOS app or CLI'}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
+      <button class="platform-option" type="button" data-unavailable aria-label={`${platform.name} availability`} aria-describedby={`${prefix}-platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" id={`${prefix}-platform-${platform.id}-soon`}>Coming soon</span></button>
+    )}
+  </nav>
+  <div class="product-cli">
+    <p class="cli-label">or <span>Khor CLI</span></p>
+    <CopyButton class="cli-command" target={commandId} label="Copy the Khor CLI install command"><code id={commandId}>{INSTALL}</code></CopyButton>
+  </div>
+</div>
+<script>
+  import {mountPlatformHints} from '../scripts/platform-hints';
+  mountPlatformHints();
+</script>

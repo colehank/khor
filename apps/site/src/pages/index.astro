@@ -5,9 +5,10 @@ import Mandala from "../components/Mandala.astro";
 import ProductHero from "../components/ProductHero.astro";
 import ProductTour from "../components/ProductTour.astro";
 import SiteNav from "../components/SiteNav.astro";
-import CopyButton from "../components/CopyButton.astro";
+import ProductActions from '../components/ProductActions.astro';
+import ProductInstallations from '../components/ProductInstallations.astro';
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
-import { INSTALL, REPO } from "../site";
+import { REPO } from "../site";
 import "../styles/story.css";
 const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But", "one mind"], ["How about", "letting them\nwork together?"], ["Meet", "Khor"]];
 ---
@@ -28,9 +29,9 @@ const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But",
     </section>
     <ProductTour />
     <section class="download-section" id="download" aria-labelledby="download-title">
-      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Work with Khor</h2><p class="download-description">Start with the device in front of you</p>
-      <div class="download-action-group"><a class="download-main" href={sitePath("/download/")} data-device-download><span data-download-label>Download Khor</span></a><p class="download-note">Preview · macOS app · Linux / macOS CLI</p></div><a class="other-downloads" href={sitePath("/download/")}>All downloads and installation options</a>
-      <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div>
+      <img src={icon.src} alt="" width="96" height="96" /><h2 id="download-title">Build with Khor</h2><p class="download-description">Start with the device in front of you</p>
+      <ProductActions />
+      <ProductInstallations prefix="download" />
     </section>
   </main>
   <footer class="story-footer"><a class="parent-brand" href="https://www.kapestack.top">kapestack</a><span>Khor · Work across your devices and agents</span><nav><a href={sitePath("/docs/")}>Docs</a><a href={REPO}>GitHub</a></nav></footer>
