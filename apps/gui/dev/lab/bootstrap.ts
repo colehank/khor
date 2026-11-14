@@ -106,7 +106,8 @@ if (theme && ['light', 'dark', 'auto'].includes(theme)) localStorage.setItem('kh
 // Enter through the actual list action; no alternative React tree, layout or gesture host.
 if (runtime.mode === 'frontend' && scene.row) {
   const enter = () => {
-    if (document.querySelector('[data-session-screen]')) {observer.disconnect();return;}
+    // A restored/default conversation can paint before the requested row.
+    // Enter this scene through its own row, rather than accepting any detail.
     const row = [...document.querySelectorAll<HTMLElement>('[data-list] [data-row-open]')].find(el => el.closest('[data-row]')?.getAttribute('data-row')===scene.session);
     if (row) {row.click();observer.disconnect();}
   };
