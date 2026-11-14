@@ -9,12 +9,11 @@ const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'files'},{id:'linux',name:'Codex',mark:'Codex',resource:'Web',icon:'web'}] as const;
-const description=agent?'You are outside KhorNet, with a Task sent to Khor and a Result returned. Khor connects to Claude Code and files on the workstation, and to Codex, Terminal and Web on Server. The laptop and Mobile remain part of the same network. All relationships stay visible; only small activity marks and connections softly pulse.':'A laptop and Mobile form one access group labelled You and Same task. This shared task connects to Claude Code and files on the remote workstation, and to Codex, Terminal and Web on Server. Sessions and resources stay on their hosts. The whole relationship is always visible; only small activity marks and connections softly pulse.';
+const description=agent?'You are outside KhorNet, with a Task sent to Khor and a Result returned. Khor connects to Claude Code and files on the workstation, and to Codex and Web on Server. The laptop and Mobile remain part of the same network. All relationships stay visible; only small activity marks and connections softly pulse.':'A laptop and Mobile form one access group labelled You and Same task. This shared task connects to Claude Code and files on the remote workstation, and to Codex and Web on Server. Sessions and resources stay on their hosts. The whole relationship is always visible; only small activity marks and connections softly pulse.';
 ---
 <figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group)`}>
   <NetworkGraph prefix={mode} infrastructure={false} externalUser={agent} title={agent?'Delegate a task to Khor and receive its result':'One task, accessible from a laptop or Mobile'} {description}>
     <Fragment slot="clearances">
-      {hosts.map(({id})=><rect data-relation-cut={id} x={g.nodes[id].x-75} y={g.nodes[id].y+49} width="150" height="32" fill="black"/>)}
       {agent&&<rect data-relation-result-cut x={g.resultLabel.x-50} y={g.resultLabel.y-25} width="100" height="32" fill="black"/>}
     </Fragment>
     <g slot="routes" class="relation-connections" aria-hidden="true">
@@ -48,18 +47,13 @@ const description=agent?'You are outside KhorNet, with a Task sent to Khor and a
       {hosts.map(({id,name,mark,resource,icon})=><g data-relation-at={id} transform={`translate(${g.nodes[id].x} ${g.nodes[id].y})`}>
         <g class="relation-badge" transform="translate(28 -28)">
           <circle r="15"/><circle class={`relation-status relation-pulse relation-${id}`} r="18"/>
-          <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
+          <svg x="-10" y="-10" width="20" height="20"><title>{name}</title><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
         </g>
-        <text class="relation-name" x="0" y="72" text-anchor="middle">{name}</text>
         <g class="relation-badge" transform={id==='linux'?'translate(-28 -28)':'translate(28 28)'}>
           <circle r="15"/>
           <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(icon)} x={0} y={0} size={20} prefix={`${mode}-${id}-resource`}/></svg>
           <text class="relation-resource" x={id==='linux'?-22:22} y="6" text-anchor={id==='linux'?'end':'start'}>{resource}</text>
         </g>
-        {id==='linux'&&<g class="relation-terminal" data-relation-terminal transform={`translate(${g.terminal.x} ${g.terminal.y})`}>
-          <svg x="-49" y="-15" width="18" height="18"><ConceptMark svg={glyph('terminal')} x={0} y={0} size={18} prefix={`${mode}-terminal`}/></svg>
-          <text x="-23" y="0">Terminal</text>
-        </g>}
       </g>)}
       {agent?<>
         <g class="relation-user" data-relation-at="you" transform={`translate(${g.nodes.you.x} ${g.nodes.you.y})`}><circle r="28"/><text x="0" y="6" text-anchor="middle">You</text></g>

@@ -43,5 +43,5 @@ export function capabilityGeometry(compact:boolean,agent=false) {
   const result=curve(port(khor,resultC1,33),resultC1,resultC2,port(nodes.you,resultC2,35));
   const taskLabel={x:(nodes.you.x+khor.x)/2+14,y:nodes.you.y-20};
   const resultLabel={x:(nodes.you.x+khor.x)/2-25,y:khor.y+(compact?36:18)};
-  return {nodes,access,accessPath,origin,routes,request,result,taskLabel,resultLabel,terminal:{x:compact?22:0,y:100}};
+  return {nodes,access,accessPath,origin,routes,request,result,taskLabel,resultLabel};
 }

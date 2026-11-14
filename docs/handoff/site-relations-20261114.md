@@ -40,3 +40,8 @@
 - Claude Code／Codex 名称提高到正文主层级，资源说明保留次级墨；补充平板字号，You／Task／Result 统一字重
 
 证据 `site-story-20261114/relations-polish/`：320／390／768／1440px 文字与连线避让、无溢出、唯一 SVG ID、静态几何、仅 opacity 动效与离屏暂停通过；最终接点调整另检查 390／1440px Agent。定向 TypeScript、diff 检查和十页 Astro 静态构建通过，产物 `site-story-20261114-relations-polish`。仅 headless Chrome、本地预览，没有部署。
+
+
+## 同日文字精简（当前）
+
+用户要求更简洁：两幕移除 Codex／Claude Code 的重复文字，保留原始厂商图标和无障碍说明；删除含义不清的独立 Terminal 图标／文字。File／Web 和 You／Same task／Task／Result 保留。同步移除旧文字遮罩、定位与 CSS，避免无文字处还留超边缺口。手机／宽屏 headless Chrome 查看无页面错误、无横向溢出，定向 TypeScript 通过。证据 `site-story-20261114/clean-labels/`；仅本地。
