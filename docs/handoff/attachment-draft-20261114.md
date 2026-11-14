@@ -2,6 +2,10 @@
 
 User approved the current Lab layout and interaction (「可以，定了吧」). Keep this as the chosen attachment direction. This accepts the Lab design; native integration, Khor/MachineChat adapter alignment, physical-device acceptance and main/release remain outstanding as recorded below. Do not reopen the design or infer ship authorization from this acceptance.
 
+## Added remaining item — Codex/Claude ACP versus their own GUI
+
+User added: investigate Codex ACP and Claude ACP versus their respective first-party GUI experiences and decide whether Khor needs both forms. This is a pending investigation, not an established equivalence or removal decision. Trace the actual Khor creation entries and adapters first, distinguishing the vendor GUI, native CLI/PTY and ACP-backed GUI paths. Check current primary documentation and installed versions; compare engine/process, account/authentication, available models, tools and permissions, capability discovery, context ownership, history/resume and delegated sessions. Revisit the earlier capability-read failures and successful independent Codex session as concrete cases. Deliver a clear keep-both / unify-entry / remove-duplicate recommendation with any capability loss or compatibility cost; implementation follows that conclusion.
+
 # Current — shared content surfaces and pill face seats (2026-11-14)
 
 Full App Lab: http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Pinned full App: http://127.0.0.1:23961/snapshots/73d09a9ee853c2e3/app?scene=terminal&machines=3 . Phone/Air borrow through MacLab; no Storybook frame.
