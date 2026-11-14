@@ -4,8 +4,12 @@
 
 - Worktree：`/Volumes/disk0/Khor/worktrees/current/khor-site-story`
 - Branch：`feat/site-story`；基线 `97bbf2a4e036f1a334c9921961d3d0b283f46c59`
-- 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新英文内容缓存后启动 PID 83220）
+- 预览：`http://127.0.0.1:23820`，Astro dev daemon（本轮刷新导航样式缓存后启动 PID 78574）
 - 用户 main 的 handoff 改动与未跟踪 lab-preview、23950/23961 的现有 Lab 和用户 App 均保留。
+
+## 最新增量 · 导航彩色简化品牌（2026-11-14）
+
+用户批准导航专用彩色版。32px Khor 标记改用既有小尺寸几何，内外环、菱形、五颗节点齐全，结构随导航变深浅，内环与节点保留品牌绿，无滤镜／渐变／背景。默认完整玻璃图仍用于文档与收尾。手机／宽屏、浅深色预览与十页构建通过，仅本地。
 
 ## 最新增量 · 三项导航（2026-11-14）
 

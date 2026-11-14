@@ -15,7 +15,7 @@ const links=[
 ] as const;
 ---
 <header class="story-nav" data-over-hero={home?true:undefined}>
-  <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} aria-label="Khor home"><BrandIcon prefix="nav-brand" size={32}/><span>Khor</span></a>
+  <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} aria-label="Khor home"><BrandIcon prefix="nav-brand" size={32} variant="navigation"/><span>Khor</span></a>
   <nav aria-label="Main navigation">
     {links.map(({id,label,href})=><a class={`nav-${id}`} {href} aria-label={label} aria-current={current===id?'page':undefined} data-device-download={id==='download'?true:undefined}>
       <ConceptMark svg={navigationMarks[id]} x={0} y={0} size={22} prefix={`nav-${id}`}/>

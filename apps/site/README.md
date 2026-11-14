@@ -19,6 +19,7 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 改官网文案、动效和 CSS 后由 Astro 自动刷新；仅修改演示数据或 App 组件时重跑
 `demo:build`。`demo:check` 检查演示与生产前端类型；`npm run build` 先打包演示再输出静态站。
 
+- 导航的 Khor 标记使用 `BrandIcon variant="navigation"`：复用 `mandala-glyph.svg` 已通过的小尺寸几何，保留外圆、菱形、内环与五颗节点。结构使用导航当前文字色，内环与节点使用 `lq2` 和当前文字色混合出的品牌绿；透明底、无滤镜、无渐变，保持 32px。默认 glass 变体仍是完整玻璃图稿，用于文档品牌和下载收尾。
 - `BrandIcon.astro` 直接使用完整 App SVG 的实体图标层，保留全部玻璃、菱形、节点、阴影与 21 个渐变定义，只去掉黑色底板和环境背景，透明区域是真 alpha。导航、文档品牌与收尾使用同一组件并隔离 SVG ID。导航 Khor 标记按用户最新要求放大至 32px，右侧四个导航图标统一 22px，点击区仍为 44px。页脚统一为 Presented by NeuroAI Innovation Team / KapeStack，团队名链接已确认的 GitHub org `https://github.com/AI-innovation-team`，KapeStack 链接公司主页。
 - `SiteNav.astro` 的右侧统一为 Docs / Download / GitHub 三个图标，全部使用 44px 点击区域、无单独下载胶囊，悬停与键盘聚焦显示名称。前两个采用 Phosphor Regular 的打开的书／下载托盘，22px 同一套线性字形；GitHub 使用 primer/octicons 的 MIT 品牌图稿，与其余右侧导航统一为 22px（`src/assets/github.svg` 与旁边许可证）。网站导航图稿单独存于 `src/assets/navigation`，含固定上游版本、来源与 MIT 许可，不引入运行时依赖。仓库入口只放导航最右侧，页脚和文档工具行不重复放置；左侧仍为 icon + Khor。
 - 首屏与收尾通过 `ProductActions.astro` 和 `ProductInstallations.astro` 共用 Download / Docs、平台图标、可用状态与 CLI 安装命令。Download 带访问设备的平台图标，Docs 带文件字形；移动设备区分 iOS / Android，未知平台用笔记本字形。收尾标题为 Build with Khor，采用黑底对应的亮色下载按钮；组件实例使用 hero / download 前缀隔离标签、tooltip、复制目标和 SVG mask ID。平台推荐逻辑仍来自同一个 download 模块，复杂度不因收尾增加。

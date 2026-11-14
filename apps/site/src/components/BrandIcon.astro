@@ -1,8 +1,9 @@
 ---
 import artwork from '../../../gui/src-tauri/icons/src/mandala-glass.svg?raw';
+import smallMark from '../../../gui/src-tauri/icons/src/mandala-glyph.svg?raw';
 import ConceptMark from './concepts/ConceptMark.astro';
-interface Props {prefix:string;size?:number;}
-const {prefix,size=22}=Astro.props;
+interface Props {prefix:string;size?:number;variant?:'glass'|'navigation';}
+const {prefix,size=22,variant='glass'}=Astro.props;
 // The same physical artwork layer used by the icon story. Keep its glass,
 // light, pearls and optical transform; omit the app tile and ambient ground.
 const definitions=artwork.match(/<defs>[\s\S]*?<\/defs>/)?.[0];
@@ -10,8 +11,15 @@ const material=artwork.match(/<g transform="translate\(2\.6 \.88\) scale\(\.9922
 if(!definitions||!material)throw new Error('The canonical Khor icon layer contract has changed');
 const transparent=`<svg viewBox="64 64 896 896" xmlns="http://www.w3.org/2000/svg">${definitions}${material}</svg>`;
 ---
-<span class="brand-icon" aria-hidden="true"><ConceptMark svg={transparent} x={0} y={0} {size} {prefix}/></span>
+<span class:list={['brand-icon',{'brand-icon-navigation':variant==='navigation'}]} aria-hidden="true"><ConceptMark svg={variant==='navigation'?smallMark:transparent} x={0} y={0} {size} {prefix}/></span>
 <style>
   .brand-icon { display:inline-flex; flex:none; vertical-align:middle; }
   .brand-icon :global(svg) { display:block; }
+  /* The accepted small-size geometry already strengthens the rings and nodes.
+     Use ink for structure and a single green for identity, with no light layers. */
+  .brand-icon-navigation { --symbol-green:color-mix(in srgb,var(--lq2) 72%,currentColor); }
+  .brand-icon-navigation :global(g[fill="none"] > circle:first-child) { opacity:.8; }
+  .brand-icon-navigation :global(g[fill="none"] > path) { opacity:.45; }
+  .brand-icon-navigation :global(g[fill="none"] > circle:last-child) { stroke:var(--symbol-green); }
+  .brand-icon-navigation :global(g[fill="currentColor"]) { fill:var(--symbol-green); stroke:currentColor; stroke-width:18; stroke-opacity:.65; paint-order:stroke fill; }
 </style>
