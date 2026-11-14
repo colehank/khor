@@ -1,3 +1,4 @@
+import {checkKhorAttachments} from './khor-attachment-checks.mjs';
 import {checkAttachmentDraft} from './attachment-draft-checks.mjs';
 import {checkResourceFiles} from './resource-checks.mjs';
 import {checkLongHistory} from './history-checks.mjs';
@@ -473,6 +474,7 @@ try {
       browser=await (engine==='webkit'?webkit:chromium).launch({headless:engine!=='webkit'||process.env.QUALITY_HEADLESS!=='0'});
       for(const width of [1280,412,390,320]){results.push(await checkAttachmentDraft(browser,{port,report,engine,width}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
       results.push(await checkGuiExperience(browser,{port,report,engine}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      for(const width of [1280,390]){results.push(await checkKhorAttachments(browser,{port,report,engine,width}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
       await browser.close();browser=undefined;
     }
   } else if (process.env.LAB_CHECKS === 'glass-selection') {
@@ -525,6 +527,7 @@ try {
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
   results.push(await checkGuiExperience(browser,{port,report,engine:'chromium'}));
+  for(const width of [1280,390])results.push(await checkKhorAttachments(browser,{port,report,engine:'chromium',width}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium'}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium',mobile:true}));
   results.push(await checkWorkspaceSessions(browser,{port,report,engine:'chromium',mobile:true,khor:true}));
@@ -575,6 +578,7 @@ try {
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkGuiExperience(browser,{port,report,engine:'webkit'}));
+    for(const width of [1280,390])results.push(await checkKhorAttachments(browser,{port,report,engine:'webkit',width}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit'}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkWorkspaceSessions(browser,{port,report,engine:'webkit',mobile:true,khor:true}));

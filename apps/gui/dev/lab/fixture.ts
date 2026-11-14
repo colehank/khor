@@ -148,9 +148,14 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
     can_cancel:task.state==='waiting',can_retry:task.state==='failed'}));
   function agentAction(body: Record<string, any>) {
     if (body.action === "catalog") return view(providers);
+    if(body.action==='put_paths'){
+      const payload=body.payload??{};attachmentEvents.push({operation:'khor_put_paths',...payload,machine:modelConfig.home});
+      if(uploadMode==='fail')throw new FixtureRefusal('Controlled Khor attachment delivery failure');
+      return view((payload.paths??[]).map((path:string)=>String(payload.into??'/preview/khor-drop')+'/'+path.split('/').pop()));
+    }
     const p = body.payload ?? {};
     const models = labModels(modelAccounts.find(account=>account.id===(p.account??modelConfig.account))?.provider??'anthropic');
-    if(body.action==='prompt'){khorRunning=true;khorPrompt=String(p.text);later(()=>{khorRunning=false;},10000);return view();}
+    if(body.action==='prompt'){attachmentEvents.push({operation:'khor_prompt',session:p.session,text:p.text,machine:body.machine});khorRunning=true;khorPrompt=String(p.text);later(()=>{khorRunning=false;},10000);return view();}
     if(body.action==='stop'){khorRunning=false;khorApproval=null;return view();}
     if(body.action==='answer'&&p.run==='khor-preview-run'&&p.ask===khorApproval?.id){khorAnswers.push({ask:p.ask,allow:p.allow});khorApproval=null;khorRunning=false;return view();}
     if (body.action === "configure") { modelConfig = { home: body.machine, account: p.account, model: p.model,options:{thought_level:"medium",auto_compaction:true} }; return view(); }
