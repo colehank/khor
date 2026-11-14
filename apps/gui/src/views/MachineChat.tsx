@@ -299,7 +299,7 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
         <AgentCommandMenu id={commandMenuId} commands={choices} pick={pick} onPick={choose} />
-        <AttachmentDestination machine={attachmentMachine} into={into} onInto={setInto} busy={sending||attachments.busy}/>
+        {pending.length>0&&<AttachmentDestination machine={attachmentMachine} into={into} onInto={setInto} busy={sending||attachments.busy}/>}
         <AttachmentPicker viewport={dropBox} open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
           machine:attachmentMachine,cwd:null,into,onInto:setInto,filesOnly:true,selected:attachmentSources,add:attachments.addSources,
           remove:entry=>{const key=pendingKeyFor(entry);if(key)attachments.remove(key);},

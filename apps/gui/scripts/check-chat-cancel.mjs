@@ -58,8 +58,10 @@ async function run(engine, name) {
     await page.addInitScript(installChatCancelWire, {scenario, http});
     const attach = async selected => {
       const before = await page.locator('[data-chat-pending-file]').count();
+      const uploads = await page.evaluate(()=>window.__cancelWire.calls.filter(call=>call.cmd==='chat_put').length);
       await page.locator('[data-chat-file-input]').setInputFiles(selected);
-      await until(async () => await page.locator('[data-chat-pending-file][data-placed]').count() === before + selected.length, 'selected synthetic files landed');
+      await until(async () => await page.locator('[data-chat-pending-file]').count() === before + selected.length, 'selected files stay in the retained draft');
+      assert.equal(await page.evaluate(()=>window.__cancelWire.calls.filter(call=>call.cmd==='chat_put').length),uploads,'Selection does not upload before explicit Send');
     };
     const emit = async (frames, gone = false, change = {}) => {
       await until(() => page.evaluate(id => window.__cancelWire.polls.some(p => !p.done && p.id === id), session), 'a real poll is waiting for this receipt');
@@ -80,7 +82,7 @@ async function run(engine, name) {
         {name: 'tiny.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nJ0AAAAASUVORK5CYII=', 'base64')},
         {name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('synthetic file')},
       ]);
-      await until(async () => await page.locator('[data-chat-pending-file][data-placed]').count() === 2, 'both synthetic selected files landed');
+      assert.equal(await page.locator('[data-chat-pending-file]').count(),2,'Both files are retained before sending');
       await page.locator('[data-chat-send]').click();
       await until(() => page.evaluate(() => window.__cancelWire.sends.length === 1), 'real send reached production API');
       const sent = await page.evaluate(() => window.__cancelWire.sends[0].args);

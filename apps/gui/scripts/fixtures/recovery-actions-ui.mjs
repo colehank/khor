@@ -159,7 +159,10 @@ async function newTerminal(page) {
 async function holdPathDrop(page) {
   const index=await page.evaluate(()=>window.__recoveryWire.drops.length);
   await page.evaluate(index=>{window.__recoveryWire.holdDrop=true;const dt=new DataTransfer();dt.setData('application/x-khor-path',JSON.stringify({machine:null,path:'/fixture/controlled-file',token:'recovery-owned-drop-'+index}));document.querySelector('[data-terminal]').dispatchEvent(new DragEvent('drop',{dataTransfer:dt,bubbles:true,cancelable:true}));},index);
-  await until(()=>page.evaluate(index=>window.__recoveryWire.drops.length===index+1,index),'actual DOM path-drop entered real sender IO');
+  await page.clock.runFor(300);
+  assert.equal(await page.evaluate(()=>window.__recoveryWire.drops.length),index,'Path drop chooses files without starting IO');
+  await page.locator('[data-attachment-picker] [data-files-send]').click();
+  await until(()=>page.evaluate(index=>window.__recoveryWire.drops.length===index+1,index),'Explicit Send enters the real sender IO');
   return index;
 }
 

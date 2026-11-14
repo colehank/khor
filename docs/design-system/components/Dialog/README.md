@@ -39,7 +39,7 @@
 - 长编辑用 `initialHeight="large" maxHeight="large"`；选择默认中档到大档；短编辑适配内容。只有能拖动／改变高度的任务才显示抓手。
 - 标题、面、圆角、间距和控件高度用现有 tokens。桌面浮层 `popover`＋`float`＋`hairline`；手机任务底栏沿用 `background`、上沿线与 `menu-r`。遮罩统一 `sheet-scrim`。
 
-文件与目录这种持续浏览页面使用 `ContentOverlay` 组合现有 `TaskOverlay`：保留公共遮罩、抓手、焦点和手势，内容不再继承表单的横向与底部内边距。里面直接放正式 `FilePage`／`FilesPane`，由页面负责自己的内容边距和导航安全区。附件预览与机器目录使用同一个容器，避免预览再次缩窄。
+文件与目录这种持续浏览页面使用 `ContentOverlay` 组合现有 `TaskOverlay`：保留公共遮罩、抓手、焦点和手势，内容不再继承表单的横向与底部内边距。里面直接放正式 `FilePage`／`FilesPane`，由页面负责自己的内容边距和导航安全区。附件预览与机器目录使用同一个容器，避免预览再次缩窄。手机顶部为抓手保留完整 `--touch` 高度，第一条可点击内容不能进入抓手的点击区；这不增加横向或底部留白。
 
 `ContentDeck`／`ContentPill` 是现有会话内容底栏的公共行与药丸；工作区文件页也使用同一个药丸。头像放在 `PillFace` 的居中座位内，与 session 的 `DeckBand` 共用占位，不把头像本身直接贴到胶囊边缘。实际 App Lab 的附件流程检查预览完整内容宽度、头像座位、底栏对齐与终端尺寸保持。
 
