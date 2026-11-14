@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-14 后两幕改为固定关系图：笔记本／Mobile 是同一任务的访问组，远端常驻 Claude Code／File 和 Codex／Terminal／Web；Agent 幕的 You 在网外，通过 Task／Result 与超边上的 Khor 连接。仅细连接与活动环缓慢脉动，设备、文字与资源位置固定；旧阶段播放、移动载荷与 task-state 已删除。320／390／768／1440px headless Chrome、仅 opacity 动效、离屏暂停、减少动态效果、无 JS 与十页静态构建通过。最新继续入口为 [固定关系图](site-relations-20261114.md)，证据 `site-story-20261114/relations/`。本轮仅本地。
+
 - 2026-11-14 用户反馈两幕太快：当前改为各 20 秒，载荷移动 1.2 秒，文件／Web 生成后停 1 秒，四句提示均至少 2.4 秒；到达后执行的依赖与图形保持。手机 Work／宽屏 Agent 完整循环及静态构建通过，证据 `site-story-20261114/task-pacing/`，本轮仅本地。
 
 - 2026-11-14 本地两幕改为通用 Task：笔记本发对话、台式机运行 Claude 并产出 File、File 直传 Server、Codex 运行并提供 Web、手机接续访问；Khor 幕替用户发起同一流程。session 固定在执行设备，输入到达后才运行，文件／服务来源持续保留。标题及副文案同步用户确认版本，两幕各 10 秒。当前继续入口见 [Task 与远端 session](site-task-sessions-20261114.md)，证据 `site-story-20261114/task-sessions/`，本轮未发布。

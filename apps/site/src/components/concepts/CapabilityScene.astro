@@ -2,62 +2,61 @@
 import NetworkGraph from './NetworkGraph.astro';
 import ConceptMark from './ConceptMark.astro';
 import {supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
-import {workPhases,agentPhases,taskPackets,taskSessions} from './capability-data';
 import {capabilityGeometry} from '../../scripts/capability-geometry';
-import {taskState} from '../../scripts/task-state';
 import '../../styles/capability-scene.css';
 interface Props {mode:'work'|'agent'}
-const {mode}=Astro.props,isAgent=mode==='agent';
-const phases=isAgent?agentPhases:workPhases,initial=phases[phases.length-1];
-const initialState=taskState(phases,phases.length-1,initial.duration);
-const {nodes,userPath}=capabilityGeometry(false);
+const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
-const recipients=isAgent?['mac','linux','khor','you'] as const:['mac','linux','windows','phone'] as const;
-const description=isAgent?'You stay outside KhorNet and delegate a task to its boundary Khor Agent. Khor sends a dialogue request to Claude Code on the workstation. Claude produces a local file. Khor instructs Codex on Server and transfers the file directly from the workstation to Server. Once both inputs arrive, Codex runs and starts a local Web service. Khor returns the result and Web link to you. Sessions stay on their execution hosts.':'From a laptop, you send a dialogue request to Claude Code on a remote workstation. Claude runs there and produces a local file. You send the next request to Codex on Server; the file transfers directly from the workstation to Server. Codex runs only after both inputs arrive and starts a Web service on Server. You switch to Mobile, continue the same task and view the page served by Server. The laptop and Mobile are access devices; sessions stay on their execution hosts.';
+const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'files'},{id:'linux',name:'Codex',mark:'Codex',resource:'Web',icon:'web'}] as const;
+const description=agent?'You are outside KhorNet, with a Task sent to Khor and a Result returned. Khor connects to Claude Code and files on the workstation, and to Codex, Terminal and Web on Server. The laptop and Mobile remain part of the same network. All relationships stay visible; only small activity marks and connections softly pulse.':'A laptop and Mobile form one access group labelled You and Same task. This shared task connects to Claude Code and files on the remote workstation, and to Codex, Terminal and Web on Server. Sessions and resources stay on their hosts. The whole relationship is always visible; only small activity marks and connections softly pulse.';
 ---
-<figure class:list={['concept','concept-network','task-scene',`task-${mode}`]} data-concept={mode} data-task-stage="done" data-task-complete="true" data-task-ready="true" data-task-accepted="true" data-task-result="true" data-net-connection="p2p" style="--net-build:1">
-  <p class="task-goal">Task</p>
-  <NetworkGraph prefix={mode} infrastructure={false} externalUser={isAgent} title={isAgent?'Khor coordinates sessions across devices and returns the result':'Continue the same task through remote sessions, files and Web'} {description}>
+<figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style="--net-build:1">
+  <NetworkGraph prefix={mode} infrastructure={false} externalUser={agent} title={agent?'Delegate a task to Khor and receive its result':'One task, accessible from a laptop or Mobile'} {description}>
     <Fragment slot="clearances">
-      <rect data-task-user-cut x={isAgent?nodes.you.x-36:nodes.phone.x-36} y={isAgent?nodes.you.y-16:nodes.phone.y+49} width="72" height="33" fill="black"/>
-      {taskSessions.map(({device})=><rect data-task-session-cut={device} x={nodes[device].x-70} y={nodes[device].y+49} width="140" height="33" fill="black"/>)}
+      {hosts.map(({id})=><rect data-relation-cut={id} x={g.nodes[id].x-75} y={g.nodes[id].y+49} width="150" height="32" fill="black"/>)}
+      {agent&&<rect data-relation-result-cut x={g.resultLabel.x-50} y={g.resultLabel.y-25} width="100" height="32" fill="black"/>}
     </Fragment>
-    <g slot="routes" class="task-operation" aria-hidden="true">
-      {isAgent&&<path class="task-user-link" data-task-user-link d={userPath}/>}
-      <path class="task-route" data-task-route d="M0 0"/>
-      <g class="task-packet" data-task-packet opacity="0">
-        <circle r="14"/>
-        {taskPackets.map(name=><g data-task-payload={name}><svg x="-9" y="-9" width="18" height="18"><ConceptMark svg={glyph(name)} x={0} y={0} size={18} prefix={`${mode}-packet-${name}`}/></svg></g>)}
-      </g>
+    <g slot="routes" class="relation-connections" aria-hidden="true">
+      {!agent&&<path class="relation-access" data-relation-access d={g.accessPath}/>}
+      {g.routes.map(({id,d})=><g>
+        <path class="relation-wire" data-relation-route={id} d={d}/>
+        <path class:list={['relation-signal','relation-pulse',`relation-${id}`]} data-relation-route={id} d={d}/>
+      </g>)}
+      {agent&&<>
+        <defs><marker id={`${mode}-relation-arrow`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 2 L8 5 L2 8" class="relation-arrow"/></marker></defs>
+        <path class="relation-wire" data-relation-request d={g.request} marker-end={`url(#${mode}-relation-arrow)`}/>
+        <path class="relation-wire" data-relation-result d={g.result} marker-end={`url(#${mode}-relation-arrow)`}/>
+        <path class="relation-signal relation-pulse" data-relation-request d={g.request}/>
+        <path class="relation-signal relation-pulse relation-mac" data-relation-result d={g.result}/>
+      </>}
     </g>
-    <g slot="activity" class="task-activity">
-      {taskSessions.map(({device,name,mark})=><g data-task-session-at={device} transform={`translate(${nodes[device].x} ${nodes[device].y})`}>
-        <g class="task-session" data-task-session={device} data-session-state="done">
-          <circle class="task-progress-track" r="43"/>
-          <circle class="task-progress" data-task-progress r="43" pathLength="1" transform="rotate(-90)"/>
-          <g class="task-badge task-session-mark" transform="translate(28 -28)">
-            <circle r="15"/>
-            <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${device}-session`}/></svg>
-          </g>
-          <text class="task-runtime-label" x="0" y="72" text-anchor="middle">{name}</text>
+    <g slot="activity" class="relation-annotations">
+      {hosts.map(({id,name,mark,resource,icon})=><g data-relation-at={id} transform={`translate(${g.nodes[id].x} ${g.nodes[id].y})`}>
+        <g class="relation-badge" transform="translate(28 -28)">
+          <circle r="15"/><circle class={`relation-status relation-pulse relation-${id}`} r="18"/>
+          <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
         </g>
-      </g>)}
-      {isAgent&&<circle class="task-router-ring" data-task-router-ring cx={nodes.khor.x} cy={nodes.khor.y} r="27"/>}
-      {isAgent?
-        <g class="task-outsider" data-task-user transform={`translate(${nodes.you.x} ${nodes.you.y})`}><circle r="28"/><text x="0" y="6" text-anchor="middle">You</text></g>:
-        <g class="task-user" data-task-user transform={`translate(${nodes.phone.x} ${nodes.phone.y+70})`}><circle cx="-22" cy="-5" r="3"/><text x="-12" y="0">You</text></g>
-      }
-      {recipients.map(device=><g data-task-receipt-at={device} transform={`translate(${nodes[device].x} ${nodes[device].y})`}>
-        <g class="task-badge task-receipt" data-task-receipt={device} data-has-receipt={String(!!initialState.receipts[device])} transform={device==='phone'?'translate(28 -28)':device==='you'?'translate(23 23)':device==='khor'?'translate(-22 22)':device==='linux'?'translate(-28 28)':'translate(28 28)'}>
+        <text class="relation-name" x="0" y="72" text-anchor="middle">{name}</text>
+        <g class="relation-badge" transform={id==='linux'?'translate(-28 -28)':'translate(28 28)'}>
           <circle r="15"/>
-          {taskPackets.map(name=><g data-receipt-payload={name} data-visible={String(name===initialState.receipts[device])}><svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(name)} x={0} y={0} size={20} prefix={`${mode}-${device}-received-${name}`}/></svg></g>)}
-          {(device==='mac'||device==='linux')&&<text class="task-resource-label" data-task-resource-label x={device==='linux'?-22:22} y="6" text-anchor={device==='linux'?'end':'start'}>{device==='mac'?'File':'Web'}</text>}
+          <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(icon)} x={0} y={0} size={20} prefix={`${mode}-${id}-resource`}/></svg>
+          <text class="relation-resource" x={id==='linux'?-22:22} y="6" text-anchor={id==='linux'?'end':'start'}>{resource}</text>
         </g>
+        {id==='linux'&&<g class="relation-terminal" data-relation-terminal transform={`translate(${g.terminal.x} ${g.terminal.y})`}>
+          <svg x="-49" y="-15" width="18" height="18"><ConceptMark svg={glyph('terminal')} x={0} y={0} size={18} prefix={`${mode}-terminal`}/></svg>
+          <text x="-23" y="0">Terminal</text>
+        </g>}
       </g>)}
+      {agent?<>
+        <g class="relation-user" data-relation-at="you" transform={`translate(${g.nodes.you.x} ${g.nodes.you.y})`}><circle r="28"/><text x="0" y="6" text-anchor="middle">You</text></g>
+        <g data-relation-at="khor" transform={`translate(${g.nodes.khor.x} ${g.nodes.khor.y})`}><circle class="relation-router relation-pulse" r="27"/></g>
+        <text class="relation-request-label" data-relation-task-label transform={`translate(${g.taskLabel.x} ${g.taskLabel.y})`} text-anchor="middle">Task</text>
+        <text class="relation-request-label" data-relation-result-label transform={`translate(${g.resultLabel.x} ${g.resultLabel.y})`} text-anchor="middle">Result</text>
+      </>:<g class="relation-access-label" data-relation-access-label transform={`translate(${g.access.x} ${g.access.y})`}>
+        <text class="relation-you" x="0" y="-9" text-anchor="middle">You</text>
+        <text class="relation-shared" x="0" y="19" text-anchor="middle">Same task</text>
+      </g>}
     </g>
   </NetworkGraph>
-  <figcaption class="task-caption">
-    <div><span class="task-caption-check" aria-hidden="true"><ConceptMark svg={glyph('check')} x={0} y={0} size={18} prefix={`${mode}-result`}/></span><span data-task-caption>{initial.caption}</span></div>
-  </figcaption>
 </figure>
