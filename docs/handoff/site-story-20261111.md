@@ -9,7 +9,7 @@
 
 ## 最新增量 · 透明完整品牌与团队署名（2026-11-14）
 
-用户指定完整彩色 Khor 图标去背景，保留玻璃和光泽；导航标记放大到 32px，右侧导航统一 22px。文档品牌和收尾复用透明完整图。页脚 About us 署名 NeuroAI Innovation Team / KapeStack，公司名链接原主页。手机／宽屏及透明度验证、十页构建通过，详见 `site-relations-20261114.md` 最后一节，仅本地。
+用户指定完整彩色 Khor 图标去背景，保留玻璃和光泽；导航标记放大到 32px，右侧导航统一 22px。文档品牌和收尾复用透明完整图。页脚现为 Presented by NeuroAI Innovation Team / KapeStack，团队名链接已核实的 GitHub org AI-innovation-team，公司名链接原主页。手机／宽屏及透明度验证、十页构建通过，详见 `site-relations-20261114.md` 最后一节，仅本地。
 
 ## 最新增量 · 图标导航（2026-11-14）
 

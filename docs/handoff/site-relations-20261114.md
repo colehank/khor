@@ -138,3 +138,8 @@ headless Chrome 320／1440px 核对四个入口、尺寸、可访问名称、透
 导航、文档品牌与收尾均使用透明完整图。用户最后要求将导航 Khor 标记放大，最终为 32px；右侧四个图标统一 22px（GitHub 不再单独 20px），44px 点击区保留。彩色图标的外环本身是圆形，不加圆形黑底。页脚改为 About us，正文为 “Khor is built by NeuroAI Innovation Team / KapeStack”，公司名链接 https://www.kapestack.top；没有添加未经提供的团队背景或联系方式。
 
 验证：headless Chrome 320／1440px 查看首屏、导航与页脚，确认尺寸、无重复 ID、无横向溢出，Docs 页面两个品牌实例正常。完整实体层 40 项、五颗珠、21 个渐变均在；透明 PNG 四角 alpha=0、中心 alpha=255，玻璃与珠光保留。十页静态构建及 diff 通过。证据 `site-story-20261114/brand-about/`，产物 `site-story-20261114-brand-about`。仅本地。
+
+
+## 同日 Presented by 与 org 链接（当前）
+
+用户要求移除 About us，改成 Presented by NeuroAI Innovation Team / KapeStack，并让团队名跳转自己的 GitHub org。通过本机已登录 gh 查到 `AI-innovation-team` 的显示名确为 NeuroAI Innovation Team，链接到 `https://github.com/AI-innovation-team`；KapeStack 仍链接公司主页。页脚是一行署名，窄屏自然换行，没有单独 About us 标题或重复 built by。320／1440px headless Chrome 预览链接与排版正常，十页构建与 diff 通过。证据 `site-story-20261114/team-credit/`，产物 `site-story-20261114-team-credit`。仅本地。

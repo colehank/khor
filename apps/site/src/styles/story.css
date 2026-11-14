@@ -146,8 +146,7 @@ a.platform-option:hover { background:color-mix(in srgb,var(--mark-ink-light) 10%
 .download-note { color:var(--secondary); font-size:var(--text-callout); }
 .story-footer { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--gap-pane); padding:calc(var(--gap-pane)*2) var(--story-gutter); border-top:var(--hair) solid var(--hairline); font-size:var(--text-callout); color:var(--secondary); }
 .footer-about { min-width:0; }
-.footer-about h2 { font-size:var(--text-callout); font-weight:500; }
-.footer-about p { margin-top:var(--gap-in); max-width:60ch; color:var(--ink); font-size:var(--text-read); line-height:1.6; text-wrap:pretty; }
+.footer-about p { max-width:60ch; color:var(--ink); font-size:var(--text-read); line-height:1.6; text-wrap:pretty; }
 .footer-about a:hover { text-decoration:underline; text-underline-offset:.2em; }
 .story-footer nav { display:flex; gap:var(--gap-group); }
 .story-footer nav a { min-height:var(--touch); display:inline-flex; align-items:center; }
