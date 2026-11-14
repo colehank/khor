@@ -78,7 +78,7 @@ export function TermFiles({road,onClose,onSent}:{road:FilesRoad;onClose:()=>void
  const send=async()=>{if(road.busy||sending.current||!road.selected.length)return;sending.current=true;setError(null);try{if(await road.send(road.selected,road.into)){if(mounted.current)finish(true);}else if(mounted.current)setError('附件未能发送，已保留所选文件，可重试');}catch(e){if(mounted.current)setError(said(e));}finally{sending.current=false;}};
  return <>
  {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height}} className="fixed inset-x-0 bottom-0 z-40 flex min-h-0 flex-col border-t bg-background px-row pb-safe-bottom shadow-(--shadow-float) sm:left-auto sm:right-row sm:w-dialog" onKeyDown={e=>{if(e.key==='Escape'&&!road.busy){e.preventDefault();finish();}}}>
-  <div data-files-actions className="flex min-h-touch flex-none items-center justify-between">
+  <div data-files-actions className="flex min-h-touch flex-none items-center justify-between py-xxs">
    <Button data-files-cancel variant="ghost" className="min-h-touch" disabled={road.stopping} onClick={()=>road.busy?road.cancel():finish()}>{road.busy?'取消传输':'取消'}</Button>
    <Button data-files-send variant="primary" className={road.selected.length?"min-h-touch":"min-h-touch bg-fill text-muted-foreground"} disabled={road.busy||picking||!road.selected.length} onClick={()=>void send()}>{road.busy?'正在发送':`发送${road.selected.length?' ('+road.selected.length+')':''}`}</Button>
   </div>
@@ -141,7 +141,7 @@ function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,fi
 export function AttachmentDestination({machine,into,onInto,busy=false}:{machine:string|null;into:string|null;onInto:(path:string|null)=>void;busy?:boolean}){
  const [target,setTarget]=useState<DeviceRow|null>(null);
  useEffect(()=>{let live=true;void fetchDevices().then(rows=>{if(live)setTarget(rows.find(row=>machine?row.name===machine:row.me)??null);},()=>{});return()=>{live=false;};},[machine]);
- return <SendInto machine={machine??''} name={target?.name??machine??''} into={into} onInto={onInto} render={({path,pick,reset})=><div data-attachment-destination className="flex w-full min-w-0 flex-none items-center gap-in border-t py-in">
+ return <SendInto machine={machine??''} name={target?.name??machine??''} into={into} onInto={onInto} render={({path,pick,reset})=><div data-attachment-destination className="flex w-full min-w-0 flex-none items-center gap-in border-t">
   {target&&<MachineAvatar face={target.face} className="size-kind-mark flex-none"/>}
   <div className="min-w-0 flex-1" title={path}>
    <p data-send-to-machine className="truncate text-callout"><span className="text-muted-foreground">发送到 </span>{target?.shown??machine??'会话所在机器'}</p>
