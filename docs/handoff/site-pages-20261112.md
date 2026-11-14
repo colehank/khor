@@ -2,6 +2,18 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
+## 2026-11-14 更新已发布（当前）
+
+用户明确要求「部署吧」，已沿用既有本地构建 → gh-pages 静态快照 → GitHub Pages 流程发布，没有合并 main。
+
+- 网站：<https://khor.cloud/>；UI 源码 `bdb29937a03b0efd2e624af53e75a49483e92f69`，静态发布提交 `70c6b2e87b74d57c45d64c5cd95dee99f377851b`
+- [Pages run 43593164300](https://github.com/colehank/khor/actions/runs/43593164300) success；公开 build.json 已返回该源码版本
+- 这轮发布包含固定关系图及完整往返光流、全英文网站／GUI 及真实浅深首图、首尾共用安装区、带图标的下载／文档按钮、三项图标导航、32px 彩色简化 Khor 品牌、透明完整收尾图，以及 Presented by NeuroAI Innovation Team / KapeStack 的 org／官网链接。App／CLI 安装版本仍为既有 `v0.2.0-rc.12`
+- 按根域参数完整构建（包含真实 GUI 演示），10 页完成；145 个本地 HTML 资源与站内链接无缺失。严格静态服务器下核对英文网站、生产演示与彩色标记，无资源／页面错误
+- 普通 https://khor.cloud/ 访问返回最新页面；390／1440px headless Chrome 检查三项导航、彩色品牌、团队 org 链接、下载页、两幕原生动画和增强光流正常，无溢出、页面或 HTTP 资源错误。手机仅首图、桌面 GUI 正常启动。线上 build.json、GUI HTML、install.sh 与发布产物逐字节一致，未执行安装器
+- 普通快进推送 gh-pages；CNAME、Cloudflare DNS 和 HTTPS 配置沿用。Pages source 仍为 gh-pages /，https_enforced=true。临时 23822 静态检查服务器已停止，23820 开发预览保留
+- 产物：`/Volumes/disk0/Khor/artifacts/site-pages-20261114/dist`；证据：`/Volumes/disk0/Khor/evidence/site-pages-20261114/`，含构建、链接审计、Pages 收据、公开版本／文件校验、两档 Chrome 检查和截图。发布 checkout 仍为 `site-pages-20261112/publish`
+
 ## 2026-11-13 更新已发布
 
 用户明确要求「部署出去」，已将当前网站发布到既有 `gh-pages` 分支，源码分支未合并 main。
