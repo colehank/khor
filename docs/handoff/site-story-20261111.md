@@ -20,6 +20,8 @@
 
 ## 本轮实现与验证
 
+- 2026-11-14 固定关系图视觉精修：后两幕设备／角标统一中性表面层次、细边与连接接点，会话名称和资源说明拉开主次，平板补充字号；Khor 路径从设备上方接入以避开角标。固定构图和局部 opacity 脉动保留。定向 headless Chrome 与十页静态构建通过，证据 `site-story-20261114/relations-polish/`，详见 [固定关系图](site-relations-20261114.md)。本轮仅本地。
+
 - 2026-11-14 后两幕改为固定关系图：笔记本／Mobile 是同一任务的访问组，远端常驻 Claude Code／File 和 Codex／Terminal／Web；Agent 幕的 You 在网外，通过 Task／Result 与超边上的 Khor 连接。仅细连接与活动环缓慢脉动，设备、文字与资源位置固定；旧阶段播放、移动载荷与 task-state 已删除。320／390／768／1440px headless Chrome、仅 opacity 动效、离屏暂停、减少动态效果、无 JS 与十页静态构建通过。最新继续入口为 [固定关系图](site-relations-20261114.md)，证据 `site-story-20261114/relations/`。本轮仅本地。
 
 - 2026-11-14 用户反馈两幕太快：当前改为各 20 秒，载荷移动 1.2 秒，文件／Web 生成后停 1 秒，四句提示均至少 2.4 秒；到达后执行的依赖与图形保持。手机 Work／宽屏 Agent 完整循环及静态构建通过，证据 `site-story-20261114/task-pacing/`，本轮仅本地。

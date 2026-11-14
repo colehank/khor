@@ -14,12 +14,16 @@ export function capabilityGeometry(compact:boolean,agent=false) {
   const access={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
   const accessPath=`M ${pair(offset(a,1))} L ${pair(offset(b,1))} A ${radius} ${radius} 0 0 0 ${pair(offset(b,-1))} L ${pair(offset(a,-1))} A ${radius} ${radius} 0 0 0 ${pair(offset(a,1))} Z`;
   const origin={x:access.x+radius*d/dy,y:access.y};
+  const workEnds={
+    linux:{x:nodes.linux.x+networkNodeRadius+5,y:nodes.linux.y},
+    mac:port(nodes.mac,compact?{x:280,y:368}:{x:650,y:360},networkNodeRadius+5),
+  };
   const workRoutes=compact?{
-    linux:curve(origin,{x:345,y:345},{x:370,y:220},{x:nodes.linux.x+53,y:nodes.linux.y}),
-    mac:curve(origin,{x:242,y:365},{x:280,y:368},port(nodes.mac,{x:280,y:368},networkNodeRadius+19)),
+    linux:curve(origin,{x:345,y:345},{x:370,y:220},workEnds.linux),
+    mac:curve(origin,{x:242,y:365},{x:280,y:368},workEnds.mac),
   }:{
-    linux:curve(origin,{x:570,y:360},{x:580,y:185},{x:nodes.linux.x+53,y:nodes.linux.y}),
-    mac:curve(origin,{x:490,y:405},{x:650,y:360},port(nodes.mac,{x:650,y:360},networkNodeRadius+19)),
+    linux:curve(origin,{x:570,y:360},{x:580,y:185},workEnds.linux),
+    mac:curve(origin,{x:490,y:405},{x:650,y:360},workEnds.mac),
   };
   const routerStart={x:khor.x,y:khor.y+27};
   const controls=compact?{
@@ -29,7 +33,9 @@ export function capabilityGeometry(compact:boolean,agent=false) {
   };
   const routes=(['linux','mac'] as const).map(id=>{
     const [c1,c2]=controls[id];
-    return {id,d:agent?curve(routerStart,c1,c2,port(nodes[id],c2,networkNodeRadius+19)):workRoutes[id]};
+    // Meet the device above its face, clear of the two corner badges.
+    const end=agent?{x:nodes[id].x,y:nodes[id].y-networkNodeRadius-5}:workEnds[id];
+    return {id,end,d:agent?curve(routerStart,c1,c2,end):workRoutes[id]};
   });
   const requestC1={x:nodes.you.x+80,y:nodes.you.y-12},requestC2={x:khor.x+10,y:nodes.you.y+20};
   const resultC1={x:khor.x-90,y:khor.y+8},resultC2={x:nodes.you.x-8,y:nodes.you.y+65};
@@ -37,5 +43,5 @@ export function capabilityGeometry(compact:boolean,agent=false) {
   const result=curve(port(khor,resultC1,33),resultC1,resultC2,port(nodes.you,resultC2,35));
   const taskLabel={x:(nodes.you.x+khor.x)/2+14,y:nodes.you.y-20};
   const resultLabel={x:(nodes.you.x+khor.x)/2-25,y:khor.y+(compact?36:18)};
-  return {nodes,access,accessPath,routes,request,result,taskLabel,resultLabel,terminal:{x:compact?22:0,y:100}};
+  return {nodes,access,accessPath,origin,routes,request,result,taskLabel,resultLabel,terminal:{x:compact?22:0,y:100}};
 }

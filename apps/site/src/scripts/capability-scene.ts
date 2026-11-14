@@ -11,7 +11,10 @@ export function mountCapabilityScene(figure:HTMLElement) {
     const g=capabilityGeometry(compact.matches,agent);
     for(const element of figure.querySelectorAll<SVGElement>('[data-relation-at]'))translate(element,g.nodes[element.dataset.relationAt as keyof typeof g.nodes]);
     translate(find('[data-relation-terminal]'),g.terminal);
-    for(const {id,d} of g.routes)for(const path of figure.querySelectorAll(`[data-relation-route="${id}"]`))path.setAttribute('d',d);
+    for(const {id,d,end} of g.routes){
+      for(const path of figure.querySelectorAll(`[data-relation-route="${id}"]`))path.setAttribute('d',d);
+      const port=find(`[data-relation-port="${id}"]`);port.setAttribute('cx',String(end.x));port.setAttribute('cy',String(end.y));
+    }
     for(const cut of figure.querySelectorAll('[data-relation-cut]')){
       const p=g.nodes[cut.getAttribute('data-relation-cut') as 'mac'|'linux'];cut.setAttribute('x',String(p.x-75));cut.setAttribute('y',String(p.y+49));
     }
@@ -22,6 +25,7 @@ export function mountCapabilityScene(figure:HTMLElement) {
       const cut=find('[data-relation-result-cut]');cut.setAttribute('x',String(g.resultLabel.x-50));cut.setAttribute('y',String(g.resultLabel.y-25));
     }else{
       find('[data-relation-access]').setAttribute('d',g.accessPath);translate(find('[data-relation-access-label]'),g.access);
+      const origin=find('[data-relation-origin]');origin.setAttribute('cx',String(g.origin.x));origin.setAttribute('cy',String(g.origin.y));
     }
   };
   compact.addEventListener('change',layout);layout();

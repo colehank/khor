@@ -4,23 +4,35 @@
 .tour-capabilities > .tour-copy h2 { max-width:none; }
 .tour-capabilities > .tour-copy p { max-width:34ch; margin:0; }
 .capability-relation { width:min(100%,calc(var(--gap-pane)*44),max(98svh,calc(var(--gap-pane)*30))); margin-inline:auto; }
-.capability-relation .net-khor-shape { stroke-opacity:.4; }
+.capability-relation .net-khor-shape { stroke-opacity:.5; }
+.capability-relation .net-khor-surface { fill-opacity:.018; }
 .capability-relation .net-khor-mark { color:var(--secondary); }
 .capability-relation .net-status-pulse { animation:none; }
+.relation-face-light { stop-color:color-mix(in srgb,var(--ink) 13%,var(--canvas)); }
+.relation-face-shade { stop-color:color-mix(in srgb,var(--ink) 4%,var(--canvas)); }
+.relation-rim-light { stop-color:var(--ink); stop-opacity:.65; }
+.relation-rim-shade { stop-color:var(--ink); stop-opacity:.18; }
+.relation-rim-end { stop-color:var(--ink); stop-opacity:.35; }
+.relation-group-light { stop-color:var(--ink); stop-opacity:.055; }
+.relation-group-shade { stop-color:var(--ink); stop-opacity:.012; }
+.capability-relation .net-device-body { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-connections,.relation-annotations { pointer-events:none; }
-.relation-access { fill:var(--ink); fill-opacity:.025; stroke:var(--tour-wire); stroke-width:1; }
-.relation-wire,.relation-signal { fill:none; stroke-linecap:round; stroke-width:1.25; }
+.relation-access { fill:var(--relation-group); stroke:var(--relation-rim); stroke-width:1; stroke-opacity:.65; vector-effect:non-scaling-stroke; }
+.relation-wire,.relation-signal { fill:none; stroke-linecap:round; stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-wire { stroke:var(--tour-wire); }
 .relation-signal { stroke:var(--tour-accent); opacity:.3; }
 .relation-arrow { fill:none; stroke:var(--secondary); stroke-width:1.25; stroke-linejoin:round; }
-.relation-badge > circle:first-child { fill:var(--canvas); stroke:var(--tour-wire); stroke-width:1; }
+.relation-port { fill:var(--canvas); stroke:var(--tour-accent); stroke-opacity:.65; stroke-width:1; vector-effect:non-scaling-stroke; }
+.relation-badge > circle:first-child { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-badge { color:var(--ink); }
 .relation-status,.relation-router { fill:none; stroke:var(--tour-accent); stroke-width:1.25; }
-.relation-user > circle { fill:var(--canvas); stroke:var(--secondary); stroke-width:1.25; }
+.relation-user > circle { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-name,.relation-resource,.relation-terminal,.relation-request-label,.relation-shared { font-family:var(--sans); font-size:var(--text-body); fill:var(--secondary); }
+.relation-name { fill:var(--ink); font-size:var(--text-read); font-weight:500; letter-spacing:-.015em; }
 .relation-terminal { color:var(--secondary); }
 .relation-you,.relation-user > text { font-family:var(--sans); font-size:var(--text-read); fill:var(--ink); }
-.relation-request-label { fill:var(--ink); font-size:var(--text-read); }
+.relation-you,.relation-user > text,.relation-request-label { font-weight:500; }
+.relation-request-label { fill:var(--ink); font-size:var(--text-read); letter-spacing:-.01em; }
 .relation-agent [data-net-brand] { color:var(--tour-accent); }
 .relation-pulse { animation:relation-breathe calc(var(--dur-240)*16) ease-in-out infinite; animation-play-state:paused; }
 .relation-mac { animation-delay:calc(var(--dur-240)*-8); }
@@ -29,6 +41,10 @@
 @media (max-width:1000px) {
  .tour-capabilities > .tour-copy { display:block; }
  .tour-capabilities > .tour-copy p { max-width:48ch; margin-top:var(--gap-group); }
+}
+@media (min-width:761px) and (max-width:1000px) {
+ .relation-name,.relation-you,.relation-user > text,.relation-request-label { font-size:var(--text-title-md); }
+ .relation-resource,.relation-terminal,.relation-shared { font-size:var(--text-read); }
 }
 @media (max-width:760px) {
  .tour-section.tour-capabilities { padding-block:calc(var(--gap-pane)*2); }
