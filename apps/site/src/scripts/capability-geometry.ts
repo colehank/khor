@@ -8,7 +8,7 @@ const curve=(from:Point,c1:Point,c2:Point,to:Point)=>`M ${pair(from)} C ${pair(c
 // permanent; responsive layout is the only time these coordinates are changed.
 export function capabilityGeometry(compact:boolean,agent=false) {
   const network=networkGeometry(compact,1),khor=network.khorNet.mark;
-  const nodes={...network.nodes,khor,you:{x:khor.x-(compact?115:145),y:khor.y-108}};
+  const nodes={...network.nodes,khor};
   const a=nodes.windows,b=nodes.phone,radius=64,dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
   const n={x:-dy/d*radius,y:dx/d*radius},offset=(p:Point,sign:number)=>({x:p.x+n.x*sign,y:p.y+n.y*sign});
   const access={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
@@ -37,11 +37,15 @@ export function capabilityGeometry(compact:boolean,agent=false) {
     const end=agent?{x:nodes[id].x,y:nodes[id].y-networkNodeRadius-5}:workEnds[id];
     return {id,end,d:agent?curve(routerStart,c1,c2,end):workRoutes[id]};
   });
-  const requestC1={x:nodes.you.x+80,y:nodes.you.y-12},requestC2={x:khor.x+10,y:nodes.you.y+20};
-  const resultC1={x:khor.x-90,y:khor.y+8},resultC2={x:nodes.you.x-8,y:nodes.you.y+65};
-  const request=curve(port(nodes.you,requestC1,35),requestC1,requestC2,port(khor,requestC2,33));
-  const result=curve(port(khor,resultC1,33),resultC1,resultC2,port(nodes.you,resultC2,35));
-  const taskLabel={x:(nodes.you.x+khor.x)/2+14,y:nodes.you.y-20};
-  const resultLabel={x:(nodes.you.x+khor.x)/2-25,y:khor.y+(compact?36:18)};
-  return {nodes,access,accessPath,origin,routes,request,result,taskLabel,resultLabel};
+  // The same access group delegates through its upper edge; no separate user.
+  const requestC1=compact?{x:105,y:163}:{x:200,y:140};
+  const requestC2=compact?{x:135,y:112}:{x:khor.x-95,y:khor.y+30};
+  const resultC1=compact?{x:195,y:118}:{x:khor.x-35,y:140};
+  const resultC2=compact?{x:175,y:159}:{x:270,y:180};
+  const requestStart=port(a,requestC1,radius),resultEnd=port(a,resultC2,radius);
+  const request=curve(requestStart,requestC1,requestC2,port(khor,requestC2,33));
+  const result=curve(port(khor,resultC1,33),resultC1,resultC2,resultEnd);
+  const taskLabel=compact?{x:134,y:139}:{x:230,y:133};
+  const resultLabel=compact?{x:157,y:186}:{x:292,y:172};
+  return {nodes,access,accessPath,origin:agent?resultEnd:origin,routes,request,result,taskLabel,resultLabel};
 }

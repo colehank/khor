@@ -29,10 +29,9 @@
 .relation-badge [data-relation-session] { color:var(--secondary); }
 .relation-status,.relation-router,.relation-receipt { fill:none; stroke:var(--tour-accent); stroke-width:1.25; opacity:.22; }
 .relation-status,.relation-receipt { opacity:0; }
-.relation-user > circle:first-child { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-resource,.relation-request-label,.relation-shared { font-family:var(--sans); font-size:var(--text-body); fill:var(--secondary); }
-.relation-you,.relation-user > text { font-family:var(--sans); font-size:var(--text-read); fill:var(--ink); }
-.relation-you,.relation-user > text,.relation-request-label { font-weight:500; }
+.relation-you { font-family:var(--sans); font-size:var(--text-read); fill:var(--ink); }
+.relation-you,.relation-request-label { font-weight:500; }
 .relation-request-label { fill:var(--ink); font-size:var(--text-read); letter-spacing:-.01em; }
 .relation-agent [data-net-brand] { color:var(--tour-accent); }
 @media (max-width:1000px) {
@@ -40,14 +39,14 @@
  .tour-capabilities > .tour-copy p { max-width:48ch; margin-top:var(--gap-group); }
 }
 @media (min-width:761px) and (max-width:1000px) {
- .relation-you,.relation-user > text,.relation-request-label { font-size:var(--text-title-md); }
+ .relation-you,.relation-request-label { font-size:var(--text-title-md); }
  .relation-resource,.relation-shared { font-size:var(--text-read); }
 }
 @media (max-width:760px) {
  .tour-section.tour-capabilities { padding-block:calc(var(--gap-pane)*2); }
  .tour-capabilities > .tour-copy { margin-bottom:var(--gap-group); }
  .capability-relation { width:min(100%,calc(var(--gap-pane)*20)); }
- .relation-resource,.relation-request-label,.relation-shared,.relation-you,.relation-user > text { font-size:var(--text-title-lg); }
+ .relation-resource,.relation-request-label,.relation-shared,.relation-you { font-size:var(--text-title-lg); }
 }
 @media (prefers-reduced-motion:reduce) {
  .capability-relation * { transition:none!important; animation:none!important; }

@@ -9,13 +9,10 @@ const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'files'},{id:'linux',name:'Codex',mark:'Codex',resource:'Web',icon:'web'}] as const;
-const description=agent?'You send a Task to Khor. Khor calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices return to Khor before Khor delivers the Result to You. Khor softly pulses from receiving the Task until the Result reaches You. All devices, resources and labels stay in place.':'The workstation and Server provide their agents and resources to You, the shared laptop and Mobile access group. Both devices send their light traces toward You together, repeating in sync. Sessions and resources stay on their hosts; all relationships remain visible.';
+const description=agent?'You use the same laptop and Mobile access group to send a Task to Khor. Khor calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices return to Khor before Khor delivers the Result to your access group. Khor softly pulses until delivery. All devices, resources and labels stay in place.':'The workstation and Server provide their agents and resources to You, the shared laptop and Mobile access group. Both devices send their light traces toward You together, repeating in sync. Sessions and resources stay on their hosts; all relationships remain visible.';
 ---
 <figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group)`}>
-  <NetworkGraph prefix={mode} infrastructure={false} externalUser={agent} title={agent?'Delegate a task to Khor and receive its result':'One task, accessible from a laptop or Mobile'} {description}>
-    <Fragment slot="clearances">
-      {agent&&<rect data-relation-result-cut x={g.resultLabel.x-50} y={g.resultLabel.y-25} width="100" height="32" fill="black"/>}
-    </Fragment>
+  <NetworkGraph prefix={mode} infrastructure={false} activeRouter={agent} title={agent?'Delegate from a laptop or Mobile and receive the result there':'One task, accessible from a laptop or Mobile'} {description}>
     <g slot="routes" class="relation-connections" aria-hidden="true">
       <defs>
         <linearGradient id={`${mode}-relation-face`} x1="0" y1="0" x2="1" y2="1">
@@ -27,8 +24,12 @@ const description=agent?'You send a Task to Khor. Khor calls the workstation and
         <linearGradient id={`${mode}-relation-group`} x1="0" y1="0" x2="1" y2="1">
           <stop class="relation-group-light"/><stop offset="1" class="relation-group-shade"/>
         </linearGradient>
+        {agent&&([['task',g.taskLabel,72],['result',g.resultLabel,88]] as const).map(([id,p,width])=><mask id={`${mode}-handoff-${id}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="690" style="mask-type:luminance">
+          <rect width="1000" height="690" fill="white"/>
+          <rect data-relation-label-cut={id} x={p.x-width/2} y={p.y-24} width={width} height="32" fill="black"/>
+        </mask>)}
       </defs>
-      {!agent&&<path class="relation-access" data-relation-access d={g.accessPath}/>}
+      <path class="relation-access" data-relation-access d={g.accessPath}/>
       {g.routes.map(({id,d,end})=><g>
         <path class="relation-wire" data-relation-route={id} d={d}/>
         <path class="relation-signal" data-relation-route={id} d={d}/>
@@ -36,17 +37,21 @@ const description=agent?'You send a Task to Khor. Khor calls the workstation and
         {agent&&<path class="relation-flow" data-relation-flow="reply" data-relation-route={id} d={d} pathLength="1"/>}
         <circle class="relation-port" data-relation-port={id} cx={end.x} cy={end.y} r="2.5"/>
       </g>)}
-      {!agent&&<g data-relation-origin transform={`translate(${g.origin.x} ${g.origin.y})`}>
-        <circle class="relation-port" r="3"/><circle class="relation-receipt relation-access-receipt" r="7"/>
-      </g>}
+      <g data-relation-origin transform={`translate(${g.origin.x} ${g.origin.y})`}>
+        {!agent&&<circle class="relation-port" r="3"/>}<circle class:list={['relation-receipt',agent?'relation-user-receipt':'relation-access-receipt']} r="7"/>
+      </g>
       {agent&&<>
         <defs><marker id={`${mode}-relation-arrow`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 2 L8 5 L2 8" class="relation-arrow"/></marker></defs>
-        <path class="relation-wire" data-relation-request d={g.request} marker-end={`url(#${mode}-relation-arrow)`}/>
-        <path class="relation-wire" data-relation-result d={g.result} marker-end={`url(#${mode}-relation-arrow)`}/>
-        <path class="relation-signal" data-relation-request d={g.request}/>
-        <path class="relation-signal" data-relation-result d={g.result}/>
-        <path class="relation-flow" data-relation-flow="request" data-relation-request d={g.request} pathLength="1"/>
-        <path class="relation-flow" data-relation-flow="delivery" data-relation-result d={g.result} pathLength="1"/>
+        <g mask={`url(#${mode}-handoff-task)`}>
+          <path class="relation-wire" data-relation-request d={g.request} marker-end={`url(#${mode}-relation-arrow)`}/>
+          <path class="relation-signal" data-relation-request d={g.request}/>
+          <path class="relation-flow" data-relation-flow="request" data-relation-request d={g.request} pathLength="1"/>
+        </g>
+        <g mask={`url(#${mode}-handoff-result)`}>
+          <path class="relation-wire" data-relation-result d={g.result} marker-end={`url(#${mode}-relation-arrow)`}/>
+          <path class="relation-signal" data-relation-result d={g.result}/>
+          <path class="relation-flow" data-relation-flow="delivery" data-relation-result d={g.result} pathLength="1"/>
+        </g>
       </>}
     </g>
     <g slot="activity" class="relation-annotations">
@@ -55,21 +60,21 @@ const description=agent?'You send a Task to Khor. Khor calls the workstation and
           <circle r="15"/><circle class={`relation-status relation-${id}`} r="18"/>
           <svg data-relation-session={id} x="-10" y="-10" width="20" height="20"><title>{name}</title><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
         </g>
-        <g class="relation-badge" transform={id==='linux'?'translate(-28 -28)':'translate(28 28)'}>
+        <g class="relation-badge" transform={id==='linux'&&!agent?'translate(-28 -28)':'translate(28 28)'}>
           <circle r="15"/>
           <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(icon)} x={0} y={0} size={20} prefix={`${mode}-${id}-resource`}/></svg>
-          <text class="relation-resource" x={id==='linux'?-22:22} y="6" text-anchor={id==='linux'?'end':'start'}>{resource}</text>
+          <text class="relation-resource" x={id==='linux'&&!agent?-22:22} y="6" text-anchor={id==='linux'&&!agent?'end':'start'}>{resource}</text>
         </g>
       </g>)}
       {agent?<>
-        <g class="relation-user" data-relation-at="you" transform={`translate(${g.nodes.you.x} ${g.nodes.you.y})`}><circle r="28"/><circle class="relation-receipt relation-user-receipt" r="32"/><text x="0" y="6" text-anchor="middle">You</text></g>
         <g data-relation-at="khor" transform={`translate(${g.nodes.khor.x} ${g.nodes.khor.y})`}><circle class="relation-router" r="27"/></g>
         <text class="relation-request-label" data-relation-task-label transform={`translate(${g.taskLabel.x} ${g.taskLabel.y})`} text-anchor="middle">Task</text>
         <text class="relation-request-label" data-relation-result-label transform={`translate(${g.resultLabel.x} ${g.resultLabel.y})`} text-anchor="middle">Result</text>
-      </>:<g class="relation-access-label" data-relation-access-label transform={`translate(${g.access.x} ${g.access.y})`}>
+      </>:null}
+      <g class="relation-access-label" data-relation-access-label transform={`translate(${g.access.x} ${g.access.y})`}>
         <text class="relation-you" x="0" y="-9" text-anchor="middle">You</text>
         <text class="relation-shared" x="0" y="19" text-anchor="middle">Same task</text>
-      </g>}
+      </g>
     </g>
   </NetworkGraph>
 </figure>
