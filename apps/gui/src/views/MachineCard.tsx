@@ -8,6 +8,7 @@ import { fetchAbout, fetchLoad, inApp, journal, setWatch, visitMachine } from "@
 import { CodeButton, type CodeWindow } from "@/components/CodeWindow";
 import { DetailFrame } from "@/components/DetailFrame";
 import { MachineFace } from "@/components/SessionFace";
+import {MachineIdentity} from "@/components/MachineIdentity";
 import { PageAvatar, PageSubtitle } from "@/components/Region";
 import { RegionState } from "@/components/RegionState";
 import { SectionHead } from "@/components/SectionHead";
@@ -140,11 +141,7 @@ export function MachineCard({
           <GlassCircle size="head" aria-label={gui.back} data-back onClick={onBack}>
             <IconBack />
           </GlassCircle>
-          {row && <MachineFace face={row.face} system={row.vitals?.vitals.system ?? null} size="head" />}
-          <span data-head-name className="flex min-w-0 flex-1 flex-col">
-            <span className="min-w-0 truncate text-title-md font-title">{row?.shown ?? ""}</span>
-            {row && <HeadModel row={row} yields />}
-          </span>
+          {row ? <MachineIdentity row={row}><HeadModel row={row} yields /></MachineIdentity> : <span data-head-name className="min-w-0 flex-1"/>}
           {actions}
         </header>
         )

@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 export async function checkAttachmentDraft(browser,{port,report,engine,width=390}){
  const height=width===320?568:844,mobile=width<500,name=`attachment-draft-${engine}-${width}`;
  const context=await browser.newContext({viewport:{width,height},hasTouch:mobile,isMobile:mobile});
- const page=await context.newPage(),errors=[],imagePreviews=[],sizes=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(String(e)));
+ const page=await context.newPage(),errors=[],imagePreviews=[],sizes=[],directoryLayouts=[];page.setDefaultTimeout(15000);page.on('pageerror',e=>errors.push(String(e)));
  const environment={platform:mobile?width===412?'android':'ios':'desktop',theme:width===412?'dark':'light',material:'solid',background:'dark',opacity:100,keyboard:0,safeTop:mobile?width===412?24:47:0,safeBottom:mobile?width===412?24:34:0};
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  const picker=page.locator('[data-attachment-picker]:visible'),directory=page.locator('[data-attachment-directory]:visible'),preview=page.locator('[data-attachment-file]:visible');
@@ -42,7 +42,18 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   assert.equal(await directory.locator('[data-files-search] input').evaluate(node=>node===document.activeElement),false,'No automatic path/search keyboard');
   // Measure the settled sheet, rather than its entrance below the viewport.
   await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-directory][data-state="open"]');if(!root)return false;const sheet=root.getBoundingClientRect(),back=root.querySelector('[data-files-directory-back]')?.getBoundingClientRect();return back&&back.top>=sheet.top&&back.bottom<=Math.min(sheet.bottom,window.innerHeight)+1;});
-  const directoryBounds=await directory.evaluate(root=>{const sheet=root.getBoundingClientRect(),back=root.querySelector('[data-files-directory-back]').getBoundingClientRect(),list=root.querySelector('[data-files-list]').getBoundingClientRect();return {sheet:{top:sheet.top,bottom:sheet.bottom},back:{top:back.top,bottom:back.bottom},list:{top:list.top,bottom:list.bottom,height:list.height},viewport:window.innerHeight};});assert(directoryBounds.back.top>=directoryBounds.sheet.top&&directoryBounds.back.bottom<=Math.min(directoryBounds.sheet.bottom,directoryBounds.viewport)+1,'Directory return action remains in view on short screens: '+JSON.stringify(directoryBounds));assert(directoryBounds.list.height>=44&&directoryBounds.list.bottom<=directoryBounds.back.top,'The file list scrolls above the fixed return action');
+  const directoryBounds=await directory.evaluate(root=>{
+   const rect=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,width:r.width,height:r.height};};
+   const head=root.querySelector('[data-files-directory-head]'),back=root.querySelector('[data-files-directory-back]'),pill=root.querySelector('[data-files-search]');
+   return {sheet:rect(root),head:rect(head),machine:head.querySelector('[data-machine-identity]')?.textContent,back:rect(back),pill:rect(pill),list:rect(root.querySelector('[data-files-list]')),glass:pill.hasAttribute('data-glass-capsule'),viewport:window.innerHeight};
+  });directoryLayouts.push(directoryBounds);
+  assert(directoryBounds.machine?.trim(),'Machine identity stays at the top');
+  assert(directoryBounds.head.bottom<=directoryBounds.list.top+1,'The directory list starts below machine identity');
+  assert(directoryBounds.back.top>=directoryBounds.sheet.top&&directoryBounds.back.bottom<=Math.min(directoryBounds.sheet.bottom,directoryBounds.viewport)+1,'Directory return action remains in view on short screens: '+JSON.stringify(directoryBounds));
+  assert(directoryBounds.list.height>=44&&directoryBounds.list.bottom<=Math.min(directoryBounds.back.top,directoryBounds.pill.top),'The file list scrolls above both fixed navigation capsules');
+  assert(directoryBounds.glass&&directoryBounds.pill.left>=directoryBounds.back.right&&Math.abs(directoryBounds.pill.top-directoryBounds.back.top)<=1&&Math.abs(directoryBounds.pill.height-directoryBounds.back.height)<=1,'Back and path capsules share one bottom navigation row');
+  assert(directoryBounds.pill.right<=directoryBounds.sheet.right+1,'The path capsule stays inside the sheet');
+
 
   if(await directory.locator('[data-files-entry="file"]').count()===0)await directory.locator('[data-files-name="project"] button').first().click();
   await directory.locator('[data-files-entry="file"]').first().waitFor();
@@ -74,5 +85,5 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   assert.equal((await api('__ai_preview/attachment-events')).length,0);await green();await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));assert((await api('__ai_preview/attachment-events')).some(e=>e.operation==='chat_put'&&e.name==='chat.txt'&&e.content==='chat attachment'));await page.screenshot({path:path.join(report,name+'-gui.png')});
  }catch(e){errors.push(String(e.stack??e));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}finally{await context.close();}
- return {name,imagePreviews,sizes,errors};
+ return {name,imagePreviews,sizes,directoryLayouts,errors};
 }

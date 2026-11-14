@@ -4,10 +4,11 @@ import {createPortal} from 'react-dom';
 import {fetchDevices,nativeFolders,said,termDropForget,termPickFolders,type DeviceRow} from '@/api';
 import {MachineAvatar} from '@/components/Avatar';
 import {IconBack,IconFile,IconFiles,IconChevronDown} from '@/components/icons';
-import {SideFind} from '@/components/SideFind';
+import {ContentSearch} from '@/components/ContentSearch';
+import {MachineIdentity} from '@/components/MachineIdentity';
 import {Button} from '@/components/ui/button';
 import {Dialog,TaskOverlay,DialogTitle} from '@/components/ui/dialog';
-import {GlassCircle} from '@/components/Glass';
+import {GlassCapsule,GlassCircle} from '@/components/Glass';
 import {gui} from '@/gen/catalog';
 import type {DirListing} from '@/gen/bindings/DirListing';
 import {deviceAttachments,deviceFolderEntries,includesAttachment,pathAttachment,type Attachment} from '@/lib/term-attachments';
@@ -121,9 +122,12 @@ function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,fi
  const entry=(full:string,dir:boolean,size:number|null=null)=>place.root?localEntry(place.root,full,dir):pathAttachment(full,place.machine.me?null:place.machine.name,place.machine.shown,dir,size);
  const listing=useMemo<DirListing|undefined>(()=>place.root?{path,entries:deviceFolderEntries(place.root,path.replace(/^\//,'')).map(row=>({name:row.name,dir:row.dir,size:row.file?.size??0,at_ms:row.file?.lastModified??0,from:null,received_ms:null})),truncated:false}:undefined,[place.root,path]);
  return <div data-files-directory-body className="flex min-h-0 flex-1 flex-col">
-  <div data-files-search className="flex-none py-in"><SideFind label="搜索或输入路径" query={query} onQuery={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);}}/></div>
+  <header data-files-directory-head className="flex min-h-touch flex-none items-center gap-row px-row py-in"><MachineIdentity row={place.machine}/></header>
   <div className="flex min-h-0 flex-1 flex-col"><FilesPane machine={place.machine.name} here={place.machine.me} path={path} onPath={navigate} onLanded={resolved=>{if(!query)navigate(resolved);}} onFile={()=>{}} open={null} sourceListing={listing} filter={filter} selection={{filesOnly,state:(full,dir)=>{const item=entry(full,dir);return {selected:selected(item)||inherited(item),disabled:busy||inherited(item)};},toggle:(full,dir,size)=>onToggle(entry(full,dir,size)),open:(full,dir)=>onOpen(entry(full,dir))}}/></div>
-  <div className="flex flex-none items-center gap-in p-row pb-safe-bottom"><GlassCircle aria-label="返回附件" data-files-directory-back onClick={onClose}><IconBack/></GlassCircle><span className="min-w-0 flex-1 truncate text-callout text-muted-foreground">{place.machine.shown}</span></div>
+  <div data-files-directory-deck className="flex min-w-0 flex-none items-center gap-in px-row py-in pb-safe-bottom">
+   <GlassCircle aria-label="返回附件" data-files-directory-back onClick={onClose}><IconBack/></GlassCircle>
+   <GlassCapsule data-files-search className="min-w-0 flex-1"><ContentSearch label="搜索或输入路径" value={query} autoFocus={false} onEditing={()=>{}} onChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);if(document.activeElement instanceof HTMLElement)document.activeElement.blur();}}/></GlassCapsule>
+  </div>
  </div>;
 }
 /** Destination is contextual to the open conversation, not another form. */
