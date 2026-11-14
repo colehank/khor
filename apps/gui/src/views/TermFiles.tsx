@@ -5,11 +5,12 @@ import {fetchDevices,nativeFolders,said,termDropForget,termPickFolders,type Devi
 import {MachineAvatar} from '@/components/Avatar';
 import {IconBack,IconFile,IconFiles,IconChevronDown,IconDevices} from '@/components/icons';
 import {ContentSearch} from '@/components/ContentSearch';
+import {ContentDeck,ContentPill,PillFace} from '@/components/ContentDeck';
 import {MachineFace} from '@/components/SessionFace';
 import {Button} from '@/components/ui/button';
 import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuItem} from '@/components/ui/dropdown-menu';
-import {Dialog,TaskOverlay,DialogTitle} from '@/components/ui/dialog';
-import {GlassCapsule,GlassCircle} from '@/components/Glass';
+import {ContentOverlay} from '@/components/ContentOverlay';
+import {GlassCircle} from '@/components/Glass';
 import {gui} from '@/gen/catalog';
 import type {DirListing} from '@/gen/bindings/DirListing';
 import {deviceAttachments,deviceFolderEntries,includesAttachment,pathAttachment,type Attachment} from '@/lib/term-attachments';
@@ -17,7 +18,7 @@ import {keyboardCover,keyboardHeight,holdFoot,footHeld} from '@/lib/viewport';
 import {lowerKeyboard,raiseKeyboard} from '@/lib/soft-keyboard';
 import {isDown} from '@/lib/topology';
 import {hopWord} from '@/words';
-import {useNarrow,useWindowNarrow} from '@/hooks/use-narrow';
+import {useNarrow} from '@/hooks/use-narrow';
 import {FilesPane,FileChoiceRow} from '@/views/FilesPane';
 import {AttachmentFile} from '@/views/AttachmentFile';
 import {SendInto} from '@/views/chat-files';
@@ -133,11 +134,9 @@ function localEntry(root:Attachment,path:string,dir:boolean):Attachment{
  return {key:root.key+'/'+relative,name,path,from:root.from,shown:root.shown,dir,size:file?.size??null,device:dir?{files:root.device!.files.filter(item=>item.relative.startsWith(prefix)).map(item=>({...item,relative:item.relative.slice(prefix.length)})),dirs:root.device!.dirs.filter(item=>item.startsWith(prefix)).map(item=>item.slice(prefix.length))}: {files:file?[{file,relative:name}]:[],dirs:[]}};
 }
 function AttachmentDirectory({place,onClose,selected,inherited,onToggle,onOpen,busy,filesOnly}:{place:Place|null;onClose:()=>void;selected:(a:Attachment)=>boolean;inherited:(a:Attachment)=>boolean;onToggle:(a:Attachment)=>void;onOpen:(a:Attachment)=>void;busy:boolean;filesOnly?:boolean}){
- const windowNarrow=useWindowNarrow();
- return <Dialog open={place!==null} onOpenChange={open=>{if(!open)onClose();}}>{place&&<TaskOverlay layout="content" purpose="preview" initialHeight="large" maxHeight="large" data-attachment-directory style={windowNarrow?{paddingInline:0,paddingBottom:0}:undefined} className="flex min-h-0 flex-col gap-0 overflow-hidden p-0" onOpenAutoFocus={event=>{event.preventDefault();(event.target as HTMLElement).focus({preventScroll:true});}} onCloseAutoFocus={event=>event.preventDefault()}>
-  <DialogTitle className="sr-only">{place.machine.shown}文件</DialogTitle>
+ return <ContentOverlay open={place!==null} title={place?place.machine.shown+'文件':''} onClose={onClose} data-attachment-directory>{place&&
   <DirectoryBody key={place.machine.id+' '+(place.root?.key??'')} place={place} onClose={onClose} selected={selected} inherited={inherited} onToggle={onToggle} onOpen={onOpen} busy={busy} filesOnly={filesOnly}/>
- </TaskOverlay>}</Dialog>;
+ }</ContentOverlay>;
 }
 function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,filesOnly}:Omit<Parameters<typeof AttachmentDirectory>[0],'place'>&{place:Place}){
  const [path,setPath]=useState(place.path),[query,setQuery]=useState(place.path?place.path.replace(/\/$/,'')+'/':''),[filter,setFilter]=useState('');
@@ -146,10 +145,10 @@ function DirectoryBody({place,onClose,selected,inherited,onToggle,onOpen,busy,fi
  const listing=useMemo<DirListing|undefined>(()=>place.root?{path,entries:deviceFolderEntries(place.root,path.replace(/^\//,'')).map(row=>({name:row.name,dir:row.dir,size:row.file?.size??0,at_ms:row.file?.lastModified??0,from:null,received_ms:null})),truncated:false}:undefined,[place.root,path]);
  return <div data-files-directory-body className="flex min-h-0 flex-1 flex-col">
   <div className="flex min-h-0 flex-1 flex-col"><FilesPane machine={place.machine.name} here={place.machine.me} path={path} onPath={navigate} onLanded={resolved=>{if(!query)navigate(resolved);}} onFile={()=>{}} open={null} sourceListing={listing} filter={filter} selection={{filesOnly,state:(full,dir)=>{const item=entry(full,dir);return {selected:selected(item)||inherited(item),disabled:busy||inherited(item)};},toggle:(full,dir,size)=>onToggle(entry(full,dir,size)),open:(full,dir)=>onOpen(entry(full,dir))}}/></div>
-  <div data-files-directory-deck className="mobile-content-deck">
+  <ContentDeck data-files-directory-deck>
    <GlassCircle aria-label="返回附件" data-files-directory-back onClick={onClose}><IconBack/></GlassCircle>
-   <GlassCapsule data-files-search className="min-w-0 flex-1"><ContentSearch leading={<span data-files-directory-avatar role="img" aria-label={place.machine.shown} title={place.machine.shown} className="flex flex-none items-center"><MachineFace face={place.machine.face} system={place.machine.vitals?.vitals.system??null} size="tab"/></span>} label="搜索或输入路径" value={query} autoFocus={false} onEditing={()=>{}} onChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);if(document.activeElement instanceof HTMLElement)document.activeElement.blur();}}/></GlassCapsule>
-  </div>
+   <ContentPill data-files-search><ContentSearch leading={<PillFace data-files-directory-avatar role="img" aria-label={place.machine.shown} title={place.machine.shown}><MachineFace face={place.machine.face} system={place.machine.vitals?.vitals.system??null} size="tab"/></PillFace>} label="搜索或输入路径" value={query} autoFocus={false} onEditing={()=>{}} onChange={value=>{setQuery(value);const split=value.lastIndexOf('/');if(split>=0){setPath(value.slice(0,split)||'/');setFilter(value.slice(split+1));}else setFilter(value);}} onEnter={()=>{if(query.endsWith('/'))navigate(query);if(document.activeElement instanceof HTMLElement)document.activeElement.blur();}}/></ContentPill>
+  </ContentDeck>
  </div>;
 }
 /** Destination is contextual to the open conversation, not another form. */

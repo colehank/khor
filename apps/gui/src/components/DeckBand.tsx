@@ -1,6 +1,7 @@
 /** Shared mobile pill: ordinary direct swipe, held joystick, upward overview. */
 import {useEffect,useLayoutEffect,useMemo,useRef,useState,type ReactNode,type PointerEvent} from 'react';
 import {MidName,TabAvatar,type TabFace} from '@/browse/TabStrip';
+import {PillFace} from '@/components/ContentDeck';
 import {BellMark} from '@/components/BellMark';
 import {NoticeLook} from '@/components/PillNotice';
 import {gui} from '@/gen/catalog';
@@ -131,9 +132,9 @@ export function DeckBand({faces,active,onFocus,onTitle,onOverview,onNew,tuning=D
       )
     ) : (
     <>
-      <span data-deck-face className="grid size-glass-item-h flex-none place-items-center">
+      <PillFace data-deck-face>
         <TabAvatar f={f} bare="size-tab-face" seat="tab" />
-      </span>
+      </PillFace>
       {f.rang && <BellMark />}
       {role === "cur" && onTitle ? (
         <button

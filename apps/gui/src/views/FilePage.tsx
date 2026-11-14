@@ -38,6 +38,7 @@ import { caretCoveredAt, editorIn, hasSymbolsIn, placeLine, topLineOf } from "@/
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { preloadEditor } from "@/components/CodeEditor.lazy";
 import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
+import {ContentPill} from '@/components/ContentDeck';
 import { DeckBand, TabSheet } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
 import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload } from "@/components/icons";
@@ -670,7 +671,7 @@ export function FilePage({
                 when clean and is ✓ save while it differs. A revision keeps
                 its compare switch there. ⚠️ 墓碑 (UX-14): name · 预览 eye ·
                 ✓ — 预览 is the circle beside the pill now. */}
-            <div data-file-pill className="glass flex h-glass-btn min-w-0 flex-1 items-center gap-in rounded-full ps-1 pe-1">
+            <ContentPill data-file-pill>
               {contentDeck && rev === null ? contentDeck.identity : tabs && rev === null ? (
                 <DeckBand faces={tabs.faces} active={tabs.active} onFocus={tabs.onFocus} onOverview={() => setSheet(true)} />
               ) : (
@@ -710,7 +711,7 @@ export function FilePage({
                   <IconReload />
                 </GlassItem>
               )}
-            </div>
+            </ContentPill>
             {rev !== null && !compare && revisionRenders(path) && (
               <GlassCircle
                 aria-label={gui.file_face_preview}

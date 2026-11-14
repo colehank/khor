@@ -29,7 +29,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await page.waitForFunction(()=>{const img=document.querySelector('[data-attachment-file] [data-file-page] img');return img?.complete&&img.naturalWidth>0;});
   assert.equal(await preview.locator('[data-file-more]').count(),0,'Workspace file page has no More action in attachments');
   await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-file][data-state="open"]');return root&&root.getAnimations().every(animation=>animation.playState==='finished');});
-  const layout=await preview.evaluate(root=>{const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};return {sheet:box(root),file:box(root.querySelector('[data-file-page]')),back:box(root.querySelector('[data-file-back]'))};});previewLayouts.push({label,...layout});
+  const layout=await preview.evaluate(root=>{const box=node=>{const r=node.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width};};const sheet=box(root),style=getComputedStyle(root),left=parseFloat(style.borderLeftWidth),right=parseFloat(style.borderRightWidth);return {sheet,frame:{left:sheet.left+left,width:sheet.width-left-right},file:box(root.querySelector('[data-file-page]')),back:box(root.querySelector('[data-file-back]'))};});previewLayouts.push({label,...layout});
   const focus=await preview.evaluate(root=>({editable:!!document.activeElement?.matches('input,textarea,[contenteditable="true"]'),inside:root.contains(document.activeElement)}));assert.equal(focus.editable,false);imagePreviews.push({label,focus});
   await page.screenshot({path:path.join(report,name+'-'+label+'-image.png')});
   await preview.locator('[data-file-back]').click();await preview.waitFor({state:'hidden'});await selected('photo.png').locator('[data-files-select]').click();await selected('photo.png').waitFor({state:'hidden'});
@@ -113,7 +113,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   assert.equal((await api('__ai_preview/attachment-events')).length,0);await green();await picker.locator('[data-files-send]').click();await picker.waitFor({state:'hidden'});
   await page.waitForFunction(async()=>((await(await fetch('/api/__ai_preview/says',{method:'POST',body:'{}'})).json()).length>0));assert((await api('__ai_preview/attachment-events')).some(e=>e.operation==='chat_put'&&e.name==='chat.txt'&&e.content==='chat attachment'));await page.screenshot({path:path.join(report,name+'-gui.png')});
   const layoutIssues=[];
-  if(mobile)for(const sample of previewLayouts)if(Math.abs(sample.file.left-sample.sheet.left)>1||Math.abs(sample.file.width-sample.sheet.width)>1)layoutIssues.push({issue:'File preview must use the complete content-sheet width',...sample});
+  for(const sample of previewLayouts)if(Math.abs(sample.file.left-sample.frame.left)>1||Math.abs(sample.file.width-sample.frame.width)>1)layoutIssues.push({issue:'File preview must use the complete content-sheet width',...sample});
   for(const sample of directoryLayouts)if(Math.abs(sample.avatar.width-sample.seat)>1)layoutIssues.push({issue:'Machine avatar must use the same face seat as the session pill',avatar:sample.avatar,seat:sample.seat});
   assert.deepEqual(layoutIssues,[],'Attachment pages share workspace width and the session face seat');
  }catch(e){errors.push(String(e.stack??e));await page.screenshot({path:path.join(report,name+'-failure.png')}).catch(()=>{});}finally{await context.close();}

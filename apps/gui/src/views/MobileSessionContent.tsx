@@ -15,6 +15,7 @@ import { SessionFace, fileKind, pageKind, newTabKind, historyKind } from '@/comp
 import { GlassCircle, GlassCapsule, GlassItem } from '@/components/Glass';
 import { IconBack, IconClose, IconPlus, IconSearch } from '@/components/icons';
 import {ContentSearch} from '@/components/ContentSearch';
+import {ContentDeck,ContentPill} from '@/components/ContentDeck';
 export {ContentSearch} from '@/components/ContentSearch';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { ContentPathField } from '@/views/ContentPathField';
@@ -63,11 +64,11 @@ export function ContentDocumentBand({session,face,content,navigation,title,onTit
   return <DeckBand faces={faces} active={active||''} onFocus={key=>{const tab=targets.get(key);if(tab){navigation.select(tab);quiet(content.focus(tab.id));}}} onTitle={onTitle} onNew={()=>navigation.add(session)} onOverview={()=>navigation.overview(session)} renderFace={(item,role)=>item.mark?.key==='new-tab'?<span className="content-new-identity"><span className="content-owner-face"><TabAvatar f={{...item,face:null,mark:newTabKind()}} bare="size-tab-face" seat="tab"/></span><span className="content-new-title">{gui.content_new}</span></span>:<ContentOwnerIdentity face={face} title={role==='cur'?title:item.label}/>}/>;
 }
 export function MobileContentDeck({session,navigation,onClose,children,editing=false,onEditEnd,leading,actions}: DeckOwner & {session:string;children:ReactNode;editing?:boolean;onEditEnd?:()=>void;leading?:ReactNode;actions?:ReactNode}) {
-  return <div className="mobile-content-deck" data-content-deck data-content-editing={editing||undefined}>
+  return <ContentDeck data-content-editing={editing||undefined}>
     {!editing&&leading}
-    <div className="glass mobile-content-pill">{children}</div>
+    <ContentPill>{children}</ContentPill>
     {editing?<GlassCircle data-content-edit-end aria-label={gui.edit_done} onPointerDown={e=>e.preventDefault()} onClick={onEditEnd}><IconClose/></GlassCircle>:<>{actions}{navigation.get(session).scene==='overview'&&<GlassCircle aria-label={gui.side_hide} onClick={onClose}><IconClose/></GlassCircle>}</>}
-  </div>;
+  </ContentDeck>;
 }
 function ContentFileIdentity({session,face,content,navigation,title,devices,tab}: DeckOwner & {session:string;title:string;devices:DeviceRow[];tab:ContentTab}) {
  const [editing,setEditing]=useState(false),device=devices.find(d=>d.id===tab.device);
