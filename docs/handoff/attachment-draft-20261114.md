@@ -1,3 +1,15 @@
+# Current — attachment width and directory navigation (2026-11-14)
+
+Full App Lab: http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Pinned full App: http://127.0.0.1:23961/snapshots/85c8e4546821510c/app?scene=terminal&machines=3 . Phone/Air borrow via MacLab; this opens the App directly without a Storybook frame.
+
+Attachment selection now measures its owning terminal/chat viewport instead of using a fixed380px desktop dialog width. ResizeObserver and window/viewport events keep its horizontal bounds synchronized. The other-machine directory removes its visible machine heading; its bottom capsule contains the tab-size machine avatar and editable path. Back and path use the shared mobile-content-deck spacing and align with the session navigation. Directory search remains unfocused on open. Source counts, selected files, single-line destination, explicit-send transport and terminal sizing guards remain intact.
+
+Tested product85c8e4546821510c827180c5354b3118d5d437df/tree405fef91dcc021e693d2f09917f551cc6b032408 passed43561096302:8 Chromium/WebKit flows at1280/412/390/320 plus wide resize760/1280 and fresh680-width probes. Measured desktop panel now matches owner939px (and419px after resizing), versus prior380px. Mobile Back/pill left edges and heights match session references. Shared checks/builds and hot update passed;22image opens retain noneditable focus and terminal PTY resize remains0. Artifact14100362228 SHA2560b4b0e04fb7f326ff7431d3bfea1331dbe925e474929feb0920d076cbb4b2096 verified source/tree/CRC/cases/hot in width-deck-85c8/. Actual WebKit320/390directory and Chromium1280panel/directory screenshots inspected.7routes/9JS assets byte-verified; prior6fb0pin retained. Only verified owned staticPID43766 replaced; currentPID68955/exec61757. No main merge, ship, installation or native App/session host restart.
+
+Baseline RED0018/run43559686462 measured owner939px vs picker380px in both desktop engines. Its later timeout came from a checker resizing through a responsive host remount, not the width assertion; final checks use a fresh680page to isolate the width contract. Physical OS picker/keyboard/drag and existing native harness acceptance limits below still apply.
+
+--- Previous layouts and evidence ---
+
 # Current — single-line destination (2026-11-14)
 
 Full App Lab: http://127.0.0.1:23961/app/?scene=terminal&machines=3 . Pinned full App: http://127.0.0.1:23961/snapshots/6fb030e00ea42523/app?scene=terminal&machines=3 . Mobile/Air borrow via MacLab; user does not want the Storybook frame.
