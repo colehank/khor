@@ -24,7 +24,7 @@ on:
         default: all
       desktop_probe:
         type: choice
-        options: [none, drag-routing, drag-all, material-neutral, appearance]
+        options: [none, drag-routing, drag-all, material-neutral, appearance, attachment-closeout]
         default: none
       desktop_target:
         type: choice
@@ -1105,7 +1105,7 @@ jobs:
   lab-front:
     if: inputs.slice == 'lab-front'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -1189,6 +1189,45 @@ jobs:
       - name: Check shared frontend rules for the final tree controls
         working-directory: apps/gui
         run: npm run test:unit && npm run gates && npm run mobile:static
+      - uses: Swatinem/rust-cache@v2
+        if: inputs.desktop_probe == 'attachment-closeout'
+        with:
+          key: session-review-native-inputs-20261111
+          cache-targets: true
+          save-if: 'false'
+      - name: Verify deferred attachment cancellation, recovery and actual PTY flow
+        if: inputs.desktop_probe == 'attachment-closeout'
+        env:
+          PLAYWRIGHT_CHROMIUM_CHANNEL: ''
+          CHAT_CANCEL_WEBKIT: '1'
+          CHAT_RECOVERY_WEBKIT: '1'
+          CHAT_CANCEL_CHECK_DIR: ${{ runner.temp }}/attachment-closeout/cancel
+          CHAT_RECOVERY_CHECK_DIR: ${{ runner.temp }}/attachment-closeout/recovery
+          KHOR_TEST_FRONTEND: dist
+          CARGO_INCREMENTAL: '0'
+          CARGO_PROFILE_DEV_DEBUG: '0'
+          CARGO_PROFILE_TEST_DEBUG: '0'
+          CARGO_BUILD_JOBS: '2'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/attachment-closeout"
+          cargo build --locked -p khor-cli --bin khor -p khor-gui-core --bin bridge
+          failed=0
+          for gate in chat-cancel chat-recovery attachment-ui; do
+            if ! npm run "$gate" --prefix apps/gui > "$RUNNER_TEMP/attachment-closeout/$gate.log" 2>&1; then
+              tail -n 40 "$RUNNER_TEMP/attachment-closeout/$gate.log"
+              failed=1
+            fi
+          done
+          exit "$failed"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && inputs.desktop_probe == 'attachment-closeout'
+        with:
+          name: attachment-closeout
+          path: |
+            ${{ runner.temp }}/attachment-closeout
+            /tmp/khor-attachment-ui-check/ui
+          if-no-files-found: error
       - name: Verify native drag routes with pinned Tauri delivery
         if: startsWith(inputs.desktop_probe, 'drag-')
         working-directory: apps/gui
