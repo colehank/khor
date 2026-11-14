@@ -106,3 +106,10 @@ Task／Result 标签采用按实际字宽留缺口的路径遮罩，窗口变化
 组件以 hero / download 前缀隔离 DOM 标签、tooltip 与复制目标；平台 SVG 通过既有 ConceptMark 隔离 mask ID，避免复用后互相引用。平台提示脚本由共享安装组件挂载，Astro 去重，只安装一次。
 
 验证：headless Chrome 在 320／390／768／1440px 核对首尾操作链接、按钮尺寸、平台与命令一致，无重复 ID 和横向溢出。手机两处复制均写入正确命令，提示可打开／关闭，截图已审视；十页静态构建及 diff 检查通过。证据 `site-story-20261114/shared-downloads/`，产物 `site-story-20261114-shared-downloads`。仅本地，未发布。
+
+
+## 同日操作按钮图标（当前）
+
+用户要求 Download 旁显示平台图标、Docs 旁显示文档图标。共享 ProductActions 增加同一套 App 字形，首屏与收尾同步；16px 图标继承按钮文字色。下载推荐仍由原来的 detect / recommend 流程决定，新增图标字段；移动平台细分 iOS / Android（包括桌面 UA 的触屏 iPad），未知平台使用通用笔记本。已请求的平台参数优先显示相应字形。没有新增下载包或改变可用性；不支持平台仍进入现有下载选项。
+
+headless Chrome 在 macOS／Linux／Windows／iOS／Android／未知平台核对两个下载图标一致、Docs 图标存在、下载链接正确；320／390／1440px 无横向溢出和重复 SVG ID。定向 TypeScript、十页静态构建、diff 检查通过，手机截图已审视。证据 `site-story-20261114/action-icons/`，产物 `site-story-20261114-action-icons`。仅本地。

@@ -2,7 +2,7 @@ import {release} from '../releases';
 import {sitePath} from '../paths';
 
 type Platform='macos'|'linux'|'windows'|'mobile'|'unknown';
-export type DownloadDevice={platform:Platform;arch?:'arm64'|'x86_64'};
+export type DownloadDevice={platform:Platform;arch?:'arm64'|'x86_64';mobileSystem?:'ios'|'android'};
 type BrowserNavigator=Navigator&{userAgentData?:{platform:string;getHighEntropyValues?:(hints:string[])=>Promise<{architecture?:string;bitness?:string;platform?:string}>}};
 
 export function recommendDownload(device:DownloadDevice) {
@@ -10,14 +10,16 @@ export function recommendDownload(device:DownloadDevice) {
   const platform=device.platform==='macos'?'macOS App':device.platform==='linux'?'Linux CLI':null;
   const arch=device.arch==='arm64'?(device.platform==='macos'?'Apple silicon':'ARM64'):device.arch==='x86_64'?'x86_64':null;
   const exact=platform&&arch?release.downloads.find(item=>item.platform===platform&&(item.arch===arch||(arch==='x86_64'&&item.arch==='Intel'))):undefined;
-  return {label,url:exact?.url??sitePath(platform?`/download/?platform=${device.platform}`:'/download/'),file:exact?.file,
+  const icon=device.platform==='mobile'?device.mobileSystem??'unknown':device.platform;
+  return {label,icon,url:exact?.url??sitePath(platform?`/download/?platform=${device.platform}`:'/download/'),file:exact?.file,
     note:exact?`${exact.platform} · ${exact.arch} · ${release.version}`:platform?`${platform} · Choose your chip`:'Available for macOS, with a CLI for Linux and macOS'};
 }
 
 export async function detectDownloadDevice(nav:BrowserNavigator):Promise<DownloadDevice> {
   const ua=nav.userAgent;
   const os=nav.userAgentData?.platform??nav.platform;
-  if(/Android|iPhone|iPad|iPod/i.test(ua)||(/Mac/i.test(os)&&nav.maxTouchPoints>1))return {platform:'mobile'};
+  if(/Android/i.test(ua))return {platform:'mobile',mobileSystem:'android'};
+  if(/iPhone|iPad|iPod/i.test(ua)||(/Mac/i.test(os)&&nav.maxTouchPoints>1))return {platform:'mobile',mobileSystem:'ios'};
   const platform:Platform=/Mac/i.test(os)?'macos':/Win/i.test(os)?'windows':/Linux/i.test(os)?'linux':'unknown';
   let arch:DownloadDevice['arch'];
   try{
@@ -42,6 +44,7 @@ export async function mountDeviceDownloads() {
     link.href=choice.url;
     const label=link.querySelector('[data-download-label]');
     if(label)label.textContent=choice.label;
+    link.querySelectorAll<HTMLElement>('[data-download-mark]').forEach(mark=>mark.hidden=mark.dataset.downloadMark!==choice.icon);
   });
   document.querySelectorAll('[data-download-note]').forEach(note=>note.textContent=choice.note);
   const options=document.querySelector<HTMLElement>('[data-download-options]');
