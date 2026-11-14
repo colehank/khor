@@ -9,7 +9,7 @@
 
 ## 最新增量 · 图标导航（2026-11-14）
 
-导航右侧统一 Explore / Docs / Download / GitHub 四个图标，下载没有独立底色；GitHub 只保留在导航最右侧。左侧仍为 icon + Khor，悬停和键盘聚焦可看名称。首页／文档／下载的手机与宽屏验证通过，见 `site-relations-20261114.md` 最后一节，本轮仅本地。
+导航右侧统一 Explore / Docs / Download / GitHub 四个图标，下载没有独立底色；GitHub 只保留在导航最右侧。用户随后要求参考 Apple 重新选图：前三项现为 Phosphor Regular 的指南针／打开的书／下载托盘，22px；GitHub 品牌标记 20px，平衡视觉重量。左侧仍为 icon + Khor，悬停和键盘聚焦可看名称。首页／文档／下载的手机与宽屏验证通过，见 `site-relations-20261114.md` 最后一节，本轮仅本地。
 
 ## 最新增量 · 统一收尾（2026-11-14）
 

@@ -120,3 +120,12 @@ headless Chrome 在 macOS／Linux／Windows／iOS／Android／未知平台核对
 连续三条用户指令合并实施：GitHub 放导航栏最右侧，其他位置不重复 GitHub 入口；导航下载不单独高亮；最后确定右侧导航全部图标。SiteNav 统一 Explore（眼睛）、Docs（文档）、Download（下箭头）、GitHub，前三个复用现有 Khor 字形，GitHub 为 primer/octicons MIT 图稿并附许可证。所有项共用 44px 热区，无下载底色；隐藏文字保留可访问名称，悬停／键盘聚焦出现简短提示。左侧品牌继续 icon + Khor。移除首页页脚、文档 R0 的独立仓库链接；安装文档里的实际下载命令与发布链接保留。
 
 headless Chrome 在 320／390／1440px 的首页、文档、下载页检查：唯一仓库入口为导航最后一个图标；四项都有 SVG、可访问名称、透明背景、44px 热区；提示可通过键盘显示且不超出屏幕。320px 品牌与右侧导航间仍有约 23.7px，无横向溢出。手机截图已审视，demo 类型检查、十页静态构建及 diff 通过。证据 `site-story-20261114/nav-github/`，产物 `site-story-20261114-nav-github`。仅本地，未发布。
+
+
+## 同日导航图标重新选型（当前）
+
+用户认为上一版不美观，要求寻找好看的图标，以 Apple 为参考。查阅 Apple SF Symbols 与 HIG 的轮廓、重量和尺度说明，以及 Phosphor 官方资产／许可后，导航前三项改成 Phosphor Regular 的 compass、book-open、download-simple。图稿为同一字重与 256 画布，按 22px 显示；GitHub 保留官方 Octicons 实心标记，20px 平衡视觉重量。44px 点击范围、提示、ARIA 和链接不变。SF Symbols 只作为视觉参考，不复制 Apple 图稿。
+
+原始 SVG 与 MIT 许可静态收于 `apps/site/src/assets/navigation/`，上游固定 revision `2b75f3ad12b420c9504ef05df8d2564a28f8500e`，未改路径、未增加 npm 包或运行时请求。移除 GUI identity-marks 中不再使用的导航导出；真实 GUI 和概念图的图标不变。
+
+headless Chrome 320／1440px 核对四个入口、尺寸、可访问名称、透明底与无横向溢出，并审视浅色首屏／黑色毛玻璃截图。十页静态构建和 diff 检查通过。证据 `site-story-20261114/nav-refined/`，产物 `site-story-20261114-nav-refined`。仅本地。

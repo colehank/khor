@@ -2,11 +2,14 @@
 import {sitePath} from "../paths";
 import icon from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import github from '../assets/github.svg?raw';
+import explore from '../assets/navigation/explore.svg?raw';
+import docs from '../assets/navigation/docs.svg?raw';
+import download from '../assets/navigation/download.svg?raw';
 import {REPO} from '../site';
-import {navigationMarks} from '../../../gui/dev/site/identity-marks';
 import ConceptMark from './concepts/ConceptMark.astro';
 interface Props { home?:boolean; current?:'docs'|'download'; }
 const {home=false,current}=Astro.props;
+const navigationMarks={explore,docs,download};
 const links=[
   {id:'explore',label:'Explore',href:sitePath(home?'#story':'/#story')},
   {id:'docs',label:'Docs',href:sitePath('/docs/')},
@@ -17,7 +20,7 @@ const links=[
   <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} aria-label="Khor home"><img src={icon.src} alt="" width="24" height="24" /><span>Khor</span></a>
   <nav aria-label="Main navigation">
     {links.map(({id,label,href})=><a class={`nav-${id}`} {href} aria-label={label} aria-current={current===id?'page':undefined} data-device-download={id==='download'?true:undefined}>
-      <ConceptMark svg={navigationMarks[id]} x={0} y={0} size={20} prefix={`nav-${id}`}/>
+      <ConceptMark svg={navigationMarks[id]} x={0} y={0} size={22} prefix={`nav-${id}`}/>
       <span class="nav-tooltip" aria-hidden="true">{label}</span>
     </a>)}
     <a class="nav-github" href={REPO} aria-label="Khor on GitHub"><Fragment set:html={github}/><span class="nav-tooltip" aria-hidden="true">GitHub</span></a>
