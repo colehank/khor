@@ -33,7 +33,7 @@ export type FilesRoad = {
   filesOnly?: boolean; action?: string;
   send: (entries: Attachment[], into?: string | null) => Promise<boolean>;
   dropFiles: (files: File[]) => void;
-  busy: boolean; stopping?: boolean; progress: number | null; cancel: () => void;
+  busy: boolean; stopping?: boolean; progress: number | null; cancel?: () => void;
 };
 export function machinesFor(devices: DeviceRow[], machine: string | null): DeviceRow[] {
   const ours = (d: DeviceRow) => (machine === null ? d.me : d.name === machine);
@@ -95,7 +95,7 @@ export function TermFiles({road,onClose,onSent,viewport}:{road:FilesRoad;onClose
  return <>
  {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height}} className="fixed bottom-0 z-40 flex min-h-0 flex-col border-t bg-background px-row pb-safe-bottom shadow-(--shadow-float)" onKeyDown={e=>{if(e.key==='Escape'&&!road.busy){e.preventDefault();finish();}}}>
   <div data-files-actions className="flex min-h-touch flex-none items-center justify-between py-xxs">
-   <Button data-files-cancel variant="ghost" className="min-h-touch" disabled={road.stopping} onClick={()=>road.busy?road.cancel():finish()}>{road.busy?'取消传输':'取消'}</Button>
+   <Button data-files-cancel variant="ghost" className="min-h-touch" disabled={road.stopping||(road.busy&&!road.cancel)} onClick={()=>road.busy?road.cancel?.():finish()}>{road.busy&&road.cancel?'取消传输':'取消'}</Button>
    <Button data-files-send variant="primary" className={road.selected.length?"min-h-touch":"min-h-touch bg-fill text-muted-foreground"} disabled={road.busy||picking||!road.selected.length} onClick={()=>void send()}>{road.busy?'正在发送':`发送${road.selected.length?' ('+road.selected.length+')':''}`}</Button>
   </div>
   <div data-attachment-split className="flex min-h-0 flex-1 flex-col">

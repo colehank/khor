@@ -60,17 +60,17 @@ try{
   const remote={...device,id:'a'.repeat(64),name:'audit-remote',shown:'远端 A',me:false,hop:'direct',hosts:true,paused:false};
   await page.route('**/devices',r=>r.fulfill({json:[device,remote]}));
   await page.route('**/ls',r=>{const asked=r.request().postDataJSON().path;const path=asked||projects[0];const child=path===folder;return r.fulfill({json:{path,entries:child?[{name:'child.md',dir:false,size:8,at_ms:0}]:[{name:'folder',dir:true,size:0,at_ms:0},{name:'notes.md',dir:false,size:8,at_ms:0}],truncated:false}});});
-  await page.route('**/read_text',r=>/\/(preview-local|folder-preview)\.txt$/.test(r.request().postDataJSON().path)?r.fallback():r.fulfill({json:{total:8,at_ms:0,text:'# Audit\n',cut:false,binary:false,digest:'audit'}}));
+  await page.route('**/read_text',r=>r.fulfill({json:{total:8,at_ms:0,text:'# Audit\n',cut:false,binary:false,digest:'audit'}}));
   await page.route('**/stat_text',r=>r.fulfill({json:{total:8,at_ms:0,digest:'audit'}}));
   let hold=null,release;const staged=[],sent=[],forgotten=[],cancelled=[];
-  await page.route(/\/term_drop_stage\?/,async r=>{const name=new URL(r.request().url()).searchParams.get('name');if(['preview-local.txt','folder-preview.txt'].includes(name))return r.fallback();staged.push(name);if(hold)await hold;await r.fulfill({json:'/stage/'+staged.length+'/'+name});});
+  await page.route(/\/term_drop_stage\?/,async r=>{const name=new URL(r.request().url()).searchParams.get('name');staged.push(name);if(hold)await hold;await r.fulfill({json:'/stage/'+staged.length+'/'+name});});
   await page.route('**/term_drop',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.paths,miss:null}});});
   await page.route('**/term_drop_items',r=>{const args=r.request().postDataJSON();sent.push(args);return r.fulfill({json:{landed:args.items.map(x=>x.path),miss:null}});});
   await page.route('**/term_drop_cancel',r=>{cancelled.push(r.request().postDataJSON());return r.fulfill({json:null});});
-  await page.route('**/term_drop_forget',r=>{const {paths}=r.request().postDataJSON();if(paths.some(path=>/\/(preview-local|folder-preview)\.txt$/.test(path)))return r.fallback();forgotten.push(...paths);return r.fulfill({json:null});});
+  await page.route('**/term_drop_forget',r=>{const {paths}=r.request().postDataJSON();forgotten.push(...paths);return r.fulfill({json:null});});
   await page.route('**/term_drop_progress',r=>r.fulfill({json:null}));
   if(!(await page.locator('[data-deck-title]').isVisible()))await page.locator('[data-session-title]').filter({hasText:/^Content Alpha$/}).click();
-  const keys=page.locator('[data-key-row-switch]:visible');if(await keys.getAttribute('aria-expanded')!=='true')await keys.click();await page.locator('[data-term-key=attach]:visible').click();await page.locator('[data-files-machine]').first().waitFor();
+  const keys=page.locator('[data-key-row-switch]:visible');if(await keys.getAttribute('aria-expanded')!=='true')await keys.click();await page.locator('[data-term-key=attach]:visible').click();await page.locator('[data-attachment-picker]').waitFor();
   const panel=()=>page.locator('[data-files-panel]');
   const reopen=async()=>{if(await panel().count()===0)await page.locator('[data-term-key=attach]:visible').click();await panel().waitFor();};
   const sentToKeyboard=async()=>{
@@ -78,82 +78,87 @@ try{
     assert.equal(await page.evaluate(()=>document.activeElement?.matches('.xterm-helper-textarea')),true,'Sending returns focus to the same terminal');
     assert.equal(await page.locator('[data-terminal]:visible .xterm-helper-textarea').getAttribute('inputmode'),'text');
   };
+  const directory=()=>page.locator('[data-attachment-directory]:visible');
+  const preview=()=>page.locator('[data-attachment-file]:visible');
+  const closePreview=async()=>{await preview().locator('[data-file-back]').click();await preview().waitFor({state:'hidden'});};
+  const openMachine=async()=>{await panel().locator('[data-files-machines]').click();await page.locator('[data-files-machine="audit-remote"]').click();await directory().locator('[data-files-select="notes.md"]').waitFor();};
+  const previewReady=async()=>{
+    await preview().locator('[data-file-view]').waitFor();
+    assert.equal(await preview().locator('[data-file-more]').count(),0,'Attachment opens the workspace file page without More');
+    assert.equal(await preview().evaluate(()=>!!document.activeElement?.matches('input,textarea,[contenteditable=true]')),false,'Opening a file never summons the keyboard');
+  };
   await step('preview-selection',async()=>{
-    await page.locator('[data-files-machine="audit-remote"]').click();await page.locator('[data-files-name="notes.md"]>button').first().click();await page.locator('[data-file-preview] [data-file-view]').waitFor();
-    assert.equal(await page.locator('[data-file-preview] [contenteditable=true]').count(),0);assert.equal(sent.length,0);note('attachment-preview',{editable:await page.locator('[data-file-preview] [contenteditable=true]').count(),sent:sent.length,source:await page.locator('[data-file-preview] [role=radio][aria-checked=true]').textContent()});
-    await page.locator('[data-file-preview-close]').click();await page.locator('[data-files-select=folder]').click();await page.locator('[data-files-name=folder]>button').first().click();
-    assert(await page.locator('[data-files-select="child.md"]').isDisabled());note('directory-inclusion',{childDisabled:await page.locator('[data-files-select="child.md"]').isDisabled()});await page.locator('[data-files-up]').click();await page.locator('[data-files-select=folder]').click();
-    assert.equal(await page.locator('[data-files-select=folder]').getAttribute('aria-pressed'),'false');note('directory-deselect',{selected:await page.locator('[data-files-select=folder]').getAttribute('aria-pressed')});
-    await page.locator('[data-files-select="notes.md"]').click();await page.locator('[data-files-review]').click();note('attachment-queue',{selected:await page.locator('[data-files-selected]').count()});
-    const header=await page.locator('[data-files-head]').boundingBox(),send=await page.locator('[data-files-send]').boundingBox();
+    await openMachine();
+    await directory().locator('[data-files-name="notes.md"] [data-files-open]').click();await previewReady();
+    assert.equal(sent.length,0);assert.equal(staged.length,0);await closePreview();
+    await directory().locator('[data-files-select=folder]').click();
+    await directory().locator('[data-files-name=folder]>button').first().click();
+    assert(await directory().locator('[data-files-select="child.md"]').isDisabled());
+    note('directory-inclusion',{childDisabled:true});await directory().locator('[data-up]').click();
+    await directory().locator('[data-files-select=folder]').click();
+    assert.equal(await directory().locator('[data-files-select=folder]').getAttribute('aria-pressed'),'false');
+    await directory().locator('[data-files-select="notes.md"]').click();await directory().locator('[data-files-directory-back]').click();
+    const selected=panel().locator('[data-files-selected="notes.md"]');await selected.waitFor();
+    const header=await panel().locator('[data-files-actions]').boundingBox(),send=await panel().locator('[data-files-send]').boundingBox();
     assert(send.y>=header.y&&send.y+send.height<=header.y+header.height+1,'Send stays in the top toolbar, clear of the home gesture');
-    await page.locator('[data-files-selected] [data-chat-file]').click();await page.locator('[data-file-preview] [data-file-view]').waitFor();await page.locator('[data-file-preview-close]').click();
-    await page.locator('[data-files-send]').click();await until(()=>sent.length>0);await sentToKeyboard();note('attachment-send',{sent:sent.length,operation:sent[0]});
+    await selected.locator('[data-files-open]').click();await previewReady();await closePreview();
+    await panel().locator('[data-files-send]').click();await until(()=>sent.length>0);await sentToKeyboard();
+    assert.equal(sent[0].items[0].from,'audit-remote','Selection preserves the source host');
+    assert.equal(sent[0].items[0].path,join(projects[0],'notes.md'));
+    note('attachment-send',{sent:sent.length,operation:sent[0]});
   });
   await step('local-file-preview',async()=>{
-    await reopen();
-    await panel().locator('input[type=file]:not([webkitdirectory])').setInputFiles([
-      {name:'preview-local.txt',mimeType:'text/plain',buffer:Buffer.from('Previewed from actual staged bytes')},
+    await reopen();const before=staged.length,uploads=sent.length;
+    await panel().locator('[data-files-input]').setInputFiles([
+      {name:'preview-local.txt',mimeType:'text/plain',buffer:Buffer.from('Previewed from original browser bytes')},
       {name:'keep-local.txt',mimeType:'text/plain',buffer:Buffer.from('Kept in selection')},
     ]);
-    const previewCard=panel().locator('[data-files-selected="preview-local.txt"]');
-    const keepCard=panel().locator('[data-files-selected="keep-local.txt"]');
-    await previewCard.getByRole('button').first().click();
-    const preview=page.locator('[data-file-preview]');
-    await preview.getByText('Previewed from actual staged bytes',{exact:false}).last().waitFor();
-    const path=await preview.getAttribute('data-file-preview');
-    assert.equal(existsSync(path),true,'preview owns a real temporary file');
-    await preview.locator('[data-file-preview-close]').click();
-    await until(()=>!existsSync(path));
-    await previewCard.getByRole('button').last().click();
-    await previewCard.waitFor({state:'detached'});
-    await keepCard.waitFor();
-    await keepCard.getByRole('button').last().click();
-    await keepCard.waitFor({state:'detached'});
-    note('local-file-preview',{retired:!existsSync(path),independentSelection:true});
+    const card=panel().locator('[data-files-selected="preview-local.txt"]'),keep=panel().locator('[data-files-selected="keep-local.txt"]');
+    await card.locator('[data-files-open]').click();await previewReady();
+    await preview().getByText('Previewed from original browser bytes',{exact:false}).last().waitFor();
+    assert.equal(await preview().locator('[contenteditable=true]').count(),0,'Unsent browser bytes are read only');
+    assert.equal(staged.length,before,'Preview never stages browser bytes');assert.equal(sent.length,uploads);
+    await closePreview();await card.locator('[data-files-select]').click();await card.waitFor({state:'detached'});
+    await keep.waitFor();await keep.locator('[data-files-select]').click();await keep.waitFor({state:'detached'});
+    note('local-file-preview',{originalBytes:true,noEagerUpload:true,independentSelection:true});
   });
   await step('local-folder-preview',async()=>{
     await reopen();
-    const folder=join(scratch,'browser-folder');mkdirSync(join(folder,'nested'),{recursive:true});
-    writeFileSync(join(folder,'README.txt'),'Root file');writeFileSync(join(folder,'.hidden'),'Hidden file');
-    writeFileSync(join(folder,'nested','folder-preview.txt'),'Actual bytes inside the selected browser folder');
-    const before=sent.length;
-    await panel().locator('input[webkitdirectory]').setInputFiles(folder);
-    const card=panel().locator('[data-files-selected="browser-folder"]');
-    await card.locator('[data-files-card-preview]').click();
-    await panel().locator('[data-files-device-folder]').waitFor();
-    assert.deepEqual(await panel().locator('[data-files-local-entry]').evaluateAll(nodes=>nodes.map(node=>node.dataset.filesLocalEntry)),['nested','README.txt','.hidden']);
-    await panel().locator('[data-files-local-entry="nested"]').click();
-    await panel().locator('[data-files-local-entry="nested/folder-preview.txt"]').click();
-    const preview=page.locator('[data-file-preview]');
-    await preview.getByText('Actual bytes inside the selected browser folder',{exact:false}).last().waitFor();
-    const path=await preview.getAttribute('data-file-preview');assert(existsSync(path));
-    await preview.locator('[data-file-preview-close]').click();await until(()=>!existsSync(path));
-    assert.match(await panel().locator('[data-files-local-path]').innerText(),/browser-folder\/nested/);
+    const pickedFolder=join(scratch,'browser-folder');mkdirSync(join(pickedFolder,'nested'),{recursive:true});
+    writeFileSync(join(pickedFolder,'README.txt'),'Root file');writeFileSync(join(pickedFolder,'.hidden'),'Hidden file');
+    writeFileSync(join(pickedFolder,'nested','folder-preview.txt'),'Actual bytes inside the selected browser folder');
+    const before=sent.length,stagedBefore=staged.length;
+    await panel().locator('[data-files-folder-input]').setInputFiles(pickedFolder);
+    const card=panel().locator('[data-files-selected="browser-folder"]');await card.locator('[data-files-name]>button').first().click();
+    await directory().locator('[data-files-name="nested"]').waitFor();
+    assert.deepEqual(await directory().locator('[data-files-name]').evaluateAll(nodes=>nodes.map(node=>node.dataset.filesName)),['nested','README.txt','.hidden']);
+    await directory().locator('[data-files-name="nested"]>button').first().click();
+    await directory().locator('[data-files-name="folder-preview.txt"] [data-files-open]').click();await previewReady();
+    await preview().getByText('Actual bytes inside the selected browser folder',{exact:false}).last().waitFor();await closePreview();
+    assert.match(await directory().locator('[data-files-search] input').inputValue(),/nested/);
     assert.equal(await panel().locator('[data-files-selected]').count(),1,'Browsing preserves the folder as one selected attachment');
-    assert.equal(sent.length,before,'Browsing and previewing never sends');
-    await panel().locator('[data-files-up]').click();
-    assert.equal(await panel().locator('[data-files-local-entry="nested"]').count(),1);
-    await card.getByRole('button').last().click();await card.waitFor({state:'detached'});
-    assert.equal(await panel().locator('[data-files-device-folder]').count(),0);
-    note('local-folder-preview',{actualBytes:true,selectionPreserved:true,retired:!existsSync(path)});
+    assert.equal(sent.length,before);assert.equal(staged.length,stagedBefore,'Folder browsing and previewing never stages');
+    await directory().locator('[data-up]').click();assert.equal(await directory().locator('[data-files-name="nested"]').count(),1);
+    await directory().locator('[data-files-directory-back]').click();await card.locator('[data-files-select]').click();await card.waitFor({state:'detached'});
+    note('local-folder-preview',{actualBytes:true,selectionPreserved:true,noEagerUpload:true});
   });
   await step('cancel-immediate-retry',async()=>{
     await reopen();
-    const file=panel().locator('input[type=file]:not([webkitdirectory])');await file.setInputFiles([{name:'retry-a.txt',mimeType:'text/plain',buffer:Buffer.from('a')},{name:'retry-b.txt',mimeType:'text/plain',buffer:Buffer.from('b')}]);
+    const file=panel().locator('[data-files-input]');const stagedBefore=staged.length,forgottenBefore=forgotten.length,sentBefore=sent.length;await file.setInputFiles([{name:'retry-a.txt',mimeType:'text/plain',buffer:Buffer.from('a')},{name:'retry-b.txt',mimeType:'text/plain',buffer:Buffer.from('b')}]);
     let finishCancel;const ack=new Promise(r=>finishCancel=r);
     await page.unroute('**/term_drop_cancel');await page.route('**/term_drop_cancel',async r=>{cancelled.push(r.request().postDataJSON());await ack;await r.fulfill({json:null});});
     hold=new Promise(r=>release=r);
     try{
-      await page.locator('[data-files-send]').click();await until(()=>staged.length===1);
+      await page.locator('[data-files-send]').click();await until(()=>staged.length===stagedBefore+1);
       await page.locator('[data-files-panel]:has([data-files-transfer]) [data-files-cancel]').click();
-      assert.equal(await page.locator('[data-files-send]').count(),0,'cancel exposed an early retry');
-      await page.locator('[data-files-transfer][data-stopping]').waitFor();
+      assert(await panel().locator('[data-files-send]').isDisabled(),'cancel exposed an early retry');
+      await page.locator('[data-files-transfer]').waitFor();
       assert.equal(await panel().locator('[data-files-cancel]').isDisabled(),true,'cancel cannot be repeated during cleanup');
-      release();hold=null;await until(()=>forgotten.length>0);
-      assert.equal(await page.locator('[data-files-send]').count(),0,'retry unlocked before cancellation acknowledgement');
-      finishCancel();await page.locator('[data-files-send]').waitFor();await page.locator('[data-files-send]').click();
-      await until(()=>sent.length>=2);await sentToKeyboard();
+      release();hold=null;await until(()=>forgotten.length>forgottenBefore);
+      assert(await panel().locator('[data-files-send]').isDisabled(),'retry unlocked before cancellation acknowledgement');
+      finishCancel();await until(async()=>!(await panel().locator('[data-files-send]').isDisabled()));await panel().locator('[data-files-send]').click();
+      await until(()=>sent.length===sentBefore+1);await sentToKeyboard();
+      assert(forgotten.slice(forgottenBefore).every(path=>path.startsWith('/stage/')),'Cleanup only retires staged copies');
       note('cancel-retry',{staged:staged.length,sent:sent.length,cancels:cancelled.length});
     }finally{release?.();hold=null;finishCancel?.();}
   });
@@ -161,8 +166,9 @@ try{
     await reopen();
     await panel().locator('input[type=file]:not([webkitdirectory])').setInputFiles([]);
     assert.equal(await panel().locator('[data-files-selected]').count(),0,'empty change entered a selection');
-    assert.equal(await panel().locator('[data-files-mesh]').isVisible(),true,'empty change remains on the sources page');
-    note('empty-system-change',{sources:await panel().locator('[data-files-machine]').count()});
+    assert(await panel().locator('[data-files-pick=device]').isVisible());assert(await panel().locator('[data-files-pick=folder]').isVisible());
+    assert.equal(await panel().locator('[data-files-machines]').getAttribute('data-files-machine-count'),'2','All source machines remain discoverable');
+    note('empty-system-change',{sources:2});
   });
   writeFileSync(join(out,'attachment-results.json'),JSON.stringify({results,errors},null,2));assert.deepEqual(errors,[]);assert.deepEqual(failures,[]);console.log('attachment UI gate: clean');
 }catch(e){

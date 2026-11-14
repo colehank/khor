@@ -28,10 +28,10 @@ const f = (name, path) => { const file = new File(["abc"], name); Object.defineP
 const picked = m.deviceAttachments([f("a.txt", "data/nested/a.txt"), f("b.txt", "data/b.txt")], true, "here");
 assert.deepEqual(picked[0].device.dirs, ["nested"]);
 assert.equal(picked[0].size, 6);
-const child={...picked[0],key:picked[0].key+'/nested/a.txt',dir:false};
-assert(m.includesAttachment(picked[0],child),'Browser folder includes a descendant from the same retained tree');
-assert.deepEqual(m.addAttachments([child],picked),picked,'Choosing the browser folder folds its selected descendant');
-assert(!m.includesAttachment(picked[0],{...child,key:'unrelated/nested/a.txt'}),'Equal names on unrelated local roots are different files');
+const folderChild={...picked[0],key:picked[0].key+'/nested/a.txt',dir:false};
+assert(m.includesAttachment(picked[0],folderChild),'Browser folder includes a descendant from the same retained tree');
+assert.deepEqual(m.addAttachments([folderChild],picked),picked,'Choosing the browser folder folds its selected descendant');
+assert(!m.includesAttachment(picked[0],{...folderChild,key:'unrelated/nested/a.txt'}),'Equal names on unrelated local roots are different files');
 const browse = m.deviceFolderEntries(picked[0]);
 assert.deepEqual(browse.map(row=>[row.name,row.dir]),[["nested",true],["b.txt",false]]);
 assert.equal(m.deviceFolderEntries(picked[0],"nested")[0].file,picked[0].device.files[0].file,'Preview retains the original selected File without staging or changing selection');

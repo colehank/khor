@@ -1,7 +1,7 @@
 /** A session owns its unsent files, including work still in flight.
  * Views subscribe; leaving a view does not cancel or reassign its uploads. */
 import type {Attachment} from '@/lib/term-attachments';
-export type PendingFile={key:string;name:string;size:number|null;thumb:string|null;inline:[string,string]|null;path:string|null;error:string|null;encoding?:boolean;source?:Attachment;landedInto?:string|null;reference?:boolean};
+export type PendingFile={key:string;name:string;size:number|null;thumb:string|null;inline:[string,string]|null;path:string|null;error:string|null;encoding?:boolean;source?:Attachment;landedInto?:string|null;landedOn?:string|null;reference?:boolean};
 export class ComposerFiles {
   private items:PendingFile[]=[];
   private listeners=new Set<()=>void>();

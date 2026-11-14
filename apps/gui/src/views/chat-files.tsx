@@ -98,7 +98,7 @@ export function usePendingFiles(upload: {
     const old=store.snapshot().find(item=>item.key===key);if(!old||lock.current)return;
     if(old.thumb)URL.revokeObjectURL(old.thumb);
     const source=deviceAttachments([file],false,'这台设备')[0];
-    store.patch(key,{name:file.name,size:file.size,source,path:null,error:null,inline:null,landedInto:undefined,
+    store.patch(key,{name:file.name,size:file.size,source,path:null,error:null,inline:null,landedInto:undefined,landedOn:undefined,
       thumb:file.type.startsWith('image/')&&file.size<=THUMB_MAX?URL.createObjectURL(file):null});
   };
   const prepare=async():Promise<Pending[]>=>{
@@ -107,7 +107,12 @@ export function usePendingFiles(upload: {
     const entries=store.snapshot();
     try{
       for(const item of entries){
-        if(item.path!==null&&(item.reference||!item.source||item.landedInto===into))continue;
+        // Execution home may finish resolving after selection. A reference
+        // belongs to its source machine, not whichever home was first painted.
+        if(item.source&&!item.source.device&&item.source.from===targetMachine){
+          store.patch(item.key,{path:item.source.path,reference:true,error:null});continue;
+        }
+        if(item.path!==null&&(!item.source||(!item.reference&&item.landedInto===into&&item.landedOn===targetMachine)))continue;
         if(!store.snapshot().some(current=>current.key===item.key))continue;
         store.patch(item.key,{encoding:true,error:null});
         try{
@@ -117,7 +122,7 @@ export function usePendingFiles(upload: {
           const path=file?await upload.put(file,into):(await upload.putPaths([source.from?await pullFile(source.from,source.path):source.path],into))[0];
           if(!path)throw new Error('附件未能送达');
           const inline:[string,string]|null=file?.type.startsWith('image/')&&file.size<=INLINE_MAX?[file.type,await base64Of(file)]:null;
-          store.patch(item.key,{path,inline,encoding:false,landedInto:into});
+          store.patch(item.key,{path,inline,encoding:false,landedInto:into,landedOn:targetMachine,reference:false});
         }catch(error){store.patch(item.key,{encoding:false,error:why(error)});throw error;}
       }
       const keys=new Set(entries.map(item=>item.key));

@@ -6,7 +6,7 @@ import type {CommandRecord} from '@/gen/bindings/CommandRecord';
 import {KhorHeader,SessionAdd,KhorSend} from '@/views/SessionPreferences';
 import {useSessionDraft} from '@/hooks/use-session-draft';
 import {useUpdateBlocker} from '@/lib/update-readiness';
-import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import {
   compose,
@@ -16,10 +16,8 @@ import {
   inApp,
   machineLog,
   markSeenSnapshot,
-  pickPaths,
   retryTransfer,
   said,
-  stageFile,
   stopTransfer,
   type ChatMsgRow,
   type DeviceRow,
@@ -28,8 +26,11 @@ import {
 } from "@/api";
 import { PathCut } from "@/components/PathCut";
 import { FilePreview, PendingChips } from "@/views/chat-files";
+import {useKhorFiles} from '@/views/khor-files';
+import {AttachmentPicker,AttachmentDestination} from '@/views/TermFiles';
+import {pathAttachment,type Attachment} from '@/lib/term-attachments';
+import {listenNativeDragDrop} from '@/lib/native-events';
 import { takeDraft } from "@/lib/composer-handoff";
-import { baseName } from "@/lib/paths";
 import { FileKindIcon } from "@/components/FileKindIcon";
 import { Button } from "@/components/ui/button";
 import { cli, gui } from "@/gen/catalog";
@@ -156,29 +157,32 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     });
   }, []);
 
-  // ── the files going along with the line ──
-  const pendingFiles=composerFiles('khor:'+id);
-  const pending=useSyncExternalStore(pendingFiles.subscribe,pendingFiles.snapshot);
-  useUpdateBlocker("attachments", pending.length > 0);
-  const fileInput = useRef<HTMLInputElement | null>(null);
-  const attach = () => {
-    setRefused(null);
-    if (inApp) {
-      void pickPaths().then(
-        ps=>pendingFiles.add(ps.map(path=>({key:pendingFiles.key(),name:baseName(path),size:null,thumb:null,inline:null,path,error:null}))),
-        (e: unknown) => setRefused(said(e)),
-      );
-    } else {
-      fileInput.current?.click();
-    }
-  };
-  const picked = (files: File[]) => {
-    for (const f of files) {
-      const key=pendingFiles.key();
-      pendingFiles.add([{key,name:f.name,size:f.size,thumb:null,inline:null,path:null,error:null}]);
-      void stageFile(f).then(path=>pendingFiles.patch(key,{path}),error=>pendingFiles.patch(key,{error:said(error)}));
-    }
-  };
+  // The same retained draft and picker as ACP, with a Khor-owned transport.
+  const [into,setInto]=useState<string|null>(null),[attachmentsOpen,setAttachmentsOpen]=useState(false),[dropping,setDropping]=useState(false);
+  useEffect(()=>{setInto(null);setAttachmentsOpen(false);},[id]);
+  const home=machines.find(row=>row.id===agent?.config?.home);
+  const attachmentMachine=id==='wide/all'||home?.me?null:home?.name??agent?.config?.home??null;
+  const attachments=useKhorFiles(id,into,attachmentMachine);
+  const pendingFiles=composerFiles('khor:'+id),pending=attachments.items;
+  useUpdateBlocker("attachments",pending.length>0);
+  const dropBox=useRef<HTMLDivElement>(null),sendLock=useRef(false);
+  const attachmentSources=pending.flatMap(item=>item.source?[item.source]:item.path?[pathAttachment(item.path,null,landsOn)]:[]);
+  const pendingKeyFor=(entry:Attachment)=>pendingFiles.snapshot().find(item=>item.source?.key===entry.key||(!item.source&&item.path===entry.path))?.key;
+  const attach=()=>{setRefused(null);setAttachmentsOpen(true);};
+  useEffect(()=>{
+    if(!inApp||!active||hidden)return;
+    return listenNativeDragDrop(event=>{
+      const bounds=dropBox.current?.getBoundingClientRect();
+      if(event.payload.type==='leave'||!bounds){setDropping(false);return;}
+      const x=event.payload.position.x/devicePixelRatio,y=event.payload.position.y/devicePixelRatio;
+      const over=x>=bounds.left&&x<=bounds.right&&y>=bounds.top&&y<=bounds.bottom;
+      if(event.payload.type!=='drop'){setDropping(over);return;}
+      setDropping(false);
+      if(over&&event.payload.paths.length){attachments.addLocalPaths(event.payload.paths);setAttachmentsOpen(true);}
+    });
+    // The subscription belongs to this conversation; preparation resolves home again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[id,active,hidden,attachmentMachine]);
 
   const commandMenuId=useId();
   const [pick, setPick] = useState(0), [dismissed, setDismissed] = useState<string | null>(null);
@@ -194,48 +198,39 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
     });
   };
 
-  const send = () => {
-    const text = draft.trim();
-    const files = pending.flatMap((p) => (p.path === null ? [] : [p.path]));
-    if ((!text && files.length === 0) || sending || !composerReady(pending)) return;
-    // What this send carries: a file added while it is on its way stays
-    // for the next one.
-    const went = new Set(pending.map((p) => p.key));
-    setSending(true);
-    setRefused(null);
-    const agentInput = files.length === 0 ? text
-      : [text, `Attached files on ${JSON.stringify(landsOn)}:`, ...files.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
-    const agentPrompt = text.startsWith('/') || (id === 'wide/all' ? text.length > 0 && files.length === 0 : agentInput.length > 0);
-    if (agentPrompt && !agent?.config) { setSending(false); setRefused(gui.agent_choose_first); return; }
-    if(agentPrompt&&khorPendingRuns.get(id)?.line!==agentInput)khorPendingRuns.set(id,{line:agentInput,token:crypto.randomUUID()});
-    const issued=khorPendingRuns.get(id);
-    if (files.length > 0 && box.current) raiseKeyboard(box.current);
-    const posted = agentPrompt
-      ? khorAgent("prompt", agent!.config!.home, { text:agentInput, token: issued!.token, session:id }) : compose(text, files);
-    posted.then(
-      () => {
-        setDraft((now) => (now.trim() === text ? "" : now));
-        for(const key of went)pendingFiles.remove(key);
-        if(khorPendingRuns.get(id)===issued)khorPendingRuns.delete(id);
-        if(currentId.current!==id)return;
-        setSending(false);
-        setDismissed(null);
-        toBottom();
-        refresh();
-      },
-      // A lost command response may follow a successful submission.
-      // Keep the draft and token so retry asks for the same receipt.
-      (e: unknown) => {
-        if(currentId.current!==id)return;
-        setSending(false);
-        setRefused(said(e));
-      },
-    );
+  const send = async (retry=false):Promise<boolean> => {
+    if(sendLock.current||sending||attachments.busy)return false;
+    if(retry)for(const item of pendingFiles.snapshot())attachments.retry(item.key);
+    const chosen=pendingFiles.snapshot(),text=draft.trim();
+    if((!text&&!chosen.length)||!composerReady(chosen))return false;
+    const agentPrompt=text.startsWith('/')||(id==='wide/all'?text.length>0&&chosen.length===0:text.length>0||chosen.length>0);
+    if(agentPrompt&&!agent?.config){setRefused(gui.agent_choose_first);return false;}
+    const went=new Set(chosen.map(item=>item.key));
+    sendLock.current=true;setSending(true);setRefused(null);
+    try{
+      // Migrate a retained old native selection without trusting a path from
+      // the viewing machine as a path on a remote agent's execution home.
+      for(const item of chosen)if(!item.source&&item.path)pendingFiles.patch(item.key,{source:pathAttachment(item.path,null,landsOn),reference:false});
+      const prepared=await attachments.prepare(),paths=prepared.flatMap(item=>item.path?[item.path]:[]);
+      const agentInput=paths.length===0?text:[text,`Attached files on ${JSON.stringify(home?.shown??landsOn)}:`,...paths.map(path=>JSON.stringify(path))].filter(Boolean).join('\n');
+      if(agentPrompt&&khorPendingRuns.get(id)?.line!==agentInput)khorPendingRuns.set(id,{line:agentInput,token:crypto.randomUUID()});
+      const issued=khorPendingRuns.get(id);
+      await (agentPrompt?khorAgent('prompt',agent!.config!.home,{text:agentInput,token:issued!.token,session:id}):compose(text,paths));
+      setDraft(now=>now.trim()===text?'':now);
+      for(const key of went)pendingFiles.remove(key);
+      if(khorPendingRuns.get(id)===issued)khorPendingRuns.delete(id);
+      if(currentId.current===id){setDismissed(null);toBottom();refresh();if(chosen.length&&box.current)requestAnimationFrame(()=>{if(box.current)raiseKeyboard(box.current);});}
+      return true;
+    }catch(error){if(currentId.current===id)setRefused(said(error));return false;}
+    finally{sendLock.current=false;if(currentId.current===id)setSending(false);}
   };
   const ready = draft.trim()!==""||pending.length>0;
 
   return (
-    <div data-machine-chat className="flex min-h-0 flex-1 flex-col">
+    <div ref={dropBox} data-machine-chat className={cn("flex min-h-0 flex-1 flex-col",dropping&&"ring-2 ring-inset ring-ring")}
+      onDragOver={event=>{if(!active||!event.dataTransfer.types.includes('Files'))return;event.preventDefault();setDropping(true);}}
+      onDragLeave={event=>{if(!event.currentTarget.contains(event.relatedTarget as Node|null))setDropping(false);}}
+      onDrop={event=>{setDropping(false);if(!active||!event.dataTransfer.files.length)return;event.preventDefault();try{attachments.addFiles([...event.dataTransfer.files]);attach();}catch(error){setRefused(said(error));}}}>
       <div className="relative flex min-h-0 flex-1 flex-col">
       <div
         ref={scroller}
@@ -303,7 +298,13 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
       <div className="flex-none px-row pt-in pb-in">
       <div className="relative mx-auto flex w-full max-w-measure flex-col text-read">
         <AgentCommandMenu id={commandMenuId} commands={choices} pick={pick} onPick={choose} />
-        <PendingChips key={id} items={pending} onRemove={key=>pendingFiles.remove(key)} machine={landsOn} here />
+        <AttachmentDestination machine={attachmentMachine} into={into} onInto={setInto} busy={sending||attachments.busy}/>
+        <AttachmentPicker viewport={dropBox} open={attachmentsOpen} onClose={()=>setAttachmentsOpen(false)} onSent={()=>setAttachmentsOpen(false)} road={{
+          machine:attachmentMachine,cwd:null,into,onInto:setInto,filesOnly:true,selected:attachmentSources,add:attachments.addSources,
+          remove:entry=>{const key=pendingKeyFor(entry);if(key)attachments.remove(key);},
+          replace:(entry,file)=>{const key=pendingKeyFor(entry);if(key)attachments.replace(key,file);},
+          send:()=>send(true),dropFiles:attachments.addFiles,busy:sending||attachments.busy,progress:null}}/>
+        <PendingChips key={id} items={pending} onRemove={attachments.remove} onRetry={key=>{attachments.retry(key);setRefused(null);}} onAdd={attach} busy={sending||attachments.busy} machine={home?.name??landsOn} here={attachmentMachine===null}/>
         <Composer
           lead={
             <SessionAdd onAttach={attach} options={[]} />
@@ -317,25 +318,10 @@ export function MachineChat({ id, active = true, onSession, sessions = [] }: { i
             <KhorSend session={id} record={runningAgent} onStopped={refresh} ready={ready} blocked={!composerReady(pending)} sending={sending} onSend={send} />
           }
         >
-        {/* The browser forms' picker: a real <input type=file>, hidden —
-            ＋ is its face. Value cleared after each pick so the same file
-            twice still fires onChange. */}
-        {!inApp && (
-          <input
-            ref={fileInput}
-            type="file"
-            multiple
-            hidden
-            data-file-input
-            onChange={(e) => {
-              picked([...(e.target.files ?? [])]);
-              e.target.value = "";
-            }}
-          />
-        )}
         <textarea
           ref={box}
           data-chat-composer
+          onPaste={event=>{const files=[...event.clipboardData.files];if(!files.length)return;event.preventDefault();try{attachments.addFiles(files);attach();}catch(error){setRefused(said(error));}}}
           aria-label={gui.message_text}
           aria-controls={choices.length?commandMenuId:undefined}
           aria-activedescendant={choices.length?`${commandMenuId}-${Math.min(pick,choices.length-1)}`:undefined}

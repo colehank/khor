@@ -1939,7 +1939,7 @@ export function ChatView({
             add:files.addSources,
             remove:item=>{const key=pendingKeyFor(item);if(key)files.remove(key);},
             replace:(item,file)=>{const key=pendingKeyFor(item);if(key)files.replace(key,file);},
-            send:async()=>{if(!canSend)return false;return await say()===true;},dropFiles:files.addFiles,busy:files.busy,progress:null,cancel:()=>{}}}/>
+            send:async()=>{if(!canSend)return false;return await say()===true;},dropFiles:files.addFiles,busy:files.busy,progress:null}}/>
           <PendingChips key={id} items={files.items} onAdd={()=>setAttachmentsOpen(true)} onRemove={key=>{files.remove(key);if(files.items.find(item=>item.key===key)?.error)setControlError(null);}} onReplace={files.replace} onRetry={key=>{files.retry(key);setControlError(null);}} busy={files.busy} machine={home ?? machine ?? ""} here={machine === null} />
           {docs.length > 0 && (
             <div data-chat-shots className="flex flex-wrap items-center gap-1.5 px-2 pb-1 text-caption">

@@ -2050,9 +2050,20 @@ pub fn chat_put_paths(
     into: &str,
 ) -> Result<Vec<String>, String> {
     let chat = chat_of(root, id, lease)?;
+    put_paths_on(root, chat.far.as_deref(), paths, into)
+}
+
+/// Common file landing for ACP and Khor conversations. The caller resolves
+/// and validates the conversation owner before reaching this transport.
+pub(crate) fn put_paths_on(
+    root: &Path,
+    machine: Option<&str>,
+    paths: &[String],
+    into: &str,
+) -> Result<Vec<String>, String> {
     let n = Node::open(root.to_path_buf())?;
-    if let Some(machine) = chat.far.as_ref() {
-        return crate::term::deliver_blocking(root, &machine, paths, into);
+    if let Some(machine) = machine {
+        return crate::term::deliver_blocking(root, machine, paths, into);
     }
     let into = khor_node::road::tidy_setting(into)?;
     let dir = if into.is_empty() {
@@ -2168,6 +2179,44 @@ mod put_tests {
         chat_leave(&root, id, &lease).unwrap();
         let _ = std::fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn khor_landing_needs_no_acp_lease_and_retry_respects_destination() {
+        let root = std::env::temp_dir().join(format!("khor-shared-put-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        let source = root.join("shared.txt");
+        std::fs::write(&source, "retained source bytes").unwrap();
+        let paths = [source.display().to_string()];
+        let first = put_paths_on(&root, None, &paths, "").unwrap();
+        assert_eq!(
+            first,
+            vec![root.join("khor-drop/shared.txt").display().to_string()]
+        );
+        assert_eq!(put_paths_on(&root, None, &paths, "").unwrap(), first);
+        let destination = root.join("chosen");
+        std::fs::create_dir_all(&destination).unwrap();
+        let custom =
+            put_paths_on(&root, None, &paths, &destination.display().to_string()).unwrap();
+        assert_eq!(
+            custom,
+            vec![destination.join("shared.txt").display().to_string()]
+        );
+        assert_eq!(
+            put_paths_on(&root, None, &paths, &destination.display().to_string()).unwrap(),
+            custom
+        );
+        assert_eq!(
+            std::fs::read_to_string(&source).unwrap(),
+            "retained source bytes"
+        );
+        assert!(
+            chat_put_paths(&root, "gui/absent", "invalid", &paths, "").is_err(),
+            "ACP still requires its live conversation lease"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
 }
 
 #[cfg(test)]

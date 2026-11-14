@@ -7,7 +7,7 @@ export async function checkKhorAttachments(browser,{port,report,engine,width=390
  const api=(command,body={})=>page.evaluate(async({command,body})=>(await fetch('/api/'+command,{method:'POST',body:JSON.stringify(body)})).json(),{command,body});
  try{
   await page.goto(`http://127.0.0.1:${port}/app/?scene=khor&machines=3`);
-  const composer=page.locator('[data-chat-composer]:visible');await composer.waitFor();
+  const composer=page.locator('[data-machine-chat]:visible [data-chat-composer]');await composer.waitFor();
   await page.locator('[data-lab-add]:visible').click();await page.locator('[data-lab-attach-device]').click();
   const input=page.locator('[data-attachment-picker] [data-files-input],[data-machine-chat] [data-file-input]');
   await input.setInputFiles({name:'khor-note.txt',mimeType:'text/plain',buffer:Buffer.from('Retained Khor attachment')});

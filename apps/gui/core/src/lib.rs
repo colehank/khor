@@ -2396,6 +2396,26 @@ pub async fn khor_agent(
                 .unwrap_or_default();
             data = Some(serde_json::json!({"conversation":conversation,"commands":commands}));
         }
+    } else if action == "put_paths" {
+        let paths: Vec<String> = serde_json::from_value(payload["paths"].clone())
+            .map_err(|_| khor_catalog::msg::agent_arguments().to_owned())?;
+        let into: Option<String> = serde_json::from_value(payload["into"].clone())
+            .map_err(|_| khor_catalog::msg::agent_arguments().to_owned())?;
+        // A caller cannot redirect a conversation's files by supplying another
+        // machine. The conversation, just like its prompt, owns execution home.
+        let home = if board == khor_node::wide::BROADCAST {
+            None
+        } else {
+            let home = n.khor_conversation(board)?.home;
+            (home != n.device_str()).then_some(home)
+        };
+        let root = root.to_path_buf();
+        let paths = tokio::task::spawn_blocking(move || {
+            chat::put_paths_on(&root, home.as_deref(), &paths, &into.unwrap_or_default())
+        })
+        .await
+        .map_err(|error| error.to_string())??;
+        data = Some(serde_json::json!(paths));
     } else {
         let action = match action {
             "create" => khor_node::khor_agent::Action::CreateConversation {
