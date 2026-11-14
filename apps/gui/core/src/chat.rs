@@ -2196,8 +2196,7 @@ mod put_tests {
         assert_eq!(put_paths_on(&root, None, &paths, "").unwrap(), first);
         let destination = root.join("chosen");
         std::fs::create_dir_all(&destination).unwrap();
-        let custom =
-            put_paths_on(&root, None, &paths, &destination.display().to_string()).unwrap();
+        let custom = put_paths_on(&root, None, &paths, &destination.display().to_string()).unwrap();
         assert_eq!(
             custom,
             vec![destination.join("shared.txt").display().to_string()]
@@ -2216,7 +2215,6 @@ mod put_tests {
         );
         let _ = std::fs::remove_dir_all(&root);
     }
-
 }
 
 #[cfg(test)]

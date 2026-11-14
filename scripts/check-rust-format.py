@@ -97,15 +97,20 @@ def main():
         edition = tomllib.loads(inputs[manifest].decode())["package"]["edition"]
         editions[member] = str(workspace["package"]["edition"] if isinstance(edition, dict) else edition)
     standalone = {"apps/gui/lab/terminal-color-answers.rs", "apps/gui/scripts/editor-history-probe/lib.rs", "apps/gui/scripts/native-menu-probe/lib.rs", "scripts/fixtures/native-io.rs", "scripts/fixtures/native-paste.rs"}
-    thirdparty = "apps/gui/scripts/fixtures/native-events/tauri-2.11.5/event-mod.rs"
-    expected = "dfcb7cf11d7674903f71196e64ae0fa95286757ac816bfbc3139ebdedcb25dea"
+    thirdparty_root = "apps/gui/scripts/fixtures/native-events/tauri-2.11.5/"
+    thirdparty = {
+        thirdparty_root + "event-mod.rs": "dfcb7cf11d7674903f71196e64ae0fa95286757ac816bfbc3139ebdedcb25dea",
+        thirdparty_root + "manager-window.rs": "882caf1fdd15f3cd93c6b419ae19748d91387ba5e8283ee2b7b89bc7187a1535",
+        thirdparty_root + "manager-webview.rs": "24d3d51920ccd56db5c44db73c0deca09cba4a0811921a2f66b78e6213789f51",
+    }
     paths = inventory(root)
-    if thirdparty not in paths or hashlib.sha256(read(root, thirdparty)).hexdigest() != expected:
-        fail("third-party snapshot missing or SHA contract changed")
+    for relative, expected in thirdparty.items():
+        if relative not in paths or hashlib.sha256(read(root, relative)).hexdigest() != expected:
+            fail("third-party snapshot missing or SHA contract changed: " + relative)
     formatted = {}
     for relative in paths:
         inputs[relative] = read(root, relative)
-        if relative.startswith("vendor/") or relative == thirdparty:
+        if relative.startswith("vendor/") or relative in thirdparty:
             continue
         owners = [p for p in editions if relative.startswith(p + "/")]
         edition = editions[max(owners, key=len)] if owners else "2024" if relative in standalone else None
