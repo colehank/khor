@@ -10,6 +10,10 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
  const picker=page.locator('[data-attachment-picker]:visible'),directory=page.locator('[data-attachment-directory]:visible'),preview=page.locator('[data-attachment-file]:visible');
  const selected=name=>picker.locator(`[data-files-selected="${name}"]`);
  const choose=file=>picker.locator('[data-files-input]').setInputFiles(file);
+ const machinesMenu=page.locator('[data-files-machines-menu]:visible');
+ const openMachines=async()=>{await picker.locator('[data-files-machines]').click();await machinesMenu.waitFor();const count=Number(await picker.locator('[data-files-machines]').getAttribute('data-files-machine-count'));assert(count>=2,'Lab exposes more than one source machine');assert.equal(await machinesMenu.locator('[data-files-machine]').count(),count,'Every advertised machine is available in the choice menu');};
+ const sessionMachine=async()=>{await openMachines();await machinesMenu.locator('[data-files-machine][data-files-session]').click();};
+
  const grid=()=>page.locator('[data-terminal] .xterm-screen').evaluate(node=>({width:node.style.width,height:node.style.height}));
  const green=async()=>assert(await picker.locator('[data-files-send]').evaluate(button=>{const p=document.createElement('i');p.style.backgroundColor='var(--brand-strong)';document.body.append(p);const expected=getComputedStyle(p).backgroundColor;p.remove();return !button.disabled&&getComputedStyle(button).backgroundColor===expected;}));
  let originalGrid,originalSizes;
@@ -31,6 +35,12 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   assert.equal(await picker.evaluate(node=>getComputedStyle(node).position),'fixed');
   if(mobile)await page.waitForFunction(()=>document.querySelector('#root').getBoundingClientRect().bottom<=document.querySelector('[data-attachment-picker]').getBoundingClientRect().top+1);
   await unchanged('chrome above the keyboard panel');assert.equal(await picker.locator('[data-files-actions]').innerText(),'取消\n发送 (1)');
+  const sourcesVisible=await picker.evaluate(root=>{
+   const source=root.querySelector('[data-files-source]').getBoundingClientRect(),selection=root.querySelector('[data-files-selection]').getBoundingClientRect();
+   return [...root.querySelectorAll('[data-files-pick],[data-files-machines]')].map(node=>{const r=node.getBoundingClientRect();return {label:node.textContent,top:r.top,bottom:r.bottom,left:r.left,right:r.right,visible:r.top>=source.top&&r.bottom<=source.bottom+1&&r.bottom<=selection.top+1};});
+  });assert(sourcesVisible.every(control=>control.visible),'Local files, folders and the counted machine entry are visible without scrolling');
+  assert.match(await picker.locator('[data-send-to-machine]').innerText(),/发送到/);assert.match(await picker.locator('[data-send-into-label]').innerText(),/文件夹/);assert.equal((await picker.locator('[data-send-into-change]').innerText()).trim(),'更改');
+  await openMachines();const other=machinesMenu.locator('[data-files-machine]').last(),otherLabel=await other.innerText();const otherBounds=await other.boundingBox();assert(otherBounds.y>=0&&otherBounds.y+otherBounds.height<=height+1,'The last machine is reachable inside the viewport');await other.click();await directory.waitFor();assert(otherLabel.includes((await directory.locator('[data-machine-identity]').innerText()).trim()),'Choosing another machine opens that machine');await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});await unchanged('other machine choice');
   assert.equal(await picker.locator('[data-files-input]').getAttribute('accept'),null);assert.match(await picker.locator('[data-send-into-path]').innerText(),/khor-drop/);await green();assert.equal((await api('__ai_preview/attachment-events')).length,0);
   await image('terminal');await unchanged('local file page and return');
   await picker.locator('[data-files-folder-input]').evaluate(input=>{const file=new File(['nested original bytes'],'inside.txt',{type:'text/plain'});Object.defineProperty(file,'webkitRelativePath',{value:'local-folder/nested/inside.txt'});const data=new DataTransfer();data.items.add(file);input.files=data.files;input.dispatchEvent(new Event('change',{bubbles:true}));});
@@ -38,7 +48,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   await directory.locator('[data-files-name="inside.txt"] [data-files-open]').click();await preview.locator('.cm-editor').waitFor();assert.match(await preview.innerText(),/nested original bytes/);await preview.locator('[data-file-back]').click();await preview.waitFor({state:'hidden'});assert.match(await directory.locator('[data-files-search] input').inputValue(),/nested/);await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});await selected('local-folder').locator('[data-files-select]').click();await unchanged('local folder navigation');
 
   await selected('draft.txt').locator('[data-files-open]').click();await preview.locator('[data-code-editor],.cm-editor').first().waitFor();await preview.locator('[data-file-back]').click();await preview.waitFor({state:'hidden'});
-  await picker.locator('[data-files-machine][data-files-session]').click();await directory.waitFor();await directory.locator('[data-files-entry]').first().waitFor();
+  await sessionMachine();await directory.waitFor();await directory.locator('[data-files-entry]').first().waitFor();
   assert.equal(await directory.locator('[data-files-search] input').evaluate(node=>node===document.activeElement),false,'No automatic path/search keyboard');
   // Measure the settled sheet, rather than its entrance below the viewport.
   await page.waitForFunction(()=>{const root=document.querySelector('[data-attachment-directory][data-state="open"]');if(!root)return false;const sheet=root.getBoundingClientRect(),back=root.querySelector('[data-files-directory-back]')?.getBoundingClientRect();return back&&back.top>=sheet.top&&back.bottom<=Math.min(sheet.bottom,window.innerHeight)+1;});
@@ -66,7 +76,7 @@ export async function checkAttachmentDraft(browser,{port,report,engine,width=390
   const field=directory.locator('[data-files-search] input');const previous=await field.inputValue();await field.fill(previous+remoteName.slice(0,3));await page.waitForTimeout(250);assert(await directory.locator(`[data-files-name="${remoteName}"]`).count());await field.fill(previous);
   await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});await selected(remoteName).waitFor();
   await selected(remoteName).locator('button').first().click();await selected(remoteName).waitFor({state:'hidden'});
-  await picker.locator('[data-files-machine][data-files-session]').click();await directory.locator('[data-files-name="project"]').waitFor();await directory.locator('[data-files-select="project"]').click();assert.equal(await directory.locator('[data-files-select="project"]').getAttribute('aria-pressed'),'true');
+  await sessionMachine();await directory.locator('[data-files-name="project"]').waitFor();await directory.locator('[data-files-select="project"]').click();assert.equal(await directory.locator('[data-files-select="project"]').getAttribute('aria-pressed'),'true');
   await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});await selected('project').locator('button').first().click();await directory.waitFor();await directory.locator('[data-files-entry]').first().waitFor();assert.match(await directory.locator('[data-files-search] input').inputValue(),/project/);await directory.locator('[data-files-directory-back]').click();await directory.waitFor({state:'hidden'});
   await selected('project').locator('[data-files-select]').click();await selected('project').waitFor({state:'hidden'});
   await choose(Array.from({length:12},(_,i)=>({name:`long-${i}.txt`,mimeType:'text/plain',buffer:Buffer.from('draft')})));
