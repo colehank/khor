@@ -1,7 +1,7 @@
 import {tourEasing,tourMotion} from './tour-motion';
 
 const leg=tourMotion.travel+tourMotion.settle;
-export const capabilityTiming={request:0,call:leg,reply:leg*2,delivery:leg*3,agentCycle:leg*4} as const;
+export const capabilityTiming={request:0,call:leg,reply:leg*2,delivery:leg*3,agentCycle:leg*4,workReply:leg,workCycle:leg*2} as const;
 type Point=[number,Omit<Keyframe,'offset'>];
 const frames=(points:Point[],cycle:number):Keyframe[]=>{
   const merged=new Map<number,Omit<Keyframe,'offset'>>();
@@ -40,7 +40,7 @@ const light=(start:number,end:number,cycle:number,ink:string,accent:string)=>fra
 // A reply cannot begin before the calls arrive and the agents light up.
 export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  const cycle=agent?capabilityTiming.agentCycle:tourMotion.turn;
+  const cycle=agent?capabilityTiming.agentCycle:capabilityTiming.workCycle;
   let animations:Animation[]=[];
   const animate=(selector:string,keyframes:Keyframe[]|((node:SVGElement)=>Keyframe[]))=>{
     for(const node of figure.querySelectorAll<SVGElement>(selector)){
@@ -54,10 +54,10 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
     for(const id of ['mac','linux']){
       const start=agent?capabilityTiming.call:0;
       const arrival=start+tourMotion.travel;
-      trace(`[data-relation-flow="${agent?'call':'access'}"][data-relation-route="${id}"]`,start,!agent);
-      animate(`.relation-status.relation-${id}`,pulse([agent?arrival:start],cycle,0));
-      animate(`[data-relation-session="${id}"]`,light(agent?arrival:start,agent?capabilityTiming.reply:start+960,cycle,ink,accent));
-      if(agent)trace(`[data-relation-flow="reply"][data-relation-route="${id}"]`,capabilityTiming.reply,true);
+      trace(`[data-relation-flow="${agent?'call':'access-out'}"][data-relation-route="${id}"]`,start);
+      animate(`.relation-status.relation-${id}`,pulse([arrival],cycle,0));
+      animate(`[data-relation-session="${id}"]`,light(arrival,agent?capabilityTiming.reply:capabilityTiming.workReply,cycle,ink,accent));
+      trace(`[data-relation-flow="${agent?'reply':'access-back'}"][data-relation-route="${id}"]`,agent?capabilityTiming.reply:capabilityTiming.workReply,true);
     }
     if(agent){
       trace('[data-relation-flow="request"]',capabilityTiming.request);
@@ -66,7 +66,7 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
       animate('.relation-router',busy(received,delivered,cycle,.22,.85));
       animate('[data-net-brand] > svg',busy(received,delivered,cycle,1,.6));
       animate('.relation-access-active',pulse([capabilityTiming.request,delivered],cycle,0));
-    }else animate('.relation-access-active',pulse([tourMotion.travel],cycle,0));
+    }else animate('.relation-access-active',pulse([0,capabilityTiming.workReply+tourMotion.travel],cycle,0));
   };
   const clear=()=>{animations.forEach(animation=>animation.cancel());animations=[];};
   const settle=()=>{if(reduced.matches)clear();};

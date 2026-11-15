@@ -13,7 +13,7 @@ export type IconState = {phase:number; copyPhase:number; harness:number; focus:n
 export type MotionValues = Record<string,string|number>;
 export type MotionTrack = {target:HTMLElement|SVGElement; sample:(state:IconState, progress:number)=>MotionValues};
 
-/** Both the native timeline and the fallback resolve the same reversible poses. */
+/** Every frame resolves from the same canonical poses, including chapter replay. */
 export function iconState(progress:number):IconState {
   const p=clamp(progress);
   const from=Math.min(3,iconStops.findLastIndex(stop=>p>=stop));

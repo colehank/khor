@@ -10,7 +10,7 @@ const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'files'},{id:'linux',name:'Codex',mark:'Codex',resource:'Web',icon:'web'}] as const;
-const description=agent?'You use the same laptop and Mobile access group to send a Task to Khor. Khor calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices return to Khor before Khor delivers the Result to your access group. Khor softly pulses until delivery. All devices, resources and labels stay in place.':'The workstation and Server provide their agents and resources to You, the shared laptop and Mobile access group. Both devices send their light traces toward You together, repeating in sync. Sessions and resources stay on their hosts; all relationships remain visible.';
+const description=agent?'You use the same laptop and Mobile access group to send a Task to Khor. Khor calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices return to Khor before Khor delivers the Result to your access group. Khor softly pulses until delivery. All devices, resources and labels stay in place.':'You use the shared laptop and Mobile access group to send requests to the workstation and Server together. Their agent marks light up after the requests arrive, then both devices return their light traces to You. The entire You boundary lights up on sending and receiving. Sessions and resources stay on their hosts; all relationships remain visible.';
 ---
 <figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group)`}>
   <NetworkGraph prefix={mode} infrastructure={false} activeRouter={agent} title={agent?'Delegate from a laptop or Mobile and receive the result there':'One task, accessible from a laptop or Mobile'} {description}>
@@ -35,8 +35,8 @@ const description=agent?'You use the same laptop and Mobile access group to send
       {g.routes.map(({id,d,end})=><g>
         <path class="relation-wire" data-relation-route={id} d={d}/>
         <path class="relation-signal" data-relation-route={id} d={d}/>
-        <FlowTrace d={d} route={id} flow={agent?'call':'access'}/>
-        {agent&&<FlowTrace d={d} route={id} flow="reply"/>}
+        <FlowTrace d={d} route={id} flow={agent?'call':'access-out'}/>
+        <FlowTrace d={d} route={id} flow={agent?'reply':'access-back'}/>
         <circle class="relation-port" data-relation-port={id} cx={end.x} cy={end.y} r="2.5"/>
       </g>)}
       {agent&&<>

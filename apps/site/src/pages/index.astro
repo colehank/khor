@@ -22,7 +22,7 @@ const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But",
         <div class="opening-copy" aria-hidden="true" lang="en">{lines.map(([lead, phrase], index) => <div class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><p class="opening-line-content"><span class="line-lead">{lead}</span>{phrase.split("\n").map(text => <span class="line-phrase">{text}</span>)}</p></div>)}</div>
         <h2 class="sr-only" lang="en">You have many devices With many harnesses But one mind How about letting them work together? Meet Khor</h2>
         <div class="assembly" data-assembly><Mandala /></div>
-        <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"><span class="scroll-stem-progress"></span></span></div>
+        <a class="scroll-cue" href="#connect"><span>Keep exploring</span><span class="scroll-stem" aria-hidden="true"></span></a>
         <nav class="story-steps" aria-label="Introduction chapters">{lines.map(([, phrase], index) => <button type="button" aria-label={`Go to ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
       </div>
     </section>
