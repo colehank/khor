@@ -54,6 +54,12 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   const tracks:MotionTrack[]=[];
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
   const board=document.createElement('div');board.className='icon-artboard';
+  const construction=document.createElement('div');construction.className='icon-construction';
+  construction.innerHTML='<div class="construction-axis"><div class="construction-clip"><div class="construction-counter"><div class="construction-art"></div></div></div></div>';
+  board.append(construction);
+  const constructionArt=construction.querySelector<HTMLElement>('.construction-art')!;
+  track(construction.querySelector<HTMLElement>('.construction-clip')!,state=>({transform:`translateX(${state.light*100}%)`}));
+  track(construction.querySelector<HTMLElement>('.construction-counter')!,state=>({transform:`translateX(${-state.light*100}%)`}));
   // Preserve the original art transform, including its optical offset.
   const transform=art.getAttribute('transform')!.match(/translate\(([^ ]+) ([^)]+)\) scale\(([^)]+)\)/)!;
   board.style.transform=`translate(${Number(transform[1])/1024*100}%,${Number(transform[2])/1024*100}%) scale(${transform[3]})`;
@@ -80,7 +86,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
     const el=document.createElement('div');el.className='icon-layer';el.dataset.storyLayer=name;
     const [x,y,w,h]=box;
     Object.assign(el.style,{left:`${x/1024*100}%`,top:`${y/1024*100}%`,width:`${w/1024*100}%`,height:`${h/1024*100}%`});
-    el.innerHTML=svgFor(nodes,name,box);board.append(el);return el;
+    el.innerHTML=svgFor(nodes,name,box);constructionArt.append(el);return el;
   };
 
   const ring=children.find(node=>node.getAttribute('stroke')==='url(#artwork-ring-solid)')!;
@@ -90,7 +96,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   const flatMind=mind.cloneNode(false) as Element;
   flatMind.setAttribute('fill',definitions.get('artwork-pearl-0')!.querySelector('stop[offset="0.72"]')!.getAttribute('stop-color')!);
   const centre=layer('mind',[flatRing,flatMind]);
-  track(centre,state=>({opacity:state.mind*(1-ease(state.light,.35,.75))}));
+  track(centre,state=>({opacity:state.mind}));
 
   const ringSource=children.find(node=>node.getAttribute('stroke')==='url(#artwork-glass-band)')!;
   const diamondSource=children.find(node=>node.getAttribute('stroke')==='url(#artwork-diamond-edge)')!;
@@ -105,7 +111,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   const diamond=diamondSource.cloneNode(false) as Element;diamond.setAttribute('stroke','currentColor');edges.push(diamond);
   for(const edge of edges){edge.setAttribute('pathLength','1');edge.setAttribute('stroke-dasharray','1');}
   const outline=layer('connection',edges);outline.classList.add('connection-line');
-  track(outline,state=>({opacity:clamp(state.connection*32)*(1-ease(state.light,.05,.8))}));
+  track(outline,state=>({opacity:clamp(state.connection*32)}));
   track(outline.querySelector('svg')!,state=>({strokeDashoffset:1-state.connection}));
 
   const faces=['device','harness'].map(kind=>{
@@ -134,8 +140,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
       const looseScale=journey.device.scale+(journey.harness.scale-journey.device.scale)*t;
       const dx=(looseX-x)*(1-state.focus),dy=(looseY-y)*(1-state.focus);
       const scale=looseScale+(1-looseScale)*state.focus;
-      const local=(x+y)/2048;
-      return {transform:`translate(${dx/size*100}%,${dy/size*100}%) scale(${scale})`,opacity:1-ease(state.light,local*.65,local*.65+.3)};
+      return {transform:`translate(${dx/size*100}%,${dy/size*100}%) scale(${scale})`};
     });
     faces.forEach(({marks},kind)=>{
       const face=marks[i],wrapper=document.createElement('div');wrapper.className='story-face';
@@ -147,8 +152,8 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   }
   faces.forEach(({source})=>source.remove());
 
-  // Reveal a static original SVG with opposing HTML translations. The diagonal
-  // clip and its feather never change shape; no SVG mask/filter is recomputed.
+  // Complementary horizontal feathers replace the flat drawing with the
+  // original glass artwork. Only HTML translations move; SVG art stays still.
   const material=document.createElement('div');material.className='icon-material';
   material.dataset.storyLayer='material';
   material.innerHTML=`<div class="reveal-axis"><div class="reveal-clip"><div class="reveal-counter"><div class="reveal-art">${svgFor(children,'material')}</div></div></div></div>`;
@@ -164,8 +169,10 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
     if(node.tagName!=='rect')clone.setAttribute('opacity',String(Number(node.getAttribute('opacity')??1)*.42));
     return clone;
   });
-  environment.innerHTML=svgFor(ground,'environment');
+  environment.innerHTML=`<div class="reveal-axis"><div class="reveal-clip"><div class="reveal-counter"><div class="reveal-art">${svgFor(ground,'environment')}</div></div></div></div>`;
   environment.querySelector('svg')!.setAttribute('preserveAspectRatio','none');
+  track(environment.querySelector<HTMLElement>('.reveal-clip')!,state=>({transform:`translateX(${(state.light-1)*100}%)`}));
+  track(environment.querySelector<HTMLElement>('.reveal-counter')!,state=>({transform:`translateX(${(1-state.light)*100}%)`}));
   canvas.replaceChildren(board);canvas.dataset.iconReady='';
   return tracks;
 }
