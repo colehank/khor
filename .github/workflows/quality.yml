@@ -1256,7 +1256,7 @@ jobs:
           SCROLL_SURFACES_MATERIAL_DIR: ${{ runner.temp }}/native-helper-probe
         run: xvfb-run -a node scripts/check-scroll-surfaces.mjs --material
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always() && inputs.desktop_probe != 'none' && inputs.desktop_probe != 'appearance'
+        if: always() && (startsWith(inputs.desktop_probe, 'drag-') || inputs.desktop_probe == 'material-neutral')
         with:
           name: desktop-ui-probe
           path: ${{ runner.temp }}/native-helper-probe
