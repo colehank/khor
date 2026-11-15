@@ -3,28 +3,25 @@ import {mountCopyButtons} from './copy';
 
 const duration=12000,firstHold=2100;
 const timeAt=(progress:number)=>firstHold+(duration-firstHold)*progress;
-// The glass scene begins without copy; name Khor near the sweep's arrival.
-const glass=iconSegments.at(-1)!;
-const meetAt=timeAt(glass.motionStart+(glass.motionEnd-glass.motionStart)*.82);
 const chapters=[0,...iconStops.slice(0,-1).map(timeAt)];
-const captionCues=[...chapters,meetAt];
 
 export function mountStory() {
   const opening=document.querySelector<HTMLElement>('[data-opening]');
   const assembly=opening?.querySelector<HTMLElement>('[data-assembly]');
-  if(!opening||!assembly)return;
+  const stage=opening?.querySelector<HTMLElement>('.opening-sticky');
+  if(!opening||!assembly||!stage)return;
   const lines=[...opening.querySelectorAll<HTMLElement>('[data-line]')];
   const steps=[...opening.querySelectorAll<HTMLButtonElement>('[data-step]')];
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const tracks=createIconMotion(assembly);
   const controller=new AbortController(),on={signal:controller.signal};
   let animations:Animation[]=[],timer:number|undefined;
-  let started=false,inView=false,completed=false,disposed=false,active=-1,captionVisible=true;
+  let started=false,inView=false,completed=false,disposed=false,active=-1;
 
-  function caption(index:number,visible=true) {
-    if(index===active&&visible===captionVisible)return;
-    active=index;captionVisible=visible;
-    lines.forEach((line,i)=>line.classList.toggle('is-current',i===index&&visible));
+  function caption(index:number) {
+    if(index===active)return;
+    active=index;
+    lines.forEach((line,i)=>line.classList.toggle('is-current',i===index));
     steps.forEach((step,i)=>{
       if(i===index)step.setAttribute('aria-current','step');else step.removeAttribute('aria-current');
     });
@@ -52,8 +49,8 @@ export function mountStory() {
     clearTimeout(timer);
     const time=Number(animations[0]?.currentTime??0);
     const index=chapters.findLastIndex(start=>time>=start);
-    caption(index,index!==4||time>=meetAt);
-    const next=captionCues.find(start=>start>time)??duration;
+    caption(index);
+    const next=chapters.find(start=>start>time)??duration;
     timer=window.setTimeout(()=>{
       if(Number(animations[0]?.currentTime??0)>=duration-1)finish();else scheduleCaption();
     },Math.max(1,next-time));
@@ -90,7 +87,7 @@ export function mountStory() {
     if(reduced.matches)return;
     completed=false;started=true;opening!.removeAttribute('data-story-complete');
     animations.forEach(animation=>{animation.pause();animation.currentTime=chapters[index];});
-    caption(index,index!==4);sync();
+    caption(index);sync();
   },on));
   mountCopyButtons();configure();
   requestAnimationFrame(()=>opening.setAttribute('data-caption-ready',''));
@@ -99,7 +96,8 @@ export function mountStory() {
     if(entry.intersectionRatio>=.75)started=true;
     sync();
   },{threshold:[0,.35,.75]});
-  visibility.observe(opening);
+  // Observe the viewport-sized stage, not the taller scroll runway.
+  visibility.observe(stage);
   reduced.addEventListener('change',configure,on);
   document.addEventListener('visibilitychange',sync,on);
   window.addEventListener('pageshow',event=>{if(event.persisted)sync();},on);
