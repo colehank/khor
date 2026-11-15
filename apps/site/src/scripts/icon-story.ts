@@ -58,8 +58,8 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   construction.innerHTML='<div class="construction-axis"><div class="construction-clip"><div class="construction-counter"><div class="construction-art"></div></div></div></div>';
   board.append(construction);
   const constructionArt=construction.querySelector<HTMLElement>('.construction-art')!;
-  track(construction.querySelector<HTMLElement>('.construction-clip')!,state=>({transform:`translateX(${state.light*100}%)`}));
-  track(construction.querySelector<HTMLElement>('.construction-counter')!,state=>({transform:`translateX(${-state.light*100}%)`}));
+  track(construction.querySelector<HTMLElement>('.construction-clip')!,state=>({transform:`translateX(${(state.light-.14)*100}%)`}));
+  track(construction.querySelector<HTMLElement>('.construction-counter')!,state=>({transform:`translateX(${(.14-state.light)*100}%)`}));
   // Preserve the original art transform, including its optical offset.
   const transform=art.getAttribute('transform')!.match(/translate\(([^ ]+) ([^)]+)\) scale\(([^)]+)\)/)!;
   board.style.transform=`translate(${Number(transform[1])/1024*100}%,${Number(transform[2])/1024*100}%) scale(${transform[3]})`;
@@ -152,7 +152,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   }
   faces.forEach(({source})=>source.remove());
 
-  // Complementary horizontal feathers replace the flat drawing with the
+  // Complementary diagonal feathers replace the flat drawing with the
   // original glass artwork. Only HTML translations move; SVG art stays still.
   const material=document.createElement('div');material.className='icon-material';
   material.dataset.storyLayer='material';

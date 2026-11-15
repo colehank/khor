@@ -47,3 +47,8 @@ Headless Chrome 实播桌面 / 手机，确认扫光开始后两句字幕均隐�
 开场 section 调为 180svh，内部 100svh sticky 舞台，让普通轻滑有额外 .8 屏的自然驻留距离。没有滚轮／触摸拦截、滚动吸附、自动定位或必须看完才能退出的逻辑；Keep exploring 可直接跳到后续内容。IntersectionObserver 改观察一屏舞台，避免对 1.8 屏容器使用 75% 门槛而永远不能起播。减少动态效果继续使用紧凑静态段。
 
 Headless Chrome 桌面／手机检查自然滚动时舞台停在原位、可直接滚离并暂停、返回继续、Meet 在光刚开始时显示、继续浏览链接有效及减少动态效果无驻留。TypeScript、detector、diff 检查通过，证据 `site-autoplay-20261116/sticky-meet/`；仅本地，未部署。
+
+
+## 已被滚动方案取代
+
+用户随后要求恢复下滑切换，并确认 Meet 的光为左上到右下。当前实现、范围与验证见 [恢复滚动叙事](site-scroll-return-20261116.md)。本文件的自动播放、字幕计时及 180svh 驻留均为历史方案。
