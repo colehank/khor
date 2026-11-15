@@ -1,9 +1,12 @@
 import {createIconMotion,iconState,iconStops,iconSegments,ease} from './icon-story';
 import {mountCopyButtons} from './copy';
 
-const duration=8000,firstHold=1200;
+const duration=12000,firstHold=2100;
 const timeAt=(progress:number)=>firstHold+(duration-firstHold)*progress;
-const chapters=[0,...iconStops.slice(0,-1).map(timeAt)];
+// Keep How about on screen through the glass sweep; name Khor near its arrival.
+const glass=iconSegments.at(-1)!;
+const meetAt=timeAt(glass.motionStart+(glass.motionEnd-glass.motionStart)*.82);
+const chapters=[0,...iconStops.slice(0,-2).map(timeAt),meetAt];
 
 export function mountStory() {
   const opening=document.querySelector<HTMLElement>('[data-opening]');
