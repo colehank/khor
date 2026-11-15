@@ -65,8 +65,8 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
       const received=capabilityTiming.request+tourMotion.travel,delivered=capabilityTiming.delivery+tourMotion.travel;
       animate('.relation-router',busy(received,delivered,cycle,.22,.85));
       animate('[data-net-brand] > svg',busy(received,delivered,cycle,1,.6));
-      animate('.relation-user-receipt',pulse([capabilityTiming.delivery+tourMotion.travel],cycle,0));
-    }else animate('.relation-access-receipt',pulse([tourMotion.travel],cycle,0));
+      animate('.relation-access-active',pulse([capabilityTiming.request,delivered],cycle,0));
+    }else animate('.relation-access-active',pulse([tourMotion.travel],cycle,0));
   };
   const clear=()=>{animations.forEach(animation=>animation.cancel());animations=[];};
   const settle=()=>{if(reduced.matches)clear();};

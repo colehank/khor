@@ -31,6 +31,7 @@ const description=agent?'You use the same laptop and Mobile access group to send
         </mask>)}
       </defs>
       <path class="relation-access" data-relation-access d={g.accessPath}/>
+      <path class="relation-access-active" data-relation-access d={g.accessPath}/>
       {g.routes.map(({id,d,end})=><g>
         <path class="relation-wire" data-relation-route={id} d={d}/>
         <path class="relation-signal" data-relation-route={id} d={d}/>
@@ -38,9 +39,6 @@ const description=agent?'You use the same laptop and Mobile access group to send
         {agent&&<FlowTrace d={d} route={id} flow="reply"/>}
         <circle class="relation-port" data-relation-port={id} cx={end.x} cy={end.y} r="2.5"/>
       </g>)}
-      <g data-relation-origin transform={`translate(${g.origin.x} ${g.origin.y})`}>
-        {!agent&&<circle class="relation-port" r="3"/>}<circle class:list={['relation-receipt',agent?'relation-user-receipt':'relation-access-receipt']} r="7"/>
-      </g>
       {agent&&<>
         <defs><marker id={`${mode}-relation-arrow`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M2 2 L8 5 L2 8" class="relation-arrow"/></marker></defs>
         <g mask={`url(#${mode}-handoff-task)`}>

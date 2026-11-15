@@ -18,6 +18,7 @@
 .capability-relation .net-device-body { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-connections,.relation-annotations { pointer-events:none; }
 .relation-access { fill:var(--relation-group); stroke:var(--relation-rim); stroke-width:1; stroke-opacity:.65; vector-effect:non-scaling-stroke; }
+.relation-access-active { fill:var(--tour-accent); fill-opacity:.045; stroke:var(--tour-accent); stroke-width:1.5; opacity:0; vector-effect:non-scaling-stroke; }
 .relation-wire,.relation-signal { fill:none; stroke-linecap:round; stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-wire { stroke:var(--tour-wire); }
 .relation-signal { stroke:var(--tour-accent); opacity:.3; }
@@ -31,8 +32,8 @@
 .relation-badge > circle:first-child { fill:var(--relation-face); stroke:var(--relation-rim); stroke-width:1; vector-effect:non-scaling-stroke; }
 .relation-badge { color:var(--ink); }
 .relation-badge [data-relation-session] { color:var(--secondary); }
-.relation-status,.relation-router,.relation-receipt { fill:none; stroke:var(--tour-accent); stroke-width:1.25; opacity:.22; }
-.relation-status,.relation-receipt { opacity:0; }
+.relation-status,.relation-router { fill:none; stroke:var(--tour-accent); stroke-width:1.25; opacity:.22; }
+.relation-status { opacity:0; }
 .relation-resource,.relation-request-label,.relation-shared { font-family:var(--sans); font-size:var(--text-body); fill:var(--secondary); }
 .relation-you { font-family:var(--sans); font-size:var(--text-read); fill:var(--ink); }
 .relation-you,.relation-request-label { font-weight:500; }

@@ -25,8 +25,8 @@ export function mountCapabilityScene(figure:HTMLElement) {
       for(const path of figure.querySelectorAll(`[data-relation-route="${id}"]`))path.setAttribute('d',d);
       const port=find(`[data-relation-port="${id}"]`);port.setAttribute('cx',String(end.x));port.setAttribute('cy',String(end.y));
     }
-    find('[data-relation-access]').setAttribute('d',g.accessPath);translate(find('[data-relation-access-label]'),g.access);
-    translate(find('[data-relation-origin]'),g.origin);
+    for(const path of figure.querySelectorAll('[data-relation-access]'))path.setAttribute('d',g.accessPath);
+    translate(find('[data-relation-access-label]'),g.access);
     if(agent){
       for(const path of figure.querySelectorAll('[data-relation-request]'))path.setAttribute('d',g.request);
       for(const path of figure.querySelectorAll('[data-relation-result]'))path.setAttribute('d',g.result);
