@@ -1,8 +1,8 @@
 export const iconStops = [0, .22, .47, .73, 1];
-// Copy and geometry start together; the resolved pose gets a short landing.
+// Copy and geometry start together; only a brief landing follows each move.
 export const iconSegments=iconStops.slice(0,-1).map((start,index)=>{
   const end=iconStops[index+1],span=end-start;
-  return {start,copyEnd:start+span*.08,motionStart:start,motionEnd:start+span*.86,end};
+  return {start,copyEnd:start+span*.08,motionStart:start,motionEnd:start+span*.94,end};
 });
 export const clamp = (x:number) => Math.max(0, Math.min(1, x));
 export const ease = (x:number, a:number, b:number) => {
@@ -23,7 +23,7 @@ export function iconState(progress:number):IconState {
     phase:from+move,
     copyPhase:from+ease(p,segment.start,segment.copyEnd),
     harness:from===0?move:1,
-    focus:from<1?0:from===1?1-Math.pow(1-move,3):1,
+    focus:from<1?0:from===1?ease(move,0,1):1,
     mind:from<1?0:from===1?ease(move,.25,.88):1,
     connection:from<2?0:from===2?1-Math.pow(1-move,2):1,
     light:from<3?0:move,
