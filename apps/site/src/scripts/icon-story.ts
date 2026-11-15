@@ -55,11 +55,9 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
   const board=document.createElement('div');board.className='icon-artboard';
   const construction=document.createElement('div');construction.className='icon-construction';
-  construction.innerHTML='<div class="construction-axis"><div class="construction-clip"><div class="construction-counter"><div class="construction-art"></div></div></div></div>';
   board.append(construction);
-  const constructionArt=construction.querySelector<HTMLElement>('.construction-art')!;
-  track(construction.querySelector<HTMLElement>('.construction-clip')!,state=>({transform:`translateX(${(state.light-.14)*100}%)`}));
-  track(construction.querySelector<HTMLElement>('.construction-counter')!,state=>({transform:`translateX(${(.14-state.light)*100}%)`}));
+  const illumination=(state:IconState)=>ease(state.light,0,1);
+  track(construction,state=>({opacity:1-illumination(state)}));
   // Preserve the original art transform, including its optical offset.
   const transform=art.getAttribute('transform')!.match(/translate\(([^ ]+) ([^)]+)\) scale\(([^)]+)\)/)!;
   board.style.transform=`translate(${Number(transform[1])/1024*100}%,${Number(transform[2])/1024*100}%) scale(${transform[3]})`;
@@ -86,7 +84,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
     const el=document.createElement('div');el.className='icon-layer';el.dataset.storyLayer=name;
     const [x,y,w,h]=box;
     Object.assign(el.style,{left:`${x/1024*100}%`,top:`${y/1024*100}%`,width:`${w/1024*100}%`,height:`${h/1024*100}%`});
-    el.innerHTML=svgFor(nodes,name,box);constructionArt.append(el);return el;
+    el.innerHTML=svgFor(nodes,name,box);construction.append(el);return el;
   };
 
   const ring=children.find(node=>node.getAttribute('stroke')==='url(#artwork-ring-solid)')!;
@@ -152,16 +150,13 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
   }
   faces.forEach(({source})=>source.remove());
 
-  // Complementary diagonal feathers replace the flat drawing with the
-  // original glass artwork. Only HTML translations move; SVG art stays still.
+  // Turn on the original upper-left lighting. The fixed artwork and light
+  // field gain intensity together; no traveling edge or moving mask is used.
   const material=document.createElement('div');material.className='icon-material';
   material.dataset.storyLayer='material';
-  material.innerHTML=`<div class="reveal-axis"><div class="reveal-clip"><div class="reveal-counter"><div class="reveal-art">${svgFor(children,'material')}</div></div></div></div>`;
+  material.innerHTML=svgFor(children,'material');
   board.append(material);
-  const clip=material.querySelector<HTMLElement>('.reveal-clip')!;
-  const counter=material.querySelector<HTMLElement>('.reveal-counter')!;
-  track(clip,state=>({transform:`translateX(${(state.light-1)*100}%)`}));
-  track(counter,state=>({transform:`translateX(${(1-state.light)*100}%)`}));
+  track(material,state=>({opacity:illumination(state)}));
 
   const environment=host.closest('[data-opening]')!.querySelector<HTMLElement>('[data-meet-environment]')!;
   const ground=[...svg.children].filter(node=>node.tagName!=='defs'&&node!==art).map(node=>{
@@ -169,10 +164,9 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
     if(node.tagName!=='rect')clone.setAttribute('opacity',String(Number(node.getAttribute('opacity')??1)*.42));
     return clone;
   });
-  environment.innerHTML=`<div class="reveal-axis"><div class="reveal-clip"><div class="reveal-counter"><div class="reveal-art">${svgFor(ground,'environment')}</div></div></div></div>`;
+  environment.innerHTML=svgFor(ground,'environment');
   environment.querySelector('svg')!.setAttribute('preserveAspectRatio','none');
-  track(environment.querySelector<HTMLElement>('.reveal-clip')!,state=>({transform:`translateX(${(state.light-1)*100}%)`}));
-  track(environment.querySelector<HTMLElement>('.reveal-counter')!,state=>({transform:`translateX(${(1-state.light)*100}%)`}));
+  track(environment,state=>({opacity:illumination(state)}));
   canvas.replaceChildren(board);canvas.dataset.iconReady='';
   return tracks;
 }
