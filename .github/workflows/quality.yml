@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt, native-glass]
         default: sync
       frontend_run:
         type: string
@@ -34,6 +34,35 @@ permissions:
   contents: read
   actions: read
 jobs:
+  native-glass:
+    if: inputs.slice == 'native-glass'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: developer-lab-review
+          path: released-lab
+          run-id: '43818628560'
+          github-token: ${{ github.token }}
+      - name: Verify the exact rc.17 Lab receipt
+        run: python3 scripts/release_manifest.py verify --root released-lab --sha 93f6cb230a4cc5bdde5547e4c15d0bb88fcdb2b3 --run-id 43818628560 --kind developer-lab-review
+      - name: Compare native transparent WebKit filters and no-filter control
+        run: python3 apps/gui/scripts/mac-glass-probe/run.py released-lab "$RUNNER_TEMP/native-glass"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-glass-${{ matrix.os }}
+          path: ${{ runner.temp }}/native-glass
+          if-no-files-found: error
   lab-lock:
     if: inputs.slice == 'lab-lock'
     runs-on: ubuntu-24.04
