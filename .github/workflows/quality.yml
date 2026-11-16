@@ -184,7 +184,9 @@ jobs:
           /sbin/ifconfig lo0 > "$RUNNER_TEMP/loopback-host.log"
           /usr/sbin/scutil --nwi >> "$RUNNER_TEMP/loopback-host.log"
           /usr/sbin/netstat -rn -f inet6 >> "$RUNNER_TEMP/loopback-host.log"
-          sudo tcpdump -i lo0 -n -U -s 256 -c 2000 -w "$RUNNER_TEMP/loopback.pcap" 'tcp and ((ip6 and host ::1) or (ip and host 127.0.0.1))' > "$RUNNER_TEMP/loopback-capture.log" 2>&1 &
+          {
+            exec sudo tcpdump -i lo0 -n -U -s 256 -c 2000 -w "$RUNNER_TEMP/loopback.pcap" 'tcp and ((ip6 and host ::1) or (ip and host 127.0.0.1))'
+          } > "$RUNNER_TEMP/loopback-capture.log" 2>&1 &
           capture_pid=$!
           trap 'sudo kill -INT "$capture_pid" 2>/dev/null || true; wait "$capture_pid" 2>/dev/null || true' EXIT
           CFNETWORK_DIAGNOSTICS=3 KHOR_WEBKIT_PROBE="$RUNNER_TEMP/webkit-loopback" cargo test --locked -p khor-gui-core --lib web::loopback_tests::native_webkit_reaches_the_borrowed_loopback_origin -- --ignored --test-threads=1 2>&1 | tee "$RUNNER_TEMP/app-loopback.log"
