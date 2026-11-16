@@ -15,3 +15,8 @@
 Headless Chrome 1440 / 390px 检查三枚图标、组网动画、无重复 ID／溢出／页面错误。正式静态构建通过，并核对没有对照 HTML 或任何三枚 Apple 图稿数据出现在 dist。脚本语法、detector 与 diff 检查通过。
 
 证据：`/Volumes/disk0/Khor/evidence/site-sf-preview-20261116/`，包含截图、检查结果与 production-isolation.json。
+
+
+## 已确认正式采用
+
+用户要求「以此为准，commit 并发布部署」。正式首页现直接导入 src/assets/network 中三枚已确认的 SVG 图稿，不再依赖开发模式、查询参数或 node_modules 缓存。与获批对照的三份图稿逐字匹配。导出脚本改为 render-network-symbols.mjs，仅在 macOS 手动重新生成时使用；本地旧对照路由保留作兼容入口，正式构建不输出该别名。来源及版权说明与资产共同保存。发布状态以 Pages 收据为准。

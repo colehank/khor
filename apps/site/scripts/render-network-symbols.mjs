@@ -2,9 +2,11 @@ import {execFileSync} from 'node:child_process';
 import {mkdirSync,readFileSync,writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 
-// Local macOS design comparison only. No Apple glyph data is checked in.
+// Optional macOS-only regeneration; ordinary website builds use committed SVGs.
 const output=fileURLToPath(new URL('../node_modules/.cache/sf-symbols-preview/',import.meta.url));
+const assets=fileURLToPath(new URL('../src/assets/network/',import.meta.url));
 mkdirSync(output,{recursive:true});
+mkdirSync(assets,{recursive:true});
 const symbols={a:'cable.connector',b:'wifi',c:'cellularbars'};
 const renderer=`
 ObjC.import('AppKit');
@@ -32,5 +34,5 @@ const marks=Object.fromEntries(Object.keys(symbols).map(id=>{
   const png=readFileSync(output+id+'.png').toString('base64');
   return [id,`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><defs><mask id="sf-${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24" style="mask-type:alpha"><image width="24" height="24" href="data:image/png;base64,${png}"/></mask></defs><rect width="24" height="24" mask="url(#sf-${id})"/></svg>`];
 }));
-writeFileSync(output+'marks.json',JSON.stringify(marks));
-console.log('Apple network icons ready: http://127.0.0.1:23820/preview/apple-network/#connect');
+for(const [id,name] of Object.entries({a:'lan',b:'wifi',c:'cellular'}))writeFileSync(assets+name+'.svg',marks[id]+'\n');
+console.log('Network symbol assets regenerated');

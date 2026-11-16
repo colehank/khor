@@ -49,16 +49,15 @@ frontend artifact 的 gen（Release run 42824017790，产品 GUI 源码与当前
 - 站点 token 从 `docs/design-system/tokens.json` 生成；不另存调色板与字体。
 - 演示产物在 `public/experience/app`，由构建生成并忽略；没有重新实现一套 App 页面。
 
-## Apple 网络图标本地对照
+## Apple 网络图标
 
-在 macOS 上运行 `node apps/site/scripts/preview-sf-symbols.mjs`，然后打开
-<http://127.0.0.1:23820/preview/apple-network/#connect>。LAN / Wi-Fi / Cellular
-分别使用系统原版 `cable.connector` / `wifi` / `cellularbars`。脚本离屏渲染，
-不打开 App 窗口；96px 透明原稿通过 SVG alpha mask 继承当前文字色。
+LAN / Wi-Fi / Cellular 使用已确认的 SF Symbols 原稿：`cable.connector` / `wifi` /
+`cellularbars`。正式首页与原本地对照页保持相同形状、比例和颜色；图稿已保存到
+`src/assets/network`，普通静态构建不依赖本机缓存或 Apple API。
 
-Apple 图稿只保存在被忽略的 `node_modules/.cache/sf-symbols-preview`，不进入版本控制。
-对照入口仅在开发模式生成；正式构建不输出该页面或 Apple 图稿，普通首页保持现有图标。
-这是一轮本地外观比较，没有发布。验证见 [Apple 对照](../../docs/handoff/site-sf-preview-20261116.md)。
+需要重新导出时在 macOS 运行 `node apps/site/scripts/render-network-symbols.mjs`。
+脚本离屏渲染 96px 透明原稿，SVG alpha mask 继承当前文字色，不打开 App 窗口。
+来源与版权说明在 `src/assets/network/README.md`。本地旧对照地址仍可访问；正式站只生成首页。
 
 ## GitHub Pages
 

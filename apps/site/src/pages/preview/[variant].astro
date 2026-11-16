@@ -1,7 +1,7 @@
 ---
 import Home from '../index.astro';
 
-// Private local design comparison. No preview route is emitted by a site build.
+// Preserve the original local review link; no alias is emitted by a site build.
 export function getStaticPaths() {
   return import.meta.env.DEV?[{params:{variant:'apple-network'}}]:[];
 }
