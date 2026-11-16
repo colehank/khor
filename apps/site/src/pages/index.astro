@@ -9,7 +9,7 @@ import ProductActions from '../components/ProductActions.astro';
 import ProductInstallations from '../components/ProductInstallations.astro';
 import BrandIcon from '../components/BrandIcon.astro';
 import "../styles/story.css";
-const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But", "one mind"], ["How about", "letting them\nwork together?"], ["Meet", "Khor"]];
+const lines = [["You have", "many devices"], ["With", "many agents"], ["But", "one mind"], ["How about", "letting them\nwork together?"], ["Meet", "Khor"]];
 ---
 <Base title="Work across your devices and agents" description="Your agents, files, and web apps. Connected peer to peer. Khor by kapestack." productWorld>
   <a class="skip-story" href="#product">Skip to the product preview</a>
@@ -20,7 +20,7 @@ const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But",
       <div class="opening-sticky">
         <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
         <div class="opening-copy" aria-hidden="true" lang="en">{lines.map(([lead, phrase], index) => <div class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><p class="opening-line-content"><span class="line-lead">{lead}</span>{phrase.split("\n").map(text => <span class="line-phrase">{text}</span>)}</p></div>)}</div>
-        <h2 class="sr-only" lang="en">You have many devices With many harnesses But one mind How about letting them work together? Meet Khor</h2>
+        <h2 class="sr-only" lang="en">You have many devices With many agents But one mind How about letting them work together? Meet Khor</h2>
         <div class="assembly" data-assembly><Mandala /></div>
         <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"><span class="scroll-stem-progress"></span></span></div>
         <nav class="story-steps" aria-label="Introduction chapters">{lines.map(([, phrase], index) => <button type="button" aria-label={`Go to ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
@@ -28,16 +28,23 @@ const lines = [["You have", "many devices"], ["With", "many harnesses"], ["But",
     </section>
     <ProductTour />
     <section class="download-section" id="download" aria-labelledby="download-title">
-      <div class="download-brand"><BrandIcon prefix="download-brand" size={96}/></div><h2 id="download-title">Build with Khor</h2><p class="download-description">Start with the device in front of you</p>
-      <ProductActions prefix="download" />
-      <ProductInstallations prefix="download" />
+      <div class="download-main">
+        <div class="download-copy">
+          <h2 id="download-title">Build with Khor</h2>
+          <p class="download-description">Start with the device in front of you</p>
+          <ProductActions prefix="download" />
+        </div>
+        <div class="download-brand" aria-hidden="true"><BrandIcon prefix="download-brand" size={336}/></div>
+      </div>
+      <div class="download-options"><ProductInstallations prefix="download" /></div>
     </section>
   </main>
   <footer class="story-footer" id="about" aria-labelledby="about-title">
     <div class="footer-about">
-      <p id="about-title">Presented by <a class="keep-together" href="https://github.com/AI-innovation-team">NeuroAI Innovation Team</a> / <a href="https://www.kapestack.top">KapeStack</a></p>
+      <p class="footer-credit">Presented by</p>
+      <p class="footer-teams" id="about-title"><a class="keep-together" href="https://github.com/AI-innovation-team">NeuroAI Innovation Team</a><span class="footer-partner"><span aria-hidden="true">/</span><a href="https://www.kapestack.top">KapeStack</a></span></p>
     </div>
-    <nav aria-label="Footer"><a href={sitePath('/docs/')}>Docs</a></nav>
+    <nav aria-label="Footer"><a href={sitePath('/docs/')}>Docs</a><a href="#khor-hero">Back to top</a></nav>
   </footer>
 
   <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">Enable JavaScript to view the animation. <a href={sitePath("/download/")}>Download Khor</a></p></noscript>
