@@ -2,7 +2,20 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
-## 2026-11-14 更新已发布（当前）
+## 2026-11-16 更新已发布（当前）
+
+用户明确要求「发布吧」，已沿用本地完整构建 → gh-pages 静态快照 → GitHub Pages 流程。
+
+- 网站：<https://khor.cloud/>；UI 源码 `c9d3de8b20a8c597392e9f89e40b7ac055586975`，静态发布提交 `c3ded45d91a7ecc3050e5d33bd5bda67e55d9624`
+- [Pages run 43815686521](https://github.com/colehank/khor/actions/runs/43815686521) success；普通公开 URL 的 build.json 已返回对应源码版本
+- 本轮包含 With many agents、恢复滚动驱动的图标叙事、固定左上光源逐渐开启、You 整条超边收发高亮、Continue 的 6 秒请求／回复，以及更醒目的 Build with Khor、放大的玻璃图标、安装组与分层团队署名／返回顶部
+- 完整构建包含 GUI 演示；10 个 Astro 页面加 GUI 入口，417 个文件，150 个站内导航与资源引用无缺失。静态产物先在独立服务器经 1440／390px headless Chrome 检查，再发布
+- 普通 https://khor.cloud/ 经两档 headless Chrome 验证 Agents 字幕、原生滚动时间轴、固定光照、新页尾、下载入口一致及团队链接，无溢出、页面或 HTTP 资源错误；桌面真实 GUI 正常启动，手机保留首图且未启动 iframe
+- 公开首页、build.json、GUI HTML 与 install.sh 均与产物逐字节一致。App／CLI 安装版本仍为已核验资产的 `v0.2.0-rc.12`；未执行安装器
+- 普通快进推送 gh-pages，沿用 CNAME 与 HTTPS；Pages source 为 gh-pages /，https_enforced=true。没有修改 DNS、合并 main 或启动原生构建
+- 产物 `/Volumes/disk0/Khor/artifacts/site-pages-20261116/dist`；证据 `/Volumes/disk0/Khor/evidence/site-pages-20261116/`，含构建、链接审计、全文件 manifest、Pages 收据、公开版本／文件核对及桌面／手机截图。临时 23822 静态服务器在验收后停止，23820 本地迭代入口保留
+
+## 2026-11-14 更新已发布
 
 用户明确要求「部署吧」，已沿用既有本地构建 → gh-pages 静态快照 → GitHub Pages 流程发布，没有合并 main。
 
