@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt, native-glass, admission]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt, native-glass, admission, chrome]
         default: sync
       frontend_run:
         type: string
@@ -34,6 +34,111 @@ permissions:
   contents: read
   actions: read
 jobs:
+  chrome-browser:
+    if: inputs.slice == 'chrome'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: frontend
+          run-id: ${{ inputs.frontend_run }}
+          github-token: ${{ github.token }}
+      - name: Verify exact generated frontend inputs
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          FRONTEND_RUN: ${{ inputs.frontend_run }}
+        run: |
+          python3 scripts/release_manifest.py verify --root frontend --sha "$SOURCE_SHA" --run-id "$FRONTEND_RUN" --kind frontend
+          cp -R frontend/gen apps/gui/src/gen
+          npm ci --prefix apps/gui
+      - name: Require old transparent native chrome to fail the new regression
+        env:
+          APPEARANCE_HEADLESS: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/chrome"
+          for path in apps/gui/src/lib/window-surface.ts apps/gui/src/styles/app.css; do
+            git show "97db25ccd9e7d78541df625bc66f2adc01f0c498:$path" > "$path"
+          done
+          set +e
+          xvfb-run -a npm run appearance --prefix apps/gui > "$RUNNER_TEMP/chrome/red.log" 2>&1
+          result=$?
+          set -e
+          tail -n 25 "$RUNNER_TEMP/chrome/red.log"
+          test "$result" -ne 0
+          grep -F 'macos/true/clear nav: blur' "$RUNNER_TEMP/chrome/red.log"
+          git checkout HEAD -- apps/gui/src/lib/window-surface.ts apps/gui/src/styles/app.css
+      - name: Require complete terminal appearance and native chrome policy to pass
+        env:
+          APPEARANCE_HEADLESS: '1'
+        run: |
+          set -euo pipefail
+          xvfb-run -a npm run appearance --prefix apps/gui 2>&1 | tee "$RUNNER_TEMP/chrome/green.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-chrome-browser-proof
+          path: ${{ runner.temp }}/chrome
+          if-no-files-found: error
+  chrome-native:
+    if: inputs.slice == 'chrome'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: quality-mac-updates
+          cache-targets: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: frontend
+          run-id: ${{ inputs.frontend_run }}
+          github-token: ${{ github.token }}
+      - name: Verify exact frontend and compile the actual native App
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          FRONTEND_RUN: ${{ inputs.frontend_run }}
+        run: |
+          set -euo pipefail
+          python3 scripts/release_manifest.py verify --root frontend --sha "$SOURCE_SHA" --run-id "$FRONTEND_RUN" --kind frontend
+          cp -R frontend/gen apps/gui/src/gen
+          cp -R frontend/dist apps/gui/dist
+          mkdir -p "$RUNNER_TEMP/chrome"
+          cargo check --locked -p khor-gui --tests 2>&1 | tee "$RUNNER_TEMP/chrome/native.log"
+      - name: Export formatter result for source-only editing
+        if: always()
+        run: cargo fmt --all && git diff --binary > "$RUNNER_TEMP/chrome/format.patch"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: native-chrome-${{ matrix.os }}
+          path: ${{ runner.temp }}/chrome
+          if-no-files-found: error
   admission:
     if: inputs.slice == 'admission'
     runs-on: ubuntu-24.04
