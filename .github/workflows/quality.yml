@@ -60,16 +60,18 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/admission"
-          git show 797eefaf498f4b21fb9f9bfa7d72e7a5b5bdda8d:crates/node/src/trust.rs > crates/node/src/trust.rs
+          for path in crates/node/src/trust.rs crates/catalog/zh.toml crates/catalog/en.toml; do
+            git show "797eefaf498f4b21fb9f9bfa7d72e7a5b5bdda8d:$path" > "$path"
+          done
           set +e
           cargo test --locked -p khor-node --lib admission_separates_waiting_approval_from_revoked_access -- --nocapture --test-threads=1 > "$RUNNER_TEMP/admission/red.log" 2>&1
           result=$?
           set -e
           tail -n 30 "$RUNNER_TEMP/admission/red.log"
           test "$result" -ne 0
-          grep -F 'admission_separates_waiting_approval_from_revoked_access ... FAILED' "$RUNNER_TEMP/admission/red.log"
+          grep -F 'test result: FAILED. 0 passed; 1 failed;' "$RUNNER_TEMP/admission/red.log"
           grep -F 'assertion `left == right` failed' "$RUNNER_TEMP/admission/red.log"
-          git checkout HEAD -- crates/node/src/trust.rs
+          git checkout HEAD -- crates/node/src/trust.rs crates/catalog/zh.toml crates/catalog/en.toml
       - name: Require all trust and catalog regressions to pass
         run: |
           set -euo pipefail
