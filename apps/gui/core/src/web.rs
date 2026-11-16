@@ -420,6 +420,8 @@ fn try_hold_loopback(host: &str, port: u16, proxy: &str) -> Result<Option<Loopba
             }
             Err(_) => return Err(khor_catalog::msg::page_port_taken(port)),
         };
+        #[cfg(test)]
+        eprintln!("loopback bound {target}: {:?}", listener.local_addr());
         listener.set_nonblocking(true).map_err(|e| e.to_string())?;
         listeners.push(tokio::net::TcpListener::from_std(listener).map_err(|e| e.to_string())?);
     }
@@ -431,8 +433,14 @@ fn try_hold_loopback(host: &str, port: u16, proxy: &str) -> Result<Option<Loopba
                 tokio::select! {
                     accepted = listener.accept() => {
                         let Ok((sock, _)) = accepted else { break };
+                        #[cfg(test)]
+                        eprintln!("loopback accepted {target}: local={:?} peer={:?}", sock.local_addr(), sock.peer_addr());
                         let (target, proxy) = (target.clone(), proxy.clone());
-                        pipes.spawn(async move { let _ = through(sock, &target, &proxy).await; });
+                        pipes.spawn(async move {
+                            let _result = through(sock, &target, &proxy).await;
+                            #[cfg(test)]
+                            eprintln!("loopback through {target} via {proxy}: {_result:?}");
+                        });
                     }
                     _ = pipes.join_next(), if !pipes.is_empty() => {}
                 }
@@ -787,6 +795,10 @@ mod loopback_tests {
             assert!(
                 output.status.success(),
                 "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            eprintln!(
+                "native loopback stderr: {}",
                 String::from_utf8_lossy(&output.stderr)
             );
             let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
