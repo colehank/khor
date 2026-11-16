@@ -8,11 +8,11 @@ const platforms=[...supportedDevices.map(platform=>({id:platform.name.toLowerCas
 ---
 <div class="product-actions">
   <a class="product-download" href={sitePath('/download/')} data-device-download>
-    <span class="action-icon" aria-hidden="true">{platforms.map(({id,svg})=><span data-download-mark={id} hidden={id!=='unknown'}><ConceptMark {svg} x={0} y={0} size={16} prefix={`${prefix}-action-${id}`}/></span>)}</span>
     <span>Download</span>
+    <span class="action-icon" aria-hidden="true">{platforms.map(({id,svg})=><span data-download-mark={id} hidden={id!=='unknown'}><ConceptMark {svg} x={0} y={0} size={16} prefix={`${prefix}-action-${id}`}/></span>)}</span>
   </a>
   <a class="product-docs" href={sitePath('/docs/')}>
-    <span class="action-icon" aria-hidden="true"><ConceptMark svg={capabilityMarks.files} x={0} y={0} size={16} prefix={`${prefix}-action-docs`}/></span>
     <span>Docs</span>
+    <span class="action-icon" aria-hidden="true"><ConceptMark svg={capabilityMarks.files} x={0} y={0} size={16} prefix={`${prefix}-action-docs`}/></span>
   </a>
 </div>
