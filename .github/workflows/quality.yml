@@ -1387,6 +1387,12 @@ jobs:
       - name: Check shared frontend rules for the final tree controls
         working-directory: apps/gui
         run: npm run test:unit && npm run gates && npm run mobile:static
+      - name: Verify shared compact task buttons and touch targets
+        if: inputs.lab_checks == 'attachment-draft'
+        working-directory: apps/gui
+        env:
+          FILE_HANDOFF_OUT: ${{ runner.temp }}/lab-report/task-buttons
+        run: npm run dialogs
       - uses: Swatinem/rust-cache@v2
         if: inputs.desktop_probe == 'attachment-closeout'
         with:
