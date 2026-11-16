@@ -1,6 +1,7 @@
 ---
 import ConceptMark from './ConceptMark.astro';
-import {networkDeviceMarks,supportedHarnesses,networkTypeMarks} from '../../../../gui/dev/site/identity-marks';
+import {networkDeviceMarks,supportedHarnesses,networkTypeMarks as appNetworkTypeMarks} from '../../../../gui/dev/site/identity-marks';
+import {existsSync,readFileSync} from 'node:fs';
 import {networkGeometry,networkNodeRadius,networkViewBox} from '../../scripts/network-geometry';
 import '../../styles/network-scene.css';
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
@@ -12,8 +13,12 @@ const devices=[{id:'mac',name:'Workstation'},{id:'linux',name:'Server'},{id:'win
 const areaNames={a:'NetA · Local network',b:'NetB · Wi-Fi',c:'NetC · Cellular'};
 const areaLabels={a:'LAN',b:'Wi-Fi',c:'Cellular'};
 const labelWidths={a:50,b:65,c:90};
+// Compare Apple's original glyphs locally; the public static site keeps its marks.
+const previewFile=new URL('../../../node_modules/.cache/sf-symbols-preview/marks.json',import.meta.url);
+const applePreview=import.meta.env.DEV&&Astro.url.pathname.endsWith('/preview/apple-network/')&&existsSync(previewFile);
+const networkTypeMarks:Record<string,string>=applePreview?JSON.parse(readFileSync(previewFile,'utf8')):appNetworkTypeMarks;
 ---
-  <svg class="network-scene" data-net-scene data-net-infrastructure={String(infrastructure)} data-net-external-user={String(externalUser)} viewBox={networkViewBox(false,externalUser)} role="img" aria-labelledby={`${ref("network-scene-title")} ${ref("network-scene-desc")}`}>
+  <svg class="network-scene" data-net-scene data-net-icons={applePreview?'apple':'khor'} data-net-infrastructure={String(infrastructure)} data-net-external-user={String(externalUser)} viewBox={networkViewBox(false,externalUser)} role="img" aria-labelledby={`${ref("network-scene-title")} ${ref("network-scene-desc")}`}>
     <title id={ref('network-scene-title')}>{title}</title>
     <desc id={ref('network-scene-desc')}>{description}</desc>
     <defs>
