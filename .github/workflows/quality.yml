@@ -7,7 +7,7 @@ on:
         required: true
       slice:
         type: choice
-        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt, native-glass]
+        options: [sync, delegation, installer, format, interaction, mac-package, desktop-package, scripts, agent-runtime, gui-regression, recents, updates, wix-probe, resources, media-fixture, lab-front, frontend-only, windows-install, published-rollback, mac-installed-debug, lab-lock, runtime-cold, recovery-debug, installer-receipt, native-glass, admission]
         default: sync
       frontend_run:
         type: string
@@ -34,6 +34,56 @@ permissions:
   contents: read
   actions: read
 jobs:
+  admission:
+    if: inputs.slice == 'admission'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: quality-node-native
+          cache-targets: false
+      - name: Prove old admission misleadingly conflates waiting and revocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/admission"
+          git show 797eefaf498f4b21fb9f9bfa7d72e7a5b5bdda8d:crates/node/src/trust.rs > crates/node/src/trust.rs
+          set +e
+          cargo test --locked -p khor-node --lib admission_separates_waiting_approval_from_revoked_access -- --nocapture --test-threads=1 > "$RUNNER_TEMP/admission/red.log" 2>&1
+          result=$?
+          set -e
+          tail -n 30 "$RUNNER_TEMP/admission/red.log"
+          test "$result" -ne 0
+          grep -F 'admission_separates_waiting_approval_from_revoked_access ... FAILED' "$RUNNER_TEMP/admission/red.log"
+          grep -F 'assertion `left == right` failed' "$RUNNER_TEMP/admission/red.log"
+          git checkout HEAD -- crates/node/src/trust.rs
+      - name: Require all trust and catalog regressions to pass
+        run: |
+          set -euo pipefail
+          cargo test --locked -p khor-node --lib trust:: -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/admission/green.log"
+          cargo test --locked -p khor-catalog --test gate -- --test-threads=1 2>&1 | tee "$RUNNER_TEMP/admission/catalog.log"
+      - name: Export formatter result for source-only editing
+        if: always()
+        run: cargo fmt --all && git diff --binary > "$RUNNER_TEMP/admission/format.patch"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: admission-proof
+          path: ${{ runner.temp }}/admission
+          if-no-files-found: error
   native-glass:
     if: inputs.slice == 'native-glass'
     strategy:
