@@ -25,6 +25,8 @@
 //!
 //! One test, run in order: the world is a few seconds to build and the
 //! cases share it.
+mod scratch;
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::{Read, Write};
@@ -92,6 +94,7 @@ fn wait_for_serve(dir: &Path, name: &str, keeper: &mut Kept) {
 struct World {
     dir: PathBuf,
     kept: Vec<Kept>,
+    relay: Option<scratch::Reaped>,
     ports: Vec<(&'static str, u16)>,
     /// The `lock` key's passphrase: generated, never printed.
     phrase: String,
@@ -110,6 +113,7 @@ impl Drop for World {
             stop_far(&self.dir, host.0);
         }
         self.kept.clear();
+        drop(self.relay.take());
         if std::env::var_os("KHOR_TEST_KEEP").is_none() {
             let _ = fs::remove_dir_all(&self.dir);
         }
@@ -143,6 +147,19 @@ fn far_home(dir: &Path, host: &str) -> PathBuf {
     dir.join(host).join("home")
 }
 
+/// Ordinary membership must not depend on a public relay being reachable.
+/// Every home, including a freshly reset far home, uses this world's relay.
+fn configure_home(dir: &Path, home: &Path) {
+    assert!(home.starts_with(dir), "only a scratch home is configured");
+    let settings = fs::read(dir.join("relay-settings.json")).unwrap();
+    let store = home.join(".khor");
+    fs::create_dir_all(&store).unwrap();
+    let file = store.join("relays.json");
+    if fs::read(&file).ok().as_deref() != Some(settings.as_slice()) {
+        fs::write(file, settings).unwrap();
+    }
+}
+
 fn stop_far(dir: &Path, host: &str) {
     let pid = far_home(dir, host).join(".khor").join("serve.pid");
     if let Ok(p) = fs::read_to_string(pid) {
@@ -164,6 +181,7 @@ fn reset_far(dir: &Path, host: &str) {
     assert!(home.starts_with(dir), "only a scratch home is emptied");
     let _ = fs::remove_dir_all(&home);
     fs::create_dir_all(&home).unwrap();
+    configure_home(dir, &home);
 }
 
 fn sh(cmd: &mut Command) {
@@ -235,9 +253,22 @@ fn build() -> Option<World> {
     let mut w = World {
         dir: dir.clone(),
         kept: vec![],
+        relay: None,
         ports: vec![],
         phrase,
     };
+    let relay_home = dir.join("relay");
+    fs::create_dir_all(&relay_home).unwrap();
+    let (relay, url) = scratch::local_relay(&relay_home);
+    w.relay = Some(relay);
+    fs::write(
+        dir.join("relay-settings.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "relays": [{ "url": url }], "only_mine": true
+        }))
+        .unwrap(),
+    )
+    .unwrap();
     sh(Command::new("ssh-keygen")
         .args(["-q", "-t", "ed25519", "-N", "", "-C", "add-ssh", "-f"])
         .arg(client.join("id")));
@@ -257,6 +288,7 @@ fn build() -> Option<World> {
         let fake = d.join("fakebin");
         fs::create_dir_all(&fake).unwrap();
         fs::create_dir_all(d.join("home")).unwrap();
+        configure_home(&dir, &d.join("home"));
         sh(Command::new("ssh-keygen")
             .args(["-q", "-t", "ed25519", "-N", "", "-C", host, "-f"])
             .arg(d.join("hostkey")));
@@ -386,6 +418,7 @@ fn sponsor_env(w: &World, mirror: &str) -> Vec<(String, String)> {
 /// socket, the scratch ssh world, mirror and secret store.
 fn node_env(w: &World, mirror: &str, who: &str) -> Vec<(String, String)> {
     let d = &w.dir;
+    configure_home(d, &d.join(who));
     [
         ("KHOR_HOME", d.join(who).display().to_string()),
         ("KHOR_NAME", who.to_owned()),
@@ -758,7 +791,12 @@ fn add_over_ssh_in_a_scratch_world() {
         out.status.success() && said.contains("Added box9"),
         "{said}"
     );
-    assert_eq!(kept(&w), 0, "a member's password is dropped once it is in");
+    assert_eq!(
+        kept(&w),
+        0,
+        "a member's password is dropped once it is in: {}",
+        said.replace(&w.phrase, "<password>")
+    );
     // Every far host is this one machine, and a far serve runs without
     // KHOR_HOME, so the next far khor would take box9's serve for one on
     // its own store (`serves::beside`): one far resident at a time.
