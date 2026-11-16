@@ -2,7 +2,17 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
-## 2026-11-16 按钮图标右置已发布（当前）
+## 2026-11-16 Apple 网络图标已发布（当前）
+
+用户确认 Apple 对照版「以此为准，commit 并发布部署」。正式首页现使用确认的三枚图稿，不再仅限本地对照入口。
+
+- UI 提交 `ed0623a90ceaf16b895ac24737d750ce9fb722ae` → gh-pages `b18d1bd854061c66dfa55d1508632b6b56f7b6bf`；[Pages run 43851024328](https://github.com/colehank/khor/actions/runs/43851024328) success
+- LAN / Wi-Fi / Cellular 采用已批准的 cable.connector / wifi / cellularbars，SVG 资产已随源码保存，静态构建不读取本机缓存；与批准对照的三份图稿逐字匹配
+- 完整静态构建通过，417 个文件，150 个本站资源与导航引用无缺失。产物及公开首页的桌面／手机 Chrome 检查确认 Apple 标记、组网动画、无重复 ID／溢出／页面错误
+- 普通公开首页、build.json、GUI HTML 与 install.sh 和产物逐字节一致。沿用既有 gh-pages /、CNAME 与 HTTPS，普通快进发布；无 main 合并或原生构建
+- 产物 `/Volumes/disk0/Khor/artifacts/site-pages-20261116-network/dist`；证据 `/Volumes/disk0/Khor/evidence/site-pages-20261116-network/`。临时 23822 检查服务器停止，23820 迭代预览保留
+
+## 2026-11-16 按钮图标右置已发布
 
 用户再次要求「部署吧」，已发布首屏与页尾共用的 Download / Docs 图标右置调整。
 

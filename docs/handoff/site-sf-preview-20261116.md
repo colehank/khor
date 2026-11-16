@@ -20,3 +20,8 @@ Headless Chrome 1440 / 390px 检查三枚图标、组网动画、无重复 ID／
 ## 已确认正式采用
 
 用户要求「以此为准，commit 并发布部署」。正式首页现直接导入 src/assets/network 中三枚已确认的 SVG 图稿，不再依赖开发模式、查询参数或 node_modules 缓存。与获批对照的三份图稿逐字匹配。导出脚本改为 render-network-symbols.mjs，仅在 macOS 手动重新生成时使用；本地旧对照路由保留作兼容入口，正式构建不输出该别名。来源及版权说明与资产共同保存。发布状态以 Pages 收据为准。
+
+
+## 正式部署完成
+
+已提交 ed0623a9 并发布到 <https://khor.cloud/#connect>，gh-pages b18d1bd8，Pages run 43851024328 success。产物与线上桌面／手机 Chrome 均确认默认首页使用三枚 Apple 图标；完整收据与文件验证见 [Pages 发布记录](site-pages-20261112.md)。
