@@ -53,8 +53,20 @@ jobs:
           path: released-lab
           run-id: '43818628560'
           github-token: ${{ github.token }}
-      - name: Verify the exact rc.17 Lab receipt
-        run: python3 scripts/release_manifest.py verify --root released-lab --sha 93f6cb230a4cc5bdde5547e4c15d0bb88fcdb2b3 --run-id 43818628560 --kind developer-lab-review
+      - name: Verify the exact rc.17 Lab manifest and stylesheet bytes
+        run: |
+          python3 - <<'PYCODE'
+          import pathlib,json,hashlib
+          root=pathlib.Path('released-lab')
+          manifests=list(root.rglob('lab-manifest.json'))
+          assert len(manifests)==1
+          m=json.loads(manifests[0].read_text())
+          assert m['snapshot_commit']=='93f6cb230a4cc5bdde5547e4c15d0bb88fcdb2b3'
+          assert m['tree']=='fc202960165406fc5ff677e0eb472fa23995c396'
+          assert m['dirty'] is False
+          css=list(root.rglob('assets/main-*.css'));assert len(css)==1
+          assert hashlib.sha256(css[0].read_bytes()).hexdigest()=='fbe8cd77ae1e91b7feb8d62e679973268f08366efca807b783e49d3b4f73e315'
+          PYCODE
       - name: Compare native transparent WebKit filters and no-filter control
         run: python3 apps/gui/scripts/mac-glass-probe/run.py released-lab "$RUNNER_TEMP/native-glass"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
