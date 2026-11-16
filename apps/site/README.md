@@ -65,7 +65,7 @@ KHOR_SITE_URL=https://colehank.github.io KHOR_SITE_BASE=/khor/ npm run build --p
 
 ## 部署
 
-2026-11-16 当前已发布：UI 源码 `c9d3de8b` → gh-pages `c3ded45d`，<https://khor.cloud/> 公开版本与手机／桌面 Chrome 验证通过，Pages run `43815686521` success。最新细节见 [发布记录](../../docs/handoff/site-pages-20261112.md)。
+2026-11-16 当前已发布：UI 源码 `f15a3e12` → gh-pages `6ae96e9a`，<https://khor.cloud/> 公开版本与手机／桌面 Chrome 验证通过，Pages run `43818154049` success。最新细节见 [发布记录](../../docs/handoff/site-pages-20261112.md)。
 
 
 用户本轮新增 GitHub Pages 发布授权；feature 分支不合并 main，网站静态产物发布到独立 gh-pages 分支。

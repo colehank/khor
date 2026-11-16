@@ -2,7 +2,16 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
-## 2026-11-16 更新已发布（当前）
+## 2026-11-16 按钮图标右置已发布（当前）
+
+用户再次要求「部署吧」，已发布首屏与页尾共用的 Download / Docs 图标右置调整。
+
+- UI 源码 `f15a3e126ee6641c0a8669a98b713d81f73343e7` → gh-pages `6ae96e9a55e84610f65641e0813b3751b1763f4e`；[Pages run 43818154049](https://github.com/colehank/khor/actions/runs/43818154049) success
+- 完整构建后与前一快照对比，417 个文件中仅 index.html、build.json 变化，首页全部资源与目标链接保持一致；普通快进发布
+- 普通 https://khor.cloud/ 的首页与版本文件逐字节匹配产物；线上 1440／390px headless Chrome 确认首尾四个按钮文字在左、图标在右，间距 8px，无页面错误或溢出
+- 产物 `/Volumes/disk0/Khor/artifacts/site-pages-20261116-icons/dist`；证据 `/Volumes/disk0/Khor/evidence/site-pages-20261116-icons/`，包含文件差异、manifest、Pages 收据、公开校验与按钮截图
+
+## 2026-11-16 更新已发布
 
 用户明确要求「发布吧」，已沿用本地完整构建 → gh-pages 静态快照 → GitHub Pages 流程。
 
