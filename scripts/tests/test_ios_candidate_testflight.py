@@ -37,6 +37,38 @@ class IOSCandidateTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 ios.require_quality(bad, jobs, SOURCE)
 
+    def test_original_conditional_dsh_skip_keeps_all_shared_gates_required(self):
+        run, jobs = self.quality()
+        optional = dict(name="dsh-integration", head_sha=SOURCE,
+                        status="completed", conclusion="skipped")
+        ios.require_quality(run, jobs + [optional], SOURCE)
+        for field, value in [("conclusion", "failure"), ("status", "in_progress"),
+                             ("head_sha", "2" * 40), ("conclusion", "success")]:
+            bad = {**optional, field: value}
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                ios.require_quality(run, jobs + [bad], SOURCE)
+
+    def test_conditional_skip_does_not_admit_unknown_or_duplicate_jobs(self):
+        run, jobs = self.quality()
+        optional = dict(name="dsh-integration", head_sha=SOURCE,
+                        status="completed", conclusion="skipped")
+        for extra in [[optional, optional], [{**optional, "name": "unknown"}],
+                      [optional, jobs[0]]]:
+            with self.subTest(extra=extra), self.assertRaises(ValueError):
+                ios.require_quality(run, jobs + extra, SOURCE)
+
+    def test_conditional_skip_cannot_replace_a_missing_or_failed_shared_gate(self):
+        run, jobs = self.quality()
+        optional = dict(name="dsh-integration", head_sha=SOURCE,
+                        status="completed", conclusion="skipped")
+        with self.assertRaises(ValueError):
+            ios.require_quality(run, jobs[:-1] + [optional], SOURCE)
+        for conclusion in ["failure", "skipped", "cancelled"]:
+            bad = copy.deepcopy(jobs)
+            bad[0]["conclusion"] = conclusion
+            with self.subTest(conclusion=conclusion), self.assertRaises(ValueError):
+                ios.require_quality(run, bad + [optional], SOURCE)
+
     def test_ios_must_pass_while_desktop_may_still_be_running(self):
         run = dict(head_sha=SOURCE, head_branch="v0.2.0-rc.19", path=".github/workflows/release.yml")
         jobs = [dict(name="ios", head_sha=SOURCE, status="completed", conclusion="success"),

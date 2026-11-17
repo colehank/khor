@@ -26,6 +26,14 @@ def require_quality(run, jobs, source):
             or run["status"] != "completed" or run["conclusion"] != "success"
             or run["path"] != ".github/workflows/quality.yml"):
         raise ValueError("The exact product source has not passed main Quality")
+    # Full Quality includes this separately requested DSH suite as a known
+    # conditional skip. Never filter arbitrary skipped or failed shared gates.
+    conditional = [j for j in jobs if j["name"] == "dsh-integration"]
+    if (len(conditional) > 1
+            or any(j["head_sha"] != source or j["status"] != "completed"
+                   or j["conclusion"] != "skipped" for j in conditional)):
+        raise ValueError("The optional DSH job must be the original conditional skip")
+    jobs = [j for j in jobs if j["name"] != "dsh-integration"]
     if (len(jobs) != len(QUALITY_JOBS) or {j["name"] for j in jobs} != QUALITY_JOBS
             or any(j["head_sha"] != source or j["status"] != "completed"
                    or j["conclusion"] != "success" for j in jobs)):
