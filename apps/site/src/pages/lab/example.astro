@@ -1,2 +1,15 @@
-<!doctype html>
-<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>Remote project · khor</title></head><body><h1>Remote project</h1><p>You’re viewing a demo web app from another device in Khor</p><button onclick="this.textContent='Action received'">Try it</button></body></html>
+---
+import Base from '../../layouts/Base.astro';
+import L from '../../components/Localized.astro';
+---
+<Base title="Remote project" titleZh="远程项目">
+  <main class="empty">
+    <h1><L en="Remote project" zh="远程项目"/></h1>
+    <p><L en="You’re viewing a demo web app from another device in Khor" zh="你正在 Khor 中查看另一台设备上的演示 Web 应用"/></p>
+    <button class="btn" data-example-action><L en="Try it" zh="试一试"/></button>
+  </main>
+</Base>
+<script>
+  import {translate} from '../../i18n';
+  document.querySelector('[data-example-action]')?.addEventListener('click',event=>(event.currentTarget as HTMLElement).textContent=translate('Action received','已收到操作'));
+</script>

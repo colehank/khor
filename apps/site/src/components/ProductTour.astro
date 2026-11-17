@@ -2,24 +2,32 @@
 import NetworkDiagram from './concepts/NetworkDiagram.astro';
 import CapabilityScene from './concepts/CapabilityScene.astro';
 import '../styles/product-tour.css';
+import L from './Localized.astro';
+interface Props {scene:'network'|'work'|'agent';pinned?:boolean;}
+const {scene,pinned=false}=Astro.props;
 ---
-<div class="product-tour" data-product-tour lang="en">
-  <section class="tour-section tour-network" id="connect" aria-labelledby="connect-title">
-    <div class="tour-copy"><h2 id="connect-title">Stay connected</h2><p>Build a resilient peer-to-peer network across devices with Khor</p></div>
+<div class:list={['product-tour',{'story-tour':pinned}]} data-product-tour>
+  {scene==='network'&&<section class="tour-section tour-network" id="connect" aria-labelledby="connect-title">
+    <div class="tour-copy">
+      <h2 id="connect-title"><L en="Stay connected" zh="保持连接"/></h2>
+      <p><L en="Build a decentralized peer-to-peer network with Khor. Your devices stay connected as you move between wired, Wi-Fi, and cellular connections, with a relay keeping work moving while Khor finds a direct path." zh="用 Khor 构建去中心化的点对点网络。切换有线网、无线网或蜂窝网时，设备依然保持连接；Khor 通过中继衔接，同时寻找直连路径。"/></p>
+    </div>
     <NetworkDiagram />
-  </section>
-  <section class="tour-section tour-capabilities" id="work" aria-labelledby="work-title">
+  </section>}
+  {scene==='work'&&<section class="tour-section tour-capabilities" id="work" aria-labelledby="work-title">
     <span class="tour-anchor" id="sessions" aria-hidden="true"></span><span class="tour-anchor" id="terminal" aria-hidden="true"></span>
-    <div class="tour-copy"><h2 id="work-title">Continue anywhere</h2><p>Use Codex, Claude Code, or just a terminal from any device with Khor</p></div>
+    <div class="tour-copy">
+      <h2 id="work-title"><L en="Continue anywhere" zh="随时继续工作"/></h2>
+      <p><L en="Pick up the same session on a laptop or phone. Use Codex, Claude Code, or a terminal through Khor, with access to files and web apps on the target device and its Git history." zh="在笔记本或手机上接着处理同一个会话。通过 Khor 使用 Codex、Claude Code 或终端，随时访问目标设备的文件与 Web 应用，甚至追踪 Git 日志。"/></p>
+    </div>
     <CapabilityScene mode="work" />
-  </section>
-  <section class="tour-section tour-capabilities" id="khor-agent" aria-labelledby="agent-title">
+  </section>}
+  {scene==='agent'&&<section class="tour-section tour-capabilities" id="khor-agent" aria-labelledby="agent-title">
     <span class="tour-anchor" id="resources" aria-hidden="true"></span>
-    <div class="tour-copy"><h2 id="agent-title">Let Khor take over</h2><p>Delegate tasks across devices and agents to Khor Agent</p></div>
+    <div class="tour-copy">
+      <h2 id="agent-title"><L en="Let Khor take over" zh="交给 Khor"/></h2>
+      <p><L en="Give Khor Agent a task from a laptop or phone. It coordinates devices and agents across the network and brings the result back to you." zh="从笔记本或手机将任务交给 Khor Agent。它会协调网络中的设备与智能体，再把结果交回。"/></p>
+    </div>
     <CapabilityScene mode="agent" />
-  </section>
+  </section>}
 </div>
-<script>
-  import {mountProductTour} from '../scripts/product-tour';
-  mountProductTour();
-</script>

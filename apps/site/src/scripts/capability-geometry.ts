@@ -3,49 +3,42 @@ type Point={x:number;y:number};
 const pair=(p:Point)=>`${p.x.toFixed(2)} ${p.y.toFixed(2)}`;
 const port=(p:Point,toward:Point,r:number)=>{const d=Math.hypot(toward.x-p.x,toward.y-p.y);return {x:p.x+(toward.x-p.x)/d*r,y:p.y+(toward.y-p.y)/d*r}};
 const curve=(from:Point,c1:Point,c2:Point,to:Point)=>`M ${pair(from)} C ${pair(c1)} ${pair(c2)} ${pair(to)}`;
+const onCurve=(a:Point,b:Point,c:Point,d:Point,t:number)=>{
+  const s=1-t;return {x:s*s*s*a.x+3*s*s*t*b.x+3*s*t*t*c.x+t*t*t*d.x,y:s*s*s*a.y+3*s*s*t*b.y+3*s*t*t*c.y+t*t*t*d.y};
+};
 
-// The same four device positions as the infrastructure scene. Relationships are
-// permanent; responsive layout is the only time these coordinates are changed.
-export function capabilityGeometry(compact:boolean,agent=false) {
+// Three scenes share two balanced device groups. Every route has its own lane.
+export function capabilityGeometry(compact:boolean,agent=false,markScale=1) {
   const network=networkGeometry(compact,1),khor=network.khorNet.mark;
   const nodes={...network.nodes,khor};
-  const a=nodes.windows,b=nodes.phone,radius=64,dx=b.x-a.x,dy=b.y-a.y,d=Math.hypot(dx,dy);
-  const n={x:-dy/d*radius,y:dx/d*radius},offset=(p:Point,sign:number)=>({x:p.x+n.x*sign,y:p.y+n.y*sign});
-  const access={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
-  const accessPath=`M ${pair(offset(a,1))} L ${pair(offset(b,1))} A ${radius} ${radius} 0 0 0 ${pair(offset(b,-1))} L ${pair(offset(a,-1))} A ${radius} ${radius} 0 0 0 ${pair(offset(a,1))} Z`;
-  const origin={x:access.x+radius*d/dy,y:access.y};
-  const workEnds={
-    linux:{x:nodes.linux.x+networkNodeRadius+5,y:nodes.linux.y},
-    mac:port(nodes.mac,compact?{x:280,y:368}:{x:650,y:360},networkNodeRadius+5),
-  };
-  const workRoutes=compact?{
-    linux:curve(origin,{x:345,y:345},{x:370,y:220},workEnds.linux),
-    mac:curve(origin,{x:242,y:365},{x:280,y:368},workEnds.mac),
-  }:{
-    linux:curve(origin,{x:570,y:360},{x:580,y:185},workEnds.linux),
-    mac:curve(origin,{x:490,y:405},{x:650,y:360},workEnds.mac),
-  };
-  const routerStart={x:khor.x,y:khor.y+27};
-  const controls=compact?{
-    linux:[{x:khor.x,y:116},{x:215,y:120}],mac:[{x:khor.x,y:140},{x:430,y:105}],
-  }:{
-    linux:[{x:khor.x,y:110},{x:390,y:115}],mac:[{x:khor.x,y:115},{x:670,y:90}],
-  };
+  const a=nodes.windows,b=nodes.phone,radius=46*markScale,nodeRadius=networkNodeRadius*Math.sqrt(markScale);
+  const access={x:a.x,y:(a.y+b.y)/2};
+  const accessPath=`M ${pair({x:a.x-radius,y:a.y})} A ${radius} ${radius} 0 0 1 ${pair({x:a.x+radius,y:a.y})} L ${pair({x:b.x+radius,y:b.y})} A ${radius} ${radius} 0 0 1 ${pair({x:b.x-radius,y:b.y})} Z`;
+  const origin={x:access.x+radius,y:access.y};
   const routes=(['linux','mac'] as const).map(id=>{
-    const [c1,c2]=controls[id];
-    // Meet the device above its face, clear of the two corner badges.
-    const end=agent?{x:nodes[id].x,y:nodes[id].y-networkNodeRadius-5}:workEnds[id];
-    return {id,end,d:agent?curve(routerStart,c1,c2,end):workRoutes[id]};
+    if(!agent){
+      const end={x:nodes[id].x-nodeRadius-5*markScale,y:nodes[id].y};
+      const c1={x:origin.x+(end.x-origin.x)*.38,y:origin.y};
+      const c2={x:origin.x+(end.x-origin.x)*.62,y:end.y};
+      return {id,end,d:curve(origin,c1,c2,end)};
+    }
+    const end=id==='linux'?{x:nodes[id].x,y:nodes[id].y-nodeRadius-5*markScale}:{x:nodes[id].x-nodeRadius-5*markScale,y:nodes[id].y};
+    const lane=(access.x+nodes.mac.x)/2+(compact?10:30);
+    const start=port(khor,id==='linux'?{x:khor.x+85,y:khor.y+100}:{x:lane,y:khor.y+130},29*markScale);
+    const c1=id==='linux'?{x:khor.x+85,y:khor.y+100}:{x:lane,y:khor.y+155};
+    const c2=id==='linux'?{x:end.x,y:end.y-62}:{x:lane,y:end.y};
+    return {id,end,d:curve(start,c1,c2,end)};
   });
-  // The same access group delegates through its upper edge; no separate user.
-  const requestC1=compact?{x:105,y:163}:{x:200,y:140};
-  const requestC2=compact?{x:135,y:112}:{x:khor.x-95,y:khor.y+30};
-  const resultC1=compact?{x:195,y:118}:{x:khor.x-35,y:140};
-  const resultC2=compact?{x:175,y:159}:{x:270,y:180};
-  const requestStart=port(a,requestC1,radius),resultEnd=port(a,resultC2,radius);
-  const request=curve(requestStart,requestC1,requestC2,port(khor,requestC2,33));
-  const result=curve(port(khor,resultC1,33),resultC1,resultC2,resultEnd);
-  const taskLabel=compact?{x:134,y:139}:{x:230,y:133};
-  const resultLabel=compact?{x:157,y:186}:{x:292,y:172};
+  // Parallel request / result arcs join the access group's upper edge to Khor.
+  const c1=compact?{x:134,y:157}:{x:275,y:137};
+  const c2={x:khor.x-82,y:khor.y+46};
+  const requestStart=port(a,c1,radius),requestEnd=port(khor,c2,32*markScale);
+  const request=curve(requestStart,c1,c2,requestEnd);
+  const r1={x:khor.x-12,y:khor.y+117};
+  const r2=compact?{x:234,y:186}:{x:440,y:179};
+  const resultStart=port(khor,r1,32*markScale),resultEnd=port(a,r2,radius);
+  const result=curve(resultStart,r1,r2,resultEnd);
+  const taskLabel=onCurve(requestStart,c1,c2,requestEnd,.43);
+  const resultLabel=onCurve(resultStart,r1,r2,resultEnd,.56);
   return {nodes,access,accessPath,origin:agent?resultEnd:origin,routes,request,result,taskLabel,resultLabel};
 }

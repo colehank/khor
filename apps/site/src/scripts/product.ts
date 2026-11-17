@@ -1,5 +1,6 @@
 import {mountPreviewBackground} from './product-background';
 import {sitePath} from '../paths';
+import {currentLocale} from '../i18n';
 
 export function mountDesktopPreview() {
   const preview=document.querySelector<HTMLElement>('[data-desktop-preview]');
@@ -25,7 +26,7 @@ export function mountDesktopPreview() {
   const start=()=>{
     idle=0;timer=0;
     if(started||!visible)return;
-    started=true;frame.src=new URL(frame.dataset.src!,location.origin).href;
+    started=true;const url=new URL(frame.dataset.src!,location.origin);url.searchParams.set('lang',currentLocale());url.searchParams.set('theme',document.documentElement.dataset.theme!);frame.src=url.href;
   };
   const schedule=()=>{
     if(started||idle||timer||!visible)return;
@@ -43,9 +44,12 @@ export function mountDesktopPreview() {
     if(event.data?.type==='khor-demo-ready')show();
     if(event.data?.type==='khor-demo-download')location.assign(document.querySelector<HTMLAnchorElement>('[data-device-download]')?.href??sitePath('/download/'));
   },on);
-  frame.addEventListener('load',()=>{
-    if(frame.contentDocument?.getElementById('root')?.childElementCount)show();
-  },on);
+  const refresh=()=>{
+    if(!started)return;
+    preview.removeAttribute('data-ready');background?.dispose();background=undefined;
+    const url=new URL(frame.dataset.src!,location.origin);url.searchParams.set('lang',currentLocale());url.searchParams.set('theme',document.documentElement.dataset.theme!);frame.src=url.href;
+  };
+  window.addEventListener('khor:localechange',refresh,on);window.addEventListener('khor:themechange',refresh,on);
   const visibility=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible)schedule();},{rootMargin:'100px'});
   visibility.observe(preview);
   window.addEventListener('pagehide',event=>{

@@ -8,46 +8,66 @@ import SiteNav from "../components/SiteNav.astro";
 import ProductActions from '../components/ProductActions.astro';
 import ProductInstallations from '../components/ProductInstallations.astro';
 import BrandIcon from '../components/BrandIcon.astro';
+import L from '../components/Localized.astro';
+import {localizedAttrs} from '../i18n';
 import "../styles/story.css";
-const lines = [["You have", "many devices"], ["With", "many agents"], ["But", "one mind"], ["How about", "letting them\nwork together?"], ["Meet", "Khor"]];
+const lines = [["You have", "many devices"], ["With", "many agents"], ["But", "one mind"], ["How do we", "keep them working\ntogether?"], ["Meet", "Khor"]];
+const chineseLines=[['你有','多台设备'],['还有','多个智能体'],['但只有','一个心智'],['怎样让他们','始终\n一起工作？'],['试试','Khor']];
+const chapterNames=[['Devices','设备'],['Agents','智能体'],['Mind','心智'],['Together','协作'],['Khor','Khor']];
 ---
-<Base title="Work across your devices and agents" description="Your agents, files, and web apps. Connected peer to peer. Khor by kapestack." productWorld>
-  <a class="skip-story" href="#product">Skip to the product preview</a>
+<Base title="Work across your devices and agents" titleZh="跨设备、跨智能体协同工作" description="Your agents, files, and web apps. Connected peer to peer. Khor by kapestack." descriptionZh="通过 Khor，在任意设备使用智能体、文件和 Web 应用，点对点协同工作。" productWorld>
+  <a class="skip-story" href="#product"><L en="Skip to the product preview" zh="跳到产品预览"/></a>
   <SiteNav home />
   <main class="story-home">
     <ProductHero />
-    <section class="opening" id="story" aria-label="Meet Khor" data-opening>
+    <section class="opening" id="story" {...localizedAttrs({'aria-label':['Meet Khor','试试 Khor']})} data-opening>
       <div class="opening-sticky">
         <div class="meet-environment" data-meet-environment aria-hidden="true"></div>
-        <div class="opening-copy" aria-hidden="true" lang="en">{lines.map(([lead, phrase], index) => <div class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><p class="opening-line-content"><span class="line-lead">{lead}</span>{phrase.split("\n").map(text => <span class="line-phrase">{text}</span>)}</p></div>)}</div>
-        <h2 class="sr-only" lang="en">You have many devices With many agents But one mind How about letting them work together? Meet Khor</h2>
+        <div class="opening-copy" aria-hidden="true">{lines.map(([lead, phrase], index) => <div class:list={["opening-line", {"is-current": index === 0}]} data-line={index}><p class="opening-line-content"><span class="line-lead"><L en={lead} zh={chineseLines[index][0]}/></span>{phrase.split("\n").map((text,i) => <span class="line-phrase"><L en={text} zh={chineseLines[index][1].split('\n')[i]}/></span>)}</p></div>)}</div>
+        <h2 class="sr-only"><L en="You have many devices With many agents But one mind How do we keep them working together? Meet Khor" zh="你有多台设备，还有多个智能体，但只有一个心智。怎样让他们始终一起工作？试试 Khor。"/></h2>
         <div class="assembly" data-assembly><Mandala /></div>
-        <div class="scroll-cue" aria-hidden="true"><span>Scroll to connect</span><span class="scroll-stem"><span class="scroll-stem-progress"></span></span></div>
-        <nav class="story-steps" aria-label="Introduction chapters">{lines.map(([, phrase], index) => <button type="button" aria-label={`Go to ${phrase}`} aria-current={index === 0 ? "step" : undefined} data-step={index}><span></span></button>)}</nav>
+        <ProductTour scene="network" pinned/>
+        <div class="scroll-cue" aria-hidden="true"><span><L en="Scroll to connect" zh="下滑，连接起来"/></span><span class="scroll-stem"><span class="scroll-stem-progress"></span></span></div>
+        <nav class="story-steps" {...localizedAttrs({'aria-label':['Introduction chapters','介绍章节']})}>{lines.map(([, phrase], index) => <button type="button" {...localizedAttrs({'aria-label':[`Go to ${phrase.replace(/\n/g,' ')}`,`查看${chineseLines[index].join('').replace(/\n/g,'')}`]})} aria-current={index === 0 ? "step" : undefined} data-step={index}><span><L en={chapterNames[index][0]} zh={chapterNames[index][1]}/></span></button>)}</nav>
       </div>
     </section>
-    <ProductTour />
-    <section class="download-section" id="download" aria-labelledby="download-title">
-      <div class="download-main">
-        <div class="download-copy">
-          <h2 id="download-title">Build with Khor</h2>
-          <p class="download-description">Start with the device in front of you</p>
-          <ProductActions prefix="download" />
+    <ProductTour scene="work"/>
+    <section class="story-closing" data-story-closing>
+      <div class="story-closing-sticky">
+        <ProductTour scene="agent" pinned/>
+        <div class="story-final-layout" data-story-final-layout>
+          <div class="story-final-copy download-copy" data-story-final-copy>
+            <h2 id="download-title"><span data-locale-content="en" lang="en">Build with Khor</span><span data-locale-content="zh" lang="zh-CN"><span class="keep-together">与 Khor</span> <span class="keep-together">一起构建</span></span></h2>
+            <p class="download-description"><L en="Connect a host. Continue from any device." zh="连接一台主机，在任意设备继续工作。"/></p>
+            <ProductActions prefix="download" />
+          </div>
+          <div class="story-final-brand assembly" data-story-final-brand aria-hidden="true"><BrandIcon prefix="download-brand" size={336}/></div>
+          <section class="story-final-installations" data-story-final-installations id="download" {...localizedAttrs({'aria-label':['Installation options','安装方式']})}>
+            <ProductInstallations prefix="download" />
+          </section>
         </div>
-        <div class="download-brand" aria-hidden="true"><BrandIcon prefix="download-brand" size={336}/></div>
       </div>
-      <div class="download-options"><ProductInstallations prefix="download" /></div>
     </section>
   </main>
   <footer class="story-footer" id="about" aria-labelledby="about-title">
     <div class="footer-about">
-      <p class="footer-credit">Presented by</p>
+      <p class="footer-credit"><L en="Presented by" zh="呈现"/></p>
       <p class="footer-teams" id="about-title"><a class="keep-together" href="https://github.com/AI-innovation-team">NeuroAI Innovation Team</a><span class="footer-partner"><span aria-hidden="true">/</span><a href="https://www.kapestack.top">KapeStack</a></span></p>
     </div>
-    <nav aria-label="Footer"><a href={sitePath('/docs/')}>Docs</a><a href="#khor-hero">Back to top</a></nav>
+    <nav {...localizedAttrs({'aria-label':['Footer','页脚']})}><a href={sitePath('/docs/')}><L en="Docs" zh="文档"/></a><a href="#khor-hero"><L en="Back to top" zh="回到顶部"/></a></nav>
   </footer>
 
-  <noscript><style>.story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}.opening{height:auto}.opening-sticky{position:relative;min-height:80svh}.opening-line{display:none}.opening-line:first-child{display:block;opacity:1}.story-steps,.scroll-cue{display:none}</style><p class="no-script">Enable JavaScript to view the animation. <a href={sitePath("/download/")}>Download Khor</a></p></noscript>
+  <noscript><style>
+    .story-nav{position:absolute}.canonical-icon{visibility:visible;filter:grayscale(1)}
+    .opening,.story-closing{height:auto;padding:var(--gap-pane) var(--story-gutter)}
+    .opening-sticky,.story-closing-sticky{position:relative;height:auto;display:block}
+    .story-final-layout{position:relative;inset:auto;min-height:0;padding:0;display:block}.story-final-installations{opacity:1;pointer-events:auto;margin-block:var(--gap-pane)}
+    .opening-copy,.opening .assembly,.story-final-copy,.story-final-brand.assembly{position:relative;inset:auto;transform:none;width:100%;opacity:1;margin-block:var(--gap-pane)}
+    .opening-copy{height:auto}.opening-line{display:none}.opening-line:first-child{position:relative;display:block;opacity:1}.opening-line-content{opacity:1!important}
+    .story-tour,.story-tour .tour-section{position:relative;inset:auto;display:block;padding:var(--gap-pane) 0}
+    .story-tour .tour-copy,.story-tour .concept{opacity:1}.story-tour .tour-section>.concept-network{position:relative;inset:auto;width:100%;height:auto}
+    .story-tour .network-scene{height:auto}.story-final-copy{pointer-events:auto}.story-steps,.scroll-cue{display:none}
+  </style><p class="no-script">Enable JavaScript to view the animation. <a href={sitePath("/download/")}>Download Khor</a></p></noscript>
 </Base>
 <script>
   import { mountStory } from "../scripts/story";

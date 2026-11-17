@@ -2,13 +2,18 @@
 import "../styles/site.css";
 import mark from "../../../gui/src-tauri/icons/src/mandala-glass.svg";
 import { TAGLINE } from "../site";
+import preferences from '../scripts/preferences.js?raw';
+import {localizedAttrs} from '../i18n';
 
 interface Props {
   title?: string;
   description?: string;
+  titleZh?: string;
+  descriptionZh?: string;
   productWorld?: boolean;
 }
-const { title, description = TAGLINE, productWorld=false } = Astro.props;
+const { title, description = TAGLINE, titleZh=title,descriptionZh='跨设备、跨智能体协同工作',productWorld=false } = Astro.props;
+const titles=[title?`${title} · khor`:`khor — ${TAGLINE}`,titleZh?`${titleZh} · khor`:'khor — 跨设备、跨智能体协同工作'] as const;
 ---
 
 <!doctype html>
@@ -16,10 +21,11 @@ const { title, description = TAGLINE, productWorld=false } = Astro.props;
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{title ? `${title} · khor` : `khor — ${TAGLINE}`}</title>
-    <meta name="description" content={description} />
+    <title {...localizedAttrs({textContent:titles})}>{titles[0]}</title>
+    <meta name="description" {...localizedAttrs({content:[description,descriptionZh]})} />
     <link rel="icon" type="image/svg+xml" href={mark.src} />
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
+    <script is:inline set:html={preferences}/>
   </head>
   <body data-product-world={productWorld?true:undefined}>
     <slot />

@@ -25,16 +25,18 @@ if(localStorage.getItem('khor.site.identity')!==identity){
   const landing=['workspace','workspaces'].includes(requested)?'workspaces':requested==='devices'?'devices':'sessions';
   localStorage.setItem('khor.place',JSON.stringify({landing,screen:'list'}));
 }
-localStorage.setItem('khor.lang','en');
+const language=query.get('lang')==='zh'?'zh':query.get('lang')==='en'?'en':(/^zh/i.test(navigator.languages.find(tag=>/^(en|zh)(-|$)/i.test(tag))??navigator.language)?'zh':'en');
+localStorage.setItem('khor.lang',language);
 const theme=query.get('theme')==='dark'?'dark':query.get('theme')==='light'?'light':'auto';
 localStorage.setItem('khor.theme',theme);
 localStorage.setItem('khor.preview-ground','auto');
-const fixture=createSiteFixture(siteRoot);
+const fixture=createSiteFixture(siteRoot,language);
 const workspacePaths=['README.md','src/export.ts','src/export.test.ts'].map(path=>({kind:'file' as const,path:projects[0].root+'/'+path}));
 new WorkspaceNavigationStore(()=>localStorage,'MacBook Pro',projects[0].root,path=>({kind:'file',path})).save({at:projects[0].root,historyOpen:false,content:{items:workspacePaths,active:workspaceTabId(workspacePaths[0]),preview:null}});
 // Discard a previous demo's pinned theme; the production theme listener
 // follows the browser live while its preference is auto.
 fixture.request('set_config',{name:'theme',value:theme});
+fixture.request('set_config',{name:'lang',value:language});
 if(hero){
   document.documentElement.dataset.siteMacos='';
   // Reuse the production window's single translucent background plane.
@@ -112,12 +114,14 @@ if(requested==='page'){
 }
 Object.defineProperty(window,'__KHOR_SITE_DEMO__',{value:Object.freeze({scene:requested,synthetic:true})});
 if(hero&&parent!==window){
+  let readyDelay:ReturnType<typeof setTimeout>|undefined;
   const ready=new MutationObserver(()=>{
-    // Any mounted App page is interactive. A restored devices/settings page
-    // has no composer and must not remain trapped behind the static poster.
     if(!document.getElementById('root')?.childElementCount)return;
-    ready.disconnect();parent.postMessage({type:'khor-demo-ready'},location.origin);
+    // Let the local session payload and restored view finish their first paint.
+    // This also supports a restored devices/settings view without a composer.
+    clearTimeout(readyDelay);readyDelay=setTimeout(()=>{ready.disconnect();parent.postMessage({type:'khor-demo-ready'},location.origin);},350);
   });
   ready.observe(document.body,{childList:true,subtree:true});
+  window.addEventListener('pagehide',()=>{ready.disconnect();clearTimeout(readyDelay);},{once:true});
 }
 await import('../../src/main');

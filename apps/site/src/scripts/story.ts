@@ -1,5 +1,7 @@
 import {createIconMotion,iconState,iconStops,iconSegments,clamp,ease,type MotionTrack} from './icon-story';
 import {mountCopyButtons} from './copy';
+import {mountNarrativeTour} from './narrative-tour';
+import {createStoryStops} from './story-stops';
 
 type ScrollTimelineConstructor=new(options:{source:Element;axis:string})=>AnimationTimeline;
 type ScrollOptions=KeyframeAnimationOptions&{rangeStart:string;rangeEnd:string};
@@ -12,7 +14,11 @@ export function mountStory() {
   const lines=[...opening.querySelectorAll<HTMLElement>('[data-line]')];
   const steps=[...opening.querySelectorAll<HTMLButtonElement>('[data-step]')];
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
+  const readingPoses=[0,...iconSegments.map(segment=>segment.motionEnd)];
+  const stops=createStoryStops(opening,readingPoses,reduced);
   const tracks=createIconMotion(assembly);
+  const tour=mountNarrativeTour(sticky);
+  const openingCopy=opening.querySelector<HTMLElement>('.opening-copy')!;
   const cue=opening.querySelector<HTMLElement>('.scroll-cue')!;
   const cueProgress=cue.querySelector<HTMLElement>('.scroll-stem-progress')!;
   const controls=opening.querySelector<HTMLElement>('.story-steps')!;
@@ -42,13 +48,17 @@ export function mountStory() {
   }
   function render() {
     scheduled=false;
-    if(disposed||!inView)return;
+    if(disposed)return;
     if(reduced.matches){
       if(lastProgress!==1){paint(1);assembly!.dataset.iconScene='meet';lastProgress=1;}
+      tour.render(0,true,true);openingCopy.style.opacity='1';
       return;
     }
+    if(!inView)return;
     const distance=scrollY-topOpening-openingTravel*introProgress;
     const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
+    const q=(scrollY-topOpening-openingTravel*(1+introProgress))/sticky!.offsetHeight;
+    openingCopy.style.opacity=tour.render(q,inView,false)?'1':'0';
     // Introduce the next sentence as its geometry starts. Its short fade is
     // time-based, so pausing a scroll never leaves two half-visible headlines.
     // Bookmarks round to the next CSS pixel; that must not select another chapter.
@@ -70,7 +80,7 @@ export function mountStory() {
     }
   }
   function requestRender() {
-    if(scheduled||disposed||!inView)return;
+    if(scheduled||disposed||(!inView&&!reduced.matches))return;
     scheduled=true;requestAnimationFrame(render);
   }
   function bindTimeline() {
@@ -100,28 +110,41 @@ export function mountStory() {
     // changes must not remap a stationary scroll position via innerHeight.
     const top=opening!.getBoundingClientRect().top+scrollY;
     const intro=reduced.matches?0:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
-    const travel=Math.max(1,opening!.offsetHeight-sticky!.offsetHeight-intro);
+    const travel=reduced.matches?1:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-travel'))*sticky!.offsetHeight;
+    tour.measure();
+    stops.measure();
     const key=[top,travel,intro,reduced.matches].join(':');
     if(key===geometry)return;
     geometry=key;topOpening=top;openingTravel=travel;introProgress=intro/travel;bindTimeline();
   }
   steps.forEach((step,index)=>step.addEventListener('click',()=>{
     // Round forward so the final bookmark reaches the exact canonical pose.
-    const distance=index===0?0:openingTravel*(introProgress+iconStops[index]);
+    const distance=index===0?0:openingTravel*(introProgress+readingPoses[index]);
     scrollTo({top:Math.ceil(topOpening+distance),behavior:reduced.matches?'instant':'smooth'});
   },on));
+  const navigateHash=(initial=false)=>{
+    if(location.hash!=='#connect'||reduced.matches)return;
+    const unfold=Number(getComputedStyle(opening!).getPropertyValue('--story-unfold-travel'));
+    scrollTo({top:Math.round(topOpening+openingTravel*(1+introProgress)+unfold*sticky!.offsetHeight),behavior:initial?'instant':'smooth'});
+  };
   mountCopyButtons();
   const visibility=new IntersectionObserver(entries=>{
-    inView=entries[0].isIntersecting;if(inView)requestRender();
+    inView=entries[0].isIntersecting;if(inView)requestRender();else tour.pause();
   });
   visibility.observe(opening);
   const resize=new ResizeObserver(measure);resize.observe(opening);resize.observe(sticky);
   const hero=document.querySelector<HTMLElement>('[data-product-hero]');if(hero)resize.observe(hero);
   window.addEventListener('scroll',requestRender,{passive:true,...on});
+  window.addEventListener('resize',measure,on);window.addEventListener('khor:localechange',measure,on);window.addEventListener('khor:themechange',measure,on);
+  window.addEventListener('hashchange',()=>navigateHash(),on);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)tour.pause();else requestRender();},on);
   reduced.addEventListener('change',measure,on);measure();
+  requestAnimationFrame(()=>navigateHash(true));
   window.addEventListener('pagehide',event=>{
     if(event.persisted)return;
     disposed=true;controller.abort();resize.disconnect();visibility.disconnect();
+    tour.destroy();
+    stops.destroy();
     animations.forEach(animation=>animation.cancel());
   },on);
 }

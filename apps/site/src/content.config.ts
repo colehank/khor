@@ -13,4 +13,5 @@ const docs = defineCollection({
   }),
 });
 
-export const collections = { docs };
+const docsZh=defineCollection({loader:glob({pattern:'*.md',base:'./src/content/docs-zh'}),schema:z.object({title:z.string(),summary:z.string(),order:z.number()})});
+export const collections={docs,docsZh};

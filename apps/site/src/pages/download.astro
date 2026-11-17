@@ -6,32 +6,34 @@ import CopyButton from '../components/CopyButton.astro';
 import {release} from '../releases';
 import {INSTALL} from '../site';
 import '../styles/story.css';
+import L from '../components/Localized.astro';
+import {localizedAttrs} from '../i18n';
 const app=release.downloads.filter(item=>item.platform==='macOS App');
 const cli=release.downloads.filter(item=>item.platform!=='macOS App');
 ---
-<Base title="Download Khor" description="Download the Khor desktop app or command-line client">
+<Base title="Download Khor" titleZh="下载 Khor" description="Download the Khor desktop app or command-line client" descriptionZh="下载 Khor 桌面应用或命令行客户端。">
   <SiteNav current="download" />
   <main class="downloads-page">
-    <h1>Download Khor</h1>
-    <p class="downloads-description">Start with one device. Connect the rest when you’re ready.</p>
+    <h1><L en="Download Khor" zh="下载 Khor"/></h1>
+    <p class="downloads-description"><L en="Start with one device. Connect the rest when you’re ready." zh="从一台设备开始，随时连接其他设备。"/></p>
     <p class="download-detected" data-download-note>macOS App · Linux / macOS CLI</p>
     <div class="downloads-options" data-download-options>
     <section class="downloads-group downloads-app" aria-labelledby="download-app-title">
-      <h2 id="download-app-title">macOS App</h2>
-      <p>Sessions, devices, and projects in one window.</p>
-      <div class="downloads-table">{app.map(item=><a href={item.url} data-download-platform="macos" data-download-file={item.file}><span>{item.arch}<small data-recommend-label hidden>Recommended</small></span><span>Desktop app</span><span aria-label="Download">↓</span></a>)}</div>
-      <p class="download-note">Unzip the download and move Khor.app to Applications. <a href={sitePath("/docs/install/#desktop")}>Set up your first device</a></p>
+      <h2 id="download-app-title"><L en="macOS App" zh="macOS 应用"/></h2>
+      <p><L en="Sessions, devices, and projects in one window." zh="在同一个窗口管理会话、设备与项目。"/></p>
+      <div class="downloads-table">{app.map(item=><a href={item.url} data-download-platform="macos" data-download-file={item.file}><span>{item.arch}<small data-recommend-label hidden><L en="Recommended" zh="推荐"/></small></span><span><L en="Desktop app" zh="桌面应用"/></span><span {...localizedAttrs({'aria-label':['Download','下载']})}>↓</span></a>)}</div>
+      <p class="download-note"><L en="Unzip the download and move Khor.app to Applications. " zh="解压后，将 Khor.app 移到应用程序。"/><a {...localizedAttrs({href:[sitePath('/docs/install/#desktop'),sitePath('/docs/install/#desktop-zh')]})}><L en="Set up your first device" zh="设置第一台设备"/></a></p>
     </section>
     <section class="downloads-group downloads-cli" aria-labelledby="download-cli-title">
-      <h2 id="download-cli-title">Command line</h2>
-      <p>Connect devices and manage sessions from your terminal, including on headless machines.</p>
+      <h2 id="download-cli-title"><L en="Command line" zh="命令行"/></h2>
+      <p><L en="Connect devices and manage sessions from your terminal, including on headless machines." zh="在终端连接设备、管理会话，也适用于无桌面的主机。"/></p>
       <div class="install-line"><code id="install">{INSTALL}</code><CopyButton target="install" /></div>
-      <details class="manual-downloads"><summary>Download the CLI manually</summary><div class="downloads-table">{cli.map(item=><a href={item.url} data-download-platform={item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden>Recommended</small></span><span>{item.arch}</span><span aria-label="Download">↓</span></a>)}</div></details>
-      <p class="download-note"><a href={sitePath("/docs/install/#cli")}>CLI installation and updates</a></p>
+      <details class="manual-downloads"><summary><L en="Download the CLI manually" zh="手动下载命令行客户端"/></summary><div class="downloads-table">{cli.map(item=><a href={item.url} data-download-platform={item.platform==='Linux CLI'?'linux':'cli'} data-download-file={item.file}><span>{item.platform}<small data-recommend-label hidden><L en="Recommended" zh="推荐"/></small></span><span>{item.arch}</span><span {...localizedAttrs({'aria-label':['Download','下载']})}>↓</span></a>)}</div></details>
+      <p class="download-note"><a {...localizedAttrs({href:[sitePath('/docs/install/#cli'),sitePath('/docs/install/#cli-zh')]})}><L en="CLI installation and updates" zh="命令行安装与更新"/></a></p>
     </section>
     </div>
-    <p class="download-note availability-note">Available for macOS, with a CLI for Linux and macOS. Windows, iOS, and Android apps are coming soon.</p>
-    <a class="release-notes" href={release.url}>{release.version} · Preview · Release notes ↗</a>
+    <p class="download-note availability-note"><L en="Available for macOS, with a CLI for Linux and macOS. Windows, iOS, and Android apps are coming soon." zh="目前提供 macOS 应用及 Linux / macOS 命令行客户端。Windows、iOS 和 Android 应用即将推出。"/></p>
+    <a class="release-notes" href={release.url}>{release.version} · <L en="Preview · Release notes" zh="预览版 · 版本说明"/> ↗</a>
   </main>
 </Base>
 <script>

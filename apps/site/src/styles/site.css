@@ -1,17 +1,31 @@
-/* The site wears the app's design system (docs/design-system): the
- * frame is `canvas`, content lands on paper (`card`), the docs sit in
- * the app's own skeleton — a left block on `side`, a first row, a board.
- * Every value comes from the tokens; nothing here writes a colour or a
- * pixel of its own. */
+/* Shared type, spacing and colors come from the app design system.
+ * The approved daylight canvas is a website-specific surface; glass tones
+ * derive from the shared brand and neutral tokens. The embedded App keeps
+ * its independent theme and material tokens. */
 @import "./tokens.gen.css";
 
 :root {
+  /* Approved website daylight canvas. Product/iframe tokens stay independent. */
+  --site-daylight-canvas:#f6f7f5;
+  --canvas:var(--site-daylight-canvas);
+  --side:var(--canvas);
+  --card:var(--canvas);
+  --site-accent:var(--brand-strong);
+  --site-glass-on-light:1;
+  --site-glass-tint:color-mix(in oklch,var(--lq1) 16%,var(--canvas));
+  --site-glass-edge:color-mix(in oklch,var(--mark-ink-dark) 42%,var(--site-glass-tint));
   /* The one size the app has no use for: a page's opening word. Twice
      the largest interface size rather than a number of its own. */
   --text-display: calc(var(--text-title-lg) * 2);
   /* Three list-widths and the two gaps between them. */
   --page-w: calc(var(--list-w) * 3 + var(--gap-base) * 2);
 }
+:root[data-theme="dark"] { --site-accent:var(--lq2); --site-glass-on-light:0; }
+@media (prefers-color-scheme:dark) { :root:not([data-theme="light"]) { --site-accent:var(--lq2); --site-glass-on-light:0; } }
+
+/* Both languages are static HTML; preference selection happens before paint. */
+[data-locale-content] { display:none!important; }
+html:not([data-locale="zh"]) [data-locale-content="en"],html[data-locale="zh"] [data-locale-content="zh"] { display:revert!important; }
 
 *,
 *::before,

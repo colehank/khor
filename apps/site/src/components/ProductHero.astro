@@ -1,25 +1,36 @@
 ---
 import desktop from "../assets/product/desktop.webp";
 import desktopDark from "../assets/product/desktop-dark.webp";
+import desktopZh from '../assets/product/desktop-zh.webp';
+import desktopZhDark from '../assets/product/desktop-zh-dark.webp';
 import fog from "../assets/product/fog.webp";
 import {sitePath} from '../paths';
 import ProductActions from './ProductActions.astro';
 import ProductInstallations from './ProductInstallations.astro';
 import {fogOptions} from "../scripts/fog-options";
+import L from './Localized.astro';
+import {localizedAttrs} from '../i18n';
 ---
 <section class="product-hero" id="khor-hero" aria-labelledby="product-title" data-product-hero style={`--fog-base:#${fogOptions.baseColor.toString(16)}`}>
   <div class="hero-ground" data-fog aria-hidden="true"><img class="fog-fallback" src={fog.src} alt="" width={fog.width} height={fog.height} loading="eager" /></div>
   <div class="product-main">
   <div class="product-copy">
     <h1 id="product-title">Khor</h1>
-    <p class="product-description" lang="en"><span class="product-promise">Work across your devices and agents</span> <span class="product-detail">Access agents, edit files, track changes, and connect to web apps from any device, <span class="keep-together">peer to peer</span></span></p>
+    <p class="product-description"><span class="product-promise"><L en="Work across your devices and agents" zh="跨设备、跨智能体协同工作"/></span> <span class="product-detail"><L en="Access agents, edit files, track changes, and connect to web apps from any device, peer to peer" zh="在任意设备访问智能体、编辑文件、追踪修改并连接 Web 应用，点对点协同"/></span></p>
     <ProductActions prefix="hero" />
   </div>
-<section class="product-showcase" id="product" aria-label="Khor desktop interface" data-product-showcase>
+<section class="product-showcase" id="product" {...localizedAttrs({'aria-label':['Khor desktop interface','Khor 桌面界面']})} data-product-showcase>
     <div class="macos-window">
       <div class="desktop-preview" data-desktop-preview>
-        <picture class="desktop-poster"><source media="(prefers-color-scheme: dark)" srcset={desktopDark.src} /><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor desktop with built-in conversations, remote files, and Cursor, Codex, Claude and shell sessions" loading="eager" fetchpriority="high" /></picture>
-        <div class="desktop-stage" data-desktop-stage><iframe title="Try the Khor desktop interface" data-desktop-demo data-src={sitePath("/experience/app/index.html?scene=content&hero=1")} sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
+        <picture class="desktop-poster" data-script-poster>
+          <source data-theme-source media="(prefers-color-scheme: dark)" {...localizedAttrs({srcset:[desktopDark.src,desktopZhDark.src]},true)}/>
+          <img width={desktop.width} height={desktop.height} {...localizedAttrs({src:[desktop.src,desktopZh.src],alt:['Khor desktop with built-in conversations, remote files, and Cursor, Codex, Claude and shell sessions','Khor 桌面界面，包含内置对话、远程文件和多种智能体会话']},true)} loading="eager" fetchpriority="high"/>
+          <script is:inline>
+            {const picture=document.currentScript.parentElement,index=document.documentElement.dataset.locale==='zh'?1:0;for(const node of picture.querySelectorAll('[data-localized-attrs]'))for(const [name,pair] of Object.entries(JSON.parse(node.getAttribute('data-localized-attrs'))))node.setAttribute(name,pair[index]);picture.querySelector('[data-theme-source]').media=document.documentElement.dataset.theme==='dark'?'all':'not all';}
+          </script>
+        </picture>
+        <noscript><picture class="desktop-poster"><source media="(prefers-color-scheme: dark)" srcset={desktopDark.src}/><img src={desktop.src} width={desktop.width} height={desktop.height} alt="Khor desktop"/></picture></noscript>
+        <div class="desktop-stage" data-desktop-stage><iframe {...localizedAttrs({title:['Try the Khor desktop interface','体验 Khor 桌面界面']})} data-desktop-demo data-src={sitePath("/experience/app/index.html?scene=content&hero=1")} sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="same-origin"></iframe></div>
       </div>
     </div>
 </section>

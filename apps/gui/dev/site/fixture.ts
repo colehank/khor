@@ -1,5 +1,5 @@
 import {createLabFixture} from '../lab/fixture';
-import {scenario} from './scenario';
+import {scenarioForLocale} from './scenario';
 import {GiB,machines,projects,tasks} from './world';
 import {release} from '../../../site/src/releases';
 import avatars from './data/avatars.json';
@@ -16,8 +16,11 @@ import type {AccountRing} from '../../src/gen/bindings/AccountRing';
 import type {ChatMsgRow} from '../../src/gen/bindings/ChatMsgRow';
 import type {KhorAgentView} from '../../src/gen/bindings/KhorAgentView';
 
-export function createSiteFixture(origin:string) {
-  const base=createLabFixture(true,{...scenario,reply:`Let's try Khor, [download it here.](${origin}/download/)`,origin,settings:true,items:3,machines:machines.length});
+export function createSiteFixture(origin:string,locale:'en'|'zh'='en') {
+  const scenario=scenarioForLocale(locale);
+  const reply=locale==='zh'?`试试 Khor，[点击这里下载。](${origin}/download/)`:`Let's try Khor, [download it here.](${origin}/download/)`;
+  const replyPlain=locale==='zh'?'试试 Khor，点击这里下载。':"Let's try Khor, download it here.";
+  const base=createLabFixture(true,{...scenario,reply,origin,settings:true,items:3,machines:machines.length});
   const at=Date.now(),version=release.version.replace(/^v/,'');
   const original=base.request('devices') as DeviceRow[];
   const devices:DeviceRow[]=machines.map((profile,index)=>{
@@ -109,7 +112,7 @@ export function createSiteFixture(origin:string) {
         const rows=base.request(command,body) as SessionRow[];
         return tasks.map((task,index)=>{
           const row=rows.find(row=>row.id===task.id)!,home=devices[task.machine];
-          return {...row,title:task.title,category:task.category,pinned:index===0,last:task.id===tasks[0].id&&messages.length>initialMessages?"Let's try Khor, download it here.":task.preview,home:home.name,execution_home:home.id,observation_owner:home.id,face:home.face,place:task.root,
+          return {...row,title:task.title,category:task.category,pinned:index===0,last:task.id===tasks[0].id&&messages.length>initialMessages?replyPlain:task.preview,home:home.name,execution_home:home.id,observation_owner:home.id,face:home.face,place:task.root,
             at_ms:at-task.minutes*60000,unread:0,source:null,stale:false,group:'',can_control:task.category!=='shell'};
         });
       }
@@ -117,7 +120,7 @@ export function createSiteFixture(origin:string) {
       case 'khor_agent':{
         if(body.action==='prompt'){
           const message=receipt(String(body.payload?.text??''),Date.now());
-          message.command!.agent!.updates.push(JSON.stringify({sessionUpdate:'agent_message_chunk',content:{type:'text',text:`Let's try Khor, [download it here.](${origin}/download/)`}}));
+          message.command!.agent!.updates.push(JSON.stringify({sessionUpdate:'agent_message_chunk',content:{type:'text',text:reply}}));
           messages.push(message);
         }
         if(body.action==='manage'){

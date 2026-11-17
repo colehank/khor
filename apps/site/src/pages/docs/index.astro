@@ -2,17 +2,18 @@
 import {sitePath} from "../../paths";
 import Docs from "../../layouts/Docs.astro";
 import { docs } from "../../site";
+import L from '../../components/Localized.astro';
 
 const pages = await docs();
 ---
 
-<Docs title="Docs" description="Install Khor, connect your devices, start sessions, and run your own relay">
+<Docs title="Docs" titleZh="文档" description="Install Khor, connect your devices, start sessions, and run your own relay" descriptionZh="安装 Khor、连接设备、创建会话，以及运行自己的中继。">
   <div class="overview">
     {
       pages.map((p) => (
         <a class="overview-row" href={sitePath(`/docs/${p.id}/`)}>
-          <strong>{p.data.title}</strong>
-          <span>{p.data.summary}</span>
+          <strong><L en={p.data.title} zh={p.titleZh}/></strong>
+          <span><L en={p.data.summary} zh={p.summaryZh}/></span>
         </a>
       ))
     }

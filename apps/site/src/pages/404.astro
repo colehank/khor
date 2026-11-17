@@ -2,12 +2,13 @@
 import {sitePath} from "../paths";
 import Base from "../layouts/Base.astro";
 import Mark from "../components/Mark.astro";
+import L from '../components/Localized.astro';
 ---
 
-<Base title="Page not found">
+<Base title="Page not found" titleZh="页面未找到">
   <header class="bar"><Mark /></header>
   <main class="empty">
-    <h1>Page not found</h1>
-    <p><a href={sitePath("/")}>Go home</a>, or browse the <a href={sitePath("/docs/")}>Docs</a></p>
+    <h1><L en="Page not found" zh="页面未找到"/></h1>
+    <p><a href={sitePath("/")}><L en="Go home" zh="返回首页"/></a><L en=", or browse the " zh="，或浏览"/><a href={sitePath("/docs/")}><L en="Docs" zh="文档"/></a></p>
   </main>
 </Base>

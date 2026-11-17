@@ -2,17 +2,18 @@
 import {sitePath} from '../paths';
 import {supportedDevices,capabilityMarks,networkDeviceMarks} from '../../../gui/dev/site/identity-marks';
 import ConceptMark from './concepts/ConceptMark.astro';
+import L from './Localized.astro';
 interface Props {prefix:string;}
 const {prefix}=Astro.props;
 const platforms=[...supportedDevices.map(platform=>({id:platform.name.toLowerCase(),svg:platform.svg})),{id:'unknown',svg:networkDeviceMarks.windows}];
 ---
 <div class="product-actions">
   <a class="product-download" href={sitePath('/download/')} data-device-download>
-    <span>Download</span>
+    <span><L en="Download" zh="下载"/></span>
     <span class="action-icon" aria-hidden="true">{platforms.map(({id,svg})=><span data-download-mark={id} hidden={id!=='unknown'}><ConceptMark {svg} x={0} y={0} size={16} prefix={`${prefix}-action-${id}`}/></span>)}</span>
   </a>
   <a class="product-docs" href={sitePath('/docs/')}>
-    <span>Docs</span>
+    <span><L en="Docs" zh="文档"/></span>
     <span class="action-icon" aria-hidden="true"><ConceptMark svg={capabilityMarks.files} x={0} y={0} size={16} prefix={`${prefix}-action-docs`}/></span>
   </a>
 </div>

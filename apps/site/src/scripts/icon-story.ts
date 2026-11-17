@@ -1,8 +1,8 @@
 export const iconStops = [0, .22, .47, .73, 1];
-// Copy and geometry start together; only a brief landing follows each move.
+// Start immediately, then keep the completed pose through a real reading interval.
 export const iconSegments=iconStops.slice(0,-1).map((start,index)=>{
   const end=iconStops[index+1],span=end-start;
-  return {start,copyEnd:start+span*.08,motionStart:start,motionEnd:start+span*.94,end};
+  return {start,copyEnd:start+span*.08,motionStart:start,motionEnd:start+span*.6,end};
 });
 export const clamp = (x:number) => Math.max(0, Math.min(1, x));
 export const ease = (x:number, a:number, b:number) => {

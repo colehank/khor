@@ -5,6 +5,8 @@ import FlowTrace from './FlowTrace.astro';
 import {supportedHarnesses,capabilityMarks} from '../../../../gui/dev/site/identity-marks';
 import {capabilityGeometry} from '../../scripts/capability-geometry';
 import '../../styles/capability-scene.css';
+import L from '../Localized.astro';
+import {localizedAttrs} from '../../i18n';
 interface Props {mode:'work'|'agent'}
 const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
@@ -13,7 +15,7 @@ const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'fi
 const description=agent?'You use the same laptop and Mobile access group to send a Task to Khor. Khor calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices return to Khor before Khor delivers the Result to your access group. Khor softly pulses until delivery. All devices, resources and labels stay in place.':'You use the shared laptop and Mobile access group to send requests to the workstation and Server together. Their agent marks light up after the requests arrive, then both devices return their light traces to You. The entire You boundary lights up on sending and receiving. Sessions and resources stay on their hosts; all relationships remain visible.';
 ---
 <figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group)`}>
-  <NetworkGraph prefix={mode} infrastructure={false} activeRouter={agent} title={agent?'Delegate from a laptop or Mobile and receive the result there':'One task, accessible from a laptop or Mobile'} {description}>
+  <NetworkGraph prefix={mode} infrastructure={false} activeRouter={agent} title={agent?'Delegate from a laptop or Mobile and receive the result there':'One task, accessible from a laptop or Mobile'} titleZh={agent?'从笔记本或手机派发任务，并接收结果':'从笔记本或手机访问同一个任务'} descriptionZh={agent?'你通过笔记本或手机把任务交给 Khor，Khor 再调用服务器与台式机上的智能体。任务到达后，智能体亮起，结果先返回 Khor，再交回设备。':'你通过笔记本或手机同时访问服务器与台式机上的智能体。请求到达后智能体亮起，两台设备再一起返回结果。文件和网页始终留在所属设备上。'} {description}>
     <g slot="routes" class="relation-connections" aria-hidden="true">
       <defs>
         <linearGradient id={`${mode}-relation-face`} x1="0" y1="0" x2="1" y2="1">
@@ -55,24 +57,23 @@ const description=agent?'You use the same laptop and Mobile access group to send
     </g>
     <g slot="activity" class="relation-annotations">
       {hosts.map(({id,name,mark,resource,icon})=><g data-relation-at={id} transform={`translate(${g.nodes[id].x} ${g.nodes[id].y})`}>
-        <g class="relation-badge" transform="translate(28 -28)">
+        <g class="relation-badge" data-relation-badge="session" transform="translate(28 -28)">
           <circle r="15"/><circle class={`relation-status relation-${id}`} r="18"/>
-          <svg data-relation-session={id} x="-10" y="-10" width="20" height="20"><title>{name}</title><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
+          <svg data-relation-session={id} x="-10" y="-10" width="20" height="20" viewBox="0 0 20 20"><title>{name}</title><ConceptMark svg={glyph(mark)} x={0} y={0} size={20} prefix={`${mode}-${id}-session`}/></svg>
         </g>
-        <g class="relation-badge" transform={id==='linux'&&!agent?'translate(-28 -28)':'translate(28 28)'}>
+        <g class="relation-badge" data-relation-badge="resource" transform="translate(28 28)">
           <circle r="15"/>
-          <svg x="-10" y="-10" width="20" height="20"><ConceptMark svg={glyph(icon)} x={0} y={0} size={20} prefix={`${mode}-${id}-resource`}/></svg>
-          <text class="relation-resource" x={id==='linux'&&!agent?-22:22} y="6" text-anchor={id==='linux'&&!agent?'end':'start'}>{resource}</text>
+          <svg x="-10" y="-10" width="20" height="20" viewBox="0 0 20 20"><title {...localizedAttrs({textContent:[resource,resource==='Web'?'网页':'文件']})}>{resource}</title><ConceptMark svg={glyph(icon)} x={0} y={0} size={20} prefix={`${mode}-${id}-resource`}/></svg>
         </g>
       </g>)}
       {agent?<>
         <g data-relation-at="khor" transform={`translate(${g.nodes.khor.x} ${g.nodes.khor.y})`}><circle class="relation-router" r="27"/></g>
-        <text class="relation-request-label" data-relation-task-label transform={`translate(${g.taskLabel.x} ${g.taskLabel.y})`} text-anchor="middle">Task</text>
-        <text class="relation-request-label" data-relation-result-label transform={`translate(${g.resultLabel.x} ${g.resultLabel.y})`} text-anchor="middle">Result</text>
+        <text class="relation-request-label" data-relation-task-label transform={`translate(${g.taskLabel.x} ${g.taskLabel.y})`} text-anchor="middle"><L en="Task" zh="任务" tag="tspan"/></text>
+        <text class="relation-request-label" data-relation-result-label transform={`translate(${g.resultLabel.x} ${g.resultLabel.y})`} text-anchor="middle"><L en="Result" zh="结果" tag="tspan"/></text>
       </>:null}
       <g class="relation-access-label" data-relation-access-label transform={`translate(${g.access.x} ${g.access.y})`}>
-        <text class="relation-you" x="0" y="-9" text-anchor="middle">You</text>
-        <text class="relation-shared" x="0" y="19" text-anchor="middle">Same task</text>
+        <text class="relation-you" x="0" y="-9" text-anchor="middle"><L en="You" zh="你" tag="tspan"/></text>
+        <text class="relation-shared" x="0" y="19" text-anchor="middle"><L en="Same task" zh="同一任务" tag="tspan"/></text>
       </g>
     </g>
   </NetworkGraph>

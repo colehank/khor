@@ -5,28 +5,32 @@ import Mark from "../components/Mark.astro";
 import SiteNav from "../components/SiteNav.astro";
 import { docs } from "../site";
 import '../styles/story.css';
+import L from '../components/Localized.astro';
+import {localizedAttrs} from '../i18n';
 
 interface Props {
   title: string;
   description?: string;
+  titleZh?:string;
+  descriptionZh?:string;
   /** The open page's id; absent on the overview. */
   current?: string;
 }
-const { title, description, current } = Astro.props;
+const {title,description,titleZh=title,descriptionZh,current}=Astro.props;
 const pages = await docs();
 ---
 
-<Base title={title} description={description}>
+<Base {title} {titleZh} {description} {descriptionZh}>
   <SiteNav current="docs" />
   <div class="docs">
-    <nav class="side" aria-label="Docs">
+    <nav class="side" {...localizedAttrs({'aria-label':['Docs','文档']})}>
       <div class="side-in">
         <div class="side-head"><Mark /></div>
-      <a class="nav-row" href={sitePath("/docs/")} aria-current={current ? undefined : "page"}>Overview</a>
+      <a class="nav-row" href={sitePath("/docs/")} aria-current={current ? undefined : "page"}><L en="Overview" zh="概览"/></a>
       {
         pages.map((p) => (
           <a class="nav-row" href={sitePath(`/docs/${p.id}/`)} aria-current={p.id === current ? "page" : undefined}>
-            {p.data.title}
+            <L en={p.data.title} zh={p.titleZh}/>
           </a>
         ))
       }
@@ -36,8 +40,8 @@ const pages = await docs();
       <header class="r0">
         <div class="r0-title">
           {/* The way back exists only where the list is off screen. */}
-          <a class="back" href={sitePath(current ? "/docs/" : "/")}>{current ? "Docs" : "khor"}</a>
-          <h1>{title}</h1>
+          <a class="back" href={sitePath(current ? "/docs/" : "/")}>{current ? <L en="Docs" zh="文档"/> : 'khor'}</a>
+          <h1><L en={title} zh={titleZh}/></h1>
         </div>
       </header>
       <main class="board">

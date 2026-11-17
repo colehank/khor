@@ -1,26 +1,35 @@
 ---
 import {sitePath} from "../paths";
 import github from '../assets/github.svg?raw';
+import {REPO} from '../site';
+import BrandIcon from './BrandIcon.astro';
+import L from './Localized.astro';
+import {localizedAttrs} from '../i18n';
+import appearance from '../assets/navigation/appearance.svg?raw';
+import language from '../assets/navigation/language.svg?raw';
 import docs from '../assets/navigation/docs.svg?raw';
 import download from '../assets/navigation/download.svg?raw';
-import {REPO} from '../site';
-import ConceptMark from './concepts/ConceptMark.astro';
-import BrandIcon from './BrandIcon.astro';
 interface Props { home?:boolean; current?:'docs'|'download'; }
 const {home=false,current}=Astro.props;
-const navigationMarks={docs,download};
 const links=[
-  {id:'docs',label:'Docs',href:sitePath('/docs/')},
-  {id:'download',label:'Download',href:sitePath('/download/')},
+  {id:'docs',label:'Docs',zh:'文档',href:sitePath('/docs/'),icon:docs},
+  {id:'download',label:'Download',zh:'下载',href:sitePath('/download/'),icon:download},
 ] as const;
 ---
 <header class="story-nav" data-over-hero={home?true:undefined}>
-  <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} aria-label="Khor home"><BrandIcon prefix="nav-brand" size={32} variant="navigation"/><span>Khor</span></a>
-  <nav aria-label="Main navigation">
-    {links.map(({id,label,href})=><a class={`nav-${id}`} {href} aria-label={label} aria-current={current===id?'page':undefined} data-device-download={id==='download'?true:undefined}>
-      <ConceptMark svg={navigationMarks[id]} x={0} y={0} size={22} prefix={`nav-${id}`}/>
-      <span class="nav-tooltip" aria-hidden="true">{label}</span>
+  <a class="site-brand" href={sitePath(home?'#khor-hero':'/')} {...localizedAttrs({'aria-label':['Khor home','Khor 首页']})}><BrandIcon prefix="nav-brand" size={32} variant="navigation"/><span class="site-brand-name">Khor</span></a>
+  <nav {...localizedAttrs({'aria-label':['Main navigation','主导航']})}>
+    {links.map(({id,label,zh,href,icon})=><a class={`nav-${id}`} {href} aria-current={current===id?'page':undefined} {...localizedAttrs({'aria-label':[label,zh]})}>
+      <Fragment set:html={icon}/><span class="nav-tooltip" aria-hidden="true"><L en={label} zh={zh}/></span>
     </a>)}
-    <a class="nav-github" href={REPO} aria-label="Khor on GitHub"><Fragment set:html={github}/><span class="nav-tooltip" aria-hidden="true">GitHub</span></a>
+    <a class="nav-github" href={REPO} {...localizedAttrs({'aria-label':['Khor on GitHub','Khor 的 GitHub 仓库']})}><Fragment set:html={github}/><span class="nav-tooltip" aria-hidden="true">GitHub</span></a>
+    <button class="nav-preference-trigger" type="button" data-theme-toggle aria-pressed="false" {...localizedAttrs({'aria-label':['Toggle appearance','切换明暗']})}><Fragment set:html={appearance}/><span class="nav-tooltip" aria-hidden="true"><L en="Appearance" zh="明暗"/></span></button>
+    <label class="nav-language"><Fragment set:html={language}/><span class="nav-tooltip" aria-hidden="true"><L en="Language" zh="语言"/></span><select data-language-select {...localizedAttrs({'aria-label':['Language','语言']})}>
+      <option value="system" {...localizedAttrs({textContent:['Follow system','跟随系统']})}>Follow system</option><option value="en">English</option><option value="zh">简体中文</option>
+    </select></label>
   </nav>
 </header>
+<script>
+  import {mountPreferenceControls} from '../scripts/preference-controls';
+  mountPreferenceControls();
+</script>

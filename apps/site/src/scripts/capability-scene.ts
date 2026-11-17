@@ -19,7 +19,7 @@ export function mountCapabilityScene(figure:HTMLElement) {
     }
   };
   const layout=()=>{
-    const g=capabilityGeometry(compact.matches,agent);
+    const scale=map.markScale,unit=map.textScale,g=capabilityGeometry(compact.matches,agent,scale);
     for(const element of figure.querySelectorAll<SVGElement>('[data-relation-at]'))translate(element,g.nodes[element.dataset.relationAt as keyof typeof g.nodes]);
     for(const {id,d,end} of g.routes){
       for(const path of figure.querySelectorAll(`[data-relation-route="${id}"]`))path.setAttribute('d',d);
@@ -27,17 +27,28 @@ export function mountCapabilityScene(figure:HTMLElement) {
     }
     for(const path of figure.querySelectorAll('[data-relation-access]'))path.setAttribute('d',g.accessPath);
     translate(find('[data-relation-access-label]'),g.access);
+    find('.relation-you').setAttribute('y',String(-8*unit));
+    find('.relation-shared').setAttribute('y',String(17*unit));
+    for(const badge of figure.querySelectorAll<SVGGElement>('[data-relation-badge]')){
+      const session=badge.dataset.relationBadge==='session';
+      translate(badge,{x:28*scale,y:(session?-28:28)*scale});
+      badge.querySelector(':scope > circle')?.setAttribute('r',String(16.5*scale));
+      badge.querySelector('.relation-status')?.setAttribute('r',String(20*scale));
+      const face=badge.querySelector('svg')!;
+      for(const [key,value] of Object.entries({x:-11*scale,y:-11*scale,width:22*scale,height:22*scale}))face.setAttribute(key,String(value));
+    }
     if(agent){
       for(const path of figure.querySelectorAll('[data-relation-request]'))path.setAttribute('d',g.request);
       for(const path of figure.querySelectorAll('[data-relation-result]'))path.setAttribute('d',g.result);
       translate(find('[data-relation-task-label]'),g.taskLabel);translate(find('[data-relation-result-label]'),g.resultLabel);
+      find('.relation-router').setAttribute('r',String(27*scale));
       fitCaptions();
     }
   };
-  compact.addEventListener('change',layout);layout();
-  if(agent)window.addEventListener('resize',fitCaptions,{passive:true});
+  const stopLayout=map.onLayout(layout);layout();
   return {
+    map,
     play(){figure.classList.add('is-running');motion.play();},pause(){figure.classList.remove('is-running');motion.pause();},
-    destroy(){figure.classList.remove('is-running');motion.destroy();map.destroy();compact.removeEventListener('change',layout);window.removeEventListener('resize',fitCaptions);},
+    destroy(){figure.classList.remove('is-running');motion.destroy();stopLayout();map.destroy();},
   };
 }

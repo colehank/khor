@@ -7,6 +7,17 @@ const user=(value:string)=>text('user_message_chunk',value);
 const agent=(value:string)=>text('agent_message_chunk',value);
 const turn={kind:'turn',stop:'EndTurn'};
 const tool=(id:string,title:string,command:string,result:string)=>update('tool_call',{toolCallId:id,title,kind:'execute',status:'completed',rawInput:{command},content:[{type:'content',content:{type:'text',text:result}}]});
+const exportSample=(locale:'en'|'zh')=>{
+  const zh=locale==='zh';
+  return [boot,
+    user(zh?'3 月 1 日凌晨 00:30 的订单，导出 CSV 后变成了 2 月 28 日。请按北京时间处理，并把“下单时间”改为“下单日期”。':'Orders placed at 00:30 on March 1 show February 28 in the CSV. Use Beijing time, and rename “Order time” to “Order date”.'),
+    agent(zh?'导出时先转成了 UTC，导致日期提前了一天。我会改用 Asia/Shanghai，并更新 CSV 列名和测试。':'The export truncates a UTC timestamp. I’ll use Asia/Shanghai and update the CSV heading and tests.'),
+    update('tool_call',{toolCallId:'export-read',title:zh?'读取 src/export.ts':'Read src/export.ts',kind:'read',status:'completed',rawInput:{file_path:roots.web+'/src/export.ts'}}),
+    update('tool_call',{toolCallId:'export-edit',title:zh?'修正日期和 CSV 列名':'Fix dates and CSV headings',kind:'edit',status:'completed',content:[{type:'diff',path:roots.web+'/src/export.ts',oldText:exportBefore,newText:exportAfter}]}),
+    tool('export-final',zh?'运行导出测试':'Run export tests','npm test -- export','PASS src/export.test.ts (8 tests)\nTest Files 1 passed (1)\nTests 8 passed (8)'),
+    agent(zh?'**日期和列名已更新，8 项测试全部通过。**\n\n修复说明和导出示例在右侧的 `README.md`。共修改了代码、测试和文档三个文件，尚未提交。':'**Dates and headings updated. All 8 tests pass.**\n\nThe fix and a sample export are in `README.md` on the right. Three files changed: code, tests, and documentation. Nothing committed yet.'),
+  ];
+};
 export const scenario = {
   sampleImage:false,
   sessionTitles:[...tasks.slice(0,4).map(task=>task.title),'Notes',tasks[4].title],
@@ -22,14 +33,7 @@ export const scenario = {
   replyChunkMs:35,
   thinking:[],
   samples:[
-    [boot,
-      user('Orders placed at 00:30 on March 1 show February 28 in the CSV. Use Beijing time, and rename “Order time” to “Order date”.'),
-      agent('The export truncates a UTC timestamp. I’ll use Asia/Shanghai and update the CSV heading and tests.'),
-      update('tool_call',{toolCallId:'export-read',title:'Read src/export.ts',kind:'read',status:'completed',rawInput:{file_path:roots.web+'/src/export.ts'}}),
-      update('tool_call',{toolCallId:'export-edit',title:'Fix dates and CSV headings',kind:'edit',status:'completed',content:[{type:'diff',path:roots.web+'/src/export.ts',oldText:exportBefore,newText:exportAfter}]}),
-      tool('export-final','Run export tests','npm test -- export','PASS src/export.test.ts (8 tests)\nTest Files 1 passed (1)\nTests 8 passed (8)'),
-      agent('**Dates and headings updated. All 8 tests pass.**\n\nThe fix and a sample export are in `README.md` on the right. Three files changed: code, tests, and documentation. Nothing committed yet.'),
-    ],
+    exportSample('en'),
     [{...boot,name:'Cursor'},
       user('Require an invoice for expenses over CNY 500. Validate as the amount or attachments change, rather than waiting for submission.'),
       agent('I’ll use one validation function and run it whenever the amount or attachments change.'),
@@ -52,3 +56,5 @@ export const scenario = {
     ],
   ].map(frames=>[...frames,turn]),
 };
+
+export const scenarioForLocale=(locale:'en'|'zh')=>locale==='en'?scenario:{...scenario,samples:[[...exportSample('zh'),turn],...scenario.samples.slice(1)]};

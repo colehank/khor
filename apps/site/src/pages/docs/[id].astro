@@ -3,6 +3,8 @@ import {sitePath} from "../../paths";
 import { render } from "astro:content";
 import Docs from "../../layouts/Docs.astro";
 import { docs } from "../../site";
+import L from '../../components/Localized.astro';
+import {localizedAttrs} from '../../i18n';
 
 export async function getStaticPaths() {
   const pages = await docs();
@@ -13,14 +15,16 @@ export async function getStaticPaths() {
 }
 const { page, prev, next } = Astro.props;
 const { Content } = await render(page);
+const {Content:Chinese}=await render(page.translation??page);
 ---
 
-<Docs title={page.data.title} description={page.data.summary} current={page.id}>
-  <article class="prose">
+<Docs title={page.data.title} titleZh={page.titleZh} description={page.data.summary} descriptionZh={page.summaryZh} current={page.id}>
+  <article class="prose" data-locale-content="en" lang="en">
     <Content />
   </article>
-  <nav class="turn" aria-label="Previous and next pages">
-    {prev ? <a href={sitePath(`/docs/${prev.id}/`)}><span>Previous</span>{prev.data.title}</a> : <span />}
-    {next && <a class="turn-next" href={sitePath(`/docs/${next.id}/`)}><span>Next</span>{next.data.title}</a>}
+  <article class="prose" data-locale-content="zh" lang="zh-CN"><Chinese/></article>
+  <nav class="turn" {...localizedAttrs({'aria-label':['Previous and next pages','上一页与下一页']})}>
+    {prev ? <a href={sitePath(`/docs/${prev.id}/`)}><span><L en="Previous" zh="上一页"/></span><L en={prev.data.title} zh={prev.titleZh}/></a> : <span />}
+    {next && <a class="turn-next" href={sitePath(`/docs/${next.id}/`)}><span><L en="Next" zh="下一页"/></span><L en={next.data.title} zh={next.titleZh}/></a>}
   </nav>
 </Docs>

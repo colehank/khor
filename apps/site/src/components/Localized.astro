@@ -1,0 +1,5 @@
+---
+interface Props { en:string; zh:string; tag?:'span'|'tspan'; }
+const {en,zh,tag:Tag='span'}=Astro.props;
+---
+<Tag data-locale-content="en" lang="en">{en}</Tag><Tag data-locale-content="zh" lang="zh-CN">{zh}</Tag>

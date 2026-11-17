@@ -5,6 +5,8 @@ import CopyButton from './CopyButton.astro';
 import ConceptMark from './concepts/ConceptMark.astro';
 import {release} from '../releases';
 import {INSTALL} from '../site';
+import L from './Localized.astro';
+import {localizedAttrs} from '../i18n';
 interface Props {prefix:string;}
 const {prefix}=Astro.props;
 const platforms=supportedDevices.map(platform=>{
@@ -15,18 +17,19 @@ const platforms=supportedDevices.map(platform=>{
 const titleId=`${prefix}-platforms-title`,commandId=`${prefix}-install`;
 ---
 <div class="product-installations">
-  <h2 class="platforms-title" id={titleId}>Other ways to get Khor</h2>
+  <h2 class="platforms-title" id={titleId}><L en="Other ways to get Khor" zh="其他安装方式"/></h2>
   <nav class="product-platforms" aria-labelledby={titleId}>
     {platforms.map(platform=>platform.available?
-      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} title={platform.id==='linux'?'Linux CLI':'macOS App · CLI'} aria-label={platform.id==='linux'?'Install the Linux CLI':'Install the macOS app or CLI'}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
-      <button class="platform-option" type="button" data-unavailable aria-label={`${platform.name} availability`} aria-describedby={`${prefix}-platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" id={`${prefix}-platform-${platform.id}-soon`}>Coming soon</span></button>
+      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} {...localizedAttrs({title:platform.id==='linux'?['Linux CLI','Linux 命令行']:['macOS App · CLI','macOS 应用 · 命令行'],'aria-label':platform.id==='linux'?['Install the Linux CLI','安装 Linux 命令行客户端']:['Install the macOS app or CLI','安装 macOS 应用或命令行客户端']})}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
+      <button class="platform-option" type="button" data-unavailable {...localizedAttrs({'aria-label':[`${platform.name} availability`,`${platform.name} 推出情况`]})} aria-describedby={`${prefix}-platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" id={`${prefix}-platform-${platform.id}-soon`}><L en="Coming soon" zh="即将推出"/></span></button>
     )}
   </nav>
   <div class="product-cli">
-    <p class="cli-label">or <span>Khor CLI</span></p>
-    <CopyButton class="cli-command" target={commandId} label="Copy the Khor CLI install command"><code id={commandId}>{INSTALL}</code></CopyButton>
+    <p class="cli-label"><L en="or" zh="或安装"/> <span>Khor CLI</span></p>
+    <CopyButton class="cli-command" target={commandId} label="Copy the Khor CLI install command" labelZh="复制 Khor CLI 安装命令"><code id={commandId}>{INSTALL}</code></CopyButton>
   </div>
 </div>
+
 <script>
   import {mountPlatformHints} from '../scripts/platform-hints';
   mountPlatformHints();

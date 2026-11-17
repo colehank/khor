@@ -69,11 +69,18 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
     }else animate('.relation-access-active',pulse([0,capabilityTiming.workReply+tourMotion.travel],cycle,0));
   };
   const clear=()=>{animations.forEach(animation=>animation.cancel());animations=[];};
+  const recolor=()=>{
+    if(!animations.length)return;
+    const time=animations[0].currentTime,playing=animations[0].playState==='running';
+    clear();if(reduced.matches)return;create();
+    for(const animation of animations){animation.currentTime=time;if(playing)animation.play();}
+  };
+  window.addEventListener('khor:themechange',recolor);
   const settle=()=>{if(reduced.matches)clear();};
   reduced.addEventListener('change',settle);
   return {
     play(){if(reduced.matches)return;if(!animations.length)create();animations.forEach(animation=>animation.play());},
     pause(){animations.forEach(animation=>animation.pause());},
-    destroy(){clear();reduced.removeEventListener('change',settle);},
+    destroy(){clear();reduced.removeEventListener('change',settle);window.removeEventListener('khor:themechange',recolor);},
   };
 }

@@ -1,11 +1,20 @@
 # Website navigation icons
 
-Phosphor Icons, Regular weight. Upstream revision `2b75f3ad12b420c9504ef05df8d2564a28f8500e`.
+Apple SF Symbols, exported through the macOS `NSImage` system symbol API:
 
-- `docs.svg`: `assets/regular/book-open.svg`
-- `download.svg`: `assets/regular/download-simple.svg`
+- `docs.svg`: `book.closed`
+- `download.svg`: `arrow.down`
+- `appearance.svg`: `circle.lefthalf.filled`
+- `language.svg`: `globe`
 
-Source: https://github.com/phosphor-icons/core/tree/2b75f3ad12b420c9504ef05df8d2564a28f8500e
-License: MIT, retained in LICENSE. SVG paths are unmodified.
+Copyright Apple Inc. These system-provided images are covered by Apple's terms,
+not the historical Phosphor MIT license retained in `LICENSE`:
+https://images.apple.com/legal/sla/docs/xcode.pdf (System-Provided Images).
 
-These two icons are specific to the marketing website. The real GUI and concept diagrams retain the Khor glyphs. The GitHub brand mark remains in `../github.svg`.
+The transparent renders are SVG alpha masks using `currentColor`. Painted bounds
+are measured and cropped to the same optical size; navigation uses a 22px SVG box
+and a 44px hit target. The GitHub brand mark remains in `../github.svg`.
+
+Optional regeneration on macOS:
+`node apps/site/scripts/render-network-symbols.mjs --navigation`.
+Rendering is offscreen. Normal static builds need neither AppKit nor symbol fonts.
