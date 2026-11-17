@@ -2,7 +2,20 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
-## 2026-11-16 Apple 网络图标已发布（当前）
+## 2026-11-18 双语、明暗与玻璃过渡已发布（当前）
+
+用户要求「部署一下试试」，已沿用本地完整构建 → gh-pages 快照 → Pages 发布。
+
+- UI 源码 `e5561703fdd9a4c079bc393a3b8b4c91427d12aa` → gh-pages `64ca2304a2bc50d89ee04afcc21e258c2bd3e2f8`；[Pages run 44162349435](https://github.com/colehank/khor/actions/runs/44162349435) success
+- 包含本轮中英文内容／文档、明暗与语言导航、Apple 功能图标、响应式超图、原生阅读停靠、连续节点／图标形变、收尾完整安装组、CLI 自适应宽度，以及雾白日光玻璃与外环材质修复
+- 发布检查发现并修复过渡遮罩复制后的重复 SVG ID；复制品不再占用原超图标题遮罩的 ID
+- 完整构建包含真实前端演示；420 个产物文件、155 个静态资源／导航引用无缺失。安装脚本与上次发布逐字节一致，版本仍为 `v0.2.0-rc.12`，未执行安装器
+- 独立静态预览和普通公开 URL 均经 1440／390px headless Chrome 检查：桌面交互 GUI、手机完整首图、中英／明暗切换、玻璃过渡、网络、下载与文档正常，无重复 ID、横向溢出、页面或资源错误
+- 普通公开首页、build.json、GUI HTML、install.sh 与 download.json 同发布产物逐字节匹配
+- 普通快进推送 gh-pages，保持 CNAME、HTTPS 与现有 DNS。源代码保存在本地 `feat/site-story`；没有推送源码构建、合并 main、原生构建或真实 Lab 访问
+- 产物 `/Volumes/disk0/Khor/artifacts/site-pages-20261118-daylight/dist`；证据 `/Volumes/disk0/Khor/evidence/site-pages-20261118-daylight/`，含 manifest、静态链接检查、Pages 收据、公开文件比对和手机／桌面截图
+
+## 2026-11-16 Apple 网络图标已发布
 
 用户确认 Apple 对照版「以此为准，commit 并发布部署」。正式首页现使用确认的三枚图稿，不再仅限本地对照入口。
 
