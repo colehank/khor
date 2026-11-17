@@ -56,3 +56,7 @@ Headless Chrome checks five positions in both directions at phone/wide/light/dar
 the broad perimeter retains varied refractive colors and alpha, the thin endpoint is green,
 and no invalid geometry or page errors occur. Three early unfold frames and reverse frames
 were inspected. Targeted TypeScript, Astro static build and whitespace checks pass.
+
+The deployment smoke check also caught duplicated clearance IDs: the transition
+copied the graph's newly named title-mask group verbatim. Its local copy now removes
+the source ID, so the live outer-edge mask retains one unambiguous reference.

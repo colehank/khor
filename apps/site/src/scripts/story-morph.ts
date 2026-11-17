@@ -93,7 +93,9 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
     layer.style.color=getComputedStyle(targetBrand).color;
     strokeOpacity=Number(getComputedStyle(graphRing).strokeOpacity);
     for(const el of [mask,white])for(const [key,value] of Object.entries({x:0,y:0,width:rect.width,height:rect.height}))el.setAttribute(key,String(value));
-    clearance.innerHTML=graph.querySelector('mask[id$="network-edge-clearance"] .net-khor-gap')!.outerHTML;
+    const gapCopy=graph.querySelector('mask[id$="network-edge-clearance"] .net-khor-gap')!.cloneNode(true) as SVGElement;
+    gapCopy.removeAttribute('id'); // The live graph owns the ID referenced by its outer-edge mask.
+    clearance.replaceChildren(gapCopy);
     const gapIcon=graph.querySelector<SVGCircleElement>('[data-net-gap-icon="khor"]')!;gapCenter={x:gapIcon.cx.baseVal.value,y:gapIcon.cy.baseVal.value};
     cutouts.setAttribute('transform',`matrix(${gm.a} ${gm.b} ${gm.c} ${gm.d} ${gm.e-rect.x} ${gm.f-rect.y})`);
     const c=new DOMPoint(512,512).matrixTransform(im);
