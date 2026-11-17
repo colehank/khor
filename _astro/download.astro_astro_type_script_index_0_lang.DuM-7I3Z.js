@@ -1,0 +1,1 @@
+import{t as e}from"./copy.B5Myw-kJ.js";e();

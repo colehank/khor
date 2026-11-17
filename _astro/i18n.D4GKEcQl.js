@@ -1,0 +1,1 @@
+var e=()=>typeof document<`u`&&document.documentElement.dataset.locale===`zh`?`zh`:`en`,t=(t,n)=>e()===`zh`?n:t;export{t as n,e as t};

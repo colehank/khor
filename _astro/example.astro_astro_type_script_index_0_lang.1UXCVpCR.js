@@ -1,0 +1,1 @@
+import{n as e}from"./i18n.D4GKEcQl.js";document.querySelector(`[data-example-action]`)?.addEventListener(`click`,t=>t.currentTarget.textContent=e(`Action received`,`已收到操作`));
