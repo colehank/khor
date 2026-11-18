@@ -1,7 +1,6 @@
 import {createIconMotion,iconState,iconStops,iconSegments,clamp,ease,type MotionTrack} from './icon-story';
 import {mountCopyButtons} from './copy';
 import {mountNarrativeTour} from './narrative-tour';
-import {createStoryStops} from './story-stops';
 
 type ScrollTimelineConstructor=new(options:{source:Element;axis:string})=>AnimationTimeline;
 type ScrollOptions=KeyframeAnimationOptions&{rangeStart:string;rangeEnd:string};
@@ -15,7 +14,6 @@ export function mountStory() {
   const steps=[...opening.querySelectorAll<HTMLButtonElement>('[data-step]')];
   const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const readingPoses=[0,...iconSegments.map(segment=>segment.motionEnd)];
-  const stops=createStoryStops(opening,readingPoses,reduced);
   const tracks=createIconMotion(assembly);
   const tour=mountNarrativeTour(sticky);
   const openingCopy=opening.querySelector<HTMLElement>('.opening-copy')!;
@@ -112,7 +110,6 @@ export function mountStory() {
     const intro=reduced.matches?0:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
     const travel=reduced.matches?1:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-travel'))*sticky!.offsetHeight;
     tour.measure();
-    stops.measure();
     const key=[top,travel,intro,reduced.matches].join(':');
     if(key===geometry)return;
     geometry=key;topOpening=top;openingTravel=travel;introProgress=intro/travel;bindTimeline();
@@ -125,7 +122,9 @@ export function mountStory() {
   const navigateHash=(initial=false)=>{
     if(location.hash!=='#connect'||reduced.matches)return;
     const unfold=Number(getComputedStyle(opening!).getPropertyValue('--story-unfold-travel'));
-    scrollTo({top:Math.round(topOpening+openingTravel*(1+introProgress)+unfold*sticky!.offsetHeight),behavior:initial?'instant':'smooth'});
+    // Land beyond the endpoint so fractional CSS pixels and floating-point
+    // subtraction cannot leave the network one frame short of its live pose.
+    scrollTo({top:Math.ceil(topOpening+openingTravel*(1+introProgress)+unfold*sticky!.offsetHeight)+1,behavior:initial?'instant':'smooth'});
   };
   mountCopyButtons();
   const visibility=new IntersectionObserver(entries=>{
@@ -144,7 +143,6 @@ export function mountStory() {
     if(event.persisted)return;
     disposed=true;controller.abort();resize.disconnect();visibility.disconnect();
     tour.destroy();
-    stops.destroy();
     animations.forEach(animation=>animation.cancel());
   },on);
 }

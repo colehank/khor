@@ -11,10 +11,6 @@
 ::selection { background:var(--fill-strong); color:var(--ink); }
 html { scrollbar-color:var(--secondary) var(--canvas); }
 html { scroll-behavior: smooth; scroll-padding-top: calc(var(--site-header-height) + var(--gap-base)); }
-/* Proximity leaves normal content free to scroll. Only completed poses are
-   stops; no snap is attached to moving SVG elements or the interactive GUI. */
-html[data-story-snapping] { scroll-snap-type:y proximity; }
-.story-snap-point { position:absolute; inset-inline:0; height:var(--hair); pointer-events:none; scroll-snap-align:start; scroll-snap-stop:always; }
 .story-home { overflow:clip; padding-bottom:var(--story-final-overflow,0); }
 .sr-only { position:absolute; width:var(--hair); height:var(--hair); padding:0; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
 .skip-story { position:fixed; top:var(--gap-in); left:var(--gap-base); z-index:100; transform:translateY(-200%); padding:var(--gap-row); border-radius:var(--radius-md); background:var(--canvas); }
@@ -210,8 +206,6 @@ html:not([data-locale]) [data-script-poster] { display:none; }
 }
 @media (prefers-reduced-motion:reduce) {
   html { scroll-behavior:auto; }
-  html[data-story-snapping] { scroll-snap-type:none; }
-  .story-snap-point { display:none; }
   *,*::before,*::after { animation:none !important; transition:none !important; }
   .scroll-cue,.story-steps { display:none; }
   .opening { height:auto; min-height:90svh; padding:calc(var(--gap-pane)*3) var(--story-gutter); }
