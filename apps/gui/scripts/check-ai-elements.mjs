@@ -387,6 +387,16 @@ try {
       await new Promise(requestAnimationFrame);
     });
     assert.equal(await bottom.count(), 0, 'returning from a bottom bounce keeps the return button hidden');
+    // WebKit can deliver the first pixel of a larger wheel gesture by itself.
+    // Feed that first scroll before checking that the reader now owns the position.
+    await chatScroll.evaluate(el => {
+      el.dispatchEvent(new WheelEvent('wheel', {deltaY: -24, bubbles: true, cancelable: true}));
+      el.scrollTop = el.scrollHeight - el.clientHeight - 1;
+      el.dispatchEvent(new Event('scroll', {bubbles: true}));
+    });
+    await bottom.waitFor({state: 'visible'});
+    await bottom.click();
+    await bottom.waitFor({state: 'hidden'});
     await page.screenshot({ path: join(out, `${name}-approval.png`) });
     queue.push(note("agent_message_chunk", { content: { type: "text", text: "\n\n" + Array.from({ length: 35 }, (_, i) => `阅读记录 ${i + 1}。这里保留足够长的历史，用于检查展开与流式回复时的位置。`).join("\n\n") } }),
       note("tool_call", { toolCallId: "scroll-anchor", title: "Read scrolling details", kind: "read", status: "completed", rawInput: { path: "/work/scroll.txt" } }),

@@ -43,13 +43,17 @@ export function useChatScroll(revision: unknown) {
     const el = scroller.current;
     if (!el) return;
     positionRevision.current++;
-    const near = atBottom(el);
+    const top = scrollOffset(el);
+    // A real upward gesture can start with a single pixel before the rest of
+    // the scroll arrives. Clamping the offset preserves that direction while
+    // making a bounce beyond the bottom read as no movement.
+    const near = top >= position.current.top && atBottom(el);
     following.current = near;
     readingLatest.current = near;
     setAway(!near);
     if (near) { anchor.current = null; setFresh(false); setReplyComplete(false); }
     else remember();
-    position.current = { top: scrollOffset(el), height: el.scrollHeight, viewport: el.clientHeight };
+    position.current = { top, height: el.scrollHeight, viewport: el.clientHeight };
   }, [remember]);
   const acceptReaderScroll = useCallback(() => {
     const el = scroller.current;
