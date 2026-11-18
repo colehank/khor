@@ -59,7 +59,7 @@ import { useHistoryExport } from '@/hooks/use-history-export';
 import type { FindHit } from '@/lib/history-find-model';
 import { historyReader, type HistoryReaderState } from '@/lib/history-reader';
 import { historyResumeCursor, historyEntries, historyReferences, historyWindowHasRoom } from '@/lib/history-window';
-import { paintHistory, retainHistoryIdentity, latestHistoryBody, historyContributionPoint, historyContributionPresent, type HistoryContributionPoint, type HistoryItem } from '@/lib/history-paint';
+import { projectHistory, retainHistoryIdentity, latestHistoryBody, historyContributionPoint, historyContributionPresent, type HistoryContributionPoint, type HistoryItem } from '@/lib/history-paint';
 import {HistoryRecordContent} from '@/components/history/HistoryRecordContent';
 import {historyRecordSlots} from '@/lib/history-record-presentation';
 import {Fragment} from 'react';
@@ -99,7 +99,7 @@ type Item = (
 
 /** Canonical pages own all body content. Live paint holds only current
  * optimistic inputs and bounded control notices; unresolved permissions remain actionable. */
-type Painting = { past: HistoryItem[]; live: Item[] };
+type Painting = { past: HistoryItem[]; live: Item[]; projection?: ReturnType<typeof projectHistory> };
 const BLANK: Painting = { past: [], live: [] };
 function boundedLive(items: Item[]): Item[] {
   let transient = 0;
@@ -108,9 +108,11 @@ function boundedLive(items: Item[]): Item[] {
     return ++transient <= 32;
   }).reverse();
 }
-function acceptHistory(previous: Painting, entries: Parameters<typeof paintHistory>[0], references: Parameters<typeof paintHistory>[1] = []): Painting {
+function acceptHistory(previous: Painting, entries: Parameters<typeof projectHistory>[0], references: Parameters<typeof projectHistory>[1], reset: boolean): Painting {
+  const projection = projectHistory(entries, references, reset ? undefined : previous.projection);
+  if (projection === previous.projection) return previous;
   const recorded = new Set(entries.flatMap(entry => entry.frame.kind === 'prompt_recorded' ? [entry.frame.token] : []));
-  return { ...previous, past: retainHistoryIdentity(previous.past, paintHistory(entries, references)),
+  return { projection, past: retainHistoryIdentity(reset ? [] : previous.past, projection.items),
     live: previous.live.filter(item => item.who !== 'user' || !item.token || !recorded.has(item.token)) };
 }
 
@@ -754,7 +756,7 @@ export function ChatView({
   // back does — and a single flag would have to pick one of those to
   // lie about. Both are cleared by arriving at the bottom, which is the
   // only way this pair can go to zero (docs/UX.md 角标可归零).
-  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, following, readingLatest } = useChatScroll(paint);
+  const { scroller, column: chatColumn, away, fresh, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, following, readingLatest, replyComplete, markReplyComplete } = useChatScroll(paint);
   const rememberReading=()=>{
     const element=scroller.current;
     if(!sourceBinding||!element||!history?.loaded||resumeReading.current)return;
@@ -885,7 +887,7 @@ export function ChatView({
       let disposed = false;
       historyAnchor.current = null;
       setHistoryEpoch(epoch => epoch + 1);
-      setPaint(previous => ({...previous, past: []})); setHistory(null); setLoaded(false); setGone(false); setOpenWhy(null);
+      setPaint(previous => ({...previous, past: [], projection: undefined})); setHistory(null); setLoaded(false); setGone(false); setOpenWhy(null);
       if (still) setPlan([]);
       setOpen(new Set()); toBottom();
       const saved=readingPlaces.get(readingKey(id,readBinding));
@@ -905,7 +907,7 @@ export function ChatView({
         setHistory(state); setLoaded(state.loaded);
         if (previousPages !== state.window.pages) {
           previousPages = state.window.pages;
-          setPaint(previous => acceptHistory(state.reset ? {...previous, past: []} : previous, historyEntries(state.window), historyReferences(state.window)));
+          setPaint(previous => acceptHistory(previous, historyEntries(state.window), historyReferences(state.window), state.reset));
           if (state.reset) {
             setFindingHistory(false); setMatchedEntry(null); historyMatch.current = null;
             historyAnchor.current = null;resumeReading.current=null;readingPlaces.delete(readingKey(id,readBinding));
@@ -1095,18 +1097,20 @@ export function ChatView({
           }
           if (batch.lost) capture();
           if (batch.frames.length) {
+            const contentChanged = batch.frames.some(frame => frame.kind === 'content_changed' || frame.kind === 'turn');
+            if (contentChanged) wakeVersion += 1;
             for (const frame of batch.frames) {
-              if (frame.kind === 'content_changed') {
-                wakeVersion += 1;
-                historyView.current?.wake();
-                if (!historyView.current && captureTransient && !captureAwaiting && !document.hidden && scroller.current?.clientHeight) capture(false);
-              }
               if (frame.kind === 'captured') receiveCapture(frame);
             }
+            if (contentChanged && !historyView.current && captureTransient && !captureAwaiting && !document.hidden && scroller.current?.clientHeight) capture(false);
+            let refreshHistory = contentChanged;
             for(const f of batch.frames){
               if(f.kind==='turn'||f.kind==='gone')setInTurn(false);
               if(f.kind==='turning'){setInTurn(true);setTurnStatus('正在处理');}
-              if(f.kind==='turn')setTurnStatus(f.stop==='Cancelled'?'已停止':'回复完成');
+              if (f.kind === 'turn') {
+                setTurnStatus(f.stop === 'Cancelled' ? '已停止' : '回复完成');
+                if (f.stop !== 'Cancelled') markReplyComplete();
+              }
               if(f.kind==='ask'||f.kind==='elicit')setTurnStatus('等待确认');
             }
             for (const f of batch.frames) {
@@ -1161,7 +1165,7 @@ export function ChatView({
               const u = usageIn(f);
               if (u) setUsage(u);
               const pl = planIn(f);
-              if (pl) {setPlan(pl);historyView.current?.wake();}
+              if (pl) { setPlan(pl); refreshHistory = true; }
               const u2 = updateOf(f);
               if(u2?.sessionUpdate==='compaction_update')setUsage(null);
               if (u2?.sessionUpdate === "current_mode_update" && u2.currentModeId) {
@@ -1170,6 +1174,7 @@ export function ChatView({
               const st = settingsIn(f);
               if(st){const model=modelOf(st);if(measuredModel.current!==null&&measuredModel.current!==model)setUsage(null);measuredModel.current=model;setSettings(st);}
             }
+            if (refreshHistory) historyView.current?.wake();
             setPaint((prev) => absorb(prev, batch.frames));
           }
           if (retired) {
@@ -1240,7 +1245,7 @@ export function ChatView({
         if (result.failures) console.warn("Chat attachment cleanup failed", result);
       });
     };
-  }, [binding, id, still, ended, attempt, watch]);
+  }, [binding, id, still, ended, attempt, watch, markReplyComplete]);
 
   useLayoutEffect(() => {
     const anchor = historyAnchor.current;
@@ -1659,7 +1664,12 @@ export function ChatView({
       <div
         ref={scroller}
         data-chat-scroll
-        onScroll={()=>{onScroll();rememberReading();}}
+        onScroll={() => {
+          const wasReadingLatest = readingLatest.current;
+          onScroll();
+          if (!wasReadingLatest && readingLatest.current) historyView.current?.wake();
+          rememberReading();
+        }}
         onClickCapture={captureDisclosure}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-3 [overflow-anchor:none]"
       >
@@ -1822,8 +1832,13 @@ export function ChatView({
           the text under it every time somebody scrolled. Absent at the
           bottom — that is what makes it able to go to zero, and it is
           why the fresh flag is cleared in the same breath. */}
-      {away && <ScrollToBottom data-chat-bottom fresh={fresh}
-        onClick={() => { toBottom(); if (history && !history.window.latest) void historyView.current?.latest(); }}/>}
+      {(away || (history?.loaded && !history.window.latest)) && <ScrollToBottom data-chat-bottom fresh={fresh}
+        replyStatus={inTurn && !gone && !still ? 'replying' : replyComplete ? 'complete' : undefined}
+        onClick={() => {
+          toBottom();
+          if (history && !history.window.latest) void historyView.current?.latest();
+          else historyView.current?.wake();
+        }}/>}
       </div>
       {/* **On the narrow face the footer is the session bar's second
           row** (`components/SessionBar`, 2026-10-02: 「where a terminal

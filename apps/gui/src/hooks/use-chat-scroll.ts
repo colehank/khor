@@ -2,6 +2,12 @@ import { useCallback, useLayoutEffect, useRef, useState, type MouseEvent } from 
 
 type Anchor = { node: Element; top: number };
 const SCROLL_IDLE_MS = 200;
+// scrollTop is fractional; scrollHeight and clientHeight are rounded. WebKit
+// can also report offsets outside the actual scroll range during a bounce.
+const BOTTOM_TOLERANCE = 1;
+const bottomOf = (el: HTMLDivElement) => Math.max(0, el.scrollHeight - el.clientHeight);
+const scrollOffset = (el: HTMLDivElement) => Math.max(0, Math.min(el.scrollTop, bottomOf(el)));
+const atBottom = (el: HTMLDivElement) => bottomOf(el) - scrollOffset(el) <= BOTTOM_TOLERANCE;
 
 /** One scroll owner for streaming, disclosures, and viewport changes.
  * Layout-driven scroll events must not be mistaken for a reader leaving the tail.
@@ -15,6 +21,7 @@ export function useChatScroll(revision: unknown) {
   const composerHadFocus = useRef(false);
   const position = useRef({ top: 0, height: 0, viewport: 0 });
   const [away, setAway] = useState(false), [fresh, setFresh] = useState(false);
+  const [replyComplete, setReplyComplete] = useState(false);
   const remember = useCallback(() => {
     const el = scroller.current, body = column.current;
     if (!el || !body) return;
@@ -36,18 +43,17 @@ export function useChatScroll(revision: unknown) {
     const el = scroller.current;
     if (!el) return;
     positionRevision.current++;
-    const movingAway = el.scrollTop < position.current.top;
-    const near = !movingAway && el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    const near = atBottom(el);
     following.current = near;
     readingLatest.current = near;
     setAway(!near);
-    if (near) { anchor.current = null; setFresh(false); }
+    if (near) { anchor.current = null; setFresh(false); setReplyComplete(false); }
     else remember();
-    position.current = { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight };
+    position.current = { top: scrollOffset(el), height: el.scrollHeight, viewport: el.clientHeight };
   }, [remember]);
   const acceptReaderScroll = useCallback(() => {
     const el = scroller.current;
-    if (!el || (!readerFrame.current && performance.now() > readerUntil.current) || Math.abs(el.scrollTop - position.current.top) < 0.5) return false;
+    if (!el || (!readerFrame.current && performance.now() > readerUntil.current) || Math.abs(scrollOffset(el) - position.current.top) < 0.5) return false;
     // Inertia extends ownership; an input that never scrolls expires on its own.
     cancelAnimationFrame(readerFrame.current);
     readerFrame.current = 0;
@@ -73,16 +79,16 @@ export function useChatScroll(revision: unknown) {
       });
     }
     if (following.current) {
-      const bottom = Math.max(0, el.scrollHeight - el.clientHeight);
-      if (Math.abs(el.scrollTop - bottom) > 0.5) el.scrollTop = bottom;
+      const bottom = bottomOf(el);
+      if (bottom - scrollOffset(el) > 0.5) el.scrollTop = bottom;
     }
     else if (anchor.current?.node.isConnected) {
       const { node, top } = anchor.current;
       const delta = node.getBoundingClientRect().top - el.getBoundingClientRect().top - top;
       if (Math.abs(delta) > 0.5) el.scrollTop += delta;
     }
-    if (!following.current) setAway(el.scrollHeight > el.clientHeight);
-    position.current = { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight };
+    if (!following.current) setAway(!atBottom(el));
+    position.current = { top: scrollOffset(el), height: el.scrollHeight, viewport: el.clientHeight };
   }, [acceptReaderScroll]);
   useLayoutEffect(() => {
     const el = scroller.current, body = column.current;
@@ -161,7 +167,7 @@ export function useChatScroll(revision: unknown) {
     releaseLayout();
     restore();
     remember();
-    position.current = { top: el.scrollTop, height: el.scrollHeight, viewport: el.clientHeight };
+    position.current = { top: scrollOffset(el), height: el.scrollHeight, viewport: el.clientHeight };
     return true;
   }, [releaseLayout, releaseReader, remember]);
   const onScroll = () => {
@@ -175,7 +181,7 @@ export function useChatScroll(revision: unknown) {
       sync();
       return;
     }
-    if (Math.abs(el.scrollTop - position.current.top) >= 0.5) readPosition();
+    if (Math.abs(scrollOffset(el) - position.current.top) >= 0.5) readPosition();
   };
   const captureDisclosure = (event: MouseEvent<HTMLDivElement>) => {
     if (!(event.target instanceof Element)) return;
@@ -199,7 +205,12 @@ export function useChatScroll(revision: unknown) {
     releaseReader();
     releaseLayout();
     following.current = true; readingLatest.current = true; anchor.current = null;
-    setAway(false); setFresh(false); sync();
+    setAway(false); setFresh(false); setReplyComplete(false); sync();
   };
-  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom, capturePositionTicket, acceptRestoredPosition, away, fresh };
+  const markReplyComplete = useCallback(() => {
+    const el = scroller.current;
+    if (!readingLatest.current || (el && !atBottom(el))) setReplyComplete(true);
+  }, []);
+  return { scroller, column, following, readingLatest, onScroll, captureDisclosure, toBottom,
+    capturePositionTicket, acceptRestoredPosition, away, fresh, replyComplete, markReplyComplete };
 }

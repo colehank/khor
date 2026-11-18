@@ -78,11 +78,34 @@ export function appendHistoryEntry(out: HistoryPaintStep[], entry: HistoryEntry,
   return nextRecord;
 }
 
+type HistoryProjection = {
+  entries: HistoryEntry[];
+  references: HistoryRecordRef[];
+  steps: HistoryPaintStep[];
+  lastRecord: HistoryRecordRef | null;
+  items: HistoryItem[];
+};
+
+/** Keep the bounded fold when the canonical window only appends records.
+ * Prepending, eviction, and reference changes can alter earlier grouping. */
+export function projectHistory(entries: HistoryEntry[], references: HistoryRecordRef[] = [], previous?: HistoryProjection): HistoryProjection {
+  const prefix = previous
+    && previous.references.length === references.length
+    && previous.references.every((reference, index) => reference === references[index])
+    && previous.entries.length <= entries.length
+    && previous.entries.every((entry, index) => entry === entries[index]) ? previous : undefined;
+  if (prefix && entries.length === prefix.entries.length) return prefix;
+  const steps = prefix ? prefix.steps.slice() : [];
+  let lastRecord = prefix?.lastRecord ?? null;
+  for (let index = prefix?.entries.length ?? 0; index < entries.length; index++) {
+    lastRecord = appendHistoryEntry(steps, entries[index], references, lastRecord);
+  }
+  const items = steps.filter((item): item is HistoryItem => item.who !== 'boundary');
+  return { entries, references, steps, lastRecord, items };
+}
+
 export function paintHistory(entries: HistoryEntry[], references: HistoryRecordRef[] = []): HistoryItem[] {
-  const out: HistoryPaintStep[] = [];
-  let previousRecord: HistoryRecordRef | null = null;
-  for (const entry of entries) previousRecord = appendHistoryEntry(out, entry, references, previousRecord);
-  return out.filter((item): item is HistoryItem => item.who !== 'boundary');
+  return projectHistory(entries, references).items;
 }
 
 /** A visible DOM sample earns a source-relative anchor only if it occurs

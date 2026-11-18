@@ -6,7 +6,7 @@ import ts from 'typescript';
 const built = await build({ stdin: { contents: ['history-window', 'history-source', 'history-reader', 'history-record', 'history-paint', 'acp-view','chat-media','history-readable-export'].map(name => `export * from './${name}';`).join('\n'), resolveDir: resolve('src/lib'), loader: 'ts' }, bundle: true, write: false, format: 'cjs', platform: 'node' });
 const module = { exports: {} };
 Function('module', 'exports', built.outputFiles[0].text)(module, module.exports);
-const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween, historyContributionPoint, historyContributionPresent } = module.exports;
+const { EMPTY_HISTORY_WINDOW: EMPTY, receiveHistoryPage: receive, historyEntries, historySource, historyReader, decodeRecordSection, paintHistory, projectHistory, projectAcp, retainHistoryIdentity, historyReferenceBetween, historyContributionPoint, historyContributionPresent } = module.exports;
 // Read the production AgentContent prop itself: this counterexample must fail
 // on the old overall-tail rule rather than on a missing helper/export.
 const chatSource = ts.createSourceFile('ChatView.tsx', readFileSync(resolve('src/views/ChatView.tsx'),'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -53,6 +53,23 @@ const page = (key, { count = 1, bytes = 100, older = `before:${key}`, newer = `a
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const flush = () => new Promise(resolve => setImmediate(resolve));
 const checks = [];
+{
+  const first = entry('old', 'Previous answer');
+  const turn = {key:'finished', starts_message:true, record:null, frame:{kind:'turn', stop:'EndTurn'}};
+  const start = entry('start', 'New ');
+  const chunk = {...entry('chunk', 'answer'), starts_message:false};
+  const previous = projectHistory([first, turn, start]);
+  const appended = projectHistory([first, turn, start, chunk], [], previous);
+  assert.strictEqual(appended.items[0], previous.items[0], 'streaming reuses the earlier projected message');
+  assert.equal(previous.items.at(-1).text, 'New ', 'the prior projection stays unchanged');
+  assert.deepEqual(appended.items, paintHistory([first, turn, start, chunk]));
+  assert.equal(appended.items.at(-1).text, 'New answer');
+  for (const entries of [[start, chunk], [entry('older'), first, turn, start, chunk], [first, turn, entry('start', 'Reset '), chunk]]) {
+    assert.deepEqual(projectHistory(entries, [], appended).items, paintHistory(entries), 'eviction, prepend and changed input refold the window');
+  }
+  const refs = [{start: 10, end: 15, item: 0}];
+  assert.deepEqual(projectHistory([first, turn, start, chunk], refs, appended).items, paintHistory([first, turn, start, chunk], refs), 'new source references can change grouping');
+}
 const test = (name, run) => checks.push([name, run]);
 test('canonical active body is independent of retained live permission and optimistic suffixes', () => {
   const done = {key:'opaque-finished',starts_message:true,record:null,frame:{kind:'turn',stop:'EndTurn'}};

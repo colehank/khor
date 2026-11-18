@@ -309,8 +309,8 @@ try {
     assert.equal(await page.locator("[data-ask-answer]").count(), 0, "transport success must not imply server confirmation");
     assert.equal(await option.isDisabled(), true, "pending choice remains visible and disabled");
     await option.dispatchEvent("click");
-    const latestWhilePending = page.locator("[data-chat-bottom]");
-    if (await latestWhilePending.isVisible()) await latestWhilePending.click();
+    // On a narrow viewport the keyboard can settle between two browser calls.
+    await page.evaluate(() => document.querySelector('[data-chat-bottom]')?.click());
     queue.push(note("agent_message_chunk", {content: {type: "text", text: "确认期间的补充说明。"}}));
     await page.getByText("确认期间的补充说明。", {exact: false}).waitFor();
     assert.equal(await page.locator('[data-ask-pending]').getAttribute('data-ask-phase'), 'sending', 'source body insertion keeps the in-flight permission owner');
@@ -369,6 +369,24 @@ try {
     await page.screenshot({ path: join(out, `${name}.png`) });
     await page.locator("[data-chat-scroll]").evaluate((el) => { el.scrollTop = el.scrollHeight; });
     await page.locator("[data-chat-bottom]").waitFor({ state: "hidden" });
+    const chatScroll = page.locator('[data-chat-scroll]');
+    const bottom = page.locator('[data-chat-bottom]');
+    // WebKit can report scrollTop beyond the maximum during rubber-banding.
+    // Supply those measurements while exercising the real scroll handler.
+    await chatScroll.evaluate(async el => {
+      const end = el.scrollHeight - el.clientHeight;
+      if (end < 40) throw new Error('Expected a scrollable transcript');
+      Object.defineProperty(el, 'scrollTop', {configurable: true, get: () => end + 18});
+      try {
+        el.dispatchEvent(new Event('scroll', {bubbles: true}));
+        await new Promise(requestAnimationFrame);
+      } finally {
+        Reflect.deleteProperty(el, 'scrollTop');
+      }
+      el.dispatchEvent(new Event('scroll', {bubbles: true}));
+      await new Promise(requestAnimationFrame);
+    });
+    assert.equal(await bottom.count(), 0, 'returning from a bottom bounce keeps the return button hidden');
     await page.screenshot({ path: join(out, `${name}-approval.png`) });
     queue.push(note("agent_message_chunk", { content: { type: "text", text: "\n\n" + Array.from({ length: 35 }, (_, i) => `阅读记录 ${i + 1}。这里保留足够长的历史，用于检查展开与流式回复时的位置。`).join("\n\n") } }),
       note("tool_call", { toolCallId: "scroll-anchor", title: "Read scrolling details", kind: "read", status: "completed", rawInput: { path: "/work/scroll.txt" } }),
@@ -392,7 +410,7 @@ try {
     await page.waitForTimeout(350);
     const tailGap = await page.locator("[data-chat-scroll]").evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
     assert(tailGap <= 2, `tail follows animated streaming growth, gap=${tailGap}`);
-    await page.emulateMedia({ reducedMotion: "reduce" });
+    assert.equal(await bottom.count(), 0, 'following streamed growth hides the return control');
     const reading = page.getByText("阅读记录 18。这里保留足够长的历史，用于检查展开与流式回复时的位置。", { exact: true });
     await page.locator("[data-chat-scroll]").evaluate((el) => {
       const paragraph = [...el.querySelectorAll("p")].find((p) => p.textContent?.startsWith("阅读记录 18。"));
@@ -400,10 +418,35 @@ try {
       el.dispatchEvent(new Event("scroll"));
     });
     const readingTop = (await reading.boundingBox()).y;
+    const ring = bottom.locator('[data-chat-bottom-ring]'), dot = bottom.locator('[data-chat-bottom-dot]');
+    await ring.waitFor();
+    const ringStyle = await ring.evaluate(el => {
+      const style = getComputedStyle(el);
+      return { animation: style.animationName, width: parseFloat(style.borderTopWidth), top: style.borderTopColor, side: style.borderRightColor };
+    });
+    assert.match(ringStyle.animation, /spin/);
+    assert(ringStyle.width > 0 && ringStyle.top !== ringStyle.side, 'the outer ring has a visible rotating arc');
+    assert.equal(await dot.count(), 0, 'streaming has not completed');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    assert.equal(await ring.evaluate(el => getComputedStyle(el).animationName), 'none');
+    const chunk = text => note('agent_message_chunk', { content: { type: 'text', text } });
+    queue.push(chunk('第一段增量已显示。'));
+    await page.getByText('第一段增量已显示。', { exact: true }).waitFor({ state: 'attached' });
+    assert(Math.abs((await reading.boundingBox()).y - readingTop) <= 2, 'text chunks leave the reader in place');
     queue.push(note("plan", { entries: Array.from({ length: 20 }, (_, i) => ({ content: `新增计划 ${i}`, status: "pending" })) }));
     await page.getByText("新增计划 19", { exact: true }).waitFor({ state: "attached" });
     await page.waitForTimeout(100);
     assert(Math.abs((await reading.boundingBox()).y - readingTop) <= 2, "reading history keeps its paragraph in place when the plan above changes height");
+    queue.push(chunk('第二段增量已显示。'));
+    await page.getByText('第二段增量已显示。', { exact: false }).waitFor({ state: 'attached' });
+    assert.equal(await ring.count(), 1, 'answer rendered before the turn completed');
+    queue.push({ kind: 'turn', stop: 'EndTurn' });
+    await dot.waitFor();
+    assert.equal(await ring.count(), 0, 'completed turn retires the ring');
+    assert(Math.abs((await reading.boundingBox()).y - readingTop) <= 2, 'completion leaves the reader in place');
+    await bottom.click();
+    await bottom.waitFor({ state: 'hidden' });
+    assert(await chatScroll.evaluate(el => el.scrollHeight - el.clientHeight - el.scrollTop <= 2), 'returning acknowledges completion and reaches the tail');
     // Different sessions may use the same numeric ask ID. The local
     // optimistic answer must not make the next session unanswerable.
     otherQueue = [ { kind: "ask", ask: 31, title: "Another session", options: [["different", "另一会话的选项"]] }];
@@ -419,7 +462,7 @@ try {
     assert.notEqual(leaseB, leaseA, "the two actual open claims have distinct leases");
     assert.deepEqual(requests.at(-1), { id: "gui/elements-b", lease: leaseB, ask: 31, option: "different" }, "answer state belongs to its session and admitted view");
     assert.deepEqual(errors, []);
-    results.push({ name, reasoning: "stream / manual override / keyboard", tool: "update / expand / output bound / no empty disclosure", diff: "real changes / independent line numbers / context model", scroll: "manual disclosure anchor / history anchor / animated tail following", plan: "live update preserves choice", permission: "submitting / waiting / retry / exact IDs / no duplicate / authoritative reply", overflow, errors });
+    results.push({ name, reasoning: "stream / manual override / keyboard", tool: "update / expand / output bound / no empty disclosure", diff: "real changes / independent line numbers / context model", scroll: "bounce / anchored reading / animated tail following / reply status", plan: "live update preserves choice", permission: "submitting / waiting / retry / exact IDs / no duplicate / authoritative reply", overflow, errors });
     await context.close();
     console.log(`${name}: production ChatView interactions passed`);
   }

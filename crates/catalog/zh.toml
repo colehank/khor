@@ -5342,6 +5342,8 @@ chat-who-context = "上下文"
 # on a terminal is how a reader ends up grepping for the wrong surface.
 to-bottom = "回到底部"
 new-below = "有新消息"
+chat-bottom-replying = "回到底部，正在回复"
+chat-bottom-complete = "回到底部，回复已完成"
 # An op this face sent that the host did not take (#88). Two keys travel
 # the wire (`gui_host::refused`), two sentences live here — **not one
 # vague "没生效"**, because the two have different next steps: wait, or
