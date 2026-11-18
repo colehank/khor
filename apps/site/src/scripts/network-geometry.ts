@@ -88,7 +88,7 @@ export function networkGeometry(compact:boolean,position:number,wiredAngle=compa
   }:{
     mac:{x:720,y:445},linux:{x:720,y:235},windows:{x:240,y:270},
   };
-  const cellular=compact?{x:215,y:525}:{x:460,y:500};
+  const cellular=compact?{x:215,y:477}:{x:460,y:500};
   const wifi=compact?{x:130,y:435}:{x:240,y:450};
   const phone=mix(cellular,wifi,position);
   phone.y+=Math.sin(position*Math.PI)*12;
@@ -99,7 +99,9 @@ export function networkGeometry(compact:boolean,position:number,wiredAngle=compa
     // reversing the baseline so text stays upright, away from the Wi-Fi edge.
     a:{...ellipse(compact?{x:355,y:345}:{x:720,y:340},compact?100:140,compact?169:185,-.04,wiredAngle,compact?-1:1),opacity:1},
     b:{...envelope([fixed.linux,fixed.windows],mix(fixed.windows,wifi,joined),joined,padding,softness,-Math.PI*.62),opacity:1},
-    c:{...ellipse(cellular,compact?88:144,compact?58:72,-.04,-Math.PI*.68),opacity:1-joined},
+    // The lower-left arc stays clear of Mobile's route into Wi-Fi. Reverse the
+    // baseline to keep the label upright and away from Wired's label.
+    c:{...ellipse(cellular,compact?88:144,compact?73:72,-.04,Math.PI*(compact?.7:.64),-1),opacity:1-joined},
   };
   // KhorNet stays stable while the native network boundaries and Mobile change.
   const khorNet=ellipse(compact?{x:250,y:340}:{x:500,y:330},compact?225:420,compact?270:285,-.05,-Math.PI/2+.05);

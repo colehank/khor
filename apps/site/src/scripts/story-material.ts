@@ -23,6 +23,18 @@ export function createStoryMaterial(icon:SVGSVGElement,target:SVGGElement,host:S
   art.innerHTML=isolate([...source.children].filter(el=>el.tagName!=='defs').map(el=>el.outerHTML).join(''));
   host.append(definitions,art);
   const ring=art.querySelector<SVGCircleElement>('circle[stroke*="glass-band"]')!;
+  // The large outer ring belongs to the expanding perimeter, not to this core.
+  // Move its lighting out too: leaving those contours behind makes a second
+  // glass ring visible even if the main stroke has been hidden.
+  const boundaryShadow=ring.previousElementSibling! as SVGCircleElement;
+  const boundaryLight=art.querySelector<SVGGElement>('g[clip-path*="annulus"]')!;
+  const boundaryEdges=[...art.querySelectorAll('circle[stroke*="outer-edge"],circle[stroke*="inner-edge"]')];
+  [boundaryShadow,boundaryLight,...boundaryEdges].forEach(el=>el.remove());
+  // This stroke completes only the small mark after the core has arrived.
+  // It never travels as a second full-size ring alongside the perimeter.
+  ring.setAttribute('data-morph-mark-ring','');
+  ring.setAttribute('pathLength','1');ring.setAttribute('stroke-dasharray','1');
+  ring.setAttribute('stroke-dashoffset','1');
   // The panel contains a second, blurred edge. Only the outer contour is the
   // persistent diamond; selecting the first descendant masks it with the panel.
   const diamond=art.querySelector<SVGPathElement>(':scope > path[stroke*="diamond-edge"]')!;
@@ -32,6 +44,11 @@ export function createStoryMaterial(icon:SVGSVGElement,target:SVGGElement,host:S
   const targetDiamond=target.querySelector<SVGPathElement>('path')!;
   const targetInner=target.querySelector<SVGCircleElement>('circle[r="170"]')!;
   const targetPearls=pearls.map(pearl=>[...target.querySelectorAll<SVGCircleElement>('circle')].find(el=>el.getAttribute('cx')===pearl.getAttribute('cx')&&el.getAttribute('cy')===pearl.getAttribute('cy')&&el.parentElement?.getAttribute('fill')==='currentColor')!);
+  const markTips=targetPearls.slice(1).map(target=>{
+    const el=target.cloneNode(true) as SVGCircleElement,r=number(target,'r');
+    el.setAttribute('fill','currentColor');el.setAttribute('r','0');
+    el.setAttribute('data-morph-mark-tip','');art.append(el);return {el,r};
+  });
   const satellites=pearls.slice(1).map((body,index)=>{
     // One physical set of outer pearls: move these parts out of the core.
     // On the return, the machines themselves become the final icon's pearls.
@@ -56,7 +73,7 @@ export function createStoryMaterial(icon:SVGSVGElement,target:SVGGElement,host:S
       body.setAttribute('stroke',stroke);body.setAttribute('stroke-width',String(width));
     }};
   });
-  const primary=new Set<Element>([ring,diamond,inner,pearls[0]]);
+  const primary=new Set<Element>([ring,diamond,inner,pearls[0],...markTips.map(tip=>tip.el)]);
   const strokes=[{el:ring,target:targetRing},{el:diamond,target:targetDiamond},{el:inner,target:targetInner}].map(({el,target})=>({el,from:number(el,'stroke-width'),to:number(target,'stroke-width')}));
   const radii=[{el:inner,target:targetInner},{el:pearls[0],target:targetPearls[0]}].map(({el,target})=>({el,from:number(el,'r'),to:number(target,'r')}));
 
@@ -82,8 +99,6 @@ export function createStoryMaterial(icon:SVGSVGElement,target:SVGGElement,host:S
     return {el,circles:circles.map(el=>({el,r:number(el,'r'),width:number(el,'stroke-width')})),lights:lights.map(el=>({el,rx:number(el,'rx'),ry:number(el,'ry'),r:number(el,'r')}))};
   });
   const filters=[...definitions.querySelectorAll('feGaussianBlur')].map(el=>({el,blur:number(el,'stdDeviation')}));
-  const outerEdges=[...art.querySelectorAll<SVGCircleElement>('circle[stroke*="outer-edge"],circle[stroke*="inner-edge"]')].map(el=>({el,r:number(el,'r'),outside:number(el,'r')>number(ring,'r')}));
-  const annulus=definitions.querySelector<SVGPathElement>('[id$="annulus"] path')!;
   let previous=NaN;
   const frame=(p:number,scale:number,sourceScale:number,targetScale:number)=>{
     // The first part visibly compresses the original volume, while the whole
@@ -92,9 +107,11 @@ export function createStoryMaterial(icon:SVGSVGElement,target:SVGGElement,host:S
     definitions.style.setProperty('--material-flat',String(material));
     for(const {el,from,to} of strokes)el.setAttribute('stroke-width',String(lerp(from*sourceScale,to*targetScale,material)/scale));
     for(const {el,from,to} of radii)el.setAttribute('r',String(lerp(from,to,settle)));
-    const width=number(ring,'stroke-width'),outside=368+width/2,inside=Math.max(0,368-width/2);
-    const round=(r:number)=>`M${512+r} 512 a${r} ${r} 0 1 0 ${-2*r} 0 a${r} ${r} 0 1 0 ${2*r} 0`;
-    annulus.setAttribute('d',`${round(outside)} ${round(inside)}`);
+    // At 72% the core is already at the title's final small-symbol scale.
+    // Complete that mark there; in reverse its details withdraw before it grows.
+    const mark=smooth((p-.72)/.14);
+    ring.setAttribute('stroke-dashoffset',String(1-mark));
+    for(const {el,r} of markTips)el.setAttribute('r',String(r*mark));
     hole.setAttribute('r',String(368*material));
     if(material!==previous){
       previous=material;
@@ -104,7 +121,6 @@ export function createStoryMaterial(icon:SVGSVGElement,target:SVGGElement,host:S
       }
       for(const {el,blur} of filters)el.setAttribute('stdDeviation',String(blur*(1-material)));
     }
-    for(const {el,r,outside:outer} of outerEdges)el.setAttribute('r',String(lerp(r,368+(outer?1:-1)*width/2,material)));
   };
-  return {art,definitions,sourceRing,targetRing,satellites,frame};
+  return {art,definitions,sourceRing,targetRing,satellites,boundaryShadow,boundaryLight,frame};
 }

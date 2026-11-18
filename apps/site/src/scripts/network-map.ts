@@ -56,39 +56,51 @@ export function mountNetworkMap(figure:HTMLElement) {
     const area=areas.get('a')!,text=area.mark.querySelector<SVGTextElement>('text')!;
     const samples=(d:string)=>{
       const path=document.createElementNS('http://www.w3.org/2000/svg','path');path.setAttribute('d',d);
-      const length=path.getTotalLength();return Array.from({length:193},(_,i)=>path.getPointAtLength(length*i/192));
+      const length=path.getTotalLength(),steps=Math.ceil(length/textScale);
+      return Array.from({length:steps+1},(_,i)=>path.getPointAtLength(length*i/steps));
     };
-    const outer=samples(reference.khorNet.d);
-    const wifi=[0,.5,1].flatMap(p=>samples(networkGeometry(compact.matches,p).areas.b.d));
+    const poses=Array.from({length:9},(_,index)=>networkGeometry(compact.matches,index/8));
+    const boundaries=[...samples(reference.khorNet.d),...poses.filter((_,index)=>index%2===0).flatMap(pose=>samples(pose.areas.b.d))];
     const cellular=samples(reference.areas.c.d);
-    const bodies=[...(['mac','linux','windows'] as const).map(id=>({...reference.nodes[id],r:Number(nodes[id].querySelector('circle')!.getAttribute('r'))})),...[0,.5,1].map(p=>({...networkGeometry(compact.matches,p).nodes.phone,r:Number(nodes.phone.querySelector('circle')!.getAttribute('r'))}))];
-    const others=['b','c'].map(id=>areas.get(id)!.mark.querySelector<SVGTextElement>('text')!.getBBox());
+    const radius=networkNodeRadius*Math.sqrt(markScale);
+    const devices=[reference.nodes.mac,reference.nodes.linux,reference.nodes.windows,...poses.map(pose=>pose.nodes.phone)];
+    // Reserve the complete neighboring label, including its rotated icon.
+    // Text-only bounds missed the cable icon colliding with Cellular's last
+    // glyphs on compact Chinese layouts.
+    const iconBox=(icon:SVGGElement)=>{
+      const box=icon.getBBox(),matrix=svg.getScreenCTM()!.inverse().multiply(icon.getScreenCTM()!);
+      const points=[[box.x,box.y],[box.x+box.width,box.y],[box.x,box.y+box.height],[box.x+box.width,box.y+box.height]].map(([x,y])=>new DOMPoint(x,y).matrixTransform(matrix));
+      const xs=points.map(p=>p.x),ys=points.map(p=>p.y);
+      return new DOMRect(Math.min(...xs),Math.min(...ys),Math.max(...xs)-Math.min(...xs),Math.max(...ys)-Math.min(...ys));
+    };
+    const others=['b','c'].flatMap(id=>{
+      const other=areas.get(id)!,label=other.mark.querySelector<SVGTextElement>('text')!;
+      return [iconBox(other.icon),...Array.from({length:label.getNumberOfChars()},(_,i)=>label.getExtentOfChar(i)).filter(b=>b.width&&b.height)];
+    });
     const distance=(b:DOMRect,p:{x:number;y:number})=>Math.hypot(Math.max(b.x-p.x,0,p.x-b.x-b.width),Math.max(b.y-p.y,0,p.y-b.y-b.height));
+    const separation=(a:DOMRect,b:DOMRect)=>Math.hypot(Math.max(a.x-b.x-b.width,b.x-a.x-a.width,0),Math.max(a.y-b.y-b.height,b.y-a.y-a.height,0));
     const place=(shape:typeof reference.areas.a,baseline:string)=>{
       orientMark(area.icon,shape.mark);attr(area.labelPath,'d',shape.labelPath);attr(text,'dominant-baseline',baseline);
     };
-    const score=(shape:typeof reference.areas.a)=>{
-      const boxes=Array.from({length:text.getNumberOfChars()},(_,i)=>text.getExtentOfChar(i)).filter(b=>b.width&&b.height);
-      let clearance=Infinity,secondary=Infinity;
+    const score=()=>{
+      const boxes=[...Array.from({length:text.getNumberOfChars()},(_,i)=>text.getExtentOfChar(i)).filter(b=>b.width&&b.height),iconBox(area.icon)];
+      let clearance=Infinity;
       for(const box of boxes){
-        for(const node of bodies)clearance=Math.min(clearance,distance(box,node)-node.r-4*textScale);
-        for(const point of [...outer,...wifi])clearance=Math.min(clearance,distance(box,point)-4*textScale);
-        for(const point of cellular)secondary=Math.min(secondary,distance(box,point)-2*textScale);
-        for(const other of others)secondary=Math.min(secondary,Math.hypot(Math.max(other.x-box.x-box.width,box.x-other.x-other.width,0),Math.max(other.y-box.y-box.height,box.y-other.y-other.height,0))-2*textScale);
+        for(const node of devices)clearance=Math.min(clearance,distance(box,node)-radius-4*textScale);
+        for(const point of boundaries)clearance=Math.min(clearance,distance(box,point)-5*textScale);
+        for(const point of cellular)clearance=Math.min(clearance,distance(box,point)-2*textScale);
+        for(const other of others)clearance=Math.min(clearance,separation(box,other)-12*textScale);
       }
-      for(const node of bodies)clearance=Math.min(clearance,Math.hypot(shape.mark.x-node.x,shape.mark.y-node.y)-node.r-12*markScale-2*textScale);
-      for(const point of outer)clearance=Math.min(clearance,Math.hypot(shape.mark.x-point.x,shape.mark.y-point.y)-12*markScale-textScale);
-      for(const point of [...wifi,...cellular])secondary=Math.min(secondary,Math.hypot(shape.mark.x-point.x,shape.mark.y-point.y)-12*markScale-textScale);
-      return {clearance,secondary,rank:clearance>=0?1000+Math.min(clearance,secondary):clearance};
+      return clearance;
     };
     // Measure the real text at the displayed scale, once per layout. A short
     // viewport can magnify SVG text far beyond the device-size breakpoint.
     let best={shape:reference.areas.a,baseline:'auto',score:-Infinity};
-    const angles=compact.matches?[.7,.73,.76,.79,.82,.85,.88,.67,.64,.61,.58,.55]:[-.3,-.27,-.24,-.21,-.18,-.15,-.12,-.09,-.06];
+    const angles=compact.matches?[.7,.73,.76,.79,.82,.85,.88,.91,.94,.97,.67,.64,.61,.58,.55,.52,.49]:[-.3,-.27,-.24,-.21,-.18,-.15,-.12,-.09,-.06];
     outer:for(const baseline of ['auto','central'])for(const angle of angles){
       const shape=networkGeometry(compact.matches,1,Math.PI*angle).areas.a;place(shape,baseline);
-      const candidate=score(shape);if(candidate.rank>best.score)best={shape,baseline,score:candidate.rank};
-      if(candidate.clearance>=0&&candidate.secondary>=0)break outer;
+      const candidate=score();if(candidate>best.score)best={shape,baseline,score:candidate};
+      if(candidate>=0)break outer;
     }
     place(best.shape,best.baseline);
     attr(gap('a'),'d',best.shape.labelPath);attr(gapIcon('a'),'cx',String(best.shape.mark.x));attr(gapIcon('a'),'cy',String(best.shape.mark.y));
@@ -110,6 +122,7 @@ export function mountNetworkMap(figure:HTMLElement) {
       const area=areas.get(id)!;
       orientMark(area.icon,shape.mark);attr(area.labelPath,'d',shape.labelPath);placeGap(id,shape);
       const text=area.mark.querySelector<SVGTextElement>('text')!;
+      attr(text,'dominant-baseline',id==='c'?'central':'auto');
       attr(text.querySelector('textPath')!,'startOffset',String(24*markScale));
       fitGap(id,text,24*markScale);
     }
@@ -123,9 +136,11 @@ export function mountNetworkMap(figure:HTMLElement) {
   const syncMetrics=()=>{
     const width=svg.getBoundingClientRect().width;
     if(width<=0)return;
-    textScale=1/(svg.getScreenCTM()?.a??width/svg.viewBox.baseVal.width);
-    // Keep symbols readable at their displayed size, with a compact-layout cap.
-    markScale=Math.max(.9,Math.min(1.5,textScale));
+    const inverseScale=1/(svg.getScreenCTM()?.a??width/svg.viewBox.baseVal.width);
+    // Cap compensation in both layouts so a narrow or short canvas still
+    // shrinks the labels, icons and clearances along with the map.
+    textScale=Math.min(compact.matches?1.32:2,inverseScale);
+    markScale=Math.max(.9,Math.min(compact.matches?1.1:1.3,inverseScale));
     figure.style.setProperty('--net-text-scale',String(textScale));
     for(const node of Object.values(nodes)){
       attr(node.querySelector('circle')!,'r',String(networkNodeRadius*Math.sqrt(markScale)));
@@ -153,7 +168,9 @@ export function mountNetworkMap(figure:HTMLElement) {
       const area=areas.get(id)!;
       attr(area.path,'d',shape.d);area.group.style.opacity=String(shape.opacity);
       attr(area.fill,'d',shape.d);area.fill.style.opacity=String(shape.opacity);
-      area.mark.style.opacity=String(shape.opacity);area.gapGroup.style.opacity=String(shape.opacity);
+      area.mark.style.opacity=String(shape.opacity);
+      // Keep the caption's gap fully cut until the caption is gone.
+      area.gapGroup.style.opacity=shape.opacity>0?'1':'0';
       attr(area.group,'aria-hidden',String(shape.opacity<.01));
     }
     attr(globalPath,'d',geometry.khorNet.d);attr(globalFill,'d',geometry.khorNet.d);

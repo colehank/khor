@@ -110,13 +110,25 @@ html:not([data-locale]) [data-script-poster] { display:none; }
 .desktop-stage iframe { width:100%; height:100%; display:block; border:0; background:transparent; }
 .desktop-preview[data-ready] .desktop-stage { opacity:1; pointer-events:auto; }
 .desktop-preview[data-ready] .desktop-poster { visibility:hidden; }
-.opening { --story-intro-travel:3.8; --story-unfold-travel:.8; --story-unfold-hold:.4; --opening-screens:calc(var(--story-intro-travel) + var(--story-unfold-travel) + var(--story-unfold-hold) + 1); --story-intro-hold:.25; height:calc((var(--opening-screens) + var(--story-intro-hold))*100svh); margin-bottom:var(--story-network-overflow,0); position:relative; z-index:10; color:var(--ink); }
+.opening {
+  --story-intro-travel:3.8;
+  --story-intro-hold:.75;
+  --story-unfold-travel:.8;
+  --story-unfold-hold:.4;
+  --opening-screens:calc(1 + var(--story-intro-hold) + var(--story-intro-travel) + var(--story-unfold-travel) + var(--story-unfold-hold));
+  height:calc(var(--opening-screens)*100svh);
+  margin-bottom:var(--story-network-overflow,0); position:relative; z-index:10; color:var(--ink);
+}
+@media (pointer:coarse) {
+  /* Leave more room for touch inertia when arriving from the hero. */
+  .opening { --story-intro-hold:1; }
+}
 .meet-environment { position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:0; background:var(--canvas); }
 .meet-environment svg { width:100%; height:100%; display:block; }
 .opening-sticky { position:sticky; top:0; height:100svh; display:flex; align-items:center; }
-.opening-copy { position:absolute; left:8.5%; top:31%; width:48%; height:calc(var(--story-title)*3.6); z-index:2; }
-.opening-line { position:absolute; inset:0; overflow:hidden; font-size:var(--story-title); font-weight:600; line-height:1.08; text-wrap:balance; }
-.opening-line-content { height:100%; opacity:0; transition:opacity var(--dur-120) ease; }
+.opening-copy { position:absolute; left:8.5%; top:31%; width:48%; display:grid; align-items:start; z-index:2; }
+.opening-line { grid-area:1/1; min-width:0; font-size:var(--story-title); font-weight:600; line-height:1.08; text-wrap:balance; }
+.opening-line-content { opacity:0; transition:opacity var(--dur-120) ease; }
 .opening-line.is-current .opening-line-content { opacity:1; transition-delay:var(--dur-120); }
 .opening:not([data-caption-ready]) .opening-line-content { transition:none; }
 .opening-line-content > span { display:block; }
@@ -204,6 +216,11 @@ html:not([data-locale]) [data-script-poster] { display:none; }
   .download-section .product-actions { justify-content:center; margin-top:var(--gap-pane); }
   .story-footer { align-items:flex-start; flex-direction:column; gap:var(--gap-base); }
 }
+@media (max-width:760px) and (max-height:650px) and (prefers-reduced-motion:no-preference) {
+  .opening-copy { top:max(calc(var(--site-header-height) + var(--gap-in)),16%); }
+  .opening-line { font-size:clamp(calc(var(--text-title-lg)*1.4),min(9.4vw,7svh),calc(var(--text-title-lg)*2.2)); }
+  .opening .assembly { width:min(100vw,57svh); top:64%; }
+}
 @media (prefers-reduced-motion:reduce) {
   html { scroll-behavior:auto; }
   *,*::before,*::after { animation:none !important; transition:none !important; }
@@ -211,11 +228,10 @@ html:not([data-locale]) [data-script-poster] { display:none; }
   .opening { height:auto; min-height:90svh; padding:calc(var(--gap-pane)*3) var(--story-gutter); }
   .opening-sticky { position:relative; height:auto; min-height:70svh; display:grid; grid-template-columns:1fr 1fr; gap:var(--gap-pane); }
   .opening-copy { position:relative; inset:auto; width:auto; height:auto; display:grid; gap:var(--gap-group); }
-  .opening-line { position:relative; inset:auto; font-size:var(--text-title-lg); overflow:visible; }
-  .opening-line-content { height:auto; opacity:1!important; }
+  .opening-line { grid-area:auto; font-size:var(--text-title-lg); }
+  .opening-line-content { opacity:1!important; }
   .opening-line-content > span { display:inline; }
   .opening-line .line-lead::after { content:' '; }
-  .opening-line-content .line-phrase + .line-phrase::before { content:' '; }
   .assembly { position:relative; inset:auto; width:100%; transform:none; }
   .meet-environment { border-radius:var(--radius-xl); }
 }
