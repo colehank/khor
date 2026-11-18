@@ -1,7 +1,7 @@
 # Single visible outer ring — 2026-11-18
 
 Local worktree: `/Volumes/disk0/Khor/worktrees/current/khor-site-story`, branch `feat/site-story`.
-Not deployed. Published UI remains `f8ee7108` / gh-pages `5affba22`.
+Published from source `2fd88d05` to gh-pages `503c998` in [Pages run 44281610286](https://github.com/colehank/khor/actions/runs/44281610286).
 
 ## Report and cause
 

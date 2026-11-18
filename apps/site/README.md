@@ -119,7 +119,7 @@ KhorNet 生长的第一帧就带标题缺口；反向合拢先收完关系线和
 玻璃先保留厚度再收薄；反射、高光、玻璃与线条都沿同一轮廓变化，标题缺口到位后显示文字。
 本节覆盖前文的外环复制方案。问题与正反向过程帧见
 [单外环修复](../../docs/handoff/site-ring-origin-20261118.md)。
-仍仅本地，GUI、下载入口、主题和原生滚动保持此前状态。
+已随 2026-11-18 故事与响应式修复发布。
 
 ## 导航、安装与浅色材质（2026-11-18）
 
@@ -155,7 +155,7 @@ KHOR_SITE_URL=https://colehank.github.io KHOR_SITE_BASE=/khor/ npm run build --p
 
 ## 部署
 
-2026-11-18 当前已发布：UI 源码 `f8ee7108` → gh-pages `5affba22`，<https://khor.cloud/> 触摸／滚轮回拉修复的线上 headless Chrome 验证通过，Pages run `44238238098` success。前述双语、明暗、布局、玻璃动效与原生滚动修复均已上线。最新细节见 [发布记录](../../docs/handoff/site-pages-20261112.md)。
+2026-11-18 当前已发布：UI 源码 `2fd88d05` → gh-pages `503c998`。<https://khor.cloud/> 已上线单外环过渡、窄屏图例间距、设备幕阅读距离与协作文案修复。Pages run `44281610286` 成功。最新细节见 [发布记录](../../docs/handoff/site-pages-20261112.md)。
 
 
 用户本轮新增 GitHub Pages 发布授权；feature 分支不合并 main，网站静态产物发布到独立 gh-pages 分支。
