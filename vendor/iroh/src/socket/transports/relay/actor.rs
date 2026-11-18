@@ -62,6 +62,8 @@ use url::Url;
 
 #[cfg(not(wasm_browser))]
 use crate::dns::DnsResolver;
+#[cfg(not(wasm_browser))]
+use n0_future::task::AbortOnDropHandle;
 use crate::{endpoint::RelayStatus, net_report::Report, socket::Metrics as SocketMetrics};
 
 /// How long a non-home relay connection needs to be idle (last written to) before we close it.
@@ -151,6 +153,10 @@ struct ActiveRelayActor {
     url: RelayUrl,
     /// Builder which can repeatedly build a relay client.
     relay_client_builder: relay::client::ClientBuilder,
+    #[cfg(not(wasm_browser))]
+    comparison_options: RelayProbeOptions,
+    #[cfg(not(wasm_browser))]
+    last_fresh_comparison: Option<Instant>,
     /// Whether or not this is the home relay server.
     ///
     /// The home relay server needs to maintain it's connection to the relay server, even if
@@ -179,6 +185,8 @@ enum ActiveRelayMessage {
     /// connection uses a local socket with an IP address not in this list the server will
     /// always re-connect.
     CheckConnection { local_ips: Vec<IpAddr> },
+    #[cfg(not(wasm_browser))]
+    CheckConnectionForDemand,
     /// Sets this relay as the home relay, or not.
     SetHomeRelay(bool),
     #[cfg(test)]
@@ -224,6 +232,14 @@ struct RelayConnectionOptions {
     auth_token: Option<String>,
 }
 
+#[cfg(not(wasm_browser))]
+#[derive(Debug, Clone)]
+struct RelayProbeOptions {
+    dns_resolver: DnsResolver,
+    proxy_url: Option<Url>,
+    tls_config: rustls::ClientConfig,
+}
+
 /// Possible reasons for a failed relay connection.
 #[allow(missing_docs)]
 #[stack_error(derive, add_meta)]
@@ -243,6 +259,9 @@ enum RunError {
     SendTimeout,
     #[error("Ping timeout")]
     PingTimeout,
+    #[cfg(not(wasm_browser))]
+    #[error("The active relay connection stalled while a fresh one responded")]
+    DemandConnectionSlow,
     #[error("Local IP no longer valid")]
     LocalIpInvalid,
     #[error("No local address")]
@@ -283,6 +302,12 @@ impl ActiveRelayActor {
             metrics,
             my_relay,
         } = opts;
+        #[cfg(not(wasm_browser))]
+        let comparison_options = RelayProbeOptions {
+            dns_resolver: connection_opts.dns_resolver.clone(),
+            proxy_url: connection_opts.proxy_url.clone(),
+            tls_config: connection_opts.tls_config.clone(),
+        };
         let relay_client_builder = Self::create_relay_builder(url.clone(), connection_opts);
         ActiveRelayActor {
             prio_inbox,
@@ -291,6 +316,10 @@ impl ActiveRelayActor {
             relay_datagrams_send,
             url,
             relay_client_builder,
+            #[cfg(not(wasm_browser))]
+            comparison_options,
+            #[cfg(not(wasm_browser))]
+            last_fresh_comparison: None,
             is_home_relay: false,
             inactive_timeout: Box::pin(time::sleep(RELAY_INACTIVE_CLEANUP_TIME)),
             stop_token,
@@ -512,6 +541,8 @@ impl ActiveRelayActor {
                             self.set_home_relay(is_home);
                         }
                         ActiveRelayMessage::CheckConnection { .. } => {}
+                        #[cfg(not(wasm_browser))]
+                        ActiveRelayMessage::CheckConnectionForDemand => {}
                         #[cfg(test)]
                         ActiveRelayMessage::GetLocalAddr(sender) => {
                             sender.send(None).ok();
@@ -582,6 +613,8 @@ impl ActiveRelayActor {
         let mut state = ConnectedRelayState {
             ping_tracker: PingTracker::default(),
             health_check: None,
+            #[cfg(not(wasm_browser))]
+            comparison: None,
             endpoints_present: BTreeSet::new(),
             last_packet_src: None,
             pong_pending: None,
@@ -606,6 +639,13 @@ impl ActiveRelayActor {
                     .await?;
             }
             let early_deadline = state.health_deadline();
+            #[cfg(not(wasm_browser))]
+            let comparison = match state.comparison.as_mut() {
+                Some(comparison) => MaybeFuture::Some(&mut comparison.probe),
+                None => MaybeFuture::None,
+            };
+            #[cfg(wasm_browser)]
+            let comparison = std::future::pending::<Result<bool, tokio::task::JoinError>>();
             tokio::select! {
                 biased;
                 _ = self.stop_token.cancelled() => {
@@ -653,6 +693,38 @@ impl ActiveRelayActor {
                             if is_home {
                                 self.my_relay
                                     .set_status(&self.url, RelayConnectionState::Connected);
+                            }
+                        }
+                        #[cfg(not(wasm_browser))]
+                        ActiveRelayMessage::CheckConnectionForDemand => {
+                            if !state.established
+                                || state.comparison.is_some()
+                                || self.last_fresh_comparison.is_some_and(|at| at.elapsed() < PING_INTERVAL)
+                            {
+                                continue;
+                            }
+                            // Coalesce overlapping hints. An old connection that
+                            // answers its ping never spends the fresh-probe budget.
+                            // A demand comparison must not reset the normal ping tracker,
+                            // whose timeout can retire the socket without a fresh probe.
+                            let in_flight = state.health_check.as_ref().map(|check| check.data);
+                            let nonce = in_flight.unwrap_or_else(rand::random);
+                            let opts = self.comparison_options.clone();
+                            let url = self.url.clone();
+                            let wait = state.ping_tracker.ping_timeout().max(Duration::from_millis(1100));
+                            let probe = AbortOnDropHandle::new(tokio::spawn(async move {
+                                time::sleep(wait).await;
+                                time::timeout(
+                                    Duration::from_millis(300),
+                                    crate::net_report::probe_fresh_relay_connection(
+                                        &opts.dns_resolver, url, opts.tls_config, opts.proxy_url.as_ref(),
+                                    ),
+                                ).await.unwrap_or(false)
+                            }));
+                            state.comparison = Some(DemandComparison { nonce, probe });
+                            if in_flight.is_none() {
+                                let fut = client_sink.send(ClientToRelayMsg::Ping(nonce));
+                                self.run_sending(fut, &mut state, &mut client_stream).await?;
                             }
                         }
                         ActiveRelayMessage::CheckConnection { local_ips } => {
@@ -719,6 +791,18 @@ impl ActiveRelayActor {
                         },
                         Err(err) => break Err(e!(RunError::ClientStreamRead, err)),
                     }
+                }
+                compared = comparison => {
+                    #[cfg(not(wasm_browser))]
+                    {
+                        state.comparison = None;
+                        self.last_fresh_comparison = Some(Instant::now());
+                        if matches!(compared, Ok(true)) {
+                            break Err(e!(RunError::DemandConnectionSlow));
+                        }
+                    }
+                    #[cfg(wasm_browser)]
+                    let _ = compared;
                 }
                 // Give ready receive work precedence over the early inference.
                 // Progress defers only this quick check. The original full
@@ -850,6 +934,13 @@ impl ActiveRelayActor {
         let mut sending_fut = pin!(sending_fut);
         let res = loop {
             let early_deadline = state.health_deadline();
+            #[cfg(not(wasm_browser))]
+            let comparison = match state.comparison.as_mut() {
+                Some(comparison) => MaybeFuture::Some(&mut comparison.probe),
+                None => MaybeFuture::None,
+            };
+            #[cfg(wasm_browser)]
+            let comparison = std::future::pending::<Result<bool, tokio::task::JoinError>>();
             tokio::select! {
                 biased;
                 _ = self.stop_token.cancelled() => {
@@ -889,6 +980,18 @@ impl ActiveRelayActor {
                         Err(err) => break Err(e!(RunError::ClientStreamRead, err)),
                     }
                 }
+                compared = comparison => {
+                    #[cfg(not(wasm_browser))]
+                    {
+                        state.comparison = None;
+                        self.last_fresh_comparison = Some(Instant::now());
+                        if matches!(compared, Ok(true)) {
+                            break Err(e!(RunError::DemandConnectionSlow));
+                        }
+                    }
+                    #[cfg(wasm_browser)]
+                    let _ = compared;
+                }
                 // Give ready receive work precedence over the early inference.
                 // Progress defers only this quick check. The original full
                 // pong deadline remains anchored at the first ping.
@@ -918,6 +1021,8 @@ struct ConnectedRelayState {
     /// One explicit health check, owned by this TCP connection until its pong
     /// or timeout. Periodic and concurrent demand cannot replace its deadline.
     health_check: Option<HealthCheck>,
+    #[cfg(not(wasm_browser))]
+    comparison: Option<DemandComparison>,
     /// Endpoints which are reachable via this relay server.
     endpoints_present: BTreeSet<EndpointId>,
     /// The [`EndpointId`] from whom we received the last packet.
@@ -937,6 +1042,13 @@ struct ConnectedRelayState {
     rate_limited: bool,
     #[cfg(test)]
     test_pong: Option<([u8; 8], oneshot::Sender<()>)>,
+}
+
+#[cfg(not(wasm_browser))]
+#[derive(Debug)]
+struct DemandComparison {
+    nonce: [u8; 8],
+    probe: AbortOnDropHandle<bool>,
 }
 
 #[derive(Debug)]
@@ -999,6 +1111,10 @@ impl ConnectedRelayState {
         {
             self.health_check = None;
         }
+        #[cfg(not(wasm_browser))]
+        if self.comparison.as_ref().is_some_and(|comparison| comparison.nonce == data) {
+            self.comparison = None;
+        }
     }
 
     fn map_err(&self, error: RunError) -> RelayConnectionError {
@@ -1020,6 +1136,8 @@ pub(super) enum RelayActorMessage {
     /// Sent after a major network change to detect broken connections faster
     /// using RTT-based timeouts instead of the default 5s ping timeout.
     CheckConnectionAfterNetworkChange,
+    #[cfg(not(wasm_browser))]
+    CheckConnectionForDemand(RelayUrl),
 }
 
 #[derive(Debug, Clone)]
@@ -1311,6 +1429,12 @@ impl RelayActor {
             }
             RelayActorMessage::MaybeCloseRelaysOnRebind => {
                 self.maybe_close_relays_on_rebind().await;
+            }
+            #[cfg(not(wasm_browser))]
+            RelayActorMessage::CheckConnectionForDemand(url) => {
+                if let Some(handle) = self.active_relays.get(&url) {
+                    let _ = handle.inbox_addr.try_send(ActiveRelayMessage::CheckConnectionForDemand);
+                }
             }
             RelayActorMessage::CheckConnectionAfterNetworkChange => {
                 self.check_connection_after_network_change().await;
@@ -2033,6 +2157,8 @@ mod tests {
         super::ConnectedRelayState {
             ping_tracker: PingTracker::new(Duration::from_secs(1)),
             health_check: None,
+            #[cfg(not(wasm_browser))]
+            comparison: None,
             endpoints_present: Default::default(),
             last_packet_src: None,
             pong_pending: None,

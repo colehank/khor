@@ -61,6 +61,8 @@ mod options;
 mod probes;
 mod report;
 mod reportgen;
+#[cfg(not(wasm_browser))]
+pub(crate) use reportgen::probe_fresh_relay_connection;
 
 #[cfg(not(wasm_browser))]
 #[allow(missing_docs)]

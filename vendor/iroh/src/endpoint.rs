@@ -1782,6 +1782,13 @@ impl Endpoint {
         !self.is_closed() && self.inner.check_relay_connections()
     }
 
+    /// Check the active connection to a selected relay when a request stays pending.
+    /// The relay actor compares the current connection with a fresh probe before replacing it.
+    #[cfg(not(wasm_browser))]
+    pub fn check_relay_for_demand(&self, relay: RelayUrl) -> bool {
+        !self.is_closed() && self.inner.check_relay_for_demand(relay)
+    }
+
     /// **A major network change, taken as told** (khor patch 16): the UDP
     /// sockets rebound on their own ports, the relay connection checked,
     /// a fresh net report, and every path of every connection pinged, so

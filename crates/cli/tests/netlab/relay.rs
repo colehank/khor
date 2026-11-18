@@ -446,3 +446,6 @@ mod demand;
 
 #[path = "relay/jitter.rs"]
 mod jitter;
+
+#[path = "relay/stall.rs"]
+mod stall;

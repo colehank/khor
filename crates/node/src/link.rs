@@ -4519,7 +4519,10 @@ impl Node {
                                 "alpn": reply_alpn, "paired": paired})
                             },
                         );
-                        let _ = crate::tunnel::serve_target(send, recv, &target, paired).await;
+                        let conn = incoming.upgrade();
+                        let road = conn.as_ref().map(|conn| (ep.as_ref(), conn));
+                        let _ =
+                            crate::tunnel::serve_target(send, recv, &target, paired, road).await;
                     }
                 }
             });
@@ -6147,7 +6150,10 @@ impl Node {
     ) -> Result<crate::tunnel::Borrow, String> {
         let conn = self.dial_tunnel(ep, machine).await?;
         let Some(me) = self.me() else {
-            return Ok(crate::tunnel::Borrow::on_shared(conn));
+            return Ok(crate::tunnel::Borrow::on_shared(
+                std::sync::Arc::new(ep.clone()),
+                conn,
+            ));
         };
         let machine = machine.to_owned();
         Ok(crate::tunnel::Borrow::on_wire(std::sync::Arc::new(
@@ -6157,7 +6163,8 @@ impl Node {
                     let ep = me
                         .current_ears()
                         .ok_or_else(|| msg::serve_gone_midway().to_string())?;
-                    me.dial_tunnel(&ep, &machine).await
+                    let conn = me.dial_tunnel(&ep, &machine).await?;
+                    Ok((ep, conn))
                 })
             },
         )))
@@ -14030,6 +14037,7 @@ async fn exchange_inner(
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
     let mut relay_checked = false;
+    let mut relay_compared = false;
     // When every path was asked whether it is there, and how long the
     // answers get (`wires::ask_every_path`).
     let mut asked: Option<(tokio::time::Instant, Duration)> = None;
@@ -14107,6 +14115,17 @@ async fn exchange_inner(
                     && let Some(endpoint) = endpoint
                 {
                     relay_checked = endpoint.check_relay_connections();
+                }
+                // Compare the selected relay's TCP flow if transport traffic
+                // continues but the request stays pending. The actor coalesces hints.
+                if !relay_compared
+                    && now.duration_since(sent) >= crate::tunnel::RELAY_DEMAND_AFTER
+                    && let Some(endpoint) = endpoint
+                    && let Some(iroh::TransportAddr::Relay(relay)) = conn.paths().iter()
+                        .find(|path| path.is_selected())
+                        .map(|path| path.remote_addr().clone())
+                {
+                    relay_compared = endpoint.check_relay_for_demand(relay);
                 }
                 let quiet = match heard {
                     None => now.duration_since(sent) >= patience.ack,

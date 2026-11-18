@@ -262,6 +262,11 @@ impl RelayNetworkChangeSender {
         self.send_relay_actor(RelayActorMessage::CheckConnectionAfterNetworkChange);
     }
 
+    #[cfg(not(wasm_browser))]
+    pub(super) fn check_connection_for_demand(&self, url: RelayUrl) {
+        self.send_relay_actor(RelayActorMessage::CheckConnectionForDemand(url));
+    }
+
     pub(super) fn rebind(&self) -> io::Result<()> {
         self.send_relay_actor(RelayActorMessage::MaybeCloseRelaysOnRebind);
 

@@ -809,6 +809,17 @@ pub(super) enum MeasureHttpsLatencyError {
     InvalidResponse { status: StatusCode },
 }
 
+/// Verify that a new connection can reach this relay with the same DNS, TLS and proxy policy.
+#[cfg(not(wasm_browser))]
+pub(crate) async fn probe_fresh_relay_connection(
+    dns_resolver: &DnsResolver,
+    relay: RelayUrl,
+    tls_config: rustls::ClientConfig,
+    proxy_url: Option<&Url>,
+) -> bool {
+    run_https_probe(dns_resolver, relay, tls_config, proxy_url).await.is_ok()
+}
+
 /// Executes an HTTPS probe.
 ///
 /// If `certs` is provided they will be added to the trusted root certificates, allowing the

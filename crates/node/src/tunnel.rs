@@ -20,10 +20,16 @@
 //! not-paired dial gets [`REFUSED`] and an unreachable target gets
 //! [`NO_ROUTE`], each a fact the caller can name.
 
-use khor_catalog::msg;
-use tokio::io::AsyncWriteExt;
+use std::sync::Arc;
 
-use iroh::endpoint::{Connection, RecvStream, SendStream};
+use khor_catalog::msg;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::time::{Duration, Instant};
+
+use iroh::Endpoint;
+use iroh::endpoint::{Connection, PathId, RecvStream, SendStream};
+
+pub(crate) const RELAY_DEMAND_AFTER: Duration = Duration::from_millis(500);
 
 /// A dialer that asks for more than this in one target header is
 /// malformed, not ambitious — a real `host:port` is well under it, and
@@ -80,9 +86,12 @@ pub(crate) async fn read_target(recv: &mut RecvStream) -> Result<String, String>
 /// Where a lease's pipes go: a wire the resident holds and re-opens as
 /// it must (`crate::wires`) — fetched for each new pipe, so a lease
 /// outlives the death of any one connection under it.
-pub type WireSource = std::sync::Arc<
+pub(crate) type WireSource = Arc<
     dyn Fn() -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<Connection, String>> + Send>,
+            Box<
+                dyn std::future::Future<Output = Result<(Arc<Endpoint>, Connection), String>>
+                    + Send,
+            >,
         > + Send
         + Sync,
 >;
@@ -100,47 +109,50 @@ pub type WireSource = std::sync::Arc<
 /// end — the next pipe dials a new one, and a page or a terminal pipe
 /// opened afterwards just works (round NET-FIX).
 pub struct Borrow {
-    _ep: Option<iroh::Endpoint>,
     lease: Lease,
 }
 
 enum Lease {
-    Fixed(Connection),
+    Fixed(Arc<Endpoint>, Connection),
     Held(WireSource),
 }
 
 impl Borrow {
     /// A borrow that owns the endpoint it dialed from (CLI/test).
     pub fn new(ep: iroh::Endpoint, conn: Connection) -> Self {
-        Borrow {
-            _ep: Some(ep),
-            lease: Lease::Fixed(conn),
-        }
+        Self::on_shared(Arc::new(ep), conn)
     }
 
-    /// A borrow on a connection someone else keeps alive.
-    pub fn on_shared(conn: Connection) -> Self {
+    /// A borrow on the resident's endpoint.
+    pub(crate) fn on_shared(ep: Arc<Endpoint>, conn: Connection) -> Self {
         Borrow {
-            _ep: None,
-            lease: Lease::Fixed(conn),
+            lease: Lease::Fixed(ep, conn),
         }
     }
 
     /// A borrow whose pipes go over whatever wire `source` holds now.
-    pub fn on_wire(source: WireSource) -> Self {
+    pub(crate) fn on_wire(source: WireSource) -> Self {
         Borrow {
-            _ep: None,
             lease: Lease::Held(source),
         }
     }
 
     /// Opens one pipe through this lease to `target`.
     pub async fn open(&self, target: &str) -> Result<(SendStream, RecvStream), String> {
-        let conn = match &self.lease {
-            Lease::Fixed(conn) => conn.clone(),
+        let (send, recv, _, _) = self.open_pipe(target).await?;
+        Ok((send, recv))
+    }
+
+    async fn open_pipe(
+        &self,
+        target: &str,
+    ) -> Result<(SendStream, RecvStream, Arc<Endpoint>, Connection), String> {
+        let (ep, conn) = match &self.lease {
+            Lease::Fixed(ep, conn) => (ep.clone(), conn.clone()),
             Lease::Held(source) => source().await?,
         };
-        dial(&conn, target).await
+        let (send, recv) = dial(&conn, target).await?;
+        Ok((send, recv, ep, conn))
     }
 }
 
@@ -182,7 +194,7 @@ pub async fn serve_stream(
     paired: bool,
 ) -> Result<(), String> {
     let target = read_target(&mut recv).await?;
-    serve_target(send, recv, &target, paired).await
+    serve_target(send, recv, &target, paired, None).await
 }
 
 /// [`serve_stream`] once its target is read: the resident reads it first
@@ -192,6 +204,7 @@ pub(crate) async fn serve_target(
     recv: RecvStream,
     target: &str,
     paired: bool,
+    road: Option<(&Endpoint, &Connection)>,
 ) -> Result<(), String> {
     if !paired {
         let _ = send.write_all(&[REFUSED]).await;
@@ -210,7 +223,7 @@ pub(crate) async fn serve_target(
             }
         };
     send.write_all(&[OK]).await.map_err(|e| e.to_string())?;
-    splice(send, recv, tcp).await;
+    splice(send, recv, tcp, road).await;
     Ok(())
 }
 
@@ -224,7 +237,12 @@ pub(crate) async fn serve_target(
 /// The same code serves both ends: `recv` always drains to `tcp` and
 /// `tcp` always feeds `send`, whether `tcp` is the target (exit side) or
 /// the browser (proxy side) — the roles are symmetric.
-async fn splice(mut send: SendStream, mut recv: RecvStream, tcp: tokio::net::TcpStream) {
+async fn splice(
+    mut send: SendStream,
+    mut recv: RecvStream,
+    tcp: tokio::net::TcpStream,
+    road: Option<(&Endpoint, &Connection)>,
+) {
     // A terminal's keystroke is one small write: never held for an ack.
     let _ = tcp.set_nodelay(true);
     let (mut tr, mut tw) = tcp.into_split();
@@ -233,10 +251,77 @@ async fn splice(mut send: SendStream, mut recv: RecvStream, tcp: tokio::net::Tcp
         let _ = tw.shutdown().await;
     };
     let down = async {
-        let _ = tokio::io::copy(&mut tr, &mut send).await;
+        let _ = match road {
+            Some((ep, conn)) => copy_to_wire(&mut tr, &mut send, ep, conn).await,
+            None => tokio::io::copy(&mut tr, &mut send).await.map(|_| ()),
+        };
         let _ = send.finish();
     };
     tokio::join!(up, down);
+}
+
+// The TCP side may be an idle shell, so waiting for inbound application
+// output is not a liveness signal. Arm only when we have bytes to send over
+// a relay. Asking iroh to compare that relay does not close the QUIC stream
+// or resend the bytes at this layer.
+async fn copy_to_wire(
+    input: &mut tokio::net::tcp::OwnedReadHalf,
+    send: &mut SendStream,
+    ep: &Endpoint,
+    conn: &Connection,
+) -> std::io::Result<()> {
+    let mut buf = Box::new([0; 8192]);
+    let mut pending = None;
+    loop {
+        let len = watch_relay(input.read(buf.as_mut()), ep, conn, &mut pending).await?;
+        if len == 0 {
+            return Ok(());
+        }
+        if pending.is_none() {
+            let paths = conn.paths();
+            if let Some(path) = paths
+                .iter()
+                .find(|path| path.is_selected() && path.is_relay())
+            {
+                pending = Some((
+                    path.id(),
+                    path.stats().frame_rx.acks,
+                    Instant::now() + RELAY_DEMAND_AFTER,
+                ));
+            }
+        }
+        watch_relay(send.write_all(&buf[..len]), ep, conn, &mut pending).await?;
+    }
+}
+
+async fn watch_relay<F: std::future::Future>(
+    io: F,
+    ep: &Endpoint,
+    conn: &Connection,
+    pending: &mut Option<(PathId, u64, Instant)>,
+) -> F::Output {
+    let Some((id, acks, due)) = *pending else {
+        return io.await;
+    };
+    tokio::pin!(io);
+    tokio::select! {
+        biased;
+        _ = tokio::time::sleep_until(due) => {
+            *pending = None;
+            let paths = conn.paths();
+            if let Some(path) = paths.iter().find(|path| path.is_selected() && path.id() == id)
+                && let iroh::TransportAddr::Relay(relay) = path.remote_addr()
+            {
+                let ack_progress = path.stats().frame_rx.acks != acks;
+                let queued = !ack_progress && ep.check_relay_for_demand(relay.clone());
+                khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_relay_demand", || {
+                    serde_json::json!({"wire":conn.stable_id(), "ack_progress":ack_progress, "queued":queued})
+                });
+            }
+        }
+        value = &mut io => return value,
+    }
+    io.await
 }
 
 /// The largest request head we will buffer before giving up. A real one
@@ -327,8 +412,8 @@ pub async fn serve_fixed(
         let borrow = borrow.clone();
         let target = target.clone();
         tokio::spawn(async move {
-            match borrow.open(&target).await {
-                Ok((send, recv)) => splice(send, recv, sock).await,
+            match borrow.open_pipe(&target).await {
+                Ok((send, recv, ep, conn)) => splice(send, recv, sock, Some((&ep, &conn))).await,
                 // Nothing can be *said* to a plain TCP client — there is
                 // no status byte in the terminal protocol — so dropping
                 // is all there is. It is logged because the difference
@@ -439,7 +524,7 @@ async fn proxy_one(
     let opened = if fresh {
         Err(String::new())
     } else {
-        borrow.open(&target).await
+        borrow.open_pipe(&target).await
     };
     if opened.is_err() && !fresh {
         if let Ok(mut u) = unreached.lock() {
@@ -448,7 +533,7 @@ async fn proxy_one(
         }
     }
     match opened {
-        Ok((mut send, recv)) => {
+        Ok((mut send, recv, ep, conn)) => {
             match ask {
                 ProxyAsk::Tunnel { .. } => {
                     sock.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
@@ -460,7 +545,7 @@ async fn proxy_one(
                 }
             }
             let _pipe = PipeGuard::open(count, activity);
-            splice(send, recv, sock).await;
+            splice(send, recv, sock, Some((&ep, &conn))).await;
             Ok(())
         }
         Err(_) => {

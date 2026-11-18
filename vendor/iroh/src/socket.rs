@@ -1383,6 +1383,11 @@ impl EndpointInner {
             .is_ok()
     }
 
+    #[cfg(not(wasm_browser))]
+    pub(crate) fn check_relay_for_demand(&self, relay: RelayUrl) -> bool {
+        self.actor_sender.try_send(ActorMessage::CheckRelayForDemand(relay)).is_ok()
+    }
+
     /// Resolves an [`EndpointAddr`] to an [`EndpointIdMappedAddr`] to connect to via [`EndpointInner::endpoint`].
     ///
     /// This starts a `RemoteStateActor` for the remote if not running already, and then checks
@@ -1516,6 +1521,8 @@ enum ActorMessage {
     DirectAddrRefresh,
     ForceNetworkChange(bool),
     CheckRelayConnections,
+    #[cfg(not(wasm_browser))]
+    CheckRelayForDemand(RelayUrl),
 }
 
 /// State for polling until a default route is available after a network change.
@@ -1951,6 +1958,10 @@ impl Actor {
             }
             ActorMessage::ForceNetworkChange(is_major) => {
                 self.handle_network_change(is_major);
+            }
+            #[cfg(not(wasm_browser))]
+            ActorMessage::CheckRelayForDemand(relay) => {
+                self.transports_network_change.check_relay_for_demand(relay);
             }
             ActorMessage::CheckRelayConnections => {
                 self.transports_network_change.check_relay_connection();

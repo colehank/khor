@@ -525,6 +525,13 @@ impl NetworkChangeSender {
         }
     }
 
+    #[cfg(not(wasm_browser))]
+    pub(crate) fn check_relay_for_demand(&self, url: RelayUrl) {
+        for relay in &self.relay {
+            relay.check_connection_for_demand(url.clone());
+        }
+    }
+
     /// Rebinds underlying connections, if necessary.
     pub(crate) fn rebind(&self) -> std::io::Result<()> {
         let mut res = Ok(());
