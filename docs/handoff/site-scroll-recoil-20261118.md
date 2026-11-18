@@ -1,7 +1,8 @@
 # Scroll recoil correction — 2026-11-18
 
 Local worktree: `/Volumes/disk0/Khor/worktrees/current/khor-site-story`, branch `feat/site-story`.
-Not deployed. Published UI remains `e5561703` / gh-pages `64ca2304`.
+Published after the user's deployment request: UI `f8ee7108` / gh-pages `5affba22`.
+Pages run `44238238098` succeeded; ordinary khor.cloud touch/wheel checks report 0px recoil.
 
 ## Cause and change
 

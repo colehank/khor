@@ -2,7 +2,18 @@
 
 用户在网站本地迭代完成后要求部署 GitHub Pages，随后询问通过既有 Cloudflare / cloudflared 设置解析域名。这是网站静态产物与目标域名的发布授权；不合并 main，不启动原生构建。
 
-## 2026-11-18 双语、明暗与玻璃过渡已发布（当前）
+## 2026-11-18 原生滚动修复已发布（当前）
+
+用户要求「部署吧」，已发布移除回拉吸附与章节终点定位修复。
+
+- UI 源码 `f8ee7108fb079ba4fd6c86bb8d81b0ba41f5c68b` → gh-pages `5affba2238b4088a6360784eb6f57a26035d6a81`；[Pages run 44238238098](https://github.com/colehank/khor/actions/runs/44238238098) success
+- 删除 proximity / always 吸附与九个隐形停靠点；保留既有阅读距离、完成态停留与章节按钮。#connect 跳转向前取整并留 1px 余量，避免停在网络完成态之前
+- 静态产物和普通公开 URL 均用 headless Chrome 实际触摸／滚轮输入验证：下一句出现后没有回拉，root scroll-snap-type=none；线上触摸前进 249px、滚轮前进 290px，回拉均为 0
+- 420 个产物文件、155 个资源／导航引用无缺失。GUI 演示全部文件及安装脚本与上一版完全一致，只重建 Astro 页面，没有 GUI／原生重型构建
+- 普通公开首页、build.json、GUI HTML 与 install.sh 和本次快照逐字节匹配；保持既有域名、HTTPS 与 DNS，普通快进发布，不合并 main
+- 产物 `/Volumes/disk0/Khor/artifacts/site-pages-20261118-scroll/dist`；证据 `/Volumes/disk0/Khor/evidence/site-pages-20261118-scroll/`，含静态和公开手势轨迹、截图、manifest、Pages 收据与公开文件核对
+
+## 2026-11-18 双语、明暗与玻璃过渡已发布
 
 用户要求「部署一下试试」，已沿用本地完整构建 → gh-pages 快照 → Pages 发布。
 
