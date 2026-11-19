@@ -39,7 +39,6 @@ const light=(start:number,end:number,cycle:number,ink:string,accent:string)=>fra
 // Browser-owned timelines: no frame loop or DOM changes during playback.
 // A reply cannot begin before the calls arrive and the agents light up.
 export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const cycle=agent?capabilityTiming.agentCycle:capabilityTiming.workCycle;
   let animations:Animation[]=[];
   const animate=(selector:string,keyframes:Keyframe[]|((node:SVGElement)=>Keyframe[]))=>{
@@ -72,15 +71,13 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
   const recolor=()=>{
     if(!animations.length)return;
     const time=animations[0].currentTime,playing=animations[0].playState==='running';
-    clear();if(reduced.matches)return;create();
+    clear();create();
     for(const animation of animations){animation.currentTime=time;if(playing)animation.play();}
   };
   window.addEventListener('khor:themechange',recolor);
-  const settle=()=>{if(reduced.matches)clear();};
-  reduced.addEventListener('change',settle);
   return {
-    play(){if(reduced.matches)return;if(!animations.length)create();animations.forEach(animation=>animation.play());},
+    play(){if(!animations.length)create();animations.forEach(animation=>animation.play());},
     pause(){animations.forEach(animation=>animation.pause());},
-    destroy(){clear();reduced.removeEventListener('change',settle);window.removeEventListener('khor:themechange',recolor);},
+    destroy(){clear();window.removeEventListener('khor:themechange',recolor);},
   };
 }

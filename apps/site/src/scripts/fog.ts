@@ -12,8 +12,7 @@ export function mountFog(){
   const ground=document.querySelector<HTMLElement>('[data-fog]');
   const header=document.querySelector<HTMLElement>('.story-nav');
   if(!hero||!ground)return;
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
-  let effect:FogEffect|undefined,disposed=false,generation=0,libraries:Promise<void>|undefined;
+  let effect:FogEffect|undefined,disposed=false;
   const nav=()=>{
     if(!header)return;
     header.toggleAttribute('data-scrolled',window.scrollY>0);
@@ -21,20 +20,18 @@ export function mountFog(){
   };
   window.addEventListener('scroll',nav,{passive:true});nav();
   const start=async()=>{
-    const current=++generation;
-    if(reduced.matches||disposed)return;
     try{
-      libraries??=load(sitePath('/vendor/three-r134.min.js')).then(()=>load(sitePath('/vendor/vanta-fog-0.5.24.min.js')));
-      await libraries;
-      if(disposed||reduced.matches||current!==generation)return;
+      await load(sitePath('/vendor/three-r134.min.js'));
+      if(disposed)return;
+      await load(sitePath('/vendor/vanta-fog-0.5.24.min.js'));
+      if(disposed)return;
       effect=(window as FogWindow).VANTA!.FOG({...fogOptions,el:ground});
       if(ground.querySelector('canvas'))ground.dataset.fogReady='';
     }catch{/* The captured frame of this same preset remains visible. */}
   };
-  const change=()=>{effect?.destroy();effect=undefined;delete ground.dataset.fogReady;void start();};
-  reduced.addEventListener('change',change);void start();
+  void start();
   window.addEventListener('pagehide',event=>{
     if(event.persisted)return;
-    disposed=true;effect?.destroy();window.removeEventListener('scroll',nav);reduced.removeEventListener('change',change);
+    disposed=true;effect?.destroy();window.removeEventListener('scroll',nav);
   },{once:true});
 }

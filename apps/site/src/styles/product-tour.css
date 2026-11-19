@@ -25,9 +25,6 @@
  .tour-section > .concept-network { min-height:0; height:100%; }
  .tour-network > .concept-network { min-height:calc(var(--gap-pane)*16); }
 }
-@media (prefers-reduced-motion:reduce) {
- .concept * { animation:none!important; transition:none!important; }
-}
 /* Only the icon unfold and fold use a pinned transition. Chapters scroll normally. */
 .product-tour:not(.story-tour) { padding-block:0; }
 .story-closing { --story-agent-hold:1; --story-fold-travel:.85; --story-fold-hold:.5; position:relative; height:calc((1 + var(--story-agent-hold) + var(--story-fold-travel) + var(--story-fold-hold))*100svh); color:var(--ink); background:var(--canvas); }
@@ -57,25 +54,4 @@
  .story-final-copy { text-align:center; }
  .story-final-copy h2 { font-size:clamp(calc(var(--text-title-lg)*1.7),9vw,calc(var(--text-title-lg)*2)); }
  .story-final-copy .product-actions { justify-content:center; }
-}
-@media (prefers-reduced-motion:reduce) {
- .story-closing,.story-closing-sticky { position:relative; height:auto; }
- .story-closing-sticky { padding-inline:var(--story-gutter); }
- .tour-section { height:auto; min-height:0; padding-block:calc(var(--gap-pane)*2); }
- .tour-section > .concept-network,.tour-section .network-scene { height:auto; }
- .opening .opening-sticky { display:block; min-height:0; }
- .opening .opening-copy { margin-bottom:var(--gap-pane); }
- .opening .assembly[data-assembly] { position:relative; inset:auto; transform:none; width:min(100%,calc(var(--gap-pane)*20)); margin:auto; }
- .story-tour { position:relative; inset:auto; }
- .story-tour .tour-section { position:relative; inset:auto; padding:calc(var(--gap-pane)*2) 0; }
- .story-tour .tour-copy,.story-tour .concept { opacity:1!important; }
- .story-tour .tour-section > .concept-network { position:relative; inset:auto; width:100%; height:auto; }
- .story-tour .network-scene { height:auto; }
- .story-tour .network-scene .net-device { visibility:visible; }
- .story-morph { display:none; }
- .story-final-layout { position:relative; inset:auto; min-height:0; padding:0; }
- .story-final-installations { opacity:1; pointer-events:auto; }
- .story-final-copy,.story-final-brand.assembly { position:relative; inset:auto; width:100%; transform:none; opacity:1!important; margin-block:var(--gap-pane); }
- .story-final-brand.assembly { max-width:calc(var(--gap-pane)*12); margin-inline:auto; }
- .story-final-copy { pointer-events:auto; }
 }

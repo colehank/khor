@@ -20,6 +20,3 @@
 .concept-network[data-net-connection="relay"] .net-handoff-status { opacity:1; }
 .concept-network[data-net-connection="relay"] .net-hole-clearance { opacity:1; }
 @keyframes net-handoff { 0%,100% { opacity:.6; } 50% { opacity:1; } }
-@media (prefers-reduced-motion:reduce) {
- .network-scene * { animation:none!important; }
-}

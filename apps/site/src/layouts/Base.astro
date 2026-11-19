@@ -17,7 +17,7 @@ const titles=[title?`${title} · khor`:`khor — ${TAGLINE}`,titleZh?`${titleZh}
 ---
 
 <!doctype html>
-<html lang="en">
+<html lang="en" data-product-world={productWorld?true:undefined}>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -27,7 +27,7 @@ const titles=[title?`${title} · khor`:`khor — ${TAGLINE}`,titleZh?`${titleZh}
     <link rel="canonical" href={new URL(Astro.url.pathname, Astro.site)} />
     <script is:inline set:html={preferences}/>
   </head>
-  <body data-product-world={productWorld?true:undefined}>
+  <body>
     <slot />
     <script>
       import {mountDeviceDownloads} from "../scripts/download";

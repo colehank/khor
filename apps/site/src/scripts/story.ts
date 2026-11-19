@@ -12,7 +12,6 @@ export function mountStory() {
   if(!opening||!assembly||!sticky)return;
   const lines=[...opening.querySelectorAll<HTMLElement>('[data-line]')];
   const steps=[...opening.querySelectorAll<HTMLButtonElement>('[data-step]')];
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const readingPoses=[0,...iconSegments.map(segment=>segment.motionEnd)];
   const tracks=createIconMotion(assembly);
   const tour=mountNarrativeTour(sticky);
@@ -47,16 +46,11 @@ export function mountStory() {
   function render() {
     scheduled=false;
     if(disposed)return;
-    if(reduced.matches){
-      if(lastProgress!==1){paint(1);assembly!.dataset.iconScene='meet';lastProgress=1;}
-      tour.render(0,true,true);openingCopy.style.opacity='1';
-      return;
-    }
     if(!inView)return;
     const distance=scrollY-topOpening-openingTravel*introProgress;
     const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
     const q=(scrollY-topOpening-openingTravel*(1+introProgress))/sticky!.offsetHeight;
-    openingCopy.style.opacity=tour.render(q,inView,false)?'1':'0';
+    openingCopy.style.opacity=tour.render(q,inView)?'1':'0';
     // Introduce the next sentence as its geometry starts. Its short fade is
     // time-based, so pausing a scroll never leaves two half-visible headlines.
     // Bookmarks round to the next CSS pixel; that must not select another chapter.
@@ -78,13 +72,13 @@ export function mountStory() {
     }
   }
   function requestRender() {
-    if(scheduled||disposed||(!inView&&!reduced.matches))return;
+    if(scheduled||disposed||!inView)return;
     scheduled=true;requestAnimationFrame(render);
   }
   function bindTimeline() {
     animations.forEach(animation=>animation.cancel());animations=[];
     native=false;lastProgress=NaN;previous=new WeakMap();
-    if(Timeline&&!reduced.matches&&CSS.supports('animation-range','0px 1px')){
+    if(Timeline&&CSS.supports('animation-range','0px 1px')){
       try{
         const timeline=new Timeline({source:document.documentElement,axis:'block'});
         const end=1;
@@ -100,27 +94,27 @@ export function mountStory() {
         native=true;
       }catch{animations.forEach(animation=>animation.cancel());animations=[];}
     }
-    assembly!.dataset.iconMotion=reduced.matches?'reduced':native?'native':'fallback';
+    assembly!.dataset.iconMotion=native?'native':'fallback';
     requestRender();
   }
   function measure() {
     // CSS and JS share the stable sticky height. Mobile toolbar/keyboard
     // changes must not remap a stationary scroll position via innerHeight.
     const top=opening!.getBoundingClientRect().top+scrollY;
-    const intro=reduced.matches?0:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
-    const travel=reduced.matches?1:Number(getComputedStyle(opening!).getPropertyValue('--story-intro-travel'))*sticky!.offsetHeight;
+    const intro=Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
+    const travel=Number(getComputedStyle(opening!).getPropertyValue('--story-intro-travel'))*sticky!.offsetHeight;
     tour.measure();
-    const key=[top,travel,intro,reduced.matches].join(':');
+    const key=[top,travel,intro].join(':');
     if(key===geometry)return;
     geometry=key;topOpening=top;openingTravel=travel;introProgress=intro/travel;bindTimeline();
   }
   steps.forEach((step,index)=>step.addEventListener('click',()=>{
     // Round forward so the final bookmark reaches the exact canonical pose.
     const distance=index===0?0:openingTravel*(introProgress+readingPoses[index]);
-    scrollTo({top:Math.ceil(topOpening+distance),behavior:reduced.matches?'instant':'smooth'});
+    scrollTo({top:Math.ceil(topOpening+distance),behavior:'smooth'});
   },on));
   const navigateHash=(initial=false)=>{
-    if(location.hash!=='#connect'||reduced.matches)return;
+    if(location.hash!=='#connect')return;
     const unfold=Number(getComputedStyle(opening!).getPropertyValue('--story-unfold-travel'));
     // Land beyond the endpoint so fractional CSS pixels and floating-point
     // subtraction cannot leave the network one frame short of its live pose.
@@ -137,7 +131,7 @@ export function mountStory() {
   window.addEventListener('resize',measure,on);window.addEventListener('khor:localechange',measure,on);window.addEventListener('khor:themechange',measure,on);
   window.addEventListener('hashchange',()=>navigateHash(),on);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)tour.pause();else requestRender();},on);
-  reduced.addEventListener('change',measure,on);measure();
+  measure();
   requestAnimationFrame(()=>navigateHash(true));
   window.addEventListener('pagehide',event=>{
     if(event.persisted)return;

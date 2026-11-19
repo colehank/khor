@@ -26,7 +26,6 @@ export function mountNarrativeTour(stage:HTMLElement){
   closingLight.innerHTML=openingLight.outerHTML.replaceAll('story-environment-','closing-environment-');closingStage.prepend(closingLight);
   const intro=createStoryMorph(stage,assembly.querySelector<SVGSVGElement>('[data-story-layer="material"] > svg')!,networkFigure.querySelector('[data-net-scene]')!,'unfold-');
   const fold=createStoryMorph(closingStage,finalBrand.querySelector('svg')!,agentFigure.querySelector('[data-net-scene]')!,'fold-');
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const controller=new AbortController(),on={signal:controller.signal};
   let networkPlaying=false,networkExpanded=false,workVisible=false,closingVisible=false,closingTop=0,agentHold=0,foldDistance=1,unfoldDistance=.6,scheduled=false;
 
@@ -36,16 +35,11 @@ export function mountNarrativeTour(stage:HTMLElement){
     if(playing)network.play();else network.pause();
   };
   const syncWork=()=>{
-    if(workVisible&&!document.hidden&&!reduced.matches)work.play();else work.pause();
+    if(workVisible&&!document.hidden)work.play();else work.pause();
   };
   const renderClosing=()=>{
     scheduled=false;
     const p=Math.max(0,Math.min(1,(scrollY-closingTop-agentHold)/foldDistance));
-    if(reduced.matches){
-      agent.pause();agentSection.classList.add('is-current');finalCopy.classList.add('is-current');finalInstallations.classList.add('is-current');finalInstallations.inert=false;
-      agentFigure.style.opacity='1';
-      finalBrand.style.opacity='1';finalBrand.style.visibility='visible';closingLight.style.opacity='0';finalCopy.inert=false;fold.showStatic();return;
-    }
     // Let the icon clear both text regions before the compact final composition.
     const compact=closingStage.clientWidth<=760,build=p>=(compact?.92:.45);
     agentSection.classList.toggle('is-current',p<(compact?.6:.45));finalCopy.classList.toggle('is-current',build);finalCopy.inert=!build;
@@ -67,14 +61,13 @@ export function mountNarrativeTour(stage:HTMLElement){
   const measure=()=>{
     // Reserve natural document space if a short viewport cannot fit the final
     // composition. It scrolls out with the closing stage, without an inner scroller.
-    const overflow=reduced.matches?0:Math.max(0,finalLayout.offsetHeight-closingStage.offsetHeight);
+    const overflow=Math.max(0,finalLayout.offsetHeight-closingStage.offsetHeight);
     closing.parentElement!.style.setProperty('--story-final-overflow',`${Math.ceil(overflow)}px`);
-    const networkOverflow=reduced.matches?0:Math.max(0,networkFigure.getBoundingClientRect().bottom-stage.getBoundingClientRect().bottom);
+    const networkOverflow=Math.max(0,networkFigure.getBoundingClientRect().bottom-stage.getBoundingClientRect().bottom);
     stage.parentElement!.style.setProperty('--story-network-overflow',`${Math.ceil(networkOverflow)}px`);
     measureCopy(stage);measureCopy(closingStage);
     network.map.measure();work.map.measure();agent.map.measure();
     intro.measure();fold.measure();
-    if(reduced.matches)intro.showStatic();
     closingTop=closing.getBoundingClientRect().top+scrollY;
     const closingStyle=getComputedStyle(closing);
     agentHold=Number(closingStyle.getPropertyValue('--story-agent-hold'))*closingStage.offsetHeight;
@@ -83,11 +76,7 @@ export function mountNarrativeTour(stage:HTMLElement){
     renderClosing();
   };
   /** q is native viewport distance after the complete Meet Khor icon. */
-  const render=(q:number,visible:boolean,isReduced:boolean)=>{
-    if(isReduced){
-      setNetwork(false);networkSection.classList.add('is-current');networkFigure.style.opacity='1';
-      assembly.style.opacity='1';assembly.style.visibility='visible';openingLight.style.opacity='1';intro.showStatic();return true;
-    }
+  const render=(q:number,visible:boolean)=>{
     const p=Math.max(0,Math.min(1,q/unfoldDistance));
     if(p<1&&networkExpanded){setNetwork(false);network.reset();intro.measure();}
     networkExpanded=p===1;
@@ -108,7 +97,6 @@ export function mountNarrativeTour(stage:HTMLElement){
   const finalResize=new ResizeObserver(measure);finalResize.observe(finalLayout);
   window.addEventListener('scroll',requestClosing,{passive:true,...on});
   document.addEventListener('visibilitychange',()=>{syncWork();renderClosing();},on);
-  reduced.addEventListener('change',()=>{syncWork();renderClosing();},on);
   return {
     measure,render,pause(){setNetwork(false);},
     destroy(){controller.abort();observer.disconnect();finalResize.disconnect();closing.parentElement!.style.removeProperty('--story-final-overflow');stage.parentElement!.style.removeProperty('--story-network-overflow');network.destroy();work.destroy();agent.destroy();intro.destroy();fold.destroy();closingLight.remove();},

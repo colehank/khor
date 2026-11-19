@@ -11,7 +11,6 @@ export function mountPreviewBackground(frame:HTMLIFrameElement,hero:HTMLElement)
   image.src=poster.currentSrc||poster.src;image.alt='';
   video.muted=true;video.playsInline=true;video.disablePictureInPicture=true;
   surface.append(image,video,shade);layer.append(surface);doc.body.prepend(layer);
-  const reduced=matchMedia('(prefers-reduced-motion: reduce)');
   const controller=new AbortController(),on={signal:controller.signal};
   let visible=false,source:HTMLCanvasElement|null=null,stream:MediaStream|undefined;
   const stop=()=>{
@@ -20,7 +19,7 @@ export function mountPreviewBackground(frame:HTMLIFrameElement,hero:HTMLElement)
   };
   const sync=()=>{
     const canvas=ground.querySelector('canvas');
-    if(!visible||document.hidden||reduced.matches||!canvas?.captureStream){stop();return;}
+    if(!visible||document.hidden||!canvas?.captureStream){stop();return;}
     if(source===canvas)return;
     stop();source=canvas;
     try{
@@ -37,7 +36,7 @@ export function mountPreviewBackground(frame:HTMLIFrameElement,hero:HTMLElement)
   };
   const visibility=new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;sync();});visibility.observe(frame);
   const canvasChanges=new MutationObserver(sync);canvasChanges.observe(ground,{childList:true});
-  reduced.addEventListener('change',sync,on);document.addEventListener('visibilitychange',sync,on);
+  document.addEventListener('visibilitychange',sync,on);
   measure();
   return {ready:image.decode().catch(()=>{}),measure,dispose:()=>{stop();controller.abort();visibility.disconnect();canvasChanges.disconnect();layer.remove();}};
 }

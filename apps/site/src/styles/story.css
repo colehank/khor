@@ -216,25 +216,17 @@ html:not([data-locale]) [data-script-poster] { display:none; }
   .download-section .product-actions { justify-content:center; margin-top:var(--gap-pane); }
   .story-footer { align-items:flex-start; flex-direction:column; gap:var(--gap-base); }
 }
-@media (max-width:760px) and (max-height:650px) and (prefers-reduced-motion:no-preference) {
+
+@media (max-width:760px) and (max-height:650px) {
   .opening-copy { top:max(calc(var(--site-header-height) + var(--gap-in)),16%); }
   .opening-line { font-size:clamp(calc(var(--text-title-lg)*1.4),min(9.4vw,7svh),calc(var(--text-title-lg)*2.2)); }
   .opening .assembly { width:min(100vw,57svh); top:64%; }
 }
+
+/* The homepage always presents the full story. Keep the preference on other pages. */
 @media (prefers-reduced-motion:reduce) {
-  html { scroll-behavior:auto; }
-  *,*::before,*::after { animation:none !important; transition:none !important; }
-  .scroll-cue,.story-steps { display:none; }
-  .opening { height:auto; min-height:90svh; padding:calc(var(--gap-pane)*3) var(--story-gutter); }
-  .opening-sticky { position:relative; height:auto; min-height:70svh; display:grid; grid-template-columns:1fr 1fr; gap:var(--gap-pane); }
-  .opening-copy { position:relative; inset:auto; width:auto; height:auto; display:grid; gap:var(--gap-group); }
-  .opening-line { grid-area:auto; font-size:var(--text-title-lg); }
-  .opening-line-content { opacity:1!important; }
-  .opening-line-content > span { display:inline; }
-  .opening-line .line-lead::after { content:' '; }
-  .assembly { position:relative; inset:auto; width:100%; transform:none; }
-  .meet-environment { border-radius:var(--radius-xl); }
+  html:not([data-product-world]) { scroll-behavior:auto; }
+  html:not([data-product-world]) *,html:not([data-product-world]) *::before,html:not([data-product-world]) *::after { animation:none!important; transition:none!important; }
 }
-@media (prefers-reduced-motion:reduce) and (max-width:760px) { .opening-sticky { grid-template-columns:1fr; } .assembly { max-width:80vw; margin:auto; } }
 
 @media (max-width:359px) { .site-brand-name { display:none; } .site-brand { gap:0; } }

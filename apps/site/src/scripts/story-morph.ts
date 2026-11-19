@@ -195,5 +195,5 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
     material.art.setAttribute('transform',`translate(${coreX} ${coreY}) rotate(${mix(brandFrom.angle,brandTo.angle,travel)}) scale(${scale}) translate(-512 -512)`);
     material.frame(p,scale,brandFrom.scale,brandTo.scale);
   };
-  return {measure,frame,showStatic(){previousGraph=NaN;graphProgress(1);layer.style.visibility='hidden';},destroy(){restoreGraph();layer.remove();}};
+  return {measure,frame,destroy(){restoreGraph();layer.remove();}};
 }

@@ -34,8 +34,3 @@
 .relation-you,.relation-request-label { font-weight:500; }
 .relation-request-label { fill:var(--ink); letter-spacing:-.01em; }
 .relation-agent [data-net-brand] { color:var(--tour-accent); }
-@media (prefers-reduced-motion:reduce) {
- .capability-relation * { transition:none!important; animation:none!important; }
- .relation-flow { display:none; }
- .relation-status,.relation-router { opacity:.45; }
-}

@@ -11,7 +11,7 @@ const phases=[
 ] as const;
 
 export function mountNetworkScene(figure:HTMLElement) {
-  const map=mountNetworkMap(figure),reduced=matchMedia('(prefers-reduced-motion: reduce)');
+  const map=mountNetworkMap(figure);
   let phaseIndex=0,position=1,build=1,active=false;
   let remaining:number=phases[phaseIndex].duration,started=0,frame=0,timer:ReturnType<typeof setTimeout>|undefined;
   let movement:{from:number;to:number;fromBuild:number;toBuild:number;duration:number;elapsed:number;started:number}|null=null;
@@ -40,13 +40,13 @@ export function mountNetworkScene(figure:HTMLElement) {
     clearTimeout(timer);cancelAnimationFrame(frame);phaseIndex=index;syncPhase();
     const phase=phases[index];remaining=phase.duration;
     figure.dataset.netTravel=String(position!==phase.position);
-    if(active&&!reduced.matches&&phase.transition&&(position!==phase.position||build!==phase.build)){
+    if(active&&phase.transition&&(position!==phase.position||build!==phase.build)){
       movement={from:position,to:phase.position,fromBuild:build,toBuild:phase.build,duration:phase.transition,elapsed:0,started:performance.now()};tick();
     }else{position=phase.position;build=phase.build;movement=null;figure.dataset.netTravel='false';draw();}
     schedule();
   };
   const play=()=>{
-    if(active||reduced.matches)return;
+    if(active)return;
     active=true;figure.classList.add('is-running');if(movement){movement.started=performance.now();tick();}schedule();
   };
   const pause=()=>{
@@ -55,13 +55,6 @@ export function mountNetworkScene(figure:HTMLElement) {
     if(movement)movement.elapsed=Math.min(movement.duration,movement.elapsed+performance.now()-movement.started);
     active=false;figure.classList.remove('is-running');clearTimeout(timer);cancelAnimationFrame(frame);frame=0;
   };
-  const settleReduced=()=>{
-    if(!reduced.matches)return;
-    pause();if(phases[phaseIndex].connection==='relay')phaseIndex++;
-    position=phases[phaseIndex].position;build=1;remaining=phases[phaseIndex].duration;movement=null;
-    figure.dataset.netTravel='false';setConnection('p2p');syncPhase();draw();
-  };
-  reduced.addEventListener('change',settleReduced);
   syncPhase();draw();
-  return {map,play,pause,reset(){pause();setPhase(0);},destroy(){pause();map.destroy();reduced.removeEventListener('change',settleReduced);}};
+  return {map,play,pause,reset(){pause();setPhase(0);},destroy(){pause();map.destroy();}};
 }
