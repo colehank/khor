@@ -27,7 +27,7 @@ export function mountNarrativeTour(stage:HTMLElement){
   const intro=createStoryMorph(stage,assembly.querySelector<SVGSVGElement>('[data-story-layer="material"] > svg')!,networkFigure.querySelector('[data-net-scene]')!,'unfold-');
   const fold=createStoryMorph(closingStage,finalBrand.querySelector('svg')!,agentFigure.querySelector('[data-net-scene]')!,'fold-');
   const controller=new AbortController(),on={signal:controller.signal};
-  let networkPlaying=false,networkExpanded=false,workVisible=false,closingVisible=false,closingTop=0,agentHold=0,foldDistance=1,unfoldDistance=.6,scheduled=false;
+  let networkPlaying=false,networkExpanded=false,workVisible=false,closingVisible=false,closingTop=0,agentHold=0,foldDistance=1,unfoldDistance=.6,scheduled=false,compactClosing=false,agentPlaying=false,lastOpening=NaN,lastClosing=NaN;
 
   const setNetwork=(playing:boolean)=>{
     if(playing===networkPlaying)return;
@@ -40,15 +40,21 @@ export function mountNarrativeTour(stage:HTMLElement){
   const renderClosing=()=>{
     scheduled=false;
     const p=Math.max(0,Math.min(1,(scrollY-closingTop-agentHold)/foldDistance));
+    const playAgent=closingVisible&&p===0&&!document.hidden;
+    if(playAgent!==agentPlaying){
+      agentPlaying=playAgent;
+      if(playAgent)agent.play();else agent.pause();
+    }
+    if(p===lastClosing)return;
+    lastClosing=p;
     // Let the icon clear both text regions before the compact final composition.
-    const compact=closingStage.clientWidth<=760,build=p>=(compact?.92:.45);
-    agentSection.classList.toggle('is-current',p<(compact?.6:.45));finalCopy.classList.toggle('is-current',build);finalCopy.inert=!build;
+    const build=p>=(compactClosing?.92:.45);
+    agentSection.classList.toggle('is-current',p<(compactClosing?.6:.45));finalCopy.classList.toggle('is-current',build);finalCopy.inert=!build;
     finalInstallations.classList.toggle('is-current',build);finalInstallations.inert=!build;
     agentFigure.style.opacity='1';finalBrand.style.visibility='';
     // Endpoint handoff only: the live SVG already matches the static artwork.
     finalBrand.style.opacity=p===1?'1':'0';fold.frame(1-p);
     closingLight.style.opacity=String(1-ease(((1-p)-.06)/.58));
-    if(closingVisible&&p===0&&!document.hidden)agent.play();else agent.pause();
   };
   const requestClosing=()=>{
     if(scheduled||!closingVisible)return;
@@ -61,7 +67,9 @@ export function mountNarrativeTour(stage:HTMLElement){
   const measure=()=>{
     // Reserve natural document space if a short viewport cannot fit the final
     // composition. It scrolls out with the closing stage, without an inner scroller.
-    const overflow=Math.max(0,finalLayout.offsetHeight-closingStage.offsetHeight);
+    const stageHeight=closingStage.offsetHeight;
+    compactClosing=closingStage.clientWidth<=760;
+    const overflow=Math.max(0,finalLayout.offsetHeight-stageHeight);
     closing.parentElement!.style.setProperty('--story-final-overflow',`${Math.ceil(overflow)}px`);
     const networkOverflow=Math.max(0,networkFigure.getBoundingClientRect().bottom-stage.getBoundingClientRect().bottom);
     stage.parentElement!.style.setProperty('--story-network-overflow',`${Math.ceil(networkOverflow)}px`);
@@ -70,10 +78,10 @@ export function mountNarrativeTour(stage:HTMLElement){
     intro.measure();fold.measure();
     closingTop=closing.getBoundingClientRect().top+scrollY;
     const closingStyle=getComputedStyle(closing);
-    agentHold=Number(closingStyle.getPropertyValue('--story-agent-hold'))*closingStage.offsetHeight;
-    foldDistance=Number(closingStyle.getPropertyValue('--story-fold-travel'))*closingStage.offsetHeight;
+    agentHold=Number(closingStyle.getPropertyValue('--story-agent-hold'))*stageHeight;
+    foldDistance=Number(closingStyle.getPropertyValue('--story-fold-travel'))*stageHeight;
     unfoldDistance=Number(getComputedStyle(stage.parentElement!).getPropertyValue('--story-unfold-travel'));
-    renderClosing();
+    lastClosing=NaN;renderClosing();
   };
   /** q is native viewport distance after the complete Meet Khor icon. */
   const render=(q:number,visible:boolean)=>{
@@ -81,6 +89,8 @@ export function mountNarrativeTour(stage:HTMLElement){
     if(p<1&&networkExpanded){setNetwork(false);network.reset();intro.measure();}
     networkExpanded=p===1;
     setNetwork(p===1&&visible&&!document.hidden);
+    if(p===lastOpening)return p<.45;
+    lastOpening=p;
     networkSection.classList.toggle('is-current',p>=.45);
     networkFigure.style.opacity='1';assembly.style.visibility='';
     assembly.style.opacity=p===0?'1':'0';intro.frame(p);

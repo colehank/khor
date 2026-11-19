@@ -1,4 +1,4 @@
-import {createIconMotion,iconState,iconStops,iconSegments,clamp,ease,type MotionTrack} from './icon-story';
+import {createIconMotion,iconState,iconStops,iconSegments,ease,type MotionTrack} from './icon-story';
 import {mountCopyButtons} from './copy';
 import {mountNarrativeTour} from './narrative-tour';
 
@@ -16,18 +16,14 @@ export function mountStory() {
   const tracks=createIconMotion(assembly);
   const tour=mountNarrativeTour(sticky);
   const openingCopy=opening.querySelector<HTMLElement>('.opening-copy')!;
-  const cue=opening.querySelector<HTMLElement>('.scroll-cue')!;
-  const cueProgress=cue.querySelector<HTMLElement>('.scroll-stem-progress')!;
   const controls=opening.querySelector<HTMLElement>('.story-steps')!;
   const controller=new AbortController(),on={signal:controller.signal};
   const Timeline=(window as Window&{ScrollTimeline?:ScrollTimelineConstructor}).ScrollTimeline;
   let animations:Animation[]=[],native=false,scheduled=false,disposed=false;
-  let topOpening=0,openingTravel=1,introProgress=0,active=-1,lastProgress=NaN;
-  let geometry='',inView=true;
+  let topOpening=0,stageHeight=1,openingTravel=1,introProgress=0,active=-1,lastProgress=NaN;
+  let geometry='',inView=true,openingCopyVisible=true;
   let previous=new WeakMap<MotionTrack['target'],Record<string,string>>();
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
-  track(cue,state=>({opacity:1-ease(state.copyPhase,0,.5)}));
-  track(cueProgress,(_,progress)=>({transform:`scaleY(${introProgress?clamp(1+progress/introProgress):1})`}));
   track(controls,(_,progress)=>({opacity:1-ease(progress,.92,1)}));
 
   function paint(progress:number) {
@@ -47,10 +43,12 @@ export function mountStory() {
     scheduled=false;
     if(disposed)return;
     if(!inView)return;
-    const distance=scrollY-topOpening-openingTravel*introProgress;
-    const progress=distance>=openingTravel-1&&distance<=openingTravel?1:Math.max(-introProgress,distance/openingTravel);
-    const q=(scrollY-topOpening-openingTravel*(1+introProgress))/sticky!.offsetHeight;
-    openingCopy.style.opacity=tour.render(q,inView)?'1':'0';
+    const position=scrollY-topOpening;
+    const distance=position-openingTravel*introProgress;
+    const progress=distance>=openingTravel-1?1:Math.max(-introProgress,distance/openingTravel);
+    const q=(position-openingTravel*(1+introProgress))/stageHeight;
+    const showCopy=tour.render(q,inView);
+    if(showCopy!==openingCopyVisible){openingCopyVisible=showCopy;openingCopy.style.opacity=showCopy?'1':'0';}
     // Introduce the next sentence as its geometry starts. Its short fade is
     // time-based, so pausing a scroll never leaves two half-visible headlines.
     // Bookmarks round to the next CSS pixel; that must not select another chapter.
@@ -82,11 +80,17 @@ export function mountStory() {
       try{
         const timeline=new Timeline({source:document.documentElement,axis:'block'});
         const end=1;
-        const cues=iconSegments.flatMap(segment=>[segment.start,segment.copyEnd,segment.motionStart,segment.motionEnd,segment.end]);
+        const cues=iconSegments.flatMap(segment=>[segment.start,segment.motionStart,segment.motionEnd,segment.end]);
         const positions=[...new Set([-introProgress,...Array.from({length:129},(_,i)=>i/128),...cues])].sort((a,b)=>a-b);
         const samples=positions.map(progress=>({progress,state:iconState(progress)}));
         for(const {target,sample} of tracks){
-          const frames=samples.map(({progress,state})=>({...sample(state,progress),offset:(progress+introProgress)/(end+introProgress)}));
+          const sampled=samples.map(({progress,state})=>{
+            const values=sample(state,progress);
+            return {key:JSON.stringify(values),frame:{...values,offset:(progress+introProgress)/(end+introProgress)}};
+          });
+          // Keep both ends of each hold. Dropping duplicate interior samples
+          // preserves interpolation and avoids hundreds of unnecessary frames.
+          const frames=sampled.filter(({key},i)=>sampled[i-1]?.key!==key||sampled[i+1]?.key!==key).map(({frame})=>frame);
           const options:ScrollOptions={timeline,fill:'both',rangeStart:`${topOpening}px`,rangeEnd:`${topOpening+openingTravel*(end+introProgress)}px`};
           const animation=target.animate(frames,options);animations.push(animation);
           if(animation.timeline!==timeline)throw new Error('Scroll timeline is unavailable');
@@ -101,8 +105,10 @@ export function mountStory() {
     // CSS and JS share the stable sticky height. Mobile toolbar/keyboard
     // changes must not remap a stationary scroll position via innerHeight.
     const top=opening!.getBoundingClientRect().top+scrollY;
-    const intro=Number(getComputedStyle(opening!).getPropertyValue('--story-intro-hold'))*sticky!.offsetHeight;
-    const travel=Number(getComputedStyle(opening!).getPropertyValue('--story-intro-travel'))*sticky!.offsetHeight;
+    stageHeight=sticky!.offsetHeight;
+    const style=getComputedStyle(opening!);
+    const intro=Number(style.getPropertyValue('--story-intro-hold'))*stageHeight;
+    const travel=Number(style.getPropertyValue('--story-intro-travel'))*stageHeight;
     tour.measure();
     const key=[top,travel,intro].join(':');
     if(key===geometry)return;
@@ -118,7 +124,7 @@ export function mountStory() {
     const unfold=Number(getComputedStyle(opening!).getPropertyValue('--story-unfold-travel'));
     // Land beyond the endpoint so fractional CSS pixels and floating-point
     // subtraction cannot leave the network one frame short of its live pose.
-    scrollTo({top:Math.ceil(topOpening+openingTravel*(1+introProgress)+unfold*sticky!.offsetHeight)+1,behavior:initial?'instant':'smooth'});
+    scrollTo({top:Math.ceil(topOpening+openingTravel*(1+introProgress)+unfold*stageHeight)+1,behavior:initial?'instant':'smooth'});
   };
   mountCopyButtons();
   const visibility=new IntersectionObserver(entries=>{

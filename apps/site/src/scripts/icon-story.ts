@@ -2,14 +2,14 @@ export const iconStops = [0, .22, .47, .73, 1];
 // Start immediately, then keep the completed pose through a real reading interval.
 export const iconSegments=iconStops.slice(0,-1).map((start,index)=>{
   const end=iconStops[index+1],span=end-start;
-  return {start,copyEnd:start+span*.08,motionStart:start,motionEnd:start+span*.6,end};
+  return {start,motionStart:start,motionEnd:start+span*.6,end};
 });
 export const clamp = (x:number) => Math.max(0, Math.min(1, x));
 export const ease = (x:number, a:number, b:number) => {
   const t=clamp((x-a)/(b-a));
   return t*t*(3-2*t);
 };
-export type IconState = {phase:number; copyPhase:number; harness:number; focus:number; mind:number; connection:number; light:number};
+export type IconState = {phase:number; harness:number; focus:number; mind:number; connection:number; light:number};
 export type MotionValues = Record<string,string|number>;
 export type MotionTrack = {target:HTMLElement|SVGElement; sample:(state:IconState, progress:number)=>MotionValues};
 
@@ -21,7 +21,6 @@ export function iconState(progress:number):IconState {
   const move=clamp((p-segment.motionStart)/(segment.motionEnd-segment.motionStart));
   return {
     phase:from+move,
-    copyPhase:from+ease(p,segment.start,segment.copyEnd),
     harness:from===0?move:1,
     focus:from<1?0:from===1?ease(move,0,1):1,
     mind:from<1?0:from===1?ease(move,.25,.88):1,
@@ -80,10 +79,11 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
     // Each fragment owns only its referenced defs and has unique document IDs.
     return image.outerHTML.replaceAll('artwork-',`story-${name}-`);
   };
-  const layer=(name:string,nodes:Element[],box=[0,0,1024,1024])=>{
+  const layer=(name:string,nodes:Element[],box=[0,0,1024,1024],layoutScale=1)=>{
     const el=document.createElement('div');el.className='icon-layer';el.dataset.storyLayer=name;
     const [x,y,w,h]=box;
-    Object.assign(el.style,{left:`${x/1024*100}%`,top:`${y/1024*100}%`,width:`${w/1024*100}%`,height:`${h/1024*100}%`});
+    const width=w*layoutScale,height=h*layoutScale;
+    Object.assign(el.style,{left:`${(x+(w-width)/2)/1024*100}%`,top:`${(y+(h-height)/2)/1024*100}%`,width:`${width/1024*100}%`,height:`${height/1024*100}%`});
     el.innerHTML=svgFor(nodes,name,box);construction.append(el);return el;
   };
 
@@ -119,17 +119,20 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
     return {source,marks};
   });
   for(let i=0;i<4;i++){
+    const journey=journeys[i];
+    // Rasterize each SVG layer at its largest visible size. Animating down
+    // from there avoids magnifying a texture made for the smallest pearl.
+    const layoutScale=Math.max(1,journey.device.scale,journey.harness.scale);
     const body=children.find(node=>node.getAttribute('fill')===`url(#artwork-pearl-${i+1})`)!;
     const x=Number(body.getAttribute('cx')),y=Number(body.getAttribute('cy')),r=Number(body.getAttribute('r'));
     const size=r*2+2,box=[x-size/2,y-size/2,size,size];
     const base=body.cloneNode(false) as Element;base.setAttribute('fill','var(--canvas)');
     const flat=body.cloneNode(false) as Element;flat.setAttribute('fill','var(--secondary)');
-    const pearl=layer(`node-${i+1}`,[base],box);
+    const pearl=layer(`node-${i+1}`,[base],box,layoutScale);
     // An opaque base keeps the construction lines behind the grey nodes.
     const surface=document.createElement('div');surface.className='icon-node-shade';
     surface.innerHTML=svgFor([flat],`node-${i+1}-shade`,box);pearl.append(surface);
     track(surface,state=>({opacity:[.88,.74,.65,.82][i]+(.58-[.88,.74,.65,.82][i])*state.focus}));
-    const journey=journeys[i];
     const personal=(state:IconState)=>ease(state.harness,journey.start,journey.end);
     track(pearl,state=>{
       const t=personal(state),arc=Math.sin(Math.PI*t);
@@ -138,7 +141,7 @@ export function createIconMotion(host:HTMLElement):MotionTrack[] {
       const looseScale=journey.device.scale+(journey.harness.scale-journey.device.scale)*t;
       const dx=(looseX-x)*(1-state.focus),dy=(looseY-y)*(1-state.focus);
       const scale=looseScale+(1-looseScale)*state.focus;
-      return {transform:`translate(${dx/size*100}%,${dy/size*100}%) scale(${scale})`};
+      return {transform:`translate(${dx/(size*layoutScale)*100}%,${dy/(size*layoutScale)*100}%) scale(${scale/layoutScale})`};
     });
     faces.forEach(({marks},kind)=>{
       const face=marks[i],wrapper=document.createElement('div');wrapper.className='story-face';

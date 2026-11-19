@@ -72,7 +72,7 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
   const legends=[...graph.querySelectorAll<SVGElement>('[data-net-mark],.net-khor-mark > text,.relation-access-label,.relation-request-label,.relation-router')];
   const captions=new Set(graph.querySelectorAll<SVGElement>('.net-khor-mark > .net-boundary-name'));
   const badges=[...graph.querySelectorAll<SVGElement>('.relation-badge')];
-  let previousGraph=NaN,lastProgress=0;
+  let previousLayerState='',previousDraw=NaN,lastProgress=0;
   const restoreGraph=()=>{
     graph.style.visibility='visible';primary.forEach(el=>el.style.visibility='');
     for(const {el,length,dash,offset,fill,marker} of drawing){if(length===null)el.removeAttribute('pathLength');else el.setAttribute('pathLength',length);el.style.strokeDasharray=dash;el.style.strokeDashoffset=offset;el.style.fill=fill;el.style.markerEnd=marker;}
@@ -80,26 +80,28 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
     captions.forEach(el=>{el.style.opacity='';el.style.transition='';});
   };
   const graphProgress=(p:number)=>{
-    if(p===previousGraph)return;previousGraph=p;
+    const draw=ease(.8,.98,p),captionVisible=p>=.72;
+    const layerState=p===1?'complete':p===0?'hidden':captionVisible?'caption':'outline';
+    if(layerState===previousLayerState&&draw===previousDraw)return;
+    previousLayerState=layerState;previousDraw=draw;
     if(p===1){restoreGraph();return;}
     graph.style.visibility=p===0?'hidden':'visible';primary.forEach(el=>el.style.visibility='hidden');
     // Connections withdraw first on the way back. Nodes begin moving only once
     // these paths are gone, so their endpoints never detach from their hosts.
-    const draw=ease(.8,.98,p);
-    for(const {el} of drawing){el.setAttribute('pathLength','1');el.style.strokeDasharray='1';el.style.strokeDashoffset=String(1-draw);el.style.fill='none';el.style.markerEnd='none';}
+    const dashOffset=String(1-draw);
+    for(const {el} of drawing){el.setAttribute('pathLength','1');el.style.strokeDasharray='1';el.style.strokeDashoffset=dashOffset;el.style.fill='none';el.style.markerEnd='none';}
     fillLayers.forEach(el=>el.style.visibility='hidden');
     for(const el of legends){
       if(captions.has(el)){
-        const visible=p>=.72;
-        el.style.visibility=visible?'visible':'hidden';el.style.clipPath='';
-        el.style.transition='opacity var(--dur-120)';el.style.opacity=visible?'1':'0';
+        el.style.visibility=captionVisible?'visible':'hidden';el.style.clipPath='';
+        el.style.transition='opacity var(--dur-120)';el.style.opacity=captionVisible?'1':'0';
       }else{
         el.style.visibility=draw>0?'visible':'hidden';el.style.clipPath=`inset(0 ${(1-draw)*100}% 0 0)`;
       }
     }
     badges.forEach(el=>el.style.clipPath=`circle(${draw*72}% at 50% 50%)`);
   };
-  let template='',to:number[]=[],lineWidth=1,sourceScale=1,strokeOpacity=1;
+  let pathParts:string[]=[],to:number[]=[],lineWidth=1,sourceScale=1,strokeOpacity=1;
   let gapCenter={x:0,y:0};
   let brandFrom={x:0,y:0,scale:1,angle:0},brandTo={x:0,y:0,scale:1,angle:0};
   const measure=()=>{
@@ -114,7 +116,9 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
     const gapIcon=graph.querySelector<SVGCircleElement>('[data-net-gap-icon="khor"]')!;gapCenter={x:gapIcon.cx.baseVal.value,y:gapIcon.cy.baseVal.value};
     cutouts.setAttribute('transform',`matrix(${gm.a} ${gm.b} ${gm.c} ${gm.d} ${gm.e-rect.x} ${gm.f-rect.y})`);
     const c=new DOMPoint(512,512).matrixTransform(im);
-    sourceScale=Math.hypot(im.a,im.b);template=graphRing.getAttribute('d')!;
+    sourceScale=Math.hypot(im.a,im.b);
+    const template=graphRing.getAttribute('d')!;
+    pathParts=template.split(/-?\d+(?:\.\d+)?/g);
     to=nums(template).map((v,i)=>i%2?v*gm.d+gm.f-rect.y:v*gm.a+gm.e-rect.x);lineWidth=1.5*gm.a;
     for(const band of bands){
       band.from=nums(circle(c.x-rect.x,c.y-rect.y,band.radius*sourceScale));
@@ -159,16 +163,21 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
       for(const band of bands)band.paint.setAttribute('gradientTransform',transform);
       reflectedLight.setAttribute('transform',transform);
     }
+    // Rims follow the narrowing band so highlights stay on the glass.
+    const rimScale=bandWidth/(bands[0].width*sourceScale);
+    let bandPath='';
     for(const [index,band] of bands.entries()){
-      // Rims stay on the narrowing band. Their distance must follow its
-      // thickness, otherwise the highlights become two stray dotted rings.
-      const rimScale=bandWidth/(bands[0].width*sourceScale);
-      let i=0;band.path.setAttribute('d',template.replace(/-?\d+(?:\.\d+)?/g,()=>{const n=i++;return String(outline[n]+(band.from[n]-bands[0].from[n])*rimScale);}));
+      let path=pathParts[0];
+      for(let i=0;i<outline.length;i++){
+        path+=String(outline[i]+(band.from[i]-bands[0].from[i])*rimScale)+pathParts[i+1];
+      }
+      band.path.setAttribute('d',path);
+      if(index===0)bandPath=path;
       band.path.setAttribute('stroke-width',String(index===0?bandWidth:band.width*sourceScale*(1-flat)));
       band.path.setAttribute('stroke-opacity',String(index===0?mix(1,strokeOpacity,flat):band.alpha));
     }
-    reflectionBand.setAttribute('d',bands[0].path.getAttribute('d')!);reflectionBand.setAttribute('stroke-width',String(bandWidth));
-    shadow.setAttribute('d',bands[0].path.getAttribute('d')!);
+    reflectionBand.setAttribute('d',bandPath);reflectionBand.setAttribute('stroke-width',String(bandWidth));
+    shadow.setAttribute('d',bandPath);
     shadow.setAttribute('stroke-width',String(Number(material.boundaryShadow.getAttribute('stroke-width'))*sourceScale*(1-flat)));
     shadow.setAttribute('transform',`translate(${(Number(material.boundaryShadow.getAttribute('cx'))-512)*sourceScale*(1-flat)} ${(Number(material.boundaryShadow.getAttribute('cy'))-512)*sourceScale*(1-flat)})`);
     for(const {el,rx,ry,r} of lightShapes){
