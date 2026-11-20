@@ -40,7 +40,7 @@ jobs:
           save-if: false
       - name: Build the draft candidate for disposable terminal tests
         run: |
-          source=4a688a96fd2b43a87787cf46373137debd304c0f
+          source=$(git rev-parse HEAD^2)
           git diff --exit-code "$source" HEAD -- . ':(exclude).github/workflows/quality.yml'
           git diff --exit-code HEAD -- . ':(exclude)apps/gui/dev/lab/data/world.generated.json'
           cargo build --locked -p khor-cli --bin khor
