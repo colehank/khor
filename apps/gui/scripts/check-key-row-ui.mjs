@@ -154,7 +154,10 @@ try{
   const page=await nativePaste.newPage();
   await page.addInitScript(()=>{
    const callbacks=new Map();
-   window.__pasteProbe={changes:[],emit:value=>callbacks.get(window.__pasteProbe.listener)?.({payload:value})};
+   window.__pasteProbe={changes:[],webReads:0,emit:value=>callbacks.get(window.__pasteProbe.listener)?.({payload:value})};
+   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{
+    read:async()=>{window.__pasteProbe.webReads++;return []},
+   }});
    let next=0;
    window.__TAURI_INTERNALS__={
     transformCallback:handler=>{callbacks.set(++next,handler);return next},
@@ -171,6 +174,8 @@ try{
   await key.scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>window.__pasteProbe.changes.some(change=>change.geometry));
   await page.waitForFunction(()=>document.querySelector('[data-term-key="paste"]')?.getAttribute('aria-hidden')==='true');
+  await key.evaluate(node=>node.click());
+  assert.equal(await page.evaluate(()=>window.__pasteProbe.webReads),0,'The mounted UIKit control owns the paste gesture');
   const seat=await page.evaluate(()=>window.__pasteProbe.changes.filter(change=>change.geometry).at(-1));
   assert(seat.geometry.clip[2]>0&&seat.geometry.clip[2]<=seat.geometry.frame[2]);
   await page.evaluate(async owner=>{

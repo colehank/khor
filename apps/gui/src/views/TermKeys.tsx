@@ -124,6 +124,7 @@ function Cap({ k, mods, onPress, pasteControl, className }: {
   const under = useRef(mods);
   const { button, native } = pasteControl ?? {};
   const hold = useHeldKey((first) => {
+    if (native) return;
     if (first) under.current = mods;
     onPress(under.current);
   }, k.repeats === true);
