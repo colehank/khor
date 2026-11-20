@@ -3,7 +3,7 @@
 //! The terminal input path arms the preview. The rendered editor supplies
 //! the text, including edits made by the application itself.
 
-const LOOKBACK: u16 = 24;
+const EDITOR_RADIUS: u16 = 24;
 const PREVIEW_LIMIT: usize = 1024;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,8 +99,7 @@ impl Editor {
     fn read(agent: Agent, screen: &vt100::Screen) -> Option<Self> {
         let (row, col) = screen.cursor_position();
         let (rows, cols) = screen.size();
-        let offset = rows.saturating_sub(LOOKBACK);
-        if row < offset || col < 2 {
+        if col < 2 {
             return None;
         }
         // Claude paints its own cursor in reverse video at the reported
@@ -108,8 +107,15 @@ impl Editor {
         if screen.hide_cursor() && (agent != Agent::Claude || !screen.cell(row, col)?.inverse()) {
             return None;
         }
+        // A new session can draw the composer near the top of an empty terminal.
+        let offset = row.saturating_sub(EDITOR_RADIUS);
+        let bound = rows.min(row.saturating_add(EDITOR_RADIUS + 1));
         let cursor = usize::from(row - offset);
-        let lines: Vec<_> = screen.rows(0, cols).skip(offset.into()).collect();
+        let lines: Vec<_> = screen
+            .rows(0, cols)
+            .skip(offset.into())
+            .take((bound - offset).into())
+            .collect();
         let first = (0..=cursor).rev().find(|&index| {
             lines
                 .get(index)
@@ -230,7 +236,7 @@ mod tests {
     use super::*;
 
     fn frame(lines: &[&str], cursor: (u16, u16)) -> vt100::Parser {
-        let mut parser = vt100::Parser::new(12, 72, 0);
+        let mut parser = vt100::Parser::new(30, 72, 0);
         for (row, line) in lines.iter().enumerate() {
             parser.process(format!("\x1b[{};1H{line}", row + 1).as_bytes());
         }
