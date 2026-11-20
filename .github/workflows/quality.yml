@@ -37,7 +37,8 @@ jobs:
       - name: Tap the terminal and swap the actual iOS keyboard with attachments
         run: |
           test "$(uname -m)" = arm64
-          PYTHONPATH=scripts python3 -m khor_lab.terminal_keyboard_probe "$RUNNER_TEMP/lab" --out "$RUNNER_TEMP/terminal-keyboard"
+          SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
+          PYTHONPATH=scripts python3 -m khor_lab.terminal_keyboard_probe --simulator "$SIMULATOR_ID" "$RUNNER_TEMP/lab" --out "$RUNNER_TEMP/terminal-keyboard"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

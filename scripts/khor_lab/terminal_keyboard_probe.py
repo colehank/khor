@@ -3,6 +3,7 @@ import argparse
 from http.server import ThreadingHTTPServer
 import json
 from pathlib import Path
+from contextlib import suppress
 import plistlib
 import subprocess
 import sys
@@ -21,6 +22,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('bundle', type=Path)
     parser.add_argument('--out', required=True, type=Path)
+    parser.add_argument('--simulator', help='Available CI device UUID; defaults to an isolated local Lab device')
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
     lab_bundle = args.bundle.resolve()
@@ -57,20 +59,24 @@ def main():
                     'apps/gui/scripts/native-keyboard-probe/Probe.swift','-o',str(app/'Probe')],
                    timeout=120, check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)], timeout=30, check=True)
-    simulator = dedicated_simulator()
+    simulator = args.simulator or dedicated_simulator()
+    installed = False
     with ThreadingHTTPServer(('127.0.0.1', 23928), Handler) as server:
         server.lab = lab
         worker = threading.Thread(target=server.serve_forever, daemon=True)
         worker.start()
         try:
-            subprocess.run(['xcrun','simctl','bootstatus',simulator,'-b'], timeout=180, check=True)
-            subprocess.run(['xcrun','simctl','install',simulator,str(app)], timeout=60, check=True)
+            subprocess.run(['xcrun','simctl','bootstatus',simulator,'-b'], timeout=240, check=True)
+            subprocess.run(['xcrun','simctl','install',simulator,str(app)], timeout=150, check=True)
+            installed = True
             receipt = keyboard_probe(home, simulator, IDENTIFIER, entry, home, terminal=True)
             receipt.update(simulator=simulator, revision=revision)
             (home / 'terminal-keyboard-result.json').write_text(json.dumps(receipt, indent=2))
         finally:
-            subprocess.run(['xcrun','simctl','uninstall',simulator,IDENTIFIER],
-                           capture_output=True, timeout=30)
+            if installed:
+                with suppress(subprocess.TimeoutExpired):
+                    subprocess.run(['xcrun','simctl','uninstall',simulator,IDENTIFIER],
+                                   capture_output=True, timeout=30)
             server.shutdown()
             worker.join(timeout=10)
 
