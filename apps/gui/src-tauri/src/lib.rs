@@ -5280,8 +5280,8 @@ fn watch_for_wake() {
 /// range, back — watched with Network.framework's `nw_path_monitor`, the
 /// system's own signal (iroh watches the routing table too, but on a
 /// phone the path monitor is what the system promises to keep current).
-/// Each change after the first report is a `link::network_changed`, the
-/// same door the Mac's wake uses.
+/// Each change after the first report goes to the resident. A confirmed
+/// usable path can rebind the network without suspending the app.
 ///
 /// Through the C API directly rather than a binding crate: four calls,
 /// and `block2` is already in the tree under the shell.
@@ -5311,6 +5311,7 @@ fn watch_the_path() {
     // cellular / wired it uses are what decide whether the old wires can
     // still be alive; the first report, at start, is the baseline.
     // `nw_interface_type_t`: wifi 1, cellular 2, wired 3.
+    const NW_PATH_STATUS_SATISFIED: u32 = 1;
     let last = std::sync::atomic::AtomicU32::new(u32::MAX);
     let changed = block2::RcBlock::new(move |path: *mut c_void| {
         // SAFETY: `path` is the monitor's for the length of this call.
@@ -5328,7 +5329,10 @@ fn watch_the_path() {
         if was == u32::MAX || was == now {
             return;
         }
-        khor_node::link::network_changed(&Node::root_from_env());
+        khor_node::link::mobile_network_changed(
+            &Node::root_from_env(),
+            now >> 8 == NW_PATH_STATUS_SATISFIED,
+        );
         khor_gui_core::rejoin::kick();
     });
     // SAFETY: Network.framework copies the handler block; the monitor is

@@ -71,6 +71,90 @@ where
     None
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_usable_mobile_path_recovers_a_dead_endpoint_in_the_same_resident() {
+    let (rp, rf, rr) = (
+        scratch("mobile-path-phone"),
+        scratch("mobile-path-far"),
+        scratch("mobile-path-relay"),
+    );
+    let (_relay, relay) = local_relay(&rr.0);
+    for dir in [&rp.0, &rf.0] {
+        home_on(dir, &relay);
+    }
+    let _far = serve(&rf.0, "far");
+    let owner = Node::open_hosting(rp.0.clone(), "phone", false).unwrap();
+    let resident = tokio::spawn(owner.serve_resumable());
+    stood_up(&[&rp.0, &rf.0]).await;
+    let phone = Node::open_hosting(rp.0.clone(), "phone", false).unwrap();
+    let far = Node::open_as(rf.0.clone(), "far").unwrap();
+    tokio::time::timeout(Duration::from_secs(15), phone.pair(&far.invite().unwrap()))
+        .await
+        .unwrap()
+        .unwrap();
+    let dir = rf.0.to_string_lossy();
+    let marker = "mobile-path-confirmed";
+    std::fs::write(rf.0.join(marker), "present").unwrap();
+    let listed = || async {
+        phone
+            .ls_of("far", &dir)
+            .await
+            .is_ok_and(|(_, entries, _)| entries.iter().any(|entry| entry.name == marker))
+    };
+    assert!(until(Duration::from_secs(15), listed).await.is_some());
+
+    let ears = || {
+        khor_node::journal::read(&rp.0, None, 0)
+            .iter()
+            .filter(|entry| {
+                matches!(
+                    entry.what,
+                    khor_node::journal::What::Ears { error: None, .. }
+                )
+            })
+            .count()
+    };
+    let before = ears();
+    assert!(khor_node::link::mobile_network_changed(&rp.0, true));
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    assert!(listed().await, "the healthy path still serves real work");
+    assert_eq!(ears(), before, "a healthy endpoint survives in place");
+
+    // Stand in for a transport iOS reclaimed. A real, independent relay
+    // and peer stay available, and only the resident receives the event.
+    assert!(khor_node::link::deafen(&rp.0).await);
+    assert!(khor_node::link::mobile_network_changed(&rp.0, true));
+    assert!(khor_node::link::mobile_network_changed(&rp.0, false));
+    tokio::time::sleep(Duration::from_secs(4)).await;
+    assert_eq!(
+        ears(),
+        before,
+        "an unusable path cannot replace the endpoint"
+    );
+
+    assert!(khor_node::link::mobile_network_changed(&rp.0, true));
+    let recovered = tokio::time::timeout(
+        Duration::from_secs(15),
+        until(Duration::from_secs(15), || async {
+            ears() > before && listed().await
+        }),
+    )
+    .await
+    .ok()
+    .flatten();
+    eprintln!("foreground path recovered in {recovered:?}");
+    assert!(
+        recovered.is_some(),
+        "the new relay path works without resume or relaunch"
+    );
+    assert!(
+        !resident.is_finished(),
+        "the original resident is still alive"
+    );
+    khor_node::link::stop_serving(&rp.0).await.unwrap();
+    resident.await.unwrap().unwrap();
+}
+
 /// From `began`: the first honest word for each of `ids`, and the first
 /// answer from `far` — polled side by side, so neither waits on the other.
 async fn the_way_back(

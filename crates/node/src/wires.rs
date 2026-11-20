@@ -724,6 +724,22 @@ pub(crate) struct Reading {
 }
 
 impl Wires {
+    /// A held peer has actually sent something since the switch. A relay
+    /// reporting its own connection up is not evidence about any peer.
+    pub(crate) fn heard_peer_since(&self, since: Instant) -> bool {
+        self.slots
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .any(|slot| {
+                slot.heard.is_some_and(|heard| heard >= since)
+                    && slot
+                        .conn
+                        .as_ref()
+                        .is_some_and(|conn| conn.close_reason().is_none())
+            })
+    }
+
     pub(crate) fn pending_dial(&self, id: &str) -> PendingDial {
         let mut pending = self.pending_dials.lock().unwrap_or_else(|p| p.into_inner());
         pending.retain(|_, state| state.strong_count() != 0);

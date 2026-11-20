@@ -395,6 +395,12 @@ pub enum Hearing {
 /// a handshake, on the slowest road a relay path has been measured on.
 const ECHO_WITHIN: Duration = Duration::from_secs(10);
 
+/// Wait out the address/route notification burst, then give the rebound
+/// endpoint a short chance to hear a peer before testing it independently.
+const MOBILE_PATH_SETTLE: Duration = Duration::from_millis(250);
+const MOBILE_PATH_GRACE: Duration = Duration::from_secs(3);
+const MOBILE_ECHO_WITHIN: Duration = Duration::from_secs(3);
+
 /// **Whether these ears can be heard at all** (round NET-11), asked only
 /// once everyone with a road has been silent for [`DEAF_AFTER`].
 ///
@@ -425,6 +431,17 @@ pub async fn ears_heard(
     relays: &[String],
     homed_before: bool,
 ) -> Hearing {
+    ears_heard_within(ep, relay_map, n0, relays, homed_before, ECHO_WITHIN).await
+}
+
+async fn ears_heard_within(
+    ep: &iroh::Endpoint,
+    relay_map: &[khor_net::endpoint::Relay],
+    n0: bool,
+    relays: &[String],
+    homed_before: bool,
+    within: Duration,
+) -> Hearing {
     let home: Vec<iroh::RelayUrl> = ep
         .addr()
         .addrs
@@ -440,7 +457,7 @@ pub async fn ears_heard(
         let addr = home
             .into_iter()
             .fold(iroh::EndpointAddr::new(ep.id()), |a, u| a.with_relay_url(u));
-        let echoed = match tokio::time::timeout(ECHO_WITHIN, probe.connect(addr, ALPN)).await {
+        let echoed = match tokio::time::timeout(within, probe.connect(addr, ALPN)).await {
             Ok(Ok(conn)) => {
                 conn.close(0u32.into(), b"echo");
                 true
@@ -560,6 +577,7 @@ enum Wake {
         synced: Option<tokio::sync::oneshot::Sender<Vec<(String, Result<String, String>)>>>,
         /// Each machine's outcome as it lands, before the round is whole.
         each: Option<Answers>,
+        mobile: Option<MobileRepair>,
     },
     /// Close the endpoint under the serve and leave it closed ([`deafen`]).
     Deafen {
@@ -570,6 +588,8 @@ enum Wake {
     /// is heard right after, and visit everyone once that is known.
     /// Carries who said so, for the journal.
     Network(crate::journal::Change),
+    /// iOS's path monitor saw a usable path appear or go away.
+    MobilePath { usable: bool },
     /// The app is going to the background ([`suspending`]): let every
     /// wire go now, closed, so the far machines read 未连接 at once
     /// instead of after their silence limit.
@@ -589,6 +609,12 @@ enum Wake {
     Cut {
         done: tokio::sync::oneshot::Sender<()>,
     },
+}
+
+struct MobileRepair {
+    /// Owned by the resident until this path changes or the app suspends.
+    path: std::sync::Weak<()>,
+    began: std::time::Instant,
 }
 
 /// **One round for a network change at a time** (NET-STABLE 第二步).
@@ -613,7 +639,6 @@ impl NetRound {
     fn ask(
         &self,
         node: &std::sync::Arc<Node>,
-        ep: &std::sync::Arc<iroh::Endpoint>,
         deaf: &std::sync::Arc<std::sync::Mutex<DeafWatch>>,
         force: bool,
         settle: Duration,
@@ -627,12 +652,17 @@ impl NetRound {
             }
             s.running = true;
         }
-        let (me, n, e, deaf) = (self.clone(), node.clone(), ep.clone(), deaf.clone());
+        let (me, n, deaf) = (self.clone(), node.clone(), deaf.clone());
         tokio::spawn(async move {
             let (mut force, mut settle) = (force, settle);
             loop {
                 tokio::time::sleep(settle).await;
-                let out = n.sync_peers(&e, force).await;
+                // An owed round can outlive the endpoint that requested
+                // it. Pick the currently published endpoint after settling.
+                let out = match n.current_ears().filter(|e| !e.is_closed()) {
+                    Some(e) => n.sync_peers(&e, force).await,
+                    None => Vec::new(),
+                };
                 let heard = if n.serve_admitted(false).await {
                     out.as_slice()
                 } else {
@@ -860,6 +890,7 @@ pub fn resume(root: &std::path::Path) -> Option<Resuming> {
             ears: Some(ears),
             synced: Some(synced),
             each: Some(each),
+            mobile: None,
         })
         .ok()?;
     Some(Resuming {
@@ -884,6 +915,12 @@ pub fn network_changed(root: &std::path::Path) -> bool {
         crate::journal::Change::Wake
     };
     door(root).is_some_and(|d| d.send(Wake::Network(change)).is_ok())
+}
+
+/// The iOS monitor has already identified a different default path.
+/// An unusable report also cancels recovery for the path that just went away.
+pub fn mobile_network_changed(root: &std::path::Path, usable: bool) -> bool {
+    door(root).is_some_and(|d| d.send(Wake::MobilePath { usable }).is_ok())
 }
 
 /// **The app is going to the background**: the resident on `root` lets
@@ -1675,6 +1712,7 @@ impl Node {
         }
         let deaf = std::sync::Arc::new(std::sync::Mutex::new(DeafWatch::new()));
         let net_round = NetRound::default();
+        let mut mobile_path: Option<(std::sync::Arc<()>, tokio::task::AbortHandle)> = None;
         let _listed = Listed::new(node.root(), wake.clone(), resumable);
         // Exit may have sealed the Root while startup was binding its ears.
         // Enqueue the stop once its door exists, before another loop turn.
@@ -1914,6 +1952,9 @@ impl Node {
                     }
                     Wake::Suspend { done } => {
                         resting.store(true, std::sync::atomic::Ordering::Relaxed);
+                        if let Some((_, task)) = mobile_path.take() {
+                            task.abort();
+                        }
                         node.wires.note(None, crate::journal::What::Rest);
                         node.wires.clear(wires::Retired::Suspended);
                         node.wires.let_go_served(wires::Retired::Suspended);
@@ -1935,6 +1976,44 @@ impl Node {
                         }
                         Err(e) => eprintln!("{e}"),
                     },
+                    Wake::MobilePath { usable } => {
+                        if let Some((_, task)) = mobile_path.take() {
+                            task.abort();
+                        }
+                        if !usable || resting.load(std::sync::atomic::Ordering::Relaxed)
+                            || paused.load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            continue;
+                        }
+                        let change = crate::journal::Change::Path;
+                        node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
+                        let path = std::sync::Arc::new(());
+                        let repair = MobileRepair {
+                            path: std::sync::Arc::downgrade(&path),
+                            began: std::time::Instant::now(),
+                        };
+                        let (n, e, wake, net_round, deaf) = (node.clone(), ep.clone(), wake.clone(), net_round.clone(), deaf.clone());
+                        let task = services.spawn(async move {
+                            tokio::time::sleep(MOBILE_PATH_SETTLE).await;
+                            // Network.framework already confirmed the change.
+                            // Rebind even if the routes enumerated by iroh still
+                            // include both Wi-Fi and cellular.
+                            e.network_change_major().await;
+                            n.wires.network_changed();
+                            net_round.ask(&n, &deaf, true, MOBILE_PATH_GRACE);
+                            tokio::time::sleep(MOBILE_PATH_GRACE).await;
+                            if n.wires.heard_peer_since(repair.began)
+                                || !n.serve_admitted(false).await
+                            {
+                                return;
+                            }
+                            let homed = n.ears_homed.load(std::sync::atomic::Ordering::Relaxed);
+                            if ears_heard_within(&e, n.relay_map(), n.relays_n0(), n.relays(), homed, MOBILE_ECHO_WITHIN).await == Hearing::Unheard {
+                                let _ = wake.send(Wake::Resume { ears: None, synced: None, each: None, mobile: Some(repair) });
+                            }
+                        });
+                        mobile_path = Some((path, task));
+                    }
                     // A network change while backgrounded is the resume's
                     // to deal with: it gives new ears and a round.
                     Wake::Network(_) if resting.load(std::sync::atomic::Ordering::Relaxed) => {}
@@ -1948,7 +2027,7 @@ impl Node {
                     Wake::Network(change @ crate::journal::Change::Relay { down_at }) => {
                         if node.wires.forgive_failed_since(down_at) > 0 {
                             node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
-                            net_round.ask(&node, &ep, &deaf, false, Duration::ZERO);
+                            net_round.ask(&node, &deaf, false, Duration::ZERO);
                         }
                     }
                     // **The interface addresses moved** (NET-STABLE 第二步),
@@ -1965,7 +2044,7 @@ impl Node {
                     Wake::Network(change @ crate::journal::Change::Addrs) => {
                         node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
                         node.wires.forgive_all();
-                        net_round.ask(&node, &ep, &deaf, true, Duration::ZERO);
+                        net_round.ask(&node, &deaf, true, Duration::ZERO);
                     }
                     Wake::Network(change) => {
                         node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
@@ -1982,13 +2061,25 @@ impl Node {
                         // the fast ones are known.
                         net_round.ask(
                             &node,
-                            &ep,
                             &deaf,
                             true,
                             wires::Patience::for_rtt(Duration::ZERO).after_change + wires::TICK,
                         );
                     }
-                    Wake::Resume { ears, synced, each } => {
+                    Wake::Resume { ears, synced, each, mobile } => {
+                        if let Some(repair) = mobile {
+                            if mobile_path.as_ref().is_none_or(|(path, _)| !repair.path.ptr_eq(&std::sync::Arc::downgrade(path)))
+                                || resting.load(std::sync::atomic::Ordering::Relaxed)
+                                || paused.load(std::sync::atomic::Ordering::Relaxed)
+                                || resuming.is_some()
+                                || node.wires.heard_peer_since(repair.began)
+                            {
+                                continue;
+                            }
+                        }
+                        if let Some((_, task)) = mobile_path.take() {
+                            task.abort();
+                        }
                         if ears.is_some() {
                             if let Err(why) = node.mend_handoffs(&ep, &mut handoffs, &cookie).await {
                                 if let Some(ears) = ears { let _ = ears.send(Err(why)); }
@@ -2056,6 +2147,9 @@ impl Node {
                     }
                 },
                 Some((fresh, begun)) = bound_rx.recv() => {
+                    if let Some((_, task)) = mobile_path.take() {
+                        task.abort();
+                    }
                     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                     let waiting = resuming.take().unwrap_or_default();
                     let mut synced_to = Vec::new();
@@ -2312,7 +2406,7 @@ impl Node {
                             if resumable {
                                 eprintln!("{}", msg::serve_deaf_fresh_ears(&stamp, DEAF_AFTER.as_secs()));
                                 *deaf.lock().expect("deaf watch poisoned") = DeafWatch::new();
-                                let _ = wake.send(Wake::Resume { ears: None, synced: None, each: None });
+                                let _ = wake.send(Wake::Resume { ears: None, synced: None, each: None, mobile: None });
                             } else {
                                 eprintln!("{}", msg::serve_gone_deaf(&stamp, DEAF_AFTER.as_secs()));
                                 std::process::exit(DEAF_EXIT);
