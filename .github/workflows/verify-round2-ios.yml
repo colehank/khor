@@ -1,0 +1,106 @@
+name: Round 2 private iPhone verification package
+on:
+  push:
+    branches: [verify/file-ime-mac]
+    paths: ['.github/workflows/verify-round2-ios.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  app:
+    runs-on: macos-26
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: ee75a79ffcfe3a0408006d714a57db60ff6a758f
+      FRONTEND_RUN: '44786879933'
+      BUNDLE_ID: io.github.colehank.khor.quality.round2physical
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: ./.github/actions/native-tools
+        with:
+          target: aarch64-apple-ios
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: frontend
+          run-id: ${{ env.FRONTEND_RUN }}
+          github-token: ${{ github.token }}
+      - name: Restore the verified frontend and set the private app identity
+        run: |
+          python3 scripts/release_manifest.py verify --root frontend --sha "$SOURCE_SHA" --kind frontend --run-id "$FRONTEND_RUN"
+          cp -R frontend/dist apps/gui/dist
+          cp -R frontend/gen apps/gui/src/gen
+          python3 - <<'PY'
+          import json
+          import os
+          import plistlib
+          from pathlib import Path
+
+          original_id = 'io.github.colehank.khor'
+          private_id = os.environ['BUNDLE_ID']
+          tauri = Path('apps/gui/src-tauri')
+          config = tauri / 'tauri.conf.json'
+          config_text = json.loads(config.read_text())
+          assert config_text['identifier'] == original_id
+          config_text['identifier'] = private_id
+          config.write_text(json.dumps(config_text, indent=2) + '\n')
+
+          apple = tauri / 'gen/apple'
+          for relative, before, after, matches in (
+              ('khor-gui.xcodeproj/project.pbxproj',
+               f'PRODUCT_BUNDLE_IDENTIFIER = {original_id};',
+               f'PRODUCT_BUNDLE_IDENTIFIER = {private_id};', 2),
+              ('project.yml', f'PRODUCT_BUNDLE_IDENTIFIER: {original_id}',
+               f'PRODUCT_BUNDLE_IDENTIFIER: {private_id}', 1),
+          ):
+              file = apple / relative
+              text = file.read_text()
+              assert text.count(before) == matches, relative
+              file.write_text(text.replace(before, after))
+
+          plist = apple / 'khor-gui_iOS/Info.plist'
+          info = plistlib.loads(plist.read_bytes())
+          assert info['CFBundleIdentifier'] == '$(PRODUCT_BUNDLE_IDENTIFIER)'
+          info['CFBundleDisplayName'] = 'Khor R2 Lab'
+          plist.write_bytes(plistlib.dumps(info))
+          PY
+      - name: Build for a physical iPhone without signing or uploading to Apple
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.5.app
+          npm ci --prefix apps/gui
+          python3 scripts/apple_release.py ios-build --signed false
+      - name: Preserve the native bundle archive
+        run: |
+          app='apps/gui/src-tauri/gen/apple/build/khor-gui_iOS.xcarchive/Products/Applications/Khor.app'
+          mkdir ios-validation
+          ditto -c -k --norsrc --keepParent "$app" ios-validation/Khor.app.zip
+      - name: Check application identity, physical iOS platform, and frontend
+        run: |
+          app='apps/gui/src-tauri/gen/apple/build/khor-gui_iOS.xcarchive/Products/Applications/Khor.app'
+          test "$(lipo -archs "$app/Khor")" = arm64
+          xcrun vtool -show-build "$app/Khor" > ios-validation/platform.txt
+          grep -Eq '^[[:space:]]*platform[[:space:]]+IOS$' ios-validation/platform.txt
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist" | grep -Fx "$BUNDLE_ID"
+          test ! -e "$app/embedded.mobileprovision"
+          python3 scripts/release_manifest.py create --root ios-validation --kind khor-round2-ios-unsigned --frontend frontend --executable "$app/Khor"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: khor-round2-ios-private-unsigned
+          path: ios-validation/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: failure() && hashFiles('ios-validation/Khor.app.zip') != ''
+        with:
+          name: khor-round2-ios-archive-for-diagnosis
+          path: ios-validation/Khor.app.zip
+          if-no-files-found: error
+          retention-days: 3
