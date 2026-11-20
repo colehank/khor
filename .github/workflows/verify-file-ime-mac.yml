@@ -1,0 +1,80 @@
+name: Mac file IME verification package
+on:
+  push:
+    branches: [verify/file-ime-mac]
+    paths: ['.github/workflows/verify-file-ime-mac.yml']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  app:
+    runs-on: macos-26
+    timeout-minutes: 75
+    env:
+      SOURCE_SHA: ee75a79ffcfe3a0408006d714a57db60ff6a758f
+      FRONTEND_RUN: '44786879933'
+      TARGET: aarch64-apple-darwin
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: ./.github/actions/native-tools
+        with:
+          target: ${{ env.TARGET }}
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: frontend
+          run-id: ${{ env.FRONTEND_RUN }}
+          github-token: ${{ github.token }}
+      - name: Restore the frontend from the passing Quality run
+        run: |
+          python3 scripts/release_manifest.py verify --root frontend --sha "$SOURCE_SHA" --kind frontend --run-id "$FRONTEND_RUN"
+          cp -R frontend/dist apps/gui/dist
+          cp -R frontend/gen apps/gui/src/gen
+      - name: Build the matching native app and CLI
+        env:
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.5.app
+          npm ci --prefix apps/agent
+          node apps/agent/build.mjs "$TARGET" "$KHOR_AGENT_BUNDLE"
+          cargo build --locked -p khor-cli --bin khor --target "$TARGET" --release
+          mkdir -p apps/gui/src-tauri/binaries
+          cp "target/$TARGET/release/khor" "apps/gui/src-tauri/binaries/khor-$TARGET"
+          npm ci --prefix apps/gui
+          python3 scripts/apple_release.py mac-build --target "$TARGET" --signed false
+      - name: Archive and verify the ad hoc signed test app
+        env:
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+        run: |
+          app="target/$TARGET/release/bundle/macos/Khor.app"
+          gui="$app/Contents/MacOS/khor-gui"
+          cli="$app/Contents/MacOS/khor"
+          lipo -verify_arch arm64 "$gui" "$cli"
+          codesign --force --sign - "$cli"
+          codesign --force --sign - "$app"
+          codesign --verify --deep --strict "$app"
+          mkdir native-validation
+          "$gui" _release_info > native-validation/gui-identity.json
+          "$cli" _release_info > native-validation/cli-identity.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('native-validation')
+          gui = json.loads((root / 'gui-identity.json').read_text())
+          cli = json.loads((root / 'cli-identity.json').read_text())
+          assert gui['component'] == 'desktop-app' and cli['component'] == 'cli'
+          assert all(gui[key] == cli[key] for key in ('build', 'platform', 'contract'))
+          PY
+          ditto -c -k --keepParent "$app" native-validation/Khor.app.zip
+          python3 scripts/release_manifest.py create --root native-validation --kind khor-ime-mac-validation --frontend frontend --executable "$gui" --agent "$KHOR_AGENT_BUNDLE" --program-info native-validation/gui-identity.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: khor-ime-mac-validation
+          path: native-validation/
+          if-no-files-found: error
+          retention-days: 7
