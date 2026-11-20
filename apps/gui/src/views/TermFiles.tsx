@@ -51,13 +51,14 @@ type PickerProps = {
  onSent: () => void;
  viewport?: RefObject<HTMLElement | null>;
  terminalOverlay?: boolean;
+ keyboardBand?: number;
  onBeforeSend?: () => void;
 };
 
 export function AttachmentPicker({open,...props}:PickerProps){
  return open?<TermFiles {...props}/>:null;
 }
-export function TermFiles({road,onClose,onSent,viewport,terminalOverlay=false,onBeforeSend}:Omit<PickerProps,'open'>){
+export function TermFiles({road,onClose,onSent,viewport,terminalOverlay=false,keyboardBand=0,onBeforeSend}:Omit<PickerProps,'open'>){
  const narrow=useNarrow();
  const sourceTitle=useId(),selectedTitle=useId();
  const picker=useRef<HTMLInputElement>(null),folders=useRef<HTMLInputElement>(null),panel=useRef<HTMLDivElement>(null);
@@ -65,7 +66,7 @@ export function TermFiles({road,onClose,onSent,viewport,terminalOverlay=false,on
  const [at,setAt]=useState<Place|null>(null),[look,setLook]=useState<Attachment|null>(null);
  const sending=useRef(false),mounted=useRef(true);
  const restore=useRef<HTMLElement|null>(null),oldHold=useRef<number|null>(null);
- const [height]=useState(()=>Math.min(keyboardCover()||footHeld()||keyboardHeight(),window.innerHeight*0.6));
+ const [height]=useState(()=>keyboardBand || Math.min(keyboardCover()||footHeld()||keyboardHeight(),window.innerHeight*0.6));
  useLayoutEffect(()=>{
   const sheet=panel.current;if(!sheet)return;
   let watched:HTMLElement|null=null;
@@ -75,9 +76,9 @@ export function TermFiles({road,onClose,onSent,viewport,terminalOverlay=false,on
    const rect=host?.getBoundingClientRect(),left=Math.max(0,rect?.left??0),right=Math.min(window.innerWidth,rect?.right??window.innerWidth);
    const width=right-left;
    sheet.style.left=(width>0?left:0)+'px';sheet.style.width=(width>0?width:window.innerWidth)+'px';
-   // Cover the lower part of the terminal, leaving the key row reachable.
-   // Opening or closing the picker never changes the shell's available height.
-   if(terminalOverlay&&rect){
+   // With no reserved keyboard space, cover part of the terminal while
+   // keeping its key row reachable and its viewport at full height.
+   if(terminalOverlay&&!keyboardBand&&rect){
     const panelHeight=Math.min(height,rect.height);
     sheet.style.top=`${rect.bottom-panelHeight}px`;
     sheet.style.height=`${panelHeight}px`;
@@ -88,7 +89,7 @@ export function TermFiles({road,onClose,onSent,viewport,terminalOverlay=false,on
   const frame=requestAnimationFrame(sync);
   window.addEventListener('resize',sync);window.addEventListener('transitionend',sync,true);window.addEventListener('animationend',sync,true);window.visualViewport?.addEventListener('resize',sync);
   return()=>{cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('resize',sync);window.removeEventListener('transitionend',sync,true);window.removeEventListener('animationend',sync,true);window.visualViewport?.removeEventListener('resize',sync);};
- },[height,terminalOverlay,viewport]);
+ },[height,keyboardBand,terminalOverlay,viewport]);
  useLayoutEffect(()=>{
   if(terminalOverlay)return;
   const field=document.activeElement;oldHold.current=footHeld();
@@ -126,7 +127,7 @@ export function TermFiles({road,onClose,onSent,viewport,terminalOverlay=false,on
   finally{sending.current=false;}
  };
  return <>
- {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height,'--attachment-panel-height':height+'px'} as import('react').CSSProperties} className={cn("fixed z-40 flex min-h-0 flex-col gap-row border-t bg-(--canvas-solid) px-base pt-in pb-safe-bottom shadow-(--shadow-float)",!terminalOverlay&&"bottom-0")} onMouseDown={event=>{
+ {createPortal(<div ref={panel} data-attachment-picker data-files-panel style={{height,'--attachment-panel-height':height+'px'} as import('react').CSSProperties} className={cn("fixed z-40 flex min-h-0 flex-col gap-row border-t bg-(--canvas-solid) px-base pt-in pb-safe-bottom shadow-(--shadow-float)",(!terminalOverlay||keyboardBand>0)&&"bottom-0")} onMouseDown={event=>{
   if(!terminalOverlay||event.button!==0||!document.activeElement?.matches('.xterm-helper-textarea'))return;
   if(event.target instanceof Element&&!event.target.closest('input,textarea,select,[contenteditable=true]'))event.preventDefault();
  }} onKeyDown={e=>{if(e.key==='Escape'&&!road.busy){e.preventDefault();finish();}}}>

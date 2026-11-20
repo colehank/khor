@@ -54,8 +54,9 @@ try{
     Object.assign(viewport,{scale:1,offsetTop:0,offsetLeft:0});
     Object.defineProperties(viewport,{height:{get:()=>innerHeight-cover},width:{get:()=>innerWidth}});
     Object.defineProperty(window,'visualViewport',{configurable:true,value:viewport});
-    window.__keyboard=covered=>{
+    window.__keyboard=(covered,pan=0)=>{
       cover=covered;
+      viewport.offsetTop=pan;
       viewport.dispatchEvent(new Event('resize'));
     };
   });
@@ -202,16 +203,50 @@ try{
     await panel().locator('[data-files-cancel]').click();
     await sentToKeyboard();
     const attach=page.locator('[data-term-key=attach]:visible');
+    const field=page.locator('[data-terminal]:visible .xterm-helper-textarea');
+    const down=await terminalSize();
+    // Model a system keyboard which follows focus and can pan the visible
+    // viewport as far as its old bottom. Focusout and refocus happen in
+    // one user gesture; sample after that gesture and animate the height.
+    await page.evaluate(()=>{
+      let target=0,timer=0;
+      window.__followTerminalKeyboard=()=>{
+        const next=document.activeElement?.matches('.xterm-helper-textarea[inputmode=text]')?300:0;
+        if(next===target)return;
+        target=next;
+        clearTimeout(timer);
+        window.__keyboard(160,next?160:0);
+        timer=setTimeout(()=>window.__keyboard(next,next),45);
+      };
+      document.addEventListener('focusin',window.__followTerminalKeyboard);
+      document.addEventListener('focusout',()=>queueMicrotask(window.__followTerminalKeyboard));
+    });
     for(const mode of ['none','text']){
-      await page.locator('[data-terminal]:visible .xterm-helper-textarea').evaluate((field,mode)=>{
-        field.inputMode=mode;
-        field.focus({preventScroll:true});
-        window.__keyboard(mode==='text'?300:0);
+      const shows=mode==='text';
+      const beforeKeyboard=resizes.length;
+      await field.evaluate((element,mode)=>{
+        element.inputMode=mode;
+        window.__followTerminalKeyboard();
       },mode);
-      await page.waitForTimeout(400); // Let the intentional keyboard resize settle first.
+      await page.waitForFunction(shows=>visualViewport.height===innerHeight-(shows?300:0),shows);
+      if(shows){
+        await until(async()=>(await terminalSize()).rows<down.rows && resizes.length>beforeKeyboard);
+        const resized=await terminalSize();
+        assert(resized.height<down.height,'A panned keyboard reduces the visible terminal height');
+        assert.equal(resizes.at(-1).rows,resized.rows,'The PTY receives the keyboard-reduced row count');
+      }
+      await page.waitForTimeout(300);
       const size=await terminalSize(),resizeCount=resizes.length;
       for(const close of ['cancel','toggle','send']){
         await reopen();
+        if(shows){
+          await page.waitForFunction(()=>visualViewport.height===innerHeight);
+          assert.equal(await field.getAttribute('inputmode'),'none','The picker lowers the system keyboard');
+          assert.deepEqual(await panel().evaluate(node=>{
+            const {top,bottom}=node.getBoundingClientRect();
+            return {top:Math.round(top),bottom:Math.round(bottom),screen:innerHeight};
+          }),{top:544,bottom:844,screen:844},'The picker occupies the keyboard band');
+        }
         assert.deepEqual(await terminalSize(),size,`Opening with inputmode=${mode} leaves the terminal in place`);
         if(close==='cancel')await panel().locator('[data-files-cancel]').tap();
         if(close==='toggle')await attach.tap();
@@ -222,23 +257,24 @@ try{
           try{
             await panel().locator('[data-files-send]').tap();
             await until(()=>staged.length===before+1);
-            assert.equal(await page.locator(':focus.xterm-helper-textarea').getAttribute('inputmode'),mode,'Sending keeps terminal focus while the upload is pending');
+            if(shows)await panel().waitFor({state:'detached'});
+            assert.equal(await field.getAttribute('inputmode'),mode,'Sending restores the original keyboard preference in the send gesture');
             assert.deepEqual(await terminalSize(),size,'A pending transfer keeps the terminal in place');
           }finally{release();hold=null;}
         }
         await sentToKeyboard(mode);
+        await page.waitForFunction(shows=>visualViewport.height===innerHeight-(shows?300:0),shows);
         assert.equal(await attach.getAttribute('aria-expanded'),'false');
         assert.deepEqual(await terminalSize(),size,`Closing with ${close} leaves the terminal in place`);
       }
       await page.waitForTimeout(300); // Include any delayed PTY resize after unmount.
       assert.equal(resizes.length,resizeCount,`Attachment interactions send no PTY resize with inputmode=${mode}`);
     }
-    await page.locator('[data-terminal]:visible .xterm-helper-textarea').evaluate(field=>{
-      field.inputMode='none';
-      field.focus({preventScroll:true});
-      window.__keyboard(0);
+    await field.evaluate(element=>{
+      element.inputMode='none';
+      window.__followTerminalKeyboard();
     });
-    await page.waitForTimeout(400);
+    await until(async()=>(await terminalSize()).rows===down.rows && resizes.at(-1)?.rows===down.rows);
     note('attachment-keyboard-and-size',{keyboardUp:true,keyboardDown:true,close:['cancel','toggle','send'],ptyStable:true});
   });
   await step('cancel-immediate-retry',async()=>{
