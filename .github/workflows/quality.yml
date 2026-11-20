@@ -18,6 +18,8 @@ env:
   CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_BUILD_JOBS: '2'
+  KHOR_DRAFT_SOURCE: a9bb098db6a3f13d369f2328cf68f228cfc52221
+  KHOR_DRAFT_FRONTEND_SOURCE: 2089acb44f278b1e9470f96eda709d4af5e3ee07
 
 jobs:
   sample-mac:
@@ -26,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          fetch-depth: 2
+          fetch-depth: 8
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
@@ -36,8 +38,8 @@ jobs:
           run-id: 44665531216
       - name: Restore the frontend from the prior candidate with identical UI sources
         run: |
-          git diff --exit-code HEAD~1 HEAD^2 -- apps/gui crates/catalog
-          python3 scripts/release_manifest.py verify --root frontend
+          git diff --exit-code "$KHOR_DRAFT_FRONTEND_SOURCE" "$KHOR_DRAFT_SOURCE" -- apps/gui crates/catalog
+          python3 scripts/release_manifest.py verify --root frontend --sha "$KHOR_DRAFT_FRONTEND_SOURCE"
           cp -R frontend/dist apps/gui/dist
           cp -R frontend/gen apps/gui/src/gen
       - uses: dtolnay/rust-toolchain@1.95.0
@@ -48,7 +50,7 @@ jobs:
           save-if: false
       - name: Build the draft candidate for disposable terminal tests
         run: |
-          source=$(git rev-parse HEAD^2)
+          source=$KHOR_DRAFT_SOURCE
           git diff --exit-code "$source" HEAD -- . ':(exclude).github/workflows/quality.yml'
           git diff --exit-code HEAD -- . ':(exclude)apps/gui/dev/lab/data/world.generated.json'
           cargo build --locked -p khor-cli --bin khor
