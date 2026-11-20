@@ -11,8 +11,8 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 120
     env:
-      SOURCE_SHA: ee75a79ffcfe3a0408006d714a57db60ff6a758f
-      FRONTEND_RUN: '44786879933'
+      SOURCE_SHA: 27c7a92c889fe6902071b1e29a6eca91d67bc0a6
+      FRONTEND_RUN: '44806410933'
       BUNDLE_ID: io.github.colehank.khor.quality.round2physical
       CARGO_INCREMENTAL: '0'
       CARGO_BUILD_JOBS: '3'
