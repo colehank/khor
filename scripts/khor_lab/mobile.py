@@ -45,11 +45,18 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal=Fals
                         break
                 except OSError:
                     time.sleep(.2)
-            result = request('POST', '/session', {'capabilities': {'alwaysMatch': {
+            capabilities = {
                 'platformName':'iOS', 'appium:automationName':'XCUITest', 'appium:udid':simulator,
                 'appium:bundleId':identifier, 'appium:noReset':True,
                 'appium:connectHardwareKeyboard':False, 'appium:forceSimulatorSoftwareKeyboardPresence':True,
-                'appium:newCommandTimeout':180, 'appium:webviewConnectTimeout':60000}}})
+                'appium:newCommandTimeout':180, 'appium:webviewConnectTimeout':60000}
+            if terminal:
+                # Keep the already booted hosted simulator. Opening its UI
+                # would restart it while WebDriverAgent is being prepared.
+                capabilities.update({'appium:isHeadless':True, 'appium:skipLogCapture':True,
+                                     'appium:wdaLaunchTimeout':180000, 'appium:showXcodeLog':True})
+            result = request('POST', '/session', {'capabilities': {'alwaysMatch': capabilities}},
+                             timeout=600 if terminal else 240)
             session = '/session/' + result['sessionId']
             def command(path, value=None, method='POST'):
                 return request(method, session + path, value)
