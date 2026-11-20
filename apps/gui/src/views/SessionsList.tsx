@@ -346,7 +346,7 @@ export function SessionsList({
     // last line on a row that lives elsewhere. The face is that machine's
     // and says it; the row says what is happening, nothing else.
     sub: r.draft ? (
-      <span data-session-draft className="block min-w-0 truncate"><span className="text-destructive">[{gui.session_draft_tag}]</span>{r.draft.replace(/\s+/g, ' ')}</span>
+      <span data-session-draft className="block min-w-0 truncate"><span className="text-destructive">[{gui.session_draft_tag}]</span>{' '}{r.draft.replace(/\s+/g, ' ')}</span>
     ) : away ? (
       <span data-row-far className="block min-w-0 truncate">
         {gui.row_unreachable(agoOf(away.age))}

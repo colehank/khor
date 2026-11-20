@@ -25,8 +25,9 @@ export async function checkSessionAttention(browser, { port, report, engine, wid
       const rows=[...document.querySelectorAll('[data-list] [data-side-row]')].map(row=>row.dataset.sideRow);
       return rows.indexOf(three)<rows.indexOf(two);
     },{three,two});
-    await list.locator('[data-session-draft]').waitFor();
-    assert.match(await list.locator(`[data-side-row="${four}"]`).innerText(), /\[草稿\]unsubmitted draft/);
+    const draft = list.locator(`[data-side-row="${four}"] [data-session-draft]`);
+    await draft.waitFor();
+    assert.equal(await draft.textContent(), '[草稿] unsubmitted draft');
     assert.equal((await ids())[0],pinned,'A pinned row remains above ordinary attention');
     const before = await ids();
     const target = list.locator(`[data-side-row="${one}"]`);

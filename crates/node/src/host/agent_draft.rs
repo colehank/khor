@@ -117,10 +117,13 @@ impl Editor {
                 if !prompt.bold() {
                     return None;
                 }
-                let footer = (cursor + 2..lines.len()).find(|&index| {
-                    lines[index - 1].trim().is_empty() && codex_status(&lines[index..])
-                })?;
-                footer - 1
+                codex_box_end(screen, &lines, offset, first, cursor).or_else(|| {
+                    (cursor + 2..lines.len())
+                        .find(|&index| {
+                            lines[index - 1].trim().is_empty() && codex_status(&lines[index..])
+                        })
+                        .map(|footer| footer - 1)
+                })?
             }
             Agent::Claude => {
                 if !claude_rule(lines.get(first.checked_sub(1)?)?, cols) {
@@ -175,6 +178,26 @@ fn prompt_text(agent: Agent, line: &str) -> Option<&str> {
     } else {
         line.strip_prefix([' ', '\u{a0}'])
     }
+}
+
+fn codex_box_end(
+    screen: &vt100::Screen,
+    lines: &[String],
+    offset: u16,
+    first: usize,
+    cursor: usize,
+) -> Option<usize> {
+    // Codex paints padding above and below the editor in the same background.
+    // Its optional status bar can omit the context indicator entirely.
+    let padding = first.checked_sub(1)?;
+    let background = |row: usize| screen.cell(offset + row as u16, 0).map(|c| c.bgcolor());
+    let paint = background(first)?;
+    if paint == vt100::Color::Default || !lines[padding].trim().is_empty() {
+        return None;
+    }
+    let edge = (padding..lines.len()).find(|&row| background(row) != Some(paint))?;
+    let bottom = edge.checked_sub(1)?;
+    (bottom > cursor && lines[bottom].trim().is_empty()).then_some(bottom)
 }
 
 fn codex_status(lines: &[String]) -> bool {
@@ -244,6 +267,40 @@ mod tests {
             Some(Some("edit".into()))
         );
         assert_eq!(capture.update(source, empty.screen()), Some(None));
+    }
+
+    #[test]
+    fn codex_uses_the_painted_box_with_a_default_status_bar() {
+        let source = Some((Agent::Codex, 0));
+        let mut capture = Capture::default();
+        let empty = frame(
+            &[
+                "\x1b[48;2;30;30;30m \x1b[0m",
+                "\x1b[48;2;30;30;30;1m›\x1b[22m \x1b[2mAsk Codex\x1b[0m",
+                "\x1b[48;2;30;30;30m \x1b[0m",
+                "  gpt-5.4 default · /work",
+            ],
+            (1, 2),
+        );
+        assert_eq!(capture.update(source, empty.screen()), Some(None));
+        capture.input(b"draft");
+        let draft = frame(
+            &[
+                "\x1b[48;2;30;30;30m \x1b[0m",
+                "\x1b[48;2;30;30;30;1m›\x1b[22m draft\x1b[0m",
+                "\x1b[48;2;30;30;30m  \x1b[0m",
+                "\x1b[48;2;30;30;30m  last line\x1b[0m",
+                "\x1b[48;2;30;30;30m \x1b[0m",
+                "  gpt-5.4 default · /work",
+            ],
+            (1, 7),
+        );
+        assert_eq!(
+            capture.update(source, draft.screen()),
+            Some(Some("draft\n\nlast line".into()))
+        );
+        let menu = frame(&["\x1b[1m›\x1b[0m approval", "  enter to confirm"], (0, 2));
+        assert_eq!(capture.update(source, menu.screen()), Some(None));
     }
 
     #[test]
