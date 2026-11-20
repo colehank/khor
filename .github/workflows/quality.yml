@@ -48,6 +48,8 @@ jobs:
         if: always()
         with:
           name: real-terminal-draft-checks
-          path: scripts/native-draft-checks.json
+          path: |
+            scripts/native-draft-checks.json
+            scripts/*-terminal.bin
           if-no-files-found: warn
           retention-days: 2

@@ -221,6 +221,12 @@ def check_agent(app, peer, name, args, direct, cols):
         if "view" in locals():
             view.read()
             (evidence / f"{name}-{cols}-terminal.bin").write_bytes(view.output)
+        row = app.row(title) or {}
+        print(json.dumps({field: row.get(field) for field in (
+            "kind", "category", "draft", "doing", "word", "attachable")}), flush=True)
+        for ledger in (app.root / ".khor").rglob("commands.json"):
+            data = json.loads(ledger.read_text())
+            print("scratch ledger", json.dumps(data.get("doing")), flush=True)
         raise
     finally:
         app.run("close", sid, check=False, timeout=12)
@@ -251,9 +257,18 @@ with tempfile.TemporaryDirectory(prefix="terminal-draft-lab-", ignore_cleanup_er
             ticket = app.run("invite")
             peer.run("pair", "-", input=ticket)
             peer.start()
-        check_agent(app, peer, "codex", ["--no-alt-screen"], False, 56)
-        if "--codex-only" not in sys.argv:
-            check_agent(app, peer, "claude", [], True, 100)
+        failure = None
+        for name, options, direct, columns in [
+            ("codex", ["--no-alt-screen"], False, 56),
+            ("claude", [], True, 100),
+        ]:
+            try:
+                check_agent(app, peer, name, options, direct, columns)
+            except Exception as error:
+                print(f"{name} verification failed: {error}", flush=True)
+                failure = error
+        if failure is not None:
+            raise failure
     finally:
         if peer is not None:
             peer.stop()
