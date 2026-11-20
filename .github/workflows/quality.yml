@@ -40,11 +40,13 @@ jobs:
           save-if: false
       - name: Build the draft candidate for disposable terminal tests
         run: |
-          git diff --exit-code 4a688a96fd2b43a87787cf46373137debd304c0f -- . ':(exclude).github/workflows/quality.yml'
+          source=4a688a96fd2b43a87787cf46373137debd304c0f
+          git diff --exit-code "$source" HEAD -- . ':(exclude).github/workflows/quality.yml'
+          git diff --exit-code HEAD -- . ':(exclude)apps/gui/dev/lab/data/world.generated.json'
           cargo build --locked -p khor-cli --bin khor
           mkdir -p "$RUNNER_TEMP/terminal-draft-cli"
           cp target/debug/khor "$RUNNER_TEMP/terminal-draft-cli/"
-          git rev-parse HEAD^ > "$RUNNER_TEMP/terminal-draft-cli/source.txt"
+          echo "$source" > "$RUNNER_TEMP/terminal-draft-cli/source.txt"
           shasum -a 256 "$RUNNER_TEMP/terminal-draft-cli/khor" | awk '{print $1}' > "$RUNNER_TEMP/terminal-draft-cli/sha256.txt"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
