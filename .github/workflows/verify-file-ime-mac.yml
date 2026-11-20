@@ -9,13 +9,16 @@ permissions:
 jobs:
   app:
     runs-on: macos-26
-    timeout-minutes: 75
+    timeout-minutes: 120
     env:
       SOURCE_SHA: ee75a79ffcfe3a0408006d714a57db60ff6a758f
       FRONTEND_RUN: '44786879933'
       TARGET: aarch64-apple-darwin
       CARGO_INCREMENTAL: '0'
       CARGO_BUILD_JOBS: '3'
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: '16'
+      CARGO_PROFILE_RELEASE_LTO: 'false'
+      CARGO_PROFILE_RELEASE_OPT_LEVEL: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
