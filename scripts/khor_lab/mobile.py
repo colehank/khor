@@ -1,4 +1,5 @@
 """Small W3C client for the pinned Appium/XCUITest simulator probe."""
+from contextlib import suppress
 import json
 import os
 from pathlib import Path
@@ -280,9 +281,13 @@ def terminal_keyboard_check(command, documents, simulator, report):
                                 abs(s['visible']-up['visible'])<=1, 'Original keyboard did not return')
             if grid(returned) != grid(up) or sizes() != resized:
                 raise ValueError(f'Closing attachments resized the terminal: {returned}')
+            samples[f'after_{close}'] = returned
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
+    except Exception:
+        with suppress(subprocess.TimeoutExpired):
+            subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report/'terminal-keyboard.png')],
+                           check=False, timeout=30)
+        raise
     finally:
         (report / 'terminal-keyboard-samples.json').write_text(json.dumps(samples, indent=2))
-        subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report/'terminal-keyboard.png')],
-                       check=False, timeout=30)
