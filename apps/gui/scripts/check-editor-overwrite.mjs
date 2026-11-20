@@ -9,7 +9,7 @@ import {tmpdir} from 'node:os';
 import {createServer} from 'vite';
 import {chromium, webkit} from 'playwright-core';
 
-const knownScenarios = ['mine', 'two-editors', 'newer-external', 'external-aba', 'typing-during-read', 'cancel-during-read', 'discard-during-read', 'close-during-read', 'switch-file-during-read', 'reopen-during-read', 'incomplete-read', 'binary-read', 'take-theirs'];
+const knownScenarios = ['mine', 'two-editors', 'newer-external', 'external-aba', 'typing-during-read', 'cancel-during-read', 'discard-during-read', 'close-during-read', 'switch-file-during-read', 'reopen-during-read', 'incomplete-read', 'binary-read', 'take-theirs', 'ime-save'];
 const scenarios = process.env.EDITOR_OVERWRITE_SCENARIOS?.split(',').filter(Boolean) ?? knownScenarios;
 assert(scenarios.length > 0, 'Select at least one overwrite scenario');
 assert.equal(new Set(scenarios).size, scenarios.length, 'Overwrite scenarios must not repeat');
@@ -25,7 +25,7 @@ const until = async (test, what) => {
   const end = Date.now() + 8000;
   while (!test()) { assert(Date.now() < end, what); await wait(20); }
 };
-const sourceFiles = ['src/views/FileView.tsx', 'src/lib/save-road.ts', 'scripts/check-editor-overwrite.mjs'];
+const sourceFiles = ['src/views/FileView.tsx', 'src/components/CodeEditor.tsx', 'src/lib/save-road.ts', 'scripts/check-editor-overwrite.mjs'];
 const fingerprint = () => Object.fromEntries(sourceFiles.map(file => [file, hash(readFileSync(join(gui, file)))]));
 const sources = fingerprint(), results = [];
 let server, browser;
@@ -155,6 +155,33 @@ async function run(engine, name) {
       }))));
       for (const viewport of viewports) assert(viewport.viewport > 0 && Math.abs(viewport.available - viewport.viewport) <= 2,
         `The editor must use its owner's bounded viewport: ${JSON.stringify(viewport)}`);
+      if (scenario === 'ime-save') {
+        const editorHost = pane('one').locator('[data-code-view]');
+        const composition = (type, text) => editorHost.evaluate((host, {type, text}) => {
+          const view = host.__view;
+          if (type === 'compositionstart') view.contentDOM.dispatchEvent(new CompositionEvent(type, {bubbles: true}));
+          view.dispatch({changes: {from: 0, to: view.state.doc.length, insert: text}, userEvent: 'input.type.compose'});
+          if (type === 'compositionend') view.contentDOM.dispatchEvent(new CompositionEvent(type, {bubbles: true, data: text}));
+        }, {type, text});
+        await editor('one').click();
+        await composition('compositionstart', 'ce shi');
+        assert.equal(await readText('one'), 'ce shi', 'the editor receives marked text');
+        await wait(1400);
+        assert.equal(writes.length, 0, 'autosave must not write marked text');
+        const modifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+        await page.keyboard.press(`${modifier}+s`);
+        assert.equal(writes.length, 0, 'manual save must not write marked text');
+        await composition('compositionend', '测试');
+        await until(() => disk === '测试', 'committed Chinese text is autosaved');
+        await composition('compositionstart', 'wei wan cheng');
+        await page.evaluate(() => window.__overwrite.close());
+        await editor('one').waitFor({state: 'detached'});
+        await wait(1400);
+        assert.deepEqual(writes.map(write => write.text), ['测试'], 'closing cannot flush marked text');
+        assert.deepEqual(errors, []);
+        results.push({engine: name, scenario, ok: true, disk, writes}); console.log('PASS', name, scenario);
+        continue;
+      }
       await type('B'); await until(() => disk === 'B', 'first edit saves B');
       // This line has A -> B. Another writer restores A; a fresh read of A
       // must not be forwarded through the old line to B.

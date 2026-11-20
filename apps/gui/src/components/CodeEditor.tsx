@@ -1,7 +1,7 @@
 // One file's text in CodeMirror 6 (CM-BRIEF step 1, the owner 2026-10-10:
 // the two-layer editor's caret never lined up with its paint, OWNER-NOTES-
 // 10-09 已知问题 1). One `EditorView` per open file; the host owns what is
-// saved and passes the text in, the editor hands every change back out.
+// saved and passes the text in, the editor hands committed changes back out.
 //
 // **What CodeMirror is here for is correct text editing, not an IDE**
 // (「不提供任何自动补全什么的」 stands): line numbers, folding, ⌘F, undo,
@@ -270,6 +270,13 @@ export function CodeEditor({
     // A file read from elsewhere must not inherit edits against different
     // bytes. Every other extension is made fresh for the current host.
     const retained = saved?.key === historyKey && saved.text === text ? saved : undefined;
+    let composing = false;
+    let settleComposition: number | undefined;
+    const publishText = (text: string) => {
+      if (text === out.current) return;
+      out.current = text;
+      cb.current.onText?.(text);
+    };
     const v = new EditorView({
       parent: box.current!,
       scrollTo: retained?.scroll,
@@ -287,8 +294,23 @@ export function CodeEditor({
           EditorView.contentAttributes.of({ "data-file-text": "", "data-sheet-scroll": "" }),
           keyboardCaret(),
           EditorView.domEventHandlers({
-            compositionstart: () => { cb.current.onComposition?.(true); },
-            compositionend: () => { cb.current.onComposition?.(false); },
+            compositionstart: () => {
+              if (settleComposition !== undefined) window.cancelAnimationFrame(settleComposition);
+              settleComposition = undefined;
+              composing = true;
+              cb.current.onComposition?.(true);
+            },
+            compositionend: (_, editor) => {
+              if (settleComposition !== undefined) window.cancelAnimationFrame(settleComposition);
+              // Let CodeMirror apply the native commit or cancellation before
+              // handing text to autosave and releasing deferred disk reads.
+              settleComposition = window.requestAnimationFrame(() => {
+                settleComposition = undefined;
+                composing = false;
+                publishText(editor.state.doc.toString());
+                cb.current.onComposition?.(false);
+              });
+            },
           }),
           // The one shortcut of the textarea, `metaKey` and `ctrlKey`
           // both: a Mac app, a phone's browser and Windows, one build
@@ -298,7 +320,7 @@ export function CodeEditor({
               key,
               preventDefault: true,
               run: () => {
-                cb.current.onSave?.();
+                if (!composing) cb.current.onSave?.();
                 return true;
               },
             })),
@@ -306,11 +328,9 @@ export function CodeEditor({
           EditorView.updateListener.of((u) => {
             const left = getChunks(u.state)?.chunks.length;
             if (left !== undefined && left !== getChunks(u.startState)?.chunks.length) cb.current.onChunks?.(left);
-            if (!u.docChanged) return;
-            const t = u.state.doc.toString();
-            out.current = t;
+            if (!u.docChanged || composing) return;
             if (u.transactions.every((tr) => !tr.docChanged || tr.annotation(fromHost))) return;
-            cb.current.onText?.(t);
+            publishText(u.state.doc.toString());
           }),
         ],
       }),
@@ -340,6 +360,7 @@ export function CodeEditor({
     // (keyboard going down).
     const teardownObserver = observeScroller(v.scrollDOM, () => view.current);
     return () => {
+      if (settleComposition !== undefined) window.cancelAnimationFrame(settleComposition);
       teardownObserver();
       if (editorHistory) editorHistory.saved = {
         key: historyKey,
