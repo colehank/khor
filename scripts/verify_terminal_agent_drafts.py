@@ -141,7 +141,18 @@ def check_agent(app, peer, name, args, direct, cols):
     assert program, f"installed {name} not found"
     title = f"Draft lab {name} {cols}"
     mode = ["--tui"] if direct else []
-    sid = app.run("open", "-d", "--title", title, *mode, "--", program, *args).strip().splitlines()[-1]
+    for attempt in range(3):
+        try:
+            sid = app.run("open", "-d", "--title", title, *mode, "--", program, *args).strip().splitlines()[-1]
+            break
+        except RuntimeError as error:
+            if "session row is busy" not in str(error) or attempt == 2:
+                raise
+            row = app.row(title)
+            if row and row.get("attachable"):
+                sid = row["id"]
+                break
+            time.sleep(0.6)
     try:
         view = View(app, sid, cols)
         claude_prompt = "❯\u00a0".encode()
