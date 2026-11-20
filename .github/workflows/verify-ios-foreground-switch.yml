@@ -1,0 +1,35 @@
+name: Verify iOS foreground network build
+on:
+  push:
+    branches: [verify/ios-foreground-switch-recovery]
+permissions:
+  contents: read
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_BUILD_JOBS: '3'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: "cea52e804ddea20b8ade3385bb827c359b06ec6c"
+          persist-credentials: false
+      - name: Verify source and select device SDK
+        run: |
+          test "$(git rev-parse HEAD)" = "cea52e804ddea20b8ade3385bb827c359b06ec6c"
+          sudo xcode-select -s /Applications/Xcode_26.5.app
+          xcrun --sdk iphoneos --show-sdk-version
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: aarch64-apple-ios
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: apps/gui/package-lock.json
+      - run: npm ci --prefix apps/gui
+      - run: npm run build --prefix apps/gui
+      - run: cargo check --locked -p khor-gui --lib --target aarch64-apple-ios
