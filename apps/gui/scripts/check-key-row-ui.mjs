@@ -182,12 +182,12 @@ try{
    await window.__keyWire.negotiate('\x1b[?2004h');
    window.__pasteProbe.emit({owner:owner+'-retired',value:{text:'wrong terminal'}});
    window.__pasteProbe.emit({owner,value:{text:'paste once'}});
-   window.__pasteProbe.emit({owner,value:{image:{type:'image/png',data:'AQID'}}});
+   window.__pasteProbe.emit({owner,value:{images:[{type:'image/png',data:'AQID'},{type:'image/jpeg',data:'BAUG'}]}});
   },seat.owner);
   assert.deepEqual(await page.evaluate(()=>window.__keyWire.data),['\x1b[200~paste once\x1b[201~']);
   assert.deepEqual(await page.evaluate(async()=>Promise.all(window.__keyWire.images.map(async file=>({
    type:file.type,bytes:[...new Uint8Array(await file.arrayBuffer())],
-  })))),[{type:'image/png',bytes:[1,2,3]}]);
+  })))),[{type:'image/png',bytes:[1,2,3]},{type:'image/jpeg',bytes:[4,5,6]}]);
   await page.setViewportSize({width:240,height:740});
   await page.locator('[data-term-keys-scroll]').evaluate(row=>row.scrollLeft=0);
   await page.waitForFunction(()=>window.__pasteProbe.changes.at(-1)?.geometry===null);

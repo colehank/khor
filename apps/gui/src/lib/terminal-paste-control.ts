@@ -6,7 +6,7 @@ import { pastedImage, type Pasted } from "@/lib/term-paste";
 
 type Rect = [number, number, number, number];
 type Seat = { frame: Rect; clip: Rect; radius: number; dark: boolean };
-type PasteEvent = { owner: string; value: { text: string } | { image: { type: string; data: string } } | { scroll: number } };
+type PasteEvent = { owner: string; value: { text: string } | { images: { type: string; data: string }[] } | { scroll: number } };
 
 const ios = inApp && (/iPhone|iPad|iPod/i.test(navigator.userAgent)
   || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 1));
@@ -94,7 +94,7 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
       if (!alive || from !== owner || !cap.isConnected) return;
       if ("scroll" in value) row.scrollLeft += value.scroll;
       else if ("text" in value && value.text) latest.current?.({ text: value.text });
-      else if ("image" in value) latest.current?.({ images: [pastedImage(value.image)] });
+      else if ("images" in value) latest.current?.({ images: value.images.map(pastedImage) });
     }, { target: { kind: "WebviewWindow", label: "main" } });
     void stop.ready.then(ready => {
       listening = ready;
