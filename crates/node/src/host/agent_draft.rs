@@ -100,7 +100,12 @@ impl Editor {
         let (row, col) = screen.cursor_position();
         let (rows, cols) = screen.size();
         let offset = rows.saturating_sub(LOOKBACK);
-        if screen.hide_cursor() || row < offset || col < 2 {
+        if row < offset || col < 2 {
+            return None;
+        }
+        // Claude paints its own cursor in reverse video at the reported
+        // cursor position and leaves the terminal's hardware cursor hidden.
+        if screen.hide_cursor() && (agent != Agent::Claude || !screen.cell(row, col)?.inverse()) {
             return None;
         }
         let cursor = usize::from(row - offset);
@@ -154,7 +159,7 @@ impl Editor {
         if self.placeholder {
             return None;
         }
-        let text: String = self.lines[self.first..self.end]
+        let mut text: String = self.lines[self.first..self.end]
             .iter()
             .enumerate()
             .flat_map(|(i, line)| {
@@ -167,7 +172,8 @@ impl Editor {
             })
             .take(PREVIEW_LIMIT)
             .collect();
-        (!text.trim().is_empty()).then_some(text)
+        text.truncate(text.trim_end().len());
+        (!text.is_empty()).then_some(text)
     }
 }
 
@@ -318,8 +324,13 @@ mod tests {
             (1, 2),
         );
         let draft = frame(
-            &[&rule, "❯\u{a0}edited by Claude", &rule, "  manual mode"],
-            (1, 11),
+            &[
+                &rule,
+                "❯\u{a0}edited by Claude\x1b[7m \x1b[27m\x1b[?25l",
+                &rule,
+                "  manual mode",
+            ],
+            (1, 18),
         );
         let menu = frame(
             &[&rule, "  Workspace access", "  ❯ Yes", "  Enter to confirm"],
