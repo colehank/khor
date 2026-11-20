@@ -180,7 +180,7 @@ try{
   assert(seat.geometry.clip[2]>0&&seat.geometry.clip[2]<=seat.geometry.frame[2]);
   await page.evaluate(async owner=>{
    await window.__keyWire.negotiate('\x1b[?2004h');
-   window.__pasteProbe.emit({owner:owner+1,value:{text:'wrong terminal'}});
+   window.__pasteProbe.emit({owner:owner+'-retired',value:{text:'wrong terminal'}});
    window.__pasteProbe.emit({owner,value:{text:'paste once'}});
    window.__pasteProbe.emit({owner,value:{image:{type:'image/png',data:'AQID'}}});
   },seat.owner);

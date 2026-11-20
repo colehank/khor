@@ -1541,7 +1541,7 @@ fn edit_menu_at(
 #[tauri::command]
 async fn terminal_paste_control(
     app: tauri::AppHandle,
-    owner: u32,
+    owner: String,
     geometry: Option<serde_json::Value>,
 ) -> Result<bool, String> {
     #[cfg(target_os = "ios")]
@@ -1556,11 +1556,12 @@ async fn terminal_paste_control(
             .map_err(|error| error.to_string())?;
         let (done, ready) = tokio::sync::oneshot::channel();
         face.with_webview(move |wv| {
+            let event_owner = owner.clone();
             let report = std::sync::Arc::new(move |value| {
                 let _ = app.emit_to(
                     "main",
                     "terminal-paste",
-                    serde_json::json!({ "owner": owner, "value": value }),
+                    serde_json::json!({ "owner": event_owner, "value": value }),
                 );
             });
             let _ = done.send(terminal_paste::place(wv.inner().cast(), owner, geometry, report));

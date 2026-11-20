@@ -6,7 +6,7 @@ import { pastedImage, type Pasted } from "@/lib/term-paste";
 
 type Rect = [number, number, number, number];
 type Seat = { frame: Rect; clip: Rect; radius: number; dark: boolean };
-type PasteEvent = { owner: number; value: { text: string } | { image: { type: string; data: string } } | { scroll: number } };
+type PasteEvent = { owner: string; value: { text: string } | { image: { type: string; data: string } } | { scroll: number } };
 
 const ios = inApp && (/iPhone|iPad|iPod/i.test(navigator.userAgent)
   || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 1));
@@ -48,7 +48,8 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     const cap = button.current;
     const row = cap?.closest<HTMLElement>("[data-term-keys-scroll]");
     if (!enabled || !cap || !row) return;
-    const owner = ++nextOwner;
+    // An item provider can complete after a WebView reload. Scope it to this document.
+    const owner = `${performance.timeOrigin}:${++nextOwner}`;
     let alive = true;
     let frame = 0;
     let last = "";
