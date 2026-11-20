@@ -38,7 +38,7 @@ jobs:
           python3 scripts/release_manifest.py verify --root frontend --sha "$SOURCE_SHA" --kind frontend --run-id "$FRONTEND_RUN"
           cp -R frontend/dist apps/gui/dist
           cp -R frontend/gen apps/gui/src/gen
-      - name: Build the matching native app and CLI
+      - name: Build and stage the matching CLI
         env:
           KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
         run: |
@@ -48,8 +48,17 @@ jobs:
           cargo build --locked -p khor-cli --bin khor --target "$TARGET" --release
           mkdir -p apps/gui/src-tauri/binaries
           cp "target/$TARGET/release/khor" "apps/gui/src-tauri/binaries/khor-$TARGET"
+      - name: Build the native app
+        env:
+          KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+        run: |
           npm ci --prefix apps/gui
           python3 scripts/apple_release.py mac-build --target "$TARGET" --signed false
+      - id: preserve
+        name: Save the built bundle for recovery if verification fails
+        run: |
+          mkdir raw-validation
+          ditto -c -k --norsrc --keepParent "target/$TARGET/release/bundle/macos/Khor.app" raw-validation/Khor.app.zip
       - name: Archive and verify the ad hoc signed test app
         env:
           KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
@@ -57,7 +66,8 @@ jobs:
           app="target/$TARGET/release/bundle/macos/Khor.app"
           gui="$app/Contents/MacOS/khor-gui"
           cli="$app/Contents/MacOS/khor"
-          lipo -verify_arch arm64 "$gui" "$cli"
+          test "$(lipo -archs "$gui")" = arm64
+          test "$(lipo -archs "$cli")" = arm64
           codesign --force --sign - "$cli"
           codesign --force --sign - "$app"
           codesign --verify --deep --strict "$app"
@@ -73,7 +83,7 @@ jobs:
           assert gui['component'] == 'desktop-app' and cli['component'] == 'cli'
           assert all(gui[key] == cli[key] for key in ('build', 'platform', 'contract'))
           PY
-          ditto -c -k --keepParent "$app" native-validation/Khor.app.zip
+          ditto -c -k --norsrc --keepParent "$app" native-validation/Khor.app.zip
           python3 scripts/release_manifest.py create --root native-validation --kind khor-ime-mac-validation --frontend frontend --executable "$gui" --agent "$KHOR_AGENT_BUNDLE" --program-info native-validation/gui-identity.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -81,3 +91,10 @@ jobs:
           path: native-validation/
           if-no-files-found: error
           retention-days: 7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: failure() && steps.preserve.outcome == 'success'
+        with:
+          name: khor-ime-mac-archive-for-diagnosis
+          path: raw-validation/Khor.app.zip
+          if-no-files-found: error
+          retention-days: 3
