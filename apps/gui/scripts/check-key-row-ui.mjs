@@ -135,6 +135,12 @@ try{
     assert(await page.locator('.xterm-helper-textarea:focus').count(),'A touch on a key preserves terminal focus');
    }
   }
+  await page.evaluate(()=>window.__keyWire.negotiate('\x1b[>1u'));
+  for(const [key,bytes] of [['tab','\t'],['backtab','\x1b[9;2u']]){
+   await page.evaluate(()=>window.__keyWire.clear());
+   await page.locator(`[data-term-key="${key}"]`).first().tap();
+   assert.deepEqual(await page.evaluate(()=>window.__keyWire.data),[bytes]);
+  }
   mark('all visible parts of Tab and Shift-Tab send the correct sequences on touch');
  }catch(error){
   groupErrors.push({group:'tab-touch',error:String(error),stack:error.stack});
