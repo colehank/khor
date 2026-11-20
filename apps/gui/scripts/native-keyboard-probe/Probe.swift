@@ -1,6 +1,11 @@
 import UIKit
 import WebKit
 
+#if PASTE_PROBE
+@_silgen_name("mount_terminal_paste_probe")
+func mountTerminalPasteProbe(_ face: UnsafeMutableRawPointer, _ path: UnsafePointer<CChar>) -> Bool
+#endif
+
 @main
 final class KeyboardProbe: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
@@ -27,6 +32,13 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
         // The host can read the sandbox of this disposable simulator app.
         // Keep JavaScript observations independent of Web Inspector discovery.
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+#if PASTE_PROBE
+        let capture = documents.appendingPathComponent("paste-result.json").path
+        let attached = capture.withCString {
+            mountTerminalPasteProbe(Unmanaged.passUnretained(web).toOpaque(), $0)
+        }
+        precondition(attached, "Native UIPasteControl could not be mounted")
+#endif
         commandTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self, weak web] _ in
             DispatchQueue.main.async {
                 if let self, let web { self.observe(web, in: documents) }
