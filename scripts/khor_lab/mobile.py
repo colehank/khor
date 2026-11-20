@@ -252,7 +252,9 @@ def terminal_keyboard_check(command, documents, simulator, report):
           if(!term) return null;
           const screen=term.element.querySelector('.xterm-screen').getBoundingClientRect();
           const buffer=term.buffer.active;
-          const row=buffer.cursorY+buffer.baseY-buffer.viewportY;
+          const line=buffer.cursorY+buffer.baseY;
+          if (!buffer.getLine(line)?.translateToString(true).startsWith('preview %')) return null;
+          const row=line-buffer.viewportY;
           return {x:screen.x+(buffer.cursorX+.5)*screen.width/term.cols,
                   y:screen.y+(row+.5)*screen.height/term.rows};""", keyboard=True)
         up = wait_for(lambda:evaluate(state), lambda s:s and s['rows']<down['rows'] and
