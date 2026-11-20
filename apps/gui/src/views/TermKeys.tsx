@@ -60,7 +60,8 @@ import { KEY_ROW_LIMITS, type CustomKeyEntry, type KeyRowEntry } from "@/lib/ter
 import { keyPanelGone, toggleKeyPanel, useKeyPanel, useKeyPanelKind, type PanelKind } from "@/lib/key-panel";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
 import { useHeldKey } from "@/lib/key-repeat";
-import { pasteInto } from "@/lib/term-paste";
+import { applyPaste, pasteInto, type Pasted } from "@/lib/term-paste";
+import { useTerminalPasteControl } from "@/lib/terminal-paste-control";
 import { setTermOptionMeta, useTermOptionMeta } from "@/lib/term-option-meta";
 import { setTermWake, useTermWake, WAKES, type Wake } from "@/lib/term-tap";
 import { useCoarse } from "@/hooks/use-coarse";
@@ -113,19 +114,26 @@ function pressKey(k: KeyDef, t: Terminal, mods: Mods, onMods: (m: Mods) => void,
 
 /** One cap: the row's and the sheet's. A key a keyboard repeats repeats
     while held (`lib/key-repeat`), under the latches it went out with. */
-function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: (under: Mods) => void; className?: string }) {
+function Cap({ k, mods, onPress, pasteControl, className }: {
+  k: KeyDef; mods: Mods; onPress: (under: Mods) => void;
+  pasteControl?: ReturnType<typeof useTerminalPasteControl>; className?: string;
+}) {
   const latch = k.name === "ctrl" || k.name === "alt";
   const held = heldOf(k, mods);
   const locked = lockedOf(k, mods);
   const under = useRef(mods);
+  const { button, native } = pasteControl ?? {};
   const hold = useHeldKey((first) => {
     if (first) under.current = mods;
     onPress(under.current);
   }, k.repeats === true);
   return (
     <button
+      ref={button}
       type="button"
       data-term-key={k.name}
+      aria-hidden={native || undefined}
+      tabIndex={native ? -1 : undefined}
       data-on={latch ? held : undefined}
       data-locked={locked || undefined}
       aria-pressed={latch ? held : undefined}
@@ -133,7 +141,7 @@ function Cap({ k, mods, onPress, className }: { k: KeyDef; mods: Mods; onPress: 
       // The caret stays in the terminal (the file head).
       onMouseDown={(e) => e.preventDefault()}
       {...hold}
-      className={cn(CAP_BOX, k.repeats && "select-none [-webkit-touch-callout:none]", className)}
+      className={cn(CAP_BOX, k.repeats && "select-none [-webkit-touch-callout:none]", native && "opacity-0", className)}
     >
       <span className={capFace(held, locked)}>{k.cap}</span>
     </button>
@@ -158,6 +166,10 @@ export function TermKeys({
   const row = useKeyRow();
   const [keyError, setKeyError] = useState(false);
   const shown = row.filter((s) => s.on).flatMap((s) => keyDefinition(s) ?? []);
+  const paste = (value: Pasted) => {
+    if (term.current) applyPaste(term.current, files.dropFiles, value);
+  };
+  const pasteControl = useTerminalPasteControl(shown.some((key) => key.name === "paste") ? paste : undefined);
   const press = (k: KeyDef, under: Mods) => {
     const t = term.current;
     // A repeat after the first key: the latches have let go already.
@@ -183,7 +195,8 @@ export function TermKeys({
       <AttachKey onOpen={files.open} onClose={files.close} on={files.opened} />
       <div data-term-keys-scroll className="flex min-w-0 flex-1 items-center gap-1.5 self-stretch overflow-x-auto">
         {shown.map((k) => (
-          <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)} />
+          <Cap key={k.name} k={k} mods={mods} onPress={(under) => press(k, under)}
+            pasteControl={k.name === "paste" ? pasteControl : undefined} />
         ))}
         <KeyPanel term={term} mods={mods} onMods={onMods} files={files} />
       </div>

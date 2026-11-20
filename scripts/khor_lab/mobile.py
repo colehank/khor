@@ -282,6 +282,23 @@ def terminal_keyboard_check(command, documents, simulator, report):
             if grid(returned) != grid(up) or sizes() != resized:
                 raise ValueError(f'Closing attachments resized the terminal: {returned}')
             samples[f'after_{close}'] = returned
+        evaluate("""window.__tabProbe = [];
+          document.querySelector('[data-terminal]').__xterm.onData(value => window.__tabProbe.push(value));""")
+        for key, expected in (('tab', '\t'), ('backtab', '\x1b[Z')):
+            selector = f'[data-term-key="{key}"]'
+            evaluate(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest',inline:'center'}});")
+            for side in ('left', 'right'):
+                position = f"""const cap=document.querySelector({json.dumps(selector)});
+                  const box=cap.getBoundingClientRect();
+                  const row=cap.closest('[data-term-keys-scroll]').getBoundingClientRect();
+                  const left=Math.max(box.left,row.left), right=Math.min(box.right,row.right);
+                  if(right-left<12) return null;
+                  return {{x:{'left+5' if side == 'left' else 'right-5'},y:box.y+box.height/2}};"""
+                tap(position, keyboard=True)
+                actual = evaluate('return window.__tabProbe.splice(0);')
+                if actual != [expected]:
+                    raise ValueError(f'{key} from the {side} edge sent {actual!r}')
+        samples['tab_key_edges'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
     except Exception:

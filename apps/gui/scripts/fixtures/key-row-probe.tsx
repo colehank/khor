@@ -7,7 +7,7 @@ followModality();
 import {PopupButton} from '/src/components/ui/popup-button';import {AgentInteraction} from '/src/components/AgentInteraction';
 import '/src/styles/tokens.css';import '/src/styles/app.css';import '@xterm/xterm/css/xterm.css';
 document.documentElement.dataset.theme='light';document.documentElement.style.setProperty('--kb','320px');
-const wire=window.__keyWire={inputs:[],data:[],unknown:[],answers:[],keyRow};
+const wire=window.__keyWire={inputs:[],data:[],unknown:[],answers:[],images:[],keyRow};
 const originalFetch=window.fetch.bind(window);window.fetch=(input,init)=>{const url=new URL(typeof input==='string'?input:input.url,location.href);if(url.pathname.startsWith('/api/')){wire.unknown.push(url.pathname);throw Error('unexpected API '+url.pathname)}return originalFetch(input,init)};
 wire.shown=keyboardShown;wire.keyboard=()=>{Object.defineProperty(window.visualViewport,'height',{configurable:true,value:window.innerHeight-260});window.visualViewport.dispatchEvent(new Event('resize'))};
 function Choices(){const [value,setValue]=useState('gamma');return <><PopupButton label="Grouped choices" value={value} onPick={setValue} choices={[{value:'alpha',label:'Alpha',group:'Letters'},{value:'beta',label:'Beta',disabled:true,group:'Letters'},{value:'gamma',label:'Gamma',note:'Rich choice detail',group:'Letters'},...Array.from({length:40},(_,i)=>({value:'item-'+i,label:'Choice '+String(i).padStart(2,'0'),group:'Long list'}))]}/><output data-choice-value>{value}</output><AgentInteraction request={{mode:'form',message:'Choose agents',requestedSchema:{required:['machine','agents'],properties:{machine:{type:'string',title:'Machine',enum:['local','remote']},agents:{type:'array',title:'Agents',items:{enum:['claude','codex']}}}}}} onAnswer={async value=>{wire.answers.push(value)}}/></>}
@@ -17,5 +17,5 @@ function Probe(){const narrow=useWindowNarrow();useEffect(()=>{document.document
   wire.negotiate=value=>new Promise(done=>t.write(value,done));wire.focus=()=>t.focus();wire.lock=()=>setMods({ctrl:true,alt:true,lock:{ctrl:true,alt:true}});wire.clear=()=>{wire.inputs=[];wire.data=[]};setReady(true);
   return()=>{protocol.dispose();t.dispose();term.current=null};},[]);
  const terminal=new URLSearchParams(location.search).has('terminal');
- return <TooltipProvider><main>{new URLSearchParams(location.search).has('choices')?<Choices/>:terminal?<><div ref={box}/><output data-key-mods>{JSON.stringify(mods)}</output>{ready&&<TermKeys term={term} mods={mods} onMods={setMods} files={{dropFiles:()=>{throw Error('unexpected file drop')}}}/>}</>:<TerminalSection/>}</main></TooltipProvider>;
+ return <TooltipProvider><main>{new URLSearchParams(location.search).has('choices')?<Choices/>:terminal?<><div ref={box}/><output data-key-mods>{JSON.stringify(mods)}</output>{ready&&<TermKeys term={term} mods={mods} onMods={setMods} files={{dropFiles:files=>wire.images.push(...files)}}/>}</>:<TerminalSection/>}</main></TooltipProvider>;
 }createRoot(document.getElementById('root')).render(<Probe/>);

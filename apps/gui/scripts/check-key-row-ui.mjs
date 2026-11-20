@@ -110,6 +110,81 @@ try{
  await page.goto(url);await open(page);await add();await pickPopup(key(),'KeyN');await modifier('shift',true);await editor.locator('[data-key-step-add]').click();await pickPopup(key(),'Digit1');await modifier('ctrl',true);await editor.locator('[data-key-entry-name]').fill('unsupported');await editor.locator('[data-key-entry-save]').click();const bad=(await row()).entries.find(entry=>entry.label==='unsupported');assert(bad);await editor.locator('[data-key-row-done]').click();await page.goto(url+'?terminal=1');await page.locator('[data-term-keys]').waitFor();await page.locator(`[data-term-key="${bad.id}"]`).click();await page.getByRole('alert').waitFor();assert.equal(await page.evaluate(()=>window.__keyWire.inputs.length),0);mark('unsupported sequence does not send a partial prefix');
  }catch(error){groupErrors.push({group:'desktop-editor',error:String(error),stack:error.stack});for(const [index,page] of context.pages().entries())await page.screenshot({path:join(evidence,`desktop-editor-failure-${index}.png`),fullPage:true}).catch(()=>{});}
  finally{await context.close();}
+ const touch=await browser.newContext({viewport:{width:390,height:740},isMobile:true,hasTouch:true});
+ try{
+  const page=await touch.newPage();
+  await page.goto(url+'?terminal=1');
+  await page.locator('[data-term-keys]').waitFor();
+  await page.evaluate(()=>window.__keyWire.focus());
+  for(const [key,bytes] of [['tab','\t'],['backtab','\x1b[Z']]){
+   const cap=page.locator(`[data-term-key="${key}"]`).first();
+   await cap.scrollIntoViewIfNeeded();
+   const bounds=await cap.boundingBox();
+   assert(bounds,'The key is visible in the mobile row');
+   for(const position of [
+    {x:5,y:bounds.height/2},
+    {x:bounds.width*.33,y:bounds.height/2},
+    {x:bounds.width*.67,y:bounds.height/2},
+    {x:bounds.width-5,y:bounds.height/2},
+    {x:bounds.width/2,y:bounds.height-4},
+   ]){
+    await page.evaluate(()=>window.__keyWire.clear());
+    await cap.tap({position});
+    assert.deepEqual(await page.evaluate(()=>window.__keyWire.data),[bytes],
+     `One touch on ${key} at ${JSON.stringify(position)} sends the key once`);
+    assert(await page.locator('.xterm-helper-textarea:focus').count(),'A touch on a key preserves terminal focus');
+   }
+  }
+  mark('all visible parts of Tab and Shift-Tab send the correct sequences on touch');
+ }catch(error){
+  groupErrors.push({group:'tab-touch',error:String(error),stack:error.stack});
+ }finally{await touch.close();}
+
+ const nativePaste=await browser.newContext({
+  viewport:{width:390,height:740},isMobile:true,hasTouch:true,
+  userAgent:'Mozilla/5.0 (iPhone; CPU iPhone OS 26_4 like Mac OS X) Mobile/15E148',
+ });
+ try {
+  const page=await nativePaste.newPage();
+  await page.addInitScript(()=>{
+   const callbacks=new Map();
+   window.__pasteProbe={changes:[],emit:value=>callbacks.get(window.__pasteProbe.listener)?.({payload:value})};
+   let next=0;
+   window.__TAURI_INTERNALS__={
+    transformCallback:handler=>{callbacks.set(++next,handler);return next},
+    unregisterCallback:id=>callbacks.delete(id),
+    invoke:async (command,args)=>{
+     if(command==='plugin:event|listen'){window.__pasteProbe.listener=args.handler;return 1}
+     if(command==='terminal_paste_control'){window.__pasteProbe.changes.push(args);return !!args.geometry}
+     return null;
+    },
+   };
+  });
+  await page.goto(url+'?terminal=1');
+  const key=page.locator('[data-term-key="paste"]');
+  await key.scrollIntoViewIfNeeded();
+  await page.waitForFunction(()=>window.__pasteProbe.changes.some(change=>change.geometry));
+  await page.waitForFunction(()=>document.querySelector('[data-term-key="paste"]')?.getAttribute('aria-hidden')==='true');
+  const seat=await page.evaluate(()=>window.__pasteProbe.changes.filter(change=>change.geometry).at(-1));
+  assert(seat.geometry.clip[2]>0&&seat.geometry.clip[2]<=seat.geometry.frame[2]);
+  await page.evaluate(async owner=>{
+   await window.__keyWire.negotiate('\x1b[?2004h');
+   window.__pasteProbe.emit({owner:owner+1,value:{text:'wrong terminal'}});
+   window.__pasteProbe.emit({owner,value:{text:'paste once'}});
+   window.__pasteProbe.emit({owner,value:{image:{type:'image/png',data:'AQID'}}});
+  },seat.owner);
+  assert.deepEqual(await page.evaluate(()=>window.__keyWire.data),['\x1b[200~paste once\x1b[201~']);
+  assert.deepEqual(await page.evaluate(async()=>Promise.all(window.__keyWire.images.map(async file=>({
+   type:file.type,bytes:[...new Uint8Array(await file.arrayBuffer())],
+  })))),[{type:'image/png',bytes:[1,2,3]}]);
+  await page.setViewportSize({width:240,height:740});
+  await page.locator('[data-term-keys-scroll]').evaluate(row=>row.scrollLeft=0);
+  await page.waitForFunction(()=>window.__pasteProbe.changes.at(-1)?.geometry===null);
+  mark('native paste sends text and images to the owning terminal and hides off the row');
+ } catch(error) {
+  groupErrors.push({group:'native-paste',error:String(error),stack:error.stack});
+ } finally{await nativePaste.close();}
+
  const broken=await browser.newContext({viewport:{width:1100,height:800}}),damaged=await broken.newPage();
  await damaged.addInitScript(()=>localStorage.setItem('khor.term-key-row','{"version":999,"entries":[]}'));
  await damaged.goto(url);await open(damaged);assert.equal(await damaged.locator('[data-key-row-add]').count(),0);
