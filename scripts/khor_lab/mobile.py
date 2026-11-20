@@ -300,9 +300,9 @@ def terminal_keyboard_check(command, documents, simulator, report):
                 actual = evaluate('return window.__tabProbe.splice(0);')
                 if actual != [expected]:
                     raise ValueError(f'{key} from the {side} edge sent {actual!r}')
+        samples['tab_key_edges'] = True
         if os.environ.get('KHOR_PASTE_PROBE_LIB'):
-            payload = 'clipboard from outside Khor'
-            subprocess.run(['xcrun','simctl','pbcopy',simulator],input=payload,text=True,check=True,timeout=150)
+            payload = 'isolated UIKit clipboard fixture'
             key = wait_for(lambda: command('/elements', {'using':'accessibility id','value':'khor-terminal-paste'}),
                            bool, 'The native paste control is missing')[0]
             element = key['element-6066-11e4-a52e-4f735466cecf']
@@ -315,7 +315,6 @@ def terminal_keyboard_check(command, documents, simulator, report):
             if not native_keyboard():
                 raise ValueError('The native paste key dismissed the terminal keyboard')
             samples['native_paste'] = content == {'text':payload}
-        samples['tab_key_edges'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
     except Exception:

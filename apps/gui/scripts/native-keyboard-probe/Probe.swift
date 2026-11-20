@@ -33,6 +33,7 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
         // Keep JavaScript observations independent of Web Inspector discovery.
         let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
 #if PASTE_PROBE
+        UIPasteboard.general.string = "isolated UIKit clipboard fixture"
         let capture = documents.appendingPathComponent("paste-result.json").path
         let attached = capture.withCString {
             mountTerminalPasteProbe(Unmanaged.passUnretained(web).toOpaque(), $0)

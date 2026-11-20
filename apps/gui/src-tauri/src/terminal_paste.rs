@@ -1,7 +1,7 @@
 //! The terminal key row's iOS paste button. UIKit supplies the item providers
 //! for a press on UIPasteControl, and the face owns the destination terminal.
 use std::cell::{Cell, RefCell};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use block2::RcBlock;
 use objc2::rc::{Allocated, Retained};
@@ -39,7 +39,11 @@ define_class!(
     impl Target {
         #[unsafe(method(pasteItemProviders:))]
         fn paste(&self, providers: &AnyObject) {
-            read_items(providers, self.ivars().report.clone());
+            // The completion may run after UIKit releases the original array.
+            let retained = unsafe { Retained::retain(providers as *const AnyObject as *mut AnyObject) };
+            if let Some(providers) = retained {
+                read_text(providers, 0, self.ivars().report.clone());
+            }
         }
 
         #[unsafe(method(gestureRecognizerShouldBegin:))]
@@ -186,15 +190,16 @@ unsafe fn make_seat(
     }
 }
 
-fn read_items(providers: &AnyObject, report: Report) {
-    // These are the providers UIKit granted for this control's activation.
-    // Text takes precedence over an accompanying Finder thumbnail.
+fn read_text(providers: Retained<AnyObject>, start: usize, report: Report) {
+    // Text wins over accompanying images. The first nonempty string is
+    // selected in provider order, including when an earlier load fails.
     unsafe {
-        let count: usize = msg_send![providers, count];
-        for index in 0..count {
-            let item: *mut AnyObject = msg_send![providers, objectAtIndex: index];
+        let count: usize = msg_send![&*providers, count];
+        for index in start..count {
+            let item: *mut AnyObject = msg_send![&*providers, objectAtIndex: index];
             let text: bool = msg_send![item, canLoadObjectOfClass: class!(NSString)];
             if text {
+                let other = providers.clone();
                 let complete =
                     RcBlock::new(move |string: *mut NSString, _error: *mut AnyObject| {
                         if let Some(text) = string
@@ -203,33 +208,69 @@ fn read_items(providers: &AnyObject, report: Report) {
                             .filter(|s| !s.is_empty())
                         {
                             report(json!({ "text": text }));
+                        } else {
+                            read_text(other.clone(), index + 1, report.clone());
                         }
                     });
                 let _: *mut AnyObject = msg_send![item, loadObjectOfClass: class!(NSString), completionHandler: &*complete];
                 return;
             }
         }
+        read_images(&providers, report);
+    }
+}
+
+struct ImageBatch {
+    pending: usize,
+    parts: Vec<Option<Value>>,
+}
+
+fn read_images(providers: &AnyObject, report: Report) {
+    // Only these granted providers are inspected. Keep the original order
+    // when the providers complete on different queues.
+    unsafe {
+        let count: usize = msg_send![providers, count];
+        let mut items = Vec::new();
         for index in 0..count {
             let item: *mut AnyObject = msg_send![providers, objectAtIndex: index];
             for (uti, mime) in crate::edit_menu::PICTURES {
                 let kind = NSString::from_str(uti);
                 let supported: bool = msg_send![item, hasItemConformingToTypeIdentifier: &*kind];
-                if !supported {
-                    continue;
+                if supported {
+                    items.push((item, kind, mime));
+                    break;
                 }
-                let complete = RcBlock::new(move |data: *mut AnyObject, _error: *mut AnyObject| {
-                    if data.is_null() {
-                        return;
-                    }
-                    let encoded: Option<Retained<NSString>> =
-                        msg_send![data, base64EncodedStringWithOptions: 0usize];
-                    if let Some(encoded) = encoded {
-                        report(json!({ "image": { "type": mime, "data": encoded.to_string() } }));
-                    }
-                });
-                let _: *mut AnyObject = msg_send![item, loadDataRepresentationForTypeIdentifier: &*kind, completionHandler: &*complete];
-                return;
             }
+        }
+        let batch = Arc::new(Mutex::new(ImageBatch {
+            pending: items.len(),
+            parts: vec![None; items.len()],
+        }));
+        for (index, (item, kind, mime)) in items.into_iter().enumerate() {
+            let batch = batch.clone();
+            let report = report.clone();
+            let complete = RcBlock::new(move |data: *mut AnyObject, _error: *mut AnyObject| {
+                let encoded: Option<Retained<NSString>> = if data.is_null() {
+                    None
+                } else {
+                    msg_send![data, base64EncodedStringWithOptions: 0usize]
+                };
+                let mut batch = batch.lock().unwrap_or_else(|error| error.into_inner());
+                batch.parts[index] =
+                    encoded.map(|data| json!({ "type": mime, "data": data.to_string() }));
+                batch.pending -= 1;
+                if batch.pending == 0 {
+                    let images = std::mem::take(&mut batch.parts)
+                        .into_iter()
+                        .flatten()
+                        .collect::<Vec<_>>();
+                    drop(batch);
+                    if !images.is_empty() {
+                        report(json!({ "images": images }));
+                    }
+                }
+            });
+            let _: *mut AnyObject = msg_send![item, loadDataRepresentationForTypeIdentifier: &*kind, completionHandler: &*complete];
         }
     }
 }
