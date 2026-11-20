@@ -137,7 +137,7 @@ import { swipeFolds, swipeLowers } from "@/lib/term-swipe";
 import { KHOR_ANSI, terminalTheme, terminalAppearance, onTermTheme } from "@/lib/term-theme";
 import { windowOpacity, onWindowSurface } from "@/lib/window-surface";
 import { keyPanelUp, lowerKeyPanel } from "@/lib/key-panel";
-import { keyboardShown, viewportMoving } from "@/lib/viewport";
+import { footHeld, holdFoot, keyboardCover, keyboardShown, viewportMoving, waitForKeyboardReturn } from "@/lib/viewport";
 import { softDeletes } from "@/lib/term-soft-delete";
 import { nativeSelects, selectionHolds, selectionUp, type MenuBox, type Picked, type Selects } from "@/lib/term-select";
 import { hideEditMenuAt, offerEditMenu, showEditMenuAt, type EditItem } from "@/lib/edit-menu";
@@ -2196,11 +2196,11 @@ export function TerminalPane({
           // Wired only now: a resize racing the open would size a pty
           // the open is about to size again.
           resizing ??= term.onResize(({ cols, rows }) => {
-            if(!document.querySelector('[data-attachment-picker]'))attachment.resize(cols, rows).catch(() => {});
+            attachment.resize(cols, rows).catch(() => {});
           });
           if (again) {
             fit.fit();
-            if(!document.querySelector('[data-attachment-picker]'))joining.resize(term.cols, term.rows).catch(() => {});
+            joining.resize(term.cols, term.rows).catch(() => {});
             term.scrollToBottom();
             // A reload keeps the terminal the focus, and the keyboard as
             // it was.
@@ -2374,7 +2374,6 @@ export function TerminalPane({
     // costs nothing; the kernel signals the program only on a change.
     let sizedAt = performance.now();
     const ownSize = () => {
-      if(document.querySelector('[data-attachment-picker]'))return;
       if (performance.now() - sizedAt < SIZE_AGAIN_MS) {
         sizedAt = performance.now();
         return;
@@ -3022,33 +3021,56 @@ export function TerminalPane({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentOpen,setAttachmentOpen]=useState(false);
   const [attachmentInto,setAttachmentInto]=useState<string|null>(null);
-  const attachmentKeyboard = useRef<{ wasUp: boolean } | null>(null);
-  const openAttachment = useCallback(() => {
-    if (attachmentKeyboard.current) return;
-    attachmentKeyboard.current = { wasUp: keyboardUp(termRef.current?.textarea ?? null) };
-    setAttachmentOpen(true);
+  const [attachmentBand, setAttachmentBand] = useState(0);
+  const attachmentKeyboard = useRef(false);
+  const releaseAttachmentFoot = useRef<(() => void) | null>(null);
+  const stopKeyboardWait = useRef<(() => void) | null>(null);
+  const releaseFoot = useCallback(() => {
+    stopKeyboardWait.current?.();
+    stopKeyboardWait.current = null;
+    releaseAttachmentFoot.current?.();
+    releaseAttachmentFoot.current = null;
   }, []);
-  const restoreAttachmentFocus = useCallback((inGesture = true) => {
-    const field = termRef.current?.textarea;
-    const keyboard = attachmentKeyboard.current;
-    if (!field?.isConnected || !keyboard) return;
-    if (!coarse) {
-      field.focus({ preventScroll: true });
-    } else if (keyboard.wasUp) {
-      if (!keyboardUp(field) && (inGesture || document.activeElement !== field || field.inputMode !== "text")) {
-        raiseKeyboard(field);
-      }
-    } else if (document.activeElement !== field || field.inputMode !== "none") {
-      lowerKeyboard(field);
+  useLayoutEffect(() => {
+    if (!active) {
+      attachmentKeyboard.current = false;
+      setAttachmentOpen(false);
     }
-  }, [coarse]);
-  const dismissAttachment = useCallback((inGesture: boolean) => {
-    if (!attachmentKeyboard.current) return;
-    restoreAttachmentFocus(inGesture);
-    attachmentKeyboard.current = null;
+    return releaseFoot;
+  }, [active, releaseFoot]);
+  const openAttachment = useCallback(() => {
+    if (attachmentOpen || dropping.current) return;
+    releaseFoot();
+    const field = termRef.current?.textarea;
+    const covered = coarse ? keyboardCover() : 0;
+    const previousHold = coarse ? footHeld() : null;
+    attachmentKeyboard.current = covered > 0 && !!field;
+    if (covered > 0) {
+      const height = Math.max(covered, previousHold ?? 0);
+      holdFoot(height);
+      releaseAttachmentFoot.current = () => {
+        if (footHeld() === height) holdFoot(previousHold);
+      };
+      if (field) lowerKeyboard(field);
+    }
+    setAttachmentBand(Math.max(covered, previousHold ?? 0));
+    setAttachmentOpen(true);
+  }, [attachmentOpen, coarse, releaseFoot]);
+  const closeAttachment = useCallback(() => {
+    const field = termRef.current?.textarea;
+    if (attachmentKeyboard.current && field?.isConnected) {
+      raiseKeyboard(field);
+      stopKeyboardWait.current = waitForKeyboardReturn(releaseFoot);
+    } else {
+      releaseFoot();
+      if (field?.isConnected) {
+        if (!coarse) field.focus({ preventScroll: true });
+        else if (document.activeElement !== field || field.inputMode !== "none") lowerKeyboard(field);
+      }
+    }
+    attachmentKeyboard.current = false;
     setAttachmentOpen(false);
-  }, [restoreAttachmentFocus]);
-  const closeAttachment = () => dismissAttachment(true);
+  }, [coarse, releaseFoot]);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const changeAttachments = useCallback((next: Attachment[]) => {
@@ -3711,7 +3733,13 @@ export function TerminalPane({
         </KeyRowSeats>
       </>
     )}
-    {active&&<AttachmentPicker viewport={boxRef} terminalOverlay open={attachmentOpen} onClose={closeAttachment} onSent={() => dismissAttachment(false)} onBeforeSend={restoreAttachmentFocus}
+    {active&&<AttachmentPicker viewport={boxRef} terminalOverlay keyboardBand={attachmentBand} open={attachmentOpen}
+      onClose={closeAttachment} onSent={closeAttachment}
+      onBeforeSend={() => {
+        // iOS needs the send press to return the keyboard. The pending
+        // transfer stays on the session pill and a failed draft can reopen.
+        if (attachmentKeyboard.current) closeAttachment();
+      }}
       road={{machine:machine??null,cwd:doing?.cwd??null,selected:attachments,into:attachmentInto,onInto:setAttachmentInto,
        add:items=>changeAttachments(addAttachments(attachmentsRef.current,items)),
        replace:(entry,file)=>changeAttachments(attachmentsRef.current.flatMap(item=>item.key===entry.key?deviceAttachments([file],false,gui.machine_here):[item])),

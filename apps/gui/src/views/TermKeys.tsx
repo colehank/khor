@@ -278,7 +278,8 @@ function KeyPanel({
         data-term-key="more"
         data-on={up || undefined}
         aria-label={gui.key_more}
-        aria-expanded={up}
+        aria-expanded={up && !files.opened}
+        disabled={files.opened}
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => panelKey(term, "keys")}
         className={CAP_BOX}
@@ -287,7 +288,7 @@ function KeyPanel({
           <IconMore className="size-5" />
         </span>
       </button>
-      {raised &&
+      {raised && !files.opened &&
         createPortal(
           <div
             data-key-panel
