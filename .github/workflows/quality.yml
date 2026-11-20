@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 env:
   CARGO_INCREMENTAL: '0'
@@ -19,11 +20,7 @@ env:
   CARGO_BUILD_JOBS: '2'
 
 jobs:
-  frontend:
-    uses: ./.github/workflows/frontend.yml
-
   sample-mac:
-    needs: frontend
     runs-on: macos-26
     timeout-minutes: 60
     steps:
@@ -31,7 +28,18 @@ jobs:
         with:
           fetch-depth: 2
           persist-credentials: false
-      - uses: ./.github/actions/restore-frontend
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: frontend
+          path: frontend
+          github-token: ${{ github.token }}
+          run-id: 44665531216
+      - name: Restore the frontend from the prior candidate with identical UI sources
+        run: |
+          git diff --exit-code HEAD~1 HEAD^2 -- apps/gui crates/catalog
+          python3 scripts/release_manifest.py verify --root frontend
+          cp -R frontend/dist apps/gui/dist
+          cp -R frontend/gen apps/gui/src/gen
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
