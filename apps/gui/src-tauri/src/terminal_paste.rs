@@ -65,7 +65,7 @@ define_class!(
 );
 
 struct Seat {
-    owner: u32,
+    owner: String,
     host: Retained<AnyObject>,
     control: Retained<AnyObject>,
     _target: Retained<Target>,
@@ -81,7 +81,12 @@ fn rect([x, y, w, h]: [f64; 4]) -> NSRect {
 
 /// Mount or move the control in the face's UIKit coordinates, clipped to the
 /// horizontal key row. Closing one terminal cannot hide a newer terminal's key.
-pub fn place(web: *mut AnyObject, owner: u32, geometry: Option<Geometry>, report: Report) -> bool {
+pub fn place(
+    web: *mut AnyObject,
+    owner: String,
+    geometry: Option<Geometry>,
+    report: Report,
+) -> bool {
     let Some(main) = MainThreadMarker::new() else {
         return false;
     };
@@ -128,7 +133,7 @@ fn remove(slot: &mut Option<Seat>) {
 unsafe fn make_seat(
     web: *mut AnyObject,
     main: MainThreadMarker,
-    owner: u32,
+    owner: String,
     radius: f64,
     report: Report,
 ) -> Option<Seat> {

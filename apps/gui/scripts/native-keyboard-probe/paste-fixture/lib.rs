@@ -18,7 +18,7 @@ extern "C" fn mount_terminal_paste_probe(face: *mut AnyObject, path: *const c_ch
         clip: [290.0, 120.0, 100.0, 42.0],
         radius: 10.0, dark: false,
     };
-    terminal_paste::place(face, 1, Some(geometry), Arc::new(move |value| {
+    terminal_paste::place(face, "paste-probe".to_owned(), Some(geometry), Arc::new(move |value| {
         let temporary = path.with_extension("tmp");
         if std::fs::write(&temporary, value.to_string()).is_ok() {
             let _ = std::fs::rename(temporary, &path);
