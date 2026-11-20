@@ -14,36 +14,51 @@ permissions:
   contents: read
   actions: read
 
+env:
+  CARGO_INCREMENTAL: '0'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_BUILD_JOBS: '2'
+  KHOR_DRAFT_SOURCE: e55a895d4cf699f332607f17e7842ae1c9c96ae6
+  KHOR_DRAFT_FRONTEND_SOURCE: 2089acb44f278b1e9470f96eda709d4af5e3ee07
+
 jobs:
   real-terminals:
     runs-on: macos-26
-    timeout-minutes: 16
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          fetch-depth: 8
+          fetch-depth: 0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22.19.0
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
-          name: terminal-draft-cli-macos-arm64
-          path: native
+          name: frontend
+          path: frontend
           github-token: ${{ github.token }}
-          run-id: 44666606037
-      - name: Verify source and binary before running the isolated test
+          run-id: 44665531216
+      - name: Verify source and restore the identical frontend
         run: |
-          source=a9bb098db6a3f13d369f2328cf68f228cfc52221
-          git diff --exit-code "$source" HEAD -- . ':(exclude).github/workflows/quality.yml' ':(exclude)scripts/verify_terminal_agent_drafts.py'
-          test "$(cat native/source.txt)" = "$source"
-          test "$(shasum -a 256 native/khor | awk '{print $1}')" = "$(cat native/sha256.txt)"
-          chmod 700 native/khor
+          git diff --exit-code "$KHOR_DRAFT_SOURCE" HEAD -- . ':(exclude).github/workflows/quality.yml' ':(exclude)scripts/verify_terminal_agent_drafts.py'
+          git diff --exit-code "$KHOR_DRAFT_FRONTEND_SOURCE" "$KHOR_DRAFT_SOURCE" -- apps/gui crates/catalog
+          python3 scripts/release_manifest.py verify --root frontend --sha "$KHOR_DRAFT_FRONTEND_SOURCE"
+          cp -R frontend/dist apps/gui/dist
+          cp -R frontend/gen apps/gui/src/gen
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: session-execution
+          cache-targets: false
+          save-if: false
+      - name: Compile the exact candidate
+        run: cargo build --locked -p khor-cli --bin khor
       - name: Test real Codex and Claude Code on two paired local nodes
         run: |
           npm install --prefix "$RUNNER_TEMP/agents" --no-package-lock --no-audit --no-fund @openai/codex@0.170.0 @anthropic-ai/claude-code@2.1.321
           export PATH="$RUNNER_TEMP/agents/node_modules/.bin:$PATH"
-          python3 scripts/verify_terminal_agent_drafts.py native/khor --peer
+          python3 scripts/verify_terminal_agent_drafts.py target/debug/khor --peer
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:

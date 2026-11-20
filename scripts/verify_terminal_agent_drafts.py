@@ -42,6 +42,7 @@ class App:
         self.port = free_port()
         self.work = root / "work"
         self.process = None
+        self.face_at = 0.0
         for folder in (self.work, root / ".khor", root / "tmux", root / ".claude",
                        root / ".codex", root / "shell"):
             folder.mkdir(parents=True, mode=0o700)
@@ -109,6 +110,9 @@ class App:
             raise RuntimeError(f"{operation} HTTP {error.code}: {error.read().decode()[-450:]}") from None
 
     def row(self, title):
+        if time.monotonic() - self.face_at >= 5:
+            self.api("face_here", visible=True)
+            self.face_at = time.monotonic()
         return next((r for r in self.api("sessions", by="recent") if r["title"] == title), None)
 
 
