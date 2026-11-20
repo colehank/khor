@@ -113,7 +113,7 @@ html:not([data-locale]) [data-script-poster] { display:none; }
 .opening {
   --story-intro-travel:3.8;
   --story-intro-hold:.75;
-  --story-unfold-travel:.8;
+  --story-unfold-travel:.42;
   --story-unfold-hold:.4;
   --opening-screens:calc(1 + var(--story-intro-hold) + var(--story-intro-travel) + var(--story-unfold-travel) + var(--story-unfold-hold));
   height:calc(var(--opening-screens)*100svh);

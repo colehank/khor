@@ -27,7 +27,7 @@
 }
 /* Only the icon unfold and fold use a pinned transition. Chapters scroll normally. */
 .product-tour:not(.story-tour) { padding-block:0; }
-.story-closing { --story-agent-hold:1; --story-fold-travel:.85; --story-fold-hold:.5; position:relative; height:calc((1 + var(--story-agent-hold) + var(--story-fold-travel) + var(--story-fold-hold))*100svh); color:var(--ink); background:var(--canvas); }
+.story-closing { --story-agent-hold:1; --story-fold-travel:.42; --story-fold-hold:.5; position:relative; height:calc((1 + var(--story-agent-hold) + var(--story-fold-travel) + var(--story-fold-hold))*100svh); color:var(--ink); background:var(--canvas); }
 .story-closing-sticky { position:sticky; top:0; height:100svh; }
 .story-tour { position:absolute; inset:0; padding:0; background:transparent; pointer-events:none; }
 .story-tour .tour-section { position:absolute; inset:0; max-width:calc(var(--list-w)*4.5 + var(--story-gutter)*2); padding-inline:var(--story-gutter); border:0; }
@@ -45,7 +45,7 @@
 .story-final-installations { grid-area:install; display:flex; justify-content:center; min-width:0; opacity:0; pointer-events:none; z-index:12; transition:opacity var(--dur-120); }
 .story-final-installations.is-current { opacity:1; pointer-events:auto; transition-delay:var(--dur-120); }
 .story-morph { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:13; overflow:visible; color:var(--site-accent); }
-.story-morph-ring { fill:none; stroke:currentColor; }
+.story-pearl-light { opacity:var(--story-pearl-light,1); }
 .story-morph [data-net-device-face] { color:var(--ink); }
 @media (max-width:760px) {
  .story-final-layout { grid-template-columns:minmax(0,1fr); grid-template-rows:auto auto auto; grid-template-areas:"brand" "copy" "install"; }

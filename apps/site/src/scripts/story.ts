@@ -15,13 +15,12 @@ export function mountStory() {
   const readingPoses=[0,...iconSegments.map(segment=>segment.motionEnd)];
   const tracks=createIconMotion(assembly);
   const tour=mountNarrativeTour(sticky);
-  const openingCopy=opening.querySelector<HTMLElement>('.opening-copy')!;
   const controls=opening.querySelector<HTMLElement>('.story-steps')!;
   const controller=new AbortController(),on={signal:controller.signal};
   const Timeline=(window as Window&{ScrollTimeline?:ScrollTimelineConstructor}).ScrollTimeline;
   let animations:Animation[]=[],native=false,scheduled=false,disposed=false;
   let topOpening=0,stageHeight=1,openingTravel=1,introProgress=0,active=-1,lastProgress=NaN;
-  let geometry='',inView=true,openingCopyVisible=true;
+  let geometry='',inView=true;
   let previous=new WeakMap<MotionTrack['target'],Record<string,string>>();
   const track=(target:MotionTrack['target'],sample:MotionTrack['sample'])=>tracks.push({target,sample});
   track(controls,(_,progress)=>({opacity:1-ease(progress,.92,1)}));
@@ -42,13 +41,12 @@ export function mountStory() {
   function render() {
     scheduled=false;
     if(disposed)return;
-    if(!inView)return;
     const position=scrollY-topOpening;
+    const q=(position-openingTravel*(1+introProgress))/stageHeight;
+    tour.render(q,inView);
+    if(!inView)return;
     const distance=position-openingTravel*introProgress;
     const progress=distance>=openingTravel-1?1:Math.max(-introProgress,distance/openingTravel);
-    const q=(position-openingTravel*(1+introProgress))/stageHeight;
-    const showCopy=tour.render(q,inView);
-    if(showCopy!==openingCopyVisible){openingCopyVisible=showCopy;openingCopy.style.opacity=showCopy?'1':'0';}
     // Introduce the next sentence as its geometry starts. Its short fade is
     // time-based, so pausing a scroll never leaves two half-visible headlines.
     // Bookmarks round to the next CSS pixel; that must not select another chapter.
@@ -128,7 +126,8 @@ export function mountStory() {
   };
   mountCopyButtons();
   const visibility=new IntersectionObserver(entries=>{
-    inView=entries[0].isIntersecting;if(inView)requestRender();else tour.pause();
+    inView=entries[0].isIntersecting;
+    if(inView)requestRender();else render();
   });
   visibility.observe(opening);
   const resize=new ResizeObserver(measure);resize.observe(opening);resize.observe(sticky);
@@ -136,7 +135,7 @@ export function mountStory() {
   window.addEventListener('scroll',requestRender,{passive:true,...on});
   window.addEventListener('resize',measure,on);window.addEventListener('khor:localechange',measure,on);window.addEventListener('khor:themechange',measure,on);
   window.addEventListener('hashchange',()=>navigateHash(),on);
-  document.addEventListener('visibilitychange',()=>{if(document.hidden)tour.pause();else requestRender();},on);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)render();else requestRender();},on);
   measure();
   requestAnimationFrame(()=>navigateHash(true));
   window.addEventListener('pagehide',event=>{

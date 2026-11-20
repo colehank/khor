@@ -1,207 +1,244 @@
 import {createStoryMaterial} from './story-material';
 
 const ns='http://www.w3.org/2000/svg';
-const make=(tag:string,attrs:Record<string,string|number>={})=>{const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));return el;};
+const make=<K extends keyof SVGElementTagNameMap>(tag:K,attrs:Record<string,string|number>={})=>{
+  const el=document.createElementNS(ns,tag);
+  for(const [k,v] of Object.entries(attrs))el.setAttribute(k,String(v));
+  return el;
+};
 const clamp=(n:number)=>Math.max(0,Math.min(1,n));
 const ease=(a:number,b:number,t:number)=>{const p=clamp((t-a)/(b-a));return p*p*(3-2*p);};
 const mix=(a:number,b:number,t:number)=>a+(b-a)*t;
 const curve=(a:number,b:number,c:number,d:number,t:number)=>{const s=1-t;return s**3*a+3*s*s*t*b+3*s*t*t*c+t**3*d;};
 const departures=[[.8,-.35],[.35,.8],[-.8,.35],[-.35,-.8]] as const;
 const arrivals=[[.2,-.5],[.5,.2],[-.2,.5],[-.5,-.2]] as const;
-const nums=(d:string)=>[...d.matchAll(/-?\d+(?:\.\d+)?/g)].map(m=>Number(m[0]));
-const paintColor=(paint:string)=>{
-  const id=paint.match(/url\(["']?[^#]*#([^"')]+)["']?\)/)?.[1];
-  if(!id)return paint;
-  const stops=[...document.getElementById(id)!.querySelectorAll('stop')];
-  return `color-mix(in srgb, ${getComputedStyle(stops[0]).stopColor} 50%, ${getComputedStyle(stops.at(-1)!).stopColor})`;
-};
-function circle(x:number,y:number,r:number){
-  const step=Math.PI*2/48;let d=`M ${x} ${y-r}`;
-  for(let i=0;i<48;i++){const a=-Math.PI/2+i*step,b=a+step;d+=` C ${x+r*Math.cos(a)-r*Math.sin(a)*step/3} ${y+r*Math.sin(a)+r*Math.cos(a)*step/3} ${x+r*Math.cos(b)+r*Math.sin(b)*step/3} ${y+r*Math.sin(b)-r*Math.cos(b)*step/3} ${x+r*Math.cos(b)} ${y+r*Math.sin(b)}`;}return d+' Z';
-}
+const center=512,radius=368;
+const diskPath=(r:number)=>`M${center-r} ${center}a${r} ${r} 0 1 0 ${2*r} 0a${r} ${r} 0 1 0 ${-2*r} 0Z`;
 
-/** One large perimeter; the four devices are the icon's outer pearls. */
+type Axes={a:number;b:number;c:number;d:number;x:number;y:number};
+const identity:Axes={a:1,b:0,c:0,d:1,x:center,y:center};
+const interpolateAxes=(from:Axes,to:Axes,t:number):Axes=>({
+  a:mix(from.a,to.a,t),b:mix(from.b,to.b,t),c:mix(from.c,to.c,t),d:mix(from.d,to.d,t),
+  x:mix(from.x,to.x,t),y:mix(from.y,to.y,t),
+});
+
+/** A shared ellipse and the original four pearls carry the physical handoff. */
 export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGSVGElement,prefix:string){
-  const layer=make('svg',{'class':'story-morph','aria-hidden':'true'});layer.style.visibility='hidden';
+  const layer=make('svg',{'class':'story-morph','aria-hidden':'true'});
+  layer.style.visibility='hidden';
   const targetBrand=graph.querySelector<SVGGElement>('[data-net-brand]')!;
   const material=createStoryMaterial(icon,targetBrand,layer,prefix);
   const graphRing=graph.querySelector<SVGPathElement>('[data-net-global]')!;
-  // This owns the source icon's outer ring throughout the handoff. The core
-  // carries only its diamond, inner circle and center, never a duplicate band.
-  const perimeter=make('g',{'data-morph-boundary':''});layer.prepend(perimeter);
-  const shadow=make('path');
-  for(const attr of material.boundaryShadow.attributes)if(!['cx','cy','r'].includes(attr.name))shadow.setAttribute(attr.name,attr.value);
-  perimeter.append(shadow);
-  const bands=[['glass-band',368,30,1],['outer-edge',382.5,2.2,1],['inner-edge',353.5,1.1,.864]].map(([name,radius,width,alpha],i)=>{
-    const paint=material.definitions.querySelector(`[id$="${name}"]`)!.cloneNode(true) as SVGGradientElement;
-    paint.id=`${prefix}perimeter-${name}`;
-    for(const stop of paint.querySelectorAll('stop')){
-      const color=stop.getAttribute('stop-color')!,opacity=stop.getAttribute('stop-opacity')??'1';
-      stop.style.stopColor=`color-mix(in srgb, ${color} calc((1 - var(--perimeter-ink,0))*100%), currentColor)`;
-      stop.style.stopOpacity=`calc(${opacity} + (1 - ${opacity})*var(--perimeter-ink,0))`;
-    }
-    material.definitions.append(paint);
-    const path=make('path',{'class':'story-morph-ring',...(i===0?{'data-morph-perimeter':''}:{})});path.style.stroke=`url(#${paint.id})`;perimeter.append(path);
-    return {path,paint,radius:Number(radius),width:Number(width),alpha:Number(alpha),from:[] as number[]};
-  });
-  // Reparent the actual reflections, rather than retaining a lit ring in both
-  // the shrinking core and the expanding boundary.
-  const reflectedLight=material.boundaryLight;
-  reflectedLight.removeAttribute('clip-path');
-  const reflections=make('g'),reflectionMask=make('mask',{id:`${prefix}perimeter-reflections`,maskUnits:'userSpaceOnUse',style:'mask-type:alpha'});
-  const reflectionBand=make('path',{fill:'none',stroke:'white'});reflectionMask.append(reflectionBand);material.definitions.append(reflectionMask);
-  reflections.setAttribute('mask',`url(#${reflectionMask.id})`);reflections.append(reflectedLight);bands[0].path.after(reflections);
-  const lightShapes=[...reflectedLight.querySelectorAll<SVGElement>('ellipse,circle')].map(el=>({el,rx:Number(el.getAttribute('rx')),ry:Number(el.getAttribute('ry')),r:Number(el.getAttribute('r'))}));
-  const mask=make('mask',{id:`${prefix}perimeter-clearance`,maskUnits:'userSpaceOnUse',style:'mask-type:luminance'}),white=make('rect',{fill:'white'}),cutouts=make('g'),clearance=make('g');
-  cutouts.append(clearance);
-  mask.append(white,cutouts);layer.querySelector('defs')!.append(mask);layer.style.setProperty('--net-build','1');
-  perimeter.setAttribute('mask',`url(#${mask.id})`);
+  const perimeter=make('g',{'data-morph-boundary':''}),ellipse=make('g'),glass=make('g'),shade=make('g');
+  layer.prepend(perimeter);perimeter.append(ellipse);ellipse.append(glass);
+  const {boundaryShadow:shadow,boundaryBand:band,boundaryLight:reflection,boundaryEdges:edges}=material;
+  // The wire and the narrowing glass share the same centerline throughout.
+  const wire=make('circle',{cx:center,cy:center,r:radius,fill:'none',stroke:'currentColor','vector-effect':'non-scaling-stroke','data-morph-perimeter':''});
+  const reflectionClip=make('clipPath',{id:`${prefix}perimeter-reflections`});
+  const reflectionBand=make('path',{'clip-rule':'evenodd'});reflectionClip.append(reflectionBand);
+  const mask=make('mask',{id:`${prefix}perimeter-clearance`,maskUnits:'userSpaceOnUse',style:'mask-type:luminance'});
+  const white=make('rect',{fill:'white'}),cutouts=make('g'),clearance=make('g');
+  cutouts.append(clearance);mask.append(white,cutouts);material.definitions.append(reflectionClip,mask);
+  reflection.setAttribute('clip-path',`url(#${reflectionClip.id})`);
+  shade.append(shadow);
+  glass.append(shade,band,reflection,...edges);ellipse.append(wire);
+
+  const nodeLayer=make('g');
+  layer.append(nodeLayer);
   const nodes=['linux','mac','phone','windows'].map((id,i)=>{
     const source=icon.querySelector<SVGCircleElement>(`circle[fill*="pearl-${i+1}"]`)!;
     const target=graph.querySelector<SVGGElement>(`[data-net-device="${id}"]`)!;
     const group=make('g',{'data-morph-device':id}),satellite=material.satellites[i];
     const glyph=target.querySelector<SVGSVGElement>('[data-net-device-face]')!.cloneNode(true) as SVGSVGElement;
-    group.append(...satellite.parts,glyph);layer.append(group);
-    return {source,target,group,satellite,glyph,cx:source.cx.baseVal.value,cy:source.cy.baseVal.value,r:source.r.baseVal.value,
-      from:{x:0,y:0,scale:1},to:{x:0,y:0,r:0,size:0,fill:'',color:'',stroke:'',width:0},c1:{x:0,y:0},c2:{x:0,y:0}};
+    const face=make('g'),cx=source.cx.baseVal.value,cy=source.cy.baseVal.value;
+    const faceOrigin=make('g',{transform:`translate(${cx} ${cy})`});
+    for(const [k,v] of Object.entries({x:-.5,y:-.5,width:1,height:1}))glyph.setAttribute(k,String(v));
+    face.append(glyph);faceOrigin.append(face);
+    group.append(...satellite.parts,faceOrigin);nodeLayer.append(group);
+    return {source,target,group,disk:satellite.disk,face,cx,cy,r:source.r.baseVal.value,scale:1,
+      from:{x:0,y:0,scale:1},to:{x:0,y:0,r:0,size:0,width:0},c1:{x:0,y:0},c2:{x:0,y:0}};
   });
   stage.append(layer);
   const primary=[graphRing,...graph.querySelectorAll<SVGElement>('[data-net-device]'),targetBrand];
   const drawing=[...graph.querySelectorAll<SVGPathElement>('.net-native path,.relation-wire,.relation-access')].map(el=>({el,length:el.getAttribute('pathLength'),dash:el.style.strokeDasharray,offset:el.style.strokeDashoffset,fill:el.style.fill,marker:el.style.markerEnd}));
   const fillLayers=[...graph.querySelectorAll<SVGElement>('.net-surfaces,.relation-access-active,.relation-flow,.relation-signal,.relation-port')];
   const legends=[...graph.querySelectorAll<SVGElement>('[data-net-mark],.net-khor-mark > text,.relation-access-label,.relation-request-label,.relation-router')];
-  const captions=new Set(graph.querySelectorAll<SVGElement>('.net-khor-mark > .net-boundary-name'));
+  const captions=legends.filter(el=>el.matches('.net-khor-mark > .net-boundary-name'));
+  const otherLegends=legends.filter(el=>!captions.includes(el));
   const badges=[...graph.querySelectorAll<SVGElement>('.relation-badge')];
-  let previousLayerState='',previousDraw=NaN,lastProgress=0;
+  let graphScrubbing=false,previousDraw=NaN,previousDetails:boolean|undefined;
   const restoreGraph=()=>{
-    graph.style.visibility='visible';primary.forEach(el=>el.style.visibility='');
-    for(const {el,length,dash,offset,fill,marker} of drawing){if(length===null)el.removeAttribute('pathLength');else el.setAttribute('pathLength',length);el.style.strokeDasharray=dash;el.style.strokeDashoffset=offset;el.style.fill=fill;el.style.markerEnd=marker;}
-    [...fillLayers,...legends].forEach(el=>el.style.visibility='');[...legends,...badges].forEach(el=>el.style.clipPath='');
+    const wasHidden=graph.style.visibility==='hidden';
+    graph.style.visibility='visible';
+    if(!graphScrubbing){
+      if(wasHidden)for(const el of captions)el.style.opacity='';
+      return;
+    }
+    graphScrubbing=false;previousDraw=NaN;previousDetails=undefined;
+    graph.style.removeProperty('--story-graph-draw');
+    primary.forEach(el=>el.style.visibility='');
+    for(const {el,length,dash,offset,fill,marker} of drawing){
+      if(length===null)el.removeAttribute('pathLength');else el.setAttribute('pathLength',length);
+      el.style.strokeDasharray=dash;el.style.strokeDashoffset=offset;el.style.fill=fill;el.style.markerEnd=marker;
+    }
+    [...fillLayers,...legends].forEach(el=>el.style.visibility='');
+    [...otherLegends,...badges].forEach(el=>el.style.clipPath='');
     captions.forEach(el=>{el.style.opacity='';el.style.transition='';});
   };
   const graphProgress=(p:number)=>{
-    const draw=ease(.8,.98,p),captionVisible=p>=.72;
-    const layerState=p===1?'complete':p===0?'hidden':captionVisible?'caption':'outline';
-    if(layerState===previousLayerState&&draw===previousDraw)return;
-    previousLayerState=layerState;previousDraw=draw;
     if(p===1){restoreGraph();return;}
-    graph.style.visibility=p===0?'hidden':'visible';primary.forEach(el=>el.style.visibility='hidden');
-    // Connections withdraw first on the way back. Nodes begin moving only once
-    // these paths are gone, so their endpoints never detach from their hosts.
-    const dashOffset=String(1-draw);
-    for(const {el} of drawing){el.setAttribute('pathLength','1');el.style.strokeDasharray='1';el.style.strokeDashoffset=dashOffset;el.style.fill='none';el.style.markerEnd='none';}
-    fillLayers.forEach(el=>el.style.visibility='hidden');
-    for(const el of legends){
-      if(captions.has(el)){
-        el.style.visibility=captionVisible?'visible':'hidden';el.style.clipPath='';
-        el.style.transition='opacity var(--dur-120)';el.style.opacity=captionVisible?'1':'0';
-      }else{
-        el.style.visibility=draw>0?'visible':'hidden';el.style.clipPath=`inset(0 ${(1-draw)*100}% 0 0)`;
+    // During the glass phase the overlay owns all visible geometry.
+    if(p<.72){
+      if(graph.style.visibility!=='hidden'){
+        graph.style.visibility='hidden';
+        if(graphScrubbing)legends.forEach(el=>el.style.visibility='hidden');
+        for(const el of captions)el.style.opacity='0';
+        previousDetails=undefined;
       }
+      return;
     }
-    badges.forEach(el=>el.style.clipPath=`circle(${draw*72}% at 50% 50%)`);
+    const entering=graph.style.visibility!=='visible'||!graphScrubbing;
+    if(entering)graph.style.visibility='visible';
+    if(!graphScrubbing){
+      graphScrubbing=true;
+      [...primary,...fillLayers].forEach(el=>el.style.visibility='hidden');
+      // In reverse the connections withdraw before their device endpoints move.
+      for(const {el} of drawing){
+        el.setAttribute('pathLength','1');
+        el.style.strokeDasharray='1';el.style.strokeDashoffset='calc(1 - var(--story-graph-draw))';el.style.fill='none';el.style.markerEnd='none';
+      }
+      for(const el of captions)el.style.transition='opacity var(--dur-120)';
+      for(const el of otherLegends)el.style.clipPath='inset(0 calc((1 - var(--story-graph-draw))*100%) 0 0)';
+      for(const el of badges)el.style.clipPath='circle(calc(var(--story-graph-draw)*72%) at 50% 50%)';
+    }
+    const draw=ease(.8,.98,p),showDetails=draw>0;
+    if(draw!==previousDraw){previousDraw=draw;graph.style.setProperty('--story-graph-draw',String(draw));}
+    if(entering){
+      for(const el of captions){el.style.visibility='visible';el.style.opacity='1';}
+    }
+    if(showDetails!==previousDetails){
+      previousDetails=showDetails;
+      for(const el of otherLegends)el.style.visibility=showDetails?'visible':'hidden';
+    }
   };
-  let pathParts:string[]=[],to:number[]=[],lineWidth=1,sourceScale=1,strokeOpacity=1;
+  let lastProgress=0,sourceAxes=identity,targetAxes=identity,sourceScale=1,lineWidth=1,strokeOpacity=1;
   let gapCenter={x:0,y:0};
   let brandFrom={x:0,y:0,scale:1,angle:0},brandTo={x:0,y:0,scale:1,angle:0};
+  let previousBoundary=NaN,previousWidth=NaN,previousInk=NaN,previousGap=NaN;
+  let previousJourney=NaN,previousSurface=NaN,previousGrowth=NaN,previousTravel=NaN;
+  const bandWidth=Number(band.getAttribute('stroke-width'));
+  const rims=edges.map(el=>({el,radius:el.r.baseVal.value,width:Number(el.getAttribute('stroke-width'))}));
   const measure=()=>{
     const rect=stage.getBoundingClientRect(),gm=graph.getScreenCTM()!,im=material.sourceRing.getScreenCTM()!;
+    const graphScale=Math.hypot(gm.a,gm.b),ringPaint=getComputedStyle(graphRing);
     layer.setAttribute('viewBox',`0 0 ${rect.width} ${rect.height}`);
     layer.style.color=getComputedStyle(targetBrand).color;
-    strokeOpacity=Number(getComputedStyle(graphRing).strokeOpacity);
-    for(const el of [mask,white,reflectionMask])for(const [key,value] of Object.entries({x:0,y:0,width:rect.width,height:rect.height}))el.setAttribute(key,String(value));
+    strokeOpacity=Number(ringPaint.strokeOpacity);
+    for(const el of [mask,white])for(const [key,value] of Object.entries({x:0,y:0,width:rect.width,height:rect.height}))el.setAttribute(key,String(value));
     const gapCopy=graph.querySelector('mask[id$="network-edge-clearance"] .net-khor-gap')!.cloneNode(true) as SVGElement;
-    gapCopy.removeAttribute('id'); // The live graph owns the ID referenced by its outer-edge mask.
+    gapCopy.removeAttribute('id'); // The live graph keeps the original mask reference.
     clearance.replaceChildren(gapCopy);
-    const gapIcon=graph.querySelector<SVGCircleElement>('[data-net-gap-icon="khor"]')!;gapCenter={x:gapIcon.cx.baseVal.value,y:gapIcon.cy.baseVal.value};
+    const gapIcon=graph.querySelector<SVGCircleElement>('[data-net-gap-icon="khor"]')!;
+    gapCenter={x:gapIcon.cx.baseVal.value,y:gapIcon.cy.baseVal.value};
     cutouts.setAttribute('transform',`matrix(${gm.a} ${gm.b} ${gm.c} ${gm.d} ${gm.e-rect.x} ${gm.f-rect.y})`);
-    const c=new DOMPoint(512,512).matrixTransform(im);
+    const source=new DOMPoint(center,center).matrixTransform(im);
     sourceScale=Math.hypot(im.a,im.b);
-    const template=graphRing.getAttribute('d')!;
-    pathParts=template.split(/-?\d+(?:\.\d+)?/g);
-    to=nums(template).map((v,i)=>i%2?v*gm.d+gm.f-rect.y:v*gm.a+gm.e-rect.x);lineWidth=1.5*gm.a;
-    for(const band of bands){
-      band.from=nums(circle(c.x-rect.x,c.y-rect.y,band.radius*sourceScale));
-    }
+    sourceAxes={a:im.a,b:im.b,c:im.c,d:im.d,x:source.x-rect.x,y:source.y-rect.y};
+    // KhorNet is an ellipse. Its four cardinal vertices give its exact affine
+    // axes, so the ring does not need a new spline for every scroll position.
+    const points=graphRing.getAttribute('d')!.match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+    const quarter=(points.length-2)/4;
+    const vertex=(index:number)=>new DOMPoint(points[index*quarter],points[index*quarter+1]).matrixTransform(gm);
+    const [top,right,bottom,left]=[0,1,2,3].map(vertex);
+    targetAxes={a:(right.x-left.x)/(2*radius),b:(right.y-left.y)/(2*radius),c:(bottom.x-top.x)/(2*radius),d:(bottom.y-top.y)/(2*radius),
+      x:(top.x+bottom.x)/2-rect.x,y:(top.y+bottom.y)/2-rect.y};
+    lineWidth=Number.parseFloat(ringPaint.strokeWidth)*graphScale;
+    wire.setAttribute('stroke-width',String(lineWidth));
     for(const [index,node] of nodes.entries()){
-      const m=node.source.getScreenCTM()!,p=new DOMPoint(node.source.cx.baseVal.value,node.source.cy.baseVal.value).matrixTransform(m),t=node.target.getScreenCTM()!;
+      const m=node.source.getScreenCTM()!,p=new DOMPoint(node.cx,node.cy).matrixTransform(m),t=node.target.getScreenCTM()!;
       node.from={x:p.x-rect.x,y:p.y-rect.y,scale:Math.hypot(m.a,m.b)};
-      const paint=getComputedStyle(node.target.querySelector(':scope > circle')!);
-      node.to={x:t.e-rect.x,y:t.f-rect.y,r:node.target.querySelector<SVGCircleElement>(':scope > circle')!.r.baseVal.value*gm.a,size:Number(node.target.querySelector('[data-net-device-face]')!.getAttribute('width'))*gm.a,
-        fill:paint.fill,color:paintColor(paint.fill),stroke:paint.stroke,width:Number.parseFloat(paint.strokeWidth)*(paint.vectorEffect==='non-scaling-stroke'?1:gm.a)};
-      const radius=368*sourceScale;
-      node.c1={x:node.from.x+departures[index][0]*radius,y:node.from.y+departures[index][1]*radius};
-      node.c2={x:node.to.x+arrivals[index][0]*radius,y:node.to.y+arrivals[index][1]*radius};
-      node.group.style.color=getComputedStyle(node.target).color;
+      const body=node.target.querySelector<SVGCircleElement>(':scope > circle')!,paint=getComputedStyle(body);
+      node.to={x:t.e-rect.x,y:t.f-rect.y,r:body.r.baseVal.value*graphScale,size:Number(node.target.querySelector('[data-net-device-face]')!.getAttribute('width'))*graphScale,
+        width:Number.parseFloat(paint.strokeWidth)*(paint.vectorEffect==='non-scaling-stroke'?1:graphScale)};
+      node.disk.setAttribute('fill',paint.fill);
+      node.disk.setAttribute('stroke',paint.stroke);
+      node.c1={x:node.from.x+departures[index][0]*radius*sourceScale,y:node.from.y+departures[index][1]*radius*sourceScale};
+      node.c2={x:node.to.x+arrivals[index][0]*radius*sourceScale,y:node.to.y+arrivals[index][1]*radius*sourceScale};
     }
-    const tm=material.targetRing.getScreenCTM()!,center=new DOMPoint(512,512).matrixTransform(tm);
-    brandFrom={x:c.x-rect.x,y:c.y-rect.y,scale:Math.hypot(im.a,im.b),angle:Math.atan2(im.b,im.a)*180/Math.PI};
-    brandTo={x:center.x-rect.x,y:center.y-rect.y,scale:Math.hypot(tm.a,tm.b),angle:Math.atan2(tm.b,tm.a)*180/Math.PI};
+    const tm=material.targetRing.getScreenCTM()!,destination=new DOMPoint(center,center).matrixTransform(tm);
+    brandFrom={x:sourceAxes.x,y:sourceAxes.y,scale:sourceScale,angle:Math.atan2(im.b,im.a)*180/Math.PI};
+    brandTo={x:destination.x-rect.x,y:destination.y-rect.y,scale:Math.hypot(tm.a,tm.b),angle:Math.atan2(tm.b,tm.a)*180/Math.PI};
+    previousBoundary=previousWidth=previousInk=previousGap=NaN;
+    previousJourney=previousSurface=previousGrowth=previousTravel=NaN;
+    material.invalidate();
     frame(lastProgress);
   };
   const frame=(p:number)=>{
     lastProgress=p;graphProgress(p);
-    if(p<=0||p>=1){layer.style.visibility='hidden';return;}
-    layer.style.visibility='visible';
-    // The single source band expands, then loses its thickness. There is no
-    // original full-size ring left behind to separate from or mask against.
-    const t=ease(0,.78,p),flat=ease(.14,.68,p);
-    // Keep the glass's theme-aware reflections while it has volume.
-    // Its green wire paint arrives only after most of that thickness is gone;
-    // using the width progress directly made an opaque olive ribbon in daylight.
-    const ink=ease(.76,1,flat);
-    material.definitions.style.setProperty('--perimeter-ink',String(ink));
-    const bandWidth=mix(bands[0].width*sourceScale,lineWidth,flat);
-    const outline=to.map((value,i)=>mix(bands[0].from[i],value,t));
+    const active=p>0&&p<1;
+    const visibility=active?'visible':'hidden';
+    if(layer.style.visibility!==visibility)layer.style.visibility=visibility;
+    if(!active)return;
+
+    const t=ease(0,.78,p),flat=ease(.14,.68,p),ink=ease(.76,1,flat);
+    const {a,b,c,d,x,y}=interpolateAxes(sourceAxes,targetAxes,t);
+    if(t!==previousBoundary){
+      previousBoundary=t;
+      ellipse.setAttribute('transform',`matrix(${a} ${b} ${c} ${d} ${x-center*(a+c)} ${y-center*(b+d)})`);
+    }
+    if(ink!==previousInk){
+      previousInk=ink;
+      glass.setAttribute('opacity',String(1-ink));
+      wire.setAttribute('opacity',String(ink*strokeOpacity));
+    }
     if(ink<1){
-      // The shared 48-segment path keeps its four cardinal anchors. They define
-      // the source circle's affine transform, including the final ellipse tilt.
-      const a=(outline[72]-outline[216])/736,b=(outline[73]-outline[217])/736;
-      const c=(outline[144]-outline[0])/736,d=(outline[145]-outline[1])/736;
-      const x=(outline[0]+outline[144])/2,y=(outline[1]+outline[145])/2;
-      const transform=`matrix(${a} ${b} ${c} ${d} ${x-512*(a+c)} ${y-512*(b+d)})`;
-      for(const band of bands)band.paint.setAttribute('gradientTransform',transform);
-      reflectedLight.setAttribute('transform',transform);
-    }
-    // Rims follow the narrowing band so highlights stay on the glass.
-    const rimScale=bandWidth/(bands[0].width*sourceScale);
-    let bandPath='';
-    for(const [index,band] of bands.entries()){
-      let path=pathParts[0];
-      for(let i=0;i<outline.length;i++){
-        path+=String(outline[i]+(band.from[i]-bands[0].from[i])*rimScale)+pathParts[i+1];
+      const width=mix(bandWidth*sourceScale,lineWidth,flat)/Math.sqrt(Math.abs(a*d-b*c));
+      if(width!==previousWidth){
+        previousWidth=width;
+        band.setAttribute('stroke-width',String(width));
+        reflectionBand.setAttribute('d',diskPath(radius+width/2)+diskPath(radius-width/2));
+        for(const rim of rims){
+          rim.el.setAttribute('r',String(mix(radius,rim.radius,width/bandWidth)));
+          rim.el.setAttribute('stroke-width',String(rim.width*(1-flat)));
+        }
+        shade.setAttribute('opacity',String(1-flat));
+        reflection.setAttribute('opacity',String(1-flat));
       }
-      band.path.setAttribute('d',path);
-      if(index===0)bandPath=path;
-      band.path.setAttribute('stroke-width',String(index===0?bandWidth:band.width*sourceScale*(1-flat)));
-      band.path.setAttribute('stroke-opacity',String(index===0?mix(1,strokeOpacity,flat):band.alpha));
     }
-    reflectionBand.setAttribute('d',bandPath);reflectionBand.setAttribute('stroke-width',String(bandWidth));
-    shadow.setAttribute('d',bandPath);
-    shadow.setAttribute('stroke-width',String(Number(material.boundaryShadow.getAttribute('stroke-width'))*sourceScale*(1-flat)));
-    shadow.setAttribute('transform',`translate(${(Number(material.boundaryShadow.getAttribute('cx'))-512)*sourceScale*(1-flat)} ${(Number(material.boundaryShadow.getAttribute('cy'))-512)*sourceScale*(1-flat)})`);
-    for(const {el,rx,ry,r} of lightShapes){
-      if(rx){el.setAttribute('rx',String(rx*(1-flat)));el.setAttribute('ry',String(ry*(1-flat)));}
-      else el.setAttribute('r',String(r*(1-flat)));
-    }
-    // The opening grows geometrically, then the caption reveals into it.
-    // No caption is visible while a line still occupies its reserved space.
+
+    // Keep the large mask out of the glass phase. The caption's cutout opens
+    // before the text appears, using the same measured geometry as the graph.
     const gap=ease(.5,.68,p);
-    clearance.setAttribute('transform',`translate(${gapCenter.x} ${gapCenter.y}) scale(${gap}) translate(${-gapCenter.x} ${-gapCenter.y})`);
-    const growth=ease(.28,.62,p),surface=ease(.08,.58,p);
-    const journey=ease(.12,.8,p);
-    nodes.forEach(node=>{
-      // Depart around the ring's exterior, then arrive from the device's outer
-      // quadrant. Reversing these curves keeps pearls clear of the growing core.
-      const scale=mix(node.r*node.from.scale,node.to.r,journey)/node.r;
-      const x=curve(node.from.x,node.c1.x,node.c2.x,node.to.x,journey),y=curve(node.from.y,node.c1.y,node.c2.y,node.to.y,journey);
-      node.group.setAttribute('transform',`translate(${x} ${y}) scale(${scale}) translate(${-node.cx} ${-node.cy})`);
-      node.satellite.frame(surface,node.to.fill,node.to.color,node.to.stroke,node.to.width*surface/scale);
-      const size=node.to.size*growth/scale;for(const [k,v] of Object.entries({x:node.cx-size/2,y:node.cy-size/2,width:size,height:size}))node.glyph.setAttribute(k,String(v));
-    });
+    if(gap!==previousGap){
+      previousGap=gap;
+      if(gap===0)perimeter.removeAttribute('mask');
+      else{
+        if(!perimeter.hasAttribute('mask'))perimeter.setAttribute('mask',`url(#${mask.id})`);
+        clearance.setAttribute('transform',`translate(${gapCenter.x} ${gapCenter.y}) scale(${gap}) translate(${-gapCenter.x} ${-gapCenter.y})`);
+      }
+    }
+
+    const growth=ease(.28,.62,p),surface=ease(.08,.58,p),journey=ease(.12,.8,p);
+    if(surface!==previousSurface)nodeLayer.style.setProperty('--story-pearl-light',String(1-surface));
+    if(journey!==previousJourney||surface!==previousSurface||growth!==previousGrowth){
+      for(const node of nodes){
+        if(journey!==previousJourney){
+          node.scale=mix(node.r*node.from.scale,node.to.r,journey)/node.r;
+          const x=curve(node.from.x,node.c1.x,node.c2.x,node.to.x,journey),y=curve(node.from.y,node.c1.y,node.c2.y,node.to.y,journey);
+          node.group.setAttribute('transform',`translate(${x} ${y}) scale(${node.scale}) translate(${-node.cx} ${-node.cy})`);
+        }
+        if(journey!==previousJourney||surface!==previousSurface)node.disk.setAttribute('stroke-width',String(node.to.width*surface/node.scale));
+        if(journey!==previousJourney||growth!==previousGrowth)node.face.setAttribute('transform',`scale(${node.to.size*growth/node.scale})`);
+      }
+      previousJourney=journey;previousSurface=surface;previousGrowth=growth;
+    }
+
     const travel=ease(.12,.72,p),scale=Math.exp(mix(Math.log(brandFrom.scale),Math.log(brandTo.scale),travel));
-    const coreX=mix(brandFrom.x,brandTo.x,travel),coreY=mix(brandFrom.y,brandTo.y,travel);
-    material.art.setAttribute('transform',`translate(${coreX} ${coreY}) rotate(${mix(brandFrom.angle,brandTo.angle,travel)}) scale(${scale}) translate(-512 -512)`);
+    if(travel!==previousTravel){
+      previousTravel=travel;
+      const coreX=mix(brandFrom.x,brandTo.x,travel),coreY=mix(brandFrom.y,brandTo.y,travel);
+      material.art.setAttribute('transform',`translate(${coreX} ${coreY}) rotate(${mix(brandFrom.angle,brandTo.angle,travel)}) scale(${scale}) translate(${-center} ${-center})`);
+    }
     material.frame(p,scale,brandFrom.scale,brandTo.scale);
   };
   return {measure,frame,destroy(){restoreGraph();layer.remove();}};
