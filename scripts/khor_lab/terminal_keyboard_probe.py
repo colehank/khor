@@ -69,7 +69,10 @@ def main():
             subprocess.run(['xcrun','simctl','bootstatus',simulator,'-b'], timeout=240, check=True)
             subprocess.run(['xcrun','simctl','install',simulator,str(app)], timeout=150, check=True)
             installed = True
-            receipt = keyboard_probe(home, simulator, IDENTIFIER, entry, home, terminal=True)
+            data = Path(run('xcrun','simctl','get_app_container',simulator,IDENTIFIER,'data'))
+            documents = data / 'Documents'
+            documents.mkdir(exist_ok=True)
+            receipt = keyboard_probe(home, simulator, IDENTIFIER, entry, home, terminal_documents=documents)
             receipt.update(simulator=simulator, revision=revision)
             (home / 'terminal-keyboard-result.json').write_text(json.dumps(receipt, indent=2))
         finally:

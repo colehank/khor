@@ -9,7 +9,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 
-def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal=False):
+def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_documents=None):
     tools = cache / 'mobile-tools/appium-3.9.0-xcuitest-12.12.4'
     binary = tools / 'node_modules/.bin/appium'
     environment = dict(os.environ, APPIUM_HOME=str(tools / 'drivers'))
@@ -50,13 +50,13 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal=Fals
                 'appium:bundleId':identifier, 'appium:noReset':True,
                 'appium:connectHardwareKeyboard':False, 'appium:forceSimulatorSoftwareKeyboardPresence':True,
                 'appium:newCommandTimeout':180, 'appium:webviewConnectTimeout':60000}
-            if terminal:
+            if terminal_documents:
                 # Keep the already booted hosted simulator. Opening its UI
                 # would restart it while WebDriverAgent is being prepared.
                 capabilities.update({'appium:isHeadless':True, 'appium:skipLogCapture':True,
                                      'appium:wdaLaunchTimeout':180000, 'appium:showXcodeLog':True})
             result = request('POST', '/session', {'capabilities': {'alwaysMatch': capabilities}},
-                             timeout=600 if terminal else 240)
+                             timeout=600 if terminal_documents else 240)
             session = '/session/' + result['sessionId']
             def command(path, value=None, method='POST'):
                 return request(method, session + path, value)
@@ -85,10 +85,10 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal=Fals
                 (report / 'native-source.xml').write_text(command('/source', method='GET'))
                 subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report / 'ios-webview-failure.png')], check=True, timeout=30)
                 raise ValueError('The actual Khor Lab WebView is not available for inspection: ' + json.dumps(observed))
+            if terminal_documents:
+                return terminal_keyboard_check(command, terminal_documents, simulator, report)
             main_context()
             command('/timeouts', {'script':30000})
-            if terminal:
-                return terminal_keyboard_check(command, evaluate, main_context, simulator, report)
             seed = '''const done=arguments[arguments.length-1]; (async()=>{
               const invoke=window.__TAURI_INTERNALS__.invoke;
               const devices=await invoke('devices'); const me=devices.find(d=>d.me);
@@ -185,9 +185,10 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal=Fals
                 server.kill()
 
 
-def terminal_keyboard_check(command, evaluate, web_context, simulator, report):
+def terminal_keyboard_check(command, documents, simulator, report):
     """Tap the production terminal in WKWebView and observe UIKit's keyboard."""
     samples = {}
+    serial = 0
     state = """const box = document.querySelector('[data-terminal]');
       const term = box?.__xterm;
       if (!term || !term.rows) return null;
@@ -206,16 +207,30 @@ def terminal_keyboard_check(command, evaluate, web_context, simulator, report):
             time.sleep(.12)
         raise ValueError(f'{label}: {last!r}')
 
+    def evaluate(script):
+        nonlocal serial
+        serial += 1
+        request = documents / 'keyboard-command.json'
+        pending = request.with_suffix('.tmp')
+        pending.write_text(json.dumps({'serial': serial, 'script': script}))
+        pending.replace(request)
+        reply = documents / 'keyboard-observation.json'
+        def read():
+            return json.loads(reply.read_text()) if reply.is_file() else {}
+        result = wait_for(read, lambda value: value.get('serial') == serial,
+                          'WKWebView did not answer an observation')
+        if 'error' in result:
+            raise ValueError(result['error'])
+        return result.get('value')
+
     def native_keyboard():
         return bool(command('/elements', {'using':'class name','value':'XCUIElementTypeKeyboard'}))
 
     def tap(script, keyboard=None):
         point = wait_for(lambda: evaluate(script), bool, 'No visible tap target')
-        command('/context', {'name':'NATIVE_APP'})
         command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
         if keyboard is not None:
             wait_for(native_keyboard, lambda visible: visible == keyboard, 'Wrong UIKit keyboard state')
-        web_context()
 
     def button(selector):
         return f"""const button=document.querySelector({json.dumps(selector)});
@@ -223,11 +238,8 @@ def terminal_keyboard_check(command, evaluate, web_context, simulator, report):
           return box?.width&&box.height?{{x:box.x+box.width/2,y:box.y+box.height/2}}:null;"""
 
     def sizes():
-        return command('/execute/async', {'script':'''
-          const done=arguments[arguments.length-1];
-          fetch('/api/__ai_preview/terminal-sizes',{method:'POST',body:'{}'})
-            .then(r=>r.json()).then(done);
-        '''})
+        return evaluate("return await (await fetch('/api/__ai_preview/terminal-sizes',"
+                        "{method:'POST',body:'{}'})).json();")
 
     def grid(value):
         return {key:value[key] for key in ('rows','cols','height','bottom')}
