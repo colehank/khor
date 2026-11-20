@@ -2207,7 +2207,10 @@ impl State {
     /// [`MAX_PENDING_OPEN_PATHS`] of them, so a remote that keeps refusing paths costs a
     /// bounded amount of memory however many connections and addresses it is reached on.
     fn queue_pending_open_path(&mut self, open_addr: &transports::FourTuple) {
-        self.scheduled_open_path = Some(Instant::now() + OPEN_PATH_RETRY_DELAY);
+        // Events for other copies can arrive faster than the retry interval.
+        // Keep the first deadline so those events cannot starve a live copy.
+        self.scheduled_open_path
+            .get_or_insert_with(|| Instant::now() + OPEN_PATH_RETRY_DELAY);
         if self.pending_open_paths.contains(open_addr) {
             return;
         }
@@ -3876,6 +3879,20 @@ mod tests {
             Vec::from_iter(state.pending_open_paths.iter().cloned()),
             vec![addr(1), addr(2)]
         );
+    }
+
+    #[test]
+    fn pending_open_paths_keep_the_first_retry_deadline() {
+        let (mut state, _guard) = test_state();
+        state.queue_pending_open_path(&addr(1));
+        let first = state.scheduled_open_path;
+        // Set a deterministic, earlier deadline to model time passing.
+        state.scheduled_open_path = first.map(|at| at - OPEN_PATH_RETRY_DELAY / 2);
+        let due = state.scheduled_open_path;
+        state.queue_pending_open_path(&addr(1));
+        state.queue_pending_open_path(&addr(2));
+        assert_eq!(state.scheduled_open_path, due);
+        assert_eq!(state.pending_open_paths.len(), 2);
     }
 
     // khor patches 17–19 and 1 (10-21, net-flap): the measurement ticks' logic on synthetic
