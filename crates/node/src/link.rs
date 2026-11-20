@@ -4702,6 +4702,7 @@ impl Node {
             let (node, ep, remote, mut done) =
                 (self.clone(), ep.clone(), remote.clone(), done.clone());
             let reply_wire = conn.stable_id();
+            let trace_connection = accepted_at.and_then(|_| directory_trace_connection(&conn));
             // ALPN is exposed on the concrete established/early states at
             // admission, rather than on Connection<T>'s generic interface.
             let reply_alpn = observed_alpn
@@ -4720,6 +4721,14 @@ impl Node {
                 // other request.
                 let question = proto::question(&bytes);
                 let listing = matches!(&question, Ok(Request::Ls { .. }));
+                if listing {
+                    khor_net::carry::observe_lifecycle(&remote, "list_request_received", || {
+                        serde_json::json!({
+                            "wire": reply_wire, "trace_connection": trace_connection,
+                            "stream": send.id().to_string(), "early": early,
+                        })
+                    });
+                }
                 let fetch_offset = match &question {
                     Ok(Request::FetchPath { offset, .. })
                     | Ok(Request::SatFetchPath { offset, .. }) => Some(*offset),
@@ -4898,6 +4907,7 @@ impl Node {
                             };
                             serde_json::json!({
                                 "wire": reply_wire, "stream": send.id().to_string(),
+                                "trace_connection": if listing { trace_connection.as_deref() } else { None },
                                 "alpn": reply_alpn,
                                 "early": early, "operation": operation, "offset": fetch_offset,
                                 "response_priority": observed_priority, "priority_applied": priority_applied,
@@ -14147,6 +14157,18 @@ async fn exchange(
     .map_err(|_| Miss::CallerExpired)?
 }
 
+/// Both endpoints derive the same diagnostic label after the handshake.
+/// The hash keeps TLS exporter material out of logs. Combine the label with
+/// the QUIC stream ID to correlate a directory request without logging its path.
+fn directory_trace_connection<T: iroh::endpoint::ConnectionState>(
+    conn: &iroh::endpoint::Connection<T>,
+) -> Option<String> {
+    let mut material = [0; 32];
+    conn.export_keying_material(&mut material, b"EXPORTER-khor-directory-trace-v1", b"")
+        .ok()?;
+    Some(blake3::hash(&material).to_hex()[..32].to_owned())
+}
+
 /// Completed business replies in the existing opt-in lifecycle trace. Never
 /// includes a path or payload. An early answer's clock starts at its dial;
 /// an ordinary answer's starts at exchange, so those durations stay labelled.
@@ -14173,6 +14195,7 @@ fn observe_workload_reply(
     khor_net::carry::observe_lifecycle(conn.remote_id(), event, || {
         serde_json::json!({
             "wire": conn.stable_id(), "stream": stream.to_string(), "early": early,
+            "trace_connection": if operation == "directory" { directory_trace_connection(conn) } else { None },
             "alpn": String::from_utf8_lossy(conn.alpn()),
             "operation": operation, "offset": offset, "payload_bytes": payload_bytes,
             "elapsed_us": elapsed().as_micros(),
@@ -14231,6 +14254,15 @@ async fn exchange_inner(
             attempt.request_written = true;
         }
         send.finish().map_err(|e| lost(msg::cant_close_stream(e)))?;
+        if matches!(req, Request::Ls { .. }) {
+            khor_net::carry::observe_lifecycle(conn.remote_id(), "list_request_submitted", || {
+                serde_json::json!({
+                    "wire": conn.stable_id(), "trace_connection": directory_trace_connection(conn),
+                    "stream": send.id().to_string(), "elapsed_us": sent.elapsed().as_micros(),
+                    "measurements": khor_net::path::path_facts(conn),
+                })
+            });
+        }
         let bytes = recv
             .read_to_end(MAX_FRAME)
             .await
