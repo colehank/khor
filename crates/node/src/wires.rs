@@ -851,6 +851,14 @@ impl Wires {
             let since = |t: Option<Instant>| {
                 t.map_or(0, |t| crate::journal::ms(now.saturating_duration_since(t)))
             };
+            khor_net::carry::observe_lifecycle(id, "request_wire_retired", || {
+                serde_json::json!({
+                    "wire": conn.stable_id(),
+                    "trace_connection": crate::link::request_trace_connection(conn),
+                    "reason": why.key(), "quiet_ms": since(slot.heard),
+                    "age_ms": since(slot.since), "received_datagrams": heard_count(conn),
+                })
+            });
             self.note(
                 Some(id),
                 crate::journal::What::Retired {
@@ -1331,6 +1339,14 @@ impl Wires {
 
     /// A freshly dialled wire becomes the one this key holds.
     pub(crate) fn adopt(&self, id: &str, proto: Proto, conn: Connection) {
+        khor_net::carry::observe_lifecycle(id, "request_wire_adopted", || {
+            serde_json::json!({
+                "wire": conn.stable_id(),
+                "trace_connection": crate::link::request_trace_connection(&conn),
+                "tunnel": proto == Proto::Tunnel,
+                "measurements": khor_net::path::path_facts(&conn),
+            })
+        });
         let now = Instant::now();
         let mut slots = self.slots.lock().unwrap_or_else(|p| p.into_inner());
         let slot = slots.entry((id.to_owned(), proto)).or_default();
@@ -1507,7 +1523,16 @@ impl Wires {
         // The confirmation starts at this receive count. A later tick must
         // not mistake an older, previously unsampled ACK for its answer.
         slot.rx = count;
-        let by = tokio::time::Instant::now() + ask_every_path(conn);
+        let grace = ask_every_path(conn);
+        let by = tokio::time::Instant::now() + grace;
+        khor_net::carry::observe_lifecycle(id, "wire_confirmation_started", || {
+            serde_json::json!({
+                "wire": conn.stable_id(),
+                "trace_connection": crate::link::request_trace_connection(conn),
+                "received_datagrams": count, "grace_ms": grace.as_millis(),
+                "measurements": khor_net::path::path_facts(conn),
+            })
+        });
         let owner = Arc::downgrade(self);
         let connection = conn.weak_handle();
         let id = id.to_owned();
@@ -1551,6 +1576,13 @@ impl Wires {
             return;
         }
         let seen = heard_count(conn);
+        khor_net::carry::observe_lifecycle(id, "wire_confirmation_finished", || {
+            serde_json::json!({
+                "wire": conn.stable_id(),
+                "trace_connection": crate::link::request_trace_connection(conn),
+                "initial_received_datagrams": count, "received_datagrams": seen,
+            })
+        });
         if seen != count {
             slot.probe = None;
             slot.rx = seen;

@@ -169,6 +169,8 @@ block2 = "0.6"
 default = ["custom-protocol", "devtools"]
 custom-protocol = ["tauri/custom-protocol"]
 devtools = ["tauri/devtools"]
+# Internal iOS builds can keep the last request timings on the device.
+net-diagnostics = []
 
 [dev-dependencies]
 # Tauri's own mock runtime (the `test` feature of the crate already

@@ -5162,6 +5162,15 @@ fn watch_the_front(app: tauri::AppHandle) {
     for (name, on) in names {
         let worker = worker.clone();
         let told = block2::RcBlock::new(move |_note: std::ptr::NonNull<NSNotification>| {
+            #[cfg(feature = "net-diagnostics")]
+            khor_node::link::observe_mobile_lifecycle(
+                "mobile_lifecycle",
+                match on {
+                    Front::Background => "background",
+                    Front::Foreground => "foreground",
+                    Front::Active => "active",
+                },
+            );
             let _ = worker.send(on);
         });
         // SAFETY: the default centre, observed for the life of the
@@ -5329,10 +5338,13 @@ fn watch_the_path() {
         if was == u32::MAX || was == now {
             return;
         }
-        khor_node::link::mobile_network_changed(
-            &Node::root_from_env(),
-            now >> 8 == NW_PATH_STATUS_SATISFIED,
+        let usable = now >> 8 == NW_PATH_STATUS_SATISFIED;
+        #[cfg(feature = "net-diagnostics")]
+        khor_node::link::observe_mobile_lifecycle(
+            "mobile_path_change",
+            if usable { "usable" } else { "unusable" },
         );
+        khor_node::link::mobile_network_changed(&Node::root_from_env(), usable);
         khor_gui_core::rejoin::kick();
     });
     // SAFETY: Network.framework copies the handler block; the monitor is
@@ -5452,6 +5464,10 @@ pub fn run() {
     // command's, reads the kept answer instead of queueing onto main.
     #[cfg(target_os = "ios")]
     let _ = khor_node::hardware::fingerprint();
+    #[cfg(all(target_os = "ios", feature = "net-diagnostics"))]
+    if let Err(error) = khor_node::link::start_mobile_request_timing(&Node::root_from_env()) {
+        eprintln!("khor request timing: {error}");
+    }
 
     // The app embeds serve — the desktop is a full node, not a client
     // (one mesh, no client/server split). Running `khor serve` on the

@@ -127,27 +127,100 @@ impl Attached {
     }
 }
 
-/// Opt-in lifecycle facts for isolated network diagnosis. Values are built
-/// only when the same diagnostic switch as the native entry point is set.
-/// This does not change the connection journal or its human-facing words.
+static REQUEST_TIMING_FILE: std::sync::OnceLock<std::sync::mpsc::SyncSender<String>> =
+    std::sync::OnceLock::new();
+
+/// Opens the local timing file for a diagnostic app build. One previous
+/// launch is kept so returning to the app does not erase the last stall.
+pub fn start_request_timing_file(path: &std::path::Path) -> std::io::Result<()> {
+    if REQUEST_TIMING_FILE.get().is_some() {
+        return Ok(());
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    if path.exists() {
+        std::fs::rename(path, path.with_extension("previous.jsonl"))?;
+    }
+    let path = path.to_owned();
+    let previous = path.with_extension("previous.jsonl");
+    let mut file = std::fs::File::create(&path)?;
+    let (tx, rx) = std::sync::mpsc::sync_channel::<String>(256);
+    std::thread::Builder::new()
+        .name("khor-request-timing".into())
+        .spawn(move || {
+            use std::io::Write;
+
+            const CAP: usize = 2 * 1024 * 1024;
+            let mut remaining = CAP;
+            for record in rx {
+                let bytes = record.len() + 1;
+                if bytes > CAP {
+                    continue;
+                }
+                if bytes > remaining {
+                    drop(file);
+                    if std::fs::rename(&path, &previous).is_err() {
+                        break;
+                    }
+                    let Ok(next) = std::fs::File::create(&path) else {
+                        break;
+                    };
+                    file = next;
+                    remaining = CAP;
+                }
+                if writeln!(file, "{record}").is_err() {
+                    break;
+                }
+                remaining -= bytes;
+            }
+        })?;
+    let _ = REQUEST_TIMING_FILE.set(tx);
+    Ok(())
+}
+
+pub fn lifecycle_diagnostics_enabled() -> bool {
+    REQUEST_TIMING_FILE.get().is_some() || std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some()
+}
+
+/// Opt-in lifecycle facts for isolated network diagnosis. The app's local
+/// file accepts only request, wire and lifecycle timings. The CLI still
+/// writes the full diagnostic stream to stderr when requested.
 pub fn observe_lifecycle(
     peer: impl std::fmt::Display,
     phase: &str,
     details: impl FnOnce() -> serde_json::Value,
 ) {
-    if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_none() {
+    let stderr = std::env::var_os("KHOR_NET_DIAGNOSTICS").is_some();
+    let writer = REQUEST_TIMING_FILE.get().filter(|_| {
+        phase.starts_with("request_")
+            || phase.starts_with("wire_confirmation_")
+            || matches!(
+                phase,
+                "list_request_submitted"
+                    | "list_request_received"
+                    | "list_response_sent"
+                    | "list_response_received"
+                    | "mobile_lifecycle"
+                    | "mobile_path_change"
+            )
+    });
+    if !stderr && writer.is_none() {
         return;
     }
     let at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as u64);
-    eprintln!(
-        "[khor-carried-lifecycle] {}",
-        serde_json::json!({
-            "schema": 1, "at": at, "pid": std::process::id(),
-            "peer": peer.to_string(), "phase": phase, "details": details(),
-        })
-    );
+    let record = serde_json::json!({
+        "schema": 1, "at": at, "pid": std::process::id(),
+        "peer": peer.to_string(), "phase": phase, "details": details(),
+    });
+    if stderr {
+        eprintln!("[khor-carried-lifecycle] {record}");
+    }
+    if let Some(writer) = writer {
+        let _ = writer.try_send(record.to_string());
+    }
 }
 
 impl Links {

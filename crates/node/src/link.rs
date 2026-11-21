@@ -917,6 +917,16 @@ pub fn network_changed(root: &std::path::Path) -> bool {
     door(root).is_some_and(|d| d.send(Wake::Network(change)).is_ok())
 }
 
+/// Starts the local request trace for an explicitly enabled diagnostic app.
+pub fn start_mobile_request_timing(root: &std::path::Path) -> std::io::Result<()> {
+    khor_net::carry::start_request_timing_file(&root.join(".khor/request-timing.jsonl"))
+}
+
+/// Records the app's own lifecycle alongside the transport timestamps.
+pub fn observe_mobile_lifecycle(phase: &str, state: &str) {
+    khor_net::carry::observe_lifecycle("local", phase, || serde_json::json!({"state": state}));
+}
+
 /// The iOS monitor has already identified a different default path.
 /// An unusable report also cancels recovery for the path that just went away.
 pub fn mobile_network_changed(root: &std::path::Path, usable: bool) -> bool {
@@ -4454,6 +4464,12 @@ impl Node {
                 Early::Failed(DialFailure::Refused(msg::resting_no_dial().to_owned()))
             }
             Ok(Ok((conn, asked))) => {
+                khor_net::carry::observe_lifecycle(&d.id, "request_early_wire_ready", || {
+                    serde_json::json!({
+                        "wire": conn.stable_id(), "trace_connection": request_trace_connection(&conn),
+                        "early_request_attached": asked.is_some(), "elapsed_us": started.elapsed().as_micros(),
+                    })
+                });
                 crate::roads::replied(&self.roads, &d.id, started.elapsed());
                 crate::roads::watch(
                     &self.roads,
@@ -4680,7 +4696,14 @@ impl Node {
             // Opt-in facts on this actual stream, with no timer or observer
             // task. These clocks are absent from ordinary resident work.
             let accepted_at =
-                std::env::var_os("KHOR_NET_DIAGNOSTICS").map(|_| std::time::Instant::now());
+                khor_net::carry::lifecycle_diagnostics_enabled().then(std::time::Instant::now);
+            let trace_connection = accepted_at.and_then(|_| request_trace_connection(&conn));
+            khor_net::carry::observe_lifecycle(&remote, "request_stream_accepted", || {
+                serde_json::json!({
+                    "wire": conn.stable_id(), "trace_connection": trace_connection,
+                    "stream": send.id().to_string(), "early": recv.is_0rtt(),
+                })
+            });
             // 按机器暂停 (SHELL.md 第五轮 第 3 条): a machine this one has
             // paused gets no answer — the connection is closed, the way
             // a machine that is not there closes nothing. Asked per
@@ -4702,7 +4725,6 @@ impl Node {
             let (node, ep, remote, mut done) =
                 (self.clone(), ep.clone(), remote.clone(), done.clone());
             let reply_wire = conn.stable_id();
-            let trace_connection = accepted_at.and_then(|_| directory_trace_connection(&conn));
             // ALPN is exposed on the concrete established/early states at
             // admission, rather than on Connection<T>'s generic interface.
             let reply_alpn = observed_alpn
@@ -4721,6 +4743,13 @@ impl Node {
                 // other request.
                 let question = proto::question(&bytes);
                 let listing = matches!(&question, Ok(Request::Ls { .. }));
+                khor_net::carry::observe_lifecycle(&remote, "request_body_read", || {
+                    serde_json::json!({
+                        "wire": reply_wire, "trace_connection": trace_connection,
+                        "stream": send.id().to_string(), "parsed": question.is_ok(),
+                        "elapsed_us": accepted_at.map(|a| a.elapsed().as_micros()),
+                    })
+                });
                 if listing {
                     khor_net::carry::observe_lifecycle(&remote, "list_request_received", || {
                         serde_json::json!({
@@ -4887,6 +4916,13 @@ impl Node {
                     #[cfg(test)]
                     documents::flow_tests::reply_written(&wire_tag, &_resp);
                     let finished = send.finish();
+                    khor_net::carry::observe_lifecycle(&remote, "request_reply_submitted", || {
+                        serde_json::json!({
+                            "wire": reply_wire, "trace_connection": trace_connection,
+                            "stream": send.id().to_string(), "finished": finished.is_ok(),
+                            "elapsed_us": accepted_at.map(|a| a.elapsed().as_micros()),
+                        })
+                    });
                     let observed = match (listing, fetch_offset, &_resp) {
                         (true, _, Response::Dir { .. }) => {
                             Some(("list_response_sent", "directory"))
@@ -14159,8 +14195,8 @@ async fn exchange(
 
 /// Both endpoints derive the same diagnostic label after the handshake.
 /// The hash keeps TLS exporter material out of logs. Combine the label with
-/// the QUIC stream ID to correlate a directory request without logging its path.
-fn directory_trace_connection<T: iroh::endpoint::ConnectionState>(
+/// the QUIC stream ID to correlate a request without logging its contents.
+pub(crate) fn request_trace_connection<T: iroh::endpoint::ConnectionState>(
     conn: &iroh::endpoint::Connection<T>,
 ) -> Option<String> {
     let mut material = [0; 32];
@@ -14195,7 +14231,7 @@ fn observe_workload_reply(
     khor_net::carry::observe_lifecycle(conn.remote_id(), event, || {
         serde_json::json!({
             "wire": conn.stable_id(), "stream": stream.to_string(), "early": early,
-            "trace_connection": if operation == "directory" { directory_trace_connection(conn) } else { None },
+            "trace_connection": if operation == "directory" { request_trace_connection(conn) } else { None },
             "alpn": String::from_utf8_lossy(conn.alpn()),
             "operation": operation, "offset": offset, "payload_bytes": payload_bytes,
             "elapsed_us": elapsed().as_micros(),
@@ -14219,6 +14255,9 @@ async fn exchange_inner(
         attempt.started = true;
     }
     let sent = tokio::time::Instant::now();
+    let trace_connection = khor_net::carry::lifecycle_diagnostics_enabled()
+        .then(|| request_trace_connection(conn))
+        .flatten();
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
     let mut relay_checked = false;
@@ -14241,6 +14280,7 @@ async fn exchange_inner(
         khor_net::carry::observe_lifecycle(conn.remote_id(), "request_stream_opened", || {
             serde_json::json!({
                 "wire": conn.stable_id(), "stream": send.id().to_string(),
+                "trace_connection": trace_connection,
                 "alpn": String::from_utf8_lossy(conn.alpn()),
                 "reading": req.is_reading(), "measurements": khor_net::path::path_facts(conn),
                 "operation": match req { Request::Ls { .. } => "directory", Request::FetchPath { .. } => "fetch_path", _ => "other" },
@@ -14254,10 +14294,16 @@ async fn exchange_inner(
             attempt.request_written = true;
         }
         send.finish().map_err(|e| lost(msg::cant_close_stream(e)))?;
+        khor_net::carry::observe_lifecycle(conn.remote_id(), "request_submitted", || {
+            serde_json::json!({
+                "wire": conn.stable_id(), "trace_connection": trace_connection,
+                "stream": send.id().to_string(), "elapsed_us": sent.elapsed().as_micros(),
+            })
+        });
         if matches!(req, Request::Ls { .. }) {
             khor_net::carry::observe_lifecycle(conn.remote_id(), "list_request_submitted", || {
                 serde_json::json!({
-                    "wire": conn.stable_id(), "trace_connection": directory_trace_connection(conn),
+                    "wire": conn.stable_id(), "trace_connection": request_trace_connection(conn),
                     "stream": send.id().to_string(), "elapsed_us": sent.elapsed().as_micros(),
                     "measurements": khor_net::path::path_facts(conn),
                 })
@@ -14272,6 +14318,12 @@ async fn exchange_inner(
             None => proto::answer(&bytes),
         }
         .map_err(Miss::Garbled)?;
+        khor_net::carry::observe_lifecycle(conn.remote_id(), "request_reply_read", || {
+            serde_json::json!({
+                "wire": conn.stable_id(), "trace_connection": trace_connection,
+                "stream": send.id().to_string(), "elapsed_us": sent.elapsed().as_micros(),
+            })
+        });
         observe_workload_reply(conn, req, &response, send.id(), false, || sent.elapsed());
         Ok(response)
     };
