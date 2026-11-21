@@ -25,8 +25,8 @@ jobs:
           node-version: 22.19.0
       - name: Run the readiness patch against the saved failing input
         run: |
-          git fetch --no-tags origin 2c2f4fbcb40c042ee5d5d15ecc451669c9ff9b47
-          git show 2c2f4fbcb40c042ee5d5d15ecc451669c9ff9b47:scripts/khor_lab/mobile.py > scripts/khor_lab/mobile.py
+          git fetch --no-tags origin 11f9b18d502b1937f79be97f7931c6b42ffd7998
+          git show 11f9b18d502b1937f79be97f7931c6b42ffd7998:scripts/khor_lab/mobile.py > scripts/khor_lab/mobile.py
           sudo xcode-select -s /Applications/Xcode_26.5.app
           SIMULATOR_ID=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for group in d["devices"].values() for x in group if "iPhone" in x["name"]))')
           PYTHONPATH=scripts python3 -m khor_lab.terminal_keyboard_probe --simulator "$SIMULATOR_ID" \
@@ -37,6 +37,7 @@ jobs:
           name: ios-keyboard-probe-readiness
           path: |
             ${{ runner.temp }}/terminal-keyboard/*keyboard*.json
+            ${{ runner.temp }}/terminal-keyboard/terminal-keyboard.png
             ${{ runner.temp }}/terminal-keyboard/appium.log
           if-no-files-found: warn
           retention-days: 7
