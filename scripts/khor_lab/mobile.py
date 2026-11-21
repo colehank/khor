@@ -194,9 +194,11 @@ def terminal_keyboard_check(command, documents, simulator, report):
       const term = box?.__xterm;
       if (!term || !term.rows) return null;
       const r = box.getBoundingClientRect(), picker = document.querySelector('[data-files-panel]');
+      const buffer = term.buffer.active;
+      const prompt = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) === 'preview %';
       return {rows:term.rows, cols:term.cols, height:r.height, bottom:r.bottom,
         screen:document.documentElement.clientHeight, visible:visualViewport.height,
-        mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
+        prompt, mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
 
     def wait_for(read, allowed, label, *, timeout=15):
         last = None
@@ -251,7 +253,8 @@ def terminal_keyboard_check(command, documents, simulator, report):
         started = time.monotonic()
         evaluate("return document.readyState;", timeout=60)
         print(f'WKWebView responded {time.monotonic() - started:.1f}s after Appium was ready')
-        down = wait_for(lambda:evaluate(state), lambda s:s and s['rows'] > 10, 'Terminal never loaded')
+        down = wait_for(lambda: evaluate(state), lambda s: s and s['rows'] > 10 and s['prompt'],
+                        'Terminal fixture never rendered its input prompt')
         samples['down'] = down
         tap("""const term=document.querySelector('[data-terminal]')?.__xterm;
           if(!term) return null;
