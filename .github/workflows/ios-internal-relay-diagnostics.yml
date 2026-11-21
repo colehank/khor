@@ -68,6 +68,8 @@ jobs:
         run: python3 ../scripts/ios_internal_relay_diagnostics.py check-audience
       - name: Build the diagnostic's frontend
         working-directory: product
+        env:
+          VITE_KHOR_DIRECTORY_TIMING: '1'
         run: |
           npm ci --prefix apps/gui
           npm run build --prefix apps/gui

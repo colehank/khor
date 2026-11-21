@@ -126,6 +126,7 @@ import { discardAll, flushAll } from "@/lib/save-road";
 import { NAV_SHOWN, useNavOrder } from "@/lib/nav-order";
 import { band } from "@/lib/scroll-edge";
 import { levelOf, onTreeChanged, sameMachine } from "@/lib/tree-changed";
+import { beginDirectoryTiming } from "@/lib/directory-timing";
 import { cn } from "@/lib/utils";
 import { type Day } from "@/views/DayStrip";
 import { DetailPane } from "@/views/DetailPane";
@@ -1838,7 +1839,9 @@ export default function App() {
       (`views/WorkspacesList` holds the same line for the row's two
       corners). */
   const openWorkspace = (r: WorkspaceRow) => {
-    setOpenWs({ device: r.device, machine: r.machine || r.device, path: r.path });
+    const machine = r.machine || r.device;
+    if (r.path) beginDirectoryTiming(machine, r.path);
+    setOpenWs({ device: r.device, machine, path: r.path });
     setWsTree(true);
     setScreen("detail");
   };
