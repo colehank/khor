@@ -89,8 +89,10 @@ export function pastedImage(image: { type: string; data: string }): File {
     when the program asked, the multi-line question when not), or the
     pictures to the drop. */
 export function pasteInto(term: { paste: (text: string) => void }, images: (files: File[]) => void) {
-  void readPaste().then((p) => {
-    if ("images" in p) images(p.images);
-    else if (p.text) term.paste(p.text);
-  });
+  void readPaste().then((p) => applyPaste(term, images, p));
+}
+
+export function applyPaste(term: { paste: (text: string) => void }, images: (files: File[]) => void, pasted: Pasted) {
+  if ("images" in pasted) images(pasted.images);
+  else if (pasted.text) term.paste(pasted.text);
 }

@@ -1536,6 +1536,46 @@ fn edit_menu_at(
     let _ = (app, x, y, w, h, items, copy);
 }
 
+/// Match the iOS paste control to the terminal key row. Only a native
+/// activation grants item providers. The face receives the result by owner.
+#[tauri::command]
+async fn terminal_paste_control(
+    app: tauri::AppHandle,
+    owner: String,
+    geometry: Option<serde_json::Value>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri::Emitter;
+        let Some(face) = phone_page::face(&app) else {
+            return Ok(false);
+        };
+        let geometry = geometry
+            .map(serde_json::from_value::<terminal_paste::Geometry>)
+            .transpose()
+            .map_err(|error| error.to_string())?;
+        let (done, ready) = tokio::sync::oneshot::channel();
+        face.with_webview(move |wv| {
+            let event_owner = owner.clone();
+            let report = std::sync::Arc::new(move |value| {
+                let _ = app.emit_to(
+                    "main",
+                    "terminal-paste",
+                    serde_json::json!({ "owner": event_owner, "value": value }),
+                );
+            });
+            let _ = done.send(terminal_paste::place(wv.inner().cast(), owner, geometry, report));
+        })
+        .map_err(|error| error.to_string())?;
+        ready.await.map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, owner, geometry);
+        Ok(false)
+    }
+}
+
 /// Puts `edit_menu_at`'s menu away (the selection ended another way).
 #[tauri::command]
 fn edit_menu_hide(app: tauri::AppHandle) {
@@ -5887,6 +5927,7 @@ pub fn run() {
             edit_menu,
             edit_menu_at,
             edit_menu_hide,
+            terminal_paste_control,
             joy_haptic,
             haptic,
             open_settings,
@@ -6142,6 +6183,8 @@ fn say_signals() {
 
 #[cfg(target_os = "ios")]
 mod edit_menu;
+#[cfg(target_os = "ios")]
+mod terminal_paste;
 #[cfg(desktop)]
 mod menu;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
