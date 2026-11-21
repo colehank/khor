@@ -92,8 +92,11 @@ def main():
                 raise ValueError("The signed iOS archive lacks the request timing recorder")
     elif sys.argv[1:] == ["upload"]:
         upload()
+    elif sys.argv[1:] == ["check-audience"]:
+        with AppleClient() as client:
+            solo_audience(client)
     else:
-        raise ValueError("Expected archive or upload")
+        raise ValueError("Expected check-audience, archive or upload")
 
 
 if __name__ == "__main__":

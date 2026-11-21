@@ -15,11 +15,13 @@ jobs:
   testflight:
     if: github.ref == 'refs/heads/main'
     runs-on: macos-26
-    timeout-minutes: 90
+    timeout-minutes: 120
     environment: apple-testflight
     env:
       SOURCE: a06b724d381f14879da04c9b97fe8b5c2ef3fa1b
       CARGO_BUILD_JOBS: '3'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -57,6 +59,13 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.12'
+      - name: Verify Apple recognizes the solo testing audience
+        working-directory: product
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_CONTENT: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: python3 ../scripts/ios_internal_relay_diagnostics.py check-audience
       - name: Build the diagnostic's frontend
         working-directory: product
         run: |
