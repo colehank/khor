@@ -195,7 +195,7 @@ def terminal_keyboard_check(command, documents, simulator, report):
       if (!term || !term.rows) return null;
       const r = box.getBoundingClientRect(), picker = document.querySelector('[data-files-panel]');
       const buffer = term.buffer.active;
-      const prompt = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true) === 'preview %';
+      const prompt = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true).trimEnd() === 'preview %';
       return {rows:term.rows, cols:term.cols, height:r.height, bottom:r.bottom,
         screen:document.documentElement.clientHeight, visible:visualViewport.height,
         prompt, mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
