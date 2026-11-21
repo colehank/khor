@@ -11,6 +11,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn explicit_shell_choice_is_durable_and_cannot_be_rebound() {
+        use crate::shell_start::WindowsShell;
+
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().to_path_buf();
+        let device = khor_core::DeviceId([3; 32]);
+        let live = LiveKind::new(root.clone(), device);
+        let id = SessionId("shell/explicit-choice".into());
+        live.register(&id, khor_core::kind::SHELL, "Shell", None, None)
+            .unwrap();
+        let path = live.dir(&id).unwrap();
+        assert!(
+            super::super::read_pair(&path)
+                .unwrap()
+                .0
+                .shell_choice
+                .is_none()
+        );
+        live.record_shell_start(&id, None, Some(WindowsShell::Cmd))
+            .unwrap();
+        let reopened = LiveKind::new(root, device);
+        reopened
+            .record_shell_start(&id, None, Some(WindowsShell::Cmd))
+            .unwrap();
+        assert!(
+            reopened
+                .record_shell_start(&id, None, Some(WindowsShell::PowerShell))
+                .is_err()
+        );
+        assert_eq!(
+            super::super::read_pair(&path).unwrap().0.shell_choice,
+            Some(WindowsShell::Cmd),
+        );
+    }
+
+    #[test]
     fn dsh_readonly_recovery_uses_the_same_default_and_override() {
         let root = tempfile::tempdir().unwrap();
         let node = crate::Node::open(root.path().to_path_buf()).unwrap();
@@ -992,18 +1028,20 @@ impl LiveKind {
         }))
     }
 
-    pub(crate) fn record_shell_ancestry(
+    pub(crate) fn record_shell_start(
         &self,
         id: &SessionId,
-        ancestry: super::ShellRun,
+        ancestry: Option<super::ShellRun>,
+        choice: Option<crate::shell_start::WindowsShell>,
     ) -> Result<(), String> {
-        if ancestry.previous == *id
-            || ancestry.root == *id
-            || ancestry.previous.0.is_empty()
-            || ancestry.root.0.is_empty()
-            || ancestry.previous.0.len() > 4096
-            || ancestry.root.0.len() > 4096
-        {
+        if ancestry.as_ref().is_some_and(|ancestry| {
+            ancestry.previous == *id
+                || ancestry.root == *id
+                || ancestry.previous.0.is_empty()
+                || ancestry.root.0.is_empty()
+                || ancestry.previous.0.len() > 4096
+                || ancestry.root.0.len() > 4096
+        }) {
             return Err("invalid fresh Shell ancestry".into());
         }
         let directory = self.dir(id).ok_or_else(|| msg::not_a_session_id(&id.0))?;
@@ -1012,17 +1050,18 @@ impl LiveKind {
         if meta.kind != khor_core::kind::SHELL || meta.id != id.0 {
             return Err("fresh Shell row changed kind or identity".into());
         }
-        if let Some(current) = &meta.shell_run {
-            return if current == &ancestry {
+        if meta.shell_run.is_some() || meta.shell_choice.is_some() {
+            return if meta.shell_run == ancestry && meta.shell_choice == choice {
                 Ok(())
             } else {
-                Err("Shell ancestry has already been published".into())
+                Err("Shell startup settings have already been published".into())
             };
         }
         if meta.pid.is_some() {
-            return Err("Shell ancestry must precede its host spawn".into());
+            return Err("Shell startup settings must precede its host spawn".into());
         }
-        meta.shell_run = Some(ancestry);
+        meta.shell_run = ancestry;
+        meta.shell_choice = choice;
         gate.write_meta(&meta)
     }
 }
@@ -1106,20 +1145,27 @@ impl crate::Node {
                 .as_ref()
                 .map_or_else(|| id.clone(), |run| run.root.clone()),
         };
-        let shell = crate::shell_start::default_shell();
+        let shell = match meta.shell_choice {
+            Some(choice) => choice.resolve()?,
+            None => crate::shell_start::default_shell(),
+        };
         if shell.trim().is_empty() {
             return Ok(ShellRunResult::Refused {
                 reason: "default-shell-unavailable".into(),
             });
         }
-        let encoded = serde_json::to_vec(&(
+        let input = (
             &requested,
             &meta.place,
             &effective,
             &shell,
             &meta.title,
             &ancestry.root,
-        ))
+        );
+        let encoded = match meta.shell_choice {
+            Some(choice) => serde_json::to_vec(&(input, choice)),
+            None => serde_json::to_vec(&input),
+        }
         .map_err(|error| error.to_string())?;
         let arguments =
             recovery_attempt::ActionArguments::shell(home, id.clone(), id.0.clone(), &encoded)?;
@@ -1146,6 +1192,7 @@ impl crate::Node {
                         || current.place != meta.place
                         || current.title != meta.title
                         || current.shell_run != meta.shell_run
+                        || current.shell_choice != meta.shell_choice
                         || super::ending_of(&gate.dir, &current, &state).is_none()
                     {
                         return Err("previous Shell is not the same ended execution".into());
@@ -1175,6 +1222,7 @@ impl crate::Node {
             .open_shell_here_from(
                 crate::shell_start::ShellStart {
                     argv: None,
+                    shell: meta.shell_choice,
                     headless: false,
                     token: once,
                     title: meta.title,

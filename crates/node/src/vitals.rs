@@ -394,6 +394,7 @@ mod tests {
     /// `disk_under` that always answered `None` would satisfy the negative
     /// assertion on its own — an absence and a broken lookup read alike
     /// (docs/handoff 否定式断言之前先证明测法还活着).
+    #[cfg(unix)]
     #[test]
     fn a_path_under_no_mount_point_reports_no_disk() {
         let disks = local::Reader::new(local::real_probe()).table(local::VOLUME_LIMIT);
@@ -421,6 +422,7 @@ mod tests {
     /// half runs first**, `a_path_under_no_mount_point_reports_no_disk`'s
     /// rule: an answer of 「missing」 for everything would pass the
     /// negative half alone.
+    #[cfg(unix)]
     #[test]
     fn a_watched_directory_names_its_volume_and_a_missing_one_says_so() {
         let here = std::env::current_dir().unwrap().display().to_string();

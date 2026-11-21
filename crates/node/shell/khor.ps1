@@ -27,7 +27,11 @@ function Global:prompt {
   }
   $loc = $executionContext.SessionState.Path.CurrentLocation
   if ($loc.Provider.Name -eq 'FileSystem') {
-    $out += __Khor-Osc ("7;file://" + [System.Net.Dns]::GetHostName() + "/" + ($loc.ProviderPath -replace '\\', '/').TrimStart('/'))
+    if ([System.IO.Path]::DirectorySeparatorChar -eq [char]92) {
+      $out += __Khor-Osc ("9;9;" + $loc.ProviderPath)
+    } else {
+      $out += __Khor-Osc ("7;file://" + [System.Net.Dns]::GetHostName() + "/" + $loc.ProviderPath.TrimStart('/'))
+    }
   }
   $out += __Khor-Osc "133;A"
   $out += & $Global:__KhorUserPrompt

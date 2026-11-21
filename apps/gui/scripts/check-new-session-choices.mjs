@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {readNewSessionChoices, rememberNewSessionChoice, recentLaunchChoices, launchId} from '../src/lib/new-session-choices.ts';
+import {readNewSessionChoices, rememberNewSessionChoice, recentLaunchChoices, launchId, preferredLaunch, windowsShells, KHOR_OWN_AGENT} from '../src/lib/new-session-choices.ts';
 
 const values = new Map();
 const storage = {getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value)};
@@ -28,6 +28,18 @@ assert.equal(launchId({kind: 'shell', command: 'before', preset: 'stable-id'}), 
 const transient = rememberNewSessionChoice(choices, 'machine-a', {dir: '/not-saved'}, {getItem: () => null, setItem: () => {throw new Error('storage unavailable');}});
 assert.equal(transient.machines['machine-a'].dir, '/not-saved');
 
+assert.deepEqual(windowsShells('windows').map(row => row.shell), ['powershell', 'cmd']);
+for (const system of ['macos', 'linux', undefined]) assert.equal(windowsShells(system).length, 0);
+const cmd = {kind: 'shell', command: '', shell: 'cmd'};
+const powershell = {kind: 'shell', command: '', shell: 'powershell'};
+choices = rememberNewSessionChoice(choices, 'windows-a', {launch: cmd}, storage);
+choices = rememberNewSessionChoice(choices, 'windows-b', {launch: powershell}, storage);
+const restored = readNewSessionChoices(storage);
+assert.deepEqual(restored.machines['windows-a'].launch, cmd);
+assert.deepEqual(restored.machines['windows-b'].launch, powershell);
+assert.deepEqual(restored.machines['windows-a'].recent, ['shell:cmd']);
+assert.deepEqual(restored.machines['windows-b'].recent, ['shell:powershell']);
+
 for (const raw of ['{', 'null', '[]', '{"machine":42,"machines":{}}']) {
   assert.deepEqual(readNewSessionChoices({getItem: () => raw, setItem() {}}), {machine: '', machines: {}});
 }
@@ -35,3 +47,35 @@ const unsafe = readNewSessionChoices({getItem: () => JSON.stringify({machine: 'm
 assert.equal(unsafe.machines['machine-a'].launch, undefined);
 assert.deepEqual(unsafe.machines['machine-a'].recent, ['khor']);
 console.log('New session choices: per-machine persistence, stable launch IDs, MRU, typing, storage failure and corrupt data passed');
+
+// ── The default a wizard opens on, from what this machine has ───────────
+// Pi is Khor's own agent and the plan's default, but only when its ACP
+// road is open: with no package runner its road is the terminal floor,
+// and a *conversation* must not default to an agent that cannot answer.
+assert.deepEqual(
+  preferredLaunch(false, [{id: 'pi', road: 'registry-acp'}, {id: 'codex', road: 'builtin'}]),
+  {kind: 'agent', agent: 'pi'},
+  'khor own agent wins when it can back a conversation',
+);
+assert.deepEqual(
+  preferredLaunch(false, [{id: 'pi', road: 'terminal'}, {id: 'codex', road: 'builtin'}]),
+  {kind: 'agent', agent: 'codex'},
+  'a terminal-only Pi is not a conversation default; the builtin road is',
+);
+assert.deepEqual(
+  preferredLaunch(false, [{id: 'codex', road: 'builtin'}, {id: 'claude', road: 'terminal'}]),
+  {kind: 'agent', agent: 'codex'},
+  'builtin roads need no npm, so they come before the shipped default',
+);
+assert.deepEqual(
+  preferredLaunch(false, [{id: 'aider', road: 'terminal'}]),
+  {kind: 'shell', command: 'aider'},
+  'with nothing able to answer, a terminal is the only form that starts — naming an absent agent is a dead 创建 button',
+);
+assert.deepEqual(
+  preferredLaunch(true, [{id: 'pi', road: 'registry-acp'}, {id: 'codex', road: 'builtin'}]),
+  {kind: 'shell', command: 'pi'},
+  'the terminal form still gets the first installed program',
+);
+assert.equal(KHOR_OWN_AGENT, 'pi');
+console.log('Preferred launch: Pi when it can answer, builtin next, a terminal when nothing can, terminal form unchanged — passed');

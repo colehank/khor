@@ -30,6 +30,7 @@ import { cli, gui } from "@/gen/catalog";
 import { cn } from "@/lib/utils";
 import { MoreFold, MoreFrame, MoreSection } from "@/views/more/MorePage";
 import { SessionAssociation } from "@/views/more/AgentRecognition";
+import { AgentFleetSection } from "@/views/more/AgentFleet";
 import { TMUX_ZSHRC } from "@/lib/term-shell-tmux";
 import { useCoarse } from "@/hooks/use-coarse";
 import { NetStatusSections } from "@/views/more/NetStatus";
@@ -281,6 +282,7 @@ export function DoctorPage({
       <NetStatusSections devices={devices} />
       <MoreFold name="session-integration" label={gui.session_association}>
         <SessionAssociation devices={devices} machine={associationMachine} onMachine={setAssociationMachine}/>
+        <AgentFleetSection devices={devices} />
         {!coarse&&<MoreSection name="shell-marks" label={gui.term_tmux_marks}>
           <ActionRow name="term-tmux-marks" label={gui.term_tmux_marks}
             hint={<>{gui.term_tmux_marks_note}<code data-term-tmux-line className="mt-xxs block select-all break-words font-mono text-caption">{TMUX_ZSHRC}</code></>}

@@ -1513,28 +1513,29 @@ mod status_tests {
     /// **The commit page's question** (COMMITS-BRIEF, 2026-10-12): HEAD
     /// of this checkout changed at least one file, and its text files
     /// arrive with both sides whole (cm-d item 1).
+    ///
+    /// The commit comes from a fixture, not from this checkout's HEAD: the
+    /// answer marks a file `big` when either side exceeds `SHOWN`, so a HEAD
+    /// that only touches a large source file has no eligible text file and
+    /// this test would go red for a reason unrelated to the walk it checks.
     #[test]
     fn head_answers_its_files_with_both_sides() {
-        let root = here();
-        let head = gix::open(&root)
-            .expect("open")
-            .head_id()
-            .expect("head")
-            .to_string();
+        let (checkout, marks) = super::repository_history_tests::text_edit();
+        let rev = marks[&2].clone();
         let GitAnswer::Commit {
             commit,
             files,
             total,
             ..
         } = answer(&GitAsk::Commit {
-            root: root.to_string_lossy().into_owned(),
-            rev: head.clone(),
+            root: checkout.0.to_string_lossy().into_owned(),
+            rev: rev.clone(),
         })
         .expect("commit")
         else {
             panic!("not a commit")
         };
-        assert_eq!(commit.id, head);
+        assert_eq!(commit.id, rev);
         assert!(!files.is_empty() && total as usize >= files.len());
         let f = files
             .iter()
@@ -1882,6 +1883,23 @@ pub(crate) mod repository_history_tests {
     use std::process::{Command, Stdio};
     use std::sync::atomic::{AtomicU64, Ordering};
 
+    /// The verbatim prefix `std::fs::canonicalize` puts on a Windows path.
+    ///
+    /// `git fast-import` refuses `--export-marks=\\?\F:\Temp\marks` with
+    /// "Invalid argument", and a person's own path never carries the
+    /// prefix. The fixtures canonicalize their root for a stable path, so
+    /// they hand git — and the node under test — the plain spelling.
+    fn plain(path: PathBuf) -> PathBuf {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            if let Some(unc) = rest.strip_prefix(r"UNC\") {
+                return PathBuf::from(format!(r"\\{unc}"));
+            }
+            return PathBuf::from(rest);
+        }
+        path
+    }
+
     pub(crate) struct Checkout(pub(crate) PathBuf);
 
     impl Checkout {
@@ -1897,7 +1915,7 @@ pub(crate) mod repository_history_tests {
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             std::fs::create_dir(&path).unwrap();
-            let checkout = Self(std::fs::canonicalize(path).unwrap());
+            let checkout = Self(plain(std::fs::canonicalize(path).unwrap()));
             checkout.git(&["init", "--quiet", "--initial-branch=main"]);
             checkout
         }
@@ -2015,6 +2033,26 @@ pub(crate) mod repository_history_tests {
                 &format!("commit {i}"),
             );
         }
+        let marks = checkout.import(&stream);
+        (checkout, marks)
+    }
+
+    /// A two-commit checkout whose second commit edits one small text file.
+    pub(crate) fn text_edit() -> (Checkout, BTreeMap<usize, String>) {
+        use std::fmt::Write;
+        let checkout = Checkout::new();
+        let mut stream = String::new();
+        // A blank line ends a fast-import commit, so `M` has to precede it.
+        writeln!(
+            stream,
+            "commit refs/heads/main\nmark :1\nauthor A <a@example.test> 1700000000 +0000\ncommitter A <a@example.test> 1700000000 +0000\ndata 3\none\ndeleteall\nM 100644 inline hello.txt\ndata 6\nfirst\n"
+        )
+        .unwrap();
+        writeln!(
+            stream,
+            "commit refs/heads/main\nmark :2\nauthor A <a@example.test> 1700000001 +0000\ncommitter A <a@example.test> 1700000001 +0000\ndata 3\ntwo\ndeleteall\nM 100644 inline hello.txt\ndata 7\nsecond\n"
+        )
+        .unwrap();
         let marks = checkout.import(&stream);
         (checkout, marks)
     }

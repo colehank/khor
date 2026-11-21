@@ -373,5 +373,9 @@ pub async fn upgrade_local(
     _trust: TrustRoot,
     _progress: impl FnMut(DownloadProgress),
 ) -> Result<UpgradeOutcome, String> {
+    #[cfg(windows)]
+    if std::env::current_exe().is_ok_and(|program| khor_update::windows_installer_owns(&program)) {
+        return Err("This CLI is updated with Khor. In the app, open Settings → About.".into());
+    }
     Err("this CLI uses its external installer for updates".into())
 }

@@ -143,6 +143,15 @@ pub(super) fn launch() -> Result<(), String> {
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
+        #[cfg(target_os = "windows")]
+        if let Some(log) = std::env::var_os("KHOR_LOG_FILE")
+            && let Ok(file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(log)
+        {
+            command.stderr(file);
+        }
         #[cfg(unix)]
         unsafe {
             use std::os::unix::process::CommandExt;

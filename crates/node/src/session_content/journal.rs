@@ -168,7 +168,7 @@ pub(crate) enum Outcome {
 
 pub(crate) struct Journal {
     directory: PathBuf,
-    file: File,
+    file: Option<File>,
     manifest: Manifest,
     pending: bool,
     poisoned: bool,
@@ -333,7 +333,7 @@ impl Journal {
                 let interrupted = manifest.active_turn;
                 let mut next = Self {
                     directory,
-                    file,
+                    file: Some(file),
                     manifest: Manifest {
                         version: VERSION,
                         identity,
@@ -362,7 +362,7 @@ impl Journal {
                     .map_err(|e| e.to_string())?;
                 Self {
                     directory,
-                    file,
+                    file: Some(file),
                     manifest,
                     pending: false,
                     poisoned: false,
@@ -379,7 +379,7 @@ impl Journal {
                 .map_err(|e| e.to_string())?;
             Self {
                 directory,
-                file,
+                file: Some(file),
                 manifest: Manifest {
                     version: VERSION,
                     identity,
@@ -447,7 +447,7 @@ impl Journal {
         )
         .map_err(|error| error.to_string())?;
         let cursor = crate::adaptor::transcript_page::capture_eof(
-            &self.file,
+            self.record(),
             &mut published,
             &binding.source_id(),
         )?;
@@ -458,6 +458,9 @@ impl Journal {
         if !self.pending {
             return Ok(());
         }
+        // Windows will not delete a folder that still has an open handle
+        // inside it; the writer is discarded either way.
+        self.file = None;
         fs::remove_dir_all(self.directory.join("pending"))
             .map_err(|e| format!("journal pending cleanup failed: {e}"))?;
         self.pending = false;
@@ -473,6 +476,26 @@ impl Journal {
         })
     }
 
+    /// The record file, while this writer holds it open.
+    ///
+    /// It is an `Option` because Windows refuses to rename or delete a
+    /// directory that still has an open handle inside it
+    /// (`ERROR_ACCESS_DENIED`, os error 5), while Unix does both without
+    /// complaint. [`publish_base`] and [`abort_base`] therefore let go
+    /// before they move or remove the folder; `ensure_writable`'s
+    /// poisoned flag is what stops a discarded handle from being used.
+    fn record(&self) -> &File {
+        self.file
+            .as_ref()
+            .expect("journal record file is open while the writer is healthy")
+    }
+
+    fn record_mut(&mut self) -> &mut File {
+        self.file
+            .as_mut()
+            .expect("journal record file is open while the writer is healthy")
+    }
+
     pub fn commit_base(&mut self) -> Result<(), String> {
         self.prepare_base()?;
         self.publish_base()
@@ -482,7 +505,7 @@ impl Journal {
     /// another replay. Make its finite accepted prefix durable before Ready.
     pub(crate) fn sync_received_prefix(&mut self) -> Result<(), String> {
         self.ensure_writable()?;
-        let result = self.file.sync_data().map_err(|error| error.to_string());
+        let result = self.record().sync_data().map_err(|error| error.to_string());
         if result.is_err() {
             self.poisoned = true;
         }
@@ -497,11 +520,9 @@ impl Journal {
         }
         self.ensure_writable()?;
         let result = (|| {
-            self.file.sync_all().map_err(|e| e.to_string())?;
+            self.record().sync_all().map_err(|e| e.to_string())?;
             self.persist()?;
-            File::open(self.directory.join("pending/manifest.json"))
-                .and_then(|file| file.sync_all())
-                .map_err(|e| e.to_string())?;
+            crate::durable::sync_file(&self.directory.join("pending/manifest.json"))?;
             sync_directory(&self.directory.join("pending"))
         })();
         if result.is_err() {
@@ -531,7 +552,25 @@ impl Journal {
                 fs::create_dir_all(self.directory.join("generations"))
                     .map_err(|e| e.to_string())?;
             }
-            fs::rename(self.directory.join("pending"), &target).map_err(|e| e.to_string())?;
+            // Windows refuses to rename a directory that still holds an open
+            // handle inside it (`ERROR_ACCESS_DENIED`, os error 5) while Unix
+            // renames it happily. Let the record file go, move the folder, and
+            // pick the file up at its new home.
+            let pending = self.directory.join("pending");
+            self.file = None;
+            fs::rename(&pending, &target).map_err(|e| {
+                self.file = private_options()
+                    .append(true)
+                    .open(pending.join("records.jsonl"))
+                    .ok();
+                e.to_string()
+            })?;
+            self.file = Some(
+                private_options()
+                    .append(true)
+                    .open(target.join("records.jsonl"))
+                    .map_err(|e| e.to_string())?,
+            );
             self.pending = false;
             self.base_prepared = false;
             sync_directory(target.parent().expect("published base has a parent"))?;
@@ -544,9 +583,7 @@ impl Journal {
                     &self.directory.join("active.json"),
                     &serde_json::to_vec(&active).map_err(|e| e.to_string())?,
                 )?;
-                File::open(self.directory.join("active.json"))
-                    .and_then(|file| file.sync_all())
-                    .map_err(|e| e.to_string())?;
+                crate::durable::sync_file(&self.directory.join("active.json"))?;
             }
             sync_directory(&self.directory)
         })();
@@ -631,13 +668,13 @@ impl Journal {
         self.ensure_writable()?;
         self.base_prepared = false;
         let result = (|| {
-            let start = self.file.seek(SeekFrom::End(0))?;
-            let mut writer = BufWriter::with_capacity(64 * 1024, &mut self.file);
+            let start = self.record_mut().seek(SeekFrom::End(0))?;
+            let mut writer = BufWriter::with_capacity(64 * 1024, self.record_mut());
             serde_json::to_writer(&mut writer, record).map_err(io::Error::other)?;
             writer.write_all(b"\n")?;
             writer.flush()?;
             drop(writer);
-            Ok::<_, io::Error>(start..self.file.seek(SeekFrom::End(0))?)
+            Ok::<_, io::Error>(start..self.record_mut().seek(SeekFrom::End(0))?)
         })();
         match result {
             Ok(range) => Ok(range),
@@ -653,7 +690,7 @@ impl Journal {
     fn persist(&mut self) -> Result<(), String> {
         self.ensure_writable()?;
         let result = (|| {
-            self.file.sync_data().map_err(|e| e.to_string())?;
+            self.record().sync_data().map_err(|e| e.to_string())?;
             let bytes = serde_json::to_vec(&self.manifest).map_err(|e| e.to_string())?;
             let folder = if self.pending {
                 self.directory.join("pending")
@@ -677,20 +714,24 @@ impl Journal {
     }
 
     fn finish_partial_record(&mut self) -> Result<bool, String> {
-        let length = self.file.metadata().map_err(|e| e.to_string())?.len();
+        let length = self.record().metadata().map_err(|e| e.to_string())?.len();
         if length == 0 {
             return Ok(false);
         }
-        self.file
+        self.record_mut()
             .seek(SeekFrom::End(-1))
             .map_err(|e| e.to_string())?;
         let mut last = [0];
-        self.file.read_exact(&mut last).map_err(|e| e.to_string())?;
+        self.record_mut()
+            .read_exact(&mut last)
+            .map_err(|e| e.to_string())?;
         if last == [b'\n'] {
             return Ok(false);
         }
         // Preserve interrupted bytes as an explicit raw record instead of joining new JSON onto them.
-        self.file.write_all(b"\n").map_err(|e| e.to_string())?;
+        self.record_mut()
+            .write_all(b"\n")
+            .map_err(|e| e.to_string())?;
         Ok(true)
     }
 }

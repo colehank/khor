@@ -1018,34 +1018,58 @@ pub(crate) async fn call_target(
     let attempt = async {
         let until = by.min(tokio::time::Instant::now() + std::time::Duration::from_millis(500));
         let mut target = target;
-        let stream = loop {
-            if crate::deadline::expired(Some(by)) {
-                return Err(timed_out());
-            }
-            match tokio::net::TcpStream::connect(("127.0.0.1", target.port)).await {
-                Ok(stream) => break stream,
-                Err(error) => {
-                    if error.kind() != std::io::ErrorKind::ConnectionRefused
-                        || tokio::time::Instant::now() >= until
-                    {
-                        return Err(msg::serve_unreachable(error));
+        let stream =
+            loop {
+                if crate::deadline::expired(Some(by)) {
+                    return Err(timed_out());
+                }
+                // **The connect itself is bounded, and its silence is read as a
+                // refusal.** A refused loopback connect is instant on Unix but can
+                // take seconds on a Windows host with a filter driver, and an
+                // unbounded await here made the whole retry budget expire before a
+                // single retry (measured 2026-11-19: the `a_refused_*` tests failed
+                // on Windows for exactly this). `until` is the retry window, so it
+                // is the ceiling — and past it the answer is the same sentence a
+                // refusal gets, never a hang.
+                let left = until.saturating_duration_since(tokio::time::Instant::now());
+                let refused = match tokio::time::timeout(
+                    left,
+                    tokio::net::TcpStream::connect(("127.0.0.1", target.port)),
+                )
+                .await
+                {
+                    Ok(Ok(stream)) => break stream,
+                    Ok(Err(error)) if error.kind() == std::io::ErrorKind::ConnectionRefused => {
+                        Some(error)
                     }
-                    let Some(next) = refresh() else {
-                        return Err(msg::serve_unreachable(error));
-                    };
-                    if next.port == 0 {
-                        return Err(msg::serve_unreachable(error));
-                    }
-                    if next == target {
+                    Ok(Err(error)) => return Err(msg::serve_unreachable(error)),
+                    Err(_) => None,
+                };
+                let silent = || {
+                    std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "the loopback connect did not answer within the retry window",
+                    )
+                };
+                // **Ask the endpoint file before giving up.** A refusal and a
+                // silence are the same question — "is that port the one now?" — and
+                // the answer may be a moved endpoint. Only past the retry window
+                // does "no move" become the final answer.
+                match refresh() {
+                    Some(next) if next.port != 0 && next != target => target = next,
+                    Some(next) if next.port != 0 => {
+                        if tokio::time::Instant::now() >= until {
+                            return Err(msg::serve_unreachable(refused.unwrap_or_else(silent)));
+                        }
                         tokio::time::sleep_until(until.min(
                             tokio::time::Instant::now() + std::time::Duration::from_millis(50),
                         ))
                         .await;
+                        let _ = next;
                     }
-                    target = next;
+                    _ => return Err(msg::serve_unreachable(refused.unwrap_or_else(silent))),
                 }
-            }
-        };
+            };
         exchange(stream, target, op, by, timed_out).await
     };
     match crate::deadline::wait(Some(by), attempt).await {

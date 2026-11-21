@@ -96,12 +96,18 @@ impl From<Utterance> for ContentEvent {
 pub(crate) enum Provider {
     Claude,
     Codex,
+    /// DeepSeek Harness. Its store is zstd frames rather than a JSONL
+    /// file, so `NativeTranscript::resolve` gives it a decompressed
+    /// snapshot to read (see the DSH branch there); everything after that
+    /// — the parser, the protocol blocks, the binding — is the same road.
+    Dsh,
 }
 impl Provider {
     pub(crate) fn of(category: Option<&str>) -> Option<Self> {
         match category {
             Some("claude") => Some(Self::Claude),
             Some("codex") => Some(Self::Codex),
+            Some("dsh") => Some(Self::Dsh),
             _ => None,
         }
     }
@@ -115,6 +121,12 @@ impl Provider {
             },
             Self::Codex => |text| {
                 adaptor::codex::utterances_of(text)
+                    .into_iter()
+                    .map(ContentEvent::Native)
+                    .collect()
+            },
+            Self::Dsh => |text| {
+                adaptor::dsh::utterances_of(text)
                     .into_iter()
                     .map(ContentEvent::Native)
                     .collect()
@@ -261,6 +273,14 @@ impl NativeTranscript {
         leaf: &str,
         exact: Option<&str>,
     ) -> Result<Option<Self>, Unavailable> {
+        // **DSH is not a JSONL file.** Its store is a sequence of zstd
+        // frames, so the reader gets a decompressed snapshot under the
+        // root and everything downstream is the ordinary road. The
+        // snapshot is rewritten on every resolve, which is what makes a
+        // view that refreshes show the newest turn.
+        if provider == Provider::Dsh {
+            return Self::resolve_dsh(root, leaf, exact);
+        }
         Self::resolve_in(
             adaptor::claude_home(root),
             adaptor::codex_home(root),
@@ -268,6 +288,33 @@ impl NativeTranscript {
             leaf,
             exact,
         )
+    }
+    /// Where DSH's conversation for this id is, as a file the reader can
+    /// parse: decompressed under `{root}/.khor/cache/dsh/`.
+    fn resolve_dsh(
+        root: &Path,
+        leaf: &str,
+        exact: Option<&str>,
+    ) -> Result<Option<Self>, Unavailable> {
+        let wanted = exact.unwrap_or(leaf);
+        // The id a reference carries is the one DSH's own header states;
+        // the locator tries the directory named after it first, so the
+        // usual resolve costs one path probe, not a scan of the store.
+        let Some(file) = crate::dsh_sessions::file_for(wanted) else {
+            return Ok(None);
+        };
+        let text =
+            crate::dsh_sessions::transcript_at(&file).map_err(|_| Unavailable::Unreadable)?;
+        let cache = root.join(".khor").join("cache").join("dsh");
+        std::fs::create_dir_all(&cache).map_err(|_| Unavailable::Unreadable)?;
+        let path = cache.join(format!("{}.jsonl", crate::live::clean_leaf(wanted)));
+        std::fs::write(&path, text).map_err(|_| Unavailable::Unreadable)?;
+        Ok(Some(Self {
+            path,
+            provider: Provider::Dsh,
+            native_id: wanted.to_owned(),
+            parse: adaptor::dsh::utterances_of,
+        }))
     }
     fn resolve_in(
         claude_home: PathBuf,
@@ -277,6 +324,9 @@ impl NativeTranscript {
         exact: Option<&str>,
     ) -> Result<Option<Self>, Unavailable> {
         Ok(match provider {
+            // Handled by `resolve` before this: it needs the root, and a
+            // decompressed snapshot rather than a vendor log path.
+            Provider::Dsh => None,
             Provider::Claude => adaptor::claude::Claude::at(claude_home)
                 .unique_transcript_path(leaf, exact)
                 .map_err(|_| Unavailable::AmbiguousSource)?
@@ -310,6 +360,11 @@ impl NativeTranscript {
             Provider::Codex => {
                 adaptor::codex::Codex::at(adaptor::codex_home(root)).recorded_cwd(&self.native_id)
             }
+            // The header states the directory; the same locator finds the
+            // file, and one frame answers the question.
+            Provider::Dsh => crate::dsh_sessions::file_for(&self.native_id)
+                .and_then(|file| crate::dsh_sessions::cwd_of(&file))
+                .map(PathBuf::from),
         }
     }
     pub(crate) fn native_reference(&self) -> (Provider, &str) {
@@ -355,6 +410,7 @@ impl ContentSource {
                 let agent = match provider {
                     Provider::Claude => "claude",
                     Provider::Codex => "codex",
+                    Provider::Dsh => "dsh",
                 };
                 (khor_core::ObservationNamespace::Native, agent, native)
             }
@@ -502,7 +558,11 @@ mod tests {
         let old = fixture.claude("old", FIRST, CLAUDE);
         let latest = fixture.claude("new", FIRST, CLAUDE);
         for (path, seconds) in [(&old, 10), (&latest, 20)] {
-            File::open(path)
+            // Windows needs a writable handle to set a file's times; a
+            // read-only one is refused with ERROR_ACCESS_DENIED.
+            File::options()
+                .write(true)
+                .open(path)
                 .unwrap()
                 .set_times(
                     std::fs::FileTimes::new()

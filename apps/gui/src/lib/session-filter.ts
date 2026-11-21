@@ -41,7 +41,20 @@ export const arrange = () =>
     Separate so a lookup by key costs no wording at all. */
 export const ARRANGE_KEYS = ["recent", "category", "device", "state", "place"] as const;
 
-/** WeChat's opening: the thing you touched last is the thing you want. */
+/**
+ * Filter by conversation or terminal. Only known shell, transfer, and
+ * borrow rows belong to the terminal side. Unknown kinds stay visible
+ * with conversations so a newer node's session can still be opened.
+ */
+export const TALK_AXIS = "talk:" as const;
+const TERMINAL_ONLY: readonly string[] = ["shell", "transfer", "borrow"];
+export const isTalk = (kind: string) => !TERMINAL_ONLY.includes(kind);
+
+/** Every axis the sessions landing offers, this one included. The
+    workspace column passes its own list (`["state:"]`) and is untouched
+    by the addition — its rows are already one project. */
+export const ALL_AXES = [...AXES, TALK_AXIS] as const;
+
 export const ARRANGE_DEFAULT = "recent";
 const ARRANGE_KEY = "khor.sessions.arrange";
 
@@ -117,10 +130,6 @@ export function rememberWords(pane: string, words: string[]): void {
   }
 }
 
-/** Every axis there is, which is what the sessions landing offers.
-    A workspace's column offers `["state:"]` alone — see `sessionOptions`. */
-export const ALL_AXES = AXES;
-
 /**
  * What a session row answers on each axis, in the node's own terms: the
  * state key it sent, the machine it lives on, the category, the place —
@@ -137,16 +146,18 @@ export const ALL_AXES = AXES;
  * it would be missing this machine — the one people reach for first
  * (`SessionRow::home` says the rest).
  */
-const pick: Record<Axis, (r: SessionRow) => string> = {
+type AnyAxis = Axis | typeof TALK_AXIS;
+const pick: Record<AnyAxis, (r: SessionRow) => string> = {
   "state:": (r) => r.word ?? "",
   "dev:": (r) => r.home,
   "cat:": (r) => r.category ?? "",
   "at:": (r) => sessionCwd(r) ?? "",
+  [TALK_AXIS]: (r) => (isTalk(r.kind) ? "yes" : "no"),
 };
 
-/** The four axes as the sieve reads them — every one, whatever a pane
+/** Every axis as the sieve reads them — every one, whatever a pane
     offers, because a stored tick on any of them still narrows. */
-export const SESSION_SIEVE = AXES.map((a) => ({ key: a, pick: pick[a] }));
+export const SESSION_SIEVE = ALL_AXES.map((a) => ({ key: a, pick: pick[a] }));
 
 /**
  * The filter's choices: the keys the node actually sent, in the order it
@@ -167,32 +178,38 @@ export const SESSION_SIEVE = AXES.map((a) => ({ key: a, pick: pick[a] }));
 export function sessionOptions(
   rows: SessionRow[],
   ticked: string[],
-  axes: readonly Axis[] = ALL_AXES,
+  axes: readonly AnyAxis[] = ALL_AXES,
 ): FilterOption[] {
   // The place chips, told apart where two checkouts share a name — the
   // same reader the list's headings use, so a chip and the heading it
   // filters to always print the same words.
   const placeNames = placeLabels(rows.map((r) => `at:${sessionCwd(r) ?? ""}`));
-  const label: Record<Axis, (v: string) => string> = {
+  const label: Record<AnyAxis, (v: string) => string> = {
     "state:": word,
     "dev:": (v) => v,
     "cat:": (v) => groupLabel(`cat:${v}`),
     "at:": (v) => placeNames.get(`at:${v}`) ?? groupLabel(`at:${v}`),
+    // The same two words the wizard's picker prints for the same pair
+    // (`view-chat` / `view-terminal`): a chip and the thing it selects
+    // must not have two names for one idea.
+    [TALK_AXIS]: (v) => (v === "yes" ? gui.view_chat : gui.view_terminal),
   };
-  const heading: Record<Axis, string> = {
+  const heading: Record<AnyAxis, string> = {
     "state:": gui.axis_state,
     "dev:": gui.devices_tab,
     "cat:": gui.axis_category,
     "at:": gui.axis_place,
+    [TALK_AXIS]: gui.axis_talk,
   };
-  // Stored ticks are read against every axis (`AXES`), not only the ones
-  // on offer: a `dev:` tick in the workspace column's store is not a
-  // state word.
+  // Stored ticks are read against every axis (the node's four plus this
+  // one), not only the ones on offer: a `dev:` tick in the workspace
+  // column's store is not a state word, and a `talk:` tick must never be
+  // read as one either.
   return listOptions(
     rows,
     ticked,
     axes.map((a) => ({ key: a, heading: heading[a], pick: pick[a], label: label[a] })),
-    AXES,
+    ALL_AXES,
   );
 }
 
@@ -204,8 +221,8 @@ export function sessionOptions(
  * (Avatar.tsx's rule).
  */
 export function sessionAxes(options: FilterOption[], devices: DeviceRow[] = []): OmniAxis[] {
-  return listAxes(options, AXES, (key) =>
-    axisOf(key) === "dev:" ? (devices.find((d) => d.name === valueOf(key))?.face ?? null) : undefined,
+  return listAxes(options, ALL_AXES, (key) =>
+    axisOf(key, ALL_AXES) === "dev:" ? (devices.find((d) => d.name === valueOf(key, ALL_AXES))?.face ?? null) : undefined,
   );
 }
 
@@ -216,7 +233,7 @@ export function sessionSearchText(row: SessionRow): string {
 
 export function visibleSessions(rows: SessionRow[], query: string, ticked: string[]) {
   const q = query.trim().toLowerCase();
-  return sieve(rows, ticked, SESSION_SIEVE, AXES).filter(
+  return sieve(rows, ticked, SESSION_SIEVE, ALL_AXES).filter(
     (row) => !q || sessionSearchText(row).toLowerCase().includes(q),
   );
 }

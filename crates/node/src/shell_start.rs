@@ -20,6 +20,108 @@ pub struct ShellStart {
     /// Structured CLI arguments are quoted only on the machine owning this shell.
     #[serde(default)]
     pub argv: Option<Vec<String>>,
+    /// Optional trailing field. Keep the existing terminal frame byte-for-byte
+    /// when absent. A reader that predates the field refuses a longer frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shell: Option<WindowsShell>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WindowsShell {
+    PowerShell,
+    Cmd,
+}
+
+impl WindowsShell {
+    pub(crate) fn from_program(program: &str) -> Option<Self> {
+        match program_name(program).as_str() {
+            "pwsh" | "powershell" => Some(Self::PowerShell),
+            "cmd" => Some(Self::Cmd),
+            _ => None,
+        }
+    }
+
+    /// Render one complete path argument for the shell on the session host.
+    pub fn quote_attachment(self, path: &str) -> Result<String, String> {
+        let path = path
+            .strip_prefix(r"\\?\")
+            .filter(|local| {
+                let bytes = local.as_bytes();
+                bytes.first().is_some_and(u8::is_ascii_alphabetic)
+                    && bytes.get(1..3) == Some(b":\\")
+            })
+            .unwrap_or(path);
+        if path.chars().any(char::is_control) {
+            return Err("The path contains a character the terminal cannot paste".into());
+        }
+        match self {
+            Self::PowerShell => Ok(quote_powershell(path)),
+            Self::Cmd if path.contains(['%', '!', '"']) => {
+                Err("CMD cannot safely paste a path containing %, ! or a quotation mark".into())
+            }
+            Self::Cmd => Ok(quote_cmd(path)),
+        }
+    }
+
+    pub(crate) fn resolve(self) -> Result<String, String> {
+        #[cfg(windows)]
+        {
+            Ok(match self {
+                Self::PowerShell => windows_powershell(crate::Node::user_path())
+                    .unwrap_or_else(|| "powershell.exe".into()),
+                Self::Cmd => {
+                    windows_system_program("System32/cmd.exe").unwrap_or_else(|| "cmd.exe".into())
+                }
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            Err(khor_catalog::msg::launch_command_invalid().into())
+        }
+    }
+}
+
+fn program_name(program: &str) -> String {
+    let name = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or_default()
+        .trim_start_matches('-')
+        .to_ascii_lowercase();
+    name.strip_suffix(".exe").unwrap_or(&name).to_owned()
+}
+
+fn quote_powershell(value: &str) -> String {
+    let mut quoted = String::with_capacity(value.len() + 2);
+    quoted.push('\'');
+    for ch in value.chars() {
+        quoted.push(ch);
+        if matches!(ch, '\'' | '\u{2018}'..='\u{201b}') {
+            quoted.push(ch);
+        }
+    }
+    quoted.push('\'');
+    quoted
+}
+
+fn quote_cmd(value: &str) -> String {
+    // For a Windows executable's argv, double any backslashes immediately
+    // before the closing quote so they remain part of the argument.
+    let trailing = value.chars().rev().take_while(|c| *c == '\\').count();
+    format!("\"{}{}\"", value, "\\".repeat(trailing))
+}
+
+#[cfg(windows)]
+fn windows_system_program(relative: &str) -> Option<String> {
+    let file = PathBuf::from(std::env::var_os("SystemRoot")?).join(relative);
+    file.is_file().then(|| file.to_string_lossy().into_owned())
+}
+
+#[cfg(windows)]
+fn windows_powershell(path: &str) -> Option<String> {
+    crate::find_program("pwsh.exe", path)
+        .or_else(|| windows_system_program("System32/WindowsPowerShell/v1.0/powershell.exe"))
 }
 
 impl ShellStart {
@@ -73,14 +175,8 @@ pub fn default_shell() -> String {
     }
     #[cfg(windows)]
     {
-        if let Some(shell) = available("pwsh.exe") {
+        if let Some(shell) = windows_powershell(&path) {
             return shell;
-        }
-        if let Some(root) = std::env::var_os("SystemRoot") {
-            let shell = PathBuf::from(root).join("System32/WindowsPowerShell/v1.0/powershell.exe");
-            if shell.is_file() {
-                return shell.to_string_lossy().into_owned();
-            }
         }
         std::env::var("COMSPEC")
             .ok()
@@ -193,27 +289,17 @@ pub fn startup_command(
     if argv.is_empty() || !command.trim().is_empty() || argv.iter().any(|arg| arg.contains('\0')) {
         return Err("Invalid structured terminal startup command".into());
     }
-    let name = PathBuf::from(shell)
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .trim_start_matches('-')
-        .to_ascii_lowercase();
-    let name = name.trim_end_matches(".exe");
+    let name = program_name(shell);
     let posix = |arg: &str| format!("'{}'", arg.replace('\'', "'\\''"));
-    let quote = |arg: &str| format!("'{}'", arg.replace('\'', "''"));
-    let rendered = match name {
-        "pwsh" | "powershell" => format!("& {}", argv.iter().map(|s| quote(s)).collect::<Vec<_>>().join(" ")),
+    let rendered = match name.as_str() {
+        "pwsh" | "powershell" => format!("& {}", argv.iter().map(|s| quote_powershell(s)).collect::<Vec<_>>().join(" ")),
         "cmd" => {
             if argv.iter().any(|arg| arg.chars().any(|c| "%!^&|<>\r\n\"".contains(c))) {
                 return Err("cmd structured startup cannot contain expansion or control characters; provide an explicit shell command instead".into());
             }
             let quoted = argv.iter().enumerate().map(|(at, arg)| {
                 if at == 0 && !arg.is_empty() && !arg.chars().any(char::is_whitespace) { return arg.clone(); }
-                // With quotes inside arguments rejected above, only trailing
-                // backslashes need doubling for Windows executable argv.
-                let trailing = arg.chars().rev().take_while(|c| *c == '\\').count();
-                format!("\"{}{}\"", arg, "\\".repeat(trailing))
+                quote_cmd(arg)
             }).collect::<Vec<_>>();
             quoted.join(" ")
         }
@@ -668,6 +754,41 @@ mod tests {
             startup_command("unknown-shell", "literal | command", None).unwrap(),
             "literal | command"
         );
+    }
+
+    #[test]
+    fn attachment_paths_are_literal_arguments_in_the_host_shell() {
+        let path = r"C:\资料\John's notes & plan.txt";
+        assert_eq!(
+            WindowsShell::from_program(r"C:\Windows\System32\CMD.EXE"),
+            Some(WindowsShell::Cmd)
+        );
+        assert_eq!(
+            WindowsShell::from_program("/opt/microsoft/powershell/7/pwsh"),
+            Some(WindowsShell::PowerShell)
+        );
+        assert_eq!(WindowsShell::from_program("bash"), None);
+        assert_eq!(
+            WindowsShell::Cmd.quote_attachment(path).unwrap(),
+            format!("\"{path}\"")
+        );
+        assert_eq!(
+            WindowsShell::Cmd
+                .quote_attachment(&format!(r"\\?\{path}"))
+                .unwrap(),
+            format!("\"{path}\"")
+        );
+        assert_eq!(
+            WindowsShell::PowerShell.quote_attachment(path).unwrap(),
+            r"'C:\资料\John''s notes & plan.txt'"
+        );
+        assert_eq!(
+            WindowsShell::PowerShell.quote_attachment("‘a’").unwrap(),
+            "'‘‘a’’'"
+        );
+        for path in ["%PATH%", "!PATH!", "\"quoted\"", "two\nlines"] {
+            assert!(WindowsShell::Cmd.quote_attachment(path).is_err());
+        }
     }
 
     #[test]

@@ -21,4 +21,12 @@ def native_environment(home, name, inherited=None):
                        KHOR_RUNTIME_DIR=str(home / 'runtime'),
                        XDG_CONFIG_HOME=str(profile / '.config'), XDG_CACHE_HOME=str(profile / '.cache'),
                        XDG_DATA_HOME=str(profile / '.local/share'))
+    # A WebView2 override would force the app and every borrowed exit to use
+    # one environment. The app instead assigns profiles beneath KHOR_HOME.
+    environment.pop('WEBVIEW2_USER_DATA_FOLDER', None)
+    desktop = {'APPDATA': profile / 'AppData/Roaming',
+               'LOCALAPPDATA': profile / 'AppData/Local'}
+    for key, value in desktop.items():
+        environment[key] = str(value)
+        value.mkdir(parents=True, exist_ok=True, mode=0o700)
     return environment

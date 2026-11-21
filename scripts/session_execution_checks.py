@@ -22,7 +22,8 @@ def main():
         # This bounded login probe is Unix-only; Windows uses its native
         # inherited environment, covered by the path and real worker checks.
         filters.remove("user_environment")
-        filters.extend(["live::tests::windows_close", "win_process::tests"])
+        filters.extend(["live::tests::windows_close", "win_process::tests",
+                        "commands::tests::history_is_searched_by_words_directory_and_failure"])
     # Keep native transcript and file-lock coverage on the same desktop matrix.
     filters.extend(["adaptor::codex", "host::agent_draft::tests"])
     commands = [

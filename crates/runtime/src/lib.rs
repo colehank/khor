@@ -2,6 +2,7 @@
 mod bundle;
 mod lease;
 mod local;
+mod source_cache;
 mod store;
 #[cfg(test)]
 mod tests;
@@ -10,6 +11,7 @@ pub use lease::Lease;
 pub use local::{
     available as available_space, local_directory, validate as validate_local_directory,
 };
+pub use source_cache::SourceCache;
 pub use store::{Collection, Image, Limits, Source, Store, Usage};
 
 pub fn platform() -> String {

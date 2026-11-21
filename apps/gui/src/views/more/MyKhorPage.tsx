@@ -63,7 +63,6 @@ import { DeleteDialog, type Pending } from "@/components/DeleteDialog";
 import { GlassCircle } from "@/components/Glass";
 import { MachineFace } from "@/components/SessionFace";
 import { IconBack, IconMore } from "@/components/icons";
-import { WindowControls } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -380,7 +379,6 @@ export function MyKhorPage({
         <GlassCircle aria-label={gui.back} data-dial-back onClick={onClose}><IconBack/></GlassCircle>
         <h1 className="min-w-0 flex-1 truncate text-title-sm font-title">{gui.my_khor}</h1>
         {segment("data-dial-segment")}
-        <WindowControls/>
       </div>}
       <section
         data-more-page="me"

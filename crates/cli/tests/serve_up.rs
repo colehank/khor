@@ -1,3 +1,9 @@
+// The login pull-up is a POSIX login script (`#!/bin/sh`, `chmod +x`)
+// and the resident it starts is the POSIX keeper's charge. Windows uses
+// the MSI installation and the supervisor in `keeper_windows.rs`, which a
+// Windows test of its own will cover (W3).
+#![cfg(unix)]
+
 //! The login pull-up (`~/.local/bin/khor-serve-up`) sends the machine
 //! that owns `$HOME` to `$HOME` — and onset ships it (SHELL.md 第五轮
 //! 第 0 条).

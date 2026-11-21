@@ -1,3 +1,9 @@
+// The shielded keeper, in-place exec handover and inode identity are POSIX
+// mechanics. Windows supervises the resident without exec (see
+// `keeper_windows.rs`); its end-to-end test belongs to the Windows smoke
+// slice (W3), not to this Unix one.
+#![cfg(unix)]
+
 //! The keeper through the real binary (docs/handoff 批19; 账本:
 //! 网络类改动必须真连,还要有对照组). hinton's serve died by signal and
 //! said nothing for eleven hours — so the assertions here are exactly

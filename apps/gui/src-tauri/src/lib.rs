@@ -2,6 +2,7 @@
 //! is one call into khor-node — CLI and GUI stay equivalent because they
 //! are the same functions (docs/KHOR.md 三条地基).
 
+pub mod diagnostics;
 mod machine_updates;
 mod menu_overlay;
 mod native_io;
@@ -9,7 +10,13 @@ mod page_history;
 mod page_navigation;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
 mod page_retire;
+#[cfg(target_os = "windows")]
+mod page_windows;
 mod updater_commands;
+#[cfg(target_os = "windows")]
+mod window_events;
+#[cfg(target_os = "windows")]
+mod window_transport;
 
 #[cfg(all(desktop, unix))]
 mod app_companions;
@@ -48,9 +55,30 @@ use khor_node::Node;
 async fn off_main<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, String> + Send + 'static,
 ) -> Result<T, String> {
-    tauri::async_runtime::spawn_blocking(work)
-        .await
-        .map_err(|e| e.to_string())?
+    // **Said on stderr, so a pool that never runs its work is visible**
+    // (2026-11-16: every `off_main` command stayed pending on Windows while
+    // the direct ones answered, and nothing anywhere said so). `KHOR_GUI_TRACE`
+    // turns it on; the pair of lines bounds the wait without changing it.
+    let traced = std::env::var_os("KHOR_GUI_TRACE").is_some();
+    let started = std::time::Instant::now();
+    if traced {
+        eprintln!("[off_main] submitted");
+    }
+    let joined = tauri::async_runtime::spawn_blocking(move || {
+        if traced {
+            eprintln!("[off_main] closure entered after {:?}", started.elapsed());
+        }
+        let out = work();
+        if traced {
+            eprintln!("[off_main] closure done after {:?}", started.elapsed());
+        }
+        out
+    })
+    .await;
+    if traced {
+        eprintln!("[off_main] settled after {:?}", started.elapsed());
+    }
+    joined.map_err(|e| e.to_string())?
 }
 
 /// `by` is the arrangement key (`khor_node::list::Arrange`). The window
@@ -63,7 +91,17 @@ async fn off_main<T: Send + 'static>(
 /// held the window still for as long as that took.
 #[tauri::command]
 async fn sessions(by: String) -> Result<Vec<SessionRow>, String> {
-    off_main(move || khor_gui_core::list_sessions(&Node::root_from_env(), &by)).await
+    if std::env::var_os("KHOR_GUI_TRACE").is_some() {
+        eprintln!("[sessions] entered with by={by:?}");
+    }
+    let out = off_main(move || khor_gui_core::list_sessions(&Node::root_from_env(), &by)).await;
+    if std::env::var_os("KHOR_GUI_TRACE").is_some() {
+        eprintln!(
+            "[sessions] answered: {:?}",
+            out.as_ref().map(|rows| rows.len())
+        );
+    }
+    out
 }
 
 #[tauri::command]
@@ -518,7 +556,17 @@ fn remove_account(id: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn devices() -> Result<Vec<DeviceRow>, String> {
-    khor_gui_core::list_devices(&Node::root_from_env()).await
+    if std::env::var_os("KHOR_GUI_TRACE").is_some() {
+        eprintln!("[devices] entered");
+    }
+    let out = khor_gui_core::list_devices(&Node::root_from_env()).await;
+    if std::env::var_os("KHOR_GUI_TRACE").is_some() {
+        eprintln!(
+            "[devices] answered: {:?}",
+            out.as_ref().map(|rows| rows.len())
+        );
+    }
+    out
 }
 
 /// The machine's process top and the CPU day its serve recorded.
@@ -1829,9 +1877,16 @@ struct PageWord {
 /// for and again when one **finishes**, which is what makes it the page's
 /// real address rather than the last one requested — a page that
 /// redirects, or follows a link, ends up somewhere nobody asked for.
-fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, (String, String)>> {
+#[derive(Clone)]
+struct PageRoute {
+    machine: String,
+    proxy: String,
+    url: String,
+}
+
+fn page_exits() -> &'static std::sync::Mutex<std::collections::HashMap<String, PageRoute>> {
     static EXITS: std::sync::OnceLock<
-        std::sync::Mutex<std::collections::HashMap<String, (String, String)>>,
+        std::sync::Mutex<std::collections::HashMap<String, PageRoute>>,
     > = std::sync::OnceLock::new();
     EXITS.get_or_init(Default::default)
 }
@@ -1898,7 +1953,7 @@ fn page_went(label: &str, to: &str) {
     if let Ok(mut m) = page_exits().lock()
         && let Some(slot) = m.get_mut(label)
     {
-        slot.1 = to.to_owned();
+        slot.url = to.to_owned();
     }
 }
 
@@ -2011,6 +2066,7 @@ async fn open_page(
         khor_gui_core::web::borrow_web(&Node::root_from_env(), &machine).await?
     };
     let target: tauri::Url = url.parse().map_err(|_| format!("not a url: {url}"))?;
+    #[cfg(not(target_os = "windows"))]
     let proxy: Option<tauri::Url> = if direct {
         None
     } else {
@@ -2020,6 +2076,10 @@ async fn open_page(
                 .map_err(|e| format!("{e}"))?,
         )
     };
+    #[cfg(target_os = "windows")]
+    let proxy = (!direct)
+        .then(|| page_windows::proxy_address(&borrow.addr))
+        .transpose()?;
     let label = page_label(&tab);
     let going_to = target.to_string();
     let top = at.y + frame_lift(&window, at);
@@ -2033,8 +2093,7 @@ async fn open_page(
         .and_then(|m| m.get(&label).cloned());
     let same_exit = wired
         .as_ref()
-        .map(|(exit, _)| exit == &machine)
-        .unwrap_or(false);
+        .is_some_and(|route| route.machine == machine && route.proxy == borrow.addr);
     if !same_exit {
         // Retire this page before changing its route. Other pages retain
         // their own leases, so their loopback port cannot be retargeted.
@@ -2075,7 +2134,7 @@ async fn open_page(
             // Read from this side rather than from the webview: see
             // `page_exits`. Asking a webview that has not started its
             // navigation for its URL takes the process down with it.
-            let now = wired.as_ref().map(|(_, at)| at.as_str());
+            let now = wired.as_ref().map(|route| route.url.as_str());
             if now != Some(target.as_str()) {
                 page_went(&label, target.as_str());
                 navigate_page(&live, &tab, target).await?;
@@ -2147,11 +2206,26 @@ async fn open_page(
         builder =
             builder.data_store_identifier(khor_gui_core::web::page_store_identifier(&profile));
     }
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(address) = proxy {
+            // The process and its proxy arguments are scoped to a data directory.
+            let directory = window
+                .state::<page_windows::Profiles>()
+                .directory(&machine, address)?;
+            builder = builder
+                .data_directory(directory)
+                .additional_browser_args(&page_windows::browser_args(address));
+        } else if let Some(directory) = page_windows::profile_directory() {
+            builder = builder.data_directory(directory);
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
     if let Some(proxy) = proxy {
-        // The two ride together or not at all — see `direct` above.
-        builder = builder
-            .proxy_url(proxy)
-            .initialization_script_for_all_frames(khor_gui_core::web::PAGE_SHIM);
+        builder = builder.proxy_url(proxy);
+    }
+    if !direct {
+        builder = builder.initialization_script_for_all_frames(khor_gui_core::web::PAGE_SHIM);
         // A user agent that says「app」is what makes a site serve its
         // mobile face to a desktop window; an editor khor started needs
         // no such dressing.
@@ -2356,7 +2430,14 @@ async fn open_page(
     }
     // Publish the requested exit before native callbacks can report redirects.
     if let Ok(mut pages) = page_exits().lock() {
-        pages.insert(label.clone(), (machine.clone(), going_to.clone()));
+        pages.insert(
+            label.clone(),
+            PageRoute {
+                machine: machine.clone(),
+                proxy: borrow.addr.clone(),
+                url: going_to.clone(),
+            },
+        );
     }
     // A load that fails says so (UX-22, `page_fail`).
     #[cfg(target_os = "macos")]
@@ -2512,8 +2593,10 @@ fn on_the_page_store<'a, R: tauri::Runtime, M: tauri::Manager<R>>(
 /// first frame rather than a moment later (`ground` has the
 /// measurements).
 #[cfg(desktop)]
-fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+fn build_the_window(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     use tauri::{WebviewUrl, WebviewWindowBuilder};
+    #[cfg(target_os = "windows")]
+    let windows_transport = window_transport::start(app.clone())?;
     let mut win = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("Khor")
         .inner_size(1080.0, 720.0)
@@ -2521,6 +2604,19 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .transparent(true)
         .initialization_script(window_surface::initial_script())
         .background_color(window_surface::background(chosen_dark(desktop_is_dark)));
+    // **The drag shim, where dragging is what it repairs.** Tauri's own
+    // `drag.js` calls `invoke('plugin:window|start_dragging')`, which only fails
+    // on Windows; registering this elsewhere would take the drag away from
+    // tauri's working handler for no reason.
+    #[cfg(target_os = "windows")]
+    {
+        win = win.initialization_script(windows_transport);
+    }
+    // Windows owns its caption controls, just as macOS owns its traffic lights.
+    #[cfg(target_os = "windows")]
+    {
+        win = win.decorations(true);
+    }
     #[cfg(target_os = "macos")]
     {
         win = win
@@ -2554,6 +2650,14 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     // (medians of twenty and ten cold launches). It is still built during
     // start-up — `menu_overlay::desktop::hang` says why that matters — just after
     // the page somebody is looking at has loaded.
+    // Windows uses the in-page menu while WebView2's native IPC is unavailable.
+    #[cfg(target_os = "windows")]
+    let win = win.on_page_load(|_, payload| {
+        if std::env::var_os("KHOR_GUI_TRACE").is_some() {
+            eprintln!("khor app: main WebView2 navigation {:?}", payload.event());
+        }
+    });
+    #[cfg(not(target_os = "windows"))]
     let win = win.on_page_load(|view, payload| {
         static HUNG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         if payload.event() == tauri::webview::PageLoadEvent::Finished
@@ -2566,7 +2670,22 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .run_on_main_thread(move || menu_overlay::desktop::hang(&app));
         }
     });
+    #[cfg(target_os = "windows")]
+    let traced = std::env::var_os("KHOR_GUI_TRACE").is_some();
+    #[cfg(target_os = "windows")]
+    if traced {
+        eprintln!("khor app: building the Windows main window");
+    }
     let _built = win.build()?;
+    #[cfg(target_os = "windows")]
+    if traced {
+        eprintln!("khor app: Windows main window created");
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use tauri::Manager;
+        app.manage(window_events::MainWindowEvents::new(_built.clone()));
+    }
     window_surface::apply(app, window_surface::material());
     // The kept numbers against the window they built (`traffic::check`):
     // its own buttons, read, no window of its own.
@@ -2601,8 +2720,7 @@ fn build_the_window(app: &tauri::AppHandle) -> tauri::Result<()> {
 /// How much of the left block's first row macOS's three buttons stand
 /// in, in CSS pixels — what the face sets `--traffic` from, and where
 /// the search box starts. **Zero where the system draws no buttons over
-/// the row** (Windows draws its own at the tab strip's end, Linux keeps
-/// its decorations, a browser has no window).
+/// the row** (Windows and Linux have native decorations outside the row).
 #[cfg(desktop)]
 #[tauri::command]
 fn traffic_room() -> f64 {
@@ -2770,11 +2888,10 @@ fn control_page_navigation(view: &tauri::Webview, tab: &str, way: &str) -> Resul
                 .eval("history.forward()")
                 .map_err(|error| error.to_string()),
             "reload" => {
-                let target = page_exits().lock().ok().and_then(|pages| {
-                    pages
-                        .get(&page_label(tab))
-                        .map(|(_, target)| target.clone())
-                });
+                let target = page_exits()
+                    .lock()
+                    .ok()
+                    .and_then(|pages| pages.get(&page_label(tab)).map(|route| route.url.clone()));
                 if let Some(target) = target {
                     request_page_navigation(app, tab, target);
                 }
@@ -3428,6 +3545,10 @@ async fn open_code_window(
                 );
         }
     }
+    #[cfg(target_os = "windows")]
+    if let Some(directory) = page_windows::profile_directory() {
+        build = build.data_directory(directory);
+    }
     let made = build.build().map_err(|e| e.to_string())?;
     // **The title bar wears khor's own light or dark** (2026-09-18:
     // 「弹出的vscode, 页面的标题和实际颜色模式不一, 比如这里是深色, 但弹出
@@ -3760,6 +3881,7 @@ async fn open_shell(
     cols: Option<u16>,
     rows: Option<u16>,
     token: String,
+    shell: Option<khor_node::shell_start::WindowsShell>,
 ) -> Result<String, String> {
     khor_gui_core::open_shell(
         &Node::root_from_env(),
@@ -3769,6 +3891,7 @@ async fn open_shell(
         title.as_deref().unwrap_or_default(),
         cols.zip(rows),
         &token,
+        shell,
     )
     .await
 }
@@ -3934,20 +4057,8 @@ async fn term_pick_folders(
 ) -> Result<Vec<String>, String> {
     #[cfg(desktop)]
     {
-        use tauri_plugin_dialog::DialogExt;
         let _ = window;
-        return app
-            .dialog()
-            .file()
-            .blocking_pick_folders()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|p| {
-                p.into_path()
-                    .map(|p| p.display().to_string())
-                    .map_err(|e| e.to_string())
-            })
-            .collect();
+        return pick_desktop_paths(&app, true);
     }
     #[cfg(target_os = "ios")]
     {
@@ -3995,6 +4106,26 @@ async fn stop_transfer(msg: String) -> Result<(), String> {
     khor_gui_core::stop_transfer(&Node::root_from_env(), &msg).await
 }
 
+#[cfg(desktop)]
+fn pick_desktop_paths(app: &tauri::AppHandle, folders: bool) -> Result<Vec<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let dialog = app.dialog().file();
+    let picked = if folders {
+        dialog.blocking_pick_folders()
+    } else {
+        dialog.blocking_pick_files()
+    };
+    picked
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| {
+            path.into_path()
+                .map(|path| path.display().to_string())
+                .map_err(|error| error.to_string())
+        })
+        .collect()
+}
+
 /// The composer's ＋, desktop and phone form: a native picker answers
 /// with real local paths, which ride the message as they are (`post`) —
 /// no upload exists here, which is the whole advantage of this form (the
@@ -4008,18 +4139,23 @@ async fn stop_transfer(msg: String) -> Result<(), String> {
 /// the plugin's JS package and its capability grant.
 #[tauri::command]
 async fn pick_paths(app: tauri::AppHandle) -> Result<Vec<String>, String> {
-    use tauri_plugin_dialog::DialogExt;
-    let Some(picked) = app.dialog().file().blocking_pick_files() else {
-        return Ok(Vec::new());
-    };
-    picked
-        .into_iter()
-        .map(|p| {
-            p.into_path()
-                .map(|p| p.display().to_string())
-                .map_err(|e| e.to_string())
-        })
-        .collect()
+    #[cfg(desktop)]
+    return pick_desktop_paths(&app, false);
+    #[cfg(not(desktop))]
+    {
+        use tauri_plugin_dialog::DialogExt;
+        app.dialog()
+            .file()
+            .blocking_pick_files()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|path| {
+                path.into_path()
+                    .map(|path| path.display().to_string())
+                    .map_err(|error| error.to_string())
+            })
+            .collect()
+    }
 }
 
 /// The wizard's 智能体 list (批⑥): every ACP agent this person named.
@@ -4036,6 +4172,37 @@ fn agents() -> Result<Vec<khor_gui_core::AgentRow>, String> {
 #[tauri::command]
 fn agents_known() -> Vec<khor_gui_core::agents::KnownAgent> {
     khor_gui_core::agents::agents_known()
+}
+
+/// **What this machine has**, not what the registry lists (`khor agents
+/// fleet` answers the same question in the terminal). No store is
+/// opened and no agent is started, so this answers on a broken store.
+#[tauri::command]
+async fn agent_fleet() -> Result<khor_gui_core::agents::AgentFleet, String> {
+    off_main(|| Ok(khor_gui_core::agents::agent_fleet())).await
+}
+
+/// **The conversations DSH already has here** (`khor agents dsh`). Reads
+/// the store DSH writes — headers only, one small decompression per
+/// session — and answers an empty list on a machine without DSH.
+#[tauri::command]
+async fn dsh_sessions() -> Result<Vec<khor_gui_core::agents::DshConversation>, String> {
+    off_main(|| Ok(khor_gui_core::agents::dsh_conversations())).await
+}
+
+/// The argv a terminal should run to continue a foreign conversation.
+/// Pure string work, no process: the face opens the terminal.
+#[tauri::command(rename_all = "snake_case")]
+async fn native_resume_argv(agent: String, id: String) -> Result<String, String> {
+    khor_gui_core::agents::native_resume_argv(&agent, &id)
+}
+
+/// One DSH conversation, line by line (`khor agents dsh <session>`). This
+/// decompresses the whole file, so it waits off the main thread like every
+/// other read that can take seconds.
+#[tauri::command(rename_all = "snake_case")]
+async fn dsh_transcript(id: String) -> Result<Vec<khor_gui_core::agents::DshLine>, String> {
+    off_main(move || khor_gui_core::agents::dsh_transcript(&id)).await
 }
 
 #[tauri::command]
@@ -4065,9 +4232,7 @@ async fn agent_ask(name: String) -> Result<khor_gui_core::agents::AgentSaid, Str
     off_main(move || khor_gui_core::agents::agent_ask(&Node::root_from_env(), &name)).await
 }
 
-/// **Windows draws its own three, and these are what they press**
-/// (docs/SHELL.md 第十轮). macOS has the system's buttons inside the row
-/// and Linux keeps its decorations, so nothing there calls these.
+/// Programmatic window controls. The desktop's visible controls are native.
 #[cfg(desktop)]
 #[tauri::command]
 fn window_minimize(window: tauri::Window) -> Result<(), String> {
@@ -4152,6 +4317,18 @@ async fn resume_session(agent: String, session: String) -> Result<String, String
         khor_gui_core::agents::resume_session(&Node::root_from_env(), &agent, &session)
     })
     .await
+}
+
+/// One message into a conversation the vendor keeps (`khor agents tell`).
+/// A process start, so it waits off the main thread like every other one.
+#[tauri::command(rename_all = "snake_case")]
+async fn native_send(
+    agent: String,
+    id: String,
+    text: String,
+    cwd: Option<String>,
+) -> Result<String, String> {
+    off_main(move || khor_gui_core::agents::native_send(&agent, &id, &text, cwd.as_deref())).await
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -5523,6 +5700,9 @@ pub fn run() {
     #[cfg(desktop)]
     let context = updater_package::configure(context).expect("bundled updater configuration");
     let builder = tauri::Builder::default().plugin(tauri_plugin_dialog::init());
+    #[cfg(target_os = "windows")]
+    let builder = builder
+        .append_invoke_initialization_script(window_transport::tauri_message_transport_script());
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
     #[cfg(target_os = "android")]
@@ -5561,6 +5741,8 @@ pub fn run() {
             {
                 use tauri::Manager;
                 app.manage(menu::Held::default());
+                #[cfg(target_os = "windows")]
+                app.manage(page_windows::Profiles::default());
                 menu::install(app.handle())?;
             }
             // The window khor's own overlays are drawn in is hung once the
@@ -5621,6 +5803,12 @@ pub fn run() {
             if window.label() == "main" {
                 use tauri::Manager;
                 match event {
+                    #[cfg(target_os = "windows")]
+                    tauri::WindowEvent::CloseRequested { api, .. } => {
+                        if window_transport::notify_close_guard(window) {
+                            api.prevent_close();
+                        }
+                    }
                     // Only after the draft owner permits the main window
                     // to be destroyed: a cancelled close keeps the auxiliaries.
                     // **The overlay window has to be closed by hand.** It
@@ -5633,11 +5821,7 @@ pub fn run() {
                         let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
                         eprintln!("[{stamp}] khor app: the main window was closed");
                         menu_overlay::desktop::close(window.app_handle());
-                        // **And so does every editor window** (工作区第
-                        // 六轮 第 46 条). They are windows of khor's own
-                        // with no parent, exactly as the overlay is, so
-                        // closing khor with one open would leave the
-                        // process alive behind somebody else's editor.
+                        // Let each editor finish its own draft confirmation.
                         for (label, w) in window.app_handle().webview_windows() {
                             if label.starts_with("code:") || label == SETTINGS {
                                 let _ = w.close();
@@ -5722,6 +5906,11 @@ pub fn run() {
                     _ => {}
                 }
             }
+            #[cfg(target_os = "windows")]
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                use tauri::Manager;
+                finish_windows_shutdown(window.app_handle().clone());
+            }
             // **An Android phone's moves** (docs/IOS.md 前后台): tauri's
             // window events, which there pair as they should. **Not on
             // iOS**: tao maps `Suspended` from `applicationWillResignActive`
@@ -5742,6 +5931,16 @@ pub fn run() {
             }
         })
         .invoke_handler(|invoke| {
+            // **Every command that reaches Rust says so here**, before any
+            // dispatch decision. This is the only point that separates "the
+            // page never sent it" from "Rust refused it" — measured on Windows
+            // 2026-11-16, where the page made 8 `sessions` calls and not one
+            // arrived, with no error on either side.
+            if std::env::var_os("KHOR_GUI_TRACE").is_some() {
+                static SEEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let n = SEEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                eprintln!("[ipc] #{n} {}", invoke.message.command());
+            }
             let invoke = match native_io::dispatch(invoke) {
                 Ok(()) => return true,
                 Err(invoke) => invoke,
@@ -5935,11 +6134,16 @@ pub fn run() {
             term_pick_folders,
             agents,
             agents_known,
+            agent_fleet,
+            dsh_sessions,
+            dsh_transcript,
+            native_resume_argv,
             agents_known_taken,
             register_known_agent,
             agent_seen,
             agent_ask,
             resume_session,
+            native_send,
             session_recovery,
             recover_session,
             new_shell_run,
@@ -6016,6 +6220,9 @@ pub fn run() {
             }
             if let tauri::RunEvent::Exit = event {
                 let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
+                #[cfg(target_os = "windows")]
+                shutdown_windows_runtime(agent_runtime_root.clone());
+                #[cfg(not(target_os = "windows"))]
                 match tauri::async_runtime::block_on(khor_node::link::shutdown(&agent_runtime_root)) {
                     Ok(khor_node::khor_agent::RuntimeClose::Closed) => {
                         eprintln!("[{stamp}] khor app: agent runtime closed");
@@ -6030,6 +6237,54 @@ pub fn run() {
                 eprintln!("[{stamp}] khor app: exiting");
             }
         });
+}
+
+#[cfg(target_os = "windows")]
+fn shutdown_windows_runtime(root: std::path::PathBuf) {
+    static SHUTDOWN: std::sync::Once = std::sync::Once::new();
+    SHUTDOWN.call_once(|| {
+        let (said, heard) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let closed = tauri::async_runtime::block_on(khor_node::link::shutdown(&root));
+            let _ = said.send(closed);
+        });
+        match heard.recv_timeout(std::time::Duration::from_secs(3)) {
+            Ok(Ok(khor_node::khor_agent::RuntimeClose::Closed)) => {
+                eprintln!("khor app: agent runtime closed");
+            }
+            Ok(Ok(khor_node::khor_agent::RuntimeClose::Busy)) => {
+                eprintln!("khor app: agent runtime is busy; pending work retained");
+            }
+            Ok(Err(error)) => eprintln!("khor app: agent runtime close failed: {error}"),
+            Err(_) => eprintln!("khor app: agent runtime close did not answer in 3 s"),
+        }
+    });
+}
+
+/// WebView2 can leave the process alive without an Exit event. Wait for
+/// Tauri to remove the destroyed window and leave the process running if
+/// any editor still has a window for its draft confirmation.
+#[cfg(target_os = "windows")]
+fn finish_windows_shutdown(app: tauri::AppHandle) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tauri::Manager;
+    static FINISHING: AtomicBool = AtomicBool::new(false);
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        if !app.windows().is_empty() || FINISHING.swap(true, Ordering::AcqRel) {
+            return;
+        }
+        shutdown_windows_runtime(Node::root_from_env());
+        if app.windows().is_empty() {
+            app.exit(0);
+            std::thread::sleep(std::time::Duration::from_secs(1));
+            if app.windows().is_empty() {
+                eprintln!("khor app: exiting after the last Windows window closed");
+                std::process::exit(0);
+            }
+        }
+        FINISHING.store(false, Ordering::Release);
+    });
 }
 
 /// **One resident per home, and on a machine with the app it is the

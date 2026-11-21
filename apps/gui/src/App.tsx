@@ -20,7 +20,7 @@ import { tabAct, useTabActs } from "@/lib/tab-acts";
 import { noticesOf, useNotices } from "@/lib/pill-notices";
 import { rungOffScreen } from "@/lib/bell-marks";
 import { FinishedWatch, type Finished } from "@/lib/finished";
-import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
+import { NEW_SESSION_EVENT, OPEN_DIR_EVENT, OPEN_PATH_EVENT, OPEN_SESSION_EVENT, OPEN_URL_EVENT, STEP_TAB_EVENT } from "@/lib/composer-handoff";
 import {
   faceHere,
   fetchDevices,
@@ -733,6 +733,22 @@ export default function App() {
     window.addEventListener(NEW_SESSION_EVENT, asked);
     return () => window.removeEventListener(NEW_SESSION_EVENT, asked);
   }, [openNewSession]);
+  // **Landing on a session an action created** (`lib/composer-handoff`'s
+  // OPEN_SESSION_EVENT — today the native resume, whose `open_shell`
+  // answers a new id). The person pressed a row's action, so the screen
+  // they should get is that session, not the list it is not on yet.
+  // Through a ref for the reason `openNewTabRef` has one: the opener is
+  // declared further down and must not re-subscribe this listener on
+  // every render.
+  const openSessionRef = useRef<(id: string) => void>(() => {});
+  useEffect(() => {
+    const asked = (e: Event) => {
+      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
+      if (id) openSessionRef.current(id);
+    };
+    window.addEventListener(OPEN_SESSION_EVENT, asked);
+    return () => window.removeEventListener(OPEN_SESSION_EVENT, asked);
+  }, []);
   /** The id a new tab opened from a workspace's own column left there,
       which the column reads. ⚠️ 墓碑 (UX-45): `newSessionInPlace`, while
       the dialog was up; the new tab carries it (`NewTabAt.inPlace`). */
@@ -758,6 +774,15 @@ export default function App() {
   const [morePage, setMorePage] = useState<MorePage | null>(() =>
     isMorePage(place.more) ? place.more === "terminal" ? "session" : place.more : null,
   );
+  // **`OPEN_SESSION_EVENT`'s opener**, assigned after every piece it uses
+  // exists (`sessionTabs` is declared far above, `setMorePage` right here).
+  // The listener's effect was registered before this assignment on purpose:
+  // it fires only on a press, never during a render.
+  openSessionRef.current = (id: string) => {
+    setMorePage(null);
+    sessionTabs.open(id);
+    setScreen("detail");
+  };
   useEffect(() => {
     rememberPlace({ landing, more: morePage, screen, device: selectedDevice, ws: openWs });
     if (isSettingsPage(morePage)) rememberSettingsPage(morePage);
@@ -824,18 +849,70 @@ export default function App() {
     // a lock is for.
     if (lock.locked) return;
     let live = true;
+    // **One question at a time, for the same reason the device beat has**
+    // (see the note there, audit/net.md F4): the beat is 2 s and a busy node can
+    // take longer than that, so asking on every beat stacks readings whose
+    // answers land in any order and the newest-looking one may be the oldest.
+    // It also kept the window asking while an earlier answer was still being
+    // drawn, which is felt as the list flickering under the pointer.
+    let asking = false;
     const tick = () => {
+      if (asking) return;
+      asking = true;
       const request = ++sessionRequest.current;
+      // Counted where the call is made, not where it lands: a read that never
+      // answers and a read that was never asked for are different bugs, and
+      // the window is the only place that can tell them apart.
+      const w = window as unknown as { __sessionCalls?: number };
+      w.__sessionCalls = (w.__sessionCalls ?? 0) + 1;
+      // Upstream's draft sync rides the same expression (it must happen before
+      // the read answers, or a draft written this instant is not yet visible).
       (syncSessionDrafts(), fetchSessions(arrangeBy))
         .then((rows) => {
           if (!live || request < sessionApplied.current) return;
           sessionApplied.current = request;
+          const w = window as unknown as {
+            __sessionReadError?: string;
+            __sessionReads?: number;
+            __announceError?: string;
+          };
+          delete w.__sessionReadError;
+          w.__sessionReads = (w.__sessionReads ?? 0) + 1;
+          // **The read succeeded, so the list is drawn — before anything is
+          // announced about it.** Announcing is a side effect of a read, not a
+          // condition of one: with the announcement first, anything it threw
+          // left `rowsRead` false and the list on its skeleton for ever, while
+          // the error the page recorded said the read had failed when it had
+          // not (measured on Windows, 2026-11-16).
           setRows(rows);
-          announceFinished(rows);
           setRowsRead(true);
           setStale(false);
+          try {
+            announceFinished(rows);
+          } catch (error) {
+            // Said, not swallowed: a broken announcer is its own bug, and it
+            // must not be able to hide a list that arrived.
+            console.error("khor: finished-announce failed", error);
+            w.__announceError = error instanceof Error ? error.message : String(error);
+          }
         })
-        .catch(() => live && request >= sessionApplied.current && setStale(true));
+        .catch((error) => {
+          // **Said, not swallowed.** A failed read leaves the skeleton up and
+          // sets the stale mark; without the reason the next person sees an
+          // empty list and no way to ask why. The reason goes to the console
+          // *and* onto `document` — the window's own page is the only witness
+          // that saw the app's call, and a devtools evaluation is not
+          // (measured 2026-11-16: an invoke issued from devtools never
+          // settles while the app's own answers arrive).
+          const said = error instanceof Error ? error.message : String(error);
+          console.error("khor: session list read failed", error);
+          const w = window as unknown as { __sessionReadError?: string };
+          w.__sessionReadError = said;
+          if (live && request >= sessionApplied.current) setStale(true);
+        })
+        .finally(() => {
+          asking = false;
+        });
     };
     tick();
     const t = setInterval(tick, hidden ? HIDDEN_MS : POLL_MS);

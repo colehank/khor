@@ -146,10 +146,21 @@ pub fn shorten_under(shown: &str, home: &str) -> String {
     if shown == home {
         return "~".to_owned();
     }
-    match shown.strip_prefix(&format!("{home}/")) {
-        Some(rest) => format!("~/{rest}"),
-        None => shown.to_owned(),
-    }
+    // The home this compares against is spelled the platform's way, so the
+    // separator that follows it is too: a Windows home ends in `\`, and a
+    // `{home}/` prefix would never match there. The face writes the rest
+    // with '/' on every platform, which is why the remainder is normalised.
+    let Some(rest) = shown.strip_prefix(home) else {
+        return shown.to_owned();
+    };
+    let Some(rest) = rest.strip_prefix(&['/', '\\'][..]) else {
+        return shown.to_owned();
+    };
+    #[cfg(windows)]
+    let rest = rest.replace('\\', "/");
+    #[cfg(not(windows))]
+    let rest = rest.to_owned();
+    format!("~/{rest}")
 }
 
 /// Folds recorded working directories into places: `(cwd, how many

@@ -27,7 +27,7 @@ use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use khor_catalog::msg;
 use khor_core::{SessionId, State};
@@ -42,6 +42,11 @@ use crate::live::LiveKind;
 use crate::proto;
 
 mod agent_draft;
+
+// The installed Windows host has taken over seven seconds to spawn its first
+// console child on a cold machine. Keep its readiness wait within the caller's
+// remote-operation deadline, and still report a failed child as soon as it exits.
+const HOST_READY_TIMEOUT: Duration = Duration::from_secs(if cfg!(windows) { 15 } else { 5 });
 
 /// Every new PTY describes khor's terminal, regardless of which CLI, GUI,
 /// daemon or automation environment happened to create its host. Application
@@ -113,6 +118,26 @@ struct ViewerHello<'a> {
     rows: u16,
 }
 
+// A named greeting lets old hosts read their existing fields and ignore
+// the new field. Their unadorned reply keeps the original paste behavior.
+#[derive(Serialize)]
+struct AttachmentHello<'a> {
+    #[serde(flatten)]
+    viewer: ViewerHello<'a>,
+    attachment_paths: bool,
+}
+
+#[derive(Deserialize)]
+struct IncomingHello {
+    cookie: String,
+    cols: u16,
+    rows: u16,
+    #[serde(default)]
+    control: bool,
+    #[serde(default)]
+    attachment_paths: bool,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct Welcome {
     pub ok: bool,
@@ -147,8 +172,8 @@ pub const HOST_VERSION: u32 = 5;
 /// Bounded automation requests use a distinct connection and protocol.
 pub const CONTROL_VERSION: u32 = 6;
 
-fn hello_version(hello: &Hello) -> u32 {
-    if hello.control {
+fn hello_version(control: bool) -> u32 {
+    if control {
         CONTROL_VERSION
     } else {
         HOST_VERSION
@@ -672,11 +697,13 @@ fn spawn_host_with(
         // child implements our private startup/control ABI and must use the
         // same code as its opener, including when the opener is the GUI.
         let image = crate::runtime_image::running_host()?;
+        crate::startup_trace::mark("client-image");
         let mut c = std::process::Command::new(image.path());
         // A host belongs to the store containing this session. A GUI request may
         // name a different root from its process environment; only the child gets
         // that root, before it changes directory to the session's working path.
         let root = host_store_root(dir)?;
+        crate::startup_trace::mark("client-root");
         c.env("KHOR_HOME", &root);
         // Native TUI resume must read the very store the GUI shim/discovery used.
         // Set these on the child only; a private node cannot inherit the user's
@@ -721,7 +748,40 @@ fn spawn_host_with(
                 Ok(())
             });
         }
+        // **The same promise on Windows, which had no counterpart** (measured
+        // 2026-11-16, and it is the reason this block is here after the merge
+        // that brought main's `running_host` refactor: main has no
+        // `DETACHED_PROCESS` anywhere). `setsid` above is what lets the
+        // opener's terminal go away without taking the session with it;
+        // without an equivalent a host was an ordinary child of whoever ran
+        // `open`, so it died with that process and the session came back
+        // `Failed / 宿主被结束` for good. Reproduced both ways on Windows:
+        // with no resident the session died when the CLI exited, and sessions
+        // hosted by `khor serve` died when that serve was stopped.
+        //
+        // `DETACHED_PROCESS` gives the child no console of its own to inherit
+        // and outlives the parent's; `CREATE_NEW_PROCESS_GROUP` keeps the
+        // parent's Ctrl+C / console close from being delivered to it. Its
+        // stdio is already /dev/null above, so it has nothing to say to a
+        // console anyway.
+        //
+        // **Conditional because `prepare_durable_child` below also sets
+        // flags**, and `creation_flags` replaces rather than merges: that call
+        // carries the same detach bits (plus breakaway) when this process is a
+        // durable worker, so setting them here first would be undone there and
+        // vice versa.
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            use windows_sys::Win32::System::Threading::{
+                CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS,
+            };
+            if !crate::mcp_worker::worker_process() {
+                c.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+            }
+        }
         crate::mcp_worker::prepare_durable_child(&mut c);
+        crate::startup_trace::mark("client-durable-child");
         // The `PATH` this process worked out travels down rather than
         // being worked out again: `_host` is a fresh process and would
         // otherwise re-run the user's login shell on every single spawn
@@ -729,6 +789,7 @@ fn spawn_host_with(
         // the override that already exists for exactly "khor, here is where
         // things are" — no second mechanism.
         c.env(crate::PATH_ENV, crate::Node::user_path());
+        crate::startup_trace::mark("client-path");
         // The locale travels the same way and for the same reason: `_host`
         // is a fresh process, and a repaired locale set here is one it does
         // not have to go back to the login shell for.
@@ -752,9 +813,12 @@ fn spawn_host_with(
         // this one; nothing else writes this file.
         let _ = std::fs::remove_file(&complaint);
         let mut child = image.spawn(&mut c).map_err(msg::host_wont_start)?;
+        crate::startup_trace::mark("client-spawned");
         host_spawned = true;
-        for _ in 0..100 {
+        let deadline = Instant::now() + HOST_READY_TIMEOUT;
+        loop {
             if marker.exists() {
+                crate::startup_trace::mark("client-ready");
                 return Ok(());
             }
             // The host's own words beat the timeout whenever it managed to
@@ -775,9 +839,12 @@ fn spawn_host_with(
                     _ => msg::host_died_mute().to_string(),
                 });
             }
-            std::thread::sleep(Duration::from_millis(50));
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Err(msg::host_never_ready(HOST_READY_TIMEOUT.as_secs()).into());
+            }
+            std::thread::sleep(remaining.min(Duration::from_millis(50)));
         }
-        Err(msg::host_never_ready().into())
     })();
     // No process exists on this branch. A timeout after spawning is uncertain
     // and must never turn a possibly running execution into a dead row.
@@ -838,12 +905,43 @@ pub fn connect_terminal(
     cols: u16,
     rows: u16,
 ) -> Result<TcpStream, ConnectError> {
-    let (mut stream, welcome) = connect_welcomed_typed(addr, cookie, cols, rows)?;
-    if welcome.why != format!("{GREETING}{HOST_VERSION}") {
-        return Err(ConnectError::Refused(msg::peer_non_answer(
-            "terminal protocol mismatch",
-        )));
-    }
+    let (stream, welcome) = connect_welcomed_typed(addr, &ViewerHello { cookie, cols, rows })?;
+    finish_terminal_connect(stream, &welcome.why, false).map(|(stream, _)| stream)
+}
+
+pub fn connect_terminal_for_attachments(
+    addr: &str,
+    cookie: &str,
+    cols: u16,
+    rows: u16,
+) -> Result<(TcpStream, Option<crate::shell_start::WindowsShell>), ConnectError> {
+    let (stream, welcome) = connect_welcomed_typed(
+        addr,
+        &AttachmentHello {
+            viewer: ViewerHello { cookie, cols, rows },
+            attachment_paths: true,
+        },
+    )?;
+    finish_terminal_connect(stream, &welcome.why, true)
+}
+
+fn finish_terminal_connect(
+    mut stream: TcpStream,
+    welcome: &str,
+    attachment_paths: bool,
+) -> Result<(TcpStream, Option<crate::shell_start::WindowsShell>), ConnectError> {
+    use crate::shell_start::WindowsShell;
+    let version = format!("{GREETING}{HOST_VERSION}");
+    let shell = match welcome.strip_prefix(&version) {
+        Some("") => None,
+        Some("/cmd") if attachment_paths => Some(WindowsShell::Cmd),
+        Some("/powershell") if attachment_paths => Some(WindowsShell::PowerShell),
+        _ => {
+            return Err(ConnectError::Refused(msg::peer_non_answer(
+                "terminal protocol mismatch",
+            )));
+        }
+    };
     write_handshake(&mut stream, &ClientOp::Version(HOST_VERSION))?;
     stream
         .set_read_timeout(None)
@@ -851,7 +949,7 @@ pub fn connect_terminal(
     stream
         .set_write_timeout(None)
         .map_err(|error| ConnectError::Unavailable(msg::handoff_failed(error)))?;
-    Ok(stream)
+    Ok((stream, shell))
 }
 
 /// The common cookie handshake, before a terminal or GUI selects its protocol.
@@ -862,21 +960,20 @@ pub fn connect_welcomed(
     cols: u16,
     rows: u16,
 ) -> Result<(TcpStream, Welcome), String> {
-    connect_welcomed_typed(addr, cookie, cols, rows).map_err(|error| error.to_string())
+    connect_welcomed_typed(addr, &ViewerHello { cookie, cols, rows })
+        .map_err(|error| error.to_string())
 }
 
 fn connect_welcomed_typed(
     addr: &str,
-    cookie: &str,
-    cols: u16,
-    rows: u16,
+    hello: &impl Serialize,
 ) -> Result<(TcpStream, Welcome), ConnectError> {
     let mut s = TcpStream::connect(addr)
         .map_err(|error| ConnectError::Unavailable(msg::cant_reach_plain(error)))?;
     let _ = s.set_nodelay(true);
     let _ = s.set_read_timeout(Some(HANDSHAKE));
     let _ = s.set_write_timeout(Some(HANDSHAKE));
-    write_handshake(&mut s, &ViewerHello { cookie, cols, rows })?;
+    write_handshake(&mut s, hello)?;
     let welcome: Welcome = read_handshake_typed(&mut s, HANDSHAKE)?;
     if !welcome.ok {
         return Err(ConnectError::Refused(welcome.why));
@@ -2133,6 +2230,7 @@ fn host_serving(
             pixel_height: 0,
         })
         .map_err(msg::cant_open_pty)?;
+    crate::startup_trace::mark("pty-opened");
     // **The PTY's command is looked up by khor, against a `PATH` that
     // can answer** — `crate::spawn_path`. A `khor serve` under launchd
     // has `/usr/bin:/bin:/usr/sbin:/sbin` and `tmux` lives in
@@ -2207,6 +2305,7 @@ fn host_serving(
         .spawn_command(builder)
         .map_err(|e| msg::wont_start(&cmd[0], e))?;
     stage.child_started = true;
+    crate::startup_trace::mark("child-spawned");
     drop(pty.slave);
     let child_pid = child.process_id().ok_or(msg::child_has_no_pid())?;
     let master = Arc::new(Mutex::new(pty.master));
@@ -2672,6 +2771,9 @@ fn host_serving(
         let master = master.clone();
         let writer = writer.clone();
         let cmd = cmd.clone();
+        let attachment_shell = cmd
+            .first()
+            .and_then(|program| crate::shell_start::WindowsShell::from_program(program));
         let output_done = output_done.clone();
         let draft_commands = commands.clone().filter(|_| tracks_shell_input);
         let draft_dir = dir.clone();
@@ -2679,7 +2781,7 @@ fn host_serving(
             for conn in listener.incoming().flatten() {
                 let _ = conn.set_write_timeout(Some(Duration::from_secs(2)));
                 let mut conn = conn;
-                let Ok(hello) = read_handshake_frame::<Hello>(&mut conn, HANDSHAKE) else {
+                let Ok(hello) = read_handshake_frame::<IncomingHello>(&mut conn, HANDSHAKE) else {
                     continue;
                 };
                 if hello.cookie != cookie {
@@ -2692,12 +2794,21 @@ fn host_serving(
                     );
                     continue;
                 }
-                let version = hello_version(&hello);
+                let version = hello_version(hello.control);
+                let suffix = if hello.attachment_paths && !hello.control {
+                    match attachment_shell {
+                        Some(crate::shell_start::WindowsShell::Cmd) => "/cmd",
+                        Some(crate::shell_start::WindowsShell::PowerShell) => "/powershell",
+                        None => "",
+                    }
+                } else {
+                    ""
+                };
                 if write_frame(
                     &mut conn,
                     &Welcome {
                         ok: true,
-                        why: format!("{GREETING}{version}"),
+                        why: format!("{GREETING}{version}{suffix}"),
                     },
                 )
                 .is_err()
@@ -3985,7 +4096,7 @@ mod handshake_tests {
                 !hello.control,
                 "new hosts accept missing control as a viewer"
             );
-            assert_eq!(hello_version(&hello), 5);
+            assert_eq!(hello_version(hello.control), 5);
             assert_eq!(
                 (hello.cookie.as_str(), hello.cols, hello.rows),
                 ("owned-cookie", 80, 24)
@@ -4015,6 +4126,60 @@ mod handshake_tests {
     }
 
     #[test]
+    fn attachment_viewers_can_connect_to_old_and_current_terminal_hosts() {
+        for (reply, shell) in [
+            ("khor-host/5", None),
+            (
+                "khor-host/5/cmd",
+                Some(crate::shell_start::WindowsShell::Cmd),
+            ),
+            (
+                "khor-host/5/powershell",
+                Some(crate::shell_start::WindowsShell::PowerShell),
+            ),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let addr = listener.local_addr().unwrap().to_string();
+            let host = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut size = [0; 4];
+                stream.read_exact(&mut size).unwrap();
+                let mut body = vec![0; u32::from_be_bytes(size) as usize];
+                stream.read_exact(&mut body).unwrap();
+                if shell.is_none() {
+                    let hello: Hello = proto::decode(&body).unwrap();
+                    assert_eq!(
+                        (hello.cookie.as_str(), hello.cols, hello.rows),
+                        ("owned", 80, 24)
+                    );
+                    assert!(!hello.control);
+                } else {
+                    let hello: IncomingHello = proto::decode(&body).unwrap();
+                    assert!(hello.attachment_paths && !hello.control);
+                }
+                write_frame(
+                    &mut stream,
+                    &Welcome {
+                        ok: true,
+                        why: reply.into(),
+                    },
+                )
+                .unwrap();
+                assert!(matches!(
+                    read_frame(&mut stream).unwrap(),
+                    ClientOp::Version(HOST_VERSION)
+                ));
+            });
+            let (_, selected) = connect_terminal_for_attachments(&addr, "owned", 80, 24).unwrap();
+            assert_eq!(selected, shell);
+            host.join().unwrap();
+        }
+    }
+
+    #[test]
     fn control_connections_declare_v6_without_changing_the_viewer_protocol() {
         let hello = Hello {
             cookie: "owned-cookie".into(),
@@ -4022,7 +4187,7 @@ mod handshake_tests {
             rows: 0,
             control: true,
         };
-        assert_eq!(hello_version(&hello), 6);
+        assert_eq!(hello_version(hello.control), 6);
         assert_eq!(HOST_VERSION, 5);
         assert_eq!(CONTROL_VERSION, 6);
         let frame = proto::encode(&hello).unwrap();

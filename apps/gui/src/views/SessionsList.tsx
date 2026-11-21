@@ -1,4 +1,6 @@
 import { sessionContentPreview } from "@/lib/session-preview";
+import { askOpenSession } from "@/lib/composer-handoff";
+import { SendMessageDialog } from "@/components/SendMessageDialog";
 import { useNotifications, setSessionNotifications } from "@/lib/notifications";
 import { notificationsEnabled } from "@/lib/notification-banners";
 import { sessionCwdOnScreen } from "@/lib/session-cwd";
@@ -11,7 +13,7 @@ import type { DelegatedChild } from "@/lib/delegated-sessions";
 import { BellMark } from "@/components/BellMark";
 import { StatusWord } from "@/components/StatusWord";
 import { SessionUnread } from "@/components/SessionUnread";
-import { takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
+import { openShell, nativeResumeArgv, nativeSend, sessionRecovery, takeover, takeoverTerm, type DeviceRow, type SessionRow } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
 import { sessionKind } from "@/components/SessionFace";
 import { type RowAction } from "@/components/RowMenu";
@@ -47,6 +49,20 @@ import { agoOf, count, groupLabel, lasting, placeLabels, quietFor } from "@/word
  * never says it.
  */
 export { visibleSessions } from "@/lib/session-filter";
+
+/**
+ * Vendors whose recorded conversation khor knows how to continue **in that
+ * vendor's own tool**.
+ *
+ * The list is the GUI's copy of `khor_node::agent_driver::resume_argv`,
+ * which answers `codex resume <id>` and `dsh tui --resume <id>` and refuses
+ * every other name with a catalog sentence. It lives here so the menu can be
+ * built before any machine is asked; a vendor not on it still meets the
+ * node's refusal if something else offers the action.
+ */
+const RESUMABLE_VENDORS = ["codex", "dsh"] as const;
+const isResumableVendor = (category: string | null): boolean =>
+  category !== null && (RESUMABLE_VENDORS as readonly string[]).includes(category);
 
 // Order and words come from the node untouched: the list never
 // re-derives a judgment the backend already made (docs/UX.md). That
@@ -120,6 +136,9 @@ export function SessionsList({
   const [turnRefused, setTurnRefused] = useState<Map<string, string>>(new Map());
   /** The row whose title box the menu's 重命名 opened, if any. */
   const [renaming, setRenaming] = useState<string | null>(null);
+  /** The conversation a message is being written for, when the dialog is
+      up: the vendor's id, not the row's — the row may not outlive it. */
+  const [messaging, setMessaging] = useState<{ agent: string; id: string; cwd: string | null } | null>(null);
   // The ticked words narrow here; the box is `SideList`'s one rule,
   // against what each row says it can be found by (`find` below) — the
   // same four things `visibleSessions` reads, so the two agree.
@@ -182,6 +201,96 @@ export function SessionsList({
     const refused = turnRefused.get(r.id);
     const said = (e: unknown) =>
       setTurnRefused((m) => new Map(m).set(r.id, String(e instanceof Error ? e.message : e)));
+    // **Somebody else's record, resumed in its own tool.** An observed
+    // conversation has no process for khor to take over — khor never
+    // owned it — but it does have a native id its vendor can resume, so
+    // the action starts that vendor in a terminal khor hosts.
+    //
+    // **Which vendors?** Those whose resume line this tree actually has:
+    // `agent_driver::resume_argv` knows `codex resume <id>` and
+    // `dsh tui --resume <id>`, and it refuses any other name with a
+    // catalog sentence. This gate used to name codex alone, so the owner's
+    // own DSH record offered nothing and read as "only a read-only
+    // conversation" (their report, 2026-11-18) — even though the roster's
+    // page could already continue DSH in a terminal.
+    //
+    // The two names are spelled here rather than asked of the node: the
+    // menu is built before a machine is asked anything, and a vendor this
+    // gate does not know still gets the node's own refusal the moment the
+    // action is chosen (never a guessed command line).
+    if (r.kind === "observe" && !r.source && isResumableVendor(r.category)) {
+      /** The vendor's own id for this row, or the sentence saying why it
+          cannot be had: both actions below need it, and neither may invent
+          one. */
+      const nativeOf = async (): Promise<{ agent: string; id: string } | null> => {
+        const host = devices.find((d) => d.name === r.home);
+        const offer = host ? await sessionRecovery(host.id, r.id) : null;
+        const native = offer?.native;
+        if (!native) throw new Error(gui.resume_native_missing);
+        return { agent: native.agent, id: native.native_id };
+      };
+      return [
+        {
+          key: "resume-native",
+          label: gui.resume_native,
+          note: refused,
+          run: async () => {
+            try {
+              // **Two different names for the same machine**, and the
+              // commands want different ones: `session_recovery` takes the
+              // device id and refuses a channel ("Not a machine id"),
+              // `open_shell` takes the channel and refuses an empty name
+              // ("This machine name can't go in a path"). A row's `home`
+              // is the channel (`DeviceRow::name`), so the id is looked up
+              // from the device table rather than assumed.
+              const native = await nativeOf();
+              if (!native) return;
+              // **Land on it.** `open_shell` answers the new session's id
+              // and the command is only typed once a face attaches
+              // (`shell_start` holds it until `Ready`), so an action that
+              // dropped the id would look like nothing happened — found by
+              // the independent review. The event is the app's own opener,
+              // shared with the wizard-free paths.
+              const id = await openShell(
+                r.home,
+                r.place ?? "",
+                // **The vendor's own spelling, from the node.** `codex
+                // resume <id>` and DSH's `tui --resume` differ, and a screen
+                // that spelled either itself would be a second answer to
+                // "how is this reopened" (`agent_driver::resume_argv`).
+                await nativeResumeArgv(native.agent, native.id),
+                r.title,
+                crypto.randomUUID(),
+              );
+              askOpenSession(id);
+            } catch (e) {
+              said(e);
+              throw e;
+            }
+          },
+        },
+        {
+          key: "send-message",
+          label: gui.send_message,
+          note: refused,
+          run: async () => {
+            try {
+              const native = await nativeOf();
+              if (!native) return;
+              // Opened once the menu has gone, for the same reason the
+              // rename editor is: a box mounted while the menu still holds
+              // focus is refused it. The place travels with it — DSH
+              // refuses a session resumed from any other directory.
+              const asked = { ...native, cwd: r.place };
+              requestAnimationFrame(() => requestAnimationFrame(() => setMessaging(asked)));
+            } catch (e) {
+              said(e);
+              throw e;
+            }
+          },
+        },
+      ];
+    }
     // Somebody else's machine hosts it; the act happens where the
     // process is.
     if (r.source || r.kind === "observe") return [];
@@ -441,6 +550,7 @@ export function SessionsList({
     };
   });
   return (
+    <>
     <SideList
       rows={side}
       loading={loading}
@@ -455,5 +565,16 @@ export function SessionsList({
       rest={gui.group_recent}
       old={{ more: (n) => gui.old_sessions(n), less: gui.collapse_old }}
     />
+    {/* One dialog for the column, driven by `messaging`: the row it was
+        opened from may be gone by the time it closes (a poll, a filter),
+        so what it needs — the vendor's id — was copied when it opened. */}
+    <SendMessageDialog
+      open={messaging !== null}
+      onClose={() => setMessaging(null)}
+      onSend={(text) =>
+        messaging ? nativeSend(messaging.agent, messaging.id, text, messaging.cwd) : Promise.resolve("")
+      }
+    />
+    </>
   );
 }

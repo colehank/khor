@@ -24,7 +24,7 @@ export function SessionFrame({aside,children,tail,mobile=false,contentMode=false
   }
   return <SettingsSeat.Provider value={settings}><div data-session-panes data-session-frame className="flex min-h-0 min-w-0 flex-1 flex-row">
     <div data-session-primary style={aside?{minWidth:"min(var(--session-side-min),50%)"}:undefined} className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <Tabs {...tabs} tail={<><span ref={setSettings} data-lab-session-settings-slot className="empty:hidden"/>{tail}</>} windowControls={tabs.windowControls??!aside}>{children}</Tabs>
+      <Tabs {...tabs} tail={<><span ref={setSettings} data-lab-session-settings-slot className="empty:hidden"/>{tail}</>}>{children}</Tabs>
     </div>
     {aside}
   </div></SettingsSeat.Provider>;

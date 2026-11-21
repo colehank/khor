@@ -29,5 +29,18 @@ class LabEnvironmentTests(unittest.TestCase):
             self.assertEqual(original['HOME'], '/real-home', 'parent environment is untouched')
 
 
+    def test_desktop_data_stays_under_probe_home(self):
+        original = {'APPDATA': 'C:/real/appdata', 'LOCALAPPDATA': 'C:/real/local',
+                    'WEBVIEW2_USER_DATA_FOLDER': 'C:/real/webview2'}
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            result = native_environment(home, 'Fixture Lab', original)
+            self.assertNotIn('WEBVIEW2_USER_DATA_FOLDER', result)
+            for key in ('APPDATA', 'LOCALAPPDATA'):
+                self.assertIn(key, result)
+                self.assertTrue(Path(result[key]).is_relative_to(home.resolve()),
+                                key + ' must stay inside the Lab home')
+
+
 if __name__ == '__main__':
     unittest.main()

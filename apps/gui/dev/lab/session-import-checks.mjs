@@ -10,8 +10,10 @@ export async function checkSessionImport(browser,{port,report,engine,width,theme
  const open=async()=>{await page.locator('[data-pane-new]:visible').first().click();await page.locator('[data-new-item="import"]:visible').click();await page.locator('[data-import-row]').first().waitFor();};
  try{
   const environment=JSON.stringify({platform:width<500?'ios':'desktop',theme,material:'frost',opacity:20,keyboard:0,safeTop:0,safeBottom:width<500?34:0,background:'dark'});
-  await page.goto(`http://127.0.0.1:${port}/app/?scene=list&machines=3&environment=${encodeURIComponent(environment)}`);
   if(width===1280&&theme==='dark'){
+    // The token uses origin storage. Reload it on a static page so the
+    // browser doesn't abort outstanding App bootstrap requests mid-check.
+    await page.goto(`http://127.0.0.1:${port}/lab/example`);
     const source=await readFile(new URL('../../src/lib/session-import-intent.ts',import.meta.url),'utf8');
     const compiled=ts.transpile(source,{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS});
     const install=()=>page.evaluate(code=>{window.__importRetry=Function('exports',code+'\nreturn exports;')({});},compiled);
@@ -25,6 +27,7 @@ export async function checkSessionImport(browser,{port,report,engine,width,theme
     await page.evaluate(token=>window.__importRetry.settleImportIntent('test-home','test-agent','full-native','fork',token),retry);
     const next=await page.evaluate(()=>window.__importRetry.claimImportIntent('test-home','test-agent','full-native','fork'));assert.notEqual(next,retry,'A confirmed result permits a later independent action');
   }
+  await page.goto(`http://127.0.0.1:${port}/app/?scene=list&machines=3&environment=${encodeURIComponent(environment)}`);
   await open();
   const dialog=page.locator('[data-import-dialog]'),read=await calls();
   assert(read.length>=2&&read.every(call=>call.action.kind==='read'),'Opening reads each source without starting providers');

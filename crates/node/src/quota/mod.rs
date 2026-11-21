@@ -528,7 +528,17 @@ pub(crate) fn account_home() -> Option<PathBuf> {
     Some(PathBuf::from(std::ffi::OsStr::from_bytes(dir.to_bytes())))
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+pub(crate) fn account_home() -> Option<PathBuf> {
+    // The Windows counterpart of the password database's home: the profile
+    // the user's token names. Read through the environment because the token
+    // itself is not reachable without a Windows API dependency, and the
+    // comparison this feeds only decides whether a unit test may touch a
+    // real login (cfg(test)) or a macOS keychain branch (cfg(macos)).
+    std::env::var_os("USERPROFILE").map(PathBuf::from)
+}
+
+#[cfg(all(not(unix), not(windows)))]
 pub(crate) fn account_home() -> Option<PathBuf> {
     None
 }

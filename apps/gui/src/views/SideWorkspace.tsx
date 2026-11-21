@@ -27,6 +27,7 @@ import { useRepositoryHistory } from "@/hooks/use-repository-history";
 import { CommitPage } from "@/views/CommitPage";
 import { HistorySheet } from "@/views/FileHistory";
 import { FileTree } from "@/views/FileTree";
+import { directoryPrefix, homeRelative, isWindowsPath, parentPath, pathLeaf } from "@/lib/path-input";
 import { Hits } from "@/views/WorkspacePane";
 import type { Draft } from "@/views/FileView";
 
@@ -37,15 +38,12 @@ function folded(root: string, git: GitStatus | null): Map<string, string> | null
   if (git === null) return null;
   const out = new Map<string, string>();
   for (const r of git.rows) {
-    const full = `${root}/${r.path}`;
+    const full = isWindowsPath(root) ? homeRelative(root, r.path) : directoryPrefix(root) + r.path;
     out.set(full, r.mark);
     if (r.mark === IGNORED) continue;
-    let cut = full.lastIndexOf("/");
-    while (cut > root.length) {
-      const dir = full.slice(0, cut);
+    for (let dir = parentPath(full); dir !== null && dir !== root && dir.startsWith(directoryPrefix(root)); dir = parentPath(dir)) {
       const had = out.get(dir);
       out.set(dir, had === undefined ? r.mark : heavier(had, r.mark));
-      cut = full.lastIndexOf("/", cut - 1);
     }
   }
   return out;
@@ -117,7 +115,7 @@ export function SideWorkspace({
   const [readAt, setReadAt] = useState(0);
   const hidden = useHidden();
   const visible = active && !hidden;
-  const fileParent = file === null ? null : file.slice(0, file.lastIndexOf("/")) || "/";
+  const fileParent = file === null ? null : parentPath(file);
   const observation = useDirectoryWatch(machine, directoryWatchScopes(null, fileParent === null ? [] : [fileParent]).scopes, active);
   const wasVisible = useRef(visible);
   useEffect(() => {
@@ -290,7 +288,7 @@ export function SideWorkspace({
       {/* The tree stays mounted under an open file, so ‹ finds it where
           it was scrolled. */}
       <div className={file !== null || commit !== null ? "invisible absolute inset-0 flex flex-col" : "flex min-h-0 flex-1 flex-col overflow-y-auto"}>
-        {onLeave && <SeatHead title={root.split("/").filter(Boolean).pop() ?? root} back={onLeave} backLabel={backLabel} />}
+        {onLeave && <SeatHead title={pathLeaf(root) || root} back={onLeave} backLabel={backLabel} />}
         {!hideFind && <SideFind onEnter={onSearchEnter} leading={findLeading} label={gui.tree_search} query={hunt} onQuery={setHunt} plus={plus} />}
         {hosted && <WorkspaceNavigation branch={git?.branch??''} repo={repo} view={historyOpen?'history':'files'} onView={view=>setHistoryOpen(view==='history')} seat="session"/>}
         {hosted && historyOpen ? <WorkspaceHistory machine={machine} root={root} query={hunt} memory={historyMemory} active={null} onOpen={(commit,keep)=>onOpenCommit?.(commit,keep)}/>:hunt.trim() !== "" ? (

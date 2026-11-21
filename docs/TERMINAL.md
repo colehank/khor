@@ -175,7 +175,7 @@ SHELL-INTEGRATION.md's ConPTY section covers the marks: create the pseudoconsole
    - Win32 input mode (`?9001`), if a program asks for it, needs its own encoder in the pane's key path, as kitty's has.
    - Do not translate kitty sequences into Win32 input records.
 4. **Size before the first prompt.** Start the pseudoconsole at the size `open_on` was given (`term-size-hint`); PowerShell's prompt is written at that width as zsh's is.
-5. **Integration scripts.** The host loads `khor.ps1` for PowerShell and `khor.cmd` for cmd. Cmd has no pre-execution hook, so its blocks have no C mark.
+5. **Shell integration.** The host loads `khor.ps1` for PowerShell and sets `PROMPT` for CMD. CMD has no pre-execution hook, so its blocks have no C mark.
 6. **Paths.** `lib/term-links.ts` recognises POSIX paths only. `C:\…` and `\\server\…` need their own candidate pattern, and a listing that answers on Windows.
 7. **Environment** (T-26). Set `TERM_PROGRAM=khor`, `TERM_PROGRAM_VERSION` and `COLORTERM=truecolor`. Strip the launching terminal's `WT_SESSION`, `TERM_SESSION_ID` and their kind, as the Unix host strips `ITERM_*` and `TMUX*`.
 

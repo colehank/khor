@@ -2945,10 +2945,12 @@ pub async fn open_shell(
     title: &str,
     size: Option<(u16, u16)>,
     token: &str,
+    shell: Option<khor_node::shell_start::WindowsShell>,
 ) -> Result<String, String> {
     let size = size.unwrap_or((80, 24));
     let start = khor_node::shell_start::ShellStart {
         argv: None,
+        shell,
         token: token.into(),
         title: title.into(),
         cwd: cwd.into(),

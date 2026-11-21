@@ -34,47 +34,9 @@
 import { createContext, useContext, useLayoutEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { windowClose, windowMaximizeToggle, windowMinimize, windowsApp } from "@/api";
-import { IconClose } from "@/components/icons";
 import { WINDOW_DRAG } from "@/components/shell";
-import { gui } from "@/gen/catalog";
 import { band } from "@/lib/scroll-edge";
 import { cn } from "@/lib/utils";
-
-/**
- * **Windows' habit, drawn at the right end of R0 because Windows has no
- * buttons of its own over it** (第十轮, moved here in 第十三轮):
- * minimise, maximise, close — close turning red under the pointer, the
- * way every window on that desktop behaves. Only that platform draws
- * them: macOS has the system's at the left block's row and Linux keeps
- * its decorations.
- */
-export function WindowControls() {
-  if (!windowsApp) return null;
-  return (
-    <div data-window-controls className="flex flex-none items-center self-stretch">
-      {[
-        { key: "minimize", label: gui.window_minimize, run: windowMinimize, mark: "—" },
-        { key: "maximize", label: gui.window_maximize, run: windowMaximizeToggle, mark: "▢" },
-        { key: "close", label: gui.window_close, run: windowClose, mark: null },
-      ].map((b) => (
-        <button
-          key={b.key}
-          type="button"
-          data-window-control={b.key}
-          aria-label={b.label}
-          onClick={() => void b.run().catch(() => {})}
-          className={cn(
-            "flex h-full w-12 items-center justify-center text-caption",
-            b.key === "close" ? "hover:bg-destructive hover:text-on-destructive" : "hover:bg-secondary",
-          )}
-        >
-          {b.mark ?? <IconClose className="size-2.5" />}
-        </button>
-      ))}
-    </div>
-  );
-}
 
 /**
  * Where a page's own buttons go (D9: page buttons live at R0's right
@@ -312,7 +274,6 @@ export function Region({
   capped,
   className,
   children,
-  windowControls = true,
   headerOverlay = true,
   headerless = false,
 }: {
@@ -348,14 +309,13 @@ export function Region({
   /** How the board lays its content out. */
   className?: string;
   children: ReactNode;
-  windowControls?: boolean;
   /** Fixed toolbars beneath this header keep their own vertical seat. */
   headerOverlay?: boolean;
   /** Form pages need no empty header; real folded navigation/native controls keep theirs. */
   headerless?: boolean;
 }) {
   const lead = useContext(RegionLead);
-  const showHeader = !headerless || !!lead || windowsApp || !!caption || !!busy;
+  const showHeader = !headerless || !!lead || !!caption || !!busy;
   const [seat, setSeat] = useState<HTMLElement | null>(null);
   const [sub, setSub] = useState<HTMLElement | null>(null);
   const [aside, setAside] = useState<HTMLElement | null>(null);
@@ -436,7 +396,6 @@ export function Region({
             {caption}
           </span>
         )}
-        {windowControls && <WindowControls />}
         {busy && <div data-region-busy aria-hidden className="absolute inset-x-0 bottom-0 h-0.5 bg-brand" />}
       </div>}
       {/* The board. On narrow it is the whole screen and wears no

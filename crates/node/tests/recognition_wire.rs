@@ -83,11 +83,14 @@ async fn recognition_is_changed_only_on_the_selected_peer_and_reads_actual_files
         std::fs::read_to_string(&pc).unwrap(),
         "[tui]\nterminal_title=[]\n"
     );
+    // Claude's status hooks are retired (9e3f33d1): its entry stays
+    // `automatic`, and enable/disable are no-ops that write nothing.
     ask(Action::Enable(Agent::Claude)).await.unwrap();
     assert!(!rb.0.join(".claude/settings.json").exists());
+    assert!(!ra.0.join(".claude/settings.json").exists());
     assert_eq!(
         ask(Action::Read).await.unwrap().entries[0].state,
-        "configured"
+        "automatic"
     );
     ask(Action::Disable(Agent::Claude)).await.unwrap();
     assert_eq!(

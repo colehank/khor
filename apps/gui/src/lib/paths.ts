@@ -3,6 +3,8 @@
 // files: the agent's replies (`components/PathLinks`), the attachments a
 // line was sent with, and whatever reads a terminal's text next.
 
+import { pathLeaf } from "./path-input";
+
 /** What a path looks like in prose. One or more segments with at least
     one `/`, optionally `./`-, `~/`- or `/`-led, optionally `:12`-tailed.
 
@@ -56,10 +58,7 @@ export function splitAttachments(text: string): { words: string; paths: string[]
 }
 
 /** The last segment of a path. */
-export function baseName(path: string): string {
-  const cut = path.replace(/\/+$/, "");
-  return cut.slice(cut.lastIndexOf("/") + 1) || cut;
-}
+export const baseName = pathLeaf;
 
 /** A name as the person gave it, from a path this machine landed: the
     conversation folder a khor before the receive directory used prefixes

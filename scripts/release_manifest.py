@@ -80,7 +80,7 @@ def executable_info(program, command=()):
     return info
 
 
-def create(root, kind, frontend=None, executable=None, agent=None, program_info=None):
+def create(root, kind, frontend=None, executable=None, agent=None, program_info=None, *, msi_unpacked_bytes=None):
     sha = source_sha()
     if kind == "frontend":
         html = (root / "dist/index.html").read_text()
@@ -115,6 +115,8 @@ def create(root, kind, frontend=None, executable=None, agent=None, program_info=
         if program_info.get("schema") != 1 or build.get("source") != sha or build.get("version") != receipt["version"] or build.get("release") != expected_release:
             raise ValueError("Executable release identity differs from the verified build")
         receipt["program"] = program_info
+    if msi_unpacked_bytes is not None:
+        receipt["msi_unpacked_bytes"] = msi_unpacked_bytes
     (root / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     return receipt
 

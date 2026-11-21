@@ -302,6 +302,38 @@ pub fn best_address(ips: &[std::net::IpAddr]) -> Option<std::net::IpAddr> {
     ips.iter().min_by_key(|ip| rank(ip)).copied()
 }
 
+/// The address this machine would use to reach the outside world, which is
+/// the one a phone on the same network can reach back on.
+///
+/// **`best_address` alone picked the wrong one**, measured on Windows
+/// 2026-11-18: this box has a WSL adapter at `172.24.80.1` and its real LAN
+/// at `192.168.3.7`. Both are private, both rank equal, and the first one
+/// in the list won — so `khor web` printed a link no phone could open, with
+/// the QR code beside it. The routing table knows the difference and the
+/// address list does not.
+///
+/// Connecting a UDP socket sends nothing; it only asks the routing table
+/// which source address it would use. `192.0.2.1` is TEST-NET-1, reserved
+/// for documentation and guaranteed not to be a real host.
+pub fn primary_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("192.0.2.1", 80)).ok()?;
+    socket.local_addr().ok().map(|addr| addr.ip())
+}
+
+/// [`best_address`], except that the routing table's answer wins **when it
+/// names one of `ips`**.
+///
+/// The containment check is what keeps this honest: the routing table can
+/// name an address this machine's own list does not carry (a container, a
+/// half-torn-down adapter), and a link built from an address the face is not
+/// listening on is worse than the ranking's approximation.
+pub fn reachable_address(ips: &[std::net::IpAddr]) -> Option<std::net::IpAddr> {
+    primary_address()
+        .filter(|ip| ips.contains(ip))
+        .or_else(|| best_address(ips))
+}
+
 /// Whether the face really answers **at this address** — a whole
 /// request and a whole reply, from outside the process.
 ///
@@ -352,4 +384,64 @@ pub fn answers_at(addr: SocketAddr) -> bool {
     // the page sits behind the key), which is this face answering in
     // full. Pinning 200 here would report a healthy face as absent.
     head.starts_with(b"HTTP/1.1 ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
+
+    /// The ranking is unchanged: a private address beats a global one, and
+    /// loopback is last.
+    #[test]
+    fn best_address_ranks_private_then_global_then_loopback() {
+        assert_eq!(
+            best_address(&[ip("127.0.0.1"), ip("8.8.8.8"), ip("192.168.3.7")]),
+            Some(ip("192.168.3.7"))
+        );
+        assert_eq!(
+            best_address(&[ip("127.0.0.1"), ip("8.8.8.8")]),
+            Some(ip("8.8.8.8"))
+        );
+        assert_eq!(best_address(&[ip("127.0.0.1")]), Some(ip("127.0.0.1")));
+        assert_eq!(best_address(&[]), None);
+    }
+
+    /// **The measured bug, kept as a test.** Two private addresses rank
+    /// equal, so the one that comes first wins — and on the developer's
+    /// Windows box that was the WSL adapter, whose link no phone can open.
+    /// This is why `reachable_address` exists.
+    #[test]
+    fn best_address_cannot_tell_a_virtual_adapter_from_the_lan() {
+        assert_eq!(
+            best_address(&[ip("172.24.80.1"), ip("192.168.3.7")]),
+            Some(ip("172.24.80.1"))
+        );
+    }
+
+    /// The routing table's answer wins when this machine actually has it.
+    #[test]
+    fn reachable_address_prefers_the_default_route() {
+        let Some(primary) = primary_address() else {
+            // A machine with no routing table answer (a sealed CI runner)
+            // has nothing to prefer; the fallback below covers it.
+            return;
+        };
+        assert_eq!(
+            reachable_address(&[ip("172.24.80.1"), primary]),
+            Some(primary)
+        );
+    }
+
+    /// When the routing table names an address the face is not listening on,
+    /// the ranking still answers — a link to nothing is worse than an
+    /// approximate one.
+    #[test]
+    fn reachable_address_falls_back_when_the_primary_is_not_among_the_ips() {
+        assert_eq!(reachable_address(&[ip("127.0.0.1")]), Some(ip("127.0.0.1")));
+    }
 }

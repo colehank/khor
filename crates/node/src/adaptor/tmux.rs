@@ -3013,6 +3013,7 @@ mod tests {
     /// understand, and no installed tmux can be asked to be one. What is
     /// under test is khor's side of that day, which is exactly the code
     /// this reaches.
+    #[cfg(unix)]
     #[test]
     fn output_this_version_cannot_read_is_counted_and_stops_nothing() {
         let fake = fake_tmux(
@@ -3046,6 +3047,7 @@ mod tests {
     /// A session whose panes have all left the process table: tmux still
     /// names it, khor cannot say a word about it, so it is counted
     /// rather than shown with a guessed one.
+    #[cfg(unix)]
     #[test]
     fn a_session_with_nothing_running_in_it_is_counted_not_guessed_at() {
         let fake = fake_tmux(

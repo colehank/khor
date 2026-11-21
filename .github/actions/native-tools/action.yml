@@ -4,6 +4,9 @@ inputs:
   target:
     description: Rust target triple
     required: true
+  cache_targets_for_validation:
+    description: Keep compiled dependencies between dedicated validation runs
+    default: 'false'
 runs:
   using: composite
   steps:
@@ -17,8 +20,9 @@ runs:
     - uses: Swatinem/rust-cache@v2
       with:
         key: release-${{ inputs.target }}
-        cache-targets: false
-        save-if: ${{ github.ref == 'refs/heads/main' }}
+        cache-targets: ${{ inputs.cache_targets_for_validation == 'true' }}
+        cache-on-failure: ${{ inputs.cache_targets_for_validation == 'true' }}
+        save-if: ${{ github.ref == 'refs/heads/main' || inputs.cache_targets_for_validation == 'true' }}
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
         node-version: 22.19.0

@@ -38,6 +38,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use base64::Engine;
 use khor_node::host::{ClientOp, write_frame};
 use khor_node::modes::Modes;
+use khor_node::shell_start::WindowsShell;
 use khor_node::{Node, SessionId};
 use serde::Serialize;
 use ts_rs::TS;
@@ -148,6 +149,8 @@ pub struct TermChunk {
 
 pub(crate) struct Term {
     far: Option<String>,
+    // An attachment rejoins the same durable host, which keeps its shell.
+    attachment_shell: Option<WindowsShell>,
     /// The write half. One lock per op so keystrokes never interleave.
     conn: crate::connection::Connection,
     commands: crate::command_queue::CommandQueue,
@@ -326,6 +329,9 @@ fn open_terminal(
         attach(root, id, cols, rows)
     })
 }
+
+type TerminalRoute = (std::net::TcpStream, Option<String>, Option<WindowsShell>);
+
 fn open_terminal_with(
     root: &Path,
     id: &str,
@@ -333,7 +339,7 @@ fn open_terminal_with(
     cols: u16,
     rows: u16,
     history: u32,
-    connect: impl FnOnce() -> Result<(std::net::TcpStream, Option<String>), OpenError>,
+    connect: impl FnOnce() -> Result<TerminalRoute, OpenError>,
 ) -> Result<(), OpenError> {
     let opening = terms().claim(root, id, lease)?;
     if let Some(term) = opening.share()? {
@@ -341,12 +347,13 @@ fn open_terminal_with(
         opening.check()?;
         return Ok(());
     }
-    let (conn, far) = connect()?;
+    let (conn, far, attachment_shell) = connect()?;
     opening.check()?;
     let sid = SessionId(id.to_owned());
     let mut reading = conn.try_clone().map_err(|e| e.to_string())?;
     let term = Arc::new(Term {
         far: far.clone(),
+        attachment_shell,
         conn: crate::connection::Connection::new(conn)?,
         commands: Default::default(),
         // No scrollback: the parser answers modes now, not history —
@@ -451,12 +458,7 @@ fn open_terminal_with(
 /// The connection [`term_open`] attaches with, and the far machine it
 /// came through (`None` when the row is hosted here). No lock is held:
 /// a far one waits on the network.
-fn attach(
-    root: &Path,
-    id: &str,
-    cols: u16,
-    rows: u16,
-) -> Result<(std::net::TcpStream, Option<String>), OpenError> {
+fn attach(root: &Path, id: &str, cols: u16, rows: u16) -> Result<TerminalRoute, OpenError> {
     let n = Node::open(root.to_path_buf())?;
     let sid = SessionId(id.to_owned());
     // **The fork is on the row, not on a flag** (`Node::far_machine`):
@@ -464,7 +466,7 @@ fn attach(
     // the same thing wherever the row lives. The CLI's `attach` forks on
     // this very question, and this door now matches it.
     let far = n.far_machine(&sid)?;
-    let conn = match &far {
+    let (conn, attachment_shell) = match &far {
         // Reached, not hosted here: the resident serve binds a local
         // port onto the far host, and what arrives is still a TCP
         // address speaking the host protocol — so everything below this
@@ -478,12 +480,12 @@ fn attach(
                     }
                     khor_node::link::Rejoin::Gone(why) => OpenError::Refused(why),
                 })?;
-            khor_node::host::connect_terminal(&addr, &cookie, cols, rows)
+            khor_node::host::connect_terminal_for_attachments(&addr, &cookie, cols, rows)
                 .map_err(|error| host_open_error(error, far.as_deref()))?
         }
         None => {
             let host = n.terminal_address(&sid)?;
-            khor_node::host::connect_terminal(
+            khor_node::host::connect_terminal_for_attachments(
                 &format!("127.0.0.1:{}", host.port),
                 &host.cookie,
                 cols,
@@ -492,7 +494,7 @@ fn attach(
             .map_err(|error| host_open_error(error, None))?
         }
     };
-    Ok((conn, far))
+    Ok((conn, far, attachment_shell))
 }
 
 fn host_open_error(error: khor_node::host::ConnectError, machine: Option<&str>) -> OpenError {
@@ -1255,14 +1257,15 @@ impl DropJob {
         if root != self.root {
             return drop_refused("drop belongs to another root".into());
         }
-        let ended = drop_items_text(
+        let ended = transfer_drop_items(
             root,
             self.attachment.far.as_deref(),
             items,
             into,
             &self.held,
         )
-        .and_then(|(landed, text)| {
+        .and_then(|landed| {
+            let text = quote_drop_paths(&landed, self.attachment.attachment_shell)?;
             if !text.is_empty() {
                 term_paste(self.attachment.clone(), text, self.held.stopped.clone())?.wait()?;
             }
@@ -1336,6 +1339,7 @@ fn drop_text(
     drop_items_text(root, target, &items, into, held)
 }
 
+#[cfg(test)]
 fn drop_items_text(
     root: &Path,
     target: Option<&str>,
@@ -1343,6 +1347,18 @@ fn drop_items_text(
     into: Option<&str>,
     held: &Held,
 ) -> Result<(Vec<String>, String), String> {
+    let landed = transfer_drop_items(root, target, items, into, held)?;
+    let text = quote_drop_paths(&landed, None)?;
+    Ok((landed, text))
+}
+
+fn transfer_drop_items(
+    root: &Path,
+    target: Option<&str>,
+    items: &[DropItem],
+    into: Option<&str>,
+    held: &Held,
+) -> Result<Vec<String>, String> {
     let n = Node::open(root.to_path_buf())?;
     let to = target.unwrap_or("");
     let here = if to.is_empty()
@@ -1384,12 +1400,18 @@ fn drop_items_text(
     if held.stopped() {
         return Err(khor_node::drops::cancelled());
     }
-    let text = here
+    Ok(here)
+}
+
+fn quote_drop_paths(paths: &[String], shell: Option<WindowsShell>) -> Result<String, String> {
+    Ok(paths
         .iter()
-        .map(|p| shell_quote(p))
-        .collect::<Vec<_>>()
-        .join(" ");
-    Ok((here, text))
+        .map(|path| match shell {
+            Some(shell) => shell.quote_attachment(path),
+            None => Ok(shell_quote(path)),
+        })
+        .collect::<Result<Vec<_>, _>>()?
+        .join(" "))
 }
 
 /// Where a face's picked files wait to be dropped ([`term_drop_stage`]):
@@ -2150,6 +2172,7 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let term = Arc::new(Term {
+            attachment_shell: None,
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
@@ -2204,6 +2227,7 @@ mod tests {
         host.set_read_timeout(Some(std::time::Duration::from_secs(2)))
             .unwrap();
         let term = Arc::new(Term {
+            attachment_shell: None,
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
@@ -2255,6 +2279,7 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let term = Arc::new(Term {
+            attachment_shell: None,
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(3, 10, 0)),
@@ -2446,6 +2471,7 @@ mod burst_tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let conn = std::net::TcpStream::connect(listener.local_addr().unwrap()).unwrap();
         let term = Arc::new(Term {
+            attachment_shell: None,
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
             parser: Mutex::new(vt100::Parser::new(24, 80, 0)),

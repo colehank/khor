@@ -458,9 +458,7 @@ fn save(root: &Path, saved: &Saved) -> Result<(), String> {
         &temp,
         &serde_json::to_vec(&saved).map_err(|e| e.to_string())?,
     )?;
-    File::open(&temp)
-        .and_then(|f| f.sync_all())
-        .map_err(|e| e.to_string())?;
+    crate::durable::sync_file(&temp)?;
     fs::rename(&temp, &target).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     File::open(target.parent().expect("agent receipt directory"))

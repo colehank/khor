@@ -262,9 +262,7 @@ pub(crate) fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), (String,
     let result = (|| {
         crate::link::write_private(&temporary, &bytes)
             .map_err(|_| ("WriteFailed".into(), false))?;
-        File::open(&temporary)
-            .and_then(|f| f.sync_all())
-            .map_err(|_| ("SyncFailed".into(), false))?;
+        crate::durable::sync_file(&temporary).map_err(|_| ("SyncFailed".into(), false))?;
         fs::rename(&temporary, path).map_err(|_| ("RenameFailed".into(), false))?;
         #[cfg(unix)]
         File::open(parent)
@@ -1395,12 +1393,12 @@ pub(crate) fn test_ready_durable_step(root: &Path, run: &str) {
     state.enqueue(root.into(), run.into(), Instant::now(), 0);
     state.pump(false);
 }
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn test_starts() -> &'static Mutex<VecDeque<(PathBuf, String, u32, i64)>> {
     static STARTS: OnceLock<Mutex<VecDeque<(PathBuf, String, u32, i64)>>> = OnceLock::new();
     STARTS.get_or_init(Default::default)
 }
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) fn test_step_starts(root: &Path) -> Vec<(String, u32, i64)> {
     test_starts()
         .lock()
