@@ -63,7 +63,6 @@ export function mountCapabilityMotion(figure:HTMLElement,agent:boolean){
       trace('[data-relation-flow="delivery"]',capabilityTiming.delivery);
       const received=capabilityTiming.request+tourMotion.travel,delivered=capabilityTiming.delivery+tourMotion.travel;
       animate('.relation-router',busy(received,delivered,cycle,.22,.85));
-      animate('[data-net-brand] > svg',busy(received,delivered,cycle,1,.6));
       animate('.relation-access-active',pulse([capabilityTiming.request,delivered],cycle,0));
     }else animate('.relation-access-active',pulse([0,capabilityTiming.workReply+tourMotion.travel],cycle,0));
   };

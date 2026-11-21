@@ -10,23 +10,23 @@ const {scene,pinned=false}=Astro.props;
   {scene==='network'&&<section class="tour-section tour-network" id="connect" aria-labelledby="connect-title">
     <div class="tour-copy">
       <h2 id="connect-title"><L en="Stay connected" zh="保持连接"/></h2>
-      <p><L en="Build a decentralized peer-to-peer network with Khor. Your devices stay connected as you move between wired, Wi-Fi, and cellular connections, with a relay keeping work moving while Khor finds a direct path." zh="用 Khor 构建去中心化的点对点网络。切换有线网、无线网或蜂窝网时，设备依然保持连接；Khor 通过中继衔接，同时寻找直连路径。"/></p>
+      <p><L en="Your devices form their own network. Built on iroh, Khor lets online devices relay for each other. When a device switches networks, Khor Relay provides a path while it reconnects." zh="你的设备，自成一张网。Khor 基于 iroh 建立去中心化连接，让在线设备可以彼此中继。设备切换网络时，Khor Relay 提供过渡路径，协助重新建联。"/></p>
     </div>
     <NetworkDiagram />
   </section>}
   {scene==='work'&&<section class="tour-section tour-capabilities" id="work" aria-labelledby="work-title">
     <span class="tour-anchor" id="sessions" aria-hidden="true"></span><span class="tour-anchor" id="terminal" aria-hidden="true"></span>
     <div class="tour-copy">
-      <h2 id="work-title"><L en="Continue anywhere" zh="随时继续工作"/></h2>
-      <p><L en="Pick up the same session on a laptop or phone. Use Codex, Claude Code, or a terminal through Khor, with access to files and web apps on the target device and its Git history." zh="在笔记本或手机上接着处理同一个会话。通过 Khor 使用 Codex、Claude Code 或终端，随时访问目标设备的文件与 Web 应用，甚至追踪 Git 日志。"/></p>
+      <h2 id="work-title"><L en="Continue anywhere" zh="随地继续"/></h2>
+      <p><L en="Pick up an agent or terminal session running on another device. Preview and edit remote files, track changes with Git, and open local web pages through the device they run on." zh="从手边的设备，接续另一台设备上的智能体或终端会话。预览和编辑远端文件，用 Git 追踪改动，也能通过目标设备的网络，打开运行在它本机的网页。"/></p>
     </div>
     <CapabilityScene mode="work" />
   </section>}
   {scene==='agent'&&<section class="tour-section tour-capabilities" id="khor-agent" aria-labelledby="agent-title">
     <span class="tour-anchor" id="resources" aria-hidden="true"></span>
     <div class="tour-copy">
-      <h2 id="agent-title"><L en="Let Khor take over" zh="交给 Khor"/></h2>
-      <p><L en="Give Khor Agent a task from a laptop or phone. It coordinates devices and agents across the network and brings the result back to you." zh="从笔记本或手机将任务交给 Khor Agent。它会协调网络中的设备与智能体，再把结果交回。"/></p>
+      <h2 id="agent-title"><L en={"Let Khor\u00a0Agent take over"} zh={"交给 Khor\u00a0Agent"}/></h2>
+      <p><L en="Tell Khor Agent what you want to accomplish. It coordinates agents across your devices and sends the result back to the device you're using." zh="告诉 Khor Agent 你想要什么结果。它会调度不同设备上的智能体，协调分工，再把结果送回你当前使用的设备。"/></p>
     </div>
     <CapabilityScene mode="agent" />
   </section>}

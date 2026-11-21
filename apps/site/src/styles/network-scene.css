@@ -1,12 +1,11 @@
 /* Native networks change; the outer KhorNet keeps every device together. */
 .network-scene { display:block; width:100%; height:auto; overflow:visible; }
-.network-scene[data-net-infrastructure="false"] :is(.net-native,.net-native-surface,.net-boundary-marks,[data-net-gap-group]) { display:none; }
-.net-native-surface { fill:var(--ink); fill-opacity:calc(.035 - var(--net-build)*.018); }
-.net-khor-surface { fill:var(--tour-accent); fill-opacity:calc(var(--net-build)*.025); opacity:var(--net-build); }
+.network-scene[data-net-infrastructure="false"] :is(.net-native,.net-boundary-marks,[data-net-gap-group]) { display:none; }
+.net-native,.net-boundary-marks { opacity:var(--story-graph-draw,1); }
 .net-native path { fill:none; stroke:var(--secondary); stroke-opacity:calc(.5 - var(--net-build)*.18); stroke-width:1; }
 .net-khor-shape { fill:none; stroke:var(--tour-accent); stroke-opacity:.85; stroke-width:1.5; stroke-linecap:round; stroke-dasharray:1; stroke-dashoffset:calc(1 - var(--net-build)); opacity:var(--net-build); }
 .net-device { color:var(--ink); }
-.net-device-body { fill:color-mix(in srgb,var(--ink) 8%,var(--canvas)); stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; }
+.net-device-body { fill:none; stroke:color-mix(in srgb,var(--ink) 62%,var(--canvas)); stroke-width:1.25; }
 .net-boundary-marks { color:var(--secondary); }
 .net-boundary-marks [data-body] { fill:currentColor; fill-opacity:.8; }
 .net-boundary-name,.net-handoff-status { font-family:var(--sans); fill:currentColor; }

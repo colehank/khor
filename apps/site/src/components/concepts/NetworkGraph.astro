@@ -51,12 +51,6 @@ const networkTypeMarks:Record<string,string>={a:lanMark.trim(),b:wifiMark.trim()
         <use href={`#${ref('khor-clearance')}`}/><use href={`#${ref('extra-clearance')}`}/>
       </mask>
     </defs>
-    <g class="net-surfaces">
-      <path class="net-khor-surface" data-net-global-fill d={initial.khorNet.d}/>
-      {Object.entries(initial.areas).map(([id,area])=>(
-        <path class="net-native-surface" data-net-area-fill={id} d={area.d} style={`opacity:${area.opacity}`}/>
-      ))}
-    </g>
     <path class="net-khor-shape" data-net-global d={initial.khorNet.d} pathLength="1" mask={`url(#${ref('global-clearance')})`}/>
     <g mask={`url(#${ref("network-edge-clearance")})`}>
       <g class="net-native">

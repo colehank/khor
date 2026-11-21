@@ -8,7 +8,6 @@ export function mountNetworkMap(figure:HTMLElement) {
   const device=(id:string)=>svg.querySelector<SVGGElement>(`[data-net-device="${id}"]`)!;
   const nodes={mac:device('mac'),linux:device('linux'),windows:device('windows'),phone:device('phone')};
   const globalPath=svg.querySelector<SVGPathElement>('[data-net-global]')!;
-  const globalFill=svg.querySelector<SVGPathElement>('[data-net-global-fill]')!;
   const globalMark=svg.querySelector<SVGGElement>('[data-net-brand]')!;
   const globalLabelPath=svg.querySelector<SVGPathElement>('[data-net-label-path="khor"]')!;
   const globalSubtitlePath=svg.querySelector<SVGPathElement>('[data-net-label-path="khor-subtitle"]')!;
@@ -19,7 +18,6 @@ export function mountNetworkMap(figure:HTMLElement) {
   const gapIcon=(id:string)=>svg.querySelector<SVGCircleElement>(`[data-net-gap-icon="${id}"]`)!;
   const areas=new Map([...svg.querySelectorAll<SVGGElement>('[data-net-area]')].map(area=>[area.dataset.netArea!,{
     group:area,path:area.querySelector('path')!,mark:svg.querySelector<SVGGElement>(`[data-net-mark="${area.dataset.netArea}"]`)!,
-    fill:svg.querySelector<SVGPathElement>(`[data-net-area-fill="${area.dataset.netArea}"]`)!,
     icon:svg.querySelector<SVGGElement>(`[data-net-mark="${area.dataset.netArea}"] [data-net-icon]`)!,
     labelPath:svg.querySelector<SVGPathElement>(`[data-net-label-path="${area.dataset.netArea}"]`)!,
     gapGroup:svg.querySelector<SVGGElement>(`[data-net-gap-group="${area.dataset.netArea}"]`)!,
@@ -167,13 +165,12 @@ export function mountNetworkMap(figure:HTMLElement) {
     for(const [id,shape] of Object.entries(geometry.areas)){
       const area=areas.get(id)!;
       attr(area.path,'d',shape.d);area.group.style.opacity=String(shape.opacity);
-      attr(area.fill,'d',shape.d);area.fill.style.opacity=String(shape.opacity);
       area.mark.style.opacity=String(shape.opacity);
       // Keep the caption's gap fully cut until the caption is gone.
       area.gapGroup.style.opacity=shape.opacity>0?'1':'0';
       attr(area.group,'aria-hidden',String(shape.opacity<.01));
     }
-    attr(globalPath,'d',geometry.khorNet.d);attr(globalFill,'d',geometry.khorNet.d);
+    attr(globalPath,'d',geometry.khorNet.d);
   };
   const relayout=()=>{lastCompact=undefined;draw(Number.isNaN(lastPosition)?1:lastPosition,lastBuild);};
   compact.addEventListener('change',relayout);

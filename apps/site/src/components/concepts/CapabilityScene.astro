@@ -12,10 +12,10 @@ const {mode}=Astro.props,agent=mode==='agent',g=capabilityGeometry(false,agent);
 const marks=Object.fromEntries(supportedHarnesses.map(mark=>[mark.name,mark.svg]));
 const glyph=(name:string)=>marks[name]??capabilityMarks[name];
 const hosts=[{id:'mac',name:'Claude Code',mark:'Claude',resource:'File',icon:'files'},{id:'linux',name:'Codex',mark:'Codex',resource:'Web',icon:'web'}] as const;
-const description=agent?'You use the same laptop and Mobile access group to send a Task to Khor. Khor calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices return to Khor before Khor delivers the Result to your access group. Khor softly pulses until delivery. All devices, resources and labels stay in place.':'You use the shared laptop and Mobile access group to send requests to the workstation and Server together. Their agent marks light up after the requests arrive, then both devices return their light traces to You. The entire You boundary lights up on sending and receiving. Sessions and resources stay on their hosts; all relationships remain visible.';
+const description=agent?'You use the same laptop and Mobile access group to send a Task to Khor Agent. It calls the workstation and Server; their Claude and Codex marks light up only after the calls arrive. Both devices send their results to Khor Agent, which delivers them to your access group. The ring around its icon pulses until delivery. All devices, resources and labels stay in place.':'You use the shared laptop and Mobile access group to send requests to the workstation and Server together. Their agent marks light up after the requests arrive, then both devices return their light traces to You. The entire You boundary lights up on sending and receiving. Sessions and resources stay on their hosts; all relationships remain visible.';
 ---
-<figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim);--relation-group:url(#${mode}-relation-group)`}>
-  <NetworkGraph prefix={mode} infrastructure={false} activeRouter={agent} title={agent?'Delegate from a laptop or Mobile and receive the result there':'One task, accessible from a laptop or Mobile'} titleZh={agent?'从笔记本或手机派发任务，并接收结果':'从笔记本或手机访问同一个任务'} descriptionZh={agent?'你通过笔记本或手机把任务交给 Khor，Khor 再调用服务器与台式机上的智能体。任务到达后，智能体亮起，结果先返回 Khor，再交回设备。':'你通过笔记本或手机同时访问服务器与台式机上的智能体。请求到达后智能体亮起，两台设备再一起返回结果。文件和网页始终留在所属设备上。'} {description}>
+<figure class:list={['concept','concept-network','capability-relation',`relation-${mode}`]} data-concept={mode} data-net-connection="p2p" style={`--net-build:1;--relation-face:url(#${mode}-relation-face);--relation-rim:url(#${mode}-relation-rim)`}>
+  <NetworkGraph prefix={mode} infrastructure={false} activeRouter={agent} title={agent?'Delegate from a laptop or Mobile and receive the result there':'One task, accessible from a laptop or Mobile'} titleZh={agent?'从笔记本或手机派发任务，并接收结果':'从笔记本或手机访问同一个任务'} descriptionZh={agent?'你通过笔记本或手机把任务交给 Khor Agent，由它调用服务器与台式机上的智能体。任务到达后，智能体亮起，结果先返回 Khor Agent，再交回设备。':'你通过笔记本或手机同时访问服务器与台式机上的智能体。请求到达后智能体亮起，两台设备再一起返回结果。文件和网页始终留在所属设备上。'} {description}>
     <g slot="routes" class="relation-connections" aria-hidden="true">
       <defs>
         <linearGradient id={`${mode}-relation-face`} x1="0" y1="0" x2="1" y2="1">
@@ -23,9 +23,6 @@ const description=agent?'You use the same laptop and Mobile access group to send
         </linearGradient>
         <linearGradient id={`${mode}-relation-rim`} x1="0" y1="0" x2="1" y2="1">
           <stop class="relation-rim-light"/><stop offset=".55" class="relation-rim-shade"/><stop offset="1" class="relation-rim-end"/>
-        </linearGradient>
-        <linearGradient id={`${mode}-relation-group`} x1="0" y1="0" x2="1" y2="1">
-          <stop class="relation-group-light"/><stop offset="1" class="relation-group-shade"/>
         </linearGradient>
         {agent&&([['task',g.taskLabel,72],['result',g.resultLabel,88]] as const).map(([id,p,width])=><mask id={`${mode}-handoff-${id}`} maskUnits="userSpaceOnUse" x="0" y="0" width="1000" height="690" style="mask-type:luminance">
           <rect width="1000" height="690" fill="white"/>
@@ -72,8 +69,11 @@ const description=agent?'You use the same laptop and Mobile access group to send
         <text class="relation-request-label" data-relation-result-label transform={`translate(${g.resultLabel.x} ${g.resultLabel.y})`} text-anchor="middle"><L en="Result" zh="结果" tag="tspan"/></text>
       </>:null}
       <g class="relation-access-label" data-relation-access-label transform={`translate(${g.access.x} ${g.access.y})`}>
-        <text class="relation-you" x="0" y="-9" text-anchor="middle"><L en="You" zh="你" tag="tspan"/></text>
-        <text class="relation-shared" x="0" y="19" text-anchor="middle"><L en="Same task" zh="同一任务" tag="tspan"/></text>
+        <text class="relation-you" x="0" y="-.48em" text-anchor="middle"><L en="You" zh="你" tag="tspan"/></text>
+        <text class="relation-location" x="0" y=".72em" text-anchor="middle">
+          <L en="Physical" zh="物理位置" tag="tspan"/>
+          <tspan data-locale-content="en" lang="en" x="0" dy="1em">location</tspan>
+        </text>
       </g>
     </g>
   </NetworkGraph>

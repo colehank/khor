@@ -19,7 +19,7 @@ export function mountCapabilityScene(figure:HTMLElement) {
     }
   };
   const layout=()=>{
-    const scale=map.markScale,unit=map.textScale,g=capabilityGeometry(compact.matches,agent,scale);
+    const scale=map.markScale,g=capabilityGeometry(compact.matches,agent,scale);
     for(const element of figure.querySelectorAll<SVGElement>('[data-relation-at]'))translate(element,g.nodes[element.dataset.relationAt as keyof typeof g.nodes]);
     for(const {id,d,end} of g.routes){
       for(const path of figure.querySelectorAll(`[data-relation-route="${id}"]`))path.setAttribute('d',d);
@@ -27,8 +27,6 @@ export function mountCapabilityScene(figure:HTMLElement) {
     }
     for(const path of figure.querySelectorAll('[data-relation-access]'))path.setAttribute('d',g.accessPath);
     translate(find('[data-relation-access-label]'),g.access);
-    find('.relation-you').setAttribute('y',String(-8*unit));
-    find('.relation-shared').setAttribute('y',String(17*unit));
     for(const badge of figure.querySelectorAll<SVGGElement>('[data-relation-badge]')){
       const session=badge.dataset.relationBadge==='session';
       translate(badge,{x:28*scale,y:(session?-28:28)*scale});

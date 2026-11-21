@@ -60,9 +60,9 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
   });
   stage.append(layer);
   const primary=[graphRing,...graph.querySelectorAll<SVGElement>('[data-net-device]'),targetBrand];
-  const drawing=[...graph.querySelectorAll<SVGPathElement>('.net-native path,.relation-wire,.relation-access')].map(el=>({el,length:el.getAttribute('pathLength'),dash:el.style.strokeDasharray,offset:el.style.strokeDashoffset,fill:el.style.fill,marker:el.style.markerEnd}));
-  const fillLayers=[...graph.querySelectorAll<SVGElement>('.net-surfaces,.relation-access-active,.relation-flow,.relation-signal,.relation-port')];
-  const legends=[...graph.querySelectorAll<SVGElement>('[data-net-mark],.net-khor-mark > text,.relation-access-label,.relation-request-label,.relation-router')];
+  const drawing=[...graph.querySelectorAll<SVGPathElement>('.relation-wire,.relation-access')].map(el=>({el,length:el.getAttribute('pathLength'),dash:el.style.strokeDasharray,offset:el.style.strokeDashoffset,marker:el.style.markerEnd}));
+  const liveLayers=[...graph.querySelectorAll<SVGElement>('.relation-access-active,.relation-flow,.relation-signal,.relation-port')];
+  const legends=[...graph.querySelectorAll<SVGElement>('.net-khor-mark > text,.relation-access-label,.relation-request-label,.relation-router')];
   const captions=legends.filter(el=>el.matches('.net-khor-mark > .net-boundary-name'));
   const otherLegends=legends.filter(el=>!captions.includes(el));
   const badges=[...graph.querySelectorAll<SVGElement>('.relation-badge')];
@@ -77,11 +77,11 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
     graphScrubbing=false;previousDraw=NaN;previousDetails=undefined;
     graph.style.removeProperty('--story-graph-draw');
     primary.forEach(el=>el.style.visibility='');
-    for(const {el,length,dash,offset,fill,marker} of drawing){
+    for(const {el,length,dash,offset,marker} of drawing){
       if(length===null)el.removeAttribute('pathLength');else el.setAttribute('pathLength',length);
-      el.style.strokeDasharray=dash;el.style.strokeDashoffset=offset;el.style.fill=fill;el.style.markerEnd=marker;
+      el.style.strokeDasharray=dash;el.style.strokeDashoffset=offset;el.style.markerEnd=marker;
     }
-    [...fillLayers,...legends].forEach(el=>el.style.visibility='');
+    [...liveLayers,...legends].forEach(el=>el.style.visibility='');
     [...otherLegends,...badges].forEach(el=>el.style.clipPath='');
     captions.forEach(el=>{el.style.opacity='';el.style.transition='';});
   };
@@ -101,11 +101,11 @@ export function createStoryMorph(stage:HTMLElement,icon:SVGSVGElement,graph:SVGS
     if(entering)graph.style.visibility='visible';
     if(!graphScrubbing){
       graphScrubbing=true;
-      [...primary,...fillLayers].forEach(el=>el.style.visibility='hidden');
+      [...primary,...liveLayers].forEach(el=>el.style.visibility='hidden');
       // In reverse the connections withdraw before their device endpoints move.
       for(const {el} of drawing){
         el.setAttribute('pathLength','1');
-        el.style.strokeDasharray='1';el.style.strokeDashoffset='calc(1 - var(--story-graph-draw))';el.style.fill='none';el.style.markerEnd='none';
+        el.style.strokeDasharray='1';el.style.strokeDashoffset='calc(1 - var(--story-graph-draw))';el.style.markerEnd='none';
       }
       for(const el of captions)el.style.transition='opacity var(--dur-120)';
       for(const el of otherLegends)el.style.clipPath='inset(0 calc((1 - var(--story-graph-draw))*100%) 0 0)';

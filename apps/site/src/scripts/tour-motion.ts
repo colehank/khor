@@ -29,7 +29,7 @@ export function createStoryHandoff(paint:(progress:number)=>void){
       stop();
       // Jump links and large scroll jumps land on a complete scene.
       if(offset>=1||progress===next){render(next);return;}
-      const from=progress,start=performance.now(),duration=800*Math.abs(next-from);
+      const from=progress,start=performance.now(),duration=1200*Math.abs(next-from);
       const tick=(now:number)=>{
         const time=Math.min(1,Math.max(0,(now-start)/duration));
         render(time===1?next:from+(next-from)*tourProgress(time));
