@@ -3836,7 +3836,7 @@ impl Node {
                 budget,
                 attempt,
                 Some(&guard),
-                endpoint.as_deref(),
+                endpoint.as_deref().map(|ep| (ep, self)),
             ),
         )
         .await
@@ -4640,7 +4640,11 @@ impl Node {
                             },
                         );
                         let conn = incoming.upgrade();
-                        let road = conn.as_ref().map(|conn| (ep.as_ref(), conn));
+                        let road = conn.as_ref().map(|conn| crate::tunnel::ActivePath {
+                            endpoint: &ep,
+                            connection: conn,
+                            node: Some(&node),
+                        });
                         let _ =
                             crate::tunnel::serve_target(send, recv, &target, paired, road).await;
                     }
@@ -6276,8 +6280,8 @@ impl Node {
             ));
         };
         let machine = machine.to_owned();
-        Ok(crate::tunnel::Borrow::on_wire(std::sync::Arc::new(
-            move || {
+        Ok(crate::tunnel::Borrow::on_wire(
+            std::sync::Arc::new(move || {
                 let (me, machine) = (me.clone(), machine.clone());
                 Box::pin(async move {
                     let ep = me
@@ -6286,8 +6290,9 @@ impl Node {
                     let conn = me.dial_tunnel(&ep, &machine).await?;
                     Ok((ep, conn))
                 })
-            },
-        )))
+            }),
+            self.weak(),
+        ))
     }
 
     /// Resolves a machine and opens the tunnel connection to it on `ep`.
@@ -14189,7 +14194,7 @@ async fn exchange_inner(
     budget: Duration,
     mut attempt: Option<&mut DocAttempt>,
     owner: Option<&RetireUnheard<'_>>,
-    endpoint: Option<&iroh::Endpoint>,
+    resident: Option<(&iroh::Endpoint, &Node)>,
 ) -> Result<Response, Miss> {
     let frame = proto::encode_request(req).map_err(Miss::Garbled)?;
     if let Some(attempt) = attempt.as_deref_mut() {
@@ -14200,6 +14205,7 @@ async fn exchange_inner(
     let mut heard: Option<tokio::time::Instant> = None;
     let mut relay_checked = false;
     let mut relay_compared = false;
+    let mut route_compared = false;
     // When every path was asked whether it is there, and how long the
     // answers get (`wires::ask_every_path`).
     let mut asked: Option<(tokio::time::Instant, Duration)> = None;
@@ -14274,20 +14280,33 @@ async fn exchange_inner(
                     && heard.is_none()
                     && now.duration_since(sent) >= relay_check_after
                     && conn.paths().iter().any(|path| path.is_selected() && path.is_relay())
-                    && let Some(endpoint) = endpoint
+                    && let Some((endpoint, _)) = resident
                 {
                     relay_checked = endpoint.check_relay_connections();
                 }
-                // Compare the selected relay's TCP flow if transport traffic
-                // continues but the request stays pending. The actor coalesces hints.
-                if !relay_compared
-                    && now.duration_since(sent) >= crate::tunnel::RELAY_DEMAND_AFTER
-                    && let Some(endpoint) = endpoint
-                    && let Some(iroh::TransportAddr::Relay(relay)) = conn.paths().iter()
-                        .find(|path| path.is_selected())
-                        .map(|path| path.remote_addr().clone())
+                // Recover the relay socket and compare independent routes while
+                // the same stream is waiting. Keep slow peer work separate
+                // from delayed or unacknowledged transport packets.
+                let waited = now.duration_since(sent);
+                if (!relay_compared || !route_compared)
+                    && waited >= crate::tunnel::RELAY_DEMAND_AFTER
+                    && let Some((endpoint, node)) = resident
+                    && let Some(path) = conn.paths().iter().find(|p| p.is_selected())
                 {
-                    relay_compared = endpoint.check_relay_for_demand(relay);
+                    let stats = path.stats();
+                    if !relay_compared && let iroh::TransportAddr::Relay(relay) = path.remote_addr() {
+                        relay_compared = endpoint.check_relay_for_demand(relay.clone());
+                    }
+                    if !route_compared
+                        && matches!(crate::journal::by_now(), crate::journal::By::Ask | crate::journal::By::Forced)
+                        && (stats.unacked_since.is_some_and(|at| {
+                            at.elapsed() >= crate::tunnel::RELAY_DEMAND_AFTER
+                        }) || (stats.latest_rtt >= crate::tunnel::RELAY_DEMAND_AFTER
+                            && stats.latest_rtt_sent.is_some_and(|at| at >= sent.into_std())))
+                    {
+                        route_compared = true;
+                        node.recover_active_path(endpoint, conn, waited);
+                    }
                 }
                 let quiet = match heard {
                     None => now.duration_since(sent) >= patience.ack,

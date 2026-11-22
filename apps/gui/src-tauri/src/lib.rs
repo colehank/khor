@@ -1564,7 +1564,12 @@ async fn terminal_paste_control(
                     serde_json::json!({ "owner": event_owner, "value": value }),
                 );
             });
-            let _ = done.send(terminal_paste::place(wv.inner().cast(), owner, geometry, report));
+            let _ = done.send(terminal_paste::place(
+                wv.inner().cast(),
+                owner,
+                geometry,
+                report,
+            ));
         })
         .map_err(|error| error.to_string())?;
         ready.await.map_err(|error| error.to_string())
@@ -6183,8 +6188,6 @@ fn say_signals() {
 
 #[cfg(target_os = "ios")]
 mod edit_menu;
-#[cfg(target_os = "ios")]
-mod terminal_paste;
 #[cfg(desktop)]
 mod menu;
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -6203,6 +6206,8 @@ mod phone_presentation;
 mod phone_share;
 #[cfg(desktop)]
 mod room;
+#[cfg(target_os = "ios")]
+mod terminal_paste;
 #[cfg(desktop)]
 mod traffic;
 

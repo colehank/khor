@@ -194,13 +194,15 @@ def terminal_keyboard_check(command, documents, simulator, report):
       const term = box?.__xterm;
       if (!term || !term.rows) return null;
       const r = box.getBoundingClientRect(), picker = document.querySelector('[data-files-panel]');
+      const buffer = term.buffer.active;
+      const prompt = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true).trimEnd() === 'preview %';
       return {rows:term.rows, cols:term.cols, height:r.height, bottom:r.bottom,
         screen:document.documentElement.clientHeight, visible:visualViewport.height,
-        mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
+        prompt, mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
 
-    def wait_for(read, allowed, label):
+    def wait_for(read, allowed, label, *, timeout=15):
         last = None
-        deadline = time.monotonic() + 15
+        deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             last = read()
             if allowed(last):
@@ -208,7 +210,7 @@ def terminal_keyboard_check(command, documents, simulator, report):
             time.sleep(.12)
         raise ValueError(f'{label}: {last!r}')
 
-    def evaluate(script):
+    def evaluate(script, *, timeout=15):
         nonlocal serial
         serial += 1
         request = documents / 'keyboard-command.json'
@@ -219,7 +221,7 @@ def terminal_keyboard_check(command, documents, simulator, report):
         def read():
             return json.loads(reply.read_text()) if reply.is_file() else {}
         result = wait_for(read, lambda value: value.get('serial') == serial,
-                          'WKWebView did not answer an observation')
+                          'WKWebView did not answer an observation', timeout=timeout)
         if 'error' in result:
             raise ValueError(result['error'])
         return result.get('value')
@@ -246,7 +248,13 @@ def terminal_keyboard_check(command, documents, simulator, report):
         return {key:value[key] for key in ('rows','cols','height','bottom')}
 
     try:
-        down = wait_for(lambda:evaluate(state), lambda s:s and s['rows'] > 10, 'Terminal never loaded')
+        # Appium can return before the probe's WKWebView has loaded its first
+        # page. Wait for that page before timing interactive keyboard actions.
+        started = time.monotonic()
+        evaluate("return document.readyState;", timeout=60)
+        print(f'WKWebView responded {time.monotonic() - started:.1f}s after Appium was ready')
+        down = wait_for(lambda: evaluate(state), lambda s: s and s['rows'] > 10 and s['prompt'],
+                        'Terminal fixture never rendered its input prompt')
         samples['down'] = down
         tap("""const term=document.querySelector('[data-terminal]')?.__xterm;
           if(!term) return null;

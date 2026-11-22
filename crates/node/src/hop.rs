@@ -1461,6 +1461,53 @@ impl Node {
         pending.hand_off(false)
     }
 
+    /// A pending operation has already spent this long waiting on its path.
+    /// Wake existing alternatives and let a measured peer hop compete on
+    /// the same QUIC connections. The operation stays on its original stream.
+    pub(crate) fn recover_active_path(
+        &self,
+        ep: &iroh::Endpoint,
+        conn: &iroh::endpoint::Connection,
+        waited: Duration,
+    ) {
+        let peer = conn.remote_id();
+        let Some(node) = self.me() else { return };
+        if conn.close_reason().is_some() || self.resting.load(std::sync::atomic::Ordering::Relaxed)
+        {
+            return;
+        }
+        let paths = conn.paths();
+        let Some(selected) = paths.iter().find(|path| path.is_selected()) else {
+            return;
+        };
+        let can_compare = !self.carry.has(&peer) && self.hop_on();
+        if !can_compare && paths.iter().all(|p| p.is_selected()) {
+            return;
+        }
+        let began = self.wires.begin_route_demand(peer);
+        khor_net::carry::observe_lifecycle(
+            peer,
+            "active_path_demand",
+            || serde_json::json!({"wire":conn.stable_id(), "began":began, "compare":can_compare}),
+        );
+        if !began {
+            return;
+        }
+        let cost = waited.max(selected.rtt());
+        for path in paths.iter().filter(|p| !p.is_selected()) {
+            path.ping();
+        }
+        if !can_compare {
+            return;
+        }
+        let ep = ep.clone();
+        let observation = MissObservation::new(self.wires.hop_epoch());
+        tokio::spawn(async move {
+            node.compare_roads_with_demand(&ep, observation, Some((peer, cost)))
+                .await;
+        });
+    }
+
     /// **The road choice by measured legs** (NET-DIRECT step 4), every
     /// resident beat, with [`COMPARE_EVERY`] per unchanged middle context:
     /// a real network/candidate/first-leg change can be compared at once.
@@ -1475,10 +1522,24 @@ impl Node {
     /// [`LOST_FOR`]. Direct needs nothing here: iroh's punching runs under
     /// every road and takes over when it opens.
     pub(crate) async fn compare_roads(&self, ep: &iroh::Endpoint) {
-        if !self.hop_on() || self.carrying().is_none() {
+        let observation = MissObservation::new(self.wires.hop_epoch());
+        self.compare_roads_with_demand(ep, observation, None).await;
+    }
+
+    async fn compare_roads_with_demand(
+        &self,
+        ep: &iroh::Endpoint,
+        observation: MissObservation,
+        demand: Option<(EndpointId, Duration)>,
+    ) {
+        if !self.hop_on()
+            || self.carrying().is_none()
+            || self.resting.load(std::sync::atomic::Ordering::Relaxed)
+            || self.paused()
+            || observation.network.strong_count() == 0
+        {
             return;
         }
-        let observation = MissObservation::new(self.wires.hop_epoch());
         let Ok(all) = self.devices() else { return };
         let me = self.device_str().to_owned();
         let mine = all
@@ -1500,16 +1561,25 @@ impl Node {
             let Ok(peer) = y.id.parse::<EndpointId>() else {
                 continue;
             };
+            if demand.is_some_and(|(id, _)| id != peer) {
+                continue;
+            }
             if self.carry.has(&peer) || crate::pause::peer_on(self.root(), &y.id) {
                 continue;
             }
-            let r = self.wires.link(&y.id);
-            let (
-                Some(khor_net::path::PathKind::Direct | khor_net::path::PathKind::Relay),
-                Some(rtt),
-            ) = (r.road, r.rtt)
-            else {
-                continue;
+            let rtt = match demand {
+                Some((_, cost)) => cost,
+                None => {
+                    let r = self.wires.link(&y.id);
+                    let (
+                        Some(khor_net::path::PathKind::Direct | khor_net::path::PathKind::Relay),
+                        Some(rtt),
+                    ) = (r.road, r.rtt)
+                    else {
+                        continue;
+                    };
+                    rtt
+                }
             };
             let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
             let picked = worth_a_hop(

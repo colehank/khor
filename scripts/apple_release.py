@@ -122,9 +122,11 @@ def ios_signing():
                 installed.write_bytes(previous)
 
 
-def archive_ios(signed):
-    config = {"build": {"beforeBuildCommand": ""}, "bundle": {"iOS": {"bundleVersion": build_number()}}}
+def archive_ios(signed, *, number=None, features=()):
+    config = {"build": {"beforeBuildCommand": ""}, "bundle": {"iOS": {"bundleVersion": number or build_number()}}}
     command = ["npm", "run", "tauri", "--", "ios", "build", "--ci", "--target", "aarch64", "--archive-only", "--config", json.dumps(config)]
+    if features:
+        command.extend(["--features", ",".join(features)])
     if not signed:
         # Tauri validates a nonempty team before applying --no-sign. This inert
         # value belongs only to the unsigned child process, never distribution.
@@ -170,12 +172,12 @@ def mac_build(target, signed):
         run(["codesign", "--verify", "--deep", "--strict", str(app)])
 
 
-def package_ios():
+def package_ios(*, number=None):
     app = ARCHIVE / "Products/Applications/Khor.app"
     info = plistlib.loads((app / "Info.plist").read_bytes())
     if info["CFBundleIdentifier"] != "io.github.colehank.khor" or info["CFBundleShortVersionString"] != version():
         raise ValueError("Archive identity/version differs from the candidate")
-    if info["CFBundleVersion"] != build_number():
+    if info["CFBundleVersion"] != (number or build_number()):
         raise ValueError("Archive build number differs from this run")
     signed = (app / "embedded.mobileprovision").is_file()
     if signed:
@@ -199,7 +201,7 @@ def upload_ios(root):
             "processing_state": processed["attributes"]["processingState"]}
 
 
-def export_ios(root):
+def export_ios(root, *, internal_only=False):
     with tempfile.TemporaryDirectory() as temporary, ios_signing() as profile, api_key() as key:
         with tarfile.open(root / "Khor.xcarchive.tar.gz") as archive:
             archive.extractall(temporary, filter="data")
@@ -207,7 +209,7 @@ def export_ios(root):
         options.write_bytes(plistlib.dumps({"method": "app-store-connect", "destination": "upload",
             "teamID": required("APPLE_DEVELOPMENT_TEAM"), "signingStyle": "manual",
             "signingCertificate": "Apple Distribution", "manageAppVersionAndBuildNumber": False,
-            "uploadSymbols": True, "testFlightInternalTestingOnly": False,
+            "uploadSymbols": True, "testFlightInternalTestingOnly": internal_only,
             "provisioningProfiles": {"io.github.colehank.khor": profile}}))
         run(["xcodebuild", "-exportArchive", "-archivePath", str(Path(temporary) / ARCHIVE.name),
              "-exportOptionsPlist", str(options), "-exportPath", str(Path(temporary) / "export"),

@@ -110,6 +110,7 @@ pub(crate) type WireSource = Arc<
 /// opened afterwards just works (round NET-FIX).
 pub struct Borrow {
     lease: Lease,
+    node: std::sync::Weak<crate::Node>,
 }
 
 enum Lease {
@@ -127,13 +128,15 @@ impl Borrow {
     pub(crate) fn on_shared(ep: Arc<Endpoint>, conn: Connection) -> Self {
         Borrow {
             lease: Lease::Fixed(ep, conn),
+            node: std::sync::Weak::new(),
         }
     }
 
     /// A borrow whose pipes go over whatever wire `source` holds now.
-    pub(crate) fn on_wire(source: WireSource) -> Self {
+    pub(crate) fn on_wire(source: WireSource, node: std::sync::Weak<crate::Node>) -> Self {
         Borrow {
             lease: Lease::Held(source),
+            node,
         }
     }
 
@@ -153,6 +156,28 @@ impl Borrow {
         };
         let (send, recv) = dial(&conn, target).await?;
         Ok((send, recv, ep, conn))
+    }
+
+    async fn splice(
+        &self,
+        send: SendStream,
+        recv: RecvStream,
+        tcp: tokio::net::TcpStream,
+        endpoint: &Endpoint,
+        connection: &Connection,
+    ) {
+        let node = self.node.upgrade();
+        splice(
+            send,
+            recv,
+            tcp,
+            Some(ActivePath {
+                endpoint,
+                connection,
+                node: node.as_deref(),
+            }),
+        )
+        .await;
     }
 }
 
@@ -197,6 +222,13 @@ pub async fn serve_stream(
     serve_target(send, recv, &target, paired, None).await
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ActivePath<'a> {
+    pub endpoint: &'a Endpoint,
+    pub connection: &'a Connection,
+    pub node: Option<&'a crate::Node>,
+}
+
 /// [`serve_stream`] once its target is read: the resident reads it first
 /// to tell a hop's ask from an exit's target (`crate::hop`).
 pub(crate) async fn serve_target(
@@ -204,7 +236,7 @@ pub(crate) async fn serve_target(
     recv: RecvStream,
     target: &str,
     paired: bool,
-    road: Option<(&Endpoint, &Connection)>,
+    road: Option<ActivePath<'_>>,
 ) -> Result<(), String> {
     if !paired {
         let _ = send.write_all(&[REFUSED]).await;
@@ -241,7 +273,7 @@ async fn splice(
     mut send: SendStream,
     mut recv: RecvStream,
     tcp: tokio::net::TcpStream,
-    road: Option<(&Endpoint, &Connection)>,
+    road: Option<ActivePath<'_>>,
 ) {
     // A terminal's keystroke is one small write: never held for an ack.
     let _ = tcp.set_nodelay(true);
@@ -252,7 +284,7 @@ async fn splice(
     };
     let down = async {
         let _ = match road {
-            Some((ep, conn)) => copy_to_wire(&mut tr, &mut send, ep, conn).await,
+            Some(road) => copy_to_wire(&mut tr, &mut send, road).await,
             None => tokio::io::copy(&mut tr, &mut send).await.map(|_| ()),
         };
         let _ = send.finish();
@@ -262,26 +294,24 @@ async fn splice(
 
 // The TCP side may be an idle shell, so waiting for inbound application
 // output is not a liveness signal. Arm only when we have bytes to send over
-// a relay. Asking iroh to compare that relay does not close the QUIC stream
-// or resend the bytes at this layer.
+// a path. Recovery opens alternatives under the same QUIC stream.
 async fn copy_to_wire(
     input: &mut tokio::net::tcp::OwnedReadHalf,
     send: &mut SendStream,
-    ep: &Endpoint,
-    conn: &Connection,
+    road: ActivePath<'_>,
 ) -> std::io::Result<()> {
     let mut buf = Box::new([0; 8192]);
     let mut pending = None;
     loop {
-        let len = watch_relay(input.read(buf.as_mut()), ep, conn, &mut pending).await?;
+        let len = watch_path(input.read(buf.as_mut()), road, &mut pending).await?;
         if len == 0 {
             return Ok(());
         }
         if pending.is_none() {
-            let paths = conn.paths();
+            let paths = road.connection.paths();
             if let Some(path) = paths
                 .iter()
-                .find(|path| path.is_selected() && path.is_relay())
+                .find(|path| path.is_selected() && (path.is_relay() || road.node.is_some()))
             {
                 pending = Some((
                     path.id(),
@@ -290,14 +320,13 @@ async fn copy_to_wire(
                 ));
             }
         }
-        watch_relay(send.write_all(&buf[..len]), ep, conn, &mut pending).await?;
+        watch_path(send.write_all(&buf[..len]), road, &mut pending).await?;
     }
 }
 
-async fn watch_relay<F: std::future::Future>(
+async fn watch_path<F: std::future::Future>(
     io: F,
-    ep: &Endpoint,
-    conn: &Connection,
+    road: ActivePath<'_>,
     pending: &mut Option<(PathId, u64, Instant)>,
 ) -> F::Output {
     let Some((id, acks, due)) = *pending else {
@@ -308,15 +337,28 @@ async fn watch_relay<F: std::future::Future>(
         biased;
         _ = tokio::time::sleep_until(due) => {
             *pending = None;
+            let conn = road.connection;
             let paths = conn.paths();
-            if let Some(path) = paths.iter().find(|path| path.is_selected() && path.id() == id)
-                && let iroh::TransportAddr::Relay(relay) = path.remote_addr()
-            {
-                let ack_progress = path.stats().frame_rx.acks != acks;
-                let queued = !ack_progress && ep.check_relay_for_demand(relay.clone());
-                khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_relay_demand", || {
-                    serde_json::json!({"wire":conn.stable_id(), "ack_progress":ack_progress, "queued":queued})
-                });
+            if let Some(path) = paths.iter().find(|path| path.is_selected() && path.id() == id) {
+                let stats = path.stats();
+                let ack_progress = stats.frame_rx.acks != acks;
+                if let iroh::TransportAddr::Relay(relay) = path.remote_addr() {
+                    let queued = !ack_progress && road.endpoint.check_relay_for_demand(relay.clone());
+                    khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_relay_demand", || {
+                        serde_json::json!({"wire":conn.stable_id(), "ack_progress":ack_progress, "queued":queued})
+                    });
+                }
+                let recent_slow_ack = stats.latest_rtt >= RELAY_DEMAND_AFTER
+                    && stats.latest_rtt_sent.is_some_and(|at| {
+                        at >= (due - RELAY_DEMAND_AFTER).into_std()
+                    });
+                let data_waiting = !ack_progress
+                    && stats.unacked_since.is_some_and(|at| at < Instant::now().into_std());
+                if (data_waiting || recent_slow_ack)
+                    && let Some(node) = road.node
+                {
+                    node.recover_active_path(road.endpoint, conn, RELAY_DEMAND_AFTER);
+                }
             }
         }
         value = &mut io => return value,
@@ -413,7 +455,7 @@ pub async fn serve_fixed(
         let target = target.clone();
         tokio::spawn(async move {
             match borrow.open_pipe(&target).await {
-                Ok((send, recv, ep, conn)) => splice(send, recv, sock, Some((&ep, &conn))).await,
+                Ok((send, recv, ep, conn)) => borrow.splice(send, recv, sock, &ep, &conn).await,
                 // Nothing can be *said* to a plain TCP client — there is
                 // no status byte in the terminal protocol — so dropping
                 // is all there is. It is logged because the difference
@@ -545,7 +587,7 @@ async fn proxy_one(
                 }
             }
             let _pipe = PipeGuard::open(count, activity);
-            splice(send, recv, sock, Some((&ep, &conn))).await;
+            borrow.splice(send, recv, sock, &ep, &conn).await;
             Ok(())
         }
         Err(_) => {
