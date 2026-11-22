@@ -398,7 +398,7 @@ fn pick(web: usize, id: &str) {
 
 /// The picture types 粘贴 takes off the pasteboard, as uniform type
 /// identifiers, with the type the page knows each by.
-const PICTURES: [(&str, &str); 4] = [
+pub(crate) const PICTURES: [(&str, &str); 4] = [
     ("public.png", "image/png"),
     ("public.jpeg", "image/jpeg"),
     ("public.heic", "image/heic"),
