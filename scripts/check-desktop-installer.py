@@ -128,7 +128,8 @@ def check_windows_backdrop(window):
     from ctypes import WinDLL, byref, c_int, c_uint, c_void_p, sizeof
     from ctypes.wintypes import HWND
 
-    read = WinDLL("dwmapi").DwmGetWindowAttribute
+    compositor = WinDLL("dwmapi")
+    read = compositor.DwmGetWindowAttribute
     read.argtypes = (HWND, c_uint, c_void_p, c_uint)
     mode = c_int()
     # DWMWA_SYSTEMBACKDROP_TYPE is available on Windows 11 and Server 2025.
@@ -140,7 +141,20 @@ def check_windows_backdrop(window):
         if mode.value == 3:
             print("The installed Windows App requested Desktop Acrylic from DWM.", flush=True)
             return
-        assert time.monotonic() < deadline, f"The installed App requested DWM backdrop {mode.value}, expected Desktop Acrylic (3)"
+        if time.monotonic() >= deadline:
+            initial = mode.value
+            set_mode = compositor.DwmSetWindowAttribute
+            set_mode.argtypes = read.argtypes
+            control = c_int(3)
+            set_result = set_mode(window, 38, byref(control), sizeof(control))
+            control_read = read(window, 38, byref(mode), sizeof(mode))
+            restored = c_int(initial)
+            set_mode(window, 38, byref(restored), sizeof(restored))
+            raise AssertionError(
+                f"The App backdrop was {initial}, expected Desktop Acrylic (3). "
+                f"Direct DWM control: set 0x{set_result & 0xffffffff:08x}, "
+                f"read 0x{control_read & 0xffffffff:08x}, backdrop {mode.value}"
+            )
         time.sleep(0.1)
 
 
