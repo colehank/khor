@@ -177,7 +177,7 @@ def check_installed_powershell(cli, environment, scratch):
 
 
 @contextmanager
-def windows_file_association(scratch, workspace):
+def windows_file_association(scratch, workspace, window):
     import winreg
 
     extension = "khorfixture" + uuid.uuid4().hex
@@ -210,7 +210,7 @@ def windows_file_association(scratch, workspace):
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, progid)
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, program_key + r"\shell\open\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{reader}" "%1" "{receipt}"')
-        yield f"--desktop-parity={extension},{scale}"
+        yield f"--desktop-parity={extension},{scale},{window}"
     finally:
         for key in (extension_key, program_key + r"\shell\open\command",
                     program_key + r"\shell\open", program_key + r"\shell", program_key):
@@ -344,7 +344,7 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
                             if shell_selection:
                                 args.append(f"--shell-selection={shell_selection}")
                             if desktop_parity:
-                                with windows_file_association(scratch, workspace) as parity:
+                                with windows_file_association(scratch, workspace, window) as parity:
                                     subprocess.run([*args, parity], check=True, timeout=300)
                             else:
                                 subprocess.run(args, check=True, timeout=300)

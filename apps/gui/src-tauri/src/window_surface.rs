@@ -53,12 +53,10 @@ pub fn apply(app: &AppHandle, material: &str) {
     #[cfg(target_os = "windows")]
     {
         use tauri::window::{Effect, EffectsBuilder};
-        // Tauri chooses the first supported material, in OS order.
-        let effects = (material == "frost").then(|| {
-            EffectsBuilder::new()
-                .effects([Effect::Mica, Effect::Acrylic, Effect::Blur])
-                .build()
-        });
+        // Desktop Acrylic blurs the windows behind Khor. Mica samples only
+        // the desktop wallpaper and would make the frost mode look opaque.
+        let effects =
+            (material == "frost").then(|| EffectsBuilder::new().effect(Effect::Acrylic).build());
         let _ = window.set_effects(effects);
     }
     #[cfg(desktop)]
