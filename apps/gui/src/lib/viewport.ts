@@ -151,12 +151,39 @@ let probe: HTMLElement | null = null;
  * comes up, and then 「innerHeight − visual height」 is 0 while the bottom
  * of the shell is behind the keys: nothing was stamped, nothing rode.
  * The layout viewport's bottom is where `fixed` and `100%` boxes end,
- * which is the thing the keys cover.
+ * which is the thing the keys cover. Compare heights: WebKit can pan
+ * the shortened viewport until its bottom reaches the old layout edge.
+ * That pan doesn't give any of the keyboard's space back to the app.
  */
 export function keyboardCover(): number {
   const vv = window.visualViewport;
-  if (!vv) return 0;
-  return Math.max(0, Math.round(layoutBottom() - (vv.offsetTop + vv.height)));
+  if (!vv || Math.abs(vv.scale - 1) >= 0.01) return 0;
+  const cover = Math.round(layoutBottom() - vv.height);
+  return cover > SLACK ? cover : 0;
+}
+
+/** Keep a panel's reserved space until the returning keyboard is steady. */
+export function waitForKeyboardReturn(done: () => void): () => void {
+  const vv = window.visualViewport;
+  let settled = 0;
+  const stop = () => {
+    window.clearTimeout(settled);
+    window.clearTimeout(timeout);
+    vv?.removeEventListener("resize", check);
+  };
+  const finish = () => {
+    stop();
+    done();
+  };
+  const check = () => {
+    window.clearTimeout(settled);
+    if (keyboardCover()) settled = window.setTimeout(finish, SETTLED_MS);
+  };
+  // A hardware keyboard (or a denied focus request) may never show one.
+  const timeout = window.setTimeout(finish, 1_500);
+  vv?.addEventListener("resize", check);
+  check();
+  return stop;
 }
 
 /** The layout viewport's bottom edge in client px: where `fixed` and
@@ -191,16 +218,9 @@ export function followVisualViewport(): () => void {
   const takeBack = () => {
     if (window.scrollY !== 0 || window.scrollX !== 0) window.scrollTo(0, 0);
   };
-  /** The system keyboard's cover, as measured now: a pinch shrinks the
-      visual viewport too, and that is somebody looking closer, not a
-      keyboard — only an unzoomed page counts. */
-  const measured = () => {
-    const covered = keyboardCover();
-    return covered > SLACK && Math.abs(vv.scale - 1) < 0.01 ? covered : 0;
-  };
   const apply = () => {
     steppedAt = performance.now();
-    const keys = measured();
+    const keys = keyboardCover();
     // **The foot held by khor's panel counts as a keyboard** (UX-31): the
     // larger of the two is what the shell lays out above, so the panel
     // taking the keyboard's place — or giving it back — changes nothing.
@@ -219,7 +239,7 @@ export function followVisualViewport(): () => void {
     // system's own, not the hold: a panel is not a keyboard to them.
     window.clearTimeout(settle);
     settle = window.setTimeout(() => {
-      const keysNow = measured();
+      const keysNow = keyboardCover();
       const now = keysNow > 0;
       if (now) remember(keysNow);
       if (now === shown) return;

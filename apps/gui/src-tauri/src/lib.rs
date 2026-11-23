@@ -1584,6 +1584,51 @@ fn edit_menu_at(
     let _ = (app, x, y, w, h, items, copy);
 }
 
+/// Match the iOS paste control to the terminal key row. Only a native
+/// activation grants item providers. The face receives the result by owner.
+#[tauri::command]
+async fn terminal_paste_control(
+    app: tauri::AppHandle,
+    owner: String,
+    geometry: Option<serde_json::Value>,
+) -> Result<bool, String> {
+    #[cfg(target_os = "ios")]
+    {
+        use tauri::Emitter;
+        let Some(face) = phone_page::face(&app) else {
+            return Ok(false);
+        };
+        let geometry = geometry
+            .map(serde_json::from_value::<terminal_paste::Geometry>)
+            .transpose()
+            .map_err(|error| error.to_string())?;
+        let (done, ready) = tokio::sync::oneshot::channel();
+        face.with_webview(move |wv| {
+            let event_owner = owner.clone();
+            let report = std::sync::Arc::new(move |value| {
+                let _ = app.emit_to(
+                    "main",
+                    "terminal-paste",
+                    serde_json::json!({ "owner": event_owner, "value": value }),
+                );
+            });
+            let _ = done.send(terminal_paste::place(
+                wv.inner().cast(),
+                owner,
+                geometry,
+                report,
+            ));
+        })
+        .map_err(|error| error.to_string())?;
+        ready.await.map_err(|error| error.to_string())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (app, owner, geometry);
+        Ok(false)
+    }
+}
+
 /// Puts `edit_menu_at`'s menu away (the selection ended another way).
 #[tauri::command]
 fn edit_menu_hide(app: tauri::AppHandle) {
@@ -5457,8 +5502,8 @@ fn watch_for_wake() {
 /// range, back — watched with Network.framework's `nw_path_monitor`, the
 /// system's own signal (iroh watches the routing table too, but on a
 /// phone the path monitor is what the system promises to keep current).
-/// Each change after the first report is a `link::network_changed`, the
-/// same door the Mac's wake uses.
+/// Each change after the first report goes to the resident. A confirmed
+/// usable path can rebind the network without suspending the app.
 ///
 /// Through the C API directly rather than a binding crate: four calls,
 /// and `block2` is already in the tree under the shell.
@@ -5488,6 +5533,7 @@ fn watch_the_path() {
     // cellular / wired it uses are what decide whether the old wires can
     // still be alive; the first report, at start, is the baseline.
     // `nw_interface_type_t`: wifi 1, cellular 2, wired 3.
+    const NW_PATH_STATUS_SATISFIED: u32 = 1;
     let last = std::sync::atomic::AtomicU32::new(u32::MAX);
     let changed = block2::RcBlock::new(move |path: *mut c_void| {
         // SAFETY: `path` is the monitor's for the length of this call.
@@ -5505,7 +5551,10 @@ fn watch_the_path() {
         if was == u32::MAX || was == now {
             return;
         }
-        khor_node::link::network_changed(&Node::root_from_env());
+        khor_node::link::mobile_network_changed(
+            &Node::root_from_env(),
+            now >> 8 == NW_PATH_STATUS_SATISFIED,
+        );
         khor_gui_core::rejoin::kick();
     });
     // SAFETY: Network.framework copies the handler block; the monitor is
@@ -6082,6 +6131,7 @@ pub fn run() {
             edit_menu,
             edit_menu_at,
             edit_menu_hide,
+            terminal_paste_control,
             joy_haptic,
             haptic,
             open_settings,
@@ -6411,6 +6461,8 @@ mod phone_presentation;
 mod phone_share;
 #[cfg(desktop)]
 mod room;
+#[cfg(target_os = "ios")]
+mod terminal_paste;
 #[cfg(desktop)]
 mod traffic;
 

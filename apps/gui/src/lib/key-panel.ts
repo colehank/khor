@@ -30,7 +30,7 @@ import { useSyncExternalStore } from "react";
 
 import { forgetKeyRowChoice } from "@/lib/key-row-open";
 import { keyboardUp, lowerKeyboard, onKeyboardChange, raiseKeyboard } from "@/lib/soft-keyboard";
-import { footHeld, holdFoot, keyboardCover, keyboardHeight, keyboardShown } from "@/lib/viewport";
+import { holdFoot, keyboardCover, keyboardHeight, keyboardShown } from "@/lib/viewport";
 
 const CHANGED = "khor:key-panel";
 /** How long a keyboard asked for may take to show before the panel
@@ -162,5 +162,5 @@ export function lowerKeyPanel() {
 /** The panel's view is gone (the row collapsed, the page left): the
     foot is let go. */
 export function keyPanelGone() {
-  if (up || footHeld() !== null) release();
+  if (up) release();
 }

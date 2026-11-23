@@ -855,7 +855,9 @@ UDP 到不了，连系统自带的 `/usr/bin/nc` 也一样），开往其余候�
 
 ## 怎么验
 
-补丁自带三条单元测试（`pending_open_paths_*`）。这个目录不是 workspace 成员，`cargo test --workspace`
+队列保留本批最早的重试期限。并发连接的路径事件即使持续入队，也不会延后这次尝试。
+
+补丁自带单元测试（`pending_open_paths_*`）。这个目录不是 workspace 成员，`cargo test --workspace`
 不会跑它们；要跑：
 
 ```sh

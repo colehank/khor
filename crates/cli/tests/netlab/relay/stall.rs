@@ -15,7 +15,7 @@ use tokio::net::TcpStream;
 use tokio::sync::oneshot;
 
 use super::flows;
-use crate::lab::{mesh, node, relay, result};
+use crate::lab::{mesh, node, relay, result, slow};
 use crate::nat::{Net, router};
 
 fn command(dev: &Device, program: &str, args: &[&str]) -> String {
@@ -106,7 +106,21 @@ async fn terminal_echo(stream: &mut TcpStream, token: &str) -> Result<(), String
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 #[ignore = "real PTY and per-flow netem require the guarded Linux netlab"]
 async fn established_terminal_old_uplink_delay() {
-    let s = "relay-stall-terminal-only";
+    terminal_with_relay_delay(false).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "real PTY and per-flow netem require the guarded Linux netlab"]
+async fn established_terminal_slow_relay_uses_live_middle() {
+    terminal_with_relay_delay(true).await;
+}
+
+async fn terminal_with_relay_delay(peer_hop: bool) {
+    let s = if peer_hop {
+        "relay-stall-terminal-via-middle"
+    } else {
+        "relay-stall-terminal-only"
+    };
     let lab = Lab::new().await.unwrap();
     let r = relay(&lab, s, "relay", None).await;
     let ra = router(&lab, "left", Net::Strict).await;
@@ -137,12 +151,25 @@ async fn established_terminal_old_uplink_delay() {
             "1",
         ],
     );
+    let initial_delay_ms = if peer_hop { 0 } else { 124 };
+    let initial_delay = format!("{initial_delay_ms}ms");
     command(
         &r.dev,
         "tc",
         &[
-            "qdisc", "add", "dev", &interface, "parent", "1:3", "handle", "30:", "netem", "delay",
-            "124ms", "limit", "1000",
+            "qdisc",
+            "add",
+            "dev",
+            &interface,
+            "parent",
+            "1:3",
+            "handle",
+            "30:",
+            "netem",
+            "delay",
+            &initial_delay,
+            "limit",
+            "1000",
         ],
     );
     command(
@@ -183,14 +210,67 @@ async fn established_terminal_old_uplink_delay() {
     let db = lab.add_device("b").uplink(rb.id()).build().await.unwrap();
     let a = node(s, da, "alpha", &[&r], &[]).await;
     let b = node(s, db, "beta", &[&r], &[]).await;
+    let middle = if peer_hop {
+        let public = router(&lab, "public", Net::Public).await;
+        let device = lab
+            .add_device("middle")
+            .uplink(public.id())
+            .build()
+            .await
+            .unwrap();
+        // Before the impairment the steady-state selector should prefer
+        // the public relay. The middle still has ample interactive capacity.
+        slow(&device, Duration::from_millis(70)).await;
+        let middle = node(s, device, "middle", &[&r], &[]).await;
+        for end in [&a, &b] {
+            khor_node::config::set(&end.home.0, "peer-hop", "off").unwrap();
+        }
+        Some(middle)
+    } else {
+        None
+    };
     tokio::time::sleep(Duration::from_secs(3)).await;
-    mesh(&[&a, &b]).await;
+    let mut peers = vec![&a, &b];
+    peers.extend(middle.iter());
+    mesh(&peers).await;
     for (from, to) in [(&a, &b), (&b, &a)] {
         from.until(to, Duration::from_secs(60), |l| {
             l.hop == Hop::Relay && l.rtt_ms.is_some()
         })
         .await
         .expect("both residents use the actual single relay");
+    }
+    if let Some(middle) = &middle {
+        for end in [&a, &b] {
+            end.until(middle, Duration::from_secs(30), |link| {
+                link.hop == Hop::Direct && link.rtt_ms.is_some()
+            })
+            .await
+            .expect("the middle has a healthy first leg from both ends");
+        }
+        let (via, target) = (middle.id.clone(), b.id.clone());
+        tokio::time::timeout(Duration::from_secs(35), async {
+            loop {
+                let (via, target) = (via.clone(), target.clone());
+                if a.with(move |node| async move {
+                    node.devices().unwrap().iter().any(|d| {
+                        d.id == via
+                            && node.roads_of(d).iter().any(|road| {
+                                road.to == target
+                                    && road.road == khor_core::RoadKind::Direct
+                                    && road.ms.is_some()
+                            })
+                    })
+                })
+                .await
+                {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(250)).await;
+            }
+        })
+        .await
+        .expect("alpha knows that the middle has a healthy onward leg");
     }
     let cwd = b.home.0.join("terminal-stall");
     std::fs::create_dir_all(&cwd).unwrap();
@@ -273,47 +353,46 @@ async fn established_terminal_old_uplink_delay() {
             "3200ms", "limit", "1000",
         ],
     );
-    in_router(
-        "tc",
-        &[
-            "filter",
-            "add",
-            "dev",
-            wan,
-            "protocol",
-            "ip",
-            "parent",
-            "1:",
-            "prio",
-            "2",
-            "u32",
-            "match",
-            "ip",
-            "protocol",
-            "6",
-            "0xff",
-            "match",
-            "ip",
-            "src",
-            &format!("{a_ip}/32"),
-            "match",
-            "ip",
-            "dst",
-            &format!("{relay_ip}/32"),
-            "match",
-            "ip",
-            "sport",
-            &old_port.to_string(),
-            "0xffff",
-            "match",
-            "ip",
-            "dport",
-            &port.to_string(),
-            "0xffff",
-            "flowid",
-            "1:3",
-        ],
-    );
+    let source_match = old_port.to_string();
+    let relay_port = port.to_string();
+    let source = format!("{a_ip}/32");
+    let destination = format!("{relay_ip}/32");
+    let mut filter = vec![
+        "filter",
+        "add",
+        "dev",
+        wan,
+        "protocol",
+        "ip",
+        "parent",
+        "1:",
+        "prio",
+        "2",
+        "u32",
+        "match",
+        "ip",
+        "protocol",
+        "6",
+        "0xff",
+        "match",
+        "ip",
+        "src",
+        &source,
+        "match",
+        "ip",
+        "dst",
+        &destination,
+        "match",
+        "ip",
+        "dport",
+        &relay_port,
+        "0xffff",
+    ];
+    if !peer_hop {
+        filter.extend(["match", "ip", "sport", &source_match, "0xffff"]);
+    }
+    filter.extend(["flowid", "1:3"]);
+    in_router("tc", &filter);
     command(
         &r.dev,
         "tc",
@@ -330,9 +409,9 @@ async fn established_terminal_old_uplink_delay() {
             "schema":1,"revision":"old_flow_uplink_delay_v2","event":"manifest",
             "alpha_public_ip":a_ip,"relay_port":port,"interface":interface,"route":route,
             "before_shape":before_shape,"after_shape":after_shape,"wan_filter":wan_filter,"old_tcp_flows":expected,
-            "initial_delay_us":124000,"post_delay_us":3200000,"post_fault_terminal_commands":2,
+            "initial_delay_us":initial_delay_ms*1000,"post_delay_us":3200000,"post_fault_terminal_commands":2,
             "terminal_caller_us":9000000,"flow_period_us":200000,
-            "no_drop_reset_or_address_change":true,
+            "all_relay_tcp_delayed":peer_hop,"no_drop_reset_or_address_change":true,
         })
     );
     let probe_url = format!("{}/ping", r.url.trim_end_matches('/'));
@@ -354,6 +433,11 @@ async fn established_terminal_old_uplink_delay() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let fresh_probe = a.dev.spawn_command_sync(probe).unwrap();
+    if peer_hop {
+        for end in [&a, &b] {
+            khor_node::config::set(&end.home.0, "peer-hop", "on").unwrap();
+        }
+    }
     fault_tx.send(()).unwrap();
     tokio::pin!(terminal);
     let mut clock = tokio::time::interval(Duration::from_millis(200));
@@ -378,9 +462,10 @@ async fn established_terminal_old_uplink_delay() {
             "reverse_journal":b.journal(Some(&a)),
         })
     );
-    assert!(
+    assert_eq!(
         fresh.status.success(),
-        "fresh relay should remain reachable"
+        !peer_hop,
+        "the fresh relay is slow only in the middle case"
     );
     let recovered = outcomes
         .iter()
@@ -394,15 +479,23 @@ async fn established_terminal_old_uplink_delay() {
         .any(|flow| flow != &json!([port, old_port]));
     crate::lab::sample_diagnostics(s, &a);
     crate::lab::sample_diagnostics(s, &b);
+    let forwarded = a
+        .journal(Some(&b))
+        .iter()
+        .any(|row| row["e"] == "hop" && !row["via"].is_null())
+        || b.journal(Some(&a))
+            .iter()
+            .any(|row| row["e"] == "hop" && !row["via"].is_null());
+    let recovery = if peer_hop { forwarded } else { replaced };
     result(
         s,
-        recovered && once && replaced,
+        recovered && once && recovery,
         format!(
-            "each answer under two seconds={recovered}, exact input={once}, old TCP replaced={replaced}"
+            "each answer under two seconds={recovered}, exact input={once}, old TCP replaced={replaced}, peer hop opened={forwarded}"
         ),
     );
     assert!(
-        recovered && once && replaced,
+        recovered && once && recovery,
         "open terminal should recover in place without replaying input"
     );
 }

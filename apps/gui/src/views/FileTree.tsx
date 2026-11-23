@@ -29,6 +29,7 @@ import { EmptyState, RegionState, Waiting } from "@/components/RegionState";
 import { fetchLs, pullFile, makeDir, makeFile, renamePath, type DirListing } from "@/api";
 import { useHereHosts } from "@/lib/here";
 import { useHidden } from "@/hooks/use-hidden";
+import { beginDirectoryTiming, pendingDirectoryTiming, reportDirectoryTiming, startDirectoryRequest } from "@/lib/directory-timing";
 import { useDirectoryWatch } from "@/hooks/use-directory-watch";
 import { directoryAliases, directoryScopeIsNative, directoryWatchScopes, type DirectoryWatchState } from "@/lib/directory-watch";
 import { EditableName } from "@/components/EditableName";
@@ -295,8 +296,10 @@ export function FileTree({
       requests.current.set(path, request);
       const latest = () => requests.current.get(path) === request;
       if (path === root) setRootAskedAt(Date.now());
+      const noteReply = startDirectoryRequest(machine, path);
       fetchLs(machine, path)
         .then((l) => {
+          noteReply?.();
           if (!latest()) return;
           setListings((was) => new Map(was).set(path, l));
           // An answer that lands after 停止等待 is still the answer.
@@ -308,6 +311,7 @@ export function FileTree({
           });
         })
         .catch((e: unknown) => {
+          noteReply?.();
           if (latest()) setFailed((was) => new Map(was).set(path, String(e instanceof Error ? e.message : e)));
         })
         .finally(() => {
@@ -323,6 +327,33 @@ export function FileTree({
     // `tries` is 重试 asking for a path taken off `asked`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [machine, want, tries, hidden, watchActive]);
+
+  useEffect(() => {
+    const navigation = pendingDirectoryTiming(machine);
+    const tree = treeElement.current;
+    if (!navigation || !tree || hidden || !watchActive) return;
+    const { path } = navigation;
+    if (path !== root && !expanded.has(path)) return;
+    if (failed.has(path) && !tree.closest('[inert], [hidden], [aria-hidden="true"]')) {
+      reportDirectoryTiming(navigation, "refused");
+      return;
+    }
+    if (!listings.has(path)) return;
+    let secondFrame: number | undefined;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        if (!document.hidden && tree.isConnected && tree.getClientRects().length &&
+            getComputedStyle(tree).visibility === "visible" &&
+            !tree.closest('[inert], [hidden], [aria-hidden="true"]')) {
+          reportDirectoryTiming(navigation, "visible");
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame !== undefined) cancelAnimationFrame(secondFrame);
+    };
+  }, [machine, root, expanded, listings, failed, hidden, watchActive]);
 
   /**
    * **A directory remembered open and deleted since leaves quietly**
@@ -467,8 +498,9 @@ export function FileTree({
   const toggle = (full: string) => {
     // A cached answer is current only where the watch can hear changes.
     // Keep it on screen while reopening reads the level again.
-    if (!expanded.has(full) && !coverage.current(full)) {
-      refresh([full]);
+    if (!expanded.has(full)) {
+      beginDirectoryTiming(machine, full);
+      if (!coverage.current(full)) refresh([full]);
     }
     setExpanded((was) => {
       const now = new Set(was);

@@ -31,4 +31,34 @@ try{
    console.log('PASS viewport resume without OS resize:',event);
   }finally{await page.close();}
  }
+ const page=await browser.newPage({viewport:{width:390,height:844}});
+ try{
+  await page.setContent('<!doctype html><textarea inputmode="text"></textarea>');
+  await page.evaluate(()=>{
+   const value=new EventTarget();
+   Object.assign(value,{height:844,width:390,offsetTop:0,scale:1});
+   Object.defineProperty(window,'visualViewport',{configurable:true,value});
+  });
+  await page.addScriptTag({content:built.outputFiles[0].text+';viewport.followVisualViewport();'});
+  await page.locator('textarea').focus();
+  // WebKit can pan the shortened viewport up to its old bottom edge.
+  // A late sample with the same pan must still see the height loss.
+  await page.evaluate(()=>{
+   Object.assign(visualViewport,{height:500,offsetTop:344});
+   visualViewport.dispatchEvent(new Event('resize'));
+  });
+  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--app-h')),'500px','A panned software keyboard still reduces the shell');
+  await page.waitForFunction(()=>viewport.keyboardShown());
+  await page.evaluate(()=>viewport.holdFoot(viewport.keyboardCover()));
+  await page.evaluate(()=>{
+   Object.assign(visualViewport,{height:844,offsetTop:0});
+   visualViewport.dispatchEvent(new Event('resize'));
+  });
+  await page.waitForFunction(()=>!viewport.keyboardShown());
+  assert.equal(await page.evaluate(()=>document.documentElement.style.getPropertyValue('--app-h')),'500px','A keyboard panel retains the same space when the system keyboard hides');
+  await page.evaluate(()=>viewport.holdFoot(null));
+  assert.equal(await page.evaluate(()=>document.documentElement.hasAttribute('data-keyboard')),false);
+  console.log('PASS panned keyboard and stable foot handoff');
+ }finally{await page.close();}
+
 }finally{await browser.close();}

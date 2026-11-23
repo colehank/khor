@@ -1,4 +1,5 @@
 """Small W3C client for the pinned Appium/XCUITest simulator probe."""
+from contextlib import suppress
 import json
 import os
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 
-def keyboard_probe(cache, simulator, identifier, entry, report):
+def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_documents=None):
     tools = cache / 'mobile-tools/appium-3.9.0-xcuitest-12.12.4'
     binary = tools / 'node_modules/.bin/appium'
     environment = dict(os.environ, APPIUM_HOME=str(tools / 'drivers'))
@@ -45,11 +46,18 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
                         break
                 except OSError:
                     time.sleep(.2)
-            result = request('POST', '/session', {'capabilities': {'alwaysMatch': {
+            capabilities = {
                 'platformName':'iOS', 'appium:automationName':'XCUITest', 'appium:udid':simulator,
                 'appium:bundleId':identifier, 'appium:noReset':True,
                 'appium:connectHardwareKeyboard':False, 'appium:forceSimulatorSoftwareKeyboardPresence':True,
-                'appium:newCommandTimeout':180, 'appium:webviewConnectTimeout':60000}}})
+                'appium:newCommandTimeout':180, 'appium:webviewConnectTimeout':60000}
+            if terminal_documents:
+                # Keep the already booted hosted simulator. Opening its UI
+                # would restart it while WebDriverAgent is being prepared.
+                capabilities.update({'appium:isHeadless':True, 'appium:skipLogCapture':True,
+                                     'appium:wdaLaunchTimeout':180000, 'appium:showXcodeLog':True})
+            result = request('POST', '/session', {'capabilities': {'alwaysMatch': capabilities}},
+                             timeout=600 if terminal_documents else 240)
             session = '/session/' + result['sessionId']
             def command(path, value=None, method='POST'):
                 return request(method, session + path, value)
@@ -78,6 +86,8 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
                 (report / 'native-source.xml').write_text(command('/source', method='GET'))
                 subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report / 'ios-webview-failure.png')], check=True, timeout=30)
                 raise ValueError('The actual Khor Lab WebView is not available for inspection: ' + json.dumps(observed))
+            if terminal_documents:
+                return terminal_keyboard_check(command, terminal_documents, simulator, report)
             main_context()
             command('/timeouts', {'script':30000})
             seed = '''const done=arguments[arguments.length-1]; (async()=>{
@@ -174,3 +184,137 @@ def keyboard_probe(cache, simulator, identifier, entry, report):
                 server.wait(timeout=20)
             except subprocess.TimeoutExpired:
                 server.kill()
+
+
+def terminal_keyboard_check(command, documents, simulator, report):
+    """Tap the production terminal in WKWebView and observe UIKit's keyboard."""
+    samples = {}
+    serial = 0
+    state = """const box = document.querySelector('[data-terminal]');
+      const term = box?.__xterm;
+      if (!term || !term.rows) return null;
+      const r = box.getBoundingClientRect(), picker = document.querySelector('[data-files-panel]');
+      const buffer = term.buffer.active;
+      const prompt = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true).trimEnd() === 'preview %';
+      return {rows:term.rows, cols:term.cols, height:r.height, bottom:r.bottom,
+        screen:document.documentElement.clientHeight, visible:visualViewport.height,
+        prompt, mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
+
+    def wait_for(read, allowed, label, *, timeout=15):
+        last = None
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            last = read()
+            if allowed(last):
+                return last
+            time.sleep(.12)
+        raise ValueError(f'{label}: {last!r}')
+
+    def evaluate(script, *, timeout=15):
+        nonlocal serial
+        serial += 1
+        request = documents / 'keyboard-command.json'
+        pending = request.with_suffix('.tmp')
+        pending.write_text(json.dumps({'serial': serial, 'script': script}))
+        pending.replace(request)
+        reply = documents / 'keyboard-observation.json'
+        def read():
+            return json.loads(reply.read_text()) if reply.is_file() else {}
+        result = wait_for(read, lambda value: value.get('serial') == serial,
+                          'WKWebView did not answer an observation', timeout=timeout)
+        if 'error' in result:
+            raise ValueError(result['error'])
+        return result.get('value')
+
+    def native_keyboard():
+        return bool(command('/elements', {'using':'class name','value':'XCUIElementTypeKeyboard'}))
+
+    def tap(script, keyboard=None):
+        point = wait_for(lambda: evaluate(script), bool, 'No visible tap target')
+        command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
+        if keyboard is not None:
+            wait_for(native_keyboard, lambda visible: visible == keyboard, 'Wrong UIKit keyboard state')
+
+    def button(selector):
+        return f"""const button=document.querySelector({json.dumps(selector)});
+          const box=button?.getBoundingClientRect();
+          return box?.width&&box.height?{{x:box.x+box.width/2,y:box.y+box.height/2}}:null;"""
+
+    def sizes():
+        return evaluate("return await (await fetch('/api/__ai_preview/terminal-sizes',"
+                        "{method:'POST',body:'{}'})).json();")
+
+    def grid(value):
+        return {key:value[key] for key in ('rows','cols','height','bottom')}
+
+    try:
+        # Appium can return before the probe's WKWebView has loaded its first
+        # page. Wait for that page before timing interactive keyboard actions.
+        started = time.monotonic()
+        evaluate("return document.readyState;", timeout=60)
+        print(f'WKWebView responded {time.monotonic() - started:.1f}s after Appium was ready')
+        down = wait_for(lambda: evaluate(state), lambda s: s and s['rows'] > 10 and s['prompt'],
+                        'Terminal fixture never rendered its input prompt')
+        samples['down'] = down
+        tap("""const term=document.querySelector('[data-terminal]')?.__xterm;
+          if(!term) return null;
+          const screen=term.element.querySelector('.xterm-screen').getBoundingClientRect();
+          const buffer=term.buffer.active;
+          const line=buffer.cursorY+buffer.baseY;
+          if (!buffer.getLine(line)?.translateToString(true).startsWith('preview %')) return null;
+          const row=line-buffer.viewportY;
+          return {x:screen.x+(buffer.cursorX+.5)*screen.width/term.cols,
+                  y:screen.y+(row+.5)*screen.height/term.rows};""", keyboard=True)
+        up = wait_for(lambda:evaluate(state), lambda s:s and s['rows']<down['rows'] and
+                      s['height']<down['height'], 'UIKit keyboard covered an unfitted terminal')
+        samples['keyboard'] = up
+        resized = wait_for(sizes, lambda rows:rows and rows[-1]['rows']==up['rows'], 'PTY never received the smaller grid')
+        attach = button('[data-term-key="attach"]')
+        for close in ('cancel','toggle','send'):
+            tap(attach, keyboard=False)
+            panel = wait_for(lambda:evaluate(state), lambda s:s and s['panel'] and
+                             s['visible']>=s['screen']-1, 'Picker failed to replace the system keyboard')
+            samples[close] = panel
+            expected_top = up['visible']
+            if abs(panel['panel']['top']-expected_top)>2 or abs(panel['panel']['bottom']-panel['screen'])>2:
+                raise ValueError(f'Picker is outside the keyboard band: {panel}')
+            if grid(panel) != grid(up) or sizes() != resized:
+                raise ValueError(f'Opening attachments resized the terminal: {panel}')
+            if close == 'send':
+                evaluate("""const input=document.querySelector('[data-files-input]');
+                  const selected=new DataTransfer();
+                  selected.items.add(new File(['keyboard'], 'keyboard.txt'));
+                  input.files=selected.files;
+                  input.dispatchEvent(new Event('change',{bubbles:true}));""")
+            tap(attach if close == 'toggle' else button(f'[data-files-{close}]'), keyboard=True)
+            returned = wait_for(lambda:evaluate(state), lambda s:s and not s['panel'] and
+                                abs(s['visible']-up['visible'])<=1, 'Original keyboard did not return')
+            if grid(returned) != grid(up) or sizes() != resized:
+                raise ValueError(f'Closing attachments resized the terminal: {returned}')
+            samples[f'after_{close}'] = returned
+        evaluate("""window.__tabProbe = [];
+          document.querySelector('[data-terminal]').__xterm.onData(value => window.__tabProbe.push(value));""")
+        for key, expected in (('tab', '\t'), ('backtab', '\x1b[Z')):
+            selector = f'[data-term-key="{key}"]'
+            evaluate(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest',inline:'center'}});")
+            for side in ('left', 'right'):
+                position = f"""const cap=document.querySelector({json.dumps(selector)});
+                  const box=cap.getBoundingClientRect();
+                  const row=cap.closest('[data-term-keys-scroll]').getBoundingClientRect();
+                  const left=Math.max(box.left,row.left), right=Math.min(box.right,row.right);
+                  if(right-left<12) return null;
+                  return {{x:{'left+5' if side == 'left' else 'right-5'},y:box.y+box.height/2}};"""
+                tap(position, keyboard=True)
+                actual = evaluate('return window.__tabProbe.splice(0);')
+                if actual != [expected]:
+                    raise ValueError(f'{key} from the {side} edge sent {actual!r}')
+        samples['tab_key_edges'] = True
+        return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
+                    automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
+    except Exception:
+        with suppress(subprocess.TimeoutExpired):
+            subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report/'terminal-keyboard.png')],
+                           check=False, timeout=30)
+        raise
+    finally:
+        (report / 'terminal-keyboard-samples.json').write_text(json.dumps(samples, indent=2))

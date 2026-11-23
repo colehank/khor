@@ -411,6 +411,8 @@ pub(crate) struct Wires {
     slots: Mutex<HashMap<(String, Proto), Slot>>,
     dialing: Mutex<HashMap<(String, Proto), DialLock>>,
     pending_dials: Mutex<HashMap<String, std::sync::Weak<PendingDialState>>>,
+    /// Coalesces foreground path probes requested by simultaneous streams.
+    route_demands: Mutex<HashMap<iroh::EndpointId, Instant>>,
     /// Replaced when all old-network dial waits are forgiven.
     hop_generation: Mutex<HopGeneration>,
     /// A network change not yet judged: wires not heard since it are
@@ -724,6 +726,34 @@ pub(crate) struct Reading {
 }
 
 impl Wires {
+    /// A held peer has actually sent something since the switch. A relay
+    /// reporting its own connection up is not evidence about any peer.
+    pub(crate) fn heard_peer_since(&self, since: Instant) -> bool {
+        self.slots
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .values()
+            .any(|slot| {
+                slot.heard.is_some_and(|heard| heard >= since)
+                    && slot
+                        .conn
+                        .as_ref()
+                        .is_some_and(|conn| conn.close_reason().is_none())
+            })
+    }
+
+    pub(crate) fn begin_route_demand(&self, peer: iroh::EndpointId) -> bool {
+        let now = Instant::now();
+        let mut demands = self.route_demands.lock().unwrap_or_else(|p| p.into_inner());
+        demands.retain(|_, until| *until > now);
+        if let std::collections::hash_map::Entry::Vacant(entry) = demands.entry(peer) {
+            entry.insert(now + crate::hop::HOP_WITHIN);
+            true
+        } else {
+            false
+        }
+    }
+
     pub(crate) fn pending_dial(&self, id: &str) -> PendingDial {
         let mut pending = self.pending_dials.lock().unwrap_or_else(|p| p.into_inner());
         pending.retain(|_, state| state.strong_count() != 0);
@@ -2041,6 +2071,10 @@ impl Wires {
             token: Arc::new(()),
             changed_at: Some(Instant::now()),
         };
+        self.route_demands
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clear();
         for slot in self
             .slots
             .lock()
