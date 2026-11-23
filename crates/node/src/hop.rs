@@ -934,7 +934,9 @@ impl Node {
                 return;
             }
             let observation = MissObservation::new(self.wires.hop_epoch());
-            let Ok(all) = self.devices() else { return };
+            let Ok(all) = self.routing_devices().await else {
+                return;
+            };
             let me = self.device_str().to_owned();
             let mine = all
                 .iter()
@@ -1540,7 +1542,9 @@ impl Node {
         {
             return;
         }
-        let Ok(all) = self.devices() else { return };
+        let Ok(all) = self.routing_devices().await else {
+            return;
+        };
         let me = self.device_str().to_owned();
         let mine = all
             .iter()
@@ -1609,6 +1613,14 @@ impl Node {
         }
     }
 
+    async fn hop_member(&self, id: &str, from: &str) -> Option<crate::DeviceInfo> {
+        if id == self.device_str() || id == from || crate::pause::peer_on(self.root(), id) {
+            return None;
+        }
+        let device = self.link_admitted_device(id).await.ok()?.ok()?;
+        (device.sponsor.is_none() && !crate::pause::peer_on(self.root(), id)).then_some(device)
+    }
+
     /// **One hop ask on a tunnel stream** (B's or Y's half), after the
     /// stream's first words named it. `paired` is the tunnel's own gate
     /// for the machine on the other end of this stream.
@@ -1634,28 +1646,15 @@ impl Node {
             return refuse(send, REFUSED).await;
         }
         let me = self.device_str().to_owned();
-        let member = |id: &str| {
-            id != me
-                && id != from
-                && !crate::pause::peer_on(self.root(), id)
-                && self.admit(id).is_ok()
-                && self
-                    .devices()
-                    .is_ok_and(|all| all.iter().any(|d| d.id == id && d.sponsor.is_none()))
-        };
         let prepared = matches!(ask, Ask::PrepareTo(_) | Ask::PrepareFrom(_));
         match ask {
             // B: splice `from` (X) to `to` (Y).
             Ask::To(to) | Ask::PrepareTo(to) => {
                 let y = to.to_string();
-                if !member(&y) || matches!(self.carry.carrier(&to), Some(Carrier::Hop { .. })) {
+                if matches!(self.carry.carrier(&to), Some(Carrier::Hop { .. })) {
                     return refuse(send, REFUSED).await;
                 }
-                let Some(d) = self
-                    .devices()
-                    .ok()
-                    .and_then(|all| all.into_iter().find(|d| d.id == y))
-                else {
+                let Some(d) = self.hop_member(&y, from).await else {
                     return refuse(send, REFUSED).await;
                 };
                 // **B's own word on Y first** (net-dial B3): a machine B is
@@ -1731,7 +1730,9 @@ impl Node {
             // Y: this stream is the link to `from`'s asker (X), via B.
             Ask::From(x) | Ask::PrepareFrom(x) => {
                 let asker = x.to_string();
-                if !member(&asker) || matches!(self.carry.carrier(&x), Some(Carrier::Ssh)) {
+                if matches!(self.carry.carrier(&x), Some(Carrier::Ssh))
+                    || self.hop_member(&asker, from).await.is_none()
+                {
                     return refuse(send, REFUSED).await;
                 }
                 // This end asked for a hop to the asker too, and its id is
@@ -1754,9 +1755,9 @@ impl Node {
                 };
                 if !self.hop_on()
                     || self.carrying().is_none()
-                    || !member(&asker)
                     || matches!(self.carry.carrier(&x), Some(Carrier::Ssh))
                     || (me < asker && asking(&me, &asker))
+                    || self.hop_member(&asker, from).await.is_none()
                 {
                     return;
                 }

@@ -328,16 +328,23 @@ impl Node {
     /// Run the same trust gate on storage workers. The outer error means
     /// the state could not be read, which is separate from a trust refusal.
     pub(crate) async fn link_admission(&self, remote: &str) -> Result<Result<(), String>, String> {
+        self.link_admitted_device(remote)
+            .await
+            .map(|reply| reply.map(drop))
+    }
+
+    pub(crate) async fn link_admitted_device(
+        &self,
+        remote: &str,
+    ) -> Result<Result<crate::DeviceInfo, String>, String> {
         let root = self.root().to_path_buf();
         let peer = self.peer;
         let remote = remote.to_owned();
+        let reader = self.device_reader.clone();
         self.storage_io
             .control
             .admit(move || {
-                let loaded = khor_sync::store::load_pile::<DeviceDoc>(
-                    &khor_sync::devices::devices_dir(&root),
-                    peer,
-                )?;
+                let devices = reader.read(&khor_sync::devices::devices_dir(&root), peer)?;
                 let anchor = match std::fs::read_to_string(root.join(".khor").join(ROOT_PUB)) {
                     Ok(text) => Some(
                         nt::id_from_hex(text.trim())
@@ -347,7 +354,7 @@ impl Node {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                     Err(_) => return Err(msg::storage_io_busy().to_owned()),
                 };
-                Ok(admit_from_table(&loaded.doc, anchor.as_ref(), &remote))
+                Ok(admitted_from_table(&devices, anchor.as_ref(), &remote))
             })
             .await
     }
@@ -1926,11 +1933,19 @@ fn admit_from_table(
     anchor: Option<&iroh::PublicKey>,
     remote: &str,
 ) -> Result<(), String> {
-    if doc.get(remote).is_none() {
-        return Err(msg::not_paired().into());
-    }
+    admitted_from_table(doc, anchor, remote).map(drop)
+}
+
+fn admitted_from_table(
+    doc: &DeviceDoc,
+    anchor: Option<&iroh::PublicKey>,
+    remote: &str,
+) -> Result<crate::DeviceInfo, String> {
+    let device = doc
+        .get(remote)
+        .ok_or_else(|| msg::not_paired().to_owned())?;
     match standing_in_table(doc, anchor, remote, crate::now_ms()) {
-        Standing::Legacy | Standing::Trusted => Ok(()),
+        Standing::Legacy | Standing::Trusted => Ok(device),
         Standing::Pending => Err(msg::not_in_roster().into()),
         Standing::Revoked => Err(msg::admission_revoked().into()),
     }
@@ -2426,8 +2441,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn admission_separates_waiting_approval_from_revoked_access() {
+    #[tokio::test]
+    async fn admission_separates_waiting_approval_from_revoked_access() {
         let (ta, tb) = (
             TempTree::fresh("trust-admission-a"),
             TempTree::fresh("trust-admission-b"),
@@ -2436,12 +2451,22 @@ mod tests {
         let b = node(&tb, "beta");
         join_through_a_member(&a, &b);
         assert_eq!(a.admit(b.device_str()).unwrap_err(), msg::not_in_roster());
+        assert_eq!(
+            a.link_admission(b.device_str()).await.unwrap().unwrap_err(),
+            msg::not_in_roster()
+        );
         assert!(a.pending().unwrap().iter().any(|r| r.id == b.device_str()));
         a.approve_here("beta").unwrap();
         assert_eq!(a.admit(b.device_str()), Ok(()));
+        assert_eq!(a.link_admission(b.device_str()).await, Ok(Ok(())));
+        assert_eq!(a.link_admission(b.device_str()).await, Ok(Ok(())));
         a.revoke_here("beta").unwrap();
         assert_eq!(
             a.admit(b.device_str()).unwrap_err(),
+            msg::admission_revoked()
+        );
+        assert_eq!(
+            a.link_admission(b.device_str()).await.unwrap().unwrap_err(),
             msg::admission_revoked()
         );
         assert!(

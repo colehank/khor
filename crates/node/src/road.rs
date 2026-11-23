@@ -539,22 +539,90 @@ pub fn receipt(root: &Path, digest: &str) -> Option<Receipt> {
 /// `dir` still at the size it landed. `dir` is canonical (a listing's).
 /// Reads every receipt, so it is asked only beside a listing.
 pub fn arrivals(root: &Path, dir: &Path) -> std::collections::HashMap<String, (String, i64)> {
-    let mut out = std::collections::HashMap::new();
-    let Ok(rd) = std::fs::read_dir(received_dir(root)) else {
-        return out;
-    };
-    let mut canon: std::collections::HashMap<PathBuf, Option<PathBuf>> = Default::default();
-    for e in rd.flatten() {
-        let p = e.path();
-        if p.extension().is_none_or(|x| x != "json") {
-            continue;
+    let (receipts, _) = read_receipts(&received_dir(root));
+    arrivals_from(&receipts, dir)
+}
+
+#[derive(Default)]
+pub(crate) struct Receipts(Mutex<Option<ReceiptSnapshot>>);
+
+struct ReceiptSnapshot {
+    modified: std::time::SystemTime,
+    read_at: Instant,
+    entries: Arc<Vec<Receipt>>,
+}
+
+impl Receipts {
+    pub(crate) fn in_directory(&self, root: &Path, dir: &Path) -> HashMap<String, (String, i64)> {
+        let path = received_dir(root);
+        let modified = || std::fs::metadata(&path).and_then(|meta| meta.modified());
+        let Ok(before) = modified() else {
+            return HashMap::new();
+        };
+        let cached = self
+            .0
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .filter(|kept| {
+                kept.modified == before && kept.read_at.elapsed() < Duration::from_secs(5)
+            })
+            .map(|kept| kept.entries.clone());
+        if let Some(receipts) = cached {
+            return arrivals_from(&receipts, dir);
         }
-        let Some(r) = std::fs::read(&p)
-            .ok()
-            .and_then(|t| serde_json::from_slice::<Receipt>(&t).ok())
-        else {
+        let read_at = Instant::now();
+        let (receipts, complete) = read_receipts(&path);
+        let receipts = Arc::new(receipts);
+        // record and forget replace or remove names in this directory. Do
+        // not retain a scan that overlapped a writer or could not read a row.
+        if complete && modified().is_ok_and(|after| before == after) {
+            let mut kept = self.0.lock().unwrap_or_else(|p| p.into_inner());
+            if kept
+                .as_ref()
+                .is_none_or(|snapshot| snapshot.read_at < read_at)
+            {
+                *kept = Some(ReceiptSnapshot {
+                    modified: before,
+                    read_at,
+                    entries: receipts.clone(),
+                });
+            }
+        }
+        arrivals_from(&receipts, dir)
+    }
+}
+
+fn read_receipts(path: &Path) -> (Vec<Receipt>, bool) {
+    let mut receipts = Vec::new();
+    let Ok(rows) = std::fs::read_dir(path) else {
+        return (receipts, false);
+    };
+    let mut complete = true;
+    for row in rows {
+        let Ok(row) = row else {
+            complete = false;
             continue;
         };
+        let path = row.path();
+        if path.extension().is_none_or(|x| x != "json") {
+            continue;
+        }
+        let Ok(bytes) = std::fs::read(path) else {
+            complete = false;
+            continue;
+        };
+        if let Ok(receipt) = serde_json::from_slice(&bytes) {
+            receipts.push(receipt);
+        }
+    }
+    (receipts, complete)
+}
+
+fn arrivals_from(receipts: &[Receipt], dir: &Path) -> HashMap<String, (String, i64)> {
+    let mut out = HashMap::new();
+    let mut canon = HashMap::new();
+    for r in receipts {
         let (Some(parent), Some(name)) =
             (r.path.parent(), r.path.file_name().and_then(|n| n.to_str()))
         else {
@@ -574,7 +642,7 @@ pub fn arrivals(root: &Path, dir: &Path) -> std::collections::HashMap<String, (S
             .get(name)
             .is_none_or(|(_, at): &(String, i64)| r.at_ms > *at);
         if newer {
-            out.insert(name.to_owned(), (r.from, r.at_ms));
+            out.insert(name.to_owned(), (r.from.clone(), r.at_ms));
         }
     }
     out
@@ -587,10 +655,13 @@ pub fn mark_arrivals(root: &Path, dir: &Path, entries: &mut [crate::proto::DirEn
     if !entries.iter().any(|e| !e.dir) {
         return;
     }
-    let got = arrivals(root, dir);
-    if got.is_empty() {
-        return;
-    }
+    apply_arrivals(entries, &arrivals(root, dir));
+}
+
+pub(crate) fn apply_arrivals(
+    entries: &mut [crate::proto::DirEntry],
+    got: &HashMap<String, (String, i64)>,
+) {
     for e in entries.iter_mut().filter(|e| !e.dir) {
         if let Some((from, at)) = got.get(&e.name) {
             e.from = (!from.is_empty()).then(|| from.clone());

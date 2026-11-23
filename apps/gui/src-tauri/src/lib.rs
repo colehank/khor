@@ -5345,6 +5345,8 @@ fn watch_the_path() {
         fn nw_path_monitor_start(monitor: *mut c_void);
         fn nw_path_get_status(path: *mut c_void) -> i32;
         fn nw_path_uses_interface_type(path: *mut c_void, kind: i32) -> bool;
+        fn nw_path_has_ipv4(path: *mut c_void) -> bool;
+        fn nw_path_has_ipv6(path: *mut c_void) -> bool;
     }
     unsafe extern "C" {
         fn dispatch_get_global_queue(identifier: isize, flags: usize) -> *mut c_void;
@@ -5354,7 +5356,9 @@ fn watch_the_path() {
     // re-evaluated on the same interface, and each `network_changed` puts
     // every wire on trial. The path's status and which of Wi-Fi /
     // cellular / wired it uses are what decide whether the old wires can
-    // still be alive; the first report, at start, is the baseline.
+    // still be alive. Address-family changes on the same interface also
+    // affect reachability. Actual IP changes are watched by iroh.
+    // The first report, at start, is the baseline.
     // `nw_interface_type_t`: wifi 1, cellular 2, wired 3.
     const NW_PATH_STATUS_SATISFIED: u32 = 1;
     let last = std::sync::atomic::AtomicU32::new(u32::MAX);
@@ -5368,7 +5372,9 @@ fn watch_the_path() {
                     kinds |= bit;
                 }
             }
-            status << 8 | kinds
+            let families =
+                (u32::from(nw_path_has_ipv4(path)) << 3) | (u32::from(nw_path_has_ipv6(path)) << 4);
+            status << 8 | kinds | families
         };
         let was = last.swap(now, Ordering::Relaxed);
         if was == u32::MAX || was == now {

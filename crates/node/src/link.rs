@@ -1988,18 +1988,16 @@ impl Node {
                         let change = crate::journal::Change::Path;
                         node.wires.note(None, crate::journal::What::Network { source: change.key().to_owned() });
                         let path = std::sync::Arc::new(());
-                        let repair = MobileRepair {
-                            path: std::sync::Arc::downgrade(&path),
-                            began: std::time::Instant::now(),
-                        };
+                        let generation = std::sync::Arc::downgrade(&path);
                         let (n, e, wake, net_round, deaf) = (node.clone(), ep.clone(), wake.clone(), net_round.clone(), deaf.clone());
                         let task = services.spawn(async move {
                             tokio::time::sleep(MOBILE_PATH_SETTLE).await;
+                            let repair = MobileRepair { path: generation, began: std::time::Instant::now() };
+                            n.wires.network_changed();
                             // Network.framework already confirmed the change.
                             // Rebind even if the routes enumerated by iroh still
                             // include both Wi-Fi and cellular.
                             e.network_change_major().await;
-                            n.wires.network_changed();
                             net_round.ask(&n, &deaf, true, MOBILE_PATH_GRACE);
                             tokio::time::sleep(MOBILE_PATH_GRACE).await;
                             if n.wires.heard_peer_since(repair.began)
@@ -4636,7 +4634,8 @@ impl Node {
                             "tunnel_target_accepted",
                             || {
                                 serde_json::json!({"wire": reply_wire, "stream": send.id().to_string(),
-                                "alpn": reply_alpn, "paired": paired})
+                                    "alpn": reply_alpn, "paired": paired,
+                                    "connection_tag": incoming.upgrade().as_ref().and_then(connection_trace_tag)})
                             },
                         );
                         let conn = incoming.upgrade();
@@ -4671,14 +4670,17 @@ impl Node {
     /// (`Request::rides_early`) waits for `Some(true)` and is dropped on
     /// anything else — a replay of captured early data never completes a
     /// handshake, so it never reaches anything that changes something.
-    async fn handle<T: iroh::endpoint::ConnectionState>(
+    async fn handle<T: iroh::endpoint::ConnectionState + Clone + Send + 'static>(
         self: std::sync::Arc<Self>,
         conn: iroh::endpoint::Connection<T>,
         remote: String,
         ep: std::sync::Arc<iroh::Endpoint>,
         done: tokio::sync::watch::Receiver<Option<bool>>,
         observed_alpn: Option<Vec<u8>>,
-    ) -> Result<(), String> {
+    ) -> Result<(), String>
+    where
+        T::Data: Send + 'static,
+    {
         let seats = std::sync::Arc::new(tokio::sync::Semaphore::new(STREAMS_AT_ONCE));
         while let Ok((mut send, mut recv)) = conn.accept_bi().await {
             // Opt-in facts on this actual stream, with no timer or observer
@@ -4711,6 +4713,7 @@ impl Node {
             let reply_alpn = observed_alpn
                 .as_ref()
                 .map(|alpn| String::from_utf8_lossy(alpn).into_owned());
+            let trace_conn = accepted_at.map(|_| conn.clone());
             tokio::spawn(async move {
                 let mut seat = Some(seat);
                 let mut content_response = None;
@@ -4723,7 +4726,7 @@ impl Node {
                 // as it goes, not once — through the same gate as every
                 // other request.
                 let question = proto::question(&bytes);
-                let listing = matches!(&question, Ok(Request::Ls { .. }));
+                let operation = question.as_ref().ok().and_then(observed_operation);
                 let fetch_offset = match &question {
                     Ok(Request::FetchPath { offset, .. })
                     | Ok(Request::SatFetchPath { offset, .. }) => Some(*offset),
@@ -4882,16 +4885,14 @@ impl Node {
                     #[cfg(test)]
                     documents::flow_tests::reply_written(&wire_tag, &_resp);
                     let finished = send.finish();
-                    let observed = match (listing, fetch_offset, &_resp) {
-                        (true, _, Response::Dir { .. }) => {
-                            Some(("list_response_sent", "directory"))
-                        }
-                        (_, Some(_), Response::PathSlice { .. }) => {
-                            Some(("path_slice_response_sent", "fetch_path"))
-                        }
-                        _ => None,
-                    };
-                    if let Some((event, operation)) = observed.filter(|_| finished.is_ok()) {
+                    if let Some(operation) = operation.filter(|_| finished.is_ok()) {
+                        let event = match (&_resp, operation) {
+                            (Response::Dir { .. }, "directory") => "list_response_sent",
+                            (Response::PathSlice { .. }, "fetch_path") => {
+                                "path_slice_response_sent"
+                            }
+                            _ => "request_response_sent",
+                        };
                         khor_net::carry::observe_lifecycle(&remote, event, || {
                             let after_accept = |at| {
                                 accepted_at.zip(at).map(
@@ -4902,8 +4903,10 @@ impl Node {
                             };
                             serde_json::json!({
                                 "wire": reply_wire, "stream": send.id().to_string(),
+                                "connection_tag": trace_conn.as_ref().and_then(connection_trace_tag),
                                 "alpn": reply_alpn,
                                 "early": early, "operation": operation, "offset": fetch_offset,
+                                "outcome": observed_outcome(&_resp),
                                 "response_priority": observed_priority, "priority_applied": priority_applied,
                                 "frame_bytes": frame.len(), "timing_origin": "stream_accepted",
                                 "permit_asked_us": after_accept(permit_asked_at),
@@ -8939,11 +8942,27 @@ impl Node {
         &self,
         path: &str,
     ) -> Result<(std::path::PathBuf, Vec<proto::DirEntry>, bool), String> {
-        let (root, path) = (self.root().to_path_buf(), path.to_owned());
-        self.storage_io
+        let path = path.to_owned();
+        let (dir, mut entries, truncated) = self
+            .storage_io
             .file(&path)
-            .read(move || listed_with_arrivals(&root, &path))
-            .await
+            .read(move || crate::files::list_dir(&path))
+            .await?;
+        if entries.iter().any(|entry| !entry.dir) {
+            let (root, listed) = (self.root().to_path_buf(), dir.clone());
+            let arrivals = self.receipts.clone();
+            // The actual directory can be local while its optional receipt
+            // history lives on NFS. Give that history its own bounded lane.
+            if let Ok(got) = self
+                .storage_io
+                .receipts
+                .read(move || Ok(arrivals.in_directory(&root, &listed)))
+                .await
+            {
+                crate::road::apply_arrivals(&mut entries, &got);
+            }
+        }
+        Ok((dir, entries, truncated))
     }
 
     async fn stat_here(&self, path: &str) -> Result<(u64, u64, String), String> {
@@ -10396,40 +10415,37 @@ impl Node {
         // (`resolve_or_here`); through `resolve` alone it was refused as
         // 「这个机器名进不了路径」 — the directory picker's 本机 row
         // asked exactly that and drew nothing (2026-09-15).
-        let (channel, home) = self.resolve_or_here(machine)?;
-        if home == self.device() {
+        if machine.is_empty() {
             let (at, entries, truncated) = self.list_here(path).await?;
             return Ok((at.display().to_string(), entries, truncated));
         }
-        // Resolve proved the name microseconds ago, but two reads of
-        // one table can straddle a removal.
-        let target = self
-            .devices_loaded()?
-            .doc
-            .by_name(&channel)
-            .ok_or_else(|| msg::machine_left_table(&channel))?;
+        let all = self.routing_devices().await?;
+        let target = Self::resolve_device(&all, machine)?;
+        if crate::device_id_from_hex(&target.id)? == self.device() {
+            let (at, entries, truncated) = self.list_here(path).await?;
+            return Ok((at.display().to_string(), entries, truncated));
+        }
         // A satellite's home is its sponsor (附属机器批): the listing
         // runs there, over ssh — the same "ask home" this function
         // already is, with one more hop written in the table. On the
         // sponsor itself no wire is needed at all.
-        if let Some(sp) = target.sponsor.clone() {
+        if let Some(sp) = target.sponsor.as_deref() {
             if sp == self.device_str() {
-                let host = crate::satellite::Dest::of(&target)
-                    .ok_or_else(|| msg::sat_no_ssh_host(&channel))?;
+                let host = crate::satellite::Dest::of(target)
+                    .ok_or_else(|| msg::sat_no_ssh_host(&target.name))?;
                 let path = path.to_owned();
                 return tokio::task::spawn_blocking(move || crate::satellite::ls(&host, &path))
                     .await
                     .map_err(|e| e.to_string())?;
             }
-            let sponsor = self
-                .devices_loaded()?
-                .doc
-                .get(&sp)
-                .ok_or_else(|| msg::machine_left_table(&channel))?;
+            let sponsor = all
+                .iter()
+                .find(|row| row.id == sp)
+                .ok_or_else(|| msg::machine_left_table(&target.name))?;
             return match self
                 .ask_on(
                     ep,
-                    &sponsor,
+                    sponsor,
                     &Request::SatLs {
                         sat: target.id.clone(),
                         path: path.to_owned(),
@@ -10449,7 +10465,7 @@ impl Node {
         match self
             .ask_on(
                 ep,
-                &target,
+                target,
                 &Request::Ls {
                     path: path.to_owned(),
                 },
@@ -14032,18 +14048,6 @@ mod last_links {
     }
 }
 
-/// A directory's listing with each received file's sender and landing
-/// time from its receipt (`road::mark_arrivals`, UX-48's storage row).
-/// **Blocking.**
-fn listed_with_arrivals(
-    root: &std::path::Path,
-    path: &str,
-) -> Result<(std::path::PathBuf, Vec<proto::DirEntry>, bool), String> {
-    let (dir, mut entries, truncated) = crate::files::list_dir(path)?;
-    crate::road::mark_arrivals(root, &dir, &mut entries);
-    Ok((dir, entries, truncated))
-}
-
 /// A held wire to one machine, as a caller holds it: the connection, and
 /// who and what it is to ([`Node::line_to`]).
 pub(crate) struct Line {
@@ -14152,6 +14156,57 @@ async fn exchange(
     .map_err(|_| Miss::CallerExpired)?
 }
 
+fn observed_operation(req: &Request) -> Option<&'static str> {
+    match req {
+        Request::Ls { .. } | Request::SatLs { .. } => Some("directory"),
+        Request::Open { .. } | Request::NewShellRun { .. } => Some("session_open"),
+        Request::ContentRead { .. } => Some("session_read"),
+        Request::FetchPath { .. } | Request::SatFetchPath { .. } | Request::Fetch { .. } => {
+            Some("fetch_path")
+        }
+        Request::FetchTree { .. } | Request::SatFetchTree { .. } => Some("fetch_tree"),
+        Request::DocTransfer { .. } | Request::Versions { .. } => Some("sync"),
+        _ => None,
+    }
+}
+
+fn observed_outcome(response: &Response) -> &'static str {
+    match response {
+        Response::Refused { why } if why == msg::storage_io_busy() => "storage_busy",
+        Response::DocTransfer {
+            reply:
+                proto::DocTransferReply::Failed {
+                    kind: proto::DocTransferFailure::Busy,
+                    ..
+                }
+                | proto::DocTransferReply::State {
+                    state:
+                        proto::DocTransferState::Failed {
+                            kind: proto::DocTransferFailure::Busy,
+                            ..
+                        },
+                    ..
+                },
+        } => "sync_busy",
+        Response::Refused { .. } | Response::InventoryNotAdmitted { .. } => "refused",
+        Response::DocTransfer {
+            reply: proto::DocTransferReply::Failed { .. },
+        } => "sync_failed",
+        _ => "reply",
+    }
+}
+
+/// A tag shared by the two ends of this TLS connection. Hash the
+/// purpose-specific exporter and log only a short, non-secret identifier.
+pub(crate) fn connection_trace_tag<T: iroh::endpoint::ConnectionState>(
+    conn: &iroh::endpoint::Connection<T>,
+) -> Option<String> {
+    let mut proof = [0u8; 32];
+    conn.export_keying_material(&mut proof, b"EXPORTER-khor-workload-diagnostics-v1", b"")
+        .ok()?;
+    Some(blake3::hash(&proof).to_hex()[..16].to_owned())
+}
+
 /// Completed business replies in the existing opt-in lifecycle trace. Never
 /// includes a path or payload. An early answer's clock starts at its dial;
 /// an ordinary answer's starts at exchange, so those durations stay labelled.
@@ -14163,23 +14218,25 @@ fn observe_workload_reply(
     early: bool,
     elapsed: impl FnOnce() -> Duration,
 ) {
-    let (event, operation, offset, payload_bytes) = match (req, response) {
-        (Request::Ls { .. }, Response::Dir { .. }) => {
-            ("list_response_received", "directory", None, None)
-        }
-        (Request::FetchPath { offset, .. }, Response::PathSlice { bytes, .. }) => (
-            "path_slice_received",
-            "fetch_path",
-            Some(*offset),
-            Some(bytes.len()),
-        ),
-        _ => return,
+    let Some(operation) = observed_operation(req) else {
+        return;
+    };
+    let (event, offset, payload_bytes) = match (operation, req, response) {
+        ("directory", _, Response::Dir { .. }) => ("list_response_received", None, None),
+        (
+            _,
+            Request::FetchPath { offset, .. } | Request::SatFetchPath { offset, .. },
+            Response::PathSlice { bytes, .. },
+        ) => ("path_slice_received", Some(*offset), Some(bytes.len())),
+        _ => ("request_response_received", None, None),
     };
     khor_net::carry::observe_lifecycle(conn.remote_id(), event, || {
         serde_json::json!({
             "wire": conn.stable_id(), "stream": stream.to_string(), "early": early,
+            "connection_tag": connection_trace_tag(conn),
             "alpn": String::from_utf8_lossy(conn.alpn()),
             "operation": operation, "offset": offset, "payload_bytes": payload_bytes,
+            "outcome": observed_outcome(response),
             "elapsed_us": elapsed().as_micros(),
             "timing_origin": if early { "early_dial_started" } else { "exchange_started" },
             "measurements": khor_net::path::path_facts(conn),
@@ -14226,7 +14283,7 @@ async fn exchange_inner(
                 "wire": conn.stable_id(), "stream": send.id().to_string(),
                 "alpn": String::from_utf8_lossy(conn.alpn()),
                 "reading": req.is_reading(), "measurements": khor_net::path::path_facts(conn),
-                "operation": match req { Request::Ls { .. } => "directory", Request::FetchPath { .. } => "fetch_path", _ => "other" },
+                "operation": observed_operation(req).unwrap_or("other"),
                 "exchange_us": sent.elapsed().as_micros(),
             })
         });
@@ -14237,6 +14294,15 @@ async fn exchange_inner(
             attempt.request_written = true;
         }
         send.finish().map_err(|e| lost(msg::cant_close_stream(e)))?;
+        if let Some(operation) = observed_operation(req) {
+            khor_net::carry::observe_lifecycle(conn.remote_id(), "request_dispatched", || {
+                serde_json::json!({
+                    "wire": conn.stable_id(), "stream": send.id().to_string(),
+                    "connection_tag": connection_trace_tag(conn), "operation": operation,
+                    "frame_bytes": frame.len(), "elapsed_us": sent.elapsed().as_micros(),
+                })
+            });
+        }
         let bytes = recv
             .read_to_end(MAX_FRAME)
             .await

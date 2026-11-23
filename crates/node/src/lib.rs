@@ -415,6 +415,8 @@ static USER_PATH: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 pub struct Node {
     root: PathBuf,
     storage_io: storage_io::StorageIo,
+    receipts: std::sync::Arc<road::Receipts>,
+    device_reader: std::sync::Arc<khor_sync::store::SnapshotReader<DeviceDoc>>,
     /// The identity key; also what the endpoint binds with. One live
     /// endpoint per key.
     key: iroh::SecretKey,
@@ -1189,6 +1191,8 @@ impl Node {
         let mut node = Node {
             root,
             storage_io: storage_io::StorageIo::default(),
+            receipts: Default::default(),
+            device_reader: Default::default(),
             key,
             device,
             device_str,
@@ -2590,6 +2594,15 @@ impl Node {
         Ok(self.devices_loaded()?.doc.all())
     }
 
+    async fn routing_devices(&self) -> Result<Vec<DeviceInfo>, String> {
+        let dir = devices_dir(&self.root);
+        let (reader, peer) = (self.device_reader.clone(), self.peer);
+        self.storage_io
+            .routing
+            .read(move || Ok(reader.read(&dir, peer)?.all()))
+            .await
+    }
+
     /// name → (channel, home). Refuses unknown machines listing what the
     /// table has — "not found" alone sends people guessing.
     ///
@@ -2607,14 +2620,19 @@ impl Node {
     /// would be unreachable by the only name anybody can see.
     fn resolve(&self, machine: &str) -> Result<(String, DeviceId), String> {
         let all = self.devices()?;
+        let selected = Self::resolve_device(&all, machine)?;
+        Ok((selected.name.clone(), device_id_from_hex(&selected.id)?))
+    }
+
+    fn resolve_device<'a>(all: &'a [DeviceInfo], machine: &str) -> Result<&'a DeviceInfo, String> {
         let typed = machine.trim();
         if let Some(d) = all.iter().find(|d| d.label.as_deref() == Some(typed)) {
-            return Ok((d.name.clone(), device_id_from_hex(&d.id)?));
+            return Ok(d);
         }
         let ch = channel_of_machine(machine)
             .ok_or_else(|| msg::machine_name_not_pathable(format_args!("{machine:?}")))?;
         match all.iter().find(|d| d.name == ch) {
-            Some(d) => Ok((ch, device_id_from_hex(&d.id)?)),
+            Some(d) => Ok(d),
             None => {
                 // Listed by the name on the glass: a list of channels
                 // would name machines the person cannot see anywhere.

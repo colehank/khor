@@ -1,6 +1,43 @@
 use super::*;
 
 #[tokio::test(flavor = "current_thread")]
+async fn stalled_receipts_do_not_hold_the_directory_listing() {
+    use std::{ffi::CString, fs, os::unix::ffi::OsStrExt, os::unix::fs::OpenOptionsExt};
+
+    let root = tempfile::tempdir().unwrap();
+    let listed = tempfile::tempdir().unwrap();
+    fs::write(listed.path().join("ordinary.txt"), b"readable").unwrap();
+    let node = Node::open_hosting(root.path().to_owned(), "storage-isolation", false).unwrap();
+    let receipts = crate::road::received_dir(root.path());
+    fs::create_dir_all(&receipts).unwrap();
+    let blocked = receipts.join("blocked.json");
+    let raw_path = CString::new(blocked.as_os_str().as_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(raw_path.as_ptr(), 0o600) }, 0);
+
+    let reply = tokio::time::timeout(
+        Duration::from_millis(650),
+        node.list_here(listed.path().to_str().unwrap()),
+    )
+    .await;
+    let release = fs::OpenOptions::new()
+        .write(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(&blocked);
+    assert!(
+        release.is_ok(),
+        "the receipt worker must have reached the FIFO"
+    );
+    drop(release);
+
+    let (_, rows, _) = reply
+        .expect("directory returns while the receipt is stalled")
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].name, "ordinary.txt");
+    assert_eq!(rows[0].received_ms, None);
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn blocked_admission_does_not_starve_the_resident_reactor() {
     use std::{ffi::CString, fs, io::Write, os::unix::ffi::OsStrExt};
 

@@ -10,12 +10,15 @@ use tokio::sync::{Semaphore, oneshot};
 
 const CONTROL_WITHIN: Duration = Duration::from_secs(2);
 const NETWORK_FILE_WITHIN: Duration = Duration::from_secs(3);
+const RECEIPTS_WITHIN: Duration = Duration::from_millis(150);
 
 type Job = Box<dyn FnOnce() + Send>;
 
 pub(crate) struct StorageIo {
     pub(crate) control: Lane,
     pub(crate) observations: Lane,
+    pub(crate) routing: Lane,
+    pub(crate) receipts: Lane,
     local_files: Lane,
     network_files: Lane,
     mounts: Vec<Mount>,
@@ -26,6 +29,8 @@ impl Default for StorageIo {
         Self {
             control: Lane::new("khor-storage-control", 8, Some(CONTROL_WITHIN)),
             observations: Lane::new("khor-storage-observations", 4, Some(CONTROL_WITHIN)),
+            routing: Lane::new("khor-storage-routing", 4, Some(CONTROL_WITHIN)),
+            receipts: Lane::new("khor-storage-receipts", 2, Some(RECEIPTS_WITHIN)),
             local_files: Lane::new("khor-storage-local", 16, None),
             network_files: Lane::new("khor-storage-network", 4, Some(NETWORK_FILE_WITHIN)),
             mounts: mounts(),

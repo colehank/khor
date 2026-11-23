@@ -189,6 +189,7 @@ impl Borrow {
 /// The caller owns `ep`; the returned streams borrow the connection, so
 /// the caller keeps `conn` alive for as long as it splices bytes.
 pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvStream), String> {
+    let started = std::env::var_os("KHOR_NET_DIAGNOSTICS").map(|_| Instant::now());
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     write_target(&mut send, target).await?;
     let mut status = [0u8; 1];
@@ -199,7 +200,9 @@ pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvSt
         OK => {
             khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_stream_ready", || {
                 serde_json::json!({"wire": conn.stable_id(), "stream": send.id().to_string(),
-                    "alpn": String::from_utf8_lossy(conn.alpn())})
+                    "alpn": String::from_utf8_lossy(conn.alpn()),
+                    "connection_tag": crate::link::connection_trace_tag(conn),
+                    "elapsed_us": started.map(|at| at.elapsed().as_micros())})
             });
             Ok((send, recv))
         }
@@ -329,18 +332,26 @@ async fn watch_path<F: std::future::Future>(
     road: ActivePath<'_>,
     pending: &mut Option<(PathId, u64, Instant)>,
 ) -> F::Output {
-    let Some((id, acks, due)) = *pending else {
-        return io.await;
-    };
     tokio::pin!(io);
-    tokio::select! {
-        biased;
-        _ = tokio::time::sleep_until(due) => {
-            *pending = None;
-            let conn = road.connection;
-            let paths = conn.paths();
-            if let Some(path) = paths.iter().find(|path| path.is_selected() && path.id() == id) {
+    while let Some((id, acks, due)) = *pending {
+        tokio::select! {
+            biased;
+            _ = tokio::time::sleep_until(due) => {
+                *pending = None;
+                let conn = road.connection;
+                let paths = conn.paths();
+                let Some(path) = paths.iter().find(|path| path.is_selected()) else { break };
                 let stats = path.stats();
+                let now = Instant::now();
+                if path.id() != id {
+                    // QUIC may move the already-written data to a different
+                    // path during the wait. Compare that path's own ACKs.
+                    if let Some(since) = stats.unacked_since {
+                        *pending = Some((path.id(), stats.frame_rx.acks,
+                            now.max(Instant::from_std(since) + RELAY_DEMAND_AFTER)));
+                    }
+                    continue;
+                }
                 let ack_progress = stats.frame_rx.acks != acks;
                 if let iroh::TransportAddr::Relay(relay) = path.remote_addr() {
                     let queued = !ack_progress && road.endpoint.check_relay_for_demand(relay.clone());
@@ -353,15 +364,15 @@ async fn watch_path<F: std::future::Future>(
                         at >= (due - RELAY_DEMAND_AFTER).into_std()
                     });
                 let data_waiting = !ack_progress
-                    && stats.unacked_since.is_some_and(|at| at < Instant::now().into_std());
+                    && stats.unacked_since.is_some_and(|at| at < now.into_std());
                 if (data_waiting || recent_slow_ack)
                     && let Some(node) = road.node
                 {
                     node.recover_active_path(road.endpoint, conn, RELAY_DEMAND_AFTER);
                 }
             }
+            value = &mut io => return value,
         }
-        value = &mut io => return value,
     }
     io.await
 }

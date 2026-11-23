@@ -1039,23 +1039,130 @@ fn read_blocks<D: Doc>(
 /// files, reseeding, updating a ledger or keeping a cache. A moving/incomplete
 /// document is a failed read; the caller may preserve its old display snapshot.
 pub fn read_snapshot<D: Doc>(dir: &Path, peer: u64) -> Result<D, String> {
-    let before = fingerprint(dir)?;
+    let before = snapshot_fingerprint(dir)?;
     let epoch = read_epoch(dir);
+    read_snapshot_from(dir, peer, &before, epoch)
+}
+
+fn read_snapshot_from<D: Doc>(
+    dir: &Path,
+    peer: u64,
+    before: &Fingerprint,
+    epoch: u32,
+) -> Result<D, String> {
     let doc = D::open(peer)?;
     let imported = read_blocks(dir, &doc, &Default::default())?;
     let version = doc.version();
     if imported.vanished
         || !imported.broken.is_empty()
+        || !imported
+            .names
+            .iter()
+            .eq(before.iter().map(|(name, _, _)| name))
         || imported
             .pending
             .iter()
             .any(|(writer, end)| version.get(writer).copied().unwrap_or(0) < *end)
-        || fingerprint(dir)? != before
+        || snapshot_fingerprint(dir)? != *before
         || read_epoch(dir) != epoch
     {
         return Err("configuration changed or is incomplete during read-only snapshot".into());
     }
     Ok(doc)
+}
+
+fn snapshot_fingerprint(dir: &Path) -> Result<Fingerprint, String> {
+    let rows = match fs::read_dir(dir) {
+        Ok(rows) => rows,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(msg::cant_list_dir(dir.display(), error)),
+    };
+    let mut fingerprint = Vec::new();
+    for row in rows {
+        let row = row.map_err(|error| msg::cant_list_dir(dir.display(), error))?;
+        let path = row.path();
+        if path.extension().is_none_or(|ext| ext != EXT) {
+            continue;
+        }
+        let name = file_name(&path).ok_or("invalid block name in read-only snapshot")?;
+        let meta = fs::metadata(&path).map_err(|error| msg::cant_read(&name, error))?;
+        let modified = meta
+            .modified()
+            .map_err(|error| msg::cant_read(&name, error))?
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|error| msg::cant_read(&name, error))?;
+        fingerprint.push((name, meta.len(), modified.as_nanos()));
+    }
+    fingerprint.sort_unstable();
+    Ok(fingerprint)
+}
+
+/// A reader of one pile that never takes a writer's pen or rewrites its
+/// ledger. Validate the published blocks on every lookup. A cache hit is
+/// reusable across requests, including changes made by another process.
+pub struct SnapshotReader<D>(std::sync::Mutex<Option<ReadSnapshot<D>>>);
+
+struct ReadSnapshot<D> {
+    directory: PathBuf,
+    blocks: Fingerprint,
+    epoch: u32,
+    doc: std::sync::Arc<D>,
+}
+
+impl<D> Default for SnapshotReader<D> {
+    fn default() -> Self {
+        Self(std::sync::Mutex::new(None))
+    }
+}
+
+impl<D: Doc + 'static> SnapshotReader<D> {
+    pub fn read(&self, dir: &Path, peer: u64) -> Result<std::sync::Arc<D>, String> {
+        let blocks = snapshot_fingerprint(dir)?;
+        let epoch = read_epoch(dir);
+        let kept = self.0.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(snapshot) = kept.as_ref().filter(|snapshot| {
+            snapshot.directory == dir && snapshot.epoch == epoch && snapshot.blocks == blocks
+        }) {
+            return Ok(snapshot.doc.clone());
+        }
+        drop(kept);
+
+        // A mutable open often already assembled this exact set of blocks.
+        // A partial or broken cache entry is never used for a fresh read.
+        let snapshot = KEPT
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get(dir)
+            .filter(|kept| {
+                kept.kind == std::any::TypeId::of::<D>()
+                    && kept.broken.is_empty()
+                    && kept.fingerprint == blocks
+            })
+            .map(|kept| kept.snapshot.clone());
+        let doc = if let Some(snapshot) = snapshot {
+            let doc = D::open(peer)?;
+            let report = doc.merge_report(&snapshot)?;
+            if !report.pending.is_empty()
+                || snapshot_fingerprint(dir)? != blocks
+                || read_epoch(dir) != epoch
+            {
+                return Err(
+                    "configuration changed or is incomplete during read-only snapshot".into(),
+                );
+            }
+            doc
+        } else {
+            read_snapshot_from(dir, peer, &blocks, epoch)?
+        };
+        let doc = std::sync::Arc::new(doc);
+        *self.0.lock().unwrap_or_else(|p| p.into_inner()) = Some(ReadSnapshot {
+            directory: dir.to_path_buf(),
+            blocks,
+            epoch,
+            doc: doc.clone(),
+        });
+        Ok(doc)
+    }
 }
 
 fn remember_pending(pending: &mut BTreeMap<u64, i32>, report: &MergeReport) {
