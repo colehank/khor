@@ -266,10 +266,9 @@ fn native_command(
                 text("kind")?,
                 optional_argument(args, "path")?,
             )),
-            "file_preview_open" => encode(rt.block_on(crate::file_preview_open(
-                webview()?,
-                text("id")?,
-            ))?),
+            "file_preview_open" => {
+                encode(rt.block_on(crate::file_preview_open(webview()?, text("id")?))?)
+            }
             "file_handoff_supported" => encode(crate::file_handoff_supported()),
             "file_handoff_open" => encode(rt.block_on(crate::file_handoff_open(
                 app.clone(),
