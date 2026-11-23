@@ -107,7 +107,8 @@ async function checkDesktopParity(page) {
       if (error.code !== "ENOENT") throw error;
       return "";
     });
-    if (record.endsWith(bytes)) {
+    if (record) {
+      assert(record.endsWith(bytes), `The associated application received unexpected data: ${record.split("\n").at(-1)}`);
       opened = record.slice(0, -bytes.length).trim();
       break;
     }

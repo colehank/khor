@@ -180,7 +180,7 @@ def check_installed_powershell(cli, environment, scratch):
 def windows_file_association(scratch, workspace, window):
     import winreg
 
-    extension = "khorfixture" + uuid.uuid4().hex
+    extension = "kh" + uuid.uuid4().hex[:8]
     progid = "Khor.Installer." + extension
     classes = r"Software\Classes"
     extension_key = f"{classes}\\.{extension}"
@@ -189,8 +189,10 @@ def windows_file_association(scratch, workspace, window):
     reader = scratch / "FileReceipt.exe"
     receipt = workspace / "file-handoff-receipt.txt"
     reader_source.write_text(
-        'using System.IO; class FileReceipt { static void Main(string[] a) { '
-        'var temp = a[1] + ".tmp"; File.WriteAllText(temp, a[0] + "\\n" + File.ReadAllText(a[0])); '
+        'using System; using System.IO; class FileReceipt { static void Main(string[] a) { '
+        'string contents; try { contents = File.ReadAllText(a[0]); } '
+        'catch (Exception e) { contents = "KHOR_READER_ERROR:" + e.GetType().Name; } '
+        'var temp = a[1] + ".tmp"; File.WriteAllText(temp, a[0] + "\\n" + contents); '
         'File.Move(temp, a[1]); } }',
         encoding="ascii",
     )
@@ -210,6 +212,16 @@ def windows_file_association(scratch, workspace, window):
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, progid)
         with winreg.CreateKey(winreg.HKEY_CURRENT_USER, program_key + r"\shell\open\command") as key:
             winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{reader}" "%1" "{receipt}"')
+        control = workspace / f"Association control.{extension}"
+        control.write_text("KHOR_SHELL_CONTROL", encoding="ascii")
+        os.startfile(control)
+        deadline = time.monotonic() + 10
+        while not receipt.is_file() and time.monotonic() < deadline:
+            time.sleep(0.1)
+        assert receipt.is_file() and receipt.read_text(encoding="utf-8").endswith("KHOR_SHELL_CONTROL"), (
+            "Windows did not honor the test-only file association for the local control"
+        )
+        receipt.unlink()
         yield f"--desktop-parity={extension},{scale},{window}"
     finally:
         for key in (extension_key, program_key + r"\shell\open\command",
