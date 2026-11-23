@@ -10,10 +10,16 @@ import zipfile
 
 from release_manifest import verify
 
-QUALITY_JOBS = {"mac-icon", "agent", "frontend / build", "windows-agent-process", "scripts",
-                "runtime-store / verify (ubuntu-24.04)", "runtime-store / verify (macos-26)",
-                "runtime-store / verify (windows-2025)", "developer-lab", "ios-native-ui",
-                "node-native", "gui", "mac-updates"}
+SHARED_QUALITY_JOBS = {
+    "mac-icon", "agent", "windows-agent-process", "scripts", "developer-lab", "ios-native-ui",
+    "node-native", "gui", "mac-updates", "ios-terminal-keyboard",
+    "runtime-store / verify (ubuntu-24.04)", "runtime-store / verify (macos-26)",
+    "runtime-store / verify (windows-2025)",
+    "session-execution / native-contracts (ubuntu-24.04)",
+    "session-execution / native-contracts (macos-26)",
+    "session-execution / native-contracts (windows-2025)",
+}
+FRONTEND_JOB = "frontend / build"
 
 
 def api(path):
@@ -21,23 +27,22 @@ def api(path):
     return json.loads(subprocess.check_output(["gh", "api", f"repos/{repo}/{path}"], text=True))
 
 
+def require_jobs(jobs, source, required, allowed_skips, error):
+    names = {job["name"] for job in jobs}
+    if (len(jobs) != len(names) or not required <= names <= required | allowed_skips
+            or any(job["head_sha"] != source or job["status"] != "completed"
+                   or job["conclusion"] != ("skipped" if job["name"] in allowed_skips else "success")
+                   for job in jobs)):
+        raise ValueError(error)
+
+
 def require_quality(run, jobs, source):
     if (run["head_sha"] != source or run["head_branch"] != "main"
             or run["status"] != "completed" or run["conclusion"] != "success"
             or run["path"] != ".github/workflows/quality.yml"):
         raise ValueError("The exact product source has not passed main Quality")
-    # Full Quality includes this separately requested DSH suite as a known
-    # conditional skip. Never filter arbitrary skipped or failed shared gates.
-    conditional = [j for j in jobs if j["name"] == "dsh-integration"]
-    if (len(conditional) > 1
-            or any(j["head_sha"] != source or j["status"] != "completed"
-                   or j["conclusion"] != "skipped" for j in conditional)):
-        raise ValueError("The optional DSH job must be the original conditional skip")
-    jobs = [j for j in jobs if j["name"] != "dsh-integration"]
-    if (len(jobs) != len(QUALITY_JOBS) or {j["name"] for j in jobs} != QUALITY_JOBS
-            or any(j["head_sha"] != source or j["status"] != "completed"
-                   or j["conclusion"] != "success" for j in jobs)):
-        raise ValueError("Every original shared quality gate must succeed")
+    require_jobs(jobs, source, SHARED_QUALITY_JOBS | {FRONTEND_JOB, "session-attention-unit"},
+                 {"dsh-integration"}, "Every required main quality gate must succeed")
 
 
 def require_ios_producer(run, jobs, source, tag):
@@ -48,14 +53,12 @@ def require_ios_producer(run, jobs, source, tag):
     if (len(ios) != 1 or ios[0]["head_sha"] != source
             or ios[0]["status"] != "completed" or ios[0]["conclusion"] != "success"):
         raise ValueError("The original signed iOS archive job must succeed")
-    required = {"quality / " + n for n in QUALITY_JOBS if n != "frontend / build"}
-    shared = [j for j in jobs if j["name"] in required]
-    frontend = [j for j in jobs if j["name"] == "frontend / build"]
-    if (len(shared) != len(required) or {j["name"] for j in shared} != required
-            or len(frontend) != 1
-            or any(j["head_sha"] != source or j["status"] != "completed"
-                   or j["conclusion"] != "success" for j in shared + frontend)):
-        raise ValueError("The producer's shared quality gates and frontend must also succeed")
+    quality = [job for job in jobs if job["name"].startswith("quality / ") or job["name"] == FRONTEND_JOB]
+    shared = {"quality / " + name for name in SHARED_QUALITY_JOBS}
+    # Release reuses its frontend artifact and the attention unit check is main-only.
+    allowed_skips = {"quality / dsh-integration", "quality / frontend", "quality / session-attention-unit"}
+    require_jobs(quality, source, shared | {FRONTEND_JOB}, allowed_skips,
+                 "The producer's required quality gates and frontend must succeed")
 
 
 def check_archive(root, source, run_id, version, build):

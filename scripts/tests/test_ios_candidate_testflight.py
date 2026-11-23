@@ -10,13 +10,35 @@ import ios_candidate_testflight as ios
 from release_manifest import files
 
 SOURCE = "1" * 40
+SHARED_JOBS = {
+    "agent", "developer-lab", "gui", "ios-native-ui", "ios-terminal-keyboard", "mac-icon",
+    "mac-updates", "node-native", "scripts", "windows-agent-process",
+    "runtime-store / verify (macos-26)", "runtime-store / verify (ubuntu-24.04)",
+    "runtime-store / verify (windows-2025)",
+    "session-execution / native-contracts (macos-26)",
+    "session-execution / native-contracts (ubuntu-24.04)",
+    "session-execution / native-contracts (windows-2025)",
+}
+TAG = "v0.2.0-rc.30"
+
+
+def job(name, conclusion="success"):
+    return dict(name=name, head_sha=SOURCE, status="completed", conclusion=conclusion)
 
 
 class IOSCandidateTests(unittest.TestCase):
     def quality(self):
         run = dict(head_sha=SOURCE, head_branch="main", status="completed", conclusion="success",
                    path=".github/workflows/quality.yml")
-        jobs = [dict(name=n, head_sha=SOURCE, status="completed", conclusion="success") for n in ios.QUALITY_JOBS]
+        jobs = [job(name) for name in sorted(SHARED_JOBS | {"frontend / build", "session-attention-unit"})]
+        return run, jobs
+
+    def producer(self):
+        run = dict(head_sha=SOURCE, head_branch=TAG, path=".github/workflows/release.yml")
+        jobs = [job("quality / " + name) for name in sorted(SHARED_JOBS)]
+        jobs += [job("frontend / build"), job("ios")]
+        jobs += [job("quality / " + name, "skipped") for name in
+                 ("dsh-integration", "frontend", "session-attention-unit")]
         return run, jobs
 
     def test_requires_every_shared_gate_without_skipping(self):
@@ -70,26 +92,27 @@ class IOSCandidateTests(unittest.TestCase):
                 ios.require_quality(run, bad + [optional], SOURCE)
 
     def test_ios_must_pass_while_desktop_may_still_be_running(self):
-        run = dict(head_sha=SOURCE, head_branch="v0.2.0-rc.19", path=".github/workflows/release.yml")
-        jobs = [dict(name="ios", head_sha=SOURCE, status="completed", conclusion="success"),
-                dict(name="desktop", status="in_progress", conclusion=None)]
-        _, quality = self.quality()
-        jobs += [{**j, "name": "quality / " + j["name"]} for j in quality if j["name"] != "frontend / build"]
-        jobs += [j for j in quality if j["name"] == "frontend / build"]
-        ios.require_ios_producer(run, jobs, SOURCE, "v0.2.0-rc.19")
-        jobs[0]["conclusion"] = "failure"
+        run, jobs = self.producer()
+        jobs.append(dict(name="desktop", status="in_progress", conclusion=None))
+        ios.require_ios_producer(run, jobs, SOURCE, TAG)
+        next(j for j in jobs if j["name"] == "ios")["conclusion"] = "failure"
         with self.assertRaises(ValueError):
-            ios.require_ios_producer(run, jobs, SOURCE, "v0.2.0-rc.19")
+            ios.require_ios_producer(run, jobs, SOURCE, TAG)
 
     def test_an_old_main_quality_pass_does_not_override_a_failed_producer_gate(self):
-        run = dict(head_sha=SOURCE, head_branch="v0.2.0-rc.19", path=".github/workflows/release.yml")
-        _, quality = self.quality()
-        jobs = [{**j, "name": "quality / " + j["name"]} for j in quality if j["name"] != "frontend / build"]
-        jobs += [j for j in quality if j["name"] == "frontend / build"]
-        jobs += [dict(name="ios", head_sha=SOURCE, status="completed", conclusion="success")]
-        next(j for j in jobs if j["name"] == "quality / mac-updates")["conclusion"] = "failure"
+        for name in ("mac-updates", "ios-terminal-keyboard", "session-execution / native-contracts (macos-26)"):
+            run, jobs = self.producer()
+            next(j for j in jobs if j["name"] == "quality / " + name)["conclusion"] = "failure"
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                ios.require_ios_producer(run, jobs, SOURCE, TAG)
+
+    def test_producer_cannot_ignore_unknown_quality_gates_or_changed_conditional_skips(self):
+        run, jobs = self.producer()
         with self.assertRaises(ValueError):
-            ios.require_ios_producer(run, jobs, SOURCE, "v0.2.0-rc.19")
+            ios.require_ios_producer(run, jobs + [job("quality / new-check", "failure")], SOURCE, TAG)
+        next(j for j in jobs if j["name"] == "quality / session-attention-unit")["conclusion"] = "failure"
+        with self.assertRaises(ValueError):
+            ios.require_ios_producer(run, jobs, SOURCE, TAG)
 
     def archive(self, root, **changes):
         (root / "Khor.xcarchive.tar.gz").write_bytes(b"opaque signed archive fixture")
