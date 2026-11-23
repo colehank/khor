@@ -84,7 +84,7 @@ jobs:
       - run: python scripts/release_manifest.py verify --root desktop-product
       - run: npm ci --prefix apps/gui
       - name: Verify the installed App and native interaction
-        run: python scripts/check-desktop-installer.py --package desktop-product/khor-windows-x86_64.msi --acp-fixture desktop-fixtures/acp-stub.exe --native-drag --output "${{ runner.temp }}/installation.json"
+        run: python scripts/check-desktop-installer.py --package desktop-product/khor-windows-x86_64.msi --acp-fixture desktop-fixtures/acp-stub.exe --native-drag --desktop-parity --output "${{ runner.temp }}/installation.json"
       - name: Verify the complete artifact is unchanged after installation tests
         run: python scripts/release_manifest.py verify --root desktop-product
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

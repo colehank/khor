@@ -1,5 +1,6 @@
 """Install and remove a desktop package on an isolated build runner."""
 import argparse
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 
 from release_manifest import executable_info, source_sha
 
@@ -174,7 +176,52 @@ def check_installed_powershell(cli, environment, scratch):
         print(f"The installed Khor executed a hosted command in {name}.", flush=True)
 
 
-def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shell_ui=False, shell_selection=None):
+@contextmanager
+def windows_file_association(scratch, workspace):
+    import winreg
+
+    extension = "khorfixture" + uuid.uuid4().hex
+    progid = "Khor.Installer." + extension
+    classes = r"Software\Classes"
+    extension_key = f"{classes}\\.{extension}"
+    program_key = f"{classes}\\{progid}"
+    reader_source = scratch / "FileReceipt.cs"
+    reader = scratch / "FileReceipt.exe"
+    receipt = workspace / "file-handoff-receipt.txt"
+    reader_source.write_text(
+        'using System.IO; class FileReceipt { static void Main(string[] a) { '
+        'var temp = a[1] + ".tmp"; File.WriteAllText(temp, a[0] + "\\n" + File.ReadAllText(a[0])); '
+        'File.Move(temp, a[1]); } }',
+        encoding="ascii",
+    )
+    source_arg = str(reader_source).replace("'", "''")
+    reader_arg = str(reader).replace("'", "''")
+    run("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+        f"$ErrorActionPreference='Stop'; Add-Type -Path '{source_arg}' "
+        f"-OutputAssembly '{reader_arg}' -OutputType WindowsApplication")
+    scale = float(run(
+        "powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
+        "$ErrorActionPreference='Stop'; "
+        "$settings=[Windows.UI.ViewManagement.UISettings,Windows.UI.ViewManagement,ContentType=WindowsRuntime]::new(); "
+        "$settings.TextScaleFactor.ToString([CultureInfo]::InvariantCulture)",
+    ).stdout.strip())
+    try:
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, extension_key) as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, progid)
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, program_key + r"\shell\open\command") as key:
+            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, f'"{reader}" "%1" "{receipt}"')
+        yield f"--desktop-parity={extension},{scale}"
+    finally:
+        for key in (extension_key, program_key + r"\shell\open\command",
+                    program_key + r"\shell\open", program_key + r"\shell", program_key):
+            try:
+                winreg.DeleteKey(winreg.HKEY_CURRENT_USER, key)
+            except FileNotFoundError:
+                pass
+
+
+def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shell_ui=False,
+                     shell_selection=None, desktop_parity=False):
     prefix = "Khor 验收 home " if os.name == "nt" else "khor-install-home-"
     # The runner reaps this scratch directory. Process shutdown is asserted
     # separately, and short-lived Windows file locks must not hide a failure.
@@ -296,7 +343,11 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
                                 args.append("--legacy-shell-ui")
                             if shell_selection:
                                 args.append(f"--shell-selection={shell_selection}")
-                            subprocess.run(args, check=True, timeout=300)
+                            if desktop_parity:
+                                with windows_file_association(scratch, workspace) as parity:
+                                    subprocess.run([*args, parity], check=True, timeout=300)
+                            else:
+                                subprocess.run(args, check=True, timeout=300)
                         finally:
                             request_windows_close(window)
                             deadline = time.monotonic() + 15
@@ -416,7 +467,7 @@ def invoke_msi(action, package, destination=None):
 
 
 def windows(package, expected_source, acp_fixture=None, previous=None, native_drag=False,
-            legacy_shell_ui=False, shell_selection=None):
+            legacy_shell_ui=False, shell_selection=None, desktop_parity=False):
     import winreg
     with tempfile.TemporaryDirectory(prefix="khor-desktop-") as temporary:
         destination = Path(temporary) / "Installed Khor"
@@ -455,7 +506,9 @@ def windows(package, expected_source, acp_fixture=None, previous=None, native_dr
             entries = [value.rstrip("\\").casefold() for value in after.split(";")]
             assert entries[0] == str(independent).casefold(), "Independent CLI keeps its PATH priority"
             assert str(destination).casefold() in entries
-            launch_installed(destination, acp_fixture, native_drag, legacy_shell_ui, shell_selection)
+            launch_installed(destination, acp_fixture, native_drag, legacy_shell_ui, shell_selection, desktop_parity)
+            if desktop_parity:
+                proof["installed_system_text_and_remote_file_handoff"] = True
             if acp_fixture is not None:
                 proof["installed_acp_conversation"] = True
             proof["installed_powershell_commands"] = True
@@ -502,6 +555,7 @@ if __name__ == "__main__":
     parser.add_argument("--native-drag", action="store_true", help="Exercise Windows OLE file drag on the runner desktop")
     parser.add_argument("--legacy-shell-ui", action="store_true", help="Replay a package before shell-aware attachments")
     parser.add_argument("--shell-selection", choices=["cmd", "powershell"], help="Replay only this explicit GUI shell choice")
+    parser.add_argument("--desktop-parity", action="store_true", help="Verify Windows system text scaling and native file handoff")
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true":
         parser.error("Installation checks require an isolated GitHub runner")
@@ -521,7 +575,7 @@ if __name__ == "__main__":
         previous = (args.upgrade_from.resolve(strict=True), source)
     if os.name == "nt":
         proof = windows(package, expected_source, acp_fixture, previous, args.native_drag,
-                        args.legacy_shell_ui, args.shell_selection)
+                        args.legacy_shell_ui, args.shell_selection, args.desktop_parity)
     elif sys.platform == "darwin":
         proof = macos(package, expected_source)
     else:

@@ -2,6 +2,7 @@
 // and creating a local cmd.exe session in an isolated store.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
@@ -14,6 +15,7 @@ import { chromium } from "playwright-core";
 const [, , port, title, ready, workspace, exitMachine, peerTitle, peerReady, ...checks] = process.argv;
 const nativeWindow = checks.find(check => check.startsWith("--native-drag="))?.split("=")[1];
 const shellSelection = checks.find(check => check.startsWith("--shell-selection="))?.split("=")[1];
+const parity = checks.find(check => check.startsWith("--desktop-parity="))?.split("=")[1];
 const endpoint = `http://127.0.0.1:${port}`;
 function isAppPage(url) {
   try {
@@ -57,6 +59,64 @@ function command(page, name, args, timeout = 15_000) {
     if (!response.ok) throw new Error(`${name} returned ${response.status}: ${await response.text()}`);
     return response.json();
   }, {name, args, timeout});
+}
+
+async function checkDesktopParity(page) {
+  const [extension, expectedScale] = parity.split(",");
+  const scales = await page.evaluate(() => {
+    const native = window.__KHOR_SYSTEM_TEXT_SCALE__;
+    const wear = () => window.dispatchEvent(new Event("khor:system-text-size"));
+    const reading = () => ({
+      ui: Number(document.documentElement.style.getPropertyValue("--ui-scale")),
+      terminal: Number.parseFloat(document.documentElement.style.getPropertyValue("--text-term")),
+    });
+    const initial = reading();
+    try {
+      window.__KHOR_SYSTEM_TEXT_SCALE__ = 1.5;
+      wear();
+      return {native, initial, enlarged: reading()};
+    } finally {
+      window.__KHOR_SYSTEM_TEXT_SCALE__ = native;
+      wear();
+    }
+  });
+  assert.equal(scales.native, Number(expectedScale), "the installed App must read the real Windows text setting");
+  assert.deepEqual(scales.initial, {ui: scales.native, terminal: Math.max(10, Math.round(14 * scales.native))});
+  assert.deepEqual(scales.enlarged, {ui: 1.5, terminal: 21}, "both surfaces must respond to the native text-scale event");
+
+  const path = join(workspace, `Original 资料.${extension}`);
+  const bytes = "KHOR_WINDOWS_ORIGINAL_FILE_资料";
+  const id = randomUUID();
+  await writeFile(path, bytes);
+  assert.equal(await command(page, "file_handoff_supported", {}), true);
+  assert.equal(await command(page, "file_preview_supported", {kind: "document", path}), false);
+  await command(page, "file_handoff_start", {id, machine: exitMachine, path});
+  for (const deadline = Date.now() + 15_000; ;) {
+    const state = await command(page, "file_handoff_state", {id});
+    assert.equal(state.error, null);
+    assert.equal(state.cancelled, false);
+    if (state.ready) break;
+    assert(Date.now() < deadline, "the paired file never reached the local cache");
+    await delay(100);
+  }
+  assert.equal(await command(page, "file_handoff_open", {id}), true);
+  const receipt = join(workspace, "file-handoff-receipt.txt");
+  let opened;
+  for (const deadline = Date.now() + 15_000; ; ) {
+    const record = await readFile(receipt, "utf8").catch(error => {
+      if (error.code !== "ENOENT") throw error;
+      return "";
+    });
+    if (record.endsWith(bytes)) {
+      opened = record.slice(0, -bytes.length).trim();
+      break;
+    }
+    assert(Date.now() < deadline, "Windows did not open the cached original in the associated app");
+    await delay(100);
+  }
+  assert.equal(basename(opened), basename(path));
+  assert.notEqual(opened.toLowerCase(), path.toLowerCase(), "the viewer must receive the local copy");
+  console.log("Windows system text scaling and opening the paired original in a local app passed.");
 }
 
 async function checkBrowser(page, navigation) {
@@ -325,6 +385,7 @@ try {
   await preview.waitFor();
   assert.equal(await windowButtons.count(), 0, "Workspace panes inherit the native caption");
   console.log("Windows workspace opened a file and displayed its preview.");
+  if (parity) await checkDesktopParity(page);
 
   await command(page, "window_event_unlisten", {eventId});
   await page.evaluate(id => window.__TAURI_INTERNALS__.unregisterCallback(id), callback);
