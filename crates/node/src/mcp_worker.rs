@@ -53,15 +53,40 @@ static WORKER_PROCESS: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 
 /// Only the two durable Khor host constructors call this. Temporary children
 /// inherit containment; default Pi and ACP jobs never enable breakaway.
+///
+/// **`creation_flags` REPLACES a command's flags**, so a caller that also wants
+/// flags of its own must build them here rather than set its own afterwards —
+/// which is why the detach bits live in this one place for a worker process
+/// (found 2026-11-16: a host opened from inside an `_mcp_worker` lost its
+/// `DETACHED_PROCESS` because this call came second).
 pub(crate) fn prepare_durable_child(command: &mut Command) {
     #[cfg(windows)]
-    if WORKER_PROCESS.load(std::sync::atomic::Ordering::Relaxed) {
+    {
         use std::os::windows::process::CommandExt;
-        use windows_sys::Win32::System::Threading::CREATE_BREAKAWAY_FROM_JOB;
-        command.creation_flags(CREATE_BREAKAWAY_FROM_JOB);
+        use windows_sys::Win32::System::Threading::{
+            CREATE_BREAKAWAY_FROM_JOB, CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS,
+        };
+        if worker_process() {
+            // A durable host must outlive whoever opens it, and escape the job
+            // when it was started from a worker that is itself contained.
+            command.creation_flags(
+                CREATE_BREAKAWAY_FROM_JOB | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+            );
+        }
     }
     #[cfg(not(windows))]
     let _ = command;
+}
+
+/// Whether this process is an `_mcp_worker`, whose children need breakaway.
+#[cfg(windows)]
+pub(crate) fn worker_process() -> bool {
+    WORKER_PROCESS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn worker_process() -> bool {
+    false
 }
 
 /// Shared CLI/GUI hook, before normal command/configuration/GUI dispatch.

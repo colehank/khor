@@ -4,6 +4,8 @@
 mod ios;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "windows")]
+pub(crate) mod windows;
 
 pub async fn open(
     view: tauri::Webview,
@@ -16,6 +18,10 @@ pub async fn open(
     #[cfg(target_os = "macos")]
     {
         macos::open(view, file).await
+    }
+    #[cfg(target_os = "windows")]
+    {
+        windows::open(view, file).await
     }
 }
 #[cfg(target_os = "macos")]

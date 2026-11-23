@@ -317,6 +317,166 @@ pub fn resume_session(
         .0)
 }
 
+/// The argv a terminal should run to continue a foreign conversation
+/// (`khor`'s one answer to `open`). The face opens the terminal; the node
+/// says what to type, so Codex's and DSH's resume spellings live in one
+/// place instead of once per screen.
+pub fn native_resume_argv(agent: &str, native_id: &str) -> Result<String, String> {
+    khor_node::agent_driver::resume_argv(agent, native_id)
+}
+/// One DSH conversation on this machine, as a screen shows it.
+///
+/// The node's [`khor_node::dsh_sessions::DshSession`] is the same facts;
+/// this is the wire shape. **There is no title**: DSH's header carries the
+/// directory and the start time, and the title lives in message events
+/// this does not read yet — inventing one would be a name the vendor never
+/// gave it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DshConversation {
+    pub id: String,
+    pub cwd: String,
+    pub created_at_ms: i64,
+    /// The name the person sees: DSH's last `session/title`, or a
+    /// subagent's descriptor label. `None` when the conversation was never
+    /// named — a row then shows its directory instead.
+    pub title: Option<String>,
+    /// A subagent's session names the session it was delegated from.
+    pub parent: Option<String>,
+    pub origin: Option<String>,
+}
+
+/// One line of a DSH conversation, as a reader shows it.
+///
+/// The node's [`khor_node::adaptor::dsh::Line`] is the same rows; this is
+/// the wire shape the face draws.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct DshLine {
+    /// `user`, `assistant`, `thought`, `tool` or `tool-result`.
+    pub who: String,
+    pub text: String,
+}
+
+/// Reads one DSH conversation, line by line (`khor agents dsh <session>`).
+///
+/// The same reader the CLI prints from: one parser, so a face and a
+/// terminal cannot disagree about what a conversation said.
+pub fn dsh_transcript(native_id: &str) -> Result<Vec<DshLine>, String> {
+    let text = khor_node::dsh_sessions::conversation(native_id)?;
+    Ok(khor_node::adaptor::dsh::lines_of(&text)
+        .into_iter()
+        .map(|line| DshLine {
+            who: line.who.to_owned(),
+            text: line.text,
+        })
+        .collect())
+}
+/// Every DSH conversation in this machine's DSH home, newest first.
+///
+/// Reads the store DSH writes (`khor agents dsh` runs the same scan); a
+/// machine without DSH is an empty list, not an error.
+pub fn dsh_conversations() -> Vec<DshConversation> {
+    khor_node::dsh_sessions::sessions()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|session| DshConversation {
+            id: session.id,
+            cwd: session.cwd,
+            created_at_ms: session.created_at_ms,
+            title: session.title,
+            parent: session.parent,
+            origin: session.origin,
+        })
+        .collect()
+}
+/// Puts one message into a conversation the vendor keeps (`khor agents
+/// tell`). The answer is the vendor's own receipt, and a refusal is its
+/// stderr: the write goes through Codex's daemon, so Codex is the one that
+/// knows whether it took.
+///
+/// **Not `resume_session`.** That opens a conversation khor recorded and
+/// starts a host of its own; this leaves the conversation where it is and
+/// says one thing to it, which is what a *loaded* thread allows.
+pub fn native_send(
+    agent: &str,
+    native_id: &str,
+    text: &str,
+    cwd: Option<&str>,
+) -> Result<String, String> {
+    khor_node::agent_driver::send(agent, native_id, text, cwd)
+}
+
+/// One agent on this machine, as a screen shows it.
+///
+/// The node's [`khor_node::agent_fleet::FleetRow`] carries `&'static str`
+/// for the fixed words; a screen needs owned strings, so this is the
+/// conversion rather than the judgment — every field means exactly what
+/// the node's own explanation says it means.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct FleetAgent {
+    pub id: String,
+    pub name: String,
+    /// Absolute path of the program, when this machine has it.
+    pub program: Option<String>,
+    /// The configuration directory that exists, when one does.
+    pub config: Option<String>,
+    /// `builtin` | `native-acp` | `registry-acp` | `terminal`.
+    pub road: Option<String>,
+    /// The argv that road runs, placeholders in `<angle>`.
+    pub said: Option<String>,
+    /// `acp`, `run`, `list`, `read`, `resume`, `send`, `needs-runner`,
+    /// `terminal` — strongest claim first.
+    pub capabilities: Vec<String>,
+    /// The ACP registry id, when the row came from that table.
+    pub registry: Option<String>,
+}
+
+/// The machine's roster, plus the fact that decides how much of it works.
+#[derive(Debug, Clone, Serialize, TS)]
+#[ts(export)]
+pub struct AgentFleet {
+    /// `npx` or `pnpm dlx` when a package runner is here. `None` closes
+    /// every `registry-acp` road on this machine, and the row says so
+    /// instead of failing at spawn time.
+    pub runner: Option<String>,
+    pub agents: Vec<FleetAgent>,
+}
+
+/// What this machine actually has (`khor agents fleet` asks the same).
+///
+/// **No store is opened and nothing is started**: this is the lookup the
+/// node's own module describes, and a page that opened to a store it had
+/// to repair would fail exactly when somebody is trying to find out why
+/// the store is broken.
+pub fn agent_fleet() -> AgentFleet {
+    let roster = khor_node::agent_fleet::fleet();
+    AgentFleet {
+        runner: roster.runner.map(str::to_owned),
+        agents: roster
+            .agents
+            .into_iter()
+            .map(|row| {
+                let (road, said) = match row.launch {
+                    Some(launch) => (Some(launch.road.to_owned()), Some(launch.said)),
+                    None => (None, None),
+                };
+                FleetAgent {
+                    id: row.id,
+                    name: row.name,
+                    program: row.program,
+                    config: row.config,
+                    road,
+                    said,
+                    capabilities: row.capabilities.iter().map(|c| (*c).to_owned()).collect(),
+                    registry: row.registry.map(str::to_owned),
+                }
+            })
+            .collect(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

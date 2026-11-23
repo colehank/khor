@@ -41,6 +41,10 @@ Rust 采用官方 rustfmt 默认风格并尊重各 manifest edition；ACP 是202
 
 原生证据包含实际源码、工具与产物来源、执行命令、退出结果及资源清理。复用结果时核对影响范围与来源；setup失败、业务失败、清理失败分别保留，未执行不计通过。协作与共享构建资源按PLAN执行。
 
+## 删除与清理
+
+删除只走 `python scripts/dev.py lab probe gc` 与 `lab clean --manifest`：前者只删带探针标记的目录，后者只删人工核对过的清单。工作区外的构建目录先用 `--inventory` 生成清单，不在盘点时直接删。任何写入路径必须落在会话工作区内，`lab doctor` 报告越界项。Windows 上 C: 的删除/覆盖一律拒绝，full access 也不例外。
+
 ## 原则来源
 
 本约定是《Clean Code》原则在Khor中的应用：[必要注释](https://blog.cleancoder.com/uncle-bob/2017/02/23/NecessaryComments.html)、[第二版原则节选](https://www.informit.com/articles/article.aspx?p=3222335)、[出版社目录](https://www.pearson.com/en-us/subject-catalog/p/clean-code-a-handbook-of-agile-software-craftsmanship-2nd-edition/P200000013239/9780135398548)。命名、职责、错误和状态归属用于帮助读者理解与修改代码，具体约束由当前功能契约决定。

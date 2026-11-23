@@ -248,6 +248,7 @@ mod tests {
 
     /// Every name is quoted, and a shell reading the one-off command
     /// hands ssh the config line's value whole.
+    #[cfg(unix)]
     #[test]
     fn the_proxy_line_survives_a_shell() {
         let (config, command) = proxy_line_with("/opt/khor app/khor", "lab's box", "gpu-box", 2222);

@@ -1,0 +1,31 @@
+{
+  "name": "dsh-delete-guard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Refuse tool calls that touch the system drive or a user profile, even under full access.",
+  "main": "host.mjs",
+  "exports": {
+    ".": "./host.mjs",
+    "./guard": "./guard.mjs",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "files": [
+    "host.mjs",
+    "guard.mjs",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
+  },
+  "scripts": {
+    "test": "node test/guard.test.mjs && node test/host.test.mjs"
+  },
+  "license": "MIT"
+}

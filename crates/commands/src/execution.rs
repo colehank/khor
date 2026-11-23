@@ -421,7 +421,7 @@ fn grammar(word: &str) -> &'static str {
         "attach" => "attach <session>",
         "takeover" => "takeover <session>",
         "agents" => {
-            "agents [known|sessions <agent> [--ask]|add <agent> -- <command>...|rm <agent>]"
+            "agents [known|fleet|dsh [<session>]|sessions <agent> [--ask]|tell <agent> <id> <text>|add <agent> -- <command>...|rm <agent>]"
         }
         "accounts" => {
             "accounts [ls|add <name> --provider <provider> [--kind sub|bill] [--base-url <url>] [--budget <number>] [--key <key>|--key-stdin]|rm <account>]"

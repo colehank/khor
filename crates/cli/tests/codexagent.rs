@@ -78,6 +78,9 @@ async fn consumed_prefix(
 /// and the rollout name both wear it.
 const SID: &str = "01a01e00-0000-7000-8000-000000000042";
 
+// The fake agent's death is driven with SIGKILL; the Windows
+// equivalent (Job Object / pid termination) belongs to the W3 smoke.
+#[cfg(unix)]
 #[tokio::test]
 async fn the_shim_speaks_acp_for_a_fake_codex() {
     let dir = std::env::temp_dir().join(format!("khor-codexagent-{}", std::process::id()));

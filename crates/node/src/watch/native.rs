@@ -428,7 +428,23 @@ impl Native {
     }
     #[cfg(test)]
     pub fn watches_directory(&self, path: &Path) -> bool {
-        self.handles.get(path).is_some_and(|handle| handle.active)
+        // The handle table is keyed by the path the walk registered, and on
+        // Windows that spelling can differ from the caller's (`\\?\` prefix,
+        // separator, case). Compare the resolved directories instead of the
+        // strings, so a registered parent is still recognised.
+        let real = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+        // A recursive handle on a parent already covers every child: on
+        // Windows one ReadDirectoryChangesW handle is the whole tree, while
+        // inotify registers a handle per directory. Both mean "changes here
+        // are watched", which is what this answers.
+        let want = real(path);
+        self.handles.iter().any(|(held, handle)| {
+            if !handle.active {
+                return false;
+            }
+            let held = real(held);
+            held == want || want.starts_with(&held)
+        })
     }
     pub fn identity(&self) -> &str {
         &self.identity
@@ -684,6 +700,10 @@ mod tests {
         );
     }
 
+    /// The fixture's roots are POSIX (`/real/root` aliased to `/alias/root`),
+    /// so the alias rewrite it pins is a Unix spelling: Windows would carry
+    /// a drive in place of `/alias/root`. NOT_TESTED on Windows.
+    #[cfg(unix)]
     #[test]
     fn aliases_keep_requested_spelling_and_both_rename_parents() {
         let plan = Plan {

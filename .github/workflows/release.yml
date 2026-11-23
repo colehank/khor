@@ -381,10 +381,6 @@ jobs:
             target: aarch64-unknown-linux-gnu
             asset: khor-linux-aarch64
             bundle: deb
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-            asset: khor-windows-x86_64
-            bundle: msi
     runs-on: ${{ matrix.runner }}
     env:
       TARGET: ${{ matrix.target }}
@@ -408,9 +404,6 @@ jobs:
       - if: runner.os == 'Linux'
         name: Verify the installed application and command entry
         run: xvfb-run -a dbus-run-session -- python3 scripts/check-desktop-installer.py --package desktop-product/${{ matrix.asset }}.deb --output "${{ runner.temp }}/installation.json"
-      - if: runner.os == 'Windows'
-        name: Verify the installed application and command entry
-        run: python scripts/check-desktop-installer.py --package desktop-product/${{ matrix.asset }}.msi --output "${{ runner.temp }}/installation.json"
       - name: Verify the complete artifact is unchanged after installation tests
         shell: bash
         run: python3 scripts/release_manifest.py verify --root desktop-product
@@ -425,15 +418,13 @@ jobs:
           name: desktop-installation-${{ matrix.target }}
           path: ${{ runner.temp }}/installation.json
           if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always() && runner.os == 'Windows'
-        with:
-          name: desktop-installer-logs-${{ matrix.target }}
-          path: ${{ runner.temp }}/khor-installer-logs/*.log
-          if-no-files-found: warn
-          retention-days: 14
+  windows-desktop:
+    needs: [frontend, agent-runtime]
+    uses: ./.github/workflows/windows-desktop.yml
+    with:
+      reuse_agent_runtime: true
   candidate:
-    needs: [quality, native, ios, mac-notarize, desktop]
+    needs: [quality, native, ios, mac-notarize, desktop, windows-desktop]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

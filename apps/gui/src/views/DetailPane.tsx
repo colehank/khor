@@ -46,14 +46,23 @@ function ObservedSession({ row, onReading }: { row: SessionRow; onReading?: Sess
     }, error => { if (!stopped) setFault({key: queryKey, message: String(error)}); });
     return () => { stopped = true; };
   }, [row.id, locator, queryKey, attempt]);
+  // **Who holds this record, and where the way forward is.** The row already
+  // says 只读记录; on its own that reads like khor refusing. One line says the
+  // vendor holds it and the row's menu is how to carry on there (T0-4).
+  const readonlyNote = row.kind === "observe" ? (
+    <p data-readonly-note className="px-row py-in text-caption text-muted-foreground" role="note">
+      {gui.session_observation_note}
+    </p>
+  ) : null;
   if (content?.kind === 'available') {
     const history=<ChatView id={row.id} still binding={content.binding} watch={content.following} category={row.category}
       home={row.home} machine={row.home} ended={row.word === 'failed'} onReading={onReading} />;
-    if (!content.capture) return history;
+    if (!content.capture) return <>{readonlyNote}{history}</>;
     return <>
       <div data-history-capture className="px-row py-in text-caption text-muted-foreground" role="status">
         <p>{gui.history_capture_scope}</p>
       </div>
+      {readonlyNote}
       {history}
     </>;
   }

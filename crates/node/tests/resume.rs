@@ -194,6 +194,7 @@ async fn a_deafened_serve_hears_its_peer_again_after_resume_without_being_reopen
 
 /// A program that writes whatever lands in `<self>.say` and waits for
 /// `<self>.stop`.
+#[cfg(unix)]
 const SAYER: &str = r#"#!/bin/sh
 printf 'sayer-up\n'
 while [ ! -f "$0.stop" ]; do
@@ -201,6 +202,35 @@ while [ ! -f "$0.stop" ]; do
   sleep 0.1
 done
 "#;
+
+/// The Windows host program for the rejoin case: `SAYER`'s behaviour, run
+/// from this test binary so no shell or script interpreter is involved.
+#[cfg(windows)]
+#[test]
+fn host_fixture() {
+    let Ok(root) = std::env::var("KHOR_SAYER_ROOT") else {
+        return;
+    };
+    use std::io::Write;
+    let root = std::path::PathBuf::from(root);
+    let say = root.join("sayer.say");
+    let stop = root.join("sayer.stop");
+    // Bounded: a normal run of this binary also executes this case, and the
+    // rejoin case has set the variable by then.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+    println!("sayer-up");
+    let _ = std::io::stdout().flush();
+    while !stop.exists() && std::time::Instant::now() < deadline {
+        if say.exists() {
+            if let Ok(text) = std::fs::read_to_string(&say) {
+                print!("{text}");
+                let _ = std::io::stdout().flush();
+            }
+            let _ = std::fs::remove_file(&say);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
 
 /// Reads from a host connection until `want` has been seen, or the
 /// budget runs out; answers everything read.
@@ -242,6 +272,8 @@ fn ends_within(conn: &mut std::net::TcpStream, budget: Duration) -> bool {
     false
 }
 
+/// **A far terminal rejoins after a resume and its replay has the meanwhile.**
+///
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_far_terminal_rejoins_after_resume_and_its_replay_has_what_happened_meanwhile() {
     let ra = root("ta");
@@ -263,9 +295,9 @@ async fn a_far_terminal_rejoins_after_resume_and_its_replay_has_what_happened_me
 
     // A real host on alpha, in this process (`host_replay.rs`'s way).
     let program = ra.0.join("sayer");
-    fs::write(&program, SAYER).unwrap();
     #[cfg(unix)]
     {
+        fs::write(&program, SAYER).unwrap();
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(&program, fs::Permissions::from_mode(0o755)).unwrap();
     }
@@ -274,7 +306,28 @@ async fn a_far_terminal_rejoins_after_resume_and_its_replay_has_what_happened_me
     kind.register(&id, "tui", "sayer", None, None).unwrap();
     let host = {
         let (root, id) = (ra.0.clone(), id.clone());
+        // The same behaviour as SAYER, in the host OS's own shell: announce
+        // itself, echo `<program>.say` while it exists, and leave on
+        // `<program>.stop`. A POSIX script is not a program on Windows.
+        #[cfg(unix)]
         let cmd = vec![program.to_string_lossy().to_string()];
+        #[cfg(windows)]
+        let cmd = {
+            // The POSIX script is not a program on Windows, and a batch loop
+            // under ConPTY lost its first line. The test binary itself is a
+            // reliable host program: `host_fixture` below is the same sayer.
+            let exe = std::env::current_exe().unwrap();
+            // SAFETY: every case in this binary is driven one at a time by the
+            // runner (`--test-threads=1` in the W4 commands), and the child
+            // only needs to learn which directory to watch.
+            unsafe { std::env::set_var("KHOR_SAYER_ROOT", &ra.0) };
+            vec![
+                exe.to_string_lossy().into_owned(),
+                "--exact".to_owned(),
+                "host_fixture".to_owned(),
+                "--nocapture".to_owned(),
+            ]
+        };
         std::thread::spawn(move || khor_node::host::host_main(root, id, (80, 24), cmd))
     };
     let dir = kind.dir_of(&id).expect("registered");

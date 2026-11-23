@@ -1,3 +1,8 @@
+// Carry installs khor on a far machine over ssh and links it into that
+// machine's `~/.local/bin`; both are POSIX shapes. The Windows road has no
+// ssh-based carry yet (W4).
+#![cfg(unix)]
+
 //! Round ROAD-2 T5: khor inside ssh (`khor carry`, `khor _carry`).
 //!
 //! Alpha and beta are scratch residents, paired over a loopback relay.

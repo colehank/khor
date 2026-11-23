@@ -35,6 +35,16 @@ export function dropHandOff() {
 
 /** Asks the app to open the new-session wizard (`App`'s listener). */
 export const NEW_SESSION_EVENT = "khor:new-session";
+/**
+ * **Open this session in a tab**, for an action that created one outside
+ * the wizard — today the native resume: `open_shell` answers the new id
+ * and the person should land on it, not go hunting in the list. Same
+ * shape as the events above: a detail object, dispatched on `window`, and
+ * App owns what opening means (`sessionTabs.open` + the detail screen).
+ */
+export const OPEN_SESSION_EVENT = "khor:open-session";
+export const askOpenSession = (id: string) =>
+  window.dispatchEvent(new CustomEvent(OPEN_SESSION_EVENT, { detail: { id } }));
 export function askNewSession(machine: string, dir: string) {
   window.dispatchEvent(new CustomEvent(NEW_SESSION_EVENT, { detail: { machine, dir } }));
 }

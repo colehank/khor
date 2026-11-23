@@ -1600,6 +1600,7 @@ mod make_tests {
     /// Set to nothing is honoured as 「this machine opens nothing」
     /// rather than read as 「fall back to the platform's」, which would
     /// be khor overruling somebody who told it the answer.
+    #[cfg(unix)]
     #[test]
     fn a_machine_with_no_opener_refuses_by_naming_the_variable() {
         // Serialised against the test below by running in one test:
@@ -1632,6 +1633,12 @@ mod make_tests {
 #[cfg(test)]
 mod search_tests {
     use super::*;
+
+    /// Search answers with the path the platform spells; the expectations
+    /// below are written with '/' so they read the same on every platform.
+    fn slashed(path: &str) -> String {
+        path.replace('\\', "/")
+    }
 
     struct Scratch(std::path::PathBuf);
 
@@ -1684,10 +1691,11 @@ mod search_tests {
             .iter()
             .map(|h| {
                 (
-                    h.path
-                        .trim_start_matches(dir.to_str().unwrap())
-                        .trim_start_matches('/')
-                        .to_owned(),
+                    slashed(
+                        h.path
+                            .trim_start_matches(dir.to_str().unwrap())
+                            .trim_start_matches(['/', '\\']),
+                    ),
                     h.line,
                 )
             })
@@ -1702,7 +1710,7 @@ mod search_tests {
         // …and a name hit is the other list, with no line in it.
         let named = search(dir.to_str().unwrap(), "one.rs").unwrap();
         assert_eq!(named.names.len(), 1, "{:?}", named.names);
-        assert!(named.names[0].ends_with("src/one.rs"));
+        assert!(slashed(&named.names[0]).ends_with("src/one.rs"));
     }
 
     /// **Case-insensitive and a plain substring**, both halves: `README`
@@ -1746,7 +1754,10 @@ mod search_tests {
         // claim above is not「it stopped answering」.
         let real = search(dir.to_str().unwrap(), "one.rs").unwrap();
         assert_eq!(real.names.len(), 1, "{:?}", real.names);
-        assert!(real.names[0].ends_with("src/one.rs"), "absolute, as before");
+        assert!(
+            slashed(&real.names[0]).ends_with("src/one.rs"),
+            "absolute, as before"
+        );
     }
 
     /// An empty box is not a refusal and not the whole project: it is

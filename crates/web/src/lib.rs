@@ -82,7 +82,7 @@ pub fn port() -> u16 {
     khor_node::face::web_port()
 }
 
-pub use khor_node::face::{answers_at, best_address, link};
+pub use khor_node::face::{answers_at, best_address, link, reachable_address};
 
 /// Starts the face on every interface this machine has.
 ///

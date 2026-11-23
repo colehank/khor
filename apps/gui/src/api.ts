@@ -1,4 +1,5 @@
 import type { ContentView } from '@/lib/content';
+import type { WindowsShell } from '@/lib/new-session-choices';
 import { hasAppUpdates, hasNativeBackend } from '@/lib/backend-context';
 import type { AttachmentKind } from "./gen/bindings/AttachmentKind";
 import { attachmentView } from "./lib/attachment-view";
@@ -17,7 +18,7 @@ import { gui, msg } from "./gen/catalog";
 // head describes about copying a token.
 import type { MenuRows } from "./components/OmniMenu";
 import { nativeMenuQueue } from "./lib/native-menu-queue";
-import { listenNativeEvent } from "./lib/native-events";
+import { listenNativeEvent, setWindowEventInvoker } from "./lib/native-events";
 import type { SyncOutcome } from "./gen/bindings/SyncOutcome";
 import type { Connections } from "./gen/bindings/Connections";
 import type { ReachReport } from "./gen/bindings/ReachReport";
@@ -102,6 +103,10 @@ import type { PaneHistory } from "./gen/bindings/PaneHistory";
 import type { LaunchPreset } from "./gen/bindings/LaunchPreset";
 import type { AgentRow } from "./gen/bindings/AgentRow";
 import type { KnownAgent } from "./gen/bindings/KnownAgent";
+import type { AgentFleet } from "./gen/bindings/AgentFleet";
+import type { FleetAgent } from "./gen/bindings/FleetAgent";
+import type { DshConversation } from "./gen/bindings/DshConversation";
+import type { DshLine } from "./gen/bindings/DshLine";
 import type { AgentSaid } from "./gen/bindings/AgentSaid";
 import type { CandidateRow } from "./gen/bindings/CandidateRow";
 import type { FindHit } from "./gen/bindings/FindHit";
@@ -210,7 +215,15 @@ export type {
 };
 
 const params = new URLSearchParams(window.location.search);
-const bridge = params.get("bridge");
+const windowTransport = (window as Window & {
+  __KHOR_WINDOW_TRANSPORT__?: Readonly<{ url: string; token: string }>;
+}).__KHOR_WINDOW_TRANSPORT__;
+const devBridge = params.get("bridge");
+const bridge = windowTransport?.url ?? (devBridge ? `http://127.0.0.1:${devBridge}` : null);
+
+function bridgeHeaders(): Record<string, string> {
+  return windowTransport ? { "X-Khor-Window-Token": windowTransport.token } : {};
+}
 
 /**
  * Inside the desktop app's webview.
@@ -314,14 +327,19 @@ async function answer<T>(r: Response): Promise<T> {
   }
 }
 
-async function post<T>(url: string, headers: Record<string, string>, args?: Record<string, unknown>): Promise<T> {
+async function post<T>(url: string, headers: Record<string, string>, args?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
   const r = await reach(url, {
     method: "POST",
     headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(args ?? {}),
+    signal,
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
   return answer<T>(r);
+}
+
+if (windowTransport) {
+  setWindowEventInvoker((command, args) => call(`window_event_${command}`, args));
 }
 
 /**
@@ -355,12 +373,23 @@ export const onWebFace = !inApp && bridge === null;
  */
 export const isMenuFace = params.get("face") === "menu";
 
-async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
-  if (bridge) return post<T>(`http://127.0.0.1:${bridge}/${cmd}`, {}, args);
-  if (inApp) {
+// The Windows HTTP bridge also answers shared web commands. These commands
+// belong to the installed App and use its normal Tauri handlers and capability
+// grants. They are absent from both the web server's command table and
+// the Windows command bridge.
+const desktopCommands = new Set([
+  "root_words", "system_unlock",
+  "page_sheet",
+  "show_menu", "hide_menu", "size_menu", "menu_rows", "menu_input", "menu_pick", "menu_state",
+  "face_note", "bell_haptic", "joy_haptic", "haptic",
+]);
+
+async function call<T>(cmd: string, args?: Record<string, unknown>, signal?: AbortSignal): Promise<T> {
+  if (inApp && (!bridge || (windowTransport && desktopCommands.has(cmd)))) {
     const { invoke } = await import("@tauri-apps/api/core");
     return invoke<T>(cmd, args);
   }
+  if (bridge) return post<T>(`${bridge}/${cmd}`, bridgeHeaders(), args, signal);
   // The web face. Same origin — the page came from here — so the
   // address is relative and no CORS is involved in either direction.
   //
@@ -374,6 +403,7 @@ async function call<T>(cmd: string, args?: Record<string, unknown>): Promise<T> 
     `/api/${cmd}`,
     webKey === null ? {} : { authorization: `Bearer ${webKey}` },
     args,
+    signal,
   );
 }
 
@@ -870,12 +900,12 @@ export const pickPaths = () => call<string[]>("pick_paths");
     its refusal sentence are the backend's (`UPLOAD_CAP_BYTES`). */
 export const stageFile = async (file: File): Promise<string> => {
   const q = `name=${encodeURIComponent(file.name)}`;
-  const url = bridge ? `http://127.0.0.1:${bridge}/upload?${q}` : `/api/upload?${q}`;
+  const url = bridge ? `${bridge}/upload?${q}` : `/api/upload?${q}`;
   const r = await reach(url, {
     method: "POST",
     // Same rule as `call`: the header rides when the key is held; a
     // bare page leans on the remembered cookie (记住一次批).
-    headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
+    headers: bridge ? bridgeHeaders() : webKey === null ? {} : { authorization: `Bearer ${webKey}` },
     body: file,
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
@@ -890,6 +920,37 @@ export const agents = () => call<AgentRow[]>("agents");
     the point: 「khor 不替你装这个」 and 「khor 接不了这个」 are
     different sentences and only the first is true. */
 export const agentsKnown = () => call<KnownAgent[]>("agents_known");
+/** **What this machine has, not what khor knows about** (`khor agents
+    fleet`). Each row is one known agent, whether its program is here, the
+    road khor would take to it (`builtin` / `native-acp` /
+    `registry-acp` / `terminal`), and what that road delivers.
+
+    Not {@link agentsKnown}: an installed DSH is not in that registry, and
+    a registry entry nobody installed is not usable. A row with no
+    `program` is a failed lookup, not an agent khor cannot speak to — so
+    it stays on the list, which is the only place "install this" can be
+    said. No store is opened and nothing is started, so this answers on a
+    machine whose store refuses. */
+export const agentFleet = () => call<AgentFleet>("agent_fleet");
+export type { AgentFleet, FleetAgent };
+/** **The conversations DSH already has on this machine**, newest first
+    (`khor agents dsh`). Header lines only: id, the directory each was
+    recorded in, when it started. There is no title — DSH keeps it in
+    message events this does not read, and inventing one would be a name
+    the vendor never gave it. A machine without DSH answers an empty
+    list, not an error. */
+export const dshSessions = () => call<DshConversation[]>("dsh_sessions");
+export type { DshConversation };
+/** **One DSH conversation, line by line** (`khor agents dsh <session>`).
+    Same reader the terminal prints from: `who` is `user`, `assistant`,
+    `thought`, `tool` or `tool-result`, and `text` is what was said. */
+export const dshTranscript = (id: string) => call<DshLine[]>("dsh_transcript", { id });
+/** The argv a terminal should run to continue a foreign conversation —
+    `codex resume <id>`, `dsh tui --resume <id>`. One answer from the node,
+    so a screen does not spell the vendors' commands itself. */
+export const nativeResumeArgv = (agent: string, id: string) =>
+  call<string>("native_resume_argv", { agent, id });
+export type { DshLine };
 /** `[when it was taken, how many, how many khor can start]`. A table
     that ages has to say when it is from. */
 export const agentsKnownTaken = () => call<[string, number, number]>("agents_known_taken");
@@ -925,6 +986,21 @@ export const agentAsk = (name: string) => call<AgentSaid>("agent_ask", { name })
 export const resumeSession = (agent: string, session: string) =>
   call<string>("resume_session", { agent, session });
 
+/** **One message into a conversation the vendor keeps** — Codex only for
+    now (`khor agents tell` runs the same function). The write goes through
+    the vendor's own daemon, so the conversation stays its owner's and a
+    *loaded* thread can still be spoken to; nothing khor owns changes.
+
+    Answers the vendor's receipt (`Queued message … for thread …`), or
+    refuses with its own words — a wrong id should read like Codex saying
+    the id is wrong. The text travels as one argument, never through a
+    shell. */
+/** Where the vendor expects to stand: DSH refuses a session adopted by
+    `--session-id` from any directory but the one it was recorded in, so a
+    row's recorded place travels with its message. */
+export const nativeSend = (agent: string, id: string, text: string, cwd?: string | null) =>
+  call<string>("native_send", { agent, id, text, ...(cwd ? { cwd } : {}) });
+
 /** Read an offer on the exact execution device; this does not start a provider. */
 export const sessionRecovery = (home_id: string, id: string) =>
   call<SessionRecovery>("session_recovery", { home_id, id });
@@ -948,19 +1024,6 @@ export const find = (word: string) => call<FindHit[]>("find", { word });
 /** **Windows' own three, pressed** (docs/SHELL.md 第十轮). Only that
     platform draws them: macOS has the system's inside the row and Linux
     keeps its decorations. A no-op outside the app. */
-export const windowMinimize = () => call<null>("window_minimize");
-export const windowMaximizeToggle = () => call<null>("window_maximize_toggle");
-export const windowClose = () => call<null>("window_close");
-/**
- * Whether this is the app on Windows — the one face that draws the
- * window's three buttons itself.
- *
- * `navigator.platform` for `trafficLights`' reason, one line up: it is
- * deprecated and still the only thing that answers without a round trip,
- * and a wrong answer costs three buttons that are not needed rather than
- * a broken face.
- */
-export const windowsApp = inApp && /win/i.test(navigator.platform || navigator.userAgent);
 /** How much of the title row's left end the system's three buttons stand
     in, **as the window measured them** (docs/SHELL.md 第十一轮): the SDK
     decides their size, so this is asked rather than written down. Zero
@@ -1010,8 +1073,8 @@ export type { LaunchPreset } from './gen/bindings/LaunchPreset';
 export const launchPresets = () => call<LaunchPreset[]>('launch_presets');
 export const saveLaunchPreset = (preset: LaunchPreset) => call<LaunchPreset[]>('launch_preset_save', { preset });
 export const deleteLaunchPreset = (id: string) => call<LaunchPreset[]>('launch_preset_delete', { id });
-export const openShell = (machine: string, cwd: string, command: string, title: string, token: string) =>
-  call<string>('open_shell', { machine, cwd, command, title, token, ...termSizeHint() });
+export const openShell = (machine: string, cwd: string, command: string, title: string, token: string, shell?: WindowsShell) =>
+  call<string>('open_shell', { machine, cwd, command, title, token, shell, ...termSizeHint() });
 
 /** 接管 (批C): end the session's terminal side; the conversation continues here. */
 export const takeover = (id: string) => call<null>("takeover", { id });
@@ -1259,6 +1322,10 @@ export const setMachinePaused = (machine: string, on: boolean) =>
 export const fetchAbout = () => call<About>("about");
 export type { AppUpdateStatus } from "./gen/bindings/AppUpdateStatus";
 export type { UpdatePreferences } from "./gen/bindings/UpdatePreferences";
+export const replyToUpdatePreparation = (nonce: string, blocked: import("./gen/bindings/UpdateBlocker").UpdateBlocker[]) =>
+  call<void>("app_update_prepared", { nonce, blocked });
+export const appUpdateUiReady = () => call<void>("app_update_ui_ready");
+
 export const fetchAppUpdateStatus = () => call<import("./gen/bindings/AppUpdateStatus").AppUpdateStatus>("app_update_status");
 export type { RuntimeCacheUsage } from "./gen/bindings/RuntimeCacheUsage";
 export const runtimeCacheUsage = (clean = false) => call<import("./gen/bindings/RuntimeCacheUsage").RuntimeCacheUsage>("app_update_runtime_cache", { clean });
@@ -1341,7 +1408,12 @@ export const setConfig = (name: string, value: string) =>
     off the store — so the shell can ask this before it draws anything,
     which is what lets a locked face come up locked rather than flashing
     a conversation first. */
-export const fetchLock = () => call<LockFacts>("lock_state");
+export const fetchLock = () => call<LockFacts>(
+  "lock_state",
+  undefined,
+  // A stalled Windows request must reach useLock's fail-closed retry.
+  windowTransport ? AbortSignal.timeout(5000) : undefined,
+);
 export const setLock = (on: boolean) => call<LockFacts>("set_lock", { on }).then(told(LOCK_TOLD));
 /** An empty PIN clears it, and clearing turns the lock off in the same
     move — splitting those is how a machine claims to be locked with no
@@ -1472,10 +1544,10 @@ export const chatPut = async (id: string, lease: string, file: File, into: strin
     });
   }
   const q = `id=${encodeURIComponent(id)}&lease=${encodeURIComponent(lease)}&name=${encodeURIComponent(file.name)}${into ? `&into=${encodeURIComponent(into)}` : ""}`;
-  const url = bridge ? `http://127.0.0.1:${bridge}/chat_put?${q}` : `/api/chat_put?${q}`;
+  const url = bridge ? `${bridge}/chat_put?${q}` : `/api/chat_put?${q}`;
   const r = await reach(url, {
     method: "POST",
-    headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
+    headers: bridge ? bridgeHeaders() : webKey === null ? {} : { authorization: `Bearer ${webKey}` },
     body: file,
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
@@ -1536,7 +1608,7 @@ export const fileExportAppend=(id:string,offset:number,data:string)=>call<null>(
 export const fileExportFinish=(id:string,total:number)=>call<null>("file_export_finish",{id,total});
 export const fileHandoffSave = (id: string) => call<boolean>("file_handoff_save", { id });
 export type FilePreviewKind = "document" | "pdf";
-export const filePreviewSupported = (kind: FilePreviewKind) => inApp ? call<boolean>("file_preview_supported", {kind}) : Promise.resolve(false);
+export const filePreviewSupported = (kind: FilePreviewKind, path?: string) => inApp ? call<boolean>("file_preview_supported", {kind, path}) : Promise.resolve(false);
 export const filePreviewOpen = (id:string) => call<boolean>("file_preview_open",{id});
 
 
@@ -1782,12 +1854,13 @@ const nativeMenus = nativeMenuQueue<MenuRequest>({
   show: request => call<boolean>("show_menu", { request }),
   hide: id => call<null>("hide_menu", { id }),
 });
+const nativeMenuAvailable = inApp && !windowTransport;
 export const showMenu = (request: MenuRequest): Promise<boolean> =>
-  inApp ? nativeMenus.show(request) : Promise.resolve(false);
+  nativeMenuAvailable ? nativeMenus.show(request) : Promise.resolve(false);
 
 /** Retires only this lease. Desktop reuses its hidden window; iOS removes
     its private sibling presenter. Stale owners cannot close a newer menu. */
-export const hideMenu = (id: string) => (inApp ? nativeMenus.hide(id) : Promise.resolve(null));
+export const hideMenu = (id: string) => (nativeMenuAvailable ? nativeMenus.hide(id) : Promise.resolve(null));
 
 /** The columns that ask the window for their room: the session's 附栏
     (`App`) and the workspace's sessions (`WorkspacePane`). Each one's
@@ -1917,6 +1990,17 @@ export function hear<T>(event: string, said: (payload: T) => void): () => void {
  */
 export function onQuitRequested(ask: () => boolean): () => void {
   if (!inApp) return () => {};
+  if (windowTransport) {
+    const event = "khor:windows-close-requested";
+    const requested = () => {
+      if (!keepWindowOpen(ask)) quitNow();
+    };
+    window.addEventListener(event, requested);
+    // The native handler can prevent a close only after the receiver is ready.
+    void call<null>("window_close_guard_ready").catch((error: unknown) =>
+      console.error("khor: cannot register the Windows close guard", error));
+    return () => window.removeEventListener(event, requested);
+  }
   let drop: (() => void) | undefined;
   let question: typeof ask | null = ask;
   let gone = false;
@@ -1940,16 +2024,24 @@ export function onQuitRequested(ask: () => boolean): () => void {
   };
 }
 
+function keepWindowOpen(ask: (() => boolean) | null): boolean {
+  try {
+    return ask?.() ?? false;
+  } catch (error) {
+    console.error("khor: the quit guard failed", error);
+    return false;
+  }
+}
+
 /** Closes the app's window for good, past every guard — what 「不存,
     退出」 presses. `destroy` rather than `close`, because `close` asks
     again and the answer would be the same guard that is on screen. */
 export function quitNow(): void {
   if (!inApp) return;
-  void import("@tauri-apps/api/window")
-    .then(({ getCurrentWindow }) => getCurrentWindow().destroy())
-    .catch((e: unknown) => {
-      console.error("khor: cannot close the window", e);
-    });
+  const close = windowTransport
+    ? call<null>("window_destroy")
+    : import("@tauri-apps/api/window").then(({ getCurrentWindow }) => getCurrentWindow().destroy());
+  void close.catch((error: unknown) => console.error("khor: cannot close the window", error));
 }
 
 /**
@@ -2171,10 +2263,10 @@ async function stageBytes(command: string, fields: Record<string, string>, file:
     });
   }
   const q = new URLSearchParams(fields);
-  const url = bridge ? `http://127.0.0.1:${bridge}/${command}?${q}` : `/api/${command}?${q}`;
+  const url = bridge ? `${bridge}/${command}?${q}` : `/api/${command}?${q}`;
   const r = await reach(url, {
     method: "POST",
-    headers: bridge || webKey === null ? {} : { authorization: `Bearer ${webKey}` },
+    headers: bridge ? bridgeHeaders() : webKey === null ? {} : { authorization: `Bearer ${webKey}` },
     body: file,
   });
   if (!r.ok) throw new Error(unwrap(await r.text()));
@@ -2184,7 +2276,7 @@ export const termDropItems = (id: string, lease: string, items: DropItem[], into
 export const termDropFolder = (name: string, dirs: string[]) => call<string>("term_drop_folder", { name, dirs });
 /** Releases only app-owned selection tokens, without cancelling a different transfer. */
 export const termDropForget = (paths: string[]) => call<null>("term_drop_forget", { paths });
-export const nativeFolders = () => inApp && !bridge && !/Android/i.test(navigator.userAgent);
+export const nativeFolders = () => inApp && (windowTransport !== undefined || !bridge) && !/Android/i.test(navigator.userAgent);
 export const termPickFolders = () => call<string[]>("term_pick_folders");
 /** How far this terminal's drop has got, 0 to 1, or `null` when none is
     under way (item 60): what its pill's line draws. */

@@ -5,7 +5,8 @@
 // page the reader's text size through the `-apple-system-body` font
 // keyword, and the scale is that size over **the platform's own default
 // body** — 17 on iOS (Dynamic Type's Large), 13 on the Mac. A platform
-// that tells a page nothing (a desktop browser) answers 1. Off, the
+// that tells a page nothing (a desktop browser) answers 1. The Windows App
+// passes the system text scale separately from display DPI. Off, the
 // slider's step is the scale — iOS's seven text sizes, xS to xxxL, over
 // 17.
 //
@@ -22,6 +23,10 @@
 import { useEffect, useState } from "react";
 
 import { heardFrom } from "@/lib/other-windows";
+
+declare global {
+  interface Window { __KHOR_SYSTEM_TEXT_SCALE__?: number }
+}
 
 /** iOS's body sizes, xS…xxxL; the fourth (17) is the default. */
 export const UI_STEPS = [14, 15, 16, 17, 19, 21, 23] as const;
@@ -71,6 +76,8 @@ export function typeSize(): TypeSize {
 
 /** The system's text size as a scale, where the platform says one. */
 export function systemScale(): number {
+  const native = typeof window === "undefined" ? undefined : window.__KHOR_SYSTEM_TEXT_SCALE__;
+  if (typeof native === "number" && Number.isFinite(native) && native > 0) return native;
   if (typeof CSS === "undefined" || !CSS.supports("font", "-apple-system-body")) return 1;
   const probe = document.createElement("span");
   probe.style.font = "-apple-system-body";
@@ -105,6 +112,11 @@ function wear(t: TypeSize) {
     it was away. */
 export function wearTypeSize() {
   wear(stored());
+  window.addEventListener("khor:system-text-size", () => {
+    const t = stored();
+    wear(t);
+    window.dispatchEvent(new CustomEvent(CHANGED, { detail: t }));
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
       const t = stored();

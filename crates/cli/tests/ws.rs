@@ -14,8 +14,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn khor(home: &Path) -> Command {
+    // Both sides speak English: this process's catalog defaults to Chinese
+    // until told otherwise, while the binary resolves from the environment
+    // (English unless LANG/LC_ALL asks for Chinese). The assertions below
+    // compare words (the pinned mark), so pin the child's environment.
+    static ENGLISH: std::sync::Once = std::sync::Once::new();
+    ENGLISH.call_once(|| khor_catalog::lang::set(khor_catalog::lang::Lang::En));
     let mut c = Command::new(env!("CARGO_BIN_EXE_khor"));
-    c.env("KHOR_HOME", home)
+    c.env("LC_ALL", "C")
+        .env("KHOR_HOME", home)
         .env("KHOR_NAME", "box")
         .env_remove("KHOR_SESSION");
     c
@@ -207,6 +214,9 @@ fn a_dot_becomes_the_directory_it_was_typed_in() {
 /// `current_dir()`, which has no links in it; a row keyed by the linked
 /// spelling would never match the sessions inside it (smoke 批⑥ found
 /// exactly this on a `target/` that points at another disk).
+/// A symlink is a Unix shape; a Windows junction needs a privilege the
+/// test host may not have, so that half is NOT_TESTED here (W3).
+#[cfg(unix)]
 #[test]
 fn a_directory_added_through_a_link_is_stored_as_the_real_one() {
     let h = home("link");

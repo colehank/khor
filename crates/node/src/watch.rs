@@ -1538,7 +1538,13 @@ mod tests {
         std::fs::write(new.join("child.txt"), b"modified after native coverage").unwrap();
         let changed = changed(&watches, &opened, &batch).await;
         assert!(changed.workspace);
-        assert!(changed.reset || changed.dirs.contains(&new.display().to_string()));
+        let want = std::fs::canonicalize(&new).unwrap_or_else(|_| new.clone());
+        assert!(
+            changed.reset
+                || changed.dirs.iter().any(|dir| std::fs::canonicalize(dir)
+                    .map(|path| path == want)
+                    .unwrap_or(false))
+        );
         watches.shutdown().await;
         assert_eq!(watches.owned.lock().unwrap().counts(), (0, 0, 0, 0));
         assert!(watches.native.lock().unwrap().is_none());

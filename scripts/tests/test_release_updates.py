@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import release_manifest
+import release_candidate
 import release_store as store
 import release_updates as updates
 from test_tag_release import candidate_at, FakeReleases, RC, SHA
@@ -75,6 +76,39 @@ class UpdatePublicationTests(unittest.TestCase):
             self.assertIn("/" + RC + "/", asset["url"])
         self.create()
         self.assertEqual(self.sign.call_count, 7, "retry must reuse the original signatures")
+
+    def test_windows_updates_sign_the_original_msi_and_its_installed_size(self):
+        self.record["schema"] = 2
+        for name in release_candidate.DESKTOP_PLATFORMS:
+            folder = self.root / name
+            folder.mkdir()
+            filename = name.removesuffix("-app") + (".msi" if name == updates.WINDOWS else ".deb")
+            (folder / filename).write_bytes(b"original package fixture")
+            receipt = dict(self.record["artifacts"]["khor-linux-x86_64"], kind=name,
+                           files=release_manifest.files(folder))
+            if name == updates.WINDOWS:
+                receipt["msi_unpacked_bytes"] = 123_456
+                receipt["program"] = dict(receipt["program"], component="desktop-app",
+                                          platform=dict(os="windows", arch="x86_64"))
+            self.record["artifacts"][name] = receipt
+            (folder / "receipt.json").write_text(json.dumps(receipt))
+        (self.root / "candidate-manifest/manifest.json").write_text(json.dumps(self.record))
+
+        self.create()
+        native = json.loads((self.output / updates.MANIFEST).read_text())
+        tauri = json.loads((self.output / updates.TAURI).read_text())
+        msi, = (asset for asset in native["artifacts"] if asset["platform"]["os"] == "windows")
+        self.assertEqual(msi["file"], "khor-windows-x86_64.msi")
+        self.assertEqual(msi["unpacked_bytes"], 123_456)
+        self.assertEqual(msi["sha256"], self.record["artifacts"][updates.WINDOWS]["files"][msi["file"]]["sha256"])
+        self.assertEqual(tauri["platforms"]["windows-x86_64"], dict(url=msi["url"], signature=msi["signature"]))
+        self.assertEqual((self.output / (msi["file"] + ".sig")).read_text().strip(), msi["signature"])
+
+        self.output.rename(self.root / "update-publication")
+        self.sign.reset_mock()
+        self.create("v1.2.3")
+        self.assertEqual(self.sign.call_count, 1)
+        self.assertEqual((self.output / (msi["file"] + ".sig")).read_text().strip(), msi["signature"])
 
     def test_stable_promotion_reuses_every_original_archive_and_its_signature(self):
         self.create()

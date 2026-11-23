@@ -175,6 +175,40 @@ fn new_terminal_startup_words_are_refused_before_old_peers_can_drop_arguments() 
 }
 
 #[test]
+fn optional_windows_shell_preserves_default_startup_frames_and_cannot_be_silently_dropped() {
+    use crate::shell_start::{ShellStart, WindowsShell};
+
+    #[derive(Debug, Serialize, Deserialize)]
+    struct BeforeShellSelection {
+        token: String,
+        title: String,
+        cwd: String,
+        command: String,
+        cols: u16,
+        rows: u16,
+        headless: bool,
+        argv: Option<Vec<String>>,
+    }
+
+    let mut start = terminal_start();
+    let before: BeforeShellSelection =
+        serde_json::from_value(serde_json::to_value(&start).unwrap()).unwrap();
+    let bytes = proto::encode(&before).unwrap();
+    assert_eq!(proto::encode(&start).unwrap(), bytes);
+    assert_eq!(proto::decode::<ShellStart>(&bytes).unwrap().shell, None);
+
+    for shell in [WindowsShell::PowerShell, WindowsShell::Cmd] {
+        start.shell = Some(shell);
+        let bytes = proto::encode(&start).unwrap();
+        assert!(proto::decode::<BeforeShellSelection>(&bytes).is_err());
+        assert_eq!(
+            proto::decode::<ShellStart>(&bytes).unwrap().shell,
+            Some(shell)
+        );
+    }
+}
+
+#[test]
 fn execution_words_are_refused_instead_of_dispatching_any_published_operation() {
     let action = crate::execution::Action::CommandTask(crate::command_task::Request::Start {
         token: "new-command-task-token".into(),

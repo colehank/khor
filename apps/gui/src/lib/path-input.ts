@@ -2,8 +2,19 @@
 export function pathSeparator(path: string): '/' | '\\' {
   return /^[a-z]:\\/i.test(path) || (path.startsWith('\\\\') || path.startsWith('~\\')) ? '\\' : '/';
 }
+
+export const isWindowsPath = (path: string) => /^[a-z]:[\\/]|^[\\/]{2}|^~\\/i.test(path);
+
 export function directoryPrefix(path: string): string {
-  return /[\\/]$/.test(path) ? path : path + pathSeparator(path);
+  const separator = pathSeparator(path);
+  return path.endsWith(separator) || separator === '\\' && path.endsWith('/') ? path : path + separator;
+}
+
+export function pathLeaf(path: string): string {
+  const windows = isWindowsPath(path);
+  const cut = path.replace(windows ? /[\\/]+$/ : /\/+$/, '');
+  const at = windows ? Math.max(cut.lastIndexOf('/'), cut.lastIndexOf('\\')) : cut.lastIndexOf('/');
+  return cut.slice(at + 1) || cut;
 }
 export function settledPath(typed: string): string {
   const value = typed.trim();
@@ -28,9 +39,11 @@ export function homeRelative(home: string, relative: string): string {
 }
 
 export function parentPath(path: string): string | null {
-  if (/^(?:\/|[a-z]:[\\/]|\\\\[^\\]+\\[^\\]+\\?)$/i.test(path)) return null;
-  const cut = path.replace(/[\\/]+$/, "");
-  const at = Math.max(cut.lastIndexOf("/"), cut.lastIndexOf("\\"));
+  const drive = /^(?:\\\\\?\\)?[a-z]:[\\/]/i.exec(path)?.[0];
+  if (path === '/' || path === drive || /^\\\\(?:\?\\UNC\\)?[^\\]+\\[^\\]+\\?$/i.test(path)) return null;
+  const windows = isWindowsPath(path);
+  const cut = path.replace(windows ? /[\\/]+$/ : /\/+$/, '');
+  const at = windows ? Math.max(cut.lastIndexOf('/'), cut.lastIndexOf('\\')) : cut.lastIndexOf('/');
   if (at < 0) return null;
-  return at === 2 && /^[a-z]:/i.test(cut) ? cut.slice(0, 3) : cut.slice(0, at) || "/";
+  return drive && at === drive.length - 1 ? drive : cut.slice(0, at) || '/';
 }

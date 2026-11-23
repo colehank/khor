@@ -4,9 +4,9 @@
 //!
 //! # Only the OS secret store of the machine that runs ssh
 //!
-//! The macOS Keychain, or the Secret Service on Linux through
-//! `secret-tool` (which takes the secret on stdin, so it is never on a
-//! command line). Never a synced document, the wire, a log or a ticket:
+//! macOS Keychain, Windows Credential Manager, or the Linux Secret
+//! Service through `secret-tool` (which takes the secret on stdin).
+//! Never a synced document, the wire, a log or a ticket:
 //! the device row says only that the road is a password road
 //! (`ssh_password`). A machine with no store refuses the password road
 //! in one sentence rather than keeping it anywhere else.
@@ -341,7 +341,103 @@ mod os {
     }
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(windows)]
+mod os {
+    use super::SERVICE;
+    use khor_catalog::msg;
+    use std::{io, ptr};
+    use windows_sys::Win32::Foundation::ERROR_NOT_FOUND;
+    use windows_sys::Win32::Security::Credentials::{
+        CRED_MAX_CREDENTIAL_BLOB_SIZE, CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CREDENTIALW,
+        CredDeleteW, CredFree, CredReadW, CredWriteW,
+    };
+
+    fn target(key: &str) -> Vec<u16> {
+        // Windows compares credential names without case. Encode the key so
+        // two differently cased aliases still have distinct entries.
+        use std::fmt::Write;
+        let mut name = format!("{SERVICE}:");
+        for byte in key.bytes() {
+            write!(&mut name, "{byte:02x}").expect("writing to String");
+        }
+        name.encode_utf16().chain(Some(0)).collect()
+    }
+
+    fn failure(error: io::Error) -> String {
+        msg::secret_store_failed(error.to_string())
+    }
+
+    pub fn put(key: &str, password: &str) -> Result<(), String> {
+        let mut target = target(key);
+        let size = password.len();
+        if size > CRED_MAX_CREDENTIAL_BLOB_SIZE as usize {
+            return Err(msg::secret_store_failed(
+                "credential exceeds the Windows vault size limit",
+            ));
+        }
+        let credential = CREDENTIALW {
+            Type: CRED_TYPE_GENERIC,
+            TargetName: target.as_mut_ptr(),
+            CredentialBlobSize: size as u32,
+            CredentialBlob: password.as_ptr().cast_mut(),
+            // Persists across sign-ins on this machine for the current user.
+            Persist: CRED_PERSIST_LOCAL_MACHINE,
+            ..Default::default()
+        };
+        // SAFETY: CredWriteW reads the structure and its buffers before returning.
+        if unsafe { CredWriteW(&credential, 0) } == 0 {
+            return Err(failure(io::Error::last_os_error()));
+        }
+        Ok(())
+    }
+
+    pub fn get(key: &str) -> Result<Option<String>, String> {
+        let target = target(key);
+        let mut found = ptr::null_mut();
+        // SAFETY: the terminated name is live and the result is an out pointer.
+        if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut found) } == 0 {
+            let error = io::Error::last_os_error();
+            return if error.raw_os_error() == Some(ERROR_NOT_FOUND as i32) {
+                Ok(None)
+            } else {
+                Err(failure(error))
+            };
+        }
+        // SAFETY: a successful read allocates the credential and blob.
+        // Copy the bytes into owned memory before releasing that allocation.
+        let bytes = unsafe {
+            let credential = &*found;
+            let bytes = if credential.CredentialBlobSize == 0 {
+                Vec::new()
+            } else {
+                std::slice::from_raw_parts(
+                    credential.CredentialBlob,
+                    credential.CredentialBlobSize as usize,
+                )
+                .to_vec()
+            };
+            CredFree(found.cast());
+            bytes
+        };
+        String::from_utf8(bytes).map(Some).map_err(|_| {
+            msg::secret_store_failed("the Windows vault returned an invalid credential")
+        })
+    }
+
+    pub fn forget(key: &str) -> Result<(), String> {
+        let target = target(key);
+        // SAFETY: target is a live NUL-terminated UTF-16 string.
+        if unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) } == 0 {
+            let error = io::Error::last_os_error();
+            if error.raw_os_error() != Some(ERROR_NOT_FOUND as i32) {
+                return Err(failure(error));
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 mod os {
     use khor_catalog::msg;
 
@@ -407,6 +503,33 @@ mod tests {
             "Allow use of key?",
         ] {
             assert!(!asks_password(p), "{p}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_vault_round_trips_and_removes_only_its_owned_entries() {
+        let scope = tempfile::tempdir().unwrap();
+        let name = scope.path().file_name().unwrap().to_string_lossy();
+        let first = format!("khor-ci-{name}-A");
+        let second = format!("khor-ci-{name}-a");
+        let check = || -> Result<(), String> {
+            assert_eq!(os::get(&first)?, None);
+            os::put(&first, "演示 · key ✓")?;
+            os::put(&second, "fixture")?;
+            assert_eq!(os::get(&first)?.as_deref(), Some("演示 · key ✓"));
+            os::put(&first, "updated")?;
+            assert_eq!(os::get(&first)?.as_deref(), Some("updated"));
+            os::forget(&first)?;
+            assert_eq!(os::get(&first)?, None);
+            assert_eq!(os::get(&second)?.as_deref(), Some("fixture"));
+            Ok(())
+        };
+        let outcome = std::panic::catch_unwind(check);
+        let cleanup = [os::forget(&first), os::forget(&second)];
+        outcome.unwrap().unwrap();
+        for result in cleanup {
+            result.unwrap();
         }
     }
 }

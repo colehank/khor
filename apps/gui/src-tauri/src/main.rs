@@ -1,4 +1,13 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// **Windows is always the GUI subsystem**, release and debug alike. The
+// old `not(debug_assertions)` gate made a debug build a console
+// application, which is how a build handed to a person opened a console
+// window — the two artefacts on this machine disagreed (release: no
+// console but a doubled title bar, debug: one bar and a console), and
+// that read as a window that "flips" between two shapes. `diagnostics`
+// covers what the gate used to buy: stderr goes to a log file, and
+// `KHOR_GUI_CONSOLE=1` allocates a console for the times a terminal is
+// genuinely wanted.
+#![cfg_attr(windows, windows_subsystem = "windows")]
 
 // **The bare binary's bundle facts** (2026-09-28, 「菜单栏」 in
 // docs/design-system/guidelines/30-behavior.md). The app is run as this
@@ -27,6 +36,9 @@
 embed_plist::embed_info_plist!("../Info.plist");
 
 fn main() {
+    // First, before anything can write: a GUI-subsystem process has no
+    // streams, and every diagnostic in this crate speaks on stderr.
+    khor_gui::diagnostics::attach();
     // ssh asking for a kept password (`khor_node::secret`): the app is
     // its own askpass, answered before any window.
     khor_node::secret::answer_askpass_if_asked();

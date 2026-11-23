@@ -17,7 +17,18 @@
     }
   },
   "bundle": {
-    "active": false,
+    "active": true,
+    "targets": "all",
+    "publisher": "Khor",
+    "copyright": "© 2026 colehank",
+    "category": "DeveloperTool",
+    "shortDescription": "A terminal and agent session manager",
+    "longDescription": "Khor keeps shell sessions, agent conversations and files in one place, reachable from this machine and from the other machines you trust.",
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
     "macOS": {
       "bundleName": "khor"
     },
@@ -26,6 +37,21 @@
         "QuickLook",
         "PDFKit"
       ]
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "English",
+          "SimpChinese"
+        ]
+      },
+      "wix": {
+        "language": [
+          "en-US",
+          "zh-CN"
+        ]
+      }
     }
   }
 }

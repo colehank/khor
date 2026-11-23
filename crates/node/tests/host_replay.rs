@@ -30,6 +30,14 @@ while [ ! -f "$0.stop" ]; do sleep 0.1; done
 "#;
 
 #[test]
+// Windows: the host never finishes this flood through ConPTY (22+ minutes
+// without completion); recorded as W4 NOT_TESTED in W4-NETWORK.md.
+#[cfg(unix)]
+// Windows: ConPTY consumes `ESC [ ? 1 h` (application cursor keys) instead of
+// passing it through, so the mode can never appear at the replay head even
+// though the host tracks it; the rest of the replay is right. Recorded as
+// W5 NOT_TESTED in docs/windows-migration/W5-GUI.md.
+#[cfg(unix)]
 fn a_replay_trimmed_past_the_modes_still_starts_in_them() {
     let root = std::env::temp_dir().join(format!("khor-hostreplay-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);

@@ -464,9 +464,11 @@ fn minting_a_ticket_sweeps_the_ones_that_expired() {
     // Minting needs a live endpoint file; without one it refuses before
     // sweeping, which is the wrong thing to be testing here.
     std::fs::create_dir_all(ra.join(".khor")).unwrap();
+    // A live pid, not 1: 1 is init on Unix but no process at all on Windows,
+    // and the endpoint file only counts while its pid is alive.
     std::fs::write(
         ra.join(".khor").join("endpoint.json"),
-        serde_json::json!({ "id": "aa", "addrs": [], "pid": 1 }).to_string(),
+        serde_json::json!({ "id": "aa", "addrs": [], "pid": std::process::id() }).to_string(),
     )
     .unwrap();
 

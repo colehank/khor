@@ -463,10 +463,9 @@ async fn check_version() -> (Health, String, Option<String>) {
     // workspace's tokio is built without the `process` feature, and one
     // spawn on a page that already runs everything concurrently is not
     // worth growing every binary in the tree for.
-    let out = tokio::task::spawn_blocking(move || {
-        std::process::Command::new(&exe).arg("version").output()
-    })
-    .await;
+    let out =
+        tokio::task::spawn_blocking(move || crate::console::hidden(&exe).arg("version").output())
+            .await;
     let Ok(Ok(out)) = out else {
         return (Health::Warn, cli::doctor_version_no_cli().to_owned(), None);
     };
@@ -1018,8 +1017,10 @@ pub fn fix(node: &Node, key: &str) -> Result<String, String> {
             let exe = khor_cli_binary().ok_or_else(|| cli::doctor_version_no_cli().to_owned())?;
             // Detached, stdio null: this starts a resident, and a
             // resident wired to this terminal dies with it — which is
-            // the opposite of what 「起它」 means.
-            std::process::Command::new(&exe)
+            // the opposite of what 「起它」 means. Hidden as well: the app
+            // has no console, so Windows would otherwise hand the
+            // resident a fresh visible one.
+            crate::console::hidden(&exe)
                 .arg("serve")
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::null())
@@ -1049,7 +1050,10 @@ pub(crate) fn khor_cli_binary() -> Option<PathBuf> {
     if let Ok(me) = crate::installed_exe()
         && let Some(dir) = me.parent()
     {
-        let beside = dir.join("khor");
+        // With the platform's own suffix: an installer on Windows lays
+        // down `khor.exe`, so a bare `khor` looked for a file that never
+        // exists there and this check reported "no CLI" beside a CLI.
+        let beside = dir.join(format!("khor{}", std::env::consts::EXE_SUFFIX));
         if beside.is_file() {
             return Some(beside);
         }

@@ -520,6 +520,7 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
           case "quota_board": answer = quota; break;
           case "usage": answer = labUsage(); break;
           case "quota": answer = { quota:quota[0] ? {windows:quota[0].reading.windows,as_of:null,plan:'Max 20x',credits:null,fill:.36,source:'lab',limit_reached:false} : null,trouble:null }; break;
+          case "agent_fleet": answer = { runner: null, agents: [] }; break;
           case "agents": answer = [{name:'codex-acp',command:'npx -y @agentclientprotocol/codex-acp@2.2.2'},
             {name:'dsh',command:'dsh --profile acp'},
             {name:'claude-acp',command:'npx -y @agentclientprotocol/claude-agent-acp@0.94.0'},

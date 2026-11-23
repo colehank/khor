@@ -18,7 +18,7 @@
 //!   `fish/vendor_conf.d/khor.fish`, which restores the variable (Kitty's
 //!   way).
 //! - PowerShell loads its native Profiles before `-NoExit -Command` loads
-//!   `khor.ps1`; cmd keeps its native AutoRun and uses `/k khor.cmd`.
+//!   `khor.ps1`; cmd keeps its native AutoRun and reads `PROMPT` from its environment.
 //!
 //! `KHOR_SHELL_INTEGRATION=0` in the environment khor runs in turns it off.
 
@@ -35,7 +35,6 @@ const FILES: &[(&str, &str)] = &[
         include_str!("../shell/khor.fish"),
     ),
     ("khor.ps1", include_str!("../shell/khor.ps1")),
-    ("khor.cmd", include_str!("../shell/khor.cmd")),
 ];
 
 /// How to start a shell so it loads khor's integration.
@@ -176,13 +175,23 @@ pub fn plan(dir: &Path, cmd: &[String], getenv: impl Fn(&str) -> Option<String>)
             ],
             env: Vec::new(),
         }),
-        "cmd" if args.is_empty() => Some(Plan {
-            args: vec![
-                "/k".into(),
-                format!("\"{}\"", dir.join("khor.cmd").display()),
-            ],
-            env: vec![("KHOR_CMD_INTEGRATED".into(), String::new())],
-        }),
+        "cmd" if args.is_empty() => {
+            // CMD expands this prompt itself. Keep file paths and quoting out
+            // of its /k parser, including when the store is under a Unicode home.
+            let original = getenv("PROMPT")
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "$P$G".into());
+            let end = r"$e]133;B$e\";
+            let prompt = if original.ends_with(end) {
+                original
+            } else {
+                format!(r"$e]133;D$e\$e]133;A$e\$e]9;9;$P$e\{original}{end}")
+            };
+            Some(Plan {
+                args: Vec::new(),
+                env: vec![("PROMPT".into(), prompt)],
+            })
+        }
         _ => None,
     }
 }
@@ -256,8 +265,14 @@ mod tests {
         assert!(ps.args[3].contains("finally"));
         assert!(!ps.args.iter().any(|a| a == "-NoProfile"));
         let cmd = plan(d, &["cmd.exe".into()], env(&[])).unwrap();
-        assert_eq!(cmd.args[0], "/k");
-        assert!(cmd.args[1].starts_with('"') && cmd.args[1].ends_with('"'));
+        assert!(cmd.args.is_empty());
+        assert_eq!(
+            cmd.env,
+            [(
+                "PROMPT".into(),
+                r"$e]133;D$e\$e]133;A$e\$e]9;9;$P$e\$P$G$e]133;B$e\".into()
+            )]
+        );
         let bash = plan(d, &["/bin/bash".into(), "-l".into(), "-i".into()], env(&[])).unwrap();
         assert_eq!(bash.args, ["--login", "--noprofile", "--norc", "-i"]);
         assert!(
@@ -283,14 +298,95 @@ mod tests {
         assert!(ps.args[3].contains(r"C:\Users\中文 user''s dir\.khor\shell\khor.ps1"));
         assert!(!ps.args[3].contains(r"\\?\"));
         assert_eq!(&ps.args[..3], ["-NoLogo", "-NoExit", "-Command"]);
-        let cmd = plan(dir, &["cmd.exe".into()], env(&[])).unwrap();
-        assert_eq!(
-            cmd.args,
-            ["/k", r#""C:\Users\中文 user's dir\.khor\shell\khor.cmd""#]
-        );
         let unc = Path::new(r"\\?\UNC\server\share\shell");
         let ps = plan(unc, &["pwsh.exe".into()], env(&[])).unwrap();
         assert!(ps.args[3].contains(r"\\?\UNC\server\share\shell\khor.ps1"));
+    }
+
+    #[test]
+    fn cmd_uses_its_native_prompt_without_rewrapping_an_inherited_integration() {
+        let dir = Path::new("/ignored/shell");
+        let command = ["cmd.exe".into()];
+        let first = plan(dir, &command, env(&[("PROMPT", "Custom $P$G")])).unwrap();
+        assert!(first.args.is_empty());
+        assert_eq!(
+            first.env[0].1,
+            r"$e]133;D$e\$e]133;A$e\$e]9;9;$P$e\Custom $P$G$e]133;B$e\"
+        );
+        assert_eq!(
+            plan(dir, &command, env(&[("PROMPT", &first.env[0].1)])),
+            Some(first)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn cmd_accepts_its_integrated_prompt_and_input_through_conpty() {
+        use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+        use std::io::{Read, Write};
+        use std::time::{Duration, Instant};
+
+        let root = crate::testdir::TempTree::fresh("cmd-native-prompt");
+        let cwd = root.join("Khor 验收 user's %20 dir");
+        std::fs::create_dir(&cwd).unwrap();
+        let executable = crate::shell_start::WindowsShell::Cmd.resolve().unwrap();
+        let plan = plan(&cwd, &[executable.clone()], env(&[("PROMPT", "Khor $P$G")])).unwrap();
+        let pair = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 100,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .unwrap();
+        let mut command = CommandBuilder::new(executable);
+        command.cwd(&cwd);
+        command.args(plan.args);
+        for (name, value) in plan.env {
+            command.env(name, value);
+        }
+        let mut child = pair.slave.spawn_command(command).unwrap();
+        drop(pair.slave);
+        let mut reader = pair.master.try_clone_reader().unwrap();
+        let mut writer = pair.master.take_writer().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut chunk = [0; 4096];
+            while let Ok(size) = reader.read(&mut chunk) {
+                if size == 0 || tx.send(chunk[..size].to_vec()).is_err() {
+                    break;
+                }
+            }
+        });
+
+        let mut output = Vec::new();
+        let mut prompt = crate::shell_start::PromptReady::default();
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut typed = false;
+        let expected = b"KHOR_CMD_NATIVE_OK";
+        while let Ok(chunk) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+            output.extend_from_slice(&chunk);
+            if !typed && prompt.feed(&chunk) {
+                if writer.write_all(b"echo KHOR_CMD_NATIVE^_OK\r").is_err() {
+                    break;
+                }
+                typed = true;
+            }
+            if output.windows(expected.len()).any(|word| word == expected) {
+                break;
+            }
+        }
+        let _ = child.kill();
+        assert!(
+            typed && output.windows(expected.len()).any(|word| word == expected),
+            "CMD did not render the native prompt and echo the command: {:?}",
+            String::from_utf8_lossy(&output)
+        );
+        let mut ledger = crate::commands::Ledger::default();
+        ledger.feed(&output, 0);
+        let doing = ledger.doing();
+        let reported = std::fs::canonicalize(doing.cwd.expect("CMD working directory mark"));
+        assert_eq!(reported.unwrap(), cwd.canonicalize().unwrap());
     }
 
     #[cfg(unix)]

@@ -16,6 +16,48 @@ TARGETS = {
 }
 
 
+def msi_installed_bytes(package):
+    """Read the payload's installed size directly from the MSI File table."""
+    from ctypes import POINTER, WinDLL, byref
+    from ctypes.wintypes import LPCWSTR, UINT
+
+    api = WinDLL("msi.dll")
+    api.MsiOpenDatabaseW.argtypes = [LPCWSTR, LPCWSTR, POINTER(UINT)]
+    api.MsiDatabaseOpenViewW.argtypes = [UINT, LPCWSTR, POINTER(UINT)]
+    api.MsiViewExecute.argtypes = [UINT, UINT]
+    api.MsiViewFetch.argtypes = [UINT, POINTER(UINT)]
+    api.MsiRecordGetInteger.argtypes = [UINT, UINT]
+    api.MsiCloseHandle.argtypes = [UINT]
+    db, view, record = UINT(), UINT(), UINT()
+
+    def check(status):
+        if status != 0:
+            raise RuntimeError(f"Cannot read the MSI File table (Windows Installer error {status})")
+
+    try:
+        check(api.MsiOpenDatabaseW(str(package.resolve()), None, byref(db)))
+        check(api.MsiDatabaseOpenViewW(db, "SELECT `FileSize` FROM `File`", byref(view)))
+        check(api.MsiViewExecute(view, 0))
+        total = 0
+        while (status := api.MsiViewFetch(view, byref(record))) != 259:  # ERROR_NO_MORE_ITEMS
+            check(status)
+            try:
+                size = api.MsiRecordGetInteger(record, 1)
+                if size < 0:
+                    raise ValueError("MSI contains an invalid installed file size")
+                total += size
+            finally:
+                api.MsiCloseHandle(record)
+        if not 0 < total <= 16 * 1024**3:
+            raise ValueError("MSI installed payload size is invalid")
+        return total
+    finally:
+        if view.value:
+            api.MsiCloseHandle(view)
+        if db.value:
+            api.MsiCloseHandle(db)
+
+
 def build(target, output):
     bundle, name, suffix = TARGETS[target]
     programs = Path("target") / target / "release"
@@ -40,6 +82,9 @@ def build(target, output):
     else:
         config["bundle"]["resources"] = {"packaging/cli-owner.json": "cli-owner.json"}
         config["bundle"]["windows"] = {"wix": {
+            # WiX emits one MSI per language. The updater and release manifest
+            # expect one MSI per target; Khor localizes its own UI at runtime.
+            "language": "en-US",
             "fragmentPaths": ["packaging/cli-path.wxs"],
             "componentRefs": ["KhorCliPath"],
         }}
@@ -71,5 +116,7 @@ if __name__ == "__main__":
     app = build(args.target, args.output)
     if args.frontend is not None:
         agent = Path(os.environ["KHOR_AGENT_BUNDLE"])
-        create(args.output, TARGETS[args.target][1] + "-app", args.frontend,
-               app, agent, executable_info(app))
+        bundle, name, _ = TARGETS[args.target]
+        unpacked_bytes = msi_installed_bytes(args.output / (name + ".msi")) if bundle == "msi" else None
+        create(args.output, name + "-app", args.frontend, app, agent, executable_info(app),
+               msi_unpacked_bytes=unpacked_bytes)

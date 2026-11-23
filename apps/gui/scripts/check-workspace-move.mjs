@@ -14,4 +14,10 @@ assert.equal(target({...source,path:'/project/docs',workspace:{root:'/project',d
 assert.equal(target({...source,machine:null},null,'/project','/project'),'/project/Methods.md');
 assert.equal(target({...source,path:'/project/../other'},'remote','/project','/project/src'),null);
 assert.equal(target({...source,path:'/project'},'remote','/project','/project/src'),null,'workspace root cannot move');
+const windowsRoot='\\\\?\\C:\\Khor 项目';
+const windowsSource={machine:'remote',path:`${windowsRoot}\\docs\\Methods.md`,workspace:{root:windowsRoot,dir:false}};
+assert.equal(target(windowsSource,'remote',windowsRoot,`${windowsRoot}\\资料`),`${windowsRoot}\\资料\\Methods.md`);
+assert.equal(target(windowsSource,'remote',windowsRoot,`${windowsRoot}\\docs`),null);
+assert.equal(target(windowsSource,'remote',windowsRoot,`${windowsRoot}\\..\\another`),null);
+assert.equal(target({...windowsSource,path:`${windowsRoot}\\docs`,workspace:{root:windowsRoot,dir:true}},'remote',windowsRoot,`${windowsRoot}\\docs\\nested`),null);
 console.log('PASS workspace move targets: local/remote scope, directories, root blank, same parent, subtree, collisions and external/cross-machine rejection');

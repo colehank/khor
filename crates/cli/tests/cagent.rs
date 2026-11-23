@@ -72,6 +72,7 @@ async fn consumed_prefix(
     .expect("the event consumer must process its finite prefix within five seconds");
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn the_shim_speaks_acp_for_a_fake_claude() {
     let dir = std::env::temp_dir().join(format!("khor-cagent-{}", std::process::id()));

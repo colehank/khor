@@ -36,6 +36,10 @@ fn wipe(p: &Path) {
 }
 
 #[test]
+// Windows: the shape does not exist there. A process's current directory is
+// held open, so it can be neither deleted nor renamed underneath it; the
+// premise this test asserts (`git` refusing from nowhere) never arises.
+#[cfg(unix)]
 fn a_node_opened_from_a_deleted_directory_still_reads_a_repository() {
     let home = temp("home");
     let repo = temp("repo");
