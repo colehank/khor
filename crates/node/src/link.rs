@@ -10408,11 +10408,7 @@ impl Node {
         // without).
         let (_, here) = self.resolve_or_here(machine)?;
         if here == self.device() {
-            let (path, root) = (path.to_owned(), self.root().to_path_buf());
-            let (at, entries, truncated) =
-                tokio::task::spawn_blocking(move || listed_with_arrivals(&root, &path))
-                    .await
-                    .map_err(|e| e.to_string())??;
+            let (at, entries, truncated) = self.list_here(path).await?;
             return Ok((at.display().to_string(), entries, truncated));
         }
         let ep = endpoint::bind_with(
