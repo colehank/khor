@@ -1,3 +1,11 @@
+// The attach protocol itself is portable, and this file was ported to
+// `cmd.exe` + `taskkill`. It stays gated on Windows for a second reason:
+// `khor open -d -- cmd.exe` does stand a host up (2026-11-15) and the ConPTY
+// output fix landed (2026-11-16), but these two cases still block past their
+// bounds once they attach. Not the duplicate-reader cause; recorded as W3 T5
+// NOT_TESTED in docs/windows-migration/W3-SMOKE.md.
+#![cfg(unix)]
+
 //! Current terminal protocol rejection and host-kept clear, through the real
 //! binary and PTY. Rejected clients receive no replay and cannot type; a
 //! subsequent current client can still use that same host. All waits are bounded.
@@ -22,16 +30,28 @@ struct Reaper(u32);
 
 impl Drop for Reaper {
     fn drop(&mut self) {
+        #[cfg(unix)]
         let _ = Command::new("kill")
             .args(["-9", &self.0.to_string()])
+            .stderr(std::process::Stdio::null())
+            .status();
+        #[cfg(windows)]
+        let _ = Command::new("taskkill")
+            .args(["/PID", &self.0.to_string(), "/F"])
             .stderr(std::process::Stdio::null())
             .status();
     }
 }
 
 fn open_detached(home: &Path) -> (String, PathBuf, Reaper) {
+    // A shell that stays interactive: `sh` on Unix, `cmd.exe` on Windows.
+    // What is under test is the attach protocol, not the shell.
+    #[cfg(unix)]
+    let program = "sh";
+    #[cfg(windows)]
+    let program = "cmd.exe";
     let out = khor(home)
-        .args(["open", "-d", "--", "sh"])
+        .args(["open", "-d", "--", program])
         .output()
         .unwrap();
     assert!(

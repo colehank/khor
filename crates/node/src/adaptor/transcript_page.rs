@@ -174,7 +174,28 @@ impl FileVersion {
             use std::os::unix::fs::MetadataExt;
             format!("{}:{}", metadata.dev(), metadata.ino())
         };
-        #[cfg(not(unix))]
+        // Creation time is not an identity on Windows: NTFS file tunneling
+        // restores the old creation time when a name is deleted or moved away
+        // and recreated within ~15s, so a replaced transcript looks unchanged
+        // and the page keeps a cursor the new file never published. The volume
+        // and file index name the file object itself.
+        #[cfg(windows)]
+        let identity = {
+            use std::os::windows::io::AsRawHandle;
+            use windows_sys::Win32::Storage::FileSystem::{
+                BY_HANDLE_FILE_INFORMATION, GetFileInformationByHandle,
+            };
+            let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+            if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &mut info) } == 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            format!(
+                "{}:{}",
+                info.dwVolumeSerialNumber,
+                (u64::from(info.nFileIndexHigh) << 32) | u64::from(info.nFileIndexLow)
+            )
+        };
+        #[cfg(not(any(unix, windows)))]
         let identity = format!("{:?}", metadata.created()?);
         Ok(Self {
             file: identity,

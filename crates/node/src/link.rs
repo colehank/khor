@@ -7120,6 +7120,7 @@ impl Node {
         if device.sponsor.is_some() {
             if !start.command.trim().is_empty()
                 || start.argv.as_ref().is_some_and(|args| !args.is_empty())
+                || start.shell.is_some()
             {
                 return Err(msg::terminal_ssh_startup().into());
             }
@@ -7210,22 +7211,24 @@ impl Node {
         self.refuse_unless_hosting()?;
         start.validate()?;
         let _held = crate::once::lock(&start.token).await;
-        let fingerprint = blake3::hash(
-            &serde_json::to_vec(&(
-                &start.title,
-                &start.cwd,
-                &start.command,
-                &start.argv,
-                start.headless,
-                &selected_shell,
-            ))
-            .map_err(|e| e.to_string())?,
-        )
-        .to_hex()
-        .to_string();
+        let intent = (
+            &start.title,
+            &start.cwd,
+            &start.command,
+            &start.argv,
+            start.headless,
+            &selected_shell,
+        );
+        let intent = match start.shell {
+            Some(shell) => serde_json::to_vec(&(intent, shell)),
+            None => serde_json::to_vec(&intent),
+        }
+        .map_err(|error| error.to_string())?;
+        let fingerprint = blake3::hash(&intent).to_hex().to_string();
         if let Some(id) = self.legacy_shell_receipt(&start.token)? {
             let equivalent = !start.headless
                 && start.argv.is_none()
+                && start.shell.is_none()
                 && selected_shell.is_none()
                 && ancestry.is_none();
             let binding = if equivalent {
@@ -7253,7 +7256,11 @@ impl Node {
         let live = self.live.clone();
         let shell_scripts = crate::integration::dir(&self.root().join(".khor"));
         let id = tokio::task::spawn_blocking(move || {
-            let shell = selected_shell.unwrap_or_else(crate::shell_start::default_shell);
+            let shell = match (selected_shell, start.shell) {
+                (Some(resolved), _) => resolved,
+                (None, Some(choice)) => choice.resolve()?,
+                (None, None) => crate::shell_start::default_shell(),
+            };
             let startup =
                 crate::shell_start::startup_command(&shell, &start.command, start.argv.as_deref())?;
             let argv = crate::shell_start::command(&shell);
@@ -7285,8 +7292,8 @@ impl Node {
                 Self::category_of_started(crate::kind::SHELL),
             )?;
             live.learn_place(&id, &cwd)?;
-            if let Some(ancestry) = ancestry {
-                live.record_shell_ancestry(&id, ancestry)?;
+            if ancestry.is_some() || start.shell.is_some() {
+                live.record_shell_start(&id, ancestry, start.shell)?;
             }
             let dir = live
                 .dir_of(&id)
@@ -10389,6 +10396,24 @@ impl Node {
                 ipc::Reply::Refused { why } => Err(why),
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
+        }
+        // **This machine answers without an endpoint.** Binding one is the
+        // expensive half of a local listing — mDNS, a socket, and a
+        // shutdown drain — and the answer never touches the wire;
+        // `ls_with` says so once it is inside, but by then the endpoint
+        // already exists. Asking one step earlier keeps a one-shot CLI
+        // from paying for a network it does not use. Measured on Windows
+        // as the whole of a ~1.08 s local listing, in samples that came
+        // in two clusters (1150/1133/1117 ms with the bind, 132/119 ms
+        // without).
+        let (_, here) = self.resolve_or_here(machine)?;
+        if here == self.device() {
+            let (path, root) = (path.to_owned(), self.root().to_path_buf());
+            let (at, entries, truncated) =
+                tokio::task::spawn_blocking(move || listed_with_arrivals(&root, &path))
+                    .await
+                    .map_err(|e| e.to_string())??;
+            return Ok((at.display().to_string(), entries, truncated));
         }
         let ep = endpoint::bind_with(
             self.secret_key().clone(),

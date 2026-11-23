@@ -30,8 +30,13 @@ console.log("session cwd: passed");
 
 // Exercise the real filter options and matching table, not a duplicate policy.
 const { build } = await import("esbuild");
+const { fileURLToPath } = await import("node:url");
+// **`fileURLToPath`, not `.pathname`**: on Windows the latter keeps a leading
+// slash (`/F:/…`) and esbuild resolves nothing from it — this check could not
+// run on the platform whose path handling it is meant to protect.
+const resolveDir = fileURLToPath(new URL("..", import.meta.url));
 const bundle = await build({
-  stdin: { contents: 'export { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText } from "./src/lib/session-filter"; export { sessionName } from "./src/lib/session-name";', resolveDir: new URL("..", import.meta.url).pathname, loader: "ts" },
+  stdin: { contents: 'export { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText } from "./src/lib/session-filter"; export { sessionName } from "./src/lib/session-name";', resolveDir, loader: "ts" },
   bundle: true, write: false, format: "esm", platform: "node",
 });
 const { SESSION_SIEVE, sessionOptions, visibleSessions, sessionSearchText, sessionName } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`);
@@ -68,7 +73,30 @@ assert(!sessionInWorkspace(moving, "MacLab", "/birth"));
 moving.doing.cwd = String.raw`C:\work\project`;
 assert(sessionInWorkspace(moving, "MacLab", String.raw`C:\work`));
 assert(!sessionInWorkspace(moving, "MacLab", String.raw`C:\wor`));
+// ── Windows path identity (T0-3) ────────────────────────────────────
+// One place, many spellings. Every case here was a way the right column
+// could silently list nothing on Windows.
+const { pathKey, samePath, underPath } = await import("../src/lib/session-cwd.ts");
+assert.equal(pathKey(String.raw`\\?\C:\work\project`), pathKey(String.raw`C:\work\project`), "extended-length prefix is a spelling, not a name");
+assert.equal(pathKey("C:/work/project"), pathKey(String.raw`C:\work\project`), "forward slashes are a spelling");
+assert.equal(pathKey(String.raw`c:\WORK\PROJECT`), pathKey(String.raw`C:\work\project`), "NTFS is case-insensitive");
+assert.equal(pathKey(String.raw`C:\work\project\\`), pathKey(String.raw`C:\work\project`), "a trailing separator is not a different place");
+assert.equal(pathKey(String.raw`\\?\UNC\server\share\p`), pathKey(String.raw`\\server\share\p`), "the UNC form of the prefix folds too");
+assert.equal(pathKey("/work/project/"), "/work/project", "unix trailing separator folds");
+assert.notEqual(pathKey("/Work"), "/work", "unix is case-sensitive and stays so");
+assert.equal(pathKey("C:\\"), "c:\\", "a drive root keeps its separator");
+assert.equal(pathKey("C:"), "c:\\", "a bare drive folds to its root — khor compares absolute paths only");
+assert(samePath(String.raw`\\?\C:\w`, String.raw`C:\W`), "samePath sees through prefix and case");
+assert(underPath(String.raw`\\?\C:\work\project\src`, String.raw`C:\work`), "membership works across spellings");
+assert(underPath(String.raw`C:/work/project`, String.raw`C:\work\project`), "at the root, in another spelling");
+assert(!underPath(String.raw`C:\workshop`, String.raw`C:\work`), "neighbours are not children");
+assert(!underPath(String.raw`C:\work`, String.raw`C:\workshop`), "and not the other way round");
+assert(underPath("/work/project", "/"), "everything is under the unix root");
+assert(!underPath("", "/work") && !underPath("/work", ""), "an empty path is nobody's child");
+assert(underPath(String.raw`\\server\share\p\q`, String.raw`\\server\share`), "UNC share boundary");
+assert(!underPath(String.raw`\\server\share2`, String.raw`\\server\share`), "and its neighbour");
 console.log("session location filter, search and workspace membership: passed");
+console.log("windows path identity: passed");
 
 const namedRow = {title:'shell',place:'/birth',doing:{cwd:'/work/ACL2027',title:'✳ Claude generated title',command:'claude'}};
 assert.equal(sessionName(namedRow),'ACL2027','automatic OSC titles do not name sessions');

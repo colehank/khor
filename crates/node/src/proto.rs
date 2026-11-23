@@ -37,6 +37,7 @@ impl From<LegacyShellStart> for crate::shell_start::ShellStart {
             rows: start.rows,
             headless: false,
             argv: None,
+            shell: None,
         }
     }
 }

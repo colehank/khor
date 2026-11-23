@@ -1,5 +1,7 @@
 /** A deliberate “show in workspace” request survives the file page leaving and
  * is consumed by the first visible tree that can actually locate its row. */
+import { directoryPrefix, isWindowsPath } from "./path-input";
+
 export type FileLocation = { id: number; machine: string; path: string };
 const pending = new Map<string, FileLocation>();
 const listeners = new Set<() => void>();
@@ -25,10 +27,9 @@ export function onFileLocation(listener: () => void): () => void {
   return () => { listeners.delete(listener); };
 }
 
-const windowsPath = (path: string) => /^[a-z]:[\\/]|^[\\/]{2}/i.test(path);
-const normalized = (path: string) => windowsPath(path) ? path.replaceAll('\\', '/').replace(/\/+/g, '/') : path;
+const normalized = (path: string) => isWindowsPath(path) ? path.replaceAll('\\', '/').replace(/\/+/g, '/') : path;
 export function sameFileLocation(a: string, b: string): boolean {
-  return windowsPath(a) && windowsPath(b)
+  return isWindowsPath(a) && isWindowsPath(b)
     ? normalized(a).toLowerCase() === normalized(b).toLowerCase()
     : a === b;
 }
@@ -38,15 +39,16 @@ export function sameFileLocation(a: string, b: string): boolean {
 export function fileLocationAncestors(root: string, path: string): string[] | null {
   const base = normalized(root).replace(/\/+$/, '') || '/';
   const full = normalized(path);
-  const insensitive = windowsPath(root);
+  const insensitive = isWindowsPath(root);
   const prefix = base === '/' ? '/' : `${base}/`;
   const compare = (value: string) => insensitive ? value.toLowerCase() : value;
   if (compare(full) === compare(base)) return [];
   if (!compare(full).startsWith(compare(prefix))) return null;
   const parts = full.slice(prefix.length).split('/');
   if (parts.some(part => part === '.' || part === '..' || part === '')) return null;
-  const original = root.replace(/\/+$/, '') || '/';
-  return parts.slice(0, -1).map((_, index) =>
-    `${original === '/' ? '' : original}/${parts.slice(0, index + 1).join('/')}`,
-  );
+  let ancestor = root;
+  return parts.slice(0, -1).map(name => {
+    ancestor = directoryPrefix(ancestor) + name;
+    return ancestor;
+  });
 }

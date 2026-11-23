@@ -1859,6 +1859,25 @@ fn one_path(rest: &[String]) -> Result<(String, String), String> {
 /// nothing on any other machine — so only a local path is resolved
 /// here, and a path meant for another machine must already be absolute
 /// (`Node::ws_add` refuses it otherwise, in the same words `Ls` uses).
+/// `std::fs::canonicalize` answers with the Windows verbatim prefix
+/// (`\\?\F:\...`). That spelling is for the OS to hand back to the OS: a
+/// person typed `F:\...`, and a row another machine reads must carry the
+/// spelling every other path in khor carries. Removed here, at the one
+/// place a typed path becomes absolute.
+fn plain_path(path: std::path::PathBuf) -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            if let Some(unc) = rest.strip_prefix(r"UNC\") {
+                return std::path::PathBuf::from(format!(r"\\{unc}"));
+            }
+            return std::path::PathBuf::from(rest.to_owned());
+        }
+    }
+    path
+}
+
 fn here(dir: &str) -> Result<String, String> {
     let p = std::path::Path::new(dir);
     if p.is_absolute() {
@@ -1875,7 +1894,7 @@ fn here(dir: &str) -> Result<String, String> {
         None => p.to_path_buf(),
     };
     match std::fs::canonicalize(&joined) {
-        Ok(abs) => Ok(abs.display().to_string()),
+        Ok(abs) => Ok(plain_path(abs).display().to_string()),
         // Not this machine's path, or not there: handed on as typed so
         // the refusal comes from the one place that knows which.
         Err(_) => Ok(dir.to_owned()),
@@ -4640,6 +4659,7 @@ fn open(rest: &[String]) -> Result<(), String> {
                 cols,
                 rows,
                 headless: detached || on.is_some(),
+                shell: None,
             },
         ))?;
         navigate(&id.0);
@@ -4781,10 +4801,14 @@ fn open(rest: &[String]) -> Result<(), String> {
         return Ok(());
     }
     let id = n.open_persistent(kind, &title, &cmd, size)?;
+    khor_node::startup_trace::mark("open-returned");
     eprintln!("session: {}", id.0);
     if detached {
         navigate(&id.0);
         println!("{}", id.0);
+        khor_node::startup_trace::mark("open-printed");
+        drop(n);
+        khor_node::startup_trace::mark("node-dropped");
         return Ok(());
     }
     attach_to(&n, &id)
@@ -5099,7 +5123,13 @@ fn web(rest: &[String]) -> Result<(), String> {
     let Some(ips) = node()?.local_ips()? else {
         return Err(msg::web_face_not_serving().to_owned());
     };
-    let Some(ip) = khor_node::face::best_address(&ips) else {
+    // **The routing table decides, not the address list.** Both private
+    // addresses rank equal in `best_address`, and on this Windows box the
+    // WSL adapter came first — a link no phone could open (see
+    // `face::primary_address`). `reachable_address` asks the routing table
+    // which address would be used, and falls back to the ranking when that
+    // answer is not one this machine listens on.
+    let Some(ip) = khor_node::face::reachable_address(&ips) else {
         return Err(msg::web_face_not_serving().to_owned());
     };
     // **The address about to be printed is the address that gets
@@ -5588,6 +5618,95 @@ fn agents(rest: &[String]) -> Result<(), String> {
                     ),
                     None => println!("{}\t{}\t{}", k.id, k.name, cli::agents_known_byhand()),
                 }
+            }
+            Ok(())
+        }
+        // **A message for a conversation the vendor keeps.** The `send`
+        // verb above drives khor's own sessions; this one asks Codex's own
+        // daemon to queue a message into a thread it owns, which is the
+        // only way to say something to a loaded thread without becoming a
+        // second writer (that is refused on purpose, `takeover`).
+        Some((word, tail)) if word == "tell" => {
+            let [agent, id, text] = tail else {
+                return Err(usage_text().into());
+            };
+            println!("{}", khor_node::agent_driver::send(agent, id, text, None)?);
+            Ok(())
+        }
+        // **The conversations DSH already has here.** Not a registered
+        // agent, so nothing asks it anything: this reads the store it
+        // writes, one header line per session — the project each was
+        // recorded in is what a person needs to find it again.
+        Some((word, tail)) if word == "dsh" => {
+            // `agents dsh` is the list; `agents dsh <session>` reads one
+            // conversation, line by line — the same reader the GUI's row
+            // uses, so the two cannot disagree about what was said.
+            if let [native_id] = tail {
+                let text = khor_node::dsh_sessions::conversation(native_id)?;
+                for line in khor_node::adaptor::dsh::lines_of(&text) {
+                    println!("{}\t{}", line.who, line.text);
+                }
+                return Ok(());
+            }
+            if !tail.is_empty() {
+                return Err(usage_text().into());
+            }
+            for session in khor_node::dsh_sessions::sessions()? {
+                match session.parent {
+                    // A subagent's session names the one it came from; printed
+                    // after the row rather than indented, because the parent may
+                    // be an older session the reader never sees.
+                    Some(parent) => println!(
+                        "{}\t{}\t{}\t↳ {parent}",
+                        session.id,
+                        session.title.as_deref().unwrap_or(""),
+                        session.cwd
+                    ),
+                    None => println!(
+                        "{}\t{}\t{}",
+                        session.id,
+                        session.title.as_deref().unwrap_or(""),
+                        session.cwd
+                    ),
+                }
+            }
+            Ok(())
+        }
+        // **What this machine has, not what khor knows about.** The two
+        // were one table for as long as it took to notice that DSH is
+        // installed here and absent from the registry, while a dozen
+        // registry entries are absent from the machine. A person looking
+        // for "what can I use" is asking this question, and the registry
+        // listing answers the other one.
+        Some((word, tail)) if word == "fleet" => {
+            if !tail.is_empty() {
+                return Err(usage_text().into());
+            }
+            let roster = khor_node::agent_fleet::fleet();
+            let installed = roster.agents.iter().filter(|r| r.program.is_some()).count();
+            let runner = roster
+                .runner
+                .map(str::to_owned)
+                .unwrap_or_else(|| cli::agents_fleet_no_runner().to_owned());
+            println!(
+                "{}",
+                cli::agents_fleet_head(roster.agents.len(), installed, runner)
+            );
+            for row in &roster.agents {
+                let state = if row.program.is_some() {
+                    cli::agents_fleet_installed()
+                } else {
+                    cli::agents_fleet_absent()
+                };
+                println!(
+                    "{}\t{}\t{}\t{}\t{}\t{}",
+                    row.id,
+                    row.name,
+                    state,
+                    row.program.as_deref().unwrap_or("-"),
+                    row.launch.as_ref().map_or("-", |launch| launch.road),
+                    row.capabilities.join(" ")
+                );
             }
             Ok(())
         }

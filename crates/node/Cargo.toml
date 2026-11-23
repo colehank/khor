@@ -66,6 +66,7 @@ pulldown-cmark = { version = "0.13.4", default-features = false, features = ["ht
 office_oxide = "0.1.11"
 pdfboss-output = "2.4.0"
 pdfboss-core = "2.4.0"
+ruzstd = "0.9.1"
 
 [target.'cfg(unix)'.dependencies]
 libc.workspace = true
@@ -163,4 +164,4 @@ name = "delegation_wire"
 harness = false
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_Security", "Win32_Security_Credentials", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }

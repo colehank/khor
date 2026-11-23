@@ -42,6 +42,7 @@ import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag, currentPathDrag, droppedPath, clearPathDrag, type DraggedPath } from "@/lib/path-drag";
 import { onWindowDrop, onWindowDrag } from "@/lib/window-drop";
+import { directoryPrefix, homeRelative, parentPath, pathLeaf, pathSeparator } from "@/lib/path-input";
 import { workspaceMoveTarget } from "@/lib/workspace-move";
 import { consumeFileLocation, fileLocationAncestors, onFileLocation, pendingFileLocation, sameFileLocation } from "@/lib/file-location";
 import { onTreeChanged, sameMachine, treeChanged } from "@/lib/tree-changed";
@@ -97,7 +98,15 @@ function remembered(machine: string, root: string): Set<string> {
     // else would be one row the tree cannot explain.
     return new Set(
       Array.isArray(list)
-        ? list.filter((p): p is string => typeof p === "string" && p.startsWith(`${root}/`))
+        ? list.flatMap(path => {
+            if (typeof path !== "string" || path === root) return [];
+            if (path.startsWith(directoryPrefix(root))) return [path];
+            // Older trees appended `/` even to verbatim Windows paths.
+            if (pathSeparator(root) === "\\" && path.startsWith(`${root}/`)) {
+              return [homeRelative(root, path.slice(root.length + 1))];
+            }
+            return [];
+          })
         : [],
     );
   } catch {
@@ -366,24 +375,24 @@ export function FileTree({
    * sentence.
    */
   useEffect(() => {
-    const parentOf = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
     const gone: string[] = [];
     const ask: string[] = [];
     for (const dir of new Set([...failed.keys(), ...expanded])) {
-      if (dir === root || !dir.startsWith(`${root}/`)) continue;
-      const parent = parentOf(dir);
+      if (dir === root || !dir.startsWith(directoryPrefix(root))) continue;
+      const parent = parentPath(dir);
+      if (parent === null) continue;
       const l = listings.get(parent);
       if (l === undefined) {
         if (failed.has(dir) && !failed.has(parent) && !want.has(parent)) ask.push(parent);
         continue;
       }
       if (l.truncated) continue;
-      const name = dir.slice(dir.lastIndexOf("/") + 1);
+      const name = pathLeaf(dir);
       if (!l.entries.some((e) => e.dir && e.name === name)) gone.push(dir);
     }
     if (ask.length > 0) setWant((was) => new Set([...was, ...ask]));
     if (gone.length === 0) return;
-    const under = (p: string) => gone.some((g) => p === g || p.startsWith(`${g}/`));
+    const under = (p: string) => gone.some((g) => p === g || p.startsWith(directoryPrefix(g)));
     for (const p of [...asked.current]) if (under(p)) asked.current.delete(p);
     setFailed((was) => new Map([...was].filter(([p]) => !under(p))));
     setWant((was) => new Set([...was].filter((p) => !under(p))));
@@ -400,10 +409,11 @@ export function FileTree({
 
   const visibleDirs = useMemo(() => [...want].filter(path => {
     if (path === root) return true;
-    for (let parent = path; parent !== root; parent = parent.slice(0, parent.lastIndexOf("/")) || "/") {
-      if (!expanded.has(parent) || parent === "/") return false;
+    for (let parent: string | null = path; parent !== null; parent = parentPath(parent)) {
+      if (parent === root) return true;
+      if (!expanded.has(parent)) return false;
     }
-    return true;
+    return false;
   }).sort(), [want, expanded, root]);
   const aliases = directoryAliases(root, listings, visibleDirs);
   const aliasKey = JSON.stringify(aliases);
@@ -465,7 +475,7 @@ export function FileTree({
       own change: the watch says which level moved, a moment later. */
   const reread = (dir: string) => {
     if (coverage.current(dir)) return;
-    const under = (p: string) => p === dir || p.startsWith(`${dir}/`);
+    const under = (p: string) => p === dir || p.startsWith(directoryPrefix(dir));
     for (const p of [...asked.current]) if (under(p)) asked.current.delete(p);
     const drop = <T,>(m: Map<string, T>) =>
       new Map([...m].filter(([p]) => !under(p)));
@@ -481,7 +491,7 @@ export function FileTree({
     here,
     onGone: (full) => {
       onGone(full);
-      reread(full.slice(0, full.lastIndexOf("/")) || "/");
+      reread(parentPath(full) ?? root);
     },
   });
 
@@ -526,7 +536,7 @@ export function FileTree({
       because the name was typed, so a refusal leaves the tree exactly
       as it was (`reread`). */
   const made = (dir: string, kind: "file" | "dir") => async (name: string) => {
-    const full = `${dir === "/" ? "" : dir}/${name.trim()}`;
+    const full = directoryPrefix(dir) + name.trim();
     await (kind === "dir" ? makeDir(machine, full) : makeFile(machine, full));
     // Open the directory it went into, or the new row is made somewhere
     // nobody can see.
@@ -543,8 +553,8 @@ export function FileTree({
       thing this box can do — a `/` typed into a row would move a file
       somewhere the tree is not showing. */
   const moved = (full: string) => async (name: string) => {
-    const dir = full.slice(0, full.lastIndexOf("/")) || "/";
-    const to = `${dir === "/" ? "" : dir}/${name.trim()}`;
+    const dir = parentPath(full) ?? root;
+    const to = directoryPrefix(dir) + name.trim();
     if (to !== full) {
       await renamePath(machine, full, to);
       onMoved?.(full, to);
@@ -582,20 +592,20 @@ export function FileTree({
     try {
       await renamePath(machine, source.path, to);
       onMoved?.(source.path, to);
-      const before = source.path.slice(0, source.path.lastIndexOf("/")) || "/";
+      const before = parentPath(source.path) ?? root;
       // Demand both listings now, even when a native watch is available.
       // A watcher may report the move after the user's next interaction.
       refresh([before, dir]);
       for (const [path, request] of requests.current) {
-        if (path === before || path === dir || path === source.path || path.startsWith(`${source.path}/`)) {
+        if (path === before || path === dir || path === source.path || path.startsWith(directoryPrefix(source.path))) {
           requests.current.set(path, request + 1);
         }
       }
       // Old parent listings would otherwise pronounce the newly moved
       // expanded branch gone before its destination read can arrive.
       setListings(was => new Map([...was].filter(([path]) => path !== before && path !== dir &&
-        path !== source.path && !path.startsWith(`${source.path}/`))));
-      const after = (path: string) => path === source.path ? to : path.startsWith(`${source.path}/`) ? `${to}${path.slice(source.path.length)}` : path;
+        path !== source.path && !path.startsWith(directoryPrefix(source.path)))));
+      const after = (path: string) => path === source.path ? to : path.startsWith(directoryPrefix(source.path)) ? `${to}${path.slice(source.path.length)}` : path;
       setWant(was => new Set([...was].map(after).concat(before, dir)));
       setExpanded(was => {
         const next = new Set([...was].map(after));
@@ -706,7 +716,7 @@ export function FileTree({
       const l = listings.get(dir);
       if (l === undefined) return;
       for (const e of l.entries) {
-        const full = `${dir === "/" ? "" : dir}/${e.name}`;
+        const full = directoryPrefix(dir) + e.name;
         out.push({ name: e.name, full, dir: e.dir, depth });
         if (e.dir && expanded.has(full)) walk(full, depth + 1);
       }
@@ -727,8 +737,7 @@ export function FileTree({
     if (make == null) return;
     onMakeSeen?.();
     const row = picked === null ? undefined : rows.find((r) => r.full === picked.full && r.dir === picked.dir);
-    const parent = (p: string) => p.slice(0, p.lastIndexOf("/")) || "/";
-    const into = row === undefined ? root : row.dir ? row.full : parent(row.full);
+    const into = row === undefined ? root : row.dir ? row.full : (parentPath(row.full) ?? root);
     // Opened, so the box stands where the row it becomes will stand,
     // among its siblings — what 新建 from a folder's own menu does too
     // once the name is taken (`made`).

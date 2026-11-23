@@ -20,6 +20,7 @@ TARGETS = {
     "khor-macos-arm64-app": ("desktop-app", "macos", "aarch64"),
     "khor-macos-x86_64-app": ("desktop-app", "macos", "x86_64"),
 }
+WINDOWS = "khor-windows-x86_64-app"
 MANIFEST = "khor-release.json"
 TAURI = "khor-tauri-update.json"
 
@@ -38,7 +39,11 @@ def identity(record, tag):
 def products(record):
     expected_build = dict(version=record["version"], source=record["source_sha"],
                           release=identity(record, record["tag"]))
-    for name, (component, system, arch) in TARGETS.items():
+    targets = TARGETS.copy()
+    windows = record["artifacts"].get(WINDOWS, {})
+    if "msi_unpacked_bytes" in windows:
+        targets[WINDOWS] = ("desktop-app", "windows", "x86_64")
+    for name, (component, system, arch) in targets.items():
         receipt = record["artifacts"][name]
         info = receipt.get("program", {})
         platform = dict(os=system, arch=arch)
@@ -46,8 +51,15 @@ def products(record):
                 or info.get("component") != component or info.get("platform") != platform
                 or not isinstance(info.get("contract"), dict)):
             raise ValueError(f"Missing or mismatched executable identity: {name}")
-        filename = name.removesuffix("-app") + (".app.tar.gz" if component == "desktop-app" else ".gz")
+        extension = ".msi" if system == "windows" else ".app.tar.gz" if component == "desktop-app" else ".gz"
+        filename = name.removesuffix("-app") + extension
         yield name, filename, info, receipt["files"][filename]
+
+
+def updater_target(program):
+    platform = program["platform"]
+    system = "darwin" if platform["os"] == "macos" else platform["os"]
+    return system + "-" + platform["arch"]
 
 
 def unpacked_size(path, component):
@@ -111,16 +123,18 @@ def verify_publication(publication, record, tag):
         raise ValueError("Update publication has an incomplete target set")
     platforms, names = {}, {MANIFEST, MANIFEST + ".sig", TAURI}
     prefix = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{record['tag']}/"
-    for asset, (_, filename, program, original) in zip(assets, expected):
+    for asset, (name, filename, program, original) in zip(assets, expected):
+        expanded = (record["artifacts"][name]["msi_unpacked_bytes"] if name == WINDOWS
+                    else asset.get("unpacked_bytes"))
         expected_asset = dict(component=program["component"], platform=program["platform"], file=filename,
                               url=prefix + filename, bytes=original["bytes"], sha256=original["sha256"],
-                              contract=program["contract"], unpacked_bytes=asset.get("unpacked_bytes"),
+                              contract=program["contract"], unpacked_bytes=expanded,
                               signature=(publication / (filename + ".sig")).read_text().strip())
         if asset != expected_asset or not isinstance(asset["unpacked_bytes"], int) or not 0 < asset["unpacked_bytes"] <= 16 * 1024**3:
             raise ValueError("Update publication changed an original archive or executable contract")
         names.add(filename + ".sig")
         if program["component"] == "desktop-app":
-            platforms["darwin-" + program["platform"]["arch"]] = dict(url=asset["url"], signature=asset["signature"])
+            platforms[updater_target(program)] = dict(url=asset["url"], signature=asset["signature"])
     expected_tauri = dict(version=tag.removeprefix("v"), notes=manifest["notes"], platforms=platforms)
     if json.loads((publication / TAURI).read_text()) != expected_tauri or set(receipt["files"]) != names:
         raise ValueError("Tauri metadata differs from the signed component selection")
@@ -149,6 +163,10 @@ def create(root, output, tag, signer, program):
         prefix = f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/releases/download/{record['tag']}/"
         for name, filename, info, original in products(record):
             archive = root / name / filename
+            expanded = (record["artifacts"][name]["msi_unpacked_bytes"] if name == WINDOWS
+                        else unpacked_size(archive, info["component"]))
+            if not isinstance(expanded, int) or not 0 < expanded <= 16 * 1024**3:
+                raise ValueError("Original update has an invalid installed size")
             if reuse:
                 signature = next(asset["signature"] for asset in reuse["artifacts"] if asset["file"] == filename)
             else:
@@ -160,11 +178,11 @@ def create(root, output, tag, signer, program):
             (staging / (filename + ".sig")).write_text(signature + "\n")
             asset = dict(component=info["component"], platform=info["platform"], file=filename,
                          url=prefix + filename, bytes=original["bytes"], sha256=original["sha256"],
-                         unpacked_bytes=unpacked_size(archive, info["component"]),
+                         unpacked_bytes=expanded,
                          signature=signature, contract=info["contract"])
             assets.append(asset)
             if info["component"] == "desktop-app":
-                platforms["darwin-" + info["platform"]["arch"]] = dict(url=asset["url"], signature=signature)
+                platforms[updater_target(info)] = dict(url=asset["url"], signature=signature)
         notes = f"Khor {tag}"
         write_json(staging / MANIFEST, dict(schema=1, identity=expected_identity, built_from=record["tag"],
                                            notes=notes, artifacts=assets))

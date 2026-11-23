@@ -24,3 +24,24 @@ pub use release::{
 };
 pub use staging::Staging;
 pub use trust::{Offer, SignedRelease, TrustRoot, VerifiedRelease};
+
+/// The MSI owns the CLI and App in its registered installation directory.
+#[cfg(windows)]
+pub fn windows_installer_owns(executable: &std::path::Path) -> bool {
+    use std::{ffi::OsString, path::PathBuf};
+    use winreg::{RegKey, enums::HKEY_CURRENT_USER};
+
+    let Some(name) = executable.file_name().filter(|name| {
+        name.eq_ignore_ascii_case("khor.exe") || name.eq_ignore_ascii_case("khor-gui.exe")
+    }) else {
+        return false;
+    };
+    let installed: std::io::Result<OsString> = RegKey::predef(HKEY_CURRENT_USER)
+        .open_subkey(r"Software\Khor")
+        .and_then(|key| key.get_value("CliPath"));
+    installed
+        .ok()
+        .and_then(|directory| PathBuf::from(directory).join(name).canonicalize().ok())
+        .zip(executable.canonicalize().ok())
+        .is_some_and(|(installed, running)| installed == running)
+}

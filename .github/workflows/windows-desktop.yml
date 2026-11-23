@@ -1,0 +1,101 @@
+name: Windows desktop package
+
+on:
+  workflow_call:
+    inputs:
+      reuse_agent_runtime:
+        description: Use the Windows agent runtime already built in this run
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      KHOR_AGENT_BUNDLE: ${{ github.workspace }}/apps/agent/dist/khor-agent
+      CARGO_INCREMENTAL: '0'
+      CARGO_BUILD_JOBS: '2'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: ./.github/actions/restore-frontend
+      - uses: ./.github/actions/native-tools
+        with:
+          target: x86_64-pc-windows-msvc
+          cache_targets_for_validation: ${{ !inputs.reuse_agent_runtime }}
+      - if: inputs.reuse_agent_runtime
+        uses: ./.github/actions/restore-agent
+        with:
+          target: x86_64-pc-windows-msvc
+      - if: '!inputs.reuse_agent_runtime'
+        name: Build the Windows agent runtime
+        shell: bash
+        run: |
+          npm ci --prefix apps/agent
+          node apps/agent/build.mjs "$TARGET" "$KHOR_AGENT_BUNDLE"
+      - run: npm ci --prefix apps/gui
+      - name: Build the App and its bundled CLI
+        shell: bash
+        run: python3 scripts/desktop_installer.py --target "$TARGET" --output desktop-product --frontend frontend
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: khor-windows-x86_64-app
+          path: desktop-product/
+          if-no-files-found: error
+          retention-days: 14
+      - if: ${{ !inputs.reuse_agent_runtime }}
+        name: Verify SSH secrets in the Windows credential vault
+        shell: bash
+        run: cargo test --locked --release --target "$TARGET" -p khor-node --lib secret::tests::windows_vault_round_trips_and_removes_only_its_owned_entries
+      - name: Build the scripted ACP agent for the installed App check
+        shell: bash
+        run: cargo build --locked --release --target "$TARGET" -p khor-acp --bin acp-stub
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: desktop-acp-fixture-windows-x86-64
+          path: target/x86_64-pc-windows-msvc/release/acp-stub.exe
+          if-no-files-found: error
+
+  installed-app:
+    needs: package
+    # The 2025 image builds the package. The 2022 image can attach to
+    # the installed WebView2 over CDP (runner-images#14738).
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22.19.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: khor-windows-x86_64-app
+          path: desktop-product
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: desktop-acp-fixture-windows-x86-64
+          path: desktop-fixtures
+      - run: python scripts/release_manifest.py verify --root desktop-product
+      - run: npm ci --prefix apps/gui
+      - name: Verify the installed App and native interaction
+        run: python scripts/check-desktop-installer.py --package desktop-product/khor-windows-x86_64.msi --acp-fixture desktop-fixtures/acp-stub.exe --native-drag --desktop-parity --output "${{ runner.temp }}/installation.json"
+      - name: Verify the complete artifact is unchanged after installation tests
+        run: python scripts/release_manifest.py verify --root desktop-product
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: desktop-installation-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/installation.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: desktop-installer-logs-x86_64-pc-windows-msvc
+          path: ${{ runner.temp }}/khor-installer-logs/*.log
+          if-no-files-found: warn
+          retention-days: 14

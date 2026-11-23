@@ -112,6 +112,7 @@ shell 后同一导入 ID 仍能重新接上 tmux 终端。只发送本地 slash 
 | `npm run tabs` | `check-tabs.mjs`,浏览外壳的契约面 + 标签,**真连**(两个 home 走真 UDP) | 不拿 |
 | `npm run smoke` | `smoke.mjs`,整条验收,**真连**(三个 home) | 不拿 |
 | `npm run web-face` | `web-face.mjs`,浏览器脸,**真连**(真的 `khor serve`) | 不拿 |
+| `npm run windows-installed` | `check-windows-installed.mjs`，由 Windows MSI 安装验证传入 WebView2 调试端口及测试会话，检查会话、工作区、浏览器与窗口控件 | 拿 |
 | `npm run gates` | `check-gates.mjs`,守门自己够不够得着、写没写下来 | 不拿 |
 | `npm run bytes` | `check-bytes.mjs`,源码里有没有**字面**控制字符(写成转义的不算) | 不拿 |
 | `npm run boot` | `check-boot.mjs`,第一帧的五个颜色和窗口的两块底是不是都来自 `--background` / `--card`——白屏一闪是主题还没到就画了 | 不拿 |

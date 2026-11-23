@@ -18,6 +18,8 @@ mod acp_management;
 mod acp_mcp;
 pub(crate) mod acp_process;
 pub mod adaptor;
+pub mod agent_driver;
+pub mod agent_fleet;
 #[path = "khor_agent_process.rs"]
 pub(crate) mod agent_process;
 mod agent_setup;
@@ -36,6 +38,7 @@ pub mod codexagent;
 pub mod command_task;
 pub mod commands;
 pub mod config;
+mod console;
 pub mod cwd;
 pub mod day;
 mod deadline;
@@ -43,6 +46,8 @@ pub mod delegation;
 mod doc_transfer_state;
 pub mod doctor;
 pub mod drops;
+pub mod dsh_sessions;
+mod durable;
 pub(crate) mod egress;
 pub mod execution;
 pub mod face;
@@ -74,6 +79,7 @@ pub mod mcp;
 pub mod mcp_worker;
 pub mod merge;
 pub mod modes;
+pub mod native_queue;
 pub(crate) mod once;
 pub mod pause;
 pub mod pictures;
@@ -99,6 +105,7 @@ mod session_drafts;
 pub use khor_sync::drafts::DraftRevision;
 pub mod session_import;
 pub mod shell_start;
+pub mod startup_trace;
 mod storage_io;
 mod store_owner;
 pub mod subscriptions;
@@ -106,6 +113,8 @@ pub mod tabs;
 pub mod terminal_control;
 #[cfg(test)]
 pub(crate) mod testdir;
+#[cfg(test)]
+mod testproc;
 pub mod top;
 pub mod transfer;
 pub mod tree;
@@ -3173,8 +3182,63 @@ impl Node {
                 });
             }
         }
+        // **DSH's conversations are local but not an agent's**: nothing
+        // lists them over ACP, so the store it writes is the source. They
+        // come in as read-only observations like any other imported
+        // conversation, with the directory each was recorded in as its
+        // place — which is what the project grouping groups by.
+        if let Ok(sessions) = crate::dsh_sessions::sessions() {
+            for session in sessions {
+                let alias = session_content::Observation::id(
+                    self.device(),
+                    khor_core::ObservationNamespace::Native,
+                    "dsh",
+                    &session.id,
+                );
+                if roster.doc.entry(&alias.0).is_some() {
+                    continue;
+                }
+                out.push(Candidate {
+                    id: format!("{DSH_CANDIDATE}{}", session.id),
+                    form: khor_core::kind::OBSERVE.to_owned(),
+                    home: self.device().hex(),
+                    title: session.title.unwrap_or_default(),
+                    place: Some(session.cwd),
+                    at_ms: session.created_at_ms,
+                    category: Some("dsh".to_owned()),
+                    // **Not an agent.** This field is "the ACP agent whose
+                    // `session/list` produced the row" (`ListedCandidate`'s
+                    // home check depends on it); DSH is not registered with
+                    // ACP at all. The vendor is named by `category`.
+                    agent: None,
+                    command: None,
+                });
+            }
+        }
         out.sort_by_key(|c| std::cmp::Reverse(c.at_ms));
         Ok(out)
+    }
+
+    /// One DSH candidate onto the list: a read-only observation whose
+    /// content is the conversation in the store it came from.
+    ///
+    /// The candidate carries the session id; its facts (title, directory,
+    /// start) are read back from the store rather than trusted from the
+    /// candidate string, so a stale panel cannot import a wrong name.
+    fn import_dsh_candidate(&self, id: &str) -> Result<SessionId, String> {
+        let native = id.strip_prefix(DSH_CANDIDATE).unwrap_or(id);
+        let session =
+            crate::dsh_sessions::session_of(native).ok_or_else(|| msg::not_a_candidate(id))?;
+        self.register_observation(session_content::Observation::new(
+            self.device(),
+            self.device(),
+            khor_core::ObservationNamespace::Native,
+            "dsh".to_owned(),
+            session.id.clone(),
+            session.title.clone().unwrap_or_default(),
+            Some(session.cwd.clone()),
+            Some(khor_core::Millis(session.created_at_ms.max(0) as u64)),
+        ))
     }
 
     /// Brings one candidate onto the list, by the id
@@ -3184,6 +3248,9 @@ impl Node {
     pub fn import(&self, id: &str) -> Result<SessionId, String> {
         if id.starts_with(ACP_CANDIDATE) {
             return self.import_listed_observation(id);
+        }
+        if id.starts_with(DSH_CANDIDATE) {
+            return self.import_dsh_candidate(id);
         }
         // Any row this machine can see and the list does not have — an
         // ended one too, when somebody names it: the panel offers only
@@ -4779,7 +4846,9 @@ impl Node {
             .dir_of(&id)
             .ok_or_else(|| msg::not_a_session_id(&id.0))?;
         host::spawn_host(&dir, &id, cmd, size)?;
+        crate::startup_trace::mark("host-ready");
         self.roster_new(&id)?;
+        crate::startup_trace::mark("roster-new");
         Ok(id)
     }
 
@@ -6032,6 +6101,12 @@ impl KindSurface for LiveKind {
 /// session yet. Its opaque payload pins the answer's home, agent and exact ID.
 pub const ACP_CANDIDATE: &str = "acp:";
 
+/// How a DSH conversation is spelled among the candidates. DSH is not a
+/// registered agent, so nothing lists its conversations over ACP — the
+/// candidate names the session in DSH's own store, and importing it makes
+/// the usual read-only observation.
+pub const DSH_CANDIDATE: &str = "dsh:";
+
 /// One thing [`Node::find`] found: what it is, how a face jumps to it,
 /// what a person reads, and where it lives.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -6278,17 +6353,51 @@ pub(crate) struct Asked {
 pub(crate) fn asked_shell() -> &'static Asked {
     static ASKED: std::sync::OnceLock<Asked> = std::sync::OnceLock::new();
     ASKED.get_or_init(|| {
-        let shell = crate::shell_start::default_shell();
-        let marker = format!("KHOR_ENV_{}", crate::link::fresh_hex().unwrap_or_else(|_| std::process::id().to_string()));
-        let script = if std::path::Path::new(&shell).file_name().is_some_and(|name| name == "fish") {
-            format!("printf '%s\\0' '{marker}' (string join : $PATH) \"$LC_ALL\" \"$LC_CTYPE\" \"$LANG\"")
-        } else {
-            format!("printf '%s\\0' '{marker}'; {}", probe_script())
+        // **A login shell is a Unix idea.** Windows has no login-shell
+        // `PATH` convention — the process environment is already the
+        // merged user/system value — and `SHELL` there is exported by
+        // whatever tool felt like it. On this machine it names Windows
+        // PowerShell, so the probe started that (loading its profile) and
+        // spent **3.1 s** on an answer that could not apply: every session
+        // creation paid it before the host was ever spawned (measured
+        // 2026-11-17 with `KHOR_STARTUP_TRACE`). Answering nothing leaves
+        // `merge_paths` with the process `PATH`, which is the right
+        // answer, and `KHOR_PATH` still overrides both.
+        #[cfg(windows)]
+        return Asked {
+            path: String::new(),
+            locale: Vec::new(),
         };
-        let said = crate::user_environment::probe(&shell, &script)
-            .and_then(|said| said.split_once(&(marker + "\0")).map(|(_, answer)| answer.to_owned()))
-            .unwrap_or_default();
-        read_shell_answer(&said)
+        #[cfg(not(windows))]
+        {
+            // **Main's newer probe, kept on the merge**: it asks the shell this
+            // machine actually starts (`shell_start::default_shell`), runs the
+            // answer through `user_environment::probe`, and strips a marker so
+            // a shell's own chatter cannot be read as the answer. The Windows
+            // branch above never reaches it — that is our 3.1 s fix, and main
+            // has no equivalent (a Windows `SHELL` is exported by whatever tool
+            // felt like it).
+            let shell = crate::shell_start::default_shell();
+            let marker = format!(
+                "KHOR_ENV_{}",
+                crate::link::fresh_hex().unwrap_or_else(|_| std::process::id().to_string())
+            );
+            let script =
+                if std::path::Path::new(&shell).file_name().is_some_and(|name| name == "fish") {
+                    format!(
+                        "printf '%s\\0' '{marker}' (string join : $PATH) \"$LC_ALL\" \"$LC_CTYPE\" \"$LANG\""
+                    )
+                } else {
+                    format!("printf '%s\\0' '{marker}'; {}", probe_script())
+                };
+            let said = crate::user_environment::probe(&shell, &script)
+                .and_then(|said| {
+                    said.split_once(&(marker + "\0"))
+                        .map(|(_, answer)| answer.to_owned())
+                })
+                .unwrap_or_default();
+            read_shell_answer(&said)
+        }
     })
 }
 
@@ -6364,6 +6473,25 @@ pub(crate) fn spawn_path(command: &str) -> String {
         return Node::user_path().to_owned();
     }
     here
+}
+
+/// Where a vendor's program is, for the spawns.
+///
+/// **`PATH` first, then the roster.** An installer that keeps its binary in
+/// a versioned folder (Codex: `<local app data>/OpenAI/Codex/bin/<hash>/
+/// codex.exe`) never touches `PATH`, and the roster knows that layout while
+/// a bare `find_program` does not. Before this, the picker could offer
+/// 「Codex · 对话」 — because the roster found it — and the agent's own
+/// spawn still failed on a bare `codex`, which is the worst of both.
+///
+/// `roster_id` is `None` when the environment names the program explicitly
+/// (`KHOR_CODEX`, `KHOR_CLAUDE`): a person's override is not something to
+/// second-guess with a guess from the table.
+pub(crate) fn vendor_bin(named: &str, path: &str, roster_id: Option<&str>) -> Option<String> {
+    if let Some(found) = find_program(named, path) {
+        return Some(found);
+    }
+    roster_id.and_then(crate::agent_fleet::program)
 }
 
 /// [`spawn_path`]'s judgment, split out so it is testable without a

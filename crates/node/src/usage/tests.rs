@@ -148,58 +148,72 @@ fn both(tag: &str) -> Usage {
 /// a single pass the way a real home is.
 fn fixture_home(tag: &str) -> crate::testdir::TempTree {
     let home = crate::testdir::TempTree::fresh(&format!("usage-{tag}"));
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(fixture().join("claude/.claude"), home.join(".claude")).unwrap();
-        std::os::unix::fs::symlink(fixture().join("codex/.codex"), home.join(".codex")).unwrap();
-        std::os::unix::fs::symlink(fixture().join("gemini/.gemini"), home.join(".gemini")).unwrap();
-        // The three Pi-format roots live under one fixture directory, so
-        // that one home wears all of them the way a real one would.
-        for dir in [".pi", ".senpi"] {
-            std::os::unix::fs::symlink(fixture().join("pi").join(dir), home.join(dir)).unwrap();
-        }
-        // `.config` has two tenants — Kimchi and VS Code — so it is a real
-        // directory here with a link per child, which is also what a real
-        // home looks like. Linking the whole of `.config` to one fixture
-        // would have let either vendor hide the other.
-        std::fs::create_dir_all(home.join(".config")).unwrap();
-        std::os::unix::fs::symlink(
-            fixture().join("pi/.config/kimchi"),
-            home.join(".config/kimchi"),
-        )
-        .unwrap();
-        std::os::unix::fs::symlink(
-            fixture().join("roo/.config/Code"),
-            home.join(".config/Code"),
-        )
-        .unwrap();
-        std::fs::create_dir_all(home.join("Library/Application Support")).unwrap();
-        std::os::unix::fs::symlink(
-            fixture().join("roo/Library/Application Support/Code"),
-            home.join("Library/Application Support/Code"),
-        )
-        .unwrap();
-        std::os::unix::fs::symlink(
-            fixture().join("roo/.vscode-server"),
-            home.join(".vscode-server"),
-        )
-        .unwrap();
-        std::os::unix::fs::symlink(fixture().join("qwen/.qwen"), home.join(".qwen")).unwrap();
-        std::os::unix::fs::symlink(fixture().join("junie/.junie"), home.join(".junie")).unwrap();
-        for root in ["openclaw", "moltbot"] {
-            std::os::unix::fs::symlink(
-                fixture().join("openclaw").join(format!(".{root}")),
-                home.join(format!(".{root}")),
-            )
-            .unwrap();
-        }
-        std::fs::create_dir_all(home.join(".local/share")).unwrap();
-        std::os::unix::fs::symlink(
-            fixture().join("amp/.local/share/amp"),
-            home.join(".local/share/amp"),
-        )
-        .unwrap();
+    // One fixture root, worn inside the scratch home.
+    //
+    // Unix links it, so the fixture stays one copy. Windows copies it: a
+    // symlink there needs a privilege the test host may not have, and an
+    // empty home would make every count below zero for a reason the test
+    // is not about.
+    fn mount(from: &std::path::Path, to: &std::path::Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(from, to).unwrap();
+        #[cfg(not(unix))]
+        copy_tree(from, to);
     }
+    #[cfg(not(unix))]
+    fn copy_tree(from: &std::path::Path, to: &std::path::Path) {
+        if from.is_dir() {
+            std::fs::create_dir_all(to).unwrap();
+            for entry in std::fs::read_dir(from).unwrap() {
+                let entry = entry.unwrap();
+                copy_tree(&entry.path(), &to.join(entry.file_name()));
+            }
+        } else {
+            std::fs::copy(from, to).unwrap();
+        }
+    }
+    mount(&fixture().join("claude/.claude"), &home.join(".claude"));
+    mount(&fixture().join("codex/.codex"), &home.join(".codex"));
+    mount(&fixture().join("gemini/.gemini"), &home.join(".gemini"));
+    // The three Pi-format roots live under one fixture directory, so
+    // that one home wears all of them the way a real one would.
+    for dir in [".pi", ".senpi"] {
+        mount(&fixture().join("pi").join(dir), &home.join(dir));
+    }
+    // `.config` has two tenants -- Kimchi and VS Code -- so it is a real
+    // directory here with one child each, which is also what a real home
+    // looks like.
+    std::fs::create_dir_all(home.join(".config")).unwrap();
+    mount(
+        &fixture().join("pi/.config/kimchi"),
+        &home.join(".config/kimchi"),
+    );
+    mount(
+        &fixture().join("roo/.config/Code"),
+        &home.join(".config/Code"),
+    );
+    std::fs::create_dir_all(home.join("Library/Application Support")).unwrap();
+    mount(
+        &fixture().join("roo/Library/Application Support/Code"),
+        &home.join("Library/Application Support/Code"),
+    );
+    mount(
+        &fixture().join("roo/.vscode-server"),
+        &home.join(".vscode-server"),
+    );
+    mount(&fixture().join("qwen/.qwen"), &home.join(".qwen"));
+    mount(&fixture().join("junie/.junie"), &home.join(".junie"));
+    for root in ["openclaw", "moltbot"] {
+        mount(
+            &fixture().join("openclaw").join(format!(".{root}")),
+            &home.join(format!(".{root}")),
+        );
+    }
+    std::fs::create_dir_all(home.join(".local/share")).unwrap();
+    mount(
+        &fixture().join("amp/.local/share/amp"),
+        &home.join(".local/share/amp"),
+    );
     home
 }
 

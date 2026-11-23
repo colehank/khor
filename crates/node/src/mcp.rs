@@ -553,6 +553,7 @@ pub(crate) fn call_with_parent(
         "open" => {
             let start = crate::shell_start::ShellStart {
                 argv: None,
+                shell: None,
                 token: s("request"),
                 title: s("title"),
                 cwd: s("cwd"),

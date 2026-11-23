@@ -38,3 +38,12 @@ __pycache__/
 
 # Developer-specific Lab defaults; project defaults are lab.config.json.
 .khor-lab.local.json
+
+# Lab scratch: build caches and probe homes stay inside this worktree.
+/.cache/
+/.probe/
+
+
+# Session-local executor ledger and scratch.
+/.superpowers/
+

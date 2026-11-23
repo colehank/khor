@@ -38,6 +38,19 @@ pub(super) fn legacy_info(program: &Path) -> Result<Option<Info>, String> {
     if metadata.len() > 256 * 1024 * 1024 {
         return Ok(None);
     }
+    // **The whitelist above names Linux and macOS only**, so on any other
+    // platform the whole-program hash below is spent comparing against four
+    // digests that cannot match. That is ~0.6 s of every session creation on
+    // Windows, measured as part of a 1.68 s `open` — the independent review
+    // ranked removing it first.
+    //
+    // Not a security exemption: this branch only skips a *lookup* that can
+    // never hit. The manifest path (`inspect`, then `publish_checked` with
+    // its own verification) still has to answer for the program, and it is
+    // the only path that runs here.
+    if !cfg!(any(target_os = "linux", target_os = "macos")) {
+        return Ok(None);
+    }
     let mut file = File::open(program)
         .map_err(|error| error.to_string())?
         .take(256 * 1024 * 1024 + 1);

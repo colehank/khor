@@ -849,6 +849,25 @@ fn spawn_ghost_prepared(
             Ok(())
         });
     }
+    // **The same promise a terminal's host keeps, and this one did not**
+    // (found 2026-11-16 by reading `host.rs` beside this file). `setsid` above
+    // is what lets a conversation outlive the process that opened it; without
+    // the Windows counterpart a ghost was an ordinary child of whoever spawned
+    // it — the app process, or a resident's inner — so stopping either left the
+    // conversation `Failed / 宿主被结束` with no exit recorded. That is the
+    // `tui/<uuid>` row the owner saw die, and it is why detaching only
+    // `host.rs`'s terminal hosts was not enough.
+    // **Conditional because `prepare_durable_child` above also sets flags**,
+    // and `creation_flags` replaces rather than merges: for a durable worker it
+    // already asked for the same detach bits (plus breakaway).
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        use windows_sys::Win32::System::Threading::{CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS};
+        if !crate::mcp_worker::worker_process() {
+            c.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
+        }
+    }
     let key = khor_net::identity::load_or_create(&root.join(".khor/identity.key"))
         .map_err(|error| error.to_string())?;
     let live = LiveKind::new(

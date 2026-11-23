@@ -537,7 +537,9 @@ mod tests {
         std::fs::create_dir_all(&plain).unwrap();
         let at = |secs: u64| std::time::SystemTime::now() - std::time::Duration::from_secs(secs);
         std::fs::write(plain.join("a.txt"), "a").unwrap();
-        std::fs::File::open(plain.join("a.txt"))
+        std::fs::File::options()
+            .write(true)
+            .open(plain.join("a.txt"))
             .unwrap()
             .set_modified(at(3600))
             .unwrap();
@@ -574,7 +576,9 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(20));
         std::fs::write(plain.join(".a.txt.tmp"), "a2").unwrap();
         std::fs::rename(plain.join(".a.txt.tmp"), plain.join("a.txt")).unwrap();
-        std::fs::File::open(plain.join("a.txt"))
+        std::fs::File::options()
+            .write(true)
+            .open(plain.join("a.txt"))
             .unwrap()
             .set_modified(at(0) + std::time::Duration::from_secs(5))
             .unwrap();

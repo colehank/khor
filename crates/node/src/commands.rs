@@ -631,6 +631,9 @@ impl Ledger {
                     self.set_cwd(path);
                 }
             }
+            // Windows shells report a native path, not a percent-encoded URL.
+            #[cfg(windows)]
+            "9" if rest.starts_with("9;") => self.set_cwd(rest[2..].to_owned()),
             // ConEmu's progress (`9;4;state;percent`, which Windows
             // Terminal, Ghostty and WezTerm read too): 0 clears, 1 a
             // figure, 2 failed, 3 busy with no figure, 4 paused.
@@ -1055,7 +1058,9 @@ pub const HISTORY_HITS: usize = 200;
 /// ([`append_history`]), so it spans sessions.
 pub fn search_history(file: &Path, ask: &HistoryAsk) -> Vec<HistoryHit> {
     let words: Vec<String> = ask.text.split_whitespace().map(str::to_lowercase).collect();
-    let dir = ask.dir.trim_end_matches('/');
+    let dir = history_directory(&ask.dir);
+    let dir = dir.trim_end_matches('/');
+    let descendants = format!("{dir}/");
     let mut out: Vec<HistoryHit> = Vec::new();
     let mut seen = std::collections::HashMap::<String, usize>::new();
     for line in read_history(file).into_iter().rev() {
@@ -1068,7 +1073,8 @@ pub fn search_history(file: &Path, ask: &HistoryAsk) -> Vec<HistoryHit> {
             let Some(cwd) = c.cwd.as_deref() else {
                 continue;
             };
-            if cwd != dir && !cwd.starts_with(&format!("{dir}/")) {
+            let cwd = history_directory(cwd);
+            if cwd != dir && !cwd.starts_with(&descendants) {
                 continue;
             }
         }
@@ -1095,6 +1101,29 @@ pub fn search_history(file: &Path, ask: &HistoryAsk) -> Vec<HistoryHit> {
         });
     }
     out
+}
+
+fn history_directory(path: &str) -> std::borrow::Cow<'_, str> {
+    #[cfg(windows)]
+    {
+        let normalized = path.replace('\\', "/").to_lowercase();
+        if let Some(share) = normalized.strip_prefix("//?/unc/") {
+            return format!("//{share}").into();
+        }
+        // The older OSC 7 writer put a slash before the drive letter.
+        if let Some(drive) = normalized
+            .strip_prefix("//?/")
+            .or_else(|| normalized.strip_prefix('/'))
+            .filter(|path| path.as_bytes().get(1..3) == Some(b":/"))
+        {
+            return drive.to_owned().into();
+        }
+        normalized.into()
+    }
+    #[cfg(not(windows))]
+    {
+        path.into()
+    }
 }
 
 /// The machine's history, newest last.
@@ -1267,6 +1296,22 @@ mod tests {
                 ("cargo build".into(), 1)
             ]
         );
+        #[cfg(windows)]
+        {
+            append_history(
+                &file,
+                "shell/windows",
+                &[
+                    c(6, "show old", "/C:/WORK/Project/task", 0),
+                    c(7, "show new", r"C:\Work\Project\%20 name", 0),
+                    c(8, "show other", r"C:\Work\Project-other", 0),
+                ],
+            );
+            assert_eq!(
+                ask("show", r"\\?\c:\work\project", false),
+                [("show new".into(), 1), ("show old".into(), 1)]
+            );
+        }
         assert!(search_history(&dir.join("none.jsonl"), &HistoryAsk::default()).is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }

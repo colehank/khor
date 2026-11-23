@@ -17,6 +17,10 @@
 //! Its own binary because the two doors are process-wide environment,
 //! and the two tests take turns on them.
 
+// Windows: the whole case is about a fake tmux (`#!/bin/sh`), and tmux does
+// not exist there — same reason W2-B gated its tmux fixtures.
+#![cfg(unix)]
+
 use std::path::PathBuf;
 use std::sync::Mutex;
 

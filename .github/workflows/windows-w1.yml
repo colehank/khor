@@ -1,0 +1,63 @@
+name: Windows W1 baseline
+
+on:
+  push:
+    branches: [steward/s2-windows-20261114]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-w1:
+    runs-on: windows-2025
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Install NASM
+        run: choco install nasm -y --no-progress
+      - name: Rust and Node versions
+        run: |
+          rustc -vV
+          cargo -V
+          node --version
+          npm --version
+      - name: Frontend build (Windows entry)
+        shell: pwsh
+        run: |
+          cd apps/gui
+          npm ci
+          New-Item -ItemType Directory -Force src/gen | Out-Null
+          cargo run --locked -q -p khor-catalog --bin gen_ts > src/gen/catalog.ts
+          cargo run --locked -q -p khor-gui-core --bin gen_bindings
+          npx tsc --noEmit
+          npx vite build
+      - name: Build khor CLI
+        run: cargo build --locked -p khor-cli --bin khor
+      - name: CLI version
+        run: .\target\debug\khor.exe --version
+      - name: CLI doctor JSON
+        run: .\target\debug\khor.exe doctor --json
+      # The W2-A write lock is what keeps the window and `khor tabs` from
+      # losing each other's rows; without this step nothing on CI notices if
+      # the Windows write path is stubbed out again.
+      - name: Node lib tests (tabs write lock)
+        shell: pwsh
+        run: |
+          cargo test --locked -p khor-node --lib tabs:: -- --test-threads=1
+      - name: Check the desktop command listener
+        run: |
+          cargo test --locked -p khor-gui --lib window_transport::tests
+
+      - name: Windows process harness
+        run: cargo run --locked --manifest-path crates/node/tests/windows-process-harness/Cargo.toml
+      - name: Build fanout harness
+        run: rustc --edition=2024 --test crates/node/tests/fanout_harness.rs -o gui-fanout-tests.exe
+      - name: Run fanout harness
+        continue-on-error: true
+        run: .\gui-fanout-tests.exe --nocapture --test-threads=1

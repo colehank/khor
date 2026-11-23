@@ -49,7 +49,12 @@ pub struct WorkspaceInfo {
 /// does not answer with an empty name, and a path with no component at
 /// all answers with itself rather than with nothing.
 pub fn basename(path: &str) -> String {
-    path.rsplit('/')
+    /// A Windows path is separated by `\`, and a Unix name may contain
+    /// one, so the separator set is the platform's rather than both.
+    fn separator(c: char) -> bool {
+        c == '/' || (cfg!(windows) && c == '\\')
+    }
+    path.rsplit(separator)
         .find(|s| !s.is_empty())
         .unwrap_or(path)
         .to_owned()
@@ -289,7 +294,12 @@ mod tests {
 
     fn stamp(path: &Path, secs: u64) {
         let t = std::time::UNIX_EPOCH + std::time::Duration::from_secs(secs);
-        std::fs::File::open(path).unwrap().set_modified(t).unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(path)
+            .unwrap()
+            .set_modified(t)
+            .unwrap();
     }
 
     #[test]
@@ -388,7 +398,9 @@ mod tests {
             "just written: made, where a birth time is kept"
         );
         if let Some(b) = born {
-            std::fs::File::open(&f)
+            std::fs::File::options()
+                .write(true)
+                .open(&f)
                 .unwrap()
                 .set_modified(b + std::time::Duration::from_secs(3600))
                 .unwrap();

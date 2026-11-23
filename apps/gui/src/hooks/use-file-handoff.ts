@@ -38,10 +38,11 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
   const page = useMemo(() => ({machine,path,enabled}), [machine,path,enabled]);
   const attached = useRef<typeof page | null>(null);
   const previewKind: FilePreviewKind = /\.pdf$/i.test(path) ? "pdf" : "document";
+  const previewPath = window.__KHOR_WINDOW_PLATFORM__ === "windows" ? path : undefined;
   const pending = useRef<Pending | null>(null);
   const [supported, setSupported] = useState(false);
-  const [previewSupport, setPreviewSupport] = useState<{kind: FilePreviewKind; value: boolean} | null>(null);
-  const previewSupported = previewSupport?.kind === previewKind ? previewSupport.value : null;
+  const [previewSupport, setPreviewSupport] = useState<{kind: FilePreviewKind; path?: string; value: boolean} | null>(null);
+  const previewSupported = previewSupport?.kind === previewKind && previewSupport.path === previewPath ? previewSupport.value : null;
   const lastIntent = useRef<"open" | "preview">("open");
   const [progress, setProgress] = useState<Progress>(idle);
 
@@ -64,12 +65,15 @@ export function useFileHandoff(machine: string, path: string, enabled = true, pa
       (capability ??= fileHandoffSupported().catch(() => { capability = undefined; return false; })).then(value => {
         if (alive) setSupported(value);
       });
-      (previewCapabilities[previewKind] ??= filePreviewSupported(previewKind).catch(() => { delete previewCapabilities[previewKind]; return false; })).then(value => {
-        if (alive) setPreviewSupport({kind:previewKind,value});
+      const preview = previewPath === undefined
+        ? (previewCapabilities[previewKind] ??= filePreviewSupported(previewKind).catch(() => { delete previewCapabilities[previewKind]; return false; }))
+        : filePreviewSupported(previewKind, previewPath).catch(() => false);
+      void preview.then(value => {
+        if (alive) setPreviewSupport({kind:previewKind,path:previewPath,value});
       });
     }
     return () => { alive = false; };
-  }, [enabled,previewKind]);
+  }, [enabled,previewKind,previewPath]);
 
   useLayoutEffect(() => {
     attached.current=page;

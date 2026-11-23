@@ -885,7 +885,8 @@ mod tests {
         assert_eq!(tidy_setting("  ").unwrap(), "");
         assert_eq!(tidy_setting("~/inbox/").unwrap(), "~/inbox");
         assert_eq!(tidy_setting("~").unwrap(), "~");
-        assert_eq!(tidy_setting("/data/in").unwrap(), "/data/in");
+        let absolute = std::env::temp_dir().join("data/in").display().to_string();
+        assert_eq!(tidy_setting(&absolute).unwrap(), absolute);
         for bad in ["inbox", "./x", "~x", "/a/../b"] {
             assert!(tidy_setting(bad).is_err(), "{bad:?} taken");
         }

@@ -90,7 +90,7 @@ pub fn probe() -> Editor {
     let Some(exe) = cli() else {
         return Editor::default();
     };
-    let Ok(out) = std::process::Command::new(exe).arg("--version").output() else {
+    let Ok(out) = crate::console::hidden(exe).arg("--version").output() else {
         return Editor::default();
     };
     if !out.status.success() {
@@ -204,7 +204,7 @@ pub fn serve() -> Result<(u16, String), String> {
         }
     }
     let token = crate::link::fresh_hex()?;
-    let mut cmd = std::process::Command::new(&exe);
+    let mut cmd = crate::console::hidden(&exe);
     cmd.arg("serve-web")
         .args(["--port", "0"])
         .args(["--connection-token", &token])

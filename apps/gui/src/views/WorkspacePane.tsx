@@ -36,7 +36,7 @@ import { DeeperHeads, NarrowHead, SideSeat } from "@/components/SideHead";
 import { ListPane } from "@/components/ListPane";
 import { PaneBar, type ArrangeOption } from "@/components/PaneBar";
 import { PathCrumbs } from "@/components/PathCrumbs";
-import { RegionLead, WindowControls } from "@/components/Region";
+import { RegionLead } from "@/components/Region";
 import { WINDOW_DRAG } from "@/components/shell";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
 import {
@@ -60,6 +60,7 @@ import type { WorkspaceMemory } from "@/views/workspace/workspace-memory";
 import { useWorkspaceField } from "@/views/workspace/use-workspace-memory";
 import { requestFileLocation } from "@/lib/file-location";
 import { directoryOf } from "@/lib/paths";
+import { directoryPrefix, homeRelative, isWindowsPath, parentPath } from "@/lib/path-input";
 import { movedFilePath, useFileObjectActions } from "@/lib/file-actions";
 import { discard, flushFile, roadOf, useRoads } from "@/lib/save-road";
 import { useReadFirst } from "@/hooks/use-read-first";
@@ -609,7 +610,7 @@ export function WorkspacePane({
   }, [memory, gitAt]);
 
   const [treeWatchEntries, setTreeWatchEntries] = useState<string[]>([]);
-  const fileParent = file === null ? null : file.slice(0, file.lastIndexOf("/")) || "/";
+  const fileParent = file === null ? null : parentPath(file);
   const watchPlan = directoryWatchScopes(root === "" ? null : root,
     [...(fileParent === null ? [] : [fileParent]), ...treeWatchEntries]);
   const observation = useDirectoryWatch(machine, watchPlan.scopes, root !== "");
@@ -808,7 +809,7 @@ export function WorkspacePane({
   const moved = useCallback(
     (from: string, to: string) => {
       const after = (p: string) =>
-        p === from ? to : p.startsWith(`${from}/`) ? `${to}${p.slice(from.length)}` : p;
+        p === from ? to : p.startsWith(directoryPrefix(from)) ? `${to}${p.slice(from.length)}` : p;
       const next = renameWorkspaceFiles(memory.read("content"), after);
       setContent(next);
       setDrafts((was) => {
@@ -1210,7 +1211,6 @@ export function WorkspacePane({
         <DropdownMenuContent align="end">{workspaceActions.map(action => <DropdownMenuItem key={action.key} onSelect={action.run}>{action.label}</DropdownMenuItem>)}</DropdownMenuContent>
       </DropdownMenu>
     </>}
-    {!(picked!==null&&sessionDetailOpen)&&<WindowControls />}
   </div>;
 
   const workspaceSessionList = (
@@ -1641,7 +1641,7 @@ export function Hits({
   onOpen: (path: string, line: number | null, keep?:boolean) => void;
 }) {
   const actions = useFileObjectActions(here, dir);
-  const short = (p: string) => (p.startsWith(`${dir}/`) ? p.slice(dir.length + 1) : p);
+  const short = (p: string) => under(dir, p);
   return (
     <div data-tree-results className="min-h-0 flex-1 overflow-y-auto">
       {error !== null && (
@@ -1784,7 +1784,8 @@ export function storedTabs(machine: string, root: string): string[] {
     there is no root to be relative to (the browsing face), because a
     path is better than a blank line. */
 function under(root: string, path: string): string {
-  return root !== "" && path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path;
+  const prefix = directoryPrefix(root);
+  return root !== "" && path.startsWith(prefix) ? path.slice(prefix.length) : path;
 }
 
 /** Absolute path → its mark, for every marked file **and every
@@ -1809,7 +1810,7 @@ function folded(root: string, git: GitStatus | null): Map<string, string> | null
   if (git === null) return null;
   const out = new Map<string, string>();
   for (const r of git.rows) {
-    const full = `${root}/${r.path}`;
+    const full = isWindowsPath(root) ? homeRelative(root, r.path) : directoryPrefix(root) + r.path;
     out.set(full, r.mark);
     // **An ignored path is the one mark that does not travel up**
     // (2026-09-16). The fold exists so a shut directory can say
@@ -1821,12 +1822,9 @@ function folded(root: string, git: GitStatus | null): Map<string, string> | null
     if (r.mark === IGNORED) continue;
     // Every step between the file and the root, exclusive of both: the
     // root itself is the head of the pane and never a row in it.
-    let cut = full.lastIndexOf("/");
-    while (cut > root.length) {
-      const dir = full.slice(0, cut);
+    for (let dir = parentPath(full); dir !== null && dir !== root && dir.startsWith(directoryPrefix(root)); dir = parentPath(dir)) {
       const had = out.get(dir);
       out.set(dir, had === undefined ? r.mark : heavier(had, r.mark));
-      cut = full.lastIndexOf("/", cut - 1);
     }
   }
   return out;

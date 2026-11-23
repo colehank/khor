@@ -13,7 +13,7 @@ fn measured() -> &'static std::sync::Mutex<Option<(String, f64)>> {
 }
 
 pub fn hang(app: &tauri::AppHandle) {
-    let built = tauri::WebviewWindowBuilder::new(
+    let builder = tauri::WebviewWindowBuilder::new(
         app,
         MENU,
         tauri::WebviewUrl::App("index.html?face=menu".into()),
@@ -28,9 +28,13 @@ pub fn hang(app: &tauri::AppHandle) {
     .shadow(true)
     .always_on_top(true)
     .visible(false)
-    .inner_size(1.0, 1.0)
-    .build();
-    if let Err(e) = built {
+    .inner_size(1.0, 1.0);
+    #[cfg(target_os = "windows")]
+    let builder = match crate::page_windows::profile_directory() {
+        Some(directory) => builder.data_directory(directory),
+        None => builder,
+    };
+    if let Err(e) = builder.build() {
         eprintln!("khor: the overlay window did not build, menus stay in the page: {e}");
     }
 }
@@ -203,6 +207,9 @@ pub fn owner_moved(window: &tauri::Window) {
 
 pub fn close(app: &tauri::AppHandle) {
     if let Some(menu) = app.get_webview_window(MENU) {
+        #[cfg(target_os = "windows")]
+        let _ = menu.destroy();
+        #[cfg(not(target_os = "windows"))]
         let _ = menu.close();
     }
 }

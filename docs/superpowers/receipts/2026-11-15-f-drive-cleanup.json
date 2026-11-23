@@ -1,0 +1,17 @@
+{
+  "checked_at": "2026-11-15T10:13:47.960583+00:00",
+  "removed": [
+    "F:\\khor-build",
+    "F:\\khor-build2",
+    "F:\\khor-target",
+    "F:\\khor-target-build",
+    "F:\\khor-target-build2",
+    "F:\\khor-target-check",
+    "F:\\khor-target-harness",
+    "F:\\khor-target-harness2",
+    "F:\\khor-target-nodefix",
+    "F:\\khor-target-tabs"
+  ],
+  "skipped": [],
+  "bytes": 33650240831
+}

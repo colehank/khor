@@ -354,11 +354,17 @@ usage = """
   attach <session>      接上一个持久 session（Ctrl-\\ 断开）；
                         行在哪台机器上就接哪台，不用说
   takeover <session>    接管一个 agent 会话：结束它的终端，对话从这里继续
-  agents [known | sessions <名字> [--ask] | add <名字> [...] | rm <名字>]
+  agents [known | fleet | sessions <名字> [--ask] | add <名字> [...] | rm <名字>]
                         登记会说 ACP 的 agent：不带参数看登记过哪些。
                         登记一次全网都认得（命令在不在各机器上，起的时候才知道）；
                         claude、codex、khor、shell 这四个名字 khor 自己在用。
                         known 看随包带的 ACP 注册表快照；@<id> 直接用快照里那条命令。
+                        fleet 看这台机器实际有什么：程序路径、khor 会怎么起它、
+                        能拿它做什么——注册表里有条目和机器上装了，是两件事。
+                        tell <agent> <id> <text> 往厂商自己拥有的对话里排一条消息
+                        （目前是 Codex），不算接管：写入走厂商自己的守护进程。
+                        dsh 列出这台机器上 DeepSeek Harness 已有的对话，
+                        按每段被记录时所在的目录。
                         sessions 看它有哪些对话（读记下来的；--ask 才真去问，那会起一个进程）；
                         问过的答案全网同步，别的机器不用再起一遍
          connect <名字> <地址> [--token-stdin]
@@ -648,6 +654,10 @@ doctor-agents-ok = "已登记的 {0} 个命令均可找到"
 doctor-agents-missing = "找不到命令：{0}"
 doctor-agents-none = "未登记智能体"
 doctor-agents-unread = "无法读取智能体登记表"
+agents-fleet-head = "已知 {0} 个，已安装 {1} 个，包运行器：{2}"
+agents-fleet-installed = "已安装"
+agents-fleet-absent = "未安装"
+agents-fleet-no-runner = "无"
 doctor-vscode-ready = "{0}，服务端已下载"
 doctor-vscode-fetch = "{0}，服务端尚未下载（首次打开时下载）"
 doctor-vscode-none = "这台机器上没有 code"
@@ -1393,6 +1403,15 @@ roads-jump = "跳板"
 roads-broken-auth = "{0} 只接受密码登录"
 
 [msg]
+native-send-empty = "空消息不会发出"
+native-send-long = "消息有 {0} 字节，一次最多带 {1} 字节"
+native-send-nul = "消息或 id 里含 NUL 字节，不发送"
+native-send-unknown = "khor 还不能往 {0} 的对话里发消息"
+native-resume-unknown = "khor 还不能重新打开 {0} 的对话"
+native-read-unknown = "khor 还不能读 {0} 的对话正文"
+native-send-no-program = "这台机器的 PATH 上没有 {0}"
+native-send-accepted = "{0} 已接收这条消息"
+native-send-refused = "{0} 拒绝了（退出码 {1}）"
 launch-preset-name = "填写启动方式名称"
 launch-preset-duplicate = "这个启动方式名称已存在"
 launch-command-invalid = "启动命令包含无效字符或超过 32 KiB"
@@ -2263,7 +2282,7 @@ gui-wont-start = "桌面 app 无法启动：{0}"
 # failure there is, and the commonest of them (`tmux` not on a launchd
 # `PATH`) took about a millisecond. **A sentence about waiting, for
 # something that never waited.**
-host-never-ready = "宿主未在 5 秒内就绪"
+host-never-ready = "宿主未在 {0} 秒内就绪"
 # The host process ended before it was reachable and left nothing
 # behind — the residue of the case above, kept honest: khor says the
 # host is gone rather than inventing a reason for it.
@@ -2758,6 +2777,8 @@ child_task_output_truncated = "输出已截断"
 term-preview-activate = "终端预览，点击体验完成提示"
 term-theme-custom-row = "自定义配色"
 session-association = "会话关联"
+agent-fleet = "这台机器上的智能体"
+agent-fleet-hint = "注册表列的是 khor 知道怎么起哪些智能体；这里列的是这台电脑实际有什么、khor 会怎么起它、能拿它做什么。"
 key-row-choose = "选择按键"
 key-row-letters = "字母"
 key-row-function = "F 键"
@@ -2891,6 +2912,11 @@ git-history-older = "更早"
 agent_list_unknown_home = "来源机器未知，需重新查询"
 session_state_unknown = "未提供运行状态"
 session_observation = "只读记录"
+# **What can be done with an imported record, said once.** The row already
+# shows 只读记录; this line says who holds it and where the way forward is,
+# because "read-only" alone reads like khor is refusing (the owner,
+# 2026-11-18: 「当前只有只读对话，为什么？」).
+session_observation_note = "这段记录由厂商自己的工具持有，khor 只读。要在它自己的工具里接着做，用这一行的菜单。"
 content_ambiguous_source = "有多个会话记录匹配此身份，无法确定内容来源"
 content_loading = "正在读取会话内容来源"
 content_no_source = "没有可读取的会话记录"
@@ -4596,8 +4622,13 @@ mesh-map = "网里的机器"
 # avatar is that machine's face, so the name said it twice (the owner,
 # on a phone). The second line is the preview alone.
 pick-a-session = "选择一个会话"
-empty-sessions = "还没有会话"
-empty-sessions-how = "点击上方的 ＋，开一个会话"
+# **派发, not 会话.** The list exists to dispatch work (the owner,
+# 2026-11-18: 用户派发任务不应该从会话入口进入吗), and "还没有会话" says
+# nothing about what to do or what a session is for. The row an import
+# creates is a session too — this empty state only speaks when the check
+# found nothing at all.
+empty-sessions = "还没有派发过任务"
+empty-sessions-how = "点击上方的 ＋，派发第一件事"
 # The big canvas behind no selection: the network's now — **two**
 # headings and what stands under each. 等你的事 is the blocked rows —
 # the word's own definition (docs/SESSION.md 待批: an approval this
@@ -4657,6 +4688,14 @@ filter = "筛选"
 # one axis reads the same in both halves of one menu.
 axis-state = "状态"
 axis-category = "类别"
+# **What a row's face is**, as opposed to what state it is in or where it
+# lives: a conversation you can talk into, or a terminal you type into.
+# The two values reuse `view-chat` / `view-terminal` — the same pair the
+# new-session wizard's picker prints — because a filter chip and the thing
+# it filters to must read as one word (this section refuses two names for
+# one thing). This heading is new only because nothing on the session list
+# had been asked to name the distinction before.
+axis-talk = "形态"
 # The chip's own control, on the search box. A chip is one token — it
 # goes whole or not at all — so this names taking it off, and it is the
 # pointer's way of doing what backspace does from the keyboard.
@@ -5603,6 +5642,18 @@ view-chat = "对话"
 # one concept, one word, wherever it appears.
 to-a-chat = "转为对话"
 to-a-terminal = "转为终端"
+resume-native = "在终端里继续"
+send-message = "发一条消息"
+send-message-title = "给这段对话发一条消息"
+send-message-hint = "由厂商排进队列——khor 不接管这段对话"
+dsh-conversations = "DeepSeek Harness 的对话"
+dsh-read = "读一下"
+dsh-read-speaker-user = "你"
+dsh-read-speaker-assistant = "DSH"
+dsh-read-speaker-thought = "思考"
+dsh-read-speaker-tool = "工具"
+dsh-read-speaker-tool-result = "结果"
+resume-native-missing = "这段对话没有记录原生 id，无法在它自己的工具里继续"
 
 # ── Claude 订阅余量(批⑩) ─────────────────────────────
 # 窗口的名字。数字与「已用多少」由环画,这里只给名字——

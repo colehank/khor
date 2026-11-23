@@ -56,9 +56,10 @@ fn current() -> Result<Info, String> {
     let wire = include_str!("proto.rs").replace("\r\n", "\n");
     let fingerprint = format!("{:x}", Sha256::digest(wire.as_bytes()));
     // These exact audited revisions add FileResource, SessionImport, then
-    // Execution and OpenTerminalOnce (including new startup fields).
+    // Execution and OpenTerminalOnce, then the optional Windows shell choice.
     // MessagePack carries operation names; existing words and positional
-    // fields are unchanged, including the six-field LegacyShellStart.
+    // fields are unchanged, including the six-field LegacyShellStart, which
+    // translates to the default shell.
     // Old peers refuse the new words before any command can execute or lose
     // its startup arguments. Existing viewer connections remain protocol v5;
     // automation requires a separate v6 control connection. Keep published
@@ -67,7 +68,8 @@ fn current() -> Result<Info, String> {
     let compatible_fingerprint = match fingerprint.as_str() {
         "f317c5ec5fa618a54ef5848016cc23219c37cbc39d6abd52cd4b361526d21f29"
         | "f0c20d8ece8dda5bab4025bf550149bba8be5a4b399459f656a9449a566f4f4f"
-        | "4c41bbe5e02bf1883c5cfa0764f53d862accdff50a2714516a3daa7caafc8773" => {
+        | "4c41bbe5e02bf1883c5cfa0764f53d862accdff50a2714516a3daa7caafc8773"
+        | "80971cd65f85a60ad80c53f731ab7198fc3e59158865bf3b358113a4f209ef42" => {
             "7bdf9a8cedcc26b783f3a6714899df875cbcb429e2f1ee64aa5a7d065e75fcda"
         }
         other => other,
@@ -104,6 +106,7 @@ pub fn process_entry() {
         eprintln!("{error}");
         std::process::exit(1);
     }
+    crate::startup_trace::begin();
     if std::env::args_os().nth(1).as_deref() == Some(std::ffi::OsStr::new("_verify_release")) {
         let result = (|| -> Result<String, String> {
             let args = std::env::args_os().skip(2).collect::<Vec<_>>();
@@ -189,6 +192,7 @@ pub fn process_entry() {
         eprintln!("cannot enter runtime: {error}");
         std::process::exit(1);
     }
+    crate::startup_trace::mark("runtime-entered");
     #[cfg(not(any(target_os = "ios", target_os = "android")))]
     if let Err(error) = crate::updates::recover_current_installation() {
         eprintln!("{error}");
@@ -199,6 +203,7 @@ pub fn process_entry() {
         eprintln!("{error}");
         std::process::exit(78);
     }
+    crate::startup_trace::mark("contracts-checked");
 }
 
 fn inspect(program: &Path) -> Result<Info, String> {
@@ -333,7 +338,31 @@ pub(crate) fn agent(bundle: &[u8]) -> Result<Image, String> {
 
 pub fn host_at(source: &Path) -> Result<HostImage, String> {
     let expected = current()?.release;
+    crate::startup_trace::mark("image-current");
+    // **The same file, already published.** Inspecting and publishing a
+    // source program costs ~600 ms here (a probe process, then a hash and a
+    // copy of 130 MB), and it repeats on every launch because
+    // `Store::image_for_program` only recognises a program that is already
+    // a managed image. `SourceCache` remembers which image came out of
+    // which file object — by the operating system's identity for that
+    // file, not by name — and a hit still has to match the running
+    // release's contract and version, so an upgrade is never skipped.
+    // Everything else (a changed file, a missing image, an unreadable
+    // cache) is a miss, and the full path below is the ordinary one.
+    let cache = khor_runtime::SourceCache::local().ok();
+    if let Some(cache) = &cache
+        && let Ok(Some(image)) = cache.lookup(source)
+        && image.contract() == &expected.contract
+        && image.version() == expected.version
+    {
+        crate::startup_trace::mark("image-reused");
+        return Ok(HostImage {
+            image,
+            source: source.into(),
+        });
+    }
     let info = inspect_supported(source)?;
+    crate::startup_trace::mark("image-inspected");
     if expected.platform != info.release.platform
         || !expected.contract.accepts(&info.release.contract)
     {
@@ -348,6 +377,7 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
     let selected = info.release;
     let executable = std::fs::canonicalize(&info.executable).map_err(|error| error.to_string())?;
     if let Some(image) = Store::image_for_program(&executable).map_err(|error| error.to_string())? {
+        crate::startup_trace::mark("image-cached");
         if image.role() != selected.role || image.contract() != &selected.contract {
             return Err("managed runtime contract differs from its executable".into());
         }
@@ -356,6 +386,7 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
             source: source.into(),
         });
     }
+    crate::startup_trace::mark("image-miss");
     let payload = Source::File(&executable);
     #[cfg(target_os = "macos")]
     let payload =
@@ -388,6 +419,12 @@ pub fn host_at(source: &Path) -> Result<HostImage, String> {
             },
         )
         .map_err(|error| error.to_string())?;
+    // Remember what this file published as, so the next launch in this
+    // release reuses it instead of hashing 130 MB again. A failure here is
+    // only a missed optimisation, never a reason this launch fails.
+    if let Some(cache) = &cache {
+        let _ = cache.remember(source, &image);
+    }
     Ok(HostImage {
         image,
         source: source.into(),

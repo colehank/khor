@@ -5013,7 +5013,9 @@ name = "khor-gui"
 version = "0.2.0"
 dependencies = [
  "block2",
+ "dunce",
  "embed_plist",
+ "getrandom 0.3.4",
  "jiff",
  "khor-catalog",
  "khor-gui-core",
@@ -5028,6 +5030,7 @@ dependencies = [
  "objc2-ui-kit",
  "serde",
  "serde_json",
+ "subtle",
  "tauri",
  "tauri-build",
  "tauri-plugin-barcode-scanner",
@@ -5036,8 +5039,11 @@ dependencies = [
  "tauri-plugin-notification",
  "tauri-plugin-updater",
  "tempfile",
+ "tiny_http",
  "tokio",
  "webkit2gtk",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
@@ -5140,6 +5146,7 @@ dependencies = [
  "pulldown-cmark",
  "reqwest",
  "rmp-serde",
+ "ruzstd",
  "security-framework",
  "serde",
  "serde_bytes",
@@ -5197,6 +5204,7 @@ dependencies = [
  "tar",
  "tempfile",
  "tokio",
+ "winreg 0.55.0",
  "xml-rs",
 ]
 
@@ -7197,8 +7205,6 @@ dependencies = [
 [[package]]
 name = "portable-pty"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4a596a2b3d2752d94f51fac2d4a96737b8705dddd311a32b9af47211f08671e"
 dependencies = [
  "anyhow",
  "bitflags 1.3.2",
@@ -8172,6 +8178,15 @@ name = "rustversion"
 version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
+
+[[package]]
+name = "ruzstd"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "69e4ce4a039f42bf25920b95667e4d789e98749ab11bbb8d2c2936f788421bb5"
+dependencies = [
+ "twox-hash",
+]
 
 [[package]]
 name = "ryu"

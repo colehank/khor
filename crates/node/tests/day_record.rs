@@ -14,6 +14,12 @@
 //! The proof here is the pair: `state.json` still says 忙碌 while the
 //! strip says 失败, in the same instant, from the same node.
 
+// Windows: every case imports an agent row, and `Node::import` refuses without
+// a verified native transcript; this fixture has no agent home to verify
+// against (the day-strip logic itself is covered by `khor_node::day`'s unit
+// tests). Recorded as W4 NOT_TESTED in docs/windows-migration/W4-NETWORK.md.
+#![cfg(unix)]
+
 mod util;
 
 use std::fs;
@@ -58,10 +64,18 @@ fn root(tag: &str) -> Scratch {
 /// waited on rather than picked out of the air, so it is a number the
 /// OS really did hand out and really has taken back.
 fn a_dead_pid() -> u32 {
+    // The shell that exits at once is the host OS's own: `/bin/sh` on Unix,
+    // `cmd.exe` on Windows — the point is the reaped pid it hands out.
+    #[cfg(unix)]
     let mut child = std::process::Command::new("/bin/sh")
         .args(["-c", "exit 0"])
         .spawn()
         .expect("sh runs");
+    #[cfg(windows)]
+    let mut child = std::process::Command::new("cmd.exe")
+        .args(["/d", "/c", "exit 0"])
+        .spawn()
+        .expect("cmd runs");
     let pid = child.id();
     child.wait().expect("it exits");
     pid

@@ -1245,6 +1245,8 @@ pub fn answer(
                     .zip(args.get("rows").and_then(|v| v.as_u64()))
                     .map(|(c, r)| (c.min(500) as u16, r.min(200) as u16)),
                 &arg("token")?,
+                serde_json::from_value(args.get("shell").cloned().unwrap_or_default())
+                    .map_err(|error| error.to_string())?,
             ))?,
         ),
         "open_on" => to_json(&rt.block_on(crate::open_term_on(
@@ -1274,6 +1276,11 @@ pub fn answer(
         // first on every keystroke of its filter and the second never.
         "agents_known" => to_json(&crate::agents::agents_known()),
         "agents_known_taken" => to_json(&crate::agents::agents_known_taken()),
+        // **What this machine has, not what khor knows about.** No store
+        // and no process: the node's own module explains why this is a
+        // lookup rather than a probe, and a page opened to find out why
+        // something is broken must not need that thing to work first.
+        "agent_fleet" => to_json(&crate::agents::agent_fleet()),
         // **By id, never by argv.** The command is looked up on this
         // side (`Node::register_known_agent`); an arm that accepted the
         // argv would be an arm that spawns whatever it is handed, and
@@ -1320,6 +1327,26 @@ pub fn answer(
             root,
             &arg("agent")?,
             &arg("session")?,
+        )?),
+        // **One message into a conversation the vendor keeps** — no node,
+        // no host: Codex's daemon takes it, and its receipt or refusal is
+        // the answer. `khor agents tell` runs the same function.
+        "dsh_sessions" => to_json(&crate::agents::dsh_conversations()),
+        // One DSH conversation, line by line — the same reader the CLI's
+        // `agents dsh <session>` prints from.
+        "dsh_transcript" => to_json(&crate::agents::dsh_transcript(&arg("id")?)?),
+        "native_resume_argv" => to_json(&crate::agents::native_resume_argv(
+            &arg("agent")?,
+            &arg("id")?,
+        )?),
+        "native_send" => to_json(&crate::agents::native_send(
+            &arg("agent")?,
+            &arg("id")?,
+            &arg("text")?,
+            // **Where the vendor expects to stand.** DSH refuses a session
+            // adopted by `--session-id` from any other directory, so the
+            // face passes the row's recorded place.
+            opt_str("cwd")?.as_deref(),
         )?),
         "session_recovery" => to_json(&rt.block_on(crate::agents::session_recovery(
             root,

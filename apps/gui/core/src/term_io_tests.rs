@@ -20,6 +20,7 @@ impl Attached {
         let (peer, _) = listener.accept().unwrap();
         peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
         let term = Arc::new(Term {
+            attachment_shell: None,
             far: None,
             conn: crate::connection::Connection::new(conn).unwrap(),
             commands: Default::default(),
@@ -395,13 +396,13 @@ fn active_reopen_retains_its_own_connection_when_an_old_open_lands_last() {
                 entered.send(()).map_err(|e| e.to_string())?;
                 held.recv_timeout(Duration::from_secs(3))
                     .map_err(|e| e.to_string())?;
-                Ok((old_stream, None))
+                Ok((old_stream, None, None))
             })
         });
         at_connector.recv_timeout(Duration::from_secs(2)).unwrap();
         term_leave(Path::new("."), &id, &old_lease).unwrap();
         let new_open = open_terminal_with(Path::new("."), &id, &new_lease, 80, 24, 0, || {
-            Ok((new_stream, None))
+            Ok((new_stream, None, None))
         });
         let before = new_open.and_then(|_| {
             new_peer
@@ -444,7 +445,7 @@ fn two_views_read_the_same_bytes_and_one_leave_preserves_the_other() {
     let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (mut peer, _) = listener.accept().unwrap();
     peer.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    open_terminal_with(root, &id, &first, 80, 24, 0, || Ok((client, None))).unwrap();
+    open_terminal_with(root, &id, &first, 80, 24, 0, || Ok((client, None, None))).unwrap();
     open_terminal_with(root, &id, &second, 80, 24, 0, || {
         panic!("a second live view must share the connection")
     })

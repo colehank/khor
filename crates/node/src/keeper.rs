@@ -4,11 +4,18 @@
 //! Each selected image keeps its OS lease through spawn or exec. Shared release
 //! packages and legacy shield directories are outside this collector's ownership.
 
+// The startup handshake is part of the POSIX keeper: it re-executes the
+// selected image and reports readiness through a pid the keeper wrote.
+#[cfg(unix)]
 mod startup;
 
+#[cfg(unix)]
 pub(crate) use startup::ready;
+
+#[cfg(unix)]
 use std::sync::atomic::{AtomicI32, Ordering};
 
+#[cfg(unix)]
 use khor_catalog::msg;
 
 /// Set on the child: "you are the serve, not the keeper". An env var
@@ -29,13 +36,16 @@ pub(crate) fn parent_gone() -> bool {
 /// Set on the shielded keeper by its own pre-exec self: the install
 /// path — the one to watch for new generations — which `current_exe`
 /// no longer answers once the process runs from a local copy.
+#[cfg(unix)]
 const SHIELD_FROM: &str = "KHOR_SHIELD_FROM";
 
 /// The installer's platform pointer survives immutable version changes.
+#[cfg(unix)]
 const INSTALL_SOURCE: &str = "KHOR_INSTALL_SOURCE";
 
 /// "1" also names local relocation in the log. "0" keeps this supervisor
 /// in place for development; its children still use owned runtime images.
+#[cfg(unix)]
 const SHIELD_ENV: &str = "KHOR_SHIELD";
 
 /// Whether this path lives on a filesystem where replacing a file can
@@ -80,6 +90,7 @@ pub(crate) fn on_network_fs(_path: &std::path::Path) -> bool {
 }
 
 /// Move the keeper itself off mutable or shared installation paths before serving.
+#[cfg(unix)]
 fn shield() -> Result<std::path::PathBuf, String> {
     let exe = crate::self_exe()?;
     let watched = std::env::var_os(SHIELD_FROM)
@@ -106,6 +117,7 @@ fn shield() -> Result<std::path::PathBuf, String> {
     Err(image.exec(&mut command).to_string())
 }
 
+#[cfg(unix)]
 fn take_generation(
     watched: &std::path::Path,
 ) -> Result<(String, crate::runtime_image::HostImage), String> {
@@ -116,29 +128,35 @@ fn take_generation(
 
 /// A child that lived at least this long was up for real, and its death
 /// is news rather than a birth defect: the backoff resets.
+#[cfg(unix)]
 const LIVED: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The longest the keeper waits between respawns of a serve that keeps
 /// dying young. Long enough not to hammer whatever is killing it, short
 /// enough that a machine recovers within a minute of the cause clearing.
+#[cfg(unix)]
 const BACKOFF_MAX: u64 = 60;
 
 /// How often the keeper checks whether the child is still there.
+#[cfg(unix)]
 const CHILD_POLL: std::time::Duration = std::time::Duration::from_millis(200);
 
 /// How often the keeper glances at the binary on disk: one stat,
 /// cheap enough to do forever, short enough that an upgrade lands
 /// within seconds.
+#[cfg(unix)]
 const SELF_CHECK: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// After the keeper's own TERM at a generation change, the old serve
 /// gets this long to leave before SIGKILL.
+#[cfg(unix)]
 const SWAP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// What "the same binary" means on disk: installs replace the file
 /// (new inode), a rewrite in place changes mtime or length. `None`
 /// while the path is momentarily absent (mid-`mv`) — absence is never
 /// a generation.
+#[cfg(unix)]
 fn fingerprint(exe: &std::path::Path) -> Option<(u64, i64, u64)> {
     use std::os::unix::fs::MetadataExt;
     let selected = crate::updates::selected_cli_source(exe).ok()?;
@@ -151,11 +169,13 @@ fn fingerprint(exe: &std::path::Path) -> Option<(u64, i64, u64)> {
 
 /// The kept child's pid, for the signal handler — which may run at any
 /// instant and can touch nothing but an atomic.
+#[cfg(unix)]
 static CHILD: AtomicI32 = AtomicI32::new(0);
 
 /// Forwards the signal to the child and leaves. `_exit` because a
 /// signal handler must not unwind, and there is nothing to clean up —
 /// the child owns every resource worth the name.
+#[cfg(unix)]
 extern "C" fn forward(sig: libc::c_int) {
     let child = CHILD.load(Ordering::SeqCst);
     if child > 0 {
@@ -168,6 +188,7 @@ extern "C" fn forward(sig: libc::c_int) {
 
 /// Runs the serve under the keeper, forever. Returns only when the serve
 /// ends cleanly (exit 0) or a child cannot even be spawned.
+#[cfg(unix)]
 pub fn keep() -> Result<(), String> {
     // Before anything else: off the network disk (#76). On success this
     // is an exec and the pid survives it; either way `watched` is the

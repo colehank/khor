@@ -13,13 +13,13 @@ use std::{
 };
 use tauri::{AppHandle, Emitter, Manager};
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 struct InstallFailure {
     retry: UpdateAction,
     message: String,
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl InstallFailure {
     fn at(retry: UpdateAction, message: &str) -> Self {
         Self {
@@ -29,7 +29,7 @@ impl InstallFailure {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl From<String> for InstallFailure {
     fn from(message: String) -> Self {
         Self {
@@ -39,7 +39,7 @@ impl From<String> for InstallFailure {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 impl From<&str> for InstallFailure {
     fn from(message: &str) -> Self {
         Self::from(message.to_owned())
@@ -54,6 +54,8 @@ struct Selection {
 struct Data {
     status: AppUpdateStatus,
     selected: Option<Selection>,
+    #[cfg(target_os = "windows")]
+    promoted: Option<khor_update::ReleaseIdentity>,
     #[cfg(unix)]
     companions: Option<crate::app_companions::Plan>,
 }
@@ -131,6 +133,8 @@ impl AppUpdates {
             data: Mutex::new(Data {
                 status,
                 selected: None,
+                #[cfg(target_os = "windows")]
+                promoted: None,
                 #[cfg(unix)]
                 companions: None,
             }),
@@ -210,6 +214,16 @@ impl AppUpdates {
     fn current(&self) -> Result<khor_update::ReleaseIdentity, String> {
         #[cfg(target_os = "macos")]
         if let Some(identity) = crate::app_update_install::adopted(&self.root, &self.build) {
+            return Ok(identity);
+        }
+        #[cfg(target_os = "windows")]
+        if let Some(identity) = self
+            .data
+            .lock()
+            .map_err(|_| "update state is unavailable")?
+            .promoted
+            .clone()
+        {
             return Ok(identity);
         }
         self.build
@@ -322,6 +336,25 @@ impl AppUpdates {
     ) -> Result<AppUpdateStatus, String> {
         let trust = TrustRoot::bundled()?;
         let staging = self.store()?;
+        #[cfg(target_os = "windows")]
+        if let Some(current) = &self.build.release {
+            let published = release.manifest();
+            if published.built_from == current.tag
+                && published.identity.tag != current.tag
+                && published.identity.source == current.source
+                && published.identity.build == current.build
+                && published
+                    .artifact(Component::DesktopApp, Platform::current()?)
+                    .is_some()
+            {
+                let mut data = self
+                    .data
+                    .lock()
+                    .map_err(|_| "update state is unavailable")?;
+                data.promoted = Some(published.identity.clone());
+                data.status.current = published.identity.tag.as_str().to_owned();
+            }
+        }
         let offer = self.app_offer(&release)?;
         let restart_required = offer.is_some();
         let mut ready = offer
@@ -546,7 +579,7 @@ impl AppUpdates {
         })
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     pub(crate) async fn install(
         &self,
         app: &AppHandle,
@@ -556,11 +589,81 @@ impl AppUpdates {
             .operation
             .try_lock()
             .map_err(|_| "an update operation is already running")?;
+        if self.status()?.source != UpdateSource::Direct {
+            return Err("this application is updated through its original installer".into());
+        }
         let result = self.install_inner(app, automatic).await;
         match result {
             Ok(status) => Ok(status),
             Err(error) => self.failed(app, error.retry, error.message),
         }
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn install_inner(
+        &self,
+        app: &AppHandle,
+        automatic: bool,
+    ) -> Result<AppUpdateStatus, InstallFailure> {
+        let (release, cached) = {
+            let mut data = self
+                .data
+                .lock()
+                .map_err(|_| "update state is unavailable")?;
+            let selected = data.selected.as_mut().ok_or_else(|| {
+                InstallFailure::at(UpdateAction::Check, "check updates before installing")
+            })?;
+            (selected.release.clone(), selected.package.take())
+        };
+        let offer = self.app_offer(&release)?.ok_or_else(|| {
+            InstallFailure::at(
+                UpdateAction::Check,
+                "no newer Windows installation is selected",
+            )
+        })?;
+        let staged = self.store()?;
+        let trust = TrustRoot::bundled()?;
+        self.change(app, |data| {
+            data.status.phase = UpdatePhase::Verifying;
+            data.status.blocked.clear();
+        })?;
+        if !staged.is_ready(&trust, &offer)? {
+            return Err(InstallFailure::at(
+                UpdateAction::Download,
+                "download the complete Windows update first",
+            ));
+        }
+        let package = match cached {
+            Some(package) => package,
+            None => DesktopPackage::check(app, offer.clone(), trust).await?,
+        };
+        let admission = app
+            .state::<Arc<crate::update_admission::UpdateAdmission>>()
+            .inner()
+            .clone();
+        let _permit = match admission.prepare(app, automatic).await {
+            Ok(permit) => permit,
+            Err(blocked) => {
+                return self
+                    .change(app, |data| {
+                        data.status.phase = UpdatePhase::Ready;
+                        data.status.blocked = blocked;
+                    })
+                    .map_err(InstallFailure::from);
+            }
+        };
+        let path = staged.archive(&offer);
+        let root = self.root.clone();
+        let identity = offer.identity().clone();
+        let status = self.change(app, |data| data.status.phase = UpdatePhase::Installing)?;
+        crate::off_main(move || {
+            // The Windows SDK launches MSI and exits. Record the handoff first
+            // so an interrupted upgrade can't loop at the next App start.
+            mark_windows_handoff(&root, &identity)?;
+            package.install(&path)
+        })
+        .await?;
+        Ok(status)
     }
 
     #[cfg(target_os = "macos")]
@@ -824,8 +927,8 @@ async fn startup(app: &AppHandle) {
             Err(_) => return,
         },
     };
-    #[cfg(target_os = "macos")]
-    if restored.phase == UpdatePhase::Ready && restored.preferences.install_on_start {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if restored.phase == UpdatePhase::Ready {
         let allowed = updates
             .data
             .lock()
@@ -835,10 +938,18 @@ async fn startup(app: &AppHandle) {
                     .as_ref()
                     .map(|selected| selected.release.manifest().identity.clone())
             })
-            .is_some_and(|identity| {
-                crate::app_update_install::automatic_allowed(&updates.root, &identity)
-            });
-        if allowed {
+            .is_some_and(|identity| automatic_allowed(&updates.root, &identity));
+        #[cfg(target_os = "windows")]
+        if !allowed {
+            let _ = updates.failed(
+                app,
+                UpdateAction::Install,
+                "Windows Installer did not finish the previous update. Retry to apply it again."
+                    .into(),
+            );
+            return;
+        }
+        if allowed && restored.preferences.install_on_start {
             let _ = updates.install(app, true).await;
             return;
         }
@@ -902,8 +1013,45 @@ fn installation_source(build: &BuildIdentity) -> Result<UpdateSource, String> {
     {
         return Ok(UpdateSource::Direct);
     }
+    #[cfg(target_os = "windows")]
+    if khor_update::windows_installer_owns(&executable) {
+        return Ok(UpdateSource::Direct);
+    }
     // An externally owned executable is never silently taken over by the SDK.
     Ok(UpdateSource::External)
+}
+
+#[cfg(target_os = "macos")]
+fn automatic_allowed(root: &Path, identity: &khor_update::ReleaseIdentity) -> bool {
+    crate::app_update_install::automatic_allowed(root, identity)
+}
+
+#[cfg(target_os = "windows")]
+fn automatic_allowed(root: &Path, identity: &khor_update::ReleaseIdentity) -> bool {
+    let path = root.join("windows-handoff.json");
+    let record = std::fs::File::open(&path).and_then(|file| {
+        serde_json::from_reader::<_, khor_update::ReleaseIdentity>(file.take(4096))
+            .map_err(std::io::Error::other)
+    });
+    match record {
+        Ok(previous) => previous != *identity,
+        Err(error) => error.kind() == std::io::ErrorKind::NotFound,
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn mark_windows_handoff(
+    root: &Path,
+    identity: &khor_update::ReleaseIdentity,
+) -> Result<(), String> {
+    let mut file = tempfile::NamedTempFile::new_in(root).map_err(|error| error.to_string())?;
+    serde_json::to_writer(file.as_file_mut(), identity).map_err(|error| error.to_string())?;
+    file.as_file()
+        .sync_all()
+        .map_err(|error| error.to_string())?;
+    file.persist(root.join("windows-handoff.json"))
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }
 
 fn read_preferences(root: &Path) -> Result<UpdatePreferences, String> {

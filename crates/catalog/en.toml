@@ -354,7 +354,7 @@ usage: khor <verb>
                         row is on — you don't say which
   takeover <session>    takes over an agent session: ends its
                         terminal, the conversation continues from here
-  agents [known | sessions <name> [--ask] | add <name> [...] | rm <name>]
+  agents [known | fleet | sessions <name> [--ask] | add <name> [...] | rm <name>]
                         registers agents that speak ACP: no arguments
                         shows what's registered. Register once and the
                         whole network knows it (whether the command
@@ -363,6 +363,17 @@ usage: khor <verb>
                         khor uses those four names itself. known shows
                         the ACP registry snapshot bundled with khor;
                         @<id> uses that snapshot's command directly.
+                        fleet shows what this machine actually has:
+                        the program's path, how khor would start it,
+                        and what it can do with it — a registry entry
+                        and an installed agent are different facts.
+                        tell <agent> <id> <text> queues one message into
+                        a conversation the vendor already owns (Codex
+                        today), without taking it over: the write goes
+                        through the vendor's own daemon.
+                        dsh lists the conversations DeepSeek Harness
+                        already has on this machine, by the directory
+                        each was recorded in.
                         sessions shows its conversations (reads what's
                         recorded; --ask actually asks, which starts a
                         process); once asked, the answer syncs across
@@ -684,6 +695,10 @@ doctor-agents-ok = "all {0} registered command(s) found"
 doctor-agents-missing = "command not found: {0}"
 doctor-agents-none = "no agent registered"
 doctor-agents-unread = "cannot read the agent registry"
+agents-fleet-head = "{0} known, {1} installed, package runner: {2}"
+agents-fleet-installed = "installed"
+agents-fleet-absent = "not installed"
+agents-fleet-no-runner = "none"
 doctor-vscode-ready = "{0}, server already fetched"
 doctor-vscode-fetch = "{0}, server not fetched yet (the first open fetches it)"
 doctor-vscode-none = "no code on this machine"
@@ -991,6 +1006,15 @@ roads-jump = "the jump host"
 roads-broken-auth = "{0} accepts password logins only"
 
 [msg]
+native-send-empty = "A message with nothing in it is not sent"
+native-send-long = "That message is {0} bytes; {1} is the most one send carries"
+native-send-nul = "A message or id containing a NUL byte is not sent"
+native-send-unknown = "khor has no way to put a message into a {0} conversation yet"
+native-resume-unknown = "khor has no way to reopen a {0} conversation yet"
+native-read-unknown = "khor has no reader for a {0} conversation yet"
+native-send-no-program = "{0} is not on this machine's PATH"
+native-send-accepted = "{0} accepted the message"
+native-send-refused = "{0} refused it (exit {1})"
 launch-preset-name = "Enter a startup preset name"
 launch-preset-duplicate = "A startup preset already has this name"
 launch-command-invalid = "The startup command contains an invalid character or exceeds 32 KiB"
@@ -1487,7 +1511,7 @@ gui-not-installed = "Install Khor for desktop from {0}, or use khor web"
 gui-app-upgrade = "This CLI comes with Khor. Update both from Settings → About → Check for Updates."
 gui-package-upgrade = "This CLI comes with Khor. Update both with the original Khor installer or your system package manager."
 gui-wont-start = "The desktop app won't start: {0}"
-host-never-ready = "Host wasn't ready within 5 seconds"
+host-never-ready = "Host wasn't ready within {0} seconds"
 host-died-mute = "Host died right after starting and left no message"
 ghost-never-ready = "Conversation host wasn't ready within 30 seconds"
 agent-wants-a-login = "This agent needs to log in before it can open a session (it said: {0})"
@@ -1793,6 +1817,8 @@ child_task_output_truncated = "Output truncated"
 term-preview-activate = "Terminal preview. Activate to preview the completion cue"
 term-theme-custom-row = "Custom palette"
 session-association = "Session association"
+agent-fleet = "Agents on this machine"
+agent-fleet-hint = "The registry lists agents khor knows how to start; this lists what this computer actually has, how khor would start each one, and what it can do with it."
 key-row-choose = "Choose a key"
 key-row-letters = "Letters"
 key-row-function = "Function keys"
@@ -1926,6 +1952,8 @@ git-history-older = "Older"
 agent_list_unknown_home = "Source machine unknown; refresh the list"
 session_state_unknown = "No execution state is available"
 session_observation = "Read-only record"
+# See zh.toml: who holds an imported record, and where the way forward is.
+session_observation_note = "This record is held by the vendor's own tool; khor only reads it. To carry on in that tool, use this row's menu."
 content_ambiguous_source = "Multiple session records match this identity; the content source is ambiguous"
 content_loading = "Reading session content source"
 content_no_source = "No readable session record"
@@ -2779,8 +2807,8 @@ mesh-map = "Machines in the mesh"
 # avatar is that machine's face, so the name said it twice (the owner,
 # on a phone). The second line is the preview alone.
 pick-a-session = "Pick a session"
-empty-sessions = "No sessions yet"
-empty-sessions-how = "Use the ＋ above to start one"
+empty-sessions = "No work dispatched yet"
+empty-sessions-how = "Use the ＋ above to dispatch the first one"
 waiting-on-you = "Waiting on you"
 none-waiting = "Nothing waiting on you"
 today = "Today"
@@ -2795,6 +2823,9 @@ search-recent = "Search recent"
 filter = "Filter"
 axis-state = "Status"
 axis-category = "Category"
+# See zh.toml: the values reuse view-chat / view-terminal; only the
+# heading is new.
+axis-talk = "Form"
 remove = "Remove"
 arrange = "Arrange by"
 by-recent = "By recent"
@@ -3227,6 +3258,18 @@ view-terminal = "Terminal"
 view-chat = "Chat"
 to-a-chat = "Switch to chat"
 to-a-terminal = "Switch to terminal"
+resume-native = "Continue in a terminal"
+send-message = "Send a message"
+send-message-title = "Send into this conversation"
+send-message-hint = "The vendor queues it — khor does not take the conversation over."
+dsh-conversations = "DeepSeek Harness conversations"
+dsh-read = "Read it"
+dsh-read-speaker-user = "You"
+dsh-read-speaker-assistant = "DSH"
+dsh-read-speaker-thought = "Thought"
+dsh-read-speaker-tool = "Tool"
+dsh-read-speaker-tool-result = "Result"
+resume-native-missing = "This conversation has no recorded native id, so its own tool cannot be asked to resume it"
 
 quota-five-hour = "5H"
 quota-seven-day = "7D"

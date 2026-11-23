@@ -1165,9 +1165,7 @@ fn track_child_inner(
         return Err("Child link resource limit".into());
     }
     crate::link::write_private(&temporary, &bytes)?;
-    fs::File::open(&temporary)
-        .and_then(|f| f.sync_all())
-        .map_err(|e| e.to_string())?;
+    crate::durable::sync_file(&temporary)?;
     fs::rename(temporary, &path).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     fs::File::open(&dir)
@@ -1239,9 +1237,7 @@ pub(crate) fn original_parent(
             &temporary,
             &serde_json::to_vec(parent).map_err(|e| e.to_string())?,
         )?;
-        fs::File::open(&temporary)
-            .and_then(|file| file.sync_all())
-            .map_err(|e| e.to_string())?;
+        crate::durable::sync_file(&temporary)?;
         fs::rename(&temporary, &path).map_err(|e| e.to_string())?;
         #[cfg(unix)]
         fs::File::open(&dir)

@@ -8,6 +8,14 @@ type CallbackRuntime = {
   unregisterCallback?: (id: number) => void;
 };
 
+type EventInvoker = <T>(command: "listen" | "unlisten", args: Record<string, unknown>) => Promise<T>;
+let invokeWindowEvent: EventInvoker | undefined;
+
+/** The Windows main window registers events through its authenticated bridge. */
+export function setWindowEventInvoker(invoke: EventInvoker) {
+  invokeWindowEvent = invoke;
+}
+
 export function listenNativeEvent<T>(
   event: string,
   receive: (payload: T, event: Event<T>, isActive: () => boolean) => void | Promise<void>,
@@ -74,9 +82,10 @@ export function listenNativeEvent<T>(
         unregister(callbackId);
         callbackReleased = true;
       };
-      unlisten = (id) => invoke<void>("plugin:event|unlisten", { event, eventId: id });
+      const invokeEvent: EventInvoker = invokeWindowEvent ?? ((command, args) => invoke(`plugin:event|${command}`, args));
+      unlisten = (id) => invokeEvent<void>("unlisten", { event, eventId: id });
       phase = "listen";
-      const id = await invoke<number>("plugin:event|listen", {
+      const id = await invokeEvent<number>("listen", {
         event,
         target,
         handler: callbackId,

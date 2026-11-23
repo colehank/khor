@@ -178,6 +178,7 @@ async fn run() {
     let value = desk_root.0.join("startup-env");
     let start = khor_node::shell_start::ShellStart {
         argv: None,
+        shell: None,
         headless: false,
         token: "0c42a3e7-cb90-44a1-9ffd-a17e2e1b4a5c".into(),
         title: "startup".into(),
@@ -261,6 +262,7 @@ async fn run() {
     let rejected_count = desk_root.0.join("rejected-client-startup");
     let strict = khor_node::shell_start::ShellStart {
         argv: None,
+        shell: None,
         headless: false,
         token: "5a7f8a4c-7426-4899-9714-4a1cb71fd11a".into(),
         title: "current startup".into(),

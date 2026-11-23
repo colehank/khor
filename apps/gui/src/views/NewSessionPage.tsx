@@ -5,7 +5,7 @@ import {KhorSessionSetup, type KhorModelSelection} from '@/views/KhorSessionSetu
 // New session: the target, its current directory, and what to run. The same
 // page sits behind the desktop strip and the narrow screen's bottom deck.
 import { useEffect, useRef, useState } from 'react';
-import { agentAsk, fetchLs, makeDir, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, khorAgent, registerKnownAgent, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
+import { agentAsk, agentFleet, fetchLs, makeDir, agents as fetchAgents, agentsKnown, agentsKnownTaken, fetchDevices, launchPresets, saveLaunchPreset, deleteLaunchPreset, openShell, openSession, khorAgent, registerKnownAgent, type AgentFleet, type AgentRow, type DeviceRow, type KnownAgent, type LaunchPreset } from '@/api';
 import { MachineField } from '@/components/MachineField';
 import { PathField, settledPath } from '@/components/PathField';
 import { sessionKind } from '@/components/SessionFace';
@@ -17,7 +17,7 @@ import { Dialog, DialogContent, TaskOverlay, TaskActions, DialogBody, DialogTitl
 import { IconClose, IconGear, IconPencil, IconPlus } from '@/components/icons';
 import { gui } from '@/gen/catalog';
 import { dropHandOff, peekHandOff } from '@/lib/composer-handoff';
-import {launchId, readNewSessionChoices, recentLaunchChoices, rememberNewSessionChoice, type SessionLaunch as Launch} from '@/lib/new-session-choices';
+import {launchId, preferredLaunch, readNewSessionChoices, recentLaunchChoices, rememberNewSessionChoice, windowsShells, type SessionLaunch as Launch} from '@/lib/new-session-choices';
 import { useHereHosts } from '@/lib/here';
 import { useSetting } from '@/settings';
 import { imeKey } from '@/lib/ime';
@@ -25,8 +25,17 @@ import {inspectSessionDirectory,ensureSessionDirectory,type SessionDirectory} fr
 type LaunchOption = ChoiceOption & {
   launch: Launch;
 };
-const defaultLaunch = (terminal: boolean): Launch => terminal ? {kind: 'shell', command: 'claude'} : {kind: 'agent', agent: 'claude'};
 const creationTarget = (devices: DeviceRow[], machine: string) => devices.find(d => d.name === machine || d.id === machine) ?? (machine === '' ? devices.find(d => d.me && d.hosts) ?? devices.find(d => d.hosts && d.sponsor === null) ?? devices.find(d => d.me) : undefined);
+
+/** The installed agents, in the order the roster prefers them — which is
+    the shipped table's order, builtin roads first. `preferredLaunch` reads
+    this and nothing else, so the choice is testable without a machine. */
+const readyAgents = (fleet: AgentFleet | null): {id: string; road: string | null}[] =>
+  (fleet?.agents ?? []).filter(agent => agent.program).map(agent => ({id: agent.id, road: agent.road}));
+
+/** Roads that answer over ACP — the same set `new-session-choices` uses to
+    decide whether an agent can back a *conversation*. */
+const SPEAKS_ACP = ['builtin', 'native-acp', 'registry-acp'];
 const kindIcon = (kind: string, agent: string | null) => sessionKind(kind, agent).glyph('size-kind-mark');
 function returnedSession(value: unknown): string {
   const session = (value as {session?: unknown} | null)?.session;
@@ -38,7 +47,7 @@ async function createSession({launch, target, cwd, title, token, environment, se
   environment: SessionEnvironment; selection: Pick<KhorModelSelection, 'account' | 'model'> | null;
 }): Promise<string> {
   if (launch.kind === 'khor') return returnedSession((await khorAgent('create', target.id, {token, title, cwd, selection})).data);
-  if (launch.kind === 'shell') return openShell(target.name, cwd, launch.command, title, token);
+  if (launch.kind === 'shell') return openShell(target.name, cwd, launch.command, title, token, launch.shell);
   if (environment.mcpServers.length || environment.additionalDirectories.length)
     return returnedSession(await managePi(target.name, {operation: 'acp_open', agent: launch.agent, cwd, title, environment, token}));
   return openSession(cwd, title, 'chat', launch.agent, target.name, token);
@@ -62,8 +71,11 @@ export function NewSessionPage({
     [paths, setPaths] = useState<Record<string, string>>({});
   const [known, setKnown] = useState<AgentRow[]>([]),
     [presets, setPresets] = useState<LaunchPreset[]>([]);
+  /** Installed agents from the roster — the ACP registry does not list all
+      of them (DeepSeek Harness has never been a registry entry). */
+  const [installed, setInstalled] = useState<{id: string; name: string; road: string | null}[]>([]);
   const [launchesLoaded, setLaunchesLoaded] = useState(false);
-  const [launch, setLaunch] = useState<Launch>(() => defaultLaunch(wantsTerm));
+  const [launch, setLaunch] = useState<Launch>(() => preferredLaunch(wantsTerm, []));
   const [name, setName] = useState('');
   const [contextValid,setContextValid]=useState(true);
   const [environment,setEnvironment]=useState<SessionEnvironment>(EMPTY_ENVIRONMENT);
@@ -87,6 +99,10 @@ export function NewSessionPage({
   const contextMachine = useRef<string | null>(null),
     startedAgent = useRef(false),
     generation = useRef(0),
+    roster = useRef<{id: string; road: string | null}[]>([]),
+    /** The installed rows as the roster answered **for this machine**, kept
+        apart from `installed` so a target change can drop them (below). */
+    localInstalled = useRef<{id: string; name: string; road: string | null}[]>([]),
     creation = useRef<{key: string; token: string} | null>(null);
   const why = (e: unknown) => setError(String(e instanceof Error ? e.message : e));
   useEffect(() => {
@@ -107,12 +123,40 @@ export function NewSessionPage({
     setError(null);
     setHanded(peekHandOff());
     startedAgent.current = false;
-    fetchDevices().then(rows => {
+    // **The default follows what this machine has**, so the roster is
+    // asked for in the same breath as the machine list: a wizard that
+    // opened on an agent nobody installed offers a button whose only
+    // outcome is a failure the person cannot act on (issue: the default
+    // was `claude`, absent here, so "new conversation" opened nothing).
+    void Promise.all([fetchDevices(), agentFleet().catch(() => null)]).then(([rows, fleet]) => {
       if (!live) return;
       const target = creationTarget(rows, picked || restored.machine);
       contextMachine.current = target?.id ?? null;
       setDevices(rows);
-      setLaunch(target && restored.machines[target.id]?.launch || defaultLaunch(wantsTerm));
+      // **The roster is this machine's, so it may only answer for this
+      // machine.** `agent_fleet` reads the filesystem it runs on; using it
+      // to choose a default for a *remote* target would offer this
+      // computer's agents on another one — the independent review's
+      // example: this machine has Codex, the target has only Claude, and
+      // the wizard would default to a conversation that cannot start.
+      // A remote target keeps the shipped default until the node can
+      // answer for that machine.
+      roster.current = target?.me ? readyAgents(fleet) : [];
+      // **Installed, but not necessarily ACP.** The wizard's agent list
+      // comes from the ACP registry, and this machine has DeepSeek Harness
+      // installed while it has never been a registry entry — so DSH was
+      // absent from the one place a person picks what to start. These rows
+      // are the fleet's own answer and become terminal choices below.
+      //
+      // **Only for this machine** (`target?.me`), the same rule
+      // `roster.current` follows: `agent_fleet` reads the filesystem it runs
+      // on, and offering this computer's DeepSeek Harness for a *remote*
+      // target would send `dsh` to a machine that may not have it.
+      localInstalled.current = (fleet?.agents ?? [])
+        .filter(agent => agent.program)
+        .map(agent => ({id: agent.id, name: agent.name, road: agent.road}));
+      setInstalled(target?.me ? localInstalled.current : []);
+      setLaunch(target && restored.machines[target.id]?.launch || preferredLaunch(wantsTerm, roster.current));
     }, e => {
       if (live) why(e);
     });
@@ -155,7 +199,13 @@ export function NewSessionPage({
       kind: 'shell',
       command: ''
     }
-  }, ...['claude', 'codex'].map(name => ({
+  }, ...windowsShells(target?.vitals?.vitals.system).map(({shell, label, terms}) => ({
+    id: launchId({kind: 'shell', command: '', shell}),
+    label,
+    terms,
+    icon: kindIcon('shell', null),
+    launch: {kind: 'shell' as const, command: '', shell},
+  })), ...['claude', 'codex'].map(name => ({
     id: 'term:' + name,
     label: (name === 'claude' ? 'Claude' : 'Codex') + ' · ' + gui.view_terminal,
     terms: name,
@@ -174,7 +224,24 @@ export function NewSessionPage({
       kind: 'agent' as const,
       agent: name
     }
-  })), ...presets.map(p => ({
+  })), ...installed
+    // **Installed tools the ACP registry does not list.** DeepSeek Harness
+    // is on this machine and has never been a registry entry, so it was
+    // missing from the one place a person picks what to start. Its own
+    // road is the terminal floor (a TUI), so that is the form offered —
+    // the honest one, not a 对话 that nothing would answer.
+    .filter(a => !(a.road !== null && SPEAKS_ACP.includes(a.road)) && !agents.includes(a.id))
+    .map(a => ({
+      id: 'term:' + a.id,
+      label: a.name + ' · ' + gui.view_terminal,
+      terms: a.id,
+      aside: a.name,
+      icon: kindIcon('tui', a.id),
+      launch: {
+        kind: 'shell' as const,
+        command: a.id
+      }
+    })), ...presets.map(p => ({
     id: 'custom:' + p.id,
     label: p.name,
     terms: p.command,
@@ -190,6 +257,7 @@ export function NewSessionPage({
   const selected = choices.find(c => c.id === launchId(launch));
   const launchReady = !!selected && !(launch.kind === 'shell' && launch.preset && (selected.launch.kind !== 'shell' || selected.launch.command !== launch.command));
   const command = launch.kind === 'shell' ? launch.command : '';
+  const explicitShell = launch.kind === 'shell' && launch.shell !== undefined;
   const contextReady = launch.kind === 'khor' ? khorSelection?.home === target?.id && !!khorSelection : launch.kind !== 'agent' || contextValid;
   const remember = (id: string, change: Parameters<typeof rememberNewSessionChoice>[2] = {}) => {
     const next = rememberNewSessionChoice(preferences, id, change);
@@ -201,7 +269,10 @@ export function NewSessionPage({
     if (!target) return;
     const next = remember(target.id);
     setMachine(target.id);
-    setLaunch(next.machines[target.id]?.launch ?? defaultLaunch(wantsTerm));
+    // Same rule as the first load: this machine's roster answers for this
+    // machine only.
+    setInstalled(target.me ? localInstalled.current : []);
+    setLaunch(next.machines[target.id]?.launch ?? preferredLaunch(wantsTerm, target.me ? roster.current : []));
     setEnvironment(EMPTY_ENVIRONMENT); setContextValid(true);
   };
   const pickLaunch = (launch: Launch, used = true) => {
@@ -309,7 +380,7 @@ export function NewSessionPage({
       {directoryFacts?.state==='missing'&&<p data-new-session-directory-missing className="text-callout text-muted-foreground">{gui.new_session_directory_create}</p>}
       {directoryFacts?.state==='unavailable'&&<p data-new-session-directory-error role="status" className="text-callout text-muted-foreground">{String(directoryFacts.error instanceof Error?directoryFacts.error.message:directoryFacts.error)}</p>}
     </div>
-    <FormLabel>{gui.launch_method}</FormLabel><div data-new-session-launch data-kind={launch.kind} data-selected={selected?.id} className="flex min-w-0 flex-col gap-in"><ChoiceField label={gui.launch_method} value={launch.kind === 'shell' ? launch.command : selected?.label || (launch.kind === 'agent' ? launch.agent : 'khor')} selected={selected?.id} options={choices} disabled={opening || !target} multiline placeholder={gui.launch_shell_hint} onInput={text => pickLaunch({
+    <FormLabel>{gui.launch_method}</FormLabel><div data-new-session-launch data-kind={launch.kind} data-selected={selected?.id} className="flex min-w-0 flex-col gap-in"><ChoiceField label={gui.launch_method} value={launch.kind === 'shell' ? (explicitShell ? selected?.label || launch.shell || '' : command) : selected?.label || (launch.kind === 'agent' ? launch.agent : 'khor')} selected={selected?.id} options={choices} disabled={opening || !target} multiline placeholder={gui.launch_shell_hint} onInput={explicitShell ? undefined : text => pickLaunch({
               kind: 'shell',
               command: text
             }, false)} onPick={id => {
@@ -326,7 +397,7 @@ export function NewSessionPage({
               icon: <IconGear />,
               run: () => setManage(true)
             }]} /></div>
-    {launch.kind === 'shell' && <span data-new-session-launch-note className="col-start-2 text-caption text-tertiary">{gui.launch_command_note}</span>}
+    {launch.kind === 'shell' && !explicitShell && <span data-new-session-launch-note className="col-start-2 text-caption text-tertiary">{gui.launch_command_note}</span>}
     {launch.kind === 'khor' && target?.hosts && <KhorSessionSetup key={target.id} machine={target.id} disabled={opening} onChange={setKhorSelection} />}
     {handed && launch.kind === 'agent' && <><FormLabel>{gui.new_session_handed}</FormLabel><span data-new-session-handed className="min-w-0 truncate font-mono text-body">{handed}</span></>}
     <FormLabel htmlFor="new-session-name">{gui.new_session_name}</FormLabel><Input id="new-session-name" data-new-session-name value={name} disabled={opening} placeholder={gui.new_session_name_hint} onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && !imeKey(e)) { e.preventDefault(); create(); } }} />

@@ -149,12 +149,12 @@ pub(crate) async fn app_update_install(
     webview: tauri::Webview,
 ) -> Result<AppUpdateStatus, String> {
     authorize(&webview)?;
-    #[cfg(all(desktop, target_os = "macos"))]
+    #[cfg(all(desktop, any(target_os = "macos", target_os = "windows")))]
     return app
         .state::<crate::app_updates::AppUpdates>()
         .install(&app, false)
         .await;
-    #[cfg(not(all(desktop, target_os = "macos")))]
+    #[cfg(not(all(desktop, any(target_os = "macos", target_os = "windows"))))]
     {
         let _ = app;
         Err("this application is updated through its original installer".into())

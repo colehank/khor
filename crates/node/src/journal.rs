@@ -1909,6 +1909,8 @@ mod tests {
     /// does. `note` used to append in its caller's thread — the wire
     /// watch's tick and every retirement among them, under the wires'
     /// lock — so that caller stayed out with it.
+    // A FIFO is a Unix file type (`mkfifo`); the Windows stand-in for
+    // 「a home that never opens」 is not this test's to invent here.
     #[cfg(unix)]
     #[test]
     fn a_journal_file_that_never_opens_does_not_hold_the_caller() {

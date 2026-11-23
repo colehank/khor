@@ -66,14 +66,24 @@ fn wait_for(what: &str, secs: u64, mut f: impl FnMut() -> bool) {
 struct Reaper(u32);
 impl Drop for Reaper {
     fn drop(&mut self) {
+        #[cfg(unix)]
         let _ = Command::new("kill")
             .args(["-9", &self.0.to_string()])
+            .status();
+        #[cfg(windows)]
+        let _ = Command::new("taskkill")
+            .args(["/PID", &self.0.to_string(), "/F"])
             .status();
     }
 }
 
 #[test]
 fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
+    // Both sides speak English: this process's catalog defaults to Chinese
+    // until told otherwise, while the binary resolves from the environment
+    // (English unless LANG/LC_ALL asks for Chinese). The assertions below
+    // compare words, so pin the child's environment with LC_ALL=C.
+    khor_catalog::lang::set(khor_catalog::lang::Lang::En);
     let home = root("main");
     let mut keeper = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("serve")
@@ -103,9 +113,24 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
     // A session host, planted the way a real one lands: a hostfile in
     // the sessions dir whose pids are a live process in its own group
     // (its OWN group, or quit's group-signal would reach this test).
-    use std::os::unix::process::CommandExt;
-    let mut sleeper = Command::new("sleep");
-    sleeper.arg("300").process_group(0);
+    // A live stand-in host. On Unix it goes in its own process group so
+    // quit's group signal cannot reach this test; on Windows quit stops
+    // pids one by one, so there is no group to avoid.
+    let mut sleeper = {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            let mut command = Command::new("sleep");
+            command.arg("300").process_group(0);
+            command
+        }
+        #[cfg(windows)]
+        {
+            let mut command = Command::new("ping");
+            command.args(["-n", "301", "127.0.0.1"]);
+            command
+        }
+    };
     let mut host_proc = sleeper.spawn().unwrap();
     let _reap2 = Reaper(host_proc.id());
     let sdir = home.join(".khor/sessions/shell-quitprobe");
@@ -121,6 +146,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
 
     let out = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("quit")
+        .env("LC_ALL", "C")
         .env("KHOR_HOME", &*home)
         .env_remove("KHOR_SESSION")
         .output()
@@ -164,6 +190,7 @@ fn quit_stops_serve_and_hosts_and_the_stop_stays_stopped() {
     // Control: a second quit finds nothing and says so.
     let out = Command::new(env!("CARGO_BIN_EXE_khor"))
         .arg("quit")
+        .env("LC_ALL", "C")
         .env("KHOR_HOME", &*home)
         .env_remove("KHOR_SESSION")
         .output()
