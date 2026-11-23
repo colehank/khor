@@ -190,13 +190,15 @@ def terminal_keyboard_check(command, documents, simulator, report):
     """Tap the production terminal in WKWebView and observe UIKit's keyboard."""
     samples = {}
     serial = 0
-    state = """const box = document.querySelector('[data-terminal]');
+    state = """const ready = location.pathname === '/app/' && window.__KHOR_LAB__?.scene === 'terminal';
+      const box = document.querySelector('[data-terminal]');
       const term = box?.__xterm;
-      if (!term || !term.rows) return null;
+      if (!ready || !term || !term.rows)
+        return {ready, page:location.pathname, document:document.readyState, rows:0, prompt:false};
       const r = box.getBoundingClientRect(), picker = document.querySelector('[data-files-panel]');
       const buffer = term.buffer.active;
       const prompt = buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true).trimEnd() === 'preview %';
-      return {rows:term.rows, cols:term.cols, height:r.height, bottom:r.bottom,
+      return {ready, rows:term.rows, cols:term.cols, height:r.height, bottom:r.bottom,
         screen:document.documentElement.clientHeight, visible:visualViewport.height,
         prompt, mode:term.textarea.inputMode, panel:picker&&picker.getBoundingClientRect().toJSON()};"""
 
@@ -248,13 +250,20 @@ def terminal_keyboard_check(command, documents, simulator, report):
         return {key:value[key] for key in ('rows','cols','height','bottom')}
 
     try:
-        # Appium can return before the probe's WKWebView has loaded its first
-        # page. Wait for that page before timing interactive keyboard actions.
+        # A successful JavaScript call can come from about:blank or a Lab
+        # document whose fixture has not attached. Give startup its own
+        # deadline; each subsequent interaction keeps its shorter deadline.
         started = time.monotonic()
-        evaluate("return document.readyState;", timeout=60)
-        print(f'WKWebView responded {time.monotonic() - started:.1f}s after Appium was ready')
-        down = wait_for(lambda: evaluate(state), lambda s: s and s['rows'] > 10 and s['prompt'],
-                        'Terminal fixture never rendered its input prompt')
+        startup_timeout = 60
+
+        def read_startup():
+            observation = evaluate(state, timeout=max(0, started + startup_timeout - time.monotonic()))
+            samples['startup'] = observation
+            return observation
+
+        down = wait_for(read_startup, lambda s: s and s['ready'] and s['rows'] > 10 and s['prompt'],
+                        'Terminal fixture never rendered its input prompt', timeout=startup_timeout)
+        print(f'Terminal fixture ready {time.monotonic() - started:.1f}s after Appium was ready')
         samples['down'] = down
         tap("""const term=document.querySelector('[data-terminal]')?.__xterm;
           if(!term) return null;

@@ -1,14 +1,16 @@
 import {defineConfig, mergeConfig} from 'vite';
 import {readFileSync,readdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import base from '../../vite.config';
+import {sharedConfig} from '../../vite.config';
 
 const previewFiles = fileURLToPath(new URL('./data/workspace/media/', import.meta.url));
 const previewPrefix = '/assets/preview-fixtures/media/';
 const previewTypes:Record<string,string>={html:'text/html',css:'text/css',js:'text/javascript',json:'application/json',mp4:'video/mp4',wav:'audio/wav'};
 const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
 
-export default mergeConfig(base, defineConfig({
+// Lab serves over HTTP and can load later chunks on demand. Tauri's
+// absolute preload URLs would instead hit unserved paths on the Lab origin.
+export default mergeConfig(sharedConfig, defineConfig({
   base: './',
   resolve: {alias: [{find: '@/lib/backend-context', replacement: fileURLToPath(new URL('./backend-context.ts', import.meta.url))}]},
   optimizeDeps: {entries: ['index.html']},

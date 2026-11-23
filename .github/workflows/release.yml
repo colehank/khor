@@ -169,7 +169,7 @@ jobs:
           - runner: macos-26
             target: aarch64-apple-darwin
             asset: khor-macos-arm64
-          - runner: macos-26
+          - runner: macos-26-intel
             target: x86_64-apple-darwin
             asset: khor-macos-x86_64
     runs-on: ${{ matrix.runner }}
@@ -184,7 +184,7 @@ jobs:
           target: ${{ matrix.target }}
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
       - if: matrix.target == 'x86_64-apple-darwin'
-        run: sudo softwareupdate --install-rosetta --agree-to-license
+        run: test "$(uname -m)" = x86_64
       - name: Stage the matching CLI inside the desktop app
         env:
           TARGET: ${{ matrix.target }}
@@ -204,14 +204,23 @@ jobs:
         run: |
           npm ci --prefix apps/gui
           python3 scripts/apple_release.py mac-build --target "$TARGET" --signed "$SIGNED"
-      - name: Preserve the signed installer before contacting Apple
+      - id: package
+        name: Preserve the signed installer before contacting Apple
         env:
           TARGET: ${{ matrix.target }}
           SIGNED: ${{ inputs.signed || needs.prepare.outputs.rc == 'true' }}
+          KHOR_STARTUP_TRACE: ${{ runner.temp }}/mac-package-startup.tsv
           MAC_INSTALLER_CERTIFICATE_P12: ${{ secrets.MAC_INSTALLER_CERTIFICATE_P12 }}
           MAC_INSTALLER_CERTIFICATE_PASSWORD: ${{ secrets.MAC_INSTALLER_CERTIFICATE_PASSWORD }}
           MAC_INSTALLER_SIGNING_IDENTITY: ${{ secrets.MAC_INSTALLER_SIGNING_IDENTITY }}
         run: python3 scripts/mac_notarization.py package-build --target "$TARGET" --signed "$SIGNED"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure() && steps.package.conclusion == 'failure'
+        with:
+          name: mac-package-startup-${{ matrix.asset }}
+          path: ${{ runner.temp }}/mac-package-startup.tsv
+          if-no-files-found: warn
+          retention-days: 14
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: mac-build-${{ matrix.asset }}
