@@ -17,6 +17,10 @@ on:
         description: Verify system text scaling and native file handoff with the installed MSI
         type: boolean
         default: false
+      windows_backdrop:
+        description: Verify the installed App's Windows compositor backdrop without WebView debugging
+        type: boolean
+        default: false
       legacy_shell_ui:
         description: Replay the Windows shell picker from before shell-aware attachments
         type: boolean
@@ -44,7 +48,7 @@ permissions:
 
 concurrency:
   # Manually requested checks pin a revision. Branch pushes can replace stale checks.
-  group: windows-desktop-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}-${{ inputs.package_run || 'build' }}-${{ inputs.previous_package_run || 'fresh' }}-${{ inputs.retry_runner || 'default' }}
+  group: windows-desktop-${{ github.event_name == 'workflow_dispatch' && github.sha || github.ref }}-${{ inputs.package_run || 'build' }}-${{ inputs.previous_package_run || 'fresh' }}-${{ inputs.retry_runner || 'default' }}-${{ inputs.windows_backdrop || false }}
   cancel-in-progress: true
 
 jobs:
@@ -92,6 +96,7 @@ jobs:
           PREVIOUS_PACKAGE_RUN: ${{ inputs.previous_package_run }}
           NATIVE_DRAG: ${{ inputs.native_drag }}
           DESKTOP_PARITY: ${{ inputs.desktop_parity }}
+          WINDOWS_BACKDROP: ${{ inputs.windows_backdrop }}
           LEGACY_SHELL_UI: ${{ inputs.legacy_shell_ui }}
           SHELL_SELECTION: ${{ inputs.shell_selection }}
           ACP_FIXTURE: ${{ inputs.acp_fixture }}
@@ -113,6 +118,9 @@ jobs:
           }
           if ($env:DESKTOP_PARITY -eq "true") {
             $installerArgs += "--desktop-parity"
+          }
+          if ($env:WINDOWS_BACKDROP -eq "true") {
+            $installerArgs += "--windows-backdrop"
           }
           if ($env:LEGACY_SHELL_UI -eq "true") {
             $installerArgs += "--legacy-shell-ui"

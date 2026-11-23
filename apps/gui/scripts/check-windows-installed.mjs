@@ -62,7 +62,7 @@ function command(page, name, args, timeout = 15_000) {
 }
 
 async function checkDesktopParity(page) {
-  const [extension, expectedScale, windowHandle] = parity.split(",");
+  const [extension, expectedScale] = parity.split(",");
   const scales = await page.evaluate(() => {
     const native = window.__KHOR_SYSTEM_TEXT_SCALE__;
     const wear = () => window.dispatchEvent(new Event("khor:system-text-size"));
@@ -119,29 +119,10 @@ async function checkDesktopParity(page) {
   assert.notEqual(opened.toLowerCase(), path.toLowerCase(), "the viewer must receive the local copy");
   console.log("Windows system text scaling and opening the paired original in a local app passed.");
 
-  const readBackdrop = async () => {
-    const result = await promisify(execFile)("python", ["-c",
-      "import ctypes as c, sys\n" +
-      "mode=c.c_int(); read=c.windll.dwmapi.DwmGetWindowAttribute\n" +
-      "read.argtypes=[c.c_void_p,c.c_uint,c.c_void_p,c.c_uint]\n" +
-      "status=read(int(sys.argv[1],0),38,c.byref(mode),c.sizeof(mode))\n" +
-      "print(mode.value if status==0 else 'unsupported')", windowHandle], {windowsHide: true});
-    return result.stdout.trim();
-  };
-  const backdrop = await readBackdrop();
   const dimensions = () => page.evaluate(() => [innerWidth, innerHeight]);
   const before = await dimensions();
   try {
     await command(page, "set_window_appearance", {material: "frost"});
-    if (backdrop !== "unsupported") {
-      for (const deadline = Date.now() + 5000; (await readBackdrop()) !== "3"; ) {
-        assert(Date.now() < deadline, "frost must request Desktop Acrylic from the Windows compositor");
-        await delay(100);
-      }
-      console.log("Windows requested Desktop Acrylic through the DWM system backdrop.");
-    } else {
-      console.log("The runner does not expose the Windows 11 DWM system backdrop attribute.");
-    }
     assert.deepEqual(await dimensions(), before, "changing window material must keep the viewport size");
   } finally {
     await command(page, "set_window_appearance", {material: "solid"});

@@ -124,6 +124,26 @@ def request_windows_close(window):
         raise WinError()
 
 
+def check_windows_backdrop(window):
+    from ctypes import WinDLL, byref, c_int, c_uint, c_void_p, sizeof
+    from ctypes.wintypes import HWND
+
+    read = WinDLL("dwmapi").DwmGetWindowAttribute
+    read.argtypes = (HWND, c_uint, c_void_p, c_uint)
+    mode = c_int()
+    # DWMWA_SYSTEMBACKDROP_TYPE is available on Windows 11 and Server 2025.
+    # DWMSBT_TRANSIENTWINDOW applies Desktop Acrylic to the whole window.
+    deadline = time.monotonic() + 8
+    while True:
+        result = read(window, 38, byref(mode), sizeof(mode))
+        assert result == 0, f"The Windows runner cannot read its DWM backdrop: HRESULT 0x{result & 0xffffffff:08x}"
+        if mode.value == 3:
+            print("The installed Windows App requested Desktop Acrylic from DWM.", flush=True)
+            return
+        assert time.monotonic() < deadline, f"The installed App requested DWM backdrop {mode.value}, expected Desktop Acrylic (3)"
+        time.sleep(0.1)
+
+
 def wait_for_resident(service, home, log):
     endpoint = Path(home) / ".khor/endpoint.json"
     deadline = time.monotonic() + 45
@@ -177,7 +197,7 @@ def check_installed_powershell(cli, environment, scratch):
 
 
 @contextmanager
-def windows_file_association(scratch, workspace, window):
+def windows_file_association(scratch, workspace):
     import winreg
 
     extension = "kh" + uuid.uuid4().hex[:8]
@@ -222,7 +242,7 @@ def windows_file_association(scratch, workspace, window):
             "Windows did not honor the test-only file association for the local control"
         )
         receipt.unlink()
-        yield f"--desktop-parity={extension},{scale},{window}"
+        yield f"--desktop-parity={extension},{scale}"
     finally:
         for key in (extension_key, program_key + r"\shell\open\command",
                     program_key + r"\shell\open", program_key + r"\shell", program_key):
@@ -233,7 +253,7 @@ def windows_file_association(scratch, workspace, window):
 
 
 def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shell_ui=False,
-                     shell_selection=None, desktop_parity=False):
+                     shell_selection=None, desktop_parity=False, windows_backdrop=False):
     prefix = "Khor 验收 home " if os.name == "nt" else "khor-install-home-"
     # The runner reaps this scratch directory. Process shutdown is asserted
     # separately, and short-lived Windows file locks must not hide a failure.
@@ -303,7 +323,10 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
             while processes() and time.monotonic() < deadline:
                 time.sleep(0.1)
             assert not processes(), "Quitting the packaged node must not leave or respawn its resident"
-            if os.name == "nt":
+            if windows_backdrop:
+                subprocess.run([str(cli), "config", "set", "window-material", "frost"],
+                               env=environment, check=True, timeout=30)
+            elif os.name == "nt":
                 exit_name = "installer-exit"
                 exit_env = {**environment, "KHOR_HOME": str(scratch / "exit"),
                             "KHOR_NAME": exit_name, "KHOR_LOG_FILE": str(logs / "exit.log")}
@@ -344,6 +367,9 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
                         assert window, "The installed App never drew a visible native Windows caption"
                         print("The installed App drew one native Windows caption.", flush=True)
                         try:
+                            if windows_backdrop:
+                                check_windows_backdrop(window)
+                                return
                             args = ["node", str(check), str(debug_port), WINDOWS_SESSION_TITLE,
                                     WINDOWS_READY_MARKER, str(workspace), exit_name,
                                     WINDOWS_PEER_SESSION_TITLE, WINDOWS_PEER_READY_MARKER]
@@ -356,7 +382,7 @@ def launch_installed(directory, acp_fixture=None, native_drag=False, legacy_shel
                             if shell_selection:
                                 args.append(f"--shell-selection={shell_selection}")
                             if desktop_parity:
-                                with windows_file_association(scratch, workspace, window) as parity:
+                                with windows_file_association(scratch, workspace) as parity:
                                     subprocess.run([*args, parity], check=True, timeout=300)
                             else:
                                 subprocess.run(args, check=True, timeout=300)
@@ -479,7 +505,7 @@ def invoke_msi(action, package, destination=None):
 
 
 def windows(package, expected_source, acp_fixture=None, previous=None, native_drag=False,
-            legacy_shell_ui=False, shell_selection=None, desktop_parity=False):
+            legacy_shell_ui=False, shell_selection=None, desktop_parity=False, windows_backdrop=False):
     import winreg
     with tempfile.TemporaryDirectory(prefix="khor-desktop-") as temporary:
         destination = Path(temporary) / "Installed Khor"
@@ -518,7 +544,11 @@ def windows(package, expected_source, acp_fixture=None, previous=None, native_dr
             entries = [value.rstrip("\\").casefold() for value in after.split(";")]
             assert entries[0] == str(independent).casefold(), "Independent CLI keeps its PATH priority"
             assert str(destination).casefold() in entries
-            launch_installed(destination, acp_fixture, native_drag, legacy_shell_ui, shell_selection, desktop_parity)
+            launch_installed(destination, acp_fixture, native_drag, legacy_shell_ui, shell_selection,
+                             desktop_parity, windows_backdrop)
+            if windows_backdrop:
+                proof["installed_windows_native_acrylic"] = True
+                return proof
             if desktop_parity:
                 proof["installed_system_text_and_remote_file_handoff"] = True
             if acp_fixture is not None:
@@ -568,6 +598,7 @@ if __name__ == "__main__":
     parser.add_argument("--legacy-shell-ui", action="store_true", help="Replay a package before shell-aware attachments")
     parser.add_argument("--shell-selection", choices=["cmd", "powershell"], help="Replay only this explicit GUI shell choice")
     parser.add_argument("--desktop-parity", action="store_true", help="Verify Windows system text scaling and native file handoff")
+    parser.add_argument("--windows-backdrop", action="store_true", help="Verify the installed Windows App's compositor backdrop without WebView debugging")
     args = parser.parse_args()
     if os.environ.get("GITHUB_ACTIONS") != "true":
         parser.error("Installation checks require an isolated GitHub runner")
@@ -587,7 +618,8 @@ if __name__ == "__main__":
         previous = (args.upgrade_from.resolve(strict=True), source)
     if os.name == "nt":
         proof = windows(package, expected_source, acp_fixture, previous, args.native_drag,
-                        args.legacy_shell_ui, args.shell_selection, args.desktop_parity)
+                        args.legacy_shell_ui, args.shell_selection, args.desktop_parity,
+                        args.windows_backdrop)
     elif sys.platform == "darwin":
         proof = macos(package, expected_source)
     else:
