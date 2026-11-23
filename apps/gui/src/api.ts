@@ -379,7 +379,7 @@ export const isMenuFace = params.get("face") === "menu";
 // the Windows command bridge.
 const desktopCommands = new Set([
   "root_words", "system_unlock",
-  "file_handoff_open", "file_preview_open", "page_sheet",
+  "page_sheet",
   "show_menu", "hide_menu", "size_menu", "menu_rows", "menu_input", "menu_pick", "menu_state",
   "face_note", "bell_haptic", "joy_haptic", "haptic",
 ]);
@@ -1608,7 +1608,7 @@ export const fileExportAppend=(id:string,offset:number,data:string)=>call<null>(
 export const fileExportFinish=(id:string,total:number)=>call<null>("file_export_finish",{id,total});
 export const fileHandoffSave = (id: string) => call<boolean>("file_handoff_save", { id });
 export type FilePreviewKind = "document" | "pdf";
-export const filePreviewSupported = (kind: FilePreviewKind) => inApp ? call<boolean>("file_preview_supported", {kind}) : Promise.resolve(false);
+export const filePreviewSupported = (kind: FilePreviewKind, path?: string) => inApp ? call<boolean>("file_preview_supported", {kind, path}) : Promise.resolve(false);
 export const filePreviewOpen = (id:string) => call<boolean>("file_preview_open",{id});
 
 

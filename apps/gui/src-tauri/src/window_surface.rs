@@ -89,12 +89,40 @@ pub fn initial_script() -> String {
         .ok()
         .and_then(|s| s.parse::<u8>().ok())
         .unwrap_or(100);
-    format!(
+    let mut script = format!(
         "window.__KHOR_WINDOW_SURFACE__ = true; window.__KHOR_WINDOW_PREF__ = {}; window.__KHOR_WINDOW_PLATFORM__ = {}; window.__KHOR_WINDOW_NATIVE_CHROME__ = {};",
         serde_json::json!({"material": material(), "opacity": opacity, "outline": khor_node::config::get(&Node::root_from_env(), "window-outline").unwrap_or("on") != "off"}),
         serde_json::json!(std::env::consts::OS),
         native_chrome()
-    )
+    );
+    if cfg!(target_os = "windows") {
+        script.push_str(&system_text_scale_script());
+    }
+    script
+}
+
+fn system_text_scale_script() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        let scale = windows::UI::ViewManagement::UISettings::new()
+            .and_then(|settings| settings.TextScaleFactor())
+            .ok()
+            .filter(|value| value.is_finite() && *value > 0.0)
+            .unwrap_or(1.0);
+        return format!("window.__KHOR_SYSTEM_TEXT_SCALE__ = {scale};");
+    }
+    #[cfg(not(target_os = "windows"))]
+    String::new()
+}
+
+#[cfg(target_os = "windows")]
+pub fn refresh_text_scale(app: &AppHandle) {
+    if let Some(view) = app.get_webview("main") {
+        let _ = view.eval(format!(
+            "{} window.dispatchEvent(new Event('khor:system-text-size'));",
+            system_text_scale_script()
+        ));
+    }
 }
 
 /// macOS only, called on the AppKit thread by setup / set_window_appearance.

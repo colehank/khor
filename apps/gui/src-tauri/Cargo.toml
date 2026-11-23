@@ -63,9 +63,19 @@ tauri-plugin-notification = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 # WebView2 command transport for the app's Windows main window.
+dunce = "1"
 getrandom.workspace = true
 subtle = "2.6"
 tiny_http = "0.12"
+windows = { version = "0.61.3", features = [
+    "UI_ViewManagement",
+    "Win32_System_Com",
+    "Win32_System_Ole",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell_PropertiesSystem",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.61.2"
 
 [target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
 tauri-plugin-updater = "~2.12.0"

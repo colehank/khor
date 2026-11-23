@@ -1204,7 +1204,8 @@ fn file_handoff_supported() -> bool {
     cfg!(any(
         target_os = "ios",
         target_os = "macos",
-        target_os = "android"
+        target_os = "android",
+        target_os = "windows"
     ))
 }
 #[tauri::command]
@@ -1223,10 +1224,15 @@ async fn file_handoff_open(
     {
         phone_share::open(webview, file).await
     }
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        khor_gui_core::files::launch(&Node::root_from_env(), "", &file.path().to_string_lossy())
-            .await?;
+        if file.is_cancelled() {
+            return Err(khor_node::drops::cancelled());
+        }
+        let path = file.path();
+        #[cfg(target_os = "windows")]
+        let path = dunce::simplified(path);
+        khor_gui_core::files::launch(&Node::root_from_env(), "", &path.to_string_lossy()).await?;
         Ok(true)
     }
     #[cfg(target_os = "android")]
@@ -1235,7 +1241,12 @@ async fn file_handoff_open(
             .map_err(|_| khor_catalog::msg::file_open_unavailable().to_owned())?;
         Ok(true)
     }
-    #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "android")))]
+    #[cfg(not(any(
+        target_os = "ios",
+        target_os = "macos",
+        target_os = "android",
+        target_os = "windows"
+    )))]
     {
         let _ = (app, file);
         Err(khor_catalog::msg::file_open_unavailable().into())
@@ -1243,11 +1254,19 @@ async fn file_handoff_open(
 }
 
 #[tauri::command]
-fn file_preview_supported(kind: String) -> bool {
-    match kind.as_str() {
-        "document" => cfg!(any(target_os = "ios", target_os = "macos")),
-        "pdf" => cfg!(target_os = "ios"),
-        _ => false,
+fn file_preview_supported(kind: String, path: Option<String>) -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        kind == "document" && path.is_some_and(|path| quick_look::windows::supported(&path))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        match kind.as_str() {
+            "document" => cfg!(any(target_os = "ios", target_os = "macos")),
+            "pdf" => cfg!(target_os = "ios"),
+            _ => false,
+        }
     }
 }
 #[tauri::command]
@@ -1265,11 +1284,11 @@ async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, 
     {
         return phone_pdf::open(webview, file).await;
     }
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "windows"))]
     {
         quick_look::open(webview, file).await
     }
-    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "windows")))]
     {
         let _ = (webview, file);
         Err(khor_catalog::msg::file_preview_unavailable().into())
@@ -5920,6 +5939,8 @@ pub fn run() {
                         // it no `focus` of its own for that.
                         if *here && window.label() == "main" {
                             use tauri::Emitter;
+                            #[cfg(target_os = "windows")]
+                            window_surface::refresh_text_scale(window.app_handle());
                             let _ = window.emit_to("main", "window:focused", ());
                             // …and so does the menu bar's language: a
                             // `khor config set lang` in a terminal reaches
@@ -6623,5 +6644,5 @@ mod tests {
     }
 }
 
-#[cfg(any(target_os = "ios", target_os = "macos"))]
+#[cfg(any(target_os = "ios", target_os = "macos", target_os = "windows"))]
 mod quick_look;

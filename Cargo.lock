@@ -5013,6 +5013,7 @@ name = "khor-gui"
 version = "0.2.0"
 dependencies = [
  "block2",
+ "dunce",
  "embed_plist",
  "getrandom 0.3.4",
  "jiff",
@@ -5041,6 +5042,8 @@ dependencies = [
  "tiny_http",
  "tokio",
  "webkit2gtk",
+ "windows 0.61.3",
+ "windows-core 0.61.2",
 ]
 
 [[package]]
