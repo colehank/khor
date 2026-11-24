@@ -154,13 +154,7 @@ impl crate::Node {
             splice(input, output, r, w).await;
             return Ok(());
         }
-        let ep = khor_net::endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = async {
             let conn = self.pipe_line(&ep, via).await?;
             let (send, recv) = crate::tunnel::dial(&conn, &to).await?;

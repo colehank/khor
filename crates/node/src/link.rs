@@ -1260,16 +1260,27 @@ impl Node {
         self.serve_as(true).await
     }
 
+    pub(crate) async fn bind_client(&self) -> Result<iroh::Endpoint, String> {
+        let settings = self.relay_settings();
+        endpoint::bind_with(
+            self.secret_key().clone(),
+            &settings.entries,
+            !settings.only_mine,
+        )
+        .await
+        .map_err(|error| error.to_string())
+    }
+
     /// The one bind that serves this machine: this key, these relays.
     /// Also what [`Self::fresh_ears`] binds again.
     async fn bind_ears(&self) -> Result<std::sync::Arc<iroh::Endpoint>, String> {
-        let preferred = self.preferred_relay();
+        let settings = self.relay_settings();
         let bind = |ports| {
             endpoint::bind_pinned(
                 self.secret_key().clone(),
-                self.relay_map(),
-                self.relays_n0(),
-                preferred.as_deref(),
+                &settings.entries,
+                !settings.only_mine,
+                settings.preferred.as_deref(),
                 ports,
                 self.carrying(),
             )
@@ -1438,6 +1449,7 @@ impl Node {
     /// that was is at worst one relay probed for nothing.
     pub(crate) fn published_relays(&self, ep: &iroh::Endpoint) -> Vec<String> {
         use iroh::Watcher;
+        let relays = self.relays();
         let home = ep
             .home_relay_status()
             .get()
@@ -1452,10 +1464,12 @@ impl Node {
                 me.addrs
                     .iter()
                     .filter(|a| a.starts_with("http://") || a.starts_with("https://"))
-                    .find(|a| !self.relays().contains(a))
-                    .and_then(|a| a.parse().ok())
-            });
-        endpoint::home_first(home.as_ref(), self.relays())
+                    .filter(|a| !relays.contains(a))
+                    .filter_map(|a| a.parse().ok())
+                    .find(|url| ep.has_configured_relay(url))
+            })
+            .filter(|url| ep.has_configured_relay(url));
+        endpoint::home_first(home.as_ref(), &relays)
     }
 
     /// `endpoint.json`: where one-shot verbs find the live endpoint and
@@ -1754,6 +1768,52 @@ impl Node {
                 }
             });
         }
+        // Settings can be written by a separate GUI or CLI process. The
+        // same resident endpoint applies them and republishes its routes.
+        {
+            let n = node.clone();
+            let wake = wake.clone();
+            services.spawn(async move {
+                let mut beat = tokio::time::interval(Duration::from_secs(5));
+                beat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    beat.tick().await;
+                    if n.resting.load(std::sync::atomic::Ordering::Relaxed) {
+                        continue;
+                    }
+                    let root = n.root().to_owned();
+                    let Ok(settings) = n
+                        .storage_io
+                        .routing
+                        .read(move || Ok(super::relays_under(&root)))
+                        .await
+                    else {
+                        continue;
+                    };
+                    let Some(ep) = n.current_ears() else { continue };
+                    if settings == n.relay_settings() {
+                        continue;
+                    }
+                    if endpoint::apply_relay_pool(
+                        &ep,
+                        &settings.entries,
+                        !settings.only_mine,
+                        settings.preferred.as_deref(),
+                    )
+                    .await
+                    {
+                        let ears = n.ears.lock().unwrap_or_else(|p| p.into_inner());
+                        if ears
+                            .as_ref()
+                            .is_some_and(|current| std::sync::Arc::ptr_eq(current, &ep))
+                        {
+                            *n.active_relays.write().unwrap_or_else(|p| p.into_inner()) = settings;
+                            let _ = wake.send(Wake::Home);
+                        }
+                    }
+                }
+            });
+        }
         let mut ticker = tokio::time::interval(SYNC_EVERY);
         // When the pump last ran a round, for the quiet pace.
         let mut last_round: Option<std::time::Instant> = None;
@@ -2017,7 +2077,8 @@ impl Node {
                                 return;
                             }
                             let homed = n.ears_homed.load(std::sync::atomic::Ordering::Relaxed);
-                            if ears_heard_within(&e, n.relay_map(), n.relays_n0(), n.relays(), homed, MOBILE_ECHO_WITHIN).await == Hearing::Unheard {
+                            let settings = n.relay_settings();
+                            if ears_heard_within(&e, &settings.entries, !settings.only_mine, &settings.urls, homed, MOBILE_ECHO_WITHIN).await == Hearing::Unheard {
                                 let _ = wake.send(Wake::Resume { ears: None, synced: None, each: None, mobile: Some(repair) });
                             }
                         });
@@ -2385,7 +2446,8 @@ impl Node {
                                 return;
                             }
                             let homed = n.ears_homed.load(std::sync::atomic::Ordering::Relaxed);
-                            match ears_heard(&e, n.relay_map(), n.relays_n0(), n.relays(), homed).await {
+                            let settings = n.relay_settings();
+                            match ears_heard(&e, &settings.entries, !settings.only_mine, &settings.urls, homed).await {
                                 Hearing::Echoed => {
                                     n.deaf_cleared();
                                     n.say_once("echoed", msg::serve_silent_echoed(&stamp));
@@ -3703,9 +3765,12 @@ impl Node {
         }
         let waited = std::time::Instant::now();
         let lock = self.wires.dial_lock(&d.id, proto);
+        let interactive = crate::journal::by_now() == crate::journal::By::Ask;
+        let foreground = lock.foreground(interactive);
         let mut one = crate::deadline::wait(by, lock.lock())
             .await
             .map_err(|_| DialFailure::CallerExpired)?;
+        drop(foreground);
         // A ready lock must not win after the caller's clock has run out.
         // Expiring a waiter neither changes the owner's result nor says
         // anything about the peer's reachability.
@@ -3715,12 +3780,16 @@ impl Node {
         if let Some(conn) = self.wires.live(&d.id, proto) {
             return Ok(line(conn));
         }
+        if !interactive && lock.has_foreground() {
+            return Err(DialFailure::CallerExpired);
+        }
         // **The dial this one waited for failed: that is its answer too**
         // (net-dial). A round and a person's ask meeting on one dead
         // machine used to dial it one after the other — a whole second
         // dial right after the first had just said no.
-        if let Some((at, failed, contact)) = one.as_ref()
+        if let Some((at, failed, contact, was_interactive)) = one.as_ref()
             && *at >= waited
+            && (!interactive || *was_interactive || matches!(failed, DialFailure::Asleep(_)))
             && contact.is_current_for(failed, self.wires.dial_contact(&d.id, proto))
         {
             return Err(failed.clone());
@@ -3733,20 +3802,27 @@ impl Node {
         let mut hop = self.hop_ahead(ep, d);
         let preparation: Option<HopPreparation<'_>> =
             if may_hop { Some(hop.as_mut()) } else { None };
-        let outcome = if may_hop {
-            self.dial_preparing(
-                ep,
-                &d.id,
-                &d.addrs,
-                proto.alpn(),
-                by,
-                DIAL_MOST,
-                preparation,
-            )
-            .await
-        } else {
-            self.dial(ep, &d.id, &d.addrs, proto.alpn(), by, DIAL_MOST)
+        let dial = async {
+            if may_hop {
+                self.dial_preparing(
+                    ep,
+                    &d.id,
+                    &d.addrs,
+                    proto.alpn(),
+                    by,
+                    DIAL_MOST,
+                    preparation,
+                )
                 .await
+            } else {
+                self.dial(ep, &d.id, &d.addrs, proto.alpn(), by, DIAL_MOST)
+                    .await
+            }
+        };
+        let outcome = tokio::select! {
+            biased;
+            result = dial => result,
+            () = lock.yield_to_foreground(), if !interactive => return Err(DialFailure::CallerExpired),
         };
         match outcome {
             // Gone to the background while it dialled (net-dial B6): the
@@ -3772,7 +3848,7 @@ impl Node {
                         Some(msg::cant_reach_named(&d.name, why))
                     }
                 };
-                *one = Some((std::time::Instant::now(), e.clone(), contact));
+                *one = Some((std::time::Instant::now(), e.clone(), contact, interactive));
                 // A middle's dial for another machine is that machine's
                 // miss, not this one's (net-dial B3, `journal::By::Onward`).
                 // A machine that refused is resting, not down: left alone
@@ -3911,16 +3987,32 @@ impl Node {
         req: &Request,
         by: tokio::time::Instant,
     ) -> Result<Response, String> {
-        match self.ask_early(ep, d, req, Some(by.into_std())).await {
-            Early::Answered(resp) => return Ok(resp),
-            Early::Failed(e) => return Err(unreached_words(&d.name, e)),
-            Early::NotTaken => {}
+        let started = std::time::Instant::now();
+        let result = async {
+            match self.ask_early(ep, d, req, Some(by.into_std())).await {
+                Early::Answered(resp) => return Ok(resp),
+                Early::Failed(e) => return Err(unreached_words(&d.name, e)),
+                Early::NotTaken => {}
+            }
+            let line = self
+                .line_to_by(ep, d, wires::Proto::Main, Some(by.into_std()))
+                .await
+                .map_err(|e| unreached_words(&d.name, e))?;
+            self.ask_on_line_within(ep, d, req, &line, by).await
         }
-        let line = self
-            .line_to_by(ep, d, wires::Proto::Main, Some(by.into_std()))
-            .await
-            .map_err(|e| unreached_words(&d.name, e))?;
-        self.ask_on_line_within(ep, d, req, &line, by).await
+        .await;
+        if observed_operation(req).is_some_and(|operation| operation != "sync")
+            && matches!(
+                crate::journal::by_now(),
+                crate::journal::By::Ask | crate::journal::By::Forced
+            )
+            && result
+                .as_ref()
+                .is_ok_and(|response| observed_outcome(response) == "reply")
+        {
+            crate::roads::business_replied(&self.roads, &d.id, started.elapsed());
+        }
+        result
     }
 
     /// The existing exchange and at-most-one read retry, with its original by.
@@ -4136,17 +4228,24 @@ impl Node {
         }
         let waited = std::time::Instant::now();
         let lock = self.wires.dial_lock(&d.id, wires::Proto::Main);
+        let interactive = crate::journal::by_now() == crate::journal::By::Ask;
+        let foreground = lock.foreground(interactive);
         let Ok(mut one) = crate::deadline::wait(by, lock.lock()).await else {
             return Early::Failed(DialFailure::CallerExpired);
         };
+        drop(foreground);
         if crate::deadline::expired(by) {
             return Early::Failed(DialFailure::CallerExpired);
         }
         if self.wires.live(&d.id, wires::Proto::Main).is_some() {
             return Early::NotTaken;
         }
-        if let Some((at, failed, contact)) = one.as_ref()
+        if !interactive && lock.has_foreground() {
+            return Early::Failed(DialFailure::CallerExpired);
+        }
+        if let Some((at, failed, contact, was_interactive)) = one.as_ref()
             && *at >= waited
+            && (!interactive || *was_interactive || matches!(failed, DialFailure::Asleep(_)))
             && contact.is_current_for(failed, self.wires.dial_contact(&d.id, wires::Proto::Main))
         {
             return Early::Failed(failed.clone());
@@ -4321,6 +4420,9 @@ impl Node {
                         }
                     }
                 },
+                () = lock.yield_to_foreground(), if !interactive => {
+                    return Early::Failed(DialFailure::CallerExpired);
+                }
             }
         };
         drop(attempt);
@@ -4363,10 +4465,18 @@ impl Node {
             && !crate::deadline::expired(by)
             && tokio::time::Instant::now() < dial_by
         {
-            let ready = if preparing {
-                tokio::time::timeout_at(dial_by, &mut hop).await
-            } else {
-                Ok(())
+            let ready = tokio::select! {
+                biased;
+                ready = async {
+                    if preparing {
+                        tokio::time::timeout_at(dial_by, &mut hop).await
+                    } else {
+                        Ok(())
+                    }
+                } => ready,
+                () = lock.yield_to_foreground(), if !interactive => {
+                    return Early::Failed(DialFailure::CallerExpired);
+                }
             };
             #[cfg(test)]
             eprintln!(
@@ -4390,13 +4500,19 @@ impl Node {
                         eprintln!("[early-fallback-stage] starting carried handshake");
                         addr.addrs.insert(carried);
                         tried.2 = true;
-                        outcome = tokio::time::timeout_at(dial_by, async {
+                        let connecting = tokio::time::timeout_at(dial_by, async {
                             connect_prepared_carrier(ep, addr, ALPN)
                                 .await
                                 .map(|conn| (conn, None))
                                 .map_err(|error| DialFailure::of_connect(&error))
-                        })
-                        .await;
+                        });
+                        outcome = tokio::select! {
+                            biased;
+                            outcome = connecting => outcome,
+                            () = lock.yield_to_foreground(), if !interactive => {
+                                return Early::Failed(DialFailure::CallerExpired);
+                            }
+                        };
                         #[cfg(test)]
                         {
                             let result = match &outcome {
@@ -4525,7 +4641,7 @@ impl Node {
                     }
                     DialFailure::TimedOut => Some(msg::cant_reach_named(&d.name, "")),
                 };
-                *one = Some((std::time::Instant::now(), e.clone(), contact));
+                *one = Some((std::time::Instant::now(), e.clone(), contact, interactive));
                 if let Some(words) = failure {
                     self.wires.failed_if_unchanged(
                         &d.id,
@@ -4539,7 +4655,12 @@ impl Node {
                 Early::Failed(e)
             }
             Err(_) => {
-                *one = Some((std::time::Instant::now(), DialFailure::TimedOut, contact));
+                *one = Some((
+                    std::time::Instant::now(),
+                    DialFailure::TimedOut,
+                    contact,
+                    interactive,
+                ));
                 self.wires.failed_if_unchanged(
                     &d.id,
                     wires::Proto::Main,
@@ -6237,13 +6358,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self.take_with(&ep, id, action).await;
         ep.close().await;
         outcome
@@ -6261,13 +6376,7 @@ impl Node {
     ///
     /// [`Borrow`]: crate::tunnel::Borrow
     pub async fn tunnel_to(&self, machine: &str) -> Result<crate::tunnel::Borrow, String> {
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let conn = self.dial_tunnel(&ep, machine).await?;
         Ok(crate::tunnel::Borrow::new(ep, conn))
     }
@@ -6612,13 +6721,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self
             .open_on_with(&ep, machine, kind, title, cwd, cmd, size, once)
             .await;
@@ -6750,13 +6853,7 @@ impl Node {
         if home == self.device() {
             return self.session_import_here(action).await;
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self.session_import_with(&ep, home, action).await;
         ep.close().await;
         result
@@ -6820,13 +6917,7 @@ impl Node {
         if home == self.device() {
             return self.session_recovery_here(home, id, observation.as_ref());
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self.session_recovery_with(&ep, home, id, observation).await;
         ep.close().await;
         result
@@ -6912,13 +7003,7 @@ impl Node {
                 .recover_session_here(home, id, expected_run, token, observation.as_ref())
                 .await;
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self
             .recover_session_with(&ep, home, id, expected_run, token, observation)
             .await;
@@ -7007,13 +7092,7 @@ impl Node {
                 .new_shell_run_here(home, id, expected_run, token, cwd)
                 .await;
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self
             .new_shell_run_with(&ep, home, id, expected_run, token, cwd)
             .await;
@@ -7082,13 +7161,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.open_shell_on_with(&ep, machine, start).await;
         ep.close().await;
         out
@@ -7354,13 +7427,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self
             .open_agent_on_with(&ep, machine, dir, title, form, agent, once)
             .await;
@@ -7453,13 +7520,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self.places_on_with(&ep, machine).await;
         ep.close().await;
         outcome
@@ -7498,13 +7559,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self.load_on_with(&ep, machine, top, by, desc).await;
         ep.close().await;
         outcome
@@ -7670,13 +7725,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.remove_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -7779,13 +7828,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.mkdir_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -7866,13 +7909,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.touch_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -7936,13 +7973,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.rename_with(&ep, machine, from, to).await;
         ep.close().await;
         out
@@ -8033,13 +8064,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.subscriptions_on_with(&ep, machine, action).await;
         ep.close().await;
         out
@@ -8152,13 +8177,7 @@ impl Node {
         if home == self.device() {
             return self.delegation_local(self.device(), action).await;
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self.delegation_with(&ep, machine, action).await;
         ep.close().await;
         result
@@ -8238,13 +8257,7 @@ impl Node {
         if home == self.device() {
             return self.khor_agent_here(action).await;
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self.khor_agent_with(&ep, machine, action).await;
         ep.close().await;
         result
@@ -8305,13 +8318,7 @@ impl Node {
         if home == self.device() {
             return self.recognition_here(action);
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self.recognition_with(&ep, machine, action).await;
         ep.close().await;
         result
@@ -8369,13 +8376,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.launch_with(&ep, machine, target).await;
         ep.close().await;
         out
@@ -8472,13 +8473,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.search_with(&ep, machine, dir, query).await;
         ep.close().await;
         out
@@ -8552,13 +8547,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.history_with(&ep, machine, ask).await;
         ep.close().await;
         out
@@ -8620,13 +8609,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.git_with(&ep, machine, ask).await;
         ep.close().await;
         out
@@ -8684,13 +8667,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.touched_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -8722,13 +8699,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.checkout_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -9036,13 +9007,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.stat_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -9070,13 +9035,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.journal_with(&ep, machine, peer, since).await;
         ep.close().await;
         out
@@ -9181,13 +9140,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.read_head_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -9251,13 +9204,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.git_status_with(&ep, machine, root).await;
         ep.close().await;
         out
@@ -9361,13 +9308,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.git_diff_with(&ep, machine, path).await;
         ep.close().await;
         out
@@ -9448,13 +9389,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.write_path_with(&ep, machine, path, was, bytes).await;
         ep.close().await;
         out
@@ -9553,13 +9488,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.code_here_with(&ep, machine).await;
         ep.close().await;
         out
@@ -9776,13 +9705,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self
             .file_resource_with(&ep, machine, anchor, resource, offset, limit)
             .await;
@@ -9900,13 +9823,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.read_at_with(&ep, machine, path, offset).await;
         ep.close().await;
         out
@@ -10159,13 +10076,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self.close_on_with(&ep, machine, session).await;
         ep.close().await;
         outcome
@@ -10211,13 +10122,7 @@ impl Node {
                     other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
                 };
             }
-            let ep = endpoint::bind_with(
-                self.secret_key().clone(),
-                self.relay_map(),
-                self.relays_n0(),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+            let ep = self.bind_client().await?;
             let outcome = self.act_on_with(&ep, &machine, &id.0, action).await;
             ep.close().await;
             return outcome;
@@ -10252,13 +10157,7 @@ impl Node {
                     other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
                 },
                 None => {
-                    let ep = endpoint::bind_with(
-                        self.secret_key().clone(),
-                        self.relay_map(),
-                        self.relays_n0(),
-                    )
-                    .await
-                    .map_err(|e| e.to_string())?;
+                    let ep = self.bind_client().await?;
                     let outcome = self.act_on_moved(&ep, &machine, &id.0, &action).await;
                     ep.close().await;
                     outcome.map(|moved| moved > 0).or(Ok(false))
@@ -10312,13 +10211,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.pane_history_with(&ep, machine, session, since).await;
         ep.close().await;
         out
@@ -10422,13 +10315,7 @@ impl Node {
             let (at, entries, truncated) = self.list_here(path).await?;
             return Ok((at.display().to_string(), entries, truncated));
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self.ls_with(&ep, machine, path).await;
         ep.close().await;
         outcome
@@ -10545,13 +10432,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let outcome = self.pull_path_with(&ep, machine, path, dir).await;
         ep.close().await;
         outcome
@@ -10569,13 +10450,7 @@ impl Node {
     ) -> Result<std::path::PathBuf, String> {
         use crate::road::{Dest, Mode, Parcel, Source};
         let dir = std::path::absolute(dir).map_err(|e| e.to_string())?;
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self
             .land(
                 &ep,
@@ -11117,13 +10992,7 @@ impl Node {
         let first = async {
             match self.via_serve(op()).await {
                 Some(reply) => (from_serve(reply), None),
-                None => match endpoint::bind_with(
-                    self.secret_key().clone(),
-                    self.relay_map(),
-                    self.relays_n0(),
-                )
-                .await
-                {
+                None => match self.bind_client().await {
                     Ok(e) => (
                         self.drop_step_with(&e, &token, from, path, to, into).await,
                         Some(e),
@@ -11296,13 +11165,7 @@ impl Node {
                         Err(e) => Err(e),
                     },
                     None => {
-                        let e = endpoint::bind_with(
-                            self.secret_key().clone(),
-                            self.relay_map(),
-                            self.relays_n0(),
-                        )
-                        .await
-                        .map_err(|e| e.to_string())?;
+                        let e = self.bind_client().await?;
                         let a = self.add_ask_with(&e, machine, &req).await;
                         ep = Some(e);
                         a
@@ -12403,13 +12266,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         // A one-shot endpoint's addresses die with it — better none than
         // stale; the far side learns real ones through table sync.
         let outcome = self.pair_with(&ep, ticket, vec![]).await;
@@ -12960,13 +12817,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let out = self.sync_peers(&ep, true).await;
         ep.close().await;
         Ok(out)
@@ -13779,13 +13630,7 @@ impl Node {
                 _ => Err("resident returned another content reply".into()),
             };
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+        let ep = self.bind_client().await?;
         let answer = self.content_read_with(&ep, action, None).await;
         ep.close().await;
         answer
@@ -14239,6 +14084,30 @@ pub(crate) fn connection_trace_tag<T: iroh::endpoint::ConnectionState>(
     Some(blake3::hash(&proof).to_hex()[..16].to_owned())
 }
 
+pub(crate) fn note_workload(
+    wires: &wires::Wires,
+    conn: &iroh::endpoint::Connection,
+    operation: &str,
+    stage: &str,
+    stream: Option<String>,
+    elapsed: Duration,
+) {
+    wires.note(
+        Some(&conn.remote_id().to_string()),
+        crate::journal::What::Workload {
+            operation: operation.to_owned(),
+            stage: stage.to_owned(),
+            wire: conn.stable_id() as u64,
+            connection_tag: connection_trace_tag(conn),
+            stream,
+            road: crate::journal::road_key(khor_net::path::classify(conn)).to_owned(),
+            relay: khor_net::path::relay_name(conn),
+            rtt_ms: crate::journal::ms(wires::rtt_of(conn)),
+            ms: crate::journal::ms(elapsed),
+        },
+    );
+}
+
 /// Completed business replies in the existing opt-in lifecycle trace. Never
 /// includes a path or payload. An early answer's clock starts at its dial;
 /// an ordinary answer's starts at exchange, so those durations stay labelled.
@@ -14293,6 +14162,10 @@ async fn exchange_inner(
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
     let mut relay_checked = false;
+    let operation = observed_operation(req).filter(|operation| *operation != "sync");
+    let stream_for_log = std::sync::OnceLock::new();
+    let request_sent = std::sync::atomic::AtomicBool::new(false);
+    let mut waiting_noted = false;
     // When every path was asked whether it is there, and how long the
     // answers get (`wires::ask_every_path`).
     let mut asked: Option<(tokio::time::Instant, Duration)> = None;
@@ -14308,6 +14181,9 @@ async fn exchange_inner(
             .open_bi()
             .await
             .map_err(|e| Miss::Unreached(msg::cant_reach_named(who, msg::cant_open_stream(e))))?;
+        if operation.is_some() {
+            let _ = stream_for_log.set(send.id().to_string());
+        }
         khor_net::carry::observe_lifecycle(conn.remote_id(), "request_stream_opened", || {
             serde_json::json!({
                 "wire": conn.stable_id(), "stream": send.id().to_string(),
@@ -14324,6 +14200,7 @@ async fn exchange_inner(
             attempt.request_written = true;
         }
         send.finish().map_err(|e| lost(msg::cant_close_stream(e)))?;
+        request_sent.store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(operation) = observed_operation(req) {
             khor_net::carry::observe_lifecycle(conn.remote_id(), "request_dispatched", || {
                 serde_json::json!({
@@ -14342,6 +14219,18 @@ async fn exchange_inner(
             None => proto::answer(&bytes),
         }
         .map_err(Miss::Garbled)?;
+        if sent.elapsed() >= Duration::from_secs(1)
+            && let (Some(operation), Some((_, node))) = (operation, resident)
+        {
+            note_workload(
+                &node.wires,
+                conn,
+                operation,
+                observed_outcome(&response),
+                stream_for_log.get().cloned(),
+                sent.elapsed(),
+            );
+        }
         observe_workload_reply(conn, req, &response, send.id(), false, || sent.elapsed());
         Ok(response)
     };
@@ -14353,6 +14242,20 @@ async fn exchange_inner(
             out = &mut work => return out,
             _ = beat.tick() => {
                 let now = tokio::time::Instant::now();
+                if !waiting_noted
+                    && now.duration_since(sent) >= Duration::from_secs(1)
+                    && let (Some(operation), Some((_, node))) = (operation, resident)
+                {
+                    waiting_noted = true;
+                    let stage = if request_sent.load(std::sync::atomic::Ordering::Relaxed) {
+                        "waiting_reply"
+                    } else if stream_for_log.get().is_some() {
+                        "sending_request"
+                    } else {
+                        "opening_stream"
+                    };
+                    note_workload(&node.wires, conn, operation, stage, stream_for_log.get().cloned(), now - sent);
+                }
                 let seen = wires::heard_count(conn);
                 if seen != count {
                     count = seen;

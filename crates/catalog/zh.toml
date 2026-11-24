@@ -637,8 +637,9 @@ doctor-peers-unread = "无法读取机器列表"
 # the dial's start to the far end's first answer; 「直连 2/3」 is two of
 # the last three dials that settled went direct. A dial whose road has
 # not settled yet has a time and no count, hence the short form.
-doctor-road = "{0} 首包 {1}ms，直连 {2}/{3}"
-doctor-road-fresh = "{0} 首包 {1}ms"
+doctor-road = "{0} 建联 {1}ms，直连 {2}/{3}"
+doctor-road-fresh = "{0} 建联 {1}ms"
+doctor-road-business = "{0} 业务响应 {1}ms"
 doctor-roads-none = "serve 这次启动后还没有连过别的机器"
 doctor-roads-no-serve = "serve 未运行，没有连接读数"
 doctor-roads-unanswered = "serve 没有回答（可能比这一版旧）"
@@ -2730,6 +2731,7 @@ journal-tun-off = "默认路由不再经过代理的 TUN"
 journal-path-opened = "直连路径已打通：{0}"
 journal-path-selected = "改走{0}：{1}"
 journal-path-rtt = "，往返 {0} ms"
+journal-workload = "{0} {1}，经{2}已用 {3} ms"
 # 转连的那一路说清是什么在转（net-e）：经第三台机器（通过 turing），或经 SSH。
 journal-path-hop = "改为通过 {0}"
 journal-path-ssh = "改为经 SSH 转连"
@@ -4453,7 +4455,7 @@ relays-hint = "http://地址:端口"
 # `khor serve` and every standing connection keep the one they started
 # with. Without this line the screen shows a change that took and a
 # network that did not move, and nothing anywhere connects the two.
-relays-after-restart = "新添加的中继在 khor serve 重启后生效"
+relays-update-live = "中继设置保存后会自动应用"
 # What the machine is dialling on right now, the built-in tier included.
 # Separate from the list above because nothing here can be removed — a
 # row with a dead delete button and no reason next to it is worse than

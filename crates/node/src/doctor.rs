@@ -696,14 +696,19 @@ async fn check_roads(node: &Node) -> (Health, String, Option<String>) {
     }
     let said: Vec<String> = rows
         .iter()
-        .filter_map(|(who, t)| {
-            let ms = t.first_reply_ms?;
-            let settled = t.direct + t.relay;
-            Some(if settled == 0 {
-                cli::doctor_road_fresh(who, ms)
-            } else {
-                cli::doctor_road(who, ms, t.direct, settled)
-            })
+        .flat_map(|(who, t)| {
+            let connection = t.first_reply_ms.map(|ms| {
+                let settled = t.direct + t.relay;
+                if settled == 0 {
+                    cli::doctor_road_fresh(who, ms)
+                } else {
+                    cli::doctor_road(who, ms, t.direct, settled)
+                }
+            });
+            let business = t
+                .business_reply_ms
+                .map(|ms| cli::doctor_road_business(who, ms));
+            [connection, business].into_iter().flatten()
         })
         .collect();
     if said.is_empty() {

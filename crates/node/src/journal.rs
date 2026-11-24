@@ -173,6 +173,18 @@ pub enum What {
     },
     /// The relay said it left (vendor/iroh patch 4).
     Departed,
+    /// Bounded operational timings. Never includes user content or paths.
+    Workload {
+        operation: String,
+        stage: String,
+        wire: u64,
+        connection_tag: Option<String>,
+        stream: Option<String>,
+        road: String,
+        relay: Option<String>,
+        rtt_ms: u64,
+        ms: u64,
+    },
     /// It opened a connection to this machine.
     Inbound,
     Network {
@@ -673,6 +685,13 @@ pub fn words(e: &Entry, name_of: &dyn Fn(&str) -> String) -> String {
             msg::journal_retired(why_word(why), quiet_ms, secs(*age_ms))
         }
         What::Departed => msg::journal_departed().to_owned(),
+        What::Workload {
+            operation,
+            stage,
+            road,
+            ms,
+            ..
+        } => msg::journal_workload(operation, stage, road_word(road), ms),
         What::Inbound => msg::journal_inbound().to_owned(),
         What::Network { source } => msg::journal_network(match source.as_str() {
             "wake" => msg::journal_net_wake(),
@@ -789,6 +808,7 @@ pub fn is_trouble(e: &Entry) -> bool {
         What::Hop { via, .. } => via.is_none(),
         What::Carry { up, .. } => !up,
         What::Departed => true,
+        What::Workload { stage, .. } => stage != "reply",
         What::NoRelay { none } => *none,
         What::Sync { .. } | What::Apart { .. } | What::PenRetired { .. } => true,
         _ => false,

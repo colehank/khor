@@ -1018,6 +1018,17 @@ impl Endpoint {
         self.inner.remove_relay(relay).await
     }
 
+    /// Applies a new Relay pool and home selection policy to the live Relay transport.
+    /// The endpoint and its QUIC connections stay open.
+    pub async fn set_relay_pool(&self, map: RelayMap, policy: NetReportConfig) -> bool {
+        !self.is_closed() && self.inner.set_relay_pool(map, policy).await
+    }
+
+    /// Whether this Relay is currently in the configured pool.
+    pub fn has_configured_relay(&self, url: &RelayUrl) -> bool {
+        self.inner.has_configured_relay(url)
+    }
+
     /// Adds an external address on which this endpoint is directly reachable.
     ///
     /// This address will be advertised to peers together with any discovered external addresses
@@ -1461,6 +1472,13 @@ impl Endpoint {
     /// can move a connection onto a road that came up after it settled.
     pub async fn offer_addrs(&self, addr: EndpointAddr) {
         let _ = self.inner.resolve_remote(addr).await;
+    }
+
+    /// Ask the path selector to validate other configured relay paths on
+    /// live connections, while leaving their incumbent path installed.
+    #[cfg(not(wasm_browser))]
+    pub async fn probe_relay_alternatives(&self, peer: EndpointId, incumbent: RelayUrl) {
+        self.inner.probe_relay_alternatives(peer, incumbent).await;
     }
 
     /// Discard IP hints older than `before` only while the peer has no live connection.

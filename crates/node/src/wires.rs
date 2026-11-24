@@ -404,6 +404,7 @@ struct HopGeneration {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum RouteDemand {
     Wire(usize),
+    RelayAlternatives(usize),
     Peer(iroh::EndpointId),
 }
 
@@ -415,7 +416,7 @@ pub(crate) struct Wires {
     /// Node-specific retry offsets, stable between journaling and scheduling.
     retry_jitter: RandomState,
     slots: Mutex<HashMap<(String, Proto), Slot>>,
-    dialing: Mutex<HashMap<(String, Proto), DialLock>>,
+    dialing: Mutex<HashMap<(String, Proto), Arc<DialLock>>>,
     pending_dials: Mutex<HashMap<String, std::sync::Weak<PendingDialState>>>,
     /// Coalesces foreground path probes requested by simultaneous streams.
     route_demands: Mutex<HashMap<RouteDemand, Instant>>,
@@ -527,8 +528,53 @@ const LEFT_ALONE_FOR: Duration = Duration::from_secs(600);
 /// The lock that makes one key's dials one at a time, holding how the
 /// last dial under it failed, when, and the peer contact version it began
 /// with — what an asker who waited for that dial may share.
-pub(crate) type DialLock =
-    Arc<tokio::sync::Mutex<Option<(Instant, crate::link::DialFailure, DialContact)>>>;
+type DialResult = (Instant, crate::link::DialFailure, DialContact, bool);
+
+#[derive(Default)]
+pub(crate) struct DialLock {
+    result: tokio::sync::Mutex<Option<DialResult>>,
+    foreground: tokio::sync::watch::Sender<usize>,
+}
+
+impl DialLock {
+    pub(crate) async fn lock(&self) -> tokio::sync::MutexGuard<'_, Option<DialResult>> {
+        self.result.lock().await
+    }
+
+    pub(crate) fn foreground(&self, interactive: bool) -> Option<ForegroundDial<'_>> {
+        interactive.then(|| {
+            self.foreground.send_modify(|count| *count += 1);
+            ForegroundDial(&self.foreground)
+        })
+    }
+
+    pub(crate) fn has_foreground(&self) -> bool {
+        *self.foreground.borrow() != 0
+    }
+
+    pub(crate) async fn yield_to_foreground(&self) {
+        let mut waiting = self.foreground.subscribe();
+        loop {
+            if waiting.wait_for(|count| *count != 0).await.is_err() {
+                return;
+            }
+            // A racing foreground caller may benefit from work already
+            // about to complete. Don't abandon that handshake immediately.
+            tokio::time::sleep(Duration::from_millis(350)).await;
+            if *waiting.borrow() != 0 {
+                return;
+            }
+        }
+    }
+}
+
+pub(crate) struct ForegroundDial<'a>(&'a tokio::sync::watch::Sender<usize>);
+
+impl Drop for ForegroundDial<'_> {
+    fn drop(&mut self) {
+        self.0.send_modify(|count| *count -= 1);
+    }
+}
 
 /// Resting is peer-wide; a failed protocol only loses its meaning after
 /// a new successful handshake on that protocol, not ordinary traffic.
@@ -1017,7 +1063,7 @@ impl Wires {
     }
 
     /// The lock that makes a key's dials one at a time.
-    pub(crate) fn dial_lock(&self, id: &str, proto: Proto) -> DialLock {
+    pub(crate) fn dial_lock(&self, id: &str, proto: Proto) -> Arc<DialLock> {
         self.dialing
             .lock()
             .unwrap_or_else(|p| p.into_inner())
@@ -2525,6 +2571,26 @@ mod tests_retirement_epoch;
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn pending_foreground_can_take_over_a_background_dial() {
+        use super::{DialLock, Duration};
+        let lock = DialLock::default();
+        let pending = lock.foreground(true).unwrap();
+        assert!(lock.has_foreground());
+        assert!(
+            tokio::time::timeout(Duration::from_secs(2), lock.yield_to_foreground())
+                .await
+                .is_ok()
+        );
+        drop(pending);
+        assert!(!lock.has_foreground());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), lock.yield_to_foreground())
+                .await
+                .is_err()
+        );
+    }
+
     #[test]
     fn connection_probes_do_not_consume_the_peers_recovery_window() {
         use super::{RouteDemand, Wires};

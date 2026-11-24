@@ -463,6 +463,7 @@ impl From<Item> for EndpointInfo {
 #[derive(Debug, Default, Clone)]
 pub struct AddressLookupServices {
     services: Arc<RwLock<Vec<Box<dyn AddressLookup>>>>,
+    relay_services: Arc<RwLock<Vec<Box<dyn AddressLookup>>>>,
     /// The data last published, used to publish when adding a new service.
     last_data: Arc<RwLock<Option<EndpointData>>>,
     /// Optional filter applied to all data before publishing to any service.
@@ -521,20 +522,34 @@ impl AddressLookupServices {
         self.services.write().expect("poisoned").push(service);
     }
 
+    /// Replace the discovery services coupled to the configured Relay pool.
+    /// Local and caller-provided services stay registered.
+    pub fn replace_relay_services(&self, lookups: Vec<Box<dyn AddressLookup>>) {
+        let mut relay = self.relay_services.write().expect("poisoned");
+        if let Some(data) = &*self.last_data.read().expect("poisoned") {
+            for service in &lookups {
+                service.publish(data);
+            }
+        }
+        *relay = lookups;
+    }
+
     /// Are there any services configured?
     pub fn is_empty(&self) -> bool {
-        self.services.read().expect("poisoned").is_empty()
+        self.len() == 0
     }
 
     /// Returns the number of services configured.
     pub fn len(&self) -> usize {
         self.services.read().expect("poisoned").len()
+            + self.relay_services.read().expect("poisoned").len()
     }
 
     /// Removes all configured services.
     pub fn clear(&self) {
         let mut services = self.services.write().expect("poisoned");
         services.clear();
+        self.relay_services.write().expect("poisoned").clear();
     }
 
     /// Publish endpoint data on all configured services.
@@ -544,7 +559,8 @@ impl AddressLookupServices {
             None => Cow::Borrowed(data),
         };
         let services = self.services.read().expect("poisoned");
-        for service in &*services {
+        let relay = self.relay_services.read().expect("poisoned");
+        for service in services.iter().chain(relay.iter()) {
             service.publish(&data);
         }
 
@@ -580,11 +596,13 @@ impl AddressLookupServices {
     ) -> impl Stream<Item = Result<Result<Item, Error>, AddressLookupFailed>> + use<> {
         self.metrics.lookups.inc();
         let services = self.services.read().expect("poisoned");
-        if services.is_empty() {
+        let relay = self.relay_services.read().expect("poisoned");
+        if services.is_empty() && relay.is_empty() {
             AddressLookupStream::empty(self.metrics.clone())
         } else {
             let streams = services
                 .iter()
+                .chain(relay.iter())
                 .filter_map(|service| service.resolve(endpoint_id));
             AddressLookupStream::new(streams, self.metrics.clone())
         }

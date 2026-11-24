@@ -272,13 +272,7 @@ impl Node {
                 other => Err(msg::serve_non_answer(format_args!("{other:?}"))),
             };
         }
-        let ep = khor_net::endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let files: Vec<PathBuf> = files.into_iter().map(PathBuf::from).collect();
         let out = self.post_with(&ep, typed, &files, true).await;
         ep.close().await;

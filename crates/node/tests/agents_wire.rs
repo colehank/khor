@@ -257,7 +257,7 @@ async fn padded_doc_requests_are_refused_before_receiver_transfer_state_exists()
         "the raw connection must authenticate as the actually paired issuer"
     );
     let destination = khor_net::trust::id_from_hex(receiver.device_str()).unwrap();
-    let ep = endpoint::bind(secret, issuer.relay_map()).await.unwrap();
+    let ep = endpoint::bind(secret, &issuer.relay_map()).await.unwrap();
     let address = endpoint::dial_addr(receiver.device_str(), &direct, &[]).unwrap();
     let conn = timeout(Duration::from_secs(45), ep.connect(address, ALPN))
         .await

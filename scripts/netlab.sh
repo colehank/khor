@@ -48,6 +48,10 @@ THREADS=${NETLAB_TEST_THREADS:-8}
 case "$THREADS" in
     ''|0|*[!0-9]*) echo 'netlab: NETLAB_TEST_THREADS must be positive' >&2; exit 2 ;;
 esac
+case ${NETLAB_PROFILE:-debug} in
+    debug|release) ;;
+    *) echo 'netlab: NETLAB_PROFILE must be debug or release' >&2; exit 2 ;;
+esac
 DIAGNOSTIC_FEATURE=
 case ${NETLAB_DIAGNOSTICS:-0} in
     0) ;;
@@ -100,6 +104,9 @@ echo "netlab: building on $(hostname) (target $CARGO_TARGET_DIR)"
 cargo_netlab() {
     if [ -n "$DIAGNOSTIC_FEATURE" ]; then
         set -- "$DIAGNOSTIC_FEATURE" "$@"
+    fi
+    if [ "${NETLAB_PROFILE:-debug}" = release ]; then
+        set -- --release "$@"
     fi
     nice -n 10 cargo test --locked -p khor-cli --test netlab "$@"
 }

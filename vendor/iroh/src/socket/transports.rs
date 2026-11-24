@@ -532,6 +532,27 @@ impl NetworkChangeSender {
         }
     }
 
+    #[cfg(not(wasm_browser))]
+    pub(crate) fn warm_relay(&self, url: RelayUrl, ready: tokio::sync::oneshot::Sender<bool>) {
+        if let Some(relay) = self.relay.first() {
+            relay.warm_relay(url, ready);
+        }
+    }
+
+    pub(crate) async fn pool_changed(
+        &self,
+        configured_only: bool,
+        removed: Vec<RelayUrl>,
+        reconnect: Vec<RelayUrl>,
+    ) -> bool {
+        let Some(relay) = self.relay.first() else {
+            return false;
+        };
+        relay
+            .pool_changed(configured_only, removed, reconnect)
+            .await
+    }
+
     /// Rebinds underlying connections, if necessary.
     pub(crate) fn rebind(&self) -> std::io::Result<()> {
         let mut res = Ok(());

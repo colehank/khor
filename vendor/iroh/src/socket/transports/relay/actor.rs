@@ -62,9 +62,9 @@ use url::Url;
 
 #[cfg(not(wasm_browser))]
 use crate::dns::DnsResolver;
+use crate::{endpoint::RelayStatus, net_report::Report, socket::Metrics as SocketMetrics};
 #[cfg(not(wasm_browser))]
 use n0_future::task::AbortOnDropHandle;
-use crate::{endpoint::RelayStatus, net_report::Report, socket::Metrics as SocketMetrics};
 
 /// How long a non-home relay connection needs to be idle (last written to) before we close it.
 const RELAY_INACTIVE_CLEANUP_TIME: Duration = Duration::from_secs(60);
@@ -1112,7 +1112,11 @@ impl ConnectedRelayState {
             self.health_check = None;
         }
         #[cfg(not(wasm_browser))]
-        if self.comparison.as_ref().is_some_and(|comparison| comparison.nonce == data) {
+        if self
+            .comparison
+            .as_ref()
+            .is_some_and(|comparison| comparison.nonce == data)
+        {
             self.comparison = None;
         }
     }
@@ -1136,8 +1140,16 @@ pub(super) enum RelayActorMessage {
     /// Sent after a major network change to detect broken connections faster
     /// using RTT-based timeouts instead of the default 5s ping timeout.
     CheckConnectionAfterNetworkChange,
+    PoolChanged {
+        configured_only: bool,
+        removed: Vec<RelayUrl>,
+        reconnect: Vec<RelayUrl>,
+        done: oneshot::Sender<()>,
+    },
     #[cfg(not(wasm_browser))]
     CheckConnectionForDemand(RelayUrl),
+    #[cfg(not(wasm_browser))]
+    WarmRelay(RelayUrl, oneshot::Sender<bool>),
 }
 
 #[derive(Debug, Clone)]
@@ -1159,6 +1171,8 @@ pub(super) struct RelayActor {
     /// These actors will exit when they have any inactivity.  Otherwise they will keep
     /// trying to maintain a connection to the relay server as needed.
     active_relays: BTreeMap<RelayUrl, ActiveRelayHandle>,
+    // URLs explicitly removed by the owner cannot come back via a stale peer hint.
+    retired_relays: BTreeSet<RelayUrl>,
     /// The tasks for the [`ActiveRelayActor`]s in `active_relays` above.
     active_relay_tasks: JoinSet<()>,
     cancel_token: CancellationToken,
@@ -1179,6 +1193,7 @@ pub(crate) struct Config {
     /// Per-relay configuration. Consulted when starting a connection to
     /// look up the auth token and any future per-relay options.
     pub relay_map: RelayMap,
+    pub configured_only: bool,
 }
 
 /// Connection state of the home relay.
@@ -1360,6 +1375,7 @@ impl RelayActor {
             config,
             relay_datagram_recv_queue,
             active_relays: Default::default(),
+            retired_relays: Default::default(),
             active_relay_tasks: JoinSet::new(),
             cancel_token,
         }
@@ -1433,8 +1449,48 @@ impl RelayActor {
             #[cfg(not(wasm_browser))]
             RelayActorMessage::CheckConnectionForDemand(url) => {
                 if let Some(handle) = self.active_relays.get(&url) {
-                    let _ = handle.inbox_addr.try_send(ActiveRelayMessage::CheckConnectionForDemand);
+                    let _ = handle
+                        .inbox_addr
+                        .try_send(ActiveRelayMessage::CheckConnectionForDemand);
                 }
+            }
+            #[cfg(not(wasm_browser))]
+            RelayActorMessage::WarmRelay(url, ready) => {
+                let allowed = self.config.relay_map.get(&url).is_some();
+                if allowed && !ready.is_closed() {
+                    self.active_relay_handle(url);
+                }
+                let _ = ready.send(allowed);
+            }
+            RelayActorMessage::PoolChanged {
+                configured_only,
+                removed,
+                reconnect,
+                done,
+            } => {
+                self.config.configured_only = configured_only;
+                self.retired_relays.extend(removed);
+                self.retired_relays
+                    .retain(|url| !self.config.relay_map.contains(url));
+                let map = &self.config.relay_map;
+                let retired = &self.retired_relays;
+                let keep = |url: &RelayUrl| {
+                    !reconnect.contains(url)
+                        && !retired.contains(url)
+                        && (!configured_only || map.contains(url))
+                };
+                let home = self.config.my_relay.get();
+                if home.as_ref().is_some_and(|status| !keep(status.url())) {
+                    self.config.my_relay.clear();
+                }
+                self.active_relays.retain(|url, handle| {
+                    if keep(url) {
+                        return true;
+                    }
+                    handle.stop_token.cancel();
+                    false
+                });
+                let _ = done.send(());
             }
             RelayActorMessage::CheckConnectionAfterNetworkChange => {
                 self.check_connection_after_network_change().await;
@@ -1452,6 +1508,11 @@ impl RelayActor {
         item: RelaySendItem,
     ) -> Option<impl Future<Output = ()> + use<>> {
         let url = item.url.clone();
+        if self.retired_relays.contains(&url)
+            || (self.config.configured_only && !self.config.relay_map.contains(&url))
+        {
+            return None;
+        }
         let handle = self
             .active_relay_handle_for_endpoint(&item.url, &item.remote_endpoint)
             .await;
@@ -1476,7 +1537,10 @@ impl RelayActor {
         }
     }
 
-    async fn on_network_change(&mut self, report: Report) {
+    async fn on_network_change(&mut self, mut report: Report) {
+        report.preferred_relay = report
+            .preferred_relay
+            .filter(|url| self.config.relay_map.contains(url));
         let prev = self.config.my_relay.get();
         let prev_url = prev.as_ref().map(RelayStatus::url);
         if report.preferred_relay.as_ref() == prev_url {
@@ -1614,6 +1678,7 @@ impl RelayActor {
         let (prio_inbox_tx, prio_inbox_rx) = mpsc::channel(32);
         let (inbox_tx, inbox_rx) = mpsc::channel(64);
         let span = info_span!("active-relay", %url);
+        let stop_token = self.cancel_token.child_token();
         let opts = ActiveRelayActorOptions {
             url,
             prio_inbox_: prio_inbox_rx,
@@ -1621,7 +1686,7 @@ impl RelayActor {
             relay_datagrams_send: send_datagram_rx,
             relay_datagrams_recv: self.relay_datagram_recv_queue.clone(),
             connection_opts,
-            stop_token: self.cancel_token.child_token(),
+            stop_token: stop_token.clone(),
             metrics: self.config.metrics.clone(),
             my_relay: self.config.my_relay.clone(),
         };
@@ -1636,6 +1701,7 @@ impl RelayActor {
             prio_inbox_addr: prio_inbox_tx,
             inbox_addr: inbox_tx,
             datagrams_send_queue: send_datagram_tx,
+            stop_token,
         };
         self.log_active_relay();
         handle
@@ -1746,6 +1812,7 @@ struct ActiveRelayHandle {
     prio_inbox_addr: mpsc::Sender<ActiveRelayPrioMessage>,
     inbox_addr: mpsc::Sender<ActiveRelayMessage>,
     datagrams_send_queue: mpsc::Sender<RelaySendItem>,
+    stop_token: CancellationToken,
 }
 
 /// A single datagram received from a relay server.
@@ -1801,6 +1868,7 @@ mod tests {
                 .expect("infallible"),
             metrics: Default::default(),
             relay_map: RelayMap::empty(),
+            configured_only: false,
         };
         let mut actor =
             RelayActor::new(config, relay_datagram_recv_queue, CancellationToken::new());

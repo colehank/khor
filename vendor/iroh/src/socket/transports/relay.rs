@@ -267,6 +267,30 @@ impl RelayNetworkChangeSender {
         self.send_relay_actor(RelayActorMessage::CheckConnectionForDemand(url));
     }
 
+    #[cfg(not(wasm_browser))]
+    pub(super) fn warm_relay(&self, url: RelayUrl, ready: tokio::sync::oneshot::Sender<bool>) {
+        self.send_relay_actor(RelayActorMessage::WarmRelay(url, ready));
+    }
+
+    pub(super) async fn pool_changed(
+        &self,
+        configured_only: bool,
+        removed: Vec<RelayUrl>,
+        reconnect: Vec<RelayUrl>,
+    ) -> bool {
+        let (done, applied) = tokio::sync::oneshot::channel();
+        self.sender
+            .send(RelayActorMessage::PoolChanged {
+                configured_only,
+                removed,
+                reconnect,
+                done,
+            })
+            .await
+            .is_ok()
+            && applied.await.is_ok()
+    }
+
     pub(super) fn rebind(&self) -> io::Result<()> {
         self.send_relay_actor(RelayActorMessage::MaybeCloseRelaysOnRebind);
 
@@ -447,6 +471,7 @@ mod tests {
                 .expect("infallible"),
             metrics: Default::default(),
             relay_map: RelayMap::empty(),
+            configured_only: false,
         };
         let mut transport = RelayTransport::new(config, CancellationToken::new());
         let (sender, receiver) = mpsc::channel(16);

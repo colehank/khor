@@ -609,8 +609,22 @@ pub async fn bind_pinned(
                 iroh::endpoint::BindOpts::default().set_is_required(false),
             )?;
     }
-    // `NetReportConfig` is non-exhaustive: built, then set.
+    let endpoint = b
+        .net_report_config(relay_policy(relays, n0, preferred))
+        .bind()
+        .await?;
+    let lookups = relay_discovery(&endpoint, relays, n0)?;
+    endpoint.address_lookup()?.replace_relay_services(lookups);
+    Ok(endpoint)
+}
+
+fn relay_policy(
+    relays: &[Relay],
+    n0: bool,
+    preferred: Option<&str>,
+) -> iroh::endpoint::NetReportConfig {
     let mut config = iroh::endpoint::NetReportConfig::default();
+    config.configured_relays_only = !n0;
     config.preferred_relay = preferred.and_then(|u| u.parse::<iroh::RelayUrl>().ok());
     config.successors = successors(relays);
     config.fallback = fallback_tier(relays, n0)
@@ -618,8 +632,67 @@ pub async fn bind_pinned(
         .map(|r| r.url.clone())
         .collect();
     config.home_dwell = HOME_DWELL;
-    b = b.net_report_config(config);
-    Ok(b.bind().await?)
+    config
+}
+
+/// Applies transport Relay settings without rebinding UDP or closing the inner connections.
+pub async fn apply_relay_pool(
+    endpoint: &iroh::Endpoint,
+    relays: &[Relay],
+    n0: bool,
+    preferred: Option<&str>,
+) -> bool {
+    let Ok(lookups) = relay_discovery(endpoint, relays, n0) else {
+        return false;
+    };
+    let Ok(discovery) = endpoint.address_lookup() else {
+        return false;
+    };
+    if !endpoint
+        .set_relay_pool(
+            full_relay_map(relays, n0),
+            relay_policy(relays, n0, preferred),
+        )
+        .await
+    {
+        return false;
+    }
+    discovery.replace_relay_services(lookups);
+    true
+}
+
+fn relay_discovery(
+    endpoint: &iroh::Endpoint,
+    relays: &[Relay],
+    n0: bool,
+) -> Result<Vec<Box<dyn iroh::address_lookup::AddressLookup>>> {
+    use iroh::address_lookup::{
+        AddrFilter, AddressLookupBuilder, DnsAddressLookup, PkarrPublisher, PkarrResolver,
+    };
+
+    let mut services: Vec<Box<dyn iroh::address_lookup::AddressLookup>> = Vec::new();
+    if n0 {
+        services.push(Box::new(
+            PkarrPublisher::n0_dns().into_address_lookup(endpoint)?,
+        ));
+        services.push(Box::new(
+            PkarrResolver::n0_dns().into_address_lookup(endpoint)?,
+        ));
+        services.push(Box::new(
+            DnsAddressLookup::n0_dns().into_address_lookup(endpoint)?,
+        ));
+    }
+    for url in registries(relays) {
+        services.push(Box::new(
+            PkarrPublisher::builder(url.clone().into())
+                .addr_filter(AddrFilter::unfiltered())
+                .into_address_lookup(endpoint)?,
+        ));
+        services.push(Box::new(
+            PkarrResolver::builder(url.into()).into_address_lookup(endpoint)?,
+        ));
+    }
+    Ok(services)
 }
 
 /// Everything [`bind`] configures, short of binding — split out so the
@@ -643,77 +716,45 @@ fn builder(
     } else {
         None
     };
-    // The n0 preset is n0's relays plus a pkarr publisher, a pkarr
-    // resolver and a DNS lookup, all pointed at n0's servers; `Minimal`
-    // keeps only the crypto provider. The relay map is replaced below
-    // either way, so the preset decides the lookup services alone.
-    let mut builder = if n0 {
-        iroh::Endpoint::builder(iroh::endpoint::presets::N0)
-    } else {
-        iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
-    }
-    .secret_key(secret)
-    // Compiled-in Mozilla roots instead of the operating system's:
-    // the system route reads the macOS Keychain, and on a Mac
-    // operated over ssh that read hangs 25-40 seconds — every
-    // process's FIRST bind paid it (measured 2026-08-20: khor's
-    // own test binaries at 36-43s per process, while the verdict
-    // hid because the hang is synchronous and froze single-thread
-    // tokio timers with it, #73). These roots only verify outward
-    // TLS (https relays); iroh's own encryption never touched the
-    // Keychain in the first place.
-    .ca_tls_config(ca_roots())
-    .proxy_from_env()
-    .transport_config(transport())
-    .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()))
-    .alpns(vec![
-        ALPN.to_vec(),
-        TUNNEL_ALPN.to_vec(),
-        UPDATE_ALPN.to_vec(),
-    ])
-    // The filter that keeps this machine from publishing an address
-    // nobody can route to belongs where the services are assembled
-    // (the reason is the mDNS service's, below). It also decides what
-    // a hole-punching round offers the far side (vendor/iroh patch 9):
-    // upstream offered every address, 198.18.0.1 among them.
-    .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
-        if addrs.iter().any(unroutable) {
-            std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
-        } else {
-            std::borrow::Cow::Borrowed(addrs)
-        }
-    }));
-    // **On the builder, not on the bound endpoint — and that is the
-    // whole difference between wired up and merely present.**
-    // `endpoint.address_lookup().add(..)` after a bind (what the
-    // crate's own README shows) leaves a service that discovers and
-    // answers `resolve()` correctly while the dialer never consults
-    // it: measured 2026-09-18, A saw B, `resolve(B)` handed back B's
-    // three addresses with provenance "mdns", dialling B by key
-    // alone timed out, and dialling the very same addresses by hand
-    // connected. Every piece worked and the chain did not.
+    let mut builder = iroh::Endpoint::builder(iroh::endpoint::presets::Minimal)
+        .secret_key(secret)
+        // Compiled-in Mozilla roots instead of the operating system's:
+        // the system route reads the macOS Keychain, and on a Mac
+        // operated over ssh that read hangs 25-40 seconds — every
+        // process's FIRST bind paid it (measured 2026-08-20: khor's
+        // own test binaries at 36-43s per process, while the verdict
+        // hid because the hang is synchronous and froze single-thread
+        // tokio timers with it, #73). These roots only verify outward
+        // TLS (https relays); iroh's own encryption never touched the
+        // Keychain in the first place.
+        .ca_tls_config(ca_roots())
+        .proxy_from_env()
+        .transport_config(transport())
+        .path_selector(std::sync::Arc::new(crate::carry::RoadOrder::default()))
+        .alpns(vec![
+            ALPN.to_vec(),
+            TUNNEL_ALPN.to_vec(),
+            UPDATE_ALPN.to_vec(),
+        ])
+        // The filter that keeps this machine from publishing an address
+        // nobody can route to belongs where the services are assembled
+        // (the reason is the mDNS service's, below). It also decides what
+        // a hole-punching round offers the far side (vendor/iroh patch 9):
+        // upstream offered every address, 198.18.0.1 among them.
+        .addr_filter(iroh::address_lookup::AddrFilter::new(|addrs| {
+            if addrs.iter().any(unroutable) {
+                std::borrow::Cow::Owned(addrs.iter().filter(|a| !unroutable(a)).cloned().collect())
+            } else {
+                std::borrow::Cow::Borrowed(addrs)
+            }
+        }));
     if let Some(mdns) = mdns {
         builder = builder.address_lookup(Prebuilt(mdns));
     }
-    // **Every registry this machine's servers keep** ([`Relay::pkarr`]):
-    // this machine publishes there and looks its peers up there, beside
-    // n0's when that tier is on (the owner, 2026-10-09: 「两边都用，看谁
-    // 最快」). iroh asks every lookup service at once and a dial takes
-    // whatever answers first. Unlike n0's, ours carry the direct
-    // addresses too (the filter above still drops the unroutable): a
-    // peer that finds this machine there can dial it straight.
-    for url in registries(relays) {
-        builder = builder
-            .address_lookup(
-                iroh::address_lookup::PkarrPublisher::builder(url.clone().into())
-                    .addr_filter(iroh::address_lookup::AddrFilter::unfiltered()),
-            )
-            .address_lookup(iroh::address_lookup::PkarrResolver::builder(url.into()));
-    }
-    let map = full_relay_map(relays, n0);
-    if !map.is_empty() {
-        builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(map));
-    }
+    // Keep the transport installed even when the configured pool is empty.
+    builder = builder.relay_mode(iroh::endpoint::RelayMode::Custom(full_relay_map(
+        relays, n0,
+    )));
     // **`KHOR_RELAY_ONLY`: no direct road at all**, every byte through a
     // relay — the network a phone on carrier NAT often has, made on
     // purpose. A diagnostic and the tests' way to put a slow relay
@@ -1369,14 +1410,12 @@ mod tests {
             ours.contains("203.0.113.9"),
             "control: the builder's Debug must show the relays it holds: {ours}"
         );
-        let with = format!(
-            "{:?}",
-            builder(iroh::SecretKey::generate(), &relays, true, true).unwrap()
-        );
-        assert!(
-            with.contains(N0),
-            "the n0 switch must name n0's services: {with}"
-        );
+        let with = bind_with(iroh::SecretKey::generate(), &relays, true)
+            .await
+            .unwrap();
+        let discovery = format!("{:?}", with.address_lookup().unwrap());
+        assert!(discovery.contains(N0), "n0 discovery services: {discovery}");
+        with.close().await;
         let urls: Vec<iroh::RelayUrl> = full_relay_map(&relays, true).urls();
         assert_eq!(urls[0], MINE.parse().unwrap(), "ours comes first: {urls:?}");
         for url in iroh::defaults::prod::default_relay_map().urls::<Vec<_>>() {

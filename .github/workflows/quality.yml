@@ -353,6 +353,44 @@ jobs:
         env:
           KHOR_TEST_AGENT_BIN: ${{ runner.temp }}/khor-agent
 
+  network-netlab:
+    needs: frontend
+    if: ${{ !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) && (inputs.suite == '' || inputs.suite == 'all' || inputs.suite == 'node') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NETLAB_TEST_THREADS: '1'
+      NETLAB_PROFILE: release
+      NETLAB_TOOLS: ${{ runner.temp }}/khor-netlab-tools
+      NETLAB_RUN_DIR: ${{ runner.temp }}/khor-netlab
+      CARGO_TARGET_DIR: ${{ runner.temp }}/khor-netlab-target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/ubuntu-apt
+      - uses: dtolnay/rust-toolchain@1.95.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: quality-network-netlab
+          cache-targets: false
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/restore-frontend
+      - name: Prepare the isolated Linux network lab
+        run: |
+          sudo apt-get install -y conntrack iproute2 nftables tmux
+          if ! unshare --user --map-root-user --net true; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          unshare --user --map-root-user --net true
+      - name: Verify active terminal failover and address changes
+        run: sh scripts/netlab.sh --ignored established_terminal_ roam_
+      - name: Keep topology, fault and business timing logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: network-netlab
+          path: ${{ runner.temp }}/khor-netlab
+          if-no-files-found: ignore
+
   node-native:
     needs: frontend
     if: ${{ inputs.suite != 'updates' && inputs.suite != 'gui' && inputs.suite != 'agent' && inputs.suite != 'runtime' && !cancelled() && (needs.frontend.result == 'success' || inputs.reuse_frontend) }}

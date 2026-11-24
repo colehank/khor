@@ -40,13 +40,7 @@ impl Node {
         if home == self.device() {
             return self.execution_here(action).await;
         }
-        let ep = endpoint::bind_with(
-            self.secret_key().clone(),
-            self.relay_map(),
-            self.relays_n0(),
-        )
-        .await
-        .map_err(|e| e.to_string())?;
+        let ep = self.bind_client().await?;
         let result = self.execution_with(&ep, machine, action).await;
         ep.close().await;
         result

@@ -40,6 +40,7 @@ pub(crate) const SETTLE: Duration = Duration::from_secs(10);
 #[derive(Debug, Default)]
 pub(crate) struct RoadLog {
     first_reply_ms: Option<u64>,
+    business_reply_ms: Option<u64>,
     settled: VecDeque<PathKind>,
 }
 
@@ -51,6 +52,12 @@ pub(crate) fn replied(roads: &Roads, id: &str, took: Duration) {
     if let Ok(mut map) = roads.lock() {
         map.entry(id.to_owned()).or_default().first_reply_ms =
             Some(u64::try_from(took.as_millis()).unwrap_or(u64::MAX));
+    }
+}
+
+pub(crate) fn business_replied(roads: &Roads, id: &str, took: Duration) {
+    if let Ok(mut map) = roads.lock() {
+        map.entry(id.to_owned()).or_default().business_reply_ms = Some(crate::journal::ms(took));
     }
 }
 
@@ -414,6 +421,7 @@ pub(crate) fn tally(roads: &Roads) -> Vec<(String, RoadTally)> {
                 id.clone(),
                 RoadTally {
                     first_reply_ms: log.first_reply_ms,
+                    business_reply_ms: log.business_reply_ms,
                     direct: count(PathKind::Direct),
                     relay: count(PathKind::Relay),
                 },
@@ -491,6 +499,7 @@ mod tests {
                 "a".to_string(),
                 RoadTally {
                     first_reply_ms: Some(42),
+                    business_reply_ms: None,
                     direct: 3,
                     relay: REMEMBERED as u32 - 3,
                 }

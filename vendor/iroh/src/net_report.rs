@@ -127,6 +127,8 @@ pub struct NetReportConfig {
     /// answers is kept before latency alone may move it. Zero is
     /// upstream's: any report may move it.
     pub home_dwell: Duration,
+    /// Restrict the Relay transport to the configured pool.
+    pub configured_relays_only: bool,
 }
 
 impl NetReportConfig {
@@ -139,6 +141,7 @@ impl NetReportConfig {
             successors: Vec::new(),
             fallback: Vec::new(),
             home_dwell: Duration::ZERO,
+            configured_relays_only: false,
         }
     }
 }
@@ -152,6 +155,7 @@ impl Default for NetReportConfig {
             successors: Vec::new(),
             fallback: Vec::new(),
             home_dwell: Duration::ZERO,
+            configured_relays_only: false,
         }
     }
 }
@@ -370,6 +374,14 @@ impl Client {
             }
         });
         self._follow_home = Some(AbortOnDropHandle::new(task));
+    }
+
+    pub(crate) fn set_relay_policy(&mut self, policy: NetReportConfig) {
+        self.preferred_relay = policy.preferred_relay;
+        self.successors = policy.successors;
+        self.fallback = policy.fallback;
+        self.home_dwell = policy.home_dwell;
+        self.request_full_report();
     }
 
     /// Refresh Relay reachability without declaring a network interface change.

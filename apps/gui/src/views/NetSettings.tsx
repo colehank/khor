@@ -28,13 +28,6 @@
 // the row's note) — every later write names the relays to keep with no
 // key, and the node keeps the one it stored (`Node::set_relays`).
 //
-// ⚠️ **The one thing here that is not visible in the data:** the list is
-// read when a node opens. The app opens one per call so it sees a change
-// at once, but a running `khor serve` and every standing connection keep
-// the list they started with. That is what `gui.relays_after_restart`
-// is for, and it is not decoration — without it the screen shows a
-// change that took and a network that did not move, with nothing
-// connecting the two.
 import { useCallback, useEffect, useState } from "react";
 
 import { fetchRelays, setPreferredRelay, setRelays, type RelayChoices, type RelayWant } from "@/api";
@@ -191,7 +184,7 @@ export function NetSettings() {
           <SwitchRow
             name="relays-only-mine"
             label={gui.relays_only_mine}
-            hint={<span data-relays-note>{gui.relays_after_restart}</span>}
+            hint={<span data-relays-note>{gui.relays_update_live}</span>}
             on={choices.only_mine}
             onToggle={() => {
               setError(null);

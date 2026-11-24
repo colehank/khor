@@ -320,11 +320,15 @@ impl RemoteMap {
     pub(super) async fn resolve_remote(
         &mut self,
         addr: EndpointAddr,
+        open_relays: bool,
         tx: oneshot::Sender<Result<(), AddressLookupFailed>>,
     ) {
         let EndpointAddr { id, addrs } = addr;
-        self.send_to_actor(id, RemoteStateMessage::ResolveRemote(addrs, tx))
-            .await
+        self.send_to_actor(
+            id,
+            RemoteStateMessage::ResolveRemote(addrs, open_relays, tx),
+        )
+        .await
     }
 
     pub(super) async fn add_connection(
@@ -584,7 +588,7 @@ mod tests {
         remote_map
             .send_to_actor(
                 endpoint_id,
-                RemoteStateMessage::ResolveRemote(BTreeSet::new(), ack_tx),
+                RemoteStateMessage::ResolveRemote(BTreeSet::new(), false, ack_tx),
             )
             .await;
         tokio::time::timeout(Duration::from_secs(1), ack_rx)

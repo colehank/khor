@@ -241,13 +241,21 @@ async fn terminal_with_relay_delay(peer_hop: bool) {
         .expect("both residents use the actual single relay");
     }
     if let Some(middle) = &middle {
-        for end in [&a, &b] {
-            end.until(middle, Duration::from_secs(30), |link| {
-                link.hop == Hop::Direct && link.rtt_ms.is_some()
+        // The fault is on alpha's public-relay uplink. Its first leg
+        // must bypass that uplink. The middle's onward leg is on a
+        // different uplink and may independently prove direct or relay.
+        a.until(middle, Duration::from_secs(30), |link| {
+            link.hop == Hop::Direct && link.rtt_ms.is_some_and(|rtt| rtt < 500)
+        })
+        .await
+        .expect("topology before fault: alpha has a direct first leg to the middle");
+        middle
+            .until(&b, Duration::from_secs(30), |link| {
+                matches!(link.hop, Hop::Direct | Hop::Relay)
+                    && link.rtt_ms.is_some_and(|rtt| rtt < 500)
             })
             .await
-            .expect("the middle has a healthy first leg from both ends");
-        }
+            .expect("topology before fault: the middle has an independent onward leg");
         let (via, target) = (middle.id.clone(), b.id.clone());
         tokio::time::timeout(Duration::from_secs(35), async {
             loop {
@@ -257,8 +265,12 @@ async fn terminal_with_relay_delay(peer_hop: bool) {
                         d.id == via
                             && node.roads_of(d).iter().any(|road| {
                                 road.to == target
-                                    && road.road == khor_core::RoadKind::Direct
-                                    && road.ms.is_some()
+                                    && matches!(
+                                        road.road,
+                                        khor_core::RoadKind::Direct | khor_core::RoadKind::Relay
+                                    )
+                                    && road.via.is_none()
+                                    && road.ms.is_some_and(|rtt| rtt < 500)
                             })
                     })
                 })

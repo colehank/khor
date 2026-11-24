@@ -181,7 +181,7 @@ fn only_mine_replaces_the_list_and_cannot_be_set_with_an_empty_one() {
         "the switch should survive a reopen"
     );
     assert_eq!(
-        reopened.relays(),
+        reopened.relays().as_ref(),
         [MINE.to_string()],
         "and so should the list it makes"
     );
@@ -218,8 +218,8 @@ fn a_relay_key_reaches_the_bind_and_nothing_that_is_published() {
     .expect("a keyed relay should be accepted");
 
     let reopened = Node::open(root.to_path_buf()).expect("the home should reopen");
-    let bound = reopened
-        .relay_map()
+    let relay_map = reopened.relay_map();
+    let bound = relay_map
         .iter()
         .find(|r| r.url == MINE)
         .expect("the typed relay is in the map the bind uses");
@@ -305,4 +305,24 @@ fn a_relay_file_of_bare_urls_still_reads() {
         node.relays().iter().any(|r| r == MINE),
         "and the relay is bound with"
     );
+}
+
+#[test]
+fn damaged_private_settings_do_not_enable_the_public_pool() {
+    let root = root("damaged-private");
+    let node = Node::open(root.to_path_buf()).unwrap();
+    node.set_relays(&[Relay::bare(MINE)], true).unwrap();
+    drop(node);
+
+    let path = root.join(".khor").join("relays.json");
+    for text in [
+        r#"{"relays": ["not a relay URL"], "only_mine": true}"#,
+        r#"{"relays": [], "only_mine": "true"}"#,
+        r#"{"only_mine": true, "relays":"#,
+    ] {
+        std::fs::write(&path, text).unwrap();
+        let node = Node::open(root.to_path_buf()).unwrap();
+        assert!(node.relays_only_mine());
+        assert!(node.relay_choices().is_empty());
+    }
 }

@@ -735,6 +735,7 @@ struct DirectAddrUpdateState {
     port_mapper: portmapper::Client,
     /// The prober that discovers local network conditions, including the closest relay relay and NAT mappings.
     net_reporter: Arc<AsyncMutex<net_report::Client>>,
+    pending_relay_policy: Option<net_report::NetReportConfig>,
     relay_map: RelayMap,
     run_done: mpsc::Sender<()>,
     shutdown_token: CancellationToken,
@@ -794,6 +795,7 @@ impl DirectAddrUpdateState {
             want_update: Default::default(),
             port_mapper,
             net_reporter,
+            pending_relay_policy: None,
             sock,
             relay_map,
             run_done,
@@ -843,6 +845,9 @@ impl DirectAddrUpdateState {
             // deactivate portmapper
             self.port_mapper.deactivate();
             return;
+        }
+        if let Some(policy) = self.pending_relay_policy.take() {
+            net_reporter.set_relay_policy(policy);
         }
         if self.relay_map.is_empty() {
             debug!("skipping net_report, empty RelayMap");
@@ -991,6 +996,7 @@ impl EndpointInner {
             tls_config: tls_config.clone(),
             metrics: metrics.socket.clone(),
             relay_map: relay_map.clone(),
+            configured_only: net_report_config.configured_relays_only,
         };
 
         let shutdown_state = ShutdownState::default();
@@ -1330,6 +1336,23 @@ impl EndpointInner {
         res
     }
 
+    pub(crate) async fn set_relay_pool(
+        &self,
+        map: RelayMap,
+        policy: net_report::NetReportConfig,
+    ) -> bool {
+        let (done, applied) = oneshot::channel();
+        self.actor_sender
+            .send(ActorMessage::SetRelayPool(map, Box::new(policy), done))
+            .await
+            .is_ok()
+            && applied.await.unwrap_or(false)
+    }
+
+    pub(crate) fn has_configured_relay(&self, url: &RelayUrl) -> bool {
+        self.relay_map.contains(url)
+    }
+
     /// Adds an external address to advertise to peers.
     pub(crate) async fn add_external_addr(&self, addr: SocketAddr) {
         self.sock
@@ -1385,7 +1408,9 @@ impl EndpointInner {
 
     #[cfg(not(wasm_browser))]
     pub(crate) fn check_relay_for_demand(&self, relay: RelayUrl) -> bool {
-        self.actor_sender.try_send(ActorMessage::CheckRelayForDemand(relay)).is_ok()
+        self.actor_sender
+            .try_send(ActorMessage::CheckRelayForDemand(relay))
+            .is_ok()
     }
 
     /// Resolves an [`EndpointAddr`] to an [`EndpointIdMappedAddr`] to connect to via [`EndpointInner::endpoint`].
@@ -1412,13 +1437,59 @@ impl EndpointInner {
         let (tx, rx) = oneshot::channel();
         let remote_id = addr.id;
         self.actor_sender
-            .send(ActorMessage::ResolveRemote(addr, tx))
+            .send(ActorMessage::ResolveRemote(addr, false, tx))
             .await
             .ok();
         let reply = rx.await.map_err(|_| RemoteStateActorStoppedError::new())?;
         match reply {
             Ok(()) => Ok(Ok(self.mapped_addrs.endpoint_addrs.get(&remote_id))),
             Err(err) => Ok(Err(err)),
+        }
+    }
+
+    #[cfg(not(wasm_browser))]
+    pub(crate) async fn probe_relay_alternatives(&self, peer: EndpointId, incumbent: RelayUrl) {
+        let mut urls: Vec<RelayUrl> = self.relay_map.urls();
+        urls.retain(|url| *url != incumbent);
+        let home = self.my_relay();
+        let (report, _) = self.net_report.get();
+        // Entry health only orders attempts. QUIC must still validate the
+        // full path before the selector can send application data on it.
+        urls.sort_by_cached_key(|url| {
+            let entry_rtt = report.as_ref().and_then(|report| {
+                report
+                    .relay_latency
+                    .iter()
+                    .filter(|(_, relay, _)| *relay == url)
+                    .map(|(_, _, rtt)| rtt)
+                    .min()
+            });
+            (
+                Some(url) != home.as_ref(),
+                entry_rtt.unwrap_or(Duration::MAX),
+                url.clone(),
+            )
+        });
+        let mut candidate = EndpointAddr::new(peer);
+        for url in urls.into_iter().take(2) {
+            let (done, ready) = oneshot::channel();
+            if self
+                .actor_sender
+                .try_send(ActorMessage::WarmRelay(url.clone(), done))
+                .is_ok()
+                && matches!(
+                    tokio::time::timeout(Duration::from_millis(200), ready).await,
+                    Ok(Ok(true))
+                )
+            {
+                candidate = candidate.with_relay_url(url);
+            }
+        }
+        if !candidate.addrs.is_empty() {
+            let (done, _) = oneshot::channel();
+            let _ = self
+                .actor_sender
+                .try_send(ActorMessage::ResolveRemote(candidate, true, done));
         }
     }
 
@@ -1506,11 +1577,19 @@ impl EndpointInner {
 enum ActorMessage {
     NetworkChange,
     RelayMapChange,
+    SetRelayPool(
+        RelayMap,
+        Box<net_report::NetReportConfig>,
+        oneshot::Sender<bool>,
+    ),
     #[debug("ResolveRemote(..)")]
     ResolveRemote(
         EndpointAddr,
+        bool,
         oneshot::Sender<Result<(), AddressLookupFailed>>,
     ),
+    #[cfg(not(wasm_browser))]
+    WarmRelay(RelayUrl, oneshot::Sender<bool>),
     #[debug("AddConnection(..)")]
     AddConnection(
         EndpointId,
@@ -1943,8 +2022,38 @@ impl Actor {
             ActorMessage::RelayMapChange => {
                 self.handle_relay_map_change();
             }
-            ActorMessage::ResolveRemote(addr, tx) => {
-                self.remote_map.resolve_remote(addr, tx).await;
+            ActorMessage::SetRelayPool(map, policy, done) => {
+                let current = &self.sock.relay_map;
+                let removed: Vec<_> = current
+                    .urls::<Vec<_>>()
+                    .into_iter()
+                    .filter(|url| !map.contains(url))
+                    .collect();
+                let mut reconnect = removed.clone();
+                for config in map.relays::<Vec<_>>() {
+                    let url = config.url.clone();
+                    if current.get(&url).as_ref() != Some(&config) {
+                        reconnect.push(url.clone());
+                        current.insert(url, config);
+                    }
+                }
+                for url in &removed {
+                    current.remove(url);
+                }
+                let applied = self
+                    .transports_network_change
+                    .pool_changed(policy.configured_relays_only, removed, reconnect)
+                    .await;
+                self.direct_addr_update_state.pending_relay_policy = Some(*policy);
+                self.handle_relay_map_change();
+                let _ = done.send(applied);
+            }
+            ActorMessage::ResolveRemote(addr, open_relays, tx) => {
+                self.remote_map.resolve_remote(addr, open_relays, tx).await;
+            }
+            #[cfg(not(wasm_browser))]
+            ActorMessage::WarmRelay(url, ready) => {
+                self.transports_network_change.warm_relay(url, ready);
             }
             ActorMessage::AddConnection(remote, conn, tx) => {
                 self.remote_map.add_connection(remote, conn, tx).await;

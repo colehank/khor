@@ -436,17 +436,7 @@ pub struct Node {
     name: String,
     /// This process's writer peer, shared by every doc it writes.
     peer: u64,
-    /// Relay roads this machine binds with and offers to others: the
-    /// Khor tier plus `KHOR_RELAY` plus the user's own (docs/NET.md 中继).
-    /// Urls only — this is the list that is published.
-    relays: Vec<String>,
-    /// The same relays with the keys they are entered with: what the
-    /// bind hands iroh. Kept apart from `relays` so that nothing which
-    /// publishes a road can reach a key by accident.
-    relay_map: Vec<khor_net::endpoint::Relay>,
-    /// Whether `relays` is the user's own list *instead of* the Khor
-    /// tier rather than on top of it.
-    relays_only_mine: bool,
+    active_relays: std::sync::RwLock<RelaySettings>,
     chat: ChatKind,
     transfer: TransferKind,
     live: LiveKind,
@@ -914,7 +904,16 @@ pub(crate) struct RelayPlan {
     pub(crate) preferred: Option<String>,
 }
 
-/// Reads the relay file, or gives an empty plan.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RelaySettings {
+    pub(crate) entries: std::sync::Arc<[khor_net::endpoint::Relay]>,
+    pub(crate) urls: std::sync::Arc<[String]>,
+    pub(crate) only_mine: bool,
+    pub(crate) preferred: Option<String>,
+}
+
+/// Reads the relay file. A missing file means factory settings. A present
+/// but unreadable file cannot silently enable relays the user did not choose.
 ///
 /// An object on disk rather than a bare array, and this flag is why —
 /// it was the question the first version could not answer, and adding
@@ -928,25 +927,24 @@ pub(crate) struct RelayPlan {
 /// machine that upgrades keeps the relays it had rather than coming up
 /// on the Khor tier alone with the user's list silently gone.
 ///
-/// Unreadable, unparseable and half-parseable all yield what they can
-/// and no error — reaching this path means somebody edited the file by
-/// hand, since [`Node::set_relays`] validates before it writes. An entry
-/// that does not parse is dropped here rather than at bind, matching
-/// `endpoint::dial_addr`: one typo must not cost the machine the relays
-/// it typed correctly.
-///
-/// ⚠️ **`only_mine` is forced back off when the list ends up empty.**
-/// Otherwise a hand-edited file could leave this machine with no relay
-/// at all — reachable only where a hole punch lands — which is not
-/// something anybody chooses by deleting the last row. The write door
-/// refuses that combination outright; this is the second net.
+/// A valid private policy survives rejection of an invalid URL. Direct
+/// and paired peer paths remain available even if every URL is rejected.
 fn chosen_relays(root: &std::path::Path) -> RelayPlan {
-    let Ok(text) = fs::read_to_string(relay_prefs_path(root)) else {
-        return RelayPlan::default();
+    let restricted = || RelayPlan {
+        only_mine: true,
+        ..RelayPlan::default()
+    };
+    let text = match fs::read_to_string(relay_prefs_path(root)) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return RelayPlan::default(),
+        Err(_) => return restricted(),
     };
     let Ok(doc) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return RelayPlan::default();
+        return restricted();
     };
+    if !doc.is_object() {
+        return restricted();
+    }
     let mut mine: Vec<khor_net::endpoint::Relay> = Vec::new();
     for v in doc
         .get("relays")
@@ -987,11 +985,9 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
             pkarr,
         });
     }
-    let only_mine = !mine.is_empty()
-        && doc
-            .get("only_mine")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false);
+    let only_mine = doc
+        .get("only_mine")
+        .map_or(false, |flag| flag.as_bool().unwrap_or(true));
     let preferred = doc
         .get("preferred")
         .and_then(serde_json::Value::as_str)
@@ -1003,6 +999,39 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
         only_mine,
         preferred,
     }
+}
+
+fn lock_relay_plan(root: &std::path::Path) -> Result<fs::File, String> {
+    let path = relay_prefs_path(root).with_extension("lock");
+    let lock = fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(|error| msg::cant_write(path.display(), error))?;
+    lock.lock()
+        .map_err(|error| msg::cant_write(path.display(), error))?;
+    Ok(lock)
+}
+
+fn write_relay_plan(root: &std::path::Path, doc: &serde_json::Value) -> Result<(), String> {
+    use std::io::Write;
+    let path = relay_prefs_path(root);
+    let result = (|| -> std::io::Result<()> {
+        let mut staged = tempfile::NamedTempFile::new_in(root.join(".khor"))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            staged
+                .as_file()
+                .set_permissions(fs::Permissions::from_mode(0o600))?;
+        }
+        staged.write_all(doc.to_string().as_bytes())?;
+        staged.as_file().sync_all()?;
+        staged.persist(&path).map_err(|error| error.error)?;
+        Ok(())
+    })();
+    result.map_err(|error| msg::cant_write(path.display(), error))
 }
 
 /// Every relay a node on this home should bind with, keys included.
@@ -1020,7 +1049,7 @@ fn chosen_relays(root: &std::path::Path) -> RelayPlan {
 /// `endpoint::bind_with` adds behind this list unless 「only mine」 is
 /// on — so 「only mine」 means 「not n0 and not Khor」, a machine that
 /// touches no relay its owner did not name.
-fn relays_under(root: &std::path::Path) -> (Vec<khor_net::endpoint::Relay>, bool) {
+fn relays_under(root: &std::path::Path) -> RelaySettings {
     let plan = chosen_relays(root);
     let mut out = if plan.only_mine {
         khor_net::endpoint::env_relays()
@@ -1032,7 +1061,14 @@ fn relays_under(root: &std::path::Path) -> (Vec<khor_net::endpoint::Relay>, bool
             out.push(entry);
         }
     }
-    (out, plan.only_mine)
+    let urls: std::sync::Arc<[String]> = out.iter().map(|relay| relay.url.clone()).collect();
+    let preferred = plan.preferred.filter(|url| urls.contains(url));
+    RelaySettings {
+        entries: out.into(),
+        urls,
+        only_mine: plan.only_mine,
+        preferred,
+    }
 }
 
 impl Node {
@@ -1194,8 +1230,7 @@ impl Node {
         // Read before `root` moves into the struct, not after — the
         // list is settled once, when the node opens, and every caller
         // that wants a changed list gets it by opening another node.
-        let (relay_map, relays_only_mine) = relays_under(&root);
-        let relays = relay_map.iter().map(|r| r.url.clone()).collect();
+        let active_relays = std::sync::RwLock::new(relays_under(&root));
         let carry = khor_net::carry::Links::new(key.public());
         let mut node = Node {
             root,
@@ -1207,9 +1242,7 @@ impl Node {
             device_str,
             name,
             peer: ChatDoc::fresh_peer(),
-            relays,
-            relay_map,
-            relays_only_mine,
+            active_relays,
             chat,
             transfer,
             live,
@@ -1460,14 +1493,14 @@ impl Node {
     /// Whether this machine is set to use only its own relays — not
     /// the Khor tier.
     pub fn relays_only_mine(&self) -> bool {
-        self.relays_only_mine
+        self.relay_settings().only_mine
     }
 
     /// Whether binds add n0's public relays behind this machine's own
     /// as the fallback tier (`endpoint::bind_with`): every machine but
     /// one set to use only its own relays.
     pub fn relays_n0(&self) -> bool {
-        !self.relays_only_mine
+        !self.relays_only_mine()
     }
 
     /// Sets this machine's own relays, replacing whatever was stored.
@@ -1488,19 +1521,13 @@ impl Node {
     /// setting exists to end — a relay the user believes is configured
     /// and nothing anywhere saying it is not.
     ///
-    /// ⚠️ **It does not move a running endpoint.** The relays a node
-    /// binds with are read once, when the node opens. The GUI opens a
-    /// node per call so it sees this immediately; a live `khor serve`
-    /// and every connection already standing keep the list they started
-    /// with until they are restarted. That is a sentence the screen has
-    /// to say out loud — a setting that visibly took and changes nothing
-    /// until a restart nobody mentioned is the same silence as no
-    /// setting at all.
+    /// A serving node reloads the transport pool on its settings tick.
     pub fn set_relays(
         &self,
         entries: &[khor_net::endpoint::Relay],
         only_mine: bool,
     ) -> Result<Vec<String>, String> {
+        let _lock = lock_relay_plan(&self.root)?;
         let stored = chosen_relays(&self.root).mine;
         let mut kept: Vec<khor_net::endpoint::Relay> = Vec::new();
         for entry in entries {
@@ -1564,31 +1591,42 @@ impl Node {
             serde_json::json!({ "relays": rows, "only_mine": only_mine, "preferred": preferred });
         // 0600, beside the identity key: the keys in it are shared
         // secrets, and the file is the only place they are kept.
-        link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())?;
-        Ok(relays_under(&self.root)
-            .0
-            .into_iter()
-            .map(|r| r.url)
-            .collect())
+        write_relay_plan(&self.root, &doc)?;
+        Ok(relays_under(&self.root).urls.to_vec())
     }
 
     /// **首选中继**: the relay this machine homes on whenever it is
     /// reachable, or `None` for iroh's own choice (the nearest). Must be
-    /// one of the relays this machine binds with. Takes effect on the next
-    /// bind — the resident's next fresh ears, or its restart.
+    /// one of the relays this machine binds with. The serving node
+    /// reloads the preference with its Relay pool.
     pub fn set_preferred_relay(&self, url: Option<&str>) -> Result<(), String> {
+        let _lock = lock_relay_plan(&self.root)?;
         let url = url.map(str::trim).filter(|u| !u.is_empty());
         if let Some(u) = url
-            && !self.relays().iter().any(|r| r == u)
+            && !relays_under(&self.root).urls.iter().any(|r| r == u)
         {
             return Err(msg::preferred_not_a_relay(u));
         }
-        let mut doc: serde_json::Value = fs::read_to_string(relay_prefs_path(&self.root))
-            .ok()
-            .and_then(|t| serde_json::from_str(&t).ok())
-            .unwrap_or_else(|| serde_json::json!({}));
+        let mut doc: serde_json::Value = match fs::read_to_string(relay_prefs_path(&self.root)) {
+            Ok(text) => serde_json::from_str(&text)
+                .ok()
+                .filter(serde_json::Value::is_object)
+                .ok_or_else(|| {
+                    msg::cant_read(
+                        relay_prefs_path(&self.root).display(),
+                        "invalid relay settings",
+                    )
+                })?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::json!({}),
+            Err(error) => {
+                return Err(msg::cant_read(
+                    relay_prefs_path(&self.root).display(),
+                    error,
+                ));
+            }
+        };
         doc["preferred"] = url.map_or(serde_json::Value::Null, |u| serde_json::json!(u));
-        link::write_private(&relay_prefs_path(&self.root), doc.to_string().as_bytes())
+        write_relay_plan(&self.root, &doc)
     }
 
     /// The relay this machine prefers to home on (首选中继), if any.
@@ -2011,6 +2049,13 @@ impl Node {
         &self.key
     }
 
+    pub(crate) fn relay_settings(&self) -> RelaySettings {
+        self.active_relays
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()
+    }
+
     /// Every relay this node binds with and advertises: the Khor tier
     /// (unless only-mine is on), `KHOR_RELAY`, and whatever the user
     /// typed here. Urls only — see [`Node::relay_map`] for the keys.
@@ -2021,17 +2066,14 @@ impl Node {
     /// only this one and the user is looking at rows that ignore the
     /// delete key; offer only that one and the screen is silent about
     /// the relay the connection is really standing on.
-    ///
-    /// Settled when the node opened — see [`Node::set_relays`] for what
-    /// that means for a change made while something is running.
-    pub fn relays(&self) -> &[String] {
-        &self.relays
+    pub fn relays(&self) -> std::sync::Arc<[String]> {
+        self.relay_settings().urls
     }
 
     /// [`Node::relays`] with the keys they were entered with — what an
     /// endpoint of this node binds with, and nothing else should read.
-    pub fn relay_map(&self) -> &[khor_net::endpoint::Relay] {
-        &self.relay_map
+    pub fn relay_map(&self) -> std::sync::Arc<[khor_net::endpoint::Relay]> {
+        self.relay_settings().entries
     }
 
     pub(crate) fn devices_loaded(&self) -> Result<Loaded<DeviceDoc>, String> {

@@ -584,7 +584,7 @@ impl RemoteStateActor {
             RemoteStateMessage::AddConnection(handle, tx) => {
                 self.handle_msg_add_connection(handle, tx);
             }
-            RemoteStateMessage::ResolveRemote(addrs, tx) => {
+            RemoteStateMessage::ResolveRemote(addrs, open_relays, tx) => {
                 // khor patch 12: a custom (carried) address handed in while
                 // connections are live is opened on them now. Upstream
                 // only records it, and a connection that settled on the
@@ -592,7 +592,10 @@ impl RemoteStateActor {
                 // `open_path_ensure` leaves a path that is already open.
                 let custom: Vec<transports::FourTuple> =
                     to_transports_addr(self.state.endpoint_id, addrs.iter().cloned())
-                        .filter(|a| matches!(a, transports::Addr::Custom(_)))
+                        .filter(|a| {
+                            matches!(a, transports::Addr::Custom(_))
+                                || (open_relays && a.is_relay())
+                        })
                         .map(transports::FourTuple::from_remote)
                         .collect();
                 self.state.handle_msg_resolve_remote(addrs, tx);
@@ -2404,6 +2407,7 @@ pub(crate) enum RemoteStateMessage {
     #[debug("ResolveRemote(..)")]
     ResolveRemote(
         BTreeSet<TransportAddr>,
+        bool,
         oneshot::Sender<Result<(), AddressLookupFailed>>,
     ),
     /// Returns information about the remote.

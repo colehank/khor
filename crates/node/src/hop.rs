@@ -1561,12 +1561,29 @@ impl Node {
             .wires
             .begin_route_demand(RouteDemand::Wire(conn.stable_id()), now);
         if probed {
+            crate::link::note_workload(
+                &self.wires,
+                conn,
+                "transport",
+                "recovery_probe",
+                None,
+                waited,
+            );
             if let iroh::TransportAddr::Relay(relay) = selected.remote_addr() {
                 ep.check_relay_for_demand(relay.clone());
             }
             for path in paths.iter().filter(|p| !p.is_selected()) {
                 path.ping();
             }
+        }
+        if waited >= Duration::from_millis(750)
+            && let iroh::TransportAddr::Relay(incumbent) = selected.remote_addr()
+            && self
+                .wires
+                .begin_route_demand(RouteDemand::RelayAlternatives(conn.stable_id()), now)
+        {
+            let (ep, incumbent) = (ep.clone(), incumbent.clone());
+            tokio::spawn(async move { ep.probe_relay_alternatives(peer, incumbent).await });
         }
         let route_can_change = match self.carry.carrier(&peer) {
             None => true,

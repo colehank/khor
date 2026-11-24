@@ -581,6 +581,10 @@ pub struct RoadTally {
     /// all. `None` when no dial to it has come back since the serve
     /// started.
     pub first_reply_ms: Option<u64>,
+    /// End-to-end time to the last successful interactive business
+    /// response, including any connection acquisition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub business_reply_ms: Option<u64>,
     /// Of the last few dials that settled on a road, how many settled
     /// direct…
     pub direct: u32,
