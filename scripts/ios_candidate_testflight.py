@@ -20,6 +20,7 @@ SHARED_QUALITY_JOBS = {
     "session-execution / native-contracts (windows-2025)",
 }
 FRONTEND_JOB = "frontend / build"
+NETWORK_LAB_JOB = "network-netlab"
 
 
 def api(path):
@@ -41,11 +42,17 @@ def require_quality(run, jobs, source):
             or run["status"] != "completed" or run["conclusion"] != "success"
             or run["path"] != ".github/workflows/quality.yml"):
         raise ValueError("The exact product source has not passed main Quality")
-    require_jobs(jobs, source, SHARED_QUALITY_JOBS | {FRONTEND_JOB, "session-attention-unit"},
+    # The completed main run establishes which shared gates this revision
+    # requires. Older signed archives predate the network lab.
+    shared = SHARED_QUALITY_JOBS
+    if any(job["name"] == NETWORK_LAB_JOB for job in jobs):
+        shared = shared | {NETWORK_LAB_JOB}
+    require_jobs(jobs, source, shared | {FRONTEND_JOB, "session-attention-unit"},
                  {"dsh-integration"}, "Every required main quality gate must succeed")
+    return shared
 
 
-def require_ios_producer(run, jobs, source, tag):
+def require_ios_producer(run, jobs, source, tag, shared_jobs):
     if (run["head_sha"] != source or run["head_branch"] != tag
             or run["path"] != ".github/workflows/release.yml"):
         raise ValueError("Archive producer belongs to another source or release")
@@ -54,7 +61,7 @@ def require_ios_producer(run, jobs, source, tag):
             or ios[0]["status"] != "completed" or ios[0]["conclusion"] != "success"):
         raise ValueError("The original signed iOS archive job must succeed")
     quality = [job for job in jobs if job["name"].startswith("quality / ") or job["name"] == FRONTEND_JOB]
-    shared = {"quality / " + name for name in SHARED_QUALITY_JOBS}
+    shared = {"quality / " + name for name in shared_jobs}
     # Release reuses its frontend artifact and the attention unit check is main-only.
     allowed_skips = {"quality / dsh-integration", "quality / frontend", "quality / session-attention-unit"}
     require_jobs(quality, source, shared | {FRONTEND_JOB}, allowed_skips,
@@ -77,10 +84,10 @@ def remote_gates(args):
         raise ValueError("Candidate tag no longer identifies the requested source")
     quality = api(f"actions/runs/{args.quality_run}")
     quality_jobs = api(f"actions/runs/{args.quality_run}/jobs?per_page=100")["jobs"]
-    require_quality(quality, quality_jobs, args.source)
+    shared_jobs = require_quality(quality, quality_jobs, args.source)
     producer = api(f"actions/runs/{args.run_id}")
     jobs = api(f"actions/runs/{args.run_id}/jobs?per_page=100")["jobs"]
-    require_ios_producer(producer, jobs, args.source, args.tag)
+    require_ios_producer(producer, jobs, args.source, args.tag, shared_jobs)
     return dict(quality=quality, quality_jobs=quality_jobs, producer=producer, producer_jobs=jobs)
 
 

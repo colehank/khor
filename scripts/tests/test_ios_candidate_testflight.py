@@ -94,25 +94,49 @@ class IOSCandidateTests(unittest.TestCase):
     def test_ios_must_pass_while_desktop_may_still_be_running(self):
         run, jobs = self.producer()
         jobs.append(dict(name="desktop", status="in_progress", conclusion=None))
-        ios.require_ios_producer(run, jobs, SOURCE, TAG)
+        main, checks = self.quality()
+        shared = ios.require_quality(main, checks, SOURCE)
+        ios.require_ios_producer(run, jobs, SOURCE, TAG, shared)
         next(j for j in jobs if j["name"] == "ios")["conclusion"] = "failure"
         with self.assertRaises(ValueError):
-            ios.require_ios_producer(run, jobs, SOURCE, TAG)
+            ios.require_ios_producer(run, jobs, SOURCE, TAG, shared)
+
+    def test_network_lab_must_pass_on_main_and_the_archive_producer(self):
+        main, checks = self.quality()
+        run, jobs = self.producer()
+        gate = job("network-netlab")
+        producer_gate = job("quality / network-netlab")
+        shared = ios.require_quality(main, checks + [gate], SOURCE)
+        ios.require_ios_producer(run, jobs + [producer_gate], SOURCE, TAG, shared)
+        with self.assertRaises(ValueError):
+            ios.require_ios_producer(run, jobs, SOURCE, TAG, shared)
+        for conclusion in ("failure", "skipped"):
+            with self.subTest(conclusion=conclusion):
+                with self.assertRaises(ValueError):
+                    ios.require_quality(main, checks + [{**gate, "conclusion": conclusion}], SOURCE)
+                with self.assertRaises(ValueError):
+                    ios.require_ios_producer(
+                        run, jobs + [{**producer_gate, "conclusion": conclusion}], SOURCE, TAG, shared
+                    )
 
     def test_an_old_main_quality_pass_does_not_override_a_failed_producer_gate(self):
+        main, checks = self.quality()
+        shared = ios.require_quality(main, checks, SOURCE)
         for name in ("mac-updates", "ios-terminal-keyboard", "session-execution / native-contracts (macos-26)"):
             run, jobs = self.producer()
             next(j for j in jobs if j["name"] == "quality / " + name)["conclusion"] = "failure"
             with self.subTest(name=name), self.assertRaises(ValueError):
-                ios.require_ios_producer(run, jobs, SOURCE, TAG)
+                ios.require_ios_producer(run, jobs, SOURCE, TAG, shared)
 
     def test_producer_cannot_ignore_unknown_quality_gates_or_changed_conditional_skips(self):
         run, jobs = self.producer()
+        main, checks = self.quality()
+        shared = ios.require_quality(main, checks, SOURCE)
         with self.assertRaises(ValueError):
-            ios.require_ios_producer(run, jobs + [job("quality / new-check", "failure")], SOURCE, TAG)
+            ios.require_ios_producer(run, jobs + [job("quality / new-check", "failure")], SOURCE, TAG, shared)
         next(j for j in jobs if j["name"] == "quality / session-attention-unit")["conclusion"] = "failure"
         with self.assertRaises(ValueError):
-            ios.require_ios_producer(run, jobs, SOURCE, TAG)
+            ios.require_ios_producer(run, jobs, SOURCE, TAG, shared)
 
     def archive(self, root, **changes):
         (root / "Khor.xcarchive.tar.gz").write_bytes(b"opaque signed archive fixture")
