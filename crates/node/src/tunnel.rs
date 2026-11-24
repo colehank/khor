@@ -27,9 +27,47 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::time::{Duration, Instant};
 
 use iroh::Endpoint;
-use iroh::endpoint::{Connection, PathId, RecvStream, SendStream};
+use iroh::endpoint::{Connection, PathStats, RecvStream, SendStream};
 
 pub(crate) const RELAY_DEMAND_AFTER: Duration = Duration::from_millis(500);
+
+/// The selected transport may be stalled despite acknowledgements for other
+/// packets. Slow samples count only while fresh, and only for work that was
+/// already pending when the sampled packet was sent.
+pub(crate) fn stalled_for(stats: &PathStats, started: Instant, now: Instant) -> Option<Duration> {
+    let pending = stats
+        .unacked_since
+        .map(|at| now.saturating_duration_since(Instant::from_std(at).max(started)))
+        .filter(|age| *age >= RELAY_DEMAND_AFTER);
+    pending.or_else(|| {
+        (stats.latest_rtt >= RELAY_DEMAND_AFTER
+            && stats
+                .latest_rtt_sent
+                .is_some_and(|sent| sent >= started.into_std())
+            && stats.latest_rtt_received.is_some_and(|received| {
+                now.saturating_duration_since(Instant::from_std(received)) < RELAY_DEMAND_AFTER
+            }))
+        .then_some(stats.latest_rtt)
+    })
+}
+
+#[cfg(test)]
+#[test]
+fn a_fresh_ack_does_not_hide_older_data_still_waiting() {
+    let started = Instant::now();
+    let now = started + RELAY_DEMAND_AFTER;
+    let mut stats = PathStats::default();
+    stats.frame_rx.acks = 25;
+    stats.unacked_since = Some(started.into_std());
+    assert_eq!(stalled_for(&stats, started, now), Some(RELAY_DEMAND_AFTER));
+    stats.unacked_since = None;
+    assert_eq!(stalled_for(&stats, started, now), None);
+    stats.latest_rtt = RELAY_DEMAND_AFTER;
+    stats.latest_rtt_sent = Some(started.into_std());
+    stats.latest_rtt_received = Some(now.into_std());
+    assert_eq!(stalled_for(&stats, started, now), Some(RELAY_DEMAND_AFTER));
+    assert_eq!(stalled_for(&stats, started, now + RELAY_DEMAND_AFTER), None);
+}
 
 /// A dialer that asks for more than this in one target header is
 /// malformed, not ambitious — a real `host:port` is well under it, and
@@ -310,65 +348,51 @@ async fn copy_to_wire(
         if len == 0 {
             return Ok(());
         }
-        if pending.is_none() {
-            let paths = road.connection.paths();
-            if let Some(path) = paths
-                .iter()
-                .find(|path| path.is_selected() && (path.is_relay() || road.node.is_some()))
-            {
-                pending = Some((
-                    path.id(),
-                    path.stats().frame_rx.acks,
-                    Instant::now() + RELAY_DEMAND_AFTER,
-                ));
-            }
-        }
+        let started = Instant::now();
+        pending.get_or_insert((started, started + RELAY_DEMAND_AFTER));
         watch_path(send.write_all(&buf[..len]), road, &mut pending).await?;
+        // The send can outlast the last probe while QUIC waits for send
+        // credit. Follow the data that was only just allowed to queue.
+        let queued = Instant::now();
+        pending.get_or_insert((queued, queued + RELAY_DEMAND_AFTER));
     }
 }
 
 async fn watch_path<F: std::future::Future>(
     io: F,
     road: ActivePath<'_>,
-    pending: &mut Option<(PathId, u64, Instant)>,
+    pending: &mut Option<(Instant, Instant)>,
 ) -> F::Output {
     tokio::pin!(io);
-    while let Some((id, acks, due)) = *pending {
+    while let Some((started, due)) = *pending {
         tokio::select! {
             biased;
             _ = tokio::time::sleep_until(due) => {
                 *pending = None;
-                let conn = road.connection;
-                let paths = conn.paths();
-                let Some(path) = paths.iter().find(|path| path.is_selected()) else { break };
-                let stats = path.stats();
                 let now = Instant::now();
-                if path.id() != id {
-                    // QUIC may move the already-written data to a different
-                    // path during the wait. Compare that path's own ACKs.
-                    if let Some(since) = stats.unacked_since {
-                        *pending = Some((path.id(), stats.frame_rx.acks,
-                            now.max(Instant::from_std(since) + RELAY_DEMAND_AFTER)));
-                    }
+                let conn = road.connection;
+                if conn.close_reason().is_some() {
+                    break;
+                }
+                let paths = conn.paths();
+                let Some(path) = paths.iter().find(|path| path.is_selected()) else {
+                    *pending = Some((started, now + RELAY_DEMAND_AFTER));
                     continue;
+                };
+                let stats = path.stats();
+                if let Some(waited) = stalled_for(&stats, started, now) {
+                    if let Some(node) = road.node {
+                        node.recover_active_path(road.endpoint, conn, waited);
+                    } else if let iroh::TransportAddr::Relay(relay) = path.remote_addr() {
+                        road.endpoint.check_relay_for_demand(relay.clone());
+                    }
                 }
-                let ack_progress = stats.frame_rx.acks != acks;
-                if let iroh::TransportAddr::Relay(relay) = path.remote_addr() {
-                    let queued = !ack_progress && road.endpoint.check_relay_for_demand(relay.clone());
-                    khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_relay_demand", || {
-                        serde_json::json!({"wire":conn.stable_id(), "ack_progress":ack_progress, "queued":queued})
-                    });
-                }
-                let recent_slow_ack = stats.latest_rtt >= RELAY_DEMAND_AFTER
-                    && stats.latest_rtt_sent.is_some_and(|at| {
-                        at >= (due - RELAY_DEMAND_AFTER).into_std()
-                    });
-                let data_waiting = !ack_progress
-                    && stats.unacked_since.is_some_and(|at| at < now.into_std());
-                if (data_waiting || recent_slow_ack)
-                    && let Some(node) = road.node
+                if let Some(since) = stats.unacked_since
+                    && (path.is_relay() || road.node.is_some())
                 {
-                    node.recover_active_path(road.endpoint, conn, RELAY_DEMAND_AFTER);
+                    let check = Instant::from_std(since).max(started) + RELAY_DEMAND_AFTER;
+                    let next = if check > now { check } else { now + RELAY_DEMAND_AFTER };
+                    *pending = Some((started, next));
                 }
             }
             value = &mut io => return value,

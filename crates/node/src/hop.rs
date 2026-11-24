@@ -47,7 +47,7 @@ use crate::Node;
 #[path = "hop/stream_trace.rs"]
 mod stream_trace;
 use crate::tunnel::{NO_ROUTE, OK, REFUSED};
-use crate::wires::{CarrierComparison, Proto};
+use crate::wires::{CarrierComparison, Proto, RouteDemand};
 
 /// X to B: splice me to this machine.
 const ASK: &str = "hop ";
@@ -1499,31 +1499,42 @@ impl Node {
         let Some(selected) = paths.iter().find(|path| path.is_selected()) else {
             return;
         };
-        let can_compare = !self.carry.has(&peer) && self.hop_on();
-        if !can_compare && paths.iter().all(|p| p.is_selected()) {
-            return;
+        let now = std::time::Instant::now();
+        let probed = self
+            .wires
+            .begin_route_demand(RouteDemand::Wire(conn.stable_id()), now);
+        if probed {
+            if let iroh::TransportAddr::Relay(relay) = selected.remote_addr() {
+                ep.check_relay_for_demand(relay.clone());
+            }
+            for path in paths.iter().filter(|p| !p.is_selected()) {
+                path.ping();
+            }
         }
-        let began = self.wires.begin_route_demand(peer);
+        let compare = !self.carry.has(&peer)
+            && self.hop_on()
+            && self.wires.begin_route_demand(RouteDemand::Peer(peer), now);
         khor_net::carry::observe_lifecycle(
             peer,
             "active_path_demand",
-            || serde_json::json!({"wire":conn.stable_id(), "began":began, "compare":can_compare}),
+            || serde_json::json!({"wire":conn.stable_id(), "began":probed, "compare":compare}),
         );
-        if !began {
+        if !compare {
             return;
         }
         let cost = waited.max(selected.rtt());
-        for path in paths.iter().filter(|p| !p.is_selected()) {
-            path.ping();
-        }
-        if !can_compare {
-            return;
-        }
         let ep = ep.clone();
         let observation = MissObservation::new(self.wires.hop_epoch());
         tokio::spawn(async move {
-            node.compare_roads_with_demand(&ep, observation, Some((peer, cost)))
-                .await;
+            let by = tokio::time::Instant::from_std(now + HOP_WITHIN);
+            let _ = crate::deadline::wait(
+                Some(by),
+                crate::deadline::scope(
+                    by,
+                    node.compare_roads_with_demand(&ep, observation, Some((peer, cost))),
+                ),
+            )
+            .await;
         });
     }
 
@@ -1608,25 +1619,33 @@ impl Node {
                 HopUse::Comparison
             };
             let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
-            let picked = worth_a_hop(
-                &me,
-                &y.id,
-                relay_ms,
-                &rows,
-                |b| {
-                    if purpose == HopUse::Recovery {
-                        self.road_for_active_hop(b)
-                    } else {
-                        self.road_for_hop(b, &mine)
+            let first_leg = |b: &str| {
+                if purpose == HopUse::Recovery {
+                    self.road_for_active_hop(b)
+                } else {
+                    self.road_for_hop(b, &mine)
+                }
+            };
+            let second_leg = |b: &str| {
+                all.iter()
+                    .find(|d| d.id == b)
+                    .and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id))
+            };
+            let mut picked = worth_a_hop(&me, &y.id, relay_ms, &rows, first_leg, second_leg, |b| {
+                purpose == HopUse::Comparison && was_lost(&y.id, b)
+            });
+            if purpose == HopUse::Recovery {
+                // The existing middle handshake validates the onward leg.
+                // A slow or missing device-table sample cannot veto it
+                // during a confirmed stall. Measured winners still go first.
+                for (middle, _) in
+                    middles_with_cost(&me, &y.id, &rows, first_leg, second_leg, Legs::Recovery)
+                {
+                    if !picked.contains(&middle) {
+                        picked.push(middle);
                     }
-                },
-                |b| {
-                    all.iter()
-                        .find(|d| d.id == b)
-                        .and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id))
-                },
-                |b| purpose == HopUse::Comparison && was_lost(&y.id, b),
-            );
+                }
+            }
             if !picked.is_empty() {
                 let observation = MissObservation {
                     network: observation.network.clone(),

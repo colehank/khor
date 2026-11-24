@@ -121,21 +121,31 @@ async fn actual_carried_success_preserves_the_unchanged_comparison_allowance() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stalled_request_reopens_a_live_middle_that_lost_to_a_healthy_relay() {
+    check_stalled_request(true).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stalled_request_can_try_a_live_middle_before_its_second_leg_is_reported() {
+    check_stalled_request(false).await;
+}
+
+async fn check_stalled_request(published: bool) {
     let mut f = Publication::new().await;
     crate::config::set(f.node.root(), "peer-hop", "on").unwrap();
-    let road = Road::own(&f.target.id, RoadKind::Direct, None, Some(35));
-    let loaded = f.node.devices_loaded().unwrap();
-    loaded
-        .doc
-        .set_road(
-            &f.middle.id,
-            &f.target.id,
-            &serde_json::to_string(&road).unwrap(),
-        )
-        .unwrap();
-    let mut store = loaded.store;
-    store.flush(&loaded.doc).unwrap();
-    drop(store);
+    if published {
+        let road = Road::own(&f.target.id, RoadKind::Direct, None, Some(35));
+        let loaded = f.node.devices_loaded().unwrap();
+        loaded
+            .doc
+            .set_road(
+                &f.middle.id,
+                &f.target.id,
+                &serde_json::to_string(&road).unwrap(),
+            )
+            .unwrap();
+        let mut store = loaded.store;
+        store.flush(&loaded.doc).unwrap();
+    }
     let epoch = comparison_epoch(&f, &f.target.id, std::slice::from_ref(&f.middle.id));
     assert!(claim(&f, &f.target.id, &epoch, &f.middle.id, true));
     {

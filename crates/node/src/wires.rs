@@ -401,6 +401,12 @@ struct HopGeneration {
     changed_at: Option<Instant>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum RouteDemand {
+    Wire(usize),
+    Peer(iroh::EndpointId),
+}
+
 /// Every wire this node holds, and the counters behind `khor doctor`'s
 /// account of them.
 #[derive(Default)]
@@ -412,7 +418,7 @@ pub(crate) struct Wires {
     dialing: Mutex<HashMap<(String, Proto), DialLock>>,
     pending_dials: Mutex<HashMap<String, std::sync::Weak<PendingDialState>>>,
     /// Coalesces foreground path probes requested by simultaneous streams.
-    route_demands: Mutex<HashMap<iroh::EndpointId, Instant>>,
+    route_demands: Mutex<HashMap<RouteDemand, Instant>>,
     /// Replaced when all old-network dial waits are forgiven.
     hop_generation: Mutex<HopGeneration>,
     /// A network change not yet judged: wires not heard since it are
@@ -742,11 +748,10 @@ impl Wires {
             })
     }
 
-    pub(crate) fn begin_route_demand(&self, peer: iroh::EndpointId) -> bool {
-        let now = Instant::now();
+    pub(crate) fn begin_route_demand(&self, demand: RouteDemand, now: Instant) -> bool {
         let mut demands = self.route_demands.lock().unwrap_or_else(|p| p.into_inner());
         demands.retain(|_, until| *until > now);
-        if let std::collections::hash_map::Entry::Vacant(entry) = demands.entry(peer) {
+        if let std::collections::hash_map::Entry::Vacant(entry) = demands.entry(demand) {
             entry.insert(now + crate::hop::HOP_WITHIN);
             true
         } else {
@@ -2500,6 +2505,22 @@ mod tests_retirement_epoch;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn connection_probes_do_not_consume_the_peers_recovery_window() {
+        use super::{RouteDemand, Wires};
+        let wires = Wires::default();
+        let now = std::time::Instant::now();
+        let peer = RouteDemand::Peer(iroh::SecretKey::generate().public());
+        assert!(wires.begin_route_demand(RouteDemand::Wire(1), now));
+        assert!(wires.begin_route_demand(peer, now));
+        assert!(wires.begin_route_demand(RouteDemand::Wire(2), now));
+        assert!(!wires.begin_route_demand(RouteDemand::Wire(1), now));
+        assert!(!wires.begin_route_demand(peer, now));
+        assert!(wires.begin_route_demand(peer, now + crate::hop::HOP_WITHIN));
+        wires.forgive_all();
+        assert!(wires.begin_route_demand(peer, now));
+    }
+
     /// A carrier belongs to the peer, while measurements belong to each
     /// connection. A direct outgoing wire cannot release the stream under
     /// an incoming wire that still uses it. Two endpoints with the same

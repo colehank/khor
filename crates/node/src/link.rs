@@ -14282,8 +14282,6 @@ async fn exchange_inner(
     let mut count = wires::heard_count(conn);
     let mut heard: Option<tokio::time::Instant> = None;
     let mut relay_checked = false;
-    let mut relay_compared = false;
-    let mut route_compared = false;
     // When every path was asked whether it is there, and how long the
     // answers get (`wires::ask_every_path`).
     let mut asked: Option<(tokio::time::Instant, Duration)> = None;
@@ -14374,26 +14372,15 @@ async fn exchange_inner(
                 // Recover the relay socket and compare independent routes while
                 // the same stream is waiting. Keep slow peer work separate
                 // from delayed or unacknowledged transport packets.
-                let waited = now.duration_since(sent);
-                if (!relay_compared || !route_compared)
-                    && waited >= crate::tunnel::RELAY_DEMAND_AFTER
+                if now.duration_since(sent) >= crate::tunnel::RELAY_DEMAND_AFTER
+                    && matches!(crate::journal::by_now(), crate::journal::By::Ask | crate::journal::By::Forced)
                     && let Some((endpoint, node)) = resident
                     && let Some(path) = conn.paths().iter().find(|p| p.is_selected())
+                    && let Some(waited) = crate::tunnel::stalled_for(&path.stats(), sent, now)
                 {
-                    let stats = path.stats();
-                    if !relay_compared && let iroh::TransportAddr::Relay(relay) = path.remote_addr() {
-                        relay_compared = endpoint.check_relay_for_demand(relay.clone());
-                    }
-                    if !route_compared
-                        && matches!(crate::journal::by_now(), crate::journal::By::Ask | crate::journal::By::Forced)
-                        && (stats.unacked_since.is_some_and(|at| {
-                            at.elapsed() >= crate::tunnel::RELAY_DEMAND_AFTER
-                        }) || (stats.latest_rtt >= crate::tunnel::RELAY_DEMAND_AFTER
-                            && stats.latest_rtt_sent.is_some_and(|at| at >= sent.into_std())))
-                    {
-                        route_compared = true;
-                        node.recover_active_path(endpoint, conn, waited);
-                    }
+                    // Keep observing the active operation. Wire probes and
+                    // peer preparation have independent suppression windows.
+                    node.recover_active_path(endpoint, conn, waited);
                 }
                 let quiet = match heard {
                     None => now.duration_since(sent) >= patience.ack,
