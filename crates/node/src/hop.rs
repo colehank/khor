@@ -884,6 +884,24 @@ impl Node {
         mine.iter().find(|w| w.to == b).cloned()
     }
 
+    /// Recovery uses the current first leg, including a new connection
+    /// whose RTT has not yet warmed up for the displayed roadbook.
+    fn road_for_active_hop(&self, middle: &str) -> Option<Road> {
+        let mut road = self.road_for_hop(middle, &[])?;
+        if road.ms.is_none() {
+            let conn = self
+                .wires
+                .live(middle, Proto::Main)
+                .or_else(|| self.wires.live(middle, Proto::Tunnel))?;
+            let rtt = crate::wires::rtt_of(&conn);
+            if rtt.is_zero() {
+                return None;
+            }
+            road.ms = Some(rtt.as_millis().min(u128::from(u16::MAX)) as u16);
+        }
+        Some(road)
+    }
+
     /// Whether X should look for a hop to `y` before dialling it: the
     /// switch is on, no link to `y` is up, `y` is a member, and its last
     /// road from here was not direct — or the last try at it failed.
@@ -1595,16 +1613,19 @@ impl Node {
                 &y.id,
                 relay_ms,
                 &rows,
-                |b| self.road_for_hop(b, &mine),
+                |b| {
+                    if purpose == HopUse::Recovery {
+                        self.road_for_active_hop(b)
+                    } else {
+                        self.road_for_hop(b, &mine)
+                    }
+                },
                 |b| {
                     all.iter()
                         .find(|d| d.id == b)
                         .and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id))
                 },
-                |b| {
-                    was_lost(&y.id, b)
-                        && (purpose == HopUse::Comparison || self.road_for_hop(b, &[]).is_none())
-                },
+                |b| purpose == HopUse::Comparison && was_lost(&y.id, b),
             );
             if !picked.is_empty() {
                 let observation = MissObservation {
