@@ -986,6 +986,7 @@ impl EndpointInner {
         let my_relay = HomeRelayWatch::default();
         // khor patch 4: kept here, handed out by `relay_departures`.
         let relay_departed = my_relay.departed.clone();
+        let relay_reconnected = my_relay.reconnected.subscribe();
         let relay_actor_config = RelayActorConfig {
             my_relay,
             secret_key: secret_key.clone(),
@@ -1171,6 +1172,7 @@ impl EndpointInner {
             transports_network_change,
             direct_addr_done_rx,
             call_notify_quic_network_change: None,
+            relay_reconnected,
         };
         // Initialize addresses
         #[cfg(not(wasm_browser))]
@@ -1668,6 +1670,7 @@ struct Actor {
     sock: Arc<Socket>,
     /// Tracks the networkmap endpoint entity for each endpoint discovery key.
     remote_map: RemoteMap,
+    relay_reconnected: tokio::sync::broadcast::Receiver<RelayUrl>,
     /// When set, is an AfterFunc timer that will call Socket::do_periodic_stun.
     periodic_re_stun_timer: time::Interval,
     /// An actor watching the local network interfaces.
@@ -1711,6 +1714,7 @@ impl Actor {
         let mut home_relay_watcher = self.sock.home_relay_status();
         let mut previous_home = home_relay_watcher.get();
         let mut home_relay_watcher_closed = false;
+        let mut relay_reconnect_closed = false;
 
         // ensure we are doing an initial publish of our addresses
         self.sock.publish_my_addr();
@@ -1762,6 +1766,15 @@ impl Actor {
                         Err(_) => {
                             home_relay_watcher_closed = true;
                             warn!("home relay watcher stopped");
+                        }
+                    }
+                }
+                reconnect = self.relay_reconnected.recv(), if !relay_reconnect_closed => {
+                    match reconnect {
+                        Ok(url) => self.remote_map.on_relay_reconnected(url),
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            relay_reconnect_closed = true;
                         }
                     }
                 }

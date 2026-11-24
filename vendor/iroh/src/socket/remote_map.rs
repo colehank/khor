@@ -317,6 +317,14 @@ impl RemoteMap {
         }
     }
 
+    pub(super) fn on_relay_reconnected(&self, url: RelayUrl) {
+        let read = self.senders.read_only();
+        let guard = read.guard();
+        for sender in read.values(&guard) {
+            let _ = sender.try_send(RemoteStateMessage::RelayReconnected(url.clone()));
+        }
+    }
+
     pub(super) async fn resolve_remote(
         &mut self,
         addr: EndpointAddr,

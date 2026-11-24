@@ -162,6 +162,7 @@ struct ActiveRelayActor {
     /// The home relay server needs to maintain it's connection to the relay server, even if
     /// the relay actor is otherwise idle.
     is_home_relay: bool,
+    connected_once: bool,
     /// When this expires the actor has been idle and should shut down.
     ///
     /// Unless it is managing the home relay connection.  Inactivity is only tracked on the
@@ -321,6 +322,7 @@ impl ActiveRelayActor {
             #[cfg(not(wasm_browser))]
             last_fresh_comparison: None,
             is_home_relay: false,
+            connected_once: false,
             inactive_timeout: Box::pin(time::sleep(RELAY_INACTIVE_CLEANUP_TIME)),
             stop_token,
             metrics,
@@ -458,6 +460,9 @@ impl ActiveRelayActor {
         self.my_relay
             .set_status(&self.url, RelayConnectionState::Connected);
         self.metrics.relay_conns_success.inc();
+        if std::mem::replace(&mut self.connected_once, true) {
+            let _ = self.my_relay.reconnected.send(self.url.clone());
+        }
         let res = self
             .run_connected(client)
             .instrument(info_span!("connected"))
@@ -1322,6 +1327,8 @@ pub(crate) struct HomeRelayWatch {
     /// sends — a peer that had been sending to this endpoint through it
     /// disconnected — told to whoever subscribed (`Endpoint::relay_departures`).
     pub(crate) departed: tokio::sync::broadcast::Sender<EndpointId>,
+    /// The connected session replaced this Relay's previous TCP session.
+    pub(crate) reconnected: tokio::sync::broadcast::Sender<RelayUrl>,
 }
 
 impl Default for HomeRelayWatch {
@@ -1329,6 +1336,7 @@ impl Default for HomeRelayWatch {
         Self {
             inner: Watchable::new(None),
             departed: tokio::sync::broadcast::channel(64).0,
+            reconnected: tokio::sync::broadcast::channel(16).0,
         }
     }
 }
@@ -1895,7 +1903,12 @@ mod tests {
         relay_datagrams_recv: mpsc::Sender<RelayRecvDatagram>,
         metrics: Arc<SocketMetrics>,
         span: tracing::Span,
-    ) -> AbortOnDropHandle<()> {
+    ) -> (
+        AbortOnDropHandle<()>,
+        tokio::sync::broadcast::Receiver<RelayUrl>,
+    ) {
+        let watch = super::HomeRelayWatch::default();
+        let reconnected = watch.reconnected.subscribe();
         let opts = ActiveRelayActorOptions {
             url,
             prio_inbox_: prio_inbox_rx,
@@ -1914,10 +1927,10 @@ mod tests {
             },
             stop_token,
             metrics,
-            my_relay: Default::default(),
+            my_relay: watch,
         };
         let task = tokio::spawn(ActiveRelayActor::new(opts).run().instrument(span));
-        AbortOnDropHandle::new(task)
+        (AbortOnDropHandle::new(task), reconnected)
     }
 
     /// Starts an [`ActiveRelayActor`] as an "iroh echo endpoint".
@@ -1932,7 +1945,7 @@ mod tests {
         let (prio_inbox_tx, prio_inbox_rx) = mpsc::channel(8);
         let (inbox_tx, inbox_rx) = mpsc::channel(16);
         let cancel_token = CancellationToken::new();
-        let actor_task = start_active_relay_actor(
+        let (actor_task, _) = start_active_relay_actor(
             secret_key.clone(),
             cancel_token.clone(),
             relay_url.clone(),
@@ -2030,7 +2043,7 @@ mod tests {
         let (inbox_tx, inbox_rx) = mpsc::channel(16);
         let cancel_token = CancellationToken::new();
         let metrics = Arc::new(SocketMetrics::default());
-        let task = start_active_relay_actor(
+        let (task, mut reconnected) = start_active_relay_actor(
             secret_key,
             cancel_token.clone(),
             relay_url.clone(),
@@ -2093,6 +2106,11 @@ mod tests {
         )
         .await?;
 
+        assert!(matches!(
+            reconnected.try_recv(),
+            Err(tokio::sync::broadcast::error::TryRecvError::Empty)
+        ));
+
         // Now ask to check the connection, this will reconnect without pinging because we
         // do not supply any "valid" local IP addresses.
         info!("check connection");
@@ -2114,6 +2132,14 @@ mod tests {
             &mut datagram_recv_rx,
         )
         .await?;
+
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(1), reconnected.recv())
+                .await
+                .expect("a real reconnect wakes pending paths")
+                .unwrap(),
+            relay_url
+        );
 
         // Shut down the actor.
         cancel_token.cancel();
@@ -2143,7 +2169,7 @@ mod tests {
         let (inbox_tx, inbox_rx) = mpsc::channel(16);
         let cancel_token = CancellationToken::new();
         let metrics = Arc::new(SocketMetrics::default());
-        let mut task = start_active_relay_actor(
+        let (mut task, _) = start_active_relay_actor(
             secret_key,
             cancel_token.clone(),
             relay_url,

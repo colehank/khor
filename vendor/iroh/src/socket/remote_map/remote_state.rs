@@ -656,6 +656,25 @@ impl RemoteStateActor {
                 }
                 let _ = tx.send(removed);
             }
+            RemoteStateMessage::RelayReconnected(relay) => {
+                // An established Relay TCP flow can fail while the inner
+                // QUIC path keeps its identity and PTO backoff. A new
+                // PING on that path lets an ACK release pending data now.
+                for (conn_id, state) in &self.connections {
+                    let Some(conn) = state.handle.upgrade() else {
+                        continue;
+                    };
+                    for (id, tuple) in &state.paths {
+                        if matches!(tuple.remote(), transports::Addr::Relay(url, _) if url == relay)
+                            && let Some(path) = conn.path(*id)
+                            && path.stats().unacked_since.is_some()
+                            && path.ping().is_ok()
+                        {
+                            debug!(%conn_id, %id, %relay, "probed pending path after relay reconnect");
+                        }
+                    }
+                }
+            }
             RemoteStateMessage::CloseCustom(still_gone) => {
                 if still_gone.is_some_and(|check| !check()) {
                     return;
@@ -2415,7 +2434,10 @@ pub(crate) enum RemoteStateMessage {
     /// This currently only includes a list of all known transport addresses for the remote.
     RemoteInfo(oneshot::Sender<RemoteInfo>),
     /// The network status has changed in some way
-    NetworkChange { is_major: bool },
+    NetworkChange {
+        is_major: bool,
+    },
+    RelayReconnected(iroh_base::RelayUrl),
     /// Retire only old, unconnected IP hints for a cold carrier retry.
     DiscardIpHints {
         before: Instant,
