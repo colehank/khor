@@ -1913,6 +1913,7 @@ pub(super) struct ManyToManyRouting {
     server_routes: Vec<(SocketAddr, usize)>,
     /// The one-way latency from client to server *and* server to client.
     latency: Duration,
+    delayed_upload: Option<(SocketAddr, Duration)>,
 }
 
 impl From<ManyToManyRouting> for Routing {
@@ -1928,6 +1929,10 @@ impl ManyToManyRouting {
     }
 
     fn route_client_to_server(&mut self, transmit: &Transmit, now: Instant) -> RoutingDecision {
+        let latency = self
+            .delayed_upload
+            .filter(|(destination, _)| *destination == transmit.destination)
+            .map_or(self.latency, |(_, delay)| delay);
         if let Some(client_interface_ip) = transmit.src_ip {
             // If we have a client interface IP, then we use that to build the packet coming in on
             // the other side. But we need to check if that is even connected to the
@@ -1945,7 +1950,7 @@ impl ManyToManyRouting {
             RoutingDecision::Deliver {
                 src: client_addr,
                 dst: Some(transmit.destination.ip()),
-                recv_time: now + self.latency,
+                recv_time: now + latency,
                 congestion_experienced: false,
             }
         } else {
@@ -1962,7 +1967,7 @@ impl ManyToManyRouting {
             RoutingDecision::Deliver {
                 src: *client_addr,
                 dst: Some(transmit.destination.ip()),
-                recv_time: now + self.latency,
+                recv_time: now + latency,
                 congestion_experienced: false,
             }
         }
@@ -2060,6 +2065,7 @@ impl ManyToManyRouting {
             client_routes,
             server_routes,
             latency: Duration::from_millis(1),
+            delayed_upload: None,
         }
     }
 
@@ -2087,6 +2093,7 @@ impl ManyToManyRouting {
             client_routes,
             server_routes,
             latency: Duration::from_millis(1),
+            delayed_upload: None,
         }
     }
 
@@ -2130,6 +2137,10 @@ impl ManyToManyRouting {
         let route = self.server_routes.get_mut(route_idx)?;
         route.0 = modify_fn(route.0);
         Some(route.0)
+    }
+
+    pub(super) fn delay_client_to(&mut self, destination: SocketAddr, delay: Duration) {
+        self.delayed_upload = Some((destination, delay));
     }
 
     pub(super) fn set_latency(&mut self, latency: Duration) {

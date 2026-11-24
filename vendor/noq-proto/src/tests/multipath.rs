@@ -2709,3 +2709,79 @@ fn blackholed_backup_resends_after_move(move_before_silence: bool) -> TestResult
     let _ = chunks.finalize();
     Ok(())
 }
+
+#[test]
+fn a_stalled_backup_releases_stream_data_even_while_it_receives() -> TestResult {
+    let _guard = subscribe();
+    let mut pair = ConnPair::builder()
+        .with_latency(Duration::from_millis(10))
+        .enable_multipath()
+        .connect();
+    let routing = pair.routes.as_basic();
+    let (client, server) = (routing.client_addr, routing.server_addr);
+    let mut other_client = client;
+    other_client.set_port(client.port() + 1);
+    let mut other_server = server;
+    other_server.set_port(server.port() + 1);
+    let mut routes =
+        ManyToManyRouting::simple_symmetric([client, other_client], [server, other_server]);
+    routes.set_latency(Duration::from_millis(10));
+    pair.routes = routes.clone().into();
+    let alternate = pair.open_path(
+        Client,
+        FourTuple {
+            local_ip: Some(other_client.ip()),
+            remote: other_server,
+        },
+        PathStatus::Backup,
+    )?;
+    pair.drive();
+    while pair.poll(Client).is_some() {}
+    while pair.poll(Server).is_some() {}
+
+    routes.delay_client_to(server, Duration::from_millis(3200));
+    pair.routes = routes.into();
+    let stream = pair.streams(Client).open(Dir::Uni).unwrap();
+    pair.send_stream(Client, stream)
+        .write(b"saved terminal input")?;
+    let sent = pair.time;
+    pair.drive_client();
+    pair.time += Duration::from_millis(600);
+    pair.conn_mut(Server).ping_path(PathId::ZERO)?;
+    pair.conn_mut(Client).ping_path(alternate)?;
+    pair.drive_server();
+    pair.drive_client();
+    loop {
+        let old = pair.conn_mut(Client).path_stats(PathId::ZERO).unwrap();
+        let ready = pair.conn_mut(Client).path_stats(alternate).unwrap();
+        if old.last_received.is_some_and(|received| received > sent)
+            && ready
+                .latest_rtt_received
+                .is_some_and(|received| received > sent)
+        {
+            assert!(old.unacked_since.is_some());
+            assert!(old.unanswered_for(pair.time).is_none());
+            assert!(old.rtt < ready.rtt * 2 + Duration::from_millis(10));
+            break;
+        }
+        assert!(pair.time < sent + Duration::from_millis(900) && pair.step());
+    }
+    assert_eq!(pair.streams(Server).accept(Dir::Uni), None);
+    pair.set_path_status(Client, alternate, PathStatus::Available)?;
+    pair.set_path_status(Client, PathId::ZERO, PathStatus::Backup)?;
+
+    loop {
+        if let Some(id) = pair.streams(Server).accept(Dir::Uni) {
+            assert_eq!(id, stream);
+            break;
+        }
+        assert!(
+            pair.time < sent + Duration::from_millis(1300) && pair.step(),
+            "input held by a slow uplink should arrive on the validated alternate"
+        );
+    }
+    let mut recv = pair.recv_stream(Server, stream);
+    let mut chunks = recv.read(true)?;
+    assert_matches!(chunks.next(usize::MAX), Ok(Some(chunk)) if chunk.bytes == &b"saved terminal input"[..]);
+    Ok(())
+}

@@ -3156,6 +3156,16 @@ impl Connection {
             if path_data.first_packet_after_rtt_sample.is_none() {
                 path_data.first_packet_after_rtt_sample = Some((space.kind(), next_pn));
             }
+            // A path can become selected before it has its first usable
+            // sample on this connection. Recheck outstanding backup data
+            // when the replacement actually answers.
+            if path_data.validated
+                && path_data.local_status() == PathStatus::Available
+                && path_data.rtt.sample_count() <= 2
+                && self.paths.len() > 1
+            {
+                self.khor_recheck_backups = true;
+            }
         }
 
         // Must be called before crypto/pto_count are clobbered
@@ -3507,21 +3517,29 @@ impl Connection {
     /// 1.5 s more, until the last bytes sent by relay arrived. Run after a path's local status
     /// changed ([`Self::set_path_status`]) or a backup's loss detection timeout: it can become
     /// unanswered after the status change. Late copies are duplicates the receiver drops.
-    /// Between live paths of about one speed nothing is resent.
+    /// Reverse traffic can keep a stalled backup looking live. A fresh
+    /// ACK on an available path also releases aged STREAM frames if it
+    /// can beat their wait. A short stall keeps its data in flight.
     fn resend_off_backups(&mut self, now: Instant) {
-        let fastest = self
-            .paths
-            .iter()
-            .filter(|(id, p)| {
-                !self.abandoned_paths.contains(id)
-                    && p.data.validated
-                    && p.data.local_status() == PathStatus::Available
+        let available = || {
+            self.paths.iter().filter_map(|(id, path)| {
+                let data = &path.data;
+                (!self.abandoned_paths.contains(id)
+                    && data.validated
+                    && data.local_status() == PathStatus::Available)
+                    .then_some(&data.rtt)
             })
-            .map(|(_, p)| p.data.rtt.get())
-            .min();
-        let Some(fastest) = fastest else {
+        };
+        let Some(fastest) = available().map(RttEstimator::get).min() else {
             return;
         };
+        let proof = available()
+            .filter_map(|rtt| {
+                let (_, received) = rtt.sample_times()?;
+                (now.saturating_duration_since(received) <= KHOR_STREAM_STALL)
+                    .then_some((rtt.get().max(rtt.latest_sample()), received))
+            })
+            .min_by_key(|(rtt, _)| *rtt);
         let backups: Vec<PathId> = self
             .paths
             .iter()
@@ -3532,11 +3550,11 @@ impl Connection {
             .collect();
         for path_id in backups {
             let far_slower = fastest * 2 + KHOR_FAR_BY <= self.path_data(path_id).rtt.get();
-            if !far_slower
-                && self
+            let retry_path = far_slower
+                || self
                     .path_stats(path_id)
-                    .is_none_or(|stats| stats.unanswered_for(now).is_none())
-            {
+                    .is_some_and(|stats| stats.unanswered_for(now).is_some());
+            if !retry_path && proof.is_none() {
                 continue;
             }
             let Some(space) = self.spaces[SpaceId::Data].number_spaces.get(&path_id) else {
@@ -3547,7 +3565,21 @@ impl Connection {
             let pns: Vec<u64> = space
                 .sent_packets
                 .iter()
-                .filter(|(pn, info)| info.ack_eliciting && Some(*pn) != probe)
+                .filter(|(pn, info)| {
+                    info.ack_eliciting
+                        && Some(*pn) != probe
+                        && (retry_path
+                            || proof.is_some_and(|(rtt, received)| {
+                                // The reverse direction can deliver packets while
+                                // this stream's upload remains queued. Use the
+                                // age of these unacknowledged bytes and a fresh
+                                // sample on the selected replacement.
+                                let waited = now.saturating_duration_since(info.time_sent);
+                                !info.stream_frames.is_empty()
+                                    && received >= info.time_sent
+                                    && waited >= KHOR_STREAM_STALL.max(rtt * 2 + KHOR_FAR_BY)
+                            }))
+                })
                 .map(|(pn, info)| {
                     size += info.size as u64;
                     pn
@@ -7812,6 +7844,7 @@ const MAX_BACKOFF_EXPONENT: u32 = 16;
 /// khor patch 7: the slack in "far slower" ([`Connection::resend_off_backups`]), so that
 /// two fast paths a few milliseconds apart are not far apart.
 const KHOR_FAR_BY: Duration = Duration::from_millis(10);
+const KHOR_STREAM_STALL: Duration = Duration::from_millis(500);
 
 /// The max interval between successive tail-loss probes.
 ///
