@@ -1260,15 +1260,18 @@ impl Node {
         self.serve_as(true).await
     }
 
-    pub(crate) async fn bind_client(&self) -> Result<iroh::Endpoint, String> {
+    pub(crate) fn bind_client(
+        &self,
+    ) -> futures::future::BoxFuture<'static, Result<iroh::Endpoint, String>> {
+        // Binding includes the platform's interface monitor. Keep its
+        // future type out of the nested IPC and session dispatch futures.
         let settings = self.relay_settings();
-        endpoint::bind_with(
-            self.secret_key().clone(),
-            &settings.entries,
-            !settings.only_mine,
-        )
-        .await
-        .map_err(|error| error.to_string())
+        let key = self.secret_key().clone();
+        Box::pin(async move {
+            endpoint::bind_with(key, &settings.entries, !settings.only_mine)
+                .await
+                .map_err(|error| error.to_string())
+        })
     }
 
     /// The one bind that serves this machine: this key, these relays.
