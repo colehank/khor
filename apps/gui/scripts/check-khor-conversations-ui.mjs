@@ -61,7 +61,7 @@ try {
    else if(cmd==='devices')result=devices;
    else if(cmd==='agents')result=[{name:'fixture-acp'}];
    else if(cmd==='launch_presets')result=[];
-   else if(cmd==='ls')result={path:'/fixture',entries:[],truncated:false};
+   else if(cmd==='ls')result={path:args.path||(args.machine==='other-fixture'?'C:\\Users\\fixture':'/fixture'),entries:[],truncated:false};
    else if(cmd==='machine_log')result={messages:histories.get(args.id)??[],broken:0};
    else if(cmd==='khor_agent') {
     const {action,payload}=args;result={config,accounts,run:null,data:{conversation:{home},commands}};
@@ -148,7 +148,10 @@ try {
   const pickMachine=async name=>{await page.locator('[data-new-session-machines] input').click();await page.locator(`[data-choice-option="${name}"]`).click();};
   await page.locator('[data-new-session-dir]').fill('/changed/a');await page.keyboard.press('Escape');await choose('agent:claude');
   await page.locator('[data-new-session-name]').fill('Do not remember this title');
-  await pickMachine('other-fixture');await page.locator('[data-new-session-dir]').fill('C:\\projects\\b');await page.keyboard.press('Escape');await choose('term:codex');
+  await pickMachine('other-fixture');
+  // Let the newly mounted field receive its home before selecting its text.
+  await page.waitForFunction(home=>document.querySelector('[data-new-session-dir]')?.value===home,'C:\\Users\\fixture\\');
+  await page.locator('[data-new-session-dir]').fill('C:\\projects\\b');await page.keyboard.press('Escape');await choose('term:codex');
   await page.evaluate(()=>window.showNewWith());await page.locator('[data-new-session-launch][data-selected="term:codex"]').waitFor();
   assert.equal(await page.locator('[data-new-session-machines]').getAttribute('data-machine'),'other-fixture');
   assert.equal(await page.locator('[data-new-session-dir]').inputValue(),'C:\\projects\\b');
