@@ -361,12 +361,16 @@ jobs:
     env:
       NETLAB_TEST_THREADS: '1'
       NETLAB_PROFILE: release
-      NETLAB_TOOLS: ${{ runner.temp }}/khor-netlab-tools
-      NETLAB_RUN_DIR: ${{ runner.temp }}/khor-netlab
-      CARGO_TARGET_DIR: ${{ runner.temp }}/khor-netlab-target
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/ubuntu-apt
+      - name: Set the lab directories
+        run: |
+          {
+            echo "NETLAB_TOOLS=$RUNNER_TEMP/khor-netlab-tools"
+            echo "NETLAB_RUN_DIR=$RUNNER_TEMP/khor-netlab"
+            echo "CARGO_TARGET_DIR=$RUNNER_TEMP/khor-netlab-target"
+          } >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@1.95.0
       - uses: Swatinem/rust-cache@v2
         with:
