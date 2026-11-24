@@ -49,6 +49,17 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     if(!workspace)throw new FixtureRefusal('No Git repository: '+String(input.dir||root));
     return workspace;
   };
+  const localPreview = 'refs/heads/feat/workspace-preview';
+  const remotePreview = 'refs/remotes/origin/release';
+  const historyAt = (path: string, reference?: string) => {
+    const base = history(path);
+    if (reference === undefined) return base;
+    if (reference !== localPreview && reference !== remotePreview) throw new FixtureRefusal('Branch reference was not found');
+    const [prefix, subject] = reference === localPreview ? ['b', '工作区分支预览'] : ['c', '远程发布准备'];
+    return base.map((commit,index)=>index>=43 ? commit : {
+      ...commit, id:prefix+commit.id.slice(1), subject:subject+' '+(43-index),
+    });
+  };
   const pathOf = (input: Record<string,unknown>) => String(input.path||labRoot(owner(input))).replace(/\\/g,'/').replace(/\/$/,'');
   const relative = (input: Record<string,unknown>) => {
     const path=pathOf(input),base=labRoot(owner(input));
@@ -97,7 +108,7 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     return documents.get(key)!;
   };
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','mkdir','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_branches','git_log','git_commit','git_blame','git_show','workspaces','ls','mkdir','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -138,16 +149,23 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
         return null;
       }
       if (command === 'git_diff') return {hunks: [], more: false};
+      if (command === 'git_branches') {
+        const workspace=requireRepository(input);
+        return {current:workspace.branch ? 'refs/heads/'+workspace.branch : null,refs:[localPreview,remotePreview],more:false};
+      }
       if (command === 'git_history') {
         requireRepository(input);
-        const commits=history(String(input.dir||root)),start=Number(input.cursor||0),limit=Number(input.limit)||40;
+        const reference=typeof input.reference==='string' ? input.reference : undefined;
+        const commits=historyAt(String(input.dir||root),reference),start=Number(input.cursor||0),limit=Number(input.limit)||40;
         return {head:commits[0].id,commits:commits.slice(start,start+limit),next:start+limit<commits.length ? String(start+limit) : null};
       }
       if (command === 'git_log') return {commits:history(String(input.path||root)).slice(0,20).map(commit=>({...commit,body:commit.subject})),more:false};
       if (command === 'git_blame') return {commits:[],runs:[]};
       if (command === 'git_show') return {text:file(input).text,cut:false,diff:{hunks:[],more:false}};
       if (command === 'git_commit') {
-        const commits=history(String(input.dir||root)),commit=commits.find(commit=>commit.id===input.rev)??commits[0];
+        const path=String(input.dir||root);
+        const ref=String(input.rev).startsWith('b') ? localPreview : String(input.rev).startsWith('c') ? remotePreview : undefined;
+        const commits=historyAt(path,ref),commit=commits.find(commit=>commit.id===input.rev)??commits[0];
         return {commit:{...commit,body:commit.subject+'\n\n完整 App Lab 的提交示例。\n\n保留中文、长路径、文件折叠与阅读位置。'},total:2,more:false,files:[
           {path:'src/navigation.ts',from:'',status:'M',added:90,removed:90,binary:false,big:false,capped:false,
             before:Array.from({length:90},(_,i)=>`const item${i} = "before";`).join('\n'),after:Array.from({length:90},(_,i)=>`const item${i} = "after";`).join('\n')},

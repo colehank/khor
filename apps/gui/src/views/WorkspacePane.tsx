@@ -27,6 +27,8 @@ import {
   type DeviceRow,
 } from "@/api";
 import { WorkspaceHistory } from "@/views/workspace/WorkspaceHistory";
+import { WorkspaceBranchPicker } from "@/views/workspace/WorkspaceBranchPicker";
+import { WorkspaceHistoryMemory } from "@/views/workspace/workspace-history";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
@@ -464,7 +466,15 @@ export function WorkspacePane({
   // grow an initially empty header after its reading position was restored.
   const [branch, setBranch] = useWorkspaceField(memory, "branch", () => "");
   const [, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
-  const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
+  const [checkoutQuery, setCheckoutQuery] = useWorkspaceField(memory, "historyQuery", () => "");
+  const [branchQuery, setBranchQuery] = useState("");
+  const [historyReference, setHistoryReference] = useState<string>();
+  const historyQuery = historyReference ? branchQuery : checkoutQuery;
+  const setHistoryQuery = historyReference ? setBranchQuery : setCheckoutQuery;
+  const branchHistory = useMemo(
+    () => historyReference ? new WorkspaceHistoryMemory() : memory.repositoryHistory,
+    [historyReference, memory],
+  );
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -587,7 +597,13 @@ export function WorkspacePane({
       };
     }, facts => {
       setGit(facts.status);
-      setBranch(facts.status?.branch ?? "");
+      if (facts.status !== null) {
+        if (memory.read("branch") !== facts.status.branch) memory.repositoryHistory.invalidate(true);
+        setBranch(facts.status.branch);
+      } else if (facts.repository === false) {
+        setBranch("");
+        setHistoryReference(undefined);
+      }
       setHeadCommit(facts.commit);
       setLiveHead({ known: facts.headKnown, id: facts.head });
       setRepository(facts.repository ?? facts.status !== null);
@@ -1135,7 +1151,7 @@ export function WorkspacePane({
   </GlassCapsule> : null;
   const workspaceActions = [
     ...(!narrow ? [{ key: "tree", label: gui.workspace_tree, run: () => side?.set(!tree) }] : []),
-    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); memory.repositoryHistory.invalidate(); } },
+    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); branchHistory.invalidate(); } },
     { key: "close-others", label: gui.tab_close_others, run: () => { const id = memory.read("content").active; if (id !== null) closeOthers(id); } },
   ];
   /** **The file's verbs at the strip's right end** (round UX-3, the Mac):
@@ -1241,7 +1257,14 @@ export function WorkspacePane({
     </div>
   );
   const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading>
-    <WorkspaceNavigation branch={branch} repo={repository} view={sidebarView} onView={setSidebarView} withSessions/>
+    <WorkspaceNavigation branch={branch} repo={repository} view={sidebarView} onView={setSidebarView} withSessions
+      branchPicker={repository && <WorkspaceBranchPicker machine={machine} root={root} branch={branch || (git === null ? null : "")}
+        reference={historyOpen ? historyReference : undefined} onPick={reference => {
+          if (reference !== historyReference) setBranchQuery("");
+          setHistoryReference(reference);
+          setSidebarView("history");
+        }} />}
+    />
   </div>;
 
 
@@ -1366,8 +1389,8 @@ export function WorkspacePane({
                 address bar are the point — docs/WORKSPACE.md 第二轮 says
                 so in the user's own terms. */}
             {sidebarView === "sessions" ? workspaceSessionList : historyOpen ? (
-              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={memory.repositoryHistory}
-                    liveHead={liveHead} active={commit?.id ?? null} onOpen={openCommit} />
+              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={branchHistory} reference={historyReference}
+                    liveHead={historyReference === undefined ? liveHead : undefined} active={commit?.id ?? null} onOpen={openCommit} />
             ) : hunt.trim() !== "" ? (
               <Hits
                 found={found}

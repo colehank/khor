@@ -10,7 +10,8 @@
 [data-workspace-navigation][data-seat="workspace"] [data-workspace-branch-icon] { width: var(--glass-btn); }
 [data-workspace-branch-icon] { width: var(--tree-slot); display: grid; place-items: center; flex: none; color: var(--muted-foreground); }
 [data-workspace-branch-icon] svg { width: var(--ctl-glyph); height: var(--ctl-glyph); }
-[data-workspace-branch] { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+[data-workspace-branch] { flex: 1; min-width: 0; }
+[data-workspace-branch] > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 [data-workspace-navigation] > .glass {
   display: grid; grid-auto-flow: column; grid-auto-columns: var(--strip-item);
   align-items: center; justify-items: center;

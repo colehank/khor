@@ -4,6 +4,7 @@ import {checkAttachmentDraft} from './attachment-draft-checks.mjs';
 import {checkResourceFiles} from './resource-checks.mjs';
 import {checkLongHistory} from './history-checks.mjs';
 import {checkWorkspaceBack} from './workspace-back-checks.mjs';
+import {checkWorkspaceBranches} from './workspace-branch-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {checkCommandTab} from './child-command-checks.mjs';
@@ -134,7 +135,7 @@ async function inspect(browser, scene, size, data = {}) {
     assert(layout.back&&layout.search&&layout.branch&&layout.pill,'The actual workspace header and sidebar controls must be present');
     assert(Math.abs(layout.branch.center-layout.back.center)<=1,`The branch icon must align with Back: ${JSON.stringify(layout)}`);
     assert(Math.abs(layout.pill.right-layout.search.right)<=1,`The sidebar pill must align with Search: ${JSON.stringify(layout)}`);
-    assert.equal(await navigation.locator('button').count(),3,'Workspace navigation has directory, history and sessions');
+    assert.equal(await navigation.locator('[data-workspace-view]').count(),3,'Workspace navigation has directory, history and sessions');
     assert.equal(await page.locator('[data-ws-sessions-switch]').count(),0,'The workspace content must not retain a second sessions switch');
     await navigation.locator('[data-workspace-view="sessions"]').click();
     await page.locator('[data-ws-tree] [data-ws-sessions-list]').waitFor();
@@ -499,7 +500,16 @@ let browser;
 const results = [];
 try {
   await waitForPreview();
-  if (process.env.LAB_CHECKS === 'session-attention') {
+  if (process.env.LAB_CHECKS === 'workspace-branches') {
+    for (const engine of ['chromium','webkit']) {
+      browser=await (engine==='webkit'?webkit:chromium).launch({headless:true});
+      for (const width of [1280,390]) {
+        results.push(await checkWorkspaceBranches(browser,{port,report,engine,width}));
+        await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      }
+      await browser.close();browser=undefined;
+    }
+  } else if (process.env.LAB_CHECKS === 'session-attention') {
     for (const engine of ['chromium','webkit']) {
       browser=await(engine==='webkit'?webkit:chromium).launch({headless:true});
       for (const width of [1280,390]) {
@@ -595,6 +605,7 @@ try {
   results.push(await checkGlassSelection(browser,{port,report,engine:'chromium'}));
   for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'chromium',workspace,khor}));
   results.push(await checkWorkspaceBack(browser,{port,report}));
+  for(const width of [1280,390])results.push(await checkWorkspaceBranches(browser,{port,report,engine:'chromium',width}));
   for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
@@ -646,6 +657,7 @@ try {
   if (process.env.QUALITY_ENGINES?.includes('webkit')) {
     await browser.close();
     browser = await webkit.launch({headless:process.env.QUALITY_HEADLESS!=='0'});
+    for(const width of [1280,390])results.push(await checkWorkspaceBranches(browser,{port,report,engine:'webkit',width}));
     for(const width of [1280,412,390,320])results.push(await inspect(browser,'dsh',{width,height:900},{items:5,engine:'webkit'}));
     for(const width of [1280,412,390,320])results.push(await checkAttachmentDraft(browser,{port,report,engine:'webkit',width}));
     results.push(await checkWorkbench(browser,{port,report,engine:'webkit'}));

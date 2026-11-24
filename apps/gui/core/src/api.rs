@@ -281,7 +281,11 @@ pub fn answer(
             &arg("dir")?,
             opt_str("cursor")?.as_deref(),
             u32::try_from(num("limit")?).map_err(|_| "limit exceeds u32".to_owned())?,
+            opt_str("reference")?.as_deref(),
         ))?),
+        "git_branches" => {
+            to_json(&rt.block_on(crate::git::branches(root, &arg("machine")?, &arg("dir")?))?)
+        }
         "git_blame" => {
             to_json(&rt.block_on(crate::git::blame(root, &arg("machine")?, &arg("path")?))?)
         }

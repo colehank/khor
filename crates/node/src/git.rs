@@ -731,7 +731,10 @@ pub(crate) const SHOWN: usize = 256 * 1024;
 pub enum GitAsk {
     /// The commits that changed `path`, newest first, following the first
     /// parent (what `git log --first-parent -- path` lists).
-    Log { path: String, limit: u32 },
+    Log {
+        path: String,
+        limit: u32,
+    },
     /// All commits reachable from a fixed HEAD, with an opaque continuation.
     RepositoryLog {
         dir: String,
@@ -739,15 +742,32 @@ pub enum GitAsk {
         limit: u32,
     },
     /// Who last changed each line of `path` as HEAD has it.
-    Blame { path: String },
+    Blame {
+        path: String,
+    },
     /// `path` as revision `rev` had it, and where the file as it is now
     /// differs from that.
-    Show { path: String, rev: String },
+    Show {
+        path: String,
+        rev: String,
+    },
     /// **One commit of the repository `root` is in, and what it changed**
     /// against its first parent (the commit page, COMMITS-BRIEF
     /// 2026-10-12: 「点开后显示这个 commit 的更改」). A root commit has no
     /// parent and every file it holds arrives added.
-    Commit { root: String, rev: String },
+    Commit {
+        root: String,
+        rev: String,
+    },
+    Branches {
+        dir: String,
+    },
+    BranchLog {
+        dir: String,
+        reference: String,
+        cursor: Option<String>,
+        limit: u32,
+    },
 }
 
 /// One file a commit changed, as the commit page draws it.
@@ -811,6 +831,8 @@ pub struct CommitSummary {
     pub cut: bool,
 }
 
+const BRANCH_LIMIT: usize = 500;
+const BRANCH_BYTES: usize = 128 * 1024;
 const HISTORY_DEFAULT: u32 = 40;
 const HISTORY_LIMIT: u32 = 100;
 const HISTORY_SUBJECT_BYTES: usize = 1024;
@@ -862,6 +884,11 @@ pub enum GitAnswer {
         total: u32,
         more: bool,
     },
+    Branches {
+        current: Option<String>,
+        refs: Vec<String>,
+        more: bool,
+    },
 }
 
 /// Answers one history question on this machine.
@@ -874,6 +901,13 @@ pub fn answer(ask: &GitAsk) -> Result<GitAnswer, String> {
         GitAsk::Blame { path } => blame(Path::new(path)),
         GitAsk::Show { path, rev } => show(Path::new(path), rev),
         GitAsk::Commit { root, rev } => commit_show(Path::new(root), rev),
+        GitAsk::Branches { dir } => branches(Path::new(dir)),
+        GitAsk::BranchLog {
+            dir,
+            reference,
+            cursor,
+            limit,
+        } => repository_log_from(Path::new(dir), Some(reference), cursor.as_deref(), *limit),
     }
 }
 
@@ -1025,7 +1059,56 @@ impl HistoryCursor {
     }
 }
 
+fn branches(path: &Path) -> Result<GitAnswer, String> {
+    let (repo, _) = open_rel(path)?;
+    let current = repo
+        .head_name()
+        .map_err(|e| e.to_string())?
+        .and_then(|name| std::str::from_utf8(name.as_bstr()).ok().map(str::to_owned));
+    let platform = repo.references().map_err(|e| e.to_string())?;
+    let mut refs = Vec::new();
+    let mut bytes = 0;
+    let mut more = false;
+    'branches: for branches in [platform.local_branches(), platform.remote_branches()] {
+        for entry in branches.map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            // In particular, origin/HEAD is an alias, not a branch.
+            if entry.try_id().is_none() {
+                continue;
+            }
+            let Ok(name) = std::str::from_utf8(entry.name().as_bstr()) else {
+                continue;
+            };
+            if Some(name) == current.as_deref() {
+                continue;
+            }
+            let size = serde_json::to_vec(name).map_err(|e| e.to_string())?.len() + 1;
+            if refs.len() >= BRANCH_LIMIT || bytes + size > BRANCH_BYTES {
+                more = true;
+                break 'branches;
+            }
+            refs.push(name.to_owned());
+            bytes += size;
+        }
+    }
+    refs.sort_unstable();
+    Ok(GitAnswer::Branches {
+        current,
+        refs,
+        more,
+    })
+}
+
 fn repository_log(path: &Path, cursor: Option<&str>, limit: u32) -> Result<GitAnswer, String> {
+    repository_log_from(path, None, cursor, limit)
+}
+
+fn repository_log_from(
+    path: &Path,
+    reference: Option<&str>,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<GitAnswer, String> {
     let (repo, _) = open_rel(path)?;
     if repo.shallow_commits().map_err(|e| e.to_string())?.is_some() {
         return Err("Repository history is incomplete in a shallow checkout".to_owned());
@@ -1033,9 +1116,22 @@ fn repository_log(path: &Path, cursor: Option<&str>, limit: u32) -> Result<GitAn
     let cursor = cursor
         .map(|c| HistoryCursor::parse(c, repo.object_hash()))
         .transpose()?;
-    let head = match &cursor {
-        Some(cursor) => cursor.head,
-        None => {
+    let head = match (&cursor, reference) {
+        (Some(cursor), _) => cursor.head,
+        (None, Some(name)) => {
+            if !name.starts_with("refs/heads/") && !name.starts_with("refs/remotes/") {
+                return Err("Expected a local or remote-tracking branch reference".to_owned());
+            }
+            let branch = repo.find_reference(name).map_err(|e| e.to_string())?;
+            if branch.name().as_bstr() != name.as_bytes() {
+                return Err("Branch reference was not found".to_owned());
+            }
+            branch
+                .into_fully_peeled_id()
+                .map_err(|e| e.to_string())?
+                .detach()
+        }
+        (None, None) => {
             let head = repo.head().map_err(|e| e.to_string())?;
             let Some(id) = head.id() else {
                 return Ok(GitAnswer::RepositoryLog {
@@ -2093,6 +2189,78 @@ pub(crate) mod repository_history_tests {
             assert_ne!(cursor.as_ref(), Some(&next));
             cursor = Some(next);
         }
+    }
+
+    #[test]
+    fn branch_history_reads_other_refs_without_changing_the_checkout() {
+        let (checkout, marks) = linear(3);
+        let dir = checkout.0.display().to_string();
+        checkout.git(&["update-ref", "refs/heads/topic", &marks[&2]]);
+        checkout.git(&["update-ref", "refs/remotes/origin/release", &marks[&1]]);
+        checkout.git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release",
+        ]);
+        checkout.git(&["tag", "v1", &marks[&2]]);
+        checkout.git(&["pack-refs", "--all"]);
+        let file = checkout.0.join("draft.txt");
+        std::fs::write(&file, "staged draft").unwrap();
+        checkout.git(&["add", "draft.txt"]);
+        std::fs::write(&file, "unstaged changes").unwrap();
+        let index = std::fs::read(checkout.0.join(".git/index")).unwrap();
+
+        let GitAnswer::Branches {
+            current,
+            refs,
+            more,
+        } = answer(&GitAsk::Branches { dir: dir.clone() }).unwrap()
+        else {
+            panic!("branch list");
+        };
+        assert_eq!(current.as_deref(), Some("refs/heads/main"));
+        assert_eq!(refs, ["refs/heads/topic", "refs/remotes/origin/release"]);
+        assert!(!more);
+
+        let history = |reference: &str, cursor| {
+            answer(&GitAsk::BranchLog {
+                dir: dir.clone(),
+                reference: reference.to_owned(),
+                cursor,
+                limit: 1,
+            })
+        };
+        let GitAnswer::RepositoryLog {
+            head,
+            commits,
+            next,
+        } = history("refs/heads/topic", None).unwrap()
+        else {
+            panic!("branch log");
+        };
+        assert_eq!(head.as_deref(), Some(marks[&2].as_str()));
+        assert_eq!(commits[0].id, marks[&2]);
+        checkout.git(&["update-ref", "refs/heads/topic", &marks[&3]]);
+        let GitAnswer::RepositoryLog {
+            head,
+            commits,
+            next,
+        } = history("refs/heads/topic", next).unwrap()
+        else {
+            panic!("branch continuation");
+        };
+        assert_eq!(head.as_deref(), Some(marks[&2].as_str()));
+        assert_eq!(commits[0].id, marks[&1]);
+        assert!(next.is_none());
+        assert!(history("refs/tags/v1", None).is_err());
+        assert!(history("refs/heads/missing", None).is_err());
+        assert_eq!(
+            page(&checkout, None, 10).0.as_deref(),
+            Some(marks[&3].as_str())
+        );
+        assert_eq!(std::fs::read(checkout.0.join(".git/index")).unwrap(), index);
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "unstaged changes");
+        assert_eq!(status(&checkout.0).unwrap().branch, "main");
     }
 
     #[test]

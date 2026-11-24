@@ -1,5 +1,5 @@
 // Khor choice menus share the app's typography, glass, viewport and focus rules.
-import {useId,type ReactNode} from "react";
+import {useId,useRef,type ReactNode} from "react";
 import {IconChevronDown,IconChevronUp} from "@/components/icons";
 import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuRadioGroup,DropdownMenuRadioItem,DropdownMenuCheckboxItem,DropdownMenuLabel} from "@/components/ui/dropdown-menu";
 import {cn} from "@/lib/utils";
@@ -10,18 +10,19 @@ export type PopupChoice={
   mark?:Record<string,string|boolean|undefined>;
 };
 type Props={choices:PopupChoice[];label:string;disabled?:boolean;look?:"plain"|"field";
-  mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string};
+  mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string;onOpenChange?:(open:boolean)=>void};
 
-function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",mark,className,placeholder}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
+function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",mark,className,placeholder,onOpenChange}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
   const id=useId();
+  const trigger=useRef<HTMLButtonElement>(null);
   const selected=choices.filter(choice=>values.includes(choice.value));
   const current=selected.map(choice=>choice.short??choice.label).join(", ")||placeholder||values.join(", ");
   const runs:{group:string|undefined;items:PopupChoice[]}[]=[];
   for(const choice of choices){const last=runs.at(-1);if(last&&last.group===choice.group)last.items.push(choice);else runs.push({group:choice.group,items:[choice]});}
   const body=(choice:PopupChoice)=><>{choice.preview&&<span aria-hidden className="grid size-5 flex-none place-items-center">{choice.preview}</span>}<span className="min-w-0 flex-1"><span className="block break-words">{choice.label}</span>{choice.note&&<span className="block break-words text-callout text-muted-foreground">{choice.note}</span>}</span></>;
-  return <DropdownMenu modal={false}>
+  return <DropdownMenu modal={false} onOpenChange={onOpenChange}>
     <div data-popup-button={look} className={cn("relative flex h-ctl-md min-w-0 items-center",look==="field"?"w-full":"flex-none",className)}>
-      <DropdownMenuTrigger asChild><button type="button" value={values[0]??""} disabled={disabled} aria-label={`${label}: ${current}`} title={selected[0]?.note}
+      <DropdownMenuTrigger asChild><button ref={trigger} type="button" value={values[0]??""} disabled={disabled} aria-label={`${label}: ${current}`} title={selected[0]?.note}
         data-popup-trigger data-popup-owner={id} {...mark}
         className={cn("flex min-h-touch min-w-0 items-center rounded-sm text-body disabled:opacity-40",look==="field"&&"w-full")}>
         <span className={cn("flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in hover:bg-fill",look==="field"&&"w-full bg-fill hover:bg-fill-strong")}>
@@ -33,6 +34,11 @@ function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,
     </div>
     <DropdownMenuContent data-popup-menu={id} align="end" aria-label={label}
       className="min-w-(--radix-dropdown-menu-trigger-width) max-w-[calc(100vw-2*var(--gap-in))] font-sans"
+      onInteractOutside={event=>{
+        // Its closing animation can leave the previous dismiss layer mounted
+        // when the same button opens the menu again.
+        if(trigger.current?.contains(event.detail.originalEvent.target as Node))event.preventDefault();
+      }}
       onFocus={event=>{
         // Keep Radix's entry/return handling, then position this choice menu on
         // its current item. Only the content's initial focus enters here.
