@@ -56,6 +56,9 @@ const HAND: &str = "hop-in ";
 /// Explicitly understood at both forwarding endpoints before parallel commit.
 const PREPARE: &str = "hop-ready ";
 const PREPARE_HAND: &str = "hop-ready-in ";
+const SWITCH: &str = "hop-switch ";
+const SWITCH_HAND: &str = "hop-switch-in ";
+const SWITCH_PROBE_BYTES: usize = 16;
 
 /// What X gives the hop before dialling without it: a middle's wire
 /// that has to be dialled first, plus its own stream to Y.
@@ -157,6 +160,12 @@ enum HopUse {
     Dial,
     Recovery,
     Comparison,
+}
+
+#[derive(Clone, Copy)]
+struct HopReplacement {
+    previous: (Carrier, u64),
+    cost_ms: u32,
 }
 
 struct HopCandidate {
@@ -658,10 +667,18 @@ pub(crate) enum Ask {
     /// Same encrypted transport, with receiver publication delayed until payload.
     PrepareTo(EndpointId),
     PrepareFrom(EndpointId),
+    SwitchTo(EndpointId),
+    SwitchFrom(EndpointId),
 }
 
 impl Ask {
     pub(crate) fn of(target: &str) -> Option<Ask> {
+        if let Some(id) = target.strip_prefix(SWITCH_HAND) {
+            return id.parse().ok().map(Ask::SwitchFrom);
+        }
+        if let Some(id) = target.strip_prefix(SWITCH) {
+            return id.parse().ok().map(Ask::SwitchTo);
+        }
         if let Some(id) = target.strip_prefix(PREPARE_HAND) {
             return id.parse().ok().map(Ask::PrepareFrom);
         }
@@ -680,6 +697,8 @@ impl Ask {
             Ask::From(id) => format!("{HAND}{id}"),
             Ask::PrepareTo(id) => format!("{PREPARE}{id}"),
             Ask::PrepareFrom(id) => format!("{PREPARE_HAND}{id}"),
+            Ask::SwitchTo(id) => format!("{SWITCH}{id}"),
+            Ask::SwitchFrom(id) => format!("{SWITCH_HAND}{id}"),
         }
     }
 }
@@ -814,6 +833,7 @@ impl Node {
         middle: &crate::DeviceInfo,
         epoch: &MissEpoch,
         prepared: bool,
+        replacement: Option<HopReplacement>,
     ) -> Option<PreparedHop> {
         let via = middle.id.parse::<EndpointId>().ok()?;
         let peer = target.id.parse::<EndpointId>().ok()?;
@@ -826,12 +846,29 @@ impl Node {
         if let Some(wire) = HopWire::observed(&line.conn) {
             used_middle(self.device_str(), &target.id, epoch, &middle.id, wire);
         }
-        let ask = if prepared {
+        let ask = if replacement.is_some() {
+            Ask::SwitchTo(peer)
+        } else if prepared {
             Ask::PrepareTo(peer)
         } else {
             Ask::To(peer)
         };
-        let (send, recv) = crate::tunnel::dial(&line.conn, &ask.words()).await.ok()?;
+        let (mut send, mut recv) = crate::tunnel::dial(&line.conn, &ask.words()).await.ok()?;
+        if let Some(replacement) = replacement {
+            // The candidate has to carry bytes to the final peer and back
+            // before either end can swap. These are transport probe bytes;
+            // no terminal input or application request is copied.
+            let mut probe = [0; SWITCH_PROBE_BYTES];
+            getrandom::fill(&mut probe).ok()?;
+            let started = std::time::Instant::now();
+            send.write_all(&probe).await.ok()?;
+            let mut reply = [0; SWITCH_PROBE_BYTES];
+            recv.read_exact(&mut reply).await.ok()?;
+            let measured_ms = u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX);
+            if reply != probe || !beats(measured_ms, replacement.cost_ms) {
+                return None;
+            }
+        }
         Some((
             via,
             line.conn.stable_id(),
@@ -1024,9 +1061,16 @@ impl Node {
             let retry_at = tokio::time::Instant::now() + HOP_WITHIN;
             // Keep the cold preparation state out of every enclosing dial and
             // resident request's future, including requests that need no hop.
-            let opened =
-                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch.clone(), purpose))
-                    .await;
+            let opened = Box::pin(self.open_hop_in_epoch(
+                ep,
+                y,
+                &all,
+                &picked,
+                epoch.clone(),
+                purpose,
+                None,
+            ))
+            .await;
             if opened
                 || purpose != HopUse::Recovery
                 || !self.wires.recovering_network()
@@ -1052,7 +1096,7 @@ impl Node {
                 return;
             }
             picked.retain(|b| self.road_for_hop(b, &[]).is_some());
-            Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, purpose)).await;
+            Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, purpose, None)).await;
         })
     }
 
@@ -1127,7 +1171,7 @@ impl Node {
         let Some(epoch) = self.hop_miss_epoch_for(y, all, picked, observation) else {
             return false;
         };
-        self.open_hop_in_epoch(ep, y, all, picked, epoch, HopUse::Dial)
+        self.open_hop_in_epoch(ep, y, all, picked, epoch, HopUse::Dial, None)
             .await
     }
 
@@ -1145,6 +1189,7 @@ impl Node {
         picked: &[String],
         epoch: MissEpoch,
         purpose: HopUse,
+        replacement: Option<HopReplacement>,
     ) -> bool {
         let caller = crate::deadline::current();
         let hop_by = tokio::time::Instant::now() + HOP_WITHIN;
@@ -1203,7 +1248,7 @@ impl Node {
         let asked = Asking::new(&me, &y.id);
         let mut attempted = Vec::with_capacity(TRIES);
         let tries = async {
-            if y.hop_staged && eligible.len() > 1 {
+            if (y.hop_staged || replacement.is_some()) && eligible.len() > 1 {
                 // The row is only a hint. Every positive preparation must
                 // use words understood by both B and Y; an old endpoint
                 // cannot accidentally grant a concurrent legacy admission.
@@ -1225,7 +1270,14 @@ impl Node {
                             continue;
                         }
                         attempted.push(b.as_str());
-                        pending.push(self.prepare_hop_middle(ep, y, middle, &epoch, true));
+                        pending.push(self.prepare_hop_middle(
+                            ep,
+                            y,
+                            middle,
+                            &epoch,
+                            true,
+                            replacement,
+                        ));
                     }
                     while let Some(result) = pending.next().await {
                         if result.is_some() {
@@ -1270,7 +1322,7 @@ impl Node {
                     Some(attempt_by),
                     crate::deadline::scope(
                         attempt_by,
-                        self.prepare_hop_middle(ep, y, middle, &epoch, false),
+                        self.prepare_hop_middle(ep, y, middle, &epoch, false, replacement),
                     ),
                 )
                 .await
@@ -1303,12 +1355,17 @@ impl Node {
                     "initiator",
                     (send, recv),
                     |current| {
-                        !crate::deadline::expired(Some(by))
-                            && match current {
-                                Some(Carrier::Ssh) => false,
-                                Some(Carrier::Hop { .. }) if y.id < me => false,
-                                _ => true,
-                            }
+                        if crate::deadline::expired(Some(by)) {
+                            return false;
+                        }
+                        if let Some(replacement) = replacement {
+                            return current.is_none() || current == Some(replacement.previous);
+                        }
+                        match current {
+                            Some((Carrier::Ssh, _)) => false,
+                            Some((Carrier::Hop { .. }, _)) if y.id < me => false,
+                            _ => true,
+                        }
                     },
                 )
             })
@@ -1511,7 +1568,14 @@ impl Node {
                 path.ping();
             }
         }
-        let compare = !self.carry.has(&peer)
+        let route_can_change = match self.carry.carrier(&peer) {
+            None => true,
+            Some(Carrier::Hop { .. }) => {
+                matches!(selected.remote_addr(), iroh::TransportAddr::Custom(_))
+            }
+            Some(Carrier::Ssh) => false,
+        };
+        let compare = route_can_change
             && self.hop_on()
             && self.wires.begin_route_demand(RouteDemand::Peer(peer), now);
         khor_net::carry::observe_lifecycle(
@@ -1596,7 +1660,7 @@ impl Node {
             if demand.is_some_and(|(id, _)| id != peer) {
                 continue;
             }
-            if self.carry.has(&peer) || crate::pause::peer_on(self.root(), &y.id) {
+            if crate::pause::peer_on(self.root(), &y.id) {
                 continue;
             }
             let rtt = match demand {
@@ -1619,7 +1683,22 @@ impl Node {
                 HopUse::Comparison
             };
             let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
+            let replacement = match self.carry.attachment(&peer) {
+                None => None,
+                Some(previous @ (Carrier::Hop { .. }, _)) if purpose == HopUse::Recovery => {
+                    Some(HopReplacement {
+                        previous,
+                        cost_ms: relay_ms,
+                    })
+                }
+                Some(_) => continue,
+            };
             let first_leg = |b: &str| {
+                if replacement.is_some_and(|swap| {
+                    matches!(swap.previous.0, Carrier::Hop { via } if b.parse().ok() == Some(via))
+                }) {
+                    return None;
+                }
                 if purpose == HopUse::Recovery {
                     self.road_for_active_hop(b)
                 } else {
@@ -1654,7 +1733,8 @@ impl Node {
                 let Some(epoch) = self.hop_miss_epoch_for(y, &all, &picked, observation) else {
                     continue;
                 };
-                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, purpose)).await;
+                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, purpose, replacement))
+                    .await;
             }
         }
     }
@@ -1692,10 +1772,11 @@ impl Node {
             return refuse(send, REFUSED).await;
         }
         let me = self.device_str().to_owned();
-        let prepared = matches!(ask, Ask::PrepareTo(_) | Ask::PrepareFrom(_));
+        let prepared = matches!(ask, Ask::PrepareTo(_));
+        let switching = matches!(ask, Ask::SwitchTo(_) | Ask::SwitchFrom(_));
         match ask {
             // B: splice `from` (X) to `to` (Y).
-            Ask::To(to) | Ask::PrepareTo(to) => {
+            Ask::To(to) | Ask::PrepareTo(to) | Ask::SwitchTo(to) => {
                 let y = to.to_string();
                 if matches!(self.carry.carrier(&to), Some(Carrier::Hop { .. })) {
                     return refuse(send, REFUSED).await;
@@ -1720,7 +1801,9 @@ impl Node {
                             .await
                             .ok()?;
                     let wire = line.conn.stable_id();
-                    let hand = if prepared {
+                    let hand = if switching {
+                        Ask::SwitchFrom(from_id)
+                    } else if prepared {
                         Ask::PrepareFrom(from_id)
                     } else {
                         Ask::From(from_id)
@@ -1774,9 +1857,10 @@ impl Node {
                 });
             }
             // Y: this stream is the link to `from`'s asker (X), via B.
-            Ask::From(x) | Ask::PrepareFrom(x) => {
+            Ask::From(x) | Ask::PrepareFrom(x) | Ask::SwitchFrom(x) => {
                 let asker = x.to_string();
-                if matches!(self.carry.carrier(&x), Some(Carrier::Ssh))
+                let previous = self.carry.attachment(&x);
+                if matches!(previous, Some((Carrier::Ssh, _)))
                     || self.hop_member(&asker, from).await.is_none()
                 {
                     return refuse(send, REFUSED).await;
@@ -1789,11 +1873,27 @@ impl Node {
                 if send.write_all(&[OK]).await.is_err() {
                     return;
                 }
+                let mut recv = recv;
+                if switching {
+                    // Reserve this peer's preparation window while the
+                    // initiator verifies the new stream. Losing candidates
+                    // never send a transport frame and never publish.
+                    self.wires
+                        .begin_route_demand(RouteDemand::Peer(x), std::time::Instant::now());
+                    let confirmed = tokio::time::timeout(HOP_WITHIN, async {
+                        let mut probe = [0; SWITCH_PROBE_BYTES];
+                        recv.read_exact(&mut probe).await.ok()?;
+                        send.write_all(&probe).await.ok()
+                    })
+                    .await;
+                    if !matches!(confirmed, Ok(Some(()))) {
+                        return;
+                    }
+                }
                 // OK admits a preparation, not a replacement carrier.
                 // Only the chosen initiator publishes its transport and
                 // writes a complete framed datagram. A status-only loser
                 // can therefore finish late without replacing live traffic.
-                let mut recv = recv;
                 let Ok(Some(prefix)) =
                     tokio::time::timeout(HOP_WITHIN, stream_trace::first_frame(&mut recv)).await
                 else {
@@ -1807,7 +1907,7 @@ impl Node {
                 {
                     return;
                 }
-                let attached = stream_trace::attach_prefixed(
+                let Some(attached) = stream_trace::attach_prefixed_if(
                     &self.carry,
                     x,
                     Carrier::Hop { via: from_id },
@@ -1815,7 +1915,16 @@ impl Node {
                     "receiver",
                     (send, recv),
                     prefix,
-                );
+                    |current| {
+                        if switching {
+                            current.is_none() || current == previous
+                        } else {
+                            !matches!(current, Some((Carrier::Ssh, _)))
+                        }
+                    },
+                ) else {
+                    return;
+                };
                 khor_net::carry::observe_lifecycle(&asker, "hop_outer_bound", || {
                     serde_json::json!({
                         "role": "receiver", "attachment": attached.serial(),
@@ -2110,6 +2219,11 @@ mod tests {
         let id = iroh::SecretKey::generate().public();
         assert_eq!(Ask::of(&Ask::To(id).words()), Some(Ask::To(id)));
         assert_eq!(Ask::of(&Ask::From(id).words()), Some(Ask::From(id)));
+        assert_eq!(Ask::of(&Ask::SwitchTo(id).words()), Some(Ask::SwitchTo(id)));
+        assert_eq!(
+            Ask::of(&Ask::SwitchFrom(id).words()),
+            Some(Ask::SwitchFrom(id))
+        );
         assert_eq!(Ask::of("example.com:22"), None);
         assert_eq!(Ask::of("hop:22"), None, "a host called hop");
         assert_eq!(Ask::of("hop nonsense"), None);

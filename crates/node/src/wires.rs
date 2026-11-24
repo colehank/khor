@@ -748,6 +748,26 @@ impl Wires {
             })
     }
 
+    /// Held paths that have not yet returned any traffic on the new
+    /// network. An answer from a different slot is no evidence for these.
+    pub(crate) fn quiet_wires_since(&self, since: Instant) -> Vec<(String, Proto, Connection)> {
+        self.slots
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .iter()
+            .filter_map(|((id, proto), slot)| {
+                let conn = slot
+                    .conn
+                    .as_ref()
+                    .filter(|conn| conn.close_reason().is_none())?;
+                if slot.heard.is_some_and(|at| at >= since) {
+                    return None;
+                }
+                Some((id.clone(), *proto, conn.clone()))
+            })
+            .collect()
+    }
+
     pub(crate) fn begin_route_demand(&self, demand: RouteDemand, now: Instant) -> bool {
         let mut demands = self.route_demands.lock().unwrap_or_else(|p| p.into_inner());
         demands.retain(|_, until| *until > now);

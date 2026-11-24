@@ -6,10 +6,16 @@ async fn admitted_from(
     local: &iroh::endpoint::Connection,
     remote: &iroh::endpoint::Connection,
     via: EndpointId,
+    switching: bool,
 ) -> (Owned<()>, SendStream, RecvStream) {
     let (mut send, mut recv) = remote.open_bi().await.unwrap();
     // A real request is parsed at the same boundary as the resident.
-    let target = Ask::From(f.target_ep.id()).words();
+    let target = if switching {
+        Ask::SwitchFrom(f.target_ep.id())
+    } else {
+        Ask::From(f.target_ep.id())
+    }
+    .words();
     send.write_all(&(target.len() as u16).to_be_bytes())
         .await
         .unwrap();
@@ -41,6 +47,16 @@ async fn admitted_from(
         .unwrap()
         .unwrap();
     assert_eq!(status[0], OK);
+    if switching {
+        let probe = [0xf4; SWITCH_PROBE_BYTES];
+        send.write_all(&probe).await.unwrap();
+        let mut reply = [0; SWITCH_PROBE_BYTES];
+        tokio::time::timeout(Duration::from_secs(2), recv.read_exact(&mut reply))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(probe, reply);
+    }
     (task, send, recv)
 }
 
@@ -78,7 +94,7 @@ async fn an_admitted_loser_without_payload_cannot_replace_a_working_receiver_lin
     })));
     let first_via = f.middle_ep.id();
     let (mut first, send, recv) =
-        admitted_from(&f, &f.outer_local, &f.outer_remote, first_via).await;
+        admitted_from(&f, &f.outer_local, &f.outer_remote, first_via, false).await;
     let attached = f
         .target_links
         .attach(f.ep.id(), Carrier::Hop { via: first_via }, recv, send);
@@ -97,35 +113,43 @@ async fn an_admitted_loser_without_payload_cannot_replace_a_working_receiver_lin
         khor_net::path::PathKind::Carried
     );
     assert!(echo(&conn).await);
-    let (mut uncommitted, send, recv) =
-        admitted_from(&f, &later.local, &later.incoming, later.ep.id()).await;
-    let still_first =
-        f.node.carry.carrier(&f.target_ep.id()) == Some(Carrier::Hop { via: first_via });
-    let while_prepared = echo(&conn).await;
-    drop((send, recv));
-    tokio::time::timeout(Duration::from_secs(2), uncommitted.0.take().unwrap())
-        .await
-        .unwrap()
-        .unwrap();
-    let after_cancel = echo(&conn).await;
-    let kept_first =
-        f.node.carry.carrier(&f.target_ep.id()) == Some(Carrier::Hop { via: first_via });
+    for switching in [false, true] {
+        let (mut uncommitted, send, recv) =
+            admitted_from(&f, &later.local, &later.incoming, later.ep.id(), switching).await;
+        assert_eq!(
+            f.node.carry.carrier(&f.target_ep.id()),
+            Some(Carrier::Hop { via: first_via })
+        );
+        assert!(echo(&conn).await);
+        drop((send, recv));
+        tokio::time::timeout(Duration::from_secs(2), uncommitted.0.take().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(echo(&conn).await);
+        assert_eq!(
+            f.node.carry.carrier(&f.target_ep.id()),
+            Some(Carrier::Hop { via: first_via })
+        );
+    }
+    let next_via = later.ep.id();
+    let (mut second, send, recv) =
+        admitted_from(&f, &later.local, &later.incoming, next_via, true).await;
+    let next_carrier = Carrier::Hop { via: next_via };
+    let replacement = f.target_links.attach(f.ep.id(), next_carrier, recv, send);
+    assert!(echo(&conn).await);
+    assert_eq!(f.node.carry.carrier(&f.target_ep.id()), Some(next_carrier));
     let outer_open = f.outer_local.close_reason().is_none()
         && later.local.close_reason().is_none()
         && later.incoming.close_reason().is_none();
     conn.close(0u32.into(), b"receiver commit fixture complete");
-    f.node
-        .carry
-        .detach(&f.target_ep.id(), Carrier::Hop { via: first_via });
-    f.target_links.detach_attached(
-        &f.ep.id(),
-        Carrier::Hop { via: first_via },
-        attached.serial(),
-    );
+    f.node.carry.detach(&f.target_ep.id(), next_carrier);
+    f.target_links
+        .detach_attached(&f.ep.id(), next_carrier, replacement.serial());
     tokio::time::timeout(Duration::from_secs(2), attached.ended())
         .await
         .unwrap();
-    for task in [&mut first, &mut f.echo_task] {
+    for task in [&mut first, &mut second, &mut f.echo_task] {
         stop(task).await;
     }
     tokio::join!(
@@ -135,8 +159,4 @@ async fn an_admitted_loser_without_payload_cannot_replace_a_working_receiver_lin
         later.ep.close()
     );
     assert!(outer_open);
-    assert!(
-        still_first && while_prepared && after_cancel && kept_first,
-        "a status-only loser must not publish over or cancel the carrier that completed actual TLS and traffic"
-    );
 }

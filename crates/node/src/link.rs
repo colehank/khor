@@ -2000,6 +2000,17 @@ impl Node {
                             e.network_change_major().await;
                             net_round.ask(&n, &deaf, true, MOBILE_PATH_GRACE);
                             tokio::time::sleep(MOBILE_PATH_GRACE).await;
+                            // Some peers can already have a good path on a
+                            // new network while an old wire to a different
+                            // peer is still stuck. Keep the recovered ones
+                            // and confirm just the silent wires separately.
+                            let runtime = tokio::runtime::Handle::current();
+                            for (id, proto, conn) in n.wires.quiet_wires_since(repair.began) {
+                                if repair.path.strong_count() != 0 {
+                                    n.recover_active_path(&e, &conn, MOBILE_PATH_GRACE);
+                                    n.wires.probe_unheard(&id, proto, &conn, &runtime);
+                                }
+                            }
                             if n.wires.heard_peer_since(repair.began)
                                 || !n.serve_admitted(false).await
                             {

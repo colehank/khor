@@ -141,15 +141,15 @@ pub(super) fn attach_if(
     wire: Option<usize>,
     role: &'static str,
     pair: (SendStream, RecvStream),
-    allow: impl FnOnce(Option<Carrier>) -> bool,
+    allow: impl FnOnce(Option<(Carrier, u64)>) -> bool,
 ) -> Option<khor_net::carry::Attached> {
     let (send, recv) = pair;
     if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_none() {
-        return links.attach_if(peer, carrier, recv, send, allow);
+        return links.attach_if_current(peer, carrier, recv, send, allow);
     }
     let send_id = format!("{:?}", send.id());
     let recv_id = format!("{:?}", recv.id());
-    let attached = links.attach_if(
+    let attached = links.attach_if_current(
         peer,
         carrier,
         Tap::new(recv, peer, role, wire, recv_id.clone()),
@@ -179,6 +179,7 @@ pub(super) async fn first_frame(recv: &mut RecvStream) -> Option<Vec<u8>> {
 }
 
 /// Preserve the first frame when a prepared receiver commits its stream.
+#[cfg(test)]
 pub(super) fn attach_prefixed(
     links: &khor_net::carry::Links,
     peer: EndpointId,
@@ -188,19 +189,34 @@ pub(super) fn attach_prefixed(
     pair: (SendStream, RecvStream),
     prefix: Vec<u8>,
 ) -> khor_net::carry::Attached {
+    attach_prefixed_if(links, peer, carrier, wire, role, pair, prefix, |_| true)
+        .expect("unconditional attachment")
+}
+
+pub(super) fn attach_prefixed_if(
+    links: &khor_net::carry::Links,
+    peer: EndpointId,
+    carrier: Carrier,
+    wire: Option<usize>,
+    role: &'static str,
+    pair: (SendStream, RecvStream),
+    prefix: Vec<u8>,
+    allow: impl FnOnce(Option<(Carrier, u64)>) -> bool,
+) -> Option<khor_net::carry::Attached> {
     use tokio::io::AsyncReadExt;
     let (send, recv) = pair;
     if std::env::var_os("KHOR_NET_DIAGNOSTICS").is_none() {
-        return links.attach(
+        return links.attach_if_current(
             peer,
             carrier,
             std::io::Cursor::new(prefix).chain(recv),
             send,
+            allow,
         );
     }
     let send_id = format!("{:?}", send.id());
     let recv_id = format!("{:?}", recv.id());
-    let attached = links.attach(
+    let attached = links.attach_if_current(
         peer,
         carrier,
         Tap::new(
@@ -211,12 +227,13 @@ pub(super) fn attach_prefixed(
             recv_id.clone(),
         ),
         Tap::new(send, peer, role, wire, send_id.clone()),
-    );
+        allow,
+    )?;
     khor_net::carry::observe_lifecycle(peer, "hop_stream_bound", || {
         serde_json::json!({"role": role, "wire": wire, "attachment": attached.serial(),
             "send_stream": send_id, "recv_stream": recv_id, "prepared_frame": true})
     });
-    attached
+    Some(attached)
 }
 
 /// Same two copies, finish calls and cancellation choice as the normal splice.

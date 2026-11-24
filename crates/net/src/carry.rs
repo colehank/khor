@@ -179,6 +179,10 @@ impl Links {
         self.lock().get(peer).map(|l| l.carrier)
     }
 
+    pub fn attachment(&self, peer: &EndpointId) -> Option<(Carrier, u64)> {
+        self.lock().get(peer).map(|l| (l.carrier, l.serial))
+    }
+
     /// **What the link to `peer` rides, or rode when it ended**: the word
     /// for a connection iroh still has on its carried path between the
     /// link ending and iroh choosing another road. Read as [`carrier`]
@@ -267,9 +271,28 @@ impl Links {
         R: AsyncRead + Unpin + Send + 'static,
         W: AsyncWrite + Unpin + Send + 'static,
     {
+        self.attach_if_current(peer, carrier, r, w, |current| {
+            allow(current.map(|(carrier, _)| carrier))
+        })
+    }
+
+    /// A replacement prepared off-lock can commit only against the
+    /// attachment that it prepared to replace.
+    pub fn attach_if_current<R, W>(
+        &self,
+        peer: EndpointId,
+        carrier: Carrier,
+        r: R,
+        w: W,
+        allow: impl FnOnce(Option<(Carrier, u64)>) -> bool,
+    ) -> Option<Attached>
+    where
+        R: AsyncRead + Unpin + Send + 'static,
+        W: AsyncWrite + Unpin + Send + 'static,
+    {
         let (out_rx, stopped, serial) = {
             let mut map = self.lock();
-            if !allow(map.get(&peer).map(|link| link.carrier)) {
+            if !allow(map.get(&peer).map(|link| (link.carrier, link.serial))) {
                 return None;
             }
             let (out, out_rx) = mpsc::channel::<Bytes>(QUEUE);
