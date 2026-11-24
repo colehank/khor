@@ -150,8 +150,8 @@ impl HopWire {
     }
 }
 
-/// A demand with no target road may recheck a live middle. Background
-/// discovery and periodic quality comparisons keep their failure backoff.
+/// A foreground operation with no progressing target road may recheck a
+/// live middle. Periodic quality comparisons keep their own backoff.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum HopUse {
     Dial,
@@ -179,7 +179,6 @@ impl HopCandidate {
             missed_wait(count).saturating_sub(at.elapsed())
         });
         if purpose == HopUse::Recovery
-            && !backoff.is_zero()
             && self.live
             && self.wires.iter().any(|wire| {
                 wire.weak
@@ -1519,10 +1518,10 @@ impl Node {
     /// middle, the middle's written one onward) against the relay's
     /// measured round trip. A hop that meets the selector's gain margin
     /// is opened; iroh then measures it end to end and the selector
-    /// keeps whichever is faster, and a hop that loses is let go
-    /// ([`Node::open_hop_in_epoch`]) and not tried through that middle again for
-    /// [`LOST_FOR`]. Direct needs nothing here: iroh's punching runs under
-    /// every road and takes over when it opens.
+    /// keeps whichever is faster. A loss cools periodic comparisons for
+    /// [`LOST_FOR`]. A stalled foreground operation may recheck a live
+    /// middle when its measured legs beat the current wait. Iroh continues
+    /// punching and validating paths underneath.
     pub(crate) async fn compare_roads(&self, ep: &iroh::Endpoint) {
         let observation = MissObservation::new(self.wires.hop_epoch());
         self.compare_roads_with_demand(ep, observation, None).await;
@@ -1585,6 +1584,11 @@ impl Node {
                     rtt
                 }
             };
+            let purpose = if demand.is_some() {
+                HopUse::Recovery
+            } else {
+                HopUse::Comparison
+            };
             let relay_ms = u32::try_from(rtt.as_millis()).unwrap_or(u32::MAX);
             let picked = worth_a_hop(
                 &me,
@@ -1597,7 +1601,10 @@ impl Node {
                         .find(|d| d.id == b)
                         .and_then(|d| self.roads_of(d).into_iter().find(|r| r.to == y.id))
                 },
-                |b| was_lost(&y.id, b),
+                |b| {
+                    was_lost(&y.id, b)
+                        && (purpose == HopUse::Comparison || self.road_for_hop(b, &[]).is_none())
+                },
             );
             if !picked.is_empty() {
                 let observation = MissObservation {
@@ -1607,8 +1614,7 @@ impl Node {
                 let Some(epoch) = self.hop_miss_epoch_for(y, &all, &picked, observation) else {
                     continue;
                 };
-                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, HopUse::Comparison))
-                    .await;
+                Box::pin(self.open_hop_in_epoch(ep, y, &all, &picked, epoch, purpose)).await;
             }
         }
     }

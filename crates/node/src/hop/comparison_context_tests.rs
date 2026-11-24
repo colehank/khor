@@ -120,6 +120,81 @@ async fn actual_carried_success_preserves_the_unchanged_comparison_allowance() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn stalled_request_reopens_a_live_middle_that_lost_to_a_healthy_relay() {
+    let mut f = Publication::new().await;
+    crate::config::set(f.node.root(), "peer-hop", "on").unwrap();
+    let road = Road::own(&f.target.id, RoadKind::Direct, None, Some(35));
+    let loaded = f.node.devices_loaded().unwrap();
+    loaded
+        .doc
+        .set_road(
+            &f.middle.id,
+            &f.target.id,
+            &serde_json::to_string(&road).unwrap(),
+        )
+        .unwrap();
+    let mut store = loaded.store;
+    store.flush(&loaded.doc).unwrap();
+    drop(store);
+    let epoch = comparison_epoch(&f, &f.target.id, std::slice::from_ref(&f.middle.id));
+    assert!(claim(&f, &f.target.id, &epoch, &f.middle.id, true));
+    {
+        let mut all = MISSED.lock().unwrap_or_else(|p| p.into_inner());
+        let entry = all
+            .get_mut(&(f.node.device_str().to_owned(), f.target.id.clone()))
+            .unwrap();
+        entry.candidates[0].attempted_at = Some(std::time::Instant::now() - HOP_WITHIN);
+    }
+    lost(&f.target.id, &f.middle.id);
+    assert!(was_lost(&f.target.id, &f.middle.id));
+    assert!(!claim(&f, &f.target.id, &epoch, &f.middle.id, true));
+
+    let (offered, release) = f.node.wires.gate_hop_offered_for_test();
+    let compare = f.node.compare_roads_with_demand(
+        &f.ep,
+        MissObservation::new(f.node.wires.hop_epoch()),
+        Some((f.target_ep.id(), Duration::from_secs(2))),
+    );
+    let (offered, ()) = tokio::join!(
+        async move {
+            let offered = tokio::time::timeout(Duration::from_secs(2), offered).await;
+            let _ = release.send(());
+            offered
+        },
+        compare,
+    );
+    let serial = offered
+        .expect("the slow request can retry the live middle")
+        .unwrap();
+    let current = comparison_epoch(&f, &f.target.id, std::slice::from_ref(&f.middle.id));
+    assert!(!begin_middle(
+        f.node.device_str(),
+        &f.target.id,
+        &current,
+        &f.middle.id,
+        HopUse::Recovery,
+        tokio::time::Instant::now() + HOP_WITHIN,
+    ));
+    let remote = (&mut f.attached_target).await.unwrap();
+    let conn = tokio::time::timeout(
+        Duration::from_secs(2),
+        f.ep.connect(
+            iroh::EndpointAddr::from_parts(f.target_ep.id(), [transport_addr(&f.target_ep.id())]),
+            INNER_ALPN,
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert!(echo(&conn).await);
+    conn.close(0u32.into(), b"active recovery fixture complete");
+    f.close(serial).await;
+    tokio::time::timeout(Duration::from_secs(2), remote.ended())
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_demands_share_the_live_middle_retry_allowance() {
     let mut f = Publication::new().await;
     let epoch = comparison_epoch(&f, &f.target.id, &[f.middle.id.clone()]);
