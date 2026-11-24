@@ -547,6 +547,7 @@ mod tests {
         remote_map
             .resolve_remote(
                 EndpointAddr::from_parts(endpoint_id, [TransportAddr::Relay(relay_url.clone())]),
+                false,
                 resolve_tx,
             )
             .await;
@@ -645,7 +646,9 @@ mod tests {
 
         // 1. Spawn A1 and let it process a real `ResolveRemote`.
         let (tx1, rx1) = oneshot::channel();
-        remote_map.resolve_remote(addr_with_ip(1234), tx1).await;
+        remote_map
+            .resolve_remote(addr_with_ip(1234), false, tx1)
+            .await;
         assert!(
             matches!(rx1.await, Ok(Ok(()))),
             "First resolve completes Ok"
@@ -665,7 +668,9 @@ mod tests {
         //    We also resume time here so that we don't immediately idle-out again.
         tokio::time::resume();
         let (tx2, rx2) = oneshot::channel();
-        remote_map.resolve_remote(addr_with_ip(5678), tx2).await;
+        remote_map
+            .resolve_remote(addr_with_ip(5678), false, tx2)
+            .await;
 
         // 4. Drive `cleanup`, like the socket actor does.
         //    Before our fixes, this would remove the sender to the just-started A2 from the sender map.
@@ -676,7 +681,9 @@ mod tests {
         //    the fix this would start a new actor because A2 was falsely removed from
         //    the senders map.
         let (tx3, rx3) = oneshot::channel();
-        remote_map.resolve_remote(EndpointAddr::new(eid), tx3).await;
+        remote_map
+            .resolve_remote(EndpointAddr::new(eid), false, tx3)
+            .await;
 
         let outcome2 = rx2.await.expect("the resolve tx must be sent");
         let outcome3 = rx3.await.expect("the resolve tx must be sent");
