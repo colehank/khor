@@ -91,7 +91,7 @@ def main():
                 ready = source_data / 'Documents' / 'clipboard-seeded'
                 ready.parent.mkdir(exist_ok=True)
                 ready.unlink(missing_ok=True)
-                subprocess.run(['xcrun','simctl','launch',simulator,CLIPBOARD_SOURCE], timeout=30, check=True)
+                subprocess.run(['xcrun','simctl','launch',simulator,CLIPBOARD_SOURCE], timeout=120, check=True)
                 deadline = time.monotonic() + 15
                 while not ready.exists() and time.monotonic() < deadline:
                     time.sleep(.1)
