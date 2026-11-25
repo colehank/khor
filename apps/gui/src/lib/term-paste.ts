@@ -7,6 +7,8 @@
 // file copied in Finder carries its name as text and its icon as a
 // picture, and the name is what a person means.
 
+import { inApp } from "@/api";
+
 /** The picture types a paste takes, and the suffix each lands under. */
 const SUFFIX: Record<string, string> = {
   "image/png": "png",
@@ -74,6 +76,21 @@ export async function readPaste(): Promise<Pasted> {
     if (blob) images.push(pastedFile(blob, type));
   }
   return images.length ? { images } : { text: "" };
+}
+
+/** The iOS app's key reads UIKit's pasteboard on that press. */
+export async function readKeyPaste(): Promise<Pasted> {
+  const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent)
+    || (/Mac/i.test(navigator.platform) && navigator.maxTouchPoints > 1);
+  if (!inApp || !ios) return readPaste();
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const value = await invoke<{ text: string } | { images: { type: string; data: string }[] } | null>("terminal_paste_from_key");
+    if (value) return "images" in value ? { images: value.images.map(pastedImage) } : value;
+  } catch {
+    // An unavailable or refused clipboard leaves the terminal alone.
+  }
+  return { text: "" };
 }
 
 /** A picture the native edit menu read off iOS's pasteboard

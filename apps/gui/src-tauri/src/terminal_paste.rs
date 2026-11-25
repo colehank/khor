@@ -1,215 +1,31 @@
-//! The terminal key row's iOS paste button. UIKit supplies the item providers
-//! for a press on UIPasteControl, and the face owns the destination terminal.
-use std::cell::{Cell, RefCell};
+//! Reads the general pasteboard for a user-pressed terminal key.
 use std::sync::{Arc, Mutex};
 
 use block2::RcBlock;
-use objc2::rc::{Allocated, Retained};
-use objc2::runtime::{AnyClass, AnyObject, NSObject};
-use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send, sel};
-use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
-use objc2_ui_kit::{UIResponder, UIView};
-use serde::Deserialize;
+use objc2::rc::Retained;
+use objc2::runtime::AnyObject;
+use objc2::{MainThreadMarker, class, msg_send};
+use objc2_foundation::NSString;
 use serde_json::{Value, json};
-
-#[derive(Deserialize)]
-pub struct Geometry {
-    pub frame: [f64; 4],
-    pub clip: [f64; 4],
-    pub radius: f64,
-    pub dark: bool,
-}
 
 type Report = Arc<dyn Fn(Value) + Send + Sync>;
 const UTF8_TEXT: &str = "public.utf8-plain-text";
 
-struct TargetState {
-    report: Report,
-    drag_x: Cell<f64>,
-}
-
-define_class!(
-    // SAFETY: UIView implements the paste configuration via UIResponder.
-    // The target is attached to the same window as the paste control.
-    #[unsafe(super(UIView, UIResponder, NSObject))]
-    #[thread_kind = MainThreadOnly]
-    #[name = "KhorTerminalPasteTarget"]
-    #[ivars = TargetState]
-    struct Target;
-
-    impl Target {
-        #[unsafe(method(canPasteItemProviders:))]
-        fn can_paste(&self, providers: &AnyObject) -> bool {
-            unsafe {
-                let count: usize = msg_send![providers, count];
-                (0..count).any(|index| {
-                    let item: *mut AnyObject = msg_send![providers, objectAtIndex: index];
-                    let text: bool = msg_send![item, canLoadObjectOfClass: class!(NSString)];
-                    text || supports(item, UTF8_TEXT) || crate::edit_menu::PICTURES.iter().any(|&(uti, _)| supports(item, uti))
-                })
-            }
-        }
-
-        #[unsafe(method(pasteItemProviders:))]
-        fn paste(&self, providers: &AnyObject) {
-            // The completion may run after UIKit releases the original array.
-            let retained = unsafe { Retained::retain(providers as *const AnyObject as *mut AnyObject) };
-            if let Some(providers) = retained {
-                read_text(providers, 0, self.ivars().report.clone());
-            }
-        }
-
-        #[unsafe(method(gestureRecognizerShouldBegin:))]
-        fn can_scroll(&self, pan: &AnyObject) -> bool {
-            let velocity: NSPoint = unsafe { msg_send![pan, velocityInView: std::ptr::null::<AnyObject>()] };
-            velocity.x.abs() > velocity.y.abs()
-        }
-
-        #[unsafe(method(dragPasteKey:))]
-        fn drag(&self, pan: &AnyObject) {
-            let state: isize = unsafe { msg_send![pan, state] };
-            if state == 1 {
-                self.ivars().drag_x.set(0.0);
-            }
-            if (1..=3).contains(&state) {
-                // Window coordinates stay still while the key itself moves.
-                let translation: NSPoint = unsafe { msg_send![pan, translationInView: std::ptr::null::<AnyObject>()] };
-                let previous = self.ivars().drag_x.replace(translation.x);
-                (self.ivars().report)(json!({ "scroll": previous - translation.x }));
-            }
-        }
-    }
-);
-
-struct Seat {
-    owner: String,
-    host: Retained<Target>,
-    control: Retained<AnyObject>,
-}
-
-thread_local! {
-    static SEAT: RefCell<Option<Seat>> = const { RefCell::new(None) };
-}
-
-fn rect([x, y, w, h]: [f64; 4]) -> NSRect {
-    NSRect::new(NSPoint::new(x, y), NSSize::new(w, h))
-}
-
-/// Mount or move the control in the face's UIKit coordinates, clipped to the
-/// horizontal key row. Closing one terminal cannot hide a newer terminal's key.
-pub fn place(
-    web: *mut AnyObject,
-    owner: String,
-    geometry: Option<Geometry>,
-    report: Report,
-) -> bool {
-    let Some(main) = MainThreadMarker::new() else {
-        return false;
+pub fn read(report: Report) {
+    let Some(_) = MainThreadMarker::new() else {
+        report(Value::Null);
+        return;
     };
-    SEAT.with(|slot| {
-        let mut slot = slot.borrow_mut();
-        if geometry.is_none() {
-            if slot.as_ref().is_some_and(|seat| seat.owner == owner) {
-                remove(&mut slot);
-            }
-            return false;
-        }
-        let Some(g) = geometry else { return false };
-        if web.is_null() || !g.frame.into_iter().chain(g.clip).chain([g.radius]).all(f64::is_finite)
-            || g.clip[2] <= 0.0 || g.clip[3] <= 0.0 || g.frame[2] <= 0.0 || g.frame[3] <= 0.0
-        {
-            return false;
-        }
-        // Keep the system control above WebKit's own scrolling and keyboard
-        // subviews. A viewport under reattachment cannot accept an overlay.
-        let parent: *mut AnyObject = unsafe { msg_send![web, superview] };
-        let window: *mut AnyObject = unsafe { msg_send![web, window] };
-        if parent.is_null() || window.is_null() {
-            if slot.as_ref().is_some_and(|seat| seat.owner == owner) {
-                remove(&mut slot);
-            }
-            return false;
-        }
-        if slot.as_ref().is_none_or(|seat| seat.owner != owner) {
-            remove(&mut slot);
-            // SAFETY: with_webview supplied a live face on UIKit's thread.
-            *slot = unsafe { make_seat(main, owner, g.radius, report) };
-        }
-        let Some(seat) = slot.as_ref() else { return false };
-        // SAFETY: the retained UIView and UIPasteControl are on UIKit's thread.
-        unsafe {
-            let [x, y, width, height] = g.frame;
-            let [left, top, _, _] = g.clip;
-            let frame: NSRect = msg_send![web, convertRect: rect(g.clip), toView: parent];
-            let _: () = msg_send![&*seat.host, setFrame: frame];
-            let _: () = msg_send![&*seat.control, setFrame: rect([x - left, y - top, width, height])];
-            let _: () = msg_send![&*seat.host, setOverrideUserInterfaceStyle: if g.dark { 2isize } else { 1isize }];
-            let current: *mut AnyObject = msg_send![&*seat.host, superview];
-            if current != parent {
-                let _: () = msg_send![parent, addSubview: &*seat.host];
-            }
-        }
-        true
-    })
-}
-
-fn remove(slot: &mut Option<Seat>) {
-    if let Some(seat) = slot.take() {
-        unsafe {
-            let _: () = msg_send![&*seat.host, removeFromSuperview];
-        }
-    }
-}
-
-unsafe fn make_seat(
-    main: MainThreadMarker,
-    owner: String,
-    radius: f64,
-    report: Report,
-) -> Option<Seat> {
-    // Resolve these classes at runtime for the iOS 15 browser fallback.
-    let control_class = AnyClass::get(c"UIPasteControl")?;
-    let config_class = AnyClass::get(c"UIPasteControlConfiguration")?;
-    unsafe {
-        let configuration: Retained<AnyObject> = msg_send![config_class, new];
-        let color: Retained<AnyObject> = msg_send![class!(UIColor), labelColor];
-        let fill: Retained<AnyObject> = msg_send![class!(UIColor), secondarySystemFillColor];
-        let _: () = msg_send![&*configuration, setBaseForegroundColor: &*color];
-        let _: () = msg_send![&*configuration, setBaseBackgroundColor: &*fill];
-        let _: () = msg_send![&*configuration, setDisplayMode: 2usize]; // Label only
-        let _: () = msg_send![&*configuration, setCornerRadius: radius.max(0.0)];
-        let control: Allocated<AnyObject> = msg_send![control_class, alloc];
-        let control: Retained<AnyObject> =
-            msg_send![control, initWithConfiguration: &*configuration];
-        let allocated = Target::alloc(main).set_ivars(TargetState {
-            report,
-            drag_x: Cell::new(0.0),
-        });
-        let target: Retained<Target> = msg_send![super(allocated), initWithFrame: NSRect::ZERO];
-        let _: () = msg_send![&*target, setClipsToBounds: true];
-        let text = NSString::from_str("public.text");
-        let image = NSString::from_str("public.image");
-        let types: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: &*text];
-        let types: Retained<AnyObject> = msg_send![&*types, arrayByAddingObject: &*image];
-        let paste_configuration: Allocated<AnyObject> =
-            msg_send![class!(UIPasteConfiguration), alloc];
-        let paste_configuration: Retained<AnyObject> =
-            msg_send![paste_configuration, initWithAcceptableTypeIdentifiers: &*types];
-        let _: () = msg_send![&*target, setPasteConfiguration: &*paste_configuration];
-        let _: () = msg_send![&*control, setTarget: &*target];
-        let identifier = NSString::from_str("khor-terminal-paste");
-        let _: () = msg_send![&*control, setAccessibilityIdentifier: &*identifier];
-        let pan: Allocated<AnyObject> = msg_send![class!(UIPanGestureRecognizer), alloc];
-        let pan: Retained<AnyObject> =
-            msg_send![pan, initWithTarget: &*target, action: sel!(dragPasteKey:)];
-        let _: () = msg_send![&*pan, setDelegate: &*target];
-        let _: () = msg_send![&*target, addGestureRecognizer: &*pan];
-        let _: () = msg_send![&*target, addSubview: &*control];
-        Some(Seat {
-            owner,
-            host: target,
-            control,
-        })
+    // One read for an explicit key press. UIKit applies the user's
+    // cross-app clipboard permission before delivering the item providers.
+    let providers: Option<Retained<AnyObject>> = unsafe {
+        let pasteboard: Retained<AnyObject> = msg_send![class!(UIPasteboard), generalPasteboard];
+        msg_send![&*pasteboard, itemProviders]
+    };
+    if let Some(providers) = providers {
+        read_text(providers, 0, report);
+    } else {
+        report(Value::Null);
     }
 }
 
@@ -297,6 +113,10 @@ fn read_images(providers: &AnyObject, report: Report) {
                 }
             }
         }
+        if items.is_empty() {
+            report(Value::Null);
+            return;
+        }
         let batch = Arc::new(Mutex::new(ImageBatch {
             pending: items.len(),
             parts: vec![None; items.len()],
@@ -320,9 +140,11 @@ fn read_images(providers: &AnyObject, report: Report) {
                         .flatten()
                         .collect::<Vec<_>>();
                     drop(batch);
-                    if !images.is_empty() {
-                        report(json!({ "images": images }));
-                    }
+                    report(if images.is_empty() {
+                        Value::Null
+                    } else {
+                        json!({ "images": images })
+                    });
                 }
             });
             let _: *mut AnyObject = msg_send![item, loadDataRepresentationForTypeIdentifier: &*kind, completionHandler: &*complete];

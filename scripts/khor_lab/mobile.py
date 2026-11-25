@@ -212,12 +212,12 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
             time.sleep(.12)
         raise ValueError(f'{label}: {last!r}')
 
-    def evaluate(script, *, timeout=15, paste_seat=False):
+    def evaluate(script, *, timeout=15):
         nonlocal serial
         serial += 1
         request = documents / 'keyboard-command.json'
         pending = request.with_suffix('.tmp')
-        pending.write_text(json.dumps({'serial': serial, 'script': script, 'pasteSeat': paste_seat}))
+        pending.write_text(json.dumps({'serial': serial, 'script': script}))
         pending.replace(request)
         reply = documents / 'keyboard-observation.json'
         def read():
@@ -226,8 +226,6 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
                           'WKWebView did not answer an observation', timeout=timeout)
         if 'error' in result:
             raise ValueError(result['error'])
-        if paste_seat and not result.get('pasteAttached'):
-            raise ValueError('UIKit did not attach the paste control at the terminal key')
         return result.get('value')
 
     def native_keyboard():
@@ -325,29 +323,28 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
               document.querySelector('[data-terminal]').__xterm.write('\x1b[?2004h', resolve));""")
             selector = '[data-term-key="paste"]'
             evaluate(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest',inline:'center'}});")
-            frame_script = f"""const key=document.querySelector({json.dumps(selector)});
-              const rect=key.getBoundingClientRect();
-              const strip=key.closest('[data-term-keys-scroll]').getBoundingClientRect();
-              if(rect.left<strip.left-1 || rect.right>strip.right+1) return null;
-              return [rect.x,rect.y,rect.width,rect.height];"""
-            wait_for(lambda: evaluate(frame_script), bool, 'The paste key is clipped by the key row')
-            frame = evaluate(frame_script, paste_seat=True)
-            point = {'x': frame[0] + frame[2] / 2, 'y': frame[1] + frame[3] / 2}
-            capture = documents / 'paste-result.json'
+            expected = f'\x1b[200~{paste_text}\x1b[201~'
+
+            def copied_input():
+                try:
+                    buttons = command('/execute/sync', {'script':'mobile: alert', 'args':[{'action':'getButtons'}]})
+                except ValueError:
+                    buttons = []
+                if 'Allow Paste' in buttons:
+                    command('/execute/sync', {'script':'mobile: alert',
+                                              'args':[{'action':'accept', 'buttonLabel':'Allow Paste'}]})
+                return evaluate('return window.__tabProbe.slice();')
+
             for _ in range(2):
-                capture.unlink(missing_ok=True)
-                wait_for(lambda: command('/elements', {'using':'accessibility id','value':'khor-terminal-paste'}),
-                         bool, 'The UIKit paste key disappeared from the row')
-                command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
-                content = wait_for(lambda: json.loads(capture.read_text()) if capture.is_file() else None,
-                                   bool, 'One native tap did not deliver the clipboard')
-                if content != {'text': paste_text}:
-                    raise ValueError(f'The native paste payload was {content!r}')
+                tap(button(selector))
+                wait_for(copied_input, lambda chunks: chunks == [expected],
+                         'A single tap did not deliver the iOS clipboard to the terminal')
+                evaluate('window.__tabProbe.length = 0;')
                 if not native_keyboard():
                     raise ValueError('Pasting dismissed the terminal keyboard')
-                evaluate(f"document.querySelector('[data-terminal]').__xterm.paste({json.dumps(content['text'])});")
-                if evaluate('return window.__tabProbe.splice(0);') != [f'\x1b[200~{paste_text}\x1b[201~']:
-                    raise ValueError('A native paste did not reach the terminal exactly once')
+                if not evaluate(f"""const key=document.querySelector({json.dumps(selector)});
+                  return key?.checkVisibility({{opacityProperty:true}});"""):
+                    raise ValueError('The paste key disappeared after tapping it')
             samples['native_paste_twice'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)

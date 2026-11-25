@@ -1624,48 +1624,37 @@ fn edit_menu_at(
     let _ = (app, x, y, w, h, items, copy);
 }
 
-/// Match the iOS paste control to the terminal key row. Only a native
-/// activation grants item providers. The face receives the result by owner.
+/// A terminal key press reads the iOS clipboard through UIKit.
 #[tauri::command]
-async fn terminal_paste_control(
+async fn terminal_paste_from_key(
     app: tauri::AppHandle,
-    owner: String,
-    geometry: Option<serde_json::Value>,
-) -> Result<bool, String> {
+    face: tauri::Webview,
+) -> Result<serde_json::Value, String> {
     #[cfg(target_os = "ios")]
     {
-        use tauri::Emitter;
-        let Some(face) = phone_page::face(&app) else {
-            return Ok(false);
-        };
-        let geometry = geometry
-            .map(serde_json::from_value::<terminal_paste::Geometry>)
-            .transpose()
-            .map_err(|error| error.to_string())?;
+        if face.label() != "main" {
+            return Ok(serde_json::Value::Null);
+        }
         let (done, ready) = tokio::sync::oneshot::channel();
-        face.with_webview(move |wv| {
-            let event_owner = owner.clone();
-            let report = std::sync::Arc::new(move |value| {
-                let _ = app.emit_to(
-                    "main",
-                    "terminal-paste",
-                    serde_json::json!({ "owner": event_owner, "value": value }),
-                );
-            });
-            let _ = done.send(terminal_paste::place(
-                wv.inner().cast(),
-                owner,
-                geometry,
-                report,
-            ));
+        app.run_on_main_thread(move || {
+            let done = std::sync::Mutex::new(Some(done));
+            terminal_paste::read(std::sync::Arc::new(move |value| {
+                if let Some(sender) = done
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .take()
+                {
+                    let _ = sender.send(value);
+                }
+            }));
         })
         .map_err(|error| error.to_string())?;
         ready.await.map_err(|error| error.to_string())
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (app, owner, geometry);
-        Ok(false)
+        let _ = (app, face);
+        Ok(serde_json::Value::Null)
     }
 }
 
@@ -6181,7 +6170,7 @@ pub fn run() {
             edit_menu,
             edit_menu_at,
             edit_menu_hide,
-            terminal_paste_control,
+            terminal_paste_from_key,
             joy_haptic,
             haptic,
             open_settings,
