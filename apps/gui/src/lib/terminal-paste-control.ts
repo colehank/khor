@@ -55,6 +55,7 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     let last = "";
     let generation = 0;
     let listening = false;
+    let awaitingSeat = false;
     const send = (geometry: Seat | null) => {
       const version = ++generation;
       // Match hide and show in call order, even if a previous reply arrives
@@ -66,10 +67,7 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
           if ((!alive && geometry) || version !== generation) return;
           const attached = await invoke<boolean>("terminal_paste_control", { owner, geometry });
           if (alive && version === generation) {
-            // UIKit may not have a window during a keyboard or view
-            // handoff. Keep the web key usable and try again on the next
-            // layout change, even if its measured rectangle stays the same.
-            if (geometry && !attached) last = "";
+            awaitingSeat = geometry !== null && !attached;
             setNative(attached);
           }
         } catch {
@@ -91,6 +89,12 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     const schedule = () => {
       if (!frame) frame = requestAnimationFrame(measure);
     };
+    const viewportChanged = () => {
+      // A keyboard handoff can reattach UIKit without changing the DOM
+      // rectangle. Retry on viewport changes, not on terminal output.
+      if (awaitingSeat) last = "";
+      schedule();
+    };
     const stop = listenNativeEvent<PasteEvent>("terminal-paste", ({ owner: from, value }) => {
       if (!alive || from !== owner || !cap.isConnected) return;
       if ("scroll" in value) row.scrollLeft += value.scroll;
@@ -108,20 +112,20 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     changes.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     changes.observe(document.body, { childList: true, subtree: true });
     row.addEventListener("scroll", schedule);
-    window.addEventListener("resize", schedule);
-    window.visualViewport?.addEventListener("resize", schedule);
-    window.visualViewport?.addEventListener("scroll", schedule);
-    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("resize", viewportChanged);
+    window.visualViewport?.addEventListener("resize", viewportChanged);
+    window.visualViewport?.addEventListener("scroll", viewportChanged);
+    document.addEventListener("visibilitychange", viewportChanged);
     return () => {
       alive = false;
       cancelAnimationFrame(frame);
       size.disconnect();
       changes.disconnect();
       row.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-      window.visualViewport?.removeEventListener("resize", schedule);
-      window.visualViewport?.removeEventListener("scroll", schedule);
-      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("resize", viewportChanged);
+      window.visualViewport?.removeEventListener("resize", viewportChanged);
+      window.visualViewport?.removeEventListener("scroll", viewportChanged);
+      document.removeEventListener("visibilitychange", viewportChanged);
       stop();
       send(null);
     };
