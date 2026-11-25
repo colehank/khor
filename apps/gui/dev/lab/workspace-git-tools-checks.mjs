@@ -16,11 +16,29 @@ export async function checkWorkspaceGitTools(browser,{port,report,engine,width,t
   const choose=async value=>{await activate(picker);await activate(option(value));};
   const openTool=async label=>{await activate(picker);await activate(menu.getByRole('menuitem',{name:label,exact:true}));};
   const close=async dialog=>{await activate(dialog.locator('[data-task-action="leading"] button'));await dialog.waitFor({state:'hidden'});};
+  const rowLayout=async (row,name)=>row.evaluate((element,selector)=>{
+    const bounds=element.getBoundingClientRect();
+    const label=element.querySelector(selector);
+    return {
+      height:bounds.height,
+      labelInset:Math.round(label.getBoundingClientRect().left-bounds.left),
+      iconCount:element.querySelectorAll('button svg').length,
+      trailingSlot:!!element.querySelector('[data-tree-mark-slot]'),
+      highlight:getComputedStyle(element,'::before').backgroundColor,
+    };
+  },name);
   try{
     await page.goto(`http://127.0.0.1:${port}/app/?scene=workspaces&machines=1&theme=${theme}`);
     await activate(page.locator('[data-ws-row]:visible').first());
-    await page.locator('[data-file-tree] [data-tree-entry]:visible').first().waitFor();
-    if(!mobile) await activate(page.locator('[data-file-tree] button[data-file-path$="/README.md"]'));
+    const live=page.locator('[data-file-tree]');
+    const docs=live.locator('[data-tree-directory$="/docs"]');
+    const readme=live.locator('[data-tree-entry][data-file="README.md"]');
+    await docs.waitFor();
+    await readme.waitFor();
+    if(!mobile) await activate(readme.locator('button[data-file-path]'));
+    const directoryLayout=await rowLayout(docs,'[data-dir-name]');
+    const fileLayout=await rowLayout(readme,'[data-file-name]');
+    await capture('workspace-tree');
 
     const topic='refs/heads/feat/workspace-preview';
     await choose(topic);
@@ -28,7 +46,18 @@ export async function checkWorkspaceGitTools(browser,{port,report,engine,width,t
     await tree.waitFor();
     assert.equal(await nav.getAttribute('data-view'),'files');
     if(!mobile) await page.locator('[data-git-snapshot-file="README.md"]').waitFor();
-    await activate(tree.locator('[data-git-snapshot-path="docs"]'));
+    const snapshotDocs=tree.locator('[data-git-snapshot-path="docs"]');
+    await snapshotDocs.waitFor();
+    await tree.locator('[data-git-snapshot-path="README.md"]').waitFor();
+    assert.equal(await tree.locator('[data-tree-entry][data-tree-directory="docs"]').count(),1,'The branch uses the workspace directory row');
+    assert.deepEqual(await rowLayout(tree.locator('[data-tree-directory="docs"]'),'[data-dir-name]'),directoryLayout);
+    assert.deepEqual(await rowLayout(tree.locator('[data-tree-entry][data-file="README.md"]'),'[data-file-name]'),fileLayout);
+    await activate(snapshotDocs);
+    const nested=tree.locator('[data-tree-entry][data-file="branch-only.md"]');
+    await nested.waitFor();
+    assert.equal(await nested.getAttribute('data-depth'),'1');
+    assert.equal(await nested.locator('[data-guide="0"]').count(),1);
+    await capture('branch-tree');
     await activate(tree.locator('[data-git-snapshot-path="docs/branch-only.md"]'));
     const file=page.locator('[data-git-snapshot-file="docs/branch-only.md"]');
     const text=file.locator('.cm-content').filter({hasText:'分支新增的文件'});

@@ -1,11 +1,11 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import { exploreGit, said, type GitExploreResult } from "@/api";
 import { CodeEditor } from "@/components/CodeEditor.lazy";
-import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconChevronDown, IconChevronRight, IconFiles } from "@/components/icons";
 import { RegionState } from "@/components/RegionState";
 import { gui } from "@/gen/catalog";
+import { useNarrow } from "@/hooks/use-narrow";
 import { cn } from "@/lib/utils";
+import { FileTreeRow, FileTreeRowLabel, fileTreeButtonClass, fileTreeSelectedClass } from "@/views/FileTreeRow";
 import { useGitResource, type GitLocation, type Version } from "./git-versions";
 
 type SnapshotProps = GitLocation & { version: Version };
@@ -13,12 +13,17 @@ type TreeProps = SnapshotProps & { selected: string | null; onOpen: (path: strin
 type DirectoryPage = Extract<GitExploreResult, {kind: "directory"}>;
 
 export function WorkspaceSnapshotTree(props: TreeProps) {
-  return <div data-git-snapshot-tree className="min-h-0 flex-1 overflow-y-auto">
-    <SnapshotDirectory {...props} path="" depth={0} />
-  </div>;
+  const narrow = useNarrow();
+  return (
+    <section data-git-snapshot-tree className="flex h-full min-w-0 flex-col">
+      <div data-files-list className="min-h-0 flex-1 overflow-y-auto">
+        <SnapshotDirectory {...props} path="" depth={0} narrow={narrow} />
+      </div>
+    </section>
+  );
 }
 
-function SnapshotDirectory({ path, depth, ...props }: TreeProps & { path: string; depth: number }) {
+function SnapshotDirectory({ path, depth, narrow, ...props }: TreeProps & { path: string; depth: number; narrow: boolean }) {
   const { machine, root, version, selected, onOpen } = props;
   const query = { kind: "directory", commit: version.commit, path } as const;
   const page = useGitResource(props, { ...query, offset: 0 }, "directory");
@@ -47,35 +52,39 @@ function SnapshotDirectory({ path, depth, ...props }: TreeProps & { path: string
       setLoading(false);
     }
   };
-  return <div>
+  return <>
     {entries.length === 0 && <p className="px-page py-in text-callout text-muted-foreground">{gui.git_snapshot_empty}</p>}
     {entries.map(entry => {
       const full = path ? `${path}/${entry.name}` : entry.name;
       const directory = entry.kind === "directory";
       const open = directory && (expanded.get(full) ?? selected?.startsWith(`${full}/`) ?? false);
-      const Chevron = open ? IconChevronDown : IconChevronRight;
-      return <div key={entry.name}>
-        <button type="button" data-git-snapshot-path={full} data-git-snapshot-kind={entry.kind}
-          aria-expanded={directory ? open : undefined} aria-current={selected === full ? "true" : undefined}
-          title={entry.name}
-          style={{ paddingInlineStart: `calc(var(--tree-inset) + ${depth} * var(--tree-step))` }}
-          className={cn("flex min-h-touch w-full items-center gap-in rounded-sm pe-page text-start text-callout hover:bg-fill",
-            selected === full && "bg-fill-strong")}
-          onClick={() => directory ? setExpanded(was => new Map(was).set(full, !open)) : onOpen(full)}>
-          <span className="flex size-affordance flex-none items-center justify-center text-muted-foreground" aria-hidden>
-            {directory ? <Chevron className="size-affordance" /> : null}
-          </span>
-          {directory ? <IconFiles className="size-affordance flex-none text-muted-foreground" /> : <FileKindIcon name={entry.name} className="size-affordance flex-none" />}
-          <span className="truncate">{entry.name}</span>
-        </button>
-        {open && <SnapshotDirectory {...props} path={full} depth={depth + 1} />}
-      </div>;
+      const active = !directory && selected === full;
+      const highlight = active && !narrow;
+      return <Fragment key={entry.name}>
+        <FileTreeRow name={entry.name} depth={depth} directory={directory ? full : undefined}
+          open={directory ? undefined : active} highlight={highlight}>
+          <button type="button"
+            data-dir={directory ? entry.name : undefined}
+            data-on={directory ? open : undefined}
+            data-file-path={full}
+            data-git-snapshot-path={full}
+            data-git-snapshot-kind={entry.kind}
+            aria-expanded={directory ? open : undefined}
+            aria-current={active ? "true" : undefined}
+            title={entry.name}
+            className={cn(fileTreeButtonClass, highlight && fileTreeSelectedClass)}
+            onClick={() => directory ? setExpanded(was => new Map(was).set(full, !open)) : onOpen(full)}>
+            <FileTreeRowLabel name={entry.name} expanded={directory ? open : undefined} />
+          </button>
+        </FileTreeRow>
+        {open && <SnapshotDirectory {...props} path={full} depth={depth + 1} narrow={narrow} />}
+      </Fragment>;
     })}
     {[first, ...append].some(value => value.incomplete) && <p className="px-page py-in text-caption text-muted-foreground">{gui.git_snapshot_omitted}</p>}
     {failure && <p role="alert" className="px-page py-in text-callout text-muted-foreground">{failure}</p>}
     {next !== null && <button type="button" disabled={loading} onClick={() => void more()}
       className="min-h-touch px-page text-callout text-foreground disabled:opacity-50">{failure ? gui.region_retry : gui.git_more}</button>}
-  </div>;
+  </>;
 }
 
 export function WorkspaceSnapshotFile({ path, ...location }: SnapshotProps & { path: string | null }) {
