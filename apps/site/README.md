@@ -157,11 +157,8 @@ KHOR_SITE_URL=https://colehank.github.io KHOR_SITE_BASE=/khor/ npm run build --p
 
 ## 部署
 
-2026-11-18 当前已发布：UI 源码 `2fd88d05` → gh-pages `503c998`。<https://khor.cloud/> 已上线单外环过渡、窄屏图例间距、设备幕阅读距离与协作文案修复。Pages run `44281610286` 成功。最新细节见 [发布记录](../../docs/handoff/site-pages-20261112.md)。
-
-
-用户本轮新增 GitHub Pages 发布授权；feature 分支不合并 main，网站静态产物发布到独立 gh-pages 分支。
-2026-11-12 整页收整与定向 Chrome 验证见 [本轮记录](../../docs/handoff/site-refinement-20261112.md)。
+GitHub Actions 接管前的 `gh-pages` 快照和以往上线记录见 [Pages 发布历史](../../docs/handoff/site-pages-20261112.md)。
+2026-11-12 整页收整与定向 Chrome 验证见 [验收记录](../../docs/handoff/site-refinement-20261112.md)。
 现有 `deploy/push.sh` 继续负责静态站与下载镜像的分阶段同步；页面同步保护 `/dl`，
 版本校验完成后才推进下载指针。详细约定见 [镜像维护](../../scripts/release-mirror.md)。
 中继、寻址和官网分别部署。

@@ -12,6 +12,6 @@ export const release = {
   })),
 };
 
-export const preview = selection.previewVersion ? {
+export const preview: {version: string; url: string} | null = selection.previewVersion ? {
   version: selection.previewVersion, url: releaseUrl(selection.previewVersion),
 } : null;

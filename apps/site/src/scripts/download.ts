@@ -17,7 +17,7 @@ export function recommendDownload(device:DownloadDevice) {
   const downloads=release.downloads.filter(item=>item.platform===platform?.name);
   const arch=device.arch==='arm64'?platform?.arm64:device.platform==='macos'&&device.arch==='x86_64'?'Intel':device.arch;
   const exact=downloads.find(item=>item.arch===arch);
-  const label=platform&&downloads.length?translate(...platform.label):device.platform==='mobile'?translate('Get the desktop app','获取桌面应用'):translate('See download options','查看下载选项');
+  const label=platform&&downloads.length?translate(platform.label[0],platform.label[1]):device.platform==='mobile'?translate('Get the desktop app','获取桌面应用'):translate('See download options','查看下载选项');
   const icon=device.platform==='mobile'?device.mobileSystem??'unknown':device.platform;
   return {label,icon,url:exact?.url??sitePath(downloads.length?`/download/?platform=${device.platform}`:'/download/'),file:exact?.file,
     note:exact?`${exact.platform} · ${exact.arch} · ${release.version}`:translate('Choose your platform','选择你的平台')};
