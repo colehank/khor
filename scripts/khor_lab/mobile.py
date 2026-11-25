@@ -254,11 +254,21 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
         # document whose fixture has not attached. Give startup its own
         # deadline; each subsequent interaction keeps its shorter deadline.
         started = time.monotonic()
-        startup_timeout = 60
+        startup_timeout = 90
+        opened_fixture = False
 
         def read_startup():
+            nonlocal opened_fixture
             observation = evaluate(state, timeout=max(0, started + startup_timeout - time.monotonic()))
             samples['startup'] = observation
+            if observation and observation['ready'] and not observation['rows'] and not opened_fixture:
+                # The Lab's auto-open observer expires while a slow hosted
+                # simulator is still loading the list. Open the visible row.
+                opened_fixture = evaluate("""if (document.querySelector('[data-session-screen]')) return false;
+                  const row = document.querySelector('[data-row="shell/layout-lab"] [data-row-open]');
+                  if (!row?.getClientRects().length) return false;
+                  row.click();
+                  return true;""")
             return observation
 
         down = wait_for(read_startup, lambda s: s and s['ready'] and s['rows'] > 10 and s['prompt'],
