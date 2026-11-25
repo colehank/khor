@@ -38,3 +38,8 @@ Files khor's interface ships that were made by others, with their licences.
   closed ```` ```mermaid ```` block is drawn: `dompurify` 3.4.17, licence
   MPL-2.0 OR Apache-2.0, used here under Apache-2.0. (mermaid's `elk`
   layout and its `elkjs` are not shipped: `vendor/no-elk` stands in.)
+
+## jsQR
+
+- Decodes pairing QR codes from user-selected photos on the device.
+- Licence: Apache-2.0 — `node_modules/jsqr/LICENSE`.

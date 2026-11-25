@@ -14,7 +14,7 @@
 // choice is a page of its own inside the sheet with a check on what is
 // picked, on the wide face too (the lead's recommendation the owner
 // took: no popup menus in this dialog).
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import {
   addRead,
@@ -23,7 +23,6 @@ import {
   fetchScannerHere,
   fetchSshConfigHosts,
   invite,
-  openCameraSettings,
   openCopyId,
   pair,
   pickKeyFile,
@@ -31,7 +30,6 @@ import {
   proxyLine,
   reachProbe,
   said,
-  scanTicket,
   type Ticket,
 } from "@/api";
 import { MachineAvatar } from "@/components/Avatar";
@@ -49,9 +47,10 @@ import type { ReachReport } from "@/gen/bindings/ReachReport";
 import { cli, gui, msg } from "@/gen/catalog";
 import { feel } from "@/lib/haptics";
 import { keptGet, keptSet, useKept } from "@/lib/kept";
+import { getJoinNetworkLab } from "@/lib/join-network-lab";
 import { YIELD_MS } from "@/lib/tempo";
 import { cn } from "@/lib/utils";
-import { ScanLayer } from "@/views/PairDialogs";
+import { JoinMachine } from "@/views/JoinMachine";
 import { latency } from "@/words";
 
 /** The pages of the sheet. `run` is an add (or 安装 khor) under way. */
@@ -318,6 +317,8 @@ export function AddMachineDialog({
   const [runOf, setRunOf] = useKept<{ host: string; promote: boolean } | null>(KEPT.runOf, null);
   const [error, setError] = useKept<string | null>(KEPT.error, null);
   const [hosts, setHosts] = useState<string[]>([]);
+  const [joinRestHeight, setJoinRestHeight] = useState<number | null>(null);
+  const resizableJoin = joinRestHeight !== null;
   /** The run's token. Made here, so pressing 添加 twice starts nothing
       new; kept, so a remounted dialog reads the same run. */
   const token = useRef<string | null>(keptGet<string | null>(KEPT.token) ?? null);
@@ -438,7 +439,13 @@ export function AddMachineDialog({
   let content: ReactNode;
   switch (page) {
     case "ticket":
-      content = <TicketPage machines={machines} onClose={close} onJoined={onAdded} />;
+      content = <TicketPage
+        open={open}
+        machines={machines}
+        onClose={close}
+        onJoined={onAdded}
+        onJoinHeightChange={setJoinRestHeight}
+      />;
       break;
     case "ssh":
       content = (
@@ -583,7 +590,21 @@ export function AddMachineDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <TaskOverlay purpose="edit" data-add-machine={page}>
+      <TaskOverlay
+        purpose="edit"
+        data-add-machine={page}
+        data-join-sheet={resizableJoin ? "" : undefined}
+        initialHeight={resizableJoin ? "medium" : undefined}
+        maxHeight={resizableJoin ? "large" : undefined}
+        expandOnInput={resizableJoin ? false : undefined}
+        style={joinRestHeight ? { "--task-sheet-medium-height": `${joinRestHeight}px` } as CSSProperties : undefined}
+        onClickCapture={resizableJoin ? (event) => {
+          // Touch and mouse expand through a drag. Keep keyboard activation.
+          if (event.detail > 0 && event.target instanceof Element && event.target.closest("[data-sheet-grabber]")) {
+            event.stopPropagation();
+          }
+        } : undefined}
+      >
         {content}
       </TaskOverlay>
     </Dialog>
@@ -592,12 +613,16 @@ export function AddMachineDialog({
 
 // ---- khor 主机: the invitation code, and one made elsewhere -----------------
 
-function TicketPage({ machines, onClose, onJoined }: {
+function TicketPage({ open, machines, onClose, onJoined, onJoinHeightChange }: {
+  open: boolean;
   machines: DeviceRow[];
   onClose: () => void;
   onJoined?: () => void;
+  onJoinHeightChange: (height: number | null) => void;
 }) {
   const [mode, setMode] = useState<"invite" | "join">("invite");
+  const invitePanel = useRef<HTMLDivElement>(null);
+  const [inviteHeight, setInviteHeight] = useState(0);
   const [ticket, setTicket] = useState<Ticket | null>(null);
   const [before] = useState(() => new Set(machines.map((machine) => machine.id)));
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -606,9 +631,10 @@ function TicketPage({ machines, onClose, onJoined }: {
   const [theirs, setTheirs] = useState("");
   const [joining, setJoining] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
-  const [scanner, setScanner] = useState(false);
-  const [scanning, setScanning] = useState(false);
-  const [camera, setCamera] = useState<"denied" | "failed" | null>(null);
+  const [scanner, setScanner] = useState<boolean | null>(null);
+  const sample = getJoinNetworkLab();
+  const cameraAvailable = !!sample || scanner === true;
+  const cameraPage = mode === "join" && cameraAvailable;
   const joined = mode === "invite" && ticket ? machines.find((machine) => !before.has(machine.id)) : undefined;
 
   // Joining consumes another machine's credential; it never issues a new one.
@@ -644,37 +670,43 @@ function TicketPage({ machines, onClose, onJoined }: {
       setError(said(failure));
     }).finally(() => setJoining(false));
   };
-  const scan = () => {
-    setError(null);
-    setCamera(null);
-    void scanTicket(() => setScanning(true)).then(read => {
-      setScanning(false);
-      if ("ticket" in read) {
-        setTheirs(read.ticket);
-        joinWith(read.ticket);
-      } else if ("refused" in read) setCamera(read.refused);
-    });
-  };
-
   return <>
     <Head title={gui.add_khor_host} centered />
     <Body>
-      <SegmentedControl label={gui.add_khor_host} value={mode} appearance="glass" className="self-center"
+      <SegmentedControl label={gui.add_khor_host} value={mode} appearance="glass" className="self-center shrink-0"
         mark={{ "data-pairing-mode": mode }}
         options={[
           { key: "invite", label: gui.make_a_ticket, disabled: joining || outcome !== null },
-          { key: "join", label: gui.join_with_a_ticket, disabled: joining || outcome !== null },
+          { key: "join", label: gui.join_with_a_ticket, disabled: joining || outcome !== null || (!sample && scanner === null) },
         ]}
-        onChange={next => { setMode(next); setError(null); setCamera(null); }} />
-      {outcome !== null ? <p data-pair-outcome role="status" className="text-body">{outcome}</p>
-        : mode === "invite" ? <div data-pair-invite className="flex min-w-0 flex-col gap-group">
+        onChange={next => {
+          if (next === "join" && cameraAvailable) {
+            const dialog = invitePanel.current?.closest<HTMLElement>('[data-add-machine="ticket"]');
+            const height = dialog?.offsetHeight ?? 0;
+            setInviteHeight(height);
+            onJoinHeightChange(height);
+          }
+          setMode(next);
+          setError(null);
+        }} />
+      {cameraPage ? <JoinMachine
+        open={open}
+        sample={sample}
+        credential={theirs}
+        onCredentialChange={setTheirs}
+        onClose={onClose}
+        onJoined={onJoined}
+        inviteHeight={inviteHeight}
+        onJoinHeightChange={onJoinHeightChange}
+      /> : outcome !== null ? <p data-pair-outcome role="status" className="text-body">{outcome}</p>
+        : mode === "invite" ? <div ref={invitePanel} data-pair-invite className="flex min-w-0 flex-col gap-group">
           {joined ? <div data-ticket-used role="status" className="flex items-center gap-row text-body">
             <Face row={joined} /><span>{gui.ticket_used_by(joined.shown)}</span>
           </div> : <>
             <p className="text-balance text-center text-callout text-muted-foreground">{gui.pair_invite_hint}</p>
             {ticket?.qr ? <svg data-ticket-qr role="img" aria-label={gui.ticket_qr}
               viewBox={`0 0 ${ticket.qr.span} ${ticket.qr.span}`} shapeRendering="crispEdges"
-              className="mx-auto size-60 max-w-full flex-none text-foreground">
+              className="pairing-paper mx-auto size-60 max-w-full flex-none rounded-lg">
               <path d={ticket.qr.path} fill="currentColor" />
             </svg> : !ticket && !inviteError && <div aria-hidden className="mx-auto size-60 max-w-full flex-none" />}
             {ticket && <div className="flex min-w-0 flex-col gap-in">
@@ -692,8 +724,6 @@ function TicketPage({ machines, onClose, onJoined }: {
           </>}
         </div> : <div data-pair-join className="flex min-w-0 flex-col gap-group">
           <p className="text-balance text-center text-callout text-muted-foreground">{gui.pair_join_hint}</p>
-          {scanner && <Button data-scan-ticket disabled={joining || scanning}
-            className="self-start pointer-coarse:min-h-touch" onClick={scan}>{gui.scan_a_ticket}</Button>}
           <div className="flex min-w-0 flex-col gap-in">
             <label htmlFor="pair-remote-ticket" className="text-callout text-muted-foreground">{gui.pair_remote_ticket}</label>
             <Input id="pair-remote-ticket" data-ticket-input aria-label={gui.pair_remote_ticket}
@@ -703,18 +733,11 @@ function TicketPage({ machines, onClose, onJoined }: {
           </div>
           {joining && <p data-join-dialing role="status" className="text-callout text-muted-foreground">{gui.join_dialing}</p>}
           <Failure text={error} />
-          {camera === "denied" && <div data-scan-denied className="flex flex-col items-start gap-in text-callout text-destructive">
-            <span>{gui.scan_camera_denied}</span>
-            <Button size="sm" data-scan-settings className="pointer-coarse:min-h-touch"
-              onClick={() => void openCameraSettings()}>{gui.scan_open_settings}</Button>
-          </div>}
-          {camera === "failed" && <p data-scan-failed className="text-callout text-destructive">{gui.scan_no_camera}</p>}
         </div>}
     </Body>
-    <TaskActions close={<Button data-dialog-cancel onClick={onClose}>{gui.close}</Button>} primary={outcome === null && mode === "join" && <Button variant="primary" data-join
+    {!cameraPage && <TaskActions close={<Button data-dialog-cancel onClick={onClose}>{gui.close}</Button>} primary={outcome === null && mode === "join" && <Button variant="primary" data-join
         disabled={joining || !theirs.trim()} aria-busy={joining || undefined}
-        onClick={() => joinWith(theirs)}>{gui.join_with_a_ticket}</Button>}/>
-    {scanning && <ScanLayer />}
+        onClick={() => joinWith(theirs)}>{gui.join_with_a_ticket}</Button>}/>}
   </>;
 }
 

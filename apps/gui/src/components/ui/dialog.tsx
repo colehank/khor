@@ -61,6 +61,7 @@ function DialogContent({
   purpose = "confirmation",
   initialHeight,
   maxHeight,
+  expandOnInput,
   dismiss: dismissMode,
   scrollable = false,
   onRequestDismiss,
@@ -73,7 +74,7 @@ function DialogContent({
   onRequestDismiss?: (close: () => void) => void;
 }) {
   const narrow=useWindowNarrow();
-  const policy=overlayPolicy({purpose,initialHeight,maxHeight,dismiss:dismissMode},narrow);
+  const policy=overlayPolicy({purpose,initialHeight,maxHeight,dismiss:dismissMode,expandOnInput},narrow);
 
   // **Focus goes back to what opened it** (the audit fix plan F3.7; W20):
   // most of these are opened from a menu or by state, not by a Radix
@@ -235,6 +236,8 @@ type TaskActionSlots = {
   close?: TaskButton;
   primary?: TaskButton | false | null;
   tools?: React.ReactNode;
+  /** Implicit dismissal leaves the task even when Back is a separate step. */
+  dismissClosesTask?: boolean;
   /** Only uncommitted edits; never mark persisted management changes dirty. */
   dirty?: boolean;
   /** Non-cancellable write in progress. Authentication can supply a Close that aborts. */
@@ -250,10 +253,10 @@ const TaskContext = React.createContext<TaskSlots | null>(null);
  * Only the common frame chooses where they are drawn. No label inspection. */
 function TaskActions(props: TaskActionSlots) {
   const slots = React.useContext(TaskContext);
-  const {cancel, back, close, primary, tools, dirty, busy} = props;
+  const {cancel, back, close, primary, tools, dismissClosesTask, dirty, busy} = props;
   React.useLayoutEffect(() => {
-    slots?.actions({cancel, back, close, primary, tools, dirty, busy});
-  }, [slots, cancel, back, close, primary, tools, dirty, busy]);
+    slots?.actions({cancel, back, close, primary, tools, dismissClosesTask, dirty, busy});
+  }, [slots, cancel, back, close, primary, tools, dismissClosesTask, dirty, busy]);
   React.useLayoutEffect(() => () => slots?.actions(null), [slots]);
   return null;
 }
@@ -273,6 +276,10 @@ function TaskFrame({children, ...props}: Omit<React.ComponentProps<typeof Dialog
   const role = actions?.back ? "back" : actions?.cancel ? "cancel" : "close";
   const source = actions?.back ?? actions?.cancel ?? actions?.close;
   const leave = () => {
+    if (actions?.dismissClosesTask) {
+      nativeClose.current();
+      return;
+    }
     const button = body?.parentElement?.querySelector<HTMLButtonElement>('[data-task-action="leading"] button');
     if (button) button.click();
     else nativeClose.current();

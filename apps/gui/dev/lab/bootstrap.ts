@@ -52,7 +52,7 @@ if (runtime.mode === 'frontend') {
     const available = sessionIds.map(id=>id==='wide/all'&&khorSession?khorSession:runtime.scene==='dsh'&&id==='gui/codex-review'?'gui/dsh-review':id);
     const tabs = [active,...available.filter(id => id !== active)].slice(0,items);
     localStorage.setItem('khor.sessions.tabs', JSON.stringify({tabs,active}));
-    const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : runtime.scene === 'devices' ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
+    const landing = ['workspace','workspaces'].includes(runtime.scene) ? 'workspaces' : ['devices', 'pairing'].includes(runtime.scene) ? 'devices' : runtime.scene === 'browser' ? 'browser' : runtime.scene === 'quota' ? 'quota' : 'sessions';
     localStorage.setItem('khor.place', JSON.stringify({landing, screen: 'list'}));
   }
   const fixture = createLabFixture(true, {settings:true,origin: location.origin, content: ['content', 'page'].includes(runtime.scene), items, machines,pageSize, longHistory:query.get('history')==='long', notices:query.get('notices')==='1',noticeBurst:query.get('notices')==='burst', page:runtime.scene==='page',khorSession,dsh:runtime.scene==='dsh'});
@@ -113,6 +113,29 @@ if (runtime.mode === 'frontend' && scene.row) {
   const observer = new MutationObserver(enter);
   observer.observe(document.body, {childList: true, subtree: true});
   setTimeout(() => observer.disconnect(), 15000);
+}
+if (runtime.mode === 'frontend' && runtime.scene === 'pairing') {
+  let stage = 0;
+  const controls = [
+    '[data-pane-new]',
+    '[data-new-item="khor"]',
+    '[data-add-machine="ticket"]:has([data-ticket-window]) [data-segment="join"]',
+  ];
+  const observer = new MutationObserver(() => {
+    const target = [...document.querySelectorAll<HTMLElement>(controls[stage])]
+      .find(element => element.getClientRects().length && getComputedStyle(element).visibility === 'visible');
+    if (!target) return;
+    if (++stage === controls.length) {
+      observer.disconnect();
+      requestAnimationFrame(() => target.click());
+      return;
+    }
+    if (target.getAttribute('aria-haspopup') === 'menu') {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    } else target.click();
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+  setTimeout(() => observer.disconnect(), 15_000);
 }
 if (runtime.mode === 'frontend' && runtime.scene === 'content') {
   const openFile = () => {

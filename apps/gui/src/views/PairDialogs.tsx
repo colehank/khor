@@ -1,63 +1,19 @@
 // What is left of the devices pane's pairing pieces once 添加机器
 // (`AddMachine.tsx`, round join-d) took over both halves of joining:
-// the camera layer its khor 主机 page scans through, the empty-device hint,
+// the empty-device hint,
 // 待批, and the root's words.
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 
 import {
   approveMachine,
   fetchWaiting,
   rootWords,
   said,
-  stopScan,
   type Waiting,
 } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Dialog, TaskOverlay, TaskActions, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cli, gui } from "@/gen/catalog";
-
-/**
- * What the page is while the camera reads (docs/IOS.md 第三步).
- *
- * The scan is **windowed**: the plugin puts the camera *behind* the
- * webview and makes the webview clear, so the picture shows only where
- * the page paints nothing. While this is up the document says so
- * (`html[data-scanning]`, `app.css`): the page's grounds go clear and
- * everything but this layer is hidden, dialog and scrim included. What
- * is left is a sentence saying what to point at, a frame to point it
- * with, and 取消 — the way out the plugin's full-screen mode does not
- * have. Its ink is the one that does not change with the theme
- * (`mark-ink-light` over `mark-veil-dark`), because what is under it is
- * a camera, not the paper.
- *
- * In `body` rather than in the dialog: the dialog is centred with a
- * transform, which would make a fixed layer inside it the dialog's size.
- */
-export function ScanLayer() {
-  useEffect(() => {
-    const root = document.documentElement;
-    root.setAttribute("data-scanning", "");
-    return () => root.removeAttribute("data-scanning");
-  }, []);
-  return createPortal(
-    <div
-      data-scanner
-      className="pointer-events-auto fixed inset-0 z-50 flex flex-col items-center justify-between text-mark-ink-light"
-    >
-      <div className="w-full bg-mark-veil-dark/50 px-pane pt-[max(env(safe-area-inset-top),var(--gap-pane))] pb-base text-center text-body">
-        {gui.scan_aim}
-      </div>
-      <div aria-hidden className="size-60 flex-none rounded-lg border-2 border-mark-ink-light" />
-      <div className="flex w-full justify-center bg-mark-veil-dark/50 px-pane pt-base pb-[max(env(safe-area-inset-bottom),var(--gap-pane))]">
-        <Button data-scan-cancel className="pointer-coarse:min-h-touch" onClick={() => void stopScan()}>
-          {gui.delete_keep}
-        </Button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
 
 export function AddMachineHint({ onAdd }: { onAdd: () => void }) {
   return (

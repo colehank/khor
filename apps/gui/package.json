@@ -211,6 +211,7 @@
     "hast-util-from-html": "^2.0.3",
     "hast-util-to-jsx-runtime": "^2.3.6",
     "html-url-attributes": "^3.0.1",
+    "jsqr": "1.4.0",
     "katex": "0.18.10",
     "lucide-react": "^1.61.0",
     "marked": "^18.1.1",
