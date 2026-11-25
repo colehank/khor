@@ -212,12 +212,12 @@ def terminal_keyboard_check(command, documents, simulator, report):
             time.sleep(.12)
         raise ValueError(f'{label}: {last!r}')
 
-    def evaluate(script, *, timeout=15):
+    def evaluate(script, *, timeout=15, paste_seat=False):
         nonlocal serial
         serial += 1
         request = documents / 'keyboard-command.json'
         pending = request.with_suffix('.tmp')
-        pending.write_text(json.dumps({'serial': serial, 'script': script}))
+        pending.write_text(json.dumps({'serial': serial, 'script': script, 'pasteSeat': paste_seat}))
         pending.replace(request)
         reply = documents / 'keyboard-observation.json'
         def read():
@@ -226,6 +226,8 @@ def terminal_keyboard_check(command, documents, simulator, report):
                           'WKWebView did not answer an observation', timeout=timeout)
         if 'error' in result:
             raise ValueError(result['error'])
+        if paste_seat and not result.get('pasteAttached'):
+            raise ValueError('UIKit did not attach the paste control at the terminal key')
         return result.get('value')
 
     def native_keyboard():
@@ -318,6 +320,38 @@ def terminal_keyboard_check(command, documents, simulator, report):
                 if actual != [expected]:
                     raise ValueError(f'{key} from the {side} edge sent {actual!r}')
         samples['tab_key_edges'] = True
+        if os.environ.get('KHOR_PASTE_PROBE_LIB'):
+            evaluate("""await new Promise(resolve =>
+              document.querySelector('[data-terminal]').__xterm.write('\x1b[?2004h', resolve));""")
+            selector = '[data-term-key="paste"]'
+            evaluate(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest',inline:'center'}});")
+            frame_script = f"""const key=document.querySelector({json.dumps(selector)});
+              const rect=key.getBoundingClientRect();
+              const strip=key.closest('[data-term-keys-scroll]').getBoundingClientRect();
+              if(rect.left<strip.left-1 || rect.right>strip.right+1) return null;
+              return [rect.x,rect.y,rect.width,rect.height];"""
+            wait_for(lambda: evaluate(frame_script), bool, 'The paste key is clipped by the key row')
+            frame = evaluate(frame_script, paste_seat=True)
+            point = {'x': frame[0] + frame[2] / 2, 'y': frame[1] + frame[3] / 2}
+            capture = documents / 'paste-result.json'
+            for payload in ('khor clipboard probe', '第二次粘贴'):
+                # Seed this simulator's pasteboard from outside the app.
+                subprocess.run(['xcrun', 'simctl', 'pbcopy', simulator], input=payload,
+                               text=True, timeout=30, check=True)
+                capture.unlink(missing_ok=True)
+                wait_for(lambda: command('/elements', {'using':'accessibility id','value':'khor-terminal-paste'}),
+                         bool, 'The UIKit paste key disappeared from the row')
+                command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
+                content = wait_for(lambda: json.loads(capture.read_text()) if capture.is_file() else None,
+                                   bool, 'One native tap did not deliver the clipboard')
+                if content != {'text': payload}:
+                    raise ValueError(f'The native paste payload was {content!r}')
+                if not native_keyboard():
+                    raise ValueError('Pasting dismissed the terminal keyboard')
+                evaluate(f"document.querySelector('[data-terminal]').__xterm.paste({json.dumps(content['text'])});")
+                if evaluate('return window.__tabProbe.splice(0);') != [f'\x1b[200~{payload}\x1b[201~']:
+                    raise ValueError('A native paste did not reach the terminal exactly once')
+            samples['native_paste_twice'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
     except Exception:

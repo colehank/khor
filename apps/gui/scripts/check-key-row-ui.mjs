@@ -154,7 +154,7 @@ try{
   const page=await nativePaste.newPage();
   await page.addInitScript(()=>{
    const callbacks=new Map();
-   window.__pasteProbe={changes:[],webReads:0,emit:value=>callbacks.get(window.__pasteProbe.listener)?.({payload:value})};
+   window.__pasteProbe={changes:[],webReads:0,withholdSeat:true,emit:value=>callbacks.get(window.__pasteProbe.listener)?.({payload:value})};
    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{
     read:async()=>{window.__pasteProbe.webReads++;return []},
    }});
@@ -164,7 +164,10 @@ try{
     unregisterCallback:id=>callbacks.delete(id),
     invoke:async (command,args)=>{
      if(command==='plugin:event|listen'){window.__pasteProbe.listener=args.handler;return 1}
-     if(command==='terminal_paste_control'){window.__pasteProbe.changes.push(args);return !!args.geometry}
+     if(command==='terminal_paste_control'){
+      window.__pasteProbe.changes.push(args);
+      return !!args.geometry&&!window.__pasteProbe.withholdSeat;
+     }
      return null;
     },
    };
@@ -173,6 +176,11 @@ try{
   const key=page.locator('[data-term-key="paste"]');
   await key.scrollIntoViewIfNeeded();
   await page.waitForFunction(()=>window.__pasteProbe.changes.some(change=>change.geometry));
+  assert.equal(await key.getAttribute('aria-hidden'),null,'Keep the web key visible while the native host is unavailable');
+  await page.evaluate(()=>{
+   window.__pasteProbe.withholdSeat=false;
+   window.visualViewport.dispatchEvent(new Event('scroll'));
+  });
   await page.waitForFunction(()=>document.querySelector('[data-term-key="paste"]')?.getAttribute('aria-hidden')==='true');
   await key.evaluate(node=>node.click());
   assert.equal(await page.evaluate(()=>window.__pasteProbe.webReads),0,'The mounted UIKit control owns the paste gesture');

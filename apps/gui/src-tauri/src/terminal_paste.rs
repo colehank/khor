@@ -8,7 +8,7 @@ use objc2::rc::{Allocated, Retained};
 use objc2::runtime::{AnyClass, AnyObject, NSObject};
 use objc2::{DefinedClass, MainThreadMarker, MainThreadOnly, class, define_class, msg_send, sel};
 use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
-use objc2_ui_kit::UIResponder;
+use objc2_ui_kit::{UIResponder, UIView};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -21,6 +21,7 @@ pub struct Geometry {
 }
 
 type Report = Arc<dyn Fn(Value) + Send + Sync>;
+const UTF8_TEXT: &str = "public.utf8-plain-text";
 
 struct TargetState {
     report: Report,
@@ -28,15 +29,27 @@ struct TargetState {
 }
 
 define_class!(
-    // SAFETY: UIResponder supplies UIPasteConfigurationSupporting's
-    // configuration property. The delegate methods match UIKit's signatures.
-    #[unsafe(super(UIResponder, NSObject))]
+    // SAFETY: UIView implements the paste configuration via UIResponder.
+    // The target is attached to the same window as the paste control.
+    #[unsafe(super(UIView, UIResponder, NSObject))]
     #[thread_kind = MainThreadOnly]
     #[name = "KhorTerminalPasteTarget"]
     #[ivars = TargetState]
     struct Target;
 
     impl Target {
+        #[unsafe(method(canPasteItemProviders:))]
+        fn can_paste(&self, providers: &AnyObject) -> bool {
+            unsafe {
+                let count: usize = msg_send![providers, count];
+                (0..count).any(|index| {
+                    let item: *mut AnyObject = msg_send![providers, objectAtIndex: index];
+                    let text: bool = msg_send![item, canLoadObjectOfClass: class!(NSString)];
+                    text || supports(item, UTF8_TEXT) || crate::edit_menu::PICTURES.iter().any(|&(uti, _)| supports(item, uti))
+                })
+            }
+        }
+
         #[unsafe(method(pasteItemProviders:))]
         fn paste(&self, providers: &AnyObject) {
             // The completion may run after UIKit releases the original array.
@@ -70,9 +83,8 @@ define_class!(
 
 struct Seat {
     owner: String,
-    host: Retained<AnyObject>,
+    host: Retained<Target>,
     control: Retained<AnyObject>,
-    _target: Retained<Target>,
 }
 
 thread_local! {
@@ -108,19 +120,34 @@ pub fn place(
         {
             return false;
         }
+        // Keep the system control above WebKit's own scrolling and keyboard
+        // subviews. A viewport under reattachment cannot accept an overlay.
+        let parent: *mut AnyObject = unsafe { msg_send![web, superview] };
+        let window: *mut AnyObject = unsafe { msg_send![web, window] };
+        if parent.is_null() || window.is_null() {
+            if slot.as_ref().is_some_and(|seat| seat.owner == owner) {
+                remove(&mut slot);
+            }
+            return false;
+        }
         if slot.as_ref().is_none_or(|seat| seat.owner != owner) {
             remove(&mut slot);
             // SAFETY: with_webview supplied a live face on UIKit's thread.
-            *slot = unsafe { make_seat(web, main, owner, g.radius, report) };
+            *slot = unsafe { make_seat(main, owner, g.radius, report) };
         }
         let Some(seat) = slot.as_ref() else { return false };
         // SAFETY: the retained UIView and UIPasteControl are on UIKit's thread.
         unsafe {
             let [x, y, width, height] = g.frame;
             let [left, top, _, _] = g.clip;
-            let _: () = msg_send![&*seat.host, setFrame: rect(g.clip)];
+            let frame: NSRect = msg_send![web, convertRect: rect(g.clip), toView: parent];
+            let _: () = msg_send![&*seat.host, setFrame: frame];
             let _: () = msg_send![&*seat.control, setFrame: rect([x - left, y - top, width, height])];
             let _: () = msg_send![&*seat.host, setOverrideUserInterfaceStyle: if g.dark { 2isize } else { 1isize }];
+            let current: *mut AnyObject = msg_send![&*seat.host, superview];
+            if current != parent {
+                let _: () = msg_send![parent, addSubview: &*seat.host];
+            }
         }
         true
     })
@@ -135,7 +162,6 @@ fn remove(slot: &mut Option<Seat>) {
 }
 
 unsafe fn make_seat(
-    web: *mut AnyObject,
     main: MainThreadMarker,
     owner: String,
     radius: f64,
@@ -145,8 +171,6 @@ unsafe fn make_seat(
     let control_class = AnyClass::get(c"UIPasteControl")?;
     let config_class = AnyClass::get(c"UIPasteControlConfiguration")?;
     unsafe {
-        let host: Retained<AnyObject> = msg_send![class!(UIView), new];
-        let _: () = msg_send![&*host, setClipsToBounds: true];
         let configuration: Retained<AnyObject> = msg_send![config_class, new];
         let color: Retained<AnyObject> = msg_send![class!(UIColor), labelColor];
         let fill: Retained<AnyObject> = msg_send![class!(UIColor), secondarySystemFillColor];
@@ -161,7 +185,8 @@ unsafe fn make_seat(
             report,
             drag_x: Cell::new(0.0),
         });
-        let target: Retained<Target> = msg_send![super(allocated), init];
+        let target: Retained<Target> = msg_send![super(allocated), initWithFrame: NSRect::ZERO];
+        let _: () = msg_send![&*target, setClipsToBounds: true];
         let text = NSString::from_str("public.text");
         let image = NSString::from_str("public.image");
         let types: Retained<AnyObject> = msg_send![class!(NSArray), arrayWithObject: &*text];
@@ -178,14 +203,12 @@ unsafe fn make_seat(
         let pan: Retained<AnyObject> =
             msg_send![pan, initWithTarget: &*target, action: sel!(dragPasteKey:)];
         let _: () = msg_send![&*pan, setDelegate: &*target];
-        let _: () = msg_send![&*host, addGestureRecognizer: &*pan];
-        let _: () = msg_send![&*host, addSubview: &*control];
-        let _: () = msg_send![web, addSubview: &*host];
+        let _: () = msg_send![&*target, addGestureRecognizer: &*pan];
+        let _: () = msg_send![&*target, addSubview: &*control];
         Some(Seat {
             owner,
-            host,
+            host: target,
             control,
-            _target: target,
         })
     }
 }
@@ -209,14 +232,48 @@ fn read_text(providers: Retained<AnyObject>, start: usize, report: Report) {
                         {
                             report(json!({ "text": text }));
                         } else {
-                            read_text(other.clone(), index + 1, report.clone());
+                            read_text_data(other.clone(), index, report.clone());
                         }
                     });
                 let _: *mut AnyObject = msg_send![item, loadObjectOfClass: class!(NSString), completionHandler: &*complete];
                 return;
             }
+            if supports(item, UTF8_TEXT) {
+                read_text_data(providers, index, report);
+                return;
+            }
         }
         read_images(&providers, report);
+    }
+}
+
+unsafe fn supports(item: *mut AnyObject, type_identifier: &str) -> bool {
+    let kind = NSString::from_str(type_identifier);
+    unsafe { msg_send![item, hasItemConformingToTypeIdentifier: &*kind] }
+}
+
+fn read_text_data(providers: Retained<AnyObject>, index: usize, report: Report) {
+    unsafe {
+        let item: *mut AnyObject = msg_send![&*providers, objectAtIndex: index];
+        if !supports(item, UTF8_TEXT) {
+            read_text(providers, index + 1, report);
+            return;
+        }
+        let kind = NSString::from_str(UTF8_TEXT);
+        let complete = RcBlock::new(move |data: *mut AnyObject, _error: *mut AnyObject| {
+            if let Some(data) = data.as_ref() {
+                let size: usize = msg_send![data, length];
+                if size > 0 {
+                    let bytes: *const u8 = msg_send![data, bytes];
+                    if let Ok(text) = std::str::from_utf8(std::slice::from_raw_parts(bytes, size)) {
+                        report(json!({ "text": text }));
+                        return;
+                    }
+                }
+            }
+            read_text(providers.clone(), index + 1, report.clone());
+        });
+        let _: *mut AnyObject = msg_send![item, loadDataRepresentationForTypeIdentifier: &*kind, completionHandler: &*complete];
     }
 }
 
@@ -234,10 +291,8 @@ fn read_images(providers: &AnyObject, report: Report) {
         for index in 0..count {
             let item: *mut AnyObject = msg_send![providers, objectAtIndex: index];
             for (uti, mime) in crate::edit_menu::PICTURES {
-                let kind = NSString::from_str(uti);
-                let supported: bool = msg_send![item, hasItemConformingToTypeIdentifier: &*kind];
-                if supported {
-                    items.push((item, kind, mime));
+                if supports(item, uti) {
+                    items.push((item, NSString::from_str(uti), mime));
                     break;
                 }
             }

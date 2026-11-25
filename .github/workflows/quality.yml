@@ -308,6 +308,17 @@ jobs:
         with:
           node-version: 22.19.0
       - run: sudo xcode-select -s /Applications/Xcode_26.5.app
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: aarch64-apple-ios-sim
+      - name: Build the production paste control for the keyboard probe
+        env:
+          IPHONEOS_DEPLOYMENT_TARGET: '17.0'
+        run: |
+          paste_target="$RUNNER_TEMP/native-paste"
+          cargo build --locked --manifest-path apps/gui/scripts/native-keyboard-probe/paste-fixture/Cargo.toml \
+            --target aarch64-apple-ios-sim --target-dir "$paste_target"
+          echo "KHOR_PASTE_PROBE_LIB=$paste_target/aarch64-apple-ios-sim/debug/libterminal_paste_probe.a" >> "$GITHUB_ENV"
       - name: Tap the terminal and swap the actual iOS keyboard with attachments
         run: |
           test "$(uname -m)" = arm64

@@ -2,6 +2,7 @@
 import argparse
 from http.server import ThreadingHTTPServer
 import json
+import os
 from pathlib import Path
 from contextlib import suppress
 import plistlib
@@ -53,10 +54,12 @@ def main():
         'NSAppTransportSecurity':{'NSAllowsLocalNetworking':True},
         'KhorProbeURL':entry,
     }))
+    paste_library = os.environ.get('KHOR_PASTE_PROBE_LIB')
+    paste_flags = ['-D', 'PASTE_PROBE', paste_library, '-framework', 'UIKit'] if paste_library else []
     subprocess.run(['xcrun','--sdk','iphonesimulator','swiftc','-parse-as-library','-swift-version','5',
                     '-target','arm64-apple-ios17.0-simulator',
                     '-sdk',run('xcrun','--sdk','iphonesimulator','--show-sdk-path'),
-                    'apps/gui/scripts/native-keyboard-probe/Probe.swift','-o',str(app/'Probe')],
+                    'apps/gui/scripts/native-keyboard-probe/Probe.swift',*paste_flags,'-o',str(app/'Probe')],
                    timeout=120, check=True)
     subprocess.run(['codesign','--force','--sign','-',str(app)], timeout=30, check=True)
     simulator = args.simulator or dedicated_simulator()

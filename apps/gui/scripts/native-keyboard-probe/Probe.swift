@@ -1,6 +1,15 @@
 import UIKit
 import WebKit
 
+#if PASTE_PROBE
+@_silgen_name("mount_terminal_paste_probe")
+func mountTerminalPasteProbe(
+    _ web: UnsafeMutableRawPointer,
+    _ frame: UnsafePointer<Double>,
+    _ path: UnsafePointer<CChar>
+) -> Bool
+#endif
+
 @main
 final class KeyboardProbe: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
@@ -48,6 +57,16 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
             do {
                 let value = try await web.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
                 reply["value"] = value ?? NSNull()
+                #if PASTE_PROBE
+                if command["pasteSeat"] as? Bool == true, let frame = value as? [Double], frame.count == 4 {
+                    let path = directory.appendingPathComponent("paste-result.json").path
+                    reply["pasteAttached"] = path.withCString { name in
+                        frame.withUnsafeBufferPointer { rectangle in
+                            mountTerminalPasteProbe(Unmanaged.passUnretained(web).toOpaque(), rectangle.baseAddress!, name)
+                        }
+                    }
+                }
+                #endif
             } catch {
                 reply["error"] = error.localizedDescription
             }

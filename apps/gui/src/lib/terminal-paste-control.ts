@@ -54,7 +54,6 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     let frame = 0;
     let last = "";
     let generation = 0;
-    let supported = true;
     let listening = false;
     const send = (geometry: Seat | null) => {
       const version = ++generation;
@@ -67,12 +66,14 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
           if ((!alive && geometry) || version !== generation) return;
           const attached = await invoke<boolean>("terminal_paste_control", { owner, geometry });
           if (alive && version === generation) {
-            supported = !geometry || attached;
+            // UIKit may not have a window during a keyboard or view
+            // handoff. Keep the web key usable and try again on the next
+            // layout change, even if its measured rectangle stays the same.
+            if (geometry && !attached) last = "";
             setNative(attached);
           }
         } catch {
           if (alive && version === generation) {
-            supported = false;
             setNative(false);
           }
         }
@@ -80,7 +81,7 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     };
     const measure = () => {
       frame = 0;
-      if (!alive || !listening || !supported) return;
+      if (!alive || !listening) return;
       const geometry = seatOf(cap, row);
       const stamp = JSON.stringify(geometry);
       if (stamp === last) return;
@@ -109,6 +110,7 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
     row.addEventListener("scroll", schedule);
     window.addEventListener("resize", schedule);
     window.visualViewport?.addEventListener("resize", schedule);
+    window.visualViewport?.addEventListener("scroll", schedule);
     document.addEventListener("visibilitychange", schedule);
     return () => {
       alive = false;
@@ -118,6 +120,7 @@ export function useTerminalPasteControl(onPaste?: (paste: Pasted) => void) {
       row.removeEventListener("scroll", schedule);
       window.removeEventListener("resize", schedule);
       window.visualViewport?.removeEventListener("resize", schedule);
+      window.visualViewport?.removeEventListener("scroll", schedule);
       document.removeEventListener("visibilitychange", schedule);
       stop();
       send(null);
