@@ -20,15 +20,33 @@ export async function checkWorkspaceBranches(browser, {port,report,engine,width}
     await page.locator('[data-file-tree] [data-tree-entry]:visible').first().waitFor();
     await label.filter({hasText:/^main$/}).waitFor();
     const filesBefore=await page.locator('[data-file-tree] button[data-file-path]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-file-path')));
+    const spacing=await picker.evaluate(async button=>{
+      // On the narrow face the panel slides in beneath the stationary Back button.
+      await Promise.allSettled(document.getAnimations()
+        .filter(animation=>animation.effect?.getTiming().iterations===1)
+        .map(animation=>animation.finished));
+      const icon=button.querySelector('[data-workspace-branch-icon] svg');
+      const name=button.querySelector('[data-popup-value]');
+      const back=[...document.querySelectorAll('[data-ws-list-back],[data-screen-head] [data-back]')].find(el=>el.getClientRects().length);
+      if(!icon||!name||!back)return null;
+      const iconBox=icon.getBoundingClientRect(),backBox=back.getBoundingClientRect();
+      return {
+        gap:name.getBoundingClientRect().left-iconBox.right,
+        token:parseFloat(getComputedStyle(button).getPropertyValue('--gap-in')),
+        offset:iconBox.left+iconBox.width/2-backBox.left-backBox.width/2,
+      };
+    });
+    assert(spacing && Math.abs(spacing.gap-spacing.token)<=1,'The branch icon and name must share a trigger and one control gap');
+    assert(Math.abs(spacing.offset)<=1,'The branch icon must align with the Back button');
     await activate(nav.locator('[data-workspace-view="history"]'));
     await first.waitFor();
     const original=await first.getAttribute('data-workspace-log-commit');
     assert(original.startsWith('a'));
 
-    await activate(picker);
+    await activate(picker.locator('[data-workspace-branch-icon] svg'));
     await option('refs/heads/feat/workspace-preview').waitFor();
     assert.equal(await option('').getAttribute('aria-checked'),'true');
-    assert.match(await option('').innerText(),/当前检出|Checked out/);
+    assert.match(await option('').innerText(),/当前工作区|Current workspace/);
     await page.screenshot({path:path.join(report,name+'-menu.png')});
     await activate(option('refs/heads/feat/workspace-preview'));
     await first.filter({hasText:'工作区分支预览 43'}).waitFor();

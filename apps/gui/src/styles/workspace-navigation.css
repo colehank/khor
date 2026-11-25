@@ -7,9 +7,11 @@
 /* The capsule's inner padding must not shift its final glyph away from Close. */
 [data-workspace-navigation][data-seat="session"] { padding-inline-end: calc(var(--gap-row) - var(--glass-pad)); }
 [data-workspace-navigation][data-seat="workspace"] { padding-inline: var(--gap-group) var(--gap-row); }
-[data-workspace-navigation][data-seat="workspace"] [data-workspace-branch-icon] { width: var(--glass-btn); }
+[data-workspace-navigation][data-seat="workspace"] > [data-workspace-branch-icon] { width: var(--glass-btn); }
 [data-workspace-branch-icon] { width: var(--tree-slot); display: grid; place-items: center; flex: none; color: var(--muted-foreground); }
 [data-workspace-branch-icon] svg { width: var(--ctl-glyph); height: var(--ctl-glyph); }
+[data-workspace-branch-picker] > span { padding-inline-start: calc((var(--glass-btn) - var(--ctl-glyph)) / 2); }
+[data-workspace-branch-picker] [data-workspace-branch-icon] { width: var(--ctl-glyph); }
 [data-workspace-branch] { flex: 1; min-width: 0; }
 [data-workspace-branch] > span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 [data-workspace-navigation] > .glass {

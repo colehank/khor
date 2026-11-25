@@ -10,9 +10,9 @@ export type PopupChoice={
   mark?:Record<string,string|boolean|undefined>;
 };
 type Props={choices:PopupChoice[];label:string;disabled?:boolean;look?:"plain"|"field";
-  mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string;onOpenChange?:(open:boolean)=>void};
+  leading?:ReactNode;mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string;onOpenChange?:(open:boolean)=>void};
 
-function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",mark,className,placeholder,onOpenChange}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
+function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",leading,mark,className,placeholder,onOpenChange}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
   const id=useId();
   const trigger=useRef<HTMLButtonElement>(null);
   const selected=choices.filter(choice=>values.includes(choice.value));
@@ -26,7 +26,7 @@ function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,
         data-popup-trigger data-popup-owner={id} {...mark}
         className={cn("flex min-h-touch min-w-0 items-center rounded-sm text-body disabled:opacity-40",look==="field"&&"w-full")}>
         <span className={cn("flex h-ctl-md min-w-0 items-center gap-in rounded-sm pr-xxs pl-in hover:bg-fill",look==="field"&&"w-full bg-fill hover:bg-fill-strong")}>
-          {!multiple&&selected[0]?.preview&&<span aria-hidden className="grid size-5 flex-none place-items-center">{selected[0].preview}</span>}
+          {leading??(!multiple&&selected[0]?.preview&&<span aria-hidden className="grid size-5 flex-none place-items-center">{selected[0].preview}</span>)}
           <span data-popup-value className={cn("min-w-0 truncate tabular-nums",look==="field"&&"flex-1")}>{current}</span>
           <span data-setting-trail className="flex h-4.5 w-4 flex-none flex-col items-center justify-center rounded-xs bg-fill-strong text-muted-foreground"><IconChevronUp centred className="-mb-(--chevron-pair) size-2.5"/><IconChevronDown centred className="size-2.5"/></span>
         </span>

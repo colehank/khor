@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchGitBranches, said, type GitBranches } from "@/api";
+import { IconBranch } from "@/components/icons";
 import { PopupButton, type PopupChoice } from "@/components/ui/popup-button";
 import { gui } from "@/gen/catalog";
 
@@ -45,6 +46,7 @@ export function WorkspaceBranchPicker({ machine, root, branch, reference, onPick
 
   return <PopupButton
     label={gui.git_branch_history}
+    leading={<span data-workspace-branch-icon aria-hidden><IconBranch /></span>}
     value={reference === branches?.current ? "" : reference ?? ""}
     placeholder={reference ? branchName(reference) : headLabel}
     choices={choices}

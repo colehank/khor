@@ -129,7 +129,7 @@ async function inspect(browser, scene, size, data = {}) {
       const back=[...document.querySelectorAll('[data-ws-list-back],[data-screen-head] [data-back]')].find(el=>el.getClientRects().length);
       const search=document.querySelector('[data-ws-side-head] [data-search-open]');
       const box=el=>{if(!el)return null;const r=el.getBoundingClientRect();return {left:r.left,right:r.right,center:r.left+r.width/2};};
-      return {back:box(back),search:box(search),branch:box(nav?.querySelector('[data-workspace-branch-icon]')),pill:box(nav?.querySelector('[data-glass-capsule]'))};
+      return {back:box(back),search:box(search),branch:box(nav?.querySelector('[data-workspace-branch-icon] svg')),pill:box(nav?.querySelector('[data-glass-capsule]'))};
     });
     workspaceLayout.push(layout);
     assert(layout.back&&layout.search&&layout.branch&&layout.pill,'The actual workspace header and sidebar controls must be present');
