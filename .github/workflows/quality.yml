@@ -129,8 +129,8 @@ jobs:
           sudo apt-get update
           sudo apt-get -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o Acquire::Retries=2 install --no-install-recommends -y fonts-noto-cjk
           npx playwright-core install --with-deps chromium webkit
-          FACE_ONLY=scan npm run face
-          FACE_ONLY=scan PAIRING_WEBKIT=1 npm run face
+          FACE_ONLY=scan PAIRING_BUNDLE=dist npm run face
+          FACE_ONLY=scan PAIRING_BUNDLE=dist PAIRING_WEBKIT=1 FACE_PORT=1459 npm run face
           node dev/lab/check-app.mjs
           LAB_CHECKS=session-import LAB_REPORT="$LAB_REPORT/session-import" node dev/lab/check-app.mjs
           LAB_CHECKS=session-attention LAB_REPORT="$LAB_REPORT/session-attention" node dev/lab/check-app.mjs

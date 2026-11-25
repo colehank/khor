@@ -64,8 +64,11 @@ import { cmProbe } from "./cm-probe.mjs";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const PORT = Number(process.env.FACE_PORT ?? 1451);
-const pairingWebKit = process.env.FACE_ONLY === "scan" && !!process.env.PAIRING_WEBKIT;
-const faceOrigin = `http://${pairingWebKit ? "127.0.0.1" : "localhost"}:${PORT}`;
+const pairingGate = process.env.FACE_ONLY === "scan";
+const pairingWebKit = pairingGate && !!process.env.PAIRING_WEBKIT;
+const pairingBundle = pairingGate ? process.env.PAIRING_BUNDLE : undefined;
+const faceHost = pairingGate ? "127.0.0.1" : "localhost";
+const faceOrigin = `http://${faceHost}:${PORT}`;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // A bounded poll where a fixed sleep used to be. Every「probe dead」in
 // this file is the claim *this surface never drew*, and a fixed wait
@@ -101,25 +104,38 @@ const DOC_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End"
 let vite = null;
 let browser = null;
 try {
-  vite = spawn("node_modules/.bin/vite", ["--port", String(PORT), "--strictPort", ...(pairingWebKit ? ["--host", "127.0.0.1"] : [])], {
+  const viteArgs = [
+    ...(pairingBundle ? ["preview", "--outDir", pairingBundle] : []),
+    "--host", faceHost, "--port", String(PORT), "--strictPort",
+  ];
+  vite = spawn("node_modules/.bin/vite", viteArgs, {
     cwd: gui,
     env: { ...process.env, KHOR_FACE_GATE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
   });
   let gone = null;
-  vite.on("exit", (code) => (gone = `vite exited with ${code} — is ${PORT} already taken?`));
-  let ready = false;
-  vite.stdout.on("data", (d) => (ready ||= String(d).includes(`:${PORT}`)));
-  for (let i = 0; i < 100 && !ready; i++) {
-    if (gone) throw new Error(gone);
-    await wait(100);
-  }
-  if (!ready) throw new Error(`vite never came up on ${PORT}`);
+  let serverLog = "";
+  const record = bytes => { serverLog = (serverLog + bytes).slice(-4096); };
+  vite.stdout.on("data", record);
+  vite.stderr.on("data", record);
+  vite.on("error", error => { gone = error.message; });
+  vite.on("exit", code => { gone = `Vite exited with ${code}`; });
+  const ready = await until(45_000, async () => {
+    if (gone) throw new Error(`${gone}
+${serverLog}`);
+    try {
+      return (await fetch(faceOrigin, { signal: AbortSignal.timeout(1000) })).ok;
+    } catch {
+      return false;
+    }
+  });
+  if (!ready) throw new Error(`Vite did not answer on ${faceOrigin}
+${serverLog}`);
 
   browser = pairingWebKit
     ? await webkit.launch({ headless: true })
-    : await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
-  const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    : await chromium.launch({ channel: pairingBundle ? undefined : "chrome", headless: true, args: ["--no-proxy-server"] });
+  const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: pairingGate ? "zh-CN" : undefined });
   // **The file's editor is CodeMirror** (cm-a, 2026-10-10): probes ask
   // the view through `window.__cm` (scripts/cm-probe.mjs).
   await page.addInitScript(cmProbe);

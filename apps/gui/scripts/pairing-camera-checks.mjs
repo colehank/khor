@@ -21,6 +21,7 @@ export async function checkPairingCamera(page, url, openDevices) {
   await page.addInitScript(() => {
     const scenario = new URLSearchParams(location.search).get("pairing-scan");
     if (!scenario) return;
+    localStorage.setItem("khor.lang", "zh");
     const state = {
       calls: [],
       permission: scenario === "prompt" ? "prompt" : scenario === "denied" ? "denied" : "granted",
