@@ -6,15 +6,15 @@ order: 1
 
 <h2 id="desktop">Desktop app</h2>
 
-Choose Apple silicon or Intel on the [download page](/download/). Check **About This Mac** if you’re unsure which chip you have.
+Find your platform on the [download page](/download/). On macOS, check **About This Mac** if you’re unsure which chip you have.
 
-1. Unzip the download, move **Khor.app** to **Applications**, and open it.
+1. On macOS, unzip the download, move **Khor.app** to **Applications**, and open it. On Windows, run the MSI installer and open Khor from the Start menu.
 2. Open **Machines** and check that your device appears. One device is enough to get started.
 3. Open **Sessions** and select **＋** beside the list. In the new tab, choose a target machine, directory, and available launch method, then select **Create**.
 
 ### Connect another device
 
-Each device needs Khor. Install the app on a Mac with a desktop, or use the CLI below for a headless Linux or Mac host.
+Each device needs Khor. Use the desktop app on macOS or Windows, or the CLI below for a Linux or Mac host.
 
 In **Machines**, select **＋**, then **Khor host**:
 

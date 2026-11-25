@@ -24,11 +24,17 @@ export default defineConfig({
   // palette of its own onto the page; the design system has one.
   markdown: { syntaxHighlight: false, processor:satteri({mdastPlugins:[deploymentLinks]}) },
   integrations:[{name:'khor-static-install',hooks:{'astro:build:done':async({dir})=>{
-    const source=await readFile(new URL('../../scripts/install.sh',import.meta.url),'utf8');
+    const installer=process.env.KHOR_SITE_INSTALLER ?? new URL('../../scripts/install.sh',import.meta.url);
+    const source=await readFile(installer,'utf8');
     const original='VERSION="${KHOR_VERSION:-latest}"';
-    if(!source.includes(original))throw new Error('Installer default changed; review the website pin before deploying');
+    if(source.split('\n').filter(line=>line===original).length!==1)throw new Error('Installer default changed; review the website pin before deploying');
     await writeFile(new URL('install.sh',dir),source.replace(original,`VERSION="\${KHOR_VERSION:-${release.version}}"`));
     await writeFile(new URL('.nojekyll',dir),'');
+    if(process.env.KHOR_SITE_SOURCE_COMMIT){
+      await writeFile(new URL('build.json',dir),JSON.stringify({
+        source_commit:process.env.KHOR_SITE_SOURCE_COMMIT, release:release.version, site:new URL(deployment.base,deployment.site).href,
+      },null,2)+'\n');
+    }
   }}}],
   // The app icon and the tokens are read from where they are decided
   // (apps/gui, docs/design-system), not copied in.

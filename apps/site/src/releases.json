@@ -1,0 +1,14 @@
+{
+  "version": "v0.2.0-rc.31",
+  "channel": "preview",
+  "files": [
+    "khor-macos-arm64.app.tar.gz",
+    "khor-macos-x86_64.app.tar.gz",
+    "khor-windows-x86_64.msi",
+    "khor-linux-x86_64.gz",
+    "khor-linux-aarch64.gz",
+    "khor-macos-arm64.gz",
+    "khor-macos-x86_64.gz"
+  ],
+  "previewVersion": null
+}

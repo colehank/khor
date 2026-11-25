@@ -9,9 +9,15 @@ import L from './Localized.astro';
 import {localizedAttrs} from '../i18n';
 interface Props {prefix:string;}
 const {prefix}=Astro.props;
+const platformsWithAssets={
+  macos:{title:['macOS App · CLI','macOS 应用 · 命令行'],label:['Install the macOS app or CLI','安装 macOS 应用或命令行客户端'],detail:'App · CLI'},
+  windows:{title:['Windows App','Windows 应用'],label:['Install the Windows app','安装 Windows 应用'],detail:'App'},
+  linux:{title:['Linux CLI','Linux 命令行'],label:['Install the Linux CLI','安装 Linux 命令行客户端'],detail:'CLI'},
+} as const;
 const platforms=supportedDevices.map(platform=>{
   const id=platform.name.toLowerCase();
-  const available=release.downloads.some(item=>item.platform.toLowerCase().startsWith(id));
+  const available=release.downloads.some(item=>item.platform.toLowerCase().startsWith(id))
+    ?platformsWithAssets[id as keyof typeof platformsWithAssets]:undefined;
   return {...platform,id,available};
 });
 const titleId=`${prefix}-platforms-title`,commandId=`${prefix}-install`;
@@ -20,7 +26,7 @@ const titleId=`${prefix}-platforms-title`,commandId=`${prefix}-install`;
   <h2 class="platforms-title" id={titleId}><L en="Other ways to get Khor" zh="其他安装方式"/></h2>
   <nav class="product-platforms" aria-labelledby={titleId}>
     {platforms.map(platform=>platform.available?
-      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} {...localizedAttrs({title:platform.id==='linux'?['Linux CLI','Linux 命令行']:['macOS App · CLI','macOS 应用 · 命令行'],'aria-label':platform.id==='linux'?['Install the Linux CLI','安装 Linux 命令行客户端']:['Install the macOS app or CLI','安装 macOS 应用或命令行客户端']})}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail">{platform.id==='linux'?'CLI':'App · CLI'}</span></a>:
+      <a class="platform-option" href={sitePath(`/download/?platform=${platform.id}`)} {...localizedAttrs({title:platform.available.title,'aria-label':platform.available.label})}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail">{platform.available.detail}</span></a>:
       <button class="platform-option" type="button" data-unavailable {...localizedAttrs({'aria-label':[`${platform.name} availability`,`${platform.name} 推出情况`]})} aria-describedby={`${prefix}-platform-${platform.id}-soon`}><span class="platform-icon" aria-hidden="true"><ConceptMark svg={platform.svg} x={0} y={0} size={24} prefix={`${prefix}-platform-${platform.id}`}/></span><span>{platform.name}</span><span class="platform-detail" aria-hidden="true"></span><span class="platform-tooltip" role="tooltip" id={`${prefix}-platform-${platform.id}-soon`}><L en="Coming soon" zh="即将推出"/></span></button>
     )}
   </nav>

@@ -147,9 +147,11 @@ Other ways to get Khor 与 or Khor CLI 共用字体、字号、字重和颜色�
 KHOR_SITE_URL=https://colehank.github.io KHOR_SITE_BASE=/khor/ npm run build --prefix apps/site -- --force
 ```
 
-输出仍是 `apps/site/dist`，将其内容作为 `gh-pages` 分支根目录发布。产物含 `.nojekyll` 和 `install.sh`，GitHub 托管静态产物；构建在本机完成。主域名部署使用 `KHOR_SITE_URL=https://khor.cloud KHOR_SITE_BASE=/`。基路径同时作用于页面、Markdown、资源、下载推荐及演示 GUI 的下载回复。
+输出为 `apps/site/dist`。主域名部署使用 `KHOR_SITE_URL=https://khor.cloud KHOR_SITE_BASE=/`。基路径同时作用于页面、Markdown、资源、下载推荐及演示 GUI 的下载回复。
 
-官网安装脚本使用仓库原始安装器，并将默认版本固定到 `src/releases.ts` 的已发布预览版；保留 `KHOR_VERSION` 覆盖能力。当前只有预发布版，不能通过 GitHub 的 `/latest` 入口选择它。安装脚本只作为静态文件输出，不在构建或发布时执行。
+应用安装包公开发布后，主分支的 `site-pages.yml` 从 `feat/site-story` 检出官网源码。`scripts/select-release.mjs` 读取发布资产和发布清单，优先选择正式版，只有预览版时选择最高 RC，同步生成下载页、`download.json` 和 CLI 默认版本。网站安装脚本取自选中版本的发布资产，核对 GitHub 摘要，并保留 `KHOR_VERSION` 覆盖。`src/releases.json` 提供离线开发默认值，CI 在构建前更新其工作副本。
+
+网站工作流也可从 Actions 手动运行。它复用上次已验收的交互演示静态产物，以独立的 Git 提交固定版本。修改演示时先用 `npm run demo:build --prefix apps/site` 重建并验收，再更新工作流引用的演示快照。主域名的日常网站发布由 GitHub Actions 部署静态文件。
 
 本次发布与 Cloudflare DNS 状态见 [Pages 发布记录](../../docs/handoff/site-pages-20261112.md)。
 
