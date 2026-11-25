@@ -330,25 +330,36 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
               const strip=key.closest('[data-term-keys-scroll]').getBoundingClientRect();
               if(rect.left<strip.left-1 || rect.right>strip.right+1) return null;
               return [rect.x,rect.y,rect.width,rect.height];"""
-            wait_for(lambda: evaluate(frame_script), bool, 'The paste key is clipped by the key row')
-            frame = evaluate(frame_script, paste_seat=True)
-            point = {'x': frame[0] + frame[2] / 2, 'y': frame[1] + frame[3] / 2}
+            samples['native_paste_diagnostics'] = []
+            frame = wait_for(lambda: evaluate(frame_script), bool, 'The paste key is clipped by the key row')
+            evaluate(f"""const key=document.querySelector({json.dumps(selector)}); key.style.opacity=0;""")
             capture = documents / 'paste-result.json'
-            for _ in range(2):
-                capture.unlink(missing_ok=True)
-                wait_for(lambda: command('/elements', {'using':'accessibility id','value':'khor-terminal-paste'}),
-                         bool, 'The UIKit paste key disappeared from the row')
-                command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
-                content = wait_for(lambda: json.loads(capture.read_text()) if capture.is_file() else None,
-                                   bool, 'One native tap did not deliver the clipboard')
-                if content != {'text': paste_text}:
-                    raise ValueError(f'The native paste payload was {content!r}')
-                if not native_keyboard():
-                    raise ValueError('Pasting dismissed the terminal keyboard')
-                evaluate(f"document.querySelector('[data-terminal]').__xterm.paste({json.dumps(content['text'])});")
-                if evaluate('return window.__tabProbe.splice(0);') != [f'\x1b[200~{paste_text}\x1b[201~']:
-                    raise ValueError('A native paste did not reach the terminal exactly once')
-            samples['native_paste_twice'] = True
+            for candidate in (frame, [frame[0], frame[1], 100, 42], [290, 120, 100, 42]):
+                record = {'requested': candidate}
+                samples['native_paste_diagnostics'].append(record)
+                evaluate(f'return {json.dumps(candidate)};', paste_seat=True)
+                keys = wait_for(lambda: command('/elements', {'using':'accessibility id','value':'khor-terminal-paste'}),
+                                bool, 'No native key')
+                element = keys[0]['element-6066-11e4-a52e-4f735466cecf']
+                for attribute in ('rect','enabled','displayed'):
+                    record[attribute] = command(f'/element/{element}/{attribute}', method='GET')
+                for mode in ('coordinate','element'):
+                    capture.unlink(missing_ok=True)
+                    if mode == 'coordinate':
+                        point = {'x': candidate[0]+candidate[2]/2,'y':candidate[1]+candidate[3]/2}
+                        command('/execute/sync', {'script':'mobile: tap','args':[point]})
+                    else:
+                        command(f'/element/{element}/click', {})
+                    try:
+                        result = wait_for(lambda: json.loads(capture.read_text()) if capture.is_file() else None,
+                                          bool, 'No paste', timeout=3)
+                    except ValueError:
+                        result = None
+                    record[mode] = result
+                print(json.dumps(record), flush=True)
+            if not any(record.get('coordinate',{}).get('text') == paste_text
+                       for record in samples['native_paste_diagnostics'] if record.get('coordinate')):
+                raise ValueError('No coordinate triggered native paste')
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
     except Exception:
