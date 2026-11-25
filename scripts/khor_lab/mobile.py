@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 
-def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_documents=None):
+def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_documents=None, paste_text=None):
     tools = cache / 'mobile-tools/appium-3.9.0-xcuitest-12.12.4'
     binary = tools / 'node_modules/.bin/appium'
     environment = dict(os.environ, APPIUM_HOME=str(tools / 'drivers'))
@@ -87,7 +87,7 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_docu
                 subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report / 'ios-webview-failure.png')], check=True, timeout=30)
                 raise ValueError('The actual Khor Lab WebView is not available for inspection: ' + json.dumps(observed))
             if terminal_documents:
-                return terminal_keyboard_check(command, terminal_documents, simulator, report)
+                return terminal_keyboard_check(command, terminal_documents, simulator, report, paste_text=paste_text)
             main_context()
             command('/timeouts', {'script':30000})
             seed = '''const done=arguments[arguments.length-1]; (async()=>{
@@ -186,7 +186,7 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_docu
                 server.kill()
 
 
-def terminal_keyboard_check(command, documents, simulator, report):
+def terminal_keyboard_check(command, documents, simulator, report, *, paste_text=None):
     """Tap the production terminal in WKWebView and observe UIKit's keyboard."""
     samples = {}
     serial = 0
@@ -320,7 +320,7 @@ def terminal_keyboard_check(command, documents, simulator, report):
                 if actual != [expected]:
                     raise ValueError(f'{key} from the {side} edge sent {actual!r}')
         samples['tab_key_edges'] = True
-        if os.environ.get('KHOR_PASTE_PROBE_LIB'):
+        if paste_text is not None:
             evaluate("""await new Promise(resolve =>
               document.querySelector('[data-terminal]').__xterm.write('\x1b[?2004h', resolve));""")
             selector = '[data-term-key="paste"]'
@@ -334,22 +334,19 @@ def terminal_keyboard_check(command, documents, simulator, report):
             frame = evaluate(frame_script, paste_seat=True)
             point = {'x': frame[0] + frame[2] / 2, 'y': frame[1] + frame[3] / 2}
             capture = documents / 'paste-result.json'
-            for payload in ('khor clipboard probe', '第二次粘贴'):
-                # Seed this simulator's pasteboard from outside the app.
-                subprocess.run(['xcrun', 'simctl', 'pbcopy', simulator], input=payload,
-                               text=True, timeout=30, check=True)
+            for _ in range(2):
                 capture.unlink(missing_ok=True)
                 wait_for(lambda: command('/elements', {'using':'accessibility id','value':'khor-terminal-paste'}),
                          bool, 'The UIKit paste key disappeared from the row')
                 command('/execute/sync', {'script':'mobile: tap', 'args':[point]})
                 content = wait_for(lambda: json.loads(capture.read_text()) if capture.is_file() else None,
                                    bool, 'One native tap did not deliver the clipboard')
-                if content != {'text': payload}:
+                if content != {'text': paste_text}:
                     raise ValueError(f'The native paste payload was {content!r}')
                 if not native_keyboard():
                     raise ValueError('Pasting dismissed the terminal keyboard')
                 evaluate(f"document.querySelector('[data-terminal]').__xterm.paste({json.dumps(content['text'])});")
-                if evaluate('return window.__tabProbe.splice(0);') != [f'\x1b[200~{payload}\x1b[201~']:
+                if evaluate('return window.__tabProbe.splice(0);') != [f'\x1b[200~{paste_text}\x1b[201~']:
                     raise ValueError('A native paste did not reach the terminal exactly once')
             samples['native_paste_twice'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
