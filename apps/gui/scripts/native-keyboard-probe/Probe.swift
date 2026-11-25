@@ -20,6 +20,18 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        #if PASTE_PROBE
+        if let payload = Bundle.main.object(forInfoDictionaryKey: "KhorClipboardSeed") as? String {
+            let source = UIWindow(frame: UIScreen.main.bounds)
+            source.rootViewController = UIViewController()
+            source.makeKeyAndVisible()
+            window = source
+            UIPasteboard.general.string = payload
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            try? Data().write(to: documents.appendingPathComponent("clipboard-seeded"))
+            return true
+        }
+        #endif
         let origin = Bundle.main.object(forInfoDictionaryKey: "KhorProbeURL") as! String
         let controller = UIViewController()
         let web = WKWebView()
