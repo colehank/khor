@@ -343,7 +343,7 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
                 if not native_keyboard():
                     raise ValueError('Pasting dismissed the terminal keyboard')
                 if not evaluate(f"""const key=document.querySelector({json.dumps(selector)});
-                  return key?.checkVisibility({{opacityProperty:true}});"""):
+                  return !!key?.getBoundingClientRect().width && getComputedStyle(key).opacity === '1';"""):
                     raise ValueError('The paste key disappeared after tapping it')
             samples['native_paste_twice'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,

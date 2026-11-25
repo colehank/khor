@@ -174,6 +174,7 @@ try{
   });
   await page.goto(url+'?terminal=1');
   const key=page.locator('[data-term-key="paste"]');
+  await page.evaluate(()=>window.__keyWire.focus());
   await key.scrollIntoViewIfNeeded();
   const geometry=await key.boundingBox();
   await page.evaluate(async()=>await window.__keyWire.negotiate('\x1b[?2004h'));
