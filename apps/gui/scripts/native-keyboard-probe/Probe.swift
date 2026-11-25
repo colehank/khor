@@ -2,12 +2,31 @@ import UIKit
 import WebKit
 
 #if PASTE_PROBE
-@_silgen_name("mount_terminal_paste_probe")
-func mountTerminalPasteProbe(
-    _ web: UnsafeMutableRawPointer,
-    _ frame: UnsafePointer<Double>,
-    _ path: UnsafePointer<CChar>
-) -> Bool
+@_silgen_name("read_terminal_paste_probe")
+func readTerminalPasteProbe(_ path: UnsafePointer<CChar>)
+
+final class ClipboardProbe: NSObject, WKScriptMessageHandlerWithReply {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage,
+        replyHandler: @escaping (Any?, String?) -> Void
+    ) {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        path.path.withCString { readTerminalPasteProbe($0) }
+        Task { @MainActor in
+            for _ in 0 ..< 300 {
+                if let data = try? Data(contentsOf: path) {
+                    try? FileManager.default.removeItem(at: path)
+                    let value = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+                    replyHandler((value as? [String: Any])?["text"] as? String ?? "", nil)
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            replyHandler(nil, "The clipboard read timed out")
+        }
+    }
+}
 #endif
 
 @main
@@ -34,7 +53,16 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
         #endif
         let origin = Bundle.main.object(forInfoDictionaryKey: "KhorProbeURL") as! String
         let controller = UIViewController()
-        let web = WKWebView()
+        let configuration = WKWebViewConfiguration()
+        #if PASTE_PROBE
+        configuration.userContentController.addScriptMessageHandler(ClipboardProbe(), contentWorld: .page, name: "terminalPaste")
+        configuration.userContentController.addUserScript(WKUserScript(source: """
+            Object.defineProperty(navigator, 'clipboard', {
+                value: { readText: () => window.webkit.messageHandlers.terminalPaste.postMessage(null) }
+            });
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        #endif
+        let web = WKWebView(frame: .zero, configuration: configuration)
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
         controller.view = web
@@ -69,16 +97,6 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
             do {
                 let value = try await web.callAsyncJavaScript(script, arguments: [:], in: nil, contentWorld: .page)
                 reply["value"] = value ?? NSNull()
-                #if PASTE_PROBE
-                if command["pasteSeat"] as? Bool == true, let frame = value as? [Double], frame.count == 4 {
-                    let path = directory.appendingPathComponent("paste-result.json").path
-                    reply["pasteAttached"] = path.withCString { name in
-                        frame.withUnsafeBufferPointer { rectangle in
-                            mountTerminalPasteProbe(Unmanaged.passUnretained(web).toOpaque(), rectangle.baseAddress!, name)
-                        }
-                    }
-                }
-                #endif
             } catch {
                 reply["error"] = error.localizedDescription
             }

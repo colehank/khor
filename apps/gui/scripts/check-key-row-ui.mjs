@@ -153,20 +153,20 @@ try{
  try {
   const page=await nativePaste.newPage();
   await page.addInitScript(()=>{
-   const callbacks=new Map();
-   window.__pasteProbe={changes:[],webReads:0,withholdSeat:true,emit:value=>callbacks.get(window.__pasteProbe.listener)?.({payload:value})};
+   const clipboard=[
+    {text:'paste once'},
+    {images:[{type:'image/png',data:'AQID'},{type:'image/jpeg',data:'BAUG'}]},
+    null,
+   ];
+   window.__pasteProbe={nativeReads:0,webReads:0};
    Object.defineProperty(navigator,'clipboard',{configurable:true,value:{
     read:async()=>{window.__pasteProbe.webReads++;return []},
    }});
-   let next=0;
    window.__TAURI_INTERNALS__={
-    transformCallback:handler=>{callbacks.set(++next,handler);return next},
-    unregisterCallback:id=>callbacks.delete(id),
-    invoke:async (command,args)=>{
-     if(command==='plugin:event|listen'){window.__pasteProbe.listener=args.handler;return 1}
-     if(command==='terminal_paste_control'){
-      window.__pasteProbe.changes.push(args);
-      return !!args.geometry&&!window.__pasteProbe.withholdSeat;
+    invoke:async command=>{
+     if(command==='terminal_paste_from_key'){
+      window.__pasteProbe.nativeReads++;
+      return clipboard.shift();
      }
      return null;
     },
@@ -175,31 +175,22 @@ try{
   await page.goto(url+'?terminal=1');
   const key=page.locator('[data-term-key="paste"]');
   await key.scrollIntoViewIfNeeded();
-  await page.waitForFunction(()=>window.__pasteProbe.changes.some(change=>change.geometry));
-  assert.equal(await key.getAttribute('aria-hidden'),null,'Keep the web key visible while the native host is unavailable');
-  await page.evaluate(()=>{
-   window.__pasteProbe.withholdSeat=false;
-   window.visualViewport.dispatchEvent(new Event('scroll'));
-  });
-  await page.waitForFunction(()=>document.querySelector('[data-term-key="paste"]')?.getAttribute('aria-hidden')==='true');
-  await key.evaluate(node=>node.click());
-  assert.equal(await page.evaluate(()=>window.__pasteProbe.webReads),0,'The mounted UIKit control owns the paste gesture');
-  const seat=await page.evaluate(()=>window.__pasteProbe.changes.filter(change=>change.geometry).at(-1));
-  assert(seat.geometry.clip[2]>0&&seat.geometry.clip[2]<=seat.geometry.frame[2]);
-  await page.evaluate(async owner=>{
-   await window.__keyWire.negotiate('\x1b[?2004h');
-   window.__pasteProbe.emit({owner:owner+'-retired',value:{text:'wrong terminal'}});
-   window.__pasteProbe.emit({owner,value:{text:'paste once'}});
-   window.__pasteProbe.emit({owner,value:{images:[{type:'image/png',data:'AQID'},{type:'image/jpeg',data:'BAUG'}]}});
-  },seat.owner);
+  const geometry=await key.boundingBox();
+  await page.evaluate(async()=>await window.__keyWire.negotiate('\x1b[?2004h'));
+  for(let index=1;index<=3;index++){
+   await key.tap();
+   await page.waitForFunction(count=>window.__pasteProbe.nativeReads===count,index);
+   assert.equal(await key.getAttribute('aria-hidden'),null,'The paste key keeps its visible button');
+   assert.equal(await key.evaluate(el=>getComputedStyle(el).opacity),'1');
+   assert.deepEqual(await key.boundingBox(),geometry);
+   assert(await page.locator('.xterm-helper-textarea:focus').count(),'Pasting keeps terminal focus');
+  }
+  assert.equal(await page.evaluate(()=>window.__pasteProbe.webReads),0,'The iOS key uses UIKit instead of the WebKit paste menu');
   assert.deepEqual(await page.evaluate(()=>window.__keyWire.data),['\x1b[200~paste once\x1b[201~']);
   assert.deepEqual(await page.evaluate(async()=>Promise.all(window.__keyWire.images.map(async file=>({
    type:file.type,bytes:[...new Uint8Array(await file.arrayBuffer())],
   })))),[{type:'image/png',bytes:[1,2,3]},{type:'image/jpeg',bytes:[4,5,6]}]);
-  await page.setViewportSize({width:240,height:740});
-  await page.locator('[data-term-keys-scroll]').evaluate(row=>row.scrollLeft=0);
-  await page.waitForFunction(()=>window.__pasteProbe.changes.at(-1)?.geometry===null);
-  mark('native paste sends text and images to the owning terminal and hides off the row');
+  mark('the same iOS key pastes through UIKit and stays visible and focused across repeated taps');
  } catch(error) {
   groupErrors.push({group:'native-paste',error:String(error),stack:error.stack});
  } finally{await nativePaste.close();}
