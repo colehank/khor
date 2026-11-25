@@ -1,0 +1,17 @@
+[package]
+name = "terminal-paste-probe"
+version = "0.0.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+path = "lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+block2 = "=0.6.2"
+objc2 = "=0.6.4"
+objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSString", "objc2-core-foundation"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

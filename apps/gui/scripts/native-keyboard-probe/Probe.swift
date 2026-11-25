@@ -1,6 +1,34 @@
 import UIKit
 import WebKit
 
+#if PASTE_PROBE
+@_silgen_name("read_terminal_paste_probe")
+func readTerminalPasteProbe(_ path: UnsafePointer<CChar>)
+
+final class ClipboardProbe: NSObject, WKScriptMessageHandlerWithReply {
+    func userContentController(
+        _ userContentController: WKUserContentController,
+        didReceive message: WKScriptMessage,
+        replyHandler: @escaping (Any?, String?) -> Void
+    ) {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        path.path.withCString { readTerminalPasteProbe($0) }
+        Task { @MainActor in
+            for _ in 0 ..< 300 {
+                if let data = try? Data(contentsOf: path) {
+                    try? FileManager.default.removeItem(at: path)
+                    let value = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+                    replyHandler((value as? [String: Any])?["text"] as? String ?? "", nil)
+                    return
+                }
+                try await Task.sleep(for: .milliseconds(100))
+            }
+            replyHandler(nil, "The clipboard read timed out")
+        }
+    }
+}
+#endif
+
 @main
 final class KeyboardProbe: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
@@ -11,9 +39,30 @@ final class KeyboardProbe: UIResponder, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]?
     ) -> Bool {
+        #if PASTE_PROBE
+        if let payload = Bundle.main.object(forInfoDictionaryKey: "KhorClipboardSeed") as? String {
+            let source = UIWindow(frame: UIScreen.main.bounds)
+            source.rootViewController = UIViewController()
+            source.makeKeyAndVisible()
+            window = source
+            UIPasteboard.general.string = payload
+            let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            try? Data().write(to: documents.appendingPathComponent("clipboard-seeded"))
+            return true
+        }
+        #endif
         let origin = Bundle.main.object(forInfoDictionaryKey: "KhorProbeURL") as! String
         let controller = UIViewController()
-        let web = WKWebView()
+        let configuration = WKWebViewConfiguration()
+        #if PASTE_PROBE
+        configuration.userContentController.addScriptMessageHandler(ClipboardProbe(), contentWorld: .page, name: "terminalPaste")
+        configuration.userContentController.addUserScript(WKUserScript(source: """
+            Object.defineProperty(navigator, 'clipboard', {
+                value: { readText: () => window.webkit.messageHandlers.terminalPaste.postMessage(null) }
+            });
+            """, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        #endif
+        let web = WKWebView(frame: .zero, configuration: configuration)
         web.scrollView.bounces = false
         web.scrollView.contentInsetAdjustmentBehavior = .never
         controller.view = web

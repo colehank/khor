@@ -10,7 +10,7 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 
-def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_documents=None):
+def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_documents=None, paste_text=None):
     tools = cache / 'mobile-tools/appium-3.9.0-xcuitest-12.12.4'
     binary = tools / 'node_modules/.bin/appium'
     environment = dict(os.environ, APPIUM_HOME=str(tools / 'drivers'))
@@ -87,7 +87,7 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_docu
                 subprocess.run(['xcrun','simctl','io',simulator,'screenshot',str(report / 'ios-webview-failure.png')], check=True, timeout=30)
                 raise ValueError('The actual Khor Lab WebView is not available for inspection: ' + json.dumps(observed))
             if terminal_documents:
-                return terminal_keyboard_check(command, terminal_documents, simulator, report)
+                return terminal_keyboard_check(command, terminal_documents, simulator, report, paste_text=paste_text)
             main_context()
             command('/timeouts', {'script':30000})
             seed = '''const done=arguments[arguments.length-1]; (async()=>{
@@ -186,7 +186,7 @@ def keyboard_probe(cache, simulator, identifier, entry, report, *, terminal_docu
                 server.kill()
 
 
-def terminal_keyboard_check(command, documents, simulator, report):
+def terminal_keyboard_check(command, documents, simulator, report, *, paste_text=None):
     """Tap the production terminal in WKWebView and observe UIKit's keyboard."""
     samples = {}
     serial = 0
@@ -254,11 +254,21 @@ def terminal_keyboard_check(command, documents, simulator, report):
         # document whose fixture has not attached. Give startup its own
         # deadline; each subsequent interaction keeps its shorter deadline.
         started = time.monotonic()
-        startup_timeout = 60
+        startup_timeout = 90
+        opened_fixture = False
 
         def read_startup():
+            nonlocal opened_fixture
             observation = evaluate(state, timeout=max(0, started + startup_timeout - time.monotonic()))
             samples['startup'] = observation
+            if observation and observation['ready'] and not observation['rows'] and not opened_fixture:
+                # The Lab's auto-open observer expires while a slow hosted
+                # simulator is still loading the list. Open the visible row.
+                opened_fixture = evaluate("""if (document.querySelector('[data-session-screen]')) return false;
+                  const row = document.querySelector('[data-row="shell/layout-lab"] [data-row-open]');
+                  if (!row?.getClientRects().length) return false;
+                  row.click();
+                  return true;""")
             return observation
 
         down = wait_for(read_startup, lambda s: s and s['ready'] and s['rows'] > 10 and s['prompt'],
@@ -318,6 +328,34 @@ def terminal_keyboard_check(command, documents, simulator, report):
                 if actual != [expected]:
                     raise ValueError(f'{key} from the {side} edge sent {actual!r}')
         samples['tab_key_edges'] = True
+        if paste_text is not None:
+            evaluate("""await new Promise(resolve =>
+              document.querySelector('[data-terminal]').__xterm.write('\x1b[?2004h', resolve));""")
+            selector = '[data-term-key="paste"]'
+            evaluate(f"document.querySelector({json.dumps(selector)}).scrollIntoView({{block:'nearest',inline:'center'}});")
+            expected = f'\x1b[200~{paste_text}\x1b[201~'
+
+            def copied_input():
+                try:
+                    buttons = command('/execute/sync', {'script':'mobile: alert', 'args':[{'action':'getButtons'}]})
+                except ValueError:
+                    buttons = []
+                if 'Allow Paste' in buttons:
+                    command('/execute/sync', {'script':'mobile: alert',
+                                              'args':[{'action':'accept', 'buttonLabel':'Allow Paste'}]})
+                return evaluate('return window.__tabProbe.slice();')
+
+            for _ in range(2):
+                tap(button(selector))
+                wait_for(copied_input, lambda chunks: chunks == [expected],
+                         'A single tap did not deliver the iOS clipboard to the terminal')
+                evaluate('window.__tabProbe.length = 0;')
+                if not native_keyboard():
+                    raise ValueError('Pasting dismissed the terminal keyboard')
+                if not evaluate(f"""const key=document.querySelector({json.dumps(selector)});
+                  return !!key?.getBoundingClientRect().width && getComputedStyle(key).opacity === '1';"""):
+                    raise ValueError('The paste key disappeared after tapping it')
+            samples['native_paste_twice'] = True
         return dict(terminal_keyboard_verified=True, samples=samples, pty_resizes=resized,
                     automation='Appium 3.9.0 / XCUITest 12.12.4', human_accepted=False)
     except Exception:

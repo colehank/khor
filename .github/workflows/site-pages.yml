@@ -79,7 +79,8 @@ jobs:
           test -s "$GITHUB_WORKSPACE/site-demo/experience/app/index.html"
           mkdir -p public/experience
           cp -R "$GITHUB_WORKSPACE/site-demo/experience/app" public/experience/app
-          export KHOR_SITE_SOURCE_COMMIT="$(git rev-parse HEAD)"
+          KHOR_SITE_SOURCE_COMMIT="$(git rev-parse HEAD)"
+          export KHOR_SITE_SOURCE_COMMIT
           export KHOR_SITE_INSTALLER="$RUNNER_TEMP/khor-published-install.sh"
           npm ci
           npm ci --prefix ../gui

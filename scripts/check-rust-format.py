@@ -96,7 +96,14 @@ def main():
         inputs[manifest] = read(root, manifest)
         edition = tomllib.loads(inputs[manifest].decode())["package"]["edition"]
         editions[member] = str(workspace["package"]["edition"] if isinstance(edition, dict) else edition)
-    standalone = {"apps/gui/lab/terminal-color-answers.rs", "apps/gui/scripts/editor-history-probe/lib.rs", "apps/gui/scripts/native-menu-probe/lib.rs", "scripts/fixtures/native-io.rs", "scripts/fixtures/native-paste.rs"}
+    standalone = {
+        "apps/gui/lab/terminal-color-answers.rs",
+        "apps/gui/scripts/editor-history-probe/lib.rs",
+        "apps/gui/scripts/native-keyboard-probe/paste-fixture/lib.rs",
+        "apps/gui/scripts/native-menu-probe/lib.rs",
+        "scripts/fixtures/native-io.rs",
+        "scripts/fixtures/native-paste.rs",
+    }
     # The transport comparison uses manifest templates, rendered only in its
     # isolated runtime copy. Its Rust sources still receive the full check.
     standalone.update({
