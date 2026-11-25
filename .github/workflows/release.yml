@@ -369,7 +369,7 @@ jobs:
     if: needs.prepare.outputs.rc == 'true'
     permissions:
       contents: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/distribute.yml
     secrets: inherit
     with:
