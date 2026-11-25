@@ -473,6 +473,8 @@ async fn git_history(
     dir: String,
     cursor: Option<String>,
     limit: u32,
+    reference: Option<String>,
+    snapshot: Option<String>,
 ) -> Result<khor_gui_core::git::GitHistoryPage, String> {
     khor_gui_core::git::history(
         &Node::root_from_env(),
@@ -480,8 +482,27 @@ async fn git_history(
         &dir,
         cursor.as_deref(),
         limit,
+        reference.as_deref(),
+        snapshot.as_deref(),
     )
     .await
+}
+
+#[tauri::command]
+async fn git_explore(
+    machine: String,
+    dir: String,
+    query: khor_gui_core::git::GitExploreQuery,
+) -> Result<khor_gui_core::git::GitExploreResult, String> {
+    khor_gui_core::git::explore(&Node::root_from_env(), &machine, &dir, query).await
+}
+
+#[tauri::command]
+async fn git_branches(
+    machine: String,
+    dir: String,
+) -> Result<khor_gui_core::git::GitBranches, String> {
+    khor_gui_core::git::branches(&Node::root_from_env(), &machine, &dir).await
 }
 
 #[tauri::command]
@@ -6058,6 +6079,8 @@ pub fn run() {
             git_diff,
             git_log,
             git_history,
+            git_branches,
+            git_explore,
             git_blame,
             git_show,
             git_commit,

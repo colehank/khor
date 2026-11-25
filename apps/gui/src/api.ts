@@ -46,6 +46,9 @@ import type { GitRow } from "./gen/bindings/GitRow";
 import type { GitDiff } from "./gen/bindings/GitDiff";
 import type { GitBlame } from "./gen/bindings/GitBlame";
 import type { GitLog } from "./gen/bindings/GitLog";
+import type { GitExploreQuery } from "./gen/bindings/GitExploreQuery";
+import type { GitExploreResult } from "./gen/bindings/GitExploreResult";
+import type { GitBranches } from "./gen/bindings/GitBranches";
 import type { GitHistoryPage } from "./gen/bindings/GitHistoryPage";
 import type { GitCommitSummary } from "./gen/bindings/GitCommitSummary";
 import type { GitShow } from "./gen/bindings/GitShow";
@@ -148,6 +151,9 @@ export type {
   GitBlame,
   GitLog,
   GitHistoryPage,
+  GitBranches,
+  GitExploreQuery,
+  GitExploreResult,
   GitCommitSummary,
   GitShow,
   GitHunk,
@@ -534,8 +540,17 @@ export const fetchGitDiff = (machine: string, path: string) =>
     that changed it, newest first; who wrote each of HEAD's lines; and the
     file as one revision had it, with where the current file differs. */
 export const fetchGitLog = (machine: string, path: string) => call<GitLog>("git_log", { machine, path });
-export const fetchGitHistory = (machine: string, dir: string, cursor?: string | null, limit = 0) =>
-  call<GitHistoryPage>("git_history", { machine, dir, cursor, limit });
+export const fetchGitHistory = (machine: string, dir: string, cursor?: string | null, limit = 0, reference?: string, snapshot?: string) =>
+  call<GitHistoryPage>("git_history", { machine, dir, cursor, limit, reference, snapshot });
+export const exploreGit = async <K extends GitExploreResult["kind"]>(
+  machine: string, dir: string, query: GitExploreQuery, kind: K,
+): Promise<Extract<GitExploreResult, { kind: K }>> => {
+  const result = await call<GitExploreResult>("git_explore", { machine, dir, query });
+  if (result.kind !== kind) throw new Error(gui.region_retry);
+  return result as Extract<GitExploreResult, { kind: K }>;
+};
+export const fetchGitBranches = (machine: string, dir: string) =>
+  call<GitBranches>("git_branches", { machine, dir });
 export const fetchGitBlame = (machine: string, path: string) => call<GitBlame>("git_blame", { machine, path });
 export const fetchGitShow = (machine: string, path: string, rev: string) =>
   call<GitShow>("git_show", { machine, path, rev });

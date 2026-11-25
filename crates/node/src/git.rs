@@ -82,6 +82,9 @@ pub(crate) const WAS: usize = 256 * 1024;
 pub(crate) const HUNKS: usize = 2000;
 
 /// One workspace's git state, as of the moment it was read.
+mod explore;
+pub use explore::{GitExploreQuery, GitExploreResult};
+
 #[derive(Debug, Clone)]
 pub struct Status {
     /// The branch HEAD is on, short (`main`, not `refs/heads/main`).
@@ -731,7 +734,10 @@ pub(crate) const SHOWN: usize = 256 * 1024;
 pub enum GitAsk {
     /// The commits that changed `path`, newest first, following the first
     /// parent (what `git log --first-parent -- path` lists).
-    Log { path: String, limit: u32 },
+    Log {
+        path: String,
+        limit: u32,
+    },
     /// All commits reachable from a fixed HEAD, with an opaque continuation.
     RepositoryLog {
         dir: String,
@@ -739,19 +745,46 @@ pub enum GitAsk {
         limit: u32,
     },
     /// Who last changed each line of `path` as HEAD has it.
-    Blame { path: String },
+    Blame {
+        path: String,
+    },
     /// `path` as revision `rev` had it, and where the file as it is now
     /// differs from that.
-    Show { path: String, rev: String },
+    Show {
+        path: String,
+        rev: String,
+    },
     /// **One commit of the repository `root` is in, and what it changed**
     /// against its first parent (the commit page, COMMITS-BRIEF
     /// 2026-10-12: 「点开后显示这个 commit 的更改」). A root commit has no
     /// parent and every file it holds arrives added.
-    Commit { root: String, rev: String },
+    Commit {
+        root: String,
+        rev: String,
+    },
+    Branches {
+        dir: String,
+    },
+    BranchLog {
+        dir: String,
+        reference: String,
+        cursor: Option<String>,
+        limit: u32,
+    },
+    Explore {
+        dir: String,
+        query: GitExploreQuery,
+    },
+    SnapshotLog {
+        dir: String,
+        commit: String,
+        cursor: Option<String>,
+        limit: u32,
+    },
 }
 
 /// One file a commit changed, as the commit page draws it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CommitFile {
     /// Relative to the repository root, `/`-separated.
     pub path: String,
@@ -801,16 +834,19 @@ pub struct Commit {
 }
 
 /// Bounded metadata for a repository-history row; full messages belong to detail.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CommitSummary {
     pub id: String,
     pub author: String,
+    #[ts(type = "number")]
     pub when_ms: i64,
     pub subject: String,
     /// Author or subject exceeded its UTF-8 byte budget.
     pub cut: bool,
 }
 
+const BRANCH_LIMIT: usize = 500;
+const BRANCH_BYTES: usize = 128 * 1024;
 const HISTORY_DEFAULT: u32 = 40;
 const HISTORY_LIMIT: u32 = 100;
 const HISTORY_SUBJECT_BYTES: usize = 1024;
@@ -862,6 +898,14 @@ pub enum GitAnswer {
         total: u32,
         more: bool,
     },
+    Branches {
+        current: Option<String>,
+        refs: Vec<String>,
+        more: bool,
+    },
+    Explore {
+        result: GitExploreResult,
+    },
 }
 
 /// Answers one history question on this machine.
@@ -874,6 +918,26 @@ pub fn answer(ask: &GitAsk) -> Result<GitAnswer, String> {
         GitAsk::Blame { path } => blame(Path::new(path)),
         GitAsk::Show { path, rev } => show(Path::new(path), rev),
         GitAsk::Commit { root, rev } => commit_show(Path::new(root), rev),
+        GitAsk::Branches { dir } => branches(Path::new(dir)),
+        GitAsk::Explore { dir, query } => {
+            explore::answer(Path::new(dir), query).map(|result| GitAnswer::Explore { result })
+        }
+        GitAsk::SnapshotLog {
+            dir,
+            commit,
+            cursor,
+            limit,
+        } => {
+            let (repo, _) = open_rel(Path::new(dir))?;
+            let commit = explore::exact_commit(&repo, commit)?;
+            repository_log_for(repo, Some(commit), cursor.as_deref(), *limit)
+        }
+        GitAsk::BranchLog {
+            dir,
+            reference,
+            cursor,
+            limit,
+        } => repository_log_from(Path::new(dir), Some(reference), cursor.as_deref(), *limit),
     }
 }
 
@@ -1025,17 +1089,91 @@ impl HistoryCursor {
     }
 }
 
-fn repository_log(path: &Path, cursor: Option<&str>, limit: u32) -> Result<GitAnswer, String> {
+fn branches(path: &Path) -> Result<GitAnswer, String> {
     let (repo, _) = open_rel(path)?;
+    let current = repo
+        .head_name()
+        .map_err(|e| e.to_string())?
+        .and_then(|name| std::str::from_utf8(name.as_bstr()).ok().map(str::to_owned));
+    let platform = repo.references().map_err(|e| e.to_string())?;
+    let mut refs = Vec::new();
+    let mut bytes = 0;
+    let mut more = false;
+    'branches: for branches in [platform.local_branches(), platform.remote_branches()] {
+        for entry in branches.map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            // In particular, origin/HEAD is an alias, not a branch.
+            if entry.try_id().is_none() {
+                continue;
+            }
+            let Ok(name) = std::str::from_utf8(entry.name().as_bstr()) else {
+                continue;
+            };
+            if Some(name) == current.as_deref() {
+                continue;
+            }
+            let size = serde_json::to_vec(name).map_err(|e| e.to_string())?.len() + 1;
+            if refs.len() >= BRANCH_LIMIT || bytes + size > BRANCH_BYTES {
+                more = true;
+                break 'branches;
+            }
+            refs.push(name.to_owned());
+            bytes += size;
+        }
+    }
+    refs.sort_unstable();
+    Ok(GitAnswer::Branches {
+        current,
+        refs,
+        more,
+    })
+}
+
+fn repository_log(path: &Path, cursor: Option<&str>, limit: u32) -> Result<GitAnswer, String> {
+    repository_log_from(path, None, cursor, limit)
+}
+
+fn repository_log_from(
+    path: &Path,
+    reference: Option<&str>,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<GitAnswer, String> {
+    let (repo, _) = open_rel(path)?;
+    let commit = reference.map(|name| {
+        if !name.starts_with("refs/heads/") && !name.starts_with("refs/remotes/") {
+            return Err("Expected a local or remote-tracking branch reference".to_owned());
+        }
+        explore::resolve(&repo, name)
+    });
+    // Existing branch continuations keep their original commit even if the ref moved.
+    let start = if cursor.is_some() {
+        None
+    } else {
+        commit.transpose()?
+    };
+    repository_log_for(repo, start, cursor, limit)
+}
+
+fn repository_log_for(
+    repo: gix::Repository,
+    start: Option<gix::ObjectId>,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<GitAnswer, String> {
     if repo.shallow_commits().map_err(|e| e.to_string())?.is_some() {
         return Err("Repository history is incomplete in a shallow checkout".to_owned());
     }
     let cursor = cursor
         .map(|c| HistoryCursor::parse(c, repo.object_hash()))
         .transpose()?;
-    let head = match &cursor {
-        Some(cursor) => cursor.head,
-        None => {
+    let head = match (&cursor, start) {
+        (Some(cursor), Some(start)) if cursor.head != start => {
+            return Err("Repository history cursor belongs to another Git snapshot".to_owned());
+        }
+        (Some(cursor), _) => cursor.head,
+        (None, Some(start)) => start,
+        (None, None) => {
             let head = repo.head().map_err(|e| e.to_string())?;
             let Some(id) = head.id() else {
                 return Ok(GitAnswer::RepositoryLog {
@@ -1190,7 +1328,6 @@ pub(crate) const COMMIT_BYTES: usize = 2 * 1024 * 1024;
 type Row = (String, String, &'static str, Vec<u8>, Vec<u8>);
 
 fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
-    use gix::object::tree::diff::ChangeDetached as C;
     let root = repo_root(root).ok_or_else(|| khor_catalog::msg::no_checkout().to_owned())?;
     let repo = gix::open(&root).map_err(|e| e.to_string())?;
     let id = gix::ObjectId::from_hex(rev.as_bytes()).map_err(|e| e.to_string())?;
@@ -1205,11 +1342,26 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
         ),
         None => None,
     };
+    let (files, total, more) = diff_files(&repo, old.as_ref(), &new)?;
+    Ok(GitAnswer::Commit {
+        commit: commit_of(&commit),
+        files,
+        total,
+        more,
+    })
+}
+
+fn diff_files(
+    repo: &gix::Repository,
+    old: Option<&gix::Tree<'_>>,
+    new: &gix::Tree<'_>,
+) -> Result<(Vec<CommitFile>, u32, bool), String> {
+    use gix::object::tree::diff::ChangeDetached as C;
     // Renames tracked with git's own defaults (50 % similar), not the
     // repository's `diff.renames`: the page reads the same everywhere.
     let opts = gix::diff::Options::default().with_rewrites(Some(Default::default()));
     let changes = repo
-        .diff_tree_to_tree(old.as_ref(), Some(&new), opts)
+        .diff_tree_to_tree(old, Some(new), opts)
         .map_err(|e| e.to_string())?;
     // (path, from, letter, old blob, new blob), files only: a directory
     // is said by the files under it, a submodule has no lines here.
@@ -1262,12 +1414,7 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
         files_of(rows.into_iter().map(|(path, from, status, was, now)| {
             Ok((path, from, status, read(was)?, read(now)?))
         }))?;
-    Ok(GitAnswer::Commit {
-        commit: commit_of(&commit),
-        files,
-        total,
-        more,
-    })
+    Ok((files, total, more))
 }
 
 /// The listed files of one commit, in `rows`' order, and whether the
@@ -2093,6 +2240,78 @@ pub(crate) mod repository_history_tests {
             assert_ne!(cursor.as_ref(), Some(&next));
             cursor = Some(next);
         }
+    }
+
+    #[test]
+    fn branch_history_reads_other_refs_without_changing_the_checkout() {
+        let (checkout, marks) = linear(3);
+        let dir = checkout.0.display().to_string();
+        checkout.git(&["update-ref", "refs/heads/topic", &marks[&2]]);
+        checkout.git(&["update-ref", "refs/remotes/origin/release", &marks[&1]]);
+        checkout.git(&[
+            "symbolic-ref",
+            "refs/remotes/origin/HEAD",
+            "refs/remotes/origin/release",
+        ]);
+        checkout.git(&["tag", "v1", &marks[&2]]);
+        checkout.git(&["pack-refs", "--all"]);
+        let file = checkout.0.join("draft.txt");
+        std::fs::write(&file, "staged draft").unwrap();
+        checkout.git(&["add", "draft.txt"]);
+        std::fs::write(&file, "unstaged changes").unwrap();
+        let index = std::fs::read(checkout.0.join(".git/index")).unwrap();
+
+        let GitAnswer::Branches {
+            current,
+            refs,
+            more,
+        } = answer(&GitAsk::Branches { dir: dir.clone() }).unwrap()
+        else {
+            panic!("branch list");
+        };
+        assert_eq!(current.as_deref(), Some("refs/heads/main"));
+        assert_eq!(refs, ["refs/heads/topic", "refs/remotes/origin/release"]);
+        assert!(!more);
+
+        let history = |reference: &str, cursor| {
+            answer(&GitAsk::BranchLog {
+                dir: dir.clone(),
+                reference: reference.to_owned(),
+                cursor,
+                limit: 1,
+            })
+        };
+        let GitAnswer::RepositoryLog {
+            head,
+            commits,
+            next,
+        } = history("refs/heads/topic", None).unwrap()
+        else {
+            panic!("branch log");
+        };
+        assert_eq!(head.as_deref(), Some(marks[&2].as_str()));
+        assert_eq!(commits[0].id, marks[&2]);
+        checkout.git(&["update-ref", "refs/heads/topic", &marks[&3]]);
+        let GitAnswer::RepositoryLog {
+            head,
+            commits,
+            next,
+        } = history("refs/heads/topic", next).unwrap()
+        else {
+            panic!("branch continuation");
+        };
+        assert_eq!(head.as_deref(), Some(marks[&2].as_str()));
+        assert_eq!(commits[0].id, marks[&1]);
+        assert!(next.is_none());
+        assert!(history("refs/tags/v1", None).is_err());
+        assert!(history("refs/heads/missing", None).is_err());
+        assert_eq!(
+            page(&checkout, None, 10).0.as_deref(),
+            Some(marks[&3].as_str())
+        );
+        assert_eq!(std::fs::read(checkout.0.join(".git/index")).unwrap(), index);
+        assert_eq!(std::fs::read_to_string(file).unwrap(), "unstaged changes");
+        assert_eq!(status(&checkout.0).unwrap().branch, "main");
     }
 
     #[test]

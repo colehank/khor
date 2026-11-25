@@ -49,6 +49,36 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     if(!workspace)throw new FixtureRefusal('No Git repository: '+String(input.dir||root));
     return workspace;
   };
+  const localPreview = 'refs/heads/feat/workspace-preview';
+  const remotePreview = 'refs/remotes/origin/release';
+  const historyAt = (path: string, reference?: string) => {
+    const base = history(path);
+    if (reference === undefined) return base;
+    if (reference !== localPreview && reference !== remotePreview) throw new FixtureRefusal('Branch reference was not found');
+    const [prefix, subject] = reference === localPreview ? ['b', '工作区分支预览'] : ['c', '远程发布准备'];
+    return base.map((commit,index)=>index>=43 ? commit : {
+      ...commit, id:prefix+commit.id.slice(1), subject:subject+' '+(43-index),
+    });
+  };
+  const releaseTag = 'refs/tags/v0.1.0';
+  const snapshotHistory = (path: string, commit: unknown) => {
+    if (typeof commit !== 'string') return history(path);
+    for (const ref of [undefined, localPreview, remotePreview]) {
+      const rows = historyAt(path, ref);
+      const index = rows.findIndex(row => row.id === commit);
+      if (index >= 0) return rows.slice(index);
+    }
+    throw new FixtureRefusal('Git snapshot is missing');
+  };
+  const snapshotSources = (commit: string): Record<string, string> => {
+    const subject = commit.startsWith('b') ? '工作区分支预览'
+      : commit.startsWith('c') ? '远程发布准备' : '已提交的工作区文件';
+    return {
+      'README.md': '# '+subject+'\n\nThis file is read from a Git snapshot.\n',
+      'src/navigation.ts': 'export const version = '+JSON.stringify(subject)+';\n',
+      ...(commit.startsWith('b') ? {'docs/branch-only.md':'# 分支新增的文件\n\nOnly present on this branch.\n'} : {}),
+    };
+  };
   const pathOf = (input: Record<string,unknown>) => String(input.path||labRoot(owner(input))).replace(/\\/g,'/').replace(/\/$/,'');
   const relative = (input: Record<string,unknown>) => {
     const path=pathOf(input),base=labRoot(owner(input));
@@ -97,7 +127,7 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
     return documents.get(key)!;
   };
   const handles = new Set(['tabs_list','tabs_open','tabs_go','tabs_focus','tabs_close','tabs_pin','tabs_reorder',
-    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_log','git_commit','git_blame','git_show','workspaces','ls','mkdir','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
+    'recents','recent_visit','git_diff','dirs_begin','dirs_wait','dirs_leave','git_history','git_branches','git_explore','git_log','git_commit','git_blame','git_show','workspaces','ls','mkdir','rename_path','read_text','stat_text','write_text','preview','touched','checkout','git_status','code_here','trash_here','git_windows','code_windows']);
   return {
     handles: (command: string) => handles.has(command),
     request(command: string, input: Record<string, unknown>): unknown {
@@ -138,16 +168,87 @@ export function navigationFixture(devices: DeviceRow[], origin: string, seeded: 
         return null;
       }
       if (command === 'git_diff') return {hunks: [], more: false};
+      if (command === 'git_branches') {
+        const workspace=requireRepository(input);
+        return {current:workspace.branch ? 'refs/heads/'+workspace.branch : null,refs:[localPreview,remotePreview],more:false};
+      }
+      if (command === 'git_explore') {
+        const workspace=requireRepository(input);
+        const path=String(input.dir||root);
+        const query=input.query as Record<string, unknown>;
+        const main=history(path);
+        const branch=historyAt(path,localPreview);
+        const remote=historyAt(path,remotePreview);
+        const tip=(reference:unknown)=>{
+          if(reference==='HEAD'||reference==='refs/heads/'+workspace.branch)return main[0].id;
+          if(reference===localPreview)return branch[0].id;
+          if(reference===remotePreview)return remote[0].id;
+          if(reference===releaseTag)return main[43].id;
+          return snapshotHistory(path,reference)[0].id;
+        };
+        switch(query.kind){
+          case 'references': return {kind:'references',current:'refs/heads/'+workspace.branch,
+            refs:['refs/heads/'+workspace.branch,localPreview,releaseTag,remotePreview],more:false};
+          case 'resolve': return {kind:'resolved',commit:tip(query.reference)};
+          case 'directory': {
+            const prefix=query.path ? String(query.path)+'/' : '';
+            const children=new Map<string,'directory'|'file'>();
+            for(const file of Object.keys(snapshotSources(String(query.commit)))){
+              if(!file.startsWith(prefix))continue;
+              const parts=file.slice(prefix.length).split('/');
+              children.set(parts[0],parts.length>1?'directory':'file');
+            }
+            return {kind:'directory',entries:[...children].map(([name,kind])=>({name,kind})),next:null,incomplete:false};
+          }
+          case 'file': {
+            const text=snapshotSources(String(query.commit))[String(query.path)]??null;
+            return {kind:'file',entry:text===null?null:'file',text,bytes:text?.length??0,too_large:false};
+          }
+          case 'compare': {
+            const base=snapshotHistory(path,tip(query.base)),head=snapshotHistory(path,tip(query.head));
+            const baseOnly=base.filter(commit=>!head.some(row=>row.id===commit.id));
+            const headOnly=head.filter(commit=>!base.some(row=>row.id===commit.id));
+            const ancestor=head.find(commit=>base.some(row=>row.id===commit.id))?.id??null;
+            const before=ancestor===null?{}:snapshotSources(ancestor),after=snapshotSources(head[0].id);
+            const files=[...new Set([...Object.keys(before),...Object.keys(after)])].flatMap(path=>{
+              const a=before[path],b=after[path];
+              return a===b?[]:[{path,from:'',status:a===undefined?'A':b===undefined?'D':'M',added:b===undefined?0:1,
+                removed:a===undefined?0:1,binary:false,big:false,capped:false,before:a??'',after:b??''}];
+            });
+            return {kind:'compare',ancestor,base_only:baseOnly.slice(0,40),head_only:headOnly.slice(0,40),
+              behind:baseOnly.length,ahead:headOnly.length,commits_cut:false,files,total:files.length,more:false};
+          }
+          case 'merge': {
+            const base=tip(query.base),head=tip(query.head);
+            const conflicts=base!==head&&base.startsWith('a')&&head.startsWith('b')?['README.md']:[];
+            return {kind:'merge',conflicts,total:conflicts.length};
+          }
+          case 'worktrees': return {kind:'worktrees',items:[
+            {path:workspace.path,reference:'refs/heads/'+workspace.branch,commit:main[0].id,current:true,available:true},
+            {path:labRoot(owner(input))+'/research-notes',reference:'refs/heads/feat/mobile-navigation',commit:branch[0].id,current:false,available:true},
+          ],more:false};
+          case 'remotes': return {kind:'remotes',items:[{name:'origin',host:'git.example.test',https:true}]};
+          case 'remote_refs': return {kind:'remote_refs',refs:[
+            {reference:'refs/heads/release',commit:remote[0].id,available:true},
+            {reference:'refs/heads/upcoming',commit:'d'.repeat(40),available:false},
+          ],more:false};
+          default: throw new FixtureRefusal('Unknown git_explore query');
+        }
+      }
       if (command === 'git_history') {
         requireRepository(input);
-        const commits=history(String(input.dir||root)),start=Number(input.cursor||0),limit=Number(input.limit)||40;
+        const reference=typeof input.reference==='string' ? input.reference : undefined;
+        const path=String(input.dir||root);
+        const commits=input.snapshot?snapshotHistory(path,input.snapshot):historyAt(path,reference),start=Number(input.cursor||0),limit=Number(input.limit)||40;
         return {head:commits[0].id,commits:commits.slice(start,start+limit),next:start+limit<commits.length ? String(start+limit) : null};
       }
       if (command === 'git_log') return {commits:history(String(input.path||root)).slice(0,20).map(commit=>({...commit,body:commit.subject})),more:false};
       if (command === 'git_blame') return {commits:[],runs:[]};
       if (command === 'git_show') return {text:file(input).text,cut:false,diff:{hunks:[],more:false}};
       if (command === 'git_commit') {
-        const commits=history(String(input.dir||root)),commit=commits.find(commit=>commit.id===input.rev)??commits[0];
+        const path=String(input.dir||root);
+        const ref=String(input.rev).startsWith('b') ? localPreview : String(input.rev).startsWith('c') ? remotePreview : undefined;
+        const commits=historyAt(path,ref),commit=commits.find(commit=>commit.id===input.rev)??commits[0];
         return {commit:{...commit,body:commit.subject+'\n\n完整 App Lab 的提交示例。\n\n保留中文、长路径、文件折叠与阅读位置。'},total:2,more:false,files:[
           {path:'src/navigation.ts',from:'',status:'M',added:90,removed:90,binary:false,big:false,capped:false,
             before:Array.from({length:90},(_,i)=>`const item${i} = "before";`).join('\n'),after:Array.from({length:90},(_,i)=>`const item${i} = "after";`).join('\n')},

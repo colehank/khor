@@ -11,12 +11,14 @@ import { WorkspaceNavigation } from '@/components/WorkspaceNavigation';
 import { useFileHandoff } from "@/hooks/use-file-handoff";
 import { sessionCwdOnScreen, sessionInWorkspace } from "@/lib/session-cwd";
 import type { EditorHistorySlot } from "@/lib/code/history";
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 
 import {
   fetchGitStatus,
   fetchGitHistory,
+  exploreGit,
+  said as gitErrorText,
   fetchCheckout,
 
   searchIn,
@@ -27,6 +29,11 @@ import {
   type DeviceRow,
 } from "@/api";
 import { WorkspaceHistory } from "@/views/workspace/WorkspaceHistory";
+import { WorkspaceBranchPicker } from "@/views/workspace/WorkspaceBranchPicker";
+import { WorkspaceSnapshotFile, WorkspaceSnapshotTree } from "@/views/workspace/WorkspaceSnapshot";
+import { WorkspaceVersionTools } from "@/views/workspace/WorkspaceVersionTools";
+import { versionName, type GitTool, type Version } from "@/views/workspace/git-versions";
+import { WorkspaceHistoryMemory } from "@/views/workspace/workspace-history";
 import { CloseDraftDialog } from "@/components/CloseDraftDialog";
 import { CodeButton, useCodeWindow } from "@/components/CodeWindow";
 import { FileKindIcon } from "@/components/FileKindIcon";
@@ -106,6 +113,7 @@ export function WorkspacePane({
   closeRefused,
   arrange,
   onNewSession,
+  onOpenWorktree,
   opened,
   onOpenedSeen,
   back = false,
@@ -181,6 +189,7 @@ export function WorkspacePane({
       (「这就是最早说的『加入我的工作区』」). The shell owns the sheet,
       so it owns this. */
   onNewSession: (machine: string, dir: string) => void;
+  onOpenWorktree?: (path: string) => void;
   /** The session the wizard just opened **from this column**, or `null`
       (2026-09-16 ruling 34:「在工作区新建的 session, 直接弹到了 session
       页面去打开, 应该是在工作区就地打开」— the user).
@@ -464,7 +473,65 @@ export function WorkspacePane({
   // grow an initially empty header after its reading position was restored.
   const [branch, setBranch] = useWorkspaceField(memory, "branch", () => "");
   const [, setHeadCommit] = useWorkspaceField(memory, "headCommit", () => null);
-  const [historyQuery, setHistoryQuery] = useWorkspaceField(memory, "historyQuery", () => "");
+  const [checkoutQuery, setCheckoutQuery] = useWorkspaceField(memory, "historyQuery", () => "");
+  const [branchQuery, setBranchQuery] = useState("");
+  const [version, setVersion] = useState<Version | null>(null);
+  const [snapshotPath, setSnapshotPath] = useState<string | null>(null);
+  const [snapshotCommit, setSnapshotCommit] = useState<GitCommitSummary | null>(null);
+  const [tool, setTool] = useState<GitTool | null>(null);
+  const versionPickerId = useId();
+  const closeGitTool = () => {
+    setTool(null);
+    requestAnimationFrame(() => document.getElementById(versionPickerId)?.focus());
+  };
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [versionBusy, setVersionBusy] = useState(false);
+  const versionLease = useRef(0);
+  useEffect(() => () => { versionLease.current++; }, []);
+  const browsingFiles = version !== null && sidebarView === "files";
+  const inspectedCommit = historyOpen ? snapshotCommit : null;
+  const snapshotTab = inspectedCommit?.id ?? snapshotPath;
+  const closeSnapshotTab = () => {
+    if (inspectedCommit) setSnapshotCommit(null);
+    else setSnapshotPath(null);
+    if (narrow) setScreen("tree");
+  };
+  const commitId = version?.commit;
+  const snapshotLabel = version === null ? null : <span data-git-read-only
+    className={cn("min-w-0 truncate text-caption text-muted-foreground", narrow ? "block px-page py-in" : "px-in")}
+    title={version.commit}>{gui.git_snapshot} · {versionName(version.reference)}</span>;
+  const historyQuery = version ? branchQuery : checkoutQuery;
+  const setHistoryQuery = version ? setBranchQuery : setCheckoutQuery;
+  const branchHistory = useMemo(
+    () => commitId ? new WorkspaceHistoryMemory() : memory.repositoryHistory,
+    [commitId, memory],
+  );
+  const viewVersion = (next: Version | null) => {
+    ++versionLease.current;
+    setVersionBusy(false);
+    setVersionError(null);
+    setBranchQuery("");
+    setSnapshotCommit(null);
+    if (!version && next && file && diffOf(file) === null) {
+      const normalizedRoot = root.replace(/\\/g, "/").replace(/\/$/, "");
+      const normalizedFile = file.replace(/\\/g, "/");
+      setSnapshotPath(normalizedFile.startsWith(`${normalizedRoot}/`) ? normalizedFile.slice(normalizedRoot.length + 1) : null);
+    } else if (!next) {
+      setSnapshotPath(null);
+    }
+    setVersion(next);
+  };
+  const selectVersion = (reference?: string) => {
+    if (!reference) { viewVersion(null); return; }
+    if (reference.startsWith("live:")) return;
+    const lease = ++versionLease.current;
+    setVersionError(null);
+    setVersionBusy(true);
+    void exploreGit(machine, root, {kind: "resolve", reference}, "resolved").then(
+      ({commit}) => { if (lease === versionLease.current) viewVersion({reference, commit}); },
+      error => { if (lease === versionLease.current) { setVersionError(gitErrorText(error)); setVersionBusy(false); } },
+    );
+  };
   /** Bumped to ask the marks again. A counter for the same reason the
       file view's is one: two saves are two questions. */
   const [gitAt, setGitAt] = useState(0);
@@ -587,7 +654,18 @@ export function WorkspacePane({
       };
     }, facts => {
       setGit(facts.status);
-      setBranch(facts.status?.branch ?? "");
+      if (facts.status !== null) {
+        if (memory.read("branch") !== facts.status.branch) memory.repositoryHistory.invalidate(true);
+        setBranch(facts.status.branch);
+      } else if (facts.repository === false) {
+        setBranch("");
+        versionLease.current++;
+        setVersion(null);
+        setSnapshotPath(null);
+        setSnapshotCommit(null);
+        setVersionError(null);
+        setVersionBusy(false);
+      }
       setHeadCommit(facts.commit);
       setLiveHead({ known: facts.headKnown, id: facts.head });
       setRepository(facts.repository ?? facts.status !== null);
@@ -766,7 +844,14 @@ export function WorkspacePane({
     if (diffOf(path) === null) setRecent(rememberOpened(machine, root, path));
     openTarget(targetOf(path), pinned);
   }, [machine, root, setRecent, openTarget]);
-  const openCommit = (value: GitCommitSummary, pinned = false) => openTarget({ kind: "commit", commit: value }, pinned);
+  const openCommit = (value: GitCommitSummary, pinned = false) => {
+    if (version === null) {
+      openTarget({ kind: "commit", commit: value }, pinned);
+    } else {
+      setSnapshotCommit(value);
+      if (narrow) setScreen("file");
+    }
+  };
 
   useEffect(() => {
     if (content.active !== null) touched.current.set(content.active, Date.now());
@@ -912,7 +997,9 @@ export function WorkspacePane({
     if (target.kind === "commit") setContent((was) => closeWorkspaceTab(was, id));
     else shut(keyOf(target));
   };
-  useTabHost(content.items.length > 0 ? {
+  useTabHost(version !== null ? (snapshotTab === null ? null : {
+    count: 1, front: true, close: closeSnapshotTab, step: () => {},
+  }) : content.items.length > 0 ? {
     count: content.items.length,
     front: content.active !== null,
     close: () => { if (content.active !== null) closeTab(content.active); },
@@ -976,6 +1063,7 @@ export function WorkspacePane({
   // into the middle column would be a second arrangement of it.
   useEffect(() => {
     if (reveal === null) return;
+    if (version !== null) viewVersion(null);
     open(reveal.path, false);
     setGoLine(
       reveal.line === null
@@ -994,8 +1082,9 @@ export function WorkspacePane({
   // (UX-25): on the narrow face the file screen with no file is the
   // tree's turn, as the session page's last × is the list's.
   useEffect(() => {
-    if (narrow && screen === "file" && file === null && commit === null) setScreen("tree");
-  }, [narrow, screen, file, commit]);
+    const active = version !== null ? snapshotTab !== null : file !== null || commit !== null;
+    if (narrow && screen === "file" && !active) setScreen("tree");
+  }, [narrow, screen, file, commit, version, snapshotTab, setScreen]);
 
   /** What the strip draws. **Built here because the facts are this
       pane's** — which files are open, which one is in front, which one
@@ -1135,7 +1224,7 @@ export function WorkspacePane({
   </GlassCapsule> : null;
   const workspaceActions = [
     ...(!narrow ? [{ key: "tree", label: gui.workspace_tree, run: () => side?.set(!tree) }] : []),
-    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); memory.repositoryHistory.invalidate(); } },
+    { key: "refresh", label: gui.file_reread, run: () => { setReadAt(n => n + 1); setGitAt(n => n + 1); branchHistory.invalidate(); } },
     { key: "close-others", label: gui.tab_close_others, run: () => { const id = memory.read("content").active; if (id !== null) closeOthers(id); } },
   ];
   /** **The file's verbs at the strip's right end** (round UX-3, the Mac):
@@ -1226,7 +1315,7 @@ export function WorkspacePane({
     <div data-ws-side-head className="flex min-w-0 items-center gap-in">
       {!narrow && <GlassCircle aria-label={gui.back} data-ws-list-back onClick={onBack}><IconBack /></GlassCircle>}
       <PaneBar inline seat="side" title={root === "" ? machine : basename(root)}
-        searchLabel={sidebarView === "sessions" ? gui.search_sessions : historyOpen ? gui.git_history_search_page : gui.tree_search}
+        searchLabel={sidebarView === "sessions" ? gui.search_sessions : historyOpen ? gui.git_history_search_page : browsingFiles ? undefined : gui.tree_search}
         query={sidebarView === "sessions" ? query : historyOpen ? historyQuery : hunt}
         onQuery={sidebarView === "sessions" ? setQuery : historyOpen ? setHistoryQuery : setHunt}
         filterLabel={sidebarView === "sessions" ? gui.filter : undefined}
@@ -1234,14 +1323,18 @@ export function WorkspacePane({
         axes={sidebarView === "sessions" ? axes : undefined}
         arrange={sidebarView === "sessions" ? { ...arrange, options: [...arrange.options] } : undefined}
         create={sidebarView === "sessions" ? { label: gui.new_session, mark: "data-ws-new-session", onSelect: () => onNewSession(channel ?? machine, root) } : undefined}
-        actions={root === "" || sidebarView === "sessions" ? undefined : [
+        actions={root === "" || sidebarView === "sessions" || browsingFiles ? undefined : [
           { key: "file", label: gui.file_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "file", at: Date.now() }); } },
           { key: "dir", label: gui.dir_new, afterClose: true, onSelect: () => { setHistoryOpen(false); dropHunt(); setMake({ kind: "dir", at: Date.now() }); } },
         ]} />
     </div>
   );
   const workspaceMetadata = <div ref={band} data-band data-ws-sidebar-heading>
-    <WorkspaceNavigation branch={branch} repo={repository} view={sidebarView} onView={setSidebarView} withSessions/>
+    <WorkspaceNavigation branch={branch} repo={repository} view={sidebarView} onView={setSidebarView} withSessions
+      branchPicker={repository && <WorkspaceBranchPicker id={versionPickerId} machine={machine} root={root} branch={branch || (git === null ? null : "")}
+        reference={version?.reference} busy={versionBusy} onPick={selectVersion} onTool={setTool} />}
+    />
+    {versionError && <p role="alert" data-git-version-error className="px-page py-in text-callout text-muted-foreground">{versionError}</p>}
   </div>;
 
 
@@ -1258,6 +1351,9 @@ export function WorkspacePane({
     // a path into a press on the middle one (ruling 35, `linkHome`).
     <LinkHomeProvider value={linkHome}>
     <RegionLead.Provider value={null}>
+    {tool && <WorkspaceVersionTools key={tool} tool={tool} machine={machine} root={root} version={version}
+      onClose={closeGitTool} onWorktree={onOpenWorktree} onVersion={viewVersion}
+      onCommit={commit => { setSidebarView("history"); openCommit(commit, false); }} />}
     {narrow && screen !== "file" && screen !== "sessions" && <NarrowHead>{() => screen === "tree" ? <>
       <GlassCircle aria-label={gui.back} data-back onClick={onBack}><IconBack /></GlassCircle>{workspaceTitle}
     </> : <>
@@ -1366,8 +1462,11 @@ export function WorkspacePane({
                 address bar are the point — docs/WORKSPACE.md 第二轮 says
                 so in the user's own terms. */}
             {sidebarView === "sessions" ? workspaceSessionList : historyOpen ? (
-              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={memory.repositoryHistory}
-                    liveHead={liveHead} active={commit?.id ?? null} onOpen={openCommit} />
+              <WorkspaceHistory machine={machine} root={root} query={historyQuery} memory={branchHistory} snapshot={commitId}
+                    liveHead={version === null ? liveHead : undefined} active={(version === null ? commit : inspectedCommit)?.id ?? null} onOpen={openCommit} />
+            ) : version !== null ? (
+              <WorkspaceSnapshotTree key={version.commit} machine={machine} root={root} version={version} selected={snapshotPath}
+                onOpen={path => { setSnapshotPath(path); if (narrow) setScreen("file"); }} />
             ) : hunt.trim() !== "" ? (
               <Hits
                 found={found}
@@ -1450,7 +1549,24 @@ export function WorkspacePane({
           // face would scroll sideways rather than the seam refusing.
           className="relative flex min-w-0 flex-1 flex-col"
         >
-          <div ref={readFirst.box} className="contents">
+          {version !== null ? <WorkspaceContentFrame
+            narrow={narrow} onBack={() => setScreen("tree")}
+            faces={inspectedCommit ? [{
+              id: inspectedCommit.id, label: inspectedCommit.subject, path: inspectedCommit.id, machine, face: machineFace,
+              mark: { key: "history", glyph: className => <IconHistory className={className} /> },
+            }] : snapshotPath === null ? [] : [{
+              id: snapshotPath, label: basename(snapshotPath), title: snapshotPath, path: snapshotPath, machine,
+              face: machineFace, mark: fileKind(basename(snapshotPath)),
+            }]}
+            active={snapshotTab ?? ""} onFocus={() => {}} onClose={closeSnapshotTab}
+            tail={narrow ? undefined : snapshotLabel}
+            bodyClass="relative isolate flex flex-col" frame={false}
+          >
+            {narrow && snapshotLabel}
+            {inspectedCommit ? <CommitPage key={inspectedCommit.id} machine={machine} root={root}
+              commit={inspectedCommit} presentation="tab" state={commitState(inspectedCommit.id)} onBack={() => {}} />
+              : <WorkspaceSnapshotFile machine={machine} root={root} version={version} path={snapshotPath} />}
+          </WorkspaceContentFrame> : <div ref={readFirst.box} className="contents">
           <WorkspaceContentFrame
             narrow={narrow}
             onBack={() => setScreen("tree")}
@@ -1529,7 +1645,7 @@ export function WorkspacePane({
             />
           )}
           </WorkspaceContentFrame>
-          </div>
+          </div>}
         </div>
         )}
         {picked !== null && (narrow ? screen === "sessions" : sessionDetailOpen) && (

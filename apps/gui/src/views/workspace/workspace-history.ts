@@ -47,10 +47,14 @@ export class WorkspaceHistoryMemory {
     };
   }
 
-  invalidate(): void {
+  invalidate(clear = false): void {
     if (this.operation) this.operation.stale = true;
     this.retryAction = null;
-    this.publish({ refreshRequested: true, error: null });
+    if (clear) this.pages.clear();
+    this.publish({
+      refreshRequested: true, error: null,
+      ...(clear && { current: null, generation: this.view.generation + 1 }),
+    });
   }
 
   refresh(request: Request): Promise<void> {

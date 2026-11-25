@@ -36,8 +36,7 @@ import { EditableName } from "@/components/EditableName";
 import { RemoveDialog } from "@/components/RemoveDialog";
 import { useFileObjectActions } from "@/lib/file-actions";
 import { RowMenu, type RowAction } from "@/components/RowMenu";
-import { FileKindIcon } from "@/components/FileKindIcon";
-import { IconChevronRight } from "@/components/icons";
+import { FileTreeRow, FileTreeRowLabel, fileTreeButtonClass, fileTreeIndent, fileTreeSelectedClass } from "@/views/FileTreeRow";
 import { cli, gui } from "@/gen/catalog";
 import { useNarrow } from "@/hooks/use-narrow";
 import { pathDrag, currentPathDrag, droppedPath, clearPathDrag, type DraggedPath } from "@/lib/path-drag";
@@ -56,31 +55,6 @@ import type { GitCommit } from "@/gen/bindings/GitCommit";
     that a row is a row whatever level it is on — the same reason the
     sessions list flattens its groups. */
 type Row = { name: string; full: string; dir: boolean; depth: number };
-
-/** The indent guides (2026-09-16:「目录展开后,有一条竖线,表示这些目录下
-    文件属于该目录。如 vscode 一致」): one hairline per level above this
-    row, each on the centre line of that level's chevron, so the rows
-    under an open directory hang off a single line that runs down from
-    it. **Drawn per row, not per directory**: the rows are a flat list
-    (`walk`), so the only thing that knows a row's ancestry is its
-    depth, and a line that every row at that depth draws for itself is
-    continuous because the rows touch. The offset is the chevron's half
-    width (12/2) past the level's own padding. */
-function Guides({ depth }: { depth: number }) {
-  return (
-    <>
-      {Array.from({ length: depth }, (_, k) => (
-        <span
-          key={k}
-          data-guide={k}
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 w-px bg-border"
-          style={{ left: `calc(var(--tree-inset) + var(--tree-step) * ${k} + var(--tree-slot) / 2)` }}
-        />
-      ))}
-    </>
-  );
-}
 
 /** Where the open branches are kept, per workspace. **Keyed by the pair
     that is the workspace's identity** (docs/WORKSPACE.md 身份与名字):
@@ -803,13 +777,6 @@ export function FileTree({
     };
   }, [machine, root, expanded, rows, hidden]);
 
-  /** How far in one level sits (tokens.css `--tree-step`). */
-  const indent = (depth: number) => ({
-    // **The first level's disclosure mark on the page's left line** (the
-    // redesign, 2026-10-02: one left line), via `--tree-inset`.
-    paddingLeft: `calc(var(--tree-inset) + var(--tree-step) * ${depth})`,
-  });
-
   const rootError = failed.get(root);
   return (
     // ⚠️ 墓碑 (ws-lab → 2026-10-12): `data-lab-mark`, a devtools switch
@@ -881,7 +848,7 @@ export function FileTree({
             {naming !== null && naming.at === root && naming.kind !== "rename" && (
               <div
                 data-new-name={naming.kind}
-                style={indent(0)}
+                style={fileTreeIndent(0)}
                 className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout"
               >
                 {nameBox(made(root, naming.kind), "")}
@@ -889,7 +856,6 @@ export function FileTree({
             )}
             {rows.map((r) => {
               const mark = marks?.get(r.full);
-              const faded = r.name.startsWith(".");
               const on = expanded.has(r.full);
               // A name being typed into *this* directory sits directly
               // under it, one level in — which is where the row it is
@@ -899,7 +865,7 @@ export function FileTree({
                   <div
                     key={`${r.full} new`}
                     data-new-name={naming.kind}
-                    style={indent(r.depth + 1)}
+                    style={fileTreeIndent(r.depth + 1)}
                     className="flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout"
                   >
                     {nameBox(
@@ -908,192 +874,48 @@ export function FileTree({
                     )}
                   </div>
                 ) : null;
-              const row = r.dir ? (
-                <div
+              const drop = r.dir && dropTarget?.dir === r.full ? dropTarget.valid : undefined;
+              const opened = !r.dir && open === r.full;
+              const highlight = opened && !narrow;
+              const row = (
+                <FileTreeRow
                   key={r.full}
-                  data-tree-entry
-                  data-tree-directory={r.full}
-                  data-drop-target={dropTarget?.dir === r.full ? String(dropTarget.valid) : undefined}
-                  data-depth={r.depth}
-                  style={indent(r.depth)}
-                  // The wash is the row's and the target fills it, the
-                  // arrangement both panes arrived at from opposite
-                  // sides (`FilesPane`'s two rows).
-                  className={cn(
-                    "group relative flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout hover:bg-muted/50",
-                    faded && "text-muted-foreground",
-                    dropTarget?.dir === r.full && dropTarget.valid && "bg-fill-strong",
-                  )}
+                  name={r.name}
+                  depth={r.depth}
+                  directory={r.dir ? r.full : undefined}
+                  data-drop-target={drop === undefined ? undefined : String(drop)}
+                  open={r.dir ? undefined : opened}
+                  highlight={highlight}
+                  className={drop ? "bg-fill-strong" : undefined}
+                  mark={r.dir
+                    ? <Mark mark={mark} dir />
+                    : <Mark mark={mark} onPress={onDiff === undefined ? undefined : () => onDiff(r.full)} />}
                 >
-                  {/* **The whole row toggles, and the chevron is a
-                      drawing on it.** VS Code's arrangement, and it is
-                      also the only one with a target a finger can land
-                      on: a 16-wide twisty of its own would be a control
-                      under the floor sitting inside a row that is not
-                      (`check-face` section 3).
-
-                      The menu hangs on the button, never on the row
-                      around it — `RowMenu`'s trigger carries an
-                      `onPointerDown`, and a press handler on a bare
-                      `<div>` is a target only a pointer can find. */}
-                  <Guides depth={r.depth} />
-                  <RowMenu items={menu(r.full, true)}>
+                  {/* The disclosure mark is drawn inside the full-row target.
+                      Its context menu uses the same accessible button. */}
+                  <RowMenu items={menu(r.full, r.dir)}>
                     <button
                       type="button"
-                      // Dragged onto a terminal, the path (item 60).
                       {...pathDrag(here ? null : machine, r.full, { root, dir: r.dir })}
-                      data-dir={r.name}
+                      data-dir={r.dir ? r.name : undefined}
                       data-file-path={r.full}
-                      data-on={on}
-                      // The row the head's ＋ reads its place off (`picked`).
+                      data-on={r.dir ? on : undefined}
+                      aria-expanded={r.dir ? on : undefined}
                       data-picked={picked?.full === r.full ? "" : undefined}
                       onClick={() => {
-                        toggle(r.full);
-                        setPicked({ full: r.full, dir: true });
+                        setPicked({ full: r.full, dir: r.dir });
+                        if (r.dir) toggle(r.full);
+                        else onOpen(r.full, clickPins);
                       }}
-                      className="flex min-w-0 flex-1 items-center gap-2 self-stretch text-left"
+                      onDoubleClick={r.dir ? undefined : () => onOpen(r.full, true)}
+                      className={cn(fileTreeButtonClass, highlight && fileTreeSelectedClass, !r.dir && markInk(mark))}
                     >
-                      {/* **12 across, not 16** (2026-09-16:「树里的 > 按钮
-                          有点大了,占地方」), and the name with no
-                          trailing slash — 「目录后面不用带 /,> 已经表明
-                          了是目录」. */}
-                      {/* The slot is 16 — the icon's size, text height —
-                          and the twisty (`--affordance`) sits centred in it, so a
-                          directory's name and a file's start on one
-                          line (2026-09-16:「文件类型 icon 太小了,应该
-                          和字等高」, after 12 proved unreadable). */}
-                      <span data-tree-slot className="flex size-[var(--tree-slot)] flex-none items-center justify-center" aria-hidden="true">
-                        <IconChevronRight
-                          className={cn("size-affordance flex-none transition-transform", on && "rotate-90")}
-                        />
-                      </span>
-                      {/* **The name wears the dot's ink** (2026-09-16:「目录
-                          如果有状态,应该也上色,现在只有个状态灯,但目录仍
-                          然是原色」) — VS Code paints the folder's name
-                          in the heaviest change below it, and so does
-                          this. */}
-                      {naming?.at === r.full && naming.kind === "rename" ? (
-                        nameBox(moved(r.full), r.name)
-                      ) : (
-                        <span
-                          data-dir-name
-                          className={cn("min-w-0 flex-1 truncate", markInk(mark))}
-                        >
-                          {r.name}
-                        </span>
-                      )}
+                      <FileTreeRowLabel name={r.name} expanded={r.dir ? on : undefined} className={r.dir ? markInk(mark) : undefined}>
+                        {naming?.at === r.full && naming.kind === "rename" ? nameBox(moved(r.full), r.name) : null}
+                      </FileTreeRowLabel>
                     </button>
                   </RowMenu>
-                  {/* **Trailing mark slot** (WS-LAB item 2): mirrors the
-                      leading `--tree-slot` so the dot and the letter
-                      share a column with the same right edge. The dot was
-                      inside the button; moving it here lines it up with
-                      the file's letter, which was already outside.
-                      Unpressable: a directory has no diff (`Mark`). */}
-                  <span
-                    data-tree-mark-slot
-                    className="flex size-[var(--tree-slot)] flex-none items-center justify-center"
-                    aria-hidden="true"
-                  >
-                    <Mark mark={mark} dir />
-                  </span>
-                </div>
-              ) : (
-                <div
-                  key={r.full}
-                  data-file={r.name}
-                  data-tree-entry
-                  data-depth={r.depth}
-                  data-open={open === r.full}
-                  style={indent(r.depth)}
-                  // **The open file's whole row is washed**
-                  // (2026-09-16:「文件树中, 被选中的文件也要高亮」— the
-                  // user). It was the name going bold and nothing else,
-                  // which from across a column is not a state: bold is
-                  // read as a kind of file before it is read as
-                  // 「this one is in front」. `fill-strong` is what the
-                  // workspace list and the sessions list mark their
-                  // selected row with (components/ListRow, 2026-09-27) —
-                  // one gesture, one look; it was the brand wash, which
-                  // is the row being located to (README 颜色, 4K). It
-                  // goes on the row rather than on the button so the
-                  // indent is inside it, the way VS Code paints it. The
-                  // weight stays: two marks of one state cost nothing
-                  // and the row is legible without colour.
-                  className={cn(
-                    // Round like every list's chosen block (F4.7; W17).
-                    "group relative isolate flex min-h-[var(--tree-row)] items-center gap-2 pr-3 text-callout",
-                    // **Inset like a list's chosen block** (W-V9): 8 in
-                    // from the pane's edges, drawn under the row.
-                    "before:absolute before:inset-y-0 before:inset-x-2 before:-z-10 before:rounded-md before:content-['']",
-                    open === r.full && !narrow ? "before:bg-fill-strong" : "hover:before:bg-fill",
-                    faded && "text-muted-foreground",
-                  )}
-                >
-                  <Guides depth={r.depth} />
-                  <RowMenu items={menu(r.full, false)}>
-                    <button
-                      type="button"
-                      // 单击文件 (`khor config set files-click
-                      // preview|pin`). **Only an explicit 「pin」 moves
-                      // it**, so an answer that has not arrived is the
-                      // default rather than a second copy of it.
-                      data-picked={picked?.full === r.full ? "" : undefined}
-                      data-file-path={r.full}
-                      {...pathDrag(here ? null : machine, r.full, { root, dir: r.dir })}
-                      onClick={() => {
-                        setPicked({ full: r.full, dir: false });
-                        onOpen(r.full, clickPins);
-                      }}
-                      // 「双击、或在里面打了字,就钉住」— the second
-                      // press is what says 「I am staying」, and the
-                      // browser hands it over as its own event rather
-                      // than making this count clicks against a clock.
-                      onDoubleClick={() => onOpen(r.full, true)}
-                      // **The name wears the letter's ink** — one
-                      // decoration in two places (`views/fileRow`), and
-                      // last in the list so it wins over the open row's
-                      // own weight.
-                      className={cn(
-                        "flex min-w-0 flex-1 items-center gap-2 self-stretch text-left",
-                        open === r.full && !narrow && "font-title text-foreground",
-                        markInk(mark),
-                      )}
-                    >
-                      {/* The chevron's seat on a row that has no
-                          chevron: without it a file's name would start
-                          16 to the left of its sibling directory's and
-                          the level would stop reading as a level. */}
-                      {/* **The chevron's slot is the row's type slot**
-                          (2026-09-16). A directory puts its chevron
-                          there; a file puts the icon VS Code would
-                          draw for it, the same 12 across, so every
-                          name at one level starts on one line — the
-                          arrangement the user first asked for as
-                          「文件名对齐到 > 的左沿」 was the answer to an
-                          *empty* slot reading as membership; a slot
-                          with the file's own mark in it is VS Code's
-                          picture, and the ruling that followed. */}
-                      {/* The kind's glyph starts its ink on the line with the
-                          chevrons' (W-V9): its box begins where the
-                          chevron's ink does (5.4 further in than its box,
-                          measured), at the chevron's 16. */}
-                      <FileKindIcon name={r.name} className="h-[var(--tree-slot)] w-[var(--tree-slot)] items-center ps-[calc(var(--tree-slot)/2-var(--affordance)/2+var(--tree-icon-nudge))] [&>svg]:!size-4" />
-                      {naming?.at === r.full && naming.kind === "rename" ? (
-                        nameBox(moved(r.full), r.name)
-                      ) : (
-                        <span data-file-name className="min-w-0 flex-1 truncate">
-                          {r.name}
-                        </span>
-                      )}
-                    </button>
-                  </RowMenu>
-                  <span data-tree-mark-slot className="flex size-[var(--tree-slot)] flex-none items-center justify-center">
-                    <Mark mark={mark} onPress={onDiff === undefined ? undefined : () => onDiff(r.full)} />
-                  </span>
-
-
-                </div>
+                </FileTreeRow>
               );
               // One row, or a row and the box being typed under it.
               return adding === null ? (
