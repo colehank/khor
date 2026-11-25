@@ -1,0 +1,83 @@
+/* Keep one sheet and one height through all pairing steps. */
+[data-join-sheet][data-slot="dialog-content"][data-task-frame][data-overlay-presentation="dialog"][data-overlay-initial="medium"] {
+  height: var(--task-sheet-medium-height, calc(var(--dialog-visible-height) * 0.6));
+}
+[data-join-sheet] > [data-slot="dialog-body"] {
+  overflow: hidden;
+}
+[data-join-sheet] > [data-slot="dialog-body"] > div {
+  flex: 1;
+  min-height: 0;
+}
+[data-narrow] [data-join-sheet] {
+  --task-sheet-top: 0;
+}
+[data-narrow] [data-join-sheet][data-detent="full"][data-task-frame][data-overlay-task] {
+  padding-top: calc(var(--safe-top) + var(--gap-row) + var(--grabber-h));
+}
+[data-narrow] [data-join-sheet][data-detent="full"] > [data-sheet-grabber] {
+  top: var(--safe-top);
+}
+
+.pairing-camera {
+  color: var(--mark-ink-light);
+  background:
+    radial-gradient(ellipse at 76% 25%, color-mix(in oklab, var(--mark-ink-light) 23%, transparent), transparent 58%),
+    radial-gradient(ellipse at 22% 77%, color-mix(in oklab, var(--mark-ink-light) 17%, transparent), transparent 66%),
+    var(--mark-ink-dark);
+}
+.pairing-camera-scene {
+  container-type: size;
+}
+.pairing-camera .pairing-camera-control {
+  color: var(--mark-ink-light);
+}
+.pairing-camera-hint {
+  background: color-mix(in oklab, var(--mark-ink-dark) 68%, transparent);
+}
+.pairing-camera-finder {
+  width: min(62vw, 16rem, max(0rem, calc(100cqh - var(--gap-row) - var(--ctl-md))));
+  border: var(--hair) solid color-mix(in oklab, var(--mark-ink-light) 46%, transparent);
+}
+.pairing-paper {
+  background: var(--mark-ink-light);
+  color: var(--mark-ink-dark);
+}
+.pairing-sample {
+  box-shadow: var(--shadow-float);
+  transform: rotate(-5deg);
+}
+.pairing-sample-code {
+  width: min(6rem, 40cqh);
+  aspect-ratio: 1;
+}
+
+/* The native picture sits behind the WebView. The scrim, app and modal
+   paper each have the same rounded opening, in their own coordinates. */
+html:root[data-pairing-camera],
+html:root[data-pairing-camera] body {
+  background: transparent;
+}
+html[data-pairing-camera] :is(#root, [data-scrim][style*="--pairing-camera-clip"]) {
+  clip-path: var(--pairing-camera-clip);
+}
+[data-join-sheet][data-camera-through][data-task-frame][data-overlay-task] {
+  background: transparent;
+  isolation: isolate;
+}
+[data-join-sheet][data-camera-through]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--popover);
+  clip-path: var(--pairing-camera-clip);
+}
+.pairing-camera[data-camera-live] {
+  background: transparent;
+}
+
+.pairing-camera[data-camera-live] [data-pairing-camera-actions] {
+  background: linear-gradient(transparent, color-mix(in oklab, var(--mark-veil-dark) 75%, transparent));
+}

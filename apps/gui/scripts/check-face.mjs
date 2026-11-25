@@ -1,3 +1,4 @@
+import {checkPairingCamera} from "./pairing-camera-checks.mjs";
 import {pickPopup,popupChoices} from "./popup-helpers.mjs";
 import {routeCanonicalChat} from './fixtures/canonical-chat-routes.mjs';
 // The type gate, rendered half: what the letterforms actually weigh on
@@ -57,12 +58,14 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, webkit } from "playwright-core";
 
 import { cmProbe } from "./cm-probe.mjs";
 
 const gui = fileURLToPath(new URL("..", import.meta.url));
 const PORT = Number(process.env.FACE_PORT ?? 1451);
+const pairingWebKit = process.env.FACE_ONLY === "scan" && !!process.env.PAIRING_WEBKIT;
+const faceOrigin = `http://${pairingWebKit ? "127.0.0.1" : "localhost"}:${PORT}`;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 // A bounded poll where a fixed sleep used to be. Every「probe dead」in
 // this file is the claim *this surface never drew*, and a fixed wait
@@ -98,7 +101,7 @@ const DOC_END = process.platform === "darwin" ? "Meta+ArrowDown" : "Control+End"
 let vite = null;
 let browser = null;
 try {
-  vite = spawn("node_modules/.bin/vite", ["--port", String(PORT), "--strictPort"], {
+  vite = spawn("node_modules/.bin/vite", ["--port", String(PORT), "--strictPort", ...(pairingWebKit ? ["--host", "127.0.0.1"] : [])], {
     cwd: gui,
     env: { ...process.env, KHOR_FACE_GATE: "1" },
     stdio: ["ignore", "pipe", "pipe"],
@@ -113,7 +116,9 @@ try {
   }
   if (!ready) throw new Error(`vite never came up on ${PORT}`);
 
-  browser = await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
+  browser = pairingWebKit
+    ? await webkit.launch({ headless: true })
+    : await chromium.launch({ channel: "chrome", headless: true, args: ["--no-proxy-server"] });
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   // **The file's editor is CodeMirror** (cm-a, 2026-10-10): probes ask
   // the view through `window.__cm` (scripts/cm-probe.mjs).
@@ -2226,8 +2231,10 @@ try {
     relayOnly = only_mine;
     r.fulfill({ contentType: "application/json", body: JSON.stringify(relayChoices()) });
   });
-  await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
-  await wait(800);
+  if (process.env.FACE_ONLY !== "scan") {
+    await page.goto(`${faceOrigin}/?bridge=${PORT}`, { waitUntil: "load" });
+    await wait(800);
+  }
 
   // **`FACE_ONLY=native` walks section 11 alone** (the Mac-app tells, at
   // the foot) — a minute rather than twelve while those rules are being
@@ -29781,291 +29788,9 @@ try {
   }
   if (process.env.FACE_ONLY === "phone") console.log("phone · FACE_ONLY=phone: the other sections are skipped");
 
-  // ── 加入网络的扫码 (docs/IOS.md 第三步, 2026-10-02) ──────────────────
-  //
-  // The invite's QR code is the ticket itself (`khor_gui_core::qr`), so on
-  // a face with a camera 加入网络 offers 扫码: what the camera reads lands
-  // in the same field a paste fills and goes down the same `pair`. One
-  // join, two ways to enter the ticket. Whether there is a camera is the
-  // shell's answer (`scanner_here`: the phone builds yes, a desktop and
-  // every HTTP skin no), and the camera is the plugin's — faked here at
-  // tauri's IPC global, the one seam it calls through, with every khor
-  // command still on the bridge. Two arms:
-  //
-  //   a. **no scanner** (a desktop): the dialog opens with its field and
-  //      no 扫码, and the plugin is never called;
-  //   b. **a scanner** (a phone): 扫码 is drawn beside the field;
-  //      pressing it scans for QR codes only, **windowed** — the page
-  //      steps aside for the camera (the root says `data-scanning`, the
-  //      dialog is hidden, a layer with a way out is up) — and what was
-  //      read is the field's value and the one `pair` asked, exactly the
-  //      ticket; typing a ticket asks the same `pair` (the control);
-  //      a refused camera permission ends in the catalog's sentence and
-  //      a way to the settings, never a scan; a permission asked for the
-  //      first time and refused, the same; 取消 on the camera layer
-  //      cancels the scan and leaves the field and `pair` alone; a camera
-  //      that cannot be had (a simulator) says so in the catalog's words.
-  //
-  // New, so the a-arm is green on the old face (there is no 扫码 to
-  // draw); it was seen red against a face that draws the entry whatever
-  // the shell answers. The b-arm is red on the old face: no 扫码.
-  //
-  // `FACE_ONLY=scan` runs this section alone.
-  scan: {
-  if (process.env.FACE_ONLY && process.env.FACE_ONLY !== "scan") break scan;
-  {
-    const zh = readFileSync(join(gui, "..", "..", "crates", "catalog", "zh.toml"), "utf8");
-    const word = (key) => new RegExp(`^${key} = "([^"]*)"$`, "m").exec(zh)?.[1] ?? null;
-    const TICKET = "khor-face-scan-ticket-1002";
-    const TYPED = "khor-face-typed-ticket-1002";
-    let scannerHere = false;
-    let scannerAsked = 0;
-    const paired = [];
-    await page.route("**/scanner_here", (r) => {
-      scannerAsked += 1;
-      r.fulfill({ contentType: "application/json", body: JSON.stringify(scannerHere) });
-    });
-    // Refused on purpose, so the dialog stays up with what was entered
-    // in it — the join's own way of answering, the same for both roads.
-    await page.route("**/pair", (r) => {
-      paired.push(JSON.parse(r.request().postData() || "{}").ticket);
-      r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify("face: refused on purpose") });
-    });
-    // The camera, at the seam the plugin calls through. `window.__scan`
-    // is the scenario and the record; a held scan waits for the gate.
-    // **Only on a page asked for as the scanning app** (`&as-scan`): the
-    // init script outlives this section, and a stand-in IPC answering
-    // `null` to every call would take the sections after it off the
-    // bridge — the terminal's stream among them.
-    await page.addInitScript((ticket) => {
-      if (!new URLSearchParams(location.search).has("as-scan")) return;
-      const s = { perm: "granted", after: "granted", scan: "hold", calls: [], ticket, release: null, refuse: null };
-      window.__scan = s;
-      window.__TAURI_INTERNALS__ = {
-        invoke: (cmd, args) => {
-          if (!String(cmd).startsWith("plugin:barcode-scanner|")) return Promise.resolve(null);
-          const what = String(cmd).split("|")[1];
-          s.calls.push({ what, args: args ?? null });
-          if (what === "check_permissions") return Promise.resolve({ camera: s.perm });
-          if (what === "request_permissions") return Promise.resolve({ camera: s.after });
-          if (what === "scan") {
-            if (s.scan === "fail") return Promise.reject("No camera available on this device (e.g., iOS Simulator)");
-            return new Promise((resolve, reject) => {
-              s.release = () => resolve({ content: s.ticket, format: "QR_CODE", bounds: null });
-              s.refuse = () => reject("cancelled");
-            });
-          }
-          if (what === "cancel") {
-            s.refuse?.();
-            return Promise.resolve(null);
-          }
-          return Promise.resolve(null);
-        },
-        transformCallback: () => 0,
-        unregisterCallback: () => {},
-        convertFileSrc: (p) => p,
-        metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
-      };
-      window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
-    }, TICKET);
-    const calls = () => page.evaluate(() => window.__scan.calls.map((c) => c.what));
-    const count = (sel) => page.locator(sel).count();
-    const openJoin = async () => {
-      if (!(await open("devices"))) return false;
-      await wait(300);
-      if (!(await press("[data-side-head] [data-pane-new]"))) return false;
-      // 添加机器 → khor 主机 (round join-d): the code field is on that page.
-      if (!(await press('[role="menu"] [data-new-item="khor"]'))) return false;
-      if (!(await until(3_000, async () => (await count('[data-pairing-mode] [data-segment="join"]')) === 1))) return false;
-      if (!(await press('[data-pairing-mode] [data-segment="join"]'))) return false;
-      return until(3_000, async () => (await count('[data-add-machine="ticket"] [data-ticket-input]')) === 1);
-    };
-    const reload = async (size) => {
-      await page.evaluate(() => window.localStorage.clear());
-      await page.setViewportSize(size);
-      await page.goto(`http://localhost:${PORT}/?bridge=${PORT}&as-scan`, { waitUntil: "load" });
-      await wait(1500);
-    };
-    const WIDE = { width: 1400, height: 900 };
-    // The phone's arm on the phone's layout: narrow, where the page's
-    // ground is its own (the Mac app's sidebar material clears the
-    // ground of the wide face, and would hide what b1 measures).
-    const PHONE = { width: 390, height: 844 };
-    const ground = () =>
-      page.evaluate(() => {
-        const root = document.documentElement;
-        const was = root.getAttribute("data-theme");
-        const read = (theme) => {
-          root.setAttribute("data-theme", theme);
-          return getComputedStyle(document.body).backgroundColor;
-        };
-        const out = { light: read("light"), dark: read("dark") };
-        if (was === null) root.removeAttribute("data-theme");
-        else root.setAttribute("data-theme", was);
-        return out;
-      });
-
-    // ── a. no scanner ──
-    scannerHere = false;
-    scannerAsked = 0;
-    await reload(WIDE);
-    if (!(await openJoin())) {
-      fail("probe dead: scan a · 加入网络 never opened");
-    } else {
-      await until(3_000, async () => scannerAsked > 0);
-      await wait(400);
-      const field = await count('[data-add-machine="ticket"] [data-ticket-input]');
-      const entry = await count("[data-scan-ticket]");
-      const used = await calls();
-      console.log(`scan a · no scanner: asked ${scannerAsked}, field ${field}, 扫码 ${entry}, camera calls ${JSON.stringify(used)}`);
-      if (field !== 1) fail("probe dead: scan a · the join dialog has no ticket field");
-      if (!scannerAsked) fail("probe dead: scan a · the face never asked scanner_here — the arm measured a default, not an answer");
-      if (entry !== 0) fail("scan a · a face without a scanner draws 扫码 — absent, not refused (src/views/AddMachine.tsx)");
-      if (used.length) fail(`scan a · a face without a scanner called the camera: ${JSON.stringify(used)}`);
-      await page.keyboard.press("Escape");
-      await wait(300);
-    }
-
-    // ── b. a scanner ──
-    scannerHere = true;
-    await reload(PHONE);
-    if (!(await openJoin())) {
-      fail("probe dead: scan b · 加入网络 never opened");
-      break scan;
-    }
-    const drawn = await until(3_000, async () => (await count('[data-add-machine="ticket"] [data-scan-ticket]')) === 1);
-    console.log(`scan b · a scanner: 扫码 ${drawn ? "drawn" : "absent"}`);
-    if (!drawn) {
-      fail("scan b · a face with a scanner draws no 扫码 in 添加机器 · khor 主机 (src/views/AddMachine.tsx)");
-      break scan;
-    }
-    const field = () => page.locator('[data-add-machine="ticket"] [data-ticket-input]').inputValue();
-    // The two sentences the catalog owns, read here rather than above so
-    // a face from before them goes red on the missing entry, not on this.
-    const DENIED = word("scan-camera-denied");
-    const NO_CAMERA = word("scan-no-camera");
-    if (!DENIED || !NO_CAMERA) {
-      fail("probe dead: scan · the catalog lost scan-camera-denied or scan-no-camera");
-      break scan;
-    }
-
-    // b1. the read lands in the field and goes down the one `pair`.
-    // The control for the ground: before the camera, the page paints its
-    // own, in both themes.
-    const before = await ground();
-    if (before.light === "rgba(0, 0, 0, 0)" || before.dark === "rgba(0, 0, 0, 0)") {
-      fail(`probe dead: scan b1 · the page has no ground of its own before scanning (${JSON.stringify(before)}) — the clear ground below would prove nothing`);
-    }
-    await press("[data-scan-ticket]");
-    const up = await until(3_000, async () => (await count("[data-scanner]")) === 1);
-    const during = await page.evaluate(() => {
-      const dialog = document.querySelector('[data-add-machine="ticket"]');
-      const scanner = document.querySelector("[data-scanner]");
-      return {
-        stamped: document.documentElement.hasAttribute("data-scanning"),
-        dialog: dialog ? getComputedStyle(dialog).visibility : null,
-        layer: scanner ? getComputedStyle(scanner).visibility : null,
-        out: scanner ? scanner.querySelectorAll("[data-scan-cancel]").length : 0,
-        asked: window.__scan.calls.find((c) => c.what === "scan")?.args ?? null,
-      };
-    });
-    during.ground = await ground();
-    console.log(`scan b1 · ground before ${JSON.stringify(before)}; while the camera is up: ${JSON.stringify(during)}`);
-    if (!up) fail("scan b1 · pressing 扫码 brought up no camera layer ([data-scanner])");
-    if (
-      !during.stamped ||
-      during.dialog !== "hidden" ||
-      during.layer !== "visible" ||
-      during.ground.light !== "rgba(0, 0, 0, 0)" ||
-      during.ground.dark !== "rgba(0, 0, 0, 0)"
-    ) {
-      fail(`scan b1 · the page did not step aside for the camera behind it: ${JSON.stringify(during)} (src/styles/app.css)`);
-    }
-    if (during.out !== 1) fail("scan b1 · the camera layer has no 取消 — the plugin's own full-screen mode has no way out either");
-    if (!during.asked || during.asked.windowed !== true || JSON.stringify(during.asked.formats) !== '["QR_CODE"]') {
-      fail(`scan b1 · the scan was asked ${JSON.stringify(during.asked)} — windowed, QR codes only`);
-    }
-    await page.evaluate(() => window.__scan.release?.());
-    await until(3_000, async () => paired.length > 0);
-    await wait(300);
-    const after = { field: await field(), paired: [...paired], layer: await count("[data-scanner]"), stamped: await page.evaluate(() => document.documentElement.hasAttribute("data-scanning")) };
-    console.log(`scan b1 · read: ${JSON.stringify(after)}`);
-    if (after.field !== TICKET) fail(`scan b1 · the field holds ${JSON.stringify(after.field)} after the scan — the read lands in it, exactly the ticket`);
-    if (after.paired.length !== 1 || after.paired[0] !== TICKET) fail(`scan b1 · pair was asked ${JSON.stringify(after.paired)} — once, with the ticket the camera read`);
-    if (after.layer || after.stamped) fail("scan b1 · the camera layer outlived the scan");
-    // The control: the typed road asks the same `pair`.
-    const typedAt = paired.length;
-    await page.locator('[data-add-machine="ticket"] [data-ticket-input]').fill(TYPED);
-    await press('[data-add-machine="ticket"] [data-join]');
-    await until(3_000, async () => paired.length > typedAt);
-    if (paired[typedAt] !== TYPED) fail(`probe dead: scan b1 · typing a ticket and pressing 加入 asked ${JSON.stringify(paired.slice(typedAt))} — the control road is broken`);
-
-    // b2. a refused permission: a sentence and the settings, no scan.
-    const pairedBefore = paired.length;
-    await page.locator('[data-add-machine="ticket"] [data-ticket-input]').fill("");
-    await page.evaluate(() => {
-      Object.assign(window.__scan, { perm: "denied", calls: [] });
-    });
-    await press("[data-scan-ticket]");
-    await until(3_000, async () => (await count("[data-scan-denied]")) === 1);
-    const denied = await page.locator("[data-scan-denied]").first().textContent().catch(() => null);
-    const settings = await count("[data-scan-denied] [data-scan-settings]");
-    if (settings) await press("[data-scan-settings]");
-    const usedDenied = await calls();
-    console.log(`scan b2 · refused: ${JSON.stringify(denied)}, settings ${settings}, calls ${JSON.stringify(usedDenied)}`);
-    if (!denied?.includes(DENIED)) fail(`scan b2 · a refused camera said ${JSON.stringify(denied)} — the catalog's scan-camera-denied`);
-    if (settings !== 1) fail("scan b2 · a refused camera offers no way to the settings — a sentence with nowhere to go");
-    if (usedDenied.includes("scan")) fail("scan b2 · the camera was asked to scan with its permission refused");
-    if (!usedDenied.includes("open_app_settings")) fail("scan b2 · 打开设置 did not open the settings");
-
-    // b3. asked for the first time, and refused: the same sentence.
-    await page.evaluate(() => Object.assign(window.__scan, { perm: "prompt", after: "denied", calls: [] }));
-    await press("[data-scan-ticket]");
-    await wait(600);
-    const usedPrompt = await calls();
-    const deniedAgain = await count("[data-scan-denied]");
-    console.log(`scan b3 · first ask refused: calls ${JSON.stringify(usedPrompt)}, sentence ${deniedAgain}`);
-    if (!usedPrompt.includes("request_permissions") || usedPrompt.includes("scan") || deniedAgain !== 1) {
-      fail(`scan b3 · a first ask that was refused went ${JSON.stringify(usedPrompt)} with ${deniedAgain} sentence(s) — ask, then say it, no scan`);
-    }
-
-    // b4. 取消 on the camera layer.
-    await page.evaluate(() => Object.assign(window.__scan, { perm: "granted", scan: "hold", calls: [] }));
-    await press("[data-scan-ticket]");
-    await until(3_000, async () => (await count("[data-scanner]")) === 1);
-    await press("[data-scan-cancel]");
-    await until(3_000, async () => (await count("[data-scanner]")) === 0);
-    const cancelled = {
-      calls: await calls(),
-      layer: await count("[data-scanner]"),
-      said: (await count("[data-scan-denied]")) + (await count("[data-scan-failed]")),
-      field: await field(),
-      paired: paired.length - pairedBefore,
-    };
-    console.log(`scan b4 · 取消: ${JSON.stringify(cancelled)}`);
-    if (!cancelled.calls.includes("cancel") || cancelled.layer || cancelled.said || cancelled.field !== "" || cancelled.paired) {
-      fail(`scan b4 · 取消 left ${JSON.stringify(cancelled)} — the scan cancelled, the layer gone, nothing said, the field and pair untouched`);
-    }
-
-    // b5. no camera to be had (a simulator).
-    await page.evaluate(() => Object.assign(window.__scan, { scan: "fail", calls: [] }));
-    await press("[data-scan-ticket]");
-    await until(3_000, async () => (await count("[data-scan-failed]")) === 1);
-    const failed = await page.locator("[data-scan-failed]").first().textContent().catch(() => null);
-    console.log(`scan b5 · no camera: ${JSON.stringify(failed)}, layer ${await count("[data-scanner]")}`);
-    if (failed !== NO_CAMERA) fail(`scan b5 · a camera that could not be had said ${JSON.stringify(failed)} — the catalog's scan-no-camera, not the plugin's English`);
-    if (await count("[data-scanner]")) fail("scan b5 · the camera layer stayed up after the camera failed");
-    if (paired.length !== pairedBefore) fail("scan b5 · a failed scan asked pair");
-
-    await page.keyboard.press("Escape");
-    await wait(300);
-    // Back to the web face for the sections after this one.
-    await page.setViewportSize(WIDE);
-    await page.goto(`http://localhost:${PORT}/?bridge=${PORT}`, { waitUntil: "load" });
-    await wait(900);
+  if (!process.env.FACE_ONLY || process.env.FACE_ONLY === "scan") {
+    await checkPairingCamera(page, `${faceOrigin}/?bridge=${PORT}`, () => open("devices"));
   }
-  }
-  if (process.env.FACE_ONLY === "scan") console.log("scan · FACE_ONLY=scan: the other sections are skipped");
 
   // ── 22) the workspace's file, UX-23 and on ─────────────────────────
   //

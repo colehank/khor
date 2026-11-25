@@ -1220,73 +1220,60 @@ export const pair = (ticket: string) => call<string>("pair", { ticket });
     down asks for. One answer per machine, reached or not. */
 export const syncNow = () => call<SyncOutcome[]>("sync_now");
 
-/* ── 加入网络's 扫码 (docs/IOS.md 第三步) ──────────────────────────────
- *
- * **One join, two ways to enter the ticket.** The invite's QR code is
- * the ticket itself, byte for byte (`khor_gui_core::qr`), so what the
- * camera reads goes into the same field a paste fills and down the same
- * `pair`. Nothing here joins anything.
- *
- * The camera is the phone app's (`tauri-plugin-barcode-scanner`, under
- * the grant in `src-tauri/capabilities/scan.json`); whether this face
- * has one is the shell's answer, not a guess from the browser. */
-
-/** Whether this face can read a ticket's QR code with a camera — the
-    phone builds say yes, a desktop and every HTTP skin no. A face that
-    hears no draws no entry (absent, not refused). Asked once. */
+/** Only native phone hosts can open the pairing camera. */
 let scannerAsked: Promise<boolean> | null = null;
 export const fetchScannerHere = (): Promise<boolean> =>
   (scannerAsked ??= call<boolean>("scanner_here").catch(() => false));
 
-/** How a scan ended. `refused` carries which sentence to say: the
-    camera permission is off (`denied`), or the camera could not be had
-    at all (`failed` — a simulator has none). */
-export type Scan = { ticket: string } | { refused: "denied" | "failed" } | { cancelled: true };
+type Scan = { ticket: string } | { refused: "denied" | "failed" } | { cancelled: true };
+const scanCancelled = { cancelled: true } as const;
+let cameraTurn: Promise<unknown> = Promise.resolve();
 
-/** Set while a scan this face started is being stopped, so its rejection
-    reads as the person's 取消 and not as a camera that failed. */
-let stopping = false;
+/** The plugin owns one native camera. Wait for previous cancellation before
+ * starting it again, and ignore results after leaving this pairing step. */
+export function scanTicket(scanning: () => void, signal: AbortSignal): Promise<Scan> {
+  const result = cameraTurn.then(() => readCamera(scanning, signal));
+  cameraTurn = result.catch(() => {});
+  return result;
+}
 
-/**
- * Reads a ticket off a QR code with the camera: asks for the permission
- * when it was never asked, then scans **windowed** — the camera behind a
- * page gone transparent, so the page draws its own way out (`stopScan`);
- * the plugin's full-screen mode has none. `scanning` is called when the
- * camera is about to come up, so the page can clear itself away first.
- */
-export async function scanTicket(scanning: () => void): Promise<Scan> {
-  const scanner = await import("@tauri-apps/plugin-barcode-scanner");
-  let camera: string;
+async function readCamera(scanning: () => void, signal: AbortSignal): Promise<Scan> {
+  if (signal.aborted) return scanCancelled;
   try {
-    camera = await scanner.checkPermissions();
-    if (camera === "prompt" || camera === "prompt-with-rationale") {
-      camera = await scanner.requestPermissions();
+    const scanner = await import("@tauri-apps/plugin-barcode-scanner");
+    if (signal.aborted) return scanCancelled;
+    let permission: string = await scanner.checkPermissions();
+    if (signal.aborted) return scanCancelled;
+    if (permission === "prompt" || permission === "prompt-with-rationale") {
+      permission = await scanner.requestPermissions();
+    }
+    if (signal.aborted) return scanCancelled;
+    if (permission !== "granted") return { refused: "denied" };
+
+    let cancellation: Promise<Scan> | undefined;
+    let finish: (result: Scan) => void = () => {};
+    const ended = new Promise<Scan>((resolve) => { finish = resolve; });
+    const cancel = () => {
+      // Android scanner 2.4.6 acknowledges cancel but can leave scan pending.
+      cancellation = scanner.cancel().catch(() => {}).then(() => scanCancelled);
+      void cancellation.then(finish);
+    };
+    signal.addEventListener("abort", cancel, { once: true });
+    try {
+      scanning();
+      const read = scanner.scan({ windowed: true, formats: [scanner.Format.QRCode] })
+        .then<Scan, Scan>(({ content }) => ({ ticket: content.trim() }), () => ({ refused: "failed" }));
+      const result = await Promise.race([read, ended]);
+      return signal.aborted ? (await cancellation ?? scanCancelled) : result;
+    } finally {
+      signal.removeEventListener("abort", cancel);
     }
   } catch {
-    return { refused: "failed" };
-  }
-  if (camera !== "granted") return { refused: "denied" };
-  stopping = false;
-  scanning();
-  try {
-    const read = await scanner.scan({ windowed: true, formats: [scanner.Format.QRCode] });
-    return { ticket: read.content.trim() };
-  } catch {
-    return stopping ? { cancelled: true } : { refused: "failed" };
-  } finally {
-    stopping = false;
+    return signal.aborted ? scanCancelled : { refused: "failed" };
   }
 }
 
-/** 取消 on the camera: the scan ends and answers `cancelled`. */
-export async function stopScan(): Promise<void> {
-  stopping = true;
-  const scanner = await import("@tauri-apps/plugin-barcode-scanner");
-  await scanner.cancel().catch(() => {});
-}
-
-/** The system's settings for khor — where a refused camera permission
-    is given back. */
+/** The system settings page for camera access. */
 export async function openCameraSettings(): Promise<void> {
   const scanner = await import("@tauri-apps/plugin-barcode-scanner");
   await scanner.openAppSettings().catch(() => {});

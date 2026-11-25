@@ -72,6 +72,7 @@ export const Khor:Story={name:'Khor 会话',args:{scene:'khor'}};
 export const GUI:Story={name:'GUI 对话',args:{scene:'gui'}};
 export const Terminal:Story={name:'终端',args:{scene:'terminal'}};
 export const Devices:Story={name:'机器',args:{scene:'devices'}};
+export const Pairing:Story={name:'扫码加入网络',args:{scene:'pairing',platform:'ios',width:390,height:844,machines:1}};
 export const Workspace:Story={name:'工作区',args:{scene:'workspaces'}};
 export const Files:Story={name:'工作区文件',args:{scene:'workspace'}};
 export const Quota:Story={name:'额度',args:{scene:'quota'}};

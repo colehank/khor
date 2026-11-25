@@ -1,10 +1,12 @@
 import type {DeviceRow} from '../../src/gen/bindings/DeviceRow';
 import {labPairingTicket} from './world';
 
+export const previewPairingCredential = 'khorLAB_REMOTE_NETWORK';
+
 /** Isolated transport facts for the production pairing form. Never a live ticket. */
 export function pairingFixture(devices:DeviceRow[], peers:DeviceRow[]) {
   let invitations=0,joins=0,fail=false,pending=false;
-  const remoteTicket='khorLAB_REMOTE_NETWORK';
+  const remoteTicket=previewPairingCredential;
   const addPeer=()=>{
     const peer=peers.find(row=>!row.me&&!devices.some(known=>known.id===row.id));
     if(peer)devices.push(structuredClone(peer));

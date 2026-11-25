@@ -12,7 +12,10 @@ const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
 // absolute preload URLs would instead hit unserved paths on the Lab origin.
 export default mergeConfig(sharedConfig, defineConfig({
   base: './',
-  resolve: {alias: [{find: '@/lib/backend-context', replacement: fileURLToPath(new URL('./backend-context.ts', import.meta.url))}]},
+  resolve: {alias: [
+    {find: '@/lib/backend-context', replacement: fileURLToPath(new URL('./backend-context.ts', import.meta.url))},
+    {find: '@/lib/join-network-lab', replacement: fileURLToPath(new URL('./join-network-sample.ts', import.meta.url))},
+  ]},
   optimizeDeps: {entries: ['index.html']},
   plugins: [{
     name: 'complete-app-lab-entry',

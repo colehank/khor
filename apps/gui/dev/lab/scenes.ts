@@ -14,6 +14,7 @@ export const scenes = {
   workspaces: {title: '工作区列表', session: null, row: null},
   quota: {title: '额度与账户', session: null, row: null},
   devices: {title: '机器列表', session: null, row: null},
+  pairing: {title: '扫码加入网络', session: null, row: null},
   browser: {title: '浏览器', session: null, row: null},
 } as const;
 export type Scene = keyof typeof scenes;

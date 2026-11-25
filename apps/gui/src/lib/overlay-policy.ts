@@ -5,7 +5,13 @@ export type TaskPurpose = 'edit' | 'selection' | 'preview';
 export type OverlayPurpose = 'confirmation' | 'actions' | TaskPurpose;
 export type OverlayHeight = 'fit' | 'medium' | 'large';
 export type OverlayDismiss = 'standard' | 'outside' | 'explicit';
-export type OverlayOptions = { purpose: OverlayPurpose; initialHeight?: OverlayHeight; maxHeight?: OverlayHeight; dismiss?: OverlayDismiss };
+export type OverlayOptions = {
+  purpose: OverlayPurpose;
+  initialHeight?: OverlayHeight;
+  maxHeight?: OverlayHeight;
+  dismiss?: OverlayDismiss;
+  expandOnInput?: boolean;
+};
 
 export function overlayPolicy(options: OverlayOptions, narrow: boolean) {
   const task = options.purpose === 'edit' || options.purpose === 'selection' || options.purpose === 'preview';
@@ -20,7 +26,7 @@ export function overlayPolicy(options: OverlayOptions, narrow: boolean) {
     resizable: task && maximum !== 'fit',
     outside: options.dismiss === 'outside' || (options.dismiss !== 'explicit' && (options.purpose !== 'edit' || narrow)),
     dismissible: options.dismiss !== 'explicit',
-    expandOnInput: task && narrow && maximum === "large",
+    expandOnInput: options.expandOnInput ?? (task && narrow && maximum === "large"),
     focus: !(narrow && (options.purpose === 'selection' || options.purpose === 'preview')),
   };
 }
