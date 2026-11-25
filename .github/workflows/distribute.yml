@@ -157,6 +157,19 @@ jobs:
           path: signed-updates
       - name: Publish the verified assets without rebuilding or overwriting
         run: python3 scripts/distribute_candidate.py publish
+  website:
+    needs: github
+    if: needs.github.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Queue the website deployment after publication
+        run: gh workflow run site-pages.yml --ref main -f release_tag="$RELEASE_TAG"
   appstore:
     needs: [plan, github]
     if: ${{ !cancelled() && needs.github.result == 'success' && needs.plan.outputs.rc == 'false' }}
