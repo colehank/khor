@@ -7,6 +7,9 @@ on:
         description: Deploy the verified site to khor.cloud
         type: boolean
         default: true
+      release_tag:
+        description: Just-published tag to verify before selecting the newest release
+        type: string
 
 permissions:
   contents: read
@@ -42,14 +45,33 @@ jobs:
         with:
           node-version: 22.19.0
           cache: npm
-          cache-dependency-path: site-source/apps/site/package-lock.json
+          cache-dependency-path: |
+            site-source/apps/site/package-lock.json
+            site-source/apps/gui/package-lock.json
       - name: Select the public release and verify its downloads
         working-directory: site-source/apps/site
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          PUBLISHED_TAG: ${{ inputs.release_tag }}
         run: |
           gh api --paginate --slurp "repos/$GH_REPO/releases?per_page=100" > "$RUNNER_TEMP/khor-releases.json"
+          if [[ -n "$PUBLISHED_TAG" ]]; then
+            [[ "$PUBLISHED_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$ ]]
+            endpoint="repos/$GH_REPO/releases/tags/$PUBLISHED_TAG"
+            for retry in 1 2 3; do
+              if gh api -H 'Cache-Control: no-cache' "$endpoint" > "$RUNNER_TEMP/khor-published-release.json" &&
+                 jq -e '.draft == false and .immutable == true' "$RUNNER_TEMP/khor-published-release.json" > /dev/null; then
+                break
+              fi
+              [[ "$retry" != 3 ]] || exit 1
+              sleep "$((retry * 3))"
+            done
+            jq --arg tag "$PUBLISHED_TAG" --slurpfile current "$RUNNER_TEMP/khor-published-release.json" \
+              'map(map(select(.tag_name != $tag))) + [$current]' \
+              "$RUNNER_TEMP/khor-releases.json" > "$RUNNER_TEMP/khor-resolved-releases.json"
+            mv "$RUNNER_TEMP/khor-resolved-releases.json" "$RUNNER_TEMP/khor-releases.json"
+          fi
           node scripts/select-release.mjs "$RUNNER_TEMP/khor-releases.json" "$RUNNER_TEMP/khor-published-install.sh"
       - name: Build the static website
         working-directory: site-source/apps/site
@@ -60,6 +82,7 @@ jobs:
           export KHOR_SITE_SOURCE_COMMIT="$(git rev-parse HEAD)"
           export KHOR_SITE_INSTALLER="$RUNNER_TEMP/khor-published-install.sh"
           npm ci
+          npm ci --prefix ../gui
           npm run tokens
           npm exec -- astro build
           sh -n dist/install.sh

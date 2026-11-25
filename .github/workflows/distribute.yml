@@ -169,7 +169,7 @@ jobs:
       GH_REPO: ${{ github.repository }}
     steps:
       - name: Queue the website deployment after publication
-        run: gh workflow run site-pages.yml --ref main
+        run: gh workflow run site-pages.yml --ref main -f release_tag="$RELEASE_TAG"
   appstore:
     needs: [plan, github]
     if: ${{ !cancelled() && needs.github.result == 'success' && needs.plan.outputs.rc == 'false' }}
