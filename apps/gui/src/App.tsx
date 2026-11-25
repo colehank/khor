@@ -2889,6 +2889,12 @@ export default function App() {
         // and in its directory (工作区批⑩) — and what it opens stays
         // here (2026-09-16 ruling 34).
         onNewSession={(m, dir) => openNewSession(m, dir, true)}
+        onOpenWorktree={path => {
+          beginDirectoryTiming(openWs.machine, path);
+          setOpenWs({ ...openWs, path });
+          setWsTree(true);
+          setScreen("detail");
+        }}
         opened={openedInWs}
         back={wsBack}
         onBackSeen={() => setWsBack(false)}

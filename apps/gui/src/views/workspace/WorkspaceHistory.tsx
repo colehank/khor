@@ -8,10 +8,11 @@ import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import { ago } from "@/words";
 import type { WorkspaceHistoryMemory } from "./workspace-history";
 
-export function WorkspaceHistory({ machine, root, query, memory, active, onOpen, liveHead, reference }: {
+export function WorkspaceHistory({ machine, root, query, memory, active, onOpen, liveHead, reference, snapshot }: {
   machine: string;
   root: string;
   reference?: string;
+  snapshot?: string;
   query: string;
   memory: WorkspaceHistoryMemory;
   active: string | null;
@@ -21,9 +22,9 @@ export function WorkspaceHistory({ machine, root, query, memory, active, onOpen,
   const view = useSyncExternalStore(memory.subscribe, memory.snapshot, memory.snapshot);
   const [since, setSince] = useState(Date.now);
   const request = useCallback(async (cursor: string | null, limit: number) => {
-    try { return await fetchGitHistory(machine, root, cursor, limit, reference); }
+    try { return await fetchGitHistory(machine, root, cursor, limit, reference, snapshot); }
     catch (error) { throw new Error(said(error)); }
-  }, [machine, root, reference]);
+  }, [machine, root, reference, snapshot]);
   useEffect(() => memory.attach(), [memory]);
   useEffect(() => {
     if (!view.busy && view.refreshRequested) void memory.refresh(request);
@@ -31,7 +32,7 @@ export function WorkspaceHistory({ machine, root, query, memory, active, onOpen,
   useEffect(() => { if (view.busy) setSince(Date.now()); }, [view.busy]);
   const current = view.current;
   const [emptyScroll] = useState(() => ({}));
-  const place = JSON.stringify([machine, root, reference, view.generation, current?.data.head, current?.index, query]);
+  const place = JSON.stringify([machine, root, reference, snapshot, view.generation, current?.data.head, current?.index, query]);
   const reading = useKeptScrollRef(
     place,
     current?.scroll ?? emptyScroll,

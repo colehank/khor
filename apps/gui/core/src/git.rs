@@ -15,6 +15,7 @@
 use std::path::Path;
 
 use khor_node::Node;
+pub use khor_node::git::{GitExploreQuery, GitExploreResult};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -302,6 +303,28 @@ pub async fn branches(root: &Path, machine: &str, dir: &str) -> Result<GitBranch
     }
 }
 
+pub async fn explore(
+    root: &Path,
+    machine: &str,
+    dir: &str,
+    query: GitExploreQuery,
+) -> Result<GitExploreResult, String> {
+    use khor_node::git::{GitAnswer, GitAsk};
+    match ask(
+        root,
+        machine,
+        GitAsk::Explore {
+            dir: dir.to_owned(),
+            query,
+        },
+    )
+    .await?
+    {
+        GitAnswer::Explore { result } => Ok(result),
+        _ => Err("Expected a Git workspace result".into()),
+    }
+}
+
 /// All parents reachable from a checkout or branch snapshot.
 pub async fn history(
     root: &Path,
@@ -310,18 +333,25 @@ pub async fn history(
     cursor: Option<&str>,
     limit: u32,
     reference: Option<&str>,
+    snapshot: Option<&str>,
 ) -> Result<GitHistoryPage, String> {
     use khor_node::git::{GitAnswer, GitAsk};
     let dir = dir.to_owned();
     let cursor = cursor.map(str::to_owned);
-    let question = match reference {
-        Some(reference) => GitAsk::BranchLog {
+    let question = match (snapshot, reference) {
+        (Some(commit), _) => GitAsk::SnapshotLog {
+            dir,
+            commit: commit.to_owned(),
+            cursor,
+            limit,
+        },
+        (None, Some(reference)) => GitAsk::BranchLog {
             dir,
             reference: reference.to_owned(),
             cursor,
             limit,
         },
-        None => GitAsk::RepositoryLog { dir, cursor, limit },
+        (None, None) => GitAsk::RepositoryLog { dir, cursor, limit },
     };
     match ask(root, machine, question).await? {
         GitAnswer::RepositoryLog {

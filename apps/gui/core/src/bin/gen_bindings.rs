@@ -72,6 +72,8 @@ macro_rules! roots {
         $visit!(khor_gui_core::git::GitLog);
         $visit!(khor_gui_core::git::GitHistoryPage);
         $visit!(khor_gui_core::git::GitBranches);
+        $visit!(khor_gui_core::git::GitExploreQuery);
+        $visit!(khor_gui_core::git::GitExploreResult);
         $visit!(khor_gui_core::git::GitCommitSummary);
         $visit!(khor_gui_core::git::GitBlame);
         $visit!(khor_gui_core::git::GitShow);

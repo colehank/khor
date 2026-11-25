@@ -282,7 +282,19 @@ pub fn answer(
             opt_str("cursor")?.as_deref(),
             u32::try_from(num("limit")?).map_err(|_| "limit exceeds u32".to_owned())?,
             opt_str("reference")?.as_deref(),
+            opt_str("snapshot")?.as_deref(),
         ))?),
+        "git_explore" => {
+            let query =
+                serde_json::from_value(args.get("query").cloned().ok_or("missing Git query")?)
+                    .map_err(|error| error.to_string())?;
+            to_json(&rt.block_on(crate::git::explore(
+                root,
+                &arg("machine")?,
+                &arg("dir")?,
+                query,
+            ))?)
+        }
         "git_branches" => {
             to_json(&rt.block_on(crate::git::branches(root, &arg("machine")?, &arg("dir")?))?)
         }

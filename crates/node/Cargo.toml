@@ -23,6 +23,7 @@ khor-runtime.workspace = true
 khor-update.workspace = true
 tempfile = "3"
 serde.workspace = true
+ts-rs = "10"
 serde_json.workspace = true
 toml_edit = "0.22.27"
 rmp-serde.workspace = true
@@ -46,7 +47,7 @@ portable-pty.workspace = true
 sysinfo.workspace = true
 jiff.workspace = true
 reqwest.workspace = true
-gix = { version = "0.87.1", default-features = false, features = ["status", "blob-diff", "revision", "sha1", "max-performance-safe", "merge", "blame"] }
+gix = { version = "0.87.1", default-features = false, features = ["status", "blob-diff", "revision", "sha1", "max-performance-safe", "merge", "blame", "blocking-http-transport-reqwest-rust-tls"] }
 # The walk behind `khor search` (工作区第六轮 第 47 条). It is ripgrep's
 # own directory walker, and what khor is buying is one thing it will not
 # write twice: **`.gitignore` read the way git reads it** — nested

@@ -82,6 +82,9 @@ pub(crate) const WAS: usize = 256 * 1024;
 pub(crate) const HUNKS: usize = 2000;
 
 /// One workspace's git state, as of the moment it was read.
+mod explore;
+pub use explore::{GitExploreQuery, GitExploreResult};
+
 #[derive(Debug, Clone)]
 pub struct Status {
     /// The branch HEAD is on, short (`main`, not `refs/heads/main`).
@@ -768,10 +771,20 @@ pub enum GitAsk {
         cursor: Option<String>,
         limit: u32,
     },
+    Explore {
+        dir: String,
+        query: GitExploreQuery,
+    },
+    SnapshotLog {
+        dir: String,
+        commit: String,
+        cursor: Option<String>,
+        limit: u32,
+    },
 }
 
 /// One file a commit changed, as the commit page draws it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CommitFile {
     /// Relative to the repository root, `/`-separated.
     pub path: String,
@@ -821,10 +834,11 @@ pub struct Commit {
 }
 
 /// Bounded metadata for a repository-history row; full messages belong to detail.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, ts_rs::TS)]
 pub struct CommitSummary {
     pub id: String,
     pub author: String,
+    #[ts(type = "number")]
     pub when_ms: i64,
     pub subject: String,
     /// Author or subject exceeded its UTF-8 byte budget.
@@ -889,6 +903,9 @@ pub enum GitAnswer {
         refs: Vec<String>,
         more: bool,
     },
+    Explore {
+        result: GitExploreResult,
+    },
 }
 
 /// Answers one history question on this machine.
@@ -902,6 +919,19 @@ pub fn answer(ask: &GitAsk) -> Result<GitAnswer, String> {
         GitAsk::Show { path, rev } => show(Path::new(path), rev),
         GitAsk::Commit { root, rev } => commit_show(Path::new(root), rev),
         GitAsk::Branches { dir } => branches(Path::new(dir)),
+        GitAsk::Explore { dir, query } => {
+            explore::answer(Path::new(dir), query).map(|result| GitAnswer::Explore { result })
+        }
+        GitAsk::SnapshotLog {
+            dir,
+            commit,
+            cursor,
+            limit,
+        } => {
+            let (repo, _) = open_rel(Path::new(dir))?;
+            let commit = explore::exact_commit(&repo, commit)?;
+            repository_log_for(repo, Some(commit), cursor.as_deref(), *limit)
+        }
         GitAsk::BranchLog {
             dir,
             reference,
@@ -1110,27 +1140,39 @@ fn repository_log_from(
     limit: u32,
 ) -> Result<GitAnswer, String> {
     let (repo, _) = open_rel(path)?;
+    let commit = reference.map(|name| {
+        if !name.starts_with("refs/heads/") && !name.starts_with("refs/remotes/") {
+            return Err("Expected a local or remote-tracking branch reference".to_owned());
+        }
+        explore::resolve(&repo, name)
+    });
+    // Existing branch continuations keep their original commit even if the ref moved.
+    let start = if cursor.is_some() {
+        None
+    } else {
+        commit.transpose()?
+    };
+    repository_log_for(repo, start, cursor, limit)
+}
+
+fn repository_log_for(
+    repo: gix::Repository,
+    start: Option<gix::ObjectId>,
+    cursor: Option<&str>,
+    limit: u32,
+) -> Result<GitAnswer, String> {
     if repo.shallow_commits().map_err(|e| e.to_string())?.is_some() {
         return Err("Repository history is incomplete in a shallow checkout".to_owned());
     }
     let cursor = cursor
         .map(|c| HistoryCursor::parse(c, repo.object_hash()))
         .transpose()?;
-    let head = match (&cursor, reference) {
-        (Some(cursor), _) => cursor.head,
-        (None, Some(name)) => {
-            if !name.starts_with("refs/heads/") && !name.starts_with("refs/remotes/") {
-                return Err("Expected a local or remote-tracking branch reference".to_owned());
-            }
-            let branch = repo.find_reference(name).map_err(|e| e.to_string())?;
-            if branch.name().as_bstr() != name.as_bytes() {
-                return Err("Branch reference was not found".to_owned());
-            }
-            branch
-                .into_fully_peeled_id()
-                .map_err(|e| e.to_string())?
-                .detach()
+    let head = match (&cursor, start) {
+        (Some(cursor), Some(start)) if cursor.head != start => {
+            return Err("Repository history cursor belongs to another Git snapshot".to_owned());
         }
+        (Some(cursor), _) => cursor.head,
+        (None, Some(start)) => start,
         (None, None) => {
             let head = repo.head().map_err(|e| e.to_string())?;
             let Some(id) = head.id() else {
@@ -1286,7 +1328,6 @@ pub(crate) const COMMIT_BYTES: usize = 2 * 1024 * 1024;
 type Row = (String, String, &'static str, Vec<u8>, Vec<u8>);
 
 fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
-    use gix::object::tree::diff::ChangeDetached as C;
     let root = repo_root(root).ok_or_else(|| khor_catalog::msg::no_checkout().to_owned())?;
     let repo = gix::open(&root).map_err(|e| e.to_string())?;
     let id = gix::ObjectId::from_hex(rev.as_bytes()).map_err(|e| e.to_string())?;
@@ -1301,11 +1342,26 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
         ),
         None => None,
     };
+    let (files, total, more) = diff_files(&repo, old.as_ref(), &new)?;
+    Ok(GitAnswer::Commit {
+        commit: commit_of(&commit),
+        files,
+        total,
+        more,
+    })
+}
+
+fn diff_files(
+    repo: &gix::Repository,
+    old: Option<&gix::Tree<'_>>,
+    new: &gix::Tree<'_>,
+) -> Result<(Vec<CommitFile>, u32, bool), String> {
+    use gix::object::tree::diff::ChangeDetached as C;
     // Renames tracked with git's own defaults (50 % similar), not the
     // repository's `diff.renames`: the page reads the same everywhere.
     let opts = gix::diff::Options::default().with_rewrites(Some(Default::default()));
     let changes = repo
-        .diff_tree_to_tree(old.as_ref(), Some(&new), opts)
+        .diff_tree_to_tree(old, Some(new), opts)
         .map_err(|e| e.to_string())?;
     // (path, from, letter, old blob, new blob), files only: a directory
     // is said by the files under it, a submodule has no lines here.
@@ -1358,12 +1414,7 @@ fn commit_show(root: &Path, rev: &str) -> Result<GitAnswer, String> {
         files_of(rows.into_iter().map(|(path, from, status, was, now)| {
             Ok((path, from, status, read(was)?, read(now)?))
         }))?;
-    Ok(GitAnswer::Commit {
-        commit: commit_of(&commit),
-        files,
-        total,
-        more,
-    })
+    Ok((files, total, more))
 }
 
 /// The listed files of one commit, in `rows`' order, and whether the

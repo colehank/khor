@@ -88,7 +88,7 @@ export function PaneBar({
   /** Keep the side toolbar in a compound heading already seated by its owner. */
   inline?: boolean;
   /** Names the search box and stands in as its placeholder. */
-  searchLabel: string;
+  searchLabel?: string;
   /**
    * `"side"`: this is a sidebar's head, and it sits in the left block's
    * first row (docs/SHELL.md 第十三轮 第 4 条:「列表头原来那一行撤掉，
@@ -187,7 +187,7 @@ export function PaneBar({
   const glass = seat === "side";
   const banded = !!bandProp && seat === undefined;
   const [searching, setSearching] = useState(query !== "");
-  const open = !glass || searching || query !== "";
+  const open = !!searchLabel && (!glass || searching || query !== "");
   /** **The glass head controls everywhere** (the audit fix plan F4.7;
       W17): seated or not — the workspace's sessions column, the tab
       switcher — filter and ＋ are a glass capsule's items. ⚠️ 墓碑: bare
@@ -201,7 +201,7 @@ export function PaneBar({
     setSearching(false);
     requestAnimationFrame(() => row?.querySelector<HTMLElement>("[data-search-open]")?.focus());
   };
-  const box = (
+  const box = searchLabel ? (
       <div
         className="flex min-w-0 flex-1 items-center"
         // **Escape, the Mac's way** (W-V4): the first clears what is
@@ -281,7 +281,7 @@ export function PaneBar({
           </div>
         )}
         </div>
-  );
+  ) : null;
   const acts = (
     <>
       {filter && filterLabel && (
@@ -424,7 +424,7 @@ export function PaneBar({
             <span className="flex-1" />
           )}
           {hasActs && <GlassCapsule>{acts}</GlassCapsule>}
-          <GlassCircle
+          {searchLabel && <GlassCircle
             aria-label={gui.search_open}
             data-search-open
             onClick={(e) => {
@@ -437,7 +437,7 @@ export function PaneBar({
             }}
           >
             <IconSearch />
-          </GlassCircle>
+          </GlassCircle>}
         </>
       )}
     </div>

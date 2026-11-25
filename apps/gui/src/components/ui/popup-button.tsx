@@ -1,20 +1,21 @@
 // Khor choice menus share the app's typography, glass, viewport and focus rules.
 import {useId,useRef,type ReactNode} from "react";
 import {IconChevronDown,IconChevronUp} from "@/components/icons";
-import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuRadioGroup,DropdownMenuRadioItem,DropdownMenuCheckboxItem,DropdownMenuLabel} from "@/components/ui/dropdown-menu";
+import {DropdownMenu,DropdownMenuTrigger,DropdownMenuContent,DropdownMenuRadioGroup,DropdownMenuRadioItem,DropdownMenuCheckboxItem,DropdownMenuLabel,DropdownMenuItem,DropdownMenuSeparator} from "@/components/ui/dropdown-menu";
 import {cn} from "@/lib/utils";
 
 export type PopupChoice={
-  value:string;label:string;short?:string;disabled?:boolean;group?:string;note?:string;
+  value:string;label:string;short?:string;disabled?:boolean;group?:string;groupNote?:string;note?:string;
   preview?:ReactNode;
   mark?:Record<string,string|boolean|undefined>;
 };
 type Props={choices:PopupChoice[];label:string;disabled?:boolean;look?:"plain"|"field";
-  leading?:ReactNode;mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string;onOpenChange?:(open:boolean)=>void};
+  actions?:readonly {label:string;run:()=>void}[];leading?:ReactNode;mark?:Record<string,string|boolean|undefined>;className?:string;placeholder?:string;onOpenChange?:(open:boolean)=>void};
 
-function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",leading,mark,className,placeholder,onOpenChange}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
+function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,look="plain",actions,leading,mark,className,placeholder,onOpenChange}:Props&{values:string[];onPick:(value:string)=>void;multiple?:boolean}) {
   const id=useId();
   const trigger=useRef<HTMLButtonElement>(null);
+  const afterClose=useRef<(() => void) | null>(null);
   const selected=choices.filter(choice=>values.includes(choice.value));
   const current=selected.map(choice=>choice.short??choice.label).join(", ")||placeholder||values.join(", ");
   const runs:{group:string|undefined;items:PopupChoice[]}[]=[];
@@ -39,6 +40,11 @@ function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,
         // when the same button opens the menu again.
         if(trigger.current?.contains(event.detail.originalEvent.target as Node))event.preventDefault();
       }}
+      onCloseAutoFocus={event=>{
+        const action=afterClose.current;
+        afterClose.current=null;
+        if(action){event.preventDefault();action();}
+      }}
       onFocus={event=>{
         // Keep Radix's entry/return handling, then position this choice menu on
         // its current item. Only the content's initial focus enters here.
@@ -53,10 +59,14 @@ function ChoicePopup({values,onPick,multiple=false,choices,label,disabled=false,
         });
       }}>
       <DropdownMenuRadioGroup value={values[0]??""} onValueChange={multiple?undefined:onPick}>
-        {runs.map((run,index)=><div key={index}>{run.group&&<DropdownMenuLabel>{run.group}</DropdownMenuLabel>}{run.items.map(choice=>multiple?
+        {runs.map((run,index)=><div key={index}>{run.group&&<DropdownMenuLabel title={run.items[0]?.groupNote}>{run.group}</DropdownMenuLabel>}{run.items.map(choice=>multiple?
           <DropdownMenuCheckboxItem key={choice.value} checked={values.includes(choice.value)} disabled={choice.disabled} textValue={choice.label} data-popup-option={choice.value} data-on={values.includes(choice.value)} {...choice.mark} onSelect={event=>event.preventDefault()} onCheckedChange={()=>onPick(choice.value)}>{body(choice)}</DropdownMenuCheckboxItem>:
           <DropdownMenuRadioItem key={choice.value} indicator="check" value={choice.value} disabled={choice.disabled} textValue={choice.label} data-popup-option={choice.value} data-on={values.includes(choice.value)} {...choice.mark}>{body(choice)}</DropdownMenuRadioItem>)}</div>)}
       </DropdownMenuRadioGroup>
+      {actions?.length ? <>
+        <DropdownMenuSeparator />
+        {actions.map(action=><DropdownMenuItem key={action.label} onSelect={()=>{afterClose.current=action.run;}}>{action.label}</DropdownMenuItem>)}
+      </> : null}
     </DropdownMenuContent>
   </DropdownMenu>;
 }

@@ -73,6 +73,9 @@ export async function checkWorkspaceBranches(browser, {port,report,engine,width}
 
     await activate(picker);
     await activate(option('refs/heads/feat/workspace-preview'));
+    await page.locator('[data-git-snapshot-tree]').waitFor();
+    assert.equal(await nav.getAttribute('data-view'),'files','Picking a version keeps the file page');
+    await activate(nav.locator('[data-workspace-view="history"]'));
     await activate(first.filter({hasText:'工作区分支预览 43'}));
     await page.locator('[data-commit-page]:visible').getByText('工作区分支预览 43',{exact:true}).first().waitFor();
     assert.deepEqual(errors,[]);

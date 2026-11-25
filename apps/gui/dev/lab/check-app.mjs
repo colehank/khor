@@ -5,6 +5,7 @@ import {checkResourceFiles} from './resource-checks.mjs';
 import {checkLongHistory} from './history-checks.mjs';
 import {checkWorkspaceBack} from './workspace-back-checks.mjs';
 import {checkWorkspaceBranches} from './workspace-branch-checks.mjs';
+import {checkWorkspaceGitTools} from './workspace-git-tools-checks.mjs';
 import {checkSettingsNavigation} from './settings-checks.mjs';
 import {checkGuiExperience,checkWorkspaceSessions} from './gui-experience-checks.mjs';
 import {checkCommandTab} from './child-command-checks.mjs';
@@ -500,7 +501,16 @@ let browser;
 const results = [];
 try {
   await waitForPreview();
-  if (process.env.LAB_CHECKS === 'workspace-branches') {
+  if (process.env.LAB_CHECKS === 'workspace-git-tools') {
+    for (const engine of ['chromium','webkit']) {
+      browser=await (engine==='webkit'?webkit:chromium).launch({headless:true});
+      for (const [width,theme] of [[1280,'light'],[390,'light'],[320,'dark']]) {
+        results.push(await checkWorkspaceGitTools(browser,{port,report,engine,width,theme}));
+        await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+      }
+      await browser.close();browser=undefined;
+    }
+  } else if (process.env.LAB_CHECKS === 'workspace-branches') {
     for (const engine of ['chromium','webkit']) {
       browser=await (engine==='webkit'?webkit:chromium).launch({headless:true});
       for (const width of [1280,390]) {
@@ -606,6 +616,7 @@ try {
   for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'chromium',workspace,khor}));
   results.push(await checkWorkspaceBack(browser,{port,report}));
   for(const width of [1280,390])results.push(await checkWorkspaceBranches(browser,{port,report,engine:'chromium',width}));
+  results.push(await checkWorkspaceGitTools(browser,{port,report,engine:'chromium',width:1280}));
   for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
@@ -658,6 +669,7 @@ try {
     await browser.close();
     browser = await webkit.launch({headless:process.env.QUALITY_HEADLESS!=='0'});
     for(const width of [1280,390])results.push(await checkWorkspaceBranches(browser,{port,report,engine:'webkit',width}));
+    results.push(await checkWorkspaceGitTools(browser,{port,report,engine:'webkit',width:390}));
     for(const width of [1280,412,390,320])results.push(await inspect(browser,'dsh',{width,height:900},{items:5,engine:'webkit'}));
     for(const width of [1280,412,390,320])results.push(await checkAttachmentDraft(browser,{port,report,engine:'webkit',width}));
     results.push(await checkWorkbench(browser,{port,report,engine:'webkit'}));
