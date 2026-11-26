@@ -271,7 +271,7 @@ export function OfficePreview({ format, source, onFallback, onTools }: {
             password.current = secret;
             setAttempt(n => n + 1);
           }}>
-            <h2 className="text-title">{gui.office_password_title}</h2>
+            <h2 className="text-headline">{gui.office_password_title}</h2>
             <label className="grid gap-in text-callout">
               {gui.add_auth_password}
               <Input name="password" type="password" required autoFocus autoComplete="off" />
