@@ -2357,7 +2357,7 @@ aside[data-side] {
 }
 [data-band][data-scrolled]::before, [data-sticky-head][data-sticky-held]::before { opacity: 1; }
 [data-sticky-group]:has(> [data-sticky-body="flush"]) > [data-sticky-head]::before { bottom: 0; }
-:is([data-sticky-surface], [data-sticky-fading], [data-band] + * [data-band-boundary][data-preview-scrolled]) {
+:is([data-sticky-surface], [data-sticky-fading]) {
   --sticky-fade-strength: 0;
   /* Keep one non-uniform mask installed. At rest its fade is above the
      viewport, rather than switching to none or an opaque replacement. */
@@ -2371,17 +2371,6 @@ aside[data-side] {
     var(--canvas-solid) calc(var(--sticky-fade-origin) + var(--sticky-fade-length)));
   -webkit-mask-image: var(--sticky-content-mask);
   mask-image: var(--sticky-content-mask);
-}
-/* Embedded viewers start below the band and need its tail only while
-   their own content has scrolled. The first page remains fully visible. */
-[data-band] + * [data-band-boundary][data-preview-scrolled] {
-  --sticky-fade-start: 0%;
-  --sticky-fade-length: var(--gap-pane);
-  --sticky-fade-strength: 1;
-}
-[data-band] + * [data-band-boundary][data-preview-scrolled][data-office-preview="xlsx"] {
-  /* The worksheet's column headings start at the top of its canvas. */
-  --sticky-fade-length: var(--gap-in);
 }
 /* A phone's band reaches up under the status bar, as iOS's bar does:
    nothing shows above the title through it. */

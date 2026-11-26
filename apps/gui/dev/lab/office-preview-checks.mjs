@@ -73,15 +73,13 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       const paperTop = Math.ceil(paper.y)+3;
       const atTop = await sampleLine(x,paperTop);
       assert(atTop.every(sample=>sample>215), `The first page stays clear at the top (${atTop.join(', ')})`);
-      assert(await scrollWord(word,72)>0,'The Word viewport scrolls under its title');
-      await page.locator('[data-office-preview="docx"][data-preview-scrolled]').waitFor();
+      assert(await scrollWord(word,72)>0,'The Word viewport scrolls inside its own pane');
+      await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
       const samples = await sampleLine(x,Math.ceil((await word.boundingBox()).y)+1);
-      assert(samples[0]+30 < samples[1] && samples[1]+30 < samples[2] && samples[2] > 215,
-        `Scrolling Word uses the common short fade below the title (${samples.join(', ')})`);
+      assert(samples.every(sample=>sample>215), `Scrolled Word paper keeps its colour up to the clip edge (${samples.join(', ')})`);
       await scrollWord(word,0);
-      await page.locator('[data-office-preview="docx"]:not([data-preview-scrolled])').waitFor();
       const returned = await sampleLine(x,paperTop);
-      assert(returned.every(sample=>sample>215), `Returning to the top clears the fade (${returned.join(', ')})`);
+      assert(returned.every(sample=>sample>215), `Returning to the top keeps the paper clear (${returned.join(', ')})`);
     }
     assert(await scrollWord(word,null)>0,'A multi-page Word document scrolls inside the pane');
     await page.screenshot({path:path.join(report,name+'-word.png')});
@@ -103,19 +101,25 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     if (mobile) await open('xlsx');
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
     const excel = await ready('xlsx');
+    const firstSheet = await image(excel);
     if (!mobile) {
       const mask = () => excel.evaluate(viewer=>getComputedStyle(viewer).maskImage);
+      const waitForScroll = scrolled => page.waitForFunction(expected => {
+        const viewer = document.querySelector('[data-office-preview="xlsx"]');
+        const port = [...(viewer?.querySelectorAll('div') ?? [])].find(child =>
+          child.scrollHeight > child.clientHeight && ['auto','scroll'].includes(getComputedStyle(child).overflowY));
+        return port && (port.scrollTop > 0) === expected;
+      },scrolled);
       assert.equal(await mask(),'none','The worksheet opens with its headings clear');
       const grid = await visibleCanvas(excel).boundingBox();
       await page.mouse.move(grid.x+grid.width/2,grid.y+grid.height/2);
       await page.mouse.wheel(0,200);
-      await page.locator('[data-office-preview="xlsx"][data-preview-scrolled]').waitFor();
-      assert.notEqual(await mask(),'none','Scrolling exposes the worksheet fade');
+      await waitForScroll(true);
+      assert.equal(await mask(),'none','Scrolling leaves the worksheet headings clear');
       await page.mouse.wheel(0,-2000);
-      await page.locator('[data-office-preview="xlsx"]:not([data-preview-scrolled])').waitFor();
-      assert.equal(await mask(),'none','Returning to the first row clears the fade');
+      await waitForScroll(false);
+      assert.equal(await mask(),'none','Returning to the first row keeps the worksheet clear');
     }
-    const firstSheet = await image(excel);
     await excel.getByText('验收汇总',{exact:true}).click();
     await page.waitForFunction(before => {
       const canvas = document.querySelector('[data-office-preview="xlsx"] canvas');

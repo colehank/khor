@@ -3,7 +3,6 @@ import { IconBack, IconForward } from "@/components/icons";
 import { RegionState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
-import { isPastScrollTop } from "@/lib/scroll-edge";
 import docxParser from "@office-parser/docx_parser_bg.wasm?url";
 import pptxParser from "@office-parser/pptx_parser_bg.wasm?url";
 import xlsxParser from "@office-parser/xlsx_parser_bg.wasm?url";
@@ -39,7 +38,6 @@ export function OfficePreview({ format, source, onFallback }: {
   const navigate = useRef<((index: number) => Promise<void>) | null>(null);
   const [ready, setReady] = useState(false);
   const [slide, setSlide] = useState<Slide | null>(null);
-  const [scrolled, setScrolled] = useState(false);
   const reportFailure = useEffectEvent(onFallback);
 
   useEffect(() => {
@@ -58,7 +56,6 @@ export function OfficePreview({ format, source, onFallback }: {
     const timeout = setTimeout(fallback, 20_000);
     setReady(false);
     setSlide(null);
-    setScrolled(false);
 
     async function load(host: HTMLDivElement) {
       // Blob URLs let worker fetches use the same bundled bytes in HTTP
@@ -86,10 +83,7 @@ export function OfficePreview({ format, source, onFallback }: {
       } else if (format === "xlsx") {
         const { XlsxViewer } = await import("@silurus/ooxml/xlsx");
         if (!active()) return;
-        viewer = new XlsxViewer(host, {
-          ...options, showZoomSlider: false, comments: false,
-          onViewportChange: ({ y }) => { if (active()) setScrolled(isPastScrollTop(y)); },
-        });
+        viewer = new XlsxViewer(host, { ...options, showZoomSlider: false, comments: false });
       } else {
         const { PptxViewer } = await import("@silurus/ooxml/pptx");
         if (!active()) return;
@@ -129,10 +123,6 @@ export function OfficePreview({ format, source, onFallback }: {
   }, [format, source]);
 
   return <div data-office-preview={format} data-band-boundary data-ready={ready || undefined}
-    data-preview-scrolled={ready && scrolled || undefined}
-    onScrollCapture={format === "docx" ? event => {
-      if (event.target instanceof HTMLElement) setScrolled(isPastScrollTop(event.target.scrollTop));
-    } : undefined}
     className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <div className="relative min-h-0 flex-1 overflow-hidden">
       <div ref={mount} className={format === "pptx" ?
