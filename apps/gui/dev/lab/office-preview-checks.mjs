@@ -16,8 +16,11 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const url = new URL(request.url());
     if (/^https?:$/.test(url.protocol) && url.origin !== origin) foreign.push(url.href);
   });
-  const open = format => page.goto(origin+'/app/?scene=workspace&machines=1&theme='+(mobile?'dark':'light')+
-    '&file='+encodeURIComponent('office/'+files[format]));
+  const environment = {platform:'desktop',theme:'dark',material:'frost',opacity:60,
+    background:'dark',keyboard:0,safeTop:0,safeBottom:0};
+  const open = format => page.goto(origin+'/app/?scene=workspace&machines=1&theme=dark'+
+    '&file='+encodeURIComponent('office/'+files[format])+
+    (mobile ? '' : '&environment='+encodeURIComponent(JSON.stringify(environment))));
   const ready = async format => {
     const viewer = page.locator(`[data-office-preview="${format}"][data-ready]`);
     await viewer.waitFor({timeout:20_000});
@@ -42,6 +45,25 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     assert.match((await word.textContent()).replace(/\s+/g,''),/项目进度周报/);
     const [wordWidth,wordHeight] = await image(word);
     assert(wordWidth > 150 && wordHeight > 200,'Word paints document-sized pages');
+    if (!mobile) {
+      await page.locator('html[data-theme="dark"][data-lab-environment]').waitFor({state:'attached'});
+      const paper = await visibleCanvas(word).boundingBox();
+      const clip = {x:Math.floor(paper.x+paper.width*0.7),y:Math.ceil(paper.y)+3,width:1,height:42};
+      const screenshot = await page.screenshot({clip,animations:'disabled'});
+      const samples = await page.evaluate(async png => {
+        const image = new Image();
+        image.src = 'data:image/png;base64,'+png;
+        await image.decode();
+        const canvas = document.createElement('canvas');
+        canvas.width = image.width;
+        canvas.height = image.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image,0,0);
+        return [0,14,41].map(y => ctx.getImageData(0,y,1,1).data[0]);
+      }, screenshot.toString('base64'));
+      assert(samples[0]+30 < samples[1] && samples[1]+30 < samples[2] && samples[2] > 215,
+        `The Word paper must blend gradually into the glass window (${samples.join(', ')})`);
+    }
     assert(await word.evaluate(viewer => {
       const scroller = [...viewer.querySelectorAll('div')].find(node =>
         node.scrollHeight > node.clientHeight && ['auto','scroll'].includes(getComputedStyle(node).overflowY));

@@ -2357,7 +2357,7 @@ aside[data-side] {
 }
 [data-band][data-scrolled]::before, [data-sticky-head][data-sticky-held]::before { opacity: 1; }
 [data-sticky-group]:has(> [data-sticky-body="flush"]) > [data-sticky-head]::before { bottom: 0; }
-:is([data-sticky-surface], [data-sticky-fading]) {
+:is([data-sticky-surface], [data-sticky-fading], [data-band] + * [data-band-boundary]) {
   --sticky-fade-strength: 0;
   /* Keep one non-uniform mask installed. At rest its fade is above the
      viewport, rather than switching to none or an opaque replacement. */
@@ -2371,6 +2371,21 @@ aside[data-side] {
     var(--canvas-solid) calc(var(--sticky-fade-origin) + var(--sticky-fade-length)));
   -webkit-mask-image: var(--sticky-content-mask);
   mask-image: var(--sticky-content-mask);
+}
+/* An embedded viewer starts below the band. Apply the same content mask
+   there, leaving the window material visible through the top edge. */
+[data-band] + * [data-band-boundary] {
+  --sticky-fade-start: 0%;
+  --sticky-fade-length: var(--gap-pane);
+  --sticky-fade-strength: 1;
+}
+[data-band] + * [data-band-boundary][data-office-preview="docx"] {
+  /* Let the fade reach past the document renderer's initial page spacing. */
+  --sticky-fade-length: var(--pane-head);
+}
+[data-band] + * [data-band-boundary][data-office-preview="xlsx"] {
+  /* The worksheet's column headings start at the top of its canvas. */
+  --sticky-fade-length: var(--gap-in);
 }
 /* A phone's band reaches up under the status bar, as iOS's bar does:
    nothing shows above the title through it. */
