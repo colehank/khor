@@ -17,6 +17,15 @@ export type OfficeThread = OfficeComment & {
   replies?: readonly OfficeComment[];
   jump?: () => Promise<OfficeCommentAnchor | boolean | null>;
 };
+export type WordReviewPoint = { x: number; y: number };
+export type WordReviewEntry = OfficeThread & {
+  points: WordReviewPoint[];
+  revision?: string;
+};
+export type WordReviewSource = {
+  page: (index: number, comments: boolean, revisions: boolean) => Promise<WordReviewEntry[]>;
+  unanchored: (comments: boolean, revisions: boolean) => WordReviewEntry[];
+};
 export type OfficePages = {
   index: number;
   count: number;

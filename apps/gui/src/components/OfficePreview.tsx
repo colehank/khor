@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { OfficeAnnotations, OfficeComments, OfficeThumbnails } from "@/components/office/OfficePanels";
+import { WordReview } from "@/components/office/WordReview";
 import type { OfficeCommentAnchor, OfficePages, OfficeThread } from "@/components/office/types";
 import { loadOfficeReader, type OfficeReader } from "@/components/office/viewer";
 import { gui } from "@/gen/catalog";
@@ -235,6 +236,7 @@ export function OfficePreview({ format, source, onFallback }: {
 
   const pages = reader?.pages;
   const page = position ?? pages?.page();
+  const wordReview = reader?.wordReview;
   const context = format === "docx" ? 0 : position?.index ?? 0;
   const activeComment = showComments && selectedComment?.context === context ? selectedComment : null;
   const anchor = activeComment?.anchor;
@@ -305,6 +307,7 @@ export function OfficePreview({ format, source, onFallback }: {
             <IconDocumentComment/><span className="hidden @lg/office:inline">{gui.office_tool_comments}</span>
           </OfficeTool>
           {reader.revisions && <OfficeTool data-office-revisions aria-pressed={tracked}
+            aria-controls={wordReview ? commentsId : undefined}
             aria-label={tracked ? gui.office_hide_revisions : gui.office_revisions} onClick={changeRevisions}>
             <IconDocumentRevisions/><span className="hidden @lg/office:inline">{gui.office_tool_revisions}</span>
           </OfficeTool>}
@@ -320,7 +323,7 @@ export function OfficePreview({ format, source, onFallback }: {
         {pages && page && showThumbnails && <OfficeThumbnails id={thumbnailsId} pages={pages} position={page}
           go={index => run(() => pages.go(index))}/>}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="flex min-h-0 min-w-0 flex-1">
+          <div className="relative flex min-h-0 min-w-0 flex-1">
             <div data-office-document className={cn("relative min-h-0 min-w-0 flex-1 overflow-hidden",
               format === "docx" && !showComments && "[&_[data-overlay=comment-marker]]:invisible")}>
               <div ref={mount} className={format === "pptx" ?
@@ -346,7 +349,9 @@ export function OfficePreview({ format, source, onFallback }: {
                   </form> : <RegionState state="loading-never"/>}
               </div>}
             </div>
-            {reader && showComments && <OfficeAnnotations id={commentsId} title={gui.office_tool_comments} beside>
+            {wordReview && (showComments || tracked) && <WordReview id={commentsId} host={mount} source={wordReview}
+              showComments={showComments} showRevisions={tracked} active={activeComment?.key} jump={selectComment}/>}
+            {reader && !wordReview && showComments && <OfficeAnnotations id={commentsId} title={gui.office_tool_comments} beside>
               <OfficeComments threads={reader.comments()} active={activeComment?.key} jump={selectComment}/>
             </OfficeAnnotations>}
           </div>

@@ -54,22 +54,29 @@ export function OfficeThumbnails({ id, pages, position, go }: {
   const start = batch * PAGE_BATCH;
   const end = Math.min(count, start + PAGE_BATCH);
   const shownNumber = number ?? String(Math.max(0, index) + 1);
+  const choosePage = (page: number) => {
+    setNumber(null);
+    setBatch(null);
+    go(page);
+  };
   return <aside id={id} data-office-thumbnails aria-label={gui.office_thumbnails}
     className="flex min-h-0 min-w-0 flex-none flex-col gap-in border-b bg-background p-in @2xl/office:w-36 @2xl/office:border-e @2xl/office:border-b-0">
     <div className="flex items-center justify-between gap-in @2xl/office:flex-wrap">
       <form className="flex min-w-0 items-center gap-in" onSubmit={event => {
         event.preventDefault();
         const page = Number(shownNumber);
-        if (Number.isInteger(page) && page > 0 && page <= count) {
-          setNumber(null);
-          setBatch(null);
-          go(page - 1);
-        }
+        if (Number.isInteger(page) && page > 0 && page <= count) choosePage(page - 1);
       }}>
-        <Input type="number" aria-label={gui.office_page_number} min={1} max={count}
+        <Button size="icon" type="button" variant="ghost" aria-label={gui.page_back} title={gui.page_back}
+          disabled={index <= 0} onClick={() => choosePage(index - 1)}>
+          <IconBack className="size-affordance"/>
+        </Button>
+        <Input type="number" aria-label={gui.office_page_number} title={gui.office_page_go} min={1} max={count}
+          enterKeyHint="go"
           value={shownNumber} onChange={event => setNumber(event.target.value)}
           className="w-16 min-w-0 tabular-nums"/>
-        <Button size="icon" type="submit" variant="ghost" aria-label={gui.office_page_go} title={gui.office_page_go}>
+        <Button size="icon" type="button" variant="ghost" aria-label={gui.page_forward} title={gui.page_forward}
+          disabled={index + 1 >= count} onClick={() => choosePage(index + 1)}>
           <IconForward className="size-affordance"/>
         </Button>
       </form>
@@ -90,7 +97,7 @@ export function OfficeThumbnails({ id, pages, position, go }: {
           aria-label={gui.office_page_number + " " + (page + 1)} data-office-thumbnail={page + 1}
           data-current={page === index || undefined}
           className="flex w-20 shrink-0 flex-col items-center rounded-md p-in focus-visible:outline-2 focus-visible:outline-ring data-current:bg-fill-strong hover:bg-fill @2xl/office:w-full"
-          onClick={() => { setNumber(null); setBatch(null); go(page); }}>
+          onClick={() => choosePage(page)}>
           <span className="grid aspect-[4/3] w-full place-items-center overflow-hidden">
             <Thumbnail pages={pages} index={page}/>
           </span>
@@ -101,9 +108,9 @@ export function OfficeThumbnails({ id, pages, position, go }: {
   </aside>;
 }
 
-function CommentText({ comment }: { comment: OfficeComment }) {
+export function CommentText({ comment, hideDate }: { comment: OfficeComment; hideDate?: boolean }) {
   const date = comment.date ? new Date(comment.date) : null;
-  const time = date && Number.isFinite(date.getTime()) ? date.toLocaleString() : null;
+  const time = !hideDate && date && Number.isFinite(date.getTime()) ? date.toLocaleString() : null;
   return <>
     {(comment.author || time) && <div className="flex flex-wrap items-baseline gap-in text-callout text-muted-foreground">
       {comment.author && <span className="text-foreground">{comment.author}</span>}

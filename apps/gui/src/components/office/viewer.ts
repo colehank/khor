@@ -1,5 +1,5 @@
 import type { OfficeFormat } from "@/components/OfficePreview";
-import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread } from "@/components/office/types";
+import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread, WordReviewEntry, WordReviewSource } from "@/components/office/types";
 import { visiblePageOwner } from "@/lib/native-page-yield";
 import type { PptxComment, PptxPresentation } from "@silurus/ooxml/pptx";
 import type { DefinedName } from "@silurus/ooxml/xlsx";
@@ -22,6 +22,7 @@ export type OfficeReader = {
   viewer: OfficeViewer;
   pages?: OfficeNavigation;
   comments: () => OfficeThread[];
+  wordReview?: WordReviewSource;
   revisions?: (show: boolean) => Promise<void>;
   notes?: () => string | null;
   dispose: () => void;
@@ -44,6 +45,7 @@ const renderers = () => Promise.all([
 ]);
 
 const THUMBNAIL_WIDTH = 200;
+export const WORD_PAGE_SURFACE = '[data-ooxml-selection-surface="docx"][data-page-index]';
 type LinkTarget = { kind: "external"; url: string } | { kind: "internal"; ref: string; slideIndex?: number };
 
 function visibleWordPage(host: HTMLElement, preferred: number): number {
@@ -52,7 +54,7 @@ function visibleWordPage(host: HTMLElement, preferred: number): number {
   let visibleHeight = 0;
   // The nearest page to the top can be the previous page when scrolling
   // stops at the end. Use the page that occupies most of the viewport.
-  for (const page of host.querySelectorAll<HTMLElement>('[data-ooxml-selection-surface="docx"][data-page-index]')) {
+  for (const page of host.querySelectorAll<HTMLElement>(WORD_PAGE_SURFACE)) {
     const bounds = page.getBoundingClientRect();
     const height = Math.min(bounds.bottom, viewport.bottom) - Math.max(bounds.top, viewport.top);
     const pageIndex = Number(page.dataset.pageIndex);
@@ -132,7 +134,8 @@ export async function loadOfficeReader(
   signal.addEventListener("abort", dispose, { once: true });
   try {
     if (format === "docx") {
-      const { DocxDocument, DocxScrollViewer } = await import("@silurus/ooxml/docx");
+      const { DocxDocument, DocxScrollViewer, resolveDocxCommentThreads, resolveRevisionAnchorRuns } =
+        await import("@silurus/ooxml/docx");
       signal.throwIfAborted();
       const document = await DocxDocument.load(bytes, options);
       closeModel = () => document.destroy();
@@ -171,6 +174,83 @@ export async function loadOfficeReader(
         cancelAnimationFrame(frame);
         document.destroy();
       };
+      const comments = () => {
+        const replies = new Map<string, OfficeThread[]>();
+        for (const comment of document.comments) {
+          if (!comment.parentId) continue;
+          const group = replies.get(comment.parentId) ?? [];
+          group.push({ ...comment, key: comment.id });
+          replies.set(comment.parentId, group);
+        }
+        return document.comments.filter(comment => !comment.parentId).map(comment => ({
+          ...comment, key: comment.id, replies: replies.get(comment.id),
+        }));
+      };
+      const wordReview: WordReviewSource = {
+        async page(index, showComments, showRevisions) {
+          const { widthPt, heightPt } = document.pageSize(index);
+          const width = widthPt * 4 / 3;
+          const height = heightPt * 4 / 3;
+          const runs = await document.collectPageRuns(index, { width, showTrackedChanges: showRevisions });
+          const point = (rect: { x: number; y: number; width: number; height: number; transform?: string }) => {
+            let x = rect.x + rect.width;
+            let y = rect.y + rect.height / 2;
+            if (rect.transform) {
+              const centerX = rect.x + rect.width / 2;
+              const centerY = rect.y + rect.height / 2;
+              const offset = new DOMMatrix(rect.transform).transformPoint({ x: x - centerX, y: y - centerY });
+              x = centerX + offset.x;
+              y = centerY + offset.y;
+            }
+            return { x: x / width, y: y / height };
+          };
+          const entries: WordReviewEntry[] = [];
+          if (showComments) {
+            for (const { root, replies, anchors } of resolveDocxCommentThreads(
+              document.comments, document.commentAnchorRanges(), runs, { includeResolved: true },
+            )) {
+              const points = anchors.flatMap(anchor => anchor.rects.map(point));
+              if (points.length) entries.push({
+                ...root, key: "comment-" + root.id, replies, points,
+                jump: () => word.goToComment(root.id, { pageIndex: index }),
+              });
+            }
+          }
+          if (showRevisions) {
+            const revisions = document.revisions;
+            const pointsByRevision = new Map<number, WordReviewEntry["points"]>();
+            for (const anchor of document.revisionAnchorRanges()) {
+              const points = resolveRevisionAnchorRuns(anchor, runs).map(run => point({
+                ...(run.highlightBounds ?? { x: run.x, y: run.y, width: run.w, height: run.h }), transform: run.transform,
+              }));
+              if (points.length) pointsByRevision.set(anchor.revisionIndex, [
+                ...(pointsByRevision.get(anchor.revisionIndex) ?? []), ...points,
+              ]);
+            }
+            for (const [i, points] of pointsByRevision) {
+              const revision = revisions[i];
+              if (revision) entries.push({ ...revision, key: "revision-" + i, revision: revision.kind, points });
+            }
+          }
+          return entries;
+        },
+        unanchored(showComments, showRevisions) {
+          const entries: WordReviewEntry[] = [];
+          if (showComments) {
+            const ids = new Set(document.commentAnchorRanges().map(range => range.commentId));
+            for (const comment of comments()) {
+              if (!ids.has(comment.key)) entries.push({ ...comment, key: "comment-" + comment.key, points: [] });
+            }
+          }
+          if (showRevisions) {
+            const ids = new Set(document.revisionAnchorRanges().map(range => range.revisionIndex));
+            document.revisions.forEach((revision, index) => {
+              if (!ids.has(index)) entries.push({ ...revision, key: "revision-" + index, revision: revision.kind, points: [] });
+            });
+          }
+          return entries;
+        },
+      };
       return {
         viewer, dispose,
         pages: {
@@ -181,19 +261,7 @@ export async function loadOfficeReader(
           },
           thumbnail: index => document.renderPageToBitmap(index, { width: THUMBNAIL_WIDTH, dpr: 1 }),
         },
-        comments: () => {
-          const replies = new Map<string, OfficeThread[]>();
-          for (const comment of document.comments) {
-            if (!comment.parentId) continue;
-            const group = replies.get(comment.parentId) ?? [];
-            group.push({ ...comment, key: comment.id });
-            replies.set(comment.parentId, group);
-          }
-          return document.comments.filter(comment => !comment.parentId).map(comment => ({
-            ...comment, key: comment.id, replies: replies.get(comment.id),
-            jump: () => word.goToComment(comment.id),
-          }));
-        },
+        comments, wordReview,
         revisions: show => word.setShowTrackedChanges(show),
       };
     }

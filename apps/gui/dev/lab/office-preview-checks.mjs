@@ -35,9 +35,12 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await viewer.waitFor({timeout:20_000});
     await visibleCanvas(viewer).waitFor();
     const icons = await viewer.locator('[data-office-toolbar] button svg').evaluateAll(nodes =>
-      nodes.map(icon => [icon.getBoundingClientRect().width, getComputedStyle(icon).getPropertyValue('--affordance')]));
-    assert(icons.length > 0 && icons.every(([size,token])=>size === parseFloat(token)),
-      'Office tools use the same glyph size as the file reader');
+      nodes.map(icon => {
+        const style = getComputedStyle(icon);
+        return [style.width, style.height, style.getPropertyValue('--affordance').trim()];
+      }));
+    assert(icons.length > 0 && icons.every(([width,height,token]) => width === token && height === token),
+      `Office tools use the same glyph size as the file reader (${JSON.stringify(icons)})`);
     assert.equal(await page.locator('[data-file-face-toggle]:visible').count(),0,`${format} opens without a preview switch`);
     if (!mobile) {
       const chrome = await page.locator('[data-ws-mid] [data-tab-bar]').boundingBox();
@@ -137,9 +140,15 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await searchWord.press('Escape');
     await page.locator('[data-office-find]').waitFor({state:'detached'});
 
-    const wordComments = await rightComments(word);
-    await wordComments.getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
-    await wordComments.getByRole('button',{name:'定位批注'}).click();
+    const wordReview = word.locator('[data-word-review]');
+    await togglePane('office-review',wordReview,true);
+    await wordReview.getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
+    const wordBody = word.locator('[data-office-document]');
+    const wordBox = await wordBody.boundingBox();
+    assert((await wordReview.boundingBox()).x >= wordBox.x + wordBox.width - 0.5);
+    const connector = word.locator('[data-word-review-connector]').first();
+    await connector.waitFor({state:'attached'});
+    await wordReview.getByRole('button',{name:'定位批注'}).click();
     // Opening the right pane makes the viewer refit the page. Check the
     // settled native highlight against the original comment range.
     await page.waitForFunction(() => {
@@ -153,16 +162,33 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       return mark.left < line.right && line.left < mark.right &&
         mark.top < line.bottom && line.top < mark.bottom;
     },null,{timeout:5_000});
-    await wordComments.locator('[data-office-comment-thread][data-active]').waitFor();
+    await wordReview.locator('[data-word-review-card][data-active]').waitFor();
+    const heading = await wordBody.getByText('本周摘要',{exact:true}).boundingBox();
+    const sourceY = await connector.evaluate(path =>
+      path.getPointAtLength(0).y + path.ownerSVGElement.getBoundingClientRect().top);
+    assert(sourceY >= heading.y - 2 && sourceY <= heading.y + heading.height + 2,
+      'Word draws the connector from the anchored text row');
     await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
-    await togglePane('office-review',wordComments,false);
+    await togglePane('office-review',wordReview,false);
     assert.equal(await word.locator('[data-ooxml-comment-highlight]:visible').count(),0,
       'Closing comments hides the document markup');
-    await tool('office-revisions');
-    await word.getByText('联调尚未开始。',{exact:true}).waitFor({state:'attached'});
+    await togglePane('office-revisions',wordReview,true);
+    await wordBody.getByText('联调尚未开始。',{exact:true}).waitFor({state:'attached'});
     const change = await search('联调尚未开始');
     assert.match(await searchCount(),/1 \/ 1/,'The deletion is findable with revision markup');
     await change.press('Escape');
+    const deletion = wordReview.locator('[data-revision="deletion"]');
+    const insertion = wordReview.locator('[data-revision="insertion"]');
+    await deletion.getByText('联调尚未开始。',{exact:true}).waitFor();
+    await insertion.getByText('本周已完成联调。',{exact:true}).waitFor();
+    const removed = await deletion.boundingBox();
+    const added = await insertion.boundingBox();
+    assert(removed.y + removed.height <= added.y || added.y + added.height <= removed.y,
+      'Revision balloons at the same anchor stack without overlap');
+    assert.equal(await word.locator('[data-word-review-connector]').count(),2,
+      'Each change has its own connector');
+    await page.screenshot({path:path.join(report,name+'-word-revisions.png'),animations:'disabled'});
+    await togglePane('office-revisions',wordReview,false);
 
     const wordPages = word.locator('[data-office-thumbnails]');
     await togglePane('office-pages',wordPages,true);
@@ -171,8 +197,20 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       const thumbnail = document.querySelector('[data-office-thumbnail="2"] canvas');
       return thumbnail instanceof HTMLCanvasElement && thumbnail.width > 80;
     });
+    const pageNumber = wordPages.getByRole('spinbutton',{name:'页码'});
+    const previousPage = wordPages.getByRole('button',{name:'上一页'});
+    const followingPage = wordPages.getByRole('button',{name:'下一页'});
     await wordPages.locator('[data-office-thumbnail="2"]').click();
     await wordPages.locator('[data-office-thumbnail="2"][aria-current="page"]').waitFor();
+    assert(await previousPage.isEnabled() && await followingPage.isDisabled());
+    await previousPage.click();
+    await wordPages.locator('[data-office-thumbnail="1"][aria-current="page"]').waitFor();
+    assert(await previousPage.isDisabled() && await followingPage.isEnabled());
+    await followingPage.click();
+    await wordPages.locator('[data-office-thumbnail="2"][aria-current="page"]').waitFor();
+    await pageNumber.fill('1');
+    await pageNumber.press('Enter');
+    await wordPages.locator('[data-office-thumbnail="1"][aria-current="page"]').waitFor();
     await togglePane('office-pages',wordPages,false);
 
     if (mobile) await open('pptx');
