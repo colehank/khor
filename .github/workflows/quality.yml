@@ -134,6 +134,7 @@ jobs:
           node dev/lab/check-app.mjs
           LAB_CHECKS=session-import LAB_REPORT="$LAB_REPORT/session-import" node dev/lab/check-app.mjs
           LAB_CHECKS=session-attention LAB_REPORT="$LAB_REPORT/session-attention" node dev/lab/check-app.mjs
+          LAB_CHECKS=office-preview LAB_REPORT="$LAB_REPORT/office-preview" node dev/lab/check-app.mjs
           node dev/lab/check-hot.mjs
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
