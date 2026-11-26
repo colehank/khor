@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A3603A1957041B1B754CDA05 /* libresolv.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = D3B46DD47284C5C612E999D4 /* libresolv.tbd */; };
 		49350A2351EB361D82C7D255 /* PDFKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0E6BE7A55261E2045FD5B1BF /* PDFKit.framework */; };
 		9860DD4923D020CE4E5EBEA3 /* QuickLook.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 3ECE6565B9623D20E4377397 /* QuickLook.framework */; };
 		1D631792999EDA7DF92189ED /* UIKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F35D9EF14B6F829116490207 /* UIKit.framework */; };
@@ -25,6 +26,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		D3B46DD47284C5C612E999D4 /* libresolv.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libresolv.tbd; path = usr/lib/libresolv.tbd; sourceTree = SDKROOT; };
 		0E6BE7A55261E2045FD5B1BF /* PDFKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PDFKit.framework; path = System/Library/Frameworks/PDFKit.framework; sourceTree = SDKROOT; };
 		3ECE6565B9623D20E4377397 /* QuickLook.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuickLook.framework; path = System/Library/Frameworks/QuickLook.framework; sourceTree = SDKROOT; };
 		129DB59333EC975C59FCA730 /* SystemConfiguration.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SystemConfiguration.framework; path = System/Library/Frameworks/SystemConfiguration.framework; sourceTree = SDKROOT; };
@@ -64,6 +66,7 @@
 				B72D90E32A15C33CF31061D0 /* QuartzCore.framework in Frameworks */,
 				C50DD54792B7A1D5C15FE330 /* Security.framework in Frameworks */,
 				E6DE7DC1155F8A5943964F8F /* SystemConfiguration.framework in Frameworks */,
+				A3603A1957041B1B754CDA05 /* libresolv.tbd in Frameworks */,
 				1D631792999EDA7DF92189ED /* UIKit.framework in Frameworks */,
 				97E48992DECCAEC8688146BD /* WebKit.framework in Frameworks */,
 			);
@@ -160,6 +163,7 @@
 				CFDB6ECC5F814126A3E44374 /* QuartzCore.framework */,
 				E33D6272B5AD1BBBB60A582C /* Security.framework */,
 				129DB59333EC975C59FCA730 /* SystemConfiguration.framework */,
+				D3B46DD47284C5C612E999D4 /* libresolv.tbd */,
 				F35D9EF14B6F829116490207 /* UIKit.framework */,
 				DF14F0E866FEFE30FDD5A2C6 /* WebKit.framework */,
 			);
