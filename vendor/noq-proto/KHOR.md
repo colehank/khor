@@ -1,5 +1,12 @@
 # vendor/noq-proto —— 为什么这里有一份 noq-proto
 
+## Current upstream baseline
+
+Source: crates.io `noq-proto 1.5.0`, upstream commit
+`c7b87d5843c2335c8a15b21324fb4fce99572ed8`. The 1.4.0 overlay is
+carried forward, including same-path ACK scheduling and the 0-RTT
+guard, together with upstream's stream affinity and key updates.
+
 ## 1.4 升级候选（2026-11-12，尚未验收）
 
 本隔离树已将发布源码从1.3.0三方迁移至1.4.0；下文为原补丁历史，不代表仍基于旧版或全部必须保留。当前迁移与退出账目见[IROH-UPGRADE](../../docs/net-optimization/IROH-UPGRADE.md)。所有旧专属回归保留；新源编译和行为证据尚待，原绿不能沿用。

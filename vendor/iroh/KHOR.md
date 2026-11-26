@@ -1,5 +1,17 @@
 # vendor/iroh —— 为什么这里有一份 iroh
 
+## Current upstream baseline
+
+Source: crates.io `iroh 1.5.0`, upstream commit `ea3bbb6` (full
+source revision in `.cargo_vcs_info.json`). Migrated from the 1.4.1
+overlay. The notes below describe the history of individual patches.
+
+The **WebSocket close portion of patch 15** now uses the upstream
+`run_closing` implementation, which applies the same one-second deadline
+and answers route queries while closing. The broad route-query timeout,
+send-queue limit and demand-triggered health checks remain local. Noq's
+stream-affinity scheduler is retained alongside Khor's per-path ACK policy.
+
 ## 1.4 升级候选（2026-11-12，尚未验收）
 
 本隔离树已将发布源码从1.2.0三方迁移至1.4.1；下文为原补丁历史，不代表仍基于旧版或全部必须保留。当前迁移与退出账目见[IROH-UPGRADE](../../docs/net-optimization/IROH-UPGRADE.md)。所有旧专属回归保留；新源编译和行为证据尚待，原绿不能沿用。
