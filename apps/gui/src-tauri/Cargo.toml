@@ -72,7 +72,6 @@ windows = { version = "0.61.3", features = [
     "Win32_System_Com",
     "Win32_System_Ole",
     "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
 windows-core = "0.61.2"

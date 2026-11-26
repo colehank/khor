@@ -3,6 +3,7 @@ import {createLabFixture} from './fixture';
 import {scenes, sessionIds, independentKhorSession, type Scene} from './scenes';
 import {configureLabBackend} from './backend-context';
 import {FixtureRefusal} from './navigation';
+import {officeFixtures} from './office-fixtures';
 import {readPreview} from './preview-state';
 
 type Runtime = {mode: 'frontend'|'full'; scene: Scene; tree: string; revision: string};
@@ -90,7 +91,7 @@ if (runtime.mode === 'frontend') {
       if(['chat_poll','chat_wait'].includes(command)&&fixture.request('__ai_preview/poll-state')==='fail')return Response.json('读取暂时中断',{status:503});
       if(command==='app_update_check')await new Promise(resolve=>setTimeout(resolve,900));
       const text = (command === 'read_text' || command === 'stat_text') && uploadedText.get(String(body.path));
-      const answer = text || fixture.request(command,body);
+      const answer = text || await fixture.request(command,body);
       // Polling fixtures must yield so production loops cannot starve rendering.
       if (['chat_wait', 'term_wait', 'term_stream', 'dirs_wait'].includes(command)) await new Promise(r => setTimeout(r, 120));
       return Response.json(answer);
@@ -159,9 +160,9 @@ if (runtime.mode === 'frontend' && runtime.scene === 'workspace') {
   let opened = false,folderOpened=false;
   const enter = () => {
     const requested=query.get('file');
-    const name=requested&&['media/preview.html','media/clip.mp4','media/audio.wav'].includes(requested)?requested:'README.md';
+    const name=requested&&['media/preview.html','media/clip.mp4','media/audio.wav',...officeFixtures].includes(requested)?requested:'README.md';
     const file = document.querySelector<HTMLElement>('[data-file-path="/preview/project/'+name+'"]');
-    const folder=name.startsWith('media/')?document.querySelector<HTMLElement>('[data-file-path="/preview/project/media"]'):null;
+    const folder=name.includes('/')?document.querySelector<HTMLElement>('[data-file-path="/preview/project/'+name.split('/')[0]+'"]'):null;
     if(!file&&folder&&!folderOpened){folderOpened=true;folder.click();return;}
     if (file) {observer.disconnect();file.click();return;}
     const row = [...document.querySelectorAll<HTMLElement>('[data-list] [data-ws-row]')].find(el => el.textContent?.includes('project'));

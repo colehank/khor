@@ -1,5 +1,6 @@
 import path from "node:path";
-import { defineConfig, mergeConfig } from "vite";
+import { readFileSync } from "node:fs";
+import { defineConfig, mergeConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -42,32 +43,77 @@ const katexWoff2Only = {
  * on the embedded protocol rather than parsed up front. If Tauri's asset
  * transport is ever fixed upstream, delete this plugin and the note with it.
  */
-const preloadEveryChunk = {
+const preloadEveryChunk: Plugin = {
   name: "khor-preload-chunks",
   enforce: "post" as const,
   transformIndexHtml: {
     order: "post" as const,
-    handler(html: string, ctx: { bundle?: Record<string, { type: string; fileName: string; isEntry?: boolean }> }) {
+    handler(html, ctx) {
       const bundle = ctx.bundle;
       if (!bundle) return html;
-      const links = Object.values(bundle)
-        .filter((f) => f.type === "chunk" && !f.isEntry)
-        .map((f) => `<link rel="modulepreload" crossorigin href="/${f.fileName}">`)
-        .join("\n");
-      return links ? html.replace("</head>", `${links}\n</head>`) : html;
+      const files = Object.values(bundle);
+      const office = [];
+      const links = [];
+      for (const file of files) {
+        const href = `/${file.fileName}`;
+        if (file.type === "chunk" && !file.isEntry) {
+          if (file.moduleIds.length > 0 && file.moduleIds.every(id => id.includes("/@silurus/ooxml/"))) {
+            office.push({ href, rel: "modulepreload" });
+          } else {
+            links.push(`<link rel="modulepreload" crossorigin href="${href}">`);
+          }
+        } else if (/\/(docx|pptx|xlsx)_parser_bg-[\w-]+\.wasm$/.test(href)) {
+          office.push({ href, rel: "preload", as: "fetch" });
+        } else if (/\/(render-worker-|(?:docx|pptx|xlsx)-source-worker-)/.test(href)) {
+          office.push({ href, rel: "modulepreload" });
+        }
+      }
+      // The Windows WebView may stop fetching from its bundled protocol
+      // after startup. Other clients fetch the selected renderer on demand.
+      const warmOffice = office.length === 0 ? "" : `<script>
+        if (window.__KHOR_WINDOW_TRANSPORT__) {
+          for (const attrs of ${JSON.stringify(office)}) {
+            const link = document.createElement("link");
+            Object.assign(link, { crossOrigin: "anonymous" }, attrs);
+            document.head.append(link);
+          }
+        }
+      </script>`;
+      return html.replace("</head>", `${links.join("\n")}\n${warmOffice}\n</head>`);
     },
+  },
+};
+
+const officeNotices: Plugin = {
+  name: "khor-office-notices",
+  generateBundle() {
+    for (const name of ["LICENSE", "THIRD_PARTY_NOTICES.md"]) {
+      this.emitFile({
+        type: "asset",
+        fileName: `licenses/silurus-ooxml/${name}`,
+        source: readFileSync(new URL(`./node_modules/@silurus/ooxml/${name}`, import.meta.url)),
+      });
+    }
   },
 };
 
 // 1430, not tauri's usual 1420: mandala's dev server owns 1420 on this
 // machine and the two must be able to run side by side.
 export const sharedConfig = defineConfig({
-  plugins: [react(), tailwindcss(), katexWoff2Only],
-  resolve: { alias: { "@": path.resolve(import.meta.dirname, "src") } },
+  plugins: [react(), tailwindcss(), katexWoff2Only, officeNotices],
+  resolve: { alias: {
+    "@": path.resolve(import.meta.dirname, "src"),
+    "@office-parser": path.resolve(import.meta.dirname, "node_modules/@silurus/ooxml/dist"),
+  } },
   server: { port: 1430, strictPort: true },
   // Browser gates exercise the app. Experimental lab entry points may
   // reference retired APIs and must not restart that app mid-gesture.
-  optimizeDeps: process.env.KHOR_FACE_GATE ? { entries: ["index.html"] } : undefined,
+  optimizeDeps: {
+    // Vite 7's dev prebundle moves the viewer's worker assets away from
+    // their import.meta.url paths. Build-time asset resolution is separate.
+    exclude: ["@silurus/ooxml"],
+    ...(process.env.KHOR_FACE_GATE ? { entries: ["index.html"] } : {}),
+  },
   // **One chunk, because a second one cannot be fetched on Windows**
   // (measured 2026-11-16). The desktop window loads its page over Tauri's
   // custom asset protocol, and that protocol stops answering after the startup

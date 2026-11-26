@@ -34,7 +34,6 @@
     },
     "iOS": {
       "frameworks": [
-        "QuickLook",
         "PDFKit"
       ]
     },

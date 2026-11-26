@@ -2,6 +2,7 @@ import {checkSessionAttention} from './session-attention-checks.mjs';
 import {checkKhorAttachments} from './khor-attachment-checks.mjs';
 import {checkAttachmentDraft} from './attachment-draft-checks.mjs';
 import {checkResourceFiles} from './resource-checks.mjs';
+import {checkOfficePreviews} from './office-preview-checks.mjs';
 import {checkLongHistory} from './history-checks.mjs';
 import {checkWorkspaceBack} from './workspace-back-checks.mjs';
 import {checkWorkspaceBranches} from './workspace-branch-checks.mjs';
@@ -442,7 +443,7 @@ async function inspect(browser, scene, size, data = {}) {
       await page.locator('[data-ws-row]:visible').first().click();
       await checkWorkspaceSidebar();
       const names=await page.evaluate(async()=> (await (await fetch('/api/ls',{method:'POST',body:JSON.stringify({machine:'e'.repeat(64),path:'/preview/project'})})).json()).entries.map(entry=>entry.name));
-      assert.deepEqual(names,['docs','media','src','design.md','notes.md','package.json','plan.md','README.md','report.md','.config','.gitignore'],'Generated ls data must retain the real backend directory and dotfile ordering');
+      assert.deepEqual(names,['docs','media','office','src','design.md','notes.md','package.json','plan.md','README.md','report.md','.config','.gitignore'],'Generated ls data must retain the real backend directory and dotfile ordering');
       const visible=await page.locator('[data-file-tree] button[data-file-path]').evaluateAll(rows=>rows.map(row=>row.getAttribute('data-file-path').split('/').pop()));
       assert.deepEqual(visible,names,'The actual file tree must display the backend order');
       await page.locator('[data-workspace-navigation]').getByRole('button',{name:'提交历史',exact:true}).click();
@@ -501,7 +502,15 @@ let browser;
 const results = [];
 try {
   await waitForPreview();
-  if (process.env.LAB_CHECKS === 'workspace-git-tools') {
+  if (process.env.LAB_CHECKS === 'office-preview') {
+    for (const [engine, launcher] of [['chromium',chromium],['webkit',webkit]]) {
+      browser = await launcher.launch({headless:true});
+      for (const width of [1280,390]) results.push(await checkOfficePreviews(browser,{port,report,engine,width}));
+      await browser.close();
+      browser = undefined;
+    }
+    await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));
+  } else if (process.env.LAB_CHECKS === 'workspace-git-tools') {
     for (const engine of ['chromium','webkit']) {
       browser=await (engine==='webkit'?webkit:chromium).launch({headless:true});
       for (const [width,theme] of [[1280,'light'],[390,'light'],[320,'dark']]) {
@@ -618,6 +627,7 @@ try {
   for(const width of [1280,390])results.push(await checkWorkspaceBranches(browser,{port,report,engine:'chromium',width}));
   results.push(await checkWorkspaceGitTools(browser,{port,report,engine:'chromium',width:1280}));
   for(const mobile of [false,true])results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'chromium'}));
+  for(const width of [1280,390])results.push(await checkOfficePreviews(browser,{port,report,engine:'chromium',width}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium'}));
   results.push(await checkSettingsNavigation(browser,{port,report,engine:'chromium',mobile:true}));
   results.push(await checkGuiExperience(browser,{port,report,engine:'chromium'}));
@@ -676,6 +686,7 @@ try {
     results.push(await checkGlassSelection(browser,{port,report,engine:'webkit'}));
     for(const workspace of [false,true])for(const khor of [true,false])results.push(await checkConversationNavigation(browser,{port,report,engine:'webkit',workspace,khor}));
     for(const mobile of [false,true]){results.push(await checkResourceFiles(browser,{port,report,mobile,engine:'webkit'}));await writeFile(path.join(report,'results.json'),JSON.stringify(results,null,2));}
+    for(const width of [1280,390])results.push(await checkOfficePreviews(browser,{port,report,engine:'webkit',width}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit'}));
     results.push(await checkSettingsNavigation(browser,{port,report,engine:'webkit',mobile:true}));
     results.push(await checkGuiExperience(browser,{port,report,engine:'webkit'}));
