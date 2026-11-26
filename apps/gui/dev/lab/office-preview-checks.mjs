@@ -188,8 +188,16 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await searchCells.press('Escape');
     const sheetGrid = await visibleCanvas(excel).boundingBox();
     await page.mouse.click(sheetGrid.x+100,sheetGrid.y+42);
-    await tool('office-copy');
+    assert.equal(await page.locator('[data-office-copy]').count(),0,'The sheet uses the system copy action');
+    await page.keyboard.press('Meta+c');
     await page.waitForFunction(() => window.officeCopied.trim().length > 0);
+    const copiedCells = await page.evaluate(() => {
+      const text = window.officeCopied;
+      window.officeCopied = '';
+      document.body.dispatchEvent(new ClipboardEvent('copy',{bubbles:true,cancelable:true}));
+      return text;
+    });
+    await page.waitForFunction(expected => window.officeCopied === expected,copiedCells);
     if (!mobile) {
       const mask = () => excel.evaluate(viewer=>getComputedStyle(viewer).maskImage);
       const waitForScroll = scrolled => page.waitForFunction(expected => {

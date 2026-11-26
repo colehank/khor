@@ -1,6 +1,6 @@
 import type { OfficeFormat } from "@/components/OfficePreview";
 import type { OfficeNavigation, OfficePages, OfficeThread } from "@/components/office/types";
-import { gui } from "@/gen/catalog";
+import { visiblePageOwner } from "@/lib/native-page-yield";
 import type { DefinedName } from "@silurus/ooxml/xlsx";
 
 export type OfficeViewer = {
@@ -23,7 +23,6 @@ export type OfficeReader = {
   comments: () => OfficeThread[];
   revisions?: (show: boolean) => Promise<void>;
   notes?: () => string | null;
-  copy?: () => Promise<string>;
   dispose: () => void;
 };
 
@@ -157,6 +156,22 @@ export async function loadOfficeReader(
         },
       });
       viewer = sheets;
+      const document = host.ownerDocument;
+      const nativeCopy = (event: ClipboardEvent) => {
+        const focus = document.activeElement;
+        if (event.defaultPrevented || !host.contains(focus) || !visiblePageOwner(host) ||
+            !sheets.selectionState || document.getSelection()?.toString()) return;
+        if (focus instanceof HTMLElement && (focus.isContentEditable || focus.closest("input, textarea, select"))) return;
+        // The viewer already owns the keyboard shortcut. The copy event is
+        // also sent by the system Edit menu and the browser's copy action.
+        event.preventDefault();
+        void sheets.copySelection().catch(() => {});
+      };
+      document.addEventListener("copy", nativeCopy);
+      closeModel = () => {
+        document.removeEventListener("copy", nativeCopy);
+        workbook.destroy();
+      };
       return {
         viewer: sheets, dispose,
         comments: () => {
@@ -165,16 +180,6 @@ export async function loadOfficeReader(
             ...comment, key: comment.id ?? String(i), location: comment.cellRef,
             jump: () => sheets.goToComment(sheet, comment.cellRef),
           }));
-        },
-        copy: async () => {
-          const { status } = await sheets.copySelection();
-          switch (status) {
-            case "copied": return gui.copied;
-            case "empty-selection": return gui.office_copy_select;
-            case "too-large": return gui.office_copy_limit;
-            case "unsupported-multiple-areas": return gui.office_copy_contiguous;
-            default: return gui.copy_failed;
-          }
         },
       };
     }

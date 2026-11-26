@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { IconBack, IconClose, IconForward, IconSearch } from "@/components/icons";
+import {
+  IconBack, IconChat, IconClose, IconDocumentNotes, IconDocumentRevisions, IconForward,
+  IconMinus, IconPageGrid, IconPlus, IconSearch,
+} from "@/components/icons";
+import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import { ContentSearch } from "@/components/ContentSearch";
 import { RegionState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
@@ -10,6 +14,7 @@ import type { OfficePages } from "@/components/office/types";
 import { loadOfficeReader, type OfficeReader } from "@/components/office/viewer";
 import { gui } from "@/gen/catalog";
 import { assertPageUrl, openSystemUrl } from "@/lib/client-opener";
+import { useCoarse } from "@/hooks/use-coarse";
 import { imeKey } from "@/lib/ime";
 import { visiblePageOwner } from "@/lib/native-page-yield";
 import { useLinkHome } from "@/views/linkHome";
@@ -39,6 +44,7 @@ async function documentBytes(source: string | File): Promise<ArrayBuffer> {
 type Lock = "encrypted" | "invalid-password" | "unsupported-encryption";
 type Zoom = "zoomIn" | "zoomOut" | "fitWidth" | "fitPage" | "actual";
 type Panel = "pages" | "comments" | "notes";
+const LABELED_TOOL = "@md/office:flex @md/office:w-auto @md/office:gap-in @md/office:px-in";
 
 export function OfficePreview({ format, source, onFallback }: {
   format: OfficeFormat;
@@ -61,6 +67,7 @@ export function OfficePreview({ format, source, onFallback }: {
   const [matches, setMatches] = useState<{ index: number; total: number } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const home = useLinkHome();
+  const coarse = useCoarse();
 
   const reportFailure = useEffectEvent(onFallback);
   const follow = useEffectEvent(async (url: string) => {
@@ -194,11 +201,6 @@ export function OfficePreview({ format, source, onFallback }: {
       setTracked(next);
     });
   }, [reader, run, tracked]);
-  const copy = useCallback(() => {
-    const copyCells = reader?.copy;
-    if (copyCells) run(async () => setNotice(await copyCells()));
-  }, [reader, run]);
-
   useEffect(() => {
     if (!reader) return;
     const keyboard = (event: KeyboardEvent) => {
@@ -221,7 +223,7 @@ export function OfficePreview({ format, source, onFallback }: {
   const closePanel = () => setPanel(null);
   return <div ref={root} tabIndex={-1} data-office-preview={format} data-band-boundary data-ready={!!reader || undefined}
     className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
-    {reader && <div data-office-toolbar className="flex h-pane-head min-w-0 flex-none items-center border-b bg-background">
+    {reader && <div data-office-toolbar className="@container/office flex h-pane-head min-w-0 flex-none items-center border-b bg-background">
       {finding ? <div data-office-find onKeyDownCapture={event => {
         if (event.key === "Escape" && !imeKey(event)) {
           event.preventDefault();
@@ -243,38 +245,47 @@ export function OfficePreview({ format, source, onFallback }: {
         </div>
       </div> : <div role="toolbar" aria-label={gui.file_actions}
         className="flex h-full min-w-0 flex-1 items-center gap-in overflow-x-auto whitespace-nowrap px-row [scrollbar-width:none]">
-        <Button size="icon" variant="ghost" data-office-find-open aria-label={gui.search_file} title={gui.search_file}
-          className="shrink-0" onClick={startFind}><IconSearch/></Button>
-        <div className="flex shrink-0 items-center border-s ps-in">
-          <Button type="button" size="icon" variant="ghost" data-office-zoom-out aria-label={gui.office_zoom_out}
-            title={gui.office_zoom_out} onClick={() => zoom("zoomOut")}>−</Button>
+        <GlassCircle data-office-find-open aria-label={gui.search_file} tip={!coarse && gui.search_file}
+          onClick={startFind}><IconSearch/></GlassCircle>
+        <GlassCapsule role="group" aria-label={gui.office_tool_zoom}>
+          <GlassItem data-office-zoom-out aria-label={gui.office_zoom_out} tip={!coarse && gui.office_zoom_out}
+            onClick={() => zoom("zoomOut")}><IconMinus/></GlassItem>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button size="sm" variant="ghost" data-office-zoom aria-label={gui.office_tool_zoom + " " + Math.round(scale * 100) + "%"}
-                className="tabular-nums">{Math.round(scale * 100)}%</Button>
+              <GlassItem data-office-zoom aria-label={gui.office_tool_zoom + " " + Math.round(scale * 100) + "%"}
+                tip={!coarse && gui.office_tool_zoom} className="w-auto min-w-glass-item-w px-in text-callout tabular-nums">
+                {Math.round(scale * 100)}%
+              </GlassItem>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start">
+            <DropdownMenuContent align="center">
               <DropdownMenuItem data-office-fit-width onSelect={() => zoom("fitWidth")}>{gui.office_fit_width}</DropdownMenuItem>
               {page && <DropdownMenuItem data-office-fit-page onSelect={() => zoom("fitPage")}>{gui.office_fit_page}</DropdownMenuItem>}
               <DropdownMenuItem data-office-actual-size onSelect={() => zoom("actual")}>{gui.office_actual_size}</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button type="button" size="icon" variant="ghost" data-office-zoom-in aria-label={gui.office_zoom_in}
-            title={gui.office_zoom_in} onClick={() => zoom("zoomIn")}>+</Button>
-        </div>
-        <div className="flex shrink-0 items-center border-s ps-in">
-          {page && <Button size="sm" variant="ghost" data-office-pages aria-label={gui.office_thumbnails}
-            onClick={() => setPanel("pages")}>{gui.office_tool_pages}</Button>}
-          <Button size="sm" variant="ghost" data-office-review aria-label={gui.office_comments}
-            onClick={() => setPanel("comments")}>{gui.office_tool_comments}</Button>
-          {reader.revisions && <Button size="sm" variant="ghost" data-office-revisions aria-pressed={tracked}
-            aria-label={tracked ? gui.office_hide_revisions : gui.office_revisions} onClick={changeRevisions}
-            className="aria-pressed:bg-fill-strong">{gui.office_tool_revisions}</Button>}
-          {reader.notes && <Button size="sm" variant="ghost" data-office-notes aria-label={gui.office_notes}
-            onClick={() => setPanel("notes")}>{gui.office_tool_notes}</Button>}
-          {reader.copy && <Button size="sm" variant="ghost" data-office-copy aria-label={gui.office_copy_cells}
-            onClick={copy}>{gui.office_tool_copy}</Button>}
-        </div>
+          <GlassItem data-office-zoom-in aria-label={gui.office_zoom_in} tip={!coarse && gui.office_zoom_in}
+            onClick={() => zoom("zoomIn")}><IconPlus/></GlassItem>
+        </GlassCapsule>
+        <GlassCapsule>
+          {page && <GlassItem data-office-pages aria-label={gui.office_thumbnails} tip={!coarse && gui.office_thumbnails}
+            className={LABELED_TOOL} onClick={() => setPanel("pages")}>
+            <IconPageGrid/><span className="hidden text-callout @md/office:inline">{gui.office_tool_pages}</span>
+          </GlassItem>}
+          <GlassItem data-office-review aria-label={gui.office_comments} tip={!coarse && gui.office_comments}
+            className={LABELED_TOOL} onClick={() => setPanel("comments")}>
+            <IconChat/><span className="hidden text-callout @md/office:inline">{gui.office_tool_comments}</span>
+          </GlassItem>
+          {reader.revisions && <GlassItem data-office-revisions aria-pressed={tracked} on={tracked}
+            aria-label={tracked ? gui.office_hide_revisions : gui.office_revisions}
+            tip={!coarse && (tracked ? gui.office_hide_revisions : gui.office_revisions)}
+            className={LABELED_TOOL} onClick={changeRevisions}>
+            <IconDocumentRevisions/><span className="hidden text-callout @md/office:inline">{gui.office_tool_revisions}</span>
+          </GlassItem>}
+          {reader.notes && <GlassItem data-office-notes aria-label={gui.office_notes} tip={!coarse && gui.office_notes}
+            className={LABELED_TOOL} onClick={() => setPanel("notes")}>
+            <IconDocumentNotes/><span className="hidden text-callout @md/office:inline">{gui.office_tool_notes}</span>
+          </GlassItem>}
+        </GlassCapsule>
       </div>}
     </div>}
     <div data-office-document className="relative min-h-0 flex-1 overflow-hidden">
