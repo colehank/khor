@@ -86,6 +86,8 @@ targets:
       # iroh's interface watcher (netdev, system-configuration) reads the
       # network through it; the template does not list it.
       - sdk: SystemConfiguration.framework
+      # The iOS netdev resolver is referenced by the Rust static library.
+      - sdk: libresolv.tbd
       - sdk: UIKit.framework
       - sdk: WebKit.framework
     preBuildScripts:
