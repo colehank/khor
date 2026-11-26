@@ -8,7 +8,9 @@ export const EDGED = "[data-nav-clear], [data-pane-body], [data-files-list]";
 
 /** How far a scroller goes before its band turns to glass: a few px, so
     a stray touch at the top does not flicker the bar. */
-const EDGE = 2;
+export function isPastScrollTop(offset: number): boolean {
+  return offset > 2;
+}
 
 type Band = {
   head: HTMLElement | null;
@@ -155,7 +157,7 @@ function watchBand(head: HTMLElement | null, parent: HTMLElement, locate: () => 
   };
   function paint() {
     frame = 0;
-    const on = !!b.scroller && b.scroller.scrollTop > EDGE;
+    const on = !!b.scroller && isPastScrollTop(b.scroller.scrollTop);
     if (stylesDirty) {
       stylesDirty = false;
       portPadding = b.scroller ? parseFloat(getComputedStyle(b.scroller).paddingTop) || 0 : 0;

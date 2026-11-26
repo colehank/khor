@@ -39,6 +39,27 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const context = canvas.getContext('2d');
     return [width,height,context ? canvas.toDataURL() : ''];
   });
+  const scrollWord = (viewer, top) => viewer.evaluate((node, offset) => {
+    const scroller = [...node.querySelectorAll('div')].find(child =>
+      child.scrollHeight > child.clientHeight && ['auto','scroll'].includes(getComputedStyle(child).overflowY));
+    if (!scroller) return null;
+    scroller.scrollTop = offset ?? scroller.scrollHeight - scroller.clientHeight;
+    return scroller.scrollTop;
+  },top);
+  const sampleLine = async (x,y) => {
+    const screenshot = await page.screenshot({clip:{x,y,width:1,height:28},animations:'disabled'});
+    return page.evaluate(async png => {
+      const image = new Image();
+      image.src = 'data:image/png;base64,'+png;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(image,0,0);
+      return [0,16,27].map(offset => ctx.getImageData(0,offset,1,1).data[0]);
+    },screenshot.toString('base64'));
+  };
   try {
     await open('docx');
     const word = await ready('docx');
@@ -48,34 +69,28 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     if (!mobile) {
       await page.locator('html[data-theme="dark"][data-lab-environment]').waitFor({state:'attached'});
       const paper = await visibleCanvas(word).boundingBox();
-      const clip = {x:Math.floor(paper.x+paper.width*0.7),y:Math.ceil(paper.y)+3,width:1,height:42};
-      const screenshot = await page.screenshot({clip,animations:'disabled'});
-      const samples = await page.evaluate(async png => {
-        const image = new Image();
-        image.src = 'data:image/png;base64,'+png;
-        await image.decode();
-        const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(image,0,0);
-        return [0,14,41].map(y => ctx.getImageData(0,y,1,1).data[0]);
-      }, screenshot.toString('base64'));
+      const x = Math.floor(paper.x+paper.width*0.7);
+      const paperTop = Math.ceil(paper.y)+3;
+      const atTop = await sampleLine(x,paperTop);
+      assert(atTop.every(sample=>sample>215), `The first page stays clear at the top (${atTop.join(', ')})`);
+      assert(await scrollWord(word,72)>0,'The Word viewport scrolls under its title');
+      await page.locator('[data-office-preview="docx"][data-preview-scrolled]').waitFor();
+      const samples = await sampleLine(x,Math.ceil((await word.boundingBox()).y)+1);
       assert(samples[0]+30 < samples[1] && samples[1]+30 < samples[2] && samples[2] > 215,
-        `The Word paper must blend gradually into the glass window (${samples.join(', ')})`);
+        `Scrolling Word uses the common short fade below the title (${samples.join(', ')})`);
+      await scrollWord(word,0);
+      await page.locator('[data-office-preview="docx"]:not([data-preview-scrolled])').waitFor();
+      const returned = await sampleLine(x,paperTop);
+      assert(returned.every(sample=>sample>215), `Returning to the top clears the fade (${returned.join(', ')})`);
     }
-    assert(await word.evaluate(viewer => {
-      const scroller = [...viewer.querySelectorAll('div')].find(node =>
-        node.scrollHeight > node.clientHeight && ['auto','scroll'].includes(getComputedStyle(node).overflowY));
-      if (!scroller) return false;
-      scroller.scrollTop = scroller.scrollHeight - scroller.clientHeight;
-      return scroller.scrollTop > 0;
-    }), 'A multi-page Word document scrolls inside the pane');
+    assert(await scrollWord(word,null)>0,'A multi-page Word document scrolls inside the pane');
     await page.screenshot({path:path.join(report,name+'-word.png')});
 
     if (mobile) await open('pptx');
     else await page.locator('[data-file-path$="/'+files.pptx+'"]').click();
     const slides = await ready('pptx');
+    assert.equal(await slides.evaluate(viewer=>getComputedStyle(viewer).maskImage),'none',
+      'A presentation that does not scroll has no top fade');
     assert.match(await slides.textContent(),/1 \/ 3/);
     await slides.getByRole('button',{name:/下一页|Next page/i}).click();
     await slides.getByText('2 / 3',{exact:true}).waitFor();
@@ -88,6 +103,18 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     if (mobile) await open('xlsx');
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
     const excel = await ready('xlsx');
+    if (!mobile) {
+      const mask = () => excel.evaluate(viewer=>getComputedStyle(viewer).maskImage);
+      assert.equal(await mask(),'none','The worksheet opens with its headings clear');
+      const grid = await visibleCanvas(excel).boundingBox();
+      await page.mouse.move(grid.x+grid.width/2,grid.y+grid.height/2);
+      await page.mouse.wheel(0,200);
+      await page.locator('[data-office-preview="xlsx"][data-preview-scrolled]').waitFor();
+      assert.notEqual(await mask(),'none','Scrolling exposes the worksheet fade');
+      await page.mouse.wheel(0,-2000);
+      await page.locator('[data-office-preview="xlsx"]:not([data-preview-scrolled])').waitFor();
+      assert.equal(await mask(),'none','Returning to the first row clears the fade');
+    }
     const firstSheet = await image(excel);
     await excel.getByText('验收汇总',{exact:true}).click();
     await page.waitForFunction(before => {
