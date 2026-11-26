@@ -694,7 +694,7 @@ press handler on any stop`——**那不是坏消息,那是「债还了,删行�
 
 - `npm run file-handoff`：生产文件页的大文件出口、原文件系统打开、下载进度／取消／重试、离开页面与隐藏标签取消，以及附件一致性；仅替换原生 IPC 与系统面板边界。
 
-- `npm run file-office-ui` 检查文件页和附件直接渲染 Office 文件、移除原来的预览切换，并覆盖本机未发送附件和移动端外部打开。Developer Lab 的 `office-preview` 检查三种格式的排版、搜索与跳转、批注和修订、讲稿、缩放、单元格复制及加密文件解锁。样例密码为 `khor-lab`。
+- `npm run file-office-ui` 检查文件页和附件直接渲染 Office 文件、移除原来的预览切换，并覆盖本机未发送附件和移动端外部打开。Developer Lab 的 `office-preview` 检查三种格式的排版、顶部工具栏、搜索与跳转、批注和修订、讲稿、缩放、单元格复制及加密文件解锁。样例密码为 `khor-lab`。
 
 - `npm run file-pdf-ui`：生产文件页与附件的原生 PDF 传输、自动打开、关闭重开及外部打开回退；禁止手机原生 PDF 回到 iframe 或 JS base64 预览副本。系统 PDFKit 的多页、缩放、旋转及页内位置另做 iPhone 验收。
 

@@ -41,7 +41,7 @@ import { GlassCapsule, GlassCircle, GlassItem } from "@/components/Glass";
 import {ContentPill} from '@/components/ContentDeck';
 import { DeckBand, TabSheet } from "@/components/SessionBar";
 import type { TabFace } from "@/browse/TabStrip";
-import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload, IconSearch } from "@/components/icons";
+import { IconBack, IconBranch, IconCheck, IconEye, IconFiles, IconMore, IconReload } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -68,7 +68,6 @@ import { bytesOf, shares } from "@/views/chat-files";
 import { HistorySheet, revisionRenders, RevisionView, shortId } from "@/views/FileHistory";
 import { SymbolsSheet } from "@/views/FileSymbols";
 import { fileManagerLabel, useNativeFileManager } from "@/lib/file-actions";
-import { useOfficeTools, type OfficeTools } from "@/components/office/types";
 import { defaultFaceOf, FileView, kindOf, rendererOf, type Draft } from "@/views/FileView";
 
 // ── where the reader is ───────────────────────────────────────────
@@ -143,13 +142,11 @@ function useFileVerbs({
   faceToggle,
   handoff,
   additionalActions = [],
-  officeTools,
   more = true,
 }: {
   more?: boolean;
   handoff?: FileHandoffControl;
   additionalActions?: readonly FileMenuAction[];
-  officeTools?: OfficeTools | null;
   /** The file page's face (UX-14): 字号 and 预览背景 are offered only
       while the file is shown rendered. Left out (the Mac's workspace
       strip), they are offered as before. */
@@ -220,10 +217,9 @@ function useFileVerbs({
     ...(code?.offered ? [{ key: "code", label: gui.file_in_code, run: () => code.want() }] : []),
     ...additionalActions,
   ];
-  const menuItems = [...(more ? menu : []), ...(officeTools?.items ?? [])];
   const afterClose=useRef<FileMenuAction | null>(null);
   useLayoutEffect(() => () => { afterClose.current=null; }, [machine,path]);
-  const MoreButton = faceToggle || officeTools ? GlassItem : GlassCircle;
+  const MoreButton = faceToggle ? GlassItem : GlassCircle;
   const moreMenu: ReactNode = (
     <DropdownMenu onOpenChange={(o) => o && setHasSymbols(hasSymbolsIn(path))}>
       <DropdownMenuTrigger asChild>
@@ -232,10 +228,9 @@ function useFileVerbs({
         </MoreButton>
       </DropdownMenuTrigger>
       <DropdownMenuContent onCloseAutoFocus={e=>{const action=afterClose.current;afterClose.current=null;if(action){if(action.key==='locate')e.preventDefault();action.run();}}} align="end" side="top" sideOffset={8} data-file-more-menu className="min-w-nav-menu">
-        {menuItems.map((m, i) => (
+        {menu.map((m, i) => (
           <Fragment key={m.key}>
-            {i > 0 && ["symbols", "history", "blame", "code"].includes(m.key) && !["symbols", "history", "blame", "code"].includes(menuItems[i-1].key) && <DropdownMenuSeparator />}
-            {i === menu.length && i > 0 && more && officeTools && <DropdownMenuSeparator/>}
+            {i > 0 && ["symbols", "history", "blame", "code"].includes(m.key) && !["symbols", "history", "blame", "code"].includes(menu[i-1].key) && <DropdownMenuSeparator />}
             <DropdownMenuItem data-file-more-item={m.key} onSelect={()=>{if(m.afterClose)afterClose.current=m;else m.run();}}>{m.label}</DropdownMenuItem>
           </Fragment>
         ))}
@@ -294,12 +289,7 @@ function useFileVerbs({
       )}
     </>
   );
-  const moreCircle = officeTools ? (
-    <GlassCapsule data-file-actions role="group" aria-label={gui.file_actions}>
-      <GlassItem data-office-find-open aria-label={gui.search_file} onClick={officeTools.find}><IconSearch /></GlassItem>
-      {moreMenu}
-    </GlassCapsule>
-  ) : faceToggle ? (
+  const moreCircle = faceToggle ? (
     <GlassCapsule data-file-actions role="group" aria-label={gui.file_actions}>
       <GlassItem data-file-face-toggle={faceToggle.face} aria-label={faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview} aria-pressed={faceToggle.face === "preview"} on={faceToggle.face === "preview"} onClick={faceToggle.run} tip={!coarse && (faceToggle.face === "preview" ? gui.file_face_source : gui.file_face_preview)}><IconEye /></GlassItem>
       {more && moreMenu}
@@ -446,10 +436,8 @@ export function FilePage({
   const setFace = faceControl?.set ?? setLocalFace;
   const controlledFace = faceControl !== undefined;
   const handoff = useFileHandoff(machine,path,!localFile);
-  const office = useOfficeTools(machine, rev === null ? path : null);
   const verbs = useFileVerbs({
     more,
-    officeTools: office.tools,
     machine,
     path,
     here,
@@ -625,7 +613,6 @@ export function FilePage({
         <FileView
           handoff={handoff}
           localFile={localFile}
-          onOfficeTools={office.publish}
           editorHistory={editorHistory ?? localHistory.current}
           key={`${machine} ${path}`}
           machine={machine}

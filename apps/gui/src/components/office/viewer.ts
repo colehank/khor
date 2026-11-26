@@ -14,6 +14,7 @@ export type OfficeViewer = {
   fitWidth(): void | Promise<void>;
   fitPage(): void | Promise<void>;
   setScale(scale: number): void | Promise<void>;
+  getScale(): number;
 };
 
 export type OfficeReader = {
@@ -30,6 +31,7 @@ type Callbacks = {
   signal: AbortSignal;
   error: (error: unknown) => void;
   externalLink: (url: string) => void;
+  scale: (scale: number) => void;
   slide: (page: OfficePages) => void;
 };
 
@@ -67,7 +69,7 @@ export async function loadOfficeReader(
   format: OfficeFormat, host: HTMLElement, bytes: ArrayBuffer, wasmUrl: string, password: string | undefined,
   callbacks: Callbacks,
 ): Promise<OfficeReader> {
-  const { signal, error, slide, externalLink } = callbacks;
+  const { signal, error, slide, externalLink, scale } = callbacks;
   const [math, chartEx, threeD, regionMap, tiff] = await renderers();
   signal.throwIfAborted();
   const options = {
@@ -77,6 +79,7 @@ export async function loadOfficeReader(
   };
   const actions = {
     enableHyperlinks: true,
+    onScaleChange: scale,
     onError: error,
   };
   // A viewer borrows the parsed model. Attach both lifetimes before awaiting
@@ -181,7 +184,6 @@ export async function loadOfficeReader(
     closeModel = () => presentation.destroy();
     signal.throwIfAborted();
     const canvas = document.createElement("canvas");
-    canvas.className = "m-auto shrink-0";
     host.append(canvas);
     const slides = PptxViewer.fromPresentation(canvas, presentation, {
       ...actions, enableTextSelection: true, enableMediaPlayback: true, width: host.clientWidth,

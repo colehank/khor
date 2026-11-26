@@ -1,11 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { IconBack, IconForward, IconMore, IconSearch } from "@/components/icons";
+import { IconBack, IconForward } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogTitle, TaskActions, TaskOverlay } from "@/components/ui/dialog";
-import { GlassCapsule, GlassItem } from "@/components/Glass";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import type { OfficeAction, OfficeComment, OfficeNavigation, OfficeThread, OfficeTools } from "@/components/office/types";
+import type { OfficeComment, OfficeNavigation, OfficeThread } from "@/components/office/types";
 import { gui } from "@/gen/catalog";
 
 export function OfficePanel({ title, close, initialHeight = "fit", children }: {
@@ -123,26 +121,4 @@ export function OfficeComments({ threads, close, jump }: {
         </article>)}
       </div>}
   </OfficePanel>;
-}
-
-export function OfficeAttachmentTools({ tools }: { tools: OfficeTools }) {
-  const pending = useRef<OfficeAction | null>(null);
-  return <GlassCapsule aria-label={gui.file_actions} role="group">
-    <GlassItem aria-label={gui.search_file} data-office-find-open onClick={tools.find}><IconSearch/></GlassItem>
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <GlassItem data-office-more aria-label={gui.rail_more}><IconMore/></GlassItem>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" onCloseAutoFocus={() => {
-        const action = pending.current;
-        pending.current = null;
-        action?.run();
-      }}>
-        {tools.items.map(action => <DropdownMenuItem key={action.key} data-file-more-item={action.key}
-          onSelect={() => { if (action.afterClose) pending.current = action; else action.run(); }}>
-          {action.label}
-        </DropdownMenuItem>)}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  </GlassCapsule>;
 }

@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { IconBack, IconClose, IconForward } from "@/components/icons";
+import { IconBack, IconClose, IconForward, IconSearch } from "@/components/icons";
 import { ContentSearch } from "@/components/ContentSearch";
 import { RegionState } from "@/components/RegionState";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { OfficeComments, OfficePanel, OfficeThumbnails } from "@/components/office/OfficePanels";
-import type { OfficeAction, OfficePages, OfficeTools } from "@/components/office/types";
+import type { OfficePages } from "@/components/office/types";
 import { loadOfficeReader, type OfficeReader } from "@/components/office/viewer";
 import { gui } from "@/gen/catalog";
 import { assertPageUrl, openSystemUrl } from "@/lib/client-opener";
+import { imeKey } from "@/lib/ime";
 import { visiblePageOwner } from "@/lib/native-page-yield";
 import { useLinkHome } from "@/views/linkHome";
 import docxParser from "@office-parser/docx_parser_bg.wasm?url";
@@ -38,11 +40,10 @@ type Lock = "encrypted" | "invalid-password" | "unsupported-encryption";
 type Zoom = "zoomIn" | "zoomOut" | "fitWidth" | "fitPage" | "actual";
 type Panel = "pages" | "comments" | "notes";
 
-export function OfficePreview({ format, source, onFallback, onTools }: {
+export function OfficePreview({ format, source, onFallback }: {
   format: OfficeFormat;
   source: string | File;
   onFallback: (reason: OfficeFailure) => void;
-  onTools?: (tools: OfficeTools | null) => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const mount = useRef<HTMLDivElement>(null);
@@ -54,6 +55,7 @@ export function OfficePreview({ format, source, onFallback, onTools }: {
   const [slide, setSlide] = useState<OfficePages | null>(null);
   const [panel, setPanel] = useState<Panel | null>(null);
   const [tracked, setTracked] = useState(false);
+  const [scale, setScale] = useState(1);
   const [finding, setFinding] = useState(false);
   const [query, setQuery] = useState("");
   const [matches, setMatches] = useState<{ index: number; total: number } | null>(null);
@@ -111,6 +113,7 @@ export function OfficePreview({ format, source, onFallback, onTools }: {
         signal: abort.signal,
         error: fallback,
         externalLink: url => { if (active()) void follow(url); },
+        scale: value => { if (active()) setScale(value); },
         slide: page => { if (active()) setSlide(page); },
       });
       if (!active()) { view.dispose(); return; }
@@ -125,6 +128,7 @@ export function OfficePreview({ format, source, onFallback, onTools }: {
         });
         resize.observe(host);
       }
+      setScale(view.viewer.getScale());
       setReader(view);
     }
 
@@ -196,27 +200,6 @@ export function OfficePreview({ format, source, onFallback, onTools }: {
   }, [reader, run]);
 
   useEffect(() => {
-    if (!reader || !onTools) return;
-    const item = (key: string, label: string, run: () => void): OfficeAction => ({ key, label, run, afterClose: true });
-    onTools({
-      find: () => setFinding(true),
-      items: [
-        item("office-zoom-in", gui.office_zoom_in, () => zoom("zoomIn")),
-        item("office-zoom-out", gui.office_zoom_out, () => zoom("zoomOut")),
-        item("office-fit-width", gui.office_fit_width, () => zoom("fitWidth")),
-        ...(reader.pages ? [item("office-fit-page", gui.office_fit_page, () => zoom("fitPage"))] : []),
-        item("office-actual-size", gui.office_actual_size, () => zoom("actual")),
-        ...(reader.pages ? [item("office-pages", gui.office_thumbnails, () => setPanel("pages"))] : []),
-        item("office-comments", gui.office_comments, () => setPanel("comments")),
-        ...(reader.revisions ? [item("office-revisions", tracked ? gui.office_hide_revisions : gui.office_revisions, changeRevisions)] : []),
-        ...(reader.notes ? [item("office-notes", gui.office_notes, () => setPanel("notes"))] : []),
-        ...(reader.copy ? [{ key: "office-copy", label: gui.office_copy_cells, run: copy }] : []),
-      ],
-    });
-    return () => onTools(null);
-  }, [reader, tracked, onTools, zoom, copy, changeRevisions]);
-
-  useEffect(() => {
     if (!reader) return;
     const keyboard = (event: KeyboardEvent) => {
       const region = root.current;
@@ -234,32 +217,69 @@ export function OfficePreview({ format, source, onFallback, onTools }: {
   }, [reader, panel]);
 
   const page = reader?.pages;
+  const startFind = () => setFinding(true);
   const closePanel = () => setPanel(null);
   return <div ref={root} tabIndex={-1} data-office-preview={format} data-band-boundary data-ready={!!reader || undefined}
     className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden outline-none">
-    {reader && finding && <div data-office-find onKeyDownCapture={event => {
-      if (event.key === "Escape" && !event.nativeEvent.isComposing) {
-        event.preventDefault();
-        event.stopPropagation();
-        closeFind();
-      }
-    }} className="flex min-w-0 flex-none items-center gap-in border-b bg-background px-row py-in">
-      <div className="min-w-0 flex-1">
-        <ContentSearch label={gui.search_file} value={query} onChange={setQuery} onEditing={() => {}}
-          onEnter={() => nextMatch(1)}/>
-      </div>
-      <div className="flex flex-none items-center">
-        {query.trim() && <span data-office-find-count role="status" className="text-caption tabular-nums text-muted-foreground">
-          {matches === null ? gui.office_searching : matches.total ? (matches.index + 1) + " / " + matches.total : gui.no_matches}
-        </span>}
-        <Button size="icon" variant="ghost" aria-label={gui.match_prev} disabled={!matches?.total} onClick={() => nextMatch(-1)}><IconBack/></Button>
-        <Button size="icon" variant="ghost" aria-label={gui.match_next} disabled={!matches?.total} onClick={() => nextMatch(1)}><IconForward/></Button>
-        <Button size="icon" variant="ghost" aria-label={gui.close} onClick={closeFind}><IconClose/></Button>
-      </div>
+    {reader && <div data-office-toolbar className="flex h-pane-head min-w-0 flex-none items-center border-b bg-background">
+      {finding ? <div data-office-find onKeyDownCapture={event => {
+        if (event.key === "Escape" && !imeKey(event)) {
+          event.preventDefault();
+          event.stopPropagation();
+          closeFind();
+        }
+      }} className="flex min-w-0 flex-1 items-center gap-in px-row">
+        <div className="min-w-0 flex-1">
+          <ContentSearch label={gui.search_file} value={query} onChange={setQuery} onEditing={() => {}}
+            onEnter={() => nextMatch(1)}/>
+        </div>
+        <div className="flex flex-none items-center">
+          {query.trim() && <span data-office-find-count role="status" className="text-caption tabular-nums text-muted-foreground">
+            {matches === null ? gui.office_searching : matches.total ? (matches.index + 1) + " / " + matches.total : gui.no_matches}
+          </span>}
+          <Button size="icon" variant="ghost" aria-label={gui.match_prev} disabled={!matches?.total} onClick={() => nextMatch(-1)}><IconBack/></Button>
+          <Button size="icon" variant="ghost" aria-label={gui.match_next} disabled={!matches?.total} onClick={() => nextMatch(1)}><IconForward/></Button>
+          <Button size="icon" variant="ghost" aria-label={gui.close} onClick={closeFind}><IconClose/></Button>
+        </div>
+      </div> : <div role="toolbar" aria-label={gui.file_actions}
+        className="flex h-full min-w-0 flex-1 items-center gap-in overflow-x-auto whitespace-nowrap px-row [scrollbar-width:none]">
+        <Button size="icon" variant="ghost" data-office-find-open aria-label={gui.search_file} title={gui.search_file}
+          className="shrink-0" onClick={startFind}><IconSearch/></Button>
+        <div className="flex shrink-0 items-center border-s ps-in">
+          <Button type="button" size="icon" variant="ghost" data-office-zoom-out aria-label={gui.office_zoom_out}
+            title={gui.office_zoom_out} onClick={() => zoom("zoomOut")}>−</Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button size="sm" variant="ghost" data-office-zoom aria-label={gui.office_tool_zoom + " " + Math.round(scale * 100) + "%"}
+                className="tabular-nums">{Math.round(scale * 100)}%</Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem data-office-fit-width onSelect={() => zoom("fitWidth")}>{gui.office_fit_width}</DropdownMenuItem>
+              {page && <DropdownMenuItem data-office-fit-page onSelect={() => zoom("fitPage")}>{gui.office_fit_page}</DropdownMenuItem>}
+              <DropdownMenuItem data-office-actual-size onSelect={() => zoom("actual")}>{gui.office_actual_size}</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button type="button" size="icon" variant="ghost" data-office-zoom-in aria-label={gui.office_zoom_in}
+            title={gui.office_zoom_in} onClick={() => zoom("zoomIn")}>+</Button>
+        </div>
+        <div className="flex shrink-0 items-center border-s ps-in">
+          {page && <Button size="sm" variant="ghost" data-office-pages aria-label={gui.office_thumbnails}
+            onClick={() => setPanel("pages")}>{gui.office_tool_pages}</Button>}
+          <Button size="sm" variant="ghost" data-office-review aria-label={gui.office_comments}
+            onClick={() => setPanel("comments")}>{gui.office_tool_comments}</Button>
+          {reader.revisions && <Button size="sm" variant="ghost" data-office-revisions aria-pressed={tracked}
+            aria-label={tracked ? gui.office_hide_revisions : gui.office_revisions} onClick={changeRevisions}
+            className="aria-pressed:bg-fill-strong">{gui.office_tool_revisions}</Button>}
+          {reader.notes && <Button size="sm" variant="ghost" data-office-notes aria-label={gui.office_notes}
+            onClick={() => setPanel("notes")}>{gui.office_tool_notes}</Button>}
+          {reader.copy && <Button size="sm" variant="ghost" data-office-copy aria-label={gui.office_copy_cells}
+            onClick={copy}>{gui.office_tool_copy}</Button>}
+        </div>
+      </div>}
     </div>}
-    <div className="relative min-h-0 flex-1 overflow-hidden">
+    <div data-office-document className="relative min-h-0 flex-1 overflow-hidden">
       <div ref={mount} className={format === "pptx" ?
-        "absolute inset-0 flex overflow-auto select-text" :
+        "absolute inset-0 flex overflow-auto select-text [&>*]:m-auto [&>*]:shrink-0" :
         "absolute inset-0 overflow-hidden select-text"}/>
       {!reader && <div className="absolute inset-0 grid place-items-center bg-background">
         {lock === "unsupported-encryption" ? <RegionState state="error" message={gui.office_encryption_unsupported}/> :

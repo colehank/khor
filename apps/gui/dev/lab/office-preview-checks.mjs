@@ -44,10 +44,9 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     return viewer;
   };
   const text = page.locator('[data-look="doc"]:visible');
-  const openMenu = async key => {
-    await page.locator('[data-file-more]:visible').click();
-    await page.locator(`[data-file-more-item="${key}"]`).press('Enter');
-    await page.locator('[data-file-more-menu]').waitFor({state:'detached'});
+  const tool = async key => {
+    if (key === 'office-fit-page') await page.locator('[data-office-zoom]').click();
+    await page.locator(`[data-${key}]`).click();
   };
   const dialog = () => page.getByRole('dialog').last();
   const closePanel = async () => {
@@ -107,7 +106,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       assert(atTop.every(sample=>sample>215), `The first page stays clear at the top (${atTop.join(', ')})`);
       assert(await scrollWord(word,72)>0,'The Word viewport scrolls inside its own pane');
       await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-      const samples = await sampleLine(x,Math.ceil((await word.boundingBox()).y)+1);
+      const samples = await sampleLine(x,Math.ceil((await word.locator('[data-office-document]').boundingBox()).y)+1);
       assert(samples.every(sample=>sample>215), `Scrolled Word paper keeps its colour up to the clip edge (${samples.join(', ')})`);
       await scrollWord(word,0);
       const returned = await sampleLine(x,paperTop);
@@ -115,24 +114,26 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     }
     assert(await scrollWord(word,null)>0,'A multi-page Word document scrolls inside the pane');
     await page.screenshot({path:path.join(report,name+'-word.png')});
+    const bodyTop = (await word.locator('[data-office-document]').boundingBox()).y;
     const searchWord = await search('验收');
+    assert.equal((await word.locator('[data-office-document]').boundingBox()).y,bodyTop,'Searching uses the same toolbar row');
     assert.match(await searchCount(), /1 \/ [2-9]|1 \/ \d{2,}/,'Word starts at the first match');
     await page.locator('[data-office-find]').getByRole('button',{name:/下一个|Next match/i}).click();
     await page.waitForFunction(() => document.querySelector('[data-office-find-count]')?.textContent?.startsWith('2 /'));
     await searchWord.press('Escape');
     await page.locator('[data-office-find]').waitFor({state:'detached'});
 
-    await openMenu('office-comments');
+    await tool('office-review');
     await dialog().getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
     await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
     await closePanel();
-    await openMenu('office-revisions');
+    await tool('office-revisions');
     await word.getByText('联调尚未开始。',{exact:true}).waitFor({state:'attached'});
     const change = await search('联调尚未开始');
     assert.match(await searchCount(),/1 \/ 1/,'The deletion is findable with revision markup');
     await change.press('Escape');
 
-    await openMenu('office-pages');
+    await tool('office-pages');
     await dialog().locator('[data-office-thumbnail="2"] canvas').waitFor();
     await page.waitForFunction(() => {
       const thumbnail = document.querySelector('[data-office-thumbnail="2"] canvas');
@@ -147,10 +148,10 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     assert.equal(await slides.evaluate(viewer=>getComputedStyle(viewer).maskImage),'none',
       'A presentation that does not scroll has no top fade');
     assert.match(await slides.textContent(),/1 \/ 3/);
-    await openMenu('office-notes');
+    await tool('office-notes');
     await dialog().getByText(/先介绍项目目标/).waitFor();
     await closePanel();
-    await openMenu('office-comments');
+    await tool('office-review');
     await dialog().getByText('在第一页强调验收目标。',{exact:true}).waitFor();
     await closePanel();
     await slides.getByRole('button',{name:/下一页|Next page/i}).click();
@@ -160,21 +161,21 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const pane = await slides.boundingBox();
     assert(slideRect.width <= pane.width + 1 && slideRect.height < pane.height,'The slide fits the pane');
     await page.screenshot({path:path.join(report,name+'-powerpoint.png')});
-    await openMenu('office-pages');
+    await tool('office-pages');
     await dialog().locator('[data-office-thumbnail="3"]').click();
     await slides.getByText('3 / 3',{exact:true}).waitFor();
-    await openMenu('office-zoom-in');
+    await tool('office-zoom-in');
     await page.waitForFunction(initial => {
       const canvas = document.querySelector('[data-office-preview="pptx"] canvas');
       return canvas && canvas.getBoundingClientRect().width > initial;
     },slideRect.width);
-    await openMenu('office-fit-page');
+    await tool('office-fit-page');
 
     if (mobile) await open('xlsx');
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
     const excel = await ready('xlsx');
     const firstSheet = await image(excel);
-    await openMenu('office-comments');
+    await tool('office-review');
     await dialog().getByText('这里记录第一项验收内容。',{exact:true}).waitFor();
     await closePanel();
     const searchCells = await search('预览验收任务 001');
@@ -182,7 +183,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await searchCells.press('Escape');
     const sheetGrid = await visibleCanvas(excel).boundingBox();
     await page.mouse.click(sheetGrid.x+100,sheetGrid.y+42);
-    await openMenu('office-copy');
+    await tool('office-copy');
     await page.waitForFunction(() => window.officeCopied.trim().length > 0);
     if (!mobile) {
       const mask = () => excel.evaluate(viewer=>getComputedStyle(viewer).maskImage);

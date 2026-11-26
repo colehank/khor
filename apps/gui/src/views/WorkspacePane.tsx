@@ -94,7 +94,6 @@ import { closeWorkspaceTab, openWorkspaceTab, pinWorkspaceTab, renameWorkspaceFi
 import { WorkspaceNavigationStore } from "@/views/workspace/workspace-navigation-storage";
 import { CommitPage } from "@/views/CommitPage";
 import { LinkHomeProvider, useKnownFiles, type LinkHome } from "@/views/linkHome";
-import { useOfficeTools } from "@/components/office/types";
 import { FileVerbs, placeAt, topLine } from "@/views/FilePage";
 import { useFullScreen } from "@/lib/full-screen";
 import { WorkspaceEmpty, rememberOpened, storedOpened } from "@/views/WorkspaceEmpty";
@@ -326,7 +325,6 @@ export function WorkspacePane({
   /** The middle column, where the reader's place is read and put back. */
   const mid = useRef<HTMLDivElement>(null);
   const handoff = useFileHandoff(machine, file ?? "", file !== null, mid);
-  const office = useOfficeTools(machine, file);
   /** Where to put the reader once the face has changed (a source line). */
   const restore = useRef<number | null>(null);
   /** A ✓ waiting on its save before the face goes back to reading. */
@@ -1271,7 +1269,6 @@ export function WorkspacePane({
       <div data-ws-file-tail className="flex flex-none items-center gap-in px-2">
         <FileVerbs
           handoff={handoff}
-          officeTools={office.tools}
           machine={machine}
           path={file}
           here={here}
@@ -1613,7 +1610,6 @@ export function WorkspacePane({
           ) : (
             <FileView
               handoff={handoff}
-              onOfficeTools={office.publish}
               key={`${machine} ${file}`}
               machine={machine}
               path={file}

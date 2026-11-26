@@ -1,5 +1,3 @@
-import { useOfficeTools } from "@/components/office/types";
-import { OfficeAttachmentTools } from "@/components/office/OfficePanels";
 import { useFileHandoff } from "@/hooks/use-file-handoff";
 import { FileHandoffAction, FileHandoffStatus } from "@/components/FileHandoff";
 import { fileManagerLabel } from "@/lib/file-actions";
@@ -326,7 +324,6 @@ export function FilePreview({
   initialFace?: "source" | "preview";
 }) {
   const handoff=useFileHandoff(machine,path??"",path!==null);
-  const office = useOfficeTools(machine, path);
   const opening = initialFace ?? (path === null ? "source" : defaultFaceOf(path));
   const [face, setFace] = useState(opening);
   useEffect(() => setFace(opening), [machine, path, opening]);
@@ -410,7 +407,6 @@ export function FilePreview({
                     {fileManagerLabel()}
                   </Button>
                 )}
-                {office.tools && <OfficeAttachmentTools tools={office.tools}/>}
                 {!finder && handoff.supported && !nativePreview && <FileHandoffAction handoff={handoff}/>}
                 {!finder && !handoff.supported && sharing && (
                   <Button size="sm" data-file-preview-share onClick={share}>
@@ -430,7 +426,6 @@ export function FilePreview({
                   the file view's, one press away above. */}
               <FileView
                 handoff={handoff}
-                onOfficeTools={office.publish}
                 key={`${machine} ${path}`}
                 machine={machine}
                 path={path}
