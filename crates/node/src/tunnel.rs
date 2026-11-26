@@ -154,7 +154,13 @@ impl Borrow {
             Lease::Fixed(ep, conn) => (ep.clone(), conn.clone()),
             Lease::Held(source) => source().await?,
         };
-        let (send, recv) = dial(&conn, target).await?;
+        let node = self.node.upgrade();
+        let road = ActivePath {
+            endpoint: &ep,
+            connection: &conn,
+            node: node.as_deref(),
+        };
+        let (send, recv) = dial_inner(&conn, target, Some(road)).await?;
         Ok((send, recv, ep, conn))
     }
 
@@ -189,13 +195,31 @@ impl Borrow {
 /// The caller owns `ep`; the returned streams borrow the connection, so
 /// the caller keeps `conn` alive for as long as it splices bytes.
 pub async fn dial(conn: &Connection, target: &str) -> Result<(SendStream, RecvStream), String> {
+    dial_inner(conn, target, None).await
+}
+
+async fn dial_inner(
+    conn: &Connection,
+    target: &str,
+    road: Option<ActivePath<'_>>,
+) -> Result<(SendStream, RecvStream), String> {
     let started = std::env::var_os("KHOR_NET_DIAGNOSTICS").map(|_| Instant::now());
     let (mut send, mut recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
-    write_target(&mut send, target).await?;
     let mut status = [0u8; 1];
-    recv.read_exact(&mut status)
-        .await
-        .map_err(msg::tunnel_bad_handshake)?;
+    let exchange = async {
+        write_target(&mut send, target).await?;
+        recv.read_exact(&mut status)
+            .await
+            .map_err(msg::tunnel_bad_handshake)
+    };
+    if let Some(road) = road {
+        // The browser has already asked for a connection. Keep recovery
+        // active while the target header is in flight, before splice starts.
+        let mut pending = pending_demand(road);
+        watch_path(exchange, road, &mut pending).await?;
+    } else {
+        exchange.await?;
+    }
     match status[0] {
         OK => {
             khor_net::carry::observe_lifecycle(conn.remote_id(), "tunnel_stream_ready", || {
@@ -311,20 +335,22 @@ async fn copy_to_wire(
             return Ok(());
         }
         if pending.is_none() {
-            let paths = road.connection.paths();
-            if let Some(path) = paths
-                .iter()
-                .find(|path| path.is_selected() && (path.is_relay() || road.node.is_some()))
-            {
-                pending = Some((
-                    path.id(),
-                    path.stats().frame_rx.acks,
-                    Instant::now() + RELAY_DEMAND_AFTER,
-                ));
-            }
+            pending = pending_demand(road);
         }
         watch_path(send.write_all(&buf[..len]), road, &mut pending).await?;
     }
+}
+
+fn pending_demand(road: ActivePath<'_>) -> Option<(PathId, u64, Instant)> {
+    let paths = road.connection.paths();
+    let path = paths
+        .iter()
+        .find(|path| path.is_selected() && (path.is_relay() || road.node.is_some()))?;
+    Some((
+        path.id(),
+        path.stats().frame_rx.acks,
+        Instant::now() + RELAY_DEMAND_AFTER,
+    ))
 }
 
 async fn watch_path<F: std::future::Future>(

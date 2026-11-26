@@ -441,6 +441,9 @@ async fn c_a_relay_flow_gone_silent_is_noticed_and_replaced() {
     );
 }
 
+#[path = "relay/borrow.rs"]
+mod borrow;
+
 #[path = "relay/demand.rs"]
 mod demand;
 
