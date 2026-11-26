@@ -30,6 +30,13 @@ stream-affinity scheduler is retained alongside Khor's per-path ACK policy.
 
 ## 补丁
 
+### Relay 重连后探测待确认的 QUIC 路径
+
+同一个 Relay URL 换掉 TCP 会话后，QUIC 仍使用原路径身份和丢包恢复计时。
+继承网络审计分支 `3b687e298` 的重连通知，在新 Relay 会话建立时，对该 URL 上
+还有未确认数据的路径发一次 PING。新 ACK 唤醒原有丢包恢复，新数据与重传仍由
+原 QUIC 流负责。第一次连接、空闲路径和其他中继不会触发探测。
+
 ### 51. 当前家中继连接断开后立即重测原Relay表（2026-11-16，隔离候选待验）
 
 独立整Relay＋同域登记服务关停场景已实际RED；20秒时仍发布旧家，native home状态为
