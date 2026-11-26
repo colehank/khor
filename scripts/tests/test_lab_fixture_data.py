@@ -25,6 +25,8 @@ class FixtureDataCache(unittest.TestCase):
                          avatars={key: dict(radius_ratio=.5, mark=dict(ink='dark')) for key in ids},
                          directories={key: {} for key in ('', 'project', 'project/src', 'project/docs', 'project/.config')},
                          documents={key: '' for key in ('project/README.md', 'project/src/navigation.ts', 'project/docs/中文说明.md')},
+                         office_previews={f'project/office/sample.{extension}': dict(html='<p>Sample</p>', total=2048)
+                                          for extension in ('docx', 'pptx', 'xlsx')},
                          pairing_ticket={'token':'khorLAB_ONLY_TEST','qr':{'span':29,'path':'M4 4h1v1h-1z'}})
 
     def save(self):
@@ -60,6 +62,11 @@ class FixtureDataCache(unittest.TestCase):
         data = json.loads((self.root / OUTPUT).read_text())
         data['avatars'][data['machine_ids'][0]]['radius_ratio'] = .18
         (self.root / OUTPUT).write_text(json.dumps(data))
+        self.assertFalse(ready(self.root))
+
+    def test_cache_requires_previews_for_each_office_format(self):
+        del self.data['office_previews']['project/office/sample.xlsx']
+        self.save()
         self.assertFalse(ready(self.root))
 
 
