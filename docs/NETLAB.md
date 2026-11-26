@@ -41,9 +41,9 @@ scripts/netlab.sh --on <主机> …   # 换一台 Linux
   而 khor 把 198.18.0.0/15 当代理 TUN 的假地址丢掉（`endpoint::unroutable`），不开这个口子实验室里
   永远打不通直连。设了它，这一段算可路由，日志里「默认路由经过代理的 TUN」那行也不写。只给临时节点，
   khor 自己从不设；场景给每个常驻进程都设上。
-- **vendor/patchbay 的三处补丁**：turing 是 Linux 5.4、nft 0.9.3，原样的 patchbay 建不起带 NAT 的路由器（前两处）；
-  第三处是 `RouterBuilder::public_v6()`，v4 在 NAT 后面、v6 拿全球地址（`Net::Campus`、`Net::Cellular`）。
-  见 `vendor/patchbay/KHOR.md`。代价：5.4 上 conntrack 超时用内核默认，测映射超时的场景要记住。
+- **vendor/patchbay 的兼容补丁**：Turing 的 nft 0.9.3 需要只含 IPv4 地址的 DNAT 映射。
+  `RouterBuilder::public_v6()` 为 `Net::Campus` 和 `Net::Cellular` 提供 IPv4 NAT 加全球 IPv6 的拓扑。
+  见 [patchbay 补丁说明](../vendor/patchbay/KHOR.md)。
 
 ## 加一个场景
 

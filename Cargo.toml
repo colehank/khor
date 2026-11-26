@@ -80,7 +80,7 @@ iroh = "1.5.0"
 # it goes silent, not wrong, where multicast does not pass (AP isolation,
 # client isolation, separate VLANs) — which is why it joins the preset
 # rather than replacing it.
-iroh-mdns-address-lookup = "0.5"
+iroh-mdns-address-lookup = "0.6"
 # The only outbound HTTP khor makes: Anthropic's usage endpoint, read
 # with the credential Claude Code already stored (crates/node/src/quota.rs).
 # rustls rather than the platform stack because iroh already brings
@@ -246,14 +246,10 @@ iroh = { path = "vendor/iroh" }
 noq-proto = { path = "vendor/noq-proto" }
 # Apple IPv4 source-address control: vendor/noq-udp/KHOR.md.
 noq-udp = { path = "vendor/noq-udp" }
-# iroh-mdns-address-lookup 0.5.0, matching a received id against the
+# iroh-mdns-address-lookup 0.6.1, matching a received id against the
 # known ones before decoding it: vendor/iroh-mdns-address-lookup/KHOR.md.
 iroh-mdns-address-lookup = { path = "vendor/iroh-mdns-address-lookup" }
-# swarm-discovery 0.6.3 with upstream's unreleased fix for a stopped
-# service's timer that never stops: vendor/swarm-discovery/KHOR.md.
-swarm-discovery = { path = "vendor/swarm-discovery" }
-# patchbay 0.7.0 (MIT OR Apache-2.0), the network lab under
-# `crates/cli/tests/netlab.rs`, made to run on turing's Linux 5.4:
+# patchbay 0.8.0 with routed IPv6 alongside IPv4 NAT for Netlab:
 # vendor/patchbay/KHOR.md.
 patchbay = { path = "vendor/patchbay" }
 # loro-internal 1.16.2 without the deep copy of the version vector per

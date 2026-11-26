@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr},
     path::{Path, PathBuf},
     process::Command,
     sync::{
@@ -112,6 +112,7 @@ impl Region {
 
 /// Parameters for an inter-region link passed to [`Lab::link_regions`].
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RegionLink {
     /// One-way latency in milliseconds (RTT = 2x).
     pub latency_ms: u32,
@@ -146,6 +147,7 @@ impl RegionLink {
 }
 
 /// Pre-built regions from [`Lab::add_default_regions`].
+#[non_exhaustive]
 pub struct DefaultRegions {
     /// US region (198.18.0.0/20).
     pub us: Region,
@@ -181,6 +183,7 @@ pub(crate) struct LabInner {
     /// IPv6 provisioning behavior.
     pub ipv6_provisioning_mode: Ipv6ProvisioningMode,
     /// In-process DNS server on the IX bridge (lazy, started on first access).
+    #[cfg(feature = "dns-server")]
     pub dns_server: std::sync::Mutex<Option<crate::dns_server::DnsServer>>,
     /// Writer task handle (kept alive until lab is dropped).
     /// Writer task handle. The task listens to `cancel` for graceful shutdown
@@ -387,6 +390,7 @@ pub struct LabBuilder {
 
 /// Where the lab writes event logs and state files.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum OutDir {
     /// Parent directory — lab creates a timestamped subdirectory inside it.
     Nested(PathBuf),
@@ -397,6 +401,7 @@ pub enum OutDir {
 /// Controls IPv6 duplicate address detection behavior in created namespaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Ipv6DadMode {
     /// Keep kernel default behavior, DAD enabled.
     Enabled,
@@ -408,6 +413,7 @@ pub enum Ipv6DadMode {
 /// Controls how IPv6 routes are provisioned for hosts and routers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Ipv6ProvisioningMode {
     /// Install routes directly from patchbay wiring logic.
     #[default]
@@ -429,6 +435,7 @@ pub enum Ipv6ProvisioningMode {
 /// order, or link-local gateway behavior.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum Ipv6Profile {
     /// DAD disabled, static route wiring. Fast and reproducible for tests.
     Deterministic,
@@ -558,7 +565,7 @@ impl Lab {
     fn refuse_real_root() -> Result<()> {
         #[cfg(target_os = "linux")]
         {
-            if !nix::unistd::Uid::effective().is_root() {
+            if !rustix::process::geteuid().is_root() {
                 return Ok(());
             }
             // Check if we're in a non-initial user namespace by comparing
@@ -669,7 +676,15 @@ impl Lab {
                     .as_ref()
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| prefix.clone());
-                let ts = chrono::Local::now().format("%Y%m%d_%H%M%S");
+                // `now_local` fails once the process has more than one thread,
+                // so the name then falls back to UTC.
+                let now = time::OffsetDateTime::now_local()
+                    .unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+                let ts = now
+                    .format(time::macros::format_description!(
+                        "[year][month][day]_[hour][minute][second]"
+                    ))
+                    .expect("format run dir timestamp");
                 base.join(format!("{ts}-{label_or_prefix}"))
             }
         });
@@ -698,6 +713,7 @@ impl Lab {
             run_dir: run_dir.clone(),
             ipv6_dad_mode: opts.ipv6_dad_mode,
             ipv6_provisioning_mode: opts.ipv6_provisioning_mode,
+            #[cfg(feature = "dns-server")]
             dns_server: std::sync::Mutex::new(None),
             writer_handle: std::sync::Mutex::new(None),
             test_status: test_status.clone(),
@@ -1539,8 +1555,10 @@ impl Lab {
     /// namespace. Once started, all devices' `resolv.conf` overlay is updated
     /// to point at it (glibc picks up the change on the next `getaddrinfo()`).
     ///
-    /// Use [`DnsServer::set_host`] and [`DnsServer::set_txt`] to add records.
+    /// Use [`DnsServer::set_host`](crate::DnsServer::set_host) and
+    /// [`DnsServer::set_txt`](crate::DnsServer::set_txt) to add records.
     /// Records are immediately visible to DNS queries — no propagation delay.
+    #[cfg(feature = "dns-server")]
     pub fn dns_server(&self) -> Result<crate::dns_server::DnsServer> {
         let mut guard = self.inner.dns_server.lock().unwrap();
         if let Some(ref server) = *guard {
@@ -1562,7 +1580,8 @@ impl Lab {
     }
 
     /// Resolves a name via the DNS server (if started), or returns `None`.
-    pub fn resolve(&self, name: &str) -> Option<IpAddr> {
+    #[cfg(feature = "dns-server")]
+    pub fn resolve(&self, name: &str) -> Option<std::net::IpAddr> {
         self.inner
             .dns_server
             .lock()
@@ -1592,7 +1611,7 @@ impl Lab {
     /// ```
     ///
     /// For per-interface directional control (egress vs ingress on a single
-    /// device interface), use [`Iface::set_condition`] instead.
+    /// device interface), use [`Iface::set_condition`](crate::Iface::set_condition) instead.
     pub async fn set_link_condition(
         &self,
         a: NodeId,
@@ -1779,6 +1798,21 @@ impl Ix {
     {
         let ns = self.lab.core.lock().unwrap().root_ns().to_string();
         self.lab.netns.spawn_thread_in(&ns, f)
+    }
+
+    /// Returns a handle that spawns commands as root in the IX root namespace.
+    ///
+    /// See [`AsRoot`](crate::AsRoot) for when root is available and what it
+    /// means for files on the host.
+    pub fn as_root(&self) -> crate::AsRoot<'_> {
+        let ns = self
+            .lab
+            .core
+            .lock()
+            .expect("poisoned")
+            .root_ns()
+            .to_string();
+        crate::AsRoot::new(&self.lab, ns)
     }
 
     /// Spawns a [`tokio::process::Command`] in the IX root namespace.

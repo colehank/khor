@@ -1,6 +1,6 @@
 [package]
 name = "patchbay"
-version = "0.7.0"
+version = "0.8.0"
 description = "Linux network-namespace lab for NAT, routing, and link-impairment experiments"
 keywords = ["network", "namespace", "nat", "simulation", "testing"]
 edition.workspace = true
@@ -9,25 +9,30 @@ authors.workspace = true
 repository.workspace = true
 
 [features]
+default = ["dns-server"]
+# The in-process lab DNS server (`Lab::dns_server`).
+dns-server = ["dep:simple-dns"]
 iroh-metrics = ["dep:iroh-metrics"]
 
 [dependencies]
-iroh-metrics = { version = "1.0.0", optional = true }
+iroh-metrics = { version = "1.0.2", optional = true }
 anyhow = "1"
-chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 derive_more = { version = "2.1.1", features = ["debug", "display", "eq"] }
-futures = "0.3"
-ipnet = { version = "2.11", features = ["serde"] }
+futures-lite = "2.6"
+ipnet = { version = "2.12", features = ["serde"] }
 libc = "0.2"
-nix = { version = "0.31", features = ["sched", "mount", "fs", "signal", "process", "user", "ioctl"] }
-rtnetlink = "0.21"
+netlink-packet-core = "0.9"
+netlink-packet-route = "0.33"
+netlink-proto = "0.13"
+rustix = { version = "1.1", default-features = false, features = ["std", "thread", "process", "pipe"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+simple-dns = { version = "0.13", optional = true }
 strum = { version = "0.28", features = ["derive"] }
+time = { version = "0.3", features = ["formatting", "local-offset", "macros", "parsing", "serde"] }
 tokio = { version = "1", features = ["rt", "macros", "sync", "time", "fs", "net", "io-util", "process"] }
-hickory-proto = { version = "0.26", default-features = false }
 tokio-util = { version = "0.7", features = ["rt"] }
-toml = "1.0"
+toml = "1.1"
 tracing = "0.1"
 tracing-core = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "ansi"] }
@@ -35,6 +40,9 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["e
 [dev-dependencies]
 ctor = "1.0"
 futures-buffered = "0.2"
-hickory-resolver = { version = "0.26", default-features = false, features = ["system-config", "tokio"] }
+n0-dns-resolver = { version = "0.1", default-features = false }
 n0-tracing-test = "0.3.0"
+noq-udp = "1.5"
 testdir = "0.10"
+# `examples/simple.rs` uses `#[tokio::main]`, which needs the multi-thread runtime.
+tokio = { version = "1", features = ["rt-multi-thread"] }

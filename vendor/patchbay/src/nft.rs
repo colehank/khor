@@ -72,11 +72,8 @@ fn generate_nat_rules(cfg: &NatConfig, wan_if: &str, wan_ip: Ipv4Addr) -> String
     let hairpin = cfg.hairpin;
 
     let map_decl = if use_fullcone_map {
-        // khor patch 1 (vendor/patchbay/KHOR.md): the map keeps the
-        // internal address only, and the port rides through unchanged
-        // (EIM here is port-preserving). Upstream's `ipv4_addr .
-        // inet_service` value needs NAT to a concatenation, Linux >= 5.6
-        // and nft >= 0.9.4; turing runs 5.4 and 0.9.3.
+        // Turing’s nft 0.9.3 can DNAT to an address but cannot parse a
+        // concatenated address and port. See vendor/patchbay/KHOR.md.
         r#"    map fullcone {
         type inet_service : ipv4_addr
         flags timeout
@@ -252,14 +249,6 @@ fn apply_conntrack_timeouts_from_config(
 ) -> Result<()> {
     let (udp, udp_stream, tcp_est) = (t.udp, t.udp_stream, t.tcp_established);
     netns.run_closure_in(ns, move || {
-        // khor patch 2 (vendor/patchbay/KHOR.md): before Linux 6.x a
-        // namespace owned by a user namespace has no conntrack sysctls at
-        // all (`nf_conntrack_standalone.c`: "Don't export sysctls to
-        // unprivileged users"). Keep the kernel's timeouts then.
-        if !std::path::Path::new("/proc/sys/net/netfilter/nf_conntrack_udp_timeout").exists() {
-            tracing::warn!("conntrack timeouts not settable in this namespace (kernel too old): kernel defaults kept");
-            return Ok(());
-        }
         set_sysctl_root("net/netfilter/nf_conntrack_udp_timeout", &udp.to_string())?;
         set_sysctl_root(
             "net/netfilter/nf_conntrack_udp_timeout_stream",

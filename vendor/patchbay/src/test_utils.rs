@@ -14,6 +14,8 @@ use anyhow::{anyhow, Context, Result};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 
+use crate::util::retry_addr_in_use;
+
 /// Runs an async UDP reflector. Loops until `cancel` is triggered.
 ///
 /// Binds the socket first, then signals readiness on `bound_tx` so callers
@@ -23,7 +25,12 @@ pub(crate) async fn run_reflector(
     cancel: CancellationToken,
     bound_tx: tokio::sync::oneshot::Sender<Result<()>>,
 ) -> Result<()> {
-    let sock = match tokio::net::UdpSocket::bind(bind).await {
+    // Probes often used this port just before. See `retry_addr_in_use`.
+    let bound = retry_addr_in_use(|| UdpSocket::bind(bind)).and_then(|sock| {
+        sock.set_nonblocking(true)?;
+        tokio::net::UdpSocket::from_std(sock)
+    });
+    let sock = match bound {
         Ok(s) => {
             let _ = bound_tx.send(Ok(()));
             s
@@ -48,6 +55,27 @@ pub(crate) async fn run_reflector(
     Ok(())
 }
 
+/// Lists the IPv6 addresses assigned to `ifname` in the current namespace.
+///
+/// Reads `/proc/net/if_inet6`, whose rows are the address as 32 hex digits
+/// followed by index, prefix length, scope, flags, and the interface name.
+pub(crate) fn iface_v6_addrs(ifname: &str) -> Result<Vec<Ipv6Addr>> {
+    let table = std::fs::read_to_string("/proc/net/if_inet6").context("read if_inet6")?;
+    let mut addrs = Vec::new();
+    for line in table.lines() {
+        let fields: Vec<&str> = line.split_whitespace().collect();
+        let [hex, .., name] = fields.as_slice() else {
+            continue;
+        };
+        if *name != ifname {
+            continue;
+        }
+        let raw = u128::from_str_radix(hex, 16).with_context(|| format!("parse {hex}"))?;
+        addrs.push(Ipv6Addr::from(raw));
+    }
+    Ok(addrs)
+}
+
 /// Sends a UDP probe to `reflector` and returns the observed external address.
 ///
 /// Assumes the calling thread is already in the target namespace.
@@ -66,7 +94,7 @@ pub(crate) fn probe_udp(
         };
         SocketAddr::new(unspecified, 0)
     });
-    let sock = UdpSocket::bind(bind_addr).context("probe_udp bind")?;
+    let sock = retry_addr_in_use(|| UdpSocket::bind(bind_addr)).context("probe_udp bind")?;
     sock.set_read_timeout(Some(timeout))?;
     let mut buf = [0u8; 512];
     for attempt in 1..=3 {

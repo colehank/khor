@@ -70,4 +70,6 @@ rcgen = "0.14"
 # it runs as its own binary, not inside khor. Its tree (297 crates) was
 # checked: MIT / Apache-2.0 / BSD / ISC / Zlib / Unicode-3.0, webpki-roots
 # CDLA-Permissive-2.0; no copyleft. License: MIT OR Apache-2.0.
+# Cargo.lock keeps hickory-server at 0.26.3 until iroh-dns-server
+# implements the ZoneHandler::metrics_label method added in 0.26.4.
 iroh-dns-server = { version = "=1.5.0", default-features = false, features = ["ring"] }
