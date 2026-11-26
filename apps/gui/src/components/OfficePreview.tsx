@@ -66,8 +66,8 @@ export function OfficePreview({ format, source, onFallback }: {
   const [showThumbnails, setShowThumbnails] = useState(false);
   const [showComments, setShowComments] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
-  const [selectedComment, setSelectedComment] = useState<{
-    key: string; context: number; author?: string; anchor: OfficeCommentAnchor | null;
+  const [selectedReview, setSelectedReview] = useState<{
+    key: string; context: number; revision: boolean; author?: string; anchor: OfficeCommentAnchor | null;
   } | null>(null);
   const commentRequest = useRef(0);
   const thumbnailsId = useId();
@@ -119,7 +119,7 @@ export function OfficePreview({ format, source, onFallback }: {
     setShowThumbnails(false);
     setShowComments(false);
     setShowNotes(false);
-    setSelectedComment(null);
+    setSelectedReview(null);
     setTracked(false);
     setFinding(false);
     setQuery("");
@@ -215,6 +215,7 @@ export function OfficePreview({ format, source, onFallback }: {
       const next = !tracked;
       await revisions(next);
       setTracked(next);
+      if (!next) setSelectedReview(entry => entry?.revision ? null : entry);
     });
   }, [reader, run, tracked]);
   useEffect(() => {
@@ -238,24 +239,28 @@ export function OfficePreview({ format, source, onFallback }: {
   const page = position ?? pages?.page();
   const wordReview = reader?.wordReview;
   const context = format === "docx" ? 0 : position?.index ?? 0;
-  const activeComment = showComments && selectedComment?.context === context ? selectedComment : null;
+  const activeComment = showComments && !selectedReview?.revision && selectedReview?.context === context ? selectedReview : null;
+  const activeReviewKey = tracked && selectedReview?.revision ? selectedReview.key : activeComment?.key;
   const anchor = activeComment?.anchor;
-  const selectComment = (thread: OfficeThread) => {
+  const selectReview = (thread: OfficeThread, revision = false) => {
     const jump = thread.jump;
     if (!jump) return;
     const request = ++commentRequest.current;
     run(async () => {
       const result = await jump();
       if (request !== commentRequest.current) return;
-      setSelectedComment({
-        key: thread.key, context, author: thread.author, anchor: typeof result === "object" ? result : null,
+      if (result === false) {
+        setNotice(gui.office_action_failed);
+        return;
+      }
+      setSelectedReview({
+        key: thread.key, context, revision, author: thread.author, anchor: typeof result === "object" ? result : null,
       });
-      if (result === false) setNotice(gui.office_action_failed);
     });
   };
   const toggleComments = () => {
     commentRequest.current++;
-    setSelectedComment(null);
+    setSelectedReview(entry => entry?.revision ? entry : null);
     setShowComments(open => !open);
   };
 
@@ -327,7 +332,7 @@ export function OfficePreview({ format, source, onFallback }: {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative flex min-h-0 min-w-0 flex-1">
             <div data-office-document style={wordReview ? {
-              "--ooxml-comment-highlight": "oklch(57% 0 0 / 0.16)",
+              "--ooxml-comment-highlight": "transparent",
               "--ooxml-comment-highlight-active": activeComment ?
                 `color-mix(in srgb, ${wordReview.authorInk(activeComment.author)} 30%, transparent)` :
                 "var(--ooxml-comment-highlight)",
@@ -358,9 +363,10 @@ export function OfficePreview({ format, source, onFallback }: {
               </div>}
             </div>
             {wordReview && (showComments || tracked) && <WordReview id={commentsId} host={mount} source={wordReview}
-              showComments={showComments} showRevisions={tracked} active={activeComment?.key} jump={selectComment}/>}
+              showComments={showComments} showRevisions={tracked} active={activeReviewKey}
+              jump={entry => selectReview(entry, Boolean(entry.revision))}/>}
             {reader && !wordReview && showComments && <OfficeAnnotations id={commentsId} title={gui.office_tool_comments} beside>
-              <OfficeComments threads={reader.comments()} active={activeComment?.key} jump={selectComment}/>
+              <OfficeComments threads={reader.comments()} active={activeComment?.key} jump={selectReview}/>
             </OfficeAnnotations>}
           </div>
           {reader && showNotes && <OfficeAnnotations id={notesId} title={gui.office_notes}>

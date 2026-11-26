@@ -153,7 +153,11 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const commentInk = await connector.evaluate(path => getComputedStyle(path).stroke);
     assert.equal(commentInk,await wordReview.locator('[data-word-review-card]').evaluate(card =>
       getComputedStyle(card).borderInlineStartColor));
-    await wordReview.getByRole('button',{name:'定位批注'}).click();
+    const inactiveHighlight = wordBody.locator('[data-ooxml-comment-highlight]').first();
+    await inactiveHighlight.waitFor({state:'attached'});
+    assert.equal(await inactiveHighlight.evaluate(node => getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)',
+      'An unselected comment leaves its source text clear');
+    await wordReview.getByText('核对第一阶段验收范围。',{exact:true}).click();
     // Opening the right pane makes the viewer refit the page. Check the
     // settled native highlight against the original comment range.
     await page.waitForFunction(() => {
@@ -168,6 +172,9 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
         mark.top < line.bottom && line.top < mark.bottom;
     },null,{timeout:5_000});
     await wordReview.locator('[data-word-review-card][data-active]').waitFor();
+    assert.equal(await wordReview.locator('[data-word-review-select]').getAttribute('aria-pressed'),'true');
+    assert.notEqual(await inactiveHighlight.evaluate(node => getComputedStyle(node).backgroundColor),'rgba(0, 0, 0, 0)',
+      'Selecting the comment colours the anchored text span');
     const heading = await wordBody.getByText('本周摘要',{exact:true}).boundingBox();
     const sourceY = await connector.evaluate(path =>
       path.getPointAtLength(0).y + path.ownerSVGElement.getBoundingClientRect().top);
@@ -247,6 +254,17 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       paths.map(path => getComputedStyle(path).stroke));
     assert.deepEqual(inks.sort(),[insertionInk,deletionInk].sort(),
       'Each connector is drawn once in the matching card colour');
+    const insertButton = insertion.locator('[data-word-review-select]');
+    await insertButton.press('Enter');
+    await insertion.locator('[aria-pressed="true"]').waitFor();
+    const originalInsertion = await wordBody.getByText('本周已完成联调。',{exact:true}).boundingBox();
+    const documentViewport = await wordBody.boundingBox();
+    assert(originalInsertion.y >= documentViewport.y - 1 &&
+      originalInsertion.y < documentViewport.y + documentViewport.height,
+    'Selecting a revision reveals the changed text inside the document viewport');
+    await deletion.locator('[data-word-review-select]').click();
+    await deletion.locator('[aria-pressed="true"]').waitFor();
+    assert.equal(await insertButton.getAttribute('aria-pressed'),'false');
     await page.screenshot({path:path.join(report,name+'-word-revisions.png'),animations:'disabled'});
     await togglePane('office-revisions',wordReview,false);
 

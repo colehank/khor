@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import type { OfficeComment, OfficeThread, WordReviewEntry, WordReviewSource } from "@/components/office/types";
+import type { OfficeComment, WordReviewEntry, WordReviewSource } from "@/components/office/types";
 import { WORD_PAGE_SURFACE } from "@/components/office/viewer";
-import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 
 type VisibleEntry = { entry: WordReviewEntry; x: number | null; y: number };
@@ -17,14 +16,25 @@ function revisionLabel(kind: string) {
   }
 }
 
-function ReviewMessage({ message, action }: { message: OfficeComment; action: string }) {
+function ReviewMessage({ message, action, selected, select }: {
+  message: OfficeComment;
+  action: string;
+  selected?: boolean;
+  select?: () => void;
+}) {
   const date = message.date ? new Date(message.date) : null;
   const time = date && Number.isFinite(date.getTime()) ?
     date.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : null;
+  const heading = <>
+    <span className="font-label [overflow-wrap:anywhere]">{message.author?.trim() || gui.office_unknown_author}</span>
+    <span className="text-muted-foreground">{action}</span>
+  </>;
+  const headingLayout = "flex flex-wrap items-baseline gap-x-in text-callout";
   return <>
-    <header className="mb-xxs flex flex-wrap items-baseline gap-x-in text-callout">
-      <span className="font-label [overflow-wrap:anywhere]">{message.author?.trim() || gui.office_unknown_author}</span>
-      <span className="text-muted-foreground">{action}</span>
+    <header className="mb-xxs">
+      {select ? <button type="button" data-word-review-select aria-pressed={selected}
+        className={headingLayout + " w-full rounded-sm text-start focus-visible:outline-2 focus-visible:outline-ring"}
+        onClick={select}>{heading}</button> : <div className={headingLayout}>{heading}</div>}
     </header>
     <div className="select-text whitespace-pre-wrap break-words text-body">{message.text}</div>
     {time && <time dateTime={message.date} title={date?.toLocaleString()}
@@ -39,7 +49,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
   showComments: boolean;
   showRevisions: boolean;
   active?: string;
-  jump: (thread: OfficeThread) => void;
+  jump: (entry: WordReviewEntry) => void;
 }) {
   const rail = useRef<HTMLElement>(null);
   const cards = useRef<HTMLDivElement>(null);
@@ -164,16 +174,22 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       <div ref={cards} className="relative" style={{ height: last && `calc(${last.top + last.height}px + var(--gap-in))` }}>
         {entries.map(({ entry }, index) => <article key={entry.key} data-word-review-card
           data-revision={entry.revision} data-active={entry.key === active || undefined}
+          onClick={entry.jump ? event => {
+            if (event.target instanceof Element && event.target.closest("button")) return;
+            const selection = event.currentTarget.ownerDocument.getSelection();
+            if (selection?.isCollapsed === false && selection.containsNode(event.currentTarget, true)) return;
+            jump(entry);
+          } : undefined}
           style={{ top: positions[index]?.top ?? 0, borderInlineStartColor: authorInk(entry.author) }}
           className="absolute inset-x-in min-w-0 rounded-md border-s-2 bg-fill px-in py-in data-active:bg-fill-strong">
           <div className="max-h-24 overflow-y-auto">
-            <ReviewMessage message={entry} action={entry.revision ? revisionLabel(entry.revision) : gui.office_tool_comments}/>
+            <ReviewMessage message={entry} action={entry.revision ? revisionLabel(entry.revision) : gui.office_tool_comments}
+              selected={entry.key === active} select={entry.jump ? () => jump(entry) : undefined}/>
             {entry.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-in"
               style={{ borderInlineStartColor: authorInk(reply.author) }}>
               <ReviewMessage message={reply} action={gui.office_reply}/>
             </div>)}
           </div>
-          {entry.jump && <Button size="sm" variant="ghost" onClick={() => jump(entry)}>{gui.office_go_comment}</Button>}
         </article>)}
       </div>
     </aside>

@@ -1,5 +1,5 @@
 import type { OfficeFormat } from "@/components/OfficePreview";
-import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread, WordReviewEntry, WordReviewSource } from "@/components/office/types";
+import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread, WordReviewEntry, WordReviewPoint, WordReviewSource } from "@/components/office/types";
 import { visiblePageOwner } from "@/lib/native-page-yield";
 import type { PptxComment, PptxPresentation } from "@silurus/ooxml/pptx";
 import type { DefinedName } from "@silurus/ooxml/xlsx";
@@ -67,6 +67,26 @@ function visibleWordPage(host: HTMLElement, preferred: number): number {
     }
   }
   return index;
+}
+
+function revealWordRevision(host: HTMLElement, index: number, points: WordReviewPoint[]): boolean {
+  const page = host.querySelector<HTMLElement>(`${WORD_PAGE_SURFACE}[data-page-index="${index}"]`);
+  // Each selection layer sits in a positioned page, directly inside the scroll host.
+  const scrollHost = page?.parentElement?.parentElement;
+  if (!page || !scrollHost) return false;
+  const bounds = page.getBoundingClientRect();
+  const viewport = scrollHost.getBoundingClientRect();
+  const point = points.find(({ y }) => {
+    const top = bounds.top + y * bounds.height;
+    return top >= viewport.top && top <= viewport.bottom;
+  }) ?? points[0];
+  if (!point) return false;
+  scrollHost.scrollBy({
+    top: bounds.top + point.y * bounds.height - viewport.top - viewport.height / 2,
+    left: bounds.left + point.x * bounds.width - viewport.left - viewport.width / 2,
+    behavior: "instant",
+  });
+  return true;
 }
 
 async function slideCommentAnchor(
@@ -205,9 +225,11 @@ export async function loadOfficeReader(
           const width = widthPt * 4 / 3;
           const height = heightPt * 4 / 3;
           const runs = await document.collectPageRuns(index, { width, showTrackedChanges: showRevisions });
-          const point = (rect: { x: number; y: number; width: number; height: number; transform?: string }) => {
+          const point = (
+            rect: { x: number; y: number; width: number; height: number; transform?: string }, underline = false,
+          ) => {
             let x = rect.x + rect.width;
-            let y = rect.y + rect.height / 2;
+            let y = rect.y + rect.height * (underline ? 1 : 0.5);
             if (rect.transform) {
               const centerX = rect.x + rect.width / 2;
               const centerY = rect.y + rect.height / 2;
@@ -222,7 +244,7 @@ export async function loadOfficeReader(
             for (const { root, replies, anchors } of resolveDocxCommentThreads(
               document.comments, document.commentAnchorRanges(), runs, { includeResolved: true },
             )) {
-              const points = anchors.flatMap(anchor => anchor.rects.map(point));
+              const points = anchors.flatMap(anchor => anchor.rects.map(rect => point(rect)));
               if (points.length) entries.push({
                 ...root, key: "comment-" + root.id, replies, points,
                 jump: () => word.goToComment(root.id, { pageIndex: index }),
@@ -233,16 +255,20 @@ export async function loadOfficeReader(
             const revisions = document.revisions;
             const pointsByRevision = new Map<number, WordReviewEntry["points"]>();
             for (const anchor of document.revisionAnchorRanges()) {
+              const kind = revisions[anchor.revisionIndex]?.kind;
               const points = resolveRevisionAnchorRuns(anchor, runs).map(run => point({
                 ...(run.highlightBounds ?? { x: run.x, y: run.y, width: run.w, height: run.h }), transform: run.transform,
-              }));
+              }, kind === "insertion" || kind === "moveTo"));
               if (points.length) pointsByRevision.set(anchor.revisionIndex, [
                 ...(pointsByRevision.get(anchor.revisionIndex) ?? []), ...points,
               ]);
             }
             for (const [i, points] of pointsByRevision) {
               const revision = revisions[i];
-              if (revision) entries.push({ ...revision, key: "revision-" + i, revision: revision.kind, points });
+              if (revision) entries.push({
+                ...revision, key: "revision-" + i, revision: revision.kind, points,
+                jump: async () => revealWordRevision(host, index, points),
+              });
             }
           }
           return entries;
