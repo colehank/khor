@@ -59,19 +59,10 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
   const documentClip = useId();
   const [entries, setEntries] = useState<VisibleEntry[]>([]);
   const [commentFrames, setCommentFrames] = useState<CommentFrame[]>([]);
-  const [firstComment, setFirstComment] = useState<string>();
   const [positions, setPositions] = useState<CardPosition[]>([]);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportSize, setViewportSize] = useState({ width: 0, railX: 0, height: 0 });
   const { authorInk } = source;
-  const selectedKey = active ?? (showComments ? firstComment : undefined);
-
-  useEffect(() => {
-    if (!showComments) setFirstComment(undefined);
-    else if (!active && !firstComment) {
-      setFirstComment(entries.find(({ entry }) => entry.ranges?.length)?.entry.key);
-    }
-  }, [showComments, active, firstComment, entries]);
 
   useEffect(() => {
     const document = host.current;
@@ -198,7 +189,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       onScroll={event => setScrollTop(event.currentTarget.scrollTop)}>
       <div ref={cards} className="relative" style={{ height: last && `calc(${last.top + last.height}px + var(--gap-in))` }}>
         {entries.map(({ entry }, index) => <article key={entry.key} data-word-review-card
-          data-revision={entry.revision} data-active={entry.key === selectedKey || undefined}
+          data-revision={entry.revision} data-active={entry.key === active || undefined}
           onClick={entry.jump ? event => {
             if (event.target instanceof Element && event.target.closest("button")) return;
             const selection = event.currentTarget.ownerDocument.getSelection();
@@ -209,7 +200,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
           className="absolute inset-x-in min-w-0 rounded-md border-s-2 bg-fill px-in py-in data-active:bg-fill-strong">
           <div className="max-h-24 overflow-y-auto">
             <ReviewMessage message={entry} action={entry.revision ? revisionLabel(entry.revision) : gui.office_tool_comments}
-              selected={entry.key === selectedKey} select={entry.jump ? () => jump(entry) : undefined}/>
+              selected={entry.key === active} select={entry.jump ? () => jump(entry) : undefined}/>
             {entry.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-in"
               style={{ borderInlineStartColor: authorInk(reply.author) }}>
               <ReviewMessage message={reply} action={gui.office_reply}/>
@@ -223,16 +214,19 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
         <clipPath id={documentClip}><rect width={viewportSize.width} height={viewportSize.height}/></clipPath>
       </defs>
       {showComments && <g clipPath={`url(#${documentClip})`}>
-        {commentFrames.map(frame => {
-          const comment = frame.entries.find(entry => entry.key === selectedKey);
-          if (!comment?.ranges) return null;
-          const ink = authorInk(comment.author);
-          return <g key={frame.page}>
-            {comment.ranges.map((range, i) => <polygon key={i} data-word-comment-range
-              points={range.map(({ x, y }) => `${frame.left + x * frame.width},${frame.top + y * frame.height}`).join(" ")}
-              fill={ink} fillOpacity="0.34" stroke={ink} strokeWidth="1.25" strokeLinejoin="round"/>)}
-          </g>;
-        })}
+        {commentFrames.map(frame => <g key={frame.page}>
+          {frame.entries.map(comment => {
+            if (!comment.ranges?.length) return null;
+            const ink = authorInk(comment.author);
+            const selected = comment.key === active;
+            return <g key={comment.key}>
+              {comment.ranges.map((range, i) => <polygon key={i} data-word-comment-range
+                points={range.map(({ x, y }) => `${frame.left + x * frame.width},${frame.top + y * frame.height}`).join(" ")}
+                fill={ink} fillOpacity={selected ? 0.44 : 0.30} stroke={ink}
+                strokeWidth={selected ? 1.5 : 1} strokeLinejoin="round"/>)}
+            </g>;
+          })}
+        </g>)}
       </g>}
       {entries.map(({ entry, x, y }, index) => {
         const card = positions[index];
@@ -242,11 +236,11 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
         const isComment = Boolean(entry.ranges?.length);
         const path = isComment ? `M ${x} ${y} H ${viewportSize.width} L ${viewportSize.railX} ${end}` :
           `M ${x} ${y} L ${viewportSize.railX} ${end}`;
-        const selectedComment = entry.key === selectedKey && isComment;
+        const selectedComment = entry.key === active && isComment;
         const ink = authorInk(entry.author);
         return <g key={entry.key}>
           <path d={path} data-word-review-connector fill="none" strokeDasharray={selectedComment ? undefined : "3 3"}
-            stroke={ink} strokeWidth={entry.key === selectedKey ? 1.75 : 1.25}/>
+            stroke={ink} strokeWidth={entry.key === active ? 1.75 : 1.25}/>
           {selectedComment && <circle cx={x} cy={y} r="2" fill={ink}/>}
         </g>;
       })}

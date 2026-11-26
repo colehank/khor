@@ -150,19 +150,17 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const wordBody = word.locator('[data-office-document]');
     const wordBox = await wordBody.boundingBox();
     assert((await wordReview.boundingBox()).x >= wordBox.x + wordBox.width - 0.5);
-    const connector = word.locator('[data-word-review-connector]:not([stroke-dasharray])');
-    await connector.waitFor({state:'attached'});
-    const commentInk = await connector.evaluate(path => getComputedStyle(path).stroke);
-    assert.equal(commentInk,await first.evaluate(card =>
-      getComputedStyle(card).borderInlineStartColor));
-    const expectAnchor = text => page.waitForFunction(text => {
+    const [commentInk,secondCommentInk] = await Promise.all([first,second].map(card =>
+      card.evaluate(card => getComputedStyle(card).borderInlineStartColor)));
+    const expectAnchor = (text,ink,selected = false) => page.waitForFunction(({text,ink,selected}) => {
       const documentBody = document.querySelector('[data-office-preview="docx"] [data-office-document]');
-      const ranges = document.querySelectorAll('[data-word-comment-range]');
-      const connector = document.querySelector('[data-word-review-connector]:not([stroke-dasharray])');
+      const ranges = [...document.querySelectorAll('[data-word-comment-range]')];
+      const highlight = ranges.find(node => getComputedStyle(node).stroke === ink);
+      const connector = [...document.querySelectorAll('[data-word-review-connector]')].find(path =>
+        getComputedStyle(path).stroke === ink && path.hasAttribute('stroke-dasharray') === !selected);
       const run = [...documentBody?.querySelectorAll('[data-ooxml-selection-run="docx"]') ?? []]
         .find(node => node.textContent === text);
-      if (ranges.length !== 1 || !connector || !run) return false;
-      const highlight = ranges[0];
+      if (ranges.length !== 2 || !highlight || !connector || !run) return false;
       const mark = highlight.getBoundingClientRect();
       const line = run.getBoundingClientRect();
       const stroke = getComputedStyle(highlight);
@@ -170,20 +168,24 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       const viewport = connector.ownerSVGElement.getBoundingClientRect();
       return Math.min(mark.right, line.right) - Math.max(mark.left, line.left) >= line.width * 0.75 &&
         mark.top < line.bottom && line.top < mark.bottom &&
-        Number(stroke.fillOpacity) >= 0.30 && stroke.stroke === getComputedStyle(connector).stroke &&
+        Number(stroke.fillOpacity) >= 0.30 && (Number(stroke.fillOpacity) > 0.40) === selected &&
         Math.abs(viewport.left + origin.x - mark.right) < 1 &&
         viewport.top + origin.y >= mark.top - 1 && viewport.top + origin.y <= mark.bottom + 1;
-    },text,{timeout:5_000});
-    await expectAnchor('第一阶段验收');
-    assert.equal(await first.locator('[data-word-review-select]').getAttribute('aria-pressed'),'true');
+    },{text,ink,selected},{timeout:5_000});
+    await expectAnchor('第一阶段验收',commentInk);
+    await expectAnchor('需求确认',secondCommentInk);
+    assert.equal(await wordReview.locator('[aria-pressed="true"]').count(),0,
+      'All comment anchors are filled as soon as the pane opens');
+    await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
     await second.getByText('确认这一项的验收记录。',{exact:true}).click();
-    await expectAnchor('需求确认');
+    await expectAnchor('需求确认',secondCommentInk,true);
+    await expectAnchor('第一阶段验收',commentInk);
     assert.equal(await first.locator('[data-word-review-select]').getAttribute('aria-pressed'),'false');
     await first.locator('[data-word-review-select]').press('Enter');
-    await expectAnchor('第一阶段验收');
+    await expectAnchor('第一阶段验收',commentInk,true);
     await wordBody.click({position:{x:4,y:4}});
-    await expectAnchor('第一阶段验收');
-    await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
+    await expectAnchor('第一阶段验收',commentInk,true);
+    await expectAnchor('需求确认',secondCommentInk);
     await togglePane('office-review',wordReview,false);
     assert.equal(await word.locator('[data-word-comment-range]').count(),0,
       'Closing comments hides the document markup');
