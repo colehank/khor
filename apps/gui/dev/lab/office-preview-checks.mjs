@@ -143,11 +143,15 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const wordReview = word.locator('[data-word-review]');
     await togglePane('office-review',wordReview,true);
     await wordReview.getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
+    assert.deepEqual(await wordReview.locator('header span').allTextContents(),['Khor Lab','批注']);
     const wordBody = word.locator('[data-office-document]');
     const wordBox = await wordBody.boundingBox();
     assert((await wordReview.boundingBox()).x >= wordBox.x + wordBox.width - 0.5);
     const connector = word.locator('[data-word-review-connector]').first();
     await connector.waitFor({state:'attached'});
+    const commentInk = await connector.evaluate(path => getComputedStyle(path).stroke);
+    assert.equal(commentInk,await wordReview.locator('[data-word-review-card]').evaluate(card =>
+      getComputedStyle(card).borderInlineStartColor));
     await wordReview.getByRole('button',{name:'定位批注'}).click();
     // Opening the right pane makes the viewer refit the page. Check the
     // settled native highlight against the original comment range.
@@ -181,12 +185,24 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const insertion = wordReview.locator('[data-revision="insertion"]');
     await deletion.getByText('联调尚未开始。',{exact:true}).waitFor();
     await insertion.getByText('本周已完成联调。',{exact:true}).waitFor();
+    const [insertionInk,deletionInk] = await Promise.all([insertion,deletion].map(card =>
+      card.evaluate(node => getComputedStyle(node).borderInlineStartColor)));
+    assert.equal(insertionInk,commentInk,'The same author keeps their colour across comments and revisions');
+    assert.notEqual(deletionInk,insertionInk,'Different authors have distinct review colours');
+    for (const [card,author,action] of [[insertion,'Khor Lab','插入了'],[deletion,'林岚','删除了']]) {
+      assert.deepEqual(await card.locator('header span').allTextContents(),[author,action],
+        'The review header shows the author first, then the action');
+    }
     const removed = await deletion.boundingBox();
     const added = await insertion.boundingBox();
     assert(removed.y + removed.height <= added.y || added.y + added.height <= removed.y,
       'Revision balloons at the same anchor stack without overlap');
     assert.equal(await word.locator('[data-word-review-connector]').count(),2,
       'Each change has its own connector');
+    const inks = await word.locator('[data-word-review-connectors] path').evaluateAll(paths =>
+      paths.map(path => getComputedStyle(path).stroke));
+    assert.deepEqual(inks.sort(),[insertionInk,deletionInk].sort(),
+      'Each connector is drawn once in the matching card colour');
     await page.screenshot({path:path.join(report,name+'-word-revisions.png'),animations:'disabled'});
     await togglePane('office-revisions',wordReview,false);
 

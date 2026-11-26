@@ -1,13 +1,15 @@
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
-import { IconDocumentComment, IconDocumentRevisions } from "@/components/icons";
-import { CommentText } from "@/components/office/OfficePanels";
-import type { OfficeThread, WordReviewEntry, WordReviewSource } from "@/components/office/types";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { OfficeComment, OfficeThread, WordReviewEntry, WordReviewSource } from "@/components/office/types";
 import { WORD_PAGE_SURFACE } from "@/components/office/viewer";
 import { Button } from "@/components/ui/button";
 import { gui } from "@/gen/catalog";
 
 type VisibleEntry = { entry: WordReviewEntry; x: number | null; y: number };
 type CardPosition = { top: number; height: number };
+
+// A middle lightness keeps a single stroke visible across the paper and rail.
+// Successive authors are spaced around the colour wheel by the golden angle.
+const UNATTRIBUTED_INK = "oklch(57% 0 0)";
 
 function revisionLabel(kind: string) {
   switch (kind) {
@@ -17,6 +19,16 @@ function revisionLabel(kind: string) {
     case "moveTo": return gui.office_change_moved_to;
     default: return gui.office_tool_revisions;
   }
+}
+
+function ReviewMessage({ message, action }: { message: OfficeComment; action: string }) {
+  return <>
+    <header className="mb-xxs flex flex-wrap items-baseline gap-x-in text-callout">
+      <span className="font-label [overflow-wrap:anywhere]">{message.author?.trim() || gui.office_unknown_author}</span>
+      <span className="text-muted-foreground">{action}</span>
+    </header>
+    <div className="select-text whitespace-pre-wrap break-words text-body">{message.text}</div>
+  </>;
 }
 
 export function WordReview({ id, host, source, showComments, showRevisions, active, jump }: {
@@ -34,6 +46,10 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
   const [positions, setPositions] = useState<CardPosition[]>([]);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportSize, setViewportSize] = useState({ railX: 0, height: 0 });
+  const authorColors = useMemo(() => new Map(source.authors.map((name, index) =>
+    [name, `oklch(57% 0.14 ${(255 + 137.508 * index) % 360})`],
+  )), [source.authors]);
+  const authorInk = (author?: string) => authorColors.get(author?.trim() ?? "") ?? UNATTRIBUTED_INK;
 
   useEffect(() => {
     const document = host.current;
@@ -150,16 +166,14 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
       <div ref={cards} className="relative" style={{ height: last && `calc(${last.top + last.height}px + var(--gap-in))` }}>
         {entries.map(({ entry }, index) => <article key={entry.key} data-word-review-card
           data-revision={entry.revision} data-active={entry.key === active || undefined}
-          style={{ top: positions[index]?.top ?? 0 }}
-          className="absolute inset-x-in min-w-0 rounded-md border-s-2 border-s-ring bg-fill px-in py-in data-active:bg-fill-strong">
-          <div className="mb-xxs flex min-w-0 items-center gap-in text-callout text-muted-foreground">
-            {entry.revision ? <IconDocumentRevisions className="size-affordance shrink-0"/> :
-              <IconDocumentComment className="size-affordance shrink-0"/>}
-            <span>{entry.revision ? revisionLabel(entry.revision) : gui.office_tool_comments}</span>
-          </div>
+          style={{ top: positions[index]?.top ?? 0, borderInlineStartColor: authorInk(entry.author) }}
+          className="absolute inset-x-in min-w-0 rounded-md border-s-2 bg-fill px-in py-in data-active:bg-fill-strong">
           <div className="max-h-24 overflow-y-auto">
-            <CommentText comment={entry} hideDate/>
-            {entry.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-in"><CommentText comment={reply} hideDate/></div>)}
+            <ReviewMessage message={entry} action={entry.revision ? revisionLabel(entry.revision) : gui.office_tool_comments}/>
+            {entry.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-in"
+              style={{ borderInlineStartColor: authorInk(reply.author) }}>
+              <ReviewMessage message={reply} action={gui.office_reply}/>
+            </div>)}
           </div>
           {entry.jump && <Button size="sm" variant="ghost" onClick={() => jump(entry)}>{gui.office_go_comment}</Button>}
         </article>)}
@@ -172,11 +186,8 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
         const end = card.top + card.height / 2 - scrollTop;
         if (end < 0 || end > viewportSize.height) return null;
         const path = `M ${x} ${y} L ${viewportSize.railX} ${end}`;
-        return <g key={entry.key} fill="none" strokeDasharray="3 3">
-          <path d={path} className="stroke-background/85" strokeWidth="3"/>
-          <path d={path} data-word-review-connector className="stroke-ring"
-            strokeWidth={entry.key === active ? 1.5 : 1}/>
-        </g>;
+        return <path key={entry.key} d={path} data-word-review-connector fill="none" strokeDasharray="3 3"
+          stroke={authorInk(entry.author)} strokeWidth={entry.key === active ? 1.75 : 1.25}/>;
       })}
     </svg>
   </>;

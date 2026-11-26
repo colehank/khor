@@ -187,6 +187,8 @@ export async function loadOfficeReader(
         }));
       };
       const wordReview: WordReviewSource = {
+        authors: [...new Set([...document.comments, ...document.revisions]
+          .map(({ author }) => author?.trim() ?? "").filter(Boolean))],
         async page(index, showComments, showRevisions) {
           const { widthPt, heightPt } = document.pageSize(index);
           const width = widthPt * 4 / 3;

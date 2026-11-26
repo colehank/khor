@@ -108,9 +108,9 @@ export function OfficeThumbnails({ id, pages, position, go }: {
   </aside>;
 }
 
-export function CommentText({ comment, hideDate }: { comment: OfficeComment; hideDate?: boolean }) {
+function CommentText({ comment }: { comment: OfficeComment }) {
   const date = comment.date ? new Date(comment.date) : null;
-  const time = !hideDate && date && Number.isFinite(date.getTime()) ? date.toLocaleString() : null;
+  const time = date && Number.isFinite(date.getTime()) ? date.toLocaleString() : null;
   return <>
     {(comment.author || time) && <div className="flex flex-wrap items-baseline gap-in text-callout text-muted-foreground">
       {comment.author && <span className="text-foreground">{comment.author}</span>}
