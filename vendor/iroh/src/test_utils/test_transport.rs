@@ -432,21 +432,6 @@ mod tests {
         )
     }
 
-    /// Returns true if either
-    /// - we have both IP and custom paths, and the selected path is IP.
-    /// - we only have one path
-    fn is_ip_selected_from_ip_and_custom(conn: &crate::endpoint::Connection) -> bool {
-        let paths = conn.paths();
-        let has_ip = paths.iter().any(|p| p.remote_addr().is_ip());
-        let has_custom = paths.iter().any(|p| p.remote_addr().is_custom());
-        if !has_ip || !has_custom {
-            return true;
-        }
-        paths
-            .iter()
-            .any(|p| p.is_selected() && p.remote_addr().is_ip())
-    }
-
     /// Returns true if the selected path is a relay transport.
     fn is_relay_selected(conn: &crate::endpoint::Connection) -> bool {
         let paths = conn.paths();
@@ -590,6 +575,23 @@ mod tests {
 
         let t1 = network.create_transport(s1.public())?;
         let t2 = network.create_transport(s2.public())?;
+        // The selector's artificial bias alone does not produce the measured
+        // RTT gain required by Khor's path confirmation. Delay delivery on
+        // the custom path so it has a real disadvantage against loopback IP.
+        let (delay_tx, mut delay_rx) = mpsc::channel(256);
+        let receiver = {
+            let mut network = network.inner.lock().expect("poisoned");
+            let (sender, _) = network.channels.get_mut(&s1.public()).expect("client");
+            std::mem::replace(sender, delay_tx)
+        };
+        let _delay = n0_future::task::AbortOnDropHandle::new(tokio::spawn(async move {
+            while let Some(packet) = delay_rx.recv().await {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                if receiver.send(packet).await.is_err() {
+                    break;
+                }
+            }
+        }));
 
         // Strong RTT disadvantage for custom transport
         let custom_bias = TransportBias::primary().with_rtt_disadvantage(Duration::from_secs(10));
@@ -597,20 +599,43 @@ mod tests {
             .with_ip()
             .with_custom_bias(custom_bias);
 
-        let ep1 = endpoint_builder(s1, t1, config.clone()).bind().await?;
-        let ep2 = endpoint_builder(s2.clone(), t2, config).bind().await?;
+        let loopback = (std::net::Ipv4Addr::LOCALHOST, 0);
+        let ep1 = endpoint_builder(s1, t1, config.clone())
+            .clear_ip_transports()
+            .bind_addr(loopback)?
+            .bind()
+            .await?;
+        let ep2 = endpoint_builder(s2.clone(), t2, config)
+            .clear_ip_transports()
+            .bind_addr(loopback)?
+            .bind()
+            .await?;
         let router = Router::builder(ep2.clone()).accept(ECHO_ALPN, Echo).spawn();
 
-        let conn = ep1
-            .connect(mixed_addr(&ep2, s2.public()), ECHO_ALPN)
-            .await?;
+        let direct = ep2.bound_sockets()[0];
+        let addr = EndpointAddr::from_parts(
+            s2.public(),
+            [
+                TransportAddr::Ip(direct),
+                TransportAddr::Custom(to_custom_addr(s2.public())),
+            ],
+        );
+        let conn = ep1.connect(addr, ECHO_ALPN).await?;
 
-        // Wait for paths to settle
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
+        let mut paths = conn.paths_stream();
+        tokio::time::timeout(Duration::from_secs(5), async {
+            paths.wait_any(|path| path.remote_addr().is_custom()).await?;
+            paths
+                .wait_any(|path| path.is_ip() && path.is_selected())
+                .await?;
+            Some(())
+        })
+        .await
+        .expect("both paths open and IP selected within the test deadline")
+        .expect("connection stays open while selecting IP");
         assert!(
-            is_ip_selected_from_ip_and_custom(&conn),
-            "IP transport should be selected when custom has RTT disadvantage"
+            conn.paths().iter().any(|path| path.remote_addr().is_custom()),
+            "the custom path still competes with the selected IP path"
         );
 
         verify_echo(&conn, b"ip wins").await?;
