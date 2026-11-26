@@ -31,6 +31,7 @@ serde.workspace = true
 serde_json.workspace = true
 base64.workspace = true
 tokio.workspace = true
+url = "2"
 # The signed certificate and roster bodies (`trust`). **Not a new
 # package**: iroh already brings it, and it is the codec iroh signs its
 # own records with — compact, and one byte string per value, so what the

@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use khor_catalog::msg;
+use url::Url;
 
 /// One protocol, one ALPN. Version bumps mean a new string.
 pub const ALPN: &[u8] = b"khor/0";
@@ -221,7 +222,7 @@ impl Relay {
     /// key left inside it would be published with it.
     pub fn parse(entry: &str) -> Option<Relay> {
         let entry = entry.trim();
-        let parsed: iroh::RelayUrl = entry.parse().ok()?;
+        let parsed = Url::parse(entry).ok()?;
         let param = |name: &str| {
             parsed
                 .query_pairs()
@@ -236,12 +237,12 @@ impl Relay {
         // The part before the query has to stand on its own too:
         // `http://?token=x` parses as a url with the query, and not
         // without it.
-        url.parse::<iroh::RelayUrl>().ok()?;
+        Url::parse(&url).ok()?;
         Some(Relay {
             url,
             token: param("token"),
             qad: param("qad").and_then(|p| p.parse().ok()),
-            pkarr: param("pkarr").filter(|p| p.parse::<iroh::RelayUrl>().is_ok()),
+            pkarr: param("pkarr").filter(|p| pkarr_url(p).is_some()),
         })
     }
 }
@@ -705,10 +706,10 @@ fn builder(
     for url in registries(relays) {
         builder = builder
             .address_lookup(
-                iroh::address_lookup::PkarrPublisher::builder(url.clone().into())
+                iroh::address_lookup::PkarrPublisher::builder(url.clone())
                     .addr_filter(iroh::address_lookup::AddrFilter::unfiltered()),
             )
-            .address_lookup(iroh::address_lookup::PkarrResolver::builder(url.into()));
+            .address_lookup(iroh::address_lookup::PkarrResolver::builder(url));
     }
     let map = full_relay_map(relays, n0);
     if !map.is_empty() {
@@ -835,14 +836,19 @@ fn fallback_tier(relays: &[Relay], n0: bool) -> Vec<std::sync::Arc<iroh::RelayCo
 /// that stops answering is left at once.
 pub const HOME_DWELL: std::time::Duration = std::time::Duration::from_secs(10 * 60);
 
+fn pkarr_url(raw: &str) -> Option<Url> {
+    let mut url = Url::parse(raw).ok()?;
+    // iroh appends the endpoint key as a path segment. Remove a trailing
+    // empty segment so /pkarr and /pkarr/ use the same registry route.
+    url.path_segments_mut().ok()?.pop_if_empty();
+    Some(url)
+}
+
 /// The pkarr registries the entries name ([`Relay::pkarr`]), each once,
 /// in the entries' order.
-pub fn registries(relays: &[Relay]) -> Vec<iroh::RelayUrl> {
-    let mut out: Vec<iroh::RelayUrl> = Vec::new();
-    for url in relays
-        .iter()
-        .filter_map(|r| r.pkarr.as_deref()?.parse().ok())
-    {
+pub fn registries(relays: &[Relay]) -> Vec<Url> {
+    let mut out = Vec::new();
+    for url in relays.iter().filter_map(|r| pkarr_url(r.pkarr.as_deref()?)) {
         if !out.contains(&url) {
             out.push(url);
         }
