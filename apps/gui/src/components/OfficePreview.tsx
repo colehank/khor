@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useCallback, useEffect, useEffectEvent, useId, useRef, useState, type ComponentProps } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useRef, useState, type ComponentProps, type CSSProperties } from "react";
 import {
   IconBack, IconClose, IconDocumentComment, IconDocumentNotes, IconDocumentRevisions, IconDocumentThumbnails,
   IconForward, IconMinus, IconPlus, IconSearch,
@@ -67,7 +67,7 @@ export function OfficePreview({ format, source, onFallback }: {
   const [showComments, setShowComments] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [selectedComment, setSelectedComment] = useState<{
-    key: string; context: number; anchor: OfficeCommentAnchor | null;
+    key: string; context: number; author?: string; anchor: OfficeCommentAnchor | null;
   } | null>(null);
   const commentRequest = useRef(0);
   const thumbnailsId = useId();
@@ -247,7 +247,9 @@ export function OfficePreview({ format, source, onFallback }: {
     run(async () => {
       const result = await jump();
       if (request !== commentRequest.current) return;
-      setSelectedComment({ key: thread.key, context, anchor: typeof result === "object" ? result : null });
+      setSelectedComment({
+        key: thread.key, context, author: thread.author, anchor: typeof result === "object" ? result : null,
+      });
       if (result === false) setNotice(gui.office_action_failed);
     });
   };
@@ -324,7 +326,13 @@ export function OfficePreview({ format, source, onFallback }: {
           go={index => run(() => pages.go(index))}/>}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="relative flex min-h-0 min-w-0 flex-1">
-            <div data-office-document className={cn("relative min-h-0 min-w-0 flex-1 overflow-hidden",
+            <div data-office-document style={wordReview ? {
+              "--ooxml-comment-highlight": "oklch(57% 0 0 / 0.16)",
+              "--ooxml-comment-highlight-active": activeComment ?
+                `color-mix(in srgb, ${wordReview.authorInk(activeComment.author)} 30%, transparent)` :
+                "var(--ooxml-comment-highlight)",
+            } as CSSProperties : undefined}
+              className={cn("relative min-h-0 min-w-0 flex-1 overflow-hidden",
               format === "docx" && !showComments && "[&_[data-overlay=comment-marker]]:invisible")}>
               <div ref={mount} className={format === "pptx" ?
                 "absolute inset-0 flex overflow-auto select-text [&>*]:m-auto [&>*]:shrink-0" :

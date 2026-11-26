@@ -144,6 +144,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await togglePane('office-review',wordReview,true);
     await wordReview.getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
     assert.deepEqual(await wordReview.locator('header span').allTextContents(),['Khor Lab','批注']);
+    assert.equal(await wordReview.locator('time:visible').getAttribute('datetime'),'2026-11-26T16:39:54Z');
     const wordBody = word.locator('[data-office-document]');
     const wordBox = await wordBody.boundingBox();
     assert((await wordReview.boundingBox()).x >= wordBox.x + wordBox.width - 0.5);
@@ -187,11 +188,54 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await insertion.getByText('本周已完成联调。',{exact:true}).waitFor();
     const [insertionInk,deletionInk] = await Promise.all([insertion,deletion].map(card =>
       card.evaluate(node => getComputedStyle(node).borderInlineStartColor)));
+    const needPaint = async (text, ink) => {
+      await page.waitForFunction(({text,ink}) => {
+        const run = [...document.querySelectorAll('[data-ooxml-selection-run="docx"]')]
+          .find(node => node.textContent === text);
+        const source = run?.closest('[data-ooxml-selection-surface]')?.parentElement.querySelector('canvas');
+        if (!run || !source) return false;
+        const rect = run.getBoundingClientRect();
+        const page = source.getBoundingClientRect();
+        const xScale = source.width / page.width;
+        const yScale = source.height / page.height;
+        const left = Math.max(0, Math.floor((rect.left - page.left) * xScale));
+        const top = Math.max(0, Math.floor((rect.top - page.top - 1) * yScale));
+        const width = Math.min(source.width - left, Math.ceil(rect.width * xScale));
+        const height = Math.min(source.height - top, Math.ceil((rect.height + 5) * yScale));
+        if (width <= 0 || height <= 0) return false;
+        const sample = document.createElement('canvas');
+        sample.width = width;
+        sample.height = height;
+        const ctx = sample.getContext('2d', {willReadFrequently:true});
+        ctx.fillStyle = ink;
+        ctx.fillRect(0,0,1,1);
+        const expected = ctx.getImageData(0,0,1,1).data;
+        const expectedRG = expected[0] - expected[1];
+        const expectedGB = expected[1] - expected[2];
+        const expectedChroma = Math.hypot(expectedRG,expectedGB);
+        ctx.drawImage(source,left,top,width,height,0,0,width,height);
+        const paint = ctx.getImageData(0,0,width,height).data;
+        for (let i=0; i<paint.length; i+=4) {
+          // A rasterised underline may be blended with white. Compare its
+          // channel differences, which keep their direction after blending.
+          const rg = paint[i] - paint[i+1];
+          const gb = paint[i+1] - paint[i+2];
+          const chroma = Math.hypot(rg,gb);
+          if (chroma > 20 && (rg*expectedRG + gb*expectedGB) / (chroma*expectedChroma) > 0.995) return true;
+        }
+        return false;
+      },{text,ink},{timeout:5000});
+    };
+    if (!mobile) {
+      await needPaint('本周已完成联调。',insertionInk);
+      await needPaint('联调尚未开始。',deletionInk);
+    }
     assert.equal(insertionInk,commentInk,'The same author keeps their colour across comments and revisions');
     assert.notEqual(deletionInk,insertionInk,'Different authors have distinct review colours');
     for (const [card,author,action] of [[insertion,'Khor Lab','插入了'],[deletion,'林岚','删除了']]) {
       assert.deepEqual(await card.locator('header span').allTextContents(),[author,action],
         'The review header shows the author first, then the action');
+      assert.equal(await card.locator('time:visible').getAttribute('datetime'),'2026-11-26T15:00:00Z');
     }
     const removed = await deletion.boundingBox();
     const added = await insertion.boundingBox();

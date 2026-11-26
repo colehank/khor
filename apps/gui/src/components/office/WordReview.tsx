@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { OfficeComment, OfficeThread, WordReviewEntry, WordReviewSource } from "@/components/office/types";
 import { WORD_PAGE_SURFACE } from "@/components/office/viewer";
 import { Button } from "@/components/ui/button";
@@ -6,10 +6,6 @@ import { gui } from "@/gen/catalog";
 
 type VisibleEntry = { entry: WordReviewEntry; x: number | null; y: number };
 type CardPosition = { top: number; height: number };
-
-// A middle lightness keeps a single stroke visible across the paper and rail.
-// Successive authors are spaced around the colour wheel by the golden angle.
-const UNATTRIBUTED_INK = "oklch(57% 0 0)";
 
 function revisionLabel(kind: string) {
   switch (kind) {
@@ -22,12 +18,17 @@ function revisionLabel(kind: string) {
 }
 
 function ReviewMessage({ message, action }: { message: OfficeComment; action: string }) {
+  const date = message.date ? new Date(message.date) : null;
+  const time = date && Number.isFinite(date.getTime()) ?
+    date.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" }) : null;
   return <>
     <header className="mb-xxs flex flex-wrap items-baseline gap-x-in text-callout">
       <span className="font-label [overflow-wrap:anywhere]">{message.author?.trim() || gui.office_unknown_author}</span>
       <span className="text-muted-foreground">{action}</span>
     </header>
     <div className="select-text whitespace-pre-wrap break-words text-body">{message.text}</div>
+    {time && <time dateTime={message.date} title={date?.toLocaleString()}
+      className="mt-xxs block tabular-nums text-caption text-muted-foreground">{time}</time>}
   </>;
 }
 
@@ -46,10 +47,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
   const [positions, setPositions] = useState<CardPosition[]>([]);
   const [scrollTop, setScrollTop] = useState(0);
   const [viewportSize, setViewportSize] = useState({ railX: 0, height: 0 });
-  const authorColors = useMemo(() => new Map(source.authors.map((name, index) =>
-    [name, `oklch(57% 0.14 ${(255 + 137.508 * index) % 360})`],
-  )), [source.authors]);
-  const authorInk = (author?: string) => authorColors.get(author?.trim() ?? "") ?? UNATTRIBUTED_INK;
+  const { authorInk } = source;
 
   useEffect(() => {
     const document = host.current;

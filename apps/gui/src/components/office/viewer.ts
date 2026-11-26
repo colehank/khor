@@ -46,6 +46,9 @@ const renderers = () => Promise.all([
 
 const THUMBNAIL_WIDTH = 200;
 export const WORD_PAGE_SURFACE = '[data-ooxml-selection-surface="docx"][data-page-index]';
+// Silurus 0.90.2 assigns these inks to tracked-change authors in first-use
+// order. Its worker paints the canvas and accepts no colour override.
+const WORD_REVISION_INKS = ["#c00000", "#0070c0", "#00b050", "#7030a0", "#e97132", "#196b24", "#9e480e", "#525252"];
 type LinkTarget = { kind: "external"; url: string } | { kind: "internal"; ref: string; slideIndex?: number };
 
 function visibleWordPage(host: HTMLElement, preferred: number): number {
@@ -186,9 +189,17 @@ export async function loadOfficeReader(
           ...comment, key: comment.id, replies: replies.get(comment.id),
         }));
       };
+      const revisionAuthors = [...new Set(document.revisions.map(({ author }) => author ?? ""))];
+      const authorInks = new Map(revisionAuthors.map((author, index) =>
+        [author, WORD_REVISION_INKS[index % WORD_REVISION_INKS.length]],
+      ));
+      let commentAuthors = 0;
+      for (const { author } of document.comments) {
+        if (!author || authorInks.has(author)) continue;
+        authorInks.set(author, `oklch(57% 0.14 ${(51 + 137.508 * commentAuthors++) % 360})`);
+      }
       const wordReview: WordReviewSource = {
-        authors: [...new Set([...document.comments, ...document.revisions]
-          .map(({ author }) => author?.trim() ?? "").filter(Boolean))],
+        authorInk: author => authorInks.get(author ?? "") ?? "oklch(57% 0 0)",
         async page(index, showComments, showRevisions) {
           const { widthPt, heightPt } = document.pageSize(index);
           const width = widthPt * 4 / 3;

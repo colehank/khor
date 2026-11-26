@@ -23,7 +23,7 @@ export type WordReviewEntry = OfficeThread & {
   revision?: string;
 };
 export type WordReviewSource = {
-  authors: readonly string[];
+  authorInk: (author: string | undefined) => string;
   page: (index: number, comments: boolean, revisions: boolean) => Promise<WordReviewEntry[]>;
   unanchored: (comments: boolean, revisions: boolean) => WordReviewEntry[];
 };
