@@ -400,8 +400,18 @@ async fn file_resource_close(id: String) {
 
 /// One file shaped for a screen (`khor_gui_core::files::preview`).
 #[tauri::command]
-async fn preview(machine: String, path: String) -> Result<khor_gui_core::files::Preview, String> {
-    khor_gui_core::files::preview(&Node::root_from_env(), &machine, &path).await
+async fn preview(
+    machine: String,
+    path: String,
+    office_bytes: Option<bool>,
+) -> Result<khor_gui_core::files::Preview, String> {
+    khor_gui_core::files::preview(
+        &Node::root_from_env(),
+        &machine,
+        &path,
+        office_bytes.unwrap_or(false),
+    )
+    .await
 }
 
 /// Whether a machine has VS Code (`khor_gui_core::code::here`).
@@ -1275,20 +1285,8 @@ async fn file_handoff_open(
 }
 
 #[tauri::command]
-fn file_preview_supported(kind: String, path: Option<String>) -> bool {
-    #[cfg(target_os = "windows")]
-    {
-        kind == "document" && path.is_some_and(|path| quick_look::windows::supported(&path))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = path;
-        match kind.as_str() {
-            "document" => cfg!(any(target_os = "ios", target_os = "macos")),
-            "pdf" => cfg!(target_os = "ios"),
-            _ => false,
-        }
-    }
+fn file_preview_supported(kind: String) -> bool {
+    kind == "pdf" && cfg!(target_os = "ios")
 }
 #[tauri::command]
 async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, String> {
@@ -1305,15 +1303,8 @@ async fn file_preview_open(webview: tauri::Webview, id: String) -> Result<bool, 
     {
         return phone_pdf::open(webview, file).await;
     }
-    #[cfg(any(target_os = "ios", target_os = "macos", target_os = "windows"))]
-    {
-        quick_look::open(webview, file).await
-    }
-    #[cfg(not(any(target_os = "ios", target_os = "macos", target_os = "windows")))]
-    {
-        let _ = (webview, file);
-        Err(khor_catalog::msg::file_preview_unavailable().into())
-    }
+    let _ = file;
+    Err(khor_catalog::msg::file_preview_unavailable().into())
 }
 
 /// The same file in a temporary folder here, for this machine's other
@@ -6661,6 +6652,3 @@ mod tests {
         }
     }
 }
-
-#[cfg(any(target_os = "ios", target_os = "macos", target_os = "windows"))]
-mod quick_look;

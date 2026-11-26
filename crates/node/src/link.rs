@@ -9997,7 +9997,31 @@ impl Node {
         path: &str,
         cap: u64,
     ) -> Result<(u64, u64, Vec<u8>, bool), String> {
+        self.read_capped(machine, path, cap, false).await
+    }
+
+    /// Like read_all, but a file over the limit returns its size and no body.
+    /// A renderer that requires an intact archive cannot use a prefix.
+    pub async fn read_complete(
+        &self,
+        machine: &str,
+        path: &str,
+        cap: u64,
+    ) -> Result<(u64, u64, Vec<u8>, bool), String> {
+        self.read_capped(machine, path, cap, true).await
+    }
+
+    async fn read_capped(
+        &self,
+        machine: &str,
+        path: &str,
+        cap: u64,
+        complete: bool,
+    ) -> Result<(u64, u64, Vec<u8>, bool), String> {
         let (total, at_ms, first) = self.read_at(machine, path, 0).await?;
+        if complete && total > cap {
+            return Ok((total, at_ms, Vec::new(), true));
+        }
         let want = total.min(cap);
         let mut bytes = first;
         if bytes.len() as u64 >= want {

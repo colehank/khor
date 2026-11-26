@@ -1,55 +1,62 @@
 // Real FilePage/FileView; only native transport and the OS activity sheet are replaced.
 import assert from 'node:assert/strict';
-import {mkdirSync,mkdtempSync,writeFileSync,rmSync} from 'node:fs';
+import {mkdirSync,mkdtempSync,readFileSync,writeFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright-core';
 import {createServer} from 'vite';
-const quicklook=process.argv.includes('--quicklook');
+const office=process.argv.includes('--office');
 const pdf=process.argv.includes('--pdf');
-const gui=fileURLToPath(new URL('..',import.meta.url)),port=23879;
+const gui=fileURLToPath(new URL('..',import.meta.url)),port=Number(process.env.FILE_HANDOFF_PORT||23879);
 const entry=join(gui,`scripts/.file-handoff-${process.pid}.tsx`);
 const cache=mkdtempSync(join(tmpdir(),'khor-file-handoff-vite-'));
 const out=process.env.FILE_HANDOFF_OUT||mkdtempSync(join(tmpdir(),'khor-file-handoff-'));mkdirSync(out,{recursive:true});
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 let vite,browser,page;const errors=[];
+const sample=office?readFileSync(join(gui,'dev/lab/data/workspace/office/项目周报.docx')):null;
 try {
  writeFileSync(entry,`import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';
-import {FilePage} from '../src/views/FilePage.tsx';import {FilePreview} from '../src/views/chat-files.tsx';import {TooltipProvider} from '../src/components/ui/tooltip.tsx';import {speakLang} from '../src/lang.ts';import {NARROW_QUERY} from '../src/hooks/use-narrow.ts';import '../src/styles/tokens.css';import '../src/styles/app.css';
+import {FilePage} from '../src/views/FilePage.tsx';import {AttachmentFile} from '../src/views/AttachmentFile.tsx';import {FilePreview} from '../src/views/chat-files.tsx';import {TooltipProvider} from '../src/components/ui/tooltip.tsx';import {speakLang} from '../src/lang.ts';import {NARROW_QUERY} from '../src/hooks/use-narrow.ts';import '../src/styles/tokens.css';import '../src/styles/app.css';
 speakLang('zh');document.documentElement.toggleAttribute('data-narrow',matchMedia(NARROW_QUERY).matches);
 const root=createRoot(document.getElementById('root'));const no=()=>{};
-window.showFile=(path='/project/large.pptx',hidden=false)=>flushSync(()=>root.render(<TooltipProvider><section className='relative flex min-h-0 flex-1 flex-col' aria-hidden={hidden||undefined} inert={hidden||undefined}><FilePage machine='remote' path={path} here={false} onBack={no} onGone={no} onMoved={no}/></section></TooltipProvider>));
-window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='remote' path={path} here={false} onClose={no}/></TooltipProvider>));window.showFile(${pdf?"'/project/three-pages.pdf'":""});`);
+window.showFile=(path='/project/large.pptx',hidden=false,here=false)=>flushSync(()=>root.render(<TooltipProvider><section className='relative flex min-h-0 flex-1 flex-col' aria-hidden={hidden||undefined} inert={hidden||undefined}><FilePage machine='remote' path={path} here={here} onBack={no} onGone={no} onMoved={no}/></section></TooltipProvider>));
+window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<TooltipProvider><FilePreview machine='remote' path={path} here={false} onClose={no}/></TooltipProvider>));window.showLocalOffice=base64=>{const file=new File([Uint8Array.from(atob(base64),c=>c.charCodeAt(0))],'report.docx');flushSync(()=>root.render(<TooltipProvider><AttachmentFile devices={[]} onClose={no} entry={{key:'local-office',name:file.name,path:file.name,from:null,device:{files:[{file}]}}}/></TooltipProvider>));};window.showFile(${pdf?"'/project/three-pages.pdf'":office?"'/project/report.docx'":""});`);
  process.env.KHOR_FACE_GATE='1';
  vite=await createServer({configFile:join(gui,'vite.config.ts'),root:gui,cacheDir:cache,optimizeDeps:{entries:[entry]},server:{host:'127.0.0.1',port,strictPort:true,hmr:false},logLevel:'error'});
  await vite.listen();
  browser=await chromium.launch({channel:(process.env.PLAYWRIGHT_CHROMIUM_CHANNEL??'chrome')||undefined,headless:true,args:['--no-proxy-server']});
- const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true});
- await context.addInitScript(({officePreview,pdfPreview})=>{
-  Object.defineProperty(navigator,'platform',{get:()=> 'iPhone'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>5});
-  window.calls=[];window.complete=false;window.refuse=false;window.startDelay=0;window.instant=pdfPreview;
-  const wait=ms=>new Promise(r=>setTimeout(r,ms));
-  window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>0,unregisterCallback:()=>{},invoke:async(cmd,args={})=>{
-   window.calls.push({cmd,args});const total=130*1024*1024;
-   if(cmd==='file_handoff_supported')return true;
-   if(cmd==='file_preview_supported')return args.kind==='pdf'?pdfPreview:officePreview;
-   if(cmd==='file_preview_open'){await wait(50);if(window.refusePreview)throw Error('Cannot preview this file');return true;}
-   if(cmd==='file_handoff_start'){await wait(window.startDelay);return {moved:window.instant?total:0,total,ready:window.instant,cancelled:false,error:null};}
-   if(cmd==='file_handoff_state')return {moved:window.complete?total:1048576,total,ready:window.complete,cancelled:false,error:window.refuse?'Download failed':null};
-   if(cmd==='file_handoff_open'){await wait(50);return false;}
-   if(cmd==='preview')return args.path?.endsWith('.png')?{kind:'image',media:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXv8AAAAASUVORK5CYII=',html:'',total:68,cut:false,empty:false}:{kind:'doc',media:'',data:'',html:'',total,cut:true,empty:false};
-   if(cmd==='read_text')return {text:'# Hello\n',total:8,at_ms:0,cut:false,binary:false,digest:'0'.repeat(64)};
-   if(cmd==='stat_text')return {total,at_ms:0,digest:''};
-   if(cmd==='about')return {hosts:false,faces:[]};
-   if(cmd==='reveal_here'||cmd==='trash_here')return false;
-   if(cmd==='git_diff')return {hunks:[],binary:false};
-   return null;
-  }};
- },{officePreview:quicklook||pdf,pdfPreview:pdf});
- page=await context.newPage();page.setDefaultTimeout(7000);page.on('pageerror',e=>errors.push(e.message));
- await page.route('**/__file_handoff',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme='dark'><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body><div id='root' class='relative flex h-screen flex-col'></div><script type='module'>import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type='module' src='/scripts/.file-handoff-${process.pid}.tsx'></script></body></html>`}));
- await page.goto(`http://127.0.0.1:${port}/__file_handoff`);
+ const openPage=async (desktop=false)=>{
+  const context=await browser.newContext({viewport:{width:desktop?1280:390,height:844},hasTouch:!desktop,isMobile:!desktop});
+  await context.addInitScript(({officeBytes,pdfPreview,desktop})=>{
+   Object.defineProperty(navigator,'platform',{get:()=>desktop?'MacIntel':'iPhone'});Object.defineProperty(navigator,'maxTouchPoints',{get:()=>desktop?0:5});
+   window.calls=[];window.complete=false;window.refuse=false;window.startDelay=0;window.instant=pdfPreview;
+   const wait=ms=>new Promise(r=>setTimeout(r,ms));
+   window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'main'},currentWebview:{label:'main'}},transformCallback:()=>0,unregisterCallback:()=>{},invoke:async(cmd,args={})=>{
+    window.calls.push({cmd,args});const total=130*1024*1024;
+    if(cmd==='file_handoff_supported')return true;
+    if(cmd==='file_preview_supported')return args.kind==='pdf'&&pdfPreview;
+    if(cmd==='file_preview_open'){await wait(50);return true;}
+    if(cmd==='file_handoff_start'){await wait(window.startDelay);return {moved:window.instant?total:0,total,ready:window.instant,cancelled:false,error:null};}
+    if(cmd==='file_handoff_state')return {moved:window.complete?total:1048576,total,ready:window.complete,cancelled:false,error:window.refuse?'Download failed':null};
+    if(cmd==='file_handoff_open'){await wait(50);return false;}
+    if(cmd==='preview'&&args.path?.endsWith('report.docx')&&officeBytes)return {kind:'doc',media:'',data:args.officeBytes?officeBytes:'',html:args.officeBytes?'':'<p>Office text</p>',total:37327,cut:false,empty:false};
+    if(cmd==='preview')return args.path?.endsWith('.png')?{kind:'image',media:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aXv8AAAAASUVORK5CYII=',html:'',total:68,cut:false,empty:false}:{kind:'doc',media:'',data:'',html:'',total,cut:true,empty:false};
+    if(cmd==='read_text')return {text:'# Hello\n',total:8,at_ms:0,cut:false,binary:false,digest:'0'.repeat(64)};
+    if(cmd==='stat_text')return {total,at_ms:0,digest:''};
+    if(cmd==='about')return {hosts:false,faces:[]};
+    if(cmd==='reveal_here')return desktop;
+    if(cmd==='pull_temp')return '/tmp/khor-test/report.docx';
+    if(cmd==='trash_here')return false;
+    if(cmd==='git_diff')return {hunks:[],binary:false};
+    return null;
+   }};
+  },{officeBytes:sample?.toString('base64'),pdfPreview:pdf,desktop});
+  page=await context.newPage();page.setDefaultTimeout(7000);page.setDefaultNavigationTimeout(30_000);page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/__file_handoff',r=>r.fulfill({contentType:'text/html',body:`<!doctype html><html data-theme='dark'><head><meta name='viewport' content='width=device-width,initial-scale=1'></head><body><div id='root' class='relative flex h-screen flex-col'></div><script type='module'>import R from '/@react-refresh';R.injectIntoGlobalHook(window);window.$RefreshReg$=()=>{};window.$RefreshSig$=()=>t=>t;window.__vite_plugin_react_preamble_installed__=true;</script><script type='module' src='/scripts/.file-handoff-${process.pid}.tsx'></script></body></html>`}));
+  await page.goto(`http://127.0.0.1:${port}/__file_handoff`);
+ };
+ await openPage();
  if(pdf) {
   await page.waitForFunction(()=>window.calls.some(c=>c.cmd==='file_preview_open'));
   await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
@@ -68,25 +75,47 @@ window.showAttachment=(path='/project/large.pptx')=>flushSync(()=>root.render(<T
   assert.deepEqual(errors,[]);
   writeFileSync(join(out,'pdf-results.json'),JSON.stringify({checks:['native PDF original transport','no iframe or JS preview copies','dismiss and reopen','attachment PDF uses same reader','original handoff retained'],errors},null,2));
   console.log('native PDF transport UI: clean',out);
- } else if(quicklook) {
-  await page.locator('[data-file-native-preview]').waitFor();
-  const before=await page.locator('[data-file-deck]').evaluate(e=>e.getBoundingClientRect().height);
-  await page.evaluate(()=>{window.complete=true;window.refusePreview=true});
-  await page.locator('[data-file-native-preview]').click();await page.getByRole('button',{name:'重试',exact:true}).waitFor();
-  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_handoff_open').length),0,'preview failure opened an external app');
-  await page.evaluate(()=>window.refusePreview=false);await page.getByRole('button',{name:'重试',exact:true}).click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
-  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length),2,'retry did not preserve preview intent');
-  assert.equal(await page.locator('[data-file-deck]').evaluate(e=>e.getBoundingClientRect().height),before,'system preview changed deck height');
-  await page.locator('[data-file-native-preview]').click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
-  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length),3,'closed preview could not reopen');
-  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),0,'Office preview still converts to Markdown');
-  await page.screenshot({path:join(out,'native-preview.png')});
-  await page.evaluate(()=>{window.complete=false;window.startDelay=400});await page.locator('[data-file-native-preview]').click();await page.evaluate(()=>window.showFile('/project/other.pptx'));await pause(700);
-  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_preview_open').length),3,'late original opened after navigating away');
-  await page.evaluate(()=>{window.startDelay=0;window.complete=true});await page.locator('[data-file-open-other]').click();await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
-  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='file_handoff_open').length),1,'external fallback is unavailable');
-  await page.evaluate(()=>window.showAttachment());await page.locator('[data-file-native-preview]').waitFor();
-  assert.deepEqual(errors,[]);writeFileSync(join(out,'quicklook-results.json'),JSON.stringify({checks:['original Office preview','preview failure and retry intent','dismiss and reopen','deck preservation','no Markdown conversion','late cancellation','external fallback','attachment preview'],errors},null,2));console.log('Quick Look UI: clean',out);
+ } else if (office) {
+  const word=page.locator('[data-office-preview="docx"][data-ready]');
+  await word.locator('canvas').first().waitFor({timeout:20_000});
+  assert.equal(await page.locator('[data-file-face-toggle], [data-file-native-preview], [data-look="doc"]').count(),0);
+  assert.deepEqual(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').map(c=>c.args.officeBytes)),[true]);
+  await page.locator('[data-file-more]').click();
+  assert.equal(await page.locator('[data-file-more-item="native-preview"]').count(),0);
+  await page.evaluate(()=>{window.instant=true;});
+  await page.locator('[data-file-more-item="open-other"]').click();
+  await page.waitForFunction(()=>window.calls.some(c=>c.cmd==='file_handoff_open'));
+  await page.locator('[data-file-handoff-status]').waitFor({state:'detached'});
+  await page.evaluate(()=>window.showAttachment('/project/report.docx'));
+  await page.locator('[data-file-preview-body] [data-office-preview="docx"][data-ready] canvas').first().waitFor({timeout:20_000});
+  assert.equal(await page.locator('[data-file-preview-head] [data-segmented]').count(),0);
+  await page.locator('[data-file-preview-body] [data-office-find-open]').waitFor();
+  await page.evaluate(base64=>window.showLocalOffice(base64),sample.toString('base64'));
+  await page.locator('[data-attachment-file] [data-office-preview="docx"][data-ready] canvas').first().waitFor({timeout:20_000});
+  assert.equal(await page.locator('[data-attachment-file] [data-file-face-toggle]').count(),0);
+  await page.locator('[data-attachment-file] [data-office-find-open]').waitFor();
+  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='preview').length),2,'local drafts never ask the host for Office bytes');
+  assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd.startsWith('file_preview_')).length),0,'Office never uses native preview');
+  await page.screenshot({path:join(out,'office-local-attachment.png')});
+
+  await openPage(true);
+  for(const here of [false,true]) {
+   const path='/project/report.docx';
+   await page.evaluate(({path,here})=>window.showFile(path,false,here),{path,here});
+   await page.locator('[data-office-preview="docx"][data-ready]').waitFor();
+   await page.locator('[data-file-more]').click();
+   const action=page.locator(`[data-file-more-item="${here?'open-default':'open-copy'}"]`);
+   assert.equal(await action.innerText(),here?'使用默认应用打开':'下载副本并用默认应用打开');
+   assert.equal(await page.locator('[data-file-more-item="native-preview"]').count(),0);
+   await action.press('Enter');
+   await page.locator('[data-file-more-menu]').waitFor({state:'detached'});
+   const target=here?path:'/tmp/khor-test/report.docx';
+   await page.waitForFunction(target=>window.calls.some(c=>c.cmd==='launch'&&c.args.machine===''&&c.args.target===target),target);
+   assert.equal(await page.evaluate(()=>window.calls.filter(c=>c.cmd==='pull_temp').length),1,'only the remote file stages a copy');
+  }
+  assert.deepEqual(errors,[]);
+  writeFileSync(join(out,'office-results.json'),JSON.stringify({checks:['direct Office rendering','no preview switch','external app handoff','saved attachment','local draft attachment','no native preview','desktop default app for local originals and remote copies'],errors},null,2));
+  console.log('Office UI: clean',out);
  } else {
  await page.locator('[data-file-open-other]').waitFor();assert.equal(await page.locator('[data-file-fallback-name]').innerText(),'large.pptx');
  assert.match(await page.locator('[data-file-body]').innerText(),/PPTX/);assert.match(await page.locator('[data-file-body]').innerText(),/130/);

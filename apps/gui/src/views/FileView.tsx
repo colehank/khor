@@ -54,6 +54,8 @@ import { editorIn, focusAtTop } from "@/lib/code/place";
 import type { EditorHistorySlot } from "@/lib/code/history";
 import { useKeptScrollRef } from "@/hooks/use-kept-scroll";
 import {ResourcePreview} from "@/components/ResourcePreview";
+import { OFFICE_PREVIEW_LIMIT, OfficePreview, officeFormat, type OfficeFailure } from "@/components/OfficePreview";
+import { RegionState } from "@/components/RegionState";
 import { HtmlView } from "@/components/HtmlView";
 import { Notebook, preloadNotebook } from "@/components/Notebook.lazy";
 import { Markdown } from "@/components/Markdown";
@@ -406,13 +408,19 @@ function FileBody({
   const history = editorHistory ?? localHistory.current;
   const previewScroll = useKeptScrollRef(JSON.stringify([machine, path]), history.preview ??= {});
   const kind=kindOf(path);
-  const nativePreview = !localFile && (kind === "doc" || kind === "pdf") && handoff.previewSupported;
+  const office = officeFormat(path);
+  const officeRevision = localFile ?? readAt;
+  const [failedOffice, setFailedOffice] = useState<{ revision: File | number; reason: OfficeFailure }>();
+  const officeFallback = failedOffice?.revision === officeRevision ? failedOffice.reason : null;
+  const fallBackOffice = useCallback((reason: OfficeFailure) => setFailedOffice({ revision: officeRevision, reason }), [officeRevision]);
+  const inlineOffice = office && !officeFallback ? office : null;
+  const nativePreview = !localFile && kind === "pdf" && handoff.previewSupported;
   const [localUrl,setLocalUrl]=useState<string>();
   useEffect(()=>{if(!localFile)return;const url=URL.createObjectURL(localFile);setLocalUrl(url);return()=>URL.revokeObjectURL(url);},[localFile]);
   const readText=async(m:string,p:string):Promise<FileText>=>localFile?{text:await localFile.slice(0,256*1024).text(),total:localFile.size,at_ms:localFile.lastModified,cut:localFile.size>256*1024,binary:false,digest:""}:fetchFileText(m,p);
   const readStat=async(m:string,p:string):Promise<FileStat>=>localFile?{total:localFile.size,at_ms:localFile.lastModified,digest:""}:fetchFileStat(m,p);
   const readPreview=async(m:string,p:string):Promise<Preview>=>{
-    if(!localFile)return fetchPreview(m,p);
+    if(!localFile)return fetchPreview(m,p,inlineOffice ? true : undefined);
     const cut=localFile.size>16*1024*1024;
     const data=cut?"":await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result).split(",")[1]??"");reader.onerror=()=>reject(reader.error);reader.readAsDataURL(localFile);});
     return {kind:kindOf(p),total:localFile.size,data,media:localFile.type||(kindOf(p)==="pdf"?"application/pdf":kindOf(p)==="svg"?"image/svg+xml":kindOf(p)==="image"?"image/png":"application/octet-stream"),html:"",cut,empty:localFile.size===0};
@@ -428,7 +436,7 @@ function FileBody({
   /** What this file turns out to be, when it is not code. `null`
       while khor is still asking, and for the kind that needs no
       asking — `text`, which is the road this view already had. */
-  const previewKey = JSON.stringify([machine, path]);
+  const previewKey = JSON.stringify([machine, path, inlineOffice]);
   const [lookValue, setLookValue] = useState<{ key: string; preview: Preview | null; total: number | null } | null>(null);
   const [lookFailure, setLookFailure] = useState<{ key: string; error: string } | null>(null);
   const look = lookValue?.key === previewKey ? lookValue.preview : null;
@@ -548,8 +556,11 @@ function FileBody({
     return () => URL.revokeObjectURL(pdfAt);
   }, [pdfAt]);
 
-  const previewMode = kind === "text" || kind === "video" || kind === "audio" || !localFile && (kind === "doc" || kind === "pdf") && handoff.previewSupported === null
-    ? null : nativePreview ? "stat" : "preview";
+  const previewMode = officeFallback === "too-large" || (officeFallback && localFile) ? null :
+    inlineOffice ? (localFile ? null : "preview") :
+    kind === "text" || kind === "video" || kind === "audio" ||
+    !localFile && kind === "pdf" && handoff.previewSupported === null
+      ? null : nativePreview ? "stat" : "preview";
   useLayoutEffect(() => {
     if (previewMode === null) return;
     previewReader.current.activate();
@@ -968,6 +979,23 @@ function FileBody({
     </div>}
   </div>;
   if (kind === "video" || kind === "audio") return localFile&&!localUrl?<div/>:previewSurface(<ResourcePreview machine={machine} path={path} media={kind} sourceUrl={localUrl}/>);
+  // Older backends can answer the original-file request with extracted text.
+  if ((inlineOffice && !look?.html) || officeFallback === "too-large") {
+    const total = localFile?.size ?? look?.total;
+    if (officeFallback === "too-large" || look?.cut || (total !== undefined && total > OFFICE_PREVIEW_LIMIT)) {
+      return previewSurface(localFile ? <RegionState state="empty" message={gui.file_preview_too_big}/> :
+        <Away path={path} handoff={handoff} total={total ?? null}
+          word={gui.file_preview_too_big} onTake={take} took={took}/>);
+    }
+    const source = localFile ?? look?.data;
+    if (localFile?.size === 0) return previewSurface(<RegionState state="empty" message={gui.doc_empty}/>);
+    if (inlineOffice && source) return previewSurface(<OfficePreview format={inlineOffice} source={source} onFallback={fallBackOffice}/>);
+    if (lookError !== null || look !== null) return previewSurface(
+      <Away path={path} handoff={handoff} total={total ?? null}
+        word={look?.empty ? gui.doc_empty : ""} onTake={take} took={took}/>);
+    return previewSurface(<RegionState state="loading-never"/>);
+  }
+  if (officeFallback && localFile) return previewSurface(<RegionState state="error" message={gui.file_office_unavailable}/>);
   if (nativePreview) return previewSurface(<Away path={path} handoff={handoff} total={lookTotal} preview word="" onTake={take} took={took}/>);
   if (kindOf(path) !== "text") {
     if (look === null) return previewSurface(lookError === null ? <div className="flex-1" /> :
@@ -1045,7 +1073,7 @@ function FileBody({
             data-doc-note={look.kind}
             className="flex-none border-t px-3 py-1.5 text-callout text-muted-foreground"
           >
-            {look.kind === "pdf" ? gui.pdf_as_words : gui.doc_plain}
+            {look.kind === "pdf" ? gui.pdf_as_words : officeFallback ? gui.file_office_unavailable : gui.doc_plain}
           </div>
         </div>
       );

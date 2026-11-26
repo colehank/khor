@@ -110,6 +110,10 @@ const LIVE = {
   search: reshare(fit(1.84, 1.84, 12.63), ROUND, LIGHT),
   grip: fit(1.82, 1.82, 12.37), // square
   plus: reshare(fit(1.96, 1.96, 12.08), PLAIN, BARE),
+  documentThumbnails: fit(1.5, 1.5, 13),
+  documentComment: fit(1.5, 1.5, 13),
+  documentNotes: fit(2, 1.1, 13.8),
+  documentRevisions: fit(1.4, 1.1, 13.8),
   filter: fit(1, 1, 14), // square
   check: reshare(fit(1.96, 1.97, 12.07), ROUND, BARE),
   close: reshare(fit(3.28, 3.28, 9.44), ROUND, BARE),
@@ -733,6 +737,37 @@ export function IconPlus({ className }: IconProps) {
       <path d="M8 3v10M3 8h10" />
     </Mark>
   );
+}
+
+export function IconMinus({ className }: IconProps) {
+  return <Mark className={className} live={LIVE.plus}><path d="M3 8h10"/></Mark>;
+}
+
+export function IconDocumentThumbnails({ className }: IconProps) {
+  return <Mark className={className} live={LIVE.documentThumbnails}>
+    <rect x="2.2" y="2.7" width="11.6" height="10.6" rx="1.5"/>
+    <path d="M6.3 3v10M4 6h.6M4 10h.6"/>
+  </Mark>;
+}
+
+export function IconDocumentComment({ className }: IconProps) {
+  return <Mark className={className} live={LIVE.documentComment}>
+    <path d="M4.1 2.9h7.8a2 2 0 0 1 2 2v4.4a2 2 0 0 1-2 2H8l-3.4 2v-2h-.5a2 2 0 0 1-2-2V4.9a2 2 0 0 1 2-2Z"/>
+    <path d="M5 6.1h6M5 8.4h3.4"/>
+  </Mark>;
+}
+
+export function IconDocumentNotes({ className }: IconProps) {
+  return <Mark className={className} live={LIVE.documentNotes}>
+    <rect x="3" y="1.8" width="10" height="12.4" rx="1.65"/>
+    <path d="M5.4 5.1h5.2m-5.2 2.8h5.2m-5.2 2.8h3.3"/>
+  </Mark>;
+}
+
+export function IconDocumentRevisions({ className }: IconProps) {
+  return <Mark className={className} live={LIVE.documentRevisions}>
+    <path d="M4.25 3.4a1.6 1.6 0 0 1 1.6-1.6h5.7A1.6 1.6 0 0 1 13.15 3.4v9.2a1.6 1.6 0 0 1-1.6 1.6h-5.7a1.6 1.6 0 0 1-1.6-1.6M2.3 5.25v5.5m4.5-5.45H11M6.8 8h4.2m-4.2 2.7h2.8"/>
+  </Mark>;
 }
 
 /** How to look at this list. Three sliders — a menu of choices, which is

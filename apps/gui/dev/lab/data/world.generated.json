@@ -1,4 +1,14 @@
 {
+  "session_attention": {
+    "blocked": 0,
+    "busy": 4,
+    "done": 3,
+    "draft": 2,
+    "errored": 1,
+    "failed": 6,
+    "idle": 5,
+    "unknown": 7
+  },
   "schema": 1,
   "machine_ids": [
     "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
@@ -215,7 +225,7 @@
           "name": "design-system",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885033,
+          "at_ms": 1795712546079,
           "from": null,
           "received_ms": null
         },
@@ -223,7 +233,7 @@
           "name": "project",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885030,
+          "at_ms": 1795712546073,
           "from": null,
           "received_ms": null
         },
@@ -231,7 +241,7 @@
           "name": "research-notes",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885032,
+          "at_ms": 1795712546076,
           "from": null,
           "received_ms": null
         },
@@ -239,7 +249,7 @@
           "name": "资料库",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885035,
+          "at_ms": 1795712546082,
           "from": null,
           "received_ms": null
         }
@@ -252,7 +262,23 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885033,
+          "at_ms": 1795712546077,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "media",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546079,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "office",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546077,
           "from": null,
           "received_ms": null
         },
@@ -260,7 +286,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885033,
+          "at_ms": 1795712546079,
           "from": null,
           "received_ms": null
         },
@@ -268,7 +294,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -276,7 +302,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -284,7 +310,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -292,7 +318,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -300,7 +326,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -308,7 +334,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -316,7 +342,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885033,
+          "at_ms": 1795712546077,
           "from": null,
           "received_ms": null
         },
@@ -324,7 +350,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -337,7 +363,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -350,7 +376,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -358,7 +384,113 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "design-system/media": {
+      "entries": [
+        {
+          "name": "app.js",
+          "dir": false,
+          "size": 280,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "audio.wav",
+          "dir": false,
+          "size": 80078,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "clip.mp4",
+          "dir": false,
+          "size": 80222,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "counter.js",
+          "dir": false,
+          "size": 132,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "data.json",
+          "dir": false,
+          "size": 107,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview.html",
+          "dir": false,
+          "size": 538,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 587,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "style.css",
+          "dir": false,
+          "size": 301,
+          "at_ms": 1795701737406,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "design-system/office": {
+      "entries": [
+        {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "阶段汇报.pptx",
+          "dir": false,
+          "size": 37944,
+          "at_ms": 1795711195078,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "项目周报.docx",
+          "dir": false,
+          "size": 38941,
+          "at_ms": 1795711194978,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "验收台账.xlsx",
+          "dir": false,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -371,7 +503,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -379,7 +511,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -387,7 +519,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794149885033,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         }
@@ -400,7 +532,23 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885028,
+          "at_ms": 1795712546067,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "media",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546072,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "office",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546066,
           "from": null,
           "received_ms": null
         },
@@ -408,7 +556,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885030,
+          "at_ms": 1795712546073,
           "from": null,
           "received_ms": null
         },
@@ -416,7 +564,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794149885027,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -424,7 +572,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794149885027,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -432,7 +580,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794149885029,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -440,7 +588,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794149885029,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -448,7 +596,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794149885029,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -456,7 +604,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794149885029,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -464,7 +612,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885030,
+          "at_ms": 1795712546064,
           "from": null,
           "received_ms": null
         },
@@ -472,7 +620,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794149885027,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -485,7 +633,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794149885031,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -498,7 +646,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794149885029,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -506,7 +654,113 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794149885028,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "project/media": {
+      "entries": [
+        {
+          "name": "app.js",
+          "dir": false,
+          "size": 280,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "audio.wav",
+          "dir": false,
+          "size": 80078,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "clip.mp4",
+          "dir": false,
+          "size": 80222,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "counter.js",
+          "dir": false,
+          "size": 132,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "data.json",
+          "dir": false,
+          "size": 107,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview.html",
+          "dir": false,
+          "size": 538,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 587,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "style.css",
+          "dir": false,
+          "size": 301,
+          "at_ms": 1795701737406,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "project/office": {
+      "entries": [
+        {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "阶段汇报.pptx",
+          "dir": false,
+          "size": 37944,
+          "at_ms": 1795711195078,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "项目周报.docx",
+          "dir": false,
+          "size": 38941,
+          "at_ms": 1795711194978,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "验收台账.xlsx",
+          "dir": false,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -519,7 +773,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794149885030,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -527,7 +781,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794149885030,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -535,7 +789,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794149885030,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         }
@@ -548,7 +802,23 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885031,
+          "at_ms": 1795712546074,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "media",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546076,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "office",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546074,
           "from": null,
           "received_ms": null
         },
@@ -556,7 +826,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885032,
+          "at_ms": 1795712546077,
           "from": null,
           "received_ms": null
         },
@@ -564,7 +834,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794149885031,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -572,7 +842,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794149885031,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -580,7 +850,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -588,7 +858,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -596,7 +866,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -604,7 +874,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -612,7 +882,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885032,
+          "at_ms": 1795712546073,
           "from": null,
           "received_ms": null
         },
@@ -620,7 +890,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794149885031,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -633,7 +903,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -646,7 +916,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -654,7 +924,113 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794149885031,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "research-notes/media": {
+      "entries": [
+        {
+          "name": "app.js",
+          "dir": false,
+          "size": 280,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "audio.wav",
+          "dir": false,
+          "size": 80078,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "clip.mp4",
+          "dir": false,
+          "size": 80222,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "counter.js",
+          "dir": false,
+          "size": 132,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "data.json",
+          "dir": false,
+          "size": 107,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview.html",
+          "dir": false,
+          "size": 538,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 587,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "style.css",
+          "dir": false,
+          "size": 301,
+          "at_ms": 1795701737406,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "research-notes/office": {
+      "entries": [
+        {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "阶段汇报.pptx",
+          "dir": false,
+          "size": 37944,
+          "at_ms": 1795711195078,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "项目周报.docx",
+          "dir": false,
+          "size": 38941,
+          "at_ms": 1795711194978,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "验收台账.xlsx",
+          "dir": false,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -667,7 +1043,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -675,7 +1051,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -683,7 +1059,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794149885032,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         }
@@ -696,7 +1072,23 @@
           "name": "docs",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885034,
+          "at_ms": 1795712546081,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "media",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546082,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "office",
+          "dir": true,
+          "size": 0,
+          "at_ms": 1795712546080,
           "from": null,
           "received_ms": null
         },
@@ -704,7 +1096,7 @@
           "name": "src",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885035,
+          "at_ms": 1795712546082,
           "from": null,
           "received_ms": null
         },
@@ -712,7 +1104,7 @@
           "name": "design.md",
           "dir": false,
           "size": 89,
-          "at_ms": 1794149885034,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -720,7 +1112,7 @@
           "name": "notes.md",
           "dir": false,
           "size": 92,
-          "at_ms": 1794149885034,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -728,7 +1120,7 @@
           "name": "package.json",
           "dir": false,
           "size": 45,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -736,7 +1128,7 @@
           "name": "plan.md",
           "dir": false,
           "size": 103,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -744,7 +1136,7 @@
           "name": "README.md",
           "dir": false,
           "size": 265,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -752,7 +1144,7 @@
           "name": "report.md",
           "dir": false,
           "size": 111,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -760,7 +1152,7 @@
           "name": ".config",
           "dir": true,
           "size": 0,
-          "at_ms": 1794149885035,
+          "at_ms": 1795712546080,
           "from": null,
           "received_ms": null
         },
@@ -768,7 +1160,7 @@
           "name": ".gitignore",
           "dir": false,
           "size": 14,
-          "at_ms": 1794149885034,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -781,7 +1173,7 @@
           "name": "preferences.json",
           "dir": false,
           "size": 17,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         }
@@ -794,7 +1186,7 @@
           "name": "formulas.md",
           "dir": false,
           "size": 91,
-          "at_ms": 1794149885034,
+          "at_ms": 1795701737403,
           "from": null,
           "received_ms": null
         },
@@ -802,7 +1194,113 @@
           "name": "中文说明.md",
           "dir": false,
           "size": 83,
-          "at_ms": 1794149885034,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "资料库/media": {
+      "entries": [
+        {
+          "name": "app.js",
+          "dir": false,
+          "size": 280,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "audio.wav",
+          "dir": false,
+          "size": 80078,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "clip.mp4",
+          "dir": false,
+          "size": 80222,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "counter.js",
+          "dir": false,
+          "size": 132,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "data.json",
+          "dir": false,
+          "size": 107,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "preview.html",
+          "dir": false,
+          "size": 538,
+          "at_ms": 1795701737405,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "README.md",
+          "dir": false,
+          "size": 587,
+          "at_ms": 1795701737403,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "style.css",
+          "dir": false,
+          "size": 301,
+          "at_ms": 1795701737406,
+          "from": null,
+          "received_ms": null
+        }
+      ],
+      "truncated": false
+    },
+    "资料库/office": {
+      "entries": [
+        {
+          "name": "加密周报.docx",
+          "dir": false,
+          "size": 44544,
+          "at_ms": 1795711195025,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "阶段汇报.pptx",
+          "dir": false,
+          "size": 37944,
+          "at_ms": 1795711195078,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "项目周报.docx",
+          "dir": false,
+          "size": 38941,
+          "at_ms": 1795711194978,
+          "from": null,
+          "received_ms": null
+        },
+        {
+          "name": "验收台账.xlsx",
+          "dir": false,
+          "size": 18746,
+          "at_ms": 1795711195058,
           "from": null,
           "received_ms": null
         }
@@ -815,7 +1313,7 @@
           "name": "app.ts",
           "dir": false,
           "size": 39,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -823,7 +1321,7 @@
           "name": "CodeEditor.tsx",
           "dir": false,
           "size": 336,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         },
@@ -831,7 +1329,7 @@
           "name": "navigation.ts",
           "dir": false,
           "size": 67,
-          "at_ms": 1794149885035,
+          "at_ms": 1795701737406,
           "from": null,
           "received_ms": null
         }
@@ -846,6 +1344,12 @@
     "design-system/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
     "design-system/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
     "design-system/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "design-system/media/README.md": "# Browser and media fixture\n\nThe HTML page uses relative CSS, JavaScript modules, imported modules, JSON, video and audio. These are finite Lab records, rendered by the production file components. The static frontend Lab verifies browser interaction; authenticated remote reads, byte ranges and cancellation are separate native checks.\n\n`clip.mp4` and `audio.wav` were generated for Khor with FFmpeg's `testsrc2` and `sine` sources in GitHub Actions run 42994611398. They contain no third-party recordings. Five seconds of H.264 test video and PCM test audio are used only as test data.\n",
+    "design-system/media/app.js": "import {counter} from './counter.js';\nconst data=await fetch(new URL('./data.json',import.meta.url)).then(r=>r.json());\ndocument.querySelector('#result').textContent=data.message;\ndocument.documentElement.dataset.resourcesReady='yes';\ncounter(document.querySelector('#counter'));\n",
+    "design-system/media/counter.js": "export function counter(button){let count=0;button.addEventListener('click',()=>{button.textContent='点击计数：'+ ++count;});}\n",
+    "design-system/media/data.json": "{\"message\":\"JavaScript 模块、相对样式和 JSON 均已加载。音视频使用浏览器播放器。\"}\n",
+    "design-system/media/preview.html": "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Browser file preview</title><link rel=\"stylesheet\" href=\"./style.css\"></head>\n<body><h1>完整网页预览</h1><p id=\"result\">正在加载相对路径中的 JavaScript…</p><button id=\"counter\">点击计数：0</button><video controls playsinline preload=\"metadata\" src=\"./clip.mp4\"></video><audio controls preload=\"metadata\" src=\"./audio.wav\"></audio><script type=\"module\" src=\"./app.js\"></script></body></html>\n",
+    "design-system/media/style.css": ":root {color-scheme:light dark;font-family:system-ui,sans-serif}body{max-width:48rem;margin:auto;padding:1.5rem}p{line-height:1.6}button{font:inherit;padding:.7em 1em;border-radius:.7em;cursor:pointer}video{display:block;width:100%;max-height:18rem;margin-block:1.5rem}audio{display:block;width:100%}\n",
     "design-system/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
     "design-system/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
     "design-system/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
@@ -859,6 +1363,12 @@
     "project/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
     "project/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
     "project/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "project/media/README.md": "# Browser and media fixture\n\nThe HTML page uses relative CSS, JavaScript modules, imported modules, JSON, video and audio. These are finite Lab records, rendered by the production file components. The static frontend Lab verifies browser interaction; authenticated remote reads, byte ranges and cancellation are separate native checks.\n\n`clip.mp4` and `audio.wav` were generated for Khor with FFmpeg's `testsrc2` and `sine` sources in GitHub Actions run 42994611398. They contain no third-party recordings. Five seconds of H.264 test video and PCM test audio are used only as test data.\n",
+    "project/media/app.js": "import {counter} from './counter.js';\nconst data=await fetch(new URL('./data.json',import.meta.url)).then(r=>r.json());\ndocument.querySelector('#result').textContent=data.message;\ndocument.documentElement.dataset.resourcesReady='yes';\ncounter(document.querySelector('#counter'));\n",
+    "project/media/counter.js": "export function counter(button){let count=0;button.addEventListener('click',()=>{button.textContent='点击计数：'+ ++count;});}\n",
+    "project/media/data.json": "{\"message\":\"JavaScript 模块、相对样式和 JSON 均已加载。音视频使用浏览器播放器。\"}\n",
+    "project/media/preview.html": "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Browser file preview</title><link rel=\"stylesheet\" href=\"./style.css\"></head>\n<body><h1>完整网页预览</h1><p id=\"result\">正在加载相对路径中的 JavaScript…</p><button id=\"counter\">点击计数：0</button><video controls playsinline preload=\"metadata\" src=\"./clip.mp4\"></video><audio controls preload=\"metadata\" src=\"./audio.wav\"></audio><script type=\"module\" src=\"./app.js\"></script></body></html>\n",
+    "project/media/style.css": ":root {color-scheme:light dark;font-family:system-ui,sans-serif}body{max-width:48rem;margin:auto;padding:1.5rem}p{line-height:1.6}button{font:inherit;padding:.7em 1em;border-radius:.7em;cursor:pointer}video{display:block;width:100%;max-height:18rem;margin-block:1.5rem}audio{display:block;width:100%}\n",
     "project/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
     "project/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
     "project/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
@@ -872,6 +1382,12 @@
     "research-notes/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
     "research-notes/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
     "research-notes/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "research-notes/media/README.md": "# Browser and media fixture\n\nThe HTML page uses relative CSS, JavaScript modules, imported modules, JSON, video and audio. These are finite Lab records, rendered by the production file components. The static frontend Lab verifies browser interaction; authenticated remote reads, byte ranges and cancellation are separate native checks.\n\n`clip.mp4` and `audio.wav` were generated for Khor with FFmpeg's `testsrc2` and `sine` sources in GitHub Actions run 42994611398. They contain no third-party recordings. Five seconds of H.264 test video and PCM test audio are used only as test data.\n",
+    "research-notes/media/app.js": "import {counter} from './counter.js';\nconst data=await fetch(new URL('./data.json',import.meta.url)).then(r=>r.json());\ndocument.querySelector('#result').textContent=data.message;\ndocument.documentElement.dataset.resourcesReady='yes';\ncounter(document.querySelector('#counter'));\n",
+    "research-notes/media/counter.js": "export function counter(button){let count=0;button.addEventListener('click',()=>{button.textContent='点击计数：'+ ++count;});}\n",
+    "research-notes/media/data.json": "{\"message\":\"JavaScript 模块、相对样式和 JSON 均已加载。音视频使用浏览器播放器。\"}\n",
+    "research-notes/media/preview.html": "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Browser file preview</title><link rel=\"stylesheet\" href=\"./style.css\"></head>\n<body><h1>完整网页预览</h1><p id=\"result\">正在加载相对路径中的 JavaScript…</p><button id=\"counter\">点击计数：0</button><video controls playsinline preload=\"metadata\" src=\"./clip.mp4\"></video><audio controls preload=\"metadata\" src=\"./audio.wav\"></audio><script type=\"module\" src=\"./app.js\"></script></body></html>\n",
+    "research-notes/media/style.css": ":root {color-scheme:light dark;font-family:system-ui,sans-serif}body{max-width:48rem;margin:auto;padding:1.5rem}p{line-height:1.6}button{font:inherit;padding:.7em 1em;border-radius:.7em;cursor:pointer}video{display:block;width:100%;max-height:18rem;margin-block:1.5rem}audio{display:block;width:100%}\n",
     "research-notes/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
     "research-notes/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
     "research-notes/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
@@ -885,6 +1401,12 @@
     "资料库/design.md": "# 设计记录\n\n头像表达身份，类型图标由正式组件按设备事实选择。\n",
     "资料库/docs/formulas.md": "# 公式\n\n行内：\\(x^2+y^2=z^2\\)，以及 $a+b$。\n\n\\[\n\\int_0^1 x^2\\,dx = \\frac{1}{3}\n\\]\n",
     "资料库/docs/中文说明.md": "# 导航说明\n\n轻推预选，松手确认。回到原位置松手保留当前。\n",
+    "资料库/media/README.md": "# Browser and media fixture\n\nThe HTML page uses relative CSS, JavaScript modules, imported modules, JSON, video and audio. These are finite Lab records, rendered by the production file components. The static frontend Lab verifies browser interaction; authenticated remote reads, byte ranges and cancellation are separate native checks.\n\n`clip.mp4` and `audio.wav` were generated for Khor with FFmpeg's `testsrc2` and `sine` sources in GitHub Actions run 42994611398. They contain no third-party recordings. Five seconds of H.264 test video and PCM test audio are used only as test data.\n",
+    "资料库/media/app.js": "import {counter} from './counter.js';\nconst data=await fetch(new URL('./data.json',import.meta.url)).then(r=>r.json());\ndocument.querySelector('#result').textContent=data.message;\ndocument.documentElement.dataset.resourcesReady='yes';\ncounter(document.querySelector('#counter'));\n",
+    "资料库/media/counter.js": "export function counter(button){let count=0;button.addEventListener('click',()=>{button.textContent='点击计数：'+ ++count;});}\n",
+    "资料库/media/data.json": "{\"message\":\"JavaScript 模块、相对样式和 JSON 均已加载。音视频使用浏览器播放器。\"}\n",
+    "资料库/media/preview.html": "<!doctype html>\n<html><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Browser file preview</title><link rel=\"stylesheet\" href=\"./style.css\"></head>\n<body><h1>完整网页预览</h1><p id=\"result\">正在加载相对路径中的 JavaScript…</p><button id=\"counter\">点击计数：0</button><video controls playsinline preload=\"metadata\" src=\"./clip.mp4\"></video><audio controls preload=\"metadata\" src=\"./audio.wav\"></audio><script type=\"module\" src=\"./app.js\"></script></body></html>\n",
+    "资料库/media/style.css": ":root {color-scheme:light dark;font-family:system-ui,sans-serif}body{max-width:48rem;margin:auto;padding:1.5rem}p{line-height:1.6}button{font:inherit;padding:.7em 1em;border-radius:.7em;cursor:pointer}video{display:block;width:100%;max-height:18rem;margin-block:1.5rem}audio{display:block;width:100%}\n",
     "资料库/notes.md": "# 会议记录\n\n本周任务：整理目录导航、移动端输入和提交阅读体验。\n",
     "资料库/package.json": "{\"name\":\"khor-lab-workspace\",\"private\":true}\n",
     "资料库/plan.md": "# 验收计划\n\n1. 切换会话和标签页\n2. 打开文件并保存草稿\n3. 分页浏览提交历史\n",
@@ -892,6 +1414,28 @@
     "资料库/src/CodeEditor.tsx": "import {EditorState} from '@codemirror/state';\nimport {keymap} from '@codemirror/view';\nimport {defaultKeymap,history,historyKeymap} from '@codemirror/commands';\n\nconst extensions = [history(),keymap.of([...historyKeymap,...defaultKeymap])];\n\nexport function createEditor(doc: string) {\n  return EditorState.create({doc,extensions});\n}\n",
     "资料库/src/app.ts": "export const title = '完整 App Lab';\n",
     "资料库/src/navigation.ts": "export const navigation = {preview: true, confirmOnRelease: true};\n"
+  },
+  "office_previews": {
+    "office/加密周报.docx": {
+      "total": 44544,
+      "html": "",
+      "encrypted": true
+    },
+    "office/阶段汇报.pptx": {
+      "total": 37944,
+      "html": "<h2>Slide 1</h2>\n<p>项目阶段回顾</p>\n<p>从需求确认到首轮验收</p>\n<p>范围确认</p>\n<p>接口联调</p>\n<p>体验验收</p>\n<p>Khor Lab  ·  1 / 3</p>\n<blockquote>\n<p>讲稿：先介绍项目目标，再说明当前验收结果。</p>\n</blockquote>\n<h2>Slide 2</h2>\n<p>阶段进度</p>\n<p>通过典型文件验证两种尺寸下的呈现</p>\n<p>Word · 分页</p>\n<p>PPT · 翻页</p>\n<p>Excel · 工作表</p>\n<p>Khor Lab  ·  2 / 3</p>\n<blockquote>\n<p>讲稿：重点说明阶段进度与下一步安排。</p>\n</blockquote>\n<h2>Slide 3</h2>\n<p>评审结论</p>\n<p>Khor Lab 预览样例</p>\n<p>查看布局</p>\n<p>检查交互</p>\n<p>记录反馈</p>\n<p>Khor Lab  ·  3 / 3</p>\n",
+      "encrypted": false
+    },
+    "office/项目周报.docx": {
+      "total": 38941,
+      "html": "<p>项目进度周报\n2026 年 11 月  ·  Khor Lab 示例文档</p>\n<h1>本周摘要</h1>\n<p>本周完成了<strong>第一阶段验收</strong>，下一步复核跨平台显示和远端文件读取。</p>\n<table><thead><tr><th>工作项</th><th>状态</th><th>负责人</th></tr></thead><tbody>\n<tr><td>需求确认</td><td>已完成</td><td>小林</td></tr>\n<tr><td>接口联调</td><td>进行中</td><td>小周</td></tr>\n<tr><td>体验验收</td><td>计划中</td><td>小陈</td></tr>\n</tbody></table>\n<h1>验收范围</h1>\n<p>中文正文和表格\n段落、页边距与分页\n从侧栏切换其他文件后重新打开</p>\n<hr />\n<h1>下周计划</h1>\n<p>确认移动端的预览范围，收集三类文件的显示差异。\n本文件仅用于预览验收，内容均为虚构。\n本周已完成联调。\n验收得分\n<img src=\"rId10\" alt=\"\" /></p>\n",
+      "encrypted": false
+    },
+    "office/验收台账.xlsx": {
+      "total": 18746,
+      "html": "<h2>任务明细</h2>\n<table><thead><tr><th>编号</th><th>事项</th><th>负责人</th><th>阶段</th><th>进度</th><th>预计工时</th><th>实际工时</th><th>优先级</th><th>组别</th><th>备注</th></tr></thead><tbody>\n<tr><td>1</td><td>预览验收任务001</td><td>小周</td><td>进行中</td><td>7%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>2</td><td>预览验收任务002</td><td>小陈</td><td>已完成</td><td>14%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>3</td><td>预览验收任务003</td><td>小林</td><td>计划中</td><td>21%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>4</td><td>预览验收任务004</td><td>小周</td><td>进行中</td><td>28%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>5</td><td>预览验收任务005</td><td>小陈</td><td>已完成</td><td>35%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>6</td><td>预览验收任务006</td><td>小林</td><td>计划中</td><td>42%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>7</td><td>预览验收任务007</td><td>小周</td><td>进行中</td><td>49%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>8</td><td>预览验收任务008</td><td>小陈</td><td>已完成</td><td>56%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>9</td><td>预览验收任务009</td><td>小林</td><td>计划中</td><td>63%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>10</td><td>预览验收任务010</td><td>小周</td><td>进行中</td><td>70%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>11</td><td>预览验收任务011</td><td>小陈</td><td>已完成</td><td>77%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>12</td><td>预览验收任务012</td><td>小林</td><td>计划中</td><td>84%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>13</td><td>预览验收任务013</td><td>小周</td><td>进行中</td><td>91%</td><td>8</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>14</td><td>预览验收任务014</td><td>小陈</td><td>已完成</td><td>98%</td><td>2</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>15</td><td>预览验收任务015</td><td>小林</td><td>计划中</td><td>4%</td><td>3</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>16</td><td>预览验收任务016</td><td>小周</td><td>进行中</td><td>11%</td><td>4</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>17</td><td>预览验收任务017</td><td>小陈</td><td>已完成</td><td>18%</td><td>5</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>18</td><td>预览验收任务018</td><td>小林</td><td>计划中</td><td>25%</td><td>6</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>19</td><td>预览验收任务019</td><td>小周</td><td>进行中</td><td>32%</td><td>7</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>20</td><td>预览验收任务020</td><td>小陈</td><td>已完成</td><td>39%</td><td>8</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>21</td><td>预览验收任务021</td><td>小林</td><td>计划中</td><td>46%</td><td>2</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>22</td><td>预览验收任务022</td><td>小周</td><td>进行中</td><td>53%</td><td>3</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>23</td><td>预览验收任务023</td><td>小陈</td><td>已完成</td><td>60%</td><td>4</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>24</td><td>预览验收任务024</td><td>小林</td><td>计划中</td><td>67%</td><td>5</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>25</td><td>预览验收任务025</td><td>小周</td><td>进行中</td><td>74%</td><td>6</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>26</td><td>预览验收任务026</td><td>小陈</td><td>已完成</td><td>81%</td><td>7</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>27</td><td>预览验收任务027</td><td>小林</td><td>计划中</td><td>88%</td><td>8</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>28</td><td>预览验收任务028</td><td>小周</td><td>进行中</td><td>95%</td><td>2</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>29</td><td>预览验收任务029</td><td>小陈</td><td>已完成</td><td>1%</td><td>3</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>30</td><td>预览验收任务030</td><td>小林</td><td>计划中</td><td>8%</td><td>4</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>31</td><td>预览验收任务031</td><td>小周</td><td>进行中</td><td>15%</td><td>5</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>32</td><td>预览验收任务032</td><td>小陈</td><td>已完成</td><td>22%</td><td>6</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>33</td><td>预览验收任务033</td><td>小林</td><td>计划中</td><td>29%</td><td>7</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>34</td><td>预览验收任务034</td><td>小周</td><td>进行中</td><td>36%</td><td>8</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>35</td><td>预览验收任务035</td><td>小陈</td><td>已完成</td><td>43%</td><td>2</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>36</td><td>预览验收任务036</td><td>小林</td><td>计划中</td><td>50%</td><td>3</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>37</td><td>预览验收任务037</td><td>小周</td><td>进行中</td><td>57%</td><td>4</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>38</td><td>预览验收任务038</td><td>小陈</td><td>已完成</td><td>64%</td><td>5</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>39</td><td>预览验收任务039</td><td>小林</td><td>计划中</td><td>71%</td><td>6</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>40</td><td>预览验收任务040</td><td>小周</td><td>进行中</td><td>78%</td><td>7</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>41</td><td>预览验收任务041</td><td>小陈</td><td>已完成</td><td>85%</td><td>8</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>42</td><td>预览验收任务042</td><td>小林</td><td>计划中</td><td>92%</td><td>2</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>43</td><td>预览验收任务043</td><td>小周</td><td>进行中</td><td>99%</td><td>3</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>44</td><td>预览验收任务044</td><td>小陈</td><td>已完成</td><td>5%</td><td>4</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>45</td><td>预览验收任务045</td><td>小林</td><td>计划中</td><td>12%</td><td>5</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>46</td><td>预览验收任务046</td><td>小周</td><td>进行中</td><td>19%</td><td>6</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>47</td><td>预览验收任务047</td><td>小陈</td><td>已完成</td><td>26%</td><td>7</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>48</td><td>预览验收任务048</td><td>小林</td><td>计划中</td><td>33%</td><td>8</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>49</td><td>预览验收任务049</td><td>小周</td><td>进行中</td><td>40%</td><td>2</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>50</td><td>预览验收任务050</td><td>小陈</td><td>已完成</td><td>47%</td><td>3</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>51</td><td>预览验收任务051</td><td>小林</td><td>计划中</td><td>54%</td><td>4</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>52</td><td>预览验收任务052</td><td>小周</td><td>进行中</td><td>61%</td><td>5</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>53</td><td>预览验收任务053</td><td>小陈</td><td>已完成</td><td>68%</td><td>6</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>54</td><td>预览验收任务054</td><td>小林</td><td>计划中</td><td>75%</td><td>7</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>55</td><td>预览验收任务055</td><td>小周</td><td>进行中</td><td>82%</td><td>8</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>56</td><td>预览验收任务056</td><td>小陈</td><td>已完成</td><td>89%</td><td>2</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>57</td><td>预览验收任务057</td><td>小林</td><td>计划中</td><td>96%</td><td>3</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>58</td><td>预览验收任务058</td><td>小周</td><td>进行中</td><td>2%</td><td>4</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>59</td><td>预览验收任务059</td><td>小陈</td><td>已完成</td><td>9%</td><td>5</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>60</td><td>预览验收任务060</td><td>小林</td><td>计划中</td><td>16%</td><td>6</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>61</td><td>预览验收任务061</td><td>小周</td><td>进行中</td><td>23%</td><td>7</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>62</td><td>预览验收任务062</td><td>小陈</td><td>已完成</td><td>30%</td><td>8</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>63</td><td>预览验收任务063</td><td>小林</td><td>计划中</td><td>37%</td><td>2</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>64</td><td>预览验收任务064</td><td>小周</td><td>进行中</td><td>44%</td><td>3</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>65</td><td>预览验收任务065</td><td>小陈</td><td>已完成</td><td>51%</td><td>4</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>66</td><td>预览验收任务066</td><td>小林</td><td>计划中</td><td>58%</td><td>5</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>67</td><td>预览验收任务067</td><td>小周</td><td>进行中</td><td>65%</td><td>6</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>68</td><td>预览验收任务068</td><td>小陈</td><td>已完成</td><td>72%</td><td>7</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>69</td><td>预览验收任务069</td><td>小林</td><td>计划中</td><td>79%</td><td>8</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>70</td><td>预览验收任务070</td><td>小周</td><td>进行中</td><td>86%</td><td>2</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>71</td><td>预览验收任务071</td><td>小陈</td><td>已完成</td><td>93%</td><td>3</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>72</td><td>预览验收任务072</td><td>小林</td><td>计划中</td><td>100%</td><td>4</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>73</td><td>预览验收任务073</td><td>小周</td><td>进行中</td><td>6%</td><td>5</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>74</td><td>预览验收任务074</td><td>小陈</td><td>已完成</td><td>13%</td><td>6</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>75</td><td>预览验收任务075</td><td>小林</td><td>计划中</td><td>20%</td><td>7</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>76</td><td>预览验收任务076</td><td>小周</td><td>进行中</td><td>27%</td><td>8</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>77</td><td>预览验收任务077</td><td>小陈</td><td>已完成</td><td>34%</td><td>2</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>78</td><td>预览验收任务078</td><td>小林</td><td>计划中</td><td>41%</td><td>3</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>79</td><td>预览验收任务079</td><td>小周</td><td>进行中</td><td>48%</td><td>4</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>80</td><td>预览验收任务080</td><td>小陈</td><td>已完成</td><td>55%</td><td>5</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>81</td><td>预览验收任务081</td><td>小林</td><td>计划中</td><td>62%</td><td>6</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>82</td><td>预览验收任务082</td><td>小周</td><td>进行中</td><td>69%</td><td>7</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>83</td><td>预览验收任务083</td><td>小陈</td><td>已完成</td><td>76%</td><td>8</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>84</td><td>预览验收任务084</td><td>小林</td><td>计划中</td><td>83%</td><td>2</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>85</td><td>预览验收任务085</td><td>小周</td><td>进行中</td><td>90%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>86</td><td>预览验收任务086</td><td>小陈</td><td>已完成</td><td>97%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>87</td><td>预览验收任务087</td><td>小林</td><td>计划中</td><td>3%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>88</td><td>预览验收任务088</td><td>小周</td><td>进行中</td><td>10%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>89</td><td>预览验收任务089</td><td>小陈</td><td>已完成</td><td>17%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>90</td><td>预览验收任务090</td><td>小林</td><td>计划中</td><td>24%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>91</td><td>预览验收任务091</td><td>小周</td><td>进行中</td><td>31%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>92</td><td>预览验收任务092</td><td>小陈</td><td>已完成</td><td>38%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>93</td><td>预览验收任务093</td><td>小林</td><td>计划中</td><td>45%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>94</td><td>预览验收任务094</td><td>小周</td><td>进行中</td><td>52%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>95</td><td>预览验收任务095</td><td>小陈</td><td>已完成</td><td>59%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>96</td><td>预览验收任务096</td><td>小林</td><td>计划中</td><td>66%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>97</td><td>预览验收任务097</td><td>小周</td><td>进行中</td><td>73%</td><td>8</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>98</td><td>预览验收任务098</td><td>小陈</td><td>已完成</td><td>80%</td><td>2</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>99</td><td>预览验收任务099</td><td>小林</td><td>计划中</td><td>87%</td><td>3</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>100</td><td>预览验收任务100</td><td>小周</td><td>进行中</td><td>94%</td><td>4</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>101</td><td>预览验收任务101</td><td>小陈</td><td>已完成</td><td>0%</td><td>5</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>102</td><td>预览验收任务102</td><td>小林</td><td>计划中</td><td>7%</td><td>6</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>103</td><td>预览验收任务103</td><td>小周</td><td>进行中</td><td>14%</td><td>7</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>104</td><td>预览验收任务104</td><td>小陈</td><td>已完成</td><td>21%</td><td>8</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>105</td><td>预览验收任务105</td><td>小林</td><td>计划中</td><td>28%</td><td>2</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>106</td><td>预览验收任务106</td><td>小周</td><td>进行中</td><td>35%</td><td>3</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>107</td><td>预览验收任务107</td><td>小陈</td><td>已完成</td><td>42%</td><td>4</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>108</td><td>预览验收任务108</td><td>小林</td><td>计划中</td><td>49%</td><td>5</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>109</td><td>预览验收任务109</td><td>小周</td><td>进行中</td><td>56%</td><td>6</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>110</td><td>预览验收任务110</td><td>小陈</td><td>已完成</td><td>63%</td><td>7</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>111</td><td>预览验收任务111</td><td>小林</td><td>计划中</td><td>70%</td><td>8</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>112</td><td>预览验收任务112</td><td>小周</td><td>进行中</td><td>77%</td><td>2</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>113</td><td>预览验收任务113</td><td>小陈</td><td>已完成</td><td>84%</td><td>3</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>114</td><td>预览验收任务114</td><td>小林</td><td>计划中</td><td>91%</td><td>4</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>115</td><td>预览验收任务115</td><td>小周</td><td>进行中</td><td>98%</td><td>5</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>116</td><td>预览验收任务116</td><td>小陈</td><td>已完成</td><td>4%</td><td>6</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>117</td><td>预览验收任务117</td><td>小林</td><td>计划中</td><td>11%</td><td>7</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>118</td><td>预览验收任务118</td><td>小周</td><td>进行中</td><td>18%</td><td>8</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>119</td><td>预览验收任务119</td><td>小陈</td><td>已完成</td><td>25%</td><td>2</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>120</td><td>预览验收任务120</td><td>小林</td><td>计划中</td><td>32%</td><td>3</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>121</td><td>预览验收任务121</td><td>小周</td><td>进行中</td><td>39%</td><td>4</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>122</td><td>预览验收任务122</td><td>小陈</td><td>已完成</td><td>46%</td><td>5</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>123</td><td>预览验收任务123</td><td>小林</td><td>计划中</td><td>53%</td><td>6</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>124</td><td>预览验收任务124</td><td>小周</td><td>进行中</td><td>60%</td><td>7</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>125</td><td>预览验收任务125</td><td>小陈</td><td>已完成</td><td>67%</td><td>8</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>126</td><td>预览验收任务126</td><td>小林</td><td>计划中</td><td>74%</td><td>2</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>127</td><td>预览验收任务127</td><td>小周</td><td>进行中</td><td>81%</td><td>3</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>128</td><td>预览验收任务128</td><td>小陈</td><td>已完成</td><td>88%</td><td>4</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>129</td><td>预览验收任务129</td><td>小林</td><td>计划中</td><td>95%</td><td>5</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>130</td><td>预览验收任务130</td><td>小周</td><td>进行中</td><td>1%</td><td>6</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>131</td><td>预览验收任务131</td><td>小陈</td><td>已完成</td><td>8%</td><td>7</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>132</td><td>预览验收任务132</td><td>小林</td><td>计划中</td><td>15%</td><td>8</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>133</td><td>预览验收任务133</td><td>小周</td><td>进行中</td><td>22%</td><td>2</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>134</td><td>预览验收任务134</td><td>小陈</td><td>已完成</td><td>29%</td><td>3</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>135</td><td>预览验收任务135</td><td>小林</td><td>计划中</td><td>36%</td><td>4</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>136</td><td>预览验收任务136</td><td>小周</td><td>进行中</td><td>43%</td><td>5</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>137</td><td>预览验收任务137</td><td>小陈</td><td>已完成</td><td>50%</td><td>6</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>138</td><td>预览验收任务138</td><td>小林</td><td>计划中</td><td>57%</td><td>7</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>139</td><td>预览验收任务139</td><td>小周</td><td>进行中</td><td>64%</td><td>8</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>140</td><td>预览验收任务140</td><td>小陈</td><td>已完成</td><td>71%</td><td>2</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>141</td><td>预览验收任务141</td><td>小林</td><td>计划中</td><td>78%</td><td>3</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>142</td><td>预览验收任务142</td><td>小周</td><td>进行中</td><td>85%</td><td>4</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>143</td><td>预览验收任务143</td><td>小陈</td><td>已完成</td><td>92%</td><td>5</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>144</td><td>预览验收任务144</td><td>小林</td><td>计划中</td><td>99%</td><td>6</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>145</td><td>预览验收任务145</td><td>小周</td><td>进行中</td><td>5%</td><td>7</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>146</td><td>预览验收任务146</td><td>小陈</td><td>已完成</td><td>12%</td><td>8</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>147</td><td>预览验收任务147</td><td>小林</td><td>计划中</td><td>19%</td><td>2</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>148</td><td>预览验收任务148</td><td>小周</td><td>进行中</td><td>26%</td><td>3</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>149</td><td>预览验收任务149</td><td>小陈</td><td>已完成</td><td>33%</td><td>4</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>150</td><td>预览验收任务150</td><td>小林</td><td>计划中</td><td>40%</td><td>5</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>151</td><td>预览验收任务151</td><td>小周</td><td>进行中</td><td>47%</td><td>6</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>152</td><td>预览验收任务152</td><td>小陈</td><td>已完成</td><td>54%</td><td>7</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>153</td><td>预览验收任务153</td><td>小林</td><td>计划中</td><td>61%</td><td>8</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>154</td><td>预览验收任务154</td><td>小周</td><td>进行中</td><td>68%</td><td>2</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>155</td><td>预览验收任务155</td><td>小陈</td><td>已完成</td><td>75%</td><td>3</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>156</td><td>预览验收任务156</td><td>小林</td><td>计划中</td><td>82%</td><td>4</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>157</td><td>预览验收任务157</td><td>小周</td><td>进行中</td><td>89%</td><td>5</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>158</td><td>预览验收任务158</td><td>小陈</td><td>已完成</td><td>96%</td><td>6</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>159</td><td>预览验收任务159</td><td>小林</td><td>计划中</td><td>2%</td><td>7</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>160</td><td>预览验收任务160</td><td>小周</td><td>进行中</td><td>9%</td><td>8</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>161</td><td>预览验收任务161</td><td>小陈</td><td>已完成</td><td>16%</td><td>2</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>162</td><td>预览验收任务162</td><td>小林</td><td>计划中</td><td>23%</td><td>3</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>163</td><td>预览验收任务163</td><td>小周</td><td>进行中</td><td>30%</td><td>4</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>164</td><td>预览验收任务164</td><td>小陈</td><td>已完成</td><td>37%</td><td>5</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>165</td><td>预览验收任务165</td><td>小林</td><td>计划中</td><td>44%</td><td>6</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>166</td><td>预览验收任务166</td><td>小周</td><td>进行中</td><td>51%</td><td>7</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>167</td><td>预览验收任务167</td><td>小陈</td><td>已完成</td><td>58%</td><td>8</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>168</td><td>预览验收任务168</td><td>小林</td><td>计划中</td><td>65%</td><td>2</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>169</td><td>预览验收任务169</td><td>小周</td><td>进行中</td><td>72%</td><td>3</td><td>2</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>170</td><td>预览验收任务170</td><td>小陈</td><td>已完成</td><td>79%</td><td>4</td><td>3</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>171</td><td>预览验收任务171</td><td>小林</td><td>计划中</td><td>86%</td><td>5</td><td>4</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>172</td><td>预览验收任务172</td><td>小周</td><td>进行中</td><td>93%</td><td>6</td><td>5</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>173</td><td>预览验收任务173</td><td>小陈</td><td>已完成</td><td>100%</td><td>7</td><td>6</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>174</td><td>预览验收任务174</td><td>小林</td><td>计划中</td><td>6%</td><td>8</td><td>1</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>175</td><td>预览验收任务175</td><td>小周</td><td>进行中</td><td>13%</td><td>2</td><td>2</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>176</td><td>预览验收任务176</td><td>小陈</td><td>已完成</td><td>20%</td><td>3</td><td>3</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>177</td><td>预览验收任务177</td><td>小林</td><td>计划中</td><td>27%</td><td>4</td><td>4</td><td>优先</td><td>工作组2</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>178</td><td>预览验收任务178</td><td>小周</td><td>进行中</td><td>34%</td><td>5</td><td>5</td><td>常规</td><td>工作组3</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>179</td><td>预览验收任务179</td><td>小陈</td><td>已完成</td><td>41%</td><td>6</td><td>6</td><td>优先</td><td>工作组4</td><td>Khor Lab模拟数据</td></tr>\n<tr><td>180</td><td>预览验收任务180</td><td>小林</td><td>计划中</td><td>48%</td><td>7</td><td>1</td><td>常规</td><td>工作组1</td><td>Khor Lab模拟数据</td></tr>\n</tbody></table>\n<h2>验收汇总</h2>\n<table><thead><tr><th>文件类型</th><th>布局检查</th><th>交互检查</th><th>样例数量</th></tr></thead><tbody>\n<tr><td>Word</td><td>标题与表格</td><td>文档滚动</td><td>1</td></tr>\n<tr><td>PowerPoint</td><td>背景与色块</td><td>幻灯片翻页</td><td>3</td></tr>\n<tr><td>Excel</td><td>列宽与样式</td><td>工作表切换</td><td>2</td></tr>\n</tbody></table>\n<h2>Chart 1</h2>\n<p>Title: 工时对比\nSeries: Series 1\nSeries: Series 2</p>\n",
+      "encrypted": false
+    }
   },
   "pairing_ticket": {
     "token": "khorLAB_ONLY_NOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIALNOT_A_PAIRING_CREDENTIAL",
@@ -901,20 +1445,1760 @@
       "path": "M4 4h7v1h-7zM13 4h1v1h-1zM15 4h1v1h-1zM17 4h1v1h-1zM20 4h6v1h-6zM28 4h1v1h-1zM30 4h2v1h-2zM33 4h4v1h-4zM38 4h3v1h-3zM44 4h4v1h-4zM49 4h3v1h-3zM55 4h2v1h-2zM58 4h7v1h-7zM4 5h1v1h-1zM10 5h1v1h-1zM12 5h2v1h-2zM15 5h3v1h-3zM19 5h2v1h-2zM23 5h1v1h-1zM27 5h7v1h-7zM35 5h1v1h-1zM37 5h1v1h-1zM41 5h1v1h-1zM44 5h1v1h-1zM51 5h1v1h-1zM53 5h1v1h-1zM55 5h2v1h-2zM58 5h1v1h-1zM64 5h1v1h-1zM4 6h1v1h-1zM6 6h3v1h-3zM10 6h1v1h-1zM14 6h2v1h-2zM19 6h2v1h-2zM22 6h1v1h-1zM24 6h3v1h-3zM28 6h1v1h-1zM31 6h1v1h-1zM33 6h5v1h-5zM40 6h2v1h-2zM43 6h1v1h-1zM47 6h1v1h-1zM49 6h3v1h-3zM54 6h3v1h-3zM58 6h1v1h-1zM60 6h3v1h-3zM64 6h1v1h-1zM4 7h1v1h-1zM6 7h3v1h-3zM10 7h1v1h-1zM14 7h1v1h-1zM16 7h3v1h-3zM21 7h3v1h-3zM26 7h1v1h-1zM28 7h2v1h-2zM31 7h5v1h-5zM37 7h3v1h-3zM41 7h7v1h-7zM49 7h1v1h-1zM51 7h4v1h-4zM56 7h1v1h-1zM58 7h1v1h-1zM60 7h3v1h-3zM64 7h1v1h-1zM4 8h1v1h-1zM6 8h3v1h-3zM10 8h1v1h-1zM12 8h1v1h-1zM16 8h5v1h-5zM24 8h1v1h-1zM26 8h2v1h-2zM30 8h1v1h-1zM32 8h6v1h-6zM40 8h2v1h-2zM43 8h3v1h-3zM48 8h3v1h-3zM53 8h3v1h-3zM58 8h1v1h-1zM60 8h3v1h-3zM64 8h1v1h-1zM4 9h1v1h-1zM10 9h1v1h-1zM13 9h3v1h-3zM17 9h1v1h-1zM20 9h1v1h-1zM23 9h2v1h-2zM26 9h1v1h-1zM28 9h3v1h-3zM32 9h1v1h-1zM36 9h2v1h-2zM39 9h1v1h-1zM41 9h1v1h-1zM43 9h1v1h-1zM45 9h3v1h-3zM49 9h3v1h-3zM53 9h2v1h-2zM58 9h1v1h-1zM64 9h1v1h-1zM4 10h7v1h-7zM12 10h1v1h-1zM14 10h1v1h-1zM16 10h1v1h-1zM18 10h1v1h-1zM20 10h1v1h-1zM22 10h1v1h-1zM24 10h1v1h-1zM26 10h1v1h-1zM28 10h1v1h-1zM30 10h1v1h-1zM32 10h1v1h-1zM34 10h1v1h-1zM36 10h1v1h-1zM38 10h1v1h-1zM40 10h1v1h-1zM42 10h1v1h-1zM44 10h1v1h-1zM46 10h1v1h-1zM48 10h1v1h-1zM50 10h1v1h-1zM52 10h1v1h-1zM54 10h1v1h-1zM56 10h1v1h-1zM58 10h7v1h-7zM13 11h1v1h-1zM15 11h2v1h-2zM18 11h1v1h-1zM20 11h1v1h-1zM22 11h1v1h-1zM27 11h3v1h-3zM32 11h1v1h-1zM36 11h1v1h-1zM39 11h1v1h-1zM41 11h1v1h-1zM45 11h2v1h-2zM51 11h2v1h-2zM54 11h3v1h-3zM4 12h1v1h-1zM6 12h1v1h-1zM8 12h1v1h-1zM10 12h1v1h-1zM14 12h1v1h-1zM16 12h2v1h-2zM19 12h2v1h-2zM23 12h1v1h-1zM25 12h2v1h-2zM30 12h1v1h-1zM32 12h5v1h-5zM40 12h1v1h-1zM42 12h2v1h-2zM45 12h1v1h-1zM47 12h2v1h-2zM50 12h1v1h-1zM52 12h1v1h-1zM60 12h1v1h-1zM63 12h1v1h-1zM4 13h5v1h-5zM12 13h3v1h-3zM19 13h5v1h-5zM25 13h2v1h-2zM29 13h1v1h-1zM32 13h3v1h-3zM37 13h4v1h-4zM43 13h2v1h-2zM46 13h2v1h-2zM51 13h1v1h-1zM55 13h1v1h-1zM57 13h4v1h-4zM62 13h1v1h-1zM64 13h1v1h-1zM4 14h5v1h-5zM10 14h1v1h-1zM14 14h3v1h-3zM20 14h3v1h-3zM24 14h1v1h-1zM27 14h2v1h-2zM31 14h1v1h-1zM36 14h1v1h-1zM40 14h3v1h-3zM45 14h2v1h-2zM48 14h4v1h-4zM54 14h1v1h-1zM56 14h2v1h-2zM60 14h2v1h-2zM64 14h1v1h-1zM4 15h1v1h-1zM7 15h1v1h-1zM11 15h1v1h-1zM13 15h2v1h-2zM16 15h1v1h-1zM19 15h7v1h-7zM27 15h3v1h-3zM35 15h1v1h-1zM37 15h1v1h-1zM39 15h1v1h-1zM41 15h1v1h-1zM43 15h1v1h-1zM49 15h1v1h-1zM53 15h3v1h-3zM57 15h1v1h-1zM59 15h1v1h-1zM61 15h4v1h-4zM6 16h1v1h-1zM8 16h3v1h-3zM13 16h1v1h-1zM16 16h1v1h-1zM18 16h2v1h-2zM21 16h3v1h-3zM25 16h1v1h-1zM28 16h7v1h-7zM36 16h3v1h-3zM40 16h1v1h-1zM42 16h1v1h-1zM44 16h2v1h-2zM48 16h2v1h-2zM51 16h2v1h-2zM54 16h1v1h-1zM56 16h1v1h-1zM59 16h5v1h-5zM6 17h1v1h-1zM11 17h1v1h-1zM15 17h1v1h-1zM17 17h3v1h-3zM21 17h2v1h-2zM28 17h2v1h-2zM32 17h2v1h-2zM37 17h2v1h-2zM43 17h1v1h-1zM46 17h1v1h-1zM48 17h1v1h-1zM52 17h2v1h-2zM55 17h1v1h-1zM57 17h1v1h-1zM59 17h1v1h-1zM61 17h2v1h-2zM4 18h3v1h-3zM10 18h1v1h-1zM12 18h1v1h-1zM19 18h2v1h-2zM23 18h2v1h-2zM26 18h1v1h-1zM29 18h2v1h-2zM34 18h3v1h-3zM39 18h4v1h-4zM44 18h1v1h-1zM46 18h2v1h-2zM49 18h1v1h-1zM51 18h1v1h-1zM53 18h1v1h-1zM56 18h1v1h-1zM58 18h2v1h-2zM61 18h1v1h-1zM63 18h2v1h-2zM4 19h1v1h-1zM6 19h1v1h-1zM8 19h1v1h-1zM12 19h4v1h-4zM17 19h3v1h-3zM26 19h2v1h-2zM31 19h2v1h-2zM36 19h1v1h-1zM42 19h1v1h-1zM48 19h2v1h-2zM51 19h2v1h-2zM54 19h2v1h-2zM59 19h2v1h-2zM62 19h1v1h-1zM4 20h1v1h-1zM6 20h5v1h-5zM12 20h2v1h-2zM17 20h1v1h-1zM20 20h2v1h-2zM26 20h6v1h-6zM35 20h4v1h-4zM40 20h3v1h-3zM44 20h3v1h-3zM48 20h2v1h-2zM53 20h2v1h-2zM57 20h3v1h-3zM64 20h1v1h-1zM6 21h2v1h-2zM11 21h1v1h-1zM13 21h2v1h-2zM19 21h1v1h-1zM23 21h4v1h-4zM29 21h6v1h-6zM41 21h2v1h-2zM46 21h1v1h-1zM48 21h4v1h-4zM55 21h4v1h-4zM61 21h4v1h-4zM6 22h2v1h-2zM10 22h2v1h-2zM18 22h2v1h-2zM21 22h1v1h-1zM24 22h1v1h-1zM26 22h2v1h-2zM30 22h2v1h-2zM35 22h1v1h-1zM37 22h1v1h-1zM40 22h1v1h-1zM44 22h2v1h-2zM52 22h1v1h-1zM54 22h2v1h-2zM60 22h2v1h-2zM63 22h2v1h-2zM4 23h1v1h-1zM8 23h1v1h-1zM12 23h1v1h-1zM14 23h2v1h-2zM17 23h1v1h-1zM19 23h1v1h-1zM21 23h1v1h-1zM26 23h1v1h-1zM28 23h1v1h-1zM32 23h4v1h-4zM39 23h1v1h-1zM41 23h1v1h-1zM44 23h2v1h-2zM48 23h2v1h-2zM51 23h1v1h-1zM53 23h5v1h-5zM64 23h1v1h-1zM4 24h2v1h-2zM9 24h2v1h-2zM12 24h2v1h-2zM16 24h2v1h-2zM20 24h1v1h-1zM22 24h3v1h-3zM26 24h3v1h-3zM30 24h1v1h-1zM34 24h1v1h-1zM38 24h1v1h-1zM40 24h1v1h-1zM42 24h3v1h-3zM46 24h1v1h-1zM48 24h3v1h-3zM53 24h1v1h-1zM56 24h2v1h-2zM60 24h1v1h-1zM64 24h1v1h-1zM6 25h3v1h-3zM11 25h2v1h-2zM14 25h2v1h-2zM17 25h2v1h-2zM20 25h1v1h-1zM23 25h1v1h-1zM25 25h1v1h-1zM27 25h2v1h-2zM31 25h2v1h-2zM34 25h2v1h-2zM37 25h1v1h-1zM41 25h1v1h-1zM45 25h1v1h-1zM47 25h6v1h-6zM54 25h1v1h-1zM61 25h4v1h-4zM9 26h2v1h-2zM12 26h2v1h-2zM16 26h1v1h-1zM18 26h1v1h-1zM20 26h1v1h-1zM22 26h4v1h-4zM28 26h1v1h-1zM31 26h2v1h-2zM38 26h2v1h-2zM41 26h1v1h-1zM43 26h2v1h-2zM46 26h1v1h-1zM48 26h2v1h-2zM55 26h1v1h-1zM57 26h1v1h-1zM59 26h1v1h-1zM63 26h2v1h-2zM5 27h4v1h-4zM11 27h3v1h-3zM15 27h2v1h-2zM18 27h1v1h-1zM21 27h2v1h-2zM24 27h2v1h-2zM29 27h3v1h-3zM34 27h1v1h-1zM36 27h2v1h-2zM39 27h1v1h-1zM41 27h1v1h-1zM44 27h2v1h-2zM47 27h1v1h-1zM50 27h1v1h-1zM53 27h1v1h-1zM56 27h2v1h-2zM59 27h1v1h-1zM61 27h1v1h-1zM63 27h1v1h-1zM4 28h3v1h-3zM8 28h1v1h-1zM10 28h2v1h-2zM13 28h1v1h-1zM15 28h2v1h-2zM26 28h4v1h-4zM31 28h2v1h-2zM34 28h5v1h-5zM40 28h4v1h-4zM46 28h1v1h-1zM48 28h1v1h-1zM51 28h1v1h-1zM54 28h1v1h-1zM57 28h2v1h-2zM62 28h1v1h-1zM64 28h1v1h-1zM5 29h2v1h-2zM14 29h2v1h-2zM17 29h2v1h-2zM21 29h7v1h-7zM30 29h2v1h-2zM34 29h2v1h-2zM37 29h1v1h-1zM39 29h1v1h-1zM41 29h1v1h-1zM43 29h1v1h-1zM45 29h1v1h-1zM47 29h1v1h-1zM49 29h5v1h-5zM55 29h1v1h-1zM59 29h2v1h-2zM63 29h2v1h-2zM5 30h3v1h-3zM10 30h1v1h-1zM13 30h4v1h-4zM21 30h1v1h-1zM23 30h3v1h-3zM27 30h2v1h-2zM30 30h1v1h-1zM32 30h1v1h-1zM35 30h1v1h-1zM37 30h2v1h-2zM40 30h3v1h-3zM44 30h1v1h-1zM46 30h1v1h-1zM48 30h1v1h-1zM51 30h2v1h-2zM54 30h1v1h-1zM56 30h1v1h-1zM58 30h1v1h-1zM60 30h2v1h-2zM4 31h1v1h-1zM6 31h4v1h-4zM11 31h2v1h-2zM14 31h1v1h-1zM19 31h3v1h-3zM23 31h3v1h-3zM27 31h1v1h-1zM29 31h1v1h-1zM31 31h7v1h-7zM40 31h1v1h-1zM43 31h1v1h-1zM45 31h2v1h-2zM50 31h1v1h-1zM52 31h1v1h-1zM54 31h3v1h-3zM58 31h2v1h-2zM61 31h3v1h-3zM8 32h5v1h-5zM14 32h1v1h-1zM16 32h1v1h-1zM18 32h2v1h-2zM21 32h1v1h-1zM25 32h2v1h-2zM28 32h1v1h-1zM30 32h1v1h-1zM32 32h6v1h-6zM39 32h1v1h-1zM41 32h1v1h-1zM47 32h1v1h-1zM49 32h1v1h-1zM54 32h1v1h-1zM56 32h6v1h-6zM64 32h1v1h-1zM5 33h4v1h-4zM12 33h3v1h-3zM17 33h3v1h-3zM23 33h1v1h-1zM26 33h4v1h-4zM32 33h1v1h-1zM36 33h1v1h-1zM42 33h4v1h-4zM48 33h1v1h-1zM51 33h2v1h-2zM55 33h2v1h-2zM60 33h2v1h-2zM5 34h1v1h-1zM8 34h1v1h-1zM10 34h1v1h-1zM12 34h6v1h-6zM19 34h3v1h-3zM24 34h2v1h-2zM29 34h2v1h-2zM32 34h1v1h-1zM34 34h1v1h-1zM36 34h1v1h-1zM39 34h2v1h-2zM42 34h3v1h-3zM47 34h2v1h-2zM50 34h2v1h-2zM53 34h2v1h-2zM56 34h1v1h-1zM58 34h1v1h-1zM60 34h1v1h-1zM62 34h1v1h-1zM64 34h1v1h-1zM7 35h2v1h-2zM12 35h1v1h-1zM18 35h2v1h-2zM21 35h5v1h-5zM27 35h4v1h-4zM32 35h1v1h-1zM36 35h3v1h-3zM40 35h2v1h-2zM43 35h1v1h-1zM45 35h3v1h-3zM51 35h1v1h-1zM55 35h2v1h-2zM60 35h2v1h-2zM63 35h1v1h-1zM4 36h9v1h-9zM15 36h3v1h-3zM22 36h2v1h-2zM29 36h1v1h-1zM31 36h6v1h-6zM38 36h3v1h-3zM42 36h1v1h-1zM44 36h1v1h-1zM46 36h1v1h-1zM48 36h7v1h-7zM56 36h5v1h-5zM62 36h1v1h-1zM64 36h1v1h-1zM6 37h1v1h-1zM11 37h1v1h-1zM14 37h2v1h-2zM17 37h1v1h-1zM22 37h3v1h-3zM26 37h6v1h-6zM33 37h2v1h-2zM36 37h1v1h-1zM38 37h1v1h-1zM40 37h1v1h-1zM45 37h1v1h-1zM47 37h1v1h-1zM49 37h1v1h-1zM51 37h3v1h-3zM55 37h1v1h-1zM57 37h3v1h-3zM61 37h2v1h-2zM4 38h1v1h-1zM6 38h1v1h-1zM10 38h2v1h-2zM13 38h1v1h-1zM15 38h1v1h-1zM17 38h1v1h-1zM19 38h2v1h-2zM23 38h2v1h-2zM26 38h6v1h-6zM33 38h2v1h-2zM37 38h2v1h-2zM40 38h1v1h-1zM42 38h1v1h-1zM44 38h1v1h-1zM46 38h1v1h-1zM48 38h1v1h-1zM50 38h2v1h-2zM53 38h2v1h-2zM57 38h2v1h-2zM60 38h1v1h-1zM62 38h2v1h-2zM4 39h1v1h-1zM8 39h1v1h-1zM12 39h3v1h-3zM16 39h3v1h-3zM21 39h2v1h-2zM24 39h4v1h-4zM30 39h6v1h-6zM38 39h2v1h-2zM41 39h1v1h-1zM43 39h1v1h-1zM47 39h2v1h-2zM50 39h2v1h-2zM55 39h1v1h-1zM57 39h1v1h-1zM59 39h1v1h-1zM61 39h1v1h-1zM63 39h2v1h-2zM5 40h2v1h-2zM8 40h1v1h-1zM10 40h1v1h-1zM12 40h2v1h-2zM15 40h4v1h-4zM21 40h5v1h-5zM27 40h1v1h-1zM29 40h2v1h-2zM33 40h3v1h-3zM38 40h2v1h-2zM43 40h1v1h-1zM46 40h1v1h-1zM48 40h2v1h-2zM52 40h1v1h-1zM55 40h1v1h-1zM58 40h1v1h-1zM60 40h1v1h-1zM63 40h1v1h-1zM4 41h1v1h-1zM14 41h2v1h-2zM17 41h2v1h-2zM20 41h1v1h-1zM23 41h1v1h-1zM25 41h4v1h-4zM31 41h1v1h-1zM34 41h1v1h-1zM36 41h10v1h-10zM49 41h1v1h-1zM54 41h1v1h-1zM56 41h2v1h-2zM61 41h2v1h-2zM8 42h1v1h-1zM10 42h2v1h-2zM13 42h1v1h-1zM15 42h1v1h-1zM22 42h3v1h-3zM26 42h1v1h-1zM29 42h1v1h-1zM35 42h1v1h-1zM38 42h2v1h-2zM41 42h1v1h-1zM43 42h1v1h-1zM45 42h3v1h-3zM50 42h1v1h-1zM55 42h1v1h-1zM58 42h1v1h-1zM62 42h1v1h-1zM64 42h1v1h-1zM4 43h3v1h-3zM8 43h1v1h-1zM14 43h1v1h-1zM19 43h4v1h-4zM25 43h1v1h-1zM27 43h1v1h-1zM29 43h3v1h-3zM33 43h3v1h-3zM37 43h1v1h-1zM39 43h2v1h-2zM42 43h2v1h-2zM45 43h1v1h-1zM47 43h1v1h-1zM52 43h1v1h-1zM55 43h1v1h-1zM57 43h1v1h-1zM59 43h1v1h-1zM63 43h1v1h-1zM5 44h7v1h-7zM13 44h1v1h-1zM16 44h1v1h-1zM18 44h1v1h-1zM20 44h2v1h-2zM26 44h1v1h-1zM28 44h2v1h-2zM34 44h1v1h-1zM38 44h1v1h-1zM42 44h1v1h-1zM44 44h1v1h-1zM46 44h2v1h-2zM50 44h1v1h-1zM54 44h1v1h-1zM58 44h1v1h-1zM60 44h1v1h-1zM64 44h1v1h-1zM4 45h4v1h-4zM9 45h1v1h-1zM11 45h1v1h-1zM13 45h1v1h-1zM17 45h1v1h-1zM19 45h1v1h-1zM21 45h1v1h-1zM23 45h1v1h-1zM25 45h2v1h-2zM28 45h2v1h-2zM31 45h1v1h-1zM34 45h4v1h-4zM39 45h1v1h-1zM45 45h1v1h-1zM48 45h3v1h-3zM53 45h1v1h-1zM55 45h3v1h-3zM59 45h1v1h-1zM61 45h3v1h-3zM5 46h1v1h-1zM9 46h4v1h-4zM15 46h2v1h-2zM19 46h1v1h-1zM22 46h1v1h-1zM24 46h1v1h-1zM26 46h1v1h-1zM32 46h2v1h-2zM38 46h1v1h-1zM43 46h1v1h-1zM46 46h1v1h-1zM52 46h1v1h-1zM54 46h1v1h-1zM56 46h1v1h-1zM60 46h1v1h-1zM64 46h1v1h-1zM4 47h1v1h-1zM7 47h1v1h-1zM11 47h2v1h-2zM14 47h3v1h-3zM19 47h3v1h-3zM23 47h2v1h-2zM28 47h1v1h-1zM31 47h1v1h-1zM35 47h2v1h-2zM38 47h1v1h-1zM42 47h2v1h-2zM46 47h2v1h-2zM49 47h1v1h-1zM51 47h1v1h-1zM53 47h1v1h-1zM55 47h4v1h-4zM61 47h1v1h-1zM63 47h1v1h-1zM5 48h3v1h-3zM10 48h2v1h-2zM15 48h1v1h-1zM17 48h3v1h-3zM21 48h3v1h-3zM26 48h2v1h-2zM30 48h1v1h-1zM32 48h2v1h-2zM35 48h2v1h-2zM40 48h1v1h-1zM44 48h1v1h-1zM47 48h2v1h-2zM50 48h3v1h-3zM54 48h1v1h-1zM62 48h1v1h-1zM64 48h1v1h-1zM5 49h1v1h-1zM7 49h2v1h-2zM11 49h1v1h-1zM13 49h1v1h-1zM19 49h2v1h-2zM23 49h1v1h-1zM25 49h1v1h-1zM27 49h3v1h-3zM31 49h2v1h-2zM35 49h1v1h-1zM38 49h2v1h-2zM42 49h3v1h-3zM46 49h1v1h-1zM50 49h1v1h-1zM53 49h1v1h-1zM56 49h1v1h-1zM58 49h1v1h-1zM60 49h1v1h-1zM63 49h2v1h-2zM4 50h1v1h-1zM7 50h1v1h-1zM10 50h3v1h-3zM14 50h1v1h-1zM16 50h3v1h-3zM20 50h4v1h-4zM26 50h7v1h-7zM34 50h3v1h-3zM38 50h3v1h-3zM42 50h1v1h-1zM44 50h1v1h-1zM46 50h2v1h-2zM49 50h3v1h-3zM54 50h7v1h-7zM62 50h1v1h-1zM4 51h5v1h-5zM11 51h1v1h-1zM13 51h1v1h-1zM15 51h1v1h-1zM19 51h4v1h-4zM24 51h1v1h-1zM27 51h1v1h-1zM29 51h2v1h-2zM32 51h1v1h-1zM36 51h3v1h-3zM41 51h2v1h-2zM44 51h3v1h-3zM49 51h1v1h-1zM51 51h1v1h-1zM53 51h2v1h-2zM56 51h2v1h-2zM60 51h1v1h-1zM64 51h1v1h-1zM7 52h1v1h-1zM10 52h1v1h-1zM14 52h1v1h-1zM16 52h1v1h-1zM18 52h2v1h-2zM24 52h3v1h-3zM28 52h1v1h-1zM31 52h1v1h-1zM34 52h5v1h-5zM40 52h1v1h-1zM42 52h2v1h-2zM45 52h1v1h-1zM47 52h1v1h-1zM49 52h3v1h-3zM53 52h2v1h-2zM58 52h1v1h-1zM60 52h4v1h-4zM6 53h1v1h-1zM8 53h1v1h-1zM13 53h1v1h-1zM18 53h1v1h-1zM20 53h8v1h-8zM30 53h2v1h-2zM35 53h2v1h-2zM39 53h1v1h-1zM41 53h1v1h-1zM43 53h2v1h-2zM47 53h1v1h-1zM51 53h2v1h-2zM55 53h6v1h-6zM63 53h1v1h-1zM6 54h5v1h-5zM12 54h6v1h-6zM20 54h2v1h-2zM23 54h1v1h-1zM26 54h1v1h-1zM28 54h1v1h-1zM32 54h1v1h-1zM34 54h5v1h-5zM40 54h1v1h-1zM42 54h3v1h-3zM46 54h1v1h-1zM48 54h3v1h-3zM53 54h2v1h-2zM56 54h3v1h-3zM61 54h1v1h-1zM63 54h2v1h-2zM4 55h3v1h-3zM8 55h1v1h-1zM11 55h3v1h-3zM17 55h1v1h-1zM21 55h1v1h-1zM23 55h1v1h-1zM26 55h2v1h-2zM29 55h5v1h-5zM35 55h1v1h-1zM38 55h4v1h-4zM43 55h1v1h-1zM45 55h1v1h-1zM47 55h3v1h-3zM51 55h1v1h-1zM53 55h3v1h-3zM61 55h4v1h-4zM4 56h4v1h-4zM10 56h1v1h-1zM12 56h4v1h-4zM17 56h1v1h-1zM20 56h5v1h-5zM28 56h1v1h-1zM30 56h1v1h-1zM32 56h7v1h-7zM42 56h4v1h-4zM48 56h1v1h-1zM50 56h4v1h-4zM55 56h6v1h-6zM62 56h2v1h-2zM12 57h2v1h-2zM16 57h1v1h-1zM18 57h3v1h-3zM23 57h1v1h-1zM27 57h3v1h-3zM32 57h1v1h-1zM36 57h1v1h-1zM39 57h3v1h-3zM46 57h1v1h-1zM48 57h2v1h-2zM52 57h1v1h-1zM55 57h2v1h-2zM60 57h3v1h-3zM4 58h7v1h-7zM13 58h1v1h-1zM15 58h1v1h-1zM17 58h4v1h-4zM25 58h2v1h-2zM29 58h1v1h-1zM32 58h1v1h-1zM34 58h1v1h-1zM36 58h1v1h-1zM38 58h3v1h-3zM42 58h1v1h-1zM44 58h1v1h-1zM46 58h2v1h-2zM50 58h2v1h-2zM54 58h1v1h-1zM56 58h1v1h-1zM58 58h1v1h-1zM60 58h2v1h-2zM63 58h1v1h-1zM4 59h1v1h-1zM10 59h1v1h-1zM13 59h1v1h-1zM15 59h1v1h-1zM20 59h3v1h-3zM28 59h5v1h-5zM36 59h2v1h-2zM47 59h4v1h-4zM52 59h5v1h-5zM60 59h1v1h-1zM62 59h2v1h-2zM4 60h1v1h-1zM6 60h3v1h-3zM10 60h1v1h-1zM12 60h2v1h-2zM15 60h4v1h-4zM20 60h2v1h-2zM23 60h1v1h-1zM25 60h3v1h-3zM30 60h7v1h-7zM38 60h1v1h-1zM40 60h1v1h-1zM42 60h1v1h-1zM44 60h5v1h-5zM50 60h2v1h-2zM56 60h5v1h-5zM4 61h1v1h-1zM6 61h3v1h-3zM10 61h1v1h-1zM13 61h1v1h-1zM15 61h1v1h-1zM21 61h1v1h-1zM26 61h1v1h-1zM31 61h3v1h-3zM41 61h1v1h-1zM46 61h2v1h-2zM50 61h4v1h-4zM55 61h3v1h-3zM59 61h1v1h-1zM62 61h2v1h-2zM4 62h1v1h-1zM6 62h3v1h-3zM10 62h1v1h-1zM12 62h1v1h-1zM15 62h4v1h-4zM20 62h3v1h-3zM24 62h2v1h-2zM28 62h1v1h-1zM30 62h3v1h-3zM34 62h1v1h-1zM36 62h1v1h-1zM40 62h3v1h-3zM44 62h2v1h-2zM47 62h4v1h-4zM54 62h1v1h-1zM58 62h1v1h-1zM60 62h2v1h-2zM64 62h1v1h-1zM4 63h1v1h-1zM10 63h1v1h-1zM13 63h3v1h-3zM17 63h1v1h-1zM20 63h3v1h-3zM25 63h1v1h-1zM27 63h1v1h-1zM31 63h2v1h-2zM37 63h1v1h-1zM39 63h2v1h-2zM42 63h1v1h-1zM44 63h1v1h-1zM46 63h3v1h-3zM50 63h1v1h-1zM53 63h1v1h-1zM55 63h1v1h-1zM57 63h1v1h-1zM59 63h1v1h-1zM63 63h1v1h-1zM4 64h7v1h-7zM12 64h3v1h-3zM18 64h1v1h-1zM21 64h3v1h-3zM27 64h2v1h-2zM30 64h2v1h-2zM33 64h9v1h-9zM43 64h5v1h-5zM50 64h4v1h-4zM56 64h2v1h-2zM61 64h1v1h-1zM63 64h2v1h-2z"
     }
   },
+  "settings": {
+    "zh": [
+      {
+        "name": "theme",
+        "label": "主题",
+        "section": "appearance",
+        "section_label": "外观",
+        "page": "appearance",
+        "value": "auto",
+        "choices": [
+          {
+            "value": "auto",
+            "label": "跟随系统"
+          },
+          {
+            "value": "light",
+            "label": "浅色"
+          },
+          {
+            "value": "dark",
+            "label": "深色"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "window-material",
+        "label": "背景材质",
+        "section": "window",
+        "section_label": "窗口",
+        "page": "appearance",
+        "value": "solid",
+        "choices": [
+          {
+            "value": "solid",
+            "label": "实色"
+          },
+          {
+            "value": "clear",
+            "label": "半透明"
+          },
+          {
+            "value": "frost",
+            "label": "毛玻璃"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "window-outline",
+        "label": "窗口轮廓",
+        "section": "window",
+        "section_label": "窗口",
+        "page": "appearance",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "开"
+          },
+          {
+            "value": "off",
+            "label": "关"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "window-opacity",
+        "label": "背景不透明度",
+        "section": "window",
+        "section_label": "窗口",
+        "page": "appearance",
+        "value": "90",
+        "choices": [
+          {
+            "value": "0",
+            "label": "0"
+          },
+          {
+            "value": "1",
+            "label": "1"
+          },
+          {
+            "value": "2",
+            "label": "2"
+          },
+          {
+            "value": "3",
+            "label": "3"
+          },
+          {
+            "value": "4",
+            "label": "4"
+          },
+          {
+            "value": "5",
+            "label": "5"
+          },
+          {
+            "value": "6",
+            "label": "6"
+          },
+          {
+            "value": "7",
+            "label": "7"
+          },
+          {
+            "value": "8",
+            "label": "8"
+          },
+          {
+            "value": "9",
+            "label": "9"
+          },
+          {
+            "value": "10",
+            "label": "10"
+          },
+          {
+            "value": "11",
+            "label": "11"
+          },
+          {
+            "value": "12",
+            "label": "12"
+          },
+          {
+            "value": "13",
+            "label": "13"
+          },
+          {
+            "value": "14",
+            "label": "14"
+          },
+          {
+            "value": "15",
+            "label": "15"
+          },
+          {
+            "value": "16",
+            "label": "16"
+          },
+          {
+            "value": "17",
+            "label": "17"
+          },
+          {
+            "value": "18",
+            "label": "18"
+          },
+          {
+            "value": "19",
+            "label": "19"
+          },
+          {
+            "value": "20",
+            "label": "20"
+          },
+          {
+            "value": "21",
+            "label": "21"
+          },
+          {
+            "value": "22",
+            "label": "22"
+          },
+          {
+            "value": "23",
+            "label": "23"
+          },
+          {
+            "value": "24",
+            "label": "24"
+          },
+          {
+            "value": "25",
+            "label": "25"
+          },
+          {
+            "value": "26",
+            "label": "26"
+          },
+          {
+            "value": "27",
+            "label": "27"
+          },
+          {
+            "value": "28",
+            "label": "28"
+          },
+          {
+            "value": "29",
+            "label": "29"
+          },
+          {
+            "value": "30",
+            "label": "30"
+          },
+          {
+            "value": "31",
+            "label": "31"
+          },
+          {
+            "value": "32",
+            "label": "32"
+          },
+          {
+            "value": "33",
+            "label": "33"
+          },
+          {
+            "value": "34",
+            "label": "34"
+          },
+          {
+            "value": "35",
+            "label": "35"
+          },
+          {
+            "value": "36",
+            "label": "36"
+          },
+          {
+            "value": "37",
+            "label": "37"
+          },
+          {
+            "value": "38",
+            "label": "38"
+          },
+          {
+            "value": "39",
+            "label": "39"
+          },
+          {
+            "value": "40",
+            "label": "40"
+          },
+          {
+            "value": "41",
+            "label": "41"
+          },
+          {
+            "value": "42",
+            "label": "42"
+          },
+          {
+            "value": "43",
+            "label": "43"
+          },
+          {
+            "value": "44",
+            "label": "44"
+          },
+          {
+            "value": "45",
+            "label": "45"
+          },
+          {
+            "value": "46",
+            "label": "46"
+          },
+          {
+            "value": "47",
+            "label": "47"
+          },
+          {
+            "value": "48",
+            "label": "48"
+          },
+          {
+            "value": "49",
+            "label": "49"
+          },
+          {
+            "value": "50",
+            "label": "50"
+          },
+          {
+            "value": "51",
+            "label": "51"
+          },
+          {
+            "value": "52",
+            "label": "52"
+          },
+          {
+            "value": "53",
+            "label": "53"
+          },
+          {
+            "value": "54",
+            "label": "54"
+          },
+          {
+            "value": "55",
+            "label": "55"
+          },
+          {
+            "value": "56",
+            "label": "56"
+          },
+          {
+            "value": "57",
+            "label": "57"
+          },
+          {
+            "value": "58",
+            "label": "58"
+          },
+          {
+            "value": "59",
+            "label": "59"
+          },
+          {
+            "value": "60",
+            "label": "60"
+          },
+          {
+            "value": "61",
+            "label": "61"
+          },
+          {
+            "value": "62",
+            "label": "62"
+          },
+          {
+            "value": "63",
+            "label": "63"
+          },
+          {
+            "value": "64",
+            "label": "64"
+          },
+          {
+            "value": "65",
+            "label": "65"
+          },
+          {
+            "value": "66",
+            "label": "66"
+          },
+          {
+            "value": "67",
+            "label": "67"
+          },
+          {
+            "value": "68",
+            "label": "68"
+          },
+          {
+            "value": "69",
+            "label": "69"
+          },
+          {
+            "value": "70",
+            "label": "70"
+          },
+          {
+            "value": "71",
+            "label": "71"
+          },
+          {
+            "value": "72",
+            "label": "72"
+          },
+          {
+            "value": "73",
+            "label": "73"
+          },
+          {
+            "value": "74",
+            "label": "74"
+          },
+          {
+            "value": "75",
+            "label": "75"
+          },
+          {
+            "value": "76",
+            "label": "76"
+          },
+          {
+            "value": "77",
+            "label": "77"
+          },
+          {
+            "value": "78",
+            "label": "78"
+          },
+          {
+            "value": "79",
+            "label": "79"
+          },
+          {
+            "value": "80",
+            "label": "80"
+          },
+          {
+            "value": "81",
+            "label": "81"
+          },
+          {
+            "value": "82",
+            "label": "82"
+          },
+          {
+            "value": "83",
+            "label": "83"
+          },
+          {
+            "value": "84",
+            "label": "84"
+          },
+          {
+            "value": "85",
+            "label": "85"
+          },
+          {
+            "value": "86",
+            "label": "86"
+          },
+          {
+            "value": "87",
+            "label": "87"
+          },
+          {
+            "value": "88",
+            "label": "88"
+          },
+          {
+            "value": "89",
+            "label": "89"
+          },
+          {
+            "value": "90",
+            "label": "90"
+          },
+          {
+            "value": "91",
+            "label": "91"
+          },
+          {
+            "value": "92",
+            "label": "92"
+          },
+          {
+            "value": "93",
+            "label": "93"
+          },
+          {
+            "value": "94",
+            "label": "94"
+          },
+          {
+            "value": "95",
+            "label": "95"
+          },
+          {
+            "value": "96",
+            "label": "96"
+          },
+          {
+            "value": "97",
+            "label": "97"
+          },
+          {
+            "value": "98",
+            "label": "98"
+          },
+          {
+            "value": "99",
+            "label": "99"
+          },
+          {
+            "value": "100",
+            "label": "100"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "kind-mark",
+        "label": "类型标记",
+        "section": "avatar",
+        "section_label": "头像",
+        "page": "appearance",
+        "value": "face",
+        "choices": [
+          {
+            "value": "face",
+            "label": "浮现"
+          },
+          {
+            "value": "corner",
+            "label": "角标"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "corner-is",
+        "label": "角标是",
+        "section": "avatar",
+        "section_label": "头像",
+        "page": "appearance",
+        "value": "kind",
+        "choices": [
+          {
+            "value": "kind",
+            "label": "类型"
+          },
+          {
+            "value": "machine",
+            "label": "机器"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "lang",
+        "label": "界面语言",
+        "section": "language",
+        "section_label": "语言",
+        "page": "appearance",
+        "value": "auto",
+        "choices": [
+          {
+            "value": "auto",
+            "label": "跟随系统"
+          },
+          {
+            "value": "zh",
+            "label": "中文"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "tabs-limit",
+        "label": "标签页上限",
+        "section": "session",
+        "section_label": "会话",
+        "page": "session",
+        "value": "off",
+        "choices": [
+          {
+            "value": "off",
+            "label": "关"
+          },
+          {
+            "value": "4",
+            "label": "4"
+          },
+          {
+            "value": "5",
+            "label": "5"
+          },
+          {
+            "value": "6",
+            "label": "6"
+          },
+          {
+            "value": "7",
+            "label": "7"
+          },
+          {
+            "value": "8",
+            "label": "8"
+          },
+          {
+            "value": "9",
+            "label": "9"
+          },
+          {
+            "value": "10",
+            "label": "10"
+          },
+          {
+            "value": "11",
+            "label": "11"
+          },
+          {
+            "value": "12",
+            "label": "12"
+          },
+          {
+            "value": "13",
+            "label": "13"
+          },
+          {
+            "value": "14",
+            "label": "14"
+          },
+          {
+            "value": "15",
+            "label": "15"
+          },
+          {
+            "value": "16",
+            "label": "16"
+          },
+          {
+            "value": "17",
+            "label": "17"
+          },
+          {
+            "value": "18",
+            "label": "18"
+          },
+          {
+            "value": "19",
+            "label": "19"
+          },
+          {
+            "value": "20",
+            "label": "20"
+          },
+          {
+            "value": "21",
+            "label": "21"
+          },
+          {
+            "value": "22",
+            "label": "22"
+          },
+          {
+            "value": "23",
+            "label": "23"
+          },
+          {
+            "value": "24",
+            "label": "24"
+          },
+          {
+            "value": "25",
+            "label": "25"
+          },
+          {
+            "value": "26",
+            "label": "26"
+          },
+          {
+            "value": "27",
+            "label": "27"
+          },
+          {
+            "value": "28",
+            "label": "28"
+          },
+          {
+            "value": "29",
+            "label": "29"
+          },
+          {
+            "value": "30",
+            "label": "30"
+          },
+          {
+            "value": "31",
+            "label": "31"
+          },
+          {
+            "value": "32",
+            "label": "32"
+          },
+          {
+            "value": "33",
+            "label": "33"
+          },
+          {
+            "value": "34",
+            "label": "34"
+          },
+          {
+            "value": "35",
+            "label": "35"
+          },
+          {
+            "value": "36",
+            "label": "36"
+          },
+          {
+            "value": "37",
+            "label": "37"
+          },
+          {
+            "value": "38",
+            "label": "38"
+          },
+          {
+            "value": "39",
+            "label": "39"
+          },
+          {
+            "value": "40",
+            "label": "40"
+          },
+          {
+            "value": "41",
+            "label": "41"
+          },
+          {
+            "value": "42",
+            "label": "42"
+          },
+          {
+            "value": "43",
+            "label": "43"
+          },
+          {
+            "value": "44",
+            "label": "44"
+          },
+          {
+            "value": "45",
+            "label": "45"
+          },
+          {
+            "value": "46",
+            "label": "46"
+          },
+          {
+            "value": "47",
+            "label": "47"
+          },
+          {
+            "value": "48",
+            "label": "48"
+          },
+          {
+            "value": "49",
+            "label": "49"
+          },
+          {
+            "value": "50",
+            "label": "50"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "session-form",
+        "label": "新会话默认打开方式",
+        "section": "session",
+        "section_label": "会话",
+        "page": "session",
+        "value": "chat",
+        "choices": [
+          {
+            "value": "chat",
+            "label": "对话"
+          },
+          {
+            "value": "term",
+            "label": "终端"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "files-click",
+        "label": "单击文件",
+        "section": "workspace",
+        "section_label": "工作区",
+        "page": "workspace",
+        "value": "preview",
+        "choices": [
+          {
+            "value": "preview",
+            "label": "预览"
+          },
+          {
+            "value": "pin",
+            "label": "保持打开"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "ssh-carry",
+        "label": "通过 SSH 转连",
+        "section": "connection",
+        "section_label": "连接",
+        "page": "connection",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "开"
+          },
+          {
+            "value": "off",
+            "label": "关"
+          }
+        ],
+        "note": "无法访问互联网的 khor 主机，由可以通过 SSH 登录它的机器转连。重启 khor 后生效"
+      },
+      {
+        "name": "peer-hop",
+        "label": "通过其他机器转发",
+        "section": "connection",
+        "section_label": "连接",
+        "page": "connection",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "开"
+          },
+          {
+            "value": "off",
+            "label": "关"
+          }
+        ],
+        "note": "没有直连时，先通过两端都能连接的机器转发，再使用中继"
+      },
+      {
+        "name": "confirm-takeover",
+        "label": "接管会话",
+        "section": "confirm",
+        "section_label": "危险操作二次确认",
+        "page": "security",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "开"
+          },
+          {
+            "value": "off",
+            "label": "关"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "confirm-delete",
+        "label": "删除",
+        "section": "confirm",
+        "section_label": "危险操作二次确认",
+        "page": "security",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "开"
+          },
+          {
+            "value": "off",
+            "label": "关"
+          }
+        ],
+        "note": null
+      }
+    ],
+    "en": [
+      {
+        "name": "theme",
+        "label": "Theme",
+        "section": "appearance",
+        "section_label": "Appearance",
+        "page": "appearance",
+        "value": "auto",
+        "choices": [
+          {
+            "value": "auto",
+            "label": "Match system"
+          },
+          {
+            "value": "light",
+            "label": "Light"
+          },
+          {
+            "value": "dark",
+            "label": "Dark"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "window-material",
+        "label": "Background material",
+        "section": "window",
+        "section_label": "Window",
+        "page": "appearance",
+        "value": "solid",
+        "choices": [
+          {
+            "value": "solid",
+            "label": "Solid"
+          },
+          {
+            "value": "clear",
+            "label": "Translucent"
+          },
+          {
+            "value": "frost",
+            "label": "Frosted"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "window-outline",
+        "label": "Window outline",
+        "section": "window",
+        "section_label": "Window",
+        "page": "appearance",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "window-opacity",
+        "label": "Background opacity",
+        "section": "window",
+        "section_label": "Window",
+        "page": "appearance",
+        "value": "90",
+        "choices": [
+          {
+            "value": "0",
+            "label": "0"
+          },
+          {
+            "value": "1",
+            "label": "1"
+          },
+          {
+            "value": "2",
+            "label": "2"
+          },
+          {
+            "value": "3",
+            "label": "3"
+          },
+          {
+            "value": "4",
+            "label": "4"
+          },
+          {
+            "value": "5",
+            "label": "5"
+          },
+          {
+            "value": "6",
+            "label": "6"
+          },
+          {
+            "value": "7",
+            "label": "7"
+          },
+          {
+            "value": "8",
+            "label": "8"
+          },
+          {
+            "value": "9",
+            "label": "9"
+          },
+          {
+            "value": "10",
+            "label": "10"
+          },
+          {
+            "value": "11",
+            "label": "11"
+          },
+          {
+            "value": "12",
+            "label": "12"
+          },
+          {
+            "value": "13",
+            "label": "13"
+          },
+          {
+            "value": "14",
+            "label": "14"
+          },
+          {
+            "value": "15",
+            "label": "15"
+          },
+          {
+            "value": "16",
+            "label": "16"
+          },
+          {
+            "value": "17",
+            "label": "17"
+          },
+          {
+            "value": "18",
+            "label": "18"
+          },
+          {
+            "value": "19",
+            "label": "19"
+          },
+          {
+            "value": "20",
+            "label": "20"
+          },
+          {
+            "value": "21",
+            "label": "21"
+          },
+          {
+            "value": "22",
+            "label": "22"
+          },
+          {
+            "value": "23",
+            "label": "23"
+          },
+          {
+            "value": "24",
+            "label": "24"
+          },
+          {
+            "value": "25",
+            "label": "25"
+          },
+          {
+            "value": "26",
+            "label": "26"
+          },
+          {
+            "value": "27",
+            "label": "27"
+          },
+          {
+            "value": "28",
+            "label": "28"
+          },
+          {
+            "value": "29",
+            "label": "29"
+          },
+          {
+            "value": "30",
+            "label": "30"
+          },
+          {
+            "value": "31",
+            "label": "31"
+          },
+          {
+            "value": "32",
+            "label": "32"
+          },
+          {
+            "value": "33",
+            "label": "33"
+          },
+          {
+            "value": "34",
+            "label": "34"
+          },
+          {
+            "value": "35",
+            "label": "35"
+          },
+          {
+            "value": "36",
+            "label": "36"
+          },
+          {
+            "value": "37",
+            "label": "37"
+          },
+          {
+            "value": "38",
+            "label": "38"
+          },
+          {
+            "value": "39",
+            "label": "39"
+          },
+          {
+            "value": "40",
+            "label": "40"
+          },
+          {
+            "value": "41",
+            "label": "41"
+          },
+          {
+            "value": "42",
+            "label": "42"
+          },
+          {
+            "value": "43",
+            "label": "43"
+          },
+          {
+            "value": "44",
+            "label": "44"
+          },
+          {
+            "value": "45",
+            "label": "45"
+          },
+          {
+            "value": "46",
+            "label": "46"
+          },
+          {
+            "value": "47",
+            "label": "47"
+          },
+          {
+            "value": "48",
+            "label": "48"
+          },
+          {
+            "value": "49",
+            "label": "49"
+          },
+          {
+            "value": "50",
+            "label": "50"
+          },
+          {
+            "value": "51",
+            "label": "51"
+          },
+          {
+            "value": "52",
+            "label": "52"
+          },
+          {
+            "value": "53",
+            "label": "53"
+          },
+          {
+            "value": "54",
+            "label": "54"
+          },
+          {
+            "value": "55",
+            "label": "55"
+          },
+          {
+            "value": "56",
+            "label": "56"
+          },
+          {
+            "value": "57",
+            "label": "57"
+          },
+          {
+            "value": "58",
+            "label": "58"
+          },
+          {
+            "value": "59",
+            "label": "59"
+          },
+          {
+            "value": "60",
+            "label": "60"
+          },
+          {
+            "value": "61",
+            "label": "61"
+          },
+          {
+            "value": "62",
+            "label": "62"
+          },
+          {
+            "value": "63",
+            "label": "63"
+          },
+          {
+            "value": "64",
+            "label": "64"
+          },
+          {
+            "value": "65",
+            "label": "65"
+          },
+          {
+            "value": "66",
+            "label": "66"
+          },
+          {
+            "value": "67",
+            "label": "67"
+          },
+          {
+            "value": "68",
+            "label": "68"
+          },
+          {
+            "value": "69",
+            "label": "69"
+          },
+          {
+            "value": "70",
+            "label": "70"
+          },
+          {
+            "value": "71",
+            "label": "71"
+          },
+          {
+            "value": "72",
+            "label": "72"
+          },
+          {
+            "value": "73",
+            "label": "73"
+          },
+          {
+            "value": "74",
+            "label": "74"
+          },
+          {
+            "value": "75",
+            "label": "75"
+          },
+          {
+            "value": "76",
+            "label": "76"
+          },
+          {
+            "value": "77",
+            "label": "77"
+          },
+          {
+            "value": "78",
+            "label": "78"
+          },
+          {
+            "value": "79",
+            "label": "79"
+          },
+          {
+            "value": "80",
+            "label": "80"
+          },
+          {
+            "value": "81",
+            "label": "81"
+          },
+          {
+            "value": "82",
+            "label": "82"
+          },
+          {
+            "value": "83",
+            "label": "83"
+          },
+          {
+            "value": "84",
+            "label": "84"
+          },
+          {
+            "value": "85",
+            "label": "85"
+          },
+          {
+            "value": "86",
+            "label": "86"
+          },
+          {
+            "value": "87",
+            "label": "87"
+          },
+          {
+            "value": "88",
+            "label": "88"
+          },
+          {
+            "value": "89",
+            "label": "89"
+          },
+          {
+            "value": "90",
+            "label": "90"
+          },
+          {
+            "value": "91",
+            "label": "91"
+          },
+          {
+            "value": "92",
+            "label": "92"
+          },
+          {
+            "value": "93",
+            "label": "93"
+          },
+          {
+            "value": "94",
+            "label": "94"
+          },
+          {
+            "value": "95",
+            "label": "95"
+          },
+          {
+            "value": "96",
+            "label": "96"
+          },
+          {
+            "value": "97",
+            "label": "97"
+          },
+          {
+            "value": "98",
+            "label": "98"
+          },
+          {
+            "value": "99",
+            "label": "99"
+          },
+          {
+            "value": "100",
+            "label": "100"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "kind-mark",
+        "label": "Kind mark",
+        "section": "avatar",
+        "section_label": "Avatar",
+        "page": "appearance",
+        "value": "face",
+        "choices": [
+          {
+            "value": "face",
+            "label": "On the face"
+          },
+          {
+            "value": "corner",
+            "label": "Corner badge"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "corner-is",
+        "label": "The corner is",
+        "section": "avatar",
+        "section_label": "Avatar",
+        "page": "appearance",
+        "value": "kind",
+        "choices": [
+          {
+            "value": "kind",
+            "label": "The kind"
+          },
+          {
+            "value": "machine",
+            "label": "The machine"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "lang",
+        "label": "Interface language",
+        "section": "language",
+        "section_label": "Language",
+        "page": "appearance",
+        "value": "auto",
+        "choices": [
+          {
+            "value": "auto",
+            "label": "Match system"
+          },
+          {
+            "value": "zh",
+            "label": "中文"
+          },
+          {
+            "value": "en",
+            "label": "English"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "tabs-limit",
+        "label": "Tab limit",
+        "section": "session",
+        "section_label": "Sessions",
+        "page": "session",
+        "value": "off",
+        "choices": [
+          {
+            "value": "off",
+            "label": "Off"
+          },
+          {
+            "value": "4",
+            "label": "4"
+          },
+          {
+            "value": "5",
+            "label": "5"
+          },
+          {
+            "value": "6",
+            "label": "6"
+          },
+          {
+            "value": "7",
+            "label": "7"
+          },
+          {
+            "value": "8",
+            "label": "8"
+          },
+          {
+            "value": "9",
+            "label": "9"
+          },
+          {
+            "value": "10",
+            "label": "10"
+          },
+          {
+            "value": "11",
+            "label": "11"
+          },
+          {
+            "value": "12",
+            "label": "12"
+          },
+          {
+            "value": "13",
+            "label": "13"
+          },
+          {
+            "value": "14",
+            "label": "14"
+          },
+          {
+            "value": "15",
+            "label": "15"
+          },
+          {
+            "value": "16",
+            "label": "16"
+          },
+          {
+            "value": "17",
+            "label": "17"
+          },
+          {
+            "value": "18",
+            "label": "18"
+          },
+          {
+            "value": "19",
+            "label": "19"
+          },
+          {
+            "value": "20",
+            "label": "20"
+          },
+          {
+            "value": "21",
+            "label": "21"
+          },
+          {
+            "value": "22",
+            "label": "22"
+          },
+          {
+            "value": "23",
+            "label": "23"
+          },
+          {
+            "value": "24",
+            "label": "24"
+          },
+          {
+            "value": "25",
+            "label": "25"
+          },
+          {
+            "value": "26",
+            "label": "26"
+          },
+          {
+            "value": "27",
+            "label": "27"
+          },
+          {
+            "value": "28",
+            "label": "28"
+          },
+          {
+            "value": "29",
+            "label": "29"
+          },
+          {
+            "value": "30",
+            "label": "30"
+          },
+          {
+            "value": "31",
+            "label": "31"
+          },
+          {
+            "value": "32",
+            "label": "32"
+          },
+          {
+            "value": "33",
+            "label": "33"
+          },
+          {
+            "value": "34",
+            "label": "34"
+          },
+          {
+            "value": "35",
+            "label": "35"
+          },
+          {
+            "value": "36",
+            "label": "36"
+          },
+          {
+            "value": "37",
+            "label": "37"
+          },
+          {
+            "value": "38",
+            "label": "38"
+          },
+          {
+            "value": "39",
+            "label": "39"
+          },
+          {
+            "value": "40",
+            "label": "40"
+          },
+          {
+            "value": "41",
+            "label": "41"
+          },
+          {
+            "value": "42",
+            "label": "42"
+          },
+          {
+            "value": "43",
+            "label": "43"
+          },
+          {
+            "value": "44",
+            "label": "44"
+          },
+          {
+            "value": "45",
+            "label": "45"
+          },
+          {
+            "value": "46",
+            "label": "46"
+          },
+          {
+            "value": "47",
+            "label": "47"
+          },
+          {
+            "value": "48",
+            "label": "48"
+          },
+          {
+            "value": "49",
+            "label": "49"
+          },
+          {
+            "value": "50",
+            "label": "50"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "session-form",
+        "label": "New sessions open as",
+        "section": "session",
+        "section_label": "Sessions",
+        "page": "session",
+        "value": "chat",
+        "choices": [
+          {
+            "value": "chat",
+            "label": "Chat"
+          },
+          {
+            "value": "term",
+            "label": "Terminal"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "files-click",
+        "label": "Single click",
+        "section": "workspace",
+        "section_label": "Workspace",
+        "page": "workspace",
+        "value": "preview",
+        "choices": [
+          {
+            "value": "preview",
+            "label": "Preview"
+          },
+          {
+            "value": "pin",
+            "label": "Keep open"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "ssh-carry",
+        "label": "Relay over SSH",
+        "section": "connection",
+        "section_label": "Connection",
+        "page": "connection",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ],
+        "note": "A khor host with no internet is connected through a machine that can log in to it over SSH. Takes effect when khor restarts"
+      },
+      {
+        "name": "peer-hop",
+        "label": "Forward Through Other Machines",
+        "section": "connection",
+        "section_label": "Connection",
+        "page": "connection",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ],
+        "note": "With no direct connection, go through a machine both ends can reach before using a relay"
+      },
+      {
+        "name": "confirm-takeover",
+        "label": "Taking over a session",
+        "section": "confirm",
+        "section_label": "Confirm dangerous actions",
+        "page": "security",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ],
+        "note": null
+      },
+      {
+        "name": "confirm-delete",
+        "label": "Deleting",
+        "section": "confirm",
+        "section_label": "Confirm dangerous actions",
+        "page": "security",
+        "value": "on",
+        "choices": [
+          {
+            "value": "on",
+            "label": "On"
+          },
+          {
+            "value": "off",
+            "label": "Off"
+          }
+        ],
+        "note": null
+      }
+    ]
+  },
   "_source": {
-    "Cargo.lock": "7cbdde6f78ebb93f98e51fe81410906f833f58793296e592547e25e8f89ad705",
+    "Cargo.lock": "73cc5c7ba6e7e9a69c7ed982913d0dd488e7e5576c05a28e0715a66456d10747",
     "crates/core/src/avatar.rs": "ac4b9db9c2c6a22c6579bb387c9c606f46cce8079b7d9822fe69bf268506a49d",
     "crates/core/src/avatar/mark.rs": "14e6a45e011668bf05e9b3c89cd2c15b15c123a65b2adb68c0362fe88095b1d5",
-    "crates/node/src/files.rs": "0051245782015daebc893495748097bf088df7114e2978b483c073cac9aedeec",
-    "apps/gui/core/src/bin/lab_data.rs": "eed761b4349375da36cbde6d36093e8678314bc34b3273212fadd7962b135aa3",
+    "crates/node/src/files.rs": "63a1097f8cba5987f00a2dfdcabd0f7da151b5d3dbb0b6fb9ae652e8cf8c407c",
+    "crates/node/src/list.rs": "9795b6a2daeb934250b1c41fd83df1a03e6ccc459a0ed4c316fd5e45229a989f",
+    "crates/node/src/preview.rs": "cbf63f7aa0045eae6523fd568808724734fac191a9cd7dbf95c5e62f645df853",
+    "apps/gui/core/src/bin/lab_data.rs": "0b53f703a80ec7895fc1fb9cf79b7809c4e2eba168833fa0edc9780151ef636e",
     "apps/gui/core/src/qr.rs": "9e1bd73fcdd6e7afe7bf5d2d71c8551e139562e53c4ced190cef6d9dcc0f07dd",
+    "apps/gui/core/src/lib.rs": "7ccd00c0745a7f005a10713e26073f7be1b13e98db019940d3a089430ec445af",
+    "crates/node/src/config.rs": "290caa516b1634a98f32e0db63bc00b3b2ce5ade93405c60a5040851ced6f663",
+    "crates/catalog/zh.toml": "138e8d38553e7c61a6e38b5691425302e22b8270df60ce29a5d0d4acdb71e939",
+    "crates/catalog/en.toml": "443acedf3d066186b2965b69100382a39616a81d79c909769fc8019cc70a8afd",
     "apps/gui/dev/lab/data/workspace/.config/preferences.json": "d15be58e7eb7f9813a8f87e0f093475bdaeb61a22917641168ced318ca61b2e2",
     "apps/gui/dev/lab/data/workspace/.gitignore": "4d56952b0fb13bf8f9b6c13a6d4c34a075bac3af447636a1df4335d7576e2f97",
     "apps/gui/dev/lab/data/workspace/README.md": "ad36cf9e020c9284bdaa4987ebd05a1cb9187acaad651956ac8ffec8622b573d",
     "apps/gui/dev/lab/data/workspace/design.md": "738e7b481a8c4ba3f4cdc4bb1171ae9d9bc3a9643a4a5a75060c9805d5a2ed74",
     "apps/gui/dev/lab/data/workspace/docs/formulas.md": "833a87e9bfc98a37c076c1c8fa834681f1cc549a21f216a010852150707e6372",
     "apps/gui/dev/lab/data/workspace/docs/中文说明.md": "9d74029ef03304ebd817e1385e80a3e5e6e6d1bde8345c20d3862d1be9995c33",
+    "apps/gui/dev/lab/data/workspace/media/README.md": "bf4f519e1ec3577ecabb4dfe56fc5029aff512780f8fd74bf5158e45122c64f0",
+    "apps/gui/dev/lab/data/workspace/media/app.js": "fb247d18476d9c831cd5e7dedbf8f46f7298d15924bc68cb2670eb6751890f1e",
+    "apps/gui/dev/lab/data/workspace/media/audio.wav": "5a9636c4ad590445d7b7a5d06b27f0dde46348bdffb2551f3762d250441c298d",
+    "apps/gui/dev/lab/data/workspace/media/clip.mp4": "b6340fa3182476454c25f883bc25b5bbe1ec493a87f682057b9d6b3e999565d3",
+    "apps/gui/dev/lab/data/workspace/media/counter.js": "2c597c10eccaf743358e8e34b3277eeebf4e1980b1e7fc82408f1f6cc9f2cdbb",
+    "apps/gui/dev/lab/data/workspace/media/data.json": "9766219140a2f8f071ca14aa252d21fb41b395a46a4616ad5029d7aa654060ec",
+    "apps/gui/dev/lab/data/workspace/media/preview.html": "181c701e4758e890648d31d00e11cce8e128568959b01290fe4977633f545f7d",
+    "apps/gui/dev/lab/data/workspace/media/style.css": "bfeb1d03be3e326f83b93386d2c0393bde50c2ef2e0cb8d506990c4987ce2a20",
     "apps/gui/dev/lab/data/workspace/notes.md": "5de2c9ce72d960bf66a6c1c99d8fea3ddc9396a840de3c01eb8e11b15fbb4c30",
+    "apps/gui/dev/lab/data/workspace/office/加密周报.docx": "8b9646829f49889f04790aa1f03b54d80a076dd4b6ab758a35ee0a248a3dee0c",
+    "apps/gui/dev/lab/data/workspace/office/阶段汇报.pptx": "506cdd9d6d7bd2935c6554f0de4b2e7ba32133e7fc3ff1caff1d6cddb461599c",
+    "apps/gui/dev/lab/data/workspace/office/项目周报.docx": "e530efdcffd1790c55514e52bc28422846cccb7ab874b05d8f50eecbe9bd47e5",
+    "apps/gui/dev/lab/data/workspace/office/验收台账.xlsx": "8a3696bfb06a8a77594a86d3a7cbafee40f5c9f6086d86d5a24d79a7090ae075",
     "apps/gui/dev/lab/data/workspace/package.json": "532e45105028b94a968e65fb3c12ca69febc4799876569b52ebf33ee12f67862",
     "apps/gui/dev/lab/data/workspace/plan.md": "458fbdc195ca00903530c1d0c943564de907a0d9b2778f034728b134377d0765",
     "apps/gui/dev/lab/data/workspace/report.md": "16d0fe5faa9ab3e651ebada07a31d562616ba4c3710f3ac290ef120037981335",
@@ -922,5 +3206,5 @@
     "apps/gui/dev/lab/data/workspace/src/app.ts": "aa86c4f80a12ab65cd5ef6b71aae1636d7186648222e06f1e2b18a3dcac4ef05",
     "apps/gui/dev/lab/data/workspace/src/navigation.ts": "aaeff633369c4afdbb21c8b53096d13afa98efa1b99bee609e05c6d8bcc07d0a"
   },
-  "_payload_sha256": "b5437123d327fb3873ffedb4d58398d450a0c7c2998e165a16d77b962c579b69"
+  "_payload_sha256": "95266dfd6892b1b120b90f3b0103fbca39d9d21e92f721257ca36a7a771d975b"
 }

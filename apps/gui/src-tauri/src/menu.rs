@@ -562,10 +562,6 @@ pub fn on_event(app: &AppHandle, id: &str) {
         return;
     }
     #[cfg(target_os = "macos")]
-    if crate::quick_look::menu(id) {
-        return;
-    }
-    #[cfg(target_os = "macos")]
     if id == "edit-undo" || id == "edit-redo" {
         native_edit::run(app, id == "edit-redo");
         return;
