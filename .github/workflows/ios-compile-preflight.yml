@@ -26,5 +26,5 @@ jobs:
         shell: bash
         run: |
           export SDKROOT="$(xcrun --sdk iphoneos --show-sdk-path)"
-          export IPHONEOS_DEPLOYMENT_TARGET=14.0
+          export IPHONEOS_DEPLOYMENT_TARGET=15.0
           cargo check --locked -p khor-gui --target aarch64-apple-ios --features tauri/custom-protocol --lib
