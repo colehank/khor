@@ -4,6 +4,7 @@ import {noticeFixture} from './notice-fixture';
 import {longHistoryFrames} from './long-history';
 // Data-only fixture for the complete production App; never imported by its normal entry.
 import {navigationFixture,FixtureRefusal} from './navigation';
+import {officeFixturePreview,officeFixtures} from './office-fixtures';
 import type {AppUpdateStatus} from '../../src/gen/bindings/AppUpdateStatus';
 import {pairingFixture} from './pairing';
 import {labSessionAttention,labDevices,labModels,labQuota,labRoot,labUsage,labSettings,labAbout,labRelays,labRoadShare,labDoctor} from './world';
@@ -392,6 +393,10 @@ export function createLabFixture(terminal = true, options: {origin?: string; con
       }
       if(path==='file_resource_touch'){if(!resourcePreviews.has(String(body.id)))throw new FixtureRefusal('File preview has closed');return null;}
       if(path==='file_resource_close'){const url=resourcePreviews.get(String(body.id));if(url)URL.revokeObjectURL(url);resourcePreviews.delete(String(body.id));return null;}
+      if(path==='preview' && typeof document!=='undefined'){
+        const file=officeFixtures.find(file=>String(body.path).endsWith('/'+file));
+        if(file)return officeFixturePreview(file,body.officeBytes===true);
+      }
       if (navigation.handles(path)) return structuredClone(navigation.request(path, body));
       if (path === 'face_note') return null;
       if (terminal && body.id === 'shell/layout-lab' && path === 'attachment_begin' && body.kind === 'terminal') {

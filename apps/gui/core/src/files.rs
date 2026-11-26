@@ -950,13 +950,28 @@ pub struct Preview {
 /// carries the answer and base64s the two kinds the browser draws
 /// itself. Doing the render here would be a second renderer for `khor`
 /// to disagree with (docs/KHOR.md, CLI 与 GUI 等价).
-pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, String> {
+pub async fn preview(
+    root: &Path,
+    machine: &str,
+    path: &str,
+    office_bytes: bool,
+) -> Result<Preview, String> {
     use base64::Engine as _;
     let n = Node::open(root.to_path_buf())?;
     let kind = khor_node::preview::kind(path);
-    let (total, _, bytes, cut) = n
-        .read_all(machine, path, khor_node::preview::cap(path))
-        .await?;
+    let office_bytes = office_bytes
+        && Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| {
+                matches!(extension.to_ascii_lowercase().as_str(), "docx" | "pptx" | "xlsx")
+            });
+    let (total, _, bytes, cut) = if office_bytes {
+        n.read_complete(machine, path, 16 * 1024 * 1024).await?
+    } else {
+        n.read_all(machine, path, khor_node::preview::cap(path))
+            .await?
+    };
     let mut out = Preview {
         kind: match kind {
             khor_node::preview::Kind::Image => "image",
@@ -981,6 +996,12 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
             if !cut => {
                 out.data = base64::engine::general_purpose::STANDARD.encode(&bytes);
             }
+        khor_node::preview::Kind::Doc if office_bytes => {
+            out.empty = total == 0;
+            if !cut {
+                out.data = base64::engine::general_purpose::STANDARD.encode(&bytes);
+            }
+        }
         khor_node::preview::Kind::Doc => {
             let md = khor_node::preview::markdown(path, &bytes)?;
             out.empty = md.trim().is_empty();
@@ -1006,6 +1027,52 @@ pub async fn preview(root: &Path, machine: &str, path: &str) -> Result<Preview, 
         _ => {}
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod office_preview_tests {
+    use super::preview;
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use std::path::PathBuf;
+
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn preview_can_return_intact_office_bytes_without_changing_text_callers() {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = Scratch(std::env::temp_dir().join(format!("khor-office-preview-{stamp}")));
+        std::fs::create_dir(&dir.0).unwrap();
+        let path = dir.0.join("example.DOCX");
+        let bytes = include_bytes!("../../dev/lab/data/workspace/office/项目周报.docx");
+        std::fs::write(&path, bytes).unwrap();
+        let name = path.to_str().unwrap();
+        let raw = preview(&dir.0, "", name, true).await.unwrap();
+        assert!(!raw.cut);
+        assert!(raw.html.is_empty());
+        assert_eq!(STANDARD.decode(raw.data).unwrap(), bytes);
+        let text = preview(&dir.0, "", name, false).await.unwrap();
+        assert!(text.data.is_empty());
+        assert!(text.html.contains("项目进度周报"));
+
+        let too_large = 16 * 1024 * 1024 + 1;
+        std::fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_len(too_large)
+            .unwrap();
+        let raw = preview(&dir.0, "", name, true).await.unwrap();
+        assert_eq!(raw.total, too_large);
+        assert!(raw.cut && raw.data.is_empty());
+    }
 }
 
 /// What a save answers: where the file stands now.

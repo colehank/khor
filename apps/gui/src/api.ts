@@ -607,8 +607,8 @@ import type {ResourcePreview} from "./gen/bindings/ResourcePreview";
 export const fileResourceOpen=(machine:string,path:string,html?:string)=>call<ResourcePreview>("file_resource_open",{machine,path,html:html??null});
 export const fileResourceTouch=(id:string)=>call<void>("file_resource_touch",{id});
 export const fileResourceClose=(id:string)=>call<void>("file_resource_close",{id});
-export const fetchPreview = (machine: string, path: string) =>
-  call<Preview>("preview", { machine, path });
+export const fetchPreview = (machine: string, path: string, officeBytes?: boolean) =>
+  call<Preview>("preview", { machine, path, officeBytes });
 export const fetchCodeHere = (machine: string) => call<Editor>("code_here", { machine });
 /** Starts (or reuses) that machine's VS Code web face and answers a URL
     to point a webview at, `dir` opened as the folder.

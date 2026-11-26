@@ -341,9 +341,14 @@ pub fn answer(
             crate::resource_preview::close(&arg("id")?);
             Ok("null".into())
         }
-        "preview" => {
-            to_json(&rt.block_on(crate::files::preview(root, &arg("machine")?, &arg("path")?))?)
-        }
+        "preview" => to_json(&rt.block_on(crate::files::preview(
+            root,
+            &arg("machine")?,
+            &arg("path")?,
+            args.get("officeBytes")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
+        ))?),
         "code_here" => to_json(&rt.block_on(crate::code::here(root, &arg("machine")?))?),
         "code_open" => {
             to_json(&rt.block_on(crate::code::open(root, &arg("machine")?, &arg("dir")?))?)

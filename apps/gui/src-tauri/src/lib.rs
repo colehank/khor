@@ -400,8 +400,18 @@ async fn file_resource_close(id: String) {
 
 /// One file shaped for a screen (`khor_gui_core::files::preview`).
 #[tauri::command]
-async fn preview(machine: String, path: String) -> Result<khor_gui_core::files::Preview, String> {
-    khor_gui_core::files::preview(&Node::root_from_env(), &machine, &path).await
+async fn preview(
+    machine: String,
+    path: String,
+    office_bytes: Option<bool>,
+) -> Result<khor_gui_core::files::Preview, String> {
+    khor_gui_core::files::preview(
+        &Node::root_from_env(),
+        &machine,
+        &path,
+        office_bytes.unwrap_or(false),
+    )
+    .await
 }
 
 /// Whether a machine has VS Code (`khor_gui_core::code::here`).

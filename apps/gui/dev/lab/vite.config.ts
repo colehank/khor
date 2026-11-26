@@ -3,8 +3,9 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {sharedConfig} from '../../vite.config';
 
-const previewFiles = fileURLToPath(new URL('./data/workspace/media/', import.meta.url));
-const previewPrefix = '/assets/preview-fixtures/media/';
+const previewFiles = fileURLToPath(new URL('./data/workspace/', import.meta.url));
+const previewPrefix = '/assets/preview-fixtures/';
+const previewFolders = ['media', 'office'];
 const previewTypes:Record<string,string>={html:'text/html',css:'text/css',js:'text/javascript',json:'application/json',mp4:'video/mp4',wav:'audio/wav'};
 const port = Number(process.env.KHOR_LAB_VITE_PORT || 23911);
 
@@ -21,15 +22,23 @@ export default mergeConfig(sharedConfig, defineConfig({
     name: 'complete-app-lab-entry',
     transformIndexHtml: {order: 'pre', handler: html => html.replace('src="/src/main.tsx"', 'src="/dev/lab/bootstrap.ts"')},
     generateBundle() {
-      for(const name of readdirSync(previewFiles))this.emitFile({type:'asset',fileName:previewPrefix.slice(1)+name,source:readFileSync(previewFiles+name)});
+      for (const folder of previewFolders) {
+        for (const name of readdirSync(previewFiles+folder)) {
+          const file = folder+'/'+name;
+          this.emitFile({type:'asset',fileName:previewPrefix.slice(1)+file,source:readFileSync(previewFiles+file)});
+        }
+      }
     },
     configureServer(server) {
       server.middlewares.use(previewPrefix,(request,response,next)=>{
-        const name=request.url?.split('?')[0]?.replace(/^\//,'');
-        if(!name||!readdirSync(previewFiles).includes(name))return next();
+        let file: string;
+        try { file=decodeURIComponent(request.url?.split('?')[0]??'').replace(/^\//,''); }
+        catch { return next(); }
+        const [folder,name,extra]=file.split('/');
+        if(extra!==undefined||!name||!previewFolders.includes(folder)||!readdirSync(previewFiles+folder).includes(name))return next();
         response.setHeader('Access-Control-Allow-Origin','*');
         response.setHeader('Content-Type',previewTypes[name.split('.').pop()??'']??'application/octet-stream');
-        response.end(readFileSync(previewFiles+name));
+        response.end(readFileSync(previewFiles+file));
       });
       const runtime = process.env.KHOR_LAB_RUNTIME;
       if (!runtime) return;
