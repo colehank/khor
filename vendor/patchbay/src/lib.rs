@@ -193,7 +193,9 @@
 //!
 //! Linux with unprivileged user namespaces enabled, plus `nft` and `tc` in
 //! PATH. No root needed. Call [`init_userns`] before spawning any threads
-//! to enter the user namespace.
+//! to enter the user namespace. The process keeps its uid. Commands can run
+//! as root on request with [`Device::as_root`] if the host has a subordinate id
+//! range for the user.
 
 use anyhow::{anyhow, bail, Context, Result};
 
@@ -205,6 +207,7 @@ pub(crate) mod core;
 /// Device handle and builder.
 pub(crate) mod device;
 /// Minimal in-process DNS server for the lab IX bridge.
+#[cfg(feature = "dns-server")]
 pub mod dns_server;
 /// Lab event system: typed events, state reducer, file writer.
 pub mod event;
@@ -248,11 +251,14 @@ pub use lab::{
 pub use metrics::MetricsBuilder;
 pub use router::{Router, RouterBuilder, RouterIface, RouterPreset};
 
+#[cfg(feature = "dns-server")]
+pub use crate::dns_server::DnsServer;
+#[allow(deprecated)]
+pub use crate::userns::init_userns_for_ctor;
 pub use crate::{
     core::{NodeId, ReflectorGuard},
-    dns_server::DnsServer,
     event::{IfaceCounters, IfaceSnapshot, LabEvent, LabEventKind, LabState},
-    userns::{init_userns, init_userns_for_ctor},
+    userns::{init_userns, AsRoot},
 };
 
 /// Verifies the process has enough privileges to manage namespaces, routes, and raw sockets.
@@ -265,7 +271,7 @@ pub use crate::{
 ///
 /// Returns an error listing the missing capabilities.
 pub fn check_caps() -> Result<()> {
-    if nix::unistd::Uid::effective().is_root() {
+    if rustix::process::geteuid().is_root() {
         return Ok(());
     }
     let status = std::fs::read_to_string("/proc/self/status").context("read /proc/self/status")?;

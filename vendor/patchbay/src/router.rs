@@ -598,6 +598,14 @@ impl Router {
         self.lab.netns.spawn_thread_in(&self.ns, f)
     }
 
+    /// Returns a handle that spawns commands as root in this router's namespace.
+    ///
+    /// See [`AsRoot`](crate::AsRoot) for when root is available and what it
+    /// means for files on the host.
+    pub fn as_root(&self) -> crate::AsRoot<'_> {
+        crate::AsRoot::new(&self.lab, self.ns.to_string())
+    }
+
     /// Spawns a [`tokio::process::Command`] in this router's network namespace.
     ///
     /// The child is registered with the namespace's tokio reactor.
@@ -734,6 +742,7 @@ impl Router {
 ///     .build().await?;
 /// ```
 #[derive(Clone, Copy, Debug)]
+#[non_exhaustive]
 pub enum RouterPreset {
     /// Residential home router.
     ///
@@ -968,7 +977,7 @@ impl RouterPreset {
 // RouterBuilder
 // ─────────────────────────────────────────────
 
-/// Builder for a router node; returned by [`Lab::add_router`].
+/// Builder for a router node; returned by [`Lab::add_router`](crate::Lab::add_router).
 pub struct RouterBuilder {
     pub(crate) inner: Arc<LabInner>,
     pub(crate) lab_span: tracing::Span,
@@ -1240,12 +1249,12 @@ impl RouterBuilder {
             // Apply builder-level config to the registered RouterData.
             if let Some(r) = inner.router_mut(id) {
                 r.cfg.mtu = self.mtu;
+                r.cfg.public_v6 = self.public_v6;
                 r.cfg.block_icmp_frag_needed = self.block_icmp_frag_needed;
                 r.cfg.firewall = self.firewall.clone();
                 r.cfg.ra_enabled = self.ra_enabled;
                 r.cfg.ra_interval_secs = self.ra_interval_secs.max(1);
                 r.cfg.ra_lifetime_secs = self.ra_lifetime_secs;
-                r.cfg.public_v6 = self.public_v6;
                 r.ra_runtime.set_enabled(self.ra_enabled);
                 r.ra_runtime.set_interval_secs(self.ra_interval_secs);
                 r.ra_runtime.set_lifetime_secs(self.ra_lifetime_secs);

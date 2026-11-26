@@ -16,7 +16,7 @@ use tokio::sync::oneshot;
 
 use super::flows;
 use crate::lab::{mesh, node, relay, result, slow};
-use crate::nat::{Net, router};
+use crate::nat::{Net, PUNCH, router};
 
 fn command(dev: &Device, program: &str, args: &[&str]) -> String {
     let mut cmd = Command::new(program);
@@ -242,7 +242,8 @@ async fn terminal_with_relay_delay(peer_hop: bool) {
     }
     if let Some(middle) = &middle {
         for end in [&a, &b] {
-            end.until(middle, Duration::from_secs(30), |link| {
+            // Allow iroh to retry hole punching before injecting the stall.
+            end.until(middle, PUNCH, |link| {
                 link.hop == Hop::Direct && link.rtt_ms.is_some()
             })
             .await

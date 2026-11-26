@@ -13,7 +13,7 @@
 edition = "2024"
 rust-version = "1.91"
 name = "iroh"
-version = "1.4.1"
+version = "1.5.0"
 authors = [
     "dignifiedquire <me@dignifiedquire.com>",
     "n0 team",
@@ -191,6 +191,11 @@ path = "examples/search.rs"
 required-features = []
 
 [[example]]
+name = "stream_affinity_direct"
+path = "examples/stream_affinity_direct.rs"
+required-features = []
+
+[[example]]
 name = "transfer"
 path = "examples/transfer.rs"
 required-features = []
@@ -256,7 +261,7 @@ version = "1"
 version = "2"
 
 [dependencies.iroh-base]
-version = "1.4.1"
+version = "1.5.0"
 features = [
     "key",
     "relay",
@@ -264,14 +269,14 @@ features = [
 default-features = false
 
 [dependencies.iroh-dns]
-version = "1.4.1"
+version = "1.5.0"
 
 [dependencies.iroh-metrics]
 version = "1.0.2"
 default-features = false
 
 [dependencies.iroh-relay]
-version = "1.4.1"
+version = "1.4.2"
 default-features = false
 
 [dependencies.n0-error]
@@ -284,19 +289,19 @@ version = "0.3"
 version = "1.0.0"
 
 [dependencies.netwatch]
-version = "0.19.3"
+version = "0.20.2"
 
 [dependencies.noq]
-version = "1.4.0"
+version = "1.5.0"
 features = ["rustls"]
 default-features = false
 
 [dependencies.noq-proto]
-version = "1.4.0"
+version = "1.5.0"
 default-features = false
 
 [dependencies.noq-udp]
-version = "1.4.0"
+version = "1.5.0"
 default-features = false
 
 [dependencies.papaya]
@@ -335,7 +340,7 @@ features = [
 ]
 
 [dependencies.simple-dns]
-version = "0.12"
+version = "0.13"
 optional = true
 
 [dependencies.smallvec]
@@ -395,7 +400,7 @@ features = ["use-std"]
 version = "0.10"
 
 [dev-dependencies.simple-dns]
-version = "0.12"
+version = "0.13"
 
 [dev-dependencies.tracing-subscriber]
 version = "0.3"
@@ -422,7 +427,7 @@ version = "0.3.62"
 version = "2.1.0"
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies.noq]
-version = "1.4.0"
+version = "1.5.0"
 features = [
     "runtime-tokio",
     "rustls",
@@ -430,7 +435,7 @@ features = [
 default-features = false
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dependencies.portmapper]
-version = "0.19.3"
+version = "0.20.2"
 optional = true
 default-features = false
 
@@ -464,7 +469,7 @@ version = "0.18"
 features = ["tokio"]
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dev-dependencies.iroh-base]
-version = "1.4.1"
+version = "1.5.0"
 features = [
     "key",
     "relay",
@@ -472,7 +477,7 @@ features = [
 default-features = false
 
 [target.'cfg(not(all(target_family = "wasm", target_os = "unknown")))'.dev-dependencies.iroh-relay]
-version = "1.4.1"
+version = "1.4.2"
 features = [
     "test-utils",
     "server",

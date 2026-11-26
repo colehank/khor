@@ -8,19 +8,21 @@ use crate::{IpSupport, Nat, NatV6Mode};
 
 /// Parsed lab configuration from TOML.
 #[derive(Deserialize, Clone, Default)]
+#[non_exhaustive]
 pub struct LabConfig {
     /// Optional region-latency map.
     pub region: Option<HashMap<String, RegionConfig>>,
     /// Router entries.
     #[serde(default)]
     pub router: Vec<RouterConfig>,
-    /// Raw device tables; post-processed by [`crate::Lab::from_config`].
+    /// Raw device tables; post-processed by [`LabBuilder::config`](crate::LabBuilder::config).
     #[serde(default)]
     pub device: HashMap<String, toml::Value>,
 }
 
 /// Per-region latency configuration.
-#[derive(Deserialize, Clone)]
+#[derive(Deserialize, Clone, Default)]
+#[non_exhaustive]
 pub struct RegionConfig {
     /// Map of target-region name to one-way latency in ms.
     #[serde(default)]
@@ -29,6 +31,7 @@ pub struct RegionConfig {
 
 /// Router configuration entry.
 #[derive(Deserialize, Clone)]
+#[non_exhaustive]
 pub struct RouterConfig {
     /// Router name.
     pub name: String,
@@ -51,4 +54,21 @@ pub struct RouterConfig {
     pub ra_interval_secs: Option<u64>,
     /// Optional RA lifetime in seconds.
     pub ra_lifetime_secs: Option<u64>,
+}
+
+impl RouterConfig {
+    /// Creates a router entry named `name` with the defaults of the TOML format.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            region: None,
+            upstream: None,
+            nat: Nat::default(),
+            ip_support: IpSupport::default(),
+            nat_v6: NatV6Mode::default(),
+            ra_enabled: None,
+            ra_interval_secs: None,
+            ra_lifetime_secs: None,
+        }
+    }
 }

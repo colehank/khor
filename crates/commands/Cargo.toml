@@ -38,7 +38,7 @@ unicode-width.workspace = true
 # it is a normal dependency here because this binary ships it.
 # License: MIT OR Apache-2.0 (and every package it adds, checked with
 # `cargo metadata` before use).
-iroh-relay = { version = "1.2.0", features = ["server"] }
+iroh-relay = { version = "1.5.0", features = ["server"] }
 # The relay's access hook names endpoints by iroh's own id type.
 iroh.workspace = true
 # The TLS config the relay's HTTPS side takes (`CertConfig`) is a rustls

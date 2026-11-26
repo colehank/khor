@@ -125,6 +125,13 @@ impl RelayTransport {
                 }
             };
 
+            // Empty datagrams are valid relay traffic, but cannot contain a QUIC packet.
+            // Ignore them rather than treating them as oversized segments.
+            if dm.datagrams.contents.is_empty() {
+                self.pending_item = None;
+                continue;
+            }
+
             // This *tries* to make the datagrams fit into our buffer by re-batching them.
             let num_segments = dm
                 .datagrams
@@ -465,7 +472,11 @@ mod tests {
 
     #[tokio::test]
     async fn relay_recv_outputs_are_contiguous_after_drops() {
-        for segment_size in [NonZeroU16::new(2000), None] {
+        for (segment_size, contents) in [
+            (NonZeroU16::new(2000), Bytes::from(vec![0u8; 4000])),
+            (None, Bytes::from(vec![0u8; 4000])),
+            (None, Bytes::new()),
+        ] {
             let (mut transport, sender) = test_relay_transport();
             let url = staging::default_na_east_relay().url;
             let sources = [
@@ -488,7 +499,7 @@ mod tests {
                         datagrams: Datagrams {
                             ecn: None,
                             segment_size,
-                            contents: Bytes::from(vec![0u8; 4000]),
+                            contents: contents.clone(),
                         },
                     })
                     .unwrap();
@@ -523,7 +534,11 @@ mod tests {
 
     #[tokio::test]
     async fn relay_recv_wakes_after_exhausting_drop_budget() {
-        for segment_size in [NonZeroU16::new(2000), None] {
+        for (segment_size, contents) in [
+            (NonZeroU16::new(2000), Bytes::from(vec![0u8; 4000])),
+            (None, Bytes::from(vec![0u8; 4000])),
+            (None, Bytes::new()),
+        ] {
             let (mut transport, sender) = test_relay_transport();
             let url = staging::default_na_east_relay().url;
             let src = SecretKey::from_bytes(&[8u8; 32]).public();
@@ -535,7 +550,7 @@ mod tests {
                         datagrams: Datagrams {
                             ecn: None,
                             segment_size,
-                            contents: Bytes::from(vec![0u8; 4000]),
+                            contents: contents.clone(),
                         },
                     })
                     .unwrap();

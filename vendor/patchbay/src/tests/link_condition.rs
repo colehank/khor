@@ -123,6 +123,51 @@ async fn link_down_up() -> Result<()> {
     Ok(())
 }
 
+/// Link down then up on a dual-stack device keeps its IPv6 addresses and
+/// restores v6 connectivity.
+///
+/// Linux flushes global IPv6 addresses when a link goes down, so without
+/// `keep_addr_on_down` the v6 default route cannot be re-added on link up.
+#[tokio::test(flavor = "current_thread")]
+#[traced_test]
+async fn link_down_up_dual_stack() -> Result<()> {
+    check_caps()?;
+    let lab = Lab::new().await?;
+    let dc = lab
+        .add_router("dc")
+        .ip_support(IpSupport::DualStack)
+        .build()
+        .await?;
+    let dev = lab.add_device("dev").uplink(dc.id()).build().await?;
+    let eth0 = dev.iface("eth0").context("eth0")?;
+    let ip6 = eth0.ip6().context("eth0 has no v6 address")?;
+    let ll6 = eth0.ll6().context("eth0 has no v6 link-local")?;
+
+    let dc_ip_v6 = dc.uplink_ip_v6().context("no dc v6 uplink ip")?;
+    let r = SocketAddr::new(IpAddr::V6(dc_ip_v6), 16_700);
+    let _r = dc.spawn_reflector(r).await?;
+    dev.run_sync(move || test_utils::udp_roundtrip(r))
+        .context("before link_down")?;
+
+    eth0.link_down().await?;
+    eth0.link_up().await?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    let addrs = dev.run_sync(|| test_utils::iface_v6_addrs("eth0"))?;
+    assert!(
+        addrs.contains(&ip6),
+        "global v6 {ip6} lost after link_up: {addrs:?}"
+    );
+    assert!(
+        addrs.contains(&ll6),
+        "link-local {ll6} lost after link_up: {addrs:?}"
+    );
+
+    dev.run_sync(move || test_utils::udp_roundtrip(r))
+        .context("after link_up")?;
+    Ok(())
+}
+
 // ── Rate limiting ────────────────────────────────────────────────────
 
 /// 2 Mbit/s upload cap via tc on device interface.
@@ -1105,5 +1150,86 @@ async fn lab_bidirectional_via_two_calls() -> Result<()> {
         "both-sides ({both_sides}ms) should exceed one-side ({one_side}ms)"
     );
 
+    Ok(())
+}
+
+// ── Carrier ──────────────────────────────────────────────────────────
+
+/// Carrier down behaves like a pulled cable: the interface stays up with its
+/// addresses and routes, traffic stops, and carrier up restores it without
+/// re-adding anything. The ingress condition on the router-side veth
+/// survives the flap.
+#[tokio::test(flavor = "current_thread")]
+#[traced_test]
+async fn carrier_down_up() -> Result<()> {
+    check_caps()?;
+    let lab = Lab::new().await?;
+    let dc = lab
+        .add_router("dc")
+        .ip_support(IpSupport::DualStack)
+        .build()
+        .await?;
+    let dev = lab.add_device("dev").uplink(dc.id()).build().await?;
+    let eth0 = dev.iface("eth0").context("eth0")?;
+    let ip6 = eth0.ip6().context("eth0 has no v6 address")?;
+    eth0.set_condition(LinkCondition::new().latency_ms(40), LinkDirection::Ingress)
+        .await?;
+
+    let r4 = SocketAddr::new(IpAddr::V4(dc.uplink_ip().context("dc v4")?), 16_720);
+    let r6 = SocketAddr::new(IpAddr::V6(dc.uplink_ip_v6().context("dc v6")?), 16_721);
+    let _r4 = dc.spawn_reflector(r4).await?;
+    let _r6 = dc.spawn_reflector(r6).await?;
+    for r in [r4, r6] {
+        dev.run_sync(move || test_utils::udp_roundtrip(r))
+            .with_context(|| format!("{r} before carrier_down"))?;
+    }
+
+    eth0.carrier_down().await?;
+    let link = ip_output(&dev, &["link", "show", "eth0"])?;
+    assert!(link.contains("NO-CARRIER"), "expected NO-CARRIER: {link}");
+    assert!(link.contains(",UP"), "expected admin up: {link}");
+    let addrs = ip_output(&dev, &["addr", "show", "eth0"])?;
+    assert!(addrs.contains(&ip6.to_string()), "v6 address lost: {addrs}");
+    let routes = ip_output(&dev, &["-6", "route", "show", "default"])?;
+    assert!(
+        routes.contains("linkdown"),
+        "v6 default route lost: {routes}"
+    );
+    for r in [r4, r6] {
+        let probe =
+            dev.run_sync(move || test_utils::probe_udp(r, Duration::from_millis(300), None));
+        assert!(probe.is_err(), "{r} reachable while carrier is down");
+    }
+
+    eth0.carrier_up().await?;
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    for r in [r4, r6] {
+        dev.run_sync(move || test_utils::udp_roundtrip(r))
+            .with_context(|| format!("{r} after carrier_up"))?;
+    }
+    let rtt = dev.run_sync(move || test_utils::udp_rtt_sync(r4))?;
+    assert!(
+        rtt >= Duration::from_millis(40),
+        "ingress latency lost after carrier_up: {rtt:?}"
+    );
+    Ok(())
+}
+
+/// Carrier changes need a router-side peer, so dummy interfaces reject them.
+#[tokio::test(flavor = "current_thread")]
+#[traced_test]
+async fn carrier_down_dummy_fails() -> Result<()> {
+    check_caps()?;
+    let lab = Lab::new().await?;
+    let dc = lab.add_router("dc").build().await?;
+    let dev = lab
+        .add_device("dev")
+        .iface("eth0", dc.id())
+        .iface("docker0", IfaceConfig::dummy())
+        .build()
+        .await?;
+    let docker0 = dev.iface("docker0").context("docker0")?;
+    assert!(docker0.carrier_down().await.is_err());
+    assert!(docker0.carrier_up().await.is_err());
     Ok(())
 }

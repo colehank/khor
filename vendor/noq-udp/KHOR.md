@@ -1,9 +1,8 @@
 # Apple IPv4 source-address control
 
-Vendored unchanged from crates.io `noq-udp 1.4.0`, archive SHA-256
-`8d0160422832eea1cc11c34be04ee6d5a046452b0b46cfb14695d55a1f24c954`,
-except the changes listed here. License: MIT OR Apache-2.0; original
-license files and `.cargo_vcs_info.json` are retained.
+Vendored from crates.io `noq-udp 1.5.0`, upstream commit
+`c7b87d5843c2335c8a15b21324fb4fce99572ed8`. The Apple transmit patch
+below is carried forward. License: MIT OR Apache-2.0.
 
 ## Temporary patch: transmit `src_ip` with `IP_PKTINFO` on Apple
 

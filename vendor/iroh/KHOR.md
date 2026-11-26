@@ -1,5 +1,17 @@
 # vendor/iroh —— 为什么这里有一份 iroh
 
+## Current upstream baseline
+
+Source: crates.io `iroh 1.5.0`, upstream commit `ea3bbb6` (full
+source revision in `.cargo_vcs_info.json`). Migrated from the 1.4.1
+overlay. The notes below describe the history of individual patches.
+
+The **WebSocket close portion of patch 15** now uses the upstream
+`run_closing` implementation, which applies the same one-second deadline
+and answers route queries while closing. The broad route-query timeout,
+send-queue limit and demand-triggered health checks remain local. Noq's
+stream-affinity scheduler is retained alongside Khor's per-path ACK policy.
+
 ## 1.4 升级候选（2026-11-12，尚未验收）
 
 本隔离树已将发布源码从1.2.0三方迁移至1.4.1；下文为原补丁历史，不代表仍基于旧版或全部必须保留。当前迁移与退出账目见[IROH-UPGRADE](../../docs/net-optimization/IROH-UPGRADE.md)。所有旧专属回归保留；新源编译和行为证据尚待，原绿不能沿用。
@@ -17,6 +29,13 @@
   只是来源从 registry 换成了这个目录。
 
 ## 补丁
+
+### Relay 重连后探测待确认的 QUIC 路径
+
+同一个 Relay URL 换掉 TCP 会话后，QUIC 仍使用原路径身份和丢包恢复计时。
+继承网络审计分支 `3b687e298` 的重连通知，在新 Relay 会话建立时，对该 URL 上
+还有未确认数据的路径发一次 PING。新 ACK 唤醒原有丢包恢复，新数据与重传仍由
+原 QUIC 流负责。第一次连接、空闲路径和其他中继不会触发探测。
 
 ### 51. 当前家中继连接断开后立即重测原Relay表（2026-11-16，隔离候选待验）
 

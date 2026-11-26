@@ -36,7 +36,7 @@ rcgen = "0.14"
 
 # The Linux network lab starts relay servers inside patchbay namespaces.
 [target.'cfg(target_os = "linux")'.dev-dependencies]
-iroh-relay = { version = "1.2.0", features = ["server"] }
+iroh-relay = { version = "1.5.0", features = ["server"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
-patchbay = "0.7"
+patchbay = "0.8"
 ctor = "1.0"

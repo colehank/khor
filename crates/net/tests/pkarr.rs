@@ -118,13 +118,13 @@ async fn peers_find_each_other_through_the_registry_their_entries_name() {
     };
     assert_eq!(endpoint::registries(std::slice::from_ref(&entry)).len(), 1);
 
-    let alpha = endpoint::bind_with(
-        iroh::SecretKey::generate(),
-        std::slice::from_ref(&entry),
-        false,
-    )
-    .await
-    .unwrap();
+    let alpha_entry = Relay {
+        pkarr: Some(format!("{pkarr}/")),
+        ..entry.clone()
+    };
+    let alpha = endpoint::bind_with(iroh::SecretKey::generate(), &[alpha_entry], false)
+        .await
+        .unwrap();
     answering(&alpha);
     let beta = endpoint::bind_with(
         iroh::SecretKey::generate(),

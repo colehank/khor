@@ -6,9 +6,9 @@ use std::{
     sync::atomic::Ordering,
 };
 
-use chrono::{DateTime, Utc};
 use ipnet::{Ipv4Net, Ipv6Net};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::{
     firewall::Firewall,
@@ -22,11 +22,13 @@ use crate::{
 
 /// A single lab event with global ordering.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct LabEvent {
     /// Monotonically increasing operation id.
     pub opid: u64,
-    /// Wall-clock timestamp.
-    pub timestamp: DateTime<Utc>,
+    /// Wall-clock timestamp in UTC, serialized as RFC 3339.
+    #[serde(with = "time::serde::rfc3339")]
+    pub timestamp: OffsetDateTime,
     /// The event payload.
     #[serde(flatten)]
     pub kind: LabEventKind,
@@ -35,9 +37,11 @@ pub struct LabEvent {
 /// All event variants. Internally tagged with a `"kind"` field.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum LabEventKind {
     // ── Lifecycle ──
     /// Emitted once during `Lab::new()`.
+    #[non_exhaustive]
     LabCreated {
         /// The lab's process-unique prefix (e.g. `"lab-p12340"`).
         lab_prefix: String,
@@ -45,12 +49,14 @@ pub enum LabEventKind {
         label: Option<String>,
     },
     /// Full state snapshot, emitted by `Lab::from_config()`.
+    #[non_exhaustive]
     InitialState {
         /// Serialized [`LabState`].
         state: serde_json::Value,
     },
     // ── IX ──
     /// Emitted once during `Lab::new()` after IX bridge creation.
+    #[non_exhaustive]
     IxCreated {
         /// IX bridge name (e.g. `"br-p1230-1"`).
         bridge: String,
@@ -66,6 +72,7 @@ pub enum LabEventKind {
 
     // ── Topology ──
     /// A router was added to the lab.
+    #[non_exhaustive]
     RouterAdded {
         /// Router name.
         name: String,
@@ -74,11 +81,13 @@ pub enum LabEventKind {
         state: Box<RouterState>,
     },
     /// A router was removed from the lab.
+    #[non_exhaustive]
     RouterRemoved {
         /// Router name.
         name: String,
     },
     /// A device was added to the lab.
+    #[non_exhaustive]
     DeviceAdded {
         /// Device name.
         name: String,
@@ -87,6 +96,7 @@ pub enum LabEventKind {
         state: DeviceState,
     },
     /// A device was removed from the lab.
+    #[non_exhaustive]
     DeviceRemoved {
         /// Device name.
         name: String,
@@ -94,6 +104,7 @@ pub enum LabEventKind {
 
     // ── Regions ──
     /// A region was added.
+    #[non_exhaustive]
     RegionAdded {
         /// Region name.
         name: String,
@@ -101,6 +112,7 @@ pub enum LabEventKind {
         router: String,
     },
     /// An inter-region link was created.
+    #[non_exhaustive]
     RegionLinkAdded {
         /// Router A name.
         router_a: String,
@@ -108,6 +120,7 @@ pub enum LabEventKind {
         router_b: String,
     },
     /// An inter-region link was broken/impaired.
+    #[non_exhaustive]
     RegionLinkBroken {
         /// Router A name.
         router_a: String,
@@ -117,6 +130,7 @@ pub enum LabEventKind {
         condition: Option<LinkCondition>,
     },
     /// An inter-region link was restored.
+    #[non_exhaustive]
     RegionLinkRestored {
         /// Router A name.
         router_a: String,
@@ -126,6 +140,7 @@ pub enum LabEventKind {
 
     // ── Mutations ──
     /// Router NAT mode changed.
+    #[non_exhaustive]
     NatChanged {
         /// Router name.
         router: String,
@@ -133,6 +148,7 @@ pub enum LabEventKind {
         nat: Option<NatConfig>,
     },
     /// Router IPv6 NAT mode changed.
+    #[non_exhaustive]
     NatV6Changed {
         /// Router name.
         router: String,
@@ -140,11 +156,13 @@ pub enum LabEventKind {
         nat_v6: NatV6Mode,
     },
     /// Router NAT conntrack state flushed.
+    #[non_exhaustive]
     NatStateFlushed {
         /// Router name.
         router: String,
     },
     /// Router firewall changed.
+    #[non_exhaustive]
     FirewallChanged {
         /// Router name.
         router: String,
@@ -152,6 +170,7 @@ pub enum LabEventKind {
         firewall: Firewall,
     },
     /// Device interface link condition changed.
+    #[non_exhaustive]
     LinkConditionChanged {
         /// Device name.
         device: String,
@@ -163,6 +182,7 @@ pub enum LabEventKind {
         ingress: Option<LinkCondition>,
     },
     /// Router downlink condition changed (affects all downstream traffic).
+    #[non_exhaustive]
     DownlinkConditionChanged {
         /// Router name.
         router: String,
@@ -170,6 +190,7 @@ pub enum LabEventKind {
         condition: Option<LinkCondition>,
     },
     /// Device interface brought up.
+    #[non_exhaustive]
     LinkUp {
         /// Device name.
         device: String,
@@ -177,13 +198,29 @@ pub enum LabEventKind {
         iface: String,
     },
     /// Device interface brought down.
+    #[non_exhaustive]
     LinkDown {
         /// Device name.
         device: String,
         /// Interface name.
         iface: String,
     },
+    /// Device interface regained carrier, like a cable plugged back in.
+    CarrierUp {
+        /// Device name.
+        device: String,
+        /// Interface name.
+        iface: String,
+    },
+    /// Device interface lost carrier, like a pulled cable.
+    CarrierDown {
+        /// Device name.
+        device: String,
+        /// Interface name.
+        iface: String,
+    },
     /// A new interface was added to a device.
+    #[non_exhaustive]
     InterfaceAdded {
         /// Device name.
         device: String,
@@ -191,6 +228,7 @@ pub enum LabEventKind {
         iface: IfaceSnapshot,
     },
     /// An interface was removed from a device.
+    #[non_exhaustive]
     InterfaceRemoved {
         /// Device name.
         device: String,
@@ -198,6 +236,7 @@ pub enum LabEventKind {
         iface_name: String,
     },
     /// A device interface was replugged to a different router.
+    #[non_exhaustive]
     InterfaceReplugged {
         /// Device name.
         device: String,
@@ -213,6 +252,7 @@ pub enum LabEventKind {
         new_ip_v6: Option<Ipv6Addr>,
     },
     /// Device IP address changed (e.g. DHCP renewal).
+    #[non_exhaustive]
     DeviceIpChanged {
         /// Device name.
         device: String,
@@ -226,6 +266,7 @@ pub enum LabEventKind {
 
     // ── Processes ──
     /// A command was spawned in a node namespace.
+    #[non_exhaustive]
     CommandSpawned {
         /// Node name (device or router).
         node: String,
@@ -235,6 +276,7 @@ pub enum LabEventKind {
         cmd: String,
     },
     /// A spawned command exited.
+    #[non_exhaustive]
     CommandExited {
         /// Node name.
         node: String,
@@ -246,6 +288,7 @@ pub enum LabEventKind {
 
     // ── Counters ──
     /// Packet counters snapshot for a node.
+    #[non_exhaustive]
     PacketCounters {
         /// Node name.
         node: String,
@@ -255,6 +298,7 @@ pub enum LabEventKind {
 
     // ── Test lifecycle ──
     /// Test completed with a result.
+    #[non_exhaustive]
     TestCompleted {
         /// Whether the test passed.
         passed: bool,
@@ -263,6 +307,7 @@ pub enum LabEventKind {
 
 /// Snapshot of a device interface at the time of an event.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
 pub struct IfaceSnapshot {
     /// Interface name.
     pub name: String,
@@ -285,6 +330,7 @@ pub struct IfaceSnapshot {
 
 /// Traffic counters for one interface (from `/proc/net/dev`).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct IfaceCounters {
     /// Interface name.
     pub iface: String,
@@ -304,6 +350,7 @@ pub struct IfaceCounters {
 
 /// Lab state derived from the event stream. Mirrors the `state.json` schema.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct LabState {
     /// Latest applied opid.
     pub opid: u64,
@@ -314,7 +361,8 @@ pub struct LabState {
     /// Lab status (`"running"` or `"stopped"`).
     pub status: String,
     /// Lab creation timestamp.
-    pub created_at: Option<DateTime<Utc>>,
+    #[serde(default, with = "time::serde::rfc3339::option")]
+    pub created_at: Option<OffsetDateTime>,
     /// IX state.
     pub ix: Option<IxState>,
     /// Router states keyed by name.
@@ -329,6 +377,7 @@ pub struct LabState {
 
 /// IX state in state.json.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct IxState {
     /// Bridge name.
     pub bridge: String,
@@ -344,6 +393,7 @@ pub struct IxState {
 
 /// Router state in state.json.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RouterState {
     /// Namespace name.
     pub ns: String,
@@ -389,6 +439,7 @@ pub struct RouterState {
 
 /// Device state in state.json.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct DeviceState {
     /// Namespace name.
     pub ns: String,
@@ -404,6 +455,7 @@ pub struct DeviceState {
 
 /// Region state in state.json.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RegionState {
     /// Router assigned to this region.
     pub router: String,
@@ -411,6 +463,7 @@ pub struct RegionState {
 
 /// Inter-region link state.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RegionLinkState {
     /// Router A name.
     pub a: String,
@@ -628,8 +681,11 @@ impl LabState {
                     r.downlink_condition = *condition;
                 }
             }
-            LabEventKind::LinkUp { .. } | LabEventKind::LinkDown { .. } => {
-                // State doesn't track link up/down currently.
+            LabEventKind::LinkUp { .. }
+            | LabEventKind::LinkDown { .. }
+            | LabEventKind::CarrierUp { .. }
+            | LabEventKind::CarrierDown { .. } => {
+                // State doesn't track link or carrier state currently.
             }
             LabEventKind::InterfaceAdded { device, iface } => {
                 if let Some(d) = self.devices.get_mut(device) {
@@ -773,7 +829,7 @@ impl crate::lab::LabInner {
         let opid = self.opid.fetch_add(1, Ordering::Relaxed);
         let event = LabEvent {
             opid,
-            timestamp: Utc::now(),
+            timestamp: OffsetDateTime::now_utc(),
             kind,
         };
         // Ignore error — no receivers is fine.
@@ -847,7 +903,7 @@ mod tests {
         for (i, kind) in events.into_iter().enumerate() {
             let event = LabEvent {
                 opid: i as u64,
-                timestamp: Utc::now(),
+                timestamp: OffsetDateTime::now_utc(),
                 kind,
             };
             let json = serde_json::to_string(&event).expect("serialize");
@@ -863,7 +919,7 @@ mod tests {
         let events = vec![
             LabEvent {
                 opid: 0,
-                timestamp: Utc::now(),
+                timestamp: OffsetDateTime::now_utc(),
                 kind: LabEventKind::LabCreated {
                     lab_prefix: "lab-test".into(),
                     label: None,
@@ -871,7 +927,7 @@ mod tests {
             },
             LabEvent {
                 opid: 1,
-                timestamp: Utc::now(),
+                timestamp: OffsetDateTime::now_utc(),
                 kind: LabEventKind::IxCreated {
                     bridge: "br-1".into(),
                     cidr: "198.18.0.0/24".parse().unwrap(),
@@ -882,7 +938,7 @@ mod tests {
             },
             LabEvent {
                 opid: 2,
-                timestamp: Utc::now(),
+                timestamp: OffsetDateTime::now_utc(),
                 kind: LabEventKind::RouterAdded {
                     name: "r1".into(),
                     state: Box::new(RouterState {
@@ -911,7 +967,7 @@ mod tests {
             },
             LabEvent {
                 opid: 3,
-                timestamp: Utc::now(),
+                timestamp: OffsetDateTime::now_utc(),
                 kind: LabEventKind::DeviceAdded {
                     name: "d1".into(),
                     state: DeviceState {

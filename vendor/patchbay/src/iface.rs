@@ -6,7 +6,7 @@ use anyhow::{anyhow, bail, Result};
 use ipnet::{Ipv4Net, Ipv6Net};
 
 use crate::{
-    core::{DeviceIfaceData, NodeId},
+    core::{DeviceIfaceData, NodeId, Renewal},
     event::LabEventKind,
     lab::{LabInner, LinkCondition, LinkDirection},
 };
@@ -295,21 +295,7 @@ impl Iface {
                 );
             }
 
-            let gateway = if !iface.is_dummy() {
-                let uplink = iface.uplink().expect("routed interface has uplink");
-                let gw_router = inner
-                    .switch(uplink)
-                    .and_then(|sw| sw.owner_router)
-                    .and_then(|rid| inner.router(rid))
-                    .ok_or_else(|| {
-                        anyhow!("gateway router not found for interface '{}'", self.ifname)
-                    })?;
-                Some((gw_router.ns.clone(), format!("v{}", iface.idx)))
-            } else {
-                None
-            };
-
-            (dev.ns.clone(), gateway, op)
+            (dev.ns.clone(), inner.gateway_veth(iface)?, op)
         };
         let _guard = op.lock().await;
 
@@ -375,15 +361,20 @@ impl Iface {
 
     /// Brings this interface administratively up.
     ///
-    /// If this is the device's default route interface (and it is routed),
-    /// the default route is re-added (Linux removes routes when a link
-    /// goes down).
+    /// Linux removes routes and the IPv6 link-local address when a link
+    /// goes down, so this re-adds the link-local and, if this is the
+    /// device's routed default route interface, the default routes. Routes
+    /// added outside patchbay are not restored.
+    ///
+    /// With [`Ipv6DadMode::Enabled`](crate::Ipv6DadMode::Enabled), IPv6
+    /// addresses rerun duplicate address detection after this returns and
+    /// stay unusable until it completes, which takes about two seconds.
     pub async fn link_up(&self) -> Result<()> {
         use crate::{
             device::select_default_v6_gateway, netlink::Netlink, wiring, Ipv6ProvisioningMode,
         };
 
-        let (ns, uplink, is_default_via, dummy, op) = {
+        let (ns, uplink, is_default_via, dummy, ll_v6, op) = {
             let inner = self.lab.core.lock().expect("poisoned");
             let dev = inner
                 .device(self.device)
@@ -396,6 +387,7 @@ impl Iface {
                 iface.uplink(),
                 *dev.default_via == *self.ifname,
                 iface.is_dummy(),
+                iface.ll_v6,
                 Arc::clone(&dev.op),
             )
         };
@@ -404,7 +396,16 @@ impl Iface {
         let ifname = self.ifname.to_string();
         wiring::nl_run(&self.lab.netns, &ns, {
             let ifname = ifname.clone();
-            move |nl: Netlink| async move { nl.set_link_up(&ifname).await }
+            move |nl: Netlink| async move {
+                nl.set_link_up(&ifname).await?;
+                // Global v6 addresses survive link down via `keep_addr_on_down`
+                // (see `wiring::create_named_netns`), but the kernel always
+                // drops link-locals, so the seeded one is re-added here.
+                if let Some(ll6) = ll_v6 {
+                    nl.add_addr6(&ifname, ll6, 64).await?;
+                }
+                Ok(())
+            }
         })
         .await?;
 
@@ -457,6 +458,72 @@ impl Iface {
         Ok(())
     }
 
+    // ── Mutate: carrier ──
+
+    /// Removes carrier from this interface, like pulling its network cable.
+    ///
+    /// The interface stays administratively up and keeps its addresses and
+    /// routes, which the kernel flags as `linkdown`. Packets sent while the
+    /// carrier is down are dropped without an error to the sender. Unlike
+    /// [`link_down`](Self::link_down), nothing is lost, so
+    /// [`carrier_up`](Self::carrier_up) restores traffic as it was.
+    ///
+    /// This takes down the router-side end of the interface's veth pair.
+    /// Returns an error for dummy interfaces, which have no peer.
+    pub async fn carrier_down(&self) -> Result<()> {
+        self.set_carrier(false).await?;
+        self.lab.emit(LabEventKind::CarrierDown {
+            device: self.device_name(),
+            iface: self.ifname.to_string(),
+        });
+        Ok(())
+    }
+
+    /// Restores carrier on this interface, like plugging its network cable
+    /// back in.
+    ///
+    /// Returns an error for dummy interfaces, which have no peer.
+    pub async fn carrier_up(&self) -> Result<()> {
+        self.set_carrier(true).await?;
+        self.lab.emit(LabEventKind::CarrierUp {
+            device: self.device_name(),
+            iface: self.ifname.to_string(),
+        });
+        Ok(())
+    }
+
+    /// Sets the admin state of the router-side veth, which the kernel
+    /// reports as carrier on this interface.
+    async fn set_carrier(&self, up: bool) -> Result<()> {
+        use crate::{netlink::Netlink, wiring};
+
+        let (gw_ns, peer, op) = {
+            let inner = self.lab.core.lock().expect("poisoned");
+            let dev = inner
+                .device(self.device)
+                .ok_or_else(|| anyhow!("device removed"))?;
+            let iface = dev
+                .iface(&self.ifname)
+                .ok_or_else(|| anyhow!("interface '{}' removed", self.ifname))?;
+            let Some((gw_ns, peer)) = inner.gateway_veth(iface)? else {
+                bail!(
+                    "cannot change carrier on dummy interface '{}' (no router-side peer)",
+                    self.ifname
+                );
+            };
+            (gw_ns, peer, Arc::clone(&dev.op))
+        };
+        let _guard = op.lock().await;
+        wiring::nl_run(&self.lab.netns, &gw_ns, move |nl: Netlink| async move {
+            if up {
+                nl.set_link_up(&peer).await
+            } else {
+                nl.set_link_down(&peer).await
+            }
+        })
+        .await
+    }
+
     // ── Mutate: addressing ──
 
     /// Adds a secondary IPv4 address to this interface.
@@ -488,7 +555,13 @@ impl Iface {
         let (_ns, op) = self.device_ns_and_op()?;
         let _guard = op.lock().await;
 
-        let (ns, old_ip, new_ip, prefix_len) = self
+        let Renewal {
+            ns,
+            old_ip,
+            new_ip,
+            prefix_len,
+            gw,
+        } = self
             .lab
             .core
             .lock()
@@ -499,6 +572,13 @@ impl Iface {
         wiring::nl_run(&self.lab.netns, &ns, move |nl: Netlink| async move {
             nl.del_addr4(&ifname, old_ip, prefix_len).await?;
             nl.add_addr4(&ifname, new_ip, prefix_len).await?;
+            // The default route went away with the old address. On a down link
+            // the gateway is unreachable, and link_up adds the route instead.
+            if let Some(gw) = gw {
+                if nl.link_is_up(&ifname).await? {
+                    nl.add_default_route_v4(&ifname, gw).await?;
+                }
+            }
             Ok(())
         })
         .await?;
