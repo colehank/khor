@@ -18,8 +18,9 @@ export type OfficeThread = OfficeComment & {
   jump?: () => Promise<OfficeCommentAnchor | boolean | null>;
 };
 export type WordReviewPoint = { x: number; y: number };
+export type WordReviewAnchorPoint = WordReviewPoint & { lineTop: number; lineHeight: number };
 export type WordReviewEntry = OfficeThread & {
-  points: WordReviewPoint[];
+  points: WordReviewAnchorPoint[];
   ranges?: WordReviewPoint[][];
   revision?: string;
 };

@@ -237,7 +237,10 @@ export async function loadOfficeReader(
               x = centerX + offset.x;
               y = centerY + offset.y;
             }
-            return { x: x / width, y: y / height };
+            return {
+              x: x / width, y: y / height, lineTop: rect.y / height,
+              lineHeight: rect.transform ? 0 : rect.height / height,
+            };
           };
           const entries: WordReviewEntry[] = [];
           if (showComments) {
@@ -253,7 +256,10 @@ export async function loadOfficeReader(
                   return { x: (rect.x + corner.x) / width, y: (rect.y + corner.y) / height };
                 });
               }));
-              const points = ranges.map(([, topRight]) => topRight);
+              const points = ranges.map(([, topRight, bottomRight]) => ({
+                ...topRight, lineTop: topRight.y,
+                lineHeight: topRight.x === bottomRight.x ? Math.max(0, bottomRight.y - topRight.y) : 0,
+              }));
               if (points.length) entries.push({
                 ...root, key: "comment-" + root.id, replies, points, ranges,
                 jump: () => word.goToComment(root.id, { pageIndex: index }),

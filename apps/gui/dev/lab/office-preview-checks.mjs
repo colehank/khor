@@ -176,6 +176,8 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await expectAnchor('需求确认',secondCommentInk);
     assert.equal(await wordReview.locator('[aria-pressed="true"]').count(),0,
       'All comment anchors are filled as soon as the pane opens');
+    assert.equal(await word.locator('[data-word-review-trunk]').count(),0,
+      'Comments on different text lines keep separate connections');
     await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
     await second.getByText('确认这一项的验收记录。',{exact:true}).click();
     await expectAnchor('需求确认',secondCommentInk,true);
@@ -255,10 +257,28 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
       'Revision balloons at the same anchor stack without overlap');
     assert.equal(await word.locator('[data-word-review-connector]').count(),2,
       'Each change has its own connector');
-    const inks = await word.locator('[data-word-review-connectors] path').evaluateAll(paths =>
+    const inks = await word.locator('[data-word-review-connector]').evaluateAll(paths =>
       paths.map(path => getComputedStyle(path).stroke));
     assert.deepEqual(inks.sort(),[insertionInk,deletionInk].sort(),
       'Each connector is drawn once in the matching card colour');
+    const trunk = word.locator('[data-word-review-trunk]');
+    await trunk.waitFor({state:'attached'});
+    assert.equal(await trunk.count(),1,'The revisions on one text line share one connector');
+    assert(![insertionInk,deletionInk].includes(await trunk.evaluate(path => getComputedStyle(path).stroke)),
+      'The shared line uses neutral ink for multiple authors');
+    const branchesMeetAtEdge = await word.evaluate(viewer => {
+      const trunk = viewer.querySelector('[data-word-review-trunk]');
+      const branches = [...viewer.querySelectorAll('[data-word-review-branch]')];
+      const width = viewer.querySelector('[data-office-document]').clientWidth;
+      const start = trunk.getPointAtLength(0);
+      const end = trunk.getPointAtLength(trunk.getTotalLength());
+      return branches.length === 2 && start.y === end.y && start.x < end.x &&
+        end.x > width * 0.8 && end.x <= width && branches.every(branch => {
+          const joint = branch.getPointAtLength(0);
+          return Math.hypot(joint.x - end.x,joint.y - end.y) < 0.1;
+        });
+    });
+    assert(branchesMeetAtEdge,'All branches start at the end of the horizontal line near the right edge');
     const insertButton = insertion.locator('[data-word-review-select]');
     await insertButton.press('Enter');
     await insertion.locator('[aria-pressed="true"]').waitFor();

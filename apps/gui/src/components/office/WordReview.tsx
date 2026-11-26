@@ -3,11 +3,33 @@ import type { OfficeComment, WordReviewEntry, WordReviewSource } from "@/compone
 import { WORD_PAGE_SURFACE } from "@/components/office/viewer";
 import { gui } from "@/gen/catalog";
 
-type VisibleEntry = { entry: WordReviewEntry; x: number | null; y: number };
+type TextLine = { page: number; top: number; height: number };
+type VisibleEntry = { entry: WordReviewEntry; x: number | null; y: number; line: TextLine | null };
 type CardPosition = { top: number; height: number };
 type CommentFrame = {
   page: number; left: number; top: number; width: number; height: number; entries: WordReviewEntry[];
 };
+type ReviewConnector = { entry: WordReviewEntry; x: number; y: number; end: number; line: TextLine };
+
+function groupConnectors(connectors: ReviewConnector[]): ReviewConnector[][] {
+  const center = ({ top, height }: TextLine) => top + height / 2;
+  connectors.sort((a, b) => a.line.page - b.line.page || center(a.line) - center(b.line) || a.x - b.x);
+  const groups: ReviewConnector[][] = [];
+  for (const connector of connectors) {
+    const group = groups.at(-1);
+    const first = group?.[0].line;
+    const line = connector.line;
+    // Underlines, deletions and comment boxes can attach at different
+    // heights, even though their original text is on the same visual line.
+    if (group && first && line.page === first.page && line.height > 0 && first.height > 0 &&
+        Math.abs(center(line) - center(first)) <= Math.min(line.height, first.height) / 2) {
+      group.push(connector);
+    } else {
+      groups.push([connector]);
+    }
+  }
+  return groups;
+}
 
 function revisionLabel(kind: string) {
   switch (kind) {
@@ -61,7 +83,7 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
   const [commentFrames, setCommentFrames] = useState<CommentFrame[]>([]);
   const [positions, setPositions] = useState<CardPosition[]>([]);
   const [scrollTop, setScrollTop] = useState(0);
-  const [viewportSize, setViewportSize] = useState({ width: 0, railX: 0, height: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 0, railX: 0, branchX: 0, height: 0 });
   const { authorInk } = source;
 
   useEffect(() => {
@@ -108,24 +130,29 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
           visible.push({
             entry, x: x >= 0 && x <= viewport.width ? x : null,
             y: bounds.top + anchor.y * bounds.height - viewport.top,
+            line: { page: index, top: bounds.top + anchor.lineTop * bounds.height - viewport.top,
+              height: anchor.lineHeight * bounds.height },
           });
           shown.add(entry.key);
         }
       }
       visible.sort((a, b) => a.y - b.y);
-      for (const entry of unanchored) visible.push({ entry, x: null, y: 0 });
+      for (const entry of unanchored) visible.push({ entry, x: null, y: 0, line: null });
       const width = document.clientWidth;
-      const railX = width + margin.clientLeft +
-        parseFloat(getComputedStyle(margin).getPropertyValue("--gap-in"));
+      const tokens = getComputedStyle(margin);
+      const railX = width + margin.clientLeft + parseFloat(tokens.getPropertyValue("--gap-in"));
+      const branchX = Math.max(0, width - parseFloat(tokens.getPropertyValue("--ctl-sm")));
       const height = margin.clientHeight;
       setViewportSize(previous => previous.width === width && previous.railX === railX &&
-        previous.height === height ? previous : { width, railX, height });
+        previous.branchX === branchX && previous.height === height ? previous : { width, railX, branchX, height });
       setCommentFrames(previous => previous.length === frames.length && previous.every((frame, i) =>
         frame.page === frames[i].page && frame.entries === frames[i].entries && frame.left === frames[i].left &&
         frame.top === frames[i].top && frame.width === frames[i].width && frame.height === frames[i].height,
       ) ? previous : frames);
       setEntries(previous => previous.length === visible.length && previous.every((item, i) =>
-        item.entry === visible[i].entry && item.x === visible[i].x && item.y === visible[i].y,
+        item.entry === visible[i].entry && item.x === visible[i].x && item.y === visible[i].y &&
+        item.line?.page === visible[i].line?.page && item.line?.top === visible[i].line?.top &&
+        item.line?.height === visible[i].line?.height,
       ) ? previous : visible);
     };
     const schedule = () => {
@@ -181,6 +208,11 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
   }, [entries]);
 
   const last = positions.at(-1);
+  const groups = groupConnectors(entries.flatMap(({ entry, x, y, line }, index) => {
+    const card = positions[index];
+    if (x === null || !line || !card) return [];
+    return [{ entry, x, y, line, end: card.top + card.height / 2 - scrollTop }];
+  }));
   return <>
     <aside id={id} ref={rail} data-word-review
       aria-label={showComments && showRevisions ? gui.office_tool_comments + " · " + gui.office_tool_revisions :
@@ -228,20 +260,33 @@ export function WordReview({ id, host, source, showComments, showRevisions, acti
           })}
         </g>)}
       </g>}
-      {entries.map(({ entry, x, y }, index) => {
-        const card = positions[index];
-        if (x === null || !card) return null;
-        const end = card.top + card.height / 2 - scrollTop;
-        if (end < 0 || end > viewportSize.height) return null;
-        const isComment = Boolean(entry.ranges?.length);
-        const path = isComment ? `M ${x} ${y} H ${viewportSize.width} L ${viewportSize.railX} ${end}` :
-          `M ${x} ${y} L ${viewportSize.railX} ${end}`;
-        const selectedComment = entry.key === active && isComment;
-        const ink = authorInk(entry.author);
-        return <g key={entry.key}>
-          <path d={path} data-word-review-connector fill="none" strokeDasharray={selectedComment ? undefined : "3 3"}
-            stroke={ink} strokeWidth={entry.key === active ? 1.75 : 1.25}/>
-          {selectedComment && <circle cx={x} cy={y} r="2" fill={ink}/>}
+      {groups.map(group => {
+        const visible = group.filter(({ end }) => end >= 0 && end <= viewportSize.height);
+        if (visible.length === 0) return null;
+        const first = group[0];
+        const shared = group.length > 1;
+        const rowX = Math.max(...group.map(({ x }) => x));
+        const rowY = Math.max(0, Math.min(...group.map(({ line }) => line.top)));
+        const junction = Math.max(rowX, viewportSize.branchX);
+        const sharedInk = group.every(({ entry }) => entry.author === first.entry.author) ?
+          authorInk(first.entry.author) : "oklch(57% 0 0)";
+        return <g key={first.entry.key} fill="none">
+          {shared && <path data-word-review-trunk d={`M ${rowX} ${rowY} H ${junction}`}
+            stroke={sharedInk} strokeWidth="1.25" strokeDasharray="3 3"/>}
+          {visible.map(({ entry, x, y, end }) => {
+            const isComment = Boolean(entry.ranges?.length);
+            const selectedComment = entry.key === active && isComment;
+            const ink = authorInk(entry.author);
+            const path = shared ? `M ${junction} ${rowY} L ${viewportSize.railX} ${end}` :
+              isComment ? `M ${x} ${y} H ${viewportSize.width} L ${viewportSize.railX} ${end}` :
+                `M ${x} ${y} L ${viewportSize.railX} ${end}`;
+            return <g key={entry.key}>
+              <path d={path} data-word-review-connector data-word-review-branch={shared || undefined}
+                strokeDasharray={selectedComment ? undefined : "3 3"} stroke={ink}
+                strokeWidth={entry.key === active ? 1.75 : 1.25}/>
+              {!shared && selectedComment && <circle cx={x} cy={y} r="2" fill={ink}/>}
+            </g>;
+          })}
         </g>;
       })}
     </svg>
