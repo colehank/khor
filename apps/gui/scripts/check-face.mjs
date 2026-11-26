@@ -135,7 +135,11 @@ ${serverLog}`);
   browser = pairingWebKit
     ? await webkit.launch({ headless: true })
     : await chromium.launch({ channel: pairingBundle ? undefined : "chrome", headless: true, args: ["--no-proxy-server"] });
-  const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, locale: pairingGate ? "zh-CN" : undefined });
+  const page = await browser.newPage({
+    viewport: { width: 1400, height: 900 },
+    locale: pairingGate ? "zh-CN" : undefined,
+    deviceScaleFactor: pairingGate ? 3 : undefined,
+  });
   // **The file's editor is CodeMirror** (cm-a, 2026-10-10): probes ask
   // the view through `window.__cm` (scripts/cm-probe.mjs).
   await page.addInitScript(cmProbe);

@@ -5,6 +5,54 @@ const credential = Buffer.from(JSON.stringify({
   id: "1".repeat(64), name: "Mac server", direct: [], relays: [], token: "lab-camera-test",
 })).toString("base64url");
 
+async function checkCameraPaint(page) {
+  const expectedPaper = [20, 60, 100, 255];
+  const samples = await page.evaluate(async paper => {
+    const camera = document.querySelector("[data-camera-live]");
+    const sheet = camera.closest("[data-join-sheet]");
+    await Promise.all(sheet.getAnimations().map(animation => animation.finished));
+    sheet.style.setProperty("--popover", `rgb(${paper.slice(0, 3).join(",")})`);
+    document.body.style.backgroundColor = "rgb(230, 30, 146)";
+    const home = document.createElement("div");
+    home.dataset.pairingPaintProbe = "";
+    home.style.cssText = "position:fixed;inset:0;z-index:2147483647;pointer-events:none;background:rgb(90, 220, 70)";
+    document.getElementById("root").append(home);
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    const box = camera.getBoundingClientRect();
+    const scale = devicePixelRatio;
+    const x = Math.floor((box.left + box.width / 2) * scale);
+    return {
+      inside: [x, Math.floor((box.top + box.height / 2) * scale)],
+      below: [x, Math.ceil(box.bottom * scale)],
+      safeArea: [x, Math.floor((innerHeight - 5) * scale)],
+    };
+  }, expectedPaper);
+  try {
+    const shot = await page.screenshot({ scale: "device" });
+    const pixels = await page.evaluate(async ({ png, samples }) => {
+      const image = new Image();
+      image.src = `data:image/png;base64,${png}`;
+      await image.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      return Object.fromEntries(Object.entries(samples).map(([name, [x, y]]) =>
+        [name, Array.from(context.getImageData(x, y, 1, 1).data)]));
+    }, { png: shot.toString("base64"), samples });
+    assert.deepEqual(pixels.inside, [230, 30, 146, 255], "picker exposes the camera within the rounded opening");
+    assert.deepEqual(pixels.below, expectedPaper, "sheet paper covers the first pixel below the camera");
+    assert.deepEqual(pixels.safeArea, expectedPaper, "sheet paper covers the bottom safe area");
+  } finally {
+    await page.evaluate(() => {
+      document.querySelector("[data-pairing-paint-probe]").remove();
+      document.querySelector("[data-join-sheet]").style.removeProperty("--popover");
+      document.body.style.removeProperty("background-color");
+    });
+  }
+}
+
 export async function checkPairingCamera(page, url, openDevices) {
   let mobile = false;
   const pairs = [];
@@ -64,6 +112,9 @@ export async function checkPairingCamera(page, url, openDevices) {
     await page.setViewportSize(viewport);
     await page.waitForLoadState("networkidle");
     await page.goto(`${url}&pairing-scan=${scenario}`, { waitUntil: "load" });
+    if (mobile) {
+      await page.evaluate(() => document.documentElement.style.setProperty("--safe-bottom", "34px"));
+    }
     assert(await openDevices(), "the Machines page is available");
     await page.locator("[data-side-head] [data-pane-new]:visible").first().click();
     await page.locator('[data-new-item="khor"]:visible').click();
@@ -114,6 +165,7 @@ export async function checkPairingCamera(page, url, openDevices) {
     assert.equal(cameraState.camera, "rgba(0, 0, 0, 0)");
     assert.equal(cameraState.body, "rgba(0, 0, 0, 0)");
     assert.deepEqual(cameraState.options, {windowed: true, formats: ["QR_CODE"]});
+    await checkCameraPaint(page);
     await page.evaluate(ticket => window.__pairingScanner.release(ticket), credential);
     const confirm = sheet.locator("[data-join-confirm]");
     await confirm.getByText("加入 Mac server 的网络？", { exact: true }).waitFor();
@@ -159,7 +211,7 @@ export async function checkPairingCamera(page, url, openDevices) {
       await outside();
     }
     assert.deepEqual(pairs, []);
-    console.log("PASS pairing camera: native QR, permission fallbacks, real photo decode, cancel/reopen, explicit pairing");
+    console.log("PASS pairing camera: native QR, opaque bottom edge, permission fallbacks, real photo decode, cancel/reopen, explicit pairing");
   } finally {
     if (process.env.FACE_ONLY !== "scan") {
       await page.setViewportSize(standardViewport);
