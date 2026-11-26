@@ -111,7 +111,8 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
   try {
     await open('docx');
     const word = await ready('docx');
-    assert.match((await word.textContent()).replace(/\s+/g,''),/项目进度周报/);
+    // A visible canvas can precede the selectable Word text in WKWebView.
+    await word.filter({hasText:/项\s*目\s*进\s*度\s*周\s*报/}).waitFor({timeout:20_000});
     const [wordWidth,wordHeight] = await image(word);
     assert(wordWidth > 150 && wordHeight > 200,'Word paints document-sized pages');
     if (!mobile) {

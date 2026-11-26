@@ -282,8 +282,9 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
           const line=buffer.cursorY+buffer.baseY;
           if (!buffer.getLine(line)?.translateToString(true).startsWith('preview %')) return null;
           const row=line-buffer.viewportY;
-          return {x:screen.x+(buffer.cursorX+.5)*screen.width/term.cols,
-                  y:screen.y+(row+.5)*screen.height/term.rows};""", keyboard=True)
+          const point = {x:screen.x+(buffer.cursorX+.5)*screen.width/term.cols,
+                         y:screen.y+(row+.5)*screen.height/term.rows};
+          return document.elementFromPoint(point.x, point.y)?.closest('[data-terminal]') ? point : null;""", keyboard=True)
         up = wait_for(lambda:evaluate(state), lambda s:s and s['rows']<down['rows'] and
                       s['height']<down['height'], 'UIKit keyboard covered an unfitted terminal')
         samples['keyboard'] = up
@@ -336,17 +337,25 @@ def terminal_keyboard_check(command, documents, simulator, report, *, paste_text
             expected = f'\x1b[200~{paste_text}\x1b[201~'
 
             def copied_input():
+                return evaluate('return window.__tabProbe.slice();')
+
+            def paste_delivered_or_allowed():
+                if copied_input():
+                    return True
                 try:
                     buttons = command('/execute/sync', {'script':'mobile: alert', 'args':[{'action':'getButtons'}]})
                 except ValueError:
-                    buttons = []
-                if 'Allow Paste' in buttons:
-                    command('/execute/sync', {'script':'mobile: alert',
-                                              'args':[{'action':'accept', 'buttonLabel':'Allow Paste'}]})
-                return evaluate('return window.__tabProbe.slice();')
+                    return False
+                if 'Allow Paste' not in buttons:
+                    return False
+                command('/execute/sync', {'script':'mobile: alert',
+                                          'args':[{'action':'accept', 'buttonLabel':'Allow Paste'}]})
+                return True
 
             for _ in range(2):
                 tap(button(selector))
+                wait_for(paste_delivered_or_allowed, bool, 'Paste produced no input or system permission prompt')
+                # The native clipboard callback runs after SpringBoard dismisses the prompt.
                 wait_for(copied_input, lambda chunks: chunks == [expected],
                          'A single tap did not deliver the iOS clipboard to the terminal')
                 evaluate('window.__tabProbe.length = 0;')
