@@ -1,6 +1,7 @@
 import type { OfficeFormat } from "@/components/OfficePreview";
-import type { OfficeNavigation, OfficePages, OfficeThread } from "@/components/office/types";
+import type { OfficeCommentAnchor, OfficeNavigation, OfficePages, OfficeThread } from "@/components/office/types";
 import { visiblePageOwner } from "@/lib/native-page-yield";
+import type { PptxComment, PptxPresentation } from "@silurus/ooxml/pptx";
 import type { DefinedName } from "@silurus/ooxml/xlsx";
 
 export type OfficeViewer = {
@@ -31,7 +32,7 @@ type Callbacks = {
   error: (error: unknown) => void;
   externalLink: (url: string) => void;
   scale: (scale: number) => void;
-  slide: (page: OfficePages) => void;
+  position: (page: OfficePages) => void;
 };
 
 const renderers = () => Promise.all([
@@ -44,6 +45,42 @@ const renderers = () => Promise.all([
 
 const THUMBNAIL_WIDTH = 200;
 type LinkTarget = { kind: "external"; url: string } | { kind: "internal"; ref: string; slideIndex?: number };
+
+function visibleWordPage(host: HTMLElement, preferred: number): number {
+  const viewport = host.getBoundingClientRect();
+  let index = preferred;
+  let visibleHeight = 0;
+  // The nearest page to the top can be the previous page when scrolling
+  // stops at the end. Use the page that occupies most of the viewport.
+  for (const page of host.querySelectorAll<HTMLElement>('[data-ooxml-selection-surface="docx"][data-page-index]')) {
+    const bounds = page.getBoundingClientRect();
+    const height = Math.min(bounds.bottom, viewport.bottom) - Math.max(bounds.top, viewport.top);
+    const pageIndex = Number(page.dataset.pageIndex);
+    if (height > visibleHeight || (height > 0 && height === visibleHeight && pageIndex === preferred)) {
+      index = pageIndex;
+      visibleHeight = height;
+    }
+  }
+  return index;
+}
+
+async function slideCommentAnchor(
+  deck: PptxPresentation, comment: Readonly<PptxComment>, page: number, surface: HTMLElement,
+): Promise<OfficeCommentAnchor | null> {
+  const anchors = comment.anchors ?? [];
+  const ids = anchors.flatMap(anchor => "elementId" in anchor && anchor.elementId ? [anchor.elementId] : []);
+  const hit = ids.length ? (await deck.getElementBoundsByIds(page, ids))[0]?.bounds : undefined;
+  if (hit) return {
+    surface, page, x: hit.x / deck.slideWidth, y: hit.y / deck.slideHeight,
+    width: hit.width / deck.slideWidth, height: hit.height / deck.slideHeight,
+  };
+  if ((anchors.length === 0 || anchors.some(anchor => anchor.type === "slide")) &&
+      typeof comment.x === "number" && Number.isFinite(comment.x) &&
+      typeof comment.y === "number" && Number.isFinite(comment.y)) {
+    return { surface, page, x: comment.x / deck.slideWidth, y: comment.y / deck.slideHeight, width: 0, height: 0 };
+  }
+  return null;
+}
 
 function sheetLink(ref: string, sheet: number, names: string[], defined: readonly DefinedName[]) {
   const lookup = new Map(defined.map(name => [name.name.toLowerCase(), name.formula]));
@@ -68,7 +105,7 @@ export async function loadOfficeReader(
   format: OfficeFormat, host: HTMLElement, bytes: ArrayBuffer, wasmUrl: string, password: string | undefined,
   callbacks: Callbacks,
 ): Promise<OfficeReader> {
-  const { signal, error, slide, externalLink, scale } = callbacks;
+  const { signal, error, position, externalLink, scale } = callbacks;
   const [math, chartEx, threeD, regionMap, tiff] = await renderers();
   signal.throwIfAborted();
   const options = {
@@ -100,8 +137,17 @@ export async function loadOfficeReader(
       const document = await DocxDocument.load(bytes, options);
       closeModel = () => document.destroy();
       signal.throwIfAborted();
+      let current: OfficePages | undefined;
+      const publishPage = (top: number, count: number) => {
+        const index = visibleWordPage(host, top);
+        if (current?.index === index && current.count === count) return;
+        current = { index, count };
+        position(current);
+      };
       const word = DocxScrollViewer.fromDocument(host, document, {
         ...actions, enableTextSelection: true, refitOnResize: true, background: "transparent",
+        onVisiblePageChange: publishPage,
+        comments: { cards: false, markers: false, includeResolved: true },
         onHyperlinkClick: (target: LinkTarget) => {
           if (target.kind === "external") externalLink(target.url);
           else {
@@ -111,11 +157,28 @@ export async function loadOfficeReader(
         },
       });
       viewer = word;
+      let frame = 0;
+      const scroll = () => {
+        if (frame) return;
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          publishPage(word.topVisiblePage, word.pageCount);
+        });
+      };
+      host.addEventListener("scroll", scroll, { capture: true, passive: true });
+      closeModel = () => {
+        host.removeEventListener("scroll", scroll, true);
+        cancelAnimationFrame(frame);
+        document.destroy();
+      };
       return {
         viewer, dispose,
         pages: {
-          page: () => ({ index: word.topVisiblePage, count: word.pageCount }),
-          go: index => word.scrollToPage(index),
+          page: () => current ?? { index: word.topVisiblePage, count: word.pageCount },
+          go: index => {
+            word.scrollToPage(index);
+            publishPage(index, word.pageCount);
+          },
           thumbnail: index => document.renderPageToBitmap(index, { width: THUMBNAIL_WIDTH, dpr: 1 }),
         },
         comments: () => {
@@ -149,7 +212,8 @@ export async function loadOfficeReader(
         if (!signal.aborted) await sheets.scrollToCell(target.ref);
       };
       const sheets = XlsxViewer.fromWorkbook(host, workbook, {
-        ...actions, showZoomSlider: false, comments: true,
+        ...actions, showZoomSlider: false, comments: false,
+        onSheetChange: (index, count) => position({ index, count }),
         onHyperlinkClick: (target: LinkTarget) => {
           if (target.kind === "external") externalLink(target.url);
           else void followCell(target.ref).catch(error);
@@ -192,7 +256,7 @@ export async function loadOfficeReader(
     host.append(canvas);
     const slides = PptxViewer.fromPresentation(canvas, presentation, {
       ...actions, enableTextSelection: true, enableMediaPlayback: true, width: host.clientWidth,
-      onSlideChange: (index, count) => slide({ index, count }),
+      onSlideChange: (index, count) => position({ index, count }),
       onHyperlinkClick: (target: LinkTarget) => {
         if (target.kind === "external") externalLink(target.url);
         else if (target.slideIndex !== undefined) void slides.goToSlide(target.slideIndex).catch(error);
@@ -208,9 +272,14 @@ export async function loadOfficeReader(
         go: index => slides.goToSlide(index),
         thumbnail: index => presentation.renderSlideToBitmap(index, { width: THUMBNAIL_WIDTH, dpr: 1 }),
       },
-      comments: () => presentation.getComments(slides.slideIndex).map((comment, i) => ({
-        ...comment, key: comment.id ?? String(i),
-      })),
+      comments: () => {
+        const page = slides.slideIndex;
+        const surface = canvas.parentElement;
+        return presentation.getComments(page).map((comment, i) => ({
+          ...comment, key: comment.id ?? String(i),
+          jump: surface ? () => slideCommentAnchor(presentation, comment, page, surface) : undefined,
+        }));
+      },
       notes: () => presentation.getNotes(slides.slideIndex),
     };
   } catch (error) {

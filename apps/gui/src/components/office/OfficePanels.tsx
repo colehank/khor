@@ -1,24 +1,23 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { IconBack, IconForward } from "@/components/icons";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogTitle, TaskActions, TaskOverlay } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { OfficeComment, OfficeNavigation, OfficeThread } from "@/components/office/types";
+import type { OfficeComment, OfficeNavigation, OfficePages, OfficeThread } from "@/components/office/types";
 import { gui } from "@/gen/catalog";
+import { cn } from "@/lib/utils";
 
-export function OfficePanel({ title, close, initialHeight = "fit", children }: {
+export function OfficeAnnotations({ id, title, beside, children }: {
+  id: string;
   title: string;
-  close: () => void;
-  initialHeight?: "fit" | "medium";
+  beside?: boolean;
   children: ReactNode;
 }) {
-  return <Dialog open onOpenChange={open => { if (!open) close(); }}>
-    <TaskOverlay purpose="selection" initialHeight={initialHeight}>
-      <DialogTitle>{title}</DialogTitle>
-      <TaskActions close={<Button onClick={close}>{gui.close}</Button>}/>
-      {children}
-    </TaskOverlay>
-  </Dialog>;
+  return <aside id={id} data-office-annotations={beside ? "comments" : "notes"} aria-label={title}
+    className={cn("min-w-0 flex-none overflow-auto bg-background px-in py-in",
+      beside ? "w-2/5 max-w-64 border-s @lg/office:px-row" : "max-h-44 border-t px-row")}>
+    <div className="text-group text-muted-foreground">{title}</div>
+    {children}
+  </aside>;
 }
 
 function Thumbnail({ pages, index }: { pages: OfficeNavigation; index: number }) {
@@ -37,59 +36,69 @@ function Thumbnail({ pages, index }: { pages: OfficeNavigation; index: number })
     return () => { active = false; };
   }, [pages, index]);
   return <canvas ref={canvas} width={3} height={4}
-    className="min-h-0 max-h-full min-w-0 max-w-full object-contain"
-    aria-hidden="true"/>;
+    className="min-h-0 max-h-full min-w-0 max-w-full object-contain" aria-hidden="true"/>;
 }
 
 const PAGE_BATCH = 6;
 
-export function OfficeThumbnails({ pages, close, go }: {
+export function OfficeThumbnails({ id, pages, position, go }: {
+  id: string;
   pages: OfficeNavigation;
-  close: () => void;
+  position: OfficePages;
   go: (index: number) => void;
 }) {
-  const { index, count } = pages.page();
-  const [batch, setBatch] = useState(() => Math.floor(Math.max(0, index) / PAGE_BATCH));
-  const [number, setNumber] = useState(String(Math.max(0, index) + 1));
+  const { index, count } = position;
+  const [chosenBatch, setBatch] = useState<number | null>(null);
+  const [number, setNumber] = useState<string | null>(null);
+  const batch = Math.min(chosenBatch ?? Math.floor(Math.max(0, index) / PAGE_BATCH), Math.floor(Math.max(0, count - 1) / PAGE_BATCH));
   const start = batch * PAGE_BATCH;
   const end = Math.min(count, start + PAGE_BATCH);
-  return <OfficePanel title={gui.office_thumbnails} close={close} initialHeight="medium">
-    <form className="flex items-center gap-in" onSubmit={event => {
-      event.preventDefault();
-      const page = Number(number);
-      if (Number.isInteger(page) && page > 0 && page <= count) go(page - 1);
-    }}>
-      <label className="flex min-w-0 flex-1 items-center gap-in text-body">
-        {gui.office_page_number}
-        <Input type="number" min={1} max={count} value={number} onChange={event => setNumber(event.target.value)}
-          className="min-w-0 tabular-nums"/>
-      </label>
-      <Button type="submit">{gui.office_page_go}</Button>
-    </form>
-    <div className="grid grid-cols-2 gap-in sm:grid-cols-3" data-office-thumbnails>
-      {Array.from({ length: end - start }, (_, offset) => {
+  const shownNumber = number ?? String(Math.max(0, index) + 1);
+  return <aside id={id} data-office-thumbnails aria-label={gui.office_thumbnails}
+    className="flex min-h-0 min-w-0 flex-none flex-col gap-in border-b bg-background p-in @2xl/office:w-36 @2xl/office:border-e @2xl/office:border-b-0">
+    <div className="flex items-center justify-between gap-in @2xl/office:flex-wrap">
+      <form className="flex min-w-0 items-center gap-in" onSubmit={event => {
+        event.preventDefault();
+        const page = Number(shownNumber);
+        if (Number.isInteger(page) && page > 0 && page <= count) {
+          setNumber(null);
+          setBatch(null);
+          go(page - 1);
+        }
+      }}>
+        <Input type="number" aria-label={gui.office_page_number} min={1} max={count}
+          value={shownNumber} onChange={event => setNumber(event.target.value)}
+          className="w-16 min-w-0 tabular-nums"/>
+        <Button size="icon" type="submit" variant="ghost" aria-label={gui.office_page_go} title={gui.office_page_go}>
+          <IconForward className="size-affordance"/>
+        </Button>
+      </form>
+      {count > PAGE_BATCH && <div className="flex items-center gap-xxs">
+        <Button size="icon" variant="ghost" aria-label={gui.page_back} disabled={start === 0} onClick={() => setBatch(batch - 1)}>
+          <IconBack className="size-affordance"/>
+        </Button>
+        <span className="text-caption tabular-nums">{start + 1}–{end}</span>
+        <Button size="icon" variant="ghost" aria-label={gui.page_forward} disabled={end === count} onClick={() => setBatch(batch + 1)}>
+          <IconForward className="size-affordance"/>
+        </Button>
+      </div>}
+    </div>
+    <div className="flex min-h-0 gap-in overflow-x-auto @2xl/office:flex-col @2xl/office:overflow-x-hidden @2xl/office:overflow-y-auto">
+      {Array.from({ length: Math.max(0, end - start) }, (_, offset) => {
         const page = start + offset;
         return <button key={page} type="button" aria-current={page === index ? "page" : undefined}
           aria-label={gui.office_page_number + " " + (page + 1)} data-office-thumbnail={page + 1}
-          className="flex min-w-0 flex-col items-center gap-in rounded-lg bg-fill p-2 aria-current:bg-fill-strong hover:bg-fill-strong"
-          onClick={() => go(page)}>
-          <span className="grid aspect-square w-full place-items-center overflow-hidden">
+          data-current={page === index || undefined}
+          className="flex w-20 shrink-0 flex-col items-center rounded-md p-in focus-visible:outline-2 focus-visible:outline-ring data-current:bg-fill-strong hover:bg-fill @2xl/office:w-full"
+          onClick={() => { setNumber(null); setBatch(null); go(page); }}>
+          <span className="grid aspect-[4/3] w-full place-items-center overflow-hidden">
             <Thumbnail pages={pages} index={page}/>
           </span>
-          <span className="text-callout tabular-nums">{page + 1}</span>
+          <span className="text-caption tabular-nums text-muted-foreground">{page + 1}</span>
         </button>;
       })}
     </div>
-    {count > PAGE_BATCH && <div className="flex items-center justify-center gap-in">
-      <Button size="icon" variant="ghost" aria-label={gui.page_back} disabled={start === 0} onClick={() => setBatch(n => n - 1)}>
-        <IconBack/>
-      </Button>
-      <span className="text-callout tabular-nums">{start + 1}–{end} / {count}</span>
-      <Button size="icon" variant="ghost" aria-label={gui.page_forward} disabled={end === count} onClick={() => setBatch(n => n + 1)}>
-        <IconForward/>
-      </Button>
-    </div>}
-  </OfficePanel>;
+  </aside>;
 }
 
 function CommentText({ comment }: { comment: OfficeComment }) {
@@ -104,21 +113,20 @@ function CommentText({ comment }: { comment: OfficeComment }) {
   </>;
 }
 
-export function OfficeComments({ threads, close, jump }: {
+export function OfficeComments({ threads, active, jump }: {
   threads: OfficeThread[];
-  close: () => void;
-  jump: (run: NonNullable<OfficeThread["jump"]>) => void;
+  active?: string;
+  jump: (thread: OfficeThread) => void;
 }) {
-  return <OfficePanel title={gui.office_comments} close={close}>
-    {threads.length === 0 ? <p className="text-body text-muted-foreground">{gui.office_no_comments}</p> :
-      <div data-office-comments className="flex flex-col divide-y">
-        {threads.map(thread => <article key={thread.key} className="min-w-0 py-in">
-          <CommentText comment={thread}/>
-          {thread.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-row"><CommentText comment={reply}/></div>)}
-          {thread.jump && <Button size="sm" variant="ghost" onClick={() => jump(thread.jump!)}>
-            {thread.location ?? gui.office_go_comment}
-          </Button>}
-        </article>)}
-      </div>}
-  </OfficePanel>;
+  return threads.length === 0 ? <p className="text-body text-muted-foreground">{gui.office_no_comments}</p> :
+    <div data-office-comments className="flex flex-col divide-y">
+      {threads.map(thread => <article key={thread.key} data-office-comment-thread data-active={thread.key === active || undefined}
+        className="min-w-0 break-words rounded-md px-in py-in data-active:bg-fill">
+        <CommentText comment={thread}/>
+        {thread.replies?.map((reply, i) => <div key={i} className="mt-in border-s ps-row"><CommentText comment={reply}/></div>)}
+        {thread.jump && <Button size="sm" variant="ghost" onClick={() => jump(thread)}>
+          {thread.location ?? gui.office_go_comment}
+        </Button>}
+      </article>)}
+    </div>;
 }

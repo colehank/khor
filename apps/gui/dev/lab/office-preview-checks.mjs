@@ -33,7 +33,11 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
   const ready = async format => {
     const viewer = page.locator(`[data-office-preview="${format}"][data-ready]`);
     await viewer.waitFor({timeout:20_000});
-    await viewer.locator('canvas').first().waitFor();
+    await visibleCanvas(viewer).waitFor();
+    const icons = await viewer.locator('[data-office-toolbar] button svg').evaluateAll(nodes =>
+      nodes.map(icon => [icon.getBoundingClientRect().width, getComputedStyle(icon).getPropertyValue('--affordance')]));
+    assert(icons.length > 0 && icons.every(([size,token])=>size === parseFloat(token)),
+      'Office tools use the same glyph size as the file reader');
     assert.equal(await page.locator('[data-file-face-toggle]:visible').count(),0,`${format} opens without a preview switch`);
     if (!mobile) {
       const chrome = await page.locator('[data-ws-mid] [data-tab-bar]').boundingBox();
@@ -48,10 +52,20 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     if (key === 'office-fit-page') await page.locator('[data-office-zoom]').click();
     await page.locator(`[data-${key}]`).click();
   };
-  const dialog = () => page.getByRole('dialog').last();
-  const closePanel = async () => {
-    await dialog().getByRole('button',{name:/^关闭$|^Close$/i}).click();
-    await page.getByRole('dialog').waitFor({state:'detached'});
+  const togglePane = async (key, pane, open) => {
+    const trigger = page.locator(`[data-${key}]`);
+    await tool(key);
+    await pane.waitFor({state:open?'visible':'detached'});
+    assert.equal(await trigger.getAttribute('aria-pressed'),String(open));
+    assert.equal(await page.getByRole('dialog').count(),0,'Reader tools do not open dialogs');
+  };
+  const rightComments = async viewer => {
+    const pane = viewer.locator('[data-office-annotations="comments"]');
+    await togglePane('office-review',pane,true);
+    const document = await viewer.locator('[data-office-document]').boundingBox();
+    assert((await pane.boundingBox()).x >= document.x + document.width - 0.5,
+      'Comments dock to the right of the document');
+    return pane;
   };
   const search = async value => {
     await page.locator('[data-office-find-open]:visible').click();
@@ -64,7 +78,7 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     return field;
   };
   const searchCount = () => page.locator('[data-office-find-count]').innerText();
-  const visibleCanvas = viewer => viewer.locator('canvas').first();
+  const visibleCanvas = viewer => viewer.locator('[data-office-document] canvas').first();
   const image = viewer => visibleCanvas(viewer).evaluate(canvas => {
     const {width,height} = canvas;
     const context = canvas.getContext('2d');
@@ -123,24 +137,43 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     await searchWord.press('Escape');
     await page.locator('[data-office-find]').waitFor({state:'detached'});
 
-    await tool('office-review');
-    await dialog().getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
+    const wordComments = await rightComments(word);
+    await wordComments.getByText('核对第一阶段验收范围。',{exact:true}).waitFor();
+    await wordComments.getByRole('button',{name:'定位批注'}).click();
+    // Opening the right pane makes the viewer refit the page. Check the
+    // settled native highlight against the original comment range.
+    await page.waitForFunction(() => {
+      const documentBody = document.querySelector('[data-office-preview="docx"] [data-office-document]');
+      const highlight = documentBody?.querySelector('[data-ooxml-comment-highlight][data-active="true"]');
+      const run = [...documentBody?.querySelectorAll('[data-ooxml-selection-run="docx"]') ?? []]
+        .find(node => node.textContent === '本周摘要');
+      if (!highlight || !run) return false;
+      const mark = highlight.getBoundingClientRect();
+      const line = run.getBoundingClientRect();
+      return mark.left < line.right && line.left < mark.right &&
+        mark.top < line.bottom && line.top < mark.bottom;
+    },null,{timeout:5_000});
+    await wordComments.locator('[data-office-comment-thread][data-active]').waitFor();
     await page.screenshot({path:path.join(report,name+'-word-comments.png'), animations:'disabled'});
-    await closePanel();
+    await togglePane('office-review',wordComments,false);
+    assert.equal(await word.locator('[data-ooxml-comment-highlight]:visible').count(),0,
+      'Closing comments hides the document markup');
     await tool('office-revisions');
     await word.getByText('联调尚未开始。',{exact:true}).waitFor({state:'attached'});
     const change = await search('联调尚未开始');
     assert.match(await searchCount(),/1 \/ 1/,'The deletion is findable with revision markup');
     await change.press('Escape');
 
-    await tool('office-pages');
-    await dialog().locator('[data-office-thumbnail="2"] canvas').waitFor();
+    const wordPages = word.locator('[data-office-thumbnails]');
+    await togglePane('office-pages',wordPages,true);
+    await wordPages.locator('[data-office-thumbnail="2"] canvas').waitFor();
     await page.waitForFunction(() => {
       const thumbnail = document.querySelector('[data-office-thumbnail="2"] canvas');
       return thumbnail instanceof HTMLCanvasElement && thumbnail.width > 80;
     });
-    await dialog().locator('[data-office-thumbnail="2"]').click();
-    await page.getByRole('dialog').waitFor({state:'detached'});
+    await wordPages.locator('[data-office-thumbnail="2"]').click();
+    await wordPages.locator('[data-office-thumbnail="2"][aria-current="page"]').waitFor();
+    await togglePane('office-pages',wordPages,false);
 
     if (mobile) await open('pptx');
     else await page.locator('[data-file-path$="/'+files.pptx+'"]').click();
@@ -148,15 +181,32 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     assert.equal(await slides.evaluate(viewer=>getComputedStyle(viewer).maskImage),'none',
       'A presentation that does not scroll has no top fade');
     assert.match(await slides.textContent(),/1 \/ 3/);
-    await tool('office-notes');
-    await dialog().getByText(/先介绍项目目标/).waitFor();
-    await closePanel();
-    await tool('office-review');
-    await dialog().getByText('在第一页强调验收目标。',{exact:true}).waitFor();
-    await closePanel();
+    const notes = slides.locator('[data-office-annotations="notes"]');
+    await togglePane('office-notes',notes,true);
+    await notes.getByText(/先介绍项目目标/).waitFor();
+    const slidesBody = slides.locator('[data-office-document]');
+    const slidesBodyBox = await slidesBody.boundingBox();
+    assert((await notes.boundingBox()).y >= slidesBodyBox.y + slidesBodyBox.height - 0.5,
+      'Presenter notes dock below the slide');
+    const slideComments = await rightComments(slides);
+    await slideComments.getByText('在第一页强调验收目标。',{exact:true}).waitFor();
+    await slideComments.getByRole('button',{name:'定位批注'}).click();
+    await slides.locator('[data-office-comment-anchor] span').waitFor();
+    await page.screenshot({path:path.join(report,name+'-powerpoint-comments.png'),animations:'disabled'});
     await slides.getByRole('button',{name:/下一页|Next page/i}).click();
     await slides.getByText('2 / 3',{exact:true}).waitFor();
+    await slideComments.getByText('此处没有批注',{exact:true}).waitFor();
+    await slides.locator('[data-office-comment-anchor]').waitFor({state:'detached'});
+    await togglePane('office-review',slideComments,false);
+    await togglePane('office-notes',notes,false);
     assert.match((await slides.textContent()).replace(/\s+/g,''),/阶段进度/);
+    await page.waitForFunction(() => {
+      const body = document.querySelector('[data-office-preview="pptx"] [data-office-document]');
+      const canvas = body?.querySelector('canvas')?.getBoundingClientRect();
+      const pane = body?.getBoundingClientRect();
+      return canvas && pane && Math.abs(canvas.x + canvas.width/2 - pane.x - pane.width/2) < 1.5 &&
+        Math.abs(canvas.y + canvas.height/2 - pane.y - pane.height/2) < 1.5;
+    });
     const slideRect = await visibleCanvas(slides).boundingBox();
     const pane = await slides.locator('[data-office-document]').boundingBox();
     assert(slideRect.width <= pane.width + 1 && slideRect.height <= pane.height + 1,'The slide fits the pane');
@@ -166,9 +216,12 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     const bottom = pane.y + pane.height - slideRect.y - slideRect.height;
     assert(Math.abs(left - right) < 1.5 && Math.abs(top - bottom) < 1.5,'The slide is centered in the document area');
     await page.screenshot({path:path.join(report,name+'-powerpoint.png')});
-    await tool('office-pages');
-    await dialog().locator('[data-office-thumbnail="3"]').click();
+    const slidePages = slides.locator('[data-office-thumbnails]');
+    await togglePane('office-pages',slidePages,true);
+    await slidePages.locator('[data-office-thumbnail="3"]').click();
     await slides.getByText('3 / 3',{exact:true}).waitFor();
+    await slidePages.locator('[data-office-thumbnail="3"][aria-current="page"]').waitFor();
+    await togglePane('office-pages',slidePages,false);
     await tool('office-zoom-in');
     await page.waitForFunction(initial => {
       const canvas = document.querySelector('[data-office-preview="pptx"] canvas');
@@ -180,9 +233,12 @@ export async function checkOfficePreviews(browser, {port, report, width, engine}
     else await page.locator('[data-file-path$="/'+files.xlsx+'"]').click();
     const excel = await ready('xlsx');
     const firstSheet = await image(excel);
-    await tool('office-review');
-    await dialog().getByText('这里记录第一项验收内容。',{exact:true}).waitFor();
-    await closePanel();
+    const cellComments = await rightComments(excel);
+    await cellComments.getByText('这里记录第一项验收内容。',{exact:true}).waitFor();
+    await cellComments.getByRole('button',{name:'B2',exact:true}).click();
+    await cellComments.locator('[data-office-comment-thread][data-active]').waitFor();
+    await page.screenshot({path:path.join(report,name+'-excel-comments.png'),animations:'disabled'});
+    await togglePane('office-review',cellComments,false);
     const searchCells = await search('预览验收任务 001');
     assert.match(await searchCount(),/\d+ \/ \d+/);
     await searchCells.press('Escape');
